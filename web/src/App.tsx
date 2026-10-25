@@ -15,6 +15,7 @@ import { CoveragePage } from "./pages/Coverage";
 import { IntegrationsPage } from "./pages/Integrations";
 import { AuditPage } from "./pages/Audit";
 import { ReportsPage } from "./pages/Reports";
+import { OutcomesPage } from "./pages/Outcomes";
 import { UsersPage } from "./pages/settings/Users";
 import { SecretsPage } from "./pages/settings/Secrets";
 import { WorkspacesPage } from "./pages/admin/Workspaces";
@@ -137,6 +138,7 @@ export function App() {
           }
         />
         <Route path="reports" element={<ReportsPage />} />
+        <Route path="outcomes" element={<OutcomesPage />} />
         <Route path="audit" element={<AuditPage />} />
         <Route path="settings/tokens" element={<TokensPage />} />
         <Route path="settings/risk-policy" element={<RiskPolicyPage />} />

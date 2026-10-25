@@ -155,6 +155,13 @@ export function FixGroupCard({ g, hideAsset, defaultOpen }: { g: FixGroup; hideA
                     {[g.component, versions].filter(Boolean).join(" ")}
                   </span>
                 ),
+                g.recommended_version && g.recommended_version !== g.to_version && (
+                  <span key="r" title={(g.rationale ?? []).join(" ")}>
+                    recommended <span className="mono">{g.recommended_version}</span>
+                  </span>
+                ),
+                g.requires_major && <span key="m">major upgrade</span>,
+                g.recommended_yanked && <span key="y">recommended version withdrawn</span>,
                 g.package_count > 0 && <span key="p">{plural(g.package_count, "package")}</span>,
               ]
                 .filter(Boolean)

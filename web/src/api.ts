@@ -691,6 +691,131 @@ export interface FindingDetail {
   advisories?: Advisory[] | null;
   /** Advisories sharing the CVE that did not match this component. */
   related_advisories?: Advisory[] | null;
+  /** For open findings: the version to upgrade this installed copy to. */
+  upgrade?: UpgradeRecommendation | null;
+}
+
+/** Support status of one release line (endoflife.date). */
+export interface UpgradeLine {
+  product: string;
+  cycle: string;
+  status: "supported" | "security_only" | "end_of_life" | string;
+  support_until?: string | null;
+  eol_date?: string | null;
+  latest?: string;
+  link?: string;
+}
+
+/** GET /findings/{id}/upgrade, /components/{id}/upgrade: built only from stored advisory, release and lifecycle data. */
+export interface UpgradeRecommendation {
+  purl_type: string;
+  installed_version: string;
+  minimum_fixed_version?: string;
+  recommended_version?: string;
+  /** distro_fixed, latest_in_line, minimum_fixed, supported_line or none. */
+  basis: string;
+  change_type?: string;
+  requires_major: boolean;
+  requires_subscription?: string;
+  /** available, none, failed or not_applicable (OS packages). */
+  release_data: string;
+  release_source?: string;
+  release_checked_at?: string | null;
+  latest_stable?: string;
+  latest_in_line?: string;
+  recommended_yanked: boolean;
+  minimum_fixed_yanked: boolean;
+  yanked_reason?: string;
+  installed_yanked: boolean;
+  deprecated?: string;
+  minimum_fixed_not_in_release_data: boolean;
+  lifecycle?: UpgradeLine | null;
+  target_lifecycle?: UpgradeLine | null;
+  supported_line?: UpgradeLine | null;
+  fixes: string[] | null;
+  unfixed: string[] | null;
+  rationale: string[] | null;
+  open_findings: number;
+}
+
+export interface VersionUpgrade extends UpgradeRecommendation {
+  version: string;
+  distro?: string;
+  asset_count: number;
+}
+
+export interface OutcomeTiming {
+  priority: string; // P1..P4 or "all"
+  kind: string; // vulnerability, end_of_life or "all"
+  resolved: number;
+  mean_days: number | null;
+  median_days: number | null;
+}
+
+export interface OutcomeSLA {
+  priority: string;
+  fix_days: number;
+  resolved: number;
+  resolved_within_sla: number;
+  rate: number | null;
+  open_active: number;
+  open_overdue: number;
+}
+
+export interface OutcomeReopen {
+  finding_id: number;
+  key: string;
+  component: string;
+  version: string;
+  asset_id: number;
+  asset_name: string;
+  reopened_at: string;
+  previous_resolution: string;
+}
+
+export interface OutcomeFailure {
+  action_id: number;
+  plan_id: number;
+  asset_id: number;
+  asset_name: string;
+  package: string;
+  from_version: string;
+  to_version: string;
+  status: string;
+  error: string;
+  at: string;
+}
+
+export interface OutcomesReport {
+  from: string;
+  to: string;
+  generated_at: string;
+  events_since: string | null;
+  resolved: number;
+  time_to_remedy: OutcomeTiming[] | null;
+  causes: { cause: string; evidence: string; count: number }[] | null;
+  sla: OutcomeSLA[] | null;
+  reopened: {
+    events: number;
+    findings: number;
+    resolution_events: number;
+    later_reopened: number;
+    rate: number | null;
+    recent: OutcomeReopen[] | null;
+    recent_limit: number;
+  };
+  open: { active: number; overdue: number; excepted: number; stale_asset: number };
+  remediation: {
+    plans: Record<string, number> | null;
+    actions: Record<string, number> | null;
+    finished: number;
+    verified: number;
+    failed: number;
+    rolled_back: number;
+    success_rate: number | null;
+    rollback_actions: Record<string, number> | null;
+    recent_failures: OutcomeFailure[] | null;
+  } | null;
 }
 
 export interface Feed {
@@ -1141,6 +1266,12 @@ export interface FixGroup {
   needs?: string;
   effort: "low" | "medium" | "high" | string;
   note?: string;
+  /** Package upgrades: the newest stable release in the major line at or above to_version, from release data. */
+  recommended_version?: string;
+  change_type?: string;
+  requires_major?: boolean;
+  recommended_yanked?: boolean;
+  rationale?: string[] | null;
 }
 
 export interface FixGroupDetail {

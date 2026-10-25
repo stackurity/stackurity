@@ -1,12 +1,13 @@
 import { useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router";
-import { api, safeHttpUrl, type ComponentIntel, type Finding, type InventoryRow, type LifecycleCycle, type List } from "../api";
+import { api, safeHttpUrl, type ComponentIntel, type Finding, type InventoryRow, type LifecycleCycle, type List, type VersionUpgrade } from "../api";
 import { useLoad } from "../hooks";
 import { componentName, displayPurl, humanize } from "../format";
 import { Badge } from "../components/Badge";
 import { FindingsTable } from "../components/Findings";
 import { Table, type Column } from "../components/Table";
 import { Card, EmptyState, ErrorBox, KeyValues, Loading, Notice, PageHeader, Pager, RelativeTime } from "../components/ui";
+import { LineStatus, RecommendedVersion, UpgradeDetails } from "../components/Upgrade";
 import { EvidencePanel, LatestCell } from "./AssetDetail";
 import { VersionChips } from "./Components";
 
@@ -93,6 +94,7 @@ export function ComponentDetailPage() {
       </Card>
       {intel.data?.release && <ReleaseCard intel={intel.data} />}
       {intel.data?.lifecycle && <LifecycleCard intel={intel.data} />}
+      <ComponentUpgrades componentId={c.id} />
       <ComponentFindings componentId={c.id} />
       <h2 className="section-title">Where it is used</h2>
       <div className="filters">
@@ -295,6 +297,73 @@ function LifecycleCard({ intel }: { intel: ComponentIntel }) {
           rowKey={(c) => c.cycle}
           rowClassName={(c) => [isEnded(c) && inUse.has(c.cycle) ? "row-stale" : "", inUse.has(c.cycle) ? "row-inuse" : ""].filter(Boolean).join(" ") || undefined}
         />
+      )}
+    </section>
+  );
+}
+
+function ComponentUpgrades({ componentId }: { componentId: number }) {
+  const [sel, setSel] = useState<string | null>(null);
+  const res = useLoad(() => api.get<List<VersionUpgrade>>(`/components/${componentId}/upgrade`), [componentId]);
+  const key = (u: VersionUpgrade) => `${u.version}|${u.distro ?? ""}`;
+  const cols: Column<VersionUpgrade>[] = [
+    {
+      key: "version",
+      header: "Installed",
+      cell: (u) => (
+        <>
+          <span className="mono">{u.version || "unknown"}</span>
+          {u.distro && <span className="muted small"> ({u.distro})</span>}
+        </>
+      ),
+    },
+    { key: "assets", header: "Assets", numeric: true, cell: (u) => u.asset_count.toLocaleString() },
+    { key: "findings", header: "Open findings", numeric: true, cell: (u) => u.open_findings.toLocaleString() },
+    {
+      key: "min",
+      header: "Minimum fixed",
+      cell: (u) => (u.minimum_fixed_version ? <span className="mono">{u.minimum_fixed_version}</span> : <span className="muted">none listed</span>),
+    },
+    { key: "rec", header: "Recommended", cell: (u) => <RecommendedVersion rec={u} /> },
+    { key: "line", header: "Release line", cell: (u) => <LineStatus line={u.lifecycle} /> },
+    {
+      key: "notes",
+      header: "Notes",
+      cell: (u) => (
+        <span className="badges">
+          {u.requires_major && <Badge status="major" tone="warn" label="major upgrade" />}
+          {u.release_data === "none" && <Badge status="none" tone="muted" label="no release data" />}
+          {u.release_data === "failed" && <Badge status="failed" tone="warn" label="registry lookup failed" />}
+          {(u.unfixed?.length ?? 0) > 0 && <Badge status="unfixed" tone="warn" label={`${u.unfixed!.length} not resolved`} />}
+        </span>
+      ),
+    },
+  ];
+  return (
+    <section aria-labelledby="cu-title">
+      <h2 className="section-title" id="cu-title">
+        Upgrade recommendations{res.data ? ` (${res.data.total})` : ""}
+      </h2>
+      <p className="hint">
+        One row per installed version with open findings. Recommended: the newest stable release in the same major line at or above the
+        minimum fixed version, from registry release data; without it, the minimum fixed version. Select a row for the reasons.
+      </p>
+      <ErrorBox error={res.error} title="Could not load recommendations" />
+      {!res.data && !res.error && <Loading />}
+      {res.data && res.data.items.length === 0 && <p className="muted">No installed version has open findings: nothing to upgrade for security.</p>}
+      {res.data && res.data.items.length > 0 && (
+        <Table
+          caption="Upgrade recommendations by installed version"
+          columns={cols}
+          rows={res.data.items}
+          rowKey={key}
+          selectedKey={sel}
+          onRowClick={(u) => setSel(sel === key(u) ? null : key(u))}
+          renderExpanded={(u) => <UpgradeDetails rec={u} />}
+        />
+      )}
+      {res.data && res.data.total > res.data.items.length && (
+        <p className="hint">Showing {res.data.items.length} of {res.data.total} installed versions, most findings first.</p>
       )}
     </section>
   );
