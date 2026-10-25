@@ -292,7 +292,10 @@ Use **Send test** to check each channel. Adjust priorities, deadlines and SOS ru
 
 ## Backup and restore
 
-Everything is in PostgreSQL. The data volume only holds temporary clones.
+Everything is in PostgreSQL. The data volume only holds temporary clones. Keep two things outside the database as well:
+
+- `STACKURITY_SECRET_KEY`, if you set it. Stored workspace secrets are encrypted with it and cannot be read without it. Keep it apart from the database dumps.
+- Your licence key, if you use Pro or Enterprise (it is also stored in the database).
 
 ```sh
 # backup
@@ -304,7 +307,9 @@ docker compose exec -T postgres pg_restore -U stackurity -d stackurity --clean -
 docker compose up -d
 ```
 
-Test a restore regularly. A backup you have never restored is not a backup.
+Restoring into a new PostgreSQL server prints `role "stackurity_app" does not exist` errors and exits with status 1. They are expected: roles belong to the server, not the dump, and Stackurity creates the role and its grants again when it starts (before release 0.2, a server with several workspaces refused to start after such a restore; start 0.2 or later against it).
+
+Test a restore regularly. A backup you have never restored is not a backup. To check one: restore it into a separate PostgreSQL, start Stackurity against it with `STACKURITY_FEEDS=off`, and confirm that `/readyz` answers 200 and `stackurity admin list-workspaces` shows your workspaces and asset counts.
 
 ## Upgrading
 
