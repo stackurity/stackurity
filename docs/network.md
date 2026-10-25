@@ -34,7 +34,9 @@ Each plugin's metadata declares the hosts it contacts. For example, `aws-managed
 
 ### Notification channels
 
-Only the channels you configure are contacted: your SMTP server, Slack or Teams webhook URLs, and your webhook endpoints. Redirects are never followed. Messages contain incident titles, asset and component names, and links to the dashboard.
+Only the channels you configure are contacted: your SMTP server, Slack or Teams webhook URLs, your webhook endpoints and your Jira site. Redirects are never followed. Messages contain incident titles, asset and component names, and links to the dashboard.
+
+A Jira channel calls the REST API of the configured site only (`/rest/api/3` on Jira Cloud, `/rest/api/2` on Data Center and Server): it checks the account and project (`/myself`, `/project/<key>`, `/priority`), searches the project for the incident's label, creates the issue, and later adds comments, sets the priority and reads and applies transitions. Issues contain the incident's title, priority and risk factors, up to 20 affected asset names with component versions and environments, the fix, and links to the dashboard; nothing from other incidents or workspaces. A Jira site on a private address is subject to the same `STACKURITY_PRIVATE_TARGETS` policy as webhooks.
 
 ### Container image integrations
 

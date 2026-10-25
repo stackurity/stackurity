@@ -281,6 +281,7 @@ Under **Settings → Notifications**, add a channel. Credentials always go in a 
 | Slack | none | The incoming webhook URL |
 | Microsoft Teams | none | The Workflows webhook URL ("Post to a channel when a webhook request is received") |
 | Webhook | `url` (HTTPS) | The HMAC signing key (optional) |
+| Jira | `url` (the site, HTTPS), `deployment` (`cloud` by default, or `datacenter`), `project` (key), `issue_type` (`Task` by default), `username` (the account email, Cloud only), optional `labels[]`, `priorities` (`{"P1": "Highest", ...}`) and `resolve_transition` (e.g. `Done`) | Cloud: an [Atlassian API token](https://id.atlassian.com/manage-profile/security/api-tokens). Data Center and Server: a personal access token |
 
 Then add routes:
 
@@ -288,6 +289,20 @@ Then add routes:
 - one marked **escalation** that goes to the team lead or the security owner.
 
 When more than 3 incidents reach one route in a single cycle (the dispatcher runs every minute), they are sent as one digest that lists the top actions from the action plan instead of one message per incident, so onboarding a server or a large feed update never floods a channel. Incidents raised while a route is disabled are recorded as announced and not sent later.
+
+### Jira
+
+A route to a Jira channel creates one issue per incident it matches, for example "[P1] CVE-2024-1234 in openssl on 5 assets". The description gives the priority and the risk factors behind it, severity and known exploitation (CISA KEV), up to 20 affected assets with their versions, the fixed version and links back to the incident and the action plan. After that the issue is kept up to date from the incident, whatever the route says:
+
+- findings that join or leave, and priority changes (either way), are added as comments, and the issue's Jira priority follows when `priorities` maps it;
+- escalations (Pro) are added as comments, when the route sends escalations;
+- when the incident resolves, a comment is added and, with `resolve_transition`, the issue is moved through that transition (or to that status). An issue already done is left alone.
+
+The incident, in the list and on its page, links to its issue. Jira channels are not summarised into digests and ignore quiet hours and hourly limits. Rate limiting by Jira (HTTP 429) is retried after the `Retry-After` time; rejected credentials or a missing project fail the delivery at once with the reason in the delivery log, and it can be retried after the fix.
+
+There is never more than one issue per incident and channel, across retries and replicas: an attempt claims the creation in the database first, and each issue carries the label `stackurity-incident-<workspace>-<incident>`, which is searched for before creating, so an attempt that died after creating the issue is picked up instead of repeated. Do not remove that label.
+
+The Jira account needs to browse the project, create issues, add comments and transition issues. **Send test** checks the credentials, the project, the issue type and the mapped priorities without creating anything. Store the token as a workspace secret (`secret:NAME`, Settings > Secrets).
 
 Use **Send test** to check each channel. Adjust priorities, deadlines and SOS rules under **Settings → Risk policy**.
 
@@ -337,7 +352,7 @@ The chart runs the same hardened container: non-root, read-only root filesystem,
 Any number of servers can run against one PostgreSQL database, behind a load balancer, for availability. Nothing needs to be configured, and sessions work on every replica.
 
 - **Background work is coordinated in the database.** Jobs are claimed one at a time. Each periodic task (the alert dispatcher, digests, feed and integration scheduling, housekeeping) runs at most once per interval across all replicas and never on two at once. A replica holds a task under a two-minute lease that it renews while the task runs; if the replica dies, another takes the task over when the lease expires and runs it again at once.
-- **Notifications are sent once.** Each delivery is claimed just before it is sent. A replica that dies mid-send leaves the delivery to be retried about five minutes later, so a message can, rarely, arrive twice; webhooks carry `X-Stackurity-Delivery` for deduplication.
+- **Notifications are sent once.** Each delivery is claimed just before it is sent. A replica that dies mid-send leaves the delivery to be retried about five minutes later, so a message can, rarely, arrive twice; webhooks carry `X-Stackurity-Delivery` for deduplication. Jira issues are never duplicated (see [Jira](#jira)), and a retried comment is skipped when the issue already has it.
 - **Shared state lives in the database**: sessions, single sign-on state, the setup token and the licence. A licence or stack pack changed through one replica reaches the others within 30 seconds, and a workspace's plan within 30 seconds.
 - **Per replica:** sign-in and setup rate limits (a client gets up to N times the limit with N replicas), the scratch directory (`STACKURITY_DATA_DIR`, temporary clones only), and HTTP and database pool metrics. Mount the same `file:` secrets and set the same environment on every replica.
 - **Upgrades:** stop every replica, then start the new version (Compose and the Helm chart's `Recreate` strategy do this). Migrations run once, inside a lock, but a new schema is not guaranteed to work with the previous version's code.

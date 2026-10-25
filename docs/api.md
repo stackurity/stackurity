@@ -74,7 +74,7 @@ Roles, from least to most access: `viewer` (read, including the audit log), `eng
 | `POST /incidents/{id}/actions` | as findings | Apply an action to every open finding in the incident |
 | `GET /risk-policy` / `PUT /risk-policy` | viewer / admin | Priority weights, thresholds, deadlines and SOS rules |
 | `GET /channels`, `GET /routes`, `GET /deliveries?status=&incident_id=` | security | Notification configuration and delivery log |
-| `POST`/`PATCH`/`DELETE /channels/{id}`, `POST /channels/{id}/test` | admin | Email, Slack, Teams and webhook channels |
+| `POST`/`PATCH`/`DELETE /channels/{id}`, `POST /channels/{id}/test` | admin | Email, Slack, Teams, webhook and Jira channels; for Jira, test checks access without creating an issue |
 | `POST /routes`, `PUT`/`DELETE /routes/{id}` | admin | Which incidents go to which channel |
 | `POST /deliveries/{id}/retry` | admin | Retry a failed or held delivery |
 | `GET /users/directory` | engineer | Active users (id, email, name) for assignment |
@@ -195,7 +195,22 @@ Routes send incidents to channels and filter by minimum priority, SOS only, kind
 - `escalated`: level 1 when the acknowledgement deadline has passed, level 2 when the fix deadline has passed. Only routes marked `escalation` receive these.
 - `resolved`
 
-Quiet hours delay everything except SOS. When `max_per_hour` is reached, further notifications are held and sent together in an hourly digest. Failed deliveries are retried with backoff up to 8 times.
+Quiet hours delay everything except SOS. When `max_per_hour` is reached, further notifications are held and sent together in an hourly digest. Failed deliveries are retried with backoff up to 8 times, no sooner than a receiver's `Retry-After`. A delivery that cannot succeed until the configuration changes (Jira rejecting the credentials, an unknown project) fails at once.
+
+Jira channels (`"kind": "jira"`) keep one issue per incident instead of sending one message per event: the first matching event creates the issue, later changes are queued as `updated` deliveries (findings joined or left, priority changed) and `resolved`. Incidents in lists and in `GET /incidents/{id}` carry the issues that follow them:
+
+```json
+"issues": [{"tracker": "jira", "key": "SEC-42", "url": "https://acme.atlassian.net/browse/SEC-42", "channel_id": 7}]
+```
+
+`channel_id` is `null` once the channel is deleted; the link is kept.
+
+```json
+{"kind": "jira", "name": "security-jira", "secret_ref": "secret:JIRA_TOKEN",
+ "config": {"url": "https://acme.atlassian.net", "deployment": "cloud", "username": "bot@acme.io", "project": "SEC",
+            "issue_type": "Task", "labels": ["security"], "priorities": {"P1": "Highest", "P2": "High"},
+            "resolve_transition": "Done"}}
+```
 
 Webhook channels receive the JSON message with these headers:
 
