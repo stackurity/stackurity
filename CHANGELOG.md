@@ -2,6 +2,14 @@
 
 All notable changes to Stackurity. Versions follow [Semantic Versioning](https://semver.org/); before 1.0, a minor version can change behaviour, and the notes say when it does.
 
+## 0.3.1
+
+### Fixed
+
+- Full vulnerability feed downloads (for example the Ubuntu archive, about 750 MB) were cancelled after the 20-minute job timeout on small servers and retried from the start, so the one-off re-sync after upgrading to 0.3.0 could never finish. Feed syncs may now run for 3 hours, and long jobs renew their lock so a second worker does not start the same job.
+- The sidebar showed the version as "vv0.3.0".
+- A finding's own fix is labelled "Fixes this issue", so it no longer reads as contradicting the package's upgrade recommendation.
+
 ## 0.3.0
 
 ### Added

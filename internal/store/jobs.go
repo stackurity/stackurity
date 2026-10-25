@@ -53,6 +53,18 @@ func (s *Store) Enqueue(ctx context.Context, kind string, payload any, dedupe st
 // lockTimeout bounds how long a crashed worker can hold a job.
 const lockTimeout = 30 * time.Minute
 
+// TouchJob renews worker's lock on a running job, so a job that runs longer
+// than lockTimeout is not claimed a second time. False means worker no
+// longer holds it.
+func (s *Store) TouchJob(ctx context.Context, id int64, worker string) (bool, error) {
+	tag, err := s.Pool.Exec(ctx, `UPDATE jobs SET locked_at = now()
+		WHERE id = $1 AND locked_by = $2 AND done_at IS NULL AND failed_at IS NULL`, id, worker)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
 // Claim locks the next runnable job for worker, or returns nil.
 func (s *Store) Claim(ctx context.Context, worker string) (*Job, error) {
 	rows, err := s.Pool.Query(ctx, `UPDATE jobs SET locked_by = $1, locked_at = now(), attempts = attempts + 1

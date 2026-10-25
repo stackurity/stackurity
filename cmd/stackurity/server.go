@@ -788,7 +788,9 @@ func registerIntel(w *worker.Worker, st *store.Store, dataDir string, log *slog.
 	eval := &intel.Evaluator{Store: st}
 	feedsOn := os.Getenv("STACKURITY_FEEDS") != "off"
 
-	w.Handle("feed.sync", func(ctx context.Context, payload json.RawMessage) error {
+	// A full archive (Ubuntu is about 750 MB) can take longer than the
+	// default job timeout on a small server.
+	w.HandleTimeout("feed.sync", 3*time.Hour, func(ctx context.Context, payload json.RawMessage) error {
 		var p struct {
 			Feed string `json:"feed"`
 		}
