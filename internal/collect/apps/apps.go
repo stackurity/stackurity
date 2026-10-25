@@ -134,6 +134,13 @@ func (s *Scanner) currentRelease(dir string) (string, bool) {
 	if !strings.HasPrefix(target, dir+"/") {
 		return "", false // a release must live under the application
 	}
+	// The release itself (releases/2) may be another link: what it finally
+	// resolves to must be inside the application as well.
+	realDir, err1 := filepath.EvalSymlinks(s.path(dir))
+	realTarget, err2 := filepath.EvalSymlinks(s.path(target))
+	if err1 != nil || err2 != nil || !strings.HasPrefix(realTarget, realDir+string(filepath.Separator)) {
+		return "", false
+	}
 	return target, true
 }
 
@@ -174,11 +181,18 @@ func (s *Scanner) ScanApp(ctx context.Context, dir string) App {
 		}
 		installed[projectDir][typ] = true
 	}
+	unusable := 0
 	add := func(obs []model.Observation) {
 		for _, o := range obs {
 			if len(app.Observations) >= MaxPackagesPerApp {
 				app.Truncated = true
 				return
+			}
+			// Anyone who publishes a package controls its name and version;
+			// one the server would refuse must not void the whole batch.
+			if !model.Usable(o) {
+				unusable++
+				continue
 			}
 			app.Observations = append(app.Observations, o)
 		}
@@ -266,8 +280,14 @@ func (s *Scanner) ScanApp(ctx context.Context, dir string) App {
 			Reason: fmt.Sprintf("stopped after %d packages", MaxPackagesPerApp)})
 	}
 	for i := range app.Observations {
-		app.Observations[i].Evidence["app_dir"] = dir
+		app.Observations[i].Evidence["app_dir"] = clip(dir)
 	}
+	if unusable > 0 {
+		app.Coverage = append(app.Coverage, model.CoverageItem{Scope: clip("app:" + dir), Status: "partial",
+			Reason: fmt.Sprintf("%d package(s) with an invalid or over-long name or version were skipped", unusable)})
+	}
+	app.Name = clip(app.Name)
+	app.GitURL = clip(app.GitURL)
 	return app
 }
 
@@ -690,3 +710,12 @@ func readLimited(file string, max int64) ([]byte, error) {
 }
 
 func boolp(b bool) *bool { return &b }
+
+// clip keeps text taken from the application (names, URLs, paths) within
+// the batch's field limit.
+func clip(s string) string {
+	if len(s) <= 1000 {
+		return s
+	}
+	return s[:1000]
+}
