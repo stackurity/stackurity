@@ -66,6 +66,9 @@ type Server struct {
 	ParseLicence func(string) (*license.License, error)
 	// Health checks the platform for instance admins; nil disables it.
 	Health *health.Checker
+	// UpdateCheck is false when the operator turned the release check off
+	// (STACKURITY_UPDATE_CHECK=off); GET /updates then says so.
+	UpdateCheck bool
 	// HTTPMetrics records requests for the metrics listener; nil disables it.
 	HTTPMetrics *metrics.HTTP
 	// limiter counts sign-in, setup and enrollment attempts in the database,
@@ -124,6 +127,7 @@ func (s *Server) Handler() http.Handler {
 				r.Delete("/{id}", s.removePack)
 			})
 			r.With(requireInstanceAdmin).Get("/admin/health", s.adminHealth)
+			r.With(requireInstanceAdmin).Get("/updates", s.updatesStatus)
 			r.Get("/workspaces", s.listMyWorkspaces)
 			r.Post("/workspaces/{id}/activate", s.activateWorkspace)
 			r.Route("/admin/workspaces", func(r chi.Router) {
