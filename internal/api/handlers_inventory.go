@@ -293,6 +293,22 @@ func (s *Server) assetCoverage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, paged(items, total, page(r)))
 }
 
+// assetCoverageSummary says how far an asset's findings can be trusted:
+// its coverage states, component coverage counts and gap reasons.
+func (s *Server) assetCoverageSummary(w http.ResponseWriter, r *http.Request) {
+	id, err := idParam(r, "id")
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	sum, err := s.Store.AssetCoverage(r.Context(), id)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, 200, sum)
+}
+
 func (s *Server) listCoverage(w http.ResponseWriter, r *http.Request) {
 	problems := r.URL.Query().Get("problems") == "true"
 	items, total, err := s.Store.ListCoverage(r.Context(), qInt(r, "asset_id"), problems, page(r))
