@@ -250,6 +250,17 @@ The image includes the `aws-managed` plugin. Add a **Plugin** integration:
 
 The secret file holds `{"aws_access_key_id": "...", "aws_secret_access_key": "..."}`. Without it, the plugin uses the instance role. The plugin calls only `Describe*` and `List*` APIs; the exact list is in its metadata, which you can see under **Settings → Plugins** or with `GET /api/v1/plugins`. Engine and runtime versions are matched against endoflife.date lifecycle data for RDS, Aurora, EKS, Lambda, ElastiCache and OpenSearch.
 
+### Kubernetes
+
+The image includes the `kubernetes` plugin. Apply the read-only service account from `deploy/kubernetes/stackurity-reader.yaml`, store a kubeconfig for its token as a workspace secret, and add a **Plugin** integration:
+
+```json
+{"kind": "plugin", "config": {"plugin": "kubernetes", "config": {"cluster_name": "prod-eu", "environment_label": "environment"}, "image_scans": 25},
+ "secret_ref": "secret:prod-eu-kubeconfig", "schedule_minutes": 60}
+```
+
+Workloads, the images they run and their exposure appear as assets, and running images are scanned with the bundled Syft. [kubernetes.md](kubernetes.md) covers credentials (kubeconfig, token or in-cluster), RBAC for some namespaces only, and what is reported.
+
 ### Plugins
 
 Plugins are executables in `STACKURITY_PLUGIN_DIR`. To add your own, read [plugins.md](plugins.md).

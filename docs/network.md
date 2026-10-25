@@ -32,6 +32,13 @@ Feeds are created automatically for the ecosystems present in your inventory. Ea
 
 Each plugin's metadata declares the hosts it contacts. For example, `aws-managed` contacts regional `*.amazonaws.com` endpoints, and the instance metadata service when no keys are configured. `GET /api/v1/plugins` shows this before you enable one.
 
+| Plugin | Destination | When | Data sent |
+|---|---|---|---|
+| `kubernetes` | The Kubernetes API server in the kubeconfig, the `server` setting, or `https://kubernetes.default.svc` with `in_cluster` | On the integration's schedule | `GET` requests for `/version` and lists of namespaces, nodes, pods, deployments, statefulsets, daemonsets, jobs, cronjobs, services and ingresses, with the stored token or client certificate |
+| `kubernetes` (image scans) | The registry of each running image (`docker.io`, `registry.k8s.io`, `ghcr.io`, your own) | After a collection, at most `image_scans` images per run; a digest at most weekly | Syft's anonymous manifest and layer requests; no credentials |
+
+The server hands each plugin run the workspace's private-network policy, and the `kubernetes` plugin refuses to connect to an internal address the workspace may not reach. A workspace other than the default one needs its API server's range in `STACKURITY_PRIVATE_CIDRS`.
+
 ### Notification channels
 
 Only the channels you configure are contacted: your SMTP server, Slack or Teams webhook URLs, and your webhook endpoints. Redirects are never followed. Messages contain incident titles, asset and component names, and links to the dashboard.

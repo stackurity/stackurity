@@ -12,8 +12,8 @@ Stackurity runs `<plugin> <command>` with one JSON request on stdin and reads on
 |---|---|---|
 | `metadata` | none (stdin is empty) | `metadata` |
 | `validate` | `config` | `validation: {ok, problems[]}` |
-| `collect` | `config`, `secrets`, `deadline` | `batches: [ObservationBatch...]` |
-| `health` | `config`, `secrets` | `health: {ok, message}` |
+| `collect` | `config`, `secrets`, `deadline`, `network` | `batches: [ObservationBatch...]` |
+| `health` | `config`, `secrets`, `network` | `health: {ok, message}` |
 
 Every response includes `"protocol_version": "1"`. On failure, set `"error": "..."` and exit non-zero.
 
@@ -48,6 +48,8 @@ Administrators read this before enabling a plugin, and `stackurity plugin test` 
 - **Reject unknown config fields** in `validate`.
 - **Never execute what you inspect.** Read data; don't run it.
 - **Respect the deadline** in the request.
+- **Respect the network policy.** `network` is `{"allow_private": false, "allowed_cidrs": ["10.20.0.0/16"]}`: whether the workspace that runs the plugin may reach internal addresses (loopback, private ranges, link-local such as cloud metadata), and the ranges it may reach anyway. A plugin that connects to targets taken from its config must refuse other internal addresses; in Go, use `plugin.Dialer(ctx)` as the transport's `DialContext`. `stackurity plugin test` sends no policy, which allows everything.
+- **Images to scan.** An `image` asset with an `image-ref` identifier and no observations asks the server to read that image with its image scanner, as the Kubernetes plugin does for running images. The integration's `image_scans` setting bounds how many are queued per run (default 25, 0 for none).
 
 ## How Stackurity runs plugins
 

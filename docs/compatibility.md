@@ -32,6 +32,13 @@ Release binaries: linux/amd64, linux/arm64, windows/amd64, darwin/amd64 and darw
 
 The same rules apply to container images scanned through the bundled Syft and to imported SBOMs: the purl's `distro` qualifier selects the source.
 
+## Clusters and cloud
+
+| Source | Inventory | Assessed | Notes |
+|---|---|---|---|
+| Kubernetes 1.25+ (kind, kubeadm, k3s, RKE2, EKS, GKE, AKS) through the `kubernetes` plugin | Workloads, the images they run (by digest), exposure, control plane, kubelet, container runtime and node OS versions | Images: as container images above. Versions: lifecycle only (endoflife.date `kubernetes`, `amazon-eks`, `google-kubernetes-engine`, `azure-kubernetes-service`, `containerd`, node OS) | Read-only RBAC in `deploy/kubernetes`. Kubeconfig with an embedded token or client certificate, a token, or the in-cluster service account; exec credential plugins are not supported. See [kubernetes.md](kubernetes.md) |
+| AWS managed services through the `aws-managed` plugin | RDS, Aurora, ElastiCache, EKS, Lambda, OpenSearch engine and runtime versions | Lifecycle only | |
+
 ## Application dependencies
 
 | Ecosystem | Lockfiles read | Vulnerabilities | Latest releases |

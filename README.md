@@ -9,6 +9,7 @@ Open-source, self-hosted software inventory and upgrade intelligence. Stackurity
 - **Hosts:** a read-only, unprivileged agent for Linux (dpkg, rpm and apk) and Windows (registry). On Linux it also finds runtimes and servers installed outside the package manager (Node.js from nvm, downloaded database binaries) and flags hosts that need a reboot to run patched code. It can also read the libraries deployed applications actually have installed (node_modules, Python virtualenvs, Composer vendor), so each application appears with its host, web server, runtime and repository in one stack view.
 - **Repositories:** npm, yarn, pnpm, Composer, Poetry, Pipenv, pip (pinned), Go modules, Bundler, NuGet and Dart/Flutter pub, including direct and transitive dependencies. More technologies come as [stack packs](docs/packs.md): signed, sandboxed WebAssembly readers an administrator installs when their estate needs them, such as Java (Maven and Gradle) and Rust (Cargo). Scans run server-side from Git or in CI, where they can fail the pipeline on a severity, priority or known exploitation threshold. Lockfiles are parsed as data and nothing is executed.
 - **Managed cloud services:** AWS RDS, Aurora, ElastiCache, EKS, Lambda and OpenSearch versions through a read-only plugin, with lifecycle tracking.
+- **Kubernetes:** a read-only plugin maps which workloads run which images (by the digest the node pulled), which workloads are exposed outside the cluster (LoadBalancer, NodePort, Ingress, host networking), and the control plane, kubelet, runtime and node OS versions for lifecycle. Running images are scanned with the bundled Syft, and exposure feeds risk scoring. Namespaces it cannot read and images it cannot pull show as not assessed. See [docs/kubernetes.md](docs/kubernetes.md).
 - **Plugins:** a public, language-agnostic plugin contract with a conformance checker. See [docs/plugins.md](docs/plugins.md).
 - **Container images:** inventory from a registry reference through the bundled Syft. No Docker daemon is needed.
 - **SBOMs:** CycloneDX and SPDX JSON import, CycloneDX 1.6 export.
@@ -52,7 +53,7 @@ docker compose exec stackurity stackurity admin load-demo        # --remove dele
 
 - **Servers:** under **Assets → Add server**, create an install command and run it on each Linux host. The agent is read-only and unprivileged, and it reports OS packages, runtimes and the libraries your deployed applications have installed.
 - **Code:** add repositories under **Integrations**, or run `stackurity scan . --fail-on critical` in CI to block vulnerable changes.
-- **Cloud:** the AWS plugin reads managed service versions with a read-only role.
+- **Cloud:** the AWS plugin reads managed service versions with a read-only role, and the Kubernetes plugin reads a cluster's workloads, images and exposure with a read-only service account.
 - **People and tools:** invite your team (or turn on single sign-on with Pro), route alerts to Slack, Teams or email, and give AI assistants read-only access with `stackurity mcp`.
 
 **4. Act on it:** each asset's **Action plan** groups findings into concrete upgrades. With Pro, opt-in remediation applies approved upgrades on enrolled hosts and opens Renovate pull requests for repositories.
@@ -70,6 +71,7 @@ For TLS, backups, upgrades, Kubernetes (Helm), the agents and plugins, see [docs
 - Runtimes found outside the package manager get lifecycle (end-of-life) tracking only; vulnerabilities are not matched for them.
 - Java needs the Java stack pack; from a `pom.xml` alone it sees direct dependencies only. Windows hotfixes and Microsoft Store apps are reported as unsupported coverage.
 - Single sign-on supports OpenID Connect; SAML is not implemented.
+- Kubernetes exposure covers Services, Ingresses and host networking, not Gateway API routes or service meshes. Running images are scanned without registry credentials, so images behind pull secrets show as failed coverage unless added as container image integrations. Kubernetes CVEs are not matched (lifecycle only).
 - Remediation applies to Linux packages (apt, dnf, apk) and to repositories through Renovate. SUSE (zypper) and Amazon Linux 2 (yum) hosts get findings and fix plans but no automatic fixing.
 
 ## Editions

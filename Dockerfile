@@ -26,7 +26,9 @@ RUN --mount=type=bind,from=pro,target=/pro set -e; FLAGS=""; \
     if [ "$EDITION" = ee ]; then go run ./tools/eeoverlay -pro /pro > /tmp/ee.json; FLAGS="-tags ee -overlay /tmp/ee.json"; fi; \
     export GOOS=linux GOARCH=${TARGETARCH:-amd64}; \
     CGO_ENABLED=0 go build $FLAGS -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/stackurity ./cmd/stackurity; \
-    CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/plugins/aws-managed ./plugins/aws-managed; \
+    for p in aws-managed kubernetes; do \
+      CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/plugins/$p ./plugins/$p; \
+    done; \
     # Agent builds the server hands to new hosts (Assets > Add server).
     mkdir -p /out/agents; for arch in amd64 arm64; do \
       CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build $FLAGS -trimpath -ldflags "-s -w -X main.version=${VERSION}" \

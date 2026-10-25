@@ -2,6 +2,22 @@
 
 All notable changes to Stackurity. Versions follow [Semantic Versioning](https://semver.org/); before 1.0, a minor version can change behaviour, and the notes say when it does.
 
+## Unreleased
+
+### Added
+
+- **Kubernetes.** A read-only `kubernetes` plugin, shipped in the image like `aws-managed`, reports a cluster (control plane, kubelet, container runtime and node OS versions for lifecycle), its workloads (Deployments, StatefulSets, DaemonSets, CronJobs, Jobs and bare Pods) and the images they run, pinned to the digest the node pulled. Workloads reached by a LoadBalancer or NodePort Service, external IPs, an Ingress or host networking are marked exposed, and risk scoring uses that for the workloads and the images they run. Running images are queued for the image scanner, most exposed first, bounded per run and once per digest. Namespaces the credentials cannot read and images the scanner cannot pull are reported as coverage. Least-privilege RBAC is in `deploy/kubernetes`; see [docs/kubernetes.md](docs/kubernetes.md).
+- Asset kinds `cluster` and `workload`; batches may report `deployed_as` relations. Assets carry `exposed` (the exposure risk scoring uses) and can be filtered with `GET /assets?exposed=true`.
+- Plugin requests carry the workspace's network policy (`network`), and `pkg/plugin` has a `Dialer` that enforces it.
+
+### Changed
+
+- Image scan failures keep Syft's error (for example `DENIED` from a registry) as the coverage reason; it was empty before.
+
+### Upgrading
+
+Migration 0017 adds an index and runs automatically at startup.
+
 ## 0.2.0
 
 ### Added
