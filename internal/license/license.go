@@ -210,6 +210,13 @@ func (h *Holder) Set(l *License) {
 	h.mu.Unlock()
 }
 
+// License returns the licence in effect, or nil for Community.
+func (h *Holder) License() *License {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.lic
+}
+
 func (h *Holder) Status() Status {
 	h.mu.RLock()
 	l := h.lic

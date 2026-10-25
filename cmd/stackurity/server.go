@@ -139,10 +139,16 @@ func serverCmd() *cobra.Command {
 				if setupToken == "" {
 					b := make([]byte, 16)
 					_, _ = rand.Read(b)
-					setupToken = hex.EncodeToString(b)
+					// Every replica must accept the same token, whichever
+					// one the browser reaches: the first to start stores it.
+					if setupToken, err = st.SharedSetupToken(tenant.System(ctx), hex.EncodeToString(b)); err != nil {
+						return err
+					}
 				}
 				// Printed to stderr directly so it is visible with `docker compose logs`.
 				fmt.Fprintf(os.Stderr, "\n  No users yet. Open the dashboard and complete setup with this one-time token:\n\n      %s\n\n", setupToken)
+			} else if err := st.ClearSetupToken(tenant.System(ctx)); err != nil {
+				return err
 			}
 
 			allowHTTPHooks := os.Getenv("STACKURITY_ALLOW_HTTP_WEBHOOKS") == "true"
@@ -186,6 +192,7 @@ func serverCmd() *cobra.Command {
 			registerPro(w, st, log, gate)
 			done := make(chan struct{})
 			go func() { w.Run(ctx); close(done) }()
+			go followReplicas(ctx, st, holder, licFromEnv, packMgr, log)
 
 			errc := make(chan error, 1)
 			go func() {
@@ -243,6 +250,49 @@ func loadLicence(ctx context.Context, st *store.Store, log *slog.Logger) (*licen
 	s := h.Status()
 	log.Info("licence", "customer", l.Customer, "edition", l.Edition, "state", s.State, "expires", l.ExpiresAt.Format("2006-01-02"))
 	return h, fromEnv, nil
+}
+
+// followReplicas keeps state that another replica can change in step with
+// the database: the licence (uploaded through any replica's dashboard) and
+// the installed stack packs. Each replica checks every 30 seconds.
+func followReplicas(ctx context.Context, st *store.Store, holder *license.Holder, licFromEnv bool, packMgr *packs.Manager, log *slog.Logger) {
+	t := time.NewTicker(30 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		if !licFromEnv {
+			if err := refreshLicence(ctx, st, holder); err != nil && ctx.Err() == nil {
+				log.Warn("refresh licence", "err", err)
+			}
+		}
+		if err := packMgr.Refresh(ctx); err != nil && ctx.Err() == nil {
+			log.Warn("refresh stack packs", "err", err)
+		}
+	}
+}
+
+// refreshLicence adopts the licence stored in the database if it differs
+// from the one in effect. A key that does not verify means Community, as at
+// start.
+func refreshLicence(ctx context.Context, st *store.Store, h *license.Holder) error {
+	key, err := st.LicenseKey(tenant.System(ctx))
+	if err != nil {
+		return err
+	}
+	var l *license.License
+	if strings.TrimSpace(key) != "" {
+		l, _ = license.Parse(key)
+	}
+	cur := h.License()
+	if (cur == nil) == (l == nil) && (cur == nil || cur.ID == l.ID && cur.IssuedAt.Equal(l.IssuedAt) && cur.ExpiresAt.Equal(l.ExpiresAt)) {
+		return nil
+	}
+	h.Set(l)
+	return nil
 }
 
 // checkIsolation refuses to serve several workspaces when the database role
