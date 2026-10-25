@@ -40,7 +40,7 @@ func ingestHost(t *testing.T, s *store.Store, ctx context.Context, name string, 
 
 // sync makes the open findings on the asset's current inventory exactly want
 // (key -> purl name), as the matcher would.
-func sync(t *testing.T, s *store.Store, ctx context.Context, asset int64, want map[string]string) {
+func syncOpen(t *testing.T, s *store.Store, ctx context.Context, asset int64, want map[string]string) {
 	t.Helper()
 	rows, _, err := s.ListInventory(ctx, store.InventoryFilter{AssetID: asset})
 	if err != nil {
@@ -84,17 +84,17 @@ func newOutcomeFixture(t *testing.T) *outcomeFixture {
 	s := store.New(testdb.New(t))
 	f := &outcomeFixture{s: s, ctx: ctx}
 	f.asset = ingestHost(t, s, ctx, "web-1", "pkg:npm/lodash@4.17.15", "pkg:deb/debian/openssl@3.0.2-1?distro=debian-12", "pkg:npm/express@4.0.0")
-	sync(t, s, ctx, f.asset, map[string]string{"CVE-1": "lodash", "CVE-2": "lodash", "CVE-3": "openssl", "CVE-4": "express"})
+	syncOpen(t, s, ctx, f.asset, map[string]string{"CVE-1": "lodash", "CVE-2": "lodash", "CVE-3": "openssl", "CVE-4": "express"})
 	setFinding(t, s, ctx, "CVE-1", "P2", 10*24*time.Hour)
 	setFinding(t, s, ctx, "CVE-3", "P1", 100*24*time.Hour)
 	setFinding(t, s, ctx, "CVE-4", "P1", 20*24*time.Hour)
 	f.before = time.Now().Add(-time.Second)
-	sync(t, s, ctx, f.asset, map[string]string{"CVE-2": "lodash", "CVE-3": "openssl", "CVE-4": "express"})                    // CVE-1 resolved
-	sync(t, s, ctx, f.asset, map[string]string{"CVE-1": "lodash", "CVE-2": "lodash", "CVE-3": "openssl", "CVE-4": "express"}) // reopened
-	sync(t, s, ctx, f.asset, map[string]string{"CVE-2": "lodash", "CVE-3": "openssl", "CVE-4": "express"})                    // resolved again
+	syncOpen(t, s, ctx, f.asset, map[string]string{"CVE-2": "lodash", "CVE-3": "openssl", "CVE-4": "express"})                    // CVE-1 resolved
+	syncOpen(t, s, ctx, f.asset, map[string]string{"CVE-1": "lodash", "CVE-2": "lodash", "CVE-3": "openssl", "CVE-4": "express"}) // reopened
+	syncOpen(t, s, ctx, f.asset, map[string]string{"CVE-2": "lodash", "CVE-3": "openssl", "CVE-4": "express"})                    // resolved again
 	// A newer complete inventory: lodash upgraded, openssl gone.
 	ingestHost(t, s, ctx, "web-1", "pkg:npm/lodash@4.17.21", "pkg:npm/express@4.0.0")
-	sync(t, s, ctx, f.asset, map[string]string{"CVE-4": "express"})
+	syncOpen(t, s, ctx, f.asset, map[string]string{"CVE-4": "express"})
 	return f
 }
 
