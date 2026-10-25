@@ -12,7 +12,7 @@ Open-source, self-hosted software inventory and upgrade intelligence. Stackurity
 - **Plugins:** a public, language-agnostic plugin contract with a conformance checker. See [docs/plugins.md](docs/plugins.md).
 - **Container images:** inventory from a registry reference through the bundled Syft. No Docker daemon is needed.
 - **SBOMs:** CycloneDX and SPDX JSON import, CycloneDX 1.6 export.
-- **Vulnerability intelligence:** OSV data for npm, Packagist, PyPI, Go, Maven, RubyGems, crates.io, NuGet, Pub, Debian, Ubuntu, Alpine, Rocky and Alma. Versions are compared by each ecosystem's own rules, so distro backports are handled. Advisories are deduplicated across sources, CISA KEV flags known exploitation, and refresh is hourly and incremental.
+- **Vulnerability intelligence:** OSV data for npm, Packagist, PyPI, Go, Maven, RubyGems, crates.io, NuGet, Pub, Debian, Ubuntu, Alpine, Rocky, Alma, Red Hat Enterprise Linux, SUSE Linux Enterprise and openSUSE Leap, and Amazon's own advisories (ALAS) for Amazon Linux 2 and 2023. Versions are compared by each ecosystem's own rules, so distro backports are handled. Advisories are deduplicated across sources, CISA KEV flags known exploitation, and refresh is hourly and incremental.
 - **Versions and lifecycle:** latest stable releases from npm and Packagist (patch, minor or major), and end-of-life data from endoflife.date for operating systems, runtimes and frameworks.
 - **One inventory:** stable asset identities, conflict detection and merging, and relations between assets. Every component carries its source, timestamp, confidence and evidence.
 - **Coverage ledger:** unsupported, skipped, failed, partial and stale areas are shown separately from healthy coverage. They are never treated as healthy.
@@ -61,13 +61,15 @@ For TLS, backups, upgrades, Kubernetes (Helm), the agents and plugins, see [docs
 ## Known limitations
 
 - Run a single server replica. Background work runs in-process, and notification delivery isn't yet coordinated across replicas.
-- Vulnerability matching covers OSV ecosystems: language packages, Debian, Ubuntu (not Pro), Alpine, Rocky and Alma. RHEL, SUSE and Amazon Linux packages are inventoried but listed as evaluation gaps.
+- Vulnerability matching covers language packages, Debian, Ubuntu (not Pro), Alpine, Rocky, Alma, RHEL, SUSE, openSUSE Leap and Amazon Linux 2 and 2023. CentOS, Oracle Linux, Fedora and Amazon Linux 1 packages are inventoried but listed as evaluation gaps.
+- Red Hat advisories are matched against the main stream of each major release; Extended Update Support (EUS, AUS) streams are not modelled, so a host held on an EUS minor release can show fixes it already has through EUS. SUSE publishes no severity in its advisory data, so SUSE findings show severity "unknown" and are prioritised on the other risk factors.
+- Amazon Linux 2 extras topics are read when the topic name carries its version line (kernel-5.10, php8.2, postgresql14); packages from other topics (docker, epel and similar) are matched against core advisories only.
 - Release (latest-version) data comes only from npm and Packagist. Lifecycle data covers everything endoflife.date tracks.
 - CVSS v4 vectors are kept but not scored locally; the vendor's label is used instead.
 - Runtimes found outside the package manager get lifecycle (end-of-life) tracking only; vulnerabilities are not matched for them.
 - Java needs the Java stack pack; from a `pom.xml` alone it sees direct dependencies only. Windows hotfixes and Microsoft Store apps are reported as unsupported coverage.
 - Single sign-on supports OpenID Connect; SAML is not implemented.
-- Remediation applies to Linux packages (apt, dnf, apk) and to repositories through Renovate.
+- Remediation applies to Linux packages (apt, dnf, apk) and to repositories through Renovate. SUSE (zypper) and Amazon Linux 2 (yum) hosts get findings and fix plans but no automatic fixing.
 
 ## Editions
 
