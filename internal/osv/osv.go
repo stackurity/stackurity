@@ -107,6 +107,11 @@ func TargetFor(purl, ver string, evidence map[string]string) (Target, bool) {
 		t.Ecosystem, t.Name = "PyPI", p.Name
 	case "golang":
 		t.Ecosystem, t.Name = "Go", joinNS(p.Namespace, p.Name)
+		if t.Name == "stdlib" {
+			// The toolchain reports "go1.22.1" (Syft keeps it as the
+			// component version); OSV's stdlib ranges use "1.22.1".
+			t.Version = strings.TrimPrefix(t.Version, "go")
+		}
 	case "cargo":
 		t.Ecosystem, t.Name = "crates.io", p.Name
 	case "gem":

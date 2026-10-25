@@ -49,6 +49,18 @@ func TestTargetFor(t *testing.T) {
 	}
 }
 
+func TestTargetForGoStdlib(t *testing.T) {
+	for _, c := range []struct{ purl, ver, want string }{
+		{"pkg:golang/stdlib@1.22.1", "go1.22.1", "1.22.1"},
+		{"pkg:golang/stdlib@1.22.1", "", "1.22.1"},
+		{"pkg:golang/golang.org/x/net@v0.22.0", "", "v0.22.0"},
+	} {
+		if got, ok := TargetFor(c.purl, c.ver, nil); !ok || got.Version != c.want {
+			t.Errorf("TargetFor(%s, %q) = %+v %v", c.purl, c.ver, got, ok)
+		}
+	}
+}
+
 func TestMatchEcosystem(t *testing.T) {
 	if !MatchEcosystem("Ubuntu:22.04:LTS", "Ubuntu:22.04") || !MatchEcosystem("Ubuntu:Pro:18.04:LTS", "Ubuntu:18.04") ||
 		!IsPro("Ubuntu:Pro:18.04:LTS") || IsPro("Ubuntu:18.04:LTS") || MatchEcosystem("Ubuntu:Pro:20.04:LTS", "Ubuntu:18.04") ||
