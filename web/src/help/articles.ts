@@ -79,7 +79,8 @@ export const ARTICLES: Article[] = [
           ["Idle kernel", "A kernel package that is installed but not running. Its vulnerabilities can't be exploited until it is booted, so they get a low priority and the action is to remove old kernels."],
           ["Reboot pending", "The host runs older code than is installed (the distro's reboot flag, or a newer kernel than the running one)."],
           ["Coverage", "What each collector checked, skipped or could not read. Findings only cover what was checked."],
-          ["Evaluation gap", "A component that no vulnerability source could evaluate, such as a runtime installed outside the package manager. It is never treated as clean."],
+          ["Evaluation gap", "A component that was not checked for vulnerabilities: “Unsupported” when no source exists for it (a runtime installed outside the package manager, an unsupported distribution), “Not checked” when a source exists but could not be used (feed not synced, release without advisories, unreadable version). It is never treated as clean, and the asset's Inventory tab marks it."],
+          ["Coverage state", "How far an asset's findings can be trusted: Healthy and recently evaluated, Stale intelligence, Failed collection, Unsupported, Partially evaluated or Awaiting verification. Shown on the asset page with the reasons."],
           ["Evidence report", "A printable patch-management summary for a period, for audits."],
           ["Exception", "A finding that was suppressed or risk-accepted by a security user, with a reason, optional mitigation and an expiry date."],
         ],
@@ -608,10 +609,13 @@ stackurity.exe agent --interval 6h`,
     section: "Daily work",
     summary: "Make sure “no findings” really means nothing was found.",
     where: ["Issues", "Intelligence"],
-    keywords: "feeds osv kev endoflife stale evaluation gap coverage refresh re-evaluate",
+    keywords: "feeds osv kev endoflife stale evaluation gap coverage state not checked unsupported awaiting verification refresh re-evaluate",
     body: [
       {
-        p: "**Coverage** (Issues ▸ Coverage) lists what each collector checked, skipped, failed or doesn't support yet. Keep **Problems only** on to see the gaps.",
+        p: "**Coverage** (Issues ▸ Coverage) counts assets by coverage state and lists what each collector checked, skipped, failed or doesn't support yet. Keep **Problems only** on to see the gaps.",
+      },
+      {
+        p: "Each asset has a **coverage state**: **Healthy and recently evaluated**, or one or more of **Failed collection**, **Stale intelligence**, **Partially evaluated**, **Unsupported** and **Awaiting verification**, each with its reason. The asset page shows them above the tabs, the Findings tab says how many components the findings do not cover, and the Inventory tab marks each component as **Not checked**, **Unsupported**, **Stale intelligence** or **Awaiting verification** (filter by **Coverage**).",
       },
       {
         p: "**Intelligence** (Issues ▸ Intelligence) lists the data feeds: OSV per ecosystem (hourly), CISA KEV and endoflife.date (daily), and the npm and Packagist registries. Each shows OK, Stale, Error, Never synced or Disabled.",
