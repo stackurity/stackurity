@@ -84,6 +84,20 @@ jobs:
         run: |
           cosign sign --yes "ghcr.io/${{ github.repository_owner }}/stackurity@${{ steps.image.outputs.digest }}"
 
+      - name: Publish and sign the Helm chart
+        # helm install oci://ghcr.io/stackurity/charts/stackurity --version <x.y.z>
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          v="${GITHUB_REF_NAME#v}"
+          echo "$REGISTRY_TOKEN" | helm registry login ghcr.io -u "$REGISTRY_USER" --password-stdin
+          helm package deploy/helm/stackurity --version "$v" --app-version "$v" -d dist-chart
+          out=$(helm push "dist-chart/stackurity-$v.tgz" "oci://ghcr.io/${{ github.repository_owner }}/charts" 2>&1 | tee /dev/stderr)
+          digest=$(printf '%s\n' "$out" | sed -n 's/^Digest: //p')
+          cosign sign --yes "ghcr.io/${{ github.repository_owner }}/charts/stackurity@$digest"
+
       - name: Publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
