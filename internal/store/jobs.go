@@ -50,11 +50,19 @@ func (s *Store) Enqueue(ctx context.Context, kind string, payload any, dedupe st
 	return id, err
 }
 
-// lockTimeout bounds how long a crashed worker can hold a job.
-const lockTimeout = 30 * time.Minute
+// DefaultJobLockTimeout bounds how long a crashed worker can hold a job.
+// Running jobs renew their lock well within it (see worker.JobRenew).
+const DefaultJobLockTimeout = 30 * time.Minute
+
+func (s *Store) lockTimeout() time.Duration {
+	if s.JobLockTimeout > 0 {
+		return s.JobLockTimeout
+	}
+	return DefaultJobLockTimeout
+}
 
 // TouchJob renews worker's lock on a running job, so a job that runs longer
-// than lockTimeout is not claimed a second time. False means worker no
+// than the lock timeout is not claimed a second time. False means worker no
 // longer holds it.
 func (s *Store) TouchJob(ctx context.Context, id int64, worker string) (bool, error) {
 	tag, err := s.Pool.Exec(ctx, `UPDATE jobs SET locked_at = now()
@@ -65,17 +73,39 @@ func (s *Store) TouchJob(ctx context.Context, id int64, worker string) (bool, er
 	return tag.RowsAffected() == 1, nil
 }
 
-// Claim locks the next runnable job for worker, or returns nil.
+// interrupted is the error recorded for an attempt whose worker stopped
+// renewing the job's lock: the process crashed, was killed or lost the
+// database. Inside an UPDATE it reads the row's values before the update.
+const interrupted = `format('attempt %s of %s was interrupted: worker %s stopped renewing its lock (crashed, killed or lost the database)',
+	attempts, max_attempts, locked_by)`
+
+// Claim locks the next runnable job for worker, or returns nil. A job whose
+// lock timed out is claimed again, with the interrupted attempt recorded as
+// its last error; when that was its last attempt it is failed instead, so a
+// job that kills its worker every time is not retried forever.
 func (s *Store) Claim(ctx context.Context, worker string) (*Job, error) {
-	rows, err := s.Pool.Query(ctx, `UPDATE jobs SET locked_by = $1, locked_at = now(), attempts = attempts + 1
+	lock := s.lockTimeout().Seconds()
+	// A requeued job has new work waiting, so it gets a fresh set of
+	// attempts, as in FailJob.
+	if _, err := s.Pool.Exec(ctx, `UPDATE jobs SET
+		failed_at = CASE WHEN requeue THEN NULL ELSE now() END,
+		attempts = CASE WHEN requeue THEN 0 ELSE attempts END,
+		run_at = CASE WHEN requeue THEN now() + interval '30 seconds' ELSE run_at END,
+		requeue = false, last_error = `+interrupted+`, locked_by = NULL, locked_at = NULL
+		WHERE done_at IS NULL AND failed_at IS NULL AND attempts >= max_attempts
+		  AND locked_at < now() - make_interval(secs => $1)`, lock); err != nil {
+		return nil, err
+	}
+	rows, err := s.Pool.Query(ctx, `UPDATE jobs SET locked_by = $1, locked_at = now(), attempts = attempts + 1,
+		last_error = CASE WHEN locked_at IS NULL THEN last_error ELSE `+interrupted+` END
 		WHERE id = (
 		  SELECT id FROM jobs
 		  WHERE done_at IS NULL AND failed_at IS NULL AND run_at <= now()
-		    AND (locked_at IS NULL OR locked_at < now() - make_interval(secs => $2))
+		    AND (locked_at IS NULL OR locked_at < now() - make_interval(secs => $2) AND attempts < max_attempts)
 		  ORDER BY run_at, id
 		  FOR UPDATE SKIP LOCKED LIMIT 1)
 		RETURNING `+jobCols,
-		worker, lockTimeout.Seconds())
+		worker, lock)
 	if err != nil {
 		return nil, err
 	}

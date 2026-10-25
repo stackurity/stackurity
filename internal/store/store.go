@@ -5,6 +5,7 @@ package store
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -21,6 +22,9 @@ var (
 
 type Store struct {
 	Pool *pgxpool.Pool
+	// JobLockTimeout is how long a job stays claimed without its worker
+	// renewing the lock; zero means DefaultJobLockTimeout. Tests shorten it.
+	JobLockTimeout time.Duration
 }
 
 func New(pool *pgxpool.Pool) *Store { return &Store{Pool: pool} }

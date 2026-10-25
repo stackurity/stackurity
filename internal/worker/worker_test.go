@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -322,5 +324,41 @@ func TestJobStopsWhenLockIsLost(t *testing.T) {
 	}
 	if err := <-stopped; err == nil {
 		t.Error("the job should be cancelled once its lock is lost")
+	}
+}
+
+// A worker that dies mid-job (crash, kill) stops renewing the lock. The job is
+// claimed again once the lock times out, with the interrupted attempt as its
+// last error, and after max_attempts it fails instead of running forever.
+func TestJobInterruptedEveryAttemptFails(t *testing.T) {
+	st := store.New(testdb.New(t))
+	ctx := tenant.System(context.Background())
+	j := claimJob(t, st, "crashy", "dead-1")
+	for attempt := 2; ; attempt++ {
+		// The worker died: its lock is older than the lock timeout.
+		if _, err := st.Pool.Exec(ctx, `UPDATE jobs SET locked_at = now() - interval '31 minutes' WHERE id = $1`, j.ID); err != nil {
+			t.Fatal(err)
+		}
+		next, err := st.Claim(ctx, fmt.Sprintf("dead-%d", attempt))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if attempt > j.MaxAttempts {
+			if next != nil {
+				t.Fatalf("attempt %d of %d claimed", next.Attempts, next.MaxAttempts)
+			}
+			break
+		}
+		want := fmt.Sprintf("attempt %d of %d was interrupted: worker dead-%d stopped", attempt-1, j.MaxAttempts, attempt-1)
+		if next == nil || next.ID != j.ID || next.Attempts != attempt || !strings.HasPrefix(next.LastError, want) {
+			t.Fatalf("attempt %d: claimed %+v; want the job again with %q", attempt, next, want)
+		}
+	}
+	got, err := st.GetJob(ctx, j.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.FailedAt == nil || got.Attempts != got.MaxAttempts || !strings.Contains(got.LastError, "was interrupted") {
+		t.Errorf("job = %+v; want failed after %d interrupted attempts", got, got.MaxAttempts)
 	}
 }

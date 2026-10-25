@@ -36,6 +36,9 @@ type Dispatcher struct {
 	Log     *slog.Logger
 	BaseURL string // dashboard URL for links, e.g. https://stackurity.example.com
 	Now     func() time.Time
+	// Lease is how long a claimed delivery is reserved for this replica;
+	// zero means deliveryLease. Tests shorten it.
+	Lease time.Duration
 	// Escalate reports whether the workspace in ctx may escalate overdue
 	// incidents (a paid feature); nil allows it.
 	Escalate func(ctx context.Context) bool
@@ -475,7 +478,11 @@ func (d *Dispatcher) Deliver(ctx context.Context) error {
 		}
 		// Claim right before sending: another replica's Tick or Digest may
 		// be delivering the same queue.
-		attempts, ok, err := d.Store.ClaimDelivery(ctx, del.ID, deliveryLease)
+		lease := d.Lease
+		if lease <= 0 {
+			lease = deliveryLease
+		}
+		attempts, ok, err := d.Store.ClaimDelivery(ctx, del.ID, lease)
 		if err != nil {
 			return err
 		}

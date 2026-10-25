@@ -33,7 +33,8 @@ type Worker struct {
 	Poll        time.Duration
 	JobTimeout  time.Duration
 	// JobRenew is how often a running job's lock is renewed; it must be well
-	// under the store's lock timeout (30 minutes).
+	// under the store's lock timeout (Store.JobLockTimeout, 30 minutes by
+	// default).
 	JobRenew time.Duration
 	// Lease is how long a periodic task stays claimed without renewal. The
 	// running replica renews it; when a replica dies, another takes the task

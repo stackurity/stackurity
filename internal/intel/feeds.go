@@ -55,7 +55,13 @@ func feedEcosystem(feed string) (string, bool) {
 type Syncer struct {
 	Store *store.Store
 	Log   *slog.Logger
-	f     *fetcher
+	// Changed, if set, is called after a sync has stored its records and
+	// before the feed's cursor moves past them, to queue re-evaluation of
+	// what they affect. If it fails, the sync fails and keeps its cursor, so
+	// the next attempt fetches the same records and calls Changed again: an
+	// error or a crash in between cannot lose the re-evaluation.
+	Changed func(ctx context.Context, feed string, res *SyncResult) error
+	f       *fetcher
 }
 
 func NewSyncer(s *store.Store, log *slog.Logger, cfg Config) *Syncer {
@@ -94,6 +100,11 @@ func (s *Syncer) Sync(ctx context.Context, name string) (*SyncResult, error) {
 		res, err = s.syncReleases(ctx, name)
 	default:
 		err = fmt.Errorf("unknown feed %q", name)
+	}
+	if err == nil && s.Changed != nil {
+		if cerr := s.Changed(ctx, name, res); cerr != nil {
+			err = fmt.Errorf("queue re-evaluation: %w", cerr)
+		}
 	}
 	changed := 0
 	if res != nil {

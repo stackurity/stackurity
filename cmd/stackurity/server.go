@@ -87,11 +87,19 @@ func serverCmd() *cobra.Command {
 			ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 			defer stop()
 
+			tm, err := parseTimings(os.Getenv("STACKURITY_TEST_TIMINGS"))
+			if err != nil {
+				return err
+			}
+			if tm != defaultTimings() {
+				log.Warn("STACKURITY_TEST_TIMINGS is set: background timings are shortened for testing", "timings", fmt.Sprintf("%+v", tm))
+			}
 			st, err := openStore(ctx)
 			if err != nil {
 				return err
 			}
 			defer st.Pool.Close()
+			st.JobLockTimeout = tm.JobLock
 			applied, err := db.Migrate(ctx, st.Pool)
 			if err != nil {
 				return err
@@ -165,7 +173,7 @@ func serverCmd() *cobra.Command {
 			dispatcher := &notify.Dispatcher{Store: st, Sender: notify.NewSender(allowHTTPHooks), Secrets: res, Log: log,
 				BaseURL:  os.Getenv("STACKURITY_BASE_URL"),
 				Escalate: func(ctx context.Context) bool { return gate.Has(ctx, license.Teams) },
-				Platform: checker.PlatformIncidents, PlatformTarget: checker.PlatformTarget}
+				Platform: checker.PlatformIncidents, PlatformTarget: checker.PlatformTarget, Lease: tm.DeliveryLease}
 			var pluginRunner *plugins.Runner
 			if dir := os.Getenv("STACKURITY_PLUGIN_DIR"); dir != "" {
 				pluginRunner = &plugins.Runner{Dir: dir, WorkDir: filepath.Join(dataDir, "work"), Timeout: 15 * time.Minute}
@@ -206,9 +214,13 @@ func serverCmd() *cobra.Command {
 			}
 
 			w := worker.New(st, log)
+			w.Lease, w.Tick, w.Poll = tm.TaskLease, tm.Tick, tm.Poll
+			if tm.JobLock > 0 {
+				w.JobRenew = min(w.JobRenew, tm.JobLock/6)
+			}
 			registerJobs(w, st, res, dataDir, log, pluginRunner, packMgr)
 			// Prioritise, correlate, plan and deliver notifications.
-			w.EveryWorkspace("alerts", time.Minute, dispatcher.Tick)
+			w.EveryWorkspace("alerts", tm.Alerts, dispatcher.Tick)
 			w.EveryWorkspace("alert-digest", time.Hour, dispatcher.Digest)
 			w.Every("platform-fallback", 10*time.Minute, dispatcher.PlatformFallback)
 			registerPro(w, st, log, gate)
@@ -787,6 +799,26 @@ func registerIntel(w *worker.Worker, st *store.Store, dataDir string, log *slog.
 	syncer := intel.NewSyncer(st, log, cfg)
 	eval := &intel.Evaluator{Store: st}
 	feedsOn := os.Getenv("STACKURITY_FEEDS") != "off"
+	// Re-evaluation is queued before the feed's cursor moves on, so a crash
+	// in between makes the retried sync queue it again rather than lose it.
+	syncer.Changed = func(ctx context.Context, feed string, res *intel.SyncResult) error {
+		ids, err := intel.ComponentsToEvaluate(ctx, st, feed, res)
+		if err != nil || len(ids) == 0 {
+			return err
+		}
+		log.Info("feed changed; re-evaluating", "feed", feed, "records", res.Changed, "components", len(ids))
+		// Each workspace evaluates the changed components it has.
+		wss, err := st.ActiveWorkspaceIDs(ctx)
+		if err != nil {
+			return err
+		}
+		for _, ws := range wss {
+			if _, err := st.Enqueue(tenant.WithWorkspace(ctx, ws), "evaluate", map[string]any{"component_ids": ids}, "", time.Time{}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 
 	// A full archive (Ubuntu is about 750 MB) can take longer than the
 	// default job timeout on a small server.
@@ -800,26 +832,8 @@ func registerIntel(w *worker.Worker, st *store.Store, dataDir string, log *slog.
 		if err := os.MkdirAll(cfg.WorkDir, 0o700); err != nil {
 			return err
 		}
-		res, err := syncer.Sync(ctx, p.Feed)
-		if err != nil {
-			return err
-		}
-		ids, err := intel.ComponentsToEvaluate(ctx, st, p.Feed, res)
-		if err != nil || len(ids) == 0 {
-			return err
-		}
-		log.Info("feed changed; re-evaluating", "feed", p.Feed, "records", res.Changed, "components", len(ids))
-		// Each workspace evaluates the changed components it has.
-		wss, err := st.ActiveWorkspaceIDs(ctx)
-		if err != nil {
-			return err
-		}
-		for _, ws := range wss {
-			if _, err := st.Enqueue(tenant.WithWorkspace(ctx, ws), "evaluate", map[string]any{"component_ids": ids}, "", time.Time{}); err != nil {
-				return err
-			}
-		}
-		return nil
+		_, err := syncer.Sync(ctx, p.Feed)
+		return err
 	})
 
 	w.Handle("evaluate", func(ctx context.Context, payload json.RawMessage) error {
