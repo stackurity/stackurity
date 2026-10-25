@@ -11,6 +11,7 @@ import { EmptyState, ErrorBox, Loading, Notice, Pager } from "./ui";
 export const STACK_ROLE_TEXT: Record<string, string> = {
   self: "this asset",
   host: "runs on",
+  cluster: "runs on cluster",
   source: "built from",
   image: "image",
   dependency: "depends on",
@@ -26,6 +27,7 @@ export const STACK_LAYER_LABEL: Record<string, string> = {
   libraries: "Application libraries (installed)",
   declared: "Declared in repository",
   managed_service: "Managed service",
+  platform: "Kubernetes platform",
   other: "Other",
 };
 
@@ -37,6 +39,9 @@ const STACK_INTRO: Record<string, string> = {
   application: "Everything this application relies on, and how each layer could be attacked.",
   host: "This host and the applications running on it.",
   repository: "Where this code is deployed, and what it runs on.",
+  cluster: "This cluster, its workloads and the images they run.",
+  workload: "This workload, the cluster it runs on and the images it runs.",
+  image: "This image and the Kubernetes workloads that run it.",
 };
 
 const FINDINGS_LIMIT = 100;

@@ -13,7 +13,7 @@ export function atLeast(role: Role | undefined, min: UserRole): boolean {
   return (RANK[role] ?? 0) >= RANK[min];
 }
 
-export const ASSET_KINDS = ["host", "repository", "image", "application", "managed_service", "sbom"] as const;
+export const ASSET_KINDS = ["host", "repository", "image", "application", "managed_service", "sbom", "cluster", "workload"] as const;
 export const ASSET_STATUSES = ["ok", "partial", "stale"] as const;
 export const CRITICALITIES = ["unknown", "low", "medium", "high", "critical"] as const;
 export const RELATION_KINDS = ["runs_on", "built_from", "deployed_as", "contains", "depends_on", "replica_of"] as const;
@@ -186,6 +186,9 @@ export interface Asset {
   region: string;
   criticality: string;
   internet_exposed: boolean | null;
+  /** Exposure risk scoring uses: internet_exposed when set by hand, else what a
+   * collector observed (a Kubernetes workload, or the workloads running an image). */
+  exposed: boolean | null;
   tags: string[];
   attributes: Record<string, string> | null;
   first_seen: string;
@@ -305,11 +308,11 @@ export interface DriftResponse {
 
 // --- Stage 7: an asset's stack (GET /assets/{id}/stack)
 
-export const STACK_ROLES = ["self", "host", "source", "image", "dependency", "workload", "deployment"] as const;
+export const STACK_ROLES = ["self", "host", "cluster", "source", "image", "dependency", "workload", "deployment"] as const;
 export type StackRole = (typeof STACK_ROLES)[number];
 
 /** Layers in the order the API returns them: most exposed first. */
-export const STACK_LAYERS = ["web_server", "os", "runtime", "data_store", "libraries", "declared", "managed_service", "other"] as const;
+export const STACK_LAYERS = ["web_server", "os", "runtime", "data_store", "libraries", "declared", "managed_service", "platform", "other"] as const;
 export type StackLayerName = (typeof STACK_LAYERS)[number];
 
 export interface StackMember {
