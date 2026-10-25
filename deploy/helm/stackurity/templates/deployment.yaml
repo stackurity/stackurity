@@ -8,7 +8,7 @@ metadata:
   labels: {{- include "stackurity.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
-  strategy: {type: Recreate}
+  strategy: {{- toYaml .Values.updateStrategy | nindent 4 }}
   selector:
     matchLabels: {{- include "stackurity.selector" . | nindent 6 }}
   template:
@@ -25,6 +25,9 @@ spec:
           securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
           ports:
             - {name: http, containerPort: 8080}
+            {{- if .Values.metrics.enabled }}
+            - {name: metrics, containerPort: {{ .Values.metrics.port }}}
+            {{- end }}
           env:
             - name: STACKURITY_DATABASE_URL
               valueFrom:
@@ -37,6 +40,9 @@ spec:
             - {name: STACKURITY_FEEDS, value: {{ .Values.config.feeds | quote }}}
             - {name: STACKURITY_STALE_AFTER, value: {{ .Values.config.staleAfter | quote }}}
             - {name: STACKURITY_LOG_FORMAT, value: {{ .Values.config.logFormat | quote }}}
+            {{- if .Values.metrics.enabled }}
+            - {name: STACKURITY_METRICS_ADDR, value: {{ printf ":%v" .Values.metrics.port | quote }}}
+            {{- end }}
             {{- with .Values.config.baseURL }}
             - {name: STACKURITY_BASE_URL, value: {{ . | quote }}}
             {{- end }}

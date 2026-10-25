@@ -60,7 +60,7 @@ For TLS, backups, upgrades, Kubernetes (Helm), the agents and plugins, see [docs
 
 ## Known limitations
 
-- Run a single server replica. Background work runs in-process, and notification delivery isn't yet coordinated across replicas.
+- Several server replicas can share one database, but sign-in and setup rate limits are kept per replica (a client behind a load balancer gets that many times the limit), and an upgrade should stop every replica before the new version starts ([docs/install.md](docs/install.md#running-several-replicas)).
 - Vulnerability matching covers OSV ecosystems: language packages, Debian, Ubuntu (not Pro), Alpine, Rocky and Alma. RHEL, SUSE and Amazon Linux packages are inventoried but listed as evaluation gaps.
 - Release (latest-version) data comes only from npm and Packagist. Lifecycle data covers everything endoflife.date tracks.
 - CVSS v4 vectors are kept but not scored locally; the vendor's label is used instead.

@@ -3,9 +3,25 @@ image:
   tag: ""            # defaults to the chart appVersion
   pullPolicy: IfNotPresent
 
-# One replica: background work (feed sync, notifications, remediation
-# rollout) runs in-process. Scaling out workers is planned, not supported.
+# Replicas share the database: periodic tasks and notification deliveries
+# are claimed there, so more than one replica is safe (docs/install.md,
+# "Running several replicas"). Sign-in rate limits are per replica.
 replicaCount: 1
+
+# Recreate stops every replica before the new version starts, so two
+# versions never share a schema during an upgrade. Keep it unless the
+# release notes say a rolling update is safe.
+updateStrategy:
+  type: Recreate
+
+# Prometheus metrics on a separate port and Service (never the ingress).
+# The endpoint has no authentication; restrict who can reach it.
+metrics:
+  enabled: false
+  port: 9100
+  # With networkPolicy.enabled, the peers allowed to scrape (e.g. a
+  # namespaceSelector for your monitoring namespace). Empty allows any pod.
+  from: []
 
 # PostgreSQL 16+ is required and not bundled. Point at a managed database or
 # an operator such as CloudNativePG.
