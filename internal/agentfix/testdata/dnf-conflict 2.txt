@@ -1,9 +1,0 @@
-Last metadata expiration check: 0:02:26 ago on Sun Oct 25 14:58:44 2026.
-Error: 
- Problem: problem with installed package stk-needy-1.0-1.noarch
-  - package stk-needy-1.0-1.noarch from @System requires stk-demo = 1:1.0-2, but none of the providers can be installed
-  - package stk-needy-1.0-1.noarch from stkdemo requires stk-demo = 1:1.0-2, but none of the providers can be installed
-  - cannot install both stk-demo-1:1.0-1.noarch from stkdemo and stk-demo-1:1.0-2.noarch from @System
-  - cannot install both stk-demo-1:1.0-2.noarch from stkdemo and stk-demo-1:1.0-1.noarch from stkdemo
-  - conflicting requests
-(try to add '--allowerasing' to command line to replace conflicting packages or '--skip-broken' to skip uninstallable packages or '--nobest' to use not only best candidate packages)
