@@ -344,11 +344,32 @@ Test a restore regularly. A backup you have never restored is not a backup. To c
 
 ## Upgrading
 
-1. Take a backup.
+1. Note the image you run now (`docker compose images stackurity`), and take a backup (see [Backup and restore](#backup-and-restore)):
+
+   ```sh
+   docker compose exec -T postgres pg_dump -U stackurity -Fc stackurity > stackurity-before-upgrade.dump
+   ```
+
 2. `git pull`, then `docker compose pull && docker compose up -d` (or bump `STACKURITY_IMAGE`; with `--build` if you build from source).
 3. Migrations run automatically at startup inside a lock, so concurrent starts are safe. Run `stackurity migrate` to apply them separately.
+4. Check that `/readyz` answers 200 and that your workspaces, assets and findings are there.
 
-Downgrades are not supported. To roll back, restore the backup taken before the upgrade.
+Before a release is published, CI installs each earlier release still in use (currently 0.2.0 and 0.3.0), loads data, starts the new version on the same database, restores a backup of the result into a new PostgreSQL server, and runs the rollback below, checking readiness and counts at each step. The script is `tools/release-checks/upgrade.sh`; you can run it against your own build: `tools/release-checks/upgrade.sh ghcr.io/stackurity/stackurity:0.3.0 stackurity:mybuild`.
+
+### Rolling back
+
+A downgrade is never done in place: the previous version may not work with a newer schema, and migrations are not reversed. To roll back, put back the previous image and the backup taken before the upgrade. Anything recorded since the upgrade is lost.
+
+```sh
+docker compose stop stackurity
+# Recreate the database: restoring over it with --clean would leave tables the new version added.
+docker compose exec -T postgres psql -U stackurity -d postgres -c 'DROP DATABASE stackurity WITH (FORCE)' -c 'CREATE DATABASE stackurity'
+docker compose exec -T postgres pg_restore -U stackurity -d stackurity < stackurity-before-upgrade.dump
+# Pin the previous version, for example STACKURITY_IMAGE=ghcr.io/stackurity/stackurity:0.3.0 in .env, then:
+docker compose up -d
+```
+
+Upgrading again later works as before; the migrations run again. With Helm, restore the database the same way and `helm rollback` (or set `image.tag` to the previous version).
 
 ## Kubernetes (Helm)
 

@@ -2,6 +2,26 @@
 
 All notable changes to Stackurity. Versions follow [Semantic Versioning](https://semver.org/); before 1.0, a minor version can change behaviour, and the notes say when it does.
 
+## Unreleased
+
+### Added
+
+- **Release checks in CI** (`.github/workflows/release-checks.yml`, on pull requests to main and before every release). For each earlier release still in use (0.2.0 and 0.3.0), a job installs it from GHCR with demo data, a second workspace and findings, starts the current build on the same database and checks that migrations apply, `/readyz` is 200, the API answers and nothing was lost; restores a `pg_dump` of the result into a new PostgreSQL server (which has no `stackurity_app` role) and checks again; and runs the documented rollback. A tag publishes nothing unless these pass. Run them locally with `tools/release-checks/upgrade.sh`.
+- `docs/install.md` describes how to roll back an upgrade (recreate the database, restore the pre-upgrade backup, start the previous image), and `docs/remediation.md` has a "Failure handling" section on what automatic fixing does when a change, an agent or the network fails.
+
+### Changed
+
+- Automatic fixing (Pro): an approval by a person lapses if the rollout has not started within 14 days; the plan is cancelled and proposed again for a fresh decision. A host whose package changed since the plan was made is dropped from the plan before release, instead of failing the rollout when its agent refuses the stale change.
+- The agent retries a remediation result report through brief network or server outages (four attempts). The server accepts a repeated report without recording it twice, and answers 409, not 404, to a report that contradicts what is recorded.
+
+### Fixed
+
+- Automatic fixing (Pro): a change already on a host when its plan was revoked, its policy disabled or its rollout halted was never verified or timed out. It stayed in flight for ever and blocked every later plan for that package on that host.
+- Automatic fixing (Pro): when an agent applied a change but its report was lost, the change timed out after two hours and, with `auto_rollback`, was rolled back although it had worked. Fresh inventory now settles such changes, and timeouts never queue a rollback, since nothing is known to have changed.
+- Automatic fixing (Pro): a change released shortly before the maintenance window closed, and not fetched in time, failed the whole plan at its dispatch deadline. It now waits for the next window.
+- Automatic fixing (Pro): two rollout loops running at once (replicas whose worker leases overlapped) could each release up to `max_concurrent` changes.
+- Automatic fixing (Pro): a plan whose changes were all cancelled was marked `succeeded`. A halted plan now says which host failed and why.
+
 ## 0.3.1
 
 ### Fixed
