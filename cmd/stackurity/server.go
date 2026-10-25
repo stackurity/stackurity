@@ -27,7 +27,9 @@ import (
 	"github.com/stackurity/stackurity/internal/collect/image"
 	"github.com/stackurity/stackurity/internal/db"
 	"github.com/stackurity/stackurity/internal/demo"
+	"github.com/stackurity/stackurity/internal/health"
 	"github.com/stackurity/stackurity/internal/intel"
+	"github.com/stackurity/stackurity/internal/metrics"
 	"github.com/stackurity/stackurity/internal/model"
 	"github.com/stackurity/stackurity/internal/notify"
 	"github.com/stackurity/stackurity/internal/plugins"
@@ -151,10 +153,12 @@ func serverCmd() *cobra.Command {
 				return err
 			}
 
+			checker := &health.Checker{Store: st, FeedsEnabled: os.Getenv("STACKURITY_FEEDS") != "off"}
 			allowHTTPHooks := os.Getenv("STACKURITY_ALLOW_HTTP_WEBHOOKS") == "true"
 			dispatcher := &notify.Dispatcher{Store: st, Sender: notify.NewSender(allowHTTPHooks), Secrets: res, Log: log,
 				BaseURL:  os.Getenv("STACKURITY_BASE_URL"),
-				Escalate: func(ctx context.Context) bool { return gate.Has(ctx, license.Teams) }}
+				Escalate: func(ctx context.Context) bool { return gate.Has(ctx, license.Teams) },
+				Platform: checker.PlatformIncidents}
 			var pluginRunner *plugins.Runner
 			if dir := os.Getenv("STACKURITY_PLUGIN_DIR"); dir != "" {
 				pluginRunner = &plugins.Runner{Dir: dir, WorkDir: filepath.Join(dataDir, "work"), Timeout: 15 * time.Minute}
@@ -174,6 +178,16 @@ func serverCmd() *cobra.Command {
 				SecretBox:    box,
 				Packs:        packMgr,
 				Licence:      holder, Gate: gate, LicenceFromEnv: licFromEnv,
+				Health: checker,
+			}
+			// Metrics have their own listener, off by default, so they are
+			// never reachable on the public API port.
+			metricsAddr := os.Getenv("STACKURITY_METRICS_ADDR")
+			if metricsAddr != "" {
+				if metricsAddr == env("STACKURITY_LISTEN", ":8080") {
+					return errors.New("STACKURITY_METRICS_ADDR must differ from STACKURITY_LISTEN: metrics are never served on the API port")
+				}
+				srv.HTTPMetrics = metrics.NewHTTP()
 			}
 			httpSrv := &http.Server{
 				Addr:              env("STACKURITY_LISTEN", ":8080"),
@@ -194,11 +208,23 @@ func serverCmd() *cobra.Command {
 			go func() { w.Run(ctx); close(done) }()
 			go followReplicas(ctx, st, holder, licFromEnv, packMgr, log)
 
-			errc := make(chan error, 1)
+			errc := make(chan error, 2)
 			go func() {
 				log.Info("listening", "addr", httpSrv.Addr, "version", version)
 				errc <- httpSrv.ListenAndServe()
 			}()
+			var metricsSrv *http.Server
+			if metricsAddr != "" {
+				mux := http.NewServeMux()
+				mux.Handle("/metrics", &metrics.Handler{Store: st, Health: checker, HTTP: srv.HTTPMetrics, Log: log,
+					Version: version, Edition: edition, Started: time.Now()})
+				metricsSrv = &http.Server{Addr: metricsAddr, Handler: mux, ReadHeaderTimeout: 10 * time.Second,
+					ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second}
+				go func() {
+					log.Info("serving metrics", "addr", metricsAddr, "path", "/metrics")
+					errc <- metricsSrv.ListenAndServe()
+				}()
+			}
 			select {
 			case err := <-errc:
 				if !errors.Is(err, http.ErrServerClosed) {
@@ -210,6 +236,9 @@ func serverCmd() *cobra.Command {
 			sctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			_ = httpSrv.Shutdown(sctx)
+			if metricsSrv != nil {
+				_ = metricsSrv.Shutdown(sctx)
+			}
 			<-done
 			return nil
 		},

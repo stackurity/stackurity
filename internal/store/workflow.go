@@ -411,7 +411,7 @@ func (s *Store) SyncSystemIncidents(ctx context.Context, current []SystemInciden
 			keys = append(keys, c.Kind+"|"+c.Key)
 		}
 		_, err := tx.Exec(ctx, `UPDATE incidents SET status = 'resolved', resolved_at = now(), updated_at = now()
-			WHERE status = 'open' AND kind IN ('feed', 'collection', 'coverage') AND NOT (kind || '|' || key = ANY($1))`, keys)
+			WHERE status = 'open' AND kind IN ('feed', 'collection', 'coverage', 'platform') AND NOT (kind || '|' || key = ANY($1))`, keys)
 		return err
 	})
 }

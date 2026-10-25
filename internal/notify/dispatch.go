@@ -15,6 +15,7 @@ import (
 	"github.com/stackurity/stackurity/internal/risk"
 	"github.com/stackurity/stackurity/internal/secrets"
 	"github.com/stackurity/stackurity/internal/store"
+	"github.com/stackurity/stackurity/internal/tenant"
 )
 
 const maxAttempts = 8
@@ -37,6 +38,10 @@ type Dispatcher struct {
 	// Escalate reports whether the workspace in ctx may escalate overdue
 	// incidents (a paid feature); nil allows it.
 	Escalate func(ctx context.Context) bool
+	// Platform returns incidents about the installation itself (stuck
+	// background tasks, no intelligence). They are raised in the default
+	// workspace, the operator's; nil disables them.
+	Platform func(ctx context.Context) ([]store.SystemIncident, error)
 }
 
 func (d *Dispatcher) now() time.Time {
@@ -68,6 +73,13 @@ func (d *Dispatcher) Tick(ctx context.Context) error {
 	sys, err := d.Store.DetectSystemProblems(ctx)
 	if err != nil {
 		return fmt.Errorf("detect system problems: %w", err)
+	}
+	if ws, ok := tenant.Workspace(ctx); ok && ws == tenant.DefaultWorkspace && d.Platform != nil {
+		p, err := d.Platform(ctx)
+		if err != nil {
+			return fmt.Errorf("platform health: %w", err)
+		}
+		sys = append(sys, p...)
 	}
 	if err := d.Store.SyncSystemIncidents(ctx, sys); err != nil {
 		return fmt.Errorf("system incidents: %w", err)
@@ -296,6 +308,9 @@ func (d *Dispatcher) message(in store.Incident, event string) Message {
 		m.Action = "Check the agent, integration credentials or network path"
 	case "coverage":
 		m.Action = "Confirm whether software was removed or the collector lost access"
+	case "platform":
+		m.Summary = append(m.Summary, "A problem with the Stackurity installation itself: findings and notifications may be out of date")
+		m.Action = "An instance administrator should check Platform health in the dashboard and the server logs"
 	}
 	switch event {
 	case "escalated":

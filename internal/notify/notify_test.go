@@ -348,6 +348,45 @@ func TestSystemIncidents(t *testing.T) {
 	}
 }
 
+// Platform problems are raised in the operator's (default) workspace only,
+// notified like other system incidents, and resolved when they clear.
+func TestPlatformIncidents(t *testing.T) {
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	f := setup(t)
+	var problems []store.SystemIncident
+	calls := 0
+	f.d.Platform = func(ctx context.Context) ([]store.SystemIncident, error) {
+		calls++
+		return problems, nil
+	}
+	problems = []store.SystemIncident{{Kind: "platform", Key: "task:alerts", Title: "Background task alerts is not succeeding", Priority: "P2"}}
+	f.tick()
+	incs, _, _ := f.st.ListIncidents(ctx, store.IncidentFilter{Kind: "platform"})
+	if len(incs) != 1 || incs[0].Priority != "P2" {
+		t.Fatalf("platform incident = %+v", incs)
+	}
+	if len(f.hook.got) != 1 || !strings.Contains(f.hook.got[0].Action, "Platform health") {
+		t.Errorf("platform alert: %+v", f.hook.got)
+	}
+	// Other workspaces do not ask for platform problems.
+	ws, _, err := f.st.CreateWorkspace(context.Background(), "Other", "other", "o@x.io", "", "correct horse battery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := calls
+	if err := f.d.Tick(tenant.WithWorkspace(context.Background(), ws.ID)); err != nil {
+		t.Fatal(err)
+	}
+	if calls != before {
+		t.Error("platform problems were raised outside the default workspace")
+	}
+	problems = nil
+	f.tick()
+	if incs, _, _ := f.st.ListIncidents(ctx, store.IncidentFilter{Kind: "platform"}); len(incs) != 0 {
+		t.Errorf("platform incident should resolve: %+v", incs)
+	}
+}
+
 func TestPayloads(t *testing.T) {
 	m := Message{Event: "opened", Title: "x <y> & z", Priority: "P1", SOS: true, Summary: []string{"a"}, Link: "https://s/i/1"}
 	sl, _ := json.Marshal(slackPayload(m))
