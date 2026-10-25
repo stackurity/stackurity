@@ -20,6 +20,11 @@ func TestTargetFor(t *testing.T) {
 		{"pkg:deb/ubuntu/libc6@2.35-0ubuntu3?distro=ubuntu-22.04&upstream=glibc", "", nil, "Ubuntu:22.04", "glibc", true},
 		{"pkg:apk/alpine/libcrypto3@3.1.4-r5?distro=alpine-3.19.1&upstream=openssl", "", nil, "Alpine:v3.19", "openssl", true},
 		{"pkg:rpm/rocky/openssl-libs@3.0.7-24.el9?distro=rocky-9.3&epoch=1", "1:3.0.7-24.el9", map[string]string{"evr": "1:3.0.7-24.el9"}, "Rocky Linux:9", "openssl-libs", true},
+		// Rocky advisories name source packages, so the binary maps to its source rpm.
+		{"pkg:rpm/rocky/openssl-libs@3.0.7-24.el9?distro=rocky-9.3", "", map[string]string{"evr": "1:3.0.7-24.el9", "source_rpm": "openssl-3.0.7-24.el9.src.rpm"}, "Rocky Linux:9", "openssl", true},
+		{"pkg:rpm/rocky/krb5-libs@1.21.1-1.el9?distro=rocky-9.4&upstream=krb5-1.21.1-1.el9.src.rpm", "", nil, "Rocky Linux:9", "krb5", true},
+		// Alma and Red Hat list every binary package, so the binary name is kept.
+		{"pkg:rpm/almalinux/openssl-libs@3.0.7-24.el9?distro=almalinux-9.3", "", map[string]string{"source_rpm": "openssl-3.0.7-24.el9.src.rpm"}, "AlmaLinux:9", "openssl-libs", true},
 		// Syft names Red Hat packages "redhat" with an epoch qualifier; the agent uses the os-release ID.
 		{"pkg:rpm/redhat/openssl@3.0.7-27.el9?distro=rhel-9.4&epoch=1", "", nil, "Red Hat:enterprise_linux:9", "openssl", true},
 		{"pkg:rpm/rhel/openssl-libs@3.0.7-27.el9?distro=rhel-9.4", "1:3.0.7-27.el9", map[string]string{"evr": "1:3.0.7-27.el9"}, "Red Hat:enterprise_linux:9", "openssl-libs", true},

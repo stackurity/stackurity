@@ -158,8 +158,9 @@ func TargetFor(purl, ver string, evidence map[string]string) (Target, bool) {
 		if id == "" {
 			return Target{}, false
 		}
-		// Red Hat, Rocky, Alma and Amazon advisories name binary packages;
-		// SUSE advisories name the source package.
+		// Red Hat, Alma and Amazon advisories name binary packages; Rocky
+		// and SUSE advisories name the source package (RLSA records list
+		// "openssl", never "openssl-libs").
 		name := p.Name
 		srpm := ""
 		if evidence != nil {
@@ -171,6 +172,9 @@ func TargetFor(purl, ver string, evidence map[string]string) (Target, bool) {
 		switch id {
 		case "rocky":
 			t.Ecosystem = "Rocky Linux:" + majorOf(rel)
+			if src := sourceRPMName(srpm); src != "" {
+				name = src
+			}
 		case "almalinux":
 			t.Ecosystem = "AlmaLinux:" + majorOf(rel)
 		case "rhel":
