@@ -22,6 +22,7 @@ import { WorkspacesPage } from "./pages/admin/Workspaces";
 import { PacksPage } from "./pages/admin/Packs";
 import { LicensePage } from "./pages/admin/License";
 import { HealthPage } from "./pages/admin/Health";
+import { UpdatesPage } from "./pages/admin/Updates";
 import { TeamsPage } from "./pages/settings/Teams";
 import { TokensPage } from "./pages/settings/Tokens";
 import { ConflictsPage } from "./pages/settings/Conflicts";
@@ -227,6 +228,14 @@ export function App() {
           element={
             <RequireInstanceAdmin>
               <PacksPage />
+            </RequireInstanceAdmin>
+          }
+        />
+        <Route
+          path="updates"
+          element={
+            <RequireInstanceAdmin>
+              <UpdatesPage />
             </RequireInstanceAdmin>
           }
         />

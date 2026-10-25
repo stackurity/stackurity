@@ -175,6 +175,36 @@ export interface PlatformHealth {
   recent_failures: { id: number; kind: string; workspace_id: number | null; attempts: number; last_error: string; failed_at: string }[];
 }
 
+/** One published, stable release newer than the running one. */
+export interface UpdateRelease {
+  version: string;
+  tag: string;
+  name: string;
+  url: string;
+  published_at: string;
+  /** Release notes, Markdown (cut at about 16 KB). */
+  notes: string;
+  notes_truncated?: boolean;
+  /** The notes have a "Security" section. */
+  security: boolean;
+}
+
+/** GET /updates (instance admins): is a newer release available? */
+export interface UpdateStatus {
+  /** False when the operator set STACKURITY_UPDATE_CHECK=off. */
+  enabled: boolean;
+  current: string;
+  /** False for development builds, which never show an update. */
+  comparable: boolean;
+  latest: string;
+  latest_url?: string;
+  latest_published_at?: string;
+  update_available: boolean;
+  security: boolean;
+  checked_at?: string;
+  releases: UpdateRelease[];
+}
+
 export interface Asset {
   id: number;
   kind: string;
