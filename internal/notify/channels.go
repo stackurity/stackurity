@@ -1,5 +1,5 @@
 // Package notify routes incidents to channels (email, Slack, Microsoft
-// Teams, webhooks) with deduplication, quiet hours, rate limits, retries and
+// Teams, webhooks, Jira issues) with deduplication, quiet hours, rate limits, retries and
 // escalation (FR-08, FR-09).
 package notify
 
@@ -86,20 +86,29 @@ const (
 	KindSlack   = "slack"
 	KindTeams   = "teams"
 	KindWebhook = "webhook"
+	KindJira    = "jira"
 )
 
 // ChannelConfig is the non-secret part of a channel. Secrets (SMTP password,
-// Slack/Teams webhook URL, webhook HMAC key) come from a secret reference.
+// Slack/Teams webhook URL, webhook HMAC key, Jira token) come from a secret
+// reference.
 type ChannelConfig struct {
 	// email
 	Host     string   `json:"host,omitempty"`
 	Port     int      `json:"port,omitempty"`
-	Username string   `json:"username,omitempty"`
+	Username string   `json:"username,omitempty"` // also the Jira Cloud account email
 	From     string   `json:"from,omitempty"`
 	To       []string `json:"to,omitempty"`
 	TLS      string   `json:"tls,omitempty"` // starttls (default), tls, none
-	// webhook
+	// webhook; the site's base URL for Jira
 	URL string `json:"url,omitempty"`
+	// jira
+	Deployment        string            `json:"deployment,omitempty"` // cloud (default) or datacenter
+	Project           string            `json:"project,omitempty"`    // project key
+	IssueType         string            `json:"issue_type,omitempty"` // default Task
+	Labels            []string          `json:"labels,omitempty"`
+	Priorities        map[string]string `json:"priorities,omitempty"`         // P1..P4 -> Jira priority name
+	ResolveTransition string            `json:"resolve_transition,omitempty"` // e.g. Done; empty only comments
 }
 
 // ValidateChannel checks configuration before it is stored.
@@ -133,8 +142,10 @@ func ValidateChannel(kind string, c ChannelConfig, hasSecret, allowHTTP bool) er
 		if err := checkURL(c.URL, allowHTTP); err != nil {
 			return err
 		}
+	case KindJira:
+		return validateJira(c, hasSecret, allowHTTP)
 	default:
-		return errors.New("kind must be email, slack, teams or webhook")
+		return errors.New("kind must be email, slack, teams, webhook or jira")
 	}
 	return nil
 }
@@ -232,6 +243,10 @@ func (s *Sender) Send(ctx context.Context, kind string, c ChannelConfig, secret 
 			h["X-Stackurity-Signature"] = "sha256=" + hex.EncodeToString(mac.Sum(nil))
 		}
 		return s.post(ctx, c.URL, body, h)
+	case KindJira:
+		// Issues are kept per incident, which needs the store; see
+		// Dispatcher.syncJira.
+		return errors.New("jira channels are delivered by the dispatcher")
 	}
 	return fmt.Errorf("unknown channel kind %q", kind)
 }
