@@ -127,7 +127,7 @@ The host needs systemd, root for the install, and HTTPS access to the Stackurity
 docker compose exec stackurity stackurity admin create-token --name hosts
 ```
 
-Get the `stackurity` binary. There is no tagged release yet, so either copy it out of the server image (`docker compose cp stackurity:/usr/local/bin/stackurity ./stackurity`; the image is linux/amd64 unless you built another platform), or build it with `make build` (or `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o stackurity ./cmd/stackurity`). The same binary is the server, the agent and the CLI.
+Get the `stackurity` binary from the [latest release](https://github.com/stackurity/stackurity/releases/latest) (signed; see [security-audit.md](security-audit.md) to verify it), copy it out of the server image (`docker compose cp stackurity:/usr/local/bin/stackurity ./stackurity`), or build it with `make build` (or `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o stackurity ./cmd/stackurity`). The same binary is the server, the agent and the CLI.
 
 On each host, create the agent user and its directory, install the binary and save the token:
 
