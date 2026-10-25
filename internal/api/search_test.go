@@ -29,6 +29,14 @@ func TestSearchAPI(t *testing.T) {
 			t.Errorf("q=%q: %d", q, code)
 		}
 	}
+	// Members are for engineers and above, like the user directory.
+	e.user("eng@x.io", auth.RoleEngineer)
+	if code := view.do("GET", "/api/v1/search?q=x.io", nil, &res); code != 200 || len(res.Members) != 0 {
+		t.Errorf("viewer sees members: %d %+v", code, res.Members)
+	}
+	if code := e.login("eng@x.io").do("GET", "/api/v1/search?q=x.io", nil, &res); code != 200 || len(res.Members) != 2 {
+		t.Errorf("engineer member search: %d %+v", code, res.Members)
+	}
 	if code := e.anon().do("GET", "/api/v1/search?q=web", nil, nil); code != 401 {
 		t.Errorf("anonymous search: %d", code)
 	}
@@ -42,8 +50,9 @@ func TestSearchAPI(t *testing.T) {
 }
 
 // TestSearchWorkspaceIsolation checks that workspace B cannot find workspace
-// A's assets, identifiers, components, findings or teams through search, even
-// when both share a machine id and a public package.
+// A's assets, identifiers, components, findings, finding titles, teams or
+// members through search, even when both share a machine id, a public package
+// and a member.
 func TestSearchWorkspaceIsolation(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
@@ -76,6 +85,20 @@ func TestSearchWorkspaceIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// A member of both workspaces, with a different role in each, assigned
+	// alpha's findings.
+	e.user("both@x.io", auth.RoleEngineer)
+	if _, err := e.st.AddMember(tenant.WithWorkspace(ctx, betaWS.ID), "both@x.io", "", auth.RoleViewer, ""); err != nil {
+		t.Fatal(err)
+	}
+	var both int64
+	if err := e.st.Pool.QueryRow(ctx, `SELECT id FROM users WHERE email = 'both@x.io'`).Scan(&both); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.st.Pool.Exec(actx, `UPDATE findings SET assignee_user_id = $1`, both); err != nil {
+		t.Fatal(err)
+	}
+
 	search := func(s *session, q string) (store.SearchResults, string) {
 		t.Helper()
 		resp := s.req("GET", "/api/v1/search?q="+url.QueryEscape(q)+"&limit=50", nil, nil)
@@ -100,10 +123,17 @@ func TestSearchWorkspaceIsolation(t *testing.T) {
 			t.Errorf("alpha cannot find %q", q)
 		}
 	}
+	if res, body := search(alphaSess, "only issue"); len(res.Findings) != 1 || res.Findings[0].OpenFindings != 2 {
+		t.Errorf("alpha cannot find its finding title: %s", body)
+	}
+	if res, body := search(alphaSess, "alpha-admin"); len(res.Members) != 1 || res.Members[0].Email != "alpha-admin@x.io" {
+		t.Errorf("alpha cannot find its member: %s", body)
+	}
 
 	// Beta never sees anything of alpha's, by name, id, key or identifier.
 	for _, q := range []string{"alpha", "host-alpha", "team-alpha", "alpha-private-lib", "pkg:npm/alpha-private-lib@1.0.0",
-		"alpha-private-lib@1.0.0", "CVE-2099-0001", "cve-2099", "alpha-only", "hooks.example/alpha"} {
+		"alpha-private-lib@1.0.0", "CVE-2099-0001", "cve-2099", "alpha-only", "hooks.example/alpha", "only issue", "issue",
+		"alpha-admin", "alpha-admin@x.io", "admin@x.io"} {
 		res, body := search(betaSess, q)
 		if strings.Contains(strings.ToLower(body), "alpha") || len(res.Vulnerabilities) != 0 {
 			t.Errorf("beta search %q leaked: %s", q, body)
@@ -119,6 +149,20 @@ func TestSearchWorkspaceIsolation(t *testing.T) {
 	if len(res.Components) != 1 || res.Components[0].AssetCount != 1 || res.Components[0].OpenFindings != 0 ||
 		len(res.Components[0].Assets) != 1 || res.Components[0].Assets[0].ID != b.asset {
 		t.Errorf("shared component from beta: %s", body)
+	}
+	// Members: beta sees its own, and the shared member with beta's role and
+	// no assignments; alpha sees alpha's role and alpha's assignments.
+	res, body = search(betaSess, "x.io")
+	if len(res.Members) != 2 || strings.Contains(body, "alpha") {
+		t.Errorf("members from beta: %s", body)
+	}
+	res, body = search(betaSess, "both@x.io")
+	if len(res.Members) != 1 || res.Members[0].Role != "viewer" || res.Members[0].OpenAssigned != 0 {
+		t.Errorf("shared member from beta: %s", body)
+	}
+	res, body = search(alphaSess, "both@x.io")
+	if len(res.Members) != 1 || res.Members[0].Role != "engineer" || res.Members[0].OpenAssigned != 2 {
+		t.Errorf("shared member from alpha: %s", body)
 	}
 	res, body = search(betaSess, "team-")
 	if len(res.Teams) != 1 || res.Teams[0].ID != b.team {

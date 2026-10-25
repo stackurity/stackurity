@@ -5,7 +5,7 @@ image:
 
 # Replicas share the database: periodic tasks and notification deliveries
 # are claimed there, so more than one replica is safe (docs/install.md,
-# "Running several replicas"). Sign-in rate limits are per replica.
+# "Running several replicas"). Sign-in rate limits are shared there too.
 replicaCount: 1
 
 # Recreate stops every replica before the new version starts, so two
@@ -22,6 +22,16 @@ metrics:
   # With networkPolicy.enabled, the peers allowed to scrape (e.g. a
   # namespaceSelector for your monitoring namespace). Empty allows any pod.
   from: []
+  # A ServiceMonitor for the Prometheus Operator. It is rendered only when
+  # the cluster serves monitoring.coreos.com/v1 (with helm template, pass
+  # --api-versions monitoring.coreos.com/v1/ServiceMonitor).
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    scrapeTimeout: ""    # defaults to Prometheus's own
+    # Extra labels, e.g. {release: kube-prometheus-stack}, so your
+    # Prometheus's serviceMonitorSelector picks it up.
+    labels: {}
 
 # PostgreSQL 16+ is required and not bundled. Point at a managed database or
 # an operator such as CloudNativePG.
@@ -36,6 +46,7 @@ config:
   feeds: "on"            # "off" for air-gapped installs (see docs/network.md)
   staleAfter: 48h
   logFormat: json
+  platformWorkspace: ""  # id or slug for platform incidents; empty is workspace 1
   extraEnv: {}           # e.g. STACKURITY_OSV_URL for a mirror
 
 # Secrets referenced by integrations and channels (env:STACKURITY_SECRET_*

@@ -42,6 +42,7 @@ docker compose exec -e STACKURITY_PASSWORD='a long passphrase' stackurity \
 | `STACKURITY_STALE_AFTER` | `48h` | An asset not seen for this long is marked stale |
 | `STACKURITY_SETUP_TOKEN` | random | Fixed setup token, for automated installs |
 | `STACKURITY_LOG_FORMAT` | `json` | `json` or `text` |
+| `STACKURITY_PLATFORM_WORKSPACE` | `1` | Workspace (id or slug) where platform incidents are raised for the operators ([Health](#health)) |
 | `STACKURITY_METRICS_ADDR` | off | Address for a separate Prometheus metrics listener, for example `127.0.0.1:9100` ([Health](#health)). Never the API port |
 | `STACKURITY_FEEDS` | on | `off` disables all intelligence feeds |
 | `STACKURITY_OSV_URL`, `STACKURITY_KEV_URL`, `STACKURITY_ENDOFLIFE_URL`, `STACKURITY_NPM_REGISTRY`, `STACKURITY_PACKAGIST_URL`, `STACKURITY_PYPI_URL`, `STACKURITY_GOPROXY_URL`, `STACKURITY_CRATES_INDEX_URL`, `STACKURITY_RUBYGEMS_URL`, `STACKURITY_NUGET_URL`, `STACKURITY_MAVEN_URL`, `STACKURITY_PUB_URL` | public sources | Mirrors for offline or air-gapped installs ([network.md](network.md)) |
@@ -345,7 +346,7 @@ helm install stackurity deploy/helm/stackurity \
   --set config.baseURL=https://stackurity.example.com
 ```
 
-The chart runs the same hardened container: non-root, read-only root filesystem, all capabilities dropped, `RuntimeDefault` seccomp, and no service-account token. PostgreSQL isn't bundled; use a managed database or an operator. Set `replicaCount` above 1 for availability (see [Running several replicas](#running-several-replicas)); the chart keeps the `Recreate` update strategy so an upgrade never runs two versions at once. `metrics.enabled=true` serves Prometheus metrics on port 9100 through a separate `<release>-metrics` Service, never through the ingress.
+The chart runs the same hardened container: non-root, read-only root filesystem, all capabilities dropped, `RuntimeDefault` seccomp, and no service-account token. PostgreSQL isn't bundled; use a managed database or an operator. Set `replicaCount` above 1 for availability (see [Running several replicas](#running-several-replicas)); the chart keeps the `Recreate` update strategy so an upgrade never runs two versions at once. `metrics.enabled=true` serves Prometheus metrics on port 9100 through a separate `<release>-metrics` Service, never through the ingress. With the Prometheus Operator, add `metrics.serviceMonitor.enabled=true` (and `metrics.serviceMonitor.labels` matching your Prometheus's `serviceMonitorSelector`, for example `release: kube-prometheus-stack`) for a ServiceMonitor that scrapes it every `metrics.serviceMonitor.interval` (30s). It is created only when the cluster serves `monitoring.coreos.com/v1`; with `helm template`, pass `--api-versions monitoring.coreos.com/v1/ServiceMonitor`.
 
 ## Running several replicas
 
@@ -353,8 +354,18 @@ Any number of servers can run against one PostgreSQL database, behind a load bal
 
 - **Background work is coordinated in the database.** Jobs are claimed one at a time. Each periodic task (the alert dispatcher, digests, feed and integration scheduling, housekeeping) runs at most once per interval across all replicas and never on two at once. A replica holds a task under a two-minute lease that it renews while the task runs; if the replica dies, another takes the task over when the lease expires and runs it again at once.
 - **Notifications are sent once.** Each delivery is claimed just before it is sent. A replica that dies mid-send leaves the delivery to be retried about five minutes later, so a message can, rarely, arrive twice; webhooks carry `X-Stackurity-Delivery` for deduplication. Jira issues are never duplicated (see [Jira](#jira)), and a retried comment is skipped when the issue already has it.
-- **Shared state lives in the database**: sessions, single sign-on state, the setup token and the licence. A licence or stack pack changed through one replica reaches the others within 30 seconds, and a workspace's plan within 30 seconds.
-- **Per replica:** sign-in and setup rate limits (a client gets up to N times the limit with N replicas), the scratch directory (`STACKURITY_DATA_DIR`, temporary clones only), and HTTP and database pool metrics. Mount the same `file:` secrets and set the same environment on every replica.
+- **Shared state lives in the database**: sessions, single sign-on state, the setup token, rate limits and the licence. A licence or stack pack changed through one replica reaches the others within 30 seconds, and a workspace's plan within 30 seconds.
+- **Rate limits are shared.** Sign-in, setup, password change, agent enrollment and the start of single sign-on are counted in the database, so a client gets the limit once however the load balancer spreads its requests. The limits are below. Every one fails closed: if the database cannot count an attempt, the request is refused with 503 (each of these requests needs the database anyway). Each replica also keeps its own count and refuses early once it alone has seen more than the limit, which saves a database write during a flood. Ended windows are deleted by the hourly housekeeping task. Behind a proxy, set `STACKURITY_TRUST_PROXY=true` so the limits see client addresses rather than the proxy's.
+
+  | Limit | Applies to |
+  |---|---|
+  | 10 a minute per client address | sign-in, setup, password change, enrollment (`POST /api/v1/enroll`), the start of single sign-on |
+  | 20 every 15 minutes per account | sign-in attempts for one email from any address, whether or not the account exists (successful ones count too); password changes by one user |
+  | 20 a minute per client address | both steps of single sign-on together (start and callback), about ten sign-ins |
+  | 100 an hour in total | setup attempts from all addresses, in case `STACKURITY_SETUP_TOKEN` was set to something guessable |
+
+  The per-account limit means someone guessing a password can keep that account from signing in with a password for up to 15 minutes at a time; single sign-on is unaffected, and the attempts appear in the audit log as `auth.login_failed`.
+- **Per replica:** the scratch directory (`STACKURITY_DATA_DIR`, temporary clones only), and HTTP and database pool metrics. Mount the same `file:` secrets and set the same environment on every replica.
 - **Upgrades:** stop every replica, then start the new version (Compose and the Helm chart's `Recreate` strategy do this). Migrations run once, inside a lock, but a new schema is not guaranteed to work with the previous version's code.
 
 ## Health
@@ -362,7 +373,7 @@ Any number of servers can run against one PostgreSQL database, behind a load bal
 - `GET /healthz`: the process is up.
 - `GET /readyz`: the database is reachable. The container health check uses this.
 - **Platform health** (**Settings → Platform health**, instance administrators; `GET /api/v1/admin/health`): flags an intelligence feed that is stale beyond its threshold or failing, a background task that has not succeeded within three times its interval (at least ten minutes), jobs that ran out of retries in the last 24 hours, a backlog of waiting jobs, and vulnerability intelligence that never synced. Instance administrators see a banner on every page while a critical problem exists.
-- **Platform incidents:** critical problems other than feeds (every workspace already gets its own feed incidents) also open a `platform` incident in the default workspace (workspace 1), so its notification routes tell the operators. They carry no error details, which can name other workspaces; the Platform health page has those. If the alert dispatcher itself is stuck it cannot report that, so also watch the metrics below.
+- **Platform incidents:** critical problems other than feeds (every workspace already gets its own feed incidents) also open a `platform` incident in the operators' workspace, so its notification routes tell them. That is the default workspace (workspace 1) unless `STACKURITY_PLATFORM_WORKSPACE` names another by id or slug (`STACKURITY_PLATFORM_WORKSPACE=ops`); changing it resolves the incidents in the old workspace and raises them in the new one. If that workspace is disabled or does not exist, no platform incidents are raised anywhere: the server logs each critical problem every ten minutes (`platform problem not raised as an incident`), instance administrators still see the banner, and Platform health shows a warning saying why. Platform incidents carry no error details, which can name other workspaces; the Platform health page has those. If the alert dispatcher itself is stuck it cannot report that, so also watch the metrics below.
 - **Metrics:** set `STACKURITY_METRICS_ADDR` (for example `127.0.0.1:9100`, or `:9100` in a container) to serve Prometheus metrics at `/metrics` on a separate listener. It has no authentication, so keep it on a private network. Database-derived values are the same on every replica; HTTP, pool and Go values are per replica.
 
 | Metric | Labels | Meaning |

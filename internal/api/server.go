@@ -68,13 +68,13 @@ type Server struct {
 	Health *health.Checker
 	// HTTPMetrics records requests for the metrics listener; nil disables it.
 	HTTPMetrics *metrics.HTTP
-	// limiter is per replica: behind a load balancer with N replicas a
-	// client gets up to N times its limit.
+	// limiter counts sign-in, setup and enrollment attempts in the database,
+	// shared by every replica (ratelimit.go).
 	limiter *rateLimiter
 }
 
 func (s *Server) Handler() http.Handler {
-	s.limiter = newRateLimiter(10, time.Minute)
+	s.limiter = newRateLimiter(s.Store, s.Log)
 	r := chi.NewRouter()
 	if s.TrustProxy {
 		r.Use(middleware.RealIP)
@@ -94,7 +94,13 @@ func (s *Server) Handler() http.Handler {
 		r.Post("/auth/login", s.login)
 		r.Post("/auth/logout", s.logout)
 		r.Post("/enroll", s.enroll)
-		s.proPublicRoutes(r)
+		r.Group(func(r chi.Router) {
+			// Single sign-on in the licensed build: the callback exchanges
+			// the code with the identity provider, so the whole flow is
+			// limited per address here as well.
+			r.Use(s.limitAddress("sso-flow", limitSSOFlow, "too many sign-in attempts; wait a minute"))
+			s.proPublicRoutes(r)
+		})
 
 		r.Group(func(r chi.Router) {
 			r.Use(requireAuth)

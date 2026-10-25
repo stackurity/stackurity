@@ -153,12 +153,19 @@ func serverCmd() *cobra.Command {
 				return err
 			}
 
-			checker := &health.Checker{Store: st, FeedsEnabled: os.Getenv("STACKURITY_FEEDS") != "off"}
+			checker := &health.Checker{Store: st, FeedsEnabled: os.Getenv("STACKURITY_FEEDS") != "off",
+				PlatformWorkspace: os.Getenv("STACKURITY_PLATFORM_WORKSPACE")}
+			if _, why, err := checker.PlatformTarget(ctx); err != nil {
+				return err
+			} else if why != "" {
+				log.Warn("platform incidents are not raised; critical platform problems are logged instead", "reason", why,
+					"fix", "set STACKURITY_PLATFORM_WORKSPACE to an active workspace id or slug")
+			}
 			allowHTTPHooks := os.Getenv("STACKURITY_ALLOW_HTTP_WEBHOOKS") == "true"
 			dispatcher := &notify.Dispatcher{Store: st, Sender: notify.NewSender(allowHTTPHooks), Secrets: res, Log: log,
 				BaseURL:  os.Getenv("STACKURITY_BASE_URL"),
 				Escalate: func(ctx context.Context) bool { return gate.Has(ctx, license.Teams) },
-				Platform: checker.PlatformIncidents}
+				Platform: checker.PlatformIncidents, PlatformTarget: checker.PlatformTarget}
 			var pluginRunner *plugins.Runner
 			if dir := os.Getenv("STACKURITY_PLUGIN_DIR"); dir != "" {
 				pluginRunner = &plugins.Runner{Dir: dir, WorkDir: filepath.Join(dataDir, "work"), Timeout: 15 * time.Minute}
@@ -203,6 +210,7 @@ func serverCmd() *cobra.Command {
 			// Prioritise, correlate, plan and deliver notifications.
 			w.EveryWorkspace("alerts", time.Minute, dispatcher.Tick)
 			w.EveryWorkspace("alert-digest", time.Hour, dispatcher.Digest)
+			w.Every("platform-fallback", 10*time.Minute, dispatcher.PlatformFallback)
 			registerPro(w, st, log, gate)
 			done := make(chan struct{})
 			go func() { w.Run(ctx); close(done) }()
@@ -464,6 +472,9 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 	})
 	w.Every("housekeeping", time.Hour, func(ctx context.Context) error {
 		if err := st.PurgeExpiredSessions(ctx); err != nil {
+			return err
+		}
+		if _, err := st.PurgeRateLimits(ctx); err != nil {
 			return err
 		}
 		return st.PurgeJobs(ctx, 14*24*time.Hour)

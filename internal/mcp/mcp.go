@@ -167,7 +167,8 @@ var tools = map[string]tool{
 	"search": {
 		description: "Search everything in the workspace at once: a vulnerability id (CVE, GHSA, DSA, USN, RHSA...), a package " +
 			"(lodash, lodash@4.17.20, 'openssl 3.0.2', a purl), a host name, machine id, repository URL, image reference or " +
-			"digest, or a team. Results are grouped by type, exact matches first, with the affected assets for each.",
+			"digest, a team, words from a finding's title, or (for engineers and above) a workspace member's name or email. " +
+			"Results are grouped by type, exact matches first, with the affected assets for each.",
 		schema: obj(map[string]any{
 			"query": str("What to look for, at least 2 characters"),
 			"limit": num("At most this many results per type (default 10, max 50)"),

@@ -5,7 +5,6 @@ import (
 	"net"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -216,42 +215,4 @@ func clientIP(r *http.Request) string {
 		return r.RemoteAddr
 	}
 	return host
-}
-
-// rateLimiter is a small fixed-window limiter keyed by client IP, used for
-// login and setup.
-type rateLimiter struct {
-	mu     sync.Mutex
-	limit  int
-	window time.Duration
-	hits   map[string]*window
-}
-
-type window struct {
-	start time.Time
-	n     int
-}
-
-func newRateLimiter(limit int, w time.Duration) *rateLimiter {
-	return &rateLimiter{limit: limit, window: w, hits: map[string]*window{}}
-}
-
-func (l *rateLimiter) allow(key string) bool {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	now := time.Now()
-	if len(l.hits) > 10_000 {
-		for k, v := range l.hits {
-			if now.Sub(v.start) > l.window {
-				delete(l.hits, k)
-			}
-		}
-	}
-	w := l.hits[key]
-	if w == nil || now.Sub(w.start) > l.window {
-		l.hits[key] = &window{start: now, n: 1}
-		return true
-	}
-	w.n++
-	return w.n <= l.limit
 }
