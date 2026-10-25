@@ -264,6 +264,13 @@ func (s *Server) inventory(w http.ResponseWriter, r *http.Request, f store.Inven
 	q := r.URL.Query()
 	f.Type, f.Search, f.Direct, f.Page = q.Get("type"), q.Get("q"), qBool(r, "direct"), page(r)
 	f.IncludeRemoved = q.Get("include_removed") == "true"
+	switch c := q.Get("coverage"); c {
+	case "", "gaps", "evaluated", "stale_intelligence", "unsupported", "not_evaluated", "awaiting":
+		f.Coverage = c
+	default:
+		s.fail(w, r, badRequest("coverage must be gaps, evaluated, stale_intelligence, unsupported, not_evaluated or awaiting"))
+		return
+	}
 	items, total, err := s.Store.ListInventory(r.Context(), f)
 	if err != nil {
 		s.fail(w, r, err)

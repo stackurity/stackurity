@@ -281,7 +281,22 @@ type InventoryRow struct {
 	LatestStable string            `json:"latest_stable"`
 	UpdateType   string            `json:"update_type"` // patch, minor, major; empty when current or unknown
 	OpenFindings int64             `json:"open_findings"`
+	// Coverage says whether vulnerability intelligence covered this row:
+	// evaluated, stale_intelligence (evaluated against a feed that is stale
+	// or failing), unsupported, not_evaluated or awaiting. CoverageReason
+	// explains the last three.
+	Coverage       string     `json:"coverage"`
+	CoverageReason string     `json:"coverage_reason"`
+	CoverageFeed   string     `json:"coverage_feed"`
+	EvaluatedAt    *time.Time `json:"evaluated_at"`
 }
+
+// rowCoverageSQL is the effective coverage of inventory row i: a row matched
+// against a feed that is stale, or whose last sync failed, is reported as
+// stale_intelligence rather than evaluated.
+const rowCoverageSQL = `CASE WHEN i.coverage = 'evaluated' AND i.coverage_feed <> '' AND EXISTS (SELECT 1 FROM feeds fd
+	  WHERE fd.name = i.coverage_feed AND (NOT fd.enabled OR fd.last_error <> '' OR fd.last_success IS NULL OR fd.last_success < now() - fd.stale_after))
+	THEN 'stale_intelligence' ELSE i.coverage END`
 
 type InventoryFilter struct {
 	AssetID        int64
@@ -290,6 +305,9 @@ type InventoryFilter struct {
 	Search         string
 	Direct         *bool
 	IncludeRemoved bool
+	// Coverage limits rows to one effective coverage state, or "gaps" for
+	// unsupported and not_evaluated together.
+	Coverage string
 	Page
 }
 
@@ -314,6 +332,13 @@ func (s *Store) ListInventory(ctx context.Context, f InventoryFilter) ([]Invento
 	if f.Direct != nil {
 		w.add("i.direct = ?", *f.Direct)
 	}
+	switch f.Coverage {
+	case "":
+	case "gaps":
+		w.conds = append(w.conds, "i.coverage IN ('unsupported', 'not_evaluated')")
+	default:
+		w.add("("+rowCoverageSQL+") = ?", f.Coverage)
+	}
 	from := ` FROM inventory i JOIN components c ON c.id = i.component_id JOIN assets a ON a.id = i.asset_id
 		LEFT JOIN package_releases pr ON pr.component_id = c.id` + w.sql()
 	var total int64
@@ -324,7 +349,8 @@ func (s *Store) ListInventory(ctx context.Context, f InventoryFilter) ([]Invento
 	rows, err := s.Pool.Query(ctx, `SELECT i.id, i.asset_id, a.name, a.kind, c.id, c.type, c.namespace, c.name, i.purl, i.version,
 		i.location, i.collector_id, i.direct, i.scope, i.confidence, i.evidence, i.first_seen, i.last_seen,
 		i.last_collection_id, i.removed_at, COALESCE(pr.latest_stable, ''),
-		(SELECT count(*) FROM findings f WHERE f.inventory_id = i.id AND f.status = 'open')`+from+
+		(SELECT count(*) FROM findings f WHERE f.inventory_id = i.id AND f.status = 'open'),
+		`+rowCoverageSQL+`, i.coverage_reason, i.coverage_feed, i.evaluated_at`+from+
 		fmt.Sprintf(` ORDER BY c.type, c.namespace, c.name, i.version, i.id LIMIT %d OFFSET %d`, p.Limit, p.Offset), w.args...)
 	if err != nil {
 		return nil, 0, err
@@ -336,7 +362,8 @@ func (s *Store) ListInventory(ctx context.Context, f InventoryFilter) ([]Invento
 		var ev []byte
 		if err := rows.Scan(&r.ID, &r.AssetID, &r.AssetName, &r.AssetKind, &r.ComponentID, &r.Type, &r.Namespace, &r.Name,
 			&r.Purl, &r.Version, &r.Location, &r.CollectorID, &r.Direct, &r.Scope, &r.Confidence, &ev,
-			&r.FirstSeen, &r.LastSeen, &r.CollectionID, &r.RemovedAt, &r.LatestStable, &r.OpenFindings); err != nil {
+			&r.FirstSeen, &r.LastSeen, &r.CollectionID, &r.RemovedAt, &r.LatestStable, &r.OpenFindings,
+			&r.Coverage, &r.CoverageReason, &r.CoverageFeed, &r.EvaluatedAt); err != nil {
 			return nil, 0, err
 		}
 		_ = json.Unmarshal(ev, &r.Evidence)

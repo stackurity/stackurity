@@ -96,8 +96,7 @@ func (s *Store) GetCollectionResult(ctx context.Context, id int64) (*CollectionR
 			break
 		}
 	}
-	err = s.Pool.QueryRow(ctx, `SELECT count(DISTINCT g.component_id) FROM evaluation_gaps g
-		JOIN inventory i ON i.component_id = g.component_id AND i.removed_at IS NULL
-		WHERE i.asset_id = $1`, res.AssetID).Scan(&res.Gaps)
+	err = s.Pool.QueryRow(ctx, `SELECT count(DISTINCT component_id) FROM inventory
+		WHERE asset_id = $1 AND removed_at IS NULL AND coverage IN ('unsupported', 'not_evaluated')`, res.AssetID).Scan(&res.Gaps)
 	return res, err
 }

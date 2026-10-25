@@ -26,11 +26,14 @@ type Feed struct {
 	LastError   string     `json:"last_error"`
 	LastChanged int        `json:"last_changed"`
 	Stale       bool       `json:"stale"`
+	// Ecosystems lists the ecosystem strings a vulnerability feed has
+	// advisories for; nil until it is known.
+	Ecosystems []string `json:"ecosystems,omitempty"`
 }
 
 const feedCols = `name, kind, enabled, auto, (extract(epoch FROM refresh)/60)::bigint, (extract(epoch FROM stale_after)/60)::bigint,
 	cursor, records, last_attempt, last_success, last_error, last_changed,
-	(last_success IS NULL OR last_success < now() - stale_after)`
+	(last_success IS NULL OR last_success < now() - stale_after), ecosystems`
 
 func (s *Store) ListFeeds(ctx context.Context) ([]Feed, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT `+feedCols+` FROM feeds ORDER BY kind, name`)
@@ -95,6 +98,26 @@ func (s *Store) FeedResult(ctx context.Context, name, cursor string, changed int
 		  WHEN name LIKE 'releases:%' THEN (SELECT count(*) FROM package_releases WHERE source = $1 AND last_error = '')
 		  ELSE records END
 		WHERE name = $1`, name, cursor, changed)
+	return err
+}
+
+// UpdateFeedEcosystems records the ecosystems a vulnerability feed covers.
+// A full sync replaces the list; an incremental one adds to it, reading the
+// stored advisories of the base ecosystem when nothing is known yet.
+func (s *Store) UpdateFeedEcosystems(ctx context.Context, name, base string, seen []string, replace bool) error {
+	if seen == nil {
+		seen = []string{}
+	}
+	if replace {
+		_, err := s.Pool.Exec(ctx, `UPDATE feeds SET ecosystems = (SELECT COALESCE(array_agg(DISTINCT e ORDER BY e), '{}') FROM unnest($2::text[]) e)
+			WHERE name = $1`, name, seen)
+		return err
+	}
+	_, err := s.Pool.Exec(ctx, `UPDATE feeds SET ecosystems = CASE
+		  WHEN ecosystems IS NULL THEN (SELECT COALESCE(array_agg(DISTINCT e ORDER BY e), '{}') FROM (
+		    SELECT ecosystem AS e FROM advisory_packages WHERE base_ecosystem = $3 UNION SELECT unnest($2::text[])) x)
+		  ELSE (SELECT array_agg(DISTINCT e ORDER BY e) FROM unnest(ecosystems || $2::text[]) e) END
+		WHERE name = $1`, name, seen, base)
 	return err
 }
 
@@ -472,29 +495,48 @@ func (s *Store) ResolveRemovedFindings(ctx context.Context) (int64, error) {
 const resolvedEvents = `INSERT INTO finding_events (workspace_id, finding_id, actor_type, actor_name, action, note)
 	SELECT workspace_id, id, 'system', 'matcher', 'resolved', resolution FROM r`
 
-// SetEvaluationGaps records which components no source could evaluate. Gaps
-// are a property of the component, shared by every workspace that has it.
-func (s *Store) SetEvaluationGaps(ctx context.Context, gaps map[int64]string, cleared []int64) error {
-	return pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
-		return asSystem(ctx, tx, func() error { return setEvaluationGaps(ctx, tx, gaps, cleared) })
-	})
+// Row coverage states (inventory.coverage). See docs/compatibility.md,
+// "Coverage states".
+const (
+	CoverageAwaiting     = "awaiting"      // inventoried, not evaluated yet
+	CoverageEvaluated    = "evaluated"     // matched against a vulnerability feed
+	CoverageUnsupported  = "unsupported"   // no vulnerability source exists for it
+	CoverageNotEvaluated = "not_evaluated" // a source exists but could not be used
+)
+
+// RowCoverage is the outcome of evaluating one inventory row.
+type RowCoverage struct {
+	InventoryID int64
+	State       string // CoverageEvaluated, CoverageUnsupported or CoverageNotEvaluated
+	Reason      string // why it was not evaluated
+	Feed        string // the vulnerability feed it was matched against
 }
 
-func setEvaluationGaps(ctx context.Context, tx pgx.Tx, gaps map[int64]string, cleared []int64) error {
-	{
-		if len(cleared) > 0 {
-			if _, err := tx.Exec(ctx, `DELETE FROM evaluation_gaps WHERE component_id = ANY($1)`, cleared); err != nil {
-				return err
-			}
+// SetCoverage records how each evaluated inventory row was covered. It runs
+// in the caller's workspace: a row's coverage is a property of that row
+// (its version, its release, its workspace), never of the shared component.
+func (s *Store) SetCoverage(ctx context.Context, rows []RowCoverage) error {
+	const batch = 5000
+	for i := 0; i < len(rows); i += batch {
+		end := min(i+batch, len(rows))
+		ids := make([]int64, 0, end-i)
+		states := make([]string, 0, end-i)
+		reasons := make([]string, 0, end-i)
+		feeds := make([]string, 0, end-i)
+		for _, r := range rows[i:end] {
+			ids = append(ids, r.InventoryID)
+			states = append(states, r.State)
+			reasons = append(reasons, r.Reason)
+			feeds = append(feeds, r.Feed)
 		}
-		for id, reason := range gaps {
-			if _, err := tx.Exec(ctx, `INSERT INTO evaluation_gaps (component_id, reason) VALUES ($1, $2)
-				ON CONFLICT (component_id) DO UPDATE SET reason = EXCLUDED.reason, updated_at = now()`, id, reason); err != nil {
-				return err
-			}
+		if _, err := s.Pool.Exec(ctx, `UPDATE inventory i SET coverage = u.state, coverage_reason = u.reason,
+			coverage_feed = u.feed, evaluated_at = now()
+			FROM unnest($1::bigint[], $2::text[], $3::text[], $4::text[]) AS u(id, state, reason, feed)
+			WHERE i.id = u.id`, ids, states, reasons, feeds); err != nil {
+			return err
 		}
-		return nil
 	}
+	return nil
 }
 
 // --- releases and lifecycle
@@ -946,7 +988,8 @@ func (s *Store) SummarizeFindings(ctx context.Context) (*FindingSummary, error) 
 		  WHERE f.status = 'open' AND f.fixed_version <> ''),
 		(SELECT count(DISTINCT f.asset_id) FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
 		  WHERE f.status = 'open'),
-		(SELECT count(*) FROM evaluation_gaps g WHERE EXISTS (SELECT 1 FROM inventory i WHERE i.component_id = g.component_id AND i.removed_at IS NULL)),
+		(SELECT count(DISTINCT i.component_id) FROM inventory i JOIN assets a ON a.id = i.asset_id AND a.merged_into IS NULL
+		  WHERE i.removed_at IS NULL AND i.coverage IN ('unsupported', 'not_evaluated')),
 		(SELECT count(*) FROM feeds WHERE enabled AND (last_success IS NULL OR last_success < now() - stale_after))`).
 		Scan(&sum.KnownExploited, &sum.FixAvailable, &sum.AffectedAssets, &sum.EvaluationGaps, &sum.StaleFeeds)
 	return sum, err
@@ -958,19 +1001,26 @@ type EvaluationGap struct {
 	Reason      string    `json:"reason"`
 	AssetCount  int64     `json:"asset_count"`
 	UpdatedAt   time.Time `json:"updated_at"`
+	// Coverage is "unsupported" when no source exists, "not_evaluated" when
+	// one exists but could not be used (e.g. an unparseable version).
+	Coverage string `json:"coverage"`
 }
 
+// ListEvaluationGaps lists components with at least one current inventory
+// row that vulnerability intelligence did not cover, one entry per component
+// and reason.
 func (s *Store) ListEvaluationGaps(ctx context.Context, p Page) ([]EvaluationGap, int64, error) {
-	from := ` FROM evaluation_gaps g JOIN components c ON c.id = g.component_id
-		WHERE EXISTS (SELECT 1 FROM inventory i WHERE i.component_id = g.component_id AND i.removed_at IS NULL)`
+	from := ` FROM inventory i JOIN components c ON c.id = i.component_id JOIN assets a ON a.id = i.asset_id
+		WHERE i.removed_at IS NULL AND a.merged_into IS NULL AND i.coverage IN ('unsupported', 'not_evaluated')`
 	var total int64
-	if err := s.Pool.QueryRow(ctx, `SELECT count(*)`+from).Scan(&total); err != nil {
+	if err := s.Pool.QueryRow(ctx, `SELECT count(*) FROM (SELECT DISTINCT i.component_id, i.coverage_reason`+from+`) x`).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 	p = p.norm()
-	rows, err := s.Pool.Query(ctx, `SELECT g.component_id, c.purl_key, g.reason,
-		(SELECT count(DISTINCT asset_id) FROM inventory i WHERE i.component_id = g.component_id AND i.removed_at IS NULL), g.updated_at`+from+
-		fmt.Sprintf(` ORDER BY g.reason, c.purl_key LIMIT %d OFFSET %d`, p.Limit, p.Offset))
+	rows, err := s.Pool.Query(ctx, `SELECT i.component_id, c.purl_key, i.coverage_reason, count(DISTINCT i.asset_id),
+		COALESCE(max(i.evaluated_at), now()), max(i.coverage)`+from+`
+		GROUP BY i.component_id, c.purl_key, i.coverage_reason`+
+		fmt.Sprintf(` ORDER BY 3, 2 LIMIT %d OFFSET %d`, p.Limit, p.Offset))
 	if err != nil {
 		return nil, 0, err
 	}
