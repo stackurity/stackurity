@@ -44,11 +44,21 @@ func (s *Store) SetRiskPolicy(ctx context.Context, p risk.Policy) error {
 	return err
 }
 
+// effectiveExposure is an asset's internet exposure for risk: what an
+// operator set, else what a collector observed (the exposure attribute of a
+// Kubernetes workload), else, for an image, whether any current workload
+// deployed as it is exposed. NULL means unknown.
+const effectiveExposure = `COALESCE(a.internet_exposed,
+		CASE a.attributes->>'exposure' WHEN 'external' THEN true WHEN 'internal' THEN false END,
+		(SELECT bool_or(w.attributes->>'exposure' = 'external') FROM asset_relations r JOIN assets w ON w.id = r.from_asset
+		 WHERE r.to_asset = a.id AND r.kind = 'deployed_as' AND w.merged_into IS NULL AND w.collection_status <> 'stale'
+		   AND w.attributes->>'exposure' IN ('external', 'internal')))`
+
 // Prioritize recomputes priority, SOS and deadlines for every open finding.
 // Deadlines run from first detection; they move only when priority changes.
 func (s *Store) Prioritize(ctx context.Context, p risk.Policy, now time.Time) (int, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT f.id, f.kind, f.severity, f.score, COALESCE((f.evidence->>'known_exploited')::boolean, false),
-		a.internet_exposed, a.environment, a.criticality,
+		`+effectiveExposure+`, a.environment, a.criticality,
 		f.fixed_version <> '' AND NOT COALESCE((f.evidence->>'requires_ubuntu_pro')::boolean, false),
 		i.scope, f.verification, f.first_seen, COALESCE((f.evidence->>'not_running_kernel')::boolean, false),
 		f.priority, f.state, f.fix_due, f.acknowledged_at, f.priority_score

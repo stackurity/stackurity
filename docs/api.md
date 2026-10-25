@@ -29,14 +29,14 @@ Roles, from least to most access: `viewer` (read, including the audit log), `eng
 | `GET /collections/{id}/result` | collector (own submissions), engineer+ | Whether a submitted collection has been evaluated (`status`: `pending`, `evaluated`, `failed`), then the asset's open findings and its count of `evaluation_gaps`. Used by `stackurity scan --fail-on` |
 | `GET /overview` | viewer | Inventory, coverage and status counts |
 | `GET /search?q=&limit=` | viewer | Global search of the current workspace, see [Search](#search) |
-| `GET /assets?kind=&environment=&status=&owner_team_id=&q=&reboot_required=true` | viewer | List assets. `reboot_required=true` lists hosts that run older code than is installed |
+| `GET /assets?kind=&environment=&status=&owner_team_id=&q=&reboot_required=true&exposed=` | viewer | List assets. `reboot_required=true` lists hosts that run older code than is installed. `exposed=true` or `false` filters by `exposed`, the exposure risk scoring uses: `internet_exposed` when set by hand, else what a collector observed (a Kubernetes workload's `exposure`, or for an image the workloads deployed as it) |
 | `GET /assets/{id}` | viewer | Asset and identifiers |
 | `PATCH /assets/{id}` | engineer | Set name, environment, owner, criticality, exposure, tags |
 | `DELETE /assets/{id}` | admin | Delete an asset and its history |
 | `GET /assets/{id}/inventory?q=&type=&direct=&include_removed=` | viewer | Components on the asset, with evidence |
 | `GET /assets/{id}/coverage`, `/collections`, `/relations` | viewer | Coverage ledger, collection history, relations |
 | `POST`/`DELETE /assets/{id}/relations` | engineer | Add or remove `runs_on`, `built_from`, `deployed_as`, `contains`, `depends_on`, `replica_of` (a standby, staging or DR copy that should run the same versions as the target) |
-| `GET /assets/{id}/stack` | viewer | Everything the asset relies on, followed through relations, with open findings grouped by layer (`web_server`, `os`, `runtime`, `data_store`, `libraries`, `declared`, `managed_service`, `other`). For an application this is its hosts, repository, images and dependencies (up to three hops); for a host, the applications running on it; for a repository, its deployments and their hosts |
+| `GET /assets/{id}/stack` | viewer | Everything the asset relies on, followed through relations, with open findings grouped by layer (`web_server`, `os`, `runtime`, `data_store`, `libraries`, `declared`, `managed_service`, `platform`, `other`). For an application this is its hosts, repository, images and dependencies (up to three hops); for a host, the applications running on it; for a cluster, its workloads and their images; for an image, the workloads deployed as it; for a repository, its deployments and their hosts |
 | `GET /assets/{id}/drift?with=` | viewer | Components whose versions differ from another asset (`with`, or the asset this one is a `replica_of`). Each item is `behind`, `ahead`, `differs`, `only_here` or `only_there`, compared by the component's ecosystem rules |
 | `GET /assets/{id}/sbom` | viewer | CycloneDX 1.6 export |
 | `GET /components?q=&type=`, `GET /components/{id}` | viewer | Component explorer |
@@ -133,8 +133,10 @@ The single ingest contract for agents, scanners, SBOM imports and plugins. See [
 }
 ```
 
-- `relations` (optional) links the asset to others by identifier: `[{"kind": "runs_on", "to": [{"scheme": "machine-id", "value": "..."}]}]`. Kinds are `runs_on` and `built_from`. Targets the server does not know yet are skipped. When present, the list replaces the relations this collector reported before; relations added by hand are kept.
+- `relations` (optional) links the asset to others by identifier: `[{"kind": "runs_on", "to": [{"scheme": "machine-id", "value": "..."}]}]`. Kinds are `runs_on`, `built_from` and `deployed_as` (a Kubernetes workload to the image it runs). Targets the server does not know yet are skipped. When present, the list replaces the relations this collector reported before; relations added by hand are kept.
 - An application on a host is identified as `{"scheme": "app-path", "value": "/srv/shop"}`, its only identifier, with a `runs_on` relation to the host. The server scopes the path to that host, which must already exist. A host-bound token may only report applications on its own host, and plugins cannot use this scheme.
+- `asset.kind` is `host`, `repository`, `image`, `application`, `managed_service`, `sbom`, `cluster` or `workload`.
+- An asset attribute `exposure` of `external` or `internal` (set on Kubernetes workloads) is used as the asset's internet exposure for risk scoring unless an operator set it by hand. An image takes the exposure of the workloads deployed as it.
 - `complete: true` tells the server that this batch is the collector's whole view of the asset. Components missing from it are marked removed, and history is kept. Partial batches never remove anything.
 - `coverage[].status` is one of `checked`, `skipped`, `failed`, `unsupported` or `partial`.
 - Limits: 200,000 observations, 64 MiB on the wire, 256 MiB after decompression.

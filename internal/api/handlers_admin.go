@@ -8,6 +8,7 @@ import (
 	"github.com/stackurity/stackurity/internal/netguard"
 	"github.com/stackurity/stackurity/internal/secrets"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -241,6 +242,24 @@ const (
 type PluginConfig struct {
 	Plugin string          `json:"plugin"`
 	Config json.RawMessage `json:"config"`
+	// ImageScans bounds how many images the plugin reports (as image assets
+	// with an image-ref and no packages, like running Kubernetes images) are
+	// queued for the image scanner per run. Nil means the default; 0 turns
+	// scanning off.
+	ImageScans *int `json:"image_scans,omitempty"`
+}
+
+const (
+	DefaultImageScans = 25
+	MaxImageScans     = 500
+)
+
+// ImageScanLimit is the number of image scans one run may queue.
+func (c PluginConfig) ImageScanLimit() int {
+	if c.ImageScans == nil {
+		return DefaultImageScans
+	}
+	return *c.ImageScans
 }
 
 type integrationRequest struct {
@@ -487,6 +506,9 @@ func (s *Server) facets(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) validatePluginConfig(c PluginConfig) error {
+	if c.ImageScans != nil && (*c.ImageScans < 0 || *c.ImageScans > MaxImageScans) {
+		return errors.New("image_scans must be between 0 and " + strconv.Itoa(MaxImageScans))
+	}
 	if s.Plugins == nil {
 		return errors.New("plugins are not enabled on this server (set STACKURITY_PLUGIN_DIR)")
 	}
