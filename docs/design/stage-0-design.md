@@ -123,7 +123,7 @@ type Adapter interface {
 
 - **Container images use Syft, not Trivy, for inventory.** Syft builds a CycloneDX SBOM straight from the registry and needs no vulnerability database. Stackurity's own OSV matcher then evaluates it like every other source. Syft is pinned and checksum-verified in the image.
 - **Matching runs on our own OSV engine.** The comparators follow each ecosystem's rules: semver, Composer, dpkg, rpm, apk, PEP 440 and RubyGems. A Trivy or Grype second opinion (FR-15) is still possible later through SBOM import or a plugin.
-- **Severity:** CVSS v3 is scored locally. When the score and the vendor label disagree, the higher one wins, because some advisories carry an all-"None" v3 vector next to a HIGH rating.
+- **Severity:** CVSS v3 and v4 are scored locally (v4 as in the FIRST reference calculator, with threat and environmental metrics when the vector carries them). When scores and the vendor label disagree, the higher one wins, because some advisories carry an all-"None" v3 vector next to a HIGH rating, and under-rating is the more dangerous error. Of a v3 and a v4 score at the same level, the higher score is kept.
 - **Advisory grouping** uses the lowest CVE found in an advisory's id, aliases and upstream fields, so GHSA, OSV, DSA and DEBIAN-CVE records for one issue become one finding.
 - **Risk defaults were calibrated on live data.** P1 starts at a score of 12. SOS needs known exploitation in production, or a critical score on an exposed production asset. The earlier "P1 with a fix" rule paged on every high-severity issue of an exposed critical app.
 - **Incidents follow ownership changes** instead of resolving and reopening.
@@ -150,5 +150,4 @@ Still open (see README, "Known limitations"):
 - OIDC/SAML
 - RHEL and SUSE advisory feeds
 - Maven and Gradle
-- CVSS v4 scoring
 - trademark screening and copyright-holder decision

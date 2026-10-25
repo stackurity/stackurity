@@ -2,6 +2,16 @@
 
 All notable changes to Stackurity. Versions follow [Semantic Versioning](https://semver.org/); before 1.0, a minor version can change behaviour, and the notes say when it does.
 
+## Unreleased
+
+### Added
+
+- **CVSS v4.0 scoring.** v4 vectors are scored locally, as the FIRST reference calculator does, including threat (E) and environmental metrics when the vector has them. Advisories that have only a v4 vector now get a score, with severity source `cvss_v4`; the vendor label is used only when it rates higher. When an advisory has both, the higher rating wins, as between a score and a label.
+
+### Upgrading
+
+Migration 0017 makes the next sync of each OSV feed download its full archive once, so stored advisories are rated with their v4 vectors.
+
 ## 0.2.0
 
 ### Added
