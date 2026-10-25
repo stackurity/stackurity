@@ -175,7 +175,7 @@ When a suppression or risk acceptance expires, the finding returns to `new` and 
 
 ## Priority and SOS
 
-Every open finding gets a priority from P1 to P4. The score is built from the CVSS score (or the severity when there is none), CISA KEV, internet exposure (unknown exposure counts a little), production environment, asset criticality, fix availability, whether it is overdue, and dev-only scope. It is then scaled down for unverified or stale evidence. `priority_factors` lists each contribution. Weights, thresholds and per-priority deadlines are configured in `/risk-policy`.
+Every open finding gets a priority from P1 to P4. The score is built from the CVSS score (CVSS v3.x or v4.0, whichever rates the advisory higher; `severity_source` on the advisory says which) or the severity when there is none, CISA KEV, internet exposure (unknown exposure counts a little), production environment, asset criticality, fix availability, whether it is overdue, and dev-only scope. It is then scaled down for unverified or stale evidence. `priority_factors` lists each contribution. Weights, thresholds and per-priority deadlines are configured in `/risk-policy`.
 
 SOS rules are conditions over the same inputs. A rule based only on severity is rejected. Only confirmed findings can trigger SOS.
 
