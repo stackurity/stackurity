@@ -95,21 +95,55 @@ var blocked = func() []netip.Prefix {
 
 // CheckIP returns ErrBlocked when ctx's workspace may not connect to ip.
 func CheckIP(ctx context.Context, ip netip.Addr) error {
+	return PolicyFor(ctx).CheckIP(ip)
+}
+
+// Policy is the rule for one workspace in a form that can be handed to a
+// process dialling on its behalf (a plugin), which has no workspace context
+// of its own.
+type Policy struct {
+	AllowPrivate bool           `json:"allow_private"`
+	Allowed      []netip.Prefix `json:"allowed_cidrs,omitempty"`
+}
+
+// PolicyFor returns the policy that applies to ctx's workspace.
+func PolicyFor(ctx context.Context) Policy {
+	return Policy{AllowPrivate: AllowsPrivate(ctx), Allowed: current.Allowed}
+}
+
+// CheckIP returns ErrBlocked when the policy does not allow connecting to ip.
+func (p Policy) CheckIP(ip netip.Addr) error {
 	ip = ip.Unmap()
-	if AllowsPrivate(ctx) {
+	if p.AllowPrivate {
 		return nil
 	}
-	for _, p := range current.Allowed {
-		if p.Contains(ip) {
+	for _, a := range p.Allowed {
+		if a.Contains(ip) {
 			return nil
 		}
 	}
-	for _, p := range blocked {
-		if p.Contains(ip) {
+	for _, b := range blocked {
+		if b.Contains(ip) {
 			return fmt.Errorf("%w (%s)", ErrBlocked, ip)
 		}
 	}
 	return nil
+}
+
+// DialContext dials like net.Dialer, refusing addresses the policy blocks
+// at connect time (so DNS rebinding is caught too).
+func (p Policy) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	d := &net.Dialer{
+		Timeout: 15 * time.Second,
+		Control: func(_, address string, _ syscall.RawConn) error {
+			ap, err := netip.ParseAddrPort(address)
+			if err != nil {
+				return err
+			}
+			return p.CheckIP(ap.Addr())
+		},
+	}
+	return d.DialContext(ctx, network, addr)
 }
 
 // Resolve looks host up and returns its addresses, failing if any of them is
@@ -134,15 +168,5 @@ func Resolve(ctx context.Context, host string) ([]netip.Addr, error) {
 // time. Use it as an http.Transport's DialContext; the request's context
 // carries the workspace.
 func DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
-	d := &net.Dialer{
-		Timeout: 15 * time.Second,
-		Control: func(_, address string, _ syscall.RawConn) error {
-			ap, err := netip.ParseAddrPort(address)
-			if err != nil {
-				return err
-			}
-			return CheckIP(ctx, ap.Addr())
-		},
-	}
-	return d.DialContext(ctx, network, addr)
+	return PolicyFor(ctx).DialContext(ctx, network, addr)
 }

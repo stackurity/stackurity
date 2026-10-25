@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stackurity/stackurity/internal/tenant"
 )
 
 // buildExample compiles the json-endpoint example plugin into dir.
@@ -119,5 +121,22 @@ cat >/dev/null; echo '{"protocol_version":"1","batches":[{"schema_version":"1","
 	}
 	if _, _, err := r.Collect(ctx, "badbatch", json.RawMessage(`{}`), nil); err == nil || !strings.Contains(err.Error(), "purl") {
 		t.Errorf("invalid batch accepted: %v", err)
+	}
+}
+
+// A plugin is told the network policy of the workspace it runs for, so it
+// can refuse internal targets taken from its config.
+func TestCollectSendsNetworkPolicy(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell scripts")
+	}
+	dir := t.TempDir()
+	meta := `{"protocol_version":"1","metadata":{"id":"net","name":"n","version":"1","maintainer":"m","license":"MIT","schema_version":"1","permissions":[],"network_access":[],"known_limitations":[]}}`
+	script(t, dir, "net", `if [ "$1" = metadata ]; then echo '`+meta+`'; exit 0; fi
+if grep -q '"network":{"allow_private":false}'; then echo '{"protocol_version":"1","batches":[]}'; else echo '{"protocol_version":"1","error":"no policy"}'; fi`)
+	r := &Runner{Dir: dir, WorkDir: t.TempDir(), Timeout: 5 * time.Second}
+	ctx := tenant.WithWorkspace(context.Background(), 2) // not the operator's workspace
+	if _, _, err := r.Collect(ctx, "net", json.RawMessage(`{}`), nil); err != nil {
+		t.Errorf("policy not sent: %v", err)
 	}
 }

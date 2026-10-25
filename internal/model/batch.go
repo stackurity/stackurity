@@ -17,11 +17,15 @@ const (
 	AssetApplication    AssetKind = "application"
 	AssetManagedService AssetKind = "managed_service"
 	AssetSBOM           AssetKind = "sbom"
+	// A Kubernetes cluster, and a workload in it (a Deployment, StatefulSet,
+	// DaemonSet, CronJob, Job or bare Pod).
+	AssetCluster  AssetKind = "cluster"
+	AssetWorkload AssetKind = "workload"
 )
 
 func (k AssetKind) Valid() bool {
 	switch k {
-	case AssetHost, AssetRepository, AssetImage, AssetApplication, AssetManagedService, AssetSBOM:
+	case AssetHost, AssetRepository, AssetImage, AssetApplication, AssetManagedService, AssetSBOM, AssetCluster, AssetWorkload:
 		return true
 	}
 	return false
@@ -96,7 +100,7 @@ const AppPathScheme = "app-path"
 // identifiers (e.g. a host by machine-id, a repository by git-url). The
 // server ignores a relation whose target it does not know yet.
 type RelationRef struct {
-	Kind string       `json:"kind"` // runs_on, built_from
+	Kind string       `json:"kind"` // runs_on, built_from, deployed_as
 	To   []Identifier `json:"to"`
 }
 
