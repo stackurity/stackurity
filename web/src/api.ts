@@ -674,13 +674,39 @@ export interface SearchTeam {
   open_findings: number;
 }
 
+/** A finding key whose open findings have a title matching the search. */
+export interface SearchFinding {
+  key: string;
+  kind: "vulnerability" | "end_of_life" | string;
+  title: string;
+  rank: SearchRank;
+  severity: string;
+  score: number | null;
+  open_findings: number;
+  affected_assets: number;
+  assets: SearchRef[];
+}
+
+/** A member of the current workspace; only returned to engineers and above. */
+export interface SearchMember {
+  id: number;
+  name: string;
+  email: string;
+  role: Role;
+  disabled: boolean;
+  rank: SearchRank;
+  open_assigned: number;
+}
+
 export interface SearchResults {
   query: string;
   vulnerabilities: SearchVuln[];
+  findings: SearchFinding[];
   assets: SearchAsset[];
   components: SearchComponent[];
   teams: SearchTeam[];
-  more: Partial<Record<"vulnerabilities" | "assets" | "components" | "teams", boolean>>;
+  members: SearchMember[];
+  more: Partial<Record<"vulnerabilities" | "findings" | "assets" | "components" | "teams" | "members", boolean>>;
 }
 
 export const SEARCH_MIN_LENGTH = 2;
