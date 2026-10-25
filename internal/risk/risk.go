@@ -186,15 +186,48 @@ type Input struct {
 	Score           *float32 // CVSS base score when known
 	KnownExploited  bool
 	InternetExposed *bool
-	Environment     string // "" when the asset has none
-	Criticality     string // "" is treated as "unknown"
-	FixAvailable    bool
-	Overdue         bool
-	Scope           string // runtime, dev, os
-	Verification    string
+	// ExposureSource says where InternetExposed came from (Exposure*
+	// constants), so the explanation names the evidence.
+	ExposureSource string
+	Environment    string // "" when the asset has none
+	Criticality    string // "" is treated as "unknown"
+	FixAvailable   bool
+	Overdue        bool
+	Scope          string // runtime, dev, os
+	Verification   string
 	// KernelNotRunning: the package belongs to an installed kernel that is
 	// not the running one, so nothing is exposed until it is booted.
 	KernelNotRunning bool
+}
+
+// Where an asset's exposure came from.
+const (
+	ExposureOperator  = "operator"  // set by hand on the asset
+	ExposureCollector = "collector" // reported by the asset's collector (a Kubernetes workload)
+	ExposureWorkloads = "workloads" // an image, from the current workloads deployed as it
+)
+
+func exposureDetail(exposed *bool, source string) string {
+	switch {
+	case exposed == nil && source == ExposureCollector:
+		return "its collector could not decide exposure (e.g. Kubernetes Services or Ingresses unreadable)"
+	case exposed == nil && source == ExposureWorkloads:
+		return "a running workload deployed as this image has unknown exposure"
+	case exposed == nil:
+		return "asset exposure not recorded"
+	case source == ExposureOperator:
+		return "marked internet exposed on the asset"
+	case source == ExposureCollector:
+		return "its collector reports it reachable from outside (e.g. a LoadBalancer or NodePort Service, an Ingress)"
+	case source == ExposureWorkloads:
+		return "a running workload deployed as this image is reachable from outside"
+	}
+	return "asset is reachable from the internet"
+}
+
+var verificationDetail = map[string]string{
+	"needs_validation": "installed version not confirmed",
+	"stale":            "asset has not reported recently",
 }
 
 type Factor struct {
@@ -242,19 +275,21 @@ func (p Policy) Evaluate(in Input) Result {
 		add("CVSS base score", float64(*in.Score), fmt.Sprintf("CVSS %.1f", *in.Score))
 	default:
 		base, ok := p.SeverityBase[in.Severity]
-		if !ok {
+		detail := "advisory severity " + in.Severity + ", no CVSS score"
+		if !ok || in.Severity == "unknown" {
 			base = p.SeverityBase["unknown"]
+			detail = "no severity or CVSS score published; scored as unknown"
 		}
-		add("Severity", base, "advisory severity "+in.Severity)
+		add("Severity", base, detail)
 	}
 	if in.KnownExploited {
 		add("Known exploited", p.KnownExploited, "listed in CISA KEV")
 	}
 	switch {
 	case in.InternetExposed == nil:
-		add("Exposure unknown", p.ExposureUnknown, "asset exposure not recorded")
+		add("Exposure unknown", p.ExposureUnknown, exposureDetail(nil, in.ExposureSource))
 	case *in.InternetExposed:
-		add("Internet exposed", p.InternetExposed, "asset is reachable from the internet")
+		add("Internet exposed", p.InternetExposed, exposureDetail(in.InternetExposed, in.ExposureSource))
 	}
 	production := p.IsProduction(in.Environment)
 	envUnknown := strings.TrimSpace(in.Environment) == ""
@@ -295,7 +330,8 @@ func (p Policy) Evaluate(in Input) Result {
 	if mul != 1 && r.Score > 0 {
 		before := r.Score
 		r.Score *= mul
-		r.Factors = append(r.Factors, Factor{"Evidence confidence", r.Score - before, fmt.Sprintf("%s: ×%.2f", in.Verification, mul)})
+		r.Factors = append(r.Factors, Factor{"Evidence confidence", r.Score - before,
+			fmt.Sprintf("%s (%s): ×%.2f", in.Verification, verificationDetail[in.Verification], mul)})
 	}
 	r.Score = math.Round(r.Score*10) / 10
 	switch {

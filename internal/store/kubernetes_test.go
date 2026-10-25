@@ -178,7 +178,8 @@ func TestKubernetesExposureFeedsRisk(t *testing.T) {
 	if err != nil || len(fs) != 1 {
 		t.Fatal(err, fs)
 	}
-	if !strings.Contains(string(fs[0].PriorityFactors), "Internet exposed") {
+	if !strings.Contains(string(fs[0].PriorityFactors), "Internet exposed") ||
+		!strings.Contains(string(fs[0].PriorityFactors), "workload deployed as this image is reachable") {
 		t.Errorf("factors = %s", fs[0].PriorityFactors)
 	}
 }

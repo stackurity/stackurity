@@ -57,11 +57,21 @@ const effectiveExposure = `COALESCE(a.internet_exposed,
 		 FROM asset_relations r JOIN assets w ON w.id = r.from_asset
 		 WHERE r.to_asset = a.id AND r.kind = 'deployed_as' AND w.merged_into IS NULL AND w.collection_status <> 'stale'))`
 
+// exposureSource says which of effectiveExposure's sources applies, for the
+// explanation: risk.ExposureOperator, ExposureCollector, ExposureWorkloads, or
+// empty when nothing recorded it.
+const exposureSource = `CASE WHEN a.internet_exposed IS NOT NULL THEN 'operator'
+		WHEN a.attributes->>'exposure' IN ('external', 'internal') THEN 'collector'
+		WHEN EXISTS (SELECT 1 FROM asset_relations r JOIN assets w ON w.id = r.from_asset
+		  WHERE r.to_asset = a.id AND r.kind = 'deployed_as' AND w.merged_into IS NULL AND w.collection_status <> 'stale') THEN 'workloads'
+		WHEN a.attributes->>'exposure' IS NOT NULL THEN 'collector'
+		ELSE '' END`
+
 // Prioritize recomputes priority, SOS and deadlines for every open finding.
 // Deadlines run from first detection; they move only when priority changes.
 func (s *Store) Prioritize(ctx context.Context, p risk.Policy, now time.Time) (int, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT f.id, f.kind, f.severity, f.score, COALESCE((f.evidence->>'known_exploited')::boolean, false),
-		`+effectiveExposure+`, a.environment, a.criticality,
+		`+effectiveExposure+`, `+exposureSource+`, a.environment, a.criticality,
 		f.fixed_version <> '' AND NOT COALESCE((f.evidence->>'requires_ubuntu_pro')::boolean, false),
 		i.scope, f.verification, f.first_seen, COALESCE((f.evidence->>'not_running_kernel')::boolean, false),
 		f.priority, f.state, f.fix_due, f.acknowledged_at, f.priority_score
@@ -86,7 +96,7 @@ func (s *Store) Prioritize(ctx context.Context, p risk.Policy, now time.Time) (i
 			fixDue, ackedAt *time.Time
 			oldScore        float32
 		)
-		if err := rows.Scan(&id, &in.Kind, &in.Severity, &in.Score, &in.KnownExploited, &in.InternetExposed, &in.Environment,
+		if err := rows.Scan(&id, &in.Kind, &in.Severity, &in.Score, &in.KnownExploited, &in.InternetExposed, &in.ExposureSource, &in.Environment,
 			&in.Criticality, &in.FixAvailable, &in.Scope, &in.Verification, &firstSeen, &in.KernelNotRunning, &oldPri, &state, &fixDue, &ackedAt, &oldScore); err != nil {
 			rows.Close()
 			return 0, err
