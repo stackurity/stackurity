@@ -23,6 +23,7 @@ const (
 	PEP440   Ecosystem = "pep440"   // PyPI
 	RubyGems Ecosystem = "rubygems" // RubyGems
 	Maven    Ecosystem = "maven"    // Maven Central and Gradle
+	NuGet    Ecosystem = "nuget"    // NuGet
 	Generic  Ecosystem = "generic"
 )
 
@@ -44,6 +45,8 @@ func For(e Ecosystem) Comparator {
 		return CompareRubyGems
 	case Maven:
 		return CompareMaven
+	case NuGet:
+		return CompareNuGet
 	}
 	return CompareGeneric
 }
@@ -59,6 +62,8 @@ func ForPurlType(t string) Ecosystem {
 		return RubyGems
 	case "maven":
 		return Maven
+	case "nuget":
+		return NuGet
 	case "composer":
 		return Composer
 	case "deb":
