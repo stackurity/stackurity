@@ -6,6 +6,7 @@ import { useAction, useLoad } from "../hooks";
 import { humanize } from "../format";
 import { Badge, Chip, EscalationBadge, KevBadge, PriorityBadge, SosBadge, StateBadge } from "../components/Badge";
 import { FindingsTable } from "../components/Findings";
+import { IssueLinks } from "../components/IssueLinks";
 import { Table, type Column } from "../components/Table";
 import { FindingActions } from "../components/Workflow";
 import { Card, ErrorBox, KeyValues, Loading, Notice, PageHeader, RelativeTime } from "../components/ui";
@@ -207,6 +208,7 @@ export function IncidentDetailPage() {
               ["owner team", inc.owner_team || <span className="muted">unowned (no team on the assets)</span>],
               ["opened", <RelativeTime iso={inc.created_at} />],
               ["updated", <RelativeTime iso={inc.updated_at} />],
+              ["issue", <IssueLinks issues={inc.issues} />],
               [
                 "last notified",
                 inc.notified_at ? (

@@ -558,6 +558,35 @@ func TestChannelSecretClearAndDirectory(t *testing.T) {
 	}
 }
 
+func TestJiraChannelAPI(t *testing.T) {
+	e := newEnv(t)
+	e.user("admin@x.io", auth.RoleAdmin)
+	e.instanceAdmin("admin@x.io")
+	admin := e.login("admin@x.io")
+	cfg := map[string]any{"url": "https://acme.atlassian.net", "username": "bot@acme.io", "project": "SEC",
+		"labels": []string{"security"}, "priorities": map[string]string{"P1": "Highest"}, "resolve_transition": "Done"}
+	if code := admin.do("POST", "/api/v1/channels", map[string]any{"kind": "jira", "name": "j", "config": cfg}, nil); code != 400 {
+		t.Errorf("jira without a token: %d", code)
+	}
+	var ch store.Channel
+	if code := admin.do("POST", "/api/v1/channels", map[string]any{"kind": "jira", "name": "j", "config": cfg,
+		"secret_ref": "env:STACKURITY_SECRET_JIRA"}, &ch); code != 201 || ch.Kind != "jira" || !strings.Contains(string(ch.Config), `"project":"SEC"`) {
+		t.Fatalf("create: %d %+v", code, ch)
+	}
+	if code := admin.do("PATCH", "/api/v1/channels/"+itoa(ch.ID), map[string]any{"secret_ref": ""}, nil); code != 400 {
+		t.Errorf("removing the jira token: %d", code)
+	}
+	for _, bad := range []map[string]any{
+		{"url": "https://acme.atlassian.net", "project": "SEC"}, // cloud needs the account email
+		{"url": "https://acme.atlassian.net", "username": "bot@acme.io", "project": "SEC", "priorities": map[string]string{"P9": "x"}},
+		{"url": "https://acme.atlassian.net", "username": "bot@acme.io", "project": "SEC", "token": "inline"},
+	} {
+		if code := admin.do("PATCH", "/api/v1/channels/"+itoa(ch.ID), map[string]any{"config": bad}, nil); code != 400 {
+			t.Errorf("invalid config %v: %d", bad, code)
+		}
+	}
+}
+
 func TestChangeOwnPassword(t *testing.T) {
 	e := newEnv(t)
 	e.user("u@x.io", auth.RoleViewer)

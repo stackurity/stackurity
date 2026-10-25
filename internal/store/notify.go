@@ -266,12 +266,18 @@ func (s *Store) DeliverySent(ctx context.Context, id int64) error {
 // DeliveryFailed schedules a retry of a claimed delivery with backoff, or
 // marks it failed once attempts (counted by ClaimDelivery) reach maxAttempts.
 func (s *Store) DeliveryFailed(ctx context.Context, id int64, attempts, maxAttempts int, sendErr error) error {
+	return s.DeliveryFailedWait(ctx, id, attempts, maxAttempts, sendErr, 0)
+}
+
+// DeliveryFailedWait is DeliveryFailed with a least wait before the retry,
+// such as a receiver's Retry-After.
+func (s *Store) DeliveryFailedWait(ctx context.Context, id int64, attempts, maxAttempts int, sendErr error, wait time.Duration) error {
 	msg := truncateText(sendErr.Error(), 1000)
 	if attempts >= maxAttempts {
 		_, err := s.Pool.Exec(ctx, `UPDATE deliveries SET status = 'failed', last_error = $2 WHERE id = $1`, id, msg)
 		return err
 	}
-	backoff := time.Duration(1<<min(max(attempts-1, 0), 8)) * 30 * time.Second
+	backoff := max(time.Duration(1<<min(max(attempts-1, 0), 8))*30*time.Second, wait)
 	_, err := s.Pool.Exec(ctx, `UPDATE deliveries SET last_error = $2,
 		next_attempt = now() + make_interval(secs => $3) WHERE id = $1`, id, msg, backoff.Seconds())
 	return err

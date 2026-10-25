@@ -857,6 +857,15 @@ export interface Incident {
   notified_priority: string;
   notified_at: string | null;
   escalation_level: number;
+  /** Tracker issues (Jira) that follow this incident. */
+  issues?: IssueRef[] | null;
+}
+
+export interface IssueRef {
+  tracker: string;
+  key: string;
+  url: string;
+  channel_id: number | null;
 }
 
 export interface Delivery {
@@ -883,7 +892,7 @@ export interface IncidentResponse {
   deliveries?: Delivery[] | null;
 }
 
-export const CHANNEL_KINDS = ["email", "slack", "teams", "webhook"] as const;
+export const CHANNEL_KINDS = ["email", "slack", "teams", "webhook", "jira"] as const;
 export type ChannelKind = (typeof CHANNEL_KINDS)[number];
 
 export interface ChannelConfig {
@@ -894,6 +903,13 @@ export interface ChannelConfig {
   to?: string[];
   tls?: "starttls" | "tls" | "none" | "";
   url?: string;
+  // jira (url is the site's base URL, username the Cloud account email)
+  deployment?: "cloud" | "datacenter" | "";
+  project?: string;
+  issue_type?: string;
+  labels?: string[];
+  priorities?: Partial<Record<Priority, string>>;
+  resolve_transition?: string;
 }
 
 export interface Channel {

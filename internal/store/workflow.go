@@ -308,6 +308,9 @@ type Incident struct {
 	NotifiedPriority string          `json:"notified_priority"`
 	NotifiedAt       *time.Time      `json:"notified_at"`
 	EscalationLevel  int             `json:"escalation_level"`
+	// Issues are the tracker issues (Jira) that follow this incident; only
+	// ListIncidents and GetIncident fill them.
+	Issues []IssueRef `json:"issues,omitempty" db:"-"`
 }
 
 const incidentCols = `i.id, i.kind, i.key, i.owner_team_id, COALESCE(t.name, ''), i.title, i.priority, i.sos, i.status, i.state,
@@ -562,7 +565,21 @@ func (s *Store) ListIncidents(ctx context.Context, f IncidentFilter) ([]Incident
 		return nil, 0, err
 	}
 	out, err := pgx.CollectRows(rows, pgx.RowToStructByPos[Incident])
-	return out, total, err
+	if err != nil {
+		return nil, 0, err
+	}
+	ids := make([]int64, len(out))
+	for i := range out {
+		ids[i] = out[i].ID
+	}
+	refs, err := s.issueRefs(ctx, ids)
+	if err != nil {
+		return nil, 0, err
+	}
+	for i := range out {
+		out[i].Issues = refs[out[i].ID]
+	}
+	return out, total, nil
 }
 
 func (s *Store) GetIncident(ctx context.Context, id int64) (*Incident, error) {
@@ -571,7 +588,15 @@ func (s *Store) GetIncident(ctx context.Context, id int64) (*Incident, error) {
 		return nil, err
 	}
 	in, err := pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByPos[Incident])
-	return in, notFound(err)
+	if err != nil {
+		return nil, notFound(err)
+	}
+	refs, err := s.issueRefs(ctx, []int64{id})
+	if err != nil {
+		return nil, err
+	}
+	in.Issues = refs[id]
+	return in, nil
 }
 
 // IncidentFindingIDs returns the open findings in an incident.
