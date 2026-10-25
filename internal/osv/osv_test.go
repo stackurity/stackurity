@@ -16,6 +16,9 @@ func TestTargetFor(t *testing.T) {
 	}{
 		{"pkg:npm/%40babel/core@7.23.0", "", nil, "npm", "@babel/core", true},
 		{"pkg:composer/laravel/framework@10.48.4", "", nil, "Packagist", "laravel/framework", true},
+		{"pkg:pypi/Django@4.2.0", "", nil, "PyPI", "django", true},
+		{"pkg:pypi/typing_extensions@4.9.0", "", nil, "PyPI", "typing-extensions", true},
+		{"pkg:pypi/zope.interface@6.1", "", nil, "PyPI", "zope-interface", true},
 		{"pkg:deb/debian/libssl3@3.0.11-1~deb12u2?arch=amd64&distro=debian-12&upstream=openssl", "", nil, "Debian:12", "openssl", true},
 		{"pkg:deb/ubuntu/libc6@2.35-0ubuntu3?distro=ubuntu-22.04&upstream=glibc", "", nil, "Ubuntu:22.04", "glibc", true},
 		{"pkg:apk/alpine/libcrypto3@3.1.4-r5?distro=alpine-3.19.1&upstream=openssl", "", nil, "Alpine:v3.19", "openssl", true},

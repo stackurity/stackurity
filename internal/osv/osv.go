@@ -104,7 +104,9 @@ func TargetFor(purl, ver string, evidence map[string]string) (Target, bool) {
 	case "composer":
 		t.Ecosystem, t.Name = "Packagist", joinNS(p.Namespace, p.Name)
 	case "pypi":
-		t.Ecosystem, t.Name = "PyPI", p.Name
+		// OSV uses PEP 503 normalised names; SBOMs and other tools do not
+		// always ("Django", "typing_extensions").
+		t.Ecosystem, t.Name = "PyPI", strings.ToLower(pypiSeparators.ReplaceAllString(p.Name, "-"))
 	case "golang":
 		t.Ecosystem, t.Name = "Go", joinNS(p.Namespace, p.Name)
 		if t.Name == "stdlib" {
@@ -216,6 +218,8 @@ func TargetFor(purl, ver string, evidence map[string]string) (Target, bool) {
 	}
 	return t, t.Name != "" && t.Version != ""
 }
+
+var pypiSeparators = regexp.MustCompile(`[-_.]+`)
 
 func joinNS(ns, name string) string {
 	if ns == "" {
