@@ -408,6 +408,15 @@ func (s *Store) SyncFindings(ctx context.Context, kinds []string, inventoryIDs [
 				"fixed_version", "sources", "evidence"}, pgx.CopyFromRows(rows)); err != nil {
 			return err
 		}
+		// Findings detected again after being resolved are recorded before
+		// the upsert reopens them, with the resolution they had.
+		if _, err := tx.Exec(ctx, `INSERT INTO finding_events (workspace_id, finding_id, actor_type, actor_name, action, note, detail)
+			SELECT f.workspace_id, f.id, 'system', 'matcher', 'reopened', 'detected again after it was resolved',
+			  jsonb_build_object('resolved_at', f.resolved_at, 'resolution', f.resolution)
+			FROM findings f JOIN want_findings w ON w.inventory_id = f.inventory_id AND w.kind = f.kind AND w.key = f.key
+			WHERE f.status = 'resolved'`); err != nil {
+			return err
+		}
 		tag, err := tx.Exec(ctx, `INSERT INTO findings AS f (kind, key, inventory_id, asset_id, component_id, verification, severity,
 			score, title, fixed_version, sources, evidence)
 			SELECT kind, key, inventory_id, asset_id, component_id, verification, severity, score, title, fixed_version, sources, evidence
@@ -425,11 +434,12 @@ func (s *Store) SyncFindings(ctx context.Context, kinds []string, inventoryIDs [
 			return err
 		}
 		opened = tag.RowsAffected()
-		tag, err = tx.Exec(ctx, `UPDATE findings f SET status = 'resolved', resolved_at = now(),
+		tag, err = tx.Exec(ctx, `WITH r AS (UPDATE findings f SET status = 'resolved', resolved_at = now(),
 			resolution = 'no longer affected (re-evaluated ' || to_char(now(), 'YYYY-MM-DD') || ')'
 			WHERE f.status = 'open' AND f.kind = ANY($1) AND f.inventory_id = ANY($2)
-			AND NOT EXISTS (SELECT 1 FROM want_findings w WHERE w.inventory_id = f.inventory_id AND w.kind = f.kind AND w.key = f.key)`,
-			kinds, inventoryIDs)
+			AND NOT EXISTS (SELECT 1 FROM want_findings w WHERE w.inventory_id = f.inventory_id AND w.kind = f.kind AND w.key = f.key)
+			RETURNING f.workspace_id, f.id, f.resolution)
+			`+resolvedEvents, kinds, inventoryIDs)
 		if err != nil {
 			return err
 		}
@@ -442,7 +452,7 @@ func (s *Store) SyncFindings(ctx context.Context, kinds []string, inventoryIDs [
 // ResolveRemovedFindings closes findings whose inventory row is gone, saying
 // why: fixed by a remediation plan, upgraded to another version, or removed.
 func (s *Store) ResolveRemovedFindings(ctx context.Context) (int64, error) {
-	tag, err := s.Pool.Exec(ctx, `UPDATE findings f SET status = 'resolved', resolved_at = now(),
+	tag, err := s.Pool.Exec(ctx, `WITH r AS (UPDATE findings f SET status = 'resolved', resolved_at = now(),
 		resolution = COALESCE(
 		  (SELECT 'fixed by remediation plan #' || ra.plan_id || ' (upgraded to ' || ra.to_version || ')'
 		     FROM remediation_actions ra WHERE ra.inventory_id = f.inventory_id AND ra.status = 'verified'
@@ -451,9 +461,16 @@ func (s *Store) ResolveRemovedFindings(ctx context.Context) (int64, error) {
 		     WHERE cur.asset_id = f.asset_id AND cur.component_id = f.component_id AND cur.removed_at IS NULL
 		     ORDER BY cur.last_seen DESC LIMIT 1),
 		  'component no longer installed')
-		FROM inventory i WHERE i.id = f.inventory_id AND f.status = 'open' AND i.removed_at IS NOT NULL`)
+		FROM inventory i WHERE i.id = f.inventory_id AND f.status = 'open' AND i.removed_at IS NOT NULL
+		RETURNING f.workspace_id, f.id, f.resolution)
+		`+resolvedEvents)
 	return tag.RowsAffected(), err
 }
+
+// resolvedEvents records one 'resolved' event per row of r, the findings an
+// UPDATE ... RETURNING workspace_id, id, resolution just resolved.
+const resolvedEvents = `INSERT INTO finding_events (workspace_id, finding_id, actor_type, actor_name, action, note)
+	SELECT workspace_id, id, 'system', 'matcher', 'resolved', resolution FROM r`
 
 // SetEvaluationGaps records which components no source could evaluate. Gaps
 // are a property of the component, shared by every workspace that has it.
