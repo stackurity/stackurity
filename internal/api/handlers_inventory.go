@@ -165,6 +165,11 @@ func (s *Server) listAssets(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	f := store.AssetFilter{Kind: q.Get("kind"), Environment: q.Get("environment"), OwnerTeamID: qInt(r, "owner_team_id"),
 		Status: q.Get("status"), Search: q.Get("q"), RebootRequired: q.Get("reboot_required") == "true", Page: page(r)}
+	switch q.Get("exposed") {
+	case "true", "false":
+		v := q.Get("exposed") == "true"
+		f.Exposed = &v
+	}
 	items, total, err := s.Store.ListAssets(r.Context(), f)
 	if err != nil {
 		s.fail(w, r, err)

@@ -36,8 +36,8 @@ type setupRequest struct {
 // setup creates the first admin. It requires the one-time setup token from
 // the server log so whoever reaches a fresh install first cannot claim it.
 func (s *Server) setup(w http.ResponseWriter, r *http.Request) {
-	if !s.limiter.allow("setup:" + clientIP(r)) {
-		writeError(w, 429, "rate_limited", "too many attempts")
+	if s.limited(w, r, "too many attempts", limitHit{"setup", clientIP(r), limitPerAddress},
+		limitHit{"setup-total", "", limitSetupTotal}) {
 		return
 	}
 	var req setupRequest
@@ -68,13 +68,18 @@ type loginRequest struct {
 }
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
-	if !s.limiter.allow("login:" + clientIP(r)) {
-		writeError(w, 429, "rate_limited", "too many login attempts; wait a minute")
+	if s.limited(w, r, "too many login attempts; wait a minute", limitHit{"login", clientIP(r), limitPerAddress}) {
 		return
 	}
 	var req loginRequest
 	if err := decode(r, &req); err != nil {
 		s.fail(w, r, err)
+		return
+	}
+	// Guessing one account's password from many addresses is limited per
+	// account, whether or not the account exists.
+	account := strings.ToLower(strings.TrimSpace(req.Email))
+	if s.limited(w, r, "too many login attempts for this account; wait a few minutes", limitHit{"login-account", account, limitPerAccount}) {
 		return
 	}
 	u, err := s.Store.Authenticate(r.Context(), req.Email, req.Password)
@@ -266,8 +271,8 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 403, "forbidden", "sign in with a session to change your password")
 		return
 	}
-	if !s.limiter.allow("password:" + clientIP(r)) {
-		writeError(w, 429, "rate_limited", "too many attempts")
+	if s.limited(w, r, "too many attempts", limitHit{"password", clientIP(r), limitPerAddress},
+		limitHit{"password-user", itoa(p.User.ID), limitPerAccount}) {
 		return
 	}
 	var req struct {

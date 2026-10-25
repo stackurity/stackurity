@@ -4,7 +4,7 @@ import { api, ASSET_KINDS, ASSET_STATUSES, type Asset, type List, type Team } fr
 import { useAuth } from "../auth";
 import { useDebounced, useFacets, useLoad } from "../hooks";
 import { assetKindLabel } from "../format";
-import { AssetKindBadge, Badge, RebootBadge } from "../components/Badge";
+import { AssetKindBadge, Badge, ExposureBadge, RebootBadge } from "../components/Badge";
 import { Table, type Column } from "../components/Table";
 import { Code, EmptyState, ErrorBox, Loading, PageHeader, Pager, RelativeTime } from "../components/ui";
 
@@ -19,6 +19,7 @@ export function AssetsPage() {
   const team = params.get("owner_team_id") ?? "";
   const qParam = params.get("q") ?? "";
   const reboot = params.get("reboot_required") === "true";
+  const exposed = params.get("exposed") ?? "";
   const offset = Number(params.get("offset") ?? 0) || 0;
 
   const [q, setQ] = useState(qParam);
@@ -50,13 +51,14 @@ export function AssetsPage() {
         owner_team_id: team,
         q: qParam,
         reboot_required: reboot ? "true" : undefined,
+        exposed: exposed || undefined,
         limit: LIMIT,
         offset,
       }),
-    [kind, environment, status, team, qParam, reboot, offset],
+    [kind, environment, status, team, qParam, reboot, exposed, offset],
   );
 
-  const filtered = Boolean(kind || environment || status || team || qParam || reboot);
+  const filtered = Boolean(kind || environment || status || team || qParam || reboot || exposed);
 
   const columns: Column<Asset>[] = [
     {
@@ -67,9 +69,15 @@ export function AssetsPage() {
         const extra =
           a.kind === "managed_service"
             ? [a.provider && a.provider.toUpperCase(), at.service, a.region].filter(Boolean).join(" · ")
-            : at.os === "windows"
-              ? [at.os_name || "Windows", at.os_release].filter(Boolean).join(" ")
-              : "";
+            : a.kind === "workload"
+              ? [at.workload_kind, at.namespace && `namespace ${at.namespace}`, at.cluster && `cluster ${at.cluster}`].filter(Boolean).join(" · ")
+              : a.kind === "cluster"
+                ? [at.kubernetes_version && `Kubernetes ${at.kubernetes_version}`, at.distribution, at.nodes && `${at.nodes} nodes`]
+                    .filter(Boolean)
+                    .join(" · ")
+                : at.os === "windows"
+                  ? [at.os_name || "Windows", at.os_release].filter(Boolean).join(" ")
+                  : "";
         return (
           <>
             <Link to={`/assets/${a.id}`}>{a.name}</Link>
@@ -77,6 +85,12 @@ export function AssetsPage() {
               <>
                 {" "}
                 <RebootBadge reason={at.reboot_reason} />
+              </>
+            )}
+            {(a.kind === "workload" || a.kind === "image" || a.internet_exposed !== null) && (
+              <>
+                {" "}
+                <ExposureBadge asset={a} />
               </>
             )}
             {extra && <div className="muted small">{extra}</div>}
@@ -97,7 +111,7 @@ export function AssetsPage() {
       <PageHeader
         help="assets"
         title="Assets"
-        sub="Hosts, repositories, images and applications Stackurity has inventoried."
+        sub="Hosts, repositories, images, applications and Kubernetes workloads Stackurity has inventoried."
         actions={
           can("admin") && (
             <Link className="btn btn-primary" to="/assets/add">
@@ -154,6 +168,14 @@ export function AssetsPage() {
                 {t.name}
               </option>
             ))}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="f-exposed">Exposure</label>
+          <select id="f-exposed" value={exposed} onChange={(e) => update({ exposed: e.target.value })}>
+            <option value="">Any exposure</option>
+            <option value="true">Exposed</option>
+            <option value="false">Not exposed</option>
           </select>
         </div>
         <label className="check">

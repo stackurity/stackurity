@@ -113,6 +113,14 @@ func TestRepositoryGrouping(t *testing.T) {
 	if none == nil || none.FindingCount != 1 {
 		t.Errorf("no fix = %+v", none)
 	}
+	up.SetRecommendation("4.17.23", "patch", false, false, []string{"why"})
+	if up.Recommended != "4.17.23" || up.ToVersion != "4.17.21" || !strings.Contains(up.Action, "Recommended: 4.17.23") {
+		t.Errorf("recommendation = %+v", up)
+	}
+	none.SetRecommendation("1.0", "patch", false, false, nil)
+	if none.Recommended != "" {
+		t.Error("a recommendation was set on a no-fix group")
+	}
 }
 
 func TestNoEOLHostKeepsNoFixSeparate(t *testing.T) {

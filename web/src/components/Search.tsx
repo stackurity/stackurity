@@ -6,7 +6,7 @@ import { componentName, plural } from "../format";
 import { AssetKindBadge, KevBadge, SeverityBadge } from "./Badge";
 import { IconSearch } from "./Icons";
 
-export type SearchGroup = "vulnerabilities" | "assets" | "components" | "teams";
+export type SearchGroup = "vulnerabilities" | "findings" | "assets" | "components" | "teams" | "members";
 
 export interface SearchItem {
   key: string;
@@ -26,7 +26,7 @@ export interface SearchSection {
   rank: number;
 }
 
-const GROUP_ORDER: SearchGroup[] = ["vulnerabilities", "assets", "components", "teams"];
+const GROUP_ORDER: SearchGroup[] = ["vulnerabilities", "findings", "assets", "components", "teams", "members"];
 
 export function searchPath(q: string): string {
   return `/search${qs({ q })}`;
@@ -92,6 +92,28 @@ export function searchSections(r: SearchResults): SearchSection[] {
           ),
         };
       }),
+    },
+    {
+      id: "findings",
+      title: "Findings",
+      more: Boolean(r.more.findings),
+      rank: Math.min(3, ...(r.findings ?? []).map((f) => f.rank)),
+      items: (r.findings ?? []).map((f) => ({
+        key: `f:${f.key}:${f.title}`,
+        href: `/findings${qs({ key: f.key })}`,
+        title: (
+          <>
+            <span>{f.title}</span> <SeverityBadge severity={f.severity} score={f.score} />
+          </>
+        ),
+        meta: (
+          <>
+            <span className="mono">{f.key}</span>
+            {` · ${plural(f.open_findings, "open finding")} on ${plural(f.affected_assets, "asset")}`}
+          </>
+        ),
+        detail: f.assets.length > 0 ? <span>Assets: {samples(f.assets, f.affected_assets)}</span> : undefined,
+      })),
     },
     {
       id: "assets",
@@ -173,6 +195,25 @@ export function searchSections(r: SearchResults): SearchSection[] {
             {t.email && `${t.email} · `}
             {`owns ${plural(t.asset_count, "asset")}`}
             {t.open_findings > 0 && ` with ${plural(t.open_findings, "open finding")}`}
+          </>
+        ),
+      })),
+    },
+    {
+      id: "members",
+      title: "Members",
+      more: Boolean(r.more.members),
+      rank: Math.min(3, ...(r.members ?? []).map((m) => m.rank)),
+      items: (r.members ?? []).map((m) => ({
+        key: `m:${m.id}`,
+        href: `/findings${qs({ assignee_user: m.id })}`,
+        title: <span>{m.name || m.email}</span>,
+        meta: (
+          <>
+            {m.name && `${m.email} · `}
+            {m.role}
+            {m.disabled && " · disabled"}
+            {` · ${m.open_assigned > 0 ? `${plural(m.open_assigned, "open finding")} assigned` : "no open findings assigned"}`}
           </>
         ),
       })),
@@ -269,7 +310,7 @@ export function GlobalSearch() {
         }}
       >
         <label htmlFor={`${listId}-input`} className="sr-only">
-          Search vulnerabilities, packages, assets and teams
+          Search vulnerabilities, findings, packages, assets, teams and members
         </label>
         <span className="global-search-icon" aria-hidden="true">
           <IconSearch size={16} />

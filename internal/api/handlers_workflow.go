@@ -208,7 +208,7 @@ func (s *Server) getRiskPolicy(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"policy": p, "default": risk.DefaultPolicy()})
+	writeJSON(w, 200, map[string]any{"policy": p, "default": risk.DefaultPolicy(), "version": p.Version()})
 }
 
 func (s *Server) putRiskPolicy(w http.ResponseWriter, r *http.Request) {

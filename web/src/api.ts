@@ -13,7 +13,7 @@ export function atLeast(role: Role | undefined, min: UserRole): boolean {
   return (RANK[role] ?? 0) >= RANK[min];
 }
 
-export const ASSET_KINDS = ["host", "repository", "image", "application", "managed_service", "sbom"] as const;
+export const ASSET_KINDS = ["host", "repository", "image", "application", "managed_service", "sbom", "cluster", "workload"] as const;
 export const ASSET_STATUSES = ["ok", "partial", "stale"] as const;
 export const CRITICALITIES = ["unknown", "low", "medium", "high", "critical"] as const;
 export const RELATION_KINDS = ["runs_on", "built_from", "deployed_as", "contains", "depends_on", "replica_of"] as const;
@@ -186,6 +186,9 @@ export interface Asset {
   region: string;
   criticality: string;
   internet_exposed: boolean | null;
+  /** Exposure risk scoring uses: internet_exposed when set by hand, else what a
+   * collector observed (a Kubernetes workload, or the workloads running an image). */
+  exposed: boolean | null;
   tags: string[];
   attributes: Record<string, string> | null;
   first_seen: string;
@@ -305,11 +308,11 @@ export interface DriftResponse {
 
 // --- Stage 7: an asset's stack (GET /assets/{id}/stack)
 
-export const STACK_ROLES = ["self", "host", "source", "image", "dependency", "workload", "deployment"] as const;
+export const STACK_ROLES = ["self", "host", "cluster", "source", "image", "dependency", "workload", "deployment"] as const;
 export type StackRole = (typeof STACK_ROLES)[number];
 
 /** Layers in the order the API returns them: most exposed first. */
-export const STACK_LAYERS = ["web_server", "os", "runtime", "data_store", "libraries", "declared", "managed_service", "other"] as const;
+export const STACK_LAYERS = ["web_server", "os", "runtime", "data_store", "libraries", "declared", "managed_service", "platform", "other"] as const;
 export type StackLayerName = (typeof STACK_LAYERS)[number];
 
 export interface StackMember {
@@ -674,13 +677,39 @@ export interface SearchTeam {
   open_findings: number;
 }
 
+/** A finding key whose open findings have a title matching the search. */
+export interface SearchFinding {
+  key: string;
+  kind: "vulnerability" | "end_of_life" | string;
+  title: string;
+  rank: SearchRank;
+  severity: string;
+  score: number | null;
+  open_findings: number;
+  affected_assets: number;
+  assets: SearchRef[];
+}
+
+/** A member of the current workspace; only returned to engineers and above. */
+export interface SearchMember {
+  id: number;
+  name: string;
+  email: string;
+  role: Role;
+  disabled: boolean;
+  rank: SearchRank;
+  open_assigned: number;
+}
+
 export interface SearchResults {
   query: string;
   vulnerabilities: SearchVuln[];
+  findings: SearchFinding[];
   assets: SearchAsset[];
   components: SearchComponent[];
   teams: SearchTeam[];
-  more: Partial<Record<"vulnerabilities" | "assets" | "components" | "teams", boolean>>;
+  members: SearchMember[];
+  more: Partial<Record<"vulnerabilities" | "findings" | "assets" | "components" | "teams" | "members", boolean>>;
 }
 
 export const SEARCH_MIN_LENGTH = 2;
@@ -691,6 +720,131 @@ export interface FindingDetail {
   advisories?: Advisory[] | null;
   /** Advisories sharing the CVE that did not match this component. */
   related_advisories?: Advisory[] | null;
+  /** For open findings: the version to upgrade this installed copy to. */
+  upgrade?: UpgradeRecommendation | null;
+}
+
+/** Support status of one release line (endoflife.date). */
+export interface UpgradeLine {
+  product: string;
+  cycle: string;
+  status: "supported" | "security_only" | "end_of_life" | string;
+  support_until?: string | null;
+  eol_date?: string | null;
+  latest?: string;
+  link?: string;
+}
+
+/** GET /findings/{id}/upgrade, /components/{id}/upgrade: built only from stored advisory, release and lifecycle data. */
+export interface UpgradeRecommendation {
+  purl_type: string;
+  installed_version: string;
+  minimum_fixed_version?: string;
+  recommended_version?: string;
+  /** distro_fixed, latest_in_line, minimum_fixed, supported_line or none. */
+  basis: string;
+  change_type?: string;
+  requires_major: boolean;
+  requires_subscription?: string;
+  /** available, none, failed or not_applicable (OS packages). */
+  release_data: string;
+  release_source?: string;
+  release_checked_at?: string | null;
+  latest_stable?: string;
+  latest_in_line?: string;
+  recommended_yanked: boolean;
+  minimum_fixed_yanked: boolean;
+  yanked_reason?: string;
+  installed_yanked: boolean;
+  deprecated?: string;
+  minimum_fixed_not_in_release_data: boolean;
+  lifecycle?: UpgradeLine | null;
+  target_lifecycle?: UpgradeLine | null;
+  supported_line?: UpgradeLine | null;
+  fixes: string[] | null;
+  unfixed: string[] | null;
+  rationale: string[] | null;
+  open_findings: number;
+}
+
+export interface VersionUpgrade extends UpgradeRecommendation {
+  version: string;
+  distro?: string;
+  asset_count: number;
+}
+
+export interface OutcomeTiming {
+  priority: string; // P1..P4 or "all"
+  kind: string; // vulnerability, end_of_life or "all"
+  resolved: number;
+  mean_days: number | null;
+  median_days: number | null;
+}
+
+export interface OutcomeSLA {
+  priority: string;
+  fix_days: number;
+  resolved: number;
+  resolved_within_sla: number;
+  rate: number | null;
+  open_active: number;
+  open_overdue: number;
+}
+
+export interface OutcomeReopen {
+  finding_id: number;
+  key: string;
+  component: string;
+  version: string;
+  asset_id: number;
+  asset_name: string;
+  reopened_at: string;
+  previous_resolution: string;
+}
+
+export interface OutcomeFailure {
+  action_id: number;
+  plan_id: number;
+  asset_id: number;
+  asset_name: string;
+  package: string;
+  from_version: string;
+  to_version: string;
+  status: string;
+  error: string;
+  at: string;
+}
+
+export interface OutcomesReport {
+  from: string;
+  to: string;
+  generated_at: string;
+  events_since: string | null;
+  resolved: number;
+  time_to_remedy: OutcomeTiming[] | null;
+  causes: { cause: string; evidence: string; count: number }[] | null;
+  sla: OutcomeSLA[] | null;
+  reopened: {
+    events: number;
+    findings: number;
+    resolution_events: number;
+    later_reopened: number;
+    rate: number | null;
+    recent: OutcomeReopen[] | null;
+    recent_limit: number;
+  };
+  open: { active: number; overdue: number; excepted: number; stale_asset: number };
+  remediation: {
+    plans: Record<string, number> | null;
+    actions: Record<string, number> | null;
+    finished: number;
+    verified: number;
+    failed: number;
+    rolled_back: number;
+    success_rate: number | null;
+    rollback_actions: Record<string, number> | null;
+    recent_failures: OutcomeFailure[] | null;
+  } | null;
 }
 
 export interface Feed {
@@ -857,6 +1011,15 @@ export interface Incident {
   notified_priority: string;
   notified_at: string | null;
   escalation_level: number;
+  /** Tracker issues (Jira) that follow this incident. */
+  issues?: IssueRef[] | null;
+}
+
+export interface IssueRef {
+  tracker: string;
+  key: string;
+  url: string;
+  channel_id: number | null;
 }
 
 export interface Delivery {
@@ -883,7 +1046,7 @@ export interface IncidentResponse {
   deliveries?: Delivery[] | null;
 }
 
-export const CHANNEL_KINDS = ["email", "slack", "teams", "webhook"] as const;
+export const CHANNEL_KINDS = ["email", "slack", "teams", "webhook", "jira"] as const;
 export type ChannelKind = (typeof CHANNEL_KINDS)[number];
 
 export interface ChannelConfig {
@@ -894,6 +1057,13 @@ export interface ChannelConfig {
   to?: string[];
   tls?: "starttls" | "tls" | "none" | "";
   url?: string;
+  // jira (url is the site's base URL, username the Cloud account email)
+  deployment?: "cloud" | "datacenter" | "";
+  project?: string;
+  issue_type?: string;
+  labels?: string[];
+  priorities?: Partial<Record<Priority, string>>;
+  resolve_transition?: string;
 }
 
 export interface Channel {
@@ -1141,6 +1311,12 @@ export interface FixGroup {
   needs?: string;
   effort: "low" | "medium" | "high" | string;
   note?: string;
+  /** Package upgrades: the newest stable release in the major line at or above to_version, from release data. */
+  recommended_version?: string;
+  change_type?: string;
+  requires_major?: boolean;
+  recommended_yanked?: boolean;
+  rationale?: string[] | null;
 }
 
 export interface FixGroupDetail {

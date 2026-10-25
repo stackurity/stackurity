@@ -12,11 +12,13 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/stackurity/stackurity/internal/health"
 	"github.com/stackurity/stackurity/internal/model"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/testdb"
@@ -384,6 +386,92 @@ func TestPlatformIncidents(t *testing.T) {
 	f.tick()
 	if incs, _, _ := f.st.ListIncidents(ctx, store.IncidentFilter{Kind: "platform"}); len(incs) != 0 {
 		t.Errorf("platform incident should resolve: %+v", incs)
+	}
+}
+
+// STACKURITY_PLATFORM_WORKSPACE moves platform incidents to another workspace,
+// named by slug or id. When that workspace is disabled or missing, none are
+// raised anywhere; the problems are logged and the health report says why.
+func TestPlatformWorkspaceSetting(t *testing.T) {
+	f := setup(t)
+	bg := context.Background()
+	ops, _, err := f.st.CreateWorkspace(bg, "Operations", "ops", "ops@x.io", "", "correct horse battery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var logged strings.Builder
+	f.d.Log = slog.New(slog.NewTextHandler(&logged, nil))
+	checker := &health.Checker{Store: f.st, FeedsEnabled: true}
+	f.d.PlatformTarget = checker.PlatformTarget
+	calls := 0
+	f.d.Platform = func(ctx context.Context) ([]store.SystemIncident, error) {
+		calls++
+		return []store.SystemIncident{{Kind: "platform", Key: "task:alerts", Title: "Background task alerts is not succeeding", Priority: "P2"}}, nil
+	}
+	open := func(ws int64) int {
+		t.Helper()
+		incs, _, err := f.st.ListIncidents(tenant.WithWorkspace(bg, ws), store.IncidentFilter{Kind: "platform"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(incs)
+	}
+	tickBoth := func() {
+		t.Helper()
+		for _, ws := range []int64{tenant.DefaultWorkspace, ops.ID} {
+			if err := f.d.Tick(tenant.WithWorkspace(bg, ws)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	// Default: workspace 1.
+	tickBoth()
+	if open(tenant.DefaultWorkspace) != 1 || open(ops.ID) != 0 {
+		t.Fatalf("default target: %d in 1, %d in ops", open(tenant.DefaultWorkspace), open(ops.ID))
+	}
+	// By slug, then by id: the incident moves, and the old one resolves.
+	for _, ref := range []string{"ops", " OPS ", strconv.FormatInt(ops.ID, 10)} {
+		checker.PlatformWorkspace = ref
+		tickBoth()
+		if open(tenant.DefaultWorkspace) != 0 || open(ops.ID) != 1 {
+			t.Errorf("target %q: %d in 1, %d in ops", ref, open(tenant.DefaultWorkspace), open(ops.ID))
+		}
+	}
+	if err := f.d.PlatformFallback(tenant.System(bg)); err != nil || logged.Len() != 0 {
+		t.Errorf("fallback with a working target: %v %q", err, logged.String())
+	}
+
+	// Disabled or missing: nothing is raised, the problem is logged, and
+	// the health report explains.
+	sys := tenant.System(bg)
+	if _, err := f.st.Pool.Exec(sys, `UPDATE workspaces SET disabled_at = now() WHERE id = $1`, ops.ID); err != nil {
+		t.Fatal(err)
+	}
+	for _, ref := range []string{"ops", "no-such-workspace", "999"} {
+		checker.PlatformWorkspace = ref
+		logged.Reset()
+		before := calls
+		if err := f.d.Tick(tenant.WithWorkspace(bg, tenant.DefaultWorkspace)); err != nil {
+			t.Fatal(err)
+		}
+		if calls != before || open(tenant.DefaultWorkspace) != 0 {
+			t.Errorf("target %q: platform problems raised in workspace 1", ref)
+		}
+		if err := f.d.PlatformFallback(sys); err != nil || !strings.Contains(logged.String(), "Background task alerts is not succeeding") {
+			t.Errorf("target %q: fallback log %q %v", ref, logged.String(), err)
+		}
+		r, err := checker.Check(sys)
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, p := range r.Problems {
+			found = found || p.Kind == "platform" && p.Key == "incident-workspace" && strings.Contains(p.Detail, ref)
+		}
+		if !found {
+			t.Errorf("target %q: health report %+v", ref, r.Problems)
+		}
 	}
 }
 

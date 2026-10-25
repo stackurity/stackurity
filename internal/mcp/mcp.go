@@ -106,7 +106,9 @@ func (s *Server) handle(ctx context.Context, req request) (any, *rpcError) {
 				"vulnerabilities and end-of-life components. Use search to look up a CVE, package, host or team. Start with " +
 				"list_assets to find the project or server, then action_plan for what to upgrade (each group lists the packages " +
 				"and target versions), asset_stack for every layer an application relies on, and list_findings or get_finding " +
-				"for details. All tools are read-only.",
+				"for details. explain_finding cites why a finding has its priority, upgrade_recommendation and remediation_plan " +
+				"give versions to move to (from stored data only), and verify_since checks what was fixed after a change. " +
+				"All tools are read-only.",
 		}, nil
 	case "ping":
 		return map[string]any{}, nil
@@ -167,7 +169,8 @@ var tools = map[string]tool{
 	"search": {
 		description: "Search everything in the workspace at once: a vulnerability id (CVE, GHSA, DSA, USN, RHSA...), a package " +
 			"(lodash, lodash@4.17.20, 'openssl 3.0.2', a purl), a host name, machine id, repository URL, image reference or " +
-			"digest, or a team. Results are grouped by type, exact matches first, with the affected assets for each.",
+			"digest, a team, words from a finding's title, or (for engineers and above) a workspace member's name or email. " +
+			"Results are grouped by type, exact matches first, with the affected assets for each.",
 		schema: obj(map[string]any{
 			"query": str("What to look for, at least 2 characters"),
 			"limit": num("At most this many results per type (default 10, max 50)"),
@@ -190,7 +193,7 @@ var tools = map[string]tool{
 		description: "List inventoried assets: hosts, deployed applications, repositories, container images and managed services. " +
 			"Use it to find the asset_id of a project or server.",
 		schema: obj(map[string]any{
-			"kind":        map[string]any{"type": "string", "enum": []string{"host", "application", "repository", "image", "managed_service", "sbom"}},
+			"kind":        map[string]any{"type": "string", "enum": []string{"host", "application", "repository", "image", "managed_service", "sbom", "cluster", "workload"}},
 			"query":       str("Name contains this text"),
 			"environment": str("Environment label, e.g. production"),
 		}),
@@ -381,6 +384,160 @@ var tools = map[string]tool{
 	},
 }
 
+// assistantTools are the tools that explain, recommend and verify; they
+// return structured data with the ids, versions and sources they rest on.
+func init() {
+	tools["explain_finding"] = tool{
+		description: "Why a finding has its priority, with citations: each risk factor and its points, the risk policy version and " +
+			"its SLA for that priority, the stored evidence, the advisories that matched (ids, feeds, links), how fresh those feeds " +
+			"are, and when the asset last reported.",
+		schema: obj(map[string]any{"finding_id": num("The id of a finding")}, "finding_id"),
+		run: func(ctx context.Context, api API, a map[string]any) (any, error) {
+			id, ok := intArg(a["finding_id"])
+			if !ok || id <= 0 {
+				return nil, fmt.Errorf("finding_id is required")
+			}
+			var res any
+			if err := api.Do(ctx, "GET", fmt.Sprintf("/api/v1/findings/%d/explain", id), nil, nil, &res); err != nil {
+				return nil, err
+			}
+			return res, nil
+		},
+	}
+	tools["upgrade_recommendation"] = tool{
+		description: "Which version to upgrade a component to, from stored advisory, registry release and end-of-life data only: " +
+			"installed version, minimum fixed version, recommended version (the newest stable release in the same major line at or " +
+			"above the fix), change type, whether a major upgrade is needed, withdrawn versions, release-line support and the " +
+			"reasons. When data is missing it says so instead of guessing. Give finding_id for one installed copy, or component_id " +
+			"for every installed version with open findings.",
+		schema: obj(map[string]any{
+			"finding_id":   num("A finding id: recommend for the component it was found in"),
+			"component_id": num("A component id: recommend for each installed version"),
+		}),
+		run: func(ctx context.Context, api API, a map[string]any) (any, error) {
+			var res any
+			if id, ok := intArg(a["finding_id"]); ok && id > 0 {
+				err := api.Do(ctx, "GET", fmt.Sprintf("/api/v1/findings/%d/upgrade", id), nil, nil, &res)
+				return res, err
+			}
+			if id, ok := intArg(a["component_id"]); ok && id > 0 {
+				err := api.Do(ctx, "GET", fmt.Sprintf("/api/v1/components/%d/upgrade", id), nil, nil, &res)
+				return res, err
+			}
+			return nil, fmt.Errorf("finding_id or component_id is required")
+		},
+	}
+	tools["remediation_plan"] = tool{
+		description: "Open findings grouped into actions per asset and package (security updates, package upgrades, end-of-life " +
+			"moves), most urgent first, each with the installed version, the minimum fixed version, the recommended version, the " +
+			"change type and how many findings it clears. Omit asset_id for every asset.",
+		schema: obj(map[string]any{
+			"asset_id": num("Limit to one asset"),
+			"limit":    num("At most this many groups (default 50, max 100)"),
+		}),
+		run: func(ctx context.Context, api API, a map[string]any) (any, error) {
+			limit := 50
+			if n, ok := intArg(a["limit"]); ok && n > 0 {
+				limit = min(n, 100)
+			}
+			q := url.Values{"limit": {strconv.Itoa(limit)}}
+			set(q, "asset_id", a["asset_id"])
+			var res struct {
+				Items []struct {
+					ID                string   `json:"id"`
+					Kind              string   `json:"kind"`
+					Title             string   `json:"title"`
+					Action            string   `json:"action"`
+					AssetID           int64    `json:"asset_id"`
+					AssetName         string   `json:"asset_name"`
+					Environment       string   `json:"environment"`
+					Component         string   `json:"component"`
+					FromVersion       string   `json:"from_version"`
+					ToVersion         string   `json:"to_version"`
+					Recommended       string   `json:"recommended_version"`
+					ChangeType        string   `json:"change_type"`
+					RequiresMajor     bool     `json:"requires_major"`
+					RecommendedYanked bool     `json:"recommended_yanked"`
+					Packages          []string `json:"packages"`
+					PackageCount      int      `json:"package_count"`
+					FindingCount      int      `json:"finding_count"`
+					UniqueIssues      int      `json:"unique_issues"`
+					TopPriority       string   `json:"top_priority"`
+					SOS               bool     `json:"sos"`
+					KnownExploited    int      `json:"known_exploited"`
+					Needs             string   `json:"needs"`
+					Effort            string   `json:"effort"`
+				} `json:"items"`
+				Total int64 `json:"total"`
+			}
+			if err := api.Do(ctx, "GET", "/api/v1/fix-groups?"+q.Encode(), nil, nil, &res); err != nil {
+				return nil, err
+			}
+			type group struct {
+				ID             string   `json:"group_id"`
+				Kind           string   `json:"kind"`
+				Title          string   `json:"title"`
+				Action         string   `json:"action"`
+				AssetID        int64    `json:"asset_id"`
+				AssetName      string   `json:"asset_name"`
+				Environment    string   `json:"environment,omitempty"`
+				Component      string   `json:"component,omitempty"`
+				Installed      string   `json:"installed_version,omitempty"`
+				MinimumFixed   string   `json:"minimum_fixed_version,omitempty"`
+				Recommended    string   `json:"recommended_version,omitempty"`
+				ChangeType     string   `json:"change_type,omitempty"`
+				RequiresMajor  bool     `json:"requires_major,omitempty"`
+				Withdrawn      bool     `json:"recommended_withdrawn,omitempty"`
+				Packages       []string `json:"packages,omitempty"`
+				PackageCount   int      `json:"package_count"`
+				Findings       int      `json:"findings"`
+				UniqueIssues   int      `json:"unique_issues"`
+				TopPriority    string   `json:"top_priority"`
+				SOS            bool     `json:"sos"`
+				KnownExploited int      `json:"known_exploited"`
+				Needs          string   `json:"needs,omitempty"`
+				Effort         string   `json:"effort"`
+			}
+			out := []group{}
+			for _, g := range res.Items {
+				out = append(out, group{g.ID, g.Kind, g.Title, g.Action, g.AssetID, g.AssetName, g.Environment, g.Component,
+					g.FromVersion, g.ToVersion, g.Recommended, g.ChangeType, g.RequiresMajor, g.RecommendedYanked, g.Packages,
+					g.PackageCount, g.FindingCount, g.UniqueIssues, g.TopPriority, g.SOS, g.KnownExploited, g.Needs, g.Effort})
+			}
+			return map[string]any{"groups": out, "total": res.Total, "shown": len(out),
+				"note": "minimum_fixed_version fixes every finding in the group; recommended_version comes from registry release " +
+					"data and is absent when there is none. Use upgrade_recommendation for the reasons."}, nil
+		},
+	}
+	tools["verify_since"] = tool{
+		description: "What changed since a time, e.g. when a fix was deployed: findings resolved since then and why (upgraded, " +
+			"removed, fixed by remediation, or re-evaluated against new advisory data), findings that existed then and are still " +
+			"open, and when each asset last sent a complete inventory, to tell 'fixed' from 'not re-scanned yet'.",
+		schema: obj(map[string]any{
+			"since":    str("RFC 3339 time (2026-10-20T14:00:00Z) or a date (2026-10-20)"),
+			"asset_id": num("Limit to one asset"),
+			"limit":    num("At most this many findings per list (default 50, max 200)"),
+		}, "since"),
+		run: func(ctx context.Context, api API, a map[string]any) (any, error) {
+			since, _ := a["since"].(string)
+			if strings.TrimSpace(since) == "" {
+				return nil, fmt.Errorf("since is required")
+			}
+			limit := 50
+			if n, ok := intArg(a["limit"]); ok && n > 0 {
+				limit = min(n, 200)
+			}
+			q := url.Values{"since": {strings.TrimSpace(since)}, "limit": {strconv.Itoa(limit)}}
+			set(q, "asset_id", a["asset_id"])
+			var res any
+			if err := api.Do(ctx, "GET", "/api/v1/findings/verify?"+q.Encode(), nil, nil, &res); err != nil {
+				return nil, err
+			}
+			return res, nil
+		},
+	}
+}
+
 // finding is the part of a finding an assistant needs to act on it.
 type finding struct {
 	ID             int64   `json:"id"`
@@ -403,7 +560,8 @@ type finding struct {
 }
 
 func toolList() []map[string]any {
-	names := []string{"search", "list_assets", "action_plan", "asset_stack", "list_findings", "get_finding", "find_component"}
+	names := []string{"search", "list_assets", "action_plan", "asset_stack", "list_findings", "get_finding", "find_component",
+		"explain_finding", "upgrade_recommendation", "remediation_plan", "verify_since"}
 	out := make([]map[string]any, 0, len(names))
 	for _, n := range names {
 		t := tools[n]

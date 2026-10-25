@@ -2,6 +2,7 @@ package risk
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
@@ -83,5 +84,16 @@ func TestDeadlines(t *testing.T) {
 	ack, fix := DefaultPolicy().Deadlines("P1", start)
 	if !ack.Equal(start.Add(4*time.Hour)) || !fix.Equal(start.AddDate(0, 0, 3)) {
 		t.Errorf("deadlines %v %v", ack, fix)
+	}
+}
+
+func TestPolicyVersion(t *testing.T) {
+	a, b := DefaultPolicy(), DefaultPolicy()
+	if a.Version() != b.Version() || !strings.HasPrefix(a.Version(), "sha256:") {
+		t.Fatalf("versions differ for the same policy: %s %s", a.Version(), b.Version())
+	}
+	b.SLA["P1"] = SLA{AckHours: 4, FixDays: 2}
+	if a.Version() == b.Version() {
+		t.Error("a changed SLA kept the same version")
 	}
 }

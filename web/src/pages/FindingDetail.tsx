@@ -7,6 +7,7 @@ import { Badge, Chip, KevBadge, SeverityBadge, VERIFICATION_EXPLAINED, Verificat
 import { EvidencePills, kindLabel } from "../components/Findings";
 import { FindingFixGroup } from "../components/FixGroups";
 import { FindingHistory, WorkflowPanel } from "../components/FindingWorkflow";
+import { UpgradeCard } from "../components/Upgrade";
 import { Card, ErrorBox, KeyValues, Loading, Notice, PageHeader, RelativeTime } from "../components/ui";
 
 const CVE_RE = /^CVE-\d{4}-\d{4,}$/i;
@@ -238,6 +239,7 @@ export function FindingDetailPage() {
       )}
       <FindingFixGroup f={f} />
       {f.status === "open" && <RecommendedAction f={f} />}
+      {f.status === "open" && res.data.upgrade && <UpgradeCard rec={res.data.upgrade} />}
       <WorkflowPanel
         f={f}
         onChanged={() => {

@@ -272,3 +272,65 @@ func TestSearchValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestSearchFindingTitles(t *testing.T) {
+	ctx, s, web := searchFixture(t)
+
+	res, err := s.Search(ctx, "command injection", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Findings) != 1 {
+		t.Fatalf("title: %+v", res.Findings)
+	}
+	if f := res.Findings[0]; f.Key != "CVE-2021-23337" || f.Title != "Command injection in lodash" || f.Rank != store.RankPrefix ||
+		f.OpenFindings != 1 || f.AffectedAssets != 1 || len(f.Assets) != 1 || f.Assets[0].ID != web || f.Severity != "high" {
+		t.Errorf("title: %+v", f)
+	}
+	// Two characters are too few for titles; resolved findings never match.
+	if res, _ := s.Search(ctx, "in", 10); len(res.Findings) != 0 {
+		t.Errorf("two-character title search: %+v", res.Findings)
+	}
+	if _, err := s.Pool.Exec(ctx, `UPDATE findings SET status = 'resolved'`); err != nil {
+		t.Fatal(err)
+	}
+	if res, _ := s.Search(ctx, "injection", 10); len(res.Findings) != 0 {
+		t.Errorf("resolved finding matched: %+v", res.Findings)
+	}
+}
+
+// Members are searched only when asked, only within the workspace, with
+// their role there and the open findings assigned to them.
+func TestSearchMembers(t *testing.T) {
+	ctx, s, _ := searchFixture(t)
+	dana, err := s.CreateUser(ctx, "dana@example.com", "Dana Scully", "engineer", "correct horse battery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Pool.Exec(ctx, `UPDATE findings SET assignee_user_id = $1`, dana.ID); err != nil {
+		t.Fatal(err)
+	}
+	// An account in another workspace only.
+	if _, _, err := s.CreateWorkspace(context.Background(), "Other", "other", "dana.other@example.com", "Dana Other", "correct horse battery"); err != nil {
+		t.Fatal(err)
+	}
+
+	if res, _ := s.Search(ctx, "dana", 10); len(res.Members) != 0 || res.More["members"] {
+		t.Errorf("members without asking: %+v", res.Members)
+	}
+	for _, q := range []string{"dana", "Scully", "DANA@EXAMPLE.COM", "example.com"} {
+		res, err := s.SearchWith(ctx, q, store.SearchOptions{Members: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res.Members) != 1 {
+			t.Fatalf("%s: %+v", q, res.Members)
+		}
+		if m := res.Members[0]; m.ID != dana.ID || m.Role != "engineer" || m.OpenAssigned != 1 || m.Disabled {
+			t.Errorf("%s: %+v", q, m)
+		}
+	}
+	if res, _ := s.SearchWith(ctx, "dana.other", store.SearchOptions{Members: true}); len(res.Members) != 0 {
+		t.Errorf("a non-member was found: %+v", res.Members)
+	}
+}

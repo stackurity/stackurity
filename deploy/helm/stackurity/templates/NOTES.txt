@@ -6,3 +6,12 @@ Stackurity is starting.
 2. Open {{ if .Values.ingress.enabled }}https://{{ .Values.ingress.host }}{{ else }}the service (kubectl port-forward svc/{{ include "stackurity.fullname" . }} 8080){{ end }} and create the first admin.
 
 Agents and CI reach the API at /api/v1 with collector tokens (Settings → API tokens).
+{{- if and .Values.metrics.serviceMonitor.enabled (not .Values.metrics.enabled) }}
+
+Note: metrics.serviceMonitor.enabled has no effect without metrics.enabled=true.
+{{- else if and .Values.metrics.serviceMonitor.enabled (not (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1/ServiceMonitor")) }}
+
+Note: no ServiceMonitor was created because this cluster does not serve
+monitoring.coreos.com/v1. Install the Prometheus Operator, or scrape the
+{{ include "stackurity.fullname" . }}-metrics Service directly.
+{{- end }}

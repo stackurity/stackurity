@@ -171,10 +171,40 @@ const ASSET_KIND_TEXT: Record<string, string> = {
   application: "application",
   managed_service: "managed service",
   sbom: "SBOM",
+  cluster: "cluster",
+  workload: "workload",
 };
 
 export function AssetKindBadge({ kind }: { kind: string }) {
-  return <Badge status={kind} tone={kind === "managed_service" ? "info" : "muted"} label={ASSET_KIND_TEXT[kind] ?? kind.replace(/_/g, " ")} />;
+  return (
+    <Badge
+      status={kind}
+      tone={kind === "managed_service" || kind === "cluster" ? "info" : "muted"}
+      label={ASSET_KIND_TEXT[kind] ?? kind.replace(/_/g, " ")}
+    />
+  );
+}
+
+/** Whether an asset is reachable from outside: set by hand, reported by a
+ * collector (Kubernetes Services, Ingresses, host ports), or inherited by an
+ * image from the workloads running it. Nothing is shown when unknown. */
+export function ExposureBadge({ asset }: { asset: { exposed: boolean | null; internet_exposed: boolean | null; kind: string; attributes: Record<string, string> | null } }) {
+  const at = asset.attributes ?? {};
+  if (asset.exposed === null) {
+    if (at.exposure === "unknown")
+      return <Badge status="exposure_unknown" tone="muted" label="exposure unknown" title="Services or Ingresses could not be read" />;
+    return null;
+  }
+  if (!asset.exposed) return <Badge status="internal" tone="muted" label="internal" title={asset.internet_exposed === false ? "Set by hand" : "Not reachable from outside the cluster"} />;
+  const title =
+    asset.internet_exposed === true
+      ? "Set by hand"
+      : at.exposed_via
+        ? `Reachable from outside the cluster: ${at.exposed_via}`
+        : asset.kind === "image"
+          ? "Run by a workload that is reachable from outside its cluster"
+          : "Reachable from outside";
+  return <Badge status="exposed" tone="warn" label="exposed" title={title} />;
 }
 
 // --- Stage 6: operational signals

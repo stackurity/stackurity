@@ -16,11 +16,14 @@ import (
 	"github.com/stackurity/stackurity/internal/tenant"
 )
 
-// Global search matches one query against the vulnerabilities, components,
-// assets and teams of the current workspace. Every query reads tenant tables,
-// or the component catalogue through the workspace's own inventory, so
-// row-level security keeps results (and counts) inside the workspace.
-// Advisories are public data and are shown whether or not anything is affected.
+// Global search matches one query against the vulnerabilities, open finding
+// titles, components, assets, teams and (when asked) members of the current
+// workspace. Every query reads tenant tables, or the component catalogue
+// through the workspace's own inventory, so row-level security keeps results
+// (and counts) inside the workspace. Accounts are global and have no
+// row-level security, so members are read through the workspace's own
+// membership rows only. Advisories are public data and are shown whether or
+// not anything is affected.
 
 const (
 	SearchMinLen      = 2
@@ -28,6 +31,9 @@ const (
 	SearchMaxLimit    = 50
 	searchDefault     = 10
 	searchSampleLimit = 5
+	// Finding titles are matched by substring over every open finding, so
+	// they need a slightly longer query.
+	searchTitleMinLen = 3
 )
 
 // Match ranks: an exact id, name or identifier first, then prefixes, then
@@ -115,12 +121,40 @@ type SearchTeam struct {
 	OpenFindings int64  `json:"open_findings"`
 }
 
+// SearchFinding is one finding key whose open findings have a title matching
+// the query, such as "Command injection in lodash".
+type SearchFinding struct {
+	Key            string      `json:"key"`
+	Kind           string      `json:"kind"`
+	Title          string      `json:"title"`
+	Rank           int         `json:"rank"`
+	Severity       string      `json:"severity"`
+	Score          *float32    `json:"score"`
+	OpenFindings   int64       `json:"open_findings"`
+	AffectedAssets int64       `json:"affected_assets"`
+	Assets         []SearchRef `json:"assets"` // a sample
+}
+
+// SearchMember is a member of the current workspace, with their role there
+// and the open findings assigned to them in it.
+type SearchMember struct {
+	ID           int64  `json:"id"`
+	Name         string `json:"name"`
+	Email        string `json:"email"`
+	Role         string `json:"role"`
+	Disabled     bool   `json:"disabled"`
+	Rank         int    `json:"rank"`
+	OpenAssigned int64  `json:"open_assigned"`
+}
+
 type SearchResults struct {
 	Query           string            `json:"query"`
 	Vulnerabilities []SearchVuln      `json:"vulnerabilities"`
+	Findings        []SearchFinding   `json:"findings"`
 	Assets          []SearchAsset     `json:"assets"`
 	Components      []SearchComponent `json:"components"`
 	Teams           []SearchTeam      `json:"teams"`
+	Members         []SearchMember    `json:"members"`
 	// More names the groups that had more matches than the limit.
 	More map[string]bool `json:"more"`
 }
@@ -141,9 +175,25 @@ func NormalizeSearch(q string) (string, error) {
 	return q, nil
 }
 
-// Search runs the global search in the caller's workspace. limit applies to
-// each group.
+// SearchOptions tune a search. The zero value searches every group but
+// members, with the default limit.
+type SearchOptions struct {
+	// Limit applies to each group.
+	Limit int
+	// Members includes workspace members (names and emails); the caller
+	// decides who may see them.
+	Members bool
+}
+
+// Search runs the global search in the caller's workspace, without members.
+// limit applies to each group.
 func (s *Store) Search(ctx context.Context, query string, limit int) (*SearchResults, error) {
+	return s.SearchWith(ctx, query, SearchOptions{Limit: limit})
+}
+
+// SearchWith runs the global search in the caller's workspace.
+func (s *Store) SearchWith(ctx context.Context, query string, opt SearchOptions) (*SearchResults, error) {
+	limit := opt.Limit
 	if _, ok := tenant.Workspace(ctx); !ok {
 		// System scope would see every workspace: search is for one.
 		return nil, fmt.Errorf("search needs a workspace: %w", ErrInvalid)
@@ -156,8 +206,8 @@ func (s *Store) Search(ctx context.Context, query string, limit int) (*SearchRes
 		limit = searchDefault
 	}
 	limit = min(limit, SearchMaxLimit)
-	res := &SearchResults{Query: q, Vulnerabilities: []SearchVuln{}, Assets: []SearchAsset{}, Components: []SearchComponent{},
-		Teams: []SearchTeam{}, More: map[string]bool{}}
+	res := &SearchResults{Query: q, Vulnerabilities: []SearchVuln{}, Findings: []SearchFinding{}, Assets: []SearchAsset{},
+		Components: []SearchComponent{}, Teams: []SearchTeam{}, Members: []SearchMember{}, More: map[string]bool{}}
 	err = pgx.BeginTxFunc(ctx, s.Pool, pgx.TxOptions{AccessMode: pgx.ReadOnly}, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `SET LOCAL statement_timeout = '5s'`); err != nil {
 			return err
@@ -167,6 +217,10 @@ func (s *Store) Search(ctx context.Context, query string, limit int) (*SearchRes
 			return fmt.Errorf("vulnerabilities: %w", err)
 		}
 		res.More["vulnerabilities"] = more
+		if res.Findings, more, err = searchFindingTitles(ctx, tx, q, limit, res.Vulnerabilities); err != nil {
+			return fmt.Errorf("findings: %w", err)
+		}
+		res.More["findings"] = more
 		if res.Assets, more, err = searchAssets(ctx, tx, q, limit); err != nil {
 			return fmt.Errorf("assets: %w", err)
 		}
@@ -179,6 +233,12 @@ func (s *Store) Search(ctx context.Context, query string, limit int) (*SearchRes
 			return fmt.Errorf("teams: %w", err)
 		}
 		res.More["teams"] = more
+		if opt.Members {
+			if res.Members, more, err = searchMembers(ctx, tx, q, limit); err != nil {
+				return fmt.Errorf("members: %w", err)
+			}
+			res.More["members"] = more
+		}
 		return nil
 	})
 	if err != nil {
@@ -530,6 +590,83 @@ func searchTeams(ctx context.Context, tx pgx.Tx, q string, limit int) ([]SearchT
 		return nil, false, err
 	}
 	out, err := pgx.CollectRows(rows, pgx.RowToStructByPos[SearchTeam])
+	if err != nil {
+		return nil, false, err
+	}
+	if len(out) > limit {
+		return out[:limit], true, nil
+	}
+	return out, false, nil
+}
+
+// searchFindingTitles finds open findings whose title contains the query,
+// one result per key and title. Keys the vulnerability group already shows
+// are left out.
+func searchFindingTitles(ctx context.Context, tx pgx.Tx, q string, limit int, shown []SearchVuln) ([]SearchFinding, bool, error) {
+	if utf8.RuneCountInString(q) < searchTitleMinLen {
+		return []SearchFinding{}, false, nil
+	}
+	skip := make([]string, 0, len(shown))
+	for _, v := range shown {
+		skip = append(skip, v.Key)
+	}
+	lower, prefix, like := patterns(q)
+	rows, err := tx.Query(ctx, `WITH m AS (
+		SELECT f.key, min(f.kind) AS kind, f.title,
+		  max(CASE f.severity WHEN 'critical' THEN 5 WHEN 'high' THEN 4 WHEN 'medium' THEN 3 WHEN 'low' THEN 2 ELSE 1 END) AS sev,
+		  max(f.score) AS score, count(*) AS open, count(DISTINCT f.asset_id) AS assets
+		FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
+		WHERE f.status = 'open' AND f.title ILIKE $3 AND NOT (f.key = ANY($6))
+		GROUP BY f.key, f.title)
+		SELECT m.key, m.kind, m.title, CASE WHEN lower(m.title) = $1 THEN 0 WHEN m.title ILIKE $2 THEN 1 ELSE 2 END AS rank,
+		  m.sev, m.score, m.open, m.assets,
+		  COALESCE((SELECT json_agg(json_build_object('id', x.id, 'name', x.name)) FROM (
+		    SELECT DISTINCT a.id, a.name FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
+		    WHERE f.key = m.key AND f.title = m.title AND f.status = 'open' ORDER BY a.name, a.id LIMIT $5) x), '[]')
+		FROM m ORDER BY rank, m.open DESC, m.sev DESC, m.key, m.title LIMIT $4`, lower, prefix, like, limit+1, searchSampleLimit, skip)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+	out := []SearchFinding{}
+	for rows.Next() {
+		var f SearchFinding
+		var sev int
+		var assets []byte
+		if err := rows.Scan(&f.Key, &f.Kind, &f.Title, &f.Rank, &sev, &f.Score, &f.OpenFindings, &f.AffectedAssets, &assets); err != nil {
+			return nil, false, err
+		}
+		if err := json.Unmarshal(assets, &f.Assets); err != nil {
+			return nil, false, err
+		}
+		f.Severity = sevName(sev)
+		out = append(out, f)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	if len(out) > limit {
+		return out[:limit], true, nil
+	}
+	return out, false, nil
+}
+
+// searchMembers finds members of the current workspace by name or email.
+// Accounts are global, so the query starts from this workspace's membership
+// rows: an account that is not a member here is never matched.
+func searchMembers(ctx context.Context, tx pgx.Tx, q string, limit int) ([]SearchMember, bool, error) {
+	lower, prefix, like := patterns(q)
+	rows, err := tx.Query(ctx, `SELECT u.id, u.name, u.email, wm.role, u.disabled,
+		  CASE WHEN lower(u.email) = $1 OR lower(u.name) = $1 THEN 0 WHEN u.email ILIKE $2 OR u.name ILIKE $2 THEN 1 ELSE 2 END AS rank,
+		  (SELECT count(*) FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
+		    WHERE f.status = 'open' AND f.assignee_user_id = u.id)
+		FROM workspace_members wm JOIN users u ON u.id = wm.user_id
+		WHERE wm.workspace_id = stackurity_ws() AND (u.email ILIKE $3 OR u.name ILIKE $3)
+		ORDER BY rank, u.disabled, u.email, u.id LIMIT $4`, lower, prefix, like, limit+1)
+	if err != nil {
+		return nil, false, err
+	}
+	out, err := pgx.CollectRows(rows, pgx.RowToStructByPos[SearchMember])
 	if err != nil {
 		return nil, false, err
 	}

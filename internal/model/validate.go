@@ -109,8 +109,8 @@ func (b *ObservationBatch) Validate() error {
 	}
 	runsOn := false
 	for i, r := range b.Relations {
-		if r.Kind != "runs_on" && r.Kind != "built_from" {
-			add("relations[%d].kind must be runs_on or built_from", i)
+		if r.Kind != "runs_on" && r.Kind != "built_from" && r.Kind != "deployed_as" {
+			add("relations[%d].kind must be runs_on, built_from or deployed_as", i)
 		}
 		runsOn = runsOn || r.Kind == "runs_on"
 		if len(r.To) == 0 || len(r.To) > MaxIdentifiers {

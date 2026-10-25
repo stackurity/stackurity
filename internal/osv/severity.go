@@ -11,7 +11,7 @@ type Rating struct {
 	Level  string  `json:"level"` // critical, high, medium, low, none, unknown
 	Score  float64 `json:"score,omitempty"`
 	Vector string  `json:"vector,omitempty"`
-	Source string  `json:"source"` // cvss_v3, cvss_v4_vendor, database
+	Source string  `json:"source"` // cvss_v3, cvss_v4, database, distro_urgency, none
 }
 
 func levelForScore(s float64) string {
@@ -32,12 +32,14 @@ var levelRank = map[string]int{"unknown": 0, "none": 1, "low": 2, "medium": 3, "
 
 func LevelRank(l string) int { return levelRank[l] }
 
-// Rate derives a severity from an advisory. CVSS v3 vectors are scored
+// Rate derives a severity from an advisory. CVSS v3 and v4 vectors are scored
 // locally; database labels (GitHub "severity", distro urgency) are also
-// considered. When sources disagree the higher rating wins: upstream records
-// sometimes carry an all-"None" v3 vector next to a HIGH vendor rating, and
-// under-rating is the more dangerous error. CVSS v4 vectors are kept for
-// reference but not scored locally.
+// considered. When sources disagree the higher rating wins, and of two scores
+// at the same level the higher score, because under-rating is the more
+// dangerous error: upstream records sometimes carry an all-"None" v3 vector
+// next to a HIGH vendor rating, and the v3 and v4 scores of one flaw often
+// differ. A vector that does not parse is ignored, so the labels decide; when
+// a label wins, the first v4 vector is still kept for reference.
 func Rate(v *Vulnerability) Rating {
 	all := append([]Severity{}, v.Severity...)
 	for _, a := range v.Affected {
@@ -45,7 +47,7 @@ func Rate(v *Vulnerability) Rating {
 	}
 	best := Rating{Level: "unknown", Source: "none"}
 	consider := func(r Rating) {
-		if levelRank[r.Level] > levelRank[best.Level] {
+		if rb, rr := levelRank[best.Level], levelRank[r.Level]; rr > rb || (rr == rb && r.Score > best.Score) {
 			best = r
 		}
 	}
@@ -56,8 +58,13 @@ func Rate(v *Vulnerability) Rating {
 			if score, ok := CVSS3Score(s.Score); ok {
 				consider(Rating{Level: levelForScore(score), Score: score, Vector: s.Score, Source: "cvss_v3"})
 			}
-		case s.Type == "CVSS_V4" && v4 == "":
-			v4 = s.Score
+		case s.Type == "CVSS_V4":
+			if score, ok := CVSS4Score(s.Score); ok {
+				consider(Rating{Level: levelForScore(score), Score: score, Vector: s.Score, Source: "cvss_v4"})
+			}
+			if v4 == "" {
+				v4 = s.Score
+			}
 		}
 	}
 	var db struct {

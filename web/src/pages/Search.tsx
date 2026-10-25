@@ -7,18 +7,32 @@ import { EmptyState, ErrorBox, Loading, PageHeader } from "../components/ui";
 
 const LIMIT = 50;
 
-/** Where the full list for a group lives, filtered by the same text. */
-function listFor(group: SearchGroup, q: string): string {
+/** Where the full list for a group lives, filtered by the same text; null when there is none for everyone who can search. */
+function listFor(group: SearchGroup, q: string): string | null {
   switch (group) {
     case "vulnerabilities":
       return `/findings${qs({ q, status: "all" })}`;
+    case "findings":
+      return `/findings${qs({ q })}`;
     case "assets":
       return `/assets${qs({ q })}`;
     case "components":
       return `/components${qs({ q })}`;
     case "teams":
       return "/settings/teams";
+    case "members":
+      // The member list is for admins only; a narrower search finds the rest.
+      return null;
   }
+}
+
+function SeeAll({ to, title }: { to: string | null; title: string }) {
+  if (!to) return <span className="muted small">Refine the search to see the rest</span>;
+  return (
+    <Link to={to} className="small">
+      See all in {title.toLowerCase()}
+    </Link>
+  );
 }
 
 const EXAMPLES = ["CVE-2021-44228", "GHSA-35jh-r3h4-6jhm", "lodash@4.17.20", "openssl 3.0.2", "pkg:npm/express", "web-1", "sha256:…"];
@@ -34,7 +48,7 @@ export function SearchPage() {
 
   return (
     <>
-      <PageHeader title="Search" sub="Vulnerability and advisory ids, packages (optionally with a version), asset names and identifiers, and teams." />
+      <PageHeader title="Search" sub="Vulnerability and advisory ids, finding titles, packages (optionally with a version), asset names and identifiers, teams and workspace members." />
       <form
         className="filters"
         role="search"
@@ -84,7 +98,8 @@ export function SearchPage() {
       ) : sections.length === 0 ? (
         <EmptyState title={`Nothing matches “${qParam}”`}>
           <p>
-            Search looks at advisory ids and aliases, installed packages, asset names and identifiers, and team names in this workspace. Check the
+            Search looks at advisory ids and aliases, the titles of open findings, installed packages, asset names and identifiers, team names and
+            (for engineers and above) members' names and emails in this workspace. Check the
             spelling, drop the version, or search for part of the name.
           </p>
         </EmptyState>
@@ -95,11 +110,7 @@ export function SearchPage() {
               <h2 id={`search-${s.id}`}>
                 {s.title} <span className="muted small">{s.more ? `first ${s.items.length}` : s.items.length}</span>
               </h2>
-              {s.more && (
-                <Link to={listFor(s.id, qParam)} className="small">
-                  See all in {s.title.toLowerCase()}
-                </Link>
-              )}
+              {s.more && <SeeAll to={listFor(s.id, qParam)} title={s.title} />}
             </header>
             <ul className="search-hits">
               {s.items.map((it) => (

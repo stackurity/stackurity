@@ -19,6 +19,7 @@ import (
 
 	"github.com/stackurity/stackurity/internal/osv"
 	"github.com/stackurity/stackurity/internal/store"
+	"github.com/stackurity/stackurity/internal/version"
 )
 
 // Feed names.
@@ -453,6 +454,13 @@ func (s *Syncer) npmRelease(ctx context.Context, c store.ReleaseCandidate) (stor
 	}
 	r.Latest = doc.DistTags["latest"]
 	r.LatestStable = latestStableSemver(keys(doc.Versions), r.Latest)
+	var stable []string
+	for v := range doc.Versions {
+		if !version.SemverPrerelease(v) {
+			stable = append(stable, v)
+		}
+	}
+	r.StableVersions = sortedVersions(version.CompareSemver, stable)
 	r.VersionDates = map[string]string{}
 	for v, t := range doc.Time {
 		if v == "created" || v == "modified" {
@@ -502,6 +510,7 @@ func (s *Syncer) packagistRelease(ctx context.Context, c store.ReleaseCandidate)
 		}
 	}
 	r.LatestStable = latestComposer(stable)
+	r.StableVersions = sortedVersions(version.CompareComposer, stable)
 	if t, err := time.Parse(time.RFC3339, r.VersionDates[r.LatestStable]); err == nil {
 		r.LatestPublished = &t
 	}

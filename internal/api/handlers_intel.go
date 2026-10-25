@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/stackurity/stackurity/internal/store"
+	"github.com/stackurity/stackurity/internal/upgrade"
 )
 
 func (s *Server) listFindings(w http.ResponseWriter, r *http.Request) {
@@ -97,6 +98,14 @@ func (s *Server) getFinding(w http.ResponseWriter, r *http.Request) {
 		}
 		resp["advisories"] = sources
 		resp["related_advisories"] = related
+	}
+	if f.Status == "open" {
+		rec, err := upgrade.ForFinding(r.Context(), s.Store, f, time.Now())
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		resp["upgrade"] = rec
 	}
 	writeJSON(w, 200, resp)
 }

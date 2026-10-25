@@ -153,12 +153,19 @@ func serverCmd() *cobra.Command {
 				return err
 			}
 
-			checker := &health.Checker{Store: st, FeedsEnabled: os.Getenv("STACKURITY_FEEDS") != "off"}
+			checker := &health.Checker{Store: st, FeedsEnabled: os.Getenv("STACKURITY_FEEDS") != "off",
+				PlatformWorkspace: os.Getenv("STACKURITY_PLATFORM_WORKSPACE")}
+			if _, why, err := checker.PlatformTarget(ctx); err != nil {
+				return err
+			} else if why != "" {
+				log.Warn("platform incidents are not raised; critical platform problems are logged instead", "reason", why,
+					"fix", "set STACKURITY_PLATFORM_WORKSPACE to an active workspace id or slug")
+			}
 			allowHTTPHooks := os.Getenv("STACKURITY_ALLOW_HTTP_WEBHOOKS") == "true"
 			dispatcher := &notify.Dispatcher{Store: st, Sender: notify.NewSender(allowHTTPHooks), Secrets: res, Log: log,
 				BaseURL:  os.Getenv("STACKURITY_BASE_URL"),
 				Escalate: func(ctx context.Context) bool { return gate.Has(ctx, license.Teams) },
-				Platform: checker.PlatformIncidents}
+				Platform: checker.PlatformIncidents, PlatformTarget: checker.PlatformTarget}
 			var pluginRunner *plugins.Runner
 			if dir := os.Getenv("STACKURITY_PLUGIN_DIR"); dir != "" {
 				pluginRunner = &plugins.Runner{Dir: dir, WorkDir: filepath.Join(dataDir, "work"), Timeout: 15 * time.Minute}
@@ -203,6 +210,7 @@ func serverCmd() *cobra.Command {
 			// Prioritise, correlate, plan and deliver notifications.
 			w.EveryWorkspace("alerts", time.Minute, dispatcher.Tick)
 			w.EveryWorkspace("alert-digest", time.Hour, dispatcher.Digest)
+			w.Every("platform-fallback", 10*time.Minute, dispatcher.PlatformFallback)
 			registerPro(w, st, log, gate)
 			done := make(chan struct{})
 			go func() { w.Run(ctx); close(done) }()
@@ -342,6 +350,11 @@ func checkIsolation(ctx context.Context, st *store.Store, log *slog.Logger) erro
 	return nil
 }
 
+// imageScanFresh is how long a successful scan of an image reported by a
+// plugin is reused. Running images are pinned to a digest, so their content
+// cannot change; a rescan only picks up scanner improvements.
+const imageScanFresh = 7 * 24 * time.Hour
+
 func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataDir string, log *slog.Logger, pluginRunner *plugins.Runner, packMgr *packs.Manager) {
 	scanner := &gitrepo.Scanner{WorkDir: filepath.Join(dataDir, "work"), Version: version, Packs: packMgr.Active}
 	imageScanner := &image.Scanner{Syft: env("STACKURITY_SYFT", "syft"), Version: version, WorkDir: filepath.Join(dataDir, "work")}
@@ -407,12 +420,26 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 					return err
 				}
 				var last int64
+				var scans []store.ImageScan
 				for _, pb := range batches {
 					r, err := st.Ingest(ctx, pb, 0)
 					if err != nil {
 						return err
 					}
 					last = r.AssetID
+					// Images the plugin found running are read by the image
+					// scanner, in the order the plugin gave (most important first).
+					if ic, ok := image.ReferenceOnly(pb); ok {
+						scans = append(scans, store.ImageScan{AssetID: r.AssetID, Image: ic.Image, Platform: ic.Platform})
+					}
+				}
+				if limit := cfg.ImageScanLimit(); len(scans) > 0 && limit > 0 {
+					stats, err := st.QueueImageScans(ctx, scans, limit, imageScanFresh)
+					if err != nil {
+						return err
+					}
+					log.Info("image scans", "plugin", cfg.Plugin, "images", len(scans), "queued", stats.Queued,
+						"fresh", stats.Fresh, "pending", stats.Pending, "deferred", stats.Limited)
 				}
 				return st.IntegrationResult(ctx, in.ID, last, nil)
 			default:
@@ -434,6 +461,38 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 			_ = st.IntegrationResult(context.WithoutCancel(ctx), in.ID, 0, runErr)
 		}
 		return runErr
+	})
+
+	// Images reported running by a plugin (Kubernetes) are read without
+	// credentials. A failure is recorded as coverage on the image, so a
+	// registry that needs a pull secret shows as not assessed, never clean.
+	w.Handle("image.scan", func(ctx context.Context, payload json.RawMessage) error {
+		var p store.ImageScan
+		if err := json.Unmarshal(payload, &p); err != nil {
+			return err
+		}
+		cfg := image.Config{Image: p.Image, Platform: p.Platform}
+		b, err := imageScanner.Scan(ctx, cfg, "")
+		if err == nil {
+			err = b.Validate()
+		}
+		if err != nil {
+			if ctx.Err() != nil {
+				return err // shutting down or timed out: try again
+			}
+			fb := model.NewBatch(model.Collector{ID: store.ImageScanCollector, Version: version, Method: "scanner"}, model.AssetRef{
+				Kind: model.AssetImage, Name: p.Image, Identifiers: []model.Identifier{{Scheme: "image-ref", Value: p.Image}},
+			})
+			msg := err.Error()
+			if len(msg) > 1000 {
+				msg = msg[:1000]
+			}
+			fb.Cover("image:"+p.Image, "failed", msg)
+			_, ierr := st.Ingest(ctx, fb, 0)
+			return ierr
+		}
+		_, err = st.Ingest(ctx, b, 0)
+		return err
 	})
 
 	registerIntel(w, st, dataDir, log)
@@ -464,6 +523,9 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 	})
 	w.Every("housekeeping", time.Hour, func(ctx context.Context) error {
 		if err := st.PurgeExpiredSessions(ctx); err != nil {
+			return err
+		}
+		if _, err := st.PurgeRateLimits(ctx); err != nil {
 			return err
 		}
 		return st.PurgeJobs(ctx, 14*24*time.Hour)

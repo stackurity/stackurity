@@ -22,7 +22,7 @@ type StackMember struct {
 	InternetExposed *bool  `json:"internet_exposed"`
 	Criticality     string `json:"criticality"`
 	Status          string `json:"collection_status"`
-	Role            string `json:"role"` // self, host, source, image, dependency, workload, deployment
+	Role            string `json:"role"` // self, host, cluster, source, image, dependency, workload, deployment
 	Via             string `json:"via"`  // relation kind that brought it in
 	From            int64  `json:"from"` // the member it was reached from (0 for self)
 	Open            int    `json:"open"`
@@ -50,7 +50,7 @@ type Stack struct {
 }
 
 // Layer order, most exposed first.
-var stackLayers = []string{"web_server", "os", "runtime", "data_store", "libraries", "declared", "managed_service", "other"}
+var stackLayers = []string{"web_server", "os", "runtime", "data_store", "libraries", "declared", "managed_service", "platform", "other"}
 
 // outgoing relations followed from any member, and the role of the target.
 var stackRoles = map[string]string{"runs_on": "host", "built_from": "source", "deployed_as": "image", "depends_on": "dependency", "contains": "dependency"}
@@ -99,14 +99,38 @@ func (s *Store) GetStack(ctx context.Context, id int64) (*Stack, error) {
 
 	// What runs on a host, or where a repository is deployed, comes first.
 	switch root.Kind {
-	case "host":
+	case "host", "cluster":
 		in, err := query(`SELECT r.to_asset, r.from_asset, r.kind FROM asset_relations r`+live+
 			` WHERE r.to_asset = ANY($1) AND r.kind = 'runs_on'`, []int64{root.ID})
 		if err != nil {
 			return nil, err
 		}
+		var workloads []int64
 		for _, e := range in {
-			addMember(e.to, "workload", "runs_on", root.ID)
+			if addMember(e.to, "workload", "runs_on", root.ID) {
+				workloads = append(workloads, e.to)
+			}
+		}
+		// A cluster's workloads bring in the images they run.
+		if root.Kind == "cluster" && len(workloads) > 0 {
+			out, err := query(`SELECT r.from_asset, r.to_asset, r.kind FROM asset_relations r`+live+
+				` WHERE r.from_asset = ANY($1) AND r.kind = 'deployed_as' ORDER BY r.to_asset`, workloads)
+			if err != nil {
+				return nil, err
+			}
+			for _, e := range out {
+				addMember(e.to, "image", "deployed_as", e.from)
+			}
+		}
+	case "image":
+		// Where the image runs: the Kubernetes workloads deployed as it.
+		in, err := query(`SELECT r.to_asset, r.from_asset, r.kind FROM asset_relations r`+live+
+			` WHERE r.to_asset = ANY($1) AND r.kind = 'deployed_as'`, []int64{root.ID})
+		if err != nil {
+			return nil, err
+		}
+		for _, e := range in {
+			addMember(e.to, "workload", "deployed_as", root.ID)
 		}
 	case "repository":
 		in, err := query(`SELECT r.to_asset, r.from_asset, r.kind FROM asset_relations r`+live+
@@ -148,8 +172,8 @@ func (s *Store) GetStack(ctx context.Context, id int64) (*Stack, error) {
 		}
 	}
 
-	rows, err := s.Pool.Query(ctx, `SELECT id, name, kind, environment, internet_exposed, criticality, collection_status
-		FROM assets WHERE id = ANY($1)`, order)
+	rows, err := s.Pool.Query(ctx, `SELECT a.id, a.name, a.kind, a.environment, `+effectiveExposure+`, a.criticality, a.collection_status
+		FROM assets a WHERE a.id = ANY($1)`, order)
 	if err != nil {
 		return nil, err
 	}
@@ -162,6 +186,9 @@ func (s *Store) GetStack(ctx context.Context, id int64) (*Stack, error) {
 		cur := members[m.AssetID]
 		cur.Name, cur.Kind, cur.Environment, cur.InternetExposed, cur.Criticality, cur.Status =
 			m.Name, m.Kind, m.Environment, m.InternetExposed, m.Criticality, m.Status
+		if cur.Role == "host" && cur.Kind == "cluster" {
+			cur.Role = "cluster" // a workload runs on a cluster, not a host
+		}
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
@@ -239,6 +266,10 @@ func findingLayer(f Finding, assetKind string) string {
 		return "declared" // what the code asks for, not necessarily what runs
 	case assetKind == "managed_service":
 		return "managed_service"
+	case assetKind == "cluster" && osReleaseNames[f.ComponentName]:
+		return "os" // a node operating system
+	case assetKind == "cluster":
+		return "platform" // Kubernetes, kubelet, container runtime
 	case hasNamePrefix(f.ComponentName, webServerNames):
 		return "web_server"
 	case hasNamePrefix(f.ComponentName, dataStoreNames):
@@ -254,5 +285,9 @@ func findingLayer(f Finding, assetKind string) string {
 	}
 	return "other"
 }
+
+// osReleaseNames are the os-release ids reported as pkg:generic/<id>.
+var osReleaseNames = map[string]bool{"debian": true, "ubuntu": true, "alpine": true, "rocky": true, "almalinux": true, "rhel": true,
+	"centos": true, "amzn": true, "fedora": true, "opensuse-leap": true, "sles": true, "ol": true}
 
 var runtimeProducts = map[string]bool{"nodejs": true, "python": true, "go": true, "ruby": true, "php": true}

@@ -29,20 +29,22 @@ Roles, from least to most access: `viewer` (read, including the audit log), `eng
 | `GET /collections/{id}/result` | collector (own submissions), engineer+ | Whether a submitted collection has been evaluated (`status`: `pending`, `evaluated`, `failed`), then the asset's open findings and its count of `evaluation_gaps`. Used by `stackurity scan --fail-on` |
 | `GET /overview` | viewer | Inventory, coverage and status counts |
 | `GET /search?q=&limit=` | viewer | Global search of the current workspace, see [Search](#search) |
-| `GET /assets?kind=&environment=&status=&owner_team_id=&q=&reboot_required=true` | viewer | List assets. `reboot_required=true` lists hosts that run older code than is installed |
+| `GET /assets?kind=&environment=&status=&owner_team_id=&q=&reboot_required=true&exposed=` | viewer | List assets. `reboot_required=true` lists hosts that run older code than is installed. `exposed=true` or `false` filters by `exposed`, the exposure risk scoring uses: `internet_exposed` when set by hand, else what a collector observed (a Kubernetes workload's `exposure`, or for an image the workloads deployed as it) |
 | `GET /assets/{id}` | viewer | Asset and identifiers |
 | `PATCH /assets/{id}` | engineer | Set name, environment, owner, criticality, exposure, tags |
 | `DELETE /assets/{id}` | admin | Delete an asset and its history |
 | `GET /assets/{id}/inventory?q=&type=&direct=&include_removed=` | viewer | Components on the asset, with evidence |
 | `GET /assets/{id}/coverage`, `/collections`, `/relations` | viewer | Coverage ledger, collection history, relations |
 | `POST`/`DELETE /assets/{id}/relations` | engineer | Add or remove `runs_on`, `built_from`, `deployed_as`, `contains`, `depends_on`, `replica_of` (a standby, staging or DR copy that should run the same versions as the target) |
-| `GET /assets/{id}/stack` | viewer | Everything the asset relies on, followed through relations, with open findings grouped by layer (`web_server`, `os`, `runtime`, `data_store`, `libraries`, `declared`, `managed_service`, `other`). For an application this is its hosts, repository, images and dependencies (up to three hops); for a host, the applications running on it; for a repository, its deployments and their hosts |
+| `GET /assets/{id}/stack` | viewer | Everything the asset relies on, followed through relations, with open findings grouped by layer (`web_server`, `os`, `runtime`, `data_store`, `libraries`, `declared`, `managed_service`, `platform`, `other`). For an application this is its hosts, repository, images and dependencies (up to three hops); for a host, the applications running on it; for a cluster, its workloads and their images; for an image, the workloads deployed as it; for a repository, its deployments and their hosts |
 | `GET /assets/{id}/drift?with=` | viewer | Components whose versions differ from another asset (`with`, or the asset this one is a `replica_of`). Each item is `behind`, `ahead`, `differs`, `only_here` or `only_there`, compared by the component's ecosystem rules |
 | `GET /assets/{id}/sbom` | viewer | CycloneDX 1.6 export |
 | `GET /components?q=&type=`, `GET /components/{id}` | viewer | Component explorer |
+| `GET /components/{id}/upgrade` | viewer | An [upgrade recommendation](#upgrade-recommendations) for each installed version with open findings (most findings first, at most 50; `total` counts all), with `version`, `distro` and `asset_count` |
 | `GET /inventory?component_id=&asset_id=` | viewer | Where a component is used |
 | `GET /coverage?problems=true` | viewer | Coverage ledger across assets |
 | `GET /reports/evidence?from=&to=` | viewer | Patch-management evidence for a period (dates, `to` inclusive; default the last 30 days, at most a year): assets and their collection status, hosts needing a reboot, evaluation gaps, open findings by severity and priority, overdue findings, findings resolved in the period with the share resolved within their deadline and the median days from first detection to resolution, every active exception with its reason, mitigation and expiry, and drift for each `replica_of` pair |
+| `GET /reports/outcomes?days=` | viewer | [Remediation outcomes](#remediation-outcomes) over the last `days` (1 to 365, default 90) |
 | `GET /audit?object_type=&object_id=` | viewer | Audit events |
 | `GET`/`POST /tokens`, `DELETE /tokens/{id}` | any user | Personal tokens (admins: all tokens and collector tokens) |
 | `GET /teams` | viewer | Teams |
@@ -58,7 +60,10 @@ Roles, from least to most access: `viewer` (read, including the audit log), `eng
 | `GET /facets` | viewer | Distinct environments, asset kinds and component types |
 | `GET /findings?status=&kind=&severity=&verification=&asset_id=&component_id=&environment=&known_exploited=&q=&key=` | viewer | Vulnerability and end-of-life findings, known-exploited and most severe first |
 | `GET /findings/summary` | viewer | Counts by severity, kind and verification, plus stale feeds and evaluation gaps |
-| `GET /findings/{id}` | viewer | One finding, with every source advisory in its group |
+| `GET /findings/{id}` | viewer | One finding, with every source advisory in its group and, while it is open, its `upgrade` recommendation |
+| `GET /findings/{id}/upgrade` | viewer | The [upgrade recommendation](#upgrade-recommendations) for the installed copy the finding is on, covering every open finding on it |
+| `GET /findings/{id}/explain` | viewer | Why the finding has its priority: `risk` (priority, score, each factor with its points, `policy_version`, thresholds, the SLA for the priority, deadlines), the stored `evidence`, the matched `advisories` (id, feed, severity, dates, an osv.dev link), the freshness of the `feeds` they came from, and the asset's last (complete) `collection` time |
+| `GET /findings/verify?since=&asset_id=&limit=` | viewer | What changed since `since` (RFC 3339 time or `YYYY-MM-DD`): findings `resolved` since then with their `cause`, findings that existed then and are `still_open`, `opened_since`, and each asset's last complete collection. `asset_rescanned_since` tells "fixed" from "not scanned again yet". Lists are capped at `limit` (default 100, max 500) with a `total` |
 | `GET /advisories/{id-or-CVE}` | viewer | Advisories in a group |
 | `GET /components/{id}/intel` | viewer | Release data (latest stable, publish date, deprecation) and lifecycle cycles |
 | `GET /feeds` | viewer | Intelligence feeds and their freshness |
@@ -74,7 +79,7 @@ Roles, from least to most access: `viewer` (read, including the audit log), `eng
 | `POST /incidents/{id}/actions` | as findings | Apply an action to every open finding in the incident |
 | `GET /risk-policy` / `PUT /risk-policy` | viewer / admin | Priority weights, thresholds, deadlines and SOS rules |
 | `GET /channels`, `GET /routes`, `GET /deliveries?status=&incident_id=` | security | Notification configuration and delivery log |
-| `POST`/`PATCH`/`DELETE /channels/{id}`, `POST /channels/{id}/test` | admin | Email, Slack, Teams and webhook channels |
+| `POST`/`PATCH`/`DELETE /channels/{id}`, `POST /channels/{id}/test` | admin | Email, Slack, Teams, webhook and Jira channels; for Jira, test checks access without creating an issue |
 | `POST /routes`, `PUT`/`DELETE /routes/{id}` | admin | Which incidents go to which channel |
 | `POST /deliveries/{id}/retry` | admin | Retry a failed or held delivery |
 | `GET /users/directory` | engineer | Active users (id, email, name) for assignment |
@@ -94,14 +99,16 @@ Lists return `{"items": [...], "total": N, "limit": L, "offset": O}`. Pass `?lim
 `GET /search?q=lodash@4.17.20&limit=10` looks one query up everywhere at once and returns the matches grouped by type. `q` is trimmed and must be 2 to 200 characters; `%`, `_` and `\` match themselves. `limit` (default 10, max 50) applies to each group, and `more` says which groups had more matches.
 
 ```json
-{"query": "...", "vulnerabilities": [...], "assets": [...], "components": [...], "teams": [...],
- "more": {"vulnerabilities": false, "assets": true, "components": false, "teams": false}}
+{"query": "...", "vulnerabilities": [...], "findings": [...], "assets": [...], "components": [...], "teams": [...], "members": [...],
+ "more": {"vulnerabilities": false, "findings": false, "assets": true, "components": false, "teams": false, "members": false}}
 ```
 
 - **vulnerabilities**: when the query looks like an id (one word with a digit and a `-` or `:`), advisories whose id, alias or group is the query, in any letter case (CVE, GHSA, DSA, USN, RHSA, ALAS and other OSV ids), and finding keys that contain it. Each result is a finding key with the workspace's open and resolved findings, the number of assets with an open finding, a sample of `assets` and `components`, and the public `advisory` when one is known. An advisory that affects nothing in the workspace is returned with `kind: ""` and zero counts.
+- **findings**: open findings whose title contains the query (3 characters or more), one result per finding key and title, with the number of open findings, the assets they are on and a sample of those `assets`. Keys already returned under `vulnerabilities` are left out.
 - **components**: packages currently installed, matched on name or `namespace/name`. A version can be given as `name@version`, `name version` or a purl (`pkg:npm/lodash@4.17.20`, which also filters by type and namespace); `version_assets` and the sample `assets` then cover that version, where `3.0.2` also matches distro builds such as `3.0.2-0ubuntu1.10`. Maven coordinates (`group:artifact`) and npm scopes (`@scope/name`) work as names.
 - **assets**: by name, any identifier (machine id, hostname, repository URL, image reference, ARN, SBOM serial) or the `digest` and `image` attributes. `match_scheme` and `match_value` say which identifier matched.
 - **teams**: by name or email, with the assets they own and those assets' open findings.
+- **members**: for engineers and above (who can already read the user directory; empty for viewers), members of the current workspace by name or email, with their `role` in this workspace, whether the account is `disabled`, and `open_assigned`, the open findings assigned to them here. Accounts that are not members of the workspace are never returned.
 
 Every result has a `rank`: `0` for an exact (case-insensitive) match of an id, name or identifier, `1` for a prefix, `2` for a substring; results are ordered by rank. Search only reads the current workspace; advisories are public data.
 
@@ -133,8 +140,10 @@ The single ingest contract for agents, scanners, SBOM imports and plugins. See [
 }
 ```
 
-- `relations` (optional) links the asset to others by identifier: `[{"kind": "runs_on", "to": [{"scheme": "machine-id", "value": "..."}]}]`. Kinds are `runs_on` and `built_from`. Targets the server does not know yet are skipped. When present, the list replaces the relations this collector reported before; relations added by hand are kept.
+- `relations` (optional) links the asset to others by identifier: `[{"kind": "runs_on", "to": [{"scheme": "machine-id", "value": "..."}]}]`. Kinds are `runs_on`, `built_from` and `deployed_as` (a Kubernetes workload to the image it runs). Targets the server does not know yet are skipped. When present, the list replaces the relations this collector reported before; relations added by hand are kept.
 - An application on a host is identified as `{"scheme": "app-path", "value": "/srv/shop"}`, its only identifier, with a `runs_on` relation to the host. The server scopes the path to that host, which must already exist. A host-bound token may only report applications on its own host, and plugins cannot use this scheme.
+- `asset.kind` is `host`, `repository`, `image`, `application`, `managed_service`, `sbom`, `cluster` or `workload`.
+- An asset attribute `exposure` of `external` or `internal` (set on Kubernetes workloads) is used as the asset's internet exposure for risk scoring unless an operator set it by hand. An image takes the exposure of the workloads deployed as it.
 - `complete: true` tells the server that this batch is the collector's whole view of the asset. Components missing from it are marked removed, and history is kept. Partial batches never remove anything.
 - `coverage[].status` is one of `checked`, `skipped`, `failed`, `unsupported` or `partial`.
 - Limits: 200,000 observations, 64 MiB on the wire, 256 MiB after decompression.
@@ -154,7 +163,38 @@ A finding is one issue on one inventory row:
 - `fixed_version` is the highest "first fixed" version across the matching sources, so every source agrees the target is fixed. It is empty when no source lists a fix.
 - `evidence` records the matched ranges, the OSV package and ecosystem, the comparator used, the feed and its last successful sync, and whether the CVE is in CISA KEV.
 
-Findings resolve automatically when the component is upgraded or removed, or when an advisory is withdrawn. If the issue comes back, the finding reopens.
+Findings resolve automatically when the component is upgraded or removed, or when an advisory is withdrawn. If the issue comes back, the finding reopens. Both are recorded in the finding's history (`GET /findings/{id}/events`) as `resolved` (the note is the resolution) and `reopened` (with the earlier resolution in `detail`), by actor `matcher`.
+
+## Upgrade recommendations
+
+`upgrade` objects are built only from stored data: the fixed versions advisories give for the open findings on one installed copy, the registry's release list, and endoflife.date release lines. Nothing is guessed: when data is missing the response says so.
+
+- `minimum_fixed_version`: the highest `fixed_version` across the open vulnerability findings, compared by the ecosystem's rules.
+- `recommended_version` and `basis`:
+  - `distro_fixed` for OS packages (deb, rpm, apk): the distribution's fixed build. Registry releases do not apply (`release_data: not_applicable`).
+  - `latest_in_line`: the newest stable, non-withdrawn release at or above the minimum in the installed version's major line. If the fix only exists in a later major line, the newest such release in that line, and `requires_major` is true.
+  - `minimum_fixed`: there is no release data (`release_data: none` or `failed`), or no stable release at or above the minimum is recorded (for example the fix is a pre-release).
+  - `supported_line`: the installed release line is end of life, so the end-of-life finding is resolved only by moving to the newest release of the oldest supported line after it (from release data, else endoflife.date's latest), provided that is at or above the minimum fix.
+  - `none`: no source lists a fixed version.
+- `change_type` (`patch`, `minor`, `major`, `distro`), `requires_subscription` (the fix is only in Ubuntu Pro or SUSE LTSS), `recommended_yanked`, `minimum_fixed_yanked` and `installed_yanked` (withdrawn by the registry, with `yanked_reason`), and the package's `deprecated` notice.
+- `lifecycle`, `target_lifecycle` and `supported_line`: release lines with `status` `supported`, `security_only` or `end_of_life`.
+- `fixes` and `unfixed`: the finding keys the recommended version resolves and those it does not. `rationale` gives the reasons in plain language.
+
+Package upgrade groups in the action plan (`GET /fix-groups`) carry `recommended_version`, `change_type`, `requires_major`, `recommended_yanked` and `rationale`; `to_version` stays the minimum fixed version.
+
+## Remediation outcomes
+
+`GET /reports/outcomes` returns `days`, the risk `policy_version` and a `report`:
+
+- `resolved`: findings resolved in the window that are still resolved.
+- `time_to_remedy`: `mean_days` (MTTR) and `median_days` from detection, or from the last reopening, to resolution, by `priority` and `kind`; `all` rows are totals.
+- `causes`: `upgraded` (a newer inventory shows another version), `remediation` (a verified remediation action), `removed` (a complete inventory no longer lists it), all with `evidence: fresh_collection`; `reevaluated` (advisory or lifecycle data changed, `evidence: intelligence`).
+- `sla`: per priority, the policy's `fix_days`, findings resolved within that many days of first detection out of those resolved, and open and overdue counts now.
+- `reopened`: reopenings and distinct findings in the window, and of the resolutions recorded in the window how many were later reopened. `events_since` is when resolutions and reopenings started being recorded.
+- `open`: active, overdue, excepted (suppressed or accepted) and on stale assets, now.
+- `remediation`: plans by status and actions by status created in the window, the success rate (verified out of verified, failed and rolled back), rollback actions and recent failures; `null` when there were none.
+
+Every rate comes with the counts it is computed from and is `null` when there is nothing to divide by.
 
 ## Workflow
 
@@ -175,7 +215,7 @@ When a suppression or risk acceptance expires, the finding returns to `new` and 
 
 ## Priority and SOS
 
-Every open finding gets a priority from P1 to P4. The score is built from the CVSS score (or the severity when there is none), CISA KEV, internet exposure (unknown exposure counts a little), production environment, asset criticality, fix availability, whether it is overdue, and dev-only scope. It is then scaled down for unverified or stale evidence. `priority_factors` lists each contribution. Weights, thresholds and per-priority deadlines are configured in `/risk-policy`.
+Every open finding gets a priority from P1 to P4. The score is built from the CVSS score (CVSS v3.x or v4.0, whichever rates the advisory higher; `severity_source` on the advisory says which) or the severity when there is none, CISA KEV, internet exposure (unknown exposure counts a little), production environment, asset criticality, fix availability, whether it is overdue, and dev-only scope. It is then scaled down for unverified or stale evidence. `priority_factors` lists each contribution. Weights, thresholds and per-priority deadlines are configured in `/risk-policy`.
 
 SOS rules are conditions over the same inputs. A rule based only on severity is rejected. Only confirmed findings can trigger SOS.
 
@@ -186,7 +226,7 @@ Findings with the same `kind` and `key` whose assets belong to the same owner te
 - a stale or failing feed (`feed`)
 - a stale asset or failing integration (`collection`)
 - a drop of more than half in an asset's collected inventory (`coverage`)
-- in the default workspace only, a critical problem with the installation itself, such as a background task that keeps failing or intelligence that never synced (`platform`)
+- in the operators' workspace only (the default workspace, or `STACKURITY_PLATFORM_WORKSPACE`), a critical problem with the installation itself, such as a background task that keeps failing or intelligence that never synced (`platform`)
 
 Routes send incidents to channels and filter by minimum priority, SOS only, kinds, environments and owner teams. Each incident produces at most one notification per event:
 
@@ -195,7 +235,22 @@ Routes send incidents to channels and filter by minimum priority, SOS only, kind
 - `escalated`: level 1 when the acknowledgement deadline has passed, level 2 when the fix deadline has passed. Only routes marked `escalation` receive these.
 - `resolved`
 
-Quiet hours delay everything except SOS. When `max_per_hour` is reached, further notifications are held and sent together in an hourly digest. Failed deliveries are retried with backoff up to 8 times.
+Quiet hours delay everything except SOS. When `max_per_hour` is reached, further notifications are held and sent together in an hourly digest. Failed deliveries are retried with backoff up to 8 times, no sooner than a receiver's `Retry-After`. A delivery that cannot succeed until the configuration changes (Jira rejecting the credentials, an unknown project) fails at once.
+
+Jira channels (`"kind": "jira"`) keep one issue per incident instead of sending one message per event: the first matching event creates the issue, later changes are queued as `updated` deliveries (findings joined or left, priority changed) and `resolved`. Incidents in lists and in `GET /incidents/{id}` carry the issues that follow them:
+
+```json
+"issues": [{"tracker": "jira", "key": "SEC-42", "url": "https://acme.atlassian.net/browse/SEC-42", "channel_id": 7}]
+```
+
+`channel_id` is `null` once the channel is deleted; the link is kept.
+
+```json
+{"kind": "jira", "name": "security-jira", "secret_ref": "secret:JIRA_TOKEN",
+ "config": {"url": "https://acme.atlassian.net", "deployment": "cloud", "username": "bot@acme.io", "project": "SEC",
+            "issue_type": "Task", "labels": ["security"], "priorities": {"P1": "Highest", "P2": "High"},
+            "resolve_transition": "Done"}}
+```
 
 Webhook channels receive the JSON message with these headers:
 

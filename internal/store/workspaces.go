@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -101,6 +102,19 @@ func (s *Store) GetWorkspace(ctx context.Context, id int64) (*Workspace, error) 
 	}
 	w, err := pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByPos[Workspace])
 	return w, notFound(err)
+}
+
+// WorkspaceByRef finds a workspace by id or slug, for configuration such as
+// STACKURITY_PLATFORM_WORKSPACE, and reports whether it is disabled.
+func (s *Store) WorkspaceByRef(ctx context.Context, ref string) (id int64, disabled bool, err error) {
+	ref = strings.ToLower(strings.TrimSpace(ref))
+	byID, convErr := strconv.ParseInt(ref, 10, 64)
+	if convErr != nil {
+		byID = 0
+	}
+	err = s.Pool.QueryRow(tenant.System(ctx), `SELECT id, disabled_at IS NOT NULL FROM workspaces
+		WHERE id = $1 OR slug = $2 ORDER BY id = $1 DESC LIMIT 1`, byID, ref).Scan(&id, &disabled)
+	return id, disabled, notFound(err)
 }
 
 // Counts read tenant tables, so listing all workspaces needs system scope.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -39,9 +40,13 @@ type Dispatcher struct {
 	// incidents (a paid feature); nil allows it.
 	Escalate func(ctx context.Context) bool
 	// Platform returns incidents about the installation itself (stuck
-	// background tasks, no intelligence). They are raised in the default
-	// workspace, the operator's; nil disables them.
+	// background tasks, no intelligence); nil disables them. They are raised
+	// in the workspace PlatformTarget returns, the operator's, or in the
+	// default workspace when PlatformTarget is nil.
 	Platform func(ctx context.Context) ([]store.SystemIncident, error)
+	// PlatformTarget returns the workspace for platform incidents, or 0 and
+	// the reason when there is none (it is missing or disabled).
+	PlatformTarget func(ctx context.Context) (id int64, why string, err error)
 }
 
 func (d *Dispatcher) now() time.Time {
@@ -74,7 +79,11 @@ func (d *Dispatcher) Tick(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("detect system problems: %w", err)
 	}
-	if ws, ok := tenant.Workspace(ctx); ok && ws == tenant.DefaultWorkspace && d.Platform != nil {
+	here, err := d.platformHere(ctx)
+	if err != nil {
+		return fmt.Errorf("platform workspace: %w", err)
+	}
+	if here {
 		p, err := d.Platform(ctx)
 		if err != nil {
 			return fmt.Errorf("platform health: %w", err)
@@ -90,6 +99,43 @@ func (d *Dispatcher) Tick(ctx context.Context) error {
 	return d.Deliver(ctx)
 }
 
+// platformHere reports whether platform incidents belong to the workspace
+// ctx is scoped to.
+func (d *Dispatcher) platformHere(ctx context.Context) (bool, error) {
+	ws, ok := tenant.Workspace(ctx)
+	if !ok || d.Platform == nil {
+		return false, nil
+	}
+	if d.PlatformTarget == nil {
+		return ws == tenant.DefaultWorkspace, nil
+	}
+	id, _, err := d.PlatformTarget(tenant.System(ctx))
+	return err == nil && id == ws, err
+}
+
+// PlatformFallback logs critical platform problems while there is no
+// workspace to raise them in, because the configured one is missing or
+// disabled. Instance admins also see them in the dashboard's banner. It runs
+// in system scope.
+func (d *Dispatcher) PlatformFallback(ctx context.Context) error {
+	if d.Platform == nil || d.PlatformTarget == nil {
+		return nil
+	}
+	_, why, err := d.PlatformTarget(ctx)
+	if err != nil || why == "" {
+		return err
+	}
+	problems, err := d.Platform(ctx)
+	if err != nil {
+		return err
+	}
+	for _, p := range problems {
+		d.Log.Error("platform problem not raised as an incident", "problem", p.Key, "title", p.Title, "reason", why,
+			"fix", "set STACKURITY_PLATFORM_WORKSPACE to an active workspace")
+	}
+	return nil
+}
+
 // Plan queues deliveries for new, raised, escalated and resolved incidents.
 func (d *Dispatcher) Plan(ctx context.Context) error {
 	routes, err := d.Store.ListRoutes(ctx)
@@ -100,13 +146,28 @@ func (d *Dispatcher) Plan(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// Tracker channels (Jira) keep one issue per incident: they get no
+	// summaries, and once an incident has an issue it is updated from the
+	// issue's state (planIssueUpdates) rather than per event.
+	tracker, err := d.trackerChannels(ctx)
+	if err != nil {
+		return err
+	}
+	ids := make([]int64, len(announce))
+	for i, in := range announce {
+		ids[i] = in.ID
+	}
+	issued, err := d.Store.IssuedChannels(ctx, ids)
+	if err != nil {
+		return err
+	}
 	// Per route, collect what it would announce this cycle. More than
 	// burstThreshold becomes one summary, so onboarding a server or a big
 	// feed update never floods a channel (FR-08: grouping, no storms).
 	perRoute := map[int64][]store.Incident{}
 	for _, in := range announce {
 		for _, r := range routes {
-			if !r.Escalation && routeMatches(r, in) {
+			if !r.Escalation && routeMatches(r, in) && !issued[in.ID][r.ChannelID] {
 				perRoute[r.ID] = append(perRoute[r.ID], in)
 			}
 		}
@@ -117,7 +178,7 @@ func (d *Dispatcher) Plan(ctx context.Context) error {
 			continue
 		}
 		r := r
-		if len(list) > burstThreshold {
+		if len(list) > burstThreshold && !tracker[r.ChannelID] {
 			msg, key, err := d.burstMessage(ctx, list, "opened")
 			if err != nil {
 				return err
@@ -158,7 +219,7 @@ func (d *Dispatcher) Plan(ctx context.Context) error {
 	perRoute = map[int64][]store.Incident{}
 	for _, in := range resolved {
 		for _, r := range routes {
-			if !r.Escalation && r.SendResolved && routeMatches(r, in) {
+			if !r.Escalation && r.SendResolved && routeMatches(r, in) && !tracker[r.ChannelID] {
 				perRoute[r.ID] = append(perRoute[r.ID], in)
 			}
 		}
@@ -186,6 +247,43 @@ func (d *Dispatcher) Plan(ctx context.Context) error {
 	}
 	for _, in := range resolved {
 		if err := d.Store.MarkResolvedNotified(ctx, in.ID); err != nil {
+			return err
+		}
+	}
+	return d.planIssueUpdates(ctx)
+}
+
+// trackerChannels returns the ids of the workspace's tracker (Jira) channels.
+func (d *Dispatcher) trackerChannels(ctx context.Context) (map[int64]bool, error) {
+	chs, err := d.Store.ListChannels(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := map[int64]bool{}
+	for _, c := range chs {
+		if c.Kind == KindJira {
+			out[c.ID] = true
+		}
+	}
+	return out, nil
+}
+
+// planIssueUpdates queues an update for every tracker issue whose incident
+// changed (priority, findings, assets) since the issue was last updated, and
+// a resolution for every issue whose incident resolved. Updates are keyed by
+// when the issue was last updated, so each change is queued once.
+func (d *Dispatcher) planIssueUpdates(ctx context.Context) error {
+	changes, err := d.Store.IssueChanges(ctx)
+	if err != nil {
+		return err
+	}
+	for _, c := range changes {
+		in := c.Incident
+		event, key := "updated", fmt.Sprintf("issue:%d:updated:%d", c.LinkID, c.SyncedAt.UnixMicro())
+		if c.Resolution {
+			event, key = "resolved", fmt.Sprintf("issue:%d:resolved", c.LinkID)
+		}
+		if _, err := d.Store.EnqueueDelivery(ctx, c.ChannelID, nil, &in.ID, event, key, d.message(in, event)); err != nil {
 			return err
 		}
 	}
@@ -348,7 +446,16 @@ func (d *Dispatcher) Deliver(ctx context.Context) error {
 				}
 			}
 		}
-		if route != nil && !msg.SOS && del.Event != "test" {
+		ch := channels[del.ChannelID]
+		if ch == nil {
+			if ch, err = d.Store.GetChannel(ctx, del.ChannelID); err != nil {
+				return err
+			}
+			channels[ch.ID] = ch
+		}
+		// Quiet hours and hourly limits are for people: an issue tracker
+		// is kept current.
+		if route != nil && !msg.SOS && del.Event != "test" && ch.Kind != KindJira {
 			if until, quiet := quietUntil(*route, d.now()); quiet {
 				if err := d.Store.DeferDelivery(ctx, del.ID, until); err != nil {
 					return err
@@ -366,13 +473,6 @@ func (d *Dispatcher) Deliver(ctx context.Context) error {
 				continue
 			}
 		}
-		ch := channels[del.ChannelID]
-		if ch == nil {
-			if ch, err = d.Store.GetChannel(ctx, del.ChannelID); err != nil {
-				return err
-			}
-			channels[ch.ID] = ch
-		}
 		// Claim right before sending: another replica's Tick or Digest may
 		// be delivering the same queue.
 		attempts, ok, err := d.Store.ClaimDelivery(ctx, del.ID, deliveryLease)
@@ -382,13 +482,25 @@ func (d *Dispatcher) Deliver(ctx context.Context) error {
 		if !ok {
 			continue
 		}
-		sendErr := d.send(ctx, ch, del.ID, msg)
+		sendErr := d.send(ctx, ch, del, attempts, msg)
 		// Record what happened even if shutdown began during the send, so a
 		// sent message is not sent again when the lease ends.
 		bg := context.WithoutCancel(ctx)
 		if sendErr != nil {
 			d.Log.Warn("delivery failed", "delivery", del.ID, "channel", ch.Name, "attempt", attempts, "err", sendErr)
-			if err := d.Store.DeliveryFailed(bg, del.ID, attempts, maxAttempts, sendErr); err != nil {
+			// The receiver may ask for a pause (Retry-After), or say that
+			// retrying cannot help (rejected credentials).
+			var wait time.Duration
+			var ra *RetryAfterError
+			if errors.As(sendErr, &ra) {
+				wait = ra.Wait
+			}
+			n := attempts
+			var pe *PermanentError
+			if errors.As(sendErr, &pe) {
+				n = maxAttempts
+			}
+			if err := d.Store.DeliveryFailedWait(bg, del.ID, n, maxAttempts, sendErr, wait); err != nil {
 				return err
 			}
 		} else if err := d.Store.DeliverySent(bg, del.ID); err != nil {
@@ -399,7 +511,13 @@ func (d *Dispatcher) Deliver(ctx context.Context) error {
 	return nil
 }
 
-func (d *Dispatcher) send(ctx context.Context, ch *store.Channel, deliveryID int64, msg Message) error {
+// send delivers one claimed delivery; attempts counts this attempt.
+func (d *Dispatcher) send(ctx context.Context, ch *store.Channel, del store.Delivery, attempts int, msg Message) error {
+	if ch.Kind == KindJira {
+		sctx, cancel := context.WithTimeout(ctx, jiraTimeout)
+		defer cancel()
+		return d.syncJira(sctx, ch, del, attempts, msg)
+	}
 	var cfg ChannelConfig
 	if err := json.Unmarshal(ch.Config, &cfg); err != nil {
 		return err
@@ -410,14 +528,20 @@ func (d *Dispatcher) send(ctx context.Context, ch *store.Channel, deliveryID int
 	}
 	sctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	return d.Sender.Send(sctx, ch.Kind, cfg, secret, deliveryID, msg)
+	return d.Sender.Send(sctx, ch.Kind, cfg, secret, del.ID, msg)
 }
 
-// SendTest sends a test message through a channel immediately.
+// SendTest sends a test message through a channel immediately. For Jira it
+// checks the credentials and project access instead, creating nothing.
 func (d *Dispatcher) SendTest(ctx context.Context, ch *store.Channel) error {
+	if ch.Kind == KindJira {
+		err := d.checkJira(ctx, ch)
+		_ = d.Store.ChannelResult(ctx, ch.ID, err)
+		return err
+	}
 	msg := Message{Event: "test", Title: "Stackurity test notification", At: d.now().UTC(),
 		Summary: []string{"This channel is configured correctly."}}
-	err := d.send(ctx, ch, 0, msg)
+	err := d.send(ctx, ch, store.Delivery{Event: "test"}, 1, msg)
 	_ = d.Store.ChannelResult(ctx, ch.ID, err)
 	return err
 }
@@ -574,7 +698,7 @@ func (d *Dispatcher) burstMessage(ctx context.Context, list []store.Incident, ev
 	return m, key, nil
 }
 
-func firstN(s []string, n int) []string {
+func firstN[T any](s []T, n int) []T {
 	if len(s) > n {
 		return s[:n]
 	}
