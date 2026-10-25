@@ -364,6 +364,16 @@ func suseChannel(advisory, sp string) (suffix string, ok bool) {
 	return "", false
 }
 
+// FIPSChannel reports whether an advisory ecosystem is one of Ubuntu Pro's
+// FIPS channels ("Ubuntu:Pro:FIPS:20.04:LTS", "...:FIPS-updates:...",
+// "...:FIPS-preview:..."). Their records describe the FIPS builds of a
+// package, which only FIPS-enabled hosts run.
+func FIPSChannel(ecosystem string) bool { return strings.HasPrefix(ecosystem, "Ubuntu:Pro:FIPS") }
+
+// FIPSBuild reports whether an installed Ubuntu package version is a FIPS
+// build: "1.1.1f-1ubuntu2.fips.20", "3.0.2-0ubuntu1.10+Fips1".
+func FIPSBuild(version string) bool { return strings.Contains(strings.ToLower(version), "fips") }
+
 // IsPro reports whether an ecosystem is a subscription channel whose fixes
 // need a paid subscription (Ubuntu Pro, SUSE LTSS).
 func IsPro(ecosystem string) bool { return Subscription(ecosystem) != "" }

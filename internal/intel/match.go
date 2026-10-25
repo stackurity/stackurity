@@ -238,6 +238,11 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 		if a.Withdrawn != nil || !osv.MatchEcosystem(a.Ecosystem, t.Ecosystem) {
 			continue
 		}
+		// Ubuntu's FIPS channels describe FIPS builds only, and a FIPS build
+		// takes its fixes from them, never from the regular channels.
+		if strings.HasPrefix(t.Ecosystem, "Ubuntu:") && osv.FIPSChannel(a.Ecosystem) != osv.FIPSBuild(t.Version) {
+			continue
+		}
 		pro := osv.IsPro(a.Ecosystem)
 		checked++
 		m, err := osv.Check(a.Affected, t)
