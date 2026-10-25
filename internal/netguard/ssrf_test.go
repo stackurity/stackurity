@@ -3,10 +3,12 @@ package netguard
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -169,3 +171,57 @@ func TestZonedLinkLocalDial(t *testing.T) {
 	}
 }
 
+// TestProxyChecksEveryTunnel: tools run as processes use the guarded proxy,
+// which refuses tunnels to internal addresses (including names that
+// resolve to them) and anything but CONNECT.
+func TestProxyChecksEveryTunnel(t *testing.T) {
+	defer Set(FromEnv())
+	Set(Config{Mode: "default"})
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) }))
+	defer srv.Close()
+	_, port, _ := net.SplitHostPort(strings.TrimPrefix(srv.URL, "https://"))
+	defer SetResolver(func(_ context.Context, _, host string) ([]netip.Addr, error) {
+		return []netip.Addr{netip.MustParseAddr("127.0.0.1")}, nil
+	})()
+
+	through := func(ctx context.Context, target string) (*http.Response, error) {
+		p, err := StartProxy(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer p.Close()
+		pu, _ := url.Parse(p.URL)
+		tr := srv.Client().Transport.(*http.Transport).Clone()
+		tr.Proxy = http.ProxyURL(pu)
+		req, _ := http.NewRequest("GET", target, nil)
+		resp, err := (&http.Client{Transport: tr}).Do(req)
+		if err == nil {
+			_, _ = io.ReadAll(resp.Body)
+			resp.Body.Close()
+		}
+		return resp, err
+	}
+	ws2 := tenant.WithWorkspace(context.Background(), 2)
+	for _, target := range []string{srv.URL, "https://registry.example.com:" + port + "/v2/", "https://[::ffff:127.0.0.1]:" + port + "/"} {
+		if _, err := through(ws2, target); err == nil || !strings.Contains(err.Error(), "Forbidden") {
+			t.Errorf("%s through the proxy for workspace 2: %v", target, err)
+		}
+	}
+	if resp, err := through(tenant.WithWorkspace(context.Background(), 1), "https://registry.example.com:"+port+"/"); err != nil || resp.StatusCode != 200 {
+		t.Errorf("default workspace through the proxy: %v", err)
+	}
+
+	p, err := StartProxy(ws2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	resp, err := http.Get(p.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("plain request to the proxy: %d", resp.StatusCode)
+	}
+}
