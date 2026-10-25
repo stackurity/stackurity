@@ -251,7 +251,7 @@ export function Layout() {
             <IconSidebar />
             <span className="nav-text">{collapsed ? "Expand" : "Collapse"}</span>
           </button>
-          <span className="nav-text muted small">{meta ? `v${meta.version}` : ""}</span>
+          <span className="nav-text muted small">{meta ? `v${meta.version.replace(/^v/, "")}` : ""}</span>
         </div>
       </aside>
       <div className="main-col">
