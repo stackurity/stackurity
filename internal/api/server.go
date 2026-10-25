@@ -225,7 +225,9 @@ func (s *Server) Handler() http.Handler {
 				r.Delete("/integrations/{id}", s.deleteIntegration)
 				r.Get("/jobs", s.listJobs)
 				r.Get("/plugins", s.listPlugins)
-				r.Patch("/feeds/{name}", s.updateFeed)
+				// Feeds are shared by every workspace: switching one off
+				// stops detection for all of them.
+				r.With(requireInstanceAdmin).Patch("/feeds/{name}", s.updateFeed)
 				r.Put("/risk-policy", s.putRiskPolicy)
 				r.Post("/channels", s.createChannel)
 				r.Patch("/channels/{id}", s.updateChannel)

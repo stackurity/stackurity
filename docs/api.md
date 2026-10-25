@@ -68,7 +68,7 @@ Roles, from least to most access: `viewer` (read, including the audit log), `eng
 | `GET /components/{id}/intel` | viewer | Release data (latest stable, publish date, deprecation) and lifecycle cycles |
 | `GET /feeds` | viewer | Intelligence feeds and their freshness |
 | `POST /feeds/{name}/refresh` | engineer | Queue a manual refresh |
-| `PATCH /feeds/{name}` | admin | Enable or disable a feed |
+| `PATCH /feeds/{name}` | instance admin | Enable or disable a feed (feeds are shared by every workspace) |
 | `GET /evaluation-gaps` | viewer | Components that could not be evaluated, with the reason |
 | `POST /evaluate` | engineer | Queue a full re-evaluation |
 | `POST /findings/{id}/actions` | engineer (security for `suppress`, `accept_risk`, `reopen`) | Workflow action, see below |

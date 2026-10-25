@@ -10,7 +10,7 @@ Stackurity has no telemetry or update checks. Every outbound connection is liste
 
 ### Intelligence feeds
 
-Feeds are created automatically for the ecosystems present in your inventory. Each one can be disabled under **Intelligence**, and `STACKURITY_FEEDS=off` turns all of them off. No inventory data is sent to any of them: OSV, KEV and endoflife.date are bulk downloads, and registry lookups send only a public package name. A release feed exists only while its ecosystem is in inventory.
+Feeds are created automatically for the ecosystems present in your inventory. Each one can be disabled under **Intelligence** by an instance administrator (feeds are shared by every workspace), and `STACKURITY_FEEDS=off` turns all of them off. No inventory data is sent to any of them: OSV, KEV and endoflife.date are bulk downloads, and registry lookups send only a public package name. A release feed exists only while its ecosystem is in inventory.
 
 | Feed | Destination | Schedule | What is requested |
 |---|---|---|---|

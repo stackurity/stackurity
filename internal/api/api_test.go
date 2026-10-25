@@ -391,8 +391,14 @@ func TestIntelEndpoints(t *testing.T) {
 	if code := eng.do("PATCH", "/api/v1/feeds/osv:npm", map[string]bool{"enabled": false}, nil); code != 403 {
 		t.Errorf("engineer disable feed: %d", code)
 	}
+	// Feeds are shared by every workspace: a workspace admin cannot switch
+	// one off for all of them, an instance admin can.
+	if code := admin.do("PATCH", "/api/v1/feeds/osv:npm", map[string]bool{"enabled": false}, nil); code != 403 {
+		t.Errorf("workspace admin disabled a shared feed: %d", code)
+	}
+	e.instanceAdmin("admin@x.io")
 	if code := admin.do("PATCH", "/api/v1/feeds/osv:npm", map[string]bool{"enabled": false}, nil); code != 200 {
-		t.Errorf("admin disable feed: %d", code)
+		t.Errorf("instance admin disable feed: %d", code)
 	}
 	var sum store.FindingSummary
 	if code := view.do("GET", "/api/v1/findings/summary", nil, &sum); code != 200 {
