@@ -141,7 +141,7 @@ func (s *Store) UpsertAdvisories(ctx context.Context, feed string, vulns []*osv.
 		for _, v := range vulns {
 			r := osv.Rate(v)
 			var score *float32
-			if r.Score > 0 || r.Source == "cvss_v3" {
+			if r.Score > 0 || r.Source == "cvss_v3" || r.Source == "cvss_v4" {
 				f := float32(r.Score)
 				score = &f
 			}

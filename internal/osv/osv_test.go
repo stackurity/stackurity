@@ -177,8 +177,38 @@ func TestSeverity(t *testing.T) {
 	_ = json.Unmarshal([]byte(`{"id":"GHSA-gv7v","database_specific":{"severity":"HIGH"},"severity":[
 	  {"type":"CVSS_V3","score":"CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N"},
 	  {"type":"CVSS_V4","score":"CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:H/VA:N/SC:N/SI:N/SA:N"}]}`), &mixed)
-	if r := Rate(&mixed); r.Level != "high" || r.Source != "database" {
+	// The v4 vector is scored (8.7, high); at the same level the score beats
+	// the bare label.
+	if r := Rate(&mixed); r.Level != "high" || r.Source != "cvss_v4" || r.Score != 8.7 || r.Vector != mixed.Severity[1].Score {
 		t.Errorf("mixed = %+v", r)
+	}
+	// v3 and v4 both scored: the higher rating wins, either way round.
+	var both Vulnerability
+	_ = json.Unmarshal([]byte(`{"id":"x","severity":[
+	  {"type":"CVSS_V3","score":"CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"},
+	  {"type":"CVSS_V4","score":"CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N/E:U"}]}`), &both)
+	if r := Rate(&both); r.Source != "cvss_v3" || r.Score != 9.8 || r.Level != "critical" {
+		t.Errorf("v3 above v4 = %+v", r)
+	}
+	_ = json.Unmarshal([]byte(`{"id":"x","severity":[
+	  {"type":"CVSS_V3","score":"CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N"},
+	  {"type":"CVSS_V4","score":"CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N"}]}`), &both)
+	if r := Rate(&both); r.Source != "cvss_v4" || r.Score != 9.3 || r.Level != "critical" {
+		t.Errorf("v4 above v3 = %+v", r)
+	}
+	// A v4 score below the label: the label wins, the vector is kept for reference.
+	var low Vulnerability
+	_ = json.Unmarshal([]byte(`{"id":"x","database_specific":{"severity":"CRITICAL"},"severity":[
+	  {"type":"CVSS_V4","score":"CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N"}]}`), &low)
+	if r := Rate(&low); r.Level != "critical" || r.Source != "database" || r.Score != 0 || r.Vector != low.Severity[0].Score {
+		t.Errorf("low v4 = %+v", r)
+	}
+	// An all-None v4 vector scores 0.0 and does not hide a label.
+	var zero Vulnerability
+	_ = json.Unmarshal([]byte(`{"id":"x","severity":[
+	  {"type":"CVSS_V4","score":"CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:N/VA:N/SC:N/SI:N/SA:N"}]}`), &zero)
+	if r := Rate(&zero); r.Level != "none" || r.Source != "cvss_v4" || r.Score != 0 {
+		t.Errorf("zero v4 = %+v", r)
 	}
 	// A real v3 score above the label is kept with its vector.
 	var scored Vulnerability
