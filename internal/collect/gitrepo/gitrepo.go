@@ -34,7 +34,8 @@ type Config struct {
 func (c Config) Validate() error {
 	u, err := url.Parse(c.URL)
 	if err != nil {
-		return fmt.Errorf("invalid repository url: %w", err)
+		// Not wrapped: url.Parse quotes the whole URL, credentials included.
+		return errors.New("invalid repository url")
 	}
 	if u.Scheme != "https" {
 		return errors.New("repository url must use https")

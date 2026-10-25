@@ -85,7 +85,13 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	u, err := s.Store.Authenticate(r.Context(), req.Email, req.Password)
 	if err != nil {
 		if err == store.ErrNotFound {
-			_ = s.Store.Audit(r.Context(), store.Actor{Type: "anonymous", Name: req.Email, RemoteAddr: clientIP(r)}, "auth.login_failed", "user", "", nil)
+			// People type their password into the email field; record what
+			// was typed only when it names an existing account.
+			name := "(no such account)"
+			if ok, _ := s.Store.UserExists(r.Context(), account); ok {
+				name = account
+			}
+			_ = s.Store.Audit(r.Context(), store.Actor{Type: "anonymous", Name: name, RemoteAddr: clientIP(r)}, "auth.login_failed", "user", "", nil)
 			writeError(w, 401, "unauthorized", "invalid email or password")
 			return
 		}
