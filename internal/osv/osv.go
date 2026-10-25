@@ -75,6 +75,9 @@ type Target struct {
 	Name      string // OSV package name (source package for distros)
 	Version   string
 	Compare   version.Ecosystem
+	// Variant is the os-release ID where one release has several products
+	// (SUSE: "sles", "sles_sap", "sled").
+	Variant string
 }
 
 // TargetFor maps a purl (with version and qualifiers) to an OSV target. ok is
@@ -197,7 +200,7 @@ func TargetFor(purl, ver string, evidence map[string]string) (Target, bool) {
 			if sp == "" {
 				return Target{}, false
 			}
-			t.Ecosystem = "SUSE:" + sp
+			t.Ecosystem, t.Variant = "SUSE:"+sp, id
 			if src := sourceRPMName(srpm); src != "" {
 				name = src
 			}
@@ -404,6 +407,44 @@ func Subscription(ecosystem string) string {
 		}
 	}
 	return ""
+}
+
+// SubscriptionFor is Subscription for a particular target. SUSE publishes
+// one record for every product of a service pack, and some of those
+// products are separate subscriptions: a fix listed only for "SUSE Linux
+// Enterprise Server for SAP Applications 15 SP4" or for High Performance
+// Computing is not available to a plain SLES host, which needs LTSS for it.
+func SubscriptionFor(ecosystem string, t Target) string {
+	if sub := Subscription(ecosystem); sub != "" || !strings.HasPrefix(ecosystem, "SUSE:") {
+		return sub
+	}
+	switch product := strings.TrimPrefix(ecosystem, "SUSE:"); {
+	case strings.Contains(product, "for SAP Applications") && t.Variant != "sles_sap":
+		return "SUSE Linux Enterprise Server for SAP Applications"
+	case strings.Contains(product, "High Performance Computing"):
+		return "SUSE Linux Enterprise High Performance Computing"
+	case strings.Contains(product, "Enterprise Desktop") && t.Variant != "sled":
+		return "SUSE Linux Enterprise Desktop"
+	}
+	return ""
+}
+
+// PreferredSubscription orders the paid channels a fix is available from,
+// so a finding names the one a host of the release is most likely to have.
+func PreferredSubscription(a, b string) bool {
+	rank := func(s string) int {
+		switch s {
+		case "Ubuntu Pro":
+			return 0
+		case "SUSE LTSS":
+			return 1
+		}
+		return 2
+	}
+	if ra, rb := rank(a), rank(b); ra != rb {
+		return ra < rb
+	}
+	return a < b
 }
 
 // suseExtended matches extended support channels such as

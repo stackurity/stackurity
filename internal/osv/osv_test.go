@@ -253,3 +253,29 @@ func TestSeverity(t *testing.T) {
 		t.Error("GroupKey")
 	}
 }
+
+func TestSubscriptionFor(t *testing.T) {
+	sles := Target{Ecosystem: "SUSE:15 SP4", Variant: "sles"}
+	sap := Target{Ecosystem: "SUSE:15 SP4", Variant: "sles_sap"}
+	cases := []struct {
+		eco    string
+		target Target
+		want   string
+	}{
+		{"SUSE:Linux Enterprise Server 15 SP4-LTSS", sles, "SUSE LTSS"},
+		{"SUSE:Linux Enterprise Server for SAP Applications 15 SP4", sles, "SUSE Linux Enterprise Server for SAP Applications"},
+		{"SUSE:Linux Enterprise Server for SAP Applications 15 SP4", sap, ""},
+		{"SUSE:Linux Enterprise High Performance Computing 15 SP4-LTSS", sles, "SUSE LTSS"},
+		{"SUSE:Linux Enterprise High Performance Computing 15 SP4", sap, "SUSE Linux Enterprise High Performance Computing"},
+		{"SUSE:Linux Enterprise Module for Basesystem 15 SP4", sles, ""},
+		{"Ubuntu:Pro:22.04:LTS", Target{Ecosystem: "Ubuntu:22.04"}, "Ubuntu Pro"},
+	}
+	for _, c := range cases {
+		if got := SubscriptionFor(c.eco, c.target); got != c.want {
+			t.Errorf("SubscriptionFor(%q, %s) = %q, want %q", c.eco, c.target.Variant, got, c.want)
+		}
+	}
+	if !PreferredSubscription("SUSE LTSS", "SUSE ESPOS") || PreferredSubscription("SUSE ESPOS", "SUSE LTSS") {
+		t.Error("LTSS is named before other SUSE channels")
+	}
+}

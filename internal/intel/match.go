@@ -243,7 +243,8 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 		if strings.HasPrefix(t.Ecosystem, "Ubuntu:") && osv.FIPSChannel(a.Ecosystem) != osv.FIPSBuild(t.Version) {
 			continue
 		}
-		pro := osv.IsPro(a.Ecosystem)
+		channel := osv.SubscriptionFor(a.Ecosystem, t)
+		pro := channel != ""
 		checked++
 		m, err := osv.Check(a.Affected, t)
 		if err != nil {
@@ -275,8 +276,8 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 		// so every source agrees the target is fixed.
 		if pro {
 			g.proHit, g.proFixed = true, higher(g.proFixed, m.FixedVersion)
-			if g.proChannel == "" {
-				g.proChannel = osv.Subscription(a.Ecosystem)
+			if g.proChannel == "" || osv.PreferredSubscription(channel, g.proChannel) {
+				g.proChannel = channel
 			}
 		} else {
 			g.freeHit, g.fixed = true, higher(g.fixed, m.FixedVersion)
