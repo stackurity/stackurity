@@ -544,6 +544,8 @@ export interface Finding {
   priority?: Priority | "";
   priority_score?: number;
   priority_factors?: PriorityFactor[] | null;
+  /** Version of the risk policy that produced the priority; empty until next prioritised. */
+  priority_policy_version?: string;
   sos?: boolean;
   sos_rule?: string;
   fix_group?: string;
@@ -1114,6 +1116,8 @@ export interface RiskPolicy {
   internet_exposed: number;
   exposure_unknown: number;
   production: number;
+  /** Added when an asset has no environment; at most `production`. */
+  environment_unknown: number;
   fix_available: number;
   overdue: number;
   dev_dependency: number;

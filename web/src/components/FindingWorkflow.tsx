@@ -118,7 +118,14 @@ export function WorkflowPanel({ f, onChanged }: { f: Finding; onChanged: () => v
           <h3 className="h-sm">Why this priority</h3>
           <FactorTable f={f} />
           <p className="hint">
-            Weights, thresholds and deadlines come from the <Link to="/settings/risk-policy">risk policy</Link>.
+            Weights, thresholds and deadlines come from the <Link to="/settings/risk-policy">risk policy</Link>
+            {f.priority_policy_version ? (
+              <>
+                {" "}
+                (version <code>{f.priority_policy_version}</code>)
+              </>
+            ) : null}
+            .
           </p>
         </div>
       </div>

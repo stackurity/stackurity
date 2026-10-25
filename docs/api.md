@@ -62,7 +62,7 @@ Roles, from least to most access: `viewer` (read, including the audit log), `eng
 | `GET /findings/summary` | viewer | Counts by severity, kind and verification, plus stale feeds and evaluation gaps |
 | `GET /findings/{id}` | viewer | One finding, with every source advisory in its group and, while it is open, its `upgrade` recommendation |
 | `GET /findings/{id}/upgrade` | viewer | The [upgrade recommendation](#upgrade-recommendations) for the installed copy the finding is on, covering every open finding on it |
-| `GET /findings/{id}/explain` | viewer | Why the finding has its priority: `risk` (priority, score, each factor with its points, `policy_version`, thresholds, the SLA for the priority, deadlines), the stored `evidence`, the matched `advisories` (id, feed, severity, dates, an osv.dev link), the freshness of the `feeds` they came from, and the asset's last (complete) `collection` time |
+| `GET /findings/{id}/explain` | viewer | Why the finding has its priority: `risk` (priority, score, each factor with its points, `policy_version`: the risk policy that produced this priority, `current_policy_version` and `policy_changed`, the current thresholds, the SLA for the priority, deadlines), the stored `evidence`, the matched `advisories` (id, feed, severity, dates, an osv.dev link), the freshness of the `feeds` they came from, and the asset's last (complete) `collection` time |
 | `GET /findings/verify?since=&asset_id=&limit=` | viewer | What changed since `since` (RFC 3339 time or `YYYY-MM-DD`): findings `resolved` since then with their `cause`, findings that existed then and are `still_open`, `opened_since`, and each asset's last complete collection. `asset_rescanned_since` tells "fixed" from "not scanned again yet". Lists are capped at `limit` (default 100, max 500) with a `total` |
 | `GET /advisories/{id-or-CVE}` | viewer | Advisories in a group |
 | `GET /components/{id}/intel` | viewer | Release data (latest stable, publish date, deprecation) and lifecycle cycles |
@@ -77,7 +77,7 @@ Roles, from least to most access: `viewer` (read, including the audit log), `eng
 | `GET /incidents?status=&kind=&priority=&sos=&team_id=` | viewer | Incidents: findings grouped by issue and owner team |
 | `GET /incidents/{id}` | viewer | An incident with its findings (and deliveries, for security and above) |
 | `POST /incidents/{id}/actions` | as findings | Apply an action to every open finding in the incident |
-| `GET /risk-policy` / `PUT /risk-policy` | viewer / admin | Priority weights, thresholds, deadlines and SOS rules |
+| `GET /risk-policy` / `PUT /risk-policy` | viewer / admin | Priority weights, thresholds, deadlines and SOS rules, with the policy `version`. `PUT` replaces the policy (fields left out take their defaults; unknown fields are rejected), returns `version`, `previous_version` and the `changed` fields, and writes a `risk_policy.update` audit event holding the policy before and after |
 | `GET /channels`, `GET /routes`, `GET /deliveries?status=&incident_id=` | security | Notification configuration and delivery log |
 | `POST`/`PATCH`/`DELETE /channels/{id}`, `POST /channels/{id}/test` | admin | Email, Slack, Teams, webhook and Jira channels; for Jira, test checks access without creating an issue |
 | `POST /routes`, `PUT`/`DELETE /routes/{id}` | admin | Which incidents go to which channel |
@@ -215,7 +215,7 @@ When a suppression or risk acceptance expires, the finding returns to `new` and 
 
 ## Priority and SOS
 
-Every open finding gets a priority from P1 to P4. The score is built from the CVSS score (CVSS v3.x or v4.0, whichever rates the advisory higher; `severity_source` on the advisory says which) or the severity when there is none, CISA KEV, internet exposure (unknown exposure counts a little), production environment, asset criticality, fix availability, whether it is overdue, and dev-only scope. It is then scaled down for unverified or stale evidence. `priority_factors` lists each contribution. Weights, thresholds and per-priority deadlines are configured in `/risk-policy`.
+Every open finding gets a priority from P1 to P4. The score is built from the CVSS score (CVSS v3.x or v4.0, whichever rates the advisory higher; `severity_source` on the advisory says which) or the severity when there is none, CISA KEV, internet exposure (unknown exposure counts a little), production environment (no environment counts a little), asset criticality, fix availability, whether it is overdue, and dev-only scope. It is then scaled down for unverified or stale evidence (a score at or below zero is not scaled). SOS rules that require an exposed or production asset also match an asset whose exposure or environment is unknown. [risk.md](risk.md) explains every factor and the guarantees the scoring keeps. `priority_factors` lists each contribution and `priority_policy_version` the risk policy version that produced them. Weights, thresholds and per-priority deadlines are configured in `/risk-policy`.
 
 SOS rules are conditions over the same inputs. A rule based only on severity is rejected. Only confirmed findings can trigger SOS.
 

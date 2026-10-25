@@ -97,3 +97,108 @@ func TestPolicyVersion(t *testing.T) {
 		t.Error("a changed SLA kept the same version")
 	}
 }
+
+// A missing environment must not score like a known non-production one, and
+// SOS rules that require production treat it as possibly production, the way
+// unknown exposure is treated as possibly exposed.
+func TestUnknownEnvironmentIsNotSilentlyLower(t *testing.T) {
+	p := DefaultPolicy()
+	base := Input{Kind: "vulnerability", Severity: "high", Score: f32(8.1), KnownExploited: true, InternetExposed: b(true), Verification: "confirmed"}
+	staging, none, prod := base, base, base
+	staging.Environment, prod.Environment = "staging", "production"
+	rs, rn, rp := p.Evaluate(staging), p.Evaluate(none), p.Evaluate(prod)
+	if !(rs.Score < rn.Score && rn.Score <= rp.Score) {
+		t.Errorf("scores staging %.1f, none %.1f, production %.1f", rs.Score, rn.Score, rp.Score)
+	}
+	if rs.SOS || !rn.SOS || !rp.SOS {
+		t.Errorf("SOS staging %v, none %v, production %v", rs.SOS, rn.SOS, rp.SOS)
+	}
+	if !hasFactor(rn, "Environment unknown") || hasFactor(rs, "Environment unknown") || hasFactor(rp, "Environment unknown") {
+		t.Errorf("factors: none %+v staging %+v production %+v", rn.Factors, rs.Factors, rp.Factors)
+	}
+}
+
+func TestEmptyCriticalityIsUnknown(t *testing.T) {
+	p := DefaultPolicy()
+	p.CriticalityBonus["unknown"] = 0.5
+	in := Input{Kind: "vulnerability", Severity: "medium", Environment: "dev", InternetExposed: b(false), Verification: "confirmed"}
+	a := p.Evaluate(in)
+	in.Criticality = "unknown"
+	if c := p.Evaluate(in); a.Score != c.Score {
+		t.Errorf("empty criticality %.1f, unknown %.1f", a.Score, c.Score)
+	}
+}
+
+// Low confidence scales a positive score down; it must never raise a score
+// that other factors already took below zero.
+func TestConfidenceNeverRaisesScore(t *testing.T) {
+	p := DefaultPolicy()
+	in := Input{Kind: "vulnerability", Severity: "low", Environment: "dev", Criticality: "low", Scope: "dev", InternetExposed: b(false),
+		KernelNotRunning: true, Verification: "confirmed"}
+	conf := p.Evaluate(in)
+	in.Verification = "needs_validation"
+	nv := p.Evaluate(in)
+	if nv.Score > conf.Score || hasFactor(nv, "Evidence confidence") {
+		t.Errorf("confirmed %.1f, needs_validation %.1f %+v", conf.Score, nv.Score, nv.Factors)
+	}
+}
+
+func TestValidateRejectsInvertedWeights(t *testing.T) {
+	for name, mut := range map[string]func(*Policy){
+		"negative KEV":                  func(p *Policy) { p.KnownExploited = -1 },
+		"negative exposure":             func(p *Policy) { p.InternetExposed = -1 },
+		"unknown exposure over exposed": func(p *Policy) { p.ExposureUnknown = 2 },
+		"unknown env over production":   func(p *Policy) { p.EnvironmentUnknown = 2 },
+		"negative overdue":              func(p *Policy) { p.Overdue = -1 },
+		"positive dev dependency":       func(p *Policy) { p.DevDependency = 1 },
+		"positive kernel not running":   func(p *Policy) { p.KernelNotRunning = 1 },
+		"high above critical":           func(p *Policy) { p.SeverityBase["high"] = 10 },
+		"low criticality above high":    func(p *Policy) { p.CriticalityBonus["low"] = 2 },
+	} {
+		p := DefaultPolicy()
+		mut(&p)
+		if p.Validate() == nil {
+			t.Errorf("%s accepted", name)
+		}
+	}
+}
+
+func hasFactor(r Result, name string) bool {
+	for _, f := range r.Factors {
+		if f.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// A saved SOS rule must be read back exactly as written. Decoding it over the
+// default rules let it inherit conditions (production: true) it never had.
+func TestDecodePolicyKeepsRulesAsWritten(t *testing.T) {
+	p, err := DecodePolicy([]byte(`{"sos_rules": [{"name": "KEV anywhere", "known_exploited": true}]}`), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.SOS) != 1 || p.SOS[0].Production != nil || p.SOS[0].KnownExploited == nil || !*p.SOS[0].KnownExploited {
+		t.Fatalf("rules = %+v", p.SOS)
+	}
+	r := p.Evaluate(Input{Kind: "vulnerability", Severity: "high", KnownExploited: true, Environment: "staging",
+		InternetExposed: b(false), Verification: "confirmed"})
+	if !r.SOS || r.SOSRule != "KEV anywhere" {
+		t.Errorf("KEV on staging under a KEV-anywhere rule: sos=%v %q", r.SOS, r.SOSRule)
+	}
+	// Omitted fields and an omitted sos_rules keep their defaults.
+	p, err = DecodePolicy([]byte(`{"known_exploited": 4}`), false)
+	if err != nil || p.KnownExploited != 4 || p.Production != DefaultPolicy().Production || len(p.SOS) != 2 {
+		t.Errorf("partial policy = %+v %v", p, err)
+	}
+	if _, err := DecodePolicy([]byte(`{"known_exploitd": 4}`), true); err == nil {
+		t.Error("strict decoding accepted an unknown field")
+	}
+	// The JSON a policy is stored as decodes to the same version.
+	def := DefaultPolicy()
+	raw, _ := json.Marshal(def)
+	if q, err := DecodePolicy(raw, true); err != nil || q.Version() != def.Version() {
+		t.Errorf("round trip changed the version: %v", err)
+	}
+}
