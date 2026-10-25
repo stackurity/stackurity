@@ -32,6 +32,9 @@ type Worker struct {
 	Concurrency int
 	Poll        time.Duration
 	JobTimeout  time.Duration
+	// JobRenew is how often a running job's lock is renewed; it must be well
+	// under the store's lock timeout (30 minutes).
+	JobRenew time.Duration
 	// Lease is how long a periodic task stays claimed without renewal. The
 	// running replica renews it; when a replica dies, another takes the task
 	// over once the lease has expired.
@@ -39,6 +42,7 @@ type Worker struct {
 	// Tick is how often the scheduler looks for due periodic tasks.
 	Tick     time.Duration
 	handlers map[string]Handler
+	timeouts map[string]time.Duration
 	periodic []periodic
 	id       string
 }
@@ -56,13 +60,20 @@ func New(s *store.Store, log *slog.Logger) *Worker {
 	b := make([]byte, 4)
 	_, _ = rand.Read(b)
 	return &Worker{
-		Store: s, Log: log, Concurrency: 2, Poll: 2 * time.Second, JobTimeout: 20 * time.Minute,
+		Store: s, Log: log, Concurrency: 2, Poll: 2 * time.Second, JobTimeout: 20 * time.Minute, JobRenew: 5 * time.Minute,
 		Lease: 2 * time.Minute, Tick: 15 * time.Second,
-		handlers: map[string]Handler{}, id: fmt.Sprintf("%s-%d-%s", host, os.Getpid(), hex.EncodeToString(b)),
+		handlers: map[string]Handler{}, timeouts: map[string]time.Duration{}, id: fmt.Sprintf("%s-%d-%s", host, os.Getpid(), hex.EncodeToString(b)),
 	}
 }
 
 func (w *Worker) Handle(kind string, h Handler) { w.handlers[kind] = h }
+
+// HandleTimeout registers a handler whose jobs may run longer than
+// JobTimeout, such as a full vulnerability archive download.
+func (w *Worker) HandleTimeout(kind string, timeout time.Duration, h Handler) {
+	w.handlers[kind] = h
+	w.timeouts[kind] = timeout
+}
 
 // Every registers a periodic platform task, run in system scope.
 func (w *Worker) Every(name string, every time.Duration, fn func(ctx context.Context) error) {
@@ -135,11 +146,11 @@ func (w *Worker) loop(ctx context.Context, id string) {
 			sleep(ctx, w.Poll)
 			continue
 		}
-		w.run(ctx, job)
+		w.run(ctx, job, id)
 	}
 }
 
-func (w *Worker) run(ctx context.Context, job *store.Job) {
+func (w *Worker) run(ctx context.Context, job *store.Job, owner string) {
 	log := w.Log.With("job", job.ID, "kind", job.Kind, "attempt", job.Attempts)
 	h, ok := w.handlers[job.Kind]
 	// Finishing bookkeeping must survive shutdown of the parent context.
@@ -149,11 +160,38 @@ func (w *Worker) run(ctx context.Context, job *store.Job) {
 			fmt.Errorf("no handler for job kind %q", job.Kind))
 		return
 	}
-	jctx, cancel := context.WithTimeout(ctx, w.JobTimeout)
+	timeout := w.JobTimeout
+	if t, ok := w.timeouts[job.Kind]; ok {
+		timeout = t
+	}
+	jctx, cancel := context.WithTimeout(ctx, timeout)
 	if job.WorkspaceID != nil {
 		jctx = tenant.WithWorkspace(jctx, *job.WorkspaceID)
 	}
 	defer cancel()
+	// Renew the lock while the job runs; stop it if another worker took it.
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		renew := w.JobRenew
+		if renew <= 0 {
+			renew = 5 * time.Minute
+		}
+		t := time.NewTicker(renew)
+		defer t.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-t.C:
+				if held, err := w.Store.TouchJob(bg, job.ID, owner); err == nil && !held {
+					log.Warn("job lock lost; stopping")
+					cancel()
+					return
+				}
+			}
+		}
+	}()
 	start := time.Now()
 	err := func() (err error) {
 		defer func() {

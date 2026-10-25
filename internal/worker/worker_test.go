@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -218,5 +219,108 @@ func TestEveryWorkspaceScopes(t *testing.T) {
 	w.runPeriodic(ctx, w.periodic[0])
 	if len(seen) != 1 || seen[0] != tenant.DefaultWorkspace {
 		t.Errorf("workspaces = %v", seen)
+	}
+}
+
+// claimJob enqueues one job of kind and claims it as owner.
+func claimJob(t *testing.T, st *store.Store, kind, owner string) *store.Job {
+	t.Helper()
+	ctx := tenant.System(context.Background())
+	if _, err := st.Enqueue(ctx, kind, map[string]string{}, "", time.Now().Add(-time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	j, err := st.Claim(ctx, owner)
+	if err != nil || j == nil {
+		t.Fatalf("claim %s: %v %v", kind, j, err)
+	}
+	return j
+}
+
+// Jobs registered with HandleTimeout get their own deadline; others keep
+// JobTimeout.
+func TestJobTimeoutPerKind(t *testing.T) {
+	st := store.New(testdb.New(t))
+	w := newWorker(st)
+	deadlines := map[string]time.Duration{}
+	record := func(kind string) Handler {
+		return func(ctx context.Context, _ json.RawMessage) error {
+			d, _ := ctx.Deadline()
+			deadlines[kind] = time.Until(d)
+			return nil
+		}
+	}
+	w.Handle("fast", record("fast"))
+	w.HandleTimeout("slow", 3*time.Hour, record("slow"))
+	ctx := tenant.System(context.Background())
+	for _, k := range []string{"fast", "slow"} {
+		w.run(ctx, claimJob(t, st, k, "a"), "a")
+	}
+	if d := deadlines["slow"]; d < 2*time.Hour+50*time.Minute || d > 3*time.Hour {
+		t.Errorf("slow job deadline = %v, want about 3h", d)
+	}
+	if d := deadlines["fast"]; d < 19*time.Minute || d > 20*time.Minute {
+		t.Errorf("fast job deadline = %v, want about 20m", d)
+	}
+}
+
+// A running job renews its lock, so a job running longer than the store's
+// lock timeout is not claimed a second time.
+func TestRunningJobKeepsItsLock(t *testing.T) {
+	st := store.New(testdb.New(t))
+	ctx := tenant.System(context.Background())
+	w := newWorker(st)
+	w.JobRenew = 50 * time.Millisecond
+	started, release := make(chan struct{}), make(chan struct{})
+	w.Handle("long", func(ctx context.Context, _ json.RawMessage) error {
+		close(started)
+		<-release
+		return ctx.Err()
+	})
+	j := claimJob(t, st, "long", "a")
+	finished := make(chan struct{})
+	go func() { w.run(ctx, j, "a"); close(finished) }()
+	<-started
+	// Pretend the job has run for 31 minutes, past the lock timeout.
+	if _, err := st.Pool.Exec(ctx, `UPDATE jobs SET locked_at = now() - interval '31 minutes' WHERE id = $1`, j.ID); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond) // several renewals
+	if other, err := st.Claim(ctx, "b"); err != nil || other != nil {
+		t.Errorf("a running job must not be claimed again: %+v %v", other, err)
+	}
+	close(release)
+	<-finished
+	var done bool
+	if err := st.Pool.QueryRow(ctx, `SELECT done_at IS NOT NULL FROM jobs WHERE id = $1`, j.ID).Scan(&done); err != nil || !done {
+		t.Errorf("job should complete: %v %v", done, err)
+	}
+}
+
+// A job whose lock another worker took over is stopped.
+func TestJobStopsWhenLockIsLost(t *testing.T) {
+	st := store.New(testdb.New(t))
+	ctx := tenant.System(context.Background())
+	w := newWorker(st)
+	w.JobRenew = 50 * time.Millisecond
+	started := make(chan struct{})
+	stopped := make(chan error, 1)
+	w.Handle("long", func(ctx context.Context, _ json.RawMessage) error {
+		close(started)
+		select {
+		case <-ctx.Done():
+			stopped <- ctx.Err()
+		case <-time.After(5 * time.Second):
+			stopped <- nil
+		}
+		return ctx.Err()
+	})
+	j := claimJob(t, st, "long", "a")
+	go w.run(ctx, j, "a")
+	<-started
+	if _, err := st.Pool.Exec(ctx, `UPDATE jobs SET locked_by = 'b' WHERE id = $1`, j.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-stopped; err == nil {
+		t.Error("the job should be cancelled once its lock is lost")
 	}
 }
