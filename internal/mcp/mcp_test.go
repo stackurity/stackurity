@@ -62,7 +62,7 @@ func TestProtocol(t *testing.T) {
 		t.Errorf("initialize = %v", init)
 	}
 	tl := res[1]["result"].(map[string]any)["tools"].([]any)
-	if len(tl) != 6 {
+	if len(tl) != 7 {
 		t.Errorf("tools = %d", len(tl))
 	}
 	for _, x := range tl {

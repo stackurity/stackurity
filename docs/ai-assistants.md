@@ -29,6 +29,7 @@ For Claude Code: `claude mcp add stackurity --env STACKURITY_SERVER=https://stac
 
 | Tool | Answers |
 |---|---|
+| `search` | Anything by id or name at once: a CVE or other advisory id, a package (optionally with version), a host, image or repository, or a team |
 | `list_assets` | Which hosts, deployed applications, repositories and images exist, and their ids |
 | `action_plan` | What to upgrade, as concrete actions ("upgrade next 15.5.20 → 15.5.28"), most urgent first, with how many findings each clears |
 | `asset_stack` | Everything an application relies on (host, OS, web server, runtime, libraries, repository) with findings by layer |

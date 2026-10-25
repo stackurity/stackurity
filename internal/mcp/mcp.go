@@ -103,9 +103,10 @@ func (s *Server) handle(ctx context.Context, req request) (any, *rpcError) {
 			"capabilities":    map[string]any{"tools": map[string]any{}},
 			"serverInfo":      map[string]any{"name": "stackurity", "version": s.Version},
 			"instructions": "Stackurity inventories software across hosts, deployed applications, repositories and images, and reports " +
-				"vulnerabilities and end-of-life components. Start with list_assets to find the project or server, then " +
-				"action_plan for what to upgrade (each group lists the packages and target versions), asset_stack for every " +
-				"layer an application relies on, and list_findings or get_finding for details. All tools are read-only.",
+				"vulnerabilities and end-of-life components. Use search to look up a CVE, package, host or team. Start with " +
+				"list_assets to find the project or server, then action_plan for what to upgrade (each group lists the packages " +
+				"and target versions), asset_stack for every layer an application relies on, and list_findings or get_finding " +
+				"for details. All tools are read-only.",
 		}, nil
 	case "ping":
 		return map[string]any{}, nil
@@ -163,6 +164,28 @@ func str(desc string) map[string]any { return map[string]any{"type": "string", "
 func num(desc string) map[string]any { return map[string]any{"type": "integer", "description": desc} }
 
 var tools = map[string]tool{
+	"search": {
+		description: "Search everything in the workspace at once: a vulnerability id (CVE, GHSA, DSA, USN, RHSA...), a package " +
+			"(lodash, lodash@4.17.20, 'openssl 3.0.2', a purl), a host name, machine id, repository URL, image reference or " +
+			"digest, or a team. Results are grouped by type, exact matches first, with the affected assets for each.",
+		schema: obj(map[string]any{
+			"query": str("What to look for, at least 2 characters"),
+			"limit": num("At most this many results per type (default 10, max 50)"),
+		}, "query"),
+		run: func(ctx context.Context, api API, a map[string]any) (any, error) {
+			query, _ := a["query"].(string)
+			if strings.TrimSpace(query) == "" {
+				return nil, fmt.Errorf("query is required")
+			}
+			q := url.Values{"q": {query}}
+			set(q, "limit", a["limit"])
+			var res any
+			if err := api.Do(ctx, "GET", "/api/v1/search?"+q.Encode(), nil, nil, &res); err != nil {
+				return nil, err
+			}
+			return res, nil
+		},
+	},
 	"list_assets": {
 		description: "List inventoried assets: hosts, deployed applications, repositories, container images and managed services. " +
 			"Use it to find the asset_id of a project or server.",
@@ -380,7 +403,7 @@ type finding struct {
 }
 
 func toolList() []map[string]any {
-	names := []string{"list_assets", "action_plan", "asset_stack", "list_findings", "get_finding", "find_component"}
+	names := []string{"search", "list_assets", "action_plan", "asset_stack", "list_findings", "get_finding", "find_component"}
 	out := make([]map[string]any, 0, len(names))
 	for _, n := range names {
 		t := tools[n]
