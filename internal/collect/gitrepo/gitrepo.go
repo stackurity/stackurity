@@ -45,6 +45,14 @@ func (c Config) Validate() error {
 	if u.Host == "" {
 		return errors.New("repository url needs a host")
 	}
+	// A query or fragment has no meaning to git, but would carry tokens
+	// (?private_token=...) into error messages and the asset's attributes.
+	if u.RawQuery != "" || u.Fragment != "" || u.ForceQuery {
+		return errors.New("repository url must not have a query or fragment; use a secret reference for credentials")
+	}
+	if err := netguard.CheckHost(u.Hostname()); err != nil {
+		return fmt.Errorf("repository url: %w", err)
+	}
 	if strings.HasPrefix(c.Ref, "-") || strings.ContainsAny(c.Ref, " \t\n") {
 		return errors.New("invalid ref")
 	}
@@ -188,7 +196,7 @@ func (s *Scanner) clone(ctx context.Context, cfg Config, token, dest string) err
 	if err := cmd.Run(); err != nil {
 		msg := strings.TrimSpace(stderr.String())
 		if token != "" {
-			msg = strings.ReplaceAll(msg, token, "[redacted]")
+			msg = redact(msg, token, cfg.Username)
 		}
 		if len(msg) > 500 {
 			msg = msg[:500]
@@ -196,6 +204,19 @@ func (s *Scanner) clone(ctx context.Context, cfg Config, token, dest string) err
 		return fmt.Errorf("git clone failed: %v: %s", err, msg)
 	}
 	return nil
+}
+
+// redact removes the token, and the Basic credential built from it, from
+// git's output.
+func redact(msg, token, user string) string {
+	if user == "" {
+		user = "x-access-token"
+	}
+	basic := base64.StdEncoding.EncodeToString([]byte(user + ":" + token))
+	for _, s := range []string{basic, strings.TrimRight(basic, "="), token} {
+		msg = strings.ReplaceAll(msg, s, "[redacted]")
+	}
+	return msg
 }
 
 // NormalizeURL lowercases the host and strips ".git" and trailing slashes,

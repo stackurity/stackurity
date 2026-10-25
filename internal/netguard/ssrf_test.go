@@ -3,7 +3,12 @@ package netguard
 import (
 	"context"
 	"errors"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"net/netip"
+	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stackurity/stackurity/internal/tenant"
@@ -58,6 +63,95 @@ func TestEveryInternalCategoryIsRefused(t *testing.T) {
 	}
 }
 
+// TestNonStandardIPv4Notation covers the encodings curl and browsers read as
+// IPv4 while Go reads them as names: decimal, octal, hexadecimal and short
+// forms. They are refused for every workspace, whatever DNS says.
+func TestNonStandardIPv4Notation(t *testing.T) {
+	defer Set(FromEnv())
+	Set(Config{Mode: "all"})
+	var asked atomic.Int32
+	defer SetResolver(func(context.Context, string, string) ([]netip.Addr, error) {
+		asked.Add(1)
+		return []netip.Addr{netip.MustParseAddr("140.82.112.3")}, nil
+	})()
+	ws1 := tenant.WithWorkspace(context.Background(), 1)
+	for _, h := range []string{"2130706433", "017700000001", "0x7f000001", "0x7f.0.0.1", "0177.0.0.1", "127.1", "127.0.1",
+		"0x7F.1", "2852039166", "0xA9.0xFE.0xA9.0xFE", "127.000.000.001", "169.254.169.254.", "foo.0x10", "1.2.3.4.5"} {
+		if err := CheckHost(h); !errors.Is(err, ErrAmbiguousHost) {
+			t.Errorf("CheckHost(%q) = %v", h, err)
+		}
+		if _, err := Resolve(ws1, h); !errors.Is(err, ErrAmbiguousHost) {
+			t.Errorf("Resolve(%q) = %v", h, err)
+		}
+		if _, err := DialContext(ws1, "tcp", net.JoinHostPort(h, "443")); !errors.Is(err, ErrAmbiguousHost) {
+			t.Errorf("dial %q = %v", h, err)
+		}
+	}
+	if asked.Load() != 0 {
+		t.Errorf("ambiguous hosts reached the resolver %d times", asked.Load())
+	}
+	for _, h := range []string{"github.com", "localhost", "a-1.example", "127.0.0.1", "::1", "[::1]", "x1.example.com", "0x.example"} {
+		if err := CheckHost(h); err != nil {
+			t.Errorf("CheckHost(%q) = %v", h, err)
+		}
+	}
+}
+
+// TestDNSRebinding: a name answers with a public address for the first
+// lookup (validation) and an internal one for the next (the connection).
+// The connection is refused, and so is any answer that mixes the two.
+func TestDNSRebinding(t *testing.T) {
+	defer Set(FromEnv())
+	Set(Config{Mode: "default"})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("internal")) }))
+	defer srv.Close()
+	_, port, _ := net.SplitHostPort(strings.TrimPrefix(srv.URL, "http://"))
+
+	var n atomic.Int32
+	defer SetResolver(func(_ context.Context, _, host string) ([]netip.Addr, error) {
+		switch host {
+		case "rebind.example":
+			if n.Add(1) == 1 {
+				return []netip.Addr{netip.MustParseAddr("140.82.112.3")}, nil
+			}
+			return []netip.Addr{netip.MustParseAddr("127.0.0.1")}, nil
+		case "mixed.example":
+			return []netip.Addr{netip.MustParseAddr("140.82.112.3"), netip.MustParseAddr("169.254.169.254")}, nil
+		case "metadata.example":
+			return []netip.Addr{netip.MustParseAddr("fd00:ec2::254")}, nil
+		}
+		return nil, &net.DNSError{Err: "no such host", Name: host, IsNotFound: true}
+	})()
+	ws2 := tenant.WithWorkspace(context.Background(), 2)
+	if _, err := Resolve(ws2, "rebind.example"); err != nil {
+		t.Fatalf("first answer is public: %v", err)
+	}
+	client := &http.Client{Transport: &http.Transport{DialContext: DialContext}}
+	req, _ := http.NewRequestWithContext(ws2, "GET", "http://rebind.example:"+port+"/", nil)
+	if resp, err := client.Do(req); !errors.Is(err, ErrBlocked) {
+		if resp != nil {
+			resp.Body.Close()
+		}
+		t.Fatalf("rebinding reached the internal server: %v", err)
+	}
+	for _, h := range []string{"mixed.example", "metadata.example"} {
+		if _, err := Resolve(ws2, h); !errors.Is(err, ErrBlocked) {
+			t.Errorf("Resolve(%s) = %v", h, err)
+		}
+		if _, err := DialContext(ws2, "tcp", net.JoinHostPort(h, port)); !errors.Is(err, ErrBlocked) {
+			t.Errorf("dial %s = %v", h, err)
+		}
+	}
+	// The default workspace still reaches its own network.
+	n.Store(5)
+	req, _ = http.NewRequestWithContext(tenant.WithWorkspace(context.Background(), 1), "GET", "http://rebind.example:"+port+"/", nil)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("default workspace: %v", err)
+	}
+	resp.Body.Close()
+}
+
 // TestZonedLinkLocalDial checks the dial-time guard itself with a zoned
 // link-local address, which netip prefixes never contain.
 func TestZonedLinkLocalDial(t *testing.T) {
@@ -74,3 +168,4 @@ func TestZonedLinkLocalDial(t *testing.T) {
 		t.Errorf("a plugin's policy let a zoned link-local address through: %v", err)
 	}
 }
+
