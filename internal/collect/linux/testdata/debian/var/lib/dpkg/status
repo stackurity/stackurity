@@ -1,0 +1,20 @@
+Package: libssl3
+Status: install ok installed
+Priority: optional
+Architecture: amd64
+Source: openssl
+Version: 3.0.11-1~deb12u2
+Description: Secure Sockets Layer toolkit
+ This package is part of the OpenSSL project.
+
+Package: removed-pkg
+Status: deinstall ok config-files
+Architecture: amd64
+Version: 1.0
+
+Package: bash
+Status: install ok installed
+Architecture: amd64
+Version: 5.2.15-2+b2
+Source: bash (5.2.15-2)
+

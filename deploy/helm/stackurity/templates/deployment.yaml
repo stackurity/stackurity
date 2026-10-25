@@ -1,0 +1,83 @@
+{{- if not .Values.database.existingSecret }}
+{{- fail "database.existingSecret is required: create a Secret with the PostgreSQL URL" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "stackurity.fullname" . }}
+  labels: {{- include "stackurity.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {{- include "stackurity.selector" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "stackurity.selector" . | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: stackurity
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["server"]
+          securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - {name: http, containerPort: 8080}
+          env:
+            - name: STACKURITY_DATABASE_URL
+              valueFrom:
+                secretKeyRef: {name: {{ .Values.database.existingSecret }}, key: {{ .Values.database.existingSecretKey }}}
+            - {name: STACKURITY_LISTEN, value: ":8080"}
+            - {name: STACKURITY_DATA_DIR, value: /var/lib/stackurity}
+            - {name: STACKURITY_SECRETS_DIR, value: /run/secrets}
+            - {name: STACKURITY_COOKIE_SECURE, value: {{ .Values.config.cookieSecure | quote }}}
+            - {name: STACKURITY_TRUST_PROXY, value: {{ .Values.config.trustProxy | quote }}}
+            - {name: STACKURITY_FEEDS, value: {{ .Values.config.feeds | quote }}}
+            - {name: STACKURITY_STALE_AFTER, value: {{ .Values.config.staleAfter | quote }}}
+            - {name: STACKURITY_LOG_FORMAT, value: {{ .Values.config.logFormat | quote }}}
+            {{- with .Values.config.baseURL }}
+            - {name: STACKURITY_BASE_URL, value: {{ . | quote }}}
+            {{- end }}
+            {{- range $k, $v := .Values.config.extraEnv }}
+            - {name: {{ $k }}, value: {{ $v | quote }}}
+            {{- end }}
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 20
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/stackurity}
+            - {name: tmp, mountPath: /tmp}
+            {{- range .Values.secretFiles }}
+            - {name: secret-{{ .name }}, mountPath: /run/secrets/{{ .name }}, subPath: {{ .key }}, readOnly: true}
+            {{- end }}
+            {{- if .Values.plugins.extraVolume }}
+            - {name: plugins, mountPath: /var/lib/stackurity-plugins, readOnly: true}
+            {{- end }}
+      volumes:
+        - name: data
+          emptyDir: {sizeLimit: {{ .Values.scratch.sizeLimit }}}
+        - name: tmp
+          emptyDir: {sizeLimit: 256Mi}
+        {{- range .Values.secretFiles }}
+        - name: secret-{{ .name }}
+          secret: {secretName: {{ .secret }}, defaultMode: 0400}
+        {{- end }}
+        {{- with .Values.plugins.extraVolume }}
+        - name: plugins
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}

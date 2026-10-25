@@ -1,0 +1,298 @@
+// Package risk computes a finding's priority from configurable factors
+// (PRD §9). Every point added or removed is reported as a factor so the
+// operator can see why something is P1 — and the result is deliberately
+// coarse (P1–P4) to avoid false precision.
+package risk
+
+import (
+	"errors"
+	"fmt"
+	"math"
+	"strings"
+	"time"
+)
+
+// Policy is stored as JSON in settings and editable by admins.
+type Policy struct {
+	// Base score per severity when no CVSS score is available.
+	SeverityBase map[string]float64 `json:"severity_base"`
+	EOLBase      float64            `json:"eol_base"`
+
+	KnownExploited     float64            `json:"known_exploited"`
+	InternetExposed    float64            `json:"internet_exposed"`
+	ExposureUnknown    float64            `json:"exposure_unknown"`
+	Production         float64            `json:"production"`
+	FixAvailable       float64            `json:"fix_available"`
+	Overdue            float64            `json:"overdue"`
+	DevDependency      float64            `json:"dev_dependency"`
+	KernelNotRunning   float64            `json:"kernel_not_running"`
+	CriticalityBonus   map[string]float64 `json:"criticality"`
+	NeedsValidationMul float64            `json:"needs_validation_multiplier"`
+	StaleMul           float64            `json:"stale_multiplier"`
+
+	ProductionEnvironments []string `json:"production_environments"`
+
+	// Thresholds: score >= P1 -> P1, etc.
+	Thresholds struct {
+		P1 float64 `json:"p1"`
+		P2 float64 `json:"p2"`
+		P3 float64 `json:"p3"`
+	} `json:"thresholds"`
+
+	SLA map[string]SLA `json:"sla"` // by priority
+
+	// ExceptionMaxDays is the longest a finding may stay suppressed or
+	// risk-accepted before it returns for review. 0 means the default (365),
+	// so policies saved before the field existed keep working.
+	ExceptionMaxDays int `json:"exception_max_days"`
+
+	// SOS fires when any rule matches. Rules never rely on severity alone.
+	SOS []SOSRule `json:"sos_rules"`
+}
+
+type SLA struct {
+	AckHours int `json:"ack_hours"`
+	FixDays  int `json:"fix_days"`
+}
+
+// SOSRule matches when every set condition holds.
+type SOSRule struct {
+	Name            string `json:"name"`
+	MinPriority     string `json:"min_priority,omitempty"`
+	KnownExploited  *bool  `json:"known_exploited,omitempty"`
+	Production      *bool  `json:"production,omitempty"`
+	InternetExposed *bool  `json:"internet_exposed,omitempty"` // true matches exposed or unknown
+	MinSeverity     string `json:"min_severity,omitempty"`
+	FixAvailable    *bool  `json:"fix_available,omitempty"`
+}
+
+func ptr(b bool) *bool { return &b }
+
+func DefaultPolicy() Policy {
+	p := Policy{
+		SeverityBase:           map[string]float64{"critical": 9.5, "high": 7.5, "medium": 5, "low": 2.5, "none": 0.5, "unknown": 5},
+		EOLBase:                6,
+		KnownExploited:         3,
+		InternetExposed:        1.5,
+		ExposureUnknown:        0.5,
+		Production:             1,
+		FixAvailable:           0.5,
+		Overdue:                1,
+		DevDependency:          -2,
+		KernelNotRunning:       -10,
+		CriticalityBonus:       map[string]float64{"critical": 1.5, "high": 1, "medium": 0, "low": -1, "unknown": 0},
+		NeedsValidationMul:     0.7,
+		StaleMul:               0.8,
+		ProductionEnvironments: []string{"production", "prod"},
+		SLA: map[string]SLA{
+			"P1": {AckHours: 4, FixDays: 3},
+			"P2": {AckHours: 24, FixDays: 14},
+			"P3": {AckHours: 72, FixDays: 45},
+			"P4": {AckHours: 168, FixDays: 90},
+		},
+		ExceptionMaxDays: 365,
+		SOS: []SOSRule{
+			{Name: "Known exploited in production", KnownExploited: ptr(true), Production: ptr(true)},
+			{Name: "Critical, exposed production asset", MinSeverity: "critical", Production: ptr(true), InternetExposed: ptr(true)},
+		},
+	}
+	// A high-severity issue on an exposed, critical production asset is P2;
+	// reaching P1 takes a critical score or active exploitation.
+	p.Thresholds.P1, p.Thresholds.P2, p.Thresholds.P3 = 12, 8.5, 6
+	return p
+}
+
+func (p Policy) Validate() error {
+	if !(p.Thresholds.P1 > p.Thresholds.P2 && p.Thresholds.P2 > p.Thresholds.P3) {
+		return errors.New("thresholds must satisfy p1 > p2 > p3")
+	}
+	for _, pr := range []string{"P1", "P2", "P3", "P4"} {
+		s, ok := p.SLA[pr]
+		if !ok || s.AckHours <= 0 || s.FixDays <= 0 {
+			return fmt.Errorf("sla for %s needs positive ack_hours and fix_days", pr)
+		}
+	}
+	if p.ExceptionMaxDays < 0 || p.ExceptionMaxDays > 730 {
+		return errors.New("exception_max_days must be between 1 and 730 (0 for the default of 365)")
+	}
+	if p.NeedsValidationMul <= 0 || p.NeedsValidationMul > 1 || p.StaleMul <= 0 || p.StaleMul > 1 {
+		return errors.New("multipliers must be in (0, 1]")
+	}
+	for _, r := range p.SOS {
+		if r.Name == "" {
+			return errors.New("every SOS rule needs a name")
+		}
+		onlySeverity := r.MinSeverity != "" && r.MinPriority == "" && r.KnownExploited == nil &&
+			r.Production == nil && r.InternetExposed == nil && r.FixAvailable == nil
+		if onlySeverity {
+			return fmt.Errorf("SOS rule %q relies on severity alone; add an exposure, environment or exploitation condition", r.Name)
+		}
+		if r.MinPriority != "" && priorityRank[r.MinPriority] == 0 {
+			return fmt.Errorf("SOS rule %q has an invalid min_priority", r.Name)
+		}
+	}
+	return nil
+}
+
+// Input is everything the model looks at.
+type Input struct {
+	Kind            string // vulnerability, end_of_life
+	Severity        string
+	Score           *float32 // CVSS base score when known
+	KnownExploited  bool
+	InternetExposed *bool
+	Environment     string
+	Criticality     string
+	FixAvailable    bool
+	Overdue         bool
+	Scope           string // runtime, dev, os
+	Verification    string
+	// KernelNotRunning: the package belongs to an installed kernel that is
+	// not the running one, so nothing is exposed until it is booted.
+	KernelNotRunning bool
+}
+
+type Factor struct {
+	Name   string  `json:"name"`
+	Points float64 `json:"points"`
+	Detail string  `json:"detail"`
+}
+
+type Result struct {
+	Score    float64  `json:"score"`
+	Priority string   `json:"priority"`
+	Factors  []Factor `json:"factors"`
+	SOS      bool     `json:"sos"`
+	SOSRule  string   `json:"sos_rule,omitempty"`
+}
+
+var priorityRank = map[string]int{"P4": 1, "P3": 2, "P2": 3, "P1": 4}
+var severityRank = map[string]int{"unknown": 0, "none": 1, "low": 2, "medium": 3, "high": 4, "critical": 5}
+
+// PriorityAtLeast reports whether p is as urgent as min.
+func PriorityAtLeast(p, min string) bool { return priorityRank[p] >= priorityRank[min] }
+
+func (p Policy) IsProduction(env string) bool {
+	for _, e := range p.ProductionEnvironments {
+		if strings.EqualFold(e, env) {
+			return true
+		}
+	}
+	return false
+}
+
+func (p Policy) Evaluate(in Input) Result {
+	var r Result
+	add := func(name string, pts float64, detail string) {
+		if pts == 0 {
+			return
+		}
+		r.Score += pts
+		r.Factors = append(r.Factors, Factor{name, pts, detail})
+	}
+	switch {
+	case in.Kind == "end_of_life":
+		add("End of life", p.EOLBase, "release cycle no longer receives security fixes")
+	case in.Score != nil && *in.Score > 0:
+		add("CVSS base score", float64(*in.Score), fmt.Sprintf("CVSS %.1f", *in.Score))
+	default:
+		base, ok := p.SeverityBase[in.Severity]
+		if !ok {
+			base = p.SeverityBase["unknown"]
+		}
+		add("Severity", base, "advisory severity "+in.Severity)
+	}
+	if in.KnownExploited {
+		add("Known exploited", p.KnownExploited, "listed in CISA KEV")
+	}
+	switch {
+	case in.InternetExposed == nil:
+		add("Exposure unknown", p.ExposureUnknown, "asset exposure not recorded")
+	case *in.InternetExposed:
+		add("Internet exposed", p.InternetExposed, "asset is reachable from the internet")
+	}
+	production := p.IsProduction(in.Environment)
+	if production {
+		add("Production", p.Production, "environment "+in.Environment)
+	}
+	if c := p.CriticalityBonus[in.Criticality]; c != 0 {
+		add("Asset criticality", c, "criticality "+in.Criticality)
+	}
+	if in.FixAvailable {
+		add("Fix available", p.FixAvailable, "an upgrade resolves it")
+	}
+	if in.Overdue {
+		add("Overdue", p.Overdue, "past its remediation deadline")
+	}
+	if in.Scope == "dev" {
+		add("Development dependency", p.DevDependency, "not shipped at runtime")
+	}
+	if in.KernelNotRunning {
+		add("Kernel not running", p.KernelNotRunning, "installed kernel that is not booted; remove old kernels")
+	}
+	// Confidence and freshness scale the result rather than add to it.
+	mul := 1.0
+	switch in.Verification {
+	case "needs_validation":
+		mul = p.NeedsValidationMul
+	case "stale":
+		mul = p.StaleMul
+	}
+	if mul != 1 {
+		before := r.Score
+		r.Score *= mul
+		r.Factors = append(r.Factors, Factor{"Evidence confidence", r.Score - before, fmt.Sprintf("%s: ×%.2f", in.Verification, mul)})
+	}
+	r.Score = math.Round(r.Score*10) / 10
+	switch {
+	case r.Score >= p.Thresholds.P1:
+		r.Priority = "P1"
+	case r.Score >= p.Thresholds.P2:
+		r.Priority = "P2"
+	case r.Score >= p.Thresholds.P3:
+		r.Priority = "P3"
+	default:
+		r.Priority = "P4"
+	}
+	// SOS requires confirmed evidence about something actually exposed.
+	if in.Verification == "confirmed" && !in.KernelNotRunning {
+		for _, rule := range p.SOS {
+			if rule.matches(in, r.Priority, production) {
+				r.SOS, r.SOSRule = true, rule.Name
+				break
+			}
+		}
+	}
+	return r
+}
+
+func (rule SOSRule) matches(in Input, priority string, production bool) bool {
+	if rule.MinPriority != "" && !PriorityAtLeast(priority, rule.MinPriority) {
+		return false
+	}
+	if rule.MinSeverity != "" && severityRank[in.Severity] < severityRank[rule.MinSeverity] {
+		return false
+	}
+	if rule.KnownExploited != nil && *rule.KnownExploited != in.KnownExploited {
+		return false
+	}
+	if rule.Production != nil && *rule.Production != production {
+		return false
+	}
+	if rule.FixAvailable != nil && *rule.FixAvailable != in.FixAvailable {
+		return false
+	}
+	if rule.InternetExposed != nil {
+		exposed := in.InternetExposed == nil || *in.InternetExposed // unknown counts as exposed
+		if *rule.InternetExposed != exposed {
+			return false
+		}
+	}
+	return true
+}
+
+// Deadlines returns acknowledgement and fix deadlines from first detection.
+func (p Policy) Deadlines(priority string, firstSeen time.Time) (ack, fix time.Time) {
+	s := p.SLA[priority]
+	return firstSeen.Add(time.Duration(s.AckHours) * time.Hour), firstSeen.AddDate(0, 0, s.FixDays)
+}

@@ -1,0 +1,70 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.6-alpine
+        env:
+          POSTGRES_USER: stackurity
+          POSTGRES_PASSWORD: stackurity
+          POSTGRES_DB: stackurity_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U stackurity" --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      STACKURITY_TEST_DATABASE_URL: postgres://stackurity:stackurity@localhost:5432/stackurity_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - run: go vet ./...
+      - run: go test -race ./...
+      - name: Cross-compile (Windows agent, plugins)
+        run: |
+          GOOS=windows GOARCH=amd64 go build -o /dev/null ./cmd/stackurity
+          go build -o /dev/null ./plugins/... ./examples/...
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
+      - run: npm run build
+
+  image:
+    runs-on: ubuntu-latest
+    needs: [go, web]
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t stackurity:ci .
+      - name: Agent builds are readable by the server user
+        run: docker run --rm --entrypoint sh stackurity:ci -c 'cd "$STACKURITY_AGENT_DIR" && sha256sum -c stackurity-linux-amd64.sha256 stackurity-linux-arm64.sha256'
+
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - run: helm lint deploy/helm/stackurity --set database.existingSecret=db

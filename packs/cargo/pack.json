@@ -1,0 +1,21 @@
+{
+  "abi": "stackurity-pack/2",
+  "id": "cargo",
+  "version": "1.1.0",
+  "name": "Rust (Cargo)",
+  "publisher": "stackurity",
+  "license": "Apache-2.0",
+  "description": "Reads Cargo.lock: every crate with its exact version, skipping the workspace's own crates and path or git dependencies.",
+  "homepage": "https://stackurity.dev/packs/cargo",
+  "files": [
+    "Cargo.lock"
+  ],
+  "purl_types": [
+    "cargo"
+  ],
+  "handles": [
+    "cargo"
+  ],
+  "max_memory_mb": 128,
+  "timeout_seconds": 60
+}

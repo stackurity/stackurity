@@ -1,0 +1,333 @@
+# Installing and operating Stackurity
+
+Stackurity runs as one container plus PostgreSQL. It needs no vendor account and sends no telemetry. [network.md](network.md) lists every outbound call.
+
+## Requirements
+
+- Docker Engine 24+ with the Compose plugin
+- 2 CPU, 2 GB RAM and 10 GB disk for a few hundred assets
+
+## Install
+
+```sh
+git clone https://github.com/stackurity/stackurity.git
+cd stackurity/deploy
+./init-secrets.sh                      # generates the database password
+docker compose up -d --build
+docker compose logs stackurity | grep -A2 "one-time token"
+```
+
+Open `http://<host>:8080`, enter the one-time setup token from the log, and create the first administrator. The token only works while no users exist.
+
+**TLS.** The session cookie is marked `Secure` by default, so serve Stackurity over HTTPS through a reverse proxy (Caddy, nginx, Traefik). If the proxy sets `X-Forwarded-For`, set `STACKURITY_TRUST_PROXY=true`. For a quick evaluation over plain HTTP on a trusted network, set `STACKURITY_COOKIE_SECURE=false` in `deploy/.env`.
+
+Alternatively, create the first admin from the command line:
+
+```sh
+docker compose exec -e STACKURITY_PASSWORD='a long passphrase' stackurity \
+  stackurity admin create-user --email you@example.com --role admin
+```
+
+## Configuration
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `STACKURITY_DATABASE_URL` / `_FILE` | — | PostgreSQL connection string, or a file containing it |
+| `STACKURITY_LISTEN` | `:8080` | HTTP listen address |
+| `STACKURITY_DATA_DIR` | `/var/lib/stackurity` | Scratch space for repository clones |
+| `STACKURITY_COOKIE_SECURE` | `true` | Mark the session cookie `Secure` |
+| `STACKURITY_TRUST_PROXY` | `false` | Honour `X-Forwarded-For` / `X-Real-IP` |
+| `STACKURITY_SECRETS_DIR` | `/run/secrets` | Directory allowed for `file:` secret references |
+| `STACKURITY_SECRET_*` | — | Environment variables allowed for `env:` secret references |
+| `STACKURITY_STALE_AFTER` | `48h` | An asset not seen for this long is marked stale |
+| `STACKURITY_SETUP_TOKEN` | random | Fixed setup token, for automated installs |
+| `STACKURITY_LOG_FORMAT` | `json` | `json` or `text` |
+| `STACKURITY_FEEDS` | on | `off` disables all intelligence feeds |
+| `STACKURITY_OSV_URL`, `STACKURITY_KEV_URL`, `STACKURITY_ENDOFLIFE_URL`, `STACKURITY_NPM_REGISTRY`, `STACKURITY_PACKAGIST_URL` | public sources | Mirrors for offline or air-gapped installs ([network.md](network.md)) |
+| `STACKURITY_BASE_URL` | — | Public dashboard URL, used for links in notifications and by the agent installer |
+| `STACKURITY_AGENT_DIR` | `/usr/local/lib/stackurity/agents` in the image | Agent builds served to new hosts by **Add server** |
+| `STACKURITY_ALLOW_HTTP_WEBHOOKS` | `false` | Allow `http://` webhook URLs, for internal receivers |
+| `STACKURITY_PLUGIN_DIR` | `/usr/local/lib/stackurity/plugins` in the image | Directory of plugin executables |
+| `STACKURITY_SYFT` | `syft` | Path to the Syft binary used for container image scans (bundled in the image) |
+| `STACKURITY_SECRET_KEY` / `_FILE` | — | 32 random bytes, base64 (`openssl rand -base64 32`). Enables secrets that workspaces store themselves (`secret:NAME`). Keep it safe: without it stored secrets cannot be decrypted |
+| `STACKURITY_PRIVATE_TARGETS` | `default` | Which workspaces may make the server connect to private, loopback or link-local addresses: `default` (workspace 1 only), `all`, or `none` (recommended when hosting other organisations) |
+| `STACKURITY_PRIVATE_CIDRS` | — | Comma-separated ranges every workspace may reach anyway, for example an internal Git server |
+| `STACKURITY_OIDC_WORKSPACE` | `1` | Workspace that people signing in through single sign-on join |
+| `STACKURITY_LICENSE` / `_FILE` | — | Licence key; when set, the dashboard cannot change it |
+| `STACKURITY_PACK_TRUSTED_KEYS` | — | File of `publisher base64-key` lines: publishers whose [stack packs](packs.md) are accepted besides official ones |
+| `STACKURITY_PACK_ALLOW_UNSIGNED` | `false` | Accept unsigned stack packs (pack development only) |
+
+Secrets are never stored in the database. Integrations hold a *reference*: `env:STACKURITY_SECRET_GITHUB` or `file:/run/secrets/github_token`.
+
+## Editions and licences
+
+Without a licence Stackurity runs as **Community**: all detection, intelligence, alerts, one team, the Action plan, CI gates, SBOMs, workspaces and the official stack packs. A licence adds:
+
+| Edition | Adds |
+| --- | --- |
+| Pro | Automatic fixing (policies, approvals, rollouts, Renovate pull requests), several teams with routing by team and escalation, the evidence report, single sign-on |
+| Enterprise | Pro, plus Enterprise stack packs (for example SAP and Oracle) |
+
+Install a licence under **Settings → Licence**, with `stackurity admin set-license`, or with `STACKURITY_LICENSE` / `STACKURITY_LICENSE_FILE` (which then wins). Licences are checked on the server and never phone home. When one expires, paid features keep working for 30 days, then stop. Detection and alerts are never affected, and an asset count above the licence's limit only shows a warning.
+
+On a server that hosts several organisations, each workspace also has a **plan** (Settings → Workspaces). A workspace gets the lower of its plan and the licence; "As licensed" gives it the licence's edition.
+
+## Workspaces
+
+One installation can serve several organisations, each in its own workspace; none can see another's data. A fresh install has one workspace and looks the same as before. The first administrator is also an *instance administrator*, who creates workspaces under **Settings → Workspaces**, or from the command line:
+
+```sh
+docker compose exec stackurity stackurity admin create-workspace --name "Acme" --admin-email ops@acme.example
+docker compose exec stackurity stackurity admin list-workspaces
+```
+
+Isolation is enforced by PostgreSQL row-level security as well as by the application ([design](design/workspaces.md)). The server switches to a role without superuser rights on every connection; if the database role would bypass row-level security, it refuses to serve more than one workspace.
+
+When you host other organisations, also set `STACKURITY_PRIVATE_TARGETS=none` and `STACKURITY_SECRET_KEY`. Workspace admins then keep credentials as stored secrets, and only instance administrators can reference the server's own `env:` and `file:` secrets.
+
+## Single sign-on
+
+Stackurity can sign people in through any OpenID Connect provider: Google Workspace, Microsoft Entra ID, Okta, Keycloak, GitLab and others. Register a web application with the provider, with the redirect URL `https://<your Stackurity>/api/v1/auth/oidc/callback`, then set:
+
+| Variable | Example | Meaning |
+|---|---|---|
+| `STACKURITY_OIDC_ISSUER` | `https://accounts.google.com` | The provider's issuer URL (it must serve `/.well-known/openid-configuration`) |
+| `STACKURITY_OIDC_CLIENT_ID` | | From the provider |
+| `STACKURITY_OIDC_CLIENT_SECRET` or `_FILE` | | From the provider |
+| `STACKURITY_OIDC_LABEL` | `Google` | Text on the sign-in button |
+| `STACKURITY_OIDC_ALLOWED_DOMAINS` | `example.com` | Only these email domains may sign in (recommended for Google and other shared providers) |
+| `STACKURITY_OIDC_ROLE_MAP` | `stackurity-admins=admin,security-team=security,engineering=engineer` | Groups (from `STACKURITY_OIDC_ROLE_CLAIM`, default `groups`) that grant each role. When set, the provider decides the role on every sign-in |
+| `STACKURITY_OIDC_DEFAULT_ROLE` | `viewer` | Role for people in no mapped group; `none` refuses them |
+| `STACKURITY_OIDC_SCOPES` | `openid,email,profile,groups` | Scopes to request; add the one your provider needs for group claims |
+
+`STACKURITY_BASE_URL` must be set (or `STACKURITY_OIDC_REDIRECT_URL`). The sign-in page then shows **Sign in with …**. The first sign-in creates the account, or links an existing account with the same verified email address. Password sign-in keeps working for local accounts, so keep one admin account with a password as a way back in if the provider is down.
+
+## Collecting inventory
+
+### Linux hosts
+
+**The quick way.** Under **Assets → Add server**, choose the environment and, optionally, the application directories to inventory, and create an install command. Run it on the host:
+
+```sh
+curl -fsSL https://stackurity.example.com/install/agent.sh | sudo STACKURITY_ENROLL_CODE=enr_... sh
+```
+
+The script downloads the agent from your Stackurity server and checks its SHA-256. It then creates an unprivileged `stackurity` user and exchanges the one-time code for a collector token. Finally it writes `/etc/stackurity/agent.env` with the settings you chose and starts a hardened systemd service that reports every 6 hours. The code works once (or as many times as you allowed) and expires after 24 hours by default, so a leaked command is short-lived, and no long-lived token is ever typed into a shell. To upgrade the agent later, run the same command without the code. Read the script first if you prefer: it is served at `/install/agent.sh`.
+
+The host needs systemd, root for the install, and HTTPS access to the Stackurity server. The installer refuses plain HTTP except to a local port such as an SSH tunnel (see below); `STACKURITY_ALLOW_HTTP=1` overrides this. Set `STACKURITY_BASE_URL` on the server so the script and its downloads use the public address.
+
+**The manual way.** Create a collector token under **Settings → API tokens** (role `collector`), or from the CLI:
+
+```sh
+docker compose exec stackurity stackurity admin create-token --name hosts
+```
+
+Get the `stackurity` binary. There is no tagged release yet, so either copy it out of the server image (`docker compose cp stackurity:/usr/local/bin/stackurity ./stackurity`; the image is linux/amd64 unless you built another platform), or build it with `make build` (or `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o stackurity ./cmd/stackurity`). The same binary is the server, the agent and the CLI.
+
+On each host, create the agent user and its directory, install the binary and save the token:
+
+```sh
+sudo useradd --system --no-create-home --shell /usr/sbin/nologin stackurity
+sudo install -m 0755 stackurity /usr/local/bin/stackurity
+sudo install -d -m 0750 -o root -g stackurity /etc/stackurity
+sudo install -m 0640 -o root -g stackurity /dev/stdin /etc/stackurity/token <<<"$TOKEN"
+```
+
+Then run the agent as that unprivileged user:
+
+```ini
+# /etc/systemd/system/stackurity-agent.service
+[Unit]
+Description=Stackurity inventory agent
+After=network-online.target
+
+[Service]
+User=stackurity
+Environment=STACKURITY_SERVER=https://stackurity.example.com
+Environment=STACKURITY_TOKEN_FILE=/etc/stackurity/token
+Environment=STACKURITY_ENVIRONMENT=production
+ExecStart=/usr/local/bin/stackurity agent --interval 6h
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
+```
+
+The agent reads `/etc/os-release` and the dpkg, rpm or apk database. It does not install or change software. It also reports whether the host needs a reboot to run what is installed: the distro's `/run/reboot-required` flag (Debian, Ubuntu), or a newer kernel of the same flavour in `/lib/modules` than the one running. Patched packages protect nothing until the process or kernel restarts, so these hosts are listed under **Assets → Reboot pending**. Inside a container the state is reported as unknown. RPM hosts need the `rpm` binary, which is always present on them. Use `stackurity agent --once -o -` to see exactly what would be sent: a JSON list of batches, the OS packages first, then the host's other software, then one per application.
+
+Enable it with `sudo systemctl enable --now stackurity-agent`; the host appears under **Assets** after the first run. Each host uses the same unit, so adding servers means repeating these steps (one token can serve many hosts, or create one per host so it can be revoked alone).
+
+If the server is not reachable over HTTPS from the host (for example it listens only on `127.0.0.1`), forward a local port over SSH with a dedicated account whose key allows nothing but that forward (`restrict,port-forwarding,permitopen="127.0.0.1:8180"` in its `authorized_keys`), run the forward as its own systemd unit, and point `STACKURITY_SERVER` at `http://127.0.0.1:<local port>`. The in-app help (**Help → Connect over an SSH tunnel**) has the full units.
+
+Runtimes and servers installed outside the package manager are invisible to the package database, yet they reach end of life like anything else: Node.js from nvm or a tarball, a downloaded Redis, MySQL, MariaDB, PostgreSQL, MongoDB, Meilisearch, nginx or HAProxy binary, and Python, Go, Ruby or PHP builds under `/usr/local` or `/opt`. The agent looks for these in the usual locations, skips any that a package owns, and reports the rest with their version, so their end-of-life dates appear with everything else. For nvm and pyenv the version comes from the install path. Otherwise the agent runs the binary's `--version` flag with an empty environment and a 5-second limit, and only when the binary and every directory above it are owned by root or the agent's user and not writable by anyone else. Binaries under `--root` are never run. Vulnerabilities are not matched for these runtimes (there is no advisory feed keyed by binary), which the **Intelligence** page lists as an evaluation gap. Turn detection off with `--no-runtimes`. With `ProtectHome=yes` the agent cannot see per-user installs such as `~/.nvm`; use `ProtectHome=read-only` to include them.
+
+#### Applications deployed on the host
+
+A repository says what an application declares; the server shows what actually runs. The agent can inventory deployed applications so that a vulnerable library is found where it is exposed, together with the OS, web server and runtime under it:
+
+```sh
+stackurity agent --app-dir /srv/shop --app-dir /var/www/blog   # or STACKURITY_APP_DIRS=/srv/shop,/var/www/blog
+stackurity agent --discover-apps                               # or STACKURITY_DISCOVER_APPS=true
+```
+
+For each application directory the agent reads what is installed: every package in `node_modules` (npm, yarn and pnpm layouts), Python packages in virtual environments (`*.dist-info`), and Composer's `vendor/composer/installed.json`. Where nothing is installed for an ecosystem (a Go or Rust service, or PHP deployed without `vendor/`), it reads the lockfiles instead. If what is installed differs from the lockfile, what is installed wins. Nothing is executed. `--discover-apps` also looks for projects up to three levels below `/srv`, `/var/www`, `/opt`, `/app` and home directories. In a release layout (`releases/` plus a `current` link), only the current release is read.
+
+Each application becomes its own asset, named after its `package.json` or `composer.json`, and is linked to the host with a `runs_on` relation. When the directory is a Git checkout whose origin matches a repository Stackurity already knows, it is also linked to that repository (`built_from`). The asset's **Stack** tab then shows every open finding from the edge down: web server, operating system, runtime, data stores, installed libraries and what the repository declares. Host-wide libraries, such as global npm packages and pip installs that no OS package owns, are reported on the host itself.
+
+The agent user needs read access to the application directories. Add it to the deploying user's group, or grant read access with an ACL (`setfacl -R -m u:stackurity:rX /srv/shop`). With `ProtectHome=yes`, applications under `/home` are invisible; use `ProtectHome=read-only`. Applications running inside containers are not read this way; scan their images with a container image integration.
+
+### Repositories
+
+There are two ways to collect repository inventory:
+
+- **Server-side.** Under **Integrations**, add a Git repository (HTTPS only). Private repositories need a read-only token referenced as `env:STACKURITY_SECRET_<NAME>`. The server makes a shallow clone, reads the lockfiles and deletes the clone. Hooks, submodules, LFS and scripts are never run.
+- **CI.** Run this in your pipeline:
+
+  ```sh
+  stackurity scan . --git-url "$CI_REPOSITORY_URL" --environment production
+  ```
+
+  Use the same `--git-url` as the integration so both land on one asset.
+
+  To fail the pipeline on findings, add a threshold. The command uploads the
+  scan, waits for the server to evaluate it, prints the findings that meet the
+  threshold and exits with status 3 (status 1 still means the scan itself
+  failed):
+
+  ```sh
+  stackurity scan . --git-url "$CI_REPOSITORY_URL" --fail-on critical --only-fixable
+  ```
+
+  `--fail-on` takes a severity, `--fail-on-priority` a priority (P1–P4, which
+  accounts for exposure, environment and exploitation) and `--fail-on-kev`
+  fails on any known exploited vulnerability. Findings that have been
+  suppressed or risk-accepted on the server, with their required reason and
+  expiry, do not fail the gate, so an exception is recorded in one place.
+  Components with no vulnerability source are listed as a warning and cannot
+  fail the gate. A collector token can read the result only of scans it
+  submitted.
+
+  A scan replaces the asset's inventory. For merge-request pipelines, give the
+  scan its own `--name` (without `--git-url`) so the default branch's
+  inventory is not overwritten by a branch that may never merge.
+
+Supported lockfiles:
+
+- npm, yarn (v1 and Berry) and pnpm
+- Composer
+- Poetry, Pipenv and pinned `requirements.txt` (unpinned lines are reported as partial coverage)
+- Go modules
+- Bundler
+- NuGet (`packages.lock.json`)
+- Dart and Flutter (`pubspec.lock`; packages from private pub repositories are skipped)
+
+Java (Maven, Gradle) and Rust (Cargo) are read by [stack packs](packs.md) once installed. Others, such as mix, are reported as unsupported coverage and never silently ignored.
+
+### Windows hosts
+
+The same `stackurity` binary runs on Windows. It reads the OS build and installed programs from the registry, as "Apps & features" shows them, and only reads. Run it as a scheduled task, or with a service wrapper, as a standard user:
+
+```powershell
+$env:STACKURITY_SERVER = "https://stackurity.example.com"
+$env:STACKURITY_TOKEN_FILE = "C:\ProgramData\Stackurity\token"
+stackurity.exe agent --interval 6h
+```
+
+Windows Update hotfixes and Microsoft Store apps are reported as unsupported coverage for now. Remediation runs only on Linux.
+
+### AWS managed services
+
+The image includes the `aws-managed` plugin. Add a **Plugin** integration:
+
+```json
+{"kind": "plugin", "config": {"plugin": "aws-managed", "config": {"regions": ["eu-west-1"], "role_arn": "arn:aws:iam::123456789012:role/stackurity-readonly", "environment_tag": "Environment"}},
+ "secret_ref": "file:/run/secrets/aws.json", "schedule_minutes": 720}
+```
+
+The secret file holds `{"aws_access_key_id": "...", "aws_secret_access_key": "..."}`. Without it, the plugin uses the instance role. The plugin calls only `Describe*` and `List*` APIs; the exact list is in its metadata, which you can see under **Settings → Plugins** or with `GET /api/v1/plugins`. Engine and runtime versions are matched against endoflife.date lifecycle data for RDS, Aurora, EKS, Lambda, ElastiCache and OpenSearch.
+
+### Plugins
+
+Plugins are executables in `STACKURITY_PLUGIN_DIR`. To add your own, read [plugins.md](plugins.md).
+
+### Container images
+
+Under **Integrations**, add a container image such as `ghcr.io/acme/shop:1.4`. The bundled Syft reads the image straight from the registry: no Docker daemon is needed and nothing in the image runs. For a private registry, set a secret reference (a token, or a password together with `username`).
+
+### SBOMs
+
+```sh
+stackurity sbom import image.cdx.json          # CycloneDX or SPDX JSON
+stackurity sbom export --asset 12 -o asset.cdx.json
+```
+
+## Intelligence
+
+Once inventory exists, Stackurity creates feeds for the ecosystems it contains: OSV vulnerability data, CISA KEV, endoflife.date, and the npm and Packagist registries. Inventory is evaluated whenever a feed changes and after every collection. The **Intelligence** page shows each feed's freshness and errors, plus the components that could *not* be evaluated (*evaluation gaps*).
+
+The first OSV download for an ecosystem can be large (see [network.md](network.md)) and is processed in batches. Allow a few minutes before findings appear.
+
+## Notifications
+
+Under **Settings → Notifications**, add a channel. Credentials always go in a secret reference, never in the configuration:
+
+| Channel | Configuration | Secret reference |
+|---|---|---|
+| Email | `host`, `port`, `from`, `to[]`, `username`, `tls` (`starttls` by default, `tls`, or `none`) | SMTP password |
+| Slack | none | The incoming webhook URL |
+| Microsoft Teams | none | The Workflows webhook URL ("Post to a channel when a webhook request is received") |
+| Webhook | `url` (HTTPS) | The HMAC signing key (optional) |
+
+Then add routes:
+
+- one for normal alerts, for example minimum priority P2 to the team channel, with quiet hours;
+- one marked **escalation** that goes to the team lead or the security owner.
+
+When more than 3 incidents reach one route in a single cycle (the dispatcher runs every minute), they are sent as one digest that lists the top actions from the action plan instead of one message per incident, so onboarding a server or a large feed update never floods a channel. Incidents raised while a route is disabled are recorded as announced and not sent later.
+
+Use **Send test** to check each channel. Adjust priorities, deadlines and SOS rules under **Settings → Risk policy**.
+
+## Backup and restore
+
+Everything is in PostgreSQL. The data volume only holds temporary clones.
+
+```sh
+# backup
+docker compose exec -T postgres pg_dump -U stackurity -Fc stackurity > stackurity-$(date +%F).dump
+
+# restore into a fresh install
+docker compose up -d postgres
+docker compose exec -T postgres pg_restore -U stackurity -d stackurity --clean --if-exists < stackurity-2026-10-23.dump
+docker compose up -d
+```
+
+Test a restore regularly. A backup you have never restored is not a backup.
+
+## Upgrading
+
+1. Take a backup.
+2. `git pull`, then `docker compose up -d --build` (or bump `STACKURITY_IMAGE`).
+3. Migrations run automatically at startup inside a lock, so concurrent starts are safe. Run `stackurity migrate` to apply them separately.
+
+Downgrades are not supported. To roll back, restore the backup taken before the upgrade.
+
+## Kubernetes (Helm)
+
+```sh
+kubectl create secret generic stackurity-db --from-literal=url='postgres://stackurity:...@db:5432/stackurity?sslmode=require'
+helm install stackurity deploy/helm/stackurity \
+  --set database.existingSecret=stackurity-db \
+  --set ingress.enabled=true --set ingress.host=stackurity.example.com \
+  --set config.baseURL=https://stackurity.example.com
+```
+
+The chart runs the same hardened container: non-root, read-only root filesystem, all capabilities dropped, `RuntimeDefault` seccomp, and no service-account token. PostgreSQL isn't bundled; use a managed database or an operator. Keep `replicaCount: 1`, because background work runs in-process.
+
+## Health
+
+- `GET /healthz`: the process is up.
+- `GET /readyz`: the database is reachable. The container health check uses this.
+- `stackurity diagnostics --server URL`: checks connectivity, authentication and version from a client.

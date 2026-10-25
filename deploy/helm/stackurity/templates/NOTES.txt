@@ -1,0 +1,8 @@
+Stackurity is starting.
+
+1. Get the one-time setup token (only printed while no users exist):
+   kubectl logs deploy/{{ include "stackurity.fullname" . }} | grep -A2 "one-time token"
+
+2. Open {{ if .Values.ingress.enabled }}https://{{ .Values.ingress.host }}{{ else }}the service (kubectl port-forward svc/{{ include "stackurity.fullname" . }} 8080){{ end }} and create the first admin.
+
+Agents and CI reach the API at /api/v1 with collector tokens (Settings → API tokens).

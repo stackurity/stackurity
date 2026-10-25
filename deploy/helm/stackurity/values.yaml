@@ -1,0 +1,76 @@
+image:
+  repository: ghcr.io/stackurity/stackurity
+  tag: ""            # defaults to the chart appVersion
+  pullPolicy: IfNotPresent
+
+# One replica: background work (feed sync, notifications, remediation
+# rollout) runs in-process. Scaling out workers is planned, not supported.
+replicaCount: 1
+
+# PostgreSQL 16+ is required and not bundled. Point at a managed database or
+# an operator such as CloudNativePG.
+database:
+  existingSecret: ""     # Secret with the connection URL
+  existingSecretKey: url # postgres://user:pass@host:5432/stackurity?sslmode=require
+
+config:
+  baseURL: ""            # public URL, used in notification links
+  cookieSecure: true
+  trustProxy: true       # behind an ingress controller
+  feeds: "on"            # "off" for air-gapped installs (see docs/network.md)
+  staleAfter: 48h
+  logFormat: json
+  extraEnv: {}           # e.g. STACKURITY_OSV_URL for a mirror
+
+# Secrets referenced by integrations and channels (env:STACKURITY_SECRET_*
+# or file:/run/secrets/<name>). Each entry mounts one key of an existing
+# Secret as a file under /run/secrets.
+secretFiles: []
+#  - name: github_token
+#    secret: stackurity-integrations
+#    key: github_token
+
+plugins:
+  # Extra plugins from a volume (the image ships aws-managed).
+  extraVolume: {}
+
+service:
+  type: ClusterIP
+  port: 8080
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  host: stackurity.example.com
+  tls: []
+
+resources:
+  requests: {cpu: 200m, memory: 512Mi}
+  limits: {memory: 2Gi}
+
+# Scratch space for repository clones and feed archives (Ubuntu's OSV
+# archive is ~750 MB during first sync).
+scratch:
+  sizeLimit: 4Gi
+
+networkPolicy:
+  enabled: false
+  # Egress is needed for feeds, Git, registries and notifications; restrict
+  # with your own egress policy or proxy.
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile: {type: RuntimeDefault}
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities: {drop: [ALL]}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

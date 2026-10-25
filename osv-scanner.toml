@@ -1,0 +1,9 @@
+# Documented exceptions for the dependency scan in .github/workflows/security.yml.
+# Every entry needs a reason and an expiry so it is reviewed again.
+
+[[IgnoredVulns]]
+id = "GO-2026-5932"
+ignoreUntil = 2027-01-31
+reason = """golang.org/x/crypto/openpgp is deprecated and unsafe by design. Stackurity never imports
+openpgp (govulncheck, which checks reachability, reports nothing), and the advisory has no fixed
+module version. Re-check when x/crypto releases a fix or before the expiry."""

@@ -1,0 +1,11 @@
+/bin/
+/dist/
+*.test
+*.out
+.env
+node_modules/
+web/dist/*
+!web/dist/.gitkeep
+.DS_Store
+deploy/secrets/
+ee-overlay.json

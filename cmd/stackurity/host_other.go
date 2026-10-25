@@ -1,0 +1,100 @@
+//go:build !windows
+
+package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+
+	"github.com/stackurity/stackurity/internal/collect/apps"
+	"github.com/stackurity/stackurity/internal/collect/gitrepo"
+	"github.com/stackurity/stackurity/internal/collect/linux"
+	"github.com/stackurity/stackurity/internal/model"
+)
+
+// AppsCollectorID reports applications deployed on a host.
+const AppsCollectorID = "linux-apps"
+
+// hostCollector returns the inventory collector for this platform. The first
+// batch is always the host's OS packages; the host must exist on the server
+// before its applications can be linked to it.
+func hostCollector(o *hostOptions) (func(context.Context) ([]*model.ObservationBatch, error), error) {
+	col := linux.New(version)
+	col.Root = o.root
+	col.Runtimes = o.runtimes
+	if o.root != "/" {
+		// A mounted image or container filesystem is not this host's code:
+		// report its runtimes from paths, never by running them.
+		col.RunVersion = nil
+	}
+	return func(ctx context.Context) ([]*model.ObservationBatch, error) {
+		host, _ := os.Hostname()
+		osBatch, err := col.Collect(ctx, host, col.MachineID())
+		if err != nil {
+			return nil, err
+		}
+		scanner := &apps.Scanner{Root: o.root, Owned: col.OwnedFunc()}
+		// Stack packs read application files the core cannot, such as
+		// deployed JARs; each is fetched only if such a file is found.
+		if o.packs != nil && (len(o.appDirs) > 0 || o.discoverApps) {
+			exts, done := o.packs(ctx)
+			defer done()
+			scanner.Packs = exts
+		}
+		batches := []*model.ObservationBatch{osBatch, col.CollectSoftware(ctx, osBatch, scanner.ScanGlobal)}
+
+		seen := map[string]bool{}
+		scan := func(dir string, explicit bool) {
+			app := scanner.ScanApp(ctx, dir)
+			if seen[app.Dir] {
+				return
+			}
+			seen[app.Dir] = true
+			// A discovered directory with nothing installed and no lockfile
+			// is a tool or an empty checkout, not an application to track.
+			if !explicit && len(app.Observations) == 0 {
+				return
+			}
+			batches = append(batches, appBatch(app, osBatch.Asset))
+		}
+		for _, dir := range o.appDirs {
+			scan(dir, true)
+		}
+		if o.discoverApps {
+			for _, dir := range scanner.Discover() {
+				scan(dir, false)
+			}
+		}
+		return batches, nil
+	}, nil
+}
+
+// appBatch describes one deployed application as its own asset, linked to
+// the host it runs on and, when its Git origin is known, to its repository.
+func appBatch(app apps.App, host model.AssetRef) *model.ObservationBatch {
+	b := model.NewBatch(model.Collector{ID: AppsCollectorID, Version: version, Method: "agent"}, model.AssetRef{
+		Kind:        model.AssetApplication,
+		Name:        fmt.Sprintf("%s on %s", app.Name, host.Name),
+		Identifiers: []model.Identifier{{Scheme: model.AppPathScheme, Value: app.Dir}},
+		Attributes:  map[string]string{"app_dir": app.Dir, "host": host.Name},
+	})
+	b.Observations = app.Observations
+	if b.Observations == nil {
+		b.Observations = []model.Observation{}
+	}
+	b.Coverage = app.Coverage
+	b.Relations = []model.RelationRef{{Kind: "runs_on", To: host.Identifiers}}
+	if app.GitURL != "" {
+		b.Asset.Attributes["git_url"] = app.GitURL
+		b.Relations = append(b.Relations, model.RelationRef{Kind: "built_from",
+			To: []model.Identifier{{Scheme: "git-url", Value: gitrepo.NormalizeURL(app.GitURL)}}})
+	}
+	b.Complete = true
+	for _, c := range b.Coverage {
+		if c.Status != "checked" {
+			b.Complete = false
+		}
+	}
+	return b
+}

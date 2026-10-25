@@ -1,0 +1,617 @@
+package store
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+
+	"github.com/stackurity/stackurity/internal/auth"
+	"github.com/stackurity/stackurity/internal/tenant"
+)
+
+// User is an account. Accounts are global; Role is the user's role in the
+// workspace the context is scoped to, empty when they are not a member.
+type User struct {
+	ID            int64      `json:"id"`
+	Email         string     `json:"email"`
+	Name          string     `json:"name"`
+	Role          auth.Role  `json:"role"`
+	Disabled      bool       `json:"disabled"`
+	CreatedAt     time.Time  `json:"created_at"`
+	LastLoginAt   *time.Time `json:"last_login_at"`
+	Teams         []string   `json:"teams"`
+	InstanceAdmin bool       `json:"instance_admin"`
+}
+
+const userCols = `u.id, u.email, u.name,
+	COALESCE((SELECT wm.role FROM workspace_members wm WHERE wm.user_id = u.id AND wm.workspace_id = stackurity_ws()), ''),
+	u.disabled, u.created_at, u.last_login_at,
+	COALESCE((SELECT array_agg(t.name ORDER BY t.name) FROM team_members m JOIN teams t ON t.id = m.team_id WHERE m.user_id = u.id), '{}'),
+	u.instance_admin`
+
+func (s *Store) CountUsers(ctx context.Context) (int64, error) {
+	var n int64
+	err := s.Pool.QueryRow(ctx, `SELECT count(*) FROM users`).Scan(&n)
+	return n, err
+}
+
+// CreateUser adds a user to the context's workspace: a new account with
+// password, or an existing account (whose password is left alone).
+func (s *Store) CreateUser(ctx context.Context, email, name string, role auth.Role, password string) (*User, error) {
+	_, err := s.AddMember(ctx, email, name, role, password)
+	if err != nil {
+		return nil, err
+	}
+	var id int64
+	if err := s.Pool.QueryRow(ctx, `SELECT id FROM users WHERE email = lower($1)`, strings.TrimSpace(email)).Scan(&id); err != nil {
+		return nil, err
+	}
+	return s.GetUser(ctx, id)
+}
+
+// AddMember adds the user with email to the context's workspace with role,
+// creating the account (with password) when it does not exist. It reports
+// whether a new account was created.
+func (s *Store) AddMember(ctx context.Context, email, name string, role auth.Role, password string) (created bool, err error) {
+	if !role.ValidUser() {
+		return false, fmt.Errorf("invalid role %q", role)
+	}
+	ws, ok := tenant.Workspace(ctx)
+	if !ok {
+		return false, errNoWorkspace
+	}
+	err = pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
+		var before int64
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM users`).Scan(&before); err != nil {
+			return err
+		}
+		id, err := ensureUser(ctx, tx, email, name, password)
+		if err != nil {
+			return err
+		}
+		var after int64
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM users`).Scan(&after); err != nil {
+			return err
+		}
+		created = after > before
+		tag, err := tx.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1, $2, $3)
+			ON CONFLICT (workspace_id, user_id) DO NOTHING`, ws, id, role)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return fmt.Errorf("a user with that email is already a member: %w", ErrConflict)
+		}
+		return nil
+	})
+	return created, err
+}
+
+// RemoveMember removes a user from the context's workspace. The account and
+// its other memberships are untouched; its tokens for this workspace stop
+// working because tokens require membership.
+func (s *Store) RemoveMember(ctx context.Context, userID int64) error {
+	ws, ok := tenant.Workspace(ctx)
+	if !ok {
+		return errNoWorkspace
+	}
+	return pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `DELETE FROM workspace_members WHERE workspace_id = $1 AND user_id = $2`, ws, userID)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return ErrNotFound
+		}
+		if err := requireActiveAdmin(ctx, tx, ws); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM team_members WHERE user_id = $1`, userID); err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `UPDATE sessions SET workspace_id = NULL WHERE user_id = $1 AND workspace_id = $2`, userID, ws)
+		return err
+	})
+}
+
+// requireActiveAdmin refuses to leave a workspace without an active admin.
+func requireActiveAdmin(ctx context.Context, tx pgx.Tx, ws int64) error {
+	var admins int64
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM workspace_members m JOIN users u ON u.id = m.user_id
+		WHERE m.workspace_id = $1 AND m.role = 'admin' AND NOT u.disabled`, ws).Scan(&admins); err != nil {
+		return err
+	}
+	if admins == 0 {
+		return fmt.Errorf("at least one active admin is required: %w", ErrConflict)
+	}
+	return nil
+}
+
+var errNoWorkspace = errors.New("no workspace selected")
+
+// CreateFirstAdmin creates an admin only if no users exist, atomically.
+func (s *Store) CreateFirstAdmin(ctx context.Context, email, name, password string) (*User, error) {
+	if err := auth.ValidPassword(password); err != nil {
+		return nil, err
+	}
+	hash, err := auth.HashPassword(password)
+	if err != nil {
+		return nil, err
+	}
+	var id int64
+	err = pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `LOCK TABLE users IN EXCLUSIVE MODE`); err != nil {
+			return err
+		}
+		var n int64
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM users`).Scan(&n); err != nil {
+			return err
+		}
+		if n > 0 {
+			return fmt.Errorf("setup already completed: %w", ErrConflict)
+		}
+		// The first user operates the installation and administers the
+		// default workspace.
+		if err := tx.QueryRow(ctx, `INSERT INTO users (email, name, role, password_hash, instance_admin)
+			VALUES (lower($1), $2, 'admin', $3, true) RETURNING id`, strings.TrimSpace(email), name, hash).Scan(&id); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1, $2, 'admin')`,
+			tenant.DefaultWorkspace, id)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.GetUser(tenant.WithWorkspace(ctx, tenant.DefaultWorkspace), id)
+}
+
+func (s *Store) GetUser(ctx context.Context, id int64) (*User, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT `+userCols+` FROM users u WHERE u.id = $1`, id)
+	if err != nil {
+		return nil, err
+	}
+	u, err := pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByPos[User])
+	return u, notFound(err)
+}
+
+func (s *Store) ListUsers(ctx context.Context) ([]User, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT `+userCols+` FROM users u
+		WHERE EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.user_id = u.id AND wm.workspace_id = stackurity_ws())
+		ORDER BY u.email`)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByPos[User])
+}
+
+type UserUpdate struct {
+	Name     *string    `json:"name"`
+	Role     *auth.Role `json:"role"`
+	Disabled *bool      `json:"disabled"`
+	Password *string    `json:"password"`
+}
+
+// UpdateUser changes a member of the context's workspace. The role is the
+// workspace role. Name, password and disabled belong to the account, which
+// other workspaces may share, so they can be changed only by an instance
+// admin or when the account belongs to this workspace alone.
+func (s *Store) UpdateUser(ctx context.Context, id int64, u UserUpdate, instanceAdmin bool) error {
+	if u.Role != nil && !u.Role.ValidUser() {
+		return fmt.Errorf("invalid role %q", *u.Role)
+	}
+	ws, ok := tenant.Workspace(ctx)
+	if !ok {
+		return errNoWorkspace
+	}
+	var hash *string
+	if u.Password != nil {
+		if err := auth.ValidPassword(*u.Password); err != nil {
+			return err
+		}
+		h, err := auth.HashPassword(*u.Password)
+		if err != nil {
+			return err
+		}
+		hash = &h
+	}
+	return pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
+		var others int64
+		err := tx.QueryRow(ctx, `SELECT count(*) FILTER (WHERE workspace_id <> $2) FROM workspace_members
+			WHERE user_id = $1 HAVING bool_or(workspace_id = $2)`, id, ws).Scan(&others)
+		if err == pgx.ErrNoRows {
+			return ErrNotFound // not a member of this workspace
+		}
+		if err != nil {
+			return err
+		}
+		account := u.Name != nil || u.Disabled != nil || hash != nil
+		if account && others > 0 && !instanceAdmin {
+			return fmt.Errorf("this account also belongs to other workspaces; only an instance admin can change its name, password or status: %w", ErrConflict)
+		}
+		if _, err := tx.Exec(ctx, `UPDATE users SET name = COALESCE($2, name), disabled = COALESCE($3, disabled),
+			password_hash = COALESCE($4, password_hash) WHERE id = $1`, id, u.Name, u.Disabled, hash); err != nil {
+			return err
+		}
+		if u.Role != nil {
+			if _, err := tx.Exec(ctx, `UPDATE workspace_members SET role = $3 WHERE workspace_id = $1 AND user_id = $2`,
+				ws, id, *u.Role); err != nil {
+				return err
+			}
+		}
+		// Never leave the workspace without an active admin.
+		if err := requireActiveAdmin(ctx, tx, ws); err != nil {
+			return err
+		}
+		// Disabling a user or changing their password ends their sessions. A
+		// role change needs no sign-out: roles are read on every request, and
+		// the user's sessions in other workspaces must not be disturbed.
+		if (u.Disabled != nil && *u.Disabled) || hash != nil {
+			_, err := tx.Exec(ctx, `DELETE FROM sessions WHERE user_id = $1`, id)
+			return err
+		}
+		return nil
+	})
+}
+
+// Authenticate checks credentials and returns the user.
+func (s *Store) Authenticate(ctx context.Context, email, password string) (*User, error) {
+	var id int64
+	var hash string
+	var disabled bool
+	err := s.Pool.QueryRow(ctx, `SELECT id, password_hash, disabled FROM users WHERE email = lower($1)`, strings.TrimSpace(email)).
+		Scan(&id, &hash, &disabled)
+	exists := err == nil
+	if err != nil && err != pgx.ErrNoRows {
+		return nil, err
+	}
+	if !auth.CheckPasswordOrDummy(hash, exists, password) || disabled {
+		return nil, ErrNotFound
+	}
+	_, _ = s.Pool.Exec(ctx, `UPDATE users SET last_login_at = now() WHERE id = $1`, id)
+	return s.GetUser(ctx, id)
+}
+
+const SessionTTL = 12 * time.Hour
+
+// CreateSession starts a browser session working in workspaceID (0: none yet).
+func (s *Store) CreateSession(ctx context.Context, userID, workspaceID int64) (string, error) {
+	secret, _, err := auth.NewToken("sess")
+	if err != nil {
+		return "", err
+	}
+	var ws *int64
+	if workspaceID > 0 {
+		ws = &workspaceID
+	}
+	_, err = s.Pool.Exec(ctx, `INSERT INTO sessions (token_hash, user_id, expires_at, workspace_id)
+		VALUES ($1, $2, now() + make_interval(secs => $3), $4)`,
+		auth.HashToken(secret), userID, SessionTTL.Seconds(), ws)
+	return secret, err
+}
+
+// SessionUser resolves a browser session to its user and the workspace it
+// works in. When the session has no workspace, or the user has left it, the
+// user's first workspace is used; 0 means the user belongs to none. The
+// returned user's Role is their role in that workspace.
+func (s *Store) SessionUser(ctx context.Context, secret string) (*User, int64, error) {
+	var id int64
+	var ws *int64
+	err := s.Pool.QueryRow(ctx, `SELECT s.user_id, s.workspace_id FROM sessions s JOIN users u ON u.id = s.user_id
+		WHERE s.token_hash = $1 AND s.expires_at > now() AND NOT u.disabled`, auth.HashToken(secret)).Scan(&id, &ws)
+	if err != nil {
+		return nil, 0, notFound(err)
+	}
+	var wsID int64
+	if ws != nil {
+		if role, err := s.MemberRole(ctx, *ws, id); err != nil {
+			return nil, 0, err
+		} else if role != "" {
+			wsID = *ws
+		}
+	}
+	if wsID == 0 {
+		ms, err := s.Memberships(ctx, id)
+		if err != nil {
+			return nil, 0, err
+		}
+		if len(ms) > 0 {
+			wsID = ms[0].WorkspaceID
+			_, _ = s.Pool.Exec(ctx, `UPDATE sessions SET workspace_id = $2 WHERE token_hash = $1`, auth.HashToken(secret), wsID)
+		}
+	}
+	u, err := s.GetUser(tenant.WithWorkspace(ctx, wsID), id)
+	return u, wsID, err
+}
+
+func (s *Store) DeleteSession(ctx context.Context, secret string) error {
+	_, err := s.Pool.Exec(ctx, `DELETE FROM sessions WHERE token_hash = $1`, auth.HashToken(secret))
+	return err
+}
+
+func (s *Store) PurgeExpiredSessions(ctx context.Context) error {
+	_, err := s.Pool.Exec(ctx, `DELETE FROM sessions WHERE expires_at < now()`)
+	return err
+}
+
+type Token struct {
+	ID          int64      `json:"id"`
+	WorkspaceID int64      `json:"workspace_id"`
+	Name        string     `json:"name"`
+	Prefix      string     `json:"prefix"`
+	UserID      *int64     `json:"user_id"`
+	Role        auth.Role  `json:"role"`
+	CreatedAt   time.Time  `json:"created_at"`
+	ExpiresAt   *time.Time `json:"expires_at"`
+	LastUsedAt  *time.Time `json:"last_used_at"`
+	RevokedAt   *time.Time `json:"revoked_at"`
+	UserEmail   string     `json:"user_email"`
+}
+
+const tokenCols = `id, workspace_id, name, prefix, user_id, role, created_at, expires_at, last_used_at, revoked_at,
+	COALESCE((SELECT email FROM users u WHERE u.id = api_tokens.user_id), '')`
+
+// CreateToken returns the stored token and its secret, shown once.
+func (s *Store) CreateToken(ctx context.Context, name string, role auth.Role, userID *int64, createdBy int64, ttl time.Duration) (*Token, string, error) {
+	if !role.ValidToken() {
+		return nil, "", fmt.Errorf("invalid role %q", role)
+	}
+	secret, prefix, err := auth.NewToken("stk")
+	if err != nil {
+		return nil, "", err
+	}
+	var expires *time.Time
+	if ttl > 0 {
+		t := time.Now().Add(ttl)
+		expires = &t
+	}
+	var by *int64
+	if createdBy > 0 {
+		by = &createdBy
+	}
+	rows, err := s.Pool.Query(ctx, `INSERT INTO api_tokens (name, prefix, token_hash, user_id, role, created_by, expires_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING `+tokenCols, name, prefix, auth.HashToken(secret), userID, role, by, expires)
+	if err != nil {
+		return nil, "", err
+	}
+	t, err := pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByPos[Token])
+	return t, secret, err
+}
+
+// TokenPrincipal resolves a bearer token. For user tokens the effective role
+// is the lower of the token role and the user's current role.
+//
+// Tokens belong to one workspace. The lookup spans workspaces, so it runs in
+// system scope; the returned user's Role is their role in the token's
+// workspace, and a user token stops working when its user leaves it.
+func (s *Store) TokenPrincipal(ctx context.Context, secret string) (*Token, *User, error) {
+	sys := tenant.System(ctx)
+	rows, err := s.Pool.Query(sys, `SELECT `+tokenCols+` FROM api_tokens WHERE token_hash = $1
+		AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())`, auth.HashToken(secret))
+	if err != nil {
+		return nil, nil, err
+	}
+	t, err := pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByPos[Token])
+	if err != nil {
+		return nil, nil, notFound(err)
+	}
+	if ok, err := s.WorkspaceEnabled(ctx, t.WorkspaceID); err != nil || !ok {
+		return nil, nil, ErrNotFound
+	}
+	_, _ = s.Pool.Exec(sys, `UPDATE api_tokens SET last_used_at = now() WHERE id = $1 AND (last_used_at IS NULL OR last_used_at < now() - interval '1 minute')`, t.ID)
+	var u *User
+	if t.UserID != nil {
+		u, err = s.GetUser(tenant.WithWorkspace(ctx, t.WorkspaceID), *t.UserID)
+		if err != nil || u.Disabled || u.Role == "" {
+			return nil, nil, ErrNotFound
+		}
+		if t.Role != auth.RoleCollector && !u.Role.AtLeast(t.Role) {
+			t.Role = u.Role
+		}
+	}
+	return t, u, nil
+}
+
+func (s *Store) ListTokens(ctx context.Context, userID int64) ([]Token, error) {
+	sql := `SELECT ` + tokenCols + ` FROM api_tokens`
+	args := []any{}
+	if userID > 0 {
+		sql += ` WHERE user_id = $1`
+		args = append(args, userID)
+	}
+	rows, err := s.Pool.Query(ctx, sql+` ORDER BY created_at DESC`, args...)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByPos[Token])
+}
+
+func (s *Store) GetToken(ctx context.Context, id int64) (*Token, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT `+tokenCols+` FROM api_tokens WHERE id = $1`, id)
+	if err != nil {
+		return nil, err
+	}
+	t, err := pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByPos[Token])
+	return t, notFound(err)
+}
+
+func (s *Store) RevokeToken(ctx context.Context, id int64) error {
+	tag, err := s.Pool.Exec(ctx, `UPDATE api_tokens SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL`, id)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return err
+}
+
+type Team struct {
+	ID         int64     `json:"id"`
+	Name       string    `json:"name"`
+	Email      string    `json:"email"`
+	CreatedAt  time.Time `json:"created_at"`
+	Members    []int64   `json:"members"`
+	AssetCount int64     `json:"asset_count"`
+}
+
+const teamCols = `t.id, t.name, t.email, t.created_at,
+	COALESCE((SELECT array_agg(user_id ORDER BY user_id) FROM team_members m WHERE m.team_id = t.id), '{}'),
+	(SELECT count(*) FROM assets a WHERE a.owner_team_id = t.id AND a.merged_into IS NULL)`
+
+func (s *Store) ListTeams(ctx context.Context) ([]Team, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT `+teamCols+` FROM teams t ORDER BY t.name`)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByPos[Team])
+}
+
+func (s *Store) CreateTeam(ctx context.Context, name, email string) (*Team, error) {
+	var id int64
+	err := s.Pool.QueryRow(ctx, `INSERT INTO teams (name, email) VALUES ($1, $2) RETURNING id`, strings.TrimSpace(name), email).Scan(&id)
+	if isUniqueViolation(err) {
+		return nil, fmt.Errorf("team exists: %w", ErrConflict)
+	}
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.Pool.Query(ctx, `SELECT `+teamCols+` FROM teams t WHERE t.id = $1`, id)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByPos[Team])
+}
+
+func (s *Store) GetTeam(ctx context.Context, id int64) (*Team, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT `+teamCols+` FROM teams t WHERE t.id = $1`, id)
+	if err != nil {
+		return nil, err
+	}
+	t, err := pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByPos[Team])
+	return t, notFound(err)
+}
+
+func (s *Store) UpdateTeam(ctx context.Context, id int64, name, email *string, members *[]int64) error {
+	return pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `UPDATE teams SET name = COALESCE($2, name), email = COALESCE($3, email) WHERE id = $1`, id, name, email)
+		if err != nil {
+			if isUniqueViolation(err) {
+				return fmt.Errorf("team exists: %w", ErrConflict)
+			}
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return ErrNotFound
+		}
+		if members != nil {
+			if _, err := tx.Exec(ctx, `DELETE FROM team_members WHERE team_id = $1`, id); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(ctx, `INSERT INTO team_members (team_id, user_id) SELECT $1, u.id FROM users u WHERE u.id = ANY($2)`, id, *members); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (s *Store) DeleteTeam(ctx context.Context, id int64) error {
+	tag, err := s.Pool.Exec(ctx, `DELETE FROM teams WHERE id = $1`, id)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return err
+}
+
+// Actor identifies who performed an audited action.
+type Actor struct {
+	Type       string // user, token, system
+	ID         int64
+	Name       string
+	RemoteAddr string
+}
+
+func (s *Store) Audit(ctx context.Context, a Actor, action, objectType, objectID string, detail any) error {
+	d, _ := json.Marshal(detail)
+	if detail == nil {
+		d = []byte("{}")
+	}
+	var id *int64
+	if a.ID > 0 {
+		id = &a.ID
+	}
+	// Events outside any workspace (sign-in, setup) belong to the platform.
+	if _, ok := tenant.Workspace(ctx); !ok {
+		ctx = tenant.System(ctx)
+	}
+	_, err := s.Pool.Exec(ctx, `INSERT INTO audit_events (actor_type, actor_id, actor_name, action, object_type, object_id, detail, remote_addr)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, a.Type, id, a.Name, action, objectType, objectID, d, a.RemoteAddr)
+	return err
+}
+
+type AuditEvent struct {
+	ID         int64           `json:"id"`
+	At         time.Time       `json:"at"`
+	ActorType  string          `json:"actor_type"`
+	ActorID    *int64          `json:"actor_id"`
+	ActorName  string          `json:"actor_name"`
+	Action     string          `json:"action"`
+	ObjectType string          `json:"object_type"`
+	ObjectID   string          `json:"object_id"`
+	Detail     json.RawMessage `json:"detail"`
+	RemoteAddr string          `json:"remote_addr"`
+}
+
+func (s *Store) ListAudit(ctx context.Context, objectType, objectID string, p Page) ([]AuditEvent, int64, error) {
+	w := &where{}
+	if objectType != "" {
+		w.add("object_type = ?", objectType)
+	}
+	if objectID != "" {
+		w.add("object_id = ?", objectID)
+	}
+	var total int64
+	if err := s.Pool.QueryRow(ctx, `SELECT count(*) FROM audit_events`+w.sql(), w.args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	p = p.norm()
+	rows, err := s.Pool.Query(ctx, `SELECT id, at, actor_type, actor_id, actor_name, action, object_type, object_id, detail, remote_addr
+		FROM audit_events`+w.sql()+fmt.Sprintf(` ORDER BY at DESC, id DESC LIMIT %d OFFSET %d`, p.Limit, p.Offset), w.args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	out, err := pgx.CollectRows(rows, pgx.RowToStructByPos[AuditEvent])
+	return out, total, err
+}
+
+// ChangeOwnPassword verifies the current password, sets the new one and ends
+// every other session of the user.
+func (s *Store) ChangeOwnPassword(ctx context.Context, userID int64, current, next, keepSession string) error {
+	var hash string
+	if err := s.Pool.QueryRow(ctx, `SELECT password_hash FROM users WHERE id = $1 AND NOT disabled`, userID).Scan(&hash); err != nil {
+		return notFound(err)
+	}
+	if !auth.CheckPassword(hash, current) {
+		return ErrNotFound
+	}
+	if err := auth.ValidPassword(next); err != nil {
+		return err
+	}
+	if current == next {
+		return fmt.Errorf("the new password must differ from the current one: %w", ErrConflict)
+	}
+	h, err := auth.HashPassword(next)
+	if err != nil {
+		return err
+	}
+	return pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `UPDATE users SET password_hash = $2 WHERE id = $1`, userID, h); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `DELETE FROM sessions WHERE user_id = $1 AND token_hash <> $2`, userID, auth.HashToken(keepSession))
+		return err
+	})
+}

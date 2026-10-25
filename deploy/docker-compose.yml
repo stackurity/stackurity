@@ -1,0 +1,62 @@
+# Stackurity single-node install. See docs/install.md.
+name: stackurity
+
+services:
+  postgres:
+    image: postgres:17.6-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: stackurity
+      POSTGRES_DB: stackurity
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets: [db_password]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stackurity -d stackurity"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [internal]
+
+  stackurity:
+    image: ${STACKURITY_IMAGE:-ghcr.io/stackurity/stackurity:latest}
+    build:
+      context: ..
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      STACKURITY_DATABASE_URL_FILE: /run/secrets/database_url
+      # Set to false only when serving plain HTTP on a trusted network.
+      STACKURITY_COOKIE_SECURE: ${STACKURITY_COOKIE_SECURE:-true}
+      STACKURITY_TRUST_PROXY: ${STACKURITY_TRUST_PROXY:-false}
+      STACKURITY_SECRETS_DIR: /run/secrets
+      # Repository tokens are referenced as env:STACKURITY_SECRET_<NAME>.
+      STACKURITY_SECRET_GITHUB: ${STACKURITY_SECRET_GITHUB:-}
+    secrets: [database_url]
+    ports:
+      - "${STACKURITY_PORT:-8080}:8080"
+    volumes:
+      - data:/var/lib/stackurity
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    networks: [internal, egress]
+
+volumes:
+  pgdata:
+  data:
+
+secrets:
+  db_password:
+    file: ./secrets/db_password
+  database_url:
+    file: ./secrets/database_url
+
+networks:
+  internal:
+    internal: true   # postgres has no route to the internet
+  egress: {}
