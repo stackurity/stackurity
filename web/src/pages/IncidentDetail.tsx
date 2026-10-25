@@ -82,7 +82,13 @@ function SystemDetail({ inc }: { inc: Incident }) {
             incident resolves itself once collection is healthy again.
           </>
         )}
-        {inc.kind !== "feed" && !assetId && "This incident resolves itself once the problem is gone."}
+        {inc.kind === "platform" && (
+          <>
+            A problem with this Stackurity installation itself. Instance administrators see the details under{" "}
+            <Link to="/admin/health">Platform health</Link>. This incident resolves itself once the problem is gone.
+          </>
+        )}
+        {inc.kind !== "feed" && inc.kind !== "platform" && !assetId && "This incident resolves itself once the problem is gone."}
       </p>
     </Card>
   );

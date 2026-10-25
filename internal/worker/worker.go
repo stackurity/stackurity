@@ -1,10 +1,17 @@
 // Package worker runs background jobs from the PostgreSQL queue and the
 // periodic scheduler. Handlers must be idempotent: a job can run twice if a
 // worker dies after finishing but before recording completion.
+//
+// Any number of server replicas can run a worker against one database. Jobs
+// are claimed row by row; periodic tasks are claimed in periodic_tasks with a
+// lease, so each runs at most once per interval across replicas and never on
+// two replicas at the same time.
 package worker
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,9 +32,15 @@ type Worker struct {
 	Concurrency int
 	Poll        time.Duration
 	JobTimeout  time.Duration
-	handlers    map[string]Handler
-	periodic    []periodic
-	id          string
+	// Lease is how long a periodic task stays claimed without renewal. The
+	// running replica renews it; when a replica dies, another takes the task
+	// over once the lease has expired.
+	Lease time.Duration
+	// Tick is how often the scheduler looks for due periodic tasks.
+	Tick     time.Duration
+	handlers map[string]Handler
+	periodic []periodic
+	id       string
 }
 
 type periodic struct {
@@ -38,9 +51,14 @@ type periodic struct {
 
 func New(s *store.Store, log *slog.Logger) *Worker {
 	host, _ := os.Hostname()
+	// Containers often share a pid (1) and sometimes a hostname, so the id
+	// also carries a random part.
+	b := make([]byte, 4)
+	_, _ = rand.Read(b)
 	return &Worker{
 		Store: s, Log: log, Concurrency: 2, Poll: 2 * time.Second, JobTimeout: 20 * time.Minute,
-		handlers: map[string]Handler{}, id: fmt.Sprintf("%s-%d", host, os.Getpid()),
+		Lease: 2 * time.Minute, Tick: 15 * time.Second,
+		handlers: map[string]Handler{}, id: fmt.Sprintf("%s-%d-%s", host, os.Getpid(), hex.EncodeToString(b)),
 	}
 }
 
@@ -78,6 +96,12 @@ func (w *Worker) EveryWorkspace(name string, every time.Duration, fn func(ctx co
 // are claimed in system scope and each runs in its own workspace.
 func (w *Worker) Run(ctx context.Context) {
 	ctx = tenant.System(ctx)
+	if w.Lease <= 0 {
+		w.Lease = 2 * time.Minute
+	}
+	if w.Tick <= 0 {
+		w.Tick = 15 * time.Second
+	}
 	var wg sync.WaitGroup
 	for i := 0; i < w.Concurrency; i++ {
 		wg.Add(1)
@@ -152,25 +176,134 @@ func (w *Worker) run(ctx context.Context, job *store.Job) {
 	}
 }
 
+// registerEvery is how often a running scheduler refreshes its tasks' rows,
+// which tells health checks the tasks are still expected to run.
+const registerEvery = 5 * time.Minute
+
+// schedule runs due periodic tasks one after another. A task that another
+// replica holds or ran recently is skipped.
 func (w *Worker) schedule(ctx context.Context) {
-	last := make([]time.Time, len(w.periodic))
-	tick := time.NewTicker(15 * time.Second)
+	tick := time.NewTicker(w.Tick)
 	defer tick.Stop()
+	var registered time.Time
 	for {
-		now := time.Now()
-		for i, p := range w.periodic {
-			if now.Sub(last[i]) < p.every {
-				continue
+		if time.Since(registered) >= registerEvery && w.register(ctx) {
+			registered = time.Now()
+		}
+		for _, p := range w.periodic {
+			if ctx.Err() != nil {
+				return
 			}
-			last[i] = now
-			if err := p.fn(ctx); err != nil && ctx.Err() == nil {
-				w.Log.Error("periodic task failed", "task", p.name, "err", err)
-			}
+			w.runPeriodic(ctx, p)
 		}
 		select {
 		case <-ctx.Done():
 			return
 		case <-tick.C:
+		}
+	}
+}
+
+func (w *Worker) register(ctx context.Context) bool {
+	for _, p := range w.periodic {
+		if err := w.Store.RegisterPeriodic(ctx, p.name, p.every); err != nil {
+			if ctx.Err() == nil {
+				w.Log.Error("register periodic task", "task", p.name, "err", err)
+			}
+			return false
+		}
+	}
+	return true
+}
+
+// runPeriodic claims p and runs it if it is due, renewing the lease while it
+// runs. If the lease is lost (this replica could not reach the database for
+// most of a lease), the task's context is cancelled so that it does not
+// overlap with the replica that takes it over.
+func (w *Worker) runPeriodic(ctx context.Context, p periodic) {
+	ok, err := w.Store.ClaimPeriodic(ctx, p.name, w.id, p.every, w.Lease)
+	if err != nil {
+		if ctx.Err() == nil {
+			w.Log.Error("claim periodic task", "task", p.name, "err", err)
+		}
+		return
+	}
+	if !ok {
+		return
+	}
+	log := w.Log.With("task", p.name)
+	tctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	done := make(chan struct{})
+	lost := make(chan struct{})
+	var hb sync.WaitGroup
+	hb.Add(1)
+	go func() {
+		defer hb.Done()
+		w.heartbeat(ctx, p.name, done, func() { close(lost); cancel() })
+	}()
+	start := time.Now()
+	runErr := func() (err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("panic: %v", r)
+			}
+		}()
+		return p.fn(tctx)
+	}()
+	close(done)
+	hb.Wait()
+	// Recording the outcome must survive shutdown of the parent context.
+	bg := context.WithoutCancel(ctx)
+	select {
+	case <-lost:
+		log.Error("periodic task lost its lease and was stopped", "took", time.Since(start), "err", runErr)
+		return
+	default:
+	}
+	if ctx.Err() != nil {
+		// Interrupted by shutdown: release without an outcome so another
+		// replica runs it again instead of waiting a whole interval.
+		if err := w.Store.ReleasePeriodic(bg, p.name, w.id); err != nil {
+			log.Error("release periodic task", "err", err)
+		}
+		return
+	}
+	if runErr != nil {
+		log.Error("periodic task failed", "err", runErr, "took", time.Since(start))
+	} else {
+		log.Debug("periodic task done", "took", time.Since(start))
+	}
+	if err := w.Store.FinishPeriodic(bg, p.name, w.id, runErr); err != nil {
+		log.Error("record periodic task", "err", err)
+	}
+}
+
+// heartbeat renews the lease on a task until done is closed. It calls lose
+// when the lease is gone or about to expire without a successful renewal.
+func (w *Worker) heartbeat(ctx context.Context, name string, done <-chan struct{}, lose func()) {
+	t := time.NewTicker(w.Lease / 4)
+	defer t.Stop()
+	renewed := time.Now()
+	for {
+		select {
+		case <-done:
+			return
+		case <-t.C:
+		}
+		ok, err := w.Store.RenewPeriodic(context.WithoutCancel(ctx), name, w.id, w.Lease)
+		switch {
+		case err == nil && ok:
+			renewed = time.Now()
+			continue
+		case err == nil:
+			lose()
+			return
+		}
+		w.Log.Warn("renew periodic task lease", "task", name, "err", err)
+		if time.Since(renewed) > w.Lease*3/4 {
+			lose()
+			return
 		}
 	}
 }

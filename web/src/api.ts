@@ -156,6 +156,25 @@ export interface LicenseInfo {
   managed_by_env: boolean;
 }
 
+/** GET /admin/health: whether the installation itself is working. */
+export interface PlatformHealth {
+  status: "ok" | "warning" | "critical";
+  checked_at: string;
+  problems: { severity: "critical" | "warning"; kind: "feed" | "task" | "jobs" | "intelligence"; key: string; title: string; detail?: string }[];
+  tasks: {
+    name: string;
+    every_seconds: number;
+    last_started_at: string | null;
+    last_success_at: string | null;
+    last_error: string;
+    consecutive_failures: number;
+    running: boolean;
+  }[];
+  jobs: { kind: string; state: "queued" | "scheduled" | "running" | "failed"; count: number }[];
+  oldest_queued_seconds: number;
+  recent_failures: { id: number; kind: string; workspace_id: number | null; attempts: number; last_error: string; failed_at: string }[];
+}
+
 export interface Asset {
   id: number;
   kind: string;
@@ -758,8 +777,8 @@ export const PRIORITIES = ["P1", "P2", "P3", "P4"] as const;
 export type Priority = (typeof PRIORITIES)[number];
 export const FINDING_STATES = ["new", "acknowledged", "in_progress", "suppressed", "risk_accepted"] as const;
 export type FindingState = (typeof FINDING_STATES)[number];
-export const INCIDENT_KINDS = ["vulnerability", "end_of_life", "feed", "collection", "coverage"] as const;
-export const SYSTEM_INCIDENT_KINDS = ["feed", "collection", "coverage"];
+export const INCIDENT_KINDS = ["vulnerability", "end_of_life", "feed", "collection", "coverage", "platform"] as const;
+export const SYSTEM_INCIDENT_KINDS = ["feed", "collection", "coverage", "platform"];
 
 export interface PriorityFactor {
   name: string;

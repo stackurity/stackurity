@@ -20,6 +20,7 @@ import { SecretsPage } from "./pages/settings/Secrets";
 import { WorkspacesPage } from "./pages/admin/Workspaces";
 import { PacksPage } from "./pages/admin/Packs";
 import { LicensePage } from "./pages/admin/License";
+import { HealthPage } from "./pages/admin/Health";
 import { TeamsPage } from "./pages/settings/Teams";
 import { TokensPage } from "./pages/settings/Tokens";
 import { ConflictsPage } from "./pages/settings/Conflicts";
@@ -208,6 +209,14 @@ export function App() {
           element={
             <RequireInstanceAdmin>
               <LicensePage />
+            </RequireInstanceAdmin>
+          }
+        />
+        <Route
+          path="admin/health"
+          element={
+            <RequireInstanceAdmin>
+              <HealthPage />
             </RequireInstanceAdmin>
           }
         />

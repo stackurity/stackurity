@@ -27,7 +27,9 @@ import (
 	"github.com/stackurity/stackurity/internal/collect/image"
 	"github.com/stackurity/stackurity/internal/db"
 	"github.com/stackurity/stackurity/internal/demo"
+	"github.com/stackurity/stackurity/internal/health"
 	"github.com/stackurity/stackurity/internal/intel"
+	"github.com/stackurity/stackurity/internal/metrics"
 	"github.com/stackurity/stackurity/internal/model"
 	"github.com/stackurity/stackurity/internal/notify"
 	"github.com/stackurity/stackurity/internal/plugins"
@@ -139,16 +141,24 @@ func serverCmd() *cobra.Command {
 				if setupToken == "" {
 					b := make([]byte, 16)
 					_, _ = rand.Read(b)
-					setupToken = hex.EncodeToString(b)
+					// Every replica must accept the same token, whichever
+					// one the browser reaches: the first to start stores it.
+					if setupToken, err = st.SharedSetupToken(tenant.System(ctx), hex.EncodeToString(b)); err != nil {
+						return err
+					}
 				}
 				// Printed to stderr directly so it is visible with `docker compose logs`.
 				fmt.Fprintf(os.Stderr, "\n  No users yet. Open the dashboard and complete setup with this one-time token:\n\n      %s\n\n", setupToken)
+			} else if err := st.ClearSetupToken(tenant.System(ctx)); err != nil {
+				return err
 			}
 
+			checker := &health.Checker{Store: st, FeedsEnabled: os.Getenv("STACKURITY_FEEDS") != "off"}
 			allowHTTPHooks := os.Getenv("STACKURITY_ALLOW_HTTP_WEBHOOKS") == "true"
 			dispatcher := &notify.Dispatcher{Store: st, Sender: notify.NewSender(allowHTTPHooks), Secrets: res, Log: log,
 				BaseURL:  os.Getenv("STACKURITY_BASE_URL"),
-				Escalate: func(ctx context.Context) bool { return gate.Has(ctx, license.Teams) }}
+				Escalate: func(ctx context.Context) bool { return gate.Has(ctx, license.Teams) },
+				Platform: checker.PlatformIncidents}
 			var pluginRunner *plugins.Runner
 			if dir := os.Getenv("STACKURITY_PLUGIN_DIR"); dir != "" {
 				pluginRunner = &plugins.Runner{Dir: dir, WorkDir: filepath.Join(dataDir, "work"), Timeout: 15 * time.Minute}
@@ -168,6 +178,16 @@ func serverCmd() *cobra.Command {
 				SecretBox:    box,
 				Packs:        packMgr,
 				Licence:      holder, Gate: gate, LicenceFromEnv: licFromEnv,
+				Health: checker,
+			}
+			// Metrics have their own listener, off by default, so they are
+			// never reachable on the public API port.
+			metricsAddr := os.Getenv("STACKURITY_METRICS_ADDR")
+			if metricsAddr != "" {
+				if metricsAddr == env("STACKURITY_LISTEN", ":8080") {
+					return errors.New("STACKURITY_METRICS_ADDR must differ from STACKURITY_LISTEN: metrics are never served on the API port")
+				}
+				srv.HTTPMetrics = metrics.NewHTTP()
 			}
 			httpSrv := &http.Server{
 				Addr:              env("STACKURITY_LISTEN", ":8080"),
@@ -186,12 +206,25 @@ func serverCmd() *cobra.Command {
 			registerPro(w, st, log, gate)
 			done := make(chan struct{})
 			go func() { w.Run(ctx); close(done) }()
+			go followReplicas(ctx, st, holder, licFromEnv, packMgr, log)
 
-			errc := make(chan error, 1)
+			errc := make(chan error, 2)
 			go func() {
 				log.Info("listening", "addr", httpSrv.Addr, "version", version)
 				errc <- httpSrv.ListenAndServe()
 			}()
+			var metricsSrv *http.Server
+			if metricsAddr != "" {
+				mux := http.NewServeMux()
+				mux.Handle("/metrics", &metrics.Handler{Store: st, Health: checker, HTTP: srv.HTTPMetrics, Log: log,
+					Version: version, Edition: edition, Started: time.Now()})
+				metricsSrv = &http.Server{Addr: metricsAddr, Handler: mux, ReadHeaderTimeout: 10 * time.Second,
+					ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second}
+				go func() {
+					log.Info("serving metrics", "addr", metricsAddr, "path", "/metrics")
+					errc <- metricsSrv.ListenAndServe()
+				}()
+			}
 			select {
 			case err := <-errc:
 				if !errors.Is(err, http.ErrServerClosed) {
@@ -203,6 +236,9 @@ func serverCmd() *cobra.Command {
 			sctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			_ = httpSrv.Shutdown(sctx)
+			if metricsSrv != nil {
+				_ = metricsSrv.Shutdown(sctx)
+			}
 			<-done
 			return nil
 		},
@@ -243,6 +279,49 @@ func loadLicence(ctx context.Context, st *store.Store, log *slog.Logger) (*licen
 	s := h.Status()
 	log.Info("licence", "customer", l.Customer, "edition", l.Edition, "state", s.State, "expires", l.ExpiresAt.Format("2006-01-02"))
 	return h, fromEnv, nil
+}
+
+// followReplicas keeps state that another replica can change in step with
+// the database: the licence (uploaded through any replica's dashboard) and
+// the installed stack packs. Each replica checks every 30 seconds.
+func followReplicas(ctx context.Context, st *store.Store, holder *license.Holder, licFromEnv bool, packMgr *packs.Manager, log *slog.Logger) {
+	t := time.NewTicker(30 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		if !licFromEnv {
+			if err := refreshLicence(ctx, st, holder); err != nil && ctx.Err() == nil {
+				log.Warn("refresh licence", "err", err)
+			}
+		}
+		if err := packMgr.Refresh(ctx); err != nil && ctx.Err() == nil {
+			log.Warn("refresh stack packs", "err", err)
+		}
+	}
+}
+
+// refreshLicence adopts the licence stored in the database if it differs
+// from the one in effect. A key that does not verify means Community, as at
+// start.
+func refreshLicence(ctx context.Context, st *store.Store, h *license.Holder) error {
+	key, err := st.LicenseKey(tenant.System(ctx))
+	if err != nil {
+		return err
+	}
+	var l *license.License
+	if strings.TrimSpace(key) != "" {
+		l, _ = license.Parse(key)
+	}
+	cur := h.License()
+	if (cur == nil) == (l == nil) && (cur == nil || cur.ID == l.ID && cur.IssuedAt.Equal(l.IssuedAt) && cur.ExpiresAt.Equal(l.ExpiresAt)) {
+		return nil
+	}
+	h.Set(l)
+	return nil
 }
 
 // checkIsolation refuses to serve several workspaces when the database role

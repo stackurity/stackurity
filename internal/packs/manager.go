@@ -8,6 +8,7 @@ import (
 	"github.com/stackurity/stackurity/internal/license"
 	"log/slog"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/stackurity/stackurity/internal/collect/lockfile"
@@ -60,6 +61,9 @@ type Manager struct {
 
 	mu     sync.RWMutex
 	loaded map[string]*Loaded
+	// seen identifies the installed packs the last Reload read, so Refresh
+	// can tell when another replica changed them.
+	seen string
 }
 
 // Active returns the loaded packs a scan in ctx's workspace may use:
@@ -76,6 +80,32 @@ func (m *Manager) Active(ctx context.Context) []lockfile.Extension {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID() < out[j].ID() })
 	return out
+}
+
+// fingerprint identifies what Reload would load from a pack listing.
+func fingerprint(installed []store.InstalledPack) string {
+	var b strings.Builder
+	for _, p := range installed {
+		fmt.Fprintf(&b, "%s:%s:%t;", p.ID, p.SHA256, p.Enabled)
+	}
+	return b.String()
+}
+
+// Refresh reloads the packs if they changed in the database since the last
+// Reload. Server replicas call it periodically, because a pack installed,
+// switched or removed through one replica is only reloaded there at once.
+func (m *Manager) Refresh(ctx context.Context) error {
+	installed, err := m.Store.ListPacks(tenant.System(ctx))
+	if err != nil {
+		return err
+	}
+	m.mu.RLock()
+	same := m.seen == fingerprint(installed)
+	m.mu.RUnlock()
+	if same {
+		return nil
+	}
+	return m.Reload(ctx)
 }
 
 // Reload loads the enabled packs from the database. Each archive is checked
@@ -118,6 +148,7 @@ func (m *Manager) Reload(ctx context.Context) error {
 	m.mu.Lock()
 	old := m.loaded
 	m.loaded = next
+	m.seen = fingerprint(installed)
 	m.mu.Unlock()
 	for id, l := range old {
 		if next[id] != l {

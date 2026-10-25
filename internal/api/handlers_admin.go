@@ -525,3 +525,18 @@ func (s *Server) listPlugins(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, map[string]any{"items": list, "total": len(list), "enabled": true})
 }
+
+// adminHealth reports whether the platform itself is working: feeds, periodic
+// tasks and jobs across all workspaces. Instance admins only.
+func (s *Server) adminHealth(w http.ResponseWriter, r *http.Request) {
+	if s.Health == nil {
+		writeError(w, 404, "not_found", "health checks are not enabled on this server")
+		return
+	}
+	rep, err := s.Health.Check(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, 200, rep)
+}

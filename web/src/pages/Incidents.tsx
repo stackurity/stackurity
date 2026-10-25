@@ -14,6 +14,7 @@ export const INCIDENT_KIND_LABEL: Record<string, string> = {
   feed: "Feed problem",
   collection: "Collection problem",
   coverage: "Coverage drop",
+  platform: "Platform problem",
 };
 
 export function IncidentsPage() {
@@ -103,7 +104,7 @@ export function IncidentsPage() {
     <>
       <PageHeader help="incidents"
         title="Incidents"
-        sub="Findings grouped by vulnerability and owner team, plus system problems (feeds, collection, coverage). Notifications are sent per incident."
+        sub="Findings grouped by vulnerability and owner team, plus system problems (feeds, collection, coverage, the platform itself). Notifications are sent per incident."
       />
       {sosCount > 0 && (
         <div className="alert sos-banner" role="alert">

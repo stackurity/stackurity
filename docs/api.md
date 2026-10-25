@@ -54,6 +54,7 @@ Roles, from least to most access: `viewer` (read, including the audit log), `eng
 | `GET /jobs?state=` | admin | Background job queue |
 | `GET /plugins` | admin | Installed plugins with their declared permissions, credentials and network access |
 | `GET /jobs/{id}` | engineer | Status of one job, e.g. after *Run now* |
+| `GET /admin/health` | instance admin | Platform health across workspaces: `status` (`ok`, `warning`, `critical`), `problems`, background `tasks` with their last success and error, job counts by kind and state, and jobs that failed in the last 24 hours ([install.md](install.md#health)) |
 | `GET /facets` | viewer | Distinct environments, asset kinds and component types |
 | `GET /findings?status=&kind=&severity=&verification=&asset_id=&component_id=&environment=&known_exploited=&q=&key=` | viewer | Vulnerability and end-of-life findings, known-exploited and most severe first |
 | `GET /findings/summary` | viewer | Counts by severity, kind and verification, plus stale feeds and evaluation gaps |
@@ -185,6 +186,7 @@ Findings with the same `kind` and `key` whose assets belong to the same owner te
 - a stale or failing feed (`feed`)
 - a stale asset or failing integration (`collection`)
 - a drop of more than half in an asset's collected inventory (`coverage`)
+- in the default workspace only, a critical problem with the installation itself, such as a background task that keeps failing or intelligence that never synced (`platform`)
 
 Routes send incidents to channels and filter by minimum priority, SOS only, kinds, environments and owner teams. Each incident produces at most one notification per event:
 
@@ -203,3 +205,5 @@ Webhook channels receive the JSON message with these headers:
 - `X-Stackurity-Signature: sha256=HMAC(secret, timestamp + "." + body)`
 
 To verify a delivery, recompute the HMAC over the timestamp and body, and reject old timestamps.
+
+Delivery is at least once: if a server dies after sending but before recording it, the message is sent again a few minutes later. Receivers that must not act twice can deduplicate on `X-Stackurity-Delivery`.

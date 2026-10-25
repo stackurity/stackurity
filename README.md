@@ -61,7 +61,7 @@ For TLS, backups, upgrades, Kubernetes (Helm), the agents and plugins, see [docs
 
 ## Known limitations
 
-- Run a single server replica. Background work runs in-process, and notification delivery isn't yet coordinated across replicas.
+- Several server replicas can share one database, but sign-in and setup rate limits are kept per replica (a client behind a load balancer gets that many times the limit), and an upgrade should stop every replica before the new version starts ([docs/install.md](docs/install.md#running-several-replicas)).
 - Vulnerability matching covers language packages, Debian, Ubuntu (not Pro), Alpine, Rocky, Alma, RHEL, SUSE, openSUSE Leap and Amazon Linux 2 and 2023. CentOS, Oracle Linux, Fedora and Amazon Linux 1 packages are inventoried but listed as evaluation gaps.
 - Red Hat advisories are matched against the main stream of each major release; Extended Update Support (EUS, AUS) streams are not modelled, so a host held on an EUS minor release can show fixes it already has through EUS. SUSE publishes no severity in its advisory data, so SUSE findings show severity "unknown" and are prioritised on the other risk factors.
 - Amazon Linux 2 extras topics are read when the topic name carries its version line (kernel-5.10, php8.2, postgresql14); packages from other topics (docker, epel and similar) are matched against core advisories only.
