@@ -2403,3 +2403,13 @@ details.json pre {
   border-color: var(--accent);
   color: var(--accent);
 }
+
+/* Platform health (instance admins) */
+.health-problems {
+  list-style: none;
+  margin: 0 0 0.75rem;
+  padding: 0;
+}
+.health-problems li {
+  margin-bottom: 0.6rem;
+}
