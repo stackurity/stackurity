@@ -799,6 +799,26 @@ func registerIntel(w *worker.Worker, st *store.Store, dataDir string, log *slog.
 	syncer := intel.NewSyncer(st, log, cfg)
 	eval := &intel.Evaluator{Store: st}
 	feedsOn := os.Getenv("STACKURITY_FEEDS") != "off"
+	// Re-evaluation is queued before the feed's cursor moves on, so a crash
+	// in between makes the retried sync queue it again rather than lose it.
+	syncer.Changed = func(ctx context.Context, feed string, res *intel.SyncResult) error {
+		ids, err := intel.ComponentsToEvaluate(ctx, st, feed, res)
+		if err != nil || len(ids) == 0 {
+			return err
+		}
+		log.Info("feed changed; re-evaluating", "feed", feed, "records", res.Changed, "components", len(ids))
+		// Each workspace evaluates the changed components it has.
+		wss, err := st.ActiveWorkspaceIDs(ctx)
+		if err != nil {
+			return err
+		}
+		for _, ws := range wss {
+			if _, err := st.Enqueue(tenant.WithWorkspace(ctx, ws), "evaluate", map[string]any{"component_ids": ids}, "", time.Time{}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 
 	// A full archive (Ubuntu is about 750 MB) can take longer than the
 	// default job timeout on a small server.
@@ -812,26 +832,8 @@ func registerIntel(w *worker.Worker, st *store.Store, dataDir string, log *slog.
 		if err := os.MkdirAll(cfg.WorkDir, 0o700); err != nil {
 			return err
 		}
-		res, err := syncer.Sync(ctx, p.Feed)
-		if err != nil {
-			return err
-		}
-		ids, err := intel.ComponentsToEvaluate(ctx, st, p.Feed, res)
-		if err != nil || len(ids) == 0 {
-			return err
-		}
-		log.Info("feed changed; re-evaluating", "feed", p.Feed, "records", res.Changed, "components", len(ids))
-		// Each workspace evaluates the changed components it has.
-		wss, err := st.ActiveWorkspaceIDs(ctx)
-		if err != nil {
-			return err
-		}
-		for _, ws := range wss {
-			if _, err := st.Enqueue(tenant.WithWorkspace(ctx, ws), "evaluate", map[string]any{"component_ids": ids}, "", time.Time{}); err != nil {
-				return err
-			}
-		}
-		return nil
+		_, err := syncer.Sync(ctx, p.Feed)
+		return err
 	})
 
 	w.Handle("evaluate", func(ctx context.Context, payload json.RawMessage) error {
