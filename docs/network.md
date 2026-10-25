@@ -1,12 +1,25 @@
 # Outbound network access
 
-Stackurity has no telemetry or update checks. Every outbound connection is listed below.
+Stackurity has no telemetry. Every outbound connection is listed below. The only request that is not for your own data or integrations is the [update check](#update-check), which sends nothing about you and can be turned off.
 
 | Component | Destination | When | Data sent |
 |---|---|---|---|
 | Server: Git integrations | The repository URL you configure (HTTPS only) | On the integration's schedule, or when someone clicks *Run now* | A Git fetch request, plus the referenced token as an HTTP Basic header |
 | Agent | Your Stackurity server | Every `--interval` | Hostname, machine-id, OS release, installed package list |
 | CLI `scan` / `sbom import` | Your Stackurity server | When run | Lockfile-derived component list, or the SBOM document |
+
+### Update check
+
+So that instance administrators learn about new releases (and security releases in particular), one server replica reads the public list of Stackurity releases.
+
+| Destination | When | What is sent |
+|---|---|---|
+| `api.github.com` (`STACKURITY_UPDATE_URL`) | Shortly after the first start, then every 12 hours | An anonymous `GET /repos/stackurity/stackurity/releases?per_page=20` with `User-Agent: stackurity`, `Accept: application/vnd.github+json` and `Accept-Encoding: gzip`. Nothing else: no version, installation id, licence, hostname, inventory or cookie |
+
+The response is compared with the running version on your server, and the result is shown to instance administrators only (a banner and **Settings → What's new**). GitHub sees the request's source IP address, as with any request. A failed check (offline, air-gapped, rate-limited) is logged at info level, keeps the last result, and is never shown as an error.
+
+- `STACKURITY_UPDATE_CHECK=off` turns it off: no request is made at all.
+- `STACKURITY_UPDATE_URL` points it at a mirror that serves the same JSON (for example a copy of the GitHub response on an internal web server).
 
 ### Intelligence feeds
 
@@ -55,4 +68,4 @@ Mirror the OSV bucket layout (`<ecosystem>/all.zip`, `<ecosystem>/modified_id.cs
 
 ## Restricting egress
 
-In `deploy/docker-compose.yml` the database sits on an internal network with no internet route. To restrict the server further, put it behind an egress proxy and allow only your Git hosts and the feeds above.
+In `deploy/docker-compose.yml` the database sits on an internal network with no internet route. To restrict the server further, put it behind an egress proxy and allow only your Git hosts, the feeds above and, unless you turned the update check off, `api.github.com`.

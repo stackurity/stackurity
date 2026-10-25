@@ -36,6 +36,7 @@ import (
 	"github.com/stackurity/stackurity/internal/secrets"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
+	"github.com/stackurity/stackurity/internal/updates"
 	"github.com/stackurity/stackurity/internal/worker"
 	"github.com/stackurity/stackurity/web"
 )
@@ -127,6 +128,10 @@ func serverCmd() *cobra.Command {
 			if err := netguard.FromEnv().Validate(); err != nil {
 				return err
 			}
+			updateCfg, err := updates.ConfigFromEnv()
+			if err != nil {
+				return err
+			}
 			holder, licFromEnv, err := loadLicence(ctx, st, log)
 			if err != nil {
 				return err
@@ -193,7 +198,7 @@ func serverCmd() *cobra.Command {
 				SecretBox:    box,
 				Packs:        packMgr,
 				Licence:      holder, Gate: gate, LicenceFromEnv: licFromEnv,
-				Health: checker,
+				Health: checker, UpdateCheck: updateCfg.Enabled,
 			}
 			// Metrics have their own listener, off by default, so they are
 			// never reachable on the public API port.
@@ -224,6 +229,9 @@ func serverCmd() *cobra.Command {
 			w.EveryWorkspace("alert-digest", time.Hour, dispatcher.Digest)
 			w.Every("platform-fallback", 10*time.Minute, dispatcher.PlatformFallback)
 			registerPro(w, st, log, gate)
+			// The release check sends nothing about this install (see
+			// internal/updates); when it is off no request is made at all.
+			updates.Register(w, st, log, updateCfg)
 			done := make(chan struct{})
 			go func() { w.Run(ctx); close(done) }()
 			go followReplicas(ctx, st, holder, licFromEnv, packMgr, log)

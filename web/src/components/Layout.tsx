@@ -5,6 +5,7 @@ import { useLoad } from "../hooks";
 import { useAuth } from "../auth";
 import { GlobalSearch } from "./Search";
 import { PlatformHealthBanner } from "../pages/admin/Health";
+import { UpdateBanner } from "../pages/admin/Updates";
 import {
   IconActionPlan,
   IconChevron,
@@ -157,6 +158,7 @@ export function Layout() {
               { to: "/admin/health", label: "Platform health" },
               { to: "/admin/packs", label: "Stack packs" },
               { to: "/admin/license", label: "Licence" },
+              { to: "/updates", label: "What's new" },
             ]
           : []),
       ],
@@ -251,7 +253,14 @@ export function Layout() {
             <IconSidebar />
             <span className="nav-text">{collapsed ? "Expand" : "Collapse"}</span>
           </button>
-          <span className="nav-text muted small">{meta ? `v${meta.version.replace(/^v/, "")}` : ""}</span>
+          {meta &&
+            (me?.user?.instance_admin ? (
+              <Link to="/updates" className="nav-text muted small nav-version" title="What's new">
+                v{meta.version.replace(/^v/, "")}
+              </Link>
+            ) : (
+              <span className="nav-text muted small">v{meta.version.replace(/^v/, "")}</span>
+            ))}
         </div>
       </aside>
       <div className="main-col">
@@ -270,6 +279,7 @@ export function Layout() {
           </div>
         </header>
         <main id="main" className="content" tabIndex={-1}>
+          <UpdateBanner />
           {!pathname.startsWith("/admin/health") && <PlatformHealthBanner />}
           {me && !me.workspace && !pathname.startsWith("/admin") ? <NoWorkspace instanceAdmin={Boolean(me.user?.instance_admin)} /> : <Outlet />}
         </main>

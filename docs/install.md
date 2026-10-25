@@ -1,6 +1,6 @@
 # Installing and operating Stackurity
 
-Stackurity runs as one container plus PostgreSQL. It needs no vendor account and sends no telemetry. [network.md](network.md) lists every outbound call.
+Stackurity runs as one container plus PostgreSQL. It needs no vendor account and sends no telemetry. [network.md](network.md) lists every outbound call, including the update check, which sends nothing about your installation and can be turned off.
 
 ## Requirements
 
@@ -48,6 +48,8 @@ docker compose exec -e STACKURITY_PASSWORD='a long passphrase' stackurity \
 | `STACKURITY_PLATFORM_WORKSPACE` | `1` | Workspace (id or slug) where platform incidents are raised for the operators ([Health](#health)) |
 | `STACKURITY_METRICS_ADDR` | off | Address for a separate Prometheus metrics listener, for example `127.0.0.1:9100` ([Health](#health)). Never the API port |
 | `STACKURITY_FEEDS` | on | `off` disables all intelligence feeds |
+| `STACKURITY_UPDATE_CHECK` | on | `off` disables the release check: no request is made at all ([Upgrading](#upgrading)) |
+| `STACKURITY_UPDATE_URL` | GitHub's release list | Mirror of `https://api.github.com/repos/stackurity/stackurity/releases?per_page=20`, for installs that cannot reach GitHub |
 | `STACKURITY_OSV_URL`, `STACKURITY_KEV_URL`, `STACKURITY_ENDOFLIFE_URL`, `STACKURITY_NPM_REGISTRY`, `STACKURITY_PACKAGIST_URL`, `STACKURITY_PYPI_URL`, `STACKURITY_GOPROXY_URL`, `STACKURITY_CRATES_INDEX_URL`, `STACKURITY_RUBYGEMS_URL`, `STACKURITY_NUGET_URL`, `STACKURITY_MAVEN_URL`, `STACKURITY_PUB_URL` | public sources | Mirrors for offline or air-gapped installs ([network.md](network.md)) |
 | `STACKURITY_BASE_URL` | — | Public dashboard URL, used for links in notifications and by the agent installer |
 | `STACKURITY_AGENT_DIR` | `/usr/local/lib/stackurity/agents` in the image | Agent builds served to new hosts by **Add server** |
@@ -344,6 +346,8 @@ Test a restore regularly. A backup you have never restored is not a backup. To c
 
 ## Upgrading
 
+Instance administrators see a banner when a newer release is available, and **Settings → What's new** lists the release notes of every newer release with these steps. A release whose notes have a **Security** section shows a stronger banner that can only be snoozed for a day. The server reads GitHub's public release list every 12 hours and compares it with its own version locally; the request carries nothing about your installation ([network.md](network.md#update-check)). Set `STACKURITY_UPDATE_CHECK=off` to turn the check off, or `STACKURITY_UPDATE_URL` to use a mirror. Development builds (`dev`) never show an update.
+
 1. Note the image you run now (`docker compose images stackurity`), and take a backup (see [Backup and restore](#backup-and-restore)):
 
    ```sh
@@ -353,6 +357,8 @@ Test a restore regularly. A backup you have never restored is not a backup. To c
 2. `git pull`, then `docker compose pull && docker compose up -d` (or bump `STACKURITY_IMAGE`; with `--build` if you build from source).
 3. Migrations run automatically at startup inside a lock, so concurrent starts are safe. Run `stackurity migrate` to apply them separately.
 4. Check that `/readyz` answers 200 and that your workspaces, assets and findings are there.
+
+With Helm, set the new image tag (or chart version) and run `helm upgrade` with your usual values.
 
 Before a release is published, CI installs each earlier release still in use (currently 0.2.0 and 0.3.0), loads data, starts the new version on the same database, restores a backup of the result into a new PostgreSQL server, and runs the rollback below, checking readiness and counts at each step. The script is `tools/release-checks/upgrade.sh`; you can run it against your own build: `tools/release-checks/upgrade.sh ghcr.io/stackurity/stackurity:0.3.0 stackurity:mybuild`.
 
