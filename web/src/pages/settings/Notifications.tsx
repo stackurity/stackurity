@@ -8,6 +8,7 @@ import {
   type Channel,
   type ChannelConfig,
   type ChannelKind,
+  type Priority,
   type Delivery,
   type List,
   type Route,
@@ -63,25 +64,26 @@ export function NotificationsPage() {
 
 // --- channels
 
-const KIND_LABEL: Record<string, string> = { email: "Email (SMTP)", slack: "Slack", teams: "Microsoft Teams", webhook: "Webhook" };
+const KIND_LABEL: Record<string, string> = { email: "Email (SMTP)", slack: "Slack", teams: "Microsoft Teams", webhook: "Webhook", jira: "Jira issues" };
 
 function channelTarget(c: Channel): string {
   const cfg = c.config ?? {};
   if (c.kind === "email") return `${(cfg.to ?? []).join(", ")} via ${cfg.host ?? "?"}:${cfg.port ?? "?"}`;
   if (c.kind === "webhook") return cfg.url ?? "";
+  if (c.kind === "jira") return `project ${cfg.project ?? "?"} on ${cfg.url ?? "?"}`;
   return c.secret_ref ? `URL from ${c.secret_ref}` : "";
 }
 
 function ChannelsTab({ channels, reload, admin }: { channels: Channel[] | undefined; reload: () => void; admin: boolean }) {
   const act = useAction();
   const [editing, setEditing] = useState<number | "new" | null>(null);
-  const [testResult, setTestResult] = useState<{ id: number; ok: boolean; error?: string } | null>(null);
+  const [testResult, setTestResult] = useState<{ id: number; kind: string; ok: boolean; error?: string } | null>(null);
 
   const test = async (c: Channel) => {
     setTestResult(null);
     const r = await act.run(() => api.post<{ ok: boolean; error?: string }>(`/channels/${c.id}/test`));
     if (r) {
-      setTestResult({ id: c.id, ...r });
+      setTestResult({ id: c.id, kind: c.kind, ...r });
       reload();
     }
   };
@@ -174,7 +176,11 @@ function ChannelsTab({ channels, reload, admin }: { channels: Channel[] | undefi
       <ErrorBox error={act.error} title="Action failed" />
       {testResult &&
         (testResult.ok ? (
-          <Notice kind="success">Test message sent successfully.</Notice>
+          <Notice kind="success">
+            {testResult.kind === "jira"
+              ? "Jira connection works: the credentials, project and issue type were checked. No issue was created."
+              : "Test message sent successfully."}
+          </Notice>
         ) : (
           <div className="alert alert-error" role="alert">
             <strong>Test failed:</strong> {testResult.error ?? "unknown error"}
@@ -182,8 +188,8 @@ function ChannelsTab({ channels, reload, admin }: { channels: Channel[] | undefi
         ))}
       {!channels && <Loading />}
       {channels && channels.length === 0 && (
-        <EmptyState title="No channels" help="notifications" helpLabel="Set up Slack, Teams, email or webhooks">
-          <p>{admin ? "Add an email, Slack, Teams or webhook channel, then a route that uses it." : "An administrator has not set up any channels."}</p>
+        <EmptyState title="No channels" help="notifications" helpLabel="Set up Slack, Teams, email, webhooks or Jira">
+          <p>{admin ? "Add an email, Slack, Teams, webhook or Jira channel, then a route that uses it." : "An administrator has not set up any channels."}</p>
         </EmptyState>
       )}
       {channels && channels.length > 0 && (
@@ -213,6 +219,12 @@ function ChannelForm({ channel, onCancel, onSaved }: { channel?: Channel; onCanc
   const [to, setTo] = useState((cfg.to ?? []).join(", "));
   const [username, setUsername] = useState(cfg.username ?? "");
   const [tls, setTls] = useState<string>(cfg.tls || "starttls");
+  const [deployment, setDeployment] = useState<string>(cfg.deployment || "cloud");
+  const [project, setProject] = useState(cfg.project ?? "");
+  const [issueType, setIssueType] = useState(cfg.issue_type ?? "");
+  const [labels, setLabels] = useState((cfg.labels ?? []).join(", "));
+  const [priorities, setPriorities] = useState<Partial<Record<Priority, string>>>(cfg.priorities ?? {});
+  const [transition, setTransition] = useState(cfg.resolve_transition ?? "");
   const [localErr, setLocalErr] = useState<string | null>(null);
   const act = useAction();
   const idp = channel ? `ch${channel.id}` : "chnew";
@@ -221,8 +233,10 @@ function ChannelForm({ channel, onCancel, onSaved }: { channel?: Channel; onCanc
     e.preventDefault();
     setLocalErr(null);
     const ref = secretRef.trim();
-    if (ref && !/^(env|file):.+/.test(ref)) return setLocalErr("Secret reference must look like env:STACKURITY_SECRET_X or file:/run/secrets/x.");
+    if (ref && !/^(secret|env|file):.+/.test(ref))
+      return setLocalErr("Secret reference must look like secret:NAME, env:STACKURITY_SECRET_X or file:/run/secrets/x.");
     if ((kind === "slack" || kind === "teams") && !ref) return setLocalErr("Slack and Teams need the webhook URL as a secret reference.");
+    if (kind === "jira" && !ref) return setLocalErr("Jira needs the API token or personal access token as a secret reference.");
     let config: ChannelConfig = {};
     if (kind === "webhook") {
       if (/^[a-z]+:\/\/[^/]*@/i.test(url.trim())) return setLocalErr("Do not put credentials in the URL; use the secret reference.");
@@ -234,6 +248,23 @@ function ChannelForm({ channel, onCancel, onSaved }: { channel?: Channel; onCanc
         .filter(Boolean);
       config = { host: host.trim(), port: Number(port), from: from.trim(), to: recipients, tls: tls as ChannelConfig["tls"] };
       if (username.trim()) config.username = username.trim();
+    } else if (kind === "jira") {
+      if (/^[a-z]+:\/\/[^/]*@/i.test(url.trim())) return setLocalErr("Do not put credentials in the URL; use the secret reference.");
+      const prio: Partial<Record<Priority, string>> = {};
+      for (const p of PRIORITIES) if (priorities[p]?.trim()) prio[p] = priorities[p]!.trim();
+      config = {
+        url: url.trim().replace(/\/+$/, ""),
+        deployment: deployment as ChannelConfig["deployment"],
+        project: project.trim().toUpperCase(),
+        labels: labels
+          .split(/[,\s]+/)
+          .map((x) => x.trim())
+          .filter(Boolean),
+        priorities: prio,
+      };
+      if (issueType.trim()) config.issue_type = issueType.trim();
+      if (transition.trim()) config.resolve_transition = transition.trim();
+      if (deployment === "cloud") config.username = username.trim();
     }
     // Always send secret_ref, including "" when cleared: an empty string removes the reference.
     const body: Record<string, unknown> = { name: name.trim(), config, secret_ref: ref };
@@ -274,6 +305,69 @@ function ChannelForm({ channel, onCancel, onSaved }: { channel?: Channel; onCanc
             <p className="hint">HTTPS required. Do not include credentials or tokens in the URL.</p>
           </div>
         )}
+        {kind === "jira" && (
+          <>
+            <div className="field">
+              <label htmlFor={`${idp}-dep`}>Jira edition</label>
+              <select id={`${idp}-dep`} value={deployment} onChange={(e) => setDeployment(e.target.value)}>
+                <option value="cloud">Jira Cloud (email and API token)</option>
+                <option value="datacenter">Jira Data Center or Server (personal access token)</option>
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor={`${idp}-jurl`}>Site URL</label>
+              <input
+                id={`${idp}-jurl`}
+                type="url"
+                required
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder={deployment === "cloud" ? "https://your-site.atlassian.net" : "https://jira.example.com"}
+              />
+            </div>
+            {deployment === "cloud" && (
+              <div className="field">
+                <label htmlFor={`${idp}-juser`}>Account email</label>
+                <input id={`${idp}-juser`} type="email" required autoComplete="off" value={username} onChange={(e) => setUsername(e.target.value)} />
+              </div>
+            )}
+            <div className="field">
+              <label htmlFor={`${idp}-proj`}>Project key</label>
+              <input id={`${idp}-proj`} required className="mono" value={project} onChange={(e) => setProject(e.target.value)} placeholder="SEC" />
+            </div>
+            <div className="field">
+              <label htmlFor={`${idp}-itype`}>Issue type</label>
+              <input id={`${idp}-itype`} value={issueType} onChange={(e) => setIssueType(e.target.value)} placeholder="Task" />
+            </div>
+            <div className="field">
+              <label htmlFor={`${idp}-labels`}>Labels (optional)</label>
+              <input id={`${idp}-labels`} value={labels} onChange={(e) => setLabels(e.target.value)} placeholder="security, vulnerability" />
+              <p className="hint">Comma-separated. Every issue also gets the labels stackurity and stackurity-incident-…, which keep it to one issue per incident.</p>
+            </div>
+            <div className="field">
+              <label htmlFor={`${idp}-trans`}>Transition when resolved (optional)</label>
+              <input id={`${idp}-trans`} value={transition} onChange={(e) => setTransition(e.target.value)} placeholder="Done" />
+              <p className="hint">Transition or status name. Empty: the issue is only commented on when the incident resolves.</p>
+            </div>
+            <fieldset className="field field-span">
+              <legend>Jira priority per Stackurity priority (optional)</legend>
+              <div className="form-grid">
+                {PRIORITIES.map((p) => (
+                  <div className="field" key={p}>
+                    <label htmlFor={`${idp}-prio-${p}`}>{p}</label>
+                    <input
+                      id={`${idp}-prio-${p}`}
+                      value={priorities[p] ?? ""}
+                      onChange={(e) => setPriorities({ ...priorities, [p]: e.target.value })}
+                      placeholder={{ P1: "Highest", P2: "High", P3: "Medium", P4: "Low" }[p]}
+                    />
+                  </div>
+                ))}
+              </div>
+              <p className="hint">Leave empty to use the project's default priority.</p>
+            </fieldset>
+          </>
+        )}
         {kind === "email" && (
           <>
             <div className="field">
@@ -309,21 +403,40 @@ function ChannelForm({ channel, onCancel, onSaved }: { channel?: Channel; onCanc
         )}
         <div className="field field-span">
           <label htmlFor={`${idp}-secret`}>
-            {kind === "email" ? "SMTP password reference (optional)" : kind === "webhook" ? "Signing key reference (optional)" : "Webhook URL reference (required)"}
+            {kind === "email"
+              ? "SMTP password reference (optional)"
+              : kind === "webhook"
+                ? "Signing key reference (optional)"
+                : kind === "jira"
+                  ? deployment === "cloud"
+                    ? "API token reference (required)"
+                    : "Personal access token reference (required)"
+                  : "Webhook URL reference (required)"}
           </label>
           <input
             id={`${idp}-secret`}
             className="mono"
             value={secretRef}
-            required={kind === "slack" || kind === "teams"}
+            required={kind === "slack" || kind === "teams" || kind === "jira"}
             onChange={(e) => setSecretRef(e.target.value)}
-            placeholder="env:STACKURITY_SECRET_SLACK"
+            placeholder={kind === "jira" ? "secret:JIRA_TOKEN" : "env:STACKURITY_SECRET_SLACK"}
           />
           <p className="hint">
-            Secrets are never stored here. Put the {kind === "email" ? "password" : kind === "webhook" ? "HMAC signing key" : "incoming webhook URL (it is a credential)"} in an
-            environment variable or file on the server and reference it: <Code>env:STACKURITY_SECRET_…</Code> or <Code>file:/run/secrets/…</Code>.
+            Secrets are never stored here. Store the{" "}
+            {kind === "email"
+              ? "password"
+              : kind === "webhook"
+                ? "HMAC signing key"
+                : kind === "jira"
+                  ? deployment === "cloud"
+                    ? "Atlassian API token"
+                    : "personal access token"
+                  : "incoming webhook URL (it is a credential)"}{" "}
+            under <Link to="/settings/secrets">Settings → Secrets</Link> and reference it as <Code>secret:NAME</Code>; instance administrators can also use{" "}
+            <Code>env:STACKURITY_SECRET_…</Code> or <Code>file:/run/secrets/…</Code>.
+            {kind === "jira" && " Send test checks the credentials and project access without creating an issue."}
             {kind === "webhook" && " With a key, each request carries an X-Stackurity-Signature HMAC header."}
-            {channel && channel.secret_ref && kind !== "slack" && kind !== "teams" && " Clear the field and save to remove the reference."}
+            {channel && channel.secret_ref && kind !== "slack" && kind !== "teams" && kind !== "jira" && " Clear the field and save to remove the reference."}
           </p>
         </div>
       </div>
@@ -428,7 +541,8 @@ function RoutesTab({ channels, admin }: { channels: Channel[]; admin: boolean })
     <>
       <p className="hint">
         Each incident produces at most one message per event (opened, priority raised, escalated, resolved). Quiet hours delay everything
-        except SOS; messages over the hourly limit are held and sent as a digest.
+        except SOS; messages over the hourly limit are held and sent as a digest. Jira channels instead keep one issue per incident up to
+        date (new findings, priority changes, resolution), unaffected by quiet hours, limits and summaries.
       </p>
       {admin && editing !== "new" && (
         <p>

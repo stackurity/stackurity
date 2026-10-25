@@ -5,6 +5,7 @@ import { humanize, plural } from "../format";
 import { Badge, EscalationBadge, PriorityBadge, SosBadge, StateBadge } from "../components/Badge";
 import { Table, type Column } from "../components/Table";
 import { EmptyState, ErrorBox, Loading, PageHeader, Pager, RelativeTime } from "../components/ui";
+import { IssueLinks } from "../components/IssueLinks";
 
 const LIMIT = 50;
 
@@ -65,6 +66,11 @@ export function IncidentsPage() {
             {i.title}
           </Link>
           {i.key && i.key !== i.title && <div className="mono small muted">{i.key}</div>}
+          {i.issues && i.issues.length > 0 && (
+            <div>
+              <IssueLinks issues={i.issues} compact />
+            </div>
+          )}
         </>
       ),
     },
