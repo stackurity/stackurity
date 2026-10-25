@@ -335,12 +335,17 @@ export function EvidencePills({ f }: { f: Finding }) {
           <Badge status="kernel" tone="muted" label="kernel not running" title="This kernel is installed but not the one running; removing old kernels clears it" />
         </>
       )}
-      {ev.requires_ubuntu_pro === true && (
+      {ev.requires_ubuntu_pro === true ? (
         <>
           {" "}
           <Badge status="pro" tone="info" label="fix needs Ubuntu Pro" title="The fixed package is published to Ubuntu Pro (ESM) subscribers" />
         </>
-      )}
+      ) : typeof ev.requires_subscription === "string" && ev.requires_subscription !== "" ? (
+        <>
+          {" "}
+          <Badge status="pro" tone="info" label={`fix needs ${ev.requires_subscription}`} title={`The fixed package is published only to ${ev.requires_subscription} subscribers`} />
+        </>
+      ) : null}
     </>
   );
 }

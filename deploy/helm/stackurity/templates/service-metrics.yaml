@@ -1,0 +1,15 @@
+{{- if .Values.metrics.enabled }}
+# Prometheus scrapes this Service (or the pods' "metrics" port). It is not
+# referenced by the ingress, so metrics never reach the public API address.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "stackurity.fullname" . }}-metrics
+  labels: {{- include "stackurity.labels" . | nindent 4 }}
+    app.kubernetes.io/component: metrics
+spec:
+  type: ClusterIP
+  ports:
+    - {name: metrics, port: {{ .Values.metrics.port }}, targetPort: metrics}
+  selector: {{- include "stackurity.selector" . | nindent 4 }}
+{{- end }}

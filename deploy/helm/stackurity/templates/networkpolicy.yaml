@@ -10,4 +10,10 @@ spec:
   policyTypes: [Ingress]
   ingress:
     - ports: [{port: 8080, protocol: TCP}]
+    {{- if .Values.metrics.enabled }}
+    - ports: [{port: {{ .Values.metrics.port }}, protocol: TCP}]
+      {{- with .Values.metrics.from }}
+      from: {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- end }}
 {{- end }}

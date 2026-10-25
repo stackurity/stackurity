@@ -22,6 +22,8 @@ import (
 
 	"github.com/stackurity/stackurity/internal/api"
 	"github.com/stackurity/stackurity/internal/auth"
+	"github.com/stackurity/stackurity/internal/health"
+	"github.com/stackurity/stackurity/internal/metrics"
 	"github.com/stackurity/stackurity/internal/model"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/testdb"
@@ -43,7 +45,7 @@ func newEnv(t *testing.T) *env {
 	holder.Set(&license.License{Version: 1, Customer: "test", Edition: license.Enterprise, ExpiresAt: time.Now().AddDate(1, 0, 0)})
 	gate := &license.Gate{Licence: holder, Plan: license.CachedPlan(st.WorkspacePlan, 0)}
 	s := &api.Server{Store: st, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Version: "test", SetupToken: "setup-123",
-		Licence: holder, Gate: gate}
+		Licence: holder, Gate: gate, Health: &health.Checker{Store: st, FeedsEnabled: true}, HTTPMetrics: metrics.NewHTTP()}
 	srv := httptest.NewServer(s.Handler())
 	t.Cleanup(srv.Close)
 	return &env{t: t, srv: srv, st: st, api: s}

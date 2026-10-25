@@ -75,6 +75,12 @@ func TestStackPacks(t *testing.T) {
 		t.Fatalf("scan with installed pack: %+v %v", obs, err)
 	}
 
+	// Another replica picks the pack up on its next refresh.
+	replica := &packs.Manager{Store: e.st, Keys: keys, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Gate: e.api.Gate}
+	if err := replica.Refresh(ws1); err != nil || len(replica.Active(ws1)) != 1 {
+		t.Fatalf("other replica after install: %v %d", err, len(replica.Active(ws1)))
+	}
+
 	// Clients download the exact archive that was installed.
 	resp := admin.req("GET", "/api/v1/packs/java/archive", nil, nil)
 	data, _ := io.ReadAll(resp.Body)
@@ -101,6 +107,9 @@ func TestStackPacks(t *testing.T) {
 	}
 	if len(mgr.Active(ws1)) != 0 {
 		t.Error("disabled pack still active")
+	}
+	if err := replica.Refresh(ws1); err != nil || len(replica.Active(ws1)) != 0 {
+		t.Errorf("other replica after disable: %v %d", err, len(replica.Active(ws1)))
 	}
 	if code := owner.do("POST", "/api/v1/admin/packs/java/rollback", nil, nil); code != 409 {
 		t.Errorf("rollback without a previous version: %d", code)

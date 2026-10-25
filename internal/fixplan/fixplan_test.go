@@ -63,6 +63,34 @@ func TestHostGrouping(t *testing.T) {
 	}
 }
 
+func TestSubscriptionChannels(t *testing.T) {
+	sles := func(id int64, f Row) Row {
+		f = host(id, f)
+		f.OS, f.OSVersion, f.OSName, f.PurlType = "sles", "15.5", "SUSE Linux Enterprise Server 15 SP5", "rpm"
+		return f
+	}
+	groups, _ := Build([]Row{
+		sles(1, Row{Component: "curl", FixedVersion: "8.0.1-150400.5.50.1", RequiresPro: true, Subscription: "SUSE LTSS"}),
+		sles(2, Row{Component: "openssl-3", FixedVersion: "3.0.8-150500.5.8.1"}),
+	}, nil)
+	by := map[string]*Group{}
+	for _, g := range groups {
+		by[g.Kind] = g
+	}
+	if g := by[NoFix]; g == nil || g.Needs != "SUSE LTSS" || g.Title != "Issues fixed only in SUSE LTSS" || strings.Contains(g.Action, "Ubuntu") {
+		t.Errorf("LTSS-only group = %+v", g)
+	}
+	if g := by[SecurityUpdates]; g == nil || g.Action != "sudo zypper refresh && sudo zypper patch" {
+		t.Errorf("SLES updates = %+v", g)
+	}
+	if u, _ := manager("amzn", "2"); u != "sudo yum update" {
+		t.Errorf("Amazon Linux 2 has no dnf: %q", u)
+	}
+	if u, _ := manager("amzn", "2023"); u != "sudo dnf upgrade --refresh" {
+		t.Errorf("Amazon Linux 2023 = %q", u)
+	}
+}
+
 func TestRepositoryGrouping(t *testing.T) {
 	repo := func(id int64, comp, ver, fix string) Row {
 		return Row{FindingID: id, Kind: "vulnerability", AssetID: 2, AssetName: "shop", AssetKind: "repository", ComponentID: 10,

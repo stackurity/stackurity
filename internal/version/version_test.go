@@ -146,3 +146,41 @@ func TestRubyGems(t *testing.T) {
 		{"7.1.2", "7.1.2.1", -1},
 	})
 }
+
+func TestNuGet(t *testing.T) {
+	run(t, "nuget", CompareNuGet, []tc{
+		{"1.0.0", "1.0.0.0", 0},
+		{"1.0.0-beta", "1.0.0", -1},
+		{"1.0.0-Beta.2", "1.0.0-beta.10", -1},
+		{"1.0.0-RC", "1.0.0-rc", 0},
+		{"3.7.400.1", "3.7.400.12", -1},
+		{"3.7.400", "3.7.400.1", -1},
+		{"13.0.3", "13.0.3+abc", 0},
+		{"12.0.1-beta2", "12.0.1", -1},
+	})
+	if _, err := CompareNuGet("1.2.3.4.5", "1.0"); err == nil {
+		t.Error("expected parse error for five parts")
+	}
+	if !NuGetPrerelease("6.0.0-preview.1") || NuGetPrerelease("6.0.0.1") {
+		t.Error("NuGetPrerelease")
+	}
+	if ct, err := ChangeType("nuget", "3.7.400.1", "3.7.401.0"); err != nil || ct != "patch" {
+		t.Errorf("ChangeType nuget = %q %v", ct, err)
+	}
+}
+
+func TestPrereleaseHelpers(t *testing.T) {
+	for v, want := range map[string]bool{"2.0.0": false, "2.0.0rc1": true, "2.0.0.dev3": true, "2.0.0.post1": false, "1.0b2": true} {
+		if got, ok := PEP440Prerelease(v); !ok || got != want {
+			t.Errorf("PEP440Prerelease(%q) = %v %v", v, got, ok)
+		}
+	}
+	for v, want := range map[string]bool{
+		"2.17.0": false, "2.0.0-RC1": true, "3.0.0-M1": true, "1.0-alpha-2": true, "1.0b2": true,
+		"5.3.0-SNAPSHOT": true, "33.3.1-jre": false, "1.0.Final": false, "6.0.0.CR1": true, "2.0-sp1": false,
+	} {
+		if got := MavenPrerelease(v); got != want {
+			t.Errorf("MavenPrerelease(%q) = %v", v, got)
+		}
+	}
+}

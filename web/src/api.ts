@@ -156,6 +156,25 @@ export interface LicenseInfo {
   managed_by_env: boolean;
 }
 
+/** GET /admin/health: whether the installation itself is working. */
+export interface PlatformHealth {
+  status: "ok" | "warning" | "critical";
+  checked_at: string;
+  problems: { severity: "critical" | "warning"; kind: "feed" | "task" | "jobs" | "intelligence"; key: string; title: string; detail?: string }[];
+  tasks: {
+    name: string;
+    every_seconds: number;
+    last_started_at: string | null;
+    last_success_at: string | null;
+    last_error: string;
+    consecutive_failures: number;
+    running: boolean;
+  }[];
+  jobs: { kind: string; state: "queued" | "scheduled" | "running" | "failed"; count: number }[];
+  oldest_queued_seconds: number;
+  recent_failures: { id: number; kind: string; workspace_id: number | null; attempts: number; last_error: string; failed_at: string }[];
+}
+
 export interface Asset {
   id: number;
   kind: string;
@@ -485,6 +504,7 @@ export interface FindingEvidence {
   // fix grouping hints
   not_running_kernel?: boolean;
   requires_ubuntu_pro?: boolean;
+  requires_subscription?: string;
   [k: string]: unknown;
 }
 
@@ -579,6 +599,93 @@ export interface Advisory {
   fetched_at?: string;
 }
 
+// --- global search (GET /search), mirrors internal/store/search.go
+
+/** 0: exact id, name or identifier; 1: prefix; 2: substring. */
+export type SearchRank = 0 | 1 | 2;
+
+export interface SearchRef {
+  id: number;
+  name: string;
+  version?: string;
+}
+
+export interface SearchVuln {
+  key: string;
+  /** Empty when the advisory exists but nothing in the workspace is affected. */
+  kind: "vulnerability" | "end_of_life" | "";
+  rank: SearchRank;
+  title: string;
+  severity: string;
+  score: number | null;
+  known_exploited: boolean;
+  open_findings: number;
+  resolved_findings: number;
+  affected_assets: number;
+  assets: SearchRef[];
+  components: string[];
+  advisory?: {
+    ids: string[];
+    aliases: string[];
+    summary: string;
+    severity: string;
+    score: number | null;
+    known_exploited: boolean;
+    published: string | null;
+    withdrawn: string | null;
+  };
+}
+
+export interface SearchComponent {
+  id: number;
+  purl_key: string;
+  type: string;
+  namespace: string;
+  name: string;
+  rank: SearchRank;
+  asset_count: number;
+  versions: string[];
+  open_findings: number;
+  assets: SearchRef[];
+  version?: string;
+  version_assets: number;
+}
+
+export interface SearchAsset {
+  id: number;
+  kind: string;
+  name: string;
+  environment: string;
+  owner_team: string;
+  collection_status: string;
+  last_seen: string;
+  rank: SearchRank;
+  match_scheme: string;
+  match_value: string;
+  open_findings: number;
+}
+
+export interface SearchTeam {
+  id: number;
+  name: string;
+  email: string;
+  rank: SearchRank;
+  asset_count: number;
+  open_findings: number;
+}
+
+export interface SearchResults {
+  query: string;
+  vulnerabilities: SearchVuln[];
+  assets: SearchAsset[];
+  components: SearchComponent[];
+  teams: SearchTeam[];
+  more: Partial<Record<"vulnerabilities" | "assets" | "components" | "teams", boolean>>;
+}
+
+export const SEARCH_MIN_LENGTH = 2;
+export const SEARCH_MAX_LENGTH = 200;
+
 export interface FindingDetail {
   finding: Finding;
   advisories?: Advisory[] | null;
@@ -615,6 +722,7 @@ export interface Release {
   latest: string;
   latest_stable: string;
   latest_published: string | null;
+  yanked?: Record<string, string>; // withdrawn (yanked, retracted, unlisted) version -> reason
   deprecated: string;
   source: string;
   source_url: string;
@@ -669,8 +777,8 @@ export const PRIORITIES = ["P1", "P2", "P3", "P4"] as const;
 export type Priority = (typeof PRIORITIES)[number];
 export const FINDING_STATES = ["new", "acknowledged", "in_progress", "suppressed", "risk_accepted"] as const;
 export type FindingState = (typeof FINDING_STATES)[number];
-export const INCIDENT_KINDS = ["vulnerability", "end_of_life", "feed", "collection", "coverage"] as const;
-export const SYSTEM_INCIDENT_KINDS = ["feed", "collection", "coverage"];
+export const INCIDENT_KINDS = ["vulnerability", "end_of_life", "feed", "collection", "coverage", "platform"] as const;
+export const SYSTEM_INCIDENT_KINDS = ["feed", "collection", "coverage", "platform"];
 
 export interface PriorityFactor {
   name: string;

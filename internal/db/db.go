@@ -177,5 +177,40 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) ([]string, error) {
 		}
 		done = append(done, name)
 	}
+	// Roles live in the cluster, not the database, so pg_dump does not carry
+	// them: after a restore into a new server the role and its grants must
+	// be created again, or the application would run without row-level
+	// security. This repeats migration 0010's step on every start.
+	if _, err := conn.Exec(ctx, ensureAppRole); err != nil {
+		return done, fmt.Errorf("ensure %s role: %w", appRole, err)
+	}
 	return done, nil
 }
+
+// ensureAppRole creates the application role and grants it access to every
+// table, sequence and function. Where the login role may not create roles
+// (managed databases) it does nothing, and FORCE ROW LEVEL SECURITY applies
+// to the table owner instead.
+const ensureAppRole = `DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'stackurity_app') THEN
+        BEGIN
+            CREATE ROLE stackurity_app NOLOGIN NOSUPERUSER NOBYPASSRLS;
+        EXCEPTION
+            WHEN duplicate_object OR unique_violation THEN NULL;
+            WHEN insufficient_privilege THEN RETURN;
+        END;
+    END IF;
+    IF NOT pg_has_role(current_user, 'stackurity_app', 'MEMBER') THEN
+        BEGIN
+            EXECUTE format('GRANT stackurity_app TO %I', current_user);
+        EXCEPTION WHEN insufficient_privilege THEN RETURN;
+        END;
+    END IF;
+    EXECUTE format('GRANT USAGE ON SCHEMA %I TO stackurity_app', current_schema());
+    EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA %I TO stackurity_app', current_schema());
+    EXECUTE format('GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA %I TO stackurity_app', current_schema());
+    EXECUTE format('GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA %I TO stackurity_app', current_schema());
+    EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO stackurity_app', current_schema());
+    EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO stackurity_app', current_schema());
+END $$`

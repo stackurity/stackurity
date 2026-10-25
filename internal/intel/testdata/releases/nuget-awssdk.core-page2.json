@@ -1,0 +1,29 @@
+{
+  "@id": "{{base}}/awssdk.core/page/4.0.7.2/4.0.102.13.json",
+  "count": 2,
+  "lower": "4.0.102.12",
+  "upper": "4.0.102.13",
+  "parent": "{{base}}/awssdk.core/index.json",
+  "items": [
+    {
+      "@id": "https://api.nuget.org/v3/registration5-gz-semver2/awssdk.core/4.0.102.12.json",
+      "catalogEntry": {
+        "@id": "https://api.nuget.org/v3/catalog0/data/2026.10.19.19.44.46/awssdk.core.4.0.102.12.json",
+        "id": "AWSSDK.Core",
+        "version": "4.0.102.12",
+        "listed": true,
+        "published": "2026-10-19T19:03:55.777+00:00"
+      }
+    },
+    {
+      "@id": "https://api.nuget.org/v3/registration5-gz-semver2/awssdk.core/4.0.102.13.json",
+      "catalogEntry": {
+        "@id": "https://api.nuget.org/v3/catalog0/data/2026.10.21.19.15.51/awssdk.core.4.0.102.13.json",
+        "id": "AWSSDK.Core",
+        "version": "4.0.102.13",
+        "listed": true,
+        "published": "2026-10-21T18:53:36.523+00:00"
+      }
+    }
+  ]
+}

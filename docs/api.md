@@ -28,6 +28,7 @@ Roles, from least to most access: `viewer` (read, including the audit log), `eng
 | `POST /sbom/import?asset_name=&asset_kind=&environment=` | collector, engineer+ | Import a CycloneDX or SPDX JSON document |
 | `GET /collections/{id}/result` | collector (own submissions), engineer+ | Whether a submitted collection has been evaluated (`status`: `pending`, `evaluated`, `failed`), then the asset's open findings and its count of `evaluation_gaps`. Used by `stackurity scan --fail-on` |
 | `GET /overview` | viewer | Inventory, coverage and status counts |
+| `GET /search?q=&limit=` | viewer | Global search of the current workspace, see [Search](#search) |
 | `GET /assets?kind=&environment=&status=&owner_team_id=&q=&reboot_required=true` | viewer | List assets. `reboot_required=true` lists hosts that run older code than is installed |
 | `GET /assets/{id}` | viewer | Asset and identifiers |
 | `PATCH /assets/{id}` | engineer | Set name, environment, owner, criticality, exposure, tags |
@@ -53,6 +54,7 @@ Roles, from least to most access: `viewer` (read, including the audit log), `eng
 | `GET /jobs?state=` | admin | Background job queue |
 | `GET /plugins` | admin | Installed plugins with their declared permissions, credentials and network access |
 | `GET /jobs/{id}` | engineer | Status of one job, e.g. after *Run now* |
+| `GET /admin/health` | instance admin | Platform health across workspaces: `status` (`ok`, `warning`, `critical`), `problems`, background `tasks` with their last success and error, job counts by kind and state, and jobs that failed in the last 24 hours ([install.md](install.md#health)) |
 | `GET /facets` | viewer | Distinct environments, asset kinds and component types |
 | `GET /findings?status=&kind=&severity=&verification=&asset_id=&component_id=&environment=&known_exploited=&q=&key=` | viewer | Vulnerability and end-of-life findings, known-exploited and most severe first |
 | `GET /findings/summary` | viewer | Counts by severity, kind and verification, plus stale feeds and evaluation gaps |
@@ -86,6 +88,22 @@ Roles, from least to most access: `viewer` (read, including the audit log), `eng
 | `GET /remediation/renovate.json?repository=&mode=exclusive` | collector, engineer | Renovate rules for approved repository plans |
 
 Lists return `{"items": [...], "total": N, "limit": L, "offset": O}`. Pass `?limit=` (max 500) and `?offset=`.
+
+## Search
+
+`GET /search?q=lodash@4.17.20&limit=10` looks one query up everywhere at once and returns the matches grouped by type. `q` is trimmed and must be 2 to 200 characters; `%`, `_` and `\` match themselves. `limit` (default 10, max 50) applies to each group, and `more` says which groups had more matches.
+
+```json
+{"query": "...", "vulnerabilities": [...], "assets": [...], "components": [...], "teams": [...],
+ "more": {"vulnerabilities": false, "assets": true, "components": false, "teams": false}}
+```
+
+- **vulnerabilities**: when the query looks like an id (one word with a digit and a `-` or `:`), advisories whose id, alias or group is the query, in any letter case (CVE, GHSA, DSA, USN, RHSA, ALAS and other OSV ids), and finding keys that contain it. Each result is a finding key with the workspace's open and resolved findings, the number of assets with an open finding, a sample of `assets` and `components`, and the public `advisory` when one is known. An advisory that affects nothing in the workspace is returned with `kind: ""` and zero counts.
+- **components**: packages currently installed, matched on name or `namespace/name`. A version can be given as `name@version`, `name version` or a purl (`pkg:npm/lodash@4.17.20`, which also filters by type and namespace); `version_assets` and the sample `assets` then cover that version, where `3.0.2` also matches distro builds such as `3.0.2-0ubuntu1.10`. Maven coordinates (`group:artifact`) and npm scopes (`@scope/name`) work as names.
+- **assets**: by name, any identifier (machine id, hostname, repository URL, image reference, ARN, SBOM serial) or the `digest` and `image` attributes. `match_scheme` and `match_value` say which identifier matched.
+- **teams**: by name or email, with the assets they own and those assets' open findings.
+
+Every result has a `rank`: `0` for an exact (case-insensitive) match of an id, name or identifier, `1` for a prefix, `2` for a substring; results are ordered by rank. Search only reads the current workspace; advisories are public data.
 
 ## ObservationBatch
 
@@ -168,6 +186,7 @@ Findings with the same `kind` and `key` whose assets belong to the same owner te
 - a stale or failing feed (`feed`)
 - a stale asset or failing integration (`collection`)
 - a drop of more than half in an asset's collected inventory (`coverage`)
+- in the default workspace only, a critical problem with the installation itself, such as a background task that keeps failing or intelligence that never synced (`platform`)
 
 Routes send incidents to channels and filter by minimum priority, SOS only, kinds, environments and owner teams. Each incident produces at most one notification per event:
 
@@ -186,3 +205,5 @@ Webhook channels receive the JSON message with these headers:
 - `X-Stackurity-Signature: sha256=HMAC(secret, timestamp + "." + body)`
 
 To verify a delivery, recompute the HMAC over the timestamp and body, and reject old timestamps.
+
+Delivery is at least once: if a server dies after sending but before recording it, the message is sent again a few minutes later. Receivers that must not act twice can deduplicate on `X-Stackurity-Delivery`.

@@ -488,6 +488,7 @@ type Release struct {
 	LatestStable    string            `json:"latest_stable"`
 	LatestPublished *time.Time        `json:"latest_published"`
 	VersionDates    map[string]string `json:"version_dates,omitempty"`
+	Yanked          map[string]string `json:"yanked,omitempty"` // withdrawn version -> reason
 	Deprecated      string            `json:"deprecated"`
 	Source          string            `json:"source"`
 	SourceURL       string            `json:"source_url"`
@@ -496,40 +497,47 @@ type Release struct {
 }
 
 func (s *Store) UpsertRelease(ctx context.Context, r Release) error {
-	vd, _ := json.Marshal(r.VersionDates)
-	if r.VersionDates == nil {
-		vd = []byte("{}")
-	}
+	vd, yk := jsonMap(r.VersionDates), jsonMap(r.Yanked)
 	// Release data is shared by every workspace that has the component.
 	return pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
-		return asSystem(ctx, tx, func() error { return upsertRelease(ctx, tx, r, vd) })
+		return asSystem(ctx, tx, func() error { return upsertRelease(ctx, tx, r, vd, yk) })
 	})
 }
 
-func upsertRelease(ctx context.Context, tx pgx.Tx, r Release, vd []byte) error {
+func jsonMap(m map[string]string) []byte {
+	if m == nil {
+		return []byte("{}")
+	}
+	b, _ := json.Marshal(m)
+	return b
+}
+
+func upsertRelease(ctx context.Context, tx pgx.Tx, r Release, vd, yk []byte) error {
 	_, err := tx.Exec(ctx, `INSERT INTO package_releases (component_id, latest, latest_stable, latest_published, version_dates,
-		deprecated, source, source_url, checked_at, last_error) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+		deprecated, source, source_url, checked_at, last_error, yanked) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
 		ON CONFLICT (component_id) DO UPDATE SET
 		  latest = CASE WHEN EXCLUDED.last_error = '' THEN EXCLUDED.latest ELSE package_releases.latest END,
 		  latest_stable = CASE WHEN EXCLUDED.last_error = '' THEN EXCLUDED.latest_stable ELSE package_releases.latest_stable END,
 		  latest_published = CASE WHEN EXCLUDED.last_error = '' THEN EXCLUDED.latest_published ELSE package_releases.latest_published END,
 		  version_dates = CASE WHEN EXCLUDED.last_error = '' THEN EXCLUDED.version_dates ELSE package_releases.version_dates END,
 		  deprecated = CASE WHEN EXCLUDED.last_error = '' THEN EXCLUDED.deprecated ELSE package_releases.deprecated END,
+		  yanked = CASE WHEN EXCLUDED.last_error = '' THEN EXCLUDED.yanked ELSE package_releases.yanked END,
 		  source = EXCLUDED.source, source_url = EXCLUDED.source_url, checked_at = EXCLUDED.checked_at, last_error = EXCLUDED.last_error`,
-		r.ComponentID, r.Latest, r.LatestStable, r.LatestPublished, vd, r.Deprecated, r.Source, r.SourceURL, r.CheckedAt, r.LastError)
+		r.ComponentID, r.Latest, r.LatestStable, r.LatestPublished, vd, r.Deprecated, r.Source, r.SourceURL, r.CheckedAt, r.LastError, yk)
 	return err
 }
 
 func (s *Store) GetRelease(ctx context.Context, componentID int64) (*Release, error) {
 	var r Release
-	var vd []byte
+	var vd, yk []byte
 	err := s.Pool.QueryRow(ctx, `SELECT component_id, latest, latest_stable, latest_published, version_dates, deprecated, source,
-		source_url, checked_at, last_error FROM package_releases WHERE component_id = $1`, componentID).
-		Scan(&r.ComponentID, &r.Latest, &r.LatestStable, &r.LatestPublished, &vd, &r.Deprecated, &r.Source, &r.SourceURL, &r.CheckedAt, &r.LastError)
+		source_url, checked_at, last_error, yanked FROM package_releases WHERE component_id = $1`, componentID).
+		Scan(&r.ComponentID, &r.Latest, &r.LatestStable, &r.LatestPublished, &vd, &r.Deprecated, &r.Source, &r.SourceURL, &r.CheckedAt, &r.LastError, &yk)
 	if err != nil {
 		return nil, notFound(err)
 	}
 	_ = json.Unmarshal(vd, &r.VersionDates)
+	_ = json.Unmarshal(yk, &r.Yanked)
 	return &r, nil
 }
 
@@ -540,10 +548,13 @@ type ReleaseCandidate struct {
 	Type        string
 	Namespace   string
 	Name        string
+	Purl        string // one inventory purl as collected, before purl case normalisation
 }
 
 func (s *Store) ReleaseCandidates(ctx context.Context, types []string, maxAge time.Duration, limit int) ([]ReleaseCandidate, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT c.id, c.type, c.namespace, c.name FROM components c
+	rows, err := s.Pool.Query(ctx, `SELECT c.id, c.type, c.namespace, c.name,
+		  COALESCE((SELECT i.purl FROM inventory i WHERE i.component_id = c.id AND i.removed_at IS NULL LIMIT 1), '')
+		FROM components c
 		LEFT JOIN package_releases r ON r.component_id = c.id
 		WHERE c.type = ANY($1)
 		  AND EXISTS (SELECT 1 FROM inventory i WHERE i.component_id = c.id AND i.removed_at IS NULL)

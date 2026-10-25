@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/stackurity/stackurity/internal/auth"
@@ -172,6 +173,24 @@ func (s *Server) recoverer(next http.Handler) http.Handler {
 			}
 		}()
 		next.ServeHTTP(w, r)
+	})
+}
+
+// instrument records each request in HTTPMetrics under its route pattern
+// (known only once routing is done), so raw paths never become labels.
+func (s *Server) instrument(next http.Handler) http.Handler {
+	if s.HTTPMetrics == nil {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+		next.ServeHTTP(ww, r)
+		route := ""
+		if rc := chi.RouteContext(r.Context()); rc != nil {
+			route = rc.RoutePattern()
+		}
+		s.HTTPMetrics.Observe(r.Method, route, ww.Status(), time.Since(start))
 	})
 }
 

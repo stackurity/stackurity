@@ -3,6 +3,8 @@ import { Link, Outlet, useLocation } from "react-router";
 import { api, type Incident, type List, type Plan } from "../api";
 import { useLoad } from "../hooks";
 import { useAuth } from "../auth";
+import { GlobalSearch } from "./Search";
+import { PlatformHealthBanner } from "../pages/admin/Health";
 import {
   IconActionPlan,
   IconChevron,
@@ -151,6 +153,7 @@ export function Layout() {
         ...(me?.user?.instance_admin
           ? [
               { to: "/admin/workspaces", label: "Workspaces" },
+              { to: "/admin/health", label: "Platform health" },
               { to: "/admin/packs", label: "Stack packs" },
               { to: "/admin/license", label: "Licence" },
             ]
@@ -252,7 +255,7 @@ export function Layout() {
       </aside>
       <div className="main-col">
         <header className="topbar">
-          <div className="topbar-spacer" />
+          {me?.workspace ? <GlobalSearch /> : <div className="topbar-spacer" />}
           <div className="topbar-user">
             <Link to="/help" className="btn btn-sm btn-link topbar-help">
               <IconHelp size={16} /> Help
@@ -266,6 +269,7 @@ export function Layout() {
           </div>
         </header>
         <main id="main" className="content" tabIndex={-1}>
+          {!pathname.startsWith("/admin/health") && <PlatformHealthBanner />}
           {me && !me.workspace && !pathname.startsWith("/admin") ? <NoWorkspace instanceAdmin={Boolean(me.user?.instance_admin)} /> : <Outlet />}
         </main>
       </div>

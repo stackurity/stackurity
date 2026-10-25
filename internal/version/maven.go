@@ -212,3 +212,27 @@ func compareQualifier(a, b string) int {
 	}
 	return 0
 }
+
+// MavenPrerelease reports whether v carries a qualifier that ranks below a
+// release (alpha, beta, milestone, rc/cr, snapshot, including the a1, b1 and
+// m1 short forms), anywhere in the version.
+func MavenPrerelease(v string) bool {
+	release, _ := qualifierRank("")
+	var walk func(items []mavenItem) bool
+	walk = func(items []mavenItem) bool {
+		for _, it := range items {
+			switch it.kind {
+			case 1:
+				if r, known := qualifierRank(it.str); known && r < release {
+					return true
+				}
+			case 2:
+				if walk(it.list) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return walk(parseMaven(v))
+}

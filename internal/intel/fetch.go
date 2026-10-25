@@ -20,6 +20,14 @@ type Config struct {
 	EndOfLifeURL     string // https://endoflife.date/api/v1/products/full
 	NpmRegistry      string // https://registry.npmjs.org
 	PackagistURL     string // https://repo.packagist.org
+	AmazonLinuxURL   string // https://cdn.amazonlinux.com
+	PyPIURL          string // https://pypi.org
+	GoProxyURL       string // https://proxy.golang.org
+	CratesIndexURL   string // https://index.crates.io (the sparse index)
+	RubyGemsURL      string // https://rubygems.org
+	NuGetURL         string // https://api.nuget.org/v3/registration5-gz-semver2
+	MavenURL         string // https://repo1.maven.org/maven2
+	PubURL           string // https://pub.dev
 	WorkDir          string // temp space for bulk downloads
 	UserAgent        string
 	IncrementalLimit int // above this many changed records, re-download the full archive
@@ -32,6 +40,14 @@ func DefaultConfig() Config {
 		EndOfLifeURL:     "https://endoflife.date/api/v1/products/full",
 		NpmRegistry:      "https://registry.npmjs.org",
 		PackagistURL:     "https://repo.packagist.org",
+		AmazonLinuxURL:   "https://cdn.amazonlinux.com",
+		PyPIURL:          "https://pypi.org",
+		GoProxyURL:       "https://proxy.golang.org",
+		CratesIndexURL:   "https://index.crates.io",
+		RubyGemsURL:      "https://rubygems.org",
+		NuGetURL:         "https://api.nuget.org/v3/registration5-gz-semver2",
+		MavenURL:         "https://repo1.maven.org/maven2",
+		PubURL:           "https://pub.dev",
 		WorkDir:          os.TempDir(),
 		UserAgent:        "stackurity",
 		IncrementalLimit: 5000,

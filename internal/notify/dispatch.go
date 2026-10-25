@@ -15,9 +15,14 @@ import (
 	"github.com/stackurity/stackurity/internal/risk"
 	"github.com/stackurity/stackurity/internal/secrets"
 	"github.com/stackurity/stackurity/internal/store"
+	"github.com/stackurity/stackurity/internal/tenant"
 )
 
 const maxAttempts = 8
+
+// deliveryLease is how long a claimed delivery is reserved for the replica
+// sending it; a replica that dies mid-send leaves it to be retried after this.
+const deliveryLease = 5 * time.Minute
 
 // burstThreshold: above this many incidents for one route in one cycle, a
 // single summary is sent instead of one message each.
@@ -33,6 +38,10 @@ type Dispatcher struct {
 	// Escalate reports whether the workspace in ctx may escalate overdue
 	// incidents (a paid feature); nil allows it.
 	Escalate func(ctx context.Context) bool
+	// Platform returns incidents about the installation itself (stuck
+	// background tasks, no intelligence). They are raised in the default
+	// workspace, the operator's; nil disables them.
+	Platform func(ctx context.Context) ([]store.SystemIncident, error)
 }
 
 func (d *Dispatcher) now() time.Time {
@@ -64,6 +73,13 @@ func (d *Dispatcher) Tick(ctx context.Context) error {
 	sys, err := d.Store.DetectSystemProblems(ctx)
 	if err != nil {
 		return fmt.Errorf("detect system problems: %w", err)
+	}
+	if ws, ok := tenant.Workspace(ctx); ok && ws == tenant.DefaultWorkspace && d.Platform != nil {
+		p, err := d.Platform(ctx)
+		if err != nil {
+			return fmt.Errorf("platform health: %w", err)
+		}
+		sys = append(sys, p...)
 	}
 	if err := d.Store.SyncSystemIncidents(ctx, sys); err != nil {
 		return fmt.Errorf("system incidents: %w", err)
@@ -292,6 +308,9 @@ func (d *Dispatcher) message(in store.Incident, event string) Message {
 		m.Action = "Check the agent, integration credentials or network path"
 	case "coverage":
 		m.Action = "Confirm whether software was removed or the collector lost access"
+	case "platform":
+		m.Summary = append(m.Summary, "A problem with the Stackurity installation itself: findings and notifications may be out of date")
+		m.Action = "An instance administrator should check Platform health in the dashboard and the server logs"
 	}
 	switch event {
 	case "escalated":
@@ -354,16 +373,28 @@ func (d *Dispatcher) Deliver(ctx context.Context) error {
 			}
 			channels[ch.ID] = ch
 		}
-		sendErr := d.send(ctx, ch, del.ID, msg)
-		if sendErr != nil {
-			d.Log.Warn("delivery failed", "delivery", del.ID, "channel", ch.Name, "attempt", del.Attempts+1, "err", sendErr)
-			if err := d.Store.DeliveryFailed(ctx, del.ID, del.Attempts, maxAttempts, sendErr); err != nil {
-				return err
-			}
-		} else if err := d.Store.DeliverySent(ctx, del.ID); err != nil {
+		// Claim right before sending: another replica's Tick or Digest may
+		// be delivering the same queue.
+		attempts, ok, err := d.Store.ClaimDelivery(ctx, del.ID, deliveryLease)
+		if err != nil {
 			return err
 		}
-		_ = d.Store.ChannelResult(ctx, ch.ID, sendErr)
+		if !ok {
+			continue
+		}
+		sendErr := d.send(ctx, ch, del.ID, msg)
+		// Record what happened even if shutdown began during the send, so a
+		// sent message is not sent again when the lease ends.
+		bg := context.WithoutCancel(ctx)
+		if sendErr != nil {
+			d.Log.Warn("delivery failed", "delivery", del.ID, "channel", ch.Name, "attempt", attempts, "err", sendErr)
+			if err := d.Store.DeliveryFailed(bg, del.ID, attempts, maxAttempts, sendErr); err != nil {
+				return err
+			}
+		} else if err := d.Store.DeliverySent(bg, del.ID); err != nil {
+			return err
+		}
+		_ = d.Store.ChannelResult(bg, ch.ID, sendErr)
 	}
 	return nil
 }

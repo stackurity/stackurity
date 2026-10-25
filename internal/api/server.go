@@ -18,6 +18,8 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/stackurity/stackurity/internal/auth"
+	"github.com/stackurity/stackurity/internal/health"
+	"github.com/stackurity/stackurity/internal/metrics"
 	"github.com/stackurity/stackurity/internal/model"
 	"github.com/stackurity/stackurity/internal/notify"
 	"github.com/stackurity/stackurity/internal/packs"
@@ -62,7 +64,13 @@ type Server struct {
 	LicenceFromEnv bool
 	// ParseLicence verifies uploaded keys; nil uses license.Parse.
 	ParseLicence func(string) (*license.License, error)
-	limiter      *rateLimiter
+	// Health checks the platform for instance admins; nil disables it.
+	Health *health.Checker
+	// HTTPMetrics records requests for the metrics listener; nil disables it.
+	HTTPMetrics *metrics.HTTP
+	// limiter is per replica: behind a load balancer with N replicas a
+	// client gets up to N times its limit.
+	limiter *rateLimiter
 }
 
 func (s *Server) Handler() http.Handler {
@@ -71,7 +79,7 @@ func (s *Server) Handler() http.Handler {
 	if s.TrustProxy {
 		r.Use(middleware.RealIP)
 	}
-	r.Use(middleware.RequestID, s.recoverer, securityHeaders, s.logRequests)
+	r.Use(s.instrument, middleware.RequestID, s.recoverer, securityHeaders, s.logRequests)
 
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]string{"status": "ok"}) })
 	r.Get("/readyz", s.ready)
@@ -109,6 +117,7 @@ func (s *Server) Handler() http.Handler {
 				r.Post("/{id}/rollback", s.rollbackPack)
 				r.Delete("/{id}", s.removePack)
 			})
+			r.With(requireInstanceAdmin).Get("/admin/health", s.adminHealth)
 			r.Get("/workspaces", s.listMyWorkspaces)
 			r.Post("/workspaces/{id}/activate", s.activateWorkspace)
 			r.Route("/admin/workspaces", func(r chi.Router) {
@@ -130,6 +139,7 @@ func (s *Server) Handler() http.Handler {
 				r.Use(requireRole(auth.RoleViewer))
 				r.Get("/overview", s.overview)
 				r.Get("/facets", s.facets)
+				r.Get("/search", s.search)
 				r.Get("/assets", s.listAssets)
 				r.Get("/assets/{id}", s.getAsset)
 				r.Get("/assets/{id}/inventory", s.assetInventory)
