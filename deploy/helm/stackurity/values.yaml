@@ -36,6 +36,7 @@ config:
   feeds: "on"            # "off" for air-gapped installs (see docs/network.md)
   staleAfter: 48h
   logFormat: json
+  platformWorkspace: ""  # id or slug for platform incidents; empty is workspace 1
   extraEnv: {}           # e.g. STACKURITY_OSV_URL for a mirror
 
 # Secrets referenced by integrations and channels (env:STACKURITY_SECRET_*

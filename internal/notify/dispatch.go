@@ -39,9 +39,13 @@ type Dispatcher struct {
 	// incidents (a paid feature); nil allows it.
 	Escalate func(ctx context.Context) bool
 	// Platform returns incidents about the installation itself (stuck
-	// background tasks, no intelligence). They are raised in the default
-	// workspace, the operator's; nil disables them.
+	// background tasks, no intelligence); nil disables them. They are raised
+	// in the workspace PlatformTarget returns, the operator's, or in the
+	// default workspace when PlatformTarget is nil.
 	Platform func(ctx context.Context) ([]store.SystemIncident, error)
+	// PlatformTarget returns the workspace for platform incidents, or 0 and
+	// the reason when there is none (it is missing or disabled).
+	PlatformTarget func(ctx context.Context) (id int64, why string, err error)
 }
 
 func (d *Dispatcher) now() time.Time {
@@ -74,7 +78,11 @@ func (d *Dispatcher) Tick(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("detect system problems: %w", err)
 	}
-	if ws, ok := tenant.Workspace(ctx); ok && ws == tenant.DefaultWorkspace && d.Platform != nil {
+	here, err := d.platformHere(ctx)
+	if err != nil {
+		return fmt.Errorf("platform workspace: %w", err)
+	}
+	if here {
 		p, err := d.Platform(ctx)
 		if err != nil {
 			return fmt.Errorf("platform health: %w", err)
@@ -88,6 +96,43 @@ func (d *Dispatcher) Tick(ctx context.Context) error {
 		return fmt.Errorf("plan: %w", err)
 	}
 	return d.Deliver(ctx)
+}
+
+// platformHere reports whether platform incidents belong to the workspace
+// ctx is scoped to.
+func (d *Dispatcher) platformHere(ctx context.Context) (bool, error) {
+	ws, ok := tenant.Workspace(ctx)
+	if !ok || d.Platform == nil {
+		return false, nil
+	}
+	if d.PlatformTarget == nil {
+		return ws == tenant.DefaultWorkspace, nil
+	}
+	id, _, err := d.PlatformTarget(tenant.System(ctx))
+	return err == nil && id == ws, err
+}
+
+// PlatformFallback logs critical platform problems while there is no
+// workspace to raise them in, because the configured one is missing or
+// disabled. Instance admins also see them in the dashboard's banner. It runs
+// in system scope.
+func (d *Dispatcher) PlatformFallback(ctx context.Context) error {
+	if d.Platform == nil || d.PlatformTarget == nil {
+		return nil
+	}
+	_, why, err := d.PlatformTarget(ctx)
+	if err != nil || why == "" {
+		return err
+	}
+	problems, err := d.Platform(ctx)
+	if err != nil {
+		return err
+	}
+	for _, p := range problems {
+		d.Log.Error("platform problem not raised as an incident", "problem", p.Key, "title", p.Title, "reason", why,
+			"fix", "set STACKURITY_PLATFORM_WORKSPACE to an active workspace")
+	}
+	return nil
 }
 
 // Plan queues deliveries for new, raised, escalated and resolved incidents.

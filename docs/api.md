@@ -186,7 +186,7 @@ Findings with the same `kind` and `key` whose assets belong to the same owner te
 - a stale or failing feed (`feed`)
 - a stale asset or failing integration (`collection`)
 - a drop of more than half in an asset's collected inventory (`coverage`)
-- in the default workspace only, a critical problem with the installation itself, such as a background task that keeps failing or intelligence that never synced (`platform`)
+- in the operators' workspace only (the default workspace, or `STACKURITY_PLATFORM_WORKSPACE`), a critical problem with the installation itself, such as a background task that keeps failing or intelligence that never synced (`platform`)
 
 Routes send incidents to channels and filter by minimum priority, SOS only, kinds, environments and owner teams. Each incident produces at most one notification per event:
 

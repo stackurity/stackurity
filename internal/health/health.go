@@ -6,8 +6,10 @@ package health
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/stackurity/stackurity/internal/store"
@@ -73,6 +75,30 @@ type Checker struct {
 	Store *store.Store
 	// FeedsEnabled is false when STACKURITY_FEEDS=off.
 	FeedsEnabled bool
+	// PlatformWorkspace is the id or slug of the workspace platform
+	// incidents are raised in (STACKURITY_PLATFORM_WORKSPACE); empty means
+	// the default workspace.
+	PlatformWorkspace string
+}
+
+// PlatformTarget returns the workspace platform incidents are raised in. When
+// there is none (the configured workspace is missing or disabled), id is 0
+// and why says so; err is only for failures to look it up.
+func (c *Checker) PlatformTarget(ctx context.Context) (id int64, why string, err error) {
+	ref := c.PlatformWorkspace
+	if ref == "" {
+		ref = strconv.FormatInt(tenant.DefaultWorkspace, 10)
+	}
+	id, disabled, err := c.Store.WorkspaceByRef(ctx, ref)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		return 0, fmt.Sprintf("Workspace %q, where platform incidents are raised, does not exist.", ref), nil
+	case err != nil:
+		return 0, "", err
+	case disabled:
+		return 0, fmt.Sprintf("Workspace %q, where platform incidents are raised, is disabled.", ref), nil
+	}
+	return id, "", nil
 }
 
 // Check reads platform state in system scope. Only instance admins and the
@@ -127,6 +153,14 @@ func (c *Checker) Check(ctx context.Context) (*Report, error) {
 			r.RecentFailures = append(r.RecentFailures, FailedJob{ID: j.ID, Kind: j.Kind, WorkspaceID: j.WorkspaceID,
 				Attempts: j.Attempts, LastError: j.LastError, FailedAt: *j.FailedAt})
 		}
+	}
+	if _, why, err := c.PlatformTarget(ctx); err != nil {
+		return nil, err
+	} else if why != "" {
+		r.Problems = append(r.Problems, Problem{Severity: Warning, Kind: "platform", Key: "incident-workspace",
+			Title: "Platform problems are not raised as incidents",
+			Detail: why + " Critical problems are shown here and in the banner, and logged by the server, instead. " +
+				"Set STACKURITY_PLATFORM_WORKSPACE to an active workspace."})
 	}
 	if wait := time.Duration(r.OldestQueuedSeconds * float64(time.Second)); wait > queueBacklog {
 		r.Problems = append(r.Problems, Problem{Severity: Warning, Kind: "jobs", Key: "backlog",
@@ -251,7 +285,7 @@ func ago(d time.Duration) string {
 }
 
 // PlatformIncidents turns critical platform problems into incidents for the
-// operator's workspace, so the people who run the installation are notified
+// operator's workspace (PlatformTarget), so the people who run the installation are notified
 // through their usual routes. Feed problems are left out: every workspace
 // already gets its own feed incidents. Details stay generic because task
 // errors can name other workspaces; instance admins see them in the

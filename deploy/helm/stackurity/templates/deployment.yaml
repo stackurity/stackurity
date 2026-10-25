@@ -43,6 +43,9 @@ spec:
             {{- if .Values.metrics.enabled }}
             - {name: STACKURITY_METRICS_ADDR, value: {{ printf ":%v" .Values.metrics.port | quote }}}
             {{- end }}
+            {{- with .Values.config.platformWorkspace }}
+            - {name: STACKURITY_PLATFORM_WORKSPACE, value: {{ . | quote }}}
+            {{- end }}
             {{- with .Values.config.baseURL }}
             - {name: STACKURITY_BASE_URL, value: {{ . | quote }}}
             {{- end }}
