@@ -489,11 +489,14 @@ type Release struct {
 	LatestPublished *time.Time        `json:"latest_published"`
 	VersionDates    map[string]string `json:"version_dates,omitempty"`
 	Yanked          map[string]string `json:"yanked,omitempty"` // withdrawn version -> reason
-	Deprecated      string            `json:"deprecated"`
-	Source          string            `json:"source"`
-	SourceURL       string            `json:"source_url"`
-	CheckedAt       time.Time         `json:"checked_at"`
-	LastError       string            `json:"last_error"`
+	// StableVersions lists every stable, non-withdrawn version the registry
+	// publishes (empty for data stored before it was recorded).
+	StableVersions []string  `json:"stable_versions,omitempty"`
+	Deprecated     string    `json:"deprecated"`
+	Source         string    `json:"source"`
+	SourceURL      string    `json:"source_url"`
+	CheckedAt      time.Time `json:"checked_at"`
+	LastError      string    `json:"last_error"`
 }
 
 func (s *Store) UpsertRelease(ctx context.Context, r Release) error {
@@ -502,6 +505,14 @@ func (s *Store) UpsertRelease(ctx context.Context, r Release) error {
 	return pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
 		return asSystem(ctx, tx, func() error { return upsertRelease(ctx, tx, r, vd, yk) })
 	})
+}
+
+// emptyIfNil keeps NOT NULL array columns from receiving NULL.
+func emptyIfNil(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
 }
 
 func jsonMap(m map[string]string) []byte {
@@ -514,7 +525,7 @@ func jsonMap(m map[string]string) []byte {
 
 func upsertRelease(ctx context.Context, tx pgx.Tx, r Release, vd, yk []byte) error {
 	_, err := tx.Exec(ctx, `INSERT INTO package_releases (component_id, latest, latest_stable, latest_published, version_dates,
-		deprecated, source, source_url, checked_at, last_error, yanked) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+		deprecated, source, source_url, checked_at, last_error, yanked, stable_versions) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
 		ON CONFLICT (component_id) DO UPDATE SET
 		  latest = CASE WHEN EXCLUDED.last_error = '' THEN EXCLUDED.latest ELSE package_releases.latest END,
 		  latest_stable = CASE WHEN EXCLUDED.last_error = '' THEN EXCLUDED.latest_stable ELSE package_releases.latest_stable END,
@@ -522,23 +533,47 @@ func upsertRelease(ctx context.Context, tx pgx.Tx, r Release, vd, yk []byte) err
 		  version_dates = CASE WHEN EXCLUDED.last_error = '' THEN EXCLUDED.version_dates ELSE package_releases.version_dates END,
 		  deprecated = CASE WHEN EXCLUDED.last_error = '' THEN EXCLUDED.deprecated ELSE package_releases.deprecated END,
 		  yanked = CASE WHEN EXCLUDED.last_error = '' THEN EXCLUDED.yanked ELSE package_releases.yanked END,
+		  stable_versions = CASE WHEN EXCLUDED.last_error = '' THEN EXCLUDED.stable_versions ELSE package_releases.stable_versions END,
 		  source = EXCLUDED.source, source_url = EXCLUDED.source_url, checked_at = EXCLUDED.checked_at, last_error = EXCLUDED.last_error`,
-		r.ComponentID, r.Latest, r.LatestStable, r.LatestPublished, vd, r.Deprecated, r.Source, r.SourceURL, r.CheckedAt, r.LastError, yk)
+		r.ComponentID, r.Latest, r.LatestStable, r.LatestPublished, vd, r.Deprecated, r.Source, r.SourceURL, r.CheckedAt, r.LastError, yk,
+		emptyIfNil(r.StableVersions))
 	return err
 }
 
 func (s *Store) GetRelease(ctx context.Context, componentID int64) (*Release, error) {
-	var r Release
-	var vd, yk []byte
-	err := s.Pool.QueryRow(ctx, `SELECT component_id, latest, latest_stable, latest_published, version_dates, deprecated, source,
-		source_url, checked_at, last_error, yanked FROM package_releases WHERE component_id = $1`, componentID).
-		Scan(&r.ComponentID, &r.Latest, &r.LatestStable, &r.LatestPublished, &vd, &r.Deprecated, &r.Source, &r.SourceURL, &r.CheckedAt, &r.LastError, &yk)
+	m, err := s.ReleasesFor(ctx, []int64{componentID})
 	if err != nil {
-		return nil, notFound(err)
+		return nil, err
 	}
-	_ = json.Unmarshal(vd, &r.VersionDates)
-	_ = json.Unmarshal(yk, &r.Yanked)
-	return &r, nil
+	r, ok := m[componentID]
+	if !ok {
+		return nil, ErrNotFound
+	}
+	return r, nil
+}
+
+// ReleasesFor returns stored release data for the given components, keyed
+// by component id; components without data are absent.
+func (s *Store) ReleasesFor(ctx context.Context, componentIDs []int64) (map[int64]*Release, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT component_id, latest, latest_stable, latest_published, version_dates, deprecated, source,
+		source_url, checked_at, last_error, yanked, stable_versions FROM package_releases WHERE component_id = ANY($1)`, componentIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64]*Release{}
+	for rows.Next() {
+		var r Release
+		var vd, yk []byte
+		if err := rows.Scan(&r.ComponentID, &r.Latest, &r.LatestStable, &r.LatestPublished, &vd, &r.Deprecated, &r.Source,
+			&r.SourceURL, &r.CheckedAt, &r.LastError, &yk, &r.StableVersions); err != nil {
+			return nil, err
+		}
+		_ = json.Unmarshal(vd, &r.VersionDates)
+		_ = json.Unmarshal(yk, &r.Yanked)
+		out[r.ComponentID] = &r
+	}
+	return out, rows.Err()
 }
 
 // ReleaseCandidates returns components of the given purl types whose

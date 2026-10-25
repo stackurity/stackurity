@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -158,9 +159,29 @@ func fill(r *store.Release, eco version.Ecosystem, vs []regVersion) {
 		}
 	}
 	r.Latest, r.LatestStable = newest(cmp, all), newest(cmp, stable)
+	r.StableVersions = sortedVersions(cmp, stable)
 	if t, err := time.Parse(time.RFC3339, r.VersionDates[r.LatestStable]); err == nil {
 		r.LatestPublished = &t
 	}
+}
+
+// sortedVersions returns the distinct versions in vs that cmp can parse,
+// oldest first.
+func sortedVersions(cmp version.Comparator, vs []string) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, v := range vs {
+		if _, err := cmp(v, v); err != nil || seen[v] {
+			continue
+		}
+		seen[v] = true
+		out = append(out, v)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		c, _ := cmp(out[i], out[j])
+		return c < 0
+	})
+	return out
 }
 
 // before reports whether RFC 3339 time a is earlier than b.

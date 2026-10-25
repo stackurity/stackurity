@@ -184,3 +184,33 @@ func TestPrereleaseHelpers(t *testing.T) {
 		}
 	}
 }
+
+func TestPrereleaseAndMajorLine(t *testing.T) {
+	for _, c := range []struct {
+		eco  Ecosystem
+		v    string
+		want bool
+	}{
+		{SemVer, "2.0.0-alpha.1", true}, {SemVer, "2.0.0", false},
+		{PEP440, "4.2rc1", true}, {PEP440, "4.2.post1", false},
+		{Maven, "6.0.0-M1", true}, {NuGet, "8.0.0-preview.1", true},
+		{RubyGems, "7.1.0.beta1", true}, {RubyGems, "7.1.0", false},
+		{Composer, "3.0.0-RC2", true}, {Composer, "3.0.0", false},
+		{Debian, "1.0~rc1-1", false},
+	} {
+		if got := Prerelease(c.eco, c.v); got != c.want {
+			t.Errorf("Prerelease(%s, %q) = %v", c.eco, c.v, got)
+		}
+	}
+	for _, c := range []struct {
+		eco     Ecosystem
+		v, want string
+	}{
+		{SemVer, "v4.17.21", "4"}, {SemVer, "0.3.1", "0"}, {PEP440, "1!2.0", "1!2"}, {PEP440, "0!3.1", "3"},
+		{Maven, "2.17.0", "2"}, {Generic, "latest", ""}, {SemVer, "010.1.0", "10"},
+	} {
+		if got := MajorLine(c.eco, c.v); got != c.want {
+			t.Errorf("MajorLine(%s, %q) = %q, want %q", c.eco, c.v, got, c.want)
+		}
+	}
+}
