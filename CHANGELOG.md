@@ -2,6 +2,24 @@
 
 All notable changes to Stackurity. Versions follow [Semantic Versioning](https://semver.org/); before 1.0, a minor version can change behaviour, and the notes say when it does.
 
+## Unreleased
+
+### Security
+
+Found by turning the security documentation into tests (see "Verification" in `docs/security-audit.md`); each fix has its own commit.
+
+- Workspace admins could disable shared intelligence feeds for every workspace. Enabling or disabling a feed now needs an instance administrator.
+- A workspace admin could set the password, name or status of an instance administrator whose only workspace was theirs. That now needs an instance administrator.
+- Zoned IPv6 link-local addresses (`fe80::1%eth0`) passed the private-network check for webhooks, Jira, SMTP, Git and Kubernetes destinations. IPv4-compatible IPv6, local-use NAT64 and site-local ranges are now blocked too.
+- A workspace could point its routes, assets, findings and teams at another workspace's channels, teams and users by id, and probe which ids exist. Migration 0025 adds database triggers that keep references inside the workspace; team members must be members of the workspace.
+- The output caps on plugins, git, stack packs and runtime detection were never applied. They now are.
+- Image scans for workspaces without private network access run Syft through a guarded proxy, so DNS rebinding and redirects to internal addresses are refused.
+- Versions longer than 256 characters are no longer compared (they could keep the shared evaluator busy for hours); such components are reported as not evaluated.
+- Git repository URLs with IPv4 in decimal, octal or hexadecimal notation, or with a query or fragment, are refused; clone errors redact the Basic credential.
+- One malformed or over-long entry in a lockfile or an installed package no longer makes the whole scan invalid; it is skipped and reported as partial coverage.
+- A release `current` link must resolve inside the application, through every link.
+- Delivery errors redact Slack and Teams URLs in every form; plugin logs and errors redact the plugin's credentials; failed sign-ins no longer record what was typed as the email unless it is an existing account; malformed Git and Kubernetes URLs are not echoed in errors.
+
 ## 0.3.1
 
 ### Fixed

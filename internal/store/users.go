@@ -230,9 +230,18 @@ func (s *Store) UpdateUser(ctx context.Context, id int64, u UserUpdate, instance
 		if err != nil {
 			return err
 		}
+		var targetInstanceAdmin bool
+		if err := tx.QueryRow(ctx, `SELECT instance_admin FROM users WHERE id = $1`, id).Scan(&targetInstanceAdmin); err != nil {
+			return notFound(err)
+		}
 		account := u.Name != nil || u.Disabled != nil || hash != nil
 		if account && others > 0 && !instanceAdmin {
 			return fmt.Errorf("this account also belongs to other workspaces; only an instance admin can change its name, password or status: %w", ErrConflict)
+		}
+		// An instance admin's password is the key to the whole installation;
+		// a workspace admin must not be able to set it.
+		if account && targetInstanceAdmin && !instanceAdmin {
+			return fmt.Errorf("this account is an instance admin; only an instance admin can change its name, password or status: %w", ErrConflict)
 		}
 		if _, err := tx.Exec(ctx, `UPDATE users SET name = COALESCE($2, name), disabled = COALESCE($3, disabled),
 			password_hash = COALESCE($4, password_hash) WHERE id = $1`, id, u.Name, u.Disabled, hash); err != nil {
@@ -511,6 +520,9 @@ func (s *Store) UpdateTeam(ctx context.Context, id int64, name, email *string, m
 				return err
 			}
 			if _, err := tx.Exec(ctx, `INSERT INTO team_members (team_id, user_id) SELECT $1, u.id FROM users u WHERE u.id = ANY($2)`, id, *members); err != nil {
+				if isForeignKey(err) {
+					return fmt.Errorf("team members must be members of this workspace: %w", ErrInvalid)
+				}
 				return err
 			}
 		}

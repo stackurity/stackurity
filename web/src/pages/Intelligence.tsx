@@ -22,9 +22,10 @@ const KIND_LABEL: Record<string, string> = { vulnerability: "Vulnerabilities", r
 const GAP_LIMIT = 100;
 
 export function IntelligencePage() {
-  const { can } = useAuth();
+  const { can, me } = useAuth();
   const engineer = can("engineer");
-  const admin = can("admin");
+  // Feeds are shared by every workspace, so only instance admins switch them.
+  const admin = can("admin") && Boolean(me?.user?.instance_admin);
   const feeds = useLoad(() => api.get<List<Feed>>("/feeds"), []);
   const [gapOffset, setGapOffset] = useState(0);
   const gaps = useLoad(() => api.get<List<EvaluationGap>>("/evaluation-gaps", { limit: GAP_LIMIT, offset: gapOffset }), [gapOffset]);

@@ -10,6 +10,9 @@ import (
 // alpha < beta < milestone < rc < snapshot < (release) < sp, so 1.0-rc1 is
 // older than 1.0 and 1.0-sp1 newer. It never errors.
 func CompareMaven(a, b string) (int, error) {
+	if err := tooLong(Maven, a, b); err != nil {
+		return 0, err
+	}
 	return compareMavenItems(parseMaven(a), parseMaven(b)), nil
 }
 

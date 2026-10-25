@@ -39,6 +39,9 @@ func ParseSemver(s string) (semver, bool) {
 }
 
 func CompareSemver(a, b string) (int, error) {
+	if err := tooLong(SemVer, a, b); err != nil {
+		return 0, err
+	}
 	va, ok := ParseSemver(a)
 	if !ok {
 		return 0, &ParseError{SemVer, a}

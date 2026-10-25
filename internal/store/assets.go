@@ -220,6 +220,9 @@ func (s *Store) UpdateAsset(ctx context.Context, id int64, u AssetUpdate) error 
 		region = COALESCE($11, region)
 		WHERE id = $1`, id, u.Name, u.Environment, clearTeam, team, u.Criticality,
 		u.InternetExposed.Set, u.InternetExposed.Value, u.Tags, u.Provider, u.Region)
+	if isForeignKey(err) {
+		return fmt.Errorf("no such team: %w", ErrInvalid)
+	}
 	if err != nil {
 		return err
 	}

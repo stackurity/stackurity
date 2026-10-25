@@ -10,7 +10,7 @@ Stackurity has no telemetry or update checks. Every outbound connection is liste
 
 ### Intelligence feeds
 
-Feeds are created automatically for the ecosystems present in your inventory. Each one can be disabled under **Intelligence**, and `STACKURITY_FEEDS=off` turns all of them off. No inventory data is sent to any of them: OSV, KEV and endoflife.date are bulk downloads, and registry lookups send only a public package name. A release feed exists only while its ecosystem is in inventory.
+Feeds are created automatically for the ecosystems present in your inventory. Each one can be disabled under **Intelligence** by an instance administrator (feeds are shared by every workspace), and `STACKURITY_FEEDS=off` turns all of them off. No inventory data is sent to any of them: OSV, KEV and endoflife.date are bulk downloads, and registry lookups send only a public package name. A release feed exists only while its ecosystem is in inventory.
 
 | Feed | Destination | Schedule | What is requested |
 |---|---|---|---|
@@ -41,13 +41,13 @@ The server hands each plugin run the workspace's private-network policy, and the
 
 ### Notification channels
 
-Only the channels you configure are contacted: your SMTP server, Slack or Teams webhook URLs, your webhook endpoints and your Jira site. Redirects are never followed. Messages contain incident titles, asset and component names, and links to the dashboard.
+Only the channels you configure are contacted: your SMTP server, Slack or Teams webhook URLs, your webhook endpoints and your Jira site. Redirects are never followed. Destinations are checked against the workspace's private-network policy when the connection is made, so a name that later resolves to an internal address is refused too. Messages contain incident titles, asset and component names, and links to the dashboard.
 
 A Jira channel calls the REST API of the configured site only (`/rest/api/3` on Jira Cloud, `/rest/api/2` on Data Center and Server): it checks the account and project (`/myself`, `/project/<key>`, `/priority`), searches the project for the incident's label, creates the issue, and later adds comments, sets the priority and reads and applies transitions. Issues contain the incident's title, priority and risk factors, up to 20 affected asset names with component versions and environments, the fix, and links to the dashboard; nothing from other incidents or workspaces. A Jira site on a private address is subject to the same `STACKURITY_PRIVATE_TARGETS` policy as webhooks.
 
 ### Container image integrations
 
-Syft fetches image manifests and layers from the registry in the image reference. With a secret reference configured, the credential is sent to that registry only.
+Syft fetches image manifests and layers from the registry in the image reference. With a secret reference configured, the credential is sent to that registry only. For a workspace that may not reach private networks, Syft connects through a proxy inside the server that checks every connection (including redirects to blob storage) against the same policy.
 
 ### Air-gapped installs
 

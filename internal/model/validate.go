@@ -148,6 +148,26 @@ func (b *ObservationBatch) Validate() error {
 	return nil
 }
 
+// Usable reports whether an observation would pass Validate, so a
+// collector can leave out one bad entry (a hostile lockfile line, say)
+// instead of producing a batch the server refuses as a whole.
+func Usable(o Observation) bool {
+	long := func(s string) bool { return len(s) > MaxFieldLen }
+	if long(o.Purl) || long(o.Version) || long(o.Location) || long(o.Scope) || len(o.Evidence) > MaxEvidenceFields {
+		return false
+	}
+	if o.Confidence != "" && !o.Confidence.Valid() {
+		return false
+	}
+	for k, v := range o.Evidence {
+		if long(k) || long(v) {
+			return false
+		}
+	}
+	pu, err := packageurl.FromString(o.Purl)
+	return err == nil && !(o.Version == "" && long(pu.Version))
+}
+
 func truncate(s string) string {
 	if len(s) > 80 {
 		return s[:80] + "…"

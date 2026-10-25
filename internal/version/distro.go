@@ -93,6 +93,9 @@ func debCompareString(a, b string) int {
 func isDigit(c byte) bool { return c >= '0' && c <= '9' }
 
 func CompareDebian(a, b string) (int, error) {
+	if err := tooLong(Debian, a, b); err != nil {
+		return 0, err
+	}
 	ea, ua, ra, ok := splitDebian(a)
 	if !ok {
 		return 0, &ParseError{Debian, a}
@@ -218,6 +221,9 @@ func rpmvercmp(a, b string) int {
 }
 
 func CompareRPM(a, b string) (int, error) {
+	if err := tooLong(RPM, a, b); err != nil {
+		return 0, err
+	}
 	if strings.TrimSpace(a) == "" {
 		return 0, &ParseError{RPM, a}
 	}
@@ -297,6 +303,9 @@ func parseAPK(v string) (apkVersion, bool) {
 }
 
 func CompareAPK(a, b string) (int, error) {
+	if err := tooLong(APK, a, b); err != nil {
+		return 0, err
+	}
 	va, ok := parseAPK(a)
 	if !ok {
 		return CompareGeneric(a, b) // apk tolerates odd versions; degrade gracefully
@@ -398,6 +407,9 @@ func parseComposer(v string) (composerVersion, bool) {
 }
 
 func CompareComposer(a, b string) (int, error) {
+	if err := tooLong(Composer, a, b); err != nil {
+		return 0, err
+	}
 	va, ok := parseComposer(a)
 	if !ok {
 		return 0, &ParseError{Composer, a}

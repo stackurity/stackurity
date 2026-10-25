@@ -48,7 +48,7 @@ Roles, from least to most access: `viewer` (read, including the audit log), `eng
 | `GET /audit?object_type=&object_id=` | viewer | Audit events |
 | `GET`/`POST /tokens`, `DELETE /tokens/{id}` | any user | Personal tokens (admins: all tokens and collector tokens) |
 | `GET /teams` | viewer | Teams |
-| `POST`/`PATCH`/`DELETE /teams/{id}` | admin | Manage teams and members |
+| `POST`/`PATCH`/`DELETE /teams/{id}` | admin | Manage teams and members (members must belong to the workspace) |
 | `GET`/`POST /users`, `PATCH /users/{id}` | admin | Manage users |
 | `GET /integrations`, `POST /integrations/{id}/run` | engineer | List integrations, trigger a run |
 | `POST`/`PATCH`/`DELETE /integrations/{id}` | admin | Manage integrations |
@@ -68,7 +68,7 @@ Roles, from least to most access: `viewer` (read, including the audit log), `eng
 | `GET /components/{id}/intel` | viewer | Release data (latest stable, publish date, deprecation) and lifecycle cycles |
 | `GET /feeds` | viewer | Intelligence feeds and their freshness |
 | `POST /feeds/{name}/refresh` | engineer | Queue a manual refresh |
-| `PATCH /feeds/{name}` | admin | Enable or disable a feed |
+| `PATCH /feeds/{name}` | instance admin | Enable or disable a feed (feeds are shared by every workspace) |
 | `GET /evaluation-gaps` | viewer | Components that could not be evaluated, with the reason |
 | `POST /evaluate` | engineer | Queue a full re-evaluation |
 | `POST /findings/{id}/actions` | engineer (security for `suppress`, `accept_risk`, `reopen`) | Workflow action, see below |

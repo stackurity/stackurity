@@ -40,6 +40,9 @@ func parseNuGet(s string) (nugetVersion, bool) {
 // fourth numeric part, and the generic comparator would put 1.0.0-beta
 // after 1.0.0.
 func CompareNuGet(a, b string) (int, error) {
+	if err := tooLong(NuGet, a, b); err != nil {
+		return 0, err
+	}
 	x, ok := parseNuGet(a)
 	if !ok {
 		return 0, &ParseError{NuGet, a}

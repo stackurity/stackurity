@@ -6,6 +6,7 @@ package image
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -76,10 +77,22 @@ func (s *Scanner) Scan(ctx context.Context, cfg Config, secret string) (*model.O
 	if _, err := exec.LookPath(bin); err != nil {
 		return nil, fmt.Errorf("syft is not installed on the server: %w", err)
 	}
-	// Syft makes its own connections; the registry host is at least checked
-	// against the workspace's network policy before it runs.
+	// Syft makes its own connections. The registry host is checked against
+	// the workspace's network policy before it runs, and when the policy
+	// keeps the workspace off private networks Syft is sent through a
+	// guarded proxy, so redirects (to blob storage, say) and a second DNS
+	// answer are checked as well.
 	if _, err := netguard.Resolve(ctx, RegistryHost(cfg.Image)); err != nil {
 		return nil, err
+	}
+	var proxyURL string
+	if !netguard.AllowsPrivate(ctx) {
+		proxy, err := netguard.StartProxy(ctx)
+		if err != nil {
+			return nil, err
+		}
+		defer proxy.Close()
+		proxyURL = proxy.URL
 	}
 	timeout := s.Timeout
 	if timeout == 0 {
@@ -110,6 +123,10 @@ func (s *Scanner) Scan(ctx context.Context, cfg Config, secret string) (*model.O
 		"TMPDIR=" + tmp,
 		"SYFT_CHECK_FOR_APP_UPDATE=false",
 	}
+	if proxyURL != "" {
+		env = append(env, "HTTPS_PROXY="+proxyURL, "https_proxy="+proxyURL, "HTTP_PROXY="+proxyURL, "http_proxy="+proxyURL,
+			"NO_PROXY=", "no_proxy=")
+	}
 	if secret != "" {
 		host := registryHost(cfg.Image)
 		env = append(env, "SYFT_REGISTRY_AUTH_AUTHORITY="+host)
@@ -125,7 +142,10 @@ func (s *Scanner) Scan(ctx context.Context, cfg Config, secret string) (*model.O
 	if err := cmd.Run(); err != nil {
 		msg := strings.TrimSpace(stderr.String())
 		if secret != "" {
-			msg = strings.ReplaceAll(msg, secret, "[redacted]")
+			basic := base64.StdEncoding.EncodeToString([]byte(cfg.Username + ":" + secret))
+			for _, s := range []string{basic, strings.TrimRight(basic, "="), secret} {
+				msg = strings.ReplaceAll(msg, s, "[redacted]")
+			}
 		}
 		if len(msg) > 500 {
 			msg = msg[:500]
