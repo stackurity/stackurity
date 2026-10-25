@@ -627,8 +627,16 @@ func intelConfig(dataDir string) intel.Config {
 	cfg.EndOfLifeURL = env("STACKURITY_ENDOFLIFE_URL", cfg.EndOfLifeURL)
 	cfg.NpmRegistry = env("STACKURITY_NPM_REGISTRY", cfg.NpmRegistry)
 	cfg.PackagistURL = env("STACKURITY_PACKAGIST_URL", cfg.PackagistURL)
+	cfg.PyPIURL = env("STACKURITY_PYPI_URL", cfg.PyPIURL)
+	cfg.GoProxyURL = env("STACKURITY_GOPROXY_URL", cfg.GoProxyURL)
+	cfg.CratesIndexURL = env("STACKURITY_CRATES_INDEX_URL", cfg.CratesIndexURL)
+	cfg.RubyGemsURL = env("STACKURITY_RUBYGEMS_URL", cfg.RubyGemsURL)
+	cfg.NuGetURL = env("STACKURITY_NUGET_URL", cfg.NuGetURL)
+	cfg.MavenURL = env("STACKURITY_MAVEN_URL", cfg.MavenURL)
+	cfg.PubURL = env("STACKURITY_PUB_URL", cfg.PubURL)
 	cfg.WorkDir = filepath.Join(dataDir, "work")
-	cfg.UserAgent = "stackurity/" + version
+	// Registries ask automated clients to identify themselves.
+	cfg.UserAgent = "stackurity/" + version + " (+https://github.com/stackurity/stackurity)"
 	return cfg
 }
 

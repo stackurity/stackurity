@@ -1,0 +1,94 @@
+{
+  "@id": "https://api.nuget.org/v3/registration5-gz-semver2/windowsazure.storage/index.json",
+  "count": 2,
+  "items": [
+    {
+      "@id": "https://api.nuget.org/v3/registration5-gz-semver2/windowsazure.storage/index.json#page/1.0.0/8.2.0",
+      "count": 1,
+      "lower": "1.0.0",
+      "upper": "8.2.0",
+      "items": [
+        {
+          "@id": "https://api.nuget.org/v3/registration5-gz-semver2/windowsazure.storage/8.1.2.json",
+          "catalogEntry": {
+            "@id": "https://api.nuget.org/v3/catalog0/data/2024.05.12.16.08.35/windowsazure.storage.8.1.2.json",
+            "id": "WindowsAzure.Storage",
+            "version": "8.1.2",
+            "listed": false,
+            "published": "1900-01-01T00:00:00+00:00",
+            "deprecation": {
+              "@id": "https://api.nuget.org/v3/catalog0/data/2024.05.12.16.08.35/windowsazure.storage.8.1.2.json#deprecation",
+              "@type": "deprecation",
+              "alternatePackage": {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2024.05.12.16.08.35/windowsazure.storage.8.1.2.json#deprecation/alternatePackage",
+                "@type": "alternatePackage",
+                "id": "Azure.Storage.Common",
+                "range": "*"
+              },
+              "message": "Please note, this package is obsolete as of 3/31/2023 and is no longer maintained or monitored. Microsoft encourages you to upgrade to the replacement package, Azure.Storage.Common, to continue receiving updates. Refer to our deprecation policy (https://aka.ms/azsdk/support-policies) for more details.",
+              "reasons": [
+                "Legacy"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "@id": "https://api.nuget.org/v3/registration5-gz-semver2/windowsazure.storage/index.json#page/8.2.1/9.3.3",
+      "count": 2,
+      "lower": "8.2.1",
+      "upper": "9.3.3",
+      "items": [
+        {
+          "@id": "https://api.nuget.org/v3/registration5-gz-semver2/windowsazure.storage/9.3.2.json",
+          "catalogEntry": {
+            "@id": "https://api.nuget.org/v3/catalog0/data/2024.05.12.16.08.35/windowsazure.storage.9.3.2.json",
+            "id": "WindowsAzure.Storage",
+            "version": "9.3.2",
+            "listed": true,
+            "published": "2018-09-15T05:38:27.443+00:00",
+            "deprecation": {
+              "@id": "https://api.nuget.org/v3/catalog0/data/2024.05.12.16.08.35/windowsazure.storage.9.3.2.json#deprecation",
+              "@type": "deprecation",
+              "alternatePackage": {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2024.05.12.16.08.35/windowsazure.storage.9.3.2.json#deprecation/alternatePackage",
+                "@type": "alternatePackage",
+                "id": "Azure.Storage.Common",
+                "range": "*"
+              },
+              "message": "Please note, this package is obsolete as of 3/31/2023 and is no longer maintained or monitored. Microsoft encourages you to upgrade to the replacement package, Azure.Storage.Common, to continue receiving updates. Refer to our deprecation policy (https://aka.ms/azsdk/support-policies) for more details.",
+              "reasons": [
+                "Legacy"
+              ]
+            }
+          }
+        },
+        {
+          "@id": "https://api.nuget.org/v3/registration5-gz-semver2/windowsazure.storage/9.3.3.json",
+          "catalogEntry": {
+            "@id": "https://api.nuget.org/v3/catalog0/data/2026.04.10.00.25.46/windowsazure.storage.9.3.3.json",
+            "id": "WindowsAzure.Storage",
+            "version": "9.3.3",
+            "listed": true,
+            "published": "2018-11-27T00:08:28.04+00:00",
+            "deprecation": {
+              "@id": "https://api.nuget.org/v3/catalog0/data/2026.04.10.00.25.46/windowsazure.storage.9.3.3.json#deprecation",
+              "@type": "deprecation",
+              "alternatePackage": {
+                "@id": "https://api.nuget.org/v3/catalog0/data/2026.04.10.00.25.46/windowsazure.storage.9.3.3.json#deprecation/alternatePackage",
+                "@type": "alternatePackage",
+                "id": "Azure.Storage.Common",
+                "range": "*"
+              },
+              "message": "Please note, this package is obsolete as of 3/31/2023 and is no longer maintained or monitored. Microsoft encourages you to upgrade to the replacement package, Azure.Storage.Common, to continue receiving updates. Refer to our deprecation policy (https://aka.ms/azsdk/support-policies) for more details.",
+              "reasons": [
+                "Legacy"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

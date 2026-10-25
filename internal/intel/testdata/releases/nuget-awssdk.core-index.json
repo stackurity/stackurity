@@ -1,0 +1,24 @@
+{
+  "@id": "{{base}}/awssdk.core/index.json",
+  "count": 3,
+  "items": [
+    {
+      "@id": "{{base}}/awssdk.core/page/3.0.0-preview/3.3.5.json",
+      "count": 64,
+      "lower": "3.0.0-preview",
+      "upper": "3.3.5"
+    },
+    {
+      "@id": "{{base}}/awssdk.core/page/4.0.7.2/4.0.102.13.json",
+      "count": 2,
+      "lower": "4.0.102.12",
+      "upper": "4.0.102.13"
+    },
+    {
+      "@id": "{{base}}/awssdk.core/page/4.1.0-preview.1/4.1.0-preview.2.json",
+      "count": 2,
+      "lower": "4.1.0-preview.1",
+      "upper": "4.1.0-preview.2"
+    }
+  ]
+}

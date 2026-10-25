@@ -141,7 +141,7 @@ func TestEndToEnd(t *testing.T) {
 	for _, f := range feeds {
 		names[f.Name] = true
 	}
-	for _, want := range []string{"osv:npm", "osv:Debian", "osv:PyPI", FeedKEV, FeedEndOfLife, FeedNpm} {
+	for _, want := range []string{"osv:npm", "osv:Debian", "osv:PyPI", FeedKEV, FeedEndOfLife, FeedNpm, FeedPyPI} {
 		if !names[want] {
 			t.Errorf("feed %s not created: %v", want, names)
 		}
@@ -266,7 +266,7 @@ func TestEndToEnd(t *testing.T) {
 		t.Errorf("express advisory: %+v", fs)
 	}
 	sum, _ := st.SummarizeFindings(ctx)
-	if sum.StaleFeeds != 2 { // PyPI failed; releases:npm never ran
+	if sum.StaleFeeds != 3 { // PyPI failed; releases:npm and releases:pypi never ran
 		t.Errorf("summary = %+v", sum)
 	}
 }

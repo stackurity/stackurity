@@ -59,14 +59,10 @@ func EnsureFeeds(ctx context.Context, s *store.Store) error {
 				return err
 			}
 		}
-		switch t {
-		case "npm":
-			err = ensure(FeedNpm, "release", 6*time.Hour, 72*time.Hour)
-		case "composer":
-			err = ensure(FeedPackagist, "release", 6*time.Hour, 72*time.Hour)
-		}
-		if err != nil {
-			return err
+		if feed := releaseFeedFor(t); feed != "" {
+			if err := ensure(feed, "release", 6*time.Hour, 72*time.Hour); err != nil {
+				return err
+			}
 		}
 	}
 	for d := range p.Distros {
