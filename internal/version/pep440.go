@@ -61,6 +61,9 @@ func orZero(s string) string {
 }
 
 func ComparePEP440(a, b string) (int, error) {
+	if err := tooLong(PEP440, a, b); err != nil {
+		return 0, err
+	}
 	x, ok := parsePEP440(a)
 	if !ok {
 		return 0, &ParseError{"pep440", a}
@@ -124,6 +127,9 @@ func ComparePEP440(a, b string) (int, error) {
 // letter/digit boundaries; any segment with letters makes a prerelease,
 // which sorts before the release.
 func CompareRubyGems(a, b string) (int, error) {
+	if err := tooLong(RubyGems, a, b); err != nil {
+		return 0, err
+	}
 	seg := func(v string) []string {
 		var out []string
 		for _, part := range strings.Split(strings.TrimSpace(strings.ReplaceAll(v, "-", ".pre.")), ".") {
