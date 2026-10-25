@@ -31,7 +31,7 @@ A workload is `exposure: external` when any of these reaches it:
 
 Otherwise it is `internal`. If Services or Ingresses in its namespace could not be read, it is `unknown`, never `internal`. `exposed_via` says what made it external, e.g. `Service web (NodePort 30080)`.
 
-Risk scoring uses this as the asset's internet exposure, and an image takes it from the workloads running it: an image is exposed when any current workload running it is. A value set by hand on the asset (**Internet exposed**) always wins. The asset list can be filtered by exposure.
+Risk scoring uses this as the asset's internet exposure, and an image takes it from the workloads running it: an image is exposed when any current workload running it is, internal only when every one of them is internal, and unknown otherwise (one workload with unknown exposure keeps the image unknown, never internal). A value set by hand on the asset (**Internet exposed**) always wins. The asset list can be filtered by exposure.
 
 ### Image scanning
 

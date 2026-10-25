@@ -46,13 +46,16 @@ func (s *Store) SetRiskPolicy(ctx context.Context, p risk.Policy) error {
 
 // effectiveExposure is an asset's internet exposure for risk: what an
 // operator set, else what a collector observed (the exposure attribute of a
-// Kubernetes workload), else, for an image, whether any current workload
-// deployed as it is exposed. NULL means unknown.
+// Kubernetes workload), else, for an image, what the current workloads
+// deployed as it say: exposed when any is, internal only when every one is
+// internal. A workload whose exposure is unknown (Services or Ingresses
+// unreadable) keeps the image unknown rather than internal. NULL means unknown.
 const effectiveExposure = `COALESCE(a.internet_exposed,
 		CASE a.attributes->>'exposure' WHEN 'external' THEN true WHEN 'internal' THEN false END,
-		(SELECT bool_or(w.attributes->>'exposure' = 'external') FROM asset_relations r JOIN assets w ON w.id = r.from_asset
-		 WHERE r.to_asset = a.id AND r.kind = 'deployed_as' AND w.merged_into IS NULL AND w.collection_status <> 'stale'
-		   AND w.attributes->>'exposure' IN ('external', 'internal')))`
+		(SELECT CASE WHEN bool_or(w.attributes->>'exposure' = 'external') THEN true
+		             WHEN bool_and(COALESCE(w.attributes->>'exposure', '') = 'internal') THEN false END
+		 FROM asset_relations r JOIN assets w ON w.id = r.from_asset
+		 WHERE r.to_asset = a.id AND r.kind = 'deployed_as' AND w.merged_into IS NULL AND w.collection_status <> 'stale'))`
 
 // Prioritize recomputes priority, SOS and deadlines for every open finding.
 // Deadlines run from first detection; they move only when priority changes.

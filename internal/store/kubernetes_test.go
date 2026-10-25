@@ -112,6 +112,43 @@ func TestKubernetesExposure(t *testing.T) {
 	}
 }
 
+// A workload whose exposure could not be decided (Services or Ingresses in
+// its namespace unreadable) must not let its image count as internal, even
+// when another workload running the same image is internal.
+func TestKubernetesUnknownExposureIsNotInternal(t *testing.T) {
+	ctx, s, ids := k8sFixture(t)
+	redis := "docker.io/library/redis@sha256:bb"
+	b := model.NewBatch(model.Collector{ID: "plugin:kubernetes", Version: "0.1.0", Method: "plugin"},
+		model.AssetRef{Kind: model.AssetWorkload, Name: "lab/locked/deployment/cache",
+			Identifiers: []model.Identifier{{Scheme: "k8s-workload", Value: "lab/locked/deployment/cache"}},
+			Attributes:  map[string]string{"exposure": "unknown"}})
+	b.Relations = []model.RelationRef{{Kind: "deployed_as", To: []model.Identifier{{Scheme: "image-ref", Value: redis}}}}
+	b.Complete = true
+	if err := b.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Ingest(ctx, b, 0); err != nil {
+		t.Fatal(err)
+	}
+	a, err := s.GetAsset(ctx, ids[redis])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Exposed != nil {
+		t.Errorf("image run by an internal and an unknown workload: exposed = %v, want unknown", *a.Exposed)
+	}
+	no := false
+	list, _, err := s.ListAssets(ctx, store.AssetFilter{Exposed: &no})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, x := range list {
+		if x.Name == redis {
+			t.Error("image listed as not exposed while one workload's exposure is unknown")
+		}
+	}
+}
+
 func TestKubernetesExposureFeedsRisk(t *testing.T) {
 	ctx, s, ids := k8sFixture(t)
 	img := ids["docker.io/library/nginx@sha256:aa"]
