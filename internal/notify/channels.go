@@ -168,17 +168,34 @@ func NewSender(allowHTTP bool) *Sender {
 			// Connections are checked against the workspace's network policy
 			// at dial time, and environment proxies are not used, so a
 			// webhook cannot reach internal addresses.
-			Transport: &http.Transport{
-				DialContext:         netguard.DialContext,
-				TLSHandshakeTimeout: 10 * time.Second,
-				MaxIdleConns:        20,
-				IdleConnTimeout:     90 * time.Second,
-			},
+			Transport: &guardedTransport{private: guardedPool(), public: guardedPool()},
 			// Never follow redirects: a webhook URL must not be able to
 			// bounce requests to another host.
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		},
 	}
+}
+
+func guardedPool() *http.Transport {
+	return &http.Transport{
+		DialContext:         netguard.DialContext,
+		TLSHandshakeTimeout: 10 * time.Second,
+		MaxIdleConns:        20,
+		IdleConnTimeout:     90 * time.Second,
+	}
+}
+
+// guardedTransport keeps connections opened for workspaces that may reach
+// private networks apart from the others. The network policy is checked when
+// a connection is dialled, so a shared pool would let one workspace reuse a
+// connection to an internal address that another workspace opened.
+type guardedTransport struct{ private, public *http.Transport }
+
+func (g *guardedTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	if netguard.AllowsPrivate(r.Context()) {
+		return g.private.RoundTrip(r)
+	}
+	return g.public.RoundTrip(r)
 }
 
 // Send delivers one message. deliveryID is passed to webhooks for receiver
