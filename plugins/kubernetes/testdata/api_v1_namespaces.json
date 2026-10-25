@@ -1,0 +1,166 @@
+{
+ "apiVersion": "v1",
+ "items": [
+  {
+   "metadata": {
+    "creationTimestamp": "2026-10-25T14:12:00Z",
+    "labels": {
+     "kubernetes.io/metadata.name": "default"
+    },
+    "name": "default",
+    "resourceVersion": "67",
+    "uid": "9cadbc69-2bf4-420d-a936-5cb898af0ead"
+   },
+   "spec": {
+    "finalizers": [
+     "kubernetes"
+    ]
+   },
+   "status": {
+    "phase": "Active"
+   }
+  },
+  {
+   "metadata": {
+    "annotations": {},
+    "creationTimestamp": "2026-10-25T14:13:47Z",
+    "labels": {
+     "kubernetes.io/metadata.name": "hidden"
+    },
+    "name": "hidden",
+    "resourceVersion": "638",
+    "uid": "49be44d0-37c9-4151-9183-6ef24b65ef15"
+   },
+   "spec": {
+    "finalizers": [
+     "kubernetes"
+    ]
+   },
+   "status": {
+    "phase": "Active"
+   }
+  },
+  {
+   "metadata": {
+    "creationTimestamp": "2026-10-25T14:12:00Z",
+    "labels": {
+     "kubernetes.io/metadata.name": "kube-node-lease"
+    },
+    "name": "kube-node-lease",
+    "resourceVersion": "96",
+    "uid": "bf8c84cc-141d-4af9-9d92-5576bf5b2c37"
+   },
+   "spec": {
+    "finalizers": [
+     "kubernetes"
+    ]
+   },
+   "status": {
+    "phase": "Active"
+   }
+  },
+  {
+   "metadata": {
+    "creationTimestamp": "2026-10-25T14:12:00Z",
+    "labels": {
+     "kubernetes.io/metadata.name": "kube-public"
+    },
+    "name": "kube-public",
+    "resourceVersion": "65",
+    "uid": "4d2a7dca-ca6b-4d0b-895a-f08f6ab3de85"
+   },
+   "spec": {
+    "finalizers": [
+     "kubernetes"
+    ]
+   },
+   "status": {
+    "phase": "Active"
+   }
+  },
+  {
+   "metadata": {
+    "creationTimestamp": "2026-10-25T14:12:00Z",
+    "labels": {
+     "kubernetes.io/metadata.name": "kube-system"
+    },
+    "name": "kube-system",
+    "resourceVersion": "10",
+    "uid": "45ba3e08-e154-4efb-bc5e-f7fd6eaea44a"
+   },
+   "spec": {
+    "finalizers": [
+     "kubernetes"
+    ]
+   },
+   "status": {
+    "phase": "Active"
+   }
+  },
+  {
+   "metadata": {
+    "annotations": {},
+    "creationTimestamp": "2026-10-25T14:12:04Z",
+    "labels": {
+     "kubernetes.io/metadata.name": "local-path-storage"
+    },
+    "name": "local-path-storage",
+    "resourceVersion": "308",
+    "uid": "7db8ee36-2240-4b96-a71b-44b46ee83a78"
+   },
+   "spec": {
+    "finalizers": [
+     "kubernetes"
+    ]
+   },
+   "status": {
+    "phase": "Active"
+   }
+  },
+  {
+   "metadata": {
+    "annotations": {},
+    "creationTimestamp": "2026-10-25T14:13:46Z",
+    "labels": {
+     "environment": "production",
+     "kubernetes.io/metadata.name": "shop"
+    },
+    "name": "shop",
+    "resourceVersion": "584",
+    "uid": "10946b33-f0bd-4294-852b-8ce6fd4246f4"
+   },
+   "spec": {
+    "finalizers": [
+     "kubernetes"
+    ]
+   },
+   "status": {
+    "phase": "Active"
+   }
+  },
+  {
+   "metadata": {
+    "annotations": {},
+    "creationTimestamp": "2026-10-25T14:13:47Z",
+    "labels": {
+     "kubernetes.io/metadata.name": "stackurity"
+    },
+    "name": "stackurity",
+    "resourceVersion": "682",
+    "uid": "841873c0-c975-447d-97a0-9ee33c6fe504"
+   },
+   "spec": {
+    "finalizers": [
+     "kubernetes"
+    ]
+   },
+   "status": {
+    "phase": "Active"
+   }
+  }
+ ],
+ "kind": "NamespaceList",
+ "metadata": {
+  "resourceVersion": "1241"
+ }
+}

@@ -42,14 +42,18 @@ function targetOf(i: Integration): ReactNode {
   if (i.kind === "plugin") {
     const pc = c.config ?? {};
     const regions = Array.isArray(pc.regions) ? ` · ${(pc.regions as unknown[]).join(", ")}` : "";
-    return `${c.plugin ?? "?"}${regions}`;
+    const cluster = typeof pc.cluster_name === "string" && pc.cluster_name ? ` · ${pc.cluster_name}` : "";
+    return `${c.plugin ?? "?"}${regions}${cluster}`;
   }
   return "";
 }
 
 function environmentOf(i: Integration): string {
   if (i.kind === "plugin") {
-    const tag = (i.config.config ?? {}).environment_tag;
+    const pc = i.config.config ?? {};
+    const tag = pc.environment_tag;
+    if (typeof pc.environment_label === "string" && pc.environment_label) return `from namespace label “${pc.environment_label}”`;
+    if (typeof pc.environment === "string" && pc.environment) return pc.environment;
     return typeof tag === "string" && tag ? `from tag “${tag}”` : "";
   }
   return i.config.environment ?? "";
@@ -550,8 +554,11 @@ function PluginForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
   const [mode, setMode] = useState<"form" | "json">("form");
   const [c, setC] = useState<CommonState>({ name: "", schedule: "720", secret_ref: "" });
   const [localErr, setLocalErr] = useState<string | null>(null);
+  const [imageScans, setImageScans] = useState("25");
   const act = useAction();
   const isAws = name === "aws-managed";
+  // Plugins that report images (Kubernetes) have them read by the image scanner.
+  const reportsImages = (selected?.metadata?.capabilities ?? []).includes("inventory:image");
 
   let parsed: Record<string, unknown> | null = null;
   let jsonErr: string | null = null;
@@ -581,7 +588,13 @@ function PluginForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
     if (missing.length) return setLocalErr(`Required: ${missing.map((f) => f.name).join(", ")}.`);
     const err = checkCommon(c);
     if (err) return setLocalErr(err);
-    const ok = await act.run(() => api.post<Integration>("/integrations", bodyOf("plugin", c, { plugin: selected.name, config: parsed })));
+    const wrapper: Record<string, unknown> = { plugin: selected.name, config: parsed };
+    if (reportsImages) {
+      const n = Number(imageScans);
+      if (!Number.isInteger(n) || n < 0 || n > 500) return setLocalErr("Image scans per run must be a whole number from 0 to 500.");
+      wrapper.image_scans = n;
+    }
+    const ok = await act.run(() => api.post<Integration>("/integrations", bodyOf("plugin", c, wrapper)));
     if (ok) onCreated();
   };
 
@@ -657,6 +670,16 @@ function PluginForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
               />
               <p id="pl-json-status" className={jsonErr ? "hint text-bad" : "hint"}>
                 {jsonErr ?? "Valid JSON. The plugin checks it again when you create the integration."}
+              </p>
+            </div>
+          )}
+          {reportsImages && (
+            <div className="field">
+              <label htmlFor="pl-image-scans">Image scans per run</label>
+              <input id="pl-image-scans" type="number" min={0} max={500} value={imageScans} onChange={(e) => setImageScans(e.target.value)} />
+              <p className="hint">
+                Images this plugin finds running are read by the built-in image scanner, most exposed first. Each digest is scanned once a week at
+                most. 0 turns scanning off.
               </p>
             </div>
           )}

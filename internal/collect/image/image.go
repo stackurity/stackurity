@@ -96,7 +96,10 @@ func (s *Scanner) Scan(ctx context.Context, cfg Config, secret string) (*model.O
 	}
 	defer os.RemoveAll(tmp)
 
-	args := []string{"scan", "registry:" + cfg.Image, "-o", "cyclonedx-json", "-q"}
+	// Not -q: that also silences errors, and the reason a registry refused
+	// (DENIED, UNAUTHORIZED) is what the coverage ledger needs. Without a
+	// terminal Syft writes nothing else to stderr.
+	args := []string{"scan", "registry:" + cfg.Image, "-o", "cyclonedx-json"}
 	if cfg.Platform != "" {
 		args = append(args, "--platform", cfg.Platform)
 	}
@@ -118,7 +121,7 @@ func (s *Scanner) Scan(ctx context.Context, cfg Config, secret string) (*model.O
 	}
 	cmd.Env = env
 	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &limited{w: &stdout, n: sbom.MaxDocumentSize}, &limited{w: &stderr, n: 64 << 10}
+	cmd.Stdout, cmd.Stderr = &limited{w: &stdout, n: sbom.MaxDocumentSize}, &limited{w: &stderr, n: 64 << 10, truncate: true}
 	if err := cmd.Run(); err != nil {
 		msg := strings.TrimSpace(stderr.String())
 		if secret != "" {
@@ -174,15 +177,45 @@ func sbomDigest(doc []byte) string {
 	return ""
 }
 
-// limited caps how much a subprocess can make us buffer.
+// limited caps how much a subprocess can make us buffer. With truncate,
+// output past the cap is dropped instead of failing the write.
 type limited struct {
-	w *bytes.Buffer
-	n int64
+	w        *bytes.Buffer
+	n        int64
+	truncate bool
 }
 
 func (l *limited) Write(p []byte) (int, error) {
 	if int64(l.w.Len()+len(p)) > l.n {
+		if l.truncate {
+			l.w.Write(p[:max(0, int(l.n)-l.w.Len())])
+			return len(p), nil
+		}
 		return 0, errors.New("output too large")
 	}
 	return l.w.Write(p)
+}
+
+// ReferenceOnly reports whether a batch only names an image for the scanner
+// to read: an image asset with an image-ref identifier and no packages, as
+// the Kubernetes plugin reports the images pods run. It returns the scan
+// config, with the platform the image runs on when that is known.
+func ReferenceOnly(b *model.ObservationBatch) (Config, bool) {
+	if b.Asset.Kind != model.AssetImage || len(b.Observations) > 0 {
+		return Config{}, false
+	}
+	for _, id := range b.Asset.Identifiers {
+		if id.Scheme != "image-ref" {
+			continue
+		}
+		cfg := Config{Image: id.Value, Platform: b.Asset.Attributes["platform"]}
+		if cfg.Platform != "" && !platformRE.MatchString(cfg.Platform) {
+			cfg.Platform = ""
+		}
+		if cfg.Validate() != nil {
+			return Config{}, false
+		}
+		return cfg, true
+	}
+	return Config{}, false
 }

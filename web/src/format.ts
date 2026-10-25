@@ -69,6 +69,8 @@ export const ASSET_KIND_LABEL: Record<string, string> = {
   application: "Application",
   managed_service: "Managed service",
   sbom: "SBOM",
+  cluster: "Kubernetes cluster",
+  workload: "Workload",
 };
 
 export function assetKindLabel(kind: string): string {

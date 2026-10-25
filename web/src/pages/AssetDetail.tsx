@@ -29,12 +29,14 @@ import {
   Badge,
   Chip,
   DriftBadge,
+  ExposureBadge,
   GlobalBadge,
   RebootBadge,
   UnmanagedBadge,
   UpdateBadge,
 } from "../components/Badge";
 import { StackTab } from "../components/Stack";
+import { KubernetesCard, WORKLOAD_ATTRS } from "../components/Kubernetes";
 import { FindingsTable } from "../components/Findings";
 import { Table, type Column } from "../components/Table";
 import { AssetPicker } from "../components/AssetPicker";
@@ -60,7 +62,7 @@ type Tab = "action-plan" | "stack" | "findings" | "inventory" | "coverage" | "co
 const TABS: Tab[] = ["action-plan", "stack", "findings", "inventory", "coverage", "collections", "relations", "drift", "remediation"];
 
 /** Kinds whose stack is the most useful first view when nothing needs fixing. */
-const STACK_FIRST_KINDS = ["application", "host", "repository"];
+const STACK_FIRST_KINDS = ["application", "host", "repository", "cluster", "workload"];
 
 /** Host attributes about pending reboots; shown in their own block, not as raw attributes. */
 const REBOOT_ATTRS = ["reboot_required", "reboot_reason", "kernel_running", "kernel_latest_installed"];
@@ -121,8 +123,9 @@ export function AssetDetailPage() {
 
   const at = a.attributes ?? {};
   const isApp = a.kind === "application";
+  const isWorkload = a.kind === "workload";
   const attrs = Object.entries(at)
-    .filter(([k]) => !REBOOT_ATTRS.includes(k) && !(isApp && APP_ATTRS.some(([ak]) => ak === k)))
+    .filter(([k]) => !REBOOT_ATTRS.includes(k) && !(isApp && APP_ATTRS.some(([ak]) => ak === k)) && !(isWorkload && WORKLOAD_ATTRS.includes(k)))
     .sort(([x], [y]) => x.localeCompare(y));
   const appEntries: [string, ReactNode][] = isApp
     ? APP_ATTRS.filter(([k]) => at[k]).map(([k, label]) => {
@@ -178,6 +181,7 @@ export function AssetDetailPage() {
           <>
             <span className="badges">
               <AssetKindBadge kind={a.kind} />
+              <ExposureBadge asset={a} />
               <span>
                 #{a.id} · last seen <RelativeTime iso={a.last_seen} /> · first seen <RelativeTime iso={a.first_seen} />
               </span>
@@ -216,6 +220,8 @@ export function AssetDetailPage() {
           {at.reboot_reason ? ` (${at.reboot_reason})` : ""}. Updates, including security fixes, take effect only after a reboot.
         </Notice>
       )}
+
+      <KubernetesCard asset={a} relations={relations.data?.items ?? []} />
 
       <div className="grid-3">
         <Card title="Attributes">
@@ -1013,6 +1019,9 @@ function AssetPlatformLine({ asset }: { asset: Asset }) {
   if (at.engine) parts.push(`engine ${at.engine}`);
   if (asset.region) parts.push(asset.region);
   if (at.account) parts.push(`account ${at.account}`);
+  if (asset.kind === "workload" && at.workload_kind) parts.push(`Kubernetes ${at.workload_kind} in ${at.namespace} on ${at.cluster}`);
+  if (asset.kind === "cluster" && at.kubernetes_version) parts.push(`Kubernetes ${at.kubernetes_version}`);
+  if (asset.kind === "cluster" && at.distribution) parts.push(at.distribution);
   if (at.os === "windows") {
     const os = [at.os_name || "Windows", at.os_release, at.os_version ? `build ${at.os_version}` : ""].filter(Boolean).join(" · ");
     parts.push(os);

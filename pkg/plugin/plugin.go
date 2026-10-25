@@ -15,10 +15,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"time"
 
 	"github.com/stackurity/stackurity/internal/model"
+	"github.com/stackurity/stackurity/internal/netguard"
 )
 
 // ProtocolVersion is bumped on breaking changes to Request or Response.
@@ -34,6 +36,10 @@ type (
 	CoverageItem     = model.CoverageItem
 	Confidence       = model.Confidence
 	AssetKind        = model.AssetKind
+	RelationRef      = model.RelationRef
+	// NetworkPolicy is the operator's rule for which addresses the plugin
+	// may connect to on behalf of the workspace that runs it.
+	NetworkPolicy = netguard.Policy
 )
 
 const (
@@ -47,6 +53,8 @@ const (
 	AssetImage          = model.AssetImage
 	AssetApplication    = model.AssetApplication
 	AssetManagedService = model.AssetManagedService
+	AssetCluster        = model.AssetCluster
+	AssetWorkload       = model.AssetWorkload
 )
 
 // NewBatch starts a batch with the current schema version and time.
@@ -89,6 +97,10 @@ type Request struct {
 	Config          json.RawMessage   `json:"config,omitempty"`
 	Secrets         map[string]string `json:"secrets,omitempty"`
 	Deadline        time.Time         `json:"deadline,omitempty"`
+	// Network is the address policy for targets taken from config, such as
+	// a Kubernetes API server. The server always sends it for collect and
+	// health; plugins that dial configured targets should use Dialer.
+	Network *NetworkPolicy `json:"network,omitempty"`
 }
 
 // Response is written to stdout. Exactly one of the payload fields is set.
@@ -148,6 +160,9 @@ func serve(p Plugin, args []string, in io.Reader, out io.Writer) int {
 		}
 	}
 	ctx := context.Background()
+	if req.Network != nil {
+		ctx = WithNetwork(ctx, *req.Network)
+	}
 	if !req.Deadline.IsZero() {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithDeadline(ctx, req.Deadline)
@@ -181,4 +196,30 @@ func serve(p Plugin, args []string, in io.Reader, out io.Writer) int {
 		return write(2)
 	}
 	return write(0)
+}
+
+type networkKey struct{}
+
+// WithNetwork returns a context carrying a network policy, as Serve does
+// with the one in the request. Use it to test a plugin's Collect.
+func WithNetwork(ctx context.Context, p NetworkPolicy) context.Context {
+	return context.WithValue(ctx, networkKey{}, p)
+}
+
+// Dialer returns a DialContext function, for an http.Transport, that refuses
+// addresses the server's network policy blocks for this run (internal
+// networks, cloud metadata). Without a policy in the request, as when a
+// plugin is run by hand, every address is allowed.
+func Dialer(ctx context.Context) func(ctx context.Context, network, addr string) (net.Conn, error) {
+	p, ok := ctx.Value(networkKey{}).(NetworkPolicy)
+	if !ok {
+		p = NetworkPolicy{AllowPrivate: true}
+	}
+	return p.DialContext
+}
+
+// AllowsPrivate reports whether this run may reach internal networks.
+func AllowsPrivate(ctx context.Context) bool {
+	p, ok := ctx.Value(networkKey{}).(NetworkPolicy)
+	return !ok || p.AllowPrivate
 }

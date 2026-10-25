@@ -101,6 +101,8 @@ func (e *Evaluator) Evaluate(ctx context.Context, componentIDs []int64, assetID 
 			// The OS itself is covered by lifecycle, its packages by the distro feed.
 		case r.Type == "generic" && r.Evidence["kind"] == "runtime":
 			gaps[r.ComponentID] = "runtime installed outside a package manager: lifecycle is tracked, vulnerabilities are not matched"
+		case r.Type == "generic" && r.Evidence["kind"] == "kubernetes":
+			gaps[r.ComponentID] = "Kubernetes component reported by the API server: lifecycle is tracked, vulnerabilities are not matched"
 		case r.Type == "generic" && r.Evidence["kind"] == "managed-service":
 			gaps[r.ComponentID] = "managed service: the provider patches the engine and publishes its own advisories; lifecycle is tracked"
 		case !ok:

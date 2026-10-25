@@ -31,16 +31,19 @@ func updateType(purlType, installed, latest string) string {
 }
 
 type Asset struct {
-	ID               int64             `json:"id"`
-	Kind             string            `json:"kind"`
-	Name             string            `json:"name"`
-	Environment      string            `json:"environment"`
-	OwnerTeamID      *int64            `json:"owner_team_id"`
-	OwnerTeam        string            `json:"owner_team"`
-	Provider         string            `json:"provider"`
-	Region           string            `json:"region"`
-	Criticality      string            `json:"criticality"`
-	InternetExposed  *bool             `json:"internet_exposed"`
+	ID              int64  `json:"id"`
+	Kind            string `json:"kind"`
+	Name            string `json:"name"`
+	Environment     string `json:"environment"`
+	OwnerTeamID     *int64 `json:"owner_team_id"`
+	OwnerTeam       string `json:"owner_team"`
+	Provider        string `json:"provider"`
+	Region          string `json:"region"`
+	Criticality     string `json:"criticality"`
+	InternetExposed *bool  `json:"internet_exposed"`
+	// Exposed is the exposure risk scoring uses: internet_exposed when set,
+	// else what collectors observed (see effectiveExposure).
+	Exposed          *bool             `json:"exposed"`
 	Tags             []string          `json:"tags"`
 	Attributes       map[string]string `json:"attributes"`
 	FirstSeen        time.Time         `json:"first_seen"`
@@ -58,18 +61,20 @@ type AssetFilter struct {
 	// RebootRequired limits the list to hosts that run older code than is
 	// installed (reported by the Linux agent).
 	RebootRequired bool
+	// Exposed limits the list by effective exposure (nil: any).
+	Exposed *bool
 	Page
 }
 
 const assetCols = `a.id, a.kind, a.name, a.environment, a.owner_team_id, COALESCE(t.name, ''), a.provider, a.region,
-	a.criticality, a.internet_exposed, a.tags, a.attributes, a.first_seen, a.last_seen, a.collection_status,
+	a.criticality, a.internet_exposed, ` + effectiveExposure + `, a.tags, a.attributes, a.first_seen, a.last_seen, a.collection_status,
 	(SELECT count(*) FROM inventory i WHERE i.asset_id = a.id AND i.removed_at IS NULL)`
 
 func scanAsset(row pgx.Row) (*Asset, error) {
 	var a Asset
 	var attrs []byte
 	err := row.Scan(&a.ID, &a.Kind, &a.Name, &a.Environment, &a.OwnerTeamID, &a.OwnerTeam, &a.Provider, &a.Region,
-		&a.Criticality, &a.InternetExposed, &a.Tags, &attrs, &a.FirstSeen, &a.LastSeen, &a.CollectionStatus, &a.ComponentCount)
+		&a.Criticality, &a.InternetExposed, &a.Exposed, &a.Tags, &attrs, &a.FirstSeen, &a.LastSeen, &a.CollectionStatus, &a.ComponentCount)
 	if err != nil {
 		return nil, err
 	}
@@ -123,6 +128,9 @@ func (s *Store) ListAssets(ctx context.Context, f AssetFilter) ([]Asset, int64, 
 	}
 	if f.RebootRequired {
 		w.conds = append(w.conds, "a.attributes->>'reboot_required' = 'true'")
+	}
+	if f.Exposed != nil {
+		w.add(effectiveExposure+" = ?", *f.Exposed)
 	}
 	from := ` FROM assets a LEFT JOIN teams t ON t.id = a.owner_team_id` + w.sql()
 	var total int64

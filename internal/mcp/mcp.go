@@ -193,7 +193,7 @@ var tools = map[string]tool{
 		description: "List inventoried assets: hosts, deployed applications, repositories, container images and managed services. " +
 			"Use it to find the asset_id of a project or server.",
 		schema: obj(map[string]any{
-			"kind":        map[string]any{"type": "string", "enum": []string{"host", "application", "repository", "image", "managed_service", "sbom"}},
+			"kind":        map[string]any{"type": "string", "enum": []string{"host", "application", "repository", "image", "managed_service", "sbom", "cluster", "workload"}},
 			"query":       str("Name contains this text"),
 			"environment": str("Environment label, e.g. production"),
 		}),

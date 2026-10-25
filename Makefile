@@ -3,10 +3,16 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 PRO ?= ../stackurity-pro
 EE_FLAGS = -tags ee -overlay ee-overlay.json
 
-.PHONY: build web test lint image clean ee-overlay build-ee test-ee image-ee
+# First-party plugins, built next to the server and shipped in the image.
+PLUGINS = aws-managed kubernetes
 
-build: web
+.PHONY: build plugins web test lint image clean ee-overlay build-ee test-ee image-ee
+
+build: web plugins
 	CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$(VERSION)" -o bin/stackurity ./cmd/stackurity
+
+plugins:
+	for p in $(PLUGINS); do CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o bin/plugins/$$p ./plugins/$$p || exit 1; done
 
 web:
 	cd web && npm ci --ignore-scripts && npm run build

@@ -4,7 +4,10 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
+
+	"github.com/stackurity/stackurity/internal/model"
 )
 
 func TestValidate(t *testing.T) {
@@ -68,4 +71,29 @@ func TestScanLive(t *testing.T) {
 		t.Errorf("expected apk packages in alpine image: %d observations", len(b.Observations))
 	}
 	t.Logf("%d observations, digest %s", len(b.Observations), b.Asset.Attributes["digest"])
+}
+
+func TestReferenceOnly(t *testing.T) {
+	ref := "docker.io/library/nginx@sha256:" + strings.Repeat("a", 64)
+	stub := func(kind model.AssetKind, id string, attrs map[string]string) *model.ObservationBatch {
+		return model.NewBatch(model.Collector{ID: "plugin:kubernetes"}, model.AssetRef{Kind: kind, Name: id,
+			Identifiers: []model.Identifier{{Scheme: "image-ref", Value: id}}, Attributes: attrs})
+	}
+	cfg, ok := ReferenceOnly(stub(model.AssetImage, ref, map[string]string{"platform": "linux/arm64"}))
+	if !ok || cfg.Image != ref || cfg.Platform != "linux/arm64" {
+		t.Errorf("stub = %+v %v", cfg, ok)
+	}
+	if cfg, ok := ReferenceOnly(stub(model.AssetImage, ref, map[string]string{"platform": "--bad"})); !ok || cfg.Platform != "" {
+		t.Errorf("bad platform kept: %+v", cfg)
+	}
+	withPkgs := stub(model.AssetImage, ref, nil)
+	withPkgs.Observations = []model.Observation{{Purl: "pkg:deb/debian/bash@5"}}
+	for _, b := range []*model.ObservationBatch{
+		withPkgs, stub(model.AssetWorkload, ref, nil), stub(model.AssetImage, "registry:--config=/etc/x", nil),
+		stub(model.AssetImage, "file:/etc/passwd", nil),
+	} {
+		if _, ok := ReferenceOnly(b); ok {
+			t.Errorf("%s %s accepted", b.Asset.Kind, b.Asset.Name)
+		}
+	}
 }

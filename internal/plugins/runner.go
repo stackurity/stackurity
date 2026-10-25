@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/stackurity/stackurity/internal/model"
+	"github.com/stackurity/stackurity/internal/netguard"
 	"github.com/stackurity/stackurity/pkg/plugin"
 )
 
@@ -225,7 +226,8 @@ func (r *Runner) Collect(ctx context.Context, name string, config json.RawMessag
 	if err != nil {
 		return nil, "", err
 	}
-	resp, logs, err := Exec(ctx, p, r.WorkDir, r.Timeout, "collect", &plugin.Request{Config: config, Secrets: secrets})
+	net := netguard.PolicyFor(ctx)
+	resp, logs, err := Exec(ctx, p, r.WorkDir, r.Timeout, "collect", &plugin.Request{Config: config, Secrets: secrets, Network: &net})
 	if err != nil {
 		return nil, logs, err
 	}
@@ -258,7 +260,8 @@ func (r *Runner) Health(ctx context.Context, name string, config json.RawMessage
 	if err != nil {
 		return nil, err
 	}
-	resp, _, err := Exec(ctx, p, r.WorkDir, time.Minute, "health", &plugin.Request{Config: config, Secrets: secrets})
+	net := netguard.PolicyFor(ctx)
+	resp, _, err := Exec(ctx, p, r.WorkDir, time.Minute, "health", &plugin.Request{Config: config, Secrets: secrets, Network: &net})
 	if err != nil {
 		return nil, err
 	}

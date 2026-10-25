@@ -2566,3 +2566,13 @@ kbd {
 .health-problems li {
   margin-bottom: 0.6rem;
 }
+
+/* Short lists of linked assets inside key/value cards (Kubernetes). */
+.plain-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.plain-list li + li {
+  margin-top: var(--s1);
+}
