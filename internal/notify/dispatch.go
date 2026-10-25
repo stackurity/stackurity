@@ -19,6 +19,10 @@ import (
 
 const maxAttempts = 8
 
+// deliveryLease is how long a claimed delivery is reserved for the replica
+// sending it; a replica that dies mid-send leaves it to be retried after this.
+const deliveryLease = 5 * time.Minute
+
 // burstThreshold: above this many incidents for one route in one cycle, a
 // single summary is sent instead of one message each.
 const burstThreshold = 3
@@ -354,16 +358,28 @@ func (d *Dispatcher) Deliver(ctx context.Context) error {
 			}
 			channels[ch.ID] = ch
 		}
-		sendErr := d.send(ctx, ch, del.ID, msg)
-		if sendErr != nil {
-			d.Log.Warn("delivery failed", "delivery", del.ID, "channel", ch.Name, "attempt", del.Attempts+1, "err", sendErr)
-			if err := d.Store.DeliveryFailed(ctx, del.ID, del.Attempts, maxAttempts, sendErr); err != nil {
-				return err
-			}
-		} else if err := d.Store.DeliverySent(ctx, del.ID); err != nil {
+		// Claim right before sending: another replica's Tick or Digest may
+		// be delivering the same queue.
+		attempts, ok, err := d.Store.ClaimDelivery(ctx, del.ID, deliveryLease)
+		if err != nil {
 			return err
 		}
-		_ = d.Store.ChannelResult(ctx, ch.ID, sendErr)
+		if !ok {
+			continue
+		}
+		sendErr := d.send(ctx, ch, del.ID, msg)
+		// Record what happened even if shutdown began during the send, so a
+		// sent message is not sent again when the lease ends.
+		bg := context.WithoutCancel(ctx)
+		if sendErr != nil {
+			d.Log.Warn("delivery failed", "delivery", del.ID, "channel", ch.Name, "attempt", attempts, "err", sendErr)
+			if err := d.Store.DeliveryFailed(bg, del.ID, attempts, maxAttempts, sendErr); err != nil {
+				return err
+			}
+		} else if err := d.Store.DeliverySent(bg, del.ID); err != nil {
+			return err
+		}
+		_ = d.Store.ChannelResult(bg, ch.ID, sendErr)
 	}
 	return nil
 }

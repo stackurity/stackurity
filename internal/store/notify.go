@@ -243,32 +243,51 @@ func (s *Store) ListDeliveries(ctx context.Context, f DeliveryFilter) ([]Deliver
 	return out, total, err
 }
 
+// ClaimDelivery takes a due delivery for one send attempt by moving its next
+// attempt past the lease, and counts the attempt. False means another
+// replica claimed it, sent it or put it off first. A replica that dies while
+// sending leaves the delivery to be retried when the lease ends, so delivery
+// is at least once; webhooks carry the delivery id for receivers to dedupe.
+func (s *Store) ClaimDelivery(ctx context.Context, id int64, lease time.Duration) (attempts int, ok bool, err error) {
+	err = s.Pool.QueryRow(ctx, `UPDATE deliveries SET attempts = attempts + 1, next_attempt = now() + $2::interval
+		WHERE id = $1 AND status = 'pending' AND next_attempt <= now() RETURNING attempts`, id, lease).Scan(&attempts)
+	if err == pgx.ErrNoRows {
+		return 0, false, nil
+	}
+	return attempts, err == nil, err
+}
+
+// DeliverySent records a claimed delivery as sent.
 func (s *Store) DeliverySent(ctx context.Context, id int64) error {
-	_, err := s.Pool.Exec(ctx, `UPDATE deliveries SET status = 'sent', sent_at = now(), attempts = attempts + 1, last_error = '' WHERE id = $1`, id)
+	_, err := s.Pool.Exec(ctx, `UPDATE deliveries SET status = 'sent', sent_at = now(), last_error = '' WHERE id = $1`, id)
 	return err
 }
 
-// DeliveryFailed schedules a retry with backoff, or marks the delivery
-// failed after maxAttempts.
+// DeliveryFailed schedules a retry of a claimed delivery with backoff, or
+// marks it failed once attempts (counted by ClaimDelivery) reach maxAttempts.
 func (s *Store) DeliveryFailed(ctx context.Context, id int64, attempts, maxAttempts int, sendErr error) error {
 	msg := truncateText(sendErr.Error(), 1000)
-	if attempts+1 >= maxAttempts {
-		_, err := s.Pool.Exec(ctx, `UPDATE deliveries SET status = 'failed', attempts = attempts + 1, last_error = $2 WHERE id = $1`, id, msg)
+	if attempts >= maxAttempts {
+		_, err := s.Pool.Exec(ctx, `UPDATE deliveries SET status = 'failed', last_error = $2 WHERE id = $1`, id, msg)
 		return err
 	}
-	backoff := time.Duration(1<<min(attempts, 8)) * 30 * time.Second
-	_, err := s.Pool.Exec(ctx, `UPDATE deliveries SET attempts = attempts + 1, last_error = $2,
+	backoff := time.Duration(1<<min(max(attempts-1, 0), 8)) * 30 * time.Second
+	_, err := s.Pool.Exec(ctx, `UPDATE deliveries SET last_error = $2,
 		next_attempt = now() + make_interval(secs => $3) WHERE id = $1`, id, msg, backoff.Seconds())
 	return err
 }
 
+// DeferDelivery puts a due delivery off until a time (quiet hours). It does
+// nothing to a delivery another replica has claimed.
 func (s *Store) DeferDelivery(ctx context.Context, id int64, until time.Time) error {
-	_, err := s.Pool.Exec(ctx, `UPDATE deliveries SET next_attempt = $2 WHERE id = $1`, id, until)
+	_, err := s.Pool.Exec(ctx, `UPDATE deliveries SET next_attempt = $2 WHERE id = $1 AND status = 'pending' AND next_attempt <= now()`, id, until)
 	return err
 }
 
+// HoldDelivery keeps a due delivery for the next digest (rate limits). It
+// does nothing to a delivery another replica has claimed.
 func (s *Store) HoldDelivery(ctx context.Context, id int64, reason string) error {
-	_, err := s.Pool.Exec(ctx, `UPDATE deliveries SET status = 'held', last_error = $2 WHERE id = $1`, id, reason)
+	_, err := s.Pool.Exec(ctx, `UPDATE deliveries SET status = 'held', last_error = $2 WHERE id = $1 AND status = 'pending' AND next_attempt <= now()`, id, reason)
 	return err
 }
 

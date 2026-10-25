@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"github.com/stackurity/stackurity/internal/tenant"
 	"io"
 	"log/slog"
@@ -25,6 +26,7 @@ type hook struct {
 	mu   sync.Mutex
 	got  []Message
 	sigs []bool
+	ids  []string // X-Stackurity-Delivery of each message received
 	fail bool
 }
 
@@ -42,6 +44,7 @@ func (h *hook) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var m Message
 	_ = json.Unmarshal(body, &m)
 	h.got = append(h.got, m)
+	h.ids = append(h.ids, r.Header.Get("X-Stackurity-Delivery"))
 }
 
 func (h *hook) events() []string {
@@ -422,5 +425,104 @@ func TestPluralWording(t *testing.T) {
 		if got := plural(c.n, c.word); got != c.want {
 			t.Errorf("plural(%d, %q) = %q, want %q", c.n, c.word, got, c.want)
 		}
+	}
+}
+
+// Replicas delivering the same queue at once send each message once, and a
+// replica that dies mid-send leaves the delivery to be retried.
+func TestDeliveryClaimsAcrossReplicas(t *testing.T) {
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	f := setup(t)
+	chs, _ := f.st.ListChannels(ctx)
+	for i := 0; i < 30; i++ {
+		msg := Message{Event: "digest", Title: fmt.Sprintf("message %d", i)}
+		if _, err := f.st.EnqueueDelivery(ctx, chs[0].ID, nil, nil, "digest", fmt.Sprintf("k%d", i), msg); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var wg sync.WaitGroup
+	for r := 0; r < 4; r++ {
+		d := *f.d // another replica's dispatcher
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := d.Deliver(ctx); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	f.hook.mu.Lock()
+	seen := map[string]int{}
+	for _, id := range f.hook.ids {
+		seen[id]++
+	}
+	got := len(f.hook.ids)
+	f.hook.mu.Unlock()
+	if got != 30 || len(seen) != 30 {
+		t.Fatalf("sent %d messages for %d deliveries; want each of 30 once", got, len(seen))
+	}
+	sent, _, _ := f.st.ListDeliveries(ctx, store.DeliveryFilter{Status: "sent", Page: store.Page{Limit: 100}})
+	for _, d := range sent {
+		if d.Attempts != 1 {
+			t.Errorf("delivery %d attempts = %d", d.ID, d.Attempts)
+		}
+	}
+
+	// A replica claims a delivery and dies before sending: nobody else sends
+	// it while the lease lasts, and it goes out once the lease has expired.
+	if _, err := f.st.EnqueueDelivery(ctx, chs[0].ID, nil, nil, "digest", "crash", Message{Event: "digest", Title: "after crash"}); err != nil {
+		t.Fatal(err)
+	}
+	pending, _, _ := f.st.ListDeliveries(ctx, store.DeliveryFilter{Status: "pending"})
+	if len(pending) != 1 {
+		t.Fatalf("pending = %+v", pending)
+	}
+	if n, ok, err := f.st.ClaimDelivery(ctx, pending[0].ID, 300*time.Millisecond); err != nil || !ok || n != 1 {
+		t.Fatalf("claim: %d %v %v", n, ok, err)
+	}
+	if _, ok, _ := f.st.ClaimDelivery(ctx, pending[0].ID, time.Minute); ok {
+		t.Fatal("a claimed delivery was claimed twice")
+	}
+	if err := f.d.Deliver(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(f.hook.events()); n != 30 {
+		t.Fatalf("sent during another replica's lease: %d", n)
+	}
+	time.Sleep(400 * time.Millisecond)
+	if err := f.d.Deliver(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(f.hook.events()); n != 31 {
+		t.Fatalf("not retried after the lease expired: %d", n)
+	}
+	got1, _, _ := f.st.ListDeliveries(ctx, store.DeliveryFilter{Status: "sent", Page: store.Page{Limit: 100}})
+	for _, d := range got1 {
+		if d.ID == pending[0].ID && d.Attempts != 2 {
+			t.Errorf("the attempt that died should count: attempts = %d", d.Attempts)
+		}
+	}
+
+	// Failed sends back off and give up after maxAttempts.
+	f.hook.fail = true
+	if _, err := f.st.EnqueueDelivery(ctx, chs[0].ID, nil, nil, "digest", "fails", Message{Event: "digest", Title: "fails"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.d.Deliver(ctx); err != nil {
+		t.Fatal(err)
+	}
+	failing, _, _ := f.st.ListDeliveries(ctx, store.DeliveryFilter{Status: "pending"})
+	if len(failing) != 1 || failing[0].Attempts != 1 || !failing[0].NextAttempt.After(time.Now().Add(20*time.Second)) {
+		t.Fatalf("after a failed send: %+v", failing)
+	}
+	if _, err := f.st.Pool.Exec(ctx, `UPDATE deliveries SET attempts = $2, next_attempt = now() WHERE id = $1`, failing[0].ID, maxAttempts-1); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.d.Deliver(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if failed, _, _ := f.st.ListDeliveries(ctx, store.DeliveryFilter{Status: "failed"}); len(failed) != 1 || failed[0].Attempts != maxAttempts {
+		t.Errorf("after the last attempt: %+v", failed)
 	}
 }
