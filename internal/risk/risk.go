@@ -25,6 +25,7 @@ type Policy struct {
 	InternetExposed    float64            `json:"internet_exposed"`
 	ExposureUnknown    float64            `json:"exposure_unknown"`
 	Production         float64            `json:"production"`
+	EnvironmentUnknown float64            `json:"environment_unknown"` // asset has no environment
 	FixAvailable       float64            `json:"fix_available"`
 	Overdue            float64            `json:"overdue"`
 	DevDependency      float64            `json:"dev_dependency"`
@@ -63,7 +64,7 @@ type SOSRule struct {
 	Name            string `json:"name"`
 	MinPriority     string `json:"min_priority,omitempty"`
 	KnownExploited  *bool  `json:"known_exploited,omitempty"`
-	Production      *bool  `json:"production,omitempty"`
+	Production      *bool  `json:"production,omitempty"`       // true matches production or no environment
 	InternetExposed *bool  `json:"internet_exposed,omitempty"` // true matches exposed or unknown
 	MinSeverity     string `json:"min_severity,omitempty"`
 	FixAvailable    *bool  `json:"fix_available,omitempty"`
@@ -79,6 +80,7 @@ func DefaultPolicy() Policy {
 		InternetExposed:        1.5,
 		ExposureUnknown:        0.5,
 		Production:             1,
+		EnvironmentUnknown:     0.5,
 		FixAvailable:           0.5,
 		Overdue:                1,
 		DevDependency:          -2,
@@ -121,6 +123,9 @@ func (p Policy) Validate() error {
 	if p.NeedsValidationMul <= 0 || p.NeedsValidationMul > 1 || p.StaleMul <= 0 || p.StaleMul > 1 {
 		return errors.New("multipliers must be in (0, 1]")
 	}
+	if err := p.validateDirections(); err != nil {
+		return err
+	}
 	for _, r := range p.SOS {
 		if r.Name == "" {
 			return errors.New("every SOS rule needs a name")
@@ -137,6 +142,43 @@ func (p Policy) Validate() error {
 	return nil
 }
 
+// validateDirections rejects weights that point the wrong way, so that the
+// invariants in docs/risk.md hold for every policy that can be saved: a fact
+// that raises risk never lowers the score, and missing evidence never counts
+// for more than the worst value it stands in for.
+func (p Policy) validateDirections() error {
+	for _, w := range []struct {
+		name string
+		v    float64
+	}{{"known_exploited", p.KnownExploited}, {"internet_exposed", p.InternetExposed}, {"exposure_unknown", p.ExposureUnknown},
+		{"production", p.Production}, {"environment_unknown", p.EnvironmentUnknown}, {"overdue", p.Overdue}} {
+		if w.v < 0 {
+			return fmt.Errorf("%s must not be negative: it marks higher risk", w.name)
+		}
+	}
+	if p.ExposureUnknown > p.InternetExposed {
+		return errors.New("exposure_unknown must not exceed internet_exposed")
+	}
+	if p.EnvironmentUnknown > p.Production {
+		return errors.New("environment_unknown must not exceed production")
+	}
+	if p.DevDependency > 0 || p.KernelNotRunning > 0 {
+		return errors.New("dev_dependency and kernel_not_running must not be positive: they mark lower risk")
+	}
+	ordered := func(field string, m map[string]float64, keys ...string) error {
+		for i := 1; i < len(keys); i++ {
+			if m[keys[i-1]] < m[keys[i]] {
+				return fmt.Errorf("%s: %s must not score below %s", field, keys[i-1], keys[i])
+			}
+		}
+		return nil
+	}
+	if err := ordered("severity_base", p.SeverityBase, "critical", "high", "medium", "low", "none"); err != nil {
+		return err
+	}
+	return ordered("criticality", p.CriticalityBonus, "critical", "high", "medium", "low")
+}
+
 // Input is everything the model looks at.
 type Input struct {
 	Kind            string // vulnerability, end_of_life
@@ -144,8 +186,8 @@ type Input struct {
 	Score           *float32 // CVSS base score when known
 	KnownExploited  bool
 	InternetExposed *bool
-	Environment     string
-	Criticality     string
+	Environment     string // "" when the asset has none
+	Criticality     string // "" is treated as "unknown"
 	FixAvailable    bool
 	Overdue         bool
 	Scope           string // runtime, dev, os
@@ -215,11 +257,19 @@ func (p Policy) Evaluate(in Input) Result {
 		add("Internet exposed", p.InternetExposed, "asset is reachable from the internet")
 	}
 	production := p.IsProduction(in.Environment)
-	if production {
+	envUnknown := strings.TrimSpace(in.Environment) == ""
+	switch {
+	case production:
 		add("Production", p.Production, "environment "+in.Environment)
+	case envUnknown:
+		add("Environment unknown", p.EnvironmentUnknown, "asset has no environment; it may be production")
 	}
-	if c := p.CriticalityBonus[in.Criticality]; c != 0 {
-		add("Asset criticality", c, "criticality "+in.Criticality)
+	crit := in.Criticality
+	if crit == "" {
+		crit = "unknown"
+	}
+	if c := p.CriticalityBonus[crit]; c != 0 {
+		add("Asset criticality", c, "criticality "+crit)
 	}
 	if in.FixAvailable {
 		add("Fix available", p.FixAvailable, "an upgrade resolves it")
@@ -233,7 +283,8 @@ func (p Policy) Evaluate(in Input) Result {
 	if in.KernelNotRunning {
 		add("Kernel not running", p.KernelNotRunning, "installed kernel that is not booted; remove old kernels")
 	}
-	// Confidence and freshness scale the result rather than add to it.
+	// Confidence and freshness scale the result rather than add to it. A
+	// score at or below zero is left alone: scaling it would raise it.
 	mul := 1.0
 	switch in.Verification {
 	case "needs_validation":
@@ -241,7 +292,7 @@ func (p Policy) Evaluate(in Input) Result {
 	case "stale":
 		mul = p.StaleMul
 	}
-	if mul != 1 {
+	if mul != 1 && r.Score > 0 {
 		before := r.Score
 		r.Score *= mul
 		r.Factors = append(r.Factors, Factor{"Evidence confidence", r.Score - before, fmt.Sprintf("%s: ×%.2f", in.Verification, mul)})
@@ -260,7 +311,7 @@ func (p Policy) Evaluate(in Input) Result {
 	// SOS requires confirmed evidence about something actually exposed.
 	if in.Verification == "confirmed" && !in.KernelNotRunning {
 		for _, rule := range p.SOS {
-			if rule.matches(in, r.Priority, production) {
+			if rule.matches(in, r.Priority, production || envUnknown) {
 				r.SOS, r.SOSRule = true, rule.Name
 				break
 			}
@@ -279,7 +330,7 @@ func (rule SOSRule) matches(in Input, priority string, production bool) bool {
 	if rule.KnownExploited != nil && *rule.KnownExploited != in.KnownExploited {
 		return false
 	}
-	if rule.Production != nil && *rule.Production != production {
+	if rule.Production != nil && *rule.Production != production { // unknown environment counts as production
 		return false
 	}
 	if rule.FixAvailable != nil && *rule.FixAvailable != in.FixAvailable {

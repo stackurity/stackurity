@@ -204,6 +204,13 @@ export function RiskPolicyPage() {
               <NumField id="exp" label="Internet exposed" value={p.internet_exposed} onChange={(n) => set("internet_exposed", n)} />
               <NumField id="expu" label="Exposure unknown" value={p.exposure_unknown} onChange={(n) => set("exposure_unknown", n)} />
               <NumField id="prod" label="Production environment" value={p.production} onChange={(n) => set("production", n)} />
+              <NumField
+                id="envu"
+                label="Environment unknown"
+                value={p.environment_unknown ?? 0}
+                onChange={(n) => set("environment_unknown", n)}
+                hint="Asset has no environment. At most the production value."
+              />
               <NumField id="fix" label="Fix available" value={p.fix_available} onChange={(n) => set("fix_available", n)} />
               <NumField id="over" label="Overdue" value={p.overdue} onChange={(n) => set("overdue", n)} />
               <NumField id="dev" label="Dev-only dependency" value={p.dev_dependency} onChange={(n) => set("dev_dependency", n)} hint="Usually negative." />

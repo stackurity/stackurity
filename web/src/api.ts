@@ -1114,6 +1114,8 @@ export interface RiskPolicy {
   internet_exposed: number;
   exposure_unknown: number;
   production: number;
+  /** Added when an asset has no environment; at most `production`. */
+  environment_unknown: number;
   fix_available: number;
   overdue: number;
   dev_dependency: number;
