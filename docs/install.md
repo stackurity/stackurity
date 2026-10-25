@@ -13,9 +13,12 @@ Stackurity runs as one container plus PostgreSQL. It needs no vendor account and
 git clone https://github.com/stackurity/stackurity.git
 cd stackurity/deploy
 ./init-secrets.sh                      # generates the database password
-docker compose up -d --build
+docker compose up -d                   # pulls ghcr.io/stackurity/stackurity:latest; --build builds from source instead
 docker compose logs stackurity | grep -A2 "one-time token"
 ```
+
+To pin a release, set `STACKURITY_IMAGE=ghcr.io/stackurity/stackurity:0.3.0` in `deploy/.env`. Images are signed; check one with
+`cosign verify ghcr.io/stackurity/stackurity:0.3.0 --certificate-identity-regexp '^https://github.com/stackurity/stackurity/.github/workflows/release.yml@refs/tags/' --certificate-oidc-issuer https://token.actions.githubusercontent.com` (see [security-audit.md](security-audit.md)).
 
 Open `http://<host>:8080`, enter the one-time setup token from the log, and create the first administrator. The token only works while no users exist.
 
@@ -342,7 +345,7 @@ Test a restore regularly. A backup you have never restored is not a backup. To c
 ## Upgrading
 
 1. Take a backup.
-2. `git pull`, then `docker compose up -d --build` (or bump `STACKURITY_IMAGE`).
+2. `git pull`, then `docker compose pull && docker compose up -d` (or bump `STACKURITY_IMAGE`; with `--build` if you build from source).
 3. Migrations run automatically at startup inside a lock, so concurrent starts are safe. Run `stackurity migrate` to apply them separately.
 
 Downgrades are not supported. To roll back, restore the backup taken before the upgrade.
