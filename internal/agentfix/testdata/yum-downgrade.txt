@@ -1,0 +1,23 @@
+Loaded plugins: ovl, priorities
+Resolving Dependencies
+--> Running transaction check
+---> Package tar.aarch64 2:1.26-35.amzn2.0.1 will be a downgrade
+---> Package tar.aarch64 2:1.26-35.amzn2.0.2 will be erased
+--> Finished Dependency Resolution
+
+Dependencies Resolved
+
+================================================================================
+ Package    Arch           Version                      Repository         Size
+================================================================================
+Downgrading:
+ tar        aarch64        2:1.26-35.amzn2.0.1          amzn2-core        850 k
+
+Transaction Summary
+================================================================================
+Downgrade  1 Package
+
+Total download size: 850 k
+Exiting on user command
+Your transaction was saved, rerun it with:
+ yum load-transaction /tmp/yum_save_tx.2026-10-25.14-31._elXGj.yumtx
