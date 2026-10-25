@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -46,6 +47,14 @@ func replicaServers(t *testing.T, n int) ([]*httptest.Server, *store.Store) {
 	return out, first
 }
 
+// freshWindow waits for the next fixed window of length d when the current
+// one ends within ten seconds, so a test's attempts all land in one window.
+func freshWindow(d time.Duration) {
+	if left := d - time.Since(time.Now().Truncate(d)); left < 10*time.Second {
+		time.Sleep(left + 100*time.Millisecond)
+	}
+}
+
 func post(t *testing.T, srv *httptest.Server, path, addr string, body any) int {
 	t.Helper()
 	b, _ := json.Marshal(body)
@@ -71,6 +80,7 @@ func TestSignInLimitPerAddressAcrossReplicas(t *testing.T) {
 		t.Fatal(err)
 	}
 	wrong := map[string]string{"email": "a@x.io", "password": "not the password"}
+	freshWindow(time.Minute)
 	for i := range 10 {
 		if code := post(t, srv[i%2], "/api/v1/auth/login", "192.0.2.1", wrong); code != 401 {
 			t.Fatalf("attempt %d: %d", i+1, code)
@@ -85,6 +95,7 @@ func TestSignInLimitPerAddressAcrossReplicas(t *testing.T) {
 		t.Errorf("another address: %d", code)
 	}
 	// Enrollment codes are limited the same way.
+	freshWindow(time.Minute)
 	for i := range 10 {
 		if code := post(t, srv[i%2], "/api/v1/enroll", "192.0.2.3", map[string]string{"code": "stke_nope"}); code != 403 {
 			t.Fatalf("enroll attempt %d: %d", i+1, code)
@@ -106,6 +117,7 @@ func TestSignInLimitPerAccount(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	freshWindow(15 * time.Minute)
 	for _, email := range []string{"victim@x.io", "nobody@x.io"} {
 		for i := range 20 {
 			addr := fmt.Sprintf("198.51.100.%d", i+1)
@@ -130,6 +142,7 @@ func TestSignInLimitPerAccount(t *testing.T) {
 func TestSetupLimitAcrossReplicas(t *testing.T) {
 	srv, _ := replicaServers(t, 2)
 	bad := map[string]string{"setup_token": "guess", "email": "a@x.io", "password": pw}
+	freshWindow(time.Minute)
 	for i := range 10 {
 		if code := post(t, srv[i%2], "/api/v1/setup", "192.0.2.9", bad); code != 403 {
 			t.Fatalf("setup attempt %d: %d", i+1, code)
