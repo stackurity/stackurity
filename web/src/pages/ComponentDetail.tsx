@@ -105,7 +105,7 @@ export function ComponentDetailPage() {
             Not checked on {gaps.data.total.toLocaleString()} {gaps.data.total === 1 ? "installation" : "installations"}.
           </strong>{" "}
           Vulnerability intelligence could not evaluate this component there, so having no findings does not mean it is safe:{" "}
-          {Array.from(new Set(gaps.data.items.map((r) => coverageText(r)))).join("; ")}.
+          {Array.from(new Set(gaps.data.items.map((r) => r.coverage_reason || coverageText(r)))).join("; ")}.
         </Notice>
       )}
       {stale.data && stale.data.total > 0 && (

@@ -122,6 +122,9 @@ func TargetFor(purl, ver string, evidence map[string]string) (Target, bool) {
 		t.Ecosystem, t.Name = "crates.io", p.Name
 	case "gem":
 		t.Ecosystem, t.Name = "RubyGems", p.Name
+		// Bundler lists platform gems as "1.16.0-x86_64-linux"; the
+		// platform is not part of the version Gem::Version compares.
+		t.Version = gemPlatform.ReplaceAllString(t.Version, "")
 	case "maven":
 		t.Ecosystem, t.Name = "Maven", p.Namespace+":"+p.Name
 	case "nuget":
@@ -224,6 +227,10 @@ func TargetFor(purl, ver string, evidence map[string]string) (Target, bool) {
 }
 
 var pypiSeparators = regexp.MustCompile(`[-_.]+`)
+
+// gemPlatform matches a platform suffix of a gem version, as the Gemfile.lock
+// collector strips it.
+var gemPlatform = regexp.MustCompile(`-(x86|x64|arm|aarch64|java|universal|mingw|mswin|darwin|linux|wasm).*$`)
 
 // WhyNoTarget explains why TargetFor found no target for a purl.
 // unsupported is true when no vulnerability source exists for it at all,

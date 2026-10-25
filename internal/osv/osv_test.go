@@ -53,11 +53,15 @@ func TestTargetFor(t *testing.T) {
 	}
 }
 
-func TestTargetForGoStdlib(t *testing.T) {
+func TestTargetForVersionSpelling(t *testing.T) {
 	for _, c := range []struct{ purl, ver, want string }{
 		{"pkg:golang/stdlib@1.22.1", "go1.22.1", "1.22.1"},
 		{"pkg:golang/stdlib@1.22.1", "", "1.22.1"},
 		{"pkg:golang/golang.org/x/net@v0.22.0", "", "v0.22.0"},
+		{"pkg:gem/nokogiri@1.16.0-x86_64-linux", "", "1.16.0"},
+		{"pkg:gem/nokogiri@1.16.0-arm64-darwin", "", "1.16.0"},
+		{"pkg:gem/rack@3.0.0.beta1", "", "3.0.0.beta1"},
+		{"pkg:gem/rails@7.1.0-rc1", "", "7.1.0-rc1"},
 	} {
 		if got, ok := TargetFor(c.purl, c.ver, nil); !ok || got.Version != c.want {
 			t.Errorf("TargetFor(%s, %q) = %+v %v", c.purl, c.ver, got, ok)
