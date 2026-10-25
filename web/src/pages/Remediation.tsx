@@ -497,7 +497,7 @@ function PolicyForm({ policy, teams, onCancel, onSaved }: { policy?: Remediation
         options={ecoOptions}
         value={(p.ecosystems ?? []).filter((x) => ecoOptions.includes(x))}
         onChange={(v) => set("ecosystems", v)}
-        hint={host ? "deb uses apt, rpm uses dnf, apk uses apk." : "Changes are published as Renovate configuration."}
+        hint={host ? "deb uses apt, rpm uses dnf, yum or zypper (chosen from the host's OS), apk uses apk." : "Changes are published as Renovate configuration."}
       />
       <div className="field">
         <label htmlFor={`${idp}-comp`}>Components (optional)</label>
@@ -592,7 +592,7 @@ function PolicyForm({ policy, teams, onCancel, onSaved }: { policy?: Remediation
             </div>
             <label className="check">
               <input type="checkbox" checked={p.auto_rollback} onChange={(e) => set("auto_rollback", e.target.checked)} /> Roll back automatically on
-              failure (best effort: apt/dnf only, if the previous version is still available; not possible for apk)
+              failure (best effort: apt, dnf, yum and zypper, if the previous version is still available; not possible for apk)
             </label>
           </>
         ) : (

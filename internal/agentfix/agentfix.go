@@ -26,7 +26,7 @@ type Action struct {
 	ID          int64    `json:"id"`
 	Kind        string   `json:"kind"` // package_upgrade, package_rollback
 	Package     string   `json:"package"`
-	Manager     string   `json:"manager"` // apt, dnf, apk
+	Manager     string   `json:"manager"` // apt, dnf, yum, zypper, apk
 	FromVersion string   `json:"from_version"`
 	ToVersion   string   `json:"to_version"`
 	HealthUnits []string `json:"health_units"`
@@ -49,11 +49,16 @@ func execRunner(ctx context.Context, env []string, name string, args ...string) 
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
 	err := cmd.Run()
-	s := out.String()
+	return out.String(), err
+}
+
+// clip shortens command output for the report. Dry runs are parsed from the
+// full output, never from a clipped copy.
+func clip(s string) string {
 	if len(s) > 16000 {
 		s = s[:8000] + "\n…\n" + s[len(s)-8000:]
 	}
-	return s, err
+	return s
 }
 
 type Fixer struct {
@@ -96,7 +101,10 @@ var (
 	// No trailing '-' or '+': apt treats "pkg=ver-" as "remove pkg".
 	verRE     = regexp.MustCompile(`^[0-9]([A-Za-z0-9.+~:_-]{0,126}[A-Za-z0-9~_.])?$`)
 	unitRE    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9@._:-]{0,127}$`)
-	managerOK = map[string]bool{"apt": true, "dnf": true, "apk": true}
+	managerOK = map[string]bool{"apt": true, "dnf": true, "yum": true, "zypper": true, "apk": true}
+	// yum and zypper get version-release (rpm allows neither '-' nor ':'
+	// inside either part) after an optional numeric epoch.
+	rpmVerRE = regexp.MustCompile(`^([0-9]+:)?[A-Za-z0-9._+~]+-[A-Za-z0-9._+~]+$`)
 )
 
 func (f *Fixer) Validate(a Action) error {
@@ -111,6 +119,11 @@ func (f *Fixer) Validate(a Action) error {
 	}
 	if !verRE.MatchString(a.ToVersion) || (a.FromVersion != "" && !verRE.MatchString(a.FromVersion)) {
 		return fmt.Errorf("refusing version %q", a.ToVersion)
+	}
+	if a.Manager == "dnf" || a.Manager == "yum" || a.Manager == "zypper" {
+		if !rpmVerRE.MatchString(a.ToVersion) || (a.FromVersion != "" && !rpmVerRE.MatchString(a.FromVersion)) {
+			return fmt.Errorf("refusing version %q: %s needs [epoch:]version-release", a.ToVersion, a.Manager)
+		}
 	}
 	for _, u := range a.HealthUnits {
 		if !unitRE.MatchString(u) {
@@ -132,7 +145,7 @@ func (f *Fixer) Validate(a Action) error {
 		if !ok {
 			return fmt.Errorf("package %q is not installed; refusing to install new software", a.Package)
 		}
-		if a.FromVersion != "" && cur != a.FromVersion && cur != a.ToVersion {
+		if a.FromVersion != "" && !sameVersion(a.Manager, cur, a.FromVersion) && !sameVersion(a.Manager, cur, a.ToVersion) {
 			return fmt.Errorf("installed version %s differs from the planned %s; refusing a stale plan", cur, a.FromVersion)
 		}
 	}
@@ -147,8 +160,27 @@ func spec(manager, pkg, ver string) string {
 	case "dnf":
 		// dnf takes name-[epoch:]version-release
 		return pkg + "-" + ver
+	case "yum":
+		// yum does not match "name-epoch:version-release", so it gets the
+		// version without its epoch; the dry run check then confirms the
+		// full epoch:version-release that would be installed.
+		return pkg + "-" + stripEpoch(ver)
+	case "zypper":
+		// zypper needs the epoch when it is not zero ("name=1:2.0-3"
+		// finds no package with epoch 1 if the epoch is left out).
+		return pkg + "=" + ver
 	}
 	return pkg
+}
+
+// sameVersion compares two installed or planned versions. rpm treats a
+// missing epoch as 0, and inventory leaves out a zero epoch that advisories
+// spell out ("0:1.2-3").
+func sameVersion(manager, a, b string) bool {
+	if manager == "dnf" || manager == "yum" || manager == "zypper" {
+		return withEpoch(a) == withEpoch(b)
+	}
+	return a == b
 }
 
 func (f *Fixer) commands(a Action) (dry, apply [][]string, env []string) {
@@ -166,13 +198,33 @@ func (f *Fixer) commands(a Action) (dry, apply [][]string, env []string) {
 		}
 		apply = [][]string{append(verb, s)}
 	case "dnf":
+		// No -q on the dry run: dnf would print no transaction to check.
+		// Weak dependencies stay out, like apt's --no-install-recommends.
+		verb := "upgrade"
 		if a.Kind == "package_rollback" {
-			dry = [][]string{{"dnf", "downgrade", "--assumeno", "-q", s}}
-			apply = [][]string{{"dnf", "downgrade", "-y", "-q", s}}
-		} else {
-			dry = [][]string{{"dnf", "upgrade", "--assumeno", "-q", s}}
-			apply = [][]string{{"dnf", "upgrade", "-y", "-q", s}}
+			verb = "downgrade"
 		}
+		dry = [][]string{{"dnf", verb, "--assumeno", "--setopt=install_weak_deps=False", s}}
+		apply = [][]string{{"dnf", verb, "-y", "-q", "--setopt=install_weak_deps=False", s}}
+	case "yum":
+		// yum (Amazon Linux 2): "upgrade" only changes installed packages,
+		// like apt's --only-upgrade, and "downgrade" is the rollback.
+		verb := "upgrade"
+		if a.Kind == "package_rollback" {
+			verb = "downgrade"
+		}
+		dry = [][]string{{"yum", verb, "--assumeno", s}}
+		apply = [][]string{{"yum", verb, "-y", s}}
+	case "zypper":
+		// The dry run reports in XML so the transaction is read from
+		// structured output; the real run prints the usual summary. Without
+		// --oldpackage zypper never installs an older version.
+		opts := []string{"--no-recommends"}
+		if a.Kind == "package_rollback" {
+			opts = append(opts, "--oldpackage")
+		}
+		dry = [][]string{append(append([]string{"zypper", "--non-interactive", "--xmlout", "install", "--dry-run"}, opts...), s)}
+		apply = [][]string{append(append([]string{"zypper", "--non-interactive", "install"}, opts...), s)}
 	case "apk":
 		// "apk add pkg=ver" would pin the version in /etc/apk/world and
 		// block later security updates; upgrade the package instead and let
@@ -194,24 +246,33 @@ func (f *Fixer) Apply(ctx context.Context, a Action) Report {
 	defer cancel()
 	dry, apply, env := f.commands(a)
 	var dryOut strings.Builder
+	var last string // full output of the final dry run command
 	for i, c := range dry {
 		out, err := f.Run(ctx, env, c[0], c[1:]...)
-		dryOut.WriteString("$ " + strings.Join(c, " ") + "\n" + out + "\n")
-		// "dnf --assumeno" exits non-zero by design after printing the plan.
-		if err != nil && !(a.Manager == "dnf" && i == len(dry)-1 && strings.Contains(out, "Operation aborted")) {
+		dryOut.WriteString("$ " + strings.Join(c, " ") + "\n" + clip(out) + "\n")
+		last = out
+		if err := dryRunStatus(a.Manager, i == len(dry)-1, out, err); err != nil {
 			r.Phase, r.DryRun, r.Error = "failed", dryOut.String(), "dry run failed: "+err.Error()
+			return r
+		}
+		if a.Manager == "apt" && strings.Contains(out, "Remv ") {
+			r.Phase, r.DryRun, r.Error = "failed", dryOut.String(), "dry run shows packages would be removed; refusing"
 			return r
 		}
 	}
 	r.DryRun = dryOut.String()
-	if a.Manager == "apt" && strings.Contains(r.DryRun, "Remv ") {
-		r.Phase, r.Error = "failed", "dry run shows packages would be removed; refusing"
+	if err := f.checkTransaction(ctx, a, last); err != nil {
+		r.Phase, r.Error = "failed", "dry run: "+err.Error()+"; refusing"
 		return r
 	}
 	var out strings.Builder
 	for _, c := range apply {
 		o, err := f.Run(ctx, env, c[0], c[1:]...)
-		out.WriteString("$ " + strings.Join(c, " ") + "\n" + o + "\n")
+		out.WriteString("$ " + strings.Join(c, " ") + "\n" + clip(o) + "\n")
+		note, err := applyStatus(a.Manager, err)
+		if note != "" {
+			out.WriteString(note + "\n")
+		}
 		if err != nil {
 			r.Phase, r.Output, r.Error = "failed", out.String(), "apply failed: "+err.Error()
 			return r

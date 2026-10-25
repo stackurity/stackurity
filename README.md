@@ -76,7 +76,7 @@ For TLS, backups, upgrades, Kubernetes (Helm), the agents and plugins, see [docs
 - Java needs the Java stack pack; from a `pom.xml` alone it sees direct dependencies only. Windows hotfixes and Microsoft Store apps are reported as unsupported coverage.
 - Single sign-on supports OpenID Connect; SAML is not implemented.
 - Kubernetes exposure covers Services, Ingresses and host networking, not Gateway API routes or service meshes. Running images are scanned without registry credentials, so images behind pull secrets show as failed coverage unless added as container image integrations. Kubernetes CVEs are not matched (lifecycle only).
-- Remediation applies to Linux packages (apt, dnf, apk) and to repositories through Renovate. SUSE (zypper) and Amazon Linux 2 (yum) hosts get findings and fix plans but no automatic fixing.
+- Remediation applies to Linux packages (apt, dnf, yum, zypper, apk) and to repositories through Renovate. Kernels and other packages installed side by side in several versions are not upgraded automatically on rpm systems.
 
 ## Editions
 

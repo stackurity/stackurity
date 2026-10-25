@@ -126,20 +126,11 @@ func TestDryRunFailureStops(t *testing.T) {
 	}
 }
 
-func TestDnfAndApkCommands(t *testing.T) {
-	f := fixer("openssl*", "musl")
+// dnf is tested in rpm_test.go.
+func TestApkCommands(t *testing.T) {
+	f := fixer("musl")
 	f.Installed = nil
-	run, calls := fake(map[string]string{"dnf upgrade --assumeno": "Operation aborted."}, map[string]bool{"dnf upgrade --assumeno": true})
-	f.Run = run
-	r := f.Apply(context.Background(), Action{Kind: "package_upgrade", Package: "openssl-libs", Manager: "dnf", ToVersion: "1:3.0.7-25.el9"})
-	if r.Phase != "applied" {
-		t.Fatalf("dnf: %+v", r)
-	}
-	last := (*calls)[len(*calls)-1].argv
-	if strings.Join(last, " ") != "dnf upgrade -y -q openssl-libs-1:3.0.7-25.el9" {
-		t.Errorf("dnf apply = %v", last)
-	}
-	run, calls = fake(nil, nil)
+	run, calls := fake(nil, nil)
 	f.Run = run
 	f.Apply(context.Background(), Action{Kind: "package_upgrade", Package: "musl", Manager: "apk", ToVersion: "1.2.4_git20230717-r5"})
 	if got := strings.Join((*calls)[len(*calls)-1].argv, " "); got != "apk upgrade musl" {

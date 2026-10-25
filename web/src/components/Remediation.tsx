@@ -80,7 +80,7 @@ export const ROLLBACK_LABEL: Record<string, string> = {
 };
 export const ROLLBACK_HELP: Record<string, string> = {
   best_effort:
-    "apt/dnf: if the policy enables auto_rollback, the previous version is reinstalled after a failure, provided a repository or cache still has it.",
+    "apt, dnf, yum, zypper: if the policy enables auto_rollback, the previous version is reinstalled after a failure, provided a repository or cache still has it.",
   manual: "apk: Alpine repositories keep only the current version, so a failed change must be fixed by hand.",
   not_applicable: "Repository changes arrive as pull requests; undo them by reverting the PR.",
 };

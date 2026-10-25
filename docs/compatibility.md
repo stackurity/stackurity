@@ -58,7 +58,9 @@ The same rules apply to container images scanned through the bundled Syft and to
 | Target | Manager | Rollback |
 |---|---|---|
 | Debian, Ubuntu | apt | Best effort |
-| RHEL, Rocky, AlmaLinux, Amazon Linux 2023 | dnf | Best effort |
+| RHEL, CentOS and Oracle Linux 8 or later, Rocky, AlmaLinux, Fedora, Amazon Linux 2023 | dnf | Best effort |
+| Amazon Linux 2, RHEL, CentOS and Oracle Linux 7 | yum | Best effort |
+| SLES, SLES for SAP, SLED, openSUSE Leap | zypper | Best effort |
 | Alpine | apk | Manual |
-| SUSE, openSUSE, Amazon Linux 2 | Not supported: findings and fix plans only | |
+| openSUSE Tumbleweed, Amazon Linux 1, other rpm systems | Not supported: findings and fix plans only | |
 | npm, Composer repositories | Renovate pull requests | Revert the pull request |

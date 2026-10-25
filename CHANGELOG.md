@@ -20,13 +20,13 @@ All notable changes to Stackurity. Versions follow [Semantic Versioning](https:/
 ### Changed
 
 - Sign-in, setup, password change, enrollment and single sign-on rate limits are shared across replicas (stored in the database) and fail closed.
-- dnf fixes get the same dry-run refusals as yum and zypper (removals, obsoletes, vendor and architecture changes).
 - Hosts whose OS has no supported package manager (for example Amazon Linux 1, Tumbleweed, or an unknown OS) no longer get automatic-fix plans.
 - Image scan failures keep Syft's error (for example `DENIED` from a registry) as the coverage reason.
 - Plugin requests carry the workspace's network policy, and `pkg/plugin` has a `Dialer` that enforces it.
 
 ### Fixed
 
+- Automatic fixing (Pro) on dnf hosts (RHEL, Rocky, AlmaLinux, Fedora, Amazon Linux 2023) did not check what the dry run would do: it ran with `-q`, which hides the transaction, so a change was approved on dnf's exit status alone. The dry run is now read, and the change is refused if it would remove or obsolete a package, change a package's vendor or architecture, pull in weak dependencies, or move anything in the wrong direction.
 - Outbound webhook, Slack and Teams calls shared one connection pool across workspaces, so a workspace not allowed to reach private addresses could reuse a connection another workspace had opened to an internal host. Workspaces with different network policies now use separate pools.
 
 ### Upgrading
