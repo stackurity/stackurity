@@ -2,6 +2,21 @@
 
 All notable changes to Stackurity. Versions follow [Semantic Versioning](https://semver.org/); before 1.0, a minor version can change behaviour, and the notes say when it does.
 
+## Unreleased
+
+### Added
+
+- **Automatic fixing (Pro) on SUSE and Amazon Linux 2.** SLES, SLES for SAP, SLED and openSUSE Leap hosts are fixed with `zypper`, Amazon Linux 2 with `yum`, and the package manager is now chosen per host from its OS rather than per package type. As with apt and dnf, every change starts with a dry run, and the agent refuses one whose dry run would remove or obsolete a package, change a package's vendor or architecture, or move anything in the wrong direction. Rollback is best effort through `zypper install --oldpackage` and `yum downgrade`. See [Package managers](docs/remediation.md#package-managers).
+
+### Changed
+
+- RHEL, CentOS and Oracle Linux 7 hosts are fixed with `yum` instead of `dnf`, which they do not have. rpm hosts on an OS without a supported package manager (for example openSUSE Tumbleweed or Amazon Linux 1) are no longer planned.
+- Versions on rpm systems compare with rpm's rules when the agent checks for a stale plan, so an advisory's explicit zero epoch (`0:1.2-3`) matches the installed `1.2-3`.
+
+### Upgrading
+
+Update the agent on SUSE and Amazon Linux 2 hosts before enabling remediation for them: older agents refuse `yum` and `zypper` actions.
+
 ## 0.2.0
 
 ### Added
