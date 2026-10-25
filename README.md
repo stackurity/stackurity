@@ -2,7 +2,7 @@
 
 Open-source, self-hosted software inventory and upgrade intelligence. Stackurity discovers software across hosts, repositories, containers and SBOMs, keeps one inventory with evidence for every component, and shows clearly what was **not** checked.
 
-> **Status:** first public release (v0.1). Inventory, intelligence, alerts and team workflow, stack packs and workspaces are in Community; see the [known limitations](#known-limitations) below and [editions](#editions) for what Pro and Enterprise add.
+> **Status:** v0.3, an early release under active development. Inventory, intelligence, alerts and team workflow, stack packs, Kubernetes, Jira and workspaces are in Community; see the [known limitations](#known-limitations) below and [editions](#editions) for what Pro and Enterprise add.
 
 ## What it does today
 
@@ -13,7 +13,7 @@ Open-source, self-hosted software inventory and upgrade intelligence. Stackurity
 - **Plugins:** a public, language-agnostic plugin contract with a conformance checker. See [docs/plugins.md](docs/plugins.md).
 - **Container images:** inventory from a registry reference through the bundled Syft. No Docker daemon is needed.
 - **SBOMs:** CycloneDX and SPDX JSON import, CycloneDX 1.6 export.
-- **Vulnerability intelligence:** OSV data for npm, Packagist, PyPI, Go, Maven, RubyGems, crates.io, NuGet, Pub, Debian, Ubuntu, Alpine, Rocky, Alma, Red Hat Enterprise Linux, SUSE Linux Enterprise and openSUSE Leap, and Amazon's own advisories (ALAS) for Amazon Linux 2 and 2023. Versions are compared by each ecosystem's own rules, so distro backports are handled. Advisories are deduplicated across sources, CISA KEV flags known exploitation, and refresh is hourly and incremental.
+- **Vulnerability intelligence:** OSV data for npm, Packagist, PyPI, Go, Maven, RubyGems, crates.io, NuGet, Pub, Debian, Ubuntu, Alpine, Rocky, Alma, Red Hat Enterprise Linux, SUSE Linux Enterprise and openSUSE Leap, and Amazon's own advisories (ALAS) for Amazon Linux 2 and 2023. Versions are compared by each ecosystem's own rules, so distro backports are handled. CVSS v3 and v4 vectors are scored locally (v4 as the FIRST reference calculator does). Advisories are deduplicated across sources, CISA KEV flags known exploitation, and refresh is hourly and incremental.
 - **Versions and lifecycle:** latest stable releases from npm, Packagist, PyPI, Go modules, crates.io, RubyGems, NuGet, Maven Central and pub.dev (patch, minor or major, plus deprecated packages and yanked, retracted or unlisted versions), and end-of-life data from endoflife.date for operating systems, runtimes and frameworks.
 - **Upgrade recommendations:** for each installed component with open findings, the minimum fixed version, the version to move to (the newest stable release in the same major line that fixes every open finding, or the distribution's fixed build for OS packages), whether it is a major upgrade, withdrawn versions and release-line support, with the reasons. Built only from stored data; missing data is reported as missing.
 - **One inventory:** stable asset identities, conflict detection and merging, and relations between assets. Every component carries its source, timestamp, confidence and evidence.
@@ -40,7 +40,7 @@ Stackurity is self-hosted: your inventory and findings stay on your own server, 
 git clone https://github.com/stackurity/stackurity.git
 cd stackurity/deploy
 ./init-secrets.sh
-STACKURITY_COOKIE_SECURE=false docker compose up -d --build
+STACKURITY_COOKIE_SECURE=false docker compose up -d   # pulls the signed ghcr.io/stackurity/stackurity image; add --build to build from source
 docker compose logs stackurity | grep -A2 "one-time token"
 ```
 

@@ -1,0 +1,23 @@
+Loaded plugins: ovl, priorities
+Resolving Dependencies
+--> Running transaction check
+---> Package tar.aarch64 2:1.26-35.amzn2.0.2 will be updated
+---> Package tar.aarch64 2:1.26-35.amzn2.0.3 will be an update
+--> Finished Dependency Resolution
+
+Dependencies Resolved
+
+================================================================================
+ Package    Arch           Version                      Repository         Size
+================================================================================
+Updating:
+ tar        aarch64        2:1.26-35.amzn2.0.3          amzn2-core        851 k
+
+Transaction Summary
+================================================================================
+Upgrade  1 Package
+
+Total download size: 851 k
+Exiting on user command
+Your transaction was saved, rerun it with:
+ yum load-transaction /tmp/yum_save_tx.2026-10-25.14-31._ITjHI.yumtx
