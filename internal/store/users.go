@@ -520,6 +520,9 @@ func (s *Store) UpdateTeam(ctx context.Context, id int64, name, email *string, m
 				return err
 			}
 			if _, err := tx.Exec(ctx, `INSERT INTO team_members (team_id, user_id) SELECT $1, u.id FROM users u WHERE u.id = ANY($2)`, id, *members); err != nil {
+				if isForeignKey(err) {
+					return fmt.Errorf("team members must be members of this workspace: %w", ErrInvalid)
+				}
 				return err
 			}
 		}
