@@ -7,6 +7,8 @@ import (
 
 	"github.com/stackurity/stackurity/internal/fixplan"
 	"github.com/stackurity/stackurity/internal/store"
+	"github.com/stackurity/stackurity/internal/upgrade"
+	"github.com/stackurity/stackurity/internal/version"
 )
 
 // osProducts maps os-release IDs to endoflife.date products (same table the
@@ -69,5 +71,54 @@ func Rebuild(ctx context.Context, st *store.Store, now time.Time) (int, error) {
 		advice[key] = a
 	}
 	groups, assign := fixplan.Build(rows, advice)
+	if err := recommend(ctx, st, rows, groups, assign, now); err != nil {
+		return 0, err
+	}
 	return len(groups), st.ReplaceFixGroups(ctx, groups, assign)
+}
+
+// recommend adds the recommended version to each package upgrade, from the
+// group's findings and the component's release data.
+func recommend(ctx context.Context, st *store.Store, rows []fixplan.Row, groups []*fixplan.Group, assign map[int64]string, now time.Time) error {
+	byGroup := map[string][]fixplan.Row{}
+	var ids []int64
+	seen := map[int64]bool{}
+	for _, r := range rows {
+		gid := assign[r.FindingID]
+		if !strings.Contains(gid, ":"+fixplan.PackageUpgrade+":") {
+			continue
+		}
+		byGroup[gid] = append(byGroup[gid], r)
+		if !seen[r.ComponentID] {
+			seen[r.ComponentID] = true
+			ids = append(ids, r.ComponentID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	releases, err := st.ReleasesFor(ctx, ids)
+	if err != nil {
+		return err
+	}
+	for _, g := range groups {
+		rs := byGroup[g.ID]
+		if g.Kind != fixplan.PackageUpgrade || len(rs) == 0 {
+			continue
+		}
+		// A dependency installed at several versions is planned from the
+		// oldest one.
+		cmp := version.For(version.ForPurlType(rs[0].PurlType))
+		in := upgrade.Input{PurlType: rs[0].PurlType, Installed: rs[0].Version, Release: releases[rs[0].ComponentID], Now: now}
+		for _, r := range rs {
+			if c, err := cmp(r.Version, in.Installed); err == nil && c < 0 {
+				in.Installed = r.Version
+			}
+			in.Findings = append(in.Findings, upgrade.Finding{ID: r.FindingID, Kind: r.Kind, Key: r.Key, FixedVersion: r.FixedVersion,
+				Subscription: r.Subscription})
+		}
+		rec := upgrade.Recommend(in)
+		g.SetRecommendation(rec.Recommended, rec.ChangeType, rec.RequiresMajor, rec.RecommendedYanked, rec.Rationale)
+	}
+	return nil
 }

@@ -52,35 +52,42 @@ type Row struct {
 }
 
 type Group struct {
-	ID             string            `json:"id"`
-	Kind           string            `json:"kind"`
-	Title          string            `json:"title"`
-	Action         string            `json:"action"`
-	AssetID        int64             `json:"asset_id"`
-	AssetName      string            `json:"asset_name"`
-	AssetKind      string            `json:"asset_kind"`
-	Environment    string            `json:"environment"`
-	Component      string            `json:"component,omitempty"`
-	FromVersion    string            `json:"from_version,omitempty"`
-	ToVersion      string            `json:"to_version,omitempty"`
-	Packages       []string          `json:"packages"`
-	PackageCount   int               `json:"package_count"`
-	FindingCount   int               `json:"finding_count"`
-	UniqueIssues   int               `json:"unique_issues"` // distinct CVE/advisory keys
-	ByPriority     map[string]int    `json:"by_priority"`
-	BySeverity     map[string]int    `json:"by_severity"`
-	TopPriority    string            `json:"top_priority"`
-	SOS            bool              `json:"sos"`
-	KnownExploited int               `json:"known_exploited"`
-	Needs          string            `json:"needs,omitempty"`
-	Effort         string            `json:"effort"`
-	Note           string            `json:"note,omitempty"`
-	FindingIDs     []int64           `json:"-"`
-	pkgs           map[string]bool   `json:"-"`
-	purlType       string            `json:"-"`
-	fromVersions   map[string]bool   `json:"-"`
-	extra          map[string]string `json:"-"`
-	keys           map[string]bool   `json:"-"`
+	ID             string         `json:"id"`
+	Kind           string         `json:"kind"`
+	Title          string         `json:"title"`
+	Action         string         `json:"action"`
+	AssetID        int64          `json:"asset_id"`
+	AssetName      string         `json:"asset_name"`
+	AssetKind      string         `json:"asset_kind"`
+	Environment    string         `json:"environment"`
+	Component      string         `json:"component,omitempty"`
+	FromVersion    string         `json:"from_version,omitempty"`
+	ToVersion      string         `json:"to_version,omitempty"`
+	Packages       []string       `json:"packages"`
+	PackageCount   int            `json:"package_count"`
+	FindingCount   int            `json:"finding_count"`
+	UniqueIssues   int            `json:"unique_issues"` // distinct CVE/advisory keys
+	ByPriority     map[string]int `json:"by_priority"`
+	BySeverity     map[string]int `json:"by_severity"`
+	TopPriority    string         `json:"top_priority"`
+	SOS            bool           `json:"sos"`
+	KnownExploited int            `json:"known_exploited"`
+	Needs          string         `json:"needs,omitempty"`
+	Effort         string         `json:"effort"`
+	Note           string         `json:"note,omitempty"`
+	// Package upgrades: the version to move to, from release data (see
+	// internal/upgrade). ToVersion stays the minimum fixed version.
+	Recommended       string            `json:"recommended_version,omitempty"`
+	ChangeType        string            `json:"change_type,omitempty"`
+	RequiresMajor     bool              `json:"requires_major,omitempty"`
+	RecommendedYanked bool              `json:"recommended_yanked,omitempty"`
+	Rationale         []string          `json:"rationale,omitempty"`
+	FindingIDs        []int64           `json:"-"`
+	pkgs              map[string]bool   `json:"-"`
+	purlType          string            `json:"-"`
+	fromVersions      map[string]bool   `json:"-"`
+	extra             map[string]string `json:"-"`
+	keys              map[string]bool   `json:"-"`
 }
 
 // Advice gives the newest supported release of an OS, for release-upgrade
@@ -325,6 +332,21 @@ func describe(g *Group, osEOL map[int64]Row, advice map[string]Advice) {
 
 // needsChannel is the Group.Needs value for a paid channel; the dashboard
 // knows "ubuntu-pro" and shows anything else as written.
+// SetRecommendation records the recommended version for a package upgrade
+// and mentions it in the action when it differs from the minimum fix.
+func (g *Group) SetRecommendation(recommended, changeType string, major, yanked bool, rationale []string) {
+	if g.Kind != PackageUpgrade || recommended == "" {
+		return
+	}
+	g.Recommended, g.ChangeType, g.RequiresMajor, g.RecommendedYanked, g.Rationale = recommended, changeType, major, yanked, rationale
+	if recommended != g.ToVersion {
+		g.Action += fmt.Sprintf(" Recommended: %s, the newest stable release in its major line.", recommended)
+	}
+	if major {
+		g.Action += " This is a major upgrade."
+	}
+}
+
 func needsChannel(ch string) string {
 	if ch == "Ubuntu Pro" {
 		return "ubuntu-pro"

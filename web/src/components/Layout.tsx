@@ -98,6 +98,7 @@ export function Layout() {
         { to: "/incidents", label: "Incidents" },
         { to: "/coverage", label: "Coverage" },
         { to: "/intelligence", label: "Intelligence" },
+        { to: "/outcomes", label: "Remediation outcomes" },
         { to: "/reports", label: "Evidence report" },
       ],
     },

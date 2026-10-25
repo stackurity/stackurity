@@ -5,6 +5,9 @@
 package risk
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -289,6 +292,15 @@ func (rule SOSRule) matches(in Input, priority string, production bool) bool {
 		}
 	}
 	return true
+}
+
+// Version identifies the policy's content: the same weights, thresholds,
+// deadlines and rules always give the same version, so a stored priority can
+// be traced to the policy that produced it.
+func (p Policy) Version() string {
+	b, _ := json.Marshal(p) // map keys are sorted, so the encoding is stable
+	sum := sha256.Sum256(b)
+	return "sha256:" + hex.EncodeToString(sum[:])[:16]
 }
 
 // Deadlines returns acknowledgement and fix deadlines from first detection.

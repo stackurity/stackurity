@@ -136,6 +136,9 @@ function describe(e: FindingEvent): string {
     suppress: "suppressed",
     accept_risk: "accepted the risk",
     reopen: "reopened",
+    // Recorded by the matcher when it resolves a finding or detects it again.
+    resolved: "resolved it",
+    reopened: "reopened it",
   };
   return verb[e.action] ?? e.action.replace(/_/g, " ");
 }
@@ -154,7 +157,7 @@ export function FindingHistory({ id, tick }: { id: number; tick: number }) {
     <Card title="History">
       <ErrorBox error={res.error} title="Could not load history" />
       {!res.data && !res.error && <Loading />}
-      {res.data && res.data.items.length === 0 && <p className="muted">No workflow activity yet.</p>}
+      {res.data && res.data.items.length === 0 && <p className="muted">No activity yet.</p>}
       {res.data && res.data.items.length > 0 && (
         <ol className="timeline">
           {res.data.items.map((e) => {

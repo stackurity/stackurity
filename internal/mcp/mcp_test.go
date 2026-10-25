@@ -17,6 +17,12 @@ func (f *fakeAPI) Do(_ context.Context, method, path string, _ io.Reader, _ map[
 	switch {
 	case strings.HasPrefix(path, "/api/v1/findings?"):
 		body = `{"items":[{"id":7,"key":"CVE-1","severity":"critical","asset_name":"shop","fixed_version":"1.2.3","evidence":{"big":"x"}}],"total":1}`
+	case strings.HasPrefix(path, "/api/v1/fix-groups?"):
+		body = `{"items":[{"id":"3:package_upgrade:9","kind":"package_upgrade","asset_id":3,"component":"lodash","from_version":"4.17.15",
+			"to_version":"4.17.21","recommended_version":"4.17.23","change_type":"patch","finding_count":2,"top_priority":"P2",
+			"by_severity":{"high":2}}],"total":1}`
+	case strings.HasSuffix(path, "/explain"), strings.HasSuffix(path, "/upgrade"), strings.HasPrefix(path, "/api/v1/findings/verify?"):
+		body = `{"ok":true}`
 	default:
 		body = `{"items":[],"total":0}`
 	}
@@ -62,7 +68,7 @@ func TestProtocol(t *testing.T) {
 		t.Errorf("initialize = %v", init)
 	}
 	tl := res[1]["result"].(map[string]any)["tools"].([]any)
-	if len(tl) != 7 {
+	if len(tl) != 11 {
 		t.Errorf("tools = %d", len(tl))
 	}
 	for _, x := range tl {
@@ -93,5 +99,46 @@ func TestProtocol(t *testing.T) {
 		if !strings.HasPrefix(p, "GET ") {
 			t.Errorf("tools must only read: %s", p)
 		}
+	}
+}
+
+func TestAssistantTools(t *testing.T) {
+	api := &fakeAPI{}
+	res := run(t, api,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"explain_finding","arguments":{"finding_id":7}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"upgrade_recommendation","arguments":{"finding_id":7}}}`,
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"upgrade_recommendation","arguments":{"component_id":9}}}`,
+		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"upgrade_recommendation","arguments":{}}}`,
+		`{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"remediation_plan","arguments":{"asset_id":3,"limit":500}}}`,
+		`{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"verify_since","arguments":{"since":"2026-10-20","asset_id":3,"limit":1000}}}`,
+		`{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"verify_since","arguments":{}}}`,
+		`{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"explain_finding","arguments":{"finding_id":"x"}}}`,
+	)
+	text := func(i int) string {
+		return res[i]["result"].(map[string]any)["content"].([]any)[0].(map[string]any)["text"].(string)
+	}
+	for _, i := range []int{3, 6, 7} {
+		if res[i]["result"].(map[string]any)["isError"] != true {
+			t.Errorf("call %d should be a tool error: %v", i+1, res[i])
+		}
+	}
+	want := []string{
+		"GET /api/v1/findings/7/explain",
+		"GET /api/v1/findings/7/upgrade",
+		"GET /api/v1/components/9/upgrade",
+		"GET /api/v1/fix-groups?asset_id=3&limit=100",
+		"GET /api/v1/findings/verify?asset_id=3&limit=200&since=2026-10-20",
+	}
+	if strings.Join(api.paths, "\n") != strings.Join(want, "\n") {
+		t.Errorf("requests = %v", api.paths)
+	}
+	plan := text(4)
+	for _, s := range []string{`"minimum_fixed_version": "4.17.21"`, `"recommended_version": "4.17.23"`, `"installed_version": "4.17.15"`, `"shown": 1`} {
+		if !strings.Contains(plan, s) {
+			t.Errorf("remediation_plan lacks %s: %s", s, plan)
+		}
+	}
+	if strings.Contains(plan, "by_severity") {
+		t.Errorf("remediation_plan passes through unbounded fields: %s", plan)
 	}
 }

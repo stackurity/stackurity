@@ -40,9 +40,11 @@ Roles, from least to most access: `viewer` (read, including the audit log), `eng
 | `GET /assets/{id}/drift?with=` | viewer | Components whose versions differ from another asset (`with`, or the asset this one is a `replica_of`). Each item is `behind`, `ahead`, `differs`, `only_here` or `only_there`, compared by the component's ecosystem rules |
 | `GET /assets/{id}/sbom` | viewer | CycloneDX 1.6 export |
 | `GET /components?q=&type=`, `GET /components/{id}` | viewer | Component explorer |
+| `GET /components/{id}/upgrade` | viewer | An [upgrade recommendation](#upgrade-recommendations) for each installed version with open findings (most findings first, at most 50; `total` counts all), with `version`, `distro` and `asset_count` |
 | `GET /inventory?component_id=&asset_id=` | viewer | Where a component is used |
 | `GET /coverage?problems=true` | viewer | Coverage ledger across assets |
 | `GET /reports/evidence?from=&to=` | viewer | Patch-management evidence for a period (dates, `to` inclusive; default the last 30 days, at most a year): assets and their collection status, hosts needing a reboot, evaluation gaps, open findings by severity and priority, overdue findings, findings resolved in the period with the share resolved within their deadline and the median days from first detection to resolution, every active exception with its reason, mitigation and expiry, and drift for each `replica_of` pair |
+| `GET /reports/outcomes?days=` | viewer | [Remediation outcomes](#remediation-outcomes) over the last `days` (1 to 365, default 90) |
 | `GET /audit?object_type=&object_id=` | viewer | Audit events |
 | `GET`/`POST /tokens`, `DELETE /tokens/{id}` | any user | Personal tokens (admins: all tokens and collector tokens) |
 | `GET /teams` | viewer | Teams |
@@ -58,7 +60,10 @@ Roles, from least to most access: `viewer` (read, including the audit log), `eng
 | `GET /facets` | viewer | Distinct environments, asset kinds and component types |
 | `GET /findings?status=&kind=&severity=&verification=&asset_id=&component_id=&environment=&known_exploited=&q=&key=` | viewer | Vulnerability and end-of-life findings, known-exploited and most severe first |
 | `GET /findings/summary` | viewer | Counts by severity, kind and verification, plus stale feeds and evaluation gaps |
-| `GET /findings/{id}` | viewer | One finding, with every source advisory in its group |
+| `GET /findings/{id}` | viewer | One finding, with every source advisory in its group and, while it is open, its `upgrade` recommendation |
+| `GET /findings/{id}/upgrade` | viewer | The [upgrade recommendation](#upgrade-recommendations) for the installed copy the finding is on, covering every open finding on it |
+| `GET /findings/{id}/explain` | viewer | Why the finding has its priority: `risk` (priority, score, each factor with its points, `policy_version`, thresholds, the SLA for the priority, deadlines), the stored `evidence`, the matched `advisories` (id, feed, severity, dates, an osv.dev link), the freshness of the `feeds` they came from, and the asset's last (complete) `collection` time |
+| `GET /findings/verify?since=&asset_id=&limit=` | viewer | What changed since `since` (RFC 3339 time or `YYYY-MM-DD`): findings `resolved` since then with their `cause`, findings that existed then and are `still_open`, `opened_since`, and each asset's last complete collection. `asset_rescanned_since` tells "fixed" from "not scanned again yet". Lists are capped at `limit` (default 100, max 500) with a `total` |
 | `GET /advisories/{id-or-CVE}` | viewer | Advisories in a group |
 | `GET /components/{id}/intel` | viewer | Release data (latest stable, publish date, deprecation) and lifecycle cycles |
 | `GET /feeds` | viewer | Intelligence feeds and their freshness |
@@ -156,7 +161,38 @@ A finding is one issue on one inventory row:
 - `fixed_version` is the highest "first fixed" version across the matching sources, so every source agrees the target is fixed. It is empty when no source lists a fix.
 - `evidence` records the matched ranges, the OSV package and ecosystem, the comparator used, the feed and its last successful sync, and whether the CVE is in CISA KEV.
 
-Findings resolve automatically when the component is upgraded or removed, or when an advisory is withdrawn. If the issue comes back, the finding reopens.
+Findings resolve automatically when the component is upgraded or removed, or when an advisory is withdrawn. If the issue comes back, the finding reopens. Both are recorded in the finding's history (`GET /findings/{id}/events`) as `resolved` (the note is the resolution) and `reopened` (with the earlier resolution in `detail`), by actor `matcher`.
+
+## Upgrade recommendations
+
+`upgrade` objects are built only from stored data: the fixed versions advisories give for the open findings on one installed copy, the registry's release list, and endoflife.date release lines. Nothing is guessed: when data is missing the response says so.
+
+- `minimum_fixed_version`: the highest `fixed_version` across the open vulnerability findings, compared by the ecosystem's rules.
+- `recommended_version` and `basis`:
+  - `distro_fixed` for OS packages (deb, rpm, apk): the distribution's fixed build. Registry releases do not apply (`release_data: not_applicable`).
+  - `latest_in_line`: the newest stable, non-withdrawn release at or above the minimum in the installed version's major line. If the fix only exists in a later major line, the newest such release in that line, and `requires_major` is true.
+  - `minimum_fixed`: there is no release data (`release_data: none` or `failed`), or no stable release at or above the minimum is recorded (for example the fix is a pre-release).
+  - `supported_line`: the installed release line is end of life, so the end-of-life finding is resolved only by moving to the newest release of the oldest supported line after it (from release data, else endoflife.date's latest), provided that is at or above the minimum fix.
+  - `none`: no source lists a fixed version.
+- `change_type` (`patch`, `minor`, `major`, `distro`), `requires_subscription` (the fix is only in Ubuntu Pro or SUSE LTSS), `recommended_yanked`, `minimum_fixed_yanked` and `installed_yanked` (withdrawn by the registry, with `yanked_reason`), and the package's `deprecated` notice.
+- `lifecycle`, `target_lifecycle` and `supported_line`: release lines with `status` `supported`, `security_only` or `end_of_life`.
+- `fixes` and `unfixed`: the finding keys the recommended version resolves and those it does not. `rationale` gives the reasons in plain language.
+
+Package upgrade groups in the action plan (`GET /fix-groups`) carry `recommended_version`, `change_type`, `requires_major`, `recommended_yanked` and `rationale`; `to_version` stays the minimum fixed version.
+
+## Remediation outcomes
+
+`GET /reports/outcomes` returns `days`, the risk `policy_version` and a `report`:
+
+- `resolved`: findings resolved in the window that are still resolved.
+- `time_to_remedy`: `mean_days` (MTTR) and `median_days` from detection, or from the last reopening, to resolution, by `priority` and `kind`; `all` rows are totals.
+- `causes`: `upgraded` (a newer inventory shows another version), `remediation` (a verified remediation action), `removed` (a complete inventory no longer lists it), all with `evidence: fresh_collection`; `reevaluated` (advisory or lifecycle data changed, `evidence: intelligence`).
+- `sla`: per priority, the policy's `fix_days`, findings resolved within that many days of first detection out of those resolved, and open and overdue counts now.
+- `reopened`: reopenings and distinct findings in the window, and of the resolutions recorded in the window how many were later reopened. `events_since` is when resolutions and reopenings started being recorded.
+- `open`: active, overdue, excepted (suppressed or accepted) and on stale assets, now.
+- `remediation`: plans by status and actions by status created in the window, the success rate (verified out of verified, failed and rolled back), rollback actions and recent failures; `null` when there were none.
+
+Every rate comes with the counts it is computed from and is `null` when there is nothing to divide by.
 
 ## Workflow
 

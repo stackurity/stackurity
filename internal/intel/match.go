@@ -12,6 +12,7 @@ import (
 
 	"github.com/stackurity/stackurity/internal/osv"
 	"github.com/stackurity/stackurity/internal/store"
+	"github.com/stackurity/stackurity/internal/upgrade"
 	"github.com/stackurity/stackurity/internal/version"
 )
 
@@ -359,20 +360,7 @@ func appendUnique(s []string, v string) []string {
 // matchCycle finds the release cycle for a version: exact, then the longest
 // dotted prefix ("3.19.1" -> "3.19" -> "3").
 func matchCycle(cycles []store.LifecycleCycle, v string) *store.LifecycleCycle {
-	v = strings.TrimPrefix(v, "v")
-	if i := strings.IndexAny(v, "-+~_ "); i > 0 {
-		v = v[:i]
-	}
-	parts := strings.Split(v, ".")
-	for n := len(parts); n >= 1; n-- {
-		cand := strings.Join(parts[:n], ".")
-		for i := range cycles {
-			if cycles[i].Cycle == cand {
-				return &cycles[i]
-			}
-		}
-	}
-	return nil
+	return upgrade.MatchCycle(cycles, v)
 }
 
 func eolFinding(r store.EvalRow, c *store.LifecycleCycle, now time.Time) *store.FindingInput {
@@ -427,18 +415,7 @@ func latestStableSemver(versions []string, fallback string) string {
 	return best
 }
 
-func isStableComposer(v string) bool {
-	l := strings.ToLower(v)
-	if strings.HasPrefix(l, "dev-") || strings.HasSuffix(l, "-dev") {
-		return false
-	}
-	for _, s := range []string{"alpha", "beta", "rc", "-a", "-b"} {
-		if strings.Contains(l, s) {
-			return false
-		}
-	}
-	return true
-}
+func isStableComposer(v string) bool { return !version.ComposerPrerelease(v) }
 
 func latestComposer(vs []string) string {
 	best := ""

@@ -66,3 +66,69 @@ func semverish(from, to string) string {
 	}
 	return "patch"
 }
+
+// Prerelease reports whether v is a pre-release under the ecosystem's own
+// rules (what its package manager skips unless asked). Distro and generic
+// versions have no such notion and are never pre-releases.
+func Prerelease(e Ecosystem, v string) bool {
+	switch e {
+	case SemVer:
+		return SemverPrerelease(v)
+	case PEP440:
+		pre, _ := PEP440Prerelease(v)
+		return pre
+	case Maven:
+		return MavenPrerelease(v)
+	case NuGet:
+		return NuGetPrerelease(v)
+	case RubyGems:
+		// Gem::Version: any letter makes a prerelease.
+		return strings.IndexFunc(v, func(r rune) bool { return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' }) >= 0
+	case Composer:
+		return ComposerPrerelease(v)
+	}
+	return false
+}
+
+// ComposerPrerelease reports whether v is a dev, alpha, beta or RC version.
+func ComposerPrerelease(v string) bool {
+	l := strings.ToLower(v)
+	if strings.HasPrefix(l, "dev-") || strings.HasSuffix(l, "-dev") {
+		return true
+	}
+	for _, s := range []string{"alpha", "beta", "rc", "-a", "-b"} {
+		if strings.Contains(l, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// MajorLine returns the version's major release line (the leading number,
+// with a non-zero PEP 440 epoch kept), or "" when it has none. Versions in
+// the same line are what a "same major" upgrade may move between.
+func MajorLine(e Ecosystem, v string) string {
+	v = strings.TrimSpace(v)
+	v = strings.TrimPrefix(strings.TrimPrefix(v, "v"), "V")
+	prefix := ""
+	if e == PEP440 {
+		if ep, rest, ok := strings.Cut(v, "!"); ok {
+			if strings.TrimLeft(ep, "0") != "" {
+				prefix = ep + "!"
+			}
+			v = rest
+		}
+	}
+	end := 0
+	for end < len(v) && v[end] >= '0' && v[end] <= '9' {
+		end++
+	}
+	if end == 0 {
+		return ""
+	}
+	n := strings.TrimLeft(v[:end], "0")
+	if n == "" {
+		n = "0"
+	}
+	return prefix + n
+}
