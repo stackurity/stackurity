@@ -12,20 +12,20 @@ import (
 	"github.com/stackurity/stackurity/internal/version"
 )
 
-// updateType classifies the gap between installed and latest stable for
-// ecosystems with semver-like versions.
+// updateType classifies the gap between installed and latest stable as
+// "major", "minor" or "patch", using the ecosystem's own comparator, for
+// the ecosystems that have release feeds.
 func updateType(purlType, installed, latest string) string {
 	if latest == "" || installed == "" {
 		return ""
 	}
 	switch purlType {
-	case "npm":
-		return version.UpdateType(installed, latest)
-	case "composer":
-		if c, err := version.CompareComposer(installed, latest); err != nil || c >= 0 {
-			return ""
+	case "npm", "composer", "pypi", "golang", "cargo", "gem", "nuget", "maven", "pub":
+		t, err := version.ChangeType(purlType, installed, latest)
+		if err != nil {
+			return "" // not newer, or not comparable
 		}
-		return version.UpdateType(installed, latest)
+		return t
 	}
 	return ""
 }

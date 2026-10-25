@@ -616,6 +616,7 @@ export interface Release {
   latest: string;
   latest_stable: string;
   latest_published: string | null;
+  yanked?: Record<string, string>; // withdrawn (yanked, retracted, unlisted) version -> reason
   deprecated: string;
   source: string;
   source_url: string;

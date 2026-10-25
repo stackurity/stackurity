@@ -89,7 +89,7 @@ func (s *Syncer) Sync(ctx context.Context, name string) (*SyncResult, error) {
 		res, err = s.syncKEV(ctx)
 	case name == FeedEndOfLife:
 		res, err = s.syncEndOfLife(ctx)
-	case name == FeedNpm || name == FeedPackagist:
+	case isReleaseFeed(name):
 		res, err = s.syncReleases(ctx, name)
 	default:
 		err = fmt.Errorf("unknown feed %q", name)
@@ -425,50 +425,8 @@ func (s *Syncer) syncEndOfLife(ctx context.Context) (*SyncResult, error) {
 
 // --- registries
 
-// releaseRefresh is how old release data may get before it is refreshed.
-const releaseRefresh = 24 * time.Hour
-
-func (s *Syncer) syncReleases(ctx context.Context, feed string) (*SyncResult, error) {
-	typ := map[string]string{FeedNpm: "npm", FeedPackagist: "composer"}[feed]
-	cands, err := s.Store.ReleaseCandidates(ctx, []string{typ}, releaseRefresh, 2000)
-	if err != nil {
-		return nil, err
-	}
-	sem := make(chan struct{}, 6)
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-	failed := 0
-	for _, c := range cands {
-		wg.Add(1)
-		go func(c store.ReleaseCandidate) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			var r store.Release
-			var err error
-			if typ == "npm" {
-				r, err = s.npmRelease(ctx, c)
-			} else {
-				r, err = s.packagistRelease(ctx, c)
-			}
-			r.ComponentID, r.CheckedAt = c.ComponentID, time.Now()
-			if err != nil {
-				r.LastError = err.Error()
-				mu.Lock()
-				failed++
-				mu.Unlock()
-			}
-			if err := s.Store.UpsertRelease(ctx, r); err != nil {
-				s.Log.Error("store release", "component", c.ComponentID, "err", err)
-			}
-		}(c)
-	}
-	wg.Wait()
-	if len(cands) > 0 && failed == len(cands) {
-		return nil, fmt.Errorf("all %d registry lookups failed", failed)
-	}
-	return &SyncResult{Changed: len(cands) - failed}, nil
-}
+// npm and Packagist lookups; syncReleases and the other registries are in
+// releases.go.
 
 func (s *Syncer) npmRelease(ctx context.Context, c store.ReleaseCandidate) (store.Release, error) {
 	name := c.Name

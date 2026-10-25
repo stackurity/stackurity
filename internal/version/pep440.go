@@ -186,3 +186,13 @@ func CompareRubyGems(a, b string) (int, error) {
 	}
 	return 0, nil
 }
+
+// PEP440Prerelease reports whether v is a pre-release or development
+// release (pip skips both unless asked). ok is false when v does not parse.
+func PEP440Prerelease(v string) (pre, ok bool) {
+	p, ok := parsePEP440(v)
+	if !ok {
+		return false, false
+	}
+	return p.preRank != 0 || p.hasDev, true
+}

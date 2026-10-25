@@ -134,11 +134,25 @@ function ReleaseCard({ intel }: { intel: ComponentIntel }) {
   const r = intel.release!;
   const versions = intel.component.versions ?? [];
   const src = safeHttpUrl(r.source_url);
+  const withdrawn = versions.filter((v) => r.yanked && v in r.yanked);
   return (
     <Card title="Releases">
       {r.deprecated && (
         <Notice kind="warn">
           <strong>Deprecated by its maintainers:</strong> {r.deprecated}
+        </Notice>
+      )}
+      {withdrawn.length > 0 && (
+        <Notice kind="warn">
+          <strong>Withdrawn by the registry:</strong>{" "}
+          {withdrawn.map((v, i) => (
+            <span key={v}>
+              {i > 0 && "; "}
+              <span className="mono">{v}</span>
+              {r.yanked![v] ? ` (${r.yanked![v]})` : ""}
+            </span>
+          ))}
+          . Yanked, retracted or unlisted versions should be replaced.
         </Notice>
       )}
       {r.last_error && (
@@ -159,6 +173,7 @@ function ReleaseCard({ intel }: { intel: ComponentIntel }) {
                   <span key={v} className="chip mono">
                     {v}
                     {r.latest_stable && v === r.latest_stable ? " ✓ latest" : ""}
+                    {r.yanked && v in r.yanked ? " (withdrawn)" : ""}
                   </span>
                 ))}
               </span>

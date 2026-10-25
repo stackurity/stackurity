@@ -1,0 +1,38 @@
+[
+  {
+    "number": "1.19.4",
+    "platform": "ruby",
+    "prerelease": false,
+    "created_at": "2026-06-18T15:18:58.041Z"
+  },
+  {
+    "number": "1.19.4",
+    "platform": "x86_64-linux-gnu",
+    "prerelease": false,
+    "created_at": "2026-06-18T15:18:50.642Z"
+  },
+  {
+    "number": "1.19.4",
+    "platform": "java",
+    "prerelease": false,
+    "created_at": "2026-06-18T15:18:35.798Z"
+  },
+  {
+    "number": "1.19.3",
+    "platform": "ruby",
+    "prerelease": false,
+    "created_at": "2026-04-27T21:16:23.955Z"
+  },
+  {
+    "number": "1.19.3",
+    "platform": "x86_64-linux-gnu",
+    "prerelease": false,
+    "created_at": "2026-04-27T21:16:18.386Z"
+  },
+  {
+    "number": "1.19.3",
+    "platform": "java",
+    "prerelease": false,
+    "created_at": "2026-04-27T21:16:08.745Z"
+  }
+]
