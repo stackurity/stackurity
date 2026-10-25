@@ -3,6 +3,7 @@ import { Link, Outlet, useLocation } from "react-router";
 import { api, type Incident, type List, type Plan } from "../api";
 import { useLoad } from "../hooks";
 import { useAuth } from "../auth";
+import { GlobalSearch } from "./Search";
 import {
   IconActionPlan,
   IconChevron,
@@ -252,7 +253,7 @@ export function Layout() {
       </aside>
       <div className="main-col">
         <header className="topbar">
-          <div className="topbar-spacer" />
+          {me?.workspace ? <GlobalSearch /> : <div className="topbar-spacer" />}
           <div className="topbar-user">
             <Link to="/help" className="btn btn-sm btn-link topbar-help">
               <IconHelp size={16} /> Help

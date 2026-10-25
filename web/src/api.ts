@@ -579,6 +579,93 @@ export interface Advisory {
   fetched_at?: string;
 }
 
+// --- global search (GET /search), mirrors internal/store/search.go
+
+/** 0: exact id, name or identifier; 1: prefix; 2: substring. */
+export type SearchRank = 0 | 1 | 2;
+
+export interface SearchRef {
+  id: number;
+  name: string;
+  version?: string;
+}
+
+export interface SearchVuln {
+  key: string;
+  /** Empty when the advisory exists but nothing in the workspace is affected. */
+  kind: "vulnerability" | "end_of_life" | "";
+  rank: SearchRank;
+  title: string;
+  severity: string;
+  score: number | null;
+  known_exploited: boolean;
+  open_findings: number;
+  resolved_findings: number;
+  affected_assets: number;
+  assets: SearchRef[];
+  components: string[];
+  advisory?: {
+    ids: string[];
+    aliases: string[];
+    summary: string;
+    severity: string;
+    score: number | null;
+    known_exploited: boolean;
+    published: string | null;
+    withdrawn: string | null;
+  };
+}
+
+export interface SearchComponent {
+  id: number;
+  purl_key: string;
+  type: string;
+  namespace: string;
+  name: string;
+  rank: SearchRank;
+  asset_count: number;
+  versions: string[];
+  open_findings: number;
+  assets: SearchRef[];
+  version?: string;
+  version_assets: number;
+}
+
+export interface SearchAsset {
+  id: number;
+  kind: string;
+  name: string;
+  environment: string;
+  owner_team: string;
+  collection_status: string;
+  last_seen: string;
+  rank: SearchRank;
+  match_scheme: string;
+  match_value: string;
+  open_findings: number;
+}
+
+export interface SearchTeam {
+  id: number;
+  name: string;
+  email: string;
+  rank: SearchRank;
+  asset_count: number;
+  open_findings: number;
+}
+
+export interface SearchResults {
+  query: string;
+  vulnerabilities: SearchVuln[];
+  assets: SearchAsset[];
+  components: SearchComponent[];
+  teams: SearchTeam[];
+  more: Partial<Record<"vulnerabilities" | "assets" | "components" | "teams", boolean>>;
+}
+
+export const SEARCH_MIN_LENGTH = 2;
+export const SEARCH_MAX_LENGTH = 200;
+
 export interface FindingDetail {
   finding: Finding;
   advisories?: Advisory[] | null;
