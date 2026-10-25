@@ -2,6 +2,26 @@
 
 All notable changes to Stackurity. Versions follow [Semantic Versioning](https://semver.org/); before 1.0, a minor version can change behaviour, and the notes say when it does.
 
+## Unreleased
+
+### Added
+
+- **Coverage states.** Every asset says how far its findings can be trusted: Healthy and recently evaluated, Stale intelligence, Failed collection, Partially evaluated, Unsupported or Awaiting verification, each with its reason (`GET /api/v1/assets/{id}/coverage-summary`, the asset page, the Coverage page and the overview). Inventory rows say whether they were checked, and the Inventory and component pages mark each component that was not ("not checked: <reason>"). See `docs/compatibility.md`.
+- A matching corpus of real advisories for every supported ecosystem (`internal/intel/testdata/corpus`), run through the whole pipeline in the tests.
+
+### Fixed
+
+These change findings after upgrading: expect new findings on Rocky Linux and RHEL 10 hosts and for Drupal modules, and fewer on Ubuntu ESM and FIPS hosts.
+
+- Rocky Linux binary packages such as `openssl-libs` were never matched: Rocky's advisories name source packages.
+- RHEL 10 hosts matched no advisory: Red Hat publishes RHEL 10 per minor release.
+- Ubuntu Pro FIPS channels were applied to regular builds (patched ESM hosts were reported affected, with a FIPS build as the fix) and regular fixes to FIPS builds. For FIPS builds, FIPS-updates is preferred over the frozen certified channel.
+- Composer advisories published for another repository (Drupal contrib modules) were never matched.
+- Fixes published only for SLES for SAP or HPC are labelled as needing a subscription on plain SLES.
+- A release the feed has no advisories for (too new, or no longer covered) is reported as not evaluated instead of clean; so are unreadable RubyGems versions, unresolved Maven properties and, when a record matched without a comparison, any unparseable version.
+- The Go standard library reported as `go1.22.1` and PyPI names with dots are matched.
+- Evaluation gaps are recorded per inventory row: evaluating another asset or workspace no longer clears a gap. Reasons say exactly why a component could not be checked.
+
 ## 0.3.1
 
 ### Fixed
