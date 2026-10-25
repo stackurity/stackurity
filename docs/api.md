@@ -48,7 +48,7 @@ Roles, from least to most access: `viewer` (read, including the audit log), `eng
 | `GET /audit?object_type=&object_id=` | viewer | Audit events |
 | `GET`/`POST /tokens`, `DELETE /tokens/{id}` | any user | Personal tokens (admins: all tokens and collector tokens) |
 | `GET /teams` | viewer | Teams |
-| `POST`/`PATCH`/`DELETE /teams/{id}` | admin | Manage teams and members |
+| `POST`/`PATCH`/`DELETE /teams/{id}` | admin | Manage teams and members (members must belong to the workspace) |
 | `GET`/`POST /users`, `PATCH /users/{id}` | admin | Manage users |
 | `GET /integrations`, `POST /integrations/{id}/run` | engineer | List integrations, trigger a run |
 | `POST`/`PATCH`/`DELETE /integrations/{id}` | admin | Manage integrations |
