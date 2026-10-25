@@ -1,6 +1,8 @@
 # syntax=docker/dockerfile:1
 
-FROM node:22.11.0-alpine3.20 AS web
+# The web and Go stages run on the build machine and cross-compile; only the
+# final stage is per target platform, so arm64 images need no emulation.
+FROM --platform=$BUILDPLATFORM node:22.11.0-alpine3.20 AS web
 WORKDIR /src/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci --ignore-scripts
@@ -11,7 +13,7 @@ RUN npm run build
 # with --build-context pro=PATH-TO-stackurity-pro --build-arg EDITION=ee.
 FROM scratch AS pro
 
-FROM golang:1.27.3-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -19,8 +21,10 @@ COPY . .
 COPY --from=web /src/web/dist ./web/dist
 ARG VERSION=dev
 ARG EDITION=community
+ARG TARGETARCH
 RUN --mount=type=bind,from=pro,target=/pro set -e; FLAGS=""; \
     if [ "$EDITION" = ee ]; then go run ./tools/eeoverlay -pro /pro > /tmp/ee.json; FLAGS="-tags ee -overlay /tmp/ee.json"; fi; \
+    export GOOS=linux GOARCH=${TARGETARCH:-amd64}; \
     CGO_ENABLED=0 go build $FLAGS -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/stackurity ./cmd/stackurity; \
     CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/plugins/aws-managed ./plugins/aws-managed; \
     # Agent builds the server hands to new hosts (Assets > Add server).
@@ -30,7 +34,7 @@ RUN --mount=type=bind,from=pro,target=/pro set -e; FLAGS=""; \
       (cd /out/agents && sha256sum stackurity-linux-$arch > stackurity-linux-$arch.sha256); \
     done
 
-FROM alpine:3.22 AS syft
+FROM --platform=$BUILDPLATFORM alpine:3.22 AS syft
 # Syft generates container image SBOMs from registries (no container runtime).
 ARG SYFT_VERSION=1.54.1
 ARG TARGETARCH

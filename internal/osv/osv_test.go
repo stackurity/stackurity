@@ -20,7 +20,18 @@ func TestTargetFor(t *testing.T) {
 		{"pkg:deb/ubuntu/libc6@2.35-0ubuntu3?distro=ubuntu-22.04&upstream=glibc", "", nil, "Ubuntu:22.04", "glibc", true},
 		{"pkg:apk/alpine/libcrypto3@3.1.4-r5?distro=alpine-3.19.1&upstream=openssl", "", nil, "Alpine:v3.19", "openssl", true},
 		{"pkg:rpm/rocky/openssl-libs@3.0.7-24.el9?distro=rocky-9.3&epoch=1", "1:3.0.7-24.el9", map[string]string{"evr": "1:3.0.7-24.el9"}, "Rocky Linux:9", "openssl-libs", true},
-		{"pkg:rpm/redhat/openssl@3.0.7?distro=rhel-9", "", nil, "", "", false},
+		// Syft names Red Hat packages "redhat" with an epoch qualifier; the agent uses the os-release ID.
+		{"pkg:rpm/redhat/openssl@3.0.7-27.el9?distro=rhel-9.4&epoch=1", "", nil, "Red Hat:enterprise_linux:9", "openssl", true},
+		{"pkg:rpm/rhel/openssl-libs@3.0.7-27.el9?distro=rhel-9.4", "1:3.0.7-27.el9", map[string]string{"evr": "1:3.0.7-27.el9"}, "Red Hat:enterprise_linux:9", "openssl-libs", true},
+		// SUSE advisories are keyed by source package.
+		{"pkg:rpm/sles/libopenssl3@3.0.8-150500.5.3.1?distro=sles-15.5", "", map[string]string{"source_rpm": "openssl-3-3.0.8-150500.5.3.1.src.rpm"}, "SUSE:15 SP5", "openssl-3", true},
+		{"pkg:rpm/suse/libopenssl3@3.0.8-150500.5.3.1?distro=sles_sap-15&upstream=openssl-3-3.0.8-150500.5.3.1.src.rpm", "", nil, "SUSE:15", "openssl-3", true},
+		{"pkg:rpm/opensuse-leap/grafana@8.3.5-150200.3.21.1?distro=opensuse-leap-15.5", "", map[string]string{"source_rpm": "grafana-8.3.5-150200.3.21.1.src.rpm"}, "openSUSE:Leap 15.5", "grafana", true},
+		{"pkg:rpm/amzn/kernel@5.10.192-183.736.amzn2?distro=amzn-2", "", nil, "Amazon Linux:2", "kernel", true},
+		{"pkg:rpm/amazon/curl-minimal@8.3.0-1.amzn2023.0.2?distro=amzn-2023", "", nil, "Amazon Linux:2023", "curl-minimal", true},
+		{"pkg:rpm/amzn/curl@7.61.1-12.95.amzn1?distro=amzn-2018.03", "", nil, "", "", false}, // Amazon Linux 1
+		{"pkg:rpm/centos/bash@4.2.46-35.el7?distro=centos-7", "", nil, "", "", false},
+		{"pkg:rpm/ol/bash@4.4.20-4.el8?distro=ol-8.9", "", nil, "", "", false},
 		{"pkg:generic/debian@12", "", nil, "", "", false},
 		{"pkg:deb/debian/bash@5.2", "", nil, "", "", false}, // no distro qualifier
 	}
@@ -37,6 +48,57 @@ func TestMatchEcosystem(t *testing.T) {
 		!IsPro("Ubuntu:Pro:18.04:LTS") || IsPro("Ubuntu:18.04:LTS") || MatchEcosystem("Ubuntu:Pro:20.04:LTS", "Ubuntu:18.04") ||
 		MatchEcosystem("Debian:11", "Debian:12") || !MatchEcosystem("npm", "npm") {
 		t.Error("MatchEcosystem")
+	}
+}
+
+func TestMatchEcosystemRPM(t *testing.T) {
+	cases := []struct {
+		advisory, target string
+		want             bool
+		sub              string
+	}{
+		{"Red Hat:enterprise_linux:9::appstream", "Red Hat:enterprise_linux:9", true, ""},
+		{"Red Hat:enterprise_linux:9::baseos", "Red Hat:enterprise_linux:9", true, ""},
+		{"Red Hat:enterprise_linux:8::baseos", "Red Hat:enterprise_linux:9", false, ""},
+		{"Red Hat:rhel_eus:9.4::baseos", "Red Hat:enterprise_linux:9", false, ""},
+		{"Red Hat:enterprise_linux:90::baseos", "Red Hat:enterprise_linux:9", false, ""},
+		{"SUSE:Linux Enterprise Module for Basesystem 15 SP5", "SUSE:15 SP5", true, ""},
+		{"SUSE:Linux Enterprise Server for SAP Applications 15 SP5", "SUSE:15 SP5", true, ""},
+		{"SUSE:Linux Enterprise Server 15 SP5-LTSS", "SUSE:15 SP5", true, "SUSE LTSS"},
+		{"SUSE:Linux Enterprise High Performance Computing 15 SP5-ESPOS", "SUSE:15 SP5", true, "SUSE ESPOS"},
+		{"SUSE:Linux Enterprise Server 15 SP4", "SUSE:15 SP5", false, ""},
+		{"SUSE:Linux Enterprise Server 15 SP5", "SUSE:15", false, ""},
+		{"SUSE:Linux Enterprise Server 15-LTSS", "SUSE:15", true, "SUSE LTSS"},
+		{"SUSE:Linux Enterprise Server 12 SP5", "SUSE:15 SP5", false, ""},
+		{"openSUSE:Leap 15.5", "openSUSE:Leap 15.5", true, ""},
+		{"openSUSE:Leap 15.4", "openSUSE:Leap 15.5", false, ""},
+		{"Amazon Linux:2", "Amazon Linux:2023", false, ""},
+	}
+	for _, c := range cases {
+		if got := MatchEcosystem(c.advisory, c.target); got != c.want {
+			t.Errorf("MatchEcosystem(%q, %q) = %v", c.advisory, c.target, got)
+		}
+		if got := Subscription(c.advisory); got != c.sub {
+			t.Errorf("Subscription(%q) = %q, want %q", c.advisory, got, c.sub)
+		}
+	}
+	if Subscription("Ubuntu:Pro:20.04:LTS") != "Ubuntu Pro" || IsPro("Red Hat:enterprise_linux:9::baseos") {
+		t.Error("Subscription")
+	}
+}
+
+func TestSourceRPMName(t *testing.T) {
+	for in, want := range map[string]string{
+		"openssl-3-3.0.8-150500.5.3.1.src.rpm": "openssl-3",
+		"glibc-2.34-100.el9.src.rpm":           "glibc",
+		"kernel-5.14.0-427.13.1.el9_4.src.rpm": "kernel",
+		"bash-5.1.nosrc.rpm":                   "",
+		"(none)":                               "",
+		"":                                     "",
+	} {
+		if got := sourceRPMName(in); got != want {
+			t.Errorf("sourceRPMName(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 

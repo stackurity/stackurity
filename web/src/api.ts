@@ -485,6 +485,7 @@ export interface FindingEvidence {
   // fix grouping hints
   not_running_kernel?: boolean;
   requires_ubuntu_pro?: boolean;
+  requires_subscription?: string;
   [k: string]: unknown;
 }
 

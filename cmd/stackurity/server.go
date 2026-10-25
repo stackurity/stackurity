@@ -626,6 +626,7 @@ func intelConfig(dataDir string) intel.Config {
 	cfg.KEVURL = env("STACKURITY_KEV_URL", cfg.KEVURL)
 	cfg.EndOfLifeURL = env("STACKURITY_ENDOFLIFE_URL", cfg.EndOfLifeURL)
 	cfg.NpmRegistry = env("STACKURITY_NPM_REGISTRY", cfg.NpmRegistry)
+	cfg.AmazonLinuxURL = env("STACKURITY_AMAZON_LINUX_URL", cfg.AmazonLinuxURL)
 	cfg.PackagistURL = env("STACKURITY_PACKAGIST_URL", cfg.PackagistURL)
 	cfg.WorkDir = filepath.Join(dataDir, "work")
 	cfg.UserAgent = "stackurity/" + version

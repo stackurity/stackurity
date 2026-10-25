@@ -18,7 +18,9 @@ var langFeeds = map[string]string{
 // distroFeeds maps the distro qualifier prefix to the OSV ecosystem.
 var distroFeeds = map[string]string{
 	"deb:debian": "Debian", "deb:ubuntu": "Ubuntu", "apk:alpine": "Alpine",
-	"rpm:rocky": "Rocky Linux", "rpm:almalinux": "AlmaLinux",
+	"rpm:rocky": "Rocky Linux", "rpm:almalinux": "AlmaLinux", "rpm:rhel": "Red Hat",
+	"rpm:sles": "SUSE", "rpm:sles_sap": "SUSE", "rpm:sled": "SUSE", "rpm:opensuse-leap": "openSUSE",
+	"rpm:amzn": "Amazon Linux",
 }
 
 // purlTypesFor lists the purl types whose components an OSV ecosystem covers.
@@ -71,10 +73,16 @@ func EnsureFeeds(ctx context.Context, s *store.Store) error {
 	}
 	for d := range p.Distros {
 		for prefix, eco := range distroFeeds {
-			if strings.HasPrefix(d, prefix+"-") {
-				if err := ensure(OSVFeed(eco), "vulnerability", time.Hour, 6*time.Hour); err != nil {
-					return err
-				}
+			if !strings.HasPrefix(d, prefix+"-") {
+				continue
+			}
+			refresh, stale := time.Hour, 6*time.Hour
+			if eco == "Amazon Linux" {
+				// A full read of every repository; Amazon publishes a few times a week.
+				refresh, stale = 6*time.Hour, 48*time.Hour
+			}
+			if err := ensure(VulnFeed(eco), "vulnerability", refresh, stale); err != nil {
+				return err
 			}
 		}
 	}
@@ -90,8 +98,8 @@ func ComponentsToEvaluate(ctx context.Context, s *store.Store, feed string, res 
 	switch {
 	case feed == FeedKEV || feed == FeedEndOfLife:
 		return s.ComponentsOfTypes(ctx, allTypes())
-	case strings.HasPrefix(feed, "osv:"):
-		base := strings.TrimPrefix(feed, "osv:")
+	case strings.HasPrefix(feed, "osv:") || feed == FeedAmazonLinux:
+		base, _ := feedEcosystem(feed)
 		types := purlTypesFor(base)
 		if len(types) == 0 {
 			return nil, nil

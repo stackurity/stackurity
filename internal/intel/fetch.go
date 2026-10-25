@@ -20,6 +20,7 @@ type Config struct {
 	EndOfLifeURL     string // https://endoflife.date/api/v1/products/full
 	NpmRegistry      string // https://registry.npmjs.org
 	PackagistURL     string // https://repo.packagist.org
+	AmazonLinuxURL   string // https://cdn.amazonlinux.com
 	WorkDir          string // temp space for bulk downloads
 	UserAgent        string
 	IncrementalLimit int // above this many changed records, re-download the full archive
@@ -32,6 +33,7 @@ func DefaultConfig() Config {
 		EndOfLifeURL:     "https://endoflife.date/api/v1/products/full",
 		NpmRegistry:      "https://registry.npmjs.org",
 		PackagistURL:     "https://repo.packagist.org",
+		AmazonLinuxURL:   "https://cdn.amazonlinux.com",
 		WorkDir:          os.TempDir(),
 		UserAgent:        "stackurity",
 		IncrementalLimit: 5000,

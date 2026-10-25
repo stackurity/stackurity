@@ -31,6 +31,26 @@ const (
 
 func OSVFeed(baseEcosystem string) string { return "osv:" + baseEcosystem }
 
+// FeedAmazonLinux reads Amazon Linux security advisories (ALAS) from the
+// distribution's own repositories; OSV does not carry them.
+const FeedAmazonLinux = "alas:Amazon Linux"
+
+// VulnFeed names the feed that holds advisories for a base ecosystem.
+func VulnFeed(baseEcosystem string) string {
+	if baseEcosystem == "Amazon Linux" {
+		return FeedAmazonLinux
+	}
+	return OSVFeed(baseEcosystem)
+}
+
+// feedEcosystem returns the base ecosystem a vulnerability feed covers.
+func feedEcosystem(feed string) (string, bool) {
+	if feed == FeedAmazonLinux {
+		return "Amazon Linux", true
+	}
+	return strings.CutPrefix(feed, "osv:")
+}
+
 type Syncer struct {
 	Store *store.Store
 	Log   *slog.Logger
@@ -63,6 +83,8 @@ func (s *Syncer) Sync(ctx context.Context, name string) (*SyncResult, error) {
 	switch {
 	case strings.HasPrefix(name, "osv:"):
 		res, cursor, err = s.syncOSV(ctx, name, strings.TrimPrefix(name, "osv:"), feed.Cursor)
+	case name == FeedAmazonLinux:
+		res, err = s.syncAmazonLinux(ctx, name)
 	case name == FeedKEV:
 		res, err = s.syncKEV(ctx)
 	case name == FeedEndOfLife:
