@@ -1,0 +1,15 @@
+Last metadata expiration check: 0:02:24 ago on Sun Oct 25 14:58:44 2026.
+Dependencies resolved.
+================================================================================
+ Package            Architecture     Version            Repository         Size
+================================================================================
+Upgrading:
+ stk-demo           noarch           1:1.0-3            stkdemo           1.4 k
+     replacing  stk-victim.noarch 1.0-1
+
+Transaction Summary
+================================================================================
+Upgrade  1 Package
+
+Total size: 1.4 k
+Operation aborted.

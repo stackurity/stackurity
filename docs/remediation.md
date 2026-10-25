@@ -35,7 +35,7 @@ With `--remediate` the agent:
 - Accepts only `package_upgrade` and `package_rollback` actions for packages that are installed **and** match the allowlist.
 - Checks the package name and version against strict patterns. Versions can't end in `-` or `+`, because apt reads `pkg=ver-` as "remove". It runs the package manager directly, never through a shell.
 - Refuses a plan if the installed version no longer matches it, which is the sign of a stale plan.
-- Runs a dry run first (`apt-get update` and `apt-get install -s`, `dnf --assumeno`, `yum --assumeno`, `zypper install --dry-run`, or `apk add --simulate`). It refuses any apt change, upgrade or rollback, whose dry run would remove packages. On Alpine it runs `apk upgrade <pkg>` rather than `apk add pkg=ver`, so the version is never pinned. yum and zypper dry runs are read in full, and anything the agent cannot read is refused (see [Package managers](#package-managers)).
+- Runs a dry run first (`apt-get update` and `apt-get install -s`, `dnf --assumeno`, `yum --assumeno`, `zypper install --dry-run`, or `apk add --simulate`). It refuses any apt change, upgrade or rollback, whose dry run would remove packages. On Alpine it runs `apk upgrade <pkg>` rather than `apk add pkg=ver`, so the version is never pinned. dnf, yum and zypper dry runs are read in full, and anything the agent cannot read is refused (see [Package managers](#package-managers)).
 - Applies the upgrade through the package manager, which verifies repository signatures. It never passes flags such as `--allow-unauthenticated`. apt runs with `--only-upgrade`, so it can't install new software, and keeps existing config files (`--force-confold`).
 - Runs the policy's health checks, reports the outcome, and collects inventory again straight away so the server can verify the change.
 
@@ -48,20 +48,22 @@ The server picks the manager from the host's OS (`ID` and `VERSION_ID` in os-rel
 | OS | Manager | Upgrade (dry run, then real run) | Rollback |
 |---|---|---|---|
 | Debian, Ubuntu | apt | `apt-get install -s --only-upgrade pkg=ver`, then without `-s` | `apt-get install --allow-downgrades pkg=ver` |
-| RHEL, CentOS, Oracle Linux 8+, Rocky, AlmaLinux, Fedora, Amazon Linux 2023 | dnf | `dnf upgrade --assumeno pkg-ver`, then `-y` | `dnf downgrade pkg-ver` |
+| RHEL, CentOS, Oracle Linux 8+, Rocky, AlmaLinux, Fedora, Amazon Linux 2023 | dnf | `dnf upgrade --assumeno --setopt=install_weak_deps=False pkg-[epoch:]ver-rel`, then `-y` | `dnf downgrade pkg-[epoch:]ver-rel` |
 | Amazon Linux 2, RHEL, CentOS and Oracle Linux 7 | yum | `yum upgrade --assumeno pkg-ver-rel`, then `-y` | `yum downgrade pkg-ver-rel` |
 | SLES, SLES for SAP, SLED, openSUSE Leap | zypper | `zypper --non-interactive --xmlout install --dry-run --no-recommends pkg=[epoch:]ver-rel`, then without `--xmlout --dry-run` | the same with `--oldpackage` |
 | Alpine | apk | `apk upgrade --simulate pkg`, then without `--simulate` | none |
 
-yum and zypper changes go ahead only when the dry run shows the requested package moving to exactly the planned epoch, version and release, in the requested direction, and nothing else apart from new dependencies and further changes in the same direction. The agent refuses a change whose dry run would:
+dnf, yum and zypper changes go ahead only when the dry run shows the requested package moving to exactly the planned epoch, version and release, in the requested direction, and nothing else apart from new dependencies and further changes in the same direction. The agent refuses a change whose dry run would:
 
 - remove a package, or replace one through an rpm `Obsoletes` (yum lists those only in its dependency resolution lines, which are read as well);
-- move a package to another vendor or architecture (zypper);
+- move a package to another vendor or architecture (dnf and zypper; yum 3 has no notion of vendor changes);
 - downgrade anything during an upgrade, or upgrade anything during a rollback;
 - change something other than a package, such as a SUSE product;
-- do nothing while the package is not yet at the target version, for example because that version is not in an enabled repository (zypper reports success in that case).
+- do nothing while the package is not yet at the target version, for example because that version is not in an enabled repository (zypper and dnf report success in that case).
 
-zypper's exit codes are handled explicitly: 102 (installed, reboot needed) counts as success and is noted in the report; everything else that is not 0, including 104 (package or version not found), 106 (repositories skipped, so not every candidate was considered) and 107 (installed, but an rpm scriptlet failed), is a failure. `yum --assumeno` always exits 1, so its dry run counts only when yum says it stopped at the confirmation. Package signatures stay on (`gpgcheck` and zypper's repository checks are never relaxed), and licence prompts are never accepted on your behalf, so a package that asks for one fails.
+dnf's table shows neither the vendor nor the installed architecture, and dnf allows vendor changes by default, so for every package the dry run would upgrade or downgrade the agent compares `rpm -q --qf '%{ARCH} %{VENDOR}'` with `dnf repoquery -C --qf '%{arch} %{vendor}'` for the new version, and refuses if either cannot be read. The dnf dry run no longer runs with `-q`, which hid the transaction altogether. Weak dependencies are left out (`install_weak_deps=False`), like apt's `--no-install-recommends` and zypper's `--no-recommends`.
+
+zypper's exit codes are handled explicitly: 102 (installed, reboot needed) counts as success and is noted in the report; everything else that is not 0, including 104 (package or version not found), 106 (repositories skipped, so not every candidate was considered) and 107 (installed, but an rpm scriptlet failed), is a failure. `dnf --assumeno` and `yum --assumeno` always exit 1, so their dry runs count only when the output says they stopped at the confirmation (dnf's `Operation aborted.`, yum's `Exiting on user command`). Package signatures stay on (`gpgcheck` and zypper's repository checks are never relaxed), and licence prompts are never accepted on your behalf, so a package that asks for one fails.
 
 yum gets the version without its epoch (it does not match `pkg-epoch:ver-rel`), and zypper with it (`pkg=1:2.0-3`; without the epoch zypper finds no package whose epoch is not zero); the dry run check then confirms the full epoch, and freshly collected inventory confirms the result as for every other manager. Packages that are installed side by side in several versions, such as kernels, appear as new installs rather than upgrades and are refused.
 

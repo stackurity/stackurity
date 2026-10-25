@@ -1,12 +1,15 @@
 #!/bin/sh
-# Runs the agent's yum and zypper code for real in throwaway containers:
-# openSUSE Leap 15.5 (zypper) and Amazon Linux 2 (yum). Needs Docker and Go.
+# Runs the agent's dnf, yum and zypper code for real in throwaway containers:
+# openSUSE Leap 15.5 (zypper), Amazon Linux 2 (yum), Rocky Linux 9 and
+# Amazon Linux 2023 (dnf). Needs Docker and Go.
 #
 #   sh internal/agentfix/testdata/pkgmanagers.sh
 #
 # Real repository packages (several versions of each are published):
 #   zypper: less 590-150400.3.3.1 -> 3.6.2 -> 3.9.1
 #   yum:    tar 2:1.26-35.amzn2.0.2 -> 0.3 -> 0.4 (epoch 2)
+#   dnf:    sudo 1.9.17p2-3.el9_8 -> el9_8.1 -> el9_8.3 (Rocky Linux 9)
+#           tar 2:1.34-1.amzn2023.0.2 -> 0.3 -> 0.4 (Amazon Linux 2023)
 # plus packages built here into a local "stkdemo" repository.
 set -eu
 cd "$(dirname "$0")/../../.."
@@ -63,3 +66,20 @@ docker run --rm -v "$work:/stk:ro" -e STK_PM=yum -e STK_PKG=tar \
 	printf "[stkdemo]\nname=stkdemo\nbaseurl=file:///stk/repo\ngpgcheck=0\n" > /etc/yum.repos.d/stkdemo.repo
 	yum -y -q install tar-1.26-35.amzn2.0.2 stk-demo-1.0-1 stk-victim >/dev/null
 	/stk/agentfix.test -test.v -test.run TestRealPackageManager'
+
+# dnf refuses to install stk-victim while a repository package obsoletes it,
+# so the starting packages are installed with rpm.
+dnf_setup='
+	set -e
+	printf "[stkdemo]\nname=stkdemo\nbaseurl=file:///stk/repo\ngpgcheck=0\n" > /etc/yum.repos.d/stkdemo.repo
+	dnf -y -q install "$STK_PKG-${STK_OLD#*:}" >/dev/null
+	rpm -i /stk/repo/stk-demo-1.0-1.noarch.rpm /stk/repo/stk-victim-1.0-1.noarch.rpm
+	/stk/agentfix.test -test.v -test.run TestRealPackageManager'
+
+docker run --rm -v "$work:/stk:ro" -e STK_PM=dnf -e STK_PKG=sudo \
+	-e STK_OLD=1.9.17p2-3.el9_8 -e STK_MID=1.9.17p2-3.el9_8.1 -e STK_NEW=1.9.17p2-3.el9_8.3 \
+	rockylinux:9 sh -c "$dnf_setup"
+
+docker run --rm -v "$work:/stk:ro" -e STK_PM=dnf -e STK_PKG=tar \
+	-e STK_OLD=2:1.34-1.amzn2023.0.2 -e STK_MID=2:1.34-1.amzn2023.0.3 -e STK_NEW=2:1.34-1.amzn2023.0.4 \
+	amazonlinux:2023 sh -c "$dnf_setup"

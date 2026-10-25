@@ -120,7 +120,7 @@ func (f *Fixer) Validate(a Action) error {
 	if !verRE.MatchString(a.ToVersion) || (a.FromVersion != "" && !verRE.MatchString(a.FromVersion)) {
 		return fmt.Errorf("refusing version %q", a.ToVersion)
 	}
-	if a.Manager == "yum" || a.Manager == "zypper" {
+	if a.Manager == "dnf" || a.Manager == "yum" || a.Manager == "zypper" {
 		if !rpmVerRE.MatchString(a.ToVersion) || (a.FromVersion != "" && !rpmVerRE.MatchString(a.FromVersion)) {
 			return fmt.Errorf("refusing version %q: %s needs [epoch:]version-release", a.ToVersion, a.Manager)
 		}
@@ -198,13 +198,14 @@ func (f *Fixer) commands(a Action) (dry, apply [][]string, env []string) {
 		}
 		apply = [][]string{append(verb, s)}
 	case "dnf":
+		// No -q on the dry run: dnf would print no transaction to check.
+		// Weak dependencies stay out, like apt's --no-install-recommends.
+		verb := "upgrade"
 		if a.Kind == "package_rollback" {
-			dry = [][]string{{"dnf", "downgrade", "--assumeno", "-q", s}}
-			apply = [][]string{{"dnf", "downgrade", "-y", "-q", s}}
-		} else {
-			dry = [][]string{{"dnf", "upgrade", "--assumeno", "-q", s}}
-			apply = [][]string{{"dnf", "upgrade", "-y", "-q", s}}
+			verb = "downgrade"
 		}
+		dry = [][]string{{"dnf", verb, "--assumeno", "--setopt=install_weak_deps=False", s}}
+		apply = [][]string{{"dnf", verb, "-y", "-q", "--setopt=install_weak_deps=False", s}}
 	case "yum":
 		// yum (Amazon Linux 2): "upgrade" only changes installed packages,
 		// like apt's --only-upgrade, and "downgrade" is the rollback.
@@ -260,7 +261,7 @@ func (f *Fixer) Apply(ctx context.Context, a Action) Report {
 		}
 	}
 	r.DryRun = dryOut.String()
-	if err := f.checkTransaction(a, last); err != nil {
+	if err := f.checkTransaction(ctx, a, last); err != nil {
 		r.Phase, r.Error = "failed", "dry run: "+err.Error()+"; refusing"
 		return r
 	}

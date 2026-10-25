@@ -1,6 +1,7 @@
 package agentfix
 
 import (
+	"context"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -10,7 +11,7 @@ import (
 	"strings"
 )
 
-// yum (Amazon Linux 2) and zypper (SUSE) dry runs are read, not just run:
+// dnf, yum (Amazon Linux 2) and zypper (SUSE) dry runs are read, not just run:
 // the change goes ahead only when the dry run shows the requested package
 // at exactly the planned version and nothing removed, replaced or moved to
 // another vendor or architecture. Output that cannot be read is refused.
@@ -76,15 +77,18 @@ func dryRunStatus(manager string, last bool, out string, err error) error {
 	switch manager {
 	case "dnf":
 		// "dnf --assumeno" exits non-zero by design after printing the plan.
-		if last && strings.Contains(out, "Operation aborted") {
+		if last && exitCode(err) == 1 && strings.Contains(out, "Operation aborted") {
 			return nil
+		}
+		if l := errorLine(out); l != "" {
+			return fmt.Errorf("%v (%s)", err, l)
 		}
 	case "yum":
 		// So does "yum --assumeno" (exit 1), after printing the transaction.
 		if last && exitCode(err) == 1 && strings.Contains(out, "Exiting on user command") {
 			return nil
 		}
-		if l := firstLineWith(out, "Error:"); l != "" {
+		if l := errorLine(out); l != "" {
 			return fmt.Errorf("%v (%s)", err, l)
 		}
 	case "zypper":
@@ -110,18 +114,48 @@ func applyStatus(manager string, err error) (note string, _ error) {
 	return "", err
 }
 
+// errorLine returns dnf's or yum's error message: a missing package, or the
+// "Error:" line, or when that line is empty (dnf's "Error: \n Problem:
+// ..."), the next one.
+func errorLine(out string) string {
+	for _, m := range []string{"No match for argument", "No Match for argument"} {
+		if l := firstLineWith(out, m); l != "" {
+			return l
+		}
+	}
+	lines := strings.Split(out, "\n")
+	for i, l := range lines {
+		t := strings.TrimSpace(l)
+		if !strings.HasPrefix(t, "Error:") {
+			continue
+		}
+		if t == "Error:" && i+1 < len(lines) {
+			return "Error: " + strings.TrimSpace(lines[i+1])
+		}
+		return t
+	}
+	return ""
+}
+
 // checkTransaction reads the final dry run's output. Managers without a
-// parser here (apt, dnf, apk) are checked in Apply as before.
-func (f *Fixer) checkTransaction(a Action, out string) error {
+// parser here (apt, apk) are checked in Apply as before.
+func (f *Fixer) checkTransaction(ctx context.Context, a Action, out string) error {
 	at := false
 	if f.Installed != nil {
 		cur, ok := f.Installed(a.Package)
 		at = ok && sameVersion(a.Manager, cur, a.ToVersion)
 	}
 	switch a.Manager {
+	case "dnf":
+		entries, err := checkTable(a, out, at)
+		if err != nil || entries == nil {
+			return err
+		}
+		return f.checkVendorArch(ctx, entries)
 	case "yum":
 		removeSavedYumTransaction(out)
-		return checkYum(a, out, at)
+		_, err := checkTable(a, out, at)
+		return err
 	case "zypper":
 		return checkZypper(a, out, at)
 	}
@@ -138,6 +172,10 @@ type txRules struct {
 func rulesFor(manager, kind string) txRules {
 	up := kind == "package_upgrade"
 	switch {
+	case manager == "dnf" && up:
+		return txRules{"Upgrading", map[string]bool{"Upgrading": true, "Installing dependencies": true}}
+	case manager == "dnf":
+		return txRules{"Downgrading", map[string]bool{"Downgrading": true, "Installing dependencies": true}}
 	case manager == "yum" && up:
 		return txRules{"Updating", map[string]bool{"Updating": true, "Updating for dependencies": true, "Installing for dependencies": true}}
 	case manager == "yum":
@@ -149,9 +187,9 @@ func rulesFor(manager, kind string) txRules {
 	}
 }
 
-type txEntry struct{ group, name, version string }
+type txEntry struct{ group, name, version, arch string }
 
-// checkEntries applies the rules shared by yum and zypper.
+// checkEntries applies the rules shared by dnf, yum and zypper.
 func checkEntries(a Action, r txRules, entries []txEntry) error {
 	removed, other := map[string][]string{}, map[string][]string{}
 	found := false
@@ -189,7 +227,7 @@ func describe(m map[string][]string) string {
 	return strings.Join(parts, "; ")
 }
 
-// --- yum
+// --- dnf and yum
 
 var yumSavedTx = regexp.MustCompile(`(?m)^\s*yum load-transaction (/tmp/yum_save_tx\.[A-Za-z0-9._-]+\.yumtx)\s*$`)
 
@@ -204,30 +242,45 @@ func removeSavedYumTransaction(out string) {
 // "---> Package tar.aarch64 2:1.26-35.amzn2.0.3 will be an update"
 var yumCheckLine = regexp.MustCompile(`(?m)^-+> Package (\S+)\.[^.\s]+ (\S+) will be (.+)$`)
 
-var yumNothing = []string{"Nothing to do", "No packages marked for update"}
-var yumMissing = []string{"No Match for argument", "No package ", "available, but not installed", "Error:"}
+// Messages of yum 3 and dnf 4 when there is no transaction. dnf says
+// "No match for argument", yum "No Match for argument".
+var tableNothing = []string{"Nothing to do", "No packages marked for update"}
+var tableMissing = []string{"No Match for argument", "No match for argument", "No package ", "available, but not installed", "Error:"}
 
-func checkYum(a Action, out string, alreadyAt bool) error {
-	entries, verbs, replacing, ok, err := parseYum(out)
+// checkTable checks a yum or dnf dry run. It returns the transaction's
+// entries, or none when there is nothing to do and the package is already
+// at the target.
+func checkTable(a Action, out string, alreadyAt bool) ([]txEntry, error) {
+	entries, verbs, replacing, ok, err := parseTable(out)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if !ok {
-		for _, m := range yumMissing {
+		for _, m := range tableMissing {
 			if strings.Contains(out, m) {
-				return fmt.Errorf("yum cannot %s %s to %s (%q)", verb(a), a.Package, a.ToVersion, firstLineWith(out, m))
+				return nil, fmt.Errorf("%s cannot %s %s to %s (%q)", a.Manager, verb(a), a.Package, a.ToVersion, firstLineWith(out, m))
 			}
 		}
-		for _, m := range yumNothing {
+		for _, m := range tableNothing {
 			if strings.Contains(out, m) && alreadyAt {
-				return nil
+				return nil, nil
 			}
 			if strings.Contains(out, m) {
-				return fmt.Errorf("yum has nothing to do although %s is not at %s", a.Package, a.ToVersion)
+				return nil, fmt.Errorf("%s has nothing to do although %s is not at %s", a.Manager, a.Package, a.ToVersion)
 			}
 		}
-		return errors.New("no transaction summary in the yum output")
+		return nil, fmt.Errorf("no transaction summary in the %s output", a.Manager)
 	}
+	if err := checkTableDetails(a, out, verbs, replacing); err != nil {
+		return nil, err
+	}
+	if err := checkEntries(a, rulesFor(a.Manager, a.Kind), entries); err != nil {
+		return nil, err
+	}
+	return entries, nil
+}
+
+func checkTableDetails(a Action, out string, verbs []string, replacing bool) error {
 	if replacing {
 		return errors.New("installed packages would be replaced (obsoleted)")
 	}
@@ -248,8 +301,8 @@ func checkYum(a Action, out string, alreadyAt bool) error {
 			return fmt.Errorf("unexpected transaction summary entry %q", v)
 		}
 	}
-	// The table leaves out packages that are obsoleted, so the dependency
-	// resolution lines are read too.
+	// yum's table leaves out packages that are obsoleted, so its dependency
+	// resolution lines are read too (dnf prints none and lists "replacing").
 	for _, m := range yumCheckLine.FindAllStringSubmatch(out, -1) {
 		name, what := m[1], strings.TrimSpace(m[3])
 		switch {
@@ -262,7 +315,71 @@ func checkYum(a Action, out string, alreadyAt bool) error {
 			return fmt.Errorf("unexpected yum resolution %q for %s", what, name)
 		}
 	}
-	return checkEntries(a, rulesFor("yum", a.Kind), entries)
+	return nil
+}
+
+var (
+	rpmNameRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9+._-]{0,200}$`)
+	evrRE     = regexp.MustCompile(`^([0-9]+:)?[A-Za-z0-9._+~^]+-[A-Za-z0-9._+~^]+$`)
+	archRE    = regexp.MustCompile(`^[A-Za-z0-9_]{1,32}$`)
+)
+
+// checkVendorArch compares each package dnf would upgrade or downgrade with
+// the installed one: dnf's table shows neither vendor nor the old
+// architecture, and dnf allows vendor changes by default.
+func (f *Fixer) checkVendorArch(ctx context.Context, entries []txEntry) error {
+	n := 0
+	for _, e := range entries {
+		if e.group != "Upgrading" && e.group != "Downgrading" {
+			continue
+		}
+		if n++; n > 50 {
+			return errors.New("too many packages change to compare vendors")
+		}
+		if !rpmNameRE.MatchString(e.name) || !evrRE.MatchString(e.version) || !archRE.MatchString(e.arch) {
+			return fmt.Errorf("unexpected package in the dnf output: %s %s %s", e.name, e.version, e.arch)
+		}
+		out, err := f.Run(ctx, nil, "rpm", "-q", "--qf", "%{ARCH} %{VENDOR}\n", e.name)
+		if err != nil {
+			return fmt.Errorf("cannot read the installed %s: %v", e.name, err)
+		}
+		installed := map[string]string{} // arch -> vendor
+		for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
+			arch, vendor, _ := strings.Cut(strings.TrimSpace(l), " ")
+			installed[arch] = vendorName(vendor)
+		}
+		out, err = f.Run(ctx, nil, "dnf", "repoquery", "-q", "-C", "--qf", "%{arch} %{vendor}", e.name+"-"+e.version+"."+e.arch)
+		if err != nil {
+			return fmt.Errorf("cannot look up the vendor of %s-%s: %v", e.name, e.version, err)
+		}
+		vendors := map[string]bool{}
+		for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
+			arch, vendor, _ := strings.Cut(strings.TrimSpace(l), " ")
+			if arch != e.arch {
+				return fmt.Errorf("unexpected repoquery output for %s: %q", e.name, l)
+			}
+			vendors[vendorName(vendor)] = true
+		}
+		if len(vendors) != 1 {
+			return fmt.Errorf("cannot tell the vendor of %s-%s.%s", e.name, e.version, e.arch)
+		}
+		old, ok := installed[e.arch]
+		if !ok {
+			return fmt.Errorf("packages would change architecture: %s to %s", e.name, e.arch)
+		}
+		if !vendors[old] {
+			return fmt.Errorf("packages would change vendor: %s from %q", e.name, old)
+		}
+	}
+	return nil
+}
+
+func vendorName(v string) string {
+	v = strings.TrimSpace(v)
+	if v == "(none)" || v == "None" {
+		return ""
+	}
+	return v
 }
 
 func verb(a Action) string {
@@ -281,7 +398,9 @@ func firstLineWith(out, s string) string {
 	return ""
 }
 
-// parseYum reads yum 3's transaction table:
+// parseTable reads the transaction table of yum 3 and dnf 4 (whose header
+// says "Architecture" and whose sections are "Upgrading", "Installing
+// dependencies" and so on):
 //
 //	 Package    Arch     Version              Repository   Size
 //	=========================================================
@@ -294,7 +413,7 @@ func firstLineWith(out, s string) string {
 //
 // ok is false when there is no transaction at all. Any line it cannot place
 // is an error.
-func parseYum(out string) (entries []txEntry, verbs []string, replacing, ok bool, err error) {
+func parseTable(out string) (entries []txEntry, verbs []string, replacing, ok bool, err error) {
 	lines := strings.Split(strings.ReplaceAll(out, "\r", ""), "\n")
 	summary := -1
 	for i, l := range lines {
@@ -309,13 +428,13 @@ func parseYum(out string) (entries []txEntry, verbs []string, replacing, ok bool
 	start := -1
 	for i := 0; i+1 < summary; i++ {
 		f := strings.Fields(lines[i])
-		if len(f) >= 3 && f[0] == "Package" && f[1] == "Arch" && f[2] == "Version" && strings.HasPrefix(lines[i+1], "===") {
+		if len(f) >= 3 && f[0] == "Package" && (f[1] == "Arch" || f[1] == "Architecture") && f[2] == "Version" && strings.HasPrefix(lines[i+1], "===") {
 			start = i + 2
 			break
 		}
 	}
 	if start < 0 {
-		return nil, nil, false, true, errors.New("cannot find the yum transaction table")
+		return nil, nil, false, true, errors.New("cannot find the transaction table")
 	}
 	section, pending := "", ""
 	for _, l := range lines[start:summary] {
@@ -325,14 +444,14 @@ func parseYum(out string) (entries []txEntry, verbs []string, replacing, ok bool
 			continue
 		case !strings.HasPrefix(l, " "):
 			if !strings.HasSuffix(t, ":") || pending != "" {
-				return nil, nil, false, true, fmt.Errorf("unexpected line in the yum transaction table: %q", t)
+				return nil, nil, false, true, fmt.Errorf("unexpected line in the transaction table: %q", t)
 			}
 			section = strings.TrimSuffix(t, ":")
 			continue
 		}
 		f := strings.Fields(l)
 		if section == "" {
-			return nil, nil, false, true, fmt.Errorf("package outside a section in the yum transaction table: %q", t)
+			return nil, nil, false, true, fmt.Errorf("package outside a section in the transaction table: %q", t)
 		}
 		if f[0] == "replacing" {
 			replacing = true
@@ -349,12 +468,12 @@ func parseYum(out string) (entries []txEntry, verbs []string, replacing, ok bool
 			continue
 		}
 		if len(f) < 4 {
-			return nil, nil, false, true, fmt.Errorf("unreadable row in the yum transaction table: %q", t)
+			return nil, nil, false, true, fmt.Errorf("unreadable row in the transaction table: %q", t)
 		}
-		entries = append(entries, txEntry{group: section, name: f[0], version: f[2]})
+		entries = append(entries, txEntry{group: section, name: f[0], arch: f[1], version: f[2]})
 	}
 	if pending != "" {
-		return nil, nil, false, true, fmt.Errorf("unreadable row in the yum transaction table: %q", pending)
+		return nil, nil, false, true, fmt.Errorf("unreadable row in the transaction table: %q", pending)
 	}
 	i := summary + 1
 	if i < len(lines) && strings.HasPrefix(lines[i], "===") {
@@ -364,7 +483,7 @@ func parseYum(out string) (entries []txEntry, verbs []string, replacing, ok bool
 		verbs = append(verbs, strings.Fields(lines[i])[0])
 	}
 	if len(entries) == 0 || len(verbs) == 0 {
-		return nil, nil, false, true, errors.New("empty yum transaction")
+		return nil, nil, false, true, errors.New("empty transaction")
 	}
 	return entries, verbs, replacing, true, nil
 }

@@ -1,11 +1,11 @@
 //go:build pkgmanagers
 
-// Real yum and zypper runs, as root inside a throwaway container. Never run
+// Real dnf, yum and zypper runs, as root inside a throwaway container. Never run
 // this on a host you care about: it installs, upgrades and downgrades
 // packages. testdata/pkgmanagers.sh builds the binary, prepares the
 // containers and runs it.
 //
-// Environment: STK_PM (yum or zypper), STK_PKG and STK_OLD, STK_MID,
+// Environment: STK_PM (dnf, yum or zypper), STK_PKG and STK_OLD, STK_MID,
 // STK_NEW (three versions of a real repository package, oldest first, with
 // STK_OLD installed), and a "stkdemo" repository holding the packages that
 // testdata/pkgmanagers.sh builds.
@@ -75,10 +75,10 @@ func TestRealPackageManager(t *testing.T) {
 	if v, ok := installed("stk-victim"); !ok {
 		t.Errorf("stk-victim was removed (%s)", v)
 	}
-	if pm == "zypper" {
+	if pm != "yum" { // yum 3 has no notion of vendor changes
 		step("vendor change", up("stk-demo", "1:1.0-2", "1:1.0-4"), "failed", "", "1:1.0-2")
 	}
-	install := map[string][]string{"yum": {"yum", "-y", "install", "stk-needy"}, "zypper": {"zypper", "--non-interactive", "install", "stk-needy"}}[pm]
+	install := map[string][]string{"dnf": {"dnf", "-y", "install", "stk-needy"}, "yum": {"yum", "-y", "install", "stk-needy"}, "zypper": {"zypper", "--non-interactive", "install", "stk-needy"}}[pm]
 	if out, err := exec.Command(install[0], install[1:]...).CombinedOutput(); err != nil {
 		t.Fatalf("install stk-needy: %v\n%s", err, out)
 	}

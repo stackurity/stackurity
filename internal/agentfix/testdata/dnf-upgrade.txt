@@ -1,0 +1,14 @@
+Last metadata expiration check: 0:02:22 ago on Sun Oct 25 14:58:44 2026.
+Dependencies resolved.
+================================================================================
+ Package      Architecture    Version                      Repository      Size
+================================================================================
+Upgrading:
+ sudo         aarch64         1.9.17p2-3.el9_8.3           baseos         1.3 M
+
+Transaction Summary
+================================================================================
+Upgrade  1 Package
+
+Total download size: 1.3 M
+Operation aborted.

@@ -10,6 +10,7 @@ All notable changes to Stackurity. Versions follow [Semantic Versioning](https:/
 
 ### Changed
 
+- dnf fixes (RHEL, Rocky, AlmaLinux, Fedora, Amazon Linux 2023) follow the same rules: the dry run is read and the change refused if it would remove or obsolete a package, change a package's vendor or architecture, move anything the wrong way, or do nothing while the package is not yet at the target. Before, a dnf dry run ran with `-q`, which printed no transaction, and only its exit status was checked. dnf no longer installs weak dependencies during a fix.
 - RHEL, CentOS and Oracle Linux 7 hosts are fixed with `yum` instead of `dnf`, which they do not have. rpm hosts on an OS without a supported package manager (for example openSUSE Tumbleweed or Amazon Linux 1) are no longer planned.
 - Versions on rpm systems compare with rpm's rules when the agent checks for a stale plan, so an advisory's explicit zero epoch (`0:1.2-3`) matches the installed `1.2-3`.
 

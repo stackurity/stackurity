@@ -9,8 +9,9 @@ import (
 	"testing"
 )
 
-// Outputs in testdata were captured from yum 3.4.3 (Amazon Linux 2) and
-// zypper 1.14.76 (openSUSE Leap 15.5); see testdata/pkgmanagers.sh.
+// Outputs in testdata were captured from yum 3.4.3 (Amazon Linux 2), dnf
+// 4.14.0 (Rocky Linux 9 and Amazon Linux 2023) and zypper 1.14.76 (openSUSE
+// Leap 15.5); see testdata/pkgmanagers.sh.
 func fixture(t *testing.T, name string) string {
 	t.Helper()
 	b, err := os.ReadFile(filepath.Join("testdata", name))
@@ -49,7 +50,7 @@ func fakeExit(responses map[string]reply) (Runner, *[]string) {
 }
 
 func rpmFixer(versions map[string]string) *Fixer {
-	f := New([]string{"tar", "less", "stk-*"})
+	f := New([]string{"tar", "less", "sudo", "openssl*", "stk-*"})
 	f.Installed = func(pkg string) (string, bool) { v, ok := versions[pkg]; return v, ok }
 	return f
 }
@@ -229,5 +230,92 @@ func TestRPMVersions(t *testing.T) {
 		if err := f.Validate(Action{Kind: "package_upgrade", Package: "tar", Manager: "yum", ToVersion: v}); err == nil {
 			t.Errorf("version %q accepted for yum", v)
 		}
+	}
+}
+
+func TestDnf(t *testing.T) {
+	f := rpmFixer(map[string]string{"sudo": "1.9.17p2-3.el9_8.1", "stk-demo": "1:1.0-2", "tar": "2:1.34-1.amzn2023.0.2"})
+	up := Action{Kind: "package_upgrade", Package: "sudo", Manager: "dnf", FromVersion: "1.9.17p2-3.el9_8.1", ToVersion: "1.9.17p2-3.el9_8.3"}
+	vendor := map[string]reply{
+		"rpm -q --qf":   {"aarch64 Rocky Enterprise Software Foundation\n", 0},
+		"dnf repoquery": {"aarch64 Rocky Enterprise Software Foundation\n", 0},
+	}
+	with := func(m map[string]reply) map[string]reply {
+		for k, v := range vendor {
+			if _, ok := m[k]; !ok {
+				m[k] = v
+			}
+		}
+		return m
+	}
+
+	run, calls := fakeExit(with(map[string]reply{"dnf upgrade --assumeno": {fixture(t, "dnf-upgrade.txt"), 1}}))
+	f.Run = run
+	if r := f.Apply(context.Background(), up); r.Phase != "applied" {
+		t.Fatalf("upgrade: %+v", r)
+	}
+	want := []string{"dnf upgrade --assumeno --setopt=install_weak_deps=False sudo-1.9.17p2-3.el9_8.3",
+		"rpm -q --qf %{ARCH} %{VENDOR}\n sudo",
+		"dnf repoquery -q -C --qf %{arch} %{vendor} sudo-1.9.17p2-3.el9_8.3.aarch64",
+		"dnf upgrade -y -q --setopt=install_weak_deps=False sudo-1.9.17p2-3.el9_8.3"}
+	if strings.Join(*calls, "\n") != strings.Join(want, "\n") {
+		t.Errorf("commands = %q", *calls)
+	}
+
+	back := Action{Kind: "package_rollback", Package: "sudo", Manager: "dnf", FromVersion: "1.9.17p2-3.el9_8.1", ToVersion: "1.9.17p2-3.el9_8"}
+	run, calls = fakeExit(with(map[string]reply{"dnf downgrade --assumeno": {fixture(t, "dnf-downgrade.txt"), 1}}))
+	f.Run = run
+	if r := f.Apply(context.Background(), back); r.Phase != "applied" || !applied(*calls, "dnf downgrade -y -q --setopt=install_weak_deps=False sudo-1.9.17p2-3.el9_8") {
+		t.Fatalf("rollback: %+v %q", r, *calls)
+	}
+
+	// Amazon Linux 2023 prints the same table; tar has epoch 2.
+	al := Action{Kind: "package_upgrade", Package: "tar", Manager: "dnf", FromVersion: "2:1.34-1.amzn2023.0.2", ToVersion: "2:1.34-1.amzn2023.0.3"}
+	run, calls = fakeExit(map[string]reply{"dnf upgrade --assumeno": {fixture(t, "dnf-al2023-upgrade.txt"), 1},
+		"rpm -q --qf": {"aarch64 Amazon Linux\n", 0}, "dnf repoquery": {"aarch64 Amazon Linux\n", 0}})
+	f.Run = run
+	if r := f.Apply(context.Background(), al); r.Phase != "applied" || !applied(*calls, "dnf upgrade -y -q --setopt=install_weak_deps=False tar-2:1.34-1.amzn2023.0.3") {
+		t.Fatalf("al2023: %+v %q", r, *calls)
+	}
+
+	demo := Action{Kind: "package_upgrade", Package: "stk-demo", Manager: "dnf", FromVersion: "1:1.0-2", ToVersion: "1:1.0-3"}
+	refused := map[string]struct {
+		a     Action
+		m     map[string]reply
+		error string
+	}{
+		"obsoletes":        {demo, map[string]reply{"dnf upgrade --assumeno": {fixture(t, "dnf-obsolete.txt"), 1}}, "replaced"},
+		"conflict":         {back, map[string]reply{"dnf downgrade --assumeno": {fixture(t, "dnf-conflict.txt"), 1}}, "Problem: problem with installed package stk-needy"},
+		"only the abort":   {up, map[string]reply{"dnf upgrade --assumeno": {"Operation aborted.\n", 1}}, "no transaction summary"},
+		"quiet output":     {up, map[string]reply{"dnf upgrade --assumeno": {"", 0}}, "no transaction summary"},
+		"downgrade in up":  {up, map[string]reply{"dnf upgrade --assumeno": {fixture(t, "dnf-downgrade.txt"), 1}}, "downgrade"},
+		"other version":    {Action{Kind: "package_upgrade", Package: "sudo", Manager: "dnf", ToVersion: "1.9.17p2-3.el9_8.2"}, map[string]reply{"dnf upgrade --assumeno": {fixture(t, "dnf-upgrade.txt"), 1}}, "not 1.9.17p2-3.el9_8.2"},
+		"nothing to do":    {up, map[string]reply{"dnf upgrade --assumeno": {"Dependencies resolved.\nNothing to do.\nComplete!\n", 0}}, "nothing to do"},
+		"no match":         {up, map[string]reply{"dnf upgrade --assumeno": {"No match for argument: sudo-1.9.17p2-3.el9_8.3\nError: No packages marked for upgrade.\n", 1}}, "No match"},
+		"vendor change":    {up, map[string]reply{"dnf upgrade --assumeno": {fixture(t, "dnf-upgrade.txt"), 1}, "dnf repoquery": {"aarch64 Someone Else\n", 0}}, "vendor"},
+		"arch change":      {up, map[string]reply{"dnf upgrade --assumeno": {fixture(t, "dnf-upgrade.txt"), 1}, "rpm -q --qf": {"noarch Rocky Enterprise Software Foundation\n", 0}}, "architecture"},
+		"unknown vendor":   {up, map[string]reply{"dnf upgrade --assumeno": {fixture(t, "dnf-upgrade.txt"), 1}, "dnf repoquery": {"", 0}}, "repoquery"},
+		"repoquery failed": {up, map[string]reply{"dnf upgrade --assumeno": {fixture(t, "dnf-upgrade.txt"), 1}, "dnf repoquery": {"", 1}}, "vendor"},
+		"weak dependency": {up, map[string]reply{"dnf upgrade --assumeno": {strings.Replace(fixture(t, "dnf-upgrade.txt"), "\nTransaction Summary",
+			"Installing weak dependencies:\n sudo-python-plugin   aarch64   1.9.17p2-3.el9_8.3   baseos   40 k\n\nTransaction Summary", 1), 1}}, "unexpected changes"},
+		"removal": {up, map[string]reply{"dnf upgrade --assumeno": {strings.Replace(fixture(t, "dnf-upgrade.txt"), "\nTransaction Summary",
+			"Removing dependent packages:\n sudo-ldap   aarch64   1.9.17p2-3.el9_8.1   @System   2 M\n\nTransaction Summary", 1), 1}}, "removed"},
+		"kernel-style install": {up, map[string]reply{"dnf upgrade --assumeno": {strings.Replace(fixture(t, "dnf-upgrade.txt"), "Upgrading:", "Installing:", 1), 1}}, "unexpected changes"},
+	}
+	for name, c := range refused {
+		run, calls := fakeExit(with(c.m))
+		f.Run = run
+		r := f.Apply(context.Background(), c.a)
+		if r.Phase != "failed" || !strings.Contains(r.Error, c.error) || applied(*calls, "dnf upgrade -y") || applied(*calls, "dnf downgrade -y") {
+			t.Errorf("%s: phase=%s error=%q calls=%q", name, r.Phase, r.Error, *calls)
+		}
+	}
+
+	// Already at the target: nothing to do is fine, and no vendor lookup.
+	f = rpmFixer(map[string]string{"sudo": "1.9.17p2-3.el9_8.3"})
+	run, calls = fakeExit(map[string]reply{"dnf upgrade --assumeno": {"Dependencies resolved.\nNothing to do.\nComplete!\n", 0}})
+	f.Run = run
+	if r := f.Apply(context.Background(), up); r.Phase != "applied" || applied(*calls, "dnf repoquery") {
+		t.Errorf("repeat: %+v %q", r, *calls)
 	}
 }
