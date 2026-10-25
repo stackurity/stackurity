@@ -120,10 +120,20 @@ func ComparePEP440(a, b string) (int, error) {
 	return cmpNum(x.dev, y.dev), nil
 }
 
+// gemVersion is Gem::Version's ANCHORED_VERSION_PATTERN.
+var gemVersion = regexp.MustCompile(`^\s*[0-9]+(?:\.[0-9a-zA-Z]+)*(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?\s*$`)
+
 // CompareRubyGems follows Gem::Version: segments split on dots and on
 // letter/digit boundaries; any segment with letters makes a prerelease,
 // which sorts before the release.
+//
+// Strings Gem::Version rejects ("unknown", "latest", "") are errors.
 func CompareRubyGems(a, b string) (int, error) {
+	for _, v := range []string{a, b} {
+		if !gemVersion.MatchString(v) {
+			return 0, &ParseError{RubyGems, v}
+		}
+	}
 	seg := func(v string) []string {
 		var out []string
 		for _, part := range strings.Split(strings.TrimSpace(strings.ReplaceAll(v, "-", ".pre.")), ".") {

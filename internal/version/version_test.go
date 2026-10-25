@@ -144,7 +144,25 @@ func TestRubyGems(t *testing.T) {
 		{"1.15.5", "1.15.10", -1},
 		{"1.0", "1", 0},
 		{"7.1.2", "7.1.2.1", -1},
+		{"3.0.0.alpha", "3.0.0.beta1", -1},
+		{"1.0.0-pre", "1.0.0", -1}, // "-" starts a prerelease, as in Gem::Version
 	})
+	for _, bad := range []string{"unknown", "latest", "", "v1.2.3", "1.2.3 beta"} {
+		if _, err := CompareRubyGems(bad, "1.0"); err == nil {
+			t.Errorf("CompareRubyGems(%q) must not parse", bad)
+		}
+	}
+}
+
+func TestMavenUnresolved(t *testing.T) {
+	for _, bad := range []string{"${log4j.version}", "2.${minor}", " "} {
+		if _, err := CompareMaven(bad, "2.17.1"); err == nil {
+			t.Errorf("CompareMaven(%q) must not parse", bad)
+		}
+	}
+	if c, err := CompareMaven("2.0-beta9", "2.0"); err != nil || c >= 0 {
+		t.Errorf("CompareMaven(2.0-beta9, 2.0) = %d %v", c, err)
+	}
 }
 
 func TestNuGet(t *testing.T) {
