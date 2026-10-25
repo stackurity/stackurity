@@ -13,7 +13,7 @@ Open-source, self-hosted software inventory and upgrade intelligence. Stackurity
 - **Container images:** inventory from a registry reference through the bundled Syft. No Docker daemon is needed.
 - **SBOMs:** CycloneDX and SPDX JSON import, CycloneDX 1.6 export.
 - **Vulnerability intelligence:** OSV data for npm, Packagist, PyPI, Go, Maven, RubyGems, crates.io, NuGet, Pub, Debian, Ubuntu, Alpine, Rocky and Alma. Versions are compared by each ecosystem's own rules, so distro backports are handled. Advisories are deduplicated across sources, CISA KEV flags known exploitation, and refresh is hourly and incremental.
-- **Versions and lifecycle:** latest stable releases from npm and Packagist (patch, minor or major), and end-of-life data from endoflife.date for operating systems, runtimes and frameworks.
+- **Versions and lifecycle:** latest stable releases from npm, Packagist, PyPI, Go modules, crates.io, RubyGems, NuGet, Maven Central and pub.dev (patch, minor or major, plus deprecated packages and yanked, retracted or unlisted versions), and end-of-life data from endoflife.date for operating systems, runtimes and frameworks.
 - **One inventory:** stable asset identities, conflict detection and merging, and relations between assets. Every component carries its source, timestamp, confidence and evidence.
 - **Coverage ledger:** unsupported, skipped, failed, partial and stale areas are shown separately from healthy coverage. They are never treated as healthy.
 - **Risk-based alerting:** configurable P1–P4 priority with explained factors (KEV, exposure, production, criticality, fix availability, confidence), SOS rules that never rely on severity alone, and incidents that group findings so one CVE on fifty servers is one alert.
@@ -62,7 +62,7 @@ For TLS, backups, upgrades, Kubernetes (Helm), the agents and plugins, see [docs
 
 - Run a single server replica. Background work runs in-process, and notification delivery isn't yet coordinated across replicas.
 - Vulnerability matching covers OSV ecosystems: language packages, Debian, Ubuntu (not Pro), Alpine, Rocky and Alma. RHEL, SUSE and Amazon Linux packages are inventoried but listed as evaluation gaps.
-- Release (latest-version) data comes only from npm and Packagist. Lifecycle data covers everything endoflife.date tracks.
+- Release (latest-version) data covers the language registries above, not OS packages. Maven Central publishes no release dates, and RubyGems hides yanked versions, so neither is shown for those. Lifecycle data covers everything endoflife.date tracks.
 - CVSS v4 vectors are kept but not scored locally; the vendor's label is used instead.
 - Runtimes found outside the package manager get lifecycle (end-of-life) tracking only; vulnerabilities are not matched for them.
 - Java needs the Java stack pack; from a `pom.xml` alone it sees direct dependencies only. Windows hotfixes and Microsoft Store apps are reported as unsupported coverage.
