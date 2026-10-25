@@ -5,7 +5,7 @@ image:
 
 # Replicas share the database: periodic tasks and notification deliveries
 # are claimed there, so more than one replica is safe (docs/install.md,
-# "Running several replicas"). Sign-in rate limits are per replica.
+# "Running several replicas"). Sign-in rate limits are shared there too.
 replicaCount: 1
 
 # Recreate stops every replica before the new version starts, so two

@@ -338,8 +338,18 @@ Any number of servers can run against one PostgreSQL database, behind a load bal
 
 - **Background work is coordinated in the database.** Jobs are claimed one at a time. Each periodic task (the alert dispatcher, digests, feed and integration scheduling, housekeeping) runs at most once per interval across all replicas and never on two at once. A replica holds a task under a two-minute lease that it renews while the task runs; if the replica dies, another takes the task over when the lease expires and runs it again at once.
 - **Notifications are sent once.** Each delivery is claimed just before it is sent. A replica that dies mid-send leaves the delivery to be retried about five minutes later, so a message can, rarely, arrive twice; webhooks carry `X-Stackurity-Delivery` for deduplication.
-- **Shared state lives in the database**: sessions, single sign-on state, the setup token and the licence. A licence or stack pack changed through one replica reaches the others within 30 seconds, and a workspace's plan within 30 seconds.
-- **Per replica:** sign-in and setup rate limits (a client gets up to N times the limit with N replicas), the scratch directory (`STACKURITY_DATA_DIR`, temporary clones only), and HTTP and database pool metrics. Mount the same `file:` secrets and set the same environment on every replica.
+- **Shared state lives in the database**: sessions, single sign-on state, the setup token, rate limits and the licence. A licence or stack pack changed through one replica reaches the others within 30 seconds, and a workspace's plan within 30 seconds.
+- **Rate limits are shared.** Sign-in, setup, password change, agent enrollment and the start of single sign-on are counted in the database, so a client gets the limit once however the load balancer spreads its requests. The limits are below. Every one fails closed: if the database cannot count an attempt, the request is refused with 503 (each of these requests needs the database anyway). Each replica also keeps its own count and refuses early once it alone has seen more than the limit, which saves a database write during a flood. Ended windows are deleted by the hourly housekeeping task. Behind a proxy, set `STACKURITY_TRUST_PROXY=true` so the limits see client addresses rather than the proxy's.
+
+  | Limit | Applies to |
+  |---|---|
+  | 10 a minute per client address | sign-in, setup, password change, enrollment (`POST /api/v1/enroll`), the start of single sign-on |
+  | 20 every 15 minutes per account | sign-in attempts for one email from any address, whether or not the account exists (successful ones count too); password changes by one user |
+  | 20 a minute per client address | both steps of single sign-on together (start and callback), about ten sign-ins |
+  | 100 an hour in total | setup attempts from all addresses, in case `STACKURITY_SETUP_TOKEN` was set to something guessable |
+
+  The per-account limit means someone guessing a password can keep that account from signing in with a password for up to 15 minutes at a time; single sign-on is unaffected, and the attempts appear in the audit log as `auth.login_failed`.
+- **Per replica:** the scratch directory (`STACKURITY_DATA_DIR`, temporary clones only), and HTTP and database pool metrics. Mount the same `file:` secrets and set the same environment on every replica.
 - **Upgrades:** stop every replica, then start the new version (Compose and the Helm chart's `Recreate` strategy do this). Migrations run once, inside a lock, but a new schema is not guaranteed to work with the previous version's code.
 
 ## Health

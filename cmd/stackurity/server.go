@@ -466,6 +466,9 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 		if err := st.PurgeExpiredSessions(ctx); err != nil {
 			return err
 		}
+		if _, err := st.PurgeRateLimits(ctx); err != nil {
+			return err
+		}
 		return st.PurgeJobs(ctx, 14*24*time.Hour)
 	})
 }

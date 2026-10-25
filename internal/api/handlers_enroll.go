@@ -110,8 +110,7 @@ func (s *Server) revokeEnrollment(w http.ResponseWriter, r *http.Request) {
 // session or token, so it is rate limited and says nothing about why a code
 // was refused.
 func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
-	if !s.limiter.allow("enroll:" + clientIP(r)) {
-		writeError(w, 429, "rate_limited", "too many attempts; wait a minute")
+	if s.limited(w, r, "too many attempts; wait a minute", limitHit{"enroll", clientIP(r), limitPerAddress}) {
 		return
 	}
 	var req struct {
