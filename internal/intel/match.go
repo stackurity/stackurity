@@ -106,9 +106,9 @@ func (e *Evaluator) Evaluate(ctx context.Context, componentIDs []int64, assetID 
 			gaps[r.ComponentID] = "no vulnerability source for this ecosystem yet"
 		default:
 			base := osv.BaseEcosystem(t.Ecosystem)
-			feed, configured := feedState[OSVFeed(base)]
+			feed, configured := feedState[VulnFeed(base)]
 			if !configured || !feed.Enabled || feed.LastSuccess == nil {
-				gaps[r.ComponentID] = fmt.Sprintf("vulnerability feed %s has not completed a sync", OSVFeed(base))
+				gaps[r.ComponentID] = fmt.Sprintf("vulnerability feed %s has not completed a sync", VulnFeed(base))
 				break
 			}
 			key := store.PackageRef{BaseEcosystem: base, Name: t.Name}
@@ -197,7 +197,8 @@ type groupMatch struct {
 	score      *float32
 	title      string
 	fixed      string // from the free channel
-	proFixed   string // from Ubuntu Pro (ESM)
+	proFixed   string // from a paid channel (Ubuntu Pro, SUSE LTSS)
+	proChannel string
 	ranges     []string
 	ecosystems []string
 	exploited  bool
@@ -264,6 +265,9 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 		// so every source agrees the target is fixed.
 		if pro {
 			g.proHit, g.proFixed = true, higher(g.proFixed, m.FixedVersion)
+			if g.proChannel == "" {
+				g.proChannel = osv.Subscription(a.Ecosystem)
+			}
 		} else {
 			g.freeHit, g.fixed = true, higher(g.fixed, m.FixedVersion)
 		}
@@ -303,7 +307,7 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 		fixed := g.fixed
 		requiresPro := !g.freeHit
 		if requiresPro {
-			fixed = g.proFixed // only obtainable with an Ubuntu Pro subscription
+			fixed = g.proFixed // only obtainable with a subscription
 		}
 		ev := map[string]any{
 			"matched_ranges":   g.ranges,
@@ -324,7 +328,10 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 			ev["feed_stale"] = true
 		}
 		if requiresPro {
-			ev["requires_ubuntu_pro"] = true
+			ev["requires_subscription"] = g.proChannel
+			if g.proChannel == "Ubuntu Pro" {
+				ev["requires_ubuntu_pro"] = true
+			}
 		}
 		if pu, err := packageurl.FromString(r.Purl); err == nil && osv.KernelNotRunning(r.Type, pu.Name, r.Version, r.RunningKernel) {
 			ev["not_running_kernel"] = true

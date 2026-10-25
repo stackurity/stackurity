@@ -5,6 +5,7 @@ package osv
 
 import (
 	"encoding/json"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -149,23 +150,56 @@ func TargetFor(purl, ver string, evidence map[string]string) (Target, bool) {
 		}
 		t.Ecosystem, t.Name = "Alpine:v"+majorMinor(rel), name
 	case "rpm":
-		distro := q["distro"] // rocky-9.3, almalinux-9.4
-		var eco string
-		switch strings.ToLower(p.Namespace) {
-		case "rocky":
-			eco = "Rocky Linux"
-		case "almalinux":
-			eco = "AlmaLinux"
-		default:
-			return Target{}, false // RHEL, SUSE, Fedora: later
-		}
-		_, rel, ok := strings.Cut(distro, "-")
-		if !ok || rel == "" {
+		// distro is "<os-release ID>-<VERSION_ID>": rocky-9.3, rhel-9.4,
+		// sles-15.5, opensuse-leap-15.5, amzn-2023. The agent uses the ID as
+		// namespace; Syft uses vendor names (redhat, amazon), so the
+		// qualifier decides.
+		id, rel := rpmDistro(q["distro"])
+		if id == "" {
 			return Target{}, false
 		}
-		t.Ecosystem, t.Name = eco+":"+majorOf(rel), p.Name
+		// Red Hat, Rocky, Alma and Amazon advisories name binary packages;
+		// SUSE advisories name the source package.
+		name := p.Name
+		srpm := ""
+		if evidence != nil {
+			srpm = evidence["source_rpm"]
+		}
+		if srpm == "" {
+			srpm = q["upstream"] // Syft: the source rpm file name
+		}
+		switch id {
+		case "rocky":
+			t.Ecosystem = "Rocky Linux:" + majorOf(rel)
+		case "almalinux":
+			t.Ecosystem = "AlmaLinux:" + majorOf(rel)
+		case "rhel":
+			t.Ecosystem = "Red Hat:enterprise_linux:" + majorOf(rel)
+		case "amzn":
+			if rel != "2" && rel != "2023" {
+				return Target{}, false // Amazon Linux 1 and unknown releases
+			}
+			t.Ecosystem = "Amazon Linux:" + rel
+		case "sles", "sles_sap", "sled":
+			sp := suseServicePack(rel)
+			if sp == "" {
+				return Target{}, false
+			}
+			t.Ecosystem = "SUSE:" + sp
+			if src := sourceRPMName(srpm); src != "" {
+				name = src
+			}
+		case "opensuse-leap":
+			t.Ecosystem = "openSUSE:Leap " + rel
+			if src := sourceRPMName(srpm); src != "" {
+				name = src
+			}
+		}
+		t.Name = name
 		if evr := evidence["evr"]; evr != "" {
 			t.Version = evr
+		} else if e := q["epoch"]; e != "" && e != "0" && !strings.Contains(t.Version, ":") {
+			t.Version = e + ":" + t.Version
 		}
 	default:
 		return Target{}, false
@@ -183,6 +217,64 @@ func joinNS(ns, name string) string {
 func majorOf(v string) string {
 	m, _, _ := strings.Cut(v, ".")
 	return m
+}
+
+// rpmDistros are the os-release IDs with an advisory source, longest first
+// so "sles_sap" is not read as "sles". CentOS, Oracle Linux and Fedora have
+// none yet.
+var rpmDistros = []string{"opensuse-leap", "almalinux", "sles_sap", "rocky", "rhel", "amzn", "sles", "sled"}
+
+// rpmDistro splits a distro qualifier ("rhel-9.4") into a supported ID and
+// its release.
+func rpmDistro(distro string) (id, rel string) {
+	for _, d := range rpmDistros {
+		if r, ok := strings.CutPrefix(distro, d+"-"); ok && r != "" {
+			return d, r
+		}
+	}
+	return "", ""
+}
+
+// suseServicePack turns a SLES VERSION_ID into the product suffix SUSE
+// advisories use: "15.5" -> "15 SP5", "15" -> "15".
+func suseServicePack(rel string) string {
+	major, sp, ok := strings.Cut(rel, ".")
+	if major == "" || !isDigits(major) {
+		return ""
+	}
+	if !ok || sp == "0" {
+		return major
+	}
+	if !isDigits(sp) {
+		return ""
+	}
+	return major + " SP" + sp
+}
+
+// sourceRPMName extracts the package name from a SOURCERPM value such as
+// "openssl-3-3.0.8-150500.5.3.1.src.rpm" (name-version-release.src.rpm).
+func sourceRPMName(srpm string) string {
+	s := strings.TrimSuffix(strings.TrimSuffix(srpm, ".src.rpm"), ".nosrc.rpm")
+	if s == srpm {
+		return ""
+	}
+	for i := 0; i < 2; i++ {
+		j := strings.LastIndexByte(s, '-')
+		if j <= 0 {
+			return ""
+		}
+		s = s[:j]
+	}
+	return s
+}
+
+func isDigits(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return s != ""
 }
 
 func majorMinor(v string) string {
@@ -203,25 +295,71 @@ func BaseEcosystem(eco string) string {
 // MatchEcosystem reports whether an advisory's ecosystem string applies to
 // the target's. Ubuntu advisories carry suffixes such as ":LTS", and Ubuntu
 // Pro (ESM) advisories use "Ubuntu:Pro:<release>"; both match the release.
-// Use IsPro to tell subscription-only fixes apart.
+// Red Hat advisories name a repository after the release
+// ("Red Hat:enterprise_linux:9::appstream"); minor-release streams
+// (rhel_eus, rhel_aus) are separate products and do not match. A SUSE
+// target "SUSE:15 SP5" matches every product of that service pack
+// ("SUSE:Linux Enterprise Module for Basesystem 15 SP5") and its extended
+// support channels ("... 15 SP5-LTSS"). Use Subscription to tell
+// subscription-only fixes apart.
 func MatchEcosystem(advisory, target string) bool {
 	if advisory == target {
 		return true
 	}
-	if strings.HasPrefix(target, "Ubuntu:") && strings.HasPrefix(advisory, "Ubuntu:") {
+	switch {
+	case strings.HasPrefix(target, "Ubuntu:") && strings.HasPrefix(advisory, "Ubuntu:"):
 		rel := strings.TrimPrefix(target, "Ubuntu:")
 		for _, part := range strings.Split(strings.TrimPrefix(advisory, "Ubuntu:"), ":") {
 			if part == rel {
 				return true
 			}
 		}
+	case strings.HasPrefix(target, "Red Hat:"):
+		return strings.HasPrefix(advisory, target+"::")
+	case strings.HasPrefix(target, "SUSE:") && strings.HasPrefix(advisory, "SUSE:"):
+		_, ok := suseChannel(advisory, strings.TrimPrefix(target, "SUSE:"))
+		return ok
 	}
 	return false
 }
 
+// suseChannel matches a SUSE product ecosystem against a service pack
+// ("15 SP5") and returns the extended support suffix ("LTSS"), if any.
+func suseChannel(advisory, sp string) (suffix string, ok bool) {
+	product := strings.TrimPrefix(advisory, "SUSE:")
+	if i := strings.LastIndex(product, " "+sp); i >= 0 {
+		rest := product[i+len(sp)+1:]
+		if rest == "" {
+			return "", true
+		}
+		if s, found := strings.CutPrefix(rest, "-"); found && s != "" && !strings.ContainsAny(s, " ") {
+			return s, true
+		}
+	}
+	return "", false
+}
+
 // IsPro reports whether an ecosystem is a subscription channel whose fixes
-// need Ubuntu Pro (ESM).
-func IsPro(ecosystem string) bool { return strings.HasPrefix(ecosystem, "Ubuntu:Pro:") }
+// need a paid subscription (Ubuntu Pro, SUSE LTSS).
+func IsPro(ecosystem string) bool { return Subscription(ecosystem) != "" }
+
+// Subscription names the paid channel an advisory ecosystem belongs to, or
+// "" for a release's free updates.
+func Subscription(ecosystem string) string {
+	switch {
+	case strings.HasPrefix(ecosystem, "Ubuntu:Pro:"):
+		return "Ubuntu Pro"
+	case strings.HasPrefix(ecosystem, "SUSE:"):
+		if m := suseExtended.FindStringSubmatch(ecosystem); m != nil {
+			return "SUSE " + m[1]
+		}
+	}
+	return ""
+}
+
+// suseExtended matches extended support channels such as
+// "SUSE:Linux Enterprise Server 15 SP5-LTSS".
+var suseExtended = regexp.MustCompile(` \d+(?: SP\d+)?-([A-Za-z0-9-]+)$`)
 
 // Match is the result of checking one Affected entry.
 type Match struct {

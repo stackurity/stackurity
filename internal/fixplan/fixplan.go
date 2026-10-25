@@ -44,8 +44,9 @@ type Row struct {
 	Severity       string
 	SOS            bool
 	KnownExploited bool
-	KernelIdle     bool // not_running_kernel
-	RequiresPro    bool
+	KernelIdle     bool   // not_running_kernel
+	RequiresPro    bool   // the only fix is in a paid channel
+	Subscription   string // that channel: "Ubuntu Pro", "SUSE LTSS"
 	IsOS           bool   // the operating system component itself
 	EOLTitle       string // finding title for end_of_life findings
 }
@@ -90,12 +91,19 @@ type Advice struct {
 	Target       string // suggested release, e.g. "24.04 LTS"
 }
 
-func manager(osID string) (update, autoremove string) {
+func manager(osID, osVersion string) (update, autoremove string) {
 	switch osID {
 	case "ubuntu", "debian":
 		return "sudo apt update && sudo apt upgrade", "sudo apt autoremove --purge"
-	case "rhel", "rocky", "almalinux", "centos", "fedora", "ol", "amzn":
+	case "amzn":
+		if osVersion == "2" {
+			return "sudo yum update", "sudo package-cleanup --oldkernels --count=1"
+		}
 		return "sudo dnf upgrade --refresh", "sudo dnf remove --oldinstallonly"
+	case "rhel", "rocky", "almalinux", "centos", "fedora", "ol":
+		return "sudo dnf upgrade --refresh", "sudo dnf remove --oldinstallonly"
+	case "sles", "sles_sap", "sled", "opensuse-leap":
+		return "sudo zypper refresh && sudo zypper patch", "sudo zypper purge-kernels"
 	case "alpine":
 		return "sudo apk update && sudo apk upgrade", ""
 	}
@@ -151,7 +159,10 @@ func Build(rows []Row, advice map[string]Advice) ([]*Group, map[int64]string) {
 				g = get(r, NoFix, "")
 			}
 			if r.RequiresPro {
-				g.extra["pro"] = "1"
+				g.extra["pro"] = r.Subscription
+				if g.extra["pro"] == "" {
+					g.extra["pro"] = "Ubuntu Pro"
+				}
 			}
 		case r.FixedVersion != "":
 			g = get(r, PackageUpgrade, fmt.Sprint(r.ComponentID))
@@ -235,7 +246,7 @@ func describe(g *Group, osEOL map[int64]Row, advice map[string]Advice) {
 	}
 	n := g.FindingCount
 	issues := plural(n, "finding")
-	update, autoremove := manager(g.extra["os"])
+	update, autoremove := manager(g.extra["os"], g.extra["osv"])
 	osLabel := strings.TrimSpace(g.extra["osname"])
 	if osLabel == "" {
 		osLabel = strings.TrimSpace(g.extra["os"] + " " + g.extra["osv"])
@@ -270,9 +281,9 @@ func describe(g *Group, osEOL map[int64]Row, advice map[string]Advice) {
 			g.Action += " (since " + a.EOLDate + ")"
 		}
 		g.Action += fmt.Sprintf("; upgrade to %s.", target)
-		if g.extra["pro"] != "" {
-			g.Needs = "ubuntu-pro"
-			g.Action += " Until then, Ubuntu Pro (ESM) provides fixes for some of these issues."
+		if ch := g.extra["pro"]; ch != "" {
+			g.Needs = needsChannel(ch)
+			g.Action += " Until then, " + channelLabel(ch) + " provides fixes for some of these issues."
 		}
 		g.Effort = "high"
 		g.Note = fmt.Sprintf("%s: the release itself, plus findings with no free fix for this release.", issues)
@@ -304,12 +315,28 @@ func describe(g *Group, osEOL map[int64]Row, advice map[string]Advice) {
 		g.Title = "Issues with no fix published yet"
 		g.Action = "Watch for fixes; consider mitigations or replacing the affected components."
 		g.Effort = "medium"
-		if g.extra["pro"] != "" {
-			g.Needs = "ubuntu-pro"
-			g.Title = "Issues fixed only in Ubuntu Pro (ESM)"
-			g.Action = "Enable Ubuntu Pro (ESM) to receive these fixes, then install updates."
+		if ch := g.extra["pro"]; ch != "" {
+			g.Needs = needsChannel(ch)
+			g.Title = "Issues fixed only in " + channelLabel(ch)
+			g.Action = "Enable " + channelLabel(ch) + " to receive these fixes, then install updates."
 		}
 	}
+}
+
+// needsChannel is the Group.Needs value for a paid channel; the dashboard
+// knows "ubuntu-pro" and shows anything else as written.
+func needsChannel(ch string) string {
+	if ch == "Ubuntu Pro" {
+		return "ubuntu-pro"
+	}
+	return ch
+}
+
+func channelLabel(ch string) string {
+	if ch == "Ubuntu Pro" {
+		return "Ubuntu Pro (ESM)"
+	}
+	return ch
 }
 
 // eolSubject turns "MySQL 8.0 is end-of-life since 2026-04-30" into
