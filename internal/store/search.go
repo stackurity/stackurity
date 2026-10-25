@@ -456,6 +456,21 @@ func searchComponents(ctx context.Context, tx pgx.Tx, q string, limit int) ([]Se
 	return out, false, nil
 }
 
+// textRank ranks s against the lower-cased query like the SQL does; 3 means
+// no match.
+func textRank(s, lowerQ string) int {
+	s = strings.ToLower(s)
+	switch {
+	case s == lowerQ:
+		return RankExact
+	case strings.HasPrefix(s, lowerQ):
+		return RankPrefix
+	case strings.Contains(s, lowerQ):
+		return RankContains
+	}
+	return RankContains + 1
+}
+
 // assetMatchAttributes are the asset attributes that identify an asset,
 // searched alongside its identifiers.
 var assetMatchAttributes = []string{"digest", "image", "arn"}
@@ -486,6 +501,10 @@ func searchAssets(ctx context.Context, tx pgx.Tx, q string, limit int) ([]Search
 		if err := rows.Scan(&a.ID, &a.Kind, &a.Name, &a.Environment, &a.OwnerTeam, &a.Status, &a.LastSeen, &a.Rank,
 			&a.MatchScheme, &a.MatchValue, &a.OpenFindings); err != nil {
 			return nil, false, err
+		}
+		// Name the identifier only when it matched better than the name did.
+		if a.MatchValue != "" && textRank(a.Name, lower) <= textRank(a.MatchValue, lower) {
+			a.MatchScheme, a.MatchValue = "", ""
 		}
 		out = append(out, a)
 	}
