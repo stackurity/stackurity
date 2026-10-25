@@ -84,7 +84,7 @@ Community is free and complete for finding and prioritising what to fix. Pro add
 
 ## Principles
 
-- Self-hosted, with no vendor account and no telemetry.
+- Self-hosted, with no vendor account and no telemetry. The only request to the project is a check for new releases: an anonymous read of the public release list that sends nothing about you, compared locally, and turned off with `STACKURITY_UPDATE_CHECK=off`.
 - Every finding carries its source, timestamp and confidence.
 - Missing or stale data is shown as missing or stale. It is never treated as healthy.
 - Refreshing intelligence never changes your software. Changes need explicit policy.

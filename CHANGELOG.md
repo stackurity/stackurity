@@ -2,6 +2,18 @@
 
 All notable changes to Stackurity. Versions follow [Semantic Versioning](https://semver.org/); before 1.0, a minor version can change behaviour, and the notes say when it does.
 
+Each release's section is published as its GitHub release notes, and a tag without a section here cannot be released (`go run ./tools/changelog -version vX.Y.Z` prints it). New changes go under **Unreleased**, which is renamed to the version when it is tagged. Subsections are **Security**, **Added**, **Changed**, **Fixed** and **Upgrading**. Put fixes for vulnerabilities under `### Security`, first: installations treat a release with that heading as a security release and show administrators a banner they can only snooze.
+
+## Unreleased
+
+### Added
+
+- **Update notices for administrators.** Every 12 hours one server replica reads the public list of Stackurity releases from GitHub (an anonymous request with a generic `User-Agent`; no version, id or other data about the installation is sent) and compares it with the running version locally. Instance administrators see a banner when a newer release exists (dismissable per version) or a stronger one when a newer release has a **Security** section (it can only be snoozed for 24 hours), and **Settings → What's new** (`/updates`, also linked from the version in the sidebar) shows the notes of every newer release with upgrade steps. `GET /api/v1/updates` returns the same for instance administrators. `STACKURITY_UPDATE_CHECK=off` turns the check off entirely, and `STACKURITY_UPDATE_URL` points it at a mirror; see [docs/network.md](docs/network.md#update-check).
+
+### Changed
+
+- GitHub release notes are now this changelog's section for the version, instead of a generated list of pull requests, and the release workflow fails when the section is missing. Tags with a prerelease suffix (`v0.4.0-rc.1`) are published as prereleases.
+
 ## 0.3.1
 
 ### Fixed
