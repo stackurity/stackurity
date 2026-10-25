@@ -360,7 +360,7 @@ Instance administrators see a banner when a newer release is available, and **Se
 
 With Helm, set the new image tag (or chart version) and run `helm upgrade` with your usual values.
 
-Before a release is published, CI installs each earlier release still in use (currently 0.2.0 and 0.3.0), loads data, starts the new version on the same database, restores a backup of the result into a new PostgreSQL server, and runs the rollback below, checking readiness and counts at each step. The script is `tools/release-checks/upgrade.sh`; you can run it against your own build: `tools/release-checks/upgrade.sh ghcr.io/stackurity/stackurity:0.3.0 stackurity:mybuild`.
+Before a release is published, CI installs each earlier release still in use (currently 0.2.0, 0.3.0 and 0.3.1), loads data, starts the new version on the same database, restores a backup of the result into a new PostgreSQL server, and runs the rollback below, checking readiness and counts at each step. The script is `tools/release-checks/upgrade.sh`; you can run it against your own build: `tools/release-checks/upgrade.sh ghcr.io/stackurity/stackurity:0.3.0 stackurity:mybuild`.
 
 ### Rolling back
 
