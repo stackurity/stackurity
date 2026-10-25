@@ -140,24 +140,34 @@ func Exec(ctx context.Context, exe, workDir string, timeout time.Duration, cmdNa
 	if ctx.Err() == context.DeadlineExceeded {
 		return nil, logs, fmt.Errorf("plugin timed out after %s", timeout)
 	}
-	var resp plugin.Response
-	dec := json.NewDecoder(bytes.NewReader(stdout.Bytes()))
-	if err := dec.Decode(&resp); err != nil {
-		if runErr != nil {
+	resp, err := decodeResponse(stdout.Bytes())
+	if err != nil {
+		if runErr != nil && !errors.Is(err, errProtocol) {
 			return nil, logs, fmt.Errorf("plugin failed: %v", runErr)
 		}
-		return nil, logs, fmt.Errorf("plugin wrote invalid JSON: %w", err)
-	}
-	if resp.ProtocolVersion != plugin.ProtocolVersion {
-		return nil, logs, fmt.Errorf("plugin speaks protocol %q, expected %q", resp.ProtocolVersion, plugin.ProtocolVersion)
+		return nil, logs, err
 	}
 	if resp.Error != "" {
-		return &resp, logs, errors.New("plugin error: " + truncate(resp.Error, 500))
+		return resp, logs, errors.New("plugin error: " + truncate(resp.Error, 500))
 	}
 	if runErr != nil {
-		return &resp, logs, fmt.Errorf("plugin exited with error: %v", runErr)
+		return resp, logs, fmt.Errorf("plugin exited with error: %v", runErr)
 	}
-	return &resp, logs, nil
+	return resp, logs, nil
+}
+
+var errProtocol = errors.New("protocol")
+
+// decodeResponse reads a plugin's stdout.
+func decodeResponse(out []byte) (*plugin.Response, error) {
+	var resp plugin.Response
+	if err := json.NewDecoder(bytes.NewReader(out)).Decode(&resp); err != nil {
+		return nil, fmt.Errorf("plugin wrote invalid JSON: %w", err)
+	}
+	if resp.ProtocolVersion != plugin.ProtocolVersion {
+		return nil, fmt.Errorf("plugin speaks %w %q, expected %q", errProtocol, resp.ProtocolVersion, plugin.ProtocolVersion)
+	}
+	return &resp, nil
 }
 
 func (r *Runner) Metadata(ctx context.Context, name string) (*plugin.Metadata, error) {
@@ -228,31 +238,45 @@ func (r *Runner) Collect(ctx context.Context, name string, config json.RawMessag
 	}
 	net := netguard.PolicyFor(ctx)
 	resp, logs, err := Exec(ctx, p, r.WorkDir, r.Timeout, "collect", &plugin.Request{Config: config, Secrets: secrets, Network: &net})
+	// What a plugin prints is logged, and its errors are stored on the
+	// integration for engineers to read; neither may carry the credentials
+	// it was given.
+	logs = redactSecrets(logs, secrets)
 	if err != nil {
-		return nil, logs, err
+		return nil, logs, redactErr(err, secrets)
 	}
-	if len(resp.Batches) > 1000 {
-		return nil, logs, errors.New("plugin returned more than 1000 batches")
+	batches, err := checkBatches(resp.Batches, meta.ID, meta.Version)
+	if err != nil {
+		return nil, logs, redactErr(err, secrets)
 	}
-	for i, b := range resp.Batches {
+	return batches, logs, nil
+}
+
+// checkBatches validates a plugin's batches and stamps them with the
+// plugin's identity, whatever collector they claim.
+func checkBatches(batches []*model.ObservationBatch, id, version string) ([]*model.ObservationBatch, error) {
+	if len(batches) > 1000 {
+		return nil, errors.New("plugin returned more than 1000 batches")
+	}
+	for i, b := range batches {
 		if b == nil {
-			return nil, logs, fmt.Errorf("batch %d is empty", i)
+			return nil, fmt.Errorf("batch %d is empty", i)
 		}
-		b.Collector.ID = "plugin:" + meta.ID
-		b.Collector.Version = meta.Version
+		b.Collector.ID = "plugin:" + id
+		b.Collector.Version = version
 		b.Collector.Method = "plugin"
 		if err := b.Validate(); err != nil {
-			return nil, logs, fmt.Errorf("batch %d: %w", i, err)
+			return nil, fmt.Errorf("batch %d: %w", i, err)
 		}
 		// Application paths are scoped to a host by the ingest API; a plugin
 		// bypasses it, so it may not use them.
 		for _, id := range b.Asset.Identifiers {
 			if id.Scheme == model.AppPathScheme {
-				return nil, logs, fmt.Errorf("batch %d: plugins cannot report %s identities", i, model.AppPathScheme)
+				return nil, fmt.Errorf("batch %d: plugins cannot report %s identities", i, model.AppPathScheme)
 			}
 		}
 	}
-	return resp.Batches, logs, nil
+	return batches, nil
 }
 
 func (r *Runner) Health(ctx context.Context, name string, config json.RawMessage, secrets map[string]string) (*plugin.HealthStatus, error) {
@@ -263,12 +287,14 @@ func (r *Runner) Health(ctx context.Context, name string, config json.RawMessage
 	net := netguard.PolicyFor(ctx)
 	resp, _, err := Exec(ctx, p, r.WorkDir, time.Minute, "health", &plugin.Request{Config: config, Secrets: secrets, Network: &net})
 	if err != nil {
-		return nil, err
+		return nil, redactErr(err, secrets)
 	}
 	if resp.Health == nil {
 		return nil, errors.New("plugin returned no health status")
 	}
-	return resp.Health, nil
+	h := *resp.Health
+	h.Message = redactSecrets(h.Message, secrets)
+	return &h, nil
 }
 
 // capped keeps at most max bytes and records overflow.
@@ -287,6 +313,26 @@ func (c *capped) Write(p []byte) (int, error) {
 		return 0, errors.New("output limit exceeded")
 	}
 	return c.buf.Write(p)
+}
+
+// redactSecrets removes credential values (and each line of a multi-line
+// one, such as a kubeconfig or a PEM key) from s.
+func redactSecrets(s string, secrets map[string]string) string {
+	for _, v := range secrets {
+		for _, part := range append([]string{v}, strings.Split(v, "\n")...) {
+			if part = strings.TrimSpace(part); len(part) >= 6 {
+				s = strings.ReplaceAll(s, part, "[redacted]")
+			}
+		}
+	}
+	return s
+}
+
+func redactErr(err error, secrets map[string]string) error {
+	if msg := redactSecrets(err.Error(), secrets); msg != err.Error() {
+		return errors.New(msg)
+	}
+	return err
 }
 
 func truncate(s string, n int) string {
