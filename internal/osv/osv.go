@@ -5,6 +5,7 @@ package osv
 
 import (
 	"encoding/json"
+	"fmt"
 	"regexp"
 	"sort"
 	"strconv"
@@ -223,6 +224,55 @@ func TargetFor(purl, ver string, evidence map[string]string) (Target, bool) {
 }
 
 var pypiSeparators = regexp.MustCompile(`[-_.]+`)
+
+// WhyNoTarget explains why TargetFor found no target for a purl.
+// unsupported is true when no vulnerability source exists for it at all,
+// false when one exists but the component lacks what matching needs (a
+// version, a distro release).
+func WhyNoTarget(purl, ver string) (reason string, unsupported bool) {
+	p, err := packageurl.FromString(purl)
+	if err != nil {
+		return "the package URL could not be read", false
+	}
+	if ver == "" {
+		ver = p.Version
+	}
+	distro := p.Qualifiers.Map()["distro"]
+	ns := strings.ToLower(p.Namespace)
+	switch p.Type {
+	case "npm", "composer", "pypi", "golang", "cargo", "gem", "maven", "nuget", "pub":
+		if ver == "" {
+			return "no installed version was reported", false
+		}
+	case "deb", "apk":
+		if (p.Type == "deb" && ns != "debian" && ns != "ubuntu") || (p.Type == "apk" && ns != "alpine") {
+			return fmt.Sprintf("%s packages from %q have no vulnerability source", p.Type, p.Namespace), true
+		}
+		if distro == "" {
+			return "the distro release is unknown (no distro qualifier)", false
+		}
+		if ver == "" {
+			return "no installed version was reported", false
+		}
+		return fmt.Sprintf("the distro release %q is not understood", distro), false
+	case "rpm":
+		if distro == "" {
+			return "the distro release is unknown (no distro qualifier)", false
+		}
+		id, rel := rpmDistro(distro)
+		switch {
+		case id == "":
+			name, _, _ := strings.Cut(distro, "-")
+			return fmt.Sprintf("%s has no vulnerability source (supported rpm distributions: RHEL, Rocky Linux, AlmaLinux, SUSE, openSUSE Leap, Amazon Linux 2 and 2023)", name), true
+		case id == "amzn":
+			return fmt.Sprintf("Amazon Linux %s has no vulnerability source (Amazon Linux 2 and 2023 are supported)", rel), true
+		case ver == "":
+			return "no installed version was reported", false
+		}
+		return fmt.Sprintf("the distro release %q is not understood", distro), false
+	}
+	return fmt.Sprintf("no vulnerability source for %s packages", p.Type), true
+}
 
 func joinNS(ns, name string) string {
 	if ns == "" {

@@ -110,7 +110,11 @@ func (e *Evaluator) Evaluate(ctx context.Context, componentIDs []int64, assetID 
 		case r.Type == "generic" && r.Evidence["kind"] == "managed-service":
 			unsupported("managed service: the provider patches the engine and publishes its own advisories; lifecycle is tracked")
 		case !ok:
-			unsupported("no vulnerability source for this ecosystem yet")
+			if reason, none := osv.WhyNoTarget(r.Purl, r.Version); none {
+				unsupported(reason)
+			} else {
+				notEvaluated(reason)
+			}
 		default:
 			base := osv.BaseEcosystem(t.Ecosystem)
 			name := VulnFeed(base)

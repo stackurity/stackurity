@@ -2,6 +2,7 @@ package osv
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/stackurity/stackurity/internal/version"
@@ -277,5 +278,34 @@ func TestSubscriptionFor(t *testing.T) {
 	}
 	if !PreferredSubscription("SUSE LTSS", "SUSE ESPOS") || PreferredSubscription("SUSE ESPOS", "SUSE LTSS") {
 		t.Error("LTSS is named before other SUSE channels")
+	}
+}
+
+func TestWhyNoTarget(t *testing.T) {
+	cases := []struct {
+		purl, ver   string
+		reason      string
+		unsupported bool
+	}{
+		{"pkg:rpm/centos/bash@4.2.46-35.el7?distro=centos-7", "", "centos has no vulnerability source", true},
+		{"pkg:rpm/amzn/curl@7.61.1-12.95.amzn1?distro=amzn-2018.03", "", "Amazon Linux 2018.03 has no vulnerability source", true},
+		{"pkg:deb/debian/bash@5.2", "", "no distro qualifier", false},
+		{"pkg:rpm/rhel/bash@5.1", "", "no distro qualifier", false},
+		{"pkg:deb/kali/bash@5.2?distro=kali-2024.1", "", `from "kali" have no vulnerability source`, true},
+		{"pkg:apk/wolfi/openssl@3.3.0-r0?distro=wolfi-20230201", "", `from "wolfi" have no vulnerability source`, true},
+		{"pkg:deb/debian/bash@5.2?distro=bookworm", "", `distro release "bookworm" is not understood`, false},
+		{"pkg:hex/phoenix@1.7.0", "", "no vulnerability source for hex packages", true},
+		{"pkg:generic/openssl@3.0.2", "", "no vulnerability source for generic packages", true},
+		{"pkg:npm/lodash", "", "no installed version", false},
+	}
+	for _, c := range cases {
+		if _, ok := TargetFor(c.purl, c.ver, nil); ok {
+			t.Errorf("TargetFor(%s) should fail", c.purl)
+			continue
+		}
+		reason, unsupported := WhyNoTarget(c.purl, c.ver)
+		if !strings.Contains(reason, c.reason) || unsupported != c.unsupported {
+			t.Errorf("WhyNoTarget(%s) = %q %v", c.purl, reason, unsupported)
+		}
 	}
 }
