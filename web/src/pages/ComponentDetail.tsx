@@ -9,6 +9,7 @@ import { Table, type Column } from "../components/Table";
 import { Card, EmptyState, ErrorBox, KeyValues, Loading, Notice, PageHeader, Pager, RelativeTime } from "../components/ui";
 import { LineStatus, RecommendedVersion, UpgradeDetails } from "../components/Upgrade";
 import { EvidencePanel, LatestCell } from "./AssetDetail";
+import { coverageText, RowCoverageNote } from "../components/Coverage";
 import { VersionChips } from "./Components";
 
 const LIMIT = 100;
@@ -31,6 +32,9 @@ export function ComponentDetailPage() {
       }),
     [cid, offset, removed],
   );
+  // Rows of this component that vulnerability intelligence did not check.
+  const gaps = useLoad(() => api.get<List<InventoryRow>>("/inventory", { component_id: cid, coverage: "gaps", limit: 5 }), [cid]);
+  const stale = useLoad(() => api.get<List<InventoryRow>>("/inventory", { component_id: cid, coverage: "stale_intelligence", limit: 1 }), [cid]);
 
   if (comp.error)
     return (
@@ -57,6 +61,7 @@ export function ComponentDetailPage() {
               <Badge status="removed" tone="muted" />
             </>
           )}
+          {!r.removed_at && <RowCoverageNote row={r} />}
         </>
       ),
     },
@@ -94,6 +99,21 @@ export function ComponentDetailPage() {
       </Card>
       {intel.data?.release && <ReleaseCard intel={intel.data} />}
       {intel.data?.lifecycle && <LifecycleCard intel={intel.data} />}
+      {gaps.data && gaps.data.total > 0 && (
+        <Notice kind="warn">
+          <strong>
+            Not checked on {gaps.data.total.toLocaleString()} {gaps.data.total === 1 ? "installation" : "installations"}.
+          </strong>{" "}
+          Vulnerability intelligence could not evaluate this component there, so having no findings does not mean it is safe:{" "}
+          {Array.from(new Set(gaps.data.items.map((r) => r.coverage_reason || coverageText(r)))).join("; ")}.
+        </Notice>
+      )}
+      {stale.data && stale.data.total > 0 && (
+        <Notice kind="warn">
+          <strong>Stale intelligence:</strong> {stale.data.total.toLocaleString()} {stale.data.total === 1 ? "installation was" : "installations were"}{" "}
+          checked against a feed that is stale or failing to update. See the Intelligence page.
+        </Notice>
+      )}
       <ComponentUpgrades componentId={c.id} />
       <ComponentFindings componentId={c.id} />
       <h2 className="section-title">Where it is used</h2>

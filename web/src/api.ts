@@ -243,6 +243,40 @@ export interface InventoryRow {
   latest_stable?: string;
   update_type?: "patch" | "minor" | "major" | "";
   open_findings?: number;
+  /** Whether vulnerability intelligence covered this row (docs/compatibility.md, "Coverage states"). */
+  coverage?: RowCoverage;
+  coverage_reason?: string;
+  coverage_feed?: string;
+  evaluated_at?: string | null;
+}
+
+export type RowCoverage = "evaluated" | "stale_intelligence" | "not_evaluated" | "unsupported" | "awaiting";
+
+/** How far an asset's findings can be trusted (GET /assets/{id}/coverage-summary). */
+export interface CoverageSummary {
+  asset_id: number;
+  state: string;
+  label: string;
+  states: { state: string; label: string; detail: string }[];
+  components: {
+    total: number;
+    evaluated: number;
+    stale_intelligence: number;
+    not_evaluated: number;
+    unsupported: number;
+    awaiting: number;
+  };
+  collection: {
+    status: string;
+    last_seen: string;
+    last_collection: string | null;
+    failed_scopes: number;
+    partial_scopes: number;
+    unsupported_scopes: number;
+  };
+  last_evaluated: string | null;
+  gap_reasons: { reason: string; coverage: string; components: number }[];
+  stale_feeds: string[];
 }
 
 export interface CoverageRow {
@@ -374,6 +408,10 @@ export interface Overview {
   confidence: Record<string, number>;
   /** Linux hosts running older code than is installed (reboot pending). */
   reboot_required?: number;
+  /** Assets by coverage state (healthy, stale_intelligence, failed_collection, ...). */
+  asset_coverage?: Record<string, number>;
+  /** Components by row coverage (evaluated, not_evaluated, unsupported, ...). */
+  component_coverage?: Record<string, number>;
 }
 
 export interface Team {
@@ -871,6 +909,8 @@ export interface EvaluationGap {
   reason: string;
   asset_count: number;
   updated_at: string;
+  /** unsupported: no source exists; not_evaluated: a source exists but could not be used. */
+  coverage: "unsupported" | "not_evaluated";
 }
 
 export interface Release {

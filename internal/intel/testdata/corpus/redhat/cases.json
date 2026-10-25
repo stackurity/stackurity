@@ -1,0 +1,14 @@
+{
+ "ecosystem": "Red Hat Enterprise Linux",
+ "feed": "osv:Red Hat",
+ "cases": [
+  {"name": "rhel9-one-behind", "purl": "pkg:rpm/rhel/openssl-libs@3.0.7-27.el9?distro=rhel-9.4", "evidence": {"evr": "1:3.0.7-27.el9"}, "affected": {"CVE-2024-6119": "1:3.0.7-28.el9_4"}, "note": "the el9_4 z-stream fix"},
+  {"name": "rhel9-older", "purl": "pkg:rpm/rhel/openssl-libs@3.0.7-24.el9?distro=rhel-9.2", "evidence": {"evr": "1:3.0.7-24.el9"}, "affected": {"CVE-2023-2975": "1:3.0.7-27.el9", "CVE-2023-5363": "1:3.0.7-25.el9_3", "CVE-2024-6119": "1:3.0.7-28.el9_4"}, "note": "a 9.2 host is matched against the main stream: the rhel_eus 9.2 fix (1:3.0.7-18.el9_2) is not used"},
+  {"name": "rhel9-current", "purl": "pkg:rpm/rhel/openssl-libs@3.0.7-28.el9_4?distro=rhel-9.4", "evidence": {"evr": "1:3.0.7-28.el9_4"}, "affected": {}, "note": "fixed"},
+  {"name": "syft-redhat-namespace", "purl": "pkg:rpm/redhat/openssl-libs@3.0.7-27.el9?distro=rhel-9.4&epoch=1", "affected": {"CVE-2024-6119": "1:3.0.7-28.el9_4"}, "note": "Syft's namespace and epoch qualifier"},
+  {"name": "rhel10-minor-stream", "purl": "pkg:rpm/rhel/openssl-libs@3.5.1-6.el10_1?distro=rhel-10.1", "evidence": {"evr": "1:3.5.1-6.el10_1"}, "affected": {"CVE-2025-11187": "1:3.5.1-7.el10_1"}, "note": "RHEL 10 records name the minor release stream (enterprise_linux:10.1)"},
+  {"name": "rhel10-current", "purl": "pkg:rpm/rhel/openssl-libs@3.5.1-7.el10_1?distro=rhel-10.1", "evidence": {"evr": "1:3.5.1-7.el10_1"}, "affected": {}, "note": "fixed"},
+  {"name": "rhel10-stream-without-advisories", "purl": "pkg:rpm/rhel/openssl-libs@3.2.2-16.el10?distro=rhel-10.0", "evidence": {"evr": "1:3.2.2-16.el10"}, "affected": {}, "coverage": "not_evaluated", "reason": "no advisories for Red Hat:enterprise_linux:10.0", "note": "this corpus holds no 10.0 stream record; the 10.1 record does not apply to 10.0"},
+  {"name": "centos", "purl": "pkg:rpm/centos/openssl-libs@1.0.2k-26.el7_9?distro=centos-7", "evidence": {"evr": "1:1.0.2k-26.el7_9"}, "affected": {}, "coverage": "unsupported", "reason": "centos has no vulnerability source", "note": "CentOS has no advisory source"}
+ ]
+}

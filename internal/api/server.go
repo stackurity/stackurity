@@ -150,6 +150,7 @@ func (s *Server) Handler() http.Handler {
 				r.Get("/assets/{id}", s.getAsset)
 				r.Get("/assets/{id}/inventory", s.assetInventory)
 				r.Get("/assets/{id}/coverage", s.assetCoverage)
+				r.Get("/assets/{id}/coverage-summary", s.assetCoverageSummary)
 				r.Get("/assets/{id}/collections", s.assetCollections)
 				r.Get("/assets/{id}/relations", s.assetRelations)
 				r.Get("/assets/{id}/drift", s.assetDrift)

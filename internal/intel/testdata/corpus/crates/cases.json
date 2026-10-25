@@ -1,0 +1,14 @@
+{
+ "ecosystem": "crates.io",
+ "feed": "osv:crates.io",
+ "cases": [
+  {"name": "tokio-1.13", "purl": "pkg:cargo/tokio@1.13.0", "affected": {"CVE-2021-45710": "1.13.1", "RUSTSEC-2023-0005": "1.18.5"}, "note": "two introduced/fixed pairs in one range; a RUSTSEC id without CVE is its own group"},
+  {"name": "tokio-1.18.5", "purl": "pkg:cargo/tokio@1.18.5", "affected": {}, "note": "fixed in both"},
+  {"name": "tokio-1.20", "purl": "pkg:cargo/tokio@1.20.3", "affected": {"RUSTSEC-2023-0005": "1.20.4"}, "note": "middle pair of three"},
+  {"name": "tokio-listed", "purl": "pkg:cargo/tokio@1.54.0", "affected": {"CVE-2026-115567": "1.54.1"}, "note": "explicit version list and a one-version range"},
+  {"name": "webauthn-prerelease", "purl": "pkg:cargo/webauthn-rs-core@0.6.0-dev", "affected": {"GHSA-22w3-693w-x895": "0.6.1-dev"}, "note": "prerelease range in an advisory without aliases"},
+  {"name": "webauthn-stable", "purl": "pkg:cargo/webauthn-rs-core@0.5.4", "affected": {"GHSA-22w3-693w-x895": "0.5.5"}, "note": "stable range of the same advisory"},
+  {"name": "openssl-withdrawn", "purl": "pkg:cargo/openssl@0.10.54", "affected": {}, "note": "GHSA-gw89-822v-8v8g is withdrawn"},
+  {"name": "unparseable", "purl": "pkg:cargo/tokio@1.x", "affected": {}, "coverage": "not_evaluated", "reason": "could not be compared", "note": "a requirement, not a version"}
+ ]
+}

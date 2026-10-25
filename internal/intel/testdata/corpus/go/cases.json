@@ -1,0 +1,16 @@
+{
+ "ecosystem": "Go",
+ "feed": "osv:Go",
+ "cases": [
+  {"name": "xnet-below-fix", "purl": "pkg:golang/golang.org/x/net@v0.22.0", "affected": {"CVE-2023-45288": "0.23.0"}, "note": "module versions carry a v prefix, OSV's do not"},
+  {"name": "xnet-at-fix", "purl": "pkg:golang/golang.org/x/net@v0.23.0", "affected": {}, "note": "fixed"},
+  {"name": "xnet-pseudo-version", "purl": "pkg:golang/golang.org/x/net@v0.0.0-20190108225652-1e06a53dbb7e", "affected": {"CVE-2018-17847": "0.0.0-20190125002852-4b62a64f59f7", "CVE-2023-45288": "0.23.0"}, "note": "pseudo-versions compare by timestamp"},
+  {"name": "xnet-pseudo-at-fix", "purl": "pkg:golang/golang.org/x/net@v0.0.0-20190125002852-4b62a64f59f7", "affected": {"CVE-2023-45288": "0.23.0"}, "note": "the fixing pseudo-version"},
+  {"name": "stdlib-second-range", "purl": "pkg:golang/stdlib@1.22.1", "affected": {"CVE-2023-45288": "1.22.2"}, "note": "range introduced at the prerelease 1.22.0-0"},
+  {"name": "stdlib-first-range", "purl": "pkg:golang/stdlib@1.21.8", "affected": {"CVE-2023-45288": "1.21.9"}, "note": "the lowest fix above the installed version is the one in its own line"},
+  {"name": "stdlib-fixed-branch", "purl": "pkg:golang/stdlib@1.21.9", "affected": {}, "note": "fixed in the 1.21 line"},
+  {"name": "stdlib-toolchain-spelling", "purl": "pkg:golang/stdlib@1.22.1", "version": "go1.22.1", "affected": {"CVE-2023-45288": "1.22.2"}, "note": "Syft reports the stdlib version as the toolchain string go1.22.1"},
+  {"name": "stdlib-withdrawn-ignored", "purl": "pkg:golang/stdlib@1.4.2", "affected": {"CVE-2023-45288": "1.21.9"}, "note": "GO-2021-0157 is withdrawn; the live advisory still applies"},
+  {"name": "devel-build", "purl": "pkg:golang/golang.org/x/net", "version": "(devel)", "affected": {}, "coverage": "not_evaluated", "reason": "could not be compared", "note": "a main module built from a checkout reports (devel)"}
+ ]
+}

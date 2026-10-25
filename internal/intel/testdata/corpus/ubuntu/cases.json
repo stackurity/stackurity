@@ -1,0 +1,17 @@
+{
+ "ecosystem": "Ubuntu (including Ubuntu Pro)",
+ "feed": "osv:Ubuntu",
+ "cases": [
+  {"name": "jammy-one-behind", "purl": "pkg:deb/ubuntu/libssl3@3.0.2-0ubuntu1.18?distro=ubuntu-22.04&upstream=openssl", "affected": {"CVE-2024-9143": "3.0.2-0ubuntu1.19"}, "note": "Ubuntu:22.04:LTS entries match ubuntu-22.04"},
+  {"name": "jammy-old", "purl": "pkg:deb/ubuntu/libssl3@3.0.2-0ubuntu1.10?distro=ubuntu-22.04&upstream=openssl", "affected": {"CVE-2023-3446": "3.0.2-0ubuntu1.12", "CVE-2024-0727": "3.0.2-0ubuntu1.14", "CVE-2024-9143": "3.0.2-0ubuntu1.19"}, "note": "free fixes; the Pro FIPS entries do not apply to a regular build"},
+  {"name": "jammy-current", "purl": "pkg:deb/ubuntu/libssl3@3.0.2-0ubuntu1.19?distro=ubuntu-22.04&upstream=openssl", "affected": {}, "note": "all fixes installed"},
+  {"name": "jammy-fips", "purl": "pkg:deb/ubuntu/libssl3@3.0.2-0ubuntu1.10+Fips1?distro=ubuntu-22.04&upstream=openssl", "affected": {"CVE-2023-3446": "3.0.2-0ubuntu1.12+Fips1", "CVE-2024-0727": "3.0.2-0ubuntu1.14+Fips1", "CVE-2024-9143": "3.0.2-0ubuntu1.19+Fips1"}, "subscription": {"CVE-2023-3446": "Ubuntu Pro", "CVE-2024-0727": "Ubuntu Pro", "CVE-2024-9143": "Ubuntu Pro"}, "note": "a FIPS build takes FIPS-updates fixes, never the regular ones"},
+  {"name": "focal-fips-updates", "purl": "pkg:deb/ubuntu/libssl1.1@1.1.1f-1ubuntu2.fips.20?distro=ubuntu-20.04&upstream=openssl", "affected": {"CVE-2024-9143": "1.1.1f-1ubuntu2.fips.24"}, "subscription": {"CVE-2024-9143": "Ubuntu Pro"}, "note": "ambiguous: the frozen certified FIPS channel lists no fix for CVE-2024-0727 and CVE-2023-3446, FIPS-updates fixed both in fips.20; FIPS-updates wins"},
+  {"name": "bionic-esm", "purl": "pkg:deb/ubuntu/libssl1.1@1.1.1-1ubuntu2.1~18.04.23+esm3?distro=ubuntu-18.04&upstream=openssl", "affected": {"CVE-2024-0727": "1.1.1-1ubuntu2.1~18.04.23+esm4", "CVE-2024-9143": ""}, "subscription": {"CVE-2024-0727": "Ubuntu Pro", "CVE-2024-9143": "Ubuntu Pro"}, "note": "18.04 is only covered by Ubuntu Pro (ESM); the esm3 fix for CVE-2023-3446 is installed and the FIPS channel saying all versions are affected does not apply"},
+  {"name": "focal-free", "purl": "pkg:deb/ubuntu/libssl1.1@1.1.1f-1ubuntu2.20?distro=ubuntu-20.04&upstream=openssl", "affected": {"CVE-2024-0727": "1.1.1f-1ubuntu2.21", "CVE-2024-9143": "1.1.1f-1ubuntu2.24"}, "note": "standard support still covers 20.04 in this data"},
+  {"name": "edk2-backport", "purl": "pkg:deb/ubuntu/ovmf@2022.02-3ubuntu0.22.04.3?distro=ubuntu-22.04&upstream=edk2", "affected": {"CVE-2023-3446": "2022.02-3ubuntu0.22.04.4", "CVE-2024-0727": "2022.02-3ubuntu0.22.04.4", "CVE-2024-9143": "2022.02-3ubuntu0.22.04.4"}, "note": "an ubuntu0.22.04.N stable-release update"},
+  {"name": "edk2-backport-fixed", "purl": "pkg:deb/ubuntu/ovmf@2022.02-3ubuntu0.22.04.4?distro=ubuntu-22.04&upstream=edk2", "affected": {}, "note": "fixed by the stable-release update"},
+  {"name": "universe-pro-only", "purl": "pkg:deb/ubuntu/libnode72@12.22.9~dfsg-1ubuntu3.6?distro=ubuntu-22.04&upstream=nodejs", "affected": {"CVE-2023-3446": "", "CVE-2024-0727": "", "CVE-2024-9143": ""}, "subscription": {"CVE-2023-3446": "Ubuntu Pro", "CVE-2024-0727": "Ubuntu Pro", "CVE-2024-9143": "Ubuntu Pro"}, "note": "universe packages are only tracked in the Pro channel, with no fix"},
+  {"name": "release-without-advisories", "purl": "pkg:deb/ubuntu/libssl3@3.5.0-1ubuntu1?distro=ubuntu-27.04&upstream=openssl", "affected": {}, "coverage": "not_evaluated", "reason": "no advisories for Ubuntu:27.04", "note": "a release the source has no data for"}
+ ]
+}

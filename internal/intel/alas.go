@@ -88,6 +88,7 @@ func (s *Syncer) syncAmazonLinux(ctx context.Context, feed string) (*SyncResult,
 		if err != nil {
 			return nil, err
 		}
+		res.noteEcosystems("Amazon Linux", batch)
 		for p := range touched {
 			res.Packages[p] = true
 		}

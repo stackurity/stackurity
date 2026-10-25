@@ -1,0 +1,59 @@
+{
+ "id": "GHSA-pj86-cfqh-vqx6",
+ "modified": "2026-09-10T03:50:32.144478290Z",
+ "published": "2025-12-01T18:59:17Z",
+ "withdrawn": "2025-12-02T15:11:19Z",
+ "aliases": [
+  "CVE-2024-51999"
+ ],
+ "summary": "Withdrawn Advisory: express improperly controls modification of query properties",
+ "severity": [
+  {
+   "type": "CVSS_V4",
+   "score": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:L/VA:N/SC:N/SI:N/SA:N/E:U"
+  }
+ ],
+ "database_specific": {
+  "severity": "LOW"
+ },
+ "affected": [
+  {
+   "package": {
+    "ecosystem": "npm",
+    "name": "express"
+   },
+   "ranges": [
+    {
+     "type": "SEMVER",
+     "events": [
+      {
+       "introduced": "0"
+      },
+      {
+       "fixed": "4.22.0"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "package": {
+    "ecosystem": "npm",
+    "name": "express"
+   },
+   "ranges": [
+    {
+     "type": "SEMVER",
+     "events": [
+      {
+       "introduced": "5.0.0"
+      },
+      {
+       "fixed": "5.2.0"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

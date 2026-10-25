@@ -1,0 +1,77 @@
+{
+ "id": "GHSA-c2qf-rxjj-qqgw",
+ "modified": "2026-09-10T03:50:02.224637541Z",
+ "published": "2023-06-21T06:30:28Z",
+ "aliases": [
+  "CVE-2022-25883"
+ ],
+ "summary": "semver vulnerable to Regular Expression Denial of Service",
+ "severity": [
+  {
+   "type": "CVSS_V3",
+   "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+  }
+ ],
+ "database_specific": {
+  "severity": "HIGH"
+ },
+ "affected": [
+  {
+   "package": {
+    "ecosystem": "npm",
+    "name": "semver"
+   },
+   "ranges": [
+    {
+     "type": "SEMVER",
+     "events": [
+      {
+       "introduced": "7.0.0"
+      },
+      {
+       "fixed": "7.5.2"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "package": {
+    "ecosystem": "npm",
+    "name": "semver"
+   },
+   "ranges": [
+    {
+     "type": "SEMVER",
+     "events": [
+      {
+       "introduced": "6.0.0"
+      },
+      {
+       "fixed": "6.3.1"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "package": {
+    "ecosystem": "npm",
+    "name": "semver"
+   },
+   "ranges": [
+    {
+     "type": "SEMVER",
+     "events": [
+      {
+       "introduced": "2.0.0-alpha"
+      },
+      {
+       "fixed": "5.7.2"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

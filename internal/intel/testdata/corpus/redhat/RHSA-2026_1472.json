@@ -1,0 +1,66 @@
+{
+ "id": "RHSA-2026:1472",
+ "modified": "2026-10-20T10:04:56Z",
+ "published": "2026-01-29T10:20:55Z",
+ "upstream": [
+  "CVE-2025-11187",
+  "CVE-2025-15467",
+  "CVE-2025-15468",
+  "CVE-2025-15469",
+  "CVE-2025-66199",
+  "CVE-2025-68160",
+  "CVE-2025-69418",
+  "CVE-2025-69419",
+  "CVE-2025-69420",
+  "CVE-2025-69421",
+  "CVE-2026-22795",
+  "CVE-2026-22796"
+ ],
+ "summary": "Red Hat Security Advisory: openssl security update",
+ "severity": [
+  {
+   "type": "CVSS_V3",
+   "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+  }
+ ],
+ "affected": [
+  {
+   "package": {
+    "ecosystem": "Red Hat:enterprise_linux:10.1",
+    "name": "openssl"
+   },
+   "ranges": [
+    {
+     "type": "ECOSYSTEM",
+     "events": [
+      {
+       "introduced": "0"
+      },
+      {
+       "fixed": "1:3.5.1-7.el10_1"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "package": {
+    "ecosystem": "Red Hat:enterprise_linux:10.1",
+    "name": "openssl-libs"
+   },
+   "ranges": [
+    {
+     "type": "ECOSYSTEM",
+     "events": [
+      {
+       "introduced": "0"
+      },
+      {
+       "fixed": "1:3.5.1-7.el10_1"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

@@ -75,6 +75,13 @@ type Overview struct {
 	LastCollection *time.Time       `json:"last_collection"`
 	Confidence     map[string]int64 `json:"confidence"`      // inventory rows by confidence
 	RebootRequired int64            `json:"reboot_required"` // hosts running older code than installed
+	// AssetCoverage counts assets by coverage state (healthy, stale_intelligence,
+	// failed_collection, unsupported, partially_evaluated, awaiting_verification).
+	AssetCoverage map[string]int64 `json:"asset_coverage"`
+	// ComponentCoverage counts components by row coverage (evaluated,
+	// stale_intelligence, not_evaluated, unsupported, awaiting); a component
+	// with rows in several states counts in each.
+	ComponentCoverage map[string]int64 `json:"component_coverage"`
 }
 
 func (s *Store) Overview(ctx context.Context) (*Overview, error) {
@@ -108,7 +115,12 @@ func (s *Store) Overview(ctx context.Context) (*Overview, error) {
 		WHERE i.removed_at IS NULL GROUP BY c.type`)
 	o.CoverageStatus = group(`SELECT status, count(*) FROM coverage GROUP BY status`)
 	o.Confidence = group(`SELECT confidence, count(*) FROM inventory WHERE removed_at IS NULL GROUP BY confidence`)
+	o.ComponentCoverage = group(`SELECT cov, count(DISTINCT component_id) FROM (SELECT i.component_id, ` + rowCoverageSQL + ` AS cov
+		FROM inventory i JOIN assets a ON a.id = i.asset_id AND a.merged_into IS NULL WHERE i.removed_at IS NULL) x GROUP BY cov`)
 	if err != nil {
+		return nil, err
+	}
+	if o.AssetCoverage, err = s.AssetCoverageCounts(ctx); err != nil {
 		return nil, err
 	}
 	err = s.Pool.QueryRow(ctx, `SELECT

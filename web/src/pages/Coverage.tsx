@@ -1,9 +1,11 @@
 import { useState } from "react";
-import { api, type CoverageRow, type List } from "../api";
+import { Link } from "react-router";
+import { api, type CoverageRow, type List, type Overview } from "../api";
 import { useLoad } from "../hooks";
 import { Table } from "../components/Table";
-import { EmptyState, ErrorBox, Loading, PageHeader, Pager } from "../components/ui";
+import { Card, EmptyState, ErrorBox, Loading, PageHeader, Pager } from "../components/ui";
 import { coverageColumns } from "./AssetDetail";
+import { ASSET_STATE_MEANINGS, AssetStateBadge } from "../components/Coverage";
 
 const LIMIT = 100;
 
@@ -14,13 +16,33 @@ export function CoveragePage() {
     () => api.get<List<CoverageRow>>("/coverage", { problems: problems ? "true" : undefined, limit: LIMIT, offset }),
     [problems, offset],
   );
+  const overview = useLoad(() => api.get<Overview>("/overview"), []);
+  const states = overview.data?.asset_coverage ?? {};
 
   return (
     <>
       <PageHeader help="coverage-intelligence"
         title="Coverage"
-        sub="What collectors checked on each asset. Unsupported, failed and skipped areas are not covered: components there are not in the inventory."
+        sub="How far findings can be trusted, and what collectors checked on each asset. Unsupported, failed and skipped areas are not covered: components there are not in the inventory."
       />
+      <h2 className="section-title">Assets by coverage state</h2>
+      <Card>
+        <dl className="coverage-states">
+          {ASSET_STATE_MEANINGS.map(([state, meaning]) => (
+            <div key={state}>
+              <dt>
+                <AssetStateBadge state={state} /> <span className="mono">{(states[state] ?? 0).toLocaleString()}</span>
+              </dt>
+              <dd className="small">{meaning}</dd>
+            </div>
+          ))}
+        </dl>
+        <p className="hint">
+          Each asset's page shows its states and reasons, and its Inventory tab marks every component that could not be checked.
+          Components that could not be checked are listed on the <Link to="/intelligence#gaps">Intelligence page</Link>.
+        </p>
+      </Card>
+      <h2 className="section-title">Collector scopes</h2>
       <div className="filters">
         <label className="check">
           <input

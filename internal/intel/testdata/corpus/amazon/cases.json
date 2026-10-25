@@ -1,0 +1,15 @@
+{
+ "ecosystem": "Amazon Linux 2 and 2023",
+ "feed": "alas:Amazon Linux",
+ "cases": [
+  {"name": "al2023-one-behind", "purl": "pkg:rpm/amzn/openssl-libs@3.5.8-1.amzn2023.0.1?distro=amzn-2023", "evidence": {"evr": "1:3.5.8-1.amzn2023.0.1"}, "affected": {"CVE-2026-35189": "1:3.5.8-1.amzn2023.0.3"}, "note": "ALAS2023 updateinfo, epoch 1"},
+  {"name": "al2023-two-behind", "purl": "pkg:rpm/amzn/openssl-libs@3.5.7-2.amzn2023.0.2?distro=amzn-2023", "evidence": {"evr": "1:3.5.7-2.amzn2023.0.2"}, "affected": {"CVE-2026-14457": "1:3.5.8-1.amzn2023.0.1", "CVE-2026-35189": "1:3.5.8-1.amzn2023.0.3"}, "note": "two advisories, keyed by their lowest CVE"},
+  {"name": "al2023-current", "purl": "pkg:rpm/amzn/openssl-libs@3.5.8-1.amzn2023.0.3?distro=amzn-2023", "evidence": {"evr": "1:3.5.8-1.amzn2023.0.3"}, "affected": {}, "note": "fixed"},
+  {"name": "al2023-curl-minimal", "purl": "pkg:rpm/amazon/curl-minimal@8.21.0-5.amzn2023.0.2?distro=amzn-2023", "evidence": {"evr": "8.21.0-5.amzn2023.0.2"}, "affected": {"CVE-2026-92392": "0:8.21.0-5.amzn2023.0.3"}, "note": "Syft's amazon namespace; the fix carries an explicit 0 epoch"},
+  {"name": "al2-core-kernel", "purl": "pkg:rpm/amzn/kernel@4.14.355-287.753.amzn2?distro=amzn-2", "evidence": {"evr": "4.14.355-287.753.amzn2"}, "affected": {"CVE-2026-98775": "0:4.14.355-287.755.amzn2"}, "note": "core repository kernel; the kernel-5.10 extras advisory does not apply to 4.14"},
+  {"name": "al2-extras-kernel", "purl": "pkg:rpm/amzn/kernel@5.10.269-270.1108.amzn2?distro=amzn-2", "evidence": {"evr": "5.10.269-270.1108.amzn2"}, "affected": {"CVE-2026-100070": "0:5.10.270-271.1109.amzn2"}, "note": "extras topic kernel-5.10 only applies to its 5.10 line"},
+  {"name": "al2-extras-other-binary", "purl": "pkg:rpm/amzn/bpftool@5.10.269-270.1108.amzn2?distro=amzn-2", "evidence": {"evr": "5.10.269-270.1108.amzn2"}, "affected": {"CVE-2026-100070": "0:5.10.270-271.1109.amzn2"}, "note": "other binaries of the extras update"},
+  {"name": "al2-openssl", "purl": "pkg:rpm/amzn/openssl-libs@1.0.2k-24.amzn2.0.22?distro=amzn-2", "evidence": {"evr": "1:1.0.2k-24.amzn2.0.22"}, "affected": {"CVE-2026-35189": "1:1.0.2k-24.amzn2.0.23"}, "note": "Amazon Linux 2 core; the AL2023 records for the same CVE do not apply"},
+  {"name": "amazon-linux-1", "purl": "pkg:rpm/amzn/openssl@1.0.2k-16.152.amzn1?distro=amzn-2018.03", "evidence": {"evr": "1:1.0.2k-16.152.amzn1"}, "affected": {}, "coverage": "unsupported", "reason": "Amazon Linux 2018.03 has no vulnerability source", "note": "Amazon Linux 1 is out of support and not read"}
+ ]
+}

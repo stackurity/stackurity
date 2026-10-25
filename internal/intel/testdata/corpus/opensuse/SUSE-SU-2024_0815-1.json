@@ -1,0 +1,30 @@
+{
+ "id": "SUSE-SU-2024:0815-1",
+ "modified": "2026-02-04T03:28:29.785316Z",
+ "published": "2024-03-08T08:32:10Z",
+ "upstream": [
+  "CVE-2024-0727"
+ ],
+ "summary": "Security update for openssl-3",
+ "affected": [
+  {
+   "package": {
+    "ecosystem": "openSUSE:Leap 15.5",
+    "name": "openssl-3"
+   },
+   "ranges": [
+    {
+     "type": "ECOSYSTEM",
+     "events": [
+      {
+       "introduced": "0"
+      },
+      {
+       "fixed": "3.0.8-150500.5.27.1"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

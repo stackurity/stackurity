@@ -1,0 +1,99 @@
+{
+ "id": "GHSA-22w3-693w-x895",
+ "modified": "2026-09-10T03:51:04.039013566Z",
+ "published": "2026-05-06T23:31:27Z",
+ "summary": "webauthn-rs-core/webauthn-authenticator-rs: Origin validation mismatch possible when subdomains are allowed",
+ "severity": [
+  {
+   "type": "CVSS_V4",
+   "score": "CVSS:4.0/AV:N/AC:H/AT:P/PR:N/UI:P/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N"
+  }
+ ],
+ "database_specific": {
+  "severity": "LOW"
+ },
+ "affected": [
+  {
+   "package": {
+    "ecosystem": "crates.io",
+    "name": "webauthn-rs-core"
+   },
+   "ranges": [
+    {
+     "type": "SEMVER",
+     "events": [
+      {
+       "introduced": "0"
+      },
+      {
+       "fixed": "0.5.5"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "package": {
+    "ecosystem": "crates.io",
+    "name": "webauthn-authenticator-rs"
+   },
+   "ranges": [
+    {
+     "type": "SEMVER",
+     "events": [
+      {
+       "introduced": "0.6.0-dev"
+      },
+      {
+       "fixed": "0.6.1-dev"
+      }
+     ]
+    }
+   ],
+   "versions": [
+    "0.6.0-dev"
+   ]
+  },
+  {
+   "package": {
+    "ecosystem": "crates.io",
+    "name": "webauthn-rs-core"
+   },
+   "ranges": [
+    {
+     "type": "SEMVER",
+     "events": [
+      {
+       "introduced": "0.6.0-dev"
+      },
+      {
+       "fixed": "0.6.1-dev"
+      }
+     ]
+    }
+   ],
+   "versions": [
+    "0.6.0-dev"
+   ]
+  },
+  {
+   "package": {
+    "ecosystem": "crates.io",
+    "name": "webauthn-authenticator-rs"
+   },
+   "ranges": [
+    {
+     "type": "SEMVER",
+     "events": [
+      {
+       "introduced": "0"
+      },
+      {
+       "fixed": "0.5.5"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

@@ -2576,3 +2576,25 @@ kbd {
 .plain-list li + li {
   margin-top: var(--s1);
 }
+
+/* Coverage: why a component or asset was not fully checked. */
+.coverage-note {
+  margin-top: 2px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+  max-width: 48ch;
+}
+.coverage-ok {
+  margin: 0 0 var(--s3);
+}
+.coverage-states {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: var(--s3) var(--s4);
+  margin: 0;
+}
+.coverage-states dd {
+  margin: 4px 0 0;
+}

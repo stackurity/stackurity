@@ -27,13 +27,14 @@ Roles, from least to most access: `viewer` (read, including the audit log), `eng
 | `POST /ingest` | collector, engineer+ | Submit an `ObservationBatch` (gzip accepted) |
 | `POST /sbom/import?asset_name=&asset_kind=&environment=` | collector, engineer+ | Import a CycloneDX or SPDX JSON document |
 | `GET /collections/{id}/result` | collector (own submissions), engineer+ | Whether a submitted collection has been evaluated (`status`: `pending`, `evaluated`, `failed`), then the asset's open findings and its count of `evaluation_gaps`. Used by `stackurity scan --fail-on` |
-| `GET /overview` | viewer | Inventory, coverage and status counts |
+| `GET /overview` | viewer | Inventory, coverage and status counts, including assets by coverage state (`asset_coverage`) and components by row coverage (`component_coverage`) |
 | `GET /search?q=&limit=` | viewer | Global search of the current workspace, see [Search](#search) |
 | `GET /assets?kind=&environment=&status=&owner_team_id=&q=&reboot_required=true&exposed=` | viewer | List assets. `reboot_required=true` lists hosts that run older code than is installed. `exposed=true` or `false` filters by `exposed`, the exposure risk scoring uses: `internet_exposed` when set by hand, else what a collector observed (a Kubernetes workload's `exposure`, or for an image the workloads deployed as it) |
 | `GET /assets/{id}` | viewer | Asset and identifiers |
 | `PATCH /assets/{id}` | engineer | Set name, environment, owner, criticality, exposure, tags |
 | `DELETE /assets/{id}` | admin | Delete an asset and its history |
-| `GET /assets/{id}/inventory?q=&type=&direct=&include_removed=` | viewer | Components on the asset, with evidence |
+| `GET /assets/{id}/inventory?q=&type=&direct=&include_removed=&coverage=` | viewer | Components on the asset, with evidence and coverage (see below) |
+| `GET /assets/{id}/coverage-summary` | viewer | How far the asset's findings can be trusted: its [coverage states](compatibility.md#coverage-states) with reasons, components by coverage, gap reasons and stale feeds |
 | `GET /assets/{id}/coverage`, `/collections`, `/relations` | viewer | Coverage ledger, collection history, relations |
 | `POST`/`DELETE /assets/{id}/relations` | engineer | Add or remove `runs_on`, `built_from`, `deployed_as`, `contains`, `depends_on`, `replica_of` (a standby, staging or DR copy that should run the same versions as the target) |
 | `GET /assets/{id}/stack` | viewer | Everything the asset relies on, followed through relations, with open findings grouped by layer (`web_server`, `os`, `runtime`, `data_store`, `libraries`, `declared`, `managed_service`, `platform`, `other`). For an application this is its hosts, repository, images and dependencies (up to three hops); for a host, the applications running on it; for a cluster, its workloads and their images; for an image, the workloads deployed as it; for a repository, its deployments and their hosts |
@@ -41,7 +42,7 @@ Roles, from least to most access: `viewer` (read, including the audit log), `eng
 | `GET /assets/{id}/sbom` | viewer | CycloneDX 1.6 export |
 | `GET /components?q=&type=`, `GET /components/{id}` | viewer | Component explorer |
 | `GET /components/{id}/upgrade` | viewer | An [upgrade recommendation](#upgrade-recommendations) for each installed version with open findings (most findings first, at most 50; `total` counts all), with `version`, `distro` and `asset_count` |
-| `GET /inventory?component_id=&asset_id=` | viewer | Where a component is used |
+| `GET /inventory?component_id=&asset_id=&coverage=` | viewer | Where a component is used |
 | `GET /coverage?problems=true` | viewer | Coverage ledger across assets |
 | `GET /reports/evidence?from=&to=` | viewer | Patch-management evidence for a period (dates, `to` inclusive; default the last 30 days, at most a year): assets and their collection status, hosts needing a reboot, evaluation gaps, open findings by severity and priority, overdue findings, findings resolved in the period with the share resolved within their deadline and the median days from first detection to resolution, every active exception with its reason, mitigation and expiry, and drift for each `replica_of` pair |
 | `GET /reports/outcomes?days=` | viewer | [Remediation outcomes](#remediation-outcomes) over the last `days` (1 to 365, default 90) |
@@ -69,7 +70,7 @@ Roles, from least to most access: `viewer` (read, including the audit log), `eng
 | `GET /feeds` | viewer | Intelligence feeds and their freshness |
 | `POST /feeds/{name}/refresh` | engineer | Queue a manual refresh |
 | `PATCH /feeds/{name}` | instance admin | Enable or disable a feed (feeds are shared by every workspace) |
-| `GET /evaluation-gaps` | viewer | Components that could not be evaluated, with the reason |
+| `GET /evaluation-gaps` | viewer | Components that could not be evaluated, one entry per component and reason, with `coverage` (`unsupported` or `not_evaluated`) |
 | `POST /evaluate` | engineer | Queue a full re-evaluation |
 | `POST /findings/{id}/actions` | engineer (security for `suppress`, `accept_risk`, `reopen`) | Workflow action, see below |
 | `POST /findings/actions` | as above | The same action on up to 500 findings (`ids`) |
@@ -91,6 +92,13 @@ Roles, from least to most access: `viewer` (read, including the audit log), `eng
 | `POST /assets/{id}/remediation-token` | admin | Collector token bound to this host, required for remediation |
 | `GET /agent/actions`, `POST /agent/actions/{id}/report` | host-bound token | Agent fetches approved changes and reports results |
 | `GET /remediation/renovate.json?repository=&mode=exclusive` | collector, engineer | Renovate rules for approved repository plans |
+
+Inventory rows carry `coverage`, whether vulnerability intelligence covered
+that row: `evaluated`, `stale_intelligence` (evaluated against a feed that is
+stale or failing), `not_evaluated` or `unsupported` (with `coverage_reason`),
+or `awaiting` (not evaluated yet). `coverage_feed` names the feed used and
+`evaluated_at` when. The `coverage` filter takes one of these or `gaps`
+(`not_evaluated` and `unsupported`).
 
 Lists return `{"items": [...], "total": N, "limit": L, "offset": O}`. Pass `?limit=` (max 500) and `?offset=`.
 

@@ -2,6 +2,7 @@ package osv
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/stackurity/stackurity/internal/version"
@@ -16,13 +17,22 @@ func TestTargetFor(t *testing.T) {
 	}{
 		{"pkg:npm/%40babel/core@7.23.0", "", nil, "npm", "@babel/core", true},
 		{"pkg:composer/laravel/framework@10.48.4", "", nil, "Packagist", "laravel/framework", true},
+		{"pkg:pypi/Django@4.2.0", "", nil, "PyPI", "django", true},
+		{"pkg:pypi/typing_extensions@4.9.0", "", nil, "PyPI", "typing-extensions", true},
+		{"pkg:pypi/zope.interface@6.1", "", nil, "PyPI", "zope-interface", true},
 		{"pkg:deb/debian/libssl3@3.0.11-1~deb12u2?arch=amd64&distro=debian-12&upstream=openssl", "", nil, "Debian:12", "openssl", true},
 		{"pkg:deb/ubuntu/libc6@2.35-0ubuntu3?distro=ubuntu-22.04&upstream=glibc", "", nil, "Ubuntu:22.04", "glibc", true},
 		{"pkg:apk/alpine/libcrypto3@3.1.4-r5?distro=alpine-3.19.1&upstream=openssl", "", nil, "Alpine:v3.19", "openssl", true},
 		{"pkg:rpm/rocky/openssl-libs@3.0.7-24.el9?distro=rocky-9.3&epoch=1", "1:3.0.7-24.el9", map[string]string{"evr": "1:3.0.7-24.el9"}, "Rocky Linux:9", "openssl-libs", true},
+		// Rocky advisories name source packages, so the binary maps to its source rpm.
+		{"pkg:rpm/rocky/openssl-libs@3.0.7-24.el9?distro=rocky-9.3", "", map[string]string{"evr": "1:3.0.7-24.el9", "source_rpm": "openssl-3.0.7-24.el9.src.rpm"}, "Rocky Linux:9", "openssl", true},
+		{"pkg:rpm/rocky/krb5-libs@1.21.1-1.el9?distro=rocky-9.4&upstream=krb5-1.21.1-1.el9.src.rpm", "", nil, "Rocky Linux:9", "krb5", true},
+		// Alma and Red Hat list every binary package, so the binary name is kept.
+		{"pkg:rpm/almalinux/openssl-libs@3.0.7-24.el9?distro=almalinux-9.3", "", map[string]string{"source_rpm": "openssl-3.0.7-24.el9.src.rpm"}, "AlmaLinux:9", "openssl-libs", true},
 		// Syft names Red Hat packages "redhat" with an epoch qualifier; the agent uses the os-release ID.
 		{"pkg:rpm/redhat/openssl@3.0.7-27.el9?distro=rhel-9.4&epoch=1", "", nil, "Red Hat:enterprise_linux:9", "openssl", true},
 		{"pkg:rpm/rhel/openssl-libs@3.0.7-27.el9?distro=rhel-9.4", "1:3.0.7-27.el9", map[string]string{"evr": "1:3.0.7-27.el9"}, "Red Hat:enterprise_linux:9", "openssl-libs", true},
+		{"pkg:rpm/rhel/openssl-libs@3.5.1-6.el10_1?distro=rhel-10.1", "", map[string]string{"evr": "1:3.5.1-6.el10_1"}, "Red Hat:enterprise_linux:10.1", "openssl-libs", true},
 		// SUSE advisories are keyed by source package.
 		{"pkg:rpm/sles/libopenssl3@3.0.8-150500.5.3.1?distro=sles-15.5", "", map[string]string{"source_rpm": "openssl-3-3.0.8-150500.5.3.1.src.rpm"}, "SUSE:15 SP5", "openssl-3", true},
 		{"pkg:rpm/suse/libopenssl3@3.0.8-150500.5.3.1?distro=sles_sap-15&upstream=openssl-3-3.0.8-150500.5.3.1.src.rpm", "", nil, "SUSE:15", "openssl-3", true},
@@ -43,10 +53,27 @@ func TestTargetFor(t *testing.T) {
 	}
 }
 
+func TestTargetForVersionSpelling(t *testing.T) {
+	for _, c := range []struct{ purl, ver, want string }{
+		{"pkg:golang/stdlib@1.22.1", "go1.22.1", "1.22.1"},
+		{"pkg:golang/stdlib@1.22.1", "", "1.22.1"},
+		{"pkg:golang/golang.org/x/net@v0.22.0", "", "v0.22.0"},
+		{"pkg:gem/nokogiri@1.16.0-x86_64-linux", "", "1.16.0"},
+		{"pkg:gem/nokogiri@1.16.0-arm64-darwin", "", "1.16.0"},
+		{"pkg:gem/rack@3.0.0.beta1", "", "3.0.0.beta1"},
+		{"pkg:gem/rails@7.1.0-rc1", "", "7.1.0-rc1"},
+	} {
+		if got, ok := TargetFor(c.purl, c.ver, nil); !ok || got.Version != c.want {
+			t.Errorf("TargetFor(%s, %q) = %+v %v", c.purl, c.ver, got, ok)
+		}
+	}
+}
+
 func TestMatchEcosystem(t *testing.T) {
 	if !MatchEcosystem("Ubuntu:22.04:LTS", "Ubuntu:22.04") || !MatchEcosystem("Ubuntu:Pro:18.04:LTS", "Ubuntu:18.04") ||
 		!IsPro("Ubuntu:Pro:18.04:LTS") || IsPro("Ubuntu:18.04:LTS") || MatchEcosystem("Ubuntu:Pro:20.04:LTS", "Ubuntu:18.04") ||
-		MatchEcosystem("Debian:11", "Debian:12") || !MatchEcosystem("npm", "npm") {
+		MatchEcosystem("Debian:11", "Debian:12") || !MatchEcosystem("npm", "npm") ||
+		!MatchEcosystem("Packagist:https://packages.drupal.org/8", "Packagist") || MatchEcosystem("Packagist", "npm") {
 		t.Error("MatchEcosystem")
 	}
 }
@@ -62,6 +89,12 @@ func TestMatchEcosystemRPM(t *testing.T) {
 		{"Red Hat:enterprise_linux:8::baseos", "Red Hat:enterprise_linux:9", false, ""},
 		{"Red Hat:rhel_eus:9.4::baseos", "Red Hat:enterprise_linux:9", false, ""},
 		{"Red Hat:enterprise_linux:90::baseos", "Red Hat:enterprise_linux:9", false, ""},
+		// RHEL 10 publishes one stream per minor release, plus major-level layered repositories.
+		{"Red Hat:enterprise_linux:10.1", "Red Hat:enterprise_linux:10.1", true, ""},
+		{"Red Hat:enterprise_linux:10.0", "Red Hat:enterprise_linux:10.1", false, ""},
+		{"Red Hat:enterprise_linux_eus:10.0", "Red Hat:enterprise_linux:10.0", false, ""},
+		{"Red Hat:enterprise_linux:10::fastdatapath", "Red Hat:enterprise_linux:10.1", true, ""},
+		{"Red Hat:enterprise_linux:10::fastdatapath", "Red Hat:enterprise_linux:1", false, ""},
 		{"SUSE:Linux Enterprise Module for Basesystem 15 SP5", "SUSE:15 SP5", true, ""},
 		{"SUSE:Linux Enterprise Server for SAP Applications 15 SP5", "SUSE:15 SP5", true, ""},
 		{"SUSE:Linux Enterprise Server 15 SP5-LTSS", "SUSE:15 SP5", true, "SUSE LTSS"},
@@ -223,5 +256,60 @@ func TestSeverity(t *testing.T) {
 	if GroupKey("GHSA-1", []string{"CVE-2024-2", "CVE-2023-9"}) != "CVE-2023-9" || GroupKey("DSA-1", nil) != "DSA-1" ||
 		GroupKey("DEBIAN-CVE-2023-52426", nil, "CVE-2023-52426") != "CVE-2023-52426" {
 		t.Error("GroupKey")
+	}
+}
+
+func TestSubscriptionFor(t *testing.T) {
+	sles := Target{Ecosystem: "SUSE:15 SP4", Variant: "sles"}
+	sap := Target{Ecosystem: "SUSE:15 SP4", Variant: "sles_sap"}
+	cases := []struct {
+		eco    string
+		target Target
+		want   string
+	}{
+		{"SUSE:Linux Enterprise Server 15 SP4-LTSS", sles, "SUSE LTSS"},
+		{"SUSE:Linux Enterprise Server for SAP Applications 15 SP4", sles, "SUSE Linux Enterprise Server for SAP Applications"},
+		{"SUSE:Linux Enterprise Server for SAP Applications 15 SP4", sap, ""},
+		{"SUSE:Linux Enterprise High Performance Computing 15 SP4-LTSS", sles, "SUSE LTSS"},
+		{"SUSE:Linux Enterprise High Performance Computing 15 SP4", sap, "SUSE Linux Enterprise High Performance Computing"},
+		{"SUSE:Linux Enterprise Module for Basesystem 15 SP4", sles, ""},
+		{"Ubuntu:Pro:22.04:LTS", Target{Ecosystem: "Ubuntu:22.04"}, "Ubuntu Pro"},
+	}
+	for _, c := range cases {
+		if got := SubscriptionFor(c.eco, c.target); got != c.want {
+			t.Errorf("SubscriptionFor(%q, %s) = %q, want %q", c.eco, c.target.Variant, got, c.want)
+		}
+	}
+	if !PreferredSubscription("SUSE LTSS", "SUSE ESPOS") || PreferredSubscription("SUSE ESPOS", "SUSE LTSS") {
+		t.Error("LTSS is named before other SUSE channels")
+	}
+}
+
+func TestWhyNoTarget(t *testing.T) {
+	cases := []struct {
+		purl, ver   string
+		reason      string
+		unsupported bool
+	}{
+		{"pkg:rpm/centos/bash@4.2.46-35.el7?distro=centos-7", "", "centos has no vulnerability source", true},
+		{"pkg:rpm/amzn/curl@7.61.1-12.95.amzn1?distro=amzn-2018.03", "", "Amazon Linux 2018.03 has no vulnerability source", true},
+		{"pkg:deb/debian/bash@5.2", "", "no distro qualifier", false},
+		{"pkg:rpm/rhel/bash@5.1", "", "no distro qualifier", false},
+		{"pkg:deb/kali/bash@5.2?distro=kali-2024.1", "", `from "kali" have no vulnerability source`, true},
+		{"pkg:apk/wolfi/openssl@3.3.0-r0?distro=wolfi-20230201", "", `from "wolfi" have no vulnerability source`, true},
+		{"pkg:deb/debian/bash@5.2?distro=bookworm", "", `distro release "bookworm" is not understood`, false},
+		{"pkg:hex/phoenix@1.7.0", "", "no vulnerability source for hex packages", true},
+		{"pkg:generic/openssl@3.0.2", "", "no vulnerability source for generic packages", true},
+		{"pkg:npm/lodash", "", "no installed version", false},
+	}
+	for _, c := range cases {
+		if _, ok := TargetFor(c.purl, c.ver, nil); ok {
+			t.Errorf("TargetFor(%s) should fail", c.purl)
+			continue
+		}
+		reason, unsupported := WhyNoTarget(c.purl, c.ver)
+		if !strings.Contains(reason, c.reason) || unsupported != c.unsupported {
+			t.Errorf("WhyNoTarget(%s) = %q %v", c.purl, reason, unsupported)
+		}
 	}
 }

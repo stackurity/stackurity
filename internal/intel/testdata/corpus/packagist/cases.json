@@ -1,0 +1,15 @@
+{
+ "ecosystem": "Packagist",
+ "feed": "osv:Packagist",
+ "cases": [
+  {"name": "guzzle-7.4.3", "purl": "pkg:composer/guzzlehttp/guzzle@7.4.3", "affected": {"CVE-2022-31042": "7.4.4", "CVE-2022-31090": "7.4.5"}, "note": "two GHSA ids for CVE-2022-31042/31043 collapse into one finding"},
+  {"name": "guzzle-v-prefix", "purl": "pkg:composer/guzzlehttp/guzzle@v7.4.3", "affected": {"CVE-2022-31042": "7.4.4", "CVE-2022-31090": "7.4.5"}, "note": "composer.lock versions may carry a v prefix"},
+  {"name": "guzzle-6.5.7", "purl": "pkg:composer/guzzlehttp/guzzle@6.5.7", "affected": {"CVE-2022-31090": "6.5.8"}, "note": "6.5.7 fixed CVE-2022-31042"},
+  {"name": "guzzle-6.2", "purl": "pkg:composer/guzzlehttp/guzzle@6.2.0", "affected": {"CVE-2016-5385": "6.2.1", "CVE-2022-31042": "6.5.7", "CVE-2022-31090": "6.5.8"}, "note": "an introduced bound written as \"6\""},
+  {"name": "guzzle-rc", "purl": "pkg:composer/guzzlehttp/guzzle@4.0.0-rc2", "affected": {"CVE-2016-5385": "4.2.4", "CVE-2022-31090": "6.5.8"}, "note": "introduced at 4.0.0-rc2; the 4.0.0..6.5.7 range starts after it"},
+  {"name": "guzzle-latest-fix", "purl": "pkg:composer/guzzlehttp/guzzle@7.4.5", "affected": {}, "note": "fixed, and the withdrawn GHSA-mjrx-74jh-7xgw (all versions) is ignored"},
+  {"name": "laravel-withdrawn", "purl": "pkg:composer/laravel/framework@8.70.2", "affected": {}, "note": "GHSA-364w-9g92-3grq is withdrawn"},
+  {"name": "drupal-registry", "purl": "pkg:composer/drupal/webform@5.10.0", "affected": {"DRUPAL-CONTRIB-2020-011": "5.11.0"}, "note": "published for Packagist:https://packages.drupal.org/8"},
+  {"name": "dev-branch", "purl": "pkg:composer/guzzlehttp/guzzle@dev-master", "affected": {}, "coverage": "not_evaluated", "reason": "could not be compared", "note": "a branch, not a release"}
+ ]
+}

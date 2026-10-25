@@ -10,6 +10,7 @@ import {
   type AssetUpdate,
   type Collection,
   type CoverageRow,
+  type CoverageSummary,
   type DriftItem,
   type DriftResponse,
   type Finding,
@@ -44,6 +45,7 @@ import { ActionsTable } from "../components/Remediation";
 import { FixSummaryStrip } from "../components/FixGroups";
 import { FixGroupList } from "./ActionPlan";
 import { EnableRemediation } from "../components/EnableRemediation";
+import { AssetCoverageNotice, AssetStateBadge, COVERAGE_FILTERS, FindingsCoverageLine, RowCoverageNote } from "../components/Coverage";
 import {
   Card,
   EmptyState,
@@ -87,6 +89,8 @@ export function AssetDetailPage() {
   const findingCount = openFindings.data?.total ?? 0;
   // Relations decide whether this asset is a replica (Drift tab label).
   const relations = useLoad(() => api.get<List<Relation>>(`/assets/${assetId}/relations`), [assetId]);
+  // Coverage says how far the findings can be trusted; shown wherever findings are.
+  const coverage = useLoad(() => api.get<CoverageSummary>(`/assets/${assetId}/coverage-summary`), [assetId]);
   const primaries = (relations.data?.items ?? []).filter((r) => r.kind === "replica_of" && r.from_asset === assetId);
   const kind = det.data?.asset.kind ?? "";
   // What to fix comes first; otherwise the stack for kinds that have one.
@@ -174,7 +178,8 @@ export function AssetDetailPage() {
       <PageHeader help="assets"
         title={
           <>
-            {a.name} <Badge status={a.collection_status} title="Collection status" />
+            {a.name} <Badge status={a.collection_status} title="Collection status" />{" "}
+            {coverage.data && <AssetStateBadge state={coverage.data.state} label={coverage.data.label} />}
           </>
         }
         sub={
@@ -203,15 +208,21 @@ export function AssetDetailPage() {
         }
       />
       <ErrorBox error={del.error} title="Delete failed" />
-      {a.collection_status === "stale" && (
-        <Notice kind="warn">
-          <strong>Stale:</strong> no collector has reported this asset recently. The inventory below may be out of date.
-        </Notice>
-      )}
-      {a.collection_status === "partial" && (
-        <Notice kind="warn">
-          <strong>Partial:</strong> the last collection was incomplete. Some components may be missing; see the Coverage tab.
-        </Notice>
+      {coverage.data ? (
+        <AssetCoverageNotice summary={coverage.data} inventoryLink={`/assets/${a.id}?tab=inventory&coverage=gaps`} />
+      ) : (
+        <>
+          {a.collection_status === "stale" && (
+            <Notice kind="warn">
+              <strong>Stale:</strong> no collector has reported this asset recently. The inventory below may be out of date.
+            </Notice>
+          )}
+          {a.collection_status === "partial" && (
+            <Notice kind="warn">
+              <strong>Partial:</strong> the last collection was incomplete. Some components may be missing; see the Coverage tab.
+            </Notice>
+          )}
+        </>
       )}
 
       {at.reboot_required === "true" && (
@@ -272,7 +283,7 @@ export function AssetDetailPage() {
       <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`} className="tabpanel">
         {tab === "action-plan" && <AssetActionPlan assetId={a.id} />}
         {tab === "stack" && <StackTab asset={a} />}
-        {tab === "findings" && <FindingsTab assetId={a.id} />}
+        {tab === "findings" && <FindingsTab assetId={a.id} coverage={coverage.data} />}
         {tab === "inventory" && <InventoryTab assetId={a.id} />}
         {tab === "coverage" && <CoverageTab assetId={a.id} />}
         {tab === "collections" && <CollectionsTab assetId={a.id} />}
@@ -498,7 +509,7 @@ export function LatestCell({ row }: { row: InventoryRow }) {
   );
 }
 
-function FindingsTab({ assetId }: { assetId: number }) {
+function FindingsTab({ assetId, coverage }: { assetId: number; coverage?: CoverageSummary }) {
   const [offset, setOffset] = useState(0);
   const [all, setAll] = useState(false);
   const res = useLoad(
@@ -507,6 +518,7 @@ function FindingsTab({ assetId }: { assetId: number }) {
   );
   return (
     <>
+      {coverage && <FindingsCoverageLine summary={coverage} inventoryLink={`/assets/${assetId}?tab=inventory&coverage=gaps`} />}
       <div className="filters">
         <label className="check">
           <input
@@ -524,7 +536,10 @@ function FindingsTab({ assetId }: { assetId: number }) {
       {!res.data && !res.error && <Loading />}
       {res.data && res.data.items.length === 0 && (
         <EmptyState title="No findings for this asset">
-          <p>Only inventoried, evaluated components are checked. See the Coverage tab and the Intelligence page for gaps.</p>
+          <p>
+            Only inventoried components that were checked against current intelligence can have findings. Components that could not
+            be checked are marked on the Inventory tab and listed on the Intelligence page.
+          </p>
         </EmptyState>
       )}
       {res.data && res.data.items.length > 0 && (
@@ -543,13 +558,21 @@ function directLabel(d: boolean | null) {
 }
 
 function InventoryTab({ assetId }: { assetId: number }) {
+  const [params, setParams] = useSearchParams();
   const [q, setQ] = useState("");
   const dq = useDebounced(q);
   const [direct, setDirect] = useState("");
   const [removed, setRemoved] = useState(false);
+  const coverage = params.get("coverage") ?? "";
+  const setCoverage = (v: string) => {
+    const n = new URLSearchParams(params);
+    if (v) n.set("coverage", v);
+    else n.delete("coverage");
+    setParams(n, { replace: true });
+  };
   const [offset, setOffset] = useState(0);
   const [sel, setSel] = useState<number | null>(null);
-  useEffect(() => setOffset(0), [dq, direct, removed]);
+  useEffect(() => setOffset(0), [dq, direct, removed, coverage]);
 
   const res = useLoad(
     () =>
@@ -557,10 +580,11 @@ function InventoryTab({ assetId }: { assetId: number }) {
         q: dq,
         direct,
         include_removed: removed ? "true" : undefined,
+        coverage: coverage || undefined,
         limit: INV_LIMIT,
         offset,
       }),
-    [assetId, dq, direct, removed, offset],
+    [assetId, dq, direct, removed, coverage, offset],
   );
 
   const columns: Column<InventoryRow>[] = [
@@ -603,6 +627,7 @@ function InventoryTab({ assetId }: { assetId: number }) {
               <Badge status="removed" tone="muted" />
             </>
           )}
+          {!r.removed_at && <RowCoverageNote row={r} />}
         </>
       ),
     },
@@ -643,6 +668,16 @@ function InventoryTab({ assetId }: { assetId: number }) {
             <option value="false">Transitive only</option>
           </select>
         </div>
+        <div className="field">
+          <label htmlFor="inv-coverage">Coverage</label>
+          <select id="inv-coverage" value={coverage} onChange={(e) => setCoverage(e.target.value)}>
+            {COVERAGE_FILTERS.map(([v, label]) => (
+              <option key={v} value={v}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </div>
         <label className="check">
           <input type="checkbox" checked={removed} onChange={(e) => setRemoved(e.target.checked)} /> Include removed
         </label>
@@ -650,8 +685,8 @@ function InventoryTab({ assetId }: { assetId: number }) {
       <ErrorBox error={res.error} title="Could not load inventory" />
       {!res.data && !res.error && <Loading />}
       {res.data && res.data.items.length === 0 && (
-        <EmptyState title={dq || direct ? "No components match" : "No components recorded"}>
-          {!dq && !direct && <p>Check the Coverage tab to see what the collector looked at and what it could not read.</p>}
+        <EmptyState title={dq || direct || coverage ? "No components match" : "No components recorded"}>
+          {!dq && !direct && !coverage && <p>Check the Coverage tab to see what the collector looked at and what it could not read.</p>}
         </EmptyState>
       )}
       {res.data && res.data.items.length > 0 && (

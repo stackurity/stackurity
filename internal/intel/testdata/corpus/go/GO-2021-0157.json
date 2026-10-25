@@ -1,0 +1,27 @@
+{
+ "id": "GO-2021-0157",
+ "modified": "2022-08-29T16:50:59Z",
+ "published": "2022-01-05T20:00:00Z",
+ "withdrawn": "2024-05-15T05:37:11.243517Z",
+ "affected": [
+  {
+   "package": {
+    "ecosystem": "Go",
+    "name": "stdlib"
+   },
+   "ranges": [
+    {
+     "type": "SEMVER",
+     "events": [
+      {
+       "introduced": "0"
+      },
+      {
+       "fixed": "1.4.3"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

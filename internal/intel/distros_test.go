@@ -174,3 +174,55 @@ func TestAmazonLinuxMirrorMustStayOnHost(t *testing.T) {
 		t.Errorf("a mirror list pointing elsewhere must be refused, got %v", err)
 	}
 }
+
+// Ubuntu Pro FIPS channels describe FIPS builds. A patched ESM host must not
+// be reported affected by a FIPS record, and a FIPS host must be told the
+// FIPS fix, not the regular one. Records trimmed from UBUNTU-CVE-2023-3446
+// and UBUNTU-CVE-2024-9143.
+func TestUbuntuFIPSChannels(t *testing.T) {
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	st, sy, ev, up := setup(t)
+	deb := func(name, ver, distro string) model.Observation {
+		return confirmed("pkg:deb/ubuntu/"+name+"@"+ver+"?distro="+distro+"&upstream=openssl", nil)
+	}
+	esm := ingest(t, st, model.AssetHost, "esm", true, deb("libssl1.1", "1.1.1-1ubuntu2.1~18.04.23+esm3", "ubuntu-18.04"))
+	fips := ingest(t, st, model.AssetHost, "fips", true, deb("libssl3", "3.0.2-0ubuntu1.10+Fips1", "ubuntu-22.04"))
+	plain := ingest(t, st, model.AssetHost, "plain", true, deb("libssl3", "3.0.2-0ubuntu1.10", "ubuntu-22.04"))
+	updates := ingest(t, st, model.AssetHost, "fips-updates", true, deb("libssl1.1", "1.1.1-1ubuntu2.fips.2.1~18.04.23.3", "ubuntu-18.04"))
+	if err := EnsureFeeds(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	up.set("/osv/Ubuntu/all.zip", zipOf(t, map[string]string{
+		"UBUNTU-CVE-2023-3446.json": `{"id":"UBUNTU-CVE-2023-3446","modified":"2026-10-05T00:00:00Z","upstream":["CVE-2023-3446"],"affected":[
+		 {"package":{"ecosystem":"Ubuntu:Pro:18.04:LTS","name":"openssl"},"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"0"},{"fixed":"1.1.1-1ubuntu2.1~18.04.23+esm3"}]}]},
+		 {"package":{"ecosystem":"Ubuntu:Pro:FIPS-updates:18.04:LTS","name":"openssl"},"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"0"},{"fixed":"1.1.1-1ubuntu2.fips.2.1~18.04.23.3"}]}]},
+		 {"package":{"ecosystem":"Ubuntu:Pro:FIPS:18.04:LTS","name":"openssl"},"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"0"}]}]},
+		 {"package":{"ecosystem":"Ubuntu:22.04:LTS","name":"openssl"},"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"0"},{"fixed":"3.0.2-0ubuntu1.12"}]}]},
+		 {"package":{"ecosystem":"Ubuntu:Pro:FIPS-updates:22.04:LTS","name":"openssl"},"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"0"},{"fixed":"3.0.2-0ubuntu1.12+Fips1"}]}]}]}`,
+	}))
+	if _, err := sy.Sync(ctx, "osv:Ubuntu"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ev.Evaluate(ctx, nil, 0); err != nil {
+		t.Fatal(err)
+	}
+	get := func(asset int64) []store.Finding {
+		fs, _, err := st.ListFindings(ctx, store.FindingFilter{AssetID: asset})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return fs
+	}
+	if fs := get(esm); len(fs) != 0 {
+		t.Errorf("the ESM fix is installed; a FIPS record must not make it affected: %+v", fs)
+	}
+	if fs := get(fips); len(fs) != 1 || fs[0].FixedVersion != "3.0.2-0ubuntu1.12+Fips1" || !strings.Contains(string(fs[0].Evidence), `"requires_ubuntu_pro": true`) {
+		t.Errorf("a FIPS build takes the FIPS fix through Ubuntu Pro: %+v", fs)
+	}
+	if fs := get(updates); len(fs) != 0 {
+		t.Errorf("a FIPS build with the FIPS-updates fix is not affected, although the frozen certified channel lists no fix: %+v", fs)
+	}
+	if fs := get(plain); len(fs) != 1 || fs[0].FixedVersion != "3.0.2-0ubuntu1.12" || strings.Contains(string(fs[0].Evidence), "requires_subscription") {
+		t.Errorf("a regular build takes the free fix: %+v", fs)
+	}
+}
