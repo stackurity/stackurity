@@ -24,7 +24,7 @@ function ExtLink({ href, children }: { href: string | null; children: ReactNode 
   );
 }
 
-function RecommendedAction({ f }: { f: Finding }) {
+function RecommendedAction({ f, hasUpgrade }: { f: Finding; hasUpgrade: boolean }) {
   const ev = f.evidence ?? {};
   if (f.kind === "end_of_life") {
     return (
@@ -55,9 +55,10 @@ function RecommendedAction({ f }: { f: Finding }) {
   return (
     <div className="action-box">
       <p>
-        <strong>Recommended action:</strong> upgrade <span className="mono">{f.component_name}</span> from{" "}
+        <strong>Fixes this issue:</strong> upgrade <span className="mono">{f.component_name}</span> from{" "}
         <span className="mono">{f.version}</span> to <span className="mono">{f.fixed_version}</span> or later
         {f.direct === false ? " (it is a transitive dependency: upgrade the package that pulls it in, or add an override)" : ""}.
+        {hasUpgrade ? " The upgrade recommendation below covers every open finding on this package." : ""}
       </p>
     </div>
   );
@@ -238,7 +239,7 @@ export function FindingDetailPage() {
         </Notice>
       )}
       <FindingFixGroup f={f} />
-      {f.status === "open" && <RecommendedAction f={f} />}
+      {f.status === "open" && <RecommendedAction f={f} hasUpgrade={!!res.data.upgrade} />}
       {f.status === "open" && res.data.upgrade && <UpgradeCard rec={res.data.upgrade} />}
       <WorkflowPanel
         f={f}
