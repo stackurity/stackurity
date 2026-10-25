@@ -2,19 +2,14 @@ package store
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/jackc/pgx/v5"
 )
 
-// UpgradeFinding is an open finding with what an upgrade recommendation
-// needs.
-type UpgradeFinding struct {
-	FindingID    int64
-	InventoryID  int64
-	AssetID      int64
-	ComponentID  int64
-	PurlType     string
-	PurlKey      string
+// UpgradeIssue is one distinct open issue on an installed version of a
+// component, with what an upgrade recommendation needs.
+type UpgradeIssue struct {
 	Version      string
 	Distro       string // the inventory purl's distro qualifier, for OS packages
 	Kind         string
@@ -22,12 +17,18 @@ type UpgradeFinding struct {
 	FixedVersion string
 	Subscription string // paid channel the fix needs
 	Product      string // endoflife.date product, for end-of-life findings
+	FindingID    int64  // the lowest id among the findings with this issue
+	Findings     int64  // open findings with this issue (one per asset and location)
 }
 
-// UpgradeFindings returns the open findings on one inventory row, or on
-// every current inventory row of a component (inventoryID 0). Suppressed and
+// upgradeIssueLimit bounds the distinct issues read for one component.
+const upgradeIssueLimit = 5000
+
+// UpgradeIssues returns the distinct open issues on one inventory row, or on
+// every current inventory row of a component (inventoryID 0), aggregated in
+// the database so a package on thousands of hosts stays cheap. Suppressed and
 // accepted findings are included: an upgrade resolves them too.
-func (s *Store) UpgradeFindings(ctx context.Context, componentID, inventoryID int64) ([]UpgradeFinding, error) {
+func (s *Store) UpgradeIssues(ctx context.Context, componentID, inventoryID int64) ([]UpgradeIssue, error) {
 	w := &where{}
 	w.conds = append(w.conds, "f.status = 'open'", "a.merged_into IS NULL")
 	if inventoryID > 0 {
@@ -36,17 +37,40 @@ func (s *Store) UpgradeFindings(ctx context.Context, componentID, inventoryID in
 	if componentID > 0 {
 		w.add("f.component_id = ?", componentID)
 	}
-	rows, err := s.Pool.Query(ctx, `SELECT f.id, f.inventory_id, f.asset_id, f.component_id, c.type, c.purl_key, i.version,
-		COALESCE(substring(i.purl from '[?&]distro=([^&#]+)'), ''), f.kind, f.key, f.fixed_version,
-		COALESCE(f.evidence->>'requires_subscription',
+	rows, err := s.Pool.Query(ctx, `SELECT i.version, COALESCE(substring(i.purl from '[?&]distro=([^&#]+)'), ''), f.kind, f.key,
+		f.fixed_version, COALESCE(f.evidence->>'requires_subscription',
 		  CASE WHEN (f.evidence->>'requires_ubuntu_pro')::boolean THEN 'Ubuntu Pro' ELSE '' END),
-		CASE WHEN f.kind = 'end_of_life' THEN COALESCE(f.evidence->>'product', '') ELSE '' END
-		FROM findings f JOIN inventory i ON i.id = f.inventory_id JOIN components c ON c.id = f.component_id
-		JOIN assets a ON a.id = f.asset_id`+w.sql()+` ORDER BY i.version, f.key, f.id LIMIT 5000`, w.args...)
+		CASE WHEN f.kind = 'end_of_life' THEN COALESCE(f.evidence->>'product', '') ELSE '' END, min(f.id), count(*)
+		FROM findings f JOIN inventory i ON i.id = f.inventory_id JOIN assets a ON a.id = f.asset_id`+w.sql()+`
+		GROUP BY 1, 2, 3, 4, 5, 6, 7 ORDER BY 1, 2, 4 LIMIT `+strconv.Itoa(upgradeIssueLimit), w.args...)
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, pgx.RowToStructByPos[UpgradeFinding])
+	return pgx.CollectRows(rows, pgx.RowToStructByPos[UpgradeIssue])
+}
+
+// UpgradeAssetCounts returns, per installed version and distro of a
+// component (keyed version + "\x00" + distro), how many assets have open
+// findings on it.
+func (s *Store) UpgradeAssetCounts(ctx context.Context, componentID int64) (map[string]int64, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT i.version, COALESCE(substring(i.purl from '[?&]distro=([^&#]+)'), ''),
+		count(DISTINCT f.asset_id)
+		FROM findings f JOIN inventory i ON i.id = f.inventory_id JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
+		WHERE f.status = 'open' AND f.component_id = $1 GROUP BY 1, 2`, componentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int64{}
+	for rows.Next() {
+		var v, d string
+		var n int64
+		if err := rows.Scan(&v, &d, &n); err != nil {
+			return nil, err
+		}
+		out[v+"\x00"+d] = n
+	}
+	return out, rows.Err()
 }
 
 // LifecycleProductFor returns the endoflife.date product for a component, as

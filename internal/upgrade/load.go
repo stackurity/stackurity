@@ -15,7 +15,7 @@ func ForFinding(ctx context.Context, st *store.Store, f *store.Finding, now time
 	if err != nil {
 		return nil, err
 	}
-	rows, err := st.UpgradeFindings(ctx, 0, f.InventoryID)
+	rows, err := st.UpgradeIssues(ctx, 0, f.InventoryID)
 	if err != nil {
 		return nil, err
 	}
@@ -46,12 +46,16 @@ func ForComponent(ctx context.Context, st *store.Store, componentID int64, now t
 	if err != nil {
 		return nil, 0, err
 	}
-	rows, err := st.UpgradeFindings(ctx, componentID, 0)
+	rows, err := st.UpgradeIssues(ctx, componentID, 0)
+	if err != nil {
+		return nil, 0, err
+	}
+	assets, err := st.UpgradeAssetCounts(ctx, componentID)
 	if err != nil {
 		return nil, 0, err
 	}
 	type key struct{ version, distro string }
-	groups := map[key][]store.UpgradeFinding{}
+	groups := map[key][]store.UpgradeIssue{}
 	var order []key
 	for _, r := range rows {
 		k := key{r.Version, r.Distro}
@@ -67,11 +71,8 @@ func ForComponent(ctx context.Context, st *store.Store, componentID int64, now t
 		if err != nil {
 			return nil, 0, err
 		}
-		assets := map[int64]bool{}
-		for _, r := range groups[k] {
-			assets[r.AssetID] = true
-		}
-		out = append(out, VersionRecommendation{Version: k.version, Distro: k.distro, Assets: len(assets), Recommendation: rec})
+		out = append(out, VersionRecommendation{Version: k.version, Distro: k.distro, Assets: int(assets[k.version+"\x00"+k.distro]),
+			Recommendation: rec})
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].Findings != out[j].Findings {
@@ -96,7 +97,7 @@ type loader struct {
 	cycles  []store.LifecycleCycle
 }
 
-func (l *loader) recommend(ctx context.Context, componentID int64, purlType, purlKey, installed string, rows []store.UpgradeFinding) (Recommendation, error) {
+func (l *loader) recommend(ctx context.Context, componentID int64, purlType, purlKey, installed string, rows []store.UpgradeIssue) (Recommendation, error) {
 	if !l.fetched {
 		rels, err := l.st.ReleasesFor(ctx, []int64{componentID})
 		if err != nil {
@@ -123,17 +124,12 @@ func (l *loader) recommend(ctx context.Context, componentID int64, purlType, pur
 		l.fetched = true
 	}
 	in := Input{PurlType: purlType, Installed: installed, Release: l.release, Product: l.product, Cycles: l.cycles, Now: l.now}
-	seen := map[string]bool{}
+	var findings int64
 	for _, r := range rows {
-		// The same issue on several assets (or locations) counts once.
-		k := r.Kind + "|" + r.Key + "|" + r.FixedVersion
-		if seen[k] {
-			continue
-		}
-		seen[k] = true
 		in.Findings = append(in.Findings, Finding{ID: r.FindingID, Kind: r.Kind, Key: r.Key, FixedVersion: r.FixedVersion, Subscription: r.Subscription})
+		findings += r.Findings
 	}
 	rec := Recommend(in)
-	rec.Findings = len(rows)
+	rec.Findings = int(findings)
 	return rec, nil
 }
