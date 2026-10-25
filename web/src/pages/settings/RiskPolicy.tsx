@@ -120,7 +120,7 @@ function cleanRule(r: SOSRule): SOSRule {
 export function RiskPolicyPage() {
   const { can } = useAuth();
   const admin = can("admin");
-  const res = useLoad(() => api.get<{ policy: RiskPolicy; default: RiskPolicy }>("/risk-policy"), []);
+  const res = useLoad(() => api.get<{ policy: RiskPolicy; default: RiskPolicy; version: string }>("/risk-policy"), []);
   const [p, setP] = useState<RiskPolicy | null>(null);
   const [saved, setSaved] = useState(false);
   const act = useAction();
@@ -167,7 +167,11 @@ export function RiskPolicyPage() {
     <>
       <PageHeader help="risk-policy"
         title="Risk policy"
-        sub="How findings are scored into priorities P1–P4, their deadlines, and which ones are SOS."
+        sub={
+          <>
+            How findings are scored into priorities P1–P4, their deadlines, and which ones are SOS. Version <code>{res.data.version}</code>.
+          </>
+        }
         actions={
           admin && (
             <button type="button" className="btn" onClick={reset} disabled={act.pending}>

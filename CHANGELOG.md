@@ -2,6 +2,27 @@
 
 All notable changes to Stackurity. Versions follow [Semantic Versioning](https://semver.org/); before 1.0, a minor version can change behaviour, and the notes say when it does.
 
+## Unreleased
+
+### Added
+
+- **How priorities are decided** (`docs/risk.md`): every input and factor, how missing evidence is scored and why, a table of 36 validated scenarios and the invariants the scoring keeps. A scenario suite and property tests in `internal/risk` check them on every build.
+- Each finding records the risk policy version that produced its priority (`priority_policy_version`; `policy_version` in the explanation is now that version, with `current_policy_version` next to it).
+- Risk policy changes are audited in the same transaction, with the full policy before and after, both versions and the changed fields. `PUT /risk-policy` returns `version`, `previous_version` and `changed`.
+- Explanations name the evidence behind exposure (set on the asset, reported by the collector, or a workload running the image) and say when a severity is missing.
+
+### Changed
+
+- An asset with no environment adds `environment_unknown` (default +0.5) instead of scoring like a known non-production asset, and SOS rules that require production match it, as unknown exposure already matches rules that require exposure. **A confirmed known-exploited finding on an asset with no environment is now SOS**; set environments to avoid it.
+- The risk policy editor rejects weights that point the wrong way (for example negative points for known exploitation, or unknown exposure weighted above exposed). Stored policies keep working until next saved.
+- `PUT /risk-policy` fills fields it leaves out with their defaults instead of 0, as reading a stored policy already did.
+
+### Fixed
+
+- A saved SOS rule picked up the conditions of the default rule at the same position that it did not set itself (for example `production: true`), so the rule applied was narrower than the one shown.
+- An image run by one internal workload and one whose exposure could not be decided scored as internal; it is now unknown.
+- Lower confidence (`needs_validation`, `stale`) no longer raises a score that is already below zero.
+
 ## 0.3.1
 
 ### Fixed
