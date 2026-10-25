@@ -11,7 +11,15 @@ permissions:
   attestations: write
 
 jobs:
+  # A tag publishes nothing unless the current build upgrades, restores and
+  # rolls back cleanly from earlier releases.
+  checks:
+    uses: ./.github/workflows/release-checks.yml
+    permissions:
+      contents: read
+
   release:
+    needs: checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

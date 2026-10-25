@@ -1,0 +1,57 @@
+# Release checks against real installations of earlier releases: upgrade
+# with data in place, backup and restore into a new PostgreSQL server, and
+# the documented rollback (restore the pre-upgrade backup, start the
+# previous image). See tools/release-checks/upgrade.sh. The release workflow
+# runs these too, before anything is published.
+name: release-checks
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    name: Build the current image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: stackurity:release-check
+          cache-from: type=gha,scope=release-check
+          cache-to: type=gha,mode=max,scope=release-check
+      - run: docker save stackurity:release-check | gzip -1 > image.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-check-image
+          path: image.tar.gz
+          retention-days: 1
+
+  upgrade:
+    name: Upgrade, restore and rollback from ${{ matrix.from }}
+    needs: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        # Published releases a site may upgrade from. Add each new minor.
+        from: ["0.2.0", "0.3.0"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-check-image
+      - run: gunzip -c image.tar.gz | docker load
+      - run: docker pull -q ghcr.io/stackurity/stackurity:${{ matrix.from }}
+      - name: Upgrade, backup and restore, rollback
+        run: tools/release-checks/upgrade.sh ghcr.io/stackurity/stackurity:${{ matrix.from }} stackurity:release-check
