@@ -130,6 +130,7 @@ func (s *Server) Handler() http.Handler {
 				r.Use(requireRole(auth.RoleViewer))
 				r.Get("/overview", s.overview)
 				r.Get("/facets", s.facets)
+				r.Get("/search", s.search)
 				r.Get("/assets", s.listAssets)
 				r.Get("/assets/{id}", s.getAsset)
 				r.Get("/assets/{id}/inventory", s.assetInventory)

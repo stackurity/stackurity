@@ -25,6 +25,7 @@ import { TokensPage } from "./pages/settings/Tokens";
 import { ConflictsPage } from "./pages/settings/Conflicts";
 import { JobsPage } from "./pages/settings/Jobs";
 import { NotFound } from "./pages/NotFound";
+import { SearchPage } from "./pages/Search";
 import { FindingsPage } from "./pages/Findings";
 import { FindingDetailPage } from "./pages/FindingDetail";
 import { IntelligencePage } from "./pages/Intelligence";
@@ -101,6 +102,7 @@ export function App() {
     <Routes>
       <Route element={<Layout />}>
         <Route index element={<OverviewPage />} />
+        <Route path="search" element={<SearchPage />} />
         <Route path="help" element={help} />
         <Route path="help/:topic" element={help} />
         <Route path="action-plan" element={<ActionPlanPage />} />
