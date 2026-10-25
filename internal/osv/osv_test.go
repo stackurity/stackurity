@@ -28,6 +28,7 @@ func TestTargetFor(t *testing.T) {
 		// Syft names Red Hat packages "redhat" with an epoch qualifier; the agent uses the os-release ID.
 		{"pkg:rpm/redhat/openssl@3.0.7-27.el9?distro=rhel-9.4&epoch=1", "", nil, "Red Hat:enterprise_linux:9", "openssl", true},
 		{"pkg:rpm/rhel/openssl-libs@3.0.7-27.el9?distro=rhel-9.4", "1:3.0.7-27.el9", map[string]string{"evr": "1:3.0.7-27.el9"}, "Red Hat:enterprise_linux:9", "openssl-libs", true},
+		{"pkg:rpm/rhel/openssl-libs@3.5.1-6.el10_1?distro=rhel-10.1", "", map[string]string{"evr": "1:3.5.1-6.el10_1"}, "Red Hat:enterprise_linux:10.1", "openssl-libs", true},
 		// SUSE advisories are keyed by source package.
 		{"pkg:rpm/sles/libopenssl3@3.0.8-150500.5.3.1?distro=sles-15.5", "", map[string]string{"source_rpm": "openssl-3-3.0.8-150500.5.3.1.src.rpm"}, "SUSE:15 SP5", "openssl-3", true},
 		{"pkg:rpm/suse/libopenssl3@3.0.8-150500.5.3.1?distro=sles_sap-15&upstream=openssl-3-3.0.8-150500.5.3.1.src.rpm", "", nil, "SUSE:15", "openssl-3", true},
@@ -67,6 +68,12 @@ func TestMatchEcosystemRPM(t *testing.T) {
 		{"Red Hat:enterprise_linux:8::baseos", "Red Hat:enterprise_linux:9", false, ""},
 		{"Red Hat:rhel_eus:9.4::baseos", "Red Hat:enterprise_linux:9", false, ""},
 		{"Red Hat:enterprise_linux:90::baseos", "Red Hat:enterprise_linux:9", false, ""},
+		// RHEL 10 publishes one stream per minor release, plus major-level layered repositories.
+		{"Red Hat:enterprise_linux:10.1", "Red Hat:enterprise_linux:10.1", true, ""},
+		{"Red Hat:enterprise_linux:10.0", "Red Hat:enterprise_linux:10.1", false, ""},
+		{"Red Hat:enterprise_linux_eus:10.0", "Red Hat:enterprise_linux:10.0", false, ""},
+		{"Red Hat:enterprise_linux:10::fastdatapath", "Red Hat:enterprise_linux:10.1", true, ""},
+		{"Red Hat:enterprise_linux:10::fastdatapath", "Red Hat:enterprise_linux:1", false, ""},
 		{"SUSE:Linux Enterprise Module for Basesystem 15 SP5", "SUSE:15 SP5", true, ""},
 		{"SUSE:Linux Enterprise Server for SAP Applications 15 SP5", "SUSE:15 SP5", true, ""},
 		{"SUSE:Linux Enterprise Server 15 SP5-LTSS", "SUSE:15 SP5", true, "SUSE LTSS"},

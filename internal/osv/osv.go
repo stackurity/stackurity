@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -178,7 +179,7 @@ func TargetFor(purl, ver string, evidence map[string]string) (Target, bool) {
 		case "almalinux":
 			t.Ecosystem = "AlmaLinux:" + majorOf(rel)
 		case "rhel":
-			t.Ecosystem = "Red Hat:enterprise_linux:" + majorOf(rel)
+			t.Ecosystem = "Red Hat:enterprise_linux:" + rhelStream(rel)
 		case "amzn":
 			if rel != "2" && rel != "2023" {
 				return Target{}, false // Amazon Linux 1 and unknown releases
@@ -216,6 +217,18 @@ func joinNS(ns, name string) string {
 		return name
 	}
 	return ns + "/" + name
+}
+
+// rhelStream names the Red Hat advisory stream for a RHEL VERSION_ID. Up to
+// RHEL 9 one stream covers the major release ("Red Hat:enterprise_linux:9::
+// baseos"); from RHEL 10 each minor release has its own
+// ("Red Hat:enterprise_linux:10.1").
+func rhelStream(rel string) string {
+	major := majorOf(rel)
+	if n, err := strconv.Atoi(major); err == nil && n >= 10 && strings.Contains(rel, ".") {
+		return majorMinor(rel)
+	}
+	return major
 }
 
 func majorOf(v string) string {
@@ -300,8 +313,9 @@ func BaseEcosystem(eco string) string {
 // the target's. Ubuntu advisories carry suffixes such as ":LTS", and Ubuntu
 // Pro (ESM) advisories use "Ubuntu:Pro:<release>"; both match the release.
 // Red Hat advisories name a repository after the release
-// ("Red Hat:enterprise_linux:9::appstream"); minor-release streams
-// (rhel_eus, rhel_aus) are separate products and do not match. A SUSE
+// ("Red Hat:enterprise_linux:9::appstream"), or from RHEL 10 the minor
+// release ("Red Hat:enterprise_linux:10.1"); extended streams (rhel_eus,
+// enterprise_linux_eus) are separate products and do not match. A SUSE
 // target "SUSE:15 SP5" matches every product of that service pack
 // ("SUSE:Linux Enterprise Module for Basesystem 15 SP5") and its extended
 // support channels ("... 15 SP5-LTSS"). Use Subscription to tell
@@ -319,7 +333,14 @@ func MatchEcosystem(advisory, target string) bool {
 			}
 		}
 	case strings.HasPrefix(target, "Red Hat:"):
-		return strings.HasPrefix(advisory, target+"::")
+		if strings.HasPrefix(advisory, target+"::") {
+			return true
+		}
+		// A RHEL 10 minor-release stream also takes the layered
+		// repositories published per major ("...:10::fastdatapath").
+		if rel, ok := strings.CutPrefix(target, "Red Hat:enterprise_linux:"); ok && strings.Contains(rel, ".") {
+			return strings.HasPrefix(advisory, "Red Hat:enterprise_linux:"+majorOf(rel)+"::")
+		}
 	case strings.HasPrefix(target, "SUSE:") && strings.HasPrefix(advisory, "SUSE:"):
 		_, ok := suseChannel(advisory, strings.TrimPrefix(target, "SUSE:"))
 		return ok
