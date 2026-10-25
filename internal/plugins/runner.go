@@ -271,18 +271,22 @@ func (r *Runner) Health(ctx context.Context, name string, config json.RawMessage
 	return resp.Health, nil
 }
 
+// capped keeps at most max bytes and records overflow.
+// The buffer is a named field, not embedded: an embedded bytes.Buffer
+// brings its ReadFrom, which io.Copy (and so os/exec) prefers to Write,
+// and the cap would never apply.
 type capped struct {
-	bytes.Buffer
+	buf  bytes.Buffer
 	max  int
 	over bool
 }
 
 func (c *capped) Write(p []byte) (int, error) {
-	if c.Len()+len(p) > c.max {
+	if c.buf.Len()+len(p) > c.max {
 		c.over = true
 		return 0, errors.New("output limit exceeded")
 	}
-	return c.Buffer.Write(p)
+	return c.buf.Write(p)
 }
 
 func truncate(s string, n int) string {
@@ -291,3 +295,6 @@ func truncate(s string, n int) string {
 	}
 	return s
 }
+
+func (c *capped) Bytes() []byte  { return c.buf.Bytes() }
+func (c *capped) String() string { return c.buf.String() }

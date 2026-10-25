@@ -243,18 +243,23 @@ func RepoName(raw string) string {
 
 // capBuffer keeps at most max bytes and silently drops the rest, so a
 // hostile server cannot exhaust memory through progress messages.
+// The buffer is a named field, not embedded: an embedded bytes.Buffer
+// brings its ReadFrom, which io.Copy (and so os/exec) prefers to Write,
+// and the cap would never apply.
 type capBuffer struct {
-	bytes.Buffer
+	buf bytes.Buffer
 	max int
 }
 
 func (c *capBuffer) Write(p []byte) (int, error) {
-	if room := c.max - c.Len(); room > 0 {
+	if room := c.max - c.buf.Len(); room > 0 {
 		if len(p) > room {
-			c.Buffer.Write(p[:room])
+			c.buf.Write(p[:room])
 		} else {
-			c.Buffer.Write(p)
+			c.buf.Write(p)
 		}
 	}
 	return len(p), nil
 }
+
+func (c *capBuffer) String() string { return c.buf.String() }
