@@ -188,6 +188,7 @@ func TestUbuntuFIPSChannels(t *testing.T) {
 	esm := ingest(t, st, model.AssetHost, "esm", true, deb("libssl1.1", "1.1.1-1ubuntu2.1~18.04.23+esm3", "ubuntu-18.04"))
 	fips := ingest(t, st, model.AssetHost, "fips", true, deb("libssl3", "3.0.2-0ubuntu1.10+Fips1", "ubuntu-22.04"))
 	plain := ingest(t, st, model.AssetHost, "plain", true, deb("libssl3", "3.0.2-0ubuntu1.10", "ubuntu-22.04"))
+	updates := ingest(t, st, model.AssetHost, "fips-updates", true, deb("libssl1.1", "1.1.1-1ubuntu2.fips.2.1~18.04.23.3", "ubuntu-18.04"))
 	if err := EnsureFeeds(ctx, st); err != nil {
 		t.Fatal(err)
 	}
@@ -217,6 +218,9 @@ func TestUbuntuFIPSChannels(t *testing.T) {
 	}
 	if fs := get(fips); len(fs) != 1 || fs[0].FixedVersion != "3.0.2-0ubuntu1.12+Fips1" || !strings.Contains(string(fs[0].Evidence), `"requires_ubuntu_pro": true`) {
 		t.Errorf("a FIPS build takes the FIPS fix through Ubuntu Pro: %+v", fs)
+	}
+	if fs := get(updates); len(fs) != 0 {
+		t.Errorf("a FIPS build with the FIPS-updates fix is not affected, although the frozen certified channel lists no fix: %+v", fs)
 	}
 	if fs := get(plain); len(fs) != 1 || fs[0].FixedVersion != "3.0.2-0ubuntu1.12" || strings.Contains(string(fs[0].Evidence), "requires_subscription") {
 		t.Errorf("a regular build takes the free fix: %+v", fs)

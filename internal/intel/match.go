@@ -263,17 +263,25 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 		}
 		return cur
 	}
+	fipsBuild := strings.HasPrefix(t.Ecosystem, "Ubuntu:") && osv.FIPSBuild(t.Version)
 	for _, a := range advs {
 		if a.Withdrawn != nil || !osv.MatchEcosystem(a.Ecosystem, t.Ecosystem) {
 			continue
 		}
 		// Ubuntu's FIPS channels describe FIPS builds only, and a FIPS build
 		// takes its fixes from them, never from the regular channels.
-		if strings.HasPrefix(t.Ecosystem, "Ubuntu:") && osv.FIPSChannel(a.Ecosystem) != osv.FIPSBuild(t.Version) {
+		if strings.HasPrefix(t.Ecosystem, "Ubuntu:") && osv.FIPSChannel(a.Ecosystem) != fipsBuild {
 			continue
 		}
 		channel := osv.SubscriptionFor(a.Ecosystem, t)
 		pro := channel != ""
+		if fipsBuild {
+			// For a FIPS build, FIPS-updates plays the part of the free
+			// channel: the certified FIPS channel is frozen and lists no fix
+			// for most issues, so its "affected" counts only where
+			// FIPS-updates has nothing to say. Either way it needs Ubuntu Pro.
+			pro = !strings.HasPrefix(a.Ecosystem, "Ubuntu:Pro:FIPS-updates:")
+		}
 		checked++
 		m, err := osv.Check(a.Affected, t)
 		if err != nil {
@@ -352,6 +360,9 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 		requiresPro := !g.freeHit
 		if requiresPro {
 			fixed = g.proFixed // only obtainable with a subscription
+		}
+		if fipsBuild {
+			requiresPro, g.proChannel = true, "Ubuntu Pro"
 		}
 		ev := map[string]any{
 			"matched_ranges":   g.ranges,
