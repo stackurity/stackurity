@@ -281,15 +281,46 @@ func (s *Sender) post(ctx context.Context, u string, body []byte, h map[string]s
 	return nil
 }
 
-// redactURL keeps webhook URLs (which embed credentials for Slack/Teams) out
-// of stored error messages.
+// redactURL keeps webhook URLs (which embed credentials for Slack/Teams, in
+// the path or a sig= query parameter) out of stored error messages. The
+// result still wraps the underlying cause (without the URL), so callers can
+// tell a blocked destination from other failures.
 func redactURL(err error, u string) error {
-	msg := strings.ReplaceAll(err.Error(), u, "[webhook url]")
+	msg := err.Error()
+	forms := []string{u}
 	if p, perr := url.Parse(u); perr == nil {
-		msg = strings.ReplaceAll(msg, p.Path, "/[redacted]")
+		forms = append(forms, p.String(), p.Redacted())
+		for _, part := range []string{p.EscapedPath(), p.Path, p.RawQuery} {
+			if strings.Trim(part, "/") != "" {
+				forms = append(forms, part)
+			}
+		}
 	}
-	return errors.New(msg)
+	for i, f := range forms {
+		if f == "" {
+			continue
+		}
+		repl := "/[redacted]"
+		if i < 3 {
+			repl = "[webhook url]"
+		}
+		msg = strings.ReplaceAll(msg, f, repl)
+	}
+	cause := err
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		cause = ue.Err
+	}
+	return &redactedError{msg: msg, cause: cause}
 }
+
+type redactedError struct {
+	msg   string
+	cause error
+}
+
+func (e *redactedError) Error() string { return e.msg }
+func (e *redactedError) Unwrap() error { return e.cause }
 
 func (s *Sender) sendEmail(ctx context.Context, c ChannelConfig, password string, m Message) error {
 	addr := net.JoinHostPort(c.Host, strconv.Itoa(c.Port))
