@@ -152,12 +152,17 @@ func (s *Server) explainFinding(w http.ResponseWriter, r *http.Request) {
 		},
 		"risk": map[string]any{
 			"priority": f.Priority, "score": f.PriorityScore, "factors": factors, "sos": f.SOS, "sos_rule": f.SOSRule,
-			"policy_version": pol.Version(),
-			"thresholds":     map[string]float64{"P1": pol.Thresholds.P1, "P2": pol.Thresholds.P2, "P3": pol.Thresholds.P3},
-			"sla":            map[string]int{"ack_hours": sla.AckHours, "fix_days": sla.FixDays},
-			"ack_due":        f.AckDue, "fix_due": f.FixDue, "overdue": f.Overdue,
-			"note": "Factors were stored when the finding was last prioritised; open findings are re-prioritised when the policy " +
-				"or the evidence changes. policy_version identifies the current policy.",
+			// The policy that produced this priority; empty if the finding
+			// has not been prioritised since versions were recorded.
+			"policy_version":         f.PriorityPolicy,
+			"current_policy_version": pol.Version(),
+			"policy_changed":         f.PriorityPolicy != pol.Version(),
+			"thresholds":             map[string]float64{"P1": pol.Thresholds.P1, "P2": pol.Thresholds.P2, "P3": pol.Thresholds.P3},
+			"sla":                    map[string]int{"ack_hours": sla.AckHours, "fix_days": sla.FixDays},
+			"ack_due":                f.AckDue, "fix_due": f.FixDue, "overdue": f.Overdue,
+			"note": "Priority, score, factors and SOS were stored when the finding was last prioritised, under policy_version; " +
+				"open findings are re-prioritised within minutes when the policy or the evidence changes. Thresholds and SLA are " +
+				"those of the current policy (current_policy_version). The audit log (risk_policy.update) holds every earlier policy.",
 		},
 		"evidence":   ev,
 		"advisories": advs,

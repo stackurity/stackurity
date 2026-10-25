@@ -544,6 +544,8 @@ export interface Finding {
   priority?: Priority | "";
   priority_score?: number;
   priority_factors?: PriorityFactor[] | null;
+  /** Version of the risk policy that produced the priority; empty until next prioritised. */
+  priority_policy_version?: string;
   sos?: boolean;
   sos_rule?: string;
   fix_group?: string;

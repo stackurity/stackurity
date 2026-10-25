@@ -744,6 +744,9 @@ type Finding struct {
 	IncidentID      *int64          `json:"incident_id"`
 	Overdue         bool            `json:"overdue"`
 	FixGroup        string          `json:"fix_group"`
+	// PriorityPolicy is the version of the risk policy that produced
+	// Priority, PriorityScore, PriorityFactors and SOS.
+	PriorityPolicy string `json:"priority_policy_version"`
 }
 
 type FindingFilter struct {
@@ -777,7 +780,8 @@ const findingCols = `f.id, f.kind, f.key, f.inventory_id, f.asset_id, a.name, a.
 	f.state, f.priority, f.priority_score, f.priority_factors, f.sos, f.sos_rule, f.assignee_user_id, COALESCE(au.email, ''),
 	f.assignee_team_id, COALESCE(ateam.name, ''), f.ack_due, f.fix_due, f.acknowledged_at, f.suppressed_until, f.state_reason,
 	f.mitigation, f.escalation_level, f.incident_id,
-	COALESCE(f.status = 'open' AND f.state IN ('new', 'acknowledged', 'in_progress') AND f.fix_due < now(), false), f.fix_group`
+	COALESCE(f.status = 'open' AND f.state IN ('new', 'acknowledged', 'in_progress') AND f.fix_due < now(), false), f.fix_group,
+	f.priority_policy`
 
 const findingFrom = ` FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
 	JOIN components c ON c.id = f.component_id JOIN inventory i ON i.id = f.inventory_id

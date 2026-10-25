@@ -10,6 +10,7 @@ import (
 	"github.com/stackurity/stackurity/internal/fixplan/planner"
 	"github.com/stackurity/stackurity/internal/model"
 	"github.com/stackurity/stackurity/internal/osv"
+	"github.com/stackurity/stackurity/internal/risk"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
 	"github.com/stackurity/stackurity/internal/upgrade"
@@ -115,8 +116,10 @@ func TestUpgradeAndOutcomeEndpoints(t *testing.T) {
 
 	var ex struct {
 		Risk struct {
-			PolicyVersion string `json:"policy_version"`
-			SLA           struct {
+			PolicyVersion        string `json:"policy_version"`
+			CurrentPolicyVersion string `json:"current_policy_version"`
+			PolicyChanged        bool   `json:"policy_changed"`
+			SLA                  struct {
 				FixDays int `json:"fix_days"`
 			} `json:"sla"`
 		} `json:"risk"`
@@ -128,7 +131,12 @@ func TestUpgradeAndOutcomeEndpoints(t *testing.T) {
 		} `json:"feeds"`
 		Collection map[string]*time.Time `json:"collection"`
 	}
-	if code := view.do("GET", path+"/explain", nil, &ex); code != 200 || !strings.HasPrefix(ex.Risk.PolicyVersion, "sha256:") ||
+	// The version recorded is the one that prioritised the finding.
+	if _, err := e.st.Prioritize(tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace), risk.DefaultPolicy(), time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if code := view.do("GET", path+"/explain", nil, &ex); code != 200 || ex.Risk.PolicyVersion != risk.DefaultPolicy().Version() ||
+		ex.Risk.CurrentPolicyVersion != ex.Risk.PolicyVersion || ex.Risk.PolicyChanged ||
 		ex.Risk.SLA.FixDays == 0 || len(ex.Advisories) != 1 || !strings.Contains(ex.Advisories[0].URL, "GHSA-35jh-r3h4-6jhm") ||
 		len(ex.Feeds) != 1 || ex.Feeds[0].Name != "osv:npm" || ex.Collection["last_complete_collection_at"] == nil {
 		t.Errorf("explain: %d %+v", code, ex)

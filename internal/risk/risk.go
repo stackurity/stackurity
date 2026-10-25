@@ -96,7 +96,7 @@ func DefaultPolicy() Policy {
 			"P3": {AckHours: 72, FixDays: 45},
 			"P4": {AckHours: 168, FixDays: 90},
 		},
-		ExceptionMaxDays: 365,
+		ExceptionMaxDays: DefaultExceptionMaxDays,
 		SOS: []SOSRule{
 			{Name: "Known exploited in production", KnownExploited: ptr(true), Production: ptr(true)},
 			{Name: "Critical, exposed production asset", MinSeverity: "critical", Production: ptr(true), InternetExposed: ptr(true)},
@@ -407,6 +407,18 @@ func DecodePolicy(raw []byte, strict bool) (Policy, error) {
 		p.SOS = defaultRules
 	}
 	return p, nil
+}
+
+// DefaultExceptionMaxDays is the exception limit when a policy leaves it at 0.
+const DefaultExceptionMaxDays = 365
+
+// Normalize fills the values that stand for "the default", so the policy that
+// is stored, audited and versioned is exactly the one that is applied.
+func (p Policy) Normalize() Policy {
+	if p.ExceptionMaxDays == 0 {
+		p.ExceptionMaxDays = DefaultExceptionMaxDays
+	}
+	return p
 }
 
 // Version identifies the policy's content: the same weights, thresholds,
