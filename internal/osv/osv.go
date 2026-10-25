@@ -341,6 +341,11 @@ func MatchEcosystem(advisory, target string) bool {
 		if rel, ok := strings.CutPrefix(target, "Red Hat:enterprise_linux:"); ok && strings.Contains(rel, ".") {
 			return strings.HasPrefix(advisory, "Red Hat:enterprise_linux:"+majorOf(rel)+"::")
 		}
+	case target == "Packagist":
+		// Packages served by another Composer repository carry its URL:
+		// Drupal contrib modules are "Packagist:https://packages.drupal.org/8".
+		// Composer names are vendor-scoped, so the name alone identifies them.
+		return strings.HasPrefix(advisory, "Packagist:")
 	case strings.HasPrefix(target, "SUSE:") && strings.HasPrefix(advisory, "SUSE:"):
 		_, ok := suseChannel(advisory, strings.TrimPrefix(target, "SUSE:"))
 		return ok

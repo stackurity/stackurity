@@ -52,7 +52,8 @@ func TestTargetFor(t *testing.T) {
 func TestMatchEcosystem(t *testing.T) {
 	if !MatchEcosystem("Ubuntu:22.04:LTS", "Ubuntu:22.04") || !MatchEcosystem("Ubuntu:Pro:18.04:LTS", "Ubuntu:18.04") ||
 		!IsPro("Ubuntu:Pro:18.04:LTS") || IsPro("Ubuntu:18.04:LTS") || MatchEcosystem("Ubuntu:Pro:20.04:LTS", "Ubuntu:18.04") ||
-		MatchEcosystem("Debian:11", "Debian:12") || !MatchEcosystem("npm", "npm") {
+		MatchEcosystem("Debian:11", "Debian:12") || !MatchEcosystem("npm", "npm") ||
+		!MatchEcosystem("Packagist:https://packages.drupal.org/8", "Packagist") || MatchEcosystem("Packagist", "npm") {
 		t.Error("MatchEcosystem")
 	}
 }
