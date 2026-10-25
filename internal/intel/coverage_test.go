@@ -2,7 +2,9 @@ package intel
 
 import (
 	"context"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stackurity/stackurity/internal/model"
 	"github.com/stackurity/stackurity/internal/store"
@@ -90,5 +92,53 @@ func TestCoverageIsPerRow(t *testing.T) {
 	}
 	if sum, _ := st.SummarizeFindings(ctx); sum.EvaluationGaps != 1 {
 		t.Errorf("summary gaps = %d", sum.EvaluationGaps)
+	}
+}
+
+// A distro release the feed has no advisories for (too new, out of the
+// source's support, or never published) is not evaluated rather than clean.
+func TestReleaseWithoutAdvisoriesIsNotEvaluated(t *testing.T) {
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	st, sy, ev, up := setup(t)
+	known := ingest(t, st, model.AssetHost, "bookworm", true,
+		confirmed("pkg:deb/debian/libssl3@3.0.11-1~deb12u2?distro=debian-12&upstream=openssl", nil))
+	unknown := ingest(t, st, model.AssetHost, "future", true,
+		confirmed("pkg:deb/debian/libssl3@3.5.0-1?distro=debian-15&upstream=openssl", nil))
+	if err := EnsureFeeds(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	up.set("/osv/Debian/all.zip", zipOf(t, map[string]string{"DSA-5532-1.json": debOpenssl}))
+	if _, err := sy.Sync(ctx, "osv:Debian"); err != nil {
+		t.Fatal(err)
+	}
+	if f, _ := st.GetFeed(ctx, "osv:Debian"); len(f.Ecosystems) != 2 || f.Ecosystems[0] != "Debian:11" || f.Ecosystems[1] != "Debian:12" {
+		t.Errorf("feed ecosystems = %v", f.Ecosystems)
+	}
+	if _, err := ev.Evaluate(ctx, nil, 0); err != nil {
+		t.Fatal(err)
+	}
+	if c := rowCoverage(t, ctx, st, known)["pkg:deb/debian/libssl3@3.0.11-1~deb12u2?distro=debian-12&upstream=openssl"]; c.Coverage != store.CoverageEvaluated {
+		t.Errorf("Debian 12 row = %+v", c)
+	}
+	c := rowCoverage(t, ctx, st, unknown)["pkg:deb/debian/libssl3@3.5.0-1?distro=debian-15&upstream=openssl"]
+	if c.Coverage != store.CoverageNotEvaluated || !strings.Contains(c.CoverageReason, "no advisories for Debian:15") {
+		t.Errorf("Debian 15 row = %+v", c)
+	}
+
+	// An incremental sync adds the releases of the records it reads.
+	up.set("/osv/Debian/modified_id.csv", time.Now().UTC().Add(time.Minute).Format(time.RFC3339Nano)+",DSA-9999-1\n")
+	up.set("/osv/Debian/DSA-9999-1.json", `{"id":"DSA-9999-1","modified":"2026-01-01T00:00:00Z","upstream":["CVE-2026-9999"],
+	 "affected":[{"package":{"ecosystem":"Debian:15","name":"openssl"},"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"0"},{"fixed":"3.5.0-2"}]}]}]}`)
+	if res, err := sy.Sync(ctx, "osv:Debian"); err != nil || res.Full {
+		t.Fatalf("incremental sync: %+v %v", res, err)
+	}
+	if f, _ := st.GetFeed(ctx, "osv:Debian"); len(f.Ecosystems) != 3 {
+		t.Errorf("feed ecosystems after an incremental sync = %v", f.Ecosystems)
+	}
+	if _, err := ev.Evaluate(ctx, nil, unknown); err != nil {
+		t.Fatal(err)
+	}
+	if c := rowCoverage(t, ctx, st, unknown)["pkg:deb/debian/libssl3@3.5.0-1?distro=debian-15&upstream=openssl"]; c.Coverage != store.CoverageEvaluated {
+		t.Errorf("Debian 15 row once the source publishes for it = %+v", c)
 	}
 }

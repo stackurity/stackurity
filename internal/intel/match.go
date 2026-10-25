@@ -85,6 +85,7 @@ func (e *Evaluator) Evaluate(ctx context.Context, componentIDs []int64, assetID 
 
 	advCache := map[store.PackageRef][]store.AdvisoryMatch{}
 	cycleCache := map[string][]store.LifecycleCycle{}
+	releaseCache := map[string]bool{}
 	var want []store.FindingInput
 	coverage := make([]store.RowCoverage, 0, len(rows))
 	invIDs := make([]int64, 0, len(rows))
@@ -121,6 +122,17 @@ func (e *Evaluator) Evaluate(ctx context.Context, componentIDs []int64, assetID 
 				notEvaluated(fmt.Sprintf("vulnerability feed %s is disabled", name))
 			case feed.LastSuccess == nil:
 				notEvaluated(fmt.Sprintf("vulnerability feed %s has not completed a sync", name))
+			}
+			if rc.State == store.CoverageEvaluated && feed.Ecosystems != nil {
+				covered, seen := releaseCache[t.Ecosystem]
+				if !seen {
+					covered = coversRelease(feed.Ecosystems, t.Ecosystem)
+					releaseCache[t.Ecosystem] = covered
+				}
+				if !covered {
+					notEvaluated(fmt.Sprintf("%s has no advisories for %s: the release is newer than the source's data, no longer covered by it, or not published there",
+						name, t.Ecosystem))
+				}
 			}
 			if rc.State != store.CoverageEvaluated {
 				break
@@ -193,6 +205,19 @@ func (e *Evaluator) Evaluate(ctx context.Context, componentIDs []int64, assetID 
 	n, err := e.Store.ResolveRemovedFindings(ctx)
 	stats.Resolved += n
 	return stats, err
+}
+
+// coversRelease reports whether a feed holding advisories for ecosystems
+// has any for the target's (release-specific) ecosystem. A distro release
+// the source has never published for would otherwise match nothing and look
+// clean.
+func coversRelease(ecosystems []string, target string) bool {
+	for _, e := range ecosystems {
+		if osv.MatchEcosystem(e, target) {
+			return true
+		}
+	}
+	return false
 }
 
 type groupMatch struct {
@@ -292,8 +317,12 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 		}
 	}
 	order = kept
-	if checked > 0 && parseFailures == checked {
-		return nil, fmt.Sprintf("installed version %q could not be compared using %s rules", t.Version, t.Compare)
+	// An installed version the ecosystem's rules cannot read is not
+	// evaluated, even when a record matched without comparing (a listed
+	// version, an "all versions" range): the other records were not checked.
+	perr := ""
+	if _, verr := cmp(t.Version, t.Version); checked > 0 && (parseFailures == checked || verr != nil) {
+		perr = fmt.Sprintf("installed version %q could not be compared using %s rules", t.Version, t.Compare)
 	}
 	verification := "confirmed"
 	switch {
@@ -355,7 +384,7 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 			Sources: g.ids, Evidence: ev,
 		})
 	}
-	return out, ""
+	return out, perr
 }
 
 func appendUnique(s []string, v string) []string {
