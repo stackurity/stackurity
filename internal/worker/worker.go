@@ -96,6 +96,12 @@ func (w *Worker) EveryWorkspace(name string, every time.Duration, fn func(ctx co
 // are claimed in system scope and each runs in its own workspace.
 func (w *Worker) Run(ctx context.Context) {
 	ctx = tenant.System(ctx)
+	if w.Lease <= 0 {
+		w.Lease = 2 * time.Minute
+	}
+	if w.Tick <= 0 {
+		w.Tick = 15 * time.Second
+	}
 	var wg sync.WaitGroup
 	for i := 0; i < w.Concurrency; i++ {
 		wg.Add(1)
