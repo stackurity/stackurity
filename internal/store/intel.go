@@ -75,8 +75,16 @@ func (s *Store) DueFeeds(ctx context.Context) ([]Feed, error) {
 	return pgx.CollectRows(rows, pgx.RowToStructByPos[Feed])
 }
 
+// FeedAttempt records the start of a sync. A previous attempt that recorded
+// no outcome (neither success nor error) was cut short, by a crash or kill of
+// the server running it; that is recorded as the feed's error, so the feed
+// shows as failing until this attempt succeeds.
 func (s *Store) FeedAttempt(ctx context.Context, name string) error {
-	_, err := s.Pool.Exec(ctx, `UPDATE feeds SET last_attempt = now() WHERE name = $1`, name)
+	_, err := s.Pool.Exec(ctx, `UPDATE feeds SET last_attempt = now(),
+		last_error = CASE WHEN last_attempt IS NOT NULL AND last_error = '' AND (last_success IS NULL OR last_success < last_attempt)
+		  THEN 'the sync started ' || to_char(last_attempt AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS') || ' UTC was interrupted before it finished'
+		  ELSE last_error END
+		WHERE name = $1`, name)
 	return err
 }
 
