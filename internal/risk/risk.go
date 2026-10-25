@@ -5,6 +5,7 @@
 package risk
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -379,6 +380,33 @@ func (rule SOSRule) matches(in Input, priority string, production bool) bool {
 		}
 	}
 	return true
+}
+
+// DecodePolicy reads a policy's JSON over the defaults: a field it leaves out
+// (one added after it was saved) keeps its default value, and an omitted
+// sos_rules keeps the default rules. Rules that are present replace the
+// defaults entirely; decoding them into the default slice would let a saved
+// rule inherit conditions it never had (json reuses existing elements). With
+// strict, unknown fields are an error.
+func DecodePolicy(raw []byte, strict bool) (Policy, error) {
+	p := DefaultPolicy()
+	defaultRules := p.SOS
+	p.SOS = nil
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	if strict {
+		dec.DisallowUnknownFields()
+	}
+	if err := dec.Decode(&p); err != nil {
+		return Policy{}, err
+	}
+	var keys map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &keys); err != nil {
+		return Policy{}, err
+	}
+	if _, ok := keys["sos_rules"]; !ok {
+		p.SOS = defaultRules
+	}
+	return p, nil
 }
 
 // Version identifies the policy's content: the same weights, thresholds,

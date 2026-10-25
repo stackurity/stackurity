@@ -171,3 +171,34 @@ func hasFactor(r Result, name string) bool {
 	}
 	return false
 }
+
+// A saved SOS rule must be read back exactly as written. Decoding it over the
+// default rules let it inherit conditions (production: true) it never had.
+func TestDecodePolicyKeepsRulesAsWritten(t *testing.T) {
+	p, err := DecodePolicy([]byte(`{"sos_rules": [{"name": "KEV anywhere", "known_exploited": true}]}`), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.SOS) != 1 || p.SOS[0].Production != nil || p.SOS[0].KnownExploited == nil || !*p.SOS[0].KnownExploited {
+		t.Fatalf("rules = %+v", p.SOS)
+	}
+	r := p.Evaluate(Input{Kind: "vulnerability", Severity: "high", KnownExploited: true, Environment: "staging",
+		InternetExposed: b(false), Verification: "confirmed"})
+	if !r.SOS || r.SOSRule != "KEV anywhere" {
+		t.Errorf("KEV on staging under a KEV-anywhere rule: sos=%v %q", r.SOS, r.SOSRule)
+	}
+	// Omitted fields and an omitted sos_rules keep their defaults.
+	p, err = DecodePolicy([]byte(`{"known_exploited": 4}`), false)
+	if err != nil || p.KnownExploited != 4 || p.Production != DefaultPolicy().Production || len(p.SOS) != 2 {
+		t.Errorf("partial policy = %+v %v", p, err)
+	}
+	if _, err := DecodePolicy([]byte(`{"known_exploitd": 4}`), true); err == nil {
+		t.Error("strict decoding accepted an unknown field")
+	}
+	// The JSON a policy is stored as decodes to the same version.
+	def := DefaultPolicy()
+	raw, _ := json.Marshal(def)
+	if q, err := DecodePolicy(raw, true); err != nil || q.Version() != def.Version() {
+		t.Errorf("round trip changed the version: %v", err)
+	}
+}

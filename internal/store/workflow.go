@@ -24,8 +24,8 @@ func (s *Store) RiskPolicy(ctx context.Context) (risk.Policy, error) {
 	if err != nil {
 		return risk.Policy{}, err
 	}
-	p := risk.DefaultPolicy()
-	if err := json.Unmarshal(raw, &p); err != nil {
+	p, err := risk.DecodePolicy(raw, false)
+	if err != nil {
 		return risk.Policy{}, fmt.Errorf("stored risk policy is invalid: %w", err)
 	}
 	if p.ExceptionMaxDays == 0 {
