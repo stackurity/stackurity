@@ -87,11 +87,19 @@ func serverCmd() *cobra.Command {
 			ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 			defer stop()
 
+			tm, err := parseTimings(os.Getenv("STACKURITY_TEST_TIMINGS"))
+			if err != nil {
+				return err
+			}
+			if tm != defaultTimings() {
+				log.Warn("STACKURITY_TEST_TIMINGS is set: background timings are shortened for testing", "timings", fmt.Sprintf("%+v", tm))
+			}
 			st, err := openStore(ctx)
 			if err != nil {
 				return err
 			}
 			defer st.Pool.Close()
+			st.JobLockTimeout = tm.JobLock
 			applied, err := db.Migrate(ctx, st.Pool)
 			if err != nil {
 				return err
@@ -165,7 +173,7 @@ func serverCmd() *cobra.Command {
 			dispatcher := &notify.Dispatcher{Store: st, Sender: notify.NewSender(allowHTTPHooks), Secrets: res, Log: log,
 				BaseURL:  os.Getenv("STACKURITY_BASE_URL"),
 				Escalate: func(ctx context.Context) bool { return gate.Has(ctx, license.Teams) },
-				Platform: checker.PlatformIncidents, PlatformTarget: checker.PlatformTarget}
+				Platform: checker.PlatformIncidents, PlatformTarget: checker.PlatformTarget, Lease: tm.DeliveryLease}
 			var pluginRunner *plugins.Runner
 			if dir := os.Getenv("STACKURITY_PLUGIN_DIR"); dir != "" {
 				pluginRunner = &plugins.Runner{Dir: dir, WorkDir: filepath.Join(dataDir, "work"), Timeout: 15 * time.Minute}
@@ -206,9 +214,13 @@ func serverCmd() *cobra.Command {
 			}
 
 			w := worker.New(st, log)
+			w.Lease, w.Tick, w.Poll = tm.TaskLease, tm.Tick, tm.Poll
+			if tm.JobLock > 0 {
+				w.JobRenew = min(w.JobRenew, tm.JobLock/6)
+			}
 			registerJobs(w, st, res, dataDir, log, pluginRunner, packMgr)
 			// Prioritise, correlate, plan and deliver notifications.
-			w.EveryWorkspace("alerts", time.Minute, dispatcher.Tick)
+			w.EveryWorkspace("alerts", tm.Alerts, dispatcher.Tick)
 			w.EveryWorkspace("alert-digest", time.Hour, dispatcher.Digest)
 			w.Every("platform-fallback", 10*time.Minute, dispatcher.PlatformFallback)
 			registerPro(w, st, log, gate)
