@@ -1,0 +1,46 @@
+{
+ "id": "ALSA-2024:2447",
+ "modified": "2026-02-04T02:13:54.975229Z",
+ "published": "2024-04-30T00:00:00Z",
+ "summary": "Low: openssl and openssl-fips-provider security update",
+ "affected": [
+  {
+   "package": {
+    "ecosystem": "AlmaLinux:9",
+    "name": "openssl"
+   },
+   "ranges": [
+    {
+     "type": "ECOSYSTEM",
+     "events": [
+      {
+       "introduced": "0"
+      },
+      {
+       "fixed": "1:3.0.7-27.el9"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "package": {
+    "ecosystem": "AlmaLinux:9",
+    "name": "openssl-libs"
+   },
+   "ranges": [
+    {
+     "type": "ECOSYSTEM",
+     "events": [
+      {
+       "introduced": "0"
+      },
+      {
+       "fixed": "1:3.0.7-27.el9"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

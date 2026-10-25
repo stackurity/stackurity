@@ -1,0 +1,57 @@
+{
+ "id": "GO-2024-2687",
+ "modified": "2026-02-04T04:09:31.762399Z",
+ "published": "2024-04-03T21:12:01Z",
+ "aliases": [
+  "BIT-golang-2023-45288",
+  "CVE-2023-45288",
+  "GHSA-4v7x-pqxf-cx7m"
+ ],
+ "summary": "HTTP/2 CONTINUATION flood in net/http",
+ "affected": [
+  {
+   "package": {
+    "ecosystem": "Go",
+    "name": "stdlib"
+   },
+   "ranges": [
+    {
+     "type": "SEMVER",
+     "events": [
+      {
+       "introduced": "0"
+      },
+      {
+       "fixed": "1.21.9"
+      },
+      {
+       "introduced": "1.22.0-0"
+      },
+      {
+       "fixed": "1.22.2"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "package": {
+    "ecosystem": "Go",
+    "name": "golang.org/x/net"
+   },
+   "ranges": [
+    {
+     "type": "SEMVER",
+     "events": [
+      {
+       "introduced": "0"
+      },
+      {
+       "fixed": "0.23.0"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

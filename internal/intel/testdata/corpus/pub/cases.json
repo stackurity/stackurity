@@ -1,0 +1,15 @@
+{
+ "ecosystem": "Pub",
+ "feed": "osv:Pub",
+ "cases": [
+  {"name": "http-below-fix", "purl": "pkg:pub/http@0.13.2", "affected": {"CVE-2020-35669": "0.13.3"}, "note": "introduced 0, fixed 0.13.3"},
+  {"name": "http-fixed", "purl": "pkg:pub/http@0.13.3", "affected": {}, "note": "fixed"},
+  {"name": "http-build-suffix", "purl": "pkg:pub/http@0.11.1+3", "affected": {"CVE-2020-35669": "0.13.3"}, "note": "a +build version listed by the advisory"},
+  {"name": "agent-dart-dev", "purl": "pkg:pub/agent_dart@1.0.0-dev.28", "affected": {"CVE-2024-48915": "1.0.0-dev.29"}, "note": "the fix is itself a prerelease"},
+  {"name": "agent-dart-fixed-dev", "purl": "pkg:pub/agent_dart@1.0.0-dev.29", "affected": {}, "note": "fixed prerelease"},
+  {"name": "dio-withdrawn", "purl": "pkg:pub/dio@4.0.6", "affected": {}, "note": "GHSA-jwpw-q68h-r678 is withdrawn"},
+  {"name": "single-version-advisory", "purl": "pkg:pub/shared_preferences_android@2.3.3", "affected": {"GHSA-3hpf-ff72-j67p": "2.3.4"}, "note": "one affected version, advisory without CVE"},
+  {"name": "single-version-next", "purl": "pkg:pub/shared_preferences_android@2.3.4", "affected": {}, "note": "fixed"},
+  {"name": "unparseable", "purl": "pkg:pub/http@any", "affected": {}, "coverage": "not_evaluated", "reason": "could not be compared", "note": "a constraint, not a version"}
+ ]
+}

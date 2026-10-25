@@ -1,0 +1,20 @@
+{
+ "ecosystem": "Debian",
+ "feed": "osv:Debian",
+ "cases": [
+  {"name": "openssh-deb12u2", "purl": "pkg:deb/debian/openssh-server@1:9.2p1-2+deb12u2?distro=debian-12&upstream=openssh", "affected": {"CVE-2024-6387": "1:9.2p1-2+deb12u3"}, "note": "backport revision +deb12u2 is below the fix +deb12u3; the DSA and the DEBIAN-CVE record collapse into one finding"},
+  {"name": "openssh-deb12u3", "purl": "pkg:deb/debian/openssh-client@1:9.2p1-2+deb12u3?distro=debian-12&upstream=openssh", "affected": {}, "note": "the security update is installed"},
+  {"name": "openssh-deb12u1", "purl": "pkg:deb/debian/openssh-server@1:9.2p1-2+deb12u1?distro=debian-12&upstream=openssh", "affected": {"CVE-2023-48795": "1:9.2p1-2+deb12u2", "CVE-2024-6387": "1:9.2p1-2+deb12u3"}, "note": "two DSAs; DSA-5586-1 covers two CVEs and is keyed by the lower one"},
+  {"name": "openssh-release-version", "purl": "pkg:deb/debian/openssh-server@1:9.2p1-2?distro=debian-12&upstream=openssh", "affected": {"CVE-2023-48795": "1:9.2p1-2+deb12u2", "CVE-2024-6387": "1:9.2p1-2+deb12u3"}, "note": "the version Debian 12 shipped with sorts below every +deb12uN"},
+  {"name": "openssh-missing-epoch", "purl": "pkg:deb/debian/openssh-server@9.2p1-2+deb12u3?distro=debian-12&upstream=openssh", "affected": {"CVE-2023-48795": "1:9.2p1-2+deb12u2", "CVE-2024-6387": "1:9.2p1-2+deb12u3"}, "note": "without its epoch the version is epoch 0 and sorts below every fix with epoch 1, as dpkg would compare it; collectors must report the epoch"},
+  {"name": "openssh-debian-11", "purl": "pkg:deb/debian/openssh-server@1:8.4p1-5+deb11u2?distro=debian-11&upstream=openssh", "affected": {"CVE-2023-48795": "1:8.4p1-5+deb11u3"}, "note": "Debian 11 entry of the same DSA; the Debian 12 entries do not apply"},
+  {"name": "openssh-debian-13", "purl": "pkg:deb/debian/openssh-server@1:9.7p1-6?distro=debian-13&upstream=openssh", "affected": {"CVE-2024-6387": "1:9.7p1-7"}, "note": "each release has its own fixed version"},
+  {"name": "libssl3-point-release", "purl": "pkg:deb/debian/libssl3@3.0.11-1~deb12u2?distro=debian-12.7&upstream=openssl", "affected": {"CVE-2024-0727": "3.0.13-1~deb12u1"}, "note": "binary package matched through its source; a point release maps to Debian:12; tilde sorts before the next upstream version; the withdrawn CVE-2010-0928 (all versions) is ignored"},
+  {"name": "openssl-current", "purl": "pkg:deb/debian/openssl@3.0.15-1~deb12u1?distro=debian-12", "affected": {}, "note": "fixed, and the withdrawn record is ignored"},
+  {"name": "openssl-debian-11-unlisted", "purl": "pkg:deb/debian/libssl1.1@1.1.1w-0+deb11u1?distro=debian-11&upstream=openssl", "affected": {}, "note": "DEBIAN-CVE-2024-0727 has no Debian 11 entry, so the source does not call Debian 11 affected"},
+  {"name": "release-without-advisories", "purl": "pkg:deb/debian/openssh-server@1:10.0p1-1?distro=debian-15&upstream=openssh", "affected": {}, "coverage": "not_evaluated", "reason": "no advisories for Debian:15", "note": "a release the source has never published for is not called clean"},
+  {"name": "no-distro-qualifier", "purl": "pkg:deb/debian/openssh-server@1:9.2p1-2", "affected": {}, "coverage": "not_evaluated", "reason": "no distro qualifier", "note": "the release is unknown"},
+  {"name": "malformed-epoch", "purl": "pkg:deb/debian/openssh-server@a:9.2p1-2?distro=debian-12&upstream=openssh", "affected": {}, "coverage": "not_evaluated", "reason": "could not be compared", "note": "an epoch must be numeric"},
+  {"name": "derivative", "purl": "pkg:deb/kali/openssh-server@1:9.7p1-7?distro=kali-2024.2", "affected": {}, "coverage": "unsupported", "reason": "no vulnerability source", "note": "Debian derivatives have no source"}
+ ]
+}

@@ -1,0 +1,15 @@
+{
+ "ecosystem": "NuGet",
+ "feed": "osv:NuGet",
+ "cases": [
+  {"name": "newtonsoft-12", "purl": "pkg:nuget/Newtonsoft.Json@12.0.3", "affected": {"CVE-2024-21907": "13.0.1"}, "note": "introduced 0, fixed 13.0.1"},
+  {"name": "newtonsoft-fixed", "purl": "pkg:nuget/Newtonsoft.Json@13.0.1", "affected": {}, "note": "fixed"},
+  {"name": "newtonsoft-prerelease", "purl": "pkg:nuget/Newtonsoft.Json@13.0.1-beta1", "affected": {"CVE-2024-21907": "13.0.1"}, "note": "a prerelease of the fixed version is still affected"},
+  {"name": "aspnet-8", "purl": "pkg:nuget/Microsoft.AspNetCore.App.Runtime.linux-x64@8.0.13", "affected": {"CVE-2025-24070": "8.0.14", "CVE-2026-70183": "8.0.32"}, "note": "per-major-line ranges"},
+  {"name": "aspnet-6-last-affected", "purl": "pkg:nuget/Microsoft.AspNetCore.App.Runtime.linux-x64@6.0.36", "affected": {"CVE-2025-24070": ""}, "note": ".NET 6 got no fix: last_affected 6.0.36"},
+  {"name": "aspnet-11-rc", "purl": "pkg:nuget/Microsoft.AspNetCore.App.Runtime.linux-x64@11.0.0-rc.1.25451.107", "affected": {"CVE-2026-70183": "11.0.0-rc.2"}, "note": "prerelease range 11.0.0-preview.1..11.0.0-rc.2"},
+  {"name": "aspnet-9-fixed", "purl": "pkg:nuget/Microsoft.AspNetCore.App.Runtime.linux-x64@9.0.21", "affected": {}, "note": "fixed in both advisories"},
+  {"name": "xml-withdrawn", "purl": "pkg:nuget/System.Security.Cryptography.Xml@4.5.0", "affected": {}, "note": "GHSA-2m65-m22p-9wjw is withdrawn"},
+  {"name": "unparseable", "purl": "pkg:nuget/Newtonsoft.Json@1.2.3.4.5", "affected": {}, "coverage": "not_evaluated", "reason": "could not be compared", "note": "NuGet versions have at most four parts"}
+ ]
+}

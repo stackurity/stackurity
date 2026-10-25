@@ -1,0 +1,167 @@
+{
+ "id": "GHSA-494h-xx7x-5frh",
+ "modified": "2026-10-19T16:30:22.874794144Z",
+ "published": "2026-10-13T19:59:23Z",
+ "aliases": [
+  "CVE-2026-70183"
+ ],
+ "summary": "Microsoft Security Advisory CVE-2026-70183 - ASP.NET Core Security Feature Bypass Vulnerability",
+ "severity": [
+  {
+   "type": "CVSS_V3",
+   "score": "CVSS:3.1/AV:N/AC:H/PR:L/UI:N/S:U/C:H/I:H/A:H"
+  }
+ ],
+ "database_specific": {
+  "severity": "HIGH"
+ },
+ "affected": [
+  {
+   "package": {
+    "ecosystem": "NuGet",
+    "name": "Microsoft.AspNetCore.App.Runtime.linux-x64"
+   },
+   "ranges": [
+    {
+     "type": "ECOSYSTEM",
+     "events": [
+      {
+       "introduced": "8.0.0"
+      },
+      {
+       "fixed": "8.0.32"
+      }
+     ]
+    }
+   ],
+   "versions": [
+    "8.0.0",
+    "8.0.1",
+    "8.0.10",
+    "8.0.11",
+    "8.0.12",
+    "8.0.13",
+    "8.0.14",
+    "8.0.15",
+    "8.0.16",
+    "8.0.17",
+    "8.0.18",
+    "8.0.19",
+    "8.0.2",
+    "8.0.20",
+    "8.0.21",
+    "8.0.22",
+    "8.0.23",
+    "8.0.24",
+    "8.0.25",
+    "8.0.26",
+    "8.0.27",
+    "8.0.28",
+    "8.0.29",
+    "8.0.3",
+    "8.0.30",
+    "8.0.31",
+    "8.0.4",
+    "8.0.5",
+    "8.0.6",
+    "8.0.7",
+    "8.0.8"
+   ]
+  },
+  {
+   "package": {
+    "ecosystem": "NuGet",
+    "name": "Microsoft.AspNetCore.App.Runtime.linux-x64"
+   },
+   "ranges": [
+    {
+     "type": "ECOSYSTEM",
+     "events": [
+      {
+       "introduced": "10.0.0"
+      },
+      {
+       "fixed": "10.0.13"
+      }
+     ]
+    }
+   ],
+   "versions": [
+    "10.0.0",
+    "10.0.1",
+    "10.0.10",
+    "10.0.11",
+    "10.0.12",
+    "10.0.2",
+    "10.0.3",
+    "10.0.4",
+    "10.0.5",
+    "10.0.6",
+    "10.0.7",
+    "10.0.8",
+    "10.0.9"
+   ]
+  },
+  {
+   "package": {
+    "ecosystem": "NuGet",
+    "name": "Microsoft.AspNetCore.App.Runtime.linux-x64"
+   },
+   "ranges": [
+    {
+     "type": "ECOSYSTEM",
+     "events": [
+      {
+       "introduced": "9.0.0"
+      },
+      {
+       "fixed": "9.0.21"
+      }
+     ]
+    }
+   ],
+   "versions": [
+    "9.0.0",
+    "9.0.1",
+    "9.0.10",
+    "9.0.11",
+    "9.0.12",
+    "9.0.13",
+    "9.0.14",
+    "9.0.15",
+    "9.0.16",
+    "9.0.17",
+    "9.0.18",
+    "9.0.19",
+    "9.0.2",
+    "9.0.20",
+    "9.0.3",
+    "9.0.4",
+    "9.0.5",
+    "9.0.6",
+    "9.0.7",
+    "9.0.8",
+    "9.0.9"
+   ]
+  },
+  {
+   "package": {
+    "ecosystem": "NuGet",
+    "name": "Microsoft.AspNetCore.App.Runtime.linux-x64"
+   },
+   "ranges": [
+    {
+     "type": "ECOSYSTEM",
+     "events": [
+      {
+       "introduced": "11.0.0-preview.1"
+      },
+      {
+       "fixed": "11.0.0-rc.2"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

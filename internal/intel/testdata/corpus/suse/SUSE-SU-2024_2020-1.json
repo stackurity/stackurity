@@ -1,0 +1,30 @@
+{
+ "id": "SUSE-SU-2024:2020-1",
+ "modified": "2026-02-04T02:56:39.749747Z",
+ "published": "2024-06-13T10:41:57Z",
+ "upstream": [
+  "CVE-2024-4741"
+ ],
+ "summary": "Security update for openssl-3",
+ "affected": [
+  {
+   "package": {
+    "ecosystem": "SUSE:Linux Enterprise Module for Basesystem 15 SP5",
+    "name": "openssl-3"
+   },
+   "ranges": [
+    {
+     "type": "ECOSYSTEM",
+     "events": [
+      {
+       "introduced": "0"
+      },
+      {
+       "fixed": "3.0.8-150500.5.36.1"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

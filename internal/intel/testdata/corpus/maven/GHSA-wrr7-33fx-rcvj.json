@@ -1,0 +1,113 @@
+{
+ "id": "GHSA-wrr7-33fx-rcvj",
+ "modified": "2024-12-02T05:42:56.401366Z",
+ "published": "2020-06-15T18:44:56Z",
+ "withdrawn": "2020-06-16T20:28:06Z",
+ "summary": "Deserialization of Untrusted Data in jackson-databind",
+ "database_specific": {
+  "severity": "HIGH"
+ },
+ "affected": [
+  {
+   "package": {
+    "ecosystem": "Maven",
+    "name": "com.fasterxml.jackson.core:jackson-databind"
+   },
+   "ranges": [
+    {
+     "type": "ECOSYSTEM",
+     "events": [
+      {
+       "introduced": "2.7.0"
+      },
+      {
+       "fixed": "2.7.9.4"
+      }
+     ]
+    }
+   ],
+   "versions": [
+    "2.7.0",
+    "2.7.1",
+    "2.7.1-1",
+    "2.7.2",
+    "2.7.3",
+    "2.7.4",
+    "2.7.5",
+    "2.7.6",
+    "2.7.7",
+    "2.7.8",
+    "2.7.9",
+    "2.7.9.1",
+    "2.7.9.2",
+    "2.7.9.3"
+   ]
+  },
+  {
+   "package": {
+    "ecosystem": "Maven",
+    "name": "com.fasterxml.jackson.core:jackson-databind"
+   },
+   "ranges": [
+    {
+     "type": "ECOSYSTEM",
+     "events": [
+      {
+       "introduced": "2.8.0"
+      },
+      {
+       "fixed": "2.8.11.2"
+      }
+     ]
+    }
+   ],
+   "versions": [
+    "2.8.0",
+    "2.8.1",
+    "2.8.10",
+    "2.8.11",
+    "2.8.11.1",
+    "2.8.2",
+    "2.8.3",
+    "2.8.4",
+    "2.8.5",
+    "2.8.6",
+    "2.8.7",
+    "2.8.8",
+    "2.8.8.1",
+    "2.8.9"
+   ]
+  },
+  {
+   "package": {
+    "ecosystem": "Maven",
+    "name": "com.fasterxml.jackson.core:jackson-databind"
+   },
+   "ranges": [
+    {
+     "type": "ECOSYSTEM",
+     "events": [
+      {
+       "introduced": "2.9.0"
+      },
+      {
+       "fixed": "2.9.6"
+      }
+     ]
+    }
+   ],
+   "versions": [
+    "2.9.0",
+    "2.9.0.pr1",
+    "2.9.0.pr2",
+    "2.9.0.pr3",
+    "2.9.0.pr4",
+    "2.9.1",
+    "2.9.2",
+    "2.9.3",
+    "2.9.4",
+    "2.9.5"
+   ]
+  }
+ ]
+}

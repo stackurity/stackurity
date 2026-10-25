@@ -1,0 +1,14 @@
+{
+ "ecosystem": "Rocky Linux",
+ "feed": "osv:Rocky Linux",
+ "cases": [
+  {"name": "libs-by-source", "purl": "pkg:rpm/rocky/openssl-libs@3.0.7-27.el9?distro=rocky-9.4", "evidence": {"evr": "1:3.0.7-27.el9", "source_rpm": "openssl-3.0.7-27.el9.src.rpm"}, "affected": {"CVE-2024-2511": "1:3.2.2-6.el9_5.1", "CVE-2024-6119": "1:3.0.7-28.el9_4"}, "note": "Rocky records name the source package (openssl), matched through the binary's source rpm"},
+  {"name": "el9_4-backport", "purl": "pkg:rpm/rocky/openssl-libs@3.0.7-28.el9_4?distro=rocky-9.4", "evidence": {"evr": "1:3.0.7-28.el9_4", "source_rpm": "openssl-3.0.7-28.el9_4.src.rpm"}, "affected": {"CVE-2024-2511": "1:3.2.2-6.el9_5.1"}, "note": "el9_4 z-stream release is the fix for CVE-2024-6119"},
+  {"name": "current", "purl": "pkg:rpm/rocky/openssl@3.2.2-6.el9_5.1?distro=rocky-9.5", "evidence": {"evr": "1:3.2.2-6.el9_5.1", "source_rpm": "openssl-3.2.2-6.el9_5.1.src.rpm"}, "affected": {}, "note": "fixed"},
+  {"name": "syft-qualifiers", "purl": "pkg:rpm/rocky/openssl-libs@3.0.7-28.el9_4?distro=rocky-9.4&epoch=1&upstream=openssl-3.0.7-28.el9_4.src.rpm", "affected": {"CVE-2024-2511": "1:3.2.2-6.el9_5.1"}, "note": "Syft puts the epoch and source rpm in qualifiers"},
+  {"name": "missing-epoch", "purl": "pkg:rpm/rocky/openssl-libs@3.0.7-28.el9_4?distro=rocky-9.4", "evidence": {"source_rpm": "openssl-3.0.7-28.el9_4.src.rpm"}, "affected": {"CVE-2024-2511": "1:3.2.2-6.el9_5.1", "CVE-2024-6119": "1:3.0.7-28.el9_4"}, "note": "without its epoch the version is epoch 0 and sorts below every epoch 1 fix, as rpm compares it"},
+  {"name": "zero-epoch-fix", "purl": "pkg:rpm/rocky/openssl-fips-provider@3.0.7-5.el9?distro=rocky-9.5", "evidence": {"evr": "3.0.7-5.el9", "source_rpm": "openssl-fips-provider-3.0.7-5.el9.src.rpm"}, "affected": {"CVE-2024-2511": "0:3.0.7-6.el9_5"}, "note": "an explicit 0: epoch in the fix equals none"},
+  {"name": "rocky-8", "purl": "pkg:rpm/rocky/openssl-libs@1.1.1k-12.el8_9?distro=rocky-8.10", "evidence": {"evr": "1:1.1.1k-12.el8_9", "source_rpm": "openssl-1.1.1k-12.el8_9.src.rpm"}, "affected": {"CVE-2024-5535": "1:1.1.1k-14.el8_10"}, "note": "Rocky Linux:8 entries"},
+  {"name": "release-without-advisories", "purl": "pkg:rpm/rocky/openssl-libs@3.5.1-3.el10?distro=rocky-10.0", "evidence": {"evr": "1:3.5.1-3.el10", "source_rpm": "openssl-3.5.1-3.el10.src.rpm"}, "affected": {}, "coverage": "not_evaluated", "reason": "no advisories for Rocky Linux:10", "note": "this corpus holds no Rocky Linux 10 records"}
+ ]
+}

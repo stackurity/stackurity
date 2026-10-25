@@ -1,0 +1,29 @@
+{
+ "ecosystem": "npm",
+ "feed": "osv:npm",
+ "cases": [
+  {"name": "lodash-below-fix", "purl": "pkg:npm/lodash@4.17.20", "affected": {"CVE-2021-23337": "4.17.21"}, "note": "introduced 0, fixed 4.17.21"},
+  {"name": "lodash-at-fix", "purl": "pkg:npm/lodash@4.17.21", "affected": {}, "note": "the fixed version itself is not affected"},
+  {"name": "lodash-template-last-affected", "purl": "pkg:npm/lodash.template@4.5.0", "affected": {"CVE-2021-23337": ""}, "note": "last_affected is inclusive and there is no fix"},
+  {"name": "lodash-template-above-last-affected", "purl": "pkg:npm/lodash.template@4.5.1", "affected": {}, "note": "above last_affected"},
+  {"name": "lodash-rails-in-npm-record", "purl": "pkg:npm/lodash-rails@4.17.20", "affected": {}, "note": "the record's lodash-rails entry is for RubyGems; an npm package of that name must not match it"},
+  {"name": "ip-listed-version", "purl": "pkg:npm/ip@2.0.0", "affected": {"CVE-2023-42282": "2.0.1", "CVE-2024-29415": ""}, "note": "2.0.0 is listed explicitly and inside 2.0.0..2.0.1; the other advisory has only last_affected 2.0.1"},
+  {"name": "ip-old-branch", "purl": "pkg:npm/ip@1.1.8", "affected": {"CVE-2023-42282": "1.1.9", "CVE-2024-29415": ""}, "note": "second range of the same advisory (0..1.1.9)"},
+  {"name": "ip-last-affected-boundary", "purl": "pkg:npm/ip@2.0.1", "affected": {"CVE-2024-29415": ""}, "note": "fixed for one advisory, still at last_affected for the other"},
+  {"name": "ip-between-ranges", "purl": "pkg:npm/ip@1.1.9", "affected": {"CVE-2024-29415": ""}, "note": "between the two ranges of CVE-2023-42282"},
+  {"name": "semver-v7", "purl": "pkg:npm/semver@7.5.1", "affected": {"CVE-2022-25883": "7.5.2"}, "note": "third of three ranges"},
+  {"name": "semver-v6-fixed", "purl": "pkg:npm/semver@6.3.1", "affected": {}, "note": "fixed in its own release line"},
+  {"name": "semver-prerelease-introduced", "purl": "pkg:npm/semver@2.0.0-alpha", "affected": {"CVE-2022-25883": "5.7.2"}, "note": "introduced is a prerelease and inclusive"},
+  {"name": "semver-before-introduced", "purl": "pkg:npm/semver@1.1.4", "affected": {}, "note": "older than the first introduced version"},
+  {"name": "next-stable-in-range", "purl": "pkg:npm/next@16.1.4", "affected": {"CVE-2025-59472": "16.1.5"}, "note": "range introduced at 16.0.0-beta.0"},
+  {"name": "next-beta-start", "purl": "pkg:npm/next@16.0.0-beta.0", "affected": {"CVE-2025-59472": "16.1.5"}, "note": "the introduced prerelease itself"},
+  {"name": "next-alpha-before-beta", "purl": "pkg:npm/next@16.0.0-alpha.1", "affected": {}, "note": "alpha sorts before beta.0"},
+  {"name": "next-canary-last-affected", "purl": "pkg:npm/next@15.0.0-canary.205", "affected": {"CVE-2025-59472": ""}, "note": "canary range ends with last_affected, no fix in that range"},
+  {"name": "next-release-after-canaries", "purl": "pkg:npm/next@15.0.0", "affected": {}, "note": "the release sorts after all of its canaries"},
+  {"name": "next-canary-fixed", "purl": "pkg:npm/next@15.6.0-canary.60", "affected": {"CVE-2025-59472": "15.6.0-canary.61"}, "note": "prerelease fixed version"},
+  {"name": "express-withdrawn", "purl": "pkg:npm/express@4.21.2", "affected": {}, "note": "GHSA-pj86-cfqh-vqx6 is withdrawn"},
+  {"name": "pubnub-npm-not-pypi-fix", "purl": "pkg:npm/pubnub@7.3.5", "affected": {"CVE-2023-26154": "7.4.0"}, "note": "the record also has PyPI (fixed 7.3.0) and Packagist entries; only the npm entry applies"},
+  {"name": "no-advisory", "purl": "pkg:npm/left-pad@1.3.0", "affected": {}, "note": "no advisory names the package: evaluated, not affected"},
+  {"name": "dist-tag-not-version", "purl": "pkg:npm/lodash@latest", "affected": {}, "coverage": "not_evaluated", "reason": "could not be compared", "note": "a dist-tag is not a version"}
+ ]
+}

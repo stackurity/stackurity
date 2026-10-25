@@ -1,0 +1,55 @@
+{
+ "id": "GHSA-78xj-cgh5-2h22",
+ "modified": "2026-09-10T03:50:09.794882940Z",
+ "published": "2024-02-08T18:30:39Z",
+ "aliases": [
+  "CVE-2023-42282"
+ ],
+ "summary": "NPM IP package incorrectly identifies some private IP addresses as public",
+ "database_specific": {
+  "severity": "LOW"
+ },
+ "affected": [
+  {
+   "package": {
+    "ecosystem": "npm",
+    "name": "ip"
+   },
+   "ranges": [
+    {
+     "type": "SEMVER",
+     "events": [
+      {
+       "introduced": "2.0.0"
+      },
+      {
+       "fixed": "2.0.1"
+      }
+     ]
+    }
+   ],
+   "versions": [
+    "2.0.0"
+   ]
+  },
+  {
+   "package": {
+    "ecosystem": "npm",
+    "name": "ip"
+   },
+   "ranges": [
+    {
+     "type": "SEMVER",
+     "events": [
+      {
+       "introduced": "0"
+      },
+      {
+       "fixed": "1.1.9"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}
