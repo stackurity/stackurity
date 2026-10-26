@@ -10,9 +10,9 @@ import (
 )
 
 // DefaultBatch bounds one run: the findings checked per workspace per run.
-// Each needs one or two small queries; a run of 250 takes well under a
-// second, and the periodic task runs every minute.
-const DefaultBatch = 250
+// Each needs one or two small queries; a run of 500 takes about a
+// second on 130,000 findings, and the periodic task runs every minute.
+const DefaultBatch = 500
 
 // Runner checks a bounded batch of the caller's workspace's high-impact
 // findings that have no current check, records the results and

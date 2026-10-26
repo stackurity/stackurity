@@ -76,7 +76,9 @@ func (s *Store) SecondCheckCandidates(ctx context.Context, limit int, all bool) 
 		FROM findings f JOIN inventory i ON i.id = f.inventory_id JOIN components c ON c.id = f.component_id
 		JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
 		WHERE `+wanted+`
-		  AND NOT EXISTS (SELECT 1 FROM second_checks s WHERE s.finding_id = f.id AND s.checked_at > now() - make_interval(secs => $2))
+		  -- NOT IN, not NOT EXISTS: one hashed scan of the (small) checks table
+		  -- whatever its statistics say, instead of a nested loop per finding.
+		  AND f.id NOT IN (SELECT s.finding_id FROM second_checks s WHERE s.checked_at > now() - make_interval(secs => $2))
 		ORDER BY f.sos DESC, f.priority, f.id LIMIT $1`, limit, secondCheckMaxAge.Seconds())
 	if err != nil {
 		return nil, err
@@ -116,7 +118,8 @@ func (s *Store) RawAdvisoryRecords(ctx context.Context, key string, ids []string
 	}
 	rows, err := s.Pool.Query(ctx, `SELECT a.id, a.group_key, a.feed, a.withdrawn IS NOT NULL, p.ecosystem, p.name, p.affected
 		FROM advisories a JOIN advisory_packages p ON p.advisory_id = a.id
-		WHERE a.group_key = $1 OR a.id = $1 OR a.id = ANY($2) ORDER BY a.id, p.ecosystem, p.name`, key, ids)
+		WHERE a.id IN (SELECT id FROM advisories WHERE group_key = $1 UNION SELECT $1 UNION SELECT unnest($2::text[]))
+		ORDER BY a.id, p.ecosystem, p.name`, key, ids)
 	if err != nil {
 		return nil, err
 	}
@@ -153,23 +156,40 @@ type SecondCheckResult struct {
 func (s *Store) RecordSecondChecks(ctx context.Context, results []SecondCheckResult) (changedAssets []int64, err error) {
 	seen := map[int64]bool{}
 	err = pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
-		for _, r := range results {
-			diffs, _ := json.Marshal(noNilSlice(r.Differences))
+		// Every result in one round trip; a result whose finding's match
+		// changed since it was read inserts nothing.
+		batch := &pgx.Batch{}
+		diffsOf := make([][]byte, len(results))
+		for i, r := range results {
+			diffsOf[i], _ = json.Marshal(noNilSlice(r.Differences))
 			ind, _ := json.Marshal(r.Independent)
 			if r.Independent == nil {
 				ind = []byte("{}")
 			}
-			tag, err := tx.Exec(ctx, `INSERT INTO second_checks (finding_id, basis, result, reason, differences, independent, checked_at)
+			batch.Queue(`INSERT INTO second_checks (finding_id, basis, result, reason, differences, independent, checked_at)
 				SELECT f.id, $2, $3, $4, $5, $6, now() FROM findings f WHERE f.id = $1 AND `+matchBasis("f")+` = $2
 				ON CONFLICT (finding_id) DO UPDATE SET basis = EXCLUDED.basis, result = EXCLUDED.result, reason = EXCLUDED.reason,
 				  differences = EXCLUDED.differences, independent = EXCLUDED.independent, checked_at = EXCLUDED.checked_at`,
-				r.FindingID, r.Basis, r.Result, truncateText(r.Reason, 1000), diffs, ind)
+				r.FindingID, r.Basis, r.Result, truncateText(r.Reason, 1000), diffsOf[i], ind)
+		}
+		br := tx.SendBatch(ctx, batch)
+		stored := make([]bool, len(results))
+		for i := range results {
+			tag, err := br.Exec()
 			if err != nil {
+				br.Close()
 				return err
 			}
-			if tag.RowsAffected() == 0 || r.Result != SecondCheckDisagreed {
+			stored[i] = tag.RowsAffected() > 0
+		}
+		if err := br.Close(); err != nil {
+			return err
+		}
+		for i, r := range results {
+			if !stored[i] || r.Result != SecondCheckDisagreed {
 				continue
 			}
+			diffs := diffsOf[i]
 			inputs, _ := json.Marshal(r.Inputs)
 			if r.Inputs == nil {
 				inputs = []byte("{}")
@@ -178,7 +198,7 @@ func (s *Store) RecordSecondChecks(ctx context.Context, results []SecondCheckRes
 				SELECT $1, asset_id, $2, $3, $4, $5, $6, $7 FROM findings WHERE id = $1`, r.FindingID, r.Kind, r.Key, r.Purl, r.Version, diffs, inputs); err != nil {
 				return err
 			}
-			tag, err = tx.Exec(ctx, `UPDATE findings SET
+			tag, err := tx.Exec(ctx, `UPDATE findings SET
 				  verification = CASE WHEN verification_before <> '' THEN verification ELSE 'needs_validation' END,
 				  verification_before = CASE WHEN verification_before <> '' THEN 'needs_validation' ELSE '' END
 				WHERE id = $1 AND (verification = 'confirmed' OR verification_before = 'confirmed')`, r.FindingID)
@@ -275,7 +295,7 @@ func (s *Store) SummarizeSecondChecks(ctx context.Context) (*SecondCheckSummary,
 	}
 	if err := s.Pool.QueryRow(ctx, `SELECT
 		(SELECT count(*) FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
-		  WHERE `+secondCheckWanted+` AND NOT EXISTS (SELECT 1 FROM second_checks s WHERE s.finding_id = f.id)),
+		  WHERE `+secondCheckWanted+` AND f.id NOT IN (SELECT s.finding_id FROM second_checks s)),
 		(SELECT count(*) FROM second_check_disagreements WHERE created_at > now() - interval '30 days')`).
 		Scan(&sum.Pending, &sum.Logged30d); err != nil {
 		return nil, err
