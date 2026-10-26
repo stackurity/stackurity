@@ -17,6 +17,17 @@ What happens to background work when a server dies is in [reliability.md](reliab
 
 Platform incidents are raised by the alerts task itself, so they stop when that task is stuck or the database is down. Alert on the metrics from outside as well: that is what the rules below are for.
 
+### How much notification traffic to expect
+
+Notifications to people are grouped (see [the API reference](api.md#incidents-and-notifications)). Per route, at most:
+
+- one `urgent` message per run of the `alerts` task (every minute), and only when that run found new urgent issues; over `max_per_hour` they are held and counted in the next summary;
+- one `summary` a day (or a week), skipped when nothing changed;
+- one `overdue` message a day (licensed, routes with escalation);
+- one `connected` message per run for the assets whose first scan finished in it.
+
+Resolved incidents and escalations are not sent one by one, so upgrading a server that closes thousands of findings, or thousands of incidents passing their deadline at once, produces at most one message per route. Jira channels are the exception: they keep one issue per incident, and each escalation adds a comment to its issue. If a channel still receives more than a few messages an hour, look at `SELECT route_id, event, count(*) FROM deliveries WHERE created_at > now() - interval '1 day' GROUP BY 1, 2 ORDER BY 3 DESC;`: usually two routes send to the same channel, and one of them can be deleted or narrowed.
+
 ## Recommended alerts
 
 [`deploy/prometheus/stackurity-alerts.yml`](../deploy/prometheus/stackurity-alerts.yml) holds the rules. Load it with `rule_files` in `prometheus.yml`, or with the Helm chart set `metrics.enabled=true` and `metrics.prometheusRule.enabled=true` to get the same rules as a `PrometheusRule` (created only when the cluster serves `monitoring.coreos.com/v1`; add `metrics.prometheusRule.labels` matching your Prometheus's `ruleSelector`).
@@ -150,7 +161,7 @@ A feed's recent syncs fail, but its last success is still within its freshness l
 
 ### StackurityTaskNotSucceeding
 
-A periodic task (`alerts`, `alert-digest`, `enqueue-due-feeds`, `ensure-feeds`, `enqueue-due-integrations`, `mark-stale-assets`, `housekeeping`, `daily-evaluation`, `platform-fallback`, `update-check`) has not succeeded for three of its intervals. Either every run fails, or one replica holds its lease and never finishes (a stuck lease). For `alerts` this means no notifications at all are sent.
+A periodic task (`alerts`, `alert-digest`, `enqueue-due-feeds`, `ensure-feeds`, `enqueue-due-integrations`, `mark-stale-assets`, `housekeeping`, `daily-evaluation`, `platform-fallback`, `update-check`) has not succeeded for three of its intervals. Either every run fails, or one replica holds its lease and never finishes (a stuck lease). For `alerts` this means no notifications at all are sent; for `alert-digest`, held messages of deleted routes wait (summaries are also planned by `alerts`).
 
 1. Platform health's **Background tasks** table shows its last error, last start and whether it runs now. Or: `SELECT name, locked_by, locked_until, last_started_at, last_success_at, consecutive_failures, last_error FROM periodic_tasks ORDER BY name;`
 2. A last error: fix its cause (it often names the workspace and the integration or channel involved).
@@ -194,7 +205,7 @@ An enabled channel's last send failed and has stayed failed for 30 minutes. Mess
 
 ### StackurityNotificationsBacklog
 
-A due notification has not been picked up for over 15 minutes, so people are not told about incidents. Deliveries deferred by quiet hours or held for a digest are not counted. The `alerts` task is stuck or failing: follow [StackurityTaskNotSucceeding](#stackuritytasknotsucceeding) for it. Platform incidents cannot report this, because they are sent by the same task.
+A due notification has not been picked up for over 15 minutes, so people are not told about incidents. Deliveries deferred by quiet hours or held for the next summary are not counted. The `alerts` task is stuck or failing: follow [StackurityTaskNotSucceeding](#stackuritytasknotsucceeding) for it. Platform incidents cannot report this, because they are sent by the same task.
 
 ### StackurityAssetsStoppedReporting
 
@@ -274,7 +285,7 @@ Automated: `TestUpstreamOutage` in `internal/crashtest`.
 
 Slack, Teams, the mail relay or a webhook receiver rejects or cannot take messages.
 
-1. On staging, point a webhook channel at a receiver that answers 500 (or revoke a Slack app's token) and trigger an incident (or **Test** the channel).
+1. On staging, point a webhook channel at a receiver that answers 500 (or revoke a Slack app's token) and trigger an urgent issue or connect a new asset (or **Test** the channel).
 
 Expected:
 

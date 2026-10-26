@@ -25,9 +25,13 @@ import (
 	"time"
 )
 
-// Message is what every channel renders.
+// Message is what every channel renders. Webhooks receive it as JSON; the
+// shape only ever gains fields (see docs/api.md, "Notification messages").
 type Message struct {
-	Event      string         `json:"event"` // opened, priority_raised, escalated, resolved, digest, test
+	// Event: urgent, summary, overdue, connected (grouped messages to
+	// people), test; opened, priority_raised, escalated, resolved and
+	// updated for Jira issues (one per incident).
+	Event      string         `json:"event"`
 	IncidentID int64          `json:"incident_id,omitempty"`
 	Kind       string         `json:"kind,omitempty"`
 	Key        string         `json:"key,omitempty"`
@@ -38,12 +42,48 @@ type Message struct {
 	OwnerTeam  string         `json:"owner_team,omitempty"`
 	Findings   int            `json:"finding_count,omitempty"`
 	Assets     int            `json:"asset_count,omitempty"`
-	Summary    []string       `json:"summary"` // short lines: assets, fix, exploitation
+	Summary    []string       `json:"summary"` // short lines; for grouped messages, the item texts of Sections
 	Action     string         `json:"recommended_action,omitempty"`
-	Link       string         `json:"link,omitempty"`
+	Link       string         `json:"link,omitempty"` // the dashboard page to open
 	Escalation int            `json:"escalation_level,omitempty"`
 	Detail     map[string]any `json:"detail,omitempty"`
 	At         time.Time      `json:"at"`
+	// Grouped messages only.
+	Route        string         `json:"route,omitempty"`  // the route that sent it
+	Period       *Period        `json:"period,omitempty"` // summaries: what they cover
+	Counts       map[string]int `json:"counts,omitempty"` // totals, e.g. new, urgent, fixed, overdue
+	Sections     []Section      `json:"sections,omitempty"`
+	SettingsLink string         `json:"settings_link,omitempty"` // where the route is changed
+}
+
+// Section is a titled list of items in a grouped message.
+type Section struct {
+	Title string `json:"title,omitempty"`
+	Items []Item `json:"items"`
+}
+
+// Item is one line of a section, such as an asset and its new issues, with
+// the dashboard page it is about. Items holds details, such as the top
+// fixes for an asset.
+type Item struct {
+	Text  string `json:"text"`
+	Link  string `json:"link,omitempty"`
+	Items []Item `json:"items,omitempty"`
+}
+
+// Period is the time a summary covers.
+type Period struct {
+	From time.Time `json:"from"`
+	To   time.Time `json:"to"`
+}
+
+// Grouped reports whether the message is one of the grouped kinds.
+func (m Message) Grouped() bool {
+	switch m.Event {
+	case EventUrgent, EventSummary, EventOverdue, EventConnected:
+		return true
+	}
+	return false
 }
 
 func (m Message) Subject() string {
@@ -56,15 +96,34 @@ func (m Message) Subject() string {
 		return fmt.Sprintf("%s[resolved] %s", prefix, m.Title)
 	case "escalated":
 		return fmt.Sprintf("%s[%s escalated] %s", prefix, m.Priority, m.Title)
-	case "digest", "test":
+	case "digest", "test", EventSummary, EventOverdue, EventConnected:
 		return m.Title
+	case EventUrgent:
+		return prefix + m.Title
 	}
 	return fmt.Sprintf("%s[%s] %s", prefix, m.Priority, m.Title)
 }
 
+// Text is the plain-text rendering (email, and anything that shows text).
 func (m Message) Text() string {
 	var b strings.Builder
 	b.WriteString(m.Subject() + "\n\n")
+	if len(m.Sections) > 0 {
+		for _, s := range m.Sections {
+			if s.Title != "" {
+				b.WriteString(s.Title + "\n")
+			}
+			writeItems(&b, s.Items, "")
+			b.WriteString("\n")
+		}
+		if m.Link != "" {
+			b.WriteString("Open in Stackurity: " + m.Link + "\n")
+		}
+		if m.SettingsLink != "" {
+			b.WriteString("Change these notifications: " + m.SettingsLink + "\n")
+		}
+		return b.String()
+	}
 	for _, l := range m.Summary {
 		b.WriteString("• " + l + "\n")
 	}
@@ -78,6 +137,32 @@ func (m Message) Text() string {
 		b.WriteString("\n" + m.Link + "\n")
 	}
 	return b.String()
+}
+
+func writeItems(b *strings.Builder, items []Item, indent string) {
+	for _, it := range items {
+		b.WriteString(indent + "- " + it.Text + "\n")
+		if it.Link != "" {
+			b.WriteString(indent + "  " + it.Link + "\n")
+		}
+		writeItems(b, it.Items, indent+"  ")
+	}
+}
+
+// itemTexts flattens sections into the Summary lines.
+func itemTexts(sections []Section) []string {
+	var out []string
+	var walk func([]Item, string)
+	walk = func(items []Item, indent string) {
+		for _, it := range items {
+			out = append(out, indent+it.Text)
+			walk(it.Items, indent+"  ")
+		}
+	}
+	for _, s := range sections {
+		walk(s.Items, "")
+	}
+	return out
 }
 
 // Channel kinds.
@@ -379,90 +464,4 @@ func (s *Sender) sendEmail(ctx context.Context, c ChannelConfig, password string
 		return err
 	}
 	return cl.Quit()
-}
-
-func buildEmail(from string, to []string, m Message) []byte {
-	var b bytes.Buffer
-	hdr := func(k, v string) {
-		b.WriteString(k + ": " + strings.NewReplacer("\r", " ", "\n", " ").Replace(v) + "\r\n")
-	}
-	hdr("From", from)
-	hdr("To", strings.Join(to, ", "))
-	hdr("Subject", m.Subject())
-	hdr("Date", time.Now().Format(time.RFC1123Z))
-	hdr("MIME-Version", "1.0")
-	hdr("Content-Type", "text/plain; charset=utf-8")
-	hdr("Content-Transfer-Encoding", "8bit")
-	if m.IncidentID > 0 {
-		hdr("X-Stackurity-Incident", strconv.FormatInt(m.IncidentID, 10))
-	}
-	b.WriteString("\r\n")
-	// Normalise every line ending to CRLF; bare CR or LF is not allowed in SMTP.
-	body := strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(m.Text())
-	b.WriteString(strings.ReplaceAll(body, "\n", "\r\n"))
-	return b.Bytes()
-}
-
-func priorityColor(m Message) string {
-	switch {
-	case m.Event == "resolved":
-		return "#2e7d32"
-	case m.SOS || m.Priority == "P1":
-		return "#c62828"
-	case m.Priority == "P2":
-		return "#ef6c00"
-	}
-	return "#546e7a"
-}
-
-func slackPayload(m Message) map[string]any {
-	text := "*" + escapeSlack(m.Subject()) + "*"
-	var lines []string
-	for _, l := range m.Summary {
-		lines = append(lines, "• "+escapeSlack(l))
-	}
-	if m.Action != "" {
-		lines = append(lines, "*Recommended action:* "+escapeSlack(m.Action))
-	}
-	if m.Link != "" {
-		lines = append(lines, "<"+m.Link+"|Open in Stackurity>")
-	}
-	return map[string]any{
-		"text": m.Subject(),
-		"attachments": []map[string]any{{
-			"color":     priorityColor(m),
-			"mrkdwn_in": []string{"text"},
-			"text":      text + "\n" + strings.Join(lines, "\n"),
-		}},
-	}
-}
-
-func escapeSlack(s string) string {
-	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(s)
-}
-
-// teamsPayload is an Adaptive Card message accepted by Teams Workflows
-// ("Post to a channel when a webhook request is received").
-func teamsPayload(m Message) map[string]any {
-	body := []map[string]any{
-		{"type": "TextBlock", "size": "Medium", "weight": "Bolder", "wrap": true, "text": m.Subject(),
-			"color": map[bool]string{true: "Attention", false: "Default"}[m.SOS || m.Priority == "P1"]},
-	}
-	for _, l := range m.Summary {
-		body = append(body, map[string]any{"type": "TextBlock", "wrap": true, "spacing": "Small", "text": "• " + l})
-	}
-	if m.Action != "" {
-		body = append(body, map[string]any{"type": "TextBlock", "wrap": true, "text": "**Recommended action:** " + m.Action})
-	}
-	card := map[string]any{
-		"$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-		"type":    "AdaptiveCard", "version": "1.4", "body": body,
-	}
-	if m.Link != "" {
-		card["actions"] = []map[string]any{{"type": "Action.OpenUrl", "title": "Open in Stackurity", "url": m.Link}}
-	}
-	return map[string]any{
-		"type":        "message",
-		"attachments": []map[string]any{{"contentType": "application/vnd.microsoft.card.adaptive", "content": card}},
-	}
 }

@@ -5,6 +5,8 @@ import {
   CHANNEL_KINDS,
   INCIDENT_KINDS,
   PRIORITIES,
+  ROUTE_MODES,
+  WEEKDAYS,
   type Channel,
   type ChannelConfig,
   type ChannelKind,
@@ -12,6 +14,7 @@ import {
   type Delivery,
   type List,
   type Route,
+  type RouteMode,
   type Team,
 } from "../../api";
 import { useAuth } from "../../auth";
@@ -38,7 +41,7 @@ export function NotificationsPage() {
         title="Notifications"
         sub={
           admin
-            ? "Channels say where messages go; routes decide which incidents are sent to which channel."
+            ? "Channels say where messages go; routes decide what each channel hears about and when."
             : "Read-only: only administrators can change channels and routes."
         }
       />
@@ -455,6 +458,27 @@ function ChannelForm({ channel, onCancel, onSaved }: { channel?: Channel; onCanc
 
 // --- routes
 
+const MODE_LABEL: Record<RouteMode, string> = {
+  urgent_summary: "Urgent right away + daily summary",
+  daily: "Daily summary only",
+  weekly: "Weekly summary only",
+};
+
+const MODE_HINT: Record<RouteMode, string> = {
+  urgent_summary:
+    "At most one message per check when there are new urgent issues, grouped by asset and fix, plus a daily summary of what is new, fixed and overdue.",
+  daily: "One message a day: what is new, what was fixed and by what, the top fixes still open. Skipped when nothing changed.",
+  weekly: "The same summary once a week.",
+};
+
+const dayLabel = (d: string) => d.charAt(0).toUpperCase() + d.slice(1);
+
+function schedule(r: Route): string {
+  const at = r.summary_time || "09:00";
+  if (r.mode === "weekly") return `${dayLabel(r.summary_day || "monday")}s at ${at} ${r.timezone}`;
+  return `daily at ${at} ${r.timezone}`;
+}
+
 const TZ_SUGGESTIONS = ["UTC", "Europe/London", "Europe/Berlin", "America/New_York", "America/Los_Angeles", "Asia/Kolkata", "Asia/Singapore", "Australia/Sydney"];
 
 function summarizeList(xs: (string | number)[] | null | undefined, all: string, label?: (x: string | number) => string) {
@@ -488,7 +512,9 @@ function RoutesTab({ channels, admin }: { channels: Channel[]; admin: boolean })
       header: "Sends",
       cell: (r) => (
         <span className="small">
-          {r.sos_only ? "SOS only" : `${r.min_priority} and above`}
+          {MODE_LABEL[r.mode] ?? MODE_LABEL.urgent_summary}
+          <br />
+          <span className="muted">urgent:</span> {r.sos_only ? "SOS only" : `${r.min_priority} and above, SOS, known exploited`}
           <br />
           <span className="muted">kinds:</span> {summarizeList(r.kinds, "all", (k) => INCIDENT_KIND_LABEL[String(k)] ?? String(k))}
           <br />
@@ -502,7 +528,9 @@ function RoutesTab({ channels, admin }: { channels: Channel[]; admin: boolean })
       header: "Options",
       cell: (r) => (
         <span className="small">
-          {[r.escalation && "escalations", r.send_resolved && "resolved"].filter(Boolean).join(", ") || <span className="muted">—</span>}
+          summary {schedule(r)}
+          <br />
+          {[r.escalation && "overdue reminders", r.send_resolved && "fixed issues"].filter(Boolean).join(", ") || <span className="muted">no extras</span>}
           <br />
           {r.quiet_start ? `quiet ${r.quiet_start}–${r.quiet_end} ${r.timezone}` : <span className="muted">no quiet hours</span>}
           <br />
@@ -540,9 +568,10 @@ function RoutesTab({ channels, admin }: { channels: Channel[]; admin: boolean })
   return (
     <>
       <p className="hint">
-        Each incident produces at most one message per event (opened, priority raised, escalated, resolved). Quiet hours delay everything
-        except SOS; messages over the hourly limit are held and sent as a digest. Jira channels instead keep one issue per incident up to
-        date (new findings, priority changes, resolution), unaffected by quiet hours, limits and summaries.
+        Routes send a few messages that bring people to the dashboard, not one per issue: at most one urgent message per check, a daily
+        or weekly summary, and at most one overdue reminder a day. A new asset's first scan sends one &quot;connected&quot; message instead
+        of alerts for its backlog. Quiet hours delay everything except SOS; urgent messages over the hourly limit are counted in the next
+        summary. Jira channels instead keep one issue per incident up to date, unaffected by modes, quiet hours, limits and summaries.
       </p>
       {admin && editing !== "new" && (
         <p>
@@ -578,9 +607,10 @@ function RoutesTab({ channels, admin }: { channels: Channel[]; admin: boolean })
 
 function routeBody(r: Route) {
   // PUT takes the full object; strip server-only fields.
-  const { id: _id, created_at: _c, ...rest } = r;
+  const { id: _id, created_at: _c, last_summary_at: _l, ...rest } = r;
   void _id;
   void _c;
+  void _l;
   return { ...rest, kinds: rest.kinds ?? [], environments: rest.environments ?? [], team_ids: rest.team_ids ?? [] };
 }
 
@@ -640,7 +670,7 @@ function RouteForm({
       name: "",
       channel_id: channels[0]?.id ?? 0,
       enabled: true,
-      min_priority: "P2",
+      min_priority: "P1",
       sos_only: false,
       kinds: [],
       environments: [],
@@ -650,7 +680,10 @@ function RouteForm({
       quiet_start: "",
       quiet_end: "",
       timezone: "UTC",
-      max_per_hour: 0,
+      max_per_hour: 20,
+      mode: "urgent_summary",
+      summary_time: "09:00",
+      summary_day: "monday",
     },
   );
   const [localErr, setLocalErr] = useState<string | null>(null);
@@ -691,8 +724,19 @@ function RouteForm({
             ))}
           </select>
         </div>
+        <div className="field field-span">
+          <label htmlFor={`${idp}-mode`}>What to send</label>
+          <select id={`${idp}-mode`} value={r.mode || "urgent_summary"} onChange={(e) => set("mode", e.target.value as RouteMode)}>
+            {ROUTE_MODES.map((m) => (
+              <option key={m} value={m}>
+                {MODE_LABEL[m]}
+              </option>
+            ))}
+          </select>
+          <p className="hint">{MODE_HINT[r.mode || "urgent_summary"]}</p>
+        </div>
         <div className="field">
-          <label htmlFor={`${idp}-prio`}>Minimum priority</label>
+          <label htmlFor={`${idp}-prio`}>Urgent from</label>
           <select id={`${idp}-prio`} value={r.min_priority} onChange={(e) => set("min_priority", e.target.value as Route["min_priority"])}>
             {PRIORITIES.map((p) => (
               <option key={p} value={p}>
@@ -700,6 +744,11 @@ function RouteForm({
               </option>
             ))}
           </select>
+          <p className="hint">
+            {r.mode === "urgent_summary" || !r.mode
+              ? "Issues at this priority, SOS and known exploited ones are sent right away; the rest waits for the summary."
+              : "Summaries count issues at this priority, SOS and known exploited ones as urgent."}
+          </p>
         </div>
         <div className="field">
           <label htmlFor={`${idp}-max`}>Max messages per hour</label>
@@ -711,7 +760,7 @@ function RouteForm({
             value={String(r.max_per_hour)}
             onChange={(e) => set("max_per_hour", Math.max(0, Number(e.target.value) || 0))}
           />
-          <p className="hint">0 = unlimited. Extra messages are held and sent as an hourly digest.</p>
+          <p className="hint">0 = unlimited. Extra urgent messages are counted in the next summary instead; summaries are never held.</p>
         </div>
       </div>
       <div className="btn-group">
@@ -722,11 +771,12 @@ function RouteForm({
           <input type="checkbox" checked={r.sos_only} onChange={(e) => set("sos_only", e.target.checked)} /> SOS incidents only
         </label>
         <label className="check">
-          <input type="checkbox" checked={r.escalation} onChange={(e) => set("escalation", e.target.checked)} /> Send escalations (missed
-          acknowledgement or fix deadlines)
+          <input type="checkbox" checked={r.escalation} onChange={(e) => set("escalation", e.target.checked)} /> Overdue reminders (an overdue
+          section in summaries and, at most once a day, a message when urgent issues pass their fix deadline)
         </label>
         <label className="check">
-          <input type="checkbox" checked={r.send_resolved} onChange={(e) => set("send_resolved", e.target.checked)} /> Send when resolved
+          <input type="checkbox" checked={r.send_resolved} onChange={(e) => set("send_resolved", e.target.checked)} /> List fixed issues in
+          summaries
         </label>
       </div>
       <CheckGroup
@@ -747,14 +797,30 @@ function RouteForm({
         hint="None ticked = all teams, including unowned incidents."
       />
       <fieldset className="field">
-        <legend>Quiet hours (optional)</legend>
+        <legend>Summary and quiet hours</legend>
         <div className="form-grid">
+          {r.mode === "weekly" && (
+            <div className="field">
+              <label htmlFor={`${idp}-sd`}>Summary day</label>
+              <select id={`${idp}-sd`} value={r.summary_day || "monday"} onChange={(e) => set("summary_day", e.target.value)}>
+                {WEEKDAYS.map((d) => (
+                  <option key={d} value={d}>
+                    {dayLabel(d)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="field">
-            <label htmlFor={`${idp}-qs`}>From</label>
+            <label htmlFor={`${idp}-st`}>Summary time</label>
+            <input id={`${idp}-st`} type="time" required value={r.summary_time || "09:00"} onChange={(e) => set("summary_time", e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor={`${idp}-qs`}>Quiet from (optional)</label>
             <input id={`${idp}-qs`} type="time" value={r.quiet_start} onChange={(e) => set("quiet_start", e.target.value)} />
           </div>
           <div className="field">
-            <label htmlFor={`${idp}-qe`}>Until</label>
+            <label htmlFor={`${idp}-qe`}>Quiet until</label>
             <input id={`${idp}-qe`} type="time" value={r.quiet_end} onChange={(e) => set("quiet_end", e.target.value)} />
           </div>
           <div className="field">
@@ -767,7 +833,10 @@ function RouteForm({
             </datalist>
           </div>
         </div>
-        <p className="hint">SOS messages are always sent immediately. Use an IANA zone name such as Europe/Berlin.</p>
+        <p className="hint">
+          The summary time and quiet hours are in this time zone (an IANA name such as Europe/Berlin). Quiet hours delay everything except
+          SOS.
+        </p>
       </fieldset>
       <div className="form-actions">
         <button type="submit" className="btn btn-primary" disabled={act.pending}>

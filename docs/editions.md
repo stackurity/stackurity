@@ -9,13 +9,13 @@ What Community, Pro and Enterprise include, their limits and what each capabilit
 | Inventory: Linux and Windows agents, repositories, CI scans, container images, SBOM import and export, AWS and Kubernetes plugins | ✓ | ✓ | ✓ | What each source can assess: [compatibility.md](compatibility.md) |
 | Vulnerability, known-exploitation, release and end-of-life intelligence | ✓ | ✓ | ✓ | Outbound access to the sources or mirrors ([network.md](network.md)) |
 | Priorities (P1 to P4, SOS), incidents, coverage ledger, Action plan, upgrade recommendations | ✓ | ✓ | ✓ | |
-| Notifications: email, Slack, Teams, webhooks, Jira; routing by priority, kind and environment, quiet hours, rate limits and digests | ✓ | ✓ | ✓ | |
+| Notifications: email, Slack, Teams, webhooks, Jira; urgent messages and daily or weekly summaries; routing by priority, kind and environment, quiet hours, hourly limits | ✓ | ✓ | ✓ | |
 | CI gates, MCP server for AI assistants, API and CLI, audit log | ✓ | ✓ | ✓ | |
 | Workspaces (several organisations on one installation, isolated by row-level security) | ✓ | ✓ | ✓ | Each workspace has a plan; it gets the lower of its plan and the licence |
 | Official stack packs (Java, Cargo) | ✓ | ✓ | ✓ | Installed by an instance admin ([packs.md](packs.md)) |
 | Teams | One | Any number | Any number | Community: creating a second team answers `402 plan_required` |
 | Routing alerts by team | | ✓ | ✓ | Community: a route with teams answers `402 plan_required` |
-| Escalation of overdue incidents | | ✓ | ✓ | Licensed build only. Community: an escalation route answers `402 plan_required` |
+| Escalation of overdue incidents (overdue reminders: summary section, daily overdue message, Jira comments) | | ✓ | ✓ | Licensed build only. Community: an escalation route answers `402 plan_required` |
 | Evidence report (patch-management evidence for audits) | | ✓ | ✓ | Licensed build only. Periods of up to a year, default the last 30 days |
 | Single sign-on | | ✓ | ✓ | Licensed build only. OpenID Connect only (SAML is not implemented); the `STACKURITY_OIDC_*` settings; people join `STACKURITY_OIDC_WORKSPACE`, whose plan must include it |
 | Automatic fixing on hosts | | ✓ | ✓ | Licensed build only. See [prerequisites](#automatic-fixing-prerequisites) below |

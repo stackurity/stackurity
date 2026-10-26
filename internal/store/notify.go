@@ -103,10 +103,30 @@ type Route struct {
 	Timezone     string    `json:"timezone"`
 	MaxPerHour   int       `json:"max_per_hour"`
 	CreatedAt    time.Time `json:"created_at"`
+	// Mode is urgent_summary (urgent alerts right away and a daily
+	// summary), daily or weekly (summary only).
+	Mode string `json:"mode"`
+	// SummaryTime ("HH:MM") and SummaryDay (weekday, for weekly summaries)
+	// are in Timezone.
+	SummaryTime string `json:"summary_time"`
+	SummaryDay  string `json:"summary_day"`
+	// LastSummaryAt is the end of the period the last summary covered. It
+	// is kept by the dispatcher; SaveRoute ignores it.
+	LastSummaryAt time.Time `json:"last_summary_at"`
 }
 
+// Route modes.
+const (
+	ModeUrgentSummary = "urgent_summary"
+	ModeDaily         = "daily"
+	ModeWeekly        = "weekly"
+)
+
+// Weekdays are the values of Route.SummaryDay.
+var Weekdays = []string{"sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"}
+
 const routeCols = `id, name, channel_id, enabled, min_priority, sos_only, kinds, environments, team_ids, escalation, send_resolved,
-	quiet_start, quiet_end, timezone, max_per_hour, created_at`
+	quiet_start, quiet_end, timezone, max_per_hour, created_at, mode, summary_time, summary_day, last_summary_at`
 
 func (s *Store) ListRoutes(ctx context.Context) ([]Route, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT `+routeCols+` FROM routes ORDER BY name`)
@@ -136,18 +156,31 @@ func (s *Store) SaveRoute(ctx context.Context, r Route) (*Route, error) {
 	if r.TeamIDs == nil {
 		r.TeamIDs = []int64{}
 	}
+	if r.MinPriority == "" {
+		r.MinPriority = "P1"
+	}
+	if r.Mode == "" {
+		r.Mode = ModeUrgentSummary
+	}
+	if r.SummaryTime == "" {
+		r.SummaryTime = "09:00"
+	}
+	if r.SummaryDay == "" {
+		r.SummaryDay = "monday"
+	}
 	var rows pgx.Rows
 	var err error
 	args := []any{r.Name, r.ChannelID, r.Enabled, r.MinPriority, r.SOSOnly, r.Kinds, r.Environments, r.TeamIDs, r.Escalation,
-		r.SendResolved, r.QuietStart, r.QuietEnd, r.Timezone, r.MaxPerHour}
+		r.SendResolved, r.QuietStart, r.QuietEnd, r.Timezone, r.MaxPerHour, r.Mode, r.SummaryTime, r.SummaryDay}
 	if r.ID == 0 {
 		rows, err = s.Pool.Query(ctx, `INSERT INTO routes (name, channel_id, enabled, min_priority, sos_only, kinds, environments,
-			team_ids, escalation, send_resolved, quiet_start, quiet_end, timezone, max_per_hour)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING `+routeCols, args...)
+			team_ids, escalation, send_resolved, quiet_start, quiet_end, timezone, max_per_hour, mode, summary_time, summary_day)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING `+routeCols, args...)
 	} else {
 		rows, err = s.Pool.Query(ctx, `UPDATE routes SET name=$1, channel_id=$2, enabled=$3, min_priority=$4, sos_only=$5, kinds=$6,
-			environments=$7, team_ids=$8, escalation=$9, send_resolved=$10, quiet_start=$11, quiet_end=$12, timezone=$13, max_per_hour=$14
-			WHERE id = $15 RETURNING `+routeCols, append(args, r.ID)...)
+			environments=$7, team_ids=$8, escalation=$9, send_resolved=$10, quiet_start=$11, quiet_end=$12, timezone=$13, max_per_hour=$14,
+			mode=$15, summary_time=$16, summary_day=$17
+			WHERE id = $18 RETURNING `+routeCols, append(args, r.ID)...)
 	}
 	if err != nil {
 		return nil, err
