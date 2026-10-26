@@ -88,6 +88,15 @@ func TestResolvedWithinAndSummary(t *testing.T) {
 	if total != open || open != 2 {
 		t.Errorf("summary counts %d open findings, list %d, want 2", total, open)
 	}
+	if _, err := s.Pool.Exec(ctx, `UPDATE findings SET first_seen = now() - interval '20 days' WHERE key = 'CVE-KERNEL'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, n, err := s.ListFindings(ctx, store.FindingFilter{NewWithinDays: 7}); err != nil || n != 1 {
+		t.Errorf("new this week: %d, %v; want 1", n, err)
+	}
+	if rows, n, err := s.ListFindings(ctx, store.FindingFilter{ByAsset: true}); err != nil || n != 2 || len(rows) != 2 {
+		t.Errorf("sorted by asset: %d rows of %d, %v; want 2", len(rows), n, err)
+	}
 	if sum.KnownExploited != 2 || sum.AffectedAssets != 1 {
 		t.Errorf("known exploited %d, affected assets %d; want 2 and 1", sum.KnownExploited, sum.AffectedAssets)
 	}

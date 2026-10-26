@@ -863,6 +863,10 @@ type FindingFilter struct {
 	Overdue      bool
 	// ResolvedWithinDays keeps findings resolved in the last N days.
 	ResolvedWithinDays int
+	// NewWithinDays keeps findings first seen in the last N days.
+	NewWithinDays int
+	// ByAsset sorts by asset name first, for a list grouped by asset.
+	ByAsset bool
 	Page
 }
 
@@ -947,6 +951,9 @@ func (s *Store) ListFindings(ctx context.Context, f FindingFilter) ([]Finding, i
 	if f.Overdue {
 		w.conds = append(w.conds, "f.state IN ('new', 'acknowledged', 'in_progress') AND f.fix_due < now()")
 	}
+	if f.NewWithinDays > 0 {
+		w.add("f.first_seen > now() - make_interval(days => ?)", f.NewWithinDays)
+	}
 	if f.ResolvedWithinDays > 0 {
 		w.add("f.resolved_at > now() - make_interval(days => ?)", f.ResolvedWithinDays)
 	}
@@ -968,10 +975,14 @@ func (s *Store) ListFindings(ctx context.Context, f FindingFilter) ([]Finding, i
 	p := f.Page.norm()
 	// Keep this order in step with the findings_open_order index (migration
 	// 0029), which serves the first pages without sorting.
+	order := ""
+	if f.ByAsset {
+		order = "a.name, a.id, "
+	}
 	rows, err := s.Pool.Query(ctx, `SELECT `+findingCols+findingFrom+w.sql()+fmt.Sprintf(`
-		ORDER BY f.sos DESC, f.priority, COALESCE((f.evidence->>'known_exploited')::boolean, false) DESC,
+		ORDER BY %sf.sos DESC, f.priority, COALESCE((f.evidence->>'known_exploited')::boolean, false) DESC,
 		  CASE f.severity WHEN 'critical' THEN 5 WHEN 'high' THEN 4 WHEN 'medium' THEN 3 WHEN 'low' THEN 2 WHEN 'unknown' THEN 1 ELSE 0 END DESC,
-		  f.score DESC NULLS LAST, f.first_seen DESC, f.id LIMIT %d OFFSET %d`, p.Limit, p.Offset), w.args...)
+		  f.score DESC NULLS LAST, f.first_seen DESC, f.id LIMIT %d OFFSET %d`, order, p.Limit, p.Offset), w.args...)
 	if err != nil {
 		return nil, 0, err
 	}
