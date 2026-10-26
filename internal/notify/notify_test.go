@@ -525,7 +525,7 @@ func TestBurstBecomesOneSummary(t *testing.T) {
 	}
 	m := f.hook.got[0]
 	if !strings.Contains(m.Title, "6 new incidents on web-1") || !strings.Contains(strings.Join(m.Summary, "\n"), "Upgrade lodash") ||
-		!m.SOS || !strings.HasSuffix(m.Link, "/action-plan") {
+		!m.SOS || !strings.HasSuffix(m.Link, "/fixes") {
 		t.Errorf("summary = %+v", m)
 	}
 	f.tick()
