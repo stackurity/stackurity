@@ -98,6 +98,17 @@ func (s *Store) SecondCheckCandidates(ctx context.Context, limit int, all bool) 
 	return out, rows.Err()
 }
 
+// SecondCheckWaiting reports whether any finding in the caller's workspace
+// is waiting for a second check, so a job is queued only when there is work.
+func (s *Store) SecondCheckWaiting(ctx context.Context) (bool, error) {
+	var waiting bool
+	err := s.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
+		WHERE `+secondCheckWanted+`
+		  AND f.id NOT IN (SELECT s.finding_id FROM second_checks s WHERE s.checked_at > now() - make_interval(secs => $1)))`,
+		secondCheckMaxAge.Seconds()).Scan(&waiting)
+	return waiting, err
+}
+
 // RawAdvisoryRecord is one stored affected entry exactly as the feed
 // published it (advisory_packages.affected), with its advisory's identity.
 type RawAdvisoryRecord struct {

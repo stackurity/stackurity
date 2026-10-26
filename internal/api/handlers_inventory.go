@@ -15,27 +15,33 @@ import (
 	"github.com/stackurity/stackurity/internal/store"
 )
 
+// Upload limits for /ingest and /sbom/import.
 const (
-	maxIngestBody   = 64 << 20  // compressed or raw bytes on the wire
-	maxIngestInflow = 256 << 20 // after gzip decompression
+	MaxIngestBody   = 64 << 20  // compressed or raw bytes on the wire
+	MaxIngestInflow = 256 << 20 // after gzip decompression
 )
 
 // body returns the request body, transparently gunzipping and enforcing
-// size limits on both the wire and decompressed size.
-func body(w http.ResponseWriter, r *http.Request) (io.Reader, error) {
-	rd := io.Reader(http.MaxBytesReader(w, r.Body, maxIngestBody))
+// size limits on both the wire and decompressed size (the Server's
+// IngestLimits when set, for tests; else the constants above).
+func (s *Server) body(w http.ResponseWriter, r *http.Request) (io.Reader, error) {
+	wire, inflow := int64(MaxIngestBody), int64(MaxIngestInflow)
+	if s.IngestLimits[0] > 0 {
+		wire, inflow = s.IngestLimits[0], s.IngestLimits[1]
+	}
+	rd := io.Reader(http.MaxBytesReader(w, r.Body, wire))
 	if strings.EqualFold(r.Header.Get("Content-Encoding"), "gzip") {
 		gz, err := gzip.NewReader(rd)
 		if err != nil {
 			return nil, badRequest("invalid gzip body")
 		}
-		rd = io.LimitReader(gz, maxIngestInflow)
+		rd = io.LimitReader(gz, inflow)
 	}
 	return rd, nil
 }
 
 func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
-	rd, err := body(w, r)
+	rd, err := s.body(w, r)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -73,7 +79,7 @@ func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) importSBOM(w http.ResponseWriter, r *http.Request) {
-	rd, err := body(w, r)
+	rd, err := s.body(w, r)
 	if err != nil {
 		s.fail(w, r, err)
 		return

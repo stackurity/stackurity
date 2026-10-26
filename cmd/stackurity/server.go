@@ -604,14 +604,27 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 		}
 		return err
 	})
-	// The independent second check of high-impact findings: a bounded batch
-	// per workspace per minute, in the background, so evaluation never waits.
+	// The independent second check of high-impact findings runs as a job,
+	// never inside the periodic tick: the scheduler runs its tasks one after
+	// another, and alerts must not wait behind it. The tick only asks
+	// (bounded to a few seconds) whether anything is waiting and queues one
+	// job per workspace; the job checks a batch of 500 findings.
 	checker := &secondcheck.Runner{Store: st, Log: log}
-	w.EveryWorkspace("second-check", time.Minute, func(ctx context.Context) error {
+	w.Handle("second.check", func(ctx context.Context, _ json.RawMessage) error {
 		n, err := checker.Run(ctx)
 		if n.Checked > 0 {
 			log.Info("second check", "checked", n.Checked, "agreed", n.Agreed, "disagreed", n.Disagreed, "could_not_check", n.CouldNotCheck)
 		}
+		return err
+	})
+	w.EveryWorkspace("second-check", time.Minute, func(ctx context.Context) error {
+		qctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		waiting, err := st.SecondCheckWaiting(qctx)
+		if err != nil || !waiting {
+			return err
+		}
+		_, err = st.Enqueue(ctx, "second.check", map[string]any{}, "second-check", time.Time{})
 		return err
 	})
 	w.Every("housekeeping", time.Hour, func(ctx context.Context) error {

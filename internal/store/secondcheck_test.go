@@ -147,4 +147,15 @@ func TestSecondCheckCandidates(t *testing.T) {
 	if sum, _ := s.SummarizeSecondChecks(ctx); sum.Pending != 1 {
 		t.Errorf("pending: %+v", sum)
 	}
+	if waiting, err := s.SecondCheckWaiting(ctx); err != nil || !waiting {
+		t.Fatalf("waiting: %v %v", waiting, err)
+	}
+	c := candidate(t, s, ctx, false, express.ID)
+	if _, err := s.RecordSecondChecks(ctx, []store.SecondCheckResult{{FindingID: c.FindingID, AssetID: c.AssetID, Basis: c.Basis,
+		Result: store.SecondCheckAgreed}}); err != nil {
+		t.Fatal(err)
+	}
+	if waiting, err := s.SecondCheckWaiting(ctx); err != nil || waiting {
+		t.Errorf("waiting after the check: %v %v", waiting, err)
+	}
 }
