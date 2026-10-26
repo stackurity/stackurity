@@ -12,7 +12,7 @@ const LOCAL_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
  * The one-line installer for a new Linux host. The installer refuses plain
  * HTTP to anything but localhost unless STACKURITY_ALLOW_HTTP=1 is set.
  */
-function installCommand(code: string): { command: string; insecure: boolean } {
+export function installCommand(code: string): { command: string; insecure: boolean } {
   const { origin, protocol, hostname } = window.location;
   const insecure = protocol === "http:" && !LOCAL_HOSTS.includes(hostname);
   const env = `STACKURITY_ENROLL_CODE=${code}${insecure ? " STACKURITY_ALLOW_HTTP=1" : ""}`;

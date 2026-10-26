@@ -16,7 +16,7 @@ import {
   type List,
 } from "../api";
 import { useAuth } from "../auth";
-import { useDebounced, useFacets, useLoad } from "../hooks";
+import { useAction, useDebounced, useFacets, useLoad } from "../hooks";
 import { plural } from "../format";
 import { FindingCards, FindingsTable } from "../components/Findings";
 import {
@@ -33,7 +33,7 @@ import {
   urgencyOf,
 } from "../components/FixGroups";
 import { Badge } from "../components/Badge";
-import { FindingActions, GROUP_ACTION_MAX } from "../components/Workflow";
+import { assignGroup, FindingActions, GROUP_ACTION_MAX } from "../components/Workflow";
 import { CheckAgain, CheckBadge, CheckResultText } from "../components/CheckAgain";
 import { Card, EmptyState, ErrorBox, FilterPanel, Loading, Notice, PageHeader, Pager, PresetChips, RelativeTime } from "../components/ui";
 
@@ -243,6 +243,11 @@ export function FixGroupDetailPage() {
   const { id = "" } = useParams();
   const { hash } = useLocation();
   const { canAct } = useAuth();
+  // Links in notifications (Assign to me, Snooze) open the fix with the
+  // action ready: ?action=assign asks for one tap to confirm, ?action=snooze
+  // opens the snooze form. Opening a link never changes anything.
+  const [params, setParams] = useSearchParams();
+  const linkAction = params.get("action");
   const [offset, setOffset] = useState(0);
   useEffect(() => setOffset(0), [id]);
   const res = useLoad(
@@ -251,7 +256,13 @@ export function FixGroupDetailPage() {
   );
   const assetId = res.data?.group.asset_id;
   const asset = useLoad(() => (assetId ? api.get<AssetDetail>(`/assets/${assetId}`) : Promise.resolve(null)), [assetId]);
-  const initialPanel = hash === "#assign" ? "assign" : hash === "#snooze" ? "suppress" : hash === "#accept" ? "accept_risk" : undefined;
+  const initialPanel =
+    hash === "#assign" ? "assign" : hash === "#snooze" || linkAction === "snooze" ? "suppress" : hash === "#accept" ? "accept_risk" : undefined;
+  const clearAction = () => {
+    const q = new URLSearchParams(params);
+    q.delete("action");
+    setParams(q, { replace: true });
+  };
   const loaded = Boolean(res.data);
   useEffect(() => {
     if (initialPanel && loaded) document.getElementById("fix-act")?.scrollIntoView({ block: "start" });
@@ -307,6 +318,8 @@ export function FixGroupDetailPage() {
           </span>
         }
       />
+
+      {linkAction === "assign" && <AssignToMe group={g} onDone={() => { clearAction(); res.reload(); }} onCancel={clearAction} />}
 
       <section className="card fix-what" aria-label="What and why">
         <p className="fix-what-line">
@@ -438,6 +451,55 @@ export function FixGroupDetailPage() {
         )}
       </section>
     </>
+  );
+}
+
+/**
+ * Assign to me, from a notification: one tap to confirm, after sign-in.
+ */
+function AssignToMe({ group, onDone, onCancel }: { group: FixGroup; onDone: () => void; onCancel: () => void }) {
+  const { me, canAct } = useAuth();
+  const act = useAction();
+  const [done, setDone] = useState<string | null>(null);
+  const myId = me?.user?.id;
+  if (done) return <Notice kind="success">{done}</Notice>;
+  if (!myId || !canAct("engineer")) {
+    return (
+      <Notice kind="warn">
+        Assigning fixes needs the engineer role or higher. You can look at this fix; ask an administrator if you should work on it.
+      </Notice>
+    );
+  }
+  if (group.finding_count > GROUP_ACTION_MAX) {
+    return (
+      <Notice kind="info">
+        This fix has {group.finding_count.toLocaleString()} issues, more than can be assigned at once here. Open its issues in All issues and assign them a page at a time.
+      </Notice>
+    );
+  }
+  const go = async () => {
+    const r = await act.run(() => assignGroup(group.id, myId));
+    if (r) {
+      setDone(`Assigned to you: ${plural(r.applied, "issue")}.${r.failed?.length ? ` ${r.failed.length} could not be changed.` : ""}`);
+      onDone();
+    }
+  };
+  return (
+    <section className="card confirm-card" aria-labelledby="assign-me-h">
+      <h2 id="assign-me-h">Assign this fix to you?</h2>
+      <p>
+        Its {plural(group.finding_count, "open issue")} on {group.asset_name} will show you as the assignee.
+      </p>
+      <ErrorBox error={act.error} title="Could not assign" />
+      <div className="form-actions">
+        <button type="button" className="btn btn-primary" onClick={go} disabled={act.pending} autoFocus>
+          {act.pending ? "Assigning…" : "Assign to me"}
+        </button>
+        <button type="button" className="btn" onClick={onCancel}>
+          Not now
+        </button>
+      </div>
+    </section>
   );
 }
 

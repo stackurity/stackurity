@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
-import { Link } from "react-router";
-import { api, type Asset, type FindingSummary, type FixGroup, type FixGroupSummary, type List, type Overview } from "../api";
+import { Link, Navigate } from "react-router";
+import { api, type Asset, type FindingSummary, type FixGroup, type FixGroupSummary, type List, type Onboarding, type Overview } from "../api";
+import { SetupChecklist } from "./Onboarding";
 import { useAuth } from "../auth";
 import { useProject } from "../project";
 import { useLoad } from "../hooks";
@@ -103,16 +104,22 @@ function UnfiledAssets() {
 }
 
 export function HomePage() {
-  const { me } = useAuth();
+  const { me, can } = useAuth();
   const { project } = useProject();
+  // Setting up (0.9): a new organisation's admins start in the first-run
+  // flow; until every step is done Home shows a checklist.
+  const admin = can("admin");
+  const ob = useLoad(() => (admin ? api.getAll<Onboarding>("/onboarding") : Promise.resolve(null)), [admin]);
   const ov = useLoad(() => api.get<Overview>("/overview"), []);
   const plan = useLoad(() => api.get<FixGroupSummary>("/fix-groups/summary"), []);
   const top = useLoad(() => api.get<List<FixGroup>>("/fix-groups", { bucket: "focus", limit: TOP }), []);
   const fs = useLoad(() => api.get<FindingSummary>("/findings/summary"), []);
   const assets = useLoad(() => api.get<List<Asset>>("/assets", { limit: 200 }), []);
 
+  if (ob.data?.show_flow) return <Navigate replace to="/get-started" />;
   if (ov.error) return <ErrorBox error={ov.error} title="Could not load Home" />;
   if (!ov.data) return <Loading />;
+  const checklist = ob.data && ob.data.state !== "done" ? <SetupChecklist o={ob.data} onChange={ob.reload} /> : null;
   const o = ov.data;
   const totalAssets = sum(o.assets);
   const workspace = [me?.workspace?.name, project?.name].filter(Boolean).join(" · ");
@@ -120,7 +127,8 @@ export function HomePage() {
   if (totalAssets === 0) {
     return (
       <>
-        <PageHeader help="daily-workflow" title="Welcome" sub={workspace} />
+        <PageHeader help="getting-started" title="Welcome" sub={workspace} />
+        {checklist}
         <EmptyState title="No assets yet" help="add-server" helpLabel="Add your first server">
           <p>
             Run <Code>stackurity agent --once</Code> on a host, <Code>stackurity scan DIR</Code> in CI, or add a Git repository under{" "}
@@ -171,6 +179,7 @@ export function HomePage() {
 
   return (
     <>
+      {checklist}
       <PackSuggestions />
       <UnfiledAssets />
       <header className="home-head">

@@ -7,6 +7,43 @@ import type { Article } from "./types";
 export const ARTICLES: Article[] = [
   // ---------------------------------------------------------------- Getting started
   {
+    id: "getting-started",
+    title: "Your first ten minutes",
+    section: "Getting started",
+    summary: "Create a project, add a server, repository or SBOM, see what it found, turn on alerts and invite people.",
+    where: ["Home"],
+    keywords: "setup set up onboarding first run welcome checklist invite invitation getting started quiet first scan",
+    body: [
+      {
+        p: "A new organisation's administrators start in **Set up Stackurity**. Each step can be skipped. Until every step is done, Home shows a checklist that leads back to the step you skipped. Installations that already have assets never see it.",
+      },
+      {
+        steps: [
+          "**Create your first project.** A name, and a description if you like. A project groups what belongs together: a site, a product or a client.",
+          "**Add something to check.** **A Linux server**: one install command, first results in about 2 minutes. **A code repository**: a token for your CI and a GitHub Actions step (or the `stackurity scan` command), first results on the next CI run. **Upload an SBOM**: a CycloneDX or SPDX file, first results in under a minute. Whatever you add here lands in the project.",
+          "**Wait for it to report.** The page shows what has arrived, how many packages, and when the check is done.",
+          "**Read the first result.** For example \"We found 1,676 packages on commmerceblog. 3 fixes matter now.\", with links to them.",
+          "**Turn on notifications.** Slack (an incoming webhook URL) or email (your mail server). Choose urgent issues right away with a short daily summary, or a weekly summary. They cover this project only.",
+          "**Invite people.** By email, with a role on this project. They get a link that works once, for 7 days.",
+        ],
+      },
+      { h: "A quiet first scan" },
+      {
+        p: "Connecting an asset never sets off alerts for what it already had. You get one message, for example \"commmerceblog connected: 1,676 packages checked, 412 issues found, 3 fixes need you\". Its existing issues raise no urgent alert, no Jira issue, no escalation and no overdue reminder, and summaries count them as found when it connected, not as new. Issues found after that alert as usual.",
+      },
+      { h: "Invitations" },
+      {
+        list: [
+          "With an email channel under **Settings ▸ Notifications**, the link is emailed through that mail server. Without one, the link is shown once for you to copy and send.",
+          "Someone new creates their account from the link and sees only the project, with the role you chose. Someone with an account signs in first, as the invited email address.",
+          "Accepting never changes a role someone already has in your organisation, and keeps a higher role they already had on the project.",
+          "The project's page under **Settings ▸ Projects and access** lists its invitations, and can withdraw one that was not used yet.",
+        ],
+      },
+      { note: "Running the server yourself? See the install guide (docs/install.md) for the first start, the setup token and backups." },
+    ],
+  },
+  {
     id: "what-is-stackurity",
     title: "What Stackurity does",
     section: "Getting started",
@@ -1022,11 +1059,15 @@ stackurity.exe agent --interval 6h`,
           ["Urgent", "At most once per check (every minute), only when there are new urgent issues", "Per asset, the new urgent issues and up to 3 fixes that clear them, for example \"commmerceblog: 6 new urgent issues. Top fix: Install security updates and reboot (clears 2,913 issues)\""],
           ["Summary", "Daily (09:00 by default) or weekly, skipped when nothing changed", "New issues by asset, issues fixed and the fix that closed them, the top 3 fixes still open, overdue counts, problems with collection or feeds"],
           ["Overdue", "At most once a day per route, when urgent (P1 or SOS) issues pass their fix deadline", "How many urgent issues are past their deadline, grouped by fix"],
-          ["Connected", "When a new asset's first complete scan has been evaluated", "\"commmerceblog connected: 1,676 packages checked, 3 fixes need you\", with those fixes"],
+          ["Connected", "When a new asset's first complete scan has been evaluated", "\"commmerceblog connected: 1,676 packages checked, 412 issues found, 3 fixes need you\", with those fixes. Summaries say \"1 asset connected, 412 issues found\", never \"412 new issues\""],
         ],
       },
       {
-        p: "Every line links to the dashboard: the asset's issues in **All issues**, the fix's page in **Fixes**, or the overdue list. Resolved issues are never announced one by one: the summary counts them. A new asset's backlog never raises urgent alerts; issues found after its first scan do.",
+        p: "Every line links to the dashboard: the asset's issues in **All issues**, the fix's page in **Fixes**, or the overdue list. Resolved issues are never announced one by one: the summary counts them. A new asset's backlog never raises urgent alerts, Jira issues, escalations or overdue reminders; issues found after its first scan do.",
+      },
+      { h: "Assign to me, Snooze, Open" },
+      {
+        p: "Each fix in a message has three links. In Slack they are buttons, and work with a plain incoming webhook: no Slack app is needed. **Assign to me** opens the fix and asks you to confirm, after you sign in; **Snooze** opens the fix with the snooze form ready; **Open** opens the fix. Following a link never changes anything by itself. A route limited to projects opens every link in its project.",
       },
       { h: "Jira issues" },
       {
@@ -1103,6 +1144,7 @@ stackurity.exe agent --interval 6h`,
         steps: [
           "**Settings ▸ Projects and access ▸ New project**, then add its assets. **Suggested groupings** proposes related assets (an application runs on a host, is built from a repository); nothing is added until you accept.",
           "Under **Who has access**, give a person (by email) or a team a role. Someone who is not a member yet joins with access to that project only; give a new account an initial password of at least 12 characters.",
+          "Or **Invite by email**: they get a link that works once, for 7 days, and choose their own password. See [Your first ten minutes](help:getting-started).",
           "Home tells organisation-wide roles how many assets are **not in a project**: only they see those, so file them.",
           "To send a client only their project's alerts, tick the project on a notification route (**Settings ▸ Notifications ▸ Routes**). Routes to Jira cannot be limited to projects yet.",
           "**Settings ▸ Users** can change someone to **projects only**: they keep their account but lose the organisation-wide role.",
