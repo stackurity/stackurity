@@ -365,7 +365,7 @@ Instance administrators see a banner when a newer release is available, and **Se
 - A server (or `stackurity migrate`, or any `stackurity admin` command) refuses to start against a database that a newer version has migrated: `this database was upgraded by a newer Stackurity ...; run that version or restore the backup taken before the upgrade`. It changes nothing in that database.
 - A server that is already running checks every minute. Once a newer version has migrated its database, it stops its background work, `/readyz` returns 503 with `schema_newer`, it logs an error on every check, and **Platform health** shows a critical problem. Orchestrators stop routing to it; stop it.
 
-The rollback below still works: the restored pre-upgrade backup has only migrations the previous version knows.
+These checks are in the version being replaced, so they protect upgrades *from* releases after 0.4.0; when upgrading from 0.4.0 or earlier, stopping every old replica is up to you. The rollback below still works: the restored pre-upgrade backup has only migrations the previous version knows.
 
 #### Checklist
 
@@ -381,7 +381,7 @@ The rollback below still works: the restored pre-upgrade backup has only migrati
    docker compose exec -T postgres pg_dump -U stackurity -Fc stackurity > stackurity-before-upgrade.dump
    ```
 
-5. **Start one replica of the new version.** Compose: `git pull`, then `docker compose pull && docker compose up -d` (or bump `STACKURITY_IMAGE`; with `--build` if you build from source). Helm: set the new image tag (or chart version) and run `helm upgrade` with your usual values. Migrations run at startup inside a lock, so concurrent starts of the *same* version are safe; `stackurity migrate` applies them separately if you prefer.
+5. **Start one replica of the new version.** Compose: `git pull`, then `docker compose pull && docker compose up -d` (or bump `STACKURITY_IMAGE`; with `--build` if you build from source). Helm: set the new image tag (or chart version) and run `helm upgrade` with your usual values; it starts every replica of the new version at once, which is safe. Migrations run at startup inside a lock, so concurrent starts of the *same* version are safe; `stackurity migrate` applies them separately if you prefer.
 6. **Check it**: `/readyz` answers 200, **Settings → Platform health** shows no new problems, and your workspaces, assets and findings are there (`stackurity admin list-workspaces`).
 7. **Start the other replicas** of the new version (scale back up).
 
