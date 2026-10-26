@@ -239,6 +239,7 @@ func (s *Server) Handler() http.Handler {
 				// stops detection for all of them.
 				r.With(requireInstanceAdmin).Patch("/feeds/{name}", s.updateFeed)
 				r.Put("/risk-policy", s.putRiskPolicy)
+				r.Post("/risk-policy/preview", s.previewRiskPolicy)
 				r.Post("/channels", s.createChannel)
 				r.Patch("/channels/{id}", s.updateChannel)
 				r.Delete("/channels/{id}", s.deleteChannel)

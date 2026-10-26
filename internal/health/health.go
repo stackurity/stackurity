@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/stackurity/stackurity/internal/db"
@@ -24,14 +25,72 @@ const (
 	Warning  Severity = "warning"
 )
 
-// Problem is one thing an operator should look at.
+// Problem is one thing an operator should look at: what is wrong, when it
+// last worked, the latest error, what it affects and what to do next.
 type Problem struct {
 	Severity Severity `json:"severity"`
-	Kind     string   `json:"kind"` // feed, task, jobs, notifications, intelligence, platform
-	Key      string   `json:"key"`  // feed name, task name, job kind
-	Title    string   `json:"title"`
-	Detail   string   `json:"detail,omitempty"`
+	// Kind is feed, intelligence, task, jobs, platform, integration,
+	// notification, notifications (delivery backlog), collector, coverage,
+	// schema or config.
+	Kind   string `json:"kind"`
+	Key    string `json:"key"` // feed name, task name, job kind, ...
+	Title  string `json:"title"`
+	Detail string `json:"detail,omitempty"`
+	// LastSuccess is when it last worked (the latest sync, run, completed
+	// job, delivery or report); nil when it never did or does not apply.
+	LastSuccess *time.Time `json:"last_success"`
+	// LastError is the latest error, as recorded (credentials are redacted
+	// where they are stored). Errors of objects in other workspaces than the
+	// viewer's are left out.
+	LastError string `json:"last_error,omitempty"`
+	Scope     Scope  `json:"scope"`
+	// NextStep is what to do about it, and Docs the documentation section
+	// that explains it (a path in the repository, such as
+	// docs/install.md#health).
+	NextStep string `json:"next_step"`
+	Docs     string `json:"docs"`
 }
+
+// Scope is what a problem affects.
+type Scope struct {
+	Summary string `json:"summary"`
+	// Count is the number of affected objects (jobs, assets,
+	// integrations, channels), in every workspace.
+	Count int64 `json:"count,omitempty"`
+	// Workspaces is the number of workspaces affected.
+	Workspaces int64 `json:"workspaces,omitempty"`
+	// Items names affected objects, only those in the viewer's active
+	// workspace and at most ItemLimit; Hidden counts the rest.
+	Items  []ScopeItem `json:"items,omitempty"`
+	Hidden int64       `json:"hidden,omitempty"`
+}
+
+// ScopeItem is one affected object in the viewer's workspace.
+type ScopeItem struct {
+	Name        string     `json:"name"`
+	Detail      string     `json:"detail,omitempty"`
+	LastSuccess *time.Time `json:"last_success,omitempty"`
+	LastError   string     `json:"last_error,omitempty"`
+	// Link is the dashboard page for the object.
+	Link string `json:"link,omitempty"`
+}
+
+// ItemLimit bounds the objects a problem names.
+const ItemLimit = 10
+
+// Documentation sections problems point to.
+const (
+	docsHealth       = "docs/install.md#health"
+	docsIntelligence = "docs/install.md#intelligence"
+	docsNetwork      = "docs/network.md"
+	docsJobs         = "docs/reliability.md#jobs-feed-syncs-evaluations-integration-runs-image-scans"
+	docsTasks        = "docs/reliability.md#periodic-tasks-alert-dispatcher-digests-feed-and-integration-scheduling-housekeeping"
+	docsNotify       = "docs/install.md#notifications"
+	docsCollect      = "docs/install.md#collecting-inventory"
+	docsRepos        = "docs/install.md#repositories"
+	docsWorkspaces   = "docs/install.md#workspaces"
+	docsVerification = "docs/verification.md"
+)
 
 type Report struct {
 	// Status is ok, warning or critical: the worst problem's severity.
@@ -121,8 +180,14 @@ func (c *Checker) PlatformTarget(ctx context.Context) (id int64, why string, err
 }
 
 // Check reads platform state in system scope. Only instance admins and the
-// server itself may see the result: task errors can name workspaces.
-func (c *Checker) Check(ctx context.Context) (*Report, error) {
+// server itself may see the result: task errors can name workspaces. It names
+// no workspace's objects; see CheckFor.
+func (c *Checker) Check(ctx context.Context) (*Report, error) { return c.CheckFor(ctx, 0) }
+
+// CheckFor is Check for an instance administrator whose active workspace is
+// viewerWS: problems that span workspaces count every workspace's objects but
+// name (and show the errors of) only those in viewerWS.
+func (c *Checker) CheckFor(ctx context.Context, viewerWS int64) (*Report, error) {
 	ctx = tenant.System(ctx)
 	now, err := c.Store.DBNow(ctx)
 	if err != nil {
@@ -155,13 +220,11 @@ func (c *Checker) Check(ctx context.Context) (*Report, error) {
 	if r.Jobs == nil {
 		r.Jobs = []store.JobCount{}
 	}
-	for _, j := range r.Jobs {
-		if j.State == "failed" {
-			r.Problems = append(r.Problems, Problem{Severity: Warning, Kind: "jobs", Key: j.Kind,
-				Title:  fmt.Sprintf("%d %s job(s) failed in the last 24 hours", j.Count, j.Kind),
-				Detail: "They ran out of retries; the latest errors are listed with the background tasks."})
-		}
+	kinds, err := c.Store.JobKindHealth(ctx)
+	if err != nil {
+		return nil, err
 	}
+	r.Problems = append(r.Problems, jobProblems(kinds)...)
 	failed, err := c.Store.ListJobs(ctx, "failed", 10)
 	if err != nil {
 		return nil, err
@@ -179,30 +242,53 @@ func (c *Checker) Check(ctx context.Context) (*Report, error) {
 		r.Problems = append(r.Problems, Problem{Severity: Warning, Kind: "platform", Key: "incident-workspace",
 			Title: "Platform problems are not raised as incidents",
 			Detail: why + " Critical problems are shown here and in the banner, and logged by the server, instead. " +
-				"Set STACKURITY_PLATFORM_WORKSPACE to an active workspace."})
+				"Set STACKURITY_PLATFORM_WORKSPACE to an active workspace.",
+			Scope:    Scope{Summary: "platform incident routing"},
+			NextStep: "Set STACKURITY_PLATFORM_WORKSPACE to the id or slug of an active workspace and restart the servers.",
+			Docs:     docsHealth})
 	}
 	if err := c.Schema.Err(); err != nil {
 		r.Problems = append(r.Problems, Problem{Severity: Critical, Kind: "schema", Key: "newer",
 			Title: "This server is older than its database and has stopped background work",
 			Detail: err.Error() + ". Mixed versions are not supported: stop every replica of this version " +
-				"(docs/install.md, Upgrading)."})
+				"(docs/install.md, Upgrading).",
+			Scope:    Scope{Summary: "this server replica"},
+			NextStep: "Stop every replica running this version and run the version that upgraded the database, or restore the backup taken before the upgrade.",
+			Docs:     "docs/install.md#upgrading"})
 	}
 	if c.InsecureCookies != "" {
 		r.Problems = append(r.Problems, Problem{Severity: Warning, Kind: "config", Key: "cookie-secure",
 			Title: "Session cookies are not marked Secure (STACKURITY_COOKIE_SECURE=false)",
 			Detail: c.InsecureCookies + ". A session cookie sent over plain HTTP can be read and reused by anyone on the network path. " +
 				"Serve Stackurity over HTTPS and remove STACKURITY_COOKIE_SECURE; for a local evaluation only, set " +
-				"STACKURITY_BASE_URL to the http://localhost address you use."})
+				"STACKURITY_BASE_URL to the http://localhost address you use.",
+			Scope:    Scope{Summary: "every browser session on this installation"},
+			NextStep: "Serve Stackurity over HTTPS through a reverse proxy and remove STACKURITY_COOKIE_SECURE=false.",
+			Docs:     "docs/install.md#tls"})
 	}
 	if r.Deliveries, r.OldestDueDeliverySeconds, r.FailingChannels, err = c.Store.DeliveryStats(ctx); err != nil {
 		return nil, err
 	}
 	r.Problems = append(r.Problems, deliveryProblems(r)...)
 	if wait := time.Duration(r.OldestQueuedSeconds * float64(time.Second)); wait > queueBacklog {
+		var queued int64
+		for _, j := range r.Jobs {
+			if j.State == "queued" {
+				queued += j.Count
+			}
+		}
 		r.Problems = append(r.Problems, Problem{Severity: Warning, Kind: "jobs", Key: "backlog",
-			Title:  "Background jobs are backing up",
-			Detail: fmt.Sprintf("The oldest due job has waited %s for a worker.", wait.Round(time.Minute))})
+			Title:    "Background jobs are backing up",
+			Detail:   fmt.Sprintf("The oldest due job has waited %s for a worker.", wait.Round(time.Minute)),
+			Scope:    Scope{Summary: fmt.Sprintf("%d job(s) due and waiting for a worker", queued), Count: queued},
+			NextStep: "Check that every server replica is running and its worker is not stuck on long jobs; add a replica if the load stays high.",
+			Docs:     docsJobs})
 	}
+	more, err := c.objectProblems(ctx, viewerWS)
+	if err != nil {
+		return nil, err
+	}
+	r.Problems = append(r.Problems, more...)
 
 	sort.SliceStable(r.Problems, func(i, j int) bool {
 		return r.Problems[i].Severity == Critical && r.Problems[j].Severity != Critical
@@ -220,23 +306,30 @@ func taskProblems(t store.PeriodicTask, now time.Time) []Problem {
 	if t.LastSuccessAt != nil {
 		since = *t.LastSuccessAt
 	}
+	scope := Scope{Summary: fmt.Sprintf("task %s, every %s", t.Name, ago(t.Every))}
 	if now.Sub(since) > grace {
 		p := Problem{Severity: Critical, Kind: "task", Key: t.Name,
-			Title: fmt.Sprintf("Background task %s has not succeeded for %s", t.Name, ago(now.Sub(since)))}
+			Title:       fmt.Sprintf("Background task %s has not succeeded for %s", t.Name, ago(now.Sub(since))),
+			LastSuccess: t.LastSuccessAt, LastError: t.LastError, Scope: scope, Docs: docsTasks}
 		switch {
 		case t.LastError != "":
 			p.Detail = "Last error: " + t.LastError
+			p.NextStep = "Fix the cause in the error (database, network or configuration); the task retries on its own schedule. The server log has the full error."
 		case t.LastStartedAt == nil:
 			p.Detail = "It has never run. Check that a server is running and its worker is not stuck."
+			p.NextStep = "Check that at least one server replica is running with its worker, and look for the task in the server log."
 		default:
 			p.Detail = "It has not finished a run recently. Check that a server is running and its worker is not stuck."
+			p.NextStep = "Check that at least one server replica is running and not stuck (CPU, memory, database locks); restart it if a run never finishes."
 		}
 		return []Problem{p}
 	}
 	if t.ConsecutiveFailures > 0 {
 		return []Problem{{Severity: Warning, Kind: "task", Key: t.Name,
-			Title:  fmt.Sprintf("Background task %s failed its last %d run(s)", t.Name, t.ConsecutiveFailures),
-			Detail: "Last error: " + t.LastError}}
+			Title:       fmt.Sprintf("Background task %s failed its last %d run(s)", t.Name, t.ConsecutiveFailures),
+			Detail:      "Last error: " + t.LastError,
+			LastSuccess: t.LastSuccessAt, LastError: t.LastError, Scope: scope, Docs: docsTasks,
+			NextStep: "Read the error: a temporary failure clears on the next run; one that repeats needs its cause fixed (database, network, configuration)."}}
 	}
 	return nil
 }
@@ -247,33 +340,21 @@ func taskProblems(t store.PeriodicTask, now time.Time) []Problem {
 // critical problem would raise a platform incident through the same
 // channels. Details stay generic because channel names belong to
 // workspaces.
+// deliveryProblems reports a backlog of due notifications. Failed
+// deliveries and failing channels are reported per channel, with names and
+// next steps, by the notification problems; their totals stay in the
+// metrics for alerting.
 func deliveryProblems(r *Report) []Problem {
-	var out []Problem
-	var failed, failing int64
-	for _, d := range r.Deliveries {
-		if d.State == "failed" {
-			failed += d.Count
-		}
+	wait := time.Duration(r.OldestDueDeliverySeconds * float64(time.Second))
+	if wait <= deliveryBacklog {
+		return nil
 	}
-	for _, c := range r.FailingChannels {
-		failing += c.Count
-	}
-	if failed > 0 {
-		out = append(out, Problem{Severity: Warning, Kind: "notifications", Key: "failed",
-			Title:  fmt.Sprintf("%d notification(s) failed in the last 24 hours", failed),
-			Detail: "They ran out of attempts. Each workspace's delivery log (Settings → Notifications) shows the errors and can send them again."})
-	}
-	if failing > 0 {
-		out = append(out, Problem{Severity: Warning, Kind: "notifications", Key: "channels",
-			Title:  fmt.Sprintf("%d notification channel(s) failed their last send", failing),
-			Detail: "Messages to them are retried. Check the channel's last error under Settings → Notifications in its workspace."})
-	}
-	if wait := time.Duration(r.OldestDueDeliverySeconds * float64(time.Second)); wait > deliveryBacklog {
-		out = append(out, Problem{Severity: Warning, Kind: "notifications", Key: "backlog",
-			Title:  "Notifications are waiting to be sent",
-			Detail: fmt.Sprintf("The oldest due notification has waited %s. Check the alerts background task.", wait.Round(time.Minute))})
-	}
-	return out
+	return []Problem{{Severity: Warning, Kind: "notifications", Key: "backlog",
+		Title:    "Notifications are waiting to be sent",
+		Detail:   fmt.Sprintf("The oldest due notification has waited %s.", wait.Round(time.Minute)),
+		Scope:    Scope{Summary: "notifications due but not yet sent, in every workspace"},
+		NextStep: "Check that the alerts background task is succeeding (Background tasks below) and that the servers' workers are running.",
+		Docs:     "docs/operations.md#stackuritynotificationsbacklog"}}
 }
 
 func feedProblems(feeds []store.Feed, now time.Time, enabled bool) []Problem {
@@ -296,45 +377,98 @@ func feedProblems(feeds []store.Feed, now time.Time, enabled bool) []Problem {
 		if f.LastError != "" {
 			failing = true
 		}
+		base := Problem{Kind: "feed", Key: f.Name, Detail: errDetail(f.LastError), LastSuccess: f.LastSuccess, LastError: f.LastError,
+			Scope: Scope{Summary: fmt.Sprintf("%s feed %s, used by every workspace; stale after %s", f.Kind, f.Name,
+				ago(time.Duration(f.StaleMin)*time.Minute))},
+			NextStep: "Check outbound HTTPS access to the feed's source or the mirror configured for it, then use Refresh on the Intelligence page. " +
+				"Findings evaluated while it is stale are marked as such.",
+			Docs: docsNetwork}
+		sev := Warning
+		if f.Kind == "vulnerability" {
+			sev = Critical
+		}
 		switch {
 		case f.Stale && f.LastSuccess != nil:
-			sev := Warning
-			if f.Kind == "vulnerability" {
-				sev = Critical
-			}
-			out = append(out, Problem{Severity: sev, Kind: "feed", Key: f.Name,
-				Title:  fmt.Sprintf("Intelligence feed %s is stale: last synced %s ago", f.Name, ago(now.Sub(*f.LastSuccess))),
-				Detail: errDetail(f.LastError)})
+			p := base
+			p.Severity = sev
+			p.Title = fmt.Sprintf("Intelligence feed %s is stale: last synced %s ago", f.Name, ago(now.Sub(*f.LastSuccess)))
+			out = append(out, p)
 		case f.Stale && f.LastAttempt != nil && f.LastError != "":
-			sev := Warning
-			if f.Kind == "vulnerability" {
-				sev = Critical
-			}
-			out = append(out, Problem{Severity: sev, Kind: "feed", Key: f.Name,
-				Title: fmt.Sprintf("Intelligence feed %s has never synced", f.Name), Detail: errDetail(f.LastError)})
+			p := base
+			p.Severity = sev
+			p.Title = fmt.Sprintf("Intelligence feed %s has never synced", f.Name)
+			out = append(out, p)
 		case !f.Stale && f.LastError != "":
-			out = append(out, Problem{Severity: Warning, Kind: "feed", Key: f.Name,
-				Title:  fmt.Sprintf("Intelligence feed %s is failing; its data is still within its freshness limit", f.Name),
-				Detail: errDetail(f.LastError)})
+			p := base
+			p.Severity = Warning
+			p.Title = fmt.Sprintf("Intelligence feed %s is failing; its data is still within its freshness limit", f.Name)
+			p.NextStep = "Nothing is stale yet. Check outbound access to the feed's source or mirror before its data passes the freshness limit."
+			out = append(out, p)
 		}
 	}
 	if synced {
 		return out
 	}
-	p := Problem{Kind: "intelligence", Key: "vulnerability"}
+	p := Problem{Kind: "intelligence", Key: "vulnerability", Scope: Scope{Summary: "vulnerability matching in every workspace"}, Docs: docsIntelligence}
 	switch {
 	case !enabled:
 		p.Severity, p.Title = Warning, "Intelligence feeds are turned off (STACKURITY_FEEDS=off) and no vulnerability data has been synced"
 		p.Detail = "Vulnerabilities cannot be matched until feeds are turned on or pointed at a mirror (docs/network.md)."
+		p.NextStep, p.Docs = "Turn feeds on (unset STACKURITY_FEEDS) or point them at a mirror reachable from the server.", docsNetwork
 	case !attempted || !failing && now.Sub(newest) < firstSync:
 		// A stuck feed task shows up as an overdue task instead.
 		p.Severity, p.Title = Warning, "The first vulnerability intelligence sync has not completed yet"
 		p.Detail = "Findings appear once it completes, usually within a few minutes."
+		p.NextStep = "Wait for the first sync; if it has not finished within an hour, check the feed task and outbound access."
 	default:
 		p.Severity, p.Title = Critical, "No vulnerability intelligence has been synced"
 		p.Detail = "Vulnerabilities cannot be matched. Check outbound access to the feeds or their mirrors, and the feed tasks above."
+		p.NextStep, p.Docs = "Check outbound HTTPS access to the feeds (or their mirrors) and the errors of the feeds listed here.", docsNetwork
 	}
 	return append(out, p)
+}
+
+// platformKinds are the problem kinds about the platform itself, which may
+// become platform incidents.
+var platformKinds = map[string]bool{"task": true, "jobs": true, "intelligence": true, "platform": true}
+
+func jobProblems(kinds []store.JobKindHealth) []Problem {
+	var out []Problem
+	for _, k := range kinds {
+		var parts []string
+		if k.Failed > 0 {
+			parts = append(parts, fmt.Sprintf("%d failed in the last 24 hours", k.Failed))
+		}
+		if k.Retrying > 0 {
+			parts = append(parts, fmt.Sprintf("%d being retried (%d after three or more attempts)", k.Retrying, k.RetriedOften))
+		}
+		where := fmt.Sprintf("in %d workspace(s)", k.Workspaces)
+		if k.Platform {
+			where = "platform jobs"
+			if k.Workspaces > 0 {
+				where = fmt.Sprintf("platform jobs and %d workspace(s)", k.Workspaces)
+			}
+		}
+		p := Problem{Severity: Warning, Kind: "jobs", Key: k.Kind, LastSuccess: k.LastSuccess, LastError: k.LastError,
+			Scope: Scope{Summary: fmt.Sprintf("job kind %s: %s; %s", k.Kind, strings.Join(parts, ", "), where),
+				Count: k.Failed + k.Retrying, Workspaces: k.Workspaces},
+			Docs: docsJobs}
+		switch {
+		case k.Failed > 0:
+			p.Title = fmt.Sprintf("%d %s job(s) failed in the last 24 hours", k.Failed, k.Kind)
+			p.Detail = "They ran out of retries; the latest errors are listed below."
+			p.NextStep = "Fix the cause in the latest error, then run the work again (Refresh a feed, Run an integration, Re-evaluate). " +
+				"Settings > Background jobs lists each failed job."
+		case k.RetriedOften > 0:
+			p.Title = fmt.Sprintf("%d %s job(s) are being retried repeatedly", k.RetriedOften, k.Kind)
+			p.Detail = "Each failed attempt is retried with a growing delay; after five attempts the job is marked failed."
+			p.NextStep = "Read the latest error: a temporary outage clears on its own, a configuration or data problem needs fixing before the retries run out."
+		default:
+			continue // a first retry is normal
+		}
+		out = append(out, p)
+	}
+	return out
 }
 
 func errDetail(e string) string {
@@ -368,7 +502,9 @@ func (c *Checker) PlatformIncidents(ctx context.Context) ([]store.SystemIncident
 	}
 	var out []store.SystemIncident
 	for _, p := range r.Problems {
-		if p.Severity != Critical || p.Kind == "feed" {
+		// Feeds are left out, and so are problems about one workspace's
+		// objects (integrations, channels, assets): their titles may name them.
+		if p.Severity != Critical || !platformKinds[p.Kind] {
 			continue
 		}
 		title := p.Title

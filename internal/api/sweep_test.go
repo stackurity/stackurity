@@ -200,6 +200,9 @@ var routeRules = map[string]routeRule{
 		return map[string]any{"action": "acknowledge", "ids": []int64{a.int("finding")}}
 	}},
 	"PUT /api/v1/risk-policy": {class: "create", body: func(*tenantFx) any { return map[string]any{} }},
+	"POST /api/v1/risk-policy/preview": {class: "create", body: func(*tenantFx) any {
+		return map[string]any{"known_exploited": 9, "thresholds": map[string]float64{"p1": 5, "p2": 3, "p3": 1}}
+	}},
 	"POST /api/v1/users": {class: "create", body: func(*tenantFx) any {
 		return map[string]any{"email": "sweep-new@x.io", "role": "viewer", "password": pw}
 	}},
@@ -215,6 +218,9 @@ var routeRules = map[string]routeRule{
 	}},
 	"POST /api/v1/enrollments":          {class: "create", body: func(*tenantFx) any { return map[string]any{"label": "sweep"} }},
 	"POST /api/v1/remediation/policies": {class: "create", body: func(*tenantFx) any { return map[string]any{"name": "sweep"} }},
+	"POST /api/v1/remediation/policies/preview": {class: "create", edition: "ee", query: "?id={policy}", body: func(*tenantFx) any {
+		return map[string]any{"name": "sweep", "enabled": true, "target": "host_package", "ecosystems": []string{"deb"}, "change_types": []string{"distro"}}
+	}},
 }
 
 // tenantFx is one workspace's data and credentials. Every name contains

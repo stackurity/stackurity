@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Link, useSearchParams } from "react-router";
-import { api, PRIORITIES, type OutcomeFailure, type OutcomeReopen, type OutcomeSLA, type OutcomesReport, type OutcomeTiming } from "../api";
+import { api, EVIDENCE_STATE_LABEL, PRIORITIES, type OutcomeFailure, type OutcomeReopen, type OutcomeSLA, type OutcomesReport, type OutcomeTiming } from "../api";
 import { useLoad } from "../hooks";
 import { absTime, humanize } from "../format";
 import { Badge, PriorityBadge } from "../components/Badge";
@@ -194,6 +194,16 @@ function OutcomesBody({ r }: { r: OutcomesReport }) {
           Also open now: {n(r.open.excepted)} suppressed or risk-accepted, {n(r.open.stale_asset)} on assets that stopped reporting (not
           re-verified).
         </p>
+        {r.open.by_evidence && Object.keys(r.open.by_evidence).length > 0 && (
+          <p className="hint">
+            Open findings by evidence:{" "}
+            {Object.entries(r.open.by_evidence)
+              .sort((a, b) => b[1] - a[1])
+              .map(([k, v]) => `${n(v)} ${EVIDENCE_STATE_LABEL[k] ?? k}`)
+              .join(", ")}
+            .
+          </p>
+        )}
       </Card>
 
       <Card title="Reopened after resolution">

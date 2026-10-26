@@ -4,7 +4,7 @@ All notable changes to Stackurity. Versions follow [Semantic Versioning](https:/
 
 Each release's section is published as its GitHub release notes, and a tag without a section here cannot be released (`go run ./tools/changelog -version vX.Y.Z` prints it). New changes go under **Unreleased**, which is renamed to the version when it is tagged. Subsections are **Security**, **Added**, **Changed**, **Fixed** and **Upgrading**. Put fixes for vulnerabilities under `### Security`, first: installations treat a release with that heading as a security release and show administrators a banner they can only snooze.
 
-## Unreleased
+## 0.5.0
 
 ### Security
 
@@ -16,19 +16,24 @@ Each release's section is published as its GitHub release notes, and a tag witho
 - **Mixed versions are refused.** A server, `stackurity migrate` or `stackurity admin` command refuses a database that a newer version has migrated ("this database was upgraded by a newer Stackurity; run that version or restore the backup") and changes nothing in it. A running server checks every minute: once a newer version has migrated its database it stops its background work, `/readyz` returns 503 `schema_newer`, it logs an error and Platform health shows a critical problem, so orchestrators stop routing to replicas left on the old version. The documented rollback (restore the pre-upgrade backup, start the previous image) is unaffected.
 - An upgrade checklist for single and multi-replica deployments in `docs/install.md` ("Upgrading"), stating that mixed-version operation is unsupported and why, and that the Helm chart's `Recreate` strategy must not be replaced by `RollingUpdate` for upgrades.
 - CI checks that the Helm chart renders `strategy: type: Recreate` by default, and the upgrade release check now starts the previous version against the database the new one migrated and expects it to refuse (and a previous-version replica left running to fail `/readyz`). This applies to upgrades from releases after 0.4.0, which have the guard.
-
-### Changed
-
-- `deploy/docker-compose.yml` passes `STACKURITY_BASE_URL` to the server; before, setting it in `deploy/.env` had no effect.
-
-### Added
-
 - **Recommended Prometheus alerts** (`deploy/prometheus/stackurity-alerts.yml`): 25 alerts with thresholds, a severity label, a summary and a runbook link, covering servers down or restarting, mixed versions, the database down, pool saturation, API and ingest errors, critical platform health, stale and failing feeds, periodic tasks that stop succeeding (stuck leases), failed jobs, job queue age, failed notifications, failing channels, a notification backlog and assets that stop reporting. They are unit tested with `promtool test rules` in CI. The Helm chart renders the same rules as a PrometheusRule with `metrics.prometheusRule.enabled=true` (when the cluster serves `monitoring.coreos.com/v1`).
 - **Operations runbook** (`docs/operations.md`): what to watch, what each alert means and what to do, and drills with exact steps and expected observations for a database interruption, disk exhaustion, a prolonged upstream outage, a notification provider failure and an unreachable agent. Each drill except disk exhaustion is also a scenario in `internal/crashtest`, run in CI.
 - **Notification metrics and health:** `stackurity_notification_deliveries{kind,state}` (pending, retrying, held, failed in the last 24 hours), `stackurity_notification_oldest_due_age_seconds` and `stackurity_notification_channels_failing{kind}`. Platform health warns about failed notifications, failing channels and notifications waiting over 15 minutes, and `GET /api/v1/admin/health` returns the counts.
 - **Edition matrix** (`docs/editions.md`): capabilities of Community, Pro and Enterprise with their limits and prerequisites, and which need the licensed build rather than only a licence.
 - **Tenant-isolation incident process** in `SECURITY.md` and `docs/security-audit.md`: reporting, triage with the logs, audit events and row-level security checks to run, containment, notification and disclosure, and the security-sensitive areas reviewers should know.
 - The workspace isolation suite (`tools/release-checks/isolation.sh`) runs as its own **Workspace isolation** check on pull requests and before every release; any failure, skip or missing test blocks the release.
+- **Risk policy preview.** `POST /api/v1/risk-policy/preview` (admins) validates a proposed policy like a save and scores the workspace's open findings under the current and the proposed policy in memory, inside a read-only transaction: counts per priority and SOS before and after, how many findings are raised or lowered, and up to 50 changed findings with their asset and the factors whose points differ. **Settings > Risk policy** requires a preview of the exact changes before saving, and shows who last changed the policy and when (`last_change` in `GET /risk-policy`, from the audit log). The preview and prioritisation share one query, so the preview is what a save produces.
+- **Remediation policy preview (Pro).** `POST /api/v1/remediation/policies/preview` shows which fixable packages and assets a new or edited policy would authorise or stop authorising, using the planner's candidates and first-matching-policy rule, without saving. The policy editor requires it before saving and shows who last changed the policy.
+- **Health centre.** Every platform health problem now has when it last worked, the latest error, what it affects (a summary, counts across workspaces, up to ten named objects with links) and a suggested next step with a documentation link. New problems: integrations whose latest run failed (and those failing for two scheduled runs or more), notification channels with failed or retrying deliveries, assets whose collector stopped reporting (with the production count), production assets with failed or partial collection, production assets running components no source could evaluate, and job kinds retried three or more times. Objects are named, and their errors shown, only for the instance administrator's active workspace; these problems never become platform incidents.
+- **Finding provenance.** The finding page shows how each verdict was reached: every matched advisory (linked) with its feed, ecosystem and the affected range that matched, the installed version, the version rules used (Debian version rules, RPM epoch:version-release, SemVer, ...) and the evidence state (confirmed, needs validation, stale, confirmed with stale advisory data, unknown) with a one-line reason. The findings list shows the same state.
+- Reports count open findings by evidence state: `open.by_evidence` in the outcomes report and in the evidence report (Pro), whose exceptions also carry their `verification`.
+- The audit log page can be opened filtered by object type (`/audit?object_type=settings`).
+- Documentation and the Helm chart can no longer name another version than the release being published: a test fails on any image, chart or `helm --version` reference in the README, `docs/install.md` or `docs/kubernetes.md`, or a `Chart.yaml` version, that differs from the newest release in this changelog, and the release workflow also checks the tag. The README's status line no longer names a version, and the supported upgrade sources are listed only in `release-checks.yml`.
+
+### Changed
+
+- Saving a risk policy or a remediation policy in the dashboard now requires previewing the exact change first, and "Reset to default" loads the defaults into the form to preview and save. The API is unchanged.
+- `deploy/docker-compose.yml` passes `STACKURITY_BASE_URL` to the server; before, setting it in `deploy/.env` had no effect.
 
 ### Fixed
 
@@ -38,6 +43,8 @@ Each release's section is published as its GitHub release notes, and a tag witho
 ### Upgrading
 
 - Migration 0027 adds `deliveries.failed_at`. Deliveries that failed before the upgrade count as failed when they were queued.
+- The mixed-version guard protects upgrades from 0.5.0 onwards; a 0.4.x server does not have it, so stop every 0.4.x replica before starting 0.5.0.
+- Platform health reports notification failures per channel (with names and next steps) instead of as totals; the totals stay in the metrics.
 
 ## 0.4.0
 

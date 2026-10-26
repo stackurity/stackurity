@@ -57,7 +57,7 @@ Roles, from least to most access: `viewer` (read, including the audit log), `eng
 | `GET /jobs?state=` | admin | Background job queue |
 | `GET /plugins` | admin | Installed plugins with their declared permissions, credentials and network access |
 | `GET /jobs/{id}` | engineer | Status of one job, e.g. after *Run now* |
-| `GET /admin/health` | instance admin | Platform health across workspaces: `status` (`ok`, `warning`, `critical`), `problems`, background `tasks` with their last success and error, job counts by kind and state, jobs that failed in the last 24 hours, notification `deliveries` by channel kind and state, the age of the oldest due notification and `failing_channels` ([install.md](install.md#health)) |
+| `GET /admin/health` | instance admin | Platform health across workspaces: `status` (`ok`, `warning`, `critical`), `problems` (each with `last_success`, `last_error`, `scope`, `next_step` and `docs`; objects are named only for the caller's active workspace), background `tasks` with their last success and error, job counts by kind and state, jobs that failed in the last 24 hours, notification `deliveries` by channel kind and state, the age of the oldest due notification and `failing_channels` ([install.md](install.md#health)) |
 | `GET /facets` | viewer | Distinct environments, asset kinds and component types |
 | `GET /findings?status=&kind=&severity=&verification=&asset_id=&component_id=&environment=&known_exploited=&q=&key=` | viewer | Vulnerability and end-of-life findings, known-exploited and most severe first |
 | `GET /findings/summary` | viewer | Counts by severity, kind and verification, plus stale feeds and evaluation gaps |
@@ -78,7 +78,8 @@ Roles, from least to most access: `viewer` (read, including the audit log), `eng
 | `GET /incidents?status=&kind=&priority=&sos=&team_id=` | viewer | Incidents: findings grouped by issue and owner team |
 | `GET /incidents/{id}` | viewer | An incident with its findings (and deliveries, for security and above) |
 | `POST /incidents/{id}/actions` | as findings | Apply an action to every open finding in the incident |
-| `GET /risk-policy` / `PUT /risk-policy` | viewer / admin | Priority weights, thresholds, deadlines and SOS rules, with the policy `version`. `PUT` replaces the policy (fields left out take their defaults; unknown fields are rejected), returns `version`, `previous_version` and the `changed` fields, and writes a `risk_policy.update` audit event holding the policy before and after |
+| `GET /risk-policy` / `PUT /risk-policy` | viewer / admin | Priority weights, thresholds, deadlines and SOS rules, with the policy `version`. `PUT` replaces the policy (fields left out take their defaults; unknown fields are rejected), returns `version`, `previous_version` and the `changed` fields, and writes a `risk_policy.update` audit event holding the policy before and after. `GET` includes `last_change` (who, when, versions, changed fields; null when never changed) |
+| `POST /risk-policy/preview` | admin | Validates a proposed policy like `PUT` and returns its effect on the workspace's open findings without saving anything: `before` / `after` counts per priority, `sos_before` / `sos_after`, `priority_changed` (`raised`, `lowered`), `sos_changed`, `score_changed`, `stored_differs`, and `sample` (at most `sample_limit`, 50) of changed findings with factor deltas ([risk.md](risk.md#reproducibility-and-audit)) |
 | `GET /channels`, `GET /routes`, `GET /deliveries?status=&incident_id=` | security | Notification configuration and delivery log |
 | `POST`/`PATCH`/`DELETE /channels/{id}`, `POST /channels/{id}/test` | admin | Email, Slack, Teams, webhook and Jira channels; for Jira, test checks access without creating an issue |
 | `POST /routes`, `PUT`/`DELETE /routes/{id}` | admin | Which incidents go to which channel |
@@ -86,6 +87,7 @@ Roles, from least to most access: `viewer` (read, including the audit log), `eng
 | `GET /users/directory` | engineer | Active users (id, email, name) for assignment |
 | `GET /remediation/policies` | security | Remediation policies |
 | `POST /remediation/policies`, `PUT`/`DELETE /remediation/policies/{id}` | admin | Manage policies ([remediation.md](remediation.md)) |
+| `POST /remediation/policies/preview?id=` | admin | Which fixable packages and assets a proposed policy would authorise or stop authorising, without saving ([remediation.md](remediation.md#previewing-a-policy-change)) |
 | `GET /remediation/plans?status=`, `GET /remediation/plans/{id}` | viewer | Plans and their per-asset actions |
 | `POST /remediation/plans/{id}/decision` | security (admin for major) | `{"decision": "approve" \| "reject" \| "cancel", "note": "..."}` |
 | `GET /assets/{id}/remediation` | viewer | Remediation actions for an asset |
@@ -170,6 +172,7 @@ A finding is one issue on one inventory row:
   - `stale`: the asset has not reported recently, so the component may no longer be installed.
 - `fixed_version` is the highest "first fixed" version across the matching sources, so every source agrees the target is fixed. It is empty when no source lists a fix.
 - `evidence` records the matched ranges, the OSV package and ecosystem, the comparator used, the feed and its last successful sync, and whether the CVE is in CISA KEV.
+- The finding page shows this as **How this was decided**: each matched advisory (linked to osv.dev) with its feed, the advisory ecosystem and the affected range that matched, the installed version and ecosystem, and the version rules used (`comparator`: `debian` is Debian version rules, `rpm` RPM epoch:version-release, `apk` Alpine, `semver` SemVer, `pep440`, `rubygems`, `maven`, `nuget`, `composer`, `generic`), plus the evidence state with a one-line reason. The evidence state is the `verification`, except that a confirmed finding evaluated while its feed was stale (`evidence.feed_stale`) is shown as `stale_intelligence` (confirmed version, stale advisory data). `GET /reports/outcomes` counts open findings by evidence state in `open.by_evidence`; the evidence report (Pro) does the same in `open.by_evidence` and lists each exception's `verification`.
 
 Findings resolve automatically when the component is upgraded or removed, or when an advisory is withdrawn. If the issue comes back, the finding reopens. Both are recorded in the finding's history (`GET /findings/{id}/events`) as `resolved` (the note is the resolution) and `reopened` (with the earlier resolution in `detail`), by actor `matcher`.
 

@@ -93,6 +93,8 @@ export const VERIFICATION_EXPLAINED: Record<string, string> = {
   needs_validation:
     "The installed version is not confirmed (inferred or low-confidence inventory), so there is no definitive severity. Check the real version on the asset.",
   stale: "The asset's inventory is stale: the component was affected when last seen, but nothing has reported the asset recently.",
+  unknown: "The evidence could not be classified: no confirmed version and no recorded source.",
+  rejected: "Someone reviewed the evidence and rejected this finding.",
 };
 
 export function VerificationBadge({ verification }: { verification: string }) {

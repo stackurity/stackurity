@@ -157,10 +157,35 @@ export interface LicenseInfo {
 }
 
 /** GET /admin/health: whether the installation itself is working. */
+/** What a platform problem affects. Items are named only in the viewer's active workspace. */
+export interface HealthScope {
+  summary: string;
+  count?: number;
+  workspaces?: number;
+  items?: { name: string; detail?: string; last_success?: string | null; last_error?: string; link?: string }[];
+  /** Affected objects not listed: in other workspaces, or beyond the first ten. */
+  hidden?: number;
+}
+
+export interface HealthProblem {
+  severity: "critical" | "warning";
+  kind: "feed" | "task" | "jobs" | "intelligence" | "platform" | "integration" | "notification" | "notifications" | "collector" | "coverage" | "schema" | "config";
+  key: string;
+  title: string;
+  detail?: string;
+  /** When it last worked; null when it never did or it does not apply. */
+  last_success?: string | null;
+  last_error?: string;
+  scope?: HealthScope;
+  next_step?: string;
+  /** Documentation section, a repository path such as docs/install.md#health. */
+  docs?: string;
+}
+
 export interface PlatformHealth {
   status: "ok" | "warning" | "critical";
   checked_at: string;
-  problems: { severity: "critical" | "warning"; kind: "feed" | "task" | "jobs" | "notifications" | "intelligence" | "platform"; key: string; title: string; detail?: string }[];
+  problems: HealthProblem[];
   tasks: {
     name: string;
     every_seconds: number;
@@ -556,6 +581,16 @@ export interface Integration {
 export const SEVERITIES = ["critical", "high", "medium", "low", "none", "unknown"] as const;
 export const VERIFICATIONS = ["confirmed", "needs_validation", "stale"] as const;
 
+/** Labels for the evidence states reports count (store.evidenceState). */
+export const EVIDENCE_STATE_LABEL: Record<string, string> = {
+  confirmed: "confirmed",
+  needs_validation: "needs validation (version not confirmed)",
+  stale: "stale (asset stopped reporting)",
+  stale_intelligence: "confirmed, stale advisory data",
+  unknown: "unknown",
+  rejected: "rejected",
+};
+
 export interface FindingEvidence {
   matched_ranges?: string[];
   osv_ecosystems?: string[];
@@ -907,7 +942,14 @@ export interface OutcomesReport {
     recent: OutcomeReopen[] | null;
     recent_limit: number;
   };
-  open: { active: number; overdue: number; excepted: number; stale_asset: number };
+  open: {
+    active: number;
+    overdue: number;
+    excepted: number;
+    stale_asset: number;
+    /** Open findings by evidence state: confirmed, needs_validation, stale, stale_intelligence, unknown. */
+    by_evidence?: Record<string, number>;
+  };
   remediation: {
     plans: Record<string, number> | null;
     actions: Record<string, number> | null;
@@ -1208,6 +1250,61 @@ export interface RiskPolicy {
 
 export const DEFAULT_EXCEPTION_MAX_DAYS = 365;
 
+/** Who last changed a policy and when, from the audit log. */
+export interface PolicyChangeRef {
+  at: string;
+  actor_type: string;
+  actor_name: string;
+  version: string;
+  previous_version: string;
+  changed: string[];
+}
+
+/** GET /risk-policy */
+export interface RiskPolicyResponse {
+  policy: RiskPolicy;
+  default: RiskPolicy;
+  version: string;
+  /** Null when the policy has never been changed (the defaults apply). */
+  last_change?: PolicyChangeRef | null;
+}
+
+/** One finding whose priority or SOS a proposed risk policy changes. */
+export interface RiskPreviewFinding {
+  id: number;
+  key: string;
+  title: string;
+  asset_id: number;
+  asset_name: string;
+  before: string;
+  after: string;
+  score_before: number;
+  score_after: number;
+  sos_before: boolean;
+  sos_after: boolean;
+  factors: { name: string; before: number; after: number }[];
+}
+
+/** POST /risk-policy/preview: the proposed policy's effect, nothing saved. */
+export interface RiskPolicyPreview {
+  current_version: string;
+  proposed_version: string;
+  changed_fields: string[];
+  findings: number;
+  before: Record<string, number>;
+  after: Record<string, number>;
+  sos_before: number;
+  sos_after: number;
+  priority_changed: number;
+  raised: number;
+  lowered: number;
+  sos_changed: number;
+  score_changed: number;
+  stored_differs: number;
+  sample: RiskPreviewFinding[];
+  sample_limit: number;
+}
+
 export interface DirectoryUser {
   id: number;
   email: string;
@@ -1230,6 +1327,42 @@ export const PLAN_STATUSES = [
   "rejected",
   "cancelled",
 ] as const;
+
+/** One package on one asset whose remediation eligibility a proposed policy changes. */
+export interface PolicyPreviewPackage {
+  asset_id: number;
+  asset_name: string;
+  environment: string;
+  package: string;
+  from_version: string;
+  to_version: string;
+  change_type: string;
+  priority: string;
+  finding_keys: string[] | null;
+  /** The policy that authorises it before and after ("" for none). */
+  before_policy: string;
+  after_policy: string;
+  /** Why the proposed policy no longer authorises it. */
+  reason?: string;
+}
+
+/** POST /remediation/policies/preview: what saving the policy would change, nothing saved. */
+export interface RemediationPolicyPreview {
+  candidates: number;
+  eligible_before: number;
+  eligible_after: number;
+  assets_before: number;
+  assets_after: number;
+  gained: number;
+  gained_from_none: number;
+  lost: number;
+  lost_to_none: number;
+  gained_assets: number;
+  lost_assets: number;
+  gained_sample: PolicyPreviewPackage[];
+  lost_sample: PolicyPreviewPackage[];
+  sample_limit: number;
+}
 
 export interface RemediationPolicy {
   id: number;
@@ -1429,6 +1562,8 @@ export interface ReportException {
   reason: string;
   mitigation: string;
   until: string | null;
+  /** Evidence state: confirmed, needs_validation, stale, stale_intelligence, unknown. */
+  verification?: string;
 }
 
 export interface ReportDrift {
@@ -1459,6 +1594,8 @@ export interface EvidenceReport {
     end_of_life: number;
     overdue: number;
     overdue_by_priority: Record<string, number> | null;
+    /** Open findings by evidence state (EVIDENCE_STATE_LABEL). */
+    by_evidence?: Record<string, number> | null;
   };
   resolved: {
     total: number;
