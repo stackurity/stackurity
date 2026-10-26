@@ -124,6 +124,11 @@ func (s *Store) RemoveMember(ctx context.Context, userID int64) error {
 		if _, err := tx.Exec(ctx, `DELETE FROM team_members WHERE user_id = $1`, userID); err != nil {
 			return err
 		}
+		// Their project and asset grants go too, so rejoining later starts
+		// with no access.
+		if _, err := tx.Exec(ctx, `DELETE FROM access_grants WHERE user_id = $1`, userID); err != nil {
+			return err
+		}
 		_, err = tx.Exec(ctx, `UPDATE sessions SET workspace_id = NULL WHERE user_id = $1 AND workspace_id = $2`, userID, ws)
 		return err
 	})

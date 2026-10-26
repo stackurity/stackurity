@@ -873,6 +873,29 @@ func TestProjectAccessRules(t *testing.T) {
 		t.Errorf("after leaving the team: %d %v", code, left.Items)
 	}
 
+	// Removing someone from the organisation removes their grants.
+	if code := o.admin.do("DELETE", fmt.Sprintf("/api/v1/users/%d", teamedID), nil, nil); code != 204 {
+		t.Fatalf("remove member: %d", code)
+	}
+	var tokenUser int64
+	o.admin.do("GET", "/api/v1/users", nil, &users)
+	for _, u := range users.Items {
+		if u.Email == "token-user@x.io" {
+			tokenUser = u.ID
+		}
+	}
+	if code := o.admin.do("DELETE", fmt.Sprintf("/api/v1/users/%d", tokenUser), nil, nil); code != 204 {
+		t.Fatalf("remove member: %d", code)
+	}
+	var left2 struct{ Items []store.Grant }
+	o.admin.do("GET", fmt.Sprintf("/api/v1/access-grants?user_id=%d", tokenUser), nil, &left2)
+	if len(left2.Items) != 0 {
+		t.Errorf("grants of a removed member: %+v", left2.Items)
+	}
+	if code := bearer(e, tok.Secret, "GET", "/api/v1/assets", nil, nil); code != 401 {
+		t.Errorf("removed member's token: %d, want 401", code)
+	}
+
 	// Agents and collectors are bound to the workspace and keep working.
 	if code := bearer(e, o.agent, "GET", "/api/v1/agent/actions", nil, nil); code != 200 {
 		t.Errorf("agent token: %d", code)

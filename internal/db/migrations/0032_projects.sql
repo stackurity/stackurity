@@ -183,6 +183,8 @@ BEGIN
         ('fix_groups', 'asset_id IN (SELECT unnest(stackurity_visible_assets()))'),
         ('remediation_actions', 'asset_id IN (SELECT unnest(stackurity_visible_assets()))'),
         ('identity_conflicts', 'asset_ids <@ (SELECT stackurity_visible_assets())'),
+        -- A remediation plan is seen through its actions on visible assets.
+        ('remediation_plans', 'EXISTS (SELECT 1 FROM remediation_actions ra WHERE ra.plan_id = remediation_plans.id)'),
         -- An incident is seen through its visible findings (its counts and
         -- names are recomputed from them by the store), and a collection or
         -- coverage problem through its asset. Feed problems hold no tenant data.
