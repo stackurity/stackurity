@@ -79,6 +79,9 @@ func (s *Server) applyAction(w http.ResponseWriter, r *http.Request, ids []int64
 			return
 		}
 	}
+	if req.Action == "assign" && !s.assigneesAllowed(w, r, req) {
+		return
+	}
 	ctx := r.Context()
 	if req.Action == "ignore" && req.Scope == store.ScopeEverywhere {
 		var ok bool
@@ -627,8 +630,11 @@ func (s *Server) userDirectory(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	// Someone who reaches this route through a project grant (the
+	// organisation role alone would not do) sees only the people of their
+	// projects.
 	var colleagues map[int64]bool
-	if p := principal(r); p.Restricted {
+	if p := principal(r); !p.Role.AtLeast(auth.RoleEngineer) && p.User != nil {
 		if colleagues, err = s.Store.ProjectColleagues(r.Context(), p.User.ID); err != nil {
 			s.fail(w, r, err)
 			return
@@ -646,4 +652,42 @@ func (s *Server) userDirectory(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, 200, all(out))
+}
+
+// assigneesAllowed: someone who assigns through a project grant (their
+// organisation role alone may not assign) may assign only to the people and
+// teams of their projects. Others' ids would otherwise be accepted, and the
+// finding's history would show the email or team name behind any id.
+func (s *Server) assigneesAllowed(w http.ResponseWriter, r *http.Request, req actionRequest) bool {
+	p := principal(r)
+	if p.Role.AtLeast(auth.RoleEngineer) {
+		return true
+	}
+	if p.User == nil {
+		writeError(w, 403, "forbidden", "assign requires the engineer role")
+		return false
+	}
+	if req.UserID != nil && *req.UserID != 0 {
+		people, err := s.Store.ProjectColleagues(r.Context(), p.User.ID)
+		if err != nil {
+			s.fail(w, r, err)
+			return false
+		}
+		if !people[*req.UserID] {
+			writeError(w, 400, "invalid_action", "you can assign issues to the people of your projects only")
+			return false
+		}
+	}
+	if req.TeamID != nil && *req.TeamID != 0 {
+		teams, err := s.Store.ColleagueTeams(r.Context(), p.User.ID)
+		if err != nil {
+			s.fail(w, r, err)
+			return false
+		}
+		if !teams[*req.TeamID] {
+			writeError(w, 400, "invalid_action", "you can assign issues to the teams of your projects only")
+			return false
+		}
+	}
+	return true
 }

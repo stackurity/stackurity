@@ -718,7 +718,7 @@ func (d *Dispatcher) planSummaries(ctx context.Context, routes []store.Route, tr
 		if changed || len(held) > 0 {
 			r := r
 			key := fmt.Sprintf("summary:%d:%s", r.ID, stamp)
-			if _, err := d.Store.EnqueueDelivery(ctx, r.ChannelID, &r.ID, nil, EventSummary, key, msg); err != nil {
+			if err := d.enqueueRouted(ctx, r, EventSummary, key, msg); err != nil {
 				return err
 			}
 			if err := d.Store.MarkDigested(ctx, held, key); err != nil {

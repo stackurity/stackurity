@@ -204,12 +204,43 @@ func (s *Server) resolveConflict(w http.ResponseWriter, r *http.Request) {
 	if p.User != nil {
 		uid = p.User.ID
 	}
+	// Merging moves access: the kept asset joins the merged assets'
+	// projects and takes their asset grants. Say so, and audit it.
+	access, err := s.Store.MergeAccessPreview(r.Context(), id, req.TargetAssetID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	if err := s.Store.ResolveConflict(r.Context(), id, req.TargetAssetID, uid); err != nil {
 		s.fail(w, r, err)
 		return
 	}
 	_ = s.Store.Audit(r.Context(), p.Actor(r), "conflict.resolve", "identity_conflict", itoa(id), req)
-	w.WriteHeader(204)
+	out := map[string]any{"projects_joined": access.ProjectsJoined, "grants_moved": access.GrantsMoved}
+	if len(access.ProjectsJoined) > 0 || access.GrantsMoved > 0 {
+		var names []string
+		for _, pr := range access.ProjectsJoined {
+			names = append(names, pr.Name)
+		}
+		notice := "The kept asset"
+		if len(names) > 0 {
+			notice += " joined " + strings.Join(names, ", ")
+		}
+		if access.GrantsMoved > 0 {
+			if len(names) > 0 {
+				notice += ", and"
+			}
+			notice += " " + strconv.FormatInt(access.GrantsMoved, 10) + " access grant(s) on the merged assets now apply to it"
+		}
+		notice += ". People with access to those projects now see it."
+		out["notice"] = notice
+		// Its own object type: the details name projects, which members of
+		// a project who see the asset must not learn (audit RLS shows asset
+		// events to them).
+		_ = s.Store.Audit(r.Context(), p.Actor(r), "asset.merge_access", "asset_merge", itoa(req.TargetAssetID),
+			map[string]any{"conflict_id": id, "projects_joined": access.ProjectsJoined, "grants_moved": access.GrantsMoved})
+	}
+	writeJSON(w, 200, out)
 }
 
 func (s *Server) listAudit(w http.ResponseWriter, r *http.Request) {

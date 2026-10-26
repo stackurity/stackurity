@@ -9,6 +9,8 @@ Each release's section is published as its GitHub release notes, and a tag witho
 ### Security
 
 - **Access can be limited to projects, and the database enforces it.** A person or team given a role on a project sees only that project's assets and what hangs off them, in every page, API route, search, report, export, audit view and assistant (MCP) tool. Row-level security narrows every asset-bound table for them (migration `0032`), as it already isolates workspaces, so a query that forgets a filter still cannot return another project's rows. Organisation routes (users, teams, integrations, notifications, jobs, secrets, remediation plans and policies, ingest) refuse them, and every route must declare its project scope or it is refused too. Their tokens act as them. Checks, ignore rules and ignore requests follow their assets; ignoring an issue on every asset, approving such a request or ending such a rule needs an organisation-wide security or admin role. See `docs/design/projects.md`.
+- **What members of one project learn about other projects is limited further.** They never see who else was given access (grants are audited as `access_grant`, which only organisation-wide roles read), tracker (Jira) links of incidents (an issue describes the whole incident), or stored incident values that span projects: priority, SOS, escalation, filters and sorting come from their own findings. Someone who assigns through a project role can assign only to the people and teams of their projects, and gets only those people in the directory, even with an organisation-wide viewer role.
+- **Messages to a notification route limited to projects are checked before they are queued:** one that links to an asset outside the projects is withheld and logged.
 
 ### Added
 
@@ -35,6 +37,7 @@ Each release's section is published as its GitHub release notes, and a tag witho
 - The fix and asset pages' "how to check again" text is replaced by the **Check again** block.
 - **Incidents that span projects** show each member with project access only the part they can see: counts, asset and component names, priority and title come from their findings, and an incident action changes only their findings.
 - `GET /auth/me` returns `access` (`organisation` or `projects`), `project_role`, `projects` and `default_project_id`; for a member with project access only `role` is empty. Users and memberships carry `access`.
+- Resolving an identity conflict (`POST /conflicts/{id}/resolve`) answers 200 with `projects_joined`, `grants_moved` and a `notice` when the kept asset joins the merged assets' projects or takes their access grants, and records `asset.merge_access` in the audit log.
 
 ### Upgrading
 
@@ -45,6 +48,8 @@ Each release's section is published as its GitHub release notes, and a tag witho
 - Measured on 130,000 open findings, the findings list takes the same time for organisation-wide roles as in 0.6 (58 ms against 51 ms on the same data) and 76 to 77 ms for members of a project (88 ms with a project chosen) (see `docs/design/projects.md`, "Performance").
 - Do not roll back to an earlier release after giving someone project access only: earlier releases cannot read a membership without a role. Remove such members, or restore the pre-upgrade backup.
 - Single sign-on role mapping does not change members with project access only.
+- A notification route limited to projects is stored switched off in the column releases before 0.8 read (its own switch is in `routes.project_enabled`), so an older release started against the database by mistake never sends every project's alerts to a project's channel; such a release also refuses a database migrated by a newer one.
+- Migration `0032` replaces the row-level security policies of about twenty tables and waits for open transactions on them. It gives up after 10 seconds per lock (`lock_timeout`) instead of blocking the application; if it does, run the upgrade again in a quieter moment. Nothing is half applied.
 
 ## 0.6.0
 

@@ -435,7 +435,39 @@ func newOrg(t *testing.T) *org {
 		t.Fatalf("ignore rules: %+v", rules.Items)
 	}
 	o.ids["beta-ignorerule"] = rules.Items[0].ID
+
+	// People, a team and a tracker link tied to Project Beta, each tagged
+	// "beta", so the sweep's check covers emails, team names and Jira keys:
+	// a client's grant on the shared database, Beta's team, an assignment of
+	// Beta's issue, and a Jira issue on the incident that spans both projects.
+	o.grant(t, "ceo@beta-client.example", 0, shared.AssetID, auth.RoleViewer)
+	o.ids["beta-viewer"] = o.userID(t, "beta-viewer@x.io")
+	var bteam store.Team
+	if code := o.admin.do("POST", "/api/v1/teams", map[string]any{"name": "team-beta-ops", "members": []int64{o.id("beta-viewer")}}, &bteam); code != 201 {
+		t.Fatalf("team: %d", code)
+	}
+	o.ids["beta-team"] = bteam.ID
+	if code := o.admin.do("POST", "/api/v1/access-grants", map[string]any{"project_id": o.id("beta-project"), "team_id": bteam.ID, "role": "viewer"}, nil); code != 201 {
+		t.Fatalf("team grant: %d", code)
+	}
+	if code := o.admin.do("POST", "/api/v1/findings/"+o.s("beta-finding")+"/actions", map[string]any{"action": "assign",
+		"user_id": o.id("beta-viewer"), "team_id": bteam.ID}, nil); code != 200 {
+		t.Fatalf("assign: %d", code)
+	}
+	if _, err := e.st.Pool.Exec(ws, `INSERT INTO incident_issues (incident_id, issue_key, issue_url) VALUES ($1, 'BETA-42', 'https://jira.example/browse/BETA-42')`,
+		o.id("shared-incident")); err != nil {
+		t.Fatal(err)
+	}
 	return o
+}
+
+func (o *org) userID(t *testing.T, email string) int64 {
+	t.Helper()
+	var id int64
+	if err := o.e.st.Pool.QueryRow(tenant.System(context.Background()), `SELECT id FROM users WHERE email = lower($1)`, email).Scan(&id); err != nil {
+		t.Fatalf("user %s: %v", email, err)
+	}
+	return id
 }
 
 // member is a caller whose access the sweep checks.
@@ -658,6 +690,19 @@ func (o *org) betaSnapshot(t *testing.T) string {
 func TestProjectIsolationSweep(t *testing.T) {
 	o := newOrg(t)
 	members := o.restrictedMembers(t)
+	var mixed []member
+	for _, role := range []auth.Role{auth.RoleEngineer, auth.RoleSecurity, auth.RoleAdmin} {
+		email := "org-viewer-" + string(role) + "@x.io"
+		o.e.user(email, auth.RoleViewer)
+		o.grant(t, email, o.id("alpha-project"), 0, role)
+		s := o.e.signIn(email)
+		mixed = append(mixed, sessionMember("session:"+email, s, nil))
+		var tok struct{ Secret string }
+		if code := s.do("POST", "/api/v1/tokens", map[string]any{"name": "t", "role": role}, &tok); code != 201 {
+			t.Fatalf("token for %s: %d", email, code)
+		}
+		mixed = append(mixed, tokenMember(o.e, "token:"+email, tok.Secret))
+	}
 	beta := o.betaFixture()
 	before := o.betaSnapshot(t)
 	routes := walkRoutes(t, o.e)
@@ -704,9 +749,63 @@ func TestProjectIsolationSweep(t *testing.T) {
 			}
 		}
 	}
-	t.Logf("%d requests on %d routes by %d members of Project Alpha", sent, len(routes), len(members))
+	// The route rules fill parameters with Beta's objects; Beta's people,
+	// teams and tracker links also hang off what Alpha can see (the shared
+	// database and the incident that spans both projects), so unfiltered
+	// lists and those objects are read too.
+	for _, path := range []string{"/api/v1/audit?limit=500", "/api/v1/incidents?status=all&limit=500", "/api/v1/incidents/" + o.s("shared-incident"),
+		"/api/v1/assets/" + o.s("shared-asset"), "/api/v1/findings?status=all&limit=500", "/api/v1/findings/" + o.s("alpha-finding") + "/events",
+		"/api/v1/search?q=beta", "/api/v1/users/directory", "/api/v1/ignore-requests?status=all", "/api/v1/projects", "/api/v1/auth/me"} {
+		for _, m := range members {
+			code, resp := m.do("GET", path, nil)
+			sent++
+			if low := strings.ToLower(withoutBetaEchoes(resp, path)); strings.Contains(low, "beta") {
+				t.Errorf("GET %s as %s leaks Project Beta: %d %s", path, m.name, code, resp)
+			}
+		}
+	}
+	t.Logf("%d requests on %d routes by %d members of Project Alpha and %d organisation viewers with a role on it", sent, len(routes), len(members), len(mixed))
 	if sent < 2000 {
 		t.Errorf("only %d requests sent", sent)
+	}
+
+	// Organisation viewers who also hold a role on Alpha see Beta (their
+	// organisation role allows it), but the Alpha role must not let them
+	// change Beta or reach what the viewer role does not open: every write
+	// on a project-scoped route with Beta's objects fails, and the people
+	// directory is limited to Alpha's people.
+	for _, r := range routes {
+		rule, ok := routeRules[r]
+		scope := projectScopes[r]
+		method, pattern, _ := strings.Cut(r, " ")
+		if !ok || scope == "public" || rule.class == "skip" || method == "GET" {
+			continue
+		}
+		path := rule.routePath(pattern, beta)
+		var body []byte
+		if rule.body != nil {
+			body, _ = json.Marshal(rule.body(beta))
+		}
+		for _, m := range mixed {
+			code, resp := m.do(method, path, body)
+			sent++
+			where := fmt.Sprintf("%s %s as %s", method, path, m.name)
+			if code >= 500 {
+				t.Errorf("%s: %d %s", where, code, resp)
+			}
+			// An organisation viewer may ask to ignore any issue it sees.
+			if scope == "scoped-write" && r != "POST /api/v1/ignore-requests" && code < 400 {
+				t.Errorf("%s: %d %s, want a refusal: the Alpha role does not reach Beta", where, code, resp)
+			}
+			if scope == "org" && code < 400 && rule.class != "create" {
+				t.Errorf("%s: %d %s, the Alpha role opened an organisation route", where, code, resp)
+			}
+		}
+	}
+	for _, m := range mixed {
+		if code, body := m.do("GET", "/api/v1/users/directory", nil); code == 200 && strings.Contains(strings.ToLower(body), "beta") {
+			t.Errorf("%s: the directory lists Beta's people: %s", m.name, body)
+		}
 	}
 	if after := o.betaSnapshot(t); after != before {
 		t.Errorf("Project Beta changed during the sweep:\nbefore %s\nafter  %s", before, after)
@@ -1280,5 +1379,157 @@ func TestProjectSuggestions(t *testing.T) {
 	if code := o.admin.do("POST", "/api/v1/routes", map[string]any{"name": "r", "channel_id": hook.ID, "enabled": true,
 		"project_ids": []int64{o.id("alpha-project")}}, &rt); code != 201 || len(rt.ProjectIDs) != 1 {
 		t.Errorf("route limited to Project Alpha: %d %+v", code, rt)
+	}
+}
+
+// TestProjectPeopleAndLinks pins the review's findings on 0.8: grants in
+// the audit log, assignment to people outside the project, the directory
+// of organisation viewers with a project role, tracker links and stored
+// incident values, and what an asset merge does to access.
+func TestProjectPeopleAndLinks(t *testing.T) {
+	o := newOrg(t)
+	e := o.e
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	o.grant(t, "alpha-viewer@x.io", o.id("alpha-project"), 0, auth.RoleViewer)
+	o.grant(t, "alpha-eng@x.io", o.id("alpha-project"), 0, auth.RoleEngineer)
+	viewer := sessionMember("alpha-viewer", e.signIn("alpha-viewer@x.io"), nil)
+	eng := sessionMember("alpha-eng", e.signIn("alpha-eng@x.io"), nil)
+
+	// Grants are audited as access_grant, which members never see; the
+	// organisation's admins do.
+	if code, body := viewer.do("GET", "/api/v1/audit?limit=500", nil); code != 200 || strings.Contains(body, "ceo@beta-client.example") {
+		t.Errorf("audit as Alpha's viewer: %d %s", code, body)
+	}
+	var grantEvents struct{ Items []store.AuditEvent }
+	o.admin.do("GET", "/api/v1/audit?object_type=access_grant&limit=500", nil, &grantEvents)
+	if len(grantEvents.Items) == 0 {
+		t.Error("grants are not in the organisation's audit log")
+	}
+
+	// Assigning to someone outside Alpha is refused, and nothing about them
+	// reaches the history.
+	betaViewer := o.id("beta-viewer")
+	code, body := eng.do("POST", "/api/v1/findings/"+o.s("alpha-finding")+"/actions", []byte(fmt.Sprintf(`{"action":"assign","user_id":%d}`, betaViewer)))
+	if code != 400 {
+		t.Errorf("assign to a member of Beta: %d %s", code, body)
+	}
+	code, body = eng.do("POST", "/api/v1/findings/"+o.s("alpha-finding")+"/actions", []byte(fmt.Sprintf(`{"action":"assign","team_id":%d}`, o.id("beta-team"))))
+	if code != 400 {
+		t.Errorf("assign to Beta's team: %d %s", code, body)
+	}
+	if _, body := eng.do("GET", "/api/v1/findings/"+o.s("alpha-finding")+"/events", nil); strings.Contains(body, "beta") {
+		t.Errorf("history names Beta's people: %s", body)
+	}
+	alphaEng := o.userID(t, "alpha-eng@x.io")
+	if code, body := eng.do("POST", "/api/v1/findings/"+o.s("alpha-finding")+"/actions", []byte(fmt.Sprintf(`{"action":"assign","user_id":%d}`, alphaEng))); code != 200 {
+		t.Errorf("assign to oneself: %d %s", code, body)
+	}
+	// An organisation engineer assigns to anyone.
+	e.user("org-eng@x.io", auth.RoleEngineer)
+	if code, body := sessionMember("org-eng", e.signIn("org-eng@x.io"), nil).do("POST", "/api/v1/findings/"+o.s("alpha-finding")+"/actions",
+		[]byte(fmt.Sprintf(`{"action":"assign","user_id":%d}`, betaViewer))); code != 200 {
+		t.Errorf("organisation engineer assigns: %d %s", code, body)
+	}
+
+	// The directory: an organisation viewer has none; with a role on Alpha
+	// they get Alpha's people only.
+	e.user("mixed@x.io", auth.RoleViewer)
+	mixed := sessionMember("mixed", e.signIn("mixed@x.io"), nil)
+	if code, _ := mixed.do("GET", "/api/v1/users/directory", nil); code != 403 {
+		t.Errorf("directory as an organisation viewer: %d", code)
+	}
+	o.grant(t, "mixed@x.io", o.id("alpha-project"), 0, auth.RoleEngineer)
+	if code, body := mixed.do("GET", "/api/v1/users/directory", nil); code != 200 || strings.Contains(body, "beta-viewer@x.io") || !strings.Contains(body, "alpha-eng@x.io") {
+		t.Errorf("directory as an organisation viewer with engineer on Alpha: %d %s", code, body)
+	}
+
+	// Tracker links describe the whole incident: not shown to Alpha.
+	if _, body := viewer.do("GET", "/api/v1/incidents/"+o.s("shared-incident"), nil); strings.Contains(body, "BETA-42") {
+		t.Errorf("Jira key shown to Alpha: %s", body)
+	}
+	var inc struct{ Incident store.Incident }
+	get(sessionMember("admin", o.admin, nil), "/api/v1/incidents/"+o.s("shared-incident"), &inc)
+	if len(inc.Incident.Issues) != 1 {
+		t.Errorf("the organisation's view lost the Jira link: %+v", inc.Incident.Issues)
+	}
+
+	// Stored incident values span both projects: Beta's issue is P1 and
+	// escalated, Alpha's P3. Alpha sees and filters by its own part.
+	if _, err := e.st.Pool.Exec(ctx, `UPDATE findings SET priority = 'P1', escalation_level = 2 WHERE id = $1`, o.id("beta-finding")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.st.Pool.Exec(ctx, `UPDATE findings SET priority = 'P3', escalation_level = 0 WHERE id = $1`, o.id("alpha-finding")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.st.Pool.Exec(ctx, `UPDATE incidents SET priority = 'P1', escalation_level = 2, notified_priority = 'P1', notified_at = now() WHERE id = $1`,
+		o.id("shared-incident")); err != nil {
+		t.Fatal(err)
+	}
+	listed := func(q string) bool {
+		var res struct{ Items []store.Incident }
+		get(viewer, "/api/v1/incidents?status=all&"+q, &res)
+		for _, in := range res.Items {
+			if in.ID == o.id("shared-incident") {
+				return true
+			}
+		}
+		return false
+	}
+	if listed("priority=P1") || !listed("priority=P3") || listed("escalated=true") {
+		t.Errorf("Alpha's incident filters use stored values: P1 %v, P3 %v, escalated %v", listed("priority=P1"), listed("priority=P3"), listed("escalated=true"))
+	}
+	get(viewer, "/api/v1/incidents/"+o.s("shared-incident"), &inc)
+	if inc.Incident.Priority != "P3" || inc.Incident.EscalationLevel != 0 || inc.Incident.NotifiedPriority != "" || inc.Incident.NotifiedAt != nil {
+		t.Errorf("Alpha's view of the incident: %+v", inc.Incident)
+	}
+
+	// Merging assets moves access: the response and the audit say so.
+	a := o.ingest(t, "dup-a", "dup-m1", "prod", "pkg:npm/dup@1.0.0")
+	b := model.NewBatch(model.Collector{ID: "agent", Method: "agent"}, model.AssetRef{Kind: model.AssetHost, Name: "dup-b",
+		Identifiers: []model.Identifier{{Scheme: "hostname", Value: "dup-h2"}}})
+	b.Complete = true
+	raw, _ := json.Marshal(b)
+	if code := bearer(e, o.collector, "POST", "/api/v1/ingest", raw, nil); code != 201 {
+		t.Fatalf("ingest dup-b: %d", code)
+	}
+	var dupB int64
+	if err := e.st.Pool.QueryRow(ctx, `SELECT id FROM assets WHERE name = 'dup-b'`).Scan(&dupB); err != nil {
+		t.Fatal(err)
+	}
+	if code := o.admin.do("POST", "/api/v1/projects/"+o.s("beta-project")+"/assets", map[string]any{"asset_ids": []int64{dupB}}, nil); code != 200 {
+		t.Fatalf("file dup-b: %d", code)
+	}
+	o.grant(t, "dup-contractor@x.io", 0, dupB, auth.RoleViewer)
+	c := model.NewBatch(model.Collector{ID: "agent", Method: "agent"}, model.AssetRef{Kind: model.AssetHost, Name: "dup-c",
+		Identifiers: []model.Identifier{{Scheme: "machine-id", Value: "dup-m1"}, {Scheme: "hostname", Value: "dup-h2"}}})
+	c.Complete = true
+	raw, _ = json.Marshal(c)
+	if code := bearer(e, o.collector, "POST", "/api/v1/ingest", raw, nil); code != 201 {
+		t.Fatalf("ingest dup-c: %d", code)
+	}
+	var conflicts struct{ Items []store.Conflict }
+	o.admin.do("GET", "/api/v1/conflicts", nil, &conflicts)
+	if len(conflicts.Items) != 1 {
+		t.Fatalf("conflicts: %+v", conflicts.Items)
+	}
+	var res struct {
+		Notice         string             `json:"notice"`
+		ProjectsJoined []store.ProjectRef `json:"projects_joined"`
+		GrantsMoved    int64              `json:"grants_moved"`
+	}
+	if code := o.admin.do("POST", fmt.Sprintf("/api/v1/conflicts/%d/resolve", conflicts.Items[0].ID), map[string]any{"target_asset_id": a.AssetID}, &res); code != 200 {
+		t.Fatalf("resolve: %d", code)
+	}
+	if len(res.ProjectsJoined) != 1 || res.ProjectsJoined[0].Name != "Project Beta" || res.GrantsMoved != 1 || !strings.Contains(res.Notice, "Project Beta") {
+		t.Errorf("merge notice: %+v", res)
+	}
+	var merged struct{ Items []store.AuditEvent }
+	o.admin.do("GET", fmt.Sprintf("/api/v1/audit?object_type=asset_merge&object_id=%d", a.AssetID), nil, &merged)
+	found := false
+	for _, ev := range merged.Items {
+		found = found || ev.Action == "asset.merge_access"
+	}
+	if !found {
+		t.Errorf("merge not audited: %+v", merged.Items)
 	}
 }
