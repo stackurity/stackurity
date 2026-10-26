@@ -9,8 +9,10 @@ image:
 replicaCount: 1
 
 # Recreate stops every replica before the new version starts, so two
-# versions never share a schema during an upgrade. Keep it unless the
-# release notes say a rolling update is safe.
+# versions never share a schema during an upgrade. Mixed versions are not
+# supported (migrations are not backward compatible), so never use
+# RollingUpdate for a version upgrade (docs/install.md, "Upgrading"). CI
+# checks that this default renders.
 updateStrategy:
   type: Recreate
 

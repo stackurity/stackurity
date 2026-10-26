@@ -94,3 +94,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: azure/setup-helm@v4
       - run: helm lint deploy/helm/stackurity --set database.existingSecret=db
+      - name: Default update strategy is Recreate (versions are never mixed during an upgrade)
+        run: |
+          set -euo pipefail
+          helm template stackurity deploy/helm/stackurity --set database.existingSecret=db --set replicaCount=3 \
+            --show-only templates/deployment.yaml > deployment.yaml
+          # The Deployment's own strategy block, exactly: nothing but type: Recreate.
+          strategy=$(awk '/^  strategy:/{f=1; next} f && /^    /{print; next} f{exit}' deployment.yaml)
+          echo "spec.strategy: $strategy"
+          [ "$strategy" = "    type: Recreate" ] || { echo "::error::the chart's default spec.strategy must be type: Recreate"; exit 1; }
