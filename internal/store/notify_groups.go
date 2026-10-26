@@ -37,6 +37,8 @@ type NewAsset struct {
 	Environment string
 	OwnerTeamID *int64
 	Packages    int
+	// Issues is how many active issues its first scan found.
+	Issues int
 	// Ready: its first complete collection has been evaluated (or it has
 	// waited six hours, so a collector that never sends a complete batch
 	// does not silence the asset for ever).
@@ -48,6 +50,7 @@ type NewAsset struct {
 func (s *Store) UnannouncedAssets(ctx context.Context) ([]NewAsset, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT a.id, a.name, a.environment, a.owner_team_id,
 		  (SELECT count(*) FROM inventory i WHERE i.asset_id = a.id AND i.removed_at IS NULL)::int,
+		  (SELECT count(*) FROM findings f WHERE f.asset_id = a.id AND `+activeFinding+`)::int,
 		  (a.evaluated_at IS NOT NULL
 		    AND EXISTS (SELECT 1 FROM collections c WHERE c.asset_id = a.id AND c.complete AND c.received_at <= a.evaluated_at)
 		    AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.dedupe_key = 'evaluate:asset:' || a.id AND j.done_at IS NULL AND j.failed_at IS NULL))
@@ -83,6 +86,9 @@ type IssueCount struct {
 	FixGroup    string
 	FixTitle    string // for fixed issues: the fix they were closed by
 	Count       int
+	// Backlog: the findings are part of their asset's first-scan backlog
+	// (see BacklogFinding), which raises no alert of its own.
+	Backlog bool
 }
 
 // IssueSet selects the findings CountIssues counts.
@@ -106,6 +112,15 @@ const (
 
 const activeFinding = `f.status = 'open' AND f.state IN ('new', 'acknowledged', 'in_progress')`
 
+// BacklogFinding is true for a finding f (on asset a) that is part of its
+// asset's first-scan backlog: what an asset connected since 0.9 reported
+// before its "connected" message, while it is not announced yet or since.
+// A quiet first scan sends no urgent alert, Jira issue, escalation or
+// overdue reminder for it; it is described once, in the connected message.
+// An issue that came back after the asset was announced is not backlog.
+const BacklogFinding = `(a.quiet_backlog AND (a.announced_at IS NULL
+	OR (f.first_seen <= a.announced_at AND (f.regressed_at IS NULL OR f.regressed_at <= a.announced_at))))`
+
 // CountIssues counts findings in a set, grouped for summaries.
 func (s *Store) CountIssues(ctx context.Context, set IssueSet, from, to time.Time) ([]IssueCount, error) {
 	cond, fix, title := "", "f.fix_group", "''"
@@ -118,21 +133,21 @@ func (s *Store) CountIssues(ctx context.Context, set IssueSet, from, to time.Tim
 		cond = `f.status = 'resolved' AND f.resolved_at >= $1 AND f.resolved_at < $2`
 		fix, title = "f.resolved_fix_group", "f.resolved_fix_title"
 	case IssuesOverdue:
-		cond = activeFinding + ` AND f.fix_due < $2 AND $1::timestamptz IS NOT NULL`
+		cond = activeFinding + ` AND f.fix_due < $2 AND $1::timestamptz IS NOT NULL AND NOT ` + BacklogFinding
 	case IssuesNewlyOverdue:
-		cond = activeFinding + ` AND f.fix_due >= $1 AND f.fix_due < $2`
+		cond = activeFinding + ` AND f.fix_due >= $1 AND f.fix_due < $2 AND NOT ` + BacklogFinding
 	case IssuesAckOverdue:
-		cond = `f.status = 'open' AND f.state = 'new' AND f.ack_due < $2 AND $1::timestamptz IS NOT NULL`
+		cond = `f.status = 'open' AND f.state = 'new' AND f.ack_due < $2 AND $1::timestamptz IS NOT NULL AND NOT ` + BacklogFinding
 	case IssuesRegressed:
 		cond = `f.regressed_at >= $1 AND f.regressed_at < $2`
 	default:
 		return nil, fmt.Errorf("unknown issue set %d", set)
 	}
 	rows, err := s.Pool.Query(ctx, `SELECT 0::bigint, a.id, a.name, a.environment, a.owner_team_id, f.kind, f.priority, f.sos,
-		  COALESCE((f.evidence->>'known_exploited')::boolean, false), `+fix+`, `+title+`, count(*)::int
+		  COALESCE((f.evidence->>'known_exploited')::boolean, false), `+fix+`, `+title+`, count(*)::int, `+BacklogFinding+`
 		FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
 		WHERE `+cond+`
-		GROUP BY 2, 3, 4, 5, 6, 7, 8, 9, 10, 11`, from, to)
+		GROUP BY 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13`, from, to)
 	if err != nil {
 		return nil, err
 	}
@@ -143,10 +158,10 @@ func (s *Store) CountIssues(ctx context.Context, set IssueSet, from, to time.Tim
 // for urgent alerts.
 func (s *Store) IncidentIssues(ctx context.Context, incidentIDs []int64) ([]IssueCount, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT f.incident_id, a.id, a.name, a.environment, a.owner_team_id, f.kind, f.priority, f.sos,
-		  COALESCE((f.evidence->>'known_exploited')::boolean, false), f.fix_group, '', count(*)::int
+		  COALESCE((f.evidence->>'known_exploited')::boolean, false), f.fix_group, '', count(*)::int, `+BacklogFinding+`
 		FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
 		WHERE f.incident_id = ANY($1) AND `+activeFinding+`
-		GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10`, incidentIDs)
+		GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 13`, incidentIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -227,8 +242,10 @@ func (s *Store) SetIncidentEscalations(ctx context.Context, levels map[int64]int
 			FROM unnest($1::bigint[], $2::int[]) AS x(id, level) WHERE i.id = x.id`, ids, lv); err != nil {
 			return err
 		}
+		// A first-scan backlog is not escalated (see BacklogFinding).
 		_, err := tx.Exec(ctx, `UPDATE findings f SET escalation_level = GREATEST(f.escalation_level, x.level), escalated_at = now()
-			FROM unnest($1::bigint[], $2::int[]) AS x(id, level) WHERE f.incident_id = x.id AND f.status = 'open'`, ids, lv)
+			FROM unnest($1::bigint[], $2::int[]) AS x(id, level), assets a
+			WHERE f.incident_id = x.id AND f.status = 'open' AND a.id = f.asset_id AND NOT `+BacklogFinding, ids, lv)
 		return err
 	})
 }
@@ -246,7 +263,8 @@ func (s *Store) IncidentsByID(ctx context.Context, ids []int64) ([]Incident, err
 // summaries; Ready is always true.
 func (s *Store) AssetsAnnounced(ctx context.Context, from, to time.Time) ([]NewAsset, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT a.id, a.name, a.environment, a.owner_team_id,
-		  (SELECT count(*) FROM inventory i WHERE i.asset_id = a.id AND i.removed_at IS NULL)::int, true
+		  (SELECT count(*) FROM inventory i WHERE i.asset_id = a.id AND i.removed_at IS NULL)::int,
+		  (SELECT count(*) FROM findings f WHERE f.asset_id = a.id AND `+activeFinding+`)::int, true
 		FROM assets a WHERE a.announced_at >= $1 AND a.announced_at < $2 AND a.merged_into IS NULL ORDER BY a.name LIMIT 5000`, from, to)
 	if err != nil {
 		return nil, err

@@ -166,28 +166,13 @@ func (d *Dispatcher) Plan(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	for _, in := range announce {
-		in := in
-		for _, r := range routes {
-			if !tracker[r.ChannelID] || r.Escalation || !routeMatches(r, in) || issued[in.ID][r.ChannelID] {
-				continue
-			}
-			r := r
-			event := "opened"
-			if in.NotifiedPriority != "" {
-				event = "priority_raised"
-			}
-			key := fmt.Sprintf("incident:%d:%s:%s", in.ID, event, in.Priority)
-			if _, err := d.Store.EnqueueDelivery(ctx, r.ChannelID, &r.ID, &in.ID, event, key, d.message(in, event)); err != nil {
-				return err
-			}
-		}
-	}
 
 	// An asset's first scan is quiet: the backlog it reports raises no
-	// urgent alerts, one "connected" message describes it instead. Until
-	// its first complete collection is evaluated, incidents found only on
-	// it wait.
+	// urgent alert and no Jira issue; one "connected" message describes it
+	// instead. Until its first complete collection is evaluated, incidents
+	// found only on it wait. A finding is backlog while its asset is not
+	// announced (quiet), or when it was first seen before the asset's
+	// announcement (Backlog, assets connected since 0.9).
 	fresh, err := d.Store.UnannouncedAssets(ctx)
 	if err != nil {
 		return err
@@ -209,22 +194,23 @@ func (d *Dispatcher) Plan(ctx context.Context) error {
 			return err
 		}
 		for _, c := range counts {
+			if quiet[c.AssetID] {
+				c.Backlog = true
+			}
 			rows[c.IncidentID] = append(rows[c.IncidentID], c)
 		}
 	}
-	deferred := map[int64]bool{}
-	var live []store.Incident // incidents that may raise urgent alerts
+	var live []store.Incident // incidents that may raise urgent alerts and Jira issues
 	var notified []int64
 	for _, in := range announce {
-		if isFindingKind(in.Kind) && len(quiet) > 0 && len(rows[in.ID]) > 0 {
+		if isFindingKind(in.Kind) && len(rows[in.ID]) > 0 {
 			known, wait := false, false
 			for _, c := range rows[in.ID] {
-				known = known || !quiet[c.AssetID]
+				known = known || !c.Backlog
 				wait = wait || waiting[c.AssetID]
 			}
 			if !known && wait {
-				deferred[in.ID] = true
-				continue
+				continue // deferred until the first scan is evaluated
 			}
 			if !known {
 				notified = append(notified, in.ID) // first-scan backlog
@@ -235,13 +221,37 @@ func (d *Dispatcher) Plan(ctx context.Context) error {
 		notified = append(notified, in.ID)
 	}
 
+	for _, in := range live {
+		in := in
+		for _, r := range routes {
+			if !tracker[r.ChannelID] || r.Escalation || !routeMatches(r, in) || issued[in.ID][r.ChannelID] {
+				continue
+			}
+			r := r
+			event := "opened"
+			if in.NotifiedPriority != "" {
+				event = "priority_raised"
+			}
+			key := fmt.Sprintf("incident:%d:%s:%s", in.ID, event, in.Priority)
+			if _, err := d.Store.EnqueueDelivery(ctx, r.ChannelID, &r.ID, &in.ID, event, key, d.message(in, event)); err != nil {
+				return err
+			}
+		}
+	}
+
 	people := func(r store.Route) bool {
 		return r.Enabled && !tracker[r.ChannelID] && r.Mode == store.ModeUrgentSummary
 	}
 	// Issues that came back after a fix are urgent whatever their priority.
-	regressed, regressedUpTo, err := d.Store.RegressedToAnnounce(ctx)
+	regressedAll, regressedUpTo, err := d.Store.RegressedToAnnounce(ctx)
 	if err != nil {
 		return err
+	}
+	var regressed []store.IssueCount
+	for _, c := range regressedAll {
+		if !c.Backlog && !quiet[c.AssetID] {
+			regressed = append(regressed, c)
+		}
 	}
 	var infos map[string]store.FixInfo
 	for _, r := range routes {

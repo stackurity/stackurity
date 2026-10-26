@@ -117,6 +117,9 @@ type Route struct {
 	// every asset). ListRoutes fills ProjectAssets with those assets.
 	ProjectIDs    []int64        `json:"project_ids"`
 	ProjectAssets map[int64]bool `json:"-" db:"-"`
+	// AssetProject is, for each of those assets, the first of the route's
+	// projects it is in: links in the route's messages open it.
+	AssetProject map[int64]int64 `json:"-" db:"-"`
 }
 
 // Route modes.
@@ -181,9 +184,13 @@ func (s *Store) routeProjectAssets(ctx context.Context, routes []Route) error {
 			continue
 		}
 		routes[i].ProjectAssets = map[int64]bool{}
+		routes[i].AssetProject = map[int64]int64{}
 		for _, p := range routes[i].ProjectIDs {
 			for _, a := range byProject[p] {
 				routes[i].ProjectAssets[a] = true
+				if routes[i].AssetProject[a] == 0 {
+					routes[i].AssetProject[a] = p
+				}
 			}
 		}
 	}

@@ -99,11 +99,12 @@ func setup(t *testing.T) *fixture {
 }
 
 // addAsset ingests one host with lodash, already announced (its first scan
-// is behind it), and records its inventory row.
+// was a year ago, so findings added later are not its backlog), and records
+// its inventory row.
 func (f *fixture) addAsset(name, env string, exposed bool) {
 	f.addNewAsset(name, env, exposed)
 	if _, err := f.st.Pool.Exec(tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace),
-		`UPDATE assets SET announced_at = now() - interval '1 day' WHERE id = $1`, f.asset[name]); err != nil {
+		`UPDATE assets SET announced_at = now() - interval '1 year' WHERE id = $1`, f.asset[name]); err != nil {
 		f.t.Fatal(err)
 	}
 }

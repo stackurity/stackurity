@@ -796,6 +796,7 @@ func (s *Store) EscalationCandidates(ctx context.Context) (map[int64]int, error)
 		  CASE WHEN bool_or(f.fix_due < now()) THEN 2 WHEN bool_or(f.state = 'new' AND f.ack_due < now()) THEN 1 ELSE 0 END
 		FROM incidents i JOIN findings f ON f.incident_id = i.id AND f.status = 'open'
 		  AND f.state IN ('new', 'acknowledged', 'in_progress')
+		JOIN assets a ON a.id = f.asset_id AND NOT `+BacklogFinding+`
 		WHERE i.status = 'open' GROUP BY i.id, i.escalation_level
 		HAVING CASE WHEN bool_or(f.fix_due < now()) THEN 2 WHEN bool_or(f.state = 'new' AND f.ack_due < now()) THEN 1 ELSE 0 END > i.escalation_level`)
 	if err != nil {
