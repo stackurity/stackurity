@@ -55,7 +55,7 @@ export function IssuesPage() {
   const fixGroup = get("fix_group");
   const assetId = get("asset_id");
   const groups = useLoad(() => api.get<List<FixGroup>>("/fix-groups", { asset_id: assetId, limit: 100 }), [assetId]);
-  const { me, can } = useAuth();
+  const { me, canAct } = useAuth();
   const myId = me?.user?.id ? String(me.user.id) : "";
   const mine = Boolean(myId) && get("assignee_user") === myId;
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -315,7 +315,7 @@ export function IssuesPage() {
       )}
       {res.data && rows.length > 0 && (
         <>
-          {can("viewer") && selected.size > 0 && (
+          {canAct("viewer") && selected.size > 0 && (
             <div className="bulkbar" role="region" aria-label="Bulk actions">
               <strong>{selected.size} selected</strong>
               <FindingActions
@@ -341,7 +341,7 @@ export function IssuesPage() {
                   </Link>
                 </h2>
                 <div className="only-wide">
-                  <FindingsTable rows={list} hideAsset selected={can("viewer") ? selected : undefined} onSelect={setSelected} />
+                  <FindingsTable rows={list} hideAsset selected={canAct("viewer") ? selected : undefined} onSelect={setSelected} />
                 </div>
                 <FindingCards rows={list} hideAsset />
               </Fragment>
@@ -349,7 +349,7 @@ export function IssuesPage() {
           ) : (
             <>
               <div className="only-wide">
-                <FindingsTable rows={rows} selected={can("viewer") ? selected : undefined} onSelect={setSelected} />
+                <FindingsTable rows={rows} selected={canAct("viewer") ? selected : undefined} onSelect={setSelected} />
               </div>
               <FindingCards rows={rows} />
             </>

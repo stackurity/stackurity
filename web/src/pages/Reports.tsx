@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { useAuth } from "../auth";
+import { useProject } from "../project";
 import { ProNotice } from "../components/ProNotice";
 import { Link, useSearchParams } from "react-router";
 import { api, ASSET_STATUSES, EVIDENCE_STATE_LABEL, PRIORITIES, SEVERITIES, type EvidenceReport, type ReportDrift, type ReportException } from "../api";
@@ -66,6 +67,7 @@ export function ReportsPage() {
 }
 
 function EvidenceReportPage() {
+  const { project } = useProject();
   const [params, setParams] = useSearchParams();
   const from = params.get("from") || daysAgo(29);
   const to = params.get("to") || daysAgo(0);
@@ -84,7 +86,7 @@ function EvidenceReportPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `stackurity-evidence-${from}-${to}.json`;
+    a.download = `stackurity-evidence-${project ? `project-${project.id}-` : ""}${from}-${to}.json`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -97,6 +99,7 @@ function EvidenceReportPage() {
         title="Patch management evidence"
         sub={
           <>
+            {project && <>{project.name} · </>}
             {from} to {to} (inclusive)
             {r && <> · generated {absTime(r.generated_at)}</>}
           </>

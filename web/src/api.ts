@@ -39,21 +39,73 @@ export interface User {
   id: number;
   email: string;
   name: string;
-  role: UserRole;
+  /** Organisation-wide role; empty with access through projects only. */
+  role: UserRole | "";
   disabled: boolean;
   created_at: string;
   last_login_at: string | null;
   teams: string[] | null;
   /** Operates the installation: manages workspaces. */
   instance_admin: boolean;
+  /** "organisation": a role on everything; "projects": access through projects only (role is then empty). */
+  access?: Access;
 }
+
+/** How a member reaches a workspace's data. */
+export type Access = "organisation" | "projects";
 
 /** One workspace the signed-in user belongs to, with their role there. */
 export interface Membership {
   workspace_id: number;
   name: string;
   slug: string;
+  /** Empty with access through projects only. */
+  role: UserRole | "";
+  access?: Access;
+}
+
+/** A named group of assets. One asset can be in several projects. */
+export interface Project {
+  id: number;
+  name: string;
+  description: string;
+  created_at: string;
+  archived_at: string | null;
+  asset_count: number;
+  /** Your role in it, when you have access through projects only. */
+  role?: UserRole;
+}
+
+export interface ProjectRef {
+  id: number;
+  name: string;
+}
+
+/** A role for a person or a team, on a project or on one asset. */
+export interface Grant {
+  id: number;
+  project_id: number | null;
+  project_name?: string;
+  asset_id: number | null;
+  asset_name?: string;
+  user_id: number | null;
+  user_email?: string;
+  user_name?: string;
+  team_id: number | null;
+  team_name?: string;
   role: UserRole;
+  created_at: string;
+}
+
+/** Related assets Stackurity proposes to put together. Nothing changes until someone accepts. */
+export interface ProjectSuggestion {
+  key: string;
+  /** Add the assets to this project; absent: create a new project. */
+  project_id?: number;
+  project_name?: string;
+  suggested_name?: string;
+  assets: { id: number; name: string; kind: string }[];
+  reason: string;
 }
 
 export interface Workspace {
@@ -130,7 +182,16 @@ export interface Token {
 
 export interface Me {
   user: User | null;
-  role: Role;
+  /** Organisation-wide role; empty with access through projects only. */
+  role: Role | "";
+  /** "projects": you see only the projects (and assets) you were given. */
+  access?: Access;
+  /** Your highest role from project and asset grants. */
+  project_role?: UserRole | "";
+  /** Projects you can choose in the switcher. */
+  projects?: Project[];
+  /** The project you chose last (0: all projects). */
+  default_project_id?: number;
   token: Token | null;
   /** The workspace this session or token works in; null when the user belongs to none. */
   workspace: { id: number; name: string; slug: string } | null;
@@ -258,6 +319,8 @@ export interface Asset {
   component_count: number;
   /** When the asset's agent last asked whether to report now (0.7 agents); null for older agents. */
   agent_polled_at?: string | null;
+  /** Active projects the asset is in (that you can see). */
+  projects?: ProjectRef[];
 }
 
 export interface Identifier {
@@ -1351,6 +1414,8 @@ export interface Route {
   summary_day: string;
   /** End of the period the last summary covered (read-only). */
   last_summary_at?: string;
+  /** Only the assets of these projects (empty: every asset). */
+  project_ids?: number[] | null;
 }
 
 export type RouteMode = "urgent_summary" | "daily" | "weekly";
@@ -1799,6 +1864,19 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * The project chosen in the switcher. Every request carries it in the
+ * X-Stackurity-Project header; the server applies it to Home, Fixes, Assets
+ * and Activity data and ignores it elsewhere.
+ */
+let activeProject = 0;
+export function setActiveProject(id: number) {
+  activeProject = id > 0 ? id : 0;
+}
+export function getActiveProject(): number {
+  return activeProject;
+}
+
 /** Called on any 401 so the app can drop back to the login screen. */
 let onUnauthorized: (() => void) | null = null;
 export function setUnauthorizedHandler(fn: (() => void) | null) {
@@ -1818,9 +1896,10 @@ export function qs(q?: Query): string {
   return s ? `?${s}` : "";
 }
 
-async function request<T>(method: string, path: string, body?: unknown, opts?: { quiet401?: boolean }): Promise<T> {
+async function request<T>(method: string, path: string, body?: unknown, opts?: { quiet401?: boolean; allProjects?: boolean }): Promise<T> {
   const headers: Record<string, string> = { Accept: "application/json" };
   if (method !== "GET") headers["X-Stackurity-CSRF"] = "1";
+  if (activeProject > 0 && !opts?.allProjects) headers["X-Stackurity-Project"] = String(activeProject);
   if (body !== undefined) headers["Content-Type"] = "application/json";
   let res: Response;
   try {
@@ -1858,6 +1937,8 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: {
 
 export const api = {
   get: <T>(path: string, q?: Query) => request<T>("GET", path + qs(q)),
+  /** GET across every project, whatever the switcher says (settings, pickers). */
+  getAll: <T>(path: string, q?: Query) => request<T>("GET", path + qs(q), undefined, { allProjects: true }),
   post: <T>(path: string, body?: unknown) => request<T>("POST", path, body ?? {}),
   patch: <T>(path: string, body: unknown) => request<T>("PATCH", path, body),
   put: <T>(path: string, body: unknown) => request<T>("PUT", path, body),

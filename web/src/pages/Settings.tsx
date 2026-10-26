@@ -43,6 +43,12 @@ const GROUPS: { title: string; entries: Entry[] }[] = [
     title: "People and access",
     entries: [
       { to: "/settings/users", label: "Users", about: "Invite people and set their role.", min: "admin" },
+      {
+        to: "/settings/projects",
+        label: "Projects and access",
+        about: "Group assets into projects and give people or teams access to chosen projects only.",
+        min: "admin",
+      },
       { to: "/settings/teams", label: "Teams", about: "Owner teams for assets, alert routing and escalation.", min: "admin" },
       { to: "/settings/tokens", label: "API tokens", about: "Tokens for the API, CI scans and collectors." },
     ],

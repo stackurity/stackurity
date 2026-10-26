@@ -1053,11 +1053,63 @@ stackurity.exe agent --interval 6h`,
         ],
       },
       {
+        p: "These roles apply to the whole organisation, or to chosen [projects](help:projects) only. Someone with access through projects only sees those projects' assets.",
+      },
+      {
         steps: [
           "**Settings ▸ Users ▸ Add user** (admin): email, name, role and an initial password of at least 12 characters. Share it securely.",
           "Change a role from the list; **Disable** stops sign-in and the user's tokens; **Reset password** sets a new one.",
           "**Settings ▸ Teams ▸ Add team**: name, contact email and members. Then set teams as asset owners so incidents and routes follow them.",
         ],
+      },
+    ],
+  },
+  {
+    id: "projects",
+    title: "Projects and access",
+    section: "Settings and administration",
+    summary: "Group assets into projects and give people access to chosen projects only.",
+    where: ["Settings", "Projects and access"],
+    keywords: "project client agency site contractor access grant switcher unfiled team role permission",
+    body: [
+      {
+        p: "A **project** groups assets: a site, a client, a product. One asset can be in several projects, such as a database server two sites share. Your organisation (this workspace) holds the projects, and the projects hold the assets.",
+      },
+      { h: "Who sees what" },
+      {
+        table: [
+          ["Access", "Sees"],
+          ["Organisation-wide role (viewer, engineer, security, admin)", "Every asset, in every project and in none."],
+          ["A role on a project", "Only that project's assets, with their issues, fixes, incidents, components, search results, reports and activity. Organisation pages (users, teams, integrations, notifications, jobs) are not shown."],
+          ["A role on one asset", "Only that asset. For the rare server one contractor looks after; prefer projects."],
+          ["A team's role on a project", "Everyone in the team, including people who join it later."],
+        ],
+      },
+      {
+        list: [
+          "A role on a project means the same as the organisation role, for that project's assets only. Someone who is a viewer for the organisation and an engineer on one project can acknowledge and assign that project's issues, and only view the rest.",
+          "An incident that spans two projects shows each person only their part: the counts, names and priority come from the assets they can see.",
+          "Archiving a project removes the access it gave. Its assets stay, and people with an organisation-wide role still see them.",
+          "Removing someone's access, or lowering their role, applies to their next request, and to their API tokens too.",
+          "This is enforced by the database for every request, not only hidden on screen.",
+        ],
+      },
+      { h: "The project switcher" },
+      {
+        p: "When the workspace has projects, the menu next to its name at the top left chooses **All projects** or one project. The choice scopes Home, Fixes, Assets and Activity, is kept in the address (so a link opens the same view) and is remembered for next time. On a phone it takes the workspace's place in the top bar.",
+      },
+      { h: "Setting it up (admins)" },
+      {
+        steps: [
+          "**Settings ▸ Projects and access ▸ New project**, then add its assets. **Suggested groupings** proposes related assets (an application runs on a host, is built from a repository); nothing is added until you accept.",
+          "Under **Who has access**, give a person (by email) or a team a role. Someone who is not a member yet joins with access to that project only; give a new account an initial password of at least 12 characters.",
+          "Home tells organisation-wide roles how many assets are **not in a project**: only they see those, so file them.",
+          "To send a client only their project's alerts, tick the project on a notification route (**Settings ▸ Notifications ▸ Routes**). Routes to Jira cannot be limited to projects yet.",
+          "**Settings ▸ Users** can change someone to **projects only**: they keep their account but lose the organisation-wide role.",
+        ],
+      },
+      {
+        note: "API clients choose a project with the `project_id` query parameter or the `X-Stackurity-Project` header. The evidence report and exports follow the choice. Agent and collector tokens belong to the workspace and are not limited by projects.",
       },
     ],
   },

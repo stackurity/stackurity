@@ -71,6 +71,8 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/auth/password":            {class: "skip"},
 	"GET /api/v1/workspaces":                {class: "account"},
 	"POST /api/v1/workspaces/{id}/activate": {class: "object", obj: id("workspace")},
+	// Choosing another workspace's project as the default must fail.
+	"PUT /api/v1/auth/default-project": {class: "create", body: func(a *tenantFx) any { return map[string]any{"project_id": a.int("project")} }},
 
 	// Sends what the user typed to the feedback URL outside the
 	// installation, nothing of the workspace; see feedback_test.go.
@@ -148,6 +150,9 @@ var routeRules = map[string]routeRule{
 	"GET /api/v1/checks":               {class: "list", query: "?asset_id={asset}"},
 	"GET /api/v1/ignore-rules":         {class: "list", query: "?status=all"},
 	"GET /api/v1/ignore-requests":      {class: "list", query: "?status=all"},
+	"GET /api/v1/projects":             {class: "list"},
+	"GET /api/v1/project-suggestions":  {class: "list"},
+	"GET /api/v1/access-grants":        {class: "list", query: "?project_id={project}"},
 
 	// A's objects by id.
 	"GET /api/v1/assets/{id}":                      {class: "object", obj: id("asset")},
@@ -204,6 +209,12 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/remediation/plans/{id}/decision": {class: "object", obj: id("plan"), body: func(*tenantFx) any { return map[string]any{"decision": "approve"} }},
 	"PUT /api/v1/remediation/policies/{id}":        {class: "object", obj: id("policy"), edition: "ee", body: func(*tenantFx) any { return map[string]any{"name": "hacked"} }},
 	"DELETE /api/v1/remediation/policies/{id}":     {class: "object", obj: id("policy"), edition: "ee"},
+	"GET /api/v1/projects/{id}":                    {class: "object", obj: id("project")},
+	"PATCH /api/v1/projects/{id}":                  {class: "object", obj: id("project"), body: func(*tenantFx) any { return map[string]any{"name": "hacked"} }},
+	"POST /api/v1/projects/{id}/assets":            {class: "object", obj: id("project"), body: func(a *tenantFx) any { return map[string]any{"asset_ids": []int64{a.int("asset2")}} }},
+	"DELETE /api/v1/projects/{id}/assets":          {class: "object", obj: id("project"), body: func(a *tenantFx) any { return map[string]any{"asset_ids": []int64{a.int("asset")}} }},
+	"PATCH /api/v1/access-grants/{id}":             {class: "object", obj: id("grant"), body: func(*tenantFx) any { return map[string]any{"role": "admin"} }},
+	"DELETE /api/v1/access-grants/{id}":            {class: "object", obj: id("grant")},
 	// Secrets are named per workspace: B writing a name A uses creates B's own.
 	"PUT /api/v1/secrets/{name}":    {class: "object", obj: map[string]string{"name": "secret"}, emptyOK: true, body: func(*tenantFx) any { return map[string]string{"value": "overwritten-by-b"} }},
 	"DELETE /api/v1/secrets/{name}": {class: "object", obj: map[string]string{"name": "secret"}, emptyOK: true},
@@ -234,7 +245,15 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/routes": {class: "create", body: func(a *tenantFx) any {
 		return map[string]any{"name": "sweep", "channel_id": a.int("channel"), "enabled": true}
 	}},
-	"POST /api/v1/enrollments":          {class: "create", body: func(*tenantFx) any { return map[string]any{"label": "sweep"} }},
+	"POST /api/v1/enrollments": {class: "create", body: func(*tenantFx) any { return map[string]any{"label": "sweep"} }},
+	"POST /api/v1/projects": {class: "create", body: func(a *tenantFx) any {
+		return map[string]any{"name": "sweep-project", "asset_ids": []int64{a.int("asset"), a.int("asset2")}}
+	}},
+	"POST /api/v1/project-suggestions/dismiss": {class: "create", body: func(*tenantFx) any { return map[string]any{"key": "new-0000000000000000"} }},
+	// Grants naming A's project, asset, user or team must fail.
+	"POST /api/v1/access-grants": {class: "create", body: func(a *tenantFx) any {
+		return map[string]any{"project_id": a.int("project"), "team_id": a.int("team"), "role": "admin"}
+	}},
 	"POST /api/v1/remediation/policies": {class: "create", body: func(*tenantFx) any { return map[string]any{"name": "sweep"} }},
 	"POST /api/v1/remediation/policies/preview": {class: "create", edition: "ee", query: "?id={policy}", body: func(*tenantFx) any {
 		return map[string]any{"name": "sweep", "enabled": true, "target": "host_package", "ecosystems": []string{"deb"}, "change_types": []string{"distro"}}
@@ -418,6 +437,16 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 		t.Fatalf("%s team: %d", tag, code)
 	}
 	set("team", team.ID)
+	var proj store.Project
+	if code := admin.do("POST", "/api/v1/projects", map[string]any{"name": "proj-" + tag, "asset_ids": []int64{main.AssetID}}, &proj); code != 201 {
+		t.Fatalf("%s project: %d", tag, code)
+	}
+	set("project", proj.ID)
+	var grant struct{ Grant store.Grant }
+	if code := admin.do("POST", "/api/v1/access-grants", map[string]any{"project_id": proj.ID, "team_id": team.ID, "role": "engineer"}, &grant); code != 201 {
+		t.Fatalf("%s grant: %d", tag, code)
+	}
+	set("grant", grant.Grant.ID)
 	f.secret = tag + "-secret-value-7Hq2"
 	f.ids["secret"] = strings.ToUpper(tag) + "_TOKEN"
 	if code := admin.do("PUT", "/api/v1/secrets/"+f.ids["secret"], map[string]string{"value": f.secret}, nil); code != 204 {
@@ -586,6 +615,47 @@ func TestEveryRouteIsClassified(t *testing.T) {
 	if len(served) < 100 {
 		t.Errorf("only %d routes walked; is the walk broken?", len(served))
 	}
+
+	// Every route also declares how it treats project access, and the
+	// declaration matches the router's (api.ProjectScopeOf): a route the
+	// router does not list is for organisation-wide roles only, so a new
+	// route is closed to members with project access only until it is
+	// classified in both places.
+	var unscoped, wrong []string
+	for r := range served {
+		want, ok := projectScopes[r]
+		if !ok {
+			unscoped = append(unscoped, r)
+			continue
+		}
+		got := api.ProjectScopeOf(r)
+		if want == "public" {
+			if c := routeRules[r].class; c != "public" && c != "skip" {
+				wrong = append(wrong, r+": public in projectScopes but "+c+" in routeRules")
+			}
+			got = "public"
+		}
+		if got != want {
+			wrong = append(wrong, fmt.Sprintf("%s: %s in projectScopes, %s in the router", r, want, got))
+		}
+	}
+	sort.Strings(unscoped)
+	sort.Strings(wrong)
+	if len(unscoped) > 0 {
+		t.Errorf("routes without a project scope in projects_test.go:\n  %s", strings.Join(unscoped, "\n  "))
+	}
+	if len(wrong) > 0 {
+		t.Errorf("project scopes that disagree:\n  %s", strings.Join(wrong, "\n  "))
+	}
+	for r, scope := range projectScopes {
+		edition := routeRules[r].edition
+		if !served[r] && (edition == "" || edition == api.BuildEdition) {
+			t.Errorf("project scope for %s, which this build does not serve", r)
+		}
+		if scope != "public" && scope != "org" && scope != "account" && scope != "global" && scope != "scoped" && scope != "scoped-write" {
+			t.Errorf("%s: unknown project scope %q", r, scope)
+		}
+	}
 }
 
 // normalise drops values that change by themselves (times, ages, counters
@@ -745,6 +815,7 @@ func (e *env) snapshot(t *testing.T, a *tenantFx) string {
 		"/api/v1/users", "/api/v1/secrets", "/api/v1/tokens", "/api/v1/conflicts", "/api/v1/risk-policy", "/api/v1/collections/{collection}/result",
 		"/api/v1/remediation/policies", "/api/v1/remediation/plans", "/api/v1/workspaces",
 		"/api/v1/checks?asset_id={asset}", "/api/v1/checks/{check}", "/api/v1/ignore-rules?status=all", "/api/v1/ignore-requests?status=all",
+		"/api/v1/projects/{project}", "/api/v1/access-grants", "/api/v1/assets?project_id={project}",
 	} {
 		resp := a.sess["admin"].req("GET", fill(p, a.ids), nil, nil)
 		body, _ := io.ReadAll(resp.Body)

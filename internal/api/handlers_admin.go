@@ -46,8 +46,8 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, badRequest("a valid email is required"))
 		return
 	}
-	if !req.Role.ValidUser() {
-		s.fail(w, r, badRequest("role must be viewer, engineer, security or admin"))
+	if !req.Role.ValidUser() && req.Role != store.RoleNone {
+		s.fail(w, r, badRequest("role must be viewer, engineer, security, admin, or none (access through projects only)"))
 		return
 	}
 	u, err := s.Store.CreateUser(r.Context(), req.Email, req.Name, req.Role, req.Password)

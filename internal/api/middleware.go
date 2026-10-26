@@ -18,15 +18,26 @@ import (
 
 const sessionCookie = "stackurity_session"
 
-// Principal is the authenticated caller. Role is the caller's role in
-// Workspace, the workspace the request is scoped to (0: the user belongs to
-// none, so only account endpoints work).
+// Principal is the authenticated caller. Role is the caller's
+// organisation-wide role in Workspace, the workspace the request is scoped
+// to (0: the user belongs to none, so only account endpoints work).
 type Principal struct {
 	User      *store.User  // nil for collector tokens without a user
 	Token     *store.Token // nil for browser sessions
-	Role      auth.Role
+	Role      auth.Role    // organisation-wide role; empty with project access only
 	Session   bool
 	Workspace int64
+	// ProjectRole is the highest role the caller holds through project
+	// and asset grants. It opens project-scoped routes; handlers that
+	// change something check the role on each asset (allowedOn).
+	ProjectRole auth.Role
+	// Restricted: a member with project access only. Their requests are
+	// narrowed to their projects' assets and asset grants by row-level
+	// security, and organisation routes refuse them.
+	Restricted bool
+	// Project is the project chosen in the switcher (0: all, -1: invalid);
+	// projectGate applies it to project-scoped routes.
+	Project int64
 }
 
 func (p *Principal) Actor(r *http.Request) store.Actor {
@@ -89,6 +100,26 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 			ctx := context.WithValue(r.Context(), ctxKey{}, p)
 			if p.Workspace > 0 {
 				ctx = tenant.WithWorkspace(ctx, p.Workspace)
+				if p.User != nil {
+					access, err := s.Store.UserAccess(r.Context(), p.Workspace, p.User.ID)
+					if err != nil {
+						s.credentialsUnavailable(w, r, err)
+						return
+					}
+					if p.Token != nil {
+						// TokenPrincipal capped the token at the user's
+						// highest role; it never acts above either.
+						p.Role = auth.Lower(p.Token.Role, access.OrgRole)
+						p.ProjectRole = auth.Lower(p.Token.Role, access.ProjectRole)
+					} else {
+						p.Role, p.ProjectRole = access.OrgRole, access.ProjectRole
+					}
+					if access.Restricted() {
+						p.Restricted = true
+						ctx = tenant.WithMember(ctx, p.User.ID)
+					}
+				}
+				p.Project = requestedProject(r)
 			}
 			r = r.WithContext(ctx)
 		}
@@ -145,10 +176,22 @@ func requireInstanceAdmin(next http.Handler) http.Handler {
 	})
 }
 
+// requireRole checks the organisation-wide role. On project-scoped and
+// account routes a role from project grants also opens the route; the
+// handler then checks the role on the objects it changes.
 func requireRole(min auth.Role) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if p := principal(r); p == nil || !p.Role.AtLeast(min) {
+			p := principal(r)
+			if p == nil {
+				writeError(w, 403, "forbidden", "requires role "+string(min))
+				return
+			}
+			role := p.Role
+			if routeScope(r) != orgOnly {
+				role = auth.Higher(p.Role, p.ProjectRole)
+			}
+			if !role.AtLeast(min) {
 				writeError(w, 403, "forbidden", "requires role "+string(min))
 				return
 			}

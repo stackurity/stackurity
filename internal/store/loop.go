@@ -507,6 +507,10 @@ func (s *Store) GetIgnoreRequest(ctx context.Context, id int64) (*IgnoreRequest,
 type IgnoreRequestFilter struct {
 	Status      string
 	RequestedBy int64
+	// DecidableOn, when set, limits the list to requests whose issues are
+	// all on these assets, plus the caller's own requests (RequestedBy):
+	// the inbox of someone who decides through project grants only.
+	DecidableOn []int64
 	Page
 }
 
@@ -515,7 +519,12 @@ func (s *Store) ListIgnoreRequests(ctx context.Context, f IgnoreRequestFilter) (
 	if f.Status != "" {
 		w.add("r.status = ?", f.Status)
 	}
-	if f.RequestedBy > 0 {
+	switch {
+	case f.DecidableOn != nil:
+		w.args = append(w.args, f.DecidableOn, f.RequestedBy)
+		w.conds = append(w.conds, fmt.Sprintf(`(r.requested_by = $%d OR NOT EXISTS (SELECT 1 FROM unnest(r.finding_ids) x(id)
+			LEFT JOIN findings f ON f.id = x.id WHERE f.asset_id IS NULL OR NOT (f.asset_id = ANY($%d))))`, len(w.args), len(w.args)-1))
+	case f.RequestedBy > 0:
 		w.add("r.requested_by = ?", f.RequestedBy)
 	}
 	var total int64

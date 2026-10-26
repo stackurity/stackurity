@@ -140,9 +140,11 @@ export function FindingActions({
   onDone: () => void;
   compact?: boolean;
 }) {
-  const { can, me } = useAuth();
-  const engineer = can("engineer");
-  const security = can("security");
+  const { me, can, canAct } = useAuth();
+  // A rule for every asset covers every project: organisation-wide roles only.
+  const orgSecurity = can("security");
+  const engineer = canAct("engineer");
+  const security = canAct("security");
   const act = useAction();
   const first: Panel = initialPanel === "accept_risk" || initialPanel === "ignore" ? (security ? "ignore" : "request") : (initialPanel ?? null);
   const [panel, setPanel] = useState<Panel>(first && (engineer || first === "request") ? first : null);
@@ -273,6 +275,7 @@ export function FindingActions({
         <IgnorePanel
           title="Ignore"
           submit="Ignore"
+          everywhere={orgSecurity}
           explain="Ignored issues are shown as Accepted, with the reason. They come back as new when the expiry passes, or when a fix ships if you choose that."
           pending={act.pending}
           onCancel={() => setPanel(null)}
@@ -396,11 +399,14 @@ export function IgnorePanel({
   pending,
   onSubmit,
   onCancel,
+  everywhere = true,
 }: {
   title: string;
   submit: string;
   explain: string;
   pending: boolean;
+  /** Offer "every asset"; false for people who act through project grants only. */
+  everywhere?: boolean;
   onSubmit: (v: IgnoreFormValue) => void;
   onCancel: () => void;
 }) {
@@ -453,15 +459,19 @@ export function IgnorePanel({
               <span>This asset</span>
             </label>
           </li>
-          <li>
-            <label className="choice">
-              <input type="radio" name={`${id}-scope`} checked={scope === "everywhere"} onChange={() => setScope("everywhere")} />
-              <span>
-                Every asset
-                <span className="hint"> The same issue in the same component, including assets and issues found later.</span>
-              </span>
-            </label>
-          </li>
+          {everywhere ? (
+            <li>
+              <label className="choice">
+                <input type="radio" name={`${id}-scope`} checked={scope === "everywhere"} onChange={() => setScope("everywhere")} />
+                <span>
+                  Every asset
+                  <span className="hint"> The same issue in the same component, including assets and issues found later.</span>
+                </span>
+              </label>
+            </li>
+          ) : (
+            <li className="hint">Ignoring on every asset needs an organisation-wide security or admin role.</li>
+          )}
         </ul>
       </fieldset>
       <fieldset className="field">
@@ -665,7 +675,9 @@ function AssignPanel({
   onCancel: () => void;
 }) {
   const [id] = useState(() => `ap${++panelSeq}`);
-  const teams = useLoad(() => api.get<List<Team>>("/teams"), []);
+  // Teams belong to the organisation: people with project access only assign to people.
+  const { projectOnly } = useAuth();
+  const teams = useLoad(() => (projectOnly ? Promise.resolve(null) : api.get<List<Team>>("/teams")), [projectOnly]);
   // Active users (engineer+ may list them for assignment).
   const users = useLoad(() => api.get<List<DirectoryUser>>("/users/directory"), []);
   const [user, setUser] = useState("keep");

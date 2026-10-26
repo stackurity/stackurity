@@ -313,7 +313,7 @@ func (d *Dispatcher) Plan(ctx context.Context) error {
 			var mine []store.NewAsset
 			var mineIDs []int64
 			for _, a := range ready {
-				if assetInScope(r, a.Environment, a.OwnerTeamID) {
+				if assetInScope(r, a.ID, a.Environment, a.OwnerTeamID) {
 					mine, mineIDs = append(mine, a), append(mineIDs, a.ID)
 				}
 			}
@@ -475,7 +475,9 @@ func (d *Dispatcher) planIssueUpdates(ctx context.Context) error {
 // routeMatches applies a route's filters. Resolved and escalation events use
 // the priority the incident reached.
 func routeMatches(r store.Route, in store.Incident) bool {
-	if !inScope(r, in) {
+	// Tracker issues describe the whole incident, across every asset, so a
+	// route limited to projects never creates or updates them.
+	if len(r.ProjectIDs) > 0 || !inScope(r, in) {
 		return false
 	}
 	pri := in.Priority

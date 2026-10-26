@@ -1,4 +1,5 @@
 import { Link, useNavigate, useSearchParams } from "react-router";
+import { useAuth } from "../auth";
 import { api, INCIDENT_KINDS, PRIORITIES, type Incident, type List, type Team } from "../api";
 import { useLoad } from "../hooks";
 import { humanize, plural } from "../format";
@@ -39,7 +40,8 @@ export function IncidentsPage() {
     setParams(next, { replace: true });
   };
 
-  const teams = useLoad(() => api.get<List<Team>>("/teams"), []);
+  const { projectOnly } = useAuth();
+  const teams = useLoad(() => (projectOnly ? Promise.resolve(null) : api.get<List<Team>>("/teams")), [projectOnly]);
   const sosOpen = useLoad(() => api.get<List<Incident>>("/incidents", { status: "open", sos: "true", limit: 5 }), []);
   const res = useLoad(
     () => api.get<List<Incident>>("/incidents", { status, kind, priority, sos: sos ? "true" : undefined, escalated: escalated ? "true" : undefined, team_id: team, limit: LIMIT, offset }),
@@ -153,17 +155,19 @@ export function IncidentsPage() {
             ))}
           </select>
         </div>
-        <div className="field">
-          <label htmlFor="in-team">Owner team</label>
-          <select id="in-team" value={team} onChange={(e) => update({ team_id: e.target.value })}>
-            <option value="">Any team</option>
-            {teams.data?.items.map((t) => (
-              <option key={t.id} value={String(t.id)}>
-                {t.name}
-              </option>
-            ))}
-          </select>
-        </div>
+        {!projectOnly && (
+          <div className="field">
+            <label htmlFor="in-team">Owner team</label>
+            <select id="in-team" value={team} onChange={(e) => update({ team_id: e.target.value })}>
+              <option value="">Any team</option>
+              {teams.data?.items.map((t) => (
+                <option key={t.id} value={String(t.id)}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <label className="check">
           <input type="checkbox" checked={sos} onChange={(e) => update({ sos: e.target.checked ? "true" : "" })} /> SOS only
         </label>

@@ -48,6 +48,9 @@ func inScope(r store.Route, in store.Incident) bool {
 	if !r.Enabled || r.SOSOnly && !in.SOS {
 		return false
 	}
+	if len(r.ProjectIDs) > 0 && !incidentInProjects(r, in) {
+		return false
+	}
 	if len(r.Kinds) > 0 && !contains(r.Kinds, in.Kind) {
 		return false
 	}
@@ -81,8 +84,32 @@ func teamIn(ids []int64, team *int64) bool {
 	return false
 }
 
-// assetInScope applies a route's team and environment filters to an asset.
-func assetInScope(r store.Route, env string, team *int64) bool {
+// incidentInProjects: a route limited to projects hears about an issue
+// (its findings are then counted per asset, for the project's assets only)
+// and about collection and coverage problems of the project's assets, not
+// about other problems.
+func incidentInProjects(r store.Route, in store.Incident) bool {
+	if isFindingKind(in.Kind) {
+		return true
+	}
+	if in.Kind != "collection" && in.Kind != "coverage" {
+		return false
+	}
+	rest, ok := strings.CutPrefix(in.Key, "asset:")
+	if !ok {
+		return false
+	}
+	id, _, _ := strings.Cut(rest, ":")
+	n, err := strconv.ParseInt(id, 10, 64)
+	return err == nil && r.ProjectAssets[n]
+}
+
+// assetInScope applies a route's project, team and environment filters to
+// an asset.
+func assetInScope(r store.Route, id int64, env string, team *int64) bool {
+	if len(r.ProjectIDs) > 0 && !r.ProjectAssets[id] {
+		return false
+	}
 	if len(r.TeamIDs) > 0 && !teamIn(r.TeamIDs, team) {
 		return false
 	}
@@ -97,7 +124,7 @@ func issueInScope(r store.Route, c store.IssueCount) bool {
 	if len(r.Kinds) > 0 && !contains(r.Kinds, c.Kind) {
 		return false
 	}
-	return assetInScope(r, c.Environment, c.OwnerTeamID)
+	return assetInScope(r, c.AssetID, c.Environment, c.OwnerTeamID)
 }
 
 // assetsWanted: routes limited to system problems or SOS get no asset news.
@@ -744,7 +771,7 @@ func (d *Dispatcher) summaryMessage(r store.Route, data *summaryData, from, to t
 	var conn []store.NewAsset
 	if assetsWanted(r) {
 		for _, a := range connected {
-			if assetInScope(r, a.Environment, a.OwnerTeamID) {
+			if assetInScope(r, a.ID, a.Environment, a.OwnerTeamID) {
 				conn = append(conn, a)
 			}
 		}
@@ -806,7 +833,7 @@ func (d *Dispatcher) summaryMessage(r store.Route, data *summaryData, from, to t
 	// The top fixes still open, for this route's assets.
 	var open []store.FixInfo
 	for _, f := range data.fixes {
-		if assetInScope(r, f.Environment, f.OwnerTeamID) && (!r.SOSOnly || f.SOS) {
+		if assetInScope(r, f.AssetID, f.Environment, f.OwnerTeamID) && (!r.SOSOnly || f.SOS) {
 			open = append(open, f)
 		}
 	}

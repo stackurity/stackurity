@@ -120,7 +120,7 @@ export function CheckAgain({
   fixGroup?: string;
   onChanged?: () => void;
 }) {
-  const { can } = useAuth();
+  const { canAct: can } = useAuth();
   const act = useAction();
   const scope = fixGroup ? { fix_group: fixGroup } : { asset_id: asset?.id };
   const last = useLoad(

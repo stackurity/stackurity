@@ -6,6 +6,10 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+### Security
+
+- **Access can be limited to projects, and the database enforces it.** A person or team given a role on a project sees only that project's assets and what hangs off them, in every page, API route, search, report, export, audit view and assistant (MCP) tool. Row-level security narrows every asset-bound table for them (migration `0032`), as it already isolates workspaces, so a query that forgets a filter still cannot return another project's rows. Organisation routes (users, teams, integrations, notifications, jobs, secrets, remediation plans and policies, ingest) refuse them, and every route must declare its project scope or it is refused too. Their tokens act as them. Checks, ignore rules and ignore requests follow their assets; ignoring an issue on every asset, approving such a request or ending such a rule needs an organisation-wide security or admin role. See `docs/design/projects.md`.
+
 ### Added
 
 - **Check again, and know the result.** A **Check again** button on fix pages and asset pages asks for fresh evidence: the agent on a host reports within about a minute, a Git repository connected under **Integrations** is scanned again on the server, and a repository scanned in CI shows its `stackurity scan` command. The fix page then says **Passed** (all its issues are gone), **Partly fixed** (how many are left, linked) or **Still open**, with the date and who asked; a whole-asset check also counts new issues. Each check is recorded (requested by, requested at, asset, fix or whole asset, the report that answered it, completed at, outcome and counts), listed under **Activity ▸ Checks**, and expires after 7 days without a report. `POST /fix-groups/{id}/check`, `POST /assets/{id}/check`, `GET /checks`, `GET /checks/{id}`. A fix whose issues are all gone shows its last check instead of "not found".
@@ -17,17 +21,30 @@ Each release's section is published as its GitHub release notes, and a tag witho
 - **Approval inbox.** Engineers and viewers, who may not snooze or ignore, can **Ask to ignore** an issue, a selection or a fix (`POST /ignore-requests`). Security and admin users approve or decline in **Settings ▸ Approvals** (also under **Activity**), with a count on **Settings**; the request records who asked, why, the scope and the expiry, and decisions are in the audit log (`ignore_request.create`, `ignore_request.approve`, `ignore_request.decline`).
 - **Seven states.** Issues show one of New, To do, In progress, Fixed, Regressed, Snoozed and Accepted (`display_state` on every finding). The stored `status` and `state` values are unchanged; see `docs/api.md`, "The seven states".
 - **Urgent messages and summaries include issues that came back.** They are urgent whatever their priority: the next urgent message says "web-1: 3 issues came back after a fix", once, and summaries have a **Came back after a fix** section (`counts.regressed`). There is still no message per incident.
+- **Projects.** An organisation groups its assets into projects, such as a site, a client or a product; one asset can be in several, such as a database two sites share. **Settings ▸ Projects and access** (admins) creates, renames and archives projects, adds and removes assets, and gives people (by email; someone new joins with access to that project only) or teams a role on a project. A role on one asset covers the rare server one contractor looks after. Every change is in the audit log (`project.*`, `access.grant`, `access.change`, `access.revoke`).
+- **Roles per project.** The organisation-wide roles still exist; a role on a project means the same for that project's assets only, and acts per asset: an organisation viewer with engineer on one project can acknowledge and assign that project's issues and only view the rest. A team's grant applies to everyone in the team, including people who join later. **Settings ▸ Users** can make someone **projects only** (`role: none`).
+- **A project switcher** next to the workspace: **All projects**, then each project. The choice scopes Home, Fixes, Assets and Activity, is kept in the address (`?project=`) and remembered per person (`PUT /auth/default-project`). On phones it takes the workspace's place in the top bar. API clients send `project_id` or `X-Stackurity-Project`.
+- **Assets in no project** are seen by organisation-wide roles only; Home says how many there are and links to them (`GET /assets?unfiled=true`), and the asset list shows each asset's projects.
+- **Suggested groupings** on the Projects page, from what Stackurity knows about how assets relate (an application runs on a host, is built from a repository): add related assets to their neighbours' project, or create a project for a related group. Nothing changes until an admin accepts.
+- **Notifications per project.** A route can be limited to projects (`project_ids`): its urgent alerts, summaries, overdue alerts and "connected" messages count and name only those projects' assets, so a client's channel hears about their project only. Not available for Jira routes yet.
+- **The evidence report and exports per project**: they follow the switcher (`GET /reports/evidence?project_id=`).
 
 ### Changed
 
 - **Accept risk** is called **Ignore** in the dashboard, and accepted issues show their reason. `accept_risk` still works and records the reason `accepted_risk`.
 - The fix and asset pages' "how to check again" text is replaced by the **Check again** block.
+- **Incidents that span projects** show each member with project access only the part they can see: counts, asset and component names, priority and title come from their findings, and an incident action changes only their findings.
+- `GET /auth/me` returns `access` (`organisation` or `projects`), `project_role`, `projects` and `default_project_id`; for a member with project access only `role` is empty. Users and memberships carry `access`.
 
 ### Upgrading
 
 - Migration `0031` adds nullable or constant-default columns to `findings` (`regressed_at`, `regressed_notified_at`, `until_fix`, `ignore_reason`, `exception_id`, `verification_before`) and `assets` (`agent_polled_at`), so the table is not rewritten, and two indexes on `findings` (`findings_identity`, `findings_open_regressed`): on a workspace with 130,000 findings they take a few seconds and lock writes to findings meanwhile. It creates `finding_exceptions`, `ignore_requests` and `checks`, each with row-level security per workspace.
 - Existing snoozes and risk acceptances keep their dates and behave as before; acceptances made before 0.7 show no reason. Issues fixed before the upgrade can be flagged regressed when they come back.
 - Upgrade agents to 0.7 for Check again within a minute. Older agents keep working and report on their interval.
+- Migration `0032` adds `projects`, `project_assets` and `access_grants`, makes `workspace_members.role` nullable, and adds `workspace_members.default_project_id` and `routes.project_ids`. It replaces the row-level security policies of the asset-bound tables; it rewrites no rows and takes seconds even with 130,000 findings. Nothing changes for existing members until projects and grants are created: everyone keeps their organisation-wide role.
+- Measured on 130,000 open findings, the findings list takes the same time for organisation-wide roles as in 0.6 (58 ms against 51 ms on the same data) and 76 to 77 ms for members of a project (88 ms with a project chosen) (see `docs/design/projects.md`, "Performance").
+- Do not roll back to an earlier release after giving someone project access only: earlier releases cannot read a membership without a role. Remove such members, or restore the pre-upgrade backup.
+- Single sign-on role mapping does not change members with project access only.
 
 ## 0.6.0
 

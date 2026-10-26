@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { api, ASSET_KINDS, ASSET_STATUSES, type Asset, type List, type Team } from "../api";
 import { useAuth } from "../auth";
+import { useProject } from "../project";
 import { useDebounced, useFacets, useLoad } from "../hooks";
 import { assetKindLabel } from "../format";
 import { AssetKindBadge, Badge, ExposureBadge, RebootBadge } from "../components/Badge";
@@ -13,7 +14,9 @@ const LIMIT = 50;
 
 export function AssetsPage() {
   const [params, setParams] = useSearchParams();
-  const { can } = useAuth();
+  const { can, projectOnly } = useAuth();
+  const { projects, project } = useProject();
+  const unfiled = params.get("unfiled") === "true";
   const kind = params.get("kind") ?? "";
   const environment = params.get("environment") ?? "";
   const status = params.get("status") ?? "";
@@ -43,7 +46,8 @@ export function AssetsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dq]);
 
-  const teams = useLoad(() => api.get<List<Team>>("/teams"), []);
+  // Teams belong to the organisation; people with project access only filter without them.
+  const teams = useLoad(() => (projectOnly ? Promise.resolve(null) : api.get<List<Team>>("/teams")), [projectOnly]);
   const res = useLoad(
     () => api.get<List<Asset>>("/assets", {
         kind,
@@ -53,13 +57,14 @@ export function AssetsPage() {
         q: qParam,
         reboot_required: reboot ? "true" : undefined,
         exposed: exposed || undefined,
+        unfiled: unfiled ? "true" : undefined,
         limit: LIMIT,
         offset,
       }),
-    [kind, environment, status, team, qParam, reboot, exposed, offset],
+    [kind, environment, status, team, qParam, reboot, exposed, unfiled, offset],
   );
 
-  const filtered = Boolean(kind || environment || status || team || qParam || reboot || exposed);
+  const filtered = Boolean(kind || environment || status || team || qParam || reboot || exposed || unfiled);
 
   const columns: Column<Asset>[] = [
     {
@@ -102,6 +107,26 @@ export function AssetsPage() {
     { key: "kind", header: "Kind", cell: (a) => <AssetKindBadge kind={a.kind} /> },
     { key: "env", header: "Environment", cell: (a) => a.environment || <span className="muted">—</span> },
     { key: "team", header: "Owner team", cell: (a) => a.owner_team || <span className="muted">unassigned</span> },
+    ...(projects.length > 0
+      ? [
+          {
+            key: "projects",
+            header: "Projects",
+            cell: (a: Asset) =>
+              a.projects?.length ? (
+                <span className="project-chips">
+                  {a.projects.map((p) => (
+                    <span key={p.id} className="project-chip">
+                      {p.name}
+                    </span>
+                  ))}
+                </span>
+              ) : (
+                <span className="muted">none</span>
+              ),
+          },
+        ]
+      : []),
     { key: "count", header: "Components", numeric: true, cell: (a) => a.component_count.toLocaleString() },
     { key: "status", header: "Status", cell: (a) => <Badge status={a.collection_status} /> },
     { key: "seen", header: "Last seen", cell: (a) => <RelativeTime iso={a.last_seen} /> },
@@ -112,7 +137,11 @@ export function AssetsPage() {
       <PageHeader
         help="assets"
         title="Assets"
-        sub="Hosts, repositories, images, applications and Kubernetes workloads Stackurity has inventoried."
+        sub={
+          project
+            ? `The assets of ${project.name}. Choose All projects at the top to see the others.`
+            : "Hosts, repositories, images, applications and Kubernetes workloads Stackurity has inventoried."
+        }
         actions={
           can("admin") && (
             <Link className="btn btn-primary" to="/assets/add">
@@ -163,18 +192,20 @@ export function AssetsPage() {
             ))}
           </select>
         </div>
-        <div className="field">
-          <label htmlFor="f-team">Owner team</label>
-          <select id="f-team" value={team} onChange={(e) => update({ owner_team_id: e.target.value })}>
-            <option value="">Any team</option>
-            {team && !teams.data?.items.some((t) => String(t.id) === team) && <option value={team}>team #{team}</option>}
-            {teams.data?.items.map((t) => (
-              <option key={t.id} value={String(t.id)}>
-                {t.name}
-              </option>
-            ))}
-          </select>
-        </div>
+        {!projectOnly && (
+          <div className="field">
+            <label htmlFor="f-team">Owner team</label>
+            <select id="f-team" value={team} onChange={(e) => update({ owner_team_id: e.target.value })}>
+              <option value="">Any team</option>
+              {team && !teams.data?.items.some((t) => String(t.id) === team) && <option value={team}>team #{team}</option>}
+              {teams.data?.items.map((t) => (
+                <option key={t.id} value={String(t.id)}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <div className="field">
           <label htmlFor="f-exposed">Exposure</label>
           <select id="f-exposed" value={exposed} onChange={(e) => update({ exposed: e.target.value })}>
@@ -187,6 +218,11 @@ export function AssetsPage() {
           <input type="checkbox" checked={reboot} onChange={(e) => update({ reboot_required: e.target.checked ? "true" : "" })} /> Reboot
           pending
         </label>
+        {!projectOnly && projects.length > 0 && !project && (
+          <label className="check">
+            <input type="checkbox" checked={unfiled} onChange={(e) => update({ unfiled: e.target.checked ? "true" : "" })} /> Not in a project
+          </label>
+        )}
         {filtered && (
           <button
             type="button"

@@ -15,6 +15,7 @@ import {
   type List,
   type Route,
   type RouteMode,
+  type Project,
   type Team,
 } from "../../api";
 import { useAuth } from "../../auth";
@@ -489,10 +490,13 @@ function summarizeList(xs: (string | number)[] | null | undefined, all: string, 
 function RoutesTab({ channels, admin }: { channels: Channel[]; admin: boolean }) {
   const res = useLoad(() => api.get<List<Route>>("/routes"), []);
   const teams = useLoad(() => api.get<List<Team>>("/teams"), []);
+  const projects = useLoad(() => api.getAll<List<Project>>("/projects"), []);
   const act = useAction();
   const [editing, setEditing] = useState<number | "new" | null>(null);
   const chName = (id: number) => channels.find((c) => c.id === id)?.name ?? `channel #${id}`;
   const teamName = (id: string | number) => teams.data?.items.find((t) => t.id === Number(id))?.name ?? `team #${id}`;
+  const projectList = projects.data?.items ?? [];
+  const projectName = (id: string | number) => projectList.find((p) => p.id === Number(id))?.name ?? `project #${id}`;
 
   const toggle = async (r: Route) => {
     const ok = await act.run(() => api.put<Route>(`/routes/${r.id}`, routeBody({ ...r, enabled: !r.enabled })));
@@ -520,6 +524,12 @@ function RoutesTab({ channels, admin }: { channels: Channel[]; admin: boolean })
           <br />
           <span className="muted">envs:</span> {summarizeList(r.environments, "all")} · <span className="muted">teams:</span>{" "}
           {summarizeList(r.team_ids, "all", teamName)}
+          {(r.project_ids?.length ?? 0) > 0 && (
+            <>
+              <br />
+              <span className="muted">projects:</span> {summarizeList(r.project_ids, "all", projectName)}
+            </>
+          )}
         </span>
       ),
     },
@@ -581,7 +591,7 @@ function RoutesTab({ channels, admin }: { channels: Channel[]; admin: boolean })
           {channels.length === 0 && <span className="muted small"> Create a channel first.</span>}
         </p>
       )}
-      {editing === "new" && <RouteForm channels={channels} teams={teamList} onCancel={() => setEditing(null)} onSaved={done} />}
+      {editing === "new" && <RouteForm channels={channels} teams={teamList} projects={projectList} onCancel={() => setEditing(null)} onSaved={done} />}
       <ErrorBox error={act.error} title="Action failed" />
       <ErrorBox error={res.error} title="Could not load routes" />
       {!res.data && !res.error && <Loading />}
@@ -597,7 +607,9 @@ function RoutesTab({ channels, admin }: { channels: Channel[]; admin: boolean })
           rows={res.data.items}
           rowKey={(r) => r.id}
           selectedKey={typeof editing === "number" ? editing : null}
-          renderExpanded={(r) => <RouteForm route={r} channels={channels} teams={teamList} onCancel={() => setEditing(null)} onSaved={done} />}
+          renderExpanded={(r) => (
+            <RouteForm route={r} channels={channels} teams={teamList} projects={projectList} onCancel={() => setEditing(null)} onSaved={done} />
+          )}
           rowClassName={(r) => (!r.enabled ? "row-removed" : undefined)}
         />
       )}
@@ -611,7 +623,7 @@ function routeBody(r: Route) {
   void _id;
   void _c;
   void _l;
-  return { ...rest, kinds: rest.kinds ?? [], environments: rest.environments ?? [], team_ids: rest.team_ids ?? [] };
+  return { ...rest, kinds: rest.kinds ?? [], environments: rest.environments ?? [], team_ids: rest.team_ids ?? [], project_ids: rest.project_ids ?? [] };
 }
 
 function CheckGroup<T extends string | number>({
@@ -654,12 +666,14 @@ function RouteForm({
   route,
   channels,
   teams,
+  projects,
   onCancel,
   onSaved,
 }: {
   route?: Route;
   channels: Channel[];
   teams: Team[];
+  projects: Project[];
   onCancel: () => void;
   onSaved: () => void;
 }) {
@@ -675,6 +689,7 @@ function RouteForm({
       kinds: [],
       environments: [],
       team_ids: [],
+      project_ids: [],
       escalation: false,
       send_resolved: true,
       quiet_start: "",
@@ -796,6 +811,19 @@ function RouteForm({
         label={(id) => teams.find((t) => t.id === id)?.name ?? `team #${id}`}
         hint="None ticked = all teams, including unowned incidents."
       />
+      {projects.length > 0 &&
+        (channels.find((c) => c.id === r.channel_id)?.kind === "jira" ? (
+          <p className="hint">Routes to Jira cannot be limited to projects yet: a Jira issue describes the whole incident.</p>
+        ) : (
+          <CheckGroup
+            legend="Projects"
+            options={projects.map((p) => p.id)}
+            value={r.project_ids ?? []}
+            onChange={(v) => set("project_ids", v)}
+            label={(id) => projects.find((p) => p.id === id)?.name ?? `project #${id}`}
+            hint="None ticked = every asset. Ticked: messages name only these projects' assets, so you can send them to a client."
+          />
+        ))}
       <fieldset className="field">
         <legend>Summary and quiet hours</legend>
         <div className="form-grid">

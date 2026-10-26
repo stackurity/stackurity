@@ -70,15 +70,19 @@ func Configure(cfg *pgxpool.Config) {
 		return err
 	}
 	cfg.PrepareConn = func(ctx context.Context, c *pgx.Conn) (bool, error) {
-		scope, ws := tenant.Settings(ctx)
-		want := scope + "/" + ws
+		scope, ws, member, project := tenant.AllSettings(ctx)
+		want := scope + "/" + ws + "/" + member + "/" + project
 		mu.Lock()
 		have, ok := current[c]
 		mu.Unlock()
 		if ok && have == want {
 			return true, nil
 		}
-		if _, err := c.Exec(ctx, `SELECT set_config('stackurity.scope', $1, false), set_config('stackurity.workspace_id', $2, false)`, scope, ws); err != nil {
+		// stackurity.member and stackurity.project narrow a workspace scope
+		// to some of its assets (migration 0032). All four are set together,
+		// so a connection never keeps a previous caller's narrowing.
+		if _, err := c.Exec(ctx, `SELECT set_config('stackurity.scope', $1, false), set_config('stackurity.workspace_id', $2, false),
+			set_config('stackurity.member', $3, false), set_config('stackurity.project', $4, false)`, scope, ws, member, project); err != nil {
 			return false, err
 		}
 		mu.Lock()

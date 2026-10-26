@@ -723,6 +723,9 @@ func (s *Store) ListIncidents(ctx context.Context, f IncidentFilter) ([]Incident
 	if err != nil {
 		return nil, 0, err
 	}
+	if err := s.narrowIncidents(ctx, out); err != nil {
+		return nil, 0, err
+	}
 	ids := make([]int64, len(out))
 	for i := range out {
 		ids[i] = out[i].ID
@@ -746,6 +749,11 @@ func (s *Store) GetIncident(ctx context.Context, id int64) (*Incident, error) {
 	if err != nil {
 		return nil, notFound(err)
 	}
+	one := []Incident{*in}
+	if err := s.narrowIncidents(ctx, one); err != nil {
+		return nil, err
+	}
+	in = &one[0]
 	refs, err := s.issueRefs(ctx, []int64{id})
 	if err != nil {
 		return nil, err

@@ -242,7 +242,7 @@ const DETAIL_LIMIT = 50;
 export function FixGroupDetailPage() {
   const { id = "" } = useParams();
   const { hash } = useLocation();
-  const { can } = useAuth();
+  const { canAct } = useAuth();
   const [offset, setOffset] = useState(0);
   useEffect(() => setOffset(0), [id]);
   const res = useLoad(
@@ -416,7 +416,7 @@ export function FixGroupDetailPage() {
       )}
 
       <section id="fix-act" className="card fix-act" aria-labelledby="fix-act-h">
-        <h2 id="fix-act-h">{can("security") ? "Assign, snooze or ignore" : "Assign or ask to ignore"}</h2>
+        <h2 id="fix-act-h">{canAct("security") ? "Assign, snooze or ignore" : "Assign or ask to ignore"}</h2>
         {g.finding_count > GROUP_ACTION_MAX ? (
           <p className="small">
             This fix has {g.finding_count.toLocaleString()} issues, more than can be changed at once here ({GROUP_ACTION_MAX.toLocaleString()}).

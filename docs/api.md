@@ -13,6 +13,16 @@ Base path: `/api/v1`. Requests and responses are JSON. Errors look like this:
 
 Roles, from least to most access: `viewer` (read, including the audit log; ask to ignore issues), `engineer` (edit assets, trigger scans, check again; ask to ignore issues), `security` (snooze, ignore and risk acceptance, deciding ignore requests, notification channels and routes, remediation policies, plan approval), `admin` (users, teams, tokens, integrations, conflicts, deletion).
 
+## Projects and access
+
+A workspace (shown as the organisation in the dashboard) groups its assets into **projects**; one asset can be in several. The roles above apply either to the whole workspace (organisation-wide) or, through **access grants**, to chosen projects or single assets only. See [docs/design/projects.md](design/projects.md).
+
+- **Members with project access only** (`GET /auth/me` returns `"access": "projects"` and an empty `role`) see only the assets of their projects and asset grants, and everything that hangs off them: findings, fix groups, incidents (their counts, names and priority recomputed from what they can see), components and their counts, search hits, reports, audit events about those objects, and exports. Routes for organisation data (users, teams, integrations, channels, routes, deliveries, jobs, secrets, enrollments, remediation plans and policies, ingest) answer 403. The database enforces this with row-level security, not only the API.
+- **Roles from grants act per asset.** `GET /auth/me` returns `project_role`, the highest role from any grant. A change (`PATCH /assets/{id}`, relations, finding and incident actions) needs that role on each asset it touches; otherwise 403. An organisation-wide viewer with `engineer` on one project can act on that project's findings only.
+- **Choosing a project.** Send `X-Stackurity-Project: <id>` (the dashboard does) or `?project_id=<id>` on any request; `0` or nothing means all projects. Project-scoped routes (the reading routes above, `GET /reports/evidence`, `GET /assets/{id}/sbom`, search, audit) then return only that project's assets and what hangs off them; other routes ignore it. A project the caller cannot see answers 404, a value that is not a number 400.
+- **Checks, ignore rules and requests** follow their assets. Ignoring an issue on every asset (`scope: everywhere`), approving such a request and ending such a rule need an organisation-wide `security` or `admin` role (403 otherwise). With `security` through a project grant, `GET /ignore-requests` lists the caller's own requests and those whose issues are all on assets where they hold it (`can_decide` is true), and they decide only those.
+- **Tokens** of a member with project access only act as that member, never above their highest grant. Collector and host-bound agent tokens belong to the workspace and are not limited by projects.
+
 ## Endpoints
 
 | Method & path | Role | Purpose |
@@ -30,7 +40,7 @@ Roles, from least to most access: `viewer` (read, including the audit log; ask t
 | `GET /collections/{id}/result` | collector (own submissions), engineer+ | Whether a submitted collection has been evaluated (`status`: `pending`, `scoring` (matched, findings not prioritised yet), `evaluated` (matched and prioritised), `failed`), then the asset's open findings and its count of `evaluation_gaps`. Used by `stackurity scan --fail-on` |
 | `GET /overview` | viewer | Inventory, coverage and status counts, including assets by coverage state (`asset_coverage`) and components by row coverage (`component_coverage`) |
 | `GET /search?q=&limit=` | viewer | Global search of the current workspace, see [Search](#search) |
-| `GET /assets?kind=&environment=&status=&owner_team_id=&q=&reboot_required=true&exposed=` | viewer | List assets. `reboot_required=true` lists hosts that run older code than is installed. `exposed=true` or `false` filters by `exposed`, the exposure risk scoring uses: `internet_exposed` when set by hand, else what a collector observed (a Kubernetes workload's `exposure`, or for an image the workloads deployed as it) |
+| `GET /assets?kind=&environment=&status=&owner_team_id=&q=&reboot_required=true&exposed=&unfiled=true` | viewer | List assets. `reboot_required=true` lists hosts that run older code than is installed. `exposed=true` or `false` filters by `exposed`, the exposure risk scoring uses: `internet_exposed` when set by hand, else what a collector observed (a Kubernetes workload's `exposure`, or for an image the workloads deployed as it). `unfiled=true` lists the assets in no active project. Each asset has `projects`, the active projects it is in that the caller can see |
 | `GET /assets/{id}` | viewer | Asset and identifiers |
 | `PATCH /assets/{id}` | engineer | Set name, environment, owner, criticality, exposure, tags |
 | `DELETE /assets/{id}` | admin | Delete an asset and its history |
@@ -49,9 +59,19 @@ Roles, from least to most access: `viewer` (read, including the audit log; ask t
 | `GET /reports/outcomes?days=` | viewer | [Remediation outcomes](#remediation-outcomes) over the last `days` (1 to 365, default 90) |
 | `GET /audit?object_type=&object_id=` | viewer | Audit events |
 | `GET`/`POST /tokens`, `DELETE /tokens/{id}` | any user | Personal tokens (admins: all tokens and collector tokens) |
+| `PUT /auth/default-project` | any signed-in user | `{"project_id": N}` (0: all projects): the project the dashboard opens with. `GET /auth/me` returns it as `default_project_id`, with `projects` (the projects the caller can choose), `access` and `project_role` |
+| `GET /projects?archived=true` | viewer, or any grant | Projects the caller can see (members with project access only: theirs, each with their `role`), with `asset_count`; organisation-wide callers also get `unfiled_assets`, the assets in no active project. `archived=true` (admins) includes archived projects |
+| `GET /projects/{id}` | viewer, or a grant on it | A project; for admins also its `grants` |
+| `POST /projects` | admin | `{"name", "description", "asset_ids"}` |
+| `PATCH /projects/{id}` | admin | `name`, `description`, `archived` (true archives: grants on it stop giving access and routes limited to it stop matching; false restores) |
+| `POST`/`DELETE /projects/{id}/assets` | admin | `{"asset_ids": [...]}` (1 to 5000): add or remove assets; returns `changed` |
+| `GET /access-grants?project_id=&asset_id=&user_id=&team_id=` | admin | Access grants, with project, asset, person and team names |
+| `POST /access-grants` | admin | `{"project_id" or "asset_id", "user_id" or "team_id" or "email", "role"}`. With `email`, someone who is not a member joins with no organisation-wide role (an account is created with `password` when there is none; `account_created` says so). A grant that exists for the same person or team and project or asset has its role changed (200); a new one is 201 |
+| `PATCH`/`DELETE /access-grants/{id}` | admin | Change a grant's `role`, or remove it. Takes effect on the next request |
+| `GET /project-suggestions`, `POST /project-suggestions/dismiss` | admin | Groupings proposed from `runs_on`, `built_from` and `deployed_as` relations: assets in no project related to a project's assets (`project_id`), or related assets all in no project (`suggested_name`). Nothing changes until someone adds the assets; `{"key"}` hides one until its assets change |
 | `GET /teams` | viewer | Teams |
 | `POST`/`PATCH`/`DELETE /teams/{id}` | admin | Manage teams and members (members must belong to the workspace) |
-| `GET`/`POST /users`, `PATCH /users/{id}` | admin | Manage users |
+| `GET`/`POST /users`, `PATCH /users/{id}` | admin | Manage users. `role` `none` keeps someone a member with no organisation-wide role (access through projects only); each user has `access`: `organisation` or `projects` |
 | `GET /integrations`, `POST /integrations/{id}/run` | engineer | List integrations, trigger a run |
 | `POST`/`PATCH`/`DELETE /integrations/{id}` | admin | Manage integrations |
 | `GET /conflicts`, `POST /conflicts/{id}/resolve` | admin | Resolve asset identity conflicts by merging assets |
@@ -97,9 +117,9 @@ Roles, from least to most access: `viewer` (read, including the audit log; ask t
 | `POST /risk-policy/preview` | admin | Validates a proposed policy like `PUT` and returns its effect on the workspace's open findings without saving anything: `before` / `after` counts per priority, `sos_before` / `sos_after`, `priority_changed` (`raised`, `lowered`), `sos_changed`, `score_changed`, `stored_differs`, and `sample` (at most `sample_limit`, 50) of changed findings with factor deltas ([risk.md](risk.md#reproducibility-and-audit)) |
 | `GET /channels`, `GET /routes`, `GET /deliveries?status=&incident_id=` | security | Notification configuration and delivery log |
 | `POST`/`PATCH`/`DELETE /channels/{id}`, `POST /channels/{id}/test` | admin | Email, Slack, Teams, webhook and Jira channels; for Jira, test checks access without creating an issue |
-| `POST /routes`, `PUT`/`DELETE /routes/{id}` | admin | Which incidents go to which channel |
+| `POST /routes`, `PUT`/`DELETE /routes/{id}` | admin | Which incidents go to which channel. `project_ids` limits a route to those projects' assets: its messages count and name only them, and only their collection and coverage problems. Not available for Jira channels (400) |
 | `POST /deliveries/{id}/retry` | admin | Retry a failed or held delivery |
-| `GET /users/directory` | engineer | Active users (id, email, name) for assignment |
+| `GET /users/directory` | engineer | Active users (id, email, name) for assignment. Members with project access only get themselves and the people granted one of their projects |
 | `GET /remediation/policies` | security | Remediation policies |
 | `POST /remediation/policies`, `PUT`/`DELETE /remediation/policies/{id}` | admin | Manage policies ([remediation.md](remediation.md)) |
 | `POST /remediation/policies/preview?id=` | admin | Which fixable packages and assets a proposed policy would authorise or stop authorising, without saving ([remediation.md](remediation.md#previewing-a-policy-change)) |

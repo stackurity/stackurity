@@ -164,7 +164,8 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 func (s *Server) listAssets(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	f := store.AssetFilter{Kind: q.Get("kind"), Environment: q.Get("environment"), OwnerTeamID: qInt(r, "owner_team_id"),
-		Status: q.Get("status"), Search: q.Get("q"), RebootRequired: q.Get("reboot_required") == "true", Page: page(r)}
+		Status: q.Get("status"), Search: q.Get("q"), RebootRequired: q.Get("reboot_required") == "true",
+		Unfiled: q.Get("unfiled") == "true", Page: page(r)}
 	switch q.Get("exposed") {
 	case "true", "false":
 		v := q.Get("exposed") == "true"
@@ -218,6 +219,13 @@ func (s *Server) updateAsset(w http.ResponseWriter, r *http.Request) {
 	}
 	if u.Name != nil && strings.TrimSpace(*u.Name) == "" {
 		s.fail(w, r, badRequest("name cannot be empty"))
+		return
+	}
+	if _, err := s.Store.GetAsset(r.Context(), id); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if !s.requireOn(w, r, auth.RoleEngineer, id) {
 		return
 	}
 	if err := s.Store.UpdateAsset(r.Context(), id, u); err != nil {
@@ -377,6 +385,9 @@ func (s *Server) addRelation(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if !s.requireOn(w, r, auth.RoleEngineer, id, req.ToAsset) {
+		return
+	}
 	if err := s.Store.AddRelation(r.Context(), id, req.ToAsset, req.Kind, "manual"); err != nil {
 		s.fail(w, r, err)
 		return
@@ -395,6 +406,17 @@ func (s *Server) deleteRelation(w http.ResponseWriter, r *http.Request) {
 	if err := decode(r, &req); err != nil {
 		s.fail(w, r, err)
 		return
+	}
+	if !principal(r).Role.AtLeast(auth.RoleEngineer) {
+		for _, a := range []int64{id, req.ToAsset} {
+			if _, err := s.Store.GetAsset(r.Context(), a); err != nil {
+				s.fail(w, r, err)
+				return
+			}
+		}
+		if !s.requireOn(w, r, auth.RoleEngineer, id, req.ToAsset) {
+			return
+		}
 	}
 	if err := s.Store.DeleteRelation(r.Context(), id, req.ToAsset, req.Kind); err != nil {
 		s.fail(w, r, err)

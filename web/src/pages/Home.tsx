@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { api, type Asset, type FindingSummary, type FixGroup, type FixGroupSummary, type List, type Overview } from "../api";
 import { useAuth } from "../auth";
+import { useProject } from "../project";
 import { useLoad } from "../hooks";
 import { plural } from "../format";
 import { Badge } from "../components/Badge";
@@ -29,7 +30,7 @@ function Tile({ to, value, label, tone, sub }: { to: string; value: number; labe
 }
 
 function HomeFixCard({ g }: { g: FixGroup }) {
-  const { can } = useAuth();
+  const { canAct: can } = useAuth();
   const u = urgencyOf(g);
   const href = `/fixes/${encodeURIComponent(g.id)}`;
   return (
@@ -76,8 +77,34 @@ function HomeFixCard({ g }: { g: FixGroup }) {
 }
 
 /** Home: what needs you now, and what is left out and why. */
+/**
+ * Assets in no project are seen only by organisation-wide roles: ask them
+ * to file the assets, once the workspace uses projects.
+ */
+function UnfiledAssets() {
+  const { can, projectOnly } = useAuth();
+  const { projects } = useProject();
+  const res = useLoad(
+    () => (projectOnly || projects.length === 0 ? Promise.resolve(null) : api.getAll<{ unfiled_assets?: number }>("/projects")),
+    [projectOnly, projects.length],
+  );
+  const n = res.data?.unfiled_assets ?? 0;
+  if (n === 0) return null;
+  return (
+    <div className="alert alert-info home-unfiled" role="status">
+      <span>
+        <strong>{plural(n, "asset")} {n === 1 ? "is" : "are"} not in a project.</strong> Only people with an organisation-wide role see{" "}
+        {n === 1 ? "it" : "them"}.
+      </span>
+      <Link to="/assets?unfiled=true&project=0">Show {n === 1 ? "it" : "them"}</Link>
+      {can("admin") && <Link to="/settings/projects">File them in projects</Link>}
+    </div>
+  );
+}
+
 export function HomePage() {
   const { me } = useAuth();
+  const { project } = useProject();
   const ov = useLoad(() => api.get<Overview>("/overview"), []);
   const plan = useLoad(() => api.get<FixGroupSummary>("/fix-groups/summary"), []);
   const top = useLoad(() => api.get<List<FixGroup>>("/fix-groups", { bucket: "focus", limit: TOP }), []);
@@ -88,7 +115,7 @@ export function HomePage() {
   if (!ov.data) return <Loading />;
   const o = ov.data;
   const totalAssets = sum(o.assets);
-  const workspace = me?.workspace?.name ?? "";
+  const workspace = [me?.workspace?.name, project?.name].filter(Boolean).join(" · ");
 
   if (totalAssets === 0) {
     return (
@@ -145,6 +172,7 @@ export function HomePage() {
   return (
     <>
       <PackSuggestions />
+      <UnfiledAssets />
       <header className="home-head">
         <h1>
           {plan.data ? (n === 0 ? "Nothing urgent needs you" : `${plural(n, "fix", "fixes")} ${n === 1 ? "needs" : "need"} you`) : "Home"}

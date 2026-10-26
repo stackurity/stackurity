@@ -26,7 +26,7 @@ Out of scope here: self-service sign-up, billing, per-workspace quotas, data res
 | Component catalogue: `components`, `package_releases`, `evaluation_gaps` | global, filtered | Purls can reveal private package names, so rows are visible only when the current workspace's inventory references them (see RLS) |
 | Everything else: assets, identifiers, relations, conflicts, collections, inventory, coverage, findings, finding events, incidents, teams, team members, channels, routes, deliveries, integrations, API tokens, enrollments, remediation policies, plans and actions, fix groups, settings, audit events | workspace | `workspace_id bigint NOT NULL REFERENCES workspaces` |
 
-Roles (`viewer`, `engineer`, `security`, `admin`, `collector`) keep their meaning but now apply within one workspace. `instance_admin` is separate: it manages workspaces and installation-wide settings and does not by itself grant access to a workspace's data.
+Roles (`viewer`, `engineer`, `security`, `admin`, `collector`) keep their meaning but now apply within one workspace. Since 0.8 they can also be granted on chosen projects or single assets only, and the workspace scope can be narrowed to them; see [projects.md](projects.md). `instance_admin` is separate: it manages workspaces and installation-wide settings and does not by itself grant access to a workspace's data.
 
 ## Isolation: two locks
 

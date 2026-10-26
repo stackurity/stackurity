@@ -138,7 +138,7 @@ function Requests({ status }: { status: "pending" | "all" }) {
 }
 
 function Rules() {
-  const { can } = useAuth();
+  const { canAct: can, can: orgCan } = useAuth();
   const [all, setAll] = useState(false);
   const [offset, setOffset] = useState(0);
   const act = useAction();
@@ -202,7 +202,7 @@ function Rules() {
                   </>
                 )}
               </p>
-              {can("security") && !r.ended_at && (
+              {(r.scope === "everywhere" ? orgCan("security") : can("security")) && !r.ended_at && (
                 <div className="approval-actions">
                   <button type="button" className="btn btn-sm" disabled={act.pending} onClick={() => end(r)}>
                     End rule

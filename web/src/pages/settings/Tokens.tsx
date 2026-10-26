@@ -91,7 +91,7 @@ export function TokensPage() {
       )}
       {me?.user && me.token === null && (
         <CreateToken
-          role={me.role}
+          role={highest(me.role, me.project_role)}
           admin={admin}
           onCreated={(c) => {
             setCreated(c);
@@ -111,6 +111,12 @@ export function TokensPage() {
       {rows.length > 0 && <Table caption="API tokens" columns={columns} rows={rows} rowKey={(t) => t.id} rowClassName={(t) => (t.revoked_at ? "row-removed" : undefined)} />}
     </>
   );
+}
+
+/** The higher of the organisation role and the project role: a token never acts above it, and the server checks each asset. */
+function highest(org: Role | "", project: Role | "" | undefined): Role {
+  if (org && project) return atLeast(org, project as Exclude<Role, "collector">) ? org : project;
+  return (org || project || "viewer") as Role;
 }
 
 function CreateToken({ role, admin, onCreated }: { role: Role; admin: boolean; onCreated: (c: { token: Token; secret: string }) => void }) {
