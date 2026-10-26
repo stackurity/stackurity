@@ -33,6 +33,12 @@ func (s *Server) listFindings(w http.ResponseWriter, r *http.Request) {
 	f.FixGroup = q.Get("fix_group")
 	f.AssigneeTeam = qInt(r, "assignee_team")
 	f.IncidentID = qInt(r, "incident_id")
+	if d := qInt(r, "resolved_within"); d > 0 {
+		if d > 3650 {
+			d = 3650
+		}
+		f.ResolvedWithinDays = int(d)
+	}
 	switch f.State {
 	case "", "active", "new", "acknowledged", "in_progress", "suppressed", "risk_accepted":
 	default:
