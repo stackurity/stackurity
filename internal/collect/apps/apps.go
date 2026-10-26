@@ -198,6 +198,9 @@ func (s *Scanner) ScanApp(ctx context.Context, dir string) App {
 		}
 	}
 	err = filepath.WalkDir(s.path(dir), func(full string, d fs.DirEntry, err error) error {
+		if cerr := ctx.Err(); cerr != nil {
+			return cerr // the collection's time limit stops the walk
+		}
 		if err != nil {
 			return nil
 		}
@@ -242,14 +245,14 @@ func (s *Scanner) ScanApp(ctx context.Context, dir string) App {
 		return nil
 	})
 	if err != nil {
-		app.Coverage = append(app.Coverage, model.CoverageItem{Scope: "app:" + dir, Status: "failed", Reason: err.Error()})
+		app.Coverage = append(app.Coverage, model.CoverageItem{Scope: clipScope("app:" + dir), Status: "failed", Reason: clipScope(err.Error())})
 	}
 
 	// Lockfiles fill in ecosystems that have nothing installed (for example
 	// a Go or Rust service, or a PHP app deployed without vendor/).
 	locks, lcov, err := lockfile.ScanWith(ctx, os.DirFS(s.path(dir)), s.Packs)
 	if err != nil {
-		app.Coverage = append(app.Coverage, model.CoverageItem{Scope: "lockfiles:" + dir, Status: "failed", Reason: err.Error()})
+		app.Coverage = append(app.Coverage, model.CoverageItem{Scope: clipScope("lockfiles:" + dir), Status: "failed", Reason: clipScope(err.Error())})
 	}
 	var kept []model.Observation
 	for _, o := range locks {
@@ -718,4 +721,12 @@ func clip(s string) string {
 		return s
 	}
 	return s[:1000]
+}
+
+// clipScope keeps a coverage field within the batch limit.
+func clipScope(s string) string {
+	if len(s) > 1000 {
+		return s[:1000]
+	}
+	return s
 }

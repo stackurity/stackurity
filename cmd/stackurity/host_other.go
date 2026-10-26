@@ -29,6 +29,8 @@ func hostCollector(o *hostOptions) (func(context.Context) ([]*model.ObservationB
 		col.RunVersion = nil
 	}
 	return func(ctx context.Context) ([]*model.ObservationBatch, error) {
+		ctx, cancel := context.WithTimeout(ctx, hostCollectTimeout)
+		defer cancel()
 		host, _ := os.Hostname()
 		osBatch, err := col.Collect(ctx, host, col.MachineID())
 		if err != nil {

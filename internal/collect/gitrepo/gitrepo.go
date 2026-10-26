@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/stackurity/stackurity/internal/collect/limits"
 	"github.com/stackurity/stackurity/internal/collect/lockfile"
 	"github.com/stackurity/stackurity/internal/model"
 )
@@ -60,12 +61,18 @@ func (c Config) Validate() error {
 	return nil
 }
 
+// DefaultMaxCloneBytes bounds a shallow clone on disk. git has no size
+// limit of its own, so the clone directory is measured while git runs.
+const DefaultMaxCloneBytes = 1 << 30
+
 // Scanner runs git clones under WorkDir.
 type Scanner struct {
 	WorkDir string
 	Version string
 	Timeout time.Duration
 	Git     string // git binary; "git" when empty
+	// MaxBytes bounds the clone on disk; DefaultMaxCloneBytes when 0.
+	MaxBytes int64
 	// Packs returns the installed stack packs to read files the core
 	// cannot; nil for none.
 	Packs func(ctx context.Context) []lockfile.Extension
@@ -94,8 +101,19 @@ func (s *Scanner) Scan(ctx context.Context, cfg Config, token string) (*model.Ob
 	defer os.RemoveAll(dir)
 
 	src := filepath.Join(dir, "src")
-	if err := s.clone(ctx, cfg, token, src); err != nil {
+	max := s.MaxBytes
+	if max <= 0 {
+		max = DefaultMaxCloneBytes
+	}
+	cctx, stop := limits.WatchDir(ctx, dir, max, time.Second, "the clone")
+	err = s.clone(cctx, cfg, token, src)
+	err = limits.Cause(cctx, err)
+	stop()
+	if err != nil {
 		return nil, err
+	}
+	if _, over := limits.DirSize(dir, max); over {
+		return nil, fmt.Errorf("%w: the clone used more than %s on disk", limits.ErrTooLarge, limits.Bytes(max))
 	}
 	git := s.gitBin()
 	commit := ""
@@ -192,6 +210,7 @@ func (s *Scanner) clone(ctx context.Context, cfg Config, token, dest string) err
 		env = append(env, "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=http.extraHeader", "GIT_CONFIG_VALUE_0=Authorization: Basic "+basic)
 	}
 	cmd.Env = env
+	limits.KillGroup(cmd) // a deadline or the size limit stops git and its helpers
 	stderr := &capBuffer{max: 64 << 10}
 	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {

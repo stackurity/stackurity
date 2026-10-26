@@ -101,6 +101,9 @@ func (c *Collector) Collect(ctx context.Context, hostname string) (*model.Observ
 	// Not collected yet: per-user installs (HKCU), Store apps, hotfixes.
 	b.Cover("windows:hotfixes", "unsupported", "installed updates (KBs) are not inventoried yet")
 	b.Cover("windows:store-apps", "unsupported", "Microsoft Store (AppX) packages are not inventoried yet")
-	sort.SliceStable(b.Observations[1:], func(i, j int) bool { return b.Observations[i+1].Purl < b.Observations[j+1].Purl })
+	b.KeepUsable()
+	if len(b.Observations) > 1 {
+		sort.SliceStable(b.Observations[1:], func(i, j int) bool { return b.Observations[i+1].Purl < b.Observations[j+1].Purl })
+	}
 	return b, nil
 }

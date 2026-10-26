@@ -3,6 +3,7 @@
 package lockfile
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -24,6 +25,18 @@ const CollectorID = "lockfile-scanner"
 
 // MaxLockfileSize guards against hostile or accidental giant files.
 const MaxLockfileSize = 64 << 20
+
+// Limits on one walk of an untrusted tree (a cloned repository, an
+// application directory). Past them the scan stops that part and says so in
+// coverage (partial or skipped) instead of running on.
+const (
+	MaxWalkEntries = 500_000   // files and directories visited
+	MaxWalkDepth   = 64        // directory levels below the root
+	MaxPackBytes   = 512 << 20 // files held in memory for stack packs, in total
+)
+
+// walkEntries is MaxWalkEntries; tests lower it.
+var walkEntries = MaxWalkEntries
 
 var skipDirs = map[string]bool{
 	".git": true, "node_modules": true, "vendor": true, ".hg": true, ".svn": true,
@@ -148,14 +161,23 @@ func scanWith(ctx context.Context, fsys fs.FS, exts []Extension, ignored map[str
 	var obs []model.Observation
 	var cov []model.CoverageItem
 	extFiles := map[int][]pack.File{}
-	skippedIgnored := 0
+	skippedIgnored, entries, tooDeep, packBytes := 0, 0, 0, 0
 	nested := func(p string) {
 		cov = append(cov, model.CoverageItem{Scope: clip(nestedScope + p), Status: "skipped",
 			Reason: "nested checkout: a separate repository or worktree, not part of this one; scan it on its own"})
 	}
 	err := fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
+		// The scan's deadline also stops the walk, not only the tools.
+		if cerr := ctx.Err(); cerr != nil {
+			return cerr
+		}
+		if entries++; entries > walkEntries {
+			cov = append(cov, model.CoverageItem{Scope: "walk", Status: "partial",
+				Reason: fmt.Sprintf("stopped after %d files and directories; the rest of the tree was not scanned", walkEntries)})
+			return fs.SkipAll
+		}
 		if err != nil {
-			cov = append(cov, model.CoverageItem{Scope: "path:" + p, Status: "failed", Reason: err.Error()})
+			cov = append(cov, model.CoverageItem{Scope: clip("path:" + p), Status: "failed", Reason: clip(err.Error())})
 			if d != nil && d.IsDir() {
 				return fs.SkipDir
 			}
@@ -164,6 +186,10 @@ func scanWith(ctx context.Context, fsys fs.FS, exts []Extension, ignored map[str
 		if d.IsDir() {
 			if p == "." {
 				return nil
+			}
+			if strings.Count(p, "/")+1 > MaxWalkDepth {
+				tooDeep++
+				return fs.SkipDir
 			}
 			if d.Name() == ".claude" {
 				// Say which worktrees are left out with it.
@@ -208,11 +234,17 @@ func scanWith(ctx context.Context, fsys fs.FS, exts []Extension, ignored map[str
 						Reason: fmt.Sprintf("larger than %d MiB", MaxLockfileSize>>20)})
 					continue
 				}
-				data, err := readLimited(fsys, p)
-				if err != nil {
-					cov = append(cov, model.CoverageItem{Scope: "pack:" + e.ID() + ":" + p, Status: "failed", Reason: err.Error()})
+				if packBytes >= MaxPackBytes {
+					cov = append(cov, model.CoverageItem{Scope: clip("pack:" + e.ID() + ":" + p), Status: "skipped",
+						Reason: fmt.Sprintf("files for stack packs passed %d MiB in this scan", MaxPackBytes>>20)})
 					continue
 				}
+				data, err := readLimited(fsys, p)
+				if err != nil {
+					cov = append(cov, model.CoverageItem{Scope: clip("pack:" + e.ID() + ":" + p), Status: "failed", Reason: clip(err.Error())})
+					continue
+				}
+				packBytes += len(data)
 				extFiles[i] = append(extFiles[i], pack.File{Path: p, Content: data})
 			}
 			if matched {
@@ -265,6 +297,10 @@ func scanWith(ctx context.Context, fsys fs.FS, exts []Extension, ignored map[str
 		}
 		return nil
 	})
+	if tooDeep > 0 {
+		cov = append(cov, model.CoverageItem{Scope: "depth", Status: "partial",
+			Reason: fmt.Sprintf("%d directories deeper than %d levels were not scanned", tooDeep, MaxWalkDepth)})
+	}
 	if skippedIgnored > 0 {
 		cov = append(cov, model.CoverageItem{Scope: ignoredScope, Status: "skipped",
 			Reason: fmt.Sprintf("%d paths ignored by git (.gitignore) were not scanned", skippedIgnored)})
@@ -274,7 +310,7 @@ func scanWith(ctx context.Context, fsys fs.FS, exts []Extension, ignored map[str
 			found, c, err := e.Scan(ctx, files)
 			if err != nil {
 				for _, f := range files {
-					cov = append(cov, model.CoverageItem{Scope: "pack:" + e.ID() + ":" + f.Path, Status: "failed", Reason: err.Error()})
+					cov = append(cov, model.CoverageItem{Scope: clip("pack:" + e.ID() + ":" + f.Path), Status: "failed", Reason: clip(err.Error())})
 				}
 				continue
 			}
@@ -282,6 +318,7 @@ func scanWith(ctx context.Context, fsys fs.FS, exts []Extension, ignored map[str
 			cov = append(cov, c...)
 		}
 	}
+	cov = capCoverage(cov)
 	sort.SliceStable(obs, func(i, j int) bool {
 		if obs[i].Location != obs[j].Location {
 			return obs[i].Location < obs[j].Location
@@ -344,7 +381,17 @@ func gitIgnored(ctx context.Context, dir string) map[string]bool {
 	run := func(args ...string) ([]byte, error) {
 		cmd := exec.CommandContext(ctx, git, append([]string{"-C", dir, "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false"}, args...)...)
 		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0")
-		return cmd.Output()
+		// The list of ignored paths is bounded: past the cap the scan goes on
+		// without it (and scans ignored paths) rather than holding it all.
+		out := &capWriter{max: maxIgnoredOutput}
+		cmd.Stdout = out
+		if err := cmd.Run(); err != nil {
+			return nil, err
+		}
+		if out.over {
+			return nil, errors.New("git ls-files output too large")
+		}
+		return out.buf.Bytes(), nil
 	}
 	if out, err := run("rev-parse", "--is-inside-work-tree"); err != nil || strings.TrimSpace(string(out)) != "true" {
 		return nil
@@ -395,4 +442,41 @@ func cleanRel(p string) string {
 		return ""
 	}
 	return filepath.ToSlash(strings.TrimPrefix(p, "./"))
+}
+
+// capCoverage keeps a batch within model.MaxCoverageItems: a tree with
+// thousands of unsupported or failed files would otherwise make the server
+// refuse the whole batch. Problems are kept before checked entries, and the
+// last item says how many were left out.
+func capCoverage(cov []model.CoverageItem) []model.CoverageItem {
+	if len(cov) <= model.MaxCoverageItems {
+		return cov
+	}
+	sort.SliceStable(cov, func(i, j int) bool { return cov[i].Status != "checked" && cov[j].Status == "checked" })
+	keep := model.MaxCoverageItems - 1
+	left := len(cov) - keep
+	out := append(cov[:keep:keep], model.CoverageItem{Scope: "coverage-limit", Status: "partial",
+		Reason: fmt.Sprintf("%d more coverage entries were left out (a batch holds at most %d)", left, model.MaxCoverageItems)})
+	return out
+}
+
+// maxIgnoredOutput bounds git's list of ignored paths.
+const maxIgnoredOutput = 16 << 20
+
+// capWriter keeps at most max bytes and notes that more were written.
+type capWriter struct {
+	buf  bytes.Buffer
+	max  int
+	over bool
+}
+
+func (w *capWriter) Write(p []byte) (int, error) {
+	if room := w.max - w.buf.Len(); len(p) > room {
+		w.over = true
+		if room > 0 {
+			w.buf.Write(p[:room])
+		}
+		return len(p), nil
+	}
+	return w.buf.Write(p)
 }

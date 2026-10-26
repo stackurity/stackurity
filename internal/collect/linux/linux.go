@@ -132,6 +132,7 @@ func (c *Collector) Collect(ctx context.Context, hostname, machineID string) (*m
 		b.Cover("os-packages", "unsupported", "no dpkg, rpm or apk package database found")
 		b.Complete = false
 	}
+	b.KeepUsable()
 	for _, cov := range b.Coverage {
 		if cov.Status != "checked" {
 			b.Complete = false

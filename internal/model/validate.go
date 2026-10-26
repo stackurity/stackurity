@@ -34,6 +34,7 @@ func (b *ObservationBatch) Validate() error {
 		}
 	}
 	long := func(s string) bool { return len(s) > MaxFieldLen }
+	b.sanitise()
 
 	if b.SchemaVersion != BatchSchemaVersion {
 		add("unsupported schema_version %q", b.SchemaVersion)
@@ -46,6 +47,9 @@ func (b *ObservationBatch) Validate() error {
 	}
 	if b.Asset.Name == "" || long(b.Asset.Name) {
 		add("asset.name is required")
+	}
+	if len(b.Asset.Environment) > MaxShortField || len(b.Asset.Provider) > MaxShortField || len(b.Asset.Region) > MaxShortField {
+		add("asset.environment, provider and region must be under %d bytes", MaxShortField)
 	}
 	if len(b.Asset.Identifiers) == 0 || len(b.Asset.Identifiers) > MaxIdentifiers {
 		add("asset.identifiers must have 1-%d entries", MaxIdentifiers)
@@ -75,7 +79,7 @@ func (b *ObservationBatch) Validate() error {
 			break
 		}
 		pu, err := packageurl.FromString(o.Purl)
-		if err != nil || long(o.Purl) {
+		if err != nil || long(o.Purl) || hasControl(o.Purl) {
 			add("observations[%d].purl %q is not a valid purl", i, truncate(o.Purl))
 			continue
 		}
@@ -84,6 +88,9 @@ func (b *ObservationBatch) Validate() error {
 		}
 		if long(o.Version) || long(o.Location) || long(o.Scope) {
 			add("observations[%d] has an over-long field", i)
+		}
+		if hasControl(o.Version) {
+			add("observations[%d].version has control characters", i)
 		}
 		if o.Confidence == "" {
 			if o.Version == "" {
@@ -154,6 +161,9 @@ func (b *ObservationBatch) Validate() error {
 func Usable(o Observation) bool {
 	long := func(s string) bool { return len(s) > MaxFieldLen }
 	if long(o.Purl) || long(o.Version) || long(o.Location) || long(o.Scope) || len(o.Evidence) > MaxEvidenceFields {
+		return false
+	}
+	if hasControl(o.Purl) || hasControl(o.Version) {
 		return false
 	}
 	if o.Confidence != "" && !o.Confidence.Valid() {
