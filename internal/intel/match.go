@@ -20,6 +20,9 @@ import (
 type Evaluator struct {
 	Store *store.Store
 	Now   func() time.Time
+	// afterRead, in tests, runs once everything is read and before
+	// anything is written.
+	afterRead func()
 }
 
 type EvalStats struct {
@@ -53,7 +56,18 @@ func versionedDebProduct(purlKey string) (product, cycle string, ok bool) {
 var osProducts = store.OSProducts
 
 // Evaluate re-evaluates the given components (nil means all) or one asset.
+//
+// Evaluations of one workspace run one at a time (Store.LockEvaluations):
+// one that read the feeds before a sync committed must not write after one
+// that read them afterwards, or it would resolve the findings the newer one
+// opened, and the next evaluation would open them again. While another
+// evaluation runs it returns store.ErrEvaluationBusy without doing anything.
 func (e *Evaluator) Evaluate(ctx context.Context, componentIDs []int64, assetID int64) (*EvalStats, error) {
+	release, err := e.Store.LockEvaluations(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	rows, err := e.Store.EvalRows(ctx, componentIDs, assetID)
 	if err != nil {
 		return nil, err
@@ -240,6 +254,9 @@ func (e *Evaluator) Evaluate(ctx context.Context, componentIDs []int64, assetID 
 	}
 	for _, g := range sortedKeys(kernelFound) {
 		want = append(want, mergeKernelFindings(kernelFound[g], kernels)...)
+	}
+	if e.afterRead != nil {
+		e.afterRead()
 	}
 	if err := e.Store.SetCoverage(ctx, coverage); err != nil {
 		return nil, err

@@ -2,9 +2,12 @@ package store
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/stackurity/stackurity/internal/tenant"
 )
 
 // DBNow returns the database clock, which collection and job times use.
@@ -110,4 +113,37 @@ func (s *Store) GetCollectionResult(ctx context.Context, id int64) (*CollectionR
 	err = s.Pool.QueryRow(ctx, `SELECT count(DISTINCT component_id) FROM inventory
 		WHERE asset_id = $1 AND removed_at IS NULL AND coverage IN ('unsupported', 'not_evaluated')`, res.AssetID).Scan(&res.Gaps)
 	return res, err
+}
+
+// ErrEvaluationBusy: another evaluation of the workspace is running.
+var ErrEvaluationBusy = errors.New("another evaluation of this workspace is running")
+
+// LockEvaluations makes sure no other evaluation of the context's workspace
+// runs, and holds that until release is called; when one does, it returns
+// ErrEvaluationBusy at once rather than wait (the caller defers its job,
+// so a waiting evaluation does not occupy a worker slot). Evaluations read
+// the inventory, the feeds and the findings, then write coverage and
+// findings; two of them overlapping could let one that read older feed
+// state write after a newer one, resolving findings the newer one had just
+// opened. Serialised, each evaluation reads what the previous one wrote.
+// The lock is held by a transaction, so it ends with the connection if the
+// process dies.
+func (s *Store) LockEvaluations(ctx context.Context) (release func(), err error) {
+	ws, _ := tenant.Workspace(ctx) // 0 (no workspace): evaluations in system scope
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var got bool
+	// Advisory locks are per database; the key names the schema too, so
+	// installations (or tests) sharing a database do not wait for each other.
+	if err := tx.QueryRow(ctx, `SELECT pg_try_advisory_xact_lock(hashtextextended('stackurity.evaluate:' || current_schema() || ':' || $1::bigint, 0))`,
+		ws).Scan(&got); err != nil || !got {
+		_ = tx.Rollback(context.WithoutCancel(ctx))
+		if err == nil {
+			err = ErrEvaluationBusy
+		}
+		return nil, err
+	}
+	return func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }, nil
 }
