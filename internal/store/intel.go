@@ -483,11 +483,20 @@ func (s *Store) SyncFindings(ctx context.Context, kinds []string, inventoryIDs [
 			SELECT kind, key, inventory_id, asset_id, component_id, verification, severity, score, title, fixed_version, sources, evidence
 			FROM want_findings
 			ON CONFLICT (inventory_id, kind, key) DO UPDATE SET
-			  verification = EXCLUDED.verification, severity = EXCLUDED.severity, score = EXCLUDED.score,
+			  -- A finding a person marked a false positive keeps verification
+			  -- 'rejected'; the matcher's own value waits in verification_before.
+			  verification = CASE WHEN f.verification_before <> '' THEN f.verification ELSE EXCLUDED.verification END,
+			  verification_before = CASE WHEN f.verification_before <> '' THEN EXCLUDED.verification ELSE '' END,
+			  severity = EXCLUDED.severity, score = EXCLUDED.score,
 			  title = EXCLUDED.title, fixed_version = EXCLUDED.fixed_version, sources = EXCLUDED.sources,
 			  evidence = EXCLUDED.evidence, last_seen = now(),
+			  -- Fixed (the component was upgraded or removed) and back: regressed.
+			  -- Work in progress before the fix is back to new.
+			  regressed_at = CASE WHEN f.status = 'resolved' AND `+fixedByInventory("f")+` THEN now() ELSE f.regressed_at END,
+			  state = CASE WHEN f.status = 'resolved' AND `+fixedByInventory("f")+` AND f.state = 'in_progress' THEN 'new' ELSE f.state END,
 			  status = 'open', resolved_at = NULL, resolution = ''
-			WHERE f.status = 'resolved' OR f.verification IS DISTINCT FROM EXCLUDED.verification
+			WHERE f.status = 'resolved'
+			  OR CASE WHEN f.verification_before <> '' THEN f.verification_before ELSE f.verification END IS DISTINCT FROM EXCLUDED.verification
 			  OR f.severity IS DISTINCT FROM EXCLUDED.severity OR f.fixed_version IS DISTINCT FROM EXCLUDED.fixed_version
 			  OR f.sources IS DISTINCT FROM EXCLUDED.sources OR f.evidence IS DISTINCT FROM EXCLUDED.evidence
 			  OR f.last_seen < now() - interval '1 hour'`)
@@ -495,6 +504,12 @@ func (s *Store) SyncFindings(ctx context.Context, kinds []string, inventoryIDs [
 			return err
 		}
 		opened = tag.RowsAffected()
+		if err := markRegressed(ctx, tx); err != nil {
+			return err
+		}
+		if _, err := applyExceptions(ctx, tx, 0, "f.asset_id IN (SELECT DISTINCT asset_id FROM want_findings)"); err != nil {
+			return err
+		}
 		tag, err = tx.Exec(ctx, `WITH r AS (UPDATE findings f SET status = 'resolved', resolved_at = now(),
 			resolution = 'no longer affected (re-evaluated ' || to_char(now(), 'YYYY-MM-DD') || ')'
 			WHERE f.status = 'open' AND f.kind = ANY($1) AND f.inventory_id = ANY($2)
@@ -838,7 +853,28 @@ type Finding struct {
 	// PriorityPolicy is the version of the risk policy that produced
 	// Priority, PriorityScore, PriorityFactors and SOS.
 	PriorityPolicy string `json:"priority_policy_version"`
+	// RegressedAt is when the issue last came back after it was fixed.
+	RegressedAt *time.Time `json:"regressed_at"`
+	// UntilFix: snoozed or ignored until a free fixed version exists.
+	UntilFix bool `json:"until_fix"`
+	// IgnoreReason: accepted_risk, false_positive, mitigated or no_fix.
+	IgnoreReason string `json:"ignore_reason"`
+	// ExceptionID is the ignore rule that set or last set the state.
+	ExceptionID *int64 `json:"exception_id"`
+	// DisplayState is the state the dashboard shows: new, to_do,
+	// in_progress, fixed, regressed, snoozed or accepted.
+	DisplayState string `json:"display_state"`
 }
+
+// displayState maps stored status and state to the seven states shown to
+// people. Regressed shows until someone starts work on the issue.
+const displayState = `CASE WHEN f.status = 'resolved' THEN 'fixed'
+	WHEN f.state = 'suppressed' THEN 'snoozed'
+	WHEN f.state = 'risk_accepted' THEN 'accepted'
+	WHEN f.regressed_at IS NOT NULL AND f.state IN ('new', 'acknowledged') THEN 'regressed'
+	WHEN f.state = 'in_progress' THEN 'in_progress'
+	WHEN f.state = 'acknowledged' THEN 'to_do'
+	ELSE 'new' END`
 
 type FindingFilter struct {
 	Kind         string
@@ -852,7 +888,7 @@ type FindingFilter struct {
 	Search       string
 	Key          string
 	Exploited    bool
-	State        string // new, acknowledged, in_progress, suppressed, risk_accepted, active (= not suppressed/accepted)
+	State        string // new, acknowledged, in_progress, suppressed, risk_accepted, active (= not suppressed/accepted), regressed
 	Priority     []string
 	SOS          bool
 	AssigneeUser int64
@@ -878,7 +914,7 @@ const findingCols = `f.id, f.kind, f.key, f.inventory_id, f.asset_id, a.name, a.
 	f.assignee_team_id, COALESCE(ateam.name, ''), f.ack_due, f.fix_due, f.acknowledged_at, f.suppressed_until, f.state_reason,
 	f.mitigation, f.escalation_level, f.incident_id,
 	COALESCE(f.status = 'open' AND f.state IN ('new', 'acknowledged', 'in_progress') AND f.fix_due < now(), false), f.fix_group,
-	f.priority_policy`
+	f.priority_policy, f.regressed_at, f.until_fix, f.ignore_reason, f.exception_id, ` + displayState
 
 const findingFrom = ` FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
 	JOIN components c ON c.id = f.component_id JOIN inventory i ON i.id = f.inventory_id
@@ -924,6 +960,8 @@ func (s *Store) ListFindings(ctx context.Context, f FindingFilter) ([]Finding, i
 	case "":
 	case "active":
 		w.conds = append(w.conds, "f.state IN ('new', 'acknowledged', 'in_progress')")
+	case "regressed":
+		w.conds = append(w.conds, "f.regressed_at IS NOT NULL AND f.state IN ('new', 'acknowledged')")
 	default:
 		w.add("f.state = ?", f.State)
 	}
@@ -1023,6 +1061,11 @@ type FindingSummary struct {
 	Unassigned     int64            `json:"unassigned"`
 	// Resolved7d counts findings resolved in the last 7 days.
 	Resolved7d int64 `json:"resolved_7d"`
+	// Regressed counts open findings that came back after they were
+	// fixed and nobody has started on yet.
+	Regressed int64 `json:"regressed"`
+	// UntilFix counts snoozed or accepted findings waiting for a fix.
+	UntilFix int64 `json:"until_fix"`
 }
 
 func (s *Store) SummarizeFindings(ctx context.Context) (*FindingSummary, error) {
@@ -1072,8 +1115,13 @@ func (s *Store) SummarizeFindings(ctx context.Context) (*FindingSummary, error) 
 		  WHERE i.removed_at IS NULL AND i.coverage IN ('unsupported', 'not_evaluated')),
 		(SELECT count(*) FROM feeds WHERE enabled AND (last_success IS NULL OR last_success < now() - stale_after)),
 		(SELECT count(*) FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
-		  WHERE f.status = 'resolved' AND f.resolved_at > now() - interval '7 days')`).
-		Scan(&sum.KnownExploited, &sum.FixAvailable, &sum.AffectedAssets, &sum.EvaluationGaps, &sum.StaleFeeds, &sum.Resolved7d)
+		  WHERE f.status = 'resolved' AND f.resolved_at > now() - interval '7 days'),
+		(SELECT count(*) FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
+		  WHERE f.status = 'open' AND f.regressed_at IS NOT NULL AND f.state IN ('new', 'acknowledged')),
+		(SELECT count(*) FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
+		  WHERE f.status = 'open' AND f.until_fix AND f.state IN ('suppressed', 'risk_accepted'))`).
+		Scan(&sum.KnownExploited, &sum.FixAvailable, &sum.AffectedAssets, &sum.EvaluationGaps, &sum.StaleFeeds, &sum.Resolved7d,
+			&sum.Regressed, &sum.UntilFix)
 	return sum, err
 }
 

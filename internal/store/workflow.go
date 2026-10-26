@@ -239,13 +239,19 @@ func (s *Store) PrioritizeAsset(ctx context.Context, p risk.Policy, now time.Tim
 
 // FindingAction is a workflow change requested by a person.
 type FindingAction struct {
-	Action     string     // acknowledge, start, reset, assign, suppress, accept_risk, reopen, comment
-	Note       string     // reason; required for suppress and accept_risk
-	Until      *time.Time // expiry for suppress / accept_risk
-	Mitigation string     // optional for suppress / accept_risk
+	Action     string     // acknowledge, start, reset, assign, suppress, accept_risk, ignore, reopen, comment
+	Note       string     // reason; required for suppress, accept_risk and ignore
+	Until      *time.Time // expiry for suppress / accept_risk / ignore with expiry date
+	Mitigation string     // optional for suppress / accept_risk / ignore
 	MaxDays    int        // longest allowed expiry; 0 means DefaultExceptionMaxDays
 	AssignUser *int64
 	AssignTeam *int64
+	// UntilFix snoozes (suppress) until a free fixed version exists; Until
+	// is then optional and defaults to the exception limit as a backstop.
+	UntilFix bool
+	// Ignore: reason, scope (asset or everywhere) and expiry (date,
+	// until_fix or never). See IgnoreSpec.
+	Ignore IgnoreSpec
 }
 
 // DefaultExceptionMaxDays bounds suppression and risk acceptance when the
@@ -256,17 +262,23 @@ var ErrInvalidAction = errors.New("invalid action")
 
 var stateFor = map[string]string{
 	"acknowledge": "acknowledged", "start": "in_progress", "reset": "new",
-	"suppress": "suppressed", "accept_risk": "risk_accepted", "reopen": "new",
+	"suppress": "suppressed", "accept_risk": "risk_accepted", "ignore": "risk_accepted", "reopen": "new",
 }
 
 // ApplyFindingAction changes a finding's workflow state and records history.
 func (s *Store) ApplyFindingAction(ctx context.Context, id int64, a FindingAction, actor Actor) error {
 	return pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
 		var state, status string
-		if err := tx.QueryRow(ctx, `SELECT state, status FROM findings WHERE id = $1 FOR UPDATE`, id).Scan(&state, &status); err != nil {
+		var hasFix bool
+		if err := tx.QueryRow(ctx, `SELECT state, status, `+freeFix("f")+` FROM findings f WHERE id = $1 FOR UPDATE`, id).Scan(&state, &status, &hasFix); err != nil {
 			return notFound(err)
 		}
 		to := state
+		maxDays := a.MaxDays
+		if maxDays <= 0 {
+			maxDays = DefaultExceptionMaxDays
+		}
+		var ignoreUntil *time.Time
 		switch a.Action {
 		case "acknowledge", "start", "reset":
 			if state == "suppressed" || state == "risk_accepted" {
@@ -277,12 +289,34 @@ func (s *Store) ApplyFindingAction(ctx context.Context, id int64, a FindingActio
 			if a.Note == "" {
 				return fmt.Errorf("%w: a reason is required", ErrInvalidAction)
 			}
-			maxDays := a.MaxDays
-			if maxDays <= 0 {
-				maxDays = DefaultExceptionMaxDays
+			if a.UntilFix {
+				if a.Action != "suppress" {
+					return fmt.Errorf("%w: until a fix ships is for snoozing; to accept until a fix ships, ignore with that expiry", ErrInvalidAction)
+				}
+				if hasFix {
+					return fmt.Errorf("%w: a fixed version already exists; install it, or snooze until a date", ErrInvalidAction)
+				}
+				if a.Until == nil {
+					backstop := time.Now().AddDate(0, 0, maxDays)
+					a.Until = &backstop
+				}
 			}
-			if a.Until == nil || !a.Until.After(time.Now()) || a.Until.After(time.Now().AddDate(0, 0, maxDays)) {
+			if a.Until == nil || !a.Until.After(time.Now()) || a.Until.After(time.Now().AddDate(0, 0, maxDays).Add(time.Minute)) {
 				return fmt.Errorf("%w: an expiry within the next %d days is required", ErrInvalidAction, maxDays)
+			}
+			to = stateFor[a.Action]
+		case "ignore":
+			if status != "open" {
+				return fmt.Errorf("%w: the issue is fixed", ErrInvalidAction)
+			}
+			a.Ignore.Note = a.Note
+			a.Ignore.Mitigation = a.Mitigation
+			if a.Ignore.Expiry == ExpiryDate {
+				a.Ignore.Until = a.Until
+			}
+			var err error
+			if ignoreUntil, err = a.Ignore.resolve(maxDays, time.Now()); err != nil {
+				return err
 			}
 			to = stateFor[a.Action]
 		case "reopen":
@@ -294,6 +328,7 @@ func (s *Store) ApplyFindingAction(ctx context.Context, id int64, a FindingActio
 		default:
 			return fmt.Errorf("%w: unknown action %q", ErrInvalidAction, a.Action)
 		}
+		var ruleID int64
 		var uid *int64
 		if actor.Type == "user" || (actor.Type == "token" && actor.ID > 0) {
 			uid = &actor.ID
@@ -305,14 +340,29 @@ func (s *Store) ApplyFindingAction(ctx context.Context, id int64, a FindingActio
 				return err
 			}
 		case "start", "reset", "reopen":
-			if _, err := tx.Exec(ctx, `UPDATE findings SET state = $2, suppressed_until = NULL, state_reason = '', mitigation = '' WHERE id = $1`, id, to); err != nil {
+			// A finding reopened from an ignore rule keeps exception_id, so
+			// that rule does not ignore it again.
+			if _, err := tx.Exec(ctx, `UPDATE findings SET state = $2, state_reason = '', mitigation = '', `+unIgnore+` WHERE id = $1`, id, to); err != nil {
 				return err
 			}
 		case "suppress", "accept_risk":
-			if _, err := tx.Exec(ctx, `UPDATE findings SET state = $2, suppressed_until = $3, state_reason = $4, mitigation = $5 WHERE id = $1`,
-				id, to, a.Until, a.Note, a.Mitigation); err != nil {
+			reason := ""
+			if a.Action == "accept_risk" {
+				reason = ReasonAcceptedRisk
+			}
+			if _, err := tx.Exec(ctx, `UPDATE findings SET state = $2, suppressed_until = $3, state_reason = $4, mitigation = $5,
+				until_fix = $6, ignore_reason = $7 WHERE id = $1`,
+				id, to, a.Until, a.Note, a.Mitigation, a.UntilFix, reason); err != nil {
 				return err
 			}
+		case "ignore":
+			rule, err := ignoreFinding(ctx, tx, id, a.Ignore, ignoreUntil, actor, 0)
+			if err != nil {
+				return err
+			}
+			a.Until = ignoreUntil
+			a.Ignore.Until = nil
+			ruleID = rule
 		case "assign":
 			if a.AssignUser == nil && a.AssignTeam == nil {
 				return fmt.Errorf("%w: user_id or team_id is required", ErrInvalidAction)
@@ -330,6 +380,12 @@ func (s *Store) ApplyFindingAction(ctx context.Context, id int64, a FindingActio
 		detail := map[string]any{}
 		if a.Until != nil {
 			detail["until"] = a.Until.UTC().Format(time.RFC3339)
+		}
+		if a.UntilFix {
+			detail["until_fix"] = true
+		}
+		if a.Action == "ignore" {
+			detail["reason"], detail["scope"], detail["expiry"], detail["rule_id"] = a.Ignore.Reason, a.Ignore.Scope, a.Ignore.Expiry, ruleID
 		}
 		if a.Mitigation != "" {
 			detail["mitigation"] = a.Mitigation
@@ -384,43 +440,6 @@ func (s *Store) FindingEvents(ctx context.Context, id int64) ([]FindingEvent, er
 		return nil, err
 	}
 	return pgx.CollectRows(rows, pgx.RowToStructByPos[FindingEvent])
-}
-
-// ExpireSuppressions returns findings whose suppression or risk acceptance
-// has lapsed to 'new' so they are reviewed again.
-func (s *Store) ExpireSuppressions(ctx context.Context) (int64, error) {
-	var n int64
-	err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
-		rows, err := tx.Query(ctx, `UPDATE findings SET state = 'new', suppressed_until = NULL
-			WHERE state IN ('suppressed', 'risk_accepted') AND suppressed_until <= now()
-			RETURNING id, state_reason`)
-		if err != nil {
-			return err
-		}
-		type ex struct {
-			id     int64
-			reason string
-		}
-		var list []ex
-		for rows.Next() {
-			var e ex
-			if err := rows.Scan(&e.id, &e.reason); err != nil {
-				rows.Close()
-				return err
-			}
-			list = append(list, e)
-		}
-		rows.Close()
-		for _, e := range list {
-			if _, err := tx.Exec(ctx, `INSERT INTO finding_events (finding_id, actor_type, actor_name, action, from_state, to_state, note)
-				VALUES ($1, 'system', 'expiry', 'expired', 'suppressed', 'new', $2)`, e.id, "expired: "+e.reason); err != nil {
-				return err
-			}
-		}
-		n = int64(len(list))
-		return nil
-	})
-	return n, err
 }
 
 // Incident is the notification unit.

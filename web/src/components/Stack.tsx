@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router";
 import { api, SEVERITIES, type Asset, type Stack, type StackFinding, type StackLayer, type StackMember } from "../api";
 import { useLoad } from "../hooks";
 import { humanize } from "../format";
-import { AssetKindBadge, Badge, KevBadge, PriorityBadge, SeverityBadge, SosBadge, StateBadge } from "./Badge";
+import { AssetKindBadge, Badge, KevBadge, PriorityBadge, SeverityBadge, SosBadge, FindingStateBadge } from "./Badge";
 import { Table, type Column } from "./Table";
 import { EmptyState, ErrorBox, Loading, Notice, Pager } from "./ui";
 
@@ -333,7 +333,7 @@ function StackFindingsTable({ rows, showAsset }: { rows: StackFinding[]; showAss
   columns.push({
     key: "state",
     header: "State",
-    cell: (f) => (f.status === "open" ? <StateBadge state={f.state} /> : <Badge status={f.status} />),
+    cell: (f) => <FindingStateBadge f={f} />,
   });
   return (
     <Table

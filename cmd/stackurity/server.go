@@ -587,6 +587,15 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 	if d, err := time.ParseDuration(os.Getenv("STACKURITY_STALE_AFTER")); err == nil && d > 0 {
 		staleAfter = d
 	}
+	// Check again: complete the checks whose fresh report has been
+	// evaluated (all workspaces at once; the query reads open checks only).
+	w.Every("complete-checks", 30*time.Second, func(ctx context.Context) error {
+		n, err := st.CompleteChecks(ctx)
+		if n > 0 {
+			log.Info("checks completed", "count", n)
+		}
+		return err
+	})
 	w.EveryWorkspace("mark-stale-assets", 10*time.Minute, func(ctx context.Context) error {
 		n, err := st.MarkStaleAssets(ctx, staleAfter)
 		if n > 0 {

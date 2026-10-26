@@ -100,6 +100,8 @@ const (
 	IssuesNewlyOverdue
 	// IssuesAckOverdue: new findings past their acknowledgement deadline.
 	IssuesAckOverdue
+	// IssuesRegressed: findings that came back after a fix in [from, to).
+	IssuesRegressed
 )
 
 const activeFinding = `f.status = 'open' AND f.state IN ('new', 'acknowledged', 'in_progress')`
@@ -109,7 +111,9 @@ func (s *Store) CountIssues(ctx context.Context, set IssueSet, from, to time.Tim
 	cond, fix, title := "", "f.fix_group", "''"
 	switch set {
 	case IssuesNew:
-		cond = activeFinding + ` AND f.first_seen >= $1 AND f.first_seen < $2 AND a.announced_at IS NOT NULL AND f.first_seen > a.announced_at`
+		// Issues that came back are counted as regressed, not as new.
+		cond = activeFinding + ` AND f.first_seen >= $1 AND f.first_seen < $2 AND a.announced_at IS NOT NULL AND f.first_seen > a.announced_at
+			AND (f.regressed_at IS NULL OR f.regressed_at < $1)`
 	case IssuesFixed:
 		cond = `f.status = 'resolved' AND f.resolved_at >= $1 AND f.resolved_at < $2`
 		fix, title = "f.resolved_fix_group", "f.resolved_fix_title"
@@ -119,6 +123,8 @@ func (s *Store) CountIssues(ctx context.Context, set IssueSet, from, to time.Tim
 		cond = activeFinding + ` AND f.fix_due >= $1 AND f.fix_due < $2`
 	case IssuesAckOverdue:
 		cond = `f.status = 'open' AND f.state = 'new' AND f.ack_due < $2 AND $1::timestamptz IS NOT NULL`
+	case IssuesRegressed:
+		cond = `f.regressed_at >= $1 AND f.regressed_at < $2`
 	default:
 		return nil, fmt.Errorf("unknown issue set %d", set)
 	}

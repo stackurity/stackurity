@@ -11,7 +11,7 @@ Base path: `/api/v1`. Requests and responses are JSON. Errors look like this:
 - **API tokens** (`Authorization: Bearer stk_...`) for the CLI, agents and integrations. User tokens carry a role no higher than their owner's *current* role. Collector tokens can only submit observations and SBOMs.
 - **Session cookie** for the dashboard (`POST /auth/login`). Requests that use cookie authentication and change state must send `X-Stackurity-CSRF: 1`.
 
-Roles, from least to most access: `viewer` (read, including the audit log), `engineer` (edit assets, trigger scans), `security` (risk acceptance and exceptions, notification channels and routes, remediation policies, plan approval), `admin` (users, teams, tokens, integrations, conflicts, deletion).
+Roles, from least to most access: `viewer` (read, including the audit log; ask to ignore issues), `engineer` (edit assets, trigger scans, check again; ask to ignore issues), `security` (snooze, ignore and risk acceptance, deciding ignore requests, notification channels and routes, remediation policies, plan approval), `admin` (users, teams, tokens, integrations, conflicts, deletion).
 
 ## Endpoints
 
@@ -65,6 +65,11 @@ Roles, from least to most access: `viewer` (read, including the audit log), `eng
 | `GET /fix-groups?asset_id=&kind=&environment=&q=&bucket=` | viewer | Fixes (fix groups), most urgent first. `bucket` is `focus` (a fix exists, SOS or P1, on a production asset or one with no environment), `no_fix`, `old_kernels`, `non_production` or `lower_priority`; every group is in exactly one, checked in that order |
 | `GET /fix-groups/summary?asset_id=` | viewer | Groups and findings per kind, plus `focus`: the number of focus groups and their findings, groups and findings per other bucket (`hidden`), and the assets with focus groups |
 | `GET /fix-groups/{id}?limit=&offset=` | viewer | One fix group with its findings, paged |
+| `POST /fix-groups/{id}/check` | engineer | [Check again](#check-again) the fix: asks the asset's agent (or a server-side scan) for a fresh report. 201 with the new check, or 200 with the check already waiting for a report |
+| `POST /fix-groups/{id}/applied` | engineer | "I applied this": the fix's active issues go to `in_progress` with the reason "applied, waiting for a check", and a check is requested. Nothing is resolved by this call. Returns `updated` and `check` |
+| `POST /assets/{id}/check` | engineer | Check the whole asset again |
+| `GET /checks?asset_id=&fix_group=&open=true&limit=&offset=` | viewer | Checks, newest first; `open=true` keeps the ones not done |
+| `GET /checks/{id}` | viewer | One check |
 | `GET /findings/{id}` | viewer | One finding, with every source advisory in its group and, while it is open, its `upgrade` recommendation |
 | `GET /findings/{id}/upgrade` | viewer | The [upgrade recommendation](#upgrade-recommendations) for the installed copy the finding is on, covering every open finding on it |
 | `GET /findings/{id}/explain` | viewer | Why the finding has its priority: `risk` (priority, score, each factor with its points, `policy_version`: the risk policy that produced this priority, `current_policy_version` and `policy_changed`, the current thresholds, the SLA for the priority, deadlines), the stored `evidence`, the matched `advisories` (id, feed, severity, dates, an osv.dev link), the freshness of the `feeds` they came from, and the asset's last (complete) `collection` time |
@@ -76,12 +81,18 @@ Roles, from least to most access: `viewer` (read, including the audit log), `eng
 | `PATCH /feeds/{name}` | instance admin | Enable or disable a feed (feeds are shared by every workspace) |
 | `GET /evaluation-gaps` | viewer | Components that could not be evaluated, one entry per component and reason, with `coverage` (`unsupported` or `not_evaluated`) |
 | `POST /evaluate` | engineer | Queue a full re-evaluation |
-| `POST /findings/{id}/actions` | engineer (security for `suppress`, `accept_risk`, `reopen`) | Workflow action, see below |
+| `POST /findings/{id}/actions` | engineer (security for `suppress`, `accept_risk`, `ignore`, `reopen`) | Workflow action, see below |
 | `POST /findings/actions` | as above | The same action on up to 500 findings (`ids`) |
 | `GET /findings/{id}/events` | viewer | A finding's workflow history |
 | `GET /incidents?status=&kind=&priority=&sos=&team_id=` | viewer | Incidents: findings grouped by issue and owner team |
 | `GET /incidents/{id}` | viewer | An incident with its findings (and deliveries, for security and above) |
 | `POST /incidents/{id}/actions` | as findings | Apply an action to every open finding in the incident |
+| `POST /ignore-requests` | viewer | Ask to ignore issues: `finding_ids` (up to 2,000 open findings) or `fix_group` (its active issues), with `reason`, `scope`, `expiry`, `until`, `note` and `mitigation` as for the `ignore` action. Validated like an ignore; 201 with the request |
+| `GET /ignore-requests?status=&limit=&offset=` | viewer | The approval inbox. `status` is `pending` (default), `approved`, `declined` or `all`. Security and admin users see every request; others see their own. `can_decide` says which |
+| `GET /ignore-requests/{id}` | viewer | One request (its requester, or security and admin users) |
+| `POST /ignore-requests/{id}/decision` | security | `{"decision": "approve" \| "decline", "note": "..."}`. Approval ignores the request's issues that are still open and active, as the decider; 409 when already decided |
+| `GET /ignore-rules?status=all` | viewer | [Ignore rules](#ignore-rules) in force (or every one with `status=all`), with the open findings each ignores |
+| `DELETE /ignore-rules/{id}` | security | End a rule: the open findings it ignores return to `new` |
 | `GET /risk-policy` / `PUT /risk-policy` | viewer / admin | Priority weights, thresholds, deadlines and SOS rules, with the policy `version`. `PUT` replaces the policy (fields left out take their defaults; unknown fields are rejected), returns `version`, `previous_version` and the `changed` fields, and writes a `risk_policy.update` audit event holding the policy before and after. `GET` includes `last_change` (who, when, versions, changed fields; null when never changed) |
 | `POST /risk-policy/preview` | admin | Validates a proposed policy like `PUT` and returns its effect on the workspace's open findings without saving anything: `before` / `after` counts per priority, `sos_before` / `sos_after`, `priority_changed` (`raised`, `lowered`), `sos_changed`, `score_changed`, `stored_differs`, and `sample` (at most `sample_limit`, 50) of changed findings with factor deltas ([risk.md](risk.md#reproducibility-and-audit)) |
 | `GET /channels`, `GET /routes`, `GET /deliveries?status=&incident_id=` | security | Notification configuration and delivery log |
@@ -97,6 +108,7 @@ Roles, from least to most access: `viewer` (read, including the audit log), `eng
 | `GET /assets/{id}/remediation` | viewer | Remediation actions for an asset |
 | `POST /assets/{id}/remediation-token` | admin | Collector token bound to this host, required for remediation |
 | `GET /agent/actions`, `POST /agent/actions/{id}/report` | host-bound token | Agent fetches approved changes and reports results |
+| `GET /agent/check?asset_id=` | collector, engineer | The agent's [check-again poll](#agent-poll): `{"check": true, "poll_seconds": 45}` when someone asked for a fresh report from one of the listed assets |
 | `GET /remediation/renovate.json?repository=&mode=exclusive` | collector, engineer | Renovate rules for approved repository plans |
 
 Inventory rows carry `coverage`, whether vulnerability intelligence covered
@@ -190,6 +202,10 @@ A finding is one issue on one inventory row:
 
 Findings resolve automatically when the component is upgraded or removed, or when an advisory is withdrawn. If the issue comes back, the finding reopens. Both are recorded in the finding's history (`GET /findings/{id}/events`) as `resolved` (the note is the resolution) and `reopened` (with the earlier resolution in `detail`), by actor `matcher`.
 
+An issue that was fixed by an upgrade or a removal and comes back on the same asset (the same component and advisory, on the same or another inventory row) is **regressed**: `regressed_at` is set, the history gets a `regressed` event, work that was in progress goes back to `new`, and the issue is urgent in notifications whatever its priority. Two cases are not regressions: an upgrade that leaves the component vulnerable (the old and new versions overlap) and an issue closed only because the intelligence changed (resolution "no longer affected (re-evaluated ...)"), which reopens as before.
+
+Findings also carry `display_state`, `regressed_at`, `until_fix`, `ignore_reason` and `exception_id`; see [The seven states](#the-seven-states).
+
 ## Upgrade recommendations
 
 `upgrade` objects are built only from stored data: the fixed versions advisories give for the open findings on one installed copy, the registry's release list, and endoflife.date release lines. Nothing is guessed: when data is missing the response says so.
@@ -232,11 +248,57 @@ Each finding has a detection `status` (`open` or `resolved`), set automatically,
 | `reset` | `new` | |
 | `assign` | unchanged | `user_id` and/or `team_id`; `0` clears |
 | `comment` | unchanged | `note` is recorded in the history |
-| `suppress` | `suppressed` | Security role. `note` (reason) and `until` are required; `until` may be at most the risk policy's `exception_max_days` (default 365) ahead. Optional `mitigation` records what reduces the risk meanwhile |
-| `accept_risk` | `risk_accepted` | Security role. Same fields and limit as `suppress` |
-| `reopen` | `new` | Security role, from `suppressed` or `risk_accepted` |
+| `suppress` | `suppressed` | Security role ("Snooze" in the dashboard). `note` (reason) and `until` are required; `until` may be at most the risk policy's `exception_max_days` (default 365) ahead. Optional `mitigation` records what reduces the risk meanwhile. With `"until_fix": true` the issue is snoozed until a fix ships: `until` is optional and defaults to the exception limit as a backstop; refused when a free fixed version already exists |
+| `accept_risk` | `risk_accepted` | Security role. Same fields and limit as `suppress`; sets `ignore_reason` `accepted_risk` |
+| `ignore` | `risk_accepted` | Security role. See [Ignore rules](#ignore-rules): `reason`, `scope`, `expiry`, `until` (for `expiry: date`), `note` (required) and `mitigation` |
+| `reopen` | `new` | Security role, from `suppressed` or `risk_accepted`. A finding reopened from an ignore rule is not ignored by that rule again |
 
-When a suppression or risk acceptance expires, the finding returns to `new` and is announced again. Every action is recorded in the finding's history and in the audit log.
+When a snooze, risk acceptance or ignore expires, or a free fixed version appears for one that waits for a fix, the finding returns to `new` with an `expired` or `fix_available` event and is announced again. Every action is recorded in the finding's history and in the audit log. Engineers and viewers cannot snooze or ignore: they ask through the [approval inbox](#approval-inbox).
+
+### The seven states
+
+The dashboard shows seven states. They map onto the stored `status` and `state`, which are unchanged; `display_state` on every finding gives the mapping:
+
+| Shown | `display_state` | Stored |
+|---|---|---|
+| New | `new` | `status` open, `state` `new` |
+| To do | `to_do` | `status` open, `state` `acknowledged` |
+| In progress | `in_progress` | `status` open, `state` `in_progress` |
+| Fixed | `fixed` | `status` `resolved` |
+| Regressed | `regressed` | `status` open, `regressed_at` set, `state` `new` or `acknowledged` |
+| Snoozed | `snoozed` | `state` `suppressed` |
+| Accepted | `accepted` | `state` `risk_accepted` (with `ignore_reason`) |
+
+`GET /findings?state=regressed` lists the regressed issues; `GET /findings/summary` adds `regressed` and `until_fix` (snoozed or ignored issues waiting for a fix). Snoozed and accepted issues stay in `by_state` (`suppressed`, `risk_accepted`), so the counts of hidden issues include them.
+
+### Ignore rules
+
+`ignore` records why an issue is ignored, where, and until when:
+
+- `reason`: `accepted_risk`, `false_positive`, `mitigated` or `no_fix`. A false positive also sets the finding's `verification` to `rejected` (the matcher keeps it; reopening restores its own value).
+- `scope`: `asset` (the default) or `everywhere`: every asset in the workspace with the same component and advisory, including assets and findings found later.
+- `expiry`: `date` (with `until`, at most `exception_max_days` ahead), `until_fix` (until a free fixed version exists, with `exception_max_days` as a backstop; refused when one exists already) or `never` (false positives only).
+
+Each ignore is stored as a rule for one issue (component and advisory) on one asset or everywhere; a new ignore with the same scope replaces the earlier rule. Every minute the rules are applied to new and regressed findings they cover, with an `ignored` event. When a rule's date passes it ends (`ended_reason: expired`) and its findings return to `new`. `DELETE /ignore-rules/{id}` ends a rule by hand.
+
+### Approval inbox
+
+Engineers and viewers ask for an ignore with `POST /ignore-requests`; the request records who asked, why, the scope and the expiry, and changes nothing. Security and admin users approve or decline it (`POST /ignore-requests/{id}/decision`), with an optional note. Approval ignores the issues that are still open and active, with the decider as the actor and the request in each finding's history. Requests and decisions are in the audit log (`ignore_request.create`, `ignore_request.approve`, `ignore_request.decline`).
+
+## Check again
+
+A check asks for fresh evidence about an asset or about one fix on it. An action reported as done never closes an issue: only a fresh report does, and issues close on their own when it no longer has them.
+
+- `method` says who has to report: `agent` (the agent on a host, which [polls](#agent-poll)), `integration` (a server-side scan of a Git repository or image, queued at once) or `report` (the next upload, such as `stackurity scan` in CI).
+- `status`: `waiting` (no report yet), `evaluating` (a complete report arrived after the request and is being matched) or `done`.
+- `outcome` when done: `passed` (none of the issues it was about is left), `partly_fixed` (some are gone, `remaining` are left), `still_open` (none is gone) or `expired` (no report within 7 days). `fixed`, `remaining` and, for a whole asset, `new_issues` give the counts; an issue counts as left when it is open on the asset in any state, on any version.
+- `reason` is `check`, or `applied` for "I applied this". `requested_by`, `requested_at`, `picked_up_at` (when the agent asked for it), `collection_id` (the report that answered it) and `completed_at` record what happened. `agent_polled_at` (also on `GET /assets/{id}`) is when the asset's agent last polled: null for agents older than 0.7.
+
+Requesting a check while one with the same scope is still waiting for a report returns that check.
+
+### Agent poll
+
+Agents from 0.7 on ask `GET /agent/check?asset_id=1&asset_id=2` between collections, every 45 seconds plus up to a third of that as jitter (`--check-interval`, 0 turns it off), with the assets their last report went to and their own token. A host-bound token is only answered for its host and the applications on it (the assets ingest accepts from it); other ids are ignored. The answer is `{"check": true|false, "poll_seconds": 45}`; the agent follows `poll_seconds` between 15 seconds and 10 minutes. When `check` is true it collects and reports at once. The request is a lookup in a small index; the server records the poll on the asset at most every 5 minutes. A server without the endpoint (404) makes the agent stop polling. Agents older than 0.7 never poll: they report on their `--interval` (6 hours by default) and when they start, so restarting one reports at once.
 
 ## Priority and SOS
 
@@ -316,8 +378,9 @@ Webhook channels receive each message as JSON. Fields are only ever added, never
 ```
 
 - `summary` holds the item texts as plain lines (details indented), for receivers that only show text.
-- `sections[].title` names the part of a summary: `New issues`, `Connected`, `Fixed`, `Top fixes still open`, `Overdue`, `Stackurity needs attention`.
-- `counts` keys: `urgent`, `assets`, `problems` (urgent); `new`, `new_urgent`, `fixed`, `connected`, `open_fixes`, `overdue`, `overdue_urgent`, `ack_overdue`, `problems`, `held` (summary); `overdue_urgent`, `fixes` (overdue).
+- `sections[].title` names the part of a message: `Came back after a fix` (urgent and summary), `New issues`, `Connected`, `Fixed`, `Top fixes still open`, `Overdue`, `Stackurity needs attention`.
+- `counts` keys: `urgent`, `assets`, `problems`, `regressed` (urgent); `new`, `new_urgent`, `fixed`, `connected`, `regressed`, `open_fixes`, `overdue`, `overdue_urgent`, `ack_overdue`, `problems`, `held` (summary); `overdue_urgent`, `fixes` (overdue).
+- Issues that came back after a fix are urgent whatever their priority: the next urgent message on routes in **Urgent right away + daily summary** mode lists them per asset ("web-1: 3 issues came back after a fix"), once, and summaries count them in their own section rather than as new issues.
 - Summaries also carry `"period": {"from": "...", "to": "..."}`.
 - Every `link` is a dashboard page: the home page, an asset, a fix (`/fixes/{id}`) or a filtered **All issues** list (`/fixes/issues?...`; summaries add `new_within` or `resolved_within` for their period). Links need `STACKURITY_BASE_URL`.
 - Jira issue events (`opened`, `priority_raised`, `escalated`, `resolved`, `updated`) and `test` keep the per-incident shape: `incident_id`, `kind`, `key`, `title`, `priority`, `summary`, `recommended_action`, `link`.

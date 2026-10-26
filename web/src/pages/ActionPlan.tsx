@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation, useParams, useSearchParams } from "react-router";
 import {
   api,
@@ -8,6 +8,7 @@ import {
   SEVERITIES,
   type Asset,
   type AssetDetail,
+  type Check,
   type FixBucket,
   type FixGroup,
   type FixGroupDetail,
@@ -33,7 +34,8 @@ import {
 } from "../components/FixGroups";
 import { Badge } from "../components/Badge";
 import { FindingActions, GROUP_ACTION_MAX } from "../components/Workflow";
-import { Card, Code, CodeBlock, EmptyState, ErrorBox, FilterPanel, Loading, Notice, PageHeader, Pager, PresetChips, RelativeTime } from "../components/ui";
+import { CheckAgain, CheckBadge, CheckResultText } from "../components/CheckAgain";
+import { Card, EmptyState, ErrorBox, FilterPanel, Loading, Notice, PageHeader, Pager, PresetChips, RelativeTime } from "../components/ui";
 
 const LIMIT = 20;
 
@@ -237,39 +239,6 @@ export function FixesPage() {
 
 const DETAIL_LIMIT = 50;
 
-/** When the asset was last checked, and how to check it again now. */
-export function CheckAgain({ asset }: { asset: AssetDetail["asset"] | undefined | null }) {
-  if (!asset) return null;
-  const at = asset.attributes ?? {};
-  let how: ReactNode;
-  if (asset.kind === "host")
-    how = (
-      <>
-        <p className="small">The agent reports every 6 hours and whenever it starts. To check now, restart it on the server:</p>
-        <CodeBlock label="Check again now" text="sudo systemctl restart stackurity-agent" />
-      </>
-    );
-  else if (asset.kind === "repository")
-    how = (
-      <>
-        <p className="small">
-          Scan the repository again in CI or on your machine, with a collector token in <Code>STACKURITY_TOKEN</Code>. If it is an{" "}
-          <Link to="/integrations">integration</Link>, use <strong>Run now</strong> there instead.
-        </p>
-        <CodeBlock label="Check again now" text={`stackurity scan . --git-url "${at.git_url || "$CI_REPOSITORY_URL"}"`} />
-      </>
-    );
-  else how = <p className="small">The next collection of this asset checks again.</p>;
-  return (
-    <div className="check-again">
-      <p className="small">
-        <strong>Last checked</strong> <RelativeTime iso={asset.last_seen} />. Issues close on their own when a check no longer finds them.
-      </p>
-      {how}
-    </div>
-  );
-}
-
 export function FixGroupDetailPage() {
   const { id = "" } = useParams();
   const { hash } = useLocation();
@@ -288,6 +257,7 @@ export function FixGroupDetailPage() {
     if (initialPanel && loaded) document.getElementById("fix-act")?.scrollIntoView({ block: "start" });
   }, [initialPanel, loaded]);
 
+  if (res.error && res.error.status === 404) return <FixDone id={id} />;
   if (res.error)
     return (
       <>
@@ -402,7 +372,7 @@ export function FixGroupDetailPage() {
               </p>
             </details>
           )}
-          <CheckAgain asset={asset.data?.asset} />
+          <CheckAgain asset={asset.data?.asset} fixGroup={g.id} onChanged={res.reload} />
         </Card>
         <Card title="How to fix">
           <div className="form-compact form">
@@ -446,10 +416,8 @@ export function FixGroupDetailPage() {
       )}
 
       <section id="fix-act" className="card fix-act" aria-labelledby="fix-act-h">
-        <h2 id="fix-act-h">Assign, snooze or accept the risk</h2>
-        {!can("engineer") ? (
-          <p className="muted small">Your role can view fixes. An engineer can assign them; the security role can snooze or accept them.</p>
-        ) : g.finding_count > GROUP_ACTION_MAX ? (
+        <h2 id="fix-act-h">{can("security") ? "Assign, snooze or ignore" : "Assign or ask to ignore"}</h2>
+        {g.finding_count > GROUP_ACTION_MAX ? (
           <p className="small">
             This fix has {g.finding_count.toLocaleString()} issues, more than can be changed at once here ({GROUP_ACTION_MAX.toLocaleString()}).
             Open <Link to={issuesLink}>its issues in All issues</Link> and select them a page at a time.
@@ -457,8 +425,8 @@ export function FixGroupDetailPage() {
         ) : (
           <>
             <p className="small muted">
-              Applies to all {plural(g.finding_count, "issue")} of this fix. Snoozing and accepting the risk need the security role, a reason
-              and an end date.
+              Applies to all {plural(g.finding_count, "issue")} of this fix. Snoozing and ignoring need the security role and a reason; other
+              roles can ask to ignore, and security decides.
             </p>
             <FindingActions target={{ type: "group", id: g.id, count: g.finding_count }} onDone={res.reload} initialPanel={initialPanel} />
           </>
@@ -469,6 +437,48 @@ export function FixGroupDetailPage() {
           </p>
         )}
       </section>
+    </>
+  );
+}
+
+/**
+ * A fix that is no longer in the plan: every issue it was about is gone (or
+ * handled). When a check proved it, say so instead of "not found".
+ */
+function FixDone({ id }: { id: string }) {
+  const checks = useLoad(() => api.get<List<Check>>("/checks", { fix_group: id, limit: 1 }), [id]);
+  if (!checks.data && !checks.error) return <Loading />;
+  const c = checks.data?.items[0];
+  return (
+    <>
+      <nav className="crumbs" aria-label="Breadcrumb">
+        <Link to="/fixes">Fixes</Link>
+      </nav>
+      <PageHeader help="check-again" title={c ? (c.fix_title || "This fix") + " is done" : "Fix"} sub={c ? c.asset_name : undefined} />
+      {c ? (
+        <Card title={<span className="badges">Last check <CheckBadge c={c} /></span>}>
+          {c.status === "done" ? (
+            <CheckResultText c={c} issuesLink={`/fixes/issues?asset_id=${c.asset_id}`} />
+          ) : (
+            <p className="small">A check is still waiting for a report.</p>
+          )}
+          <p className="small">
+            This fix is no longer in the plan: none of its issues is open and active any more. Asked by {c.requested_by || "someone"}{" "}
+            <RelativeTime iso={c.requested_at} />.
+          </p>
+          <p className="small">
+            <Link to={`/assets/${c.asset_id}`}>Open {c.asset_name}</Link> · <Link to={`/fixes?asset_id=${c.asset_id}`}>Its other fixes</Link> ·{" "}
+            <Link to={`/fixes/issues?status=resolved&asset_id=${c.asset_id}`}>Fixed issues</Link>
+          </p>
+        </Card>
+      ) : (
+        <>
+          <Notice kind="info">This fix is no longer in the plan. Its issues were fixed or handled, or the plan changed.</Notice>
+          <p>
+            <Link to="/fixes">Back to fixes</Link>
+          </p>
+        </>
+      )}
     </>
   );
 }

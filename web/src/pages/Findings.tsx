@@ -10,6 +10,15 @@ import { EmptyState, ErrorBox, FilterPanel, Loading, PageHeader, Pager, PresetCh
 
 const LIMIT = 50;
 
+/** Stored states under the names people see. */
+const STATE_FILTER_LABEL: Record<string, string> = {
+  new: "New",
+  acknowledged: "To do",
+  in_progress: "In progress",
+  suppressed: "Snoozed",
+  risk_accepted: "Accepted (ignored)",
+};
+
 /** Filters that the preset chips and the panel share, as URL parameters. */
 const PARAMS = [
   "status",
@@ -108,6 +117,7 @@ export function IssuesPage() {
     ...(myId ? [{ label: "Assigned to me", p: { assignee_user: myId } }] : []),
     { label: "New this week", p: { new_within: "7" } },
     { label: "Known exploited", p: { known_exploited: "true" } },
+    { label: "Came back", p: { state: "regressed" } },
   ];
   // Panel filters: everything except the presets' own keys that are visible as chips.
   const active = PARAMS.filter((k) => params.get(k) && !(k === "status" && params.get(k) === "open")).length;
@@ -169,9 +179,10 @@ export function IssuesPage() {
               <option value="active">Active (not snoozed or accepted)</option>
               {FINDING_STATES.map((x) => (
                 <option key={x} value={x}>
-                  {x === "suppressed" ? "snoozed" : x.replace(/_/g, " ")}
+                  {STATE_FILTER_LABEL[x] ?? x.replace(/_/g, " ")}
                 </option>
               ))}
+              <option value="regressed">Regressed (came back after a fix)</option>
             </select>
           </div>
           <div className="field">
@@ -304,7 +315,7 @@ export function IssuesPage() {
       )}
       {res.data && rows.length > 0 && (
         <>
-          {can("engineer") && selected.size > 0 && (
+          {can("viewer") && selected.size > 0 && (
             <div className="bulkbar" role="region" aria-label="Bulk actions">
               <strong>{selected.size} selected</strong>
               <FindingActions
@@ -330,7 +341,7 @@ export function IssuesPage() {
                   </Link>
                 </h2>
                 <div className="only-wide">
-                  <FindingsTable rows={list} hideAsset selected={can("engineer") ? selected : undefined} onSelect={setSelected} />
+                  <FindingsTable rows={list} hideAsset selected={can("viewer") ? selected : undefined} onSelect={setSelected} />
                 </div>
                 <FindingCards rows={list} hideAsset />
               </Fragment>
@@ -338,7 +349,7 @@ export function IssuesPage() {
           ) : (
             <>
               <div className="only-wide">
-                <FindingsTable rows={rows} selected={can("engineer") ? selected : undefined} onSelect={setSelected} />
+                <FindingsTable rows={rows} selected={can("viewer") ? selected : undefined} onSelect={setSelected} />
               </div>
               <FindingCards rows={rows} />
             </>

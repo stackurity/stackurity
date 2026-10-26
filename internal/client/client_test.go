@@ -48,3 +48,30 @@ func TestReportActionRetries(t *testing.T) {
 		t.Errorf("server down: err %v, %d calls", err, calls.Load())
 	}
 }
+
+// The check-again poll sends the agent's assets and reads the answer; a
+// server older than 0.7 (404) tells the agent to stop asking.
+func TestCheckDue(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/agent/check" {
+			w.WriteHeader(404)
+			return
+		}
+		if got := r.URL.Query()["asset_id"]; len(got) != 2 || got[0] != "4" || got[1] != "9" || r.Header.Get("Authorization") != "Bearer t" {
+			w.WriteHeader(400)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"check":true,"poll_seconds":45}`))
+	}))
+	defer srv.Close()
+	c, _ := New(srv.URL, "t", "test")
+	due, every, err := c.CheckDue(context.Background(), []int64{4, 9})
+	if err != nil || !due || every != 45*time.Second {
+		t.Errorf("poll: %v %v %v", due, every, err)
+	}
+	old, _ := New(srv.URL+"/old", "t", "test")
+	if _, _, err := old.CheckDue(context.Background(), []int64{4}); !errors.Is(err, ErrNoCheckPolling) {
+		t.Errorf("old server: %v", err)
+	}
+}

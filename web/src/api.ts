@@ -256,6 +256,8 @@ export interface Asset {
   last_seen: string;
   collection_status: string;
   component_count: number;
+  /** When the asset's agent last asked whether to report now (0.7 agents); null for older agents. */
+  agent_polled_at?: string | null;
 }
 
 export interface Identifier {
@@ -691,6 +693,16 @@ export interface Finding {
   escalation_level?: number;
   incident_id?: number | null;
   overdue?: boolean;
+  /** When the issue last came back after it was fixed. */
+  regressed_at?: string | null;
+  /** Snoozed or ignored until a free fixed version exists. */
+  until_fix?: boolean;
+  /** Why an accepted issue is ignored. */
+  ignore_reason?: IgnoreReason | "";
+  /** The ignore rule that set the state. */
+  exception_id?: number | null;
+  /** The state the dashboard shows. */
+  display_state?: DisplayState;
 }
 
 export interface FindingSummary {
@@ -709,6 +721,10 @@ export interface FindingSummary {
   unassigned?: number;
   /** Findings resolved in the last 7 days. */
   resolved_7d?: number;
+  /** Open issues that came back after a fix and nobody has started on. */
+  regressed?: number;
+  /** Snoozed or accepted issues waiting for a fix. */
+  until_fix?: number;
 }
 
 export interface AdvisoryReference {
@@ -1072,6 +1088,90 @@ export const PRIORITIES = ["P1", "P2", "P3", "P4"] as const;
 export type Priority = (typeof PRIORITIES)[number];
 export const FINDING_STATES = ["new", "acknowledged", "in_progress", "suppressed", "risk_accepted"] as const;
 export type FindingState = (typeof FINDING_STATES)[number];
+/** The seven states shown to people, mapped from stored state and status. */
+export const DISPLAY_STATES = ["new", "to_do", "in_progress", "fixed", "regressed", "snoozed", "accepted"] as const;
+export type DisplayState = (typeof DISPLAY_STATES)[number];
+export const IGNORE_REASONS = ["accepted_risk", "false_positive", "mitigated", "no_fix"] as const;
+export type IgnoreReason = (typeof IGNORE_REASONS)[number];
+export type IgnoreScope = "asset" | "everywhere";
+export type IgnoreExpiry = "date" | "until_fix" | "never";
+
+/** Check again: a request for fresh evidence about an asset or one fix on it. */
+export interface Check {
+  id: number;
+  asset_id: number;
+  asset_name: string;
+  asset_kind: string;
+  fix_group: string;
+  fix_title: string;
+  reason: "check" | "applied" | string;
+  method: "agent" | "integration" | "report" | string;
+  integration_id: number | null;
+  requested_by: string;
+  requested_at: string;
+  picked_up_at: string | null;
+  collection_id: number | null;
+  completed_at: string | null;
+  outcome: "" | "passed" | "partly_fixed" | "still_open" | "expired";
+  open_before: number;
+  fixed: number;
+  remaining: number;
+  new_issues: number;
+  status: "waiting" | "evaluating" | "done";
+  agent_polled_at: string | null;
+}
+
+/** An ignore decision for one issue on one asset, or on every asset. */
+export interface IgnoreRule {
+  id: number;
+  kind: string;
+  key: string;
+  component_id: number;
+  component_name: string;
+  asset_id: number | null;
+  asset_name: string;
+  scope: IgnoreScope;
+  reason: IgnoreReason;
+  note: string;
+  mitigation: string;
+  expires_at: string | null;
+  until_fix: boolean;
+  created_by: string;
+  request_id: number | null;
+  created_at: string;
+  ended_at: string | null;
+  ended_by: string;
+  ended_reason: string;
+  findings: number;
+}
+
+/** A request to ignore issues, decided by security or admin users. */
+export interface IgnoreRequest {
+  id: number;
+  finding_ids: number[];
+  title: string;
+  fix_group: string;
+  asset_id: number | null;
+  asset_name: string;
+  reason: IgnoreReason;
+  note: string;
+  mitigation: string;
+  scope: IgnoreScope;
+  expiry: IgnoreExpiry;
+  expires_at: string | null;
+  status: "pending" | "approved" | "declined";
+  requested_by_id: number | null;
+  requested_by: string;
+  requested_at: string;
+  decided_by: string;
+  decided_at: string | null;
+  decision_note: string;
+  applied: number;
+}
+
+export interface IgnoreRequestList extends List<IgnoreRequest> {
+  can_decide: boolean;
+}
 export const INCIDENT_KINDS = ["vulnerability", "end_of_life", "feed", "collection", "coverage", "platform"] as const;
 export const SYSTEM_INCIDENT_KINDS = ["feed", "collection", "coverage", "platform"];
 
@@ -1089,6 +1189,7 @@ export type FindingActionName =
   | "comment"
   | "suppress"
   | "accept_risk"
+  | "ignore"
   | "reopen";
 
 export interface FindingActionRequest {
@@ -1099,6 +1200,12 @@ export interface FindingActionRequest {
   user_id?: number; // 0 clears
   team_id?: number; // 0 clears
   ids?: number[]; // bulk only
+  /** suppress: until a free fixed version exists (no date needed). */
+  until_fix?: boolean;
+  /** ignore: why, where and until when. */
+  reason?: IgnoreReason;
+  scope?: IgnoreScope;
+  expiry?: IgnoreExpiry;
 }
 
 export interface ActionResult {

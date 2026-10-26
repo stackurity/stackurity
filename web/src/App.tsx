@@ -15,6 +15,8 @@ import { ComponentDetailPage } from "./pages/ComponentDetail";
 import { CoveragePage } from "./pages/Coverage";
 import { IntegrationsPage } from "./pages/Integrations";
 import { AuditPage } from "./pages/Audit";
+import { ApprovalsPage } from "./pages/Approvals";
+import { ChecksPage } from "./pages/Checks";
 import { ReportsPage } from "./pages/Reports";
 import { OutcomesPage } from "./pages/Outcomes";
 import { UsersPage } from "./pages/settings/Users";
@@ -180,6 +182,8 @@ export function App() {
         <Route path="reports" element={<ReportsPage />} />
         <Route path="outcomes" element={<OutcomesPage />} />
         <Route path="audit" element={<AuditPage />} />
+        <Route path="checks" element={<ChecksPage />} />
+        <Route path="settings/approvals" element={<ApprovalsPage />} />
         <Route path="settings/tokens" element={<TokensPage />} />
         <Route path="settings/risk-policy" element={<RiskPolicyPage />} />
         <Route

@@ -346,7 +346,7 @@ func countIf(n int, word string) string {
 // problems with Stackurity's own data. quiet assets (first scan) are left
 // out. ok is false when nothing is left to say.
 func (d *Dispatcher) urgentMessage(r store.Route, incs []store.Incident, rows map[int64][]store.IssueCount,
-	quiet map[int64]bool, infos map[string]store.FixInfo) (Message, bool) {
+	quiet map[int64]bool, infos map[string]store.FixInfo, regressed []store.IssueCount) (Message, bool) {
 	var counts []store.IssueCount
 	var system []store.Incident
 	top, sos := "P4", false
@@ -370,9 +370,17 @@ func (d *Dispatcher) urgentMessage(r store.Route, incs []store.Incident, rows ma
 		}
 		sos = sos || in.SOS
 	}
+	for _, c := range regressed {
+		if c.Priority < top {
+			top = c.Priority
+		}
+		sos = sos || c.SOS
+	}
 	assets := byAsset(counts, nil, func(store.IssueCount) bool { return true })
+	back := byAsset(regressed, nil, func(store.IssueCount) bool { return true })
 	n, _ := total(assets)
-	if n == 0 && len(system) == 0 {
+	nBack, _ := total(back)
+	if n == 0 && len(system) == 0 && nBack == 0 {
 		return Message{}, false
 	}
 	pf := priorityFilter(r.MinPriority)
@@ -392,6 +400,9 @@ func (d *Dispatcher) urgentMessage(r store.Route, incs []store.Incident, rows ma
 		}
 		sections = append(sections, Section{Items: items})
 	}
+	if len(back) > 0 {
+		sections = append(sections, Section{Title: "Came back after a fix", Items: d.regressedItems(back, infos)})
+	}
 	if len(system) > 0 {
 		sections = append(sections, Section{Title: "Stackurity needs attention", Items: d.systemItems(system)})
 	}
@@ -401,16 +412,45 @@ func (d *Dispatcher) urgentMessage(r store.Route, incs []store.Incident, rows ma
 		title = fmt.Sprintf("%s: %s", assets[0].Name, plural(n, "new urgent issue"))
 	case len(assets) > 1:
 		title = fmt.Sprintf("%s on %s", plural(n, "new urgent issue"), plural(len(assets), "asset"))
+	case len(back) == 1:
+		title = fmt.Sprintf("%s: %s", back[0].Name, cameBack(nBack))
+	case len(back) > 1:
+		title = fmt.Sprintf("%s on %s", cameBack(nBack), plural(len(back), "asset"))
 	default:
 		title = fmt.Sprintf("Stackurity needs attention: %s", plural(len(system), "problem"))
 	}
-	if len(assets) > 0 && len(system) > 0 {
+	if len(assets) > 0 && nBack > 0 {
+		title += fmt.Sprintf(", %s came back", thousands(nBack))
+	}
+	if (len(assets) > 0 || len(back) > 0) && len(system) > 0 {
 		title += fmt.Sprintf(", %s", plural(len(system), "problem"))
 	}
 	m := d.grouped(r, EventUrgent, title, sections)
 	m.Priority, m.SOS = top, sos
-	m.Counts = map[string]int{"urgent": n, "assets": len(assets), "problems": len(system)}
+	m.Counts = map[string]int{"urgent": n, "assets": len(assets), "problems": len(system), "regressed": nBack}
 	return m, true
+}
+
+// cameBack: "1 issue came back after a fix", "3 issues came back after a fix".
+func cameBack(n int) string { return plural(n, "issue") + " came back after a fix" }
+
+// regressedItems lists, per asset, the issues that came back after a fix,
+// with the fixes that clear them.
+func (d *Dispatcher) regressedItems(back []*assetIssues, infos map[string]store.FixInfo) []Item {
+	q := url.Values{"state": {"regressed"}}
+	var items []Item
+	for i, a := range back {
+		if i == maxAssetItems {
+			items = append(items, moreAssets(len(back)-maxAssetItems, "with issues that came back", d.findingsURL(0, q)))
+			break
+		}
+		items = append(items, Item{
+			Text:  fmt.Sprintf("%s: %s%s", a.Name, cameBack(a.Count), detail(countIf(a.KEV, "known exploited"), countIf(a.SOS, "SOS"))),
+			Link:  d.findingsURL(a.ID, q),
+			Items: d.fixItems(a.Fixes, infos, a.ID, true),
+		})
+	}
+	return items
 }
 
 func (d *Dispatcher) systemItems(list []store.Incident) []Item {
@@ -679,6 +719,10 @@ func (d *Dispatcher) summaryMessage(r store.Route, data *summaryData, from, to t
 	if err != nil {
 		return Message{}, false, err
 	}
+	regressed, err := data.counts(store.IssuesRegressed, from, to)
+	if err != nil {
+		return Message{}, false, err
+	}
 	connected, err := d.Store.AssetsAnnounced(data.ctx, from, to)
 	if err != nil {
 		return Message{}, false, err
@@ -689,6 +733,11 @@ func (d *Dispatcher) summaryMessage(r store.Route, data *summaryData, from, to t
 	fixedAssets := byAsset(fixed, scope, nil)
 	nNew, nUrgent := total(newAssets)
 	nFixed, _ := total(fixedAssets)
+	backAssets := byAsset(regressed, scope, nil)
+	if !assetsWanted(r) {
+		backAssets = nil
+	}
+	nBack, _ := total(backAssets)
 	if !r.SendResolved {
 		nFixed, fixedAssets = 0, nil
 	}
@@ -703,8 +752,21 @@ func (d *Dispatcher) summaryMessage(r store.Route, data *summaryData, from, to t
 	// The issues lists show the summary's period (in whole days).
 	days := strconv.Itoa(max(1, int(to.Sub(from).Hours()/24+0.5)))
 	newQ, fixedQ := url.Values{"new_within": {days}}, url.Values{"status": {"resolved"}, "resolved_within": {days}}
-	counts := map[string]int{"new": nNew, "new_urgent": nUrgent, "fixed": nFixed, "connected": len(conn)}
+	counts := map[string]int{"new": nNew, "new_urgent": nUrgent, "fixed": nFixed, "connected": len(conn), "regressed": nBack}
 	var sections []Section
+
+	if len(backAssets) > 0 {
+		var items []Item
+		q := url.Values{"state": {"regressed"}}
+		for i, a := range backAssets {
+			if i == maxAssetItems {
+				items = append(items, moreAssets(len(backAssets)-maxAssetItems, "with issues that came back", d.findingsURL(0, q)))
+				break
+			}
+			items = append(items, Item{Text: fmt.Sprintf("%s: %s", a.Name, cameBack(a.Count)), Link: d.findingsURL(a.ID, q)})
+		}
+		sections = append(sections, Section{Title: "Came back after a fix", Items: items})
+	}
 
 	if len(newAssets) > 0 {
 		var items []Item
@@ -830,6 +892,9 @@ func (d *Dispatcher) summaryMessage(r store.Route, data *summaryData, from, to t
 		period = "Weekly"
 	}
 	var parts []string
+	if nBack > 0 {
+		parts = append(parts, thousands(nBack)+" came back")
+	}
 	if nNew > 0 {
 		parts = append(parts, plural(nNew, "new issue"))
 	}
@@ -852,7 +917,7 @@ func (d *Dispatcher) summaryMessage(r store.Route, data *summaryData, from, to t
 	m := d.grouped(r, EventSummary, title, sections)
 	m.Period = &Period{From: from.UTC(), To: to.UTC()}
 	m.Counts = counts
-	changed := nNew > 0 || nFixed > 0 || len(conn) > 0 || newlyOverdue > 0 || newSys > 0
+	changed := nNew > 0 || nFixed > 0 || len(conn) > 0 || newlyOverdue > 0 || newSys > 0 || nBack > 0
 	return m, changed, nil
 }
 

@@ -2,7 +2,7 @@ import type { MouseEvent, ReactNode } from "react";
 import { Link, useNavigate } from "react-router";
 import { PRIORITIES, SEVERITIES, type Finding, type FindingSummary } from "../api";
 import { plural } from "../format";
-import { Badge, KevBadge, PriorityBadge, SeverityBadge, SosBadge, StateBadge } from "./Badge";
+import { Badge, KevBadge, PriorityBadge, SeverityBadge, SosBadge, FindingStateBadge } from "./Badge";
 import { EvidenceStateBadge } from "./Provenance";
 import { Assignee, DueDate } from "./Workflow";
 import { Table, type Column } from "./Table";
@@ -37,7 +37,7 @@ export function FindingCards({ rows, hideAsset }: { rows: Finding[]; hideAsset?:
               <SeverityBadge severity={f.severity} score={f.score} />
               {f.known_exploited && <KevBadge />}
             </span>
-            {f.status === "open" ? <StateBadge state={f.state} /> : <Badge status={f.status} />}
+            <FindingStateBadge f={f} detail />
           </div>
           <Link to={`/findings/${f.id}`} className="finding-card-title">
             <span className="mono">{f.key}</span>
@@ -227,7 +227,7 @@ export function FindingsTable({
     {
       key: "state",
       header: "State",
-      cell: (f) => (f.status === "open" ? <StateBadge state={f.state} /> : <Badge status={f.status} />),
+      cell: (f) => <FindingStateBadge f={f} />,
     },
     { key: "assignee", header: "Assignee", cell: (f) => <Assignee email={f.assignee_email} team={f.assignee_team} /> },
     {

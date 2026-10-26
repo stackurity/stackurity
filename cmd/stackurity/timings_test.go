@@ -20,3 +20,15 @@ func TestParseTimings(t *testing.T) {
 		}
 	}
 }
+
+// Agents spread their check-again polls: up to a third of the interval on top.
+func TestJitter(t *testing.T) {
+	for i := 0; i < 100; i++ {
+		if d := jitter(45 * time.Second); d < 45*time.Second || d > 60*time.Second {
+			t.Fatalf("jitter(45s) = %v", d)
+		}
+	}
+	if jitter(0) != 0 {
+		t.Error("jitter(0)")
+	}
+}

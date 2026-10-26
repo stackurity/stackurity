@@ -257,3 +257,31 @@ func (c *Client) Enroll(ctx context.Context, code, hostname string) (*Enrollment
 		map[string]string{"Content-Type": "application/json", "X-Stackurity-CSRF": "1"}, &e)
 	return &e, err
 }
+
+// ErrNoCheckPolling means the server predates check again (0.7): it has no
+// endpoint for agents to ask whether to report now.
+var ErrNoCheckPolling = fmt.Errorf("server does not support check again")
+
+// CheckDue asks the server whether someone asked for a fresh report from
+// any of assetIDs (Check again in the dashboard). It is a small GET the
+// agent sends about once a minute. pollEvery is the interval the server
+// suggests (0 when it says nothing).
+func (c *Client) CheckDue(ctx context.Context, assetIDs []int64) (due bool, pollEvery time.Duration, err error) {
+	q := url.Values{}
+	for _, id := range assetIDs {
+		q.Add("asset_id", fmt.Sprint(id))
+	}
+	var out struct {
+		Check       bool `json:"check"`
+		PollSeconds int  `json:"poll_seconds"`
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if err := c.Do(ctx, "GET", "/api/v1/agent/check?"+q.Encode(), nil, nil, &out); err != nil {
+		if ae, ok := err.(*APIError); ok && (ae.Status == 404 || ae.Status == 405) {
+			return false, 0, ErrNoCheckPolling
+		}
+		return false, 0, err
+	}
+	return out.Check, time.Duration(out.PollSeconds) * time.Second, nil
+}

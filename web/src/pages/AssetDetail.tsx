@@ -42,7 +42,8 @@ import { FindingsTable } from "../components/Findings";
 import { Table, type Column } from "../components/Table";
 import { AssetPicker } from "../components/AssetPicker";
 import { ActionsTable } from "../components/Remediation";
-import { CheckAgain, FixGroupList } from "./ActionPlan";
+import { FixGroupList } from "./ActionPlan";
+import { CheckAgain } from "../components/CheckAgain";
 import { EnableRemediation } from "../components/EnableRemediation";
 import { AssetCoverageNotice, AssetStateBadge, COVERAGE_FILTERS, FindingsCoverageLine, RowCoverageNote } from "../components/Coverage";
 import {
