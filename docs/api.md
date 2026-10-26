@@ -20,6 +20,7 @@ Roles, from least to most access: `viewer` (read, including the audit log), `eng
 | `GET /meta` | none | Version and whether first-time setup is required |
 | `POST /setup` | setup token | Create the first admin |
 | `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` | none / any | Session handling |
+| `POST /feedback` | any signed-in user (rate limited, 10 an hour) | Send feedback to the Stackurity team: `kind` (`bug`, `idea`, `question`), `message` (up to 5000 characters), optional `email` and `page` (a path). The server adds its version and edition and forwards it to `STACKURITY_FEEDBACK_URL`; answers 202 when delivered, 502 when the feedback service cannot be reached, and 404 when feedback is turned off (`GET /auth/me` then has `feedback_enabled: false`). See [network.md](network.md#feedback) |
 | `POST /auth/password` | any signed-in user | Change your own password (`current_password`, `new_password`). Your other sessions are signed out |
 | `POST /enroll` | none (rate limited) | Exchange a one-time enrollment code (`{"code", "hostname"}`) for a collector token and the agent settings chosen with it. Refusals do not say why |
 | `GET`/`POST /enrollments`, `DELETE /enrollments/{id}` | admin | Create, list and revoke enrollment codes: `label`, `environment`, `app_dirs`, `discover_apps`, `uses` (1–500, default 1), `ttl_hours` (1–720, default 24). The code is returned once |

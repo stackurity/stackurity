@@ -72,6 +72,10 @@ var routeRules = map[string]routeRule{
 	"GET /api/v1/workspaces":                {class: "account"},
 	"POST /api/v1/workspaces/{id}/activate": {class: "object", obj: id("workspace")},
 
+	// Sends what the user typed to the feedback URL outside the
+	// installation, nothing of the workspace; see feedback_test.go.
+	"POST /api/v1/feedback": {class: "skip"},
+
 	// Shared by every workspace.
 	"GET /api/v1/packs":                 {class: "global"},
 	"GET /api/v1/packs/{id}/archive":    {class: "global"},

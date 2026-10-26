@@ -2679,3 +2679,83 @@ h6.md-h {
   overflow-x: auto;
   max-width: 100%;
 }
+
+/* Send feedback (components/Feedback.tsx) */
+.topbar-feedback {
+  gap: 4px;
+}
+.dialog {
+  width: min(560px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+  padding: 0;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+}
+.dialog::backdrop {
+  background: rgba(7, 15, 31, 0.45);
+}
+.dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  padding: var(--s3) var(--s4);
+  border-bottom: 1px solid var(--border);
+}
+.dialog-head h2 {
+  margin: 0;
+  font-size: 16px;
+}
+.dialog-body {
+  padding: var(--s4);
+}
+.dialog-body .alert {
+  margin-bottom: var(--s3);
+}
+.feedback-dialog textarea,
+.feedback-dialog input[type="email"] {
+  width: 100%;
+}
+.feedback-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+.feedback-kinds .kind-choice {
+  flex: 1 1 140px;
+  padding: 8px 12px;
+  font-weight: 600;
+  text-align: center;
+  align-items: center;
+}
+.kind-choice[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--info-bg);
+  color: var(--info-fg);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.kind-choice:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.feedback-sent-what code {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 700px) {
+  .topbar-feedback-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+  .feedback-kinds .kind-choice {
+    flex-basis: 100%;
+  }
+}

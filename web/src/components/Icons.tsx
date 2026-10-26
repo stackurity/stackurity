@@ -137,3 +137,9 @@ export const IconSearch = (p: P) => (
     <path d="M20 20l-4-4" />
   </Svg>
 );
+export const IconMessage = (p: P) => (
+  <Svg {...p}>
+    <path d="M4 5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-9l-5 4v-4H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z" />
+    <path d="M8 10h8M8 13h5" />
+  </Svg>
+);

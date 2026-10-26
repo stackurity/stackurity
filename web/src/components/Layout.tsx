@@ -4,6 +4,7 @@ import { api, type Incident, type List, type Plan } from "../api";
 import { useLoad } from "../hooks";
 import { useAuth } from "../auth";
 import { GlobalSearch } from "./Search";
+import { FeedbackButton } from "./Feedback";
 import { PlatformHealthBanner } from "../pages/admin/Health";
 import { UpdateBanner } from "../pages/admin/Updates";
 import {
@@ -270,6 +271,7 @@ export function Layout() {
             <Link to="/help" className="btn btn-sm btn-link topbar-help">
               <IconHelp size={16} /> Help
             </Link>
+            <FeedbackButton />
             <WorkspaceSwitcher />
             <span className="user-email">{who}</span>
             {me && <span className={`role-pill role-${me.role}`}>{me.role}</span>}

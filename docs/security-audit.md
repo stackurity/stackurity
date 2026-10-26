@@ -155,7 +155,7 @@ The documentation is the test specification. Each control stated on this page, i
 
 ### Not provable by a test
 
-Some commitments are design properties checked by review rather than tests: no telemetry or update checks (every outbound client is listed in [network.md](network.md)), and Stackurity never executing code from what it inspects (the clone and parser tests above show the hardening, not the absence of every other path).
+Some commitments are design properties checked by review rather than tests: no telemetry, and no request to the project beyond the update check and feedback a user sends on purpose (every outbound client is listed in [network.md](network.md)), and Stackurity never executing code from what it inspects (the clone and parser tests above show the hardening, not the absence of every other path).
 
 ### Findings of the October 2026 verification
 

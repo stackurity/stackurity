@@ -1,6 +1,6 @@
 # Installing and operating Stackurity
 
-Stackurity runs as one container plus PostgreSQL. It needs no vendor account and sends no telemetry. [network.md](network.md) lists every outbound call, including the update check, which sends nothing about your installation and can be turned off.
+Stackurity runs as one container plus PostgreSQL. It needs no vendor account and sends no telemetry. [network.md](network.md) lists every outbound call, including the update check, which sends nothing about your installation, and feedback that users send on purpose; both can be turned off.
 
 ## Requirements
 
@@ -61,6 +61,7 @@ docker compose exec -e STACKURITY_PASSWORD='a long passphrase' stackurity \
 | `STACKURITY_METRICS_ADDR` | off | Address for a separate Prometheus metrics listener, for example `127.0.0.1:9100` ([Health](#health)). Never the API port |
 | `STACKURITY_FEEDS` | on | `off` disables all intelligence feeds |
 | `STACKURITY_UPDATE_CHECK` | on | `off` disables the release check: no request is made at all ([Upgrading](#upgrading)) |
+| `STACKURITY_FEEDBACK_URL` | `https://stackurity.dev/feedback` | Where **Send feedback** delivers what users write. Set it empty (`STACKURITY_FEEDBACK_URL=`) or `off` to hide the button and turn feedback off ([network.md](network.md#feedback)) |
 | `STACKURITY_UPDATE_URL` | GitHub's release list | Mirror of `https://api.github.com/repos/stackurity/stackurity/releases?per_page=20`, for installs that cannot reach GitHub |
 | `STACKURITY_OSV_URL`, `STACKURITY_KEV_URL`, `STACKURITY_ENDOFLIFE_URL`, `STACKURITY_NPM_REGISTRY`, `STACKURITY_PACKAGIST_URL`, `STACKURITY_PYPI_URL`, `STACKURITY_GOPROXY_URL`, `STACKURITY_CRATES_INDEX_URL`, `STACKURITY_RUBYGEMS_URL`, `STACKURITY_NUGET_URL`, `STACKURITY_MAVEN_URL`, `STACKURITY_PUB_URL` | public sources | Mirrors for offline or air-gapped installs ([network.md](network.md)) |
 | `STACKURITY_BASE_URL` | — | Public dashboard URL, used for links in notifications and by the agent installer |

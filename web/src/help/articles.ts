@@ -28,7 +28,7 @@ export const ARTICLES: Article[] = [
         ],
       },
       {
-        note: "Stackurity runs on your own server and sends no telemetry. The only outbound calls are to the vulnerability feeds, your Git hosts and registries, and the notification channels you configure.",
+        note: "Stackurity runs on your own server and sends no telemetry. The only outbound calls are to the vulnerability feeds, your Git hosts and registries, the notification channels you configure, and [feedback](help:feedback) when you send it.",
       },
     ],
   },
@@ -85,6 +85,36 @@ export const ARTICLES: Article[] = [
           ["Exception", "A finding that was suppressed or risk-accepted by a security user, with a reason, optional mitigation and an expiry date."],
         ],
       },
+    ],
+  },
+  {
+    id: "feedback",
+    title: "Send feedback to the Stackurity team",
+    section: "Getting started",
+    summary: "Report a problem, suggest an improvement or ask a question from inside the app.",
+    where: ["Top bar", "Feedback"],
+    keywords: "feedback bug report idea suggestion question contact support",
+    body: [
+      {
+        steps: [
+          "Click **Feedback** in the top bar (on a phone, the speech-bubble icon).",
+          "Choose **Report a problem**, **Suggest an improvement** or **Ask a question**.",
+          "Write your message. Your email is filled in so the team can reply; clear it to send without one.",
+          "Click **Send feedback**. You see “Thanks, it went to the Stackurity team” when it arrives.",
+        ],
+      },
+      { h: "What is sent" },
+      {
+        list: [
+          "The kind of feedback and your message.",
+          "Your email address, only if it is in the form when you send.",
+          "The path of the page you were on, such as `/findings/17`, without search terms or filters.",
+          "The Stackurity version and edition.",
+        ],
+      },
+      { p: "Nothing else: no findings, asset, host or workspace names, and not this installation's address. Your Stackurity server sends it, not your browser, and each send is recorded in the [audit log](/audit) as `feedback.send`." },
+      { note: "Operators can send feedback somewhere else, or turn it off, with `STACKURITY_FEEDBACK_URL`. When it is off, the button is not shown." },
+      { p: "For a security vulnerability in Stackurity itself, follow the security policy (SECURITY.md in the repository) instead of using feedback." },
     ],
   },
 

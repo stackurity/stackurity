@@ -146,7 +146,7 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 		features = []license.Feature{}
 	}
 	out := map[string]any{"user": p.User, "role": p.Role, "token": p.Token, "workspace": nil, "workspaces": []store.Membership{},
-		"edition": ed, "features": features}
+		"edition": ed, "features": features, "feedback_enabled": s.FeedbackURL != "" && p.User != nil}
 	if p.Workspace > 0 {
 		ws, err := s.Store.GetWorkspace(r.Context(), p.Workspace)
 		if err != nil {
