@@ -229,11 +229,24 @@ func (w *Worker) schedule(ctx context.Context) {
 		if time.Since(registered) >= registerEvery && w.register(ctx) {
 			registered = time.Now()
 		}
+		// While the database is unreachable every claim fails: log the
+		// first error of a tick and how many tasks it affected, not one
+		// line per task.
+		var claimErr error
+		failed := 0
 		for _, p := range w.periodic {
 			if ctx.Err() != nil {
 				return
 			}
-			w.runPeriodic(ctx, p)
+			if err := w.runPeriodic(ctx, p); err != nil {
+				if claimErr == nil {
+					claimErr = fmt.Errorf("task %s: %w", p.name, err)
+				}
+				failed++
+			}
+		}
+		if claimErr != nil {
+			w.Log.Error("claim periodic tasks", "failed", failed, "of", len(w.periodic), "err", claimErr)
 		}
 		select {
 		case <-ctx.Done():
@@ -258,17 +271,18 @@ func (w *Worker) register(ctx context.Context) bool {
 // runPeriodic claims p and runs it if it is due, renewing the lease while it
 // runs. If the lease is lost (this replica could not reach the database for
 // most of a lease), the task's context is cancelled so that it does not
-// overlap with the replica that takes it over.
-func (w *Worker) runPeriodic(ctx context.Context, p periodic) {
+// overlap with the replica that takes it over. It returns the error of a
+// claim that failed (not of the task, which is recorded).
+func (w *Worker) runPeriodic(ctx context.Context, p periodic) error {
 	ok, err := w.Store.ClaimPeriodic(ctx, p.name, w.id, p.every, w.Lease)
 	if err != nil {
-		if ctx.Err() == nil {
-			w.Log.Error("claim periodic task", "task", p.name, "err", err)
+		if ctx.Err() != nil {
+			return nil
 		}
-		return
+		return err
 	}
 	if !ok {
-		return
+		return nil
 	}
 	log := w.Log.With("task", p.name)
 	tctx, cancel := context.WithCancel(ctx)
@@ -297,7 +311,7 @@ func (w *Worker) runPeriodic(ctx context.Context, p periodic) {
 	select {
 	case <-lost:
 		log.Error("periodic task lost its lease and was stopped", "took", time.Since(start), "err", runErr)
-		return
+		return nil
 	default:
 	}
 	if ctx.Err() != nil {
@@ -306,7 +320,7 @@ func (w *Worker) runPeriodic(ctx context.Context, p periodic) {
 		if err := w.Store.ReleasePeriodic(bg, p.name, w.id); err != nil {
 			log.Error("release periodic task", "err", err)
 		}
-		return
+		return nil
 	}
 	if runErr != nil {
 		log.Error("periodic task failed", "err", runErr, "took", time.Since(start))
@@ -316,6 +330,7 @@ func (w *Worker) runPeriodic(ctx context.Context, p periodic) {
 	if err := w.Store.FinishPeriodic(bg, p.name, w.id, runErr); err != nil {
 		log.Error("record periodic task", "err", err)
 	}
+	return nil
 }
 
 // heartbeat renews the lease on a task until done is closed. It calls lose
