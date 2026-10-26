@@ -32,6 +32,8 @@ jobs:
       # without one fails here, before anything is built or published.
       - name: Release notes from CHANGELOG.md
         run: go run ./tools/changelog -version "$GITHUB_REF_NAME" > "$RUNNER_TEMP/release-notes.md"
+      - name: Version references match the tag
+        run: STACKURITY_RELEASE_TAG="$GITHUB_REF_NAME" go test -count=1 ./tools/releaselint
 
       - name: Build dashboard
         run: cd web && npm ci --ignore-scripts && npm run build

@@ -2,7 +2,7 @@
 
 Open-source, self-hosted software inventory and upgrade intelligence. Stackurity discovers software across hosts, repositories, containers and SBOMs, keeps one inventory with evidence for every component, and shows clearly what was **not** checked.
 
-> **Status:** v0.3, an early release under active development. Inventory, intelligence, alerts and team workflow, stack packs, Kubernetes, Jira and workspaces are in Community; see the [known limitations](#known-limitations) below and [editions](#editions) for what Pro and Enterprise add.
+> **Status:** an early release under active development; see the [latest release](https://github.com/stackurity/stackurity/releases/latest) and the [changelog](CHANGELOG.md). Inventory, intelligence, alerts and team workflow, stack packs, Kubernetes, Jira and workspaces are in Community; see the [known limitations](#known-limitations) below and [editions](#editions) for what Pro and Enterprise add.
 
 ## What it does today
 

@@ -17,8 +17,8 @@ docker compose up -d                   # pulls ghcr.io/stackurity/stackurity:lat
 docker compose logs stackurity | grep -A2 "one-time token"
 ```
 
-To pin a release, set `STACKURITY_IMAGE=ghcr.io/stackurity/stackurity:0.3.0` in `deploy/.env`. Images are signed; check one with
-`cosign verify ghcr.io/stackurity/stackurity:0.3.0 --certificate-identity-regexp '^https://github.com/stackurity/stackurity/.github/workflows/release.yml@refs/tags/' --certificate-oidc-issuer https://token.actions.githubusercontent.com` (see [security-audit.md](security-audit.md)).
+To pin a release, set `STACKURITY_IMAGE=ghcr.io/stackurity/stackurity:0.4.0` in `deploy/.env`. Images are signed; check one with
+`cosign verify ghcr.io/stackurity/stackurity:0.4.0 --certificate-identity-regexp '^https://github.com/stackurity/stackurity/.github/workflows/release.yml@refs/tags/' --certificate-oidc-issuer https://token.actions.githubusercontent.com` (see [security-audit.md](security-audit.md)).
 
 Open `http://<host>:8080`, enter the one-time setup token from the log, and create the first administrator. The token only works while no users exist.
 
@@ -360,7 +360,7 @@ Instance administrators see a banner when a newer release is available, and **Se
 
 With Helm, set the new image tag (or chart version) and run `helm upgrade` with your usual values.
 
-Before a release is published, CI installs each earlier release still in use (currently 0.2.0, 0.3.0 and 0.3.1), loads data, starts the new version on the same database, restores a backup of the result into a new PostgreSQL server, and runs the rollback below, checking readiness and counts at each step. The script is `tools/release-checks/upgrade.sh`; you can run it against your own build: `tools/release-checks/upgrade.sh ghcr.io/stackurity/stackurity:0.3.0 stackurity:mybuild`.
+Before a release is published, CI installs each earlier release listed under `from:` in [`.github/workflows/release-checks.yml`](../.github/workflows/release-checks.yml) (the supported upgrade sources), loads data, starts the new version on the same database, restores a backup of the result into a new PostgreSQL server, and runs the rollback below, checking readiness and counts at each step. The script is `tools/release-checks/upgrade.sh`; you can run it against your own build: `tools/release-checks/upgrade.sh ghcr.io/stackurity/stackurity:0.4.0 stackurity:mybuild`.
 
 ### Rolling back
 
@@ -371,7 +371,7 @@ docker compose stop stackurity
 # Recreate the database: restoring over it with --clean would leave tables the new version added.
 docker compose exec -T postgres psql -U stackurity -d postgres -c 'DROP DATABASE stackurity WITH (FORCE)' -c 'CREATE DATABASE stackurity'
 docker compose exec -T postgres pg_restore -U stackurity -d stackurity < stackurity-before-upgrade.dump
-# Pin the previous version, for example STACKURITY_IMAGE=ghcr.io/stackurity/stackurity:0.3.0 in .env, then:
+# Pin the version you ran before (docker compose images showed it), for example STACKURITY_IMAGE=ghcr.io/stackurity/stackurity:<previous> in .env, then:
 docker compose up -d
 ```
 
