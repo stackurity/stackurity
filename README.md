@@ -61,7 +61,7 @@ docker compose exec stackurity stackurity admin load-demo        # --remove dele
 
 **4. Act on it:** each asset's **Action plan** groups findings into concrete upgrades. With Pro, opt-in remediation applies approved upgrades on enrolled hosts and opens Renovate pull requests for repositories.
 
-For TLS, backups, upgrades, Kubernetes (Helm), the agents and plugins, see [docs/install.md](docs/install.md). [docs/compatibility.md](docs/compatibility.md) lists supported platforms and what each can assess, [docs/verification.md](docs/verification.md) how each claim is tested, and [CHANGELOG.md](CHANGELOG.md) what changed in each release. [docs/security-audit.md](docs/security-audit.md) covers the threat model and how releases are signed. The API is described in [docs/api.md](docs/api.md), and every outbound connection is listed in [docs/network.md](docs/network.md).
+For TLS, backups, upgrades, Kubernetes (Helm), the agents and plugins, see [docs/install.md](docs/install.md). [docs/compatibility.md](docs/compatibility.md) lists supported platforms and what each can assess, [docs/verification.md](docs/verification.md) how each claim is tested, and [CHANGELOG.md](CHANGELOG.md) what changed in each release. [docs/security-audit.md](docs/security-audit.md) covers the threat model and how releases are signed, and [docs/operations.md](docs/operations.md) the recommended alerts, their runbooks and operational drills. The API is described in [docs/api.md](docs/api.md), and every outbound connection is listed in [docs/network.md](docs/network.md).
 
 ## Known limitations
 
@@ -80,7 +80,7 @@ For TLS, backups, upgrades, Kubernetes (Helm), the agents and plugins, see [docs
 
 ## Editions
 
-Community is free and complete for finding and prioritising what to fix. Pro adds automatic fixing, multi-team workflow, the evidence report and single sign-on; Enterprise adds packs for enterprise technologies. See [Editions and licences](docs/install.md#editions-and-licences).
+Community is free and complete for finding and prioritising what to fix. Pro adds automatic fixing, multi-team workflow, the evidence report and single sign-on; Enterprise adds packs for enterprise technologies. [docs/editions.md](docs/editions.md) has the full matrix with limits and prerequisites; licences are covered in [Editions and licences](docs/install.md#editions-and-licences).
 
 ## Principles
 

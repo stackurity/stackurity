@@ -75,6 +75,8 @@ Without a licence Stackurity runs as **Community**: all detection, intelligence,
 | Pro | Automatic fixing (policies, approvals, rollouts, Renovate pull requests), several teams with routing by team and escalation, the evidence report, single sign-on |
 | Enterprise | Pro, plus Enterprise stack packs (for example SAP and Oracle) |
 
+[editions.md](editions.md) lists every capability by edition with its limits and prerequisites, and which features need the licensed build rather than only a licence.
+
 Install a licence under **Settings → Licence**, with `stackurity admin set-license`, or with `STACKURITY_LICENSE` / `STACKURITY_LICENSE_FILE` (which then wins). Licences are checked on the server and never phone home. When one expires, paid features keep working for 30 days, then stop. Detection and alerts are never affected, and an asset count above the licence's limit only shows a warning.
 
 On a server that hosts several organisations, each workspace also has a **plan** (Settings → Workspaces). A workspace gets the lower of its plan and the licence; "As licensed" gives it the licence's edition.
