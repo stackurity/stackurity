@@ -1,0 +1,33 @@
+{
+ "id": "GO-2022-0197",
+ "modified": "2026-02-04T04:06:39.203335Z",
+ "published": "2022-07-01T20:15:19Z",
+ "aliases": [
+  "CVE-2018-17847",
+  "CVE-2018-17848",
+  "GHSA-4r78-hx75-jjj2",
+  "GHSA-mv93-wvcp-7m7r"
+ ],
+ "summary": "Panic when parsing certain inputs in golang.org/x/net/html",
+ "affected": [
+  {
+   "package": {
+    "ecosystem": "Go",
+    "name": "golang.org/x/net"
+   },
+   "ranges": [
+    {
+     "type": "SEMVER",
+     "events": [
+      {
+       "introduced": "0"
+      },
+      {
+       "fixed": "0.0.0-20190125002852-4b62a64f59f7"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

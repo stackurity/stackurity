@@ -2576,3 +2576,106 @@ kbd {
 .plain-list li + li {
   margin-top: var(--s1);
 }
+
+/* Coverage: why a component or asset was not fully checked. */
+.coverage-note {
+  margin-top: 2px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+  max-width: 48ch;
+}
+.coverage-ok {
+  margin: 0 0 var(--s3);
+}
+.coverage-states {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: var(--s3) var(--s4);
+  margin: 0;
+}
+.coverage-states dd {
+  margin: 4px 0 0;
+}
+
+/* --- update banner and release notes */
+
+.update-banner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s2) var(--s3);
+}
+.update-banner-text {
+  flex: 1 1 260px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.update-banner .btn {
+  flex: none;
+}
+.alert-info.update-banner a {
+  color: inherit;
+  text-decoration: underline;
+}
+a.nav-version {
+  text-decoration: none;
+}
+a.nav-version:hover,
+a.nav-version:focus-visible {
+  color: var(--sidebar-active);
+  text-decoration: underline;
+}
+.md {
+  overflow-wrap: anywhere;
+}
+.md > :first-child {
+  margin-top: 0;
+}
+.md p,
+.md ul,
+.md ol,
+.md blockquote {
+  margin: 0 0 var(--s3);
+}
+.md ul,
+.md ol {
+  padding-left: 22px;
+}
+.md li {
+  margin-bottom: 4px;
+}
+.md li > ul,
+.md li > ol {
+  margin: 4px 0 0;
+}
+.md-h {
+  margin: var(--s4) 0 var(--s2);
+  font-size: 15px;
+}
+h5.md-h,
+h6.md-h {
+  font-size: 14px;
+}
+.md blockquote {
+  padding-left: var(--s3);
+  border-left: 3px solid var(--border-strong);
+  color: var(--text-2);
+}
+.md hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: var(--s4) 0;
+}
+.md-code {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--s2) var(--s3);
+  margin: 0 0 var(--s3);
+  overflow-x: auto;
+  max-width: 100%;
+}

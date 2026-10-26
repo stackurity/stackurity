@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -24,17 +25,23 @@ func (s *Store) RiskPolicy(ctx context.Context) (risk.Policy, error) {
 	if err != nil {
 		return risk.Policy{}, err
 	}
-	p := risk.DefaultPolicy()
-	if err := json.Unmarshal(raw, &p); err != nil {
-		return risk.Policy{}, fmt.Errorf("stored risk policy is invalid: %w", err)
-	}
-	if p.ExceptionMaxDays == 0 {
-		p.ExceptionMaxDays = DefaultExceptionMaxDays
-	}
-	return p, nil
+	return decodeRiskPolicy(raw)
 }
 
+// decodeRiskPolicy reads a stored policy over the defaults, so a field added
+// after it was saved takes its default value.
+func decodeRiskPolicy(raw []byte) (risk.Policy, error) {
+	p, err := risk.DecodePolicy(raw, false)
+	if err != nil {
+		return risk.Policy{}, fmt.Errorf("stored risk policy is invalid: %w", err)
+	}
+	return p.Normalize(), nil
+}
+
+// SetRiskPolicy stores a policy without an audit event (setup and tests);
+// changes made by people go through ReplaceRiskPolicy.
 func (s *Store) SetRiskPolicy(ctx context.Context, p risk.Policy) error {
+	p = p.Normalize()
 	if err := p.Validate(); err != nil {
 		return err
 	}
@@ -44,21 +51,102 @@ func (s *Store) SetRiskPolicy(ctx context.Context, p risk.Policy) error {
 	return err
 }
 
+// RiskPolicyChange is the detail of a risk_policy.update audit event: enough
+// to see what changed and to rebuild either policy from the log.
+type RiskPolicyChange struct {
+	Before        risk.Policy `json:"before"`
+	After         risk.Policy `json:"after"`
+	BeforeVersion string      `json:"before_version"`
+	AfterVersion  string      `json:"after_version"`
+	Changed       []string    `json:"changed"` // top-level policy fields that differ
+}
+
+// ReplaceRiskPolicy validates and stores p and, in the same transaction,
+// records a risk_policy.update audit event with the policy before and after,
+// so every change is attributable and any version can be rebuilt.
+func (s *Store) ReplaceRiskPolicy(ctx context.Context, p risk.Policy, a Actor) (RiskPolicyChange, error) {
+	p = p.Normalize()
+	if err := p.Validate(); err != nil {
+		return RiskPolicyChange{}, err
+	}
+	var ch RiskPolicyChange
+	err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
+		before := risk.DefaultPolicy()
+		var raw []byte
+		err := tx.QueryRow(ctx, `SELECT value FROM settings WHERE key = $1 FOR UPDATE`, riskPolicyKey).Scan(&raw)
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+		case err != nil:
+			return err
+		default:
+			if before, err = decodeRiskPolicy(raw); err != nil {
+				return err
+			}
+		}
+		ch = RiskPolicyChange{Before: before, After: p, BeforeVersion: before.Version(), AfterVersion: p.Version(),
+			Changed: changedFields(before, p)}
+		after, _ := json.Marshal(p)
+		if _, err := tx.Exec(ctx, `INSERT INTO settings (key, value) VALUES ($1, $2)
+			ON CONFLICT (workspace_id, key) DO UPDATE SET value = EXCLUDED.value`, riskPolicyKey, after); err != nil {
+			return err
+		}
+		d, _ := json.Marshal(ch)
+		var id *int64
+		if a.ID > 0 {
+			id = &a.ID
+		}
+		_, err = tx.Exec(ctx, `INSERT INTO audit_events (actor_type, actor_id, actor_name, action, object_type, object_id, detail, remote_addr)
+			VALUES ($1,$2,$3,'risk_policy.update','settings','risk_policy',$4,$5)`, a.Type, id, a.Name, d, a.RemoteAddr)
+		return err
+	})
+	return ch, err
+}
+
+// changedFields lists the top-level JSON fields whose values differ.
+func changedFields(a, b risk.Policy) []string {
+	var ma, mb map[string]json.RawMessage
+	ja, _ := json.Marshal(a)
+	jb, _ := json.Marshal(b)
+	_ = json.Unmarshal(ja, &ma)
+	_ = json.Unmarshal(jb, &mb)
+	out := []string{}
+	for k, v := range mb {
+		if string(ma[k]) != string(v) {
+			out = append(out, k)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // effectiveExposure is an asset's internet exposure for risk: what an
 // operator set, else what a collector observed (the exposure attribute of a
-// Kubernetes workload), else, for an image, whether any current workload
-// deployed as it is exposed. NULL means unknown.
+// Kubernetes workload), else, for an image, what the current workloads
+// deployed as it say: exposed when any is, internal only when every one is
+// internal. A workload whose exposure is unknown (Services or Ingresses
+// unreadable) keeps the image unknown rather than internal. NULL means unknown.
 const effectiveExposure = `COALESCE(a.internet_exposed,
 		CASE a.attributes->>'exposure' WHEN 'external' THEN true WHEN 'internal' THEN false END,
-		(SELECT bool_or(w.attributes->>'exposure' = 'external') FROM asset_relations r JOIN assets w ON w.id = r.from_asset
-		 WHERE r.to_asset = a.id AND r.kind = 'deployed_as' AND w.merged_into IS NULL AND w.collection_status <> 'stale'
-		   AND w.attributes->>'exposure' IN ('external', 'internal')))`
+		(SELECT CASE WHEN bool_or(w.attributes->>'exposure' = 'external') THEN true
+		             WHEN bool_and(COALESCE(w.attributes->>'exposure', '') = 'internal') THEN false END
+		 FROM asset_relations r JOIN assets w ON w.id = r.from_asset
+		 WHERE r.to_asset = a.id AND r.kind = 'deployed_as' AND w.merged_into IS NULL AND w.collection_status <> 'stale'))`
+
+// exposureSource says which of effectiveExposure's sources applies, for the
+// explanation: risk.ExposureOperator, ExposureCollector, ExposureWorkloads, or
+// empty when nothing recorded it.
+const exposureSource = `CASE WHEN a.internet_exposed IS NOT NULL THEN 'operator'
+		WHEN a.attributes->>'exposure' IN ('external', 'internal') THEN 'collector'
+		WHEN EXISTS (SELECT 1 FROM asset_relations r JOIN assets w ON w.id = r.from_asset
+		  WHERE r.to_asset = a.id AND r.kind = 'deployed_as' AND w.merged_into IS NULL AND w.collection_status <> 'stale') THEN 'workloads'
+		WHEN a.attributes->>'exposure' IS NOT NULL THEN 'collector'
+		ELSE '' END`
 
 // Prioritize recomputes priority, SOS and deadlines for every open finding.
 // Deadlines run from first detection; they move only when priority changes.
 func (s *Store) Prioritize(ctx context.Context, p risk.Policy, now time.Time) (int, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT f.id, f.kind, f.severity, f.score, COALESCE((f.evidence->>'known_exploited')::boolean, false),
-		`+effectiveExposure+`, a.environment, a.criticality,
+		`+effectiveExposure+`, `+exposureSource+`, a.environment, a.criticality,
 		f.fixed_version <> '' AND NOT COALESCE((f.evidence->>'requires_ubuntu_pro')::boolean, false),
 		i.scope, f.verification, f.first_seen, COALESCE((f.evidence->>'not_running_kernel')::boolean, false),
 		f.priority, f.state, f.fix_due, f.acknowledged_at, f.priority_score
@@ -74,6 +162,7 @@ func (s *Store) Prioritize(ctx context.Context, p risk.Policy, now time.Time) (i
 		changed        bool
 	}
 	var ups []upd
+	version := p.Version()
 	for rows.Next() {
 		var (
 			id              int64
@@ -83,7 +172,7 @@ func (s *Store) Prioritize(ctx context.Context, p risk.Policy, now time.Time) (i
 			fixDue, ackedAt *time.Time
 			oldScore        float32
 		)
-		if err := rows.Scan(&id, &in.Kind, &in.Severity, &in.Score, &in.KnownExploited, &in.InternetExposed, &in.Environment,
+		if err := rows.Scan(&id, &in.Kind, &in.Severity, &in.Score, &in.KnownExploited, &in.InternetExposed, &in.ExposureSource, &in.Environment,
 			&in.Criticality, &in.FixAvailable, &in.Scope, &in.Verification, &firstSeen, &in.KernelNotRunning, &oldPri, &state, &fixDue, &ackedAt, &oldScore); err != nil {
 			rows.Close()
 			return 0, err
@@ -101,9 +190,9 @@ func (s *Store) Prioritize(ctx context.Context, p risk.Policy, now time.Time) (i
 	for _, u := range ups {
 		factors, _ := json.Marshal(u.res.Factors)
 		batch.Queue(`UPDATE findings SET priority = $2, priority_score = $3, priority_factors = $4, sos = $5, sos_rule = $8,
-			ack_due = $6, fix_due = $7,
+			ack_due = $6, fix_due = $7, priority_policy = $9,
 			assignee_team_id = COALESCE(assignee_team_id, (SELECT owner_team_id FROM assets WHERE id = findings.asset_id))
-			WHERE id = $1`, u.id, u.res.Priority, u.res.Score, factors, u.res.SOS, u.ackDue, u.fixDue, u.res.SOSRule)
+			WHERE id = $1`, u.id, u.res.Priority, u.res.Score, factors, u.res.SOS, u.ackDue, u.fixDue, u.res.SOSRule, version)
 	}
 	if err := s.Pool.SendBatch(ctx, batch).Close(); err != nil {
 		return 0, err
@@ -124,7 +213,7 @@ type FindingAction struct {
 
 // DefaultExceptionMaxDays bounds suppression and risk acceptance when the
 // policy does not say otherwise.
-const DefaultExceptionMaxDays = 365
+const DefaultExceptionMaxDays = risk.DefaultExceptionMaxDays
 
 var ErrInvalidAction = errors.New("invalid action")
 

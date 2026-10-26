@@ -1,0 +1,42 @@
+{
+ "id": "RUSTSEC-2023-0005",
+ "modified": "2023-11-08T04:15:17.465753Z",
+ "published": "2023-01-11T12:00:00Z",
+ "aliases": [
+  "GHSA-4q83-7cq4-p6wg"
+ ],
+ "summary": "`tokio::io::ReadHalf<T>::unsplit` is Unsound",
+ "affected": [
+  {
+   "package": {
+    "ecosystem": "crates.io",
+    "name": "tokio"
+   },
+   "ranges": [
+    {
+     "type": "SEMVER",
+     "events": [
+      {
+       "introduced": "0.2.0"
+      },
+      {
+       "fixed": "1.18.5"
+      },
+      {
+       "introduced": "1.19.0"
+      },
+      {
+       "fixed": "1.20.4"
+      },
+      {
+       "introduced": "1.21.0"
+      },
+      {
+       "fixed": "1.24.2"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

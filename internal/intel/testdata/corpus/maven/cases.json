@@ -1,0 +1,15 @@
+{
+ "ecosystem": "Maven",
+ "feed": "osv:Maven",
+ "cases": [
+  {"name": "log4shell-2.14", "purl": "pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1", "affected": {"CVE-2021-44228": "2.15.0", "CVE-2021-45046": "2.16.0"}, "note": "two advisories, different fixes"},
+  {"name": "log4j-2.15", "purl": "pkg:maven/org.apache.logging.log4j/log4j-core@2.15.0", "affected": {"CVE-2021-45046": "2.16.0"}, "note": "2.15.0 fixed only the first"},
+  {"name": "log4j-2.12.2", "purl": "pkg:maven/org.apache.logging.log4j/log4j-core@2.12.2", "affected": {}, "note": "the Java 7 line's fix"},
+  {"name": "log4j-introduced-beta", "purl": "pkg:maven/org.apache.logging.log4j/log4j-core@2.0-beta9", "affected": {"CVE-2021-44228": "2.3.1", "CVE-2021-45046": "2.3.1"}, "note": "introduced at a beta qualifier"},
+  {"name": "log4j-before-beta9", "purl": "pkg:maven/org.apache.logging.log4j/log4j-core@2.0-beta8", "affected": {"CVE-2021-45046": "2.3.1"}, "note": "beta8 sorts before beta9"},
+  {"name": "log4j-2.3.1", "purl": "pkg:maven/org.apache.logging.log4j/log4j-core@2.3.1", "affected": {}, "note": "the Java 6 line's fix"},
+  {"name": "fork-listed-version", "purl": "pkg:maven/uk.co.nichesolutions.logging.log4j/log4j-core@2.6.3-CUSTOM", "affected": {"CVE-2021-44228": ""}, "note": "an entry with only an explicit version list"},
+  {"name": "jackson-withdrawn", "purl": "pkg:maven/com.fasterxml.jackson.core/jackson-databind@2.9.5", "affected": {}, "note": "GHSA-wrr7-33fx-rcvj is withdrawn"},
+  {"name": "unresolved-property", "purl": "pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1", "version": "${log4j.version}", "affected": {}, "coverage": "not_evaluated", "reason": "could not be compared", "note": "a property the build left unexpanded is not a version"}
+ ]
+}

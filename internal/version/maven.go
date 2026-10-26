@@ -8,8 +8,18 @@ import (
 // CompareMaven orders versions the way Maven's ComparableVersion does, which
 // is what OSV's Maven ranges assume. Qualifiers rank
 // alpha < beta < milestone < rc < snapshot < (release) < sp, so 1.0-rc1 is
-// older than 1.0 and 1.0-sp1 newer. It never errors.
+// older than 1.0 and 1.0-sp1 newer. Any other string is a valid Maven
+// version, except an empty one and an unresolved property reference such as
+// "${log4j.version}", which a build left unexpanded: those are errors.
 func CompareMaven(a, b string) (int, error) {
+	if err := tooLong(Maven, a, b); err != nil {
+		return 0, err
+	}
+	for _, v := range []string{a, b} {
+		if strings.TrimSpace(v) == "" || strings.Contains(v, "${") {
+			return 0, &ParseError{Maven, v}
+		}
+	}
 	return compareMavenItems(parseMaven(a), parseMaven(b)), nil
 }
 

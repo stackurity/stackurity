@@ -250,8 +250,8 @@ export function IntelBanners({ s }: { s: FindingSummary }) {
   if (s.evaluation_gaps > 0)
     problems.push(
       <li key="gaps">
-        <Link to="/intelligence#gaps">{plural(s.evaluation_gaps, "component")}</Link> could not be checked (no feed for the
-        ecosystem, feed never synced, or unparseable version). They may be vulnerable.
+        <Link to="/intelligence#gaps">{plural(s.evaluation_gaps, "component")}</Link> could not be checked (unsupported
+        ecosystem or distribution, feed not synced, release without advisories, or unreadable version). They may be vulnerable.
       </li>,
     );
   if (problems.length === 0) return null;

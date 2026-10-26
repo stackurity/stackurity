@@ -1,0 +1,11 @@
+{
+ "ecosystem": "AlmaLinux",
+ "feed": "osv:AlmaLinux",
+ "cases": [
+  {"name": "one-behind", "purl": "pkg:rpm/almalinux/openssl-libs@3.0.7-27.el9?distro=almalinux-9.4", "evidence": {"evr": "1:3.0.7-27.el9", "source_rpm": "openssl-3.0.7-27.el9.src.rpm"}, "affected": {"ALSA-2024:6783": "1:3.0.7-28.el9_4"}, "note": "AlmaLinux records name binary packages and carry no CVE ids, so the ALSA id is the key"},
+  {"name": "two-behind", "purl": "pkg:rpm/almalinux/openssl-libs@3.0.7-24.el9?distro=almalinux-9.3", "evidence": {"evr": "1:3.0.7-24.el9", "source_rpm": "openssl-3.0.7-24.el9.src.rpm"}, "affected": {"ALSA-2024:2447": "1:3.0.7-27.el9", "ALSA-2024:6783": "1:3.0.7-28.el9_4"}, "note": "minor release 9.3 uses the AlmaLinux:9 stream"},
+  {"name": "current", "purl": "pkg:rpm/almalinux/openssl-libs@3.0.7-28.el9_4?distro=almalinux-9.4", "evidence": {"evr": "1:3.0.7-28.el9_4"}, "affected": {}, "note": "fixed"},
+  {"name": "alma-8", "purl": "pkg:rpm/almalinux/openssl@1.1.1k-12.el8_9?distro=almalinux-8.10", "evidence": {"evr": "1:1.1.1k-12.el8_9"}, "affected": {"ALSA-2024:7848": "1:1.1.1k-14.el8_6"}, "note": "AlmaLinux:8 entries"},
+  {"name": "release-without-advisories", "purl": "pkg:rpm/almalinux/openssl-libs@3.5.1-3.el10?distro=almalinux-10.0", "evidence": {"evr": "1:3.5.1-3.el10"}, "affected": {}, "coverage": "not_evaluated", "reason": "no advisories for AlmaLinux:10", "note": "this corpus holds no AlmaLinux 10 records"}
+ ]
+}

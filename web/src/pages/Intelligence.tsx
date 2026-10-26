@@ -5,6 +5,7 @@ import { useAuth } from "../auth";
 import { useAction, useJobRunner, useLoad } from "../hooks";
 import { displayPurl, minutesLabel } from "../format";
 import { Badge, type Tone } from "../components/Badge";
+import { ROW_COVERAGE_LABELS } from "../components/Coverage";
 import { Table, type Column } from "../components/Table";
 import { Card, EmptyState, ErrorBox, JobStatus, Loading, PageHeader, Pager, RelativeTime } from "../components/ui";
 
@@ -22,9 +23,10 @@ const KIND_LABEL: Record<string, string> = { vulnerability: "Vulnerabilities", r
 const GAP_LIMIT = 100;
 
 export function IntelligencePage() {
-  const { can } = useAuth();
+  const { can, me } = useAuth();
   const engineer = can("engineer");
-  const admin = can("admin");
+  // Feeds are shared by every workspace, so only instance admins switch them.
+  const admin = can("admin") && Boolean(me?.user?.instance_admin);
   const feeds = useLoad(() => api.get<List<Feed>>("/feeds"), []);
   const [gapOffset, setGapOffset] = useState(0);
   const gaps = useLoad(() => api.get<List<EvaluationGap>>("/evaluation-gaps", { limit: GAP_LIMIT, offset: gapOffset }), [gapOffset]);
@@ -111,6 +113,11 @@ export function IntelligencePage() {
 
   const gapColumns: Column<EvaluationGap>[] = [
     { key: "c", header: "Component", cell: (g) => <Link to={`/components/${g.component_id}`} className="mono">{displayPurl(g.purl_key)}</Link> },
+    {
+      key: "coverage",
+      header: "Coverage",
+      cell: (g) => <Badge status={g.coverage} tone={g.coverage === "unsupported" ? "muted" : "warn"} label={ROW_COVERAGE_LABELS[g.coverage] ?? g.coverage} />,
+    },
     { key: "reason", header: "Why it was not checked", cell: (g) => g.reason },
     { key: "assets", header: "Assets", numeric: true, cell: (g) => g.asset_count.toLocaleString() },
     { key: "upd", header: "Since", cell: (g) => <RelativeTime iso={g.updated_at} /> },
@@ -166,8 +173,10 @@ export function IntelligencePage() {
         </h2>
         <Card>
           <p className="hint">
-            These components were <strong>not</strong> checked for vulnerabilities: there is no feed for their ecosystem, the feed has
-            never synced, or the version could not be parsed. They may be vulnerable even though they have no findings.
+            These components were <strong>not</strong> checked for vulnerabilities. <em>Unsupported</em>: no source exists for their
+            ecosystem, distribution or install method. <em>Not checked</em>: a source exists but could not be used (the feed has not
+            synced, the release has no advisories, the version could not be read). They may be vulnerable even though they have no
+            findings. Each asset's Inventory tab marks them too.
           </p>
         </Card>
         <ErrorBox error={gaps.error} title="Could not load evaluation gaps" />
@@ -179,7 +188,7 @@ export function IntelligencePage() {
         )}
         {gaps.data && gaps.data.items.length > 0 && (
           <>
-            <Table caption="Evaluation gaps" columns={gapColumns} rows={gaps.data.items} rowKey={(g) => g.component_id} />
+            <Table caption="Evaluation gaps" columns={gapColumns} rows={gaps.data.items} rowKey={(g) => `${g.component_id}|${g.reason}`} />
             <Pager total={gaps.data.total} limit={GAP_LIMIT} offset={gapOffset} onChange={setGapOffset} />
           </>
         )}

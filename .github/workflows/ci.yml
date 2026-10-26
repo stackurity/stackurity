@@ -37,6 +37,32 @@ jobs:
           GOOS=windows GOARCH=amd64 go build -o /dev/null ./cmd/stackurity
           go build -o /dev/null ./plugins/... ./examples/...
 
+  # Kills the real server with SIGKILL during a feed import, an ingest, a
+  # notification send, a periodic task and a job, restarts it and checks the
+  # outcome (docs/reliability.md). Each scenario gets its own database.
+  crash:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.6-alpine
+        env:
+          POSTGRES_USER: stackurity
+          POSTGRES_PASSWORD: stackurity
+          POSTGRES_DB: stackurity_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U stackurity" --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      STACKURITY_TEST_DATABASE_URL: postgres://stackurity:stackurity@localhost:5432/stackurity_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet -tags crash ./internal/crashtest
+      - name: Crash tests
+        run: go test -tags crash -count=1 -v -timeout 20m ./internal/crashtest
+
   web:
     runs-on: ubuntu-latest
     defaults:

@@ -1,0 +1,43 @@
+{
+ "id": "GHSA-5wjr-9356-4wc8",
+ "modified": "2026-10-23T21:10:33.527479876Z",
+ "published": "2026-10-23T20:54:00Z",
+ "aliases": [
+  "CVE-2026-115567",
+  "RUSTSEC-2026-0384"
+ ],
+ "summary": "Tokio: Race condition in `tokio::time::Interval`",
+ "severity": [
+  {
+   "type": "CVSS_V4",
+   "score": "CVSS:4.0/AV:L/AC:H/AT:P/PR:L/UI:N/VC:N/VI:L/VA:H/SC:N/SI:N/SA:N"
+  }
+ ],
+ "database_specific": {
+  "severity": "MODERATE"
+ },
+ "affected": [
+  {
+   "package": {
+    "ecosystem": "crates.io",
+    "name": "tokio"
+   },
+   "ranges": [
+    {
+     "type": "SEMVER",
+     "events": [
+      {
+       "introduced": "1.54.0"
+      },
+      {
+       "fixed": "1.54.1"
+      }
+     ]
+    }
+   ],
+   "versions": [
+    "1.54.0"
+   ]
+  }
+ ]
+}

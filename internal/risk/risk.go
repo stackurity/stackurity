@@ -5,6 +5,7 @@
 package risk
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -25,6 +26,7 @@ type Policy struct {
 	InternetExposed    float64            `json:"internet_exposed"`
 	ExposureUnknown    float64            `json:"exposure_unknown"`
 	Production         float64            `json:"production"`
+	EnvironmentUnknown float64            `json:"environment_unknown"` // asset has no environment
 	FixAvailable       float64            `json:"fix_available"`
 	Overdue            float64            `json:"overdue"`
 	DevDependency      float64            `json:"dev_dependency"`
@@ -63,7 +65,7 @@ type SOSRule struct {
 	Name            string `json:"name"`
 	MinPriority     string `json:"min_priority,omitempty"`
 	KnownExploited  *bool  `json:"known_exploited,omitempty"`
-	Production      *bool  `json:"production,omitempty"`
+	Production      *bool  `json:"production,omitempty"`       // true matches production or no environment
 	InternetExposed *bool  `json:"internet_exposed,omitempty"` // true matches exposed or unknown
 	MinSeverity     string `json:"min_severity,omitempty"`
 	FixAvailable    *bool  `json:"fix_available,omitempty"`
@@ -79,6 +81,7 @@ func DefaultPolicy() Policy {
 		InternetExposed:        1.5,
 		ExposureUnknown:        0.5,
 		Production:             1,
+		EnvironmentUnknown:     0.5,
 		FixAvailable:           0.5,
 		Overdue:                1,
 		DevDependency:          -2,
@@ -93,7 +96,7 @@ func DefaultPolicy() Policy {
 			"P3": {AckHours: 72, FixDays: 45},
 			"P4": {AckHours: 168, FixDays: 90},
 		},
-		ExceptionMaxDays: 365,
+		ExceptionMaxDays: DefaultExceptionMaxDays,
 		SOS: []SOSRule{
 			{Name: "Known exploited in production", KnownExploited: ptr(true), Production: ptr(true)},
 			{Name: "Critical, exposed production asset", MinSeverity: "critical", Production: ptr(true), InternetExposed: ptr(true)},
@@ -121,6 +124,9 @@ func (p Policy) Validate() error {
 	if p.NeedsValidationMul <= 0 || p.NeedsValidationMul > 1 || p.StaleMul <= 0 || p.StaleMul > 1 {
 		return errors.New("multipliers must be in (0, 1]")
 	}
+	if err := p.validateDirections(); err != nil {
+		return err
+	}
 	for _, r := range p.SOS {
 		if r.Name == "" {
 			return errors.New("every SOS rule needs a name")
@@ -137,6 +143,43 @@ func (p Policy) Validate() error {
 	return nil
 }
 
+// validateDirections rejects weights that point the wrong way, so that the
+// invariants in docs/risk.md hold for every policy that can be saved: a fact
+// that raises risk never lowers the score, and missing evidence never counts
+// for more than the worst value it stands in for.
+func (p Policy) validateDirections() error {
+	for _, w := range []struct {
+		name string
+		v    float64
+	}{{"known_exploited", p.KnownExploited}, {"internet_exposed", p.InternetExposed}, {"exposure_unknown", p.ExposureUnknown},
+		{"production", p.Production}, {"environment_unknown", p.EnvironmentUnknown}, {"overdue", p.Overdue}} {
+		if w.v < 0 {
+			return fmt.Errorf("%s must not be negative: it marks higher risk", w.name)
+		}
+	}
+	if p.ExposureUnknown > p.InternetExposed {
+		return errors.New("exposure_unknown must not exceed internet_exposed")
+	}
+	if p.EnvironmentUnknown > p.Production {
+		return errors.New("environment_unknown must not exceed production")
+	}
+	if p.DevDependency > 0 || p.KernelNotRunning > 0 {
+		return errors.New("dev_dependency and kernel_not_running must not be positive: they mark lower risk")
+	}
+	ordered := func(field string, m map[string]float64, keys ...string) error {
+		for i := 1; i < len(keys); i++ {
+			if m[keys[i-1]] < m[keys[i]] {
+				return fmt.Errorf("%s: %s must not score below %s", field, keys[i-1], keys[i])
+			}
+		}
+		return nil
+	}
+	if err := ordered("severity_base", p.SeverityBase, "critical", "high", "medium", "low", "none"); err != nil {
+		return err
+	}
+	return ordered("criticality", p.CriticalityBonus, "critical", "high", "medium", "low")
+}
+
 // Input is everything the model looks at.
 type Input struct {
 	Kind            string // vulnerability, end_of_life
@@ -144,15 +187,48 @@ type Input struct {
 	Score           *float32 // CVSS base score when known
 	KnownExploited  bool
 	InternetExposed *bool
-	Environment     string
-	Criticality     string
-	FixAvailable    bool
-	Overdue         bool
-	Scope           string // runtime, dev, os
-	Verification    string
+	// ExposureSource says where InternetExposed came from (Exposure*
+	// constants), so the explanation names the evidence.
+	ExposureSource string
+	Environment    string // "" when the asset has none
+	Criticality    string // "" is treated as "unknown"
+	FixAvailable   bool
+	Overdue        bool
+	Scope          string // runtime, dev, os
+	Verification   string
 	// KernelNotRunning: the package belongs to an installed kernel that is
 	// not the running one, so nothing is exposed until it is booted.
 	KernelNotRunning bool
+}
+
+// Where an asset's exposure came from.
+const (
+	ExposureOperator  = "operator"  // set by hand on the asset
+	ExposureCollector = "collector" // reported by the asset's collector (a Kubernetes workload)
+	ExposureWorkloads = "workloads" // an image, from the current workloads deployed as it
+)
+
+func exposureDetail(exposed *bool, source string) string {
+	switch {
+	case exposed == nil && source == ExposureCollector:
+		return "its collector could not decide exposure (e.g. Kubernetes Services or Ingresses unreadable)"
+	case exposed == nil && source == ExposureWorkloads:
+		return "a running workload deployed as this image has unknown exposure"
+	case exposed == nil:
+		return "asset exposure not recorded"
+	case source == ExposureOperator:
+		return "marked internet exposed on the asset"
+	case source == ExposureCollector:
+		return "its collector reports it reachable from outside (e.g. a LoadBalancer or NodePort Service, an Ingress)"
+	case source == ExposureWorkloads:
+		return "a running workload deployed as this image is reachable from outside"
+	}
+	return "asset is reachable from the internet"
+}
+
+var verificationDetail = map[string]string{
+	"needs_validation": "installed version not confirmed",
+	"stale":            "asset has not reported recently",
 }
 
 type Factor struct {
@@ -200,26 +276,36 @@ func (p Policy) Evaluate(in Input) Result {
 		add("CVSS base score", float64(*in.Score), fmt.Sprintf("CVSS %.1f", *in.Score))
 	default:
 		base, ok := p.SeverityBase[in.Severity]
-		if !ok {
+		detail := "advisory severity " + in.Severity + ", no CVSS score"
+		if !ok || in.Severity == "unknown" {
 			base = p.SeverityBase["unknown"]
+			detail = "no severity or CVSS score published; scored as unknown"
 		}
-		add("Severity", base, "advisory severity "+in.Severity)
+		add("Severity", base, detail)
 	}
 	if in.KnownExploited {
 		add("Known exploited", p.KnownExploited, "listed in CISA KEV")
 	}
 	switch {
 	case in.InternetExposed == nil:
-		add("Exposure unknown", p.ExposureUnknown, "asset exposure not recorded")
+		add("Exposure unknown", p.ExposureUnknown, exposureDetail(nil, in.ExposureSource))
 	case *in.InternetExposed:
-		add("Internet exposed", p.InternetExposed, "asset is reachable from the internet")
+		add("Internet exposed", p.InternetExposed, exposureDetail(in.InternetExposed, in.ExposureSource))
 	}
 	production := p.IsProduction(in.Environment)
-	if production {
+	envUnknown := strings.TrimSpace(in.Environment) == ""
+	switch {
+	case production:
 		add("Production", p.Production, "environment "+in.Environment)
+	case envUnknown:
+		add("Environment unknown", p.EnvironmentUnknown, "asset has no environment; it may be production")
 	}
-	if c := p.CriticalityBonus[in.Criticality]; c != 0 {
-		add("Asset criticality", c, "criticality "+in.Criticality)
+	crit := in.Criticality
+	if crit == "" {
+		crit = "unknown"
+	}
+	if c := p.CriticalityBonus[crit]; c != 0 {
+		add("Asset criticality", c, "criticality "+crit)
 	}
 	if in.FixAvailable {
 		add("Fix available", p.FixAvailable, "an upgrade resolves it")
@@ -233,7 +319,8 @@ func (p Policy) Evaluate(in Input) Result {
 	if in.KernelNotRunning {
 		add("Kernel not running", p.KernelNotRunning, "installed kernel that is not booted; remove old kernels")
 	}
-	// Confidence and freshness scale the result rather than add to it.
+	// Confidence and freshness scale the result rather than add to it. A
+	// score at or below zero is left alone: scaling it would raise it.
 	mul := 1.0
 	switch in.Verification {
 	case "needs_validation":
@@ -241,10 +328,11 @@ func (p Policy) Evaluate(in Input) Result {
 	case "stale":
 		mul = p.StaleMul
 	}
-	if mul != 1 {
+	if mul != 1 && r.Score > 0 {
 		before := r.Score
 		r.Score *= mul
-		r.Factors = append(r.Factors, Factor{"Evidence confidence", r.Score - before, fmt.Sprintf("%s: ×%.2f", in.Verification, mul)})
+		r.Factors = append(r.Factors, Factor{"Evidence confidence", r.Score - before,
+			fmt.Sprintf("%s (%s): ×%.2f", in.Verification, verificationDetail[in.Verification], mul)})
 	}
 	r.Score = math.Round(r.Score*10) / 10
 	switch {
@@ -260,7 +348,7 @@ func (p Policy) Evaluate(in Input) Result {
 	// SOS requires confirmed evidence about something actually exposed.
 	if in.Verification == "confirmed" && !in.KernelNotRunning {
 		for _, rule := range p.SOS {
-			if rule.matches(in, r.Priority, production) {
+			if rule.matches(in, r.Priority, production || envUnknown) {
 				r.SOS, r.SOSRule = true, rule.Name
 				break
 			}
@@ -279,7 +367,7 @@ func (rule SOSRule) matches(in Input, priority string, production bool) bool {
 	if rule.KnownExploited != nil && *rule.KnownExploited != in.KnownExploited {
 		return false
 	}
-	if rule.Production != nil && *rule.Production != production {
+	if rule.Production != nil && *rule.Production != production { // unknown environment counts as production
 		return false
 	}
 	if rule.FixAvailable != nil && *rule.FixAvailable != in.FixAvailable {
@@ -292,6 +380,45 @@ func (rule SOSRule) matches(in Input, priority string, production bool) bool {
 		}
 	}
 	return true
+}
+
+// DecodePolicy reads a policy's JSON over the defaults: a field it leaves out
+// (one added after it was saved) keeps its default value, and an omitted
+// sos_rules keeps the default rules. Rules that are present replace the
+// defaults entirely; decoding them into the default slice would let a saved
+// rule inherit conditions it never had (json reuses existing elements). With
+// strict, unknown fields are an error.
+func DecodePolicy(raw []byte, strict bool) (Policy, error) {
+	p := DefaultPolicy()
+	defaultRules := p.SOS
+	p.SOS = nil
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	if strict {
+		dec.DisallowUnknownFields()
+	}
+	if err := dec.Decode(&p); err != nil {
+		return Policy{}, err
+	}
+	var keys map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &keys); err != nil {
+		return Policy{}, err
+	}
+	if _, ok := keys["sos_rules"]; !ok {
+		p.SOS = defaultRules
+	}
+	return p, nil
+}
+
+// DefaultExceptionMaxDays is the exception limit when a policy leaves it at 0.
+const DefaultExceptionMaxDays = 365
+
+// Normalize fills the values that stand for "the default", so the policy that
+// is stored, audited and versioned is exactly the one that is applied.
+func (p Policy) Normalize() Policy {
+	if p.ExceptionMaxDays == 0 {
+		p.ExceptionMaxDays = DefaultExceptionMaxDays
+	}
+	return p
 }
 
 // Version identifies the policy's content: the same weights, thresholds,

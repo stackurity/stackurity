@@ -1,0 +1,47 @@
+{
+ "id": "GHSA-58pv-8j8x-9vj2",
+ "modified": "2026-09-10T03:50:32.597700920Z",
+ "published": "2026-01-13T21:48:17Z",
+ "aliases": [
+  "CVE-2026-23949",
+  "PYSEC-2026-1469"
+ ],
+ "summary": "jaraco.context Has a Path Traversal Vulnerability",
+ "severity": [
+  {
+   "type": "CVSS_V3",
+   "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:N/A:N"
+  }
+ ],
+ "database_specific": {
+  "severity": "HIGH"
+ },
+ "affected": [
+  {
+   "package": {
+    "ecosystem": "PyPI",
+    "name": "jaraco-context"
+   },
+   "ranges": [
+    {
+     "type": "ECOSYSTEM",
+     "events": [
+      {
+       "introduced": "5.2.0"
+      },
+      {
+       "fixed": "6.1.0"
+      }
+     ]
+    }
+   ],
+   "versions": [
+    "5.2.0",
+    "5.3.0",
+    "6.0.0",
+    "6.0.1",
+    "6.0.2"
+   ]
+  }
+ ]
+}

@@ -44,6 +44,11 @@ func VulnFeed(baseEcosystem string) string {
 	return OSVFeed(baseEcosystem)
 }
 
+func osvBase(feed string) string {
+	b, _ := feedEcosystem(feed)
+	return b
+}
+
 // feedEcosystem returns the base ecosystem a vulnerability feed covers.
 func feedEcosystem(feed string) (string, bool) {
 	if feed == FeedAmazonLinux {
@@ -55,7 +60,13 @@ func feedEcosystem(feed string) (string, bool) {
 type Syncer struct {
 	Store *store.Store
 	Log   *slog.Logger
-	f     *fetcher
+	// Changed, if set, is called after a sync has stored its records and
+	// before the feed's cursor moves past them, to queue re-evaluation of
+	// what they affect. If it fails, the sync fails and keeps its cursor, so
+	// the next attempt fetches the same records and calls Changed again: an
+	// error or a crash in between cannot lose the re-evaluation.
+	Changed func(ctx context.Context, feed string, res *SyncResult) error
+	f       *fetcher
 }
 
 func NewSyncer(s *store.Store, log *slog.Logger, cfg Config) *Syncer {
@@ -68,6 +79,22 @@ type SyncResult struct {
 	Changed  int
 	Packages map[store.PackageRef]bool
 	Full     bool // everything in the ecosystem should be re-evaluated
+	// Ecosystems seen in the records read, e.g. "Debian:12".
+	Ecosystems map[string]bool
+}
+
+// noteEcosystems records the ecosystem strings of base that vs name.
+func (r *SyncResult) noteEcosystems(base string, vs []*osv.Vulnerability) {
+	if r.Ecosystems == nil {
+		r.Ecosystems = map[string]bool{}
+	}
+	for _, v := range vs {
+		for _, a := range v.Affected {
+			if a.Package.Ecosystem != "" && osv.BaseEcosystem(a.Package.Ecosystem) == base {
+				r.Ecosystems[a.Package.Ecosystem] = true
+			}
+		}
+	}
 }
 
 // Sync refreshes one feed and records the outcome on the feed row.
@@ -95,12 +122,24 @@ func (s *Syncer) Sync(ctx context.Context, name string) (*SyncResult, error) {
 	default:
 		err = fmt.Errorf("unknown feed %q", name)
 	}
+	if err == nil && s.Changed != nil {
+		if cerr := s.Changed(ctx, name, res); cerr != nil {
+			err = fmt.Errorf("queue re-evaluation: %w", cerr)
+		}
+	}
 	changed := 0
 	if res != nil {
 		changed = res.Changed
 	}
 	if rerr := s.Store.FeedResult(context.WithoutCancel(ctx), name, cursor, changed, err); rerr != nil && err == nil {
 		err = rerr
+	}
+	if base, ok := feedEcosystem(name); ok && err == nil && res != nil {
+		// Which releases the feed covers, so a release it has nothing for
+		// is reported as not evaluated rather than clean.
+		if rerr := s.Store.UpdateFeedEcosystems(ctx, name, base, keys(res.Ecosystems), res.Full); rerr != nil {
+			err = rerr
+		}
 	}
 	return res, err
 }
@@ -159,6 +198,7 @@ func (s *Syncer) osvFull(ctx context.Context, feed, base string) (*SyncResult, s
 		for p := range touched {
 			res.Packages[p] = true
 		}
+		res.noteEcosystems(osvBase(feed), batch)
 		res.Changed += len(batch)
 		batch = batch[:0]
 		return err
@@ -291,6 +331,7 @@ func (s *Syncer) osvIncremental(ctx context.Context, feed, base, cursor string) 
 		if err != nil {
 			return nil, "", err
 		}
+		res.noteEcosystems(osvBase(feed), got[i:end])
 		for p := range touched {
 			res.Packages[p] = true
 		}

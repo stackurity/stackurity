@@ -1,0 +1,46 @@
+{
+ "id": "ALSA-2024:7848",
+ "modified": "2026-02-04T03:18:33.305817Z",
+ "published": "2024-10-09T00:00:00Z",
+ "summary": "Low: openssl security update",
+ "affected": [
+  {
+   "package": {
+    "ecosystem": "AlmaLinux:8",
+    "name": "openssl"
+   },
+   "ranges": [
+    {
+     "type": "ECOSYSTEM",
+     "events": [
+      {
+       "introduced": "0"
+      },
+      {
+       "fixed": "1:1.1.1k-14.el8_6"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "package": {
+    "ecosystem": "AlmaLinux:8",
+    "name": "openssl-libs"
+   },
+   "ranges": [
+    {
+     "type": "ECOSYSTEM",
+     "events": [
+      {
+       "introduced": "0"
+      },
+      {
+       "fixed": "1:1.1.1k-14.el8_6"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

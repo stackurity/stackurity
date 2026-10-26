@@ -19,7 +19,7 @@ Open-source, self-hosted software inventory and upgrade intelligence. Stackurity
 - **One inventory:** stable asset identities, conflict detection and merging, and relations between assets. Every component carries its source, timestamp, confidence and evidence.
 - **Global search:** type a CVE or advisory id, a package with or without a version, a hostname, image digest or repository URL, a team, words from a finding's title or a workspace member, and land on the affected assets, components and findings.
 - **Coverage ledger:** unsupported, skipped, failed, partial and stale areas are shown separately from healthy coverage. They are never treated as healthy.
-- **Risk-based alerting:** configurable P1–P4 priority with explained factors (KEV, exposure, production, criticality, fix availability, confidence), SOS rules that never rely on severity alone, and incidents that group findings so one CVE on fifty servers is one alert.
+- **Risk-based alerting:** configurable P1–P4 priority with explained factors (KEV, exposure, production, criticality, fix availability, confidence), SOS rules that never rely on severity alone, and incidents that group findings so one CVE on fifty servers is one alert. [docs/risk.md](docs/risk.md) explains how priorities are decided, what happens when evidence is missing, and the scenarios and invariants the scoring is tested against.
 - **Team workflow:** acknowledge, assign, risk acceptance (security role, with a reason, an expiry capped by policy, and the mitigation in place) and deadlines, with full history. Several teams with routing by team and escalation of overdue issues are part of Pro.
 - **Remediation outcomes:** time to remedy by priority, SLA compliance against the risk policy, findings resolved by a fresh inventory versus by changed advisory data, findings that came back after being resolved, and remediation success, failures and rollbacks, always with the counts behind each rate.
 - **Evidence (Pro):** a periodic patch-management report for audits and security questionnaires: coverage, open and overdue findings, time to resolve, active exceptions and replica drift.
@@ -61,7 +61,7 @@ docker compose exec stackurity stackurity admin load-demo        # --remove dele
 
 **4. Act on it:** each asset's **Action plan** groups findings into concrete upgrades. With Pro, opt-in remediation applies approved upgrades on enrolled hosts and opens Renovate pull requests for repositories.
 
-For TLS, backups, upgrades, Kubernetes (Helm), the agents and plugins, see [docs/install.md](docs/install.md). [docs/compatibility.md](docs/compatibility.md) lists supported platforms and what each can assess, and [CHANGELOG.md](CHANGELOG.md) what changed in each release. [docs/security-audit.md](docs/security-audit.md) covers the threat model and how releases are signed. The API is described in [docs/api.md](docs/api.md), and every outbound connection is listed in [docs/network.md](docs/network.md).
+For TLS, backups, upgrades, Kubernetes (Helm), the agents and plugins, see [docs/install.md](docs/install.md). [docs/compatibility.md](docs/compatibility.md) lists supported platforms and what each can assess, [docs/verification.md](docs/verification.md) how each claim is tested, and [CHANGELOG.md](CHANGELOG.md) what changed in each release. [docs/security-audit.md](docs/security-audit.md) covers the threat model and how releases are signed. The API is described in [docs/api.md](docs/api.md), and every outbound connection is listed in [docs/network.md](docs/network.md).
 
 ## Known limitations
 
@@ -84,7 +84,7 @@ Community is free and complete for finding and prioritising what to fix. Pro add
 
 ## Principles
 
-- Self-hosted, with no vendor account and no telemetry.
+- Self-hosted, with no vendor account and no telemetry. The only request to the project is a check for new releases: an anonymous read of the public release list that sends nothing about you, compared locally, and turned off with `STACKURITY_UPDATE_CHECK=off`.
 - Every finding carries its source, timestamp and confidence.
 - Missing or stale data is shown as missing or stale. It is never treated as healthy.
 - Refreshing intelligence never changes your software. Changes need explicit policy.

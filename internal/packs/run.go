@@ -205,17 +205,23 @@ func (l *Loaded) check(files []pack.File, resp *pack.Response) ([]model.Observat
 }
 
 // capped is a writer that keeps at most max bytes and records overflow.
+// The buffer is a named field, not embedded: an embedded bytes.Buffer
+// brings its ReadFrom, which io.Copy (and so os/exec) prefers to Write,
+// and the cap would never apply.
 type capped struct {
-	bytes.Buffer
+	buf  bytes.Buffer
 	max  int
 	over bool
 }
 
 func (c *capped) Write(p []byte) (int, error) {
-	if c.Len()+len(p) > c.max {
+	if c.buf.Len()+len(p) > c.max {
 		c.over = true
-		p = p[:max(0, c.max-c.Len())]
+		p = p[:max(0, c.max-c.buf.Len())]
 	}
-	c.Buffer.Write(p)
+	c.buf.Write(p)
 	return len(p), nil
 }
+
+func (c *capped) Bytes() []byte  { return c.buf.Bytes() }
+func (c *capped) String() string { return c.buf.String() }

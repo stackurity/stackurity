@@ -1,0 +1,39 @@
+{
+ "id": "GHSA-3hpf-ff72-j67p",
+ "modified": "2024-12-06T21:24:30Z",
+ "published": "2024-12-06T21:24:30Z",
+ "summary": "shared_preferences_android vulnerability",
+ "severity": [
+  {
+   "type": "CVSS_V3",
+   "score": "CVSS:3.1/AV:L/AC:H/PR:H/UI:N/S:U/C:N/I:L/A:L"
+  }
+ ],
+ "database_specific": {
+  "severity": "LOW"
+ },
+ "affected": [
+  {
+   "package": {
+    "ecosystem": "Pub",
+    "name": "shared_preferences_android"
+   },
+   "ranges": [
+    {
+     "type": "ECOSYSTEM",
+     "events": [
+      {
+       "introduced": "2.3.3"
+      },
+      {
+       "fixed": "2.3.4"
+      }
+     ]
+    }
+   ],
+   "versions": [
+    "2.3.3"
+   ]
+  }
+ ]
+}

@@ -11,7 +11,15 @@ permissions:
   attestations: write
 
 jobs:
+  # A tag publishes nothing unless the current build upgrades, restores and
+  # rolls back cleanly from earlier releases.
+  checks:
+    uses: ./.github/workflows/release-checks.yml
+    permissions:
+      contents: read
+
   release:
+    needs: checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,6 +27,11 @@ jobs:
         with: {go-version-file: go.mod}
       - uses: actions/setup-node@v4
         with: {node-version: 22, cache: npm, cache-dependency-path: web/package-lock.json}
+
+      # Every release has notes: the CHANGELOG.md section for the tag. A tag
+      # without one fails here, before anything is built or published.
+      - name: Release notes from CHANGELOG.md
+        run: go run ./tools/changelog -version "$GITHUB_REF_NAME" > "$RUNNER_TEMP/release-notes.md"
 
       - name: Build dashboard
         run: cd web && npm ci --ignore-scripts && npm run build
@@ -84,9 +97,27 @@ jobs:
         run: |
           cosign sign --yes "ghcr.io/${{ github.repository_owner }}/stackurity@${{ steps.image.outputs.digest }}"
 
+      - name: Publish and sign the Helm chart
+        # helm install oci://ghcr.io/stackurity/charts/stackurity --version <x.y.z>
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          v="${GITHUB_REF_NAME#v}"
+          echo "$REGISTRY_TOKEN" | helm registry login ghcr.io -u "$REGISTRY_USER" --password-stdin
+          helm package deploy/helm/stackurity --version "$v" --app-version "$v" -d dist-chart
+          out=$(helm push "dist-chart/stackurity-$v.tgz" "oci://ghcr.io/${{ github.repository_owner }}/charts" 2>&1 | tee /dev/stderr)
+          digest=$(printf '%s\n' "$out" | sed -n 's/^Digest: //p')
+          cosign sign --yes "ghcr.io/${{ github.repository_owner }}/charts/stackurity@$digest"
+
       - name: Publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${{ github.ref_name }}" dist/* --verify-tag --generate-notes \
-            --title "Stackurity ${{ github.ref_name }}"
+          # A tag such as v0.4.0-rc.1 is published as a prerelease, which
+          # installations' update checks ignore.
+          pre=""; case "$GITHUB_REF_NAME" in *-*) pre="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" dist/* --verify-tag $pre \
+            --notes-file "$RUNNER_TEMP/release-notes.md" \
+            --title "Stackurity $GITHUB_REF_NAME"

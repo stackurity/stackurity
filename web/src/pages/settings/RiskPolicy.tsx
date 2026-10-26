@@ -120,7 +120,7 @@ function cleanRule(r: SOSRule): SOSRule {
 export function RiskPolicyPage() {
   const { can } = useAuth();
   const admin = can("admin");
-  const res = useLoad(() => api.get<{ policy: RiskPolicy; default: RiskPolicy }>("/risk-policy"), []);
+  const res = useLoad(() => api.get<{ policy: RiskPolicy; default: RiskPolicy; version: string }>("/risk-policy"), []);
   const [p, setP] = useState<RiskPolicy | null>(null);
   const [saved, setSaved] = useState(false);
   const act = useAction();
@@ -167,7 +167,11 @@ export function RiskPolicyPage() {
     <>
       <PageHeader help="risk-policy"
         title="Risk policy"
-        sub="How findings are scored into priorities P1–P4, their deadlines, and which ones are SOS."
+        sub={
+          <>
+            How findings are scored into priorities P1–P4, their deadlines, and which ones are SOS. Version <code>{res.data.version}</code>.
+          </>
+        }
         actions={
           admin && (
             <button type="button" className="btn" onClick={reset} disabled={act.pending}>
@@ -204,6 +208,13 @@ export function RiskPolicyPage() {
               <NumField id="exp" label="Internet exposed" value={p.internet_exposed} onChange={(n) => set("internet_exposed", n)} />
               <NumField id="expu" label="Exposure unknown" value={p.exposure_unknown} onChange={(n) => set("exposure_unknown", n)} />
               <NumField id="prod" label="Production environment" value={p.production} onChange={(n) => set("production", n)} />
+              <NumField
+                id="envu"
+                label="Environment unknown"
+                value={p.environment_unknown ?? 0}
+                onChange={(n) => set("environment_unknown", n)}
+                hint="Asset has no environment. At most the production value."
+              />
               <NumField id="fix" label="Fix available" value={p.fix_available} onChange={(n) => set("fix_available", n)} />
               <NumField id="over" label="Overdue" value={p.overdue} onChange={(n) => set("overdue", n)} />
               <NumField id="dev" label="Dev-only dependency" value={p.dev_dependency} onChange={(n) => set("dev_dependency", n)} hint="Usually negative." />

@@ -264,6 +264,13 @@ func (s *Server) inventory(w http.ResponseWriter, r *http.Request, f store.Inven
 	q := r.URL.Query()
 	f.Type, f.Search, f.Direct, f.Page = q.Get("type"), q.Get("q"), qBool(r, "direct"), page(r)
 	f.IncludeRemoved = q.Get("include_removed") == "true"
+	switch c := q.Get("coverage"); c {
+	case "", "gaps", "evaluated", "stale_intelligence", "unsupported", "not_evaluated", "awaiting":
+		f.Coverage = c
+	default:
+		s.fail(w, r, badRequest("coverage must be gaps, evaluated, stale_intelligence, unsupported, not_evaluated or awaiting"))
+		return
+	}
 	items, total, err := s.Store.ListInventory(r.Context(), f)
 	if err != nil {
 		s.fail(w, r, err)
@@ -284,6 +291,22 @@ func (s *Server) assetCoverage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, paged(items, total, page(r)))
+}
+
+// assetCoverageSummary says how far an asset's findings can be trusted:
+// its coverage states, component coverage counts and gap reasons.
+func (s *Server) assetCoverageSummary(w http.ResponseWriter, r *http.Request) {
+	id, err := idParam(r, "id")
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	sum, err := s.Store.AssetCoverage(r.Context(), id)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, 200, sum)
 }
 
 func (s *Server) listCoverage(w http.ResponseWriter, r *http.Request) {

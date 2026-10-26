@@ -1,0 +1,17 @@
+{
+ "ecosystem": "RubyGems",
+ "feed": "osv:RubyGems",
+ "cases": [
+  {"name": "rack-2.2", "purl": "pkg:gem/rack@2.2.22", "affected": {"CVE-2026-34763": "2.2.23", "CVE-2026-34829": "2.2.23"}, "note": "first of three ranges, two advisories"},
+  {"name": "rack-3.0-rc", "purl": "pkg:gem/rack@3.0.0.rc1", "affected": {"CVE-2026-34763": "3.1.21", "CVE-2026-34829": "3.1.21"}, "note": "rc1 is after the introduced 3.0.0.beta1"},
+  {"name": "rack-3.0-alpha", "purl": "pkg:gem/rack@3.0.0.alpha", "affected": {}, "note": "alpha sorts before beta1 and after 2.2.23"},
+  {"name": "rack-3.1-fixed", "purl": "pkg:gem/rack@3.1.21", "affected": {}, "note": "fixed"},
+  {"name": "rack-3.2", "purl": "pkg:gem/rack@3.2.5", "affected": {"CVE-2026-34763": "3.2.6", "CVE-2026-34829": "3.2.6"}, "note": "third range"},
+  {"name": "nokogiri-1.16", "purl": "pkg:gem/nokogiri@1.16.1", "affected": {"CVE-2024-58378": "1.16.2"}, "note": "the withdrawn GHSA-5jhf-fpp7-v2pv (all versions) must not add a finding"},
+  {"name": "nokogiri-platform-gem", "purl": "pkg:gem/nokogiri@1.16.1-x86_64-linux", "affected": {"CVE-2024-58378": "1.16.2"}, "note": "Bundler lists platform gems with the platform after the version"},
+  {"name": "nokogiri-1.15", "purl": "pkg:gem/nokogiri@1.15.5", "affected": {"CVE-2024-58378": "1.15.6"}, "note": "older line"},
+  {"name": "nokogiri-fixed", "purl": "pkg:gem/nokogiri@1.16.2", "affected": {}, "note": "fixed, and the withdrawn record is ignored"},
+  {"name": "actionpack-withdrawn-last-affected", "purl": "pkg:gem/actionpack@7.0.4", "affected": {}, "note": "GHSA-9chr-4fjh-5rgw is withdrawn"},
+  {"name": "unparseable", "purl": "pkg:gem/nokogiri@unknown", "affected": {}, "coverage": "not_evaluated", "reason": "could not be compared", "note": "Gem::Version rejects it"}
+ ]
+}

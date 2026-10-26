@@ -25,6 +25,7 @@ import (
 	"github.com/stackurity/stackurity/internal/health"
 	"github.com/stackurity/stackurity/internal/metrics"
 	"github.com/stackurity/stackurity/internal/model"
+	"github.com/stackurity/stackurity/internal/risk"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/testdb"
 )
@@ -391,8 +392,14 @@ func TestIntelEndpoints(t *testing.T) {
 	if code := eng.do("PATCH", "/api/v1/feeds/osv:npm", map[string]bool{"enabled": false}, nil); code != 403 {
 		t.Errorf("engineer disable feed: %d", code)
 	}
+	// Feeds are shared by every workspace: a workspace admin cannot switch
+	// one off for all of them, an instance admin can.
+	if code := admin.do("PATCH", "/api/v1/feeds/osv:npm", map[string]bool{"enabled": false}, nil); code != 403 {
+		t.Errorf("workspace admin disabled a shared feed: %d", code)
+	}
+	e.instanceAdmin("admin@x.io")
 	if code := admin.do("PATCH", "/api/v1/feeds/osv:npm", map[string]bool{"enabled": false}, nil); code != 200 {
-		t.Errorf("admin disable feed: %d", code)
+		t.Errorf("instance admin disable feed: %d", code)
 	}
 	var sum store.FindingSummary
 	if code := view.do("GET", "/api/v1/findings/summary", nil, &sum); code != 200 {
@@ -508,6 +515,30 @@ func TestWorkflowRoles(t *testing.T) {
 	pol.Policy["sos_rules"] = []map[string]any{{"name": "all critical", "min_severity": "critical"}}
 	if code := admin.do("PUT", "/api/v1/risk-policy", pol.Policy, nil); code != 400 {
 		t.Errorf("severity-only SOS accepted: %d", code)
+	}
+
+	// A saved rule is stored as written: it does not pick up conditions from
+	// the default rule it replaces, and the response names what changed.
+	pol.Policy["sos_rules"] = []map[string]any{{"name": "KEV anywhere", "known_exploited": true}}
+	var put struct {
+		Version         string   `json:"version"`
+		PreviousVersion string   `json:"previous_version"`
+		Changed         []string `json:"changed"`
+	}
+	if code := admin.do("PUT", "/api/v1/risk-policy", pol.Policy, &put); code != 200 || strings.Join(put.Changed, ",") != "sos_rules" ||
+		put.PreviousVersion != risk.DefaultPolicy().Version() {
+		t.Errorf("save rule: %d %+v", code, put)
+	}
+	var back struct {
+		Policy  risk.Policy `json:"policy"`
+		Version string      `json:"version"`
+	}
+	view.do("GET", "/api/v1/risk-policy", nil, &back)
+	if len(back.Policy.SOS) != 1 || back.Policy.SOS[0].Production != nil || back.Version != put.Version {
+		t.Errorf("rule read back as %+v (version %s, saved %s)", back.Policy.SOS, back.Version, put.Version)
+	}
+	if code := admin.do("PUT", "/api/v1/risk-policy", map[string]any{"known_exploited": 3, "no_such_field": 1}, nil); code != 400 {
+		t.Errorf("unknown policy field accepted: %d", code)
 	}
 }
 

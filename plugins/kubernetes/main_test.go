@@ -499,3 +499,20 @@ func TestValidate(t *testing.T) {
 		t.Error("valid config rejected")
 	}
 }
+
+// TestInternalAPIServersRefused: the server setting, written any way, cannot
+// take a workspace without private access to internal addresses.
+func TestInternalAPIServersRefused(t *testing.T) {
+	ctx := plugin.WithNetwork(context.Background(), netguard.Policy{AllowPrivate: false})
+	for _, server := range []string{
+		"https://127.0.0.1:6443", "https://[::1]:6443", "https://[::ffff:127.0.0.1]:6443", "https://10.96.0.1",
+		"https://169.254.169.254", "https://[fd00:ec2::254]", "https://[fe80::1%25lo0]:6443", "https://100.64.0.1",
+		"https://2130706433:6443", "https://0x7f.1:6443", "https://kubernetes.default.svc.2130706433",
+	} {
+		cfg, _ := json.Marshal(map[string]string{"server": server})
+		_, err := (k8sPlugin{connect: connect}).Collect(ctx, cfg, map[string]string{"token": "t"})
+		if !errors.Is(err, netguard.ErrBlocked) && !errors.Is(err, netguard.ErrAmbiguousHost) {
+			t.Errorf("%s: %v", server, err)
+		}
+	}
+}

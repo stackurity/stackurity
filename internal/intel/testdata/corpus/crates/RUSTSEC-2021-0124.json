@@ -1,0 +1,37 @@
+{
+ "id": "RUSTSEC-2021-0124",
+ "modified": "2023-11-08T04:07:23.239744Z",
+ "published": "2021-11-16T12:00:00Z",
+ "aliases": [
+  "CVE-2021-45710",
+  "GHSA-fg7r-2g4j-5cgr"
+ ],
+ "summary": "Data race when sending and receiving after closing a `oneshot` channel",
+ "affected": [
+  {
+   "package": {
+    "ecosystem": "crates.io",
+    "name": "tokio"
+   },
+   "ranges": [
+    {
+     "type": "SEMVER",
+     "events": [
+      {
+       "introduced": "0.1.14"
+      },
+      {
+       "fixed": "1.8.4"
+      },
+      {
+       "introduced": "1.9.0"
+      },
+      {
+       "fixed": "1.13.1"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

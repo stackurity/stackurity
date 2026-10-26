@@ -28,6 +28,28 @@ Stackurity can apply security updates, but only within limits you set. Detection
 
    Each plan shows which of these applies to it.
 
+## Failure handling
+
+What happens when part of a change goes wrong. Each case is covered by an end-to-end test that drives a simulated agent through the same API, client and fixer the real agent uses.
+
+**A change is not done until inventory says so.** The agent's "applied" report is only a claim. The change is *verified* when inventory collected after it shows the target version (and the health checks passed). The finding closes only when that fresh inventory no longer has the vulnerable version, and its resolution names the plan ("fixed by remediation plan #12 (upgraded to 3.0.11-1~deb12u2)"). If no inventory confirms the target within 30 minutes of the report, the change fails (and is rolled back where allowed) and the finding stays open.
+
+**The first failure stops the rollout.** Nothing more is released, pending changes are cancelled, and the plan ends `failed` (or `partially_failed` if some hosts were already verified). The plan's note names the host and the reason, for example `halted after a failed change on web-2: health check failed: nginx.service=failed`.
+
+| Situation | What happens |
+|---|---|
+| A health check fails | The change fails and the rollout halts. With `auto_rollback` and a manager that can roll back, a rollback to the previous version goes to that host at once, even outside the window. |
+| The package manager fails (the agent reports `failed`) | The rollout halts. Nothing was installed, so nothing is rolled back. |
+| The agent becomes unreachable | A change released but not fetched within 2 hours, or fetched but not reported within 2 hours of release, fails and halts the rollout. It is not rolled back, because nothing is known to have changed. A report that arrives afterwards is refused (409); the inventory the agent sends still updates findings. |
+| The network drops between applying and reporting | The agent retries the report (four attempts, 2, 4 and 8 seconds apart). If it still does not arrive, the inventory the agent collects next settles it: inventory taken after the change was fetched that shows the target version verifies the change, and nothing is run again. If the policy has health checks, their result was lost with the report, so at the 2-hour deadline the change fails with "the agent's report and its health checks never arrived" for a person to check, without a rollback. |
+| Duplicates | The same plan approved twice at once: one approval wins, the other gets 409. An agent fetching twice, or through two server replicas at once, receives each change once. The same result reported twice is accepted (204) and recorded once; a contradicting second result gets 409. Two rollout loops running at once (replicas whose worker leases overlapped) still release no more than `max_concurrent`. |
+| Approval revoked (plan cancelled or rejected) before dispatch | Released changes are taken back; agents get nothing. A cancelled plan cannot be approved again; the planner proposes the change afresh. |
+| Approval revoked while changes are out | Nothing more is released. A change an agent already fetched cannot be recalled: it runs, and its result is verified (or times out) like any other, so it never stays in flight blocking later plans. |
+| An approval is old | A plan approved by a person that has not started within 14 days is cancelled ("approval expired") and proposed again for a fresh decision. Plans approved automatically by policy do not expire; their policy is checked at every dispatch. |
+| The host changed since the plan was made | If the host no longer has the planned version (upgraded by hand, removed), its change is cancelled before release with the reason, and the rest of the plan goes ahead. A new plan covers the host if it still needs a fix. A plan whose changes were all cancelled ends `cancelled`, not `succeeded`. The agent also refuses a change whose installed version differs from the plan. |
+| The maintenance window closes mid-rollout | Changes released but not yet fetched are taken back and released again, with a new deadline, in the next window; the plan is not failed. Changes already on a host finish. |
+| The policy is disabled, edited or deleted mid-rollout | Its plans are cancelled at once and nothing more is dispatched. Changes already on a host finish and are verified. |
+
 ## What the agent does
 
 With `--remediate` the agent:

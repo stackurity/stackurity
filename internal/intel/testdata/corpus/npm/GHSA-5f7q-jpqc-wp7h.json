@@ -1,0 +1,77 @@
+{
+ "id": "GHSA-5f7q-jpqc-wp7h",
+ "modified": "2026-09-10T03:50:32.644775462Z",
+ "published": "2026-01-28T15:20:55Z",
+ "aliases": [
+  "CVE-2025-59472"
+ ],
+ "summary": "Next.js has Unbounded Memory Consumption via PPR Resume Endpoint ",
+ "severity": [
+  {
+   "type": "CVSS_V3",
+   "score": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:N/A:H"
+  }
+ ],
+ "database_specific": {
+  "severity": "MODERATE"
+ },
+ "affected": [
+  {
+   "package": {
+    "ecosystem": "npm",
+    "name": "next"
+   },
+   "ranges": [
+    {
+     "type": "SEMVER",
+     "events": [
+      {
+       "introduced": "16.0.0-beta.0"
+      },
+      {
+       "fixed": "16.1.5"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "package": {
+    "ecosystem": "npm",
+    "name": "next"
+   },
+   "ranges": [
+    {
+     "type": "SEMVER",
+     "events": [
+      {
+       "introduced": "15.0.0-canary.0"
+      },
+      {
+       "last_affected": "15.0.0-canary.205"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "package": {
+    "ecosystem": "npm",
+    "name": "next"
+   },
+   "ranges": [
+    {
+     "type": "SEMVER",
+     "events": [
+      {
+       "introduced": "15.6.0-canary.0"
+      },
+      {
+       "fixed": "15.6.0-canary.61"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

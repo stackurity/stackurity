@@ -1,6 +1,6 @@
 # Outbound network access
 
-Stackurity has no telemetry or update checks. Every outbound connection is listed below.
+Stackurity has no telemetry. Every outbound connection is listed below. The only request that is not for your own data or integrations is the [update check](#update-check), which sends nothing about you and can be turned off.
 
 | Component | Destination | When | Data sent |
 |---|---|---|---|
@@ -8,9 +8,22 @@ Stackurity has no telemetry or update checks. Every outbound connection is liste
 | Agent | Your Stackurity server | Every `--interval` | Hostname, machine-id, OS release, installed package list |
 | CLI `scan` / `sbom import` | Your Stackurity server | When run | Lockfile-derived component list, or the SBOM document |
 
+### Update check
+
+So that instance administrators learn about new releases (and security releases in particular), one server replica reads the public list of Stackurity releases.
+
+| Destination | When | What is sent |
+|---|---|---|
+| `api.github.com` (`STACKURITY_UPDATE_URL`) | Shortly after the first start, then every 12 hours | An anonymous `GET /repos/stackurity/stackurity/releases?per_page=20` with `User-Agent: stackurity`, `Accept: application/vnd.github+json` and `Accept-Encoding: gzip`. Nothing else: no version, installation id, licence, hostname, inventory or cookie |
+
+The response is compared with the running version on your server, and the result is shown to instance administrators only (a banner and **Settings → What's new**). GitHub sees the request's source IP address, as with any request. A failed check (offline, air-gapped, rate-limited) is logged at info level, keeps the last result, and is never shown as an error.
+
+- `STACKURITY_UPDATE_CHECK=off` turns it off: no request is made at all.
+- `STACKURITY_UPDATE_URL` points it at a mirror that serves the same JSON (for example a copy of the GitHub response on an internal web server).
+
 ### Intelligence feeds
 
-Feeds are created automatically for the ecosystems present in your inventory. Each one can be disabled under **Intelligence**, and `STACKURITY_FEEDS=off` turns all of them off. No inventory data is sent to any of them: OSV, KEV and endoflife.date are bulk downloads, and registry lookups send only a public package name. A release feed exists only while its ecosystem is in inventory.
+Feeds are created automatically for the ecosystems present in your inventory. Each one can be disabled under **Intelligence** by an instance administrator (feeds are shared by every workspace), and `STACKURITY_FEEDS=off` turns all of them off. No inventory data is sent to any of them: OSV, KEV and endoflife.date are bulk downloads, and registry lookups send only a public package name. A release feed exists only while its ecosystem is in inventory.
 
 | Feed | Destination | Schedule | What is requested |
 |---|---|---|---|
@@ -41,13 +54,13 @@ The server hands each plugin run the workspace's private-network policy, and the
 
 ### Notification channels
 
-Only the channels you configure are contacted: your SMTP server, Slack or Teams webhook URLs, your webhook endpoints and your Jira site. Redirects are never followed. Messages contain incident titles, asset and component names, and links to the dashboard.
+Only the channels you configure are contacted: your SMTP server, Slack or Teams webhook URLs, your webhook endpoints and your Jira site. Redirects are never followed. Destinations are checked against the workspace's private-network policy when the connection is made, so a name that later resolves to an internal address is refused too. Messages contain incident titles, asset and component names, and links to the dashboard.
 
 A Jira channel calls the REST API of the configured site only (`/rest/api/3` on Jira Cloud, `/rest/api/2` on Data Center and Server): it checks the account and project (`/myself`, `/project/<key>`, `/priority`), searches the project for the incident's label, creates the issue, and later adds comments, sets the priority and reads and applies transitions. Issues contain the incident's title, priority and risk factors, up to 20 affected asset names with component versions and environments, the fix, and links to the dashboard; nothing from other incidents or workspaces. A Jira site on a private address is subject to the same `STACKURITY_PRIVATE_TARGETS` policy as webhooks.
 
 ### Container image integrations
 
-Syft fetches image manifests and layers from the registry in the image reference. With a secret reference configured, the credential is sent to that registry only.
+Syft fetches image manifests and layers from the registry in the image reference. With a secret reference configured, the credential is sent to that registry only. For a workspace that may not reach private networks, Syft connects through a proxy inside the server that checks every connection (including redirects to blob storage) against the same policy.
 
 ### Air-gapped installs
 
@@ -55,4 +68,4 @@ Mirror the OSV bucket layout (`<ecosystem>/all.zip`, `<ecosystem>/modified_id.cs
 
 ## Restricting egress
 
-In `deploy/docker-compose.yml` the database sits on an internal network with no internet route. To restrict the server further, put it behind an egress proxy and allow only your Git hosts and the feeds above.
+In `deploy/docker-compose.yml` the database sits on an internal network with no internet route. To restrict the server further, put it behind an egress proxy and allow only your Git hosts, the feeds above and, unless you turned the update check off, `api.github.com`.

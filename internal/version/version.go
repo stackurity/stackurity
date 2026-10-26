@@ -81,6 +81,9 @@ func ForPurlType(t string) Ecosystem {
 // CompareGeneric splits on non-alphanumerics and compares numeric parts
 // numerically and others lexically. It never errors.
 func CompareGeneric(a, b string) (int, error) {
+	if err := tooLong(Generic, a, b); err != nil {
+		return 0, err
+	}
 	pa, pb := splitAlnum(a), splitAlnum(b)
 	for i := 0; i < len(pa) || i < len(pb); i++ {
 		var x, y string
@@ -189,6 +192,22 @@ func sign(n int) int {
 		return 1
 	}
 	return 0
+}
+
+// MaxLength bounds the versions compared. Real versions are far shorter,
+// but a collector may submit any string up to the batch field limit, and
+// comparing such strings against every advisory range and release would let
+// one batch keep the shared evaluator busy for hours. Longer versions fail
+// to parse, which records the component as not evaluated.
+const MaxLength = 256
+
+func tooLong(e Ecosystem, a, b string) error {
+	for _, v := range []string{a, b} {
+		if len(v) > MaxLength {
+			return &ParseError{Ecosystem: e, Version: v[:32] + "…"}
+		}
+	}
+	return nil
 }
 
 type ParseError struct {

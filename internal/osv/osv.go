@@ -5,8 +5,10 @@ package osv
 
 import (
 	"encoding/json"
+	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -74,6 +76,9 @@ type Target struct {
 	Name      string // OSV package name (source package for distros)
 	Version   string
 	Compare   version.Ecosystem
+	// Variant is the os-release ID where one release has several products
+	// (SUSE: "sles", "sles_sap", "sled").
+	Variant string
 }
 
 // TargetFor maps a purl (with version and qualifiers) to an OSV target. ok is
@@ -103,13 +108,23 @@ func TargetFor(purl, ver string, evidence map[string]string) (Target, bool) {
 	case "composer":
 		t.Ecosystem, t.Name = "Packagist", joinNS(p.Namespace, p.Name)
 	case "pypi":
-		t.Ecosystem, t.Name = "PyPI", p.Name
+		// OSV uses PEP 503 normalised names; SBOMs and other tools do not
+		// always ("Django", "typing_extensions").
+		t.Ecosystem, t.Name = "PyPI", strings.ToLower(pypiSeparators.ReplaceAllString(p.Name, "-"))
 	case "golang":
 		t.Ecosystem, t.Name = "Go", joinNS(p.Namespace, p.Name)
+		if t.Name == "stdlib" {
+			// The toolchain reports "go1.22.1" (Syft keeps it as the
+			// component version); OSV's stdlib ranges use "1.22.1".
+			t.Version = strings.TrimPrefix(t.Version, "go")
+		}
 	case "cargo":
 		t.Ecosystem, t.Name = "crates.io", p.Name
 	case "gem":
 		t.Ecosystem, t.Name = "RubyGems", p.Name
+		// Bundler lists platform gems as "1.16.0-x86_64-linux"; the
+		// platform is not part of the version Gem::Version compares.
+		t.Version = gemPlatform.ReplaceAllString(t.Version, "")
 	case "maven":
 		t.Ecosystem, t.Name = "Maven", p.Namespace+":"+p.Name
 	case "nuget":
@@ -158,8 +173,9 @@ func TargetFor(purl, ver string, evidence map[string]string) (Target, bool) {
 		if id == "" {
 			return Target{}, false
 		}
-		// Red Hat, Rocky, Alma and Amazon advisories name binary packages;
-		// SUSE advisories name the source package.
+		// Red Hat, Alma and Amazon advisories name binary packages; Rocky
+		// and SUSE advisories name the source package (RLSA records list
+		// "openssl", never "openssl-libs").
 		name := p.Name
 		srpm := ""
 		if evidence != nil {
@@ -171,10 +187,13 @@ func TargetFor(purl, ver string, evidence map[string]string) (Target, bool) {
 		switch id {
 		case "rocky":
 			t.Ecosystem = "Rocky Linux:" + majorOf(rel)
+			if src := sourceRPMName(srpm); src != "" {
+				name = src
+			}
 		case "almalinux":
 			t.Ecosystem = "AlmaLinux:" + majorOf(rel)
 		case "rhel":
-			t.Ecosystem = "Red Hat:enterprise_linux:" + majorOf(rel)
+			t.Ecosystem = "Red Hat:enterprise_linux:" + rhelStream(rel)
 		case "amzn":
 			if rel != "2" && rel != "2023" {
 				return Target{}, false // Amazon Linux 1 and unknown releases
@@ -185,7 +204,7 @@ func TargetFor(purl, ver string, evidence map[string]string) (Target, bool) {
 			if sp == "" {
 				return Target{}, false
 			}
-			t.Ecosystem = "SUSE:" + sp
+			t.Ecosystem, t.Variant = "SUSE:"+sp, id
 			if src := sourceRPMName(srpm); src != "" {
 				name = src
 			}
@@ -207,11 +226,78 @@ func TargetFor(purl, ver string, evidence map[string]string) (Target, bool) {
 	return t, t.Name != "" && t.Version != ""
 }
 
+var pypiSeparators = regexp.MustCompile(`[-_.]+`)
+
+// gemPlatform matches a platform suffix of a gem version, as the Gemfile.lock
+// collector strips it.
+var gemPlatform = regexp.MustCompile(`-(x86|x64|arm|aarch64|java|universal|mingw|mswin|darwin|linux|wasm).*$`)
+
+// WhyNoTarget explains why TargetFor found no target for a purl.
+// unsupported is true when no vulnerability source exists for it at all,
+// false when one exists but the component lacks what matching needs (a
+// version, a distro release).
+func WhyNoTarget(purl, ver string) (reason string, unsupported bool) {
+	p, err := packageurl.FromString(purl)
+	if err != nil {
+		return "the package URL could not be read", false
+	}
+	if ver == "" {
+		ver = p.Version
+	}
+	distro := p.Qualifiers.Map()["distro"]
+	ns := strings.ToLower(p.Namespace)
+	switch p.Type {
+	case "npm", "composer", "pypi", "golang", "cargo", "gem", "maven", "nuget", "pub":
+		if ver == "" {
+			return "no installed version was reported", false
+		}
+	case "deb", "apk":
+		if (p.Type == "deb" && ns != "debian" && ns != "ubuntu") || (p.Type == "apk" && ns != "alpine") {
+			return fmt.Sprintf("%s packages from %q have no vulnerability source", p.Type, p.Namespace), true
+		}
+		if distro == "" {
+			return "the distro release is unknown (no distro qualifier)", false
+		}
+		if ver == "" {
+			return "no installed version was reported", false
+		}
+		return fmt.Sprintf("the distro release %q is not understood", distro), false
+	case "rpm":
+		if distro == "" {
+			return "the distro release is unknown (no distro qualifier)", false
+		}
+		id, rel := rpmDistro(distro)
+		switch {
+		case id == "":
+			name, _, _ := strings.Cut(distro, "-")
+			return fmt.Sprintf("%s has no vulnerability source (supported rpm distributions: RHEL, Rocky Linux, AlmaLinux, SUSE, openSUSE Leap, Amazon Linux 2 and 2023)", name), true
+		case id == "amzn":
+			return fmt.Sprintf("Amazon Linux %s has no vulnerability source (Amazon Linux 2 and 2023 are supported)", rel), true
+		case ver == "":
+			return "no installed version was reported", false
+		}
+		return fmt.Sprintf("the distro release %q is not understood", distro), false
+	}
+	return fmt.Sprintf("no vulnerability source for %s packages", p.Type), true
+}
+
 func joinNS(ns, name string) string {
 	if ns == "" {
 		return name
 	}
 	return ns + "/" + name
+}
+
+// rhelStream names the Red Hat advisory stream for a RHEL VERSION_ID. Up to
+// RHEL 9 one stream covers the major release ("Red Hat:enterprise_linux:9::
+// baseos"); from RHEL 10 each minor release has its own
+// ("Red Hat:enterprise_linux:10.1").
+func rhelStream(rel string) string {
+	major := majorOf(rel)
+	if n, err := strconv.Atoi(major); err == nil && n >= 10 && strings.Contains(rel, ".") {
+		return majorMinor(rel)
+	}
+	return major
 }
 
 func majorOf(v string) string {
@@ -296,8 +382,9 @@ func BaseEcosystem(eco string) string {
 // the target's. Ubuntu advisories carry suffixes such as ":LTS", and Ubuntu
 // Pro (ESM) advisories use "Ubuntu:Pro:<release>"; both match the release.
 // Red Hat advisories name a repository after the release
-// ("Red Hat:enterprise_linux:9::appstream"); minor-release streams
-// (rhel_eus, rhel_aus) are separate products and do not match. A SUSE
+// ("Red Hat:enterprise_linux:9::appstream"), or from RHEL 10 the minor
+// release ("Red Hat:enterprise_linux:10.1"); extended streams (rhel_eus,
+// enterprise_linux_eus) are separate products and do not match. A SUSE
 // target "SUSE:15 SP5" matches every product of that service pack
 // ("SUSE:Linux Enterprise Module for Basesystem 15 SP5") and its extended
 // support channels ("... 15 SP5-LTSS"). Use Subscription to tell
@@ -315,7 +402,19 @@ func MatchEcosystem(advisory, target string) bool {
 			}
 		}
 	case strings.HasPrefix(target, "Red Hat:"):
-		return strings.HasPrefix(advisory, target+"::")
+		if strings.HasPrefix(advisory, target+"::") {
+			return true
+		}
+		// A RHEL 10 minor-release stream also takes the layered
+		// repositories published per major ("...:10::fastdatapath").
+		if rel, ok := strings.CutPrefix(target, "Red Hat:enterprise_linux:"); ok && strings.Contains(rel, ".") {
+			return strings.HasPrefix(advisory, "Red Hat:enterprise_linux:"+majorOf(rel)+"::")
+		}
+	case target == "Packagist":
+		// Packages served by another Composer repository carry its URL:
+		// Drupal contrib modules are "Packagist:https://packages.drupal.org/8".
+		// Composer names are vendor-scoped, so the name alone identifies them.
+		return strings.HasPrefix(advisory, "Packagist:")
 	case strings.HasPrefix(target, "SUSE:") && strings.HasPrefix(advisory, "SUSE:"):
 		_, ok := suseChannel(advisory, strings.TrimPrefix(target, "SUSE:"))
 		return ok
@@ -339,6 +438,16 @@ func suseChannel(advisory, sp string) (suffix string, ok bool) {
 	return "", false
 }
 
+// FIPSChannel reports whether an advisory ecosystem is one of Ubuntu Pro's
+// FIPS channels ("Ubuntu:Pro:FIPS:20.04:LTS", "...:FIPS-updates:...",
+// "...:FIPS-preview:..."). Their records describe the FIPS builds of a
+// package, which only FIPS-enabled hosts run.
+func FIPSChannel(ecosystem string) bool { return strings.HasPrefix(ecosystem, "Ubuntu:Pro:FIPS") }
+
+// FIPSBuild reports whether an installed Ubuntu package version is a FIPS
+// build: "1.1.1f-1ubuntu2.fips.20", "3.0.2-0ubuntu1.10+Fips1".
+func FIPSBuild(version string) bool { return strings.Contains(strings.ToLower(version), "fips") }
+
 // IsPro reports whether an ecosystem is a subscription channel whose fixes
 // need a paid subscription (Ubuntu Pro, SUSE LTSS).
 func IsPro(ecosystem string) bool { return Subscription(ecosystem) != "" }
@@ -355,6 +464,44 @@ func Subscription(ecosystem string) string {
 		}
 	}
 	return ""
+}
+
+// SubscriptionFor is Subscription for a particular target. SUSE publishes
+// one record for every product of a service pack, and some of those
+// products are separate subscriptions: a fix listed only for "SUSE Linux
+// Enterprise Server for SAP Applications 15 SP4" or for High Performance
+// Computing is not available to a plain SLES host, which needs LTSS for it.
+func SubscriptionFor(ecosystem string, t Target) string {
+	if sub := Subscription(ecosystem); sub != "" || !strings.HasPrefix(ecosystem, "SUSE:") {
+		return sub
+	}
+	switch product := strings.TrimPrefix(ecosystem, "SUSE:"); {
+	case strings.Contains(product, "for SAP Applications") && t.Variant != "sles_sap":
+		return "SUSE Linux Enterprise Server for SAP Applications"
+	case strings.Contains(product, "High Performance Computing"):
+		return "SUSE Linux Enterprise High Performance Computing"
+	case strings.Contains(product, "Enterprise Desktop") && t.Variant != "sled":
+		return "SUSE Linux Enterprise Desktop"
+	}
+	return ""
+}
+
+// PreferredSubscription orders the paid channels a fix is available from,
+// so a finding names the one a host of the release is most likely to have.
+func PreferredSubscription(a, b string) bool {
+	rank := func(s string) int {
+		switch s {
+		case "Ubuntu Pro":
+			return 0
+		case "SUSE LTSS":
+			return 1
+		}
+		return 2
+	}
+	if ra, rb := rank(a), rank(b); ra != rb {
+		return ra < rb
+	}
+	return a < b
 }
 
 // suseExtended matches extended support channels such as

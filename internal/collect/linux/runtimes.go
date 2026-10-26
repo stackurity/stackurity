@@ -357,17 +357,21 @@ func runVersion(ctx context.Context, bin string, args []string) ([]byte, error) 
 	return buf.Bytes(), err
 }
 
+// limitedBuffer keeps at most max bytes of a command's output.
+// The buffer is a named field, not embedded: an embedded bytes.Buffer
+// brings its ReadFrom, which io.Copy (and so os/exec) prefers to Write,
+// and the cap would never apply.
 type limitedBuffer struct {
-	bytes.Buffer
+	buf bytes.Buffer
 	max int
 }
 
 func (b *limitedBuffer) Write(p []byte) (int, error) {
-	if room := b.max - b.Len(); room > 0 {
+	if room := b.max - b.buf.Len(); room > 0 {
 		if len(p) > room {
-			b.Buffer.Write(p[:room])
+			b.buf.Write(p[:room])
 		} else {
-			b.Buffer.Write(p)
+			b.buf.Write(p)
 		}
 	}
 	return len(p), nil
@@ -399,3 +403,5 @@ func runRPMOwner(ctx context.Context, root string, paths []string) (map[string]b
 	}
 	return owned, nil
 }
+
+func (b *limitedBuffer) Bytes() []byte { return b.buf.Bytes() }

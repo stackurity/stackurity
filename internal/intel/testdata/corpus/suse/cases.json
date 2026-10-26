@@ -1,0 +1,13 @@
+{
+ "ecosystem": "SUSE Linux Enterprise (including LTSS)",
+ "feed": "osv:SUSE",
+ "cases": [
+  {"name": "sp5-by-source", "purl": "pkg:rpm/sles/libopenssl3@3.0.8-150500.5.30.1?distro=sles-15.5", "evidence": {"evr": "3.0.8-150500.5.30.1", "source_rpm": "openssl-3-3.0.8-150500.5.30.1.src.rpm"}, "affected": {"CVE-2024-4741": "3.0.8-150500.5.36.1", "CVE-2024-6119": "3.0.8-150500.5.42.1"}, "note": "SUSE records name the source package; Basesystem module fixes are free"},
+  {"name": "sp5-current", "purl": "pkg:rpm/sles/libopenssl3@3.0.8-150500.5.42.1?distro=sles-15.5", "evidence": {"evr": "3.0.8-150500.5.42.1", "source_rpm": "openssl-3-3.0.8-150500.5.42.1.src.rpm"}, "affected": {}, "note": "fixed"},
+  {"name": "sp4-ltss", "purl": "pkg:rpm/sles/libopenssl3@3.0.8-150400.4.50.1?distro=sles-15.4", "evidence": {"evr": "3.0.8-150400.4.50.1", "source_rpm": "openssl-3-3.0.8-150400.4.50.1.src.rpm"}, "affected": {"CVE-2024-4741": "3.0.8-150400.4.57.1"}, "subscription": {"CVE-2024-4741": "SUSE LTSS"}, "note": "SP4 fixes come through LTSS (and products this host does not have: SAP, HPC)"},
+  {"name": "sp4-sap", "purl": "pkg:rpm/sles_sap/libopenssl3@3.0.8-150400.4.50.1?distro=sles_sap-15.4", "evidence": {"evr": "3.0.8-150400.4.50.1", "source_rpm": "openssl-3-3.0.8-150400.4.50.1.src.rpm"}, "affected": {"CVE-2024-4741": "3.0.8-150400.4.57.1"}, "note": "SLES for SAP gets the fix through its own product"},
+  {"name": "syft-upstream", "purl": "pkg:rpm/suse/libopenssl3@3.0.8-150500.5.30.1?distro=sles-15.5&upstream=openssl-3-3.0.8-150500.5.30.1.src.rpm", "affected": {"CVE-2024-4741": "3.0.8-150500.5.36.1", "CVE-2024-6119": "3.0.8-150500.5.42.1"}, "note": "Syft's source rpm qualifier"},
+  {"name": "service-pack-without-advisories", "purl": "pkg:rpm/sles/libopenssl3@3.5.0-150900.1.1?distro=sles-15.9", "evidence": {"source_rpm": "openssl-3-3.5.0-150900.1.1.src.rpm"}, "affected": {}, "coverage": "not_evaluated", "reason": "no advisories for SUSE:15 SP9", "note": "a service pack the source has no data for"},
+  {"name": "unreadable-release", "purl": "pkg:rpm/sles/libopenssl3@3.0.8-150500.5.30.1?distro=sles-15.SP5", "affected": {}, "coverage": "not_evaluated", "reason": "is not understood", "note": "a VERSION_ID that is not major.minor"}
+ ]
+}

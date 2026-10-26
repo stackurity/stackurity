@@ -1,0 +1,125 @@
+{
+ "id": "GHSA-jfh8-c2jp-5v3q",
+ "modified": "2025-10-22T19:37:02.616807Z",
+ "published": "2021-12-10T00:40:56Z",
+ "aliases": [
+  "CVE-2021-44228"
+ ],
+ "summary": "Remote code injection in Log4j",
+ "severity": [
+  {
+   "type": "CVSS_V3",
+   "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H/E:H"
+  }
+ ],
+ "database_specific": {
+  "severity": "CRITICAL"
+ },
+ "affected": [
+  {
+   "package": {
+    "ecosystem": "Maven",
+    "name": "org.apache.logging.log4j:log4j-core"
+   },
+   "ranges": [
+    {
+     "type": "ECOSYSTEM",
+     "events": [
+      {
+       "introduced": "2.13.0"
+      },
+      {
+       "fixed": "2.15.0"
+      }
+     ]
+    }
+   ],
+   "versions": [
+    "2.13.0",
+    "2.13.1",
+    "2.13.2",
+    "2.13.3",
+    "2.14.0",
+    "2.14.1"
+   ]
+  },
+  {
+   "package": {
+    "ecosystem": "Maven",
+    "name": "org.apache.logging.log4j:log4j-core"
+   },
+   "ranges": [
+    {
+     "type": "ECOSYSTEM",
+     "events": [
+      {
+       "introduced": "2.0-beta9"
+      },
+      {
+       "fixed": "2.3.1"
+      }
+     ]
+    }
+   ],
+   "versions": [
+    "2.0",
+    "2.0-beta9",
+    "2.0-rc1",
+    "2.0-rc2",
+    "2.0.1",
+    "2.0.2",
+    "2.1",
+    "2.2",
+    "2.3"
+   ]
+  },
+  {
+   "package": {
+    "ecosystem": "Maven",
+    "name": "org.apache.logging.log4j:log4j-core"
+   },
+   "ranges": [
+    {
+     "type": "ECOSYSTEM",
+     "events": [
+      {
+       "introduced": "2.4"
+      },
+      {
+       "fixed": "2.12.2"
+      }
+     ]
+    }
+   ],
+   "versions": [
+    "2.10.0",
+    "2.11.0",
+    "2.11.1",
+    "2.11.2",
+    "2.12.0",
+    "2.12.1",
+    "2.4",
+    "2.4.1",
+    "2.5",
+    "2.6",
+    "2.6.1",
+    "2.6.2",
+    "2.7",
+    "2.8",
+    "2.8.1",
+    "2.8.2",
+    "2.9.0",
+    "2.9.1"
+   ]
+  },
+  {
+   "package": {
+    "ecosystem": "Maven",
+    "name": "uk.co.nichesolutions.logging.log4j:log4j-core"
+   },
+   "versions": [
+    "2.6.3-CUSTOM"
+   ]
+  }
+ ]
+}

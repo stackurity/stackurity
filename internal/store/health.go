@@ -26,7 +26,7 @@ func (s *Store) JobStats(ctx context.Context) ([]JobCount, float64, error) {
 		  count(*)
 		FROM jobs
 		WHERE done_at IS NULL AND (failed_at IS NULL OR failed_at >= now() - interval '24 hours')
-		GROUP BY 1, 2 ORDER BY 1, 2`, lockTimeout.Seconds())
+		GROUP BY 1, 2 ORDER BY 1, 2`, s.lockTimeout().Seconds())
 	if err != nil {
 		return nil, 0, err
 	}
@@ -37,7 +37,7 @@ func (s *Store) JobStats(ctx context.Context) ([]JobCount, float64, error) {
 	var oldest float64
 	err = s.Pool.QueryRow(ctx, `SELECT COALESCE(extract(epoch FROM now() - min(run_at)), 0)::float8 FROM jobs
 		WHERE done_at IS NULL AND failed_at IS NULL AND run_at <= now()
-		  AND (locked_at IS NULL OR locked_at < now() - make_interval(secs => $1))`, lockTimeout.Seconds()).Scan(&oldest)
+		  AND (locked_at IS NULL OR locked_at < now() - make_interval(secs => $1))`, s.lockTimeout().Seconds()).Scan(&oldest)
 	return counts, oldest, err
 }
 

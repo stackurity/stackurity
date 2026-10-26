@@ -169,13 +169,37 @@ func (c *Client) AgentActions(ctx context.Context) ([]AgentAction, error) {
 	return out.Items, err
 }
 
+// reportRetryWait is the first pause between report attempts; it doubles.
+var reportRetryWait = 2 * time.Second
+
+// ReportAction sends the result of a remediation action. A change has
+// already been made, so the result is worth retrying through a brief network
+// interruption or server restart; the server accepts the same result twice
+// without recording it twice. Client errors (such as a 409 because the
+// server already timed the action out) are not retried. If every attempt
+// fails, the inventory the agent collects next lets the server settle it.
 func (c *Client) ReportAction(ctx context.Context, id int64, report any) error {
 	b, err := json.Marshal(report)
 	if err != nil {
 		return err
 	}
-	return c.Do(ctx, "POST", fmt.Sprintf("/api/v1/agent/actions/%d/report", id), bytes.NewReader(b),
-		map[string]string{"Content-Type": "application/json"}, nil)
+	wait := reportRetryWait
+	for attempt := 0; ; attempt++ {
+		err = c.Do(ctx, "POST", fmt.Sprintf("/api/v1/agent/actions/%d/report", id), bytes.NewReader(b),
+			map[string]string{"Content-Type": "application/json"}, nil)
+		if err == nil || attempt == 3 {
+			return err
+		}
+		if ae, ok := err.(*APIError); ok && ae.Status < 500 && ae.Status != 429 {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(wait):
+		}
+		wait *= 2
+	}
 }
 
 // ResultFinding is the part of a finding a CI gate needs.

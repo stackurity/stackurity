@@ -160,16 +160,35 @@ func ScanWith(ctx context.Context, fsys fs.FS, exts []Extension) ([]model.Observ
 			return nil
 		}
 		found, err := parse(fsys, path.Dir(p), p)
+		// One hostile entry (an over-long or malformed name) must not make
+		// the whole batch invalid and so hide every other package.
+		kept := found[:0]
+		for _, o := range found {
+			if model.Usable(o) {
+				kept = append(kept, o)
+			}
+		}
+		if dropped := len(found) - len(kept); dropped > 0 {
+			msg := fmt.Sprintf("%d entr%s with an invalid or over-long name or version were skipped", dropped, map[bool]string{true: "y", false: "ies"}[dropped == 1])
+			var partial *partialError
+			if errors.As(err, &partial) {
+				msg = partial.msg + "; " + msg
+			}
+			if err == nil || errors.As(err, &partial) {
+				err = &partialError{msg}
+			}
+		}
+		found = kept
 		var partial *partialError
 		switch {
 		case errors.As(err, &partial):
 			obs = append(obs, found...)
-			cov = append(cov, model.CoverageItem{Scope: scope, Status: "partial", Reason: partial.msg})
+			cov = append(cov, model.CoverageItem{Scope: clip(scope), Status: "partial", Reason: clip(partial.msg)})
 		case err != nil:
-			cov = append(cov, model.CoverageItem{Scope: scope, Status: "failed", Reason: err.Error()})
+			cov = append(cov, model.CoverageItem{Scope: clip(scope), Status: "failed", Reason: clip(err.Error())})
 		default:
 			obs = append(obs, found...)
-			cov = append(cov, model.CoverageItem{Scope: scope, Status: "checked"})
+			cov = append(cov, model.CoverageItem{Scope: clip(scope), Status: "checked"})
 		}
 		return nil
 	})
@@ -245,6 +264,15 @@ func readLimited(fsys fs.FS, p string) ([]byte, error) {
 }
 
 func boolp(b bool) *bool { return &b }
+
+// clip keeps coverage text (paths, parser errors that quote the file) within
+// the batch's field limit.
+func clip(s string) string {
+	if len(s) <= 1000 {
+		return s
+	}
+	return s[:1000] + "…"
+}
 
 // cleanRel turns an fs path into a display path; "." becomes "".
 func cleanRel(p string) string {

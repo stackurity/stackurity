@@ -235,7 +235,8 @@ func connect(ctx context.Context, s settings, secrets map[string]string) (*clien
 func newClient(ctx context.Context, conn *connection) (*client, error) {
 	u, err := url.Parse(conn.server)
 	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil {
-		return nil, fmt.Errorf("server %q must be an https:// URL", conn.server)
+		// The URL is not quoted: it may carry credentials.
+		return nil, errors.New("the API server must be an https:// URL without credentials")
 	}
 	u.Path = strings.TrimSuffix(u.Path, "/")
 	tc := &tls.Config{MinVersion: tls.VersionTLS12, ServerName: conn.serverName}

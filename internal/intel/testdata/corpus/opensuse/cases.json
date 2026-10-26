@@ -1,0 +1,11 @@
+{
+ "ecosystem": "openSUSE Leap",
+ "feed": "osv:openSUSE",
+ "cases": [
+  {"name": "leap-15.6", "purl": "pkg:rpm/opensuse-leap/libopenssl3@3.1.4-150600.5.7.1?distro=opensuse-leap-15.6", "evidence": {"evr": "3.1.4-150600.5.7.1", "source_rpm": "openssl-3-3.1.4-150600.5.7.1.src.rpm"}, "affected": {"CVE-2024-5535": "3.1.4-150600.5.10.1"}, "note": "Leap records arrive with SUSE ids and name the source package"},
+  {"name": "leap-15.6-older", "purl": "pkg:rpm/opensuse-leap/libopenssl3@3.1.4-150600.5.1.1?distro=opensuse-leap-15.6", "evidence": {"evr": "3.1.4-150600.5.1.1", "source_rpm": "openssl-3-3.1.4-150600.5.1.1.src.rpm"}, "affected": {"CVE-2024-4603": "3.1.4-150600.5.7.1", "CVE-2024-5535": "3.1.4-150600.5.10.1"}, "note": "an advisory covering two CVEs is keyed by the lower one"},
+  {"name": "leap-15.5", "purl": "pkg:rpm/opensuse-leap/libopenssl3@3.0.8-150500.5.24.1?distro=opensuse-leap-15.5", "evidence": {"evr": "3.0.8-150500.5.24.1", "source_rpm": "openssl-3-3.0.8-150500.5.24.1.src.rpm"}, "affected": {"CVE-2024-0727": "3.0.8-150500.5.27.1"}, "note": "release-specific entries: 15.6 fixes do not apply"},
+  {"name": "release-without-advisories", "purl": "pkg:rpm/opensuse-leap/libopenssl3@3.5.0-160000.1.1?distro=opensuse-leap-16.0", "evidence": {"source_rpm": "openssl-3-3.5.0-160000.1.1.src.rpm"}, "affected": {}, "coverage": "not_evaluated", "reason": "no advisories for openSUSE:Leap 16.0", "note": "this corpus holds no Leap 16.0 records"},
+  {"name": "tumbleweed", "purl": "pkg:rpm/opensuse-tumbleweed/libopenssl3@3.5.0-1.1?distro=opensuse-tumbleweed-20251001", "affected": {}, "coverage": "unsupported", "reason": "no vulnerability source", "note": "Tumbleweed is not supported"}
+ ]
+}

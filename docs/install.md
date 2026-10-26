@@ -1,6 +1,6 @@
 # Installing and operating Stackurity
 
-Stackurity runs as one container plus PostgreSQL. It needs no vendor account and sends no telemetry. [network.md](network.md) lists every outbound call.
+Stackurity runs as one container plus PostgreSQL. It needs no vendor account and sends no telemetry. [network.md](network.md) lists every outbound call, including the update check, which sends nothing about your installation and can be turned off.
 
 ## Requirements
 
@@ -48,6 +48,8 @@ docker compose exec -e STACKURITY_PASSWORD='a long passphrase' stackurity \
 | `STACKURITY_PLATFORM_WORKSPACE` | `1` | Workspace (id or slug) where platform incidents are raised for the operators ([Health](#health)) |
 | `STACKURITY_METRICS_ADDR` | off | Address for a separate Prometheus metrics listener, for example `127.0.0.1:9100` ([Health](#health)). Never the API port |
 | `STACKURITY_FEEDS` | on | `off` disables all intelligence feeds |
+| `STACKURITY_UPDATE_CHECK` | on | `off` disables the release check: no request is made at all ([Upgrading](#upgrading)) |
+| `STACKURITY_UPDATE_URL` | GitHub's release list | Mirror of `https://api.github.com/repos/stackurity/stackurity/releases?per_page=20`, for installs that cannot reach GitHub |
 | `STACKURITY_OSV_URL`, `STACKURITY_KEV_URL`, `STACKURITY_ENDOFLIFE_URL`, `STACKURITY_NPM_REGISTRY`, `STACKURITY_PACKAGIST_URL`, `STACKURITY_PYPI_URL`, `STACKURITY_GOPROXY_URL`, `STACKURITY_CRATES_INDEX_URL`, `STACKURITY_RUBYGEMS_URL`, `STACKURITY_NUGET_URL`, `STACKURITY_MAVEN_URL`, `STACKURITY_PUB_URL` | public sources | Mirrors for offline or air-gapped installs ([network.md](network.md)) |
 | `STACKURITY_BASE_URL` | — | Public dashboard URL, used for links in notifications and by the agent installer |
 | `STACKURITY_AGENT_DIR` | `/usr/local/lib/stackurity/agents` in the image | Agent builds served to new hosts by **Add server** |
@@ -344,21 +346,48 @@ Test a restore regularly. A backup you have never restored is not a backup. To c
 
 ## Upgrading
 
-1. Take a backup.
+Instance administrators see a banner when a newer release is available, and **Settings → What's new** lists the release notes of every newer release with these steps. A release whose notes have a **Security** section shows a stronger banner that can only be snoozed for a day. The server reads GitHub's public release list every 12 hours and compares it with its own version locally; the request carries nothing about your installation ([network.md](network.md#update-check)). Set `STACKURITY_UPDATE_CHECK=off` to turn the check off, or `STACKURITY_UPDATE_URL` to use a mirror. Development builds (`dev`) never show an update.
+
+1. Note the image you run now (`docker compose images stackurity`), and take a backup (see [Backup and restore](#backup-and-restore)):
+
+   ```sh
+   docker compose exec -T postgres pg_dump -U stackurity -Fc stackurity > stackurity-before-upgrade.dump
+   ```
+
 2. `git pull`, then `docker compose pull && docker compose up -d` (or bump `STACKURITY_IMAGE`; with `--build` if you build from source).
 3. Migrations run automatically at startup inside a lock, so concurrent starts are safe. Run `stackurity migrate` to apply them separately.
+4. Check that `/readyz` answers 200 and that your workspaces, assets and findings are there.
 
-Downgrades are not supported. To roll back, restore the backup taken before the upgrade.
+With Helm, set the new image tag (or chart version) and run `helm upgrade` with your usual values.
+
+Before a release is published, CI installs each earlier release still in use (currently 0.2.0, 0.3.0 and 0.3.1), loads data, starts the new version on the same database, restores a backup of the result into a new PostgreSQL server, and runs the rollback below, checking readiness and counts at each step. The script is `tools/release-checks/upgrade.sh`; you can run it against your own build: `tools/release-checks/upgrade.sh ghcr.io/stackurity/stackurity:0.3.0 stackurity:mybuild`.
+
+### Rolling back
+
+A downgrade is never done in place: the previous version may not work with a newer schema, and migrations are not reversed. To roll back, put back the previous image and the backup taken before the upgrade. Anything recorded since the upgrade is lost.
+
+```sh
+docker compose stop stackurity
+# Recreate the database: restoring over it with --clean would leave tables the new version added.
+docker compose exec -T postgres psql -U stackurity -d postgres -c 'DROP DATABASE stackurity WITH (FORCE)' -c 'CREATE DATABASE stackurity'
+docker compose exec -T postgres pg_restore -U stackurity -d stackurity < stackurity-before-upgrade.dump
+# Pin the previous version, for example STACKURITY_IMAGE=ghcr.io/stackurity/stackurity:0.3.0 in .env, then:
+docker compose up -d
+```
+
+Upgrading again later works as before; the migrations run again. With Helm, restore the database the same way and `helm rollback` (or set `image.tag` to the previous version).
 
 ## Kubernetes (Helm)
 
 ```sh
 kubectl create secret generic stackurity-db --from-literal=url='postgres://stackurity:...@db:5432/stackurity?sslmode=require'
-helm install stackurity deploy/helm/stackurity \
+helm install stackurity oci://ghcr.io/stackurity/charts/stackurity --version 0.4.0 \
   --set database.existingSecret=stackurity-db \
   --set ingress.enabled=true --set ingress.host=stackurity.example.com \
   --set config.baseURL=https://stackurity.example.com
 ```
+
+The chart is published with each release from 0.4.0 and signed with Sigstore (`cosign verify ghcr.io/stackurity/charts/stackurity:0.4.0 --certificate-identity-regexp '^https://github.com/stackurity/stackurity/.github/workflows/release.yml@refs/tags/' --certificate-oidc-issuer https://token.actions.githubusercontent.com`). You can also install from a checkout: `helm install stackurity deploy/helm/stackurity ...`.
 
 The chart runs the same hardened container: non-root, read-only root filesystem, all capabilities dropped, `RuntimeDefault` seccomp, and no service-account token. PostgreSQL isn't bundled; use a managed database or an operator. Set `replicaCount` above 1 for availability (see [Running several replicas](#running-several-replicas)); the chart keeps the `Recreate` update strategy so an upgrade never runs two versions at once. `metrics.enabled=true` serves Prometheus metrics on port 9100 through a separate `<release>-metrics` Service, never through the ingress. With the Prometheus Operator, add `metrics.serviceMonitor.enabled=true` (and `metrics.serviceMonitor.labels` matching your Prometheus's `serviceMonitorSelector`, for example `release: kube-prometheus-stack`) for a ServiceMonitor that scrapes it every `metrics.serviceMonitor.interval` (30s). It is created only when the cluster serves `monitoring.coreos.com/v1`; with `helm template`, pass `--api-versions monitoring.coreos.com/v1/ServiceMonitor`.
 
@@ -367,7 +396,7 @@ The chart runs the same hardened container: non-root, read-only root filesystem,
 Any number of servers can run against one PostgreSQL database, behind a load balancer, for availability. Nothing needs to be configured, and sessions work on every replica.
 
 - **Background work is coordinated in the database.** Jobs are claimed one at a time. Each periodic task (the alert dispatcher, digests, feed and integration scheduling, housekeeping) runs at most once per interval across all replicas and never on two at once. A replica holds a task under a two-minute lease that it renews while the task runs; if the replica dies, another takes the task over when the lease expires and runs it again at once.
-- **Notifications are sent once.** Each delivery is claimed just before it is sent. A replica that dies mid-send leaves the delivery to be retried about five minutes later, so a message can, rarely, arrive twice; webhooks carry `X-Stackurity-Delivery` for deduplication. Jira issues are never duplicated (see [Jira](#jira)), and a retried comment is skipped when the issue already has it.
+- **Notifications are sent at least once.** Each delivery is claimed just before it is sent. A replica that dies mid-send leaves the delivery to be retried about five minutes later, so a message can, rarely, arrive twice; webhooks carry `X-Stackurity-Delivery` for deduplication. Jira issues are never duplicated (see [Jira](#jira)), and a retried comment is skipped when the issue already has it.
 - **Shared state lives in the database**: sessions, single sign-on state, the setup token, rate limits and the licence. A licence or stack pack changed through one replica reaches the others within 30 seconds, and a workspace's plan within 30 seconds.
 - **Rate limits are shared.** Sign-in, setup, password change, agent enrollment and the start of single sign-on are counted in the database, so a client gets the limit once however the load balancer spreads its requests. The limits are below. Every one fails closed: if the database cannot count an attempt, the request is refused with 503 (each of these requests needs the database anyway). Each replica also keeps its own count and refuses early once it alone has seen more than the limit, which saves a database write during a flood. Ended windows are deleted by the hourly housekeeping task. Behind a proxy, set `STACKURITY_TRUST_PROXY=true` so the limits see client addresses rather than the proxy's.
 
@@ -380,6 +409,7 @@ Any number of servers can run against one PostgreSQL database, behind a load bal
 
   The per-account limit means someone guessing a password can keep that account from signing in with a password for up to 15 minutes at a time; single sign-on is unaffected, and the attempts appear in the audit log as `auth.login_failed`.
 - **Per replica:** the scratch directory (`STACKURITY_DATA_DIR`, temporary clones only), and HTTP and database pool metrics. Mount the same `file:` secrets and set the same environment on every replica.
+- **Crashes:** what a killed replica leaves behind (jobs, feed syncs, ingests, notifications, periodic tasks), what is guaranteed after a restart, and the crash tests that check it are in [reliability.md](reliability.md).
 - **Upgrades:** stop every replica, then start the new version (Compose and the Helm chart's `Recreate` strategy do this). Migrations run once, inside a lock, but a new schema is not guaranteed to work with the previous version's code.
 
 ## Health

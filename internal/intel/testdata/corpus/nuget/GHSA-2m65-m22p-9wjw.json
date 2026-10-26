@@ -1,0 +1,74 @@
+{
+ "id": "GHSA-2m65-m22p-9wjw",
+ "modified": "2024-12-03T06:27:48.987241Z",
+ "published": "2022-08-10T00:00:18Z",
+ "withdrawn": "2024-04-02T19:01:11Z",
+ "summary": "Duplicate Advisory: .NET Information Disclosure Vulnerability",
+ "severity": [
+  {
+   "type": "CVSS_V3",
+   "score": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:N/A:N"
+  }
+ ],
+ "database_specific": {
+  "severity": "MODERATE"
+ },
+ "affected": [
+  {
+   "package": {
+    "ecosystem": "NuGet",
+    "name": "System.Security.Cryptography.Xml"
+   },
+   "ranges": [
+    {
+     "type": "ECOSYSTEM",
+     "events": [
+      {
+       "introduced": "0"
+      },
+      {
+       "fixed": "4.7.1"
+      }
+     ]
+    }
+   ],
+   "versions": [
+    "4.4.0",
+    "4.4.0-preview1-25305-02",
+    "4.4.0-preview2-25405-01",
+    "4.4.1",
+    "4.4.2",
+    "4.5.0",
+    "4.5.0-preview1-25914-04",
+    "4.5.0-preview1-26216-02",
+    "4.5.0-preview2-26406-04",
+    "4.5.0-rc1",
+    "4.6.0",
+    "4.7.0"
+   ]
+  },
+  {
+   "package": {
+    "ecosystem": "NuGet",
+    "name": "System.Security.Cryptography.Xml"
+   },
+   "ranges": [
+    {
+     "type": "ECOSYSTEM",
+     "events": [
+      {
+       "introduced": "5.0.0"
+      },
+      {
+       "fixed": "6.0.1"
+      }
+     ]
+    }
+   ],
+   "versions": [
+    "5.0.0",
+    "6.0.0"
+   ]
+  }
+ ]
+}

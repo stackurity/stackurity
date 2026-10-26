@@ -1,0 +1,23 @@
+{
+ "ecosystem": "PyPI",
+ "feed": "osv:PyPI",
+ "cases": [
+  {"name": "django-3.2-branch", "purl": "pkg:pypi/django@3.2.24", "affected": {"CVE-2024-27351": "3.2.25"}, "note": "GHSA and PYSEC records for the same CVE collapse into one finding"},
+  {"name": "django-4.2-fixed", "purl": "pkg:pypi/django@4.2.11", "affected": {}, "note": "fixed in its branch"},
+  {"name": "django-5.0-branch", "purl": "pkg:pypi/django@5.0.2", "affected": {"CVE-2024-27351": "5.0.3"}, "note": "third range"},
+  {"name": "django-4.1-unlisted", "purl": "pkg:pypi/django@4.1.13", "affected": {}, "note": "4.1 is in none of the ranges (it was out of support); the advisory does not call it affected"},
+  {"name": "dotted-name", "purl": "pkg:pypi/jaraco.context@6.0.1", "affected": {"CVE-2026-23949": "6.1.0"}, "note": "OSV names are PEP 503 normalised (jaraco-context); purls keep the dot"},
+  {"name": "name-spelling", "purl": "pkg:pypi/Jaraco_Context@6.1.0", "affected": {}, "note": "case and underscores are normalised too; 6.1.0 is the fix"},
+  {"name": "django-prerelease-range", "purl": "pkg:pypi/django@1.8b1", "affected": {"CVE-2015-2241": "1.8b2"}, "note": "range 1.8a1..1.8b2 made of prereleases"},
+  {"name": "django-final-after-prereleases", "purl": "pkg:pypi/django@1.8", "affected": {}, "note": "1.8 final is after 1.8b2"},
+  {"name": "django-1.7-beta", "purl": "pkg:pypi/django@1.7b1", "affected": {"CVE-2014-1418": "1.7b4", "CVE-2015-2241": "1.7.6"}, "note": "prerelease inside two advisories' ranges"},
+  {"name": "django-last-affected", "purl": "pkg:pypi/django@1.2.7", "affected": {"CVE-2011-4140": "", "CVE-2015-2241": "1.7.6"}, "note": "last_affected 1.2.7 is inclusive"},
+  {"name": "django-second-last-affected-range", "purl": "pkg:pypi/django@1.3.1", "affected": {"CVE-2011-4140": "", "CVE-2015-2241": "1.7.6"}, "note": "second range 1.3..1.3.1"},
+  {"name": "django-after-last-affected", "purl": "pkg:pypi/django@1.3.2", "affected": {"CVE-2015-2241": "1.7.6"}, "note": "past last_affected"},
+  {"name": "django-1.5-branch", "purl": "pkg:pypi/django@1.5.5", "affected": {"CVE-2014-1418": "1.5.8", "CVE-2015-2241": "1.7.6"}, "note": "one of four ranges"},
+  {"name": "pillow-withdrawn", "purl": "pkg:pypi/pillow@9.0.0", "affected": {}, "note": "GHSA-56pw-mpj4-fxww is withdrawn"},
+  {"name": "pubnub-pypi-entry", "purl": "pkg:pypi/pubnub@7.2.0", "affected": {"CVE-2023-26154": "7.3.0"}, "note": "a record covering several ecosystems: the PyPI entry's fix (7.3.0) applies, not npm's (7.4.0)"},
+  {"name": "pubnub-pypi-fixed", "purl": "pkg:pypi/pubnub@7.3.5", "affected": {}, "note": "fixed for PyPI although below the npm entry's fix"},
+  {"name": "unparseable", "purl": "pkg:pypi/django@4.2.x", "affected": {}, "coverage": "not_evaluated", "reason": "could not be compared", "note": "not a PEP 440 version"}
+ ]
+}

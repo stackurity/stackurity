@@ -211,22 +211,31 @@ func (s *Server) getRiskPolicy(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"policy": p, "default": risk.DefaultPolicy(), "version": p.Version()})
 }
 
+// putRiskPolicy replaces the policy. Fields the body leaves out take their
+// default values, as they do when a stored policy is read. The change and the
+// policy before it are written to the audit log in the same transaction.
 func (s *Server) putRiskPolicy(w http.ResponseWriter, r *http.Request) {
-	var p risk.Policy
-	if err := decode(r, &p); err != nil {
+	var raw json.RawMessage
+	if err := decode(r, &raw); err != nil {
 		s.fail(w, r, err)
 		return
 	}
+	p, err := risk.DecodePolicy(raw, true)
+	if err != nil {
+		s.fail(w, r, badRequest("invalid JSON body: "+err.Error()))
+		return
+	}
+	p = p.Normalize()
 	if err := p.Validate(); err != nil {
 		s.fail(w, r, badRequest(err.Error()))
 		return
 	}
-	if err := s.Store.SetRiskPolicy(r.Context(), p); err != nil {
+	ch, err := s.Store.ReplaceRiskPolicy(r.Context(), p, principal(r).Actor(r))
+	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	_ = s.Store.Audit(r.Context(), principal(r).Actor(r), "risk_policy.update", "settings", "risk_policy", p)
-	writeJSON(w, 200, map[string]any{"policy": p})
+	writeJSON(w, 200, map[string]any{"policy": ch.After, "version": ch.AfterVersion, "previous_version": ch.BeforeVersion, "changed": ch.Changed})
 }
 
 // --- channels and routes

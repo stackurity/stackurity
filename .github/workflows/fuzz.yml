@@ -1,0 +1,41 @@
+name: fuzz
+
+# Long fuzzing is opt-in: run it by hand (Actions > fuzz > Run workflow).
+# The seed corpus of every target already runs in the normal test job.
+on:
+  workflow_dispatch:
+    inputs:
+      fuzztime:
+        description: Time per target (Go duration)
+        default: 5m
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - { pkg: ./internal/sbom, name: FuzzImport }
+          - { pkg: ./internal/collect/lockfile, name: FuzzLockfiles }
+          - { pkg: ./internal/osv, name: FuzzRecord }
+          - { pkg: ./internal/osv, name: FuzzComparators }
+          - { pkg: ./internal/intel, name: FuzzParseUpdateInfo }
+          - { pkg: ./internal/plugins, name: FuzzPluginBatches }
+          - { pkg: ./internal/model, name: FuzzBatch }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Fuzz ${{ matrix.target.name }}
+        run: go test -run '^$' -fuzz='^${{ matrix.target.name }}$' -fuzztime='${{ inputs.fuzztime }}' ${{ matrix.target.pkg }}
+      - name: Keep failing inputs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-${{ matrix.target.name }}
+          path: '**/testdata/fuzz/**'
