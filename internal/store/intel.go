@@ -478,6 +478,13 @@ func (s *Store) SyncFindings(ctx context.Context, kinds []string, inventoryIDs [
 			WHERE f.status = 'resolved'`); err != nil {
 			return err
 		}
+		// A second check stands only for the match it checked: when the
+		// matcher's claim changes, the check is dropped and runs again.
+		if _, err := tx.Exec(ctx, `DELETE FROM second_checks s USING findings f, want_findings w
+			WHERE s.finding_id = f.id AND w.inventory_id = f.inventory_id AND w.kind = f.kind AND w.key = f.key
+			  AND s.basis <> `+matchBasis("w")); err != nil {
+			return err
+		}
 		tag, err := tx.Exec(ctx, `INSERT INTO findings AS f (kind, key, inventory_id, asset_id, component_id, verification, severity,
 			score, title, fixed_version, sources, evidence)
 			SELECT kind, key, inventory_id, asset_id, component_id, verification, severity, score, title, fixed_version, sources, evidence
@@ -485,8 +492,8 @@ func (s *Store) SyncFindings(ctx context.Context, kinds []string, inventoryIDs [
 			ON CONFLICT (inventory_id, kind, key) DO UPDATE SET
 			  -- A finding a person marked a false positive keeps verification
 			  -- 'rejected'; the matcher's own value waits in verification_before.
-			  verification = CASE WHEN f.verification_before <> '' THEN f.verification ELSE EXCLUDED.verification END,
-			  verification_before = CASE WHEN f.verification_before <> '' THEN EXCLUDED.verification ELSE '' END,
+			  verification = CASE WHEN f.verification_before <> '' THEN f.verification ELSE `+effectiveVerification+` END,
+			  verification_before = CASE WHEN f.verification_before <> '' THEN `+effectiveVerification+` ELSE '' END,
 			  severity = EXCLUDED.severity, score = EXCLUDED.score,
 			  title = EXCLUDED.title, fixed_version = EXCLUDED.fixed_version, sources = EXCLUDED.sources,
 			  evidence = EXCLUDED.evidence, last_seen = now(),
@@ -496,7 +503,7 @@ func (s *Store) SyncFindings(ctx context.Context, kinds []string, inventoryIDs [
 			  state = CASE WHEN f.status = 'resolved' AND `+fixedByInventory("f")+` AND f.state = 'in_progress' THEN 'new' ELSE f.state END,
 			  status = 'open', resolved_at = NULL, resolution = ''
 			WHERE f.status = 'resolved'
-			  OR CASE WHEN f.verification_before <> '' THEN f.verification_before ELSE f.verification END IS DISTINCT FROM EXCLUDED.verification
+			  OR CASE WHEN f.verification_before <> '' THEN f.verification_before ELSE f.verification END IS DISTINCT FROM `+effectiveVerification+`
 			  OR f.severity IS DISTINCT FROM EXCLUDED.severity OR f.fixed_version IS DISTINCT FROM EXCLUDED.fixed_version
 			  OR f.sources IS DISTINCT FROM EXCLUDED.sources OR f.evidence IS DISTINCT FROM EXCLUDED.evidence
 			  OR f.last_seen < now() - interval '1 hour'`)
@@ -524,6 +531,14 @@ func (s *Store) SyncFindings(ctx context.Context, kinds []string, inventoryIDs [
 	})
 	return opened, resolved, err
 }
+
+// effectiveVerification is the matcher's verification for an existing
+// finding (in the ON CONFLICT clause of SyncFindings): a confirmed match the
+// independent second check disagreed with stays needs_validation while that
+// disagreement stands (it is deleted when the match changes).
+const effectiveVerification = `(CASE WHEN EXCLUDED.verification = 'confirmed'
+	AND EXISTS (SELECT 1 FROM second_checks s WHERE s.finding_id = f.id AND s.result = 'disagreed')
+	THEN 'needs_validation' ELSE EXCLUDED.verification END)`
 
 // ResolveRemovedFindings closes findings whose inventory row is gone, saying
 // why: fixed by a remediation plan, upgraded to another version, or removed.
@@ -903,6 +918,9 @@ type FindingFilter struct {
 	NewWithinDays int
 	// ByAsset sorts by asset name first, for a list grouped by asset.
 	ByAsset bool
+	// SecondCheck keeps findings whose current second check has this
+	// result (agreed, disagreed, could_not_check).
+	SecondCheck string
 	Page
 }
 
@@ -988,6 +1006,9 @@ func (s *Store) ListFindings(ctx context.Context, f FindingFilter) ([]Finding, i
 	}
 	if f.Overdue {
 		w.conds = append(w.conds, "f.state IN ('new', 'acknowledged', 'in_progress') AND f.fix_due < now()")
+	}
+	if f.SecondCheck != "" {
+		w.add("EXISTS (SELECT 1 FROM second_checks sc WHERE sc.finding_id = f.id AND sc.result = ?)", f.SecondCheck)
 	}
 	if f.NewWithinDays > 0 {
 		w.add("f.first_seen > now() - make_interval(days => ?)", f.NewWithinDays)

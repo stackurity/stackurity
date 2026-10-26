@@ -3,14 +3,17 @@ package intel
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
 
 	"github.com/stackurity/stackurity/internal/model"
+	"github.com/stackurity/stackurity/internal/secondcheck"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
 )
@@ -65,6 +68,9 @@ func TestCorpus(t *testing.T) {
 	if n < 18 {
 		t.Errorf("expected a corpus for each of the 18 supported ecosystems, found %d", n)
 	}
+	sc := corpusSecondCheck
+	t.Logf("second check over the corpus: %d findings, %d agreed, %d could not check, %d disagreed",
+		sc.Checked, sc.Agreed, sc.CouldNotCheck, sc.Disagreed)
 }
 
 func runCorpus(t *testing.T, dir string) {
@@ -119,6 +125,12 @@ func runCorpus(t *testing.T, dir string) {
 			got[f.Key] = f.FixedVersion
 			var ev map[string]any
 			_ = json.Unmarshal(f.Evidence, &ev)
+			// The rule that matched is stored with the finding (evidence
+			// "match"), naming one of its sources.
+			m, _ := ev["match"].(map[string]any)
+			if rule, _ := m["rule"].(string); rule == "" || !slices.Contains(f.Sources, fmt.Sprint(m["record"])) {
+				t.Errorf("%s: %s match explanation %v does not name its rule and one of %v", c.Name, f.Key, m, f.Sources)
+			}
 			sub, _ := ev["requires_subscription"].(string)
 			if want := c.Subscription[f.Key]; sub != want {
 				t.Errorf("%s: %s subscription = %q, want %q", c.Name, f.Key, sub, want)
@@ -143,7 +155,29 @@ func runCorpus(t *testing.T, dir string) {
 			t.Errorf("%s: a case that is not evaluated must say why (reason)", c.Name)
 		}
 	}
+
+	// The independent second check re-derives every corpus finding from the
+	// stored records. It may be unable to read some (pre-releases, SUSE
+	// channels), but it must never disagree with a verdict the corpus pins.
+	sc := &secondcheck.Runner{Store: st, All: true, Batch: 100_000}
+	stats, err := sc.Run(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.Disagreed > 0 {
+		sum, _ := st.SummarizeSecondChecks(ctx)
+		for _, d := range sum.Recent {
+			t.Errorf("second check disagrees on %s %s@%s: %+v", d.Key, d.Purl, d.Version, d.Differences)
+		}
+	}
+	corpusSecondCheck.Checked += stats.Checked
+	corpusSecondCheck.Agreed += stats.Agreed
+	corpusSecondCheck.CouldNotCheck += stats.CouldNotCheck
+	corpusSecondCheck.Disagreed += stats.Disagreed
 }
+
+// corpusSecondCheck adds up the second check over every corpus.
+var corpusSecondCheck secondcheck.Stats
 
 // serveCorpus publishes the corpus records the way the real source does:
 // an OSV all.zip, or Amazon Linux repositories with updateinfo.

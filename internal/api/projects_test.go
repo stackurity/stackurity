@@ -97,6 +97,7 @@ var projectScopes = map[string]string{
 	"GET /api/v1/fix-groups/summary":           "scoped",
 	"GET /api/v1/fix-groups/{id}":              "scoped",
 	"GET /api/v1/evaluation-gaps":              "scoped",
+	"GET /api/v1/second-checks":                "scoped",
 	"GET /api/v1/reports/outcomes":             "scoped",
 	"GET /api/v1/reports/evidence":             "scoped",
 	"GET /api/v1/incidents":                    "scoped",
@@ -373,6 +374,7 @@ func newOrg(t *testing.T) *org {
 			o.ids["unfiled-finding"] = f.ID
 		}
 	}
+	recordDisagreement(t, e.st, ws, o.ids["alpha-finding"], o.ids["beta-finding"], o.ids["beta-db-finding"])
 	incs, _, err := e.st.ListIncidents(ws, store.IncidentFilter{Status: "all"})
 	if err != nil {
 		t.Fatal(err)
@@ -677,7 +679,7 @@ func (o *org) betaSnapshot(t *testing.T) string {
 		"/api/v1/findings/{shared-finding}", "/api/v1/incidents/{beta-incident}", "/api/v1/projects/{beta-project}",
 		"/api/v1/access-grants", "/api/v1/assets?project_id={beta-project}", "/api/v1/projects?archived=true",
 		"/api/v1/checks/{beta-check}", "/api/v1/ignore-requests/{beta-ignorerequest}", "/api/v1/ignore-rules?status=all",
-		"/api/v1/findings/{unfiled-finding}",
+		"/api/v1/findings/{unfiled-finding}", "/api/v1/second-checks",
 	} {
 		path := regexp.MustCompile(`\{([a-z0-9-]+)\}`).ReplaceAllStringFunc(p, func(m string) string { return o.s(m[1 : len(m)-1]) })
 		resp := o.admin.req("GET", path, nil, nil)

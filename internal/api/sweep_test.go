@@ -132,6 +132,7 @@ var routeRules = map[string]routeRule{
 	"GET /api/v1/fix-groups":           {class: "list", query: "?asset_id={asset}"},
 	"GET /api/v1/fix-groups/summary":   {class: "list", query: "?asset_id={asset}"},
 	"GET /api/v1/evaluation-gaps":      {class: "list"},
+	"GET /api/v1/second-checks":        {class: "list"},
 	"GET /api/v1/reports/outcomes":     {class: "list"},
 	"GET /api/v1/reports/evidence":     {class: "list"},
 	"GET /api/v1/incidents":            {class: "list", query: "?status=all&team_id={team}"},
@@ -405,6 +406,9 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 		t.Fatalf("%s findings: %v %v", tag, fs, err)
 	}
 	set("finding", fs[0].ID)
+	// A second check that disagreed with it, and its log entry (purl and
+	// inputs name the tenant).
+	recordDisagreement(t, e.st, ctx, fs[0].ID)
 	incs, _, err := e.st.ListIncidents(ctx, store.IncidentFilter{})
 	if err != nil || len(incs) == 0 {
 		t.Fatalf("%s incidents: %v", tag, err)
@@ -827,6 +831,35 @@ func TestIsolationSweep(t *testing.T) {
 	}
 }
 
+// recordDisagreement stores a disagreeing second check for each finding, as
+// the second check would after re-deriving it differently.
+func recordDisagreement(t *testing.T, st *store.Store, ctx context.Context, ids ...int64) {
+	t.Helper()
+	cands, err := st.SecondCheckCandidates(ctx, 1000, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[int64]bool{}
+	for _, id := range ids {
+		want[id] = true
+	}
+	var res []store.SecondCheckResult
+	for _, c := range cands {
+		if want[c.FindingID] {
+			res = append(res, store.SecondCheckResult{FindingID: c.FindingID, AssetID: c.AssetID, Basis: c.Basis,
+				Result: store.SecondCheckDisagreed, Reason: "affected: the matcher says affected, the second check finds not affected",
+				Differences: []store.SecondCheckDifference{{Field: "affected", Matcher: "affected", Independent: "not affected"}},
+				Kind:        c.Kind, Key: c.Key, Purl: c.Purl, Version: c.Version, Inputs: map[string]any{"observed": map[string]any{"purl": c.Purl}}})
+		}
+	}
+	if len(res) != len(ids) {
+		t.Fatalf("second check fixtures: %d of %d findings found", len(res), len(ids))
+	}
+	if _, err := st.RecordSecondChecks(ctx, res); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // snapshot reads, as A's admin, everything B's requests could have changed.
 func (e *env) snapshot(t *testing.T, a *tenantFx) string {
 	t.Helper()
@@ -838,6 +871,7 @@ func (e *env) snapshot(t *testing.T, a *tenantFx) string {
 		"/api/v1/users", "/api/v1/secrets", "/api/v1/tokens", "/api/v1/conflicts", "/api/v1/risk-policy", "/api/v1/collections/{collection}/result",
 		"/api/v1/remediation/policies", "/api/v1/remediation/plans", "/api/v1/workspaces",
 		"/api/v1/checks?asset_id={asset}", "/api/v1/checks/{check}", "/api/v1/ignore-rules?status=all", "/api/v1/ignore-requests?status=all",
+		"/api/v1/second-checks",
 		"/api/v1/projects/{project}", "/api/v1/access-grants", "/api/v1/assets?project_id={project}",
 		"/api/v1/invitations", "/api/v1/onboarding",
 	} {

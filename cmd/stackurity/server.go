@@ -33,6 +33,7 @@ import (
 	"github.com/stackurity/stackurity/internal/model"
 	"github.com/stackurity/stackurity/internal/notify"
 	"github.com/stackurity/stackurity/internal/plugins"
+	"github.com/stackurity/stackurity/internal/secondcheck"
 	"github.com/stackurity/stackurity/internal/secrets"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
@@ -600,6 +601,16 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 		n, err := st.MarkStaleAssets(ctx, staleAfter)
 		if n > 0 {
 			log.Warn("assets marked stale", "count", n, "after", staleAfter)
+		}
+		return err
+	})
+	// The independent second check of high-impact findings: a bounded batch
+	// per workspace per minute, in the background, so evaluation never waits.
+	checker := &secondcheck.Runner{Store: st, Log: log}
+	w.EveryWorkspace("second-check", time.Minute, func(ctx context.Context) error {
+		n, err := checker.Run(ctx)
+		if n.Checked > 0 {
+			log.Info("second check", "checked", n.Checked, "agreed", n.Agreed, "disagreed", n.Disagreed, "could_not_check", n.CouldNotCheck)
 		}
 		return err
 	})

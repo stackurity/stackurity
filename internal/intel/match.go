@@ -222,6 +222,7 @@ func (e *Evaluator) Evaluate(ctx context.Context, componentIDs []int64, assetID 
 		}
 		if c := matchCycle(cycles, cycleVersion); c != nil {
 			if f := eolFinding(r, c, now); f != nil {
+				f.Evidence["match"] = eolMatch(r.Version, cycleVersion, c.Cycle)
 				dist, err := e.distroCycle(ctx, r, cycleCache)
 				if err != nil {
 					return nil, err
@@ -282,6 +283,15 @@ type groupMatch struct {
 	exploited  bool
 	freeHit    bool // a free-channel advisory says the version is affected
 	proHit     bool // a Pro advisory says it is affected
+	// The record that decided the verdict in each channel: the one whose
+	// fixed version is recommended, else the first that matched.
+	freeRec, proRec decisive
+}
+
+// decisive is one advisory record's verdict, kept for the match explanation.
+type decisive struct {
+	id    string
+	match osv.Match
 }
 
 // matchAdvisories returns findings for one inventory row. perr is non-empty
@@ -295,6 +305,9 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 	// "affected" verdict is used only when the free channel has nothing to
 	// say about that issue, so ESM data never contradicts a free fix.
 	freeChecked := map[string]bool{}
+	// freeClear counts free-channel records of an issue that say the
+	// version is not affected: if another says it is, the match is ambiguous.
+	freeClear := map[string]int{}
 	higher := func(cur, v string) string {
 		if v == "" {
 			return cur
@@ -336,6 +349,9 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 			freeChecked[a.GroupKey] = true
 		}
 		if !m.Affected {
+			if !pro {
+				freeClear[a.GroupKey]++
+			}
 			continue
 		}
 		g := groups[a.GroupKey]
@@ -356,12 +372,20 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 		// The fix to recommend is the highest "first fixed" across sources,
 		// so every source agrees the target is fixed.
 		if pro {
+			prev := g.proFixed
 			g.proHit, g.proFixed = true, higher(g.proFixed, m.FixedVersion)
+			if g.proRec.id == "" || (g.proFixed != prev && g.proFixed == m.FixedVersion) {
+				g.proRec = decisive{a.ID, m}
+			}
 			if g.proChannel == "" || osv.PreferredSubscription(channel, g.proChannel) {
 				g.proChannel = channel
 			}
 		} else {
+			prev := g.fixed
 			g.freeHit, g.fixed = true, higher(g.fixed, m.FixedVersion)
+			if g.freeRec.id == "" || (g.fixed != prev && g.fixed == m.FixedVersion) {
+				g.freeRec = decisive{a.ID, m}
+			}
 		}
 		g.exploited = g.exploited || a.KnownExploited
 	}
@@ -432,6 +456,18 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 				ev["requires_ubuntu_pro"] = true
 			}
 		}
+		rec := g.freeRec
+		if requiresPro && g.proRec.id != "" {
+			rec = g.proRec
+		}
+		var ambiguous []string
+		if parseFailures > 0 {
+			ambiguous = append(ambiguous, "some_records_unreadable")
+		}
+		if g.freeHit && freeClear[k] > 0 {
+			ambiguous = append(ambiguous, "sources_disagree")
+		}
+		ev["match"] = matchExplanation(r, t, rec, fixed, ambiguous)
 		if pu, err := packageurl.FromString(r.Purl); err == nil && osv.KernelNotRunning(r.Type, pu.Name, r.Version, r.RunningKernel) {
 			ev["not_running_kernel"] = true
 			ev["running_kernel"] = r.RunningKernel
@@ -444,6 +480,75 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 		})
 	}
 	return out, perr
+}
+
+// matchExplanation is the compact record of the rule that produced a
+// vulnerability finding (evidence "match"), stored at evaluation time so the
+// explanation shown later is the rule that really matched, not a
+// reconstruction. See internal/why for how it is read.
+//
+//	rule        range, last_affected, no_fix_listed or listed_version
+//	record      the advisory record that decided the verdict
+//	range_type  SEMVER when a SEMVER range decided (compared with SemVer
+//	            rules whatever the ecosystem); omitted for ECOSYSTEM
+//	backport    the fixed version is a distro revision of the installed
+//	            upstream release (a backported fix)
+//	normalised  the version compared differs from the one reported (a Go
+//	            "go" prefix, a gem platform suffix)
+//	ambiguous   why a second check is wanted: some_records_unreadable,
+//	            sources_disagree, version_normalised, semver_range
+func matchExplanation(r store.EvalRow, t osv.Target, rec decisive, fixed string, ambiguous []string) map[string]any {
+	m := map[string]any{"record": rec.id}
+	switch {
+	case rec.match.Exact:
+		m["rule"] = "listed_version"
+	case strings.Contains(rec.match.Range, "<="):
+		m["rule"] = "last_affected"
+	case !strings.Contains(rec.match.Range, "<"):
+		m["rule"] = "no_fix_listed"
+	default:
+		m["rule"] = "range"
+	}
+	if rec.match.RangeType == "SEMVER" && t.Compare != version.SemVer {
+		m["range_type"] = "SEMVER"
+		ambiguous = append(ambiguous, "semver_range")
+	}
+	if fixed != "" && distroBackport(t.Compare, t.Version, fixed) {
+		m["backport"] = true
+	}
+	if t.Version != r.Version && r.Version != "" && t.Compare != version.RPM {
+		m["normalised"] = t.Version
+		ambiguous = append(ambiguous, "version_normalised")
+	}
+	if len(ambiguous) > 0 {
+		m["ambiguous"] = ambiguous
+	}
+	return m
+}
+
+// distroBackport reports whether a distro fixed version keeps the installed
+// upstream release and changes only the distro revision: the distribution
+// backported the fix instead of moving to the upstream release that has it.
+func distroBackport(cmp version.Ecosystem, installed, fixed string) bool {
+	upstream := func(v string) string {
+		if _, rest, ok := strings.Cut(v, ":"); ok {
+			v = rest
+		}
+		if cmp == version.APK {
+			v, _, _ = strings.Cut(v, "-r")
+			return v
+		}
+		if i := strings.LastIndexByte(v, '-'); i > 0 {
+			return v[:i]
+		}
+		return v
+	}
+	switch cmp {
+	case version.Debian, version.RPM, version.APK:
+		u := upstream(installed)
+		return u != "" && u == upstream(fixed) && installed != fixed
+	}
+	return false
 }
 
 func appendUnique(s []string, v string) []string {
@@ -459,6 +564,20 @@ func appendUnique(s []string, v string) []string {
 // dotted prefix ("3.19.1" -> "3.19" -> "3").
 func matchCycle(cycles []store.LifecycleCycle, v string) *store.LifecycleCycle {
 	return upgrade.MatchCycle(cycles, v)
+}
+
+// eolMatch records how the release line was chosen (evidence "match"):
+// exact_cycle (the version is the cycle), version_prefix (its longest dotted
+// prefix is) or package_name (a versioned distro package such as
+// php8.1-common names the line).
+func eolMatch(installed, compared, cycle string) map[string]any {
+	switch {
+	case compared != installed:
+		return map[string]any{"rule": "package_name"}
+	case installed == cycle:
+		return map[string]any{"rule": "exact_cycle"}
+	}
+	return map[string]any{"rule": "version_prefix"}
 }
 
 func eolFinding(r store.EvalRow, c *store.LifecycleCycle, now time.Time) *store.FindingInput {

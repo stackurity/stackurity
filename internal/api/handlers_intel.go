@@ -31,6 +31,13 @@ func (s *Server) listFindings(w http.ResponseWriter, r *http.Request) {
 	f.AssigneeUser = qInt(r, "assignee_user")
 	f.Unassigned = q.Get("assignee") == "none"
 	f.FixGroup = q.Get("fix_group")
+	switch sc := q.Get("second_check"); sc {
+	case "", store.SecondCheckAgreed, store.SecondCheckDisagreed, store.SecondCheckCouldNotCheck:
+		f.SecondCheck = sc
+	default:
+		s.fail(w, r, badRequest("second_check must be agreed, disagreed or could_not_check"))
+		return
+	}
 	f.AssigneeTeam = qInt(r, "assignee_team")
 	f.IncidentID = qInt(r, "incident_id")
 	f.ResolvedWithinDays = withinDays(qInt(r, "resolved_within"))
@@ -86,6 +93,12 @@ func (s *Server) getFinding(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp := map[string]any{"finding": f}
+	expl, err := s.findingWhy(r.Context(), f)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	resp["why"] = expl
 	if f.Kind == "vulnerability" {
 		advs, err := s.Store.AdvisoryGroup(r.Context(), f.Key)
 		if err != nil {

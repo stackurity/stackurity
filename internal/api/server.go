@@ -193,6 +193,7 @@ func (s *Server) Handler() http.Handler {
 				r.Get("/advisories/{key}", s.getAdvisory)
 				r.Get("/feeds", s.listFeeds)
 				r.Get("/evaluation-gaps", s.listEvaluationGaps)
+				r.Get("/second-checks", s.secondChecks)
 				r.Get("/findings/{id}/events", s.findingEvents)
 				r.Get("/findings/{id}/upgrade", s.findingUpgrade)
 				r.Get("/findings/{id}/explain", s.explainFinding)
