@@ -89,17 +89,28 @@ func setup(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.SaveRoute(ctx, store.Route{Name: "main", ChannelID: ch.ID, Enabled: true, MinPriority: "P2", SendResolved: true, Timezone: "UTC", MaxPerHour: 20}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := st.SaveRoute(ctx, store.Route{Name: "escalations", ChannelID: ch.ID, Enabled: true, MinPriority: "P4", Escalation: true, Timezone: "UTC", MaxPerHour: 20}); err != nil {
+	// The default mode: urgent alerts right away and a daily summary, with
+	// the overdue section (escalation).
+	if _, err := st.SaveRoute(ctx, store.Route{Name: "main", ChannelID: ch.ID, Enabled: true, MinPriority: "P2", SendResolved: true,
+		Escalation: true, Timezone: "UTC", MaxPerHour: 20}); err != nil {
 		t.Fatal(err)
 	}
 	return f
 }
 
-// addAsset ingests one host with lodash and returns its inventory row.
+// addAsset ingests one host with lodash, already announced (its first scan
+// is behind it), and records its inventory row.
 func (f *fixture) addAsset(name, env string, exposed bool) {
+	f.addNewAsset(name, env, exposed)
+	if _, err := f.st.Pool.Exec(tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace),
+		`UPDATE assets SET announced_at = now() - interval '1 day' WHERE id = $1`, f.asset[name]); err != nil {
+		f.t.Fatal(err)
+	}
+}
+
+// addNewAsset ingests one host with lodash whose first scan has not been
+// announced yet.
+func (f *fixture) addNewAsset(name, env string, exposed bool) {
 	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
 	b := model.NewBatch(model.Collector{ID: "t", Method: "agent"},
 		model.AssetRef{Kind: model.AssetHost, Name: name, Identifiers: []model.Identifier{{Scheme: "test", Value: name}}})
@@ -164,15 +175,24 @@ func TestAlertLifecycle(t *testing.T) {
 	if len(incs) != 1 || incs[0].FindingCount != 3 || incs[0].AssetCount != 3 || !incs[0].SOS || incs[0].Priority != "P1" {
 		t.Fatalf("one SOS P1 incident expected: %+v", incs)
 	}
-	if ev := f.hook.events(); len(ev) != 1 || ev[0] != "opened:P1" {
+	// One urgent message for the cycle, per asset, each with its fix.
+	if ev := f.hook.events(); len(ev) != 1 || ev[0] != "urgent:P1" {
 		t.Fatalf("deliveries = %v", ev)
 	}
 	if !f.hook.sigs[0] {
 		t.Error("webhook signature did not verify")
 	}
 	m := f.hook.got[0]
-	if !m.SOS || !strings.Contains(m.Action, "4.17.21") || m.Link != "https://stk.example/incidents/"+itoa(incs[0].ID) {
-		t.Errorf("message = %+v", m)
+	if !m.SOS || m.Title != "3 new urgent issues on 3 assets" || m.Link != "https://stk.example/" || m.Route != "main" ||
+		len(m.Sections) != 1 || len(m.Sections[0].Items) != 3 || m.Counts["urgent"] != 3 {
+		t.Fatalf("message = %+v", m)
+	}
+	for _, it := range m.Sections[0].Items {
+		if !strings.Contains(it.Text, ": 1 new urgent issue") || !strings.HasPrefix(it.Link, "https://stk.example/fixes/issues?asset_id=") ||
+			len(it.Items) != 1 || !strings.HasPrefix(it.Items[0].Text, "Top fix: Upgrade lodash") || !strings.Contains(it.Items[0].Text, "(clears 1 issue)") ||
+			!strings.HasPrefix(it.Items[0].Link, "https://stk.example/fixes/") {
+			t.Errorf("asset item = %+v", it)
+		}
 	}
 
 	// Reprocessing creates no duplicate incident or delivery.
@@ -225,24 +245,48 @@ func TestAlertLifecycle(t *testing.T) {
 		t.Errorf("ownership change must not notify: %v", ev)
 	}
 
-	// Escalation (licensed build only): acknowledgement deadline passes.
+	// The acknowledgement deadline passes: the level is recorded (licensed
+	// build only), nobody is messaged.
 	if _, err := f.st.Pool.Exec(ctx, `UPDATE findings SET first_seen = now() - interval '5 hours'`); err != nil {
 		t.Fatal(err)
 	}
 	f.tick()
+	in, _ = f.st.GetIncident(ctx, incs[0].ID)
+	if want := map[bool]int{true: 1, false: 0}[escalationBuilt]; in.EscalationLevel != want {
+		t.Errorf("escalation level = %d, want %d", in.EscalationLevel, want)
+	}
+	if ev := f.hook.events(); len(ev) != 1 {
+		t.Errorf("a missed acknowledgement must not message anyone: %v", ev)
+	}
+	// The fix deadline passes: one overdue message, grouped by fix.
+	if _, err := f.st.Pool.Exec(ctx, `UPDATE findings SET first_seen = now() - interval '60 days'`); err != nil {
+		t.Fatal(err)
+	}
+	f.tick()
+	f.tick()
 	want := 1
 	if escalationBuilt {
 		want = 2
-		if ev := f.hook.events(); len(ev) != 2 || ev[1] != "escalated:P1" {
-			t.Fatalf("expected escalation: %v", ev)
+		ev := f.hook.events()
+		if len(ev) != 2 || ev[1] != "overdue:P1" {
+			t.Fatalf("expected one overdue message: %v", ev)
+		}
+		o := f.hook.got[1]
+		if o.Title != "2 urgent issues past their deadline across 2 fixes" || len(o.Sections[0].Items) != 3 ||
+			!strings.Contains(o.Sections[0].Items[0].Text, ": 1 overdue") || !strings.Contains(o.Sections[0].Items[2].Link, "overdue=true") {
+			t.Errorf("overdue message = %+v", o)
+		}
+		in, _ = f.st.GetIncident(ctx, incs[0].ID)
+		if in.EscalationLevel != 2 {
+			t.Errorf("escalation level = %d, want 2", in.EscalationLevel)
 		}
 	}
-	f.tick()
 	if ev := f.hook.events(); len(ev) != want {
-		t.Errorf("escalation: %v", ev)
+		t.Errorf("overdue: %v", ev)
 	}
 
-	// Fixing everything resolves the incident and announces it once.
+	// Fixing everything resolves the incident without a message: the
+	// summary counts it.
 	f.setFindings()
 	f.tick()
 	f.tick()
@@ -250,8 +294,8 @@ func TestAlertLifecycle(t *testing.T) {
 	if in.Status != "resolved" {
 		t.Errorf("incident should be resolved: %+v", in)
 	}
-	if ev := f.hook.events(); len(ev) != want+1 || !strings.HasPrefix(ev[want], "resolved") {
-		t.Errorf("resolved notice: %v", ev)
+	if ev := f.hook.events(); len(ev) != want {
+		t.Errorf("resolved must not be announced on its own: %v", ev)
 	}
 }
 
@@ -259,40 +303,56 @@ func TestQuietHoursRateLimitsAndRetries(t *testing.T) {
 	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
 	f := setup(t)
 	routes, _ := f.st.ListRoutes(ctx)
-	for _, r := range routes {
-		if r.Name == "main" {
-			r.MaxPerHour = 1
-			r.MinPriority = "P4"
-			if _, err := f.st.SaveRoute(ctx, r); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
-	// Two unrelated, non-SOS incidents (staging, not exposed).
-	f.addAsset("a", "staging", false)
-	f.addAsset("b", "dev", false)
-	f.setFindings("a", "b")
-	// Distinct CVEs so they are separate incidents; not known exploited.
-	if _, err := f.st.Pool.Exec(ctx, `UPDATE findings SET evidence = '{}', key = 'CVE-B' WHERE asset_id = $1`, f.asset["b"]); err != nil {
+	main := routes[0]
+	main.MaxPerHour, main.MinPriority = 1, "P4"
+	if _, err := f.st.SaveRoute(ctx, main); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.st.Pool.Exec(ctx, `UPDATE findings SET evidence = '{}' WHERE asset_id = $1`, f.asset["a"]); err != nil {
+	// Two unrelated, non-SOS incidents (staging, not exposed), in two cycles.
+	f.addAsset("a", "staging", false)
+	f.addAsset("b", "dev", false)
+	f.setFindings("a")
+	if _, err := f.st.Pool.Exec(ctx, `UPDATE findings SET evidence = '{}'`); err != nil {
 		t.Fatal(err)
 	}
 	f.tick()
 	if n := len(f.hook.events()); n != 1 {
-		t.Fatalf("rate limit of 1/hour: sent %d", n)
+		t.Fatalf("first urgent message: sent %d", n)
+	}
+	f.setFindings("a", "b")
+	// Distinct CVE so it is a separate incident; not known exploited.
+	if _, err := f.st.Pool.Exec(ctx, `UPDATE findings SET evidence = '{}', key = CASE WHEN asset_id = $1 THEN 'CVE-B' ELSE key END`, f.asset["b"]); err != nil {
+		t.Fatal(err)
+	}
+	f.tick()
+	if n := len(f.hook.events()); n != 1 {
+		t.Fatalf("limit of 1/hour: sent %d", n)
 	}
 	held, _, _ := f.st.ListDeliveries(ctx, store.DeliveryFilter{Status: "held"})
-	if len(held) != 1 {
+	if len(held) != 1 || held[0].Event != EventUrgent {
 		t.Fatalf("held = %+v", held)
 	}
+	// The hourly digest task sends nothing on its own: held messages wait
+	// for the route's summary.
 	if err := f.d.Digest(ctx); err != nil {
 		t.Fatal(err)
 	}
+	if n := len(f.hook.events()); n != 1 {
+		t.Fatalf("held message sent before the summary: %v", f.hook.events())
+	}
+	// The next morning's summary takes it in, despite the limit.
+	f.d.Now = func() time.Time { return nextAt(9, 30) }
+	f.tick()
 	ev := f.hook.events()
-	if len(ev) != 2 || !strings.HasPrefix(ev[1], "digest") {
-		t.Errorf("digest: %v", ev)
+	if len(ev) != 2 || !strings.HasPrefix(ev[1], "summary") {
+		t.Fatalf("summary: %v", ev)
+	}
+	sum := f.hook.got[1]
+	if sum.Counts["held"] != 1 || !strings.Contains(strings.Join(sum.Summary, "\n"), "Includes 1 urgent message held back by the hourly limit") {
+		t.Errorf("summary = %+v", sum)
+	}
+	if held, _, _ := f.st.ListDeliveries(ctx, store.DeliveryFilter{Status: "held"}); len(held) != 0 {
+		t.Errorf("still held after the summary: %+v", held)
 	}
 
 	// Failures retry with backoff and record the error on the channel.
@@ -305,6 +365,12 @@ func TestQuietHoursRateLimitsAndRetries(t *testing.T) {
 	if !strings.Contains(ch[0].LastError, "503") {
 		t.Errorf("channel error = %q", ch[0].LastError)
 	}
+}
+
+// nextAt is the next day's hh:mm UTC, so a summary at 09:00 UTC is due.
+func nextAt(h, m int) time.Time {
+	n := time.Now().UTC().AddDate(0, 0, 1)
+	return time.Date(n.Year(), n.Month(), n.Day(), h, m, 0, 0, time.UTC)
 }
 
 func TestQuietWindow(t *testing.T) {
@@ -340,7 +406,7 @@ func TestSystemIncidents(t *testing.T) {
 	if len(incs) != 1 || incs[0].Priority != "P2" {
 		t.Fatalf("feed incident = %+v", incs)
 	}
-	if ev := f.hook.events(); len(ev) != 1 || ev[0] != "opened:P2" {
+	if ev := f.hook.events(); len(ev) != 1 || ev[0] != "urgent:P2" {
 		t.Errorf("feed alert: %v", ev)
 	}
 	_ = f.st.FeedResult(ctx, "osv:npm", "c", 1, nil)
@@ -367,7 +433,8 @@ func TestPlatformIncidents(t *testing.T) {
 	if len(incs) != 1 || incs[0].Priority != "P2" {
 		t.Fatalf("platform incident = %+v", incs)
 	}
-	if len(f.hook.got) != 1 || !strings.Contains(f.hook.got[0].Action, "Platform health") {
+	if len(f.hook.got) != 1 || f.hook.got[0].Title != "Stackurity needs attention: 1 problem" ||
+		!strings.HasSuffix(f.hook.got[0].Sections[0].Items[0].Link, fmt.Sprintf("/incidents/%d", incs[0].ID)) {
 		t.Errorf("platform alert: %+v", f.hook.got)
 	}
 	// Other workspaces do not ask for platform problems.
@@ -476,9 +543,10 @@ func TestPlatformWorkspaceSetting(t *testing.T) {
 }
 
 func TestPayloads(t *testing.T) {
-	m := Message{Event: "opened", Title: "x <y> & z", Priority: "P1", SOS: true, Summary: []string{"a"}, Link: "https://s/i/1"}
+	m := Message{Event: "opened", Title: "x <y> & z", Priority: "P1", SOS: true, Summary: []string{"a <b> & c"}, Link: "https://s/i/1"}
 	sl, _ := json.Marshal(slackPayload(m))
-	if !strings.Contains(string(sl), "x \\u0026lt;y\\u0026gt; \\u0026amp; z") || !strings.Contains(string(sl), "[SOS]") {
+	// mrkdwn is escaped; the header is plain text and is not.
+	if !strings.Contains(string(sl), "a \\u0026lt;b\\u0026gt; \\u0026amp; c") || !strings.Contains(string(sl), "[SOS] [P1] x \\u003cy\\u003e") {
 		t.Errorf("slack escaping: %s", sl)
 	}
 	tm, _ := json.Marshal(teamsPayload(m))
@@ -502,8 +570,9 @@ func TestPayloads(t *testing.T) {
 
 func itoa(i int64) string { b, _ := json.Marshal(i); return string(b) }
 
-// A burst of new incidents becomes one summary that lists the top actions.
-func TestBurstBecomesOneSummary(t *testing.T) {
+// Many new incidents on one asset in a cycle become one urgent message that
+// names the fix clearing them.
+func TestUrgentAlertGroupsByAssetAndFix(t *testing.T) {
 	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
 	f := setup(t)
 	f.addAsset("web-1", "production", true)
@@ -520,17 +589,21 @@ func TestBurstBecomesOneSummary(t *testing.T) {
 	}
 	f.tick()
 	ev := f.hook.events()
-	if len(ev) != 1 || !strings.HasPrefix(ev[0], "digest") {
-		t.Fatalf("expected one summary, got %v", ev)
+	if len(ev) != 1 || !strings.HasPrefix(ev[0], "urgent") {
+		t.Fatalf("expected one urgent message, got %v", ev)
 	}
 	m := f.hook.got[0]
-	if !strings.Contains(m.Title, "6 new incidents on web-1") || !strings.Contains(strings.Join(m.Summary, "\n"), "Upgrade lodash") ||
-		!m.SOS || !strings.HasSuffix(m.Link, "/fixes") {
-		t.Errorf("summary = %+v", m)
+	if m.Title != "web-1: 6 new urgent issues" || !m.SOS || len(m.Sections) != 1 || len(m.Sections[0].Items) != 1 {
+		t.Fatalf("message = %+v", m)
+	}
+	item := m.Sections[0].Items[0]
+	if !strings.HasPrefix(item.Text, "web-1: 6 new urgent issues (1 known exploited") || len(item.Items) != 1 ||
+		!strings.HasPrefix(item.Items[0].Text, "Top fix: Upgrade lodash") || !strings.HasSuffix(item.Items[0].Text, "(clears 6 issues)") {
+		t.Errorf("item = %+v", item)
 	}
 	f.tick()
 	if n := len(f.hook.events()); n != 1 {
-		t.Errorf("summary repeated: %d messages", n)
+		t.Errorf("urgent message repeated: %d messages", n)
 	}
 	groups, total, err := f.st.ListFixGroups(ctx, store.FixGroupFilter{AssetID: f.asset["web-1"]})
 	var g0 struct {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"github.com/stackurity/stackurity/internal/license"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -440,7 +441,17 @@ func (s *Server) saveRoute(w http.ResponseWriter, r *http.Request, id int64) {
 		rt.Timezone = "UTC"
 	}
 	if rt.MinPriority == "" {
-		rt.MinPriority = "P2"
+		rt.MinPriority = "P1"
+	}
+	if rt.Mode == "" {
+		rt.Mode = store.ModeUrgentSummary
+	}
+	if rt.SummaryTime == "" {
+		rt.SummaryTime = "09:00"
+	}
+	rt.SummaryDay = strings.ToLower(strings.TrimSpace(rt.SummaryDay))
+	if rt.SummaryDay == "" {
+		rt.SummaryDay = "monday"
 	}
 	switch {
 	case rt.Name == "":
@@ -448,6 +459,15 @@ func (s *Server) saveRoute(w http.ResponseWriter, r *http.Request, id int64) {
 		return
 	case !priorities[rt.MinPriority]:
 		s.fail(w, r, badRequest("min_priority must be P1-P4"))
+		return
+	case rt.Mode != store.ModeUrgentSummary && rt.Mode != store.ModeDaily && rt.Mode != store.ModeWeekly:
+		s.fail(w, r, badRequest("mode must be urgent_summary, daily or weekly"))
+		return
+	case !notify.ValidQuietTime(rt.SummaryTime):
+		s.fail(w, r, badRequest("summary_time must be HH:MM"))
+		return
+	case !slices.Contains(store.Weekdays, rt.SummaryDay):
+		s.fail(w, r, badRequest("summary_day must be a weekday name, such as monday"))
 		return
 	case !notify.ValidQuietTime(rt.QuietStart) || !notify.ValidQuietTime(rt.QuietEnd) || (rt.QuietStart == "") != (rt.QuietEnd == ""):
 		s.fail(w, r, badRequest("quiet_start and quiet_end must both be HH:MM or both empty"))

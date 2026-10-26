@@ -328,20 +328,20 @@ Under **Settings → Notifications**, add a channel. Credentials always go in a 
 
 Then add routes:
 
-- one for normal alerts, for example minimum priority P2 to the team channel, with quiet hours;
-- one marked **escalation** that goes to the team lead or the security owner.
+- one to the team channel in the default mode, **Urgent right away + daily summary**, urgent from P1, with quiet hours;
+- optionally one in **Daily summary only** or **Weekly summary only** mode for a lead or the security owner, with **Overdue reminders** (Pro).
 
-When more than 3 incidents reach one route in a single cycle (the dispatcher runs every minute), they are sent as one digest that lists the top actions from the action plan instead of one message per incident, so onboarding a server or a large feed update never floods a channel. Incidents raised while a route is disabled are recorded as announced and not sent later.
+People get a few messages that bring them to the dashboard, not one per incident: at most one urgent message per route each time the dispatcher runs (every minute), summarised per asset with the fixes that clear the issues ("commmerceblog: 6 new urgent issues. Top fix: Install security updates and reboot (clears 2,913 issues)"); a daily or weekly summary of what is new, what was fixed and by what, the top fixes still open and what is overdue; and, with overdue reminders, at most one message a day when urgent issues pass their fix deadline. A new server's first scan sends one "connected" message ("commmerceblog connected: 1,676 packages checked, 3 fixes need you") instead of alerts for its backlog. Resolved incidents are counted in the summary, never announced one by one. Incidents raised while a route is disabled are recorded as announced and not sent later. See [the API reference](api.md#incidents-and-notifications) for the details and the webhook message.
 
 ### Jira
 
 A route to a Jira channel creates one issue per incident it matches, for example "[P1] CVE-2024-1234 in openssl on 5 assets". The description gives the priority and the risk factors behind it, severity and known exploitation (CISA KEV), up to 20 affected assets with their versions, the fixed version and links back to the incident and the action plan. After that the issue is kept up to date from the incident, whatever the route says:
 
 - findings that join or leave, and priority changes (either way), are added as comments, and the issue's Jira priority follows when `priorities` maps it;
-- escalations (Pro) are added as comments, when the route sends escalations;
+- escalations (Pro) are added as comments, when the route has **Overdue reminders** (`escalation`);
 - when the incident resolves, a comment is added and, with `resolve_transition`, the issue is moved through that transition (or to that status). An issue already done is left alone.
 
-The incident, in the list and on its page, links to its issue. Jira channels are not summarised into digests and ignore quiet hours and hourly limits. Rate limiting by Jira (HTTP 429) is retried after the `Retry-After` time; rejected credentials or a missing project fail the delivery at once with the reason in the delivery log, and it can be retried after the fix.
+The incident, in the list and on its page, links to its issue. Jira channels ignore the route's mode (no urgent messages or summaries), quiet hours and hourly limits. Rate limiting by Jira (HTTP 429) is retried after the `Retry-After` time; rejected credentials or a missing project fail the delivery at once with the reason in the delivery log, and it can be retried after the fix.
 
 There is never more than one issue per incident and channel, across retries and replicas: an attempt claims the creation in the database first, and each issue carries the label `stackurity-incident-<workspace>-<incident>`, which is searched for before creating, so an attempt that died after creating the issue is picked up instead of repeated. Do not remove that label.
 

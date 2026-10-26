@@ -69,6 +69,14 @@ func (s *Store) EndedPackages(ctx context.Context) (map[int64][]fixplan.EndedPac
 // ReplaceFixGroups stores the current plan and each finding's group.
 func (s *Store) ReplaceFixGroups(ctx context.Context, groups []*fixplan.Group, assign map[int64]string) error {
 	return pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
+		// Findings resolved since the last plan still name the group they
+		// were in: keep which fix closed them, for summaries, before the
+		// group is replaced.
+		if _, err := tx.Exec(ctx, `UPDATE findings f SET resolved_fix_group = f.fix_group, resolved_fix_title = COALESCE(g.data->>'title', '')
+			FROM fix_groups g WHERE g.id = f.fix_group AND f.status = 'resolved' AND f.fix_group <> ''
+			  AND f.resolved_fix_group IS DISTINCT FROM f.fix_group`); err != nil {
+			return err
+		}
 		if _, err := tx.Exec(ctx, `DELETE FROM fix_groups`); err != nil {
 			return err
 		}
@@ -310,47 +318,4 @@ func (s *Store) SummarizeFixFocus(ctx context.Context, assetID int64, production
 		out.Assets = append(out.Assets, a)
 	}
 	return out, arows.Err()
-}
-
-// FixGroupsForAssets returns the top groups for the given assets, for
-// summary notifications.
-func (s *Store) FixGroupsForAssets(ctx context.Context, assetIDs []int64, limit int) ([]fixplan.Group, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT data FROM fix_groups WHERE asset_id = ANY($1) ORDER BY sort_order LIMIT $2`, assetIDs, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []fixplan.Group
-	for rows.Next() {
-		var d []byte
-		if err := rows.Scan(&d); err != nil {
-			return nil, err
-		}
-		var g fixplan.Group
-		if json.Unmarshal(d, &g) == nil {
-			out = append(out, g)
-		}
-	}
-	return out, rows.Err()
-}
-
-// IncidentAssetIDs returns the assets behind a set of incidents.
-func (s *Store) IncidentAssetIDs(ctx context.Context, incidentIDs []int64) ([]int64, []string, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT DISTINCT a.id, a.name FROM findings f JOIN assets a ON a.id = f.asset_id
-		WHERE f.incident_id = ANY($1) ORDER BY a.name`, incidentIDs)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer rows.Close()
-	var ids []int64
-	var names []string
-	for rows.Next() {
-		var id int64
-		var n string
-		if err := rows.Scan(&id, &n); err != nil {
-			return nil, nil, err
-		}
-		ids, names = append(ids, id), append(names, n)
-	}
-	return ids, names, rows.Err()
 }

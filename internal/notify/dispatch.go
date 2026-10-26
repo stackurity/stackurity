@@ -2,12 +2,11 @@ package notify
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
-	"sort"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -24,10 +23,6 @@ const maxAttempts = 8
 // deliveryLease is how long a claimed delivery is reserved for the replica
 // sending it; a replica that dies mid-send leaves it to be retried after this.
 const deliveryLease = 5 * time.Minute
-
-// burstThreshold: above this many incidents for one route in one cycle, a
-// single summary is sent instead of one message each.
-const burstThreshold = 3
 
 type Dispatcher struct {
 	Store   *store.Store
@@ -139,7 +134,10 @@ func (d *Dispatcher) PlatformFallback(ctx context.Context) error {
 	return nil
 }
 
-// Plan queues deliveries for new, raised, escalated and resolved incidents.
+// Plan queues what this cycle has to say: grouped messages to people
+// (urgent alerts, "connected" messages, overdue alerts, summaries; see
+// grouped.go) and, for Jira channels, issue creation and updates per
+// incident.
 func (d *Dispatcher) Plan(ctx context.Context) error {
 	routes, err := d.Store.ListRoutes(ctx)
 	if err != nil {
@@ -150,8 +148,8 @@ func (d *Dispatcher) Plan(ctx context.Context) error {
 		return err
 	}
 	// Tracker channels (Jira) keep one issue per incident: they get no
-	// summaries, and once an incident has an issue it is updated from the
-	// issue's state (planIssueUpdates) rather than per event.
+	// grouped messages, and once an incident has an issue it is updated
+	// from the issue's state (planIssueUpdates) rather than per event.
 	tracker, err := d.trackerChannels(ctx)
 	if err != nil {
 		return err
@@ -164,35 +162,13 @@ func (d *Dispatcher) Plan(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	// Per route, collect what it would announce this cycle. More than
-	// burstThreshold becomes one summary, so onboarding a server or a big
-	// feed update never floods a channel (FR-08: grouping, no storms).
-	perRoute := map[int64][]store.Incident{}
 	for _, in := range announce {
+		in := in
 		for _, r := range routes {
-			if !r.Escalation && routeMatches(r, in) && !issued[in.ID][r.ChannelID] {
-				perRoute[r.ID] = append(perRoute[r.ID], in)
+			if !tracker[r.ChannelID] || r.Escalation || !routeMatches(r, in) || issued[in.ID][r.ChannelID] {
+				continue
 			}
-		}
-	}
-	for _, r := range routes {
-		list := perRoute[r.ID]
-		if len(list) == 0 {
-			continue
-		}
-		r := r
-		if len(list) > burstThreshold && !tracker[r.ChannelID] {
-			msg, key, err := d.burstMessage(ctx, list, "opened")
-			if err != nil {
-				return err
-			}
-			if _, err := d.Store.EnqueueDelivery(ctx, r.ChannelID, &r.ID, nil, "digest", key, msg); err != nil {
-				return err
-			}
-			continue
-		}
-		for _, in := range list {
-			in := in
+			r := r
 			event := "opened"
 			if in.NotifiedPriority != "" {
 				event = "priority_raised"
@@ -203,57 +179,233 @@ func (d *Dispatcher) Plan(ctx context.Context) error {
 			}
 		}
 	}
+
+	// An asset's first scan is quiet: the backlog it reports raises no
+	// urgent alerts, one "connected" message describes it instead. Until
+	// its first complete collection is evaluated, incidents found only on
+	// it wait.
+	fresh, err := d.Store.UnannouncedAssets(ctx)
+	if err != nil {
+		return err
+	}
+	quiet, waiting := map[int64]bool{}, map[int64]bool{}
+	var ready []store.NewAsset
+	for _, a := range fresh {
+		quiet[a.ID] = true
+		if a.Ready {
+			ready = append(ready, a)
+		} else {
+			waiting[a.ID] = true
+		}
+	}
+	rows := map[int64][]store.IssueCount{}
+	if len(ids) > 0 {
+		counts, err := d.Store.IncidentIssues(ctx, ids)
+		if err != nil {
+			return err
+		}
+		for _, c := range counts {
+			rows[c.IncidentID] = append(rows[c.IncidentID], c)
+		}
+	}
+	deferred := map[int64]bool{}
+	var live []store.Incident // incidents that may raise urgent alerts
+	var notified []int64
 	for _, in := range announce {
-		// Recorded even when no route matched, so adding a route later does
-		// not flood it with every historical incident.
-		if err := d.Store.MarkIncidentNotified(ctx, in.ID, in.Priority); err != nil {
+		if isFindingKind(in.Kind) && len(quiet) > 0 && len(rows[in.ID]) > 0 {
+			known, wait := false, false
+			for _, c := range rows[in.ID] {
+				known = known || !quiet[c.AssetID]
+				wait = wait || waiting[c.AssetID]
+			}
+			if !known && wait {
+				deferred[in.ID] = true
+				continue
+			}
+			if !known {
+				notified = append(notified, in.ID) // first-scan backlog
+				continue
+			}
+		}
+		live = append(live, in)
+		notified = append(notified, in.ID)
+	}
+
+	people := func(r store.Route) bool {
+		return r.Enabled && !tracker[r.ChannelID] && r.Mode == store.ModeUrgentSummary
+	}
+	var infos map[string]store.FixInfo
+	for _, r := range routes {
+		if !people(r) {
+			continue
+		}
+		var urgent []store.Incident
+		var urgentIDs []int64
+		for _, in := range live {
+			if urgentIncident(r, in) {
+				urgent = append(urgent, in)
+				urgentIDs = append(urgentIDs, in.ID)
+			}
+		}
+		if len(urgent) == 0 {
+			continue
+		}
+		if infos == nil {
+			var all []store.IssueCount
+			for _, in := range live {
+				all = append(all, rows[in.ID]...)
+			}
+			if infos, err = d.Store.FixInfos(ctx, fixIDs(all)); err != nil {
+				return err
+			}
+		}
+		msg, ok := d.urgentMessage(r, urgent, rows, quiet, infos)
+		if !ok {
+			continue
+		}
+		r := r
+		if _, err := d.Store.EnqueueDelivery(ctx, r.ChannelID, &r.ID, nil, EventUrgent, keyOf("urgent", r.ID, urgentIDs), msg); err != nil {
 			return err
 		}
 	}
 
-	if err := d.escalate(ctx, routes); err != nil {
+	if len(ready) > 0 {
+		readyIDs := make([]int64, len(ready))
+		for i, a := range ready {
+			readyIDs[i] = a.ID
+		}
+		fixes, err := d.Store.OpenFixes(ctx, readyIDs)
+		if err != nil {
+			return err
+		}
+		byAsset := fixesByAsset(fixes)
+		for _, r := range routes {
+			if !people(r) || !assetsWanted(r) {
+				continue
+			}
+			var mine []store.NewAsset
+			var mineIDs []int64
+			for _, a := range ready {
+				if assetInScope(r, a.Environment, a.OwnerTeamID) {
+					mine, mineIDs = append(mine, a), append(mineIDs, a.ID)
+				}
+			}
+			if len(mine) == 0 {
+				continue
+			}
+			r := r
+			msg := d.connectedMessage(r, mine, byAsset)
+			if _, err := d.Store.EnqueueDelivery(ctx, r.ChannelID, &r.ID, nil, EventConnected, keyOf("connected", r.ID, mineIDs), msg); err != nil {
+				return err
+			}
+		}
+		if err := d.Store.MarkAssetsAnnounced(ctx, readyIDs); err != nil {
+			return err
+		}
+	}
+	// Recorded even when no route matched, so adding a route later does
+	// not flood it with every historical incident.
+	if err := d.Store.MarkIncidentsNotified(ctx, notified); err != nil {
 		return err
 	}
 
+	if err := d.planOverdue(ctx, routes, tracker); err != nil {
+		return err
+	}
+
+	// Resolved incidents are counted in summaries (findings fixed), never
+	// announced one by one; Jira issues are resolved by planIssueUpdates.
 	resolved, err := d.Store.ResolvedToAnnounce(ctx)
 	if err != nil {
 		return err
 	}
-	perRoute = map[int64][]store.Incident{}
-	for _, in := range resolved {
-		for _, r := range routes {
-			if !r.Escalation && r.SendResolved && routeMatches(r, in) && !tracker[r.ChannelID] {
-				perRoute[r.ID] = append(perRoute[r.ID], in)
-			}
-		}
+	done := make([]int64, len(resolved))
+	for i, in := range resolved {
+		done[i] = in.ID
 	}
+	if err := d.Store.MarkResolvedNotifiedAll(ctx, done); err != nil {
+		return err
+	}
+	if err := d.planSummaries(ctx, routes, tracker); err != nil {
+		return err
+	}
+	return d.planIssueUpdates(ctx)
+}
+
+// planOverdue records escalation levels of overdue incidents (licensed
+// builds) and tells people about it at most once a day per route: when
+// urgent issues have just passed their fix deadline, one message groups
+// every overdue urgent issue by fix. Jira issues still get one comment
+// each.
+func (d *Dispatcher) planOverdue(ctx context.Context, routes []store.Route, tracker map[int64]bool) error {
+	esc, err := d.escalate(ctx)
+	if err != nil || len(esc) == 0 {
+		return err
+	}
+	ids := make([]int64, 0, len(esc))
+	for id := range esc {
+		ids = append(ids, id)
+	}
+	incs, err := d.Store.IncidentsByID(ctx, ids)
+	if err != nil {
+		return err
+	}
+	var counts []store.IssueCount
+	var infos map[string]store.FixInfo
 	for _, r := range routes {
-		list := perRoute[r.ID]
+		if !r.Escalation || !r.Enabled {
+			continue
+		}
 		r := r
-		if len(list) > burstThreshold {
-			msg, key, err := d.burstMessage(ctx, list, "resolved")
-			if err != nil {
-				return err
-			}
-			if _, err := d.Store.EnqueueDelivery(ctx, r.ChannelID, &r.ID, nil, "digest", key, msg); err != nil {
-				return err
+		if tracker[r.ChannelID] {
+			for _, in := range incs {
+				in.EscalationLevel = esc[in.ID]
+				if !routeMatches(r, in) {
+					continue
+				}
+				key := fmt.Sprintf("incident:%d:escalated:%d", in.ID, in.EscalationLevel)
+				if _, err := d.Store.EnqueueDelivery(ctx, r.ChannelID, &r.ID, &in.ID, "escalated", key, d.message(in, "escalated")); err != nil {
+					return err
+				}
 			}
 			continue
 		}
-		for _, in := range list {
-			in := in
-			key := fmt.Sprintf("incident:%d:resolved", in.ID)
-			if _, err := d.Store.EnqueueDelivery(ctx, r.ChannelID, &r.ID, &in.ID, "resolved", key, d.message(in, "resolved")); err != nil {
+		if r.Mode != store.ModeUrgentSummary {
+			continue // the overdue section of the summary covers it
+		}
+		crossed := false
+		for _, in := range incs {
+			if esc[in.ID] >= 2 && overdueUrgent(in.Priority, in.SOS) && inScope(r, in) {
+				crossed = true
+				break
+			}
+		}
+		if !crossed {
+			continue
+		}
+		if counts == nil {
+			now := d.now()
+			if counts, err = d.Store.CountIssues(ctx, store.IssuesOverdue, now, now); err != nil {
+				return err
+			}
+			if infos, err = d.Store.FixInfos(ctx, fixIDs(counts)); err != nil {
 				return err
 			}
 		}
-	}
-	for _, in := range resolved {
-		if err := d.Store.MarkResolvedNotified(ctx, in.ID); err != nil {
+		msg, ok := d.overdueMessage(r, counts, infos)
+		if !ok {
+			continue
+		}
+		loc, err := time.LoadLocation(r.Timezone)
+		if err != nil {
+			loc = time.UTC
+		}
+		key := fmt.Sprintf("overdue:%d:%s", r.ID, d.now().In(loc).Format("2006-01-02"))
+		if _, err := d.Store.EnqueueDelivery(ctx, r.ChannelID, &r.ID, nil, EventOverdue, key, msg); err != nil {
 			return err
 		}
 	}
-	return d.planIssueUpdates(ctx)
+	return nil
 }
 
 // trackerChannels returns the ids of the workspace's tracker (Jira) channels.
@@ -296,52 +448,14 @@ func (d *Dispatcher) planIssueUpdates(ctx context.Context) error {
 // routeMatches applies a route's filters. Resolved and escalation events use
 // the priority the incident reached.
 func routeMatches(r store.Route, in store.Incident) bool {
-	if !r.Enabled {
-		return false
-	}
-	if r.SOSOnly && !in.SOS {
+	if !inScope(r, in) {
 		return false
 	}
 	pri := in.Priority
 	if in.NotifiedPriority != "" && in.NotifiedPriority < pri {
 		pri = in.NotifiedPriority
 	}
-	if !risk.PriorityAtLeast(pri, r.MinPriority) {
-		return false
-	}
-	if len(r.Kinds) > 0 && !contains(r.Kinds, in.Kind) {
-		return false
-	}
-	if len(r.TeamIDs) > 0 {
-		if in.OwnerTeamID == nil {
-			return false
-		}
-		found := false
-		for _, t := range r.TeamIDs {
-			if t == *in.OwnerTeamID {
-				found = true
-			}
-		}
-		if !found {
-			return false
-		}
-	}
-	if len(r.Environments) > 0 {
-		var detail struct {
-			Environments []string `json:"environments"`
-		}
-		_ = json.Unmarshal(in.Detail, &detail)
-		match := false
-		for _, e := range detail.Environments {
-			if contains(r.Environments, e) {
-				match = true
-			}
-		}
-		if !match {
-			return false
-		}
-	}
-	return true
+	return risk.PriorityAtLeast(pri, r.MinPriority)
 }
 
 func contains(list []string, v string) bool {
@@ -457,7 +571,8 @@ func (d *Dispatcher) Deliver(ctx context.Context) error {
 			channels[ch.ID] = ch
 		}
 		// Quiet hours and hourly limits are for people: an issue tracker
-		// is kept current.
+		// is kept current. SOS is never delayed. A summary is never held:
+		// it is where held messages go.
 		if route != nil && !msg.SOS && del.Event != "test" && ch.Kind != KindJira {
 			if until, quiet := quietUntil(*route, d.now()); quiet {
 				if err := d.Store.DeferDelivery(ctx, del.ID, until); err != nil {
@@ -465,15 +580,17 @@ func (d *Dispatcher) Deliver(ctx context.Context) error {
 				}
 				continue
 			}
-			sent, err := d.Store.RouteSentSince(ctx, route.ID, d.now().Add(-time.Hour))
-			if err != nil {
-				return err
-			}
-			if route.MaxPerHour > 0 && sent >= route.MaxPerHour {
-				if err := d.Store.HoldDelivery(ctx, del.ID, "rate limit reached; included in the next digest"); err != nil {
+			if route.MaxPerHour > 0 && del.Event != EventSummary {
+				sent, err := d.Store.RouteSentSince(ctx, route.ID, d.now().Add(-time.Hour))
+				if err != nil {
 					return err
 				}
-				continue
+				if sent >= route.MaxPerHour {
+					if err := d.Store.HoldDelivery(ctx, del.ID, "hourly limit reached; counted in the next summary"); err != nil {
+						return err
+					}
+					continue
+				}
 			}
 		}
 		// Claim right before sending: another replica's Tick or Digest may
@@ -553,8 +670,22 @@ func (d *Dispatcher) SendTest(ctx context.Context, ch *store.Channel) error {
 	return err
 }
 
-// Digest sends one summary per channel for deliveries held by rate limits.
+// Digest runs hourly. Messages a route's hourly limit held are taken in
+// by that route's next summary, never sent one by one; this plans the
+// summaries that are due (as every Tick does) and, for held messages whose
+// route was deleted, sends one digest per channel.
 func (d *Dispatcher) Digest(ctx context.Context) error {
+	routes, err := d.Store.ListRoutes(ctx)
+	if err != nil {
+		return err
+	}
+	tracker, err := d.trackerChannels(ctx)
+	if err != nil {
+		return err
+	}
+	if err := d.planSummaries(ctx, routes, tracker); err != nil {
+		return err
+	}
 	held, err := d.Store.HeldByChannel(ctx)
 	if err != nil {
 		return err
@@ -564,20 +695,23 @@ func (d *Dispatcher) Digest(ctx context.Context) error {
 		var lines []string
 		var ids []int64
 		for _, del := range list {
+			if del.RouteID != nil {
+				continue
+			}
 			var m Message
 			_ = json.Unmarshal(del.Payload, &m)
 			lines = append(lines, m.Subject())
 			ids = append(ids, del.ID)
 		}
-		if len(lines) > 50 {
-			lines = append(lines[:50], fmt.Sprintf("…and %d more", len(lines)-50))
+		if len(ids) == 0 {
+			continue
+		}
+		if len(lines) > 20 {
+			lines = append(lines[:20], fmt.Sprintf("+%d more", len(lines)-20))
 		}
 		key := "digest:" + stamp
-		msg := Message{Event: "digest", Title: fmt.Sprintf("Stackurity digest: %d notification(s) held by rate limits", len(ids)),
-			Summary: lines, At: d.now().UTC()}
-		if d.BaseURL != "" {
-			msg.Link = strings.TrimSuffix(d.BaseURL, "/") + "/incidents"
-		}
+		msg := Message{Event: "digest", Title: fmt.Sprintf("Stackurity: %s held by an hourly limit", plural(len(ids), "notification")),
+			Summary: lines, At: d.now().UTC(), Link: d.url("/settings/notifications", url.Values{"tab": {"deliveries"}})}
 		if _, err := d.Store.EnqueueDelivery(ctx, chID, nil, nil, "digest", key, msg); err != nil {
 			return err
 		}
@@ -632,92 +766,15 @@ func ValidQuietTime(s string) bool {
 	return err == nil
 }
 
-// burstMessage summarises many incidents as the actions that resolve them.
-func (d *Dispatcher) burstMessage(ctx context.Context, list []store.Incident, event string) (Message, string, error) {
-	ids := make([]int64, 0, len(list))
-	sos, kev := 0, 0
-	top := "P4"
-	for _, in := range list {
-		ids = append(ids, in.ID)
-		if in.SOS {
-			sos++
-		}
-		var det struct {
-			KnownExploited bool `json:"known_exploited"`
-		}
-		_ = json.Unmarshal(in.Detail, &det)
-		if det.KnownExploited {
-			kev++
-		}
-		if in.Priority < top {
-			top = in.Priority
-		}
-	}
-	assetIDs, names, err := d.Store.IncidentAssetIDs(ctx, ids)
-	if err != nil {
-		return Message{}, "", err
-	}
-	where := strings.Join(firstN(names, 3), ", ")
-	if len(names) > 3 {
-		where += fmt.Sprintf(" and %d more", len(names)-3)
-	}
-	m := Message{Event: "digest", Priority: top, SOS: sos > 0, At: d.now().UTC()}
-	if event == "resolved" {
-		m.Title = fmt.Sprintf("%s resolved on %s", plural(len(list), "incident"), where)
-		m.Summary = []string{"No open findings remain for these incidents."}
-	} else {
-		m.Title = fmt.Sprintf("%s on %s", plural(len(list), "new incident"), where)
-		if sos > 0 {
-			m.Summary = append(m.Summary, fmt.Sprintf("%s need urgent attention (SOS)", thousands(sos)))
-		}
-		if kev > 0 {
-			m.Summary = append(m.Summary, fmt.Sprintf("%s are known to be exploited in the wild (CISA KEV)", thousands(kev)))
-		}
-		groups, err := d.Store.FixGroupsForAssets(ctx, assetIDs, 5)
-		if err != nil {
-			return Message{}, "", err
-		}
-		if len(groups) > 0 {
-			m.Summary = append(m.Summary, "Top actions:")
-		}
-		for _, g := range groups {
-			line := fmt.Sprintf("%s on %s: resolves %s", g.Title, g.AssetName, plural(g.FindingCount, "finding"))
-			if g.UniqueIssues > 0 && g.UniqueIssues != g.FindingCount {
-				line += fmt.Sprintf(" (%s)", plural(g.UniqueIssues, "unique vulnerability"))
-			}
-			line += ", highest " + g.TopPriority
-			if g.Needs == "ubuntu-pro" {
-				line += ", some fixes also in Ubuntu Pro (paid, optional)"
-			}
-			m.Summary = append(m.Summary, line)
-		}
-		m.Action = "Open Fixes to see what to do first; each fix lists the issues it clears."
-	}
-	if d.BaseURL != "" {
-		m.Link = strings.TrimSuffix(d.BaseURL, "/") + "/fixes"
-	}
-	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
-	h := sha256.New()
-	for _, id := range ids {
-		fmt.Fprintf(h, "%d,", id)
-	}
-	key := fmt.Sprintf("burst:%s:%x", event, h.Sum(nil)[:8])
-	return m, key, nil
-}
-
-func firstN[T any](s []T, n int) []T {
-	if len(s) > n {
-		return s[:n]
-	}
-	return s
-}
-
 func plural(n int, word string) string {
 	if n == 1 {
 		return "1 " + word
 	}
-	if strings.HasSuffix(word, "y") {
+	switch {
+	case strings.HasSuffix(word, "y"):
 		return thousands(n) + " " + strings.TrimSuffix(word, "y") + "ies"
+	case strings.HasSuffix(word, "x"), strings.HasSuffix(word, "s"), strings.HasSuffix(word, "ch"):
+		return thousands(n) + " " + word + "es"
 	}
 	return thousands(n) + " " + word + "s"
 }
@@ -727,6 +784,13 @@ func thousands(n int) string {
 	s := strconv.Itoa(n)
 	for i := len(s) - 3; i > 0 && s[i-1] != '-'; i -= 3 {
 		s = s[:i] + "," + s[i:]
+	}
+	return s
+}
+
+func firstN[T any](s []T, n int) []T {
+	if len(s) > n {
+		return s[:n]
 	}
 	return s
 }
