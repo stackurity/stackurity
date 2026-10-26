@@ -1,8 +1,10 @@
 # Release checks against real installations of earlier releases: upgrade
 # with data in place, backup and restore into a new PostgreSQL server, and
 # the documented rollback (restore the pre-upgrade backup, start the
-# previous image). See tools/release-checks/upgrade.sh. The release workflow
-# runs these too, before anything is published.
+# previous image). See tools/release-checks/upgrade.sh. Also the workspace
+# isolation suite (tools/release-checks/isolation.sh): any failure there
+# blocks the release. The release workflow runs these too, before anything
+# is published.
 name: release-checks
 
 on:
@@ -14,6 +16,33 @@ permissions:
   contents: read
 
 jobs:
+  # Workspace isolation: one workspace never sees or changes another's data,
+  # and the database enforces it. A failure, a skip or a test that no longer
+  # exists fails this job, which blocks the pull request and the release
+  # (docs/security-audit.md, "Tenant-isolation incidents").
+  isolation:
+    name: Workspace isolation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17.6-alpine
+        env:
+          POSTGRES_USER: stackurity
+          POSTGRES_PASSWORD: stackurity
+          POSTGRES_DB: stackurity_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U stackurity" --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      STACKURITY_TEST_DATABASE_URL: postgres://stackurity:stackurity@localhost:5432/stackurity_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: tools/release-checks/isolation.sh
+
   image:
     name: Build the current image
     runs-on: ubuntu-latest

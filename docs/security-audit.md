@@ -44,7 +44,7 @@ This page covers PRD FR-18: a repeatable, evidence-led way to review Stackurity'
 - OSV-Scanner on `go.mod` and `web/package-lock.json`, plus `npm audit` for runtime dependencies.
 - CodeQL for Go and TypeScript.
 - Dogfooding: Stackurity inventories its own lockfiles, and the batch is kept as a release artifact.
-- The tests in section 4, including the workspace isolation sweep, run in `ci.yml` on every change; `fuzz.yml` fuzzes the parsers of untrusted input for longer when started by hand.
+- The tests in section 4, including the workspace isolation sweep, run in `ci.yml` on every change; the isolation suite also runs as its own **Workspace isolation** check, which blocks a release when it fails (section 6). `fuzz.yml` fuzzes the parsers of untrusted input for longer when started by hand.
 
 The release pipeline (`release.yml`) publishes SHA256 checksums signed with Sigstore (keyless), build provenance attestations, a CycloneDX source SBOM, and a signed multi-arch image with an SBOM and provenance.
 
@@ -179,3 +179,111 @@ Writing these tests found and fixed the following; each fix is its own commit wi
 ## 5. Reporting
 
 Report vulnerabilities privately as described in [SECURITY.md](../SECURITY.md).
+
+## 6. Tenant-isolation incidents
+
+A tenant-isolation failure is any way a principal of one workspace (a session, an API token, a collector or agent token) can read, count, change, delete or learn the existence of another workspace's data, or any way background work (an evaluation, a notification, an export, a Jira issue) carries one workspace's data into another. On an installation that hosts several organisations this is the most serious class of bug Stackurity can have. This section is the process for one, whether it is reported from outside, found in review, or shown by a failing test.
+
+### Report
+
+- **From outside, or as an operator:** report privately as described in [SECURITY.md](../SECURITY.md), marked "tenant isolation". Include the version, the edition, the workspaces and principals involved (ids, not data), the request or steps, and the time window. Do not test further against workspaces you do not own.
+- **Found by a maintainer or a test:** open a private security advisory on the repository at once, not a public issue or pull request.
+
+Isolation reports are triaged as critical until shown otherwise and handled before anything else.
+
+### Triage
+
+Work from a copy where you can: take a `pg_dump` of the database and keep the server and reverse-proxy logs for the window before changing anything.
+
+1. **Establish the window and the principals.** From the report: the workspaces (ids), users, tokens (`api_tokens.id`, `last_used_at`, updated at most once a minute) and the times.
+2. **Pull the request logs.** The server logs every request as an `http` line with method, path, status, duration and `request_id` (query strings are never logged). Match them to the reverse proxy's logs for client addresses. Look for requests from the suspected principal to ids that belong to another workspace, and for unusual 200s on routes that should have answered 404.
+3. **Pull the audit events.** Changes are audited per workspace, including sign-ins, token and user changes, workspace changes and switching workspace (`auth.login`, `auth.login_failed`, `token.create`, `token.revoke`, `user.update`, `workspace.update`, `workspace.enter`). Reads are not audited; the request logs cover them.
+
+   ```sql
+   -- psql as the database login role. If it is not a superuser, first let the
+   -- policies show every workspace for this session:
+   SELECT set_config('stackurity.scope', 'system', false);
+
+   SELECT at, workspace_id, actor_type, actor_id, actor_name, action, object_type, object_id, remote_addr, detail
+   FROM audit_events
+   WHERE at BETWEEN '2026-10-01 00:00Z' AND '2026-10-02 00:00Z'
+     AND (actor_id = 42 OR workspace_id IN (1, 2))
+   ORDER BY at;
+   ```
+
+4. **Run the isolation suite against the affected version.** `STACKURITY_TEST_DATABASE_URL=... tools/release-checks/isolation.sh` (add `-tags ee -overlay ee-overlay.json` after `make ee-overlay` for the licensed build). Then reproduce the report as a test, normally a new rule or case in `TestIsolationSweep` (`internal/api/sweep_test.go`): that test is the proof of the bug and, once fixed, of the fix.
+5. **Check the database's own enforcement** on the affected installation:
+
+   ```sql
+   -- Tables without forced row-level security or without policies. Only the
+   -- global tables listed in internal/db/rls_test.go may appear.
+   SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity, count(p.polname) AS policies
+   FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+   LEFT JOIN pg_policy p ON p.polrelid = c.oid
+   WHERE n.nspname = current_schema() AND c.relkind = 'r'
+   GROUP BY 1, 2, 3
+   HAVING NOT (c.relrowsecurity AND c.relforcerowsecurity) OR count(p.polname) = 0
+   ORDER BY 1;
+
+   -- The application role must not bypass row-level security.
+   SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = 'stackurity_app';
+
+   -- As the application role (the login role is a member when the migration
+   -- created it), a workspace scope sees only its own rows, and no scope
+   -- sees none.
+   BEGIN;
+   SET LOCAL ROLE stackurity_app;
+   SELECT set_config('stackurity.scope', '', true), set_config('stackurity.workspace_id', '', true);
+   SELECT count(*) FROM assets;                                     -- 0: no scope
+   SELECT set_config('stackurity.workspace_id', '2', true);
+   SELECT DISTINCT workspace_id FROM assets;                        -- only 2
+   SELECT DISTINCT workspace_id FROM findings;                      -- only 2
+   SELECT DISTINCT workspace_id FROM audit_events;                  -- only 2
+   ROLLBACK;
+
+   -- Rows pointing at another workspace's rows (foreign keys ignore
+   -- row-level security; migration 0025's triggers refuse new ones). Each
+   -- query must return nothing. Run with the system scope set as above.
+   SELECT r.id FROM routes r JOIN channels c ON c.id = r.channel_id WHERE r.workspace_id <> c.workspace_id;
+   SELECT d.id FROM deliveries d JOIN channels c ON c.id = d.channel_id WHERE d.workspace_id <> c.workspace_id;
+   SELECT f.id FROM findings f JOIN assets a ON a.id = f.asset_id WHERE f.workspace_id <> a.workspace_id;
+   SELECT i.id FROM incidents i JOIN teams t ON t.id = i.owner_team_id WHERE i.workspace_id <> t.workspace_id;
+   ```
+
+   The server also refuses to start if its role bypasses row-level security (`db.CheckIsolation`).
+6. **Decide the scope:** which workspaces' data, which kinds (inventory, findings, user names and emails, integration and channel settings; stored secrets are encrypted and never returned by the API), since which version, and whether it was actually exploited (step 2 and 3) or only possible.
+
+### Contain
+
+- **Disable the affected workspace** (or the one the access came from): **Settings → Workspaces**, or `PATCH /api/v1/admin/workspaces/{id}` with `{"disabled": true}` as an instance admin. Its tokens and sessions are refused on their next request and its periodic work (alerts, integrations, evaluations) stops; its data stays for the investigation.
+- **Revoke credentials:** the tokens involved (`DELETE /api/v1/tokens/{id}`, audited as `token.revoke`), and the sessions of the users involved (disable the user, or `DELETE FROM sessions WHERE user_id = ...;`). In an emergency, `UPDATE api_tokens SET revoked_at = now() WHERE workspace_id = ... AND revoked_at IS NULL;`.
+- **Block the route** at the reverse proxy if the leak is through one endpoint and a fix is not yet available.
+- **Rotate what may have leaked:** if integration or channel settings were exposed, rotate the underlying credentials (Git tokens, webhook URLs, bot tokens, Jira tokens) at their providers, then update the secrets in Stackurity.
+- **Upgrade** to the fixed release as soon as it is published, then run the checks in step 5 again.
+
+### Notify and disclose
+
+- **Operators** tell the organisations whose data was exposed, through their workspace admins, with what was exposed, to whom, when, and what was done; and meet their own legal obligations (for example, personal data breach notification deadlines). Stackurity holds people's names and email addresses, so assume personal data is involved until shown otherwise.
+- **The project** fixes the bug in private (advisory fork), adds the reproducing test, releases a patch version with a GitHub security advisory and a CVE, and credits the reporter if they agree. The advisory states the affected versions and editions, whether exploitation leaves traces in the request logs or audit events, and how to check an installation (the queries above).
+
+### Any isolation-test failure blocks a release
+
+The isolation suite is `tools/release-checks/isolation.sh`: every test in section 4's workspace-isolation table, run by name, failing if any of them fails, is skipped or no longer exists. It runs as the **Workspace isolation** job of `.github/workflows/release-checks.yml` on every pull request (keep it a required status check for `main` in the repository's branch protection), and the release workflow runs the same checks and publishes nothing unless they pass. The tests also run in `ci.yml` and, for the licensed build, in `make test-ee`.
+
+- A failure blocks merging and releasing. It is not retried until it passes, skipped or marked flaky: an isolation test that fails intermittently is treated as a failing one until the cause is understood.
+- A failure on `main` or on a release branch is handled as a suspected incident under this section, starting with triage, until shown to be a defect of the test alone.
+- A fix lands with a test that fails without it, and a new table, route or background job that holds workspace data lands with its row-level security, its sweep rule and its scope (the tests above fail otherwise).
+
+## 7. Security-sensitive areas
+
+There is no CODEOWNERS file. Instead, a change touching one of these areas needs a reviewer who has read this section, and the review checks the points listed.
+
+| Area | Why | What review checks |
+|---|---|---|
+| `internal/tenant` | The scope every database connection carries | A context without a scope still sees nothing; `tenant.System` is not reachable from request handling except where an instance admin is checked |
+| `internal/db` (`db.go`) and `internal/db/migrations` | Row-level security, the application role, grants, same-workspace triggers | Every new table has `workspace_id`, `FORCE ROW LEVEL SECURITY` and policies, or is listed as global in `rls_test.go` with a reason; new references between workspace tables get a 0025-style trigger; nothing grants `BYPASSRLS` or ownership to `stackurity_app` |
+| `internal/api` authentication and authorisation (`middleware.go`, `handlers_auth.go`, `handlers_workspaces.go`, the single sign-on handlers of the licensed build) | Who a request is, its workspace and role | Credentials are looked up only by hash; a lookup failure is never treated as anonymous or as another principal; role and instance-admin checks sit on the route; every new route has a rule in `sweep_test.go` |
+| `internal/store` code that uses `tenant.System` | System scope reads every workspace | It is needed (platform work, instance admin views) and its results never reach a workspace principal |
+| `internal/netguard` | Server-side request forgery from workspace-supplied URLs | Every outbound connection a workspace can point somewhere goes through it; the checked address is the one dialled; redirects are not followed |
+| `internal/secrets`, `internal/auth` | Stored secrets, password and token hashing | Secrets stay encrypted per workspace and are never returned or logged; no weaker hashing |
+| `internal/agentfix`, `internal/plugins`, `internal/packs` | Code that changes hosts or runs third-party code | Allowlists, sandboxing and output caps stay in place ([remediation.md](remediation.md), [plugins.md](plugins.md), [packs.md](packs.md)) |

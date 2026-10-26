@@ -47,6 +47,7 @@ export function HealthPage() {
   ];
   const queued = d?.jobs.filter((j) => j.state === "queued").reduce((n, j) => n + j.count, 0) ?? 0;
   const running = d?.jobs.filter((j) => j.state === "running").reduce((n, j) => n + j.count, 0) ?? 0;
+  const deliveries = (state: string) => (d?.deliveries ?? []).filter((x) => x.state === state).reduce((n, x) => n + x.count, 0);
 
   return (
     <>
@@ -91,6 +92,10 @@ export function HealthPage() {
               Jobs: {plural(queued, "job")} waiting, {running} running
               {d.oldest_queued_seconds > 60 && `, the oldest has waited ${minutesLabel(Math.round(d.oldest_queued_seconds / 60))}`}. Prometheus
               metrics are served when STACKURITY_METRICS_ADDR is set.
+            </p>
+            <p className="small muted">
+              Notifications: {plural(deliveries("pending") + deliveries("retrying"), "message")} to send ({deliveries("retrying")} after a failed
+              attempt), {deliveries("failed")} failed in the last 24 hours.
             </p>
           </Card>
           <Card title="Background tasks">

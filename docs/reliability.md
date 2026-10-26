@@ -45,6 +45,11 @@ In short: work resumes or fails visibly, data from the last good run stays avail
 - A task runs on one replica at a time under a 2-minute lease, renewed every 30 seconds. If that replica dies, another takes the task over once the lease has expired, and runs it at once because the interrupted run never finished. With one replica, the restarted server does the same.
 - The interrupted run records no outcome. A task that keeps failing or never completes is flagged in Platform health once it has not succeeded within three times its interval.
 
+### Database outages
+
+- The server does not exit or need a restart when PostgreSQL goes away: `/readyz` answers 503 until the database answers again, then the same process resumes. Requests that need the database answer 503, which agents, CI and the dashboard treat as temporary.
+- Work in flight is treated as if its server had died: leases and locks that expire during the outage hand the work over as described above, and nothing is recorded as done that was not.
+
 ## How it is tested
 
 `internal/crashtest` runs the real server binary and kills it with `SIGKILL` at chosen moments, then restarts it and checks the database, the fake upstreams and a webhook receiver that counts what it processed. Each scenario gets a fresh database; OSV, KEV, endoflife.date and the webhook receiver are local HTTP servers. The tests need the `crash` build tag and a PostgreSQL the test may create databases in:
@@ -54,7 +59,7 @@ STACKURITY_TEST_DATABASE_URL=postgres://stackurity:secret@127.0.0.1:5432/stackur
   go test -tags crash -count=1 -v ./internal/crashtest
 ```
 
-CI runs them in the `crash` job of `.github/workflows/ci.yml`. They take about a minute and a half.
+CI runs them in the `crash` job of `.github/workflows/ci.yml`, together with the operational drills of [operations.md](operations.md) (`TestUpstreamOutage`, `TestNotificationProviderOutage`, `TestAgentStopsReporting`). They take about four minutes.
 
 So that a lease or lock timeout passes in seconds, the tests start the server with `STACKURITY_TEST_TIMINGS=job-lock=3s,task-lease=2s,tick=200ms,poll=200ms,delivery-lease=2s,alerts=1s`. The guarantees are the same; only the clocks are shorter. Never set it in production: the server logs a warning when it is set.
 
@@ -66,11 +71,13 @@ So that a lease or lock timeout passes in seconds, the tests start the server wi
 | | After the receiver processed it, before the server recorded it | It is received exactly twice, with the same `X-Stackurity-Delivery` id, and has 2 attempts. Every other delivery is received once, every delivery ends `sent`, and no incident event is queued twice. |
 | Periodic tasks | Two replicas; the one running the alert dispatcher (blocked in a webhook send) | The other replica takes the task over no earlier than the dead replica's lease end, finishes it without error, and sends everything. |
 | Jobs | A feed sync whose download never finishes, killed on every attempt | Each attempt is claimed at least one lock timeout after the last renewal; after the fifth the job is failed (no sixth download), with the interruption as its last error, on the health report and in `stackurity_jobs{kind="feed.sync",state="failed"}`. |
+| Database outage | Not killed: PostgreSQL is cut off (every connection closed, new ones refused) for longer than the job lock, task lease and delivery lease, during a slow OSV import, then with a webhook in flight | While it is down: the process stays up, `/healthz` answers, `/readyz` answers 503, `/metrics` reports `stackurity_database_up 0`, API requests answer 503 at once. Afterwards the same process is ready again, the alerts task runs, the import is retried with the interruption recorded and completes (earlier advisories and findings kept, none duplicated), and the webhook is sent again with the same delivery id. Every database connection terminated at once (a PostgreSQL restart): the next requests and ingests succeed. |
 
-Three problems were found this way and fixed:
+Four problems were found this way and fixed:
 
 - A job killed on every attempt was claimed again after each lock timeout forever, never failed and showed no error. It now fails after `max_attempts`, and interrupted attempts are recorded.
 - An interrupted feed sync showed nothing: no error on the feed until the retry finished. The next attempt now records the interruption.
+- During a database outage, requests with valid API tokens or sessions were answered 401 (the failed lookup was taken for an unknown credential), so agents and CI dropped their batches instead of retrying, and the dashboard signed people out. They now get 503.
 - A feed sync interrupted (or failing to queue jobs) after moving its cursor but before queueing re-evaluation lost the re-evaluation until the daily one. Re-evaluation is now queued before the cursor moves. This window is too short to hit reliably by killing the process, so it is covered by `TestChangedBeforeCursorMoves` in `internal/intel` instead.
 
 Unit tests in the default suite cover the same rules without processes: `internal/worker` (leases, lock renewal, interrupted jobs failing), `internal/notify` (delivery claims across replicas) and `internal/intel` (the feed bookkeeping above).

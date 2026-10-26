@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
@@ -134,4 +135,39 @@ func (c *Checker) mustCheck(t *testing.T) *Report {
 		t.Fatal(err)
 	}
 	return r
+}
+
+func TestDeliveryProblems(t *testing.T) {
+	r := &Report{}
+	if p := deliveryProblems(r); len(p) != 0 {
+		t.Fatalf("no deliveries: %+v", p)
+	}
+	r = &Report{
+		Deliveries: []store.DeliveryCount{{Kind: "webhook", State: "failed", Count: 2}, {Kind: "slack", State: "failed", Count: 1},
+			{Kind: "webhook", State: "retrying", Count: 5}},
+		FailingChannels:          []store.ChannelCount{{Kind: "webhook", Count: 1}},
+		OldestDueDeliverySeconds: (20 * time.Minute).Seconds(),
+	}
+	ps := deliveryProblems(r)
+	byKey := map[string]Problem{}
+	for _, p := range ps {
+		if p.Severity != Warning || p.Kind != "notifications" {
+			t.Errorf("%+v: want a notifications warning", p)
+		}
+		byKey[p.Key] = p
+	}
+	if !strings.HasPrefix(byKey["failed"].Title, "3 notification(s) failed") {
+		t.Errorf("failed: %+v", byKey["failed"])
+	}
+	if !strings.HasPrefix(byKey["channels"].Title, "1 notification channel(s)") {
+		t.Errorf("channels: %+v", byKey["channels"])
+	}
+	if !strings.Contains(byKey["backlog"].Detail, "20m") {
+		t.Errorf("backlog: %+v", byKey["backlog"])
+	}
+	r.OldestDueDeliverySeconds = 60
+	r.FailingChannels, r.Deliveries = nil, r.Deliveries[2:]
+	if p := deliveryProblems(r); len(p) != 0 {
+		t.Errorf("retries alone and a short wait are not problems: %+v", p)
+	}
 }

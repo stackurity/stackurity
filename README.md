@@ -69,7 +69,7 @@ docker compose exec stackurity stackurity admin load-demo        # --remove dele
 
 Put Stackurity behind a reverse proxy that serves HTTPS (Caddy, nginx, Traefik), set `STACKURITY_BASE_URL=https://stackurity.example.com` and leave `STACKURITY_COOKIE_SECURE` at its default. The steps, Kubernetes (Helm), backups and the upgrade checklist are in [docs/install.md](docs/install.md). Never set `STACKURITY_COOKIE_SECURE=false` on a server other people reach: the server logs a warning and Platform health shows one if you do.
 
-For TLS, backups, upgrades, Kubernetes (Helm), the agents and plugins, see [docs/install.md](docs/install.md). [docs/compatibility.md](docs/compatibility.md) lists supported platforms and what each can assess, [docs/verification.md](docs/verification.md) how each claim is tested, and [CHANGELOG.md](CHANGELOG.md) what changed in each release. [docs/security-audit.md](docs/security-audit.md) covers the threat model and how releases are signed. The API is described in [docs/api.md](docs/api.md), and every outbound connection is listed in [docs/network.md](docs/network.md).
+For TLS, backups, upgrades, Kubernetes (Helm), the agents and plugins, see [docs/install.md](docs/install.md). [docs/compatibility.md](docs/compatibility.md) lists supported platforms and what each can assess, [docs/verification.md](docs/verification.md) how each claim is tested, and [CHANGELOG.md](CHANGELOG.md) what changed in each release. [docs/security-audit.md](docs/security-audit.md) covers the threat model and how releases are signed, and [docs/operations.md](docs/operations.md) the recommended alerts, their runbooks and operational drills. The API is described in [docs/api.md](docs/api.md), and every outbound connection is listed in [docs/network.md](docs/network.md).
 
 ## Known limitations
 
@@ -88,7 +88,7 @@ For TLS, backups, upgrades, Kubernetes (Helm), the agents and plugins, see [docs
 
 ## Editions
 
-Community is free and complete for finding and prioritising what to fix. Pro adds automatic fixing, multi-team workflow, the evidence report and single sign-on; Enterprise adds packs for enterprise technologies. See [Editions and licences](docs/install.md#editions-and-licences).
+Community is free and complete for finding and prioritising what to fix. Pro adds automatic fixing, multi-team workflow, the evidence report and single sign-on; Enterprise adds packs for enterprise technologies. [docs/editions.md](docs/editions.md) has the full matrix with limits and prerequisites; licences are covered in [Editions and licences](docs/install.md#editions-and-licences).
 
 ## Principles
 

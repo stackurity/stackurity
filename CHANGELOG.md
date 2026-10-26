@@ -21,6 +21,24 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 - `deploy/docker-compose.yml` passes `STACKURITY_BASE_URL` to the server; before, setting it in `deploy/.env` had no effect.
 
+### Added
+
+- **Recommended Prometheus alerts** (`deploy/prometheus/stackurity-alerts.yml`): 25 alerts with thresholds, a severity label, a summary and a runbook link, covering servers down or restarting, mixed versions, the database down, pool saturation, API and ingest errors, critical platform health, stale and failing feeds, periodic tasks that stop succeeding (stuck leases), failed jobs, job queue age, failed notifications, failing channels, a notification backlog and assets that stop reporting. They are unit tested with `promtool test rules` in CI. The Helm chart renders the same rules as a PrometheusRule with `metrics.prometheusRule.enabled=true` (when the cluster serves `monitoring.coreos.com/v1`).
+- **Operations runbook** (`docs/operations.md`): what to watch, what each alert means and what to do, and drills with exact steps and expected observations for a database interruption, disk exhaustion, a prolonged upstream outage, a notification provider failure and an unreachable agent. Each drill except disk exhaustion is also a scenario in `internal/crashtest`, run in CI.
+- **Notification metrics and health:** `stackurity_notification_deliveries{kind,state}` (pending, retrying, held, failed in the last 24 hours), `stackurity_notification_oldest_due_age_seconds` and `stackurity_notification_channels_failing{kind}`. Platform health warns about failed notifications, failing channels and notifications waiting over 15 minutes, and `GET /api/v1/admin/health` returns the counts.
+- **Edition matrix** (`docs/editions.md`): capabilities of Community, Pro and Enterprise with their limits and prerequisites, and which need the licensed build rather than only a licence.
+- **Tenant-isolation incident process** in `SECURITY.md` and `docs/security-audit.md`: reporting, triage with the logs, audit events and row-level security checks to run, containment, notification and disclosure, and the security-sensitive areas reviewers should know.
+- The workspace isolation suite (`tools/release-checks/isolation.sh`) runs as its own **Workspace isolation** check on pull requests and before every release; any failure, skip or missing test blocks the release.
+
+### Fixed
+
+- While the database was unreachable, requests with valid API tokens or sessions were answered `401`, so agents and CI dropped their submissions instead of retrying and the dashboard signed people out. They now get `503`, which clients retry. Found by the new database-outage crash scenario.
+- During a database outage the scheduler logged one error per periodic task on every tick; it now logs one line per tick.
+
+### Upgrading
+
+- Migration 0027 adds `deliveries.failed_at`. Deliveries that failed before the upgrade count as failed when they were queued.
+
 ## 0.4.0
 
 ### Security

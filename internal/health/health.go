@@ -27,7 +27,7 @@ const (
 // Problem is one thing an operator should look at.
 type Problem struct {
 	Severity Severity `json:"severity"`
-	Kind     string   `json:"kind"` // feed, task, jobs, intelligence
+	Kind     string   `json:"kind"` // feed, task, jobs, notifications, intelligence, platform
 	Key      string   `json:"key"`  // feed name, task name, job kind
 	Title    string   `json:"title"`
 	Detail   string   `json:"detail,omitempty"`
@@ -45,6 +45,14 @@ type Report struct {
 	// RecentFailures are the latest jobs that gave up in the last 24 hours,
 	// in any workspace, with their errors.
 	RecentFailures []FailedJob `json:"recent_failures"`
+	// Deliveries counts notification deliveries by channel kind and state
+	// (pending, retrying, held, failed in the last 24 hours).
+	Deliveries []store.DeliveryCount `json:"deliveries"`
+	// OldestDueDeliverySeconds is how long the oldest due notification has
+	// waited to be sent.
+	OldestDueDeliverySeconds float64 `json:"oldest_due_delivery_seconds"`
+	// FailingChannels counts enabled channels whose last send failed.
+	FailingChannels []store.ChannelCount `json:"failing_channels"`
 }
 
 // FailedJob is a job that ran out of retries. Its payload is left out.
@@ -67,6 +75,9 @@ const (
 	taskGraceMin = 10 * time.Minute
 	// queueBacklog is how long a due job may wait before it is a problem.
 	queueBacklog = 30 * time.Minute
+	// deliveryBacklog is how long a due notification may wait to be sent
+	// before it is a problem. The alert dispatcher runs every minute.
+	deliveryBacklog = 15 * time.Minute
 	// firstSync is how long a new installation has to complete its first
 	// intelligence sync before that is critical.
 	firstSync = time.Hour
@@ -183,6 +194,10 @@ func (c *Checker) Check(ctx context.Context) (*Report, error) {
 				"Serve Stackurity over HTTPS and remove STACKURITY_COOKIE_SECURE; for a local evaluation only, set " +
 				"STACKURITY_BASE_URL to the http://localhost address you use."})
 	}
+	if r.Deliveries, r.OldestDueDeliverySeconds, r.FailingChannels, err = c.Store.DeliveryStats(ctx); err != nil {
+		return nil, err
+	}
+	r.Problems = append(r.Problems, deliveryProblems(r)...)
 	if wait := time.Duration(r.OldestQueuedSeconds * float64(time.Second)); wait > queueBacklog {
 		r.Problems = append(r.Problems, Problem{Severity: Warning, Kind: "jobs", Key: "backlog",
 			Title:  "Background jobs are backing up",
@@ -224,6 +239,41 @@ func taskProblems(t store.PeriodicTask, now time.Time) []Problem {
 			Detail: "Last error: " + t.LastError}}
 	}
 	return nil
+}
+
+// deliveryProblems flags notifications that failed, channels whose last
+// send failed and notifications that wait too long to be sent. They are
+// warnings: the people affected are told by the delivery log, and a
+// critical problem would raise a platform incident through the same
+// channels. Details stay generic because channel names belong to
+// workspaces.
+func deliveryProblems(r *Report) []Problem {
+	var out []Problem
+	var failed, failing int64
+	for _, d := range r.Deliveries {
+		if d.State == "failed" {
+			failed += d.Count
+		}
+	}
+	for _, c := range r.FailingChannels {
+		failing += c.Count
+	}
+	if failed > 0 {
+		out = append(out, Problem{Severity: Warning, Kind: "notifications", Key: "failed",
+			Title:  fmt.Sprintf("%d notification(s) failed in the last 24 hours", failed),
+			Detail: "They ran out of attempts. Each workspace's delivery log (Settings → Notifications) shows the errors and can send them again."})
+	}
+	if failing > 0 {
+		out = append(out, Problem{Severity: Warning, Kind: "notifications", Key: "channels",
+			Title:  fmt.Sprintf("%d notification channel(s) failed their last send", failing),
+			Detail: "Messages to them are retried. Check the channel's last error under Settings → Notifications in its workspace."})
+	}
+	if wait := time.Duration(r.OldestDueDeliverySeconds * float64(time.Second)); wait > deliveryBacklog {
+		out = append(out, Problem{Severity: Warning, Kind: "notifications", Key: "backlog",
+			Title:  "Notifications are waiting to be sent",
+			Detail: fmt.Sprintf("The oldest due notification has waited %s. Check the alerts background task.", wait.Round(time.Minute))})
+	}
+	return out
 }
 
 func feedProblems(feeds []store.Feed, now time.Time, enabled bool) []Problem {

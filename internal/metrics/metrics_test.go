@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http/httptest"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -129,6 +130,24 @@ func TestHandlerOutput(t *testing.T) {
 		`INSERT INTO jobs (kind, payload) VALUES ('integration.run', '{}')`); err != nil {
 		t.Fatal(err)
 	}
+	// A webhook that failed its last send: one delivery retrying, one that
+	// ran out of attempts, one overdue and one sent.
+	wsCtx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	for _, sql := range []string{
+		`INSERT INTO channels (kind, name, config, last_error) VALUES ('webhook', 'hook', '{}', 'HTTP 503')`,
+		`INSERT INTO deliveries (channel_id, event, dedupe_key, payload, attempts, last_error, next_attempt)
+			SELECT id, 'opened', 'a', '{}', 2, 'HTTP 503', now() + interval '1 minute' FROM channels`,
+		`INSERT INTO deliveries (channel_id, event, dedupe_key, payload, attempts, last_error, status, failed_at)
+			SELECT id, 'opened', 'b', '{}', 8, 'HTTP 503', 'failed', now() FROM channels`,
+		`INSERT INTO deliveries (channel_id, event, dedupe_key, payload, next_attempt)
+			SELECT id, 'opened', 'c', '{}', now() - interval '20 minutes' FROM channels`,
+		`INSERT INTO deliveries (channel_id, event, dedupe_key, payload, status, sent_at)
+			SELECT id, 'opened', 'd', '{}', 'sent', now() FROM channels`,
+	} {
+		if _, err := st.Pool.Exec(wsCtx, sql); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	httpm := NewHTTP()
 	httpm.Observe("GET", "/healthz", 200, time.Millisecond)
@@ -156,6 +175,10 @@ func TestHandlerOutput(t *testing.T) {
 		`stackurity_feed_last_success_timestamp_seconds{feed="kev",kind="vulnerability"} 0`,
 		`stackurity_feed_records{feed="osv:npm",kind="vulnerability"} 42`,
 		"stackurity_assets_stale 0\n",
+		`stackurity_notification_deliveries{kind="webhook",state="retrying"} 1`,
+		`stackurity_notification_deliveries{kind="webhook",state="failed"} 1`,
+		`stackurity_notification_deliveries{kind="webhook",state="pending"} 1`,
+		`stackurity_notification_channels_failing{kind="webhook"} 1`,
 		`stackurity_health_problems{severity="critical"} 1`,
 		`stackurity_http_requests_total{method="GET",route="/healthz",code="2xx"} 1`,
 		`stackurity_db_pool_connections{state="idle"}`,
@@ -163,6 +186,12 @@ func TestHandlerOutput(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %s", want)
 		}
+	}
+	if strings.Contains(out, `state="sent"`) {
+		t.Error("sent deliveries are not counted")
+	}
+	if age := sampleValue(t, out, "stackurity_notification_oldest_due_age_seconds"); age < 20*60 || age > 30*60 {
+		t.Errorf("oldest due notification age = %v, want about 20 minutes", age)
 	}
 	if strings.Contains(out, "workspace=") || strings.Contains(out, "asset=") {
 		t.Error("workspace and asset ids must not be labels")
@@ -177,4 +206,20 @@ func TestHandlerOutput(t *testing.T) {
 	if rec.Code != 200 || !strings.Contains(out, "stackurity_database_up 0\n") || !strings.Contains(out, "stackurity_scrape_errors 1\n") {
 		t.Errorf("database down: %d\n%s", rec.Code, out)
 	}
+}
+
+// sampleValue returns the value of an unlabelled series.
+func sampleValue(t *testing.T, text, name string) float64 {
+	t.Helper()
+	for _, line := range strings.Split(text, "\n") {
+		if v, ok := strings.CutPrefix(line, name+" "); ok {
+			f, err := strconv.ParseFloat(v, 64)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return f
+		}
+	}
+	t.Fatalf("no %s in the output", name)
+	return 0
 }

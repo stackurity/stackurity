@@ -409,13 +409,18 @@ func (s *Store) TokenPrincipal(ctx context.Context, secret string) (*Token, *Use
 	if err != nil {
 		return nil, nil, notFound(err)
 	}
-	if ok, err := s.WorkspaceEnabled(ctx, t.WorkspaceID); err != nil || !ok {
+	if ok, err := s.WorkspaceEnabled(ctx, t.WorkspaceID); err != nil {
+		return nil, nil, err
+	} else if !ok {
 		return nil, nil, ErrNotFound
 	}
 	_, _ = s.Pool.Exec(sys, `UPDATE api_tokens SET last_used_at = now() WHERE id = $1 AND (last_used_at IS NULL OR last_used_at < now() - interval '1 minute')`, t.ID)
 	var u *User
 	if t.UserID != nil {
 		u, err = s.GetUser(tenant.WithWorkspace(ctx, t.WorkspaceID), *t.UserID)
+		if err != nil && !errors.Is(err, ErrNotFound) {
+			return nil, nil, err
+		}
 		if err != nil || u.Disabled || u.Role == "" {
 			return nil, nil, ErrNotFound
 		}

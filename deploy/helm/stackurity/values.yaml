@@ -34,6 +34,17 @@ metrics:
     # Extra labels, e.g. {release: kube-prometheus-stack}, so your
     # Prometheus's serviceMonitorSelector picks it up.
     labels: {}
+  # The recommended alerts (deploy/prometheus/stackurity-alerts.yml, runbooks
+  # in docs/operations.md) as a PrometheusRule. Rendered only when the cluster
+  # serves monitoring.coreos.com/v1 (with helm template, pass
+  # --api-versions monitoring.coreos.com/v1/PrometheusRule). StackurityTargetDown
+  # matches scrape jobs whose name contains "stackurity", as the
+  # ServiceMonitor's job (the <release>-stackurity-metrics Service) does.
+  prometheusRule:
+    enabled: false
+    # Extra labels, e.g. {release: kube-prometheus-stack}, so your
+    # Prometheus's ruleSelector picks it up.
+    labels: {}
 
 # PostgreSQL 16+ is required and not bundled. Point at a managed database or
 # an operator such as CloudNativePG.
