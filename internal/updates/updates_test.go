@@ -10,12 +10,14 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
 	"github.com/stackurity/stackurity/internal/testdb"
+	"github.com/stackurity/stackurity/internal/worker"
 )
 
 func rel(tag string, opts ...func(*ghRelease)) ghRelease {
@@ -321,7 +323,7 @@ func TestOptOutMakesNoRequest(t *testing.T) {
 		t.Fatalf("config: %+v %v", cfg, err)
 	}
 	var s sched
-	if Register(&s, nil, quiet(), cfg) || len(s.names) != 0 {
+	if Register(context.Background(), &s, nil, quiet(), cfg) || len(s.names) != 0 {
 		t.Errorf("registered while off: %v", s.names)
 	}
 	if f.count() != 0 {
@@ -332,7 +334,7 @@ func TestOptOutMakesNoRequest(t *testing.T) {
 	if cfg, err = ConfigFromEnv(); err != nil || !cfg.Enabled {
 		t.Fatalf("default: %+v %v", cfg, err)
 	}
-	if !Register(&s, nil, quiet(), cfg) || fmt.Sprint(s.names) != "[update-check]" {
+	if !Register(context.Background(), &s, nil, quiet(), cfg) || fmt.Sprint(s.names) != "[update-check]" {
 		t.Errorf("not registered: %v", s.names)
 	}
 	t.Setenv("STACKURITY_UPDATE_CHECK", "maybe")
@@ -357,5 +359,99 @@ func TestStateIsPlatformOnly(t *testing.T) {
 	ws := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
 	if err := st.Pool.QueryRow(ws, `SELECT count(*) FROM instance_state WHERE key = 'update_check'`).Scan(&n); err != nil || n != 0 {
 		t.Errorf("workspace sees %d rows (%v)", n, err)
+	}
+}
+
+// The worker runs periodic tasks one after another. The release check's
+// random wait and its request run in the background, so the other tasks
+// (the notification tick among them) keep their pace while it is due and
+// in flight. Before, they stopped for the whole wait and request.
+func TestCheckDoesNotHoldUpOtherTasks(t *testing.T) {
+	f := newFake(t, rel("v0.4.0"))
+	gate := make(chan struct{})
+	inFlight := make(chan struct{}, 1)
+	slow := f.srv.Config.Handler
+	var requests atomic.Int64
+	f.srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		select {
+		case inFlight <- struct{}{}:
+		default:
+		}
+		<-gate // the release service answers slowly
+		slow.ServeHTTP(w, r)
+	})
+	c, st := newChecker(t, f)
+	c.Jitter = 800 * time.Millisecond
+	c.done = make(chan error, 2)
+	ctx, stop := context.WithCancel(context.Background())
+	defer stop()
+	c.Base = ctx
+
+	w := worker.New(st, quiet())
+	w.Tick, w.Lease = 20*time.Millisecond, 2*time.Second
+	var ticks atomic.Int64
+	w.Every("alerts", 50*time.Millisecond, func(context.Context) error { ticks.Add(1); return nil })
+	w.Every("update-check", Every, c.Start)
+	go w.Run(ctx)
+
+	// Due: the random wait, then the request, which hangs.
+	select {
+	case <-inFlight:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the check never sent its request")
+	}
+	before := ticks.Load()
+	time.Sleep(time.Second)
+	if n := ticks.Load() - before; n < 5 {
+		t.Errorf("the notification tick ran %d times in a second while the check was in flight, want at least 5", n)
+	}
+	// A second start while one runs does nothing.
+	if err := c.Start(tenant.System(ctx)); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(c.Jitter + 200*time.Millisecond)
+	if n := requests.Load(); n != 1 {
+		t.Errorf("a second start while one runs: %d requests, want 1", n)
+	}
+	close(gate)
+	select {
+	case err := <-c.done:
+		if err != nil {
+			t.Fatalf("check: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the check did not finish")
+	}
+	if r := status(t, st, "v0.3.1"); r.Latest != "0.4.0" {
+		t.Errorf("after the check: %+v", r)
+	}
+}
+
+// Shutdown stops a check that is waiting or in flight.
+func TestCheckStopsAtShutdown(t *testing.T) {
+	f := newFake(t, rel("v0.4.0"))
+	c, st := newChecker(t, f)
+	c.Jitter = time.Hour
+	c.done = make(chan error, 1)
+	ctx, stop := context.WithCancel(context.Background())
+	c.Base = ctx
+	if err := c.Start(tenant.System(context.Background())); err != nil {
+		t.Fatal(err)
+	}
+	stop()
+	select {
+	case err := <-c.done:
+		if err == nil {
+			t.Error("a cancelled check reported success")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the check kept waiting after shutdown")
+	}
+	if f.count() != 0 {
+		t.Errorf("%d requests after shutdown", f.count())
+	}
+	if r := status(t, st, "v0.3.1"); r.CheckedAt != nil {
+		t.Errorf("stored after shutdown: %+v", r)
 	}
 }

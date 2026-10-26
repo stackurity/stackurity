@@ -253,7 +253,7 @@ func serverCmd() *cobra.Command {
 			registerPro(w, st, log, gate)
 			// The release check sends nothing about this install (see
 			// internal/updates); when it is off no request is made at all.
-			updates.Register(w, st, log, updateCfg)
+			updates.Register(ctx, w, st, log, updateCfg)
 			// The worker stops when a newer version migrates the database
 			// under this server (watchSchema); the API keeps answering, but
 			// /readyz fails so traffic moves to the new replicas.

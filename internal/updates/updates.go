@@ -25,10 +25,12 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
 	"github.com/stackurity/stackurity/internal/store"
+	"github.com/stackurity/stackurity/internal/tenant"
 	"github.com/stackurity/stackurity/internal/version"
 )
 
@@ -109,7 +111,18 @@ type Checker struct {
 	// Jitter is the longest random wait before a check, so that installs
 	// started together do not all call at the same moment.
 	Jitter time.Duration
+	// Base bounds checks started in the background (Start): cancelling it,
+	// at shutdown, stops a wait or a request in flight. Nil: they are
+	// bounded by their own timeout only.
+	Base context.Context
+	// running is set while a background check runs, so ticks never stack.
+	running atomic.Bool
+	// done, when set (tests), receives each background check's outcome.
+	done chan error
 }
+
+// requestTimeout bounds one request for the release list.
+const requestTimeout = 30 * time.Second
 
 // NewChecker returns a checker with the default client and jitter.
 func NewChecker(st *store.Store, log *slog.Logger, cfg Config) *Checker {
@@ -117,7 +130,7 @@ func NewChecker(st *store.Store, log *slog.Logger, cfg Config) *Checker {
 	if u == "" {
 		u = DefaultURL
 	}
-	return &Checker{Store: st, Log: log, URL: u, HTTP: &http.Client{Timeout: 30 * time.Second}, Jitter: 30 * time.Second}
+	return &Checker{Store: st, Log: log, URL: u, HTTP: &http.Client{Timeout: requestTimeout}, Jitter: 30 * time.Second}
 }
 
 // Scheduler is the part of the worker that runs periodic platform tasks.
@@ -127,25 +140,60 @@ type Scheduler interface {
 
 // Register adds the periodic check to w, leased in the database so that one
 // replica runs it every 12 hours. When the check is off nothing is
-// registered, so no request is ever made.
-func Register(w Scheduler, st *store.Store, log *slog.Logger, cfg Config) bool {
+// registered, so no request is ever made. base is the server's lifetime:
+// a check in flight stops when it ends.
+func Register(base context.Context, w Scheduler, st *store.Store, log *slog.Logger, cfg Config) bool {
 	if !cfg.Enabled {
 		return false
 	}
-	w.Every("update-check", Every, NewChecker(st, log, cfg).Run)
+	c := NewChecker(st, log, cfg)
+	c.Base = base
+	w.Every("update-check", Every, c.Start)
 	return true
 }
 
-// Run is the periodic task. A failed fetch is logged and keeps the last good
+// Start is the periodic task. It returns at once and checks in the
+// background: the worker runs periodic tasks one after another, and the
+// random wait (up to Jitter) and the request (up to requestTimeout) would
+// otherwise hold up every other task, notifications included. A failure
+// is logged; the next check is 12 hours later, as when it ran inline.
+func (c *Checker) Start(ctx context.Context) error {
+	if !c.running.CompareAndSwap(false, true) {
+		return nil // the previous check is still running
+	}
+	base := c.Base
+	if base == nil {
+		base = context.WithoutCancel(ctx)
+	}
+	base = tenant.System(base)
+	var wait time.Duration
+	if c.Jitter > 0 {
+		wait = rand.N(c.Jitter)
+	}
+	go func() {
+		defer c.running.Store(false)
+		bctx, cancel := context.WithTimeout(base, wait+requestTimeout+10*time.Second)
+		defer cancel()
+		var err error
+		select {
+		case <-bctx.Done():
+			err = bctx.Err()
+		case <-time.After(wait):
+			err = c.Run(bctx)
+		}
+		if err != nil && base.Err() == nil {
+			c.Log.Warn("update check could not store its result", "err", err)
+		}
+		if c.done != nil {
+			c.done <- err
+		}
+	}()
+	return nil
+}
+
+// Run checks once, now. A failed fetch is logged and keeps the last good
 // result; only a database failure is returned as an error.
 func (c *Checker) Run(ctx context.Context) error {
-	if c.Jitter > 0 {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(rand.N(c.Jitter)):
-		}
-	}
 	rels, err := c.Fetch(ctx)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -197,7 +245,7 @@ func (c *Checker) Fetch(ctx context.Context) ([]Release, error) {
 	req.Header.Set("Accept", "application/vnd.github+json")
 	hc := c.HTTP
 	if hc == nil {
-		hc = &http.Client{Timeout: 30 * time.Second}
+		hc = &http.Client{Timeout: requestTimeout}
 	}
 	resp, err := hc.Do(req)
 	if err != nil {
