@@ -124,6 +124,16 @@ func writeHealth(w *Writer, r *health.Report) {
 	}
 	w.Gauge("stackurity_jobs_oldest_queued_age_seconds", "How long the oldest due job has waited for a worker.", r.OldestQueuedSeconds)
 
+	w.Family("stackurity_notification_deliveries", "gauge", "Notification deliveries by channel kind and state (pending, retrying, held, failed in the last 24 hours).")
+	for _, d := range r.Deliveries {
+		w.Sample("stackurity_notification_deliveries", float64(d.Count), "kind", d.Kind, "state", d.State)
+	}
+	w.Gauge("stackurity_notification_oldest_due_age_seconds", "How long the oldest due notification has waited to be sent.", r.OldestDueDeliverySeconds)
+	w.Family("stackurity_notification_channels_failing", "gauge", "Enabled notification channels whose last send failed, by kind.")
+	for _, c := range r.FailingChannels {
+		w.Sample("stackurity_notification_channels_failing", float64(c.Count), "kind", c.Kind)
+	}
+
 	w.Family("stackurity_periodic_task_interval_seconds", "gauge", "How often each periodic task runs.")
 	for _, t := range r.Tasks {
 		w.Sample("stackurity_periodic_task_interval_seconds", t.EverySeconds, "task", t.Name)

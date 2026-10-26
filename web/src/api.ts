@@ -160,7 +160,7 @@ export interface LicenseInfo {
 export interface PlatformHealth {
   status: "ok" | "warning" | "critical";
   checked_at: string;
-  problems: { severity: "critical" | "warning"; kind: "feed" | "task" | "jobs" | "intelligence"; key: string; title: string; detail?: string }[];
+  problems: { severity: "critical" | "warning"; kind: "feed" | "task" | "jobs" | "notifications" | "intelligence" | "platform"; key: string; title: string; detail?: string }[];
   tasks: {
     name: string;
     every_seconds: number;
@@ -173,6 +173,10 @@ export interface PlatformHealth {
   jobs: { kind: string; state: "queued" | "scheduled" | "running" | "failed"; count: number }[];
   oldest_queued_seconds: number;
   recent_failures: { id: number; kind: string; workspace_id: number | null; attempts: number; last_error: string; failed_at: string }[];
+  /** Notification deliveries by channel kind and state; failed means in the last 24 hours. */
+  deliveries: { kind: string; state: "pending" | "retrying" | "held" | "failed"; count: number }[];
+  oldest_due_delivery_seconds: number;
+  failing_channels: { kind: string; count: number }[];
 }
 
 /** One published, stable release newer than the running one. */

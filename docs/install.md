@@ -416,7 +416,7 @@ Any number of servers can run against one PostgreSQL database, behind a load bal
 
 - `GET /healthz`: the process is up.
 - `GET /readyz`: the database is reachable. The container health check uses this.
-- **Platform health** (**Settings → Platform health**, instance administrators; `GET /api/v1/admin/health`): flags an intelligence feed that is stale beyond its threshold or failing, a background task that has not succeeded within three times its interval (at least ten minutes), jobs that ran out of retries in the last 24 hours, a backlog of waiting jobs, and vulnerability intelligence that never synced. Instance administrators see a banner on every page while a critical problem exists.
+- **Platform health** (**Settings → Platform health**, instance administrators; `GET /api/v1/admin/health`): flags an intelligence feed that is stale beyond its threshold or failing, a background task that has not succeeded within three times its interval (at least ten minutes), jobs that ran out of retries in the last 24 hours, a backlog of waiting jobs, notifications that ran out of attempts in the last 24 hours, channels whose last send failed, notifications waiting more than 15 minutes to be sent, and vulnerability intelligence that never synced. Instance administrators see a banner on every page while a critical problem exists.
 - **Platform incidents:** critical problems other than feeds (every workspace already gets its own feed incidents) also open a `platform` incident in the operators' workspace, so its notification routes tell them. That is the default workspace (workspace 1) unless `STACKURITY_PLATFORM_WORKSPACE` names another by id or slug (`STACKURITY_PLATFORM_WORKSPACE=ops`); changing it resolves the incidents in the old workspace and raises them in the new one. If that workspace is disabled or does not exist, no platform incidents are raised anywhere: the server logs each critical problem every ten minutes (`platform problem not raised as an incident`), instance administrators still see the banner, and Platform health shows a warning saying why. Platform incidents carry no error details, which can name other workspaces; the Platform health page has those. If the alert dispatcher itself is stuck it cannot report that, so also watch the metrics below.
 - **Metrics:** set `STACKURITY_METRICS_ADDR` (for example `127.0.0.1:9100`, or `:9100` in a container) to serve Prometheus metrics at `/metrics` on a separate listener. It has no authentication, so keep it on a private network. Database-derived values are the same on every replica; HTTP, pool and Go values are per replica.
 
@@ -431,6 +431,9 @@ Any number of servers can run against one PostgreSQL database, behind a load bal
 | `stackurity_jobs_oldest_queued_age_seconds` | | How long the oldest due job has waited |
 | `stackurity_periodic_task_last_success_timestamp_seconds`, `_consecutive_failures`, `_interval_seconds`, `_last_duration_seconds`, `_running` | `task` | Periodic task health |
 | `stackurity_feed_last_success_timestamp_seconds`, `stackurity_feed_stale`, `stackurity_feed_failing`, `stackurity_feed_records` | `feed`, `kind` | Intelligence feed freshness (enabled feeds) |
+| `stackurity_notification_deliveries` | `kind` (channel kind), `state` (`pending`, `retrying`, `held`, `failed` in the last 24 hours) | Notification deliveries, across workspaces |
+| `stackurity_notification_oldest_due_age_seconds` | | How long the oldest due notification has waited to be sent |
+| `stackurity_notification_channels_failing` | `kind` | Enabled channels whose last send failed |
 | `stackurity_assets_stale` | | Assets that stopped reporting, across workspaces |
 | `stackurity_health_problems` | `severity` | Problems the platform health check found |
 

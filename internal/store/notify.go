@@ -274,7 +274,7 @@ func (s *Store) DeliveryFailed(ctx context.Context, id int64, attempts, maxAttem
 func (s *Store) DeliveryFailedWait(ctx context.Context, id int64, attempts, maxAttempts int, sendErr error, wait time.Duration) error {
 	msg := truncateText(sendErr.Error(), 1000)
 	if attempts >= maxAttempts {
-		_, err := s.Pool.Exec(ctx, `UPDATE deliveries SET status = 'failed', last_error = $2 WHERE id = $1`, id, msg)
+		_, err := s.Pool.Exec(ctx, `UPDATE deliveries SET status = 'failed', failed_at = now(), last_error = $2 WHERE id = $1`, id, msg)
 		return err
 	}
 	backoff := max(time.Duration(1<<min(max(attempts-1, 0), 8))*30*time.Second, wait)
@@ -299,7 +299,7 @@ func (s *Store) HoldDelivery(ctx context.Context, id int64, reason string) error
 
 // RetryDelivery puts a failed delivery back in the queue.
 func (s *Store) RetryDelivery(ctx context.Context, id int64) error {
-	tag, err := s.Pool.Exec(ctx, `UPDATE deliveries SET status = 'pending', next_attempt = now() WHERE id = $1 AND status IN ('failed', 'held')`, id)
+	tag, err := s.Pool.Exec(ctx, `UPDATE deliveries SET status = 'pending', next_attempt = now(), failed_at = NULL WHERE id = $1 AND status IN ('failed', 'held')`, id)
 	if err == nil && tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
