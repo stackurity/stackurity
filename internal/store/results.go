@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/stackurity/stackurity/internal/tenant"
 )
 
 // DBNow returns the database clock, which collection and job times use.
@@ -110,4 +112,29 @@ func (s *Store) GetCollectionResult(ctx context.Context, id int64) (*CollectionR
 	err = s.Pool.QueryRow(ctx, `SELECT count(DISTINCT component_id) FROM inventory
 		WHERE asset_id = $1 AND removed_at IS NULL AND coverage IN ('unsupported', 'not_evaluated')`, res.AssetID).Scan(&res.Gaps)
 	return res, err
+}
+
+// evaluationLock is the advisory lock key space for evaluations: the key is
+// this plus the workspace id.
+const evaluationLock int64 = 0x5354_4b45_0000_0000
+
+// LockEvaluations waits until no other evaluation of the context's
+// workspace runs, and holds that until release is called. Evaluations read
+// the inventory, the feeds and the findings, then write coverage and
+// findings; two of them overlapping could let one that read older feed
+// state write after a newer one, resolving findings the newer one had just
+// opened. Serialised, each evaluation reads what the previous one wrote.
+// The lock is held by a transaction (it ends with the connection if the
+// process dies) and waiting stops when ctx is cancelled.
+func (s *Store) LockEvaluations(ctx context.Context) (release func(), err error) {
+	ws, _ := tenant.Workspace(ctx) // 0 (no workspace): evaluations in system scope
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, evaluationLock+ws); err != nil {
+		_ = tx.Rollback(context.WithoutCancel(ctx))
+		return nil, err
+	}
+	return func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }, nil
 }

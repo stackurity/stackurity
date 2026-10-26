@@ -40,6 +40,7 @@ Proof (1.0):
 ### Fixed
 
 - **The release check no longer holds up alerts and other background tasks.** Periodic tasks run one after another, and the check waited a random 0 to 30 seconds and then up to 30 seconds for GitHub inside its turn, so after each start, and every 12 hours, notifications and the other periodic tasks could pause for up to a minute. The wait and the request now run in the background, at most one at a time, and stop when the server shuts down.
+- **Evaluations no longer resolve and reopen the same findings when they overlap.** Two evaluations of one organisation could run at once; one that read the intelligence feeds before a sync finished could write after a newer one and resolve the findings it had just opened, which the next evaluation then reopened: a "fixed" that never happened in summaries, a duplicate incident, and possibly a wrong Check again result. Evaluations of an organisation now run one at a time (a database lock per organisation), so each reads what the previous one wrote.
 
 ### Upgrading
 
