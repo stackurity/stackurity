@@ -156,11 +156,13 @@ func TestDeliveryProblems(t *testing.T) {
 		}
 		byKey[p.Key] = p
 	}
-	if !strings.HasPrefix(byKey["failed"].Title, "3 notification(s) failed") {
-		t.Errorf("failed: %+v", byKey["failed"])
+	// Failed deliveries and failing channels are reported per channel by the
+	// notification problems (objects.go); only the backlog is reported here.
+	if len(ps) != 1 {
+		t.Errorf("want only the backlog problem, got %+v", ps)
 	}
-	if !strings.HasPrefix(byKey["channels"].Title, "1 notification channel(s)") {
-		t.Errorf("channels: %+v", byKey["channels"])
+	if b := byKey["backlog"]; b.NextStep == "" || b.Docs == "" {
+		t.Errorf("backlog needs a next step and docs: %+v", b)
 	}
 	if !strings.Contains(byKey["backlog"].Detail, "20m") {
 		t.Errorf("backlog: %+v", byKey["backlog"])

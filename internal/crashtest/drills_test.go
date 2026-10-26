@@ -156,9 +156,12 @@ func TestNotificationProviderOutage(t *testing.T) {
 		failing, _ := metric(m, `stackurity_notification_channels_failing{kind="webhook"}`)
 		return retrying > 0 && failing == 1
 	})
-	if p := e.problem("notifications", "channels"); p == nil {
-		t.Error("platform health does not report the failing channel")
-	}
+	// A channel is reported once a delivery to it has failed twice, so one
+	// passing glitch does not raise a problem.
+	waitFor(t, 60*time.Second, "platform health to report the failing channel", func() bool {
+		p := e.problem("notification", "delivery")
+		return p != nil && p.NextStep != "" && p.Scope.Count == 1
+	})
 
 	// Skip the backoff: the next attempt is the last.
 	e.exec(`UPDATE deliveries SET attempts = 7, next_attempt = now() WHERE status = 'pending'`)
@@ -171,8 +174,9 @@ func TestNotificationProviderOutage(t *testing.T) {
 	if v, _ := metric(m, `stackurity_notification_deliveries{kind="webhook",state="failed"}`); v != float64(failed) {
 		t.Errorf("%d failed deliveries, metrics:\n%s", failed, grep(m, "stackurity_notification"))
 	}
-	if p := e.problem("notifications", "failed"); p == nil || !strings.HasPrefix(p.Title, strconv.FormatInt(failed, 10)+" notification(s) failed") {
-		t.Errorf("platform health: %+v, want %d failed notifications", p, failed)
+	// The summary counts channels whose deliveries were given up: here one.
+	if p := e.problem("notification", "delivery"); p == nil || !strings.Contains(p.Scope.Summary, "failed in the last 7 days (1)") {
+		t.Errorf("platform health: %+v, want the channel with its %d failed deliveries", p, failed)
 	}
 	e.logf("%d deliveries failed after 8 attempts; metrics and platform health report them", failed)
 	if n := len(e.hook.counts()); n != 0 {
