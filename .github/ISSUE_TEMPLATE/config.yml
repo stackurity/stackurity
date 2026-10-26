@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability in Stackurity
+    url: https://github.com/stackurity/stackurity/security/advisories/new
+    about: Please report vulnerabilities privately, not as an issue (see SECURITY.md).
+  - name: Questions and pilots
+    url: https://stackurity.dev/#contact
+    about: Ask a question or talk to us about a pilot.

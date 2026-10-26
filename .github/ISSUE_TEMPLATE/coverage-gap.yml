@@ -1,0 +1,36 @@
+name: Coverage gap
+description: Stackurity marks something as not checked or unsupported, and you need it covered.
+title: "Coverage: <what is not checked>"
+labels: [coverage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Stackurity shows what it cannot check instead of treating it as clean. This form tells us which gaps matter most, so we can prioritise them.
+  - type: input
+    id: version
+    attributes:
+      label: Stackurity version
+      placeholder: v0.5.0
+    validations:
+      required: true
+  - type: input
+    id: what
+    attributes:
+      label: What is not checked
+      description: The OS, ecosystem, lockfile, cloud service or platform, as precisely as you can.
+      placeholder: Oracle Linux 9 packages, or Gradle without lockfiles, or Kubernetes control plane
+    validations:
+      required: true
+  - type: input
+    id: reason
+    attributes:
+      label: The reason Stackurity gives
+      description: 'From the asset or component page ("not checked: ...").'
+  - type: textarea
+    id: impact
+    attributes:
+      label: How much of your estate does this affect?
+      description: Roughly how many servers, repositories or images, and whether they are in production.
+    validations:
+      required: true

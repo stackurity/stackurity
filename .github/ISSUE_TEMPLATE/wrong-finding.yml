@@ -1,0 +1,55 @@
+name: Wrong finding (false positive)
+description: Stackurity reports a vulnerability or end of life that does not apply.
+title: "Wrong finding: <advisory id> on <package>"
+labels: [matching, false-positive]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you. Each confirmed report becomes a permanent test case (`internal/intel/testdata/corpus`), so the same mistake cannot come back.
+        **Do not paste secrets, tokens, internal hostnames or IP addresses.** Package names and versions are enough.
+  - type: input
+    id: version
+    attributes:
+      label: Stackurity version
+      description: Shown at the bottom of the sidebar, or `stackurity --version`.
+      placeholder: v0.5.0
+    validations:
+      required: true
+  - type: input
+    id: advisory
+    attributes:
+      label: Advisory or finding
+      description: The id Stackurity shows (CVE, GHSA, DSA, USN, RHSA, ALAS, SUSE-SU, end of life ...).
+      placeholder: CVE-2024-12345
+    validations:
+      required: true
+  - type: input
+    id: package
+    attributes:
+      label: Package and installed version
+      description: As Stackurity shows it, ideally the full package URL from the component page.
+      placeholder: pkg:deb/ubuntu/openssl@3.0.2-0ubuntu1.18?distro=ubuntu-22.04
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Operating system or ecosystem
+      description: For OS packages, ID and VERSION_ID from /etc/os-release. For libraries, the lockfile type.
+      placeholder: ubuntu 22.04, or package-lock.json
+    validations:
+      required: true
+  - type: textarea
+    id: provenance
+    attributes:
+      label: What Stackurity based it on
+      description: 'From the finding page, "How this was decided": the matched advisory, feed, version rules and range. Paste the text.'
+      render: text
+  - type: textarea
+    id: why
+    attributes:
+      label: Why it does not apply
+      description: For example, the fix is in your version (vendor backport), the package is not affected on this release, or the advisory was withdrawn. Link the vendor's statement if you have one.
+    validations:
+      required: true
