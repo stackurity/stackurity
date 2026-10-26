@@ -136,7 +136,7 @@ func (s *Server) createInvitation(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, r, err)
 			return
 		}
-		_ = s.Store.Audit(r.Context(), p.Actor(r), "access.grant", grantObject(g), grantObjectID(g), g)
+		_ = s.Store.Audit(r.Context(), p.Actor(r), "access.grant", "access_grant", itoa(g.ID), g)
 		status := 200
 		if isNew {
 			status = 201
@@ -320,7 +320,7 @@ func (s *Server) acceptInvitation(w http.ResponseWriter, r *http.Request) {
 	_ = s.Store.Audit(ctx, actor, "invitation.accept", "invitation", itoa(res.Invitation.ID),
 		map[string]any{"project_id": res.Invitation.ProjectID, "role": res.Invitation.Role, "joined": res.Joined, "account_created": res.AccountCreated})
 	if res.Grant != nil {
-		_ = s.Store.Audit(ctx, actor, "access.grant", grantObject(res.Grant), grantObjectID(res.Grant), res.Grant)
+		_ = s.Store.Audit(ctx, actor, "access.grant", "access_grant", itoa(res.Grant.ID), res.Grant)
 	}
 	// Work in the organisation just joined: a new session for a new
 	// account, the current one switched for a signed-in person.

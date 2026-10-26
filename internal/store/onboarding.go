@@ -72,7 +72,8 @@ func (s *Store) GetOnboarding(ctx context.Context) (*Onboarding, error) {
 		  EXISTS (SELECT 1 FROM projects WHERE archived_at IS NULL),
 		  CASE WHEN $1::bigint = 0 THEN EXISTS (SELECT 1 FROM assets WHERE merged_into IS NULL)
 		       ELSE EXISTS (SELECT 1 FROM project_assets WHERE project_id = $1) END,
-		  EXISTS (SELECT 1 FROM routes r WHERE r.enabled AND (cardinality(r.project_ids) = 0 OR $1 = ANY(r.project_ids) OR $1::bigint = 0)),
+		  EXISTS (SELECT 1 FROM routes r WHERE CASE WHEN cardinality(r.project_ids) > 0 THEN r.project_enabled ELSE r.enabled END
+		    AND (cardinality(r.project_ids) = 0 OR $1 = ANY(r.project_ids) OR $1::bigint = 0)),
 		  EXISTS (SELECT 1 FROM invitations WHERE revoked_at IS NULL)
 		    OR (SELECT count(*) FROM workspace_members WHERE workspace_id = $2) > 1`, o.ProjectID, ws).
 		Scan(&o.HasAssets, &o.Steps.Project, &o.Steps.Asset, &o.Steps.Notifications, &o.Steps.Invite)
