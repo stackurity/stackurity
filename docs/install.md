@@ -43,6 +43,22 @@ docker compose exec -e STACKURITY_PASSWORD='a long passphrase' stackurity \
   stackurity admin create-user --email you@example.com --role admin
 ```
 
+## Your first ten minutes
+
+After the first administrator signs in, a new organisation with no assets opens in **Set up Stackurity**. Every step can be skipped; Home then shows a checklist until the steps are done. Organisations that already have assets never see it.
+
+1. **Create your first project**: a name and, if you like, a description.
+2. **Add an asset**, which lands in that project:
+   - **A Linux server**: one install command (an enrollment code for up to 5 servers, valid 24 hours). First results in about 2 minutes. The server needs systemd, sudo and outbound HTTPS to the dashboard.
+   - **A code repository**: a collector token to save as the CI secret `STACKURITY_TOKEN`, and a GitHub Actions step (`stackurity/scan-action@v1`) or the `stackurity scan .` command for other CI. First results on the next CI run.
+   - **Upload an SBOM** (CycloneDX or SPDX JSON). First results in under a minute.
+3. **Wait** while it reports: the page shows the packages found and when the check is done.
+4. **The first result**, in plain words: "We found 1,676 packages on commmerceblog. 3 fixes matter now.", with links to them.
+5. **Notifications** for the project: Slack (an incoming webhook URL) or email (your SMTP server), urgent issues right away with a daily summary, or a weekly summary. The webhook URL or SMTP password is stored as an encrypted secret, which needs `STACKURITY_SECRET_KEY` (see [Configuration](#configuration)); without it, set channels up under **Settings → Notifications** with `env:` references.
+6. **Invite people** by email with a role on the project. The link works once, for 7 days. It is emailed through the organisation's first email channel; without one, the dashboard shows it to copy and send yourself.
+
+Connecting an asset is quiet: one "connected" message, and no alerts, Jira issues, escalations or overdue reminders for what it already had. See [A quiet first scan](api.md#a-quiet-first-scan).
+
 ## Configuration
 
 | Variable | Default | Purpose |
@@ -331,7 +347,7 @@ Then add routes:
 - one to the team channel in the default mode, **Urgent right away + daily summary**, urgent from P1, with quiet hours;
 - optionally one in **Daily summary only** or **Weekly summary only** mode for a lead or the security owner, with **Overdue reminders** (Pro).
 
-People get a few messages that bring them to the dashboard, not one per incident: at most one urgent message per route each time the dispatcher runs (every minute), summarised per asset with the fixes that clear the issues ("commmerceblog: 6 new urgent issues. Top fix: Install security updates and reboot (clears 2,913 issues)"); a daily or weekly summary of what is new, what was fixed and by what, the top fixes still open and what is overdue; and, with overdue reminders, at most one message a day when urgent issues pass their fix deadline. A new server's first scan sends one "connected" message ("commmerceblog connected: 1,676 packages checked, 3 fixes need you") instead of alerts for its backlog. Resolved incidents are counted in the summary, never announced one by one. Incidents raised while a route is disabled are recorded as announced and not sent later. See [the API reference](api.md#incidents-and-notifications) for the details and the webhook message.
+People get a few messages that bring them to the dashboard, not one per incident: at most one urgent message per route each time the dispatcher runs (every minute), summarised per asset with the fixes that clear the issues ("commmerceblog: 6 new urgent issues. Top fix: Install security updates and reboot (clears 2,913 issues)"); a daily or weekly summary of what is new, what was fixed and by what, the top fixes still open and what is overdue; and, with overdue reminders, at most one message a day when urgent issues pass their fix deadline. A new server's first scan sends one "connected" message ("commmerceblog connected: 1,676 packages checked, 412 issues found, 3 fixes need you") instead of alerts, Jira issues, escalations or overdue reminders for its backlog. Each fix in a message has **Assign to me**, **Snooze** and **Open** links (buttons in Slack, with a plain incoming webhook) that open it in the dashboard, where you confirm; links of a route limited to projects open in its project. Resolved incidents are counted in the summary, never announced one by one. Incidents raised while a route is disabled are recorded as announced and not sent later. See [the API reference](api.md#incidents-and-notifications) for the details and the webhook message.
 
 ### Jira
 

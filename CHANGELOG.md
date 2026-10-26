@@ -51,6 +51,31 @@ Each release's section is published as its GitHub release notes, and a tag witho
 - A notification route limited to projects is stored switched off in the column releases before 0.8 read (its own switch is in `routes.project_enabled`), so an older release started against the database by mistake never sends every project's alerts to a project's channel; such a release also refuses a database migrated by a newer one.
 - Migration `0032` replaces the row-level security policies of about twenty tables and waits for open transactions on them. It gives up after 10 seconds per lock (`lock_timeout`) instead of blocking the application; if it does, run the upgrade again in a quieter moment. Nothing is half applied.
 
+
+<!-- 0.9 Onboarding -->
+
+### Added
+
+- **Set up Stackurity: the first ten minutes.** A new organisation's administrators start in a short flow: create a project; add a Linux server (one install command, first results in about 2 minutes), a code repository (a CI token with a GitHub Actions step or `stackurity scan`, results on the next CI run) or an SBOM (under a minute), and what is added lands in the project; a waiting screen that counts what arrives; the first result in plain words ("We found 1,676 packages on commmerceblog. 3 fixes matter now."); notifications for the project by Slack or email, urgent right away or a weekly summary; and invitations. Every step can be skipped, and Home keeps a checklist until they are done. Organisations that already have assets never see it. `GET`/`PUT /onboarding`, `GET /onboarding/results`.
+- **Invite people by email, with a role on a project.** An invitation is a link that works once, for 7 days, can be withdrawn, and creates the account (or adds an existing one, signed in as itself) with only that role in only that organisation. It is emailed through the organisation's email channel, or shown once to copy. Tokens are stored as SHA-256, following links is rate limited per address and sending per organisation, and every step is audited (`invitation.create`, `invitation.revoke`, `invitation.accept`). Also on each project's page under **Settings ▸ Projects and access**. `POST`/`GET /invitations`, `DELETE /invitations/{id}`, `POST /invitations/preview`, `POST /invitations/accept`.
+- **Assign to me, Snooze and Open on every fix in Slack and email.** URL buttons in Slack (they work with a plain incoming webhook; no Slack app), links in email and Teams, `actions` in webhook JSON. They open the fix with the action ready, and the person confirms with one tap after signing in; following a link changes nothing. Acting from inside Slack (interactivity) is for later: it needs a public Slack app endpoint and a mapping of Slack users.
+- **Links open in the route's project.** Every link in a message of a route limited to projects carries `?project=`, so the dashboard opens scoped to it.
+- Collector tokens and enrollment codes take `project_id`, and an admin's SBOM upload `?project_id=`: the assets they create are added to that project.
+
+### Changed
+
+- **A quiet first scan is quiet everywhere.** A new asset's backlog (what it reported before its "connected" message) no longer creates Jira issues, is never escalated, and is not counted in overdue reminders or in summaries' overdue and not-acknowledged counts; a late part of it, and an issue that comes back before the asset is announced, raise no alert either. Issues found after the first scan alert, escalate and become overdue as before.
+- Connected messages and summaries say how much an asset's first scan found: "commmerceblog connected: 1,676 packages checked, 412 issues found, 3 fixes need you", and "1 asset connected, 412 issues found" rather than new issues. `counts` gains `connected_issues` (summary) and `issues` (connected).
+
+### Fixed
+
+- The dashboard's project switcher and Projects pages were unstyled in 0.8: a style block left open when 0.7 and 0.8 were merged made their styles apply nowhere.
+
+### Upgrading
+
+- Migration `0033` adds `invitations` (with row-level security per workspace), `workspaces.onboarding_state` and `onboarding_project_id`, `project_id` on `enrollments` and `api_tokens`, and `assets.quiet_backlog`. All are new tables, nullable columns or constant defaults, so no table is rewritten. Workspaces that already have assets are marked as onboarded. Existing assets keep `quiet_backlog` false: their findings keep escalating as before; every asset created after the upgrade gets a quiet first scan.
+- Storing a Slack webhook URL or SMTP password from the first-run flow needs `STACKURITY_SECRET_KEY`; without it the flow says so, and channels can still be set up with `env:` references.
+
 ## 0.6.0
 
 ### Added
