@@ -1204,6 +1204,61 @@ export interface RiskPolicy {
 
 export const DEFAULT_EXCEPTION_MAX_DAYS = 365;
 
+/** Who last changed a policy and when, from the audit log. */
+export interface PolicyChangeRef {
+  at: string;
+  actor_type: string;
+  actor_name: string;
+  version: string;
+  previous_version: string;
+  changed: string[];
+}
+
+/** GET /risk-policy */
+export interface RiskPolicyResponse {
+  policy: RiskPolicy;
+  default: RiskPolicy;
+  version: string;
+  /** Null when the policy has never been changed (the defaults apply). */
+  last_change?: PolicyChangeRef | null;
+}
+
+/** One finding whose priority or SOS a proposed risk policy changes. */
+export interface RiskPreviewFinding {
+  id: number;
+  key: string;
+  title: string;
+  asset_id: number;
+  asset_name: string;
+  before: string;
+  after: string;
+  score_before: number;
+  score_after: number;
+  sos_before: boolean;
+  sos_after: boolean;
+  factors: { name: string; before: number; after: number }[];
+}
+
+/** POST /risk-policy/preview: the proposed policy's effect, nothing saved. */
+export interface RiskPolicyPreview {
+  current_version: string;
+  proposed_version: string;
+  changed_fields: string[];
+  findings: number;
+  before: Record<string, number>;
+  after: Record<string, number>;
+  sos_before: number;
+  sos_after: number;
+  priority_changed: number;
+  raised: number;
+  lowered: number;
+  sos_changed: number;
+  score_changed: number;
+  stored_differs: number;
+  sample: RiskPreviewFinding[];
+  sample_limit: number;
+}
+
 export interface DirectoryUser {
   id: number;
   email: string;

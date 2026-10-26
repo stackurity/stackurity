@@ -142,16 +142,55 @@ const exposureSource = `CASE WHEN a.internet_exposed IS NOT NULL THEN 'operator'
 		WHEN a.attributes->>'exposure' IS NOT NULL THEN 'collector'
 		ELSE '' END`
 
-// Prioritize recomputes priority, SOS and deadlines for every open finding.
-// Deadlines run from first detection; they move only when priority changes.
-func (s *Store) Prioritize(ctx context.Context, p risk.Policy, now time.Time) (int, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT f.id, f.kind, f.severity, f.score, COALESCE((f.evidence->>'known_exploited')::boolean, false),
+// riskRow is an open finding with everything the risk model looks at, as
+// Prioritize and PreviewRiskPolicy read it.
+type riskRow struct {
+	id        int64
+	in        risk.Input
+	firstSeen time.Time
+	title     string
+	key       string
+	assetID   int64
+	assetName string
+	priority  string // stored
+}
+
+// riskRows reads every open finding's risk inputs. Prioritize and the policy
+// preview share it, so a preview scores exactly what a save would.
+func riskRows(ctx context.Context, db q, now time.Time) ([]riskRow, error) {
+	rows, err := db.Query(ctx, `SELECT f.id, f.kind, f.severity, f.score, COALESCE((f.evidence->>'known_exploited')::boolean, false),
 		`+effectiveExposure+`, `+exposureSource+`, a.environment, a.criticality,
 		f.fixed_version <> '' AND NOT COALESCE((f.evidence->>'requires_ubuntu_pro')::boolean, false),
 		i.scope, f.verification, f.first_seen, COALESCE((f.evidence->>'not_running_kernel')::boolean, false),
-		f.priority, f.state, f.fix_due, f.acknowledged_at, f.priority_score
+		f.priority, f.state, f.fix_due, f.title, f.key, a.id, a.name
 		FROM findings f JOIN assets a ON a.id = f.asset_id JOIN inventory i ON i.id = f.inventory_id
 		WHERE f.status = 'open'`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []riskRow
+	for rows.Next() {
+		var (
+			r      riskRow
+			state  string
+			fixDue *time.Time
+		)
+		if err := rows.Scan(&r.id, &r.in.Kind, &r.in.Severity, &r.in.Score, &r.in.KnownExploited, &r.in.InternetExposed, &r.in.ExposureSource,
+			&r.in.Environment, &r.in.Criticality, &r.in.FixAvailable, &r.in.Scope, &r.in.Verification, &r.firstSeen, &r.in.KernelNotRunning,
+			&r.priority, &state, &fixDue, &r.title, &r.key, &r.assetID, &r.assetName); err != nil {
+			return nil, err
+		}
+		r.in.Overdue = fixDue != nil && now.After(*fixDue) && (state == "new" || state == "acknowledged" || state == "in_progress")
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// Prioritize recomputes priority, SOS and deadlines for every open finding.
+// Deadlines run from first detection; they move only when priority changes.
+func (s *Store) Prioritize(ctx context.Context, p risk.Policy, now time.Time) (int, error) {
+	rows, err := riskRows(ctx, s.Pool, now)
 	if err != nil {
 		return 0, err
 	}
@@ -159,32 +198,13 @@ func (s *Store) Prioritize(ctx context.Context, p risk.Policy, now time.Time) (i
 		id             int64
 		res            risk.Result
 		ackDue, fixDue time.Time
-		changed        bool
 	}
-	var ups []upd
+	ups := make([]upd, 0, len(rows))
 	version := p.Version()
-	for rows.Next() {
-		var (
-			id              int64
-			in              risk.Input
-			firstSeen       time.Time
-			oldPri, state   string
-			fixDue, ackedAt *time.Time
-			oldScore        float32
-		)
-		if err := rows.Scan(&id, &in.Kind, &in.Severity, &in.Score, &in.KnownExploited, &in.InternetExposed, &in.ExposureSource, &in.Environment,
-			&in.Criticality, &in.FixAvailable, &in.Scope, &in.Verification, &firstSeen, &in.KernelNotRunning, &oldPri, &state, &fixDue, &ackedAt, &oldScore); err != nil {
-			rows.Close()
-			return 0, err
-		}
-		in.Overdue = fixDue != nil && now.After(*fixDue) && (state == "new" || state == "acknowledged" || state == "in_progress")
-		res := p.Evaluate(in)
-		ack, fix := p.Deadlines(res.Priority, firstSeen)
-		ups = append(ups, upd{id, res, ack, fix, res.Priority != oldPri || float32(res.Score) != oldScore})
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return 0, err
+	for _, r := range rows {
+		res := p.Evaluate(r.in)
+		ack, fix := p.Deadlines(res.Priority, r.firstSeen)
+		ups = append(ups, upd{r.id, res, ack, fix})
 	}
 	batch := &pgx.Batch{}
 	for _, u := range ups {
