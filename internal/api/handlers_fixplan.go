@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"slices"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -15,7 +17,19 @@ import (
 func (s *Server) listFixGroups(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	f := store.FixGroupFilter{AssetID: qInt(r, "asset_id"), Kind: q.Get("kind"), Environment: q.Get("environment"),
-		Search: q.Get("q"), Page: page(r)}
+		Search: q.Get("q"), Bucket: q.Get("bucket"), Page: page(r)}
+	if f.Bucket != "" {
+		if !slices.Contains(store.FixBuckets, f.Bucket) {
+			s.fail(w, r, badRequest("bucket must be one of "+strings.Join(store.FixBuckets, ", ")))
+			return
+		}
+		pol, err := s.Store.RiskPolicy(r.Context())
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		f.ProductionEnvs = pol.ProductionEnvironments
+	}
 	items, total, err := s.Store.ListFixGroups(r.Context(), f)
 	if err != nil {
 		s.fail(w, r, err)
@@ -25,12 +39,26 @@ func (s *Server) listFixGroups(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) fixPlanSummary(w http.ResponseWriter, r *http.Request) {
-	sum, err := s.Store.SummarizeFixPlan(r.Context(), qInt(r, "asset_id"))
+	assetID := qInt(r, "asset_id")
+	sum, err := s.Store.SummarizeFixPlan(r.Context(), assetID)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	writeJSON(w, 200, sum)
+	pol, err := s.Store.RiskPolicy(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	focus, err := s.Store.SummarizeFixFocus(r.Context(), assetID, pol.ProductionEnvironments)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, 200, struct {
+		*store.FixPlanSummary
+		Focus *store.FixFocus `json:"focus"`
+	}{sum, focus})
 }
 
 // getFixGroup returns one group with its findings (paged via limit/offset).

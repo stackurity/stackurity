@@ -9,7 +9,7 @@ A stack pack teaches Stackurity to read one technology's dependency files. Packs
 
 ## For administrators
 
-Instance administrators manage packs under **Settings → Stack packs**. The official packs ship inside the server but stay inactive until someone installs them. When a repository holds files the core cannot read, such as a `pom.xml`, the Overview names the pack that would read them. Installing a pack:
+Instance administrators manage packs under **Settings → Stack packs**. The official packs ship inside the server but stay inactive until someone installs them. When a repository holds files the core cannot read, such as a `pom.xml`, Home names the pack that would read them. Installing a pack:
 
 - checks its signature (see below) and that its module compiles;
 - applies to every workspace;

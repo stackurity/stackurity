@@ -33,6 +33,16 @@ func (s *Server) listFindings(w http.ResponseWriter, r *http.Request) {
 	f.FixGroup = q.Get("fix_group")
 	f.AssigneeTeam = qInt(r, "assignee_team")
 	f.IncidentID = qInt(r, "incident_id")
+	f.ResolvedWithinDays = withinDays(qInt(r, "resolved_within"))
+	f.NewWithinDays = withinDays(qInt(r, "new_within"))
+	switch q.Get("sort") {
+	case "", "priority":
+	case "asset":
+		f.ByAsset = true
+	default:
+		s.fail(w, r, badRequest("sort must be priority or asset"))
+		return
+	}
 	switch f.State {
 	case "", "active", "new", "acknowledged", "in_progress", "suppressed", "risk_accepted":
 	default:

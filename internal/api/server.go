@@ -374,6 +374,18 @@ func qInt(r *http.Request, k string) int64 {
 	return v
 }
 
+// withinDays turns a "within N days" parameter into a day count capped at
+// ten years; zero or negative means no limit.
+func withinDays(d int64) int {
+	switch {
+	case d <= 0:
+		return 0
+	case d > 3650:
+		return 3650
+	}
+	return int(d)
+}
+
 func qBool(r *http.Request, k string) *bool {
 	switch strings.ToLower(r.URL.Query().Get(k)) {
 	case "true", "1", "yes":

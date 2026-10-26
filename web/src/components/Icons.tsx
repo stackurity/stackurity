@@ -143,3 +143,23 @@ export const IconMessage = (p: P) => (
     <path d="M8 10h8M8 13h5" />
   </Svg>
 );
+
+export const IconActivity = (p: P) => (
+  <Svg {...p}>
+    <path d="M3 12h4l3-8 4 16 3-8h4" />
+  </Svg>
+);
+
+export const IconMore = (p: P) => (
+  <Svg {...p}>
+    <circle cx="5" cy="12" r="1.3" />
+    <circle cx="12" cy="12" r="1.3" />
+    <circle cx="19" cy="12" r="1.3" />
+  </Svg>
+);
+
+export const IconFilter = (p: P) => (
+  <Svg {...p}>
+    <path d="M4 5h16l-6 8v5l-4 2v-7z" />
+  </Svg>
+);

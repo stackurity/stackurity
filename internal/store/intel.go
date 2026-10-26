@@ -861,6 +861,12 @@ type FindingFilter struct {
 	FixGroup     string
 	IncidentID   int64
 	Overdue      bool
+	// ResolvedWithinDays keeps findings resolved in the last N days.
+	ResolvedWithinDays int
+	// NewWithinDays keeps findings first seen in the last N days.
+	NewWithinDays int
+	// ByAsset sorts by asset name first, for a list grouped by asset.
+	ByAsset bool
 	Page
 }
 
@@ -945,18 +951,46 @@ func (s *Store) ListFindings(ctx context.Context, f FindingFilter) ([]Finding, i
 	if f.Overdue {
 		w.conds = append(w.conds, "f.state IN ('new', 'acknowledged', 'in_progress') AND f.fix_due < now()")
 	}
+	if f.NewWithinDays > 0 {
+		w.add("f.first_seen > now() - make_interval(days => ?)", f.NewWithinDays)
+	}
+	if f.ResolvedWithinDays > 0 {
+		w.add("f.resolved_at > now() - make_interval(days => ?)", f.ResolvedWithinDays)
+	}
 	if f.Search != "" {
 		w.add("(c.name ILIKE ? OR f.key ILIKE ? OR f.title ILIKE ? OR a.name ILIKE ?)", likeEscape(f.Search))
 	}
+	// The count joins only what the conditions read: a finding's inventory row
+	// and component always exist in its own workspace, and the assignee joins
+	// are for display. Without them the count of open findings is an
+	// index-only scan of findings_open_cover.
+	countFrom := ` FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL`
+	if f.Search != "" {
+		countFrom += ` JOIN components c ON c.id = f.component_id`
+	}
 	var total int64
-	if err := s.Pool.QueryRow(ctx, `SELECT count(*)`+findingFrom+w.sql(), w.args...).Scan(&total); err != nil {
+	if err := s.Pool.QueryRow(ctx, `SELECT count(*)`+countFrom+w.sql(), w.args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 	p := f.Page.norm()
+	// Keep this order in step with the findings_open_order index (migration
+	// 0029), which serves the first pages without sorting.
+	order := ""
+	switch {
+	case f.ByAsset:
+		order = "a.name, a.id, "
+	case f.Search != "":
+		// A text search usually matches few rows spread through the whole
+		// order. Walking findings_open_order until 50 match read every open
+		// finding (over 10 s on 130,000); sorting the matches is faster.
+		// This leading key sorts like f.sos DESC but does not match the
+		// index, so the planner filters first.
+		order = "CASE WHEN f.sos THEN 0 ELSE 1 END, "
+	}
 	rows, err := s.Pool.Query(ctx, `SELECT `+findingCols+findingFrom+w.sql()+fmt.Sprintf(`
-		ORDER BY f.sos DESC, f.priority, COALESCE((f.evidence->>'known_exploited')::boolean, false) DESC,
+		ORDER BY %sf.sos DESC, f.priority, COALESCE((f.evidence->>'known_exploited')::boolean, false) DESC,
 		  CASE f.severity WHEN 'critical' THEN 5 WHEN 'high' THEN 4 WHEN 'medium' THEN 3 WHEN 'low' THEN 2 WHEN 'unknown' THEN 1 ELSE 0 END DESC,
-		  f.score DESC NULLS LAST, f.first_seen DESC, f.id LIMIT %d OFFSET %d`, p.Limit, p.Offset), w.args...)
+		  f.score DESC NULLS LAST, f.first_seen DESC, f.id LIMIT %d OFFSET %d`, order, p.Limit, p.Offset), w.args...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -987,64 +1021,59 @@ type FindingSummary struct {
 	SOS            int64            `json:"sos"`
 	Overdue        int64            `json:"overdue"`
 	Unassigned     int64            `json:"unassigned"`
+	// Resolved7d counts findings resolved in the last 7 days.
+	Resolved7d int64 `json:"resolved_7d"`
 }
 
 func (s *Store) SummarizeFindings(ctx context.Context) (*FindingSummary, error) {
 	sum := &FindingSummary{BySeverity: map[string]int64{}, ByKind: map[string]int64{}, ByVerification: map[string]int64{},
 		ByPriority: map[string]int64{}, ByState: map[string]int64{}}
-	if err := s.Pool.QueryRow(ctx, `SELECT count(*) FILTER (WHERE f.sos AND f.state IN ('new','acknowledged','in_progress')),
-		count(*) FILTER (WHERE f.state IN ('new','acknowledged','in_progress') AND f.fix_due < now()),
-		count(*) FILTER (WHERE f.state IN ('new','acknowledged','in_progress') AND f.assignee_user_id IS NULL AND f.assignee_team_id IS NULL)
-		FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL WHERE f.status = 'open'`).
-		Scan(&sum.SOS, &sum.Overdue, &sum.Unassigned); err != nil {
-		return nil, err
-	}
-	prow, err := s.Pool.Query(ctx, `SELECT f.priority, f.state, count(*) FROM findings f
-		JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL WHERE f.status = 'open' GROUP BY 1, 2`)
-	if err != nil {
-		return nil, err
-	}
-	for prow.Next() {
-		var pr, st string
-		var n int64
-		if err := prow.Scan(&pr, &st, &n); err != nil {
-			prow.Close()
-			return nil, err
-		}
-		sum.ByState[st] += n
-		if st == "new" || st == "acknowledged" || st == "in_progress" {
-			sum.ByPriority[pr] += n
-		}
-	}
-	prow.Close()
-	rows, err := s.Pool.Query(ctx, `SELECT f.kind, f.severity, f.verification, count(*) FROM findings f
-		JOIN assets a ON a.id = f.asset_id WHERE f.status = 'open' AND a.merged_into IS NULL GROUP BY 1, 2, 3`)
+	// One pass over the open findings, answered from findings_open_cover
+	// without reading the wide table rows.
+	rows, err := s.Pool.Query(ctx, `SELECT f.priority, f.state, f.kind, f.severity, f.verification, count(*),
+		count(*) FILTER (WHERE f.sos),
+		count(*) FILTER (WHERE f.fix_due < now()),
+		count(*) FILTER (WHERE f.assignee_user_id IS NULL AND f.assignee_team_id IS NULL)
+		FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
+		WHERE f.status = 'open' GROUP BY 1, 2, 3, 4, 5`)
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
-		var k, sev, ver string
-		var n int64
-		if err := rows.Scan(&k, &sev, &ver, &n); err != nil {
+		var pr, st, k, sev, ver string
+		var n, sos, overdue, unassigned int64
+		if err := rows.Scan(&pr, &st, &k, &sev, &ver, &n, &sos, &overdue, &unassigned); err != nil {
 			rows.Close()
 			return nil, err
 		}
+		sum.ByState[st] += n
 		sum.ByKind[k] += n
 		sum.BySeverity[sev] += n
 		sum.ByVerification[ver] += n
+		if st == "new" || st == "acknowledged" || st == "in_progress" {
+			sum.ByPriority[pr] += n
+			sum.SOS += sos
+			sum.Overdue += overdue
+			sum.Unassigned += unassigned
+		}
 	}
 	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	err = s.Pool.QueryRow(ctx, `SELECT
 		(SELECT count(*) FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
 		  WHERE f.status = 'open' AND (f.evidence->>'known_exploited')::boolean),
 		(SELECT count(*) FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
 		  WHERE f.status = 'open' AND f.fixed_version <> ''),
-		(SELECT count(DISTINCT f.asset_id) FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
-		  WHERE f.status = 'open'),
+		(SELECT count(*) FROM assets a WHERE a.merged_into IS NULL
+		  AND EXISTS (SELECT 1 FROM findings f WHERE f.asset_id = a.id AND f.status = 'open')),
 		(SELECT count(DISTINCT i.component_id) FROM inventory i JOIN assets a ON a.id = i.asset_id AND a.merged_into IS NULL
 		  WHERE i.removed_at IS NULL AND i.coverage IN ('unsupported', 'not_evaluated')),
-		(SELECT count(*) FROM feeds WHERE enabled AND (last_success IS NULL OR last_success < now() - stale_after))`).
-		Scan(&sum.KnownExploited, &sum.FixAvailable, &sum.AffectedAssets, &sum.EvaluationGaps, &sum.StaleFeeds)
+		(SELECT count(*) FROM feeds WHERE enabled AND (last_success IS NULL OR last_success < now() - stale_after)),
+		(SELECT count(*) FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
+		  WHERE f.status = 'resolved' AND f.resolved_at > now() - interval '7 days')`).
+		Scan(&sum.KnownExploited, &sum.FixAvailable, &sum.AffectedAssets, &sum.EvaluationGaps, &sum.StaleFeeds, &sum.Resolved7d)
 	return sum, err
 }
 

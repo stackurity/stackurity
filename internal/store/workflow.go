@@ -219,10 +219,17 @@ func (s *Store) PrioritizeAsset(ctx context.Context, p risk.Policy, now time.Tim
 	batch := &pgx.Batch{}
 	for _, u := range ups {
 		factors, _ := json.Marshal(u.res.Factors)
+		// Rows whose result has not changed are left alone. This runs every
+		// minute over every open finding; rewriting them all bloated the
+		// table and kept the findings list from using index-only scans.
 		batch.Queue(`UPDATE findings SET priority = $2, priority_score = $3, priority_factors = $4, sos = $5, sos_rule = $8,
 			ack_due = $6, fix_due = $7, priority_policy = $9,
 			assignee_team_id = COALESCE(assignee_team_id, (SELECT owner_team_id FROM assets WHERE id = findings.asset_id))
-			WHERE id = $1`, u.id, u.res.Priority, u.res.Score, factors, u.res.SOS, u.ackDue, u.fixDue, u.res.SOSRule, version)
+			WHERE id = $1 AND (
+			  (priority, priority_score, priority_factors, sos, sos_rule, ack_due, fix_due, priority_policy)
+			    IS DISTINCT FROM ($2::text, $3::real, $4::jsonb, $5::boolean, $8::text, $6::timestamptz, $7::timestamptz, $9::text)
+			  OR (assignee_team_id IS NULL AND (SELECT owner_team_id FROM assets WHERE id = findings.asset_id) IS NOT NULL))`,
+			u.id, u.res.Priority, u.res.Score, factors, u.res.SOS, u.ackDue, u.fixDue, u.res.SOSRule, version)
 	}
 	if err := s.Pool.SendBatch(ctx, batch).Close(); err != nil {
 		return 0, err

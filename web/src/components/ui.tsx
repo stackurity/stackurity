@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { IconHelp, IconInbox } from "./Icons";
+import { IconFilter, IconHelp, IconInbox } from "./Icons";
 import { useEffect, useState, type ReactNode } from "react";
 import { ApiError } from "../api";
 import type { JobState } from "../hooks";
@@ -327,5 +327,66 @@ export function CodeBlock({ text, label }: { text: string; label: string }) {
         <span className="sr-only"> {label}</span>
       </button>
     </div>
+  );
+}
+
+/**
+ * Filters behind one "Filters" button: a panel under the button on wide
+ * screens, a bottom sheet on phones. Preset chips stay outside it so the
+ * common choices are one tap away.
+ */
+export function FilterPanel({ active, children, onClear }: { active: number; children: ReactNode; onClear?: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [id] = useState(() => `fp${Math.random().toString(36).slice(2, 8)}`);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
+  return (
+    <div className="filter-bar">
+      <button type="button" className="btn filter-toggle" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>
+        <IconFilter size={16} /> Filters
+        {active > 0 && (
+          <span className="filter-count">
+            {active}
+            <span className="sr-only"> active</span>
+          </span>
+        )}
+      </button>
+      {active > 0 && onClear && (
+        <button type="button" className="btn btn-link" onClick={onClear}>
+          Clear filters
+        </button>
+      )}
+      {open && <div className="filter-backdrop" aria-hidden="true" onClick={() => setOpen(false)} />}
+      <div id={id} className={`filter-panel${open ? " open" : ""}`} hidden={!open} role="group" aria-label="Filters">
+        <div className="filter-panel-head">
+          <strong>Filters</strong>
+          <button type="button" className="btn btn-sm" onClick={() => setOpen(false)}>
+            Done
+          </button>
+        </div>
+        <form className="filters" role="search" onSubmit={(e) => e.preventDefault()}>
+          {children}
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/** A row of preset filters; each chip is a link so it can be shared. */
+export function PresetChips({ label, chips }: { label: string; chips: { to: string; label: ReactNode; active: boolean }[] }) {
+  return (
+    <nav className="preset-chips" aria-label={label}>
+      {chips.map((c, i) => (
+        <Link key={i} to={c.to} className={`preset-chip${c.active ? " active" : ""}`} aria-current={c.active ? "true" : undefined}>
+          {c.label}
+        </Link>
+      ))}
+    </nav>
   );
 }

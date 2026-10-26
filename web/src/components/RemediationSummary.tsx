@@ -46,22 +46,22 @@ export function RemediationTiles() {
   return (
     <section aria-labelledby="ov-rem">
       <div className="card-head">
-        <h2 id="ov-rem">Remediation</h2>
-        <Link to="/remediation?status=all">All plans</Link>
+        <h2 id="ov-rem">At a glance</h2>
+        <Link to="/fixes/automatic?status=all">All plans</Link>
       </div>
       <div className="tiles tiles-tight">
         <StatTile
           label="Awaiting approval"
           value={d.proposed.toLocaleString()}
           tone={d.proposed > 0 ? "warn" : undefined}
-          sub={d.proposed > 0 ? <Link to="/remediation">Review</Link> : "none"}
+          sub={d.proposed > 0 ? <Link to="/fixes/automatic">Review</Link> : "none"}
         />
-        <StatTile label="In progress" value={d.running.toLocaleString()} sub={d.running > 0 ? <Link to="/remediation?status=in_progress">View</Link> : "none"} />
+        <StatTile label="In progress" value={d.running.toLocaleString()} sub={d.running > 0 ? <Link to="/fixes/automatic?status=in_progress">View</Link> : "none"} />
         <StatTile
           label="Failed (30 days)"
           value={d.recentFailed.toLocaleString()}
           tone={d.recentFailed > 0 ? "bad" : undefined}
-          sub={d.recentFailed > 0 ? <Link to="/remediation?status=failed,partially_failed">Investigate</Link> : "none"}
+          sub={d.recentFailed > 0 ? <Link to="/fixes/automatic?status=failed,partially_failed">Investigate</Link> : "none"}
         />
       </div>
     </section>

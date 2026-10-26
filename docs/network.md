@@ -23,7 +23,7 @@ The response is compared with the running version on your server, and the result
 
 ### Feedback
 
-**Send feedback** in the dashboard's top bar lets a signed-in user write to the Stackurity team. Nothing is sent until they press **Send feedback**.
+**Send feedback** in the dashboard's account menu (top right; on phones also under **More**) lets a signed-in user write to the Stackurity team. Nothing is sent until they press **Send feedback**.
 
 | Destination | When | What is sent |
 |---|---|---|
@@ -31,7 +31,7 @@ The response is compared with the running version on your server, and the result
 
 The request goes from the server, not the browser, with a 10 second timeout, and redirects are not followed. Each send is recorded in the workspace audit log as `feedback.send` (kind only).
 
-- `STACKURITY_FEEDBACK_URL=` (set to an empty value) or `off` turns it off: the button is hidden and `POST /api/v1/feedback` answers 404.
+- `STACKURITY_FEEDBACK_URL=` (set to an empty value) or `off` turns it off: the menu item is hidden and `POST /api/v1/feedback` answers 404.
 - Point it at another URL that accepts the same JSON to keep feedback inside your organisation.
 
 ### Intelligence feeds

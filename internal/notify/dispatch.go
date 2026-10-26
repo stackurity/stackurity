@@ -691,10 +691,10 @@ func (d *Dispatcher) burstMessage(ctx context.Context, list []store.Incident, ev
 			}
 			m.Summary = append(m.Summary, line)
 		}
-		m.Action = "Open the action plan to see what to do first; each action lists its individual findings."
+		m.Action = "Open Fixes to see what to do first; each fix lists the issues it clears."
 	}
 	if d.BaseURL != "" {
-		m.Link = strings.TrimSuffix(d.BaseURL, "/") + "/action-plan"
+		m.Link = strings.TrimSuffix(d.BaseURL, "/") + "/fixes"
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 	h := sha256.New()

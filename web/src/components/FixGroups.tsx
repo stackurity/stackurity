@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router";
-import { api, PRIORITIES, SEVERITIES, type Finding, type FixGroup, type FixGroupDetail, type FixGroupSummary, type List } from "../api";
+import { api, PRIORITIES, type Finding, type FixGroup, type FixGroupDetail, type FixGroupSummary, type List } from "../api";
 import { plural } from "../format";
 import { Badge, PriorityBadge, SosBadge, type Tone } from "./Badge";
 import { FindingsTable } from "./Findings";
@@ -53,8 +53,37 @@ export function EffortPill({ effort }: { effort: string }) {
   return <Badge status={`effort-${effort}`} tone={tone} label={`${effort} effort`} title={help[effort]} />;
 }
 
-const PRIO_CLASS: Record<string, string> = { P1: "seg-crit", P2: "seg-orange", P3: "seg-warn", P4: "seg-muted" };
-const SEV_CLASS: Record<string, string> = {
+/** Plain-language urgency of a fix: urgent now, plan it, or when convenient. */
+export function urgencyOf(g: FixGroup): { label: string; tone: Tone; title: string } {
+  if (g.sos || g.top_priority === "P1")
+    return { label: "Urgent", tone: "crit", title: g.sos ? "Matches an SOS rule in the risk policy" : "Highest priority (P1)" };
+  if (g.kind === "release_upgrade" || g.kind === "end_of_life" || g.effort === "high")
+    return { label: "Plan it", tone: "orange", title: "A bigger change: schedule and test it" };
+  return { label: "When you can", tone: "muted", title: `Highest priority ${g.top_priority}` };
+}
+
+/** What kind of change a fix is, in words. */
+export function changeText(g: FixGroup): string {
+  if (g.requires_major || g.change_type === "major") return "major upgrade, may break things";
+  if (g.change_type === "minor") return "minor upgrade";
+  if (g.change_type === "patch") return "patch release";
+  switch (g.kind) {
+    case "security_updates":
+      return "routine package updates";
+    case "old_kernels":
+      return "remove unused kernels";
+    case "release_upgrade":
+      return "operating system upgrade";
+    case "end_of_life":
+      return "move to a supported version";
+    case "no_fix":
+      return "no fix published yet";
+  }
+  return FIX_KIND_LABEL[g.kind] ?? g.kind;
+}
+
+export const PRIO_CLASS: Record<string, string> = { P1: "seg-crit", P2: "seg-orange", P3: "seg-warn", P4: "seg-muted" };
+export const SEV_CLASS: Record<string, string> = {
   critical: "seg-crit",
   high: "seg-bad",
   medium: "seg-warn",
@@ -120,9 +149,9 @@ export function GroupFindings({ groupId, hideAsset }: { groupId: string; hideAss
   const res = useLoad(() => api.get<List<Finding>>("/findings", { fix_group: groupId, limit: LIMIT, offset }), [groupId, offset]);
   return (
     <div className="group-findings">
-      <ErrorBox error={res.error} title="Could not load the issues in this group" />
+      <ErrorBox error={res.error} title="Could not load the issues in this fix" />
       {!res.data && !res.error && <Loading />}
-      {res.data && res.data.items.length === 0 && <p className="muted">No open findings in this group.</p>}
+      {res.data && res.data.items.length === 0 && <p className="muted">No open issues in this fix.</p>}
       {res.data && res.data.items.length > 0 && (
         <>
           <FindingsTable rows={res.data.items} hideAsset={hideAsset} hideGroup />
@@ -147,7 +176,7 @@ export function FixGroupCard({ g, hideAsset, defaultOpen }: { g: FixGroup; hideA
           <div>
             <span className="fix-kind">{FIX_KIND_LABEL[g.kind] ?? g.kind}</span>
             <h3 id={titleId} className="fix-title">
-              <Link to={`/action-plan/${encodeURIComponent(g.id)}`}>{g.title}</Link>
+              <Link to={`/fixes/${encodeURIComponent(g.id)}`}>{g.title}</Link>
             </h3>
             <p className="fix-meta small">
               {[
@@ -177,23 +206,15 @@ export function FixGroupCard({ g, hideAsset, defaultOpen }: { g: FixGroup; hideA
             </p>
           </div>
           <div className="fix-resolves">
-            {g.unique_issues !== undefined ? (
-              <>
-                <span className="fix-count">{g.unique_issues.toLocaleString()}</span>
-                <span className="small">{g.unique_issues === 1 ? "unique vulnerability" : "unique vulnerabilities"}</span>
-                <span className="small muted">in {plural(g.finding_count, "finding")}</span>
-              </>
-            ) : (
-              <>
-                <span className="fix-count">{g.finding_count.toLocaleString()}</span>
-                <span className="small muted">{g.finding_count === 1 ? "finding resolved" : "findings resolved"}</span>
-              </>
+            <span className="fix-count">{g.finding_count.toLocaleString()}</span>
+            <span className="small">{g.finding_count === 1 ? "issue cleared" : "issues cleared"}</span>
+            {g.unique_issues !== undefined && g.unique_issues !== g.finding_count && (
+              <span className="small muted">{plural(g.unique_issues, "distinct vulnerability", "distinct vulnerabilities")}</span>
             )}
           </div>
         </div>
         <GroupBadges g={g} />
         <BreakdownBar counts={g.by_priority} order={PRIORITIES} classes={PRIO_CLASS} label="By priority" />
-        <BreakdownBar counts={g.by_severity} order={SEVERITIES} classes={SEV_CLASS} label="By severity" />
         <ActionInstruction action={g.action} />
         {g.note && <p className="hint">{g.note}</p>}
         {g.packages && g.packages.length > 0 && (
@@ -213,10 +234,10 @@ export function FixGroupCard({ g, hideAsset, defaultOpen }: { g: FixGroup; hideA
         )}
         <div className="fix-actions">
           <button type="button" className="btn btn-sm" aria-expanded={open} onClick={() => setOpen(!open)}>
-            {open ? "Hide findings" : `View ${plural(g.finding_count, "finding")}`}
+            {open ? "Hide the issues" : `Show ${plural(g.finding_count, "issue")}`}
           </button>
-          <Link className="btn btn-sm btn-link" to={`/action-plan/${encodeURIComponent(g.id)}`}>
-            Open group
+          <Link className="btn btn-sm btn-primary" to={`/fixes/${encodeURIComponent(g.id)}`}>
+            How to fix
           </Link>
         </div>
         {open && <GroupFindings groupId={g.id} hideAsset={hideAsset} />}
@@ -284,12 +305,11 @@ export function FindingFixGroup({ f }: { f: Finding }) {
       </span>
       <span>
         <strong>Part of:</strong>{" "}
-        <Link to={`/action-plan/${encodeURIComponent(f.fix_group)}`}>{g ? g.title : "an action in the action plan"}</Link>
+        <Link to={`/fixes/${encodeURIComponent(f.fix_group)}`}>{g ? g.title : "an action in the action plan"}</Link>
         {g && (
           <span className="muted">
             {" "}
-            ({plural(g.finding_count, "finding")}
-            {g.unique_issues !== undefined ? `, ${plural(g.unique_issues, "unique vulnerability", "unique vulnerabilities")}` : ""} fixed together)
+            ({plural(g.finding_count, "issue")} cleared together)
           </span>
         )}
       </span>

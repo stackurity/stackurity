@@ -707,6 +707,8 @@ export interface FindingSummary {
   sos?: number;
   overdue?: number;
   unassigned?: number;
+  /** Findings resolved in the last 7 days. */
+  resolved_7d?: number;
 }
 
 export interface AdvisoryReference {
@@ -1566,6 +1568,19 @@ export interface FixGroupSummary {
   sos_findings?: number;
   /** Distinct CVE/advisory keys across all groups, when the server provides it. */
   unique_issues?: number;
+  /** What needs a person now, and why the other groups are left out of that view. */
+  focus?: FixFocus;
+}
+
+/** Buckets of GET /fix-groups?bucket=, mirrors store.FixBuckets. */
+export const FIX_BUCKETS = ["focus", "no_fix", "old_kernels", "non_production", "lower_priority"] as const;
+export type FixBucket = (typeof FIX_BUCKETS)[number];
+
+export interface FixFocus {
+  groups: number;
+  findings: number;
+  hidden: Partial<Record<FixBucket, { groups: number; findings: number }>> | null;
+  assets: { asset_id: number; asset_name: string; groups: number; findings: number }[] | null;
 }
 
 // --- Stage 6: evidence report

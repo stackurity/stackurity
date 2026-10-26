@@ -172,7 +172,7 @@ export function PlanDetailPage() {
         <PageHeader help="remediation-overview" title="Remediation plan" />
         <ErrorBox error={res.error} title="Could not load plan" />
         <p>
-          <Link to="/remediation">Back to plans</Link>
+          <Link to="/fixes/automatic">Back to automatic fixes</Link>
         </p>
       </>
     );
@@ -198,7 +198,7 @@ export function PlanDetailPage() {
       "policy",
       plan.policy_id ? (
         can("security") ? (
-          <Link to="/remediation?tab=policies">{plan.policy_name}</Link>
+          <Link to="/settings/automatic-fixes">{plan.policy_name}</Link>
         ) : (
           plan.policy_name
         )
@@ -231,7 +231,7 @@ export function PlanDetailPage() {
   return (
     <>
       <nav className="crumbs" aria-label="Breadcrumb">
-        <Link to="/remediation">Remediation</Link> <span aria-hidden="true">/</span> <span>Plan #{plan.id}</span>
+        <Link to="/fixes">Fixes</Link> <span aria-hidden="true">/</span> <Link to="/fixes/automatic">Automatic fixes</Link> <span aria-hidden="true">/</span> <span>Plan #{plan.id}</span>
       </nav>
       <PageHeader help="remediation-overview"
         title={
@@ -268,7 +268,7 @@ export function PlanDetailPage() {
             ) : (
               <span className="chips">
                 {keys.map((k) => (
-                  <Link key={k} to={`/findings?key=${encodeURIComponent(k)}&status=all`}>
+                  <Link key={k} to={`/fixes/issues?key=${encodeURIComponent(k)}&status=all`}>
                     <Chip>
                       <span className="mono">{k}</span>
                     </Chip>

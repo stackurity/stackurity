@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { api, type ActionResult, type DirectoryUser, type FindingActionName, type FindingActionRequest, type List, type Team } from "../api";
+import { api, type ActionResult, type DirectoryUser, type Finding, type FindingActionName, type FindingActionRequest, type List, type Team } from "../api";
 import { useAuth } from "../auth";
 import { useAction, useExceptionMaxDays, useLoad } from "../hooks";
 import { absTime, relTime } from "../format";
@@ -28,7 +28,33 @@ export function Assignee({ email, team }: { email?: string; team?: string }) {
   );
 }
 
-export type ActionTarget = { type: "finding"; id: number } | { type: "bulk"; ids: number[] } | { type: "incident"; id: number };
+export type ActionTarget =
+  | { type: "finding"; id: number }
+  | { type: "bulk"; ids: number[] }
+  | { type: "incident"; id: number }
+  /** Every open issue of a fix group (at most GROUP_ACTION_MAX), sent as bulk actions. */
+  | { type: "group"; id: string; count: number };
+
+/** Largest fix group whose issues can be changed at once from the fix page. */
+export const GROUP_ACTION_MAX = 2000;
+
+/** Applies a bulk action to every open finding of a fix group, 500 at a time. */
+async function groupAction(groupId: string, req: FindingActionRequest): Promise<ActionResult> {
+  const ids: number[] = [];
+  for (let offset = 0; offset < GROUP_ACTION_MAX; offset += 500) {
+    const page = await api.get<List<Finding>>("/findings", { fix_group: groupId, limit: 500, offset });
+    ids.push(...page.items.map((f) => f.id));
+    if (page.items.length < 500 || ids.length >= page.total) break;
+  }
+  let applied = 0;
+  const failed: string[] = [];
+  for (let i = 0; i < ids.length; i += 500) {
+    const r = await api.post<ActionResult>("/findings/actions", { ...req, ids: ids.slice(i, i + 500) });
+    applied += r.applied;
+    failed.push(...(r.failed ?? []));
+  }
+  return { applied, failed };
+}
 
 function isoDate(d: Date): string {
   const p = (n: number) => String(n).padStart(2, "0");
@@ -55,7 +81,7 @@ const LABELS: Record<FindingActionName, string> = {
   reset: "Reset to new",
   assign: "Assigned",
   comment: "Comment added",
-  suppress: "Suppressed",
+  suppress: "Snoozed",
   accept_risk: "Risk accepted",
   reopen: "Reopened",
 };
@@ -70,8 +96,11 @@ export function FindingActions({
   state,
   onDone,
   compact,
+  initialPanel,
 }: {
   target: ActionTarget;
+  /** Opens this form first (e.g. from a "Snooze" link on Home). */
+  initialPanel?: "assign" | "suppress" | "accept_risk";
   /** Current state for a single finding, to hide actions that cannot apply. */
   state?: string;
   onDone: () => void;
@@ -81,14 +110,14 @@ export function FindingActions({
   const engineer = can("engineer");
   const security = can("security");
   const act = useAction();
-  const [panel, setPanel] = useState<Panel>(null);
+  const [panel, setPanel] = useState<Panel>(initialPanel ?? null);
   const [result, setResult] = useState<string | null>(null);
   const [failures, setFailures] = useState<string[]>([]);
 
   if (!engineer) return null;
 
   const closed = state === "suppressed" || state === "risk_accepted";
-  const count = target.type === "bulk" ? target.ids.length : null;
+  const count = target.type === "bulk" ? target.ids.length : target.type === "group" ? target.count : null;
 
   const send = async (req: FindingActionRequest) => {
     setResult(null);
@@ -96,6 +125,7 @@ export function FindingActions({
     const r = await act.run(() => {
       if (target.type === "finding") return api.post<ActionResult>(`/findings/${target.id}/actions`, req);
       if (target.type === "incident") return api.post<ActionResult>(`/incidents/${target.id}/actions`, req);
+      if (target.type === "group") return groupAction(target.id, req);
       return api.post<ActionResult>("/findings/actions", { ...req, ids: target.ids });
     });
     if (r) {
@@ -114,7 +144,7 @@ export function FindingActions({
 
   return (
     <div className="workflow-actions">
-      <div className="btn-group" role="group" aria-label={count !== null ? `Actions for ${count} selected findings` : "Finding actions"}>
+      <div className="btn-group" role="group" aria-label={count !== null ? `Actions for ${count} ${target.type === "group" ? "issues in this fix" : "selected findings"}` : "Finding actions"}>
         {!closed && (
           <>
             {state !== "acknowledged" && (
@@ -145,7 +175,7 @@ export function FindingActions({
         {security && !closed && (
           <>
             <button type="button" className="btn btn-sm" aria-expanded={panel === "suppress"} onClick={() => toggle("suppress")}>
-              Suppress…
+              Snooze…
             </button>
             <button type="button" className="btn btn-sm" aria-expanded={panel === "accept_risk"} onClick={() => toggle("accept_risk")}>
               Accept risk…
@@ -158,7 +188,7 @@ export function FindingActions({
             className="btn btn-sm"
             disabled={act.pending}
             onClick={() => send({ action: "reopen", note: "" })}
-            title="Return suppressed or risk-accepted findings to new"
+            title="Return snoozed or risk-accepted issues to new"
           >
             Reopen
           </button>
@@ -178,13 +208,13 @@ export function FindingActions({
       )}
       {(panel === "suppress" || panel === "accept_risk") && (
         <NotePanel
-          title={panel === "suppress" ? "Suppress" : "Accept risk"}
+          title={panel === "suppress" ? "Snooze" : "Accept risk"}
           explain={
             panel === "suppress"
-              ? "Hides the finding until the expiry date (e.g. a false positive or a compensating control). It comes back as new when the date passes."
+              ? "Hides the issue until the date you pick (stored as suppressed), e.g. a false positive or a compensating control. It comes back as new when the date passes."
               : "Records that the risk is knowingly accepted until the expiry date. It comes back as new when the date passes."
           }
-          submit={panel === "suppress" ? "Suppress" : "Accept risk"}
+          submit={panel === "suppress" ? "Snooze" : "Accept risk"}
           withExpiry
           pending={act.pending}
           onCancel={() => setPanel(null)}

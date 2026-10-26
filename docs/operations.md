@@ -131,7 +131,7 @@ Platform health has a critical problem: a vulnerability feed is stale, no vulner
 
 ### StackurityVulnerabilityFeedStale
 
-A vulnerability feed has not synced within its freshness limit. New advisories for that ecosystem are not matched. Nothing is cleared: findings already open stay open, every workspace gets a P2 feed incident, the Findings page says intelligence is stale, and each affected asset's coverage says its components were checked against stale intelligence.
+A vulnerability feed has not synced within its freshness limit. New advisories for that ecosystem are not matched. Nothing is cleared: findings already open stay open, every workspace gets a P2 feed incident, the All issues page says intelligence is stale, and each affected asset's coverage says its components were checked against stale intelligence.
 
 1. **Intelligence** (or `GET /api/v1/feeds`) shows the feed's last error.
 2. HTTP 5xx, timeouts or DNS errors: the upstream or the way to it is down. Check outbound access from the server (`curl -sI https://osv-vulnerabilities.storage.googleapis.com/` from the container), proxies and firewalls; see [network.md](network.md). If it is the upstream itself, wait: see [prolonged upstream outage](#prolonged-upstream-outage).
@@ -263,7 +263,7 @@ OSV, a package registry or endoflife.date is unreachable for hours.
 Expected:
 
 - Each sync attempt tries a failed request 4 times (2, 4 and 8 seconds apart), then the job is retried with backoff and fails after 5 attempts. The feed shows the upstream's error (`GET ...: HTTP 503`) on **Intelligence** and in `stackurity_feed_failing`; [StackurityFeedFailing](#stackurityfeedfailing) fires after 2 hours, [StackurityJobsFailed](#stackurityjobsfailed) once a sync job gives up.
-- Once the last success is older than the freshness limit: `stackurity_feed_stale` is 1, [StackurityVulnerabilityFeedStale](#stackurityvulnerabilityfeedstale) and [StackurityHealthCritical](#stackurityhealthcritical) fire, Platform health shows a critical stale-feed problem, every workspace gets a P2 feed incident, the Findings page warns that intelligence is stale, and affected assets' coverage says their components were checked against stale intelligence.
+- Once the last success is older than the freshness limit: `stackurity_feed_stale` is 1, [StackurityVulnerabilityFeedStale](#stackurityvulnerabilityfeedstale) and [StackurityHealthCritical](#stackurityhealthcritical) fire, Platform health shows a critical stale-feed problem, every workspace gets a P2 feed incident, the All issues page warns that intelligence is stale, and affected assets' coverage says their components were checked against stale intelligence.
 - Nothing is cleared: advisories already stored stay, open findings stay open, and no finding is resolved because data is missing.
 
 Recover: restore access and refresh the feed. The sync catches up from its cursor, the feed incident resolves, the alerts clear. For long planned outages or air-gapped sites, mirror the sources ([network.md](network.md)).

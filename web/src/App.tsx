@@ -1,11 +1,12 @@
 import { lazy, Suspense, type ReactNode } from "react";
-import { Route, Routes } from "react-router";
+import { Navigate, Route, Routes, useLocation, useParams } from "react-router";
 import type { UserRole } from "./api";
 import { useAuth } from "./auth";
 import { Layout } from "./components/Layout";
 import { ErrorBox, Loading } from "./components/ui";
 import { LoginPage, SetupPage } from "./pages/Login";
-import { OverviewPage } from "./pages/Overview";
+import { HomePage } from "./pages/Home";
+import { AutomaticFixPoliciesPage, SettingsPage } from "./pages/Settings";
 import { AssetsPage } from "./pages/Assets";
 import { AssetDetailPage } from "./pages/AssetDetail";
 import { AddServerPage } from "./pages/AddServer";
@@ -29,15 +30,15 @@ import { ConflictsPage } from "./pages/settings/Conflicts";
 import { JobsPage } from "./pages/settings/Jobs";
 import { NotFound } from "./pages/NotFound";
 import { SearchPage } from "./pages/Search";
-import { FindingsPage } from "./pages/Findings";
+import { IssuesPage } from "./pages/Findings";
 import { FindingDetailPage } from "./pages/FindingDetail";
 import { IntelligencePage } from "./pages/Intelligence";
 import { IncidentsPage } from "./pages/Incidents";
 import { IncidentDetailPage } from "./pages/IncidentDetail";
-import { RemediationPage } from "./pages/Remediation";
+import { AutomaticFixesPage } from "./pages/Remediation";
 import { PlanDetailPage } from "./pages/PlanDetail";
 import { PluginsPage } from "./pages/settings/Plugins";
-import { ActionPlanPage, FixGroupDetailPage } from "./pages/ActionPlan";
+import { FixesPage, FixGroupDetailPage } from "./pages/ActionPlan";
 import { NotificationsPage } from "./pages/settings/Notifications";
 import { RiskPolicyPage } from "./pages/settings/RiskPolicy";
 
@@ -59,6 +60,18 @@ function RequireRole({ min, children }: { min: UserRole; children: ReactNode }) 
     );
   }
   return <>{children}</>;
+}
+
+/**
+ * Sends an old address to its new page, keeping the query and hash, so
+ * bookmarks and links in Slack, email and Jira keep working.
+ */
+function Moved({ to }: { to: (params: Record<string, string | undefined>, search: URLSearchParams) => string }) {
+  const params = useParams();
+  const { search, hash } = useLocation();
+  const target = to(params, new URLSearchParams(search));
+  const keep = target.includes("?") ? "" : search;
+  return <Navigate replace to={target + keep + hash} />;
 }
 
 function RequireInstanceAdmin({ children }: { children: ReactNode }) {
@@ -104,18 +117,44 @@ export function App() {
   return (
     <Routes>
       <Route element={<Layout />}>
-        <Route index element={<OverviewPage />} />
+        <Route index element={<HomePage />} />
         <Route path="search" element={<SearchPage />} />
         <Route path="help" element={help} />
         <Route path="help/:topic" element={help} />
-        <Route path="action-plan" element={<ActionPlanPage />} />
-        <Route path="action-plan/:id" element={<FixGroupDetailPage />} />
+        <Route path="fixes" element={<FixesPage />} />
+        <Route path="fixes/issues" element={<IssuesPage />} />
+        <Route path="fixes/automatic" element={<AutomaticFixesPage />} />
+        <Route path="fixes/:id" element={<FixGroupDetailPage />} />
+        <Route path="action-plan" element={<Moved to={() => "/fixes"} />} />
+        <Route path="action-plan/:id" element={<Moved to={(p) => `/fixes/${encodeURIComponent(p.id ?? "")}`} />} />
+        <Route path="findings" element={<Moved to={() => "/fixes/issues"} />} />
+        <Route path="findings/:id" element={<FindingDetailPage />} />
+        <Route
+          path="remediation"
+          element={
+            <Moved
+              to={(_p, q) => {
+                if (q.get("tab") === "policies") return "/settings/automatic-fixes";
+                q.delete("tab");
+                const rest = q.toString();
+                return `/fixes/automatic${rest ? `?${rest}` : ""}`;
+              }}
+            />
+          }
+        />
+        <Route path="remediation/plans/:id" element={<PlanDetailPage />} />
+        <Route path="activity" element={<Moved to={() => "/incidents"} />} />
         <Route path="incidents" element={<IncidentsPage />} />
         <Route path="incidents/:id" element={<IncidentDetailPage />} />
-        <Route path="remediation" element={<RemediationPage />} />
-        <Route path="remediation/plans/:id" element={<PlanDetailPage />} />
-        <Route path="findings" element={<FindingsPage />} />
-        <Route path="findings/:id" element={<FindingDetailPage />} />
+        <Route path="settings" element={<SettingsPage />} />
+        <Route
+          path="settings/automatic-fixes"
+          element={
+            <RequireRole min="security">
+              <AutomaticFixPoliciesPage />
+            </RequireRole>
+          }
+        />
         <Route path="intelligence" element={<IntelligencePage />} />
         <Route path="assets" element={<AssetsPage />} />
         <Route

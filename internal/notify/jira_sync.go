@@ -321,7 +321,7 @@ func (d *Dispatcher) issueDescription(in store.Incident, brief *store.IncidentBr
 	if m.Action != "" {
 		fix := plain(m.Action + ".")
 		if d.BaseURL != "" && vuln {
-			fix = append(fix, jiraInline{Text: " "}, jiraInline{Text: "See the action plan", Href: strings.TrimSuffix(d.BaseURL, "/") + "/action-plan"})
+			fix = append(fix, jiraInline{Text: " "}, jiraInline{Text: "See the fixes", Href: strings.TrimSuffix(d.BaseURL, "/") + "/fixes"})
 		}
 		doc = append(doc, jiraBlock{Heading: "Fix"}, jiraBlock{Para: fix})
 	}
