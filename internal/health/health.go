@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/stackurity/stackurity/internal/db"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
 )
@@ -79,6 +80,13 @@ type Checker struct {
 	// incidents are raised in (STACKURITY_PLATFORM_WORKSPACE); empty means
 	// the default workspace.
 	PlatformWorkspace string
+	// Schema reports a database migrated by a newer version while this
+	// server runs; nil disables the check.
+	Schema *db.SchemaGuard
+	// InsecureCookies says why session cookies without the Secure flag are
+	// a risk in this deployment; empty when they are marked Secure or the
+	// deployment is declared local (see cmd/stackurity cookieRisk).
+	InsecureCookies string
 }
 
 // PlatformTarget returns the workspace platform incidents are raised in. When
@@ -161,6 +169,19 @@ func (c *Checker) Check(ctx context.Context) (*Report, error) {
 			Title: "Platform problems are not raised as incidents",
 			Detail: why + " Critical problems are shown here and in the banner, and logged by the server, instead. " +
 				"Set STACKURITY_PLATFORM_WORKSPACE to an active workspace."})
+	}
+	if err := c.Schema.Err(); err != nil {
+		r.Problems = append(r.Problems, Problem{Severity: Critical, Kind: "schema", Key: "newer",
+			Title: "This server is older than its database and has stopped background work",
+			Detail: err.Error() + ". Mixed versions are not supported: stop every replica of this version " +
+				"(docs/install.md, Upgrading)."})
+	}
+	if c.InsecureCookies != "" {
+		r.Problems = append(r.Problems, Problem{Severity: Warning, Kind: "config", Key: "cookie-secure",
+			Title: "Session cookies are not marked Secure (STACKURITY_COOKIE_SECURE=false)",
+			Detail: c.InsecureCookies + ". A session cookie sent over plain HTTP can be read and reused by anyone on the network path. " +
+				"Serve Stackurity over HTTPS and remove STACKURITY_COOKIE_SECURE; for a local evaluation only, set " +
+				"STACKURITY_BASE_URL to the http://localhost address you use."})
 	}
 	if wait := time.Duration(r.OldestQueuedSeconds * float64(time.Second)); wait > queueBacklog {
 		r.Problems = append(r.Problems, Problem{Severity: Warning, Kind: "jobs", Key: "backlog",

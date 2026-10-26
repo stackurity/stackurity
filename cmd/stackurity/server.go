@@ -76,6 +76,12 @@ func openStore(ctx context.Context) (*store.Store, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Every command that uses the database refuses one a newer version has
+	// migrated: this version's code may not work with that schema.
+	if err := db.CheckSchema(ctx, pool); err != nil {
+		pool.Close()
+		return nil, err
+	}
 	return store.New(pool), nil
 }
 
@@ -166,8 +172,17 @@ func serverCmd() *cobra.Command {
 				return err
 			}
 
+			cookieSecure := env("STACKURITY_COOKIE_SECURE", "true") != "false"
+			listenAddr := env("STACKURITY_LISTEN", ":8080")
+			insecureCookies := cookieRisk(cookieSecure, os.Getenv("STACKURITY_BASE_URL"), listenAddr)
+			if insecureCookies != "" {
+				log.Warn("session cookies are not marked Secure (STACKURITY_COOKIE_SECURE=false); never run like this in production",
+					"reason", insecureCookies,
+					"fix", "serve Stackurity over HTTPS and remove STACKURITY_COOKIE_SECURE; for a local evaluation only, set STACKURITY_BASE_URL=http://localhost:<port>")
+			}
+			schema := &db.SchemaGuard{}
 			checker := &health.Checker{Store: st, FeedsEnabled: os.Getenv("STACKURITY_FEEDS") != "off",
-				PlatformWorkspace: os.Getenv("STACKURITY_PLATFORM_WORKSPACE")}
+				PlatformWorkspace: os.Getenv("STACKURITY_PLATFORM_WORKSPACE"), Schema: schema, InsecureCookies: insecureCookies}
 			if _, why, err := checker.PlatformTarget(ctx); err != nil {
 				return err
 			} else if why != "" {
@@ -192,8 +207,9 @@ func serverCmd() *cobra.Command {
 				Dispatcher: dispatcher, AllowHTTPWebhooks: allowHTTPHooks, Plugins: pluginRunner,
 				Store: st, Log: log, Secrets: res, Version: version, SetupToken: setupToken,
 				BaseURL: os.Getenv("STACKURITY_BASE_URL"), AgentDir: os.Getenv("STACKURITY_AGENT_DIR"),
-				CookieSecure: env("STACKURITY_COOKIE_SECURE", "true") != "false",
+				CookieSecure: cookieSecure,
 				TrustProxy:   os.Getenv("STACKURITY_TRUST_PROXY") == "true",
+				Schema:       schema,
 				UI:           web.Dist(),
 				SecretBox:    box,
 				Packs:        packMgr,
@@ -204,13 +220,13 @@ func serverCmd() *cobra.Command {
 			// never reachable on the public API port.
 			metricsAddr := os.Getenv("STACKURITY_METRICS_ADDR")
 			if metricsAddr != "" {
-				if metricsAddr == env("STACKURITY_LISTEN", ":8080") {
+				if metricsAddr == listenAddr {
 					return errors.New("STACKURITY_METRICS_ADDR must differ from STACKURITY_LISTEN: metrics are never served on the API port")
 				}
 				srv.HTTPMetrics = metrics.NewHTTP()
 			}
 			httpSrv := &http.Server{
-				Addr:              env("STACKURITY_LISTEN", ":8080"),
+				Addr:              listenAddr,
 				Handler:           srv.Handler(),
 				ReadHeaderTimeout: 10 * time.Second,
 				ReadTimeout:       5 * time.Minute,
@@ -232,9 +248,15 @@ func serverCmd() *cobra.Command {
 			// The release check sends nothing about this install (see
 			// internal/updates); when it is off no request is made at all.
 			updates.Register(w, st, log, updateCfg)
+			// The worker stops when a newer version migrates the database
+			// under this server (watchSchema); the API keeps answering, but
+			// /readyz fails so traffic moves to the new replicas.
+			workCtx, stopWork := context.WithCancel(ctx)
+			defer stopWork()
 			done := make(chan struct{})
-			go func() { w.Run(ctx); close(done) }()
+			go func() { w.Run(workCtx); close(done) }()
 			go followReplicas(ctx, st, holder, licFromEnv, packMgr, log)
+			go watchSchema(ctx, st, schema, tm.SchemaCheck, stopWork, log)
 
 			errc := make(chan error, 2)
 			go func() {
@@ -328,6 +350,32 @@ func followReplicas(ctx context.Context, st *store.Store, holder *license.Holder
 		}
 		if err := packMgr.Refresh(ctx); err != nil && ctx.Err() == nil {
 			log.Warn("refresh stack packs", "err", err)
+		}
+	}
+}
+
+// watchSchema checks every interval whether a newer version has migrated
+// the database, which happens when an upgrade starts new replicas while this
+// one still runs. Mixed versions are not supported, so once it has, the
+// server stops its background work, fails /readyz and logs an error on every
+// check until it is stopped.
+func watchSchema(ctx context.Context, st *store.Store, g *db.SchemaGuard, every time.Duration, stopWork func(), log *slog.Logger) {
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		err := g.Check(tenant.System(ctx), st.Pool)
+		switch {
+		case errors.Is(err, db.ErrNewerSchema):
+			stopWork()
+			log.Error("database schema is newer than this server: background work stopped and /readyz fails; stop this replica",
+				"err", err, "version", version)
+		case err != nil && ctx.Err() == nil:
+			log.Warn("check database schema version", "err", err)
 		}
 	}
 }

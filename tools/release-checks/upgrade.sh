@@ -8,6 +8,12 @@
 #   restore   pg_dump the upgraded database, restore it into a new
 #             PostgreSQL server (which has no stackurity_app role), start
 #             CURRENT: ready, role recreated, counts unchanged.
+#   mixed     versions: once CURRENT has migrated the database, PREVIOUS
+#             must refuse to start (server and migrate) and leave the schema
+#             as it is, and a PREVIOUS server already running must fail
+#             /readyz. Only releases after 0.4.0 have this guard, and only a
+#             CURRENT that adds migrations triggers it; otherwise the step
+#             says why it was skipped.
 #   rollback  the documented downgrade on the upgraded server: recreate the
 #             database, restore the backup taken before the upgrade, start
 #             PREVIOUS: ready, counts as before the upgrade; then upgrade
@@ -87,11 +93,13 @@ counts() {
 		ORDER BY 1"
 }
 
-# server NAME IMAGE DB: start a server and wait for /readyz; prints the URL.
+# server NAME IMAGE DB [DOCKER-ARGS...]: start a server and wait for
+# /readyz; prints the URL.
 server() {
 	local name=$1 img=$2 db=$3
+	shift 3
 	docker run -d --name "$ID-$name" --network "$NET" -p 127.0.0.1::8080 -e STACKURITY_DATABASE_URL="$(dburl "$db")" \
-		-e STACKURITY_FEEDS=off -e STACKURITY_COOKIE_SECURE=false "$img" server >/dev/null
+		-e STACKURITY_FEEDS=off -e STACKURITY_COOKIE_SECURE=false "$@" "$img" server >/dev/null
 	local port url
 	port=$(docker port "$ID-$name" 8080/tcp | head -1 | sed 's/.*://')
 	url="http://127.0.0.1:$port"
@@ -135,6 +143,42 @@ api() {
 	curl -s -b "$jar" "$url/api/v1/assets?limit=1" | jq -r '.total'
 }
 
+# has_schema_guard IMAGE: whether the release refuses a database a newer
+# version migrated. Releases up to 0.4.0 do not; a build from source does.
+has_schema_guard() {
+	local v
+	v=$(docker run --rm "$1" --version | awk '{print $NF}')
+	v=${v#v}
+	case "$v" in "" | dev) return 0 ;; esac
+	[ "$(printf '%s\n%s\n' "$v" 0.4.0 | sort -V | tail -1)" != 0.4.0 ]
+}
+
+# refuses NAME IMAGE DB ARGS...: the command must exit non-zero with the
+# newer-schema error within a minute.
+refuses() {
+	local name=$1 img=$2 db=$3 code
+	shift 3
+	docker run -d --name "$ID-$name" --network "$NET" -e STACKURITY_DATABASE_URL="$(dburl "$db")" \
+		-e STACKURITY_FEEDS=off -e STACKURITY_LOG_FORMAT=text "$img" "$@" >/dev/null
+	for _ in $(seq 60); do
+		[ "$(docker inspect -f '{{.State.Running}}' "$ID-$name")" = true ] || break
+		sleep 1
+	done
+	if [ "$(docker inspect -f '{{.State.Running}}' "$ID-$name")" = true ]; then
+		fail "$img $* started against a database a newer version migrated"
+	else
+		code=$(docker inspect -f '{{.State.ExitCode}}' "$ID-$name")
+		docker logs "$ID-$name" >"$WORK/$name.log" 2>&1
+		if [ "$code" = 0 ] || ! grep -q 'upgraded by a newer Stackurity' "$WORK/$name.log"; then
+			cat "$WORK/$name.log" >&2
+			fail "$img $* exited $code without the newer-schema error"
+		else
+			echo "$img $* refused the newer schema (exit $code)"
+		fi
+	fi
+	docker rm -f "$ID-$name" >/dev/null
+}
+
 same() {
 	if ! diff -u "$WORK/$1" "$WORK/$2"; then
 		fail "$3: counts differ ($1 vs $2)"
@@ -159,20 +203,56 @@ psql old-db "INSERT INTO findings (workspace_id, kind, key, inventory_id, asset_
 	SELECT i.workspace_id, 'vulnerability', 'CVE-2099-' || i.id, i.id, i.asset_id, i.component_id, 'confirmed', 'high', '99.0'
 	FROM inventory i WHERE i.removed_at IS NULL ON CONFLICT DO NOTHING" >/dev/null
 psql old-db "UPDATE findings SET status = 'resolved', resolved_at = now() WHERE id IN (SELECT id FROM findings ORDER BY id LIMIT 2)" >/dev/null
+prev_migrations=$(psql old-db "SELECT count(*) FROM schema_migrations")
 counts old-db >"$WORK/before"
 cat "$WORK/before"
 grep -q '^workspaces|2$' "$WORK/before" || fail "expected two workspaces"
 grep -q '^findings|[1-9]' "$WORK/before" || fail "expected findings"
 docker exec "$ID-old-db" pg_dump -U stackurity -Fc stackurity >"$WORK/pre-upgrade.dump"
 
+want=$(ls "$ROOT"/internal/db/migrations/*.sql | wc -l | tr -d ' ')
+mixed=""
+if [ "$want" -le "$prev_migrations" ]; then
+	mixed="$CUR adds no migration to the $prev_migrations of $PREV"
+elif ! has_schema_guard "$PREV"; then
+	mixed="$PREV predates the newer-schema guard (added after 0.4.0)"
+fi
+if [ -z "$mixed" ]; then
+	# A replica of the previous version still running when the upgrade
+	# starts: it must notice and fail /readyz.
+	stale_url=$(server stale "$PREV" old-db -e STACKURITY_TEST_TIMINGS=schema-check=2s)
+fi
+
 log "upgrade to $CUR"
 url=$(server new "$CUR" old-db)
-want=$(ls "$ROOT"/internal/db/migrations/*.sql | wc -l | tr -d ' ')
 got=$(psql old-db "SELECT count(*) FROM schema_migrations")
 [ "$got" = "$want" ] || fail "schema_migrations has $got entries, the build has $want migrations"
 api "$url" >"$WORK/assets-new"
 same assets-prev assets-new "API asset total"
 cli "$CUR" old-db admin list-workspaces
+
+log "mixed versions: $PREV against the database $CUR migrated"
+if [ -n "$mixed" ]; then
+	echo "skipped: $mixed"
+else
+	code=""
+	for _ in $(seq 30); do
+		code=$(curl -s -o "$WORK/stale-readyz.json" -w '%{http_code}' "$stale_url/readyz" || true)
+		[ "$code" = 503 ] && break
+		sleep 1
+	done
+	if [ "$code" = 503 ] && grep -q schema_newer "$WORK/stale-readyz.json"; then
+		echo "running $PREV replica fails /readyz: $(jq -r .error.message "$WORK/stale-readyz.json")"
+	else
+		fail "running $PREV replica: /readyz returned $code, want 503 schema_newer"
+	fi
+	docker rm -f "$ID-stale" >/dev/null
+	migrations_before=$(psql old-db "SELECT string_agg(name, ',' ORDER BY name) FROM schema_migrations")
+	refuses old-server "$PREV" old-db server
+	refuses old-migrate "$PREV" old-db migrate
+	[ "$(psql old-db "SELECT string_agg(name, ',' ORDER BY name) FROM schema_migrations")" = "$migrations_before" ] ||
+		fail "$PREV changed schema_migrations of a newer database"
+fi
 stop new
 counts old-db >"$WORK/after-upgrade"
 same before after-upgrade upgrade

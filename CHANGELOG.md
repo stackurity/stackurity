@@ -4,6 +4,23 @@ All notable changes to Stackurity. Versions follow [Semantic Versioning](https:/
 
 Each release's section is published as its GitHub release notes, and a tag without a section here cannot be released (`go run ./tools/changelog -version vX.Y.Z` prints it). New changes go under **Unreleased**, which is renamed to the version when it is tagged. Subsections are **Security**, **Added**, **Changed**, **Fixed** and **Upgrading**. Put fixes for vulnerabilities under `### Security`, first: installations treat a release with that heading as a security release and show administrators a banner they can only snooze.
 
+## Unreleased
+
+### Security
+
+- The quick start no longer turns off the `Secure` flag on the session cookie. Chrome, Edge and Firefox keep a `Secure` cookie on `http://localhost`, so a trial on your own machine runs with the same cookie settings as production; the README separates "Try it on your own machine" from "Production install" (HTTPS through a reverse proxy). Safari does not send `Secure` cookies to `http://localhost`; the documented workaround is labelled local evaluation only and keeps the port on loopback.
+- When `STACKURITY_COOKIE_SECURE=false` and the deployment is not declared local (`STACKURITY_BASE_URL` an `http://` loopback address, or no base URL and a loopback `STACKURITY_LISTEN`), the server logs a warning at startup and **Platform health** shows "Session cookies are not marked Secure". An `https://` base URL with insecure cookies always warns. See `docs/install.md`, "TLS".
+
+### Added
+
+- **Mixed versions are refused.** A server, `stackurity migrate` or `stackurity admin` command refuses a database that a newer version has migrated ("this database was upgraded by a newer Stackurity; run that version or restore the backup") and changes nothing in it. A running server checks every minute: once a newer version has migrated its database it stops its background work, `/readyz` returns 503 `schema_newer`, it logs an error and Platform health shows a critical problem, so orchestrators stop routing to replicas left on the old version. The documented rollback (restore the pre-upgrade backup, start the previous image) is unaffected.
+- An upgrade checklist for single and multi-replica deployments in `docs/install.md` ("Upgrading"), stating that mixed-version operation is unsupported and why, and that the Helm chart's `Recreate` strategy must not be replaced by `RollingUpdate` for upgrades.
+- CI checks that the Helm chart renders `strategy: type: Recreate` by default, and the upgrade release check now starts the previous version against the database the new one migrated and expects it to refuse (and a previous-version replica left running to fail `/readyz`). This applies to upgrades from releases after 0.4.0, which have the guard.
+
+### Changed
+
+- `deploy/docker-compose.yml` passes `STACKURITY_BASE_URL` to the server; before, setting it in `deploy/.env` had no effect.
+
 ## 0.4.0
 
 ### Security

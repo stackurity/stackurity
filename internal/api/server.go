@@ -18,6 +18,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/stackurity/stackurity/internal/auth"
+	"github.com/stackurity/stackurity/internal/db"
 	"github.com/stackurity/stackurity/internal/health"
 	"github.com/stackurity/stackurity/internal/metrics"
 	"github.com/stackurity/stackurity/internal/model"
@@ -71,6 +72,10 @@ type Server struct {
 	UpdateCheck bool
 	// HTTPMetrics records requests for the metrics listener; nil disables it.
 	HTTPMetrics *metrics.HTTP
+	// Schema reports when the database was migrated by a newer version while
+	// this server runs; /readyz then fails so traffic moves to the new
+	// replicas. Nil disables the check.
+	Schema *db.SchemaGuard
 	// limiter counts sign-in, setup and enrollment attempts in the database,
 	// shared by every replica (ratelimit.go).
 	limiter *rateLimiter
@@ -262,6 +267,10 @@ func (s *Server) ready(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	if err := s.Store.Pool.Ping(ctx); err != nil {
 		writeError(w, 503, "database_unavailable", "database is not reachable")
+		return
+	}
+	if err := s.Schema.Err(); err != nil {
+		writeError(w, 503, "schema_newer", err.Error())
 		return
 	}
 	writeJSON(w, 200, map[string]string{"status": "ready"})

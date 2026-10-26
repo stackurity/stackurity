@@ -20,9 +20,21 @@ docker compose logs stackurity | grep -A2 "one-time token"
 To pin a release, set `STACKURITY_IMAGE=ghcr.io/stackurity/stackurity:0.4.0` in `deploy/.env`. Images are signed; check one with
 `cosign verify ghcr.io/stackurity/stackurity:0.4.0 --certificate-identity-regexp '^https://github.com/stackurity/stackurity/.github/workflows/release.yml@refs/tags/' --certificate-oidc-issuer https://token.actions.githubusercontent.com` (see [security-audit.md](security-audit.md)).
 
-Open `http://<host>:8080`, enter the one-time setup token from the log, and create the first administrator. The token only works while no users exist.
+Open the dashboard through your HTTPS proxy (see [TLS](#tls)), or at http://localhost:8080 in a browser on the server itself, enter the one-time setup token from the log, and create the first administrator. The token only works while no users exist.
 
-**TLS.** The session cookie is marked `Secure` by default, so serve Stackurity over HTTPS through a reverse proxy (Caddy, nginx, Traefik). If the proxy sets `X-Forwarded-For`, set `STACKURITY_TRUST_PROXY=true`. For a quick evaluation over plain HTTP on a trusted network, set `STACKURITY_COOKIE_SECURE=false` in `deploy/.env`.
+### TLS
+
+The session cookie is marked `Secure` by default, so serve Stackurity over HTTPS through a reverse proxy (Caddy, nginx, Traefik) and set `STACKURITY_BASE_URL` to its `https://` address in `deploy/.env`. If the proxy sets `X-Forwarded-For`, set `STACKURITY_TRUST_PROXY=true`. A minimal Caddyfile: `stackurity.example.com { reverse_proxy 127.0.0.1:8080 }`; with the proxy on the same host, also set `STACKURITY_PORT=127.0.0.1:8080` so the plain HTTP port is not reachable from the network.
+
+Over plain HTTP, browsers only keep a `Secure` cookie for `http://localhost` (Chrome, Edge and Firefox; checked by signing in with headless Chrome, Chromium and Firefox), which is how a trial on your own machine works without changing anything. Safari's engine (WebKit) stores the cookie but does not send it back to `http://localhost`, so sign-in does not stick there.
+
+> **Warning: `STACKURITY_COOKIE_SECURE=false` is for local evaluation only, never production.** Without `Secure`, the browser also sends the session cookie over plain HTTP, where anyone on the network path can read it and take over the session, an administrator's included. If you need it (Safari on your own machine), declare the local evaluation and keep the port on loopback:
+>
+> ```sh
+> STACKURITY_PORT=127.0.0.1:8080 STACKURITY_COOKIE_SECURE=false STACKURITY_BASE_URL=http://localhost:8080 docker compose up -d
+> ```
+>
+> When session cookies are not `Secure` and the deployment does not look local, the server logs a warning at startup (`session cookies are not marked Secure`) and **Platform health** shows "Session cookies are not marked Secure". Local means `STACKURITY_BASE_URL` is an `http://` address on `localhost`, `*.localhost`, `127.0.0.0/8` or `[::1]`, or, with no base URL, `STACKURITY_LISTEN` is a loopback address. Anything else warns, an `https://` base URL most of all (the proxy serves HTTPS, but the cookie would also be sent over HTTP). Inside a container the server cannot see which host interfaces Docker publishes the port on, so `STACKURITY_LISTEN=:8080` with no base URL warns too.
 
 Alternatively, create the first admin from the command line:
 
@@ -38,7 +50,7 @@ docker compose exec -e STACKURITY_PASSWORD='a long passphrase' stackurity \
 | `STACKURITY_DATABASE_URL` / `_FILE` | — | PostgreSQL connection string, or a file containing it |
 | `STACKURITY_LISTEN` | `:8080` | HTTP listen address |
 | `STACKURITY_DATA_DIR` | `/var/lib/stackurity` | Scratch space for repository clones |
-| `STACKURITY_COOKIE_SECURE` | `true` | Mark the session cookie `Secure` |
+| `STACKURITY_COOKIE_SECURE` | `true` | Mark the session cookie `Secure`. `false` is for local evaluation only, never production ([TLS](#tls)) |
 | `STACKURITY_TRUST_PROXY` | `false` | Honour `X-Forwarded-For` / `X-Real-IP` |
 | `STACKURITY_SECRETS_DIR` | `/run/secrets` | Directory allowed for `file:` secret references |
 | `STACKURITY_SECRET_*` | — | Environment variables allowed for `env:` secret references |
@@ -348,19 +360,38 @@ Test a restore regularly. A backup you have never restored is not a backup. To c
 
 Instance administrators see a banner when a newer release is available, and **Settings → What's new** lists the release notes of every newer release with these steps. A release whose notes have a **Security** section shows a stronger banner that can only be snoozed for a day. The server reads GitHub's public release list every 12 hours and compares it with its own version locally; the request carries nothing about your installation ([network.md](network.md#update-check)). Set `STACKURITY_UPDATE_CHECK=off` to turn the check off, or `STACKURITY_UPDATE_URL` to use a mirror. Development builds (`dev`) never show an update.
 
-1. Note the image you run now (`docker compose images stackurity`), and take a backup (see [Backup and restore](#backup-and-restore)):
+**Versions are never mixed.** Every replica must run the same version. Schema migrations are not backward compatible (a newer release can rename or drop what the previous code reads), and the meaning of background task leases, job payloads and scheduling can change between releases, so an old and a new replica working on one database at the same time can lose or corrupt work. So every upgrade stops all replicas of the old version before the first replica of the new version starts. Stackurity enforces the part it can see:
+
+- A server (or `stackurity migrate`, or any `stackurity admin` command) refuses to start against a database that a newer version has migrated: `this database was upgraded by a newer Stackurity ...; run that version or restore the backup taken before the upgrade`. It changes nothing in that database.
+- A server that is already running checks every minute. Once a newer version has migrated its database, it stops its background work, `/readyz` returns 503 with `schema_newer`, it logs an error on every check, and **Platform health** shows a critical problem. Orchestrators stop routing to it; stop it.
+
+These checks are in the version being replaced, so they protect upgrades *from* releases after 0.4.0; when upgrading from 0.4.0 or earlier, stopping every old replica is up to you. The rollback below still works: the restored pre-upgrade backup has only migrations the previous version knows.
+
+#### Checklist
+
+1. **Read the release notes** for every version between yours and the new one (**Settings → What's new**), especially **Upgrading** sections.
+2. **Note the version you run now** (`docker compose images stackurity`, or the image tag in your Helm values) so you can roll back.
+3. **Stop every replica.**
+   - Compose, one server: nothing to do; `docker compose up -d` in step 5 replaces the container (the old one stops before the new one starts).
+   - Several servers or hosts against one database: stop all of them (`docker compose stop stackurity` on each host, `systemctl stop`, or scale your service to 0) and check none is left (`SELECT DISTINCT client_addr, application_name FROM pg_stat_activity WHERE datname = 'stackurity'` lists who is still connected).
+   - Helm: nothing to do with the chart's default `Recreate` strategy. Do not use `RollingUpdate` for a version upgrade (see below).
+4. **Take a backup** (see [Backup and restore](#backup-and-restore)):
 
    ```sh
    docker compose exec -T postgres pg_dump -U stackurity -Fc stackurity > stackurity-before-upgrade.dump
    ```
 
-2. `git pull`, then `docker compose pull && docker compose up -d` (or bump `STACKURITY_IMAGE`; with `--build` if you build from source).
-3. Migrations run automatically at startup inside a lock, so concurrent starts are safe. Run `stackurity migrate` to apply them separately.
-4. Check that `/readyz` answers 200 and that your workspaces, assets and findings are there.
+5. **Start one replica of the new version.** Compose: `git pull`, then `docker compose pull && docker compose up -d` (or bump `STACKURITY_IMAGE`; with `--build` if you build from source). Helm: set the new image tag (or chart version) and run `helm upgrade` with your usual values; it starts every replica of the new version at once, which is safe. Migrations run at startup inside a lock, so concurrent starts of the *same* version are safe; `stackurity migrate` applies them separately if you prefer.
+6. **Check it**: `/readyz` answers 200, **Settings → Platform health** shows no new problems, and your workspaces, assets and findings are there (`stackurity admin list-workspaces`).
+7. **Start the other replicas** of the new version (scale back up).
 
-With Helm, set the new image tag (or chart version) and run `helm upgrade` with your usual values.
+If a replica of the old version was missed, it refuses to start, or, if it was still running, fails `/readyz` within a minute and logs `database schema is newer than this server`; stop it.
 
-Before a release is published, CI installs each earlier release listed under `from:` in [`.github/workflows/release-checks.yml`](../.github/workflows/release-checks.yml) (the supported upgrade sources), loads data, starts the new version on the same database, restores a backup of the result into a new PostgreSQL server, and runs the rollback below, checking readiness and counts at each step. The script is `tools/release-checks/upgrade.sh`; you can run it against your own build: `tools/release-checks/upgrade.sh ghcr.io/stackurity/stackurity:0.4.0 stackurity:mybuild`.
+#### Helm and the update strategy
+
+The chart's `updateStrategy` is `Recreate`: Kubernetes deletes every pod of the old version before it creates the new ones, so two versions never share the database. CI checks that the chart renders `Recreate` by default. Do not override it with `RollingUpdate` for a version upgrade: during a rolling update, pods of both versions run together against a schema only the new one understands. (Old pods then fail `/readyz` and stop their background work, so the damage is limited, but it is not a supported way to upgrade.) A rolling restart of the *same* version (`kubectl rollout restart`) is safe with either strategy.
+
+Before a release is published, CI installs each earlier release listed under `from:` in [`.github/workflows/release-checks.yml`](../.github/workflows/release-checks.yml) (the supported upgrade sources), loads data, starts the new version on the same database, checks that the previous version then refuses that database (for releases that have the check), restores a backup of the result into a new PostgreSQL server, and runs the rollback below, checking readiness and counts at each step. The script is `tools/release-checks/upgrade.sh`; you can run it against your own build: `tools/release-checks/upgrade.sh ghcr.io/stackurity/stackurity:0.4.0 stackurity:mybuild`.
 
 ### Rolling back
 
@@ -389,7 +420,7 @@ helm install stackurity oci://ghcr.io/stackurity/charts/stackurity --version 0.4
 
 The chart is published with each release from 0.4.0 and signed with Sigstore (`cosign verify ghcr.io/stackurity/charts/stackurity:0.4.0 --certificate-identity-regexp '^https://github.com/stackurity/stackurity/.github/workflows/release.yml@refs/tags/' --certificate-oidc-issuer https://token.actions.githubusercontent.com`). You can also install from a checkout: `helm install stackurity deploy/helm/stackurity ...`.
 
-The chart runs the same hardened container: non-root, read-only root filesystem, all capabilities dropped, `RuntimeDefault` seccomp, and no service-account token. PostgreSQL isn't bundled; use a managed database or an operator. Set `replicaCount` above 1 for availability (see [Running several replicas](#running-several-replicas)); the chart keeps the `Recreate` update strategy so an upgrade never runs two versions at once. `metrics.enabled=true` serves Prometheus metrics on port 9100 through a separate `<release>-metrics` Service, never through the ingress. With the Prometheus Operator, add `metrics.serviceMonitor.enabled=true` (and `metrics.serviceMonitor.labels` matching your Prometheus's `serviceMonitorSelector`, for example `release: kube-prometheus-stack`) for a ServiceMonitor that scrapes it every `metrics.serviceMonitor.interval` (30s). It is created only when the cluster serves `monitoring.coreos.com/v1`; with `helm template`, pass `--api-versions monitoring.coreos.com/v1/ServiceMonitor`.
+The chart runs the same hardened container: non-root, read-only root filesystem, all capabilities dropped, `RuntimeDefault` seccomp, and no service-account token. PostgreSQL isn't bundled; use a managed database or an operator. Set `replicaCount` above 1 for availability (see [Running several replicas](#running-several-replicas)); the chart keeps the `Recreate` update strategy so an upgrade never runs two versions at once; do not switch it to `RollingUpdate` for upgrades ([Upgrading](#helm-and-the-update-strategy)). `metrics.enabled=true` serves Prometheus metrics on port 9100 through a separate `<release>-metrics` Service, never through the ingress. With the Prometheus Operator, add `metrics.serviceMonitor.enabled=true` (and `metrics.serviceMonitor.labels` matching your Prometheus's `serviceMonitorSelector`, for example `release: kube-prometheus-stack`) for a ServiceMonitor that scrapes it every `metrics.serviceMonitor.interval` (30s). It is created only when the cluster serves `monitoring.coreos.com/v1`; with `helm template`, pass `--api-versions monitoring.coreos.com/v1/ServiceMonitor`.
 
 ## Running several replicas
 
@@ -410,12 +441,12 @@ Any number of servers can run against one PostgreSQL database, behind a load bal
   The per-account limit means someone guessing a password can keep that account from signing in with a password for up to 15 minutes at a time; single sign-on is unaffected, and the attempts appear in the audit log as `auth.login_failed`.
 - **Per replica:** the scratch directory (`STACKURITY_DATA_DIR`, temporary clones only), and HTTP and database pool metrics. Mount the same `file:` secrets and set the same environment on every replica.
 - **Crashes:** what a killed replica leaves behind (jobs, feed syncs, ingests, notifications, periodic tasks), what is guaranteed after a restart, and the crash tests that check it are in [reliability.md](reliability.md).
-- **Upgrades:** stop every replica, then start the new version (Compose and the Helm chart's `Recreate` strategy do this). Migrations run once, inside a lock, but a new schema is not guaranteed to work with the previous version's code.
+- **Upgrades:** stop every replica, then start the new version (the [checklist](#checklist); the Helm chart's `Recreate` strategy does this). Mixed versions are not supported: a new schema is not guaranteed to work with the previous version's code, so an old replica refuses to start against it, and one still running fails `/readyz` and stops its background work.
 
 ## Health
 
 - `GET /healthz`: the process is up.
-- `GET /readyz`: the database is reachable. The container health check uses this.
+- `GET /readyz`: the database is reachable and has not been migrated by a newer version (503 `schema_newer` once it has, see [Upgrading](#upgrading)). The container health check uses this.
 - **Platform health** (**Settings → Platform health**, instance administrators; `GET /api/v1/admin/health`): flags an intelligence feed that is stale beyond its threshold or failing, a background task that has not succeeded within three times its interval (at least ten minutes), jobs that ran out of retries in the last 24 hours, a backlog of waiting jobs, and vulnerability intelligence that never synced. Instance administrators see a banner on every page while a critical problem exists.
 - **Platform incidents:** critical problems other than feeds (every workspace already gets its own feed incidents) also open a `platform` incident in the operators' workspace, so its notification routes tell them. That is the default workspace (workspace 1) unless `STACKURITY_PLATFORM_WORKSPACE` names another by id or slug (`STACKURITY_PLATFORM_WORKSPACE=ops`); changing it resolves the incidents in the old workspace and raises them in the new one. If that workspace is disabled or does not exist, no platform incidents are raised anywhere: the server logs each critical problem every ten minutes (`platform problem not raised as an incident`), instance administrators still see the banner, and Platform health shows a warning saying why. Platform incidents carry no error details, which can name other workspaces; the Platform health page has those. If the alert dispatcher itself is stuck it cannot report that, so also watch the metrics below.
 - **Metrics:** set `STACKURITY_METRICS_ADDR` (for example `127.0.0.1:9100`, or `:9100` in a container) to serve Prometheus metrics at `/metrics` on a separate listener. It has no authentication, so keep it on a private network. Database-derived values are the same on every replica; HTTP, pool and Go values are per replica.
