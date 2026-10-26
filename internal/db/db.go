@@ -6,9 +6,6 @@ import (
 	"embed"
 	"errors"
 	"fmt"
-	"io/fs"
-	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -138,30 +135,26 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) ([]string, error) {
 		name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
 		return nil, err
 	}
+	names, err := appliedMigrations(ctx, conn)
+	if err != nil {
+		return nil, err
+	}
+	// A database a newer version migrated is left exactly as it is: this
+	// version's code may not work with that schema, and migrations are not
+	// reversed. The way back is the backup taken before the upgrade.
+	if err := newerSchema(names); err != nil {
+		return nil, err
+	}
 	applied := map[string]bool{}
-	rows, err := conn.Query(ctx, `SELECT name FROM schema_migrations`)
-	if err != nil {
-		return nil, err
-	}
-	names, err := pgx.CollectRows(rows, pgx.RowTo[string])
-	if err != nil {
-		return nil, err
-	}
 	for _, n := range names {
 		applied[n] = true
 	}
-	files, err := fs.Glob(migrations, "migrations/*.sql")
-	if err != nil {
-		return nil, err
-	}
-	sort.Strings(files)
 	var done []string
-	for _, f := range files {
-		name := strings.TrimSuffix(strings.TrimPrefix(f, "migrations/"), ".sql")
+	for _, name := range Known() {
 		if applied[name] {
 			continue
 		}
-		sql, err := migrations.ReadFile(f)
+		sql, err := migrations.ReadFile("migrations/" + name + ".sql")
 		if err != nil {
 			return done, err
 		}

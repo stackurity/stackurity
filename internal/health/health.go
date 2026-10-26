@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/stackurity/stackurity/internal/db"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
 )
@@ -79,6 +80,9 @@ type Checker struct {
 	// incidents are raised in (STACKURITY_PLATFORM_WORKSPACE); empty means
 	// the default workspace.
 	PlatformWorkspace string
+	// Schema reports a database migrated by a newer version while this
+	// server runs; nil disables the check.
+	Schema *db.SchemaGuard
 }
 
 // PlatformTarget returns the workspace platform incidents are raised in. When
@@ -161,6 +165,12 @@ func (c *Checker) Check(ctx context.Context) (*Report, error) {
 			Title: "Platform problems are not raised as incidents",
 			Detail: why + " Critical problems are shown here and in the banner, and logged by the server, instead. " +
 				"Set STACKURITY_PLATFORM_WORKSPACE to an active workspace."})
+	}
+	if err := c.Schema.Err(); err != nil {
+		r.Problems = append(r.Problems, Problem{Severity: Critical, Kind: "schema", Key: "newer",
+			Title: "This server is older than its database and has stopped background work",
+			Detail: err.Error() + ". Mixed versions are not supported: stop every replica of this version " +
+				"(docs/install.md, Upgrading)."})
 	}
 	if wait := time.Duration(r.OldestQueuedSeconds * float64(time.Second)); wait > queueBacklog {
 		r.Problems = append(r.Problems, Problem{Severity: Warning, Kind: "jobs", Key: "backlog",
