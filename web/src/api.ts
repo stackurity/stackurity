@@ -1324,6 +1324,42 @@ export const PLAN_STATUSES = [
   "cancelled",
 ] as const;
 
+/** One package on one asset whose remediation eligibility a proposed policy changes. */
+export interface PolicyPreviewPackage {
+  asset_id: number;
+  asset_name: string;
+  environment: string;
+  package: string;
+  from_version: string;
+  to_version: string;
+  change_type: string;
+  priority: string;
+  finding_keys: string[] | null;
+  /** The policy that authorises it before and after ("" for none). */
+  before_policy: string;
+  after_policy: string;
+  /** Why the proposed policy no longer authorises it. */
+  reason?: string;
+}
+
+/** POST /remediation/policies/preview: what saving the policy would change, nothing saved. */
+export interface RemediationPolicyPreview {
+  candidates: number;
+  eligible_before: number;
+  eligible_after: number;
+  assets_before: number;
+  assets_after: number;
+  gained: number;
+  gained_from_none: number;
+  lost: number;
+  lost_to_none: number;
+  gained_assets: number;
+  lost_assets: number;
+  gained_sample: PolicyPreviewPackage[];
+  lost_sample: PolicyPreviewPackage[];
+  sample_limit: number;
+}
+
 export interface RemediationPolicy {
   id: number;
   name: string;
@@ -1522,6 +1558,8 @@ export interface ReportException {
   reason: string;
   mitigation: string;
   until: string | null;
+  /** Evidence state: confirmed, needs_validation, stale, stale_intelligence, unknown. */
+  verification?: string;
 }
 
 export interface ReportDrift {
@@ -1552,6 +1590,8 @@ export interface EvidenceReport {
     end_of_life: number;
     overdue: number;
     overdue_by_priority: Record<string, number> | null;
+    /** Open findings by evidence state (EVIDENCE_STATE_LABEL). */
+    by_evidence?: Record<string, number> | null;
   };
   resolved: {
     total: number;

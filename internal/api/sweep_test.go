@@ -218,6 +218,9 @@ var routeRules = map[string]routeRule{
 	}},
 	"POST /api/v1/enrollments":          {class: "create", body: func(*tenantFx) any { return map[string]any{"label": "sweep"} }},
 	"POST /api/v1/remediation/policies": {class: "create", body: func(*tenantFx) any { return map[string]any{"name": "sweep"} }},
+	"POST /api/v1/remediation/policies/preview": {class: "create", edition: "ee", query: "?id={policy}", body: func(*tenantFx) any {
+		return map[string]any{"name": "sweep", "enabled": true, "target": "host_package", "ecosystems": []string{"deb"}, "change_types": []string{"distro"}}
+	}},
 }
 
 // tenantFx is one workspace's data and credentials. Every name contains

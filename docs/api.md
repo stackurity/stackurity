@@ -87,6 +87,7 @@ Roles, from least to most access: `viewer` (read, including the audit log), `eng
 | `GET /users/directory` | engineer | Active users (id, email, name) for assignment |
 | `GET /remediation/policies` | security | Remediation policies |
 | `POST /remediation/policies`, `PUT`/`DELETE /remediation/policies/{id}` | admin | Manage policies ([remediation.md](remediation.md)) |
+| `POST /remediation/policies/preview?id=` | admin | Which fixable packages and assets a proposed policy would authorise or stop authorising, without saving ([remediation.md](remediation.md#previewing-a-policy-change)) |
 | `GET /remediation/plans?status=`, `GET /remediation/plans/{id}` | viewer | Plans and their per-asset actions |
 | `POST /remediation/plans/{id}/decision` | security (admin for major) | `{"decision": "approve" \| "reject" \| "cancel", "note": "..."}` |
 | `GET /assets/{id}/remediation` | viewer | Remediation actions for an asset |
