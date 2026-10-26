@@ -37,6 +37,10 @@ Proof (1.0):
 - Findings carry `second_check` and `second_check_reason`, and `GET /findings/summary` counts `second_check_disagreed`. A second-check disagreement never changes `verification` or lowers priority.
 - Linux and Windows host batches leave out an entry the server would refuse (and say so) instead of failing the whole batch; an SBOM's over-long supplier or reference is clipped instead of refusing the document.
 
+### Fixed
+
+- **The release check no longer holds up alerts and other background tasks.** Periodic tasks run one after another, and the check waited a random 0 to 30 seconds and then up to 30 seconds for GitHub inside its turn, so after each start, and every 12 hours, notifications and the other periodic tasks could pause for up to a minute. The wait and the request now run in the background, at most one at a time, and stop when the server shuts down.
+
 ### Upgrading
 
 - Migration `0033` adds `invitations` (with row-level security per workspace), `workspaces.onboarding_state` and `onboarding_project_id`, `project_id` on `enrollments` and `api_tokens`, and `assets.quiet_backlog`. All are new tables, nullable columns or constant defaults, so no table is rewritten. Workspaces that already have assets are marked as onboarded. Existing assets keep `quiet_backlog` false: their findings keep escalating as before; every asset created after the upgrade gets a quiet first scan.
