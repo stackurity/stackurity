@@ -26,7 +26,7 @@ Roles, from least to most access: `viewer` (read, including the audit log), `eng
 | `GET /install/agent.sh`, `GET /download/agent/linux-{amd64,arm64}[.sha256]` | none | The agent installer and the agent builds it downloads (bundled in the server image; `STACKURITY_AGENT_DIR`) |
 | `POST /ingest` | collector, engineer+ | Submit an `ObservationBatch` (gzip accepted) |
 | `POST /sbom/import?asset_name=&asset_kind=&environment=` | collector, engineer+ | Import a CycloneDX or SPDX JSON document |
-| `GET /collections/{id}/result` | collector (own submissions), engineer+ | Whether a submitted collection has been evaluated (`status`: `pending`, `evaluated`, `failed`), then the asset's open findings and its count of `evaluation_gaps`. Used by `stackurity scan --fail-on` |
+| `GET /collections/{id}/result` | collector (own submissions), engineer+ | Whether a submitted collection has been evaluated (`status`: `pending`, `scoring` (matched, findings not prioritised yet), `evaluated` (matched and prioritised), `failed`), then the asset's open findings and its count of `evaluation_gaps`. Used by `stackurity scan --fail-on` |
 | `GET /overview` | viewer | Inventory, coverage and status counts, including assets by coverage state (`asset_coverage`) and components by row coverage (`component_coverage`) |
 | `GET /search?q=&limit=` | viewer | Global search of the current workspace, see [Search](#search) |
 | `GET /assets?kind=&environment=&status=&owner_team_id=&q=&reboot_required=true&exposed=` | viewer | List assets. `reboot_required=true` lists hosts that run older code than is installed. `exposed=true` or `false` filters by `exposed`, the exposure risk scoring uses: `internet_exposed` when set by hand, else what a collector observed (a Kubernetes workload's `exposure`, or for an image the workloads deployed as it) |
@@ -100,7 +100,17 @@ that row: `evaluated`, `stale_intelligence` (evaluated against a feed that is
 stale or failing), `not_evaluated` or `unsupported` (with `coverage_reason`),
 or `awaiting` (not evaluated yet). `coverage_feed` names the feed used and
 `evaluated_at` when. The `coverage` filter takes one of these or `gaps`
-(`not_evaluated` and `unsupported`).
+(`not_evaluated` and `unsupported`). An evaluated row can carry a
+`coverage_reason` too, saying how it is reported: kernel headers ("not
+running code") and the other packages of a kernel version, whose findings are
+on the kernel image ([compatibility.md](compatibility.md#kernels)).
+
+`lifecycle_note` is set on a distribution package whose upstream release is
+end of life: `status` is `distribution_supported` (no finding: the
+distribution release still provides security updates), `distribution_ended`
+(the release itself is end of life) or `third_party_build` (the finding
+stands), with `text`, `subject`, `upstream_eol`, `distribution` and
+`distribution_eol` ([compatibility.md](compatibility.md#lifecycle-of-distribution-packages)).
 
 Lists return `{"items": [...], "total": N, "limit": L, "offset": O}`. Pass `?limit=` (max 500) and `?offset=`.
 
@@ -187,11 +197,11 @@ Findings resolve automatically when the component is upgraded or removed, or whe
   - `minimum_fixed`: there is no release data (`release_data: none` or `failed`), or no stable release at or above the minimum is recorded (for example the fix is a pre-release).
   - `supported_line`: the installed release line is end of life, so the end-of-life finding is resolved only by moving to the newest release of the oldest supported line after it (from release data, else endoflife.date's latest), provided that is at or above the minimum fix.
   - `none`: no source lists a fixed version.
-- `change_type` (`patch`, `minor`, `major`, `distro`), `requires_subscription` (the fix is only in Ubuntu Pro or SUSE LTSS), `recommended_yanked`, `minimum_fixed_yanked` and `installed_yanked` (withdrawn by the registry, with `yanked_reason`), and the package's `deprecated` notice.
+- `change_type` (`patch`, `minor`, `major`, `distro`), `requires_subscription` (the fixed build is only in Ubuntu Pro or SUSE LTSS, paid subscriptions; the rationale names the free path), `recommended_yanked`, `minimum_fixed_yanked` and `installed_yanked` (withdrawn by the registry, with `yanked_reason`), and the package's `deprecated` notice.
 - `lifecycle`, `target_lifecycle` and `supported_line`: release lines with `status` `supported`, `security_only` or `end_of_life`.
 - `fixes` and `unfixed`: the finding keys the recommended version resolves and those it does not. `rationale` gives the reasons in plain language.
 
-Package upgrade groups in the action plan (`GET /fix-groups`) carry `recommended_version`, `change_type`, `requires_major`, `recommended_yanked` and `rationale`; `to_version` stays the minimum fixed version.
+Package upgrade groups in the action plan (`GET /fix-groups`) carry `recommended_version`, `change_type`, `requires_major`, `recommended_yanked` and `rationale`; `to_version` stays the minimum fixed version. A group's `needs` (`ubuntu-pro`, `SUSE LTSS`) says a paid channel also publishes fixes for some of its findings; it is informational, and `action` is always the free path.
 
 ## Remediation outcomes
 

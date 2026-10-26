@@ -25,6 +25,11 @@ func (e *exitError) Error() string { return e.msg }
 // so a pipeline can tell a blocked change from a broken scan.
 const gateExitCode = 3
 
+// notReadyExitCode is returned when --wait ran out before the server had
+// evaluated and prioritised the scan: the gate could not be applied, which
+// must never read as a pass.
+const notReadyExitCode = 4
+
 var severityRank = map[string]int{"low": 1, "medium": 2, "high": 3, "critical": 4}
 var priorityRank = map[string]int{"P4": 1, "P3": 2, "P2": 3, "P1": 4}
 
@@ -35,6 +40,7 @@ type gate struct {
 	kev         bool   // known exploited findings block
 	onlyFixable bool   // ignore findings without a fixed version
 	wait        time.Duration
+	poll        time.Duration // between result requests; 0 means 2s
 }
 
 func (g *gate) flags(cmd *cobra.Command) {
@@ -42,7 +48,7 @@ func (g *gate) flags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&g.priority, "fail-on-priority", "", "exit 3 when an open finding has this priority or higher (P1-P4)")
 	cmd.Flags().BoolVar(&g.kev, "fail-on-kev", false, "exit 3 when an open finding is known to be exploited")
 	cmd.Flags().BoolVar(&g.onlyFixable, "only-fixable", false, "with a --fail-on flag, ignore findings that have no fixed version")
-	cmd.Flags().DurationVar(&g.wait, "wait", 5*time.Minute, "how long to wait for the server to evaluate the scan")
+	cmd.Flags().DurationVar(&g.wait, "wait", 5*time.Minute, "how long to wait for the server to evaluate and prioritise the scan (exit 4 when it runs out)")
 }
 
 func (g *gate) enabled() bool { return g.severity != "" || g.priority != "" || g.kev }
@@ -81,30 +87,66 @@ func (g *gate) blocks(f client.ResultFinding) bool {
 	return false
 }
 
-// await polls until the collection has been evaluated.
+// await polls until the collection has been evaluated and every open
+// finding prioritised. Matching creates findings with the default priority
+// (P4, score 0) and the risk engine scores them afterwards; reading them in
+// between let a --fail-on-priority gate pass on unscored findings. When
+// --wait runs out first the result is not ready and the gate fails with
+// notReadyExitCode, never passes.
 func (g *gate) await(ctx context.Context, cl *client.Client, collectionID int64) (*client.CollectionResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, g.wait)
 	defer cancel()
+	poll := g.poll
+	if poll <= 0 {
+		poll = 2 * time.Second
+	}
+	stage := "evaluate"
+	notReady := func() error {
+		what := "evaluate"
+		if stage == "prioritise" {
+			what = "prioritise the findings of"
+		}
+		return &exitError{code: notReadyExitCode, msg: fmt.Sprintf("result not ready: the server did not %s collection %d within %s (--wait); "+
+			"the gate was not applied", what, collectionID, g.wait)}
+	}
 	for {
 		res, err := cl.CollectionResult(ctx, collectionID)
 		if err != nil {
 			if ctx.Err() != nil {
-				return nil, fmt.Errorf("the server did not evaluate collection %d within %s", collectionID, g.wait)
+				return nil, notReady()
 			}
 			return nil, err
 		}
 		switch res.Status {
 		case "evaluated":
-			return res, nil
+			if unscored(res) == 0 {
+				return res, nil
+			}
+			stage = "prioritise"
+		case "scoring":
+			stage = "prioritise"
 		case "failed":
 			return nil, fmt.Errorf("evaluation of collection %d failed on the server: %s", collectionID, res.Error)
 		}
 		select {
 		case <-ctx.Done():
-			return nil, fmt.Errorf("the server did not evaluate collection %d within %s", collectionID, g.wait)
-		case <-time.After(2 * time.Second):
+			return nil, notReady()
+		case <-time.After(poll):
 		}
 	}
+}
+
+// unscored counts findings the server has not prioritised yet. Servers
+// before 0.5.1 report "evaluated" as soon as matching finishes; the policy
+// version on each finding says whether it has been scored.
+func unscored(res *client.CollectionResult) int {
+	n := 0
+	for _, f := range res.Findings {
+		if f.PriorityPolicy == "" {
+			n++
+		}
+	}
+	return n
 }
 
 // report prints the blocking findings and returns an exitError when any exist.

@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import type { CoverageSummary, InventoryRow, RowCoverage } from "../api";
+import type { CoverageSummary, InventoryRow, LifecycleNote, RowCoverage } from "../api";
 import { Badge, type Tone } from "./Badge";
 
 // One vocabulary for coverage, shared with the API and docs/compatibility.md
@@ -81,11 +81,45 @@ export function coverageText(r: InventoryRow): string {
  */
 export function RowCoverageNote({ row }: { row: InventoryRow }) {
   const c = row.coverage;
-  if (!c || c === "evaluated") return null;
+  const life = row.lifecycle_note?.text ? <LifecycleNoteLine note={row.lifecycle_note} /> : null;
+  if (!c || c === "evaluated")
+    return (
+      <>
+        {/* How an evaluated row is reported, e.g. a kernel package whose findings are on the kernel image. */}
+        {row.coverage_reason && (
+          <div className="coverage-note">
+            <span className="small muted">{row.coverage_reason}</span>
+          </div>
+        )}
+        {life}
+      </>
+    );
+  return (
+    <>
+      <div className="coverage-note">
+        <Badge status={c} tone={ROW_COVERAGE_TONES[c]} label={ROW_COVERAGE_LABELS[c]} />{" "}
+        <span className="small">{coverageText(row)}</span>
+      </div>
+      {life}
+    </>
+  );
+}
+
+const LIFECYCLE_NOTE_BADGES: Record<string, { tone: Tone; label: string }> = {
+  distribution_supported: { tone: "info", label: "maintained by the distribution" },
+  distribution_ended: { tone: "warn", label: "release end of life" },
+  third_party_build: { tone: "warn", label: "upstream end of life" },
+};
+
+/**
+ * Upstream end of life on a distribution package: why it raised no finding
+ * (the distribution still provides security updates) or what stands.
+ */
+export function LifecycleNoteLine({ note }: { note: LifecycleNote }) {
+  const b = LIFECYCLE_NOTE_BADGES[note.status ?? ""] ?? { tone: "muted" as Tone, label: "lifecycle" };
   return (
     <div className="coverage-note">
-      <Badge status={c} tone={ROW_COVERAGE_TONES[c]} label={ROW_COVERAGE_LABELS[c]} />{" "}
-      <span className="small">{coverageText(row)}</span>
+      <Badge status={note.status ?? "lifecycle"} tone={b.tone} label={b.label} /> <span className="small">{note.text}</span>
     </div>
   );
 }

@@ -12,10 +12,10 @@ Every open finding gets a priority from P1 (most urgent) to P4, an SOS flag for 
 | Internet exposure | In order: the **Internet exposed** value set on the asset, else the collector's observation (a Kubernetes workload's `exposure`), else for an image the current workloads deployed as it: exposed if any is, internal only if every one is internal, otherwise unknown. |
 | Environment | The asset's environment. It counts as production when it matches one of the policy's production environment names (case-insensitive). Empty or blank means unknown. |
 | Criticality | The asset's criticality: `critical`, `high`, `medium`, `low` or `unknown` (the default). |
-| Fix available | The finding has a fixed version obtainable without a subscription. A fix that needs Ubuntu Pro does not count. |
+| Fix available | The finding has a fixed version obtainable without a subscription. A fix published only in Ubuntu Pro or SUSE LTSS (paid) does not count. |
 | Overdue | The fix deadline has passed and the finding is still `new`, `acknowledged` or `in_progress`. |
 | Scope | `dev` for a development-only dependency. |
-| Kernel not running | The package belongs to an installed kernel that is not the one running. |
+| Kernel not running | The finding is on an installed kernel version that is not the one running. Kernel findings are one per CVE per installed kernel version, and none on headers ([compatibility.md](compatibility.md#kernels)), so a CVE in the running kernel is scored once. |
 | Verification | `confirmed`, `needs_validation` (the installed version came from a low-confidence source) or `stale` (the asset has stopped reporting). |
 
 ## Score
@@ -55,7 +55,7 @@ Missing evidence is never scored like the benign value, and is always named in t
 | Environment (empty) | +0.5, between non-production (0) and production (+1). SOS treats it as production. | Same reasoning as exposure. Set environments to remove the uncertainty: a confirmed KEV finding on an asset with no environment is SOS. |
 | Criticality (`unknown`, or empty) | The policy's `unknown` weight, 0 by default, like `medium` and above `low`. | Criticality is a business judgement most assets never get; treating every asset as critical would make the factor meaningless. Raise the `unknown` weight to be more cautious. |
 | Severity (none published, as for SUSE, or unrecognised) | The policy's `unknown` base, 5 by default (medium). It never meets an SOS rule's `min_severity`. | Treating every SUSE finding as critical would flood P1 and SOS. KEV, exposure and environment still apply, and KEV in production is SOS whatever the severity. |
-| Fix (no fixed version known, or only with Ubuntu Pro) | No fix bonus. | "Fix available" is an actionability bonus, not a risk factor: a finding that can be fixed now ranks slightly higher. |
+| Fix (no fixed version known, or only in a paid channel: Ubuntu Pro, SUSE LTSS) | No fix bonus. | "Fix available" is an actionability bonus, not a risk factor: a finding that can be fixed now ranks slightly higher. |
 | Confidence (`needs_validation`, `stale`) | The score is scaled down (× 0.7, × 0.8) and the finding cannot be SOS. | Low-confidence and stale evidence may describe software that is not, or no longer, installed. The finding stays visible with its own factor; it is never dropped. |
 
 CISA's "known ransomware campaign use" flag is stored with the KEV catalogue but is not a separate input: such an entry scores exactly as any KEV entry.

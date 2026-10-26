@@ -214,9 +214,11 @@ There are two ways to collect repository inventory:
   Use the same `--git-url` as the integration so both land on one asset.
 
   To fail the pipeline on findings, add a threshold. The command uploads the
-  scan, waits for the server to evaluate it, prints the findings that meet the
-  threshold and exits with status 3 (status 1 still means the scan itself
-  failed):
+  scan, waits for the server to evaluate it and prioritise its findings,
+  prints the findings that meet the threshold and exits with status 3 (status
+  1 still means the scan itself failed). If `--wait` (default 5 minutes) runs
+  out first, it exits with status 4, "result not ready": the gate was not
+  applied, and it never passes on findings the server has not scored yet:
 
   ```sh
   stackurity scan . --git-url "$CI_REPOSITORY_URL" --fail-on critical --only-fixable
@@ -230,6 +232,15 @@ There are two ways to collect repository inventory:
   Components with no vulnerability source are listed as a warning and cannot
   fail the gate. A collector token can read the result only of scans it
   submitted.
+
+  The scan reads the directory's own lockfiles. It skips `node_modules`,
+  `vendor`, virtualenvs and similar, `.claude/` (coding-agent worktrees), and
+  any directory below the root that is a checkout of its own: a nested
+  repository or clone (`.git` directory) or a git worktree (`.git` file).
+  Each nested checkout is listed once as "skipped: nested checkout"; scan it
+  separately if it matters. Submodules are part of the repository and are
+  scanned. When the directory is in a git work tree and `git` is installed,
+  paths git ignores are skipped too, counted in one "gitignored" line.
 
   A scan replaces the asset's inventory. For merge-request pipelines, give the
   scan its own `--name` (without `--git-url`) so the default branch's

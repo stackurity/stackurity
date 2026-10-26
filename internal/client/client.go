@@ -217,12 +217,15 @@ type ResultFinding struct {
 	FixedVersion   string `json:"fixed_version"`
 	Title          string `json:"title"`
 	KnownExploited bool   `json:"known_exploited"`
+	// PriorityPolicy is the risk policy version that scored the finding;
+	// "" until the server has prioritised it.
+	PriorityPolicy string `json:"priority_policy_version"`
 }
 
 type CollectionResult struct {
 	CollectionID int64           `json:"collection_id"`
 	AssetID      int64           `json:"asset_id"`
-	Status       string          `json:"status"` // pending, evaluated, failed
+	Status       string          `json:"status"` // pending, scoring, evaluated, failed
 	Error        string          `json:"error"`
 	Findings     []ResultFinding `json:"findings"`
 	Gaps         int64           `json:"evaluation_gaps"`

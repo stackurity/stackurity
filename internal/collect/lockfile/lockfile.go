@@ -9,10 +9,12 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/stackurity/stackurity/internal/model"
 	"github.com/stackurity/stackurity/pkg/pack"
@@ -26,6 +28,41 @@ const MaxLockfileSize = 64 << 20
 var skipDirs = map[string]bool{
 	".git": true, "node_modules": true, "vendor": true, ".hg": true, ".svn": true,
 	"bower_components": true, ".venv": true, "venv": true, "__pycache__": true, "target": true, ".yarn": true,
+	// Coding agents (Claude Code) keep worktrees of the repository here.
+	".claude": true,
+}
+
+// Coverage scopes for parts of the tree a scan leaves out on purpose. They
+// do not make the batch incomplete: nothing that belongs to this checkout
+// was missed.
+const (
+	nestedScope  = "nested-checkout:"
+	ignoredScope = "gitignored"
+)
+
+// nestedCheckout reports whether directory p (below the scan root) is a
+// checkout of its own: a repository or clone (.git directory) or a git
+// worktree (.git file pointing into another repository's worktrees). Their
+// lockfiles belong to that checkout; scanning them counted the same
+// dependencies once per worktree (a repository with coding-agent worktrees
+// in .claude/worktrees reported 1658 observations instead of 340).
+// Submodules (.git file pointing into the parent's .git/modules) are part of
+// the checkout and are scanned.
+func nestedCheckout(fsys fs.FS, p string) bool {
+	gp := path.Join(p, ".git")
+	info, err := fs.Stat(fsys, gp)
+	if err != nil {
+		return false
+	}
+	if info.IsDir() {
+		return true
+	}
+	data, err := readLimited(fsys, gp)
+	if err != nil {
+		return true // unreadable: treat as a separate checkout, and say so
+	}
+	gitdir := filepath.ToSlash(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(string(data)), "gitdir:")))
+	return !strings.Contains(gitdir, "/modules/") && !strings.HasPrefix(gitdir, "modules/")
 }
 
 // Ecosystem lockfiles we recognise but cannot parse yet; reported as
@@ -102,9 +139,20 @@ func Scan(fsys fs.FS) ([]model.Observation, []model.CoverageItem, error) {
 
 // ScanWith is Scan with extensions for files the core cannot read itself.
 func ScanWith(ctx context.Context, fsys fs.FS, exts []Extension) ([]model.Observation, []model.CoverageItem, error) {
+	return scanWith(ctx, fsys, exts, nil)
+}
+
+// scanWith walks fsys. ignored holds slash paths git ignores (directories
+// without a trailing slash); nil when unknown.
+func scanWith(ctx context.Context, fsys fs.FS, exts []Extension, ignored map[string]bool) ([]model.Observation, []model.CoverageItem, error) {
 	var obs []model.Observation
 	var cov []model.CoverageItem
 	extFiles := map[int][]pack.File{}
+	skippedIgnored := 0
+	nested := func(p string) {
+		cov = append(cov, model.CoverageItem{Scope: clip(nestedScope + p), Status: "skipped",
+			Reason: "nested checkout: a separate repository or worktree, not part of this one; scan it on its own"})
+	}
 	err := fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			cov = append(cov, model.CoverageItem{Scope: "path:" + p, Status: "failed", Reason: err.Error()})
@@ -114,9 +162,34 @@ func ScanWith(ctx context.Context, fsys fs.FS, exts []Extension) ([]model.Observ
 			return nil
 		}
 		if d.IsDir() {
-			if p != "." && skipDirs[d.Name()] {
+			if p == "." {
+				return nil
+			}
+			if d.Name() == ".claude" {
+				// Say which worktrees are left out with it.
+				if entries, err := fs.ReadDir(fsys, path.Join(p, "worktrees")); err == nil {
+					for _, e := range entries {
+						if wt := path.Join(p, "worktrees", e.Name()); e.IsDir() && nestedCheckout(fsys, wt) {
+							nested(wt)
+						}
+					}
+				}
+			}
+			if skipDirs[d.Name()] {
 				return fs.SkipDir
 			}
+			if ignored[p] {
+				skippedIgnored++
+				return fs.SkipDir
+			}
+			if nestedCheckout(fsys, p) {
+				nested(p)
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if ignored[p] {
+			skippedIgnored++
 			return nil
 		}
 		if d.Type()&fs.ModeSymlink != 0 {
@@ -192,6 +265,10 @@ func ScanWith(ctx context.Context, fsys fs.FS, exts []Extension) ([]model.Observ
 		}
 		return nil
 	})
+	if skippedIgnored > 0 {
+		cov = append(cov, model.CoverageItem{Scope: ignoredScope, Status: "skipped",
+			Reason: fmt.Sprintf("%d paths ignored by git (.gitignore) were not scanned", skippedIgnored)})
+	}
 	for i, e := range exts {
 		for _, files := range batches(extFiles[i], packBatchBytes) {
 			found, c, err := e.Scan(ctx, files)
@@ -228,7 +305,7 @@ func ScanDirWith(ctx context.Context, dir string, asset model.AssetRef, version 
 	if !info.IsDir() {
 		return nil, errors.New("not a directory: " + dir)
 	}
-	obs, cov, err := ScanWith(ctx, os.DirFS(dir), exts)
+	obs, cov, err := scanWith(ctx, os.DirFS(dir), exts, gitIgnored(ctx, dir))
 	if err != nil {
 		return nil, err
 	}
@@ -240,11 +317,49 @@ func ScanDirWith(ctx context.Context, dir string, asset model.AssetRef, version 
 	}
 	b.Complete = true
 	for _, c := range cov {
+		if strings.HasPrefix(c.Scope, nestedScope) || c.Scope == ignoredScope {
+			continue // left out on purpose
+		}
 		if c.Status == "failed" || c.Status == "skipped" || c.Status == "partial" {
 			b.Complete = false
 		}
 	}
 	return b, nil
+}
+
+// gitIgnored returns the paths below dir that git ignores, relative to dir
+// (directories without their trailing slash), or nil when git is not
+// installed or dir is not in a work tree. It asks git itself, so nested
+// .gitignore files, .git/info/exclude and the global excludes file apply,
+// and tracked files never count as ignored. The repository's own
+// configuration could otherwise run commands (core.fsmonitor), so that is
+// switched off.
+func gitIgnored(ctx context.Context, dir string) map[string]bool {
+	git, err := exec.LookPath("git")
+	if err != nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	run := func(args ...string) ([]byte, error) {
+		cmd := exec.CommandContext(ctx, git, append([]string{"-C", dir, "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false"}, args...)...)
+		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0")
+		return cmd.Output()
+	}
+	if out, err := run("rev-parse", "--is-inside-work-tree"); err != nil || strings.TrimSpace(string(out)) != "true" {
+		return nil
+	}
+	out, err := run("ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory")
+	if err != nil {
+		return nil
+	}
+	ignored := map[string]bool{}
+	for _, p := range strings.Split(string(out), "\x00") {
+		if p = strings.TrimSuffix(p, "/"); p != "" {
+			ignored[p] = true
+		}
+	}
+	return ignored
 }
 
 func readLimited(fsys fs.FS, p string) ([]byte, error) {

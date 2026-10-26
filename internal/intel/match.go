@@ -50,11 +50,7 @@ func versionedDebProduct(purlKey string) (product, cycle string, ok bool) {
 }
 
 // osProducts maps os-release IDs to endoflife.date product names.
-var osProducts = map[string]string{
-	"debian": "debian", "ubuntu": "ubuntu", "alpine": "alpine-linux", "rocky": "rocky-linux",
-	"almalinux": "almalinux", "rhel": "rhel", "centos": "centos", "amzn": "amazon-linux",
-	"fedora": "fedora", "opensuse-leap": "opensuse", "sles": "sles", "ol": "oracle-linux",
-}
+var osProducts = store.OSProducts
 
 // Evaluate re-evaluates the given components (nil means all) or one asset.
 func (e *Evaluator) Evaluate(ctx context.Context, componentIDs []int64, assetID int64) (*EvalStats, error) {
@@ -62,6 +58,15 @@ func (e *Evaluator) Evaluate(ctx context.Context, componentIDs []int64, assetID 
 	if err != nil {
 		return nil, err
 	}
+	if componentIDs != nil {
+		// Kernel packages are reported per kernel version, which needs every
+		// package of that version on the asset, not only the changed ones.
+		if rows, err = e.withKernelSiblings(ctx, rows); err != nil {
+			return nil, err
+		}
+	}
+	kernels := planKernels(rows)
+	kernelFound := map[string]map[int64][]store.FindingInput{}
 	now := time.Now()
 	if e.Now != nil {
 		now = e.Now()
@@ -75,6 +80,10 @@ func (e *Evaluator) Evaluate(ctx context.Context, componentIDs []int64, assetID 
 		return nil, err
 	}
 	feeds, err := e.Store.ListFeeds(ctx)
+	if err != nil {
+		return nil, err
+	}
+	assetOS, err := e.Store.AssetOperatingSystems(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -155,11 +164,32 @@ func (e *Evaluator) Evaluate(ctx context.Context, componentIDs []int64, assetID 
 			} else {
 				rc.Feed = feed.Name
 			}
+			if k, ok := kernels[r.InventoryID]; ok {
+				// Kernel packages: no findings on files that do not run,
+				// and one finding per issue per kernel version.
+				switch {
+				case k.role == osv.KernelNoCode:
+					found = nil
+					if rc.State == store.CoverageEvaluated {
+						rc.Reason = "kernel headers or build files, not running code: kernel vulnerabilities are reported on the kernel image"
+					}
+				default:
+					if kernelFound[k.group] == nil {
+						kernelFound[k.group] = map[int64][]store.FindingInput{}
+					}
+					kernelFound[k.group][r.InventoryID] = found
+					found = nil
+					if rc.State == store.CoverageEvaluated && r.InventoryID != k.rep.InventoryID {
+						rc.Reason = fmt.Sprintf("part of kernel %s: its findings are reported once, on %s", k.release, k.repName)
+					}
+				}
+			}
 			want = append(want, found...)
 		}
 		if rc.State != store.CoverageEvaluated {
 			stats.Gaps++
 		}
+		ci := len(coverage)
 		coverage = append(coverage, rc)
 
 		// --- lifecycle
@@ -192,9 +222,23 @@ func (e *Evaluator) Evaluate(ctx context.Context, componentIDs []int64, assetID 
 		}
 		if c := matchCycle(cycles, cycleVersion); c != nil {
 			if f := eolFinding(r, c, now); f != nil {
-				want = append(want, *f)
+				dist, err := e.distroCycle(ctx, r, cycleCache)
+				if err != nil {
+					return nil, err
+				}
+				note, keep := distroLifecycle(r, c, dist, assetOS[r.AssetID], cycleCache, now)
+				coverage[ci].Lifecycle = note
+				if keep {
+					if note != nil {
+						f.Evidence["distribution"] = note
+					}
+					want = append(want, *f)
+				}
 			}
 		}
+	}
+	for _, g := range sortedKeys(kernelFound) {
+		want = append(want, mergeKernelFindings(kernelFound[g], kernels)...)
 	}
 	if err := e.Store.SetCoverage(ctx, coverage); err != nil {
 		return nil, err

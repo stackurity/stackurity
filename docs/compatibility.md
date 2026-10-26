@@ -65,6 +65,74 @@ The same rules apply to container images scanned through the bundled Syft and to
 | openSUSE Tumbleweed, Amazon Linux 1, other rpm systems | Not supported: findings and fix plans only | |
 | npm, Composer repositories | Renovate pull requests | Revert the pull request |
 
+## Kernels
+
+A host keeps several kernels installed, and each kernel version is several
+packages built from one source package (on Ubuntu: `linux-image-<v>`,
+`linux-modules-<v>`, `linux-modules-extra-<v>`, `linux-headers-<v>`,
+`linux-headers-<v>-generic`, `linux-tools-<v>`). Every kernel advisory
+applies to all of them alike, so they are reported per kernel version:
+
+| Package | Findings |
+|---|---|
+| Kernel code of one version: Debian and Ubuntu `linux-image-*`, `linux-modules-*`, `linux-tools-<version>` and other packages named with the kernel ABI; RPM `kernel`, `kernel-core`, `kernel-modules*` and flavours (`kernel-rt-*`, `kernel-debug-*`, `kernel-64k-*`, `kernel-uek*`, SUSE `kernel-default*`) | One finding per CVE per installed kernel version, on the package that boots (`linux-image-*`, `kernel-core`, `kernel`, `kernel-default`). The other packages of that version are listed in the finding's evidence (`kernel_packages`) and their inventory rows say "its findings are reported once, on ...". Matching is unchanged: findings from every package are merged, a free fix wins over a paid-channel one and the highest fixed version is kept |
+| No running code: `linux-headers-*` (and `linux-<flavour>-headers-*`), `linux-libc-dev`, `linux-tools-common`, `linux-source*`, `linux-doc`; RPM `kernel-headers`, `kernel-devel`, `kernel-*-devel`, `kernel-macros`, `kernel-source`, `kernel-doc`, `kernel-syms` | None. They are checked (coverage `evaluated`) with the reason "kernel headers or build files, not running code" |
+| `kernel-tools`, `kernel-tools-libs`, `kernel-firmware`, `linux-firmware`, metapackages (`linux-image-generic`) | Matched like any package: userspace code, firmware or a different source |
+
+A kernel version that is installed but not the one running (from the agent's
+`kernel_running`) keeps its single finding per CVE, marked
+`not_running_kernel`: the risk engine scores it down to P4, it is never SOS,
+and the action plan puts it under **Remove old kernels**
+(`sudo apt autoremove --purge`, `dnf remove --oldinstallonly`, `zypper
+purge-kernels`). When the running kernel is unknown, every kernel version is
+treated as running. On the first pilot's Ubuntu 20.04 host this turned the
+same CVE from five findings per kernel version (headers, flavour headers,
+modules, plus `linux-libc-dev` and `linux-tools-common` for the newest) into
+one; the fixture in `internal/intel/pilot_test.go` goes from 510 findings and
+100 P1 to 150 and 20. Alpine installs one kernel package at a time and is
+matched as before.
+
+## Lifecycle of distribution packages
+
+End-of-life dates from endoflife.date are the upstream project's: nginx 1.18
+ended in 2021, PHP 8.1 on 2025-12-31, MySQL 8.0 on 2026-04-30. A
+distribution that ships one of those versions keeps patching its own package
+for as long as the distribution release is supported (Ubuntu 22.04 to
+2027, RHEL 9 to 2032), so an upstream end-of-life finding on it would be a
+false positive. For a runtime or server matched to an endoflife.date
+product:
+
+| Installed as | End-of-life finding |
+|---|---|
+| Outside the package manager (nvm's Node.js, a downloaded binary, a language package) | Upstream dates, as before |
+| A distribution package (deb, rpm or apk with a `distro` qualifier) on a supported distribution release | None. The inventory row records "nginx 1.18 is end of life upstream since 2021-04-20; this is Ubuntu 22.04's own package, and Ubuntu 22.04 provides security updates until 2027-06-30", shown on the component and asset pages (`lifecycle_note`) |
+| A distribution package on a release that is itself end of life (Ubuntu 20.04 after 2025-05-31) | None of its own: the operating system's end-of-life finding says its packages no longer get free fixes, and the action plan's release upgrade lists them. If the asset has no operating system row (some SBOMs), the package finding stays |
+| A distribution package whose release is not in the lifecycle data, or without a `distro` qualifier | Upstream dates: the distribution's support cannot be confirmed |
+| A build from another repository, recognised by its version: Ondřej Surý's PHP (`deb.sury.org`), nginx.org (`~jammy`), Docker, NodeSource, PGDG, Remi (`.remi`), nginx.org rpm (`.ngx`), MySQL's APT repository (`-1ubuntu22.04`) | Upstream dates: the distribution does not maintain it |
+
+The distribution's date is the endoflife.date end of its standard security
+support (`eol`), the same date the operating system's own finding uses; paid
+extensions (Ubuntu Pro, SUSE LTSS, RHEL ELS) do not count. Limits: the agent
+does not record which repository a package came from, so a third-party build
+whose version looks like the distribution's own is treated as the
+distribution's; Ubuntu's security support covers the `main` repository, and
+`universe` packages get security fixes only through Ubuntu Pro, which the
+package data does not distinguish; RHEL Application Streams modules can
+retire before the release does. Vulnerability matching is unaffected:
+fixes that only a paid channel publishes are still reported.
+
+## Paid support channels
+
+Ubuntu Pro (Canonical) and SUSE LTSS are paid subscriptions for commercial
+use. Their advisories are matched, and a finding whose only fixed build is in
+one of them is labelled "no free fix" (`requires_subscription`). They are
+never the recommended action: the action plan says "Fixed in Ubuntu Pro (paid
+subscription); without it, upgrade to a supported release" on an end-of-life
+release, and on a supported one, to install the update when the distribution
+publishes a free fix. Groups carry `needs` so a team with a subscription can
+use it, and findings that need one get no "fix available" bonus in the risk
+score.
+
 ## Coverage states
 
 Having no findings only means something if the components were checked. The
@@ -122,11 +190,11 @@ evaluate, with the explicit response expected.
 | NuGet | `nuget/` | Per-major ranges, `last_affected` without a fix, pre-releases, withdrawn records | More than four version parts: not checked |
 | Pub | `pub/` | `+build` versions, pre-release fixes, single-version advisories, withdrawn records | A constraint (`any`): not checked |
 | Debian | `debian/` | `+debNuM` backports, epochs (and a version reported without one), per-release fixes, binary to source mapping, withdrawn records | A release without advisories, no distro qualifier, a malformed epoch: not checked; derivatives: unsupported |
-| Ubuntu, including Pro | `ubuntu/` | `ubuntu0.22.04.N` updates, Pro-only (ESM) fixes and universe packages, FIPS builds and the FIPS-updates channel | A release without advisories: not checked |
+| Ubuntu, including Pro | `ubuntu/` | `ubuntu0.22.04.N` updates, Pro-only (ESM) fixes and universe packages, FIPS builds and the FIPS-updates channel, kernel modules against the `linux` source while headers, `linux-libc-dev` and `linux-tools-common` get no findings | A release without advisories: not checked |
 | Alpine | `alpine/` | `-rN` revisions, per-release fixes, `_alpha` pre-releases | A release without advisories, no distro qualifier: not checked; other apk distributions: unsupported |
 | Rocky Linux | `rocky/` | Source-package matching, `el9_4` z-stream fixes, epochs (agent and Syft forms, and a missing epoch), Rocky 8 and 9 | A release without advisories: not checked |
 | AlmaLinux | `alma/` | Binary-package records without CVE ids, minor releases on the major stream | A release without advisories: not checked |
-| Red Hat | `redhat/` | `el9_4` fixes, EUS records kept out of the main stream, RHEL 10 minor-release streams, Syft's namespace and epoch | A RHEL 10 stream without advisories: not checked; CentOS: unsupported |
+| Red Hat | `redhat/` | `el9_4` fixes, EUS records kept out of the main stream, RHEL 10 minor-release streams, Syft's namespace and epoch, `kernel-core` matched while `kernel-devel` (listed in the advisory) gets no findings | A RHEL 10 stream without advisories: not checked; CentOS: unsupported |
 | SUSE, including LTSS | `suse/` | Source-package matching, Basesystem fixes, LTSS-only fixes, SLES for SAP | A service pack without advisories, an unreadable VERSION_ID: not checked |
 | openSUSE Leap | `opensuse/` | Leap entries of SUSE records, per-release fixes | A Leap release without advisories: not checked; Tumbleweed: unsupported |
 | Amazon Linux 2 and 2023 | `amazon/` | Real `updateinfo` read through the repository mirrors, epochs, AL2 extras (kernel-5.10) limited to their version line | Amazon Linux 1: unsupported |

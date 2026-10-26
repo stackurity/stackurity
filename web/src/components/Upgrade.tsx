@@ -55,7 +55,14 @@ export function RecommendedVersion({ rec }: { rec: UpgradeRecommendation }) {
       <span className="mono">{rec.recommended_version}</span>
       {rec.change_type === "distro" ? <Badge status="distro" tone="muted" label="distro update" /> : <UpdateBadge type={rec.change_type} />}
       {rec.recommended_yanked && <Badge status="withdrawn" tone="bad" label="withdrawn" title={rec.yanked_reason || "withdrawn by the registry"} />}
-      {rec.requires_subscription && <Badge status="subscription" tone="warn" label={rec.requires_subscription} />}
+      {rec.requires_subscription && (
+        <Badge
+          status="subscription"
+          tone="warn"
+          label={`${rec.requires_subscription} (paid)`}
+          title={`This build is published only in ${rec.requires_subscription}, a paid subscription; without it, upgrade to a supported release or wait for a free fix`}
+        />
+      )}
     </span>
   );
 }

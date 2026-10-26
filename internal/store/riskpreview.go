@@ -85,7 +85,7 @@ func (s *Store) PreviewRiskPolicy(ctx context.Context, current, proposed risk.Po
 	var rows []riskRow
 	err := pgx.BeginTxFunc(ctx, s.Pool, pgx.TxOptions{AccessMode: pgx.ReadOnly}, func(tx pgx.Tx) error {
 		var err error
-		rows, err = riskRows(ctx, tx, now)
+		rows, err = riskRows(ctx, tx, now, 0)
 		return err
 	})
 	if err != nil {

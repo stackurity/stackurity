@@ -687,7 +687,7 @@ func (d *Dispatcher) burstMessage(ctx context.Context, list []store.Incident, ev
 			}
 			line += ", highest " + g.TopPriority
 			if g.Needs == "ubuntu-pro" {
-				line += ", needs Ubuntu Pro"
+				line += ", some fixes also in Ubuntu Pro (paid, optional)"
 			}
 			m.Summary = append(m.Summary, line)
 		}

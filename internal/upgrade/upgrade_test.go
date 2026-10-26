@@ -168,7 +168,7 @@ func TestRecommend(t *testing.T) {
 				Release: rel([]string{"9.9.9"}, nil)},
 			want: Recommendation{MinimumFixed: "1.1.1f-1ubuntu2.20", Recommended: "1.1.1f-1ubuntu2.20", Basis: BasisDistroFixed,
 				ChangeType: "distro", Subscription: "Ubuntu Pro", Fixes: []string{"CVE-O1", "CVE-O2"}, ReleaseData: ReleaseNotApplicable},
-			say: "published only in Ubuntu Pro",
+			say: "Fixed in Ubuntu Pro (paid subscription); without it, upgrade to a supported release",
 		},
 		{
 			name: "rpm: an upstream minor change",

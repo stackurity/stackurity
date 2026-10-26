@@ -10,6 +10,25 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 - Release images are also published to Docker Hub as `stackurity/stackurity` (same signed image as GHCR), and the `mirror-dockerhub` workflow copies an existing release there.
 
+### Changed
+
+- **Kernel findings are reported per kernel version.** The packages with kernel code of one installed kernel version (image, modules, extra modules, tools; on RPM systems `kernel`, `kernel-core`, `kernel-modules*` and their flavours, SUSE `kernel-default*`) share one finding per CVE, on the package that boots, with the others listed in its evidence. Kernels that are installed but not running keep that one finding, marked not running (P4, under **Remove old kernels**). On a pilot Ubuntu 20.04 host with three kernels, 119,719 of 129,732 open findings were kernel packages repeating each CVE; a fixture built like it goes from 510 findings and 100 P1 to 150 and 20, with each exploited CVE P1 once, on the running kernel. See `docs/compatibility.md`, "Kernels".
+- **Ubuntu Pro and SUSE LTSS are no longer presented as the fix.** They are paid subscriptions: the action plan's primary action is the free path ("Fixed in Ubuntu Pro (paid subscription); without it, upgrade to a supported release" on an end-of-life release; install the update when the distribution publishes a free fix on a supported one). The "Issues fixed only in Ubuntu Pro (ESM)" group is now "Issues with no free fix yet", the finding badge "fix needs Ubuntu Pro" is "no free fix", the group badge "needs Ubuntu Pro" is "Ubuntu Pro optional (paid)", and upgrade recommendations, notifications and the MCP `remediation_plan` tool (which now returns `paid_channel` and each group's `note` instead of `needs`) say the same.
+- Findings whose only fix is in SUSE LTSS no longer get the risk score's "fix available" bonus, as Ubuntu Pro-only fixes already did not.
+
+### Fixed
+
+- **Kernel headers no longer produce vulnerability findings.** `linux-headers-*`, `linux-libc-dev`, `linux-tools-common`, `linux-source*`, and on RPM systems `kernel-headers`, `kernel-devel` and the other `-devel` packages hold no running code; they are recorded as checked with the reason "kernel headers or build files, not running code". Their old findings are resolved as "no longer affected (re-evaluated)" on the first evaluation after the upgrade.
+- **No upstream end-of-life finding on a distribution's own package while the distribution release is supported.** nginx 1.18 and PHP 8.1 on Ubuntu 22.04, nginx 1.24 on Ubuntu 24.04 or PHP 8.0 on RHEL 9 are patched by the distribution; the component and asset pages show the upstream status and the distribution's support date instead ("nginx 1.18 is end of life upstream since 2021-04-20; this is Ubuntu 22.04's own package, and Ubuntu 22.04 provides security updates until 2027-06-30"). On a release that is itself end of life the operating system's end-of-life finding stands alone and the release upgrade lists the packages. Runtimes installed outside the package manager, builds recognised as coming from another repository, and releases without lifecycle data keep the upstream finding. See `docs/compatibility.md`, "Lifecycle of distribution packages".
+
+- **`stackurity scan --fail-on-priority` no longer gates on unscored findings.** The collection result said `evaluated` as soon as matching finished, while the findings still had the default priority (P4, score 0) until the periodic risk pass scored them: 447 findings across 5 repositories printed as P4 and were P2 and P3 minutes later, so a P2 gate passed. The evaluate job now prioritises the asset's findings before marking it evaluated, the result reports `scoring` in between, and the CLI also waits until every finding carries a policy version (for older servers). When `--wait` runs out first the command exits with status 4, "result not ready", instead of passing.
+
+- **`stackurity scan DIR` no longer counts other checkouts' lockfiles.** It walked into `.claude/worktrees/*` (coding-agent worktrees) and other nested repositories, clones and worktrees, reporting the same lockfiles once per checkout (1658 observations instead of 340 on one repository). It now skips `.claude/` and any directory below the root with its own `.git` directory or worktree `.git` file (submodules are still scanned), lists each skipped checkout once in coverage as "skipped: nested checkout", and, when the directory is in a git work tree and `git` is installed, skips paths git ignores (`git ls-files --others --ignored --exclude-standard`, with the repository's `core.fsmonitor` turned off). These skips do not mark the scan incomplete.
+
+### Upgrading
+
+- Migration `0028` adds `inventory.lifecycle_note`. The first evaluation after the upgrade resolves the duplicate kernel findings and the distribution-package end-of-life findings as re-evaluated, so the outcomes report shows a one-time drop attributed to intelligence.
+
 ## 0.5.0
 
 ### Security

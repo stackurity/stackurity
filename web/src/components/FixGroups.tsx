@@ -23,7 +23,7 @@ export const FIX_KIND_HELP: Record<string, string> = {
   release_upgrade: "The OS release is end-of-life, or these issues have no free fix in this release: upgrade the release.",
   end_of_life: "Software that no longer receives security fixes: move to a supported version.",
   package_upgrade: "An application dependency with a fixed version: upgrade it in the repository.",
-  no_fix: "No source lists a fixed version yet: mitigate, accept the risk, or watch for a fix.",
+  no_fix: "No source lists a free fixed version yet: mitigate, accept the risk, or watch for a fix.",
 };
 
 export function FixKindIcon({ kind }: { kind: string }) {
@@ -99,11 +99,14 @@ export function GroupBadges({ g }: { g: FixGroup }) {
       <PriorityBadge priority={g.top_priority} />
       {g.sos && <SosBadge />}
       {g.known_exploited > 0 && <Badge status="kev" tone="crit" label={`${g.known_exploited} known exploited`} title="Listed in the CISA Known Exploited Vulnerabilities catalog" />}
-      {g.needs === "ubuntu-pro" ? (
-        <Badge status="needs" tone="info" label="needs Ubuntu Pro" title="Fixes for these packages are published to Ubuntu Pro (ESM) subscribers" />
-      ) : g.needs ? (
-        <Badge status="needs" tone="info" label={`needs ${g.needs}`} />
-      ) : null}
+      {g.needs && (
+        <Badge
+          status="needs"
+          tone="muted"
+          label={`${g.needs === "ubuntu-pro" ? "Ubuntu Pro" : g.needs} optional (paid)`}
+          title={`Some of these fixes are also published in ${g.needs === "ubuntu-pro" ? "Ubuntu Pro" : g.needs}, a paid subscription. The action is the free path.`}
+        />
+      )}
       <EffortPill effort={g.effort} />
     </span>
   );

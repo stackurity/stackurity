@@ -292,6 +292,10 @@ type InventoryRow struct {
 	CoverageReason string     `json:"coverage_reason"`
 	CoverageFeed   string     `json:"coverage_feed"`
 	EvaluatedAt    *time.Time `json:"evaluated_at"`
+	// LifecycleNote says why an upstream end-of-life version raised no
+	// finding (a distribution package the distribution still supports), or
+	// what the distribution's support adds to a finding that stands.
+	LifecycleNote map[string]any `json:"lifecycle_note,omitempty"`
 }
 
 // rowCoverageSQL is the effective coverage of inventory row i: a row matched
@@ -353,7 +357,7 @@ func (s *Store) ListInventory(ctx context.Context, f InventoryFilter) ([]Invento
 		i.location, i.collector_id, i.direct, i.scope, i.confidence, i.evidence, i.first_seen, i.last_seen,
 		i.last_collection_id, i.removed_at, COALESCE(pr.latest_stable, ''),
 		(SELECT count(*) FROM findings f WHERE f.inventory_id = i.id AND f.status = 'open'),
-		`+rowCoverageSQL+`, i.coverage_reason, i.coverage_feed, i.evaluated_at`+from+
+		`+rowCoverageSQL+`, i.coverage_reason, i.coverage_feed, i.evaluated_at, i.lifecycle_note`+from+
 		fmt.Sprintf(` ORDER BY c.type, c.namespace, c.name, i.version, i.id LIMIT %d OFFSET %d`, p.Limit, p.Offset), w.args...)
 	if err != nil {
 		return nil, 0, err
@@ -362,14 +366,17 @@ func (s *Store) ListInventory(ctx context.Context, f InventoryFilter) ([]Invento
 	out := []InventoryRow{}
 	for rows.Next() {
 		var r InventoryRow
-		var ev []byte
+		var ev, note []byte
 		if err := rows.Scan(&r.ID, &r.AssetID, &r.AssetName, &r.AssetKind, &r.ComponentID, &r.Type, &r.Namespace, &r.Name,
 			&r.Purl, &r.Version, &r.Location, &r.CollectorID, &r.Direct, &r.Scope, &r.Confidence, &ev,
 			&r.FirstSeen, &r.LastSeen, &r.CollectionID, &r.RemovedAt, &r.LatestStable, &r.OpenFindings,
-			&r.Coverage, &r.CoverageReason, &r.CoverageFeed, &r.EvaluatedAt); err != nil {
+			&r.Coverage, &r.CoverageReason, &r.CoverageFeed, &r.EvaluatedAt, &note); err != nil {
 			return nil, 0, err
 		}
 		_ = json.Unmarshal(ev, &r.Evidence)
+		if len(note) > 0 {
+			_ = json.Unmarshal(note, &r.LifecycleNote)
+		}
 		r.UpdateType = updateType(r.Type, r.Version, r.LatestStable)
 		out = append(out, r)
 	}
