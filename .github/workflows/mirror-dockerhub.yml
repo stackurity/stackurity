@@ -1,0 +1,48 @@
+name: mirror-dockerhub
+
+# Copies a published release image from GHCR to Docker Hub unchanged (the
+# same multi-platform index, attestations included) and signs it there.
+# Releases push to both registries; this is for releases published before
+# Docker Hub was added, or to repair a failed push.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release to copy, for example 0.5.0
+        required: true
+
+permissions:
+  contents: read
+  packages: read
+  id-token: write   # keyless signing
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          username: stackurity
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: sigstore/cosign-installer@v3
+      - name: Verify the source, copy and sign
+        env:
+          V: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          case "$V" in [0-9]*.[0-9]*.[0-9]*) ;; *) echo "::error::version must look like 0.5.0"; exit 1 ;; esac
+          src="ghcr.io/stackurity/stackurity:$V"
+          # Only an image this repository's release workflow signed is copied.
+          cosign verify "$src" --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-identity-regexp '^https://github.com/stackurity/stackurity/.github/workflows/release.yml@refs/tags/' > /dev/null
+          docker buildx imagetools create -t "docker.io/stackurity/stackurity:$V" -t "docker.io/stackurity/stackurity:v$V" "$src"
+          latest=$(gh release view --repo stackurity/stackurity --json tagName --jq .tagName)
+          if [ "$latest" = "v$V" ]; then
+            docker buildx imagetools create -t docker.io/stackurity/stackurity:latest "$src"
+          fi
+          digest=$(docker buildx imagetools inspect "docker.io/stackurity/stackurity:$V" --format '{{.Manifest.Digest}}')
+          case "$digest" in sha256:*) ;; *) echo "::error::no digest for the copied image"; exit 1 ;; esac
+          cosign sign --yes "docker.io/stackurity/stackurity@$digest"
+          echo "copied $src to docker.io/stackurity/stackurity:$V ($digest)"
