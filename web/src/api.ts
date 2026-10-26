@@ -157,10 +157,35 @@ export interface LicenseInfo {
 }
 
 /** GET /admin/health: whether the installation itself is working. */
+/** What a platform problem affects. Items are named only in the viewer's active workspace. */
+export interface HealthScope {
+  summary: string;
+  count?: number;
+  workspaces?: number;
+  items?: { name: string; detail?: string; last_success?: string | null; last_error?: string; link?: string }[];
+  /** Affected objects not listed: in other workspaces, or beyond the first ten. */
+  hidden?: number;
+}
+
+export interface HealthProblem {
+  severity: "critical" | "warning";
+  kind: "feed" | "task" | "jobs" | "intelligence" | "platform" | "integration" | "notification" | "collector" | "coverage";
+  key: string;
+  title: string;
+  detail?: string;
+  /** When it last worked; null when it never did or it does not apply. */
+  last_success?: string | null;
+  last_error?: string;
+  scope?: HealthScope;
+  next_step?: string;
+  /** Documentation section, a repository path such as docs/install.md#health. */
+  docs?: string;
+}
+
 export interface PlatformHealth {
   status: "ok" | "warning" | "critical";
   checked_at: string;
-  problems: { severity: "critical" | "warning"; kind: "feed" | "task" | "jobs" | "intelligence"; key: string; title: string; detail?: string }[];
+  problems: HealthProblem[];
   tasks: {
     name: string;
     every_seconds: number;

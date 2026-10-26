@@ -57,7 +57,7 @@ Roles, from least to most access: `viewer` (read, including the audit log), `eng
 | `GET /jobs?state=` | admin | Background job queue |
 | `GET /plugins` | admin | Installed plugins with their declared permissions, credentials and network access |
 | `GET /jobs/{id}` | engineer | Status of one job, e.g. after *Run now* |
-| `GET /admin/health` | instance admin | Platform health across workspaces: `status` (`ok`, `warning`, `critical`), `problems`, background `tasks` with their last success and error, job counts by kind and state, and jobs that failed in the last 24 hours ([install.md](install.md#health)) |
+| `GET /admin/health` | instance admin | Platform health across workspaces: `status` (`ok`, `warning`, `critical`), `problems` (each with `last_success`, `last_error`, `scope`, `next_step` and `docs`; objects are named only for the caller's active workspace), background `tasks` with their last success and error, job counts by kind and state, and jobs that failed in the last 24 hours ([install.md](install.md#health)) |
 | `GET /facets` | viewer | Distinct environments, asset kinds and component types |
 | `GET /findings?status=&kind=&severity=&verification=&asset_id=&component_id=&environment=&known_exploited=&q=&key=` | viewer | Vulnerability and end-of-life findings, known-exploited and most severe first |
 | `GET /findings/summary` | viewer | Counts by severity, kind and verification, plus stale feeds and evaluation gaps |

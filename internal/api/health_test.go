@@ -66,6 +66,36 @@ func TestAdminHealth(t *testing.T) {
 	if rep.Status != "critical" || !found || len(rep.Tasks) != 1 {
 		t.Errorf("report: %+v", rep)
 	}
+
+	// Problems with a workspace's objects name them for an instance admin
+	// whose active workspace they are in, with the next step and docs.
+	if _, err := e.st.Pool.Exec(tenant.System(context.Background()),
+		`INSERT INTO integrations (workspace_id, kind, name, last_attempt, last_error) VALUES (1, 'git_repository', 'repo-x', now(), 'auth failed')`); err != nil {
+		t.Fatal(err)
+	}
+	var rep2 struct {
+		Problems []struct {
+			Kind, Key, Docs string
+			LastError       string `json:"last_error"`
+			NextStep        string `json:"next_step"`
+			Scope           struct {
+				Count int
+				Items []struct{ Name, Link string }
+			}
+		}
+	}
+	if code := owner.do("GET", "/api/v1/admin/health", nil, &rep2); code != 200 {
+		t.Fatalf("instance admin: %d", code)
+	}
+	ok := false
+	for _, p := range rep2.Problems {
+		if p.Kind == "integration" && p.Scope.Count == 1 && len(p.Scope.Items) == 1 && p.Scope.Items[0].Name == "repo-x" && p.NextStep != "" && p.Docs != "" {
+			ok = true
+		}
+	}
+	if !ok {
+		t.Errorf("integration problem: %+v", rep2.Problems)
+	}
 }
 
 // Requests are counted under their route pattern, never the raw path.
