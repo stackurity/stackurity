@@ -6,6 +6,13 @@ import { Badge } from "../../components/Badge";
 import { Table, type Column } from "../../components/Table";
 import { Card, EmptyState, ErrorBox, Loading, Notice, PageHeader, RelativeTime } from "../../components/ui";
 
+/** Organisation-wide roles, and "none": access only to the projects someone is given. */
+const ORG_ROLES: (UserRole | "none")[] = [...USER_ROLES, "none"];
+
+function roleLabel(r: UserRole | "none" | ""): string {
+  return r === "none" || r === "" ? "projects only" : r;
+}
+
 export function UsersPage() {
   const { me } = useAuth();
   const res = useLoad(() => api.get<List<User>>("/users"), []);
@@ -45,17 +52,19 @@ export function UsersPage() {
           </label>
           <select
             id={`role-${u.id}`}
-            value={u.role}
+            value={u.role || "none"}
             disabled={act.pending || u.id === me?.user?.id}
             title={u.id === me?.user?.id ? "You cannot change your own role" : undefined}
             onChange={(e) => {
-              const role = e.target.value as UserRole;
-              if (window.confirm(`Change ${u.email} from ${u.role} to ${role}?`)) void patch(u, { role }, `${u.email} is now ${role}.`);
+              const role = e.target.value as UserRole | "none";
+              const from = roleLabel(u.role || "none");
+              if (window.confirm(`Change ${u.email} from ${from} to ${roleLabel(role)}?`))
+                void patch(u, { role }, `${u.email} is now ${roleLabel(role)}.`);
             }}
           >
-            {USER_ROLES.map((r) => (
+            {ORG_ROLES.map((r) => (
               <option key={r} value={r}>
-                {r}
+                {roleLabel(r)}
               </option>
             ))}
           </select>
@@ -197,7 +206,7 @@ function ResetPassword({ user, onDone, onCancel }: { user: User; onDone: () => v
 }
 
 function CreateUser({ onCancel, onCreated }: { onCancel: () => void; onCreated: (u: User) => void }) {
-  const [f, setF] = useState<{ email: string; name: string; role: UserRole; password: string }>({ email: "", name: "", role: "viewer", password: "" });
+  const [f, setF] = useState<{ email: string; name: string; role: UserRole | "none"; password: string }>({ email: "", name: "", role: "viewer", password: "" });
   const act = useAction();
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -219,10 +228,10 @@ function CreateUser({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
           </div>
           <div className="field">
             <label htmlFor="nu-role">Role</label>
-            <select id="nu-role" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value as UserRole })}>
-              {USER_ROLES.map((r) => (
+            <select id="nu-role" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value as UserRole | "none" })}>
+              {ORG_ROLES.map((r) => (
                 <option key={r} value={r}>
-                  {r}
+                  {roleLabel(r)}
                 </option>
               ))}
             </select>

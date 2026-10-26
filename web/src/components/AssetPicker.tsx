@@ -9,15 +9,18 @@ export function AssetPicker({
   value,
   onChange,
   excludeId,
+  allProjects,
 }: {
   id: string;
   value: Asset | null;
   onChange: (a: Asset | null) => void;
   excludeId?: number;
+  /** Search every asset, whatever project is chosen in the switcher (settings). */
+  allProjects?: boolean;
 }) {
   const [q, setQ] = useState("");
   const dq = useDebounced(q);
-  const res = useLoad(() => api.get<List<Asset>>("/assets", { q: dq, limit: 20 }), [dq]);
+  const res = useLoad(() => (allProjects ? api.getAll : api.get)<List<Asset>>("/assets", { q: dq, limit: 20 }), [dq, allProjects]);
   const options = (res.data?.items ?? []).filter((a) => a.id !== excludeId);
 
   if (value) {

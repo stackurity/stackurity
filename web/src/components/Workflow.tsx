@@ -140,9 +140,9 @@ export function FindingActions({
   onDone: () => void;
   compact?: boolean;
 }) {
-  const { can, me } = useAuth();
-  const engineer = can("engineer");
-  const security = can("security");
+  const { me, canAct } = useAuth();
+  const engineer = canAct("engineer");
+  const security = canAct("security");
   const act = useAction();
   const first: Panel = initialPanel === "accept_risk" || initialPanel === "ignore" ? (security ? "ignore" : "request") : (initialPanel ?? null);
   const [panel, setPanel] = useState<Panel>(first && (engineer || first === "request") ? first : null);
@@ -665,7 +665,9 @@ function AssignPanel({
   onCancel: () => void;
 }) {
   const [id] = useState(() => `ap${++panelSeq}`);
-  const teams = useLoad(() => api.get<List<Team>>("/teams"), []);
+  // Teams belong to the organisation: people with project access only assign to people.
+  const { projectOnly } = useAuth();
+  const teams = useLoad(() => (projectOnly ? Promise.resolve(null) : api.get<List<Team>>("/teams")), [projectOnly]);
   // Active users (engineer+ may list them for assignment).
   const users = useLoad(() => api.get<List<DirectoryUser>>("/users/directory"), []);
   const [user, setUser] = useState("keep");

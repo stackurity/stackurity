@@ -3,6 +3,7 @@ import { Link, Outlet, useLocation } from "react-router";
 import { api, type IgnoreRequest, type Incident, type List, type Plan } from "../api";
 import { useLoad } from "../hooks";
 import { useAuth } from "../auth";
+import { ProjectProvider, useProject } from "../project";
 import { GlobalSearch } from "./Search";
 import { FeedbackDialog, feedbackAvailable, type FeedbackHandle } from "./Feedback";
 import { PlatformHealthBanner } from "../pages/admin/Health";
@@ -51,7 +52,16 @@ function CountBadge({ b }: { b: NonNullable<NavEntry["badge"]> }) {
 const EDITION_LABEL: Record<string, string> = { community: "Community", pro: "Pro", enterprise: "Enterprise" };
 
 export function Layout() {
-  const { me, meta, logout, can } = useAuth();
+  return (
+    <ProjectProvider>
+      <Shell />
+    </ProjectProvider>
+  );
+}
+
+function Shell() {
+  const { me, meta, logout, canAct, projectOnly } = useAuth();
+  const { projectId, projects } = useProject();
   const { pathname } = useLocation();
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const [more, setMore] = useState(false);
@@ -61,17 +71,19 @@ export function Layout() {
 
   // Badge counts, refreshed on navigation.
   const hasWorkspace = Boolean(me?.workspace);
+  // Automatic fixes are approved for the whole organisation.
   const pending = useLoad(
-    () => (hasWorkspace ? api.get<List<Plan>>("/remediation/plans", { status: "proposed", limit: 1 }) : Promise.resolve(null)),
-    [pathname, hasWorkspace],
+    () =>
+      hasWorkspace && !projectOnly ? api.get<List<Plan>>("/remediation/plans", { status: "proposed", limit: 1 }) : Promise.resolve(null),
+    [pathname, hasWorkspace, projectOnly],
   );
   const sos = useLoad(
     () => (hasWorkspace ? api.get<List<Incident>>("/incidents", { status: "open", sos: "true", limit: 1 }) : Promise.resolve(null)),
-    [pathname, hasWorkspace],
+    [pathname, hasWorkspace, projectId],
   );
 
   // Requests to ignore issues waiting for a decision (security and admin).
-  const decider = hasWorkspace && can("security");
+  const decider = hasWorkspace && canAct("security");
   const approvals = useLoad(
     () => (decider ? api.get<List<IgnoreRequest>>("/ignore-requests", { status: "pending", limit: 1 }) : Promise.resolve(null)),
     [pathname, decider],
@@ -166,8 +178,9 @@ export function Layout() {
         </div>
       </aside>
       <div className="main-col">
-        <header className="topbar">
+        <header className={`topbar${projects.length > 0 ? " has-projects" : ""}`}>
           <WorkspaceSwitcher />
+          <ProjectSwitcher />
           <div className="topbar-search">{me?.workspace ? <GlobalSearch /> : null}</div>
           <AvatarMenu onFeedback={showFeedback ? () => feedback.current?.open() : undefined} onLogout={() => void logout()} version={version} />
         </header>
@@ -180,7 +193,13 @@ export function Layout() {
             </nav>
           )}
           {me?.workspace && <SectionTabsFor path={pathname} />}
-          {me && !me.workspace && !pathname.startsWith("/admin") ? <NoWorkspace instanceAdmin={Boolean(me.user?.instance_admin)} /> : <Outlet />}
+          {me && !me.workspace && !pathname.startsWith("/admin") ? (
+            <NoWorkspace instanceAdmin={Boolean(me.user?.instance_admin)} />
+          ) : (
+            // A new project choice remounts the page, so nothing of the
+            // previous choice stays on screen.
+            <Outlet key={projectId} />
+          )}
         </main>
       </div>
 
@@ -307,7 +326,7 @@ function WorkspaceSwitcher() {
   const edition = <span className={`edition-pill edition-${me.edition}`}>{EDITION_LABEL[me.edition] ?? me.edition}</span>;
   if (list.length < 2)
     return (
-      <div className="workspace-menu">
+      <div className="workspace-menu workspace-single">
         <span className="workspace-name" title={`Workspace ${me.workspace.name}`}>
           {me.workspace.name}
         </span>
@@ -359,9 +378,72 @@ function WorkspaceSwitcher() {
               onClick={() => void activate(m.workspace_id)}
             >
               <span className="menu-item-main">{m.name}</span>
-              <span className="muted small">{m.role}</span>
+              <span className="muted small">{m.role || "some projects"}</span>
             </button>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The project switcher, next to the workspace: "All projects" first, then
+ * each project. The choice scopes Home, Fixes, Assets and Activity, and is
+ * remembered. Shown when the workspace has projects.
+ */
+function ProjectSwitcher() {
+  const { me, can, projectOnly } = useAuth();
+  const { project, projects, choose } = useProject();
+  const pop = usePopup();
+  if (!me?.workspace || projects.length === 0) return null;
+  const allLabel = projectOnly ? "All my projects" : "All projects";
+  const label = project ? project.name : allLabel;
+  const pick = (id: number) => {
+    pop.setOpen(false);
+    choose(id);
+  };
+  return (
+    <div className="project-menu" ref={pop.box}>
+      <button
+        type="button"
+        ref={pop.button}
+        className={`workspace-button project-button${project ? " project-chosen" : ""}`}
+        aria-haspopup="menu"
+        aria-expanded={pop.open}
+        onClick={() => pop.setOpen(!pop.open)}
+        title="Choose a project"
+      >
+        <span className="sr-only">Project: </span>
+        <span className="project-name">{label}</span>
+        <span className={`nav-chevron${pop.open ? " open" : ""}`} aria-hidden="true">
+          <IconChevron size={14} />
+        </span>
+      </button>
+      {pop.open && (
+        <div className="menu menu-left project-pop" role="menu" aria-label="Projects">
+          <div className="menu-label">Show</div>
+          <button type="button" role="menuitemradio" aria-checked={!project} className="menu-item" onClick={() => pick(0)}>
+            <span className="menu-item-main">{allLabel}</span>
+          </button>
+          {projects.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              role="menuitemradio"
+              aria-checked={project?.id === p.id}
+              className="menu-item"
+              onClick={() => pick(p.id)}
+            >
+              <span className="menu-item-main">{p.name}</span>
+              <span className="muted small">{p.asset_count.toLocaleString()}</span>
+            </button>
+          ))}
+          {can("admin") && (
+            <Link to="/settings/projects" role="menuitem" className="menu-item menu-item-sep" onClick={() => pop.setOpen(false)}>
+              <span className="menu-item-main">Manage projects and access</span>
+            </Link>
+          )}
         </div>
       )}
     </div>
@@ -396,7 +478,11 @@ function AvatarMenu({ onFeedback, onLogout, version }: { onFeedback?: () => void
             <span className="menu-email break">{who}</span>
             {me && (
               <span className="menu-role">
-                <span className={`role-pill role-${me.role}`}>{me.role}</span>
+                {me.role ? (
+                  <span className={`role-pill role-${me.role}`}>{me.role}</span>
+                ) : (
+                  <span className="role-pill">project access</span>
+                )}
                 {me.workspace && <span className="muted small"> in {me.workspace.name}</span>}
               </span>
             )}

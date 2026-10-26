@@ -79,7 +79,7 @@ const APP_ATTRS: [string, string][] = [
 export function AssetDetailPage() {
   const { id } = useParams();
   const assetId = Number(id);
-  const { can } = useAuth();
+  const { can, canAct } = useAuth();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const tabParam = params.get("tab") as Tab | null;
@@ -192,6 +192,16 @@ export function AssetDetailPage() {
               </span>
             </span>
             <AssetPlatformLine asset={a} />
+            {(a.projects?.length ?? 0) > 0 && (
+              <span className="project-chips">
+                <span className="small muted">In</span>
+                {a.projects!.map((p) => (
+                  <span key={p.id} className="project-chip">
+                    {p.name}
+                  </span>
+                ))}
+              </span>
+            )}
           </>
         }
         actions={
@@ -264,7 +274,7 @@ export function AssetDetailPage() {
         {tab === "inventory" && <InventoryTab assetId={a.id} />}
         {tab === "coverage" && <CoverageTab assetId={a.id} />}
         {tab === "collections" && <CollectionsTab assetId={a.id} />}
-        {tab === "relations" && <RelationsTab asset={a} editable={can("engineer")} onChanged={relations.reload} />}
+        {tab === "relations" && <RelationsTab asset={a} editable={canAct("engineer")} onChanged={relations.reload} />}
         {tab === "drift" && <DriftTab asset={a} primaries={primaries} />}
             {tab === "remediation" && <RemediationTab asset={a} />}
           </>
@@ -295,7 +305,7 @@ export function AssetDetailPage() {
             <KeyValues entries={identifiers.map((i) => [i.scheme, <span className="mono break">{i.value}</span>])} />
           )}
         </Card>
-        <OwnershipCard asset={a} editable={can("engineer")} onSaved={det.reload} />
+        <OwnershipCard asset={a} editable={canAct("engineer")} onSaved={det.reload} />
       </div>
 
       </details>

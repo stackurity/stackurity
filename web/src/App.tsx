@@ -43,6 +43,7 @@ import { PluginsPage } from "./pages/settings/Plugins";
 import { FixesPage, FixGroupDetailPage } from "./pages/ActionPlan";
 import { NotificationsPage } from "./pages/settings/Notifications";
 import { RiskPolicyPage } from "./pages/settings/RiskPolicy";
+import { ProjectDetailPage, ProjectsPage } from "./pages/settings/Projects";
 
 // The help articles are large and rarely needed, so they load on demand.
 const HelpPage = lazy(() => import("./pages/Help").then((m) => ({ default: m.HelpPage })));
@@ -207,6 +208,22 @@ export function App() {
           element={
             <RequireRole min="admin">
               <UsersPage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="settings/projects"
+          element={
+            <RequireRole min="admin">
+              <ProjectsPage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="settings/projects/:id"
+          element={
+            <RequireRole min="admin">
+              <ProjectDetailPage />
             </RequireRole>
           }
         />

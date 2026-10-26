@@ -151,7 +151,7 @@ export function DeliveryStatus({ status }: { status: string }) {
 
 export function IncidentDetailPage() {
   const { id } = useParams();
-  const { can } = useAuth();
+  const { canAct } = useAuth();
   const res = useLoad(() => api.get<IncidentResponse>(`/incidents/${Number(id)}`), [id]);
 
   if (res.error)
@@ -236,7 +236,7 @@ export function IncidentDetailPage() {
         ) : (
           <div>
             {inc.status === "open" && <Recommended inc={inc} />}
-            {can("engineer") && openFindings.length > 0 && (
+            {canAct("engineer") && openFindings.length > 0 && (
               <Card title={`Act on all ${openFindings.length} open finding${openFindings.length === 1 ? "" : "s"}`}>
                 <FindingActions target={{ type: "incident", id: inc.id }} onDone={res.reload} />
               </Card>

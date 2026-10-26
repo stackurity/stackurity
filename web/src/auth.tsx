@@ -12,7 +12,15 @@ interface AuthValue {
   state: State;
   me: Me | null;
   meta: Meta | null;
+  /** Organisation-wide role at least min. */
   can: (min: UserRole) => boolean;
+  /**
+   * May act with min on something: through the organisation-wide role, or
+   * through a project or asset grant (the server checks each asset).
+   */
+  canAct: (min: UserRole) => boolean;
+  /** Access through projects only: organisation pages are not for them. */
+  projectOnly: boolean;
   /** Whether this workspace's plan includes a paid feature. */
   has: (f: Feature) => boolean;
   refresh: () => Promise<void>;
@@ -68,7 +76,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AuthValue>(() => {
     const me = state.phase === "ready" ? state.me : null;
     const meta = "meta" in state ? state.meta : null;
-    return { state, me, meta, can: (min) => atLeast(me?.role, min), has: (f) => Boolean(me?.features?.includes(f)), refresh, logout };
+    const role = me?.role || undefined;
+    const projectRole = me?.project_role || undefined;
+    return {
+      state,
+      me,
+      meta,
+      can: (min) => atLeast(role, min),
+      canAct: (min) => atLeast(role, min) || atLeast(projectRole, min),
+      projectOnly: me?.access === "projects",
+      has: (f) => Boolean(me?.features?.includes(f)),
+      refresh,
+      logout,
+    };
   }, [state, refresh, logout]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

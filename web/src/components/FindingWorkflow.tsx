@@ -185,9 +185,9 @@ export function FindingHistory({ id, tick }: { id: number; tick: number }) {
   const res = useLoad(() => api.get<List<FindingEvent>>(`/findings/${id}/events`), [id, tick]);
   // Events carry only IDs; resolve names where the viewer may list them.
   // Older events may lack user_email/team_name; fall back to lookups.
-  const { can, me } = useAuth();
-  const teams = useLoad(() => api.get<List<Team>>("/teams"), []);
-  const users = useLoad(() => (can("engineer") ? api.get<List<DirectoryUser>>("/users/directory") : Promise.resolve(null)), []);
+  const { me, canAct, projectOnly } = useAuth();
+  const teams = useLoad(() => (projectOnly ? Promise.resolve(null) : api.get<List<Team>>("/teams")), [projectOnly]);
+  const users = useLoad(() => (canAct("engineer") ? api.get<List<DirectoryUser>>("/users/directory") : Promise.resolve(null)), []);
   const userName = (uid: number) =>
     uid === me?.user?.id ? (me.user.email ?? "you") : (users.data?.items.find((u) => u.id === uid)?.email ?? `user #${uid}`);
   const teamName = (tid: number) => teams.data?.items.find((t) => t.id === tid)?.name ?? `team #${tid}`;

@@ -138,7 +138,7 @@ function Requests({ status }: { status: "pending" | "all" }) {
 }
 
 function Rules() {
-  const { can } = useAuth();
+  const { canAct: can } = useAuth();
   const [all, setAll] = useState(false);
   const [offset, setOffset] = useState(0);
   const act = useAction();
