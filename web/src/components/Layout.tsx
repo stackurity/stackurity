@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, Outlet, useLocation } from "react-router";
-import { api, type Incident, type List, type Plan } from "../api";
+import { api, type IgnoreRequest, type Incident, type List, type Plan } from "../api";
 import { useLoad } from "../hooks";
 import { useAuth } from "../auth";
 import { GlobalSearch } from "./Search";
@@ -51,7 +51,7 @@ function CountBadge({ b }: { b: NonNullable<NavEntry["badge"]> }) {
 const EDITION_LABEL: Record<string, string> = { community: "Community", pro: "Pro", enterprise: "Enterprise" };
 
 export function Layout() {
-  const { me, meta, logout } = useAuth();
+  const { me, meta, logout, can } = useAuth();
   const { pathname } = useLocation();
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const [more, setMore] = useState(false);
@@ -68,6 +68,13 @@ export function Layout() {
   const sos = useLoad(
     () => (hasWorkspace ? api.get<List<Incident>>("/incidents", { status: "open", sos: "true", limit: 1 }) : Promise.resolve(null)),
     [pathname, hasWorkspace],
+  );
+
+  // Requests to ignore issues waiting for a decision (security and admin).
+  const decider = hasWorkspace && can("security");
+  const approvals = useLoad(
+    () => (decider ? api.get<List<IgnoreRequest>>("/ignore-requests", { status: "pending", limit: 1 }) : Promise.resolve(null)),
+    [pathname, decider],
   );
 
   const entries: NavEntry[] = [
@@ -87,7 +94,13 @@ export function Layout() {
       icon: <IconActivity />,
       badge: { count: sos.data?.total ?? 0, label: "open SOS incidents", tone: "crit" },
     },
-    { id: "settings", to: "/settings", label: "Settings", icon: <IconSettings /> },
+    {
+      id: "settings",
+      to: "/settings",
+      label: "Settings",
+      icon: <IconSettings />,
+      badge: { count: approvals.data?.total ?? 0, label: "requests to ignore issues waiting for approval", tone: "warn" },
+    },
   ];
   const current = sectionOf(pathname);
   const showFeedback = feedbackAvailable(me);

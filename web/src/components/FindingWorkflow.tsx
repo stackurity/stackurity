@@ -4,8 +4,8 @@ import { api, type DirectoryUser, type Finding, type FindingEvent, type List, ty
 import { useAuth } from "../auth";
 import { useLoad } from "../hooks";
 import { absTime } from "../format";
-import { EscalationBadge, PriorityBadge, SosBadge, STATE_EXPLAINED, StateBadge } from "./Badge";
-import { Card, ErrorBox, KeyValues, Loading, RelativeTime } from "./ui";
+import { EscalationBadge, PriorityBadge, SosBadge, FindingStateBadge, IGNORE_REASON_LABEL, STATE_EXPLAINED } from "./Badge";
+import { Card, ErrorBox, KeyValues, Loading, Notice, RelativeTime } from "./ui";
 import { Assignee, DueDate, FindingActions } from "./Workflow";
 import { FindingRemediation } from "./RemediationSummary";
 
@@ -65,7 +65,7 @@ export function WorkflowPanel({ f, onChanged }: { f: Finding; onChanged: () => v
     <Card
       title={
         <span className="badges">
-          Workflow <StateBadge state={f.status === "open" ? f.state : f.status} />
+          Workflow <FindingStateBadge f={f} detail />
           <PriorityBadge priority={f.priority} score={f.priority_score} />
           {f.sos && <SosBadge rule={f.sos_rule} />}
           <EscalationBadge level={f.escalation_level} />
@@ -73,7 +73,19 @@ export function WorkflowPanel({ f, onChanged }: { f: Finding; onChanged: () => v
       }
     >
       {f.status !== "open" && <p className="hint">This finding is resolved; workflow actions no longer apply.</p>}
-      {f.status === "open" && f.state && STATE_EXPLAINED[f.state] && <p className="hint">{STATE_EXPLAINED[f.state]}.</p>}
+      {f.status === "open" && f.state && STATE_EXPLAINED[f.state] && !f.until_fix && <p className="hint">{STATE_EXPLAINED[f.state]}.</p>}
+      {f.status === "open" && f.until_fix && closedByDecision && (
+        <p className="hint">It comes back on its own when a free fixed version exists, or on the date below at the latest.</p>
+      )}
+      {f.status === "open" && f.regressed_at && (
+        <Notice kind="warn">
+          <strong>Came back after a fix</strong> <RelativeTime iso={f.regressed_at} />. It was fixed on this asset and a later check found it
+          again. See the history below.
+        </Notice>
+      )}
+      {f.verification === "rejected" && f.ignore_reason === "false_positive" && (
+        <p className="hint">Marked a false positive: verification is rejected until someone reopens it.</p>
+      )}
       {f.sos && (
         <div className="alert sos-banner" role="alert">
           <strong>SOS{f.sos_rule ? ` — ${f.sos_rule}` : ""}:</strong> this finding matches{" "}
@@ -101,9 +113,22 @@ export function WorkflowPanel({ f, onChanged }: { f: Finding; onChanged: () => v
               ["fix by", active ? <DueDate iso={f.fix_due} overdue={f.overdue} label="Fix by" /> : <span className="muted">—</span>],
               ...(closedByDecision
                 ? ([
+                    ...(f.ignore_reason ? ([["why", IGNORE_REASON_LABEL[f.ignore_reason] ?? f.ignore_reason]] as [string, ReactNode][]) : []),
                     ["reason", <span className="break">{f.state_reason || <span className="muted">none given</span>}</span>],
                     ["mitigation", <span className="break">{f.mitigation || <span className="muted">none recorded</span>}</span>],
-                    ["until", f.suppressed_until ? <span title={absTime(f.suppressed_until)}>{absTime(f.suppressed_until)}</span> : "—"],
+                    [
+                      "until",
+                      f.suppressed_until ? (
+                        <span title={absTime(f.suppressed_until)}>
+                          {f.until_fix ? "a fix ships, at the latest " : ""}
+                          {absTime(f.suppressed_until)}
+                        </span>
+                      ) : f.until_fix ? (
+                        "a fix ships"
+                      ) : (
+                        "no expiry"
+                      ),
+                    ],
                   ] as [string, ReactNode][])
                 : []),
               ...(f.incident_id
@@ -146,6 +171,12 @@ function describe(e: FindingEvent): string {
     // Recorded by the matcher when it resolves a finding or detects it again.
     resolved: "resolved it",
     reopened: "reopened it",
+    regressed: "found it again after it was fixed",
+    ignore: "ignored it",
+    ignored: "ignored it",
+    applied: "applied the fix",
+    expired: "ended the snooze or ignore",
+    fix_available: "returned it: a fix shipped",
   };
   return verb[e.action] ?? e.action.replace(/_/g, " ");
 }
@@ -171,6 +202,10 @@ export function FindingHistory({ id, tick }: { id: number; tick: number }) {
             const d = e.detail ?? {};
             const extra: string[] = [];
             if (typeof d.until === "string") extra.push(`until ${absTime(d.until)}`);
+            if (d.until_fix) extra.push("until a fix ships");
+            if (typeof d.reason === "string" && IGNORE_REASON_LABEL[d.reason]) extra.push(IGNORE_REASON_LABEL[d.reason].toLowerCase());
+            if (d.scope === "everywhere") extra.push("on every asset");
+            if (d.request_id) extra.push(`request #${String(d.request_id)}`);
             if (d.user_email) extra.push(`to ${String(d.user_email)}`);
             else if (d.user_id !== undefined && d.user_id !== null) extra.push(Number(d.user_id) === 0 ? "person cleared" : `to ${userName(Number(d.user_id))}`);
             if (d.team_name) extra.push(`team ${String(d.team_name)}`);

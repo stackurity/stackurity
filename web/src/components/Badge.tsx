@@ -160,6 +160,64 @@ export function StateBadge({ state }: { state: string | undefined | null }) {
   return <Badge status={s} tone={STATE_TONES[s] ?? "info"} label={s === "suppressed" ? "snoozed" : s.replace(/_/g, " ")} title={STATE_EXPLAINED[s]} />;
 }
 
+// --- 0.7: the seven states shown to people
+
+const DISPLAY_STATE: Record<string, { label: string; tone: Tone; title: string }> = {
+  new: { label: "New", tone: "bad", title: "Nobody has looked at it yet" },
+  to_do: { label: "To do", tone: "warn", title: "Someone has seen it; the fix deadline still applies" },
+  in_progress: { label: "In progress", tone: "info", title: "A fix is being worked on" },
+  fixed: { label: "Fixed", tone: "good", title: "The latest check no longer finds it" },
+  regressed: { label: "Regressed", tone: "crit", title: "It was fixed and came back on this asset" },
+  snoozed: { label: "Snoozed", tone: "muted", title: "Hidden for now; it comes back on its own" },
+  accepted: { label: "Accepted", tone: "muted", title: "Ignored by a security decision, with a reason" },
+};
+
+export const IGNORE_REASON_LABEL: Record<string, string> = {
+  accepted_risk: "Accepted risk",
+  false_positive: "False positive",
+  mitigated: "Mitigated",
+  no_fix: "No fix",
+};
+
+/** The display state of a finding, from display_state or, for older servers, its stored state. */
+export function displayStateOf(f: { display_state?: string; status?: string; state?: string; regressed_at?: string | null }): string {
+  if (f.display_state) return f.display_state;
+  if (f.status && f.status !== "open") return "fixed";
+  switch (f.state) {
+    case "suppressed":
+      return "snoozed";
+    case "risk_accepted":
+      return "accepted";
+    case "acknowledged":
+      return f.regressed_at ? "regressed" : "to_do";
+    case "in_progress":
+      return "in_progress";
+  }
+  return f.regressed_at ? "regressed" : "new";
+}
+
+/**
+ * One chip for a finding's state: New, To do, In progress, Fixed, Regressed,
+ * Snoozed or Accepted. With detail, Accepted says why and Snoozed or
+ * Accepted say when they wait for a fix.
+ */
+export function FindingStateBadge({
+  f,
+  detail,
+}: {
+  f: { display_state?: string; status?: string; state?: string; regressed_at?: string | null; until_fix?: boolean; ignore_reason?: string };
+  detail?: boolean;
+}) {
+  const s = displayStateOf(f);
+  const d = DISPLAY_STATE[s] ?? { label: s.replace(/_/g, " "), tone: "info" as Tone, title: "" };
+  let label = d.label;
+  if (detail && s === "accepted" && f.ignore_reason) label += `: ${IGNORE_REASON_LABEL[f.ignore_reason] ?? f.ignore_reason}`;
+  const waits = (s === "snoozed" || s === "accepted") && f.until_fix;
+  if (detail && waits) label += ", until a fix ships";
+  const title = waits ? `${d.title}. It comes back when a fixed version exists.` : d.title;
+  return <Badge status={`state-${s}`} tone={d.tone} label={label} title={title} />;
+}
+
 export function EscalationBadge({ level }: { level: number | undefined | null }) {
   if (!level) return null;
   if (level >= 2) return <Badge status="fix_overdue" tone="crit" label="Fix overdue" title="The fix deadline has passed" />;

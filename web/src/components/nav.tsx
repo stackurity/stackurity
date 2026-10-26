@@ -14,7 +14,7 @@ export function sectionOf(path: string): Section {
   if (path === "/") return "home";
   if (under(path, "/fixes", "/action-plan", "/findings", "/remediation")) return "fixes";
   if (under(path, "/assets", "/components", "/coverage")) return "assets";
-  if (under(path, "/activity", "/incidents", "/outcomes", "/reports", "/audit")) return "activity";
+  if (under(path, "/activity", "/incidents", "/checks", "/outcomes", "/reports", "/audit")) return "activity";
   if (under(path, "/settings", "/integrations", "/intelligence", "/admin", "/updates")) return "settings";
   if (under(path, "/help")) return "help";
   return "other";
@@ -84,6 +84,8 @@ export function ActivityTabs() {
       label="Activity"
       tabs={[
         { to: "/incidents", label: "Incidents" },
+        { to: "/checks", label: "Checks" },
+        { to: "/settings/approvals", label: "Approvals" },
         { to: "/outcomes", label: "Outcomes" },
         { to: "/reports", label: "Evidence report" },
         { to: "/audit", label: "Audit log" },
@@ -96,6 +98,6 @@ export function ActivityTabs() {
 export function SectionTabsFor({ path }: { path: string }) {
   if (["/fixes", "/fixes/issues", "/fixes/automatic"].includes(path)) return <FixesTabs />;
   if (["/assets", "/components", "/coverage"].includes(path)) return <AssetsTabs />;
-  if (["/incidents", "/outcomes", "/reports", "/audit"].includes(path)) return <ActivityTabs />;
+  if (["/incidents", "/checks", "/outcomes", "/reports", "/audit"].includes(path)) return <ActivityTabs />;
   return null;
 }

@@ -117,7 +117,7 @@ export function HomePage() {
     { key: "non_production", n: hidden.non_production?.findings ?? 0, to: "/fixes?bucket=non_production", text: "are on assets that are not production" },
     { key: "lower_priority", n: hidden.lower_priority?.findings ?? 0, to: "/fixes?bucket=lower_priority", text: "are lower priority" },
     { key: "suppressed", n: snoozed, to: "/fixes/issues?state=suppressed", text: "are snoozed" },
-    { key: "risk_accepted", n: accepted, to: "/fixes/issues?state=risk_accepted", text: "are accepted risks" },
+    { key: "risk_accepted", n: accepted, to: "/fixes/issues?state=risk_accepted", text: "are ignored" },
   ].filter((r) => r.n > 0);
   const hiddenTotal = reasons.reduce((a, r) => a + r.n, 0);
 
@@ -197,13 +197,15 @@ export function HomePage() {
               <Link to={r.to}>{r.n.toLocaleString()}</Link> {r.text}
             </span>
           ))}
-          . <Link to="/fixes">Show all fixes</Link> or <Link to="/fixes/issues">all issues</Link>.
+          .{(s.until_fix ?? 0) > 0 && <> {plural(s.until_fix ?? 0, "snoozed or ignored issue")} {(s.until_fix ?? 0) === 1 ? "returns" : "return"} when a fix ships.</>}{" "}
+          <Link to="/fixes">Show all fixes</Link> or <Link to="/fixes/issues">all issues</Link>.
         </p>
       )}
 
       {s && (
         <section aria-label="At a glance" className="home-tiles">
           <Tile to="/fixes/issues?priority=P1&state=active" value={s.by_priority?.P1 ?? 0} label="urgent issues (P1)" tone="crit" />
+          <Tile to="/fixes/issues?state=regressed" value={s.regressed ?? 0} label="came back after a fix" tone="crit" />
           <Tile to="/fixes/issues?known_exploited=true" value={s.known_exploited} label="known exploited" tone="crit" />
           <Tile to="/fixes/issues?status=resolved&resolved_within=7" value={s.resolved_7d ?? 0} label="fixed in the last 7 days" tone="good" />
           <Tile to="/fixes/issues?kind=end_of_life" value={s.by_kind?.end_of_life ?? 0} label="end of life" tone="warn" />

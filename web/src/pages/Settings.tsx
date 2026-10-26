@@ -21,6 +21,11 @@ const GROUPS: { title: string; entries: Entry[] }[] = [
       { to: "/integrations", label: "Integrations", about: "Git repositories, container images and cloud accounts to scan on a schedule.", min: "engineer" },
       { to: "/settings/risk-policy", label: "Risk policy", about: "How issues get their priority, SOS rules, deadlines and the longest snooze." },
       {
+        to: "/settings/approvals",
+        label: "Approvals and ignore rules",
+        about: "Requests to ignore issues, and the ignore rules in force for one asset or every asset.",
+      },
+      {
         to: "/settings/automatic-fixes",
         label: "Automatic fixes",
         about: "Policies that let Stackurity apply upgrades for you, with approval and canary hosts.",
