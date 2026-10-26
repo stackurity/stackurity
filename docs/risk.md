@@ -16,7 +16,7 @@ Every open finding gets a priority from P1 (most urgent) to P4, an SOS flag for 
 | Overdue | The fix deadline has passed and the finding is still `new`, `acknowledged` or `in_progress`. |
 | Scope | `dev` for a development-only dependency. |
 | Kernel not running | The finding is on an installed kernel version that is not the one running. Kernel findings are one per CVE per installed kernel version, and none on headers ([compatibility.md](compatibility.md#kernels)), so a CVE in the running kernel is scored once. |
-| Verification | `confirmed`, `needs_validation` (the installed version came from a low-confidence source) or `stale` (the asset has stopped reporting). |
+| Verification | `confirmed`, `needs_validation` (the installed version came from a low-confidence source, or the independent second check disagreed) or `stale` (the asset has stopped reporting); `rejected` findings are false positives a person ignored. The definitions are in [verification.md, "Evidence states"](verification.md#evidence-states). |
 
 ## Score
 

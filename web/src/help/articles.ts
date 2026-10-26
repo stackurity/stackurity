@@ -1246,7 +1246,7 @@ stackurity.exe agent --interval 6h`,
       {
         list: [
           "**Identity conflicts** (admin): when a report's identifiers match more than one asset (e.g. a cloned VM image reused a machine-id), pick the asset to keep; the others are merged into it.",
-          "**Jobs** (admin): the background queue — integration runs, feed syncs, evaluations — with attempts and errors. Read-only.",
+          "**Jobs** (admin): the background queue (integration runs, feed syncs, evaluations), with attempts and errors. Read-only.",
           "**Audit log** (everyone, under **Activity**): sign-ins and every change, with the actor and details. Filter by object type.",
         ],
       },
