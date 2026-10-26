@@ -60,6 +60,10 @@ func (d *Dispatcher) Tick(ctx context.Context) error {
 	if _, err := d.Store.ExpireSuppressions(ctx); err != nil {
 		return fmt.Errorf("expire suppressions: %w", err)
 	}
+	// Ignore rules for every asset also cover issues found since.
+	if _, err := d.Store.ApplyExceptions(ctx); err != nil {
+		return fmt.Errorf("ignore rules: %w", err)
+	}
 	policy, err := d.Store.RiskPolicy(ctx)
 	if err != nil {
 		return err
@@ -234,6 +238,11 @@ func (d *Dispatcher) Plan(ctx context.Context) error {
 	people := func(r store.Route) bool {
 		return r.Enabled && !tracker[r.ChannelID] && r.Mode == store.ModeUrgentSummary
 	}
+	// Issues that came back after a fix are urgent whatever their priority.
+	regressed, regressedUpTo, err := d.Store.RegressedToAnnounce(ctx)
+	if err != nil {
+		return err
+	}
 	var infos map[string]store.FixInfo
 	for _, r := range routes {
 		if !people(r) {
@@ -247,11 +256,19 @@ func (d *Dispatcher) Plan(ctx context.Context) error {
 				urgentIDs = append(urgentIDs, in.ID)
 			}
 		}
-		if len(urgent) == 0 {
+		var back []store.IssueCount
+		if assetsWanted(r) {
+			for _, c := range regressed {
+				if issueInScope(r, c) {
+					back = append(back, c)
+				}
+			}
+		}
+		if len(urgent) == 0 && len(back) == 0 {
 			continue
 		}
 		if infos == nil {
-			var all []store.IssueCount
+			all := append([]store.IssueCount(nil), regressed...)
 			for _, in := range live {
 				all = append(all, rows[in.ID]...)
 			}
@@ -259,12 +276,22 @@ func (d *Dispatcher) Plan(ctx context.Context) error {
 				return err
 			}
 		}
-		msg, ok := d.urgentMessage(r, urgent, rows, quiet, infos)
+		msg, ok := d.urgentMessage(r, urgent, rows, quiet, infos, back)
 		if !ok {
 			continue
 		}
 		r := r
-		if _, err := d.Store.EnqueueDelivery(ctx, r.ChannelID, &r.ID, nil, EventUrgent, keyOf("urgent", r.ID, urgentIDs), msg); err != nil {
+		key := keyOf("urgent", r.ID, urgentIDs)
+		if len(back) > 0 {
+			key += ":regressed:" + regressedUpTo.UTC().Format(time.RFC3339Nano)
+		}
+		if _, err := d.Store.EnqueueDelivery(ctx, r.ChannelID, &r.ID, nil, EventUrgent, key, msg); err != nil {
+			return err
+		}
+	}
+	// Recorded even when no route matched, as incidents are below.
+	if !regressedUpTo.IsZero() {
+		if err := d.Store.MarkRegressedNotified(ctx, regressedUpTo); err != nil {
 			return err
 		}
 	}

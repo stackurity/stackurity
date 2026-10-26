@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stackurity/stackurity/internal/model"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
 )
@@ -286,7 +287,7 @@ func syntheticUrgent(assets, fixes int, name func(int) string) (store.Route, []s
 func TestUrgentMessageLimits(t *testing.T) {
 	d := &Dispatcher{BaseURL: "https://stk.example"}
 	r, incs, rows, infos := syntheticUrgent(40, 12, func(a int) string { return fmt.Sprintf("host-%02d.%s", a, strings.Repeat("very-long-name.", 20)) })
-	m, ok := d.urgentMessage(r, incs, rows, nil, infos)
+	m, ok := d.urgentMessage(r, incs, rows, nil, infos, nil)
 	if !ok {
 		t.Fatal("no message")
 	}
@@ -338,7 +339,7 @@ func TestUrgentMessageLimits(t *testing.T) {
 func TestGroupedPayloads(t *testing.T) {
 	d := &Dispatcher{BaseURL: "https://stk.example"}
 	r, incs, rows, infos := syntheticUrgent(2, 4, func(a int) string { return []string{"", "commmerceblog", "pos-api"}[a] })
-	m, _ := d.urgentMessage(r, incs, rows, nil, infos)
+	m, _ := d.urgentMessage(r, incs, rows, nil, infos, nil)
 	e := string(buildEmail("a@x.io", []string{"b@x.io"}, m))
 	headers, body, _ := strings.Cut(e, "\r\n\r\n")
 	if !strings.Contains(headers, "Subject: 148 new urgent issues on 2 assets") || !strings.Contains(headers, "multipart/alternative") {
@@ -366,5 +367,84 @@ func TestGroupedPayloads(t *testing.T) {
 	}
 	if shape["event"] != "urgent" || len(shape["summary"].([]any)) != 2+2*4 {
 		t.Errorf("webhook JSON = %s", wh)
+	}
+}
+
+// An issue that comes back after a fix is urgent whatever its priority:
+// one urgent message says so, once, and the summary has a section for it.
+func TestRegressedIsUrgent(t *testing.T) {
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	f := setup(t)
+	f.addAsset("web-1", "staging", false)
+	report := func(purls ...string) {
+		b := model.NewBatch(model.Collector{ID: "t", Method: "agent"},
+			model.AssetRef{Kind: model.AssetHost, Name: "web-1", Identifiers: []model.Identifier{{Scheme: "test", Value: "web-1"}}})
+		for _, p := range purls {
+			b.Observations = append(b.Observations, model.Observation{Purl: p, Confidence: model.ConfidenceConfirmed, Scope: "runtime"})
+		}
+		b.Complete = true
+		if err := b.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.st.Ingest(ctx, b, 0); err != nil {
+			t.Fatal(err)
+		}
+		rows, _, _ := f.st.ListInventory(ctx, store.InventoryFilter{AssetID: f.asset["web-1"]})
+		var ids []int64
+		var want []store.FindingInput
+		for _, r := range rows {
+			if r.RemovedAt != nil {
+				continue
+			}
+			ids = append(ids, r.ID)
+			want = append(want, store.FindingInput{Kind: "vulnerability", Key: "CVE-2099-0007", InventoryID: r.ID, AssetID: f.asset["web-1"],
+				ComponentID: r.ComponentID, Verification: "confirmed", Severity: "low", Title: "Minor issue in lodash",
+				FixedVersion: "4.17.21", Sources: []string{"GHSA-low"}, Evidence: map[string]any{}})
+		}
+		if _, _, err := f.st.SyncFindings(ctx, []string{"vulnerability"}, ids, want); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.st.ResolveRemovedFindings(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	report("pkg:npm/lodash@4.17.15")
+	f.tick()
+	if ev := f.hook.events(); len(ev) != 0 {
+		t.Fatalf("a low-priority issue raised %v", ev)
+	}
+	before := time.Now().Add(-time.Second)
+	report() // lodash removed: fixed
+	f.tick()
+	report("pkg:npm/lodash@4.17.15") // and back
+	f.tick()
+	f.tick()
+	ev := f.hook.events()
+	if len(ev) != 1 || !strings.HasPrefix(ev[0], "urgent") {
+		t.Fatalf("want one urgent message: %v", ev)
+	}
+	m := f.hook.got[0]
+	if m.Title != "web-1: 1 issue came back after a fix" || m.Counts["regressed"] != 1 || len(m.Sections) != 1 ||
+		m.Sections[0].Title != "Came back after a fix" {
+		t.Fatalf("urgent = %+v", m)
+	}
+	if it := m.Sections[0].Items[0]; it.Link != fmt.Sprintf("https://stk.example/fixes/issues?asset_id=%d&state=regressed", f.asset["web-1"]) {
+		t.Errorf("item = %+v", it)
+	}
+
+	// The summary has the section, and the issue is not also "new".
+	routes, _ := f.st.ListRoutes(ctx)
+	data := &summaryData{d: f.d, ctx: ctx, cache: map[string][]store.IssueCount{}}
+	sm, changed, err := f.d.summaryMessage(routes[0], data, before, time.Now().Add(time.Minute), false)
+	if err != nil || !changed {
+		t.Fatalf("summary: %v %v", changed, err)
+	}
+	var titles []string
+	for _, s := range sm.Sections {
+		titles = append(titles, s.Title)
+	}
+	if sm.Counts["regressed"] != 1 || sm.Counts["new"] != 0 || !strings.Contains(sm.Title, "1 came back") ||
+		!strings.Contains(strings.Join(titles, "|"), "Came back after a fix") {
+		t.Errorf("summary %q counts %v sections %v", sm.Title, sm.Counts, titles)
 	}
 }

@@ -23,15 +23,27 @@ type actionRequest struct {
 	UserID     *int64     `json:"user_id"`
 	TeamID     *int64     `json:"team_id"`
 	IDs        []int64    `json:"ids"` // bulk only
+	// UntilFix (suppress): snooze until a free fixed version exists.
+	UntilFix bool `json:"until_fix"`
+	// Ignore: why (accepted_risk, false_positive, mitigated, no_fix), where
+	// (asset or everywhere) and until when (date, until_fix, never).
+	Reason string `json:"reason"`
+	Scope  string `json:"scope"`
+	Expiry string `json:"expiry"`
 }
 
-// Suppression and risk acceptance are reserved for the security role (FR-09).
-var securityActions = map[string]bool{"suppress": true, "accept_risk": true, "reopen": true}
+// Suppression, risk acceptance and ignoring are reserved for the security
+// role (FR-09); others ask through the approval inbox (ignore-requests).
+var securityActions = map[string]bool{"suppress": true, "accept_risk": true, "ignore": true, "reopen": true}
 
 func (s *Server) checkAction(w http.ResponseWriter, r *http.Request, req *actionRequest) bool {
 	p := principal(r)
 	if securityActions[req.Action] && !p.Role.AtLeast(auth.RoleSecurity) {
-		writeError(w, 403, "forbidden", req.Action+" requires the security role")
+		msg := req.Action + " requires the security role"
+		if req.Action == "ignore" || req.Action == "accept_risk" {
+			msg += "; ask for it with POST /api/v1/ignore-requests"
+		}
+		writeError(w, 403, "forbidden", msg)
 		return false
 	}
 	if len(req.Note) > 2000 || len(req.Mitigation) > 2000 {
@@ -46,8 +58,9 @@ func (s *Server) checkAction(w http.ResponseWriter, r *http.Request, req *action
 func (s *Server) applyAction(w http.ResponseWriter, r *http.Request, ids []int64, req actionRequest) {
 	actor := principal(r).Actor(r)
 	a := store.FindingAction{Action: req.Action, Note: req.Note, Until: req.Until, Mitigation: req.Mitigation,
-		AssignUser: req.UserID, AssignTeam: req.TeamID}
-	if req.Action == "suppress" || req.Action == "accept_risk" {
+		AssignUser: req.UserID, AssignTeam: req.TeamID, UntilFix: req.UntilFix,
+		Ignore: store.IgnoreSpec{Reason: req.Reason, Scope: req.Scope, Expiry: req.Expiry}}
+	if req.Action == "suppress" || req.Action == "accept_risk" || req.Action == "ignore" {
 		pol, err := s.Store.RiskPolicy(r.Context())
 		if err != nil {
 			s.fail(w, r, err)
@@ -69,7 +82,8 @@ func (s *Server) applyAction(w http.ResponseWriter, r *http.Request, ids []int64
 		done++
 	}
 	_ = s.Store.Audit(r.Context(), actor, "finding."+req.Action, "finding", joinIDs(ids),
-		map[string]any{"note": req.Note, "mitigation": req.Mitigation, "until": req.Until, "user_id": req.UserID, "team_id": req.TeamID, "applied": done})
+		map[string]any{"note": req.Note, "mitigation": req.Mitigation, "until": req.Until, "user_id": req.UserID, "team_id": req.TeamID,
+			"until_fix": req.UntilFix, "reason": req.Reason, "scope": req.Scope, "expiry": req.Expiry, "applied": done})
 	if done == 0 && len(failures) > 0 {
 		writeError(w, 400, "invalid_action", "no finding was changed", failures...)
 		return

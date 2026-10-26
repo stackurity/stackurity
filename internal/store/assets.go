@@ -50,6 +50,9 @@ type Asset struct {
 	LastSeen         time.Time         `json:"last_seen"`
 	CollectionStatus string            `json:"collection_status"`
 	ComponentCount   int64             `json:"component_count"`
+	// AgentPolledAt is when the asset's agent last asked whether to report
+	// now (0.7 agents); null for older agents and assets without one.
+	AgentPolledAt *time.Time `json:"agent_polled_at"`
 }
 
 type AssetFilter struct {
@@ -68,13 +71,13 @@ type AssetFilter struct {
 
 const assetCols = `a.id, a.kind, a.name, a.environment, a.owner_team_id, COALESCE(t.name, ''), a.provider, a.region,
 	a.criticality, a.internet_exposed, ` + effectiveExposure + `, a.tags, a.attributes, a.first_seen, a.last_seen, a.collection_status,
-	(SELECT count(*) FROM inventory i WHERE i.asset_id = a.id AND i.removed_at IS NULL)`
+	(SELECT count(*) FROM inventory i WHERE i.asset_id = a.id AND i.removed_at IS NULL), a.agent_polled_at`
 
 func scanAsset(row pgx.Row) (*Asset, error) {
 	var a Asset
 	var attrs []byte
 	err := row.Scan(&a.ID, &a.Kind, &a.Name, &a.Environment, &a.OwnerTeamID, &a.OwnerTeam, &a.Provider, &a.Region,
-		&a.Criticality, &a.InternetExposed, &a.Exposed, &a.Tags, &attrs, &a.FirstSeen, &a.LastSeen, &a.CollectionStatus, &a.ComponentCount)
+		&a.Criticality, &a.InternetExposed, &a.Exposed, &a.Tags, &attrs, &a.FirstSeen, &a.LastSeen, &a.CollectionStatus, &a.ComponentCount, &a.AgentPolledAt)
 	if err != nil {
 		return nil, err
 	}

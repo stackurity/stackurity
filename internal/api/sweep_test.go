@@ -108,6 +108,7 @@ var routeRules = map[string]routeRule{
 		return json.RawMessage(`{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}`)
 	}},
 	"GET /api/v1/agent/actions":              {class: "list"},
+	"GET /api/v1/agent/check":                {class: "list", query: "?asset_id={asset}&asset_id={asset2}"},
 	"POST /api/v1/agent/actions/{id}/report": {class: "object", obj: id("action"), edition: "ee", body: func(*tenantFx) any { return map[string]any{"phase": "failed", "error": "x"} }},
 	"GET /api/v1/remediation/renovate.json":  {class: "list"},
 
@@ -144,6 +145,9 @@ var routeRules = map[string]routeRule{
 	"GET /api/v1/jobs":                 {class: "list"},
 	"GET /api/v1/secrets":              {class: "list"},
 	"GET /api/v1/enrollments":          {class: "list"},
+	"GET /api/v1/checks":               {class: "list", query: "?asset_id={asset}"},
+	"GET /api/v1/ignore-rules":         {class: "list", query: "?status=all"},
+	"GET /api/v1/ignore-requests":      {class: "list", query: "?status=all"},
 
 	// A's objects by id.
 	"GET /api/v1/assets/{id}":                      {class: "object", obj: id("asset")},
@@ -178,6 +182,13 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/findings/{id}/actions":           {class: "object", obj: id("finding"), body: func(*tenantFx) any { return map[string]any{"action": "acknowledge"} }},
 	"POST /api/v1/incidents/{id}/actions":          {class: "object", obj: id("incident"), body: func(*tenantFx) any { return map[string]any{"action": "acknowledge"} }},
 	"POST /api/v1/conflicts/{id}/resolve":          {class: "object", obj: id("conflict"), body: func(a *tenantFx) any { return map[string]any{"target_asset_id": a.int("asset2")} }},
+	"GET /api/v1/checks/{id}":                      {class: "object", obj: id("check")},
+	"POST /api/v1/assets/{id}/check":               {class: "object", obj: id("asset")},
+	"POST /api/v1/fix-groups/{id}/check":           {class: "object", obj: id("fixgroup")},
+	"POST /api/v1/fix-groups/{id}/applied":         {class: "object", obj: id("fixgroup")},
+	"DELETE /api/v1/ignore-rules/{id}":             {class: "object", obj: id("ignorerule")},
+	"GET /api/v1/ignore-requests/{id}":             {class: "object", obj: id("ignorerequest")},
+	"POST /api/v1/ignore-requests/{id}/decision":   {class: "object", obj: id("ignorerequest"), body: func(*tenantFx) any { return map[string]any{"decision": "approve"} }},
 	"PATCH /api/v1/users/{id}":                     {class: "object", obj: id("user"), body: func(*tenantFx) any { return map[string]any{"role": "viewer"} }},
 	"DELETE /api/v1/users/{id}":                    {class: "object", obj: id("user")},
 	"PATCH /api/v1/teams/{id}":                     {class: "object", obj: id("team"), body: func(*tenantFx) any { return map[string]any{"name": "hacked"} }},
@@ -204,6 +215,9 @@ var routeRules = map[string]routeRule{
 		return map[string]any{"action": "acknowledge", "ids": []int64{a.int("finding")}}
 	}},
 	"PUT /api/v1/risk-policy": {class: "create", body: func(*tenantFx) any { return map[string]any{} }},
+	"POST /api/v1/ignore-requests": {class: "create", body: func(a *tenantFx) any {
+		return map[string]any{"finding_ids": []int64{a.int("finding")}, "reason": "false_positive", "note": "sweep", "scope": "everywhere", "expiry": "never"}
+	}},
 	"POST /api/v1/risk-policy/preview": {class: "create", body: func(*tenantFx) any {
 		return map[string]any{"known_exploited": 9, "thresholds": map[string]float64{"p1": 5, "p2": 3, "p3": 1}}
 	}},
@@ -374,6 +388,30 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 	if code := admin.do("POST", "/api/v1/findings/"+f.ids["finding"]+"/actions", map[string]any{"action": "comment", "note": "note-" + tag}, nil); code != 200 {
 		t.Fatalf("%s comment: %d", tag, code)
 	}
+	// The loop (0.7): a check, an ignore request from an engineer, and an
+	// ignore rule for every asset.
+	var chk store.Check
+	if code := admin.do("POST", "/api/v1/assets/"+f.ids["asset"]+"/check", nil, &chk); code != 201 {
+		t.Fatalf("%s check: %d", tag, code)
+	}
+	set("check", chk.ID)
+	var ireq store.IgnoreRequest
+	if code := f.sess["engineer"].do("POST", "/api/v1/ignore-requests", map[string]any{"finding_ids": []int64{f.int("finding")},
+		"reason": "mitigated", "note": "request-" + tag, "scope": "asset", "expiry": "date", "until": time.Now().AddDate(0, 0, 30)}, &ireq); code != 201 {
+		t.Fatalf("%s ignore request: %d", tag, code)
+	}
+	set("ignorerequest", ireq.ID)
+	// A second finding on the same component, ignored everywhere.
+	if code := admin.do("POST", "/api/v1/findings/"+f.ids["finding"]+"/actions", map[string]any{"action": "ignore", "reason": "false_positive",
+		"note": "rule-" + tag, "scope": "everywhere", "expiry": "never"}, nil); code != 200 {
+		t.Fatalf("%s ignore: %d", tag, code)
+	}
+	var rules struct{ Items []store.IgnoreRule }
+	admin.do("GET", "/api/v1/ignore-rules", nil, &rules)
+	if len(rules.Items) != 1 {
+		t.Fatalf("%s ignore rules: %+v", tag, rules)
+	}
+	set("ignorerule", rules.Items[0].ID)
 
 	var team store.Team
 	if code := admin.do("POST", "/api/v1/teams", map[string]any{"name": "team-" + tag, "members": []int64{me.User.ID}}, &team); code != 201 {
@@ -706,6 +744,7 @@ func (e *env) snapshot(t *testing.T, a *tenantFx) string {
 		"/api/v1/teams", "/api/v1/channels", "/api/v1/routes", "/api/v1/deliveries", "/api/v1/integrations", "/api/v1/enrollments",
 		"/api/v1/users", "/api/v1/secrets", "/api/v1/tokens", "/api/v1/conflicts", "/api/v1/risk-policy", "/api/v1/collections/{collection}/result",
 		"/api/v1/remediation/policies", "/api/v1/remediation/plans", "/api/v1/workspaces",
+		"/api/v1/checks?asset_id={asset}", "/api/v1/checks/{check}", "/api/v1/ignore-rules?status=all", "/api/v1/ignore-requests?status=all",
 	} {
 		resp := a.sess["admin"].req("GET", fill(p, a.ids), nil, nil)
 		body, _ := io.ReadAll(resp.Body)

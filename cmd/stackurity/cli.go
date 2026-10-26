@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/stackurity/stackurity/internal/packs"
 	"io"
+	"math/rand/v2"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -147,7 +148,7 @@ func writeJSON(path string, v any) error {
 
 func agentCmd() *cobra.Command {
 	var c conn
-	var interval, actionInterval time.Duration
+	var interval, actionInterval, checkInterval time.Duration
 	var once, remediate, noRuntimes, discoverApps, noPacks bool
 	var root, envName, output, allowFile string
 	var appDirs []string
@@ -169,7 +170,12 @@ With --remediate (root required) the agent also applies upgrades the server
 has approved for this host, but only for packages matching the local
 allowlist file. Each change is dry-run first, applied through the package
 manager, health-checked, and followed by a fresh inventory collection so the
-server can verify it. Remediation needs a token bound to this host.`,
+server can verify it. Remediation needs a token bound to this host.
+
+Between collections the agent asks the server about once a minute whether
+someone pressed Check again in the dashboard, and reports at once if so
+(--check-interval, 0 turns it off). The question is a small GET with the
+agent's own token; it never changes anything on the host.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts := &hostOptions{root: root, runtimes: !noRuntimes, appDirs: appDirs, discoverApps: discoverApps}
 			hostCollect, err := hostCollector(opts)
@@ -226,11 +232,15 @@ server can verify it. Remediation needs a token bound to this host.`,
 			// report sends every batch, the host's OS packages first, and
 			// returns those for remediation. A failed application batch is
 			// reported but does not fail the host's collection.
+			// assetIDs are the assets the last report went to, which the
+			// agent asks about when it polls for check-again requests.
+			var assetIDs []int64
 			report := func() (*model.ObservationBatch, error) {
 				bs, err := collect(ctx)
 				if err != nil {
 					return nil, err
 				}
+				var ids []int64
 				for i, b := range bs {
 					r, err := cl.Ingest(ctx, b)
 					if err != nil {
@@ -241,7 +251,9 @@ server can verify it. Remediation needs a token bound to this host.`,
 						continue
 					}
 					printResult(r)
+					ids = append(ids, r.AssetID)
 				}
+				assetIDs = ids
 				return bs[0], nil
 			}
 			remediateOnce := func(current *model.ObservationBatch) {
@@ -285,7 +297,13 @@ server can verify it. Remediation needs a token bound to this host.`,
 				}
 			}
 
-			nextCollect := time.Now()
+			// Between collections the agent asks the server, about once a
+			// minute, whether someone pressed Check again; if so it reports
+			// at once. Servers older than 0.7 do not know the question, and
+			// the agent then stops asking.
+			poll := checkInterval > 0
+			nextCollect, nextAction := time.Now(), time.Now()
+			nextPoll := time.Now().Add(jitter(checkInterval))
 			var last *model.ObservationBatch
 			for {
 				if !time.Now().Before(nextCollect) {
@@ -300,18 +318,44 @@ server can verify it. Remediation needs a token bound to this host.`,
 					}
 					nextCollect = time.Now().Add(interval)
 				}
-				remediateOnce(last)
+				if !time.Now().Before(nextAction) {
+					remediateOnce(last)
+					nextAction = time.Now().Add(actionInterval)
+				}
 				if once {
 					return nil
 				}
-				wait := interval
-				if fixer != nil && actionInterval < wait {
-					wait = actionInterval
+				if poll && len(assetIDs) > 0 && !time.Now().Before(nextPoll) {
+					due, every, err := cl.CheckDue(ctx, assetIDs)
+					switch {
+					case errors.Is(err, client.ErrNoCheckPolling):
+						poll = false
+					case err != nil:
+						fmt.Fprintln(os.Stderr, time.Now().Format(time.RFC3339), "check-again poll failed:", err)
+					case due:
+						fmt.Println(time.Now().Format(time.RFC3339), "check again requested: reporting now")
+						nextCollect = time.Now()
+					}
+					next := checkInterval
+					if every >= 15*time.Second && every <= 10*time.Minute {
+						next = every
+					}
+					nextPoll = time.Now().Add(jitter(next))
+					if due {
+						continue
+					}
+				}
+				wake := nextCollect
+				if fixer != nil && nextAction.Before(wake) {
+					wake = nextAction
+				}
+				if poll && nextPoll.Before(wake) {
+					wake = nextPoll
 				}
 				select {
 				case <-ctx.Done():
 					return nil
-				case <-time.After(wait):
+				case <-time.After(time.Until(wake)):
 				}
 			}
 		},
@@ -331,7 +375,17 @@ server can verify it. Remediation needs a token bound to this host.`,
 	cmd.Flags().BoolVar(&remediate, "remediate", false, "apply server-approved upgrades for allowlisted packages (needs root and a host-bound token)")
 	cmd.Flags().StringVar(&allowFile, "allowlist", "/etc/stackurity/remediation-allow", "file of package patterns this host may upgrade")
 	cmd.Flags().DurationVar(&actionInterval, "action-interval", 5*time.Minute, "how often to check for approved changes when --remediate is set")
+	cmd.Flags().DurationVar(&checkInterval, "check-interval", 45*time.Second,
+		"how often to ask the server whether someone pressed Check again (0 turns it off)")
 	return cmd
+}
+
+// jitter spreads polls from many agents: d plus up to a third of d.
+func jitter(d time.Duration) time.Duration {
+	if d <= 0 {
+		return d
+	}
+	return d + time.Duration(rand.Int64N(int64(d)/3+1))
 }
 
 func scanCmd() *cobra.Command {
