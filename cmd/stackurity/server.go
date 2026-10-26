@@ -174,9 +174,15 @@ func serverCmd() *cobra.Command {
 
 			cookieSecure := env("STACKURITY_COOKIE_SECURE", "true") != "false"
 			listenAddr := env("STACKURITY_LISTEN", ":8080")
+			insecureCookies := cookieRisk(cookieSecure, os.Getenv("STACKURITY_BASE_URL"), listenAddr)
+			if insecureCookies != "" {
+				log.Warn("session cookies are not marked Secure (STACKURITY_COOKIE_SECURE=false); never run like this in production",
+					"reason", insecureCookies,
+					"fix", "serve Stackurity over HTTPS and remove STACKURITY_COOKIE_SECURE; for a local evaluation only, set STACKURITY_BASE_URL=http://localhost:<port>")
+			}
 			schema := &db.SchemaGuard{}
 			checker := &health.Checker{Store: st, FeedsEnabled: os.Getenv("STACKURITY_FEEDS") != "off",
-				PlatformWorkspace: os.Getenv("STACKURITY_PLATFORM_WORKSPACE"), Schema: schema}
+				PlatformWorkspace: os.Getenv("STACKURITY_PLATFORM_WORKSPACE"), Schema: schema, InsecureCookies: insecureCookies}
 			if _, why, err := checker.PlatformTarget(ctx); err != nil {
 				return err
 			} else if why != "" {

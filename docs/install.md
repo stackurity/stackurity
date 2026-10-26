@@ -20,9 +20,21 @@ docker compose logs stackurity | grep -A2 "one-time token"
 To pin a release, set `STACKURITY_IMAGE=ghcr.io/stackurity/stackurity:0.3.0` in `deploy/.env`. Images are signed; check one with
 `cosign verify ghcr.io/stackurity/stackurity:0.3.0 --certificate-identity-regexp '^https://github.com/stackurity/stackurity/.github/workflows/release.yml@refs/tags/' --certificate-oidc-issuer https://token.actions.githubusercontent.com` (see [security-audit.md](security-audit.md)).
 
-Open `http://<host>:8080`, enter the one-time setup token from the log, and create the first administrator. The token only works while no users exist.
+Open the dashboard through your HTTPS proxy (see [TLS](#tls)), or at http://localhost:8080 in a browser on the server itself, enter the one-time setup token from the log, and create the first administrator. The token only works while no users exist.
 
-**TLS.** The session cookie is marked `Secure` by default, so serve Stackurity over HTTPS through a reverse proxy (Caddy, nginx, Traefik). If the proxy sets `X-Forwarded-For`, set `STACKURITY_TRUST_PROXY=true`. For a quick evaluation over plain HTTP on a trusted network, set `STACKURITY_COOKIE_SECURE=false` in `deploy/.env`.
+### TLS
+
+The session cookie is marked `Secure` by default, so serve Stackurity over HTTPS through a reverse proxy (Caddy, nginx, Traefik) and set `STACKURITY_BASE_URL` to its `https://` address in `deploy/.env`. If the proxy sets `X-Forwarded-For`, set `STACKURITY_TRUST_PROXY=true`. A minimal Caddyfile: `stackurity.example.com { reverse_proxy 127.0.0.1:8080 }`; with the proxy on the same host, also set `STACKURITY_PORT=127.0.0.1:8080` so the plain HTTP port is not reachable from the network.
+
+Over plain HTTP, browsers only keep a `Secure` cookie for `http://localhost` (Chrome, Edge and Firefox; checked by signing in with headless Chrome, Chromium and Firefox), which is how a trial on your own machine works without changing anything. Safari's engine (WebKit) stores the cookie but does not send it back to `http://localhost`, so sign-in does not stick there.
+
+> **Warning: `STACKURITY_COOKIE_SECURE=false` is for local evaluation only, never production.** Without `Secure`, the browser also sends the session cookie over plain HTTP, where anyone on the network path can read it and take over the session, an administrator's included. If you need it (Safari on your own machine), declare the local evaluation and keep the port on loopback:
+>
+> ```sh
+> STACKURITY_PORT=127.0.0.1:8080 STACKURITY_COOKIE_SECURE=false STACKURITY_BASE_URL=http://localhost:8080 docker compose up -d
+> ```
+>
+> When session cookies are not `Secure` and the deployment does not look local, the server logs a warning at startup (`session cookies are not marked Secure`) and **Platform health** shows "Session cookies are not marked Secure". Local means `STACKURITY_BASE_URL` is an `http://` address on `localhost`, `*.localhost`, `127.0.0.0/8` or `[::1]`, or, with no base URL, `STACKURITY_LISTEN` is a loopback address. Anything else warns, an `https://` base URL most of all (the proxy serves HTTPS, but the cookie would also be sent over HTTP). Inside a container the server cannot see which host interfaces Docker publishes the port on, so `STACKURITY_LISTEN=:8080` with no base URL warns too.
 
 Alternatively, create the first admin from the command line:
 
@@ -38,7 +50,7 @@ docker compose exec -e STACKURITY_PASSWORD='a long passphrase' stackurity \
 | `STACKURITY_DATABASE_URL` / `_FILE` | — | PostgreSQL connection string, or a file containing it |
 | `STACKURITY_LISTEN` | `:8080` | HTTP listen address |
 | `STACKURITY_DATA_DIR` | `/var/lib/stackurity` | Scratch space for repository clones |
-| `STACKURITY_COOKIE_SECURE` | `true` | Mark the session cookie `Secure` |
+| `STACKURITY_COOKIE_SECURE` | `true` | Mark the session cookie `Secure`. `false` is for local evaluation only, never production ([TLS](#tls)) |
 | `STACKURITY_TRUST_PROXY` | `false` | Honour `X-Forwarded-For` / `X-Real-IP` |
 | `STACKURITY_SECRETS_DIR` | `/run/secrets` | Directory allowed for `file:` secret references |
 | `STACKURITY_SECRET_*` | — | Environment variables allowed for `env:` secret references |

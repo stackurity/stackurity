@@ -69,3 +69,37 @@ func TestReadyzFailsOnNewerSchema(t *testing.T) {
 		t.Errorf("health report: %+v", rep)
 	}
 }
+
+// Session cookies without Secure in a deployment that is not declared local
+// show as a Platform health warning.
+func TestInsecureCookieHealthWarning(t *testing.T) {
+	e := newEnv(t)
+	e.user("owner@x.io", auth.RoleAdmin)
+	e.instanceAdmin("owner@x.io")
+	owner := e.login("owner@x.io")
+	type report struct {
+		Problems []struct{ Severity, Kind, Key, Title string }
+	}
+	has := func() bool {
+		var rep report
+		if code := owner.do("GET", "/api/v1/admin/health", nil, &rep); code != 200 {
+			t.Fatalf("health: %d", code)
+		}
+		for _, p := range rep.Problems {
+			if p.Key == "cookie-secure" {
+				if p.Severity != "warning" || !strings.Contains(p.Title, "Session cookies are not marked Secure") {
+					t.Errorf("problem: %+v", p)
+				}
+				return true
+			}
+		}
+		return false
+	}
+	if has() {
+		t.Error("warning shown with secure cookies")
+	}
+	e.api.Health.InsecureCookies = "the server accepts connections from other machines"
+	if !has() {
+		t.Error("no warning for insecure cookies")
+	}
+}

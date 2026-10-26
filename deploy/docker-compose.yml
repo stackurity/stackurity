@@ -29,8 +29,12 @@ services:
         condition: service_healthy
     environment:
       STACKURITY_DATABASE_URL_FILE: /run/secrets/database_url
-      # Set to false only when serving plain HTTP on a trusted network.
+      # Keep true. Chrome, Edge and Firefox accept the Secure cookie on
+      # http://localhost, so a local trial works without changing it; false is
+      # for a local evaluation only, never production (docs/install.md, TLS).
       STACKURITY_COOKIE_SECURE: ${STACKURITY_COOKIE_SECURE:-true}
+      # Public dashboard URL (https://... behind your proxy), used in links.
+      STACKURITY_BASE_URL: ${STACKURITY_BASE_URL:-}
       STACKURITY_TRUST_PROXY: ${STACKURITY_TRUST_PROXY:-false}
       STACKURITY_SECRETS_DIR: /run/secrets
       # Repository tokens are referenced as env:STACKURITY_SECRET_<NAME>.
