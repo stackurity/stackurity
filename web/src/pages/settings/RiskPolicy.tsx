@@ -1,8 +1,21 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { api, DEFAULT_EXCEPTION_MAX_DAYS, PRIORITIES, type RiskPolicy, type SOSRule } from "../../api";
+import { Link } from "react-router";
+import {
+  api,
+  DEFAULT_EXCEPTION_MAX_DAYS,
+  PRIORITIES,
+  type RiskPolicy,
+  type RiskPolicyPreview,
+  type RiskPolicyResponse,
+  type RiskPreviewFinding,
+  type SOSRule,
+} from "../../api";
 import { useAuth } from "../../auth";
 import { forgetRiskPolicy, useAction, useLoad } from "../../hooks";
-import { Card, ErrorBox, Loading, Notice, PageHeader } from "../../components/ui";
+import { PriorityBadge, SosBadge } from "../../components/Badge";
+import { Table, type Column } from "../../components/Table";
+import { Card, ErrorBox, Loading, Notice, PageHeader, RelativeTime } from "../../components/ui";
+import { plural } from "../../format";
 
 const SEVERITY_KEYS = ["critical", "high", "medium", "low", "none", "unknown"];
 const CRITICALITY_KEYS = ["critical", "high", "medium", "low", "unknown"];
@@ -109,6 +122,132 @@ function TagsField({ id, label, value, onChange }: { id: string; label: string; 
   );
 }
 
+const pts = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/0$/, ""));
+
+/** What a proposed policy does to the workspace's open findings. */
+function PreviewCard({ pv }: { pv: RiskPolicyPreview }) {
+  const cols: Column<RiskPreviewFinding>[] = [
+    {
+      key: "finding",
+      header: "Finding",
+      cell: (f) => (
+        <Link to={`/findings/${f.id}`} className="break">
+          {f.title || f.key}
+        </Link>
+      ),
+    },
+    { key: "asset", header: "Asset", cell: (f) => <Link to={`/assets/${f.asset_id}?tab=findings`}>{f.asset_name}</Link> },
+    {
+      key: "change",
+      header: "Priority",
+      cell: (f) => (
+        <span className="badges">
+          <PriorityBadge priority={f.before} score={f.score_before} />
+          {f.sos_before && <SosBadge />}
+          <span aria-label="becomes">-&gt;</span>
+          <PriorityBadge priority={f.after} score={f.score_after} />
+          {f.sos_after && <SosBadge />}
+        </span>
+      ),
+    },
+    {
+      key: "factors",
+      header: "What changed",
+      cell: (f) =>
+        f.factors.length === 0 ? (
+          <span className="muted small">thresholds or SOS rules only</span>
+        ) : (
+          <ul className="ref-list small">
+            {f.factors.map((x) => (
+              <li key={x.name}>
+                {x.name}: {pts(x.before)} -&gt; {pts(x.after)}
+              </li>
+            ))}
+          </ul>
+        ),
+    },
+  ];
+  const nothing = pv.priority_changed === 0 && pv.sos_changed === 0;
+  return (
+    <Card title="Impact of these changes">
+      <p className="hint">
+        Every open finding in this workspace ({pv.findings}) scored under the policy in force and under the proposed one, from the same
+        evidence. Nothing has been saved.
+        {pv.changed_fields.length > 0 && <> Changed: {pv.changed_fields.map((f) => f.replace(/_/g, " ")).join(", ")}.</>}
+      </p>
+      {nothing ? (
+        <Notice kind="info">
+          No finding changes priority or SOS.{" "}
+          {pv.score_changed > 0 ? `${plural(pv.score_changed, "finding")} change score without crossing a threshold.` : ""}
+          {pv.changed_fields.some((f) => f === "sla" || f === "exception_max_days") ? " Deadline and exception limits still change." : ""}
+        </Notice>
+      ) : (
+        <Notice kind="warn">
+          <strong>{plural(pv.priority_changed, "finding")} change priority</strong> ({pv.raised} raised, {pv.lowered} lowered)
+          {pv.sos_changed > 0 && <>, {plural(pv.sos_changed, "finding")} gain or lose SOS</>}. Deadlines follow the new priority.
+        </Notice>
+      )}
+      <div className="table-wrap">
+        <table className="table">
+          <caption className="sr-only">Open findings per priority before and after</caption>
+          <thead>
+            <tr>
+              <th scope="col"></th>
+              {PRIORITIES.map((p) => (
+                <th key={p} scope="col" className="num">
+                  {p}
+                </th>
+              ))}
+              <th scope="col" className="num">
+                SOS
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row">Now</th>
+              {PRIORITIES.map((p) => (
+                <td key={p} className="num">
+                  {pv.before[p] ?? 0}
+                </td>
+              ))}
+              <td className="num">{pv.sos_before}</td>
+            </tr>
+            <tr>
+              <th scope="row">Proposed</th>
+              {PRIORITIES.map((p) => {
+                const d = (pv.after[p] ?? 0) - (pv.before[p] ?? 0);
+                return (
+                  <td key={p} className="num">
+                    {pv.after[p] ?? 0}
+                    {d !== 0 && <span className="muted small"> ({d > 0 ? `+${d}` : d})</span>}
+                  </td>
+                );
+              })}
+              <td className="num">{pv.sos_after}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      {pv.sample.length > 0 && (
+        <>
+          <h3 className="section-title">
+            Findings that change
+            {pv.priority_changed + pv.sos_changed > pv.sample.length ? ` (the ${pv.sample.length} largest moves)` : ""}
+          </h3>
+          <Table columns={cols} rows={pv.sample} rowKey={(f) => f.id} caption="Findings whose priority or SOS changes" />
+        </>
+      )}
+      {pv.stored_differs > 0 && (
+        <p className="hint">
+          {plural(pv.stored_differs, "finding")} already differ from their stored priority because their evidence changed since the
+          last scoring; they move on the next cycle whether or not you save.
+        </p>
+      )}
+    </Card>
+  );
+}
+
 function cleanRule(r: SOSRule): SOSRule {
   const out: SOSRule = { name: r.name.trim() };
   if (r.min_priority) out.min_priority = r.min_priority;
@@ -120,10 +259,14 @@ function cleanRule(r: SOSRule): SOSRule {
 export function RiskPolicyPage() {
   const { can } = useAuth();
   const admin = can("admin");
-  const res = useLoad(() => api.get<{ policy: RiskPolicy; default: RiskPolicy; version: string }>("/risk-policy"), []);
+  const res = useLoad(() => api.get<RiskPolicyResponse>("/risk-policy"), []);
   const [p, setP] = useState<RiskPolicy | null>(null);
   const [saved, setSaved] = useState(false);
   const act = useAction();
+  // The preview and the exact body it was computed for: Save needs a preview
+  // of what is about to be saved.
+  const [preview, setPreview] = useState<{ body: string; data: RiskPolicyPreview } | null>(null);
+  const previewAct = useAction();
 
   useEffect(() => {
     if (res.data) setP(structuredClone(res.data.policy));
@@ -143,25 +286,35 @@ export function RiskPolicyPage() {
   const exceptionDays = p.exception_max_days ?? DEFAULT_EXCEPTION_MAX_DAYS;
   const exceptionDaysValid = Number.isInteger(exceptionDays) && exceptionDays >= 1 && exceptionDays <= 730;
 
-  const save = async (policy: RiskPolicy) => {
+  const bodyOf = (policy: RiskPolicy) => ({ ...policy, sos_rules: (policy.sos_rules ?? []).map(cleanRule) });
+  const body = bodyOf(p);
+  const previewed = preview !== null && preview.body === JSON.stringify(body);
+  const runPreview = async () => {
+    const b = bodyOf(p);
+    const r = await previewAct.run(() => api.post<RiskPolicyPreview>("/risk-policy/preview", b));
+    if (r) setPreview({ body: JSON.stringify(b), data: r });
+  };
+  const save = async () => {
     setSaved(false);
-    const body = { ...policy, sos_rules: (policy.sos_rules ?? []).map(cleanRule) };
     const r = await act.run(() => api.put<{ policy: RiskPolicy }>("/risk-policy", body));
     if (r) {
       setSaved(true);
+      setPreview(null);
       forgetRiskPolicy();
       res.reload();
     }
   };
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (!exceptionDaysValid) return;
-    void save(p);
+    if (!exceptionDaysValid || !previewed) return;
+    void save();
   };
   const reset = () => {
-    if (!window.confirm("Replace the whole risk policy with the built-in defaults? Priorities are recalculated on the next notification cycle (within a few minutes).")) return;
-    void save(res.data!.default);
+    // The defaults go into the form; they are previewed and saved like any change.
+    setSaved(false);
+    setP(structuredClone(res.data!.default));
   };
+  const last = res.data.last_change;
 
   return (
     <>
@@ -169,13 +322,21 @@ export function RiskPolicyPage() {
         title="Risk policy"
         sub={
           <>
-            How findings are scored into priorities P1–P4, their deadlines, and which ones are SOS. Version <code>{res.data.version}</code>.
+            How findings are scored into priorities P1 to P4, their deadlines, and which ones are SOS. Version <code>{res.data.version}</code>.{" "}
+            {last ? (
+              <>
+                Last changed by <strong>{last.actor_name || last.actor_type}</strong> <RelativeTime iso={last.at} /> (
+                <Link to="/audit?object_type=settings">history</Link>).
+              </>
+            ) : (
+              "Never changed: the built-in defaults apply."
+            )}
           </>
         }
         actions={
           admin && (
             <button type="button" className="btn" onClick={reset} disabled={act.pending}>
-              Reset to default
+              Load defaults
             </button>
           )
         }
@@ -392,11 +553,21 @@ export function RiskPolicyPage() {
             )}
           </Card>
         </fieldset>
+        <ErrorBox error={previewAct.error} title="Could not preview the change" />
+        {dirty && previewed && preview && <PreviewCard pv={preview.data} />}
         <ErrorBox error={act.error} title="Policy not saved" />
         {saved && <Notice kind="success">Risk policy saved. Priorities are recalculated on the next notification cycle (within a few minutes).</Notice>}
         {admin && (
           <div className="form-actions bulkbar">
-            <button type="submit" className="btn btn-primary" disabled={act.pending || !dirty || !exceptionDaysValid}>
+            <button type="button" className="btn" disabled={!dirty || !exceptionDaysValid || previewAct.pending || previewed} onClick={() => void runPreview()}>
+              {previewAct.pending ? "Previewing…" : preview && !previewed ? "Preview again" : "Preview impact"}
+            </button>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={act.pending || !dirty || !exceptionDaysValid || !previewed}
+              title={dirty && !previewed ? "Preview the impact of these changes first" : undefined}
+            >
               {act.pending ? "Saving…" : "Save policy"}
             </button>
             <button
@@ -405,12 +576,13 @@ export function RiskPolicyPage() {
               disabled={!dirty || act.pending}
               onClick={() => {
                 setP(structuredClone(res.data!.policy));
+                setPreview(null);
                 act.clear();
               }}
             >
               Discard changes
             </button>
-            {dirty && <span className="muted small">Unsaved changes</span>}
+            {dirty && <span className="muted small">{previewed ? "Previewed, not saved" : "Unsaved changes: preview them before saving"}</span>}
           </div>
         )}
       </form>

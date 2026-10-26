@@ -20,6 +20,12 @@ func riskFixture(t *testing.T) (context.Context, *store.Store, int64) {
 	t.Helper()
 	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
 	s := store.New(testdb.New(t))
+	return ctx, s, riskFixtureIn(t, ctx, s)
+}
+
+// riskFixtureIn builds the risk fixture in the workspace ctx is scoped to.
+func riskFixtureIn(t *testing.T, ctx context.Context, s *store.Store) int64 {
+	t.Helper()
 	host := ingestHost(t, s, ctx, "web-1", "pkg:deb/ubuntu/openssl@3.0.2?distro=ubuntu-22.04",
 		"pkg:deb/ubuntu/linux-image-5.15.0-91-generic@5.15.0-91.101?distro=ubuntu-22.04", "pkg:deb/ubuntu/curl@7.81.0?distro=ubuntu-22.04")
 	rows, _, err := s.ListInventory(ctx, store.InventoryFilter{AssetID: host})
@@ -50,7 +56,7 @@ func riskFixture(t *testing.T) (context.Context, *store.Store, int64) {
 	if _, _, err := s.SyncFindings(ctx, []string{"vulnerability"}, ids, in); err != nil {
 		t.Fatal(err)
 	}
-	return ctx, s, host
+	return host
 }
 
 type stored struct {

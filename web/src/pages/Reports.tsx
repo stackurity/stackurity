@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { useAuth } from "../auth";
 import { ProNotice } from "../components/ProNotice";
 import { Link, useSearchParams } from "react-router";
-import { api, ASSET_STATUSES, PRIORITIES, SEVERITIES, type EvidenceReport, type ReportDrift, type ReportException } from "../api";
+import { api, ASSET_STATUSES, EVIDENCE_STATE_LABEL, PRIORITIES, SEVERITIES, type EvidenceReport, type ReportDrift, type ReportException } from "../api";
 import { useLoad } from "../hooks";
 import { absTime, assetKindLabel, humanize } from "../format";
 import { PriorityBadge, SeverityBadge, StateBadge } from "../components/Badge";
@@ -159,6 +159,11 @@ function ReportBody({ r }: { r: EvidenceReport }) {
     { key: "sev", header: "Severity", cell: (e) => <SeverityBadge severity={e.severity} /> },
     { key: "prio", header: "Priority", cell: (e) => <PriorityBadge priority={e.priority} /> },
     { key: "state", header: "State", cell: (e) => <StateBadge state={e.state} /> },
+    {
+      key: "evidence",
+      header: "Evidence",
+      cell: (e) => (e.verification ? EVIDENCE_STATE_LABEL[e.verification] ?? e.verification : <span className="muted">not reported</span>),
+    },
     { key: "reason", header: "Reason", cell: (e) => <span className="break">{e.reason || <span className="muted">—</span>}</span> },
     { key: "mitigation", header: "Mitigation", cell: (e) => <span className="break">{e.mitigation || <span className="muted">none recorded</span>}</span> },
     { key: "until", header: "Expires", cell: (e) => (e.until ? absTime(e.until) : <span className="muted">—</span>) },
@@ -212,6 +217,7 @@ function ReportBody({ r }: { r: EvidenceReport }) {
             entries={[
               ["open", n(r.open.total)],
               ["by severity", <Counts m={r.open.by_severity} order={SEVERITIES} />],
+              ["by evidence", <Counts m={r.open.by_evidence} label={(k) => EVIDENCE_STATE_LABEL[k] ?? k} />],
               ["known exploited", n(r.open.known_exploited)],
               ["end of life", n(r.open.end_of_life)],
               ["overdue", n(r.open.overdue)],

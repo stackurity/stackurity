@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router";
 import { api, type AuditEvent, type List } from "../api";
 import { useLoad } from "../hooks";
 import { Table, type Column } from "../components/Table";
@@ -21,7 +22,8 @@ function Detail({ value }: { value: unknown }) {
 
 export function AuditPage() {
   const [offset, setOffset] = useState(0);
-  const [objectType, setObjectType] = useState("");
+  const [params] = useSearchParams();
+  const [objectType, setObjectType] = useState(params.get("object_type") ?? "");
   const res = useLoad(() => api.get<List<AuditEvent>>("/audit", { limit: LIMIT, offset, object_type: objectType }), [offset, objectType]);
 
   const columns: Column<AuditEvent>[] = [
@@ -59,7 +61,7 @@ export function AuditPage() {
             }}
           >
             <option value="">All</option>
-            {["asset", "user", "team", "token", "integration", "identity_conflict"].map((t) => (
+            {["asset", "user", "team", "token", "integration", "identity_conflict", "settings", "remediation_policy"].map((t) => (
               <option key={t} value={t}>
                 {t.replace(/_/g, " ")}
               </option>

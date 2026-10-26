@@ -2,7 +2,8 @@ import type { MouseEvent, ReactNode } from "react";
 import { Link, useNavigate } from "react-router";
 import { PRIORITIES, SEVERITIES, type Finding, type FindingSummary } from "../api";
 import { plural } from "../format";
-import { Badge, KevBadge, PriorityBadge, SeverityBadge, SosBadge, StateBadge, VerificationBadge } from "./Badge";
+import { Badge, KevBadge, PriorityBadge, SeverityBadge, SosBadge, StateBadge } from "./Badge";
+import { EvidenceStateBadge } from "./Provenance";
 import { Assignee, DueDate } from "./Workflow";
 import { Table, type Column } from "./Table";
 import { RelativeTime, StatTile } from "./ui";
@@ -114,10 +115,10 @@ export function FindingsTable({
               <Badge status="eol" tone="muted" label="end of life" />
             </>
           )}
-          {f.verification !== "confirmed" && (
+          {(f.verification !== "confirmed" || f.evidence?.feed_stale === true) && (
             <>
               {" "}
-              <VerificationBadge verification={f.verification} />
+              <EvidenceStateBadge f={f} />
             </>
           )}
           <EvidencePills f={f} />

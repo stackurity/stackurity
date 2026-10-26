@@ -18,11 +18,12 @@ type timings struct {
 	Poll          time.Duration // how often an idle worker looks for jobs (2s)
 	DeliveryLease time.Duration // a claimed notification is retried after this (5m)
 	Alerts        time.Duration // how often notifications are planned and delivered (1m)
+	SchemaCheck   time.Duration // how often a running server looks for a newer schema (1m)
 }
 
 func defaultTimings() timings {
 	return timings{TaskLease: 2 * time.Minute, Tick: 15 * time.Second, Poll: 2 * time.Second,
-		DeliveryLease: 5 * time.Minute, Alerts: time.Minute}
+		DeliveryLease: 5 * time.Minute, Alerts: time.Minute, SchemaCheck: time.Minute}
 }
 
 // parseTimings applies a STACKURITY_TEST_TIMINGS value to the defaults.
@@ -30,7 +31,7 @@ func parseTimings(s string) (timings, error) {
 	t := defaultTimings()
 	fields := map[string]*time.Duration{
 		"job-lock": &t.JobLock, "task-lease": &t.TaskLease, "tick": &t.Tick, "poll": &t.Poll,
-		"delivery-lease": &t.DeliveryLease, "alerts": &t.Alerts,
+		"delivery-lease": &t.DeliveryLease, "alerts": &t.Alerts, "schema-check": &t.SchemaCheck,
 	}
 	for _, part := range strings.Split(s, ",") {
 		part = strings.TrimSpace(part)

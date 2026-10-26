@@ -88,6 +88,36 @@ type OutcomeOpen struct {
 	Overdue    int64 `json:"overdue"`
 	Excepted   int64 `json:"excepted"`    // suppressed or risk accepted
 	StaleAsset int64 `json:"stale_asset"` // evidence is old: the asset stopped reporting
+	// ByEvidence counts open findings by evidence state (evidenceState):
+	// confirmed, needs_validation, stale, stale_intelligence, unknown.
+	ByEvidence map[string]int64 `json:"by_evidence"`
+}
+
+// evidenceState is a finding's evidence state for reports: its verification,
+// except that confirmed findings evaluated against a stale feed are
+// stale_intelligence (the version is confirmed, the advisory data was not
+// fresh).
+const evidenceState = `CASE WHEN f.verification = 'confirmed' AND COALESCE((f.evidence->>'feed_stale')::boolean, false)
+	THEN 'stale_intelligence' ELSE f.verification END`
+
+// openByEvidence counts open findings on current assets by evidence state.
+func (s *Store) openByEvidence(ctx context.Context) (map[string]int64, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT `+evidenceState+`, count(*) FROM findings f
+		JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL WHERE f.status = 'open' GROUP BY 1`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int64{}
+	for rows.Next() {
+		var k string
+		var n int64
+		if err := rows.Scan(&k, &n); err != nil {
+			return nil, err
+		}
+		out[k] = n
+	}
+	return out, rows.Err()
 }
 
 type OutcomeRemedies struct {
@@ -227,6 +257,9 @@ func (s *Store) OutcomesReport(ctx context.Context, from, to time.Time, fixDays 
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if r.Open.ByEvidence, err = s.openByEvidence(ctx); err != nil {
 		return nil, err
 	}
 	for _, p := range prios {

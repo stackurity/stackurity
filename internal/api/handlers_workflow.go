@@ -208,26 +208,64 @@ func (s *Server) getRiskPolicy(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"policy": p, "default": risk.DefaultPolicy(), "version": p.Version()})
+	// Who changed the policy last and when, from the audit log; null when it
+	// has never been changed (the defaults apply).
+	last, err := s.Store.LastRiskPolicyChange(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"policy": p, "default": risk.DefaultPolicy(), "version": p.Version(), "last_change": last})
+}
+
+// proposedRiskPolicy reads a policy from the body the way putRiskPolicy
+// stores it: fields left out take their defaults, unknown fields are an
+// error, and the result is normalised and validated.
+func proposedRiskPolicy(r *http.Request) (risk.Policy, error) {
+	var raw json.RawMessage
+	if err := decode(r, &raw); err != nil {
+		return risk.Policy{}, err
+	}
+	p, err := risk.DecodePolicy(raw, true)
+	if err != nil {
+		return risk.Policy{}, badRequest("invalid JSON body: " + err.Error())
+	}
+	p = p.Normalize()
+	if err := p.Validate(); err != nil {
+		return risk.Policy{}, badRequest(err.Error())
+	}
+	return p, nil
+}
+
+// previewRiskPolicy shows what a proposed policy would change before it is
+// saved: priorities and SOS before and after for the workspace's open
+// findings, and a sample of the findings that move. Nothing is written.
+func (s *Server) previewRiskPolicy(w http.ResponseWriter, r *http.Request) {
+	p, err := proposedRiskPolicy(r)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	cur, err := s.Store.RiskPolicy(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	pv, err := s.Store.PreviewRiskPolicy(r.Context(), cur, p, time.Now())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, 200, pv)
 }
 
 // putRiskPolicy replaces the policy. Fields the body leaves out take their
 // default values, as they do when a stored policy is read. The change and the
 // policy before it are written to the audit log in the same transaction.
 func (s *Server) putRiskPolicy(w http.ResponseWriter, r *http.Request) {
-	var raw json.RawMessage
-	if err := decode(r, &raw); err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	p, err := risk.DecodePolicy(raw, true)
+	p, err := proposedRiskPolicy(r)
 	if err != nil {
-		s.fail(w, r, badRequest("invalid JSON body: "+err.Error()))
-		return
-	}
-	p = p.Normalize()
-	if err := p.Validate(); err != nil {
-		s.fail(w, r, badRequest(err.Error()))
+		s.fail(w, r, err)
 		return
 	}
 	ch, err := s.Store.ReplaceRiskPolicy(r.Context(), p, principal(r).Actor(r))

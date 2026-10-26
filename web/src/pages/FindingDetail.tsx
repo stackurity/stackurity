@@ -3,10 +3,11 @@ import { Link, useParams } from "react-router";
 import { api, safeHttpUrl, type Advisory, type Finding, type FindingDetail, type FindingEvidence } from "../api";
 import { useLoad } from "../hooks";
 import { absTime } from "../format";
-import { Badge, Chip, KevBadge, SeverityBadge, VERIFICATION_EXPLAINED, VerificationBadge } from "../components/Badge";
+import { Badge, Chip, KevBadge, SeverityBadge, VERIFICATION_EXPLAINED } from "../components/Badge";
 import { EvidencePills, kindLabel } from "../components/Findings";
 import { FindingFixGroup } from "../components/FixGroups";
 import { FindingHistory, WorkflowPanel } from "../components/FindingWorkflow";
+import { EvidenceStateBadge, Provenance } from "../components/Provenance";
 import { UpgradeCard } from "../components/Upgrade";
 import { Card, ErrorBox, KeyValues, Loading, Notice, PageHeader, RelativeTime } from "../components/ui";
 
@@ -205,7 +206,7 @@ export function FindingDetailPage() {
             <span>· {kindLabel(f.kind)}</span>
             <SeverityBadge severity={f.severity} score={f.score} />
             {f.known_exploited && <KevBadge />}
-            <VerificationBadge verification={f.verification} />
+            <EvidenceStateBadge f={f} />
             <EvidencePills f={f} />
             <Badge status={f.status} />
           </span>
@@ -248,6 +249,8 @@ export function FindingDetailPage() {
           setTick((t) => t + 1);
         }}
       />
+
+      <Provenance f={f} matched={matched} />
 
       <div className="grid-2">
         <Card title="Affected">

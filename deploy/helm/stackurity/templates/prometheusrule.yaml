@@ -1,0 +1,17 @@
+{{- if and .Values.metrics.enabled .Values.metrics.prometheusRule.enabled (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1/PrometheusRule") }}
+# For the Prometheus Operator: the recommended alerts (docs/operations.md).
+# files/stackurity-alerts.yml is a copy of deploy/prometheus/stackurity-alerts.yml,
+# kept identical by deploy/prometheus/rules_test.go. Rendered only when the
+# cluster has the PrometheusRule API.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "stackurity.fullname" . }}
+  labels: {{- include "stackurity.labels" . | nindent 4 }}
+    app.kubernetes.io/component: metrics
+    {{- with .Values.metrics.prometheusRule.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+{{ .Files.Get "files/stackurity-alerts.yml" | indent 2 }}
+{{- end }}

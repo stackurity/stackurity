@@ -6,6 +6,16 @@ Please do **not** open a public issue. Report vulnerabilities privately through 
 
 We aim to acknowledge reports within 3 working days and to agree a disclosure date with you. Fixes are released as patch versions with a GitHub security advisory.
 
+## Suspected tenant-isolation failure
+
+If one workspace may be able to see or change another's data, report it privately as above and say "tenant isolation": these reports are treated as critical and handled first. If you run an installation that hosts several organisations:
+
+1. Keep evidence: a database dump and the server and proxy logs for the window.
+2. Contain: disable the affected workspace (**Settings → Workspaces**) and revoke the tokens and sessions involved.
+3. Triage with the queries and checks in [docs/security-audit.md](docs/security-audit.md#6-tenant-isolation-incidents), then tell the organisations affected.
+
+Any failure of the workspace isolation tests (the **Workspace isolation** check, `tools/release-checks/isolation.sh`) blocks merging and releasing until it is understood and fixed with a regression test. [docs/security-audit.md](docs/security-audit.md#7-security-sensitive-areas) lists the parts of the code that need the most careful review.
+
 ## Supported versions
 
 Until 1.0, only the latest release receives security fixes.

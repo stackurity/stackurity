@@ -34,17 +34,21 @@ Open-source, self-hosted software inventory and upgrade intelligence. Stackurity
 
 Stackurity is self-hosted: your inventory and findings stay on your own server, and your hosts and pipelines send data to it. Nothing needs inbound access to your machines.
 
-**1. Run the server** (Docker Compose; plain HTTP is for evaluation only):
+There are two ways to run it. Both keep the session cookie `Secure`, as production does: Chrome, Edge and Firefox treat `http://localhost` as a secure origin, so a trial on your own machine needs no security setting changed.
+
+### Try it on your own machine
+
+**1. Run the server** (Docker Compose):
 
 ```sh
 git clone https://github.com/stackurity/stackurity.git
 cd stackurity/deploy
 ./init-secrets.sh
-STACKURITY_COOKIE_SECURE=false docker compose up -d   # pulls the signed ghcr.io/stackurity/stackurity image; add --build to build from source
+docker compose up -d   # pulls the signed ghcr.io/stackurity/stackurity image; add --build to build from source
 docker compose logs stackurity | grep -A2 "one-time token"
 ```
 
-Open http://localhost:8080 and create the first administrator with the token from the log.
+Open http://localhost:8080 in Chrome, Edge or Firefox on the same machine and create the first administrator with the token from the log. Safari does not send `Secure` cookies to `http://localhost`, so sign-in does not stick there: use another browser, or, for local evaluation only and never in production, start with `STACKURITY_PORT=127.0.0.1:8080 STACKURITY_COOKIE_SECURE=false STACKURITY_BASE_URL=http://localhost:8080 docker compose up -d`, which also keeps the port off your network ([why](docs/install.md#tls)).
 
 **2. See it working in five minutes** with a labelled demo estate: a server with outdated packages and an end-of-life runtime, an application deployed on it, and two repositories. Findings appear once the vulnerability feeds have synced:
 
@@ -61,11 +65,15 @@ docker compose exec stackurity stackurity admin load-demo        # --remove dele
 
 **4. Act on it:** each asset's **Action plan** groups findings into concrete upgrades. With Pro, opt-in remediation applies approved upgrades on enrolled hosts and opens Renovate pull requests for repositories.
 
-For TLS, backups, upgrades, Kubernetes (Helm), the agents and plugins, see [docs/install.md](docs/install.md). [docs/compatibility.md](docs/compatibility.md) lists supported platforms and what each can assess, [docs/verification.md](docs/verification.md) how each claim is tested, and [CHANGELOG.md](CHANGELOG.md) what changed in each release. [docs/security-audit.md](docs/security-audit.md) covers the threat model and how releases are signed. The API is described in [docs/api.md](docs/api.md), and every outbound connection is listed in [docs/network.md](docs/network.md).
+### Production install
+
+Put Stackurity behind a reverse proxy that serves HTTPS (Caddy, nginx, Traefik), set `STACKURITY_BASE_URL=https://stackurity.example.com` and leave `STACKURITY_COOKIE_SECURE` at its default. The steps, Kubernetes (Helm), backups and the upgrade checklist are in [docs/install.md](docs/install.md). Never set `STACKURITY_COOKIE_SECURE=false` on a server other people reach: the server logs a warning and Platform health shows one if you do.
+
+For TLS, backups, upgrades, Kubernetes (Helm), the agents and plugins, see [docs/install.md](docs/install.md). [docs/compatibility.md](docs/compatibility.md) lists supported platforms and what each can assess, [docs/verification.md](docs/verification.md) how each claim is tested, and [CHANGELOG.md](CHANGELOG.md) what changed in each release. [docs/security-audit.md](docs/security-audit.md) covers the threat model and how releases are signed, and [docs/operations.md](docs/operations.md) the recommended alerts, their runbooks and operational drills. The API is described in [docs/api.md](docs/api.md), and every outbound connection is listed in [docs/network.md](docs/network.md).
 
 ## Known limitations
 
-- Several server replicas can share one database, but an upgrade should stop every replica before the new version starts ([docs/install.md](docs/install.md#running-several-replicas)).
+- Several server replicas can share one database, but versions cannot be mixed: an upgrade stops every replica before the new version starts ([upgrade checklist](docs/install.md#upgrading)). A server whose database a newer version has migrated refuses to start, and one already running fails `/readyz`.
 - Vulnerability matching covers language packages, Debian, Ubuntu (not Pro), Alpine, Rocky, Alma, RHEL, SUSE, openSUSE Leap and Amazon Linux 2 and 2023. CentOS, Oracle Linux, Fedora and Amazon Linux 1 packages are inventoried but listed as evaluation gaps.
 - Red Hat advisories are matched against the main stream of each major release; Extended Update Support (EUS, AUS) streams are not modelled, so a host held on an EUS minor release can show fixes it already has through EUS. SUSE publishes no severity in its advisory data, so SUSE findings show severity "unknown" and are prioritised on the other risk factors.
 - Amazon Linux 2 extras topics are read when the topic name carries its version line (kernel-5.10, php8.2, postgresql14); packages from other topics (docker, epel and similar) are matched against core advisories only.
@@ -80,7 +88,7 @@ For TLS, backups, upgrades, Kubernetes (Helm), the agents and plugins, see [docs
 
 ## Editions
 
-Community is free and complete for finding and prioritising what to fix. Pro adds automatic fixing, multi-team workflow, the evidence report and single sign-on; Enterprise adds packs for enterprise technologies. See [Editions and licences](docs/install.md#editions-and-licences).
+Community is free and complete for finding and prioritising what to fix. Pro adds automatic fixing, multi-team workflow, the evidence report and single sign-on; Enterprise adds packs for enterprise technologies. [docs/editions.md](docs/editions.md) has the full matrix with limits and prerequisites; licences are covered in [Editions and licences](docs/install.md#editions-and-licences).
 
 ## Principles
 

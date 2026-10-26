@@ -1,11 +1,11 @@
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import { Link } from "react-router";
-import { api, type PlatformHealth } from "../../api";
+import { api, safeHttpUrl, type HealthProblem, type PlatformHealth } from "../../api";
 import { useAuth } from "../../auth";
 import { useLoad } from "../../hooks";
 import { Badge } from "../../components/Badge";
 import { Table, type Column } from "../../components/Table";
-import { Card, EmptyState, ErrorBox, Loading, Notice, PageHeader, RelativeTime } from "../../components/ui";
+import { Card, EmptyState, ErrorBox, KeyValues, Loading, Notice, PageHeader, RelativeTime } from "../../components/ui";
 import { minutesLabel, plural } from "../../format";
 
 type Task = PlatformHealth["tasks"][number];
@@ -13,6 +13,92 @@ type Failure = PlatformHealth["recent_failures"][number];
 
 const STATUS_LABEL = { ok: "Working", warning: "Needs attention", critical: "Not working" } as const;
 const STATUS_TONE = { ok: "good", warning: "warn", critical: "crit" } as const;
+
+const DOCS_BASE = "https://github.com/stackurity/stackurity/blob/main/";
+
+/** Where to look in the dashboard for each kind of problem. */
+const KIND_PAGE: Partial<Record<HealthProblem["kind"], [string, string]>> = {
+  feed: ["/intelligence", "Intelligence"],
+  intelligence: ["/intelligence", "Intelligence"],
+  jobs: ["/settings/jobs", "Background jobs"],
+  integration: ["/integrations", "Integrations"],
+  notification: ["/settings/notifications", "Notifications"],
+  collector: ["/assets?status=stale", "Assets"],
+  coverage: ["/coverage", "Coverage"],
+};
+
+function Problem({ p }: { p: HealthProblem }) {
+  const scope = p.scope;
+  const items = scope?.items ?? [];
+  const docs = p.docs ? safeHttpUrl(DOCS_BASE + p.docs) : null;
+  const page = KIND_PAGE[p.kind];
+  const entries: [string, ReactNode][] = [
+    [
+      "last worked",
+      p.last_success ? <RelativeTime iso={p.last_success} /> : <span className="muted">{p.kind === "coverage" ? "not applicable" : "never, or not recorded"}</span>,
+    ],
+    ["latest error", p.last_error ? <span className="text-bad small break">{p.last_error}</span> : <span className="muted">none recorded{scope?.hidden ? " in this workspace" : ""}</span>],
+  ];
+  if (scope?.summary) {
+    entries.push([
+      "affects",
+      <>
+        {scope.summary}
+        {scope.workspaces && scope.workspaces > 1 ? <span className="muted"> ({plural(scope.workspaces, "workspace")})</span> : null}
+      </>,
+    ]);
+  }
+  return (
+    <li>
+      <Badge status={p.severity} tone={p.severity === "critical" ? "crit" : "warn"} /> <strong>{p.title}</strong>
+      {p.detail && <div className="small muted break">{p.detail}</div>}
+      <KeyValues entries={entries} />
+      {items.length > 0 && (
+        <ul className="ref-list small">
+          {items.map((it, i) => (
+            <li key={i}>
+              {it.link ? <Link to={it.link}>{it.name}</Link> : <strong>{it.name}</strong>}
+              {it.detail && <span className="muted">: {it.detail}</span>}
+              {it.last_success !== undefined && (
+                <span className="muted">
+                  {" "}
+                  (last worked <RelativeTime iso={it.last_success} />)
+                </span>
+              )}
+              {it.last_error && <div className="text-bad break">{it.last_error}</div>}
+            </li>
+          ))}
+        </ul>
+      )}
+      {scope?.hidden ? (
+        <div className="small muted">
+          {scope.hidden} more not listed: names and errors are shown only for your active workspace (and at most ten); switch
+          workspace to see the others.
+        </div>
+      ) : null}
+      {(p.next_step || docs || page) && (
+        <div className="small">
+          <strong>Next step:</strong> {p.next_step}
+          {page && (
+            <>
+              {" "}
+              <Link to={page[0]}>Open {page[1]}</Link>.
+            </>
+          )}
+          {docs && (
+            <>
+              {" "}
+              <a href={docs} target="_blank" rel="noopener noreferrer">
+                Documentation<span className="sr-only"> (opens in a new tab)</span>
+              </a>
+              .
+            </>
+          )}
+        </div>
+      )}
+    </li>
+  );
+}
 
 function taskStatus(t: Task): string {
   if (t.running) return "running";
@@ -47,12 +133,13 @@ export function HealthPage() {
   ];
   const queued = d?.jobs.filter((j) => j.state === "queued").reduce((n, j) => n + j.count, 0) ?? 0;
   const running = d?.jobs.filter((j) => j.state === "running").reduce((n, j) => n + j.count, 0) ?? 0;
+  const deliveries = (state: string) => (d?.deliveries ?? []).filter((x) => x.state === state).reduce((n, x) => n + x.count, 0);
 
   return (
     <>
       <PageHeader
         title="Platform health"
-        sub="Whether this installation is working: intelligence feeds, background tasks and jobs across every workspace and server replica."
+        sub="Whether this installation is working: intelligence feeds, background tasks and jobs, integrations, notification delivery, collectors and production coverage, across every workspace and server replica."
         actions={
           <button type="button" className="btn" onClick={res.reload}>
             Refresh
@@ -75,15 +162,7 @@ export function HealthPage() {
             ) : (
               <ul className="health-problems">
                 {d.problems.map((p) => (
-                  <li key={`${p.kind}:${p.key}`}>
-                    <Badge status={p.severity} tone={p.severity === "critical" ? "crit" : "warn"} /> <strong>{p.title}</strong>
-                    {p.detail && <div className="small muted break">{p.detail}</div>}
-                    {(p.kind === "feed" || p.kind === "intelligence") && (
-                      <div className="small">
-                        See <Link to="/intelligence">Intelligence</Link>.
-                      </div>
-                    )}
-                  </li>
+                  <Problem key={`${p.kind}:${p.key}`} p={p} />
                 ))}
               </ul>
             )}
@@ -91,6 +170,10 @@ export function HealthPage() {
               Jobs: {plural(queued, "job")} waiting, {running} running
               {d.oldest_queued_seconds > 60 && `, the oldest has waited ${minutesLabel(Math.round(d.oldest_queued_seconds / 60))}`}. Prometheus
               metrics are served when STACKURITY_METRICS_ADDR is set.
+            </p>
+            <p className="small muted">
+              Notifications: {plural(deliveries("pending") + deliveries("retrying"), "message")} to send ({deliveries("retrying")} after a failed
+              attempt), {deliveries("failed")} failed in the last 24 hours.
             </p>
           </Card>
           <Card title="Background tasks">

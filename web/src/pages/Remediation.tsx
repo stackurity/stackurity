@@ -8,14 +8,17 @@ import {
   PLAN_STATUSES,
   PRIORITIES,
   REPO_ECOSYSTEMS,
+  type AuditEvent,
   type List,
   type Plan,
+  type PolicyPreviewPackage,
   type RemediationPolicy,
+  type RemediationPolicyPreview,
   type Team,
 } from "../api";
 import { useAuth } from "../auth";
 import { useAction, useFacets, useLoad } from "../hooks";
-import { Badge } from "../components/Badge";
+import { Badge, PriorityBadge } from "../components/Badge";
 import { Table, type Column } from "../components/Table";
 import {
   CHANGE_TYPE_HELP,
@@ -387,6 +390,84 @@ const EMPTY_POLICY: RemediationPolicy = {
   auto_rollback: false,
 };
 
+/** Which packages and assets a proposed policy would authorise or stop authorising. */
+function PolicyPreviewCard({ pv, enabled }: { pv: RemediationPolicyPreview; enabled: boolean }) {
+  const cols = (lost: boolean): Column<PolicyPreviewPackage>[] => [
+    { key: "asset", header: "Asset", cell: (x) => <Link to={`/assets/${x.asset_id}`}>{x.asset_name}</Link> },
+    { key: "env", header: "Environment", cell: (x) => x.environment || <span className="muted">none</span> },
+    {
+      key: "pkg",
+      header: "Change",
+      cell: (x) => (
+        <span className="mono small break">
+          {x.package} {x.from_version} -&gt; {x.to_version}
+        </span>
+      ),
+    },
+    { key: "type", header: "Type", cell: (x) => <ChangeTypeBadge type={x.change_type} /> },
+    { key: "prio", header: "Priority", cell: (x) => <PriorityBadge priority={x.priority} /> },
+    {
+      key: "why",
+      header: lost ? "Why not" : "Before",
+      cell: (x) =>
+        lost ? (
+          <>
+            {x.reason}
+            {x.after_policy && <div className="muted small">now covered by {x.after_policy}</div>}
+          </>
+        ) : x.before_policy ? (
+          <span className="small">from {x.before_policy}</span>
+        ) : (
+          <span className="muted small">no policy</span>
+        ),
+    },
+  ];
+  return (
+    <Card title="Impact of this policy">
+      <p className="hint">
+        Planning picks the first matching policy in creation order. Compared over the {pv.candidates} fixable package(s) that could be
+        remediated today (confirmed, fixable findings on hosts with a remediation agent, and on repositories). Nothing has been saved.
+      </p>
+      {!enabled && <Notice kind="info">The policy is disabled, so it authorises nothing until it is enabled.</Notice>}
+      <Notice kind={pv.gained + pv.lost > 0 ? "warn" : "info"}>
+        This policy authorises <strong>{pv.eligible_before}</strong> package(s) on {pv.assets_before} asset(s) now, and would authorise{" "}
+        <strong>{pv.eligible_after}</strong> on {pv.assets_after}: {pv.gained} newly eligible ({pv.gained_from_none} not covered by any
+        policy before) on {pv.gained_assets} asset(s), {pv.lost} no longer eligible ({pv.lost_to_none} left without any policy) on{" "}
+        {pv.lost_assets} asset(s).
+      </Notice>
+      {pv.gained_sample.length > 0 && (
+        <>
+          <h3 className="section-title">
+            Becomes eligible{pv.gained > pv.gained_sample.length ? ` (first ${pv.gained_sample.length} of ${pv.gained})` : ""}
+          </h3>
+          <Table columns={cols(false)} rows={pv.gained_sample} rowKey={(x) => `${x.asset_id}|${x.package}`} caption="Packages that become eligible" />
+        </>
+      )}
+      {pv.lost_sample.length > 0 && (
+        <>
+          <h3 className="section-title">
+            Stops being eligible{pv.lost > pv.lost_sample.length ? ` (first ${pv.lost_sample.length} of ${pv.lost})` : ""}
+          </h3>
+          <Table columns={cols(true)} rows={pv.lost_sample} rowKey={(x) => `${x.asset_id}|${x.package}`} caption="Packages that stop being eligible" />
+        </>
+      )}
+    </Card>
+  );
+}
+
+/** Who last created or changed a policy, from the audit log. */
+function PolicyLastChange({ id }: { id: number }) {
+  const res = useLoad(() => api.get<List<AuditEvent>>("/audit", { object_type: "remediation_policy", object_id: String(id), limit: 1 }), [id]);
+  const ev = res.data?.items[0];
+  if (!ev) return null;
+  return (
+    <p className="hint">
+      Last {ev.action.endsWith(".create") ? "created" : "changed"} by <strong>{ev.actor_name || ev.actor_type}</strong>{" "}
+      <RelativeTime iso={ev.at} />.
+    </p>
+  );
+}
+
 function PolicyForm({ policy, teams, onCancel, onSaved }: { policy?: RemediationPolicy; teams: Team[]; onCancel: () => void; onSaved: () => void }) {
   const facets = useFacets();
   const [p, setP] = useState<RemediationPolicy>(policy ? { ...policy } : { ...EMPTY_POLICY });
@@ -395,6 +476,10 @@ function PolicyForm({ policy, teams, onCancel, onSaved }: { policy?: Remediation
   const [units, setUnits] = useState((policy?.health_units ?? []).join(", "));
   const [localErr, setLocalErr] = useState<string | null>(null);
   const act = useAction();
+  const previewAct = useAction();
+  // The preview and the exact body it was computed for: saving needs a
+  // preview of what is about to be saved.
+  const [preview, setPreview] = useState<{ body: string; data: RemediationPolicyPreview } | null>(null);
   const idp = policy ? `po${policy.id}` : "ponew";
   const set = <K extends keyof RemediationPolicy>(k: K, v: RemediationPolicy[K]) => setP({ ...p, [k]: v });
   const host = p.target === "host_package";
@@ -402,12 +487,7 @@ function PolicyForm({ policy, teams, onCancel, onSaved }: { policy?: Remediation
   const envOptions = [...new Set([...(facets?.environments ?? []), ...(p.environments ?? [])])];
   const changeTypes = p.change_types ?? [];
 
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    setLocalErr(null);
-    if (changeTypes.includes("major") && (!p.allow_major || p.approval !== "required"))
-      return setLocalErr("Major upgrades need “Allow major upgrades” and approval set to required.");
-    if (Boolean(p.window_start) !== Boolean(p.window_end)) return setLocalErr("Set both window start and end, or neither.");
+  const buildBody = () => {
     const { id: _id, created_at: _c, updated_at: _u, ...rest } = p;
     void _id;
     void _c;
@@ -426,6 +506,34 @@ function PolicyForm({ policy, teams, onCancel, onSaved }: { policy?: Remediation
       window_days: p.window_days ?? [],
       change_types: changeTypes,
     };
+    return body;
+  };
+  const check = (): string | null => {
+    if (changeTypes.includes("major") && (!p.allow_major || p.approval !== "required"))
+      return "Major upgrades need “Allow major upgrades” and approval set to required.";
+    if (Boolean(p.window_start) !== Boolean(p.window_end)) return "Set both window start and end, or neither.";
+    return null;
+  };
+  const currentBody = JSON.stringify(buildBody());
+  const previewed = preview !== null && preview.body === currentBody;
+  const runPreview = async () => {
+    setLocalErr(null);
+    const bad = check();
+    if (bad) return setLocalErr(bad);
+    const body = buildBody();
+    const r = await previewAct.run(() =>
+      api.post<RemediationPolicyPreview>(`/remediation/policies/preview${policy ? `?id=${policy.id}` : ""}`, body),
+    );
+    if (r) setPreview({ body: JSON.stringify(body), data: r });
+  };
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setLocalErr(null);
+    const bad = check();
+    if (bad) return setLocalErr(bad);
+    if (!previewed) return setLocalErr("Preview the impact of these settings before saving.");
+    const body = buildBody();
     const ok = await act.run(() =>
       policy ? api.put<RemediationPolicy>(`/remediation/policies/${policy.id}`, body) : api.post<RemediationPolicy>("/remediation/policies", body),
     );
@@ -434,6 +542,7 @@ function PolicyForm({ policy, teams, onCancel, onSaved }: { policy?: Remediation
 
   const form = (
     <form className="form" onSubmit={submit}>
+      {policy && <PolicyLastChange id={policy.id} />}
       <ErrorBox error={act.error} title="Policy not saved" />
       {localErr && (
         <div className="alert alert-error" role="alert">
@@ -600,8 +709,18 @@ function PolicyForm({ policy, teams, onCancel, onSaved }: { policy?: Remediation
         )}
       </Card>
 
+      <ErrorBox error={previewAct.error} title="Could not preview the policy" />
+      {previewed && preview && <PolicyPreviewCard pv={preview.data} enabled={p.enabled} />}
       <div className="form-actions">
-        <button type="submit" className="btn btn-primary" disabled={act.pending}>
+        <button type="button" className="btn" disabled={previewAct.pending || previewed} onClick={() => void runPreview()}>
+          {previewAct.pending ? "Previewing…" : preview && !previewed ? "Preview again" : "Preview impact"}
+        </button>
+        <button
+          type="submit"
+          className="btn btn-primary"
+          disabled={act.pending || !previewed}
+          title={!previewed ? "Preview the impact of these settings first" : undefined}
+        >
           {policy ? "Save policy" : "Create policy"}
         </button>
         <button type="button" className="btn" onClick={onCancel}>

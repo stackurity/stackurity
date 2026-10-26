@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
@@ -134,4 +135,41 @@ func (c *Checker) mustCheck(t *testing.T) *Report {
 		t.Fatal(err)
 	}
 	return r
+}
+
+func TestDeliveryProblems(t *testing.T) {
+	r := &Report{}
+	if p := deliveryProblems(r); len(p) != 0 {
+		t.Fatalf("no deliveries: %+v", p)
+	}
+	r = &Report{
+		Deliveries: []store.DeliveryCount{{Kind: "webhook", State: "failed", Count: 2}, {Kind: "slack", State: "failed", Count: 1},
+			{Kind: "webhook", State: "retrying", Count: 5}},
+		FailingChannels:          []store.ChannelCount{{Kind: "webhook", Count: 1}},
+		OldestDueDeliverySeconds: (20 * time.Minute).Seconds(),
+	}
+	ps := deliveryProblems(r)
+	byKey := map[string]Problem{}
+	for _, p := range ps {
+		if p.Severity != Warning || p.Kind != "notifications" {
+			t.Errorf("%+v: want a notifications warning", p)
+		}
+		byKey[p.Key] = p
+	}
+	// Failed deliveries and failing channels are reported per channel by the
+	// notification problems (objects.go); only the backlog is reported here.
+	if len(ps) != 1 {
+		t.Errorf("want only the backlog problem, got %+v", ps)
+	}
+	if b := byKey["backlog"]; b.NextStep == "" || b.Docs == "" {
+		t.Errorf("backlog needs a next step and docs: %+v", b)
+	}
+	if !strings.Contains(byKey["backlog"].Detail, "20m") {
+		t.Errorf("backlog: %+v", byKey["backlog"])
+	}
+	r.OldestDueDeliverySeconds = 60
+	r.FailingChannels, r.Deliveries = nil, r.Deliveries[2:]
+	if p := deliveryProblems(r); len(p) != 0 {
+		t.Errorf("retries alone and a short wait are not problems: %+v", p)
+	}
 }
