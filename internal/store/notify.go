@@ -129,7 +129,11 @@ const (
 // Weekdays are the values of Route.SummaryDay.
 var Weekdays = []string{"sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"}
 
-const routeCols = `id, name, channel_id, enabled, min_priority, sos_only, kinds, environments, team_ids, escalation, send_resolved,
+// A route limited to projects keeps its on/off switch in project_enabled
+// and is stored with enabled false (migration 0032): a release before 0.8,
+// which ignores project_ids, sees it switched off instead of sending every
+// project's alerts to that project's channel.
+const routeCols = `id, name, channel_id, CASE WHEN cardinality(project_ids) > 0 THEN project_enabled ELSE enabled END, min_priority, sos_only, kinds, environments, team_ids, escalation, send_resolved,
 	quiet_start, quiet_end, timezone, max_per_hour, created_at, mode, summary_time, summary_day, last_summary_at, project_ids`
 
 func (s *Store) ListRoutes(ctx context.Context) ([]Route, error) {
@@ -236,10 +240,13 @@ func (s *Store) SaveRoute(ctx context.Context, r Route) (*Route, error) {
 	}
 	if r.ID == 0 {
 		rows, err = s.Pool.Query(ctx, `INSERT INTO routes (name, channel_id, enabled, min_priority, sos_only, kinds, environments,
-			team_ids, escalation, send_resolved, quiet_start, quiet_end, timezone, max_per_hour, mode, summary_time, summary_day, project_ids)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING `+routeCols, args...)
+			team_ids, escalation, send_resolved, quiet_start, quiet_end, timezone, max_per_hour, mode, summary_time, summary_day, project_ids,
+			project_enabled)
+			VALUES ($1,$2,$3 AND cardinality($18::bigint[]) = 0,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
+			  $3 AND cardinality($18::bigint[]) > 0) RETURNING `+routeCols, args...)
 	} else {
-		rows, err = s.Pool.Query(ctx, `UPDATE routes SET name=$1, channel_id=$2, enabled=$3, min_priority=$4, sos_only=$5, kinds=$6,
+		rows, err = s.Pool.Query(ctx, `UPDATE routes SET name=$1, channel_id=$2, enabled=$3 AND cardinality($18::bigint[]) = 0,
+			project_enabled = $3 AND cardinality($18::bigint[]) > 0, min_priority=$4, sos_only=$5, kinds=$6,
 			environments=$7, team_ids=$8, escalation=$9, send_resolved=$10, quiet_start=$11, quiet_end=$12, timezone=$13, max_per_hour=$14,
 			mode=$15, summary_time=$16, summary_day=$17, project_ids=$18
 			WHERE id = $19 RETURNING `+routeCols, append(args, r.ID)...)

@@ -443,7 +443,7 @@ func (s *Server) createGrant(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	_ = s.Store.Audit(r.Context(), p.Actor(r), "access.grant", grantObject(g), grantObjectID(g), g)
+	_ = s.Store.Audit(r.Context(), p.Actor(r), "access.grant", "access_grant", itoa(g.ID), g)
 	status := 200
 	if isNew {
 		status = 201
@@ -477,7 +477,7 @@ func (s *Server) updateGrant(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	_ = s.Store.Audit(r.Context(), principal(r).Actor(r), "access.change", grantObject(g), grantObjectID(g), g)
+	_ = s.Store.Audit(r.Context(), principal(r).Actor(r), "access.change", "access_grant", itoa(g.ID), g)
 	writeJSON(w, 200, g)
 }
 
@@ -496,23 +496,13 @@ func (s *Server) deleteGrant(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	_ = s.Store.Audit(r.Context(), principal(r).Actor(r), "access.revoke", grantObject(g), grantObjectID(g), g)
+	_ = s.Store.Audit(r.Context(), principal(r).Actor(r), "access.revoke", "access_grant", itoa(g.ID), g)
 	w.WriteHeader(204)
 }
 
-func grantObject(g *store.Grant) string {
-	if g.ProjectID != nil {
-		return "project"
-	}
-	return "asset"
-}
-
-func grantObjectID(g *store.Grant) string {
-	if g.ProjectID != nil {
-		return itoa(*g.ProjectID)
-	}
-	return itoa(*g.AssetID)
-}
+// Grants are audited as object type access_grant, which narrowed
+// connections never see (stackurity_audit_visible): the details name the
+// person or team, which members of other projects must not learn.
 
 func actorUserID(p *Principal) int64 {
 	if p != nil && p.User != nil {

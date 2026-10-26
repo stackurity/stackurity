@@ -18,6 +18,13 @@
 -- is the fast path: the policies compare one per-query flag and never look
 -- at projects, so the findings list costs what it did before.
 
+-- This migration replaces the row-level security policies of about twenty
+-- tables, which waits for every open transaction on them. Rather than queue
+-- behind a long report or backup and block the application meanwhile, it
+-- gives up after 10 seconds per lock; run it again in a quieter moment
+-- (nothing is half applied: a migration is one transaction).
+SET LOCAL lock_timeout = '10s';
+
 CREATE TABLE projects (
     id           bigserial PRIMARY KEY,
     workspace_id bigint NOT NULL DEFAULT stackurity_ws() REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -84,7 +91,11 @@ ALTER TABLE workspace_members ALTER COLUMN role DROP NOT NULL;
 ALTER TABLE workspace_members ADD COLUMN default_project_id bigint REFERENCES projects(id) ON DELETE SET NULL;
 
 -- Notification routes can be limited to projects (empty: every asset).
+-- Such a route is stored with enabled false and its switch in
+-- project_enabled, so that releases before 0.8, which do not know
+-- project_ids, see it as off and never send other projects' alerts to it.
 ALTER TABLE routes ADD COLUMN project_ids bigint[] NOT NULL DEFAULT '{}';
+ALTER TABLE routes ADD COLUMN project_enabled boolean NOT NULL DEFAULT false;
 
 -- --- scope functions
 
@@ -208,6 +219,13 @@ BEGIN
         EXECUTE format('CREATE POLICY ws ON %I USING (%s) WITH CHECK (%s)', r.tbl, pred, pred);
     END LOOP;
 END $$;
+
+-- Tracker (Jira) issues describe a whole incident, across every asset: a
+-- narrowed connection sees none.
+DROP POLICY ws ON incident_issues;
+CREATE POLICY ws ON incident_issues
+    USING (workspace_id = stackurity_ws() AND (SELECT stackurity_narrowed()) IS NOT TRUE)
+    WITH CHECK (workspace_id = stackurity_ws() AND (SELECT stackurity_narrowed()) IS NOT TRUE);
 
 -- Audit events: a narrowed connection sees events about the assets,
 -- findings and incidents it can see. Events about anything else (people,

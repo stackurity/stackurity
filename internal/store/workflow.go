@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/stackurity/stackurity/internal/risk"
+	"github.com/stackurity/stackurity/internal/tenant"
 )
 
 const riskPolicyKey = "risk_policy"
@@ -697,25 +698,35 @@ func (s *Store) ListIncidents(ctx context.Context, f IncidentFilter) ([]Incident
 	if f.Kind != "" {
 		w.add("i.kind = ?", f.Kind)
 	}
+	// A caller who sees only some assets filters and sorts on what the
+	// incident's visible findings say (v), as narrowIncidents shows it;
+	// incidents without findings (system problems) keep their own values.
+	prio, sos, esc, join := "i.priority", "i.sos", "i.escalation_level", ""
+	if tenant.Narrowed(ctx) {
+		prio, sos, esc = "COALESCE(v.priority, i.priority)", "COALESCE(v.sos, i.sos)", "COALESCE(v.esc, i.escalation_level)"
+		join = ` LEFT JOIN LATERAL (SELECT min(f.priority) AS priority, bool_or(f.sos) AS sos, max(f.escalation_level) AS esc
+			FROM findings f WHERE f.incident_id = i.id
+			  AND (i.status <> 'open' OR (f.status = 'open' AND f.state IN ('new', 'acknowledged', 'in_progress')))) v ON true`
+	}
 	if f.Priority != "" {
-		w.add("i.priority = ?", f.Priority)
+		w.add(prio+" = ?", f.Priority)
 	}
 	if f.SOS {
-		w.conds = append(w.conds, "i.sos")
+		w.conds = append(w.conds, sos)
 	}
 	if f.Escalated {
-		w.conds = append(w.conds, "i.escalation_level > 0")
+		w.conds = append(w.conds, esc+" > 0")
 	}
 	if f.TeamID > 0 {
 		w.add("i.owner_team_id = ?", f.TeamID)
 	}
-	from := ` FROM incidents i LEFT JOIN teams t ON t.id = i.owner_team_id` + w.sql()
+	from := ` FROM incidents i LEFT JOIN teams t ON t.id = i.owner_team_id` + join + w.sql()
 	var total int64
 	if err := s.Pool.QueryRow(ctx, `SELECT count(*)`+from, w.args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 	p := f.Page.norm()
-	rows, err := s.Pool.Query(ctx, `SELECT `+incidentCols+from+fmt.Sprintf(` ORDER BY i.sos DESC, i.priority, i.updated_at DESC LIMIT %d OFFSET %d`, p.Limit, p.Offset), w.args...)
+	rows, err := s.Pool.Query(ctx, `SELECT `+incidentCols+from+fmt.Sprintf(` ORDER BY %s DESC, %s, i.updated_at DESC LIMIT %d OFFSET %d`, sos, prio, p.Limit, p.Offset), w.args...)
 	if err != nil {
 		return nil, 0, err
 	}

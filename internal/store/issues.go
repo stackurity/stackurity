@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/stackurity/stackurity/internal/risk"
+	"github.com/stackurity/stackurity/internal/tenant"
 )
 
 // IssueRef is what the dashboard shows of a tracker issue.
@@ -42,7 +43,10 @@ var ErrIssueBeingCreated = errors.New("the issue is being created by another att
 
 func (s *Store) issueRefs(ctx context.Context, incidentIDs []int64) (map[int64][]IssueRef, error) {
 	out := map[int64][]IssueRef{}
-	if len(incidentIDs) == 0 {
+	// A tracker issue describes the whole incident, across every asset:
+	// a caller who sees only some assets gets none (row-level security
+	// hides them too, migration 0032).
+	if len(incidentIDs) == 0 || tenant.Narrowed(ctx) {
 		return out, nil
 	}
 	rows, err := s.Pool.Query(ctx, `SELECT incident_id, tracker, issue_key, issue_url, channel_id FROM incident_issues

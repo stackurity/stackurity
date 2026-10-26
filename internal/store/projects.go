@@ -736,7 +736,7 @@ func (s *Store) narrowIncidents(ctx context.Context, list []Incident) error {
 	// Active findings for open incidents; every finding for resolved ones.
 	rows, err := s.Pool.Query(ctx, `SELECT f.incident_id,
 		  count(*)::int, count(DISTINCT f.asset_id)::int,
-		  (array_agg(f.title ORDER BY f.priority_score DESC))[1], min(f.priority), bool_or(f.sos),
+		  (array_agg(f.title ORDER BY f.priority_score DESC))[1], min(f.priority), bool_or(f.sos), max(f.escalation_level),
 		  CASE WHEN bool_or(f.state = 'new') THEN 'new' WHEN bool_or(f.state = 'acknowledged') THEN 'acknowledged' ELSE 'in_progress' END,
 		  jsonb_build_object(
 		    'assets', (array_agg(DISTINCT a.name))[1:10],
@@ -758,13 +758,14 @@ func (s *Store) narrowIncidents(ctx context.Context, list []Incident) error {
 		findings, assets       int
 		title, priority, state string
 		sos                    bool
+		escalation             int
 		detail                 json.RawMessage
 	}
 	got := map[int64]agg{}
 	for rows.Next() {
 		var id int64
 		var a agg
-		if err := rows.Scan(&id, &a.findings, &a.assets, &a.title, &a.priority, &a.sos, &a.state, &a.detail); err != nil {
+		if err := rows.Scan(&id, &a.findings, &a.assets, &a.title, &a.priority, &a.sos, &a.escalation, &a.state, &a.detail); err != nil {
 			return err
 		}
 		got[id] = a
@@ -777,6 +778,8 @@ func (s *Store) narrowIncidents(ctx context.Context, list []Incident) error {
 		if !isFindingKind(in.Kind) {
 			continue
 		}
+		// What was announced, and when, was about every asset.
+		in.NotifiedPriority, in.NotifiedAt = "", nil
 		a, ok := got[in.ID]
 		if !ok {
 			// Visible through a finding that is no longer active: say
@@ -786,7 +789,7 @@ func (s *Store) narrowIncidents(ctx context.Context, list []Incident) error {
 			continue
 		}
 		in.FindingCount, in.AssetCount = a.findings, a.assets
-		in.Title, in.Priority, in.SOS, in.Detail = a.title, a.priority, a.sos, a.detail
+		in.Title, in.Priority, in.SOS, in.Detail, in.EscalationLevel = a.title, a.priority, a.sos, a.detail, a.escalation
 		if in.Status == "open" {
 			in.State = a.state
 		}
@@ -847,4 +850,61 @@ func (s *Store) GrantAssets(ctx context.Context, userID int64, min auth.Role) ([
 		return nil, err
 	}
 	return pgx.CollectRows(rows, pgx.RowTo[int64])
+}
+
+// ColleagueTeams returns the teams granted (any role) one of the projects
+// userID is granted, directly or through a team: the teams a person who
+// acts through project grants may assign issues to.
+func (s *Store) ColleagueTeams(ctx context.Context, userID int64) (map[int64]bool, error) {
+	rows, err := s.Pool.Query(tenant.WithMember(tenant.WithoutProject(ctx), userID), `SELECT DISTINCT g.team_id FROM access_grants g
+		WHERE g.team_id IS NOT NULL AND g.project_id = ANY (stackurity_member_projects())`)
+	if err != nil {
+		return nil, err
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[int64])
+	if err != nil {
+		return nil, err
+	}
+	out := map[int64]bool{}
+	for _, id := range ids {
+		out[id] = true
+	}
+	return out, nil
+}
+
+// MergeAccess is what merging assets into a target changes about access:
+// the target joins the merged assets' projects, and grants on them move to
+// it.
+type MergeAccess struct {
+	ProjectsJoined []ProjectRef `json:"projects_joined"`
+	GrantsMoved    int64        `json:"grants_moved"`
+}
+
+// MergeAccessPreview says, before an identity conflict is resolved into
+// target, which projects target will join and how many asset grants will
+// move to it.
+func (s *Store) MergeAccessPreview(ctx context.Context, conflictID, target int64) (*MergeAccess, error) {
+	ctx = tenant.WithoutProject(ctx)
+	var ids []int64
+	if err := s.Pool.QueryRow(ctx, `SELECT asset_ids FROM identity_conflicts WHERE id = $1`, conflictID).Scan(&ids); err != nil {
+		return nil, notFound(err)
+	}
+	var others []int64
+	for _, id := range ids {
+		if id != target {
+			others = append(others, id)
+		}
+	}
+	out := &MergeAccess{ProjectsJoined: []ProjectRef{}}
+	rows, err := s.Pool.Query(ctx, `SELECT DISTINCT p.id, p.name FROM project_assets pa JOIN projects p ON p.id = pa.project_id
+		WHERE pa.asset_id = ANY($1) AND NOT EXISTS (SELECT 1 FROM project_assets t WHERE t.project_id = pa.project_id AND t.asset_id = $2)
+		ORDER BY p.name`, others, target)
+	if err != nil {
+		return nil, err
+	}
+	if out.ProjectsJoined, err = pgx.CollectRows(rows, pgx.RowToStructByPos[ProjectRef]); err != nil {
+		return nil, err
+	}
+	err = s.Pool.QueryRow(ctx, `SELECT count(*) FROM access_grants WHERE asset_id = ANY($1)`, others).Scan(&out.GrantsMoved)
+	return out, err
 }

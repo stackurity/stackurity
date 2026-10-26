@@ -27,8 +27,8 @@ export function ConflictsPage() {
         <ConflictCard
           key={c.id}
           conflict={c}
-          onResolved={(name) => {
-            setMsg(`Conflict #${c.id} resolved: merged into ${name}.`);
+          onResolved={(name, notice) => {
+            setMsg(`Conflict #${c.id} resolved: merged into ${name}.${notice ? ` ${notice}` : ""}`);
             res.reload();
           }}
         />
@@ -37,7 +37,7 @@ export function ConflictsPage() {
   );
 }
 
-function ConflictCard({ conflict, onResolved }: { conflict: Conflict; onResolved: (name: string) => void }) {
+function ConflictCard({ conflict, onResolved }: { conflict: Conflict; onResolved: (name: string, notice?: string) => void }) {
   // Candidate details come with the conflict; any ID missing from
   // `assets` (e.g. deleted since) is still listed so it can be seen.
   const byId = new Map((conflict.assets ?? []).map((a) => [a.id, a]));
@@ -51,8 +51,10 @@ function ConflictCard({ conflict, onResolved }: { conflict: Conflict; onResolved
     const name = a?.name ?? `asset #${target}`;
     const others = conflict.asset_ids.length - 1;
     if (!window.confirm(`Merge ${others} other asset(s) into "${name}"? This cannot be undone.`)) return;
-    const ok = await act.run(() => api.post(`/conflicts/${conflict.id}/resolve`, { target_asset_id: target }).then(() => true));
-    if (ok) onResolved(name);
+    // The kept asset joins the merged assets' projects and takes their
+    // access grants; the server says so in `notice`.
+    const res = await act.run(() => api.post<{ notice?: string }>(`/conflicts/${conflict.id}/resolve`, { target_asset_id: target }));
+    if (res) onResolved(name, res.notice);
   };
 
   return (

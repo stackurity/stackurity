@@ -285,7 +285,7 @@ func (d *Dispatcher) Plan(ctx context.Context) error {
 		if len(back) > 0 {
 			key += ":regressed:" + regressedUpTo.UTC().Format(time.RFC3339Nano)
 		}
-		if _, err := d.Store.EnqueueDelivery(ctx, r.ChannelID, &r.ID, nil, EventUrgent, key, msg); err != nil {
+		if err := d.enqueueRouted(ctx, r, EventUrgent, key, msg); err != nil {
 			return err
 		}
 	}
@@ -322,7 +322,7 @@ func (d *Dispatcher) Plan(ctx context.Context) error {
 			}
 			r := r
 			msg := d.connectedMessage(r, mine, byAsset)
-			if _, err := d.Store.EnqueueDelivery(ctx, r.ChannelID, &r.ID, nil, EventConnected, keyOf("connected", r.ID, mineIDs), msg); err != nil {
+			if err := d.enqueueRouted(ctx, r, EventConnected, keyOf("connected", r.ID, mineIDs), msg); err != nil {
 				return err
 			}
 		}
@@ -428,7 +428,7 @@ func (d *Dispatcher) planOverdue(ctx context.Context, routes []store.Route, trac
 			loc = time.UTC
 		}
 		key := fmt.Sprintf("overdue:%d:%s", r.ID, d.now().In(loc).Format("2006-01-02"))
-		if _, err := d.Store.EnqueueDelivery(ctx, r.ChannelID, &r.ID, nil, EventOverdue, key, msg); err != nil {
+		if err := d.enqueueRouted(ctx, r, EventOverdue, key, msg); err != nil {
 			return err
 		}
 	}
