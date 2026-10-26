@@ -138,6 +138,10 @@ func serverCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			feedbackURL, err := api.FeedbackURLFromEnv()
+			if err != nil {
+				return err
+			}
 			holder, licFromEnv, err := loadLicence(ctx, st, log)
 			if err != nil {
 				return err
@@ -215,6 +219,7 @@ func serverCmd() *cobra.Command {
 				Packs:        packMgr,
 				Licence:      holder, Gate: gate, LicenceFromEnv: licFromEnv,
 				Health: checker, UpdateCheck: updateCfg.Enabled,
+				FeedbackURL: feedbackURL,
 			}
 			// Metrics have their own listener, off by default, so they are
 			// never reachable on the public API port.

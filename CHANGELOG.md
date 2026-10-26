@@ -4,6 +4,12 @@ All notable changes to Stackurity. Versions follow [Semantic Versioning](https:/
 
 Each release's section is published as its GitHub release notes, and a tag without a section here cannot be released (`go run ./tools/changelog -version vX.Y.Z` prints it). New changes go under **Unreleased**, which is renamed to the version when it is tagged. Subsections are **Security**, **Added**, **Changed**, **Fixed** and **Upgrading**. Put fixes for vulnerabilities under `### Security`, first: installations treat a release with that heading as a security release and show administrators a banner they can only snooze.
 
+## Unreleased
+
+### Added
+
+- **Send feedback from the dashboard.** A **Feedback** button in the top bar (an icon on phones) opens a dialog to report a problem, suggest an improvement or ask a question. The server forwards it to the Stackurity team (`POST /api/v1/feedback`, at most 10 an hour per user) with only the message, the email address if the user leaves it in, the page path, the version and the edition; never findings, asset, host or workspace names, or the installation's URL. Each send is recorded in the audit log as `feedback.send`. `STACKURITY_FEEDBACK_URL` (default `https://stackurity.dev/feedback`) sends it elsewhere, and an empty value turns it off and hides the button (`GET /auth/me` reports `feedback_enabled`). See `docs/network.md`, "Feedback".
+
 ## 0.5.1
 
 ### Added

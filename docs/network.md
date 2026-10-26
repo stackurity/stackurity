@@ -1,6 +1,6 @@
 # Outbound network access
 
-Stackurity has no telemetry. Every outbound connection is listed below. The only request that is not for your own data or integrations is the [update check](#update-check), which sends nothing about you and can be turned off.
+Stackurity has no telemetry. Every outbound connection is listed below. The only requests that are not for your own data or integrations are the [update check](#update-check), which sends nothing about you, and [feedback](#feedback), which a user sends on purpose. Both can be turned off.
 
 | Component | Destination | When | Data sent |
 |---|---|---|---|
@@ -20,6 +20,19 @@ The response is compared with the running version on your server, and the result
 
 - `STACKURITY_UPDATE_CHECK=off` turns it off: no request is made at all.
 - `STACKURITY_UPDATE_URL` points it at a mirror that serves the same JSON (for example a copy of the GitHub response on an internal web server).
+
+### Feedback
+
+**Send feedback** in the dashboard's top bar lets a signed-in user write to the Stackurity team. Nothing is sent until they press **Send feedback**.
+
+| Destination | When | What is sent |
+|---|---|---|
+| `stackurity.dev/feedback` (`STACKURITY_FEEDBACK_URL`) | Each time a user sends feedback (at most 10 an hour per user) | A `POST` with JSON: `kind` (`bug`, `idea` or `question`), the `message`, the `email` the user left in the form (prefilled with theirs, can be cleared), the `page` path they were on (no query string; segments other than route words and numbers become `_`), the server `version`, the `edition` and `source: "app"`. No cookie, token, workspace, asset or host names, findings, or the installation's URL |
+
+The request goes from the server, not the browser, with a 10 second timeout, and redirects are not followed. Each send is recorded in the workspace audit log as `feedback.send` (kind only).
+
+- `STACKURITY_FEEDBACK_URL=` (set to an empty value) or `off` turns it off: the button is hidden and `POST /api/v1/feedback` answers 404.
+- Point it at another URL that accepts the same JSON to keep feedback inside your organisation.
 
 ### Intelligence feeds
 

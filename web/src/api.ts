@@ -139,6 +139,8 @@ export interface Me {
   /** Edition in effect for this workspace, and the paid features it includes. */
   edition: Edition;
   features: Feature[];
+  /** Whether Send feedback is on (STACKURITY_FEEDBACK_URL) for this signed-in user. */
+  feedback_enabled?: boolean;
 }
 
 export type Edition = "community" | "pro" | "enterprise";

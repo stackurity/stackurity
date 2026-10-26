@@ -76,6 +76,12 @@ type Server struct {
 	// this server runs; /readyz then fails so traffic moves to the new
 	// replicas. Nil disables the check.
 	Schema *db.SchemaGuard
+	// FeedbackURL receives what users send with Send feedback
+	// (STACKURITY_FEEDBACK_URL); empty turns feedback off.
+	FeedbackURL string
+	// FeedbackHTTP forwards feedback; nil uses a client with a 10 second
+	// timeout that follows no redirects.
+	FeedbackHTTP *http.Client
 	// limiter counts sign-in, setup and enrollment attempts in the database,
 	// shared by every replica (ratelimit.go).
 	limiter *rateLimiter
@@ -114,6 +120,7 @@ func (s *Server) Handler() http.Handler {
 			r.Use(requireAuth)
 			r.Get("/auth/me", s.me)
 			r.Post("/auth/password", s.changePassword)
+			r.Post("/feedback", s.sendFeedback)
 			r.Get("/packs", s.listPacks)
 			r.Get("/packs/{id}/archive", s.packArchive)
 			r.Route("/admin/license", func(r chi.Router) {
