@@ -62,6 +62,15 @@ func (e *Evaluator) Evaluate(ctx context.Context, componentIDs []int64, assetID 
 	if err != nil {
 		return nil, err
 	}
+	if componentIDs != nil {
+		// Kernel packages are reported per kernel version, which needs every
+		// package of that version on the asset, not only the changed ones.
+		if rows, err = e.withKernelSiblings(ctx, rows); err != nil {
+			return nil, err
+		}
+	}
+	kernels := planKernels(rows)
+	kernelFound := map[string]map[int64][]store.FindingInput{}
 	now := time.Now()
 	if e.Now != nil {
 		now = e.Now()
@@ -155,6 +164,26 @@ func (e *Evaluator) Evaluate(ctx context.Context, componentIDs []int64, assetID 
 			} else {
 				rc.Feed = feed.Name
 			}
+			if k, ok := kernels[r.InventoryID]; ok {
+				// Kernel packages: no findings on files that do not run,
+				// and one finding per issue per kernel version.
+				switch {
+				case k.role == osv.KernelNoCode:
+					found = nil
+					if rc.State == store.CoverageEvaluated {
+						rc.Reason = "kernel headers or build files, not running code: kernel vulnerabilities are reported on the kernel image"
+					}
+				default:
+					if kernelFound[k.group] == nil {
+						kernelFound[k.group] = map[int64][]store.FindingInput{}
+					}
+					kernelFound[k.group][r.InventoryID] = found
+					found = nil
+					if rc.State == store.CoverageEvaluated && r.InventoryID != k.rep.InventoryID {
+						rc.Reason = fmt.Sprintf("part of kernel %s: its findings are reported once, on %s", k.release, k.repName)
+					}
+				}
+			}
 			want = append(want, found...)
 		}
 		if rc.State != store.CoverageEvaluated {
@@ -195,6 +224,9 @@ func (e *Evaluator) Evaluate(ctx context.Context, componentIDs []int64, assetID 
 				want = append(want, *f)
 			}
 		}
+	}
+	for _, g := range sortedKeys(kernelFound) {
+		want = append(want, mergeKernelFindings(kernelFound[g], kernels)...)
 	}
 	if err := e.Store.SetCoverage(ctx, coverage); err != nil {
 		return nil, err
