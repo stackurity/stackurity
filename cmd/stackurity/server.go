@@ -921,6 +921,15 @@ func registerIntel(w *worker.Worker, st *store.Store, dataDir string, log *slog.
 		if comps != nil {
 			return nil // a partial run says nothing about whole assets
 		}
+		// Score the findings before the asset counts as evaluated: a CI
+		// gate reading the collection result must see real priorities.
+		policy, err := st.RiskPolicy(ctx)
+		if err != nil {
+			return err
+		}
+		if _, err := st.PrioritizeAsset(ctx, policy, time.Now(), p.AssetID); err != nil {
+			return fmt.Errorf("prioritize: %w", err)
+		}
 		return st.MarkEvaluated(ctx, p.AssetID, start)
 	})
 

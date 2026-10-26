@@ -25,7 +25,7 @@ In short: work resumes or fails visibly, data from the last good run stays avail
 ### Inventory ingest
 
 - A collection (from the agent, CI, an integration or an SBOM import) is stored in one transaction: the asset, the collection, every inventory row, removals of packages that are gone, coverage, relations and the queued evaluation. A crash before the commit keeps none of it; the asset keeps its previous inventory and findings, and the client gets no `201` and sends again. A crash after the commit keeps all of it.
-- Between ingest and evaluation, the asset has its new inventory and its previous findings. Its evaluation is a queued job, so it survives the crash, and the collection's result (`GET /api/v1/collections/{id}/result`, which CI gates read) says `pending` until the evaluation has run: it is never reported as evaluated or clean early.
+- Between ingest and evaluation, the asset has its new inventory and its previous findings. Its evaluation is a queued job, so it survives the crash, and the collection's result (`GET /api/v1/collections/{id}/result`, which CI gates read) says `pending` until the evaluation has run, and `scoring` until its findings have been prioritised: it is never reported as evaluated or clean early, and a gate never reads unscored priorities.
 
 ### Evaluation
 

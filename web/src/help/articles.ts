@@ -343,7 +343,7 @@ stackurity.exe agent --interval 6h`,
           ["`--fail-on-priority P1|P2|P3|P4`", "Fail on priority instead, which includes exposure, environment and exploitation."],
           ["`--fail-on-kev`", "Fail on any known exploited vulnerability."],
           ["`--only-fixable`", "Ignore findings that have no fixed version (needs one of the flags above)."],
-          ["`--wait 5m`", "How long to wait for the server to evaluate the scan (default 5 minutes)."],
+          ["`--wait 5m`", "How long to wait for the server to evaluate the scan and prioritise its findings (default 5 minutes). When it runs out the command exits with status 4, “result not ready”, and the gate does not pass."],
         ],
       },
       {

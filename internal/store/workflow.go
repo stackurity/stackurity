@@ -157,7 +157,8 @@ type riskRow struct {
 
 // riskRows reads every open finding's risk inputs. Prioritize and the policy
 // preview share it, so a preview scores exactly what a save would.
-func riskRows(ctx context.Context, db q, now time.Time) ([]riskRow, error) {
+// assetID 0 means every asset.
+func riskRows(ctx context.Context, db q, now time.Time, assetID int64) ([]riskRow, error) {
 	rows, err := db.Query(ctx, `SELECT f.id, f.kind, f.severity, f.score, COALESCE((f.evidence->>'known_exploited')::boolean, false),
 		`+effectiveExposure+`, `+exposureSource+`, a.environment, a.criticality,
 		f.fixed_version <> '' AND NOT COALESCE((f.evidence->>'requires_ubuntu_pro')::boolean, false)
@@ -165,7 +166,7 @@ func riskRows(ctx context.Context, db q, now time.Time) ([]riskRow, error) {
 		i.scope, f.verification, f.first_seen, COALESCE((f.evidence->>'not_running_kernel')::boolean, false),
 		f.priority, f.state, f.fix_due, f.title, f.key, a.id, a.name
 		FROM findings f JOIN assets a ON a.id = f.asset_id JOIN inventory i ON i.id = f.inventory_id
-		WHERE f.status = 'open'`)
+		WHERE f.status = 'open' AND ($1::bigint = 0 OR f.asset_id = $1)`, assetID)
 	if err != nil {
 		return nil, err
 	}
@@ -191,7 +192,15 @@ func riskRows(ctx context.Context, db q, now time.Time) ([]riskRow, error) {
 // Prioritize recomputes priority, SOS and deadlines for every open finding.
 // Deadlines run from first detection; they move only when priority changes.
 func (s *Store) Prioritize(ctx context.Context, p risk.Policy, now time.Time) (int, error) {
-	rows, err := riskRows(ctx, s.Pool, now)
+	return s.PrioritizeAsset(ctx, p, now, 0)
+}
+
+// PrioritizeAsset is Prioritize for one asset's open findings (0: all). The
+// evaluate job runs it right after matching, so a collection reported as
+// evaluated also has its priorities, and a CI gate never reads the defaults
+// of findings the periodic pass has not scored yet.
+func (s *Store) PrioritizeAsset(ctx context.Context, p risk.Policy, now time.Time, assetID int64) (int, error) {
+	rows, err := riskRows(ctx, s.Pool, now, assetID)
 	if err != nil {
 		return 0, err
 	}

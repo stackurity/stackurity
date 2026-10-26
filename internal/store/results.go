@@ -26,7 +26,7 @@ func (s *Store) MarkEvaluated(ctx context.Context, assetID int64, start time.Tim
 type CollectionResult struct {
 	CollectionID int64  `json:"collection_id"`
 	AssetID      int64  `json:"asset_id"`
-	Status       string `json:"status"` // pending, evaluated, failed
+	Status       string `json:"status"` // pending, scoring, evaluated, failed
 	Error        string `json:"error,omitempty"`
 	// Findings holds the asset's open findings once evaluated.
 	Findings []Finding `json:"findings"`
@@ -84,6 +84,17 @@ func (s *Store) GetCollectionResult(ctx context.Context, id int64) (*CollectionR
 		return res, nil
 	default:
 		res.Status = "pending"
+		return res, nil
+	}
+	// Matched but not yet prioritised: the findings still carry the
+	// default priority (P4, score 0), which a priority gate must not read.
+	var unscored bool
+	if err := s.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM findings WHERE asset_id = $1 AND status = 'open' AND priority_policy = '')`,
+		res.AssetID).Scan(&unscored); err != nil {
+		return nil, err
+	}
+	if unscored {
+		res.Status = "scoring"
 		return res, nil
 	}
 	for off := 0; off < maxResultFindings; off += 500 {

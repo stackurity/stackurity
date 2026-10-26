@@ -214,9 +214,11 @@ There are two ways to collect repository inventory:
   Use the same `--git-url` as the integration so both land on one asset.
 
   To fail the pipeline on findings, add a threshold. The command uploads the
-  scan, waits for the server to evaluate it, prints the findings that meet the
-  threshold and exits with status 3 (status 1 still means the scan itself
-  failed):
+  scan, waits for the server to evaluate it and prioritise its findings,
+  prints the findings that meet the threshold and exits with status 3 (status
+  1 still means the scan itself failed). If `--wait` (default 5 minutes) runs
+  out first, it exits with status 4, "result not ready": the gate was not
+  applied, and it never passes on findings the server has not scored yet:
 
   ```sh
   stackurity scan . --git-url "$CI_REPOSITORY_URL" --fail-on critical --only-fixable
