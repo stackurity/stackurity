@@ -466,6 +466,13 @@ func TestInvitationExistingAccount(t *testing.T) {
 	if code := bearer(e, bt.Secret, "POST", "/api/v1/invitations/accept", []byte(`{"token":"`+tok+`"}`), nil); code != 403 {
 		t.Errorf("accept with a token: %d", code)
 	}
+	_, collector, err := e.st.CreateToken(tenant.WithWorkspace(ctx, beta.ID), "c", auth.RoleCollector, nil, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code := bearer(e, collector, "POST", "/api/v1/invitations/accept", []byte(`{"token":"`+tok+`","password":"`+pw+`"}`), nil); code != 403 {
+		t.Errorf("accept with a collector token: %d", code)
+	}
 	var me meView
 	boss.do("GET", "/api/v1/auth/me", nil, &me)
 	if me.Workspace.ID != beta.ID || me.Role != "admin" {

@@ -289,12 +289,12 @@ func (s *Server) acceptInvitation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := principal(r)
+	if p != nil && p.Token != nil {
+		writeError(w, 403, "forbidden", "accept an invitation in the browser, not with an API token")
+		return
+	}
 	var signedIn int64
 	if p != nil && p.User != nil {
-		if !p.Session {
-			writeError(w, 403, "forbidden", "accept an invitation in the browser, not with an API token")
-			return
-		}
 		signedIn = p.User.ID
 	}
 	res, err := s.Store.AcceptInvitation(r.Context(), strings.TrimSpace(req.Token), signedIn, req.Name, req.Password)
