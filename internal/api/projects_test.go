@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
 	"sort"
 	"strings"
@@ -103,13 +104,25 @@ var projectScopes = map[string]string{
 	"GET /api/v1/coverage":                     "scoped",
 	"GET /api/v1/audit":                        "scoped",
 	"GET /api/v1/users/directory":              "scoped",
+	"GET /api/v1/checks":                       "scoped",
+	"GET /api/v1/checks/{id}":                  "scoped",
+	"GET /api/v1/ignore-rules":                 "scoped",
+	"GET /api/v1/ignore-requests":              "scoped",
+	"GET /api/v1/ignore-requests/{id}":         "scoped",
 
-	"PATCH /api/v1/assets/{id}":            "scoped-write",
-	"POST /api/v1/assets/{id}/relations":   "scoped-write",
-	"DELETE /api/v1/assets/{id}/relations": "scoped-write",
-	"POST /api/v1/findings/{id}/actions":   "scoped-write",
-	"POST /api/v1/findings/actions":        "scoped-write",
-	"POST /api/v1/incidents/{id}/actions":  "scoped-write",
+	"PATCH /api/v1/assets/{id}":                  "scoped-write",
+	"POST /api/v1/assets/{id}/relations":         "scoped-write",
+	"DELETE /api/v1/assets/{id}/relations":       "scoped-write",
+	"POST /api/v1/findings/{id}/actions":         "scoped-write",
+	"POST /api/v1/findings/actions":              "scoped-write",
+	"POST /api/v1/incidents/{id}/actions":        "scoped-write",
+	"POST /api/v1/assets/{id}/check":             "scoped-write",
+	"POST /api/v1/fix-groups/{id}/check":         "scoped-write",
+	"POST /api/v1/fix-groups/{id}/applied":       "scoped-write",
+	"POST /api/v1/ignore-requests":               "scoped-write",
+	"POST /api/v1/ignore-requests/{id}/decision": "scoped-write",
+	"DELETE /api/v1/ignore-rules/{id}":           "scoped-write",
+	"GET /api/v1/agent/check":                    "org",
 
 	"POST /api/v1/feeds/{name}/refresh":            "org",
 	"GET /api/v1/plugins":                          "org",
@@ -273,7 +286,7 @@ func newOrg(t *testing.T) *org {
 		t.Fatal(err)
 	}
 	e.user("admin-org@x.io", auth.RoleAdmin)
-	o := &org{e: e, admin: e.login("admin-org@x.io"), ids: map[string]int64{}}
+	o := &org{e: e, admin: e.signIn("admin-org@x.io"), ids: map[string]int64{}}
 	var me struct{ User store.User }
 	o.admin.do("GET", "/api/v1/auth/me", nil, &me)
 	o.adminID = me.User.ID
@@ -397,6 +410,31 @@ func newOrg(t *testing.T) *org {
 		o.ids[p.key] = pr.ID
 	}
 	o.ids["beta-grant"] = o.grant(t, "beta-viewer@x.io", o.id("beta-project"), 0, auth.RoleViewer).ID
+
+	// The loop (0.7) on Beta: a check, a request to ignore Beta's database
+	// issue, and an ignore rule on the unfiled host.
+	var chk struct{ ID int64 }
+	if code := o.admin.do("POST", "/api/v1/assets/"+o.s("beta-asset")+"/check", nil, &chk); code != 201 {
+		t.Fatalf("check: %d", code)
+	}
+	o.ids["beta-check"] = chk.ID
+	e.user("org-engineer@x.io", auth.RoleEngineer)
+	var ireq struct{ ID int64 }
+	if code := e.signIn("org-engineer@x.io").do("POST", "/api/v1/ignore-requests", map[string]any{"finding_ids": []int64{o.id("beta-db-finding")},
+		"reason": "mitigated", "note": "beta-firewall", "scope": "asset", "expiry": "date", "until": time.Now().AddDate(0, 0, 30)}, &ireq); code != 201 {
+		t.Fatalf("ignore request: %d", code)
+	}
+	o.ids["beta-ignorerequest"] = ireq.ID
+	if code := o.admin.do("POST", "/api/v1/findings/"+o.s("unfiled-finding")+"/actions", map[string]any{"action": "ignore",
+		"reason": "false_positive", "note": "beta-not-used", "scope": "asset", "expiry": "never"}, nil); code != 200 {
+		t.Fatalf("ignore: %d", code)
+	}
+	var rules struct{ Items []store.IgnoreRule }
+	o.admin.do("GET", "/api/v1/ignore-rules", nil, &rules)
+	if len(rules.Items) != 1 {
+		t.Fatalf("ignore rules: %+v", rules.Items)
+	}
+	o.ids["beta-ignorerule"] = rules.Items[0].ID
 	return o
 }
 
@@ -483,7 +521,7 @@ func (o *org) restrictedMembers(t *testing.T) []member {
 	for _, role := range []auth.Role{auth.RoleViewer, auth.RoleEngineer, auth.RoleSecurity, auth.RoleAdmin} {
 		email := "pa-" + string(role) + "@x.io"
 		o.grant(t, email, alphaProject, 0, role)
-		s := e.login(email)
+		s := e.signIn(email)
 		out = append(out, sessionMember("session:"+email, s, nil))
 		out = append(out, sessionMember("session+beta-project:"+email, s, map[string]string{"X-Stackurity-Project": o.s("beta-project")}))
 		var tok struct{ Secret string }
@@ -516,20 +554,20 @@ func (o *org) restrictedMembers(t *testing.T) []member {
 	if code := o.admin.do("POST", "/api/v1/access-grants", map[string]any{"project_id": alphaProject, "team_id": team.ID, "role": "engineer"}, &tg); code != 201 {
 		t.Fatalf("team grant: %d", code)
 	}
-	out = append(out, sessionMember("session:team-member@x.io", e.login("team-member@x.io"), nil))
+	out = append(out, sessionMember("session:team-member@x.io", e.signIn("team-member@x.io"), nil))
 	// One asset only.
 	o.grant(t, "asset-only@x.io", 0, alphaAsset, auth.RoleEngineer)
-	out = append(out, sessionMember("session:asset-only@x.io", e.login("asset-only@x.io"), nil))
+	out = append(out, sessionMember("session:asset-only@x.io", e.signIn("asset-only@x.io"), nil))
 	// A grant on Beta, revoked.
 	o.grant(t, "revoked@x.io", alphaProject, 0, auth.RoleViewer)
 	g := o.grant(t, "revoked@x.io", o.id("beta-project"), 0, auth.RoleSecurity)
 	if code := o.admin.do("DELETE", fmt.Sprintf("/api/v1/access-grants/%d", g.ID), nil, nil); code != 204 {
 		t.Fatalf("revoke: %d", code)
 	}
-	out = append(out, sessionMember("session:revoked@x.io", e.login("revoked@x.io"), nil))
+	out = append(out, sessionMember("session:revoked@x.io", e.signIn("revoked@x.io"), nil))
 	// An organisation admin downgraded to project access only.
 	e.user("downgraded@x.io", auth.RoleAdmin)
-	down := e.login("downgraded@x.io")
+	down := e.signIn("downgraded@x.io")
 	if code := o.admin.do("PATCH", fmt.Sprintf("/api/v1/users/%d", userID("downgraded@x.io")), map[string]any{"role": "none"}, nil); code != 200 {
 		t.Fatalf("downgrade: %d", code)
 	}
@@ -541,8 +579,27 @@ func (o *org) restrictedMembers(t *testing.T) []member {
 	if code := o.admin.do("PATCH", "/api/v1/projects/"+o.s("gamma-project"), map[string]any{"archived": true}, nil); code != 200 {
 		t.Fatalf("archive: %d", code)
 	}
-	out = append(out, sessionMember("session:archived@x.io", e.login("archived@x.io"), nil))
+	out = append(out, sessionMember("session:archived@x.io", e.signIn("archived@x.io"), nil))
 	return out
+}
+
+// signIn opens a session for email without the sign-in endpoint, whose
+// per-address limit the many members of these tests would reach.
+func (e *env) signIn(email string) *session {
+	e.t.Helper()
+	ctx := context.Background()
+	var id int64
+	if err := e.st.Pool.QueryRow(tenant.System(ctx), `SELECT id FROM users WHERE email = lower($1)`, email).Scan(&id); err != nil {
+		e.t.Fatalf("sign in %s: %v", email, err)
+	}
+	secret, err := e.st.CreateSession(ctx, id, tenant.DefaultWorkspace)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	s := e.anon()
+	u, _ := url.Parse(e.srv.URL)
+	s.http.Jar.SetCookies(u, []*http.Cookie{{Name: "stackurity_session", Value: secret, Path: "/"}})
+	return s
 }
 
 // betaFixture fills route parameters with Project Beta's objects.
@@ -558,6 +615,9 @@ func (o *org) betaFixture() *tenantFx {
 	set("project", "beta-project")
 	set("grant", "beta-grant")
 	set("team", "team-x")
+	set("check", "beta-check")
+	set("ignorerequest", "beta-ignorerequest")
+	set("ignorerule", "beta-ignorerule")
 	ids["fixgroup"] = o.fixGroup
 	for _, k := range []string{"user", "job", "channel", "route", "delivery", "integration", "enrollment", "token", "conflict",
 		"plan", "policy", "action", "collector-token"} {
@@ -576,6 +636,8 @@ func (o *org) betaSnapshot(t *testing.T) string {
 		"/api/v1/findings/{beta-finding}", "/api/v1/findings/{beta-finding}/events", "/api/v1/findings/{beta-db-finding}",
 		"/api/v1/findings/{shared-finding}", "/api/v1/incidents/{beta-incident}", "/api/v1/projects/{beta-project}",
 		"/api/v1/access-grants", "/api/v1/assets?project_id={beta-project}", "/api/v1/projects?archived=true",
+		"/api/v1/checks/{beta-check}", "/api/v1/ignore-requests/{beta-ignorerequest}", "/api/v1/ignore-rules?status=all",
+		"/api/v1/findings/{unfiled-finding}",
 	} {
 		path := regexp.MustCompile(`\{([a-z0-9-]+)\}`).ReplaceAllStringFunc(p, func(m string) string { return o.s(m[1 : len(m)-1]) })
 		resp := o.admin.req("GET", path, nil, nil)
@@ -682,7 +744,7 @@ func TestProjectAccessRules(t *testing.T) {
 
 	// Organisation-wide roles see every asset, with or without projects.
 	e.user("org-viewer@x.io", auth.RoleViewer)
-	viewer := sessionMember("org-viewer", e.login("org-viewer@x.io"), nil)
+	viewer := sessionMember("org-viewer", e.signIn("org-viewer@x.io"), nil)
 	for _, m := range []member{admin, viewer} {
 		if got := assetNames(t, m, ""); strings.Join(got, ",") != strings.Join(all, ",") {
 			t.Errorf("%s sees %v, want every asset", m.name, got)
@@ -735,8 +797,8 @@ func TestProjectAccessRules(t *testing.T) {
 	// A member of Alpha.
 	o.grant(t, "alpha-viewer@x.io", o.id("alpha-project"), 0, auth.RoleViewer)
 	g := o.grant(t, "alpha-engineer@x.io", o.id("alpha-project"), 0, auth.RoleEngineer)
-	av := sessionMember("alpha-viewer", e.login("alpha-viewer@x.io"), nil)
-	ae := sessionMember("alpha-engineer", e.login("alpha-engineer@x.io"), nil)
+	av := sessionMember("alpha-viewer", e.signIn("alpha-viewer@x.io"), nil)
+	ae := sessionMember("alpha-engineer", e.signIn("alpha-engineer@x.io"), nil)
 	var me struct {
 		Access   string          `json:"access"`
 		Role     string          `json:"role"`
@@ -748,7 +810,7 @@ func TestProjectAccessRules(t *testing.T) {
 	}
 	// The shared database shows in both projects.
 	o.grant(t, "beta-only@x.io", o.id("beta-project"), 0, auth.RoleViewer)
-	bv := sessionMember("beta-viewer", e.login("beta-only@x.io"), nil)
+	bv := sessionMember("beta-viewer", e.signIn("beta-only@x.io"), nil)
 	if got := assetNames(t, bv, ""); strings.Join(got, ",") != "db-beta,host-beta,shared-db" {
 		t.Errorf("Beta's viewer sees %v", got)
 	}
@@ -807,7 +869,7 @@ func TestProjectAccessRules(t *testing.T) {
 	// An organisation viewer with engineer on Alpha acts on Alpha only.
 	e.user("mixed@x.io", auth.RoleViewer)
 	o.grant(t, "mixed@x.io", o.id("alpha-project"), 0, auth.RoleEngineer)
-	mixed := sessionMember("mixed", e.login("mixed@x.io"), nil)
+	mixed := sessionMember("mixed", e.signIn("mixed@x.io"), nil)
 	if got := assetNames(t, mixed, ""); len(got) != len(all) {
 		t.Errorf("mixed sees %v, want every asset", got)
 	}
@@ -830,7 +892,7 @@ func TestProjectAccessRules(t *testing.T) {
 	}
 	// A token never acts above its member's grant, and follows it.
 	o.grant(t, "token-user@x.io", o.id("alpha-project"), 0, auth.RoleEngineer)
-	ts := e.login("token-user@x.io")
+	ts := e.signIn("token-user@x.io")
 	var tok struct{ Secret string }
 	if code := ts.do("POST", "/api/v1/tokens", map[string]any{"name": "ci", "role": "admin"}, nil); code != 403 {
 		t.Errorf("token above the grant: %d, want 403", code)
@@ -863,7 +925,7 @@ func TestProjectAccessRules(t *testing.T) {
 	var team store.Team
 	o.admin.do("POST", "/api/v1/teams", map[string]any{"name": "team-y", "members": []int64{teamedID}}, &team)
 	o.admin.do("POST", "/api/v1/access-grants", map[string]any{"project_id": o.id("beta-project"), "team_id": team.ID, "role": "viewer"}, nil)
-	teamed := sessionMember("teamed", e.login("teamed@x.io"), nil)
+	teamed := sessionMember("teamed", e.signIn("teamed@x.io"), nil)
 	if got := assetNames(t, teamed, ""); len(got) != 3 {
 		t.Errorf("team member sees %v", got)
 	}
@@ -901,6 +963,93 @@ func TestProjectAccessRules(t *testing.T) {
 		t.Errorf("agent token: %d", code)
 	}
 	o.ingest(t, "host-alpha", "alpha-m1", "prod-alpha", "pkg:npm/alpha-private-lib@1.0.1")
+
+	// Ignore rules and the approval inbox (0.7). A member with security on
+	// Alpha may ignore Alpha's issues on their asset, but not on every
+	// asset of the organisation, and decides only Alpha's requests.
+	o.grant(t, "alpha-sec@x.io", o.id("alpha-project"), 0, auth.RoleSecurity)
+	sec := sessionMember("alpha-sec", e.signIn("alpha-sec@x.io"), nil)
+	ignore := func(m member, finding, scope string) (int, string) {
+		return m.do("POST", "/api/v1/findings/"+o.s(finding)+"/actions",
+			[]byte(`{"action":"ignore","reason":"false_positive","note":"n","scope":"`+scope+`","expiry":"never"}`))
+	}
+	if code, body := ignore(sec, "alpha-finding", "everywhere"); code != 403 {
+		t.Errorf("project security ignores everywhere: %d %s", code, body)
+	}
+	if code, body := ignore(sec, "alpha-finding", "asset"); code != 200 {
+		t.Errorf("project security ignores on the asset: %d %s", code, body)
+	}
+	// An organisation admin ignores Beta's issue everywhere: it covers no
+	// finding Alpha's members can see, so they do not see the rule.
+	if code, body := ignore(admin, "beta-finding", "everywhere"); code != 200 {
+		t.Fatalf("admin ignores everywhere: %d %s", code, body)
+	}
+	var rules struct{ Items []store.IgnoreRule }
+	o.admin.do("GET", "/api/v1/ignore-rules", nil, &rules)
+	var betaRule int64
+	for _, r := range rules.Items {
+		if r.Scope == "everywhere" && r.Key == "CVE-2099-0001" {
+			betaRule = r.ID
+		}
+	}
+	code, body = sec.do("GET", "/api/v1/ignore-rules?status=all", nil)
+	if code != 200 || strings.Contains(body, fmt.Sprintf(`"id":%d,`, betaRule)) || strings.Contains(strings.ToLower(body), "beta") {
+		t.Errorf("Alpha's view of ignore rules: %d %s", code, body)
+	}
+	if code, _ := sec.do("DELETE", fmt.Sprintf("/api/v1/ignore-rules/%d", betaRule), nil); code != 404 {
+		t.Errorf("project security ends a rule it cannot see: %d, want 404", code)
+	}
+	// A rule for every asset that covers a visible finding is shown, with
+	// only the member's findings counted, and only the organisation ends it.
+	if code, body := ignore(admin, "shared-finding", "everywhere"); code != 200 {
+		t.Fatalf("admin ignores the shared database's issue everywhere: %d %s", code, body)
+	}
+	var mine struct{ Items []store.IgnoreRule }
+	get(sec, "/api/v1/ignore-rules", &mine)
+	var sharedRule *store.IgnoreRule
+	for i, r := range mine.Items {
+		if r.Scope == "everywhere" {
+			sharedRule = &mine.Items[i]
+		}
+	}
+	if sharedRule == nil || sharedRule.Findings != 1 {
+		t.Fatalf("Alpha's view of the rule on the shared database: %+v", mine.Items)
+	}
+	if code, _ := sec.do("DELETE", fmt.Sprintf("/api/v1/ignore-rules/%d", sharedRule.ID), nil); code != 403 {
+		t.Errorf("project security ends a rule for every asset: %d, want 403", code)
+	}
+	// The inbox: Beta's request is not Alpha's to see or decide.
+	var inbox struct {
+		Items     []store.IgnoreRequest
+		CanDecide bool `json:"can_decide"`
+	}
+	get(sec, "/api/v1/ignore-requests?status=all", &inbox)
+	if !inbox.CanDecide || len(inbox.Items) != 0 {
+		t.Errorf("Alpha's inbox: %+v", inbox)
+	}
+	if code, _ := sec.do("POST", "/api/v1/ignore-requests/"+o.s("beta-ignorerequest")+"/decision", []byte(`{"decision":"approve"}`)); code != 404 {
+		t.Errorf("project security decides Beta's request: %d, want 404", code)
+	}
+	// An organisation viewer with security on Alpha sees every request but
+	// may decide only Alpha's.
+	o.grant(t, "mixed@x.io", o.id("alpha-project"), 0, auth.RoleSecurity)
+	get(mixed, "/api/v1/ignore-requests?status=all", &inbox)
+	if len(inbox.Items) != 0 {
+		t.Errorf("mixed's inbox lists requests outside Alpha: %+v", inbox.Items)
+	}
+	if code, _ := mixed.do("POST", "/api/v1/ignore-requests/"+o.s("beta-ignorerequest")+"/decision", []byte(`{"decision":"decline"}`)); code != 403 {
+		t.Errorf("mixed decides Beta's request: %d, want 403", code)
+	}
+	// Checks follow the asset.
+	if code, _ := sec.do("POST", "/api/v1/assets/"+o.s("beta-asset")+"/check", nil); code != 404 {
+		t.Errorf("project member checks Beta's asset: %d, want 404", code)
+	}
+	if code, _ := av.do("POST", "/api/v1/assets/"+o.s("alpha-asset")+"/check", nil); code != 403 {
+		t.Errorf("Alpha's viewer checks: %d, want 403", code)
+	}
+	if code, _ := sec.do("POST", "/api/v1/assets/"+o.s("alpha-asset")+"/check", nil); code != 201 && code != 200 {
+		t.Errorf("Alpha's security member checks Alpha's asset: %d", code)
+	}
 
 	// The evidence report follows the switcher (licensed build).
 	if api.BuildEdition == "ee" {
@@ -992,6 +1141,11 @@ func TestProjectScopeInDatabase(t *testing.T) {
 		o.id("alpha-asset"), o.id("beta-asset")); err == nil {
 		t.Error("a member of Alpha related its host to Beta's")
 	}
+	// Nor can it create an ignore rule for every asset (0.7).
+	if _, err := pool.Exec(member, `INSERT INTO finding_exceptions (kind, key, component_id, reason)
+		SELECT 'vulnerability', 'CVE-2099-0001', component_id, 'accepted_risk' FROM findings WHERE id = $1`, o.id("alpha-finding")); err == nil {
+		t.Error("a member of Alpha created an ignore rule for every asset")
+	}
 	// Choosing a project narrows an organisation-wide connection the same way.
 	var n int
 	if err := pool.QueryRow(tenant.WithProject(ws, o.id("alpha-project")), `SELECT count(*) FROM findings`).Scan(&n); err != nil || n != 2 {
@@ -1004,7 +1158,7 @@ func TestProjectScopeInDatabase(t *testing.T) {
 func TestProjectMCP(t *testing.T) {
 	o := newOrg(t)
 	o.grant(t, "mcp-user@x.io", o.id("alpha-project"), 0, auth.RoleEngineer)
-	s := o.e.login("mcp-user@x.io")
+	s := o.e.signIn("mcp-user@x.io")
 	var tok struct{ Secret string }
 	if code := s.do("POST", "/api/v1/tokens", map[string]any{"name": "mcp", "role": "viewer"}, &tok); code != 201 {
 		t.Fatalf("token: %d", code)

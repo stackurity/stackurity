@@ -22,6 +22,7 @@ Every new table has `workspace_id` defaulting to `stackurity_ws()`, row-level se
 - An **organisation-wide role** (today's workspace role) sees every asset, in every project and in none.
 - A **role on a project** sees that project's assets; a **role on an asset** sees that asset. A **team's** grant applies to everyone in the team, now and later. Grants on an **archived** project give nothing.
 - What hangs off a visible asset is visible: findings, fix groups, inventory, coverage, collections, relations (both ends visible), finding events, remediation actions, components (through inventory) with their in-use counts, search hits, reports and exports. An **incident** spanning several projects is visible through any visible finding; its counts, asset and component names, priority, SOS flag and title are recomputed from the visible findings (`store.narrowIncidents`). Collection and coverage problems follow their asset; feed problems hold no tenant data.
+- **Checks, ignore rules and the approval inbox** (0.7). A check follows its asset. An ignore rule for one asset follows the asset. A rule for **every asset** applies across every project, so only an organisation-wide security or admin role may create one, approve a request for one or end one; a member sees such a rule only through a visible finding it covers, with only those findings counted, and a narrowed connection cannot insert one (the row check fails for a rule that covers nothing yet). A request to ignore issues is visible when every issue in it is; someone with security through a project grant decides the requests about issues all on assets where they hold it, and sees those and their own in the inbox.
 - **Audit events** about visible assets, findings and incidents are visible; events about anything else (people, settings, projects) are for organisation-wide roles.
 - **Assets in no project** are seen by organisation-wide roles only. Home asks them to file the assets ("N assets are not in a project").
 - **Organisation routes** (users, teams, integrations, channels, routes, deliveries, jobs, secrets, enrollments, remediation plans and policies, ingest, project management) refuse members with project access only (403).
@@ -46,7 +47,7 @@ AND ((SELECT stackurity_narrowed()) IS NOT TRUE
      OR asset_id IN (SELECT unnest(stackurity_visible_assets())))
 ```
 
-for `assets` (on `id`), `asset_identifiers`, `collections`, `coverage`, `inventory`, `findings`, `fix_groups`, `remediation_actions`; both ends for `asset_relations`; through the parent row for `coverage_history` (collections), `finding_events` (findings), `remediation_plans` (their actions) and `incidents` (findings, or the asset in a collection or coverage key); `asset_ids <@` for `identity_conflicts`; and `stackurity_audit_visible()` for reading `audit_events` (inserting stays workspace-wide). The component catalogue was already visible only through `inventory`, so it follows. The same predicate is the `WITH CHECK`, so a narrowed connection cannot write a row it could not read (for example a relation to another project's asset).
+for `assets` (on `id`), `asset_identifiers`, `collections`, `coverage`, `inventory`, `findings`, `fix_groups`, `remediation_actions`, `checks`; `finding_exceptions` (one asset, or for every asset through a covered finding) and `ignore_requests` (every issue in it); both ends for `asset_relations`; through the parent row for `coverage_history` (collections), `finding_events` (findings), `remediation_plans` (their actions) and `incidents` (findings, or the asset in a collection or coverage key); `asset_ids <@` for `identity_conflicts`; and `stackurity_audit_visible()` for reading `audit_events` (inserting stays workspace-wide). The component catalogue was already visible only through `inventory`, so it follows. The same predicate is the `WITH CHECK`, so a narrowed connection cannot write a row it could not read (for example a relation to another project's asset).
 
 **The fast path.** `(SELECT stackurity_narrowed())` is an InitPlan evaluated once per query; for an organisation-wide caller it is false, the `OR` is decided by its first term, and the hashed SubPlan that lists visible assets is never executed (the plan shows it as "never executed"). For a narrowed caller the list is computed once per query and probed by hash. Inside the functions, `(SELECT stackurity_member())` and `IN (SELECT unnest(stackurity_member_projects()))` are likewise evaluated once rather than per row; the first version called them per row and members' lists took 0.2 to 0.3 seconds.
 
@@ -68,15 +69,15 @@ A route with `project_ids` hears about issues counted per asset for those projec
 
 ## Performance
 
-`TestProjectScopePerformance` (`STACKURITY_PERF_FINDINGS=130000 go test ./internal/store -run TestProjectScopePerformance -v`) seeds 130,000 open findings on 2,000 hosts, vacuums and analyses as autovacuum would, and times each caller (median of 7). On the development machine (PostgreSQL 17 in Docker):
+`TestProjectScopePerformance` (`STACKURITY_PERF_FINDINGS=130000 go test ./internal/store -run TestProjectScopePerformance -v`) seeds 130,000 open findings on 2,000 hosts, vacuums and analyses as autovacuum would, and times each caller (median of 7). On the development machine, on top of 0.7 (PostgreSQL 17 in Docker):
 
 | Caller | Findings list (first page and total) | Findings summary | Asset list |
 | --- | --- | --- | --- |
-| Organisation-wide, 0.6 policies (baseline, same data) | 52 ms | 118 ms | 3 ms |
-| Organisation-wide, 0.8 (fast path) | 57 ms | 118 ms | 4 ms |
-| Organisation-wide, project of 100 hosts chosen | 68 ms | 96 ms | 16 ms |
-| Member of a project of 100 hosts | 73 ms | 102 ms | 10 ms |
-| Member of a project of 1,000 hosts | 87 ms | 124 ms | 11 ms |
+| Organisation-wide, 0.6 policies (baseline, same data) | 51 ms | 116 ms | 3 ms |
+| Organisation-wide, 0.8 (fast path) | 58 ms | 132 ms | 4 ms |
+| Organisation-wide, project of 100 hosts chosen | 88 ms | 102 ms | 7 ms |
+| Member of a project of 100 hosts | 77 ms | 101 ms | 9 ms |
+| Member of a project of 1,000 hosts | 76 ms | 119 ms | 10 ms |
 
 The fast path adds about 3 ms of planning time per query. The test fails if any of these reaches a second.
 

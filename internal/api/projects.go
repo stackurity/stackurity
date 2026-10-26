@@ -102,6 +102,12 @@ var projectRoutes = map[string]projectScope{
 	"GET /api/v1/audit":                        scopedRead,
 	// Members with project access only see the people of their projects.
 	"GET /api/v1/users/directory": scopedRead,
+	// The loop (0.7): checks, ignore rules and the approval inbox.
+	"GET /api/v1/checks":               scopedRead,
+	"GET /api/v1/checks/{id}":          scopedRead,
+	"GET /api/v1/ignore-rules":         scopedRead,
+	"GET /api/v1/ignore-requests":      scopedRead,
+	"GET /api/v1/ignore-requests/{id}": scopedRead,
 
 	// Narrowed, and the handler checks the role on each asset.
 	"PATCH /api/v1/assets/{id}":            scopedWrite,
@@ -110,6 +116,15 @@ var projectRoutes = map[string]projectScope{
 	"POST /api/v1/findings/{id}/actions":   scopedWrite,
 	"POST /api/v1/findings/actions":        scopedWrite,
 	"POST /api/v1/incidents/{id}/actions":  scopedWrite,
+	"POST /api/v1/assets/{id}/check":       scopedWrite,
+	"POST /api/v1/fix-groups/{id}/check":   scopedWrite,
+	"POST /api/v1/fix-groups/{id}/applied": scopedWrite,
+	// Anyone who can see the issues may ask; the request is narrowed too.
+	"POST /api/v1/ignore-requests": scopedWrite,
+	// Security on every issue's asset; a rule for every asset needs an
+	// organisation-wide security or admin role (Server.everywhere).
+	"POST /api/v1/ignore-requests/{id}/decision": scopedWrite,
+	"DELETE /api/v1/ignore-rules/{id}":           scopedWrite,
 }
 
 // ProjectScopeOf returns how a route ("METHOD pattern") treats project
@@ -572,4 +587,17 @@ func (s *Server) setDefaultProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(204)
+}
+
+// everywhere checks that the caller may ignore an issue on every asset of
+// the organisation, which only an organisation-wide security or admin role
+// may: such a rule applies to assets of every project, and to those found
+// later. It returns the context to apply it in, without the project chosen
+// in the switcher, so the rule covers every asset at once.
+func (s *Server) everywhere(w http.ResponseWriter, r *http.Request) (context.Context, bool) {
+	if !principal(r).Role.AtLeast(auth.RoleSecurity) {
+		writeError(w, 403, "forbidden", "ignoring an issue on every asset needs an organisation-wide security or admin role; ignore it on this asset instead")
+		return nil, false
+	}
+	return tenant.WithoutProject(r.Context()), true
 }

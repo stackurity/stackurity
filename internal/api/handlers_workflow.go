@@ -79,6 +79,13 @@ func (s *Server) applyAction(w http.ResponseWriter, r *http.Request, ids []int64
 			return
 		}
 	}
+	ctx := r.Context()
+	if req.Action == "ignore" && req.Scope == store.ScopeEverywhere {
+		var ok bool
+		if ctx, ok = s.everywhere(w, r); !ok {
+			return
+		}
+	}
 	a := store.FindingAction{Action: req.Action, Note: req.Note, Until: req.Until, Mitigation: req.Mitigation,
 		AssignUser: req.UserID, AssignTeam: req.TeamID, UntilFix: req.UntilFix,
 		Ignore: store.IgnoreSpec{Reason: req.Reason, Scope: req.Scope, Expiry: req.Expiry}}
@@ -93,7 +100,7 @@ func (s *Server) applyAction(w http.ResponseWriter, r *http.Request, ids []int64
 	done := 0
 	var failures []string
 	for _, id := range ids {
-		if err := s.Store.ApplyFindingAction(r.Context(), id, a, actor); err != nil {
+		if err := s.Store.ApplyFindingAction(ctx, id, a, actor); err != nil {
 			if errors.Is(err, store.ErrInvalidAction) || errors.Is(err, store.ErrNotFound) {
 				failures = append(failures, itoa(id)+": "+err.Error())
 				continue

@@ -817,3 +817,34 @@ func (s *Store) ProjectColleagues(ctx context.Context, userID int64) (map[int64]
 	}
 	return out, nil
 }
+
+// FixGroupAsset returns the asset of a fix group the caller can see.
+func (s *Store) FixGroupAsset(ctx context.Context, id string) (int64, error) {
+	var a int64
+	err := s.Pool.QueryRow(ctx, `SELECT asset_id FROM fix_groups WHERE id = $1`, id).Scan(&a)
+	return a, notFound(err)
+}
+
+// IgnoreRuleAsset returns the asset of an ignore rule the caller can see;
+// nil for a rule that covers every asset.
+func (s *Store) IgnoreRuleAsset(ctx context.Context, id int64) (*int64, error) {
+	var a *int64
+	err := s.Pool.QueryRow(ctx, `SELECT asset_id FROM finding_exceptions WHERE id = $1`, id).Scan(&a)
+	return a, notFound(err)
+}
+
+// GrantAssets returns the assets on which userID holds at least min
+// through project and asset grants (their own or their teams'), counting
+// active projects only.
+func (s *Store) GrantAssets(ctx context.Context, userID int64, min auth.Role) ([]int64, error) {
+	rows, err := s.Pool.Query(tenant.WithoutProject(ctx), `WITH g AS (
+		  SELECT g.project_id, g.asset_id FROM access_grants g LEFT JOIN projects p ON p.id = g.project_id
+		  WHERE (g.user_id = $1 OR g.team_id IN (SELECT tm.team_id FROM team_members tm WHERE tm.user_id = $1))
+		    AND (g.asset_id IS NOT NULL OR p.archived_at IS NULL) AND `+roleRank("g.role")+` >= `+roleRank("$2::text")+`)
+		SELECT pa.asset_id FROM project_assets pa JOIN g ON g.project_id = pa.project_id
+		UNION SELECT asset_id FROM g WHERE asset_id IS NOT NULL`, userID, string(min))
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[int64])
+}

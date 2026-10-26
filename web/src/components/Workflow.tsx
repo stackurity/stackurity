@@ -140,7 +140,9 @@ export function FindingActions({
   onDone: () => void;
   compact?: boolean;
 }) {
-  const { me, canAct } = useAuth();
+  const { me, can, canAct } = useAuth();
+  // A rule for every asset covers every project: organisation-wide roles only.
+  const orgSecurity = can("security");
   const engineer = canAct("engineer");
   const security = canAct("security");
   const act = useAction();
@@ -273,6 +275,7 @@ export function FindingActions({
         <IgnorePanel
           title="Ignore"
           submit="Ignore"
+          everywhere={orgSecurity}
           explain="Ignored issues are shown as Accepted, with the reason. They come back as new when the expiry passes, or when a fix ships if you choose that."
           pending={act.pending}
           onCancel={() => setPanel(null)}
@@ -396,11 +399,14 @@ export function IgnorePanel({
   pending,
   onSubmit,
   onCancel,
+  everywhere = true,
 }: {
   title: string;
   submit: string;
   explain: string;
   pending: boolean;
+  /** Offer "every asset"; false for people who act through project grants only. */
+  everywhere?: boolean;
   onSubmit: (v: IgnoreFormValue) => void;
   onCancel: () => void;
 }) {
@@ -453,15 +459,19 @@ export function IgnorePanel({
               <span>This asset</span>
             </label>
           </li>
-          <li>
-            <label className="choice">
-              <input type="radio" name={`${id}-scope`} checked={scope === "everywhere"} onChange={() => setScope("everywhere")} />
-              <span>
-                Every asset
-                <span className="hint"> The same issue in the same component, including assets and issues found later.</span>
-              </span>
-            </label>
-          </li>
+          {everywhere ? (
+            <li>
+              <label className="choice">
+                <input type="radio" name={`${id}-scope`} checked={scope === "everywhere"} onChange={() => setScope("everywhere")} />
+                <span>
+                  Every asset
+                  <span className="hint"> The same issue in the same component, including assets and issues found later.</span>
+                </span>
+              </label>
+            </li>
+          ) : (
+            <li className="hint">Ignoring on every asset needs an organisation-wide security or admin role.</li>
+          )}
         </ul>
       </fieldset>
       <fieldset className="field">

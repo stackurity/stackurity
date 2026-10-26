@@ -84,6 +84,15 @@ func (s *Server) checkAsset(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	if !principal(r).Role.AtLeast(auth.RoleEngineer) {
+		if _, err := s.Store.GetAsset(r.Context(), id); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		if !s.requireOn(w, r, auth.RoleEngineer, id) {
+			return
+		}
+	}
 	s.requestCheck(w, r, store.CheckRequest{AssetID: id})
 }
 
@@ -95,10 +104,26 @@ func fixGroupParam(r *http.Request) (string, error) {
 	return id, nil
 }
 
+// fixGroupAllowed checks a role from project grants on a fix's asset.
+func (s *Server) fixGroupAllowed(w http.ResponseWriter, r *http.Request, id string, min auth.Role) bool {
+	if principal(r).Role.AtLeast(min) {
+		return true
+	}
+	asset, err := s.Store.FixGroupAsset(r.Context(), id)
+	if err != nil {
+		s.fail(w, r, err)
+		return false
+	}
+	return s.requireOn(w, r, min, asset)
+}
+
 func (s *Server) checkFixGroup(w http.ResponseWriter, r *http.Request) {
 	id, err := fixGroupParam(r)
 	if err != nil {
 		s.fail(w, r, err)
+		return
+	}
+	if !s.fixGroupAllowed(w, r, id, auth.RoleEngineer) {
 		return
 	}
 	s.requestCheck(w, r, store.CheckRequest{FixGroup: id})
@@ -111,6 +136,9 @@ func (s *Server) fixApplied(w http.ResponseWriter, r *http.Request) {
 	id, err := fixGroupParam(r)
 	if err != nil {
 		s.fail(w, r, err)
+		return
+	}
+	if !s.fixGroupAllowed(w, r, id, auth.RoleEngineer) {
 		return
 	}
 	actor := principal(r).Actor(r)
@@ -187,8 +215,25 @@ func (s *Server) endIgnoreRule(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	// A rule for one asset needs security on that asset; a rule for every
+	// asset reopens issues across every project, so it needs an
+	// organisation-wide security or admin role.
+	asset, err := s.Store.IgnoreRuleAsset(r.Context(), id)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	ctx := r.Context()
+	if asset == nil {
+		var ok bool
+		if ctx, ok = s.everywhere(w, r); !ok {
+			return
+		}
+	} else if !s.requireOn(w, r, auth.RoleSecurity, *asset) {
+		return
+	}
 	actor := principal(r).Actor(r)
-	n, err := s.Store.EndIgnoreRule(r.Context(), id, actor)
+	n, err := s.Store.EndIgnoreRule(ctx, id, actor)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -242,8 +287,18 @@ func (s *Server) createIgnoreRequest(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 201, req)
 }
 
-// canDecide: security and admin users may ignore issues and decide requests.
-func canDecide(r *http.Request) bool { return principal(r).Role.AtLeast(auth.RoleSecurity) }
+// canDecide: security and admin users may ignore issues and decide
+// requests: organisation-wide, or through project grants for their
+// projects' issues (decidesByGrant).
+func canDecide(r *http.Request) bool {
+	p := principal(r)
+	return auth.Higher(p.Role, p.ProjectRole).AtLeast(auth.RoleSecurity)
+}
+
+// decidesByGrant: the caller decides only through project or asset grants.
+func decidesByGrant(r *http.Request) bool {
+	return canDecide(r) && !principal(r).Role.AtLeast(auth.RoleSecurity)
+}
 
 // listIgnoreRequests: the inbox for those who decide, a person's own
 // requests for everyone else. status=pending (the default), approved,
@@ -260,13 +315,25 @@ func (s *Server) listIgnoreRequests(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, badRequest("status must be pending, approved, declined or all"))
 		return
 	}
-	if !canDecide(r) {
-		p := principal(r)
+	if p := principal(r); !canDecide(r) || decidesByGrant(r) {
 		if p.User == nil {
 			writeJSON(w, 200, paged([]store.IgnoreRequest{}, 0, f.Page))
 			return
 		}
 		f.RequestedBy = p.User.ID
+		if decidesByGrant(r) {
+			// Their own requests, and those about issues all on assets
+			// where they hold security or admin.
+			on, err := s.Store.GrantAssets(r.Context(), p.User.ID, auth.RoleSecurity)
+			if err != nil {
+				s.fail(w, r, err)
+				return
+			}
+			if on == nil {
+				on = []int64{}
+			}
+			f.DecidableOn = on
+		}
 	}
 	items, total, err := s.Store.ListIgnoreRequests(r.Context(), f)
 	if err != nil {
@@ -289,9 +356,24 @@ func (s *Server) getIgnoreRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := principal(r)
-	if !canDecide(r) && (p.User == nil || req.RequestedBy == nil || *req.RequestedBy != p.User.ID) {
-		s.fail(w, r, store.ErrNotFound)
-		return
+	own := p.User != nil && req.RequestedBy != nil && *req.RequestedBy == p.User.ID
+	if !own && !p.Role.AtLeast(auth.RoleSecurity) {
+		ok := false
+		if canDecide(r) {
+			assets, err := s.Store.FindingAssets(r.Context(), req.FindingIDs)
+			if err != nil {
+				s.fail(w, r, err)
+				return
+			}
+			if ok, err = s.allowedOn(r, auth.RoleSecurity, assets); err != nil {
+				s.fail(w, r, err)
+				return
+			}
+		}
+		if !ok {
+			s.fail(w, r, store.ErrNotFound)
+			return
+		}
 	}
 	writeJSON(w, 200, req)
 }
@@ -323,8 +405,37 @@ func (s *Server) decideIgnoreRequest(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	// Deciding through project grants needs security on every issue's
+	// asset; approving a rule for every asset needs an organisation-wide
+	// security or admin role.
+	cur, err := s.Store.GetIgnoreRequest(r.Context(), id)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	ctx := r.Context()
+	if !principal(r).Role.AtLeast(auth.RoleSecurity) {
+		assets, err := s.Store.FindingAssets(ctx, cur.FindingIDs)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		if len(assets) == 0 {
+			s.fail(w, r, store.ErrNotFound)
+			return
+		}
+		if !s.requireOn(w, r, auth.RoleSecurity, assets...) {
+			return
+		}
+	}
+	if b.Decision == "approve" && cur.Scope == store.ScopeEverywhere {
+		var ok bool
+		if ctx, ok = s.everywhere(w, r); !ok {
+			return
+		}
+	}
 	actor := principal(r).Actor(r)
-	req, err := s.Store.DecideIgnoreRequest(r.Context(), id, b.Decision == "approve", strings.TrimSpace(b.Note), maxDays, actor)
+	req, err := s.Store.DecideIgnoreRequest(ctx, id, b.Decision == "approve", strings.TrimSpace(b.Note), maxDays, actor)
 	if err != nil {
 		s.failAction(w, r, err)
 		return

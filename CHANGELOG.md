@@ -8,7 +8,7 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ### Security
 
-- **Access can be limited to projects, and the database enforces it.** A person or team given a role on a project sees only that project's assets and what hangs off them, in every page, API route, search, report, export, audit view and assistant (MCP) tool. Row-level security narrows every asset-bound table for them (migration `0032`), as it already isolates workspaces, so a query that forgets a filter still cannot return another project's rows. Organisation routes (users, teams, integrations, notifications, jobs, secrets, remediation plans and policies, ingest) refuse them, and every route must declare its project scope or it is refused too. Their tokens act as them. See `docs/design/projects.md`.
+- **Access can be limited to projects, and the database enforces it.** A person or team given a role on a project sees only that project's assets and what hangs off them, in every page, API route, search, report, export, audit view and assistant (MCP) tool. Row-level security narrows every asset-bound table for them (migration `0032`), as it already isolates workspaces, so a query that forgets a filter still cannot return another project's rows. Organisation routes (users, teams, integrations, notifications, jobs, secrets, remediation plans and policies, ingest) refuse them, and every route must declare its project scope or it is refused too. Their tokens act as them. Checks, ignore rules and ignore requests follow their assets; ignoring an issue on every asset, approving such a request or ending such a rule needs an organisation-wide security or admin role. See `docs/design/projects.md`.
 
 ### Added
 
@@ -42,7 +42,7 @@ Each release's section is published as its GitHub release notes, and a tag witho
 - Existing snoozes and risk acceptances keep their dates and behave as before; acceptances made before 0.7 show no reason. Issues fixed before the upgrade can be flagged regressed when they come back.
 - Upgrade agents to 0.7 for Check again within a minute. Older agents keep working and report on their interval.
 - Migration `0032` adds `projects`, `project_assets` and `access_grants`, makes `workspace_members.role` nullable, and adds `workspace_members.default_project_id` and `routes.project_ids`. It replaces the row-level security policies of the asset-bound tables; it rewrites no rows and takes seconds even with 130,000 findings. Nothing changes for existing members until projects and grants are created: everyone keeps their organisation-wide role.
-- Measured on 130,000 open findings, the findings list takes the same time for organisation-wide roles as in 0.6 (57 ms against 52 ms on the same data) and 73 to 87 ms for members of a project (see `docs/design/projects.md`, "Performance").
+- Measured on 130,000 open findings, the findings list takes the same time for organisation-wide roles as in 0.6 (58 ms against 51 ms on the same data) and 76 to 77 ms for members of a project (88 ms with a project chosen) (see `docs/design/projects.md`, "Performance").
 - Do not roll back to an earlier release after giving someone project access only: earlier releases cannot read a membership without a role. Remove such members, or restore the pre-upgrade backup.
 - Single sign-on role mapping does not change members with project access only.
 

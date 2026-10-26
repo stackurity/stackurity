@@ -183,6 +183,16 @@ BEGIN
         ('fix_groups', 'asset_id IN (SELECT unnest(stackurity_visible_assets()))'),
         ('remediation_actions', 'asset_id IN (SELECT unnest(stackurity_visible_assets()))'),
         ('identity_conflicts', 'asset_ids <@ (SELECT stackurity_visible_assets())'),
+        ('checks', 'asset_id IN (SELECT unnest(stackurity_visible_assets()))'),
+        -- An ignore rule for one asset follows the asset. A rule for every
+        -- asset ("everywhere") is seen only through a visible finding it
+        -- covers, and a narrowed connection can never create one: the check
+        -- below fails for a new rule that covers nothing yet.
+        ('finding_exceptions', '(finding_exceptions.asset_id IS NOT NULL AND finding_exceptions.asset_id IN (SELECT unnest(stackurity_visible_assets())))'
+            || ' OR (finding_exceptions.asset_id IS NULL AND EXISTS (SELECT 1 FROM findings f WHERE f.exception_id = finding_exceptions.id))'),
+        -- A request to ignore issues is seen when every issue in it is.
+        ('ignore_requests', '(ignore_requests.asset_id IS NULL OR ignore_requests.asset_id IN (SELECT unnest(stackurity_visible_assets())))'
+            || ' AND NOT EXISTS (SELECT 1 FROM unnest(ignore_requests.finding_ids) x(id) WHERE NOT EXISTS (SELECT 1 FROM findings f WHERE f.id = x.id))'),
         -- A remediation plan is seen through its actions on visible assets.
         ('remediation_plans', 'EXISTS (SELECT 1 FROM remediation_actions ra WHERE ra.plan_id = remediation_plans.id)'),
         -- An incident is seen through its visible findings (its counts and

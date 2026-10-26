@@ -99,6 +99,10 @@ func TestProjectRouteScope(t *testing.T) {
 	if routeMatches(r, store.Incident{Kind: "vulnerability", Key: "CVE-1", Priority: "P1"}) {
 		t.Error("a route limited to projects matched a tracker incident")
 	}
+	// Issues that came back after a fix (0.7) are counted per asset too.
+	if issueInScope(r, store.IssueCount{AssetID: 4, Kind: "vulnerability"}) || !issueInScope(r, store.IssueCount{AssetID: 3, Kind: "vulnerability"}) {
+		t.Error("issueInScope ignores the project")
+	}
 	if !assetInScope(r, 3, "", nil) || assetInScope(r, 4, "", nil) {
 		t.Error("assetInScope ignores the project")
 	}
