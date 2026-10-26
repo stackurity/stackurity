@@ -3708,6 +3708,8 @@ h6.md-h {
 @media (max-width: 720px) {
   .home-tiles {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
 
 /* --- projects: the switcher next to the workspace, project chips, settings */
 
