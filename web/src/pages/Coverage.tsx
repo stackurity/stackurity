@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import { api, type CoverageRow, type List, type Overview } from "../api";
+import { api, type CoverageRow, type List, type Overview, type SecondCheckSummary } from "../api";
 import { useLoad } from "../hooks";
 import { Table } from "../components/Table";
 import { Card, EmptyState, ErrorBox, Loading, PageHeader, Pager } from "../components/ui";
@@ -18,6 +18,7 @@ export function CoveragePage() {
   );
   const overview = useLoad(() => api.get<Overview>("/overview"), []);
   const states = overview.data?.asset_coverage ?? {};
+  const checks = useLoad(() => api.get<SecondCheckSummary>("/second-checks"), []);
 
   return (
     <>
@@ -41,6 +42,62 @@ export function CoveragePage() {
           Each asset's page shows its states and reasons, and its Inventory tab marks every component that could not be checked.
           Components that could not be checked are listed on the <Link to="/intelligence#gaps">Intelligence page</Link>.
         </p>
+      </Card>
+      <h2 className="section-title">Second check of high-impact findings</h2>
+      <Card>
+        <p className="small">
+          P1, SOS, known exploited, regressed, unconfirmed and ambiguous findings are re-derived from the raw advisory record and the
+          raw observed version by a separate, simpler code path. A disagreement sets the finding to needs validation.{" "}
+          <Link to="/help/how-stackurity-knows">How Stackurity knows</Link>
+        </p>
+        <ErrorBox error={checks.error} title="Could not load second checks" />
+        {checks.data && (
+          <>
+            <dl className="coverage-states">
+              <div>
+                <dt>
+                  <Link to="/fixes/issues?second_check=disagreed">Disagreed</Link>{" "}
+                  <span className="mono">{checks.data.disagreed.toLocaleString()}</span>
+                </dt>
+                <dd className="small">Open findings the second check derived differently. They need a person to look.</dd>
+              </div>
+              <div>
+                <dt>
+                  <Link to="/fixes/issues?second_check=agreed">Agreed</Link> <span className="mono">{checks.data.agreed.toLocaleString()}</span>
+                </dt>
+                <dd className="small">Open findings the second check reached on its own.</dd>
+              </div>
+              <div>
+                <dt>
+                  <Link to="/fixes/issues?second_check=could_not_check">Could not check</Link>{" "}
+                  <span className="mono">{checks.data.could_not_check.toLocaleString()}</span>
+                </dt>
+                <dd className="small">Versions or channels the simpler check does not read (pre-releases, SUSE, FIPS builds). Each says why.</dd>
+              </div>
+              <div>
+                <dt>
+                  Waiting <span className="mono">{checks.data.pending.toLocaleString()}</span>
+                </dt>
+                <dd className="small">Covered findings not checked yet. The check runs in the background, a batch each minute.</dd>
+              </div>
+            </dl>
+            <p className="hint">{checks.data.logged_30d.toLocaleString()} disagreements logged in the last 30 days, kept for new matching tests.</p>
+            {checks.data.recent.length > 0 && (
+              <details>
+                <summary>Latest disagreements ({checks.data.recent.length})</summary>
+                <ul className="ref-list small">
+                  {checks.data.recent.map((d) => (
+                    <li key={d.id} className="break">
+                      {d.finding_id ? <Link to={`/findings/${d.finding_id}`}>{d.key}</Link> : <span className="mono">{d.key}</span>}{" "}
+                      <span className="mono">{d.purl}</span>:{" "}
+                      {d.differences.map((x) => `${x.field.replace(/_/g, " ")} (matcher ${x.matcher}, second check ${x.independent})`).join("; ")}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </>
+        )}
       </Card>
       <h2 className="section-title">Collector scopes</h2>
       <div className="filters">

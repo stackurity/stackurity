@@ -56,14 +56,17 @@ export function evidenceState(f: Finding): EvidenceState {
         explain:
           f.kind === "end_of_life"
             ? "The installed version was read from an authoritative source and its release line is past its end-of-life date."
-            : "The installed version was read from an authoritative source (package database or lockfile) and compared with the advisory's ranges.",
+            : "The installed version was read from an authoritative source (package database or lockfile) and compared with the advisory's ranges. A match is not proof that it can be exploited here.",
       };
     case "needs_validation":
       return {
         state: "needs_validation",
         label: "needs validation",
         tone: "warn",
-        explain: `The installed version is not confirmed${conf ? ` (inventory confidence: ${conf})` : ""}; check the real version on the asset before acting.`,
+        explain:
+          conf && conf !== "confirmed"
+            ? `The installed version is not confirmed (inventory confidence: ${conf}); check the real version on the asset before acting.`
+            : "The match cannot be relied on yet: see Missing information above.",
       };
     case "stale":
       return {
@@ -73,7 +76,7 @@ export function evidenceState(f: Finding): EvidenceState {
         explain: "The asset has not reported recently: this was true when it was last seen, but may no longer be.",
       };
     case "rejected":
-      return { state: "rejected", label: "rejected", tone: "muted", explain: "Someone reviewed the evidence and rejected this finding." };
+      return { state: "rejected", label: "rejected", tone: "muted", explain: "A person marked this a false positive." };
   }
   return { state: "unknown", label: "unknown", tone: "muted", explain: "The evidence could not be classified: no confirmed version and no recorded source." };
 }

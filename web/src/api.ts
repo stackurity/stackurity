@@ -935,6 +935,59 @@ export interface FindingDetail {
   related_advisories?: Advisory[] | null;
   /** For open findings: the version to upgrade this installed copy to. */
   upgrade?: UpgradeRecommendation | null;
+  /** Why it matched (1.0); absent from older servers. */
+  why?: FindingWhy | null;
+}
+
+/** One thing the independent second check derived differently. */
+export interface SecondCheckDifference {
+  field: string;
+  matcher: string;
+  independent: string;
+  note?: string;
+}
+
+export interface SecondCheck {
+  result: "agreed" | "disagreed" | "could_not_check" | string;
+  reason: string;
+  differences: SecondCheckDifference[];
+  independent: Record<string, unknown>;
+  checked_at: string;
+}
+
+/** Why a finding matched: the stored rule, its evidence and what is missing (internal/why). */
+export interface FindingWhy {
+  sentence: string;
+  type: "package_advisory" | "os_package" | "container_image" | "end_of_life" | string;
+  installed: { version: string; compared?: string; from: string; collector: string; confidence: string; observed_at: string | null };
+  source: { record?: string; ecosystem?: string; feed: string; refreshed_at: string | null; stale: boolean };
+  rule: { kind: string; range?: string; comparator?: string; text: string; ambiguous?: string[] };
+  fixed_version?: string;
+  evidence_state: string;
+  evidence_state_text: string;
+  missing_information: string[];
+  second_check: SecondCheck | null;
+  second_check_text: string;
+}
+
+export interface SecondCheckDisagreement {
+  id: number;
+  finding_id: number | null;
+  kind: string;
+  key: string;
+  purl: string;
+  version: string;
+  differences: SecondCheckDifference[];
+  created_at: string;
+}
+
+export interface SecondCheckSummary {
+  agreed: number;
+  disagreed: number;
+  could_not_check: number;
+  pending: number;
+  logged_30d: number;
+  recent: SecondCheckDisagreement[];
 }
 
 /** Support status of one release line (endoflife.date). */

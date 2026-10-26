@@ -4101,3 +4101,13 @@ h6.md-h {
     font-size: 1.25rem;
   }
 }
+
+/* Why it matched (1.0): the lead sentence of a finding. */
+.why-sentence {
+  font-size: 1.05rem;
+  line-height: 1.5;
+  margin: 0 0 0.5rem;
+}
+.why .badges {
+  margin: 0 0 0.25rem;
+}
