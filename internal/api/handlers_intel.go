@@ -33,12 +33,8 @@ func (s *Server) listFindings(w http.ResponseWriter, r *http.Request) {
 	f.FixGroup = q.Get("fix_group")
 	f.AssigneeTeam = qInt(r, "assignee_team")
 	f.IncidentID = qInt(r, "incident_id")
-	if d := qInt(r, "resolved_within"); d > 0 {
-		f.ResolvedWithinDays = int(min(d, 3650))
-	}
-	if d := qInt(r, "new_within"); d > 0 {
-		f.NewWithinDays = int(min(d, 3650))
-	}
+	f.ResolvedWithinDays = withinDays(qInt(r, "resolved_within"))
+	f.NewWithinDays = withinDays(qInt(r, "new_within"))
 	switch q.Get("sort") {
 	case "", "priority":
 	case "asset":
