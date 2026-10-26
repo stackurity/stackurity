@@ -44,9 +44,9 @@ func (s *Server) listFindings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch f.State {
-	case "", "active", "new", "acknowledged", "in_progress", "suppressed", "risk_accepted":
+	case "", "active", "new", "acknowledged", "in_progress", "suppressed", "risk_accepted", "regressed":
 	default:
-		s.fail(w, r, badRequest("state must be active, new, acknowledged, in_progress, suppressed or risk_accepted"))
+		s.fail(w, r, badRequest("state must be active, new, acknowledged, in_progress, suppressed, risk_accepted or regressed"))
 		return
 	}
 	switch f.Status {

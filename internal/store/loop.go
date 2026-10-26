@@ -228,9 +228,14 @@ func ignoreFinding(ctx context.Context, tx pgx.Tx, id int64, sp IgnoreSpec, expi
 	if sp.Scope == ScopeAsset {
 		scopeAsset = &assetID
 	}
-	if _, err := tx.Exec(ctx, `UPDATE finding_exceptions SET ended_at = now(), ended_by_name = $5, ended_reason = 'replaced'
-		WHERE ended_at IS NULL AND kind = $1 AND key = $2 AND component_id = $3 AND asset_id IS NOT DISTINCT FROM $4`,
-		kind, key, componentID, scopeAsset, actor.Name); err != nil {
+	rows, err := tx.Query(ctx, `UPDATE finding_exceptions SET ended_at = now(), ended_by_name = $5, ended_reason = 'replaced'
+		WHERE ended_at IS NULL AND kind = $1 AND key = $2 AND component_id = $3 AND asset_id IS NOT DISTINCT FROM $4 RETURNING id`,
+		kind, key, componentID, scopeAsset, actor.Name)
+	if err != nil {
+		return 0, err
+	}
+	replaced, err := pgx.CollectRows(rows, pgx.RowTo[int64])
+	if err != nil {
 		return 0, err
 	}
 	var req *int64
@@ -250,6 +255,19 @@ func ignoreFinding(ctx context.Context, tx pgx.Tx, id int64, sp IgnoreSpec, expi
 		verification = CASE WHEN $2 = 'false_positive' THEN 'rejected' ELSE verification END
 		WHERE id = $1`, id, sp.Reason, sp.Note, sp.Mitigation, expires, sp.Expiry == ExpiryUntilFix, rule); err != nil {
 		return 0, err
+	}
+	// What the replaced rules ignored now follows the new one.
+	if len(replaced) > 0 {
+		if _, err := tx.Exec(ctx, `UPDATE findings SET ignore_reason = $2, state_reason = $3, mitigation = $4,
+			suppressed_until = $5, until_fix = $6, exception_id = $7,
+			verification_before = CASE WHEN $2 = 'false_positive' AND verification_before = '' THEN verification
+			  WHEN $2 <> 'false_positive' THEN '' ELSE verification_before END,
+			verification = CASE WHEN $2 = 'false_positive' THEN 'rejected'
+			  WHEN verification_before <> '' THEN verification_before ELSE verification END
+			WHERE exception_id = ANY($1) AND state = 'risk_accepted'`, replaced, sp.Reason, sp.Note, sp.Mitigation, expires,
+			sp.Expiry == ExpiryUntilFix, rule); err != nil {
+			return 0, err
+		}
 	}
 	if _, err := applyExceptions(ctx, tx, rule, ""); err != nil {
 		return 0, err

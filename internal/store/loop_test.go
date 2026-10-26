@@ -268,6 +268,35 @@ func TestIgnoreEverywhere(t *testing.T) {
 	if f := one(t, s, ctx, b, "CVE-E"); f.State != "new" {
 		t.Errorf("asset scope reached another asset: %s", f.State)
 	}
+	// A second ignore with the same scope replaces the rule; what the old
+	// rule ignored follows the new one.
+	until := time.Now().AddDate(0, 0, 3)
+	if err := s.ApplyFindingAction(ctx, one(t, s, ctx, b, "CVE-E").ID, store.FindingAction{Action: "ignore", Note: "short", Until: &until,
+		Ignore: store.IgnoreSpec{Reason: store.ReasonAcceptedRisk, Scope: store.ScopeEverywhere, Expiry: store.ExpiryDate}}, user); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ApplyFindingAction(ctx, one(t, s, ctx, b, "CVE-E").ID, store.FindingAction{Action: "reopen"}, user); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ApplyFindingAction(ctx, one(t, s, ctx, a, "CVE-E").ID, store.FindingAction{Action: "reopen"}, user); err != nil {
+		t.Fatal(err)
+	}
+	ev := store.FindingAction{Action: "ignore", Note: "first", Until: &until,
+		Ignore: store.IgnoreSpec{Reason: store.ReasonAcceptedRisk, Scope: store.ScopeAsset, Expiry: store.ExpiryDate}}
+	if err := s.ApplyFindingAction(ctx, one(t, s, ctx, a, "CVE-E").ID, ev, user); err != nil {
+		t.Fatal(err)
+	}
+	first := one(t, s, ctx, a, "CVE-E").ExceptionID
+	if err := s.ApplyFindingAction(ctx, one(t, s, ctx, a, "CVE-E").ID, store.FindingAction{Action: "reopen"}, user); err != nil {
+		t.Fatal(err)
+	}
+	ev.Note, ev.Ignore.Reason = "second", store.ReasonMitigated
+	if err := s.ApplyFindingAction(ctx, one(t, s, ctx, a, "CVE-E").ID, ev, user); err != nil {
+		t.Fatal(err)
+	}
+	if f := one(t, s, ctx, a, "CVE-E"); f.ExceptionID == nil || *f.ExceptionID == *first || f.IgnoreReason != store.ReasonMitigated || f.StateReason != "second" {
+		t.Errorf("replaced rule: %+v", f)
+	}
 
 	// A host added later, and a new version on an existing host.
 	c := ingestHost(t, s, ctx, "web-3", "pkg:npm/lodash@4.17.15")
@@ -298,7 +327,7 @@ func TestIgnoreEverywhere(t *testing.T) {
 	}
 
 	rules, _, err := s.ListIgnoreRules(ctx, false, store.Page{})
-	if err != nil || len(rules) != 2 {
+	if err != nil || len(rules) != 3 {
 		t.Fatalf("rules: %+v %v", rules, err)
 	}
 	var everywhere store.IgnoreRule

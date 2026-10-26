@@ -319,6 +319,10 @@ func TestCheckAgainAPI(t *testing.T) {
 	if code := l.eng.do("POST", fmt.Sprintf("/api/v1/fix-groups/%s/applied", l.group), nil, &applied); code != 200 || applied.Updated != 2 || applied.Check.ID != c.ID {
 		t.Fatalf("applied: %d %+v", code, applied)
 	}
+	var regressed struct{ Total int64 }
+	if code := l.view.do("GET", "/api/v1/findings?state=regressed", nil, &regressed); code != 200 || regressed.Total != 0 {
+		t.Errorf("state=regressed: %d %d", code, regressed.Total)
+	}
 	if f := l.finding("CVE-L1"); f.Status != "open" || f.State != "in_progress" || f.StateReason != "applied, waiting for a check" {
 		t.Errorf("applied issue: %s %s %q", f.Status, f.State, f.StateReason)
 	}
