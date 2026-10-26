@@ -1,0 +1,276 @@
+# Recommended Prometheus alerts for Stackurity.
+#
+# Load this file with rule_files in prometheus.yml, or let the Helm chart
+# render it as a PrometheusRule (metrics.prometheusRule.enabled). Each alert
+# has a severity label (critical: people get paged; warning: look today;
+# info: look this week) and a runbook in docs/operations.md.
+#
+# The server exports these metrics on STACKURITY_METRICS_ADDR (docs/install.md,
+# Health). Values read from the database (jobs, tasks, feeds, notifications,
+# assets, health problems) are the same on every replica, so those alerts
+# aggregate away the per-target labels and fire once per installation.
+#
+# The scrape job is matched by name in StackurityTargetDown: if yours is not
+# called something containing "stackurity", change that selector.
+#
+# deploy/helm/stackurity/files/stackurity-alerts.yml is a copy for the chart.
+# Edit this file and copy it there; deploy/prometheus/rules_test.go fails
+# when they differ. The unit tests are in stackurity-alerts_test.yml
+# (promtool test rules).
+groups:
+  - name: stackurity-availability
+    rules:
+      - alert: StackurityTargetDown
+        expr: up{job=~".*stackurity.*"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Prometheus cannot scrape a Stackurity server
+          description: The metrics endpoint {{ $labels.instance }} has not answered for 5 minutes. The server process may be down, restarting or unreachable.
+          runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackuritytargetdown
+      - alert: StackurityMetricsAbsent
+        expr: absent(stackurity_build_info)
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: No Stackurity server is reporting metrics
+          description: No stackurity_build_info series has been seen for 10 minutes. Every replica is down, or Prometheus no longer scrapes them.
+          runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackuritymetricsabsent
+      - alert: StackurityRestarting
+        expr: changes(stackurity_start_time_seconds[30m]) >= 3
+        labels:
+          severity: warning
+        annotations:
+          summary: A Stackurity server restarted {{ $value }} times in 30 minutes
+          description: '{{ $labels.instance }} keeps restarting: look for out-of-memory kills, a full disk or a database it cannot reach at start.'
+          runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackurityrestarting
+      - alert: StackurityMixedVersions
+        expr: count(count by (version) (stackurity_build_info)) > 1
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: Stackurity replicas run different versions
+          description: '{{ $value }} versions are running against the same database. Stop every replica before starting a new version.'
+          runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackuritymixedversions
+
+  - name: stackurity-database
+    rules:
+      - alert: StackurityDatabaseDown
+        expr: stackurity_database_up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Stackurity cannot reach its database
+          description: '{{ $labels.instance }} has not had an answer from PostgreSQL for 2 minutes. /readyz answers 503, API requests fail and background work is paused.'
+          runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackuritydatabasedown
+      - alert: StackurityMetricsIncomplete
+        expr: stackurity_scrape_errors > 0 and stackurity_database_up == 1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Part of Stackurity's platform metrics cannot be read
+          description: '{{ $value }} database sections of the scrape of {{ $labels.instance }} failed for 15 minutes, so alerts that use them cannot fire. The server log says which ("metrics: read failed").'
+          runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackuritymetricsincomplete
+      - alert: StackurityDatabasePoolSaturated
+        expr: stackurity_db_pool_connections{state="acquired"} / ignoring(state) stackurity_db_pool_max_connections > 0.9
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Stackurity's database pool is nearly exhausted
+          description: '{{ $labels.instance }} has used over 90% of its database connections for 10 minutes. Requests and jobs wait for connections.'
+          runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackuritydatabasepoolsaturated
+      - alert: StackurityDatabasePoolWaits
+        expr: |
+          rate(stackurity_db_pool_acquire_wait_seconds_total[5m])
+            / clamp_min(rate(stackurity_db_pool_acquires_total[5m]), 0.001) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Stackurity waits for database connections
+          description: 'Acquiring a connection on {{ $labels.instance }} has taken {{ $value | humanizeDuration }} on average for 10 minutes.'
+          runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackuritydatabasepoolwaits
+
+  - name: stackurity-api
+    rules:
+      - alert: StackurityHTTPErrors
+        expr: |
+          sum without (method, route, code) (rate(stackurity_http_requests_total{code="5xx",route!~"/healthz|/readyz"}[5m]))
+            / sum without (method, route, code) (rate(stackurity_http_requests_total{route!~"/healthz|/readyz"}[5m]))
+            > 0.05
+          and sum without (method, route, code) (rate(stackurity_http_requests_total{route!~"/healthz|/readyz"}[5m])) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Over 5% of Stackurity API requests fail with 5xx
+          description: '{{ $value | humanizePercentage }} of requests to {{ $labels.instance }} answered 5xx over 10 minutes (health probes left out).'
+          runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackurityhttperrors
+      - alert: StackurityIngestErrors
+        expr: sum without (method, code) (rate(stackurity_http_requests_total{route=~"/api/v1/(ingest|sbom/import)",code="5xx"}[15m])) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Stackurity refuses inventory with server errors
+          description: '{{ $labels.route }} on {{ $labels.instance }} has answered 5xx for 15 minutes. Agents and CI keep their data and send it again, but the inventory is not updated.'
+          runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackurityingesterrors
+
+  - name: stackurity-platform
+    rules:
+      - alert: StackurityHealthCritical
+        expr: max without (instance, pod) (stackurity_health_problems{severity="critical"}) > 0
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: Stackurity's platform health check reports {{ $value }} critical problem(s)
+          description: Settings, Platform health lists them with their errors. The more specific alerts below usually say which.
+          runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackurityhealthcritical
+      - alert: StackurityVulnerabilityFeedStale
+        expr: max without (instance, pod) (stackurity_feed_stale{kind="vulnerability"}) == 1
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: Vulnerability feed {{ $labels.feed }} is stale
+          description: '{{ $labels.feed }} has not synced within its freshness limit. New advisories for its ecosystem are not matched; findings already open stay open and show the stale intelligence.'
+          runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackurityvulnerabilityfeedstale
+      - alert: StackurityFeedStale
+        expr: max without (instance, pod) (stackurity_feed_stale{kind!="vulnerability"}) == 1
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: Intelligence feed {{ $labels.feed }} ({{ $labels.kind }}) is stale
+          description: '{{ $labels.feed }} has not synced within its freshness limit. Its data (known exploitation, releases or end of life) is older than promised.'
+          runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackurityfeedstale
+      - alert: StackurityFeedFailing
+        expr: max without (instance, pod) (stackurity_feed_failing) == 1 and max without (instance, pod) (stackurity_feed_stale) == 0
+        for: 2h
+        labels:
+          severity: warning
+        annotations:
+          summary: Intelligence feed {{ $labels.feed }} keeps failing
+          description: '{{ $labels.feed }} has failed its sync attempts for 2 hours. Its data is still within its freshness limit, so nothing is stale yet.'
+          runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackurityfeedfailing
+      - alert: StackurityTaskNotSucceeding
+        expr: |
+          max without (instance, pod) (
+            (time() - stackurity_periodic_task_last_success_timestamp_seconds)
+              > clamp_min(3 * stackurity_periodic_task_interval_seconds, 600)
+            and stackurity_periodic_task_last_success_timestamp_seconds > 0
+          )
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Background task {{ $labels.task }} has not succeeded for {{ $value | humanizeDuration }}
+          description: 'Its last success is older than three times its interval (at least 10 minutes). Either it fails every run, or a replica holds its lease and never finishes (a stuck lease). For the alerts task this means no notifications are sent.'
+          runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackuritytasknotsucceeding
+      - alert: StackurityTaskNeverSucceeded
+        expr: max without (instance, pod) (stackurity_periodic_task_last_success_timestamp_seconds) == 0
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: Background task {{ $labels.task }} has never succeeded
+          description: The task has been registered for an hour without one successful run.
+          runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackuritytaskneversucceeded
+      - alert: StackurityTaskFailing
+        expr: max without (instance, pod) (stackurity_periodic_task_consecutive_failures) >= 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Background task {{ $labels.task }} failed its last {{ $value }} runs
+          description: Platform health shows its last error.
+          runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackuritytaskfailing
+
+  - name: stackurity-jobs
+    rules:
+      - alert: StackurityJobsFailed
+        expr: max without (instance, pod) (stackurity_jobs{state="failed"}) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $value }} {{ $labels.kind }} job(s) failed in the last 24 hours'
+          description: They ran out of attempts. Platform health lists the latest with their errors. The alert clears 24 hours after the last failure.
+          runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackurityjobsfailed
+      - alert: StackurityJobQueueBacklog
+        expr: max without (instance, pod) (stackurity_jobs_oldest_queued_age_seconds) > 1800
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Stackurity jobs wait {{ $value | humanizeDuration }} for a worker
+          description: The oldest due job has waited over 30 minutes. Workers are busy, stuck or not running.
+          runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackurityjobqueuebacklog
+      - alert: StackurityJobQueueStalled
+        expr: max without (instance, pod) (stackurity_jobs_oldest_queued_age_seconds) > 7200
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: Stackurity jobs have waited {{ $value | humanizeDuration }} for a worker
+          description: The oldest due job has waited over 2 hours. Evaluations, feed syncs and integration runs are not happening.
+          runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackurityjobqueuestalled
+
+  - name: stackurity-notifications
+    rules:
+      - alert: StackurityNotificationsFailed
+        expr: max without (instance, pod) (stackurity_notification_deliveries{state="failed"}) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $value }} {{ $labels.kind }} notification(s) failed in the last 24 hours'
+          description: They ran out of attempts and were not delivered. The workspace's delivery log shows the errors and can send them again.
+          runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackuritynotificationsfailed
+      - alert: StackurityNotificationChannelFailing
+        expr: max without (instance, pod) (stackurity_notification_channels_failing) > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $value }} {{ $labels.kind }} channel(s) failed their last send for 30 minutes'
+          description: Messages to them are being retried with backoff and fail after 8 attempts.
+          runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackuritynotificationchannelfailing
+      - alert: StackurityNotificationsBacklog
+        expr: max without (instance, pod) (stackurity_notification_oldest_due_age_seconds) > 900
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Stackurity notifications have waited {{ $value | humanizeDuration }} to be sent
+          description: A due notification has not been picked up for over 15 minutes, so people are not being told about incidents. The alerts task is stuck or failing.
+          runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackuritynotificationsbacklog
+
+  - name: stackurity-collection
+    rules:
+      - alert: StackurityAssetsStoppedReporting
+        expr: |
+          max without (instance, pod) (stackurity_assets_stale)
+            - max without (instance, pod) (stackurity_assets_stale offset 1h) >= 5
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $value }} more assets stopped reporting in the last hour'
+          description: Many agents or integrations going quiet at once usually has one cause, such as a network change, an expired token or ingest errors.
+          runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackurityassetsstoppedreporting
+      - alert: StackurityAssetsStale
+        expr: max without (instance, pod) (stackurity_assets_stale) > 0
+        for: 24h
+        labels:
+          severity: info
+        annotations:
+          summary: '{{ $value }} assets have not reported for over a day'
+          description: Their inventory and findings are out of date. Each workspace sees them as stale coverage and gets collector incidents.
+          runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackurityassetsstale

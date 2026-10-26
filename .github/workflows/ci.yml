@@ -39,7 +39,10 @@ jobs:
 
   # Kills the real server with SIGKILL during a feed import, an ingest, a
   # notification send, a periodic task and a job, restarts it and checks the
-  # outcome (docs/reliability.md). Each scenario gets its own database.
+  # outcome (docs/reliability.md); cuts it off from PostgreSQL mid-sync and
+  # mid-send, and runs the operational drills of docs/operations.md
+  # (upstream outage, failing notification provider, silent agent). Each
+  # scenario gets its own database.
   crash:
     runs-on: ubuntu-latest
     services:
@@ -62,6 +65,27 @@ jobs:
       - run: go vet -tags crash ./internal/crashtest
       - name: Crash tests
         run: go test -tags crash -count=1 -v -timeout 20m ./internal/crashtest
+
+  # The recommended alerts (deploy/prometheus/stackurity-alerts.yml): syntax
+  # and unit tests with promtool from a pinned Prometheus release, verified
+  # against its published checksum. rules_test.go (in the go job) keeps the
+  # Helm chart's copy, the runbook and the metric names in step.
+  alerts:
+    runs-on: ubuntu-latest
+    env:
+      PROMETHEUS_VERSION: 3.5.0
+      PROMETHEUS_SHA256: e811827af26d822afb09a4f28314f61b618b12cff5369835a67f674d8b46f39a
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install promtool
+        run: |
+          f=prometheus-$PROMETHEUS_VERSION.linux-amd64
+          curl -sSfLO "https://github.com/prometheus/prometheus/releases/download/v$PROMETHEUS_VERSION/$f.tar.gz"
+          echo "$PROMETHEUS_SHA256  $f.tar.gz" | sha256sum -c -
+          tar xzf "$f.tar.gz" "$f/promtool"
+          sudo install "$f/promtool" /usr/local/bin/promtool
+      - run: promtool check rules deploy/prometheus/stackurity-alerts.yml
+      - run: cd deploy/prometheus && promtool test rules stackurity-alerts_test.yml
 
   web:
     runs-on: ubuntu-latest
@@ -94,3 +118,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: azure/setup-helm@v4
       - run: helm lint deploy/helm/stackurity --set database.existingSecret=db
+      - name: PrometheusRule renders the recommended alerts
+        run: |
+          helm template t deploy/helm/stackurity --set database.existingSecret=db \
+            --set metrics.enabled=true --set metrics.prometheusRule.enabled=true \
+            --api-versions monitoring.coreos.com/v1/PrometheusRule --show-only templates/prometheusrule.yaml > rule.yaml
+          grep -q 'alert: StackurityDatabaseDown' rule.yaml
+          test -z "$(helm template t deploy/helm/stackurity --set database.existingSecret=db --set metrics.enabled=true \
+            --set metrics.prometheusRule.enabled=true | grep PrometheusRule)"

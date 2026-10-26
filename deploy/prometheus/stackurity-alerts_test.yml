@@ -1,0 +1,498 @@
+# Unit tests for stackurity-alerts.yml:
+#
+#   promtool test rules stackurity-alerts_test.yml
+#
+# CI runs them with the promtool of a pinned Prometheus image (the alerts job
+# in .github/workflows/ci.yml). Every alert has at least one case where it
+# fires; deploy/prometheus/rules_test.go checks that.
+rule_files:
+  - stackurity-alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  # --- availability
+
+  - name: target down for 5 minutes
+    interval: 1m
+    input_series:
+      - series: 'up{job="stackurity-metrics",instance="10.0.0.1:9100"}'
+        values: '1 1 0x10'
+      - series: 'up{job="node",instance="10.0.0.9:9100"}'
+        values: '0x12'
+      - series: 'stackurity_build_info{job="stackurity-metrics",instance="10.0.0.1:9100",version="0.4.0",edition="community",go_version="go1.27.3"}'
+        values: '1x12'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: StackurityTargetDown
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: StackurityTargetDown
+        exp_alerts:
+          - exp_labels: {severity: critical, job: stackurity-metrics, instance: "10.0.0.1:9100"}
+            exp_annotations:
+              summary: Prometheus cannot scrape a Stackurity server
+              description: The metrics endpoint 10.0.0.1:9100 has not answered for 5 minutes. The server process may be down, restarting or unreachable.
+              runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackuritytargetdown
+      - eval_time: 12m
+        alertname: StackurityMetricsAbsent
+        exp_alerts: []
+
+  - name: no server reports metrics
+    interval: 1m
+    input_series:
+      - series: 'up{job="stackurity-metrics",instance="10.0.0.1:9100"}'
+        values: '0x15'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: StackurityMetricsAbsent
+        exp_alerts:
+          - exp_labels: {severity: critical}
+            exp_annotations:
+              summary: No Stackurity server is reporting metrics
+              description: No stackurity_build_info series has been seen for 10 minutes. Every replica is down, or Prometheus no longer scrapes them.
+              runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackuritymetricsabsent
+
+  - name: restart loop and mixed versions
+    interval: 1m
+    input_series:
+      # Restarts at minutes 5, 10 and 15.
+      - series: 'stackurity_start_time_seconds{job="stackurity-metrics",instance="a"}'
+        values: '0x4 300x4 600x4 900x20'
+      - series: 'stackurity_build_info{job="stackurity-metrics",instance="a",version="0.4.0",edition="community",go_version="go1.27.3"}'
+        values: '1x40'
+      - series: 'stackurity_build_info{job="stackurity-metrics",instance="b",version="0.5.0",edition="community",go_version="go1.27.3"}'
+        values: '1x40'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: StackurityRestarting
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: StackurityRestarting
+        exp_alerts:
+          - exp_labels: {severity: warning, job: stackurity-metrics, instance: a}
+            exp_annotations:
+              summary: A Stackurity server restarted 3 times in 30 minutes
+              description: 'a keeps restarting: look for out-of-memory kills, a full disk or a database it cannot reach at start.'
+              runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackurityrestarting
+      - eval_time: 20m
+        alertname: StackurityMixedVersions
+        exp_alerts: []
+      - eval_time: 31m
+        alertname: StackurityMixedVersions
+        exp_alerts:
+          - exp_labels: {severity: warning}
+            exp_annotations:
+              summary: Stackurity replicas run different versions
+              description: 2 versions are running against the same database. Stop every replica before starting a new version.
+              runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackuritymixedversions
+
+  # --- database
+
+  - name: database down, then back
+    interval: 1m
+    input_series:
+      - series: 'stackurity_database_up{job="stackurity-metrics",instance="a"}'
+        values: '1 1 0 0 0 0 0 1 1 1'
+      - series: 'stackurity_scrape_errors{job="stackurity-metrics",instance="a"}'
+        values: '0 0 1 1 1 1 1 0 0 0'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: StackurityDatabaseDown
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: StackurityDatabaseDown
+        exp_alerts:
+          - exp_labels: {severity: critical, job: stackurity-metrics, instance: a}
+            exp_annotations:
+              summary: Stackurity cannot reach its database
+              description: 'a has not had an answer from PostgreSQL for 2 minutes. /readyz answers 503, API requests fail and background work is paused.'
+              runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackuritydatabasedown
+      - eval_time: 8m
+        alertname: StackurityDatabaseDown
+        exp_alerts: []
+      # Scrape errors while the database is down are the outage, not this.
+      - eval_time: 6m
+        alertname: StackurityMetricsIncomplete
+        exp_alerts: []
+
+  - name: part of the scrape fails
+    interval: 1m
+    input_series:
+      - series: 'stackurity_database_up{job="stackurity-metrics",instance="a"}'
+        values: '1x20'
+      - series: 'stackurity_scrape_errors{job="stackurity-metrics",instance="a"}'
+        values: '0 1x19'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: StackurityMetricsIncomplete
+        exp_alerts:
+          - exp_labels: {severity: warning, job: stackurity-metrics, instance: a}
+            exp_annotations:
+              summary: Part of Stackurity's platform metrics cannot be read
+              description: '1 database sections of the scrape of a failed for 15 minutes, so alerts that use them cannot fire. The server log says which ("metrics: read failed").'
+              runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackuritymetricsincomplete
+
+  - name: database pool saturated and waiting
+    interval: 1m
+    input_series:
+      - series: 'stackurity_db_pool_connections{job="stackurity-metrics",instance="a",state="acquired"}'
+        values: '5 19x15'
+      - series: 'stackurity_db_pool_connections{job="stackurity-metrics",instance="a",state="idle"}'
+        values: '15 1x15'
+      - series: 'stackurity_db_pool_max_connections{job="stackurity-metrics",instance="a"}'
+        values: '20x15'
+      # 600 acquires a minute that wait 0.25 s each.
+      - series: 'stackurity_db_pool_acquires_total{job="stackurity-metrics",instance="a"}'
+        values: '0+600x20'
+      - series: 'stackurity_db_pool_acquire_wait_seconds_total{job="stackurity-metrics",instance="a"}'
+        values: '0+150x20'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: StackurityDatabasePoolSaturated
+        exp_alerts:
+          - exp_labels: {severity: warning, job: stackurity-metrics, instance: a}
+            exp_annotations:
+              summary: Stackurity's database pool is nearly exhausted
+              description: 'a has used over 90% of its database connections for 10 minutes. Requests and jobs wait for connections.'
+              runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackuritydatabasepoolsaturated
+      - eval_time: 16m
+        alertname: StackurityDatabasePoolWaits
+        exp_alerts:
+          - exp_labels: {severity: warning, job: stackurity-metrics, instance: a}
+            exp_annotations:
+              summary: Stackurity waits for database connections
+              description: 'Acquiring a connection on a has taken 250ms on average for 10 minutes.'
+              runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackuritydatabasepoolwaits
+
+  - name: pool busy but not saturated
+    interval: 1m
+    input_series:
+      - series: 'stackurity_db_pool_connections{job="stackurity-metrics",instance="a",state="acquired"}'
+        values: '12x20'
+      - series: 'stackurity_db_pool_max_connections{job="stackurity-metrics",instance="a"}'
+        values: '20x20'
+      - series: 'stackurity_db_pool_acquires_total{job="stackurity-metrics",instance="a"}'
+        values: '0+600x20'
+      - series: 'stackurity_db_pool_acquire_wait_seconds_total{job="stackurity-metrics",instance="a"}'
+        values: '0+6x20'
+    alert_rule_test:
+      - eval_time: 18m
+        alertname: StackurityDatabasePoolSaturated
+        exp_alerts: []
+      - eval_time: 18m
+        alertname: StackurityDatabasePoolWaits
+        exp_alerts: []
+
+  # --- API
+
+  - name: 5xx rate, health probes left out
+    interval: 1m
+    input_series:
+      # 60 requests a minute, 6 of them 5xx (10%).
+      - series: 'stackurity_http_requests_total{job="stackurity-metrics",instance="a",method="GET",route="/api/v1/assets",code="2xx"}'
+        values: '0+54x20'
+      - series: 'stackurity_http_requests_total{job="stackurity-metrics",instance="a",method="GET",route="/api/v1/assets",code="5xx"}'
+        values: '0+6x20'
+      # Readiness probes failing during an outage do not count.
+      - series: 'stackurity_http_requests_total{job="stackurity-metrics",instance="a",method="GET",route="/readyz",code="5xx"}'
+        values: '0+600x20'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: StackurityHTTPErrors
+        exp_alerts: []
+      - eval_time: 18m
+        alertname: StackurityHTTPErrors
+        exp_alerts:
+          - exp_labels: {severity: warning, job: stackurity-metrics, instance: a}
+            exp_annotations:
+              summary: Over 5% of Stackurity API requests fail with 5xx
+              description: '10% of requests to a answered 5xx over 10 minutes (health probes left out).'
+              runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackurityhttperrors
+
+  - name: only probes fail
+    interval: 1m
+    input_series:
+      - series: 'stackurity_http_requests_total{job="stackurity-metrics",instance="a",method="GET",route="/api/v1/assets",code="2xx"}'
+        values: '0+60x20'
+      - series: 'stackurity_http_requests_total{job="stackurity-metrics",instance="a",method="GET",route="/readyz",code="5xx"}'
+        values: '0+60x20'
+    alert_rule_test:
+      - eval_time: 18m
+        alertname: StackurityHTTPErrors
+        exp_alerts: []
+
+  - name: ingest refused
+    interval: 1m
+    input_series:
+      - series: 'stackurity_http_requests_total{job="stackurity-metrics",instance="a",method="POST",route="/api/v1/ingest",code="5xx"}'
+        values: '0+2x40'
+      - series: 'stackurity_http_requests_total{job="stackurity-metrics",instance="a",method="POST",route="/api/v1/ingest",code="2xx"}'
+        values: '0+20x40'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: StackurityIngestErrors
+        exp_alerts: []
+      - eval_time: 32m
+        alertname: StackurityIngestErrors
+        exp_alerts:
+          - exp_labels: {severity: warning, job: stackurity-metrics, instance: a, route: /api/v1/ingest}
+            exp_annotations:
+              summary: Stackurity refuses inventory with server errors
+              description: '/api/v1/ingest on a has answered 5xx for 15 minutes. Agents and CI keep their data and send it again, but the inventory is not updated.'
+              runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackurityingesterrors
+
+  # --- platform: two replicas report the same database values; each alert
+  # fires once.
+
+  - name: critical health problem
+    interval: 1m
+    input_series:
+      - series: 'stackurity_health_problems{job="stackurity-metrics",instance="a",pod="stackurity-0",severity="critical"}'
+        values: '0 1x20'
+      - series: 'stackurity_health_problems{job="stackurity-metrics",instance="b",pod="stackurity-1",severity="critical"}'
+        values: '0 1x20'
+      - series: 'stackurity_health_problems{job="stackurity-metrics",instance="a",pod="stackurity-0",severity="warning"}'
+        values: '3x20'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: StackurityHealthCritical
+        exp_alerts: []
+      - eval_time: 17m
+        alertname: StackurityHealthCritical
+        exp_alerts:
+          - exp_labels: {severity: critical, job: stackurity-metrics}
+            exp_annotations:
+              summary: Stackurity's platform health check reports 1 critical problem(s)
+              description: Settings, Platform health lists them with their errors. The more specific alerts below usually say which.
+              runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackurityhealthcritical
+
+  - name: feeds stale and failing
+    interval: 1m
+    input_series:
+      - series: 'stackurity_feed_stale{job="stackurity-metrics",instance="a",feed="osv:Debian",kind="vulnerability"}'
+        values: '0 1x200'
+      - series: 'stackurity_feed_stale{job="stackurity-metrics",instance="b",feed="osv:Debian",kind="vulnerability"}'
+        values: '0 1x200'
+      - series: 'stackurity_feed_stale{job="stackurity-metrics",instance="a",feed="endoflife",kind="lifecycle"}'
+        values: '0 1x200'
+      - series: 'stackurity_feed_stale{job="stackurity-metrics",instance="a",feed="osv:npm",kind="vulnerability"}'
+        values: '0x200'
+      - series: 'stackurity_feed_failing{job="stackurity-metrics",instance="a",feed="osv:Debian",kind="vulnerability"}'
+        values: '1x200'
+      - series: 'stackurity_feed_failing{job="stackurity-metrics",instance="a",feed="osv:npm",kind="vulnerability"}'
+        values: '0 1x200'
+      - series: 'stackurity_feed_failing{job="stackurity-metrics",instance="a",feed="endoflife",kind="lifecycle"}'
+        values: '1x200'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: StackurityVulnerabilityFeedStale
+        exp_alerts:
+          - exp_labels: {severity: critical, job: stackurity-metrics, feed: "osv:Debian", kind: vulnerability}
+            exp_annotations:
+              summary: Vulnerability feed osv:Debian is stale
+              description: 'osv:Debian has not synced within its freshness limit. New advisories for its ecosystem are not matched; findings already open stay open and show the stale intelligence.'
+              runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackurityvulnerabilityfeedstale
+      - eval_time: 12m
+        alertname: StackurityFeedStale
+        exp_alerts: []
+      - eval_time: 32m
+        alertname: StackurityFeedStale
+        exp_alerts:
+          - exp_labels: {severity: warning, job: stackurity-metrics, feed: endoflife, kind: lifecycle}
+            exp_annotations:
+              summary: Intelligence feed endoflife (lifecycle) is stale
+              description: 'endoflife has not synced within its freshness limit. Its data (known exploitation, releases or end of life) is older than promised.'
+              runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackurityfeedstale
+      # Stale feeds are reported as stale, not as failing too.
+      - eval_time: 150m
+        alertname: StackurityFeedFailing
+        exp_alerts:
+          - exp_labels: {severity: warning, job: stackurity-metrics, feed: "osv:npm", kind: vulnerability}
+            exp_annotations:
+              summary: Intelligence feed osv:npm keeps failing
+              description: 'osv:npm has failed its sync attempts for 2 hours. Its data is still within its freshness limit, so nothing is stale yet.'
+              runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackurityfeedfailing
+
+  - name: periodic tasks
+    interval: 1m
+    input_series:
+      # alerts runs every minute; it last succeeded at 0 (a stuck lease).
+      # time() is 0 at the start of a test, so a success "at 60" is at 1m.
+      - series: 'stackurity_periodic_task_last_success_timestamp_seconds{job="stackurity-metrics",instance="a",task="alerts"}'
+        values: '60x30'
+      - series: 'stackurity_periodic_task_interval_seconds{job="stackurity-metrics",instance="a",task="alerts"}'
+        values: '60x30'
+      # housekeeping runs hourly and succeeded recently.
+      - series: 'stackurity_periodic_task_last_success_timestamp_seconds{job="stackurity-metrics",instance="a",task="housekeeping"}'
+        values: '60x30'
+      - series: 'stackurity_periodic_task_interval_seconds{job="stackurity-metrics",instance="a",task="housekeeping"}'
+        values: '3600x30'
+      # update-check never succeeded.
+      - series: 'stackurity_periodic_task_last_success_timestamp_seconds{job="stackurity-metrics",instance="a",task="update-check"}'
+        values: '0x80'
+      - series: 'stackurity_periodic_task_interval_seconds{job="stackurity-metrics",instance="a",task="update-check"}'
+        values: '86400x80'
+      - series: 'stackurity_periodic_task_consecutive_failures{job="stackurity-metrics",instance="a",task="update-check"}'
+        values: '0 1 2 3x80'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: StackurityTaskNotSucceeding
+        exp_alerts: []
+      - eval_time: 17m
+        alertname: StackurityTaskNotSucceeding
+        exp_alerts:
+          - exp_labels: {severity: critical, job: stackurity-metrics, task: alerts}
+            exp_annotations:
+              summary: Background task alerts has not succeeded for 16m 0s
+              description: 'Its last success is older than three times its interval (at least 10 minutes). Either it fails every run, or a replica holds its lease and never finishes (a stuck lease). For the alerts task this means no notifications are sent.'
+              runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackuritytasknotsucceeding
+      - eval_time: 30m
+        alertname: StackurityTaskNeverSucceeded
+        exp_alerts: []
+      - eval_time: 61m
+        alertname: StackurityTaskNeverSucceeded
+        exp_alerts:
+          - exp_labels: {severity: warning, job: stackurity-metrics, task: update-check}
+            exp_annotations:
+              summary: Background task update-check has never succeeded
+              description: The task has been registered for an hour without one successful run.
+              runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackuritytaskneversucceeded
+      - eval_time: 9m
+        alertname: StackurityTaskFailing
+        exp_alerts:
+          - exp_labels: {severity: warning, job: stackurity-metrics, task: update-check}
+            exp_annotations:
+              summary: Background task update-check failed its last 3 runs
+              description: Platform health shows its last error.
+              runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackuritytaskfailing
+
+  # --- jobs
+
+  - name: failed jobs and queue age
+    interval: 1m
+    input_series:
+      - series: 'stackurity_jobs{job="stackurity-metrics",instance="a",kind="feed.sync",state="failed"}'
+        values: '0 2x20'
+      - series: 'stackurity_jobs{job="stackurity-metrics",instance="b",kind="feed.sync",state="failed"}'
+        values: '0 2x20'
+      - series: 'stackurity_jobs{job="stackurity-metrics",instance="a",kind="evaluate",state="queued"}'
+        values: '40x20'
+      # The oldest due job ages a minute a minute from 25 minutes.
+      - series: 'stackurity_jobs_oldest_queued_age_seconds{job="stackurity-metrics",instance="a"}'
+        values: '1500+60x150'
+    alert_rule_test:
+      - eval_time: 7m
+        alertname: StackurityJobsFailed
+        exp_alerts:
+          - exp_labels: {severity: warning, job: stackurity-metrics, kind: feed.sync, state: failed}
+            exp_annotations:
+              summary: '2 feed.sync job(s) failed in the last 24 hours'
+              description: They ran out of attempts. Platform health lists the latest with their errors. The alert clears 24 hours after the last failure.
+              runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackurityjobsfailed
+      - eval_time: 7m
+        alertname: StackurityJobQueueBacklog
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: StackurityJobQueueBacklog
+        exp_alerts:
+          - exp_labels: {severity: warning, job: stackurity-metrics}
+            exp_annotations:
+              summary: Stackurity jobs wait 37m 0s for a worker
+              description: The oldest due job has waited over 30 minutes. Workers are busy, stuck or not running.
+              runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackurityjobqueuebacklog
+      - eval_time: 100m
+        alertname: StackurityJobQueueStalled
+        exp_alerts: []
+      - eval_time: 120m
+        alertname: StackurityJobQueueStalled
+        exp_alerts:
+          - exp_labels: {severity: critical, job: stackurity-metrics}
+            exp_annotations:
+              summary: Stackurity jobs have waited 2h 25m 0s for a worker
+              description: The oldest due job has waited over 2 hours. Evaluations, feed syncs and integration runs are not happening.
+              runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackurityjobqueuestalled
+
+  # --- notifications
+
+  - name: notification provider failing
+    interval: 1m
+    input_series:
+      - series: 'stackurity_notification_deliveries{job="stackurity-metrics",instance="a",kind="slack",state="retrying"}'
+        values: '3x40'
+      - series: 'stackurity_notification_deliveries{job="stackurity-metrics",instance="a",kind="slack",state="failed"}'
+        values: '_x10 1x30'
+      - series: 'stackurity_notification_channels_failing{job="stackurity-metrics",instance="a",kind="slack"}'
+        values: '1x40'
+      - series: 'stackurity_notification_oldest_due_age_seconds{job="stackurity-metrics",instance="a"}'
+        values: '0x40'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: StackurityNotificationsFailed
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: StackurityNotificationsFailed
+        exp_alerts:
+          - exp_labels: {severity: warning, job: stackurity-metrics, kind: slack, state: failed}
+            exp_annotations:
+              summary: '1 slack notification(s) failed in the last 24 hours'
+              description: They ran out of attempts and were not delivered. The workspace's delivery log shows the errors and can send them again.
+              runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackuritynotificationsfailed
+      - eval_time: 31m
+        alertname: StackurityNotificationChannelFailing
+        exp_alerts:
+          - exp_labels: {severity: warning, job: stackurity-metrics, kind: slack}
+            exp_annotations:
+              summary: '1 slack channel(s) failed their last send for 30 minutes'
+              description: Messages to them are being retried with backoff and fail after 8 attempts.
+              runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackuritynotificationchannelfailing
+      - eval_time: 31m
+        alertname: StackurityNotificationsBacklog
+        exp_alerts: []
+
+  - name: notifications not being sent
+    interval: 1m
+    input_series:
+      - series: 'stackurity_notification_oldest_due_age_seconds{job="stackurity-metrics",instance="a"}'
+        values: '0 60 120 0 0 0 0 0 0 0 0 600+60x20'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: StackurityNotificationsBacklog
+        exp_alerts: []
+      - eval_time: 22m
+        alertname: StackurityNotificationsBacklog
+        exp_alerts:
+          - exp_labels: {severity: critical, job: stackurity-metrics}
+            exp_annotations:
+              summary: Stackurity notifications have waited 21m 0s to be sent
+              description: A due notification has not been picked up for over 15 minutes, so people are not being told about incidents. The alerts task is stuck or failing.
+              runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackuritynotificationsbacklog
+
+  # --- collection
+
+  - name: assets stop reporting
+    interval: 1m
+    input_series:
+      # Two stale hosts for 25 hours, then eight more within ten minutes.
+      - series: 'stackurity_assets_stale{job="stackurity-metrics",instance="a"}'
+        values: '2x1500 3 4 5 6 7 8 9 10x60'
+    alert_rule_test:
+      - eval_time: 24h
+        alertname: StackurityAssetsStoppedReporting
+        exp_alerts: []
+      - eval_time: 25h10m
+        alertname: StackurityAssetsStoppedReporting
+        exp_alerts:
+          - exp_labels: {severity: warning, job: stackurity-metrics}
+            exp_annotations:
+              summary: '8 more assets stopped reporting in the last hour'
+              description: Many agents or integrations going quiet at once usually has one cause, such as a network change, an expired token or ingest errors.
+              runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackurityassetsstoppedreporting
+      - eval_time: 24h10m
+        alertname: StackurityAssetsStale
+        exp_alerts:
+          - exp_labels: {severity: info, job: stackurity-metrics}
+            exp_annotations:
+              summary: '2 assets have not reported for over a day'
+              description: Their inventory and findings are out of date. Each workspace sees them as stale coverage and gets collector incidents.
+              runbook_url: https://github.com/stackurity/stackurity/blob/main/docs/operations.md#stackurityassetsstale

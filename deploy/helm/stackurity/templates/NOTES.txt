@@ -15,3 +15,12 @@ Note: no ServiceMonitor was created because this cluster does not serve
 monitoring.coreos.com/v1. Install the Prometheus Operator, or scrape the
 {{ include "stackurity.fullname" . }}-metrics Service directly.
 {{- end }}
+{{- if and .Values.metrics.prometheusRule.enabled (not .Values.metrics.enabled) }}
+
+Note: metrics.prometheusRule.enabled has no effect without metrics.enabled=true.
+{{- else if and .Values.metrics.prometheusRule.enabled (not (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1/PrometheusRule")) }}
+
+Note: no PrometheusRule was created because this cluster does not serve
+monitoring.coreos.com/v1. Load deploy/prometheus/stackurity-alerts.yml into
+Prometheus instead.
+{{- end }}
