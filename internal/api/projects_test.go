@@ -642,6 +642,7 @@ func TestProjectIsolationSweep(t *testing.T) {
 			}
 		}
 	}
+	t.Logf("%d requests on %d routes by %d members of Project Alpha", sent, len(routes), len(members))
 	if sent < 2000 {
 		t.Errorf("only %d requests sent", sent)
 	}
