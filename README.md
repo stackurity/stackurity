@@ -97,6 +97,10 @@ Community is free and complete for finding and prioritising what to fix. Pro add
 - Missing or stale data is shown as missing or stale. It is never treated as healthy.
 - Refreshing intelligence never changes your software. Changes need explicit policy.
 
+## Pilots and reporting wrong results
+
+[docs/pilot.md](docs/pilot.md) describes a two-to-four-week pilot, hosted or on your own server. If Stackurity reports something that does not apply, misses a known vulnerability, or cannot check something you need, use the [issue forms](https://github.com/stackurity/stackurity/issues/new/choose); confirmed wrong and missed findings become permanent test cases.
+
 ## Contributing and security
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).

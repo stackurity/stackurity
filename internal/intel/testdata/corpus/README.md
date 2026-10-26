@@ -73,3 +73,5 @@ Add a line to `cases.json`; add a record if none covers it. Work out the
 expected verdict from the record, not from what the matcher returns. If the
 matcher disagrees and the record is right, that is a matching bug: fix it in
 its own commit and keep the case.
+
+Reports from users come through the [wrong finding](../../../../.github/ISSUE_TEMPLATE/wrong-finding.yml) and [missed vulnerability](../../../../.github/ISSUE_TEMPLATE/missed-vulnerability.yml) issue forms; each confirmed one gets a case here, referencing the issue in its `note`.
