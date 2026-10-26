@@ -362,6 +362,36 @@ func (s *Store) EvalRows(ctx context.Context, componentIDs []int64, assetID int6
 	return out, rows.Err()
 }
 
+// AssetOperatingSystems maps each asset with a current operating system row
+// to "<endoflife.date product>|<version>" ("ubuntu|22.04").
+func (s *Store) AssetOperatingSystems(ctx context.Context) (map[int64]string, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT i.asset_id, c.name, i.version FROM inventory i JOIN components c ON c.id = i.component_id
+		WHERE i.removed_at IS NULL AND c.type = 'generic' AND i.evidence->>'kind' = 'operating-system' ORDER BY i.id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64]string{}
+	for rows.Next() {
+		var id int64
+		var name, v string
+		if err := rows.Scan(&id, &name, &v); err != nil {
+			return nil, err
+		}
+		if p := OSProducts[name]; p != "" {
+			out[id] = p + "|" + v
+		}
+	}
+	return out, rows.Err()
+}
+
+// OSProducts maps os-release IDs to endoflife.date product names.
+var OSProducts = map[string]string{
+	"debian": "debian", "ubuntu": "ubuntu", "alpine": "alpine-linux", "rocky": "rocky-linux",
+	"almalinux": "almalinux", "rhel": "rhel", "centos": "centos", "amzn": "amazon-linux",
+	"fedora": "fedora", "opensuse-leap": "opensuse", "sles": "sles", "ol": "oracle-linux",
+}
+
 // ComponentsOfTypes returns ids of components with current inventory whose
 // purl type is in types.
 func (s *Store) ComponentsOfTypes(ctx context.Context, types []string) ([]int64, error) {
@@ -516,8 +546,11 @@ const (
 type RowCoverage struct {
 	InventoryID int64
 	State       string // CoverageEvaluated, CoverageUnsupported or CoverageNotEvaluated
-	Reason      string // why it was not evaluated
+	Reason      string // why it was not evaluated, or how an evaluated row is reported
 	Feed        string // the vulnerability feed it was matched against
+	// Lifecycle is the upstream end-of-life note for a distribution
+	// package (see intel.distroLifecycle); nil when there is none.
+	Lifecycle map[string]any
 }
 
 // SetCoverage records how each evaluated inventory row was covered. It runs
@@ -531,16 +564,24 @@ func (s *Store) SetCoverage(ctx context.Context, rows []RowCoverage) error {
 		states := make([]string, 0, end-i)
 		reasons := make([]string, 0, end-i)
 		feeds := make([]string, 0, end-i)
+		notes := make([]*string, 0, end-i)
 		for _, r := range rows[i:end] {
 			ids = append(ids, r.InventoryID)
 			states = append(states, r.State)
 			reasons = append(reasons, r.Reason)
 			feeds = append(feeds, r.Feed)
+			var note *string
+			if r.Lifecycle != nil {
+				b, _ := json.Marshal(r.Lifecycle)
+				n := string(b)
+				note = &n
+			}
+			notes = append(notes, note)
 		}
 		if _, err := s.Pool.Exec(ctx, `UPDATE inventory i SET coverage = u.state, coverage_reason = u.reason,
-			coverage_feed = u.feed, evaluated_at = now()
-			FROM unnest($1::bigint[], $2::text[], $3::text[], $4::text[]) AS u(id, state, reason, feed)
-			WHERE i.id = u.id`, ids, states, reasons, feeds); err != nil {
+			coverage_feed = u.feed, lifecycle_note = u.note::jsonb, evaluated_at = now()
+			FROM unnest($1::bigint[], $2::text[], $3::text[], $4::text[], $5::text[]) AS u(id, state, reason, feed, note)
+			WHERE i.id = u.id`, ids, states, reasons, feeds, notes); err != nil {
 			return err
 		}
 	}

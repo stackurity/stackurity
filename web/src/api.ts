@@ -307,6 +307,20 @@ export interface InventoryRow {
   coverage_reason?: string;
   coverage_feed?: string;
   evaluated_at?: string | null;
+  /** Upstream end of life on a distribution package (docs/compatibility.md, "Lifecycle of distribution packages"). */
+  lifecycle_note?: LifecycleNote | null;
+}
+
+export interface LifecycleNote {
+  /** distribution_supported (no finding), distribution_ended or third_party_build. */
+  status?: "distribution_supported" | "distribution_ended" | "third_party_build";
+  text?: string;
+  product?: string;
+  cycle?: string;
+  subject?: string;
+  upstream_eol?: string;
+  distribution?: string;
+  distribution_eol?: string;
 }
 
 export type RowCoverage = "evaluated" | "stale_intelligence" | "not_evaluated" | "unsupported" | "awaiting";
@@ -615,6 +629,11 @@ export interface FindingEvidence {
   not_running_kernel?: boolean;
   requires_ubuntu_pro?: boolean;
   requires_subscription?: string;
+  // kernels: the installed kernel version this finding covers and its packages
+  kernel_release?: string;
+  kernel_packages?: string[];
+  // end_of_life on a distribution package whose finding stands
+  distribution?: LifecycleNote;
   [k: string]: unknown;
 }
 

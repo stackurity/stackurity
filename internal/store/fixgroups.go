@@ -42,6 +42,29 @@ func (s *Store) FixPlanRows(ctx context.Context) ([]fixplan.Row, error) {
 	return out, rows.Err()
 }
 
+// EndedPackages returns, per asset, the distribution packages past upstream
+// end of life on a release that is itself end of life (inventory
+// lifecycle_note status distribution_ended), for the release upgrade.
+func (s *Store) EndedPackages(ctx context.Context) (map[int64][]fixplan.EndedPackage, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT i.asset_id, c.name, COALESCE(i.lifecycle_note->>'subject', '')
+		FROM inventory i JOIN components c ON c.id = i.component_id JOIN assets a ON a.id = i.asset_id AND a.merged_into IS NULL
+		WHERE i.removed_at IS NULL AND i.lifecycle_note->>'status' = 'distribution_ended' ORDER BY i.asset_id, c.name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64][]fixplan.EndedPackage{}
+	for rows.Next() {
+		var id int64
+		var p fixplan.EndedPackage
+		if err := rows.Scan(&id, &p.Component, &p.Subject); err != nil {
+			return nil, err
+		}
+		out[id] = append(out[id], p)
+	}
+	return out, rows.Err()
+}
+
 // ReplaceFixGroups stores the current plan and each finding's group.
 func (s *Store) ReplaceFixGroups(ctx context.Context, groups []*fixplan.Group, assign map[int64]string) error {
 	return pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {

@@ -50,11 +50,7 @@ func versionedDebProduct(purlKey string) (product, cycle string, ok bool) {
 }
 
 // osProducts maps os-release IDs to endoflife.date product names.
-var osProducts = map[string]string{
-	"debian": "debian", "ubuntu": "ubuntu", "alpine": "alpine-linux", "rocky": "rocky-linux",
-	"almalinux": "almalinux", "rhel": "rhel", "centos": "centos", "amzn": "amazon-linux",
-	"fedora": "fedora", "opensuse-leap": "opensuse", "sles": "sles", "ol": "oracle-linux",
-}
+var osProducts = store.OSProducts
 
 // Evaluate re-evaluates the given components (nil means all) or one asset.
 func (e *Evaluator) Evaluate(ctx context.Context, componentIDs []int64, assetID int64) (*EvalStats, error) {
@@ -84,6 +80,10 @@ func (e *Evaluator) Evaluate(ctx context.Context, componentIDs []int64, assetID 
 		return nil, err
 	}
 	feeds, err := e.Store.ListFeeds(ctx)
+	if err != nil {
+		return nil, err
+	}
+	assetOS, err := e.Store.AssetOperatingSystems(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -189,6 +189,7 @@ func (e *Evaluator) Evaluate(ctx context.Context, componentIDs []int64, assetID 
 		if rc.State != store.CoverageEvaluated {
 			stats.Gaps++
 		}
+		ci := len(coverage)
 		coverage = append(coverage, rc)
 
 		// --- lifecycle
@@ -221,7 +222,18 @@ func (e *Evaluator) Evaluate(ctx context.Context, componentIDs []int64, assetID 
 		}
 		if c := matchCycle(cycles, cycleVersion); c != nil {
 			if f := eolFinding(r, c, now); f != nil {
-				want = append(want, *f)
+				dist, err := e.distroCycle(ctx, r, cycleCache)
+				if err != nil {
+					return nil, err
+				}
+				note, keep := distroLifecycle(r, c, dist, assetOS[r.AssetID], cycleCache, now)
+				coverage[ci].Lifecycle = note
+				if keep {
+					if note != nil {
+						f.Evidence["distribution"] = note
+					}
+					want = append(want, *f)
+				}
 			}
 		}
 	}

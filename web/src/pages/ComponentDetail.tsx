@@ -257,6 +257,7 @@ function LifecycleCard({ intel }: { intel: ComponentIntel }) {
     return c && isEnded(c);
   });
   const label = cycles[0]?.product_label || lc.product;
+  const distroPackage = ["deb", "rpm", "apk"].includes(intel.component.type);
   const cols: Column<LifecycleCycle>[] = [
     {
       key: "cycle",
@@ -302,7 +303,13 @@ function LifecycleCard({ intel }: { intel: ComponentIntel }) {
       <h2 className="section-title" id="lc-title">
         Lifecycle: {label} <span className="muted small">(endoflife.date product “{lc.product}”)</span>
       </h2>
-      {eolInUse.length > 0 && (
+      {eolInUse.length > 0 && distroPackage && (
+        <Notice kind="info">
+          <strong>Upstream end of life:</strong> {eolInUse.join(", ")}. These are distribution packages: the distribution keeps patching its own
+          package while its release is supported, so no end-of-life finding is raised then. Each installation below says which applies.
+        </Notice>
+      )}
+      {eolInUse.length > 0 && !distroPackage && (
         <div className="alert alert-error" role="alert">
           <strong>End-of-life release line in use:</strong> {eolInUse.join(", ")}. It no longer receives security fixes.
         </div>

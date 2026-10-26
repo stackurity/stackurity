@@ -57,6 +57,13 @@ func TestHostGrouping(t *testing.T) {
 		"(paid subscription); without it, upgrade to a supported release."; rel.Action != want {
 		t.Errorf("release upgrade action = %q", rel.Action)
 	}
+	AddEndedPackages(groups, map[int64][]EndedPackage{1: {{Component: "php7.4-common", Subject: "PHP 7.4"}, {Component: "nginx", Subject: "nginx 1.18"}}})
+	if rel.PackageCount != 5 || !strings.HasSuffix(rel.Note, "which only the release's support kept patched: PHP 7.4, nginx 1.18.") {
+		t.Errorf("release upgrade with ended packages = %+v", rel)
+	}
+	if g := by[EndOfLife]; g.PackageCount != 1 {
+		t.Errorf("ended packages only go to the release upgrade: %+v", g)
+	}
 	if g := by[EndOfLife]; g == nil || g.Title != "Upgrade nginx 1.18 (end of life)" || !strings.Contains(g.Action, "since 2021-04-20") {
 		t.Errorf("eol = %+v", g)
 	}

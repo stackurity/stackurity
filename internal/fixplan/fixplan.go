@@ -364,6 +364,50 @@ func paidLabel(ch string) string {
 	return ch + " (paid subscription)"
 }
 
+// EndedPackage is a distribution package past upstream end of life on a
+// release that is itself end of life. The matcher raises no finding for it
+// (the operating system's end-of-life finding covers it); the release
+// upgrade lists it.
+type EndedPackage struct {
+	Component string // package name, e.g. php7.4-common
+	Subject   string // upstream product and release, e.g. PHP 7.4
+}
+
+// AddEndedPackages adds each asset's ended packages to its release upgrade.
+func AddEndedPackages(groups []*Group, byAsset map[int64][]EndedPackage) {
+	for _, g := range groups {
+		pkgs := byAsset[g.AssetID]
+		if g.Kind != ReleaseUpgrade || len(pkgs) == 0 {
+			continue
+		}
+		var subjects []string
+		for _, p := range pkgs {
+			g.pkgs[p.Component] = true
+			if p.Subject != "" {
+				subjects = appendUnique(subjects, p.Subject)
+			}
+		}
+		g.Packages = sortedKeys(g.pkgs)
+		g.PackageCount = len(g.Packages)
+		if len(g.Packages) > 25 {
+			g.Packages = g.Packages[:25]
+		}
+		if len(subjects) > 0 {
+			sort.Strings(subjects)
+			g.Note += " Packages also end of life upstream, which only the release's support kept patched: " + strings.Join(subjects, ", ") + "."
+		}
+	}
+}
+
+func appendUnique(s []string, v string) []string {
+	for _, x := range s {
+		if x == v {
+			return s
+		}
+	}
+	return append(s, v)
+}
+
 // eolSubject turns "MySQL 8.0 is end-of-life since 2026-04-30" into
 // ("MySQL 8.0", "2026-04-30").
 func eolSubject(title string) (subject, since string) {

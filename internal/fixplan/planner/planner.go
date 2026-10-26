@@ -11,13 +11,9 @@ import (
 	"github.com/stackurity/stackurity/internal/version"
 )
 
-// osProducts maps os-release IDs to endoflife.date products (same table the
+// osProducts maps os-release IDs to endoflife.date products (the table the
 // matcher uses for OS lifecycle).
-var osProducts = map[string]string{
-	"debian": "debian", "ubuntu": "ubuntu", "alpine": "alpine-linux", "rocky": "rocky-linux",
-	"almalinux": "almalinux", "rhel": "rhel", "centos": "centos", "amzn": "amazon-linux",
-	"fedora": "fedora", "opensuse-leap": "opensuse", "sles": "sles", "ol": "oracle-linux",
-}
+var osProducts = store.OSProducts
 
 // Package planner rebuilds the stored action plan from current findings.
 
@@ -71,6 +67,11 @@ func Rebuild(ctx context.Context, st *store.Store, now time.Time) (int, error) {
 		advice[key] = a
 	}
 	groups, assign := fixplan.Build(rows, advice)
+	ended, err := st.EndedPackages(ctx)
+	if err != nil {
+		return 0, err
+	}
+	fixplan.AddEndedPackages(groups, ended)
 	if err := recommend(ctx, st, rows, groups, assign, now); err != nil {
 		return 0, err
 	}
