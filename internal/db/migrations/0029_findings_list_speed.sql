@@ -30,3 +30,7 @@ CREATE INDEX findings_open_exploited ON findings (asset_id) INCLUDE (workspace_i
     WHERE status = 'open' AND (evidence->>'known_exploited')::boolean;
 CREATE INDEX findings_open_fixable ON findings (asset_id) INCLUDE (workspace_id)
     WHERE status = 'open' AND fixed_version <> '';
+
+-- "New this week" (first seen in the last N days) matches few findings
+-- spread through the list's order; this finds them directly.
+CREATE INDEX findings_open_first_seen ON findings (first_seen) WHERE status = 'open';

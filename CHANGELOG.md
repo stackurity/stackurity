@@ -29,7 +29,8 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ### Upgrading
 
-- Migration `0029` adds four indexes on `findings`; on a workspace with 130,000 findings it takes under a minute and locks writes to findings meanwhile. Bookmarks keep working: the old addresses redirect.
+- Migration `0029` adds five indexes on `findings`; on a workspace with 130,000 findings it takes under a minute and locks writes to findings meanwhile. Bookmarks keep working: the old addresses redirect.
+- The old risk pass left the `findings` table several times larger than its data (553 MB for 130,000 findings, 157 MB after compaction). Searches and other lists that read every finding are faster once it is compacted: in a quiet period run `VACUUM (FULL, ANALYZE) findings;` (it locks the table, about 10 seconds per 130,000 findings) or use `pg_repack`.
 
 ## 0.5.1
 

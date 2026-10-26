@@ -976,8 +976,16 @@ func (s *Store) ListFindings(ctx context.Context, f FindingFilter) ([]Finding, i
 	// Keep this order in step with the findings_open_order index (migration
 	// 0029), which serves the first pages without sorting.
 	order := ""
-	if f.ByAsset {
+	switch {
+	case f.ByAsset:
 		order = "a.name, a.id, "
+	case f.Search != "":
+		// A text search usually matches few rows spread through the whole
+		// order. Walking findings_open_order until 50 match read every open
+		// finding (over 10 s on 130,000); sorting the matches is faster.
+		// This leading key sorts like f.sos DESC but does not match the
+		// index, so the planner filters first.
+		order = "CASE WHEN f.sos THEN 0 ELSE 1 END, "
 	}
 	rows, err := s.Pool.Query(ctx, `SELECT `+findingCols+findingFrom+w.sql()+fmt.Sprintf(`
 		ORDER BY %sf.sos DESC, f.priority, COALESCE((f.evidence->>'known_exploited')::boolean, false) DESC,
