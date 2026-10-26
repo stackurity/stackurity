@@ -25,6 +25,8 @@ func TestFindingWhyAndSecondCheck(t *testing.T) {
 			Sentence      string   `json:"sentence"`
 			Type          string   `json:"type"`
 			EvidenceState string   `json:"evidence_state"`
+			StateText     string   `json:"evidence_state_text"`
+			NeedsReview   bool     `json:"needs_review"`
 			Missing       []string `json:"missing_information"`
 			SecondCheck   *struct {
 				Result string `json:"result"`
@@ -44,7 +46,8 @@ func TestFindingWhyAndSecondCheck(t *testing.T) {
 	if code := l.view.do("GET", "/api/v1/findings/"+itoa(id), nil, &detail); code != 200 {
 		t.Fatalf("finding: %d", code)
 	}
-	if detail.Why.EvidenceState != "needs_validation" || detail.Why.SecondCheck == nil || detail.Why.SecondCheck.Result != "disagreed" ||
+	if detail.Why.EvidenceState != "confirmed" || !detail.Why.NeedsReview || detail.Why.SecondCheck == nil || detail.Why.SecondCheck.Result != "disagreed" ||
+		!strings.HasPrefix(detail.Why.StateText, "Needs validation: the second check disagreed (affected") ||
 		len(detail.Why.Missing) != 1 || !strings.Contains(detail.Why.Missing[0], "disagreed") {
 		t.Fatalf("after a disagreement: %+v", detail.Why)
 	}
@@ -63,7 +66,8 @@ func TestFindingWhyAndSecondCheck(t *testing.T) {
 	var list struct {
 		Items []store.Finding `json:"items"`
 	}
-	if code := l.view.do("GET", "/api/v1/findings?second_check=disagreed", nil, &list); code != 200 || len(list.Items) != 1 || list.Items[0].ID != id {
+	if code := l.view.do("GET", "/api/v1/findings?second_check=disagreed", nil, &list); code != 200 || len(list.Items) != 1 || list.Items[0].ID != id ||
+		list.Items[0].SecondCheck != "disagreed" {
 		t.Fatalf("filter: %d %+v", code, list)
 	}
 	if code := l.view.do("GET", "/api/v1/findings?second_check=maybe", nil, nil); code != 400 {

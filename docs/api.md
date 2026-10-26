@@ -108,7 +108,7 @@ A workspace (shown as the organisation in the dashboard) groups its assets into 
 | `GET /feeds` | viewer | Intelligence feeds and their freshness |
 | `POST /feeds/{name}/refresh` | engineer | Queue a manual refresh |
 | `PATCH /feeds/{name}` | instance admin | Enable or disable a feed (feeds are shared by every workspace) |
-| `GET /second-checks` | viewer | The independent second check of high-impact findings: open findings `agreed`, `disagreed` and `could_not_check`, `pending` (covered, not checked yet), `logged_30d` and the 50 latest logged disagreements with their differences and inputs. `GET /findings?second_check=disagreed` (or `agreed`, `could_not_check`) lists the findings. Narrowed to the caller's projects |
+| `GET /second-checks` | viewer | The independent second check of high-impact findings: open findings `agreed`, `disagreed` and `could_not_check`, `pending` (covered, not checked yet), `logged_30d` and the 50 latest logged disagreements with their differences and inputs. `GET /findings?second_check=disagreed` (or `agreed`, `could_not_check`) lists the findings; every finding carries `second_check` and `second_check_reason`, and `GET /findings/summary` counts `second_check_disagreed`. A disagreement never changes a finding's verification, priority, SOS or alerts. Narrowed to the caller's projects |
 | `GET /evaluation-gaps` | viewer | Components that could not be evaluated, one entry per component and reason, with `coverage` (`unsupported` or `not_evaluated`) |
 | `POST /evaluate` | engineer | Queue a full re-evaluation |
 | `POST /findings/{id}/actions` | engineer (security for `suppress`, `accept_risk`, `ignore`, `reopen`) | Workflow action, see below |

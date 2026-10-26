@@ -14,8 +14,9 @@ import (
 
 // End to end: a real advisory matched by the real matcher, then the stored
 // record is corrupted so it no longer covers the installed version. The
-// second check reads the raw record, disagrees, and the finding becomes
-// needs validation (and loses any SOS), with the disagreement logged.
+// second check reads the raw record and disagrees; the finding shows the
+// disagreement and keeps its verification (so its priority and SOS), and
+// the disagreement is logged.
 func TestSecondCheckCatchesACorruptedRecord(t *testing.T) {
 	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
 	st, sy, ev, up := setup(t)
@@ -54,8 +55,8 @@ func TestSecondCheckCatchesACorruptedRecord(t *testing.T) {
 		t.Fatalf("after corruption: %+v %v", s, err)
 	}
 	fs, _, _ = st.ListFindings(ctx, store.FindingFilter{AssetID: asset, Key: "CVE-2021-23337"})
-	if fs[0].Verification != "needs_validation" || fs[0].SOS {
-		t.Fatalf("a disagreement must not confirm: %s sos=%v", fs[0].Verification, fs[0].SOS)
+	if fs[0].Verification != "confirmed" || fs[0].SecondCheck != store.SecondCheckDisagreed || !strings.Contains(fs[0].SecondCheckReason, "4.17.10") {
+		t.Fatalf("after the disagreement: %s %q %q", fs[0].Verification, fs[0].SecondCheck, fs[0].SecondCheckReason)
 	}
 	sum, err := st.SummarizeSecondChecks(ctx)
 	if err != nil || len(sum.Recent) != 1 || !strings.Contains(string(sum.Recent[0].Inputs), "4.17.10") {

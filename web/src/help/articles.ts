@@ -871,7 +871,7 @@ stackurity.exe agent --interval 6h`,
         table: [
           ["State", "What it means", "What resolves it"],
           ["Confirmed", "The installed version was read from an authoritative source (package database or lockfile) and is in the advisory's affected range, or its release line has ended.", "Nothing: act on it."],
-          ["Needs validation", "The match cannot be relied on yet: the version was inferred or has low confidence, or the independent second check disagreed. It scores lower and is never SOS.", "The **Missing information** box says exactly what: a confirmed version, or a person comparing the version with the advisory."],
+          ["Needs validation", "The match cannot be relied on yet because the version was inferred or has low confidence. It scores lower and is never SOS. An issue the second check disagreed with also says **Needs validation: the second check disagreed**, but keeps its priority, SOS and alerts.", "The **Missing information** box says exactly what: a confirmed version, or a person comparing the version with the advisory."],
           ["Stale", "The asset has stopped reporting. This was true when it was last seen.", "A fresh report: **Check again**, or get the agent reporting."],
           ["Rejected", "A person marked it a false positive with an ignore rule. Stackurity keeps it rejected while the match stays the same.", "Reopen it, or end the ignore rule."],
         ],
@@ -886,7 +886,7 @@ stackurity.exe agent --interval 6h`,
       {
         list: [
           "**Agreed**: it reached the same verdict and fixed version.",
-          "**Disagreed**: it found something different (not affected, another fixed version, a different package or release line). The issue becomes **needs validation** and the page lists what differs. It stays so until the match or the advisory data changes.",
+          "**Disagreed**: it found something different (not affected, another fixed version, a different package or release line). The issue says **Needs validation: the second check disagreed** and lists what differs, and **Home** counts it for review. Its priority, SOS and alerts do not change: the second check is deliberately simple, so a mistake in it must never hide a real issue. It stays flagged until the match or the advisory data changes.",
           "**Could not check**: it does not read this case (pre-release versions, SUSE product channels, Ubuntu FIPS builds, some Alpine versions). It says why. Nothing changes on the issue.",
         ],
       },

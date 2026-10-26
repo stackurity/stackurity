@@ -15,8 +15,8 @@ import (
 const DefaultBatch = 500
 
 // Runner checks a bounded batch of the caller's workspace's high-impact
-// findings that have no current check, records the results and
-// re-prioritises the assets whose findings it moved to needs_validation.
+// findings that have no current check and records the results. It never
+// changes a finding's verification, priority or SOS.
 type Runner struct {
 	Store *store.Store
 	Log   *slog.Logger
@@ -97,20 +97,8 @@ func (r *Runner) Run(ctx context.Context) (Stats, error) {
 		}
 		results = append(results, res)
 	}
-	changed, err := r.Store.RecordSecondChecks(ctx, results)
-	if err != nil || len(changed) == 0 {
-		return st, err
-	}
-	policy, err := r.Store.RiskPolicy(ctx)
-	if err != nil {
-		return st, err
-	}
-	for _, a := range changed {
-		if _, err := r.Store.PrioritizeAsset(ctx, policy, now, a); err != nil {
-			return st, err
-		}
-	}
-	return st, nil
+	_, err = r.Store.RecordSecondChecks(ctx, results)
+	return st, err
 }
 
 // disagreementInputs is what a corpus case needs: the observation, the

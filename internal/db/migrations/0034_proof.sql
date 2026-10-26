@@ -10,8 +10,9 @@
 -- checked (see store.matchBasis); when the matcher changes the match the row
 -- is deleted and the finding is checked again.
 --   agreed           the independent check reached the same verdict
---   disagreed        it did not; differences says what differs. The finding's
---                    verification is needs_validation while this stands.
+--   disagreed        it did not; differences says what differs. A person
+--                    should review it; verification, priority and SOS are
+--                    left as they are, so a defect here never hides an issue.
 --   could_not_check  it could not decide; reason says why
 CREATE TABLE second_checks (
     finding_id    bigint PRIMARY KEY REFERENCES findings(id) ON DELETE CASCADE,

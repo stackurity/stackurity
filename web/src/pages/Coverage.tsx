@@ -47,7 +47,7 @@ export function CoveragePage() {
       <Card>
         <p className="small">
           P1, SOS, known exploited, regressed, unconfirmed and ambiguous findings are re-derived from the raw advisory record and the
-          raw observed version by a separate, simpler code path. A disagreement sets the finding to needs validation.{" "}
+          raw observed version by a separate, simpler code path. A disagreement marks the finding for review; its priority and alerts stay as they are.{" "}
           <Link to="/help/how-stackurity-knows">How Stackurity knows</Link>
         </p>
         <ErrorBox error={checks.error} title="Could not load second checks" />
@@ -59,7 +59,7 @@ export function CoveragePage() {
                   <Link to="/fixes/issues?second_check=disagreed">Disagreed</Link>{" "}
                   <span className="mono">{checks.data.disagreed.toLocaleString()}</span>
                 </dt>
-                <dd className="small">Open findings the second check derived differently. They need a person to look.</dd>
+                <dd className="small">Open findings the second check derived differently. A person should look; they keep their priority.</dd>
               </div>
               <div>
                 <dt>

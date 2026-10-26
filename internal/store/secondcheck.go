@@ -149,10 +149,11 @@ type SecondCheckResult struct {
 }
 
 // RecordSecondChecks stores results. A result is dropped when the finding's
-// match changed since it was read (the basis differs). A disagreement sets
-// a confirmed finding's verification to needs_validation (kept under a
-// person's 'rejected'), adds a history event and is logged. It returns the
-// assets whose findings changed verification, to be re-prioritised.
+// match changed since it was read (the basis differs). A disagreement adds
+// a history event and is logged; it never changes the finding's
+// verification, priority or SOS (the verifier is deliberately simple, so a
+// defect in it must not hide a real issue from urgent alerts). It returns
+// the assets with new disagreements.
 func (s *Store) RecordSecondChecks(ctx context.Context, results []SecondCheckResult) (changedAssets []int64, err error) {
 	seen := map[int64]bool{}
 	err = pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
@@ -198,14 +199,7 @@ func (s *Store) RecordSecondChecks(ctx context.Context, results []SecondCheckRes
 				SELECT $1, asset_id, $2, $3, $4, $5, $6, $7 FROM findings WHERE id = $1`, r.FindingID, r.Kind, r.Key, r.Purl, r.Version, diffs, inputs); err != nil {
 				return err
 			}
-			tag, err := tx.Exec(ctx, `UPDATE findings SET
-				  verification = CASE WHEN verification_before <> '' THEN verification ELSE 'needs_validation' END,
-				  verification_before = CASE WHEN verification_before <> '' THEN 'needs_validation' ELSE '' END
-				WHERE id = $1 AND (verification = 'confirmed' OR verification_before = 'confirmed')`, r.FindingID)
-			if err != nil {
-				return err
-			}
-			if tag.RowsAffected() > 0 && !seen[r.AssetID] {
+			if !seen[r.AssetID] {
 				seen[r.AssetID] = true
 				changedAssets = append(changedAssets, r.AssetID)
 			}

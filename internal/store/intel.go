@@ -492,8 +492,8 @@ func (s *Store) SyncFindings(ctx context.Context, kinds []string, inventoryIDs [
 			ON CONFLICT (inventory_id, kind, key) DO UPDATE SET
 			  -- A finding a person marked a false positive keeps verification
 			  -- 'rejected'; the matcher's own value waits in verification_before.
-			  verification = CASE WHEN f.verification_before <> '' THEN f.verification ELSE `+effectiveVerification+` END,
-			  verification_before = CASE WHEN f.verification_before <> '' THEN `+effectiveVerification+` ELSE '' END,
+			  verification = CASE WHEN f.verification_before <> '' THEN f.verification ELSE EXCLUDED.verification END,
+			  verification_before = CASE WHEN f.verification_before <> '' THEN EXCLUDED.verification ELSE '' END,
 			  severity = EXCLUDED.severity, score = EXCLUDED.score,
 			  title = EXCLUDED.title, fixed_version = EXCLUDED.fixed_version, sources = EXCLUDED.sources,
 			  evidence = EXCLUDED.evidence, last_seen = now(),
@@ -503,7 +503,7 @@ func (s *Store) SyncFindings(ctx context.Context, kinds []string, inventoryIDs [
 			  state = CASE WHEN f.status = 'resolved' AND `+fixedByInventory("f")+` AND f.state = 'in_progress' THEN 'new' ELSE f.state END,
 			  status = 'open', resolved_at = NULL, resolution = ''
 			WHERE f.status = 'resolved'
-			  OR CASE WHEN f.verification_before <> '' THEN f.verification_before ELSE f.verification END IS DISTINCT FROM `+effectiveVerification+`
+			  OR CASE WHEN f.verification_before <> '' THEN f.verification_before ELSE f.verification END IS DISTINCT FROM EXCLUDED.verification
 			  OR f.severity IS DISTINCT FROM EXCLUDED.severity OR f.fixed_version IS DISTINCT FROM EXCLUDED.fixed_version
 			  OR f.sources IS DISTINCT FROM EXCLUDED.sources OR f.evidence IS DISTINCT FROM EXCLUDED.evidence
 			  OR f.last_seen < now() - interval '1 hour'`)
@@ -531,14 +531,6 @@ func (s *Store) SyncFindings(ctx context.Context, kinds []string, inventoryIDs [
 	})
 	return opened, resolved, err
 }
-
-// effectiveVerification is the matcher's verification for an existing
-// finding (in the ON CONFLICT clause of SyncFindings): a confirmed match the
-// independent second check disagreed with stays needs_validation while that
-// disagreement stands (it is deleted when the match changes).
-const effectiveVerification = `(CASE WHEN EXCLUDED.verification = 'confirmed'
-	AND EXISTS (SELECT 1 FROM second_checks s WHERE s.finding_id = f.id AND s.result = 'disagreed')
-	THEN 'needs_validation' ELSE EXCLUDED.verification END)`
 
 // ResolveRemovedFindings closes findings whose inventory row is gone, saying
 // why: fixed by a remediation plan, upgraded to another version, or removed.
@@ -879,6 +871,12 @@ type Finding struct {
 	// DisplayState is the state the dashboard shows: new, to_do,
 	// in_progress, fixed, regressed, snoozed or accepted.
 	DisplayState string `json:"display_state"`
+	// SecondCheck is the result of the independent second check (agreed,
+	// disagreed, could_not_check; "" when none), and SecondCheckReason what
+	// it found. A disagreement never changes verification, priority or SOS:
+	// it asks a person to look.
+	SecondCheck       string `json:"second_check"`
+	SecondCheckReason string `json:"second_check_reason"`
 }
 
 // displayState maps stored status and state to the seven states shown to
@@ -932,11 +930,13 @@ const findingCols = `f.id, f.kind, f.key, f.inventory_id, f.asset_id, a.name, a.
 	f.assignee_team_id, COALESCE(ateam.name, ''), f.ack_due, f.fix_due, f.acknowledged_at, f.suppressed_until, f.state_reason,
 	f.mitigation, f.escalation_level, f.incident_id,
 	COALESCE(f.status = 'open' AND f.state IN ('new', 'acknowledged', 'in_progress') AND f.fix_due < now(), false), f.fix_group,
-	f.priority_policy, f.regressed_at, f.until_fix, f.ignore_reason, f.exception_id, ` + displayState
+	f.priority_policy, f.regressed_at, f.until_fix, f.ignore_reason, f.exception_id, ` + displayState + `,
+	COALESCE(sc.result, ''), COALESCE(sc.reason, '')`
 
 const findingFrom = ` FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
 	JOIN components c ON c.id = f.component_id JOIN inventory i ON i.id = f.inventory_id
-	LEFT JOIN users au ON au.id = f.assignee_user_id LEFT JOIN teams ateam ON ateam.id = f.assignee_team_id`
+	LEFT JOIN users au ON au.id = f.assignee_user_id LEFT JOIN teams ateam ON ateam.id = f.assignee_team_id
+	LEFT JOIN second_checks sc ON sc.finding_id = f.id`
 
 func (s *Store) ListFindings(ctx context.Context, f FindingFilter) ([]Finding, int64, error) {
 	w := &where{}
@@ -1087,6 +1087,9 @@ type FindingSummary struct {
 	Regressed int64 `json:"regressed"`
 	// UntilFix counts snoozed or accepted findings waiting for a fix.
 	UntilFix int64 `json:"until_fix"`
+	// SecondCheckDisagreed counts open findings the independent second
+	// check disagreed with: a person should review them.
+	SecondCheckDisagreed int64 `json:"second_check_disagreed"`
 }
 
 func (s *Store) SummarizeFindings(ctx context.Context) (*FindingSummary, error) {
@@ -1140,9 +1143,11 @@ func (s *Store) SummarizeFindings(ctx context.Context) (*FindingSummary, error) 
 		(SELECT count(*) FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
 		  WHERE f.status = 'open' AND f.regressed_at IS NOT NULL AND f.state IN ('new', 'acknowledged')),
 		(SELECT count(*) FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
-		  WHERE f.status = 'open' AND f.until_fix AND f.state IN ('suppressed', 'risk_accepted'))`).
+		  WHERE f.status = 'open' AND f.until_fix AND f.state IN ('suppressed', 'risk_accepted')),
+		(SELECT count(*) FROM second_checks s JOIN findings f ON f.id = s.finding_id JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
+		  WHERE s.result = 'disagreed' AND f.status = 'open')`).
 		Scan(&sum.KnownExploited, &sum.FixAvailable, &sum.AffectedAssets, &sum.EvaluationGaps, &sum.StaleFeeds, &sum.Resolved7d,
-			&sum.Regressed, &sum.UntilFix)
+			&sum.Regressed, &sum.UntilFix, &sum.SecondCheckDisagreed)
 	return sum, err
 }
 

@@ -83,7 +83,8 @@ func TestMissingInformation(t *testing.T) {
 	e := Build(in, now)
 	if len(e.Missing) != 3 || !strings.Contains(e.Missing[0], `confidence "inferred" (detected by binary banner)`) ||
 		!strings.Contains(e.Missing[1], "second check, which disagreed") || !strings.Contains(e.Missing[2], "successful refresh") ||
-		!strings.Contains(e.SecondCheckText, "disagreed") {
+		!strings.Contains(e.SecondCheckText, "disagreed") || !e.NeedsReview ||
+		!strings.HasPrefix(e.StateText, "Needs validation: the second check disagreed (fixed version") {
 		t.Fatalf("%q\n%s", e.Missing, e.SecondCheckText)
 	}
 	in = vuln(npmEvidence())

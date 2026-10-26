@@ -768,6 +768,9 @@ export interface Finding {
   exception_id?: number | null;
   /** The state the dashboard shows. */
   display_state?: DisplayState;
+  /** Independent second check (1.0): agreed, disagreed, could_not_check, or "" when none. */
+  second_check?: string;
+  second_check_reason?: string;
 }
 
 export interface FindingSummary {
@@ -788,6 +791,8 @@ export interface FindingSummary {
   resolved_7d?: number;
   /** Open issues that came back after a fix and nobody has started on. */
   regressed?: number;
+  /** Open findings the independent second check disagreed with (1.0). */
+  second_check_disagreed?: number;
   /** Snoozed or accepted issues waiting for a fix. */
   until_fix?: number;
 }
@@ -968,6 +973,8 @@ export interface FindingWhy {
   missing_information: string[];
   second_check: SecondCheck | null;
   second_check_text: string;
+  /** The second check disagrees: shown for review; priority and SOS are unchanged. */
+  needs_review?: boolean;
 }
 
 export interface SecondCheckDisagreement {

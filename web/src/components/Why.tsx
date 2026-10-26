@@ -33,7 +33,11 @@ export function WhyMatched({ why }: { why: FindingWhy }) {
       <p className="why-sentence break">{why.sentence}</p>
       <p className="badges">
         <Badge status={why.evidence_state} tone={STATE_TONE[why.evidence_state] ?? "muted"} label={`Evidence: ${state}`} />
-        <SecondCheckBadge check={check} />
+        {why.needs_review ? (
+          <Badge status="second-check-disagreed" tone="warn" label="Needs validation: second check disagreed" />
+        ) : (
+          <SecondCheckBadge check={check} />
+        )}
       </p>
       <p className="small">{why.evidence_state_text}</p>
       {why.missing_information.length > 0 && (

@@ -28,8 +28,9 @@ func disagreed(c *store.SecondCheckCandidate) store.SecondCheckResult {
 		Kind:        c.Kind, Key: c.Key, Purl: c.Purl, Version: c.Version, Inputs: map[string]any{"records": []string{}}}
 }
 
-// A disagreement never silently confirms: the finding is needs validation
-// while it stands, through re-evaluation, and a new match is checked again.
+// A disagreement is shown and kept while the match stands, through
+// re-evaluation, without touching verification (so never priority or SOS);
+// a new match is checked again.
 func TestSecondCheckDisagreementHoldsUntilTheMatchChanges(t *testing.T) {
 	ctx, s := loopStore(t)
 	web := ingestHost(t, s, ctx, "web-1", "pkg:npm/lodash@4.17.15")
@@ -44,7 +45,7 @@ func TestSecondCheckDisagreementHoldsUntilTheMatchChanges(t *testing.T) {
 		t.Fatalf("record: %v %v", changed, err)
 	}
 	f = one(t, s, ctx, web, "CVE-L")
-	if f.Verification != "needs_validation" || !has(actions(t, s, ctx, f.ID), "second_check_disagreed") {
+	if f.Verification != "confirmed" || f.SecondCheck != store.SecondCheckDisagreed || !has(actions(t, s, ctx, f.ID), "second_check_disagreed") {
 		t.Fatalf("after a disagreement: %s %v", f.Verification, actions(t, s, ctx, f.ID))
 	}
 	sc, err := s.FindingSecondCheck(ctx, f.ID)
@@ -56,8 +57,8 @@ func TestSecondCheckDisagreementHoldsUntilTheMatchChanges(t *testing.T) {
 	}
 	// Re-evaluation with the same match keeps it needs validation.
 	syncFix(t, s, ctx, web, map[string]string{"CVE-L": "lodash"}, map[string]string{"CVE-L": "1.0.1"})
-	if f = one(t, s, ctx, web, "CVE-L"); f.Verification != "needs_validation" {
-		t.Fatalf("re-evaluated with the same match: %s", f.Verification)
+	if f = one(t, s, ctx, web, "CVE-L"); f.Verification != "confirmed" || f.SecondCheck != store.SecondCheckDisagreed {
+		t.Fatalf("re-evaluated with the same match: %s %q", f.Verification, f.SecondCheck)
 	}
 	sum, err := s.SummarizeSecondChecks(ctx)
 	if err != nil || sum.Disagreed != 1 || sum.Logged30d != 1 || len(sum.Recent) != 1 || sum.Recent[0].Purl != "pkg:npm/lodash@4.17.15" {
@@ -67,8 +68,8 @@ func TestSecondCheckDisagreementHoldsUntilTheMatchChanges(t *testing.T) {
 	stale := disagreed(c)
 	stale.Result = store.SecondCheckAgreed
 	syncFix(t, s, ctx, web, map[string]string{"CVE-L": "lodash"}, map[string]string{"CVE-L": "1.0.2"})
-	if f = one(t, s, ctx, web, "CVE-L"); f.Verification != "confirmed" {
-		t.Fatalf("after the match changed: %s", f.Verification)
+	if f = one(t, s, ctx, web, "CVE-L"); f.Verification != "confirmed" || f.SecondCheck != "" {
+		t.Fatalf("after the match changed: %s %q", f.Verification, f.SecondCheck)
 	}
 	if sc, _ := s.FindingSecondCheck(ctx, f.ID); sc != nil {
 		t.Fatalf("the check of the old match stands: %+v", sc)
@@ -87,8 +88,8 @@ func TestSecondCheckDisagreementHoldsUntilTheMatchChanges(t *testing.T) {
 	}
 }
 
-// A person's false positive stays rejected; the disagreement waits in
-// verification_before and shows if the finding is reopened.
+// A person's false positive stays rejected, and reopening it gives back the
+// matcher's own verdict; the disagreement is still shown.
 func TestSecondCheckKeepsRejected(t *testing.T) {
 	ctx, s := loopStore(t)
 	web := ingestHost(t, s, ctx, "web-1", "pkg:npm/lodash@4.17.15")
@@ -109,8 +110,8 @@ func TestSecondCheckKeepsRejected(t *testing.T) {
 	if err := s.ApplyFindingAction(ctx, f.ID, store.FindingAction{Action: "reopen"}, user); err != nil {
 		t.Fatal(err)
 	}
-	if f = one(t, s, ctx, web, "CVE-L"); f.Verification != "needs_validation" {
-		t.Fatalf("reopened after a disagreement: %s", f.Verification)
+	if f = one(t, s, ctx, web, "CVE-L"); f.Verification != "confirmed" || f.SecondCheck != store.SecondCheckDisagreed {
+		t.Fatalf("reopened after a disagreement: %s %q", f.Verification, f.SecondCheck)
 	}
 }
 

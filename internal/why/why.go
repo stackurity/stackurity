@@ -49,6 +49,9 @@ type Explanation struct {
 	Missing []string `json:"missing_information"`
 
 	SecondCheck *store.SecondCheck `json:"second_check"`
+	// NeedsReview is set while the second check disagrees. It never lowers
+	// priority or SOS (docs/risk.md); it asks a person to look.
+	NeedsReview bool `json:"needs_review"`
 	// SecondCheckText says what the second check concluded, or that it
 	// does not cover this finding, or has not run yet.
 	SecondCheckText string `json:"second_check_text"`
@@ -279,8 +282,12 @@ func Build(in Input, now time.Time) Explanation {
 		e.StateText = "Rejected: a person reviewed the evidence and marked this a false positive."
 	}
 	if sc := in.SecondCheck; sc != nil && sc.Result == store.SecondCheckDisagreed {
+		e.NeedsReview = true
+		e.StateText = "Needs validation: the second check disagreed (" + sc.Reason + "). " +
+			"Priority, SOS and alerts are unchanged, so a real issue is never hidden; a person should compare the installed version with the advisory record. " +
+			e.StateText
 		e.Missing = append(e.Missing, "Agreement between the matcher and the independent second check, which disagreed: "+sc.Reason+
-			". Compare the installed version with the advisory record; the finding stays needs validation until the match or the record changes.")
+			". Compare the installed version with the advisory record. The disagreement stands until the match or the record changes.")
 	}
 	if e.Source.Stale && f.Verification != "rejected" {
 		e.Missing = append(e.Missing, fmt.Sprintf("A current copy of the source. %s was %s and is stale; a successful refresh would confirm or change this result.",
