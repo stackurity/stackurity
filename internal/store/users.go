@@ -381,10 +381,13 @@ type Token struct {
 	LastUsedAt  *time.Time `json:"last_used_at"`
 	RevokedAt   *time.Time `json:"revoked_at"`
 	UserEmail   string     `json:"user_email"`
+	// ProjectID: assets this collector token creates are added to this
+	// project.
+	ProjectID *int64 `json:"project_id"`
 }
 
 const tokenCols = `id, workspace_id, name, prefix, user_id, role, created_at, expires_at, last_used_at, revoked_at,
-	COALESCE((SELECT email FROM users u WHERE u.id = api_tokens.user_id), '')`
+	COALESCE((SELECT email FROM users u WHERE u.id = api_tokens.user_id), ''), project_id`
 
 // CreateToken returns the stored token and its secret, shown once.
 func (s *Store) CreateToken(ctx context.Context, name string, role auth.Role, userID *int64, createdBy int64, ttl time.Duration) (*Token, string, error) {

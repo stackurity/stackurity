@@ -957,11 +957,11 @@ func (s *Store) RegressedToAnnounce(ctx context.Context) ([]IssueCount, time.Tim
 		return nil, time.Time{}, nil
 	}
 	rows, err := s.Pool.Query(ctx, `SELECT 0::bigint, a.id, a.name, a.environment, a.owner_team_id, f.kind, f.priority, f.sos,
-		  COALESCE((f.evidence->>'known_exploited')::boolean, false), f.fix_group, '', count(*)::int
+		  COALESCE((f.evidence->>'known_exploited')::boolean, false), f.fix_group, '', count(*)::int, `+BacklogFinding+`
 		FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
 		WHERE f.status = 'open' AND f.regressed_at IS NOT NULL AND f.regressed_at <= $1 AND f.state IN ('new', 'acknowledged')
 		  AND (f.regressed_notified_at IS NULL OR f.regressed_notified_at < f.regressed_at)
-		GROUP BY 2, 3, 4, 5, 6, 7, 8, 9, 10`, *upto)
+		GROUP BY 2, 3, 4, 5, 6, 7, 8, 9, 10, 13`, *upto)
 	if err != nil {
 		return nil, time.Time{}, err
 	}

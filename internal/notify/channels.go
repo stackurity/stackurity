@@ -69,6 +69,20 @@ type Item struct {
 	Text  string `json:"text"`
 	Link  string `json:"link,omitempty"`
 	Items []Item `json:"items,omitempty"`
+	// Actions are links that open the item in the dashboard with an action
+	// ready (Assign to me, Snooze, Open a fix). The dashboard asks for one
+	// tap to confirm after sign-in; following a link changes nothing.
+	Actions []Action `json:"actions,omitempty"`
+	// asset is the asset the item is about (0: none or several), used to
+	// open links in the route's project.
+	asset int64
+}
+
+// Action is a link to act on an item: assign, snooze or open.
+type Action struct {
+	Kind  string `json:"kind"`
+	Label string `json:"label"`
+	Link  string `json:"link"`
 }
 
 // Period is the time a summary covers.
@@ -96,7 +110,7 @@ func (m Message) Subject() string {
 		return fmt.Sprintf("%s[resolved] %s", prefix, m.Title)
 	case "escalated":
 		return fmt.Sprintf("%s[%s escalated] %s", prefix, m.Priority, m.Title)
-	case "digest", "test", EventSummary, EventOverdue, EventConnected:
+	case "digest", "test", "invitation", EventSummary, EventOverdue, EventConnected:
 		return m.Title
 	case EventUrgent:
 		return prefix + m.Title
@@ -144,6 +158,11 @@ func writeItems(b *strings.Builder, items []Item, indent string) {
 		b.WriteString(indent + "- " + it.Text + "\n")
 		if it.Link != "" {
 			b.WriteString(indent + "  " + it.Link + "\n")
+		}
+		for _, a := range it.Actions {
+			if a.Kind != "open" { // the item's own link opens it
+				b.WriteString(indent + "  " + a.Label + ": " + a.Link + "\n")
+			}
 		}
 		writeItems(b, it.Items, indent+"  ")
 	}

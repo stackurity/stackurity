@@ -5,6 +5,8 @@ import { useAuth } from "./auth";
 import { Layout } from "./components/Layout";
 import { ErrorBox, Loading } from "./components/ui";
 import { LoginPage, SetupPage } from "./pages/Login";
+import { AcceptInvitePage } from "./pages/AcceptInvite";
+import { OnboardingPage } from "./pages/Onboarding";
 import { HomePage } from "./pages/Home";
 import { AutomaticFixPoliciesPage, SettingsPage } from "./pages/Settings";
 import { AssetsPage } from "./pages/Assets";
@@ -91,6 +93,10 @@ function RequireInstanceAdmin({ children }: { children: ReactNode }) {
 
 export function App() {
   const { state, refresh } = useAuth();
+  const { pathname } = useLocation();
+
+  // An invitation link works signed in or not, before any other page.
+  if (pathname === "/invite" && (state.phase === "login" || state.phase === "ready")) return <AcceptInvitePage />;
 
   switch (state.phase) {
     case "loading":
@@ -122,6 +128,7 @@ export function App() {
       <Route element={<Layout />}>
         <Route index element={<HomePage />} />
         <Route path="search" element={<SearchPage />} />
+        <Route path="get-started" element={<OnboardingPage />} />
         <Route path="help" element={help} />
         <Route path="help/:topic" element={help} />
         <Route path="fixes" element={<FixesPage />} />

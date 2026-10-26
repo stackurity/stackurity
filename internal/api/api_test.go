@@ -39,7 +39,10 @@ type env struct {
 	api *api.Server
 }
 
-func newEnv(t *testing.T) *env {
+func newEnv(t *testing.T) *env { return newEnvWith(t, nil) }
+
+// newEnvWith is newEnv with the server adjusted before it starts.
+func newEnvWith(t *testing.T, adjust func(*api.Server)) *env {
 	st := store.New(testdb.New(t))
 	// Tests run licensed (Enterprise) unless they say otherwise.
 	holder := &license.Holder{}
@@ -47,6 +50,9 @@ func newEnv(t *testing.T) *env {
 	gate := &license.Gate{Licence: holder, Plan: license.CachedPlan(st.WorkspacePlan, 0)}
 	s := &api.Server{Store: st, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Version: "test", SetupToken: "setup-123",
 		Licence: holder, Gate: gate, Health: &health.Checker{Store: st, FeedsEnabled: true}, HTTPMetrics: metrics.NewHTTP()}
+	if adjust != nil {
+		adjust(s)
+	}
 	srv := httptest.NewServer(s.Handler())
 	t.Cleanup(srv.Close)
 	return &env{t: t, srv: srv, st: st, api: s}
@@ -56,6 +62,8 @@ func newEnv(t *testing.T) *env {
 type session struct {
 	e    *env
 	http *http.Client
+	// hdr is sent with every request (such as X-Forwarded-For).
+	hdr map[string]string
 }
 
 func (e *env) anon() *session {
@@ -85,6 +93,9 @@ func (e *env) instanceAdmin(email string) {
 
 func (s *session) req(method, path string, body io.Reader, hdr map[string]string) *http.Response {
 	req, _ := http.NewRequest(method, s.e.srv.URL+path, body)
+	for k, v := range s.hdr {
+		req.Header.Set(k, v)
+	}
 	for k, v := range hdr {
 		req.Header.Set(k, v)
 	}

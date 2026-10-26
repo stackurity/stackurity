@@ -31,6 +31,15 @@ func (s *Store) Ingest(ctx context.Context, b *model.ObservationBatch, tokenID i
 			return fmt.Errorf("resolve asset: %w", err)
 		}
 		res.AssetID, res.NewAsset, res.Conflict = assetID, isNew, conflict
+		// A token made for a project (in the first-run flow, or an
+		// enrollment code naming one) adds the assets it creates to it.
+		if isNew && tokenID > 0 {
+			if _, err := tx.Exec(ctx, `INSERT INTO project_assets (project_id, asset_id)
+				SELECT t.project_id, $2 FROM api_tokens t JOIN projects p ON p.id = t.project_id AND p.archived_at IS NULL
+				WHERE t.id = $1 ON CONFLICT DO NOTHING`, tokenID, assetID); err != nil {
+				return fmt.Errorf("add to project: %w", err)
+			}
+		}
 
 		var tok *int64
 		if tokenID > 0 {

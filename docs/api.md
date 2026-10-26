@@ -34,10 +34,10 @@ A workspace (shown as the organisation in the dashboard) groups its assets into 
 | `POST /feedback` | any signed-in user (rate limited, 10 an hour) | Send feedback to the Stackurity team: `kind` (`bug`, `idea`, `question`), `message` (up to 5000 characters), optional `email` and `page` (a path). The server adds its version and edition and forwards it to `STACKURITY_FEEDBACK_URL`; answers 202 when delivered, 502 when the feedback service cannot be reached, and 404 when feedback is turned off (`GET /auth/me` then has `feedback_enabled: false`). See [network.md](network.md#feedback) |
 | `POST /auth/password` | any signed-in user | Change your own password (`current_password`, `new_password`). Your other sessions are signed out |
 | `POST /enroll` | none (rate limited) | Exchange a one-time enrollment code (`{"code", "hostname"}`) for a collector token and the agent settings chosen with it. Refusals do not say why |
-| `GET`/`POST /enrollments`, `DELETE /enrollments/{id}` | admin | Create, list and revoke enrollment codes: `label`, `environment`, `app_dirs`, `discover_apps`, `uses` (1–500, default 1), `ttl_hours` (1–720, default 24). The code is returned once |
+| `GET`/`POST /enrollments`, `DELETE /enrollments/{id}` | admin | Create, list and revoke enrollment codes: `label`, `environment`, `app_dirs`, `discover_apps`, `uses` (1–500, default 1), `ttl_hours` (1–720, default 24), `project_id` (hosts enrolled with the code, and the assets their agent reports, are added to that project when first created). The code is returned once |
 | `GET /install/agent.sh`, `GET /download/agent/linux-{amd64,arm64}[.sha256]` | none | The agent installer and the agent builds it downloads (bundled in the server image; `STACKURITY_AGENT_DIR`) |
 | `POST /ingest` | collector, engineer+ | Submit an `ObservationBatch` (gzip accepted) |
-| `POST /sbom/import?asset_name=&asset_kind=&environment=` | collector, engineer+ | Import a CycloneDX or SPDX JSON document |
+| `POST /sbom/import?asset_name=&asset_kind=&environment=&project_id=` | collector, engineer+ | Import a CycloneDX or SPDX JSON document. `project_id` (admins; 403 for others) adds the asset to that project. A collector token made for a project adds the assets it creates to it |
 | `GET /collections/{id}/result` | collector (own submissions), engineer+ | Whether a submitted collection has been evaluated (`status`: `pending`, `scoring` (matched, findings not prioritised yet), `evaluated` (matched and prioritised), `failed`), then the asset's open findings and its count of `evaluation_gaps`. Used by `stackurity scan --fail-on` |
 | `GET /overview` | viewer | Inventory, coverage and status counts, including assets by coverage state (`asset_coverage`) and components by row coverage (`component_coverage`) |
 | `GET /search?q=&limit=` | viewer | Global search of the current workspace, see [Search](#search) |
@@ -59,7 +59,7 @@ A workspace (shown as the organisation in the dashboard) groups its assets into 
 | `GET /reports/evidence?from=&to=` | viewer | Patch-management evidence for a period (dates, `to` inclusive; default the last 30 days, at most a year): assets and their collection status, hosts needing a reboot, evaluation gaps, open findings by severity and priority, overdue findings, findings resolved in the period with the share resolved within their deadline and the median days from first detection to resolution, every active exception with its reason, mitigation and expiry, and drift for each `replica_of` pair |
 | `GET /reports/outcomes?days=` | viewer | [Remediation outcomes](#remediation-outcomes) over the last `days` (1 to 365, default 90) |
 | `GET /audit?object_type=&object_id=` | viewer | Audit events |
-| `GET`/`POST /tokens`, `DELETE /tokens/{id}` | any user | Personal tokens (admins: all tokens and collector tokens) |
+| `GET`/`POST /tokens`, `DELETE /tokens/{id}` | any user | Personal tokens (admins: all tokens and collector tokens). A collector token can name a `project_id`: assets it creates are added to that project (the first-run flow's repository step) |
 | `PUT /auth/default-project` | any signed-in user | `{"project_id": N}` (0: all projects): the project the dashboard opens with. `GET /auth/me` returns it as `default_project_id`, with `projects` (the projects the caller can choose), `access` and `project_role` |
 | `GET /projects?archived=true` | viewer, or any grant | Projects the caller can see (members with project access only: theirs, each with their `role`), with `asset_count`; organisation-wide callers also get `unfiled_assets`, the assets in no active project. `archived=true` (admins) includes archived projects |
 | `GET /projects/{id}` | viewer, or a grant on it | A project; for admins also its `grants` |
@@ -70,6 +70,14 @@ A workspace (shown as the organisation in the dashboard) groups its assets into 
 | `POST /access-grants` | admin | `{"project_id" or "asset_id", "user_id" or "team_id" or "email", "role"}`. With `email`, someone who is not a member joins with no organisation-wide role (an account is created with `password` when there is none; `account_created` says so). A grant that exists for the same person or team and project or asset has its role changed (200); a new one is 201 |
 | `PATCH`/`DELETE /access-grants/{id}` | admin | Change a grant's `role`, or remove it. Takes effect on the next request |
 | `GET /project-suggestions`, `POST /project-suggestions/dismiss` | admin | Groupings proposed from `runs_on`, `built_from` and `deployed_as` relations: assets in no project related to a project's assets (`project_id`), or related assets all in no project (`suggested_name`). Nothing changes until someone adds the assets; `{"key"}` hides one until its assets change |
+| `GET /onboarding` | admin | The [first-run flow](#onboarding): `state` (`new`, `skipped`, `done`), `show_flow` (state `new` and no assets yet), `has_assets`, `project_id` and `project` (chosen in the flow), and `steps` (`project`, `asset`, `notifications`, `invite`), each read from what exists. When every step is done the state becomes `done` |
+| `PUT /onboarding` | admin | `{"state": "new" \| "skipped" \| "done", "project_id": N}`; audited as `onboarding.update` |
+| `GET /onboarding/results?since=` | viewer | The waiting screen's poll: assets created since `since` (RFC 3339; default the last 24 hours), newest first, at most 20, in the chosen project (`project_id` or the header). Each has `packages`, `issues` (active), `checked` (its first complete report has been evaluated, so the counts are final) and `fixes_now` (fixes in Home's focus) |
+| `GET /invitations?project_id=` | admin | [Invitations](#invitations): open ones, and the others of the last 30 days, with `status` (`pending`, `accepted`, `revoked`, `expired`). Never the link |
+| `POST /invitations` | admin (30 an hour per organisation) | `{"email", "name", "role", "project_id"}` (`project_id` 0: an organisation-wide role). 201 with `invitation` and `emailed`; when the email was not sent, `link` (shown once) and `email_problem`. Inviting the same person to the same project again replaces the open invitation. Someone already a member gets the project role at once (`granted`, `grant`); an organisation-wide invitation for a member is 409 |
+| `DELETE /invitations/{id}` | admin | Withdraw a pending invitation: its link stops working |
+| `POST /invitations/preview` | none (rate limited) | `{"token"}`: what the link is for (`workspace`, `project`, `role`, `email`, `invited_by`, `expires_at`, `account_exists`) and `signed_in_as`. 410 for any link that does not work, without saying why |
+| `POST /invitations/accept` | none, or the invitee's session (rate limited) | `{"token", "name", "password"}`. Joins the invitation's organisation with its role (see [Invitations](#invitations)); answers `workspace_id`, `project_id`, `role`, `account_created` and `joined`, and the browser session then works in that organisation. 410: the link does not work; 409 `sign_in_required` or `wrong_account` |
 | `GET /teams` | viewer | Teams |
 | `POST`/`PATCH`/`DELETE /teams/{id}` | admin | Manage teams and members (members must belong to the workspace) |
 | `GET`/`POST /users`, `PATCH /users/{id}` | admin | Manage users. `role` `none` keeps someone a member with no organisation-wide role (access through projects only); each user has `access`: `organisation` or `projects` |
@@ -150,6 +158,22 @@ stands), with `text`, `subject`, `upstream_eol`, `distribution` and
 `distribution_eol` ([compatibility.md](compatibility.md#lifecycle-of-distribution-packages)).
 
 Lists return `{"items": [...], "total": N, "limit": L, "offset": O}`. Pass `?limit=` (max 500) and `?offset=`.
+
+## Onboarding
+
+A new organisation's admins see the first-run flow while `GET /onboarding` says `show_flow`: the state is `new` and there are no assets. Organisations with assets never see it (migration `0033` marks them `done`). Skipping sets `skipped`: the dashboard then shows a checklist on Home until every step is done or someone hides it (`done`). The steps are read from data, so doing them elsewhere counts: an active project; an asset (in the flow's project, when one is chosen); an enabled route (for that project, or for every asset); an invitation not withdrawn, or a second member.
+
+Assets added through the flow land in its project: the install command's enrollment code, the CI token and the SBOM upload all carry `project_id`.
+
+## Invitations
+
+An invitation lets someone join the organisation with a role on one project (or, with no project, an organisation-wide role). The link is `https://<server>/invite#<token>`: the token is in the fragment, which browsers do not send to servers or in `Referer`, and travels to the API only in request bodies.
+
+- **Tokens** are 32 random bytes, stored only as their SHA-256, single use, valid for 7 days, and can be withdrawn. Inviting the same person to the same project again withdraws the open one.
+- **Rate limits**: following links (preview and accept together) 10 a minute per address; sending invitations 30 an hour per organisation.
+- **Accepting** takes the organisation, project and role from the stored invitation only; the request has no field that could change them (unknown fields are refused). An account with the invitation's email must be signed in, as itself (409 otherwise); a new account is created with the name and password given (at least 12 characters). A person who is not yet a member joins with project access only (or with the invitation's organisation-wide role); a member's organisation-wide role is never changed, and a higher grant they already hold on the project is kept. A disabled account, an archived project or a disabled organisation make the link invalid. API tokens cannot accept.
+- **Email**: the link goes through the organisation's first enabled email channel. Without one, or when sending fails, `POST /invitations` returns the link once, for the admin to send.
+- **Audit**: `invitation.create`, `invitation.revoke`, `invitation.accept` (with `user.create`, `access.grant` and `auth.login` for a new account) in the organisation's audit log.
 
 ## Search
 
@@ -351,7 +375,7 @@ The `event` of each message:
 - `urgent`: at most one per route per evaluation cycle, only when the cycle produced new urgent issues for the route (at `min_priority` or above, SOS, or known exploited), or a problem with collection, feeds or the platform at that priority. Summarised per asset (up to 5, then "+N more") with up to 3 fixes each from **Fixes**.
 - `summary`: daily or weekly at `summary_time`: new issues by asset, issues fixed (with the fix that closed them, when `send_resolved`), the top 3 fixes still open, overdue counts (when `escalation`, licensed), and open problems. Skipped when nothing changed. A summary is never held by `max_per_hour`.
 - `overdue` (licensed, routes with `escalation`, `urgent_summary` mode): at most one per route per day, when urgent (P1 or SOS) issues have just passed their fix deadline; groups every overdue urgent issue by fix. Escalation levels (1: acknowledgement deadline passed, 2: fix deadline passed) are still recorded on incidents and findings.
-- `connected`: when a new asset's first complete collection has been evaluated (or six hours after it appeared, if no complete collection arrives). Its backlog raises no `urgent` message; issues found later do.
+- `connected`: when a new asset's first complete collection has been evaluated (or six hours after it appeared, if no complete collection arrives): "commmerceblog connected: 1,676 packages checked, 412 issues found, 3 fixes need you". See [A quiet first scan](#a-quiet-first-scan).
 - `test`: **Send test**.
 
 Resolved incidents are not announced; summaries count fixed issues. Quiet hours delay everything except SOS. When `max_per_hour` is reached, further messages are held and counted in the route's next summary, never sent one by one. Failed deliveries are retried with backoff up to 8 times, no sooner than a receiver's `Retry-After`. A delivery that cannot succeed until the configuration changes (Jira rejecting the credentials, an unknown project) fails at once.
@@ -400,11 +424,24 @@ Webhook channels receive each message as JSON. Fields are only ever added, never
 
 - `summary` holds the item texts as plain lines (details indented), for receivers that only show text.
 - `sections[].title` names the part of a message: `Came back after a fix` (urgent and summary), `New issues`, `Connected`, `Fixed`, `Top fixes still open`, `Overdue`, `Stackurity needs attention`.
-- `counts` keys: `urgent`, `assets`, `problems`, `regressed` (urgent); `new`, `new_urgent`, `fixed`, `connected`, `regressed`, `open_fixes`, `overdue`, `overdue_urgent`, `ack_overdue`, `problems`, `held` (summary); `overdue_urgent`, `fixes` (overdue).
+- `counts` keys: `urgent`, `assets`, `problems`, `regressed` (urgent); `new`, `new_urgent`, `fixed`, `connected`, `connected_issues`, `regressed`, `open_fixes`, `overdue`, `overdue_urgent`, `ack_overdue`, `problems`, `held` (summary); `overdue_urgent`, `fixes` (overdue); `assets`, `issues` (connected).
+- Each fix in a message (an item whose `link` is `/fixes/{id}`) has `actions`: `[{"kind": "assign", "label": "Assign to me", "link": ".../fixes/{id}?action=assign"}, {"kind": "snooze", ...}, {"kind": "open", ...}]`. Slack shows them as URL buttons (on up to 8 items per message), email and Teams as links. They open the fix in the dashboard with the action ready; the person confirms it there after signing in. Following a link changes nothing. Slack interactivity (acting from inside Slack) is not built: it needs a public Slack app endpoint and a mapping of Slack users to Stackurity users.
+- A route limited to projects (`project_ids`) opens every link in its project (`?project=N`): its only project, or for a route on several the first of them the item's asset is in.
 - Issues that came back after a fix are urgent whatever their priority: the next urgent message on routes in **Urgent right away + daily summary** mode lists them per asset ("web-1: 3 issues came back after a fix"), once, and summaries count them in their own section rather than as new issues.
 - Summaries also carry `"period": {"from": "...", "to": "..."}`.
 - Every `link` is a dashboard page: the home page, an asset, a fix (`/fixes/{id}`) or a filtered **All issues** list (`/fixes/issues?...`; summaries add `new_within` or `resolved_within` for their period). Links need `STACKURITY_BASE_URL`.
 - Jira issue events (`opened`, `priority_raised`, `escalated`, `resolved`, `updated`) and `test` keep the per-incident shape: `incident_id`, `kind`, `key`, `title`, `priority`, `summary`, `recommended_action`, `link`.
+
+### A quiet first scan
+
+Connecting an asset tells people once, in the `connected` message, and nothing else about what it already had. A finding is part of an asset's **first-scan backlog** while the asset is not announced yet, or when it was first seen before the asset's announcement (assets created since 0.9; `assets.quiet_backlog`). The backlog:
+
+- raises no `urgent` message and no "came back after a fix" alert, even when its incident appears after the announcement;
+- creates no Jira issue (an incident whose open findings are all backlog);
+- is never escalated (no escalation level is recorded on its incidents or findings) and is not counted in `overdue` messages or in summaries' overdue, newly overdue and not-acknowledged counts;
+- is not "new issues" in summaries: the `Connected` section says "1,676 packages checked, 412 issues found", and the title "1 asset connected, 412 issues found".
+
+Issues first seen after the announcement, and issues that come back after it, alert and escalate as usual. Assets that existed before 0.9 keep their deadlines as they were.
 
 Every delivery carries these headers:
 

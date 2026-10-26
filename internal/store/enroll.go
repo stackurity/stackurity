@@ -26,10 +26,13 @@ type Enrollment struct {
 	LastUsedAt   *time.Time `json:"last_used_at"`
 	RevokedAt    *time.Time `json:"revoked_at"`
 	WorkspaceID  int64      `json:"workspace_id"`
+	// ProjectID: hosts enrolled with this code (and the assets their agent
+	// reports) are added to this project.
+	ProjectID *int64 `json:"project_id"`
 }
 
 const enrollmentCols = `id, prefix, label, environment, app_dirs, discover_apps, uses_left, created_by, created_at,
-	expires_at, last_used_at, revoked_at, workspace_id`
+	expires_at, last_used_at, revoked_at, workspace_id, project_id`
 
 // ErrEnrollmentInvalid hides whether a code is unknown, used up, expired or
 // revoked, so the public endpoint reveals nothing about codes.
@@ -48,13 +51,18 @@ func (s *Store) CreateEnrollment(ctx context.Context, e Enrollment, ttl time.Dur
 	if createdBy > 0 {
 		by = &createdBy
 	}
-	rows, err := s.Pool.Query(ctx, `INSERT INTO enrollments (prefix, code_hash, label, environment, app_dirs, discover_apps, uses_left, created_by, expires_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8, now() + make_interval(secs => $9)) RETURNING `+enrollmentCols,
-		prefix, auth.HashToken(secret), e.Label, e.Environment, e.AppDirs, e.DiscoverApps, e.UsesLeft, by, ttl.Seconds())
+	rows, err := s.Pool.Query(tenant.WithoutProject(ctx), `INSERT INTO enrollments (prefix, code_hash, label, environment, app_dirs, discover_apps, uses_left, created_by, expires_at, project_id)
+		SELECT $1,$2,$3,$4,$5,$6,$7,$8, now() + make_interval(secs => $9), $10
+		WHERE $10::bigint IS NULL OR EXISTS (SELECT 1 FROM projects WHERE id = $10 AND archived_at IS NULL)
+		RETURNING `+enrollmentCols,
+		prefix, auth.HashToken(secret), e.Label, e.Environment, e.AppDirs, e.DiscoverApps, e.UsesLeft, by, ttl.Seconds(), e.ProjectID)
 	if err != nil {
 		return nil, "", err
 	}
 	out, err := pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByPos[Enrollment])
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, "", fmt.Errorf("no such project: %w", ErrInvalid)
+	}
 	return out, secret, err
 }
 
@@ -103,8 +111,8 @@ func (s *Store) RedeemEnrollment(ctx context.Context, code, hostname string) (*E
 			return err
 		}
 		name := fmt.Sprintf("agent on %s (enrollment %s)", hostname, e.Prefix)
-		_, err = tx.Exec(ctx, `INSERT INTO api_tokens (name, prefix, token_hash, role, created_by, workspace_id) VALUES ($1,$2,$3,$4,$5,$6)`,
-			name, prefix, auth.HashToken(token), auth.RoleCollector, e.CreatedBy, e.WorkspaceID)
+		_, err = tx.Exec(ctx, `INSERT INTO api_tokens (name, prefix, token_hash, role, created_by, workspace_id, project_id) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+			name, prefix, auth.HashToken(token), auth.RoleCollector, e.CreatedBy, e.WorkspaceID, e.ProjectID)
 		secret = token
 		return err
 	})

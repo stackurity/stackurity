@@ -19,6 +19,9 @@ const (
 	slackHeaderMax  = 150
 	slackSectionMax = 3000
 	slackBlocksMax  = 50
+	// slackActionItems is how many items of one message get buttons; the
+	// rest keep their links. Each takes two blocks.
+	slackActionItems = 8
 )
 
 func buildEmail(from string, to []string, m Message) []byte {
@@ -79,6 +82,13 @@ func emailHTML(m Message) string {
 		b.WriteString("<ul style=\"margin:4px 0 4px 18px;padding:0\">\n")
 		for _, it := range list {
 			b.WriteString("<li>" + link(it.Text, it.Link))
+			if len(it.Actions) > 0 {
+				var acts []string
+				for _, a := range it.Actions {
+					acts = append(acts, link(a.Label, a.Link))
+				}
+				b.WriteString(` <span style="white-space:nowrap">(` + strings.Join(acts, " &middot; ") + `)</span>`)
+			}
 			if len(it.Items) > 0 {
 				items(it.Items)
 			}
@@ -120,6 +130,22 @@ func slackLink(text, href string) string {
 // the message (not an attachment, which Slack folds away behind "Show
 // more").
 func slackPayload(m Message) map[string]any {
+	// Items with actions (fixes) get URL buttons: Assign to me, Snooze,
+	// Open. They open the dashboard, which asks to confirm; they work with
+	// a plain incoming webhook, no Slack app needed. Each takes two more
+	// blocks (its own section and the buttons), so they go to the first
+	// items while the message stays inside Slack's block limit.
+	plain := slackBlocks(m, 0)
+	budget := min(slackActionItems, (slackBlocksMax-len(plain))/2)
+	blocks := plain
+	if budget > 0 {
+		blocks = slackBlocks(m, budget)
+	}
+	return map[string]any{"text": m.Subject(), "blocks": blocks}
+}
+
+// slackBlocks renders a message, giving buttons to at most buttons items.
+func slackBlocks(m Message, buttons int) []map[string]any {
 	var blocks []map[string]any
 	section := func(text string) {
 		for _, part := range splitLines(text, slackSectionMax) {
@@ -129,10 +155,17 @@ func slackPayload(m Message) map[string]any {
 	blocks = append(blocks, map[string]any{"type": "header",
 		"text": map[string]any{"type": "plain_text", "text": shorten(m.Subject(), slackHeaderMax), "emoji": false}})
 	if len(m.Sections) > 0 {
+		given := 0
 		for _, s := range m.Sections {
 			var lines []string
 			if s.Title != "" {
 				lines = append(lines, "*"+escapeSlack(s.Title)+"*")
+			}
+			flush := func() {
+				if len(lines) > 0 {
+					section(strings.Join(lines, "\n"))
+					lines = nil
+				}
 			}
 			var walk func([]Item, string)
 			walk = func(items []Item, indent string) {
@@ -142,11 +175,16 @@ func slackPayload(m Message) map[string]any {
 						bullet = "◦ "
 					}
 					lines = append(lines, indent+bullet+slackLink(it.Text, it.Link))
+					if len(it.Actions) > 0 && given < buttons {
+						flush()
+						blocks = append(blocks, slackButtons(it.Actions, given))
+						given++
+					}
 					walk(it.Items, indent+"      ")
 				}
 			}
 			walk(s.Items, "")
-			section(strings.Join(lines, "\n"))
+			flush()
 		}
 	} else {
 		var lines []string
@@ -177,7 +215,7 @@ func slackPayload(m Message) map[string]any {
 	if len(blocks) > slackBlocksMax {
 		blocks = blocks[:slackBlocksMax]
 	}
-	return map[string]any{"text": m.Subject(), "blocks": blocks}
+	return blocks
 }
 
 // teamsPayload is an Adaptive Card message accepted by Teams Workflows
@@ -217,7 +255,13 @@ func teamsPayload(m Message) map[string]any {
 						extra["isSubtle"] = true
 						extra["spacing"] = "None"
 					}
-					text(prefix+mdLink(it.Text, it.Link), extra)
+					line := prefix + mdLink(it.Text, it.Link)
+					for _, a := range it.Actions {
+						if a.Kind != "open" {
+							line += " · " + mdLink(a.Label, a.Link)
+						}
+					}
+					text(line, extra)
 					walk(it.Items, depth+1)
 				}
 			}
@@ -249,6 +293,24 @@ func teamsPayload(m Message) map[string]any {
 		"type":        "message",
 		"attachments": []map[string]any{{"contentType": "application/vnd.microsoft.card.adaptive", "content": card}},
 	}
+}
+
+// slackButtons is an actions block of URL buttons; n numbers the item so
+// every action_id in the message is unique.
+func slackButtons(actions []Action, n int) map[string]any {
+	var els []map[string]any
+	for _, a := range actions {
+		if len(a.Link) > 3000 {
+			continue
+		}
+		b := map[string]any{"type": "button", "text": map[string]any{"type": "plain_text", "text": a.Label, "emoji": false},
+			"url": a.Link, "action_id": "stk-" + strconv.Itoa(n) + "-" + a.Kind}
+		if a.Kind == "assign" {
+			b["style"] = "primary"
+		}
+		els = append(els, b)
+	}
+	return map[string]any{"type": "actions", "elements": els}
 }
 
 // shorten cuts s to at most n characters at a word boundary.

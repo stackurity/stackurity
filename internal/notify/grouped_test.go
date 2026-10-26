@@ -78,7 +78,7 @@ func TestFirstScanIsQuiet(t *testing.T) {
 		t.Fatalf("want one connected message: %v", ev)
 	}
 	m := f.hook.got[0]
-	if m.Title != "web-1 connected: 1 package checked, 1 fix needs you" || m.SOS ||
+	if m.Title != "web-1 connected: 1 package checked, 2 issues found, 1 fix needs you" || m.SOS ||
 		len(m.Sections) != 1 || len(m.Sections[0].Items) != 1 {
 		t.Fatalf("connected = %+v", m)
 	}

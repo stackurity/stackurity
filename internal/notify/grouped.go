@@ -214,8 +214,76 @@ func priorityFilter(min string) url.Values {
 }
 
 func (d *Dispatcher) grouped(r store.Route, event, title string, sections []Section) Message {
+	for i := range sections {
+		scopeItems(r, sections[i].Items)
+	}
 	return Message{Event: event, Title: title, Route: r.Name, Sections: sections, Summary: itemTexts(sections),
-		Link: d.homeURL(), SettingsLink: d.settingsURL(), At: d.now().UTC()}
+		Link: inProject(d.homeURL(), routeProject(r, 0)), SettingsLink: d.settingsURL(), At: d.now().UTC()}
+}
+
+// --- links into the route's project
+
+// routeProject is the project a link about asset (0: none or several)
+// opens in the dashboard: the route's project when it has one, else the
+// first of its projects the asset is in. 0: all projects.
+func routeProject(r store.Route, asset int64) int64 {
+	switch {
+	case len(r.ProjectIDs) == 1:
+		return r.ProjectIDs[0]
+	case len(r.ProjectIDs) == 0 || asset == 0:
+		return 0
+	}
+	return r.AssetProject[asset]
+}
+
+// inProject adds the project to a dashboard link, so it opens scoped to it.
+func inProject(link string, project int64) string {
+	if project == 0 || link == "" {
+		return link
+	}
+	u, err := url.Parse(link)
+	if err != nil {
+		return link
+	}
+	q := u.Query()
+	q.Set("project", strconv.FormatInt(project, 10))
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
+// scopeItems opens every link of the items in the route's project.
+func scopeItems(r store.Route, items []Item) {
+	for i := range items {
+		it := &items[i]
+		p := routeProject(r, it.asset)
+		it.Link = inProject(it.Link, p)
+		for j := range it.Actions {
+			it.Actions[j].Link = inProject(it.Actions[j].Link, p)
+		}
+		for j := range it.Items {
+			if it.Items[j].asset == 0 {
+				it.Items[j].asset = it.asset
+			}
+		}
+		scopeItems(r, it.Items)
+	}
+}
+
+// fixItem is a fix in a message, with links to assign it, snooze it or
+// open it. The links open the fix page with the action ready; nothing
+// changes until the person confirms it there.
+func (d *Dispatcher) fixItem(text, id string, asset int64) Item {
+	it := Item{Text: text, Link: d.fixURL(id), asset: asset}
+	if d.BaseURL == "" {
+		return it
+	}
+	path := "/fixes/" + url.PathEscape(id)
+	it.Actions = []Action{
+		{Kind: "assign", Label: "Assign to me", Link: d.url(path, url.Values{"action": {"assign"}})},
+		{Kind: "snooze", Label: "Snooze", Link: d.url(path, url.Values{"action": {"snooze"}})},
+		{Kind: "open", Label: "Open", Link: d.fixURL(id)},
+	}
+	return it
 }
 
 // --- aggregation
@@ -313,7 +381,7 @@ func (d *Dispatcher) fixItems(counts map[string]int, infos map[string]store.FixI
 		if top && i == 0 {
 			text = "Top fix: " + text
 		}
-		out = append(out, Item{Text: text, Link: d.fixURL(id)})
+		out = append(out, d.fixItem(text, id, g.AssetID))
 	}
 	return out
 }
@@ -382,7 +450,7 @@ func (d *Dispatcher) urgentMessage(r store.Route, incs []store.Incident, rows ma
 			system = append(system, in)
 		}
 		for _, c := range rows[in.ID] {
-			if !quiet[c.AssetID] && issueInScope(r, c) && urgentIssue(r, c) {
+			if !quiet[c.AssetID] && !c.Backlog && issueInScope(r, c) && urgentIssue(r, c) {
 				counts = append(counts, c)
 				if c.Priority < top {
 					top = c.Priority
@@ -423,6 +491,7 @@ func (d *Dispatcher) urgentMessage(r store.Route, incs []store.Incident, rows ma
 				Text:  fmt.Sprintf("%s: %s%s", a.Name, plural(a.Count, "new urgent issue"), detail(countIf(a.KEV, "known exploited"), countIf(a.SOS, "SOS"))),
 				Link:  d.findingsURL(a.ID, pf),
 				Items: d.fixItems(a.Fixes, infos, a.ID, true),
+				asset: a.ID,
 			})
 		}
 		sections = append(sections, Section{Items: items})
@@ -475,6 +544,7 @@ func (d *Dispatcher) regressedItems(back []*assetIssues, infos map[string]store.
 			Text:  fmt.Sprintf("%s: %s%s", a.Name, cameBack(a.Count), detail(countIf(a.KEV, "known exploited"), countIf(a.SOS, "SOS"))),
 			Link:  d.findingsURL(a.ID, q),
 			Items: d.fixItems(a.Fixes, infos, a.ID, true),
+			asset: a.ID,
 		})
 	}
 	return items
@@ -503,11 +573,15 @@ func fixesByAsset(fixes []store.FixInfo) map[int64][]store.FixInfo {
 	return out
 }
 
-// connectedItem: "commmerceblog connected: 1,676 packages checked, 3 fixes
-// need you", with its top fixes.
+// connectedItem: "commmerceblog connected: 1,676 packages checked, 412
+// issues found, 3 fixes need you", with its top fixes. The issues are the
+// asset's backlog: they are counted here, never as new issues.
 func (d *Dispatcher) connectedItem(a store.NewAsset, fixes []store.FixInfo) Item {
 	name := shorten(a.Name, maxNameLen)
 	text := fmt.Sprintf("%s connected: %s checked, ", name, plural(a.Packages, "package"))
+	if a.Issues > 0 {
+		text += plural(a.Issues, "issue") + " found, "
+	}
 	switch len(fixes) {
 	case 0:
 		text += "nothing needs fixing"
@@ -516,13 +590,13 @@ func (d *Dispatcher) connectedItem(a store.NewAsset, fixes []store.FixInfo) Item
 	default:
 		text += plural(len(fixes), "fix") + " need you"
 	}
-	it := Item{Text: text, Link: d.assetURL(a.ID)}
+	it := Item{Text: text, Link: d.assetURL(a.ID), asset: a.ID}
 	for i, f := range fixes {
 		if i == maxFixItems {
 			it.Items = append(it.Items, Item{Text: fmt.Sprintf("+%s", plural(len(fixes)-maxFixItems, "more fix")), Link: d.planURL(a.ID)})
 			break
 		}
-		it.Items = append(it.Items, Item{Text: fmt.Sprintf("%s (clears %s)", f.Title, plural(f.FindingCount, "issue")), Link: d.fixURL(f.ID)})
+		it.Items = append(it.Items, d.fixItem(fmt.Sprintf("%s (clears %s)", f.Title, plural(f.FindingCount, "issue")), f.ID, a.ID))
 	}
 	return it
 }
@@ -546,7 +620,11 @@ func (d *Dispatcher) connectedMessage(r store.Route, assets []store.NewAsset, fi
 		title = plural(len(assets), "asset") + " connected"
 	}
 	m := d.grouped(r, EventConnected, title, []Section{{Items: items}})
-	m.Counts = map[string]int{"assets": len(assets)}
+	issues := 0
+	for _, a := range assets {
+		issues += a.Issues
+	}
+	m.Counts = map[string]int{"assets": len(assets), "issues": issues}
 	return m
 }
 
@@ -582,7 +660,7 @@ func (d *Dispatcher) overdueFixItems(counts []store.IssueCount, keep func(store.
 			break
 		}
 		g := infos[id]
-		items = append(items, Item{Text: fmt.Sprintf("%s on %s: %s overdue", g.Title, shorten(g.AssetName, maxNameLen), thousands(per[id])), Link: d.fixURL(id)})
+		items = append(items, d.fixItem(fmt.Sprintf("%s on %s: %s overdue", g.Title, shorten(g.AssetName, maxNameLen), thousands(per[id])), id, g.AssetID))
 	}
 	return items, n, len(ids)
 }
@@ -779,7 +857,11 @@ func (d *Dispatcher) summaryMessage(r store.Route, data *summaryData, from, to t
 	// The issues lists show the summary's period (in whole days).
 	days := strconv.Itoa(max(1, int(to.Sub(from).Hours()/24+0.5)))
 	newQ, fixedQ := url.Values{"new_within": {days}}, url.Values{"status": {"resolved"}, "resolved_within": {days}}
-	counts := map[string]int{"new": nNew, "new_urgent": nUrgent, "fixed": nFixed, "connected": len(conn), "regressed": nBack}
+	connIssues := 0
+	for _, a := range conn {
+		connIssues += a.Issues
+	}
+	counts := map[string]int{"new": nNew, "new_urgent": nUrgent, "fixed": nFixed, "connected": len(conn), "connected_issues": connIssues, "regressed": nBack}
 	var sections []Section
 
 	if len(backAssets) > 0 {
@@ -790,7 +872,7 @@ func (d *Dispatcher) summaryMessage(r store.Route, data *summaryData, from, to t
 				items = append(items, moreAssets(len(backAssets)-maxAssetItems, "with issues that came back", d.findingsURL(0, q)))
 				break
 			}
-			items = append(items, Item{Text: fmt.Sprintf("%s: %s", a.Name, cameBack(a.Count)), Link: d.findingsURL(a.ID, q)})
+			items = append(items, Item{Text: fmt.Sprintf("%s: %s", a.Name, cameBack(a.Count)), Link: d.findingsURL(a.ID, q), asset: a.ID})
 		}
 		sections = append(sections, Section{Title: "Came back after a fix", Items: items})
 	}
@@ -803,7 +885,7 @@ func (d *Dispatcher) summaryMessage(r store.Route, data *summaryData, from, to t
 				break
 			}
 			items = append(items, Item{Text: fmt.Sprintf("%s: %s%s", a.Name, plural(a.Count, "new issue"), detail(countIf(a.Urgent, "urgent"))),
-				Link: d.findingsURL(a.ID, newQ)})
+				Link: d.findingsURL(a.ID, newQ), asset: a.ID})
 		}
 		sections = append(sections, Section{Title: "New issues", Items: items})
 	}
@@ -825,7 +907,7 @@ func (d *Dispatcher) summaryMessage(r store.Route, data *summaryData, from, to t
 				items = append(items, moreAssets(len(fixedAssets)-maxAssetItems, "with fixed issues", d.findingsURL(0, fixedQ)))
 				break
 			}
-			items = append(items, Item{Text: fixedText(a), Link: d.findingsURL(a.ID, fixedQ)})
+			items = append(items, Item{Text: fixedText(a), Link: d.findingsURL(a.ID, fixedQ), asset: a.ID})
 		}
 		sections = append(sections, Section{Title: "Fixed", Items: items})
 	}
@@ -845,8 +927,8 @@ func (d *Dispatcher) summaryMessage(r store.Route, data *summaryData, from, to t
 				items = append(items, Item{Text: fmt.Sprintf("+%s", plural(len(open)-maxFixItems, "more fix")), Link: d.planURL(0)})
 				break
 			}
-			items = append(items, Item{Text: fmt.Sprintf("%s on %s (clears %s)", f.Title, shorten(f.AssetName, maxNameLen), plural(f.FindingCount, "issue")),
-				Link: d.fixURL(f.ID)})
+			items = append(items, d.fixItem(fmt.Sprintf("%s on %s (clears %s)", f.Title, shorten(f.AssetName, maxNameLen), plural(f.FindingCount, "issue")),
+				f.ID, f.AssetID))
 		}
 		sections = append(sections, Section{Title: "Top fixes still open", Items: items})
 	}
@@ -929,7 +1011,13 @@ func (d *Dispatcher) summaryMessage(r store.Route, data *summaryData, from, to t
 		parts = append(parts, thousands(nFixed)+" fixed")
 	}
 	if len(conn) > 0 {
-		parts = append(parts, plural(len(conn), "asset")+" connected")
+		// A new asset's backlog is not news: "1 asset connected, 412 issues
+		// found", never "412 new issues".
+		p := plural(len(conn), "asset") + " connected"
+		if connIssues > 0 {
+			p += ", " + plural(connIssues, "issue") + " found"
+		}
+		parts = append(parts, p)
 	}
 	if len(parts) == 0 && counts["overdue"] > 0 {
 		parts = append(parts, thousands(counts["overdue"])+" overdue")

@@ -178,6 +178,8 @@ export interface Token {
   last_used_at: string | null;
   revoked_at: string | null;
   user_email?: string;
+  /** Assets this collector token creates are added to this project. */
+  project_id?: number | null;
 }
 
 export interface Me {
@@ -1842,12 +1844,84 @@ export interface Enrollment {
   expires_at: string;
   last_used_at: string | null;
   revoked_at: string | null;
+  /** Hosts enrolled with the code land in this project. */
+  project_id?: number | null;
 }
 
 /** POST /enrollments: the code is returned only here, once. */
 export interface EnrollmentCreated {
   enrollment: Enrollment;
   code: string;
+}
+
+// --- Onboarding (0.9): the first-run flow, the waiting screen, invitations
+
+export type OnboardingState = "new" | "skipped" | "done";
+
+/** GET /onboarding (admins). Each step is read from what exists. */
+export interface Onboarding {
+  state: OnboardingState;
+  /** Open the first-run flow: state new and no assets yet. */
+  show_flow: boolean;
+  has_assets: boolean;
+  project_id: number;
+  project: Project | null;
+  steps: { project: boolean; asset: boolean; notifications: boolean; invite: boolean };
+}
+
+/** GET /onboarding/results: an asset the waiting screen reports on. */
+export interface FirstResult {
+  id: number;
+  name: string;
+  kind: string;
+  environment: string;
+  created_at: string;
+  last_seen: string | null;
+  /** Its first complete report has been checked: the counts are final. */
+  checked: boolean;
+  packages: number;
+  issues: number;
+  /** Fixes that matter now (SOS or P1 with a fix, in production). */
+  fixes_now: number;
+}
+
+export interface Invitation {
+  id: number;
+  email: string;
+  name: string;
+  project_id: number | null;
+  project_name: string;
+  role: UserRole;
+  prefix: string;
+  created_at: string;
+  expires_at: string;
+  emailed_at: string | null;
+  accepted_at: string | null;
+  revoked_at: string | null;
+  status: "pending" | "accepted" | "revoked" | "expired";
+}
+
+/** POST /invitations. link is there only when the email was not sent. */
+export interface InvitationCreated {
+  invitation?: Invitation;
+  emailed?: boolean;
+  link?: string;
+  email_problem?: string;
+  /** The person was already a member: the project role was given at once. */
+  granted?: boolean;
+  grant?: Grant;
+}
+
+/** POST /invitations/preview, for the person following the link. */
+export interface InvitationPreview {
+  email: string;
+  name: string;
+  workspace: string;
+  project: string;
+  role: UserRole;
+  invited_by: string;
+  expires_at: string;
+  account_exists: boolean;
 }
 
 // --- transport

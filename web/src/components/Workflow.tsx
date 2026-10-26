@@ -53,6 +53,11 @@ export type ActionTarget =
 /** Largest fix group whose issues can be changed at once from the fix page. */
 export const GROUP_ACTION_MAX = 2000;
 
+/** Assigns every open issue of a fix to a person (Assign to me in notifications). */
+export function assignGroup(groupId: string, userId: number): Promise<ActionResult> {
+  return groupAction(groupId, { action: "assign", user_id: userId });
+}
+
 /** Applies a bulk action to every open finding of a fix group, 500 at a time. */
 async function groupAction(groupId: string, req: FindingActionRequest): Promise<ActionResult> {
   const ids: number[] = [];

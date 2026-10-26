@@ -27,6 +27,8 @@ type enrollmentRequest struct {
 	DiscoverApps bool     `json:"discover_apps"`
 	Uses         int      `json:"uses"`      // default 1
 	TTLHours     int      `json:"ttl_hours"` // default 24
+	// ProjectID: hosts enrolled with the code land in this project.
+	ProjectID int64 `json:"project_id"`
 }
 
 var envLabel = regexp.MustCompile(`^[A-Za-z0-9._-]{0,64}$`)
@@ -72,14 +74,21 @@ func (s *Server) createEnrollment(w http.ResponseWriter, r *http.Request) {
 	if p.User != nil {
 		by = p.User.ID
 	}
+	var project *int64
+	if req.ProjectID > 0 {
+		project = &req.ProjectID
+	} else if req.ProjectID < 0 {
+		s.fail(w, r, badRequest("project_id must be a project"))
+		return
+	}
 	e, code, err := s.Store.CreateEnrollment(r.Context(), store.Enrollment{Label: strings.TrimSpace(req.Label), Environment: req.Environment,
-		AppDirs: req.AppDirs, DiscoverApps: req.DiscoverApps, UsesLeft: req.Uses}, time.Duration(req.TTLHours)*time.Hour, by)
+		AppDirs: req.AppDirs, DiscoverApps: req.DiscoverApps, UsesLeft: req.Uses, ProjectID: project}, time.Duration(req.TTLHours)*time.Hour, by)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
 	_ = s.Store.Audit(r.Context(), p.Actor(r), "enrollment.create", "enrollment", itoa(e.ID), map[string]any{
-		"label": e.Label, "environment": e.Environment, "uses": e.UsesLeft, "expires_at": e.ExpiresAt})
+		"label": e.Label, "environment": e.Environment, "uses": e.UsesLeft, "expires_at": e.ExpiresAt, "project_id": e.ProjectID})
 	writeJSON(w, 201, map[string]any{"enrollment": e, "code": code})
 }
 

@@ -63,7 +63,7 @@ for `assets` (on `id`), `asset_identifiers`, `collections`, `coverage`, `invento
 
 ## Notifications
 
-A route with `project_ids` hears about issues counted per asset for those projects' assets only, about collection and coverage problems of those assets, and about no other problems: urgent alerts, summaries, overdue alerts and "connected" messages never name an asset outside the projects. `ListRoutes` loads each such route's asset set (active projects only). As a second lock, every message for such a route is checked before it is queued: one that links to an asset outside the projects (an asset page, its issues or fixes, a fix of it) is withheld and logged. Such a route is stored with `enabled` false and its switch in `project_enabled`, so a release before 0.8, which ignores `project_ids`, sees it as off rather than sending it every project's alerts (such releases also refuse a database migrated by a newer one). Jira issues describe a whole incident across every asset, so routes to Jira cannot be limited to projects yet (400).
+A route with `project_ids` opens its links in its project (0.9; `notify.routeProject`). It hears about issues counted per asset for those projects' assets only, about collection and coverage problems of those assets, and about no other problems: urgent alerts, summaries, overdue alerts and "connected" messages never name an asset outside the projects. `ListRoutes` loads each such route's asset set (active projects only). As a second lock, every message for such a route is checked before it is queued: one that links to an asset outside the projects (an asset page, its issues or fixes, a fix of it) is withheld and logged. Such a route is stored with `enabled` false and its switch in `project_enabled`, so a release before 0.8, which ignores `project_ids`, sees it as off rather than sending it every project's alerts (such releases also refuse a database migrated by a newer one). Jira issues describe a whole incident across every asset, so routes to Jira cannot be limited to projects yet (400).
 
 ## Grouping suggestions
 
@@ -87,5 +87,5 @@ The fast path adds about 3 ms of planning time per query. The test fails if any 
 
 - Jira routes limited to projects (an issue would need a per-project view of its incident).
 - Project-level filters on incidents by stored priority: list filters (`priority=`, `sos=`) use the incident's stored values; the narrowed values are shown.
-- Links in notifications for project routes open the dashboard without choosing the project.
+- Links in notifications for project routes open the dashboard without choosing the project. Done in 0.9: every link of a route limited to projects carries `?project=` (its only project, or the first of its projects the item's asset is in).
 - The CLI has no project option; the API's `project_id` parameter works with any client.

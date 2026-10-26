@@ -108,6 +108,8 @@ var projectRoutes = map[string]projectScope{
 	"GET /api/v1/ignore-rules":         scopedRead,
 	"GET /api/v1/ignore-requests":      scopedRead,
 	"GET /api/v1/ignore-requests/{id}": scopedRead,
+	// Onboarding (0.9): the waiting screen's poll, narrowed like assets.
+	"GET /api/v1/onboarding/results": scopedRead,
 
 	// Narrowed, and the handler checks the role on each asset.
 	"PATCH /api/v1/assets/{id}":            scopedWrite,

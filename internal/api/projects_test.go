@@ -37,17 +37,19 @@ import (
 //	scoped-write  as scoped, and the handler checks the caller's role on each asset
 //	org           organisation-wide roles only: members with project access get 403
 var projectScopes = map[string]string{
-	"GET /healthz":                   "public",
-	"GET /readyz":                    "public",
-	"GET /install/agent.sh":          "public",
-	"GET /download/agent/{platform}": "public",
-	"GET /api/v1/meta":               "public",
-	"POST /api/v1/setup":             "public",
-	"POST /api/v1/auth/login":        "public",
-	"POST /api/v1/auth/logout":       "public",
-	"POST /api/v1/enroll":            "public",
-	"GET /api/v1/auth/oidc/login":    "public",
-	"GET /api/v1/auth/oidc/callback": "public",
+	"GET /healthz":                     "public",
+	"GET /readyz":                      "public",
+	"GET /install/agent.sh":            "public",
+	"GET /download/agent/{platform}":   "public",
+	"GET /api/v1/meta":                 "public",
+	"POST /api/v1/setup":               "public",
+	"POST /api/v1/auth/login":          "public",
+	"POST /api/v1/auth/logout":         "public",
+	"POST /api/v1/enroll":              "public",
+	"POST /api/v1/invitations/preview": "public",
+	"POST /api/v1/invitations/accept":  "public",
+	"GET /api/v1/auth/oidc/login":      "public",
+	"GET /api/v1/auth/oidc/callback":   "public",
 
 	"GET /api/v1/auth/me":                   "account",
 	"POST /api/v1/auth/password":            "account",
@@ -109,6 +111,7 @@ var projectScopes = map[string]string{
 	"GET /api/v1/ignore-rules":                 "scoped",
 	"GET /api/v1/ignore-requests":              "scoped",
 	"GET /api/v1/ignore-requests/{id}":         "scoped",
+	"GET /api/v1/onboarding/results":           "scoped",
 
 	"PATCH /api/v1/assets/{id}":                  "scoped-write",
 	"POST /api/v1/assets/{id}/relations":         "scoped-write",
@@ -198,6 +201,11 @@ var projectScopes = map[string]string{
 	"POST /api/v1/risk-policy/preview":             "org",
 	"POST /api/v1/users":                           "org",
 	"POST /api/v1/teams":                           "org",
+	"GET /api/v1/onboarding":                       "org",
+	"PUT /api/v1/onboarding":                       "org",
+	"GET /api/v1/invitations":                      "org",
+	"POST /api/v1/invitations":                     "org",
+	"DELETE /api/v1/invitations/{id}":              "org",
 	"POST /api/v1/integrations":                    "org",
 	"POST /api/v1/channels":                        "org",
 	"POST /api/v1/routes":                          "org",
@@ -652,7 +660,7 @@ func (o *org) betaFixture() *tenantFx {
 	set("ignorerule", "beta-ignorerule")
 	ids["fixgroup"] = o.fixGroup
 	for _, k := range []string{"user", "job", "channel", "route", "delivery", "integration", "enrollment", "token", "conflict",
-		"plan", "policy", "action", "collector-token"} {
+		"plan", "policy", "action", "collector-token", "invitation"} {
 		ids[k] = "999999999"
 	}
 	ids["secret"] = "BETA_TOKEN"
