@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 
@@ -113,7 +114,45 @@ type FixGroupFilter struct {
 	Kind        string
 	Environment string
 	Search      string
+	// Bucket keeps the groups of one FixBucket (focus, no_fix, ...).
+	Bucket string
+	// ProductionEnvs names the production environments (from the risk
+	// policy), for the non_production bucket.
+	ProductionEnvs []string
 	Page
+}
+
+// Fix buckets sort every fix group into what needs a person now (focus) or
+// the first reason it is left out of that view. Home shows the focus groups
+// and counts the others, so nothing is hidden without saying why.
+const (
+	BucketFocus         = "focus"          // a fix exists, SOS or P1, production or no environment
+	BucketNoFix         = "no_fix"         // no free fixed version yet
+	BucketOldKernels    = "old_kernels"    // kernels installed but not running
+	BucketNonProduction = "non_production" // the asset's environment is not a production one
+	BucketLowerPriority = "lower_priority" // P2 to P4 without SOS
+)
+
+// FixBuckets lists the buckets in the order the reasons are checked.
+var FixBuckets = []string{BucketFocus, BucketNoFix, BucketOldKernels, BucketNonProduction, BucketLowerPriority}
+
+// fixBucketSQL returns the bucket of fix group g as a SQL expression; $n is
+// the text[] of production environment names (lower case).
+func fixBucketSQL(n int) string {
+	return fmt.Sprintf(`CASE
+		WHEN g.kind = 'no_fix' THEN 'no_fix'
+		WHEN g.kind = 'old_kernels' THEN 'old_kernels'
+		WHEN COALESCE(g.data->>'environment', '') <> '' AND NOT (lower(g.data->>'environment') = ANY($%d::text[])) THEN 'non_production'
+		WHEN COALESCE((g.data->>'sos')::boolean, false) OR g.data->>'top_priority' = 'P1' THEN 'focus'
+		ELSE 'lower_priority' END`, n)
+}
+
+func lowerAll(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, e := range in {
+		out = append(out, strings.ToLower(e))
+	}
+	return out
 }
 
 func (s *Store) ListFixGroups(ctx context.Context, f FixGroupFilter) ([]json.RawMessage, int64, error) {
@@ -129,6 +168,10 @@ func (s *Store) ListFixGroups(ctx context.Context, f FixGroupFilter) ([]json.Raw
 	}
 	if f.Search != "" {
 		w.add("(g.data->>'title' ILIKE ? OR g.data->>'asset_name' ILIKE ? OR g.data->>'packages' ILIKE ?)", likeEscape(f.Search))
+	}
+	if f.Bucket != "" {
+		w.args = append(w.args, lowerAll(f.ProductionEnvs))
+		w.add(fixBucketSQL(len(w.args))+" = ?", f.Bucket)
 	}
 	var total int64
 	if err := s.Pool.QueryRow(ctx, `SELECT count(*) FROM fix_groups g`+w.sql(), w.args...).Scan(&total); err != nil {
@@ -201,6 +244,72 @@ func (s *Store) SummarizeFixPlan(ctx context.Context, assetID int64) (*FixPlanSu
 	err = s.Pool.QueryRow(ctx, q, args...).
 		Scan(&sum.UniqueIssues, &sum.SOSFindings)
 	return sum, err
+}
+
+// FixFocus says how many fix groups need a person now, why the others are
+// left out of that view, and which assets the focus groups are on.
+type FixFocus struct {
+	Groups   int64 `json:"groups"`
+	Findings int64 `json:"findings"`
+	// Hidden counts groups and findings per bucket other than focus.
+	Hidden map[string]map[string]int64 `json:"hidden"`
+	Assets []FocusAsset                `json:"assets"`
+}
+
+// FocusAsset is an asset with fix groups in the focus bucket.
+type FocusAsset struct {
+	AssetID   int64  `json:"asset_id"`
+	AssetName string `json:"asset_name"`
+	Groups    int64  `json:"groups"`
+	Findings  int64  `json:"findings"`
+}
+
+// SummarizeFixFocus sorts the fix groups into buckets (see FixBuckets).
+func (s *Store) SummarizeFixFocus(ctx context.Context, assetID int64, productionEnvs []string) (*FixFocus, error) {
+	out := &FixFocus{Hidden: map[string]map[string]int64{}, Assets: []FocusAsset{}}
+	args := []any{lowerAll(productionEnvs)}
+	cond := ""
+	if assetID > 0 {
+		args = append(args, assetID)
+		cond = " WHERE g.asset_id = $2"
+	}
+	rows, err := s.Pool.Query(ctx, `SELECT `+fixBucketSQL(1)+` AS bucket, count(*), COALESCE(sum((g.data->>'finding_count')::bigint), 0)
+		FROM fix_groups g`+cond+` GROUP BY 1`, args...)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var b string
+		var groups, findings int64
+		if err := rows.Scan(&b, &groups, &findings); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if b == BucketFocus {
+			out.Groups, out.Findings = groups, findings
+			continue
+		}
+		out.Hidden[b] = map[string]int64{"groups": groups, "findings": findings}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	arows, err := s.Pool.Query(ctx, `SELECT g.asset_id, min(g.data->>'asset_name'), count(*), COALESCE(sum((g.data->>'finding_count')::bigint), 0)
+		FROM fix_groups g WHERE `+fixBucketSQL(1)+` = 'focus'`+strings.Replace(cond, " WHERE", " AND", 1)+`
+		GROUP BY g.asset_id ORDER BY min(g.sort_order) LIMIT 20`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer arows.Close()
+	for arows.Next() {
+		var a FocusAsset
+		if err := arows.Scan(&a.AssetID, &a.AssetName, &a.Groups, &a.Findings); err != nil {
+			return nil, err
+		}
+		out.Assets = append(out.Assets, a)
+	}
+	return out, arows.Err()
 }
 
 // FixGroupsForAssets returns the top groups for the given assets, for
