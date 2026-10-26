@@ -33,6 +33,19 @@ func (s *Server) agentCheck(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	// A host-bound token may only ask about what it may report for: its
+	// host and the applications on it, as ingest enforces.
+	bound, err := s.boundAsset(r)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if bound != nil {
+		if ids, err = s.Store.AssetsReportingThrough(r.Context(), *bound, ids); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+	}
 	due, err := s.Store.AgentCheckDue(r.Context(), ids)
 	if err != nil {
 		s.fail(w, r, err)

@@ -114,13 +114,37 @@ func (l *loopEnv) ingest(purls ...string) int64 {
 	return r.AssetID
 }
 
-func (l *loopEnv) poll(assets ...int64) (bool, int) {
+func (l *loopEnv) poll(assets ...int64) (bool, int) { return l.pollWith(l.collector, assets...) }
+
+// send posts a batch with a token and returns the asset it went to.
+func (l *loopEnv) send(token string, b *model.ObservationBatch) int64 {
+	l.t.Helper()
+	b.Complete = true
+	if err := b.Validate(); err != nil {
+		l.t.Fatal(err)
+	}
+	raw, _ := json.Marshal(b)
+	req, _ := http.NewRequest("POST", l.srv.URL+"/api/v1/ingest", strings.NewReader(string(raw)))
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		l.t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var r store.IngestResult
+	if resp.StatusCode != 201 || json.NewDecoder(resp.Body).Decode(&r) != nil {
+		l.t.Fatalf("ingest %s: %d", b.Asset.Name, resp.StatusCode)
+	}
+	return r.AssetID
+}
+
+func (l *loopEnv) pollWith(token string, assets ...int64) (bool, int) {
 	q := make([]string, len(assets))
 	for i, a := range assets {
 		q[i] = fmt.Sprint(a)
 	}
 	req, _ := http.NewRequest("GET", l.srv.URL+"/api/v1/agent/check?asset_id="+strings.Join(q, ","), nil)
-	req.Header.Set("Authorization", "Bearer "+l.collector)
+	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		l.t.Fatal(err)
@@ -393,5 +417,57 @@ func TestCheckAgainAPI(t *testing.T) {
 	if err := l.st.Pool.QueryRow(l.ctx, `SELECT EXISTS (SELECT 1 FROM jobs WHERE kind = 'integration.run' AND dedupe_key = $1 AND done_at IS NULL)`,
 		fmt.Sprintf("integration:%d", integ.ID)).Scan(&queued); err != nil || !queued {
 		t.Errorf("scan queued: %v %v", queued, err)
+	}
+}
+
+// A host-bound agent token may only poll for its host and the applications
+// on it (the assets ingest lets it report for), never for another host.
+func TestAgentCheckRespectsBoundTokens(t *testing.T) {
+	l := newLoopEnv(t)
+	hostA := l.asset
+	hostB := l.send(l.collector, model.NewBatch(model.Collector{ID: "agent", Method: "agent"}, model.AssetRef{Kind: model.AssetHost,
+		Name: "web-2", Identifiers: []model.Identifier{{Scheme: "machine-id", Value: "web-2"}}}))
+	_, bound, err := l.st.CreateAssetToken(l.ctx, hostA, "agent-web-1", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	appBatch := model.NewBatch(model.Collector{ID: "linux-apps", Method: "agent"}, model.AssetRef{Kind: model.AssetApplication,
+		Name: "shop on web-1", Identifiers: []model.Identifier{{Scheme: model.AppPathScheme, Value: "/srv/shop"}}})
+	appBatch.Observations = []model.Observation{{Purl: "pkg:npm/express@4.17.1", Confidence: model.ConfidenceConfirmed}}
+	appBatch.Relations = []model.RelationRef{{Kind: "runs_on", To: []model.Identifier{{Scheme: "machine-id", Value: "web-1"}}}}
+	app := l.send(bound, appBatch)
+
+	for _, a := range []int64{hostA, hostB, app} {
+		if code := l.eng.do("POST", fmt.Sprintf("/api/v1/assets/%d/check", a), nil, nil); code != 201 {
+			t.Fatalf("check %d: %d", a, code)
+		}
+	}
+	// Host B's id, alone or among its own: B is never touched.
+	if due, _ := l.pollWith(bound, hostB); due {
+		t.Error("a token bound to web-1 was told web-2 has a check due")
+	}
+	var b struct {
+		Items []store.Check
+	}
+	l.view.do("GET", fmt.Sprintf("/api/v1/checks?asset_id=%d", hostB), nil, &b)
+	var asset struct{ Asset store.Asset }
+	l.view.do("GET", fmt.Sprintf("/api/v1/assets/%d", hostB), nil, &asset)
+	if len(b.Items) != 1 || b.Items[0].PickedUpAt != nil || asset.Asset.AgentPolledAt != nil {
+		t.Errorf("web-2 touched by web-1's token: check %+v, agent_polled_at %v", b.Items, asset.Asset.AgentPolledAt)
+	}
+	// Its own host and application.
+	if due, _ := l.pollWith(bound, hostB, app); !due {
+		t.Error("the bound token was not told about its application's check")
+	}
+	if due, _ := l.pollWith(bound, hostA); !due {
+		t.Error("the bound token was not told about its host's check")
+	}
+	l.view.do("GET", fmt.Sprintf("/api/v1/checks?asset_id=%d", hostB), nil, &b)
+	if b.Items[0].PickedUpAt != nil {
+		t.Error("web-2's check picked up by web-1's token")
+	}
+	// An unbound collector token keeps asking for any asset it reports.
+	if due, _ := l.pollWith(l.collector, hostB); !due {
+		t.Error("unbound collector token")
 	}
 }
