@@ -362,3 +362,71 @@ func TestJobInterruptedEveryAttemptFails(t *testing.T) {
 		t.Errorf("job = %+v; want failed after %d interrupted attempts", got, got.MaxAttempts)
 	}
 }
+
+// A job that cannot start yet (Defer) frees its slot: on a one-slot worker,
+// while an evaluation of the workspace holds the evaluation lock, a second
+// evaluation is deferred and another job kind runs meanwhile; the deferred
+// evaluation runs once the lock is released, without using up an attempt or
+// recording an error.
+func TestDeferredJobFreesItsSlot(t *testing.T) {
+	st := store.New(testdb.New(t))
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	w := newWorker(st)
+	w.Concurrency, w.Poll = 1, 20*time.Millisecond
+	// The first evaluation, holding the lock (as a long full evaluation would).
+	release, err := st.LockEvaluations(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tries, ran atomic.Int64
+	// As the server's evaluate handler: busy means defer.
+	w.Handle("evaluate", func(ctx context.Context, _ json.RawMessage) error {
+		tries.Add(1)
+		rel, err := st.LockEvaluations(ctx)
+		if errors.Is(err, store.ErrEvaluationBusy) {
+			return Defer(50*time.Millisecond, "another evaluation of this workspace is running")
+		}
+		if err != nil {
+			return err
+		}
+		defer rel()
+		ran.Add(1)
+		return nil
+	})
+	other := make(chan struct{})
+	w.Handle("feed.sync", func(context.Context, json.RawMessage) error { close(other); return nil })
+	evalID, err := st.Enqueue(ctx, "evaluate", map[string]any{"all": true}, "", time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Enqueue(ctx, "feed.sync", map[string]any{"feed": "x"}, "", time.Now().Add(100*time.Millisecond)); err != nil {
+		t.Fatal(err)
+	}
+	rctx, stop := context.WithCancel(context.Background())
+	defer stop()
+	go w.Run(rctx)
+	select {
+	case <-other:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the other job did not run while the evaluation was deferred")
+	}
+	if ran.Load() != 0 || tries.Load() < 2 {
+		t.Fatalf("evaluation tries %d, ran %d", tries.Load(), ran.Load())
+	}
+	release()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		j, err := st.GetJob(tenant.System(context.Background()), evalID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if j.DoneAt != nil {
+			if ran.Load() != 1 || j.Attempts != 1 || j.LastError != "" || j.FailedAt != nil {
+				t.Errorf("after the lock was released: ran %d, job %+v", ran.Load(), j)
+			}
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("the deferred evaluation did not run after the lock was released")
+}

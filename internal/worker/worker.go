@@ -26,6 +26,20 @@ import (
 
 type Handler func(ctx context.Context, payload json.RawMessage) error
 
+// Deferred is what a handler returns when its job cannot start yet, for
+// example because another job holds a lock it needs: the job goes back to
+// the queue and runs again after After, its slot is free for other jobs
+// meanwhile, and the attempt is neither counted nor logged as a failure.
+type Deferred struct {
+	After  time.Duration
+	Reason string
+}
+
+func (d *Deferred) Error() string { return "deferred: " + d.Reason }
+
+// Defer returns a Deferred error for a handler to return.
+func Defer(after time.Duration, reason string) error { return &Deferred{After: after, Reason: reason} }
+
 type Worker struct {
 	Store       *store.Store
 	Log         *slog.Logger
@@ -202,6 +216,14 @@ func (w *Worker) run(ctx context.Context, job *store.Job, owner string) {
 		}()
 		return h(jctx, job.Payload)
 	}()
+	var deferred *Deferred
+	if errors.As(err, &deferred) {
+		log.Debug("job deferred", "reason", deferred.Reason, "after", deferred.After)
+		if derr := w.Store.DeferJob(bg, job.ID, deferred.After); derr != nil {
+			log.Error("defer job", "err", derr)
+		}
+		return
+	}
 	if err != nil {
 		log.Warn("job failed", "err", err, "took", time.Since(start))
 		if ferr := w.Store.FailJob(bg, job, err); ferr != nil {

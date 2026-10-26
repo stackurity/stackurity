@@ -11,6 +11,7 @@ import (
 	"github.com/stackurity/stackurity/internal/netguard"
 	"github.com/stackurity/stackurity/internal/packs"
 	"log/slog"
+	mrand "math/rand/v2"
 	"net/http"
 	"os"
 	"os/signal"
@@ -951,6 +952,11 @@ func registerIntel(w *worker.Worker, st *store.Store, dataDir string, log *slog.
 			return err
 		}
 		stats, err := eval.Evaluate(ctx, comps, p.AssetID)
+		if errors.Is(err, store.ErrEvaluationBusy) {
+			// Another evaluation of this workspace runs: try again shortly,
+			// leaving the worker slot to other jobs meanwhile.
+			return worker.Defer(5*time.Second+mrand.N(10*time.Second), "another evaluation of this workspace is running")
+		}
 		if err != nil {
 			return err
 		}

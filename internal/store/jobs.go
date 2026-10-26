@@ -128,6 +128,16 @@ func (s *Store) CompleteJob(ctx context.Context, id int64) error {
 	return err
 }
 
+// DeferJob puts a claimed job back to run again after `after`, without
+// counting the attempt or recording an error: the job could not start
+// yet (another job holds what it needs), it did not fail.
+func (s *Store) DeferJob(ctx context.Context, id int64, after time.Duration) error {
+	_, err := s.Pool.Exec(ctx, `UPDATE jobs SET run_at = now() + make_interval(secs => $2),
+		attempts = GREATEST(attempts - 1, 0), locked_by = NULL, locked_at = NULL
+		WHERE id = $1 AND done_at IS NULL AND failed_at IS NULL`, id, after.Seconds())
+	return err
+}
+
 // FailJob records an error and retries with exponential backoff until
 // max_attempts, after which the job is marked failed.
 func (s *Store) FailJob(ctx context.Context, j *Job, jobErr error) error {

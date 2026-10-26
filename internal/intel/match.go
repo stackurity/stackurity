@@ -60,7 +60,8 @@ var osProducts = store.OSProducts
 // Evaluations of one workspace run one at a time (Store.LockEvaluations):
 // one that read the feeds before a sync committed must not write after one
 // that read them afterwards, or it would resolve the findings the newer one
-// opened, and the next evaluation would open them again.
+// opened, and the next evaluation would open them again. While another
+// evaluation runs it returns store.ErrEvaluationBusy without doing anything.
 func (e *Evaluator) Evaluate(ctx context.Context, componentIDs []int64, assetID int64) (*EvalStats, error) {
 	release, err := e.Store.LockEvaluations(ctx)
 	if err != nil {

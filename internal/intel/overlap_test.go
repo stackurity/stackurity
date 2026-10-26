@@ -2,6 +2,7 @@ package intel
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -47,27 +48,18 @@ func TestOverlappingEvaluationsDoNotResolveNewerFindings(t *testing.T) {
 	<-read // A has read the feed as not synced
 
 	setSynced(true) // the sync commits
+	// B starts while A has not written: it does nothing and says the
+	// workspace is busy (its job is deferred and runs again shortly).
 	b := &Evaluator{Store: st}
-	bDone := make(chan error, 1)
-	go func() { _, err := b.Evaluate(ctx, nil, app); bDone <- err }()
-	// B either finishes (no serialisation: the old behaviour) or waits for
-	// A's lock; then A writes.
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		var waiting int
-		if err := st.Pool.QueryRow(sys, `SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND NOT granted`).Scan(&waiting); err != nil {
-			t.Fatal(err)
-		}
-		if waiting > 0 || len(bDone) > 0 {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
+	if _, err := b.Evaluate(ctx, nil, app); !errors.Is(err, store.ErrEvaluationBusy) {
+		t.Fatalf("an evaluation while another runs: %v, want ErrEvaluationBusy", err)
 	}
 	close(resume)
 	if err := <-aDone; err != nil {
 		t.Fatal(err)
 	}
-	if err := <-bDone; err != nil {
+	// B again, as its deferred job would: it reads what A wrote.
+	if _, err := b.Evaluate(ctx, nil, app); err != nil {
 		t.Fatal(err)
 	}
 
