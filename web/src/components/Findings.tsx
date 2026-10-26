@@ -24,6 +24,53 @@ export function kindLabel(kind: string): string {
 }
 
 /** Shared findings table; asset/component columns can be hidden in context. */
+/** Findings as cards, for phones (shown instead of the table under 720 px). */
+export function FindingCards({ rows, hideAsset }: { rows: Finding[]; hideAsset?: boolean }) {
+  return (
+    <ul className="finding-cards only-narrow" aria-label="Issues">
+      {rows.map((f) => (
+        <li key={f.id} className={`finding-card${f.sos || f.overdue || f.known_exploited ? " finding-card-hot" : ""}`}>
+          <div className="finding-card-top">
+            <span className="badges">
+              <PriorityBadge priority={f.priority} />
+              {f.sos && <SosBadge rule={f.sos_rule} />}
+              <SeverityBadge severity={f.severity} score={f.score} />
+              {f.known_exploited && <KevBadge />}
+            </span>
+            {f.status === "open" ? <StateBadge state={f.state} /> : <Badge status={f.status} />}
+          </div>
+          <Link to={`/findings/${f.id}`} className="finding-card-title">
+            <span className="mono">{f.key}</span>
+            {f.title && f.title !== f.key && <span className="finding-card-sub"> {f.title}</span>}
+          </Link>
+          <p className="small finding-card-where">
+            {!hideAsset && (
+              <>
+                <Link to={`/assets/${f.asset_id}`} className="asset-cell">
+                  {f.asset_name}
+                </Link>
+                {" · "}
+              </>
+            )}
+            <span className="break">
+              {f.component_name} <span className="mono">{f.version || "?"}</span>
+            </span>
+          </p>
+          <p className="small finding-card-fix">
+            <FixCell f={f} />
+            {f.fix_group && (
+              <>
+                {" · "}
+                <Link to={`/fixes/${encodeURIComponent(f.fix_group)}`}>{fixGroupKindLabel(f.fix_group)}</Link>
+              </>
+            )}
+          </p>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function FindingsTable({
   rows,
   hideAsset,
@@ -127,6 +174,21 @@ export function FindingsTable({
       ),
     },
   );
+  if (!hideAsset)
+    cols.push(
+      {
+        key: "asset",
+        header: "Asset",
+        cell: (f) => (
+          <>
+            <Link to={`/assets/${f.asset_id}?tab=findings`} onClick={stop} className="asset-cell">
+              {f.asset_name}
+            </Link>
+            <div className="muted small">{f.environment || "no environment"}</div>
+          </>
+        ),
+      },
+    );
   if (!hideComponent)
     cols.push({
       key: "component",
@@ -144,21 +206,6 @@ export function FindingsTable({
     });
   else
     cols.push({ key: "version", header: "Version", cell: (f) => <span className="mono">{f.version || "?"}</span> });
-  if (!hideAsset)
-    cols.push(
-      {
-        key: "asset",
-        header: "Asset",
-        cell: (f) => (
-          <>
-            <Link to={`/assets/${f.asset_id}?tab=findings`} onClick={stop}>
-              {f.asset_name}
-            </Link>
-            <div className="muted small">{f.environment || "no environment"}</div>
-          </>
-        ),
-      },
-    );
   cols.push(
     { key: "fix", header: "Fix", cell: (f) => <FixCell f={f} /> },
     ...(hideGroup
@@ -166,10 +213,10 @@ export function FindingsTable({
       : [
           {
             key: "group",
-            header: "Fix group",
+            header: "Part of fix",
             cell: (f: Finding) =>
               f.fix_group ? (
-                <Link to={`/action-plan/${encodeURIComponent(f.fix_group)}`} onClick={stop} className="small">
+                <Link to={`/fixes/${encodeURIComponent(f.fix_group)}`} onClick={stop} className="small">
                   {fixGroupKindLabel(f.fix_group)}
                 </Link>
               ) : (
@@ -210,7 +257,7 @@ export function FindingsTable({
 /** Severity, KEV, fix and asset tiles from GET /findings/summary. */
 export function FindingTiles({ s, link }: { s: FindingSummary; link?: (q: string) => string }) {
   const sev = s.by_severity ?? {};
-  const to = (q: string) => (link ? link(q) : `/findings?${q}`);
+  const to = (q: string) => (link ? link(q) : `/fixes/issues?${q}`);
   const tone: Record<string, "crit" | "bad" | "warn" | "muted" | undefined> = { critical: "crit", high: "bad", medium: "warn" };
   return (
     <div className="tiles tiles-tight">
@@ -277,7 +324,7 @@ export function PriorityTiles({ s, openIncidents }: { s: FindingSummary; openInc
         label="SOS"
         value={sos.toLocaleString()}
         tone={sos > 0 ? "crit" : undefined}
-        sub={sos > 0 ? <Link to="/findings?sos=true&state=active">Act now</Link> : "none active"}
+        sub={sos > 0 ? <Link to="/fixes/issues?sos=true&state=active">Act now</Link> : "none active"}
       />
       {PRIORITIES.map((p) => {
         const n = bp[p] ?? 0;
@@ -287,7 +334,7 @@ export function PriorityTiles({ s, openIncidents }: { s: FindingSummary; openInc
             label={`${p} active`}
             value={n.toLocaleString()}
             tone={n > 0 ? tone[p] : undefined}
-            sub={n > 0 ? <Link to={`/findings?priority=${p}&state=active`}>View</Link> : "none"}
+            sub={n > 0 ? <Link to={`/fixes/issues?priority=${p}&state=active`}>View</Link> : "none"}
           />
         );
       })}
@@ -295,13 +342,13 @@ export function PriorityTiles({ s, openIncidents }: { s: FindingSummary; openInc
         label="Overdue"
         value={overdue.toLocaleString()}
         tone={overdue > 0 ? "bad" : undefined}
-        sub={overdue > 0 ? <Link to="/findings?overdue=true&state=active">Past fix deadline</Link> : "none past deadline"}
+        sub={overdue > 0 ? <Link to="/fixes/issues?overdue=true&state=active">Past fix deadline</Link> : "none past deadline"}
       />
       <StatTile
         label="Unassigned"
         value={unassigned.toLocaleString()}
         tone={unassigned > 0 ? "warn" : undefined}
-        sub={unassigned > 0 ? <Link to="/findings?assignee=none&state=active">Active, no owner</Link> : "all active ones assigned"}
+        sub={unassigned > 0 ? <Link to="/fixes/issues?assignee=none&state=active">Active, no owner</Link> : "all active ones assigned"}
       />
       {openIncidents !== undefined && (
         <StatTile label="Open incidents" value={openIncidents.toLocaleString()} sub={<Link to="/incidents">View incidents</Link>} />

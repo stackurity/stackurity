@@ -175,7 +175,7 @@ export function FindingDetailPage() {
         <PageHeader help="findings" title="Finding" />
         <ErrorBox error={res.error} title="Could not load finding" />
         <p>
-          <Link to="/findings">Back to findings</Link>
+          <Link to="/fixes/issues">Back to all issues</Link>
         </p>
       </>
     );
@@ -193,7 +193,7 @@ export function FindingDetailPage() {
   return (
     <>
       <nav className="crumbs" aria-label="Breadcrumb">
-        <Link to="/findings">Findings</Link> <span aria-hidden="true">/</span> <span>{f.key}</span>
+        <Link to="/fixes">Fixes</Link> <span aria-hidden="true">/</span> <Link to="/fixes/issues">All issues</Link> <span aria-hidden="true">/</span> <span>{f.key}</span>
       </nav>
       <PageHeader help="findings"
         title={<span className="break">{f.title || f.key}</span>}

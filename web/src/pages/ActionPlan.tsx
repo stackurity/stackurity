@@ -1,41 +1,91 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Link, useParams, useSearchParams } from "react-router";
-import { api, FIX_GROUP_KINDS, PRIORITIES, type Asset, type FixGroup, type FixGroupDetail, type FixGroupSummary, type List } from "../api";
+import { Link, useLocation, useParams, useSearchParams } from "react-router";
+import {
+  api,
+  FIX_BUCKETS,
+  FIX_GROUP_KINDS,
+  PRIORITIES,
+  SEVERITIES,
+  type Asset,
+  type AssetDetail,
+  type FixBucket,
+  type FixGroup,
+  type FixGroupDetail,
+  type FixGroupSummary,
+  type List,
+} from "../api";
+import { useAuth } from "../auth";
 import { useDebounced, useFacets, useLoad } from "../hooks";
 import { plural } from "../format";
 import { FindingsTable } from "../components/Findings";
 import {
   ActionInstruction,
   BreakdownBar,
+  changeText,
   FIX_KIND_HELP,
   FIX_KIND_LABEL,
   FixGroupCard,
   FixKindIcon,
-  FixSummaryStrip,
   GroupBadges,
+  PRIO_CLASS,
+  SEV_CLASS,
+  urgencyOf,
 } from "../components/FixGroups";
-import { Card, EmptyState, ErrorBox, KeyValues, Loading, PageHeader, Pager } from "../components/ui";
+import { Badge } from "../components/Badge";
+import { FindingActions, GROUP_ACTION_MAX } from "../components/Workflow";
+import { Card, Code, CodeBlock, EmptyState, ErrorBox, FilterPanel, Loading, Notice, PageHeader, Pager, PresetChips, RelativeTime } from "../components/ui";
 
 const LIMIT = 20;
 
-/** Action cards for an asset (used on asset detail) or for everything. */
-export function FixGroupList({ assetId, kind, environment, q, compactEmpty }: { assetId?: number; kind?: string; environment?: string; q?: string; compactEmpty?: boolean }) {
+/** Plain-language names of the fix buckets (store.FixBuckets). */
+export const BUCKET_LABEL: Record<FixBucket, string> = {
+  focus: "Needs you",
+  no_fix: "No fix yet",
+  old_kernels: "Old kernels",
+  non_production: "Not production",
+  lower_priority: "Lower priority",
+};
+
+const BUCKET_HELP: Record<FixBucket, string> = {
+  focus: "",
+  no_fix: "No source lists a free fixed version yet. These come back as fixes when one is published; meanwhile mitigate or accept the risk.",
+  old_kernels: "Kernels that are installed but not running. Removing them clears these issues; they are not exploitable while unused.",
+  non_production: "Fixes on assets whose environment is not a production one in the risk policy.",
+  lower_priority: "Fixes whose most urgent issue is P2 to P4 and matches no SOS rule.",
+};
+
+/** Fix cards for an asset (used on asset detail) or for everything. */
+export function FixGroupList({
+  assetId,
+  kind,
+  environment,
+  q,
+  bucket,
+  compactEmpty,
+}: {
+  assetId?: number;
+  kind?: string;
+  environment?: string;
+  q?: string;
+  bucket?: string;
+  compactEmpty?: boolean;
+}) {
   const [offset, setOffset] = useState(0);
-  useEffect(() => setOffset(0), [assetId, kind, environment, q]);
+  useEffect(() => setOffset(0), [assetId, kind, environment, q, bucket]);
   const res = useLoad(
-    () => api.get<List<FixGroup>>("/fix-groups", { asset_id: assetId, kind, environment, q, limit: LIMIT, offset }),
-    [assetId, kind, environment, q, offset],
+    () => api.get<List<FixGroup>>("/fix-groups", { asset_id: assetId, kind, environment, q, bucket, limit: LIMIT, offset }),
+    [assetId, kind, environment, q, bucket, offset],
   );
   return (
     <>
-      <ErrorBox error={res.error} title="Could not load the action plan" />
+      <ErrorBox error={res.error} title="Could not load the fixes" />
       {!res.data && !res.error && <Loading />}
       {res.data && res.data.items.length === 0 && (
-        <EmptyState title={kind || environment || q ? "No actions match these filters" : "Nothing to do"} help="action-plan">
+        <EmptyState title={kind || environment || q || bucket ? "No fixes match these filters" : "Nothing to fix"} help="action-plan">
           {!compactEmpty && (
             <p>
-              No open issues need an action. That covers only what was inventoried and evaluated; check{" "}
-              <Link to="/coverage">Coverage</Link> and <Link to="/intelligence">Intelligence</Link> for gaps.
+              No open issues need a change. That covers only what was inventoried and checked; see <Link to="/coverage">Coverage</Link>{" "}
+              and <Link to="/intelligence">Intelligence</Link> for gaps.
             </p>
           )}
         </EmptyState>
@@ -54,11 +104,13 @@ export function FixGroupList({ assetId, kind, environment, q, compactEmpty }: { 
   );
 }
 
-export function ActionPlanPage() {
+/** Fixes: every change to make, one card per fix, most urgent first. */
+export function FixesPage() {
   const [params, setParams] = useSearchParams();
   const assetId = params.get("asset_id") ?? "";
   const kind = params.get("kind") ?? "";
   const environment = params.get("environment") ?? "";
+  const bucket = params.get("bucket") ?? "";
   const qParam = params.get("q") ?? "";
   const [q, setQ] = useState(qParam);
   const dq = useDebounced(q);
@@ -66,30 +118,78 @@ export function ActionPlanPage() {
   const assets = useLoad(() => api.get<List<Asset>>("/assets", { limit: 200 }), []);
   const summary = useLoad(() => api.get<FixGroupSummary>("/fix-groups/summary", { asset_id: assetId }), [assetId]);
 
-  const update = (patch: Record<string, string>) => {
+  const with_ = (patch: Record<string, string>) => {
     const n = new URLSearchParams(params);
     for (const [k, v] of Object.entries(patch)) {
       if (v) n.set(k, v);
       else n.delete(k);
     }
-    setParams(n, { replace: true });
+    return n;
+  };
+  const update = (patch: Record<string, string>) => setParams(with_(patch), { replace: true });
+  const link = (patch: Record<string, string>) => {
+    const str = with_(patch).toString();
+    return `/fixes${str ? `?${str}` : ""}`;
   };
   useEffect(() => {
     if (dq !== qParam) update({ q: dq });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dq]);
+  useEffect(() => setQ(qParam), [qParam]);
 
-  const filtered = Boolean(assetId || kind || environment || qParam);
+  const active = [assetId, kind, environment, qParam].filter(Boolean).length;
+  const s = summary.data;
+  const focus = s?.focus;
+  const bucketCount = (b: FixBucket) => (b === "focus" ? focus?.groups : focus?.hidden?.[b]?.groups) ?? 0;
 
   return (
     <>
-      <PageHeader help="action-plan"
-        title="Action plan"
-        sub="Findings grouped by the action that fixes them, most urgent first. Open a group to see every finding it resolves."
+      <PageHeader
+        help="action-plan"
+        title="Fixes"
+        sub="Each fix is one change, such as an upgrade, that clears one or more issues. Most urgent first; open a fix for the steps."
       />
       <ErrorBox error={summary.error} title="Could not load the summary" />
-      {summary.data && <FixSummaryStrip s={summary.data} scope={assetId ? "on this asset" : undefined} />}
-      <form className="filters" role="search" onSubmit={(e) => e.preventDefault()}>
+      {s && (
+        <p className="lead-line">
+          {focus && (
+            <>
+              <Link to={link({ bucket: "focus" })}>
+                <strong>
+                  {plural(focus.groups, "fix", "fixes")} {focus.groups === 1 ? "needs" : "need"} you
+                </strong>
+              </Link>
+              {" · "}
+            </>
+          )}
+          <Link to={link({ bucket: "" })}>{plural(s.groups, "fix", "fixes")} in all</Link>, clearing{" "}
+          <Link to={assetId ? `/fixes/issues?asset_id=${assetId}` : "/fixes/issues"}>{plural(s.findings, "issue")}</Link>
+          {assetId && <span className="muted"> on this asset</span>}
+        </p>
+      )}
+      <PresetChips
+        label="Show"
+        chips={[
+          { to: link({ bucket: "" }), label: <>All fixes{s ? ` (${s.groups.toLocaleString()})` : ""}</>, active: !bucket },
+          ...FIX_BUCKETS.filter((b) => b === "focus" || bucketCount(b) > 0 || bucket === b).map((b) => ({
+            to: link({ bucket: b }),
+            label: (
+              <>
+                {BUCKET_LABEL[b]}
+                {focus ? ` (${bucketCount(b).toLocaleString()})` : ""}
+              </>
+            ),
+            active: bucket === b,
+          })),
+        ]}
+      />
+      <FilterPanel
+        active={active}
+        onClear={() => {
+          setQ("");
+          setParams(bucket ? new URLSearchParams({ bucket }) : new URLSearchParams(), { replace: true });
+        }}
+      >
         <div className="field">
           <label htmlFor="ap-q">Search</label>
           <input id="ap-q" type="search" placeholder="Package, OS or title" value={q} onChange={(e) => setQ(e.target.value)} />
@@ -117,7 +217,7 @@ export function ActionPlanPage() {
           </select>
         </div>
         <div className="field">
-          <label htmlFor="ap-kind">Kind of action</label>
+          <label htmlFor="ap-kind">Kind of fix</label>
           <select id="ap-kind" value={kind} onChange={(e) => update({ kind: e.target.value })}>
             <option value="">All kinds</option>
             {FIX_GROUP_KINDS.map((k) => (
@@ -127,42 +227,74 @@ export function ActionPlanPage() {
             ))}
           </select>
         </div>
-        {filtered && (
-          <button
-            type="button"
-            className="btn btn-link"
-            onClick={() => {
-              setQ("");
-              setParams(new URLSearchParams(), { replace: true });
-            }}
-          >
-            Clear filters
-          </button>
-        )}
-      </form>
+      </FilterPanel>
+      {bucket && BUCKET_HELP[bucket as FixBucket] && <p className="hint">{BUCKET_HELP[bucket as FixBucket]}</p>}
       {kind && <p className="hint">{FIX_KIND_HELP[kind]}</p>}
-      <FixGroupList assetId={assetId ? Number(assetId) : undefined} kind={kind} environment={environment} q={qParam} />
+      <FixGroupList assetId={assetId ? Number(assetId) : undefined} kind={kind} environment={environment} q={qParam} bucket={bucket} />
     </>
   );
 }
 
 const DETAIL_LIMIT = 50;
 
+/** When the asset was last checked, and how to check it again now. */
+export function CheckAgain({ asset }: { asset: AssetDetail["asset"] | undefined | null }) {
+  if (!asset) return null;
+  const at = asset.attributes ?? {};
+  let how: ReactNode;
+  if (asset.kind === "host")
+    how = (
+      <>
+        <p className="small">The agent reports every 6 hours and whenever it starts. To check now, restart it on the server:</p>
+        <CodeBlock label="Check again now" text="sudo systemctl restart stackurity-agent" />
+      </>
+    );
+  else if (asset.kind === "repository")
+    how = (
+      <>
+        <p className="small">
+          Scan the repository again in CI or on your machine, with a collector token in <Code>STACKURITY_TOKEN</Code>. If it is an{" "}
+          <Link to="/integrations">integration</Link>, use <strong>Run now</strong> there instead.
+        </p>
+        <CodeBlock label="Check again now" text={`stackurity scan . --git-url "${at.git_url || "$CI_REPOSITORY_URL"}"`} />
+      </>
+    );
+  else how = <p className="small">The next collection of this asset checks again.</p>;
+  return (
+    <div className="check-again">
+      <p className="small">
+        <strong>Last checked</strong> <RelativeTime iso={asset.last_seen} />. Issues close on their own when a check no longer finds them.
+      </p>
+      {how}
+    </div>
+  );
+}
+
 export function FixGroupDetailPage() {
   const { id = "" } = useParams();
+  const { hash } = useLocation();
+  const { can } = useAuth();
   const [offset, setOffset] = useState(0);
   useEffect(() => setOffset(0), [id]);
   const res = useLoad(
     () => api.get<FixGroupDetail>(`/fix-groups/${encodeURIComponent(id)}`, { limit: DETAIL_LIMIT, offset }),
     [id, offset],
   );
+  const assetId = res.data?.group.asset_id;
+  const asset = useLoad(() => (assetId ? api.get<AssetDetail>(`/assets/${assetId}`) : Promise.resolve(null)), [assetId]);
+  const initialPanel = hash === "#assign" ? "assign" : hash === "#snooze" ? "suppress" : hash === "#accept" ? "accept_risk" : undefined;
+  const loaded = Boolean(res.data);
+  useEffect(() => {
+    if (initialPanel && loaded) document.getElementById("fix-act")?.scrollIntoView({ block: "start" });
+  }, [initialPanel, loaded]);
+
   if (res.error)
     return (
       <>
-        <PageHeader help="action-plan" title="Action" />
-        <ErrorBox error={res.error} title="Could not load this action" />
+        <PageHeader help="action-plan" title="Fix" />
+        <ErrorBox error={res.error} title="Could not load this fix" />
         <p>
-          <Link to="/action-plan">Back to the action plan</Link>
+          <Link to="/fixes">Back to fixes</Link>
         </p>
       </>
     );
@@ -171,14 +303,23 @@ export function FixGroupDetailPage() {
   const page = res.data.findings?.items ?? [];
   const total = res.data.findings?.total ?? 0;
   const versions = g.from_version || g.to_version ? `${g.from_version ?? "?"} → ${g.to_version ?? "?"}` : null;
-  const findingsLink = `/findings?fix_group=${encodeURIComponent(g.id)}`;
+  const issuesLink = `/fixes/issues?fix_group=${encodeURIComponent(g.id)}`;
+  const u = urgencyOf(g);
+  const locations = [...new Set(page.map((f) => f.location).filter(Boolean))];
+  const why =
+    g.known_exploited > 0
+      ? `${plural(g.known_exploited, "of them is", "of them are")} known to be exploited by attackers.`
+      : g.sos
+        ? "It matches an SOS rule in your risk policy."
+        : `The most urgent of them is ${g.top_priority}.`;
 
   return (
     <>
       <nav className="crumbs" aria-label="Breadcrumb">
-        <Link to="/action-plan">Action plan</Link> <span aria-hidden="true">/</span> <span>{FIX_KIND_LABEL[g.kind] ?? g.kind}</span>
+        <Link to="/fixes">Fixes</Link> <span aria-hidden="true">/</span> <span>{FIX_KIND_LABEL[g.kind] ?? g.kind}</span>
       </nav>
-      <PageHeader help="action-plan"
+      <PageHeader
+        help="action-plan"
         title={
           <span className="badges">
             <span className="fix-icon fix-icon-inline">
@@ -187,61 +328,144 @@ export function FixGroupDetailPage() {
             <span className="break">{g.title}</span>
           </span>
         }
-        sub={`Resolves ${plural(g.finding_count, "finding")}${
-          g.unique_issues !== undefined ? ` (${plural(g.unique_issues, "unique vulnerability", "unique vulnerabilities")})` : ""
-        } on ${g.asset_name}. ${FIX_KIND_HELP[g.kind] ?? ""}`}
-        actions={
-          <Link className="btn" to={findingsLink}>
-            Work on these in Findings
-          </Link>
+        sub={
+          <span className="badges">
+            <Badge status={`urgency-${u.label}`} tone={u.tone} label={u.label} title={u.title} />
+            <span>
+              {g.asset_name} · {plural(g.finding_count, "issue")} · {changeText(g)}
+            </span>
+          </span>
         }
       />
+
+      <section className="card fix-what" aria-label="What and why">
+        <p className="fix-what-line">
+          {g.kind === "no_fix" ? (
+            <>
+              No source lists a free fixed version for these {plural(g.finding_count, "issue")} on <strong>{g.asset_name}</strong> yet.
+            </>
+          ) : (
+            <>
+              This clears {plural(g.finding_count, "issue")} on <strong>{g.asset_name}</strong>
+              {g.unique_issues !== undefined && g.unique_issues !== g.finding_count
+                ? ` (${plural(g.unique_issues, "distinct vulnerability", "distinct vulnerabilities")})`
+                : ""}
+              .
+            </>
+          )}{" "}
+          {why}
+        </p>
+        {FIX_KIND_HELP[g.kind] && <p className="hint">{FIX_KIND_HELP[g.kind]}</p>}
+      </section>
+
       <div className="grid-2">
-        <Card title="What to do">
-          <div className="form-compact form">
-            <GroupBadges g={g} />
-            <ActionInstruction action={g.action} />
-            {g.note && <p className="hint">{g.note}</p>}
-            <BreakdownBar counts={g.by_priority} order={PRIORITIES} classes={{ P1: "seg-crit", P2: "seg-orange", P3: "seg-warn", P4: "seg-muted" }} label="By priority" />
-          </div>
-        </Card>
-        <Card title="Scope">
-          <KeyValues
-            entries={[
-              ["asset", <Link to={`/assets/${g.asset_id}?tab=action-plan`}>{g.asset_name}</Link>],
-              ["environment", g.environment || <span className="muted">not set</span>],
-              ...(g.component ? ([["component", <span className="mono">{g.component}</span>]] as [string, ReactNode][]) : []),
-              ...(versions ? ([["change", <span className="mono">{versions}</span>]] as [string, ReactNode][]) : []),
-              ["packages", g.package_count.toLocaleString()],
-              ...(g.unique_issues !== undefined ? ([["unique vulnerabilities", g.unique_issues.toLocaleString()]] as [string, ReactNode][]) : []),
-              ["findings", g.finding_count.toLocaleString()],
-              ["known exploited", g.known_exploited.toLocaleString()],
-            ]}
-          />
-          {g.packages && g.packages.length > 0 && (
-            <p className="chips">
-              {g.packages.map((p) => (
-                <span key={p} className="chip mono">
-                  {p}
-                </span>
-              ))}
-              {g.package_count > g.packages.length && <span className="muted small">+{g.package_count - g.packages.length} more</span>}
+        <Card title="Where">
+          <p>
+            <Link to={`/assets/${g.asset_id}`}>{g.asset_name}</Link>
+            <span className="muted"> · {g.environment || "no environment"}</span>
+          </p>
+          {g.component && (
+            <p className="small">
+              Component <span className="mono break">{g.component}</span>
+              {versions && (
+                <>
+                  , <span className="mono break">{versions}</span>
+                </>
+              )}
             </p>
           )}
+          {locations.length > 0 && (
+            <>
+              <p className="small muted fix-found-in">Found in</p>
+              <ul className="plain-list small">
+                {locations.slice(0, 8).map((l) => (
+                  <li key={l} className="mono break">
+                    {l}
+                  </li>
+                ))}
+                {locations.length > 8 && <li className="muted">and {locations.length - 8} more on this page</li>}
+              </ul>
+            </>
+          )}
+          {g.packages && g.packages.length > 0 && (
+            <details className="fix-packages">
+              <summary>
+                {plural(g.package_count, "package")}
+                {g.package_count > g.packages.length ? `, first ${g.packages.length} shown` : ""}
+              </summary>
+              <p className="chips">
+                {g.packages.map((p) => (
+                  <span key={p} className="chip mono">
+                    {p}
+                  </span>
+                ))}
+              </p>
+            </details>
+          )}
+          <CheckAgain asset={asset.data?.asset} />
+        </Card>
+        <Card title="How to fix">
+          <div className="form-compact form">
+            <ActionInstruction action={g.action} />
+            {g.note && <p className="hint">{g.note}</p>}
+            <p className="small">
+              <strong>Change:</strong> {changeText(g)}
+              {g.effort && <span className="muted"> · {g.effort} effort</span>}
+            </p>
+            {(g.requires_major || g.change_type === "major") && (
+              <Notice kind="warn">
+                <strong>Major upgrade.</strong> The fixed version is in a new major release, which can change behaviour. Test it before
+                rolling it out.
+              </Notice>
+            )}
+            {g.recommended_version && g.recommended_version !== g.to_version && (
+              <p className="small">
+                <strong>Recommended:</strong> <span className="mono">{g.recommended_version}</span>, the newest stable release in that line.
+                {g.rationale && g.rationale.length > 0 && <span className="muted"> {g.rationale.join(" ")}</span>}
+              </p>
+            )}
+            {g.recommended_yanked && <Notice kind="warn">The recommended version was withdrawn by its publisher; pick the next release.</Notice>}
+            <GroupBadges g={g} />
+          </div>
         </Card>
       </div>
-      <h2 className="section-title">Findings in this group ({total.toLocaleString()})</h2>
+
+      <h2 className="section-title">Issues this fix clears ({total.toLocaleString()})</h2>
+      <BreakdownBar counts={g.by_priority} order={PRIORITIES} classes={PRIO_CLASS} label="By priority" />
+      <BreakdownBar counts={g.by_severity} order={SEVERITIES} classes={SEV_CLASS} label="By severity" />
       {page.length === 0 ? (
-        <p className="muted">No open findings in this group.</p>
+        <p className="muted">No open issues in this fix.</p>
       ) : (
         <>
           <FindingsTable rows={page} hideAsset hideGroup />
           <Pager total={total} limit={DETAIL_LIMIT} offset={offset} onChange={setOffset} />
         </>
       )}
-      <p className="small">
-        To assign, acknowledge or accept these in bulk, <Link to={findingsLink}>open them in Findings</Link>.
-      </p>
+
+      <section id="fix-act" className="card fix-act" aria-labelledby="fix-act-h">
+        <h2 id="fix-act-h">Assign, snooze or accept the risk</h2>
+        {!can("engineer") ? (
+          <p className="muted small">Your role can view fixes. An engineer can assign them; the security role can snooze or accept them.</p>
+        ) : g.finding_count > GROUP_ACTION_MAX ? (
+          <p className="small">
+            This fix has {g.finding_count.toLocaleString()} issues, more than can be changed at once here ({GROUP_ACTION_MAX.toLocaleString()}).
+            Open <Link to={issuesLink}>its issues in All issues</Link> and select them a page at a time.
+          </p>
+        ) : (
+          <>
+            <p className="small muted">
+              Applies to all {plural(g.finding_count, "issue")} of this fix. Snoozing and accepting the risk need the security role, a reason
+              and an end date.
+            </p>
+            <FindingActions target={{ type: "group", id: g.id, count: g.finding_count }} onDone={res.reload} initialPanel={initialPanel} />
+          </>
+        )}
+        {g.finding_count <= GROUP_ACTION_MAX && (
+          <p className="small">
+            <Link to={issuesLink}>Open these issues in All issues</Link> to filter them or act on some of them.
+          </p>
+        )}
+      </section>
     </>
   );
 }

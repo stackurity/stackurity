@@ -6,6 +6,7 @@ import { useDebounced, useFacets, useLoad } from "../hooks";
 import { assetKindLabel } from "../format";
 import { AssetKindBadge, Badge, ExposureBadge, RebootBadge } from "../components/Badge";
 import { Table, type Column } from "../components/Table";
+import { InventorySummary } from "./InventorySummary";
 import { Code, EmptyState, ErrorBox, Loading, PageHeader, Pager, RelativeTime } from "../components/ui";
 
 const LIMIT = 50;
@@ -120,6 +121,10 @@ export function AssetsPage() {
           )
         }
       />
+      <details className="sev-tiles">
+        <summary>Inventory at a glance</summary>
+        <InventorySummary />
+      </details>
       <form className="filters" role="search" onSubmit={(e) => e.preventDefault()}>
         <div className="field">
           <label htmlFor="f-q">Search</label>

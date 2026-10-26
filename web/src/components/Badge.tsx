@@ -157,7 +157,7 @@ export const STATE_EXPLAINED: Record<string, string> = {
 
 export function StateBadge({ state }: { state: string | undefined | null }) {
   const s = state || "new";
-  return <Badge status={s} tone={STATE_TONES[s] ?? "info"} label={s.replace(/_/g, " ")} title={STATE_EXPLAINED[s]} />;
+  return <Badge status={s} tone={STATE_TONES[s] ?? "info"} label={s === "suppressed" ? "snoozed" : s.replace(/_/g, " ")} title={STATE_EXPLAINED[s]} />;
 }
 
 export function EscalationBadge({ level }: { level: number | undefined | null }) {

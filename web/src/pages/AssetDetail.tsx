@@ -23,7 +23,7 @@ import {
 } from "../api";
 import { useAuth } from "../auth";
 import { useAction, useDebounced, useLoad } from "../hooks";
-import { absTime, componentName, humanize } from "../format";
+import { absTime, componentName, humanize, plural } from "../format";
 import {
   AppSourceBadge,
   AssetKindBadge,
@@ -42,8 +42,7 @@ import { FindingsTable } from "../components/Findings";
 import { Table, type Column } from "../components/Table";
 import { AssetPicker } from "../components/AssetPicker";
 import { ActionsTable } from "../components/Remediation";
-import { FixSummaryStrip } from "../components/FixGroups";
-import { FixGroupList } from "./ActionPlan";
+import { CheckAgain, FixGroupList } from "./ActionPlan";
 import { EnableRemediation } from "../components/EnableRemediation";
 import { AssetCoverageNotice, AssetStateBadge, COVERAGE_FILTERS, FindingsCoverageLine, RowCoverageNote } from "../components/Coverage";
 import {
@@ -188,26 +187,18 @@ export function AssetDetailPage() {
               <AssetKindBadge kind={a.kind} />
               <ExposureBadge asset={a} />
               <span>
-                #{a.id} · last seen <RelativeTime iso={a.last_seen} /> · first seen <RelativeTime iso={a.first_seen} />
+                last checked <RelativeTime iso={a.last_seen} /> · first seen <RelativeTime iso={a.first_seen} />
               </span>
             </span>
             <AssetPlatformLine asset={a} />
           </>
         }
         actions={
-          <>
-            <a className="btn" href={`/api/v1/assets/${a.id}/sbom`} download>
-              Download CycloneDX
-            </a>
-            {can("admin") && (
-              <button type="button" className="btn btn-danger" onClick={onDelete} disabled={del.pending}>
-                Delete asset
-              </button>
-            )}
-          </>
+          <a className="btn" href={`/api/v1/assets/${a.id}/sbom`} download>
+            Download CycloneDX
+          </a>
         }
       />
-      <ErrorBox error={del.error} title="Delete failed" />
       {coverage.data ? (
         <AssetCoverageNotice summary={coverage.data} inventoryLink={`/assets/${a.id}?tab=inventory&coverage=gaps`} />
       ) : (
@@ -232,8 +223,58 @@ export function AssetDetailPage() {
         </Notice>
       )}
 
+      <AssetHealth asset={a} findingCount={findingCount} />
+
       <KubernetesCard asset={a} relations={relations.data?.items ?? []} />
 
+      <Tabs<Tab>
+        label="Asset sections"
+        value={tab}
+        onChange={(t) => {
+          const n = new URLSearchParams(params);
+          if (t === defaultTab) n.delete("tab");
+          else n.set("tab", t);
+          setParams(n, { replace: true });
+        }}
+        tabs={[
+          ...(findingCount > 0 ? [{ id: "action-plan" as Tab, label: "Fixes" }] : []),
+          { id: "stack", label: "Stack" },
+          ...(findingCount > 0 ? [{ id: "findings" as Tab, label: `Issues (${findingCount.toLocaleString()})` }] : []),
+          { id: "inventory", label: `Inventory (${a.component_count.toLocaleString()})` },
+          { id: "coverage", label: "Coverage" },
+          { id: "collections", label: "Collections" },
+          { id: "relations", label: "Relations" },
+          {
+            id: "drift",
+            label: primaries.length === 1 ? `Drift from ${primaries[0].to_name}` : "Drift",
+          },
+          { id: "remediation", label: "Automatic fixes" },
+        ]}
+      />
+      <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`} className="tabpanel">
+        {/* The default tab depends on whether there is anything to fix; wait for that before loading a tab. */}
+        {!tabParam && !openFindings.data && !openFindings.error ? (
+          <Loading />
+        ) : (
+          <>
+            {tab === "action-plan" && <AssetActionPlan assetId={a.id} />}
+            {tab === "stack" && <StackTab asset={a} />}
+        {tab === "findings" && <FindingsTab assetId={a.id} coverage={coverage.data} />}
+        {tab === "inventory" && <InventoryTab assetId={a.id} />}
+        {tab === "coverage" && <CoverageTab assetId={a.id} />}
+        {tab === "collections" && <CollectionsTab assetId={a.id} />}
+        {tab === "relations" && <RelationsTab asset={a} editable={can("engineer")} onChanged={relations.reload} />}
+        {tab === "drift" && <DriftTab asset={a} primaries={primaries} />}
+            {tab === "remediation" && <RemediationTab asset={a} />}
+          </>
+        )}
+      </div>
+
+      <details className="asset-details">
+        <summary>
+          <h2>Details</h2>
+          <span className="small muted">attributes, identifiers, owner and context</span>
+        </summary>
       <div className="grid-3">
         <Card title="Attributes">
           <KeyValues
@@ -256,41 +297,21 @@ export function AssetDetailPage() {
         <OwnershipCard asset={a} editable={can("engineer")} onSaved={det.reload} />
       </div>
 
-      <Tabs<Tab>
-        label="Asset sections"
-        value={tab}
-        onChange={(t) => {
-          const n = new URLSearchParams(params);
-          if (t === defaultTab) n.delete("tab");
-          else n.set("tab", t);
-          setParams(n, { replace: true });
-        }}
-        tabs={[
-          ...(findingCount > 0 ? [{ id: "action-plan" as Tab, label: "Action plan" }] : []),
-          { id: "stack", label: "Stack" },
-          ...(findingCount > 0 ? [{ id: "findings" as Tab, label: `Findings (${findingCount.toLocaleString()})` }] : []),
-          { id: "inventory", label: `Inventory (${a.component_count.toLocaleString()})` },
-          { id: "coverage", label: "Coverage" },
-          { id: "collections", label: "Collections" },
-          { id: "relations", label: "Relations" },
-          {
-            id: "drift",
-            label: primaries.length === 1 ? `Drift from ${primaries[0].to_name}` : "Drift",
-          },
-          { id: "remediation", label: "Remediation" },
-        ]}
-      />
-      <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`} className="tabpanel">
-        {tab === "action-plan" && <AssetActionPlan assetId={a.id} />}
-        {tab === "stack" && <StackTab asset={a} />}
-        {tab === "findings" && <FindingsTab assetId={a.id} coverage={coverage.data} />}
-        {tab === "inventory" && <InventoryTab assetId={a.id} />}
-        {tab === "coverage" && <CoverageTab assetId={a.id} />}
-        {tab === "collections" && <CollectionsTab assetId={a.id} />}
-        {tab === "relations" && <RelationsTab asset={a} editable={can("engineer")} onChanged={relations.reload} />}
-        {tab === "drift" && <DriftTab asset={a} primaries={primaries} />}
-        {tab === "remediation" && <RemediationTab asset={a} />}
-      </div>
+      </details>
+
+      {can("admin") && (
+        <section className="danger-zone" aria-labelledby="danger-h">
+          <h2 id="danger-h">Danger zone</h2>
+          <p className="small">
+            Deleting removes this asset with its inventory, coverage and history. If a collector still reports it, it comes back on the next
+            collection.
+          </p>
+          <ErrorBox error={del.error} title="Delete failed" />
+          <button type="button" className="btn btn-danger" onClick={onDelete} disabled={del.pending}>
+            Delete asset
+          </button>
+        </section>
+      )}
     </>
   );
 }
@@ -638,7 +659,7 @@ function InventoryTab({ assetId }: { assetId: number }) {
       header: "Findings",
       cell: (r) =>
         r.open_findings ? (
-          <Link to={`/findings?asset_id=${r.asset_id}&component_id=${r.component_id}`} onClick={(e) => e.stopPropagation()}>
+          <Link to={`/fixes/issues?asset_id=${r.asset_id}&component_id=${r.component_id}`} onClick={(e) => e.stopPropagation()}>
             <Badge status="open" tone="bad" label={`${r.open_findings} open`} />
           </Link>
         ) : (
@@ -1036,7 +1057,7 @@ function RemediationTab({ asset }: { asset: Asset }) {
       {res.data && res.data.items.length === 0 && (
         <EmptyState title="No remediation actions">
           <p>
-            Changes appear here when an approved plan includes this asset. See <Link to="/remediation">Remediation</Link>.
+            Changes appear here when an approved plan includes this asset. See <Link to="/fixes/automatic">Automatic fixes</Link>.
           </p>
         </EmptyState>
       )}
@@ -1068,11 +1089,38 @@ function AssetPlatformLine({ asset }: { asset: Asset }) {
 }
 
 function AssetActionPlan({ assetId }: { assetId: number }) {
-  const summary = useLoad(() => api.get<FixGroupSummary>("/fix-groups/summary", { asset_id: assetId }), [assetId]);
+  return <FixGroupList assetId={assetId} compactEmpty />;
+}
+
+/** The top of an asset page: how it is doing, when it was last checked, and how to check again. */
+function AssetHealth({ asset, findingCount }: { asset: Asset; findingCount: number }) {
+  const summary = useLoad(() => api.get<FixGroupSummary>("/fix-groups/summary", { asset_id: asset.id }), [asset.id]);
+  const focus = summary.data?.focus;
+  const n = focus?.groups ?? 0;
   return (
-    <>
-      {summary.data && <FixSummaryStrip s={summary.data} scope="on this asset" />}
-      <FixGroupList assetId={assetId} compactEmpty />
-    </>
+    <section className="card asset-health" aria-label="Health">
+      <div className="asset-health-main">
+        {summary.data ? (
+          <p className="asset-health-line">
+            {n > 0 ? (
+              <Link to={`/fixes?asset_id=${asset.id}&bucket=focus`}>
+                <strong>
+                  {plural(n, "fix", "fixes")} {n === 1 ? "needs" : "need"} you
+                </strong>
+              </Link>
+            ) : (
+              <strong>Nothing urgent</strong>
+            )}
+            {" · "}
+            <Link to={`/fixes?asset_id=${asset.id}`}>{plural(summary.data.groups, "fix", "fixes")} in all</Link>
+            {" · "}
+            <Link to={`/fixes/issues?asset_id=${asset.id}`}>{plural(findingCount, "open issue")}</Link>
+          </p>
+        ) : (
+          <Loading />
+        )}
+      </div>
+      <CheckAgain asset={asset} />
+    </section>
   );
 }

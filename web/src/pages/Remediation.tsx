@@ -1,5 +1,6 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import { ProNotice } from "../components/ProNotice";
+import { RemediationTiles } from "../components/RemediationSummary";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import {
   api,
@@ -29,9 +30,7 @@ import {
   RollbackText,
   TargetLabel,
 } from "../components/Remediation";
-import { Card, EmptyState, ErrorBox, Loading, Notice, PageHeader, Pager, RelativeTime, Tabs } from "../components/ui";
-
-type Tab = "plans" | "policies";
+import { Card, EmptyState, ErrorBox, Loading, Notice, PageHeader, Pager, RelativeTime } from "../components/ui";
 
 export function SafetyNote() {
   return (
@@ -44,27 +43,30 @@ export function SafetyNote() {
   );
 }
 
-export function RemediationPage() {
+/** Fixes, Automatic fixes: plans Stackurity proposes and applies (Pro). */
+export function AutomaticFixesPage() {
   const { can, has } = useAuth();
-  const [params, setParams] = useSearchParams();
-  const tab: Tab = params.get("tab") === "policies" && can("security") ? "policies" : "plans";
   return (
     <>
-      <PageHeader help="remediation-overview" title="Remediation" sub="Policy-controlled security updates for hosts and repositories." />
+      <PageHeader
+        help="remediation-overview"
+        title="Automatic fixes"
+        sub="Upgrades Stackurity applies for you, for hosts and repositories, under policies you set."
+        actions={
+          can("security") && (
+            <Link className="btn" to="/settings/automatic-fixes">
+              Policies
+            </Link>
+          )
+        }
+      />
       {!has("remediation") && (
         <ProNotice feature="remediation">
-          The Action plan still lists every upgrade to make; Pro applies them for you, with approvals, canary hosts and rollback.{" "}
+          Without it, the <Link to="/fixes">Fixes</Link> list still shows every upgrade to make by hand.{" "}
         </ProNotice>
       )}
-      <Tabs<Tab>
-        label="Remediation"
-        value={tab}
-        onChange={(t) => setParams(t === "plans" ? {} : { tab: t }, { replace: true })}
-        tabs={[{ id: "plans", label: "Plans" }, ...(can("security") ? [{ id: "policies" as Tab, label: "Policies" }] : [])]}
-      />
-      <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`} className="tabpanel">
-        {tab === "plans" ? <PlansTab /> : <PoliciesTab />}
-      </div>
+      {has("remediation") && <RemediationTiles />}
+      <PlansTab />
     </>
   );
 }
@@ -73,7 +75,7 @@ export function RemediationPage() {
 
 const LIMIT = 50;
 
-function PlansTab() {
+export function PlansTab() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const status = params.get("status") ?? "proposed";
@@ -158,9 +160,15 @@ function PlansTab() {
       <ErrorBox error={res.error} title="Could not load plans" />
       {!res.data && !res.error && <Loading />}
       {res.data && res.data.items.length === 0 && (
-        <EmptyState title={status === "proposed" ? "Nothing needs approval" : "No plans"} help="remediation-overview" helpLabel="How remediation policies work">
+        <EmptyState title={status === "proposed" ? "No automatic fixes waiting for approval" : "No automatic fixes yet"} help="remediation-overview" helpLabel="How automatic fixes work">
           <p>
-            Plans are proposed automatically when an enabled remediation policy covers open findings.{" "}
+            Automatic fixes are upgrades Stackurity makes for you: it proposes a plan when a policy covers open issues, waits for approval
+            (unless the policy approves on its own), then rolls the change out to a canary host first and checks the result.
+          </p>
+          <p>
+            Nothing appears here until someone with the security role turns on a policy under{" "}
+            <Link to="/settings/automatic-fixes">Settings, Automatic fixes</Link>. Until then, the <Link to="/fixes">Fixes</Link> list shows
+            every upgrade to make by hand.{" "}
             {status === "proposed" && (
               <button type="button" className="btn btn-sm btn-link" onClick={() => setStatus("all")}>
                 Show all plans
@@ -218,7 +226,7 @@ function scopeText(p: RemediationPolicy, teams: Team[]): ReactNode {
   return <span className="small break">{parts.join(" · ")}</span>;
 }
 
-function PoliciesTab() {
+export function PoliciesTab() {
   const { can } = useAuth();
   const admin = can("admin");
   const res = useLoad(() => api.get<List<RemediationPolicy>>("/remediation/policies"), []);

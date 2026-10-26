@@ -60,7 +60,7 @@ export function searchSections(r: SearchResults): SearchSection[] {
         const affected = v.kind !== "";
         return {
           key: `v:${v.key}`,
-          href: affected ? `/findings${qs({ key: v.key, status: "all" })}` : searchPath(v.key),
+          href: affected ? `/fixes/issues${qs({ key: v.key, status: "all" })}` : searchPath(v.key),
           title: (
             <>
               <span className="mono">{v.key}</span> <SeverityBadge severity={v.severity} score={v.score} />
@@ -100,7 +100,7 @@ export function searchSections(r: SearchResults): SearchSection[] {
       rank: Math.min(3, ...(r.findings ?? []).map((f) => f.rank)),
       items: (r.findings ?? []).map((f) => ({
         key: `f:${f.key}:${f.title}`,
-        href: `/findings${qs({ key: f.key })}`,
+        href: `/fixes/issues${qs({ key: f.key })}`,
         title: (
           <>
             <span>{f.title}</span> <SeverityBadge severity={f.severity} score={f.score} />
@@ -206,7 +206,7 @@ export function searchSections(r: SearchResults): SearchSection[] {
       rank: Math.min(3, ...(r.members ?? []).map((m) => m.rank)),
       items: (r.members ?? []).map((m) => ({
         key: `m:${m.id}`,
-        href: `/findings${qs({ assignee_user: m.id })}`,
+        href: `/fixes/issues${qs({ assignee_user: m.id })}`,
         title: <span>{m.name || m.email}</span>,
         meta: (
           <>

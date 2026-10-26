@@ -1,69 +1,44 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, Outlet, useLocation } from "react-router";
 import { api, type Incident, type List, type Plan } from "../api";
 import { useLoad } from "../hooks";
 import { useAuth } from "../auth";
 import { GlobalSearch } from "./Search";
-import { FeedbackButton } from "./Feedback";
+import { FeedbackDialog, feedbackAvailable, type FeedbackHandle } from "./Feedback";
 import { PlatformHealthBanner } from "../pages/admin/Health";
 import { UpdateBanner } from "../pages/admin/Updates";
-import {
-  IconActionPlan,
-  IconChevron,
-  IconInventory,
-  IconIssues,
-  IconOverview,
-  IconRemediation,
-  IconSettings,
-  IconHelp,
-  IconSidebar,
-} from "./Icons";
-
-interface NavItem {
-  to: string;
-  label: string;
-  /** Active when the location matches; defaults to path-prefix matching. */
-  match?: (path: string, search: URLSearchParams) => boolean;
-}
-
-interface NavGroup {
-  id: string;
-  label: string;
-  icon: ReactNode;
-  items: NavItem[];
-  badge?: { count: number; label: string; tone: "crit" | "warn" };
-}
+import { IconActionPlan, IconActivity, IconChevron, IconHelp, IconInventory, IconMessage, IconMore, IconOverview, IconSettings, IconSidebar } from "./Icons";
+import { sectionOf, SectionTabsFor, type Section } from "./nav";
 
 const STORE_KEY = "stackurity.nav";
 
-function readStore(): { open: Record<string, boolean>; collapsed: boolean } {
+function readCollapsed(): boolean {
   try {
     const raw = window.localStorage.getItem(STORE_KEY);
-    if (raw) {
-      const v = JSON.parse(raw);
-      return { open: v.open ?? {}, collapsed: Boolean(v.collapsed) };
-    }
+    if (raw) return Boolean(JSON.parse(raw).collapsed);
   } catch {
     // storage unavailable (private mode, blocked): fall back to defaults
   }
-  return { open: {}, collapsed: false };
+  return false;
 }
 
-function writeStore(v: { open: Record<string, boolean>; collapsed: boolean }) {
+function writeCollapsed(collapsed: boolean) {
   try {
-    window.localStorage.setItem(STORE_KEY, JSON.stringify(v));
+    window.localStorage.setItem(STORE_KEY, JSON.stringify({ collapsed }));
   } catch {
     // ignore
   }
 }
 
-const prefix = (p: string) => (path: string) => path === p || path.startsWith(p + "/");
-
-function isActive(item: NavItem, path: string, search: URLSearchParams): boolean {
-  return item.match ? item.match(path, search) : prefix(item.to.split("?")[0])(path);
+interface NavEntry {
+  id: Section;
+  to: string;
+  label: string;
+  icon: ReactNode;
+  badge?: { count: number; label: string; tone: "crit" | "warn" };
 }
 
-function CountBadge({ b }: { b: NonNullable<NavGroup["badge"]> }) {
+function CountBadge({ b }: { b: NonNullable<NavEntry["badge"]> }) {
   if (b.count <= 0) return null;
   return (
     <span className={`nav-count nav-count-${b.tone}`} title={b.label}>
@@ -73,106 +48,51 @@ function CountBadge({ b }: { b: NonNullable<NavGroup["badge"]> }) {
   );
 }
 
+const EDITION_LABEL: Record<string, string> = { community: "Community", pro: "Pro", enterprise: "Enterprise" };
+
 export function Layout() {
-  const { me, meta, can, logout } = useAuth();
-  const { pathname, search } = useLocation();
-  const params = new URLSearchParams(search);
-  const [store, setStore] = useState(readStore);
-  useEffect(() => writeStore(store), [store]);
+  const { me, meta, logout } = useAuth();
+  const { pathname } = useLocation();
+  const [collapsed, setCollapsed] = useState(readCollapsed);
+  const [more, setMore] = useState(false);
+  const feedback = useRef<FeedbackHandle>(null);
+  useEffect(() => writeCollapsed(collapsed), [collapsed]);
+  useEffect(() => setMore(false), [pathname]);
 
   // Badge counts, refreshed on navigation.
-  const pending = useLoad(() => api.get<List<Plan>>("/remediation/plans", { status: "proposed", limit: 1 }), [pathname]);
-  const sos = useLoad(() => api.get<List<Incident>>("/incidents", { status: "open", sos: "true", limit: 1 }), [pathname]);
+  const hasWorkspace = Boolean(me?.workspace);
+  const pending = useLoad(
+    () => (hasWorkspace ? api.get<List<Plan>>("/remediation/plans", { status: "proposed", limit: 1 }) : Promise.resolve(null)),
+    [pathname, hasWorkspace],
+  );
+  const sos = useLoad(
+    () => (hasWorkspace ? api.get<List<Incident>>("/incidents", { status: "open", sos: "true", limit: 1 }) : Promise.resolve(null)),
+    [pathname, hasWorkspace],
+  );
 
-  const single: NavItem[] = [
-    { to: "/", label: "Overview", match: (p) => p === "/" },
-    { to: "/action-plan", label: "Action plan" },
-  ];
-
-  const groups: NavGroup[] = [
+  const entries: NavEntry[] = [
+    { id: "home", to: "/", label: "Home", icon: <IconOverview /> },
     {
-      id: "issues",
-      label: "Issues",
-      icon: <IconIssues />,
+      id: "fixes",
+      to: "/fixes",
+      label: "Fixes",
+      icon: <IconActionPlan />,
+      badge: { count: pending.data?.total ?? 0, label: "automatic fixes waiting for approval", tone: "warn" },
+    },
+    { id: "assets", to: "/assets", label: "Assets", icon: <IconInventory /> },
+    {
+      id: "activity",
+      to: "/activity",
+      label: "Activity",
+      icon: <IconActivity />,
       badge: { count: sos.data?.total ?? 0, label: "open SOS incidents", tone: "crit" },
-      items: [
-        { to: "/findings", label: "Findings" },
-        { to: "/incidents", label: "Incidents" },
-        { to: "/coverage", label: "Coverage" },
-        { to: "/intelligence", label: "Intelligence" },
-        { to: "/outcomes", label: "Remediation outcomes" },
-        { to: "/reports", label: "Evidence report" },
-      ],
     },
-    {
-      id: "inventory",
-      label: "Inventory",
-      icon: <IconInventory />,
-      items: [
-        { to: "/assets", label: "Assets" },
-        { to: "/components", label: "Components" },
-      ],
-    },
-    {
-      id: "remediation",
-      label: "Remediation",
-      icon: <IconRemediation />,
-      badge: { count: pending.data?.total ?? 0, label: "plans need approval", tone: "warn" },
-      items: [
-        {
-          to: "/remediation",
-          label: "Plans",
-          match: (p, q) => (p === "/remediation" && q.get("tab") !== "policies") || p.startsWith("/remediation/plans"),
-        },
-        ...(can("security")
-          ? [{ to: "/remediation?tab=policies", label: "Policies", match: (p: string, q: URLSearchParams) => p === "/remediation" && q.get("tab") === "policies" }]
-          : []),
-      ],
-    },
-    {
-      id: "settings",
-      label: "Settings",
-      icon: <IconSettings />,
-      items: [
-        ...(can("engineer") ? [{ to: "/integrations", label: "Integrations" }] : []),
-        ...(can("security") ? [{ to: "/settings/notifications", label: "Notifications" }] : []),
-        { to: "/settings/risk-policy", label: "Risk policy" },
-        ...(can("admin")
-          ? [
-              { to: "/settings/plugins", label: "Plugins" },
-              { to: "/settings/users", label: "Users" },
-              { to: "/settings/teams", label: "Teams" },
-            ]
-          : []),
-        { to: "/settings/tokens", label: "API tokens" },
-        ...(can("admin")
-          ? [
-              { to: "/settings/conflicts", label: "Identity conflicts" },
-              { to: "/settings/jobs", label: "Jobs" },
-            ]
-          : []),
-        ...(can("admin") ? [{ to: "/settings/secrets", label: "Secrets" }] : []),
-        { to: "/audit", label: "Audit log" },
-        ...(me?.user?.instance_admin
-          ? [
-              { to: "/admin/workspaces", label: "Workspaces" },
-              { to: "/admin/health", label: "Platform health" },
-              { to: "/admin/packs", label: "Stack packs" },
-              { to: "/admin/license", label: "Licence" },
-              { to: "/updates", label: "What's new" },
-            ]
-          : []),
-      ],
-    },
+    { id: "settings", to: "/settings", label: "Settings", icon: <IconSettings /> },
   ];
-
-  const activeGroup = groups.find((g) => g.items.some((i) => isActive(i, pathname, params)))?.id;
-  // The group with the current page is always open.
-  const isOpen = (id: string) => id === activeGroup || Boolean(store.open[id]);
-  const toggleGroup = (id: string) => setStore((s) => ({ ...s, open: { ...s.open, [id]: !isOpen(id) } }));
-  const collapsed = store.collapsed;
-
-  const who = me?.user?.email ?? (me?.token ? `token ${me.token.prefix}` : "");
+  const current = sectionOf(pathname);
+  const showFeedback = feedbackAvailable(me);
+  const version = meta ? `v${meta.version.replace(/^v/, "")}` : "";
+  const moreActive = current === "activity" || current === "settings" || current === "help";
 
   return (
     <div className={`shell${collapsed ? " shell-collapsed" : ""}`}>
@@ -188,59 +108,27 @@ export function Layout() {
         </div>
         <nav aria-label="Main">
           <ul className="nav">
-            {single.map((n, i) => {
-              const active = isActive(n, pathname, params);
+            {entries.map((n) => {
+              const active = current === n.id;
               return (
-                <li key={n.to}>
+                <li key={n.id}>
                   <Link to={n.to} className={`nav-item${active ? " active" : ""}`} aria-current={active ? "page" : undefined} title={collapsed ? n.label : undefined}>
-                    {i === 0 ? <IconOverview /> : <IconActionPlan />}
+                    {n.icon}
                     <span className="nav-text">{n.label}</span>
+                    {n.badge && <CountBadge b={n.badge} />}
                   </Link>
                 </li>
               );
             })}
           </ul>
-          {groups.map((g) => {
-            const open = isOpen(g.id);
-            const panel = `nav-${g.id}`;
-            return (
-              <div key={g.id} className={`nav-group${g.id === activeGroup ? " has-active" : ""}`}>
-                {collapsed ? (
-                  <Link to={g.items[0]?.to ?? "/"} className={`nav-item${g.id === activeGroup ? " active" : ""}`} title={g.label}>
-                    {g.icon}
-                    <span className="nav-text">{g.label}</span>
-                    {g.badge && <CountBadge b={g.badge} />}
-                  </Link>
-                ) : (
-                  <button type="button" className="nav-group-head" aria-expanded={open} aria-controls={panel} onClick={() => toggleGroup(g.id)}>
-                    {g.icon}
-                    <span className="nav-text">{g.label}</span>
-                    {g.badge && <CountBadge b={g.badge} />}
-                    <span className={`nav-chevron${open ? " open" : ""}`}>
-                      <IconChevron size={14} />
-                    </span>
-                  </button>
-                )}
-                {!collapsed && (
-                  <ul className="nav nav-sub" id={panel} hidden={!open}>
-                    {g.items.map((n) => {
-                      const active = isActive(n, pathname, params);
-                      return (
-                        <li key={n.to}>
-                          <Link to={n.to} className={`nav-item${active ? " active" : ""}`} aria-current={active ? "page" : undefined}>
-                            <span className="nav-text">{n.label}</span>
-                          </Link>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </div>
-            );
-          })}
         </nav>
         <div className="sidebar-foot">
-          <Link to="/help" className={`nav-item${pathname.startsWith("/help") ? " active" : ""}`} aria-current={pathname.startsWith("/help") ? "page" : undefined} title={collapsed ? "Help" : undefined}>
+          <Link
+            to="/help"
+            className={`nav-item${current === "help" ? " active" : ""}`}
+            aria-current={current === "help" ? "page" : undefined}
+            title={collapsed ? "Help" : undefined}
+          >
             <IconHelp />
             <span className="nav-text">Help</span>
           </Link>
@@ -248,96 +136,287 @@ export function Layout() {
             type="button"
             className="nav-collapse"
             aria-pressed={collapsed}
-            onClick={() => setStore((s) => ({ ...s, collapsed: !s.collapsed }))}
+            onClick={() => setCollapsed((c) => !c)}
             title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
             <IconSidebar />
             <span className="nav-text">{collapsed ? "Expand" : "Collapse"}</span>
           </button>
-          {meta &&
+          {version &&
             (me?.user?.instance_admin ? (
               <Link to="/updates" className="nav-text muted small nav-version" title="What's new">
-                v{meta.version.replace(/^v/, "")}
+                {version}
               </Link>
             ) : (
-              <span className="nav-text muted small">v{meta.version.replace(/^v/, "")}</span>
+              <span className="nav-text muted small">{version}</span>
             ))}
         </div>
       </aside>
       <div className="main-col">
         <header className="topbar">
-          {me?.workspace ? <GlobalSearch /> : <div className="topbar-spacer" />}
-          <div className="topbar-user">
-            <Link to="/help" className="btn btn-sm btn-link topbar-help">
-              <IconHelp size={16} /> Help
-            </Link>
-            <FeedbackButton />
-            <WorkspaceSwitcher />
-            <span className="user-email">{who}</span>
-            {me && <span className={`role-pill role-${me.role}`}>{me.role}</span>}
-            <button type="button" className="btn btn-sm" onClick={() => void logout()}>
-              Log out
-            </button>
-          </div>
+          <WorkspaceSwitcher />
+          <div className="topbar-search">{me?.workspace ? <GlobalSearch /> : null}</div>
+          <AvatarMenu onFeedback={showFeedback ? () => feedback.current?.open() : undefined} onLogout={() => void logout()} version={version} />
         </header>
         <main id="main" className="content" tabIndex={-1}>
           <UpdateBanner />
           {!pathname.startsWith("/admin/health") && <PlatformHealthBanner />}
+          {current === "settings" && pathname !== "/settings" && (
+            <nav className="crumbs" aria-label="Breadcrumb">
+              <Link to="/settings">Settings</Link>
+            </nav>
+          )}
+          {me?.workspace && <SectionTabsFor path={pathname} />}
           {me && !me.workspace && !pathname.startsWith("/admin") ? <NoWorkspace instanceAdmin={Boolean(me.user?.instance_admin)} /> : <Outlet />}
         </main>
       </div>
+
+      {/* Phones: a bottom tab bar instead of the sidebar. */}
+      <nav className="tabbar" aria-label="Main (phone)">
+        {entries.slice(0, 3).map((n) => {
+          const active = current === n.id && !more;
+          return (
+            <Link key={n.id} to={n.to} className={`tabbar-item${active ? " active" : ""}`} aria-current={active ? "page" : undefined}>
+              {n.icon}
+              <span className="tabbar-label">{n.label}</span>
+              {n.badge && <CountBadge b={n.badge} />}
+            </Link>
+          );
+        })}
+        <button
+          type="button"
+          className={`tabbar-item${more || moreActive ? " active" : ""}`}
+          aria-expanded={more}
+          aria-controls="more-sheet"
+          onClick={() => setMore((m) => !m)}
+        >
+          <IconMore />
+          <span className="tabbar-label">More</span>
+          {entries[3].badge && <CountBadge b={entries[3].badge} />}
+        </button>
+      </nav>
+      {more && (
+        <div className="sheet-backdrop" onClick={() => setMore(false)}>
+          <div
+            id="more-sheet"
+            className="sheet"
+            role="dialog"
+            aria-label="More"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setMore(false);
+            }}
+          >
+            <ul className="sheet-list">
+              {entries.slice(3).map((n) => (
+                <li key={n.id}>
+                  <Link to={n.to} className="sheet-item">
+                    {n.icon}
+                    <span className="sheet-item-main">{n.label}</span>
+                    {n.badge && <CountBadge b={n.badge} />}
+                  </Link>
+                </li>
+              ))}
+              <li>
+                <Link to="/help" className="sheet-item">
+                  <IconHelp />
+                  <span className="sheet-item-main">Help</span>
+                </Link>
+              </li>
+              {showFeedback && (
+                <li>
+                  <button
+                    type="button"
+                    className="sheet-item"
+                    aria-haspopup="dialog"
+                    onClick={() => {
+                      setMore(false);
+                      feedback.current?.open();
+                    }}
+                  >
+                    <IconMessage />
+                    <span className="sheet-item-main">Send feedback</span>
+                  </button>
+                </li>
+              )}
+            </ul>
+            <button type="button" className="btn sheet-close" onClick={() => setMore(false)}>
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+      {/* Mounted once, outside the menus, so closing a menu does not close the dialog. */}
+      <FeedbackDialog ref={feedback} />
     </div>
   );
 }
 
+/** Closes a popup on a click outside it, Escape, or navigation. */
+function usePopup() {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  const { pathname } = useLocation();
+  useEffect(() => setOpen(false), [pathname]);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (box.current && !box.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpen(false);
+        button.current?.focus();
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+  return { open, setOpen, box, button };
+}
+
 /**
- * Shows the current workspace, and lets people who belong to several switch.
- * Switching reloads the app so nothing from the previous workspace stays on
- * screen.
+ * Workspace name and edition on the left of the top bar. People who belong
+ * to several workspaces get a menu to switch; switching reloads the app so
+ * nothing from the previous workspace stays on screen.
  */
 function WorkspaceSwitcher() {
   const { me } = useAuth();
   const [busy, setBusy] = useState(false);
-  if (!me?.workspace) return null;
+  const pop = usePopup();
+  if (!me?.workspace) return <div className="workspace-menu" />;
   const list = me.workspaces ?? [];
-  const edition = <span className={`edition-pill edition-${me.edition}`}>{me.edition === "community" ? "Community" : me.edition === "pro" ? "Pro" : "Enterprise"}</span>;
+  const edition = <span className={`edition-pill edition-${me.edition}`}>{EDITION_LABEL[me.edition] ?? me.edition}</span>;
   if (list.length < 2)
     return (
-      <>
-        <span className="workspace-name" title="Workspace">
+      <div className="workspace-menu">
+        <span className="workspace-name" title={`Workspace ${me.workspace.name}`}>
           {me.workspace.name}
         </span>
         {edition}
-      </>
+      </div>
     );
+  const activate = async (id: number) => {
+    if (id === me.workspace?.id) {
+      pop.setOpen(false);
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.post(`/workspaces/${id}/activate`);
+      window.location.assign("/");
+    } catch {
+      setBusy(false);
+    }
+  };
   return (
-    <>
-      <label className="sr-only" htmlFor="workspace-switch">
-        Workspace
-      </label>
-      <select
-        id="workspace-switch"
-        className="workspace-switch"
-        value={me.workspace.id}
+    <div className="workspace-menu" ref={pop.box}>
+      <button
+        type="button"
+        ref={pop.button}
+        className="workspace-button"
+        aria-haspopup="menu"
+        aria-expanded={pop.open}
         disabled={busy}
-        onChange={async (e) => {
-          setBusy(true);
-          try {
-            await api.post(`/workspaces/${e.target.value}/activate`);
-            window.location.assign("/");
-          } catch {
-            setBusy(false);
-          }
-        }}
+        onClick={() => pop.setOpen(!pop.open)}
+        title="Switch workspace"
       >
-        {list.map((m) => (
-          <option key={m.workspace_id} value={m.workspace_id}>
-            {m.name} ({m.role})
-          </option>
-        ))}
-      </select>
-      {edition}
-    </>
+        <span className="workspace-name">{me.workspace.name}</span>
+        {edition}
+        <span className={`nav-chevron${pop.open ? " open" : ""}`} aria-hidden="true">
+          <IconChevron size={14} />
+        </span>
+        <span className="sr-only"> (switch workspace)</span>
+      </button>
+      {pop.open && (
+        <div className="menu menu-left" role="menu" aria-label="Workspaces">
+          <div className="menu-label">Switch workspace</div>
+          {list.map((m) => (
+            <button
+              key={m.workspace_id}
+              type="button"
+              role="menuitemradio"
+              aria-checked={m.workspace_id === me.workspace?.id}
+              className="menu-item"
+              onClick={() => void activate(m.workspace_id)}
+            >
+              <span className="menu-item-main">{m.name}</span>
+              <span className="muted small">{m.role}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** One menu for the signed-in person: who and what role, help, feedback, log out. */
+function AvatarMenu({ onFeedback, onLogout, version }: { onFeedback?: () => void; onLogout: () => void; version: string }) {
+  const { me } = useAuth();
+  const pop = usePopup();
+  const who = me?.user?.email ?? (me?.token ? `token ${me.token.prefix}` : "");
+  const initial = (me?.user?.name || me?.user?.email || "?").trim().charAt(0).toUpperCase();
+  return (
+    <div className="avatar-menu" ref={pop.box}>
+      <button
+        type="button"
+        ref={pop.button}
+        className="avatar-button"
+        aria-haspopup="menu"
+        aria-expanded={pop.open}
+        onClick={() => pop.setOpen(!pop.open)}
+        title={who}
+      >
+        <span className="avatar" aria-hidden="true">
+          {initial}
+        </span>
+        <span className="sr-only">Account menu for {who}</span>
+      </button>
+      {pop.open && (
+        <div className="menu menu-right" role="menu" aria-label="Account">
+          <div className="menu-head">
+            <span className="menu-email break">{who}</span>
+            {me && (
+              <span className="menu-role">
+                <span className={`role-pill role-${me.role}`}>{me.role}</span>
+                {me.workspace && <span className="muted small"> in {me.workspace.name}</span>}
+              </span>
+            )}
+          </div>
+          <Link to="/help" role="menuitem" className="menu-item" onClick={() => pop.setOpen(false)}>
+            <IconHelp size={16} /> <span className="menu-item-main">Help</span>
+          </Link>
+          {onFeedback && (
+            <button
+              type="button"
+              role="menuitem"
+              className="menu-item"
+              aria-haspopup="dialog"
+              onClick={() => {
+                pop.setOpen(false);
+                onFeedback();
+              }}
+            >
+              <IconMessage size={16} /> <span className="menu-item-main">Send feedback</span>
+            </button>
+          )}
+          {me?.user?.instance_admin && (
+            <Link to="/updates" role="menuitem" className="menu-item" onClick={() => pop.setOpen(false)}>
+              <span className="menu-item-main">What&apos;s new</span>
+              <span className="muted small">{version}</span>
+            </Link>
+          )}
+          <button type="button" role="menuitem" className="menu-item menu-item-sep" onClick={onLogout}>
+            <span className="menu-item-main">Log out</span>
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 

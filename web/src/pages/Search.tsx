@@ -11,9 +11,9 @@ const LIMIT = 50;
 function listFor(group: SearchGroup, q: string): string | null {
   switch (group) {
     case "vulnerabilities":
-      return `/findings${qs({ q, status: "all" })}`;
+      return `/fixes/issues${qs({ q, status: "all" })}`;
     case "findings":
-      return `/findings${qs({ q })}`;
+      return `/fixes/issues${qs({ q })}`;
     case "assets":
       return `/assets${qs({ q })}`;
     case "components":

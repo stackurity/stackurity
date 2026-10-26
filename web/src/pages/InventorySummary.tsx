@@ -1,14 +1,10 @@
 import { Link } from "react-router";
-import { api, ASSET_STATUSES, COVERAGE_STATUSES, type FindingSummary, type Incident, type List, type Overview } from "../api";
-import { FindingTiles, IntelBanners, PriorityTiles } from "../components/Findings";
-import { RemediationTiles } from "../components/RemediationSummary";
-import { ActionPlanLead } from "../components/ActionPlanLead";
-import { PackSuggestions } from "../components/PackSuggestions";
+import { api, ASSET_STATUSES, COVERAGE_STATUSES, type Overview } from "../api";
 import { useAuth } from "../auth";
 import { useLoad } from "../hooks";
 import { assetKindLabel, humanize, plural } from "../format";
 import { toneFor } from "../components/Badge";
-import { BarRows, Card, Code, EmptyState, ErrorBox, Loading, PageHeader, RelativeTime, StatTile, type Bar } from "../components/ui";
+import { BarRows, Card, ErrorBox, Loading, RelativeTime, StatTile, type Bar } from "../components/ui";
 
 function sum(m: Record<string, number> | null | undefined): number {
   return Object.values(m ?? {}).reduce((a, b) => a + b, 0);
@@ -20,13 +16,12 @@ function sortedBars(m: Record<string, number> | null | undefined, toLabel?: (k: 
     .map(([k, v]) => ({ key: k, label: toLabel ? toLabel(k) : humanize(k), value: v }));
 }
 
-export function OverviewPage() {
+/** Inventory at a glance: what was collected, how complete it is. Shown on the Assets page. */
+export function InventorySummary() {
   const { can } = useAuth();
   const ov = useLoad(() => api.get<Overview>("/overview"), []);
-  const fs = useLoad(() => api.get<FindingSummary>("/findings/summary"), []);
-  const incidents = useLoad(() => api.get<List<Incident>>("/incidents", { status: "open", limit: 1 }), []);
 
-  if (ov.error) return <ErrorBox error={ov.error} title="Could not load overview" />;
+  if (ov.error) return <ErrorBox error={ov.error} title="Could not load the inventory summary" />;
   if (!ov.data) return <Loading />;
   const o = ov.data;
   const totalAssets = sum(o.assets);
@@ -35,20 +30,6 @@ export function OverviewPage() {
   const partial = st.partial ?? 0;
   const cov = o.coverage_status ?? {};
   const covProblems = (cov.failed ?? 0) + (cov.unsupported ?? 0) + (cov.skipped ?? 0) + (cov.partial ?? 0);
-
-  if (totalAssets === 0) {
-    return (
-      <>
-        <PageHeader help="daily-workflow" title="Overview" />
-        <EmptyState title="No assets yet" help="add-server" helpLabel="Add your first server">
-          <p>
-            Run <Code>stackurity agent --once</Code> on a host, <Code>stackurity scan DIR</Code> in CI, or add a Git
-            repository under <Link to="/integrations">Integrations</Link>.
-          </p>
-        </EmptyState>
-      </>
-    );
-  }
 
   // Asset status: show every known status, even at zero, so "0 stale" is explicit.
   const statusBars: Bar[] = [...ASSET_STATUSES, ...Object.keys(st).filter((k) => !(ASSET_STATUSES as readonly string[]).includes(k))].map(
@@ -59,49 +40,15 @@ export function OverviewPage() {
 
   return (
     <>
-      <PageHeader help="daily-workflow"
-        title="Overview"
-        sub={
-          <>
-            Last collection: <RelativeTime iso={o.last_collection} empty="never" />
-          </>
-        }
-      />
-
-      <PackSuggestions />
-      <ActionPlanLead />
-
-      <section aria-labelledby="ov-findings">
-        <div className="card-head">
-          <h2 id="ov-findings">Open findings</h2>
-          <Link to="/findings">All findings</Link>
-        </div>
-        <ErrorBox error={fs.error} title="Could not load findings summary" />
-        {fs.data && (
-          <>
-            <IntelBanners s={fs.data} />
-            {(fs.data.sos ?? 0) > 0 && (
-              <div className="alert sos-banner" role="alert">
-                <strong>SOS:</strong> {fs.data.sos} active finding{fs.data.sos === 1 ? "" : "s"} match an SOS rule.{" "}
-                <Link to="/incidents?sos=true">See SOS incidents</Link>.
-              </div>
-            )}
-            <PriorityTiles s={fs.data} openIncidents={incidents.data?.total} />
-            <h3 className="h-sm">By severity</h3>
-            <FindingTiles s={fs.data} />
-          </>
-        )}
-      </section>
-
-      <RemediationTiles />
-
-      <h2 className="section-title">Inventory</h2>
+      <p className="small muted">
+        Last collection: <RelativeTime iso={o.last_collection} empty="never" />
+      </p>
       {(stale > 0 || partial > 0) && (
         <div className="alert alert-warn" role="alert">
           <strong>Collection problems:</strong>{" "}
           {stale > 0 && (
             <>
-              <Link to="/assets?status=stale">{plural(stale, "asset")} stale</Link> (no recent data — inventory may be out of date)
+              <Link to="/assets?status=stale">{plural(stale, "asset")} stale</Link> (no recent data, so their inventory may be out of date)
             </>
           )}
           {stale > 0 && partial > 0 && "; "}

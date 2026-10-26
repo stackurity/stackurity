@@ -1,6 +1,6 @@
-import { useRef, useState, type FormEvent } from "react";
+import { forwardRef, useImperativeHandle, useRef, useState, type FormEvent } from "react";
 import { Link, useLocation } from "react-router";
-import { api, ApiError } from "../api";
+import { api, ApiError, type Me } from "../api";
 import { useAuth } from "../auth";
 import { ErrorBox } from "./ui";
 import { IconMessage } from "./Icons";
@@ -15,12 +15,42 @@ const KINDS: { id: Kind; label: string }[] = [
 
 const MAX = 5000;
 
+/** Whether Send feedback is offered to this session (the operator can turn it off). */
+export function feedbackAvailable(me: Me | null | undefined): boolean {
+  return Boolean(me?.feedback_enabled && me.user);
+}
+
+/** Opens the Send feedback dialog; see FeedbackDialog. */
+export interface FeedbackHandle {
+  open: () => void;
+}
+
 /**
  * Send feedback: a button in the top bar and the dialog it opens. The server
  * forwards the message to the Stackurity team (POST /feedback); the button is
  * hidden when the operator turned feedback off.
  */
 export function FeedbackButton() {
+  const ref = useRef<FeedbackHandle>(null);
+  const { me } = useAuth();
+  if (!feedbackAvailable(me)) return null;
+  return (
+    <>
+      <button type="button" className="btn btn-sm btn-link topbar-feedback" onClick={() => ref.current?.open()} aria-haspopup="dialog">
+        <IconMessage size={16} />
+        <span className="topbar-feedback-label">Feedback</span>
+      </button>
+      <FeedbackDialog ref={ref} />
+    </>
+  );
+}
+
+/**
+ * The Send feedback dialog on its own, for menus: mount it once outside the
+ * menu (so closing the menu does not unmount it) and call open() on its ref.
+ * It renders nothing when feedback is off.
+ */
+export const FeedbackDialog = forwardRef<FeedbackHandle>(function FeedbackDialog(_props, handle) {
   const { me } = useAuth();
   const { pathname } = useLocation();
   const ref = useRef<HTMLDialogElement>(null);
@@ -33,21 +63,20 @@ export function FeedbackButton() {
   const [error, setError] = useState<ApiError | null>(null);
   const [sent, setSent] = useState(false);
 
-  if (!me?.feedback_enabled || !me.user) return null;
-
   const open = () => {
     if (sent) {
       setSent(false);
       setMessage("");
       setKind("bug");
     }
-    setEmail((e) => e || me.user?.email || "");
+    setEmail((e) => e || me?.user?.email || "");
     setPage(pathname);
     setError(null);
     ref.current?.showModal();
     messageRef.current?.focus();
   };
   const close = () => ref.current?.close();
+  useImperativeHandle(handle, () => ({ open }));
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -63,12 +92,10 @@ export function FeedbackButton() {
     }
   };
 
+  if (!feedbackAvailable(me) || !me?.user) return null;
+
   return (
     <>
-      <button type="button" className="btn btn-sm btn-link topbar-feedback" onClick={open} aria-haspopup="dialog">
-        <IconMessage size={16} />
-        <span className="topbar-feedback-label">Feedback</span>
-      </button>
       <dialog ref={ref} className="dialog feedback-dialog" aria-labelledby="feedback-title" onClose={() => setError(null)}>
         <header className="dialog-head">
           <h2 id="feedback-title">Send feedback</h2>
@@ -141,4 +168,4 @@ export function FeedbackButton() {
       </dialog>
     </>
   );
-}
+});
