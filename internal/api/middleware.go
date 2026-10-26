@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
 	"strings"
@@ -65,15 +66,23 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 				return
 			}
 			tok, user, err := s.Store.TokenPrincipal(r.Context(), strings.TrimSpace(secret))
-			if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
 				writeError(w, 401, "unauthorized", "invalid or expired token")
+				return
+			}
+			if err != nil {
+				s.credentialsUnavailable(w, r, err)
 				return
 			}
 			p = &Principal{User: user, Token: tok, Role: tok.Role, Workspace: tok.WorkspaceID}
 		} else if c, err := r.Cookie(sessionCookie); err == nil && c.Value != "" {
 			user, ws, err := s.Store.SessionUser(r.Context(), c.Value)
-			if err == nil {
+			switch {
+			case err == nil:
 				p = &Principal{User: user, Role: user.Role, Session: true, Workspace: ws}
+			case !errors.Is(err, store.ErrNotFound):
+				s.credentialsUnavailable(w, r, err)
+				return
 			}
 		}
 		if p != nil {
@@ -85,6 +94,15 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// credentialsUnavailable answers a request whose credentials could not be
+// checked, usually because the database is unreachable. It is a 503, never a
+// 401: agents and CI do not retry a 401, and the dashboard would sign the
+// person out, although nothing is wrong with their credentials.
+func (s *Server) credentialsUnavailable(w http.ResponseWriter, r *http.Request, err error) {
+	s.Log.Warn("could not check credentials", "path", r.URL.Path, "err", err, "request_id", middleware.GetReqID(r.Context()))
+	writeError(w, 503, "unavailable", "credentials cannot be checked right now; try again shortly")
 }
 
 // csrfGuard requires a custom header on state-changing requests made with
