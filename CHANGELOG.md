@@ -4,6 +4,17 @@ All notable changes to Stackurity. Versions follow [Semantic Versioning](https:/
 
 Each release's section is published as its GitHub release notes, and a tag without a section here cannot be released (`go run ./tools/changelog -version vX.Y.Z` prints it). New changes go under **Unreleased**, which is renamed to the version when it is tagged. Subsections are **Security**, **Added**, **Changed**, **Fixed** and **Upgrading**. Put fixes for vulnerabilities under `### Security`, first: installations treat a release with that heading as a security release and show administrators a banner they can only snooze.
 
+## Unreleased
+
+### Added
+
+- **Risk policy preview.** `POST /api/v1/risk-policy/preview` (admins) validates a proposed policy like a save and scores the workspace's open findings under the current and the proposed policy in memory, inside a read-only transaction: counts per priority and SOS before and after, how many findings are raised or lowered, and up to 50 changed findings with their asset and the factors whose points differ. **Settings > Risk policy** requires a preview of the exact changes before saving, and shows who last changed the policy and when (`last_change` in `GET /risk-policy`, from the audit log). The preview and prioritisation share one query, so the preview is what a save produces.
+- **Remediation policy preview (Pro).** `POST /api/v1/remediation/policies/preview` shows which fixable packages and assets a new or edited policy would authorise or stop authorising, using the planner's candidates and first-matching-policy rule, without saving. The policy editor requires it before saving and shows who last changed the policy.
+- **Health centre.** Every platform health problem now has when it last worked, the latest error, what it affects (a summary, counts across workspaces, up to ten named objects with links) and a suggested next step with a documentation link. New problems: integrations whose latest run failed (and those failing for two scheduled runs or more), notification channels with failed or retrying deliveries, assets whose collector stopped reporting (with the production count), production assets with failed or partial collection, production assets running components no source could evaluate, and job kinds retried three or more times. Objects are named, and their errors shown, only for the instance administrator's active workspace; these problems never become platform incidents.
+- **Finding provenance.** The finding page shows how each verdict was reached: every matched advisory (linked) with its feed, ecosystem and the affected range that matched, the installed version, the version rules used (Debian version rules, RPM epoch:version-release, SemVer, ...) and the evidence state (confirmed, needs validation, stale, confirmed with stale advisory data, unknown) with a one-line reason. The findings list shows the same state.
+- Reports count open findings by evidence state: `open.by_evidence` in the outcomes report and in the evidence report (Pro), whose exceptions also carry their `verification`.
+- The audit log page can be opened filtered by object type (`/audit?object_type=settings`).
+
 ## 0.4.0
 
 ### Security
