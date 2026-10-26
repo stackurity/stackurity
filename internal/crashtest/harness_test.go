@@ -150,7 +150,7 @@ func newEnv(t *testing.T) *env {
 	us := httptest.NewServer(e.up)
 	t.Cleanup(us.Close)
 	e.upURL = us.URL
-	e.hook = &receiver{held: make(chan string, 16)}
+	e.hook = &receiver{held: make(chan string, 16), release: make(chan struct{})}
 	hs := httptest.NewServer(e.hook)
 	t.Cleanup(hs.Close)
 	e.hookURL = hs.URL
@@ -567,6 +567,9 @@ type upstream struct {
 	hang  map[string]bool
 	// sent counts the bytes of slow responses written so far.
 	sent atomic.Int64
+	// down makes every request fail with 503, as an unreachable or
+	// overloaded upstream does.
+	down atomic.Bool
 }
 
 func (u *upstream) set(path string, body []byte) {
@@ -599,6 +602,10 @@ func (u *upstream) hitCount(path string) int {
 
 func (u *upstream) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.EscapedPath()
+	if u.down.Load() {
+		http.Error(w, "upstream unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	u.mu.Lock()
 	u.hits[p]++
 	body, ok := u.files[p]
@@ -649,12 +656,18 @@ type receipt struct {
 // X-Stackurity-Delivery id a real receiver deduplicates on. It can be told to
 // stall the next request, before processing it ("before": the message is
 // never taken in) or after ("after": taken in, but no response is sent), and
-// reports the stalled delivery id on held.
+// reports the stalled delivery id on held. A stalled request ends when the
+// client goes away or when release is closed; a released "after" request
+// is answered 204.
 type receiver struct {
-	mu   sync.Mutex
-	got  []receipt
-	hold string
-	held chan string
+	mu      sync.Mutex
+	got     []receipt
+	hold    string
+	held    chan string
+	release chan struct{}
+	// fail answers every request 500 without processing it, as a failing
+	// notification provider does.
+	fail atomic.Bool
 }
 
 func (r *receiver) holdNext(mode string) {
@@ -665,6 +678,10 @@ func (r *receiver) holdNext(mode string) {
 
 func (r *receiver) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	body, _ := io.ReadAll(req.Body)
+	if r.fail.Load() {
+		http.Error(w, "provider unavailable", http.StatusInternalServerError)
+		return
+	}
 	var m struct {
 		Event, Title string
 	}
@@ -674,12 +691,15 @@ func (r *receiver) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	mode := r.hold
 	r.hold = ""
 	r.mu.Unlock()
-	stall := func() {
+	stall := func() bool {
 		r.held <- rc.id
 		select {
 		case <-req.Context().Done():
 		case <-time.After(2 * time.Minute):
+		case <-r.release:
+			return true
 		}
+		return false
 	}
 	if mode == "before" {
 		stall()
@@ -688,8 +708,7 @@ func (r *receiver) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	r.mu.Lock()
 	r.got = append(r.got, rc)
 	r.mu.Unlock()
-	if mode == "after" {
-		stall()
+	if mode == "after" && !stall() {
 		return
 	}
 	w.WriteHeader(204)
