@@ -102,6 +102,20 @@ func (h *Handler) Write(ctx context.Context, w *Writer) {
 	} else {
 		w.Gauge("stackurity_assets_stale", "Assets that have stopped reporting, across all workspaces.", float64(n))
 	}
+	if counts, err := h.Store.CountSecondChecks(ctx); err != nil {
+		fail("second_checks", err)
+	} else {
+		w.Family("stackurity_second_check_findings", "gauge", "Open findings by the result of their independent second check, across all workspaces.")
+		for _, r := range []string{store.SecondCheckAgreed, store.SecondCheckDisagreed, store.SecondCheckCouldNotCheck} {
+			w.Sample("stackurity_second_check_findings", float64(counts[r]), "result", r)
+		}
+	}
+	if n, err := h.Store.CountSecondCheckDisagreementsLogged(ctx); err != nil {
+		fail("second_check_log", err)
+	} else {
+		w.Family("stackurity_second_check_disagreements_total", "counter", "Disagreements between the matcher and the independent second check, ever logged.")
+		w.Sample("stackurity_second_check_disagreements_total", float64(n))
+	}
 	w.Gauge("stackurity_scrape_errors", "Database sections of this scrape that could not be read.", float64(errs))
 }
 

@@ -1,0 +1,262 @@
+package secondcheck
+
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/stackurity/stackurity/internal/store"
+)
+
+func rec(id, eco, name, affected string) store.RawAdvisoryRecord {
+	return store.RawAdvisoryRecord{ID: id, GroupKey: "CVE-2099-1", Ecosystem: eco, Name: name, Affected: json.RawMessage(affected)}
+}
+
+func rng(events string) string {
+	return `{"ranges":[{"type":"ECOSYSTEM","events":[` + events + `]}]}`
+}
+
+func claim(fixed string, ev map[string]any) Claim {
+	if ev == nil {
+		ev = map[string]any{}
+	}
+	return Claim{Kind: "vulnerability", Key: "CVE-2099-1", FixedVersion: fixed, Evidence: ev}
+}
+
+func TestSecondCheckAgrees(t *testing.T) {
+	cases := []struct {
+		name  string
+		purl  string
+		ver   string
+		ev    map[string]string
+		recs  []store.RawAdvisoryRecord
+		fixed string
+		claim map[string]any
+	}{
+		{name: "npm range", purl: "pkg:npm/lodash@4.17.15", recs: []store.RawAdvisoryRecord{
+			rec("GHSA-1", "npm", "lodash", rng(`{"introduced":"0"},{"fixed":"4.17.21"}`))}, fixed: "4.17.21"},
+		{name: "scoped npm, last_affected", purl: "pkg:npm/%40babel/core@7.1.0", recs: []store.RawAdvisoryRecord{
+			rec("GHSA-2", "npm", "@babel/core", rng(`{"introduced":"7.0.0"},{"last_affected":"7.1.0"}`))}},
+		{name: "PyPI name normalised", purl: "pkg:pypi/Typing_Extensions@4.0.0", recs: []store.RawAdvisoryRecord{
+			rec("PYSEC-1", "PyPI", "typing-extensions", `{"versions":["4.0.0","4.0.1"]}`)}},
+		{name: "two ranges, highest fix of the two records", purl: "pkg:npm/x@1.5.0", recs: []store.RawAdvisoryRecord{
+			rec("GHSA-3", "npm", "x", rng(`{"introduced":"1.0.0"},{"fixed":"1.6.0"}`)),
+			rec("GHSA-4", "npm", "x", rng(`{"introduced":"1.0.0"},{"fixed":"1.7.0"}`))}, fixed: "1.7.0"},
+		{name: "Debian source package", purl: "pkg:deb/debian/libssl3@3.0.11-1~deb12u1?distro=debian-12", ev: map[string]string{"source_package": "openssl"},
+			recs: []store.RawAdvisoryRecord{
+				rec("DEBIAN-CVE-2099-1", "Debian:12", "openssl", rng(`{"introduced":"0"},{"fixed":"3.0.11-1~deb12u2"}`)),
+				rec("DEBIAN-CVE-2099-1", "Debian:11", "openssl", rng(`{"introduced":"0"},{"fixed":"1.1.1w-0+deb11u1"}`)),
+			}, fixed: "3.0.11-1~deb12u2"},
+		{name: "Ubuntu free channel wins over Pro", purl: "pkg:deb/ubuntu/curl@7.81.0-1ubuntu1.14?distro=ubuntu-22.04",
+			recs: []store.RawAdvisoryRecord{
+				rec("UBUNTU-CVE-2099-1", "Ubuntu:22.04:LTS", "curl", rng(`{"introduced":"0"},{"fixed":"7.81.0-1ubuntu1.15"}`)),
+				rec("UBUNTU-CVE-2099-1", "Ubuntu:Pro:22.04:LTS", "curl", rng(`{"introduced":"0"},{"fixed":"7.81.0-1ubuntu1.16"}`)),
+			}, fixed: "7.81.0-1ubuntu1.15"},
+		{name: "Ubuntu Pro only", purl: "pkg:deb/ubuntu/curl@7.68.0-1ubuntu2.20?distro=ubuntu-20.04",
+			recs: []store.RawAdvisoryRecord{
+				rec("UBUNTU-CVE-2099-1", "Ubuntu:Pro:20.04:LTS", "curl", rng(`{"introduced":"0"},{"fixed":"7.68.0-1ubuntu2.21+esm1"}`)),
+			}, fixed: "7.68.0-1ubuntu2.21+esm1", claim: map[string]any{"requires_subscription": "Ubuntu Pro"}},
+		{name: "rpm epoch from evr", purl: "pkg:rpm/rocky/openssl-libs@3.0.7-24.el9?distro=rocky-9.3",
+			ev:    map[string]string{"evr": "1:3.0.7-24.el9", "source_rpm": "openssl-3.0.7-24.el9.src.rpm"},
+			recs:  []store.RawAdvisoryRecord{rec("RLSA-1", "Rocky Linux:9", "openssl", rng(`{"introduced":"0"},{"fixed":"1:3.0.7-25.el9_3"}`))},
+			fixed: "1:3.0.7-25.el9_3"},
+		{name: "RHEL stream", purl: "pkg:rpm/redhat/bash@5.1.8-6.el9?distro=rhel-9.4",
+			recs:  []store.RawAdvisoryRecord{rec("RHSA-1", "Red Hat:enterprise_linux:9::baseos", "bash", rng(`{"introduced":"0"},{"fixed":"0:5.1.8-9.el9"}`))},
+			fixed: "0:5.1.8-9.el9"},
+		{name: "Alpine release", purl: "pkg:apk/alpine/busybox@1.36.1-r15?distro=alpine-3.19.1",
+			recs:  []store.RawAdvisoryRecord{rec("ALPINE-1", "Alpine:v3.19", "busybox", rng(`{"introduced":"0"},{"fixed":"1.36.1-r16"}`))},
+			fixed: "1.36.1-r16"},
+		{name: "Go stdlib prefix", purl: "pkg:golang/stdlib@go1.22.1",
+			recs:  []store.RawAdvisoryRecord{rec("GO-1", "Go", "stdlib", `{"ranges":[{"type":"SEMVER","events":[{"introduced":"0"},{"fixed":"1.22.2"}]}]}`)},
+			fixed: "1.22.2"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			out := CheckVulnerability(claim(c.fixed, c.claim), Observed{Purl: c.purl, Version: c.ver, Evidence: c.ev}, c.recs)
+			if out.Result != store.SecondCheckAgreed {
+				t.Fatalf("got %s: %s %+v", out.Result, out.Reason, out.Differences)
+			}
+		})
+	}
+}
+
+// The deliberate disagreements: a second check must catch each.
+func TestSecondCheckDisagrees(t *testing.T) {
+	t.Run("corrupted range", func(t *testing.T) {
+		// The matcher claimed < 4.17.21; the stored record says fixed in
+		// 4.17.10 (a corrupted or changed range), so 4.17.15 is not affected.
+		out := CheckVulnerability(claim("4.17.21", map[string]any{"matched_ranges": []any{"GHSA-1: < 4.17.21"}}),
+			Observed{Purl: "pkg:npm/lodash@4.17.15"},
+			[]store.RawAdvisoryRecord{rec("GHSA-1", "npm", "lodash", rng(`{"introduced":"0"},{"fixed":"4.17.10"}`))})
+		want(t, out, "affected", "GHSA-1 (npm): not affected, fixed in 4.17.10")
+	})
+	t.Run("events swapped", func(t *testing.T) {
+		// A range whose events were written in the wrong order: the
+		// record lists fixed 2.0.0 before introduced 1.0.0 and nothing
+		// after; read in order, 1.5.0 is not in a closed span.
+		out := CheckVulnerability(claim("2.0.0", nil), Observed{Purl: "pkg:npm/x@0.5.0"},
+			[]store.RawAdvisoryRecord{rec("GHSA-9", "npm", "x", rng(`{"fixed":"2.0.0"},{"introduced":"1.0.0"}`))})
+		want(t, out, "affected", "not affected")
+	})
+	t.Run("package identity mismatch", func(t *testing.T) {
+		out := CheckVulnerability(claim("4.17.21", map[string]any{"osv_package": "lodash", "target_ecosystem": "npm"}),
+			Observed{Purl: "pkg:npm/lodahs@4.17.15"},
+			[]store.RawAdvisoryRecord{rec("GHSA-1", "npm", "lodash", rng(`{"introduced":"0"},{"fixed":"4.17.21"}`))})
+		want(t, out, "package", "name lodash, not lodahs")
+		if out.Differences[0].Note != "package identity mismatch" {
+			t.Errorf("note: %q", out.Differences[0].Note)
+		}
+	})
+	t.Run("no record for the release", func(t *testing.T) {
+		out := CheckVulnerability(claim("", nil), Observed{Purl: "pkg:deb/debian/openssl@3.0.11-1~deb12u1?distro=debian-12"},
+			[]store.RawAdvisoryRecord{rec("DEBIAN-CVE-2099-1", "Debian:11", "openssl", rng(`{"introduced":"0"}`))})
+		want(t, out, "package", "no record of CVE-2099-1 applies to Debian 12")
+	})
+	t.Run("backport fixed version the upstream range calls vulnerable", func(t *testing.T) {
+		// Upstream fixed the issue in 3.0.12; Debian backported the fix to
+		// 3.0.11 as 3.0.11-1~deb12u2. A match that read the upstream range
+		// calls the installed backport vulnerable; the Debian record does not.
+		c := claim("3.0.12", map[string]any{"matched_ranges": []any{"GHSA-up: >= 3.0.0, < 3.0.12"}})
+		out := CheckVulnerability(c, Observed{Purl: "pkg:deb/debian/openssl@3.0.11-1~deb12u2?distro=debian-12"},
+			[]store.RawAdvisoryRecord{
+				rec("GHSA-up", "npm", "openssl", rng(`{"introduced":"3.0.0"},{"fixed":"3.0.12"}`)),
+				rec("DEBIAN-CVE-2099-1", "Debian:12", "openssl", rng(`{"introduced":"0"},{"fixed":"3.0.11-1~deb12u2"}`)),
+			})
+		want(t, out, "affected", "not affected, fixed in 3.0.11-1~deb12u2")
+		if !strings.Contains(out.Differences[0].Note, "backported") {
+			t.Errorf("note: %q", out.Differences[0].Note)
+		}
+	})
+	t.Run("fixed version", func(t *testing.T) {
+		out := CheckVulnerability(claim("4.17.20", nil), Observed{Purl: "pkg:npm/lodash@4.17.15"},
+			[]store.RawAdvisoryRecord{rec("GHSA-1", "npm", "lodash", rng(`{"introduced":"0"},{"fixed":"4.17.21"}`))})
+		want(t, out, "fixed_version", "4.17.21")
+	})
+	t.Run("subscription", func(t *testing.T) {
+		out := CheckVulnerability(claim("7.68.0-1ubuntu2.21", nil), Observed{Purl: "pkg:deb/ubuntu/curl@7.68.0-1ubuntu2.20?distro=ubuntu-20.04"},
+			[]store.RawAdvisoryRecord{rec("U-1", "Ubuntu:Pro:20.04:LTS", "curl", rng(`{"introduced":"0"},{"fixed":"7.68.0-1ubuntu2.21"}`))})
+		want(t, out, "subscription", "only a paid channel lists it")
+	})
+}
+
+func want(t *testing.T, out Outcome, field, independent string) {
+	t.Helper()
+	if out.Result != store.SecondCheckDisagreed {
+		t.Fatalf("want a disagreement on %s, got %s: %s", field, out.Result, out.Reason)
+	}
+	for _, d := range out.Differences {
+		if d.Field == field && strings.Contains(d.Independent, independent) {
+			if out.Reason == "" {
+				t.Error("a disagreement needs a reason")
+			}
+			return
+		}
+	}
+	t.Fatalf("no difference on %s containing %q: %+v", field, independent, out.Differences)
+}
+
+// Whatever the second check cannot read is "could not check", never a
+// disagreement.
+func TestSecondCheckCouldNotCheck(t *testing.T) {
+	npm := []store.RawAdvisoryRecord{rec("GHSA-1", "npm", "x", rng(`{"introduced":"0"},{"fixed":"2.0.0-rc.1"}`))}
+	cases := []struct {
+		name, purl, reason string
+		recs               []store.RawAdvisoryRecord
+	}{
+		{"pre-release", "pkg:npm/x@1.0.0-beta.2", "not plain dotted numbers", npm},
+		{"pre-release fix", "pkg:npm/x@1.0.0", "not plain dotted numbers", npm},
+		{"SUSE", "pkg:rpm/suse/openssl@3.0.8-150500.5.3.1?distro=sles-15.5", "SUSE", npm},
+		{"FIPS build", "pkg:deb/ubuntu/openssl@1.1.1f-1ubuntu2.fips.20?distro=ubuntu-20.04", "FIPS", npm},
+		{"no record stored", "pkg:npm/x@1.0.0", "no advisory record", nil},
+		{"GIT range only", "pkg:npm/x@1.0.0", "GIT ranges", []store.RawAdvisoryRecord{
+			rec("GHSA-1", "npm", "x", `{"ranges":[{"type":"GIT","events":[{"introduced":"abc"},{"fixed":"def"}]}]}`)}},
+		{"Composer repository", "pkg:composer/a/b@1.0.0", "", []store.RawAdvisoryRecord{
+			rec("GHSA-1", "Packagist:https://x", "a/b", rng(`{"introduced":"0"}`))}},
+		{"unreadable purl", "npm/x@1", "could not be read", npm},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			fixed := "2.0.0"
+			if c.name == "Composer repository" {
+				fixed = ""
+			}
+			out := CheckVulnerability(claim(fixed, nil), Observed{Purl: c.purl}, c.recs)
+			if c.name == "Composer repository" {
+				// Packages from another Composer repository: read, and agreed.
+				if out.Result != store.SecondCheckAgreed {
+					t.Fatalf("got %s: %s", out.Result, out.Reason)
+				}
+				return
+			}
+			if out.Result != store.SecondCheckCouldNotCheck || !strings.Contains(out.Reason, c.reason) {
+				t.Fatalf("got %s: %q, want could not check with %q", out.Result, out.Reason, c.reason)
+			}
+		})
+	}
+}
+
+func TestSecondCheckEndOfLife(t *testing.T) {
+	past, future := time.Date(2024, 10, 7, 0, 0, 0, 0, time.UTC), time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 10, 27, 0, 0, 0, 0, time.UTC)
+	cycles := []store.LifecycleCycle{{Product: "python", Cycle: "3.8", EOLUntil: &past}, {Product: "python", Cycle: "3.12", EOLUntil: &future}, {Product: "python", Cycle: "3", EOLUntil: &future}}
+	eol := func(cycle string) Claim {
+		return Claim{Kind: "end_of_life", Key: "python:" + cycle, Evidence: map[string]any{"product": "python", "cycle": cycle}}
+	}
+	if out := CheckEndOfLife(eol("3.8"), Observed{Purl: "pkg:generic/python@3.8.10", Version: "3.8.10"}, cycles, now); out.Result != store.SecondCheckAgreed {
+		t.Fatalf("3.8.10: %s %s", out.Result, out.Reason)
+	}
+	out := CheckEndOfLife(eol("3"), Observed{Purl: "pkg:generic/python@3.8.10", Version: "3.8.10"}, cycles, now)
+	want(t, out, "release_line", "3.8")
+	out = CheckEndOfLife(eol("3.12"), Observed{Purl: "pkg:generic/python@3.12.1", Version: "3.12.1"}, cycles, now)
+	want(t, out, "end_of_life", "supported until 2030-01-01")
+	php := []store.LifecycleCycle{{Product: "php", Cycle: "7.4", IsEOL: true}}
+	c := Claim{Kind: "end_of_life", Evidence: map[string]any{"product": "php", "cycle": "7.4"}}
+	if out := CheckEndOfLife(c, Observed{Purl: "pkg:deb/debian/php7.4-common@7.4.33-1+deb11u5?distro=debian-11", Version: "7.4.33-1+deb11u5"}, php, now); out.Result != store.SecondCheckAgreed {
+		t.Fatalf("php7.4-common: %s %s", out.Result, out.Reason)
+	}
+}
+
+func TestComparators(t *testing.T) {
+	type pair struct {
+		a, b string
+		want int
+	}
+	check := func(name string, c comparator, ps []pair) {
+		for _, p := range ps {
+			got, err := c(p.a, p.b)
+			if err != nil || got != p.want {
+				t.Errorf("%s(%q, %q) = %d, %v; want %d", name, p.a, p.b, got, err, p.want)
+			}
+			if back, _ := c(p.b, p.a); back != -p.want {
+				t.Errorf("%s(%q, %q) is not antisymmetric", name, p.b, p.a)
+			}
+		}
+	}
+	check("dotted", dottedCompare, []pair{{"1.2.10", "1.2.9", 1}, {"1.0", "1.0.0", 0}, {"v2", "1.99", 1}, {"0", "0.0.1", -1}})
+	check("dpkg", dpkgCompare, []pair{
+		{"1.0~rc1", "1.0", -1}, {"1:1.0", "2.0", 1}, {"3.0.11-1~deb12u1", "3.0.11-1~deb12u2", -1},
+		{"3.0.11-1~deb12u2", "3.0.11-1", -1}, {"1.0a", "1.0", 1}, {"1.0+b1", "1.0", 1}, {"2.36-9+deb12u4", "2.36-9+deb12u10", -1},
+		{"7.81.0-1ubuntu1.15", "7.81.0-1ubuntu1.9", 1}, {"1.0-1", "1.0-1", 0},
+	})
+	check("rpm", rpmCompare, []pair{
+		{"1:3.0.7-25.el9_3", "1:3.0.7-24.el9", 1}, {"0:1.0-1", "1.0-1", 0}, {"1:1.0-1", "2.0-1", 1}, {"1.0~rc1-1", "1.0-1", -1},
+		{"1.0^git1-1", "1.0-1", 1}, {"1.0a-1", "1.0-1", 1}, {"1.10-1", "1.9-1", 1}, {"5.1.8-6.el9", "0:5.1.8-9.el9", -1},
+	})
+	check("apk", apkCompare, []pair{{"1.36.1-r15", "1.36.1-r16", -1}, {"1.2.3a-r0", "1.2.3-r9", 1}, {"3.0", "3.0-r0", 0}})
+	for _, bad := range []string{"1.0.0-beta", "", "1..2", strings.Repeat("1.", 100) + "1"} {
+		if _, err := dottedCompare(bad, "1"); err == nil {
+			t.Errorf("dotted accepted %q", bad)
+		}
+	}
+}
+
+func TestParsePurl(t *testing.T) {
+	p, err := parsePurl("pkg:npm/%40babel/core@7.1.0?foo=b%20ar#sub")
+	if err != nil || p.typ != "npm" || p.namespace != "@babel" || p.name != "core" || p.version != "7.1.0" || p.qualifiers["foo"] != "b ar" {
+		t.Fatalf("%+v %v", p, err)
+	}
+	if _, err := parsePurl("pkg:npm"); err == nil {
+		t.Error("a purl without a name was read")
+	}
+}

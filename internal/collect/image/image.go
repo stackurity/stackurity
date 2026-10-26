@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/stackurity/stackurity/internal/collect/limits"
 	"github.com/stackurity/stackurity/internal/model"
 	"github.com/stackurity/stackurity/internal/sbom"
 )
@@ -49,7 +50,12 @@ type Scanner struct {
 	Version string
 	Timeout time.Duration
 	WorkDir string
+	// MaxBytes bounds what Syft downloads; DefaultMaxImageBytes when 0.
+	MaxBytes int64
 }
+
+// DefaultMaxImageBytes bounds the layers one image scan downloads.
+const DefaultMaxImageBytes = 4 << 30
 
 // RegistryHost is the registry an image reference points at; references
 // without one (nginx, library/nginx) come from Docker Hub.
@@ -116,7 +122,15 @@ func (s *Scanner) Scan(ctx context.Context, cfg Config, secret string) (*model.O
 	if cfg.Platform != "" {
 		args = append(args, "--platform", cfg.Platform)
 	}
-	cmd := exec.CommandContext(ctx, bin, args...)
+	// Syft downloads the image's layers into TMPDIR; it has no size limit
+	// of its own, so the directory is measured while it runs.
+	maxBytes := s.MaxBytes
+	if maxBytes <= 0 {
+		maxBytes = DefaultMaxImageBytes
+	}
+	wctx, stop := limits.WatchDir(ctx, tmp, maxBytes, 2*time.Second, "the image")
+	defer stop()
+	cmd := exec.CommandContext(wctx, bin, args...)
 	env := []string{
 		"PATH=" + os.Getenv("PATH"),
 		"HOME=" + tmp,
@@ -137,9 +151,13 @@ func (s *Scanner) Scan(ctx context.Context, cfg Config, secret string) (*model.O
 		}
 	}
 	cmd.Env = env
+	limits.KillGroup(cmd) // a deadline or the size limit stops Syft and its workers
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &limited{w: &stdout, n: sbom.MaxDocumentSize}, &limited{w: &stderr, n: 64 << 10, truncate: true}
-	if err := cmd.Run(); err != nil {
+	if err := limits.Cause(wctx, cmd.Run()); err != nil {
+		if errors.Is(err, limits.ErrTooLarge) {
+			return nil, err
+		}
 		msg := strings.TrimSpace(stderr.String())
 		if secret != "" {
 			basic := base64.StdEncoding.EncodeToString([]byte(cfg.Username + ":" + secret))

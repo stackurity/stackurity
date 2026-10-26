@@ -8,6 +8,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stackurity/stackurity/internal/model"
+	"github.com/stackurity/stackurity/pkg/plugin"
 )
 
 const hostileMeta = `{"protocol_version":"1","metadata":{"id":"h","name":"h","version":"1","maintainer":"m","license":"MIT","schema_version":"1","permissions":[],"network_access":[],"known_limitations":[]}}`
@@ -114,4 +117,31 @@ func FuzzPluginBatches(f *testing.F) {
 			}
 		}
 	})
+}
+
+// Plugin metadata is untrusted too: an admin reads it before enabling the
+// plugin, so it is bounded and its homepage must be a web address.
+func TestHostilePluginMetadata(t *testing.T) {
+	good := func() *plugin.Metadata {
+		return &plugin.Metadata{ID: "x", Name: "X", Version: "1", Maintainer: "m", License: "MIT", SchemaVersion: model.BatchSchemaVersion,
+			Homepage: "https://example.com/x", NetworkAccess: []string{}, Permissions: []string{}, Limitations: []string{}}
+	}
+	if err := CheckMetadata(good()); err != nil {
+		t.Fatal(err)
+	}
+	for name, edit := range map[string]func(m *plugin.Metadata){
+		"javascript homepage": func(m *plugin.Metadata) { m.Homepage = "javascript:alert(1)" },
+		"data homepage":       func(m *plugin.Metadata) { m.Homepage = "data:text/html,x" },
+		"hostless homepage":   func(m *plugin.Metadata) { m.Homepage = "https:///x" },
+		"long name":           func(m *plugin.Metadata) { m.Name = strings.Repeat("n", 300) },
+		"long description":    func(m *plugin.Metadata) { m.Description = strings.Repeat("d", 5000) },
+		"many permissions":    func(m *plugin.Metadata) { m.Permissions = make([]string, 101) },
+		"long permission":     func(m *plugin.Metadata) { m.Permissions = []string{strings.Repeat("p", 600)} },
+	} {
+		m := good()
+		edit(m)
+		if err := CheckMetadata(m); err == nil {
+			t.Errorf("%s accepted", name)
+		}
+	}
 }

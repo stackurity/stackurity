@@ -89,12 +89,13 @@ export function KevBadge() {
 }
 
 export const VERIFICATION_EXPLAINED: Record<string, string> = {
-  confirmed: "The installed version was read from an authoritative source (package database or lockfile) and falls in an affected range.",
+  confirmed:
+    "The installed version was read from an authoritative source (package database or lockfile) and falls in an affected range. This is not proof that it can be exploited on this asset.",
   needs_validation:
-    "The installed version is not confirmed (inferred or low-confidence inventory), so there is no definitive severity. Check the real version on the asset.",
+    "The match cannot be relied on yet: the installed version is not confirmed (inferred or low-confidence inventory), or the independent second check disagreed. Check the issue page for what is missing.",
   stale: "The asset's inventory is stale: the component was affected when last seen, but nothing has reported the asset recently.",
   unknown: "The evidence could not be classified: no confirmed version and no recorded source.",
-  rejected: "Someone reviewed the evidence and rejected this finding.",
+  rejected: "A person marked this a false positive.",
 };
 
 export function VerificationBadge({ verification }: { verification: string }) {

@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -202,9 +203,39 @@ func CheckMetadata(m *plugin.Metadata) error {
 	if m.NetworkAccess == nil || m.Permissions == nil || m.Limitations == nil {
 		missing = append(missing, "permissions, network_access and known_limitations (use [] when none)")
 	}
+	// Metadata is shown to admins before they enable a plugin: it is
+	// untrusted output like any other, so it is bounded and its link must be
+	// a web address.
+	for k, v := range map[string]string{"name": m.Name, "version": m.Version, "maintainer": m.Maintainer, "license": m.License,
+		"protocol_version": m.ProtocolVersion, "default_frequency": m.Frequency} {
+		if len(v) > 256 {
+			missing = append(missing, k+" under 256 bytes")
+		}
+	}
+	if len(m.Description) > 4096 || len(m.RateLimits) > 1024 {
+		missing = append(missing, "description under 4096 bytes and rate_limits under 1024")
+	}
+	if m.Homepage != "" {
+		if u, err := url.Parse(m.Homepage); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || len(m.Homepage) > 2048 {
+			missing = append(missing, "homepage as an http or https address")
+		}
+	}
+	for k, list := range map[string][]string{"capabilities": m.Capabilities, "permissions": m.Permissions, "credentials": m.Credentials,
+		"network_access": m.NetworkAccess, "known_limitations": m.Limitations} {
+		long := len(list) > 100
+		for _, v := range list {
+			long = long || len(v) > 512
+		}
+		if long {
+			missing = append(missing, k+" with at most 100 entries of 512 bytes")
+		}
+	}
+	if len(m.ConfigSchema) > 100 {
+		missing = append(missing, "config_schema with at most 100 fields")
+	}
 	if len(missing) > 0 {
 		sort.Strings(missing)
-		return errors.New("plugin metadata incomplete: " + strings.Join(missing, "; "))
+		return errors.New("plugin metadata incomplete or invalid: " + strings.Join(missing, "; "))
 	}
 	return nil
 }

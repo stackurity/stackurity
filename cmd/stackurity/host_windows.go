@@ -20,6 +20,8 @@ func hostCollector(o *hostOptions) (func(context.Context) ([]*model.ObservationB
 	}
 	col := &windows.Collector{Reg: windows.System{}, Version: version}
 	return func(ctx context.Context) ([]*model.ObservationBatch, error) {
+		ctx, cancel := context.WithTimeout(ctx, hostCollectTimeout)
+		defer cancel()
 		host, _ := os.Hostname()
 		b, err := col.Collect(ctx, host)
 		if err != nil {

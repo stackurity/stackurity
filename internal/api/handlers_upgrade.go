@@ -140,6 +140,11 @@ func (s *Server) explainFinding(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	expl, err := s.findingWhy(ctx, f)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	sla := pol.SLA[f.Priority]
 	writeJSON(w, 200, map[string]any{
 		"finding": map[string]any{
@@ -164,6 +169,9 @@ func (s *Server) explainFinding(w http.ResponseWriter, r *http.Request) {
 				"open findings are re-prioritised within minutes when the policy or the evidence changes. Thresholds and SLA are " +
 				"those of the current policy (current_policy_version). The audit log (risk_policy.update) holds every earlier policy.",
 		},
+		// Why it matched: the stored rule in one sentence, the version and
+		// source evidence, what is missing, and the independent second check.
+		"why":        expl,
 		"evidence":   ev,
 		"advisories": advs,
 		"feeds":      feeds,

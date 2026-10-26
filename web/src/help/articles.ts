@@ -853,6 +853,49 @@ stackurity.exe agent --interval 6h`,
     ],
   },
   {
+    id: "how-stackurity-knows",
+    title: "How Stackurity knows",
+    section: "Daily work",
+    summary: "Why each finding matched, the evidence states, the independent second check, and what a match does not prove.",
+    where: ["Fixes", "All issues", "an issue"],
+    keywords: "why matched evidence confirmed needs validation rejected stale second check disagreed agreed could not check proof exploit false positive missing information",
+    body: [
+      {
+        p: "Every issue page starts with one sentence that says why it matched, for example: “Installed 6.10.0 (from web/package-lock.json, seen 2 h ago) is in the affected range < 7.0.7 of GHSA-xxxx (osv:npm, refreshed 3 h ago), compared with SemVer rules; fixed in 7.0.7.” It names the installed version and where it was read, the advisory record and range, the version rules used, the source and when it was last refreshed, and the fix.",
+      },
+      {
+        p: "The sentence is built from the rule the matcher stored when it made the finding. It is not worked out again later, so it shows what really matched. The same explanation is in the API (`why` in `GET /findings/{id}`) and in the `explain_finding` tool for AI assistants.",
+      },
+      { h: "Evidence states" },
+      {
+        table: [
+          ["State", "What it means", "What resolves it"],
+          ["Confirmed", "The installed version was read from an authoritative source (package database or lockfile) and is in the advisory's affected range, or its release line has ended.", "Nothing: act on it."],
+          ["Needs validation", "The match cannot be relied on yet because the version was inferred or has low confidence. It scores lower and is never SOS. An issue the second check disagreed with also says **Needs validation: the second check disagreed**, but keeps its priority, SOS and alerts.", "The **Missing information** box says exactly what: a confirmed version, or a person comparing the version with the advisory."],
+          ["Stale", "The asset has stopped reporting. This was true when it was last seen.", "A fresh report: **Check again**, or get the agent reporting."],
+          ["Rejected", "A person marked it a false positive with an ignore rule. Stackurity keeps it rejected while the match stays the same.", "Reopen it, or end the ignore rule."],
+        ],
+      },
+      {
+        warn: "A confirmed match means the installed version is in an advisory's affected range. It does not show that the issue can be exploited on this asset: the vulnerable code may not be used, or may be unreachable. **Known exploited** means attackers use the issue somewhere (CISA's catalog), not that this asset was attacked.",
+      },
+      { h: "The independent second check" },
+      {
+        p: "P1, SOS, known exploited and regressed issues, and those with an unconfirmed version or an ambiguous match, are checked a second time by separate, deliberately simple code. It reads the raw advisory record and the raw reported version itself, with its own version rules, and compares its answer with the finding.",
+      },
+      {
+        list: [
+          "**Agreed**: it reached the same verdict and fixed version.",
+          "**Disagreed**: it found something different (not affected, another fixed version, a different package or release line). The issue says **Needs validation: the second check disagreed** and lists what differs, and **Home** counts it for review. Its priority, SOS and alerts do not change: the second check is deliberately simple, so a mistake in it must never hide a real issue. It stays flagged until the match or the advisory data changes.",
+          "**Could not check**: it does not read this case (pre-release versions, SUSE product channels, Ubuntu FIPS builds, some Alpine versions). It says why. Nothing changes on the issue.",
+        ],
+      },
+      {
+        p: "The check runs in the background, a batch every minute, so a new urgent issue can be alerted before it is checked. **Coverage** shows the counts and the latest disagreements, and **All issues** can filter by second check. Every disagreement is logged so it can become a new matching test.",
+      },
+    ],
+  },
+  {
     id: "evidence-report",
     title: "Evidence report",
     section: "Daily work",
@@ -1203,7 +1246,7 @@ stackurity.exe agent --interval 6h`,
       {
         list: [
           "**Identity conflicts** (admin): when a report's identifiers match more than one asset (e.g. a cloned VM image reused a machine-id), pick the asset to keep; the others are merged into it.",
-          "**Jobs** (admin): the background queue — integration runs, feed syncs, evaluations — with attempts and errors. Read-only.",
+          "**Jobs** (admin): the background queue (integration runs, feed syncs, evaluations), with attempts and errors. Read-only.",
           "**Audit log** (everyone, under **Activity**): sign-ins and every change, with the actor and details. Filter by object type.",
         ],
       },

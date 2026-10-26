@@ -11,6 +11,7 @@ import (
 	"io"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	cdx "github.com/CycloneDX/cyclonedx-go"
 	"github.com/package-url/packageurl-go"
@@ -132,10 +133,10 @@ func importCycloneDX(data []byte, asset *model.AssetRef, version string) (*model
 				conf = model.ConfidenceUnknown
 			}
 			if c.BOMRef != "" {
-				ev["bom_ref"] = c.BOMRef
+				ev["bom_ref"] = clipEvidence(c.BOMRef)
 			}
 			if c.Supplier != nil && c.Supplier.Name != "" {
-				ev["supplier"] = c.Supplier.Name
+				ev["supplier"] = clipEvidence(c.Supplier.Name)
 			}
 			var d *bool
 			if hasGraph {
@@ -242,9 +243,9 @@ func importSPDX(data []byte, asset *model.AssetRef, version string) (*model.Obse
 		if v == "" {
 			conf = model.ConfidenceUnknown
 		}
-		ev := map[string]string{"format": doc.SPDXVersion, "spdx_id": p.SPDXID}
+		ev := map[string]string{"format": clipEvidence(doc.SPDXVersion), "spdx_id": clipEvidence(p.SPDXID)}
 		if p.Supplier != "" && p.Supplier != "NOASSERTION" {
-			ev["supplier"] = p.Supplier
+			ev["supplier"] = clipEvidence(p.Supplier)
 		}
 		var d *bool
 		if hasGraph {
@@ -303,4 +304,18 @@ func ExportCycloneDX(w io.Writer, assetName, assetKind, toolVersion string, comp
 	enc := cdx.NewBOMEncoder(w, cdx.BOMFileFormatJSON)
 	enc.SetPretty(true)
 	return enc.EncodeVersion(bom, cdx.SpecVersion1_6)
+}
+
+// clipEvidence keeps a descriptive value (supplier, document reference)
+// within the batch's field limit: one over-long value used to make the
+// server refuse the whole document.
+func clipEvidence(s string) string {
+	if len(s) <= model.MaxFieldLen {
+		return s
+	}
+	cut := model.MaxFieldLen
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut]
 }

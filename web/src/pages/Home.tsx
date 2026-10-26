@@ -244,6 +244,14 @@ export function HomePage() {
           <Tile to="/fixes/issues?priority=P1&state=active" value={s.by_priority?.P1 ?? 0} label="urgent issues (P1)" tone="crit" />
           <Tile to="/fixes/issues?state=regressed" value={s.regressed ?? 0} label="came back after a fix" tone="crit" />
           <Tile to="/fixes/issues?known_exploited=true" value={s.known_exploited} label="known exploited" tone="crit" />
+          {(s.second_check_disagreed ?? 0) > 0 && (
+            <Tile
+              to="/fixes/issues?second_check=disagreed"
+              value={s.second_check_disagreed ?? 0}
+              label="to review: the second check disagreed"
+              tone="warn"
+            />
+          )}
           <Tile to="/fixes/issues?status=resolved&resolved_within=7" value={s.resolved_7d ?? 0} label="fixed in the last 7 days" tone="good" />
           <Tile to="/fixes/issues?kind=end_of_life" value={s.by_kind?.end_of_life ?? 0} label="end of life" tone="warn" />
         </section>

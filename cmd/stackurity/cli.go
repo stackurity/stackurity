@@ -84,6 +84,11 @@ func printResult(r *client.IngestResult) {
 }
 
 // hostOptions configures the platform's host collector.
+// hostCollectTimeout bounds one collection on a host: the package database,
+// the runtimes and every application directory. Each tool has its own
+// shorter limit; this one stops a walk of a huge or looping tree.
+const hostCollectTimeout = 30 * time.Minute
+
 type hostOptions struct {
 	root         string
 	runtimes     bool

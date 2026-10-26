@@ -514,6 +514,10 @@ type Match struct {
 	FixedVersion string // lowest fix above the installed version, if known
 	Range        string // human-readable description of the matched range
 	Exact        bool   // matched through the explicit versions list
+	// RangeType is the OSV range type that matched (SEMVER or ECOSYSTEM;
+	// "" for a listed version). A SEMVER range is compared with SemVer rules
+	// whatever the ecosystem.
+	RangeType string
 }
 
 // Check evaluates whether target.Version falls in a's ranges or versions.
@@ -543,7 +547,7 @@ func Check(a Affected, t Target) (Match, error) {
 			continue
 		}
 		if hit {
-			return Match{Affected: true, Range: desc, FixedVersion: lowestFixAbove(a, t.Version, cmp)}, nil
+			return Match{Affected: true, Range: desc, FixedVersion: lowestFixAbove(a, t.Version, cmp), RangeType: r.Type}, nil
 		}
 	}
 	return Match{}, firstErr

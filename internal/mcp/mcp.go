@@ -106,7 +106,7 @@ func (s *Server) handle(ctx context.Context, req request) (any, *rpcError) {
 				"vulnerabilities and end-of-life components. Use search to look up a CVE, package, host or team. Start with " +
 				"list_assets to find the project or server, then action_plan for what to upgrade (each group lists the packages " +
 				"and target versions), asset_stack for every layer an application relies on, and list_findings or get_finding " +
-				"for details. explain_finding cites why a finding has its priority, upgrade_recommendation and remediation_plan " +
+				"for details. explain_finding cites why a finding matched and why it has its priority, upgrade_recommendation and remediation_plan " +
 				"give versions to move to (from stored data only), and verify_since checks what was fixed after a change. " +
 				"All tools are read-only.",
 		}, nil
@@ -388,9 +388,13 @@ var tools = map[string]tool{
 // return structured data with the ids, versions and sources they rest on.
 func init() {
 	tools["explain_finding"] = tool{
-		description: "Why a finding has its priority, with citations: each risk factor and its points, the risk policy version and " +
-			"its SLA for that priority, the stored evidence, the advisories that matched (ids, feeds, links), how fresh those feeds " +
-			"are, and when the asset last reported.",
+		description: "Why a finding matched and why it has its priority, with citations. why.sentence says in one sentence which " +
+			"installed version (from which file or collector, seen when) is in which advisory range under which version rules, from " +
+			"which source refreshed when, and the fix; why also gives the evidence state (confirmed, needs_validation, stale, " +
+			"rejected), the missing information that would resolve a finding that is not confirmed, and the independent second " +
+			"check (agreed, disagreed with what differs, or could not check and why). A confirmed match is not proof that the issue " +
+			"can be exploited on the asset. Also: each risk factor and its points, the risk policy version and its SLA, the stored " +
+			"evidence, the advisories that matched (ids, feeds, links), how fresh those feeds are, and when the asset last reported.",
 		schema: obj(map[string]any{"finding_id": num("The id of a finding")}, "finding_id"),
 		run: func(ctx context.Context, api API, a map[string]any) (any, error) {
 			id, ok := intArg(a["finding_id"])

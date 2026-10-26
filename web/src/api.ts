@@ -768,6 +768,9 @@ export interface Finding {
   exception_id?: number | null;
   /** The state the dashboard shows. */
   display_state?: DisplayState;
+  /** Independent second check (1.0): agreed, disagreed, could_not_check, or "" when none. */
+  second_check?: string;
+  second_check_reason?: string;
 }
 
 export interface FindingSummary {
@@ -788,6 +791,8 @@ export interface FindingSummary {
   resolved_7d?: number;
   /** Open issues that came back after a fix and nobody has started on. */
   regressed?: number;
+  /** Open findings the independent second check disagreed with (1.0). */
+  second_check_disagreed?: number;
   /** Snoozed or accepted issues waiting for a fix. */
   until_fix?: number;
 }
@@ -935,6 +940,61 @@ export interface FindingDetail {
   related_advisories?: Advisory[] | null;
   /** For open findings: the version to upgrade this installed copy to. */
   upgrade?: UpgradeRecommendation | null;
+  /** Why it matched (1.0); absent from older servers. */
+  why?: FindingWhy | null;
+}
+
+/** One thing the independent second check derived differently. */
+export interface SecondCheckDifference {
+  field: string;
+  matcher: string;
+  independent: string;
+  note?: string;
+}
+
+export interface SecondCheck {
+  result: "agreed" | "disagreed" | "could_not_check" | string;
+  reason: string;
+  differences: SecondCheckDifference[];
+  independent: Record<string, unknown>;
+  checked_at: string;
+}
+
+/** Why a finding matched: the stored rule, its evidence and what is missing (internal/why). */
+export interface FindingWhy {
+  sentence: string;
+  type: "package_advisory" | "os_package" | "container_image" | "end_of_life" | string;
+  installed: { version: string; compared?: string; from: string; collector: string; confidence: string; observed_at: string | null };
+  source: { record?: string; ecosystem?: string; feed: string; refreshed_at: string | null; stale: boolean };
+  rule: { kind: string; range?: string; comparator?: string; text: string; ambiguous?: string[] };
+  fixed_version?: string;
+  evidence_state: string;
+  evidence_state_text: string;
+  missing_information: string[];
+  second_check: SecondCheck | null;
+  second_check_text: string;
+  /** The second check disagrees: shown for review; priority and SOS are unchanged. */
+  needs_review?: boolean;
+}
+
+export interface SecondCheckDisagreement {
+  id: number;
+  finding_id: number | null;
+  kind: string;
+  key: string;
+  purl: string;
+  version: string;
+  differences: SecondCheckDifference[];
+  created_at: string;
+}
+
+export interface SecondCheckSummary {
+  agreed: number;
+  disagreed: number;
+  could_not_check: number;
+  pending: number;
+  logged_30d: number;
+  recent: SecondCheckDisagreement[];
 }
 
 /** Support status of one release line (endoflife.date). */

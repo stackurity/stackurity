@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stackurity/stackurity/internal/model"
 )
@@ -100,5 +101,24 @@ func TestExportRoundTrip(t *testing.T) {
 	}
 	if len(b.Observations) != 2 || !*b.Observations[0].Direct || *b.Observations[1].Direct {
 		t.Errorf("round trip = %+v", b.Observations)
+	}
+}
+
+// One over-long supplier or reference is clipped, not a reason to refuse
+// the whole SBOM.
+func TestLongEvidenceIsClipped(t *testing.T) {
+	long := strings.Repeat("é", 3000)
+	doc := `{"bomFormat":"CycloneDX","specVersion":"1.5","metadata":{"component":{"type":"application","name":"app"}},
+	  "components":[{"type":"library","name":"lodash","version":"4.17.21","purl":"pkg:npm/lodash@4.17.21",
+	  "bom-ref":"` + long + `","supplier":{"name":"` + long + `"}}]}`
+	b, err := Import(strings.NewReader(doc), nil, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Validate(); err != nil {
+		t.Fatalf("refused: %v", err)
+	}
+	if s := b.Observations[0].Evidence["supplier"]; len(s) > 2048 || !utf8.ValidString(s) || len(s) < 2000 {
+		t.Errorf("supplier: %d bytes", len(s))
 	}
 }

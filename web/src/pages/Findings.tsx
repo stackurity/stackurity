@@ -25,6 +25,7 @@ const PARAMS = [
   "kind",
   "severity",
   "verification",
+  "second_check",
   "environment",
   "known_exploited",
   "q",
@@ -234,6 +235,15 @@ export function IssuesPage() {
                   {v.replace(/_/g, " ")}
                 </option>
               ))}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="fd-sc">Second check</label>
+            <select id="fd-sc" value={get("second_check")} onChange={(e) => update({ second_check: e.target.value })}>
+              <option value="">Any</option>
+              <option value="disagreed">Disagreed</option>
+              <option value="agreed">Agreed</option>
+              <option value="could_not_check">Could not check</option>
             </select>
           </div>
           <div className="field">

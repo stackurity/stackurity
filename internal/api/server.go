@@ -36,6 +36,9 @@ type Server struct {
 	Version      string
 	SetupToken   string // required for first-admin creation; printed at startup
 	CookieSecure bool
+	// IngestLimits overrides the upload limits (wire, after gzip) for
+	// tests; zero means MaxIngestBody and MaxIngestInflow.
+	IngestLimits [2]int64
 	UI           fs.FS // built dashboard; nil serves a placeholder
 	// TrustProxy honours X-Forwarded-For / X-Real-IP. Enable only behind a
 	// reverse proxy that overwrites those headers.
@@ -193,6 +196,7 @@ func (s *Server) Handler() http.Handler {
 				r.Get("/advisories/{key}", s.getAdvisory)
 				r.Get("/feeds", s.listFeeds)
 				r.Get("/evaluation-gaps", s.listEvaluationGaps)
+				r.Get("/second-checks", s.secondChecks)
 				r.Get("/findings/{id}/events", s.findingEvents)
 				r.Get("/findings/{id}/upgrade", s.findingUpgrade)
 				r.Get("/findings/{id}/explain", s.explainFinding)

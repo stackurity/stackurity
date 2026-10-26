@@ -377,6 +377,17 @@ export function EvidencePills({ f }: { f: Finding }) {
   const ev = f.evidence ?? {};
   return (
     <>
+      {f.second_check === "disagreed" && (
+        <>
+          {" "}
+          <Badge
+            status="second-check-disagreed"
+            tone="warn"
+            label="needs validation: second check disagreed"
+            title={`Needs validation: the second check disagreed (${f.second_check_reason ?? ""}). Priority and alerts are unchanged; a person should review it.`}
+          />
+        </>
+      )}
       {ev.not_running_kernel === true && (
         <>
           {" "}

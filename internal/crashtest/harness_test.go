@@ -161,6 +161,7 @@ func newEnv(t *testing.T) *env {
 			s.kill()
 		}
 		if t.Failed() {
+			e.dumpState()
 			for _, s := range e.servers {
 				t.Logf("--- %s (last lines)\n%s", filepath.Base(s.logPath), tail(s.logPath, 25))
 			}
@@ -740,4 +741,33 @@ func (r *receiver) receipts(id string) []receipt {
 		}
 	}
 	return out
+}
+
+// dumpState logs what a failed drill needs to tell a product defect from a
+// race in the scenario: incidents, deliveries and periodic task outcomes.
+func (e *env) dumpState() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	for _, q := range []string{
+		`SELECT id || ' ' || kind || ' ' || key || ' ' || status || ' notified=' || COALESCE(notified_at::text, '-') FROM incidents ORDER BY id`,
+		`SELECT id || ' ' || event || ' ' || status || ' attempts=' || attempts FROM deliveries ORDER BY id`,
+		`SELECT name || ' started=' || COALESCE(last_started_at::text, '-') || ' finished=' || COALESCE(last_finished_at::text, '-') ||
+		   ' error=' || COALESCE(last_error, '') FROM periodic_tasks ORDER BY name`,
+		`SELECT f.id || ' ' || f.key || ' ' || f.status || ' ' || COALESCE(f.resolution, '') FROM findings f ORDER BY f.id`,
+	} {
+		rows, err := e.db.Query(ctx, q)
+		if err != nil {
+			e.t.Logf("state: %v", err)
+			continue
+		}
+		var lines []string
+		for rows.Next() {
+			var l string
+			if rows.Scan(&l) == nil {
+				lines = append(lines, l)
+			}
+		}
+		rows.Close()
+		e.t.Logf("state %.40s...:\n  %s", q[7:], strings.Join(lines, "\n  "))
+	}
 }

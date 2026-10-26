@@ -9,6 +9,7 @@ import { FindingFixGroup } from "../components/FixGroups";
 import { FindingHistory, WorkflowPanel } from "../components/FindingWorkflow";
 import { EvidenceStateBadge, Provenance } from "../components/Provenance";
 import { UpgradeCard } from "../components/Upgrade";
+import { WhyMatched } from "../components/Why";
 import { Card, ErrorBox, KeyValues, Loading, Notice, PageHeader, RelativeTime } from "../components/ui";
 
 const CVE_RE = /^CVE-\d{4}-\d{4,}$/i;
@@ -212,6 +213,7 @@ export function FindingDetailPage() {
           </span>
         }
       />
+      {res.data.why && <WhyMatched why={res.data.why} />}
       {f.status !== "open" && (
         <Notice kind="success">
           Resolved <RelativeTime iso={f.resolved_at} />
@@ -220,11 +222,11 @@ export function FindingDetailPage() {
       )}
       {f.known_exploited && (
         <div className="alert alert-error" role="alert">
-          <strong>Known exploited:</strong> this vulnerability is in the CISA Known Exploited Vulnerabilities catalog. Attackers are
-          using it; prioritise it.
+          <strong>Known exploited:</strong> this vulnerability is in the CISA Known Exploited Vulnerabilities catalog: attackers are
+          using it somewhere. That does not show it was exploited on this asset; prioritise it.
         </div>
       )}
-      {VERIFICATION_EXPLAINED[f.verification] && (
+      {!res.data.why && VERIFICATION_EXPLAINED[f.verification] && (
         <Notice kind={f.verification === "confirmed" ? "info" : "warn"}>
           <strong>Verification: {f.verification.replace(/_/g, " ")}.</strong>{" "}
           {f.kind === "end_of_life" && f.verification === "confirmed"
@@ -261,7 +263,7 @@ export function FindingDetailPage() {
               ["installed version", <span className="mono">{f.version || "unknown"}</span>],
               ["fixed version", f.fixed_version ? <span className="mono">{f.fixed_version}</span> : <span className="muted">none listed</span>],
               ["dependency", f.direct === null ? <span className="muted">unknown</span> : f.direct ? "direct" : "transitive"],
-              ["location", <span className="mono small break">{f.location || "—"}</span>],
+              ["location", f.location ? <span className="mono small break">{f.location}</span> : <span className="muted">none</span>],
               ["asset", <Link to={`/assets/${f.asset_id}?tab=findings`}>{f.asset_name}</Link>],
               ["asset kind", f.asset_kind],
               ["environment", f.environment || <span className="muted">not set</span>],
@@ -292,7 +294,7 @@ export function FindingDetailPage() {
           {related.length > 0 && (
             <details className="related">
               <summary>
-                Related advisories for the same vulnerability ({related.length}) — about other packages or ecosystems
+                Related advisories for the same vulnerability ({related.length}), about other packages or ecosystems
               </summary>
               {related.map((a) => (
                 <AdvisoryCard key={`${a.feed}|${a.id}`} a={a} matched={false} />
