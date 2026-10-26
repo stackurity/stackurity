@@ -117,7 +117,7 @@ func TestEveryAlertHasARunbook(t *testing.T) {
 		if !headings[r.Alert] {
 			t.Errorf("%s: docs/operations.md has no \"### %s\" section", r.Alert, r.Alert)
 		}
-		if strings.Contains(r.Annotations["description"]+r.Annotations["summary"], "—") {
+		if strings.Contains(r.Annotations["description"]+r.Annotations["summary"], "\u2014") {
 			t.Errorf("%s: no em dashes", r.Alert)
 		}
 	}
