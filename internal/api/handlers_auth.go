@@ -211,6 +211,9 @@ type tokenRequest struct {
 	Name     string    `json:"name"`
 	Role     auth.Role `json:"role"`
 	TTLHours int       `json:"ttl_hours"`
+	// ProjectID: assets a collector token creates are added to this
+	// project (a repository connected in the first-run flow).
+	ProjectID int64 `json:"project_id"`
 }
 
 // createToken issues a personal token (role at most the caller's), or,
@@ -237,6 +240,19 @@ func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, badRequest("ttl_hours must be between 0 (no expiry) and 8784"))
 		return
 	}
+	if req.ProjectID != 0 {
+		if req.Role != auth.RoleCollector || req.ProjectID < 0 {
+			s.fail(w, r, badRequest("project_id is for collector tokens"))
+			return
+		}
+		if ok, err := s.Store.ActiveProject(r.Context(), req.ProjectID); err != nil {
+			s.fail(w, r, err)
+			return
+		} else if !ok {
+			s.fail(w, r, badRequest("no such project"))
+			return
+		}
+	}
 	var userID *int64
 	switch {
 	case req.Role == auth.RoleCollector:
@@ -261,7 +277,15 @@ func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	_ = s.Store.Audit(r.Context(), p.Actor(r), "token.create", "token", itoa(t.ID), map[string]any{"name": t.Name, "role": t.Role})
+	if req.ProjectID > 0 {
+		if err := s.Store.SetTokenProject(r.Context(), t.ID, req.ProjectID); err != nil {
+			_ = s.Store.RevokeToken(r.Context(), t.ID)
+			s.fail(w, r, err)
+			return
+		}
+		t.ProjectID = &req.ProjectID
+	}
+	_ = s.Store.Audit(r.Context(), p.Actor(r), "token.create", "token", itoa(t.ID), map[string]any{"name": t.Name, "role": t.Role, "project_id": t.ProjectID})
 	writeJSON(w, 201, map[string]any{"token": t, "secret": secret})
 }
 

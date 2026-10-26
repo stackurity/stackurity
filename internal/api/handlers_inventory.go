@@ -102,6 +102,30 @@ func (s *Server) importSBOM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := principal(r)
+	// project_id adds the asset to a project (the first-run flow's upload);
+	// filing assets in projects is for admins. The switcher's header alone
+	// is ignored for other roles.
+	project := p.Project
+	if project != 0 && !p.Role.AtLeast(auth.RoleAdmin) {
+		if q.Get("project_id") != "" {
+			writeError(w, 403, "forbidden", "adding an asset to a project needs the admin role")
+			return
+		}
+		project = 0
+	}
+	if project < 0 {
+		s.fail(w, r, badRequest("project_id must be a project"))
+		return
+	}
+	if project > 0 {
+		if ok, err := s.Store.ActiveProject(r.Context(), project); err != nil {
+			s.fail(w, r, err)
+			return
+		} else if !ok {
+			writeError(w, 404, "not_found", "no such project")
+			return
+		}
+	}
 	var tokenID int64
 	if p.Token != nil {
 		tokenID = p.Token.ID
@@ -111,8 +135,14 @@ func (s *Server) importSBOM(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	if project > 0 {
+		if _, err := s.Store.AddProjectAssets(r.Context(), project, []int64{res.AssetID}); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+	}
 	_ = s.Store.Audit(r.Context(), p.Actor(r), "sbom.import", "asset", itoa(res.AssetID),
-		map[string]any{"collector": b.Collector.ID, "components": len(b.Observations)})
+		map[string]any{"collector": b.Collector.ID, "components": len(b.Observations), "project_id": project})
 	writeJSON(w, 201, res)
 }
 

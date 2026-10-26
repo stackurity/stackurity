@@ -56,15 +56,21 @@ func id(k string) map[string]string { return map[string]string{"id": k} }
 
 var routeRules = map[string]routeRule{
 	// Unauthenticated and account endpoints.
-	"GET /healthz":                          {class: "public"},
-	"GET /readyz":                           {class: "public"},
-	"GET /install/agent.sh":                 {class: "public"},
-	"GET /download/agent/{platform}":        {class: "public"},
-	"GET /api/v1/meta":                      {class: "public"},
-	"POST /api/v1/setup":                    {class: "skip"},
-	"POST /api/v1/auth/login":               {class: "skip"},
-	"POST /api/v1/auth/logout":              {class: "skip"},
-	"POST /api/v1/enroll":                   {class: "public"},
+	"GET /healthz":                   {class: "public"},
+	"GET /readyz":                    {class: "public"},
+	"GET /install/agent.sh":          {class: "public"},
+	"GET /download/agent/{platform}": {class: "public"},
+	"GET /api/v1/meta":               {class: "public"},
+	"POST /api/v1/setup":             {class: "skip"},
+	"POST /api/v1/auth/login":        {class: "skip"},
+	"POST /api/v1/auth/logout":       {class: "skip"},
+	"POST /api/v1/enroll":            {class: "public"},
+	// Following an invitation link: a token B does not have is refused
+	// without saying why; accepting is tested in onboarding_test.go.
+	"POST /api/v1/invitations/preview": {class: "public", body: func(*tenantFx) any { return map[string]string{"token": "inv_guessed"} }},
+	"POST /api/v1/invitations/accept": {class: "public", body: func(*tenantFx) any {
+		return map[string]string{"token": "inv_guessed", "password": pw}
+	}},
 	"GET /api/v1/auth/oidc/login":           {class: "skip", edition: "ee"},
 	"GET /api/v1/auth/oidc/callback":        {class: "skip", edition: "ee"},
 	"GET /api/v1/auth/me":                   {class: "account"},
@@ -153,6 +159,9 @@ var routeRules = map[string]routeRule{
 	"GET /api/v1/projects":             {class: "list"},
 	"GET /api/v1/project-suggestions":  {class: "list"},
 	"GET /api/v1/access-grants":        {class: "list", query: "?project_id={project}"},
+	"GET /api/v1/onboarding":           {class: "list"},
+	"GET /api/v1/onboarding/results":   {class: "list", query: "?since=2000-01-01T00:00:00Z"},
+	"GET /api/v1/invitations":          {class: "list", query: "?project_id={project}"},
 
 	// A's objects by id.
 	"GET /api/v1/assets/{id}":                      {class: "object", obj: id("asset")},
@@ -215,6 +224,7 @@ var routeRules = map[string]routeRule{
 	"DELETE /api/v1/projects/{id}/assets":          {class: "object", obj: id("project"), body: func(a *tenantFx) any { return map[string]any{"asset_ids": []int64{a.int("asset")}} }},
 	"PATCH /api/v1/access-grants/{id}":             {class: "object", obj: id("grant"), body: func(*tenantFx) any { return map[string]any{"role": "admin"} }},
 	"DELETE /api/v1/access-grants/{id}":            {class: "object", obj: id("grant")},
+	"DELETE /api/v1/invitations/{id}":              {class: "object", obj: id("invitation")},
 	// Secrets are named per workspace: B writing a name A uses creates B's own.
 	"PUT /api/v1/secrets/{name}":    {class: "object", obj: map[string]string{"name": "secret"}, emptyOK: true, body: func(*tenantFx) any { return map[string]string{"value": "overwritten-by-b"} }},
 	"DELETE /api/v1/secrets/{name}": {class: "object", obj: map[string]string{"name": "secret"}, emptyOK: true},
@@ -255,6 +265,11 @@ var routeRules = map[string]routeRule{
 		return map[string]any{"project_id": a.int("project"), "team_id": a.int("team"), "role": "admin"}
 	}},
 	"POST /api/v1/remediation/policies": {class: "create", body: func(*tenantFx) any { return map[string]any{"name": "sweep"} }},
+	// Onboarding naming A's project, and an invitation to it, must fail.
+	"PUT /api/v1/onboarding": {class: "create", body: func(a *tenantFx) any { return map[string]any{"project_id": a.int("project")} }},
+	"POST /api/v1/invitations": {class: "create", body: func(a *tenantFx) any {
+		return map[string]any{"email": "sweep-invitee@x.io", "project_id": a.int("project"), "role": "admin"}
+	}},
 	"POST /api/v1/remediation/policies/preview": {class: "create", edition: "ee", query: "?id={policy}", body: func(*tenantFx) any {
 		return map[string]any{"name": "sweep", "enabled": true, "target": "host_package", "ecosystems": []string{"deb"}, "change_types": []string{"distro"}}
 	}},
@@ -447,6 +462,14 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 		t.Fatalf("%s grant: %d", tag, code)
 	}
 	set("grant", grant.Grant.ID)
+	var inv struct {
+		Invitation store.Invitation
+		Link       string
+	}
+	if code := admin.do("POST", "/api/v1/invitations", map[string]any{"email": "invitee-" + tag + "@x.io", "project_id": proj.ID, "role": "engineer"}, &inv); code != 201 || inv.Link == "" {
+		t.Fatalf("%s invitation: %d", tag, code)
+	}
+	set("invitation", inv.Invitation.ID)
 	f.secret = tag + "-secret-value-7Hq2"
 	f.ids["secret"] = strings.ToUpper(tag) + "_TOKEN"
 	if code := admin.do("PUT", "/api/v1/secrets/"+f.ids["secret"], map[string]string{"value": f.secret}, nil); code != 204 {
@@ -816,6 +839,7 @@ func (e *env) snapshot(t *testing.T, a *tenantFx) string {
 		"/api/v1/remediation/policies", "/api/v1/remediation/plans", "/api/v1/workspaces",
 		"/api/v1/checks?asset_id={asset}", "/api/v1/checks/{check}", "/api/v1/ignore-rules?status=all", "/api/v1/ignore-requests?status=all",
 		"/api/v1/projects/{project}", "/api/v1/access-grants", "/api/v1/assets?project_id={project}",
+		"/api/v1/invitations", "/api/v1/onboarding",
 	} {
 		resp := a.sess["admin"].req("GET", fill(p, a.ids), nil, nil)
 		body, _ := io.ReadAll(resp.Body)

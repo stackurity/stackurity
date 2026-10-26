@@ -108,6 +108,9 @@ func (s *Server) Handler() http.Handler {
 		r.Post("/auth/login", s.login)
 		r.Post("/auth/logout", s.logout)
 		r.Post("/enroll", s.enroll)
+		// Following an invitation link: the person may have no account yet.
+		r.Post("/invitations/preview", s.previewInvitation)
+		r.Post("/invitations/accept", s.acceptInvitation)
 		r.Group(func(r chi.Router) {
 			// Single sign-on in the licensed build: the callback exchanges
 			// the code with the identity provider, so the whole flow is
@@ -197,6 +200,7 @@ func (s *Server) Handler() http.Handler {
 				r.Get("/incidents", s.listIncidents)
 				r.Get("/incidents/{id}", s.getIncident)
 				r.Get("/risk-policy", s.getRiskPolicy)
+				r.Get("/onboarding/results", s.firstResults)
 				r.Get("/checks", s.listChecks)
 				r.Get("/checks/{id}", s.getCheck)
 				r.Get("/ignore-rules", s.listIgnoreRules)
@@ -285,6 +289,11 @@ func (s *Server) Handler() http.Handler {
 				r.Get("/secrets", s.listSecrets)
 				r.Put("/secrets/{name}", s.putSecret)
 				r.Delete("/secrets/{name}", s.deleteSecret)
+				r.Get("/onboarding", s.getOnboarding)
+				r.Put("/onboarding", s.putOnboarding)
+				r.Get("/invitations", s.listInvitations)
+				r.Post("/invitations", s.createInvitation)
+				r.Delete("/invitations/{id}", s.revokeInvitation)
 				r.Get("/enrollments", s.listEnrollments)
 				r.Post("/enrollments", s.createEnrollment)
 				r.Delete("/enrollments/{id}", s.revokeEnrollment)

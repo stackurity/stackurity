@@ -110,7 +110,7 @@ func (m Message) Subject() string {
 		return fmt.Sprintf("%s[resolved] %s", prefix, m.Title)
 	case "escalated":
 		return fmt.Sprintf("%s[%s escalated] %s", prefix, m.Priority, m.Title)
-	case "digest", "test", EventSummary, EventOverdue, EventConnected:
+	case "digest", "test", "invitation", EventSummary, EventOverdue, EventConnected:
 		return m.Title
 	case EventUrgent:
 		return prefix + m.Title

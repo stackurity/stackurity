@@ -833,3 +833,24 @@ func firstN[T any](s []T, n int) []T {
 	}
 	return s
 }
+
+// SendEmail sends m to one address through an email channel's SMTP
+// server, now. Invitations use it: the organisation's first enabled email
+// channel is its mail server.
+func (d *Dispatcher) SendEmail(ctx context.Context, ch *store.Channel, to string, m Message) error {
+	if ch.Kind != KindEmail {
+		return errors.New("not an email channel")
+	}
+	var cfg ChannelConfig
+	if err := json.Unmarshal(ch.Config, &cfg); err != nil {
+		return err
+	}
+	cfg.To = []string{to}
+	secret, err := d.Secrets.Resolve(ctx, ch.SecretRef)
+	if err != nil {
+		return err
+	}
+	sctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	return d.Sender.Send(sctx, KindEmail, cfg, secret, 0, m)
+}
