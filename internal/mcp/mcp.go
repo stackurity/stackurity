@@ -467,6 +467,7 @@ func init() {
 					KnownExploited    int      `json:"known_exploited"`
 					Needs             string   `json:"needs"`
 					Effort            string   `json:"effort"`
+					Note              string   `json:"note"`
 				} `json:"items"`
 				Total int64 `json:"total"`
 			}
@@ -495,18 +496,21 @@ func init() {
 				TopPriority    string   `json:"top_priority"`
 				SOS            bool     `json:"sos"`
 				KnownExploited int      `json:"known_exploited"`
-				Needs          string   `json:"needs,omitempty"`
+				PaidChannel    string   `json:"paid_channel,omitempty"`
 				Effort         string   `json:"effort"`
+				Note           string   `json:"note,omitempty"`
 			}
 			out := []group{}
 			for _, g := range res.Items {
 				out = append(out, group{g.ID, g.Kind, g.Title, g.Action, g.AssetID, g.AssetName, g.Environment, g.Component,
 					g.FromVersion, g.ToVersion, g.Recommended, g.ChangeType, g.RequiresMajor, g.RecommendedYanked, g.Packages,
-					g.PackageCount, g.FindingCount, g.UniqueIssues, g.TopPriority, g.SOS, g.KnownExploited, g.Needs, g.Effort})
+					g.PackageCount, g.FindingCount, g.UniqueIssues, g.TopPriority, g.SOS, g.KnownExploited, paidChannel(g.Needs), g.Effort, g.Note})
 			}
 			return map[string]any{"groups": out, "total": res.Total, "shown": len(out),
 				"note": "minimum_fixed_version fixes every finding in the group; recommended_version comes from registry release " +
-					"data and is absent when there is none. Use upgrade_recommendation for the reasons."}, nil
+					"data and is absent when there is none. Use upgrade_recommendation for the reasons. action is the free path; " +
+					"paid_channel names a paid subscription (Ubuntu Pro, SUSE LTSS) that also publishes fixes for some findings, " +
+					"an option to mention, never the recommendation."}, nil
 		},
 	}
 	tools["verify_since"] = tool{
@@ -593,4 +597,13 @@ func intArg(v any) (int, bool) {
 		return n, err == nil
 	}
 	return 0, false
+}
+
+// paidChannel names the paid subscription a fix group's needs value refers
+// to ("ubuntu-pro" is stored for Ubuntu Pro).
+func paidChannel(needs string) string {
+	if needs == "ubuntu-pro" {
+		return "Ubuntu Pro"
+	}
+	return needs
 }

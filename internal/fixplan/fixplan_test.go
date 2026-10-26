@@ -52,6 +52,11 @@ func TestHostGrouping(t *testing.T) {
 		rel.Title != "Upgrade Ubuntu 20.04 to a supported release" {
 		t.Errorf("release upgrade = %+v", rel)
 	}
+	// Upgrading is the action; Ubuntu Pro is an optional paid channel.
+	if want := "Ubuntu 20.04 is end of life (since 2025-05-31); upgrade to 24.04 LTS. Some of these issues are fixed in Ubuntu Pro " +
+		"(paid subscription); without it, upgrade to a supported release."; rel.Action != want {
+		t.Errorf("release upgrade action = %q", rel.Action)
+	}
 	if g := by[EndOfLife]; g == nil || g.Title != "Upgrade nginx 1.18 (end of life)" || !strings.Contains(g.Action, "since 2021-04-20") {
 		t.Errorf("eol = %+v", g)
 	}
@@ -77,7 +82,10 @@ func TestSubscriptionChannels(t *testing.T) {
 	for _, g := range groups {
 		by[g.Kind] = g
 	}
-	if g := by[NoFix]; g == nil || g.Needs != "SUSE LTSS" || g.Title != "Issues fixed only in SUSE LTSS" || strings.Contains(g.Action, "Ubuntu") {
+	// The free path is the action; LTSS is mentioned as a paid option.
+	if g := by[NoFix]; g == nil || g.Needs != "SUSE LTSS" || g.Title != "Issues with no free fix yet" || strings.Contains(g.Action, "Ubuntu") ||
+		!strings.HasPrefix(g.Action, "Install updates when SUSE Linux Enterprise Server 15 SP5 publishes free fixes") ||
+		!strings.Contains(g.Action, "Fixed in SUSE LTSS (paid subscription); without it,") || strings.Contains(g.Action, "Enable") {
 		t.Errorf("LTSS-only group = %+v", g)
 	}
 	if g := by[SecurityUpdates]; g == nil || g.Action != "sudo zypper refresh && sudo zypper patch" {
@@ -127,6 +135,13 @@ func TestNoEOLHostKeepsNoFixSeparate(t *testing.T) {
 	groups, _ := Build([]Row{host(1, Row{Component: "libxml2"})}, nil)
 	if len(groups) != 1 || groups[0].Kind != NoFix {
 		t.Errorf("groups = %+v", groups[0])
+	}
+	// On a supported release a Pro-only fix is not the action either.
+	groups, _ = Build([]Row{host(1, Row{Component: "libnode72", RequiresPro: true, Subscription: "Ubuntu Pro"})}, nil)
+	if g := groups[0]; g.Kind != NoFix || g.Needs != "ubuntu-pro" || g.Title != "Issues with no free fix yet" ||
+		!strings.Contains(g.Action, "Fixed in Ubuntu Pro (paid subscription); without it, wait for the free fix or upgrade to a newer supported release.") ||
+		strings.Contains(g.Action, "Enable") || strings.Contains(g.Action, "ESM") {
+		t.Errorf("Pro-only group = %+v", g)
 	}
 }
 

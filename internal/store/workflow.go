@@ -160,7 +160,8 @@ type riskRow struct {
 func riskRows(ctx context.Context, db q, now time.Time) ([]riskRow, error) {
 	rows, err := db.Query(ctx, `SELECT f.id, f.kind, f.severity, f.score, COALESCE((f.evidence->>'known_exploited')::boolean, false),
 		`+effectiveExposure+`, `+exposureSource+`, a.environment, a.criticality,
-		f.fixed_version <> '' AND NOT COALESCE((f.evidence->>'requires_ubuntu_pro')::boolean, false),
+		f.fixed_version <> '' AND NOT COALESCE((f.evidence->>'requires_ubuntu_pro')::boolean, false)
+		  AND COALESCE(f.evidence->>'requires_subscription', '') = '',
 		i.scope, f.verification, f.first_seen, COALESCE((f.evidence->>'not_running_kernel')::boolean, false),
 		f.priority, f.state, f.fix_due, f.title, f.key, a.id, a.name
 		FROM findings f JOIN assets a ON a.id = f.asset_id JOIN inventory i ON i.id = f.inventory_id

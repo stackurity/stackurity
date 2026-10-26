@@ -223,7 +223,7 @@ func TestPilotKernelHost(t *testing.T) {
 	if g := kinds[fixplan.SecurityUpdates]; g.FindingCount != 20 || g.TopPriority != "P1" {
 		t.Errorf("security updates = %+v", g)
 	}
-	if g := kinds[fixplan.NoFix]; g.FindingCount != 10 || g.Needs != "ubuntu-pro" {
+	if g := kinds[fixplan.NoFix]; g.FindingCount != 10 || g.Needs != "ubuntu-pro" || strings.Contains(g.Action, "Enable") {
 		t.Errorf("no fix = %+v", g)
 	}
 }

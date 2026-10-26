@@ -267,7 +267,9 @@ func Recommend(in Input) Recommendation {
 		say("This is a major upgrade (%s to %s): expect breaking changes.", in.Installed, rec.Recommended)
 	}
 	if rec.Subscription != "" {
-		say("The fix is published only in %s.", rec.Subscription)
+		// The paid channel is an option, never the action.
+		say("Fixed in %s (paid subscription); without it, upgrade to a supported release or install the update when the distribution publishes a free fix.",
+			rec.Subscription)
 	}
 	if rec.Deprecated != "" {
 		say("The package is deprecated by its maintainers: %s", rec.Deprecated)

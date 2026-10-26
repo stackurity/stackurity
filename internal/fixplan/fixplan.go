@@ -289,8 +289,9 @@ func describe(g *Group, osEOL map[int64]Row, advice map[string]Advice) {
 		}
 		g.Action += fmt.Sprintf("; upgrade to %s.", target)
 		if ch := g.extra["pro"]; ch != "" {
+			// The paid channel is an option, never the action.
 			g.Needs = needsChannel(ch)
-			g.Action += " Until then, " + channelLabel(ch) + " provides fixes for some of these issues."
+			g.Action += " Some of these issues are fixed in " + paidLabel(ch) + "; without it, upgrade to a supported release."
 		}
 		g.Effort = "high"
 		g.Note = fmt.Sprintf("%s: the release itself, plus findings with no free fix for this release.", issues)
@@ -324,14 +325,13 @@ func describe(g *Group, osEOL map[int64]Row, advice map[string]Advice) {
 		g.Effort = "medium"
 		if ch := g.extra["pro"]; ch != "" {
 			g.Needs = needsChannel(ch)
-			g.Title = "Issues fixed only in " + channelLabel(ch)
-			g.Action = "Enable " + channelLabel(ch) + " to receive these fixes, then install updates."
+			g.Title = "Issues with no free fix yet"
+			g.Action = "Install updates when " + osLabel + " publishes free fixes; meanwhile consider mitigations or replacing the affected packages. " +
+				"Fixed in " + paidLabel(ch) + "; without it, wait for the free fix or upgrade to a newer supported release."
 		}
 	}
 }
 
-// needsChannel is the Group.Needs value for a paid channel; the dashboard
-// knows "ubuntu-pro" and shows anything else as written.
 // SetRecommendation records the recommended version for a package upgrade
 // and mentions it in the action when it differs from the minimum fix.
 func (g *Group) SetRecommendation(recommended, changeType string, major, yanked bool, rationale []string) {
@@ -347,6 +347,10 @@ func (g *Group) SetRecommendation(recommended, changeType string, major, yanked 
 	}
 }
 
+// needsChannel is the Group.Needs value for a paid channel that also
+// publishes fixes for the group; the dashboard knows "ubuntu-pro" and shows
+// anything else as written. It is informational: the group's action is the
+// free path.
 func needsChannel(ch string) string {
 	if ch == "Ubuntu Pro" {
 		return "ubuntu-pro"
@@ -354,11 +358,10 @@ func needsChannel(ch string) string {
 	return ch
 }
 
-func channelLabel(ch string) string {
-	if ch == "Ubuntu Pro" {
-		return "Ubuntu Pro (ESM)"
-	}
-	return ch
+// paidLabel names a paid channel as an option: "Ubuntu Pro (paid
+// subscription)", "SUSE LTSS (paid subscription)".
+func paidLabel(ch string) string {
+	return ch + " (paid subscription)"
 }
 
 // eolSubject turns "MySQL 8.0 is end-of-life since 2026-04-30" into
