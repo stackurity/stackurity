@@ -77,6 +77,10 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/login-action@v3
+        with:
+          username: stackurity
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Image version
         id: ver
         # The Helm chart pulls the version without the "v" (appVersion 0.2.0).
@@ -93,11 +97,15 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/stackurity:${{ github.ref_name }}
             ghcr.io/${{ github.repository_owner }}/stackurity:${{ steps.ver.outputs.version }}
             ghcr.io/${{ github.repository_owner }}/stackurity:latest
+            docker.io/stackurity/stackurity:${{ github.ref_name }}
+            docker.io/stackurity/stackurity:${{ steps.ver.outputs.version }}
+            docker.io/stackurity/stackurity:latest
           sbom: true
           provenance: mode=max
       - name: Sign image (keyless)
         run: |
           cosign sign --yes "ghcr.io/${{ github.repository_owner }}/stackurity@${{ steps.image.outputs.digest }}"
+          cosign sign --yes "docker.io/stackurity/stackurity@${{ steps.image.outputs.digest }}"
 
       - name: Publish and sign the Helm chart
         # helm install oci://ghcr.io/stackurity/charts/stackurity --version <x.y.z>

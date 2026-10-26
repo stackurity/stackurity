@@ -17,7 +17,7 @@ docker compose up -d                   # pulls ghcr.io/stackurity/stackurity:lat
 docker compose logs stackurity | grep -A2 "one-time token"
 ```
 
-To pin a release, set `STACKURITY_IMAGE=ghcr.io/stackurity/stackurity:0.5.0` in `deploy/.env`. Images are signed; check one with
+To pin a release, set `STACKURITY_IMAGE=ghcr.io/stackurity/stackurity:0.5.0` in `deploy/.env`. The same signed image is on Docker Hub as `stackurity/stackurity:0.5.0` (`docker pull stackurity/stackurity`); GHCR is the default because Docker Hub limits anonymous pulls. Images are signed; check one with
 `cosign verify ghcr.io/stackurity/stackurity:0.5.0 --certificate-identity-regexp '^https://github.com/stackurity/stackurity/.github/workflows/release.yml@refs/tags/' --certificate-oidc-issuer https://token.actions.githubusercontent.com` (see [security-audit.md](security-audit.md)).
 
 Open the dashboard through your HTTPS proxy (see [TLS](#tls)), or at http://localhost:8080 in a browser on the server itself, enter the one-time setup token from the log, and create the first administrator. The token only works while no users exist.
