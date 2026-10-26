@@ -1,0 +1,575 @@
+package api
+
+import (
+	"context"
+	"net/http"
+	"strconv"
+	"strings"
+
+	"github.com/go-chi/chi/v5"
+
+	"github.com/stackurity/stackurity/internal/auth"
+	"github.com/stackurity/stackurity/internal/store"
+	"github.com/stackurity/stackurity/internal/tenant"
+)
+
+// Projects and permissions (docs/design/projects.md).
+//
+// Every authenticated route declares how it treats project access in
+// projectRoutes. A route that is not listed is for organisation-wide roles
+// only: a member with project access only gets 403, so a new route cannot
+// leak by being forgotten. TestEveryRouteIsClassified checks that the list
+// and the isolation sweeps agree.
+
+type projectScope int
+
+const (
+	// orgOnly: organisation-wide roles only (the default).
+	orgOnly projectScope = iota
+	// accountScope: the caller's own account (profile, tokens, workspaces).
+	accountScope
+	// globalScope: data shared by every workspace (feeds, advisories, packs).
+	globalScope
+	// scopedRead: workspace data, narrowed by row-level security to the
+	// caller's projects and to the project chosen in the switcher.
+	scopedRead
+	// scopedWrite: as scopedRead; the handler also checks the caller's role
+	// on each asset it changes (allowedOn).
+	scopedWrite
+)
+
+var projectScopeNames = map[projectScope]string{
+	orgOnly: "org", accountScope: "account", globalScope: "global", scopedRead: "scoped", scopedWrite: "scoped-write",
+}
+
+var projectRoutes = map[string]projectScope{
+	// The caller's own account.
+	"GET /api/v1/auth/me":                   accountScope,
+	"POST /api/v1/auth/password":            accountScope,
+	"PUT /api/v1/auth/default-project":      accountScope,
+	"POST /api/v1/feedback":                 accountScope,
+	"GET /api/v1/workspaces":                accountScope,
+	"POST /api/v1/workspaces/{id}/activate": accountScope,
+	"GET /api/v1/tokens":                    accountScope,
+	"POST /api/v1/tokens":                   accountScope,
+	"DELETE /api/v1/tokens/{id}":            accountScope,
+
+	// Shared by every workspace.
+	"GET /api/v1/packs":              globalScope,
+	"GET /api/v1/packs/{id}/archive": globalScope,
+	"GET /api/v1/feeds":              globalScope,
+	"GET /api/v1/advisories/{key}":   globalScope,
+
+	// Narrowed by row-level security.
+	"GET /api/v1/projects":                     scopedRead,
+	"GET /api/v1/projects/{id}":                scopedRead,
+	"GET /api/v1/overview":                     scopedRead,
+	"GET /api/v1/facets":                       scopedRead,
+	"GET /api/v1/search":                       scopedRead,
+	"GET /api/v1/assets":                       scopedRead,
+	"GET /api/v1/assets/{id}":                  scopedRead,
+	"GET /api/v1/assets/{id}/inventory":        scopedRead,
+	"GET /api/v1/assets/{id}/coverage":         scopedRead,
+	"GET /api/v1/assets/{id}/coverage-summary": scopedRead,
+	"GET /api/v1/assets/{id}/collections":      scopedRead,
+	"GET /api/v1/assets/{id}/relations":        scopedRead,
+	"GET /api/v1/assets/{id}/drift":            scopedRead,
+	"GET /api/v1/assets/{id}/stack":            scopedRead,
+	"GET /api/v1/assets/{id}/sbom":             scopedRead,
+	"GET /api/v1/assets/{id}/remediation":      scopedRead,
+	"GET /api/v1/components":                   scopedRead,
+	"GET /api/v1/components/{id}":              scopedRead,
+	"GET /api/v1/components/{id}/intel":        scopedRead,
+	"GET /api/v1/components/{id}/upgrade":      scopedRead,
+	"GET /api/v1/findings":                     scopedRead,
+	"GET /api/v1/findings/summary":             scopedRead,
+	"GET /api/v1/findings/verify":              scopedRead,
+	"GET /api/v1/findings/{id}":                scopedRead,
+	"GET /api/v1/findings/{id}/events":         scopedRead,
+	"GET /api/v1/findings/{id}/upgrade":        scopedRead,
+	"GET /api/v1/findings/{id}/explain":        scopedRead,
+	"GET /api/v1/fix-groups":                   scopedRead,
+	"GET /api/v1/fix-groups/summary":           scopedRead,
+	"GET /api/v1/fix-groups/{id}":              scopedRead,
+	"GET /api/v1/evaluation-gaps":              scopedRead,
+	"GET /api/v1/reports/outcomes":             scopedRead,
+	"GET /api/v1/reports/evidence":             scopedRead,
+	"GET /api/v1/incidents":                    scopedRead,
+	"GET /api/v1/incidents/{id}":               scopedRead,
+	"GET /api/v1/risk-policy":                  scopedRead,
+	"GET /api/v1/inventory":                    scopedRead,
+	"GET /api/v1/coverage":                     scopedRead,
+	"GET /api/v1/audit":                        scopedRead,
+	// Members with project access only see the people of their projects.
+	"GET /api/v1/users/directory": scopedRead,
+
+	// Narrowed, and the handler checks the role on each asset.
+	"PATCH /api/v1/assets/{id}":            scopedWrite,
+	"POST /api/v1/assets/{id}/relations":   scopedWrite,
+	"DELETE /api/v1/assets/{id}/relations": scopedWrite,
+	"POST /api/v1/findings/{id}/actions":   scopedWrite,
+	"POST /api/v1/findings/actions":        scopedWrite,
+	"POST /api/v1/incidents/{id}/actions":  scopedWrite,
+}
+
+// ProjectScopeOf returns how a route ("METHOD pattern") treats project
+// access: org, account, global, scoped or scoped-write. For tests.
+func ProjectScopeOf(route string) string { return projectScopeNames[projectRoutes[route]] }
+
+type scopeKey struct{}
+
+func routeScope(r *http.Request) projectScope {
+	sc, _ := r.Context().Value(scopeKey{}).(projectScope)
+	return sc
+}
+
+// projectGate runs on every authenticated route, after routing. It refuses
+// organisation routes to members with project access only, and narrows
+// project-scoped routes to the project the caller chose.
+func (s *Server) projectGate(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p := principal(r)
+		route := r.Method + " "
+		if rc := chi.RouteContext(r.Context()); rc != nil {
+			route += rc.RoutePattern()
+		}
+		sc := projectRoutes[route]
+		if p.Restricted && sc == orgOnly {
+			writeError(w, 403, "forbidden", "this needs an organisation-wide role; you have access to some projects only")
+			return
+		}
+		ctx := context.WithValue(r.Context(), scopeKey{}, sc)
+		scoped := sc == scopedRead || sc == scopedWrite
+		if p.Project < 0 && scoped {
+			writeError(w, 400, "bad_request", "project_id must be a project id, or 0 for all projects")
+			return
+		}
+		if p.Project > 0 && scoped && p.Workspace > 0 {
+			ok, err := s.Store.ProjectVisible(ctx, p.Project)
+			if err != nil {
+				s.fail(w, r, err)
+				return
+			}
+			if !ok {
+				writeError(w, 404, "not_found", "no such project")
+				return
+			}
+			ctx = tenant.WithProject(ctx, p.Project)
+		}
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// requestedProject reads the project chosen in the switcher: the
+// X-Stackurity-Project header (the dashboard) or the project_id query
+// parameter (API clients). 0: all projects; -1: not a valid id.
+func requestedProject(r *http.Request) int64 {
+	v := strings.TrimSpace(r.Header.Get("X-Stackurity-Project"))
+	if v == "" {
+		v = strings.TrimSpace(r.URL.Query().Get("project_id"))
+	}
+	if v == "" || v == "0" || v == "all" {
+		return 0
+	}
+	id, err := strconv.ParseInt(v, 10, 64)
+	if err != nil || id <= 0 {
+		return -1
+	}
+	return id
+}
+
+// allowedOn reports whether the caller may act with at least min on every
+// one of the assets: through their organisation-wide role, or through
+// project and asset grants (capped by the token's role).
+func (s *Server) allowedOn(r *http.Request, min auth.Role, assetIDs []int64) (bool, error) {
+	p := principal(r)
+	if p.Role.AtLeast(min) {
+		return true, nil
+	}
+	if p.User == nil || !p.ProjectRole.AtLeast(min) || len(assetIDs) == 0 {
+		return false, nil
+	}
+	role, err := s.Store.GrantRoleOn(r.Context(), p.User.ID, assetIDs)
+	if err != nil {
+		return false, err
+	}
+	if p.Token != nil {
+		role = auth.Lower(role, p.Token.Role)
+	}
+	return role.AtLeast(min), nil
+}
+
+// requireOn writes 403 and returns false unless allowedOn.
+func (s *Server) requireOn(w http.ResponseWriter, r *http.Request, min auth.Role, assetIDs ...int64) bool {
+	ok, err := s.allowedOn(r, min, assetIDs)
+	if err != nil {
+		s.fail(w, r, err)
+		return false
+	}
+	if !ok {
+		writeError(w, 403, "forbidden", "requires role "+string(min)+" on this asset")
+	}
+	return ok
+}
+
+// --- projects
+
+func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
+	archived := r.URL.Query().Get("archived") == "true" && principal(r).Role.AtLeast(auth.RoleAdmin)
+	ps, err := s.Store.ListProjects(r.Context(), archived)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	out := map[string]any{"items": ps, "total": len(ps)}
+	if p := principal(r); !p.Restricted {
+		n, err := s.Store.UnfiledAssetCount(tenant.WithoutProject(r.Context()))
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		out["unfiled_assets"] = n
+	}
+	if ps == nil {
+		out["items"] = []store.Project{}
+	}
+	writeJSON(w, 200, out)
+}
+
+func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
+	id, err := idParam(r, "id")
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	pr, err := s.Store.GetProject(r.Context(), id)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	// An archived project gives its members nothing, not even its name.
+	if pr.ArchivedAt != nil && principal(r).Restricted {
+		writeError(w, 404, "not_found", "not found")
+		return
+	}
+	out := map[string]any{"project": pr}
+	if principal(r).Role.AtLeast(auth.RoleAdmin) {
+		gs, err := s.Store.ListGrants(r.Context(), store.GrantFilter{ProjectID: id})
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		out["grants"] = all(gs)
+	}
+	writeJSON(w, 200, out)
+}
+
+type projectRequest struct {
+	Name        string  `json:"name"`
+	Description string  `json:"description"`
+	AssetIDs    []int64 `json:"asset_ids"`
+}
+
+func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
+	var req projectRequest
+	if err := decode(r, &req); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if len(req.AssetIDs) > 5000 {
+		s.fail(w, r, badRequest("add at most 5000 assets at a time"))
+		return
+	}
+	pr, err := s.Store.CreateProject(r.Context(), req.Name, req.Description)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if len(req.AssetIDs) > 0 {
+		if _, err := s.Store.AddProjectAssets(r.Context(), pr.ID, req.AssetIDs); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		if pr, err = s.Store.GetProject(r.Context(), pr.ID); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+	}
+	_ = s.Store.Audit(r.Context(), principal(r).Actor(r), "project.create", "project", itoa(pr.ID),
+		map[string]any{"name": pr.Name, "assets": len(req.AssetIDs)})
+	writeJSON(w, 201, pr)
+}
+
+func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
+	id, err := idParam(r, "id")
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	var u store.ProjectUpdate
+	if err := decode(r, &u); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if err := s.Store.UpdateProject(r.Context(), id, u); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	action := "project.update"
+	if u.Archived != nil {
+		action = map[bool]string{true: "project.archive", false: "project.restore"}[*u.Archived]
+	}
+	_ = s.Store.Audit(r.Context(), principal(r).Actor(r), action, "project", itoa(id), u)
+	pr, err := s.Store.GetProject(r.Context(), id)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, 200, pr)
+}
+
+type projectAssetsRequest struct {
+	AssetIDs []int64 `json:"asset_ids"`
+}
+
+func (s *Server) changeProjectAssets(add bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := idParam(r, "id")
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		var req projectAssetsRequest
+		if err := decode(r, &req); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		if len(req.AssetIDs) == 0 || len(req.AssetIDs) > 5000 {
+			s.fail(w, r, badRequest("asset_ids must list 1 to 5000 assets"))
+			return
+		}
+		var n int64
+		action := "project.assets_add"
+		if add {
+			n, err = s.Store.AddProjectAssets(r.Context(), id, req.AssetIDs)
+		} else {
+			action = "project.assets_remove"
+			n, err = s.Store.RemoveProjectAssets(r.Context(), id, req.AssetIDs)
+		}
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		_ = s.Store.Audit(r.Context(), principal(r).Actor(r), action, "project", itoa(id),
+			map[string]any{"asset_ids": firstIDs(req.AssetIDs, 50), "requested": len(req.AssetIDs), "changed": n})
+		writeJSON(w, 200, map[string]int64{"changed": n})
+	}
+}
+
+func firstIDs(ids []int64, n int) []int64 {
+	if len(ids) > n {
+		return ids[:n]
+	}
+	return ids
+}
+
+// --- access grants
+
+func (s *Server) listGrants(w http.ResponseWriter, r *http.Request) {
+	f := store.GrantFilter{ProjectID: qInt(r, "project_id"), AssetID: qInt(r, "asset_id"), UserID: qInt(r, "user_id"), TeamID: qInt(r, "team_id")}
+	gs, err := s.Store.ListGrants(r.Context(), f)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, 200, all(gs))
+}
+
+type grantRequest struct {
+	store.GrantInput
+	// Email adds the person to the organisation with project access only
+	// when they are not a member yet (creating their account with
+	// Password when they have none).
+	Email    string `json:"email"`
+	Name     string `json:"name"`
+	Password string `json:"password"`
+}
+
+func (s *Server) createGrant(w http.ResponseWriter, r *http.Request) {
+	var req grantRequest
+	if err := decode(r, &req); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	p := principal(r)
+	in := req.GrantInput
+	created := false
+	if email := strings.TrimSpace(req.Email); email != "" {
+		if in.UserID != nil || in.TeamID != nil {
+			s.fail(w, r, badRequest("name the person by email or by user_id, not both"))
+			return
+		}
+		if !strings.Contains(email, "@") {
+			s.fail(w, r, badRequest("a valid email is required"))
+			return
+		}
+		uid, newAccount, err := s.Store.EnsureMember(r.Context(), email, req.Name, req.Password)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		in.UserID, created = &uid, newAccount
+		if newAccount {
+			_ = s.Store.Audit(r.Context(), p.Actor(r), "user.create", "user", itoa(uid), map[string]any{"email": strings.ToLower(email), "role": "none"})
+		}
+	}
+	g, isNew, err := s.Store.SaveGrant(r.Context(), in, actorUserID(p))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	_ = s.Store.Audit(r.Context(), p.Actor(r), "access.grant", grantObject(g), grantObjectID(g), g)
+	status := 200
+	if isNew {
+		status = 201
+	}
+	writeJSON(w, status, map[string]any{"grant": g, "account_created": created})
+}
+
+type grantUpdate struct {
+	Role auth.Role `json:"role"`
+}
+
+func (s *Server) updateGrant(w http.ResponseWriter, r *http.Request) {
+	id, err := idParam(r, "id")
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	var req grantUpdate
+	if err := decode(r, &req); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	g, err := s.Store.GetGrant(r.Context(), id)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	in := store.GrantInput{ProjectID: g.ProjectID, AssetID: g.AssetID, UserID: g.UserID, TeamID: g.TeamID, Role: req.Role}
+	g, _, err = s.Store.SaveGrant(r.Context(), in, actorUserID(principal(r)))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	_ = s.Store.Audit(r.Context(), principal(r).Actor(r), "access.change", grantObject(g), grantObjectID(g), g)
+	writeJSON(w, 200, g)
+}
+
+func (s *Server) deleteGrant(w http.ResponseWriter, r *http.Request) {
+	id, err := idParam(r, "id")
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	g, err := s.Store.GetGrant(r.Context(), id)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if err := s.Store.DeleteGrant(r.Context(), id); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	_ = s.Store.Audit(r.Context(), principal(r).Actor(r), "access.revoke", grantObject(g), grantObjectID(g), g)
+	w.WriteHeader(204)
+}
+
+func grantObject(g *store.Grant) string {
+	if g.ProjectID != nil {
+		return "project"
+	}
+	return "asset"
+}
+
+func grantObjectID(g *store.Grant) string {
+	if g.ProjectID != nil {
+		return itoa(*g.ProjectID)
+	}
+	return itoa(*g.AssetID)
+}
+
+func actorUserID(p *Principal) int64 {
+	if p != nil && p.User != nil {
+		return p.User.ID
+	}
+	return 0
+}
+
+// --- suggestions
+
+func (s *Server) projectSuggestions(w http.ResponseWriter, r *http.Request) {
+	sg, err := s.Store.ProjectSuggestions(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, 200, all(sg))
+}
+
+type dismissRequest struct {
+	Key string `json:"key"`
+}
+
+func (s *Server) dismissSuggestion(w http.ResponseWriter, r *http.Request) {
+	var req dismissRequest
+	if err := decode(r, &req); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if err := s.Store.DismissSuggestion(r.Context(), req.Key); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	_ = s.Store.Audit(r.Context(), principal(r).Actor(r), "project.suggestion_dismiss", "settings", "projects", req)
+	w.WriteHeader(204)
+}
+
+// --- the switcher's remembered choice
+
+type defaultProjectRequest struct {
+	ProjectID int64 `json:"project_id"`
+}
+
+func (s *Server) setDefaultProject(w http.ResponseWriter, r *http.Request) {
+	p := principal(r)
+	if p.User == nil || !p.Session || p.Workspace == 0 {
+		writeError(w, 403, "forbidden", "sign in to choose a project")
+		return
+	}
+	var req defaultProjectRequest
+	if err := decode(r, &req); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if req.ProjectID < 0 {
+		s.fail(w, r, badRequest("project_id must be a project, or 0 for all projects"))
+		return
+	}
+	if req.ProjectID > 0 {
+		ok, err := s.Store.ProjectVisible(r.Context(), req.ProjectID)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		if !ok {
+			writeError(w, 404, "not_found", "no such project")
+			return
+		}
+	}
+	if err := s.Store.SetDefaultProject(r.Context(), p.User.ID, req.ProjectID); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	w.WriteHeader(204)
+}

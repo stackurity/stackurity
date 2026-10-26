@@ -26,13 +26,19 @@ type User struct {
 	LastLoginAt   *time.Time `json:"last_login_at"`
 	Teams         []string   `json:"teams"`
 	InstanceAdmin bool       `json:"instance_admin"`
+	// Access is "organisation" for a member with an organisation-wide
+	// role, "projects" for one with project access only (Role is then
+	// empty), and "" for someone who is not a member.
+	Access string `json:"access"`
 }
 
 const userCols = `u.id, u.email, u.name,
 	COALESCE((SELECT wm.role FROM workspace_members wm WHERE wm.user_id = u.id AND wm.workspace_id = stackurity_ws()), ''),
 	u.disabled, u.created_at, u.last_login_at,
 	COALESCE((SELECT array_agg(t.name ORDER BY t.name) FROM team_members m JOIN teams t ON t.id = m.team_id WHERE m.user_id = u.id), '{}'),
-	u.instance_admin`
+	u.instance_admin,
+	COALESCE((SELECT CASE WHEN wm.role IS NULL THEN 'projects' ELSE 'organisation' END FROM workspace_members wm
+	  WHERE wm.user_id = u.id AND wm.workspace_id = stackurity_ws()), '')`
 
 func (s *Store) CountUsers(ctx context.Context) (int64, error) {
 	var n int64
@@ -58,8 +64,12 @@ func (s *Store) CreateUser(ctx context.Context, email, name string, role auth.Ro
 // creating the account (with password) when it does not exist. It reports
 // whether a new account was created.
 func (s *Store) AddMember(ctx context.Context, email, name string, role auth.Role, password string) (created bool, err error) {
-	if !role.ValidUser() {
+	if !role.ValidUser() && role != RoleNone {
 		return false, fmt.Errorf("invalid role %q", role)
+	}
+	var orgRole *auth.Role // RoleNone: project access only
+	if role != RoleNone {
+		orgRole = &role
 	}
 	ws, ok := tenant.Workspace(ctx)
 	if !ok {
@@ -80,7 +90,7 @@ func (s *Store) AddMember(ctx context.Context, email, name string, role auth.Rol
 		}
 		created = after > before
 		tag, err := tx.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1, $2, $3)
-			ON CONFLICT (workspace_id, user_id) DO NOTHING`, ws, id, role)
+			ON CONFLICT (workspace_id, user_id) DO NOTHING`, ws, id, orgRole)
 		if err != nil {
 			return err
 		}
@@ -202,7 +212,7 @@ type UserUpdate struct {
 // other workspaces may share, so they can be changed only by an instance
 // admin or when the account belongs to this workspace alone.
 func (s *Store) UpdateUser(ctx context.Context, id int64, u UserUpdate, instanceAdmin bool) error {
-	if u.Role != nil && !u.Role.ValidUser() {
+	if u.Role != nil && !u.Role.ValidUser() && *u.Role != RoleNone {
 		return fmt.Errorf("invalid role %q", *u.Role)
 	}
 	ws, ok := tenant.Workspace(ctx)
@@ -248,8 +258,14 @@ func (s *Store) UpdateUser(ctx context.Context, id int64, u UserUpdate, instance
 			return err
 		}
 		if u.Role != nil {
+			// RoleNone keeps the membership without an organisation-wide
+			// role: the person then sees only what they are granted.
+			var role *auth.Role
+			if *u.Role != RoleNone {
+				role = u.Role
+			}
 			if _, err := tx.Exec(ctx, `UPDATE workspace_members SET role = $3 WHERE workspace_id = $1 AND user_id = $2`,
-				ws, id, *u.Role); err != nil {
+				ws, id, role); err != nil {
 				return err
 			}
 		}
@@ -318,9 +334,9 @@ func (s *Store) SessionUser(ctx context.Context, secret string) (*User, int64, e
 	}
 	var wsID int64
 	if ws != nil {
-		if role, err := s.MemberRole(ctx, *ws, id); err != nil {
+		if member, err := s.IsMember(ctx, *ws, id); err != nil {
 			return nil, 0, err
-		} else if role != "" {
+		} else if member {
 			wsID = *ws
 		}
 	}
@@ -421,11 +437,21 @@ func (s *Store) TokenPrincipal(ctx context.Context, secret string) (*Token, *Use
 		if err != nil && !errors.Is(err, ErrNotFound) {
 			return nil, nil, err
 		}
-		if err != nil || u.Disabled || u.Role == "" {
+		if err != nil || u.Disabled {
 			return nil, nil, ErrNotFound
 		}
-		if t.Role != auth.RoleCollector && !u.Role.AtLeast(t.Role) {
-			t.Role = u.Role
+		// A member with project access only acts with at most their
+		// highest grant; the request is then narrowed to what they may see.
+		access, err := s.UserAccess(ctx, t.WorkspaceID, u.ID)
+		if err != nil {
+			return nil, nil, err
+		}
+		most := auth.Higher(access.OrgRole, access.ProjectRole)
+		if !access.Member || most == "" {
+			return nil, nil, ErrNotFound
+		}
+		if t.Role != auth.RoleCollector && !most.AtLeast(t.Role) {
+			t.Role = most
 		}
 	}
 	return t, u, nil

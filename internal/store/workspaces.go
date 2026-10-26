@@ -31,6 +31,9 @@ type Membership struct {
 	Name        string    `json:"name"`
 	Slug        string    `json:"slug"`
 	Role        auth.Role `json:"role"`
+	// Access is "organisation" or "projects" (project access only; Role
+	// is then empty).
+	Access string `json:"access"`
 }
 
 var slugRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
@@ -58,7 +61,8 @@ func Slugify(name string) string {
 
 // Memberships lists the enabled workspaces a user belongs to, oldest first.
 func (s *Store) Memberships(ctx context.Context, userID int64) ([]Membership, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT w.id, w.name, w.slug, m.role FROM workspace_members m
+	rows, err := s.Pool.Query(ctx, `SELECT w.id, w.name, w.slug, COALESCE(m.role, ''),
+		CASE WHEN m.role IS NULL THEN 'projects' ELSE 'organisation' END FROM workspace_members m
 		JOIN workspaces w ON w.id = m.workspace_id
 		WHERE m.user_id = $1 AND w.disabled_at IS NULL ORDER BY w.id`, userID)
 	if err != nil {
@@ -67,16 +71,25 @@ func (s *Store) Memberships(ctx context.Context, userID int64) ([]Membership, er
 	return pgx.CollectRows(rows, pgx.RowToStructByPos[Membership])
 }
 
-// MemberRole returns the user's role in an enabled workspace, or "" when they
-// are not a member.
+// MemberRole returns the user's organisation-wide role in an enabled
+// workspace, or "" when they are not a member or have project access only.
 func (s *Store) MemberRole(ctx context.Context, workspaceID, userID int64) (auth.Role, error) {
 	var role auth.Role
-	err := s.Pool.QueryRow(ctx, `SELECT m.role FROM workspace_members m JOIN workspaces w ON w.id = m.workspace_id
+	err := s.Pool.QueryRow(ctx, `SELECT COALESCE(m.role, '') FROM workspace_members m JOIN workspaces w ON w.id = m.workspace_id
 		WHERE m.workspace_id = $1 AND m.user_id = $2 AND w.disabled_at IS NULL`, workspaceID, userID).Scan(&role)
 	if err == pgx.ErrNoRows {
 		return "", nil
 	}
 	return role, err
+}
+
+// IsMember reports whether the user belongs to an enabled workspace, with
+// an organisation-wide role or with project access only.
+func (s *Store) IsMember(ctx context.Context, workspaceID, userID int64) (bool, error) {
+	var ok bool
+	err := s.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM workspace_members m JOIN workspaces w ON w.id = m.workspace_id
+		WHERE m.workspace_id = $1 AND m.user_id = $2 AND w.disabled_at IS NULL)`, workspaceID, userID).Scan(&ok)
+	return ok, err
 }
 
 // WorkspaceEnabled reports whether a workspace exists and is not disabled.
@@ -245,11 +258,11 @@ func (s *Store) UserExists(ctx context.Context, email string) (bool, error) {
 // SetSessionWorkspace switches a browser session to another workspace the
 // user belongs to.
 func (s *Store) SetSessionWorkspace(ctx context.Context, secret string, userID, workspaceID int64) error {
-	role, err := s.MemberRole(ctx, workspaceID, userID)
+	member, err := s.IsMember(ctx, workspaceID, userID)
 	if err != nil {
 		return err
 	}
-	if role == "" {
+	if !member {
 		return ErrNotFound
 	}
 	_, err = s.Pool.Exec(ctx, `UPDATE sessions SET workspace_id = $3 WHERE token_hash = $1 AND user_id = $2`,

@@ -229,11 +229,16 @@ func (s *Store) SearchWith(ctx context.Context, query string, opt SearchOptions)
 			return fmt.Errorf("components: %w", err)
 		}
 		res.More["components"] = more
-		if res.Teams, more, err = searchTeams(ctx, tx, q, limit); err != nil {
-			return fmt.Errorf("teams: %w", err)
+		// Teams and people belong to the organisation: a member with
+		// project access only finds neither.
+		narrowedToMember := tenant.Member(ctx) > 0
+		if !narrowedToMember {
+			if res.Teams, more, err = searchTeams(ctx, tx, q, limit); err != nil {
+				return fmt.Errorf("teams: %w", err)
+			}
+			res.More["teams"] = more
 		}
-		res.More["teams"] = more
-		if opt.Members {
+		if opt.Members && !narrowedToMember {
 			if res.Members, more, err = searchMembers(ctx, tx, q, limit); err != nil {
 				return fmt.Errorf("members: %w", err)
 			}
@@ -656,7 +661,7 @@ func searchFindingTitles(ctx context.Context, tx pgx.Tx, q string, limit int, sh
 // rows: an account that is not a member here is never matched.
 func searchMembers(ctx context.Context, tx pgx.Tx, q string, limit int) ([]SearchMember, bool, error) {
 	lower, prefix, like := patterns(q)
-	rows, err := tx.Query(ctx, `SELECT u.id, u.name, u.email, wm.role, u.disabled,
+	rows, err := tx.Query(ctx, `SELECT u.id, u.name, u.email, COALESCE(wm.role, ''), u.disabled,
 		  CASE WHEN lower(u.email) = $1 OR lower(u.name) = $1 THEN 0 WHEN u.email ILIKE $2 OR u.name ILIKE $2 THEN 1 ELSE 2 END AS rank,
 		  (SELECT count(*) FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
 		    WHERE f.status = 'open' AND f.assignee_user_id = u.id)

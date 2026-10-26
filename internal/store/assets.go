@@ -53,6 +53,9 @@ type Asset struct {
 	// AgentPolledAt is when the asset's agent last asked whether to report
 	// now (0.7 agents); null for older agents and assets without one.
 	AgentPolledAt *time.Time `json:"agent_polled_at"`
+	// Projects are the active projects the asset belongs to that the
+	// caller may see.
+	Projects []ProjectRef `json:"projects"`
 }
 
 type AssetFilter struct {
@@ -66,22 +69,30 @@ type AssetFilter struct {
 	RebootRequired bool
 	// Exposed limits the list by effective exposure (nil: any).
 	Exposed *bool
+	// Unfiled limits the list to assets in no active project.
+	Unfiled bool
 	Page
 }
 
 const assetCols = `a.id, a.kind, a.name, a.environment, a.owner_team_id, COALESCE(t.name, ''), a.provider, a.region,
 	a.criticality, a.internet_exposed, ` + effectiveExposure + `, a.tags, a.attributes, a.first_seen, a.last_seen, a.collection_status,
-	(SELECT count(*) FROM inventory i WHERE i.asset_id = a.id AND i.removed_at IS NULL), a.agent_polled_at`
+	(SELECT count(*) FROM inventory i WHERE i.asset_id = a.id AND i.removed_at IS NULL), a.agent_polled_at,
+	COALESCE((SELECT jsonb_agg(jsonb_build_object('id', p.id, 'name', p.name) ORDER BY lower(p.name), p.id)
+	  FROM project_assets pa JOIN projects p ON p.id = pa.project_id WHERE pa.asset_id = a.id AND p.archived_at IS NULL), '[]')`
 
 func scanAsset(row pgx.Row) (*Asset, error) {
 	var a Asset
-	var attrs []byte
+	var attrs, projects []byte
 	err := row.Scan(&a.ID, &a.Kind, &a.Name, &a.Environment, &a.OwnerTeamID, &a.OwnerTeam, &a.Provider, &a.Region,
-		&a.Criticality, &a.InternetExposed, &a.Exposed, &a.Tags, &attrs, &a.FirstSeen, &a.LastSeen, &a.CollectionStatus, &a.ComponentCount, &a.AgentPolledAt)
+		&a.Criticality, &a.InternetExposed, &a.Exposed, &a.Tags, &attrs, &a.FirstSeen, &a.LastSeen, &a.CollectionStatus, &a.ComponentCount, &a.AgentPolledAt, &projects)
 	if err != nil {
 		return nil, err
 	}
 	_ = json.Unmarshal(attrs, &a.Attributes)
+	_ = json.Unmarshal(projects, &a.Projects)
+	if a.Projects == nil {
+		a.Projects = []ProjectRef{}
+	}
 	if a.Tags == nil {
 		a.Tags = []string{}
 	}
@@ -134,6 +145,10 @@ func (s *Store) ListAssets(ctx context.Context, f AssetFilter) ([]Asset, int64, 
 	}
 	if f.Exposed != nil {
 		w.add(effectiveExposure+" = ?", *f.Exposed)
+	}
+	if f.Unfiled {
+		w.conds = append(w.conds, `NOT EXISTS (SELECT 1 FROM project_assets pa JOIN projects p ON p.id = pa.project_id
+			WHERE pa.asset_id = a.id AND p.archived_at IS NULL)`)
 	}
 	from := ` FROM assets a LEFT JOIN teams t ON t.id = a.owner_team_id` + w.sql()
 	var total int64
@@ -569,6 +584,14 @@ func mergeAsset(ctx context.Context, tx pgx.Tx, from, into int64) error {
 		   AND s.collector_id = t.collector_id AND s.scope = t.scope`,
 		`UPDATE coverage SET asset_id = $2 WHERE asset_id = $1`,
 		`UPDATE collections SET asset_id = $2 WHERE asset_id = $1`,
+		// The target joins the merged asset's projects, and grants on the
+		// merged asset now apply to the target.
+		`INSERT INTO project_assets (workspace_id, project_id, asset_id, added_at)
+		   SELECT workspace_id, project_id, $2, added_at FROM project_assets WHERE asset_id = $1 ON CONFLICT DO NOTHING`,
+		`DELETE FROM project_assets WHERE asset_id = $1 AND $2::bigint IS NOT NULL`,
+		`UPDATE access_grants g SET asset_id = $2 WHERE g.asset_id = $1 AND NOT EXISTS (SELECT 1 FROM access_grants o
+		   WHERE o.asset_id = $2 AND o.user_id IS NOT DISTINCT FROM g.user_id AND o.team_id IS NOT DISTINCT FROM g.team_id)`,
+		`DELETE FROM access_grants WHERE asset_id = $1 AND $2::bigint IS NOT NULL`,
 		`INSERT INTO asset_relations (from_asset, to_asset, kind, source, created_at)
 		   SELECT CASE WHEN from_asset = $1 THEN $2 ELSE from_asset END, CASE WHEN to_asset = $1 THEN $2 ELSE to_asset END, kind, source, created_at
 		   FROM asset_relations WHERE (from_asset = $1 OR to_asset = $1) AND from_asset <> to_asset

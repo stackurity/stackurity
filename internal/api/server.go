@@ -117,8 +117,9 @@ func (s *Server) Handler() http.Handler {
 		})
 
 		r.Group(func(r chi.Router) {
-			r.Use(requireAuth)
+			r.Use(requireAuth, s.projectGate)
 			r.Get("/auth/me", s.me)
+			r.Put("/auth/default-project", s.setDefaultProject)
 			r.Post("/auth/password", s.changePassword)
 			r.Post("/feedback", s.sendFeedback)
 			r.Get("/packs", s.listPacks)
@@ -160,6 +161,8 @@ func (s *Server) Handler() http.Handler {
 
 			r.Group(func(r chi.Router) {
 				r.Use(requireRole(auth.RoleViewer))
+				r.Get("/projects", s.listProjects)
+				r.Get("/projects/{id}", s.getProject)
 				r.Get("/overview", s.overview)
 				r.Get("/facets", s.facets)
 				r.Get("/search", s.search)
@@ -241,6 +244,16 @@ func (s *Server) Handler() http.Handler {
 			r.Group(func(r chi.Router) {
 				r.Use(requireRole(auth.RoleAdmin))
 				r.Delete("/assets/{id}", s.deleteAsset)
+				r.Post("/projects", s.createProject)
+				r.Patch("/projects/{id}", s.updateProject)
+				r.Post("/projects/{id}/assets", s.changeProjectAssets(true))
+				r.Delete("/projects/{id}/assets", s.changeProjectAssets(false))
+				r.Get("/project-suggestions", s.projectSuggestions)
+				r.Post("/project-suggestions/dismiss", s.dismissSuggestion)
+				r.Get("/access-grants", s.listGrants)
+				r.Post("/access-grants", s.createGrant)
+				r.Patch("/access-grants/{id}", s.updateGrant)
+				r.Delete("/access-grants/{id}", s.deleteGrant)
 				r.Get("/conflicts", s.listConflicts)
 				r.Post("/conflicts/{id}/resolve", s.resolveConflict)
 				r.Get("/users", s.listUsers)

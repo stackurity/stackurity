@@ -146,7 +146,11 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 		features = []license.Feature{}
 	}
 	out := map[string]any{"user": p.User, "role": p.Role, "token": p.Token, "workspace": nil, "workspaces": []store.Membership{},
-		"edition": ed, "features": features, "feedback_enabled": s.FeedbackURL != "" && p.User != nil}
+		"edition": ed, "features": features, "feedback_enabled": s.FeedbackURL != "" && p.User != nil,
+		"access": "organisation", "project_role": p.ProjectRole, "projects": []store.Project{}, "default_project_id": 0}
+	if p.Restricted {
+		out["access"] = "projects"
+	}
 	if p.Workspace > 0 {
 		ws, err := s.Store.GetWorkspace(r.Context(), p.Workspace)
 		if err != nil {
@@ -154,6 +158,23 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		out["workspace"] = map[string]any{"id": ws.ID, "name": ws.Name, "slug": ws.Slug}
+		// The projects for the switcher, and the one chosen last.
+		ps, err := s.Store.ListProjects(r.Context(), false)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		if ps != nil {
+			out["projects"] = ps
+		}
+		if p.User != nil {
+			def, err := s.Store.DefaultProject(r.Context(), p.User.ID)
+			if err != nil {
+				s.fail(w, r, err)
+				return
+			}
+			out["default_project_id"] = def
+		}
 	}
 	if p.User != nil && p.Session {
 		ms, err := s.Store.Memberships(r.Context(), p.User.ID)
@@ -224,7 +245,9 @@ func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case req.Role.ValidUser():
-		if !p.Role.AtLeast(req.Role) {
+		// A token never acts above its user; one of a member with project
+		// access only is narrowed like their sessions.
+		if !auth.Higher(p.Role, p.ProjectRole).AtLeast(req.Role) {
 			writeError(w, 403, "forbidden", "cannot create a token above your own role")
 			return
 		}

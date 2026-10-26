@@ -113,6 +113,10 @@ type Route struct {
 	// LastSummaryAt is the end of the period the last summary covered. It
 	// is kept by the dispatcher; SaveRoute ignores it.
 	LastSummaryAt time.Time `json:"last_summary_at"`
+	// ProjectIDs limits the route to the assets of these projects (empty:
+	// every asset). ListRoutes fills ProjectAssets with those assets.
+	ProjectIDs    []int64        `json:"project_ids"`
+	ProjectAssets map[int64]bool `json:"-" db:"-"`
 }
 
 // Route modes.
@@ -126,14 +130,60 @@ const (
 var Weekdays = []string{"sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"}
 
 const routeCols = `id, name, channel_id, enabled, min_priority, sos_only, kinds, environments, team_ids, escalation, send_resolved,
-	quiet_start, quiet_end, timezone, max_per_hour, created_at, mode, summary_time, summary_day, last_summary_at`
+	quiet_start, quiet_end, timezone, max_per_hour, created_at, mode, summary_time, summary_day, last_summary_at, project_ids`
 
 func (s *Store) ListRoutes(ctx context.Context) ([]Route, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT `+routeCols+` FROM routes ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, pgx.RowToStructByPos[Route])
+	out, err := pgx.CollectRows(rows, pgx.RowToStructByPos[Route])
+	if err != nil {
+		return nil, err
+	}
+	return out, s.routeProjectAssets(ctx, out)
+}
+
+// routeProjectAssets fills ProjectAssets of the routes limited to projects:
+// the assets of those projects that are not archived. A route whose
+// projects are all archived matches no asset.
+func (s *Store) routeProjectAssets(ctx context.Context, routes []Route) error {
+	var ids []int64
+	for _, r := range routes {
+		ids = append(ids, r.ProjectIDs...)
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	rows, err := s.Pool.Query(ctx, `SELECT pa.project_id, pa.asset_id FROM project_assets pa JOIN projects p ON p.id = pa.project_id
+		WHERE pa.project_id = ANY($1) AND p.archived_at IS NULL`, ids)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	byProject := map[int64][]int64{}
+	for rows.Next() {
+		var p, a int64
+		if err := rows.Scan(&p, &a); err != nil {
+			return err
+		}
+		byProject[p] = append(byProject[p], a)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for i := range routes {
+		if len(routes[i].ProjectIDs) == 0 {
+			continue
+		}
+		routes[i].ProjectAssets = map[int64]bool{}
+		for _, p := range routes[i].ProjectIDs {
+			for _, a := range byProject[p] {
+				routes[i].ProjectAssets[a] = true
+			}
+		}
+	}
+	return nil
 }
 
 func (s *Store) GetRoute(ctx context.Context, id int64) (*Route, error) {
@@ -156,6 +206,9 @@ func (s *Store) SaveRoute(ctx context.Context, r Route) (*Route, error) {
 	if r.TeamIDs == nil {
 		r.TeamIDs = []int64{}
 	}
+	if r.ProjectIDs == nil {
+		r.ProjectIDs = []int64{}
+	}
 	if r.MinPriority == "" {
 		r.MinPriority = "P1"
 	}
@@ -171,16 +224,25 @@ func (s *Store) SaveRoute(ctx context.Context, r Route) (*Route, error) {
 	var rows pgx.Rows
 	var err error
 	args := []any{r.Name, r.ChannelID, r.Enabled, r.MinPriority, r.SOSOnly, r.Kinds, r.Environments, r.TeamIDs, r.Escalation,
-		r.SendResolved, r.QuietStart, r.QuietEnd, r.Timezone, r.MaxPerHour, r.Mode, r.SummaryTime, r.SummaryDay}
+		r.SendResolved, r.QuietStart, r.QuietEnd, r.Timezone, r.MaxPerHour, r.Mode, r.SummaryTime, r.SummaryDay, r.ProjectIDs}
+	if len(r.ProjectIDs) > 0 {
+		var known int
+		if err := s.Pool.QueryRow(ctx, `SELECT count(*) FROM projects WHERE id = ANY($1)`, r.ProjectIDs).Scan(&known); err != nil {
+			return nil, err
+		}
+		if known != len(uniqueIDs(r.ProjectIDs)) {
+			return nil, fmt.Errorf("no such project: %w", ErrInvalid)
+		}
+	}
 	if r.ID == 0 {
 		rows, err = s.Pool.Query(ctx, `INSERT INTO routes (name, channel_id, enabled, min_priority, sos_only, kinds, environments,
-			team_ids, escalation, send_resolved, quiet_start, quiet_end, timezone, max_per_hour, mode, summary_time, summary_day)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING `+routeCols, args...)
+			team_ids, escalation, send_resolved, quiet_start, quiet_end, timezone, max_per_hour, mode, summary_time, summary_day, project_ids)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING `+routeCols, args...)
 	} else {
 		rows, err = s.Pool.Query(ctx, `UPDATE routes SET name=$1, channel_id=$2, enabled=$3, min_priority=$4, sos_only=$5, kinds=$6,
 			environments=$7, team_ids=$8, escalation=$9, send_resolved=$10, quiet_start=$11, quiet_end=$12, timezone=$13, max_per_hour=$14,
-			mode=$15, summary_time=$16, summary_day=$17
-			WHERE id = $18 RETURNING `+routeCols, append(args, r.ID)...)
+			mode=$15, summary_time=$16, summary_day=$17, project_ids=$18
+			WHERE id = $19 RETURNING `+routeCols, append(args, r.ID)...)
 	}
 	if err != nil {
 		return nil, err
@@ -395,4 +457,12 @@ func (s *Store) ResolvedToAnnounce(ctx context.Context) ([]Incident, error) {
 func (s *Store) MarkResolvedNotified(ctx context.Context, id int64) error {
 	_, err := s.Pool.Exec(ctx, `UPDATE incidents SET resolved_notified = true WHERE id = $1`, id)
 	return err
+}
+
+func uniqueIDs(ids []int64) map[int64]bool {
+	out := map[int64]bool{}
+	for _, id := range ids {
+		out[id] = true
+	}
+	return out
 }

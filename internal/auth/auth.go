@@ -36,6 +36,30 @@ func (r Role) AtLeast(min Role) bool {
 	return rank[r] >= rank[min] && rank[r] > 0
 }
 
+// Lower returns the lesser of two user roles; "" when either is not a user
+// role (no access).
+func Lower(a, b Role) Role {
+	if !a.ValidUser() || !b.ValidUser() {
+		return ""
+	}
+	if rank[a] <= rank[b] {
+		return a
+	}
+	return b
+}
+
+// Higher returns the greater of two user roles, ignoring one that is not a
+// user role; "" when neither is.
+func Higher(a, b Role) Role {
+	switch {
+	case !a.ValidUser() && !b.ValidUser():
+		return ""
+	case rank[a] >= rank[b]:
+		return a
+	}
+	return b
+}
+
 // CanIngest: collectors plus any engineer-or-higher user (CLI uploads).
 func (r Role) CanIngest() bool { return r == RoleCollector || r.AtLeast(RoleEngineer) }
 

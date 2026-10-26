@@ -38,7 +38,8 @@ var securityActions = map[string]bool{"suppress": true, "accept_risk": true, "ig
 
 func (s *Server) checkAction(w http.ResponseWriter, r *http.Request, req *actionRequest) bool {
 	p := principal(r)
-	if securityActions[req.Action] && !p.Role.AtLeast(auth.RoleSecurity) {
+	// Roles from project grants are checked per finding in applyAction.
+	if securityActions[req.Action] && !auth.Higher(p.Role, p.ProjectRole).AtLeast(auth.RoleSecurity) {
 		msg := req.Action + " requires the security role"
 		if req.Action == "ignore" || req.Action == "accept_risk" {
 			msg += "; ask for it with POST /api/v1/ignore-requests"
@@ -55,8 +56,29 @@ func (s *Server) checkAction(w http.ResponseWriter, r *http.Request, req *action
 	return true
 }
 
+// actionRole is the role an action needs on each finding's asset.
+func actionRole(action string) auth.Role {
+	if securityActions[action] {
+		return auth.RoleSecurity
+	}
+	return auth.RoleEngineer
+}
+
 func (s *Server) applyAction(w http.ResponseWriter, r *http.Request, ids []int64, req actionRequest) {
 	actor := principal(r).Actor(r)
+	// With a role from project grants only, the caller needs it on the
+	// asset of every finding they change (findings they cannot see fail
+	// below as not found).
+	if need := actionRole(req.Action); !principal(r).Role.AtLeast(need) {
+		assets, err := s.Store.FindingAssets(r.Context(), ids)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		if len(assets) > 0 && !s.requireOn(w, r, need, assets...) {
+			return
+		}
+	}
 	a := store.FindingAction{Action: req.Action, Note: req.Note, Until: req.Until, Mitigation: req.Mitigation,
 		AssignUser: req.UserID, AssignTeam: req.TeamID, UntilFix: req.UntilFix,
 		Ignore: store.IgnoreSpec{Reason: req.Reason, Scope: req.Scope, Expiry: req.Expiry}}
@@ -506,6 +528,18 @@ func (s *Server) saveRoute(w http.ResponseWriter, r *http.Request, id int64) {
 			return
 		}
 	}
+	if len(rt.ProjectIDs) > 0 {
+		if len(rt.ProjectIDs) > 100 {
+			s.fail(w, r, badRequest("a route can name at most 100 projects"))
+			return
+		}
+		// A Jira issue describes the whole incident across every asset, so
+		// it cannot be limited to a project's assets.
+		if ch, err := s.Store.GetChannel(r.Context(), rt.ChannelID); err == nil && ch.Kind == notify.KindJira {
+			s.fail(w, r, badRequest("routes to Jira cannot be limited to projects yet; use an email, Slack, Teams or webhook channel"))
+			return
+		}
+	}
 	out, err := s.Store.SaveRoute(r.Context(), rt)
 	if err != nil {
 		s.fail(w, r, err)
@@ -586,6 +620,13 @@ func (s *Server) userDirectory(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	var colleagues map[int64]bool
+	if p := principal(r); p.Restricted {
+		if colleagues, err = s.Store.ProjectColleagues(r.Context(), p.User.ID); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+	}
 	type entry struct {
 		ID    int64  `json:"id"`
 		Email string `json:"email"`
@@ -593,7 +634,7 @@ func (s *Server) userDirectory(w http.ResponseWriter, r *http.Request) {
 	}
 	out := []entry{}
 	for _, u := range us {
-		if !u.Disabled {
+		if !u.Disabled && (colleagues == nil || colleagues[u.ID]) {
 			out = append(out, entry{u.ID, u.Email, u.Name})
 		}
 	}
