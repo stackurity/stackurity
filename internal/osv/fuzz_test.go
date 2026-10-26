@@ -68,7 +68,7 @@ func TestHostileRecords(t *testing.T) {
 			t.Errorf("%s: a 2001-character version was compared", e)
 		}
 		_, _ = Check(a, Target{Version: strings.Repeat("1.", 120) + "0", Compare: e})
-		if d := time.Since(start); d > 5*time.Second {
+		if d := time.Since(start); d > timeBudgetFactor*5*time.Second {
 			t.Errorf("%s: %s", e, d)
 		}
 	}
