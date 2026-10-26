@@ -158,6 +158,13 @@ func TestOutcomesReport(t *testing.T) {
 	if r.Open.Active != 1 || r.Open.Overdue != 1 {
 		t.Errorf("open = %+v", r.Open)
 	}
+	var byEvidence int64
+	for _, n := range r.Open.ByEvidence {
+		byEvidence += n
+	}
+	if byEvidence != r.Open.Active+r.Open.Excepted || r.Open.ByEvidence["confirmed"] == 0 {
+		t.Errorf("open by evidence state = %v, open = %+v", r.Open.ByEvidence, r.Open)
+	}
 	if r.Remediation != nil {
 		t.Errorf("remediation without plans = %+v", r.Remediation)
 	}
@@ -244,7 +251,8 @@ func TestOutcomesAreWorkspaceScoped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Resolved != 0 || r.Reopened.Events != 0 || r.Reopened.ResolutionEvents != 0 || r.Open.Active != 0 || len(r.Causes) != 0 {
+	if r.Resolved != 0 || r.Reopened.Events != 0 || r.Reopened.ResolutionEvents != 0 || r.Open.Active != 0 || len(r.Causes) != 0 ||
+		len(r.Open.ByEvidence) != 0 {
 		t.Errorf("beta sees alpha's outcomes: %+v", r)
 	}
 	v, err := f.s.VerifySince(beta, f.before, 0, 0)

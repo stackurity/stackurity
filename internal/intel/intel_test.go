@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/json"
 	"github.com/stackurity/stackurity/internal/tenant"
 	"io"
 	"log/slog"
@@ -386,6 +387,19 @@ func TestUbuntuProAndIdleKernels(t *testing.T) {
 	old, ok := got["ubuntu/linux-image-5.4.0-190-generic CVE-2024-36971"]
 	if !ok || !strings.Contains(string(old.Evidence), `"not_running_kernel": true`) {
 		t.Errorf("old kernel finding = %+v", old)
+	}
+	// The evidence names what produced the verdict: the feed, the version
+	// rules, the advisory ecosystem and the range that matched.
+	var prov struct {
+		Feed       string   `json:"feed"`
+		Comparator string   `json:"comparator"`
+		Ecosystems []string `json:"osv_ecosystems"`
+		Ranges     []string `json:"matched_ranges"`
+	}
+	if err := json.Unmarshal(old.Evidence, &prov); err != nil || prov.Feed != "osv:Ubuntu" || prov.Comparator != "debian" ||
+		len(prov.Ecosystems) != 1 || prov.Ecosystems[0] != "Ubuntu:20.04:LTS" || len(prov.Ranges) != 1 ||
+		!strings.HasPrefix(prov.Ranges[0], "UBUNTU-CVE-2024-36971: ") || old.Verification != "confirmed" {
+		t.Errorf("provenance = %+v (%v), verification %s", prov, err, old.Verification)
 	}
 	if _, ok := got["ubuntu/linux-image-5.4.0-216-generic CVE-2024-36971"]; ok {
 		t.Error("the running, patched kernel must not be affected")

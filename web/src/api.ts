@@ -577,6 +577,16 @@ export interface Integration {
 export const SEVERITIES = ["critical", "high", "medium", "low", "none", "unknown"] as const;
 export const VERIFICATIONS = ["confirmed", "needs_validation", "stale"] as const;
 
+/** Labels for the evidence states reports count (store.evidenceState). */
+export const EVIDENCE_STATE_LABEL: Record<string, string> = {
+  confirmed: "confirmed",
+  needs_validation: "needs validation (version not confirmed)",
+  stale: "stale (asset stopped reporting)",
+  stale_intelligence: "confirmed, stale advisory data",
+  unknown: "unknown",
+  rejected: "rejected",
+};
+
 export interface FindingEvidence {
   matched_ranges?: string[];
   osv_ecosystems?: string[];
@@ -928,7 +938,14 @@ export interface OutcomesReport {
     recent: OutcomeReopen[] | null;
     recent_limit: number;
   };
-  open: { active: number; overdue: number; excepted: number; stale_asset: number };
+  open: {
+    active: number;
+    overdue: number;
+    excepted: number;
+    stale_asset: number;
+    /** Open findings by evidence state: confirmed, needs_validation, stale, stale_intelligence, unknown. */
+    by_evidence?: Record<string, number>;
+  };
   remediation: {
     plans: Record<string, number> | null;
     actions: Record<string, number> | null;
