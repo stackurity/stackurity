@@ -4,6 +4,31 @@ All notable changes to Stackurity. Versions follow [Semantic Versioning](https:/
 
 Each release's section is published as its GitHub release notes, and a tag without a section here cannot be released (`go run ./tools/changelog -version vX.Y.Z` prints it). New changes go under **Unreleased**, which is renamed to the version when it is tagged. Subsections are **Security**, **Added**, **Changed**, **Fixed** and **Upgrading**. Put fixes for vulnerabilities under `### Security`, first: installations treat a release with that heading as a security release and show administrators a banner they can only snooze.
 
+## Unreleased
+
+### Added
+
+- **Check again, and know the result.** A **Check again** button on fix pages and asset pages asks for fresh evidence: the agent on a host reports within about a minute, a Git repository connected under **Integrations** is scanned again on the server, and a repository scanned in CI shows its `stackurity scan` command. The fix page then says **Passed** (all its issues are gone), **Partly fixed** (how many are left, linked) or **Still open**, with the date and who asked; a whole-asset check also counts new issues. Each check is recorded (requested by, requested at, asset, fix or whole asset, the report that answered it, completed at, outcome and counts), listed under **Activity ▸ Checks**, and expires after 7 days without a report. `POST /fix-groups/{id}/check`, `POST /assets/{id}/check`, `GET /checks`, `GET /checks/{id}`. A fix whose issues are all gone shows its last check instead of "not found".
+- **Agents pick up Check again within a minute.** Between collections, 0.7 agents ask `GET /agent/check` every 45 seconds plus jitter (`--check-interval`, 0 turns it off) with their own token and the assets they report, and report at once when asked. The answer comes from a small index; the server records the poll on the asset at most every 5 minutes (`agent_polled_at`). Agents older than 0.7 keep reporting on their interval: the dashboard says "Waiting for the agent. Agents older than 0.7 report on their interval; restart the agent to report now." with the restart command. An agent talking to an older server stops asking after the first 404.
+- **"I applied this"** on a fix sets its open issues to in progress with "applied, waiting for a check" and asks for a check. It never resolves anything: only a fresh report closes an issue (`POST /fix-groups/{id}/applied`).
+- **Regressed issues.** An issue fixed by an upgrade or removal that comes back on the same asset (same component and advisory, on any version) is shown as **Regressed**, with its own chip, a `regressed` event in its history, a tile on Home and a preset in **All issues** (`GET /findings?state=regressed`, `regressed` in `GET /findings/summary`). Work in progress on it goes back to new. An upgrade that leaves the component vulnerable, or an issue closed only because the intelligence changed, is not a regression.
+- **Snooze until a fix ships.** Besides a date, an issue (or all of a fix's issues) can be snoozed until a free fixed version exists; it returns as new on its own, with a `fix_available` event, when the intelligence shows one (a fix only in Ubuntu Pro or SUSE LTSS does not count). The risk policy's exception limit stays as a backstop. `suppress` takes `"until_fix": true`.
+- **Ignore with a reason, a scope and an expiry.** **Ignore** replaces **Accept risk** in the dashboard: the reason is accepted risk, false positive, mitigated or no fix; the scope is this asset or every asset in the workspace with the same component and advisory, including assets and findings found later; the expiry is a date, until a fix ships, or never (false positives only). A false positive sets the finding's verification to `rejected`, which the matcher keeps until it is reopened. Ignores are stored as rules (`GET /ignore-rules`, `DELETE /ignore-rules/{id}` ends one and returns its issues to new); expired ones return their issues to new with an `expired` event. New action `ignore` on `POST /findings/{id}/actions`, `/findings/actions` and `/incidents/{id}/actions`.
+- **Approval inbox.** Engineers and viewers, who may not snooze or ignore, can **Ask to ignore** an issue, a selection or a fix (`POST /ignore-requests`). Security and admin users approve or decline in **Settings ▸ Approvals** (also under **Activity**), with a count on **Settings**; the request records who asked, why, the scope and the expiry, and decisions are in the audit log (`ignore_request.create`, `ignore_request.approve`, `ignore_request.decline`).
+- **Seven states.** Issues show one of New, To do, In progress, Fixed, Regressed, Snoozed and Accepted (`display_state` on every finding). The stored `status` and `state` values are unchanged; see `docs/api.md`, "The seven states".
+- **Urgent messages and summaries include issues that came back.** They are urgent whatever their priority: the next urgent message says "web-1: 3 issues came back after a fix", once, and summaries have a **Came back after a fix** section (`counts.regressed`). There is still no message per incident.
+
+### Changed
+
+- **Accept risk** is called **Ignore** in the dashboard, and accepted issues show their reason. `accept_risk` still works and records the reason `accepted_risk`.
+- The fix and asset pages' "how to check again" text is replaced by the **Check again** block.
+
+### Upgrading
+
+- Migration `0031` adds nullable or constant-default columns to `findings` (`regressed_at`, `regressed_notified_at`, `until_fix`, `ignore_reason`, `exception_id`, `verification_before`) and `assets` (`agent_polled_at`), so the table is not rewritten, and two indexes on `findings` (`findings_identity`, `findings_open_regressed`): on a workspace with 130,000 findings they take a few seconds and lock writes to findings meanwhile. It creates `finding_exceptions`, `ignore_requests` and `checks`, each with row-level security per workspace.
+- Existing snoozes and risk acceptances keep their dates and behave as before; acceptances made before 0.7 show no reason. Issues fixed before the upgrade can be flagged regressed when they come back.
+- Upgrade agents to 0.7 for Check again within a minute. Older agents keep working and report on their interval.
+
 ## 0.6.0
 
 ### Added
