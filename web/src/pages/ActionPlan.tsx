@@ -17,7 +17,7 @@ import {
 import { useAuth } from "../auth";
 import { useDebounced, useFacets, useLoad } from "../hooks";
 import { plural } from "../format";
-import { FindingsTable } from "../components/Findings";
+import { FindingCards, FindingsTable } from "../components/Findings";
 import {
   ActionInstruction,
   BreakdownBar,
@@ -437,7 +437,10 @@ export function FixGroupDetailPage() {
         <p className="muted">No open issues in this fix.</p>
       ) : (
         <>
-          <FindingsTable rows={page} hideAsset hideGroup />
+          <div className="only-wide">
+            <FindingsTable rows={page} hideAsset hideGroup />
+          </div>
+          <FindingCards rows={page} hideAsset />
           <Pager total={total} limit={DETAIL_LIMIT} offset={offset} onChange={setOffset} />
         </>
       )}
