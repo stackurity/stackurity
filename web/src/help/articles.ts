@@ -11,7 +11,7 @@ export const ARTICLES: Article[] = [
     title: "What Stackurity does",
     section: "Getting started",
     summary: "An inventory of what runs where, matched against vulnerability and end-of-life data, grouped into actions.",
-    where: ["Overview"],
+    where: ["Home"],
     body: [
       {
         p: "Stackurity keeps an inventory of the software on your servers, repositories, container images and cloud services. It checks that inventory against public vulnerability data (OSV, CISA's Known Exploited Vulnerabilities list) and end-of-life dates (endoflife.date), and tells you what to fix first.",
@@ -22,11 +22,23 @@ export const ARTICLES: Article[] = [
           "**Collect.** A small read-only agent on each server, a CI step for each repository, or a server-side integration reports what is installed. Nothing is changed on the server.",
           "**Evaluate.** Every installed package is compared with the advisories for its ecosystem. A match is a **finding**.",
           "**Prioritise.** Each finding gets a priority (P1–P4) from its severity, whether it is being exploited, the environment and exposure. Rules in the [risk policy](help:risk-policy) decide which are **SOS**.",
-          "**Group into actions.** The [Action plan](help:action-plan) turns thousands of findings into a handful of jobs, such as “Install available security updates (917 findings)”.",
+          "**Group into fixes.** [Fixes](help:action-plan) turns thousands of findings into a handful of jobs, such as “Install available security updates (917 issues)”. **Home** shows the few that need you now.",
           "**Alert and track.** Findings of the same vulnerability for the same team form an **incident**; incidents are sent to Slack, Teams, email or webhooks.",
           "**Verify.** The next collection shows the new versions and the findings resolve on their own.",
         ],
       },
+      { h: "Finding your way" },
+      {
+        table: [
+          ["Place", "What it holds"],
+          ["Home", "The fixes that need you now (SOS or P1, with a fix available), what is left out and why, and the assets that need attention."],
+          ["Fixes", "Every fix, one card per change, most urgent first. **All issues** lists each finding with filters; **Automatic fixes** shows the upgrades Stackurity applies for you (Pro)."],
+          ["Assets", "Servers, repositories, images and cloud services, with their **Components** and **Coverage**."],
+          ["Activity", "Incidents, remediation outcomes, the evidence report and the audit log."],
+          ["Settings", "Integrations, risk policy, automatic fix policies, intelligence feeds, notifications, people, tokens and administration."],
+        ],
+      },
+      { p: "On a phone the menu is a bar at the bottom: Home, Fixes, Assets and **More** (Activity, Settings, Help and feedback). Your workspace is at the top left, search in the middle, and your account menu (email, role, help, feedback, log out) at the top right." },
       {
         note: "Stackurity runs on your own server and sends no telemetry. The only outbound calls are to the vulnerability feeds, your Git hosts and registries, the notification channels you configure, and [feedback](help:feedback) when you send it.",
       },
@@ -36,24 +48,24 @@ export const ARTICLES: Article[] = [
     id: "daily-workflow",
     title: "The daily workflow",
     section: "Getting started",
-    summary: "Open the Action plan, do the top action, let the next scan confirm it.",
-    where: ["Action plan"],
+    summary: "Open Home, do the top fix, let the next check confirm it.",
+    where: ["Home"],
     body: [
       { p: "You don't need to read individual findings to make progress. Work from actions, not findings." },
       {
         steps: [
-          "Open **Overview** and look at “What to do first”, or go straight to [Action plan](/action-plan).",
-          "Take the top card. It is sorted by urgency: SOS first, then highest priority, then the number of findings it resolves.",
-          "Read the instruction on the card. For security updates it is a command you can copy, such as `sudo apt update && sudo apt upgrade`.",
+          "Open **Home**. The headline says how many fixes need you; the cards below are the most urgent ones, SOS first, then highest priority, then the number of issues each clears. All of them are under [Fixes](/fixes).",
+          "Click **How to fix** on the top card. The fix page says what and why in one sentence, where (the asset and files), and how: the command or upgrade to make, with a **Copy** button and a warning for major upgrades.",
           "Do the work on the server, then reboot if the asset shows **Reboot pending** (patched packages protect nothing until the process or kernel restarts).",
-          "Wait for the next agent run (every 6 hours by default), or run `stackurity agent --once` on the server to report straight away.",
-          "Check the card again. Resolved findings disappear and the card shrinks or goes away.",
+          "Wait for the next agent run (every 6 hours by default), or check again now: the fix page shows the command, `sudo systemctl restart stackurity-agent` on a server or `stackurity scan` for a repository, and when the asset was last checked.",
+          "Look at the fix again. Resolved issues disappear and the fix shrinks or goes away.",
         ],
       },
       {
-        p: "When a fix can't be applied yet, record why: open the findings and use **Accept risk** or **Suppress** with a reason and an expiry date (see [Exceptions](help:exceptions)). They stop counting towards alerts and CI gates until the date passes.",
+        p: "When a fix can't be applied yet, record why: use **Snooze** or **Accept risk** on the fix page (or on the issues) with a reason and an expiry date (see [Exceptions](help:exceptions)). They stop counting towards alerts and CI gates until the date passes.",
       },
-      { p: "For alerts, someone on the team should check [Incidents](/incidents) daily and acknowledge new ones, so escalations don't fire." },
+      { p: "Home also says how many issues it does not show and why (no free fix yet, kernels that are not running, assets that are not production, lower priority, snoozed or accepted). Every number is a link to the list it counts." },
+      { p: "For alerts, someone on the team should check [Incidents](/incidents) (under **Activity**) daily and acknowledge new ones, so escalations don't fire." },
     ],
   },
   {
@@ -70,7 +82,9 @@ export const ARTICLES: Article[] = [
           ["Component", "A package or library with a version, e.g. `openssl 1.1.1f` or `lodash 4.17.15`. One component can appear on many assets."],
           ["Finding", "One vulnerability (or end-of-life issue) on one installed component on one asset. Kernels are the exception: the packages of one installed kernel version (image, modules, tools) share one finding per CVE, shown on the kernel image, and kernel headers get none."],
           ["Unique vulnerability", "A distinct CVE or advisory, however many packages it affects. This is the number people usually mean by “how many vulnerabilities”."],
-          ["Action (fix group)", "A set of findings that one piece of work resolves, such as installing security updates or upgrading the OS release. See [Action plan](help:action-plan)."],
+          ["Fix (fix group)", "A set of findings that one piece of work resolves, such as installing security updates or upgrading the OS release. Earlier versions called it an action. See [Fixes](help:action-plan)."],
+          ["Issue", "The word the dashboard uses for a finding."],
+          ["Snooze", "Hide an issue until a date (stored as the **suppressed** state). See [Exceptions](help:exceptions)."],
           ["Incident", "Findings with the same vulnerability on assets owned by the same team, plus system problems (a stale feed, a server that stopped reporting). Notifications are sent per incident."],
           ["Priority (P1–P4)", "How urgent a finding is, from a score: severity or CVSS, plus known exploitation, internet exposure, production, asset criticality and so on. P1 is the most urgent. Each priority has an acknowledge and fix deadline."],
           ["SOS", "A finding that matches one of the SOS rules in the risk policy, e.g. “known exploited in production”. SOS findings ignore quiet hours."],
@@ -92,12 +106,12 @@ export const ARTICLES: Article[] = [
     title: "Send feedback to the Stackurity team",
     section: "Getting started",
     summary: "Report a problem, suggest an improvement or ask a question from inside the app.",
-    where: ["Top bar", "Feedback"],
+    where: ["Account menu", "Send feedback"],
     keywords: "feedback bug report idea suggestion question contact support",
     body: [
       {
         steps: [
-          "Click **Feedback** in the top bar (on a phone, the speech-bubble icon).",
+          "Open your account menu (the round button with your initial, top right) and click **Send feedback**. On a phone it is also under **More** in the bottom bar.",
           "Choose **Report a problem**, **Suggest an improvement** or **Ask a question**.",
           "Write your message. Your email is filled in so the team can reply; clear it to send without one.",
           "Click **Send feedback**. You see “Thanks, it went to the Stackurity team” when it arrives.",
@@ -113,7 +127,7 @@ export const ARTICLES: Article[] = [
         ],
       },
       { p: "Nothing else: no findings, asset, host or workspace names, and not this installation's address. Your Stackurity server sends it, not your browser, and each send is recorded in the [audit log](/audit) as `feedback.send`." },
-      { note: "Operators can send feedback somewhere else, or turn it off, with `STACKURITY_FEEDBACK_URL`. When it is off, the button is not shown." },
+      { note: "Operators can send feedback somewhere else, or turn it off, with `STACKURITY_FEEDBACK_URL`. When it is off, the menu item is not shown." },
       { p: "For a security vulnerability in Stackurity itself, follow the security policy (SECURITY.md in the repository) instead of using feedback." },
     ],
   },
@@ -124,7 +138,7 @@ export const ARTICLES: Article[] = [
     title: "Add a server",
     section: "Adding servers and sources",
     summary: "Create a one-time install command in the dashboard and run it on the new Linux server. Admins only.",
-    where: ["Inventory", "Assets", "Add server"],
+    where: ["Assets", "Add server"],
     keywords: "add server new server install command enroll enrollment code curl sudo agent linux systemd onboarding",
     body: [
       {
@@ -158,7 +172,7 @@ export const ARTICLES: Article[] = [
       { h: "Afterwards" },
       {
         list: [
-          "The server appears under **Inventory ▸ Assets** within a minute; applications appear as their own assets linked to it.",
+          "The server appears under **Assets** within a minute; applications appear as their own assets linked to it.",
           "Unused codes are listed under **Pending install codes** on the same page until they expire or are used up. **Revoke** one you no longer need; servers that already enrolled keep reporting.",
           "For Windows, or to install by hand, see [Add a Linux server manually](help:add-linux-server), [Add a Windows server](help:windows-hosts) and docs/install.md.",
         ],
@@ -180,7 +194,7 @@ export const ARTICLES: Article[] = [
       { h: "1. Create a collector token (once)" },
       {
         steps: [
-          "Go to **Menu ▸ Settings ▸ API tokens**.",
+          "Go to **Settings ▸ API tokens**.",
           "Under **Create token**, enter a name such as `servers`, choose role **collector (submit observations only)**, and leave the expiry empty (or set hours).",
           "Click **Create token** and copy the token (it starts with `stk_`). It is shown only once.",
           "You can use one collector token for all servers, or one per server so you can revoke them separately. Only admins can create collector tokens.",
@@ -239,7 +253,7 @@ WantedBy=multi-user.target`,
       {
         steps: [
           "The log shows a line like `asset 7: 1834 observations stored (collection 12, 0 removed), new asset`.",
-          "Open **Menu ▸ Inventory ▸ Assets**. The server is listed under its hostname.",
+          "Open **Assets**. The server is listed under its hostname.",
           "Open it, click **Edit** under *Ownership & context* and set the owner team, criticality and whether it is internet exposed. These change priorities.",
           "Findings appear within a few minutes; the first download of a vulnerability feed for a new OS can take longer.",
         ],
@@ -271,7 +285,7 @@ WantedBy=multi-user.target`,
           "On the agent host, create an SSH key for the tunnel (no passphrase, readable only by root).",
           "Add a systemd unit that keeps the tunnel open (below).",
           "Point the agent at the local end: `Environment=STACKURITY_SERVER=http://127.0.0.1:8180`, and add `After=stackurity-tunnel.service` and `Wants=stackurity-tunnel.service` to the agent unit.",
-          "Start both units and check the asset appears under **Inventory ▸ Assets**.",
+          "Start both units and check the asset appears under **Assets**.",
         ],
       },
       {
@@ -310,7 +324,7 @@ WantedBy=multi-user.target`,
           "Copy `stackurity_<version>_windows_amd64.exe` to the server, e.g. `C:\\Program Files\\Stackurity\\stackurity.exe`.",
           "Save the token to `C:\\ProgramData\\Stackurity\\token` and restrict the file to the account that runs the agent.",
           "Run it as a scheduled task (at startup, running continuously) or with a service wrapper, as a standard user.",
-          "Check the server appears under **Inventory ▸ Assets** with its Windows release and build.",
+          "Check the server appears under **Assets** with its Windows release and build.",
         ],
       },
       {
@@ -333,7 +347,7 @@ stackurity.exe agent --interval 6h`,
       { h: "Option A: the server clones it on a schedule" },
       {
         steps: [
-          "Go to **Menu ▸ Settings ▸ Integrations** and click **Add integration ▸ Git repository** (admin).",
+          "Go to **Settings ▸ Integrations** and click **Add integration ▸ Git repository** (admin).",
           "Enter the HTTPS URL. For a private repository, create a read-only access token at your Git host, put it in the server's environment as `STACKURITY_SECRET_GITHUB` (any name starting with `STACKURITY_SECRET_`), and enter the secret reference `env:STACKURITY_SECRET_GITHUB`. GitHub needs username `x-access-token`, GitLab `oauth2`, Bitbucket `x-token-auth`.",
           "Optionally set a branch or tag, the environment, and how often to run (15 minutes to a week; default 6 hours).",
           "Click **Create integration**, then **Run now** to scan straight away. The status shows the last attempt and any error.",
@@ -414,7 +428,7 @@ stackurity.exe agent --interval 6h`,
     body: [
       {
         steps: [
-          "Go to **Menu ▸ Settings ▸ Integrations ▸ Add integration ▸ Container image** (admin).",
+          "Go to **Settings ▸ Integrations ▸ Add integration ▸ Container image** (admin).",
           "Enter the image reference, e.g. `ghcr.io/acme/shop:1.4`. Pin a digest (`@sha256:…`) to inventory exactly what you deploy; a tag is re-resolved on every run.",
           "Optionally set the platform (`linux/amd64`) for multi-architecture images, and the environment.",
           "For a private registry, set a secret reference to the token or password (with **Registry username** when the secret is a password).",
@@ -433,7 +447,7 @@ stackurity.exe agent --interval 6h`,
     body: [
       {
         steps: [
-          "Review what the plugin needs under **Menu ▸ Settings ▸ Plugins**: permissions (only `Describe*`/`List*` calls), credentials and network access.",
+          "Review what the plugin needs under **Settings ▸ Plugins**: permissions (only `Describe*`/`List*` calls), credentials and network access.",
           "Create a read-only IAM user or role with those permissions.",
           "Put the keys in a file on the server, e.g. `/run/secrets/aws.json` containing `{\"aws_access_key_id\": \"…\", \"aws_secret_access_key\": \"…\"}`. Without keys the plugin uses the instance role.",
           "Go to **Settings ▸ Integrations ▸ Add integration ▸ Plugin**, choose **AWS managed services**, enter the regions, optionally services, role ARN, external ID and the tag whose value becomes the environment.",
@@ -476,16 +490,16 @@ stackurity.exe agent --interval 6h`,
   // ---------------------------------------------------------------- Daily work
   {
     id: "action-plan",
-    title: "Action plan",
+    title: "Fixes",
     section: "Daily work",
-    summary: "Findings grouped by the one piece of work that resolves them, most urgent first.",
-    where: ["Action plan"],
-    keywords: "fix group actions security updates release upgrade kernels",
+    summary: "Findings grouped by the one change that resolves them, most urgent first, and what each fix page tells you.",
+    where: ["Fixes"],
+    keywords: "fix group actions action plan security updates release upgrade kernels needs you hidden snooze",
     body: [
-      { p: "The Action plan answers “what should we do?”. Each card is one action on one asset, with the number of unique vulnerabilities and findings it resolves." },
+      { p: "**Fixes** answers “what should we do?”. Each card is one change on one asset, with the number of issues it clears. The page was called Action plan before 0.6; old links still work." },
       {
         table: [
-          ["Kind", "What it means", "Typical action"],
+          ["Kind", "What it means", "Typical fix"],
           ["Security updates", "OS packages that have a fix in the current release.", "`sudo apt update && sudo apt upgrade` (or dnf/apk), then reboot if needed."],
           ["Old kernels", "Kernels installed but not running. Not exploitable until booted.", "`sudo apt autoremove --purge` to remove them."],
           ["Release upgrade", "The OS release is end of life, plus OS issues with no free fix in this release and its packages that are also end of life upstream. May say “Ubuntu Pro optional (paid)” when the paid channel has fixes.", "Upgrade the release (e.g. Ubuntu 20.04 → 24.04). Ubuntu Pro (paid subscription) can bridge the time until then."],
@@ -494,35 +508,48 @@ stackurity.exe agent --interval 6h`,
           ["No fix yet", "No source lists a fixed version.", "Mitigate, accept the risk, or wait."],
         ],
       },
-      { h: "Using a card" },
+      { h: "Needs you, and what is left out" },
       {
-        list: [
-          "**Badges**: highest priority in the group, SOS, number of known-exploited vulnerabilities, “Ubuntu Pro optional (paid)”, and effort (low, medium, high).",
-          "**Bars**: findings by priority and by severity, with the numbers written out.",
-          "**Copy** copies the command when the action is one.",
-          "**View N findings** expands the list inline (paged); **Open group** shows the full detail.",
-          "**Work on these in Findings** (on the group page) opens them filtered, where you can assign, acknowledge or accept them in bulk.",
+        table: [
+          ["Chip", "Which fixes"],
+          ["Needs you", "A fix exists, and it matches an SOS rule or has a P1 issue, on a production asset or one with no environment. Home shows these."],
+          ["No fix yet", "No free fixed version is published."],
+          ["Old kernels", "Kernels that are installed but not running."],
+          ["Not production", "On assets whose environment is not one of the risk policy's production environments."],
+          ["Lower priority", "Everything else: P2 to P4 without SOS."],
         ],
       },
-      { p: "Filters: search, asset, environment and kind of action. On an asset's page, the **Action plan** tab shows the same for that asset only." },
+      { p: "Each fix is in exactly one of these, checked in that order. Home counts the issues in the others, plus snoozed and accepted ones, so nothing is left out without saying why." },
+      { h: "A fix page" },
+      {
+        list: [
+          "**What and why**: one sentence, for example how many issues it clears and how many are known to be exploited.",
+          "**Where**: the asset, its environment, the files the issues were found in, and the packages. **Last checked** says when the asset last reported, with the command to check again now (restart the agent on a server, `stackurity scan` for a repository).",
+          "**How to fix**: the command or upgrade with a **Copy** button, the kind of change (patch, minor, major), a warning for major upgrades, and the recommended version from release data.",
+          "**Issues this fix clears**, with bars by priority and by severity.",
+          "**Assign, snooze or accept the risk**: applies to every issue of the fix (up to 2,000; for bigger fixes, act from All issues). Snooze and accept need the security role, a reason and an end date.",
+        ],
+      },
+      { p: "Filters (search, asset, environment, kind of fix) are behind the **Filters** button. On an asset's page, the **Fixes** tab shows the same for that asset only." },
     ],
   },
   {
     id: "findings",
-    title: "Findings: filters, states and bulk actions",
+    title: "All issues: filters, states and bulk actions",
     section: "Daily work",
     summary: "Every individual finding, with workflow state, assignee and deadlines.",
-    where: ["Issues", "Findings"],
+    where: ["Fixes", "All issues"],
     keywords: "filter state acknowledge assign bulk priority severity verification",
     body: [
+      { p: "**Fixes ▸ All issues** lists every finding. The chips at the top are one-tap presets: **Open**, **Urgent** (P1, not snoozed or accepted), **Assigned to me**, **New this week** and **Known exploited**. Everything else is behind the **Filters** button (a sheet from the bottom on a phone). **Group by asset** sorts by asset and puts a heading over each one's issues. On a phone each issue is a card." },
       { h: "Filters" },
       {
         table: [
           ["Filter", "Use"],
           ["Search", "CVE, package, title or asset name."],
           ["Status", "Open (default), resolved, or all. Findings resolve on their own when the component is upgraded or removed."],
-          ["Workflow state", "New, acknowledged, in progress, suppressed, risk accepted, or **Active** (anything not suppressed or accepted)."],
-          ["Fix group", "Only findings that one action resolves."],
+          ["Workflow state", "New, acknowledged, in progress, snoozed (suppressed), risk accepted, or **Active** (anything not snoozed or accepted)."],
+          ["Fix", "Only the issues that one fix clears."],
           ["Priority / Severity", "Tick one or more."],
           ["Kind", "Vulnerability or end of life."],
           ["Verification", "Confirmed (exact version from the package database or lockfile), needs validation (version uncertain, severity withheld), stale (the asset stopped reporting)."],
@@ -534,7 +561,7 @@ stackurity.exe agent --interval 6h`,
       {
         list: [
           "**New** → **Acknowledged** (someone has seen it; stops the acknowledgement escalation) → **In progress**.",
-          "**Suppressed** and **Risk accepted** are exceptions set by the security role; see [Exceptions](help:exceptions).",
+          "**Snoozed** (stored as suppressed) and **Risk accepted** are exceptions set by the security role; see [Exceptions](help:exceptions).",
           "Detection status (open/resolved) is automatic and separate from the state.",
         ],
       },
@@ -542,25 +569,25 @@ stackurity.exe agent --interval 6h`,
       {
         steps: [
           "Tick findings (or the header box for the whole page).",
-          "Use the bar that appears: Acknowledge, Start work, Assign…, and for security users Suppress… or Accept risk….",
+          "Use the bar that appears: Acknowledge, Start work, Assign…, and for security users Snooze… or Accept risk….",
           "A bulk action applies to up to 500 findings at a time; the result lists any that could not change.",
         ],
       },
-      { p: "Open a finding to see why it has its priority (each factor and its points), its deadlines, history, the matched advisories and evidence, and which action resolves it (“Part of: …”)." },
+      { p: "Open a finding to see why it has its priority (each factor and its points), its deadlines, history, the matched advisories and evidence, and which fix clears it (“Part of: …”)." },
     ],
   },
   {
     id: "exceptions",
-    title: "Exceptions: suppress, accept risk, mitigations",
+    title: "Exceptions: snooze, accept risk, mitigations",
     section: "Daily work",
     summary: "Record why a finding won't be fixed now, what reduces the risk meanwhile, and until when.",
-    where: ["Issues", "Findings"],
-    keywords: "suppress accept risk exception mitigation expiry false positive",
+    where: ["Fixes", "All issues"],
+    keywords: "snooze suppress accept risk exception mitigation expiry false positive",
     body: [
       {
         steps: [
-          "Open the finding (or tick several in Findings).",
-          "Choose **Suppress…** (for example a false positive or a compensating control) or **Accept risk…** (the risk is known and accepted). Only the **security** and **admin** roles can.",
+          "Open the fix (to act on all its issues), the issue, or tick several in **All issues**.",
+          "Choose **Snooze…** (stored as suppressed; for example a false positive or a compensating control) or **Accept risk…** (the risk is known and accepted). Only the **security** and **admin** roles can.",
           "Enter the **reason** (required), an optional **mitigation** (what reduces the risk meanwhile, e.g. “port closed by firewall”), and the **expiry date** (required; at most the risk policy's maximum, 365 days by default).",
           "Confirm. The finding leaves alerts and CI gates until the date passes, then returns as new and is announced again.",
         ],
@@ -573,7 +600,7 @@ stackurity.exe agent --interval 6h`,
     title: "Incidents",
     section: "Daily work",
     summary: "Findings grouped by vulnerability and owner team, plus system problems. Notifications are sent per incident.",
-    where: ["Issues", "Incidents"],
+    where: ["Activity", "Incidents"],
     keywords: "incident alert escalation ack overdue",
     body: [
       {
@@ -594,7 +621,7 @@ stackurity.exe agent --interval 6h`,
     title: "Assets: filters, tabs, reboot and drift",
     section: "Daily work",
     summary: "Everything Stackurity knows about each server, repository, image or service.",
-    where: ["Inventory", "Assets"],
+    where: ["Assets"],
     keywords: "asset reboot pending drift replica relations coverage collections ownership",
     body: [
       { h: "Filters" },
@@ -608,11 +635,12 @@ stackurity.exe agent --interval 6h`,
       {
         list: [
           "**Edit** (engineer): environment, owner team, criticality, internet exposure, tags. These feed the priority.",
-          "**Action plan** tab: the actions for this asset.",
-          "**Findings**, **Inventory** (every component; click a row for its evidence), **Coverage** (what was checked), **Collections** (each report received).",
+          "**Fixes** tab: the fixes for this asset. Above the tabs, the health line says how many need you, and when the asset was last checked with the command to check again.",
+          "**Issues**, **Inventory** (every component; click a row for its evidence), **Coverage** (what was checked), **Collections** (each report received).",
           "**Relations**: link assets, e.g. an image `built_from` a repository, or a standby `replica_of` its primary.",
           "**Drift**: compares versions with a primary (`replica_of`) or any asset you pick, showing what is behind, ahead or missing.",
-          "**Remediation**: changes applied to this host, and (admin) **Enable remediation**.",
+          "**Automatic fixes**: changes applied to this host, and (admin) **Enable remediation**.",
+          "**Details** (below the tabs, collapsed): attributes, identifiers, owner and context. **Delete asset** is in the **Danger zone** at the bottom (admin).",
           "**Download CycloneDX** exports the inventory; **Delete asset** (admin) removes it and its history.",
         ],
       },
@@ -623,7 +651,7 @@ stackurity.exe agent --interval 6h`,
     title: "Components",
     section: "Daily work",
     summary: "Every package across all assets, with where each version is used.",
-    where: ["Inventory", "Components"],
+    where: ["Assets", "Components"],
     body: [
       {
         steps: [
@@ -638,17 +666,17 @@ stackurity.exe agent --interval 6h`,
     title: "Coverage, Intelligence feeds and gaps",
     section: "Daily work",
     summary: "Make sure “no findings” really means nothing was found.",
-    where: ["Issues", "Intelligence"],
+    where: ["Settings", "Intelligence and feeds"],
     keywords: "feeds osv kev endoflife stale evaluation gap coverage state not checked unsupported awaiting verification refresh re-evaluate",
     body: [
       {
-        p: "**Coverage** (Issues ▸ Coverage) counts assets by coverage state and lists what each collector checked, skipped, failed or doesn't support yet. Keep **Problems only** on to see the gaps.",
+        p: "**Coverage** (Assets ▸ Coverage) counts assets by coverage state and lists what each collector checked, skipped, failed or doesn't support yet. Keep **Problems only** on to see the gaps.",
       },
       {
         p: "Each asset has a **coverage state**: **Healthy and recently evaluated**, or one or more of **Failed collection**, **Stale intelligence**, **Partially evaluated**, **Unsupported** and **Awaiting verification**, each with its reason. The asset page shows them above the tabs, the Findings tab says how many components the findings do not cover, and the Inventory tab marks each component as **Not checked**, **Unsupported**, **Stale intelligence** or **Awaiting verification** (filter by **Coverage**).",
       },
       {
-        p: "**Intelligence** (Issues ▸ Intelligence) lists the data feeds: OSV per ecosystem (hourly), CISA KEV and endoflife.date (daily), and the npm and Packagist registries. Each shows OK, Stale, Error, Never synced or Disabled.",
+        p: "**Intelligence** (Settings ▸ Intelligence and feeds) lists the data feeds: OSV per ecosystem (hourly), CISA KEV and endoflife.date (daily), and the npm and Packagist registries. Each shows OK, Stale, Error, Never synced or Disabled.",
       },
       {
         list: [
@@ -665,7 +693,7 @@ stackurity.exe agent --interval 6h`,
     title: "Evidence report",
     section: "Daily work",
     summary: "A printable patch-management summary for a period, for audits and management.",
-    where: ["Issues", "Evidence report"],
+    where: ["Activity", "Evidence report"],
     keywords: "audit report compliance print pdf sla",
     body: [
       {
@@ -684,11 +712,11 @@ stackurity.exe agent --interval 6h`,
     title: "How remediation works (and why Plans is empty)",
     section: "Remediation",
     summary: "Remediation is off until an admin creates an enabled policy and enrols hosts. Plans then appear for approval.",
-    where: ["Remediation", "Plans"],
+    where: ["Fixes", "Automatic fixes"],
     keywords: "remediation plans empty approve lifecycle safety automatic",
     body: [
       {
-        p: "Remediation lets Stackurity apply security updates for you, within limits you set. **It is off by default**: with no enabled policy, nothing is ever planned, so **Remediation ▸ Plans** stays empty.",
+        p: "Remediation lets Stackurity apply security updates for you, within limits you set. **It is off by default**: with no enabled policy, nothing is ever planned, so **Fixes ▸ Automatic fixes** stays empty.",
       },
       { h: "What has to be in place" },
       {
@@ -703,7 +731,7 @@ stackurity.exe agent --interval 6h`,
       {
         table: [
           ["Status", "Meaning"],
-          ["proposed", "Waiting for a decision. Shown under **Needs approval** and as the count on the Remediation menu."],
+          ["proposed", "Waiting for a decision. Shown under **Needs approval** and as the count next to **Fixes** in the menu."],
           ["approved", "Released within the policy's maintenance window and limits."],
           ["in progress", "Canary assets first, then the rest after the soak time."],
           ["succeeded", "Every change applied **and verified** by freshly collected inventory and passing health checks."],
@@ -727,7 +755,7 @@ stackurity.exe agent --interval 6h`,
     title: "Remediation policies, field by field",
     section: "Remediation",
     summary: "What a policy is, every field, and a worked example for staging and production.",
-    where: ["Remediation", "Policies"],
+    where: ["Settings", "Automatic fixes"],
     keywords: "policy field scope change types approval window canary soak health rollback example staging production",
     body: [
       {
@@ -760,11 +788,11 @@ stackurity.exe agent --interval 6h`,
       { h: "Worked example: automatic for staging, approval for production" },
       {
         steps: [
-          "Go to **Menu ▸ Remediation ▸ Policies** and click **Add policy**.",
+          "Go to **Settings ▸ Automatic fixes** and click **Add policy**.",
           "Policy 1, “staging security backports”: Target **Host packages**, Ecosystems **deb**, Change types **Security backport** only, Environments **staging**, Approval **Automatic**, window Mon–Fri 02:00–05:00 in your time zone, Canary 1, Soak 60, Max concurrent 5, Health checks `nginx.service`, Roll back automatically on. Tick **Enabled** and save.",
           "Policy 2, “production security backports”: the same, but Environments **production**, Approval **Required**, Minimum finding priority **P2**, Canary 2, Soak 240, Max concurrent 2.",
           "Enrol the hosts ([Enable remediation on a host](help:enable-host-remediation)), allowlisting the packages you are comfortable with.",
-          "Staging plans now run on their own in the window. Production plans wait in **Remediation ▸ Plans ▸ Needs approval**; open one, check the assets, environments and rollback note, and click **Approve** or **Reject** with a note.",
+          "Staging plans now run on their own in the window. Production plans wait in **Fixes ▸ Automatic fixes ▸ Needs approval**; open one, check the assets, environments and rollback note, and click **Approve** or **Reject** with a note.",
         ],
       },
       { note: "Before automating production: run with approval required on non-production first, deliberately test a rollback, and confirm your backups and snapshots." },
@@ -775,13 +803,13 @@ stackurity.exe agent --interval 6h`,
     title: "Enable remediation on a host",
     section: "Remediation",
     summary: "Mint a host-bound token, write the allowlist, and run the agent as root with --remediate.",
-    where: ["Inventory", "Assets", "(host)", "Remediation"],
+    where: ["Assets", "(host)", "Automatic fixes"],
     keywords: "enable remediation host token allowlist root remediate",
     body: [
       { warn: "The remediation agent runs as **root** so it can use the package manager. Hosts you don't enrol keep the unprivileged, read-only agent." },
       {
         steps: [
-          "Open the host under **Inventory ▸ Assets**, go to the **Remediation** tab and click **Enable remediation…** (admin), then **Create host token**. Copy it; it is shown once. It can only report for this host and fetch this host's changes.",
+          "Open the host under **Assets**, go to the **Automatic fixes** tab and click **Enable remediation…** (admin), then **Create host token**. Copy it; it is shown once. It can only report for this host and fetch this host's changes.",
           "On the host, save the token to `/etc/stackurity/token` (mode 600) and write `/etc/stackurity/remediation-allow`: one shell-glob package pattern per line, e.g. `libssl*`, `openssl`. Only listed packages can ever change, whatever the server asks.",
           "Install the systemd unit shown on the page: `stackurity agent --remediate --interval 6h --action-interval 5m`, running as root.",
           "`systemctl daemon-reload && systemctl enable --now stackurity-remediate.service`, and stop the read-only agent on that host if it uses a different token.",
@@ -881,7 +909,7 @@ stackurity.exe agent --interval 6h`,
       {
         table: [
           ["Role", "Can"],
-          ["viewer", "See inventory, findings, incidents, the action plan, reports and the audit log. Notification settings and remediation policies need security."],
+          ["viewer", "See inventory, fixes, issues, incidents, reports and the audit log. Notification settings and remediation policies need security."],
           ["engineer", "Edit assets and relations, acknowledge/assign/comment on findings, run integrations, refresh feeds."],
           ["security", "Everything an engineer can, plus suppress, accept risk and reopen findings, view notifications and remediation policies, approve plans (not major)."],
           ["admin", "Everything: users, teams, tokens, integrations, plugins, channels, routes, risk policy, remediation policies, deleting assets, identity conflicts, jobs."],
@@ -945,7 +973,7 @@ stackurity.exe agent --interval 6h`,
         list: [
           "**Identity conflicts** (admin): when a report's identifiers match more than one asset (e.g. a cloned VM image reused a machine-id), pick the asset to keep; the others are merged into it.",
           "**Jobs** (admin): the background queue — integration runs, feed syncs, evaluations — with attempts and errors. Read-only.",
-          "**Audit log** (everyone): sign-ins and every change, with the actor and details. Filter by object type.",
+          "**Audit log** (everyone, under **Activity**): sign-ins and every change, with the actor and details. Filter by object type.",
         ],
       },
     ],
