@@ -21,6 +21,8 @@ Each release's section is published as its GitHub release notes, and a tag witho
 - A fix that is urgent because it matches an SOS rule, not because it is P1, says **Urgent: SOS rule**, so the label does not look wrong next to a P2 badge.
 - **The first summary after upgrading to 0.6 or later no longer lists every existing asset as newly connected** ("Daily summary: 51 fixed, 11 assets connected"). Migration `0030` marked existing assets as announced at the time of the upgrade, and summaries treat an asset announced in their period as new. Migration `0035` sets those assets back to when they were first seen; assets connected since keep their time. Installations that already sent that summary see nothing change; a weekly summary due after the upgrade will no longer repeat it.
 
+- **A Jira escalation that creates the incident's issue now adds its "Escalated: ..." comment.** When an escalation was the delivery that created a new incident's issue (the incident's earlier deliveries had failed, or with several replicas it won the race to create the issue), the issue never said the incident had been escalated.
+
 ### Upgrading
 
 - Migration `0039` adds `workspaces.asset_limit` (empty: no limit) and the `refused_assets` table. Nothing changes until a limit is set.

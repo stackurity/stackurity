@@ -74,33 +74,66 @@ func TestRateLimitSharedAcrossReplicas(t *testing.T) {
 	}
 }
 
+// dbNow reads the database clock. Rate limit windows follow it, not this
+// process's clock, which can be off by a large part of a second when the
+// database runs in a container or VM.
+func dbNow(t *testing.T, st *store.Store) time.Time {
+	t.Helper()
+	var now time.Time
+	if err := st.Pool.QueryRow(tenant.System(context.Background()), `SELECT clock_timestamp()`).Scan(&now); err != nil {
+		t.Fatal(err)
+	}
+	return now
+}
+
+// waitDB sleeps until the database clock reaches at.
+func waitDB(t *testing.T, st *store.Store, at time.Time) {
+	t.Helper()
+	for {
+		d := at.Sub(dbNow(t, st))
+		if d <= 0 {
+			return
+		}
+		time.Sleep(d)
+	}
+}
+
 // A counter starts again in the next window, and ended windows are purged.
 func TestRateLimitWindowAndPurge(t *testing.T) {
 	a, b := replicas(t)
 	ctx := context.Background()
-	// Start just after a window boundary so both hits share a window.
-	time.Sleep(time.Until(time.Now().Truncate(time.Second).Add(time.Second + 50*time.Millisecond)))
-	if h, _ := a.RateLimitHit(ctx, "setup", "198.51.100.1", time.Second); h != 1 {
+	const window = 2 * time.Second
+	// Open a connection on both pools first, so that no hit waits for one.
+	dbNow(t, b)
+	// Start just after a window boundary on the database clock, so that
+	// the first two hits share a window and the third lands in the next.
+	// Windows are aligned to the Unix epoch, as in RateLimitHit.
+	now := dbNow(t, a).Unix()
+	start := time.Unix(now-now%int64(window/time.Second), 0).Add(window)
+	waitDB(t, a, start.Add(50*time.Millisecond))
+	if h, _ := a.RateLimitHit(ctx, "setup", "198.51.100.1", window); h != 1 {
 		t.Fatalf("first hit: %d", h)
 	}
-	if h, _ := b.RateLimitHit(ctx, "setup", "198.51.100.1", time.Second); h != 2 {
+	if h, _ := b.RateLimitHit(ctx, "setup", "198.51.100.1", window); h != 2 {
 		t.Fatalf("second hit: %d", h)
 	}
-	if _, err := a.RateLimitHit(ctx, "setup", "198.51.100.2", time.Hour); err != nil {
-		t.Fatal(err)
-	}
-	time.Sleep(1100 * time.Millisecond)
-	if h, _ := b.RateLimitHit(ctx, "setup", "198.51.100.1", time.Second); h != 1 {
+	waitDB(t, a, start.Add(window+50*time.Millisecond))
+	if h, _ := b.RateLimitHit(ctx, "setup", "198.51.100.1", window); h != 1 {
 		t.Errorf("next window: %d; want a fresh count", h)
 	}
-	time.Sleep(1100 * time.Millisecond)
+	// A window that cannot end while the test runs (one aligned to the
+	// hour could end between this hit and the purge).
+	if _, err := a.RateLimitHit(ctx, "setup", "198.51.100.2", 100*365*24*time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	waitDB(t, a, start.Add(2*window+50*time.Millisecond))
 	n, err := a.PurgeRateLimits(ctx)
 	if err != nil || n != 2 {
 		t.Errorf("purged %d (%v); want the two ended windows", n, err)
 	}
 	var left int
 	if err := a.Pool.QueryRow(tenant.System(ctx), `SELECT count(*) FROM rate_limits`).Scan(&left); err != nil || left != 1 {
-		t.Errorf("%d windows left (%v); want the open hour-long one", left, err)
+		t.Errorf("%d windows left (%v); want the open long one", left, err)
 	}
 }
 

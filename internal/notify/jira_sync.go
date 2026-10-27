@@ -78,8 +78,17 @@ func (d *Dispatcher) syncJira(ctx context.Context, ch *store.Channel, del store.
 		if in.Status != "open" {
 			return nil // resolved before an issue was made: nothing to track
 		}
-		if link, err = d.createJiraIssue(ctx, j, cfg, ch, ws, in); err != nil || link == nil {
+		if link, err = d.createJiraIssue(ctx, j, cfg, ch, ws, in); err != nil {
 			return err
+		}
+		if link == nil {
+			// Just created: the description covers the incident as it is,
+			// but not what this event adds (an escalation's note), so the
+			// update below still runs. Several events for a new incident
+			// race to create its issue, and any of them can win.
+			if link, err = d.Store.IssueLinkFor(ctx, ch.ID, in.ID); err != nil {
+				return err
+			}
 		}
 	}
 	return d.updateJiraIssue(ctx, j, cfg, link, in, del, attempts, msg)
@@ -87,8 +96,8 @@ func (d *Dispatcher) syncJira(ctx context.Context, ch *store.Channel, del store.
 
 // createJiraIssue creates the incident's issue, or finds the one an earlier
 // attempt created, and records it. It returns the link to update when the
-// issue already existed, and nil when it has just been created (it then
-// describes the incident as it is).
+// issue already existed, and nil when it has just been created (recorded as
+// in sync with the incident as it is).
 func (d *Dispatcher) createJiraIssue(ctx context.Context, j *jiraClient, cfg ChannelConfig, ch *store.Channel, ws int64, in *store.Incident) (*store.IssueLink, error) {
 	existing, err := d.Store.ClaimIssueCreation(ctx, ch.ID, in.ID, issueClaimLease)
 	if err != nil || existing != nil {

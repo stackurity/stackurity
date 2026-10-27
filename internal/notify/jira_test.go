@@ -517,6 +517,36 @@ func TestJiraOneIssueAcrossReplicas(t *testing.T) {
 	}
 }
 
+// An escalation that creates the issue (the incident's earlier deliveries
+// failed, or it won the race against them on another replica) still adds
+// its note: the description alone does not say the incident was escalated.
+func TestJiraEscalationThatCreatesTheIssue(t *testing.T) {
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	f := setup(t)
+	fj, srv := newFakeJira(t, false)
+	ch := f.addJira(ctx, srv.URL, false, nil)
+	f.addAsset("web-1", "production", true)
+	f.setFindings("web-1")
+	if err := f.d.Store.CorrelateIncidents(ctx); err != nil {
+		t.Fatal(err)
+	}
+	incs, _, _ := f.st.ListIncidents(ctx, store.IncidentFilter{})
+	in := incs[0]
+	if _, err := f.st.EnqueueDelivery(ctx, ch.ID, nil, &in.ID, "escalated", "k-escalated", f.d.message(in, "escalated")); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.d.Deliver(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if fj.creates != 1 {
+		t.Fatalf("created %d issues", fj.creates)
+	}
+	is := fj.snapshot()[0]
+	if len(is.Comments) != 1 || !strings.Contains(string(is.Comments[0]), "Escalated") {
+		t.Errorf("comments on the issue the escalation created: %s", is.Comments)
+	}
+}
+
 func TestJiraRateLimitAndAuthFailures(t *testing.T) {
 	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
 	f := setup(t)
