@@ -743,9 +743,10 @@ var volatile = regexp.MustCompile(`"[a-z_]*(_at|_since|_until|_age|_days|_hours|
 
 var timestamp = regexp.MustCompile(`"\d{4}-\d{2}-\d{2}T[0-9:.]+(Z|[+-]\d{2}:\d{2})"`)
 
-// relativeAge is a time in words ("seen just now", "seen 1 min ago"),
-// which moves on by itself while a slow sweep runs.
-var relativeAge = regexp.MustCompile(`\b(just now|\d+ (sec|min|hour|day)s? ago)`)
+// relativeAge is a time in words ("seen just now", "seen 1 min ago",
+// "2 h ago"; why.go and the dashboard), which moves on by itself while a
+// slow sweep runs.
+var relativeAge = regexp.MustCompile(`\b(just now|\d+ (sec|min|h|hour|d|day)s? ago)\b`)
 
 func normalise(body string) string {
 	body = relativeAge.ReplaceAllString(body, "_ago")
