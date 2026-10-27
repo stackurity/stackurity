@@ -153,10 +153,10 @@ func Register(base context.Context, w Scheduler, st *store.Store, log *slog.Logg
 }
 
 // Start is the periodic task. It returns at once and checks in the
-// background: the worker runs periodic tasks one after another, and the
-// random wait (up to Jitter) and the request (up to requestTimeout) would
-// otherwise hold up every other task, notifications included. A failure
-// is logged; the next check is 12 hours later, as when it ran inline.
+// background, so the random wait (up to Jitter) and the request (up to
+// requestTimeout) do not hold one of the worker's few periodic slots. A
+// failure is logged; the next check is 12 hours later, as when it ran
+// inline.
 func (c *Checker) Start(ctx context.Context) error {
 	if !c.running.CompareAndSwap(false, true) {
 		return nil // the previous check is still running

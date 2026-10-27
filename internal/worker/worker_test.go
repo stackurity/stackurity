@@ -480,3 +480,228 @@ func TestDeferredJobFreesItsSlot(t *testing.T) {
 	}
 	t.Fatal("the deferred evaluation did not run after the lock was released")
 }
+
+// startWorker runs w until the test ends or the returned stop is called;
+// stop returns once Run has returned.
+func startWorker(t *testing.T, w *Worker) (stop func()) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { w.Run(ctx); close(done) }()
+	stop = func() {
+		cancel()
+		<-done
+	}
+	t.Cleanup(stop)
+	return stop
+}
+
+// A task that is stuck does not hold up another: the fast task keeps its
+// pace (one check per Tick) the whole time the slow one runs. Before, the
+// scheduler ran tasks one after another and the fast one waited.
+func TestSlowTaskDoesNotDelayFastOne(t *testing.T) {
+	st := store.New(testdb.New(t))
+	w := newWorker(st)
+	w.Tick = 50 * time.Millisecond
+	slowStarted, release := make(chan struct{}), make(chan struct{})
+	w.Every("slow", time.Millisecond, func(ctx context.Context) error {
+		select {
+		case <-slowStarted:
+		default:
+			close(slowStarted)
+		}
+		select {
+		case <-release:
+		case <-ctx.Done():
+		}
+		return nil
+	})
+	var mu sync.Mutex
+	var runs []time.Time
+	w.Every("fast", time.Millisecond, func(context.Context) error {
+		mu.Lock()
+		runs = append(runs, time.Now())
+		mu.Unlock()
+		return nil
+	})
+	startWorker(t, w)
+	<-slowStarted
+	from := time.Now()
+	time.Sleep(1500 * time.Millisecond)
+	close(release)
+	mu.Lock()
+	defer mu.Unlock()
+	var during []time.Time
+	for _, r := range runs {
+		if r.After(from) {
+			during = append(during, r)
+		}
+	}
+	// 30 ticks in 1.5 s; allow for a slow test machine.
+	if len(during) < 15 {
+		t.Fatalf("fast task ran %d times in 1.5 s while the slow one was stuck; want about 30", len(during))
+	}
+	prev := from
+	for _, r := range during {
+		if gap := r.Sub(prev); gap > 500*time.Millisecond {
+			t.Errorf("fast task paused %v while the slow one ran", gap)
+		}
+		prev = r
+	}
+}
+
+// A task never runs twice at once in one process: not when it is due again
+// while still running, not when it is registered twice, and not when a run
+// that lost its lease (and ignores cancellation) is still going and the task
+// could be claimed again.
+func TestTaskNeverRunsTwiceInOneProcess(t *testing.T) {
+	st := store.New(testdb.New(t))
+	ctx := tenant.System(context.Background())
+
+	w := newWorker(st)
+	w.Tick = 5 * time.Millisecond
+	var runs, running, overlap atomic.Int32
+	fn := func(context.Context) error {
+		if running.Add(1) > 1 {
+			overlap.Add(1)
+		}
+		runs.Add(1)
+		time.Sleep(30 * time.Millisecond)
+		running.Add(-1)
+		return nil
+	}
+	w.Every("busy", time.Millisecond, fn)
+	w.Every("busy", time.Millisecond, fn)
+	stop := startWorker(t, w)
+	time.Sleep(time.Second)
+	stop()
+	if runs.Load() < 5 || overlap.Load() != 0 {
+		t.Fatalf("runs = %d, overlapping = %d; want many runs, none overlapping", runs.Load(), overlap.Load())
+	}
+
+	// A run that lost its lease but has not returned: the row is free, yet
+	// this process does not start the task again.
+	s := newWorker(st)
+	s.Lease = 400 * time.Millisecond
+	started, release := make(chan struct{}), make(chan struct{})
+	var stuckRuns atomic.Int32
+	s.Every("stuck", time.Millisecond, func(context.Context) error {
+		if stuckRuns.Add(1) == 1 {
+			close(started)
+		}
+		<-release // ignores cancellation
+		return nil
+	})
+	s.register(ctx)
+	first := make(chan struct{})
+	go func() { s.runPeriodic(ctx, s.periodic[0]); close(first) }()
+	<-started
+	if _, err := st.Pool.Exec(ctx, `UPDATE periodic_tasks SET locked_by = NULL, locked_until = NULL WHERE name = 'stuck'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.runPeriodic(ctx, s.periodic[0]); err != nil {
+		t.Fatal(err)
+	}
+	if n := stuckRuns.Load(); n != 1 {
+		t.Errorf("task started %d times while its first run was still going", n)
+	}
+	close(release)
+	<-first
+}
+
+// A running task whose lease is taken (this replica lost it) is cancelled
+// within a renewal, and its outcome is not recorded.
+func TestPeriodicLeaseLossCancelsTask(t *testing.T) {
+	st := store.New(testdb.New(t))
+	ctx := tenant.System(context.Background())
+	w := newWorker(st)
+	w.Lease, w.Tick = 400*time.Millisecond, 20*time.Millisecond
+	started := make(chan struct{})
+	cancelled := make(chan time.Time, 1)
+	var n atomic.Int32
+	w.Every("victim", time.Hour, func(ctx context.Context) error {
+		if n.Add(1) > 1 {
+			return nil
+		}
+		close(started)
+		select {
+		case <-ctx.Done():
+			cancelled <- time.Now()
+		case <-time.After(10 * time.Second):
+		}
+		return ctx.Err()
+	})
+	startWorker(t, w)
+	<-started
+	taken := time.Now()
+	if _, err := st.Pool.Exec(ctx, `UPDATE periodic_tasks SET locked_by = 'other-replica' WHERE name = 'victim'`); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case at := <-cancelled:
+		if d := at.Sub(taken); d > w.Lease {
+			t.Errorf("cancelled %v after the lease was lost; want within a renewal (%v)", d, w.Lease/4)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the task was not cancelled when its lease was lost")
+	}
+	time.Sleep(100 * time.Millisecond)
+	if tk := task(t, st, "victim"); tk.LastFinishedAt != nil || tk.LockedBy == nil || *tk.LockedBy != "other-replica" {
+		t.Errorf("a lost run must not record an outcome or touch the new owner's lease: %+v", tk)
+	}
+}
+
+// On shutdown no task starts, a running task that finishes within the grace
+// records its outcome, and one that does not is cancelled at the end of the
+// grace and released without an outcome. Run returns after that.
+func TestPeriodicShutdownWaitsThenCancels(t *testing.T) {
+	st := store.New(testdb.New(t))
+	w := newWorker(st)
+	w.Tick, w.ShutdownGrace = 20*time.Millisecond, 600*time.Millisecond
+	var wg sync.WaitGroup
+	wg.Add(2)
+	finishing, finished := make(chan struct{}), make(chan error, 1)
+	w.Every("finishes", time.Hour, func(ctx context.Context) error {
+		wg.Done()
+		<-finishing
+		time.Sleep(200 * time.Millisecond) // past the start of shutdown
+		finished <- ctx.Err()
+		return nil
+	})
+	cancelledAfter := make(chan time.Duration, 1)
+	var shutdownAt atomic.Int64
+	w.Every("hangs", time.Hour, func(ctx context.Context) error {
+		wg.Done()
+		<-ctx.Done()
+		cancelledAfter <- time.Since(time.Unix(0, shutdownAt.Load()))
+		return ctx.Err()
+	})
+	var lastFast atomic.Int64
+	w.Every("fast", time.Millisecond, func(context.Context) error { lastFast.Store(time.Now().UnixNano()); return nil })
+	stop := startWorker(t, w)
+	wg.Wait()
+	time.Sleep(100 * time.Millisecond)
+	shutdownAt.Store(time.Now().UnixNano())
+	close(finishing)
+	stop()
+	took := time.Since(time.Unix(0, shutdownAt.Load()))
+	if err := <-finished; err != nil {
+		t.Errorf("a task finishing within the grace was cancelled: %v", err)
+	}
+	if d := <-cancelledAfter; d < 500*time.Millisecond || d > 1500*time.Millisecond {
+		t.Errorf("hanging task cancelled %v after shutdown; want at the 600ms grace", d)
+	}
+	if took < 500*time.Millisecond || took > 2*time.Second {
+		t.Errorf("Run returned %v after shutdown; want just after the 600ms grace", took)
+	}
+	if tk := task(t, st, "finishes"); tk.LastSuccessAt == nil || tk.LockedBy != nil {
+		t.Errorf("a task that finished during shutdown should record success: %+v", tk)
+	}
+	if tk := task(t, st, "hangs"); tk.LastFinishedAt != nil || tk.LockedBy != nil {
+		t.Errorf("a cancelled task should be released without an outcome: %+v", tk)
+	}
+	// A claim already under way when shutdown began may still start.
+	if d := time.Duration(lastFast.Load() - shutdownAt.Load()); d > 100*time.Millisecond {
+		t.Errorf("a task started %v after shutdown began", d)
+	}
+}

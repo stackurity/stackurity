@@ -362,10 +362,9 @@ func TestStateIsPlatformOnly(t *testing.T) {
 	}
 }
 
-// The worker runs periodic tasks one after another. The release check's
-// random wait and its request run in the background, so the other tasks
-// (the notification tick among them) keep their pace while it is due and
-// in flight. Before, they stopped for the whole wait and request.
+// The release check's random wait and its request run in the background,
+// so the other tasks (the notification tick among them) keep their pace
+// while it is due and in flight, even when tasks run one after another.
 func TestCheckDoesNotHoldUpOtherTasks(t *testing.T) {
 	f := newFake(t, rel("v0.4.0"))
 	gate := make(chan struct{})

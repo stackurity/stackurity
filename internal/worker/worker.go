@@ -6,6 +6,11 @@
 // are claimed row by row; periodic tasks are claimed in periodic_tasks with a
 // lease, so each runs at most once per interval across replicas and never on
 // two replicas at the same time.
+//
+// Each periodic task has its own loop, so a slow or stuck task does not hold
+// up the others (the notification task in particular). At most
+// PeriodicSlots tasks run at once in one process, which bounds the database
+// connections they use, and a task never runs twice at once in one process.
 package worker
 
 import (
@@ -18,6 +23,7 @@ import (
 	"log/slog"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/stackurity/stackurity/internal/store"
@@ -54,18 +60,33 @@ type Worker struct {
 	// running replica renews it; when a replica dies, another takes the task
 	// over once the lease has expired.
 	Lease time.Duration
-	// Tick is how often the scheduler looks for due periodic tasks.
-	Tick     time.Duration
-	handlers map[string]Handler
-	timeouts map[string]time.Duration
-	periodic []periodic
-	id       string
+	// Tick is how often each periodic task checks whether it is due.
+	Tick time.Duration
+	// PeriodicSlots is how many periodic tasks may run at the same time in
+	// this process. Each run uses at most one database connection at a time
+	// for its queries and one for a moment while it renews its lease, so
+	// periodic work holds at most 2*PeriodicSlots of the pool's connections.
+	// The default of 4 leaves at least 12 of the 20 to the API and the job
+	// workers, and three tasks can be slow or stuck at once while the
+	// others keep their pace.
+	PeriodicSlots int
+	// ShutdownGrace is how long periodic tasks that are running when Run's
+	// context ends may take to finish before they are cancelled (and their
+	// lease released). No task starts after the context ends.
+	ShutdownGrace time.Duration
+	handlers      map[string]Handler
+	timeouts      map[string]time.Duration
+	periodic      []periodic
+	running       map[string]*atomic.Bool
+	id            string
 }
 
 type periodic struct {
 	name  string
 	every time.Duration
 	fn    func(ctx context.Context) error
+	// running is shared by the tasks of one name in this process.
+	running *atomic.Bool
 }
 
 func New(s *store.Store, log *slog.Logger) *Worker {
@@ -76,8 +97,9 @@ func New(s *store.Store, log *slog.Logger) *Worker {
 	_, _ = rand.Read(b)
 	return &Worker{
 		Store: s, Log: log, Concurrency: 2, Poll: 2 * time.Second, JobTimeout: 20 * time.Minute, JobRenew: 5 * time.Minute,
-		Lease: 2 * time.Minute, Tick: 15 * time.Second,
-		handlers: map[string]Handler{}, timeouts: map[string]time.Duration{}, id: fmt.Sprintf("%s-%d-%s", host, os.Getpid(), hex.EncodeToString(b)),
+		Lease: 2 * time.Minute, Tick: 15 * time.Second, PeriodicSlots: 4, ShutdownGrace: 30 * time.Second,
+		handlers: map[string]Handler{}, timeouts: map[string]time.Duration{}, running: map[string]*atomic.Bool{},
+		id: fmt.Sprintf("%s-%d-%s", host, os.Getpid(), hex.EncodeToString(b)),
 	}
 }
 
@@ -92,15 +114,24 @@ func (w *Worker) HandleTimeout(kind string, timeout time.Duration, h Handler) {
 
 // Every registers a periodic platform task, run in system scope.
 func (w *Worker) Every(name string, every time.Duration, fn func(ctx context.Context) error) {
-	w.periodic = append(w.periodic, periodic{name, every, func(ctx context.Context) error {
+	w.add(name, every, func(ctx context.Context) error {
 		return fn(tenant.System(ctx))
-	}})
+	})
+}
+
+func (w *Worker) add(name string, every time.Duration, fn func(ctx context.Context) error) {
+	r, ok := w.running[name]
+	if !ok {
+		r = new(atomic.Bool)
+		w.running[name] = r
+	}
+	w.periodic = append(w.periodic, periodic{name, every, fn, r})
 }
 
 // EveryWorkspace registers a periodic task that runs once for each enabled
 // workspace, scoped to it. A failure in one workspace does not stop the rest.
 func (w *Worker) EveryWorkspace(name string, every time.Duration, fn func(ctx context.Context) error) {
-	w.periodic = append(w.periodic, periodic{name, every, func(ctx context.Context) error {
+	w.add(name, every, func(ctx context.Context) error {
 		ids, err := w.Store.ActiveWorkspaceIDs(tenant.System(ctx))
 		if err != nil {
 			return err
@@ -115,11 +146,13 @@ func (w *Worker) EveryWorkspace(name string, every time.Duration, fn func(ctx co
 			}
 		}
 		return errors.Join(errs...)
-	}})
+	})
 }
 
-// Run blocks until ctx is cancelled and in-flight jobs have finished. Jobs
-// are claimed in system scope and each runs in its own workspace.
+// Run blocks until ctx is cancelled and in-flight work has stopped. Jobs are
+// claimed in system scope and each runs in its own workspace; a running job
+// is cancelled when ctx ends. A running periodic task gets ShutdownGrace to
+// finish and record its outcome, and is then cancelled and released.
 func (w *Worker) Run(ctx context.Context) {
 	ctx = tenant.System(ctx)
 	if w.Lease <= 0 {
@@ -127,6 +160,9 @@ func (w *Worker) Run(ctx context.Context) {
 	}
 	if w.Tick <= 0 {
 		w.Tick = 15 * time.Second
+	}
+	if w.PeriodicSlots <= 0 {
+		w.PeriodicSlots = 4
 	}
 	var wg sync.WaitGroup
 	for i := 0; i < w.Concurrency; i++ {
@@ -241,34 +277,71 @@ func (w *Worker) run(ctx context.Context, job *store.Job, owner string) {
 // which tells health checks the tasks are still expected to run.
 const registerEvery = 5 * time.Minute
 
-// schedule runs due periodic tasks one after another. A task that another
-// replica holds or ran recently is skipped.
+// schedule gives each periodic task its own loop and keeps the tasks
+// registered. A task that another replica holds or ran recently is skipped.
+// It returns when ctx has ended and every task's loop has stopped: a run in
+// progress may finish within ShutdownGrace, then its context is cancelled.
 func (w *Worker) schedule(ctx context.Context) {
+	runCtx, stopRuns := context.WithCancel(context.WithoutCancel(ctx))
+	defer stopRuns()
+	stop := context.AfterFunc(ctx, func() { time.AfterFunc(w.ShutdownGrace, stopRuns) })
+	defer stop()
+
+	var registered time.Time
+	if w.register(ctx) {
+		registered = time.Now()
+	}
+	slots := make(chan struct{}, w.PeriodicSlots)
+	var failures claimFailures
+	var wg sync.WaitGroup
+	for _, p := range w.periodic {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			w.loopPeriodic(ctx, runCtx, p, slots, &failures)
+		}()
+	}
+	defer wg.Wait()
+
 	tick := time.NewTicker(w.Tick)
 	defer tick.Stop()
-	var registered time.Time
 	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+		}
 		if time.Since(registered) >= registerEvery && w.register(ctx) {
 			registered = time.Now()
 		}
 		// While the database is unreachable every claim fails: log the
-		// first error of a tick and how many tasks it affected, not one
+		// first error and how many tasks it affected once a tick, not one
 		// line per task.
-		var claimErr error
-		failed := 0
-		for _, p := range w.periodic {
-			if ctx.Err() != nil {
-				return
-			}
-			if err := w.runPeriodic(ctx, p); err != nil {
-				if claimErr == nil {
-					claimErr = fmt.Errorf("task %s: %w", p.name, err)
-				}
-				failed++
-			}
+		if n, err := failures.take(); n > 0 {
+			w.Log.Error("claim periodic tasks", "failed", n, "of", len(w.periodic), "err", err)
 		}
-		if claimErr != nil {
-			w.Log.Error("claim periodic tasks", "failed", failed, "of", len(w.periodic), "err", claimErr)
+	}
+}
+
+// loopPeriodic runs p every Tick, if it is due, in a free slot, until ctx
+// ends. Runs get runCtx, which outlives ctx by the shutdown grace.
+func (w *Worker) loopPeriodic(ctx, runCtx context.Context, p periodic, slots chan struct{}, failures *claimFailures) {
+	tick := time.NewTicker(w.Tick)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case slots <- struct{}{}:
+		}
+		if ctx.Err() != nil {
+			<-slots
+			return
+		}
+		err := w.runPeriodic(runCtx, p)
+		<-slots
+		if err != nil {
+			failures.add(p.name, err)
 		}
 		select {
 		case <-ctx.Done():
@@ -276,6 +349,35 @@ func (w *Worker) schedule(ctx context.Context) {
 		case <-tick.C:
 		}
 	}
+}
+
+// claimFailures collects the tasks whose claim failed since the last report.
+type claimFailures struct {
+	mu    sync.Mutex
+	tasks map[string]bool
+	first error
+}
+
+func (c *claimFailures) add(name string, err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.tasks == nil {
+		c.tasks = map[string]bool{}
+	}
+	if c.first == nil {
+		c.first = fmt.Errorf("task %s: %w", name, err)
+	}
+	c.tasks[name] = true
+}
+
+// take returns how many tasks failed to claim and the first error, and
+// starts over.
+func (c *claimFailures) take() (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	n, err := len(c.tasks), c.first
+	c.tasks, c.first = nil, nil
+	return n, err
 }
 
 func (w *Worker) register(ctx context.Context) bool {
@@ -293,9 +395,15 @@ func (w *Worker) register(ctx context.Context) bool {
 // runPeriodic claims p and runs it if it is due, renewing the lease while it
 // runs. If the lease is lost (this replica could not reach the database for
 // most of a lease), the task's context is cancelled so that it does not
-// overlap with the replica that takes it over. It returns the error of a
-// claim that failed (not of the task, which is recorded).
+// overlap with the replica that takes it over. A run of p that is still in
+// progress in this process (one that lost its lease and has not returned yet)
+// means p is skipped. It returns the error of a claim that failed (not of the
+// task, which is recorded).
 func (w *Worker) runPeriodic(ctx context.Context, p periodic) error {
+	if !p.running.CompareAndSwap(false, true) {
+		return nil
+	}
+	defer p.running.Store(false)
 	ok, err := w.Store.ClaimPeriodic(ctx, p.name, w.id, p.every, w.Lease)
 	if err != nil {
 		if ctx.Err() != nil {
