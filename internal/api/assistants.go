@@ -63,9 +63,16 @@ var (
 	limitMCP = rateLimit{300, time.Minute}
 	// limitOAuthToken caps token and revocation requests per address.
 	limitOAuthToken = rateLimit{60, time.Minute}
-	// limitOAuthRegister caps client registrations per address.
+	// limitOAuthRegister caps client registrations per address (IPv6: /64).
 	limitOAuthRegister = rateLimit{20, time.Hour}
+	// limitMCPBadToken caps requests to /mcp with a token that does not
+	// work, per address (IPv6: /64).
+	limitMCPBadToken = rateLimit{30, time.Minute}
 )
+
+// maxUnusedClients caps registered clients that were never used; the
+// housekeeping task removes them after 7 days.
+const maxUnusedClients = 5000
 
 type viaMCPKey struct{}
 
@@ -81,16 +88,40 @@ func viaMCP(ctx context.Context) bool {
 // cookie requests does not apply, and they allow cross-origin calls from
 // browser-based MCP clients (no credentials are ever implied).
 func (s *Server) assistantRoutes(r chi.Router) {
+	if s.BaseURL == "" {
+		s.Log.Warn("AI assistants (/mcp and OAuth sign-in) are off: set STACKURITY_BASE_URL to the server's public https:// address")
+	}
+	r = r.With(s.requireBaseURL)
 	r.Get("/.well-known/oauth-protected-resource", s.protectedResourceMetadata)
 	r.Get("/.well-known/oauth-protected-resource/mcp", s.protectedResourceMetadata)
 	r.Get("/.well-known/oauth-authorization-server", s.authorizationServerMetadata)
-	r.With(s.limitAddress("oauth-register", limitOAuthRegister, "too many client registrations from this address; wait an hour")).
-		Post("/oauth/register", s.registerClient)
+	r.Post("/oauth/register", s.registerClient)
 	r.With(s.limitAddress("oauth-token", limitOAuthToken, "too many token requests; wait a minute")).Post("/oauth/token", s.oauthToken)
 	r.With(s.limitAddress("oauth-token", limitOAuthToken, "too many token requests; wait a minute")).Post("/oauth/revoke", s.oauthRevoke)
 	r.Post("/mcp", s.mcpEndpoint)
 	r.Get("/mcp", s.mcpEndpoint)
 	r.Delete("/mcp", s.mcpEndpoint)
+}
+
+func (s *Server) requireBaseURL(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.assistantsOff(w) {
+			next.ServeHTTP(w, r)
+		}
+	})
+}
+
+// addressKey is what per-address limits count: the address, or for IPv6 its
+// /64, which one client usually holds whole.
+func addressKey(r *http.Request) string {
+	ip := net.ParseIP(clientIP(r))
+	if ip == nil {
+		return clientIP(r)
+	}
+	if v4 := ip.To4(); v4 != nil {
+		return v4.String()
+	}
+	return ip.Mask(net.CIDRMask(64, 128)).String() + "/64"
 }
 
 var corsPaths = map[string]bool{
@@ -123,16 +154,32 @@ func assistantCORS(next http.Handler) http.Handler {
 
 // --- discovery
 
-func (s *Server) mcpResource(r *http.Request) string { return s.publicURL(r) + "/mcp" }
+// assistantBase is the server's public URL (STACKURITY_BASE_URL). The MCP
+// endpoint and sign-in need it: the issuer, the resource and the redirect
+// back carry it, and taking it from the Host header would let a request
+// name another server in them.
+func (s *Server) assistantBase() string { return strings.TrimRight(s.BaseURL, "/") }
+
+// assistantsOff answers the MCP and OAuth endpoints while no base URL is
+// set, and reports whether it did.
+func (s *Server) assistantsOff(w http.ResponseWriter) bool {
+	if s.BaseURL != "" {
+		return false
+	}
+	writeError(w, 404, "not_configured", "AI assistants are off on this server: an administrator has to set STACKURITY_BASE_URL to its public https:// address")
+	return true
+}
+
+func (s *Server) mcpResource(r *http.Request) string { return s.assistantBase() + "/mcp" }
 
 func (s *Server) resourceMetadataURL(r *http.Request) string {
-	return s.publicURL(r) + "/.well-known/oauth-protected-resource/mcp"
+	return s.assistantBase() + "/.well-known/oauth-protected-resource/mcp"
 }
 
 func (s *Server) protectedResourceMetadata(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{
 		"resource":                 s.mcpResource(r),
-		"authorization_servers":    []string{s.publicURL(r)},
+		"authorization_servers":    []string{s.assistantBase()},
 		"bearer_methods_supported": []string{"header"},
 		"scopes_supported":         []string{assistantScope},
 		"resource_name":            "Stackurity",
@@ -141,7 +188,7 @@ func (s *Server) protectedResourceMetadata(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) authorizationServerMetadata(w http.ResponseWriter, r *http.Request) {
-	base := s.publicURL(r)
+	base := s.assistantBase()
 	writeJSON(w, 200, map[string]any{
 		"issuer":                                         base,
 		"authorization_endpoint":                         base + "/oauth/authorize",
@@ -169,12 +216,14 @@ func oauthError(w http.ResponseWriter, status int, code, desc string) {
 	writeJSON(w, status, map[string]string{"error": code, "error_description": desc})
 }
 
-var privateScheme = regexp.MustCompile(`^[a-z][a-z0-9+.-]*$`)
+// A native app's own scheme must look like reverse DNS (com.example.app),
+// as RFC 8252 asks, which also rules out schemes that run content.
+var privateScheme = regexp.MustCompile(`^[a-z][a-z0-9-]*(\.[a-z0-9-]+)+$`)
 
-// Schemes a browser or the OS may treat as content or code rather than as
-// an application to return to.
+// Schemes refused even when they look like reverse DNS.
 var badSchemes = map[string]bool{"javascript": true, "data": true, "file": true, "vbscript": true, "about": true, "blob": true,
-	"ftp": true, "ws": true, "wss": true, "mailto": true, "filesystem": true, "view-source": true, "chrome": true, "resource": true}
+	"ftp": true, "ws": true, "wss": true, "mailto": true, "filesystem": true, "view-source": true, "chrome": true, "resource": true,
+	"intent": true}
 
 func isLoopback(host string) bool {
 	if host == "localhost" {
@@ -186,7 +235,7 @@ func isLoopback(host string) bool {
 
 // checkRedirectURI accepts an HTTPS URL, an HTTP URL on the loopback
 // interface (a native app's local listener), or a native app's own scheme
-// (RFC 8252). No fragments, user names or schemes that run content.
+// (RFC 8252) in reverse-DNS form. No fragments, user names or schemes that run content.
 func checkRedirectURI(raw string) error {
 	if raw == "" || len(raw) > 2048 {
 		return errors.New("redirect URIs must be 1 to 2048 characters")
@@ -211,8 +260,8 @@ func checkRedirectURI(raw string) error {
 			return fmt.Errorf("%q: plain http is only for localhost, 127.0.0.1 or [::1]", raw)
 		}
 	default:
-		if !privateScheme.MatchString(u.Scheme) || badSchemes[u.Scheme] {
-			return fmt.Errorf("%q: the scheme %s is not allowed", raw, u.Scheme)
+		if !privateScheme.MatchString(u.Scheme) || badSchemes[u.Scheme] || strings.HasPrefix(u.Scheme, "ms-") {
+			return fmt.Errorf("%q: use https, http on localhost, or an app scheme in reverse-DNS form (com.example.app)", raw)
 		}
 	}
 	return nil
@@ -255,6 +304,17 @@ type registrationRequest struct {
 // unused registrations are removed after 30 days. Other metadata (logo,
 // contacts, software id) is accepted and ignored.
 func (s *Server) registerClient(w http.ResponseWriter, r *http.Request) {
+	if s.limited(w, r, "too many client registrations from this address; wait an hour", limitHit{"oauth-register", addressKey(r), limitOAuthRegister}) {
+		return
+	}
+	if n, err := s.Store.UnusedOAuthClients(r.Context()); err != nil {
+		s.fail(w, r, err)
+		return
+	} else if n >= maxUnusedClients {
+		s.Log.Warn("refusing an assistant registration: too many unused registrations", "unused", n)
+		oauthError(w, 503, "temporarily_unavailable", "too many registrations are waiting to be used; try again later")
+		return
+	}
 	var req registrationRequest
 	if err := json.NewDecoder(http.MaxBytesReader(nil, r.Body, 64<<10)).Decode(&req); err != nil {
 		oauthError(w, 400, "invalid_client_metadata", "the body must be a JSON object of client metadata")
@@ -487,7 +547,7 @@ func (s *Server) ourResource(r *http.Request, res string) bool {
 		return u.String()
 	}
 	n := norm(res)
-	return n == norm(s.mcpResource(r)) || n == norm(s.publicURL(r))
+	return n == norm(s.mcpResource(r)) || n == norm(s.assistantBase())
 }
 
 // redirectWith adds the answer, state and issuer (RFC 9207) to the client's
@@ -504,7 +564,7 @@ func (s *Server) redirectWith(r *http.Request, redirect, state string, v url.Val
 	if state != "" {
 		q.Set("state", state)
 	}
-	q.Set("iss", s.publicURL(r))
+	q.Set("iss", s.assistantBase())
 	u.RawQuery = q.Encode()
 	return u.String()
 }
@@ -534,6 +594,9 @@ var assistantRoles = []auth.Role{auth.RoleViewer, auth.RoleEngineer, auth.RoleSe
 // may allow: the client's name and redirect host, the organisation, the
 // projects they can choose and the roles up to their own.
 func (s *Server) previewAuthorize(w http.ResponseWriter, r *http.Request) {
+	if s.assistantsOff(w) {
+		return
+	}
 	p, ok := consenter(w, r)
 	if !ok {
 		return
@@ -587,14 +650,23 @@ func (s *Server) previewAuthorize(w http.ResponseWriter, r *http.Request) {
 
 type authorizeDecision struct {
 	authorizeParams
-	Decision  string    `json:"decision"`
-	ProjectID int64     `json:"project_id"`
-	Role      auth.Role `json:"role"`
+	Decision string `json:"decision"`
+	// WorkspaceID is the organisation the page showed: the session may
+	// have switched since, in another tab.
+	WorkspaceID int64     `json:"workspace_id"`
+	ProjectID   int64     `json:"project_id"`
+	Role        auth.Role `json:"role"`
+	// AllowChanges is the "Allow changes" box, off by default: without it
+	// the connection only reads.
+	AllowChanges bool `json:"allow_changes"`
 }
 
 // decideAuthorize records the person's answer and returns where the browser
 // goes next: the client's redirect URI with a code, or with access_denied.
 func (s *Server) decideAuthorize(w http.ResponseWriter, r *http.Request) {
+	if s.assistantsOff(w) {
+		return
+	}
 	p, ok := consenter(w, r)
 	if !ok {
 		return
@@ -607,6 +679,10 @@ func (s *Server) decideAuthorize(w http.ResponseWriter, r *http.Request) {
 	c, prob := s.checkAuthorize(r, &d.authorizeParams)
 	if prob != nil {
 		writeAuthorizeProblem(w, prob)
+		return
+	}
+	if d.WorkspaceID != p.Workspace {
+		writeError(w, 409, "conflict", "this session now works in another organisation; reload the page and check what you allow")
 		return
 	}
 	if d.Decision != "allow" {
@@ -641,13 +717,13 @@ func (s *Server) decideAuthorize(w http.ResponseWriter, r *http.Request) {
 		project = &d.ProjectID
 	}
 	code, err := s.Store.CreateOAuthCode(ctx, store.OAuthCode{ClientID: c.ID, UserID: p.User.ID, ProjectID: project, Role: d.Role,
-		RedirectURI: d.RedirectURI, CodeChallenge: d.CodeChallenge, Resource: d.Resource})
+		AllowWrites: d.AllowChanges, RedirectURI: d.RedirectURI, CodeChallenge: d.CodeChallenge, Resource: d.Resource})
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
 	_ = s.Store.Audit(r.Context(), p.Actor(r), "assistant.authorize", "assistant", "", map[string]any{"client_id": c.ID,
-		"client_name": c.Name, "redirect_uri": d.RedirectURI, "role": d.Role, "project_id": project})
+		"client_name": c.Name, "redirect_uri": d.RedirectURI, "role": d.Role, "project_id": project, "allow_changes": d.AllowChanges})
 	writeJSON(w, 200, map[string]string{"redirect": s.redirectWith(r, d.RedirectURI, d.State, url.Values{"code": {code}})})
 }
 
@@ -710,7 +786,8 @@ func (s *Server) oauthToken(w http.ResponseWriter, r *http.Request) {
 		t, err = s.Store.RedeemOAuthCode(r.Context(), f.Get("code"), func(code store.OAuthCode) error {
 			sum := sha256.Sum256([]byte(verifier))
 			challenge := base64.RawURLEncoding.EncodeToString(sum[:])
-			if code.ClientID != c.ID || (redirect != "" && code.RedirectURI != redirect) ||
+			// The code was issued for a redirect URI: the same one is required.
+			if code.ClientID != c.ID || code.RedirectURI != redirect ||
 				subtle.ConstantTimeCompare([]byte(challenge), []byte(code.CodeChallenge)) != 1 {
 				return store.ErrOAuthInvalidGrant
 			}
@@ -718,7 +795,8 @@ func (s *Server) oauthToken(w http.ResponseWriter, r *http.Request) {
 		})
 		if err == nil {
 			_ = s.Store.Audit(tenant.WithWorkspace(r.Context(), t.Grant.WorkspaceID), assistantActor(r, t.Grant), "assistant.connect", "assistant",
-				itoa(t.Grant.ID), map[string]any{"client_id": c.ID, "client_name": t.Grant.ClientName, "role": t.Grant.Role, "project_id": t.Grant.ProjectID})
+				itoa(t.Grant.ID), map[string]any{"client_id": c.ID, "client_name": t.Grant.ClientName, "role": t.Grant.Role, "project_id": t.Grant.ProjectID,
+					"allow_changes": t.Grant.AllowWrites})
 		}
 	case "refresh_token":
 		t, err = s.Store.RefreshOAuthGrant(r.Context(), f.Get("refresh_token"), c.ID)
@@ -806,6 +884,42 @@ func (s *Server) disconnectAssistant(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(204)
 }
 
+type assistantUpdate struct {
+	AllowChanges *bool `json:"allow_changes"`
+}
+
+// updateAssistant turns "Allow changes" on or off for one of the caller's
+// assistants; it applies to its next request.
+func (s *Server) updateAssistant(w http.ResponseWriter, r *http.Request) {
+	p := principal(r)
+	if p.User == nil || !p.Session {
+		writeError(w, 403, "forbidden", "sign in to change an assistant")
+		return
+	}
+	id, err := idParam(r, "id")
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	var u assistantUpdate
+	if err := decode(r, &u); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if u.AllowChanges == nil {
+		s.fail(w, r, badRequest("allow_changes is required"))
+		return
+	}
+	g, err := s.Store.SetAssistantWrites(r.Context(), id, p.User.ID, *u.AllowChanges)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	_ = s.Store.Audit(tenant.WithWorkspace(r.Context(), g.WorkspaceID), p.Actor(r), "assistant.update", "assistant", itoa(g.ID),
+		map[string]any{"client_name": g.ClientName, "allow_changes": g.AllowWrites})
+	writeJSON(w, 200, g)
+}
+
 // --- the MCP endpoint
 
 // mcpEndpoint serves MCP over Streamable HTTP. It needs a bearer token (an
@@ -836,7 +950,10 @@ func (s *Server) mcpEndpoint(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := context.WithValue(r.Context(), viaMCPKey{}, true)
 	p, err := s.bearerPrincipal(ctx, secret)
-	if errors.Is(err, store.ErrNotFound) {
+	if errors.Is(err, store.ErrNotFound) || errors.Is(err, errAssistantToken) {
+		if s.limited(w, r, "too many requests with a token that does not work; wait a minute", limitHit{"mcp-bad-token", addressKey(r), limitMCPBadToken}) {
+			return
+		}
 		w.Header().Set("WWW-Authenticate", challenge+`, error="invalid_token", error_description="the token is invalid, expired or revoked"`)
 		writeError(w, 401, "unauthorized", "invalid or expired token")
 		return
@@ -857,7 +974,10 @@ func (s *Server) mcpEndpoint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	api := &inProcessAPI{s: s, auth: "Bearer " + secret, remote: r.RemoteAddr, project: r.Header.Get("X-Stackurity-Project")}
-	srv := &mcp.Server{API: api, Version: s.Version, BaseURL: s.publicURL(r)}
+	// An assistant changes things only when the person allowed it; a
+	// personal token can do what its role allows, as on the API.
+	writes := p.Assistant == nil || p.Assistant.AllowWrites
+	srv := &mcp.Server{API: api, Version: s.Version, BaseURL: s.assistantBase(), AllowWrites: writes}
 	srv.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, nil)))
 }
 
@@ -866,7 +986,7 @@ func (s *Server) mcpEndpoint(w http.ResponseWriter, r *http.Request) {
 // from the browser; origins are accepted when they are well-formed HTTPS
 // (or loopback HTTP) web origins, and "null" and others are refused.
 func (s *Server) allowedOrigin(r *http.Request, origin string) bool {
-	if origin == s.publicURL(r) {
+	if origin == s.assistantBase() {
 		return true
 	}
 	u, err := url.Parse(origin)

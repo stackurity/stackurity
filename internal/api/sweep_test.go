@@ -116,6 +116,7 @@ var routeRules = map[string]routeRule{
 	// The caller's own connected assistants; A's cannot be disconnected.
 	"GET /api/v1/assistants":         {class: "list"},
 	"DELETE /api/v1/assistants/{id}": {class: "object", obj: id("assistant")},
+	"PATCH /api/v1/assistants/{id}":  {class: "object", obj: id("assistant"), body: func(*tenantFx) any { return map[string]any{"allow_changes": true} }},
 
 	// Sends what the user typed to the feedback URL outside the
 	// installation, nothing of the workspace; see feedback_test.go.
@@ -646,7 +647,8 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 func (f *tenantFx) authorizeParams(allow bool) map[string]any {
 	_, c := pkcePair("sweep")
 	p := map[string]any{"response_type": "code", "client_id": f.ids["oauthclient"], "redirect_uri": redirectURI,
-		"code_challenge": c, "code_challenge_method": "S256", "project_id": f.int("project"), "role": "viewer"}
+		"code_challenge": c, "code_challenge_method": "S256", "project_id": f.int("project"), "role": "viewer", "workspace_id": f.ws,
+		"allow_changes": true}
 	if !allow {
 		delete(p, "project_id")
 		delete(p, "role")

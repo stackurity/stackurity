@@ -64,6 +64,7 @@ var projectRoutes = map[string]projectScope{
 	"POST /api/v1/oauth/authorize":         accountScope,
 	"GET /api/v1/assistants":               accountScope,
 	"DELETE /api/v1/assistants/{id}":       accountScope,
+	"PATCH /api/v1/assistants/{id}":        accountScope,
 
 	// Shared by every workspace.
 	"GET /api/v1/packs":              globalScope,
@@ -176,6 +177,10 @@ func (s *Server) projectGate(next http.Handler) http.Handler {
 				writeError(w, 403, "forbidden", "an assistant cannot change account settings")
 				return
 			}
+			if !a.AllowWrites && r.Method != http.MethodGet {
+				writeError(w, 403, "forbidden", "this assistant is read-only: allow changes for it under Settings, Connected assistants")
+				return
+			}
 			if a.ProjectID != nil {
 				if sc == orgOnly {
 					writeError(w, 403, "forbidden", "this assistant is connected to one project only; this needs a connection to the whole organisation")
@@ -204,7 +209,12 @@ func (s *Server) projectGate(next http.Handler) http.Handler {
 				writeError(w, 404, "not_found", "no such project")
 				return
 			}
-			ctx = tenant.WithProject(ctx, p.Project)
+			if p.boundToProject() {
+				// Nothing on this request may widen it to the workspace.
+				ctx = tenant.WithBoundProject(ctx, p.Project)
+			} else {
+				ctx = tenant.WithProject(ctx, p.Project)
+			}
 		}
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
@@ -645,6 +655,10 @@ func (s *Server) setDefaultProject(w http.ResponseWriter, r *http.Request) {
 // later. It returns the context to apply it in, without the project chosen
 // in the switcher, so the rule covers every asset at once.
 func (s *Server) everywhere(w http.ResponseWriter, r *http.Request) (context.Context, bool) {
+	if p := principal(r); p.boundToProject() || tenant.Bound(r.Context()) {
+		writeError(w, 403, "forbidden", "this assistant is connected to one project only; ignore the issue on its assets instead")
+		return nil, false
+	}
 	if !principal(r).Role.AtLeast(auth.RoleSecurity) {
 		writeError(w, 403, "forbidden", "ignoring an issue on every asset needs an organisation-wide security or admin role; ignore it on this asset instead")
 		return nil, false

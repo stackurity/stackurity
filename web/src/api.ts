@@ -2126,6 +2126,8 @@ export interface AssistantConnection {
   project_id: number | null;
   project_name: string;
   role: UserRole;
+  /** "Allow changes": without it the assistant only reads. */
+  allow_changes: boolean;
   created_at: string;
   last_used_at: string | null;
 }

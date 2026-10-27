@@ -84,6 +84,7 @@ var projectScopes = map[string]string{
 	"POST /api/v1/oauth/authorize":          "account",
 	"GET /api/v1/assistants":                "account",
 	"DELETE /api/v1/assistants/{id}":        "account",
+	"PATCH /api/v1/assistants/{id}":         "account",
 
 	"GET /api/v1/packs":              "global",
 	"GET /api/v1/packs/{id}/archive": "global",

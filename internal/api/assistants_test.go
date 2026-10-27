@@ -29,6 +29,23 @@ type oauthFx struct {
 	e        *env
 	clientID string
 	secret   string
+	// readOnly leaves "Allow changes" off on the consent page.
+	readOnly bool
+}
+
+// withBaseURL turns assistants on: they need STACKURITY_BASE_URL.
+func withBaseURL(e *env) {
+	if e.api.BaseURL == "" {
+		e.api.BaseURL = e.srv.URL
+	}
+}
+
+// workspaceOf is the organisation a session works in, as the consent page
+// shows it.
+func workspaceOf(s *session) int64 {
+	var me struct{ Workspace struct{ ID int64 } }
+	s.do("GET", "/api/v1/auth/me", nil, &me)
+	return me.Workspace.ID
 }
 
 func jsonPost(e *env, path string, body any, hdr map[string]string) (int, map[string]any, http.Header) {
@@ -51,6 +68,7 @@ func jsonPost(e *env, path string, body any, hdr map[string]string) (int, map[st
 // registerAssistant registers a public client by dynamic client registration.
 func registerAssistant(t *testing.T, e *env, redirects ...string) *oauthFx {
 	t.Helper()
+	withBaseURL(e)
 	if len(redirects) == 0 {
 		redirects = []string{redirectURI}
 	}
@@ -79,6 +97,7 @@ func (o *oauthFx) authorize(t *testing.T, s *session, challenge string, role aut
 	t.Helper()
 	p := o.params(challenge)
 	p["decision"], p["role"], p["project_id"] = "allow", role, project
+	p["workspace_id"], p["allow_changes"] = workspaceOf(s), !o.readOnly
 	var out struct{ Redirect string }
 	if code := s.do("POST", "/api/v1/oauth/authorize", p, &out); code != 200 {
 		t.Fatalf("authorize: %d", code)
@@ -161,6 +180,18 @@ func TestAssistantOAuth(t *testing.T) {
 	e.user("eng@x.io", auth.RoleEngineer)
 	admin := e.signIn("admin@x.io")
 
+	// Without STACKURITY_BASE_URL assistants are off: the issuer and the
+	// resource would come from the Host header.
+	for _, path := range []string{"/.well-known/oauth-authorization-server", "/.well-known/oauth-protected-resource/mcp"} {
+		if code := e.anon().do("GET", path, nil, nil); code != 404 {
+			t.Errorf("%s without a base URL: %d", path, code)
+		}
+	}
+	if code, _, _ := mcpPost(e, "", map[string]any{"id": 1, "method": "ping"}); code != 404 {
+		t.Errorf("/mcp without a base URL: %d", code)
+	}
+	withBaseURL(e)
+
 	// Discovery: /mcp says where to sign in.
 	code, _, h := mcpPost(e, "", map[string]any{"id": 1, "method": "tools/list"})
 	if code != 401 || !strings.Contains(h.Get("WWW-Authenticate"), `resource_metadata="`+e.srv.URL+`/.well-known/oauth-protected-resource/mcp"`) {
@@ -190,10 +221,14 @@ func TestAssistantOAuth(t *testing.T) {
 
 	// Registration refuses redirect URIs that are not HTTPS, loopback or an
 	// app's own scheme.
-	for _, bad := range []string{"http://evil.example/cb", "javascript:alert(1)", "https://x.example/cb#frag", "https://user@x.example/cb", "/relative"} {
+	for _, bad := range []string{"http://evil.example/cb", "javascript:alert(1)", "https://x.example/cb#frag", "https://user@x.example/cb", "/relative",
+		"myapp:/callback", "intent://cb#Intent;scheme=x;end", "ms-word:ofe|u|https://x"} {
 		if code, out, _ := jsonPost(e, "/oauth/register", map[string]any{"redirect_uris": []string{bad}, "token_endpoint_auth_method": "none"}, nil); code != 400 || out["error"] != "invalid_redirect_uri" {
 			t.Errorf("register %q: %d %v", bad, code, out)
 		}
+	}
+	if code, out, _ := jsonPost(e, "/oauth/register", map[string]any{"redirect_uris": []string{"com.example.app:/oauth/cb"}, "token_endpoint_auth_method": "none"}, nil); code != 201 {
+		t.Errorf("register a reverse-DNS app scheme: %d %v", code, out)
 	}
 	o := registerAssistant(t, e, redirectURI, "http://127.0.0.1:33418/callback")
 
@@ -256,7 +291,7 @@ func TestAssistantOAuth(t *testing.T) {
 	}
 	// Declining sends access_denied back.
 	deny := o.params(c)
-	deny["decision"] = "deny"
+	deny["decision"], deny["workspace_id"] = "deny", workspaceOf(admin)
 	var out struct{ Redirect string }
 	admin.do("POST", "/api/v1/oauth/authorize", deny, &out)
 	if !strings.Contains(out.Redirect, "error=access_denied") || !strings.Contains(out.Redirect, "state=st-1") {
@@ -264,9 +299,21 @@ func TestAssistantOAuth(t *testing.T) {
 	}
 	// A role above one's own is refused.
 	above := o.params(c)
-	above["decision"], above["role"] = "allow", "admin"
+	above["decision"], above["role"], above["workspace_id"] = "allow", "admin", workspaceOf(admin)
 	if code := e.signIn("eng@x.io").do("POST", "/api/v1/oauth/authorize", above, nil); code != 403 {
 		t.Errorf("engineer giving admin: %d", code)
+	}
+
+	// The page showed another organisation than the session's now: refused.
+	moved := o.params(c)
+	moved["decision"], moved["role"], moved["workspace_id"] = "allow", "viewer", workspaceOf(admin)+1
+	if code := admin.do("POST", "/api/v1/oauth/authorize", moved, nil); code != 409 {
+		t.Errorf("decision for another organisation: %d", code)
+	}
+	// The token request must repeat the code's redirect URI.
+	if status, _ := o.token(url.Values{"grant_type": {"authorization_code"}, "code": {o.authorize(t, admin, c, auth.RoleViewer, 0)},
+		"code_verifier": {v}}); status != 400 {
+		t.Errorf("token request without redirect_uri: %d", status)
 	}
 
 	// The code: a wrong verifier fails and uses it up.
@@ -361,9 +408,10 @@ func TestAssistantOAuth(t *testing.T) {
 	access = o.connect(t, admin, auth.RoleViewer, 0)
 	var list struct {
 		Items []struct {
-			ID         int64
-			ClientName string `json:"client_name"`
-			Role       string
+			ID           int64
+			ClientName   string `json:"client_name"`
+			Role         string
+			AllowChanges bool `json:"allow_changes"`
 		}
 	}
 	if code := admin.do("GET", "/api/v1/assistants", nil, &list); code != 200 || len(list.Items) != 1 || list.Items[0].Role != "viewer" {
@@ -390,6 +438,42 @@ func TestAssistantOAuth(t *testing.T) {
 	}
 	if seen["assistant.authorize"] == 0 || seen["assistant.connect"] == 0 || seen["assistant.revoke"] < 2 {
 		t.Errorf("audit: %v", seen)
+	}
+
+	// "Allow changes" off: read tools only, and the API refuses changes
+	// even if a tool were reached; it can be turned on in Settings.
+	ro := &oauthFx{e: e, clientID: o.clientID, readOnly: true}
+	roToken := ro.connect(t, admin, auth.RoleAdmin, 0)
+	if _, out, _ := mcpPost(e, roToken, map[string]any{"id": 1, "method": "tools/list"}); len(out["result"].(map[string]any)["tools"].([]any)) != 11 {
+		t.Errorf("read-only connection lists %v", out)
+	}
+	if code, out, _ := mcpPost(e, roToken, map[string]any{"id": 1, "method": "tools/call", "params": map[string]any{"name": "create_project",
+		"arguments": map[string]any{"name": "x"}}}); code != 200 || out["error"] == nil {
+		t.Errorf("write tool on a read-only connection: %d %v", code, out)
+	}
+	admin.do("GET", "/api/v1/assistants", nil, &list)
+	if len(list.Items) != 1 || list.Items[0].AllowChanges {
+		t.Fatalf("read-only connection listed as %+v", list.Items)
+	}
+	if code := e.signIn("eng@x.io").do("PATCH", fmt.Sprint("/api/v1/assistants/", list.Items[0].ID), map[string]any{"allow_changes": true}, nil); code != 404 {
+		t.Errorf("someone else allowing changes: %d", code)
+	}
+	if code := admin.do("PATCH", fmt.Sprint("/api/v1/assistants/", list.Items[0].ID), map[string]any{"allow_changes": true}, nil); code != 200 {
+		t.Errorf("allow changes: %d", code)
+	}
+	if _, out, _ := mcpPost(e, roToken, map[string]any{"id": 1, "method": "tools/list"}); len(out["result"].(map[string]any)["tools"].([]any)) != 21 {
+		t.Errorf("after allowing changes: %v", out)
+	}
+	// Tokens that do not work are limited per address.
+	limited := false
+	for range 40 {
+		if code, _, _ := mcpPost(e, "stka_wrong", map[string]any{"id": 1, "method": "ping"}); code == 429 {
+			limited = true
+			break
+		}
+	}
+	if !limited {
+		t.Error("no limit on wrong tokens at /mcp")
 	}
 
 	// A personal API token works on /mcp too; collector tokens do not.
@@ -430,6 +514,7 @@ func TestAssistantClientKinds(t *testing.T) {
 	}))
 	defer meta.Close()
 	e := newEnvWith(t, func(s *api.Server) { s.ClientMetadataHTTP = meta.Client() })
+	withBaseURL(e)
 	e.user("admin@x.io", auth.RoleAdmin)
 	admin := e.signIn("admin@x.io")
 	v, c := pkcePair("k")
@@ -516,6 +601,28 @@ func TestAssistantRoles(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("project.create not audited as the assistant: %+v", audit.Items)
+	}
+	// An install code from an assistant: small, and audited as the assistant.
+	eargs := map[string]any{"servers": 3.0}
+	text, _ = callMCPTool(t, e, admin, "create_enrollment", eargs)
+	_ = json.Unmarshal([]byte(text), &pv)
+	eargs["confirm"] = pv["confirm"]
+	if text, isErr := callMCPTool(t, e, admin, "create_enrollment", eargs); isErr || !strings.Contains(text, "STACKURITY_ENROLL_CODE=enr_") {
+		t.Errorf("enrollment: %s", text)
+	}
+	var enrs struct {
+		Items []struct {
+			UsesLeft  int       `json:"uses_left"`
+			ExpiresAt time.Time `json:"expires_at"`
+		}
+	}
+	o.admin.do("GET", "/api/v1/enrollments", nil, &enrs)
+	if len(enrs.Items) != 1 || enrs.Items[0].UsesLeft != 3 || time.Until(enrs.Items[0].ExpiresAt) > 25*time.Hour {
+		t.Errorf("enrollment = %+v", enrs.Items)
+	}
+	o.admin.do("GET", "/api/v1/audit?object_type=enrollment&limit=50", nil, &audit)
+	if len(audit.Items) == 0 || audit.Items[0].ActorType != "assistant" {
+		t.Errorf("enrollment.create audit: %+v", audit.Items)
 	}
 
 	// The person is demoted: the admin connection acts as a viewer now.
@@ -692,6 +799,24 @@ func TestAssistantProjectIsolation(t *testing.T) {
 	if text, isErr := callMCPTool(t, e, bound, "check_again", args); isErr || !strings.Contains(text, `"status": "done"`) {
 		t.Errorf("check again in Alpha: %s", text)
 	}
+	// It cannot ignore an issue on every asset (a rule for every project),
+	// although the person could: refused, and no rule is made.
+	var rulesBefore struct{ Items []struct{ ID int64 } }
+	o.admin.do("GET", "/api/v1/ignore-rules?status=all", nil, &rulesBefore)
+	args = map[string]any{"finding_ids": []any{float64(o.id("alpha-finding"))}, "reason": "false_positive", "note": "n",
+		"scope": "everywhere", "expiry": "never"}
+	text, _ = callMCPTool(t, e, bound, "ignore", args)
+	_ = json.Unmarshal([]byte(text), &pv)
+	args["confirm"] = pv["confirm"]
+	if text, isErr := callMCPTool(t, e, bound, "ignore", args); !isErr || !strings.Contains(text, "one project") {
+		t.Errorf("bound connection ignoring everywhere: %s", text)
+	}
+	var rulesAfter struct{ Items []struct{ ID int64 } }
+	o.admin.do("GET", "/api/v1/ignore-rules?status=all", nil, &rulesAfter)
+	if len(rulesAfter.Items) != len(rulesBefore.Items) {
+		t.Errorf("a rule was made: %d before, %d after", len(rulesBefore.Items), len(rulesAfter.Items))
+	}
+
 	// The project is archived: the connection limited to it sees nothing.
 	if code := o.admin.do("PATCH", "/api/v1/projects/"+o.s("alpha-project"), map[string]any{"archived": true}, nil); code != 200 {
 		t.Fatalf("archive: %d", code)

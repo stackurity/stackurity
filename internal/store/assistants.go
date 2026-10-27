@@ -49,8 +49,9 @@ const oauthClientCols = `id, name, client_uri, redirect_uris, auth_method, metad
 
 // RegisterOAuthClient stores a client registered by dynamic client
 // registration and returns its secret (empty for a public client). Clients
-// that were never used are removed after 30 days, so anonymous registrations
-// cannot pile up.
+// never used are removed after 7 days (PruneOAuth), and registration is
+// capped while too many are waiting, so anonymous registrations cannot
+// pile up.
 func (s *Store) RegisterOAuthClient(ctx context.Context, c OAuthClient) (*OAuthClient, string, error) {
 	sys := tenant.System(ctx)
 	id, _, err := auth.NewToken("stkc")
@@ -66,8 +67,6 @@ func (s *Store) RegisterOAuthClient(ctx context.Context, c OAuthClient) (*OAuthC
 		}
 		hash = auth.HashToken(secret)
 	}
-	_, _ = s.Pool.Exec(sys, `DELETE FROM oauth_clients WHERE NOT metadata_url AND last_used_at IS NULL
-		AND created_at < now() - interval '30 days' AND NOT EXISTS (SELECT 1 FROM oauth_grants g WHERE g.client_id = oauth_clients.id)`)
 	_, err = s.Pool.Exec(sys, `INSERT INTO oauth_clients (id, name, client_uri, redirect_uris, auth_method, secret_hash)
 		VALUES ($1, $2, $3, $4, $5, $6)`, c.ID, c.Name, c.ClientURI, c.RedirectURIs, c.AuthMethod, hash)
 	if err != nil {
@@ -104,6 +103,7 @@ type OAuthCode struct {
 	UserID        int64
 	ProjectID     *int64
 	Role          auth.Role
+	AllowWrites   bool
 	RedirectURI   string
 	CodeChallenge string
 	Resource      string
@@ -122,9 +122,9 @@ func (s *Store) CreateOAuthCode(ctx context.Context, c OAuthCode) (string, error
 	}
 	ctx = tenant.WithoutProject(ctx)
 	_, _ = s.Pool.Exec(ctx, `DELETE FROM oauth_codes WHERE expires_at < now() - interval '1 day'`)
-	_, err = s.Pool.Exec(ctx, `INSERT INTO oauth_codes (code_hash, client_id, user_id, project_id, role, redirect_uri, code_challenge, resource, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now() + make_interval(secs => $9))`,
-		auth.HashToken(code), c.ClientID, c.UserID, c.ProjectID, c.Role, c.RedirectURI, c.CodeChallenge, c.Resource, OAuthCodeTTL.Seconds())
+	_, err = s.Pool.Exec(ctx, `INSERT INTO oauth_codes (code_hash, client_id, user_id, project_id, role, allow_writes, redirect_uri, code_challenge, resource, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now() + make_interval(secs => $10))`,
+		auth.HashToken(code), c.ClientID, c.UserID, c.ProjectID, c.Role, c.AllowWrites, c.RedirectURI, c.CodeChallenge, c.Resource, OAuthCodeTTL.Seconds())
 	if isForeignKey(err) {
 		return "", fmt.Errorf("the project or client does not exist: %w", ErrInvalid)
 	}
@@ -152,10 +152,10 @@ func (s *Store) RedeemOAuthCode(ctx context.Context, code string, check func(OAu
 		var used bool
 		var expired bool
 		var grantID *int64
-		err := tx.QueryRow(sys, `SELECT oc.id, oc.workspace_id, oc.client_id, oc.user_id, oc.project_id, oc.role, oc.redirect_uri,
+		err := tx.QueryRow(sys, `SELECT oc.id, oc.workspace_id, oc.client_id, oc.user_id, oc.project_id, oc.role, oc.allow_writes, oc.redirect_uri,
 			oc.code_challenge, oc.resource, oc.used_at IS NOT NULL, oc.expires_at < now(), oc.grant_id, cl.name
 			FROM oauth_codes oc JOIN oauth_clients cl ON cl.id = oc.client_id WHERE oc.code_hash = $1 FOR UPDATE OF oc`,
-			auth.HashToken(code)).Scan(&id, &ws, &c.ClientID, &c.UserID, &c.ProjectID, &c.Role, &c.RedirectURI,
+			auth.HashToken(code)).Scan(&id, &ws, &c.ClientID, &c.UserID, &c.ProjectID, &c.Role, &c.AllowWrites, &c.RedirectURI,
 			&c.CodeChallenge, &c.Resource, &used, &expired, &grantID, &c.ClientName)
 		if err != nil {
 			return notFound(err)
@@ -190,8 +190,8 @@ func (s *Store) RedeemOAuthCode(ctx context.Context, code string, check func(OAu
 			return nil
 		}
 		var g AssistantGrant
-		err = tx.QueryRow(sys, `INSERT INTO oauth_grants (workspace_id, client_id, user_id, project_id, role, client_name, redirect_host)
-			VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`, ws, c.ClientID, c.UserID, c.ProjectID, c.Role, c.ClientName,
+		err = tx.QueryRow(sys, `INSERT INTO oauth_grants (workspace_id, client_id, user_id, project_id, role, allow_writes, client_name, redirect_host)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`, ws, c.ClientID, c.UserID, c.ProjectID, c.Role, c.AllowWrites, c.ClientName,
 			redirectHost(c.RedirectURI)).Scan(&g.ID)
 		if err != nil {
 			return err
@@ -339,22 +339,25 @@ func (s *Store) RevokeOAuthToken(ctx context.Context, token, clientID string) (*
 
 // AssistantGrant is a connected assistant.
 type AssistantGrant struct {
-	ID            int64      `json:"id"`
-	WorkspaceID   int64      `json:"workspace_id"`
-	WorkspaceName string     `json:"workspace_name"`
-	ClientID      string     `json:"client_id"`
-	ClientName    string     `json:"client_name"`
-	RedirectHost  string     `json:"redirect_host"`
-	UserID        int64      `json:"user_id"`
-	ProjectID     *int64     `json:"project_id"`
-	ProjectName   string     `json:"project_name"`
-	Role          auth.Role  `json:"role"`
-	CreatedAt     time.Time  `json:"created_at"`
-	LastUsedAt    *time.Time `json:"last_used_at"`
+	ID            int64     `json:"id"`
+	WorkspaceID   int64     `json:"workspace_id"`
+	WorkspaceName string    `json:"workspace_name"`
+	ClientID      string    `json:"client_id"`
+	ClientName    string    `json:"client_name"`
+	RedirectHost  string    `json:"redirect_host"`
+	UserID        int64     `json:"user_id"`
+	ProjectID     *int64    `json:"project_id"`
+	ProjectName   string    `json:"project_name"`
+	Role          auth.Role `json:"role"`
+	// AllowWrites: the person ticked "Allow changes"; without it the
+	// connection only reads.
+	AllowWrites bool       `json:"allow_changes"`
+	CreatedAt   time.Time  `json:"created_at"`
+	LastUsedAt  *time.Time `json:"last_used_at"`
 }
 
 const assistantCols = `g.id, g.workspace_id, w.name, g.client_id, g.client_name, g.redirect_host, g.user_id, g.project_id,
-	COALESCE((SELECT p.name FROM projects p WHERE p.id = g.project_id), ''), g.role, g.created_at, g.last_used_at`
+	COALESCE((SELECT p.name FROM projects p WHERE p.id = g.project_id), ''), g.role, g.allow_writes, g.created_at, g.last_used_at`
 
 func grantByID(ctx context.Context, db q, id int64) (*AssistantGrant, error) {
 	rows, err := db.Query(ctx, `SELECT `+assistantCols+` FROM oauth_grants g JOIN workspaces w ON w.id = g.workspace_id WHERE g.id = $1`, id)
@@ -432,6 +435,47 @@ func (s *Store) RevokeAssistantGrant(ctx context.Context, id, userID int64) (*As
 		return err
 	})
 	return g, err
+}
+
+// SetAssistantWrites turns "Allow changes" on or off for one of userID's
+// connections.
+func (s *Store) SetAssistantWrites(ctx context.Context, id, userID int64, allow bool) (*AssistantGrant, error) {
+	sys := tenant.System(ctx)
+	tag, err := s.Pool.Exec(sys, `UPDATE oauth_grants SET allow_writes = $3 WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL`, id, userID, allow)
+	if err != nil {
+		return nil, err
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, ErrNotFound
+	}
+	return grantByID(sys, s.Pool, id)
+}
+
+// PruneOAuth removes what sign-in leaves behind: clients registered but
+// never used for 7 days, codes a day past expiry, expired access tokens,
+// and connections that ended over 90 days ago. Housekeeping runs it.
+func (s *Store) PruneOAuth(ctx context.Context) error {
+	sys := tenant.System(ctx)
+	for _, q := range []string{
+		`DELETE FROM oauth_clients c WHERE NOT c.metadata_url AND c.last_used_at IS NULL AND c.created_at < now() - interval '7 days'
+			AND NOT EXISTS (SELECT 1 FROM oauth_grants g WHERE g.client_id = c.id) AND NOT EXISTS (SELECT 1 FROM oauth_codes oc WHERE oc.client_id = c.id)`,
+		`DELETE FROM oauth_codes WHERE expires_at < now() - interval '1 day'`,
+		`DELETE FROM oauth_access_tokens WHERE expires_at < now()`,
+		`DELETE FROM oauth_grants WHERE (revoked_at < now() - interval '90 days') OR (revoked_at IS NULL AND refresh_expires_at < now() - interval '90 days')`,
+	} {
+		if _, err := s.Pool.Exec(sys, q); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// UnusedOAuthClients counts registered clients never used: registration is
+// refused above a cap, so anonymous registrations cannot fill the table.
+func (s *Store) UnusedOAuthClients(ctx context.Context) (int64, error) {
+	var n int64
+	err := s.Pool.QueryRow(tenant.System(ctx), `SELECT count(*) FROM oauth_clients WHERE NOT metadata_url AND last_used_at IS NULL`).Scan(&n)
+	return n, err
 }
 
 // redirectHost is the host the codes of a connection went to, shown with

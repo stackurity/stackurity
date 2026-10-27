@@ -167,6 +167,7 @@ func (s *Server) Handler() http.Handler {
 			r.Post("/oauth/authorize/preview", s.previewAuthorize)
 			r.Post("/oauth/authorize", s.decideAuthorize)
 			r.Get("/assistants", s.listAssistants)
+			r.Patch("/assistants/{id}", s.updateAssistant)
 			r.Delete("/assistants/{id}", s.disconnectAssistant)
 			r.Get("/packs", s.listPacks)
 			r.Get("/packs/{id}/archive", s.packArchive)

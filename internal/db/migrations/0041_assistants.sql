@@ -38,7 +38,8 @@ CREATE POLICY sys ON oauth_clients USING (stackurity_system()) WITH CHECK (stack
 -- A connected assistant: what the person allowed on the consent screen.
 -- It acts as user_id in one workspace, with at most role (and never more
 -- than the person's own role, checked on every request), and, with
--- project_id, only on that project's assets. The current refresh token's
+-- project_id, only on that project's assets. Without allow_writes it is
+-- read-only whatever the role: the person ticks "Allow changes" for it. The current refresh token's
 -- hash is kept; the one before it too, so a replayed refresh token revokes
 -- the connection (OAuth 2.1 refresh token rotation).
 CREATE TABLE oauth_grants (
@@ -48,6 +49,7 @@ CREATE TABLE oauth_grants (
     user_id               bigint NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     project_id            bigint REFERENCES projects(id) ON DELETE CASCADE,
     role                  text NOT NULL CHECK (role IN ('viewer', 'engineer', 'security', 'admin')),
+    allow_writes          boolean NOT NULL DEFAULT false,
     client_name           text NOT NULL DEFAULT '' CHECK (length(client_name) <= 200),
     redirect_host         text NOT NULL DEFAULT '' CHECK (length(redirect_host) <= 300),
     refresh_hash          bytea UNIQUE,
@@ -85,6 +87,7 @@ CREATE TABLE oauth_codes (
     user_id        bigint NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     project_id     bigint REFERENCES projects(id) ON DELETE CASCADE,
     role           text NOT NULL CHECK (role IN ('viewer', 'engineer', 'security', 'admin')),
+    allow_writes   boolean NOT NULL DEFAULT false,
     redirect_uri   text NOT NULL CHECK (length(redirect_uri) <= 2048),
     code_challenge text NOT NULL CHECK (code_challenge ~ '^[A-Za-z0-9_-]{43}$'),
     resource       text NOT NULL DEFAULT '' CHECK (length(resource) <= 2048),

@@ -24,10 +24,13 @@ import (
 // The code is a digest of the tool, its arguments and what the preview
 // found (the issues a fix covers now, whether an ignore is applied or
 // asked for), so it only works for the exact change that was shown. It is
-// not a secret: it proves that the change was previewed, not who may make
-// it; the API decides that on every call. MCP clients that ask the user
-// before a tool that is not read-only see the second call with its
-// arguments, and the annotations mark which tools are destructive.
+// not a secret and not a consent: it guards against a model acting on a
+// guess, not against the model itself, which can always send it. What may
+// change is decided by the person: "Allow changes" on the connection (or
+// --allow-writes) offers these tools at all, and the API checks their role
+// on everything a call touches. MCP clients that ask the user before a tool
+// that is not read-only see the second call with its arguments, and the
+// annotations mark which tools are destructive.
 
 type writeTool struct {
 	title       string
@@ -46,6 +49,12 @@ type change struct {
 	apply   func(ctx context.Context) (any, error)
 	notes   []string
 }
+
+// Install codes made by an assistant: at most this many servers and hours.
+const (
+	maxEnrollUses  = 50
+	maxEnrollHours = 24
+)
 
 // writeTools are listed after the read-only tools, in this order.
 var writeTools = []string{"create_project", "rename_project", "add_assets_to_project", "remove_assets_from_project",
@@ -486,8 +495,8 @@ func init() {
 			"(as root). Use it for \"set up 3 servers\": servers is how many may use the code. The code is shown once. " +
 			"Needs the admin role. Without confirm it only previews.",
 		schema: obj(map[string]any{
-			"servers":     num("How many servers may use the code (1 to 500, default 1)"),
-			"valid_hours": num("Hours the code works (1 to 720, default 24)"),
+			"servers":     num("How many servers may use the code (1 to 50, default 1): exactly the number to set up"),
+			"valid_hours": num("Hours the code works (1 to 24, default 24)"),
 			"label":       str("A label for the code, such as what the servers are for"),
 			"environment": str("Environment label for the servers, e.g. production (letters, digits, . _ -)"),
 			"project_id":  num("Add the servers to this project"),
@@ -501,8 +510,10 @@ func init() {
 			if n, ok := intArg(a["valid_hours"]); ok {
 				ttl = n
 			}
-			if uses < 1 || uses > 500 || ttl < 1 || ttl > 720 {
-				return nil, fmt.Errorf("servers must be 1 to 500 and valid_hours 1 to 720")
+			// Small on purpose: the code ends up in a chat. More servers, or
+			// a longer life, are for Settings, Add servers.
+			if uses < 1 || uses > maxEnrollUses || ttl < 1 || ttl > maxEnrollHours {
+				return nil, fmt.Errorf("servers must be 1 to %d and valid_hours 1 to %d; create larger codes in Stackurity under Add servers", maxEnrollUses, maxEnrollHours)
 			}
 			body := map[string]any{"uses": uses, "ttl_hours": ttl, "label": text(a, "label"), "environment": text(a, "environment")}
 			details := map[string]any{"servers": uses, "valid_hours": ttl, "label": body["label"], "environment": body["environment"]}
@@ -757,16 +768,26 @@ func init() {
 			}
 			return &change{summary: fmt.Sprintf("Invite %s to the project %q as %s", email, p.Name, role),
 				details: map[string]any{"email": email, "project": p.Name, "project_id": id, "role": role},
-				notes:   []string{"They get an email with a link when email is set up on this server; otherwise the link comes back here once, to pass on privately."},
+				notes:   []string{"Someone already in the organisation gets the role at once; others get an email with a link when email is set up on this server."},
 				apply: func(ctx context.Context) (any, error) {
-					var res map[string]any
-					err := send(ctx, s.API, "POST", "/api/v1/invitations", map[string]any{"email": email, "name": text(a, "name"), "role": role, "project_id": id}, &res)
-					out := map[string]any{"emailed": res["emailed"], "granted": res["granted"]}
-					if l, ok := res["link"].(string); ok && l != "" {
-						out["link"] = l
-						out["note"] = "Not emailed: give this link to them privately. It works once."
+					var res struct {
+						Emailed bool `json:"emailed"`
+						Granted bool `json:"granted"`
 					}
-					return out, err
+					// The answer may carry the invitation link (when it was not
+					// emailed): it is a credential, so it never reaches the model.
+					err := send(ctx, s.API, "POST", "/api/v1/invitations", map[string]any{"email": email, "name": text(a, "name"), "role": role, "project_id": id}, &res)
+					if err != nil {
+						return nil, err
+					}
+					switch {
+					case res.Granted:
+						return map[string]any{"result": email + " is already in the organisation and now has the " + role + " role on " + p.Name + "."}, nil
+					case res.Emailed:
+						return map[string]any{"result": "Invitation emailed to " + email + "."}, nil
+					}
+					return map[string]any{"result": "Invitation created for " + email + ", but this server does not send email. To get a link to " +
+						"pass on privately, invite them again in Stackurity (Settings, Projects and access, the project, Invite by email): that replaces this invitation and shows the link once."}, nil
 				}}, nil
 		}},
 	}

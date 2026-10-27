@@ -3,9 +3,12 @@
 // 2.0) for `stackurity mcp`, and over Streamable HTTP for the server's /mcp
 // endpoint (http.go). Both use the same tools, and every tool goes through
 // the HTTP API with the caller's credentials, so the assistant sees and may
-// change exactly what that user may. Tools that change something show what
-// they will do and change nothing until called again with the confirmation
-// code of that preview (write.go).
+// change exactly what that user may. Tools that change something are offered
+// only when the server allows them (AllowWrites: "Allow changes" on the
+// connection, or stackurity mcp --allow-writes), and each first answers a
+// preview and changes nothing until called again with the preview's code
+// (write.go), which guards against a model's mistakes, not against the
+// person.
 //
 // Both protocol eras are served: the per-request metadata of 2026-07-28 and
 // later (server/discover, no handshake), and the initialize handshake of
@@ -68,7 +71,10 @@ type Server struct {
 	// BaseURL is the server's public URL, for the install command that
 	// create_enrollment returns.
 	BaseURL string
-	mu      sync.Mutex
+	// AllowWrites offers the tools that change something; without it only
+	// the read-only tools are listed or callable.
+	AllowWrites bool
+	mu          sync.Mutex
 }
 
 type request struct {
@@ -146,11 +152,22 @@ const instructions = "Stackurity inventories software across hosts, deployed app
 	"list_assets to find the project or server, then action_plan for what to upgrade (each group lists the packages " +
 	"and target versions), asset_stack for every layer an application relies on, and list_findings or get_finding " +
 	"for details. explain_finding cites why a finding matched and why it has its priority, upgrade_recommendation and remediation_plan " +
-	"give versions to move to (from stored data only), and verify_since checks what was fixed after a change. " +
-	"Tools that change something (create_project, rename_project, add_assets_to_project, remove_assets_from_project, " +
+	"give versions to move to (from stored data only), and verify_since checks what was fixed after a change."
+
+const readOnlyNote = " This connection is read-only: no tool changes anything."
+
+const writeNote = " Tools that change something (create_project, rename_project, add_assets_to_project, remove_assets_from_project, " +
 	"create_enrollment, assign, snooze, ignore, check_again, invite_to_project) first answer with a preview of what they " +
-	"will do and change nothing; show it to the user, and only when they agree call the tool again with the same arguments " +
-	"and the confirm code from the preview. Every change is limited by the user's role and recorded in the audit log."
+	"would do and change nothing. Show the preview to the user and call the tool again with the same arguments and the " +
+	"preview's confirm code only when they ask for the change. Every change is limited by the user's role and recorded in " +
+	"the activity log under their name."
+
+func (s *Server) instructions() string {
+	if s.AllowWrites {
+		return instructions + writeNote
+	}
+	return instructions + readOnlyNote
+}
 
 func (s *Server) handle(ctx context.Context, req request) (any, *rpcError) {
 	modern := requestVersion(req.Params)
@@ -179,19 +196,19 @@ func (s *Server) dispatch(ctx context.Context, req request, modern bool) (any, *
 			"protocolVersion": v,
 			"capabilities":    map[string]any{"tools": map[string]any{}},
 			"serverInfo":      map[string]any{"name": "stackurity", "version": s.Version},
-			"instructions":    instructions,
+			"instructions":    s.instructions(),
 		}, nil
 	case "server/discover":
 		return map[string]any{
 			"supportedVersions": SupportedVersions,
 			"capabilities":      map[string]any{"tools": map[string]any{}},
 			"_meta":             map[string]any{"io.modelcontextprotocol/serverInfo": map[string]any{"name": "stackurity", "version": s.Version}},
-			"instructions":      instructions,
+			"instructions":      s.instructions(),
 		}, nil
 	case "ping":
 		return map[string]any{}, nil
 	case "tools/list":
-		return map[string]any{"tools": toolList()}, nil
+		return map[string]any{"tools": toolList(s.AllowWrites)}, nil
 	case "tools/call":
 		var p struct {
 			Name      string          `json:"name"`
@@ -203,6 +220,10 @@ func (s *Server) dispatch(ctx context.Context, req request, modern bool) (any, *
 		t, ok := tools[p.Name]
 		if !ok {
 			return nil, &rpcError{Code: codeInvalidParams, Message: "unknown tool " + p.Name}
+		}
+		if t.write != nil && !s.AllowWrites {
+			return nil, &rpcError{Code: codeInvalidParams, Message: "unknown tool " + p.Name + ": this connection is read-only " +
+				"(allow changes for it in Stackurity under Settings, Connected assistants; for stackurity mcp, --allow-writes)"}
 		}
 		args := map[string]any{}
 		if len(p.Arguments) > 0 && string(p.Arguments) != "null" {
@@ -659,7 +680,7 @@ type finding struct {
 var readTools = []string{"search", "list_assets", "action_plan", "asset_stack", "list_findings", "get_finding", "find_component",
 	"explain_finding", "upgrade_recommendation", "remediation_plan", "verify_since"}
 
-func toolList() []map[string]any {
+func toolList(writes bool) []map[string]any {
 	out := make([]map[string]any, 0, len(readTools)+len(writeTools))
 	for _, n := range readTools {
 		t := tools[n]
@@ -667,6 +688,9 @@ func toolList() []map[string]any {
 			"annotations": map[string]any{"readOnlyHint": true, "openWorldHint": false}})
 	}
 	for _, n := range writeTools {
+		if !writes {
+			break
+		}
 		t := tools[n]
 		out = append(out, map[string]any{"name": n, "title": t.write.title, "description": t.description, "inputSchema": t.schema,
 			"annotations": map[string]any{"title": t.write.title, "readOnlyHint": false, "destructiveHint": t.write.destructive,

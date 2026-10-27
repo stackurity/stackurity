@@ -670,6 +670,10 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 		if _, err := st.PurgeRateLimits(ctx); err != nil {
 			return err
 		}
+		// Unused assistant registrations, old codes and tokens.
+		if err := st.PruneOAuth(ctx); err != nil {
+			return err
+		}
 		return st.PurgeJobs(ctx, 14*24*time.Hour)
 	})
 }

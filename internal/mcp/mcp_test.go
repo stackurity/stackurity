@@ -36,7 +36,7 @@ func (f *fakeAPI) Do(_ context.Context, method, path string, _ io.Reader, _ map[
 func run(t *testing.T, api API, lines ...string) []map[string]any {
 	t.Helper()
 	var out bytes.Buffer
-	s := &Server{API: api, Version: "test"}
+	s := &Server{API: api, Version: "test", AllowWrites: true}
 	if err := s.Serve(context.Background(), strings.NewReader(strings.Join(lines, "\n")+"\n"), &out); err != nil {
 		t.Fatal(err)
 	}
@@ -179,6 +179,8 @@ func (f *writeAPI) Do(_ context.Context, method, path string, body io.Reader, _ 
 		resp = `{"group":{"title":"Upgrade lodash","asset_name":"web-1"},"findings":{"items":[{"id":7},{"id":8}],"total":2}}`
 	case path == "/api/v1/findings/actions":
 		resp = `{"applied":2}`
+	case path == "/api/v1/invitations":
+		resp = `{"invitation":{"id":2},"emailed":false,"link":"https://stk.example/invite#inv_secret"}`
 	case path == "/api/v1/enrollments":
 		resp = `{"enrollment":{"id":4},"code":"enr_abc"}`
 	default:
@@ -241,7 +243,7 @@ func TestWriteToolsNeedConfirmation(t *testing.T) {
 	}
 	for name, args := range cases {
 		api := &writeAPI{role: "admin"}
-		s := &Server{API: api, Version: "test", BaseURL: "https://stk.example"}
+		s := &Server{API: api, Version: "test", BaseURL: "https://stk.example", AllowWrites: true}
 		pv := callTool(t, s, name, args)
 		if pv["status"] != "preview" || pv["confirm"] == "" || len(api.writes()) != 0 {
 			t.Errorf("%s without confirm: %v, writes %v", name, pv, api.writes())
@@ -274,7 +276,7 @@ func TestWriteToolsNeedConfirmation(t *testing.T) {
 	// The install command, and an ignore by someone without security: a
 	// request for approval.
 	api := &writeAPI{role: "admin"}
-	s := &Server{API: api, BaseURL: "http://stk.internal:8080"}
+	s := &Server{API: api, BaseURL: "http://stk.internal:8080", AllowWrites: true}
 	pv := callTool(t, s, "create_enrollment", map[string]any{"servers": 2.0})
 	done := callTool(t, s, "create_enrollment", map[string]any{"servers": 2.0, "confirm": pv["confirm"]})
 	cmd, _ := done["result"].(map[string]any)["install_command"].(string)
@@ -282,7 +284,7 @@ func TestWriteToolsNeedConfirmation(t *testing.T) {
 		t.Errorf("install command = %q", cmd)
 	}
 	api = &writeAPI{role: "engineer"}
-	s = &Server{API: api}
+	s = &Server{API: api, AllowWrites: true}
 	args := map[string]any{"fix_group": "9:package_upgrade:1", "reason": "no_fix", "note": "n", "expiry": "until_fix"}
 	pv = callTool(t, s, "ignore", args)
 	if !strings.HasPrefix(pv["will"].(string), "Ask to ignore 2 issues") {
@@ -364,5 +366,43 @@ func TestHTTPTransport(t *testing.T) {
 	}
 	if code, _ := post(`[{"jsonrpc":"2.0","id":1,"method":"ping"}]`, nil); code != 400 {
 		t.Errorf("batch: %d", code)
+	}
+}
+
+// TestReadOnlyByDefault: without AllowWrites the tools that change
+// something are neither listed nor callable, and the instructions say so.
+func TestReadOnlyByDefault(t *testing.T) {
+	api := &writeAPI{role: "admin"}
+	s := &Server{API: api}
+	res, _ := s.handle(context.Background(), request{Method: "tools/list"})
+	if n := len(res.(map[string]any)["tools"].([]map[string]any)); n != len(readTools) {
+		t.Errorf("read-only server lists %d tools", n)
+	}
+	raw, _ := json.Marshal(map[string]any{"name": "create_project", "arguments": map[string]any{"name": "x"}})
+	if _, rerr := s.handle(context.Background(), request{Method: "tools/call", Params: raw}); rerr == nil || !strings.Contains(rerr.Message, "read-only") {
+		t.Errorf("write tool on a read-only server: %v", rerr)
+	}
+	init, _ := s.handle(context.Background(), request{Method: "initialize", Params: json.RawMessage(`{}`)})
+	if !strings.Contains(init.(map[string]any)["instructions"].(string), "read-only") || len(api.reqs) != 0 {
+		t.Errorf("instructions or requests: %v %v", init, api.reqs)
+	}
+}
+
+// TestInviteNeverReturnsTheLink: an invitation link is a credential; the
+// model gets a sentence instead.
+func TestInviteNeverReturnsTheLink(t *testing.T) {
+	s := &Server{API: &writeAPI{role: "admin"}, AllowWrites: true}
+	args := map[string]any{"email": "new@x.io", "project_id": 3.0, "role": "viewer"}
+	pv := callTool(t, s, "invite_to_project", args)
+	args["confirm"] = pv["confirm"]
+	out, _ := json.Marshal(callTool(t, s, "invite_to_project", args))
+	if strings.Contains(string(out), "inv_secret") || strings.Contains(string(out), "/invite") || !strings.Contains(string(out), "does not send email") {
+		t.Errorf("invite answer: %s", out)
+	}
+	if out := callTool(t, s, "create_enrollment", map[string]any{"servers": 51.0}); !strings.Contains(fmt.Sprint(out["error"]), "1 to 50") {
+		t.Errorf("51 servers: %v", out)
+	}
+	if out := callTool(t, s, "create_enrollment", map[string]any{"valid_hours": 48.0}); !strings.Contains(fmt.Sprint(out["error"]), "1 to 24") {
+		t.Errorf("48 hours: %v", out)
 	}
 }

@@ -37,6 +37,9 @@ export function ConnectAssistantPage() {
   const [error, setError] = useState<ApiError | null>(null);
   const [project, setProject] = useState(0);
   const [role, setRole] = useState<UserRole>("viewer");
+  // "Allow changes" is off until the person ticks it: the connection then
+  // only reads, whatever the role.
+  const [allowChanges, setAllowChanges] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const act = useAction();
 
@@ -51,7 +54,14 @@ export function ConnectAssistantPage() {
   }, [params]);
 
   const decide = async (decision: "allow" | "deny") => {
-    const r = await act.run(() => api.post<{ redirect: string }>("/oauth/authorize", { ...params, decision, project_id: project, role }));
+    const r = await act.run(() => api.post<{ redirect: string }>("/oauth/authorize", {
+        ...params,
+        decision,
+        workspace_id: pv?.workspace.id ?? 0,
+        project_id: project,
+        role,
+        allow_changes: allowChanges,
+      }),);
     if (r?.redirect) {
       setLeaving(true);
       window.location.assign(r.redirect);
@@ -127,9 +137,17 @@ export function ConnectAssistantPage() {
               </option>
             ))}
           </select>
+          <p className="hint">Never more than you can do yourself ({pv.your_role || "no role"}), now or later.</p>
+        </div>
+        <div className="field">
+          <label>
+            <input type="checkbox" checked={allowChanges} onChange={(e) => setAllowChanges(e.target.checked)} /> Allow changes
+          </label>
           <p className="hint">
-            Never more than you can do yourself ({pv.your_role || "no role"}), now or later. Before it changes anything it shows you what it will do and
-            waits for you to agree. Everything it does is in the activity log under your name.
+            {allowChanges
+              ? "It may make changes your role allows, such as assigning or snoozing issues, creating projects or install codes. It previews each change first so it can check with you, but that preview is a safeguard against its mistakes, not a lock: you decide here, and you can turn this off any time in Connected assistants."
+              : "Off: it can only read. Tick this only if you want it to make changes for you; you can change it later in Connected assistants."}{" "}
+            Everything it does is in the activity log under your name.
           </p>
         </div>
         <ErrorBox error={act.error} title="Could not connect" />
@@ -174,6 +192,10 @@ export function AssistantsPage() {
     const ok = await act.run(() => api.del(`/assistants/${c.id}`).then(() => true));
     if (ok) res.reload();
   };
+  const setChanges = async (c: AssistantConnection, allow: boolean) => {
+    const ok = await act.run(() => api.patch(`/assistants/${c.id}`, { allow_changes: allow }).then(() => true));
+    if (ok) res.reload();
+  };
   const items = res.data?.items ?? [];
   const mcpURL = `${window.location.origin}/mcp`;
   return (
@@ -195,15 +217,21 @@ export function AssistantsPage() {
               <div className="slack-link-who">
                 <div className="break">
                   <strong>{c.client_name || "Assistant"}</strong> <span className="muted">({c.redirect_host})</span> in <strong>{c.workspace_name}</strong>
-                  {c.project_name ? <>, project {c.project_name} only</> : null}, as {c.role}
+                  {c.project_name ? <>, project {c.project_name} only</> : null}, as {c.role}, {c.allow_changes ? "may make changes" : "read only"}
                 </div>
                 <div className="small muted">
                   Connected <RelativeTime iso={c.created_at} />, last used <RelativeTime iso={c.last_used_at} />
                 </div>
               </div>
-              <button type="button" className="btn btn-sm btn-link-danger" onClick={() => void disconnect(c)} disabled={act.pending}>
-                Disconnect
-              </button>
+              <div>
+                <label className="small">
+                  <input type="checkbox" checked={c.allow_changes} onChange={(e) => void setChanges(c, e.target.checked)} disabled={act.pending} /> Allow
+                  changes
+                </label>{" "}
+                <button type="button" className="btn btn-sm btn-link-danger" onClick={() => void disconnect(c)} disabled={act.pending}>
+                  Disconnect
+                </button>
+              </div>
             </li>
           ))}
         </ul>
