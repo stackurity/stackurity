@@ -13,6 +13,13 @@ Each release's section is published as its GitHub release notes, and a tag witho
 - **Linked Slack accounts.** The first time someone clicks, Slack shows them a link that works once, for 15 minutes; they sign in and confirm which Slack account acts as them. After that, clicks act as that person with their role and projects, exactly as in the dashboard (a viewer cannot assign, snoozing needs the security role, people with access to some projects only cannot touch other projects' fixes), and are audited like dashboard actions with source `slack`. People see and unlink their Slack accounts under the account menu and **Settings**, **Linked Slack accounts**. `GET /slack/links`, `DELETE /slack/links/{id}`, `POST /slack/links/preview`, `POST /slack/links/confirm`.
 - Actions in webhook JSON carry `fix`, the fix group id.
 - How clicks are trusted: the Slack interactivity endpoint is public and acts only on requests signed with the signing secret of the channel the button belongs to (Slack's HMAC-SHA256 signature, compared in constant time), at most 5 minutes old and accepted once, from that channel's Slack workspace, and it answers only to Slack's own response URLs. A Slack account is never matched by name or email: it must be linked by its owner through a single-use link, and a Slack account linked to someone else cannot be taken over. See `docs/security-audit.md`, "Acting from Slack", and `docs/network.md` for the inbound request.
+- **The CLI has a project option.** `stackurity scan`, `agent`, `sbom import`, `sbom export`, `mcp` and `diagnostics` take `--project` with a project's id or name (or `STACKURITY_PROJECT` in CI). Reads are limited to that project (`X-Stackurity-Project`), and uploads add the assets they create to it. The CLI refuses to upload with `--project` to a server that would ignore it.
+- `POST /ingest` takes `project_id`, as SBOM uploads already did: an admin's upload files the asset in the project, and a collector token made for a project may name that project only (403 for any other) and never moves an asset that already exists. Uploads answer with `project_id` and `in_project`.
+- `stackurity enroll --project <id>` checks that the enrollment code is for that project, and refuses without using the code if it is not. `POST /enroll` returns the code's `project_id`, and `GET /meta` lists `features` (`upload_project`).
+
+### Changed
+
+- A collector token made for a project may now pass that project's `project_id` to `POST /sbom/import`; other callers who are not admins still get 403.
 
 ### Fixed
 
