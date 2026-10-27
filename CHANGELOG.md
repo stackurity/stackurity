@@ -38,7 +38,7 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ### Upgrading
 
-- Migration `0046` builds the index `findings_asset_incident`, rebuilds `findings_resolved_at` with two more columns, and replaces the row-level security policy on `incidents` with an equivalent one. Migrations run in a transaction, so the indexes are built without `CONCURRENTLY`: writes to findings (uploads, evaluation) wait while they are built, 4 to 11 seconds on a copy of a 1.2 GB production database with 240,000 findings (2 CPUs, 768 MB memory limit); reading is not blocked. Upgrading takes that much longer to start.
+- Migration `0046` builds the index `findings_asset_incident`, rebuilds `findings_resolved_at` with two more columns, and replaces the row-level security policy on `incidents` with an equivalent one. Migrations run in a transaction, so the indexes are built without `CONCURRENTLY`: writes to findings (uploads, evaluation) wait while they are built (reading is blocked only for the moment before the commit), 1.5 to 11 seconds (depending on load and cache) on a copy of a 1.2 GB production database with 240,000 findings (2 CPUs, 768 MB memory limit). Upgrading takes that much longer to start.
 
 ## 0.12.0
 

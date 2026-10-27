@@ -27,10 +27,12 @@ CREATE INDEX findings_asset_incident ON findings (asset_id, status, incident_id)
 -- large rescan that is most findings, and each was read from the heap:
 -- three seconds for 125,000. With the asset and workspace in the index (for
 -- the join and the row-level security check) the count reads the index only.
-DROP INDEX findings_resolved_at;
-CREATE INDEX findings_resolved_at ON findings (resolved_at) INCLUDE (asset_id, workspace_id) WHERE status = 'resolved';
+CREATE INDEX findings_resolved_at_cover ON findings (resolved_at) INCLUDE (asset_id, workspace_id) WHERE status = 'resolved';
 
--- Last, so that incidents is locked only for the moment before the commit.
+-- Last, as dropping an index and changing a policy lock their tables
+-- against reading until the commit, which follows at once.
+DROP INDEX findings_resolved_at;
+ALTER INDEX findings_resolved_at_cover RENAME TO findings_resolved_at;
 DROP POLICY ws ON incidents;
 CREATE POLICY ws ON incidents
     USING (workspace_id = stackurity_ws() AND ((SELECT stackurity_narrowed()) IS NOT TRUE
