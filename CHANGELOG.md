@@ -9,6 +9,10 @@ Each release's section is published as its GitHub release notes, and a tag witho
 ### Added
 
 - **Monitored-asset limits per organisation.** An instance administrator can limit how many assets each workspace monitors (**Settings → Workspaces**, or `PATCH /admin/workspaces/{id}` with `asset_limit`; `-1` removes it). Self-hosted installs have no limit unless one is set. A monitored asset is a host, application, repository, image, cluster, managed service or SBOM that is not merged into another; Kubernetes workloads are not counted. At the limit, new assets are refused wherever they would be created (agent and collector uploads, CI scans, SBOM imports, image scans, integrations, enrollment codes) with `402 asset_limit` and a message that says so, while every asset already monitored keeps being collected, evaluated and alerted on. A banner shows when the organisation is at its limit, and **Settings → Usage** shows usage against the limit by kind and the assets that were refused. `GET /usage`. See `docs/asset-limits.md`.
+- **Act from Slack: Assign to me and Snooze from inside Slack.** A Slack channel set up with a Slack app's signing secret (a new, optional **Slack app signing secret reference**, stored like every other secret) gets interactive **Assign to me** and **Snooze 1 week** buttons; **Open** still opens the dashboard. The message is updated with what was done ("Assigned to Nirmal (3 issues)", "Snoozed until 3 Nov by Nirmal"), or the person is told, only them, why it was refused. Without a signing secret, messages are exactly as in 0.9. The app needs no OAuth scopes beyond its incoming webhook; its Interactivity Request URL is `POST /api/v1/integrations/slack/actions`. Setup steps are in `docs/install.md` and Help.
+- **Linked Slack accounts.** The first time someone clicks, Slack shows them a link that works once, for 15 minutes; they sign in and confirm which Slack account acts as them. After that, clicks act as that person with their role and projects, exactly as in the dashboard (a viewer cannot assign, snoozing needs the security role, people with access to some projects only cannot touch other projects' fixes), and are audited like dashboard actions with source `slack`. People see and unlink their Slack accounts under the account menu and **Settings**, **Linked Slack accounts**. `GET /slack/links`, `DELETE /slack/links/{id}`, `POST /slack/links/preview`, `POST /slack/links/confirm`.
+- Actions in webhook JSON carry `fix`, the fix group id.
+- How clicks are trusted: the Slack interactivity endpoint is public and acts only on requests signed with the signing secret of the channel the button belongs to (Slack's HMAC-SHA256 signature, compared in constant time), at most 5 minutes old and accepted once, from that channel's Slack workspace, and it answers only to Slack's own response URLs. A Slack account is never matched by name or email: it must be linked by its owner through a single-use link, and a Slack account linked to someone else cannot be taken over. See `docs/security-audit.md`, "Acting from Slack", and `docs/network.md` for the inbound request.
 
 ### Fixed
 
@@ -21,6 +25,7 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 - Migration `0039` adds `workspaces.asset_limit` (empty: no limit) and the `refused_assets` table. Nothing changes until a limit is set.
 - Migration `0035` updates `assets.announced_at` for the assets that existed when `0030` ran (one row per asset, no lock on findings).
+- Migration `0038` adds `slack_links`, `slack_link_requests` and `slack_seen_requests`, each with row-level security per workspace. Nothing existing changes; Slack channels keep their link buttons until an administrator adds a signing secret.
 
 ## 0.9.0
 
