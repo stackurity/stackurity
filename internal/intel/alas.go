@@ -84,15 +84,12 @@ func (s *Syncer) syncAmazonLinux(ctx context.Context, feed string) (*SyncResult,
 		for _, id := range order[i:end] {
 			batch = append(batch, byID[id])
 		}
-		touched, err := s.Store.UpsertAdvisories(ctx, feed, batch)
+		n, err := s.Store.UpsertAdvisories(ctx, feed, batch)
 		if err != nil {
 			return nil, err
 		}
 		res.noteEcosystems("Amazon Linux", batch)
-		for p := range touched {
-			res.Packages[p] = true
-		}
-		res.Changed += len(batch)
+		res.Changed += n
 	}
 	_ = s.Store.SetFeedRecords(ctx, feed, int64(len(order)))
 	if len(failed) > 0 {

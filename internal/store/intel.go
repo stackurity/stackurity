@@ -100,13 +100,20 @@ func (s *Store) FeedResult(ctx context.Context, name, cursor string, changed int
 		_, err := s.Pool.Exec(ctx, `UPDATE feeds SET last_error = $2 WHERE name = $1`, name, msg)
 		return err
 	}
-	_, err := s.Pool.Exec(ctx, `UPDATE feeds SET last_success = now(), last_error = '', cursor = $2, last_changed = $3,
-		records = CASE
-		  WHEN name LIKE 'osv:%' THEN (SELECT count(*) FROM advisories WHERE feed = $1)
-		  WHEN name LIKE 'releases:%' THEN (SELECT count(*) FROM package_releases WHERE source = $1 AND last_error = '')
-		  ELSE records END
-		WHERE name = $1`, name, cursor, changed)
-	return err
+	// The sync handed its pending packages to re-evaluation before this,
+	// so they are cleared with the success that ends it.
+	return pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `UPDATE feeds SET last_success = now(), last_error = '', cursor = $2, last_changed = $3,
+			records = CASE
+			  WHEN name LIKE 'osv:%' THEN (SELECT count(*) FROM advisories WHERE feed = $1)
+			  WHEN name LIKE 'releases:%' THEN (SELECT count(*) FROM package_releases WHERE source = $1 AND last_error = '')
+			  ELSE records END
+			WHERE name = $1`, name, cursor, changed); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `DELETE FROM feed_pending_packages WHERE feed = $1`, name)
+		return err
+	})
 }
 
 // UpdateFeedEcosystems records the ecosystems a vulnerability feed covers.
@@ -132,92 +139,6 @@ func (s *Store) UpdateFeedEcosystems(ctx context.Context, name, base string, see
 func (s *Store) SetFeedRecords(ctx context.Context, name string, n int64) error {
 	_, err := s.Pool.Exec(ctx, `UPDATE feeds SET records = $2 WHERE name = $1`, name, n)
 	return err
-}
-
-// PackageRef identifies an OSV package.
-type PackageRef struct {
-	BaseEcosystem string
-	Name          string
-}
-
-// UpsertAdvisories stores OSV records and returns the packages they touch,
-// so only affected components are re-evaluated.
-func (s *Store) UpsertAdvisories(ctx context.Context, feed string, vulns []*osv.Vulnerability) (map[PackageRef]bool, error) {
-	touched := map[PackageRef]bool{}
-	err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
-		ids := make([]string, 0, len(vulns))
-		for _, v := range vulns {
-			ids = append(ids, v.ID)
-		}
-		// Packages the old versions referenced are touched too: an advisory
-		// that drops a package must clear that package's findings.
-		rows, err := tx.Query(ctx, `SELECT DISTINCT base_ecosystem, name FROM advisory_packages WHERE advisory_id = ANY($1)`, ids)
-		if err != nil {
-			return err
-		}
-		for rows.Next() {
-			var p PackageRef
-			if err := rows.Scan(&p.BaseEcosystem, &p.Name); err != nil {
-				rows.Close()
-				return err
-			}
-			touched[p] = true
-		}
-		rows.Close()
-		if _, err := tx.Exec(ctx, `DELETE FROM advisory_packages WHERE advisory_id = ANY($1)`, ids); err != nil {
-			return err
-		}
-		batch := &pgx.Batch{}
-		var pkgRows [][]any
-		for _, v := range vulns {
-			r := osv.Rate(v)
-			var score *float32
-			if r.Score > 0 || r.Source == "cvss_v3" || r.Source == "cvss_v4" {
-				f := float32(r.Score)
-				score = &f
-			}
-			refs, _ := json.Marshal(v.References)
-			aliases := v.Aliases
-			if aliases == nil {
-				aliases = []string{}
-			}
-			var published *time.Time
-			if !v.Published.IsZero() {
-				published = &v.Published
-			}
-			modified := v.Modified
-			if modified.IsZero() {
-				modified = time.Now()
-			}
-			batch.Queue(`INSERT INTO advisories (id, feed, group_key, aliases, summary, severity_level, severity_score,
-				severity_vector, severity_source, published, modified, withdrawn, refs, known_exploited, fetched_at)
-				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,
-				  EXISTS (SELECT 1 FROM known_exploited k WHERE k.cve = $3 OR k.cve = ANY($4)), now())
-				ON CONFLICT (id) DO UPDATE SET feed = EXCLUDED.feed, group_key = EXCLUDED.group_key, aliases = EXCLUDED.aliases,
-				  summary = EXCLUDED.summary, severity_level = EXCLUDED.severity_level, severity_score = EXCLUDED.severity_score,
-				  severity_vector = EXCLUDED.severity_vector, severity_source = EXCLUDED.severity_source,
-				  published = EXCLUDED.published, modified = EXCLUDED.modified, withdrawn = EXCLUDED.withdrawn,
-				  refs = EXCLUDED.refs, known_exploited = EXCLUDED.known_exploited, fetched_at = now()`,
-				v.ID, feed, osv.GroupKey(v.ID, v.Aliases, v.Upstream...), aliases, truncateText(v.Summary, 500), r.Level, score, r.Vector, r.Source,
-				published, modified, v.Withdrawn, refs)
-			for _, a := range v.Affected {
-				if a.Package.Name == "" || a.Package.Ecosystem == "" {
-					continue
-				}
-				aj, _ := json.Marshal(a)
-				base := osv.BaseEcosystem(a.Package.Ecosystem)
-				pkgRows = append(pkgRows, []any{v.ID, base, a.Package.Ecosystem, a.Package.Name, aj})
-				touched[PackageRef{base, a.Package.Name}] = true
-			}
-		}
-		if err := tx.SendBatch(ctx, batch).Close(); err != nil {
-			return err
-		}
-		_, err = tx.CopyFrom(ctx, pgx.Identifier{"advisory_packages"},
-			[]string{"advisory_id", "base_ecosystem", "ecosystem", "name", "affected"}, pgx.CopyFromRows(pkgRows))
-		return err
-	})
-	return touched, err
 }
 
 func truncateText(s string, n int) string {
