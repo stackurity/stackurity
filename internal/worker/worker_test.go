@@ -125,15 +125,22 @@ func TestPeriodicHeartbeatKeepsLongTask(t *testing.T) {
 	st := store.New(testdb.New(t))
 	ctx := tenant.System(context.Background())
 	a, b := newWorker(st), newWorker(st)
-	a.Lease, b.Lease = 400*time.Millisecond, 400*time.Millisecond
-	started := make(chan struct{})
+	// The lease is renewed every quarter of it, so it survives a stall of
+	// up to three quarters (from the claim to the first renewal, or
+	// between renewals). With a database under heavy load, round trips of
+	// over 300 ms (all a 400 ms lease allowed) were seen to lose it.
+	const lease = 2 * time.Second
+	a.Lease, b.Lease = lease, lease
+	started, release := make(chan struct{}), make(chan struct{})
 	var bRuns atomic.Int32
+	var aStopped atomic.Bool
 	a.Every("long", time.Millisecond, func(ctx context.Context) error {
 		close(started)
 		select {
-		case <-time.After(1500 * time.Millisecond):
+		case <-release:
 			return nil
 		case <-ctx.Done():
+			aStopped.Store(true)
 			return ctx.Err()
 		}
 	})
@@ -142,19 +149,31 @@ func TestPeriodicHeartbeatKeepsLongTask(t *testing.T) {
 	done := make(chan struct{})
 	go func() { a.runPeriodic(ctx, a.periodic[0]); close(done) }()
 	<-started
-	deadline := time.After(1200 * time.Millisecond)
-loop:
+	// The task runs until the test releases it, so the second replica's
+	// attempts all fall while the first holds it, however slowly this
+	// goroutine is scheduled. They go on until, by the database clock the
+	// lease is kept in, the first lease and one more have ended: the task
+	// has then outlived its lease twice over, which only renewal allows.
+	var firstLease time.Time
+	if err := st.Pool.QueryRow(ctx, `SELECT locked_until FROM periodic_tasks WHERE name = 'long'`).Scan(&firstLease); err != nil {
+		t.Fatal(err)
+	}
 	for {
 		b.runPeriodic(ctx, b.periodic[0])
-		select {
-		case <-deadline:
-			break loop
-		case <-time.After(100 * time.Millisecond):
+		var past bool
+		if err := st.Pool.QueryRow(ctx, `SELECT now() > $1`, firstLease.Add(lease)).Scan(&past); err != nil {
+			t.Fatal(err)
 		}
+		if past {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
+	close(release)
 	<-done
-	if bRuns.Load() != 0 {
-		t.Fatalf("second replica ran %d times while the first still held the task", bRuns.Load())
+	if bRuns.Load() != 0 || aStopped.Load() {
+		t.Fatalf("second replica ran %d times while the first still held the task (first stopped for a lost lease: %v)",
+			bRuns.Load(), aStopped.Load())
 	}
 	if tk := task(t, st, "long"); tk.LastSuccessAt == nil || tk.LastError != "" {
 		t.Errorf("long task outcome: %+v", tk)
@@ -286,7 +305,21 @@ func TestRunningJobKeepsItsLock(t *testing.T) {
 	if _, err := st.Pool.Exec(ctx, `UPDATE jobs SET locked_at = now() - interval '31 minutes' WHERE id = $1`, j.ID); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(200 * time.Millisecond) // several renewals
+	// Wait for a renewal (every 50 ms) to move the lock back to now. A fixed
+	// sleep assumed one had happened, and under load another worker could
+	// then claim a job whose lock still looked 31 minutes old.
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		var renewed bool
+		if err := st.Pool.QueryRow(ctx, `SELECT locked_at > now() - interval '1 minute' FROM jobs WHERE id = $1`, j.ID).Scan(&renewed); err != nil {
+			t.Fatal(err)
+		}
+		if renewed {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the running job's lock was not renewed")
+		}
+	}
 	if other, err := st.Claim(ctx, "b"); err != nil || other != nil {
 		t.Errorf("a running job must not be claimed again: %+v %v", other, err)
 	}
@@ -374,10 +407,15 @@ func TestDeferredJobFreesItsSlot(t *testing.T) {
 	w := newWorker(st)
 	w.Concurrency, w.Poll = 1, 20*time.Millisecond
 	// The first evaluation, holding the lock (as a long full evaluation would).
-	release, err := st.LockEvaluations(ctx)
+	unlock, err := st.LockEvaluations(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Release on failure too: the lock holds a pool connection, and closing
+	// the pool waits for it (a failed check used to hang the package).
+	var once sync.Once
+	release := func() { once.Do(unlock) }
+	t.Cleanup(release)
 	var tries, ran atomic.Int64
 	// As the server's evaluate handler: busy means defer.
 	w.Handle("evaluate", func(ctx context.Context, _ json.RawMessage) error {
@@ -410,8 +448,20 @@ func TestDeferredJobFreesItsSlot(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("the other job did not run while the evaluation was deferred")
 	}
-	if ran.Load() != 0 || tries.Load() < 2 {
+	if ran.Load() != 0 || tries.Load() < 1 {
 		t.Fatalf("evaluation tries %d, ran %d", tries.Load(), ran.Load())
+	}
+	// The deferred evaluation comes back and is deferred again while the
+	// lock is held. (Whether its second try comes before or after the other
+	// job depends on scheduling: under load the first try can start after
+	// the other job is due.)
+	for deadline := time.Now().Add(10 * time.Second); tries.Load() < 2; time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("the deferred evaluation was not tried again: tries %d", tries.Load())
+		}
+	}
+	if ran.Load() != 0 {
+		t.Fatalf("the evaluation ran while another held the lock")
 	}
 	release()
 	deadline := time.Now().Add(10 * time.Second)
