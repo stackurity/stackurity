@@ -664,8 +664,8 @@
   "/admin/workspaces/{id}": {
    "patch": {
     "operationId": "patch_admin_workspaces_id",
-    "summary": "Rename, disable or set the plan and asset limit of a workspace",
-    "description": "Workspaces with `member_count`, `asset_count`, `monitored` and `asset_limit` (null: none). `PATCH` takes `name`, `disabled`, `plan` and `asset_limit` (`-1` removes the limit; see asset-limits.md)\n\nRole: instance admin",
+    "summary": "Rename, disable or set the plan, limits, read-only state and report mode of a workspace",
+    "description": "Workspaces with `member_count`, `asset_count`, `monitored` and `asset_limit` (null: none). `PATCH` takes `name`, `disabled`, `plan`, `asset_limit` and `project_limit` (`-1` removes a limit), `read_only` with `read_only_reason`, and `report_mode` (`full` or `trial`); see asset-limits.md\n\nRole: instance admin",
     "tags": [
      "Instance administration"
     ],
@@ -7027,7 +7027,7 @@
    "get": {
     "operationId": "get_usage",
     "summary": "Monitored assets against the organisation's limit",
-    "description": "Monitored assets against the organisation's limit: `monitored`, `limit` (null: none), `at_limit`, `by_kind`, `stale`, `workloads` (not counted), `refused` (the most recent new assets refused at the limit) and `refused_recently` (last 7 days). At the limit, requests that would create an asset answer `402` with code `asset_limit`\n\nRole: viewer (organisation-wide)",
+    "description": "Monitored assets against the organisation's limit: `monitored`, `limit` (null: none), `at_limit`, `by_kind`, `stale`, `workloads` (not counted), `refused` (the most recent new assets refused at the limit) and `refused_recently` (last 7 days). Also `projects`, `project_limit`, `projects_at_limit`, `read_only` (`since`, `reason`) and `report_mode` (`full`, `trial`). At the limit, requests that would create an asset answer `402` with code `asset_limit`, a new project `402 project_limit`; while read-only, uploads, enrollment, integrations, checks and notifications answer `402 read_only`\n\nRole: viewer (organisation-wide)",
     "tags": [
      "Reports"
     ],
@@ -7284,6 +7284,278 @@
       }
      }
     },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/signup": {
+   "post": {
+    "operationId": "post_signup",
+    "summary": "Start a sign-up (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. Email, name, organisation, password, challenge token (action `signup`) and `accept_terms`; answers `202 check_email` whatever the email's state\n\nRole: none",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "none",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/signup/verify": {
+   "post": {
+    "operationId": "post_signup_verify",
+    "summary": "Verify a sign-up and create the organisation (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. Uses the emailed token once: creates the account and the organisation on its trial, and starts a session\n\nRole: none",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "none",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/billing": {
+   "get": {
+    "operationId": "get_billing",
+    "summary": "Plan and billing of the organisation (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. Status (trial, trial_ended, awaiting_payment, active, past_due, halted, cancelling, cancelled), plans, limits, read-only and deletion dates, `billing_enabled` and `contact_url`\n\nRole: admin",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "admin",
+    "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/billing/subscribe": {
+   "post": {
+    "operationId": "post_billing_subscribe",
+    "summary": "Subscribe to or change a plan (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. `plan_id`, `extra_assets`, `country` (asked once; decides the currency). A browser session only. `503 billing_off` while billing is off; `409` while a payment is being confirmed\n\nRole: admin",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/billing/cancel": {
+   "post": {
+    "operationId": "post_billing_cancel",
+    "summary": "Cancel the plan at the end of the period (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. A browser session only. Then the organisation becomes read-only\n\nRole: admin",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/billing/invoices": {
+   "get": {
+    "operationId": "get_billing_invoices",
+    "summary": "Invoices of the organisation (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. Invoices of this organisation's subscriptions\n\nRole: admin",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "admin",
+    "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/admin/trials/{id}": {
+   "put": {
+    "operationId": "put_admin_trials_id",
+    "summary": "Extend one organisation's trial (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. `trial_ends_at` (RFC 3339, in the future and within a year); applied at once and audited `cloud.trial_extended`\n\nRole: instance admin",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "instance admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "x-stackurity-edition": "cloud",
     "responses": {
      "2XX": {
       "description": "Success",
