@@ -381,6 +381,7 @@ Routes send to channels and filter by SOS only, kinds, environments and owner te
 | `mode` | Sends |
 |---|---|
 | `urgent_summary` (default) | urgent messages right away and a daily summary |
+| `urgent_only` | urgent messages right away (with issues that came back, `connected` and, with `escalation`, `overdue` messages), no summary |
 | `daily` | a daily summary only |
 | `weekly` | a weekly summary only, on `summary_day` |
 
@@ -390,11 +391,11 @@ The `event` of each message:
 
 - `urgent`: at most one per route per evaluation cycle, only when the cycle produced new urgent issues for the route (at `min_priority` or above, SOS, or known exploited), or a problem with collection, feeds or the platform at that priority. Summarised per asset (up to 5, then "+N more") with up to 3 fixes each from **Fixes**.
 - `summary`: daily or weekly at `summary_time`: new issues by asset, issues fixed (with the fix that closed them, when `send_resolved`), the top 3 fixes still open, overdue counts (when `escalation`, licensed), and open problems. Skipped when nothing changed. A summary is never held by `max_per_hour`.
-- `overdue` (licensed, routes with `escalation`, `urgent_summary` mode): at most one per route per day, when urgent (P1 or SOS) issues have just passed their fix deadline; groups every overdue urgent issue by fix. Escalation levels (1: acknowledgement deadline passed, 2: fix deadline passed) are still recorded on incidents and findings.
+- `overdue` (licensed, routes with `escalation`, `urgent_summary` or `urgent_only` mode): at most one per route per day, when urgent (P1 or SOS) issues have just passed their fix deadline; groups every overdue urgent issue by fix. Escalation levels (1: acknowledgement deadline passed, 2: fix deadline passed) are still recorded on incidents and findings.
 - `connected`: when a new asset's first complete collection has been evaluated (or six hours after it appeared, if no complete collection arrives): "commmerceblog connected: 1,676 packages checked, 412 issues found, 3 fixes need you". See [A quiet first scan](#a-quiet-first-scan).
 - `test`: **Send test**.
 
-Resolved incidents are not announced; summaries count fixed issues. Quiet hours delay everything except SOS. When `max_per_hour` is reached, further messages are held and counted in the route's next summary, never sent one by one. Failed deliveries are retried with backoff up to 8 times, no sooner than a receiver's `Retry-After`. A delivery that cannot succeed until the configuration changes (Jira rejecting the credentials, an unknown project) fails at once.
+Resolved incidents are not announced; summaries count fixed issues. Quiet hours delay everything except SOS. When `max_per_hour` is reached, further messages are held and counted in the route's next summary, never sent one by one; a route in `urgent_only` mode, which has no summary, gets them in one `digest` message an hour instead ("Stackurity: 4 urgent messages held by the hourly limit", one line per held message). Failed deliveries are retried with backoff up to 8 times, no sooner than a receiver's `Retry-After`. A delivery that cannot succeed until the configuration changes (Jira rejecting the credentials, an unknown project) fails at once.
 
 Jira channels (`"kind": "jira"`) keep one issue per incident instead, whatever the route's `mode`: the first matching event (`opened`, `priority_raised`) creates the issue, later changes are queued as `updated` deliveries (findings joined or left, priority changed), `escalated` for routes marked `escalation` (one comment per issue) and `resolved`. Quiet hours, limits and summaries do not apply to them. Incidents in lists and in `GET /incidents/{id}` carry the issues that follow them:
 
@@ -443,7 +444,7 @@ Webhook channels receive each message as JSON. Fields are only ever added, never
 - `counts` keys: `urgent`, `assets`, `problems`, `regressed` (urgent); `new`, `new_urgent`, `fixed`, `connected`, `connected_issues`, `regressed`, `open_fixes`, `overdue`, `overdue_urgent`, `ack_overdue`, `problems`, `held` (summary); `overdue_urgent`, `fixes` (overdue); `assets`, `issues` (connected).
 - Each fix in a message (an item whose `link` is `/fixes/{id}`) has `actions`: `[{"kind": "assign", "label": "Assign to me", "link": ".../fixes/{id}?action=assign"}, {"kind": "snooze", ...}, {"kind": "open", ...}]`. Each action also carries `fix`, the fix group id. Slack shows them as URL buttons (on up to 8 items per message), email and Teams as links. They open the fix in the dashboard with the action ready; the person confirms it there after signing in. Following a link changes nothing. On a Slack channel with a signing secret, Assign to me and Snooze 1 week act from inside Slack instead (see [Acting from Slack](#acting-from-slack)).
 - A route limited to projects (`project_ids`) opens every link in its project (`?project=N`): its only project, or for a route on several the first of them the item's asset is in.
-- Issues that came back after a fix are urgent whatever their priority: the next urgent message on routes in **Urgent right away + daily summary** mode lists them per asset ("web-1: 3 issues came back after a fix"), once, and summaries count them in their own section rather than as new issues.
+- Issues that came back after a fix are urgent whatever their priority: the next urgent message on routes in **Urgent right away + daily summary** or **Urgent only** mode lists them per asset ("web-1: 3 issues came back after a fix"), once, and summaries count them in their own section rather than as new issues.
 - Summaries also carry `"period": {"from": "...", "to": "..."}`.
 
 ### Acting from Slack

@@ -532,8 +532,8 @@ func (s *Server) saveRoute(w http.ResponseWriter, r *http.Request, id int64) {
 	case !priorities[rt.MinPriority]:
 		s.fail(w, r, badRequest("min_priority must be P1-P4"))
 		return
-	case rt.Mode != store.ModeUrgentSummary && rt.Mode != store.ModeDaily && rt.Mode != store.ModeWeekly:
-		s.fail(w, r, badRequest("mode must be urgent_summary, daily or weekly"))
+	case !slices.Contains([]string{store.ModeUrgentSummary, store.ModeUrgentOnly, store.ModeDaily, store.ModeWeekly}, rt.Mode):
+		s.fail(w, r, badRequest("mode must be urgent_summary, urgent_only, daily or weekly"))
 		return
 	case !notify.ValidQuietTime(rt.SummaryTime):
 		s.fail(w, r, badRequest("summary_time must be HH:MM"))

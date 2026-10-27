@@ -489,6 +489,7 @@ function ChannelForm({ channel, onCancel, onSaved }: { channel?: Channel; onCanc
 
 const MODE_LABEL: Record<RouteMode, string> = {
   urgent_summary: "Urgent right away + daily summary",
+  urgent_only: "Urgent only, no summary",
   daily: "Daily summary only",
   weekly: "Weekly summary only",
 };
@@ -496,6 +497,8 @@ const MODE_LABEL: Record<RouteMode, string> = {
 const MODE_HINT: Record<RouteMode, string> = {
   urgent_summary:
     "At most one message per check when there are new urgent issues, grouped by asset and fix, plus a daily summary of what is new, fixed and overdue.",
+  urgent_only:
+    "At most one message per check when there are new urgent issues or issues that came back, plus overdue reminders and new assets. No daily or weekly summary; urgent messages over the hourly limit are sent together once an hour.",
   daily: "One message a day: what is new, what was fixed and by what, the top fixes still open. Skipped when nothing changed.",
   weekly: "The same summary once a week.",
 };
@@ -504,6 +507,7 @@ const dayLabel = (d: string) => d.charAt(0).toUpperCase() + d.slice(1);
 
 function schedule(r: Route): string {
   const at = r.summary_time || "09:00";
+  if (r.mode === "urgent_only") return "none";
   if (r.mode === "weekly") return `${dayLabel(r.summary_day || "monday")}s at ${at} ${r.timezone}`;
   return `daily at ${at} ${r.timezone}`;
 }
@@ -788,7 +792,9 @@ function RouteForm({
             ))}
           </select>
           <p className="hint">
-            {r.mode === "urgent_summary" || !r.mode
+            {r.mode === "urgent_only"
+              ? "Issues at this priority, SOS and known exploited ones are sent right away; nothing else is sent."
+              : r.mode === "urgent_summary" || !r.mode
               ? "Issues at this priority, SOS and known exploited ones are sent right away; the rest waits for the summary."
               : "Summaries count issues at this priority, SOS and known exploited ones as urgent."}
           </p>
@@ -803,7 +809,11 @@ function RouteForm({
             value={String(r.max_per_hour)}
             onChange={(e) => set("max_per_hour", Math.max(0, Number(e.target.value) || 0))}
           />
-          <p className="hint">0 = unlimited. Extra urgent messages are counted in the next summary instead; summaries are never held.</p>
+          <p className="hint">
+            {r.mode === "urgent_only"
+              ? "0 = unlimited. Extra urgent messages are sent together once an hour instead."
+              : "0 = unlimited. Extra urgent messages are counted in the next summary instead; summaries are never held."}
+          </p>
         </div>
       </div>
       <div className="btn-group">
@@ -853,7 +863,7 @@ function RouteForm({
           />
         ))}
       <fieldset className="field">
-        <legend>Summary and quiet hours</legend>
+        <legend>{r.mode === "urgent_only" ? "Quiet hours" : "Summary and quiet hours"}</legend>
         <div className="form-grid">
           {r.mode === "weekly" && (
             <div className="field">
@@ -867,10 +877,12 @@ function RouteForm({
               </select>
             </div>
           )}
-          <div className="field">
-            <label htmlFor={`${idp}-st`}>Summary time</label>
-            <input id={`${idp}-st`} type="time" required value={r.summary_time || "09:00"} onChange={(e) => set("summary_time", e.target.value)} />
-          </div>
+          {r.mode !== "urgent_only" && (
+            <div className="field">
+              <label htmlFor={`${idp}-st`}>Summary time</label>
+              <input id={`${idp}-st`} type="time" required value={r.summary_time || "09:00"} onChange={(e) => set("summary_time", e.target.value)} />
+            </div>
+          )}
           <div className="field">
             <label htmlFor={`${idp}-qs`}>Quiet from (optional)</label>
             <input id={`${idp}-qs`} type="time" value={r.quiet_start} onChange={(e) => set("quiet_start", e.target.value)} />
