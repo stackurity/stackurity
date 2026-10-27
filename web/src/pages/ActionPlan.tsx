@@ -77,8 +77,7 @@ export function FixGroupList({
   const [offset, setOffset] = useState(0);
   useEffect(() => setOffset(0), [assetId, kind, environment, q, bucket]);
   const res = useLoad(
-    // The same upgrade on several assets in view is one card (merge).
-    () => api.get<List<FixGroup>>("/fix-groups", { asset_id: assetId, kind, environment, q, bucket, merge: true, limit: LIMIT, offset }),
+    () => api.get<List<FixGroup>>("/fix-groups", { asset_id: assetId, kind, environment, q, bucket, limit: LIMIT, offset }),
     [assetId, kind, environment, q, bucket, offset],
   );
   return (
@@ -121,7 +120,7 @@ export function FixesPage() {
   const dq = useDebounced(q);
   const facets = useFacets();
   const assets = useLoad(() => api.get<List<Asset>>("/assets", { limit: 200 }), []);
-  const summary = useLoad(() => api.get<FixGroupSummary>("/fix-groups/summary", { asset_id: assetId, merge: true }), [assetId]);
+  const summary = useLoad(() => api.get<FixGroupSummary>("/fix-groups/summary", { asset_id: assetId }), [assetId]);
 
   const with_ = (patch: Record<string, string>) => {
     const n = new URLSearchParams(params);

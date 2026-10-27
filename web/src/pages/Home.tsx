@@ -8,7 +8,7 @@ import { useLoad } from "../hooks";
 import { plural } from "../format";
 import { Badge } from "../components/Badge";
 import { IntelBanners } from "../components/Findings";
-import { changeText, fixesFrom, FixKindIcon, isMerged, MergedAssets, urgencyOf } from "../components/FixGroups";
+import { changeText, fixesFrom, FixKindIcon, FixPlaces, urgencyOf } from "../components/FixGroups";
 import { PackSuggestions } from "../components/PackSuggestions";
 import { IconHelp } from "../components/Icons";
 import { Code, EmptyState, ErrorBox, Loading, PageHeader, RelativeTime } from "../components/ui";
@@ -30,11 +30,12 @@ function Tile({ to, value, label, tone, sub }: { to: string; value: number; labe
   );
 }
 
-/** The same upgrade on several assets: one card, the assets inside. */
-function HomeMergedCard({ g }: { g: FixGroup }) {
+/** One fix needed in several places: one card, the places inside. */
+function HomeFixPlacesCard({ g }: { g: FixGroup }) {
   const u = urgencyOf(g);
   const [open, setOpen] = useState(false);
   const id = `hf-${g.id.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+  const places = g.places ?? [];
   return (
     <article className="home-fix" aria-labelledby={id}>
       <div className="home-fix-top">
@@ -45,29 +46,28 @@ function HomeMergedCard({ g }: { g: FixGroup }) {
         <span className="fix-icon fix-icon-inline" aria-hidden="true">
           <FixKindIcon kind={g.kind} />
         </span>
-        <span>{g.title}</span>
+        <span>
+          {g.title} in {places.length} places
+        </span>
         {fixesFrom(g) && <span className="home-fix-from small muted"> {fixesFrom(g)}</span>}
       </h3>
       <p className="home-fix-where small">
         clears {plural(g.finding_count, "issue")}
-        {g.unique_issues !== undefined && g.unique_issues !== g.finding_count && (
-          <span className="muted"> ({plural(g.unique_issues, "distinct vulnerability", "distinct vulnerabilities")})</span>
-        )}
         {g.known_exploited > 0 && <strong className="text-bad"> · {g.known_exploited.toLocaleString()} known exploited</strong>}
       </p>
       <div className="home-fix-actions">
         <button type="button" className="btn btn-sm btn-primary" aria-expanded={open} onClick={() => setOpen(!open)}>
-          {open ? `Hide the ${g.asset_name}` : `Show the ${g.asset_name}`}
+          {open ? "Hide the places" : `Show the ${places.length} places`}
         </button>
       </div>
-      {open && <MergedAssets g={g} />}
+      {open && <FixPlaces g={g} places={places} />}
     </article>
   );
 }
 
 function HomeFixCard({ g }: { g: FixGroup }) {
   const { canAct: can } = useAuth();
-  if (isMerged(g)) return <HomeMergedCard g={g} />;
+  if ((g.places?.length ?? 0) > 1) return <HomeFixPlacesCard g={g} />;
   const u = urgencyOf(g);
   const href = `/fixes/${encodeURIComponent(g.id)}`;
   return (
@@ -148,9 +148,9 @@ export function HomePage() {
   const admin = can("admin");
   const ob = useLoad(() => (admin ? api.getAll<Onboarding>("/onboarding") : Promise.resolve(null)), [admin]);
   const ov = useLoad(() => api.get<Overview>("/overview"), []);
-  // The same upgrade on several assets is one fix (merge), in the list and the counts.
-  const plan = useLoad(() => api.get<FixGroupSummary>("/fix-groups/summary", { merge: true }), []);
-  const top = useLoad(() => api.get<List<FixGroup>>("/fix-groups", { bucket: "focus", merge: true, limit: TOP }), []);
+  // The same fix in several places is one fix (Settings, Fix grouping), in the list and the counts.
+  const plan = useLoad(() => api.get<FixGroupSummary>("/fix-groups/summary"), []);
+  const top = useLoad(() => api.get<List<FixGroup>>("/fix-groups", { bucket: "focus", limit: TOP }), []);
   const fs = useLoad(() => api.get<FindingSummary>("/findings/summary"), []);
   const assets = useLoad(() => api.get<List<Asset>>("/assets", { limit: 200 }), []);
 

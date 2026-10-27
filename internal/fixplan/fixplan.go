@@ -31,8 +31,8 @@ type Row struct {
 	AssetID        int64
 	AssetName      string
 	AssetKind      string
-	AssetPath      string // an application's directory on its host
 	Environment    string
+	AppDir         string // deployed application's directory, when the asset is one
 	OS             string // os-release ID, e.g. ubuntu
 	OSVersion      string
 	OSName         string
@@ -53,15 +53,19 @@ type Row struct {
 }
 
 type Group struct {
-	ID             string         `json:"id"`
-	Kind           string         `json:"kind"`
-	Title          string         `json:"title"`
-	Action         string         `json:"action"`
-	AssetID        int64          `json:"asset_id"`
-	AssetName      string         `json:"asset_name"`
-	AssetKind      string         `json:"asset_kind"`
-	AssetPath      string         `json:"asset_path,omitempty"` // an application's directory
-	Environment    string         `json:"environment"`
+	ID          string `json:"id"`
+	Kind        string `json:"kind"`
+	Title       string `json:"title"`
+	Action      string `json:"action"`
+	AssetID     int64  `json:"asset_id"`
+	AssetName   string `json:"asset_name"`
+	AssetKind   string `json:"asset_kind"`
+	Environment string `json:"environment"`
+	AppDir      string `json:"app_dir,omitempty"`
+	// FixKey is the same for groups that make the same change in different
+	// places (jquery 3.3.1 → 3.5.0 in two apps), so a list can show them as
+	// one fix. Groups that only make sense per asset use their ID.
+	FixKey         string         `json:"fix_key"`
 	Component      string         `json:"component,omitempty"`
 	FromVersion    string         `json:"from_version,omitempty"`
 	ToVersion      string         `json:"to_version,omitempty"`
@@ -84,17 +88,20 @@ type Group struct {
 	// recommended version when it is in the same major line as the minimum
 	// fix, otherwise the minimum fixed version. Clients show it as the
 	// headline and ToVersion as "fixes from".
-	TargetVersion     string            `json:"target_version,omitempty"`
-	ChangeType        string            `json:"change_type,omitempty"`
-	RequiresMajor     bool              `json:"requires_major,omitempty"`
-	RecommendedYanked bool              `json:"recommended_yanked,omitempty"`
-	Rationale         []string          `json:"rationale,omitempty"`
-	FindingIDs        []int64           `json:"-"`
-	pkgs              map[string]bool   `json:"-"`
-	purlType          string            `json:"-"`
-	fromVersions      map[string]bool   `json:"-"`
-	extra             map[string]string `json:"-"`
-	keys              map[string]bool   `json:"-"`
+	TargetVersion     string   `json:"target_version,omitempty"`
+	ChangeType        string   `json:"change_type,omitempty"`
+	RequiresMajor     bool     `json:"requires_major,omitempty"`
+	RecommendedYanked bool     `json:"recommended_yanked,omitempty"`
+	Rationale         []string `json:"rationale,omitempty"`
+	// Places lists every asset the fix applies to, when groups are merged
+	// by FixKey (see Merge); empty for a single asset's group.
+	Places       []Place           `json:"places,omitempty"`
+	FindingIDs   []int64           `json:"-"`
+	pkgs         map[string]bool   `json:"-"`
+	purlType     string            `json:"-"`
+	fromVersions map[string]bool   `json:"-"`
+	extra        map[string]string `json:"-"`
+	keys         map[string]bool   `json:"-"`
 }
 
 // Advice gives the newest supported release of an OS, for release-upgrade
@@ -146,8 +153,8 @@ func Build(rows []Row, advice map[string]Advice) ([]*Group, map[int64]string) {
 		}
 		g := groups[id]
 		if g == nil {
-			g = &Group{ID: id, Kind: kind, AssetID: r.AssetID, AssetName: r.AssetName, AssetKind: r.AssetKind, AssetPath: r.AssetPath,
-				Environment: r.Environment, ByPriority: map[string]int{}, BySeverity: map[string]int{},
+			g = &Group{ID: id, Kind: kind, AssetID: r.AssetID, AssetName: r.AssetName, AssetKind: r.AssetKind,
+				Environment: r.Environment, AppDir: r.AppDir, ByPriority: map[string]int{}, BySeverity: map[string]int{},
 				TopPriority: "P4", pkgs: map[string]bool{}, purlType: r.PurlType, fromVersions: map[string]bool{},
 				extra: map[string]string{}, keys: map[string]bool{}}
 			groups[id] = g
@@ -250,6 +257,7 @@ func less(a, b *Group) bool {
 }
 
 func describe(g *Group, osEOL map[int64]Row, advice map[string]Advice) {
+	g.FixKey = g.ID
 	for p := range g.pkgs {
 		g.Packages = append(g.Packages, p)
 	}
@@ -314,6 +322,7 @@ func describe(g *Group, osEOL map[int64]Row, advice map[string]Advice) {
 		}
 		g.Action += "; move to a supported version."
 		g.Note = fmt.Sprintf("Installed package: %s %s.", g.Component, g.FromVersion)
+		g.FixKey = fmt.Sprintf("%s:%s:%s:%s", EndOfLife, g.purlType, g.Component, g.FromVersion)
 		g.Effort = "medium"
 	case PackageUpgrade:
 		from := sortedKeys(g.fromVersions)
@@ -321,6 +330,7 @@ func describe(g *Group, osEOL map[int64]Row, advice map[string]Advice) {
 		g.TargetVersion = g.ToVersion
 		g.Title = fmt.Sprintf("Upgrade %s %s → %s", g.Component, g.FromVersion, g.ToVersion)
 		g.Action = fmt.Sprintf("Update %s to %s or later in the lockfile and redeploy.", g.Component, g.ToVersion)
+		g.FixKey = fmt.Sprintf("%s:%s:%s:%s>%s", PackageUpgrade, g.purlType, g.Component, g.FromVersion, g.ToVersion)
 		g.Effort = "medium"
 		if len(from) > 0 {
 			if ct, err := version.ChangeType(g.purlType, from[0], g.ToVersion); err == nil {
@@ -338,6 +348,46 @@ func describe(g *Group, osEOL map[int64]Row, advice map[string]Advice) {
 				"Fixed in " + paidLabel(ch) + "; without it, wait for the free fix or upgrade to a newer supported release."
 		}
 	}
+}
+
+// Place is one asset a fix applies to, when one fix is shown for several.
+type Place struct {
+	GroupID      string `json:"group_id"`
+	AssetID      int64  `json:"asset_id"`
+	AssetName    string `json:"asset_name"`
+	AssetKind    string `json:"asset_kind"`
+	AppDir       string `json:"app_dir,omitempty"`
+	Environment  string `json:"environment"`
+	FindingCount int    `json:"finding_count"`
+}
+
+// Merge shows groups with the same FixKey as one fix: the first group (the
+// most urgent, as stored) with the counts of all of them and the places they
+// are in. Distinct issues are not added up: the same library at the same
+// version has the same vulnerabilities everywhere.
+func Merge(gs []Group) Group {
+	m := gs[0]
+	m.ByPriority, m.BySeverity = map[string]int{}, map[string]int{}
+	m.FindingCount, m.KnownExploited = 0, 0
+	for _, g := range gs {
+		m.Places = append(m.Places, Place{GroupID: g.ID, AssetID: g.AssetID, AssetName: g.AssetName, AssetKind: g.AssetKind,
+			AppDir: g.AppDir, Environment: g.Environment, FindingCount: g.FindingCount})
+		m.FindingCount += g.FindingCount
+		m.KnownExploited += g.KnownExploited
+		m.UniqueIssues = max(m.UniqueIssues, g.UniqueIssues)
+		m.PackageCount = max(m.PackageCount, g.PackageCount)
+		m.SOS = m.SOS || g.SOS
+		if g.TopPriority < m.TopPriority {
+			m.TopPriority = g.TopPriority
+		}
+		for k, n := range g.ByPriority {
+			m.ByPriority[k] += n
+		}
+		for k, n := range g.BySeverity {
+			m.BySeverity[k] += n
+		}
+	}
+	return m
 }
 
 func effortOf(changeType string) string {
@@ -494,87 +544,6 @@ func sortedKeys(m map[string]bool) []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-// MergedAsset is one asset of a merged fix: its own group, to open and act
-// on.
-type MergedAsset struct {
-	GroupID        string `json:"group_id"`
-	AssetID        int64  `json:"asset_id"`
-	AssetName      string `json:"asset_name"`
-	AssetKind      string `json:"asset_kind"`
-	AssetPath      string `json:"asset_path,omitempty"`
-	Environment    string `json:"environment"`
-	FindingCount   int    `json:"finding_count"`
-	UniqueIssues   int    `json:"unique_issues"`
-	TopPriority    string `json:"top_priority"`
-	SOS            bool   `json:"sos"`
-	KnownExploited int    `json:"known_exploited"`
-}
-
-// Merged is the same upgrade on several assets, shown as one fix: the
-// combined counts, and each asset's own group underneath.
-type Merged struct {
-	Group
-	GroupIDs []string      `json:"group_ids"`
-	Assets   []MergedAsset `json:"assets"`
-}
-
-// Merge combines groups that are the same upgrade (same kind, component,
-// installed version and version to move to) on different assets, most
-// urgent first. unique is the number of distinct issues across them. The
-// result has no asset of its own (asset_id 0, asset_name "3 apps").
-func Merge(gs []Group, unique int) Merged {
-	m := Merged{Group: gs[0]}
-	g := &m.Group
-	g.ID = "merged:" + gs[0].ID
-	g.FindingCount, g.KnownExploited, g.SOS = 0, 0, false
-	g.ByPriority, g.BySeverity = map[string]int{}, map[string]int{}
-	g.TopPriority = "P4"
-	pkgs := map[string]bool{}
-	kinds, envs := map[string]bool{}, map[string]bool{}
-	for _, x := range gs {
-		m.GroupIDs = append(m.GroupIDs, x.ID)
-		m.Assets = append(m.Assets, MergedAsset{GroupID: x.ID, AssetID: x.AssetID, AssetName: x.AssetName, AssetKind: x.AssetKind,
-			AssetPath: x.AssetPath, Environment: x.Environment, FindingCount: x.FindingCount, UniqueIssues: x.UniqueIssues,
-			TopPriority: x.TopPriority, SOS: x.SOS, KnownExploited: x.KnownExploited})
-		g.FindingCount += x.FindingCount
-		g.KnownExploited += x.KnownExploited
-		g.SOS = g.SOS || x.SOS
-		if x.TopPriority < g.TopPriority {
-			g.TopPriority = x.TopPriority
-		}
-		for k, v := range x.ByPriority {
-			g.ByPriority[k] += v
-		}
-		for k, v := range x.BySeverity {
-			g.BySeverity[k] += v
-		}
-		for _, p := range x.Packages {
-			pkgs[p] = true
-		}
-		kinds[x.AssetKind], envs[x.Environment] = true, true
-	}
-	g.UniqueIssues = unique
-	g.Packages = sortedKeys(pkgs)
-	g.PackageCount = len(g.Packages)
-	noun := "assets"
-	if len(kinds) == 1 {
-		noun = map[string]string{"application": "apps", "host": "servers", "repository": "repositories", "image": "images"}[gs[0].AssetKind]
-		if noun == "" {
-			noun = "assets"
-		}
-	}
-	g.AssetID, g.AssetPath = 0, ""
-	g.AssetName = fmt.Sprintf("%d %s", len(gs), noun)
-	if len(kinds) != 1 {
-		g.AssetKind = ""
-	}
-	if len(envs) != 1 {
-		g.Environment = ""
-	}
-	g.Title += " on " + g.AssetName
-	return m
 }
 
 // minorLine is "0.21" for "0.21.4" (the leading two numbers), or "".

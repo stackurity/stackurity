@@ -252,6 +252,7 @@ func (s *Server) Handler() http.Handler {
 				r.Get("/incidents", s.listIncidents)
 				r.Get("/incidents/{id}", s.getIncident)
 				r.Get("/risk-policy", s.getRiskPolicy)
+				r.Get("/settings/fix-grouping", s.getFixGrouping)
 				r.Get("/usage", s.assetUsage)
 				r.Get("/onboarding/results", s.firstResults)
 				r.Get("/checks", s.listChecks)
@@ -329,6 +330,7 @@ func (s *Server) Handler() http.Handler {
 				// stops detection for all of them.
 				r.With(requireInstanceAdmin).Patch("/feeds/{name}", s.updateFeed)
 				r.Put("/risk-policy", s.putRiskPolicy)
+				r.Put("/settings/fix-grouping", s.putFixGrouping)
 				r.Post("/risk-policy/preview", s.previewRiskPolicy)
 				r.Post("/channels", s.createChannel)
 				r.Patch("/channels/{id}", s.updateChannel)

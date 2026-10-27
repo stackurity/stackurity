@@ -207,8 +207,8 @@ func TestUpgradeAndOutcomeEndpoints(t *testing.T) {
 	}
 }
 
-// The same upgrade on several assets is one item in the merged list and
-// counts once; filters apply first, so one asset in view is not merged.
+// Grouped by fix, the same upgrade in several places is one item and counts
+// once in the summary; filters apply first, so one asset is not merged.
 func TestMergedFixGroups(t *testing.T) {
 	e := newEnv(t)
 	e.user("view@x.io", auth.RoleViewer)
@@ -248,61 +248,55 @@ func TestMergedFixGroups(t *testing.T) {
 		t.Fatal(err)
 	}
 	type item struct {
-		ID           string   `json:"id"`
-		Title        string   `json:"title"`
-		AssetID      int64    `json:"asset_id"`
-		AssetName    string   `json:"asset_name"`
-		FindingCount int      `json:"finding_count"`
-		UniqueIssues int      `json:"unique_issues"`
-		GroupIDs     []string `json:"group_ids"`
-		Assets       []struct {
+		ID           string `json:"id"`
+		FindingCount int    `json:"finding_count"`
+		Places       []struct {
 			GroupID      string `json:"group_id"`
-			AssetName    string `json:"asset_name"`
 			FindingCount int    `json:"finding_count"`
-		} `json:"assets"`
+		} `json:"places"`
 	}
 	var list struct {
 		Items []item `json:"items"`
 		Total int    `json:"total"`
 	}
-	if code := view.do("GET", "/api/v1/fix-groups?kind=package_upgrade&merge=true", nil, &list); code != 200 || list.Total != 2 || len(list.Items) != 2 {
-		t.Fatalf("merged list: %d %+v", code, list)
+	if code := view.do("GET", "/api/v1/fix-groups?kind=package_upgrade&group_by=fix", nil, &list); code != 200 || list.Total != 2 || len(list.Items) != 2 {
+		t.Fatalf("by fix: %d %+v", code, list)
 	}
 	var merged *item
 	for i := range list.Items {
-		if len(list.Items[i].GroupIDs) > 0 {
+		if len(list.Items[i].Places) > 1 {
 			merged = &list.Items[i]
 		}
 	}
-	if merged == nil || len(merged.Assets) != 2 || merged.AssetID != 0 || merged.AssetName != "2 servers" || merged.FindingCount != 4 ||
-		merged.UniqueIssues != 2 || !strings.HasSuffix(merged.Title, " on 2 servers") || !strings.HasPrefix(merged.ID, "merged:") {
-		t.Errorf("merged item = %+v", merged)
+	if merged == nil || len(merged.Places) != 2 || merged.FindingCount != 4 {
+		t.Fatalf("merged item = %+v", merged)
 	}
-	// Each asset's own group still opens.
-	for _, x := range merged.Assets {
+	// Each place's own group still opens.
+	for _, x := range merged.Places {
 		if code := view.do("GET", "/api/v1/fix-groups/"+url.PathEscape(x.GroupID), nil, nil); code != 200 || x.FindingCount != 2 {
 			t.Errorf("group %s: %d", x.GroupID, code)
 		}
 	}
-	// Unmerged by default; one asset in view is never merged.
 	list.Items = nil
-	if view.do("GET", "/api/v1/fix-groups?kind=package_upgrade", nil, &list); list.Total != 3 {
-		t.Errorf("default list: %d", list.Total)
+	if view.do("GET", "/api/v1/fix-groups?kind=package_upgrade&group_by=asset", nil, &list); list.Total != 3 {
+		t.Errorf("by asset: %d", list.Total)
 	}
+	// One asset in view is never merged.
 	list.Items = nil
-	if view.do("GET", "/api/v1/fix-groups?merge=true&asset_id="+itoa(a), nil, &list); list.Total != 1 || len(list.Items[0].GroupIDs) != 0 {
+	if view.do("GET", "/api/v1/fix-groups?group_by=fix&asset_id="+itoa(a), nil, &list); list.Total != 1 || len(list.Items[0].Places) > 1 {
 		t.Errorf("one asset: %+v", list)
 	}
+	// Counts follow the grouping: the same fix in two places counts once.
 	var sum struct {
 		Groups int `json:"groups"`
-		Focus  struct {
-			Groups int `json:"groups"`
-		} `json:"focus"`
 	}
-	view.do("GET", "/api/v1/fix-groups/summary?merge=true", nil, &sum)
-	merged2 := sum.Groups
-	view.do("GET", "/api/v1/fix-groups/summary", nil, &sum)
-	if merged2 != sum.Groups-1 {
-		t.Errorf("summary: merged %d, groups %d", merged2, sum.Groups)
+	view.do("GET", "/api/v1/fix-groups/summary?group_by=fix", nil, &sum)
+	byFix := sum.Groups
+	view.do("GET", "/api/v1/fix-groups/summary?group_by=asset", nil, &sum)
+	if byFix != sum.Groups-1 {
+		t.Errorf("summary: by fix %d, by asset %d", byFix, sum.Groups)
+	}
+	if code := view.do("GET", "/api/v1/fix-groups/summary?group_by=nope", nil, nil); code != 400 {
+		t.Errorf("bad group_by: %d", code)
 	}
 }

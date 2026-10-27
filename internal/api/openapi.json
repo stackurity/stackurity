@@ -3646,7 +3646,7 @@
    "get": {
     "operationId": "get_fix_groups",
     "summary": "Fixes (fix groups), most urgent first",
-    "description": "Fixes (fix groups), most urgent first. `bucket` is `focus` (a fix exists, SOS or P1, on a production asset or one with no environment), `no_fix`, `old_kernels`, `non_production` or `lower_priority`; every group is in exactly one, checked in that order. With `merge=true`, the same upgrade (kind, component, installed version and `target_version`) on several assets in view is one item: `id` `merged:<first group id>`, `asset_id` 0, `asset_name` such as \"3 apps\", combined counts, and `group_ids` and `assets` (each asset's own group, with its counts)\n\nRole: viewer",
+    "description": "Fixes (fix groups), most urgent first. `bucket` is `focus` (a fix exists, SOS or P1, on a production asset or one with no environment), `no_fix`, `old_kernels`, `non_production` or `lower_priority`; every group is in exactly one, checked in that order. `group_by` is `fix` (the same change in several places is one entry with `places`: group, asset, app directory and finding count per place; counts are added up, `unique_issues` is not) or `asset` (one entry per asset); the default is the workspace's setting (`/settings/fix-grouping`)\n\nRole: viewer",
     "tags": [
      "Findings and fixes"
     ],
@@ -3693,11 +3693,15 @@
       }
      },
      {
-      "name": "merge",
+      "name": "group_by",
       "in": "query",
       "required": false,
       "schema": {
-       "type": "boolean"
+       "type": "string",
+       "enum": [
+        "fix",
+        "asset"
+       ]
       }
      }
     ],
@@ -3725,7 +3729,7 @@
    "get": {
     "operationId": "get_fix_groups_summary",
     "summary": "Fix groups and findings per kind and bucket",
-    "description": "Groups and findings per kind, plus `focus`: the number of focus groups and their findings, groups and findings per other bucket (`hidden`), and the assets with focus groups. With `merge=true` the same upgrade on several assets counts as one group, as the merged list shows it\n\nRole: viewer",
+    "description": "Groups and findings per kind, plus `focus`: the number of focus groups and their findings, groups and findings per other bucket (`hidden`), and the assets with focus groups. Counts follow `group_by` as `GET /fix-groups` does: grouped by fix, the same fix in several places counts once\n\nRole: viewer",
     "tags": [
      "Findings and fixes"
     ],
@@ -3740,11 +3744,15 @@
       }
      },
      {
-      "name": "merge",
+      "name": "group_by",
       "in": "query",
       "required": false,
       "schema": {
-       "type": "boolean"
+       "type": "string",
+       "enum": [
+        "fix",
+        "asset"
+       ]
       }
      }
     ],
@@ -7572,6 +7580,72 @@
      }
     },
     "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/settings/fix-grouping": {
+   "get": {
+    "operationId": "get_fix_grouping",
+    "summary": "How fix lists group the same fix in several places",
+    "description": "How fix lists show the same fix in several places: `fix_grouping` is `fix` (one entry per fix listing its places; the default) or `asset` (one entry per asset). `PUT` writes a `settings.update` audit event\n\nRole: viewer",
+    "tags": [
+     "Findings and fixes"
+    ],
+    "x-stackurity-role": "viewer",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "put": {
+    "operationId": "put_fix_grouping",
+    "summary": "Change how fix lists group the same fix",
+    "description": "How fix lists show the same fix in several places: `fix_grouping` is `fix` (one entry per fix listing its places; the default) or `asset` (one entry per asset). `PUT` writes a `settings.update` audit event\n\nRole: admin",
+    "tags": [
+     "Findings and fixes"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
     "responses": {
      "2XX": {
       "description": "Success",

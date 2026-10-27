@@ -11,7 +11,6 @@ Each release's section is published as its GitHub release notes, and a tag witho
 - **Settings → AI assistants: connect an assistant step by step.** The page shows the server's MCP address with a Copy button and a card per assistant (Claude, Claude Code, ChatGPT, Cursor, Visual Studio Code, Windsurf, Gemini CLI, Replit, other) that opens short numbered steps checked against each vendor's documentation, with one-click install links for Cursor, VS Code and Replit, and questions to try. Connected assistants, with Allow changes and Disconnect, are listed below. Without `STACKURITY_BASE_URL` it explains how to turn assistants on. It is linked from the account menu (**Connect an AI assistant**) and from Help. `GET /assistants` now returns `mcp_url`. The old address, `/settings/assistants`, opens it.
 - **Create a team where you need one.** Giving a team access to a project offers **Create a team** in place, and selects the new team. Team dropdowns with no teams (asset owner, assigning issues, remediation policies) say where teams are made. Community's one-team limit still applies.
 - **Home's first-run checklist** also asks to connect an AI assistant, and each item opens the page that does it: add a server, connect an AI assistant, turn on notifications, invite your team. `GET /onboarding` has a new `steps.assistant`.
-
 - **ChatGPT can sign in.** Clients whose metadata document declares `private_key_jwt` (ChatGPT's, https://chatgpt.com/oauth/client.json, does) authenticate at the token endpoint with a signed client assertion (RFC 7523), checked against the keys at their `jwks_uri`: issuer, subject, audience, expiry, and a `jti` that cannot be used twice. Migration 0043 adds the method, the client's keys and the used assertions; it is additive.
 - `GET /.well-known/openai-apps-challenge` serves `STACKURITY_OPENAI_APPS_CHALLENGE` (or `_FILE`) as text for OpenAI's domain check, and 404 when it is unset (it used to return the dashboard).
 - **Data handling** in docs/ai-assistants.md: what an assistant can read and change, how your role caps it, how to disconnect, and that Stackurity never receives or stores prompts.
@@ -23,14 +22,27 @@ Each release's section is published as its GitHub release notes, and a tag witho
 - **Upgrade advice leads with the recommended version.** A package upgrade's title and action name the newest stable release in the minimum fix's major line when release data has one: "Upgrade ip-address 10.1.0 → 10.7.5", with "fixes from 10.7.4" beside it, where it read "→ 10.7.4". Home, Fixes, a fix's page, Slack and email messages that list fixes, and the MCP `action_plan` and `remediation_plan` tools show it. Fix groups have a new `target_version`; `to_version` stays the minimum fixed version. A major upgrade, a withdrawn release, or below 1.0 another minor line (0.21 to 0.34) never heads the title.
 - **Install commands look for websites and apps by default.** **Also check websites and apps on this server** is ticked under Add server and in the first-run flow, so the agent finds applications under `/srv`, `/var/www`, `/opt`, `/app` and home directories. The MCP `create_enrollment` tool does the same unless `check_apps` is false. `stackurity agent` itself is unchanged: without `--discover-apps` it does not look.
 - Application discovery is bounded: at most 20,000 directories read and 200 applications reported per run. The installer's service now runs at a low CPU and disk priority (`Nice=10`, best-effort I/O priority 7).
-
-- **The same upgrade on several assets is one fix.** On Fixes, Home and in the MCP `action_plan` tool, "Upgrade lodash 4.17.20 → 4.18.1" on four apps is one card ("on 4 apps") with the combined counts (distinct issues counted once), the highest priority and the SOS and known-exploited flags. The assets are listed inside, each with its own count and its own fix page (Check again, I applied this, Assign, Snooze), plus **Assign, snooze or ignore on all 4**, which reports partial results. Headline counts ("4 fixes need you", "8 fixes in all") count merged fixes. Filters apply first. `GET /fix-groups` and `/fix-groups/summary` take `merge=true`; fix groups are stored and keyed per asset as before.
-- **Two copies of an application on one host are told apart.** The second copy of "phpmyadmin on DBC" is named by its path ("phpmyadmin (/demo/phpmyadmin) on DBC"), and the first is renamed to match while it still has its generated name. A name a person set is never changed (migration 0044 records which names those are). Application paths show beside the name on Assets, Home, Fixes and in the MCP `list_assets` tool.
+- **Fix cards count and act like one fix.** With fixes grouped by fix (the default since 0.12.0), the counts on Home and Fixes ("4 fixes need you", "8 fixes in all") count a fix needed in several places once, as the list shows it; `GET /fix-groups/summary` takes `group_by` like `GET /fix-groups`. Home's focus list shows such a fix as one card listing its places, and a fix card can **Assign, snooze or ignore in all N places** at once, reporting partial results. The MCP `action_plan` tool lists the places of each fix.
+- **Two copies of an application on one host are told apart.** The second copy of "phpmyadmin on DBC" is named by its path ("phpmyadmin (/demo/phpmyadmin) on DBC"), and the first is renamed to match while it still has its generated name. A name a person set is never changed (migration 0044 records which names those are). Application paths show beside the name on Assets, Home and in the MCP `list_assets` tool.
 - **Approvals moved to Activity** (`/approvals`, with the Activity tabs); `/settings/approvals` redirects there, and the count of requests waiting shows on Activity.
 
 ### Fixed
 
 - The project switcher in the header shows a project created in the first-run flow at once, and choosing it at the end of the flow works, instead of needing a page reload.
+
+## 0.12.0
+
+### Added
+
+- **One card per fix, wherever it is needed.** When the same upgrade is needed in several places (jquery 3.3.1 → 3.5.0 in two phpMyAdmin copies, or lodash on ten servers), Fixes and Home show one card that lists every place: the asset, the application's directory, its environment and its issue count, each linking to that place's own fix. Issues cleared add up across places; distinct vulnerabilities are counted once. **Show issues** lists the findings of every place. Checks, "applied", notifications and project access still work per place, so a project member sees only the places they can see. **Settings → Fix grouping** switches a workspace back to one card per asset. `GET /fix-groups` takes `group_by=fix|asset` (default: the workspace setting) and returns `places`, `fix_key` and `app_dir`; `GET/PUT /settings/fix-grouping`; `GET /findings?fix_group=` accepts several groups, comma-separated.
+
+### Changed
+
+- Fix cards for a deployed application show its directory, so two applications with the same name on one server can be told apart.
+
+### Fixed
+
+- **A library in an application inside another application was reported twice.** With a webroot and an application under it both scanned (a CodeIgniter site in `/var/www/html` with phpMyAdmin in `/var/www/html/phpmyadmin`), the outer scan also read the inner application's libraries and lockfiles, so each of its vulnerabilities appeared under both. The agent now learns every application directory first and each library belongs only to the innermost application. Upgrade the agent to clear the duplicates.
 
 ## 0.11.0
 

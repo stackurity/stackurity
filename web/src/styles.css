@@ -1944,6 +1944,17 @@ details.json pre {
   gap: var(--s2);
   align-items: center;
 }
+.fix-places p {
+  margin: 0 0 var(--s1);
+}
+.fix-place-list {
+  margin: 0;
+  padding-left: var(--s4);
+  overflow-wrap: anywhere;
+}
+.fix-place-list li + li {
+  margin-top: 2px;
+}
 .fix-packages summary {
   cursor: pointer;
   color: var(--text-2);
@@ -4363,33 +4374,3 @@ h6.md-h {
   gap: 8px;
 }
 
-/* --- the same upgrade on several assets */
-.merged-assets {
-  margin-top: 10px;
-}
-.merged-asset-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  border-top: 1px solid var(--border);
-}
-.merged-asset-list li {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: 12px;
-  align-items: center;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--border);
-}
-.merged-asset-name {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-@media (max-width: 600px) {
-  .merged-asset-list li {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-  .merged-asset-name {
-    grid-column: 1 / -1;
-  }
-}

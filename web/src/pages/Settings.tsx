@@ -23,6 +23,11 @@ const GROUPS: { title: string; entries: Entry[] }[] = [
       { to: "/integrations", label: "Integrations", about: "Git repositories, container images and cloud accounts to scan on a schedule.", min: "engineer" },
       { to: "/settings/risk-policy", label: "Risk policy", about: "How issues get their priority, SOS rules, deadlines and the longest snooze." },
       {
+        to: "/settings/fix-grouping",
+        label: "Fix grouping",
+        about: "Show a fix needed in several places as one card listing them, or one card per asset.",
+      },
+      {
         to: "/approvals",
         label: "Approvals and ignore rules",
         about: "Requests to ignore issues, and the ignore rules in force for one asset or every asset.",

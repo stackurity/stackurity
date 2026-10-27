@@ -1961,6 +1961,12 @@ export interface FixGroup {
   asset_name: string;
   asset_kind: string;
   environment: string;
+  /** Directory of a deployed application, when the asset is one. */
+  app_dir?: string;
+  /** Same for the same change in different places; groups by asset use their id. */
+  fix_key?: string;
+  /** Every place this fix applies to, when the list shows one entry per fix (more than one place). */
+  places?: FixPlace[] | null;
   component?: string;
   from_version?: string;
   to_version?: string;
@@ -1984,34 +1990,24 @@ export interface FixGroup {
    * line as to_version (the minimum fixed version), otherwise to_version.
    */
   target_version?: string;
-  /** An application's directory on its host. */
-  asset_path?: string;
-  /**
-   * With merge=true: the same upgrade on several assets as one item (asset_id 0, asset_name "3 apps"); each
-   * asset's own group, to open and act on, is under assets.
-   */
-  group_ids?: string[];
-  assets?: MergedFixAsset[];
   change_type?: string;
   requires_major?: boolean;
   recommended_yanked?: boolean;
   rationale?: string[] | null;
 }
 
-/** One asset of a merged fix: its own fix group. */
-export interface MergedFixAsset {
+export interface FixPlace {
   group_id: string;
   asset_id: number;
   asset_name: string;
   asset_kind: string;
-  asset_path?: string;
+  app_dir?: string;
   environment: string;
   finding_count: number;
-  unique_issues: number;
-  top_priority: string;
-  sos: boolean;
-  known_exploited: number;
 }
+
+/** GET/PUT /settings/fix-grouping: one entry per fix (listing its places) or one per asset. */
+export type FixGrouping = "fix" | "asset";
 
 export interface FixGroupDetail {
   group: FixGroup;

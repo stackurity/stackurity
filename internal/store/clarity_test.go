@@ -1,12 +1,19 @@
 package store_test
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/stackurity/stackurity/internal/fixplan"
 	"github.com/stackurity/stackurity/internal/fixplan/planner"
 	"github.com/stackurity/stackurity/internal/risk"
 	"github.com/stackurity/stackurity/internal/store"
+	"github.com/stackurity/stackurity/internal/tenant"
+	"github.com/stackurity/stackurity/internal/testdb"
 )
 
 // Prioritize runs every minute over every open finding; rows whose result
@@ -149,5 +156,77 @@ func TestFixBuckets(t *testing.T) {
 	}
 	if focus.Hidden[store.BucketNoFix]["groups"] == 0 {
 		t.Errorf("the finding with no fixed version should be in the no_fix bucket: %+v", focus.Hidden)
+	}
+}
+
+// The same upgrade on several assets is one entry when listed by fix, with
+// every place, and the findings of all its places can be listed together.
+func TestFixGroupsByFix(t *testing.T) {
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	s := store.New(testdb.New(t))
+	var ids []int64
+	var in []store.FindingInput
+	for _, h := range []struct{ name, ver string }{{"a", "3.3.1"}, {"b", "3.3.1"}, {"c", "3.2.0"}} {
+		host := ingestHost(t, s, ctx, h.name, "pkg:npm/jquery@"+h.ver)
+		rows, _, err := s.ListInventory(ctx, store.InventoryFilter{AssetID: host})
+		if err != nil || len(rows) != 1 {
+			t.Fatalf("inventory of %s: %d, %v", h.name, len(rows), err)
+		}
+		ids = append(ids, rows[0].ID)
+		for _, key := range []string{"CVE-2019-11358", "CVE-2020-11022"} {
+			in = append(in, store.FindingInput{Kind: "vulnerability", Key: key, InventoryID: rows[0].ID, AssetID: host, ComponentID: rows[0].ComponentID,
+				Verification: "confirmed", Severity: "medium", FixedVersion: "3.5.0", Title: key, Sources: []string{"GHSA-" + key}})
+		}
+	}
+	if _, _, err := s.SyncFindings(ctx, []string{"vulnerability"}, ids, in); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := planner.Rebuild(ctx, s, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	_, byAsset, err := s.ListFixGroups(ctx, store.FixGroupFilter{})
+	if err != nil || byAsset != 3 {
+		t.Fatalf("by asset: %d, %v; want 3", byAsset, err)
+	}
+	raw, byFix, err := s.ListFixGroups(ctx, store.FixGroupFilter{ByFix: true})
+	if err != nil || byFix != 2 || len(raw) != 2 {
+		t.Fatalf("by fix: %d entries of %d, %v; want 2", len(raw), byFix, err)
+	}
+	var merged *fixplan.Group
+	for _, r := range raw {
+		var g fixplan.Group
+		if err := json.Unmarshal(r, &g); err != nil {
+			t.Fatal(err)
+		}
+		if g.FromVersion == "3.3.1" {
+			merged = &g
+		}
+	}
+	if merged == nil || len(merged.Places) != 2 || merged.FindingCount != 4 || merged.UniqueIssues != 2 {
+		t.Fatalf("jquery 3.3.1 = %+v", merged)
+	}
+	var groups []string
+	for _, p := range merged.Places {
+		groups = append(groups, p.GroupID)
+	}
+	if _, n, err := s.ListFindings(ctx, store.FindingFilter{FixGroup: strings.Join(groups, ",")}); err != nil || n != 4 {
+		t.Errorf("findings of both places: %d, %v; want 4", n, err)
+	}
+	// One page of one fix still brings all of its places.
+	if raw, _, err := s.ListFixGroups(ctx, store.FixGroupFilter{ByFix: true, Page: store.Page{Limit: 1}}); err != nil || len(raw) != 1 {
+		t.Errorf("first page: %d, %v", len(raw), err)
+	}
+
+	if v, err := s.FixGrouping(ctx); err != nil || v != store.FixGroupingFix {
+		t.Errorf("default grouping = %q, %v", v, err)
+	}
+	if err := s.SetFixGrouping(ctx, store.FixGroupingAsset); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := s.FixGrouping(ctx); v != store.FixGroupingAsset {
+		t.Errorf("grouping after change = %q", v)
+	}
+	if err := s.SetFixGrouping(ctx, "server"); !errors.Is(err, store.ErrInvalid) {
+		t.Errorf("unknown grouping: %v", err)
 	}
 }

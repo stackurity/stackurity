@@ -53,6 +53,22 @@ type Scanner struct {
 	// Packs read files the core cannot (deployed JARs, Cargo.lock, ...): the
 	// stack packs installed on the server.
 	Packs []lockfile.Extension
+	// Apps lists every application directory being reported on this host.
+	// An application inside another (phpMyAdmin under a site's webroot)
+	// belongs only to itself: the outer scan skips it, so one library is
+	// never reported twice.
+	Apps []string
+}
+
+// nestedApp reports whether host path p is another application below dir.
+func (s *Scanner) nestedApp(dir, p string) bool {
+	for _, a := range s.Apps {
+		a = path.Clean("/" + a)
+		if a != dir && strings.HasPrefix(a, dir+"/") && (p == a || strings.HasPrefix(p, a+"/")) {
+			return true
+		}
+	}
+	return false
 }
 
 // App is one deployed application and what it has installed.
@@ -226,6 +242,8 @@ func (s *Scanner) ScanApp(ctx context.Context, dir string) App {
 		host := s.hostPath(full)
 		name := d.Name()
 		switch {
+		case s.nestedApp(dir, host):
+			return fs.SkipDir
 		case name == "node_modules":
 			project := path.Dir(host)
 			obs, cov := s.scanNodeModules(project, host)
@@ -273,7 +291,7 @@ func (s *Scanner) ScanApp(ctx context.Context, dir string) App {
 	var kept []model.Observation
 	for _, o := range locks {
 		lockDir := path.Join(dir, path.Dir(o.Location))
-		if installed[lockDir][purlType(o.Purl)] {
+		if installed[lockDir][purlType(o.Purl)] || s.nestedApp(dir, lockDir) {
 			continue // the installed tree is what runs
 		}
 		o.Location = path.Join(dir, o.Location)
@@ -288,6 +306,9 @@ func (s *Scanner) ScanApp(ctx context.Context, dir string) App {
 	for _, c := range lcov {
 		if i := strings.Index(c.Scope, ":"); i > 0 {
 			c.Scope = c.Scope[:i+1] + path.Join(dir, c.Scope[i+1:])
+			if s.nestedApp(dir, c.Scope[i+1:]) {
+				continue
+			}
 		}
 		app.Coverage = append(app.Coverage, c)
 	}
