@@ -24,6 +24,7 @@ and `cases.json`:
 | `subscription` | The paid channel a group's only fix needs (Ubuntu Pro, SUSE LTSS) |
 | `coverage`, `reason` | `evaluated` by default; `not_evaluated` or `unsupported` with words the reason must contain, for cases the system cannot evaluate |
 | `note` | What the case shows |
+| `also` | More packages reported on the same asset (`purl`, `evidence`), for cases that need them together, such as a kernel built from several source packages. Findings and coverage are checked on the case's own `purl` row |
 
 Every directory covers, where the source has them: versions below, at and
 above a fix; distribution backports (`+deb12u3`, `ubuntu0.22.04.4`,

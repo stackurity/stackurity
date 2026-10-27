@@ -33,6 +33,11 @@ type corpusFile struct {
 	Cases     []corpusCase `json:"cases"`
 }
 
+type corpusPackage struct {
+	Purl     string            `json:"purl"`
+	Evidence map[string]string `json:"evidence,omitempty"`
+}
+
 type corpusCase struct {
 	Name     string            `json:"name"`
 	Purl     string            `json:"purl"`
@@ -49,6 +54,10 @@ type corpusCase struct {
 	Coverage string `json:"coverage,omitempty"`
 	Reason   string `json:"reason,omitempty"`
 	Note     string `json:"note"`
+	// Also lists more packages reported on the same asset, for cases that
+	// need them together (a kernel is several packages from several
+	// source packages). Findings and coverage are checked on purl's row.
+	Also []corpusPackage `json:"also,omitempty"`
 }
 
 func TestCorpus(t *testing.T) {
@@ -102,7 +111,11 @@ func runCorpus(t *testing.T, dir string) {
 		}
 		obs := confirmed(c.Purl, c.Evidence)
 		obs.Version = c.Version
-		assets[i] = ingest(t, st, kind, c.Name, true, obs)
+		all := []model.Observation{obs}
+		for _, p := range c.Also {
+			all = append(all, confirmed(p.Purl, p.Evidence))
+		}
+		assets[i] = ingest(t, st, kind, c.Name, true, all...)
 	}
 	if err := EnsureFeeds(ctx, st); err != nil {
 		t.Fatal(err)
@@ -140,7 +153,7 @@ func runCorpus(t *testing.T, dir string) {
 			t.Errorf("%s (%s): findings %s, want %s\n  note: %s", c.Name, c.Purl, showMap(got), showMap(c.Affected), c.Note)
 		}
 		rows, _, err := st.ListInventory(ctx, store.InventoryFilter{AssetID: assets[i]})
-		if err != nil || len(rows) != 1 {
+		if err != nil || len(rows) != 1+len(c.Also) {
 			t.Fatalf("%s: inventory %+v %v", c.Name, rows, err)
 		}
 		want := c.Coverage
@@ -148,6 +161,11 @@ func runCorpus(t *testing.T, dir string) {
 			want = store.CoverageEvaluated
 		}
 		r := rows[0]
+		for _, row := range rows {
+			if row.Purl == c.Purl {
+				r = row
+			}
+		}
 		if r.Coverage != want || !strings.Contains(r.CoverageReason, c.Reason) {
 			t.Errorf("%s (%s): coverage %s %q, want %s %q", c.Name, c.Purl, r.Coverage, r.CoverageReason, want, c.Reason)
 		}

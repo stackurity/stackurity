@@ -131,6 +131,12 @@ func CheckVulnerability(c Claim, o Observed, recs []store.RawAdvisoryRecord) Out
 	if len(free) == 0 {
 		used = paid
 	}
+	if len(used) == 0 && t.kernel && !t.kernelSource && kernelRecords(otherNames) {
+		// The records name kernel sources, and which one built this binary
+		// (linux, linux-aws, linux-hwe-5.15, ...) is not in the observation.
+		return couldNot("records name the kernel source %s; which kernel source built %s is not reported (no upstream or source package), "+
+			"and the binary name alone does not say", strings.Join(otherNames, ", "), strings.Join(sortedNames(t.names), ", "))
+	}
 	if len(used) == 0 {
 		if sameRelease == 0 {
 			// The matcher found a record for this package and release; none
@@ -460,4 +466,14 @@ func CheckEndOfLife(c Claim, o Observed, cycles []store.LifecycleCycle, now time
 		}
 	}
 	return Outcome{Result: store.SecondCheckAgreed, Independent: ind}
+}
+
+// kernelRecords reports whether every name is a kernel source package.
+func kernelRecords(names []string) bool {
+	for _, n := range names {
+		if _, ok := kernelSourceName("", n); !ok {
+			return false
+		}
+	}
+	return len(names) > 0
 }
