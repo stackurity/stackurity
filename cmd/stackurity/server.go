@@ -243,6 +243,9 @@ func serverCmd() *cobra.Command {
 
 			w := worker.New(st, log)
 			w.Lease, w.Tick, w.Poll = tm.TaskLease, tm.Tick, tm.Poll
+			// Periodic tasks running at shutdown may finish within the same
+			// deadline as the HTTP server, then they are cancelled.
+			w.ShutdownGrace = shutdownTimeout
 			if tm.JobLock > 0 {
 				w.JobRenew = min(w.JobRenew, tm.JobLock/6)
 			}
@@ -290,7 +293,7 @@ func serverCmd() *cobra.Command {
 			case <-ctx.Done():
 			}
 			log.Info("shutting down")
-			sctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			sctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 			defer cancel()
 			_ = httpSrv.Shutdown(sctx)
 			if metricsSrv != nil {
@@ -301,6 +304,10 @@ func serverCmd() *cobra.Command {
 		},
 	}
 }
+
+// shutdownTimeout is how long a stopping server lets requests and running
+// periodic tasks finish.
+const shutdownTimeout = 30 * time.Second
 
 // loadLicence reads the licence from STACKURITY_LICENSE (or _FILE), which
 // wins, or from the database. A licence that does not verify is ignored with
@@ -624,8 +631,8 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 		return err
 	})
 	// The independent second check of high-impact findings runs as a job,
-	// never inside the periodic tick: the scheduler runs its tasks one after
-	// another, and alerts must not wait behind it. The tick only asks
+	// never inside the periodic tick: periodic tasks share a few slots, and
+	// a long check must not hold one. The tick only asks
 	// (bounded to a few seconds) whether anything is waiting and queues one
 	// job per workspace; the job checks a batch of 500 findings.
 	checker := &secondcheck.Runner{Store: st, Log: log}
@@ -999,10 +1006,7 @@ func registerIntel(w *worker.Worker, st *store.Store, dataDir string, log *slog.
 		log.Warn("STACKURITY_FEEDS=off: intelligence feeds will not be created or refreshed")
 		return
 	}
-	w.Every("ensure-feeds", time.Minute, func(ctx context.Context) error {
-		return intel.EnsureFeeds(ctx, st)
-	})
-	w.Every("enqueue-due-feeds", time.Minute, func(ctx context.Context) error {
+	enqueueDueFeeds := func(ctx context.Context) error {
 		due, err := st.DueFeeds(ctx)
 		if err != nil {
 			return err
@@ -1013,7 +1017,18 @@ func registerIntel(w *worker.Worker, st *store.Store, dataDir string, log *slog.
 			}
 		}
 		return nil
+	}
+	// Periodic tasks run side by side, so enqueue-due-feeds may run before a
+	// feed exists: ensure-feeds queues the feeds it finds due too, so that a
+	// new feed (on first start, or for a new ecosystem) syncs at once rather
+	// than a minute later. A feed's sync is queued once (keyed by feed).
+	w.Every("ensure-feeds", time.Minute, func(ctx context.Context) error {
+		if err := intel.EnsureFeeds(ctx, st); err != nil {
+			return err
+		}
+		return enqueueDueFeeds(ctx)
 	})
+	w.Every("enqueue-due-feeds", time.Minute, enqueueDueFeeds)
 	// Lifecycle dates pass without any feed change, so evaluate everything daily.
 	w.EveryWorkspace("daily-evaluation", 24*time.Hour, func(ctx context.Context) error {
 		_, err := st.Enqueue(ctx, "evaluate", map[string]bool{"all": true}, "evaluate:all", time.Now().Add(10*time.Minute))

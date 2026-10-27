@@ -22,6 +22,7 @@ Each release's section is published as its GitHub release notes, and a tag witho
 ### Changed
 
 - A collector token made for a project may now pass that project's `project_id` to `POST /sbom/import`; other callers who are not admins still get 403.
+- **Periodic tasks run independently, so a slow one never delays alerts.** Each background task (alert dispatching, digests, feed and integration scheduling, housekeeping and the others) now has its own schedule instead of waiting its turn behind the others, so a slow or stuck task no longer holds up notifications. At most 4 run at the same time in one server, which keeps them to at most 8 of the 20 database connections, and a task never runs twice at once. `ensure-feeds` now also queues the feeds that are due, so a new feed still syncs at once. On shutdown a running task has the 30-second shutdown deadline to finish before it is cancelled and handed to another replica. See `docs/reliability.md`, "Periodic tasks".
 
 ### Fixed
 

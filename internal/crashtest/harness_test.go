@@ -207,10 +207,8 @@ func (e *env) start(extra ...string) *server {
 		"STACKURITY_ALLOW_HTTP_WEBHOOKS=true",
 		"STACKURITY_SETUP_TOKEN=crash-test",
 		"STACKURITY_TEST_TIMINGS="+timings,
-		// The release check waits up to 30 seconds (jitter) before calling
-		// GitHub, inside the periodic scheduler, which runs its tasks one
-		// after another: notifications then pause for that long, longer
-		// than a drill waits. The drills make no call outside the machine.
+		// The drills make no call outside the machine, so the release
+		// check (a request to GitHub) is off.
 		"STACKURITY_UPDATE_CHECK=off",
 		"STACKURITY_OSV_URL="+up+"/osv",
 		"STACKURITY_KEV_URL="+up+"/kev.json",
