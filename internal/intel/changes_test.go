@@ -429,3 +429,78 @@ func TestOlderRowsRewrittenOnce(t *testing.T) {
 		t.Errorf("then unchanged: changed = %d", res.Changed)
 	}
 }
+
+// An advisory that covers npm and PyPI packages is in both archives. The
+// two feeds' syncs do not rewrite it in turn.
+func TestAdvisoryInTwoFeedsWrittenOnce(t *testing.T) {
+	e := newChangeEnv(t)
+	shared := `{"id":"GHSA-both","modified":"2024-01-01T00:00:00Z","aliases":["CVE-2024-0100"],"summary":"bundled library",
+	 "affected":[{"package":{"ecosystem":"npm","name":"bundle"},"ranges":[{"type":"SEMVER","events":[{"introduced":"0"},{"fixed":"2.0.0"}]}]},
+	             {"package":{"ecosystem":"PyPI","name":"bundle"},"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"0"},{"fixed":"2.0.0"}]}]}]}`
+	e.up.set("/osv/npm/all.zip", zipOf(t, map[string]string{"GHSA-both.json": shared}))
+	e.up.set("/osv/PyPI/all.zip", zipOf(t, map[string]string{"GHSA-both.json": shared}))
+	for _, f := range []string{"osv:npm", "osv:PyPI"} {
+		if err := e.st.EnsureFeed(e.ctx, f, "vulnerability", time.Hour, 6*time.Hour); err != nil {
+			t.Fatal(err)
+		}
+	}
+	syncFull := func(feed string) *SyncResult {
+		if _, err := e.st.Pool.Exec(e.ctx, `UPDATE feeds SET cursor = '' WHERE name = $1`, feed); err != nil {
+			t.Fatal(err)
+		}
+		res, err := e.sy.Sync(e.ctx, feed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res
+	}
+	if res := syncFull("osv:npm"); res.Changed != 1 {
+		t.Errorf("npm first sync changed %d", res.Changed)
+	}
+	if res := syncFull("osv:PyPI"); res.Changed != 0 {
+		t.Errorf("PyPI sync of the same advisory changed %d", res.Changed)
+	}
+	pkgs, advs := e.rows("advisory_packages"), e.rows("advisories")
+	for _, f := range []string{"osv:npm", "osv:PyPI", "osv:npm"} {
+		if res := syncFull(f); res.Changed != 0 {
+			t.Errorf("%s re-sync changed %d", f, res.Changed)
+		}
+	}
+	if d := diffKeys(pkgs, e.rows("advisory_packages")); d != nil {
+		t.Errorf("package rows rewritten: %v", d)
+	}
+	if d := diffKeys(advs, e.rows("advisories")); d != nil {
+		t.Errorf("advisory rewritten: %v", d)
+	}
+
+	// The fix changes. The npm sync reads it first and stores it; the PyPI
+	// sync finds it unchanged and still re-evaluates the PyPI package.
+	repo := ingest(t, e.st, model.AssetRepository, "app", true, confirmed("pkg:pypi/bundle@1.0", nil))
+	if _, err := e.ev.Evaluate(e.ctx, nil, 0); err != nil {
+		t.Fatal(err)
+	}
+	moved := strings.ReplaceAll(shared, `"fixed":"2.0.0"`, `"fixed":"2.0.1"`)
+	e.up.set("/osv/npm/all.zip", zipOf(t, map[string]string{"GHSA-both.json": moved}))
+	e.up.set("/osv/PyPI/all.zip", zipOf(t, map[string]string{"GHSA-both.json": moved}))
+	if res := syncFull("osv:npm"); res.Changed != 1 || packages(res.Packages) != "bundle" {
+		t.Errorf("npm sync of the change: %+v", res)
+	}
+	res := syncFull("osv:PyPI")
+	if res.Changed != 0 || packages(res.Packages) != "bundle" {
+		t.Errorf("PyPI sync after npm stored the change: changed %d, packages %s; want bundle", res.Changed, packages(res.Packages))
+	}
+	ids, err := ComponentsToEvaluate(e.ctx, e.st, "osv:PyPI", res)
+	if err != nil || len(ids) != 1 {
+		t.Fatalf("PyPI components to evaluate = %v %v", ids, err)
+	}
+	if _, err := e.ev.Evaluate(e.ctx, ids, 0); err != nil {
+		t.Fatal(err)
+	}
+	fs, _, _ := e.st.ListFindings(e.ctx, store.FindingFilter{AssetID: repo})
+	if len(fs) != 1 || fs[0].FixedVersion != "2.0.1" {
+		t.Errorf("PyPI finding = %+v; want fixed in 2.0.1", fs)
+	}
+	if res := syncFull("osv:PyPI"); len(res.Packages) != 0 {
+		t.Errorf("handed over twice: %s", packages(res.Packages))
+	}
+}

@@ -113,15 +113,20 @@ func newAdvisoryRecord(feed string, v *osv.Vulnerability) *advisoryRecord {
 }
 
 // contentHash covers everything stored for the advisory except what other
-// feeds maintain (known_exploited, from the KEV catalogue) and the time it
-// was stored. Two records with the same hash store the same rows.
+// feeds maintain (known_exploited, from the KEV catalogue), the time it was
+// stored and the feed that stored it. Two records with the same hash store
+// the same rows. An advisory that covers packages in several ecosystems is
+// in each of their OSV archives; leaving the feed out keeps the syncs of
+// those feeds from rewriting it in turn. Its feed is the one that last
+// changed it (the column is shown with the advisory; matching uses the
+// feed of the installed package's ecosystem).
 func (r *advisoryRecord) contentHash() string {
 	h := sha256.New()
 	rows := make([][4]string, len(r.rows))
 	for i, p := range r.rows {
 		rows[i] = [4]string{p.base, p.ecosystem, p.name, string(p.affected)}
 	}
-	_ = json.NewEncoder(h).Encode([]any{storedFormat, r.id, r.feed, r.groupKey, r.aliases, r.summary, r.level, r.score,
+	_ = json.NewEncoder(h).Encode([]any{storedFormat, r.id, r.groupKey, r.aliases, r.summary, r.level, r.score,
 		r.vector, r.source, r.published, r.modified, r.withdrawn, json.RawMessage(r.refs), rows})
 	return hex.EncodeToString(h.Sum(nil)[:16])
 }
@@ -135,9 +140,9 @@ func (r *advisoryRecord) contentHash() string {
 // in its old or its new state.
 //
 // The packages a changed record touches (before and after the change) are
-// added to the feed's pending re-evaluation in the same transaction;
-// the sync hands them to re-evaluation and clears them when it completes
-// (PendingPackages, FeedResult). A record stored by an interrupted sync is
+// recorded as pending in the same transaction; the sync of each package's
+// ecosystem hands them to re-evaluation and clears them when it completes
+// (PendingPackages, ClearPending). A record stored by an interrupted sync is
 // unchanged when the next sync reads it again, and its packages are still
 // re-evaluated.
 func (s *Store) UpsertAdvisories(ctx context.Context, feed string, vulns []*osv.Vulnerability) (int, error) {
@@ -249,7 +254,7 @@ func (s *Store) UpsertAdvisories(ctx context.Context, feed string, vulns []*osv.
 				return err
 			}
 		}
-		return addPending(ctx, tx, feed, touched)
+		return addPending(ctx, tx, touched)
 	})
 	if err != nil {
 		return 0, err
@@ -257,8 +262,9 @@ func (s *Store) UpsertAdvisories(ctx context.Context, feed string, vulns []*osv.
 	return len(changed), nil
 }
 
-// addPending records packages a feed's sync changed, for re-evaluation.
-func addPending(ctx context.Context, tx pgx.Tx, feed string, pkgs map[PackageRef]bool) error {
+// addPending records packages whose advisory data changed, for
+// re-evaluation by the sync of their ecosystem's feed.
+func addPending(ctx context.Context, tx pgx.Tx, pkgs map[PackageRef]bool) error {
 	if len(pkgs) == 0 {
 		return nil
 	}
@@ -266,30 +272,52 @@ func addPending(ctx context.Context, tx pgx.Tx, feed string, pkgs map[PackageRef
 	for p := range pkgs {
 		bases, names = append(bases, p.BaseEcosystem), append(names, p.Name)
 	}
-	_, err := tx.Exec(ctx, `INSERT INTO feed_pending_packages (feed, base_ecosystem, name)
-		SELECT $1, b, n FROM unnest($2::text[], $3::text[]) AS u(b, n)
-		WHERE EXISTS (SELECT 1 FROM feeds WHERE name = $1)
-		ON CONFLICT DO NOTHING`, feed, bases, names)
+	_, err := tx.Exec(ctx, `INSERT INTO pending_packages (base_ecosystem, name)
+		SELECT b, n FROM unnest($1::text[], $2::text[]) AS u(b, n)
+		ON CONFLICT (base_ecosystem, name) DO UPDATE SET added_at = clock_timestamp()`, bases, names)
 	return err
 }
 
-// PendingPackages returns the packages a feed's syncs changed since its last
-// successful sync: by this sync, and by any earlier attempt that stored
-// records and was interrupted or failed before it queued their
-// re-evaluation. FeedResult clears them when a sync succeeds.
-func (s *Store) PendingPackages(ctx context.Context, feed string) (map[PackageRef]bool, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT base_ecosystem, name FROM feed_pending_packages WHERE feed = $1`, feed)
+// Pending is the set of packages of one ecosystem waiting for
+// re-evaluation, as read by PendingPackages.
+type Pending struct {
+	Packages map[PackageRef]bool
+	names    []string
+	added    []time.Time
+}
+
+// PendingPackages returns the packages of a base ecosystem whose advisory
+// data changed since they were last handed to re-evaluation: by the current
+// sync, by an earlier attempt that stored records and was interrupted or
+// failed before it queued their re-evaluation, or by another feed's sync
+// that stored an advisory also covering this ecosystem.
+func (s *Store) PendingPackages(ctx context.Context, base string) (*Pending, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT name, added_at FROM pending_packages WHERE base_ecosystem = $1`, base)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := map[PackageRef]bool{}
+	p := &Pending{Packages: map[PackageRef]bool{}}
 	for rows.Next() {
-		var p PackageRef
-		if err := rows.Scan(&p.BaseEcosystem, &p.Name); err != nil {
+		var n string
+		var at time.Time
+		if err := rows.Scan(&n, &at); err != nil {
 			return nil, err
 		}
-		out[p] = true
+		p.Packages[PackageRef{base, n}] = true
+		p.names, p.added = append(p.names, n), append(p.added, at)
 	}
-	return out, rows.Err()
+	return p, rows.Err()
+}
+
+// ClearPending removes the pending packages that were read, once their
+// re-evaluation is queued. A package changed again since it was read (a
+// later added_at) stays pending.
+func (s *Store) ClearPending(ctx context.Context, base string, p *Pending) error {
+	if p == nil || len(p.names) == 0 {
+		return nil
+	}
+	_, err := s.Pool.Exec(ctx, `DELETE FROM pending_packages x USING unnest($2::text[], $3::timestamptz[]) AS u(name, added_at)
+		WHERE x.base_ecosystem = $1 AND x.name = u.name AND x.added_at = u.added_at`, base, p.names, p.added)
+	return err
 }

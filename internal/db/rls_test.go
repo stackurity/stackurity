@@ -15,21 +15,21 @@ import (
 // row-level security; a new table that does not fails this test until it
 // is given policies or added here with a reason.
 var globalTables = map[string]string{
-	"advisories":            "public intelligence",
-	"advisory_packages":     "public intelligence",
-	"feed_pending_packages": "public intelligence: packages a feed sync changed, before re-evaluation is queued",
-	"feeds":                 "public intelligence; changed only by instance admins",
-	"known_exploited":       "public intelligence",
-	"lifecycle_cycles":      "public intelligence",
-	"lifecycle_products":    "public intelligence",
-	"license_key":           "installation licence",
-	"oidc_logins":           "sign-in flow state, before a workspace is known",
-	"packs":                 "stack packs, installed by instance admins",
-	"schema_migrations":     "migration bookkeeping",
-	"users":                 "accounts are global; roles live in workspace_members",
-	"workspaces":            "the workspaces themselves",
-	"sessions":              "looked up before the workspace is known; carries the active workspace",
-	"workspace_members":     "memberships span workspaces; read by user id",
+	"advisories":         "public intelligence",
+	"advisory_packages":  "public intelligence",
+	"pending_packages":   "public intelligence: packages a feed sync changed, before re-evaluation is queued",
+	"feeds":              "public intelligence; changed only by instance admins",
+	"known_exploited":    "public intelligence",
+	"lifecycle_cycles":   "public intelligence",
+	"lifecycle_products": "public intelligence",
+	"license_key":        "installation licence",
+	"oidc_logins":        "sign-in flow state, before a workspace is known",
+	"packs":              "stack packs, installed by instance admins",
+	"schema_migrations":  "migration bookkeeping",
+	"users":              "accounts are global; roles live in workspace_members",
+	"workspaces":         "the workspaces themselves",
+	"sessions":           "looked up before the workspace is known; carries the active workspace",
+	"workspace_members":  "memberships span workspaces; read by user id",
 }
 
 func TestEveryTenantTableHasRowLevelSecurity(t *testing.T) {

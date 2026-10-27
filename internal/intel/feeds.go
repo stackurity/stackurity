@@ -134,8 +134,9 @@ func (s *Syncer) Sync(ctx context.Context, name string) (*SyncResult, error) {
 	default:
 		err = fmt.Errorf("unknown feed %q", name)
 	}
-	if _, vuln := feedEcosystem(name); vuln && err == nil && res != nil {
-		err = s.collectPending(ctx, feed, res)
+	var pending *store.Pending
+	if base, vuln := feedEcosystem(name); vuln && err == nil && res != nil {
+		pending, err = s.collectPending(ctx, feed, base, res)
 	}
 	if err == nil && s.Changed != nil {
 		if cerr := s.Changed(ctx, name, res); cerr != nil {
@@ -149,6 +150,14 @@ func (s *Syncer) Sync(ctx context.Context, name string) (*SyncResult, error) {
 	if rerr := s.Store.FeedResult(context.WithoutCancel(ctx), name, cursor, changed, err); rerr != nil && err == nil {
 		err = rerr
 	}
+	if base, ok := feedEcosystem(name); ok && err == nil {
+		// Re-evaluation of the pending packages is queued: they are done.
+		// If this fails or the server dies first, the next sync queues
+		// them again.
+		if cerr := s.Store.ClearPending(context.WithoutCancel(ctx), base, pending); cerr != nil {
+			s.Log.Warn("clearing packages queued for re-evaluation", "feed", name, "err", cerr)
+		}
+	}
 	if base, ok := feedEcosystem(name); ok && err == nil && res != nil {
 		// Which releases the feed covers, so a release it has nothing for
 		// is reported as not evaluated rather than clean.
@@ -160,19 +169,21 @@ func (s *Syncer) Sync(ctx context.Context, name string) (*SyncResult, error) {
 }
 
 // collectPending sets what a vulnerability feed's sync re-evaluates: the
-// packages whose advisories changed since the last successful sync (stored
-// with them, so records written by an interrupted attempt are included even
-// though this sync found them unchanged), or everything when the feed's
-// coverage or state changed. feed is the feed as it was before the sync.
-func (s *Syncer) collectPending(ctx context.Context, feed *store.Feed, res *SyncResult) error {
-	pending, err := s.Store.PendingPackages(ctx, feed.Name)
+// packages of its ecosystem whose advisory data changed and have not been
+// handed to re-evaluation yet (recorded with the advisories, so records
+// written by an interrupted attempt, or by another feed's sync of an
+// advisory that also covers this ecosystem, are included although this
+// sync found them unchanged), or everything when the feed's coverage or
+// state changed. feed is the feed as it was before the sync.
+func (s *Syncer) collectPending(ctx context.Context, feed *store.Feed, base string, res *SyncResult) (*store.Pending, error) {
+	pending, err := s.Store.PendingPackages(ctx, base)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if res.Packages == nil {
 		res.Packages = map[store.PackageRef]bool{}
 	}
-	for p := range pending {
+	for p := range pending.Packages {
 		res.Packages[p] = true
 	}
 	switch {
@@ -187,7 +198,7 @@ func (s *Syncer) collectPending(ctx context.Context, feed *store.Feed, res *Sync
 			}
 		}
 	}
-	return nil
+	return pending, nil
 }
 
 func sameSet(list []string, set map[string]bool) bool {

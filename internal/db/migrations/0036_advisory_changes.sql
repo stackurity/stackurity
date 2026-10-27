@@ -11,17 +11,20 @@ SET LOCAL lock_timeout = '10s';
 
 ALTER TABLE advisories ADD COLUMN content_hash text;
 
--- Packages whose advisory data a feed's sync changed and whose components
--- have not been queued for re-evaluation yet. Written in the same
--- transaction as the advisories, cleared when the sync succeeds, so a sync
--- that is interrupted after storing records still has them re-evaluated by
--- the next one (which finds those records unchanged). Public intelligence,
--- like advisories: no workspace data.
-CREATE TABLE feed_pending_packages (
-    feed            text NOT NULL REFERENCES feeds(name) ON DELETE CASCADE,
+-- Packages whose advisory data a sync changed and whose components have not
+-- been queued for re-evaluation yet. Written in the same transaction as the
+-- advisories and cleared by the sync of the package's own ecosystem once it
+-- has queued their re-evaluation, so a sync that is interrupted after
+-- storing records still has them re-evaluated by the next one (which finds
+-- those records unchanged). Keyed by ecosystem, not by the feed that wrote
+-- them: an advisory covering npm and PyPI packages is in both archives and
+-- is stored by whichever sync reads it first. Public intelligence, like
+-- advisories: no workspace data.
+CREATE TABLE pending_packages (
     base_ecosystem  text NOT NULL,
     name            text NOT NULL,
-    PRIMARY KEY (feed, base_ecosystem, name)
+    added_at        timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (base_ecosystem, name)
 );
 
 -- The next sync of each OSV feed reads the full archive once instead of the

@@ -100,20 +100,13 @@ func (s *Store) FeedResult(ctx context.Context, name, cursor string, changed int
 		_, err := s.Pool.Exec(ctx, `UPDATE feeds SET last_error = $2 WHERE name = $1`, name, msg)
 		return err
 	}
-	// The sync handed its pending packages to re-evaluation before this,
-	// so they are cleared with the success that ends it.
-	return pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `UPDATE feeds SET last_success = now(), last_error = '', cursor = $2, last_changed = $3,
-			records = CASE
-			  WHEN name LIKE 'osv:%' THEN (SELECT count(*) FROM advisories WHERE feed = $1)
-			  WHEN name LIKE 'releases:%' THEN (SELECT count(*) FROM package_releases WHERE source = $1 AND last_error = '')
-			  ELSE records END
-			WHERE name = $1`, name, cursor, changed); err != nil {
-			return err
-		}
-		_, err := tx.Exec(ctx, `DELETE FROM feed_pending_packages WHERE feed = $1`, name)
-		return err
-	})
+	_, err := s.Pool.Exec(ctx, `UPDATE feeds SET last_success = now(), last_error = '', cursor = $2, last_changed = $3,
+		records = CASE
+		  WHEN name LIKE 'osv:%' THEN (SELECT count(*) FROM advisories WHERE feed = $1)
+		  WHEN name LIKE 'releases:%' THEN (SELECT count(*) FROM package_releases WHERE source = $1 AND last_error = '')
+		  ELSE records END
+		WHERE name = $1`, name, cursor, changed)
+	return err
 }
 
 // UpdateFeedEcosystems records the ecosystems a vulnerability feed covers.
