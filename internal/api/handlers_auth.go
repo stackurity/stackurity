@@ -171,7 +171,7 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, r, err)
 			return
 		}
-		if ps != nil {
+		if ps = boundProjects(p, ps); ps != nil {
 			out["projects"] = ps
 		}
 		if p.User != nil {

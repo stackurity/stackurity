@@ -93,6 +93,30 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/slack/links/preview": {class: "create", body: func(a *tenantFx) any { return map[string]string{"token": a.ids["slacktoken"]} }},
 	"POST /api/v1/slack/links/confirm": {class: "create", body: func(a *tenantFx) any { return map[string]string{"token": a.ids["slacktoken"]} }},
 
+	// AI assistants (assistants.go). Discovery is public and names no
+	// tenant; registration, tokens and revocation are form or JSON
+	// exchanges covered by assistants_test.go. /mcp is reached here with
+	// every credential of B, asking for A's finding: tools act as the
+	// caller, so B's tokens find nothing and sessions are refused.
+	"GET /.well-known/oauth-protected-resource":     {class: "public"},
+	"GET /.well-known/oauth-protected-resource/mcp": {class: "public"},
+	"GET /.well-known/oauth-authorization-server":   {class: "public"},
+	"POST /oauth/register":                          {class: "skip"},
+	"POST /oauth/token":                             {class: "skip"},
+	"POST /oauth/revoke":                            {class: "skip"},
+	"GET /mcp":                                      {class: "public"},
+	"DELETE /mcp":                                   {class: "public"},
+	"POST /mcp": {class: "public", body: func(a *tenantFx) any {
+		return map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": "get_finding",
+			"arguments": map[string]any{"finding_id": a.int("finding")}}}
+	}},
+	// The consent page: allowing an assistant on A's project must fail.
+	"POST /api/v1/oauth/authorize/preview": {class: "create", body: func(a *tenantFx) any { return a.authorizeParams(false) }},
+	"POST /api/v1/oauth/authorize":         {class: "create", body: func(a *tenantFx) any { return a.authorizeParams(true) }},
+	// The caller's own connected assistants; A's cannot be disconnected.
+	"GET /api/v1/assistants":         {class: "list"},
+	"DELETE /api/v1/assistants/{id}": {class: "object", obj: id("assistant")},
+
 	// Sends what the user typed to the feedback URL outside the
 	// installation, nothing of the workspace; see feedback_test.go.
 	"POST /api/v1/feedback": {class: "skip"},
@@ -599,6 +623,15 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 	if f.ids["slacktoken"], _, err = e.st.CreateSlackLinkRequest(ctx, ch.ID, "TS"+strings.ToUpper(tag), "slack-team-"+tag, "U"+strings.ToUpper(tag)+"2", "slack-user2-"+tag); err != nil {
 		t.Fatal(err)
 	}
+	// An assistant connected to the organisation, with admin rights.
+	oc := registerAssistant(t, e)
+	f.ids["oauthclient"] = oc.clientID
+	f.tokens["assistant"] = oc.connect(t, admin, auth.RoleAdmin, 0)
+	var conns struct{ Items []struct{ ID int64 } }
+	if code := admin.do("GET", "/api/v1/assistants", nil, &conns); code != 200 || len(conns.Items) != 1 {
+		t.Fatalf("%s assistants: %d %+v", tag, code, conns)
+	}
+	set("assistant", conns.Items[0].ID)
 	if eeFixtures != nil {
 		eeFixtures(t, e, f)
 	}
@@ -606,6 +639,21 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 		fx(t, e, f)
 	}
 	return f
+}
+
+// authorizeParams is a consent page request for an assistant (any client
+// works: clients are global) on the tenant's project.
+func (f *tenantFx) authorizeParams(allow bool) map[string]any {
+	_, c := pkcePair("sweep")
+	p := map[string]any{"response_type": "code", "client_id": f.ids["oauthclient"], "redirect_uri": redirectURI,
+		"code_challenge": c, "code_challenge_method": "S256", "project_id": f.int("project"), "role": "viewer"}
+	if !allow {
+		delete(p, "project_id")
+		delete(p, "role")
+	} else {
+		p["decision"] = "allow"
+	}
+	return p
 }
 
 // principals are every kind of credential workspace B can hold.
@@ -903,6 +951,12 @@ func TestIsolationSweep(t *testing.T) {
 		path := "/api/v1/auth/me"
 		if name != "admin-token" {
 			path = "/api/v1/agent/actions"
+		}
+		if name == "assistant" {
+			if code, _, _ := mcpPost(e, secret, map[string]any{"id": 1, "method": "ping"}); code != 200 {
+				t.Errorf("A's assistant after the sweep: %d", code)
+			}
+			continue
 		}
 		if code := bearer(e, secret, "GET", path, nil, nil); code >= 400 && code != 403 {
 			t.Errorf("A's %s after the sweep: %d", name, code)

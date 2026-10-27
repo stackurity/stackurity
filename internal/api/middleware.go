@@ -38,6 +38,10 @@ type Principal struct {
 	// Project is the project chosen in the switcher (0: all, -1: invalid);
 	// projectGate applies it to project-scoped routes.
 	Project int64
+	// Assistant is the connection of an AI assistant signed in with OAuth
+	// (assistants.go). Its requests come only from the tools behind /mcp;
+	// Token then describes it, so it is capped like an API token.
+	Assistant *store.AssistantGrant
 }
 
 func (p *Principal) Actor(r *http.Request) store.Actor {
@@ -45,6 +49,8 @@ func (p *Principal) Actor(r *http.Request) store.Actor {
 	switch {
 	case p == nil:
 		a.Type = "anonymous"
+	case p.Assistant != nil:
+		a.Type, a.ID, a.Name = "assistant", p.Assistant.ID, p.User.Email+" (assistant "+p.Assistant.ClientName+")"
 	case p.Token != nil:
 		a.Type, a.ID, a.Name = "token", p.Token.ID, p.Token.Name
 		if p.User != nil {
@@ -76,7 +82,12 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 				writeError(w, 401, "unauthorized", "use a Bearer token")
 				return
 			}
-			tok, user, err := s.Store.TokenPrincipal(r.Context(), strings.TrimSpace(secret))
+			var err error
+			p, err = s.bearerPrincipal(r.Context(), strings.TrimSpace(secret))
+			if errors.Is(err, errAssistantToken) {
+				writeError(w, 401, "unauthorized", "an assistant's token works only through /mcp")
+				return
+			}
 			if errors.Is(err, store.ErrNotFound) {
 				writeError(w, 401, "unauthorized", "invalid or expired token")
 				return
@@ -85,7 +96,6 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 				s.credentialsUnavailable(w, r, err)
 				return
 			}
-			p = &Principal{User: user, Token: tok, Role: tok.Role, Workspace: tok.WorkspaceID}
 		} else if c, err := r.Cookie(sessionCookie); err == nil && c.Value != "" {
 			user, ws, err := s.Store.SessionUser(r.Context(), c.Value)
 			switch {
@@ -125,6 +135,33 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// errAssistantToken is an assistant's access token sent to the API directly:
+// it is for /mcp only (the audience it was issued for).
+var errAssistantToken = errors.New("assistant token outside /mcp")
+
+// bearerPrincipal resolves an API token, or an assistant's access token on
+// a request the /mcp endpoint makes in process (viaMCP). Invalid tokens are
+// store.ErrNotFound.
+func (s *Server) bearerPrincipal(ctx context.Context, secret string) (*Principal, error) {
+	if strings.HasPrefix(secret, assistantTokenPrefix) {
+		if !viaMCP(ctx) {
+			return nil, errAssistantToken
+		}
+		g, user, err := s.Store.AssistantPrincipal(ctx, secret)
+		if err != nil {
+			return nil, err
+		}
+		tok := &store.Token{WorkspaceID: g.WorkspaceID, Name: "assistant: " + g.ClientName, Prefix: secret[:len(assistantTokenPrefix)+8],
+			UserID: &user.ID, Role: g.Role, UserEmail: user.Email, ProjectID: g.ProjectID}
+		return &Principal{User: user, Token: tok, Role: g.Role, Workspace: g.WorkspaceID, Assistant: g}, nil
+	}
+	tok, user, err := s.Store.TokenPrincipal(ctx, secret)
+	if err != nil {
+		return nil, err
+	}
+	return &Principal{User: user, Token: tok, Role: tok.Role, Workspace: tok.WorkspaceID}, nil
 }
 
 // credentialsUnavailable answers a request whose credentials could not be
@@ -168,7 +205,7 @@ func requireAuth(next http.Handler) http.Handler {
 func requireInstanceAdmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := principal(r)
-		if p == nil || p.User == nil || !p.User.InstanceAdmin || (p.Token != nil && p.Role != auth.RoleAdmin) {
+		if p == nil || p.User == nil || !p.User.InstanceAdmin || (p.Token != nil && p.Role != auth.RoleAdmin) || p.Assistant != nil {
 			writeError(w, 403, "forbidden", "requires an instance administrator")
 			return
 		}

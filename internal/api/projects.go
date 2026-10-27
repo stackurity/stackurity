@@ -58,6 +58,12 @@ var projectRoutes = map[string]projectScope{
 	"DELETE /api/v1/slack/links/{id}":  accountScope,
 	"POST /api/v1/slack/links/preview": accountScope,
 	"POST /api/v1/slack/links/confirm": accountScope,
+	// Connecting AI assistants: the consent page and the caller's own
+	// connections, in every workspace they belong to.
+	"POST /api/v1/oauth/authorize/preview": accountScope,
+	"POST /api/v1/oauth/authorize":         accountScope,
+	"GET /api/v1/assistants":               accountScope,
+	"DELETE /api/v1/assistants/{id}":       accountScope,
 
 	// Shared by every workspace.
 	"GET /api/v1/packs":              globalScope,
@@ -162,6 +168,26 @@ func (s *Server) projectGate(next http.Handler) http.Handler {
 			writeError(w, 403, "forbidden", "this needs an organisation-wide role; you have access to some projects only")
 			return
 		}
+		if a := p.Assistant; a != nil {
+			// An assistant reaches only what its tools use: no account
+			// settings, and with a connection to one project, nothing
+			// outside it.
+			if sc == accountScope && route != "GET /api/v1/auth/me" {
+				writeError(w, 403, "forbidden", "an assistant cannot change account settings")
+				return
+			}
+			if a.ProjectID != nil {
+				if sc == orgOnly {
+					writeError(w, 403, "forbidden", "this assistant is connected to one project only; this needs a connection to the whole organisation")
+					return
+				}
+				if p.Project != 0 && p.Project != *a.ProjectID {
+					writeError(w, 403, "forbidden", "this assistant is connected to another project")
+					return
+				}
+				p.Project = *a.ProjectID
+			}
+		}
 		ctx := context.WithValue(r.Context(), scopeKey{}, sc)
 		scoped := sc == scopedRead || sc == scopedWrite
 		if p.Project < 0 && scoped {
@@ -245,8 +271,9 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	ps = boundProjects(principal(r), ps)
 	out := map[string]any{"items": ps, "total": len(ps)}
-	if p := principal(r); !p.Restricted {
+	if p := principal(r); !p.Restricted && !p.boundToProject() {
 		n, err := s.Store.UnfiledAssetCount(tenant.WithoutProject(r.Context()))
 		if err != nil {
 			s.fail(w, r, err)
@@ -264,6 +291,11 @@ func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
 	id, err := idParam(r, "id")
 	if err != nil {
 		s.fail(w, r, err)
+		return
+	}
+	// An assistant connected to one project sees only that one.
+	if p := principal(r); p.boundToProject() && id != *p.Assistant.ProjectID {
+		writeError(w, 404, "not_found", "not found")
 		return
 	}
 	pr, err := s.Store.GetProject(r.Context(), id)
@@ -388,6 +420,25 @@ func (s *Server) changeProjectAssets(add bool) http.HandlerFunc {
 			map[string]any{"asset_ids": firstIDs(req.AssetIDs, 50), "requested": len(req.AssetIDs), "changed": n})
 		writeJSON(w, 200, map[string]int64{"changed": n})
 	}
+}
+
+// boundToProject: an assistant connected to one project only.
+func (p *Principal) boundToProject() bool {
+	return p.Assistant != nil && p.Assistant.ProjectID != nil
+}
+
+// boundProjects keeps only the project an assistant is connected to.
+func boundProjects(p *Principal, ps []store.Project) []store.Project {
+	if !p.boundToProject() {
+		return ps
+	}
+	out := []store.Project{}
+	for _, pr := range ps {
+		if pr.ID == *p.Assistant.ProjectID {
+			out = append(out, pr)
+		}
+	}
+	return out
 }
 
 func firstIDs(ids []int64, n int) []int64 {

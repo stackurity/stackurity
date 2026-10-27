@@ -2100,6 +2100,36 @@ export interface SlackLink {
   last_used_at: string | null;
 }
 
+/** POST /oauth/authorize/preview: an assistant asking to connect, and what the person may allow. */
+export interface AssistantConsent {
+  client: { id: string; name: string; client_uri: string; metadata_document: boolean; redirect_host: string };
+  signed_in_as: string;
+  workspace: { id: number; name: string };
+  projects: Project[];
+  /** The roles the person may give: up to their own. */
+  roles: UserRole[];
+  your_role: UserRole | "";
+  access: Access;
+  access_token_minutes: number;
+  idle_days: number;
+}
+
+/** GET /assistants: an AI assistant connected with OAuth. */
+export interface AssistantConnection {
+  id: number;
+  workspace_id: number;
+  workspace_name: string;
+  client_id: string;
+  client_name: string;
+  redirect_host: string;
+  user_id: number;
+  project_id: number | null;
+  project_name: string;
+  role: UserRole;
+  created_at: string;
+  last_used_at: string | null;
+}
+
 /** POST /slack/links/preview: the Slack account a one-time link would link. */
 export interface SlackLinkPreview {
   team_id: string;
@@ -2117,11 +2147,14 @@ export class ApiError extends Error {
   status: number;
   code: string;
   details: string[];
-  constructor(status: number, code: string, message: string, details: string[] = []) {
+  /** The whole error object, for answers that carry more than a message. */
+  data?: Record<string, unknown>;
+  constructor(status: number, code: string, message: string, details: string[] = [], data?: Record<string, unknown>) {
     super(message);
     this.status = status;
     this.code = code;
     this.details = details;
+    this.data = data;
   }
 }
 
@@ -2191,6 +2224,7 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: {
       err?.code ?? "http_" + res.status,
       err?.message ?? `Request failed (${res.status} ${res.statusText})`,
       err?.details ?? [],
+      err as Record<string, unknown> | undefined,
     );
   }
   return data as T;

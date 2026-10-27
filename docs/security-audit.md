@@ -187,6 +187,20 @@ Slack channels set up with a Slack app's signing secret carry interactive **Assi
 
 **Acting.** A linked click runs as the linked person: their current membership (removed or disabled accounts are refused), organisation role and project roles are read at click time, the request is scoped like theirs (workspace, and member narrowing for project-only members), and the dashboard's own handler (`POST /findings/actions`, with `requireRole(engineer)`, `checkAction` and the per-asset role check) does the change in batches of 500 over the fix's open issues as that person sees them (at most 2,000). Audit entries and finding history are the dashboard's, with `source: slack` and the Slack ids. The risk of the design: anyone who controls a linked Slack account acts as its Stackurity user, as with any single sign-on; people should only link their own Slack account (the confirmation page says so) and can unlink at any time.
 
+### AI assistants (remote MCP and OAuth)
+
+Assistants reach `/mcp` and sign in through the OAuth endpoints (`internal/api/assistants.go`, `internal/store/assistants.go`, `internal/mcp`). See [ai-assistants.md](ai-assistants.md#how-sign-in-works).
+
+**Tokens and codes.** Authorization codes (`stkx_`), access tokens (`stka_`) and refresh tokens (`stkr_`) are 32 random bytes, stored as SHA-256 only, looked up in system scope and then scoped to the connection's workspace like API tokens. Codes are single use, 2 minutes, bound to client, redirect URI and an S256 PKCE challenge; a reused code revokes the connection made with it, and a replayed refresh token revokes its connection (`TestAssistantOAuth`). Confidential clients' secrets are compared as hashes in constant time.
+
+**Audience.** An access token is accepted only on requests the `/mcp` tools make in process (a context value nothing outside the server can set); the API answers 401 to it directly. `/mcp` reads no cookies, so CORS (allowed for any origin on the discovery, OAuth and MCP paths) lends a page nothing, and `Origin: null` is refused.
+
+**Consent and scope.** Only a signed-in browser session may allow a connection (API tokens and assistants are refused), in its active workspace, on a project it can see, with a role no higher than its own. Every request then acts with the lower of the connection's role and the person's current role, narrowed to their projects and to the connection's project (`projectGate`): a connection limited to a project is refused organisation routes and any other project, and sees no other project's names, people or teams. Assistants are refused account routes other than `GET /auth/me` and instance administration. Isolation is tested per tool across workspaces (`TestAssistantWorkspaceIsolation`) and projects (`TestAssistantProjectIsolation`), and `/mcp` is part of the route sweeps.
+
+**Redirects and clients.** Redirect URIs are HTTPS, loopback HTTP or an app's own scheme (never `javascript:`, `data:`, `file:` and similar), compared exactly (only a loopback port may differ). An invalid client or redirect URI is shown on the consent page and never redirected to. Client ID metadata documents are fetched through the outbound address guard, without redirects, at most 64 KiB in 5 seconds, and must name their own URL as `client_id` (`TestAssistantClientKinds`).
+
+**Changes.** Tools that change something make the change only when called with the confirm code of a preview of that exact change; the code is a digest, not a secret, so the API's role checks and audit apply to every change as usual (`TestWriteToolsNeedConfirmation`, `TestAssistantRoles`).
+
 ### Not provable by a test
 
 Some commitments are design properties checked by review rather than tests: no telemetry, and no request to the project beyond the update check and feedback a user sends on purpose (every outbound client is listed in [network.md](network.md)), and Stackurity never executing code from what it inspects (the clone and parser tests above show the hardening, not the absence of every other path).

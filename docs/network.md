@@ -77,6 +77,10 @@ A Jira channel calls the REST API of the configured site only (`/rest/api/3` on 
 
 Syft fetches image manifests and layers from the registry in the image reference. With a secret reference configured, the credential is sent to that registry only. For a workspace that may not reach private networks, Syft connects through a proxy inside the server that checks every connection (including redirects to blob storage) against the same policy.
 
+### AI assistants' client metadata
+
+When an AI assistant identifies itself with a client ID metadata document (its client id is an HTTPS URL; see [ai-assistants.md](ai-assistants.md#how-sign-in-works)), the server fetches that URL once an hour at most while someone connects it: a GET over HTTPS, without redirects, at most 64 KiB in 5 seconds, never to private, loopback or cloud metadata addresses. Nothing is sent but the request. Assistants that register themselves instead cause no outbound request.
+
 ### Air-gapped installs
 
 Mirror the OSV bucket layout (`<ecosystem>/all.zip`, `<ecosystem>/modified_id.csv`, `<ecosystem>/<id>.json`) and point `STACKURITY_OSV_URL` at it. Do the same for the other `STACKURITY_*_URL` variables. Any feed you cannot mirror shows as stale, and the components it covers are listed as evaluation gaps. They are never treated as clean.
@@ -84,6 +88,10 @@ Mirror the OSV bucket layout (`<ecosystem>/all.zip`, `<ecosystem>/modified_id.cs
 ### Inbound: Slack's interactivity requests
 
 The only inbound request from a third party is optional. A Slack app set up to act from inside Slack sends each button click to `POST /api/v1/integrations/slack/actions` on your server, from Slack's addresses, over HTTPS. It carries Slack's payload (the Slack workspace and user ids and names, the message, the button's value with the channel id and fix id, and a `response_url`) and is verified with the channel's signing secret before anything is read from the database beyond that channel. Without a Slack app nothing calls it, and every request to it is refused (401). To allow it through a firewall or reverse proxy, allow that one path from the internet; it needs no session and no other path. It is limited to 600 requests a minute per address.
+
+### Inbound: AI assistants
+
+`/mcp`, `/oauth/register`, `/oauth/token`, `/oauth/revoke` and `/.well-known/oauth-*` are called by AI assistants you connect (claude.ai and ChatGPT call them from their own servers, desktop apps from your machine). Behind a reverse proxy or firewall, allow these paths with the dashboard; `/oauth/authorize` is a dashboard page opened in your browser. Without connected assistants nothing calls them.
 
 ## Restricting egress
 

@@ -183,6 +183,9 @@ type SearchOptions struct {
 	// Members includes workspace members (names and emails); the caller
 	// decides who may see them.
 	Members bool
+	// ProjectOnly leaves out teams and people, as for a member with
+	// project access only (an assistant connected to one project).
+	ProjectOnly bool
 }
 
 // Search runs the global search in the caller's workspace, without members.
@@ -231,7 +234,7 @@ func (s *Store) SearchWith(ctx context.Context, query string, opt SearchOptions)
 		res.More["components"] = more
 		// Teams and people belong to the organisation: a member with
 		// project access only finds neither.
-		narrowedToMember := tenant.Member(ctx) > 0
+		narrowedToMember := tenant.Member(ctx) > 0 || opt.ProjectOnly
 		if !narrowedToMember {
 			if res.Teams, more, err = searchTeams(ctx, tx, q, limit); err != nil {
 				return fmt.Errorf("teams: %w", err)

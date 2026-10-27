@@ -7,6 +7,7 @@ import { ErrorBox, Loading } from "./components/ui";
 import { LoginPage, SetupPage } from "./pages/Login";
 import { AcceptInvitePage } from "./pages/AcceptInvite";
 import { SlackAccountsPage, SlackLinkPage } from "./pages/SlackLink";
+import { AssistantsPage, ConnectAssistantPage } from "./pages/Assistants";
 import { OnboardingPage } from "./pages/Onboarding";
 import { SignupPage, VerifySignupPage } from "./pages/Signup";
 import { UsagePage } from "./pages/settings/Usage";
@@ -109,6 +110,10 @@ export function App() {
   // confirm. The address (and its #token) stays the same while signing in.
   if (pathname === "/slack/link" && state.phase === "login") return <LoginPage />;
   if (pathname === "/slack/link" && state.phase === "ready") return <SlackLinkPage />;
+  // An AI assistant asking to connect (OAuth): sign in first, then allow.
+  // The address and its query stay the same while signing in.
+  if (pathname === "/oauth/authorize" && state.phase === "login") return <LoginPage />;
+  if (pathname === "/oauth/authorize" && state.phase === "ready") return <ConnectAssistantPage />;
 
   switch (state.phase) {
     case "loading":
@@ -222,6 +227,7 @@ export function App() {
           }
         />
         <Route path="settings/slack" element={<SlackAccountsPage />} />
+        <Route path="settings/assistants" element={<AssistantsPage />} />
         <Route path="settings/risk-policy" element={<RiskPolicyPage />} />
         <Route
           path="settings/plugins"

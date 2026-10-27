@@ -13,10 +13,16 @@ func mcpCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "mcp",
 		Short: "Serve Stackurity to AI assistants over the Model Context Protocol (stdio)",
-		Long: `Runs a read-only MCP server on standard input and output, for AI assistants
-and coding agents. It answers through the HTTP API with your token, so use a
-viewer token: the assistant can see inventory, findings and action plans but
-cannot change anything.
+		Long: `Runs an MCP server on standard input and output, for AI assistants and
+coding agents. It answers through the HTTP API with your token, so the
+assistant can do exactly what the token may. With a viewer token it can see
+inventory, findings and action plans but cannot change anything; with a
+higher role, tools that change something (create a project, assign, snooze,
+ignore, check again, ...) first show what they will do and change nothing
+until called again with the preview's confirm code.
+
+Most assistants can connect to the server's /mcp endpoint directly instead,
+with no install (docs/ai-assistants.md).
 
 Example client configuration:
 
@@ -34,7 +40,7 @@ start; servers before 0.8, which have no projects, are refused.`,
 			if err != nil {
 				return err
 			}
-			s := &mcp.Server{API: cl, Version: version}
+			s := &mcp.Server{API: cl, Version: version, BaseURL: cl.BaseURL}
 			return s.Serve(cmd.Context(), os.Stdin, os.Stdout)
 		},
 	}
