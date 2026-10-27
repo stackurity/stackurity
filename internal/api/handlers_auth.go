@@ -19,7 +19,11 @@ func (s *Server) meta(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	meta := map[string]any{"name": "stackurity", "version": s.Version, "api": "v1", "setup_required": n == 0}
+	// features lets clients check what an older server would silently
+	// ignore: "upload_project" means POST /ingest and POST /sbom/import
+	// honour project_id (the CLI's --project).
+	meta := map[string]any{"name": "stackurity", "version": s.Version, "api": "v1", "setup_required": n == 0,
+		"features": []string{FeatureUploadProject}}
 	if sso := s.ssoMeta(r); sso != nil {
 		meta["sso"] = sso
 	}

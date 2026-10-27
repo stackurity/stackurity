@@ -13,7 +13,7 @@ import (
 )
 
 func enrollCmd() *cobra.Command {
-	var server, dir string
+	var server, dir, projectArg string
 	var force bool
 	cmd := &cobra.Command{
 		Use:   "enroll",
@@ -26,8 +26,18 @@ agent's token and settings to --dir:
   agent.env   STACKURITY_SERVER, STACKURITY_TOKEN_FILE and the settings the
               administrator chose (environment, application directories)
 
+With --project (an id; or STACKURITY_PROJECT) the server first checks that
+the code adds hosts to that project, and refuses without using the code up
+if it adds them to another project or to none. The code's project is chosen
+by the administrator who made it; enrolling cannot change it. A name is not
+accepted here, since enrolling has no token to look names up with.
+
 The agent install script runs this for you.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			project, err := enrollProject(projectArg)
+			if err != nil {
+				return err
+			}
 			code := strings.TrimSpace(os.Getenv("STACKURITY_ENROLL_CODE"))
 			if code == "" {
 				return errors.New("set STACKURITY_ENROLL_CODE to the code from Assets > Add server")
@@ -44,9 +54,16 @@ The agent install script runs this for you.`,
 				return err
 			}
 			host, _ := os.Hostname()
-			e, err := cl.Enroll(cmd.Context(), code, host)
+			e, err := cl.Enroll(cmd.Context(), code, host, project)
+			var ae *client.APIError
+			if project > 0 && errors.As(err, &ae) && ae.Status == 400 && strings.Contains(ae.Message, "project_id") {
+				return errors.New("the server does not support --project for enrollment (Stackurity 0.10 or later is needed); the code was not used")
+			}
 			if err != nil {
 				return err
+			}
+			if project > 0 && (e.ProjectID == nil || *e.ProjectID != project) {
+				return fmt.Errorf("the server did not confirm that hosts enrolled with this code go to project %d; the token was not saved", project)
 			}
 			for _, d := range e.AppDirs {
 				if strings.ContainsAny(d, ", \t\n\r\"'\\$`") {
@@ -68,12 +85,16 @@ The agent install script runs this for you.`,
 				return err
 			}
 			fmt.Printf("enrolled %s; settings in %s\n", host, filepath.Join(dir, "agent.env"))
+			if e.ProjectID != nil {
+				fmt.Printf("the host is added to project %d when it first reports\n", *e.ProjectID)
+			}
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&server, "server", os.Getenv("STACKURITY_SERVER"), "server URL")
 	cmd.Flags().StringVar(&dir, "dir", "/etc/stackurity", "directory for the token and agent.env")
 	cmd.Flags().BoolVar(&force, "force", false, "replace an existing token")
+	projectFlag(cmd, &projectArg, "project id the enrollment code must add hosts to; refused otherwise (env STACKURITY_PROJECT)")
 	return cmd
 }
 

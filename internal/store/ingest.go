@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/stackurity/stackurity/internal/model"
+	"github.com/stackurity/stackurity/internal/tenant"
 )
 
 type IngestResult struct {
@@ -20,6 +21,20 @@ type IngestResult struct {
 	Removed      int64   `json:"removed"`
 	NewAsset     bool    `json:"new_asset"`
 	Conflict     []int64 `json:"identity_conflict,omitempty"`
+	// ProjectID is the project the upload asked for (project_id) and the
+	// server accepted; 0 when it named none. InProject says whether the
+	// asset is in that project after the upload: a collector token files
+	// only the assets it creates, so an existing asset may not be.
+	ProjectID int64 `json:"project_id,omitempty"`
+	InProject *bool `json:"in_project,omitempty"`
+}
+
+// AssetInProject reports whether an asset is in a project.
+func (s *Store) AssetInProject(ctx context.Context, projectID, assetID int64) (bool, error) {
+	var ok bool
+	err := s.Pool.QueryRow(tenant.WithoutProject(ctx), `SELECT EXISTS (SELECT 1 FROM project_assets WHERE project_id = $1 AND asset_id = $2)`,
+		projectID, assetID).Scan(&ok)
+	return ok, err
 }
 
 // Ingest stores a validated batch in one transaction. tokenID is the API

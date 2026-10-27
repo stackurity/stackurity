@@ -23,9 +23,14 @@ Example client configuration:
   {"mcpServers": {"stackurity": {
      "command": "stackurity", "args": ["mcp"],
      "env": {"STACKURITY_SERVER": "https://stackurity.example.com",
-             "STACKURITY_TOKEN_FILE": "/home/me/.config/stackurity/token"}}}}`,
+             "STACKURITY_TOKEN_FILE": "/home/me/.config/stackurity/token"}}}}
+
+With --project (an id or name; or STACKURITY_PROJECT) every answer is
+limited to that project's assets and what hangs off them, as when the
+project is chosen in the dashboard's switcher. The project is checked at
+start; servers before 0.8, which have no projects, are refused.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cl, err := c.client()
+			cl, err := c.connect(cmd.Context(), false)
 			if err != nil {
 				return err
 			}

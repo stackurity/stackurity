@@ -19,7 +19,7 @@ A workspace (shown as the organisation in the dashboard) groups its assets into 
 
 - **Members with project access only** (`GET /auth/me` returns `"access": "projects"` and an empty `role`) see only the assets of their projects and asset grants, and everything that hangs off them: findings, fix groups, incidents (their counts, names and priority recomputed from what they can see), components and their counts, search hits, reports, audit events about those objects, and exports. Routes for organisation data (users, teams, integrations, channels, routes, deliveries, jobs, secrets, enrollments, remediation plans and policies, ingest) answer 403. The database enforces this with row-level security, not only the API.
 - **Roles from grants act per asset.** `GET /auth/me` returns `project_role`, the highest role from any grant. A change (`PATCH /assets/{id}`, relations, finding and incident actions) needs that role on each asset it touches; otherwise 403. An organisation-wide viewer with `engineer` on one project can act on that project's findings only.
-- **Choosing a project.** Send `X-Stackurity-Project: <id>` (the dashboard does) or `?project_id=<id>` on any request; `0` or nothing means all projects. Project-scoped routes (the reading routes above, `GET /reports/evidence`, `GET /assets/{id}/sbom`, search, audit) then return only that project's assets and what hangs off them; other routes ignore it. A project the caller cannot see answers 404, a value that is not a number 400.
+- **Choosing a project.** Send `X-Stackurity-Project: <id>` (the dashboard does) or `?project_id=<id>` on any request; `0` or nothing means all projects. Project-scoped routes (the reading routes above, `GET /reports/evidence`, `GET /assets/{id}/sbom`, search, audit) then return only that project's assets and what hangs off them; other routes ignore it. A project the caller cannot see answers 404, a value that is not a number 400. The CLI sends the header for `--project` (or `STACKURITY_PROJECT`).
 - **People and links.** Someone who assigns through a project role (their organisation role alone may not assign) can assign only to the people and teams of their projects (400 otherwise), and `GET /users/directory` gives them only those people. Grants are audited as object type `access_grant` and asset merges as `asset_merge`, which project-only members never see. Incidents shown to them carry no tracker `issues`, no `notified_priority`, and priority, SOS and escalation from their findings; `priority=`, `sos=` and `escalated=` filter on those.
 - **Checks, ignore rules and requests** follow their assets. Ignoring an issue on every asset (`scope: everywhere`), approving such a request and ending such a rule need an organisation-wide `security` or `admin` role (403 otherwise). With `security` through a project grant, `GET /ignore-requests` lists the caller's own requests and those whose issues are all on assets where they hold it (`can_decide` is true), and they decide only those.
 - **Tokens** of a member with project access only act as that member, never above their highest grant. Collector and host-bound agent tokens belong to the workspace and are not limited by projects.
@@ -28,16 +28,16 @@ A workspace (shown as the organisation in the dashboard) groups its assets into 
 
 | Method & path | Role | Purpose |
 |---|---|---|
-| `GET /meta` | none | Version and whether first-time setup is required |
+| `GET /meta` | none | Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project` |
 | `POST /setup` | setup token | Create the first admin |
 | `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` | none / any | Session handling |
 | `POST /feedback` | any signed-in user (rate limited, 10 an hour) | Send feedback to the Stackurity team: `kind` (`bug`, `idea`, `question`), `message` (up to 5000 characters), optional `email` and `page` (a path). The server adds its version and edition and forwards it to `STACKURITY_FEEDBACK_URL`; answers 202 when delivered, 502 when the feedback service cannot be reached, and 404 when feedback is turned off (`GET /auth/me` then has `feedback_enabled: false`). See [network.md](network.md#feedback) |
 | `POST /auth/password` | any signed-in user | Change your own password (`current_password`, `new_password`). Your other sessions are signed out |
-| `POST /enroll` | none (rate limited) | Exchange a one-time enrollment code (`{"code", "hostname"}`) for a collector token and the agent settings chosen with it. Refusals do not say why |
+| `POST /enroll` | none (rate limited) | Exchange a one-time enrollment code (`{"code", "hostname"}`) for a collector token and the agent settings chosen with it, including the code's `project_id` (null when it has none). Refusals of a code do not say why. Optional `project_id` (`stackurity enroll --project`) is a check, not a choice: when the code adds hosts to another project or to none, the answer is 403 and the code keeps its use. Servers before 0.10 answer 400 to the unknown field, also without using the code |
 | `GET`/`POST /enrollments`, `DELETE /enrollments/{id}` | admin | Create, list and revoke enrollment codes: `label`, `environment`, `app_dirs`, `discover_apps`, `uses` (1–500, default 1), `ttl_hours` (1–720, default 24), `project_id` (hosts enrolled with the code, and the assets their agent reports, are added to that project when first created). The code is returned once |
 | `GET /install/agent.sh`, `GET /download/agent/linux-{amd64,arm64}[.sha256]` | none | The agent installer and the agent builds it downloads (bundled in the server image; `STACKURITY_AGENT_DIR`) |
-| `POST /ingest` | collector, engineer+ | Submit an `ObservationBatch` (gzip accepted) |
-| `POST /sbom/import?asset_name=&asset_kind=&environment=&project_id=` | collector, engineer+ | Import a CycloneDX or SPDX JSON document. `project_id` (admins; 403 for others) adds the asset to that project. A collector token made for a project adds the assets it creates to it |
+| `POST /ingest?project_id=` | collector, engineer+ | Submit an `ObservationBatch` (gzip accepted). `project_id` files the asset in a project, see [Uploads into a project](#uploads-into-a-project) |
+| `POST /sbom/import?asset_name=&asset_kind=&environment=&project_id=` | collector, engineer+ | Import a CycloneDX or SPDX JSON document. `project_id` files the asset in a project, see [Uploads into a project](#uploads-into-a-project). A collector token made for a project adds the assets it creates to it |
 | `GET /collections/{id}/result` | collector (own submissions), engineer+ | Whether a submitted collection has been evaluated (`status`: `pending`, `scoring` (matched, findings not prioritised yet), `evaluated` (matched and prioritised), `failed`), then the asset's open findings and its count of `evaluation_gaps`. Used by `stackurity scan --fail-on` |
 | `GET /overview` | viewer | Inventory, coverage and status counts, including assets by coverage state (`asset_coverage`) and components by row coverage (`component_coverage`) |
 | `GET /search?q=&limit=` | viewer | Global search of the current workspace, see [Search](#search) |
@@ -166,6 +166,16 @@ stands), with `text`, `subject`, `upstream_eol`, `distribution` and
 `distribution_eol` ([compatibility.md](compatibility.md#lifecycle-of-distribution-packages)).
 
 Lists return `{"items": [...], "total": N, "limit": L, "offset": O}`. Pass `?limit=` (max 500) and `?offset=`.
+
+## Uploads into a project
+
+`POST /ingest` and `POST /sbom/import` take `?project_id=` (0.10; `/sbom/import` took it from admins since 0.9). It is what `stackurity scan`, `stackurity agent` and `stackurity sbom import` send for `--project`.
+
+- An organisation **admin** (a session or an admin's token) files the uploaded asset in the project, whether the upload created it or not. The addition is audited as `project.assets_add`.
+- A **collector token made for a project** (`POST /tokens` with `project_id`, or an enrollment code with one) may name that project, which it fills anyway with the assets it creates. It never moves an asset that already existed. Naming any other project is 403.
+- **Anyone else** (engineers and security, collector tokens without a project) gets 403 for `project_id`: filing assets in projects is for admins. Members with project access only cannot upload at all. `X-Stackurity-Project` alone is ignored for them, so a dashboard upload with a project chosen is not refused.
+- The project must exist, be active and belong to the caller's workspace (404 otherwise); a value that is not a number is 400. A refused upload stores nothing.
+- The answer adds `project_id` and `in_project` (whether the asset is in the project now). A server before 0.10 ignores `project_id` on `/ingest` and answers without these fields; `GET /meta` lists `upload_project` in `features` so clients can check first.
 
 ## Onboarding
 

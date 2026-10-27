@@ -152,6 +152,8 @@ Stackurity can sign people in through any OpenID Connect provider: Google Worksp
 curl -fsSL https://stackurity.example.com/install/agent.sh | sudo STACKURITY_ENROLL_CODE=enr_... sh
 ```
 
+To put the server in a project, create the code from the project (it then carries the project). Hosts enrolled with it are added to the project when they first report. `stackurity enroll --project <id>` (or `STACKURITY_PROJECT`) checks that the code is for that project and refuses, without using the code, if it is not; it never changes the code's project. `stackurity agent --project` makes the same assertion on every report.
+
 The script downloads the agent from your Stackurity server and checks its SHA-256. It then creates an unprivileged `stackurity` user and exchanges the one-time code for a collector token. Finally it writes `/etc/stackurity/agent.env` with the settings you chose and starts a hardened systemd service that reports every 6 hours. The code works once (or as many times as you allowed) and expires after 24 hours by default, so a leaked command is short-lived, and no long-lived token is ever typed into a shell. To upgrade the agent later, run the same command without the code. Read the script first if you prefer: it is served at `/install/agent.sh`.
 
 The host needs systemd, root for the install, and HTTPS access to the Stackurity server. The installer refuses plain HTTP except to a local port such as an SSH tunnel (see below); `STACKURITY_ALLOW_HTTP=1` overrides this. Set `STACKURITY_BASE_URL` on the server so the script and its downloads use the public address.
@@ -261,6 +263,19 @@ There are two ways to collect repository inventory:
   scanned. When the directory is in a git work tree and `git` is installed,
   paths git ignores are skipped too, counted in one "gitignored" line.
 
+  To put the repository in a project, add `--project` with the project's id
+  or name (or set `STACKURITY_PROJECT`). Use a collector token made for that
+  project (**Settings → API tokens**, or the first-run flow): it files the
+  assets it creates in the project and may name only that project. A
+  collector token cannot read project names, so give it the id. An admin's
+  token may name any project and also files an asset that already exists.
+  The command checks that the server supports this (0.10 or later) before
+  uploading, and fails rather than storing the scan outside the project:
+
+  ```sh
+  stackurity scan . --git-url "$CI_REPOSITORY_URL" --project 12
+  ```
+
   A scan replaces the asset's inventory. For merge-request pipelines, give the
   scan its own `--name` (without `--git-url`) so the default branch's
   inventory is not overwritten by a branch that may never merge.
@@ -325,6 +340,8 @@ Under **Integrations**, add a container image such as `ghcr.io/acme/shop:1.4`. T
 stackurity sbom import image.cdx.json          # CycloneDX or SPDX JSON
 stackurity sbom export --asset 12 -o asset.cdx.json
 ```
+
+`--project <id or name>` (or `STACKURITY_PROJECT`) on `sbom import` files the asset in that project (an admin's token, or a collector token made for the project); on `sbom export` it scopes the request, so an asset outside the project is not found.
 
 ## Intelligence
 

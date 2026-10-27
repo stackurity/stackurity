@@ -23,6 +23,8 @@ Most MCP clients take a JSON entry like this:
 }
 ```
 
+To limit the assistant to one project, add `"args": ["mcp", "--project", "Shop"]` (an id or name) or `STACKURITY_PROJECT` to `env`: every answer then covers only that project's assets, as when the project is chosen in the dashboard. A viewer token of someone with project access only is limited to their projects anyway.
+
 For Claude Code: `claude mcp add stackurity --env STACKURITY_SERVER=https://stackurity.example.com --env STACKURITY_TOKEN_FILE=$HOME/.config/stackurity/token -- stackurity mcp`.
 
 ## Tools
