@@ -114,6 +114,13 @@ func TestWorkspaceIsolation(t *testing.T) {
 	alphaSess.do("GET", "/api/v1/auth/me", nil, &me)
 	a := e.populate(t, tenant.DefaultWorkspace, "alpha", alphaSess, me.User.ID)
 	b := e.populate(t, betaWS.ID, "beta", betaSess, betaAdmin.ID)
+	// A is at its monitored-asset limit and refused a host named for it.
+	if err := e.st.SetAssetLimit(ctx, tenant.DefaultWorkspace, new(int64(1))); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := bearerBody(e, a.collector, "POST", "/api/v1/ingest", hostBatch(model.AssetHost, "refused-alpha", "machine-id")); code != 402 {
+		t.Fatalf("alpha refused host: %d", code)
+	}
 	if a.asset == b.asset || a.component == b.component {
 		t.Fatalf("the shared machine id merged the workspaces' hosts or private components: %+v %+v", a, b)
 	}
@@ -126,14 +133,14 @@ func TestWorkspaceIsolation(t *testing.T) {
 	}
 
 	// Lists seen from B never mention A.
-	for _, path := range []string{
+	for _, path := range append([]string{
 		"/api/v1/overview", "/api/v1/facets", "/api/v1/assets", "/api/v1/components", "/api/v1/components?q=alpha",
 		"/api/v1/inventory", "/api/v1/findings", "/api/v1/findings/summary", "/api/v1/fix-groups", "/api/v1/evaluation-gaps",
 		"/api/v1/incidents", "/api/v1/coverage", "/api/v1/teams", "/api/v1/users", "/api/v1/users/directory", "/api/v1/tokens",
 		"/api/v1/audit", "/api/v1/channels", "/api/v1/routes", "/api/v1/deliveries", "/api/v1/integrations", "/api/v1/jobs",
 		"/api/v1/enrollments", "/api/v1/conflicts", "/api/v1/remediation/policies", "/api/v1/remediation/plans",
-		"/api/v1/reports/evidence", "/api/v1/workspaces", "/api/v1/auth/me",
-	} {
+		"/api/v1/reports/evidence", "/api/v1/workspaces", "/api/v1/auth/me", "/api/v1/usage",
+	}, editionIsolationLists...) {
 		code, body := get(betaSess, path)
 		if code >= 500 {
 			t.Errorf("GET %s: %d %s", path, code, body)

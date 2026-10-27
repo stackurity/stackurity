@@ -796,6 +796,9 @@ h1 .badge {
 /* --- tables */
 
 .table-wrap {
+  /* Contains absolutely positioned helpers (screen-reader labels in
+     cells), which would otherwise widen the page on phones. */
+  position: relative;
   overflow: auto;
   max-height: min(76vh, 960px);
   background: var(--surface);
@@ -1359,6 +1362,7 @@ details.json pre {
 }
 .auth-card-wide {
   max-width: 500px;
+  width: 100%;
 }
 .auth-card h1 {
   margin-bottom: 4px;
@@ -4115,4 +4119,126 @@ h6.md-h {
 }
 .why .badges {
   margin: 0 0 0.25rem;
+}
+
+/* --- monitored-asset limits, sign-up and billing */
+
+.usage-figure {
+  margin: 0 0 var(--s2);
+}
+.meter {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--muted-bg);
+  overflow: hidden;
+  margin-bottom: var(--s3);
+}
+.meter > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+.meter-near > span {
+  background: var(--warn-dot);
+}
+.meter-full > span {
+  background: var(--danger);
+}
+.usage-kinds {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--s2) var(--s4);
+  margin: 0 0 var(--s3);
+}
+.usage-kinds dt {
+  color: var(--muted);
+  font-size: 0.85em;
+}
+.usage-kinds dd {
+  margin: 0;
+  font-weight: 600;
+}
+.limit-banner {
+  overflow-wrap: anywhere;
+}
+.limit-editor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+}
+.limit-editor input {
+  width: 7em;
+}
+.limit-reached {
+  color: var(--danger);
+  font-weight: 600;
+}
+.check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s2);
+}
+.check-row input {
+  margin-top: 3px;
+  flex: none;
+}
+.challenge {
+  min-height: 65px;
+  max-width: 100%;
+  overflow: hidden;
+}
+.plan-choices {
+  border: 0;
+  padding: 0;
+  margin: 0 0 var(--s3);
+  min-width: 0;
+}
+.plan-choices legend {
+  font-weight: 600;
+  margin-bottom: var(--s2);
+}
+.plan-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s2);
+  padding: var(--s3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: var(--s2);
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.plan-choice.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.plan-choice input {
+  margin-top: 3px;
+  flex: none;
+}
+.bill-total {
+  font-size: 1.15em;
+  font-weight: 600;
+  margin: var(--s2) 0 0;
+}
+
+/* Small phones: the sign-up card holds the challenge widget, which is at
+   least 300px wide, so the card and its frame give up some padding. */
+@media (max-width: 400px) {
+  .center-screen {
+    padding: 12px;
+  }
+  .center-screen > * {
+    min-width: 0;
+  }
+  .auth-card {
+    padding: 16px;
+  }
+}
+
+/* A long name in a narrow table column wraps between words, not letters. */
+.cell-name {
+  display: inline-block;
+  min-width: 12ch;
 }

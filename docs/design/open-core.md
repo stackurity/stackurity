@@ -27,7 +27,8 @@ The paid implementations live in the private repository `stackurity/stackurity-p
 - Every file there starts with `//go:build ee` and sits at the path of the core package it joins (for example `internal/rollout/rollout.go`, `internal/api/handlers_remediation.go`).
 - `tools/eeoverlay` writes a Go build overlay that adds them; it refuses a file that would replace a core file. `make build-ee`, `make test-ee` and `make image-ee` (with `PRO=path/to/stackurity-pro`) use it, and the Dockerfile takes `--build-context pro=... --build-arg EDITION=ee`.
 - The core holds the extension points and their Community versions in `*_community.go` files (`//go:build !ee`): API routes for paid features answer `402 plan_required`, agents receive no changes, escalation does nothing, and the server sets nothing up.
-- Database migrations, the data model, the Action plan, host-bound tokens and the agent stay in the core, so both editions share one schema.
+- Database migrations, the data model, the Action plan, host-bound tokens and the agent stay in the core, so both editions share one schema. An edition with tables only it uses can register its own migrations (`db.RegisterMigrations`): they run after the core's, as the table owner, and are recorded as `set/name` in `schema_migrations`.
+- A few hooks in `internal/api/hooks.go` let an edition add routes outside `/api/v1` (callbacks signed by an outside service) and fields to `GET /meta`; `api.Server.WidgetOrigins` lets the dashboard load a third-party widget. Each does nothing when unset.
 
 | Image | Built from | Contains |
 | --- | --- | --- |

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -30,7 +31,8 @@ var ErrNewerSchema = errors.New("database schema is newer than this version")
 
 func (e *NewerSchemaError) Is(target error) bool { return target == ErrNewerSchema }
 
-// Known returns the names of the migrations built into this binary, in order.
+// Known returns the names of the migrations built into this binary, in order:
+// the core's, then each registered extension's.
 func Known() []string {
 	files, err := fs.Glob(migrations, "migrations/*.sql")
 	if err != nil {
@@ -41,7 +43,79 @@ func Known() []string {
 	for i, f := range files {
 		names[i] = strings.TrimSuffix(strings.TrimPrefix(f, "migrations/"), ".sql")
 	}
+	extMu.RLock()
+	defer extMu.RUnlock()
+	for _, e := range extensions {
+		for _, n := range e.names {
+			names = append(names, e.set+"/"+n)
+		}
+	}
 	return names
+}
+
+// An extension is a set of migrations a build adds to the core's schema.
+type extension struct {
+	set   string
+	names []string
+	sql   map[string]string
+}
+
+var (
+	extMu      sync.RWMutex
+	extensions []extension
+)
+
+var (
+	extName = regexp.MustCompile(`^[a-z][a-z0-9-]{0,30}$`)
+	migName = regexp.MustCompile(`^[0-9]{4}_[a-z0-9_]+$`)
+)
+
+// RegisterMigrations adds an extension's migrations (name -> SQL), applied
+// after the core's in name order and recorded in schema_migrations as
+// "set/name". An edition built on the core with its own tables (a licensed
+// or hosted build) calls it from an init function, so every binary and
+// test that links the edition migrates its tables too. Extension migrations
+// run like the core's: as the table owner, each in its own transaction,
+// and the application role is granted the tables they create.
+func RegisterMigrations(set string, sql map[string]string) {
+	if !extName.MatchString(set) {
+		panic("db: invalid migration set name " + set)
+	}
+	names := make([]string, 0, len(sql))
+	for n := range sql {
+		if !migName.MatchString(n) {
+			panic("db: invalid migration name " + n)
+		}
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	extMu.Lock()
+	defer extMu.Unlock()
+	for _, e := range extensions {
+		if e.set == set {
+			panic("db: migration set registered twice: " + set)
+		}
+	}
+	extensions = append(extensions, extension{set: set, names: names, sql: sql})
+	sort.Slice(extensions, func(i, j int) bool { return extensions[i].set < extensions[j].set })
+}
+
+// migrationSQL returns the SQL of a known migration.
+func migrationSQL(name string) (string, error) {
+	if set, n, ok := strings.Cut(name, "/"); ok {
+		extMu.RLock()
+		defer extMu.RUnlock()
+		for _, e := range extensions {
+			if e.set == set {
+				if sql, ok := e.sql[n]; ok {
+					return sql, nil
+				}
+			}
+		}
+		return "", fmt.Errorf("no migration %s", name)
+	}
+	b, err := migrations.ReadFile("migrations/" + name + ".sql")
+	return string(b), err
 }
 
 type querier interface {

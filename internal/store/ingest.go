@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -27,6 +28,9 @@ func (s *Store) Ingest(ctx context.Context, b *model.ObservationBatch, tokenID i
 	res := &IngestResult{Observations: len(b.Observations)}
 	err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
 		assetID, isNew, conflict, err := resolveAsset(ctx, tx, b)
+		if errors.Is(err, ErrAssetLimit) {
+			return err
+		}
 		if err != nil {
 			return fmt.Errorf("resolve asset: %w", err)
 		}
@@ -123,6 +127,10 @@ func (s *Store) Ingest(ctx context.Context, b *model.ObservationBatch, tokenID i
 		return err
 	})
 	if err != nil {
+		if errors.Is(err, ErrAssetLimit) {
+			// Remembered for the Usage page; the refusal stands either way.
+			_ = s.recordRefused(ctx, b)
+		}
 		return nil, err
 	}
 	return res, nil
@@ -253,6 +261,9 @@ func resolveAsset(ctx context.Context, tx pgx.Tx, b *model.ObservationBatch) (in
 	isNew := false
 	var conflict []int64
 	if len(ids) == 0 {
+		if err := checkNewAsset(ctx, tx, b); err != nil {
+			return 0, false, nil, err
+		}
 		isNew = true
 		err = tx.QueryRow(ctx, `INSERT INTO assets (kind, name, environment, provider, region, attributes, first_seen, last_seen)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$7) RETURNING id`,

@@ -7,6 +7,7 @@ import { Code, ErrorBox } from "../components/ui";
 export function LoginPage() {
   const { refresh, state } = useAuth();
   const sso = state.phase === "login" ? state.meta.sso : undefined;
+  const signup = state.phase === "login" ? state.meta.signup : undefined;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const act = useAction();
@@ -56,6 +57,11 @@ export function LoginPage() {
         <button type="submit" className={sso ? "btn btn-block" : "btn btn-primary btn-block"} disabled={act.pending}>
           {act.pending ? "Signing in…" : "Sign in"}
         </button>
+        {signup && (
+          <p className="small" style={{ textAlign: "center" }}>
+            New here? <a href="/signup">Create an account</a>
+          </p>
+        )}
       </form>
     </div>
   );

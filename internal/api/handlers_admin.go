@@ -392,6 +392,11 @@ func (s *Server) createIntegration(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	// An integration exists to add assets; at the limit it could add none.
+	if err := s.Store.AssetLimitReached(r.Context()); err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	if req.SecretRef != nil {
 		if err := checkSecretRef(r, *req.SecretRef); err != nil {
 			s.fail(w, r, err)

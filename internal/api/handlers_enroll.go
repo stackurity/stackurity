@@ -69,6 +69,11 @@ func (s *Server) createEnrollment(w http.ResponseWriter, r *http.Request) {
 		}
 		req.AppDirs[i] = d
 	}
+	// A code exists to add hosts; at the limit none could be added.
+	if err := s.Store.AssetLimitReached(r.Context()); err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	p := principal(r)
 	var by int64
 	if p.User != nil {

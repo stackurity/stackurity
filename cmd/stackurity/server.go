@@ -494,12 +494,18 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 				if err != nil {
 					return err
 				}
+				// At the monitored-asset limit new assets are left out; the
+				// ones already monitored are still updated.
+				results, refused, err := st.IngestAll(ctx, batches, 0)
+				if err != nil {
+					return err
+				}
 				var last int64
 				var scans []store.ImageScan
-				for _, pb := range batches {
-					r, err := st.Ingest(ctx, pb, 0)
-					if err != nil {
-						return err
+				for i, pb := range batches {
+					r := results[i]
+					if r == nil {
+						continue
 					}
 					last = r.AssetID
 					// Images the plugin found running are read by the image
@@ -515,6 +521,9 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 					}
 					log.Info("image scans", "plugin", cfg.Plugin, "images", len(scans), "queued", stats.Queued,
 						"fresh", stats.Fresh, "pending", stats.Pending, "deferred", stats.Limited)
+				}
+				if len(refused) > 0 {
+					return st.IntegrationResult(ctx, in.ID, last, assetLimitNote(len(refused), len(batches)))
 				}
 				return st.IntegrationResult(ctx, in.ID, last, nil)
 			default:
@@ -534,6 +543,9 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 		}()
 		if runErr != nil {
 			_ = st.IntegrationResult(context.WithoutCancel(ctx), in.ID, 0, runErr)
+		}
+		if errors.Is(runErr, store.ErrAssetLimit) {
+			return nil // recorded on the integration; trying again cannot help
 		}
 		return runErr
 	})
@@ -564,9 +576,15 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 			}
 			fb.Cover("image:"+p.Image, "failed", msg)
 			_, ierr := st.Ingest(ctx, fb, 0)
+			if errors.Is(ierr, store.ErrAssetLimit) {
+				return nil
+			}
 			return ierr
 		}
 		_, err = st.Ingest(ctx, b, 0)
+		if errors.Is(err, store.ErrAssetLimit) {
+			return nil // the image asset was deleted meanwhile and there is no room for it
+		}
 		return err
 	})
 
@@ -1008,4 +1026,11 @@ func truncateLog(s string) string {
 		return s[:2000] + "…"
 	}
 	return s
+}
+
+// assetLimitNote is the integration result when the organisation's
+// monitored-asset limit kept some of a plugin's assets out.
+func assetLimitNote(refused, total int) error {
+	return fmt.Errorf("%d of %d assets were not added because this organisation is at its monitored-asset limit; "+
+		"the assets already monitored were updated. See Settings, Usage: %w", refused, total, store.ErrAssetLimit)
 }

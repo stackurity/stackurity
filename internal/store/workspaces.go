@@ -23,6 +23,10 @@ type Workspace struct {
 	MemberCount int64      `json:"member_count"`
 	AssetCount  int64      `json:"asset_count"`
 	Plan        string     `json:"plan"`
+	// Monitored counts the assets the limit applies to; AssetLimit is nil
+	// when the workspace has no limit (docs/asset-limits.md).
+	Monitored  int64  `json:"monitored"`
+	AssetLimit *int64 `json:"asset_limit"`
 }
 
 // Membership is one workspace a user belongs to, with their role there.
@@ -134,7 +138,9 @@ func (s *Store) WorkspaceByRef(ctx context.Context, ref string) (id int64, disab
 const workspaceSelect = `SELECT w.id, w.name, w.slug, w.created_at, w.disabled_at,
 	(SELECT count(*) FROM workspace_members m WHERE m.workspace_id = w.id),
 	(SELECT count(*) FROM assets a WHERE a.workspace_id = w.id AND a.merged_into IS NULL),
-	w.plan
+	w.plan,
+	(SELECT count(*) FROM assets a WHERE a.workspace_id = w.id AND a.merged_into IS NULL AND a.kind <> 'workload'),
+	w.asset_limit
 	FROM workspaces w`
 
 // ListWorkspaces lists every workspace. Instance administration only.
@@ -191,6 +197,8 @@ type WorkspaceUpdate struct {
 	Disabled *bool   `json:"disabled"`
 	// Plan is "inherit", "community", "pro" or "enterprise".
 	Plan *string `json:"plan"`
+	// AssetLimit sets the monitored-asset limit; -1 removes it.
+	AssetLimit *int64 `json:"asset_limit"`
 }
 
 func (s *Store) UpdateWorkspace(ctx context.Context, id int64, u WorkspaceUpdate) error {
@@ -208,13 +216,17 @@ func (s *Store) UpdateWorkspace(ctx context.Context, id int64, u WorkspaceUpdate
 			return fmt.Errorf("plan must be inherit, community, pro or enterprise: %w", ErrInvalid)
 		}
 	}
+	if u.AssetLimit != nil && (*u.AssetLimit < -1 || *u.AssetLimit > 1_000_000_000) {
+		return fmt.Errorf("asset_limit must be between 0 and 1000000000, or -1 for no limit: %w", ErrInvalid)
+	}
 	if u.Disabled != nil && *u.Disabled && id == tenant.DefaultWorkspace {
 		return fmt.Errorf("the default workspace cannot be disabled: %w", ErrConflict)
 	}
 	tag, err := s.Pool.Exec(ctx, `UPDATE workspaces SET name = COALESCE($2, name),
 		disabled_at = CASE WHEN $3::boolean IS NULL THEN disabled_at WHEN $3 THEN COALESCE(disabled_at, now()) ELSE NULL END,
-		plan = COALESCE($4, plan)
-		WHERE id = $1`, id, u.Name, u.Disabled, u.Plan)
+		plan = COALESCE($4, plan),
+		asset_limit = CASE WHEN $5::bigint IS NULL THEN asset_limit WHEN $5 < 0 THEN NULL ELSE $5 END
+		WHERE id = $1`, id, u.Name, u.Disabled, u.Plan, u.AssetLimit)
 	if err == nil && tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}

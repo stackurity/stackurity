@@ -163,6 +163,7 @@ var routeRules = map[string]routeRule{
 	"GET /api/v1/onboarding":           {class: "list"},
 	"GET /api/v1/onboarding/results":   {class: "list", query: "?since=2000-01-01T00:00:00Z"},
 	"GET /api/v1/invitations":          {class: "list", query: "?project_id={project}"},
+	"GET /api/v1/usage":                {class: "list"},
 
 	// A's objects by id.
 	"GET /api/v1/assets/{id}":                      {class: "object", obj: id("asset")},
@@ -305,6 +306,15 @@ func (f *tenantFx) claimBatch() json.RawMessage {
 // eeFixtures adds the licensed edition's objects (remediation policies,
 // plans, actions); the ee build sets it.
 var eeFixtures func(t *testing.T, e *env, f *tenantFx)
+
+// Further editions built on the core add their own objects, the paths
+// that read them back for A's snapshot, and their listings for
+// TestWorkspaceIsolation, from an init function.
+var (
+	editionFixtures       []func(t *testing.T, e *env, f *tenantFx)
+	editionSnapshotPaths  []string
+	editionIsolationLists []string
+)
 
 func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenantFx {
 	t.Helper()
@@ -534,8 +544,23 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 		t.Fatal(err)
 	}
 	f.tokens["agent"] = agent
+	// A monitored-asset limit the workspace is at, and a host it refused:
+	// the Usage page names it, so a leak would show the tag.
+	u, err := e.st.AssetUsage(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.st.SetAssetLimit(ctx, ws, &u.Monitored); err != nil {
+		t.Fatal(err)
+	}
+	if code, body := bearerBody(e, collector, "POST", "/api/v1/ingest", hostBatch(model.AssetHost, "refused-"+tag, "machine-id")); code != 402 {
+		t.Fatalf("%s refused host: %d %s", tag, code, body)
+	}
 	if eeFixtures != nil {
 		eeFixtures(t, e, f)
+	}
+	for _, fx := range editionFixtures {
+		fx(t, e, f)
 	}
 	return f
 }
@@ -691,7 +716,12 @@ var volatile = regexp.MustCompile(`"[a-z_]*(_at|_since|_until|_age|_days|_hours|
 
 var timestamp = regexp.MustCompile(`"\d{4}-\d{2}-\d{2}T[0-9:.]+(Z|[+-]\d{2}:\d{2})"`)
 
+// relativeAge is a time in words ("seen just now", "seen 1 min ago"),
+// which moves on by itself while a slow sweep runs.
+var relativeAge = regexp.MustCompile(`\b(just now|\d+ (sec|min|hour|day)s? ago)`)
+
 func normalise(body string) string {
+	body = relativeAge.ReplaceAllString(body, "_ago")
 	return timestamp.ReplaceAllString(volatile.ReplaceAllString(body, `"$1":_`), `"_"`)
 }
 
@@ -864,7 +894,7 @@ func recordDisagreement(t *testing.T, st *store.Store, ctx context.Context, ids 
 func (e *env) snapshot(t *testing.T, a *tenantFx) string {
 	t.Helper()
 	var b strings.Builder
-	for _, p := range []string{
+	for _, p := range append([]string{
 		"/api/v1/assets/{asset}", "/api/v1/assets/{asset2}", "/api/v1/assets/{asset}/relations", "/api/v1/assets/{asset}/inventory",
 		"/api/v1/findings/{finding}", "/api/v1/findings/{finding}/events", "/api/v1/incidents/{incident}", "/api/v1/fix-groups/{fixgroup}",
 		"/api/v1/teams", "/api/v1/channels", "/api/v1/routes", "/api/v1/deliveries", "/api/v1/integrations", "/api/v1/enrollments",
@@ -873,8 +903,8 @@ func (e *env) snapshot(t *testing.T, a *tenantFx) string {
 		"/api/v1/checks?asset_id={asset}", "/api/v1/checks/{check}", "/api/v1/ignore-rules?status=all", "/api/v1/ignore-requests?status=all",
 		"/api/v1/second-checks",
 		"/api/v1/projects/{project}", "/api/v1/access-grants", "/api/v1/assets?project_id={project}",
-		"/api/v1/invitations", "/api/v1/onboarding",
-	} {
+		"/api/v1/invitations", "/api/v1/onboarding", "/api/v1/usage",
+	}, editionSnapshotPaths...) {
 		resp := a.sess["admin"].req("GET", fill(p, a.ids), nil, nil)
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()

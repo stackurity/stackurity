@@ -33,6 +33,20 @@ export interface Meta {
   setup_required: boolean;
   /** Present when single sign-on is configured. */
   sso?: { label: string; login_url: string };
+  /** Present when people may create their own organisation (a hosted edition). */
+  signup?: SignupMeta;
+  /** True when organisations manage their plan and billing here (a hosted edition). */
+  billing?: boolean;
+}
+
+export interface SignupMeta {
+  /** Site key of the challenge that keeps bots out of sign-up. */
+  turnstile_site_key: string;
+  terms_url: string;
+  privacy_url: string;
+  terms_version: string;
+  /** Where the organisation's data is stored, in words ("India"). */
+  region_label: string;
 }
 
 export interface User {
@@ -117,6 +131,93 @@ export interface Workspace {
   member_count: number;
   asset_count: number;
   plan: "inherit" | Edition;
+  /** Assets the monitored-asset limit applies to (every kind but Kubernetes workloads). */
+  monitored: number;
+  /** Null: no limit. */
+  asset_limit: number | null;
+}
+
+/** PATCH /admin/workspaces/{id}. */
+export interface WorkspaceUpdate {
+  name?: string;
+  disabled?: boolean;
+  plan?: "inherit" | Edition;
+  /** -1 removes the limit. */
+  asset_limit?: number;
+}
+
+/** A new asset refused because the organisation was at its limit. */
+export interface RefusedAsset {
+  kind: string;
+  name: string;
+  source: string;
+  attempts: number;
+  first_refused_at: string;
+  last_refused_at: string;
+}
+
+/** GET /usage: monitored assets against the organisation's limit (docs/asset-limits.md). */
+export interface AssetUsage {
+  monitored: number;
+  /** Null: no limit. */
+  limit: number | null;
+  at_limit: boolean;
+  by_kind: Record<string, number>;
+  /** Monitored assets that stopped reporting; they count until deleted. */
+  stale: number;
+  /** Kubernetes workloads, which are not counted. */
+  workloads: number;
+  refused: RefusedAsset[];
+  refused_recently: number;
+}
+
+/** A paid plan of a hosted edition. Prices are in the currency's smallest unit. */
+export interface BillingPlan {
+  id: string;
+  name: string;
+  description: string;
+  currency: string;
+  price_per_asset: number;
+  period: "monthly" | "yearly";
+  edition: string;
+  min_assets: number;
+  max_assets: number;
+}
+
+export type BillingStatus = "free" | "awaiting_payment" | "active" | "past_due" | "halted" | "cancelling" | "cancelled";
+
+/** GET /billing (admins, hosted edition). */
+export interface Billing {
+  test_mode: boolean;
+  region: string;
+  region_label: string;
+  status: BillingStatus;
+  plan: BillingPlan | null;
+  free_assets: number;
+  asset_limit: number | null;
+  monitored: number;
+  assets_paid: number | null;
+  current_period_end: string | null;
+  next_charge: { at: string; amount: number; currency: string } | null;
+  grace_until: string | null;
+  payment_url: string | null;
+  scheduled_change: { assets: number; at: string } | null;
+  notice: string;
+  plans: BillingPlan[];
+}
+
+export interface Invoice {
+  id: string;
+  number: string;
+  status: string;
+  amount: number;
+  amount_paid: number;
+  currency: string;
+  issued_at: string | null;
+  paid_at: string | null;
+  period_start: string | null;
+  period_end: string | null;
+  url: string;
 }
 
 export interface PackManifest {
@@ -2085,6 +2186,11 @@ export const api = {
   setup: (b: { setup_token: string; email: string; name: string; password: string }) =>
     request<User>("POST", "/setup", b, { quiet401: true }),
   logout: () => request<void>("POST", "/auth/logout", undefined, { quiet401: true }),
+  usage: () => request<AssetUsage>("GET", "/usage", undefined, { allProjects: true }),
+  updateWorkspace: (id: number, b: WorkspaceUpdate) => request<Workspace>("PATCH", `/admin/workspaces/${id}`, b),
+  signup: (b: { email: string; name: string; organisation: string; password: string; turnstile_token: string; accept_terms: true }) =>
+    request<{ status: string }>("POST", "/signup", b, { quiet401: true }),
+  verifySignup: (token: string) => request<{ workspace_id: number }>("POST", "/signup/verify", { token }, { quiet401: true }),
 };
 
 /**

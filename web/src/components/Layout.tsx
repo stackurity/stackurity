@@ -187,6 +187,7 @@ function Shell() {
         <main id="main" className="content" tabIndex={-1}>
           <UpdateBanner />
           {!pathname.startsWith("/admin/health") && <PlatformHealthBanner />}
+          {me?.workspace && !projectOnly && pathname !== "/settings/usage" && <AssetLimitBanner workspaceId={me.workspace.id} />}
           {current === "settings" && pathname !== "/settings" && (
             <nav className="crumbs" aria-label="Breadcrumb">
               <Link to="/settings">Settings</Link>
@@ -515,6 +516,24 @@ function AvatarMenu({ onFeedback, onLogout, version }: { onFeedback?: () => void
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Says so when the organisation is at its monitored-asset limit. Read once
+ * per workspace; a failed read shows nothing.
+ */
+function AssetLimitBanner({ workspaceId }: { workspaceId: number }) {
+  const { can } = useAuth();
+  const usage = useLoad(() => api.usage(), [workspaceId]);
+  const u = usage.data;
+  if (!u || !u.at_limit || u.limit === null) return null;
+  return (
+    <div className="alert alert-warn limit-banner" role="status">
+      This organisation monitors {u.monitored} of {u.limit} assets allowed. New servers, repositories and images are not added; everything already
+      here is still checked.{" "}
+      {can("admin") ? <Link to="/settings/usage">See usage</Link> : <span>Ask an admin to make room.</span>}
     </div>
   );
 }
