@@ -108,4 +108,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
 
 ## License
 
-Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). Copyright 2026 Commmerce Revolution and Future Technologies Private Limited.
+Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). Copyright 2026 OUTDO INC.
