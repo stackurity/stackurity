@@ -654,6 +654,11 @@ func TestAssistantProjectIsolation(t *testing.T) {
 				t.Errorf("%s: %s with Beta's ids leaks Beta: %s", who, name, text)
 			}
 		}
+		// Beta's people are not offered for assignment.
+		args := map[string]any{"finding_ids": []any{float64(o.id("alpha-finding"))}, "assignee": "beta-viewer@x.io"}
+		if text, isErr := callMCPTool(t, e, token, "assign", args); !isErr || strings.Contains(text, "preview") {
+			t.Errorf("%s: assign to Beta's viewer: %s", who, text)
+		}
 		text, _ := callMCPTool(t, e, token, "list_assets", map[string]any{})
 		if !strings.Contains(text, "host-alpha") || strings.Contains(text, "host-beta") || strings.Contains(text, "unfiled-beta") {
 			t.Errorf("%s sees: %s", who, text)

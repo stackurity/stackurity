@@ -662,7 +662,13 @@ func (s *Server) userDirectory(w http.ResponseWriter, r *http.Request) {
 	// organisation role alone would not do) sees only the people of their
 	// projects.
 	var colleagues map[int64]bool
-	if p := principal(r); !p.Role.AtLeast(auth.RoleEngineer) && p.User != nil {
+	if p := principal(r); p.boundToProject() {
+		// An assistant connected to one project: the people who can see it.
+		if colleagues, err = s.Store.ProjectPeople(r.Context(), *p.Assistant.ProjectID); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+	} else if !p.Role.AtLeast(auth.RoleEngineer) && p.User != nil {
 		if colleagues, err = s.Store.ProjectColleagues(r.Context(), p.User.ID); err != nil {
 			s.fail(w, r, err)
 			return
