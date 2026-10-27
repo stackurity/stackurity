@@ -1666,7 +1666,7 @@
    "get": {
     "operationId": "get_assistants",
     "summary": "The caller's connected assistants in every organisation they belong to",
-    "description": "The caller's connected assistants in every organisation they belong to: `client_name`, `redirect_host`, `workspace_name`, `project_name`, `role`, `created_at`, `last_used_at`\n\nRole: a browser session",
+    "description": "The caller's connected assistants in every organisation they belong to: `client_name`, `redirect_host`, `workspace_name`, `project_name`, `role`, `allow_changes`, `created_at`, `last_used_at`\n\nRole: a browser session",
     "tags": [
      "Account"
     ],
@@ -1713,6 +1713,53 @@
     "responses": {
      "2XX": {
       "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "patch": {
+    "operationId": "patch_assistants_id",
+    "summary": "Allow or stop changes by one of the caller's assistants",
+    "description": "`{\"allow_changes\": true | false}` for one of the caller's assistants (404 for anyone else's). Audited as `assistant.update`\n\nRole: a browser session",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "a browser session",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
      },
      "4XX": {
       "$ref": "#/components/responses/Error"
@@ -4912,7 +4959,7 @@
    "post": {
     "operationId": "post_oauth_authorize",
     "summary": "Allow or deny an assistant's connection (the consent page)",
-    "description": "The same parameters with `decision` (`allow` or `deny`), `project_id` (0: the whole organisation) and `role`: answers `redirect`, the client's redirect URI with a single-use `code` (2 minutes) or `error=access_denied`, plus `state` and `iss`. A role above the caller's is 403. Audited as `assistant.authorize`\n\nRole: a browser session",
+    "description": "The same parameters with `decision` (`allow` or `deny`), `workspace_id` (the organisation the page showed; 409 if the session switched), `project_id` (0: the whole organisation), `role` and `allow_changes` (default false: read only): answers `redirect`, the client's redirect URI with a single-use `code` (2 minutes) or `error=access_denied`, plus `state` and `iss`. A role above the caller's is 403. Audited as `assistant.authorize`\n\nRole: a browser session",
     "tags": [
      "Account"
     ],
