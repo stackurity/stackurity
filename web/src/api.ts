@@ -1594,6 +1594,8 @@ export interface Delivery {
   last_error: string;
   created_at: string;
   sent_at: string | null;
+  /** Why a held message waits: the route's hourly limit or the organisation's email quota. */
+  held_by?: "" | "hourly_limit" | "email_quota" | string;
 }
 
 export interface IncidentResponse {
@@ -1602,7 +1604,7 @@ export interface IncidentResponse {
   deliveries?: Delivery[] | null;
 }
 
-export const CHANNEL_KINDS = ["email", "slack", "teams", "webhook", "jira"] as const;
+export const CHANNEL_KINDS = ["email", "slack", "teams", "webhook", "jira", "stackurity_email"] as const;
 export type ChannelKind = (typeof CHANNEL_KINDS)[number];
 
 export interface ChannelConfig {
@@ -1623,6 +1625,161 @@ export interface ChannelConfig {
   // slack: the Slack app's signing secret (a reference). When set, Assign
   // to me and Snooze act from inside Slack.
   signing_secret_ref?: string;
+  // stackurity_email: members (user ids) and other addresses (`to`, each
+  // confirmed once by its owner).
+  user_ids?: number[];
+  // slack created with "Add to Slack" (the Stackurity Slack app)
+  slack_app?: boolean;
+  team_id?: string;
+  team_name?: string;
+  slack_channel?: string;
+  configuration_url?: string;
+}
+
+/** GET /notification-options: what this server offers. */
+export interface NotificationOptions {
+  slack_app: boolean;
+  platform_email: {
+    enabled: boolean;
+    from?: string;
+    max_recipients?: number;
+    quota?: { per_minute: number; per_hour: number; per_day: number };
+  };
+  secrets: boolean;
+  base_url: boolean;
+}
+
+export const NO_NOTIFICATION_OPTIONS: NotificationOptions = { slack_app: false, platform_email: { enabled: false }, secrets: false, base_url: false };
+
+/** Loads the options; a failure counts as nothing offered. */
+export function loadNotificationOptions(): Promise<NotificationOptions> {
+  return api
+    .get<Partial<NotificationOptions>>("/notification-options")
+    .then((o) => ({
+      slack_app: Boolean(o?.slack_app),
+      platform_email: o?.platform_email?.enabled ? o.platform_email : { enabled: false },
+      secrets: Boolean(o?.secrets),
+      base_url: Boolean(o?.base_url),
+    }))
+    .catch(() => NO_NOTIFICATION_OPTIONS);
+}
+
+/** GET /email-recipients: other addresses of Stackurity email channels. */
+export interface EmailRecipient {
+  email: string;
+  status: "pending" | "confirmed" | string;
+  requested_at: string;
+  confirmed_at: string | null;
+}
+
+/** POST /integrations/slack/oauth */
+export interface SlackOAuthResult {
+  channel: Channel;
+  return_to: string;
+  team_name: string;
+  slack_channel: string;
+}
+
+/** Route choices saved before "Add to Slack" during onboarding (sessionStorage). */
+export const SLACK_PENDING_KEY = "stk-slack-pending";
+export interface SlackPendingRoute {
+  project_id: number;
+  events: RouteEvent[];
+  new_min_priority: Priority;
+  escalation: boolean;
+  summary_time: string;
+  summary_day: string;
+  timezone: string;
+  route_name: string;
+  max_per_hour: number;
+  send_resolved: boolean;
+}
+
+/** The quick questions of onboarding: what to send right away, and which summary. */
+export type SendNow = "urgent" | "all" | "none";
+export type SummaryChoice = "daily" | "weekly" | "none";
+
+/** What a route sends (its "Trigger" checkboxes). */
+export const ROUTE_EVENTS = ["urgent", "new_issues", "regressed", "overdue", "connected", "problems", "daily_summary", "weekly_summary"] as const;
+export type RouteEvent = (typeof ROUTE_EVENTS)[number];
+
+export const ROUTE_EVENT_LABEL: Record<RouteEvent, string> = {
+  urgent: "New urgent issues",
+  new_issues: "All new issues",
+  regressed: "Issues that came back after a fix",
+  overdue: "Fix overdue",
+  connected: "New asset connected",
+  problems: "Collection, feed or platform problems",
+  daily_summary: "Daily summary",
+  weekly_summary: "Weekly summary",
+};
+
+/** What the old modes mean as events (routes without `events`). */
+const MODE_EVENTS: Record<string, RouteEvent[]> = {
+  urgent_summary: ["urgent", "regressed", "overdue", "connected", "problems", "daily_summary"],
+  urgent_weekly: ["urgent", "regressed", "overdue", "connected", "problems", "weekly_summary"],
+  urgent_only: ["urgent", "regressed", "overdue", "connected", "problems"],
+  daily: ["daily_summary"],
+  weekly: ["weekly_summary"],
+};
+
+/** A route's events, from `events` or, for an older answer, its mode. */
+export function eventsOf(r: Pick<Route, "events" | "mode">): RouteEvent[] {
+  if (r.events) return r.events.filter((e): e is RouteEvent => (ROUTE_EVENTS as readonly string[]).includes(e));
+  return MODE_EVENTS[r.mode || "urgent_summary"] ?? MODE_EVENTS.urgent_summary;
+}
+
+/**
+ * The events for the two quick questions (onboarding). Null when neither is
+ * chosen: nothing would ever be sent.
+ */
+export function eventsFor(now: SendNow, summary: SummaryChoice): { events: RouteEvent[]; new_min_priority: Priority } | null {
+  if (now === "none" && summary === "none") return null;
+  const events: RouteEvent[] = now === "all" ? ["new_issues", "urgent", "regressed", "connected", "problems"] : now === "urgent" ? ["urgent", "regressed", "connected", "problems"] : [];
+  if (summary === "daily") events.push("daily_summary");
+  if (summary === "weekly") events.push("weekly_summary");
+  return { events, new_min_priority: "P4" };
+}
+
+/** The two quick answers that best describe a route. */
+export function choicesOf(r: Pick<Route, "events" | "mode">): { now: SendNow; summary: SummaryChoice } {
+  const ev = eventsOf(r);
+  const now: SendNow = ev.includes("new_issues") ? "all" : ev.includes("urgent") ? "urgent" : "none";
+  const summary: SummaryChoice = ev.includes("daily_summary") ? "daily" : ev.includes("weekly_summary") ? "weekly" : "none";
+  return { now, summary };
+}
+
+const capital = (d: string) => d.charAt(0).toUpperCase() + d.slice(1);
+
+/** "Daily at 09:00 (Europe/Berlin)", "Weekly, Mondays at 09:00 (UTC)" or "No summary". */
+export function summaryText(summary: SummaryChoice, time: string, day: string, tz: string): string {
+  if (summary === "none") return "No summary";
+  const at = `${time || "09:00"}${tz ? ` (${tz})` : ""}`;
+  return summary === "daily" ? `Daily at ${at}` : `Weekly, ${capital(day || "monday")}s at ${at}`;
+}
+
+/** One line for a route: "Urgent issues, all new issues (P3+) · Daily summary at 09:00 Europe/Berlin". */
+export function describeRoute(r: Pick<Route, "events" | "mode" | "min_priority" | "new_min_priority" | "summary_time" | "summary_day" | "timezone">): string {
+  const ev = eventsOf(r);
+  const parts: string[] = [];
+  if (ev.includes("new_issues")) parts.push(r.new_min_priority && r.new_min_priority !== "P4" ? `New issues (${r.new_min_priority}+)` : "All new issues");
+  if (ev.includes("urgent")) parts.push(r.min_priority && r.min_priority !== "P1" ? `Urgent issues (${r.min_priority}+)` : "Urgent issues");
+  const now = parts.length ? [`${parts.join(", ")} right away`] : [];
+  const at = `at ${r.summary_time || "09:00"} ${r.timezone || "UTC"}`;
+  if (ev.includes("daily_summary")) now.push(`Daily summary ${at}`);
+  if (ev.includes("weekly_summary")) now.push(`Weekly summary, ${capital(r.summary_day || "monday")}s ${at}`);
+  const extra = (["regressed", "overdue", "connected", "problems"] as RouteEvent[]).filter((e) => ev.includes(e)).length;
+  if (now.length === 0) return extra ? `${extra} kind${extra === 1 ? "" : "s"} of message` : "Nothing";
+  return now.join(" · ");
+}
+
+/** The browser's time zone, for new routes. */
+export function browserTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
 }
 
 export interface Channel {
@@ -1654,7 +1811,7 @@ export interface Route {
   timezone: string;
   max_per_hour: number;
   created_at?: string;
-  /** urgent_summary: urgent alerts right away and a daily summary; urgent_only: urgent alerts, no summary; daily or weekly: summary only. */
+  /** urgent_summary / urgent_weekly: urgent alerts right away and a daily / weekly summary; urgent_only: urgent alerts, no summary; daily or weekly: summary only. */
   mode: RouteMode;
   /** "HH:MM" in `timezone`. */
   summary_time: string;
@@ -1664,10 +1821,18 @@ export interface Route {
   last_summary_at?: string;
   /** Only the assets of these projects (empty: every asset). */
   project_ids?: number[] | null;
+  /** What this route sends; see ROUTE_EVENTS. Wins over `mode` on write. */
+  events?: string[] | null;
+  /** Slack routes only: a different Slack channel for some events. */
+  event_channels?: Record<string, number> | null;
+  /** Lowest priority sent by the `new_issues` event (default P4). */
+  new_min_priority?: Priority;
+  /** End of the period the last weekly summary covered (read-only). */
+  last_weekly_summary_at?: string;
 }
 
-export type RouteMode = "urgent_summary" | "urgent_only" | "daily" | "weekly";
-export const ROUTE_MODES: RouteMode[] = ["urgent_summary", "urgent_only", "daily", "weekly"];
+export type RouteMode = "urgent_summary" | "urgent_weekly" | "urgent_only" | "daily" | "weekly" | "custom";
+export const ROUTE_MODES: RouteMode[] = ["urgent_summary", "urgent_weekly", "urgent_only", "daily", "weekly"];
 export const WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const;
 
 export interface SOSRule {

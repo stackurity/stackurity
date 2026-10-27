@@ -85,7 +85,7 @@ func TestQuietFirstScanEveryPath(t *testing.T) {
 		}
 	}
 	data := &summaryData{d: f.d, ctx: ctx, cache: map[string][]store.IssueCount{}}
-	sm, changed, err := f.d.summaryMessage(main, data, now.Add(-time.Hour), time.Now().Add(time.Minute), true)
+	sm, changed, err := f.d.summaryMessage(main, false, data, now.Add(-time.Hour), time.Now().Add(time.Minute), true)
 	if err != nil || !changed {
 		t.Fatalf("summary: %v %v", changed, err)
 	}

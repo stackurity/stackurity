@@ -46,6 +46,16 @@ type Dispatcher struct {
 	// PlatformTarget returns the workspace for platform incidents, or 0 and
 	// the reason when there is none (it is missing or disabled).
 	PlatformTarget func(ctx context.Context) (id int64, why string, err error)
+	// PlatformMail delivers email sent by Stackurity (stackurity_email
+	// channels) through the platform's own mail server; nil (self-hosted)
+	// turns that channel kind off. EmailQuota limits each organisation
+	// (zero: DefaultEmailLimits); MaxRecipients caps a channel's recipients.
+	PlatformMail  Mailer
+	EmailQuota    store.EmailLimits
+	MaxRecipients int
+	// SlackApp is the Stackurity Slack app ("Add to Slack"); nil turns it
+	// off. Its signing secret verifies clicks on channels it added.
+	SlackApp *SlackApp
 }
 
 // tickSkips counts, per store and workspace, the ticks in a row whose
@@ -343,7 +353,7 @@ func (d *Dispatcher) Plan(ctx context.Context) error {
 			}
 		}
 		var back []store.IssueCount
-		if assetsWanted(r) {
+		if r.HasEvent(store.EventRegressed) && assetsWanted(r) {
 			for _, c := range regressed {
 				if issueInScope(r, c) {
 					back = append(back, c)
@@ -362,17 +372,46 @@ func (d *Dispatcher) Plan(ctx context.Context) error {
 				return err
 			}
 		}
-		msg, ok := d.urgentMessage(r, urgent, rows, quiet, infos, back)
-		if !ok {
-			continue
+		// One message per destination: events may go to other channels
+		// than the route's (Route.EventChannels).
+		type part struct {
+			incs []store.Incident
+			ids  []int64
+			back []store.IssueCount
 		}
-		r := r
-		key := keyOf("urgent", r.ID, urgentIDs)
+		parts := map[int64]*part{}
+		var order []int64
+		get := func(ch int64) *part {
+			if parts[ch] == nil {
+				parts[ch] = &part{}
+				order = append(order, ch)
+			}
+			return parts[ch]
+		}
+		for i, in := range urgent {
+			ch := findingsChannel(r)
+			if !isFindingKind(in.Kind) {
+				ch = r.ChannelFor(store.EventProblems)
+			}
+			p := get(ch)
+			p.incs, p.ids = append(p.incs, in), append(p.ids, urgentIDs[i])
+		}
 		if len(back) > 0 {
-			key += ":regressed:" + regressedUpTo.UTC().Format(time.RFC3339Nano)
+			get(r.ChannelFor(store.EventRegressed)).back = back
 		}
-		if err := d.enqueueRouted(ctx, r, EventUrgent, key, msg); err != nil {
-			return err
+		for _, ch := range order {
+			p := parts[ch]
+			msg, ok := d.urgentMessage(r, p.incs, rows, quiet, infos, p.back)
+			if !ok {
+				continue
+			}
+			key := keyOf("urgent", r.ID, p.ids)
+			if len(p.back) > 0 {
+				key += ":regressed:" + regressedUpTo.UTC().Format(time.RFC3339Nano)
+			}
+			if err := d.enqueueTo(ctx, r, ch, EventUrgent, key, msg); err != nil {
+				return err
+			}
 		}
 	}
 	// Recorded even when no route matched, as incidents are below.
@@ -393,7 +432,7 @@ func (d *Dispatcher) Plan(ctx context.Context) error {
 		}
 		byAsset := fixesByAsset(fixes)
 		for _, r := range routes {
-			if !people(r) || !assetsWanted(r) {
+			if !people(r) || !assetsWanted(r) || !r.HasEvent(store.EventConnected) {
 				continue
 			}
 			var mine []store.NewAsset
@@ -408,7 +447,7 @@ func (d *Dispatcher) Plan(ctx context.Context) error {
 			}
 			r := r
 			msg := d.connectedMessage(r, mine, byAsset)
-			if err := d.enqueueRouted(ctx, r, EventConnected, keyOf("connected", r.ID, mineIDs), msg); err != nil {
+			if err := d.enqueueTo(ctx, r, r.ChannelFor(store.EventConnected), EventConnected, keyOf("connected", r.ID, mineIDs), msg); err != nil {
 				return err
 			}
 		}
@@ -497,7 +536,7 @@ func (d *Dispatcher) planOverdue(ctx context.Context, routes []store.Route, trac
 			}
 			continue
 		}
-		if !sendsUrgent(r) {
+		if !r.HasEvent(store.EventOverdue) {
 			continue // the overdue section of the summary covers it
 		}
 		crossed := false
@@ -528,7 +567,7 @@ func (d *Dispatcher) planOverdue(ctx context.Context, routes []store.Route, trac
 			loc = time.UTC
 		}
 		key := fmt.Sprintf("overdue:%d:%s", r.ID, d.now().In(loc).Format("2006-01-02"))
-		if err := d.enqueueRouted(ctx, r, EventOverdue, key, msg); err != nil {
+		if err := d.enqueueTo(ctx, r, r.ChannelFor(store.EventOverdue), EventOverdue, key, msg); err != nil {
 			return err
 		}
 	}
@@ -727,6 +766,19 @@ func (d *Dispatcher) Deliver(ctx context.Context) error {
 				}
 			}
 		}
+		// Email sent by Stackurity counts against the organisation's email
+		// limits; over them, the message is held or waits.
+		var reservation int64
+		if ch.Kind == KindStackurityEmail && del.Event != "test" {
+			res, ok, err := d.quotaCheck(ctx, ch, del, route)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				continue
+			}
+			reservation = res
+		}
 		// Claim right before sending: another replica's Tick or Digest may
 		// be delivering the same queue.
 		lease := d.Lease
@@ -738,6 +790,7 @@ func (d *Dispatcher) Deliver(ctx context.Context) error {
 			return err
 		}
 		if !ok {
+			_ = d.Store.ReleaseEmails(context.WithoutCancel(ctx), reservation)
 			continue
 		}
 		sendErr := d.send(ctx, ch, del, attempts, msg)
@@ -745,6 +798,7 @@ func (d *Dispatcher) Deliver(ctx context.Context) error {
 		// sent message is not sent again when the lease ends.
 		bg := context.WithoutCancel(ctx)
 		if sendErr != nil {
+			_ = d.Store.ReleaseEmails(bg, reservation)
 			d.Log.Warn("delivery failed", "delivery", del.ID, "channel", ch.Name, "attempt", attempts, "err", sendErr)
 			// The receiver may ask for a pause (Retry-After), or say that
 			// retrying cannot help (rejected credentials).
@@ -776,6 +830,9 @@ func (d *Dispatcher) send(ctx context.Context, ch *store.Channel, del store.Deli
 		defer cancel()
 		return d.syncJira(sctx, ch, del, attempts, msg)
 	}
+	if ch.Kind == KindStackurityEmail {
+		return d.sendPlatformEmail(ctx, ch, msg)
+	}
 	var cfg ChannelConfig
 	if err := json.Unmarshal(ch.Config, &cfg); err != nil {
 		return err
@@ -784,7 +841,11 @@ func (d *Dispatcher) send(ctx context.Context, ch *store.Channel, del store.Deli
 	if err != nil {
 		return err
 	}
-	if ch.Kind == KindSlack && cfg.SigningSecretRef != "" {
+	if ch.Kind == KindSlack && cfg.SlackApp && d.SlackApp != nil && d.SlackApp.SigningSecret != "" {
+		// Added with the Stackurity Slack app: its signing secret verifies
+		// clicks (internal/api/slack.go).
+		cfg.interactive = ch.ID
+	} else if ch.Kind == KindSlack && cfg.SigningSecretRef != "" {
 		// Interactive buttons only when clicks can be verified: with a
 		// signing secret that resolves. Otherwise the message keeps the URL
 		// buttons, which always work.
@@ -809,7 +870,20 @@ func (d *Dispatcher) SendTest(ctx context.Context, ch *store.Channel) error {
 	}
 	msg := Message{Event: "test", Title: "Stackurity test notification", At: d.now().UTC(),
 		Summary: []string{"This channel is configured correctly."}}
+	var reservation int64
+	if ch.Kind == KindStackurityEmail {
+		to, err := d.recipients(ctx, ch)
+		if err != nil {
+			return err
+		}
+		if reservation, err = d.Store.ReserveEmails(ctx, max(len(to), 1), d.EmailLimits()); err != nil {
+			return err
+		}
+	}
 	err := d.send(ctx, ch, store.Delivery{Event: "test"}, 1, msg)
+	if err != nil {
+		_ = d.Store.ReleaseEmails(context.WithoutCancel(ctx), reservation)
+	}
 	_ = d.Store.ChannelResult(ctx, ch.ID, err)
 	return err
 }
@@ -890,14 +964,25 @@ func (d *Dispatcher) digestRoutes(ctx context.Context, routes []store.Route, hel
 		}
 		var lines []string
 		var ids []int64
+		byQuota := 0
 		for _, del := range list {
-			if del.ChannelID != r.ChannelID {
+			if !routeChannel(r, del.ChannelID) {
 				continue // queued before the route moved to another channel
 			}
 			var m Message
 			_ = json.Unmarshal(del.Payload, &m)
 			lines = append(lines, m.Subject())
 			ids = append(ids, del.ID)
+			if del.HeldBy == store.HeldEmailQuota {
+				byQuota++
+			}
+		}
+		limit := "the hourly limit"
+		switch {
+		case byQuota == len(ids) && byQuota > 0:
+			limit = "the email limit"
+		case byQuota > 0:
+			limit = "the hourly and email limits"
 		}
 		if len(ids) == 0 {
 			continue
@@ -906,7 +991,7 @@ func (d *Dispatcher) digestRoutes(ctx context.Context, routes []store.Route, hel
 			lines = append(lines[:20], fmt.Sprintf("+%d more", len(lines)-20))
 		}
 		key := fmt.Sprintf("digest:%d:%s", r.ID, stamp)
-		msg := Message{Event: EventDigest, Title: fmt.Sprintf("Stackurity: %s held by the hourly limit", plural(len(ids), "urgent message")),
+		msg := Message{Event: EventDigest, Title: fmt.Sprintf("Stackurity: %s held by %s", plural(len(ids), "urgent message"), limit),
 			Route: r.Name, Summary: lines, At: d.now().UTC(),
 			Link: inProject(d.url("/settings/notifications", url.Values{"tab": {"deliveries"}}), routeProject(r, 0))}
 		if err := d.enqueueRouted(ctx, r, EventDigest, key, msg); err != nil {
@@ -917,6 +1002,19 @@ func (d *Dispatcher) digestRoutes(ctx context.Context, routes []store.Route, hel
 		}
 	}
 	return nil
+}
+
+// routeChannel reports whether the route sends anything to channel id.
+func routeChannel(r store.Route, id int64) bool {
+	if id == r.ChannelID {
+		return true
+	}
+	for _, c := range r.EventChannels {
+		if c == id {
+			return true
+		}
+	}
+	return false
 }
 
 // quietUntil reports whether now is within the route's quiet hours and, if

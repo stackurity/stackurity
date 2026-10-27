@@ -4278,3 +4278,104 @@ h6.md-h {
   overflow-wrap: anywhere;
   word-break: break-all;
 }
+
+/* --- Settings, Integrations */
+.int-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.int-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.int-group {
+  margin: var(--s3) 0 var(--s2);
+  font-size: 0.95rem;
+  color: var(--text-2);
+}
+.int-cards {
+  list-style: none;
+  margin: 0 0 var(--s3);
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
+  gap: var(--s3);
+}
+.int-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: var(--s3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.int-card p {
+  margin: 0;
+}
+.int-card .btn {
+  align-self: flex-start;
+  margin-top: auto;
+}
+.int-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.trigger-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.trigger-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+.trigger-extra {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.trigger-extra select,
+.trigger-extra input {
+  width: auto;
+  max-width: 100%;
+}
+.trigger-hint {
+  flex-basis: 100%;
+  margin: 0 0 0 24px;
+}
+.trigger-add {
+  margin-top: var(--s2);
+}
+.rule-list {
+  list-style: none;
+  margin: 0 0 var(--s3);
+  padding: 0;
+}
+.rule-list > li {
+  padding: var(--s2) 0;
+  border-bottom: 1px solid var(--border);
+}
+.rule-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--s2);
+}

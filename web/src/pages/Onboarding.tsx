@@ -17,6 +17,19 @@ import { plural } from "../format";
 import { installCommand } from "./AddServer";
 import { InviteForm } from "../components/Invite";
 import { CodeBlock, ErrorBox, Loading, Notice } from "../components/ui";
+import {
+  browserTimeZone,
+  choicesOf,
+  loadNotificationOptions,
+  eventsFor,
+  SLACK_PENDING_KEY,
+  type DirectoryUser,
+  type Route,
+  type SendNow,
+  type SlackPendingRoute,
+  type SummaryChoice,
+} from "../api";
+import { AddToSlackButton, parseAddresses, RouteQuestions, SmtpProviderPicker, StackurityEmailFields } from "../components/NotifyChoices";
 
 /*
  * The first-run flow (0.9): a new organisation's first ten minutes.
@@ -608,19 +621,24 @@ function ResultStep({ project, since, onNext }: { project: Project; since: strin
 // --- 5. notifications
 
 type Kind = "slack" | "email";
-type Mode = "urgent_summary" | "urgent_only" | "weekly";
 
-const MODE_ROUTE_NAME: Record<Mode, string> = {
-  urgent_summary: "urgent and daily summary",
-  urgent_only: "urgent only",
-  weekly: "weekly summary",
-};
+const NOTIFY_TIME = "09:00";
+const NOTIFY_DAY = "monday";
 
-const MODE_DONE: Record<Mode, string> = {
-  urgent_summary: "Urgent issues arrive right away, with a summary each day at 09:00.",
-  urgent_only: "Urgent issues arrive right away, with no summary.",
-  weekly: "A summary arrives on Mondays at 09:00.",
-};
+/** Route name from the two answers, e.g. "urgent + daily summary". */
+function routeNameFor(now: SendNow, summary: SummaryChoice): string {
+  const parts = [now === "urgent" ? "urgent" : now === "all" ? "all new issues" : "", summary === "none" ? "" : `${summary} summary`].filter(Boolean);
+  if (summary === "none") return `${parts[0]} only`;
+  return parts.join(" + ");
+}
+
+/** What the person will get, in a sentence. */
+function doneText(now: SendNow, summary: SummaryChoice, tz: string): string {
+  const when = summary === "daily" ? `each day at ${NOTIFY_TIME} (${tz})` : `on Mondays at ${NOTIFY_TIME} (${tz})`;
+  if (now === "none") return `A summary arrives ${when}.`;
+  const first = now === "all" ? "New issues arrive right away" : "Urgent issues arrive right away";
+  return summary === "none" ? `${first}, with no summary.` : `${first}, with a summary ${when}.`;
+}
 
 function secretName(project: Project, kind: Kind): string {
   const slug = project.name.toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 30) || "PROJECT";
@@ -628,48 +646,101 @@ function secretName(project: Project, kind: Kind): string {
 }
 
 function NotifyStep({ project, onNext }: { project: Project; onNext: () => void }) {
+  const { me } = useAuth();
+  const [params] = useSearchParams();
+  const options = useLoad(loadNotificationOptions, []);
+  const opts = options.data;
+  const members = useLoad(() => (opts?.platform_email.enabled ? api.getAll<List<DirectoryUser>>("/users/directory") : Promise.resolve(null)), [opts?.platform_email.enabled]);
   const [kind, setKind] = useState<Kind>("slack");
-  const [mode, setMode] = useState<Mode>("urgent_summary");
+  const [now, setNow] = useState<SendNow>("urgent");
+  const [summary, setSummary] = useState<SummaryChoice>("daily");
+  const [tz] = useState(browserTimeZone);
+  const [slackWebhook, setSlackWebhook] = useState(false);
+  const [ownSmtp, setOwnSmtp] = useState(false);
   const [webhook, setWebhook] = useState("");
   const [to, setTo] = useState("");
   const [host, setHost] = useState("");
   const [port, setPort] = useState("587");
+  const [tls, setTls] = useState<"starttls" | "tls">("starttls");
   const [from, setFrom] = useState("");
   const [user, setUser] = useState("");
   const [password, setPassword] = useState("");
-  const [saved, setSaved] = useState<{ channel: number } | null>(null);
+  const [userIds, setUserIds] = useState<number[] | null>(null);
+  const [others, setOthers] = useState("");
+  const [saved, setSaved] = useState<{ channel: number; text: string } | null>(null);
   const [tested, setTested] = useState<string | null>(null);
   const act = useAction();
 
+  // Back from "Add to Slack": the callback page created the route.
+  const backChannel = Number(params.get("channel")) || 0;
+  const back = useLoad(() => (backChannel ? api.getAll<List<Route>>("/routes") : Promise.resolve(null)), [backChannel]);
+  useEffect(() => {
+    if (!backChannel || !back.data || saved) return;
+    const r = back.data.items.find((x) => x.channel_id === backChannel);
+    if (r) {
+      const c = choicesOf(r);
+      setSaved({ channel: backChannel, text: doneText(c.now, c.summary, r.timezone || tz) });
+    }
+  }, [backChannel, back.data, saved, tz]);
+
+  // The signed-in person is ticked by default.
+  const ids = userIds ?? (me?.user ? [me.user.id] : []);
+  const useApp = kind === "slack" && Boolean(opts?.slack_app) && !slackWebhook;
+  const platformEmail = kind === "email" && Boolean(opts?.platform_email.enabled) && !ownSmtp;
+  const choice = eventsFor(now, summary);
+  const needsSecret = (kind === "slack" && !useApp) || (kind === "email" && !platformEmail && Boolean(password));
+  const routeName = `${project.name}: ${routeNameFor(now, summary)}`;
+
+  const routeFields = () =>
+    choice && {
+      events: choice.events,
+      new_min_priority: choice.new_min_priority,
+      escalation: false,
+      summary_time: NOTIFY_TIME,
+      summary_day: NOTIFY_DAY,
+      timezone: tz,
+      max_per_hour: 10,
+      send_resolved: true,
+    };
+
+  const rememberForSlack = () => {
+    const f = routeFields();
+    if (!f) return;
+    const pending: SlackPendingRoute = { project_id: project.id, route_name: routeName, ...f };
+    try {
+      window.sessionStorage.setItem(SLACK_PENDING_KEY, JSON.stringify(pending));
+    } catch {
+      /* storage blocked: the route can be added in Settings */
+    }
+  };
+
   const save = async (e: FormEvent) => {
     e.preventDefault();
+    const f = routeFields();
+    if (!f || useApp) return;
     const r = await act.run(async () => {
       let ref = "";
-      if (kind === "slack" || password) {
+      if (needsSecret) {
         ref = secretName(project, kind);
         await api.put(`/secrets/${ref}`, { value: kind === "slack" ? webhook.trim() : password });
         ref = `secret:${ref}`;
       }
-      const config =
-        kind === "slack"
-          ? {}
-          : { host: host.trim(), port: Number(port) || 587, from: from.trim(), to: [to.trim()], username: user.trim() || undefined };
-      const ch = await api.post<{ id: number }>("/channels", { kind, name: `${project.name} (${kind === "slack" ? "Slack" : "email"})`, config, secret_ref: ref });
-      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-      await api.post("/routes", {
-        name: `${project.name}: ${MODE_ROUTE_NAME[mode]}`,
-        channel_id: ch.id,
-        enabled: true,
-        project_ids: [project.id],
-        mode,
-        min_priority: "P1",
-        summary_time: "09:00",
-        summary_day: "monday",
-        timezone: tz,
-        max_per_hour: 10,
-        send_resolved: true,
-      });
-      return { channel: ch.id };
+      let ch: { id: number };
+      if (platformEmail) {
+        ch = await api.post<{ id: number }>("/channels", {
+          kind: "stackurity_email",
+          name: `${project.name} (email)`,
+          config: { user_ids: ids, to: parseAddresses(others) },
+        });
+      } else {
+        const config =
+          kind === "slack"
+            ? {}
+            : { host: host.trim(), port: Number(port) || 587, tls, from: from.trim(), to: [to.trim()], username: user.trim() || undefined };
+        ch = await api.post<{ id: number }>("/channels", { kind, name: `${project.name} (${kind === "slack" ? "Slack" : "email"})`, config, secret_ref: ref });
+      }
+      await api.post("/routes", { name: routeName, channel_id: ch.id, enabled: true, project_ids: [project.id], min_priority: "P1", ...f });
+      return { channel: ch.id, text: doneText(now, summary, tz) };
     });
     if (r) setSaved(r);
   };
@@ -679,16 +750,24 @@ function NotifyStep({ project, onNext }: { project: Project; onNext: () => void 
     if (r) setTested(r.ok ? "Test message sent. Check that it arrived." : `The test failed: ${r.error ?? "unknown error"}`);
   };
   const noKey = act.error?.message.includes("STACKURITY_SECRET_KEY");
+  const recipients = ids.length + parseAddresses(others).length;
+  const maxRecipients = opts?.platform_email.max_recipients ?? 20;
+  const blocked = !choice || (platformEmail && (recipients === 0 || recipients > maxRecipients));
+
+  if (backChannel && !saved && !back.data && !back.error) return <Loading />;
 
   if (saved) {
     return (
       <StepCard>
         <Notice kind="success">
-          Notifications are on for {project.name}. {MODE_DONE[mode]}
+          Notifications are on for {project.name}. {saved.text}
         </Notice>
         {tested && <Notice kind={tested.startsWith("Test message") ? "success" : "warn"}>{tested}</Notice>}
         <ErrorBox error={act.error} title="Could not send a test" />
         <p className="small">Each fix in a message has Assign to me, Snooze and Open buttons that open it here.</p>
+        <p className="small">
+          You can fine-tune this in <Link to={`/settings/integrations/channels/${saved.channel}`}>Settings → Integrations</Link>.
+        </p>
         <div className="form-actions">
           <button type="button" className="btn" onClick={test} disabled={act.pending}>
             Send a test message
@@ -701,9 +780,62 @@ function NotifyStep({ project, onNext }: { project: Project; onNext: () => void 
     );
   }
 
+  if (!opts) return <Loading />;
+
+  const smtpFields = (
+    <div className="form-grid">
+      <div className="field field-span">
+        <label htmlFor="ob-to">Send to</label>
+        <input id="ob-to" type="email" required value={to} onChange={(e) => setTo(e.target.value)} placeholder="security@example.com" />
+      </div>
+      <SmtpProviderPicker
+        idp="ob"
+        onApply={(v) => {
+          setHost(v.host);
+          setPort(String(v.port));
+          setTls(v.tls);
+          if (v.username) setUser(v.username);
+        }}
+      />
+      <div className="field">
+        <label htmlFor="ob-host">Mail server (SMTP)</label>
+        <input id="ob-host" required value={host} onChange={(e) => setHost(e.target.value)} placeholder="smtp.example.com" />
+      </div>
+      <div className="field">
+        <label htmlFor="ob-port">Port</label>
+        <input id="ob-port" type="number" min={1} max={65535} required value={port} onChange={(e) => setPort(e.target.value)} />
+      </div>
+      <div className="field">
+        <label htmlFor="ob-tls">Encryption</label>
+        <select id="ob-tls" value={tls} onChange={(e) => setTls(e.target.value as "starttls" | "tls")}>
+          <option value="starttls">STARTTLS (usually port 587)</option>
+          <option value="tls">TLS (usually port 465)</option>
+        </select>
+      </div>
+      <div className="field">
+        <label htmlFor="ob-from">From</label>
+        <input id="ob-from" type="email" required value={from} onChange={(e) => setFrom(e.target.value)} placeholder="stackurity@example.com" />
+      </div>
+      <div className="field">
+        <label htmlFor="ob-user">Username (optional)</label>
+        <input id="ob-user" value={user} onChange={(e) => setUser(e.target.value)} autoComplete="off" />
+      </div>
+      <div className="field field-span">
+        <label htmlFor="ob-pass">Password (optional)</label>
+        <input id="ob-pass" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
+        <p className="hint">Stored encrypted, as a secret. This mail server also sends your invitations.</p>
+      </div>
+    </div>
+  );
+
   return (
     <StepCard>
       <form className="form" onSubmit={save}>
+        {backChannel > 0 && back.data && (
+          <Notice kind="info">
+            Slack is connected. Choose what to send below, or later under <Link to={`/settings/integrations/channels/${backChannel}`}>Settings → Integrations</Link>.
+          </Notice>
+        )}
         <fieldset className="field">
           <legend>Where</legend>
           <div className="onboard-toggle">
@@ -715,7 +847,10 @@ function NotifyStep({ project, onNext }: { project: Project; onNext: () => void 
             </label>
           </div>
         </fieldset>
-        {kind === "slack" ? (
+        {kind === "slack" && useApp && (
+          <p className="hint">Slack asks you to pick a channel, then brings you back here. Buttons in the messages (Assign to me, Snooze) work inside Slack.</p>
+        )}
+        {kind === "slack" && !useApp && (
           <div className="field">
             <label htmlFor="ob-webhook">Slack incoming webhook URL</label>
             <input id="ob-webhook" type="url" required pattern="https://.*" value={webhook} onChange={(e) => setWebhook(e.target.value)} placeholder="https://hooks.slack.com/services/..." autoComplete="off" />
@@ -723,79 +858,72 @@ function NotifyStep({ project, onNext }: { project: Project; onNext: () => void 
               In Slack: Apps, Incoming Webhooks, Add to Slack, pick the channel. It is stored encrypted, as a secret.
             </p>
           </div>
-        ) : (
+        )}
+        {kind === "slack" && opts.slack_app && (
+          <p className="small">
+            <button type="button" className="btn btn-link" onClick={() => setSlackWebhook(!slackWebhook)} aria-expanded={slackWebhook}>
+              {slackWebhook ? "Use Add to Slack instead" : "Advanced: use a webhook"}
+            </button>
+          </p>
+        )}
+        {kind === "email" && platformEmail && (
           <div className="form-grid">
-            <div className="field field-span">
-              <label htmlFor="ob-to">Send to</label>
-              <input id="ob-to" type="email" required value={to} onChange={(e) => setTo(e.target.value)} placeholder="security@example.com" />
-            </div>
-            <div className="field">
-              <label htmlFor="ob-host">Mail server (SMTP)</label>
-              <input id="ob-host" required value={host} onChange={(e) => setHost(e.target.value)} placeholder="smtp.example.com" />
-            </div>
-            <div className="field">
-              <label htmlFor="ob-port">Port</label>
-              <input id="ob-port" type="number" min={1} max={65535} required value={port} onChange={(e) => setPort(e.target.value)} />
-            </div>
-            <div className="field">
-              <label htmlFor="ob-from">From</label>
-              <input id="ob-from" type="email" required value={from} onChange={(e) => setFrom(e.target.value)} placeholder="stackurity@example.com" />
-            </div>
-            <div className="field">
-              <label htmlFor="ob-user">Username (optional)</label>
-              <input id="ob-user" value={user} onChange={(e) => setUser(e.target.value)} autoComplete="off" />
-            </div>
-            <div className="field field-span">
-              <label htmlFor="ob-pass">Password (optional)</label>
-              <input id="ob-pass" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
-              <p className="hint">Stored encrypted, as a secret. This mail server also sends your invitations.</p>
-            </div>
+            <ErrorBox error={members.error} title="Could not load members" />
+            <StackurityEmailFields
+              idp="ob"
+              options={opts}
+              members={members.data?.items}
+              userIds={ids}
+              setUserIds={setUserIds}
+              others={others}
+              setOthers={setOthers}
+            />
           </div>
         )}
-        <fieldset className="field">
-          <legend>What</legend>
-          <ul className="choice-list">
-            <li>
-              <label className="choice">
-                <input type="radio" name="ob-mode" checked={mode === "urgent_summary"} onChange={() => setMode("urgent_summary")} />
-                <span>
-                  <strong>Urgent issues right away</strong>
-                  <span className="hint"> P1, SOS and known exploited, with a short summary each day.</span>
-                </span>
-              </label>
-            </li>
-            <li>
-              <label className="choice">
-                <input type="radio" name="ob-mode" checked={mode === "urgent_only"} onChange={() => setMode("urgent_only")} />
-                <span>
-                  <strong>Urgent issues only</strong>
-                  <span className="hint"> P1, SOS, known exploited and issues that came back, right away. No summaries.</span>
-                </span>
-              </label>
-            </li>
-            <li>
-              <label className="choice">
-                <input type="radio" name="ob-mode" checked={mode === "weekly"} onChange={() => setMode("weekly")} />
-                <span>
-                  <strong>A weekly summary</strong>
-                  <span className="hint"> On Mondays: what is new, what was fixed, the top fixes.</span>
-                </span>
-              </label>
-            </li>
-          </ul>
-        </fieldset>
+        {kind === "email" && !platformEmail && smtpFields}
+        {kind === "email" && opts.platform_email.enabled && (
+          <p className="small">
+            <button type="button" className="btn btn-link" onClick={() => setOwnSmtp(!ownSmtp)} aria-expanded={ownSmtp}>
+              {ownSmtp ? "Let Stackurity send the email" : "Advanced: use your own mail server"}
+            </button>
+          </p>
+        )}
+        <RouteQuestions
+          idp="ob"
+          now={now}
+          summary={summary}
+          onChange={(a, b) => {
+            setNow(a);
+            setSummary(b);
+          }}
+          time={NOTIFY_TIME}
+          day={NOTIFY_DAY}
+          timezone={tz}
+        />
+        <p className="small muted">
+          You can fine-tune this in <Link to="/settings/integrations">Settings → Integrations</Link>.
+        </p>
+        {needsSecret && !opts.secrets && !noKey && (
+          <Notice kind="warn">
+            This server may not be able to store secrets (STACKURITY_SECRET_KEY is not set). If saving fails, ask whoever runs it to set it.
+          </Notice>
+        )}
         {noKey ? (
           <Notice kind="warn">
             This server cannot store secrets yet. Ask whoever runs it to set STACKURITY_SECRET_KEY, or set notifications up later under{" "}
-            <Link to="/settings/notifications">Settings, Notifications</Link>.
+            <Link to="/settings/integrations">Settings → Integrations</Link>.
           </Notice>
         ) : (
           <ErrorBox error={act.error} title="Could not turn on notifications" />
         )}
         <div className="form-actions">
-          <button type="submit" className="btn btn-primary" disabled={act.pending}>
-            Turn on
-          </button>
+          {useApp ? (
+            <AddToSlackButton returnTo="/get-started?step=notify" beforeRedirect={rememberForSlack} disabled={!choice} />
+          ) : (
+            <button type="submit" className="btn btn-primary" disabled={act.pending || blocked}>
+              Turn on
+            </button>
+          )}
           <button type="button" className="btn" onClick={onNext}>
             Not now
           </button>

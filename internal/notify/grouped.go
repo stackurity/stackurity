@@ -42,14 +42,49 @@ const (
 	EventDigest = "digest"
 )
 
-// sendsUrgent: the route's mode sends urgent, overdue and connected
-// messages as they happen.
+// sendsUrgent: the route sends something as it happens (urgent or new
+// issues, issues that came back, overdue, connected or problems).
 func sendsUrgent(r store.Route) bool {
-	return r.Mode == store.ModeUrgentSummary || r.Mode == store.ModeUrgentOnly
+	for _, e := range []string{store.EventUrgent, store.EventNewIssues, store.EventRegressed, store.EventOverdue, store.EventConnected, store.EventProblems} {
+		if r.HasEvent(e) {
+			return true
+		}
+	}
+	return false
 }
 
-// sendsSummary: the route's mode sends a daily or weekly summary.
-func sendsSummary(r store.Route) bool { return r.Mode != store.ModeUrgentOnly }
+// sendsSummary: the route sends a daily or weekly summary.
+func sendsSummary(r store.Route) bool {
+	return r.HasEvent(store.EventDailySummary) || r.HasEvent(store.EventWeeklySummary)
+}
+
+// newIssueThreshold is the lowest priority of new issues the route sends
+// right away: min_priority for urgent, new_min_priority for new issues,
+// the lower of the two with both; "" for none.
+func newIssueThreshold(r store.Route) string {
+	t := ""
+	if r.HasEvent(store.EventUrgent) {
+		t = r.MinPriority
+	}
+	if r.HasEvent(store.EventNewIssues) {
+		n := r.NewMinPriority
+		if n == "" {
+			n = "P4"
+		}
+		if n > t {
+			t = n
+		}
+	}
+	return t
+}
+
+// findingsChannel is where the route sends new issues right away.
+func findingsChannel(r store.Route) int64 {
+	if r.HasEvent(store.EventNewIssues) {
+		return r.ChannelFor(store.EventNewIssues)
+	}
+	return r.ChannelFor(store.EventUrgent)
+}
 
 const (
 	maxAssetItems = 5 // assets listed in one section, then "+N more"
@@ -159,9 +194,24 @@ func knownExploited(in store.Incident) bool {
 	return det.KnownExploited
 }
 
-// urgentIncident: the incident is for this route and urgent for it.
+// urgentIncident: the incident is for this route and is sent right away:
+// new issues at its threshold, SOS or known exploited (urgent or
+// new_issues), or a problem at min_priority or SOS (problems).
 func urgentIncident(r store.Route, in store.Incident) bool {
-	return inScope(r, in) && (risk.PriorityAtLeast(in.Priority, r.MinPriority) || in.SOS || knownExploited(in))
+	if !inScope(r, in) {
+		return false
+	}
+	if !isFindingKind(in.Kind) {
+		return r.HasEvent(store.EventProblems) && (risk.PriorityAtLeast(in.Priority, r.MinPriority) || in.SOS)
+	}
+	t := newIssueThreshold(r)
+	return t != "" && (risk.PriorityAtLeast(in.Priority, t) || in.SOS || knownExploited(in))
+}
+
+// rightAwayIssue: a new issue the route sends as it happens.
+func rightAwayIssue(r store.Route, c store.IssueCount) bool {
+	t := newIssueThreshold(r)
+	return t != "" && (risk.PriorityAtLeast(c.Priority, t) || c.SOS || c.KEV)
 }
 
 func urgentIssue(r store.Route, c store.IssueCount) bool {
@@ -466,7 +516,7 @@ func (d *Dispatcher) urgentMessage(r store.Route, incs []store.Incident, rows ma
 			system = append(system, in)
 		}
 		for _, c := range rows[in.ID] {
-			if !quiet[c.AssetID] && !c.Backlog && issueInScope(r, c) && urgentIssue(r, c) {
+			if !quiet[c.AssetID] && !c.Backlog && issueInScope(r, c) && rightAwayIssue(r, c) {
 				counts = append(counts, c)
 				if c.Priority < top {
 					top = c.Priority
@@ -487,24 +537,37 @@ func (d *Dispatcher) urgentMessage(r store.Route, incs []store.Incident, rows ma
 		}
 		sos = sos || c.SOS
 	}
-	assets := byAsset(counts, nil, func(store.IssueCount) bool { return true })
+	// Routes sending every new issue say "new issues (3 urgent)"; others
+	// send only urgent ones and say "new urgent issues".
+	all := r.HasEvent(store.EventNewIssues)
+	noun := "new urgent issue"
+	isUrgent := func(store.IssueCount) bool { return true }
+	if all {
+		noun = "new issue"
+		isUrgent = func(c store.IssueCount) bool { return urgentIssue(r, c) }
+	}
+	assets := byAsset(counts, nil, isUrgent)
 	back := byAsset(regressed, nil, func(store.IssueCount) bool { return true })
 	n, _ := total(assets)
 	nBack, _ := total(back)
 	if n == 0 && len(system) == 0 && nBack == 0 {
 		return Message{}, false
 	}
-	pf := priorityFilter(r.MinPriority)
+	pf := priorityFilter(newIssueThreshold(r))
 	var sections []Section
 	if len(assets) > 0 {
 		var items []Item
 		for i, a := range assets {
 			if i == maxAssetItems {
-				items = append(items, moreAssets(len(assets)-maxAssetItems, "with new urgent issues", d.findingsURL(0, pf)))
+				items = append(items, moreAssets(len(assets)-maxAssetItems, "with "+noun+"s", d.findingsURL(0, pf)))
 				break
 			}
+			urgentPart := ""
+			if all {
+				urgentPart = countIf(a.Urgent, "urgent")
+			}
 			items = append(items, Item{
-				Text:  fmt.Sprintf("%s: %s%s", a.Name, plural(a.Count, "new urgent issue"), detail(countIf(a.KEV, "known exploited"), countIf(a.SOS, "SOS"))),
+				Text:  fmt.Sprintf("%s: %s%s", a.Name, plural(a.Count, noun), detail(urgentPart, countIf(a.KEV, "known exploited"), countIf(a.SOS, "SOS"))),
 				Link:  d.findingsURL(a.ID, pf),
 				Items: d.fixItems(a.Fixes, infos, a.ID, true),
 				asset: a.ID,
@@ -521,9 +584,9 @@ func (d *Dispatcher) urgentMessage(r store.Route, incs []store.Incident, rows ma
 	var title string
 	switch {
 	case len(assets) == 1:
-		title = fmt.Sprintf("%s: %s", assets[0].Name, plural(n, "new urgent issue"))
+		title = fmt.Sprintf("%s: %s", assets[0].Name, plural(n, noun))
 	case len(assets) > 1:
-		title = fmt.Sprintf("%s on %s", plural(n, "new urgent issue"), plural(len(assets), "asset"))
+		title = fmt.Sprintf("%s on %s", plural(n, noun), plural(len(assets), "asset"))
 	case len(back) == 1:
 		title = fmt.Sprintf("%s: %s", back[0].Name, cameBack(nBack))
 	case len(back) > 1:
@@ -540,6 +603,10 @@ func (d *Dispatcher) urgentMessage(r store.Route, incs []store.Incident, rows ma
 	m := d.grouped(r, EventUrgent, title, sections)
 	m.Priority, m.SOS = top, sos
 	m.Counts = map[string]int{"urgent": n, "assets": len(assets), "problems": len(system), "regressed": nBack}
+	if all {
+		_, nUrgent := total(assets)
+		m.Counts["new"], m.Counts["urgent"] = n, nUrgent
+	}
 	return m, true
 }
 
@@ -706,7 +773,7 @@ func (d *Dispatcher) overdueMessage(r store.Route, counts []store.IssueCount, in
 // summaryDue reports whether a route's summary is due at now: its last
 // summary is older than the latest scheduled time (route-local). stamp
 // names that scheduled time, for the delivery's dedupe key.
-func summaryDue(r store.Route, now time.Time) (stamp string, due bool) {
+func summaryDue(r store.Route, weekly bool, now time.Time) (stamp string, due bool) {
 	loc, err := time.LoadLocation(r.Timezone)
 	if err != nil {
 		loc = time.UTC
@@ -720,13 +787,15 @@ func summaryDue(r store.Route, now time.Time) (stamp string, due bool) {
 	if cand.After(local) {
 		cand = cand.AddDate(0, 0, -1)
 	}
-	if r.Mode == store.ModeWeekly {
+	last := r.LastSummaryAt
+	if weekly {
 		want := weekday(r.SummaryDay)
 		for cand.Weekday() != want {
 			cand = cand.AddDate(0, 0, -1)
 		}
+		last = lastWeekly(r)
 	}
-	return cand.Format("2006-01-02T15:04"), r.LastSummaryAt.Before(cand)
+	return cand.Format("2006-01-02T15:04"), last.Before(cand)
 }
 
 func weekday(s string) time.Weekday {
@@ -780,7 +849,18 @@ func (s *summaryData) load() error {
 	return nil
 }
 
-// planSummaries queues the summaries that are due.
+// lastWeekly is the end of the period the route's last weekly summary
+// covered. A route built without events (not read from the database) keeps
+// it in LastSummaryAt, as the weekly mode did.
+func lastWeekly(r store.Route) time.Time {
+	if r.Events == nil {
+		return r.LastSummaryAt
+	}
+	return r.LastWeeklySummaryAt
+}
+
+// planSummaries queues the summaries that are due: daily and weekly ones
+// are planned and recorded apart, so a route may send both.
 func (d *Dispatcher) planSummaries(ctx context.Context, routes []store.Route, tracker map[int64]bool) error {
 	now := d.now()
 	data := &summaryData{d: d, ctx: ctx, cache: map[string][]store.IssueCount{}}
@@ -789,54 +869,78 @@ func (d *Dispatcher) planSummaries(ctx context.Context, routes []store.Route, tr
 		if !r.Enabled || tracker[r.ChannelID] {
 			continue
 		}
-		stamp, due := summaryDue(r, now)
-		if !due {
-			continue
-		}
-		if !sendsSummary(r) {
-			// No summary, but the period moves on, so a route switched to a
-			// summary mode later does not start with one covering months.
-			if _, err := d.Store.ClaimSummary(ctx, r.ID, r.LastSummaryAt, now); err != nil {
+		for _, weekly := range []bool{false, true} {
+			if err := d.planSummary(ctx, r, weekly, now, data, overdue); err != nil {
 				return err
 			}
-			continue
-		}
-		msg, changed, err := d.summaryMessage(r, data, r.LastSummaryAt, now, overdue && r.Escalation)
-		if err != nil {
-			return err
-		}
-		held, err := d.Store.HeldForRoute(ctx, r.ID)
-		if err != nil {
-			return err
-		}
-		if len(held) > 0 {
-			msg.Counts["held"] = len(held)
-			msg.Sections = append(msg.Sections, Section{Items: []Item{{
-				Text: fmt.Sprintf("Includes %s held back by the hourly limit", plural(len(held), "urgent message")),
-				Link: d.url("/settings/notifications", url.Values{"tab": {"deliveries"}}),
-			}}})
-			msg.Summary = itemTexts(msg.Sections)
-		}
-		if changed || len(held) > 0 {
-			r := r
-			key := fmt.Sprintf("summary:%d:%s", r.ID, stamp)
-			if err := d.enqueueRouted(ctx, r, EventSummary, key, msg); err != nil {
-				return err
-			}
-			if err := d.Store.MarkDigested(ctx, held, key); err != nil {
-				return err
-			}
-		}
-		if _, err := d.Store.ClaimSummary(ctx, r.ID, r.LastSummaryAt, now); err != nil {
-			return err
 		}
 	}
 	return nil
 }
 
+func (d *Dispatcher) planSummary(ctx context.Context, r store.Route, weekly bool, now time.Time, data *summaryData, overdue bool) error {
+	if r.Events == nil && weekly != (r.Mode == store.ModeWeekly || r.Mode == store.ModeUrgentWeekly) {
+		return nil // built without events: one summary, kept in LastSummaryAt
+	}
+	event, prev, claim := store.EventDailySummary, r.LastSummaryAt, d.Store.ClaimSummary
+	if weekly {
+		event, prev = store.EventWeeklySummary, lastWeekly(r)
+		if r.Events != nil {
+			claim = d.Store.ClaimWeeklySummary
+		}
+	}
+	stamp, due := summaryDue(r, weekly, now)
+	if !due {
+		return nil
+	}
+	if !r.HasEvent(event) {
+		// No summary, but the period moves on, so a route that adds the
+		// summary later does not start with one covering months.
+		_, err := claim(ctx, r.ID, prev, now)
+		return err
+	}
+	msg, changed, err := d.summaryMessage(r, weekly, data, prev, now, overdue && r.Escalation)
+	if err != nil {
+		return err
+	}
+	held, byQuota, err := d.Store.HeldForRoute(ctx, r.ID)
+	if err != nil {
+		return err
+	}
+	if len(held) > 0 {
+		msg.Counts["held"] = len(held)
+		limit := "the hourly limit"
+		switch {
+		case byQuota == len(held):
+			limit = "the email limit"
+		case byQuota > 0:
+			limit = "the hourly and email limits"
+		}
+		msg.Sections = append(msg.Sections, Section{Items: []Item{{
+			Text: fmt.Sprintf("Includes %s held back by %s", plural(len(held), "urgent message"), limit),
+			Link: d.url("/settings/notifications", url.Values{"tab": {"deliveries"}}),
+		}}})
+		msg.Summary = itemTexts(msg.Sections)
+	}
+	if changed || len(held) > 0 {
+		key := fmt.Sprintf("summary:%d:%s", r.ID, stamp)
+		if weekly {
+			key = fmt.Sprintf("summary:%d:weekly:%s", r.ID, stamp)
+		}
+		if err := d.enqueueTo(ctx, r, r.ChannelFor(event), EventSummary, key, msg); err != nil {
+			return err
+		}
+		if err := d.Store.MarkDigested(ctx, held, key); err != nil {
+			return err
+		}
+	}
+	_, err = claim(ctx, r.ID, prev, now)
+	return err
+}
+
 // summaryMessage builds a route's summary of [from, to). changed is false
 // when nothing happened worth a message.
-func (d *Dispatcher) summaryMessage(r store.Route, data *summaryData, from, to time.Time, withOverdue bool) (Message, bool, error) {
+func (d *Dispatcher) summaryMessage(r store.Route, weekly bool, data *summaryData, from, to time.Time, withOverdue bool) (Message, bool, error) {
 	if err := data.load(); err != nil {
 		return Message{}, false, err
 	}
@@ -1021,7 +1125,7 @@ func (d *Dispatcher) summaryMessage(r store.Route, data *summaryData, from, to t
 	counts["problems"] = len(sys)
 
 	period := "Daily"
-	if r.Mode == store.ModeWeekly {
+	if weekly {
 		period = "Weekly"
 	}
 	var parts []string

@@ -197,11 +197,11 @@ The backlog has lasted over two hours: evaluations, feed syncs and integration r
 
 ### StackurityNotificationsFailed
 
-Notifications ran out of their 8 attempts (retried after 30 seconds, then 1, 2, 4, 8, 16 and 32 minutes; at once when the receiver rejects credentials) and were not delivered. Each workspace's delivery log (**Settings → Notifications**, `GET /api/v1/deliveries?status=failed`) shows each one with its error, and **Retry** (`POST /api/v1/deliveries/{id}/retry`) sends it again once the cause is fixed. Common causes: an expired webhook secret or bot token, a removed Slack or Teams channel, a Jira project or permission change, a mail relay refusing the sender. The people the incidents were for may not know about them: tell them, or retry.
+Notifications ran out of their 8 attempts (retried after 30 seconds, then 1, 2, 4, 8, 16 and 32 minutes; at once when the receiver rejects credentials) and were not delivered. Each workspace's delivery log (**Settings → Integrations**, **Delivery log**, `GET /api/v1/deliveries?status=failed`) shows each one with its error, and **Retry** (`POST /api/v1/deliveries/{id}/retry`) sends it again once the cause is fixed. Common causes: an expired webhook secret or bot token, a removed Slack or Teams channel, a Jira project or permission change, a mail relay refusing the sender. The people the incidents were for may not know about them: tell them, or retry.
 
 ### StackurityNotificationChannelFailing
 
-An enabled channel's last send failed and has stayed failed for 30 minutes. Messages to it are being retried; they fail after 8 attempts (about an hour) and then fire [StackurityNotificationsFailed](#stackuritynotificationsfailed). The channel shows its last error under **Settings → Notifications**; the **Test** button sends a test message once it is fixed.
+An enabled channel's last send failed and has stayed failed for 30 minutes. Messages to it are being retried; they fail after 8 attempts (about an hour) and then fire [StackurityNotificationsFailed](#stackuritynotificationsfailed). The channel shows its last error under **Settings → Integrations**; the **Send test** button sends a test message once it is fixed.
 
 ### StackurityNotificationsBacklog
 

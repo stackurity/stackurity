@@ -6207,7 +6207,7 @@
    "post": {
     "operationId": "post_routes",
     "summary": "Create a notification route",
-    "description": "Which incidents go to which channel. `project_ids` limits a route to those projects' assets: its messages count and name only them, and only their collection and coverage problems. For a Jira channel, at most one project (400 otherwise): its issues then describe only that project's part of each incident, see Incidents and notifications. `mode`: `urgent_summary`, `urgent_only`, `daily`, `weekly`\n\nRole: admin",
+    "description": "Which incidents go to which channel. `project_ids` limits a route to those projects' assets: its messages count and name only them, and only their collection and coverage problems. For a Jira channel, at most one project (400 otherwise): its issues then describe only that project's part of each incident, see Incidents and notifications. `events`: any of `urgent`, `new_issues`, `regressed`, `overdue`, `connected`, `problems`, `daily_summary`, `weekly_summary`; `event_channels` (Slack only) sends some events to other Slack channels; `new_min_priority` is the threshold of `new_issues`. `mode` (`urgent_summary`, `urgent_weekly`, `urgent_only`, `daily`, `weekly`) is still accepted and translated to events; returned as one of them or `custom`\n\nRole: admin",
     "tags": [
      "Notifications"
     ],
@@ -6276,7 +6276,7 @@
    "put": {
     "operationId": "put_routes_id",
     "summary": "Replace a notification route",
-    "description": "Which incidents go to which channel. `project_ids` limits a route to those projects' assets: its messages count and name only them, and only their collection and coverage problems. For a Jira channel, at most one project (400 otherwise): its issues then describe only that project's part of each incident, see Incidents and notifications. `mode`: `urgent_summary`, `urgent_only`, `daily`, `weekly`\n\nRole: admin",
+    "description": "Which incidents go to which channel. `project_ids` limits a route to those projects' assets: its messages count and name only them, and only their collection and coverage problems. For a Jira channel, at most one project (400 otherwise): its issues then describe only that project's part of each incident, see Incidents and notifications. `events`: any of `urgent`, `new_issues`, `regressed`, `overdue`, `connected`, `problems`, `daily_summary`, `weekly_summary`; `event_channels` (Slack only) sends some events to other Slack channels; `new_min_priority` is the threshold of `new_issues`. `mode` (`urgent_summary`, `urgent_weekly`, `urgent_only`, `daily`, `weekly`) is still accepted and translated to events; returned as one of them or `custom`\n\nRole: admin",
     "tags": [
      "Notifications"
     ],
@@ -7556,6 +7556,261 @@
      }
     },
     "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/notification-options": {
+   "get": {
+    "operationId": "get_notification_options",
+    "summary": "What notifications this server offers",
+    "description": "`slack_app` (Add to Slack is configured), `platform_email` (`enabled`; when enabled also `from`, `max_recipients` and `quota` with `per_minute`, `per_hour`, `per_day`: email sent by Stackurity), `secrets` (stored secrets work) and `base_url` (STACKURITY_BASE_URL is set)\n\nRole: security",
+    "tags": [
+     "Notifications"
+    ],
+    "x-stackurity-role": "security",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/email-recipients": {
+   "get": {
+    "operationId": "get_email_recipients",
+    "summary": "Addresses that email sent by Stackurity may reach",
+    "description": "Addresses named by `stackurity_email` channels that are not members: `email`, `status` (`pending` until the address clicks the confirmation link, then `confirmed`), `requested_at`, `confirmed_at`\n\nRole: security",
+    "tags": [
+     "Notifications"
+    ],
+    "x-stackurity-role": "security",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/email-recipients/resend": {
+   "post": {
+    "operationId": "post_email_recipients_resend",
+    "summary": "Send a confirmation link again",
+    "description": "`{\"email\"}` of a pending address. 202; 429 `too_soon` when one was sent in the last 10 minutes; 404 for an unknown or confirmed address\n\nRole: admin",
+    "tags": [
+     "Notifications"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/email-recipients/confirm": {
+   "post": {
+    "operationId": "post_email_recipients_confirm",
+    "summary": "Confirm an address for email sent by Stackurity",
+    "description": "`{\"token\"}` from the emailed link (`/email/confirm#emc_...`). Answers `email` and `organisation`; 410 `link_invalid` when the link is unknown, used or expired (7 days)\n\nRole: none (rate limited)",
+    "tags": [
+     "Notifications"
+    ],
+    "x-stackurity-role": "none (rate limited)",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/slack/install": {
+   "post": {
+    "operationId": "post_integrations_slack_install",
+    "summary": "Start Add to Slack",
+    "description": "`{\"return_to\": \"/settings/integrations\"}` (a dashboard path). Answers `url`, Slack's consent page with a single-use state bound to the caller and organisation (10 minutes). 404 `not_configured` without the Stackurity Slack app (STACKURITY_SLACK_CLIENT_ID, ...)\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/slack/oauth": {
+   "post": {
+    "operationId": "post_integrations_slack_oauth",
+    "summary": "Finish Add to Slack",
+    "description": "`{\"code\", \"state\"}` from Slack's redirect to `/integrations/slack/oauth/callback`. The state must be the caller's, in this organisation, unused and fresh (400 `slack_state` otherwise). Creates a Slack channel for the webhook Slack returned (201: `channel`, `return_to`, `team_name`, `slack_channel`); 502 `slack_refused` when Slack does not complete the install\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/slack/events": {
+   "post": {
+    "operationId": "post_integrations_slack_events",
+    "summary": "Slack app events (verified by Slack's signature)",
+    "description": "The Stackurity Slack app's Event Subscriptions Request URL: `url_verification`, and `app_uninstalled` or `tokens_revoked`, which disable that Slack workspace's app channels in every organisation and delete their webhooks and tokens. 401 for a request the app's signing secret does not verify or older than 5 minutes; 404 without the app\n\nRole: none: Slack's signature (the app's signing secret)",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "none: Slack's signature (the app's signing secret)",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
     "responses": {
      "2XX": {
       "description": "Success",

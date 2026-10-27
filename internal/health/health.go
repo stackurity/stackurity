@@ -112,6 +112,16 @@ type Report struct {
 	OldestDueDeliverySeconds float64 `json:"oldest_due_delivery_seconds"`
 	// FailingChannels counts enabled channels whose last send failed.
 	FailingChannels []store.ChannelCount `json:"failing_channels"`
+	// EmailQuota is what the organisations' email limits (email sent by
+	// Stackurity) held in the last 24 hours: messages, and in how many
+	// organisations. Held messages go into the next summary or digest.
+	EmailQuota EmailQuotaHeld `json:"email_quota"`
+}
+
+// EmailQuotaHeld counts messages held by email limits.
+type EmailQuotaHeld struct {
+	Held24h    int `json:"held_24h"`
+	Workspaces int `json:"workspaces"`
 }
 
 // FailedJob is a job that ran out of retries. Its payload is left out.
@@ -270,6 +280,17 @@ func (c *Checker) CheckFor(ctx context.Context, viewerWS int64) (*Report, error)
 		return nil, err
 	}
 	r.Problems = append(r.Problems, deliveryProblems(r)...)
+	if r.EmailQuota.Held24h, r.EmailQuota.Workspaces, err = c.Store.EmailQuotaHeld(ctx); err != nil {
+		return nil, err
+	}
+	if q := r.EmailQuota; q.Held24h > 0 {
+		r.Problems = append(r.Problems, Problem{Severity: Warning, Kind: "notifications", Key: "email-quota",
+			Title:    "Email limits held some notifications",
+			Detail:   fmt.Sprintf("%d message(s) in %d organisation(s) reached the email limits in the last 24 hours. They were not dropped: they go into the next summary or hourly digest.", q.Held24h, q.Workspaces),
+			Scope:    Scope{Summary: "email sent by Stackurity, in every workspace", Count: int64(q.Held24h)},
+			NextStep: "If an organisation needs more, raise its limits (STACKURITY_CLOUD_EMAIL_PER_MINUTE, _PER_HOUR, _PER_DAY), or check whether something sends far more than usual.",
+			Docs:     "docs/install.md#notifications"})
+	}
 	if wait := time.Duration(r.OldestQueuedSeconds * float64(time.Second)); wait > queueBacklog {
 		var queued int64
 		for _, j := range r.Jobs {

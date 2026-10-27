@@ -20,14 +20,33 @@ func (s *Store) ClaimSummary(ctx context.Context, routeID int64, prev, to time.T
 	return err == nil && tag.RowsAffected() == 1, err
 }
 
-// HeldForRoute returns the ids of a route's deliveries held by its hourly
-// limit, which its next summary takes in.
-func (s *Store) HeldForRoute(ctx context.Context, routeID int64) ([]int64, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT id FROM deliveries WHERE route_id = $1 AND status = 'held' ORDER BY id`, routeID)
+// ClaimWeeklySummary is ClaimSummary for the weekly summary.
+func (s *Store) ClaimWeeklySummary(ctx context.Context, routeID int64, prev, to time.Time) (bool, error) {
+	tag, err := s.Pool.Exec(ctx, `UPDATE routes SET last_weekly_summary_at = $3 WHERE id = $1 AND last_weekly_summary_at = $2`, routeID, prev, to)
+	return err == nil && tag.RowsAffected() == 1, err
+}
+
+// HeldForRoute returns the ids of a route's held deliveries, which its
+// next summary takes in, and how many of them the organisation's email
+// limits held (the rest, its hourly limit).
+func (s *Store) HeldForRoute(ctx context.Context, routeID int64) (ids []int64, byQuota int, err error) {
+	rows, err := s.Pool.Query(ctx, `SELECT id, held_by = 'email_quota' FROM deliveries WHERE route_id = $1 AND status = 'held' ORDER BY id`, routeID)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	return pgx.CollectRows(rows, pgx.RowTo[int64])
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var quota bool
+		if err := rows.Scan(&id, &quota); err != nil {
+			return nil, 0, err
+		}
+		ids = append(ids, id)
+		if quota {
+			byQuota++
+		}
+	}
+	return ids, byQuota, rows.Err()
 }
 
 // NewAsset is an asset notifications have not described yet.

@@ -169,15 +169,33 @@ func (s *Server) slackActions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var cfg notify.ChannelConfig
-	if err := json.Unmarshal(ch.Config, &cfg); err != nil || cfg.SigningSecretRef == "" {
+	if err := json.Unmarshal(ch.Config, &cfg); err != nil {
 		slackRefuse(w)
 		return
 	}
 	ctx := tenant.WithWorkspace(r.Context(), ch.WorkspaceID)
-	secret, err := s.Secrets.Resolve(ctx, cfg.SigningSecretRef)
-	if err != nil || secret == "" {
-		// The reference is logged, never the value.
-		s.Log.Warn("slack action: signing secret cannot be read", "channel", ch.ID, "ref", cfg.SigningSecretRef)
+	var secret string
+	switch {
+	case cfg.SlackApp:
+		// Added with the Stackurity Slack app: the app's signing secret
+		// verifies every organisation's clicks, and the click must come
+		// from the Slack workspace the app was installed into (below).
+		if app := s.slackApp(); app != nil {
+			secret = app.SigningSecret
+		}
+		if secret == "" {
+			slackRefuse(w)
+			return
+		}
+	case cfg.SigningSecretRef != "":
+		secret, err = s.Secrets.Resolve(ctx, cfg.SigningSecretRef)
+		if err != nil || secret == "" {
+			// The reference is logged, never the value.
+			s.Log.Warn("slack action: signing secret cannot be read", "channel", ch.ID, "ref", cfg.SigningSecretRef)
+			slackRefuse(w)
+			return
+		}
+	default:
 		slackRefuse(w)
 		return
 	}
@@ -189,6 +207,13 @@ func (s *Server) slackActions(w http.ResponseWriter, r *http.Request) {
 	// to this channel. The rest checks what it says.
 	if !slackIDRE.MatchString(p.Team.ID) || !slackIDRE.MatchString(p.User.ID) || !slackResponseURL(p.ResponseURL) {
 		writeError(w, 400, "bad_request", "unexpected payload")
+		return
+	}
+	if cfg.SlackApp && cfg.TeamID != p.Team.ID {
+		// One app serves every organisation: a click is accepted only from
+		// the Slack workspace this channel's install belongs to.
+		s.Log.Warn("slack action: Slack workspace does not match the channel's install", "channel", ch.ID)
+		slackRefuse(w)
 		return
 	}
 	if team := s.slackWebhookTeam(ctx, ch.SecretRef); team != "" && team != p.Team.ID && team != p.User.TeamID {

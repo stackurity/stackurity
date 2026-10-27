@@ -87,6 +87,25 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/integrations/slack/actions": {class: "public", body: func(a *tenantFx) any {
 		return map[string]string{"payload": `{"type":"block_actions","actions":[{"value":"stk1|` + a.ids["channel"] + `|assign|` + a.ids["fixgroup"] + `"}]}`}
 	}},
+	// The Stackurity Slack app's events: public, verified by the app's
+	// signing secret (slack_app_test.go); 404 without the app.
+	"POST /api/v1/integrations/slack/events": {class: "public", body: func(a *tenantFx) any {
+		return map[string]any{"type": "event_callback", "team_id": "TAAAA", "event": map[string]string{"type": "app_uninstalled"}}
+	}},
+	// Confirming an address for email sent by Stackurity: no session; a
+	// token B does not have is refused (notify_setup_test.go).
+	"POST /api/v1/email-recipients/confirm": {class: "public", body: func(*tenantFx) any { return map[string]string{"token": "emc_guessed"} }},
+	// Add to Slack: B's install starts in B; a state of A's (or a
+	// guessed one) is refused (slack_app_test.go).
+	"POST /api/v1/integrations/slack/install": {class: "create", body: func(*tenantFx) any { return map[string]string{"return_to": "/settings/integrations"} }},
+	"POST /api/v1/integrations/slack/oauth": {class: "create", body: func(*tenantFx) any {
+		return map[string]string{"code": "c", "state": "guessed"}
+	}},
+	"GET /api/v1/notification-options": {class: "list"},
+	"GET /api/v1/email-recipients":     {class: "list"},
+	"POST /api/v1/email-recipients/resend": {class: "create", body: func(*tenantFx) any {
+		return map[string]string{"email": "outside@example.com"}
+	}},
 	// The caller's own linked Slack accounts. A's link token must not
 	// preview or link for B, and A's link must not be removed.
 	"GET /api/v1/slack/links":          {class: "list"},
