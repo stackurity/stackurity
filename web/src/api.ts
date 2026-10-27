@@ -916,6 +916,10 @@ export interface Finding {
   last_seen: string;
   resolved_at: string | null;
   resolution: string;
+  /** Why it closed: remediated, removed, superseded, advisory_withdrawn, advisory_changed, not_evaluated, other; "" while open. */
+  resolution_kind?: string;
+  /** The facts behind the closure: advisories, source, feed, withdrawn_at, package, version, plan_id, successor. */
+  resolution_detail?: ResolutionDetail | null;
   known_exploited: boolean;
   // Stage 3: workflow and priority
   state?: FindingState;
@@ -1271,14 +1275,36 @@ export interface OutcomeFailure {
   at: string;
 }
 
+export interface ResolutionDetail {
+  advisories?: string[];
+  source?: string;
+  feed?: string;
+  withdrawn_at?: string;
+  package?: string;
+  version?: string;
+  plan_id?: number;
+  successor?: number;
+  reason?: string;
+}
+
+/** Findings that closed with nothing changed on the asset: not remediation. */
+export interface ClosedNotRemediation {
+  total: number;
+  by_kind: Record<string, number> | null;
+}
+
 export interface OutcomesReport {
   from: string;
   to: string;
   generated_at: string;
   events_since: string | null;
+  /** Remediated plus removed: the findings time to remedy and SLA count. */
   resolved: number;
+  remediated?: number;
+  removed?: number;
+  closed_not_remediation?: ClosedNotRemediation;
   time_to_remedy: OutcomeTiming[] | null;
-  causes: { cause: string; evidence: string; count: number }[] | null;
+  causes: { cause: string; resolution_kind?: string; evidence: string; count: number; counts_as_remediation?: boolean }[] | null;
   sla: OutcomeSLA[] | null;
   reopened: {
     events: number;
@@ -2089,12 +2115,17 @@ export interface EvidenceReport {
     /** Open findings by evidence state (EVIDENCE_STATE_LABEL). */
     by_evidence?: Record<string, number> | null;
   };
+  /** Findings remediated in the period (remediated plus removed). */
   resolved: {
     total: number;
+    remediated?: number;
+    removed?: number;
     within_sla: number;
     median_days: number | null;
     median_days_by_priority: Record<string, number> | null;
   };
+  /** Findings closed in the period with nothing changed on the asset; not in resolved. */
+  closed_not_remediation?: ClosedNotRemediation;
   exceptions: ReportException[] | null;
   drift: ReportDrift[] | null;
   /** Present when the report was shortened in trial mode. */

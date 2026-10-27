@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/stackurity/stackurity/internal/risk"
+	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/upgrade"
 )
 
@@ -146,11 +147,13 @@ func (s *Server) explainFinding(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sla := pol.SLA[f.Priority]
+	remedied := f.Status == "resolved" && store.CountsAsRemediation(f.ResolutionKind)
 	writeJSON(w, 200, map[string]any{
 		"finding": map[string]any{
 			"id": f.ID, "kind": f.Kind, "key": f.Key, "title": f.Title, "status": f.Status, "state": f.State,
 			"verification": f.Verification, "severity": f.Severity, "score": f.Score, "known_exploited": f.KnownExploited,
 			"first_seen": f.FirstSeen, "last_evaluated": f.LastSeen, "resolved_at": f.ResolvedAt, "resolution": f.Resolution,
+			"resolution_kind": f.ResolutionKind, "resolution_detail": f.ResolutionDetail, "counts_as_remediation": remedied,
 			"asset": map[string]any{"id": f.AssetID, "name": f.AssetName, "kind": f.AssetKind, "environment": f.Environment},
 			"component": map[string]any{"id": f.ComponentID, "name": f.ComponentName, "type": f.ComponentType, "version": f.Version,
 				"location": f.Location, "direct": f.Direct, "fixed_version": f.FixedVersion},

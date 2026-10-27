@@ -152,7 +152,7 @@ Every tool calls the HTTP API as you, so the assistant sees exactly what you may
 | `explain_finding` | Why a finding matched, in one sentence (`why.sentence`: installed version and where it was read, the advisory range and version rules applied, the source and its last refresh, the fix), with the evidence state, the missing information when it is not confirmed and the independent second check; and why it has its priority, with citations: each risk factor and its points, the risk policy version and SLA, the evidence, the matched advisory ids with links, how fresh their feeds are, and when the asset last reported |
 | `upgrade_recommendation` | Which version to move a component to (by `finding_id` or `component_id`): installed, minimum fixed and recommended versions, change type, major-upgrade and withdrawn-version warnings, release-line support and the reasons. Built only from stored advisory, release and end-of-life data; when data is missing it says so |
 | `remediation_plan` | Open findings grouped into actions per asset and package, with installed, minimum fixed and recommended versions and how many findings each clears (at most 100 groups) |
-| `verify_since` | After a change: what was resolved since a time and how, what is still open, and when each asset last sent a complete inventory, so "fixed" can be told from "not re-scanned yet" (at most 200 per list) |
+| `verify_since` | After a change: what was resolved since a time and how (remediated, removed, or closed with nothing changed on the asset, such as a withdrawn advisory, which is not a fix), what is still open, and when each asset last sent a complete inventory, so "fixed" can be told from "not re-scanned yet" (at most 200 per list) |
 
 ### Changing things
 

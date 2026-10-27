@@ -422,7 +422,7 @@ func (s *Store) SyncFindings(ctx context.Context, kinds []string, inventoryIDs [
 		// the upsert reopens them, with the resolution they had.
 		if _, err := tx.Exec(ctx, `INSERT INTO finding_events (workspace_id, finding_id, actor_type, actor_name, action, note, detail)
 			SELECT f.workspace_id, f.id, 'system', 'matcher', 'reopened', 'detected again after it was resolved',
-			  jsonb_build_object('resolved_at', f.resolved_at, 'resolution', f.resolution)
+			  jsonb_build_object('resolved_at', f.resolved_at, 'resolution', f.resolution, 'resolution_kind', f.resolution_kind)
 			FROM findings f JOIN want_findings w ON w.inventory_id = f.inventory_id AND w.kind = f.kind AND w.key = f.key
 			WHERE f.status = 'resolved'`); err != nil {
 			return err
@@ -450,7 +450,7 @@ func (s *Store) SyncFindings(ctx context.Context, kinds []string, inventoryIDs [
 			  -- Work in progress before the fix is back to new.
 			  regressed_at = CASE WHEN f.status = 'resolved' AND `+fixedByInventory("f")+` THEN now() ELSE f.regressed_at END,
 			  state = CASE WHEN f.status = 'resolved' AND `+fixedByInventory("f")+` AND f.state = 'in_progress' THEN 'new' ELSE f.state END,
-			  status = 'open', resolved_at = NULL, resolution = ''
+			  status = 'open', resolved_at = NULL, resolution = '', resolution_kind = '', resolution_detail = '{}'
 			WHERE f.status = 'resolved'
 			  OR CASE WHEN f.verification_before <> '' THEN f.verification_before ELSE f.verification END IS DISTINCT FROM EXCLUDED.verification
 			  OR f.severity IS DISTINCT FROM EXCLUDED.severity OR f.fixed_version IS DISTINCT FROM EXCLUDED.fixed_version
@@ -466,11 +466,19 @@ func (s *Store) SyncFindings(ctx context.Context, kinds []string, inventoryIDs [
 		if _, err := applyExceptions(ctx, tx, 0, "f.asset_id IN (SELECT DISTINCT asset_id FROM want_findings)"); err != nil {
 			return err
 		}
-		tag, err = tx.Exec(ctx, `WITH r AS (UPDATE findings f SET status = 'resolved', resolved_at = now(),
-			resolution = 'no longer affected (re-evaluated ' || to_char(now(), 'YYYY-MM-DD') || ')'
+		// The rest closes. Their inventory rows are installed (they were just
+		// evaluated), so nothing on the asset changed: the advisory was
+		// withdrawn or changed, or the row could not be evaluated. Each gets
+		// the specific reason (see resolution.go); none is remediation.
+		tag, err = tx.Exec(ctx, `WITH g AS (SELECT f.id, x.kind, x.resolution, x.detail
+			FROM findings f JOIN inventory i ON i.id = f.inventory_id JOIN components c ON c.id = f.component_id
+			`+closedByIntel()+`
 			WHERE f.status = 'open' AND f.kind = ANY($1) AND f.inventory_id = ANY($2)
-			AND NOT EXISTS (SELECT 1 FROM want_findings w WHERE w.inventory_id = f.inventory_id AND w.kind = f.kind AND w.key = f.key)
-			RETURNING f.workspace_id, f.id, f.resolution)
+			AND NOT EXISTS (SELECT 1 FROM want_findings w WHERE w.inventory_id = f.inventory_id AND w.kind = f.kind AND w.key = f.key)),
+			r AS (UPDATE findings f SET status = 'resolved', resolved_at = now(),
+			resolution_kind = g.kind, resolution = g.resolution, resolution_detail = g.detail
+			FROM g WHERE f.id = g.id
+			RETURNING f.workspace_id, f.id, f.resolution, f.resolution_kind, f.resolution_detail)
 			`+resolvedEvents, kinds, inventoryIDs)
 		if err != nil {
 			return err
@@ -482,30 +490,48 @@ func (s *Store) SyncFindings(ctx context.Context, kinds []string, inventoryIDs [
 }
 
 // ResolveRemovedFindings closes findings whose inventory row is gone, saying
-// why: fixed by a remediation plan, upgraded to another version, or removed.
+// why: fixed by a remediation plan or upgraded to another version
+// (remediated), upgraded to a version that is still affected (superseded:
+// the issue continues as the open finding on the new version), or removed.
 func (s *Store) ResolveRemovedFindings(ctx context.Context) (int64, error) {
 	// Locked in id order before they change (see SyncFindings).
 	tag, err := s.Pool.Exec(ctx, `WITH l AS (SELECT f.id FROM findings f JOIN inventory i ON i.id = f.inventory_id
 		  WHERE f.status = 'open' AND i.removed_at IS NOT NULL ORDER BY f.id FOR NO KEY UPDATE OF f),
+		g AS (SELECT f.id, ra.plan_id, ra.to_version, cur.version AS current, p.id AS successor
+		  FROM l JOIN findings f ON f.id = l.id
+		  LEFT JOIN LATERAL (SELECT ra.plan_id, ra.to_version FROM remediation_actions ra
+		    WHERE ra.inventory_id = f.inventory_id AND ra.status = 'verified' ORDER BY ra.verified_at DESC LIMIT 1) ra ON true
+		  LEFT JOIN LATERAL (SELECT cur.version FROM inventory cur
+		    WHERE cur.asset_id = f.asset_id AND cur.component_id = f.component_id AND cur.removed_at IS NULL
+		    ORDER BY cur.last_seen DESC LIMIT 1) cur ON true
+		  -- The same issue open on the version now installed at the same
+		  -- location: the upgrade left it affected.
+		  LEFT JOIN LATERAL (SELECT p.id FROM findings p JOIN inventory pi ON pi.id = p.inventory_id AND pi.removed_at IS NULL
+		    JOIN inventory fi ON fi.id = f.inventory_id AND fi.location = pi.location
+		    WHERE `+twin+` AND p.status = 'open' ORDER BY p.id LIMIT 1) p ON true),
 		r AS (UPDATE findings f SET status = 'resolved', resolved_at = now(),
-		resolution = COALESCE(
-		  (SELECT 'fixed by remediation plan #' || ra.plan_id || ' (upgraded to ' || ra.to_version || ')'
-		     FROM remediation_actions ra WHERE ra.inventory_id = f.inventory_id AND ra.status = 'verified'
-		     ORDER BY ra.verified_at DESC LIMIT 1),
-		  (SELECT 'upgraded to ' || cur.version FROM inventory cur
-		     WHERE cur.asset_id = f.asset_id AND cur.component_id = f.component_id AND cur.removed_at IS NULL
-		     ORDER BY cur.last_seen DESC LIMIT 1),
-		  'component no longer installed')
-		FROM inventory i, l WHERE l.id = f.id AND i.id = f.inventory_id AND f.status = 'open' AND i.removed_at IS NOT NULL
-		RETURNING f.workspace_id, f.id, f.resolution)
+		resolution_kind = CASE WHEN g.successor IS NOT NULL THEN 'superseded'
+		  WHEN g.plan_id IS NOT NULL OR g.current IS NOT NULL THEN 'remediated' ELSE 'removed' END,
+		resolution = CASE
+		  WHEN g.successor IS NOT NULL THEN 'upgraded to ' || COALESCE(g.current, g.to_version, 'another version') ||
+		    ', which is still affected (finding #' || g.successor || ')'
+		  WHEN g.plan_id IS NOT NULL THEN 'fixed by remediation plan #' || g.plan_id || ' (upgraded to ' || g.to_version || ')'
+		  WHEN g.current IS NOT NULL THEN 'upgraded to ' || g.current
+		  ELSE 'component no longer installed' END,
+		resolution_detail = jsonb_strip_nulls(jsonb_build_object('plan_id', g.plan_id,
+		  'version', COALESCE(g.current, g.to_version), 'successor', g.successor))
+		FROM g WHERE g.id = f.id AND f.status = 'open'
+		RETURNING f.workspace_id, f.id, f.resolution, f.resolution_kind, f.resolution_detail)
 		`+resolvedEvents)
 	return tag.RowsAffected(), err
 }
 
 // resolvedEvents records one 'resolved' event per row of r, the findings an
-// UPDATE ... RETURNING workspace_id, id, resolution just resolved.
-const resolvedEvents = `INSERT INTO finding_events (workspace_id, finding_id, actor_type, actor_name, action, note)
-	SELECT workspace_id, id, 'system', 'matcher', 'resolved', resolution FROM r`
+// UPDATE ... RETURNING workspace_id, id, resolution, resolution_kind,
+// resolution_detail just resolved. The detail carries the kind and its facts.
+const resolvedEvents = `INSERT INTO finding_events (workspace_id, finding_id, actor_type, actor_name, action, note, detail)
+	SELECT workspace_id, id, 'system', 'matcher', 'resolved', resolution,
+	  jsonb_build_object('resolution_kind', resolution_kind) || resolution_detail FROM r`
 
 // Row coverage states (inventory.coverage). See docs/compatibility.md,
 // "Coverage states".
@@ -829,6 +855,13 @@ type Finding struct {
 	// it asks a person to look.
 	SecondCheck       string `json:"second_check"`
 	SecondCheckReason string `json:"second_check_reason"`
+
+	// ResolutionKind is why it closed (see resolution.go): remediated,
+	// removed, superseded, advisory_withdrawn, advisory_changed,
+	// not_evaluated or other; "" while open. ResolutionDetail holds the
+	// facts (advisories, source, withdrawn_at, version, plan_id, successor).
+	ResolutionKind   string          `json:"resolution_kind"`
+	ResolutionDetail json.RawMessage `json:"resolution_detail"`
 }
 
 // displayState maps stored status and state to the seven states shown to
@@ -871,6 +904,9 @@ type FindingFilter struct {
 	// SecondCheck keeps findings whose current second check has this
 	// result (agreed, disagreed, could_not_check).
 	SecondCheck string
+	// ResolutionKind keeps resolved findings closed for one of these
+	// reasons (see resolution.go).
+	ResolutionKind []string
 	Page
 }
 
@@ -883,7 +919,7 @@ const findingCols = `f.id, f.kind, f.key, f.inventory_id, f.asset_id, a.name, a.
 	f.mitigation, f.escalation_level, f.incident_id,
 	COALESCE(f.status = 'open' AND f.state IN ('new', 'acknowledged', 'in_progress') AND f.fix_due < now(), false), f.fix_group,
 	f.priority_policy, f.regressed_at, f.until_fix, f.ignore_reason, f.exception_id, ` + displayState + `,
-	COALESCE(sc.result, ''), COALESCE(sc.reason, '')`
+	COALESCE(sc.result, ''), COALESCE(sc.reason, ''), f.resolution_kind, f.resolution_detail`
 
 const findingFrom = ` FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
 	JOIN components c ON c.id = f.component_id JOIN inventory i ON i.id = f.inventory_id
@@ -965,6 +1001,9 @@ func (s *Store) ListFindings(ctx context.Context, f FindingFilter) ([]Finding, i
 	}
 	if f.NewWithinDays > 0 {
 		w.add("f.first_seen > now() - make_interval(days => ?)", f.NewWithinDays)
+	}
+	if len(f.ResolutionKind) > 0 {
+		w.add("f.resolution_kind = ANY(?)", f.ResolutionKind)
 	}
 	if f.ResolvedWithinDays > 0 {
 		w.add("f.resolved_at > now() - make_interval(days => ?)", f.ResolvedWithinDays)

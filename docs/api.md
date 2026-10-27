@@ -58,7 +58,7 @@ A workspace (shown as the organisation in the dashboard) groups its assets into 
 | `GET /components/{id}/upgrade` | viewer | An [upgrade recommendation](#upgrade-recommendations) for each installed version with open findings (most findings first, at most 50; `total` counts all), with `version`, `distro` and `asset_count` |
 | `GET /inventory?component_id=&asset_id=&coverage=` | viewer | Where a component is used |
 | `GET /coverage?problems=true` | viewer | Coverage ledger across assets |
-| `GET /reports/evidence?from=&to=` | viewer | Patch-management evidence for a period (dates, `to` inclusive; default the last 30 days, at most a year): assets and their collection status, hosts needing a reboot, evaluation gaps, open findings by severity and priority, overdue findings, findings resolved in the period with the share resolved within their deadline and the median days from first detection to resolution, every active exception with its reason, mitigation and expiry, and drift for each `replica_of` pair |
+| `GET /reports/evidence?from=&to=` | viewer | Patch-management evidence for a period (dates, `to` inclusive; default the last 30 days, at most a year): assets and their collection status, hosts needing a reboot, evaluation gaps, open findings by severity and priority, overdue findings, findings remediated in the period (upgraded, fixed or removed) with the share resolved within their deadline and the median days from first detection to resolution, findings closed without remediation (advisory withdrawn or changed) counted apart, every active exception with its reason, mitigation and expiry, and drift for each `replica_of` pair |
 | `GET /reports/outcomes?days=` | viewer | [Remediation outcomes](#remediation-outcomes) over the last `days` (1 to 365, default 90) |
 | `GET /audit?object_type=&object_id=` | viewer | Audit events |
 | `GET /usage` | viewer (organisation-wide) | [Monitored assets](asset-limits.md) against the organisation's limit: `monitored`, `limit` (null: none), `at_limit`, `by_kind`, `stale`, `workloads` (not counted), `refused` (the most recent new assets refused at the limit) and `refused_recently` (last 7 days); `projects`, `project_limit` (null: none), `projects_at_limit`, `read_only` (`since`, `reason`; null when not) and `report_mode` (`full` or `trial`). At the limit, requests that would create an asset answer `402` with code `asset_limit`, and a new project `402 project_limit`; while read-only, uploads, enrollment, integrations, checks and notifications answer `402 read_only` |
@@ -271,7 +271,23 @@ A finding is one issue on one inventory row:
 
 Findings resolve automatically when the component is upgraded or removed, or when an advisory is withdrawn. If the issue comes back, the finding reopens. Both are recorded in the finding's history (`GET /findings/{id}/events`) as `resolved` (the note is the resolution) and `reopened` (with the earlier resolution in `detail`), by actor `matcher`.
 
-An issue that was fixed by an upgrade or a removal and comes back on the same asset (the same component and advisory, on the same or another inventory row) is **regressed**: `regressed_at` is set, the history gets a `regressed` event, work that was in progress goes back to `new`, and the issue is urgent in notifications whatever its priority. Two cases are not regressions: an upgrade that leaves the component vulnerable (the old and new versions overlap) and an issue closed only because the intelligence changed (resolution "no longer affected (re-evaluated ...)"), which reopens as before.
+An issue that was fixed by an upgrade or a removal and comes back on the same asset (the same component and advisory, on the same or another inventory row) is **regressed**: `regressed_at` is set, the history gets a `regressed` event, work that was in progress goes back to `new`, and the issue is urgent in notifications whatever its priority. Two cases are not regressions: an upgrade that leaves the component vulnerable (the old and new versions overlap) and an issue closed only because the intelligence changed (`resolution_kind` `advisory_withdrawn` or `advisory_changed`), which reopens as before.
+
+### Why a finding closed
+
+A resolved finding has a `resolution` sentence and a machine-readable `resolution_kind`, with the facts in `resolution_detail`:
+
+| `resolution_kind` | When | Remediation? |
+| --- | --- | --- |
+| `remediated` | The installed version changed: "upgraded to V", or "fixed by remediation plan #N (upgraded to V)" | yes |
+| `removed` | A complete inventory no longer lists the component ("component no longer installed") | yes |
+| `superseded` | Upgraded, but the new version is still affected: the issue continues as finding `resolution_detail.successor` | no |
+| `advisory_withdrawn` | Every advisory behind it was withdrawn by its source: "advisory withdrawn by Ubuntu on 2026-10-27" (`source`, `feed`, `withdrawn_at`) | no |
+| `advisory_changed` | The advisory or lifecycle data no longer lists the installed version, which did not change: "advisory updated: UBUNTU-CVE-2026-2 no longer lists mysql-8.0 8.0.42" | no |
+| `not_evaluated` | The row could no longer be evaluated (its feed was disabled, or the version could not be compared) | no |
+| `other` | A resolution recorded before 0.13 that could not be classified | no |
+
+Reports count only `remediated` and `removed` as remediation. `GET /findings?status=resolved&resolution_kind=advisory_withdrawn,advisory_changed` lists the others. The matcher's `resolved` history events carry the kind and facts in `detail`.
 
 Findings also carry `display_state`, `regressed_at`, `until_fix`, `ignore_reason` and `exception_id`; see [The seven states](#the-seven-states).
 
@@ -296,10 +312,11 @@ Package upgrade groups in the action plan (`GET /fix-groups`) carry `recommended
 
 `GET /reports/outcomes` returns `days`, the risk `policy_version` and a `report`:
 
-- `resolved`: findings resolved in the window that are still resolved.
-- `time_to_remedy`: `mean_days` (MTTR) and `median_days` from detection, or from the last reopening, to resolution, by `priority` and `kind`; `all` rows are totals.
-- `causes`: `upgraded` (a newer inventory shows another version), `remediation` (a verified remediation action), `removed` (a complete inventory no longer lists it), all with `evidence: fresh_collection`; `reevaluated` (advisory or lifecycle data changed, `evidence: intelligence`).
-- `sla`: per priority, the policy's `fix_days`, findings resolved within that many days of first detection out of those resolved, and open and overdue counts now.
+- `resolved`: findings remediated in the window that are still resolved: `remediated` (the installed version changed) plus `removed` (the component is gone). See [Why a finding closed](#why-a-finding-closed).
+- `closed_not_remediation`: findings that closed in the window with nothing changed on the asset, `total` and `by_kind` (`advisory_withdrawn`, `advisory_changed`, `superseded`, `not_evaluated`, `other`). They are not in `resolved`, `time_to_remedy` or `sla`.
+- `time_to_remedy`: `mean_days` (MTTR) and `median_days` from detection, or from the last reopening, to resolution, by `priority` and `kind`, for remediated and removed findings; `all` rows are totals.
+- `causes`: every closure by `cause` with its `resolution_kind`, `counts_as_remediation` and `evidence`: `upgraded` (a newer inventory shows another version), `remediation` (a verified remediation action) and `removed` (a complete inventory no longer lists it) count as remediation; `superseded` (`evidence: fresh_collection`), `advisory_withdrawn` and `advisory_changed` (`evidence: intelligence`), `not_evaluated` (`evidence: coverage`) and `other` do not.
+- `sla`: per priority, the policy's `fix_days`, remediated findings resolved within that many days of first detection out of those remediated, and open and overdue counts now.
 - `reopened`: reopenings and distinct findings in the window, and of the resolutions recorded in the window how many were later reopened. `events_since` is when resolutions and reopenings started being recorded.
 - `open`: active, overdue, excepted (suppressed or accepted) and on stale assets, now.
 - `remediation`: plans by status and actions by status created in the window, the success rate (verified out of verified, failed and rolled back), rollback actions and recent failures; `null` when there were none.

@@ -17,6 +17,13 @@ type VerifyReport struct {
 	StillOpen VerifyList    `json:"still_open"`
 	NewSince  int64         `json:"opened_since"` // findings first seen after T
 	Assets    []VerifyAsset `json:"assets"`
+	// Of Resolved.Total, how many were remediated (upgraded, fixed by a
+	// remediation plan or removed) and how many closed with nothing changed
+	// on the asset (advisory withdrawn or changed, still affected after an
+	// upgrade, no longer evaluated), which is not remediation.
+	Remediated           int64            `json:"remediated"`
+	ClosedNotRemediation int64            `json:"closed_not_remediation"`
+	ResolvedByKind       map[string]int64 `json:"resolved_by_kind"`
 }
 
 type VerifyList struct {
@@ -38,7 +45,13 @@ type VerifyFinding struct {
 	FirstSeen    time.Time  `json:"first_seen"`
 	ResolvedAt   *time.Time `json:"resolved_at,omitempty"`
 	Resolution   string     `json:"resolution,omitempty"`
-	Cause        string     `json:"cause,omitempty"` // upgraded, remediation, removed, reevaluated, other
+	// Cause: upgraded, remediation, removed, superseded, advisory_withdrawn,
+	// advisory_changed, not_evaluated or other (see resolutionCause).
+	Cause string `json:"cause,omitempty"`
+	// ResolutionKind and Remediation: what closed it, and whether that
+	// counts as remediation (remediated or removed) in reports.
+	ResolutionKind string `json:"resolution_kind,omitempty"`
+	Remediation    bool   `json:"counts_as_remediation"`
 	// Rescanned: the asset sent a complete inventory after T, so an open
 	// finding was checked against fresh evidence.
 	Rescanned bool `json:"asset_rescanned_since"`
@@ -53,12 +66,14 @@ type VerifyAsset struct {
 	Rescanned        bool       `json:"rescanned_since"`
 }
 
-// resolutionCause classifies a resolution written by the matcher.
-func resolutionCause(col string) string {
-	return `CASE WHEN ` + col + ` LIKE 'fixed by remediation plan%' THEN 'remediation'
-		WHEN ` + col + ` LIKE 'upgraded to %' THEN 'upgraded'
-		WHEN ` + col + ` = 'component no longer installed' THEN 'removed'
-		WHEN ` + col + ` LIKE 'no longer affected%' THEN 'reevaluated' ELSE 'other' END`
+// resolutionCause classifies a resolved finding (alias a) by what closed
+// it: remediation (a verified remediation plan) or upgraded, both kind
+// remediated; otherwise its resolution kind (removed, superseded,
+// advisory_withdrawn, advisory_changed, not_evaluated, other).
+func resolutionCause(a string) string {
+	return `CASE WHEN ` + a + `.resolution_kind = 'remediated' THEN
+		  CASE WHEN ` + a + `.resolution LIKE 'fixed by remediation plan%' THEN 'remediation' ELSE 'upgraded' END
+		WHEN ` + a + `.resolution_kind = '' THEN 'other' ELSE ` + a + `.resolution_kind END`
 }
 
 // VerifySince builds the report for findings of one asset (or all, assetID
@@ -67,7 +82,7 @@ func (s *Store) VerifySince(ctx context.Context, since time.Time, assetID int64,
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
-	r := &VerifyReport{Since: since, Assets: []VerifyAsset{}}
+	r := &VerifyReport{Since: since, Assets: []VerifyAsset{}, ResolvedByKind: map[string]int64{}}
 	scope := ""
 	args := []any{since}
 	if assetID > 0 {
@@ -87,7 +102,30 @@ func (s *Store) VerifySince(ctx context.Context, since time.Time, assetID int64,
 		Scan(&r.Resolved.Total, &r.StillOpen.Total, &r.NewSince); err != nil {
 		return nil, err
 	}
-	rows, err := s.Pool.Query(ctx, `SELECT `+cols+resolutionCause("f.resolution")+`, `+rescanned+from+resolved+
+	kinds, err := s.Pool.Query(ctx, `SELECT CASE WHEN f.resolution_kind = '' THEN 'other' ELSE f.resolution_kind END, count(*)`+
+		from+resolved+` GROUP BY 1`, args...)
+	if err != nil {
+		return nil, err
+	}
+	for kinds.Next() {
+		var k string
+		var n int64
+		if err := kinds.Scan(&k, &n); err != nil {
+			kinds.Close()
+			return nil, err
+		}
+		r.ResolvedByKind[k] = n
+		if CountsAsRemediation(k) {
+			r.Remediated += n
+		} else {
+			r.ClosedNotRemediation += n
+		}
+	}
+	kinds.Close()
+	if err := kinds.Err(); err != nil {
+		return nil, err
+	}
+	rows, err := s.Pool.Query(ctx, `SELECT `+cols+resolutionCause("f")+`, f.resolution_kind, `+remedied("f")+`, `+rescanned+from+resolved+
 		fmt.Sprintf(` ORDER BY f.resolved_at DESC, f.id LIMIT %d`, limit), args...)
 	if err != nil {
 		return nil, err
@@ -95,7 +133,7 @@ func (s *Store) VerifySince(ctx context.Context, since time.Time, assetID int64,
 	if r.Resolved.Items, err = pgx.CollectRows(rows, pgx.RowToStructByPos[VerifyFinding]); err != nil {
 		return nil, err
 	}
-	rows, err = s.Pool.Query(ctx, `SELECT `+cols+`'', `+rescanned+from+open+
+	rows, err = s.Pool.Query(ctx, `SELECT `+cols+`'', '', false, `+rescanned+from+open+
 		fmt.Sprintf(` ORDER BY f.priority, f.first_seen, f.id LIMIT %d`, limit), args...)
 	if err != nil {
 		return nil, err
