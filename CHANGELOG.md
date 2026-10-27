@@ -11,6 +11,11 @@ Each release's section is published as its GitHub release notes, and a tag witho
 - **Add an asset** in a project's settings no longer offers assets already in the project: they show as "already in this project" and cannot be picked.
 - The asset page header has a separator before the project chips (it read "first seen 15 min agoIn Shop").
 - A fix that is urgent because it matches an SOS rule, not because it is P1, says **Urgent: SOS rule**, so the label does not look wrong next to a P2 badge.
+- **The first summary after upgrading to 0.6 or later no longer lists every existing asset as newly connected** ("Daily summary: 51 fixed, 11 assets connected"). Migration `0030` marked existing assets as announced at the time of the upgrade, and summaries treat an asset announced in their period as new. Migration `0035` sets those assets back to when they were first seen; assets connected since keep their time. Installations that already sent that summary see nothing change; a weekly summary due after the upgrade will no longer repeat it.
+
+### Upgrading
+
+- Migration `0035` updates `assets.announced_at` for the assets that existed when `0030` ran (one row per asset, no lock on findings).
 
 ## 0.9.0
 
