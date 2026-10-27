@@ -131,3 +131,23 @@ jobs:
           gh release create "$GITHUB_REF_NAME" dist/* --verify-tag $pre \
             --notes-file "$RUNNER_TEMP/release-notes.md" \
             --title "Stackurity $GITHUB_REF_NAME"
+
+  # The tap's own schedule runs only every few hours on a quiet repository,
+  # so start its update now. HOMEBREW_TAP_TOKEN may only run workflows in
+  # stackurity/homebrew-tap; without it (forks) this is skipped. The tap
+  # verifies the release's signature and tests the formula before committing.
+  homebrew:
+    needs: release
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Update the Homebrew formula
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "HOMEBREW_TAP_TOKEN is not set; the tap updates on its own schedule"
+            exit 0
+          fi
+          gh workflow run update.yml -R stackurity/homebrew-tap -f version="$GITHUB_REF_NAME"
