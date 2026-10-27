@@ -55,6 +55,9 @@ function Challenge({ siteKey, onToken, resetKey }: { siteKey: string; onToken: (
         if (gone || !box.current) return;
         const id = t.render(box.current, {
           sitekey: siteKey,
+          // The site key is shared with other forms: the server accepts
+          // only tokens made for sign-up.
+          action: "signup",
           size: "flexible",
           callback: (token: string) => tokenRef.current(token),
           "expired-callback": () => tokenRef.current(""),
