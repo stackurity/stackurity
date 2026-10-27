@@ -194,7 +194,7 @@ export function AssetDetailPage() {
             <AssetPlatformLine asset={a} />
             {(a.projects?.length ?? 0) > 0 && (
               <span className="project-chips">
-                <span className="small muted">In</span>
+                <span className="small muted">· In</span>
                 {a.projects!.map((p) => (
                   <span key={p.id} className="project-chip">
                     {p.name}
