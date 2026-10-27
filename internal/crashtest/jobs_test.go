@@ -26,9 +26,16 @@ func TestJobKilledEveryAttempt(t *testing.T) {
 	var lastLock time.Time
 	s := e.start()
 	for attempt := 1; ; attempt++ {
-		waitFor(t, 30*time.Second, "attempt to start", func() bool {
+		// Kill only while the hanging sync is the one job in flight. The
+		// other feeds (KEV, endoflife.date) sync at the same time on the
+		// second job worker, and the jobs their changes queue follow; a job
+		// cut short by a kill is claimed again together with the hanging
+		// one when both locks time out, so it would be killed with it at
+		// every attempt and fail too.
+		waitFor(t, 30*time.Second, "attempt to start, alone", func() bool {
 			j := e.job(where)
-			return j != nil && j.Attempts == attempt && j.LockedBy != "" && e.up.hitCount("/osv/Debian/all.zip") == attempt
+			return j != nil && j.Attempts == attempt && j.LockedBy != "" && e.up.hitCount("/osv/Debian/all.zip") == attempt &&
+				e.int(`SELECT count(*) FROM jobs WHERE locked_by IS NOT NULL AND done_at IS NULL AND failed_at IS NULL AND id <> $1`, j.ID) == 0
 		})
 		j := e.job(where)
 		if attempt > 1 && j.LockedAt.Sub(lastLock) < jobLock {
