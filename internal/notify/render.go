@@ -129,23 +129,30 @@ func slackLink(text, href string) string {
 // slackPayload renders a message as Block Kit blocks at the top level of
 // the message (not an attachment, which Slack folds away behind "Show
 // more").
-func slackPayload(m Message) map[string]any {
-	// Items with actions (fixes) get URL buttons: Assign to me, Snooze,
-	// Open. They open the dashboard, which asks to confirm; they work with
-	// a plain incoming webhook, no Slack app needed. Each takes two more
-	// blocks (its own section and the buttons), so they go to the first
-	// items while the message stays inside Slack's block limit.
-	plain := slackBlocks(m, 0)
+func slackPayload(m Message) map[string]any { return slackPayloadFor(m, 0) }
+
+// slackPayloadFor renders a message for a Slack channel. channel is the
+// channel's id when it is set up with a Slack app's signing secret (0:
+// not): Assign to me and Snooze are then interactive buttons that act from
+// inside Slack, handled by POST /api/v1/integrations/slack/actions.
+func slackPayloadFor(m Message, channel int64) map[string]any {
+	// Items with actions (fixes) get buttons: Assign to me, Snooze, Open.
+	// Without a Slack app they are URL buttons that open the dashboard,
+	// which asks to confirm; they work with a plain incoming webhook. Each
+	// takes two more blocks (its own section and the buttons), so they go
+	// to the first items while the message stays inside Slack's block
+	// limit.
+	plain := slackBlocks(m, 0, channel)
 	budget := min(slackActionItems, (slackBlocksMax-len(plain))/2)
 	blocks := plain
 	if budget > 0 {
-		blocks = slackBlocks(m, budget)
+		blocks = slackBlocks(m, budget, channel)
 	}
 	return map[string]any{"text": m.Subject(), "blocks": blocks}
 }
 
 // slackBlocks renders a message, giving buttons to at most buttons items.
-func slackBlocks(m Message, buttons int) []map[string]any {
+func slackBlocks(m Message, buttons int, channel int64) []map[string]any {
 	var blocks []map[string]any
 	section := func(text string) {
 		for _, part := range splitLines(text, slackSectionMax) {
@@ -177,7 +184,7 @@ func slackBlocks(m Message, buttons int) []map[string]any {
 					lines = append(lines, indent+bullet+slackLink(it.Text, it.Link))
 					if len(it.Actions) > 0 && given < buttons {
 						flush()
-						blocks = append(blocks, slackButtons(it.Actions, given))
+						blocks = append(blocks, slackButtons(it.Actions, given, channel))
 						given++
 					}
 					walk(it.Items, indent+"      ")
@@ -295,22 +302,81 @@ func teamsPayload(m Message) map[string]any {
 	}
 }
 
-// slackButtons is an actions block of URL buttons; n numbers the item so
-// every action_id in the message is unique.
-func slackButtons(actions []Action, n int) map[string]any {
+// slackButtons is an actions block of buttons; n numbers the item so
+// every block_id and action_id in the message is unique. Without a channel
+// they are URL buttons. With one (a Slack app is set up), Assign to me and
+// Snooze are interactive and Open stays a URL button; each carries a value
+// naming the channel, the action and the fix, which the interactivity
+// endpoint reads after checking the request's signature with that
+// channel's signing secret.
+func slackButtons(actions []Action, n int, channel int64) map[string]any {
 	var els []map[string]any
 	for _, a := range actions {
 		if len(a.Link) > 3000 {
 			continue
 		}
-		b := map[string]any{"type": "button", "text": map[string]any{"type": "plain_text", "text": a.Label, "emoji": false},
-			"url": a.Link, "action_id": "stk-" + strconv.Itoa(n) + "-" + a.Kind}
+		label := a.Label
+		value := ""
+		if channel > 0 && a.Fix != "" {
+			value = SlackActionValue(channel, a.Kind, a.Fix)
+			if len(value) > slackValueMax {
+				value = ""
+			}
+		}
+		interactive := value != "" && a.Kind != "open"
+		if interactive && a.Kind == "snooze" {
+			label = "Snooze 1 week"
+		}
+		b := map[string]any{"type": "button", "text": map[string]any{"type": "plain_text", "text": label, "emoji": false},
+			"action_id": "stk-" + strconv.Itoa(n) + "-" + a.Kind}
+		if !interactive {
+			b["url"] = a.Link
+		}
+		if value != "" {
+			// Slack also reports clicks on URL buttons of an app's message;
+			// the value lets the endpoint verify and ignore them.
+			b["value"] = value
+		}
 		if a.Kind == "assign" {
 			b["style"] = "primary"
 		}
 		els = append(els, b)
 	}
-	return map[string]any{"type": "actions", "elements": els}
+	block := map[string]any{"type": "actions", "elements": els}
+	if channel > 0 {
+		// The endpoint puts what was done under the clicked buttons.
+		block["block_id"] = "stk-" + strconv.Itoa(n)
+	}
+	return block
+}
+
+// slackValueMax is the longest value Slack accepts on a button.
+const slackValueMax = 2000
+
+// SlackActionValue is the value of an interactive button: a version, the
+// channel whose signing secret must verify the click, the action and the
+// fix.
+func SlackActionValue(channel int64, kind, fix string) string {
+	return "stk1|" + strconv.FormatInt(channel, 10) + "|" + kind + "|" + fix
+}
+
+// ParseSlackActionValue reads a button's value; ok is false for anything
+// that is not one.
+func ParseSlackActionValue(v string) (channel int64, kind, fix string, ok bool) {
+	parts := strings.SplitN(v, "|", 4)
+	if len(parts) != 4 || parts[0] != "stk1" || parts[3] == "" || len(v) > slackValueMax {
+		return 0, "", "", false
+	}
+	channel, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil || channel <= 0 {
+		return 0, "", "", false
+	}
+	switch parts[2] {
+	case "assign", "snooze", "open":
+	default:
+		return 0, "", "", false
+	}
+	return channel, parts[2], parts[3], true
 }
 
 // shorten cuts s to at most n characters at a word boundary.

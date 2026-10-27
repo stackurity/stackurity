@@ -689,6 +689,16 @@ func (d *Dispatcher) send(ctx context.Context, ch *store.Channel, del store.Deli
 	if err != nil {
 		return err
 	}
+	if ch.Kind == KindSlack && cfg.SigningSecretRef != "" {
+		// Interactive buttons only when clicks can be verified: with a
+		// signing secret that resolves. Otherwise the message keeps the URL
+		// buttons, which always work.
+		if sig, err := d.Secrets.Resolve(ctx, cfg.SigningSecretRef); err == nil && sig != "" {
+			cfg.interactive = ch.ID
+		} else {
+			d.Log.Warn("slack signing secret cannot be read; sending link buttons", "channel", ch.Name)
+		}
+	}
 	sctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	return d.Sender.Send(sctx, ch.Kind, cfg, secret, del.ID, msg)

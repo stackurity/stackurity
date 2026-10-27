@@ -83,6 +83,8 @@ type Action struct {
 	Kind  string `json:"kind"`
 	Label string `json:"label"`
 	Link  string `json:"link"`
+	// Fix is the fix group the action is about.
+	Fix string `json:"fix,omitempty"`
 }
 
 // Period is the time a summary covers.
@@ -213,10 +215,21 @@ type ChannelConfig struct {
 	Labels            []string          `json:"labels,omitempty"`
 	Priorities        map[string]string `json:"priorities,omitempty"`         // P1..P4 -> Jira priority name
 	ResolveTransition string            `json:"resolve_transition,omitempty"` // e.g. Done; empty only comments
+	// slack: a reference to the Slack app's signing secret. When set,
+	// messages carry interactive Assign to me and Snooze buttons, and
+	// clicks are verified with it (internal/api/slack.go).
+	SigningSecretRef string `json:"signing_secret_ref,omitempty"`
+
+	// interactive is the channel's id when its messages get interactive
+	// buttons; set by the dispatcher, never stored.
+	interactive int64
 }
 
 // ValidateChannel checks configuration before it is stored.
 func ValidateChannel(kind string, c ChannelConfig, hasSecret, allowHTTP bool) error {
+	if c.SigningSecretRef != "" && kind != KindSlack {
+		return errors.New("signing_secret_ref is for Slack channels")
+	}
 	switch kind {
 	case KindEmail:
 		if c.Host == "" || c.Port <= 0 || c.Port > 65535 {
@@ -323,7 +336,7 @@ func (s *Sender) Send(ctx context.Context, kind string, c ChannelConfig, secret 
 		if err := checkURL(secret, false); err != nil {
 			return fmt.Errorf("slack webhook: %w", err)
 		}
-		return s.postJSON(ctx, secret, slackPayload(m), nil)
+		return s.postJSON(ctx, secret, slackPayloadFor(m, c.interactive), nil)
 	case KindTeams:
 		if err := checkURL(secret, false); err != nil {
 			return fmt.Errorf("teams webhook: %w", err)

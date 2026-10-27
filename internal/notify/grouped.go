@@ -279,9 +279,9 @@ func (d *Dispatcher) fixItem(text, id string, asset int64) Item {
 	}
 	path := "/fixes/" + url.PathEscape(id)
 	it.Actions = []Action{
-		{Kind: "assign", Label: "Assign to me", Link: d.url(path, url.Values{"action": {"assign"}})},
-		{Kind: "snooze", Label: "Snooze", Link: d.url(path, url.Values{"action": {"snooze"}})},
-		{Kind: "open", Label: "Open", Link: d.fixURL(id)},
+		{Kind: "assign", Label: "Assign to me", Link: d.url(path, url.Values{"action": {"assign"}}), Fix: id},
+		{Kind: "snooze", Label: "Snooze", Link: d.url(path, url.Values{"action": {"snooze"}}), Fix: id},
+		{Kind: "open", Label: "Open", Link: d.fixURL(id), Fix: id},
 	}
 	return it
 }
