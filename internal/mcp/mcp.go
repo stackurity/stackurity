@@ -336,11 +336,16 @@ var tools = map[string]tool{
 				Components  int64  `json:"components"`
 				OS          string `json:"os,omitempty"`
 				Reboot      string `json:"reboot_required,omitempty"`
+				Path        string `json:"path,omitempty"` // an application's directory on its host
 			}
 			out := []item{}
 			for _, x := range res.Items {
+				path := ""
+				if x.Kind == "application" {
+					path = x.Attributes["app_dir"]
+				}
 				out = append(out, item{x.ID, x.Kind, x.Name, x.Environment, x.Status, x.LastSeen, x.Components,
-					x.Attributes["os_name"], x.Attributes["reboot_required"]})
+					x.Attributes["os_name"], x.Attributes["reboot_required"], path})
 			}
 			return map[string]any{"assets": out, "total": res.Total}, nil
 		},
@@ -348,10 +353,13 @@ var tools = map[string]tool{
 	"action_plan": {
 		description: "What to fix, grouped into concrete actions (upgrade X to version Y, move off an end-of-life runtime), " +
 			"ordered by urgency, with how many findings each action clears. For package upgrades, target_version is the version " +
-			"to move to (the title names it), to_version the lowest version that fixes them all. Omit asset_id for every asset.",
+			"to move to (the title names it), to_version the lowest version that fixes them all. The same upgrade on several assets is " +
+			"one action (\"... on 3 apps\") listing each asset, with its own group_id, under assets. Omit asset_id for every asset.",
 		schema: obj(map[string]any{"asset_id": num("Limit to one asset")}),
 		run: func(ctx context.Context, api API, a map[string]any) (any, error) {
-			q := url.Values{"limit": {"100"}}
+			// The same upgrade on several assets is one action, with each
+			// asset's own group under assets.
+			q := url.Values{"limit": {"100"}, "merge": {"true"}}
 			set(q, "asset_id", a["asset_id"])
 			var groups, summary any
 			if err := api.Do(ctx, "GET", "/api/v1/fix-groups?"+q.Encode(), nil, nil, &groups); err != nil {

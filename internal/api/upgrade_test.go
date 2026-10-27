@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"context"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -203,5 +204,105 @@ func TestUpgradeAndOutcomeEndpoints(t *testing.T) {
 	ver = store.VerifyReport{}
 	if code := beta.do("GET", "/api/v1/findings/verify?since="+since, nil, &ver); code != 200 || ver.NewSince != 0 || len(ver.Assets) != 0 {
 		t.Errorf("beta verify: %d %+v", code, ver)
+	}
+}
+
+// The same upgrade on several assets is one item in the merged list and
+// counts once; filters apply first, so one asset in view is not merged.
+func TestMergedFixGroups(t *testing.T) {
+	e := newEnv(t)
+	e.user("view@x.io", auth.RoleViewer)
+	view := e.login("view@x.io")
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	host := func(name, version string) int64 {
+		b := model.NewBatch(model.Collector{ID: "agent", Method: "agent"}, model.AssetRef{Kind: model.AssetHost, Name: name,
+			Identifiers: []model.Identifier{{Scheme: "machine-id", Value: name}}})
+		b.Observations = []model.Observation{{Purl: "pkg:npm/lodash@" + version, Confidence: model.ConfidenceConfirmed}}
+		b.Complete = true
+		if err := b.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		res, err := e.st.Ingest(ctx, b, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rows, _, err := e.st.ListInventory(ctx, store.InventoryFilter{AssetID: res.AssetID})
+		if err != nil || len(rows) != 1 {
+			t.Fatalf("inventory: %v %v", rows, err)
+		}
+		r := rows[0]
+		in := []store.FindingInput{
+			{Kind: "vulnerability", Key: "CVE-2021-23337", InventoryID: r.ID, AssetID: res.AssetID, ComponentID: r.ComponentID,
+				Verification: "confirmed", Severity: "high", FixedVersion: "4.17.21", Sources: []string{"GHSA-1"}, Evidence: map[string]any{}},
+			{Kind: "vulnerability", Key: "CVE-2020-8203", InventoryID: r.ID, AssetID: res.AssetID, ComponentID: r.ComponentID,
+				Verification: "confirmed", Severity: "high", FixedVersion: "4.17.19", Sources: []string{"GHSA-2"}, Evidence: map[string]any{}}}
+		if _, _, err := e.st.SyncFindings(ctx, []string{"vulnerability"}, []int64{r.ID}, in); err != nil {
+			t.Fatal(err)
+		}
+		return res.AssetID
+	}
+	a := host("web-1", "4.17.15")
+	host("web-2", "4.17.15")
+	host("web-3", "4.17.10") // another installed version: its own fix
+	if _, err := planner.Rebuild(ctx, e.st, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	type item struct {
+		ID           string   `json:"id"`
+		Title        string   `json:"title"`
+		AssetID      int64    `json:"asset_id"`
+		AssetName    string   `json:"asset_name"`
+		FindingCount int      `json:"finding_count"`
+		UniqueIssues int      `json:"unique_issues"`
+		GroupIDs     []string `json:"group_ids"`
+		Assets       []struct {
+			GroupID      string `json:"group_id"`
+			AssetName    string `json:"asset_name"`
+			FindingCount int    `json:"finding_count"`
+		} `json:"assets"`
+	}
+	var list struct {
+		Items []item `json:"items"`
+		Total int    `json:"total"`
+	}
+	if code := view.do("GET", "/api/v1/fix-groups?kind=package_upgrade&merge=true", nil, &list); code != 200 || list.Total != 2 || len(list.Items) != 2 {
+		t.Fatalf("merged list: %d %+v", code, list)
+	}
+	var merged *item
+	for i := range list.Items {
+		if len(list.Items[i].GroupIDs) > 0 {
+			merged = &list.Items[i]
+		}
+	}
+	if merged == nil || len(merged.Assets) != 2 || merged.AssetID != 0 || merged.AssetName != "2 servers" || merged.FindingCount != 4 ||
+		merged.UniqueIssues != 2 || !strings.HasSuffix(merged.Title, " on 2 servers") || !strings.HasPrefix(merged.ID, "merged:") {
+		t.Errorf("merged item = %+v", merged)
+	}
+	// Each asset's own group still opens.
+	for _, x := range merged.Assets {
+		if code := view.do("GET", "/api/v1/fix-groups/"+url.PathEscape(x.GroupID), nil, nil); code != 200 || x.FindingCount != 2 {
+			t.Errorf("group %s: %d", x.GroupID, code)
+		}
+	}
+	// Unmerged by default; one asset in view is never merged.
+	list.Items = nil
+	if view.do("GET", "/api/v1/fix-groups?kind=package_upgrade", nil, &list); list.Total != 3 {
+		t.Errorf("default list: %d", list.Total)
+	}
+	list.Items = nil
+	if view.do("GET", "/api/v1/fix-groups?merge=true&asset_id="+itoa(a), nil, &list); list.Total != 1 || len(list.Items[0].GroupIDs) != 0 {
+		t.Errorf("one asset: %+v", list)
+	}
+	var sum struct {
+		Groups int `json:"groups"`
+		Focus  struct {
+			Groups int `json:"groups"`
+		} `json:"focus"`
+	}
+	view.do("GET", "/api/v1/fix-groups/summary?merge=true", nil, &sum)
+	merged2 := sum.Groups
+	view.do("GET", "/api/v1/fix-groups/summary", nil, &sum)
+	if merged2 != sum.Groups-1 {
+		t.Errorf("summary: merged %d, groups %d", merged2, sum.Groups)
 	}
 }

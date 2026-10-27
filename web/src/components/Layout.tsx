@@ -104,14 +104,17 @@ function Shell() {
       to: "/activity",
       label: "Activity",
       icon: <IconActivity />,
-      badge: { count: sos.data?.total ?? 0, label: "open SOS incidents", tone: "crit" },
+      // Open SOS incidents first; otherwise requests to ignore waiting (Activity, Approvals).
+      badge:
+        (sos.data?.total ?? 0) > 0 || !(approvals.data?.total ?? 0)
+          ? { count: sos.data?.total ?? 0, label: "open SOS incidents", tone: "crit" }
+          : { count: approvals.data?.total ?? 0, label: "requests to ignore issues waiting for approval", tone: "warn" },
     },
     {
       id: "settings",
       to: "/settings",
       label: "Settings",
       icon: <IconSettings />,
-      badge: { count: approvals.data?.total ?? 0, label: "requests to ignore issues waiting for approval", tone: "warn" },
     },
   ];
   const current = sectionOf(pathname);

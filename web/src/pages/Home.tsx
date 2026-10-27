@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Link, Navigate } from "react-router";
 import { api, type Asset, type FindingSummary, type FixGroup, type FixGroupSummary, type List, type Onboarding, type Overview } from "../api";
 import { SetupChecklist } from "./Onboarding";
@@ -8,7 +8,7 @@ import { useLoad } from "../hooks";
 import { plural } from "../format";
 import { Badge } from "../components/Badge";
 import { IntelBanners } from "../components/Findings";
-import { changeText, fixesFrom, FixKindIcon, urgencyOf } from "../components/FixGroups";
+import { changeText, fixesFrom, FixKindIcon, isMerged, MergedAssets, urgencyOf } from "../components/FixGroups";
 import { PackSuggestions } from "../components/PackSuggestions";
 import { IconHelp } from "../components/Icons";
 import { Code, EmptyState, ErrorBox, Loading, PageHeader, RelativeTime } from "../components/ui";
@@ -30,8 +30,44 @@ function Tile({ to, value, label, tone, sub }: { to: string; value: number; labe
   );
 }
 
+/** The same upgrade on several assets: one card, the assets inside. */
+function HomeMergedCard({ g }: { g: FixGroup }) {
+  const u = urgencyOf(g);
+  const [open, setOpen] = useState(false);
+  const id = `hf-${g.id.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+  return (
+    <article className="home-fix" aria-labelledby={id}>
+      <div className="home-fix-top">
+        <Badge status={`urgency-${u.label}`} tone={u.tone} label={u.label} title={u.title} />
+        <span className="muted small">{changeText(g)}</span>
+      </div>
+      <h3 className="home-fix-title" id={id}>
+        <span className="fix-icon fix-icon-inline" aria-hidden="true">
+          <FixKindIcon kind={g.kind} />
+        </span>
+        <span>{g.title}</span>
+        {fixesFrom(g) && <span className="home-fix-from small muted"> {fixesFrom(g)}</span>}
+      </h3>
+      <p className="home-fix-where small">
+        clears {plural(g.finding_count, "issue")}
+        {g.unique_issues !== undefined && g.unique_issues !== g.finding_count && (
+          <span className="muted"> ({plural(g.unique_issues, "distinct vulnerability", "distinct vulnerabilities")})</span>
+        )}
+        {g.known_exploited > 0 && <strong className="text-bad"> · {g.known_exploited.toLocaleString()} known exploited</strong>}
+      </p>
+      <div className="home-fix-actions">
+        <button type="button" className="btn btn-sm btn-primary" aria-expanded={open} onClick={() => setOpen(!open)}>
+          {open ? `Hide the ${g.asset_name}` : `Show the ${g.asset_name}`}
+        </button>
+      </div>
+      {open && <MergedAssets g={g} />}
+    </article>
+  );
+}
+
 function HomeFixCard({ g }: { g: FixGroup }) {
   const { canAct: can } = useAuth();
+  if (isMerged(g)) return <HomeMergedCard g={g} />;
   const u = urgencyOf(g);
   const href = `/fixes/${encodeURIComponent(g.id)}`;
   return (
@@ -112,8 +148,9 @@ export function HomePage() {
   const admin = can("admin");
   const ob = useLoad(() => (admin ? api.getAll<Onboarding>("/onboarding") : Promise.resolve(null)), [admin]);
   const ov = useLoad(() => api.get<Overview>("/overview"), []);
-  const plan = useLoad(() => api.get<FixGroupSummary>("/fix-groups/summary"), []);
-  const top = useLoad(() => api.get<List<FixGroup>>("/fix-groups", { bucket: "focus", limit: TOP }), []);
+  // The same upgrade on several assets is one fix (merge), in the list and the counts.
+  const plan = useLoad(() => api.get<FixGroupSummary>("/fix-groups/summary", { merge: true }), []);
+  const top = useLoad(() => api.get<List<FixGroup>>("/fix-groups", { bucket: "focus", merge: true, limit: TOP }), []);
   const fs = useLoad(() => api.get<FindingSummary>("/findings/summary"), []);
   const assets = useLoad(() => api.get<List<Asset>>("/assets", { limit: 200 }), []);
 
@@ -159,11 +196,16 @@ export function HomePage() {
 
   // Assets with fixes that need you first, then assets that stopped reporting.
   const byId = new Map((assets.data?.items ?? []).map((a) => [a.id, a]));
-  const attention: { id: number; name: string; why: ReactNode; seen?: string }[] = [];
+  const attention: { id: number; name: string; path?: string; why: ReactNode; seen?: string }[] = [];
+  const appDir = (id: number) => {
+    const a = byId.get(id);
+    return a?.kind === "application" ? a.attributes?.app_dir : undefined;
+  };
   for (const a of focus?.assets ?? []) {
     attention.push({
       id: a.asset_id,
       name: a.asset_name,
+      path: appDir(a.asset_id),
       why: (
         <Link to={`/fixes?asset_id=${a.asset_id}&bucket=focus`}>
           {plural(a.groups, "fix", "fixes")} {a.groups === 1 ? "needs" : "need"} you
@@ -174,7 +216,13 @@ export function HomePage() {
   }
   for (const a of assets.data?.items ?? []) {
     if (a.collection_status !== "ok" && !attention.some((x) => x.id === a.id))
-      attention.push({ id: a.id, name: a.name, why: a.collection_status === "stale" ? "stopped reporting" : "last check was incomplete", seen: a.last_seen });
+      attention.push({
+        id: a.id,
+        name: a.name,
+        path: appDir(a.id),
+        why: a.collection_status === "stale" ? "stopped reporting" : "last check was incomplete",
+        seen: a.last_seen,
+      });
   }
   const stale = o.asset_status?.stale ?? 0;
 
@@ -274,9 +322,10 @@ export function HomePage() {
           <ul className="home-asset-list">
             {attention.slice(0, 6).map((a) => (
               <li key={a.id}>
-                <Link to={`/assets/${a.id}`} className="home-asset-name">
-                  {a.name}
-                </Link>
+                <span className="home-asset-name">
+                  <Link to={`/assets/${a.id}`}>{a.name}</Link>
+                  {a.path && <span className="small muted mono break"> {a.path}</span>}
+                </span>
                 <span className="small">{a.why}</span>
                 <span className="small muted">
                   checked <RelativeTime iso={a.seen} empty="never" />

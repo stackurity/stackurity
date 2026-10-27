@@ -6,6 +6,7 @@ import { Badge, PriorityBadge, SosBadge, type Tone } from "./Badge";
 import { FindingsTable } from "./Findings";
 import { IconBan, IconClock, IconKernel, IconPackage, IconReleaseUp, IconUpdates } from "./Icons";
 import { CodeBlock, ErrorBox, Loading, Pager } from "./ui";
+import { FindingActions } from "./Workflow";
 import { useLoad } from "../hooks";
 
 export const FIX_KIND_LABEL: Record<string, string> = {
@@ -175,7 +176,107 @@ export function GroupFindings({ groupId, hideAsset }: { groupId: string; hideAss
   );
 }
 
+/** Whether g is the same upgrade on several assets (GET /fix-groups?merge=true). */
+export function isMerged(g: FixGroup): boolean {
+  return (g.assets?.length ?? 0) > 1;
+}
+
+/**
+ * The assets of a merged fix, each with its own count and its own fix page,
+ * where Check again, I applied this, Assign and Snooze act on that asset.
+ */
+export function MergedAssets({ g, onChanged }: { g: FixGroup; onChanged?: () => void }) {
+  const [acting, setActing] = useState(false);
+  const assets = g.assets ?? [];
+  return (
+    <div className="merged-assets">
+      <ul className="merged-asset-list">
+        {assets.map((a) => (
+          <li key={a.group_id}>
+            <span className="merged-asset-name">
+              <Link to={`/assets/${a.asset_id}`}>{a.asset_name}</Link>
+              {a.asset_path && <span className="small muted mono break"> {a.asset_path}</span>}
+              {a.environment && <span className="small muted"> · {a.environment}</span>}
+            </span>
+            <span className="small">
+              <PriorityBadge priority={a.top_priority} /> {plural(a.finding_count, "issue")}
+              {a.known_exploited > 0 && <strong className="text-bad"> · {a.known_exploited.toLocaleString()} known exploited</strong>}
+            </span>
+            <Link className="btn btn-sm" to={`/fixes/${encodeURIComponent(a.group_id)}`}>
+              How to fix
+              <span className="sr-only"> on {a.asset_name}</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+      <p className="small">
+        <button type="button" className="btn btn-link btn-sm" aria-expanded={acting} onClick={() => setActing(!acting)}>
+          {acting ? "Close" : `Assign, snooze or ignore on all ${assets.length}`}
+        </button>
+      </p>
+      {acting && (
+        <FindingActions target={{ type: "groups", ids: assets.map((a) => a.group_id), count: g.finding_count }} onDone={() => onChanged?.()} />
+      )}
+    </div>
+  );
+}
+
+function MergedFixCard({ g }: { g: FixGroup }) {
+  const [open, setOpen] = useState(false);
+  const titleId = `fg-${g.id.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+  const versions = versionsText(g);
+  const from = fixesFrom(g);
+  return (
+    <article className={`fix-card fix-${g.kind}${g.sos ? " fix-sos" : ""}`} aria-labelledby={titleId}>
+      <div className="fix-icon" title={FIX_KIND_HELP[g.kind]}>
+        <FixKindIcon kind={g.kind} />
+      </div>
+      <div className="fix-body">
+        <div className="fix-head">
+          <div>
+            <span className="fix-kind">{FIX_KIND_LABEL[g.kind] ?? g.kind}</span>
+            <h3 id={titleId} className="fix-title">
+              {g.title}
+            </h3>
+            <p className="fix-meta small">
+              {[g.component && <span key="c" className="mono">{[g.component, versions].filter(Boolean).join(" ")}</span>, from && <span key="f">{from}</span>]
+                .filter(Boolean)
+                .map((node, i) => (
+                  <span key={i}>
+                    {i > 0 && " · "}
+                    {node}
+                  </span>
+                ))}
+            </p>
+          </div>
+          <div className="fix-resolves">
+            <span className="fix-count">{g.finding_count.toLocaleString()}</span>
+            <span className="small">{g.finding_count === 1 ? "issue cleared" : "issues cleared"}</span>
+            {g.unique_issues !== undefined && g.unique_issues !== g.finding_count && (
+              <span className="small muted">{plural(g.unique_issues, "distinct vulnerability", "distinct vulnerabilities")}</span>
+            )}
+          </div>
+        </div>
+        <GroupBadges g={g} />
+        <BreakdownBar counts={g.by_priority} order={PRIORITIES} classes={PRIO_CLASS} label="By priority" />
+        <ActionInstruction action={g.action} />
+        <div className="fix-actions">
+          <button type="button" className="btn btn-sm btn-primary" aria-expanded={open} onClick={() => setOpen(!open)}>
+            {open ? `Hide the ${g.asset_name}` : `Show the ${g.asset_name}`}
+          </button>
+        </div>
+        {open && <MergedAssets g={g} />}
+      </div>
+    </article>
+  );
+}
+
 export function FixGroupCard({ g, hideAsset, defaultOpen }: { g: FixGroup; hideAsset?: boolean; defaultOpen?: boolean }) {
+  if (isMerged(g)) return <MergedFixCard g={g} />;
+  return <SingleFixCard g={g} hideAsset={hideAsset} defaultOpen={defaultOpen} />;
+}
+
+function SingleFixCard({ g, hideAsset, defaultOpen }: { g: FixGroup; hideAsset?: boolean; defaultOpen?: boolean }) {
   const [open, setOpen] = useState(Boolean(defaultOpen));
   const titleId = `fg-${g.id.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
   const versions = versionsText(g);
@@ -195,6 +296,7 @@ export function FixGroupCard({ g, hideAsset, defaultOpen }: { g: FixGroup; hideA
             <p className="fix-meta small">
               {[
                 !hideAsset && <Link key="a" to={`/assets/${g.asset_id}?tab=action-plan`}>{g.asset_name}</Link>,
+                !hideAsset && g.asset_path && <span key="ap" className="mono break">{g.asset_path}</span>,
                 !hideAsset && g.environment && <span key="e">{g.environment}</span>,
                 (g.component || versions) && (
                   <span key="c" className="mono">

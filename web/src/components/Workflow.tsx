@@ -49,7 +49,9 @@ export type ActionTarget =
   | { type: "bulk"; ids: number[] }
   | { type: "incident"; id: number }
   /** Every open issue of a fix group (at most GROUP_ACTION_MAX), sent as bulk actions. */
-  | { type: "group"; id: string; count: number };
+  | { type: "group"; id: string; count: number }
+  /** Every open issue of several fix groups (the same upgrade on several assets), one group at a time. */
+  | { type: "groups"; ids: string[]; count: number };
 
 /** Largest fix group whose issues can be changed at once from the fix page. */
 export const GROUP_ACTION_MAX = 2000;
@@ -75,6 +77,37 @@ async function groupAction(groupId: string, req: FindingActionRequest): Promise<
     failed.push(...(r.failed ?? []));
   }
   return { applied, failed };
+}
+
+/**
+ * Applies a bulk action to several fix groups in turn. A group that fails
+ * is reported among the failures; the others still change.
+ */
+async function groupsAction(groupIds: string[], req: FindingActionRequest): Promise<ActionResult> {
+  let applied = 0;
+  const failed: string[] = [];
+  for (const id of groupIds) {
+    try {
+      const r = await groupAction(id, req);
+      applied += r.applied;
+      failed.push(...(r.failed ?? []));
+    } catch (e) {
+      failed.push(`${id}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  return { applied, failed };
+}
+
+async function groupFindingIds(groupIds: string[]): Promise<number[]> {
+  const ids: number[] = [];
+  for (const id of groupIds) {
+    for (let offset = 0; offset < GROUP_ACTION_MAX; offset += 500) {
+      const page = await api.get<List<Finding>>("/findings", { fix_group: id, limit: 500, offset });
+      ids.push(...page.items.map((f) => f.id));
+      if (page.items.length < 500) break;
+    }
+  }
+  return ids;
 }
 
 function isoDate(d: Date): string {
@@ -117,6 +150,8 @@ async function requestTarget(target: ActionTarget): Promise<{ finding_ids?: numb
       return { finding_ids: target.ids };
     case "group":
       return { fix_group: target.id };
+    case "groups":
+      return { finding_ids: await groupFindingIds(target.ids) };
     case "incident": {
       const d = await api.get<{ findings: Finding[] }>(`/incidents/${target.id}`);
       return { finding_ids: (d.findings ?? []).filter((f) => f.status === "open").map((f) => f.id) };
@@ -160,7 +195,7 @@ export function FindingActions({
   if (!me?.workspace) return null;
 
   const closed = state === "suppressed" || state === "risk_accepted";
-  const count = target.type === "bulk" ? target.ids.length : target.type === "group" ? target.count : null;
+  const count = target.type === "bulk" ? target.ids.length : target.type === "group" || target.type === "groups" ? target.count : null;
 
   const send = async (req: FindingActionRequest) => {
     setResult(null);
@@ -169,6 +204,7 @@ export function FindingActions({
       if (target.type === "finding") return api.post<ActionResult>(`/findings/${target.id}/actions`, req);
       if (target.type === "incident") return api.post<ActionResult>(`/incidents/${target.id}/actions`, req);
       if (target.type === "group") return groupAction(target.id, req);
+      if (target.type === "groups") return groupsAction(target.ids, req);
       return api.post<ActionResult>("/findings/actions", { ...req, ids: target.ids });
     });
     if (r) {
@@ -201,7 +237,7 @@ export function FindingActions({
 
   return (
     <div className="workflow-actions">
-      <div className="btn-group" role="group" aria-label={count !== null ? `Actions for ${count} ${target.type === "group" ? "issues in this fix" : "selected findings"}` : "Finding actions"}>
+      <div className="btn-group" role="group" aria-label={count !== null ? `Actions for ${count} ${target.type === "group" || target.type === "groups" ? "issues in this fix" : "selected findings"}` : "Finding actions"}>
         {engineer && !closed && (
           <>
             {state !== "acknowledged" && (

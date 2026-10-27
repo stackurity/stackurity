@@ -208,7 +208,8 @@ export function App() {
         <Route path="outcomes" element={<OutcomesPage />} />
         <Route path="audit" element={<AuditPage />} />
         <Route path="checks" element={<ChecksPage />} />
-        <Route path="settings/approvals" element={<ApprovalsPage />} />
+        <Route path="approvals" element={<ApprovalsPage />} />
+        <Route path="settings/approvals" element={<Moved to={() => "/approvals"} />} />
         <Route path="settings/tokens" element={<TokensPage />} />
         <Route
           path="settings/usage"

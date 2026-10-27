@@ -1984,10 +1984,33 @@ export interface FixGroup {
    * line as to_version (the minimum fixed version), otherwise to_version.
    */
   target_version?: string;
+  /** An application's directory on its host. */
+  asset_path?: string;
+  /**
+   * With merge=true: the same upgrade on several assets as one item (asset_id 0, asset_name "3 apps"); each
+   * asset's own group, to open and act on, is under assets.
+   */
+  group_ids?: string[];
+  assets?: MergedFixAsset[];
   change_type?: string;
   requires_major?: boolean;
   recommended_yanked?: boolean;
   rationale?: string[] | null;
+}
+
+/** One asset of a merged fix: its own fix group. */
+export interface MergedFixAsset {
+  group_id: string;
+  asset_id: number;
+  asset_name: string;
+  asset_kind: string;
+  asset_path?: string;
+  environment: string;
+  finding_count: number;
+  unique_issues: number;
+  top_priority: string;
+  sos: boolean;
+  known_exploited: number;
 }
 
 export interface FixGroupDetail {

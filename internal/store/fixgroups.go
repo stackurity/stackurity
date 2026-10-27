@@ -21,7 +21,8 @@ func (s *Store) FixPlanRows(ctx context.Context) ([]fixplan.Row, error) {
 		COALESCE((f.evidence->>'not_running_kernel')::boolean, false),
 		COALESCE(f.evidence->>'requires_subscription',
 		  CASE WHEN (f.evidence->>'requires_ubuntu_pro')::boolean THEN 'Ubuntu Pro' ELSE '' END),
-		COALESCE(i.evidence->>'kind', '') = 'operating-system', f.title
+		COALESCE(i.evidence->>'kind', '') = 'operating-system', f.title,
+		CASE WHEN a.kind = 'application' THEN COALESCE(a.attributes->>'app_dir', '') ELSE '' END
 		FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
 		JOIN components c ON c.id = f.component_id JOIN inventory i ON i.id = f.inventory_id
 		WHERE f.status = 'open' AND f.state IN ('new', 'acknowledged', 'in_progress')`)
@@ -34,7 +35,7 @@ func (s *Store) FixPlanRows(ctx context.Context) ([]fixplan.Row, error) {
 		var r fixplan.Row
 		if err := rows.Scan(&r.FindingID, &r.Kind, &r.Key, &r.AssetID, &r.AssetName, &r.AssetKind, &r.Environment,
 			&r.OS, &r.OSVersion, &r.OSName, &r.ComponentID, &r.PurlType, &r.Component, &r.Version, &r.FixedVersion,
-			&r.Priority, &r.Severity, &r.SOS, &r.KnownExploited, &r.KernelIdle, &r.Subscription, &r.IsOS, &r.EOLTitle); err != nil {
+			&r.Priority, &r.Severity, &r.SOS, &r.KnownExploited, &r.KernelIdle, &r.Subscription, &r.IsOS, &r.EOLTitle, &r.AssetPath); err != nil {
 			return nil, err
 		}
 		r.RequiresPro = r.Subscription != ""
@@ -127,8 +128,19 @@ type FixGroupFilter struct {
 	// ProductionEnvs names the production environments (from the risk
 	// policy), for the non_production bucket.
 	ProductionEnvs []string
+	// Merge shows the same upgrade on several assets as one item (see
+	// MergeFixGroups), after the other filters.
+	Merge bool
 	Page
 }
+
+// fixMergeKeySQL is what makes fix groups "the same upgrade": the kind, the
+// component, the installed version and the version to move to. Other kinds
+// (security updates, release upgrades) are about one asset and never merge.
+const fixMergeKeySQL = `CASE WHEN g.kind IN ('package_upgrade', 'end_of_life') AND COALESCE(g.data->>'component', '') <> ''
+	THEN g.kind || chr(31) || (g.data->>'component') || chr(31) || COALESCE(g.data->>'from_version', '') || chr(31) ||
+	  COALESCE(NULLIF(g.data->>'target_version', ''), g.data->>'to_version', '')
+	ELSE g.id END`
 
 // Fix buckets sort every fix group into what needs a person now (focus) or
 // the first reason it is left out of that view. Home shows the focus groups
@@ -182,6 +194,9 @@ func (s *Store) ListFixGroups(ctx context.Context, f FixGroupFilter) ([]json.Raw
 		w.add(fixBucketSQL(len(w.args))+" = ?", f.Bucket)
 	}
 	var total int64
+	if f.Merge {
+		return s.listMergedFixGroups(ctx, w, f.Page.norm())
+	}
 	if err := s.Pool.QueryRow(ctx, `SELECT count(*) FROM fix_groups g`+w.sql(), w.args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
@@ -213,14 +228,21 @@ type FixPlanSummary struct {
 	FixableFindings int64 `json:"fixable_findings"`
 }
 
-func (s *Store) SummarizeFixPlan(ctx context.Context, assetID int64) (*FixPlanSummary, error) {
+// SummarizeFixPlan counts fixes and their findings. With merge, the same
+// upgrade on several assets counts as one fix (as the merged list shows it).
+func (s *Store) SummarizeFixPlan(ctx context.Context, assetID int64, merge bool) (*FixPlanSummary, error) {
 	sum := &FixPlanSummary{ByKind: map[string]map[string]int64{}}
 	w := &where{}
 	if assetID > 0 {
-		w.add("asset_id = ?", assetID)
+		w.add("g.asset_id = ?", assetID)
 	}
-	rows, err := s.Pool.Query(ctx, `SELECT kind, count(*), sum((data->>'finding_count')::int), count(*) FILTER (WHERE (data->>'sos')::boolean)
-		FROM fix_groups`+w.sql()+` GROUP BY kind`, w.args...)
+	count := "count(*)"
+	if merge {
+		count = "count(DISTINCT " + fixMergeKeySQL + ")"
+	}
+	rows, err := s.Pool.Query(ctx, `SELECT g.kind, `+count+`, sum((g.data->>'finding_count')::int),
+		count(DISTINCT CASE WHEN (g.data->>'sos')::boolean THEN `+fixMergeKeyOr(merge)+` END)
+		FROM fix_groups g`+w.sql()+` GROUP BY g.kind`, w.args...)
 	if err != nil {
 		return nil, err
 	}
@@ -273,7 +295,7 @@ type FocusAsset struct {
 }
 
 // SummarizeFixFocus sorts the fix groups into buckets (see FixBuckets).
-func (s *Store) SummarizeFixFocus(ctx context.Context, assetID int64, productionEnvs []string) (*FixFocus, error) {
+func (s *Store) SummarizeFixFocus(ctx context.Context, assetID int64, productionEnvs []string, merge bool) (*FixFocus, error) {
 	out := &FixFocus{Hidden: map[string]map[string]int64{}, Assets: []FocusAsset{}}
 	args := []any{lowerAll(productionEnvs)}
 	cond := ""
@@ -281,7 +303,11 @@ func (s *Store) SummarizeFixFocus(ctx context.Context, assetID int64, production
 		args = append(args, assetID)
 		cond = " WHERE g.asset_id = $2"
 	}
-	rows, err := s.Pool.Query(ctx, `SELECT `+fixBucketSQL(1)+` AS bucket, count(*), COALESCE(sum((g.data->>'finding_count')::bigint), 0)
+	count := "count(*)"
+	if merge {
+		count = "count(DISTINCT " + fixMergeKeySQL + ")"
+	}
+	rows, err := s.Pool.Query(ctx, `SELECT `+fixBucketSQL(1)+` AS bucket, `+count+`, COALESCE(sum((g.data->>'finding_count')::bigint), 0)
 		FROM fix_groups g`+cond+` GROUP BY 1`, args...)
 	if err != nil {
 		return nil, err
@@ -318,4 +344,54 @@ func (s *Store) SummarizeFixFocus(ctx context.Context, assetID int64, production
 		out.Assets = append(out.Assets, a)
 	}
 	return out, arows.Err()
+}
+
+func fixMergeKeyOr(merge bool) string {
+	if merge {
+		return fixMergeKeySQL
+	}
+	return "g.id"
+}
+
+// listMergedFixGroups lists fix groups with the same upgrade on several
+// assets as one item, ordered by its most urgent group.
+func (s *Store) listMergedFixGroups(ctx context.Context, w *where, p Page) ([]json.RawMessage, int64, error) {
+	var total int64
+	if err := s.Pool.QueryRow(ctx, `SELECT count(DISTINCT `+fixMergeKeySQL+`) FROM fix_groups g`+w.sql(), w.args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	rows, err := s.Pool.Query(ctx, `SELECT array_agg(g.data ORDER BY g.sort_order) FROM fix_groups g`+w.sql()+
+		` GROUP BY `+fixMergeKeySQL+fmt.Sprintf(` ORDER BY min(g.sort_order) LIMIT %d OFFSET %d`, p.Limit, p.Offset), w.args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	sets, err := pgx.CollectRows(rows, pgx.RowTo[[]json.RawMessage])
+	if err != nil {
+		return nil, 0, err
+	}
+	out := make([]json.RawMessage, 0, len(sets))
+	for _, set := range sets {
+		if len(set) == 1 {
+			out = append(out, set[0])
+			continue
+		}
+		gs := make([]fixplan.Group, len(set))
+		ids := make([]string, len(set))
+		for i, raw := range set {
+			if err := json.Unmarshal(raw, &gs[i]); err != nil {
+				return nil, 0, err
+			}
+			ids[i] = gs[i].ID
+		}
+		var unique int
+		if err := s.Pool.QueryRow(ctx, `SELECT count(DISTINCT key) FROM findings WHERE fix_group = ANY($1) AND status = 'open'`, ids).Scan(&unique); err != nil {
+			return nil, 0, err
+		}
+		m, err := json.Marshal(fixplan.Merge(gs, unique))
+		if err != nil {
+			return nil, 0, err
+		}
+		out = append(out, m)
+	}
+	return out, total, nil
 }

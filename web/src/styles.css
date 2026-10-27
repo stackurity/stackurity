@@ -4362,3 +4362,34 @@ h6.md-h {
   flex-wrap: wrap;
   gap: 8px;
 }
+
+/* --- the same upgrade on several assets */
+.merged-assets {
+  margin-top: 10px;
+}
+.merged-asset-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--border);
+}
+.merged-asset-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.merged-asset-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .merged-asset-list li {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .merged-asset-name {
+    grid-column: 1 / -1;
+  }
+}

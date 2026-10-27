@@ -13,11 +13,12 @@ import (
 )
 
 // listFixGroups returns the action plan: findings grouped by the action that
-// resolves them, most urgent first.
+// resolves them, most urgent first. With merge=true the same upgrade on
+// several assets (in view after the filters) is one item.
 func (s *Server) listFixGroups(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	f := store.FixGroupFilter{AssetID: qInt(r, "asset_id"), Kind: q.Get("kind"), Environment: q.Get("environment"),
-		Search: q.Get("q"), Bucket: q.Get("bucket"), Page: page(r)}
+		Search: q.Get("q"), Bucket: q.Get("bucket"), Merge: q.Get("merge") == "true", Page: page(r)}
 	if f.Bucket != "" {
 		if !slices.Contains(store.FixBuckets, f.Bucket) {
 			s.fail(w, r, badRequest("bucket must be one of "+strings.Join(store.FixBuckets, ", ")))
@@ -40,7 +41,8 @@ func (s *Server) listFixGroups(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) fixPlanSummary(w http.ResponseWriter, r *http.Request) {
 	assetID := qInt(r, "asset_id")
-	sum, err := s.Store.SummarizeFixPlan(r.Context(), assetID)
+	merge := r.URL.Query().Get("merge") == "true"
+	sum, err := s.Store.SummarizeFixPlan(r.Context(), assetID, merge)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -50,7 +52,7 @@ func (s *Server) fixPlanSummary(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	focus, err := s.Store.SummarizeFixFocus(r.Context(), assetID, pol.ProductionEnvironments)
+	focus, err := s.Store.SummarizeFixFocus(r.Context(), assetID, pol.ProductionEnvironments, merge)
 	if err != nil {
 		s.fail(w, r, err)
 		return

@@ -31,6 +31,7 @@ type Row struct {
 	AssetID        int64
 	AssetName      string
 	AssetKind      string
+	AssetPath      string // an application's directory on its host
 	Environment    string
 	OS             string // os-release ID, e.g. ubuntu
 	OSVersion      string
@@ -59,6 +60,7 @@ type Group struct {
 	AssetID        int64          `json:"asset_id"`
 	AssetName      string         `json:"asset_name"`
 	AssetKind      string         `json:"asset_kind"`
+	AssetPath      string         `json:"asset_path,omitempty"` // an application's directory
 	Environment    string         `json:"environment"`
 	Component      string         `json:"component,omitempty"`
 	FromVersion    string         `json:"from_version,omitempty"`
@@ -144,7 +146,7 @@ func Build(rows []Row, advice map[string]Advice) ([]*Group, map[int64]string) {
 		}
 		g := groups[id]
 		if g == nil {
-			g = &Group{ID: id, Kind: kind, AssetID: r.AssetID, AssetName: r.AssetName, AssetKind: r.AssetKind,
+			g = &Group{ID: id, Kind: kind, AssetID: r.AssetID, AssetName: r.AssetName, AssetKind: r.AssetKind, AssetPath: r.AssetPath,
 				Environment: r.Environment, ByPriority: map[string]int{}, BySeverity: map[string]int{},
 				TopPriority: "P4", pkgs: map[string]bool{}, purlType: r.PurlType, fromVersions: map[string]bool{},
 				extra: map[string]string{}, keys: map[string]bool{}}
@@ -386,6 +388,11 @@ func (g *Group) leadsWith(recommended string, major, yanked bool) bool {
 	if line == "" || version.MajorLine(eco, recommended) != line {
 		return false
 	}
+	// Below 1.0 a minor release may break things (0.21 to 0.34), so the
+	// headline stays within the same 0.x minor line.
+	if line == "0" && minorLine(recommended) != minorLine(g.ToVersion) {
+		return false
+	}
 	c, err := version.For(eco)(recommended, g.ToVersion)
 	return err == nil && c > 0
 }
@@ -487,4 +494,99 @@ func sortedKeys(m map[string]bool) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// MergedAsset is one asset of a merged fix: its own group, to open and act
+// on.
+type MergedAsset struct {
+	GroupID        string `json:"group_id"`
+	AssetID        int64  `json:"asset_id"`
+	AssetName      string `json:"asset_name"`
+	AssetKind      string `json:"asset_kind"`
+	AssetPath      string `json:"asset_path,omitempty"`
+	Environment    string `json:"environment"`
+	FindingCount   int    `json:"finding_count"`
+	UniqueIssues   int    `json:"unique_issues"`
+	TopPriority    string `json:"top_priority"`
+	SOS            bool   `json:"sos"`
+	KnownExploited int    `json:"known_exploited"`
+}
+
+// Merged is the same upgrade on several assets, shown as one fix: the
+// combined counts, and each asset's own group underneath.
+type Merged struct {
+	Group
+	GroupIDs []string      `json:"group_ids"`
+	Assets   []MergedAsset `json:"assets"`
+}
+
+// Merge combines groups that are the same upgrade (same kind, component,
+// installed version and version to move to) on different assets, most
+// urgent first. unique is the number of distinct issues across them. The
+// result has no asset of its own (asset_id 0, asset_name "3 apps").
+func Merge(gs []Group, unique int) Merged {
+	m := Merged{Group: gs[0]}
+	g := &m.Group
+	g.ID = "merged:" + gs[0].ID
+	g.FindingCount, g.KnownExploited, g.SOS = 0, 0, false
+	g.ByPriority, g.BySeverity = map[string]int{}, map[string]int{}
+	g.TopPriority = "P4"
+	pkgs := map[string]bool{}
+	kinds, envs := map[string]bool{}, map[string]bool{}
+	for _, x := range gs {
+		m.GroupIDs = append(m.GroupIDs, x.ID)
+		m.Assets = append(m.Assets, MergedAsset{GroupID: x.ID, AssetID: x.AssetID, AssetName: x.AssetName, AssetKind: x.AssetKind,
+			AssetPath: x.AssetPath, Environment: x.Environment, FindingCount: x.FindingCount, UniqueIssues: x.UniqueIssues,
+			TopPriority: x.TopPriority, SOS: x.SOS, KnownExploited: x.KnownExploited})
+		g.FindingCount += x.FindingCount
+		g.KnownExploited += x.KnownExploited
+		g.SOS = g.SOS || x.SOS
+		if x.TopPriority < g.TopPriority {
+			g.TopPriority = x.TopPriority
+		}
+		for k, v := range x.ByPriority {
+			g.ByPriority[k] += v
+		}
+		for k, v := range x.BySeverity {
+			g.BySeverity[k] += v
+		}
+		for _, p := range x.Packages {
+			pkgs[p] = true
+		}
+		kinds[x.AssetKind], envs[x.Environment] = true, true
+	}
+	g.UniqueIssues = unique
+	g.Packages = sortedKeys(pkgs)
+	g.PackageCount = len(g.Packages)
+	noun := "assets"
+	if len(kinds) == 1 {
+		noun = map[string]string{"application": "apps", "host": "servers", "repository": "repositories", "image": "images"}[gs[0].AssetKind]
+		if noun == "" {
+			noun = "assets"
+		}
+	}
+	g.AssetID, g.AssetPath = 0, ""
+	g.AssetName = fmt.Sprintf("%d %s", len(gs), noun)
+	if len(kinds) != 1 {
+		g.AssetKind = ""
+	}
+	if len(envs) != 1 {
+		g.Environment = ""
+	}
+	g.Title += " on " + g.AssetName
+	return m
+}
+
+// minorLine is "0.21" for "0.21.4" (the leading two numbers), or "".
+func minorLine(v string) string {
+	v = strings.TrimPrefix(strings.TrimPrefix(strings.TrimSpace(v), "v"), "V")
+	parts := strings.SplitN(v, ".", 3)
+	if len(parts) < 2 {
+		return ""
+	}
+	end := 0
+	for end < len(parts[1]) && parts[1][end] >= '0' && parts[1][end] <= '9' {
+		end++
+	}
+	return parts[0] + "." + parts[1][:end]
 }

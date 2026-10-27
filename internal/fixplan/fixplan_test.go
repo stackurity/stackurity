@@ -163,6 +163,22 @@ func TestRecommendationHeadline(t *testing.T) {
 		{"other line, not flagged major", "11.2.0", "minor", false, false, "Upgrade ip-address 10.1.0 → 10.7.4", "10.7.4", true},
 		{"withdrawn", "10.7.5", "minor", false, true, "Upgrade ip-address 10.1.0 → 10.7.4", "10.7.4", true},
 	}
+	// Below 1.0, only the same minor line leads.
+	zero := func() *Group {
+		groups, _ := Build([]Row{{FindingID: 1, Kind: "vulnerability", Key: "GHSA-2", AssetID: 2, AssetName: "shop", ComponentID: 11,
+			PurlType: "npm", Component: "axios", Version: "0.21.1", FixedVersion: "0.30.2", Priority: "P2", Severity: "high"}}, nil)
+		return groups[0]
+	}
+	z := zero()
+	z.SetRecommendation("0.34.0", "minor", false, false, nil)
+	if z.TargetVersion != "0.30.2" || z.Title != "Upgrade axios 0.21.1 → 0.30.2" {
+		t.Errorf("0.x across minor lines: %q %q", z.Title, z.TargetVersion)
+	}
+	z = zero()
+	z.SetRecommendation("0.30.5", "minor", false, false, nil)
+	if z.TargetVersion != "0.30.5" {
+		t.Errorf("0.x in the same minor line: %q", z.TargetVersion)
+	}
 	for _, c := range cases {
 		g := build()
 		g.SetRecommendation(c.rec, c.ct, c.major, c.yanked, nil)

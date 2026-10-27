@@ -1181,3 +1181,77 @@ func TestAgentDownload(t *testing.T) {
 		t.Error("installer should use the configured base URL")
 	}
 }
+
+// Two copies of one application on a host are told apart by their path;
+// the same name on different hosts needs nothing; a name a person set
+// stays as it is.
+func TestApplicationNamesOnOneHost(t *testing.T) {
+	e := newEnv(t)
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	e.user("admin@x.io", auth.RoleAdmin)
+	admin := e.login("admin@x.io")
+	_, collector, _ := e.st.CreateToken(ctx, "c", auth.RoleCollector, nil, 0, 0)
+	send := func(b *model.ObservationBatch) store.IngestResult {
+		raw, _ := json.Marshal(b)
+		req, _ := http.NewRequest("POST", e.srv.URL+"/api/v1/ingest", bytes.NewReader(raw))
+		req.Header.Set("Authorization", "Bearer "+collector)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var res store.IngestResult
+		_ = json.NewDecoder(resp.Body).Decode(&res)
+		if resp.StatusCode != 201 {
+			t.Fatalf("ingest %s: %d", b.Asset.Name, resp.StatusCode)
+		}
+		return res
+	}
+	hostIDs := func(m string) []model.Identifier { return []model.Identifier{{Scheme: "machine-id", Value: m}} }
+	for _, m := range []string{"DBC", "WEB"} {
+		send(model.NewBatch(model.Collector{ID: "linux-agent", Method: "agent"}, model.AssetRef{Kind: model.AssetHost, Name: m, Identifiers: hostIDs(m)}))
+	}
+	app := func(host, dir string) int64 {
+		b := model.NewBatch(model.Collector{ID: "linux-apps", Method: "agent"}, model.AssetRef{Kind: model.AssetApplication, Name: "phpmyadmin on " + host,
+			Identifiers: []model.Identifier{{Scheme: model.AppPathScheme, Value: dir}}, Attributes: map[string]string{"app_dir": dir, "host": host}})
+		b.Relations = []model.RelationRef{{Kind: "runs_on", To: hostIDs(host)}}
+		b.Complete = true
+		return send(b).AssetID
+	}
+	name := func(id int64) string {
+		var a struct{ Asset store.Asset }
+		admin.do("GET", "/api/v1/assets/"+itoa(id), nil, &a)
+		return a.Asset.Name
+	}
+	first := app("DBC", "/var/www/html/phpmyadmin")
+	other := app("WEB", "/var/www/html/phpmyadmin")
+	if n := name(first); n != "phpmyadmin on DBC" {
+		t.Errorf("first copy = %q", n)
+	}
+	second := app("DBC", "/var/www/html/demo/phpmyadmin")
+	if n := name(second); n != "phpmyadmin (/demo/phpmyadmin) on DBC" {
+		t.Errorf("second copy = %q", n)
+	}
+	if n := name(first); n != "phpmyadmin (/phpmyadmin) on DBC" {
+		t.Errorf("first copy after the second = %q", n)
+	}
+	if n := name(other); n != "phpmyadmin on WEB" {
+		t.Errorf("same name on another host = %q", n)
+	}
+	// Reporting again changes nothing.
+	app("DBC", "/var/www/html/phpmyadmin")
+	if n := name(first); n != "phpmyadmin (/phpmyadmin) on DBC" {
+		t.Errorf("after a second report = %q", n)
+	}
+	// A person's name stays, even when it is the generated one.
+	if code := admin.do("PATCH", "/api/v1/assets/"+itoa(other), map[string]any{"name": "phpmyadmin on WEB"}, nil); code != 200 {
+		t.Fatalf("rename: %d", code)
+	}
+	third := app("WEB", "/srv/tools/phpmyadmin")
+	if n := name(other); n != "phpmyadmin on WEB" {
+		t.Errorf("renamed by a person = %q", n)
+	}
+	if n := name(third); n != "phpmyadmin (/srv/tools/phpmyadmin) on WEB" {
+		t.Errorf("third copy = %q", n)
+	}
+}

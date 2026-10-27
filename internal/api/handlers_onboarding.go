@@ -68,7 +68,7 @@ func (s *Server) firstResults(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, r, err)
 			return
 		}
-		focus, err := s.Store.SummarizeFixFocus(r.Context(), 0, pol.ProductionEnvironments)
+		focus, err := s.Store.SummarizeFixFocus(r.Context(), 0, pol.ProductionEnvironments, false)
 		if err != nil {
 			s.fail(w, r, err)
 			return

@@ -118,7 +118,7 @@ func TestFixBuckets(t *testing.T) {
 		t.Fatalf("fix groups: %d, %v", all, err)
 	}
 	prod := risk.DefaultPolicy().ProductionEnvironments
-	focus, err := s.SummarizeFixFocus(ctx, 0, prod)
+	focus, err := s.SummarizeFixFocus(ctx, 0, prod, false)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -3646,7 +3646,7 @@
    "get": {
     "operationId": "get_fix_groups",
     "summary": "Fixes (fix groups), most urgent first",
-    "description": "Fixes (fix groups), most urgent first. `bucket` is `focus` (a fix exists, SOS or P1, on a production asset or one with no environment), `no_fix`, `old_kernels`, `non_production` or `lower_priority`; every group is in exactly one, checked in that order\n\nRole: viewer",
+    "description": "Fixes (fix groups), most urgent first. `bucket` is `focus` (a fix exists, SOS or P1, on a production asset or one with no environment), `no_fix`, `old_kernels`, `non_production` or `lower_priority`; every group is in exactly one, checked in that order. With `merge=true`, the same upgrade (kind, component, installed version and `target_version`) on several assets in view is one item: `id` `merged:<first group id>`, `asset_id` 0, `asset_name` such as \"3 apps\", combined counts, and `group_ids` and `assets` (each asset's own group, with its counts)\n\nRole: viewer",
     "tags": [
      "Findings and fixes"
     ],
@@ -3691,6 +3691,14 @@
       "schema": {
        "type": "string"
       }
+     },
+     {
+      "name": "merge",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "boolean"
+      }
      }
     ],
     "responses": {
@@ -3717,7 +3725,7 @@
    "get": {
     "operationId": "get_fix_groups_summary",
     "summary": "Fix groups and findings per kind and bucket",
-    "description": "Groups and findings per kind, plus `focus`: the number of focus groups and their findings, groups and findings per other bucket (`hidden`), and the assets with focus groups\n\nRole: viewer",
+    "description": "Groups and findings per kind, plus `focus`: the number of focus groups and their findings, groups and findings per other bucket (`hidden`), and the assets with focus groups. With `merge=true` the same upgrade on several assets counts as one group, as the merged list shows it\n\nRole: viewer",
     "tags": [
      "Findings and fixes"
     ],
@@ -3729,6 +3737,14 @@
       "required": false,
       "schema": {
        "type": "string"
+      }
+     },
+     {
+      "name": "merge",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "boolean"
       }
      }
     ],
