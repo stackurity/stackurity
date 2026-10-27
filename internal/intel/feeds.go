@@ -80,8 +80,9 @@ type SyncResult struct {
 	// Changed counts the records whose stored data changed (for a
 	// vulnerability feed, advisories written; unchanged ones are skipped).
 	Changed int
-	// Packages lists the packages whose advisory data changed since the
-	// feed's last successful sync: their components are re-evaluated.
+	// Packages lists the packages of the feed's ecosystem whose advisory
+	// data changed and that no successful sync has handed to
+	// re-evaluation yet: their components are re-evaluated.
 	Packages map[store.PackageRef]bool
 	// Full means the sync read the source's complete data (an archive, not
 	// the changes since the cursor), so Ecosystems is complete.
