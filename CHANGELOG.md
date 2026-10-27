@@ -4,6 +4,14 @@ All notable changes to Stackurity. Versions follow [Semantic Versioning](https:/
 
 Each release's section is published as its GitHub release notes, and a tag without a section here cannot be released (`go run ./tools/changelog -version vX.Y.Z` prints it). New changes go under **Unreleased**, which is renamed to the version when it is tagged. Subsections are **Security**, **Added**, **Changed**, **Fixed** and **Upgrading**. Put fixes for vulnerabilities under `### Security`, first: installations treat a release with that heading as a security release and show administrators a banner they can only snooze.
 
+## Unreleased
+
+### Fixed
+
+- **Add an asset** in a project's settings no longer offers assets already in the project: they show as "already in this project" and cannot be picked.
+- The asset page header has a separator before the project chips (it read "first seen 15 min agoIn Shop").
+- A fix that is urgent because it matches an SOS rule, not because it is P1, says **Urgent: SOS rule**, so the label does not look wrong next to a P2 badge.
+
 ## 0.9.0
 
 ### Security
