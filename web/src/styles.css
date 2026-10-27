@@ -4379,3 +4379,12 @@ h6.md-h {
   align-items: flex-start;
   gap: var(--s2);
 }
+.int-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  min-width: 0;
+}
+.int-panel p {
+  margin: 0;
+}

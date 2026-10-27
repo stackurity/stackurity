@@ -1,11 +1,11 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { api, loadNotificationOptions, NO_NOTIFICATION_OPTIONS, type Channel, type Integration, type List } from "../../api";
+import { api, loadNotificationOptions, NO_NOTIFICATION_OPTIONS, type Asset, type Channel, type Integration, type List } from "../../api";
 import { useAuth } from "../../auth";
 import { useLoad } from "../../hooks";
 import { Badge } from "../../components/Badge";
 import { Table, type Column } from "../../components/Table";
-import { ErrorBox, Loading, PageHeader, RelativeTime, Tabs } from "../../components/ui";
+import { CodeBlock, ErrorBox, Loading, PageHeader, RelativeTime, Tabs } from "../../components/ui";
 import { channelTarget, DeliveriesTab, KIND_LABEL } from "./Notifications";
 
 /*
@@ -51,6 +51,16 @@ export function IntegrationIcon({ kind }: { kind: string }) {
       </>
     ),
     plugin: <path d="M9 3v4M15 3v4M6 7h12v4a6 6 0 0 1-12 0zM12 17v4" />,
+    server: (
+      <>
+        <rect x="3" y="4" width="18" height="7" rx="1.5" />
+        <rect x="3" y="13" width="18" height="7" rx="1.5" />
+        <path d="M7 7.5h.01M7 16.5h.01" />
+      </>
+    ),
+    windows: <path d="M3 5.5 10.5 4.5v7H3zM12.5 4.2 21 3v8.5h-8.5zM3 12.5h7.5v7L3 18.5zM12.5 12.5H21V21l-8.5-1.2z" />,
+    ci: <path d="M4 12a8 8 0 0 1 13.7-5.6L20 9M20 4v5h-5M20 12a8 8 0 0 1-13.7 5.6L4 15M4 20v-5h5" />,
+    sbom: <path d="M7 3h7l5 5v13H7zM14 3v5h5M10 12h6M10 15.5h6M10 19h3" />,
     ai: <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z" />,
   };
   const key = kind === "stackurity_email" ? "email" : kind === "git_repository" ? "git" : kind === "container_image" ? "container" : kind;
@@ -112,6 +122,100 @@ interface AddCard {
   text: string;
   to: string;
   admin?: boolean;
+  /** Short instructions shown on this page instead of a link. */
+  panel?: "ci" | "sbom";
+}
+
+const HOST_PAGE = 500;
+
+/** "Servers with the agent" rows from GET /assets?kind=host; Windows apart when every host was read. */
+function serverRows(res: List<Asset> | null | undefined): Active[] {
+  if (!res || res.total === 0) return [];
+  const newest = (xs: Asset[]) => xs.reduce<string | null>((m, a) => (a.last_seen && (!m || a.last_seen > m) ? a.last_seen : m), null);
+  const row = (key: string, kind: string, name: string, n: number, xs: Asset[]): Active => ({
+    key,
+    kind,
+    name,
+    kindLabel: `${n} ${n === 1 ? "server" : "servers"}`,
+    target: "",
+    enabled: true,
+    ok: newest(xs),
+    error: "",
+    to: "/assets?kind=host",
+  });
+  const all = res.items;
+  if (res.total > all.length) return [row("hosts", "server", "Servers with the agent", res.total, all)];
+  const win = all.filter((a) => a.attributes?.os === "windows");
+  const other = all.filter((a) => a.attributes?.os !== "windows");
+  const rows: Active[] = [];
+  if (other.length) rows.push(row("hosts", "server", win.length ? "Linux servers with the agent" : "Servers with the agent", other.length, other));
+  if (win.length) rows.push(row("hosts-win", "windows", "Windows servers with the agent", win.length, win));
+  return rows;
+}
+
+function CiPanel() {
+  const origin = window.location.origin;
+  const action = `- uses: stackurity/scan-action@v1
+  with:
+    server: ${origin}
+    token: \${{ secrets.STACKURITY_TOKEN }}`;
+  const cli = `STACKURITY_SERVER=${origin} STACKURITY_TOKEN=<token> \\
+  stackurity scan . --git-url "$CI_REPOSITORY_URL" --environment production`;
+  const gate = `stackurity scan . --git-url "$CI_REPOSITORY_URL" --fail-on critical --only-fixable`;
+  return (
+    <div className="int-panel">
+      <p>
+        <strong>1.</strong> Create a collector token under <Link to="/settings/tokens">Settings → API tokens</Link> and save it as the CI secret{" "}
+        <span className="mono">STACKURITY_TOKEN</span>. It can only send scans.
+      </p>
+      <p>
+        <strong>2. GitHub Actions:</strong> add this step after the checkout.
+      </p>
+      <CodeBlock text={action} label="GitHub Actions step" />
+      <p>
+        <strong>Other CI:</strong> run the scan in the repository.
+      </p>
+      <CodeBlock text={cli} label="Scan command" />
+      <p>
+        <strong>Fail the pipeline</strong> on findings: it waits for the result and exits with status 3 when findings meet the threshold (4 when the result
+        was not ready in time). <span className="mono">--fail-on-priority P1</span> and <span className="mono">--fail-on-kev</span> also work.
+      </p>
+      <CodeBlock text={gate} label="Scan with a gate" />
+      <p className="small">
+        <Link to="/help/repositories">More about repositories and CI</Link>
+      </p>
+    </div>
+  );
+}
+
+function SbomPanel({ admin }: { admin: boolean }) {
+  const origin = window.location.origin;
+  const cli = `STACKURITY_SERVER=${origin} STACKURITY_TOKEN=<token> \\
+  stackurity sbom import image.cdx.json`;
+  const curl = `curl -X POST -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \\
+  --data-binary @image.cdx.json \\
+  "${origin}/api/v1/sbom/import?asset_name=shop-api&asset_kind=application"`;
+  return (
+    <div className="int-panel">
+      <p>A CycloneDX or SPDX JSON file from your build tool. Each upload replaces that asset's inventory.</p>
+      {admin && (
+        <p>
+          <Link className="btn btn-sm" to="/get-started?step=asset">
+            Upload a file in the browser
+          </Link>
+        </p>
+      )}
+      <p>
+        From a script or CI, with a collector token from <Link to="/settings/tokens">Settings → API tokens</Link>:
+      </p>
+      <CodeBlock text={cli} label="SBOM import command" />
+      <p>Or with the API:</p>
+      <CodeBlock text={curl} label="SBOM upload with curl" />
+      <p className="small">
+        Add <span className="mono">--project &lt;id&gt;</span> (or <span className="mono">project_id=</span>) to file it in a project. <Link to="/help/sbom">More about SBOMs</Link>
+      </p>
+    </div>
+  );
 }
 
 export function IntegrationsHubPage() {
@@ -125,6 +229,8 @@ export function IntegrationsHubPage() {
   const back = Number(params.get("channel")) || 0;
   const channels = useLoad(() => (security ? api.get<List<Channel>>("/channels") : Promise.resolve(null)), [security]);
   const sources = useLoad(() => (engineer ? api.get<List<Integration>>("/integrations") : Promise.resolve(null)), [engineer]);
+  const hosts = useLoad(() => api.get<List<Asset>>("/assets", { kind: "host", limit: HOST_PAGE }), []);
+  const [panel, setPanel] = useState<"ci" | "sbom" | null>(null);
   const optionsRes = useLoad(loadNotificationOptions, []);
   const options = optionsRes.data ?? NO_NOTIFICATION_OPTIONS;
 
@@ -133,7 +239,11 @@ export function IntegrationsHubPage() {
     if (back) navigate(`/settings/integrations/channels/${back}?added=1`, { replace: true });
   }, [back, navigate]);
 
-  const rows: Active[] = [...(channels.data?.items ?? []).map(fromChannel), ...(sources.data?.items ?? []).map(fromSource)];
+  const rows: Active[] = [
+    ...serverRows(hosts.data),
+    ...(sources.data?.items ?? []).map(fromSource),
+    ...(channels.data?.items ?? []).map(fromChannel),
+  ];
   const cols: Column<Active>[] = [
     {
       key: "name",
@@ -165,7 +275,7 @@ export function IntegrationsHubPage() {
           <Badge status="untested" tone="warn" label="not used yet" />
         ),
     },
-    { key: "ok", header: "Last success", cell: (a) => <RelativeTime iso={a.ok} /> },
+    { key: "ok", header: "Last success / report", cell: (a) => <RelativeTime iso={a.ok} /> },
     { key: "err", header: "Last error", cell: (a) => (a.error ? <span className="text-bad small break">{a.error}</span> : <span className="muted">—</span>) },
     {
       key: "gear",
@@ -201,17 +311,20 @@ export function IntegrationsHubPage() {
     );
     groups.push({ title: "Notifications", cards: n });
   }
-  if (engineer)
-    groups.push({
-      title: "Sources",
-      cards: [
-        { kind: "git", title: "Git repositories", text: "Clone over HTTPS and read lockfiles on a schedule.", to: "/integrations", admin: true },
-        { kind: "container", title: "Container registries", text: "Pull images and list their OS and application packages.", to: "/integrations", admin: true },
-        { kind: "kubernetes", title: "Kubernetes", text: "Workloads and images of a cluster, through a plugin.", to: "/integrations", admin: true },
-        { kind: "cloud", title: "AWS", text: "Managed services (RDS, EKS, Lambda and more), through a plugin.", to: "/integrations", admin: true },
-        { kind: "plugin", title: "Plugins", text: "Collectors installed on this server.", to: "/settings/plugins", admin: true },
-      ],
-    });
+  groups.push({
+    title: "Sources",
+    cards: [
+      { kind: "server", title: "Linux server", text: "A small read-only agent, installed with one command. First results in about 2 minutes.", to: "/assets/add", admin: true },
+      { kind: "windows", title: "Windows server", text: "The same agent on Windows, run as a scheduled task. Reads installed programs.", to: "/assets/add", admin: true },
+      { kind: "git", title: "Git repository", text: "Clone over HTTPS and read lockfiles on a schedule.", to: "/integrations", admin: true },
+      { kind: "ci", title: "CI pipeline", text: "Run stackurity scan or the GitHub Action in CI, and fail the build on findings.", to: "", panel: "ci" },
+      { kind: "container", title: "Container image / registry", text: "Pull images and list their OS and application packages.", to: "/integrations", admin: true },
+      { kind: "kubernetes", title: "Kubernetes cluster", text: "Workloads and the images they run, through the Kubernetes plugin.", to: "/integrations", admin: true },
+      { kind: "cloud", title: "AWS", text: "Managed services (RDS, EKS, Lambda and more), through the AWS plugin.", to: "/integrations", admin: true },
+      { kind: "sbom", title: "SBOM upload", text: "Upload a CycloneDX or SPDX file from your build tool.", to: "", panel: "sbom" },
+      { kind: "plugin", title: "Other plugins", text: "Collectors installed on this server.", to: "/settings/plugins", admin: true },
+    ],
+  });
   groups.push({
     title: "AI assistants",
     cards: [{ kind: "ai", title: "AI assistants", text: "Ask about your issues and fixes from Claude, ChatGPT or your IDE.", to: "/settings/ai-assistants" }],
@@ -239,6 +352,7 @@ export function IntegrationsHubPage() {
             <h2 className="h-sm">Active integrations</h2>
             <ErrorBox error={channels.error} title="Could not load notification integrations" />
             <ErrorBox error={sources.error} title="Could not load sources" />
+            <ErrorBox error={hosts.error} title="Could not load servers" />
             {(channels.loading || sources.loading) && rows.length === 0 ? (
               <Loading />
             ) : rows.length === 0 ? (
@@ -258,14 +372,37 @@ export function IntegrationsHubPage() {
                         <strong>{c.title}</strong>
                       </div>
                       <p className="small muted">{c.text}</p>
-                      {(!c.admin || admin) && (
-                        <Link className="btn btn-sm" to={c.to}>
-                          {c.to.startsWith("/settings/integrations/new/") ? "Add" : "Open"}
-                        </Link>
+                      {c.panel ? (
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          aria-expanded={panel === c.panel}
+                          aria-controls={`int-panel-${c.panel}`}
+                          onClick={() => setPanel(panel === c.panel ? null : c.panel!)}
+                        >
+                          {panel === c.panel ? "Hide steps" : "Show steps"}
+                        </button>
+                      ) : (
+                        (!c.admin || admin) && (
+                          <Link className="btn btn-sm" to={c.to}>
+                            {c.to.startsWith("/settings/integrations/new/") || c.to === "/assets/add" ? "Add" : "Open"}
+                          </Link>
+                        )
                       )}
                     </li>
                   ))}
                 </ul>
+                {g.title === "Sources" && panel && (
+                  <section className="card" id={`int-panel-${panel}`} aria-label={panel === "ci" ? "CI pipeline" : "SBOM upload"}>
+                    <div className="card-head">
+                      <h2>{panel === "ci" ? "Scan in a CI pipeline" : "Upload an SBOM"}</h2>
+                      <button type="button" className="btn btn-link" onClick={() => setPanel(null)}>
+                        Close
+                      </button>
+                    </div>
+                    {panel === "ci" ? <CiPanel /> : <SbomPanel admin={admin} />}
+                  </section>
+                )}
               </section>
             ))}
           </>

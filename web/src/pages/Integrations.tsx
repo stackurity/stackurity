@@ -182,7 +182,7 @@ export function IntegrationsPage() {
         <EmptyState title="No integrations" help="repositories" helpLabel="Add a repository, image or cloud account">
           <p>
             {admin
-              ? "Add a Git repository, a container image or a plugin (such as AWS managed services) to collect inventory on a schedule."
+              ? "Add a Git repository, a container image or a plugin (such as AWS managed services) to collect inventory on a schedule. Servers (with the agent), CI pipelines and SBOM uploads are added from Settings → Integrations."
               : "An administrator can add Git repositories, container images and plugins here."}
           </p>
         </EmptyState>

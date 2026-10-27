@@ -352,7 +352,7 @@ The first OSV download for an ecosystem can be large (see [network.md](network.m
 
 ## Notifications
 
-Everything Stackurity connects to is under **Settings → Integrations**: the **Active integrations** with their status (last delivery, last error) and a gear for their settings, and **Add an integration** with cards in three groups: **Notifications** (email, Slack, Microsoft Teams, Jira, webhook), **Sources** (Git repositories, container registries, Kubernetes, AWS and plugins) and **AI assistants**. The old **Settings → Notifications** links lead there.
+Everything Stackurity connects to is under **Settings → Integrations**: the **Active integrations** with their status (last delivery, last error) and a gear for their settings, and **Add an integration** with cards in three groups: **Notifications** (email, Slack, Microsoft Teams, Jira, webhook), **Sources** (every way to connect something: Linux and Windows servers through the agent, which open **Add server**; Git repositories; CI pipelines with `stackurity scan` or the GitHub Action; container images and registries; Kubernetes clusters; AWS managed services; SBOM upload; other plugins) and **AI assistants**. Active integrations also show servers with the agent, with their count and last report. The old **Settings → Notifications** links lead there.
 
 The first-run flow asks two questions and sets up one notification integration for the new project:
 
