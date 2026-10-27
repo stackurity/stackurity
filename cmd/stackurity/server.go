@@ -250,9 +250,10 @@ func serverCmd() *cobra.Command {
 				w.JobRenew = min(w.JobRenew, tm.JobLock/6)
 			}
 			registerJobs(w, st, res, dataDir, log, pluginRunner, packMgr)
-			// Prioritise, correlate, plan and deliver notifications.
-			w.EveryWorkspace("alerts", tm.Alerts, dispatcher.Tick)
-			w.EveryWorkspace("alert-digest", time.Hour, dispatcher.Digest)
+			// Prioritise, correlate, plan and deliver notifications; none
+			// for a read-only workspace.
+			w.EveryCollectingWorkspace("alerts", tm.Alerts, dispatcher.Tick)
+			w.EveryCollectingWorkspace("alert-digest", time.Hour, dispatcher.Digest)
 			w.Every("platform-fallback", 10*time.Minute, dispatcher.PlatformFallback)
 			registerPro(w, st, log, gate)
 			// The release check sends nothing about this install (see
@@ -551,7 +552,7 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 		if runErr != nil {
 			_ = st.IntegrationResult(context.WithoutCancel(ctx), in.ID, 0, runErr)
 		}
-		if errors.Is(runErr, store.ErrAssetLimit) {
+		if errors.Is(runErr, store.ErrAssetLimit) || errors.Is(runErr, store.ErrReadOnly) {
 			return nil // recorded on the integration; trying again cannot help
 		}
 		return runErr
@@ -583,21 +584,21 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 			}
 			fb.Cover("image:"+p.Image, "failed", msg)
 			_, ierr := st.Ingest(ctx, fb, 0)
-			if errors.Is(ierr, store.ErrAssetLimit) {
+			if errors.Is(ierr, store.ErrAssetLimit) || errors.Is(ierr, store.ErrReadOnly) {
 				return nil
 			}
 			return ierr
 		}
 		_, err = st.Ingest(ctx, b, 0)
-		if errors.Is(err, store.ErrAssetLimit) {
-			return nil // the image asset was deleted meanwhile and there is no room for it
+		if errors.Is(err, store.ErrAssetLimit) || errors.Is(err, store.ErrReadOnly) {
+			return nil // no room for the image asset (deleted meanwhile), or nothing is collected now
 		}
 		return err
 	})
 
 	registerIntel(w, st, dataDir, log)
 
-	w.EveryWorkspace("enqueue-due-integrations", time.Minute, func(ctx context.Context) error {
+	w.EveryCollectingWorkspace("enqueue-due-integrations", time.Minute, func(ctx context.Context) error {
 		due, err := st.DueIntegrations(ctx)
 		if err != nil {
 			return err
@@ -653,7 +654,7 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 		}
 		return err
 	})
-	w.EveryWorkspace("second-check", time.Minute, func(ctx context.Context) error {
+	w.EveryCollectingWorkspace("second-check", time.Minute, func(ctx context.Context) error {
 		qctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
 		waiting, err := st.SecondCheckWaiting(qctx)
@@ -941,8 +942,9 @@ func registerIntel(w *worker.Worker, st *store.Store, dataDir string, log *slog.
 			return err
 		}
 		log.Info("feed changed; re-evaluating", "feed", feed, "records", res.Changed, "components", len(ids))
-		// Each workspace evaluates the changed components it has.
-		wss, err := st.ActiveWorkspaceIDs(ctx)
+		// Each workspace evaluates the changed components it has (none
+		// that is read-only).
+		wss, err := st.CollectingWorkspaceIDs(ctx)
 		if err != nil {
 			return err
 		}
@@ -1060,8 +1062,9 @@ func registerIntel(w *worker.Worker, st *store.Store, dataDir string, log *slog.
 		}
 		return err
 	})
-	// Lifecycle dates pass without any feed change, so evaluate everything daily.
-	w.EveryWorkspace("daily-evaluation", 24*time.Hour, func(ctx context.Context) error {
+	// Lifecycle dates pass without any feed change, so evaluate everything
+	// daily; not a read-only workspace, whose findings stay as they were.
+	w.EveryCollectingWorkspace("daily-evaluation", 24*time.Hour, func(ctx context.Context) error {
 		_, err := st.Enqueue(ctx, "evaluate", map[string]bool{"all": true}, "evaluate:all", time.Now().Add(10*time.Minute))
 		return err
 	})

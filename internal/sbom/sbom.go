@@ -266,8 +266,15 @@ type ExportComponent struct {
 	Direct  *bool
 }
 
-// ExportCycloneDX writes a CycloneDX 1.6 JSON document for one asset.
-func ExportCycloneDX(w io.Writer, assetName, assetKind, toolVersion string, comps []ExportComponent) error {
+// Property is a name and value recorded in the document's metadata (a
+// trial watermark, for example).
+type Property struct {
+	Name, Value string
+}
+
+// ExportCycloneDX writes a CycloneDX 1.6 JSON document for one asset, with
+// props as metadata properties.
+func ExportCycloneDX(w io.Writer, assetName, assetKind, toolVersion string, comps []ExportComponent, props ...Property) error {
 	rootType := cdx.ComponentTypeApplication
 	if assetKind == string(model.AssetImage) {
 		rootType = cdx.ComponentTypeContainer
@@ -281,6 +288,13 @@ func ExportCycloneDX(w io.Writer, assetName, assetKind, toolVersion string, comp
 			Type: cdx.ComponentTypeApplication, Name: "stackurity", Version: toolVersion,
 		}}},
 		Component: &cdx.Component{BOMRef: "root", Type: rootType, Name: assetName},
+	}
+	if len(props) > 0 {
+		list := make([]cdx.Property, len(props))
+		for i, p := range props {
+			list[i] = cdx.Property{Name: p.Name, Value: p.Value}
+		}
+		bom.Metadata.Properties = &list
 	}
 	list := make([]cdx.Component, 0, len(comps))
 	var directRefs []string

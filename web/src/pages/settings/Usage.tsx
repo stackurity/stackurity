@@ -3,7 +3,8 @@ import { api, type AssetUsage, type RefusedAsset } from "../../api";
 import { useAuth } from "../../auth";
 import { useLoad } from "../../hooks";
 import { Table, type Column } from "../../components/Table";
-import { Card, EmptyState, ErrorBox, Loading, PageHeader, RelativeTime } from "../../components/ui";
+import { Card, EmptyState, ErrorBox, Loading, Notice, PageHeader, RelativeTime } from "../../components/ui";
+import { absTime } from "../../format";
 
 /** Plain words for asset kinds, as people count them. */
 export const KIND_WORDS: Record<string, string> = {
@@ -17,12 +18,12 @@ export const KIND_WORDS: Record<string, string> = {
   workload: "Kubernetes workloads",
 };
 
-/** Monitored assets against a limit, as a bar. */
-export function UsageMeter({ used, limit }: { used: number; limit: number | null }) {
+/** Monitored assets (or, with noun, projects) against a limit, as a bar. */
+export function UsageMeter({ used, limit, noun = "monitored assets" }: { used: number; limit: number | null; noun?: string }) {
   if (limit === null) {
     return (
       <p className="usage-figure">
-        <strong>{used}</strong> monitored assets. <span className="muted">No limit.</span>
+        <strong>{used}</strong> {noun}. <span className="muted">No limit.</span>
       </p>
     );
   }
@@ -31,7 +32,8 @@ export function UsageMeter({ used, limit }: { used: number; limit: number | null
   return (
     <div className="usage-meter">
       <p className="usage-figure">
-        <strong>{used}</strong> of {limit} monitored assets{full ? ": the limit is reached" : ""}
+        <strong>{used}</strong> of {limit} {noun}
+        {full ? ": the limit is reached" : ""}
       </p>
       <div
         className={`meter${full ? " meter-full" : pct >= 80 ? " meter-near" : ""}`}
@@ -39,7 +41,7 @@ export function UsageMeter({ used, limit }: { used: number; limit: number | null
         aria-valuemin={0}
         aria-valuemax={limit}
         aria-valuenow={used}
-        aria-label="Monitored assets against the limit"
+        aria-label={`${noun[0].toUpperCase()}${noun.slice(1)} against the limit`}
       >
         <span style={{ width: `${pct}%` }} />
       </div>
@@ -64,7 +66,7 @@ export function UsagePage() {
     <>
       <PageHeader
         title="Usage"
-        sub="How many assets this organisation monitors, and its limit. At the limit new assets are refused; everything already monitored keeps being checked."
+        sub="How many assets and projects this organisation has, and its limits. At a limit new ones are refused; everything already here is kept and checked."
         actions={
           meta?.billing ? (
             <Link className="btn" to="/settings/billing">
@@ -86,6 +88,15 @@ function UsageDetails({ u }: { u: AssetUsage }) {
     .sort((a, b) => b[1] - a[1]);
   return (
     <>
+      {u.read_only && (
+        <Notice kind="warn">
+          <strong>This organisation is read-only</strong> since {absTime(u.read_only.since)}. {u.read_only.reason} Nothing new is collected and no
+          notifications are sent.
+        </Notice>
+      )}
+      {u.report_mode === "trial" && (
+        <Notice kind="info">Reports and exports are trial versions: each list shows its first rows, with a watermark.</Notice>
+      )}
       <Card title="Monitored assets">
         <UsageMeter used={u.monitored} limit={u.limit} />
         {kinds.length > 0 && (
@@ -109,6 +120,13 @@ function UsageDetails({ u }: { u: AssetUsage }) {
         <p className="small muted">
           Kubernetes workloads are not counted{u.workloads > 0 ? ` (${u.workloads} here)` : ""}: they come with their cluster and the images they
           run.
+        </p>
+      </Card>
+      <Card title="Projects">
+        <UsageMeter used={u.projects} limit={u.project_limit} noun="projects" />
+        <p className="small muted">
+          Archived projects are not counted. At the limit new projects are refused; existing ones are always kept.{" "}
+          <Link to="/settings/projects">Projects</Link>
         </p>
       </Card>
       <Card title="New assets refused at the limit">

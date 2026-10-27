@@ -9,6 +9,7 @@ import { absTime, assetKindLabel, humanize } from "../format";
 import { PriorityBadge, SeverityBadge, StateBadge } from "../components/Badge";
 import { Table, type Column } from "../components/Table";
 import { Card, ErrorBox, KeyValues, Loading, PageHeader } from "../components/ui";
+import { TrialBanner, TrialMore } from "../components/Trial";
 
 function isoDate(d: Date): string {
   const p = (n: number) => String(n).padStart(2, "0");
@@ -132,6 +133,7 @@ function EvidenceReportPage() {
       </p>
 
       <ErrorBox error={res.error} title="Could not build the report" />
+      <TrialBanner trial={r?.trial} />
       {!r && !res.error && <Loading />}
       {r && <ReportBody r={r} />}
     </div>
@@ -282,17 +284,18 @@ function ReportBody({ r }: { r: EvidenceReport }) {
       </div>
 
       <section className="report-section">
-        <h2 className="section-title">Active exceptions ({exceptions.length.toLocaleString()})</h2>
+        <h2 className="section-title">Active exceptions ({(exceptions.length + (r.trial?.omitted?.exceptions ?? 0)).toLocaleString()})</h2>
         <p className="hint">Suppressed and risk-accepted findings, with the recorded reason, mitigation and expiry.</p>
         {exceptions.length === 0 ? (
           <p className="muted">No active exceptions.</p>
         ) : (
           <Table caption="Active exceptions" columns={exceptionColumns} rows={exceptions} rowKey={(e) => e.finding_id} />
         )}
+        <TrialMore trial={r.trial} list="exceptions" />
       </section>
 
       <section className="report-section">
-        <h2 className="section-title">Replica drift ({drift.length.toLocaleString()})</h2>
+        <h2 className="section-title">Replica drift ({(drift.length + (r.trial?.omitted?.drift ?? 0)).toLocaleString()})</h2>
         <p className="hint">
           Version differences for each asset marked as a <span className="mono">replica_of</span> another. Behind and only on primary mean
           an update has not reached the replica.
@@ -302,6 +305,7 @@ function ReportBody({ r }: { r: EvidenceReport }) {
         ) : (
           <Table caption="Replica drift" columns={driftColumns} rows={drift} rowKey={(d) => `${d.replica_id}-${d.primary_id}`} />
         )}
+        <TrialMore trial={r.trial} list="drift" />
       </section>
     </>
   );

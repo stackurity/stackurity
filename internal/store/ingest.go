@@ -40,6 +40,11 @@ func (s *Store) AssetInProject(ctx context.Context, projectID, assetID int64) (b
 // Ingest stores a validated batch in one transaction. tokenID is the API
 // token that submitted it, or 0.
 func (s *Store) Ingest(ctx context.Context, b *model.ObservationBatch, tokenID int64) (*IngestResult, error) {
+	// A read-only organisation keeps what it has; nothing new is
+	// collected, for existing assets either.
+	if err := s.CheckWritable(ctx); err != nil {
+		return nil, err
+	}
 	res := &IngestResult{Observations: len(b.Observations)}
 	err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
 		assetID, isNew, conflict, err := resolveAsset(ctx, tx, b)

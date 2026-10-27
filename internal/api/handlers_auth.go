@@ -164,7 +164,13 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, r, err)
 			return
 		}
-		out["workspace"] = map[string]any{"id": ws.ID, "name": ws.Name, "slug": ws.Slug}
+		// Every member sees why the organisation is read-only, and report
+		// pages say when reports are shortened (docs/asset-limits.md).
+		var readOnly *store.ReadOnlyState
+		if ws.ReadOnlyAt != nil {
+			readOnly = &store.ReadOnlyState{Since: *ws.ReadOnlyAt, Reason: ws.ReadOnlyReason}
+		}
+		out["workspace"] = map[string]any{"id": ws.ID, "name": ws.Name, "slug": ws.Slug, "read_only": readOnly, "report_mode": ws.ReportMode}
 		// The projects for the switcher, and the one chosen last.
 		ps, err := s.Store.ListProjects(r.Context(), false)
 		if err != nil {

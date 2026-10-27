@@ -251,9 +251,26 @@ func (s *Server) exportSBOM(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
+	// In trial mode the document lists the first components only, says
+	// how many more there are, and carries the watermark.
+	trial, err := s.reportTrial(r)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	var props []sbom.Property
+	if trial != nil {
+		comps = trialClip(trial, "components", comps)
+		props = append(props, sbom.Property{Name: "stackurity:report_mode", Value: "trial"},
+			sbom.Property{Name: "stackurity:watermark", Value: trial.Watermark})
+		for _, n := range trial.Notes {
+			props = append(props, sbom.Property{Name: "stackurity:trial_note", Value: n})
+		}
+		w.Header().Set("X-Stackurity-Report-Mode", "trial")
+	}
 	w.Header().Set("Content-Type", "application/vnd.cyclonedx+json")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="asset-%d.cdx.json"`, id))
-	if err := sbom.ExportCycloneDX(w, a.Name, a.Kind, s.Version, comps); err != nil {
+	if err := sbom.ExportCycloneDX(w, a.Name, a.Kind, s.Version, comps, props...); err != nil {
 		s.Log.Error("export sbom", "err", err)
 	}
 }

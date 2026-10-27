@@ -121,7 +121,7 @@ docker compose exec stackurity stackurity admin list-workspaces
 
 Isolation is enforced by PostgreSQL row-level security as well as by the application ([design](design/workspaces.md)). The server switches to a role without superuser rights on every connection; if the database role would bypass row-level security, it refuses to serve more than one workspace.
 
-An instance administrator can also limit how many assets each workspace monitors (**Settings → Workspaces**). At the limit new assets are refused and everything already monitored keeps being checked; see [Monitored-asset limits](asset-limits.md).
+An instance administrator can also limit how many assets each workspace monitors (**Settings → Workspaces**). At the limit new assets are refused and everything already monitored keeps being checked. A project limit, a read-only state and shortened trial reports work the same way, and none is set unless an administrator sets it; see [Monitored-asset limits](asset-limits.md).
 
 When you host other organisations, also set `STACKURITY_PRIVATE_TARGETS=none` and `STACKURITY_SECRET_KEY`. Workspace admins then keep credentials as stored secrets, and only instance administrators can reference the server's own `env:` and `file:` secrets.
 

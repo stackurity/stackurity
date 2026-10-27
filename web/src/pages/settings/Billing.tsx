@@ -22,16 +22,41 @@ function day(iso: string | null | undefined): string {
 }
 
 const STATUS_WORDS: Record<BillingStatus, string> = {
-  free: "Free tier",
+  trial: "Free trial",
+  trial_ended: "Trial ended",
   awaiting_payment: "Waiting for payment",
   active: "Active",
   past_due: "Payment failed, retrying",
   halted: "Payment failed",
   cancelling: "Ends at the end of the period",
-  cancelled: "Cancelled",
+  cancelled: "Ended",
 };
 
 const PERIOD_WORDS = { monthly: "month", yearly: "year" } as const;
+
+/** ISO 3166-1 alpha-2 codes, named in the reader's language. */
+const COUNTRY_CODES =
+  "AD AE AF AG AI AL AM AO AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BW BY BZ CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG EH ER ES ET FI FJ FK FM FO FR GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GT GU GW GY HK HN HR HT HU ID IE IL IM IN IO IQ IR IS IT JE JM JO JP KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW SA SB SC SD SE SG SH SI SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG UM US UY UZ VA VC VE VG VI VN VU WF WS YE YT ZA ZM ZW".split(
+    " ",
+  );
+
+function countryName(code: string): string {
+  try {
+    return new Intl.DisplayNames(undefined, { type: "region" }).of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
+
+/** The plan's price for a period with extra assets, before tax. */
+function planTotal(p: BillingPlan, extra: number): number {
+  return p.price + (p.extra_asset_price ?? 0) * extra;
+}
+
+/** "₹2,999 + 18% GST" or "$35". */
+function priceWords(amount: number, p: BillingPlan): string {
+  return money(amount, p.currency) + (p.tax_percent > 0 ? ` + ${p.tax_percent}% ${p.tax_label}` : "");
+}
 
 /** Settings, Plan and billing (admins, hosted edition). */
 export function BillingPage() {
@@ -45,7 +70,7 @@ export function BillingPage() {
     <>
       <PageHeader
         title="Plan and billing"
-        sub="You pay for the number of assets you choose. Raising it takes effect now; lowering it takes effect at the end of the period."
+        sub="Plans are bundles of projects and monitored assets, paid monthly or yearly. A bigger plan takes effect now; a smaller one at the end of the period."
         actions={
           <Link className="btn" to="/settings/usage">
             Usage
@@ -75,22 +100,30 @@ function Current({ b: cur, onChanged }: { b: Billing; onChanged: (b: Billing) =>
   const doCancel = async () => {
     const until = day(cur.current_period_end);
     const ok = window.confirm(
-      `Your plan stays until ${until || "the end of the period"}, then the organisation moves to the free tier of ${cur.free_assets} assets. ` +
-        "Nothing is deleted; assets above the free tier keep being checked but no new ones can be added.",
+      `Your plan stays until ${until || "the end of the period"}. Then the organisation becomes read-only: you can still sign in and look, ` +
+        "but nothing new is collected and no notifications are sent, and its data is deleted 30 days later unless you subscribe again.",
     );
     if (!ok) return;
     const r = await cancel.run(() => api.post<Billing>("/billing/cancel", {}));
     if (r) onChanged(r);
   };
-  const entries: [string, ReactNode][] = [
-    ["Status", STATUS_WORDS[cur.status] ?? cur.status],
-    ["Plan", cur.plan ? cur.plan.name : `Free tier (${cur.free_assets} assets)`],
-  ];
-  if (cur.assets_paid !== null) entries.push(["Assets paid for", cur.assets_paid]);
+  const entries: [string, ReactNode][] = [["Status", STATUS_WORDS[cur.status] ?? cur.status]];
+  if (cur.plan) {
+    entries.push(["Plan", `${cur.plan.name}, ${priceWords(planTotal(cur.plan, cur.extra_assets ?? 0), cur.plan)} per ${PERIOD_WORDS[cur.plan.period]}`]);
+    if (cur.extra_assets) entries.push(["Extra assets", cur.extra_assets]);
+  } else if (cur.status === "trial" && cur.trial_ends_at) {
+    entries.push(["Trial ends", day(cur.trial_ends_at)]);
+  }
   if (cur.next_charge) entries.push(["Next charge", `${money(cur.next_charge.amount, cur.next_charge.currency)} on ${day(cur.next_charge.at)}`]);
   if (cur.current_period_end) entries.push(["Current period ends", day(cur.current_period_end)]);
   if (cur.scheduled_change)
-    entries.push(["Scheduled change", `${cur.scheduled_change.assets} assets from ${day(cur.scheduled_change.at)}`]);
+    entries.push([
+      "Scheduled change",
+      `${cur.scheduled_change.plan?.name ?? "Plan"}${cur.scheduled_change.extra_assets ? ` with ${cur.scheduled_change.extra_assets} extra assets` : ""}${
+        cur.scheduled_change.at ? ` from ${day(cur.scheduled_change.at)}` : ""
+      }`,
+    ]);
+  if (cur.billing_country) entries.push(["Billing country", `${countryName(cur.billing_country)} (${cur.currency ?? ""})`]);
   entries.push(["Data stored in", cur.region_label]);
   return (
     <Card
@@ -104,10 +137,16 @@ function Current({ b: cur, onChanged }: { b: Billing; onChanged: (b: Billing) =>
       }
     >
       <ErrorBox error={cancel.error} title="Could not cancel" />
+      {cur.read_only_since && (
+        <Notice kind="warn">
+          <strong>This organisation is read-only</strong> since {day(cur.read_only_since)}: nothing new is collected and no notifications are sent.
+          {cur.deletion_at && <> Its data will be deleted on {day(cur.deletion_at)} unless you choose a plan before then.</>}
+        </Notice>
+      )}
       {cur.grace_until && (
         <Notice kind="warn">
-          Payment failed. Update your payment method by {day(cur.grace_until)}, or the limit drops to the free tier. Assets already monitored keep
-          being checked either way.
+          Payment failed. Update your payment method by {day(cur.grace_until)}, or the organisation becomes read-only. Nothing is deleted before
+          then.
         </Notice>
       )}
       {cur.notice && !cur.grace_until && <p>{cur.notice}</p>}
@@ -119,41 +158,43 @@ function Current({ b: cur, onChanged }: { b: Billing; onChanged: (b: Billing) =>
         </p>
       )}
       <UsageMeter used={cur.monitored} limit={cur.asset_limit} />
+      <UsageMeter used={cur.projects} limit={cur.project_limit} noun="projects" />
       <KeyValues entries={entries} />
     </Card>
   );
 }
 
 function ChoosePlan({ b, onChanged }: { b: Billing; onChanged: (b: Billing) => void }) {
-  const plans = b.plans;
-  const [planId, setPlanId] = useState(b.plan?.id ?? plans[0]?.id ?? "");
+  const [country, setCountry] = useState(b.billing_country ?? "");
+  const currency = b.currency ?? (country ? (b.country_currency[country] ?? b.default_currency) : "");
+  const [period, setPeriod] = useState<"monthly" | "yearly">(b.plan?.period ?? "monthly");
+  const plans = b.plans.filter((p) => p.currency === currency && p.period === period);
+  const [planId, setPlanId] = useState(b.plan?.id ?? "");
   const plan: BillingPlan | undefined = plans.find((p) => p.id === planId);
-  const initial = (p?: BillingPlan) => {
-    if (!p) return "";
-    if (b.plan?.id === p.id && b.assets_paid !== null) return String(b.assets_paid);
-    return String(Math.min(p.max_assets, Math.max(b.monitored, p.min_assets)));
-  };
-  const [assets, setAssets] = useState(() => initial(plan));
+  const [extra, setExtra] = useState(String(b.extra_assets ?? 0));
   const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
   const act = useAction();
 
-  if (plans.length === 0) return null;
-  const n = Number(assets);
-  const valid = plan !== undefined && Number.isInteger(n) && n >= plan.min_assets && n <= plan.max_assets;
+  if (b.plans.length === 0) return null;
+  const n = plan?.extra_asset_price ? Number(extra) : 0;
+  const valid = plan !== undefined && Number.isInteger(n) && n >= 0 && n <= (plan.max_extra_assets ?? 0);
   const subscribed = b.plan !== null && (b.status === "active" || b.status === "past_due" || b.status === "halted");
-  const unchanged = subscribed && b.plan?.id === planId && b.assets_paid === n;
+  const unchanged = subscribed && b.plan?.id === planId && (b.extra_assets ?? 0) === n;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!valid) return;
+    if (!valid || !plan) return;
     setDone(null);
     setPaymentUrl(null);
-    const r = await act.run(() => api.post<{ billing: Billing; payment_url: string | null }>("/billing/subscribe", { plan_id: planId, assets: n }));
+    const r = await act.run(() =>
+      api.post<{ billing: Billing; payment_url: string | null }>("/billing/subscribe", { plan_id: plan.id, extra_assets: n, country }),
+    );
     if (!r) return;
     onChanged(r.billing);
     if (r.payment_url) setPaymentUrl(r.payment_url);
-    else setDone(n < (b.assets_paid ?? 0) ? `Saved. ${n} assets from the next period.` : `Saved. You now pay for ${n} assets.`);
+    else if (r.billing.scheduled_change) setDone(`Saved. ${plan.name} from the next period.`);
+    else setDone(`Saved. You are on ${plan.name} now.`);
   };
 
   return (
@@ -170,60 +211,103 @@ function ChoosePlan({ b, onChanged }: { b: Billing; onChanged: (b: Billing) => v
           </Notice>
         ) : (
           <>
-            <fieldset className="plan-choices">
-              <legend>Plan</legend>
-              {plans.map((p) => (
-                <label key={p.id} className={`plan-choice${p.id === planId ? " selected" : ""}`}>
-                  <input
-                    type="radio"
-                    name="plan"
-                    value={p.id}
-                    checked={p.id === planId}
-                    onChange={() => {
-                      setPlanId(p.id);
-                      setAssets(initial(p));
-                    }}
-                  />
-                  <span>
-                    <strong>{p.name}</strong>: {money(p.price_per_asset, p.currency)} per asset per {PERIOD_WORDS[p.period]}
-                    {p.description && <span className="small muted block">{p.description}</span>}
-                  </span>
-                </label>
-              ))}
-            </fieldset>
-            {plan && (
+            {!b.billing_country && (
               <div className="field">
-                <label htmlFor="bill-assets">Assets to pay for</label>
-                <input
-                  id="bill-assets"
-                  type="number"
-                  inputMode="numeric"
-                  min={plan.min_assets}
-                  max={plan.max_assets}
-                  step={1}
-                  required
-                  value={assets}
-                  onChange={(e) => setAssets(e.target.value)}
-                  aria-invalid={!valid}
-                  aria-describedby="bill-assets-hint"
-                />
-                <p className="hint" id="bill-assets-hint">
-                  Between {plan.min_assets} and {plan.max_assets}. You monitor {b.monitored} now. This is also your limit: at it, new assets are refused
-                  and existing ones keep being checked.
+                <label htmlFor="bill-country">Billing country</label>
+                <select id="bill-country" required value={country} onChange={(e) => setCountry(e.target.value)} aria-describedby="bill-country-hint">
+                  <option value="">Choose…</option>
+                  {COUNTRY_CODES.map((c) => ({ c, name: countryName(c) }))
+                    .sort((x, y) => x.name.localeCompare(y.name))
+                    .map(({ c, name }) => (
+                      <option key={c} value={c}>
+                        {name}
+                      </option>
+                    ))}
+                </select>
+                <p className="hint" id="bill-country-hint">
+                  Asked once: it sets the currency you pay in{currency ? ` (${currency})` : ""} and the tax on your invoices.
                 </p>
-                {valid && (
+              </div>
+            )}
+            {currency && (
+              <>
+                <fieldset className="plan-choices">
+                  <legend>Billed</legend>
+                  {(["monthly", "yearly"] as const).map((p) => (
+                    <label key={p} className={`plan-choice${p === period ? " selected" : ""}`}>
+                      <input type="radio" name="period" value={p} checked={p === period} onChange={() => setPeriod(p)} />
+                      <span>{p === "monthly" ? "Monthly" : "Yearly (two months free)"}</span>
+                    </label>
+                  ))}
+                </fieldset>
+                {plans.length === 0 ? (
+                  <p className="muted">No plans are offered in {currency} for this period.</p>
+                ) : (
+                  <fieldset className="plan-choices">
+                    <legend>Plan</legend>
+                    {plans.map((p) => (
+                      <label key={p.id} className={`plan-choice${p.id === planId ? " selected" : ""}`}>
+                        <input
+                          type="radio"
+                          name="plan"
+                          value={p.id}
+                          checked={p.id === planId}
+                          onChange={() => {
+                            setPlanId(p.id);
+                            if (!p.extra_asset_price) setExtra("0");
+                          }}
+                        />
+                        <span>
+                          <strong>{p.name}</strong>: {priceWords(p.price, p)} per {PERIOD_WORDS[p.period]}
+                          <span className="small block">
+                            {p.max_projects} {p.max_projects === 1 ? "project" : "projects"}, {p.included_assets} monitored assets
+                            {p.extra_asset_price ? `, then ${money(p.extra_asset_price, p.currency)} per extra asset per ${PERIOD_WORDS[p.period]}` : ""}
+                          </span>
+                          {p.description && <span className="small muted block">{p.description}</span>}
+                        </span>
+                      </label>
+                    ))}
+                  </fieldset>
+                )}
+                {plan?.extra_asset_price ? (
+                  <div className="field">
+                    <label htmlFor="bill-extra">Extra assets</label>
+                    <input
+                      id="bill-extra"
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      max={plan.max_extra_assets}
+                      step={1}
+                      value={extra}
+                      onChange={(e) => setExtra(e.target.value)}
+                      aria-invalid={!valid}
+                      aria-describedby="bill-extra-hint"
+                    />
+                    <p className="hint" id="bill-extra-hint">
+                      0 to {plan.max_extra_assets}, beyond the {plan.included_assets} included. You monitor {b.monitored} now. At the limit new
+                      assets are refused; existing ones keep being checked.
+                    </p>
+                  </div>
+                ) : null}
+                {plan && valid && (
                   <p className="bill-total">
-                    {money(plan.price_per_asset * n, plan.currency)} per {PERIOD_WORDS[plan.period]}
+                    {priceWords(planTotal(plan, n), plan)} per {PERIOD_WORDS[plan.period]}
                     {b.test_mode ? " (test mode)" : ""}
                   </p>
                 )}
-              </div>
+                <div className="form-actions">
+                  <button type="submit" className="btn btn-primary" disabled={act.pending || !valid || unchanged || !country}>
+                    {act.pending ? "Saving…" : subscribed ? "Change plan" : "Subscribe"}
+                  </button>
+                </div>
+              </>
             )}
-            <div className="form-actions">
-              <button type="submit" className="btn btn-primary" disabled={act.pending || !valid || unchanged}>
-                {act.pending ? "Saving…" : subscribed ? "Change plan" : "Subscribe"}
-              </button>
-            </div>
+            {b.enterprise_contact && (
+              <p className="small muted">
+                Enterprise (more projects and assets, agreements): <a href={b.enterprise_contact}>contact us</a>.
+              </p>
+            )}
           </>
         )}
       </form>

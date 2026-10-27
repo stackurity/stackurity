@@ -147,7 +147,12 @@ export function SignupPage({ signup }: { signup: SignupMeta }) {
         <h1 id="signup-title" className="auth-title">
           Create your account
         </h1>
-        <p>Start with a free organisation. You can invite your team and add servers, repositories and images right after.</p>
+        <p>
+          {signup.trial_days
+            ? `Start with a free ${signup.trial_days}-day trial, no card needed.`
+            : "Create your organisation."}{" "}
+          You can invite your team and add servers, repositories and images right after.
+        </p>
         <ErrorBox error={act.error} title="Sign-up failed" />
         {localErr && (
           <div className="alert alert-error" role="alert">

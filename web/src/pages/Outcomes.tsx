@@ -1,11 +1,22 @@
 import type { ReactNode } from "react";
 import { Link, useSearchParams } from "react-router";
-import { api, EVIDENCE_STATE_LABEL, PRIORITIES, type OutcomeFailure, type OutcomeReopen, type OutcomeSLA, type OutcomesReport, type OutcomeTiming } from "../api";
+import {
+  api,
+  EVIDENCE_STATE_LABEL,
+  PRIORITIES,
+  type OutcomeFailure,
+  type OutcomeReopen,
+  type OutcomeSLA,
+  type OutcomesReport,
+  type OutcomeTiming,
+  type ReportTrial,
+} from "../api";
 import { useLoad } from "../hooks";
 import { absTime, humanize } from "../format";
 import { Badge, PriorityBadge } from "../components/Badge";
 import { Table, type Column } from "../components/Table";
 import { Card, EmptyState, ErrorBox, Loading, PageHeader, StatTile } from "../components/ui";
+import { TrialBanner, TrialMore } from "../components/Trial";
 
 const WINDOWS = [30, 90, 180, 365] as const;
 
@@ -45,7 +56,7 @@ const EVIDENCE_LABEL: Record<string, string> = {
 export function OutcomesPage() {
   const [params, setParams] = useSearchParams();
   const w = Number(params.get("days")) || 90;
-  const res = useLoad(() => api.get<{ days: number; policy_version: string; report: OutcomesReport }>("/reports/outcomes", { days: w }), [w]);
+  const res = useLoad(() => api.get<{ days: number; policy_version: string; report: OutcomesReport; trial?: ReportTrial }>("/reports/outcomes", { days: w }), [w]);
   const setWindow = (d: number) => {
     const next = new URLSearchParams(params);
     next.set("days", String(d));
@@ -83,13 +94,14 @@ export function OutcomesPage() {
         first detection.
       </p>
       <ErrorBox error={res.error} title="Could not build the report" />
+      <TrialBanner trial={res.data?.trial} />
       {!r && !res.error && <Loading />}
-      {r && <OutcomesBody r={r} />}
+      {r && <OutcomesBody r={r} trial={res.data?.trial} />}
     </>
   );
 }
 
-function OutcomesBody({ r }: { r: OutcomesReport }) {
+function OutcomesBody({ r, trial }: { r: OutcomesReport; trial?: ReportTrial }) {
   const timing = r.time_to_remedy ?? [];
   const total = timing.find((t) => t.priority === "all" && t.kind === "all");
   const sla = r.sla ?? [];
@@ -216,16 +228,17 @@ function OutcomesBody({ r }: { r: OutcomesReport }) {
               {(r.reopened.recent?.length ?? 0) >= r.reopened.recent_limit && ` The ${r.reopened.recent_limit} most recent are listed.`}
             </p>
             <Table caption="Recently reopened findings" columns={reopenCols} rows={r.reopened.recent ?? []} rowKey={(x) => `${x.finding_id}-${x.reopened_at}`} />
+            <TrialMore trial={trial} list="reopened" />
           </>
         )}
       </Card>
 
-      <RemediationOutcomes r={r} />
+      <RemediationOutcomes r={r} trial={trial} />
     </>
   );
 }
 
-function RemediationOutcomes({ r }: { r: OutcomesReport }) {
+function RemediationOutcomes({ r, trial }: { r: OutcomesReport; trial?: ReportTrial }) {
   const m = r.remediation;
   if (!m) {
     return (
@@ -262,6 +275,7 @@ function RemediationOutcomes({ r }: { r: OutcomesReport }) {
         <strong>Rollback actions:</strong> {counts(m.rollback_actions)}
       </p>
       {(m.recent_failures?.length ?? 0) > 0 && <Table caption="Recent failures" columns={failCols} rows={m.recent_failures ?? []} rowKey={(f) => f.action_id} />}
+      <TrialMore trial={trial} list="recent_failures" />
     </Card>
   );
 }
