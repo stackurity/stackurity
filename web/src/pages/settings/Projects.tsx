@@ -479,7 +479,7 @@ export function ProjectDetailPage() {
       <Card title={`Assets (${p.asset_count.toLocaleString()})`}>
         <div className="field">
           <label htmlFor="pd-add">Add an asset</label>
-          <AssetPicker id="pd-add" value={picked} onChange={(a) => (a ? void add(a) : setPicked(null))} allProjects />
+          <AssetPicker id="pd-add" value={picked} onChange={(a) => (a ? void add(a) : setPicked(null))} allProjects inProject={p.id} />
           <p className="hint">An asset can be in several projects, such as a database two sites share.</p>
         </div>
         <ErrorBox error={assets.error} title="Could not load the assets" />

@@ -10,6 +10,7 @@ export function AssetPicker({
   onChange,
   excludeId,
   allProjects,
+  inProject,
 }: {
   id: string;
   value: Asset | null;
@@ -17,6 +18,8 @@ export function AssetPicker({
   excludeId?: number;
   /** Search every asset, whatever project is chosen in the switcher (settings). */
   allProjects?: boolean;
+  /** Assets already in this project are shown but cannot be picked. */
+  inProject?: number;
 }) {
   const [q, setQ] = useState("");
   const dq = useDebounced(q);
@@ -48,17 +51,21 @@ export function AssetPicker({
       <ul className="picker-list" role="listbox" aria-label="Matching assets">
         {res.error && <li className="muted">{res.error.message}</li>}
         {!res.error && options.length === 0 && !res.loading && <li className="muted">No matching assets.</li>}
-        {options.map((a) => (
-          <li key={a.id} role="option" aria-selected="false">
-            <button type="button" className="picker-option" onClick={() => onChange(a)}>
-              <span>{a.name}</span>
-              <span className="muted small">
-                {humanize(a.kind)}
-                {a.environment ? ` · ${a.environment}` : ""} · #{a.id}
-              </span>
-            </button>
-          </li>
-        ))}
+        {options.map((a) => {
+          const already = inProject !== undefined && (a.projects ?? []).some((p) => p.id === inProject);
+          return (
+            <li key={a.id} role="option" aria-selected="false" aria-disabled={already || undefined}>
+              <button type="button" className="picker-option" disabled={already} onClick={() => onChange(a)}>
+                <span>{a.name}</span>
+                <span className="muted small">
+                  {already
+                    ? "already in this project"
+                    : `${humanize(a.kind)}${a.environment ? ` · ${a.environment}` : ""} · #${a.id}`}
+                </span>
+              </button>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

@@ -1138,6 +1138,11 @@ select:disabled {
 .picker-option:focus-visible {
   background: var(--surface-2);
 }
+.picker-option:disabled {
+  color: var(--text-2);
+  cursor: default;
+  background: none;
+}
 .picked {
   display: flex;
   align-items: center;

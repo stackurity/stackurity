@@ -55,8 +55,10 @@ export function EffortPill({ effort }: { effort: string }) {
 
 /** Plain-language urgency of a fix: urgent now, plan it, or when convenient. */
 export function urgencyOf(g: FixGroup): { label: string; tone: Tone; title: string } {
-  if (g.sos || g.top_priority === "P1")
-    return { label: "Urgent", tone: "crit", title: g.sos ? "Matches an SOS rule in the risk policy" : "Highest priority (P1)" };
+  if (g.top_priority === "P1") return { label: "Urgent", tone: "crit", title: "Highest priority (P1)" };
+  // An SOS rule makes a fix urgent whatever its priority; say so, or "Urgent"
+  // next to a P2 badge reads as a mistake.
+  if (g.sos) return { label: "Urgent: SOS rule", tone: "crit", title: "Matches an SOS rule in the risk policy" };
   if (g.kind === "release_upgrade" || g.kind === "end_of_life" || g.effort === "high")
     return { label: "Plan it", tone: "orange", title: "A bigger change: schedule and test it" };
   return { label: "When you can", tone: "muted", title: `Highest priority ${g.top_priority}` };
