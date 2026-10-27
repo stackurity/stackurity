@@ -168,6 +168,8 @@ export function FixGroupCard({ g, hideAsset, defaultOpen }: { g: FixGroup; hideA
   const [open, setOpen] = useState(Boolean(defaultOpen));
   const titleId = `fg-${g.id.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
   const versions = g.from_version || g.to_version ? `${g.from_version ?? "?"} → ${g.to_version ?? "?"}` : "";
+  // One fix needed in several places (Settings, Fix grouping): the card lists them.
+  const places = g.places && g.places.length > 1 ? g.places : null;
   return (
     <article className={`fix-card fix-${g.kind}${g.sos ? " fix-sos" : ""}`} aria-labelledby={titleId}>
       <div className="fix-icon" title={FIX_KIND_HELP[g.kind]}>
@@ -182,8 +184,14 @@ export function FixGroupCard({ g, hideAsset, defaultOpen }: { g: FixGroup; hideA
             </h3>
             <p className="fix-meta small">
               {[
-                !hideAsset && <Link key="a" to={`/assets/${g.asset_id}?tab=action-plan`}>{g.asset_name}</Link>,
-                !hideAsset && g.environment && <span key="e">{g.environment}</span>,
+                places && <strong key="n">{places.length} places</strong>,
+                !places && !hideAsset && <Link key="a" to={`/assets/${g.asset_id}?tab=action-plan`}>{g.asset_name}</Link>,
+                !places && g.app_dir && (
+                  <span key="d" className="mono">
+                    {g.app_dir}
+                  </span>
+                ),
+                !places && !hideAsset && g.environment && <span key="e">{g.environment}</span>,
                 (g.component || versions) && (
                   <span key="c" className="mono">
                     {[g.component, versions].filter(Boolean).join(" ")}
@@ -211,13 +219,35 @@ export function FixGroupCard({ g, hideAsset, defaultOpen }: { g: FixGroup; hideA
             <span className="fix-count">{g.finding_count.toLocaleString()}</span>
             <span className="small">{g.finding_count === 1 ? "issue cleared" : "issues cleared"}</span>
             {g.unique_issues !== undefined && g.unique_issues !== g.finding_count && (
-              <span className="small muted">{plural(g.unique_issues, "distinct vulnerability", "distinct vulnerabilities")}</span>
+              <span className="small muted">
+                {plural(g.unique_issues, "distinct vulnerability", "distinct vulnerabilities")}
+                {places && ` in ${places.length} places`}
+              </span>
             )}
           </div>
         </div>
         <GroupBadges g={g} />
         <BreakdownBar counts={g.by_priority} order={PRIORITIES} classes={PRIO_CLASS} label="By priority" />
         <ActionInstruction action={g.action} />
+        {places && (
+          <div className="fix-places">
+            <p className="small">
+              <strong>Needed in {places.length} places</strong>
+            </p>
+            <ul className="fix-place-list">
+              {places.map((p) => (
+                <li key={p.group_id}>
+                  <Link to={`/assets/${p.asset_id}?tab=action-plan`}>{p.asset_name}</Link>
+                  {p.app_dir && <span className="mono small"> {p.app_dir}</span>}
+                  <span className="small muted">
+                    {p.environment && ` · ${p.environment}`} · {plural(p.finding_count, "issue")} ·{" "}
+                    <Link to={`/fixes/${encodeURIComponent(p.group_id)}`}>details</Link>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {g.note && <p className="hint">{g.note}</p>}
         {g.packages && g.packages.length > 0 && (
           <details className="fix-packages">
@@ -242,7 +272,7 @@ export function FixGroupCard({ g, hideAsset, defaultOpen }: { g: FixGroup; hideA
             How to fix
           </Link>
         </div>
-        {open && <GroupFindings groupId={g.id} hideAsset={hideAsset} />}
+        {open && <GroupFindings groupId={places ? places.map((p) => p.group_id).join(",") : g.id} hideAsset={hideAsset && !places} />}
       </div>
     </article>
   );

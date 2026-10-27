@@ -3646,7 +3646,7 @@
    "get": {
     "operationId": "get_fix_groups",
     "summary": "Fixes (fix groups), most urgent first",
-    "description": "Fixes (fix groups), most urgent first. `bucket` is `focus` (a fix exists, SOS or P1, on a production asset or one with no environment), `no_fix`, `old_kernels`, `non_production` or `lower_priority`; every group is in exactly one, checked in that order\n\nRole: viewer",
+    "description": "Fixes (fix groups), most urgent first. `bucket` is `focus` (a fix exists, SOS or P1, on a production asset or one with no environment), `no_fix`, `old_kernels`, `non_production` or `lower_priority`; every group is in exactly one, checked in that order. `group_by` is `fix` (the same change in several places is one entry with `places`: group, asset, app directory and finding count per place; counts are added up, `unique_issues` is not) or `asset` (one entry per asset); the default is the workspace's setting (`/settings/fix-grouping`)\n\nRole: viewer",
     "tags": [
      "Findings and fixes"
     ],
@@ -3690,6 +3690,18 @@
       "required": false,
       "schema": {
        "type": "string"
+      }
+     },
+     {
+      "name": "group_by",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "enum": [
+        "fix",
+        "asset"
+       ]
       }
      }
     ],
@@ -7556,6 +7568,72 @@
      }
     },
     "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/settings/fix-grouping": {
+   "get": {
+    "operationId": "get_fix_grouping",
+    "summary": "How fix lists group the same fix in several places",
+    "description": "How fix lists show the same fix in several places: `fix_grouping` is `fix` (one entry per fix listing its places; the default) or `asset` (one entry per asset). `PUT` writes a `settings.update` audit event\n\nRole: viewer",
+    "tags": [
+     "Findings and fixes"
+    ],
+    "x-stackurity-role": "viewer",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "put": {
+    "operationId": "put_fix_grouping",
+    "summary": "Change how fix lists group the same fix",
+    "description": "How fix lists show the same fix in several places: `fix_grouping` is `fix` (one entry per fix listing its places; the default) or `asset` (one entry per asset). `PUT` writes a `settings.update` audit event\n\nRole: admin",
+    "tags": [
+     "Findings and fixes"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
     "responses": {
      "2XX": {
       "description": "Success",

@@ -945,7 +945,8 @@ func (s *Store) ListFindings(ctx context.Context, f FindingFilter) ([]Finding, i
 		w.add("f.assignee_user_id = ?", f.AssigneeUser)
 	}
 	if f.FixGroup != "" {
-		w.add("f.fix_group = ?", f.FixGroup)
+		// Several groups, comma-separated: one fix shown for all its places.
+		w.add("f.fix_group = ANY(?)", strings.Split(f.FixGroup, ","))
 	}
 	if f.Unassigned {
 		w.conds = append(w.conds, "f.assignee_user_id IS NULL AND f.assignee_team_id IS NULL")

@@ -1961,6 +1961,12 @@ export interface FixGroup {
   asset_name: string;
   asset_kind: string;
   environment: string;
+  /** Directory of a deployed application, when the asset is one. */
+  app_dir?: string;
+  /** Same for the same change in different places; groups by asset use their id. */
+  fix_key?: string;
+  /** Every place this fix applies to, when the list shows one entry per fix (more than one place). */
+  places?: FixPlace[] | null;
   component?: string;
   from_version?: string;
   to_version?: string;
@@ -1984,6 +1990,19 @@ export interface FixGroup {
   recommended_yanked?: boolean;
   rationale?: string[] | null;
 }
+
+export interface FixPlace {
+  group_id: string;
+  asset_id: number;
+  asset_name: string;
+  asset_kind: string;
+  app_dir?: string;
+  environment: string;
+  finding_count: number;
+}
+
+/** GET/PUT /settings/fix-grouping: one entry per fix (listing its places) or one per asset. */
+export type FixGrouping = "fix" | "asset";
 
 export interface FixGroupDetail {
   group: FixGroup;

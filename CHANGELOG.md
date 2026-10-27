@@ -4,6 +4,20 @@ All notable changes to Stackurity. Versions follow [Semantic Versioning](https:/
 
 Each release's section is published as its GitHub release notes, and a tag without a section here cannot be released (`go run ./tools/changelog -version vX.Y.Z` prints it). New changes go under **Unreleased**, which is renamed to the version when it is tagged. Subsections are **Security**, **Added**, **Changed**, **Fixed** and **Upgrading**. Put fixes for vulnerabilities under `### Security`, first: installations treat a release with that heading as a security release and show administrators a banner they can only snooze.
 
+## 0.12.0
+
+### Added
+
+- **One card per fix, wherever it is needed.** When the same upgrade is needed in several places (jquery 3.3.1 → 3.5.0 in two phpMyAdmin copies, or lodash on ten servers), Fixes and Home show one card that lists every place: the asset, the application's directory, its environment and its issue count, each linking to that place's own fix. Issues cleared add up across places; distinct vulnerabilities are counted once. **Show issues** lists the findings of every place. Checks, "applied", notifications and project access still work per place, so a project member sees only the places they can see. **Settings → Fix grouping** switches a workspace back to one card per asset. `GET /fix-groups` takes `group_by=fix|asset` (default: the workspace setting) and returns `places`, `fix_key` and `app_dir`; `GET/PUT /settings/fix-grouping`; `GET /findings?fix_group=` accepts several groups, comma-separated.
+
+### Changed
+
+- Fix cards for a deployed application show its directory, so two applications with the same name on one server can be told apart.
+
+### Fixed
+
+- **A library in an application inside another application was reported twice.** With a webroot and an application under it both scanned (a CodeIgniter site in `/var/www/html` with phpMyAdmin in `/var/www/html/phpmyadmin`), the outer scan also read the inner application's libraries and lockfiles, so each of its vulnerabilities appeared under both. The agent now learns every application directory first and each library belongs only to the innermost application. Upgrade the agent to clear the duplicates.
+
 ## 0.11.0
 
 ### Added

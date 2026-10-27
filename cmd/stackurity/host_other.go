@@ -46,27 +46,27 @@ func hostCollector(o *hostOptions) (func(context.Context) ([]*model.ObservationB
 		}
 		batches := []*model.ObservationBatch{osBatch, col.CollectSoftware(ctx, osBatch, scanner.ScanGlobal)}
 
+		// Every application is known before any is scanned, so one inside
+		// another is reported once, by itself.
+		dirs := append([]string{}, o.appDirs...)
+		if o.discoverApps {
+			dirs = append(dirs, scanner.Discover()...)
+		}
+		scanner.Apps = dirs
 		seen := map[string]bool{}
-		scan := func(dir string, explicit bool) {
+		for i, dir := range dirs {
+			explicit := i < len(o.appDirs)
 			app := scanner.ScanApp(ctx, dir)
 			if seen[app.Dir] {
-				return
+				continue
 			}
 			seen[app.Dir] = true
 			// A discovered directory with nothing installed and no lockfile
 			// is a tool or an empty checkout, not an application to track.
 			if !explicit && len(app.Observations) == 0 {
-				return
+				continue
 			}
 			batches = append(batches, appBatch(app, osBatch.Asset))
-		}
-		for _, dir := range o.appDirs {
-			scan(dir, true)
-		}
-		if o.discoverApps {
-			for _, dir := range scanner.Discover() {
-				scan(dir, false)
-			}
 		}
 		return batches, nil
 	}, nil

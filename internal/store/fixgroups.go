@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -13,7 +14,7 @@ import (
 
 // FixPlanRows loads every open, active finding with what the planner needs.
 func (s *Store) FixPlanRows(ctx context.Context) ([]fixplan.Row, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT f.id, f.kind, f.key, f.asset_id, a.name, a.kind, a.environment,
+	rows, err := s.Pool.Query(ctx, `SELECT f.id, f.kind, f.key, f.asset_id, a.name, a.kind, a.environment, COALESCE(a.attributes->>'app_dir', ''),
 		COALESCE(a.attributes->>'os', ''), COALESCE(a.attributes->>'os_version', ''), COALESCE(a.attributes->>'os_name', ''),
 		c.id, c.type, CASE WHEN c.namespace = '' OR c.type IN ('deb','rpm','apk') THEN c.name ELSE c.namespace || '/' || c.name END,
 		i.version, f.fixed_version, f.priority, f.severity, f.sos,
@@ -32,7 +33,7 @@ func (s *Store) FixPlanRows(ctx context.Context) ([]fixplan.Row, error) {
 	var out []fixplan.Row
 	for rows.Next() {
 		var r fixplan.Row
-		if err := rows.Scan(&r.FindingID, &r.Kind, &r.Key, &r.AssetID, &r.AssetName, &r.AssetKind, &r.Environment,
+		if err := rows.Scan(&r.FindingID, &r.Kind, &r.Key, &r.AssetID, &r.AssetName, &r.AssetKind, &r.Environment, &r.AppDir,
 			&r.OS, &r.OSVersion, &r.OSName, &r.ComponentID, &r.PurlType, &r.Component, &r.Version, &r.FixedVersion,
 			&r.Priority, &r.Severity, &r.SOS, &r.KnownExploited, &r.KernelIdle, &r.Subscription, &r.IsOS, &r.EOLTitle); err != nil {
 			return nil, err
@@ -124,6 +125,9 @@ type FixGroupFilter struct {
 	Search      string
 	// Bucket keeps the groups of one FixBucket (focus, no_fix, ...).
 	Bucket string
+	// ByFix shows the same fix in several places as one entry (see
+	// FixGroupingFix).
+	ByFix bool
 	// ProductionEnvs names the production environments (from the risk
 	// policy), for the non_production bucket.
 	ProductionEnvs []string
@@ -181,6 +185,9 @@ func (s *Store) ListFixGroups(ctx context.Context, f FixGroupFilter) ([]json.Raw
 		w.args = append(w.args, lowerAll(f.ProductionEnvs))
 		w.add(fixBucketSQL(len(w.args))+" = ?", f.Bucket)
 	}
+	if f.ByFix {
+		return s.listFixGroupsByFix(ctx, w, f.Page.norm())
+	}
 	var total int64
 	if err := s.Pool.QueryRow(ctx, `SELECT count(*) FROM fix_groups g`+w.sql(), w.args...).Scan(&total); err != nil {
 		return nil, 0, err
@@ -192,6 +199,95 @@ func (s *Store) ListFixGroups(ctx context.Context, f FixGroupFilter) ([]json.Raw
 	}
 	out, err := pgx.CollectRows(rows, pgx.RowTo[json.RawMessage])
 	return out, total, err
+}
+
+// fixKeySQL is a stored group's fix key; groups planned before keys existed
+// stand alone.
+const fixKeySQL = `COALESCE(g.data->>'fix_key', g.id)`
+
+// listFixGroupsByFix pages over fixes rather than groups: the groups with
+// the same fix key (that the caller can see and that match the filter) come
+// back as one, listing the places it applies to.
+func (s *Store) listFixGroupsByFix(ctx context.Context, w *where, p Page) ([]json.RawMessage, int64, error) {
+	var total int64
+	if err := s.Pool.QueryRow(ctx, `SELECT count(DISTINCT `+fixKeySQL+`) FROM fix_groups g`+w.sql(), w.args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	rows, err := s.Pool.Query(ctx, `SELECT `+fixKeySQL+` FROM fix_groups g`+w.sql()+
+		fmt.Sprintf(` GROUP BY 1 ORDER BY min(g.sort_order) LIMIT %d OFFSET %d`, p.Limit, p.Offset), w.args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	keys, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil || len(keys) == 0 {
+		return []json.RawMessage{}, total, err
+	}
+	w.add(fixKeySQL+" = ANY(?)", keys)
+	rows, err = s.Pool.Query(ctx, `SELECT `+fixKeySQL+`, g.data FROM fix_groups g`+w.sql()+` ORDER BY g.sort_order`, w.args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	byKey := map[string][]fixplan.Group{}
+	for rows.Next() {
+		var k string
+		var g fixplan.Group
+		if err := rows.Scan(&k, &g); err != nil {
+			return nil, 0, err
+		}
+		byKey[k] = append(byKey[k], g)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	out := make([]json.RawMessage, 0, len(keys))
+	for _, k := range keys {
+		gs := byKey[k]
+		if len(gs) == 0 {
+			continue // replanned between the two queries
+		}
+		var d []byte
+		if len(gs) == 1 {
+			d, err = json.Marshal(gs[0])
+		} else {
+			d, err = json.Marshal(fixplan.Merge(gs))
+		}
+		if err != nil {
+			return nil, 0, err
+		}
+		out = append(out, d)
+	}
+	return out, total, nil
+}
+
+// Fix groupings: how lists show the same fix in several places.
+const (
+	FixGroupingFix   = "fix"   // one entry per fix, listing its places (default)
+	FixGroupingAsset = "asset" // one entry per asset and fix
+)
+
+const fixGroupingKey = "fix_grouping"
+
+// FixGrouping returns the workspace's choice of FixGroupingFix or
+// FixGroupingAsset.
+func (s *Store) FixGrouping(ctx context.Context) (string, error) {
+	var v string
+	err := s.Pool.QueryRow(ctx, `SELECT value #>> '{}' FROM settings WHERE key = $1`, fixGroupingKey).Scan(&v)
+	if errors.Is(err, pgx.ErrNoRows) || err == nil && v != FixGroupingAsset {
+		return FixGroupingFix, nil
+	}
+	return v, err
+}
+
+// SetFixGrouping stores the workspace's fix grouping.
+func (s *Store) SetFixGrouping(ctx context.Context, v string) error {
+	if v != FixGroupingFix && v != FixGroupingAsset {
+		return fmt.Errorf("fix grouping must be fix or asset: %w", ErrInvalid)
+	}
+	raw, _ := json.Marshal(v)
+	_, err := s.Pool.Exec(ctx, `INSERT INTO settings (key, value) VALUES ($1, $2)
+		ON CONFLICT (workspace_id, key) DO UPDATE SET value = EXCLUDED.value`, fixGroupingKey, raw)
+	return err
 }
 
 func (s *Store) GetFixGroup(ctx context.Context, id string) (json.RawMessage, error) {
