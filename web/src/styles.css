@@ -4241,6 +4241,7 @@ h6.md-h {
 .cell-name {
   display: inline-block;
   min-width: 12ch;
+}
 
 /* Linking a Slack account (/slack/link) and Settings, Linked Slack accounts */
 .slack-link-actions {
