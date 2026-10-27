@@ -3,9 +3,11 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/stackurity/stackurity/internal/tenant"
 )
@@ -129,21 +131,53 @@ var ErrEvaluationBusy = errors.New("another evaluation of this workspace is runn
 // The lock is held by a transaction, so it ends with the connection if the
 // process dies.
 func (s *Store) LockEvaluations(ctx context.Context) (release func(), err error) {
+	return s.lockEvaluations(ctx, 0)
+}
+
+// LockEvaluationsWait is LockEvaluations waiting up to wait for a running
+// evaluation to finish. Postgres queues the waiter ahead of evaluations
+// that try the lock later, so it gets the lock as soon as the current one
+// ends. The periodic upkeep of findings (the dispatcher's tick) uses it:
+// it writes the same findings an evaluation writes, and the two could
+// otherwise lock them in opposite orders and deadlock.
+func (s *Store) LockEvaluationsWait(ctx context.Context, wait time.Duration) (release func(), err error) {
+	return s.lockEvaluations(ctx, wait)
+}
+
+// evaluationKey is the advisory lock key of the context's workspace.
+// Advisory locks are per database; the key names the schema too, so
+// installations (or tests) sharing a database do not wait for each other.
+const evaluationKey = `hashtextextended('stackurity.evaluate:' || current_schema() || ':' || $1::bigint, 0)`
+
+func (s *Store) lockEvaluations(ctx context.Context, wait time.Duration) (release func(), err error) {
 	ws, _ := tenant.Workspace(ctx) // 0 (no workspace): evaluations in system scope
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return nil, err
 	}
-	var got bool
-	// Advisory locks are per database; the key names the schema too, so
-	// installations (or tests) sharing a database do not wait for each other.
-	if err := tx.QueryRow(ctx, `SELECT pg_try_advisory_xact_lock(hashtextextended('stackurity.evaluate:' || current_schema() || ':' || $1::bigint, 0))`,
-		ws).Scan(&got); err != nil || !got {
+	fail := func(err error) (func(), error) {
 		_ = tx.Rollback(context.WithoutCancel(ctx))
-		if err == nil {
-			err = ErrEvaluationBusy
-		}
 		return nil, err
+	}
+	if wait <= 0 {
+		var got bool
+		if err := tx.QueryRow(ctx, `SELECT pg_try_advisory_xact_lock(`+evaluationKey+`)`, ws).Scan(&got); err != nil {
+			return fail(err)
+		}
+		if !got {
+			return fail(ErrEvaluationBusy)
+		}
+	} else {
+		if _, err := tx.Exec(ctx, fmt.Sprintf(`SET LOCAL lock_timeout = '%dms'`, wait.Milliseconds())); err != nil {
+			return fail(err)
+		}
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(`+evaluationKey+`)`, ws); err != nil {
+			var pe *pgconn.PgError
+			if errors.As(err, &pe) && pe.Code == "55P03" { // lock_not_available
+				return fail(ErrEvaluationBusy)
+			}
+			return fail(err)
+		}
 	}
 	return func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }, nil
 }

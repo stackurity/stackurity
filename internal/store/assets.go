@@ -552,6 +552,14 @@ func (s *Store) ResolveConflict(ctx context.Context, conflictID, target, userID 
 		if !found {
 			return fmt.Errorf("target asset %d is not part of conflict %d: %w", target, conflictID, ErrConflict)
 		}
+		// The findings of every asset merged are locked first, in id order,
+		// as an evaluation locks them (see SyncFindings): merging them one
+		// asset after another would lock them out of order. FOR UPDATE, as
+		// dropped inventory takes its findings with it.
+		if _, err := tx.Exec(ctx, `SELECT id FROM findings WHERE asset_id = ANY($1) AND asset_id <> $2 ORDER BY id FOR UPDATE`,
+			ids, target); err != nil {
+			return err
+		}
 		for _, id := range ids {
 			if id == target {
 				continue
@@ -570,6 +578,8 @@ func (s *Store) ResolveConflict(ctx context.Context, conflictID, target, userID 
 }
 
 func mergeAsset(ctx context.Context, tx pgx.Tx, from, into int64) error {
+	// The caller has locked the merged assets' findings (see
+	// ResolveConflict).
 	stmts := []string{
 		`UPDATE asset_identifiers SET asset_id = $2 WHERE asset_id = $1`,
 		// Inventory rows that already exist on the target are dropped.

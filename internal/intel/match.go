@@ -68,6 +68,12 @@ func (e *Evaluator) Evaluate(ctx context.Context, componentIDs []int64, assetID 
 		return nil, err
 	}
 	defer release()
+	return e.EvaluateLocked(ctx, componentIDs, assetID)
+}
+
+// EvaluateLocked is Evaluate for a caller that holds the workspace's
+// evaluation lock (Store.LockEvaluations), to do more under it.
+func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, assetID int64) (*EvalStats, error) {
 	rows, err := e.Store.EvalRows(ctx, componentIDs, assetID)
 	if err != nil {
 		return nil, err
