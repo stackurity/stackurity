@@ -75,7 +75,8 @@ function channelTarget(c: Channel): string {
   if (c.kind === "email") return `${(cfg.to ?? []).join(", ")} via ${cfg.host ?? "?"}:${cfg.port ?? "?"}`;
   if (c.kind === "webhook") return cfg.url ?? "";
   if (c.kind === "jira") return `project ${cfg.project ?? "?"} on ${cfg.url ?? "?"}`;
-  return c.secret_ref ? `URL from ${c.secret_ref}` : "";
+  const target = c.secret_ref ? `URL from ${c.secret_ref}` : "";
+  return c.kind === "slack" && cfg.signing_secret_ref ? `${target}; buttons act in Slack` : target;
 }
 
 function ChannelsTab({ channels, reload, admin }: { channels: Channel[] | undefined; reload: () => void; admin: boolean }) {
@@ -229,6 +230,7 @@ function ChannelForm({ channel, onCancel, onSaved }: { channel?: Channel; onCanc
   const [labels, setLabels] = useState((cfg.labels ?? []).join(", "));
   const [priorities, setPriorities] = useState<Partial<Record<Priority, string>>>(cfg.priorities ?? {});
   const [transition, setTransition] = useState(cfg.resolve_transition ?? "");
+  const [signingRef, setSigningRef] = useState(cfg.signing_secret_ref ?? "");
   const [localErr, setLocalErr] = useState<string | null>(null);
   const act = useAction();
   const idp = channel ? `ch${channel.id}` : "chnew";
@@ -242,6 +244,11 @@ function ChannelForm({ channel, onCancel, onSaved }: { channel?: Channel; onCanc
     if ((kind === "slack" || kind === "teams") && !ref) return setLocalErr("Slack and Teams need the webhook URL as a secret reference.");
     if (kind === "jira" && !ref) return setLocalErr("Jira needs the API token or personal access token as a secret reference.");
     let config: ChannelConfig = {};
+    if (kind === "slack" && signingRef.trim()) {
+      if (!/^(secret|env|file):.+/.test(signingRef.trim()))
+        return setLocalErr("The signing secret reference must look like secret:NAME, env:STACKURITY_SECRET_X or file:/run/secrets/x.");
+      config = { signing_secret_ref: signingRef.trim() };
+    }
     if (kind === "webhook") {
       if (/^[a-z]+:\/\/[^/]*@/i.test(url.trim())) return setLocalErr("Do not put credentials in the URL; use the secret reference.");
       config = { url: url.trim() };
@@ -443,6 +450,27 @@ function ChannelForm({ channel, onCancel, onSaved }: { channel?: Channel; onCanc
             {channel && channel.secret_ref && kind !== "slack" && kind !== "teams" && kind !== "jira" && " Clear the field and save to remove the reference."}
           </p>
         </div>
+        {kind === "slack" && (
+          <div className="field field-span">
+            <label htmlFor={`${idp}-signing`}>Slack app signing secret reference (optional)</label>
+            <input
+              id={`${idp}-signing`}
+              className="mono"
+              value={signingRef}
+              onChange={(e) => setSigningRef(e.target.value)}
+              placeholder="secret:SLACK_SIGNING_SECRET"
+              autoComplete="off"
+            />
+            <p className="hint">
+              Lets people <strong>Assign to me</strong> and <strong>Snooze 1 week</strong> from inside Slack. Needs a Slack app: use its incoming webhook above, turn on
+              Interactivity with the Request URL <span className="break">
+                <Code>{`${window.location.origin}/api/v1/integrations/slack/actions`}</Code>
+              </span>, and store its signing secret under{" "}
+              <Link to="/settings/secrets">Settings → Secrets</Link>. Empty: the buttons open Stackurity instead.{" "}
+              <Link to="/help/notifications">How to set it up</Link>
+            </p>
+          </div>
+        )}
       </div>
       <div className="form-actions">
         <button type="submit" className="btn btn-primary" disabled={act.pending}>

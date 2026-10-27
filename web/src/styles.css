@@ -4241,4 +4241,39 @@ h6.md-h {
 .cell-name {
   display: inline-block;
   min-width: 12ch;
+
+/* Linking a Slack account (/slack/link) and Settings, Linked Slack accounts */
+.slack-link-actions {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0 8px;
+}
+.slack-links {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.slack-link-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}
+.slack-link-row:first-child {
+  border-top: 0;
+}
+.slack-link-who {
+  min-width: 0;
+}
+@media (max-width: 480px) {
+  .slack-link-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+.break .code {
+  overflow-wrap: anywhere;
+  word-break: break-all;
 }

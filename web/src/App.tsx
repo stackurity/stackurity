@@ -6,6 +6,7 @@ import { Layout } from "./components/Layout";
 import { ErrorBox, Loading } from "./components/ui";
 import { LoginPage, SetupPage } from "./pages/Login";
 import { AcceptInvitePage } from "./pages/AcceptInvite";
+import { SlackAccountsPage, SlackLinkPage } from "./pages/SlackLink";
 import { OnboardingPage } from "./pages/Onboarding";
 import { SignupPage, VerifySignupPage } from "./pages/Signup";
 import { UsagePage } from "./pages/settings/Usage";
@@ -104,6 +105,10 @@ export function App() {
   const signup = "meta" in state ? state.meta.signup : undefined;
   if (signup && pathname === "/signup/verify" && (state.phase === "login" || state.phase === "ready")) return <VerifySignupPage />;
   if (signup && pathname === "/signup" && state.phase === "login") return <SignupPage signup={signup} />;
+  // A link from Slack to connect a Slack account: sign in first, then
+  // confirm. The address (and its #token) stays the same while signing in.
+  if (pathname === "/slack/link" && state.phase === "login") return <LoginPage />;
+  if (pathname === "/slack/link" && state.phase === "ready") return <SlackLinkPage />;
 
   switch (state.phase) {
     case "loading":
@@ -216,6 +221,7 @@ export function App() {
             </RequireRole>
           }
         />
+        <Route path="settings/slack" element={<SlackAccountsPage />} />
         <Route path="settings/risk-policy" element={<RiskPolicyPage />} />
         <Route
           path="settings/plugins"

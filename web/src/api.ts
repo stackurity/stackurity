@@ -1538,6 +1538,9 @@ export interface ChannelConfig {
   labels?: string[];
   priorities?: Partial<Record<Priority, string>>;
   resolve_transition?: string;
+  // slack: the Slack app's signing secret (a reference). When set, Assign
+  // to me and Snooze act from inside Slack.
+  signing_secret_ref?: string;
 }
 
 export interface Channel {
@@ -2083,6 +2086,29 @@ export interface InvitationPreview {
   invited_by: string;
   expires_at: string;
   account_exists: boolean;
+}
+
+/** A Slack account linked to the signed-in person (GET /slack/links). */
+export interface SlackLink {
+  id: number;
+  team_id: string;
+  team_name: string;
+  slack_user_id: string;
+  slack_user_name: string;
+  user_id: number;
+  created_at: string;
+  last_used_at: string | null;
+}
+
+/** POST /slack/links/preview: the Slack account a one-time link would link. */
+export interface SlackLinkPreview {
+  team_id: string;
+  team_name: string;
+  slack_user_id: string;
+  slack_user_name: string;
+  expires_at: string;
+  linked_to_you: boolean;
+  linked_to_other: boolean;
 }
 
 // --- transport
