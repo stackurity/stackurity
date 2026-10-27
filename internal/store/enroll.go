@@ -127,6 +127,10 @@ func (s *Store) RedeemEnrollmentFor(ctx context.Context, code, hostname string, 
 		if err := s.workspaceAtLimit(ctx, tx, e.WorkspaceID); err != nil {
 			return err
 		}
+		// Nor while the organisation is read-only.
+		if err := readOnly(ctx, tx, e.WorkspaceID); err != nil {
+			return err
+		}
 		token, prefix, err := auth.NewToken("stk")
 		if err != nil {
 			return err

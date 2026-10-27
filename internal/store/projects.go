@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/stackurity/stackurity/internal/auth"
 	"github.com/stackurity/stackurity/internal/tenant"
@@ -109,7 +110,12 @@ func (s *Store) CreateProject(ctx context.Context, name, description string) (*P
 		return nil, fmt.Errorf("the description is limited to 1000 characters: %w", ErrInvalid)
 	}
 	var id int64
-	err = s.Pool.QueryRow(ctx, `INSERT INTO projects (name, description) VALUES ($1, $2) RETURNING id`, name, strings.TrimSpace(description)).Scan(&id)
+	err = pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
+		if err := checkNewProject(ctx, tx); err != nil {
+			return err
+		}
+		return tx.QueryRow(ctx, `INSERT INTO projects (name, description) VALUES ($1, $2) RETURNING id`, name, strings.TrimSpace(description)).Scan(&id)
+	})
 	if isUniqueViolation(err) {
 		return nil, fmt.Errorf("a project with that name exists: %w", ErrConflict)
 	}
@@ -141,9 +147,27 @@ func (s *Store) UpdateProject(ctx context.Context, id int64, u ProjectUpdate) er
 		d := strings.TrimSpace(*u.Description)
 		u.Description = &d
 	}
-	tag, err := s.Pool.Exec(ctx, `UPDATE projects SET name = COALESCE($2, name), description = COALESCE($3, description),
-		archived_at = CASE WHEN $4::boolean IS NULL THEN archived_at WHEN $4 THEN COALESCE(archived_at, now()) ELSE NULL END
-		WHERE id = $1`, id, u.Name, u.Description, u.Archived)
+	var tag pgconn.CommandTag
+	err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
+		// Taking a project out of the archive makes one more active
+		// project, which the project limit counts.
+		if u.Archived != nil && !*u.Archived {
+			var archived bool
+			if err := tx.QueryRow(ctx, `SELECT archived_at IS NOT NULL FROM projects WHERE id = $1`, id).Scan(&archived); err != nil {
+				return notFound(err)
+			}
+			if archived {
+				if err := checkNewProject(ctx, tx); err != nil {
+					return err
+				}
+			}
+		}
+		var err error
+		tag, err = tx.Exec(ctx, `UPDATE projects SET name = COALESCE($2, name), description = COALESCE($3, description),
+			archived_at = CASE WHEN $4::boolean IS NULL THEN archived_at WHEN $4 THEN COALESCE(archived_at, now()) ELSE NULL END
+			WHERE id = $1`, id, u.Name, u.Description, u.Archived)
+		return err
+	})
 	if isUniqueViolation(err) {
 		return fmt.Errorf("a project with that name exists: %w", ErrConflict)
 	}

@@ -233,5 +233,18 @@ func (s *Server) outcomesReport(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"days": days, "policy_version": pol.Version(), "report": rep})
+	trial, err := s.reportTrial(r)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	rep.Reopened.Recent = trialClip(trial, "reopened", rep.Reopened.Recent)
+	if rep.Remediation != nil {
+		rep.Remediation.Failures = trialClip(trial, "recent_failures", rep.Remediation.Failures)
+	}
+	out := map[string]any{"days": days, "policy_version": pol.Version(), "report": rep}
+	if trial != nil {
+		out["trial"] = trial
+	}
+	writeJSON(w, 200, out)
 }

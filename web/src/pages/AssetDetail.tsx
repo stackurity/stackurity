@@ -79,7 +79,7 @@ const APP_ATTRS: [string, string][] = [
 export function AssetDetailPage() {
   const { id } = useParams();
   const assetId = Number(id);
-  const { can, canAct } = useAuth();
+  const { can, canAct, me } = useAuth();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const tabParam = params.get("tab") as Tab | null;
@@ -205,8 +205,13 @@ export function AssetDetailPage() {
           </>
         }
         actions={
-          <a className="btn" href={`/api/v1/assets/${a.id}/sbom`} download>
-            Download CycloneDX
+          <a
+            className="btn"
+            href={`/api/v1/assets/${a.id}/sbom`}
+            download
+            title={me?.workspace?.report_mode === "trial" ? "Trial: the download lists the first 10 components and carries a watermark" : undefined}
+          >
+            Download CycloneDX{me?.workspace?.report_mode === "trial" ? " (trial)" : ""}
           </a>
         }
       />

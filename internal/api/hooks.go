@@ -21,4 +21,8 @@ var (
 	// editionMeta adds what the dashboard needs to know before sign-in to
 	// GET /api/v1/meta.
 	editionMeta func(s *Server, r *http.Request, meta map[string]any)
+	// reportWatermark is the line every report and export carries while the
+	// organisation's report mode is trial (reportmode.go). An edition that
+	// sets trial mode may name itself here.
+	reportWatermark = "Trial — not for distribution"
 )

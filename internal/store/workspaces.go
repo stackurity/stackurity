@@ -27,6 +27,15 @@ type Workspace struct {
 	// when the workspace has no limit (docs/asset-limits.md).
 	Monitored  int64  `json:"monitored"`
 	AssetLimit *int64 `json:"asset_limit"`
+	// Projects counts active projects; ProjectLimit is nil when there is
+	// no project limit.
+	Projects     int64  `json:"projects"`
+	ProjectLimit *int64 `json:"project_limit"`
+	// ReadOnlyAt is when the workspace became read-only; nil when it is
+	// not.
+	ReadOnlyAt     *time.Time `json:"read_only_at"`
+	ReadOnlyReason string     `json:"read_only_reason"`
+	ReportMode     string     `json:"report_mode"`
 }
 
 // Membership is one workspace a user belongs to, with their role there.
@@ -140,7 +149,9 @@ const workspaceSelect = `SELECT w.id, w.name, w.slug, w.created_at, w.disabled_a
 	(SELECT count(*) FROM assets a WHERE a.workspace_id = w.id AND a.merged_into IS NULL),
 	w.plan,
 	(SELECT count(*) FROM assets a WHERE a.workspace_id = w.id AND a.merged_into IS NULL AND a.kind <> 'workload'),
-	w.asset_limit
+	w.asset_limit,
+	(SELECT count(*) FROM projects p WHERE p.workspace_id = w.id AND p.archived_at IS NULL),
+	w.project_limit, w.read_only_at, w.read_only_reason, w.report_mode
 	FROM workspaces w`
 
 // ListWorkspaces lists every workspace. Instance administration only.
@@ -199,6 +210,15 @@ type WorkspaceUpdate struct {
 	Plan *string `json:"plan"`
 	// AssetLimit sets the monitored-asset limit; -1 removes it.
 	AssetLimit *int64 `json:"asset_limit"`
+	// ProjectLimit sets the project limit; -1 removes it.
+	ProjectLimit *int64 `json:"project_limit"`
+	// ReadOnly makes the workspace read-only (keeping an earlier time when
+	// it already is) or writable again; ReadOnlyReason is shown to its
+	// members.
+	ReadOnly       *bool   `json:"read_only"`
+	ReadOnlyReason *string `json:"read_only_reason"`
+	// ReportMode is full or trial.
+	ReportMode *string `json:"report_mode"`
 }
 
 func (s *Store) UpdateWorkspace(ctx context.Context, id int64, u WorkspaceUpdate) error {
@@ -219,14 +239,31 @@ func (s *Store) UpdateWorkspace(ctx context.Context, id int64, u WorkspaceUpdate
 	if u.AssetLimit != nil && (*u.AssetLimit < -1 || *u.AssetLimit > 1_000_000_000) {
 		return fmt.Errorf("asset_limit must be between 0 and 1000000000, or -1 for no limit: %w", ErrInvalid)
 	}
+	if u.ProjectLimit != nil && (*u.ProjectLimit < -1 || *u.ProjectLimit > 1_000_000) {
+		return fmt.Errorf("project_limit must be between 0 and 1000000, or -1 for no limit: %w", ErrInvalid)
+	}
+	if u.ReportMode != nil && *u.ReportMode != ReportFull && *u.ReportMode != ReportTrial {
+		return fmt.Errorf("report_mode must be full or trial: %w", ErrInvalid)
+	}
+	if u.ReadOnlyReason != nil {
+		r := strings.TrimSpace(*u.ReadOnlyReason)
+		if len(r) > 500 {
+			return fmt.Errorf("read_only_reason is limited to 500 characters: %w", ErrInvalid)
+		}
+		u.ReadOnlyReason = &r
+	}
 	if u.Disabled != nil && *u.Disabled && id == tenant.DefaultWorkspace {
 		return fmt.Errorf("the default workspace cannot be disabled: %w", ErrConflict)
 	}
 	tag, err := s.Pool.Exec(ctx, `UPDATE workspaces SET name = COALESCE($2, name),
 		disabled_at = CASE WHEN $3::boolean IS NULL THEN disabled_at WHEN $3 THEN COALESCE(disabled_at, now()) ELSE NULL END,
 		plan = COALESCE($4, plan),
-		asset_limit = CASE WHEN $5::bigint IS NULL THEN asset_limit WHEN $5 < 0 THEN NULL ELSE $5 END
-		WHERE id = $1`, id, u.Name, u.Disabled, u.Plan, u.AssetLimit)
+		asset_limit = CASE WHEN $5::bigint IS NULL THEN asset_limit WHEN $5 < 0 THEN NULL ELSE $5 END,
+		project_limit = CASE WHEN $6::bigint IS NULL THEN project_limit WHEN $6 < 0 THEN NULL ELSE $6 END,
+		read_only_at = CASE WHEN $7::boolean IS NULL THEN read_only_at WHEN $7 THEN COALESCE(read_only_at, now()) ELSE NULL END,
+		read_only_reason = CASE WHEN $7::boolean IS NOT NULL AND NOT $7 THEN '' ELSE COALESCE($8, read_only_reason) END,
+		report_mode = COALESCE($9, report_mode)
+		WHERE id = $1`, id, u.Name, u.Disabled, u.Plan, u.AssetLimit, u.ProjectLimit, u.ReadOnly, u.ReadOnlyReason, u.ReportMode)
 	if err == nil && tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}

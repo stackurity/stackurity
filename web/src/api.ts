@@ -47,6 +47,8 @@ export interface SignupMeta {
   terms_version: string;
   /** Where the organisation's data is stored, in words ("India"). */
   region_label: string;
+  /** Days a new organisation is free for, without a card; absent when there is no trial. */
+  trial_days?: number;
 }
 
 export interface User {
@@ -135,6 +137,13 @@ export interface Workspace {
   monitored: number;
   /** Null: no limit. */
   asset_limit: number | null;
+  /** Active (not archived) projects. */
+  projects: number;
+  /** Null: no limit. */
+  project_limit: number | null;
+  read_only_at: string | null;
+  read_only_reason: string;
+  report_mode: ReportMode;
 }
 
 /** PATCH /admin/workspaces/{id}. */
@@ -144,6 +153,28 @@ export interface WorkspaceUpdate {
   plan?: "inherit" | Edition;
   /** -1 removes the limit. */
   asset_limit?: number;
+  /** -1 removes the limit. */
+  project_limit?: number;
+  read_only?: boolean;
+  read_only_reason?: string;
+  report_mode?: ReportMode;
+}
+
+export type ReportMode = "full" | "trial";
+
+/** Why and since when an organisation is read-only. */
+export interface ReadOnlyState {
+  since: string;
+  reason: string;
+}
+
+/** Present on a report shortened in trial mode (docs/asset-limits.md). */
+export interface ReportTrial {
+  watermark: string;
+  rows_per_list: number;
+  /** Rows left out, per list. */
+  omitted: Record<string, number>;
+  notes: string[];
 }
 
 /** A new asset refused because the organisation was at its limit. */
@@ -169,22 +200,49 @@ export interface AssetUsage {
   workloads: number;
   refused: RefusedAsset[];
   refused_recently: number;
+  /** Active (not archived) projects against the project limit. */
+  projects: number;
+  /** Null: no limit. */
+  project_limit: number | null;
+  projects_at_limit: boolean;
+  read_only: ReadOnlyState | null;
+  report_mode: ReportMode;
 }
 
-/** A paid plan of a hosted edition. Prices are in the currency's smallest unit. */
+/**
+ * A paid plan of a hosted edition: a bundle of projects and monitored
+ * assets for a period, in one currency. Prices are in the currency's
+ * smallest unit and exclude tax.
+ */
 export interface BillingPlan {
   id: string;
+  /** The bundle (starter, team, business) this plan prices for one period and currency. */
+  tier: string;
   name: string;
   description: string;
   currency: string;
-  price_per_asset: number;
+  price: number;
   period: "monthly" | "yearly";
   edition: string;
-  min_assets: number;
-  max_assets: number;
+  max_projects: number;
+  included_assets: number;
+  /** Price of each asset beyond the included ones, per period; null when the plan has none. */
+  extra_asset_price: number | null;
+  max_extra_assets: number;
+  /** Tax added to the price (for example 18 and "GST"); 0 when none. */
+  tax_percent: number;
+  tax_label: string;
 }
 
-export type BillingStatus = "free" | "awaiting_payment" | "active" | "past_due" | "halted" | "cancelling" | "cancelled";
+export type BillingStatus =
+  | "trial"
+  | "trial_ended"
+  | "awaiting_payment"
+  | "active"
+  | "past_due"
+  | "halted"
+  | "cancelling"
+  | "cancelled";
 
 /** GET /billing (admins, hosted edition). */
 export interface Billing {
@@ -192,18 +250,34 @@ export interface Billing {
   region: string;
   region_label: string;
   status: BillingStatus;
+  trial_ends_at: string | null;
+  /** Set while read-only; with deletion_at, when the data is deleted if nothing changes. */
+  read_only_since: string | null;
+  deletion_at: string | null;
   plan: BillingPlan | null;
-  free_assets: number;
+  extra_assets: number | null;
   asset_limit: number | null;
   monitored: number;
-  assets_paid: number | null;
+  project_limit: number | null;
+  projects: number;
   current_period_end: string | null;
+  /** Amount with tax. */
   next_charge: { at: string; amount: number; currency: string } | null;
   grace_until: string | null;
   payment_url: string | null;
-  scheduled_change: { assets: number; at: string } | null;
+  scheduled_change: { plan: BillingPlan | null; extra_assets: number; at: string | null } | null;
   notice: string;
+  /** Asked once, at the first subscription; it decides the currency. */
+  billing_country: string | null;
+  currency: string | null;
+  /** Currency for a billing country, and for every other country. */
+  country_currency: Record<string, string>;
+  default_currency: string;
   plans: BillingPlan[];
+  /** False while paid plans cannot be bought yet: the plans are shown with contact_url instead. */
+  billing_enabled: boolean;
+  /** Where to ask about Enterprise, and about paid plans while billing is off (a mailto: or https: link). */
+  contact_url: string;
 }
 
 export interface Invoice {
@@ -297,7 +371,15 @@ export interface Me {
   default_project_id?: number;
   token: Token | null;
   /** The workspace this session or token works in; null when the user belongs to none. */
-  workspace: { id: number; name: string; slug: string } | null;
+  workspace: {
+    id: number;
+    name: string;
+    slug: string;
+    /** Set while the organisation is read-only: nothing new is collected or sent. */
+    read_only?: ReadOnlyState | null;
+    /** "trial": reports and exports are shortened and watermarked. */
+    report_mode?: ReportMode;
+  } | null;
   /** Workspaces the signed-in user can switch to (sessions only). */
   workspaces: Membership[];
   /** Edition in effect for this workspace, and the paid features it includes. */
@@ -1991,6 +2073,8 @@ export interface EvidenceReport {
   };
   exceptions: ReportException[] | null;
   drift: ReportDrift[] | null;
+  /** Present when the report was shortened in trial mode. */
+  trial?: ReportTrial;
 }
 
 // --- Enrollment: one-time install codes for new servers (admin)

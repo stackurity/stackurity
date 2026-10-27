@@ -69,8 +69,11 @@ export function WorkspacesPage() {
       key: "limit",
       header: "Monitored / limit",
       cell: (w) => (
-        <AssetLimitEditor
-          w={w}
+        <LimitEditor
+          id={`limit-${w.id}`}
+          label={`Asset limit for ${w.name}`}
+          used={w.monitored}
+          limit={w.asset_limit}
           pending={act.pending}
           onSave={(limit) =>
             void update(w, { asset_limit: limit ?? -1 }, limit === null ? `${w.name} has no asset limit now.` : `${w.name} may monitor up to ${limit} assets.`)
@@ -78,7 +81,37 @@ export function WorkspacesPage() {
         />
       ),
     },
-    { key: "status", header: "Status", cell: (w) => (w.disabled_at ? <Badge status="disabled" /> : <Badge status="active" />) },
+    {
+      key: "projects",
+      header: "Projects / limit",
+      cell: (w) => (
+        <LimitEditor
+          id={`plimit-${w.id}`}
+          label={`Project limit for ${w.name}`}
+          used={w.projects}
+          limit={w.project_limit}
+          pending={act.pending}
+          onSave={(limit) =>
+            void update(w, { project_limit: limit ?? -1 }, limit === null ? `${w.name} has no project limit now.` : `${w.name} may have up to ${limit} projects.`)
+          }
+        />
+      ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      cell: (w) => (
+        <>
+          {w.disabled_at ? <Badge status="disabled" /> : <Badge status="active" />}
+          {w.read_only_at && (
+            <span className="block small" title={w.read_only_reason || undefined}>
+              Read-only since <RelativeTime iso={w.read_only_at} />
+            </span>
+          )}
+          {w.report_mode === "trial" && <span className="block small muted">Trial reports</span>}
+        </>
+      ),
+    },
     { key: "created", header: "Created", cell: (w) => <RelativeTime iso={w.created_at} /> },
     {
       key: "actions",
@@ -95,6 +128,23 @@ export function WorkspacesPage() {
             }}
           >
             Rename
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm"
+            disabled={act.pending}
+            onClick={() => {
+              if (w.read_only_at) {
+                void update(w, { read_only: false }, `${w.name} collects and notifies again.`);
+                return;
+              }
+              const reason = window.prompt(
+                `Make ${w.name} read-only? Its members can still sign in and look, but nothing new is collected and no notifications are sent. Reason shown to them:`,
+              );
+              if (reason !== null) void update(w, { read_only: true, read_only_reason: reason.trim() }, `${w.name} is read-only.`);
+            }}
+          >
+            {w.read_only_at ? "Make writable" : "Make read-only"}
           </button>
           {w.id !== 1 && (
             <button
@@ -120,8 +170,8 @@ export function WorkspacesPage() {
         title="Workspaces"
         sub={
           <>
-            Each organisation on this installation works in its own workspace and cannot see the others. A limit on monitored assets refuses new assets
-            only; everything already monitored keeps being checked.
+            Each organisation on this installation works in its own workspace and cannot see the others. A limit on monitored assets or projects refuses new
+            ones only; everything already there is kept and checked. A read-only workspace can be viewed but collects and notifies nothing.
           </>
         }
         actions={
@@ -199,15 +249,29 @@ function CreateWorkspace({ onCancel, onCreated }: { onCancel: () => void; onCrea
 }
 
 /**
- * Monitored assets against the workspace's limit, and a field to change the
- * limit. An empty field removes it.
+ * Usage against one of the workspace's limits (monitored assets, projects),
+ * and a field to change the limit. An empty field removes it.
  */
-function AssetLimitEditor({ w, pending, onSave }: { w: Workspace; pending: boolean; onSave: (limit: number | null) => void }) {
-  const [value, setValue] = useState(w.asset_limit === null ? "" : String(w.asset_limit));
+function LimitEditor({
+  id,
+  label,
+  used,
+  limit,
+  pending,
+  onSave,
+}: {
+  id: string;
+  label: string;
+  used: number;
+  limit: number | null;
+  pending: boolean;
+  onSave: (limit: number | null) => void;
+}) {
+  const [value, setValue] = useState(limit === null ? "" : String(limit));
   const parsed = value.trim() === "" ? null : Number(value);
   const valid = parsed === null || (Number.isInteger(parsed) && parsed >= 0);
-  const changed = parsed !== w.asset_limit;
-  const over = w.asset_limit !== null && w.monitored >= w.asset_limit;
+  const changed = parsed !== limit;
+  const over = limit !== null && used >= limit;
   return (
     <form
       className="limit-editor"
@@ -217,13 +281,13 @@ function AssetLimitEditor({ w, pending, onSave }: { w: Workspace; pending: boole
       }}
     >
       <span className={over ? "limit-reached" : undefined}>
-        {w.monitored} / {w.asset_limit === null ? "no limit" : w.asset_limit}
+        {used} / {limit === null ? "no limit" : limit}
       </span>
-      <label className="sr-only" htmlFor={`limit-${w.id}`}>
-        Asset limit for {w.name} (empty for no limit)
+      <label className="sr-only" htmlFor={id}>
+        {label} (empty for no limit)
       </label>
       <input
-        id={`limit-${w.id}`}
+        id={id}
         type="number"
         min={0}
         step={1}

@@ -12,7 +12,8 @@ import (
 	"github.com/stackurity/stackurity/internal/tenant"
 )
 
-// Monitored-asset limits (docs/asset-limits.md).
+// Monitored-asset limits (docs/asset-limits.md). The project limit, the
+// read-only state and the report mode are in plan_state.go.
 //
 // A monitored asset is an asset of the organisation that has not been
 // merged into another and whose kind is anything but a Kubernetes
@@ -207,6 +208,16 @@ type AssetUsage struct {
 	Refused []RefusedAsset `json:"refused"`
 	// RefusedRecently counts refused assets last tried in the past 7 days.
 	RefusedRecently int64 `json:"refused_recently"`
+	// Projects counts active (not archived) projects; ProjectLimit is nil
+	// when the organisation has no project limit.
+	Projects        int64  `json:"projects"`
+	ProjectLimit    *int64 `json:"project_limit"`
+	ProjectsAtLimit bool   `json:"projects_at_limit"`
+	// ReadOnly is set while the organisation is read-only.
+	ReadOnly *ReadOnlyState `json:"read_only"`
+	// ReportMode is full, or trial: reports and exports are shortened and
+	// watermarked.
+	ReportMode string `json:"report_mode"`
 }
 
 // AssetUsage reports the current workspace's monitored assets and limit.
@@ -267,7 +278,22 @@ func (s *Store) WorkspaceAssetUsage(ctx context.Context, ws int64) (*AssetUsage,
 	}
 	err = s.Pool.QueryRow(sys, `SELECT count(*) FROM refused_assets WHERE workspace_id = $1 AND last_refused_at > now() - interval '7 days'`,
 		ws).Scan(&u.RefusedRecently)
-	return u, err
+	if err != nil {
+		return nil, err
+	}
+	if u.ProjectLimit, err = projectLimit(sys, s.Pool, ws); err != nil {
+		return nil, err
+	}
+	if u.Projects, err = activeProjects(sys, s.Pool, ws); err != nil {
+		return nil, err
+	}
+	u.ProjectsAtLimit = u.ProjectLimit != nil && u.Projects >= *u.ProjectLimit
+	state, err := s.GetWorkspaceState(ctx, ws)
+	if err != nil {
+		return nil, err
+	}
+	u.ReadOnly, u.ReportMode = state.ReadOnly, state.ReportMode
+	return u, nil
 }
 
 // SetAssetLimit sets workspace ws's monitored-asset limit; nil removes it.

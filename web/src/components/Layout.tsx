@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, Outlet, useLocation } from "react-router";
-import { api, type IgnoreRequest, type Incident, type List, type Plan } from "../api";
+import { api, type IgnoreRequest, type Incident, type List, type Plan, type ReadOnlyState } from "../api";
 import { useLoad } from "../hooks";
 import { useAuth } from "../auth";
 import { ProjectProvider, useProject } from "../project";
@@ -187,7 +187,8 @@ function Shell() {
         <main id="main" className="content" tabIndex={-1}>
           <UpdateBanner />
           {!pathname.startsWith("/admin/health") && <PlatformHealthBanner />}
-          {me?.workspace && !projectOnly && pathname !== "/settings/usage" && <AssetLimitBanner workspaceId={me.workspace.id} />}
+          {me?.workspace?.read_only && <ReadOnlyBanner state={me.workspace.read_only} />}
+          {me?.workspace && !me.workspace.read_only && !projectOnly && pathname !== "/settings/usage" && <AssetLimitBanner workspaceId={me.workspace.id} />}
           {current === "settings" && pathname !== "/settings" && (
             <nav className="crumbs" aria-label="Breadcrumb">
               <Link to="/settings">Settings</Link>
@@ -540,6 +541,30 @@ function AssetLimitBanner({ workspaceId }: { workspaceId: number }) {
       This organisation monitors {u.monitored} of {u.limit} assets allowed. New servers, repositories and images are not added; everything already
       here is still checked.{" "}
       {can("admin") ? <Link to="/settings/usage">See usage</Link> : <span>Ask an admin to make room.</span>}
+    </div>
+  );
+}
+
+/**
+ * Says why the organisation is read-only (docs/asset-limits.md): everyone
+ * can still look, nothing new is collected or sent. Admins of a hosted
+ * service get a link to Plan and billing.
+ */
+function ReadOnlyBanner({ state }: { state: ReadOnlyState }) {
+  const { can, meta } = useAuth();
+  return (
+    <div className="alert alert-warn limit-banner" role="status">
+      <strong>This organisation is read-only.</strong> {state.reason && <>{state.reason} </>}
+      Everything here can still be viewed, but nothing new is collected and no notifications are sent.{" "}
+      {meta?.billing ? (
+        can("admin") ? (
+          <Link to="/settings/billing">Plan and billing</Link>
+        ) : (
+          <span>An admin can restore it under Plan and billing.</span>
+        )
+      ) : (
+        <span>Ask your administrator.</span>
+      )}
     </div>
   );
 }

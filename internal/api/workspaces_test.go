@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stackurity/stackurity/internal/auth"
 	"github.com/stackurity/stackurity/internal/model"
@@ -121,6 +122,54 @@ func TestWorkspaceIsolation(t *testing.T) {
 	if code, _ := bearerBody(e, a.collector, "POST", "/api/v1/ingest", hostBatch(model.AssetHost, "refused-alpha", "machine-id")); code != 402 {
 		t.Fatalf("alpha refused host: %d", code)
 	}
+	// A is also read-only, in trial mode and at a project limit, with a
+	// reason naming it: B sees none of that, and B still collects and
+	// reports in full (checked below, then A is writable again).
+	alphaSince := time.Now()
+	if err := e.st.SetReadOnly(ctx, tenant.DefaultWorkspace, &alphaSince, "alpha's trial ended"); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.st.SetReportMode(ctx, tenant.DefaultWorkspace, store.ReportTrial); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.st.SetProjectLimit(ctx, tenant.DefaultWorkspace, new(int64(0))); err != nil {
+		t.Fatal(err)
+	}
+	if code, body := bearerBody(e, a.collector, "POST", "/api/v1/ingest", hostBatch(model.AssetHost, "alpha-ro", "machine-id")); code != 402 ||
+		!strings.Contains(body, "read_only") {
+		t.Fatalf("alpha read-only ingest: %d %s", code, body)
+	}
+	if code, body := bearerBody(e, b.collector, "POST", "/api/v1/ingest", hostBatch(model.AssetHost, "beta-new", "machine-id")); code != 201 {
+		t.Errorf("beta ingest while alpha is read-only: %d %s", code, body)
+	}
+	if code := betaSess.do("POST", "/api/v1/projects", map[string]any{"name": "beta-new"}, nil); code != 201 {
+		t.Errorf("beta project while alpha is at its project limit: %d", code)
+	}
+	var betaUsage store.AssetUsage
+	if betaSess.do("GET", "/api/v1/usage", nil, &betaUsage); betaUsage.ReadOnly != nil || betaUsage.ReportMode != "full" || betaUsage.ProjectLimit != nil {
+		t.Errorf("beta usage while alpha is read-only: %+v", betaUsage)
+	}
+	var betaOutcomes map[string]any
+	if betaSess.do("GET", "/api/v1/reports/outcomes", nil, &betaOutcomes); betaOutcomes["trial"] != nil {
+		t.Errorf("beta's outcomes report is in trial mode: %v", betaOutcomes["trial"])
+	}
+	for _, get := range []string{"/api/v1/auth/me", "/api/v1/usage", "/api/v1/workspaces"} {
+		resp := betaSess.req("GET", get, nil, nil)
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if strings.Contains(strings.ToLower(string(body)), "alpha") || strings.Contains(string(body), `"trial"`) {
+			t.Errorf("GET %s from beta shows alpha's state: %s", get, body)
+		}
+	}
+	if err := e.st.SetReadOnly(ctx, tenant.DefaultWorkspace, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.st.SetReportMode(ctx, tenant.DefaultWorkspace, store.ReportFull); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.st.SetProjectLimit(ctx, tenant.DefaultWorkspace, nil); err != nil {
+		t.Fatal(err)
+	}
 	if a.asset == b.asset || a.component == b.component {
 		t.Fatalf("the shared machine id merged the workspaces' hosts or private components: %+v %+v", a, b)
 	}
@@ -139,7 +188,7 @@ func TestWorkspaceIsolation(t *testing.T) {
 		"/api/v1/incidents", "/api/v1/coverage", "/api/v1/teams", "/api/v1/users", "/api/v1/users/directory", "/api/v1/tokens",
 		"/api/v1/audit", "/api/v1/channels", "/api/v1/routes", "/api/v1/deliveries", "/api/v1/integrations", "/api/v1/jobs",
 		"/api/v1/enrollments", "/api/v1/conflicts", "/api/v1/remediation/policies", "/api/v1/remediation/plans",
-		"/api/v1/reports/evidence", "/api/v1/workspaces", "/api/v1/auth/me", "/api/v1/usage",
+		"/api/v1/reports/evidence", "/api/v1/reports/outcomes", "/api/v1/workspaces", "/api/v1/auth/me", "/api/v1/usage",
 	}, editionIsolationLists...) {
 		code, body := get(betaSess, path)
 		if code >= 500 {

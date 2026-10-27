@@ -101,7 +101,8 @@ func (s *Server) adminUpdateWorkspace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = s.Store.Audit(tenant.WithWorkspace(r.Context(), id), principal(r).Actor(r), "workspace.update", "workspace", itoa(id),
-		map[string]any{"name": req.Name, "disabled": req.Disabled, "plan": req.Plan, "asset_limit": req.AssetLimit})
+		map[string]any{"name": req.Name, "disabled": req.Disabled, "plan": req.Plan, "asset_limit": req.AssetLimit,
+			"project_limit": req.ProjectLimit, "read_only": req.ReadOnly, "read_only_reason": req.ReadOnlyReason, "report_mode": req.ReportMode})
 	ws, err := s.Store.GetWorkspace(tenant.System(r.Context()), id)
 	if err != nil {
 		s.fail(w, r, err)

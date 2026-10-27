@@ -11,7 +11,7 @@ Stackurity becomes a platform: one installation serves many organisations, each 
 - Users are global and can belong to several workspaces with a different role in each.
 - Public intelligence (OSV, KEV, lifecycle, registry releases) is stored once and shared.
 
-Out of scope here: self-service sign-up, billing, data residency, a silo database per customer. These build on this design. Per-workspace limits on monitored assets are a generic mechanism in the core (`workspaces.asset_limit`, see [asset-limits.md](../asset-limits.md)); a hosted service only sets the limits.
+Out of scope here: self-service sign-up, billing, data residency, a silo database per customer. These build on this design. Per-workspace limits on monitored assets and projects, the read-only state and the trial report mode are generic mechanisms in the core (`workspaces.asset_limit`, `project_limit`, `read_only_at`, `report_mode`; see [asset-limits.md](../asset-limits.md)); a hosted service only sets them. `Store.DeleteWorkspace` removes a workspace and every row in it (all tenant tables cascade), with the accounts that belonged only to it; no route calls it in the core.
 
 ## Model
 

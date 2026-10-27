@@ -237,6 +237,20 @@ func requireRole(min auth.Role) func(http.Handler) http.Handler {
 	}
 }
 
+// requireWritable refuses, with 402 read_only, what would collect
+// something new or send a notification while the organisation is
+// read-only (docs/asset-limits.md). Uploads are refused in the store
+// (Ingest), whatever route they come by.
+func (s *Server) requireWritable(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := s.Store.CheckWritable(r.Context()); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func requireIngest(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if p := principal(r); p == nil || !p.Role.CanIngest() {

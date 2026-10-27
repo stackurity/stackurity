@@ -131,8 +131,19 @@ func (w *Worker) add(name string, every time.Duration, fn func(ctx context.Conte
 // EveryWorkspace registers a periodic task that runs once for each enabled
 // workspace, scoped to it. A failure in one workspace does not stop the rest.
 func (w *Worker) EveryWorkspace(name string, every time.Duration, fn func(ctx context.Context) error) {
+	w.everyWorkspace(name, every, w.Store.ActiveWorkspaceIDs, fn)
+}
+
+// EveryCollectingWorkspace is EveryWorkspace for the workspaces that are
+// not read-only: collection, evaluation and notifications stop while a
+// workspace is read-only (docs/asset-limits.md).
+func (w *Worker) EveryCollectingWorkspace(name string, every time.Duration, fn func(ctx context.Context) error) {
+	w.everyWorkspace(name, every, w.Store.CollectingWorkspaceIDs, fn)
+}
+
+func (w *Worker) everyWorkspace(name string, every time.Duration, list func(context.Context) ([]int64, error), fn func(ctx context.Context) error) {
 	w.add(name, every, func(ctx context.Context) error {
-		ids, err := w.Store.ActiveWorkspaceIDs(tenant.System(ctx))
+		ids, err := list(tenant.System(ctx))
 		if err != nil {
 			return err
 		}
