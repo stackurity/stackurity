@@ -269,8 +269,16 @@ func (d *Dispatcher) syncProjectJira(ctx context.Context, ch *store.Channel, del
 		if !partOpen(in) {
 			return nil // the part closed before an issue was made
 		}
-		if link, err = d.createProjectIssue(ctx, nctx, j, cfg, k, ws, sc, in); err != nil || link == nil {
+		if link, err = d.createProjectIssue(ctx, nctx, j, cfg, k, ws, sc, in); err != nil {
 			return err
+		}
+		if link == nil {
+			// Just created, in sync with the part as it is; the update
+			// below still adds what this event says (an escalation), as
+			// for whole-incident issues.
+			if link, err = d.Store.RouteIssueFor(ctx, k); err != nil {
+				return err
+			}
 		}
 	}
 	return d.updateProjectIssue(ctx, j, cfg, link, sc, in, del, attempts, msg)

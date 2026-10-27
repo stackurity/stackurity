@@ -94,7 +94,7 @@ func (pf *projectJiraFixture) assertAlphaOnly(t *testing.T, what, text string) {
 
 func issueText(is *fakeIssue) string {
 	b, _ := json.Marshal(is)
-	return strings.ReplaceAll(string(b), `&`, "&")
+	return strings.ReplaceAll(string(b), `\u0026`, "&")
 }
 
 // A Jira route limited to a project keeps its own issue per incident,
@@ -181,7 +181,7 @@ func TestJiraRouteLimitedToProject(t *testing.T) {
 	if len(c) != 1 || !strings.Contains(string(c[0]), "1 new finding joined this incident (now 2 findings on 2 assets)") {
 		t.Fatalf("Alpha's comments = %s", c)
 	}
-	pf.assertAlphaOnly(t, "Alpha's comment", strings.ReplaceAll(string(c[0]), `&`, "&"))
+	pf.assertAlphaOnly(t, "Alpha's comment", strings.ReplaceAll(string(c[0]), `\u0026`, "&"))
 
 	// Alpha's part is fixed while Beta's stays open: Alpha's issue is
 	// resolved and moved to Done; the incident stays open.
@@ -192,7 +192,7 @@ func TestJiraRouteLimitedToProject(t *testing.T) {
 		alpha.Status != "Done" {
 		t.Fatalf("Alpha's issue after its part was fixed: %s", issueText(alpha))
 	}
-	pf.assertAlphaOnly(t, "Alpha's resolution", strings.ReplaceAll(string(alpha.Comments[1]), `&`, "&"))
+	pf.assertAlphaOnly(t, "Alpha's resolution", strings.ReplaceAll(string(alpha.Comments[1]), `\u0026`, "&"))
 	if in, _ := pf.st.GetIncident(ctx, inc.ID); in.Status != "open" {
 		t.Errorf("incident %s", in.Status)
 	}
@@ -278,4 +278,46 @@ func TestProjectIssueRouteChanged(t *testing.T) {
 			t.Errorf("issue for Alpha created after the route moved to Beta: %+v", is)
 		}
 	}
+}
+
+// An escalation that creates the project's issue (no earlier delivery
+// made it) still adds its comment, as for whole-incident issues.
+func TestProjectIssueEscalationCreates(t *testing.T) {
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	pf := setupProjectJira(t)
+	// The route escalates only: it opens no issue on announcement.
+	r := pf.route
+	r.Escalation = true
+	if _, err := pf.st.SaveRoute(ctx, r); err != nil {
+		t.Fatal(err)
+	}
+	pf.setFindings("alpha-web", "beta-secret-db")
+	pf.tick()
+	incs, _, _ := pf.st.ListIncidents(ctx, store.IncidentFilter{})
+	label := ProjectIssueLabel(tenant.DefaultWorkspace, incs[0].ID, r.ID, pf.alpha)
+	if pf.issue(label) != nil {
+		t.Fatal("an escalation route opened an issue on announcement")
+	}
+	routes, _ := pf.st.ListRoutes(ctx) // as planOverdue reads them, with their project's assets
+	for _, x := range routes {
+		if x.ID == r.ID {
+			r = x
+		}
+	}
+	if err := pf.d.planProjectEscalations(ctx, r, pf.alpha, map[int64]int{incs[0].ID: 2}); err != nil {
+		t.Fatal(err)
+	}
+	if err := pf.d.Deliver(ctx); err != nil {
+		t.Fatal(err)
+	}
+	is := pf.issue(label)
+	if is == nil {
+		for _, d := range jiraDeliveries(t, pf.st, ctx, pf.ch.ID) {
+			t.Logf("delivery %s %s %s %s", d.Event, d.DedupeKey, d.Status, d.LastError)
+		}
+	}
+	if is == nil || len(is.Comments) != 1 || !strings.Contains(string(is.Comments[0]), "Escalated: Remediation deadline has passed.") {
+		t.Fatalf("issue = %+v", is)
+	}
+	pf.assertAlphaOnly(t, "escalation", issueText(is))
 }
