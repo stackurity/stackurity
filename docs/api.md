@@ -1,6 +1,6 @@
 # API v1
 
-Base path: `/api/v1`. Requests and responses are JSON. Errors look like this:
+Base path: `/api/v1`. Requests and responses are JSON. Every operation is also described in an [OpenAPI 3.1 document](../internal/api/openapi.json), which each server serves at `GET /api/v1/openapi.json` (no sign-in needed): load it into Swagger UI, Postman or a client generator. It lists each operation's summary, role (`x-stackurity-role`), parameters and authentication; this page describes the response bodies. Errors look like this:
 
 ```json
 {"error": {"code": "invalid", "message": "validation failed", "details": ["observations[3].purl \"x\" is not a valid purl"]}}
@@ -30,6 +30,7 @@ A workspace (shown as the organisation in the dashboard) groups its assets into 
 | Method & path | Role | Purpose |
 |---|---|---|
 | `GET /meta` | none | Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project` |
+| `GET /openapi.json` | none | This API as an OpenAPI 3.1 document |
 | `POST /setup` | setup token | Create the first admin |
 | `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` | none / any | Session handling |
 | `POST /feedback` | any signed-in user (rate limited, 10 an hour) | Send feedback to the Stackurity team: `kind` (`bug`, `idea`, `question`), `message` (up to 5000 characters), optional `email` and `page` (a path). The server adds its version and edition and forwards it to `STACKURITY_FEEDBACK_URL`; answers 202 when delivered, 502 when the feedback service cannot be reached, and 404 when feedback is turned off (`GET /auth/me` then has `feedback_enabled: false`). See [network.md](network.md#feedback) |
