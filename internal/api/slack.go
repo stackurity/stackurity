@@ -96,15 +96,29 @@ func SlackSignature(secret, ts string, body []byte) string {
 // slackResponseURL accepts only Slack's own response URLs, so a signed
 // payload can never make the server post elsewhere.
 func slackResponseURL(raw string) bool {
+	_, ok := slackSafeURL(raw)
+	return ok
+}
+
+// slackSafeURL rebuilds a response_url on one of Slack's own hosts, taking
+// only the path and query from the payload, so a request can only ever go
+// to Slack.
+func slackSafeURL(raw string) (string, bool) {
 	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "https" || u.User != nil || u.Port() != "" {
-		return false
+	if err != nil || u.Scheme != "https" || u.User != nil || u.Port() != "" || !strings.HasPrefix(u.Path, "/") {
+		return "", false
 	}
+	var host string
 	switch u.Hostname() {
-	case "hooks.slack.com", "hooks.slack-gov.com":
-		return strings.HasPrefix(u.Path, "/")
+	case "hooks.slack.com":
+		host = "hooks.slack.com"
+	case "hooks.slack-gov.com":
+		host = "hooks.slack-gov.com"
+	default:
+		return "", false
 	}
-	return false
+	safe := url.URL{Scheme: "https", Host: host, Path: u.Path, RawPath: u.RawPath, RawQuery: u.RawQuery}
+	return safe.String(), true
 }
 
 // slackRefuse answers a request that fails a check. Every failure before
@@ -579,7 +593,11 @@ var slackClient = &http.Client{
 	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 }
 
-func slackPost(ctx context.Context, u string, body []byte) error {
+func slackPost(ctx context.Context, raw string, body []byte) error {
+	u, ok := slackSafeURL(raw)
+	if !ok {
+		return errors.New("bad response_url")
+	}
 	req, err := http.NewRequestWithContext(ctx, "POST", u, bytes.NewReader(body))
 	if err != nil {
 		return errors.New("bad response_url")
