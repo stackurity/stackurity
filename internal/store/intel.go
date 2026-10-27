@@ -134,92 +134,6 @@ func (s *Store) SetFeedRecords(ctx context.Context, name string, n int64) error 
 	return err
 }
 
-// PackageRef identifies an OSV package.
-type PackageRef struct {
-	BaseEcosystem string
-	Name          string
-}
-
-// UpsertAdvisories stores OSV records and returns the packages they touch,
-// so only affected components are re-evaluated.
-func (s *Store) UpsertAdvisories(ctx context.Context, feed string, vulns []*osv.Vulnerability) (map[PackageRef]bool, error) {
-	touched := map[PackageRef]bool{}
-	err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
-		ids := make([]string, 0, len(vulns))
-		for _, v := range vulns {
-			ids = append(ids, v.ID)
-		}
-		// Packages the old versions referenced are touched too: an advisory
-		// that drops a package must clear that package's findings.
-		rows, err := tx.Query(ctx, `SELECT DISTINCT base_ecosystem, name FROM advisory_packages WHERE advisory_id = ANY($1)`, ids)
-		if err != nil {
-			return err
-		}
-		for rows.Next() {
-			var p PackageRef
-			if err := rows.Scan(&p.BaseEcosystem, &p.Name); err != nil {
-				rows.Close()
-				return err
-			}
-			touched[p] = true
-		}
-		rows.Close()
-		if _, err := tx.Exec(ctx, `DELETE FROM advisory_packages WHERE advisory_id = ANY($1)`, ids); err != nil {
-			return err
-		}
-		batch := &pgx.Batch{}
-		var pkgRows [][]any
-		for _, v := range vulns {
-			r := osv.Rate(v)
-			var score *float32
-			if r.Score > 0 || r.Source == "cvss_v3" || r.Source == "cvss_v4" {
-				f := float32(r.Score)
-				score = &f
-			}
-			refs, _ := json.Marshal(v.References)
-			aliases := v.Aliases
-			if aliases == nil {
-				aliases = []string{}
-			}
-			var published *time.Time
-			if !v.Published.IsZero() {
-				published = &v.Published
-			}
-			modified := v.Modified
-			if modified.IsZero() {
-				modified = time.Now()
-			}
-			batch.Queue(`INSERT INTO advisories (id, feed, group_key, aliases, summary, severity_level, severity_score,
-				severity_vector, severity_source, published, modified, withdrawn, refs, known_exploited, fetched_at)
-				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,
-				  EXISTS (SELECT 1 FROM known_exploited k WHERE k.cve = $3 OR k.cve = ANY($4)), now())
-				ON CONFLICT (id) DO UPDATE SET feed = EXCLUDED.feed, group_key = EXCLUDED.group_key, aliases = EXCLUDED.aliases,
-				  summary = EXCLUDED.summary, severity_level = EXCLUDED.severity_level, severity_score = EXCLUDED.severity_score,
-				  severity_vector = EXCLUDED.severity_vector, severity_source = EXCLUDED.severity_source,
-				  published = EXCLUDED.published, modified = EXCLUDED.modified, withdrawn = EXCLUDED.withdrawn,
-				  refs = EXCLUDED.refs, known_exploited = EXCLUDED.known_exploited, fetched_at = now()`,
-				v.ID, feed, osv.GroupKey(v.ID, v.Aliases, v.Upstream...), aliases, truncateText(v.Summary, 500), r.Level, score, r.Vector, r.Source,
-				published, modified, v.Withdrawn, refs)
-			for _, a := range v.Affected {
-				if a.Package.Name == "" || a.Package.Ecosystem == "" {
-					continue
-				}
-				aj, _ := json.Marshal(a)
-				base := osv.BaseEcosystem(a.Package.Ecosystem)
-				pkgRows = append(pkgRows, []any{v.ID, base, a.Package.Ecosystem, a.Package.Name, aj})
-				touched[PackageRef{base, a.Package.Name}] = true
-			}
-		}
-		if err := tx.SendBatch(ctx, batch).Close(); err != nil {
-			return err
-		}
-		_, err = tx.CopyFrom(ctx, pgx.Identifier{"advisory_packages"},
-			[]string{"advisory_id", "base_ecosystem", "ecosystem", "name", "affected"}, pgx.CopyFromRows(pkgRows))
-		return err
-	})
-	return touched, err
-}
-
 func truncateText(s string, n int) string {
 	if len(s) <= n {
 		return s
@@ -242,13 +156,28 @@ type AdvisoryMatch struct {
 	Affected       osv.Affected
 }
 
+// affectedJoin and affectedColumn read a package row's affected entry: from
+// affected_values, or for a row written by an earlier version, from the row.
+const (
+	affectedJoin   = `LEFT JOIN affected_values v ON v.hash = p.affected_hash`
+	affectedColumn = `COALESCE(v.affected, p.affected)`
+)
+
 // AdvisoriesFor returns every affected entry for a package in a base
 // ecosystem. Callers filter by exact ecosystem with osv.MatchEcosystem.
+//
+// The rows come in stored order, which is the order the index on
+// (base_ecosystem, name) returned them in before entries were read from
+// affected_values. The matcher keeps the first record it meets among equals
+// (the deciding record, the order of matched_ranges), so a join plan must
+// not reorder them: the same stored data gives the same evidence.
 func (s *Store) AdvisoriesFor(ctx context.Context, base, name string) ([]AdvisoryMatch, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT a.id, a.group_key, a.aliases, a.summary, a.severity_level, a.severity_score,
-		a.withdrawn, a.known_exploited, a.feed, p.ecosystem, p.affected
+		a.withdrawn, a.known_exploited, a.feed, p.ecosystem, `+affectedColumn+`
 		FROM advisory_packages p JOIN advisories a ON a.id = p.advisory_id
-		WHERE p.base_ecosystem = $1 AND p.name = $2`, base, name)
+		`+affectedJoin+`
+		WHERE p.base_ecosystem = $1 AND p.name = $2
+		ORDER BY p.ctid`, base, name)
 	if err != nil {
 		return nil, err
 	}
@@ -309,7 +238,10 @@ func (s *Store) ReplaceKnownExploited(ctx context.Context, rows [][]any) error {
 			[]string{"cve", "vendor", "product", "name", "added", "due_date", "ransomware"}, pgx.CopyFromRows(rows)); err != nil {
 			return err
 		}
-		_, err := tx.Exec(ctx, `UPDATE advisories a SET known_exploited = EXISTS (
+		// Only the advisories whose flag changes are written (and locked):
+		// rewriting every row each time left as many dead rows behind.
+		_, err := tx.Exec(ctx, `UPDATE advisories a SET known_exploited = NOT a.known_exploited
+			WHERE a.known_exploited <> EXISTS (
 			SELECT 1 FROM known_exploited k WHERE k.cve = a.group_key OR k.cve = ANY(a.aliases))`)
 		return err
 	})

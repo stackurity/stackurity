@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -76,9 +77,21 @@ func NewSyncer(s *store.Store, log *slog.Logger, cfg Config) *Syncer {
 // SyncResult tells the caller which packages changed so it can re-evaluate
 // only what is affected.
 type SyncResult struct {
-	Changed  int
+	// Changed counts the records whose stored data changed (for a
+	// vulnerability feed, advisories written; unchanged ones are skipped).
+	Changed int
+	// Packages lists the packages of the feed's ecosystem whose advisory
+	// data changed and that no successful sync has handed to
+	// re-evaluation yet: their components are re-evaluated.
 	Packages map[store.PackageRef]bool
-	Full     bool // everything in the ecosystem should be re-evaluated
+	// Full means the sync read the source's complete data (an archive, not
+	// the changes since the cursor), so Ecosystems is complete.
+	Full bool
+	// All asks for every component of the feed's ecosystem to be
+	// re-evaluated, not only Packages: the feed's coverage changed (a
+	// release was added or dropped), or it was stale or had never synced,
+	// so every finding's feed state changes.
+	All bool
 	// Ecosystems seen in the records read, e.g. "Debian:12".
 	Ecosystems map[string]bool
 }
@@ -122,6 +135,10 @@ func (s *Syncer) Sync(ctx context.Context, name string) (*SyncResult, error) {
 	default:
 		err = fmt.Errorf("unknown feed %q", name)
 	}
+	var pending *store.Pending
+	if base, vuln := feedEcosystem(name); vuln && err == nil && res != nil {
+		pending, err = s.collectPending(ctx, feed, base, res)
+	}
 	if err == nil && s.Changed != nil {
 		if cerr := s.Changed(ctx, name, res); cerr != nil {
 			err = fmt.Errorf("queue re-evaluation: %w", cerr)
@@ -134,6 +151,14 @@ func (s *Syncer) Sync(ctx context.Context, name string) (*SyncResult, error) {
 	if rerr := s.Store.FeedResult(context.WithoutCancel(ctx), name, cursor, changed, err); rerr != nil && err == nil {
 		err = rerr
 	}
+	if base, ok := feedEcosystem(name); ok && err == nil {
+		// Re-evaluation of the pending packages is queued: they are done.
+		// If this fails or the server dies first, the next sync queues
+		// them again.
+		if cerr := s.Store.ClearPending(context.WithoutCancel(ctx), base, pending); cerr != nil {
+			s.Log.Warn("clearing packages queued for re-evaluation", "feed", name, "err", cerr)
+		}
+	}
 	if base, ok := feedEcosystem(name); ok && err == nil && res != nil {
 		// Which releases the feed covers, so a release it has nothing for
 		// is reported as not evaluated rather than clean.
@@ -142,6 +167,50 @@ func (s *Syncer) Sync(ctx context.Context, name string) (*SyncResult, error) {
 		}
 	}
 	return res, err
+}
+
+// collectPending sets what a vulnerability feed's sync re-evaluates: the
+// packages of its ecosystem whose advisory data changed and have not been
+// handed to re-evaluation yet (recorded with the advisories, so records
+// written by an interrupted attempt, or by another feed's sync of an
+// advisory that also covers this ecosystem, are included although this
+// sync found them unchanged), or everything when the feed's coverage or
+// state changed. feed is the feed as it was before the sync.
+func (s *Syncer) collectPending(ctx context.Context, feed *store.Feed, base string, res *SyncResult) (*store.Pending, error) {
+	pending, err := s.Store.PendingPackages(ctx, base)
+	if err != nil {
+		return nil, err
+	}
+	if res.Packages == nil {
+		res.Packages = map[store.PackageRef]bool{}
+	}
+	for p := range pending.Packages {
+		res.Packages[p] = true
+	}
+	switch {
+	case feed.LastSuccess == nil || feed.Stale || feed.Ecosystems == nil:
+		res.All = true
+	case res.Full:
+		res.All = !sameSet(feed.Ecosystems, res.Ecosystems)
+	default:
+		for e := range res.Ecosystems {
+			if !slices.Contains(feed.Ecosystems, e) {
+				res.All = true
+			}
+		}
+	}
+	return pending, nil
+}
+
+func sameSet(list []string, set map[string]bool) bool {
+	n := 0
+	for _, e := range list {
+		if !set[e] {
+			return false
+		}
+		n++
+	}
+	return n == len(set)
 }
 
 // --- OSV
@@ -194,12 +263,9 @@ func (s *Syncer) osvFull(ctx context.Context, feed, base string) (*SyncResult, s
 		if len(batch) == 0 {
 			return nil
 		}
-		touched, err := s.Store.UpsertAdvisories(ctx, feed, batch)
-		for p := range touched {
-			res.Packages[p] = true
-		}
+		n, err := s.Store.UpsertAdvisories(ctx, feed, batch)
 		res.noteEcosystems(osvBase(feed), batch)
-		res.Changed += len(batch)
+		res.Changed += n
 		batch = batch[:0]
 		return err
 	}
@@ -327,16 +393,13 @@ func (s *Syncer) osvIncremental(ctx context.Context, feed, base, cursor string) 
 	}
 	for i := 0; i < len(got); i += osvBatch {
 		end := min(i+osvBatch, len(got))
-		touched, err := s.Store.UpsertAdvisories(ctx, feed, got[i:end])
+		n, err := s.Store.UpsertAdvisories(ctx, feed, got[i:end])
 		if err != nil {
 			return nil, "", err
 		}
 		res.noteEcosystems(osvBase(feed), got[i:end])
-		for p := range touched {
-			res.Packages[p] = true
-		}
+		res.Changed += n
 	}
-	res.Changed = len(got)
 	return res, newest.Format(time.RFC3339Nano), nil
 }
 

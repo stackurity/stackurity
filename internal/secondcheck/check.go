@@ -1,6 +1,7 @@
 // Package secondcheck is the independent second check of high-impact
-// findings. It re-derives a finding from the raw stored advisory record and
-// the raw observed version through its own, deliberately simple code: its
+// findings. It re-derives a finding from the stored advisory record (each
+// affected entry's ranges and listed versions, in the order the feed lists
+// them) and the raw observed version through its own, deliberately simple code: its
 // own package URL parser, ecosystem and release rules, version comparators
 // and a plain reading of OSV ranges. It imports nothing from the matcher
 // (internal/intel, internal/osv, internal/version), so a defect there is not

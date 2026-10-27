@@ -16,7 +16,9 @@ import (
 // is given policies or added here with a reason.
 var globalTables = map[string]string{
 	"advisories":         "public intelligence",
+	"affected_values":    "public intelligence",
 	"advisory_packages":  "public intelligence",
+	"pending_packages":   "public intelligence: packages a feed sync changed, before re-evaluation is queued",
 	"feeds":              "public intelligence; changed only by instance admins",
 	"known_exploited":    "public intelligence",
 	"lifecycle_cycles":   "public intelligence",
