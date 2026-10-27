@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/stackurity/stackurity/internal/license"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -91,6 +92,10 @@ type Server struct {
 	// SlackRespond posts an answer to a Slack response_url (already checked
 	// to be Slack's); nil posts it over HTTPS. Tests capture answers here.
 	SlackRespond func(ctx context.Context, responseURL string, body []byte) error
+	// OpenAIAppsChallenge is served as text/plain at
+	// /.well-known/openai-apps-challenge, for OpenAI's domain check when an
+	// app is submitted (STACKURITY_OPENAI_APPS_CHALLENGE); empty answers 404.
+	OpenAIAppsChallenge string
 	// ClientMetadataHTTP fetches OAuth client ID metadata documents; nil
 	// uses a client through the outbound address guard. Tests set it.
 	ClientMetadataHTTP *http.Client
@@ -124,6 +129,7 @@ func (s *Server) Handler() http.Handler {
 
 	// AI assistants: the MCP endpoint and OAuth sign-in (assistants.go).
 	s.assistantRoutes(r)
+	r.Get("/.well-known/openai-apps-challenge", s.openAIAppsChallenge)
 
 	r.Get("/install/agent.sh", s.installScript)
 	r.Get("/download/agent/{platform}", s.downloadAgent)
@@ -508,4 +514,16 @@ func all[T any](items []T) list[T] {
 		items = []T{}
 	}
 	return list[T]{Items: items, Total: int64(len(items))}
+}
+
+// openAIAppsChallenge answers OpenAI's domain verification for app
+// submission with the configured token, or 404 (never the dashboard).
+func (s *Server) openAIAppsChallenge(w http.ResponseWriter, r *http.Request) {
+	if s.OpenAIAppsChallenge == "" {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = io.WriteString(w, s.OpenAIAppsChallenge)
 }

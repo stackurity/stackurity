@@ -685,12 +685,32 @@ type finding struct {
 var readTools = []string{"search", "list_assets", "action_plan", "asset_stack", "list_findings", "get_finding", "find_component",
 	"explain_finding", "upgrade_recommendation", "remediation_plan", "verify_since"}
 
+// readTitles are the read tools' short human titles (directories show them).
+var readTitles = map[string]string{
+	"search":                 "Search",
+	"list_assets":            "List assets",
+	"action_plan":            "What to fix first",
+	"asset_stack":            "An asset's stack",
+	"list_findings":          "List issues",
+	"get_finding":            "Get an issue",
+	"find_component":         "Find a package",
+	"explain_finding":        "Explain an issue's priority",
+	"upgrade_recommendation": "Upgrade recommendation",
+	"remediation_plan":       "Remediation plan",
+	"verify_since":           "What changed since",
+}
+
+// toolList lists the tools with a title and every behaviour hint set
+// explicitly: read tools only read Stackurity's own data; write tools say
+// whether they overwrite or hide something, are safe to repeat, or reach
+// outside Stackurity.
 func toolList(writes bool) []map[string]any {
 	out := make([]map[string]any, 0, len(readTools)+len(writeTools))
 	for _, n := range readTools {
 		t := tools[n]
-		out = append(out, map[string]any{"name": n, "description": t.description, "inputSchema": t.schema,
-			"annotations": map[string]any{"readOnlyHint": true, "openWorldHint": false}})
+		out = append(out, map[string]any{"name": n, "title": readTitles[n], "description": t.description, "inputSchema": t.schema,
+			"annotations": map[string]any{"title": readTitles[n], "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true,
+				"openWorldHint": false}})
 	}
 	for _, n := range writeTools {
 		if !writes {
@@ -699,7 +719,7 @@ func toolList(writes bool) []map[string]any {
 		t := tools[n]
 		out = append(out, map[string]any{"name": n, "title": t.write.title, "description": t.description, "inputSchema": t.schema,
 			"annotations": map[string]any{"title": t.write.title, "readOnlyHint": false, "destructiveHint": t.write.destructive,
-				"idempotentHint": t.write.idempotent, "openWorldHint": false}})
+				"idempotentHint": t.write.idempotent, "openWorldHint": t.write.openWorld}})
 	}
 	return out
 }

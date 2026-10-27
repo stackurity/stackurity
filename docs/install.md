@@ -81,6 +81,7 @@ Connecting an asset is quiet: one "connected" message, and no alerts, Jira issue
 | `STACKURITY_UPDATE_URL` | GitHub's release list | Mirror of `https://api.github.com/repos/stackurity/stackurity/releases?per_page=20`, for installs that cannot reach GitHub |
 | `STACKURITY_OSV_URL`, `STACKURITY_KEV_URL`, `STACKURITY_ENDOFLIFE_URL`, `STACKURITY_NPM_REGISTRY`, `STACKURITY_PACKAGIST_URL`, `STACKURITY_PYPI_URL`, `STACKURITY_GOPROXY_URL`, `STACKURITY_CRATES_INDEX_URL`, `STACKURITY_RUBYGEMS_URL`, `STACKURITY_NUGET_URL`, `STACKURITY_MAVEN_URL`, `STACKURITY_PUB_URL` | public sources | Mirrors for offline or air-gapped installs ([network.md](network.md)) |
 | `STACKURITY_BASE_URL` | — | Public dashboard URL, used for links in notifications and by the agent installer |
+| `STACKURITY_OPENAI_APPS_CHALLENGE` (or `_FILE`) | — | The token OpenAI gives when you submit Stackurity as a ChatGPT app; served as text at `/.well-known/openai-apps-challenge` (404 when unset) |
 | `STACKURITY_AGENT_DIR` | `/usr/local/lib/stackurity/agents` in the image | Agent builds served to new hosts by **Add server** |
 | `STACKURITY_ALLOW_HTTP_WEBHOOKS` | `false` | Allow `http://` webhook URLs, for internal receivers |
 | `STACKURITY_PLUGIN_DIR` | `/usr/local/lib/stackurity/plugins` in the image | Directory of plugin executables |

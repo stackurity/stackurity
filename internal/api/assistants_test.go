@@ -466,7 +466,7 @@ func TestAssistantOAuth(t *testing.T) {
 	}
 	// Tokens that do not work are limited per address.
 	limited := false
-	for range 40 {
+	for range 320 {
 		if code, _, _ := mcpPost(e, "stka_wrong", map[string]any{"id": 1, "method": "ping"}); code == 429 {
 			limited = true
 			break
@@ -842,5 +842,59 @@ func TestAssistantsListMCPURL(t *testing.T) {
 	withBaseURL(e)
 	if code := s.do("GET", "/api/v1/assistants", nil, &res); code != 200 || res.MCPURL == nil || *res.MCPURL != e.srv.URL+"/mcp" {
 		t.Fatalf("with a base URL: %d %v", code, res.MCPURL)
+	}
+}
+
+// OpenAI's domain check reads the configured token as text, and nothing
+// (not the dashboard) when none is set.
+func TestOpenAIAppsChallenge(t *testing.T) {
+	get := func(e *env) (int, string, string) {
+		resp, err := http.Get(e.srv.URL + "/.well-known/openai-apps-challenge")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var b bytes.Buffer
+		_, _ = b.ReadFrom(resp.Body)
+		return resp.StatusCode, resp.Header.Get("Content-Type"), b.String()
+	}
+	if code, _, body := get(newEnv(t)); code != 404 || strings.Contains(body, "<html") {
+		t.Errorf("unset: %d %q", code, body)
+	}
+	e := newEnvWith(t, func(s *api.Server) { s.OpenAIAppsChallenge = "tok-123" })
+	if code, ct, body := get(e); code != 200 || body != "tok-123" || !strings.HasPrefix(ct, "text/plain") {
+		t.Errorf("set: %d %q %q", code, ct, body)
+	}
+}
+
+// Token requests are limited per code or refresh token, not only per
+// address: hosted assistants share their vendor's addresses, so many
+// users' requests from one address still go through.
+func TestOAuthTokenLimits(t *testing.T) {
+	e := newEnv(t)
+	withBaseURL(e)
+	post := func(form url.Values) int {
+		resp, err := http.Post(e.srv.URL+"/oauth/token", "application/x-www-form-urlencoded", strings.NewReader(form.Encode()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	limited := false
+	for i := range 12 {
+		if post(url.Values{"grant_type": {"refresh_token"}, "refresh_token": {"stkr_same"}, "client_id": {"stkc_x"}}) == 429 {
+			limited = i >= 10
+			break
+		}
+	}
+	if !limited {
+		t.Error("one refresh token is not limited after 10 tries a minute")
+	}
+	// Other credentials from the same address still get an answer.
+	for i := range 30 {
+		if code := post(url.Values{"grant_type": {"refresh_token"}, "refresh_token": {fmt.Sprint("stkr_", i)}, "client_id": {fmt.Sprint("stkc_", i)}}); code == 429 {
+			t.Fatalf("request %d from one address was limited", i)
+		}
 	}
 }

@@ -77,6 +77,15 @@ func TestProtocol(t *testing.T) {
 	}
 	for i, x := range tl {
 		ann := x.(map[string]any)["annotations"].(map[string]any)
+		// Directories require a title and all three behaviour hints on every tool.
+		if title, _ := x.(map[string]any)["title"].(string); title == "" || ann["title"] != title {
+			t.Errorf("tool without a title: %v", x)
+		}
+		for _, h := range []string{"readOnlyHint", "destructiveHint", "openWorldHint"} {
+			if _, ok := ann[h].(bool); !ok {
+				t.Errorf("tool %v does not set %s", x.(map[string]any)["name"], h)
+			}
+		}
 		if ann["readOnlyHint"] != (i < len(readTools)) {
 			t.Errorf("tool %d marked readOnlyHint %v: %v", i, ann["readOnlyHint"], x)
 		}
@@ -86,6 +95,19 @@ func TestProtocol(t *testing.T) {
 	}
 	if len(tools) != len(tl) {
 		t.Errorf("%d tools implemented, %d listed", len(tools), len(tl))
+	}
+	hints := map[string][2]bool{} // destructive, open world
+	for _, x := range tl {
+		ann := x.(map[string]any)["annotations"].(map[string]any)
+		hints[x.(map[string]any)["name"].(string)] = [2]bool{ann["destructiveHint"].(bool), ann["openWorldHint"].(bool)}
+	}
+	for _, n := range []string{"rename_project", "assign", "snooze", "ignore", "remove_assets_from_project"} {
+		if !hints[n][0] {
+			t.Errorf("%s is not marked destructive", n)
+		}
+	}
+	if !hints["invite_to_project"][1] || hints["create_project"][1] || hints["search"][0] {
+		t.Errorf("hints = %v", hints)
 	}
 	call := res[2]["result"].(map[string]any)
 	text := call["content"].([]any)[0].(map[string]any)["text"].(string)

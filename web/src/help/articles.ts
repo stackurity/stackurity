@@ -51,9 +51,9 @@ export const ARTICLES: Article[] = [
     id: "ai-assistants",
     title: "Connect an AI assistant",
     section: "Getting started",
-    summary: "Ask Claude, ChatGPT, Cursor, VS Code or Claude Code what is installed, what is vulnerable and what to upgrade.",
+    summary: "Ask Claude, ChatGPT, Cursor, VS Code, Windsurf, Gemini CLI or Replit what is installed, what is vulnerable and what to upgrade.",
     where: ["Settings", "AI assistants"],
-    keywords: "ai assistant claude chatgpt cursor vs code copilot claude code mcp connector model context protocol oauth connected assistants allow changes",
+    keywords: "ai assistant claude chatgpt cursor vs code copilot claude code windsurf gemini cli replit mcp connector model context protocol oauth connected assistants allow changes",
     body: [
       {
         p: "Stackurity is an MCP server: an AI assistant can read your inventory, issues and fixes as you, and, if you allow it, make changes for you, such as assigning or snoozing issues.",
@@ -61,7 +61,7 @@ export const ARTICLES: Article[] = [
       {
         steps: [
           "Open [Settings ▸ AI assistants](/settings/ai-assistants) and copy the address shown there.",
-          "Pick your assistant's tab and follow its steps: add the address as a custom connector or MCP server.",
+          "Click your assistant's card and follow its steps. Cursor, VS Code and Replit have an install button; the others take the address as a custom connector or MCP server.",
           "Sign in to Stackurity when the assistant asks. Choose the organisation and what it can see. Tick **Allow changes** only if it should make changes for you. Click **Allow**.",
         ],
       },

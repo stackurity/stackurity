@@ -208,9 +208,14 @@ func serverCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			challenge, err := envOrFile("STACKURITY_OPENAI_APPS_CHALLENGE")
+			if err != nil {
+				return err
+			}
 			srv := &api.Server{
-				Pro:        proCfg,
-				Dispatcher: dispatcher, AllowHTTPWebhooks: allowHTTPHooks, Plugins: pluginRunner,
+				OpenAIAppsChallenge: challenge,
+				Pro:                 proCfg,
+				Dispatcher:          dispatcher, AllowHTTPWebhooks: allowHTTPHooks, Plugins: pluginRunner,
 				Store: st, Log: log, Secrets: res, Version: version, SetupToken: setupToken,
 				BaseURL: os.Getenv("STACKURITY_BASE_URL"), AgentDir: os.Getenv("STACKURITY_AGENT_DIR"),
 				CookieSecure: cookieSecure,
@@ -1082,4 +1087,17 @@ func truncateLog(s string) string {
 func assetLimitNote(refused, total int) error {
 	return fmt.Errorf("%d of %d assets were not added because this organisation is at its monitored-asset limit; "+
 		"the assets already monitored were updated. See Settings, Usage: %w", refused, total, store.ErrAssetLimit)
+}
+
+// envOrFile reads NAME, or the file NAME_FILE names (which wins), trimmed.
+func envOrFile(name string) (string, error) {
+	v := os.Getenv(name)
+	if f := os.Getenv(name + "_FILE"); f != "" {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			return "", fmt.Errorf("read %s_FILE: %w", name, err)
+		}
+		v = string(b)
+	}
+	return strings.TrimSpace(v), nil
 }

@@ -33,9 +33,13 @@ import (
 // annotations mark which tools are destructive.
 
 type writeTool struct {
-	title       string
+	title string
+	// destructive: it overwrites or hides something (a name, an
+	// assignment, an issue from lists). openWorld: it reaches outside
+	// Stackurity (an email to any address).
 	destructive bool
 	idempotent  bool
+	openWorld   bool
 	// plan reads what the change needs and describes it. It must not
 	// change anything.
 	plan func(ctx context.Context, s *Server, a map[string]any) (*change, error)
@@ -412,7 +416,7 @@ func init() {
 			"name":       str("The new name, 1 to 100 characters"),
 			"confirm":    confirmProp(),
 		}, "project_id", "name"),
-		write: &writeTool{title: "Rename a project", idempotent: true, plan: func(ctx context.Context, s *Server, a map[string]any) (*change, error) {
+		write: &writeTool{title: "Rename a project", idempotent: true, destructive: true, plan: func(ctx context.Context, s *Server, a map[string]any) (*change, error) {
 			id, err := positive(a, "project_id")
 			if err != nil {
 				return nil, err
@@ -563,7 +567,7 @@ func init() {
 			"assignee": str(`"me", a user id, or a person's email`),
 			"confirm":  confirmProp(),
 		}), "assignee"),
-		write: &writeTool{title: "Assign issues", idempotent: true, plan: func(ctx context.Context, s *Server, a map[string]any) (*change, error) {
+		write: &writeTool{title: "Assign issues", idempotent: true, destructive: true, plan: func(ctx context.Context, s *Server, a map[string]any) (*change, error) {
 			set, err := resolveIssues(ctx, s.API, a)
 			if err != nil {
 				return nil, err
@@ -590,7 +594,7 @@ func init() {
 			"note":      str("Why (kept in each issue's history)"),
 			"confirm":   confirmProp(),
 		})),
-		write: &writeTool{title: "Snooze issues", idempotent: true, plan: func(ctx context.Context, s *Server, a map[string]any) (*change, error) {
+		write: &writeTool{title: "Snooze issues", idempotent: true, destructive: true, plan: func(ctx context.Context, s *Server, a map[string]any) (*change, error) {
 			until, err := dateArg(a, "until")
 			if err != nil {
 				return nil, err
@@ -635,7 +639,7 @@ func init() {
 			"mitigation": str("What reduces the risk meanwhile (for mitigated and accepted_risk)"),
 			"confirm":    confirmProp(),
 		}), "reason", "note", "expiry"),
-		write: &writeTool{title: "Ignore issues (or ask to)", idempotent: true, plan: func(ctx context.Context, s *Server, a map[string]any) (*change, error) {
+		write: &writeTool{title: "Ignore issues (or ask to)", idempotent: true, destructive: true, plan: func(ctx context.Context, s *Server, a map[string]any) (*change, error) {
 			reason, note, expiry, scope := text(a, "reason"), text(a, "note"), text(a, "expiry"), text(a, "scope")
 			if scope == "" {
 				scope = "asset"
@@ -758,7 +762,7 @@ func init() {
 			"name":       str("Their name (optional)"),
 			"confirm":    confirmProp(),
 		}, "email", "project_id", "role"),
-		write: &writeTool{title: "Invite someone to a project", plan: func(ctx context.Context, s *Server, a map[string]any) (*change, error) {
+		write: &writeTool{title: "Invite someone to a project", openWorld: true, plan: func(ctx context.Context, s *Server, a map[string]any) (*change, error) {
 			email, role := strings.ToLower(text(a, "email")), text(a, "role")
 			if !strings.Contains(email, "@") || len(email) > 254 {
 				return nil, fmt.Errorf("a valid email is required")

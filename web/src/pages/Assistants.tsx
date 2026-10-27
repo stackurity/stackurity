@@ -3,7 +3,7 @@ import { Link, useLocation } from "react-router";
 import { api, ApiError, type AssistantConnection, type AssistantConsent, type List, type UserRole } from "../api";
 import { useAuth } from "../auth";
 import { useAction, useLoad } from "../hooks";
-import { Card, CodeBlock, CopyBox, ErrorBox, Loading, Notice, PageHeader, RelativeTime, Tabs } from "../components/ui";
+import { Card, CodeBlock, CopyBox, ErrorBox, Loading, Notice, PageHeader, RelativeTime } from "../components/ui";
 
 const ROLE_ABOUT: Record<UserRole, string> = {
   viewer: "read only: inventory, issues, fixes and reports",
@@ -188,50 +188,97 @@ interface AssistantList extends List<AssistantConnection> {
   mcp_url?: string;
 }
 
-type Client = "claude" | "chatgpt" | "cursor" | "vscode" | "claude-code" | "other";
+type Client = "claude" | "claude-code" | "chatgpt" | "cursor" | "vscode" | "windsurf" | "gemini" | "replit" | "other";
 
-const CLIENTS: { id: Client; label: string }[] = [
-  { id: "claude", label: "Claude" },
-  { id: "chatgpt", label: "ChatGPT" },
-  { id: "cursor", label: "Cursor" },
-  { id: "vscode", label: "VS Code" },
-  { id: "claude-code", label: "Claude Code" },
-  { id: "other", label: "Other" },
+const CLIENTS: { id: Client; label: string; about: string }[] = [
+  { id: "claude", label: "Claude", about: "claude.ai and Claude Desktop, as a connector" },
+  { id: "claude-code", label: "Claude Code", about: "One command in your terminal" },
+  { id: "chatgpt", label: "ChatGPT", about: "ChatGPT on the web, as a custom MCP server" },
+  { id: "cursor", label: "Cursor", about: "One click, or a few lines in mcp.json" },
+  { id: "vscode", label: "Visual Studio Code", about: "GitHub Copilot in VS Code, one click" },
+  { id: "windsurf", label: "Windsurf", about: "Cascade in Windsurf (Devin Desktop)" },
+  { id: "gemini", label: "Gemini CLI", about: "One command in your terminal" },
+  { id: "replit", label: "Replit", about: "Replit Agent, under Integrations" },
+  { id: "other", label: "Other", about: "Any MCP client, or one that runs a program" },
 ];
 
 const SIGN_IN = "Sign in to Stackurity in the page that opens. Choose the organisation and what it can see (everything, or one project). Tick Allow changes only if it should make changes for you. Click Allow.";
 
-function Steps({ children }: { children: ReactNode }) {
-  return <ol className="assistant-steps">{children}</ol>;
+const ASK = [
+  "What should we fix first on the shop project?",
+  "Which servers run an end-of-life operating system?",
+  "Did last night's upgrade fix it?",
+  "Where is log4j installed, and at which versions?",
+];
+
+function Steps({ children, start }: { children: ReactNode; start?: number }) {
+  return (
+    <ol className="assistant-steps" start={start}>
+      {children}
+    </ol>
+  );
+}
+
+function b64(v: unknown): string {
+  return btoa(unescape(encodeURIComponent(JSON.stringify(v))));
+}
+
+/** One-click install links, in each client's documented format. */
+export function installLinks(url: string) {
+  const vscode = encodeURIComponent(JSON.stringify({ name: "stackurity", type: "http", url }));
+  return {
+    cursor: `cursor://anysphere.cursor-deeplink/mcp/install?name=stackurity&config=${encodeURIComponent(b64({ url }))}`,
+    vscode: `vscode:mcp/install?${vscode}`,
+    vscodeInsiders: `vscode-insiders:mcp/install?${vscode}`,
+    replit: `https://replit.com/integrations?mcp=${encodeURIComponent(b64({ displayName: "Stackurity", baseUrl: url }))}`,
+  };
 }
 
 /*
- * How each client adds a remote MCP server, checked against the vendors'
- * documentation on 2026-10-27:
- * - Claude: https://claude.com/docs/connectors/custom/remote-mcp and
+ * How each client adds a remote MCP server and signs in, checked against
+ * the vendors' documentation on 2026-10-27/28. Every redirect URI they
+ * document passes checkRedirectURI (https, or http on the loopback).
+ * - Claude: https://claude.com/docs/connectors/custom/remote-mcp,
  *   https://support.claude.com/en/articles/11175166-getting-started-with-custom-connectors-using-remote-mcp
- *   (Customize > Connectors > Add custom connector; Team and Enterprise
- *   owners add it under Organization settings > Connectors first).
- * - ChatGPT: https://developers.openai.com/api/docs/guides/custom-mcp-server and
- *   https://developers.openai.com/plugins/deploy/connect-chatgpt (Plugins >
- *   + > Add custom MCP server; OAuth with dynamic client registration when
- *   no client ID is given). The help centre article could not be read and
- *   menu names have changed often, so the steps say what to look for.
- * - Cursor: https://cursor.com/docs/context/mcp (mcpServers with "url";
- *   OAuth with dynamic client registration). How sign-in starts for a
- *   server added by hand is not documented, hence "If Cursor asks".
- * - VS Code: https://code.visualstudio.com/docs/copilot/reference/mcp-configuration and
- *   https://code.visualstudio.com/docs/copilot/chat/mcp-servers ("servers",
- *   "type": "http"; MCP: Add Server; a browser sign-in on first use).
+ *   (Customize > Connectors > Add custom connector). Redirect
+ *   https://claude.ai/api/mcp/auth_callback
+ *   (https://claude.com/docs/connectors/building/authentication.md).
  * - Claude Code: https://code.claude.com/docs/en/mcp (claude mcp add
- *   --transport http, then /mcp to sign in).
+ *   --transport http, then /mcp). Redirect http://localhost:<port>/callback.
+ * - ChatGPT: https://developers.openai.com/api/docs/guides/custom-mcp-server,
+ *   https://developers.openai.com/plugins/deploy/connect-chatgpt (Plugins >
+ *   + > Add custom MCP server). Redirect
+ *   https://chatgpt.com/connector_platform_oauth_redirect
+ *   (https://developers.openai.com/apps-sdk/build/auth). The help centre
+ *   article could not be read and the menus have moved, so the steps say
+ *   what to look for.
+ * - Cursor: https://cursor.com/docs/context/mcp and
+ *   https://cursor.com/docs/context/mcp/install-links (config is the base64
+ *   of the server entry). Redirects http://localhost:8787/callback and
+ *   https://www.cursor.com/agents/mcp/oauth/callback. How sign-in starts
+ *   for a server added by hand is not documented: "If Cursor asks".
+ * - VS Code: https://code.visualstudio.com/docs/copilot/reference/mcp-configuration,
+ *   https://code.visualstudio.com/api/extension-guides/ai/mcp (vscode:mcp/install
+ *   link; the documented example shows a command server, "type": "http"
+ *   with "url" follows the mcp.json format). Redirects
+ *   http://127.0.0.1:33418 and https://vscode.dev/redirect.
+ * - Windsurf: https://docs.devin.ai/desktop/cascade/mcp (mcp_config.json,
+ *   "serverUrl"; OAuth supported; no one-click install). Redirect URI not
+ *   documented.
+ * - Gemini CLI: https://geminicli.com/docs/tools/mcp-server/ ("httpUrl" is
+ *   Streamable HTTP; gemini mcp add --transport http; /mcp auth). Redirect
+ *   http://localhost:<port>/oauth/callback.
+ * - Replit: https://docs.replit.com/build/connect-via-mcp,
+ *   https://docs.replit.com/replitai/mcp/overview.md (Integrations > MCP
+ *   Servers > Add MCP server; ?mcp= install link). Redirect URI not
+ *   documented.
  */
 function ClientSteps({ client, url }: { client: Client; url: string }) {
+  const links = installLinks(url);
   switch (client) {
     case "claude":
       return (
         <>
-          <p className="small muted">claude.ai and Claude Desktop</p>
           <Steps>
             <li>
               In Claude, open <strong>Customize</strong>, then <strong>Connectors</strong> (older versions: <strong>Settings</strong>,{" "}
@@ -259,6 +306,21 @@ function ClientSteps({ client, url }: { client: Client; url: string }) {
           </p>
         </>
       );
+    case "claude-code":
+      return (
+        <>
+          <Steps>
+            <li>Run this in a terminal:</li>
+          </Steps>
+          <CodeBlock label="Claude Code command" text={`claude mcp add --transport http stackurity ${url}`} />
+          <Steps start={2}>
+            <li>
+              In Claude Code, type <code>/mcp</code>, choose stackurity and sign in.
+            </li>
+            <li>{SIGN_IN}</li>
+          </Steps>
+        </>
+      );
     case "chatgpt":
       return (
         <>
@@ -284,6 +346,12 @@ function ClientSteps({ client, url }: { client: Client; url: string }) {
     case "cursor":
       return (
         <>
+          <p>
+            <a className="btn btn-primary" href={links.cursor}>
+              Add to Cursor
+            </a>
+          </p>
+          <p className="small muted">Or add it by hand:</p>
           <Steps>
             <li>
               Open <code>~/.cursor/mcp.json</code> (for all your projects) or <code>.cursor/mcp.json</code> in one project. Create it if it is
@@ -292,12 +360,21 @@ function ClientSteps({ client, url }: { client: Client; url: string }) {
             <li>Add Stackurity to it and save:</li>
           </Steps>
           <CodeBlock label="Cursor mcp.json" text={JSON.stringify({ mcpServers: { stackurity: { url } } }, null, 2)} />
-          <p className="hint">If Cursor asks you to sign in to Stackurity, do it, then click Allow. {SIGN_IN.split(". ").slice(1, 3).join(". ")}.</p>
+          <p className="hint">If Cursor asks you to sign in to Stackurity, do it, then click Allow.</p>
         </>
       );
     case "vscode":
       return (
         <>
+          <p className="assistant-install">
+            <a className="btn btn-primary" href={links.vscode}>
+              Add to VS Code
+            </a>
+            <a className="btn" href={links.vscodeInsiders}>
+              Add to VS Code Insiders
+            </a>
+          </p>
+          <p className="small muted">Or add it by hand:</p>
           <Steps>
             <li>
               Open the Command Palette and run <strong>MCP: Add Server</strong>. Choose <strong>HTTP</strong>, paste the address above and name it
@@ -311,16 +388,54 @@ function ClientSteps({ client, url }: { client: Client; url: string }) {
           <p className="hint">The first time Copilot uses it, VS Code opens Stackurity in your browser. {SIGN_IN.split(". ").slice(1).join(". ")}</p>
         </>
       );
-    case "claude-code":
+    case "windsurf":
+      return (
+        <>
+          <Steps>
+            <li>
+              In the Cascade panel, click the <strong>…</strong> menu at the top right, then the <strong>Open MCP config file</strong> icon in the
+              MCPs section.
+            </li>
+            <li>Add Stackurity to the file and save:</li>
+          </Steps>
+          <CodeBlock label="Windsurf mcp_config.json" text={JSON.stringify({ mcpServers: { stackurity: { serverUrl: url } } }, null, 2)} />
+          <p className="hint">If Windsurf asks you to sign in to Stackurity, do it, then click Allow.</p>
+        </>
+      );
+    case "gemini":
       return (
         <>
           <Steps>
             <li>Run this in a terminal:</li>
           </Steps>
-          <CodeBlock label="Claude Code command" text={`claude mcp add --transport http stackurity ${url}`} />
+          <CodeBlock label="Gemini CLI command" text={`gemini mcp add --transport http stackurity ${url}`} />
+          <p className="small muted">
+            Or add it to <code>~/.gemini/settings.json</code>:
+          </p>
+          <CodeBlock label="Gemini CLI settings.json" text={JSON.stringify({ mcpServers: { stackurity: { httpUrl: url } } }, null, 2)} />
+          <Steps start={2}>
+            <li>
+              Start <code>gemini</code>. It opens Stackurity in your browser the first time; if not, type <code>/mcp auth stackurity</code>.
+            </li>
+            <li>{SIGN_IN}</li>
+          </Steps>
+        </>
+      );
+    case "replit":
+      return (
+        <>
+          <p>
+            <a className="btn btn-primary" href={links.replit} target="_blank" rel="noreferrer">
+              Add to Replit
+            </a>
+          </p>
+          <p className="small muted">Or add it by hand:</p>
           <Steps>
             <li>
-              In Claude Code, type <code>/mcp</code>, choose stackurity and sign in.
+              In Replit, open <strong>Integrations</strong>, then <strong>MCP Servers</strong>, and click <strong>Add MCP server</strong>.
+            </li>
+            <li>
+              Enter Stackurity as the display name and paste the address above as the MCP server URL. Click <strong>Test &amp; save</strong>.
             </li>
             <li>{SIGN_IN}</li>
           </Steps>
@@ -421,13 +536,36 @@ export function AssistantsPage() {
                 <strong>The address to add in your assistant</strong>
               </p>
               <CopyBox value={url} label="MCP server address" />
-              <p className="hint">Paste it where your assistant adds a custom connector or MCP server. Then sign in when it asks.</p>
+              <p className="hint">Pick your assistant below. Most need only this address, then you sign in.</p>
             </div>
           )}
-          {!off && <Tabs label="Assistant" tabs={CLIENTS} value={client} onChange={setClient} />}
-          <div role={off ? undefined : "tabpanel"} id={`panel-${shown}`} aria-labelledby={off ? undefined : `tab-${shown}`} className="assistant-panel">
+          {!off && (
+            <div className="assistant-grid" role="group" aria-label="Your assistant">
+              {CLIENTS.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  className={`assistant-card${client === c.id ? " selected" : ""}`}
+                  aria-pressed={client === c.id}
+                  aria-controls="assistant-steps"
+                  onClick={() => setClient(c.id)}
+                >
+                  <strong>{c.label}</strong>
+                  <span className="small muted">{c.about}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <section id="assistant-steps" className="assistant-panel" aria-label={off ? "Set up" : `Steps for ${CLIENTS.find((c) => c.id === shown)?.label}`}>
+            {!off && <h3>{CLIENTS.find((c) => c.id === shown)?.label}</h3>}
             <ClientSteps client={shown} url={url} />
-          </div>
+          </section>
+          <h3>Ask it something</h3>
+          <ul className="assistant-ask">
+            {ASK.map((q) => (
+              <li key={q}>&ldquo;{q}&rdquo;</li>
+            ))}
+          </ul>
           <p className="small muted">
             Every change an assistant makes is checked against your role and recorded in the activity log under your name. More in{" "}
             <Link to="/help/ai-assistants">Help</Link>.
