@@ -87,8 +87,14 @@ export function BillingPage() {
             </Notice>
           )}
           <Current b={b} onChanged={setBilling} />
-          <ChoosePlan b={b} onChanged={setBilling} />
-          <Invoices />
+          {b.billing_enabled ? (
+            <>
+              <ChoosePlan b={b} onChanged={setBilling} />
+              <Invoices />
+            </>
+          ) : (
+            <PlansSoon b={b} />
+          )}
         </>
       )}
     </>
@@ -303,14 +309,46 @@ function ChoosePlan({ b, onChanged }: { b: Billing; onChanged: (b: Billing) => v
                 </div>
               </>
             )}
-            {b.enterprise_contact && (
+            {b.contact_url && (
               <p className="small muted">
-                Enterprise (more projects and assets, agreements): <a href={b.enterprise_contact}>contact us</a>.
+                Enterprise (more projects and assets, agreements): <a href={b.contact_url}>contact us</a>.
               </p>
             )}
           </>
         )}
       </form>
+    </Card>
+  );
+}
+
+/** While paid plans cannot be bought yet: the plans and prices, and a contact link. */
+function PlansSoon({ b }: { b: Billing }) {
+  const tiers = new Map<string, BillingPlan[]>();
+  for (const p of b.plans) tiers.set(p.tier, [...(tiers.get(p.tier) ?? []), p]);
+  const price = (p: BillingPlan) => `${priceWords(p.price, p)} per ${PERIOD_WORDS[p.period]}`;
+  return (
+    <Card title="Plans">
+      <Notice kind="info">
+        Paid plans open soon. To keep using Stackurity after your trial, or for a plan now,{" "}
+        <a href={b.contact_url}>contact us</a>.
+      </Notice>
+      {tiers.size > 0 && (
+        <ul className="plan-list">
+          {[...tiers.values()].map((ps) => (
+            <li key={ps[0].tier}>
+              <strong>{ps[0].name}</strong>: {ps[0].max_projects} {ps[0].max_projects === 1 ? "project" : "projects"}, {ps[0].included_assets} monitored
+              assets
+              {ps[0].extra_asset_price ? `, then ${money(ps[0].extra_asset_price, ps[0].currency)} per extra asset` : ""}.
+              <span className="small muted block">{ps.map(price).join(" · ")}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p>
+        <a className="btn btn-primary" href={b.contact_url}>
+          Contact us
+        </a>
+      </p>
     </Card>
   );
 }

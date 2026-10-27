@@ -274,8 +274,10 @@ export interface Billing {
   country_currency: Record<string, string>;
   default_currency: string;
   plans: BillingPlan[];
-  /** Where to ask about plans that are not self-service (a mailto: or https: link); absent when none. */
-  enterprise_contact?: string;
+  /** False while paid plans cannot be bought yet: the plans are shown with contact_url instead. */
+  billing_enabled: boolean;
+  /** Where to ask about Enterprise, and about paid plans while billing is off (a mailto: or https: link). */
+  contact_url: string;
 }
 
 export interface Invoice {
