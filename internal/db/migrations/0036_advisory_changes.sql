@@ -11,6 +11,20 @@ SET LOCAL lock_timeout = '10s';
 
 ALTER TABLE advisories ADD COLUMN content_hash text;
 
+-- Affected entries (ranges and listed versions) are stored once each and
+-- referenced by hash: most repeat across releases, channels and advisories.
+-- Rows written before this keep their entry in advisory_packages.affected,
+-- which is read when affected_hash is NULL, until their advisory is stored
+-- again. Values no row references are pruned daily. affected_hash has no
+-- foreign key: checking one on every delete would need an index on 3.5
+-- million rows; the writers and the pruning share a lock instead.
+CREATE TABLE affected_values (
+    hash      bytea PRIMARY KEY,   -- first 16 bytes of the SHA-256 of affected
+    affected  jsonb NOT NULL
+);
+ALTER TABLE advisory_packages ADD COLUMN affected_hash bytea,
+    ALTER COLUMN affected DROP NOT NULL;
+
 -- Packages whose advisory data a sync changed and whose components have not
 -- been queued for re-evaluation yet. Written in the same transaction as the
 -- advisories and cleared by the sync of the package's own ecosystem once it
@@ -29,7 +43,7 @@ CREATE TABLE pending_packages (
 
 -- The next sync of each OSV feed reads the full archive once instead of the
 -- changes since its cursor. It stores every advisory's hash and rewrites the
--- package rows in the compact form (ranges and versions only), which is what
--- the incremental syncs then compare against. Amazon Linux always reads
+-- package rows in the new form, which is what the incremental syncs then
+-- compare against. Amazon Linux always reads
 -- everything.
 UPDATE feeds SET cursor = '' WHERE name LIKE 'osv:%' AND cursor <> '';

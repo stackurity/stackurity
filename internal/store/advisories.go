@@ -1,7 +1,6 @@
 package store
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -25,15 +24,21 @@ type PackageRef struct {
 // it, so the next sync rewrites every advisory once in the new form.
 const storedFormat = "2"
 
-// StoredAffected is what advisory_packages.affected keeps of an OSV affected
-// entry: the ranges and the listed versions. They are all that is read back
+// StoredAffected is what is stored of an OSV affected entry (in
+// affected_values, referenced from advisory_packages.affected_hash): the
+// ranges and the listed versions. They are all that is read back
 // from it: by the matcher (osv.Check, and the fix it reports from every
 // range's "fixed" events), by the second check (internal/secondcheck reads
 // ranges and versions) and by the explanation, which the matcher stores
 // with the finding. The package is in the row's own columns; severities,
 // ecosystem_specific and database_specific are read once, when the record
 // is synced, to rate the advisory (osv.Rate), and the rating is stored on
-// the advisory. Rows written before 0.10 also hold those fields; they read
+// the advisory.
+//
+// Identical values are stored once: most entries repeat across releases and
+// advisories (an Ubuntu record lists the same versions for each channel).
+// Rows written by earlier versions keep the whole entry in
+// advisory_packages.affected until their advisory is next stored; they read
 // the same.
 type StoredAffected struct {
 	Ranges   []osv.Range `json:"ranges,omitempty"`
@@ -49,7 +54,19 @@ func CompactAffected(a osv.Affected) []byte {
 type packageRow struct {
 	base, ecosystem, name string
 	affected              []byte
+	hash                  []byte // affectedHash(affected)
 }
+
+// affectedHash identifies a stored affected value.
+func affectedHash(b []byte) []byte {
+	h := sha256.Sum256(b)
+	return h[:16]
+}
+
+// affectedLock is a transaction-level advisory lock between writers of
+// package rows (shared) and PruneAffectedValues (exclusive), so a value is
+// never pruned while a sync is about to reference it.
+const affectedLock = 0x5354_4b41_4646 // "STKAFF"
 
 // advisoryRecord is one advisory as it is stored.
 type advisoryRecord struct {
@@ -88,7 +105,8 @@ func newAdvisoryRecord(feed string, v *osv.Vulnerability) *advisoryRecord {
 			if a.Package.Name == "" || a.Package.Ecosystem == "" {
 				continue
 			}
-			row := packageRow{osv.BaseEcosystem(a.Package.Ecosystem), a.Package.Ecosystem, a.Package.Name, CompactAffected(a)}
+			aff := CompactAffected(a)
+			row := packageRow{osv.BaseEcosystem(a.Package.Ecosystem), a.Package.Ecosystem, a.Package.Name, aff, affectedHash(aff)}
 			// An identical entry listed twice matches the same way once.
 			k := row.ecosystem + "\x00" + row.name + "\x00" + string(row.affected)
 			if seen[k] {
@@ -98,16 +116,8 @@ func newAdvisoryRecord(feed string, v *osv.Vulnerability) *advisoryRecord {
 			rec.rows = append(rec.rows, row)
 		}
 	}
-	sort.Slice(rec.rows, func(i, j int) bool {
-		a, b := rec.rows[i], rec.rows[j]
-		if a.ecosystem != b.ecosystem {
-			return a.ecosystem < b.ecosystem
-		}
-		if a.name != b.name {
-			return a.name < b.name
-		}
-		return bytes.Compare(a.affected, b.affected) < 0
-	})
+	// The rows keep the order the feed lists them in: they are inserted
+	// in it, and AdvisoriesFor reads a package's rows in stored order.
 	rec.hash = rec.contentHash()
 	return rec
 }
@@ -122,10 +132,20 @@ func newAdvisoryRecord(feed string, v *osv.Vulnerability) *advisoryRecord {
 // feed of the installed package's ecosystem).
 func (r *advisoryRecord) contentHash() string {
 	h := sha256.New()
+	// In a fixed order: listing the same entries in another order is not a
+	// change (the stored rows keep their order).
 	rows := make([][4]string, len(r.rows))
 	for i, p := range r.rows {
 		rows[i] = [4]string{p.base, p.ecosystem, p.name, string(p.affected)}
 	}
+	sort.Slice(rows, func(i, j int) bool {
+		for k := range rows[i] {
+			if rows[i][k] != rows[j][k] {
+				return rows[i][k] < rows[j][k]
+			}
+		}
+		return false
+	})
 	_ = json.NewEncoder(h).Encode([]any{storedFormat, r.id, r.groupKey, r.aliases, r.summary, r.level, r.score,
 		r.vector, r.source, r.published, r.modified, r.withdrawn, json.RawMessage(r.refs), rows})
 	return hex.EncodeToString(h.Sum(nil)[:16])
@@ -207,6 +227,7 @@ func (s *Store) UpsertAdvisories(ctx context.Context, feed string, vulns []*osv.
 
 		batch := &pgx.Batch{}
 		var nID, nBase, nEco, nName, nAff []string
+		var nHash [][]byte
 		for _, id := range changed {
 			r := byID[id]
 			modified := r.modified
@@ -228,29 +249,42 @@ func (s *Store) UpsertAdvisories(ctx context.Context, feed string, vulns []*osv.
 			for _, p := range r.rows {
 				nID, nBase, nEco, nName, nAff = append(nID, id), append(nBase, p.base), append(nEco, p.ecosystem),
 					append(nName, p.name), append(nAff, string(p.affected))
+				nHash = append(nHash, p.hash)
 				touched[PackageRef{p.base, p.name}] = true
 			}
 		}
 		if err := tx.SendBatch(ctx, batch).Close(); err != nil {
 			return err
 		}
-		// The package rows that differ: a stored row with no equal new row
-		// is deleted, a new row with no equal stored row is inserted, and
-		// rows that are the same are left alone. affected is compared as
-		// jsonb (key order and spacing do not matter).
-		if _, err := tx.Exec(ctx, `WITH n AS MATERIALIZED (
-			  SELECT u.id, u.eco, u.name, u.aff::jsonb AS aff FROM unnest($2::text[], $3::text[], $4::text[], $5::text[]) AS u(id, eco, name, aff))
-			DELETE FROM advisory_packages p WHERE p.advisory_id = ANY($1)
-			  AND NOT EXISTS (SELECT 1 FROM n WHERE n.id = p.advisory_id AND n.eco = p.ecosystem AND n.name = p.name AND n.aff = p.affected)`,
-			changed, nID, nEco, nName, nAff); err != nil {
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock_shared($1)`, affectedLock); err != nil {
 			return err
 		}
 		if len(nID) > 0 {
-			if _, err := tx.Exec(ctx, `INSERT INTO advisory_packages (advisory_id, base_ecosystem, ecosystem, name, affected)
-				SELECT u.id, u.base, u.eco, u.name, u.aff::jsonb FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[]) AS u(id, base, eco, name, aff)
+			if _, err := tx.Exec(ctx, `INSERT INTO affected_values (hash, affected)
+				SELECT DISTINCT ON (u.hash) u.hash, u.aff::jsonb FROM unnest($1::bytea[], $2::text[]) AS u(hash, aff)
+				ORDER BY u.hash
+				ON CONFLICT (hash) DO NOTHING`, nHash, nAff); err != nil {
+				return err
+			}
+		}
+		// The package rows that differ: a stored row with no equal new row
+		// is deleted, a new row with no equal stored row is inserted, and
+		// rows that are the same are left alone. A row written by an earlier
+		// version (no hash) is never equal, so it is rewritten in the
+		// current form.
+		if _, err := tx.Exec(ctx, `WITH n AS MATERIALIZED (
+			  SELECT u.id, u.eco, u.name, u.hash FROM unnest($2::text[], $3::text[], $4::text[], $5::bytea[]) AS u(id, eco, name, hash))
+			DELETE FROM advisory_packages p WHERE p.advisory_id = ANY($1)
+			  AND NOT EXISTS (SELECT 1 FROM n WHERE n.id = p.advisory_id AND n.eco = p.ecosystem AND n.name = p.name AND n.hash = p.affected_hash)`,
+			changed, nID, nEco, nName, nHash); err != nil {
+			return err
+		}
+		if len(nID) > 0 {
+			if _, err := tx.Exec(ctx, `INSERT INTO advisory_packages (advisory_id, base_ecosystem, ecosystem, name, affected_hash)
+				SELECT u.id, u.base, u.eco, u.name, u.hash FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::bytea[]) AS u(id, base, eco, name, hash)
 				WHERE NOT EXISTS (SELECT 1 FROM advisory_packages p WHERE p.advisory_id = u.id AND p.ecosystem = u.eco
-				  AND p.name = u.name AND p.affected = u.aff::jsonb)`,
-				nID, nBase, nEco, nName, nAff); err != nil {
+				  AND p.name = u.name AND p.affected_hash = u.hash)`,
+				nID, nBase, nEco, nName, nHash); err != nil {
 				return err
 			}
 		}
@@ -320,4 +354,22 @@ func (s *Store) ClearPending(ctx context.Context, base string, p *Pending) error
 	_, err := s.Pool.Exec(ctx, `DELETE FROM pending_packages x USING unnest($2::text[], $3::timestamptz[]) AS u(name, added_at)
 		WHERE x.base_ecosystem = $1 AND x.name = u.name AND x.added_at = u.added_at`, base, p.names, p.added)
 	return err
+}
+
+// PruneAffectedValues deletes stored affected values no package row
+// references any more (their advisories changed or were withdrawn). It
+// reads the whole advisory_packages table once, so it runs daily, not with
+// every sync, and it waits for syncs that are writing package rows.
+func (s *Store) PruneAffectedValues(ctx context.Context) (int64, error) {
+	var n int64
+	err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, affectedLock); err != nil {
+			return err
+		}
+		tag, err := tx.Exec(ctx, `DELETE FROM affected_values v
+			WHERE NOT EXISTS (SELECT 1 FROM advisory_packages p WHERE p.affected_hash = v.hash)`)
+		n = tag.RowsAffected()
+		return err
+	})
+	return n, err
 }

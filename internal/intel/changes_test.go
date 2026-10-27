@@ -138,7 +138,7 @@ func (e *changeEnv) findings() map[string]string {
 // delete or insert changes the set.
 func (e *changeEnv) rows(table string) map[string]string {
 	e.t.Helper()
-	q := `SELECT advisory_id || ' ' || ecosystem || ' ' || name, ctid::text || '/' || xmin::text || ' ' || affected::text FROM advisory_packages`
+	q := `SELECT advisory_id || ' ' || ecosystem || ' ' || name, ctid::text || '/' || xmin::text || ' ' || encode(affected_hash, 'hex') FROM advisory_packages`
 	if table == "advisories" {
 		q = `SELECT id, ctid::text || '/' || xmin::text FROM advisories`
 	}
@@ -351,6 +351,16 @@ func TestShrinkingPackageList(t *testing.T) {
 	if got["pkg:deb/debian/libxml2"] != "open" || got["pkg:deb/debian/zlib"] != "resolved" {
 		t.Errorf("CVE-2024-0003 findings = %v; want libxml2 open, zlib resolved", got)
 	}
+	// zlib's entry is referenced by no row now; pruning removes only it.
+	if n, err := e.st.PruneAffectedValues(e.ctx); err != nil || n != 1 {
+		t.Errorf("pruned %d (%v); want zlib's entry", n, err)
+	}
+	if _, err := e.ev.Evaluate(e.ctx, nil, 0); err != nil {
+		t.Fatal(err)
+	}
+	if f := e.findings(); !strings.HasPrefix(f["CVE-2024-0003 libxml2"], "open") || !strings.HasPrefix(f["CVE-2024-0001 openssl"], "open") {
+		t.Errorf("after pruning: %v", f)
+	}
 }
 
 // A sync that stored records and was interrupted before it queued their
@@ -400,10 +410,14 @@ func TestOlderRowsRewrittenOnce(t *testing.T) {
 	if _, err := e.st.Pool.Exec(e.ctx, `UPDATE advisories SET content_hash = NULL`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.st.Pool.Exec(e.ctx, `UPDATE advisory_packages SET affected = affected ||
-		jsonb_build_object('package', jsonb_build_object('ecosystem', ecosystem, 'name', name, 'purl', ''),
-		  'severity', NULL, 'ecosystem_specific', NULL, 'database_specific', '{"source":"x"}'::jsonb)`); err != nil {
+	if _, err := e.st.Pool.Exec(e.ctx, `UPDATE advisory_packages p SET affected_hash = NULL, affected = v.affected ||
+		jsonb_build_object('package', jsonb_build_object('ecosystem', p.ecosystem, 'name', p.name, 'purl', ''),
+		  'severity', NULL, 'ecosystem_specific', NULL, 'database_specific', '{"source":"x"}'::jsonb)
+		FROM affected_values v WHERE v.hash = p.affected_hash`); err != nil {
 		t.Fatal(err)
+	}
+	if n, err := e.st.PruneAffectedValues(e.ctx); err != nil || n != 5 {
+		t.Fatalf("pruned %d values (%v); want the 5 no row refers to now", n, err)
 	}
 	if _, err := e.ev.Evaluate(e.ctx, nil, 0); err != nil {
 		t.Fatal(err)
@@ -416,8 +430,12 @@ func TestOlderRowsRewrittenOnce(t *testing.T) {
 		t.Errorf("changed = %d; want every record rewritten once", res.Changed)
 	}
 	var old int
-	if err := e.st.Pool.QueryRow(e.ctx, `SELECT count(*) FROM advisory_packages WHERE affected ? 'package'`).Scan(&old); err != nil || old != 0 {
+	if err := e.st.Pool.QueryRow(e.ctx, `SELECT count(*) FROM advisory_packages WHERE affected IS NOT NULL OR affected_hash IS NULL`).Scan(&old); err != nil || old != 0 {
 		t.Errorf("%d rows still in the older form (%v)", old, err)
+	}
+	var stray int
+	if err := e.st.Pool.QueryRow(e.ctx, `SELECT count(*) FROM affected_values v WHERE v.affected ? 'package'`).Scan(&stray); err != nil || stray != 0 {
+		t.Errorf("%d stored values keep the package (%v)", stray, err)
 	}
 	if _, err := e.ev.Evaluate(e.ctx, nil, 0); err != nil {
 		t.Fatal(err)

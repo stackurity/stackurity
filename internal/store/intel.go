@@ -156,13 +156,28 @@ type AdvisoryMatch struct {
 	Affected       osv.Affected
 }
 
+// affectedJoin and affectedColumn read a package row's affected entry: from
+// affected_values, or for a row written by an earlier version, from the row.
+const (
+	affectedJoin   = `LEFT JOIN affected_values v ON v.hash = p.affected_hash`
+	affectedColumn = `COALESCE(v.affected, p.affected)`
+)
+
 // AdvisoriesFor returns every affected entry for a package in a base
 // ecosystem. Callers filter by exact ecosystem with osv.MatchEcosystem.
+//
+// The rows come in stored order, which is the order the index on
+// (base_ecosystem, name) returned them in before entries were read from
+// affected_values. The matcher keeps the first record it meets among equals
+// (the deciding record, the order of matched_ranges), so a join plan must
+// not reorder them: the same stored data gives the same evidence.
 func (s *Store) AdvisoriesFor(ctx context.Context, base, name string) ([]AdvisoryMatch, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT a.id, a.group_key, a.aliases, a.summary, a.severity_level, a.severity_score,
-		a.withdrawn, a.known_exploited, a.feed, p.ecosystem, p.affected
+		a.withdrawn, a.known_exploited, a.feed, p.ecosystem, `+affectedColumn+`
 		FROM advisory_packages p JOIN advisories a ON a.id = p.advisory_id
-		WHERE p.base_ecosystem = $1 AND p.name = $2`, base, name)
+		`+affectedJoin+`
+		WHERE p.base_ecosystem = $1 AND p.name = $2
+		ORDER BY p.ctid`, base, name)
 	if err != nil {
 		return nil, err
 	}

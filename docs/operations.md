@@ -161,7 +161,7 @@ A feed's recent syncs fail, but its last success is still within its freshness l
 
 ### StackurityTaskNotSucceeding
 
-A periodic task (`alerts`, `alert-digest`, `enqueue-due-feeds`, `ensure-feeds`, `enqueue-due-integrations`, `mark-stale-assets`, `housekeeping`, `daily-evaluation`, `platform-fallback`, `update-check`) has not succeeded for three of its intervals. Either every run fails, or one replica holds its lease and never finishes (a stuck lease). For `alerts` this means no notifications at all are sent; for `alert-digest`, held messages of deleted routes wait (summaries are also planned by `alerts`).
+A periodic task (`alerts`, `alert-digest`, `enqueue-due-feeds`, `ensure-feeds`, `enqueue-due-integrations`, `mark-stale-assets`, `housekeeping`, `daily-evaluation`, `prune-affected-values`, `platform-fallback`, `update-check`) has not succeeded for three of its intervals. Either every run fails, or one replica holds its lease and never finishes (a stuck lease). For `alerts` this means no notifications at all are sent; for `alert-digest`, held messages of deleted routes wait (summaries are also planned by `alerts`).
 
 1. Platform health's **Background tasks** table shows its last error, last start and whether it runs now. Or: `SELECT name, locked_by, locked_until, last_started_at, last_success_at, consecutive_failures, last_error FROM periodic_tasks ORDER BY name;`
 2. A last error: fix its cause (it often names the workspace and the integration or channel involved).
@@ -219,6 +219,36 @@ At least five more assets went stale within an hour (an asset is stale when noth
 ### StackurityAssetsStale
 
 Some assets have not reported for over a day after being marked stale. Their inventory and findings are out of date, their coverage says so, and each workspace has a collection incident for them. Decommissioned hosts belong deleted (or merged), so they stop counting; others need their agent or integration fixed.
+
+## Maintenance
+
+### Reclaiming advisory space after upgrading
+
+Before migration `0036`, every feed sync deleted and re-inserted the package rows of every advisory it read, and the stored entries carried fields nothing reads. On a large installation `advisory_packages` grew to several gigabytes, a large part of it dead rows. Since `0036`, syncs write only what changed and an entry is stored once, so the table stops growing, but PostgreSQL does not give the old space back on its own: the table file keeps its size until it is rewritten. Physical backups, snapshots and copies of the database carry that space.
+
+1. **Wait for one sync of every OSV feed after the upgrade.** The migration makes the next sync of each OSV feed read its full archive once and rewrite its rows in the new form. On **Intelligence**, every `osv:` feed's last success must be later than the upgrade. Ubuntu takes longest.
+2. **Check what there is to reclaim** (optional):
+
+   ```sql
+   SELECT pg_size_pretty(pg_total_relation_size('advisory_packages')) AS now,
+          count(*) AS rows,
+          count(*) FILTER (WHERE affected_hash IS NULL) AS old_rows
+   FROM advisory_packages;
+   ```
+
+   `old_rows` should be 0 or close to it (rows of advisories that are no longer in any archive keep the old form; they are read as before). Expect roughly 165 bytes per row, including indexes and `affected_values`, after the rewrite.
+3. **Rewrite the tables in a quiet moment:**
+
+   ```sql
+   SET lock_timeout = '10s';  -- give up rather than queue behind a long query
+   VACUUM FULL advisory_packages;
+   VACUUM FULL advisories;
+   VACUUM FULL affected_values;
+   ```
+
+   Each command holds an exclusive lock on its table while it copies the live rows into a new file and rebuilds its indexes. While `advisory_packages` or `advisories` is locked, evaluations, feed syncs, the finding page and the second check wait for it; they continue when it finishes, and nothing fails unless it waits longer than a job's timeout (minutes, not seconds). Ingest, sign-in and lists that do not read advisories are not affected. The time is about one read of the old file plus one write of the new, much smaller one: 24 seconds for 1.28 million rows on a laptop, a few minutes for 3.5 million rows on a server with an SSD. It needs free disk space for the new copy (a fraction of the old size) until it finishes.
+
+   `pg_repack` would avoid the long lock, but it needs a primary key, and `advisory_packages` has none. A plain `VACUUM` (no lock) does not shrink the file, but it makes the dead space reusable; the table then stays at its current size.
 
 ## Drills
 

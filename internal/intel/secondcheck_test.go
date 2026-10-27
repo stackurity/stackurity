@@ -42,8 +42,8 @@ func TestSecondCheckCatchesACorruptedRecord(t *testing.T) {
 
 	// Corrupt the stored range: fixed 4.17.21 becomes 4.17.10.
 	sys := tenant.System(context.Background())
-	tag, err := st.Pool.Exec(sys, `UPDATE advisory_packages SET affected = replace(affected::text, '"4.17.21"', '"4.17.10"')::jsonb
-		WHERE name = 'lodash' AND affected::text LIKE '%4.17.21%'`)
+	tag, err := st.Pool.Exec(sys, `UPDATE affected_values v SET affected = replace(v.affected::text, '"4.17.21"', '"4.17.10"')::jsonb
+		FROM advisory_packages p WHERE p.affected_hash = v.hash AND p.name = 'lodash' AND v.affected::text LIKE '%4.17.21%'`)
 	if err != nil || tag.RowsAffected() == 0 {
 		t.Fatalf("corrupt: %v", err)
 	}

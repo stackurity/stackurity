@@ -1047,6 +1047,15 @@ func registerIntel(w *worker.Worker, st *store.Store, dataDir string, log *slog.
 		return enqueueDueFeeds(ctx)
 	})
 	w.Every("enqueue-due-feeds", time.Minute, enqueueDueFeeds)
+	// Affected entries no advisory refers to any more (advisories changed or
+	// withdrawn). It reads every package row once, so daily.
+	w.Every("prune-affected-values", 24*time.Hour, func(ctx context.Context) error {
+		n, err := st.PruneAffectedValues(ctx)
+		if n > 0 {
+			log.Info("pruned unreferenced advisory data", "values", n)
+		}
+		return err
+	})
 	// Lifecycle dates pass without any feed change, so evaluate everything daily.
 	w.EveryWorkspace("daily-evaluation", 24*time.Hour, func(ctx context.Context) error {
 		_, err := st.Enqueue(ctx, "evaluate", map[string]bool{"all": true}, "evaluate:all", time.Now().Add(10*time.Minute))

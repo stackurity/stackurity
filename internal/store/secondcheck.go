@@ -119,7 +119,8 @@ func (s *Store) SecondCheckWaiting(ctx context.Context) (bool, error) {
 }
 
 // RawAdvisoryRecord is one stored affected entry exactly as the feed
-// published it (advisory_packages.affected), with its advisory's identity.
+// published it (its ranges and listed versions), with its advisory's
+// identity.
 type RawAdvisoryRecord struct {
 	ID        string          `json:"id"`
 	GroupKey  string          `json:"group_key"`
@@ -136,10 +137,11 @@ func (s *Store) RawAdvisoryRecords(ctx context.Context, key string, ids []string
 	if ids == nil {
 		ids = []string{}
 	}
-	rows, err := s.Pool.Query(ctx, `SELECT a.id, a.group_key, a.feed, a.withdrawn IS NOT NULL, p.ecosystem, p.name, p.affected
+	rows, err := s.Pool.Query(ctx, `SELECT a.id, a.group_key, a.feed, a.withdrawn IS NOT NULL, p.ecosystem, p.name, `+affectedColumn+`
 		FROM advisories a JOIN advisory_packages p ON p.advisory_id = a.id
+		`+affectedJoin+`
 		WHERE a.id IN (SELECT id FROM advisories WHERE group_key = $1 UNION SELECT $1 UNION SELECT unnest($2::text[]))
-		ORDER BY a.id, p.ecosystem, p.name`, key, ids)
+		ORDER BY a.id, p.ecosystem, p.name, p.ctid`, key, ids)
 	if err != nil {
 		return nil, err
 	}
