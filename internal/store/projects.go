@@ -749,15 +749,22 @@ func (s *Store) narrowIncidents(ctx context.Context, list []Incident) error {
 		return nil
 	}
 	ids := make([]int64, 0, len(list))
+	open := []int64{} // never nil: <> ALL(NULL) is NULL
 	for _, in := range list {
 		if isFindingKind(in.Kind) {
 			ids = append(ids, in.ID)
+			if in.Status == "open" {
+				open = append(open, in.ID)
+			}
 		}
 	}
 	if len(ids) == 0 {
 		return nil
 	}
 	// Active findings for open incidents; every finding for resolved ones.
+	// The caller already read each incident's status: joining incidents
+	// again would repeat its row-level security check, which reads the
+	// findings of every visible asset.
 	rows, err := s.Pool.Query(ctx, `SELECT f.incident_id,
 		  count(*)::int, count(DISTINCT f.asset_id)::int,
 		  (array_agg(f.title ORDER BY f.priority_score DESC))[1], min(f.priority), bool_or(f.sos), max(f.escalation_level),
@@ -769,11 +776,11 @@ func (s *Store) narrowIncidents(ctx context.Context, list []Incident) error {
 		    'fixed_versions', COALESCE(array_agg(DISTINCT f.fixed_version) FILTER (WHERE f.fixed_version <> ''), '{}'),
 		    'known_exploited', bool_or(COALESCE((f.evidence->>'known_exploited')::boolean, false)),
 		    'severity', (array_agg(f.severity ORDER BY f.priority_score DESC))[1])
-		FROM findings f JOIN incidents i ON i.id = f.incident_id
+		FROM findings f
 		JOIN assets a ON a.id = f.asset_id JOIN components c ON c.id = f.component_id
 		WHERE f.incident_id = ANY($1)
-		  AND (i.status <> 'open' OR (f.status = 'open' AND f.state IN ('new', 'acknowledged', 'in_progress')))
-		GROUP BY f.incident_id`, ids)
+		  AND (f.incident_id <> ALL($2) OR (`+activeFinding+`))
+		GROUP BY f.incident_id`, ids, open)
 	if err != nil {
 		return err
 	}

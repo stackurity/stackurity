@@ -714,10 +714,29 @@ func (s *Store) ListIncidents(ctx context.Context, f IncidentFilter) ([]Incident
 	// incidents without findings (system problems) keep their own values.
 	prio, sos, esc, join := "i.priority", "i.sos", "i.escalation_level", ""
 	if tenant.Narrowed(ctx) {
-		prio, sos, esc = "COALESCE(v.priority, i.priority)", "COALESCE(v.sos, i.sos)", "COALESCE(v.esc, i.escalation_level)"
-		join = ` LEFT JOIN LATERAL (SELECT min(f.priority) AS priority, bool_or(f.sos) AS sos, max(f.escalation_level) AS esc
-			FROM findings f WHERE f.incident_id = i.id
-			  AND (i.status <> 'open' OR (f.status = 'open' AND f.state IN ('new', 'acknowledged', 'in_progress')))) v ON true`
+		// Open incidents count their active findings, resolved ones every
+		// finding. v is worked out in one pass over the findings on the
+		// visible assets (an index-only scan of findings_asset_incident,
+		// migration 0044), not by looking up each incident's findings in
+		// turn, which read the heap thousands of times per request.
+		pick := func(col string) string {
+			return fmt.Sprintf("CASE WHEN i.status = 'open' THEN v.active_%s ELSE v.%s END", col, col)
+		}
+		prio = "COALESCE(" + pick("priority") + ", i.priority)"
+		sos = "COALESCE(" + pick("sos") + ", i.sos)"
+		esc = "COALESCE(" + pick("esc") + ", i.escalation_level)"
+		only := ""
+		if status == "open" {
+			only = ` AND ` + activeFinding
+		}
+		join = ` LEFT JOIN (SELECT f.incident_id,
+			  min(f.priority) FILTER (WHERE ` + activeFinding + `) AS active_priority,
+			  bool_or(f.sos) FILTER (WHERE ` + activeFinding + `) AS active_sos,
+			  max(f.escalation_level) FILTER (WHERE ` + activeFinding + `) AS active_esc,
+			  min(f.priority) AS priority, bool_or(f.sos) AS sos, max(f.escalation_level) AS esc
+			FROM findings f
+			WHERE f.asset_id = ANY ((SELECT stackurity_visible_assets())::bigint[]) AND f.incident_id IS NOT NULL` + only + `
+			GROUP BY f.incident_id) v ON v.incident_id = i.id`
 	}
 	if f.Priority != "" {
 		w.add(prio+" = ?", f.Priority)
@@ -732,18 +751,31 @@ func (s *Store) ListIncidents(ctx context.Context, f IncidentFilter) ([]Incident
 		w.add("i.owner_team_id = ?", f.TeamID)
 	}
 	from := ` FROM incidents i LEFT JOIN teams t ON t.id = i.owner_team_id` + join + w.sql()
-	var total int64
-	if err := s.Pool.QueryRow(ctx, `SELECT count(*)`+from, w.args...).Scan(&total); err != nil {
-		return nil, 0, err
-	}
+	// The page carries the total (count(*) OVER ()), so the incidents and
+	// their row-level security check are read once per request, not twice.
 	p := f.Page.norm()
-	rows, err := s.Pool.Query(ctx, `SELECT `+incidentCols+from+fmt.Sprintf(` ORDER BY %s DESC, %s, i.updated_at DESC LIMIT %d OFFSET %d`, sos, prio, p.Limit, p.Offset), w.args...)
+	rows, err := s.Pool.Query(ctx, `SELECT `+incidentCols+`, count(*) OVER ()`+from+fmt.Sprintf(` ORDER BY %s DESC, %s, i.updated_at DESC LIMIT %d OFFSET %d`, sos, prio, p.Limit, p.Offset), w.args...)
 	if err != nil {
 		return nil, 0, err
 	}
-	out, err := pgx.CollectRows(rows, pgx.RowToStructByPos[Incident])
+	type counted struct {
+		Incident
+		Total int64
+	}
+	page, err := pgx.CollectRows(rows, pgx.RowToStructByPos[counted])
 	if err != nil {
 		return nil, 0, err
+	}
+	var total int64
+	out := make([]Incident, len(page))
+	for i, c := range page {
+		out[i], total = c.Incident, c.Total
+	}
+	// Past the last page there is no row to carry the total.
+	if len(page) == 0 && p.Offset > 0 {
+		if err := s.Pool.QueryRow(ctx, `SELECT count(*)`+from, w.args...).Scan(&total); err != nil {
+			return nil, 0, err
+		}
 	}
 	if err := s.narrowIncidents(ctx, out); err != nil {
 		return nil, 0, err
