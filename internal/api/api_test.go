@@ -511,6 +511,13 @@ func TestWorkflowRoles(t *testing.T) {
 		"quiet_start": "22:00", "quiet_end": "07:00", "timezone": "Europe/London"}, nil); code != 201 {
 		t.Errorf("valid route: %d", code)
 	}
+	var uo store.Route
+	if code := admin.do("POST", "/api/v1/routes", map[string]any{"name": "on-call", "channel_id": ch.ID, "enabled": true, "mode": "urgent_only"}, &uo); code != 201 || uo.Mode != store.ModeUrgentOnly {
+		t.Errorf("urgent_only route: %d %+v", code, uo)
+	}
+	if code := admin.do("POST", "/api/v1/routes", map[string]any{"name": "r2", "channel_id": ch.ID, "enabled": true, "mode": "hourly"}, nil); code != 400 {
+		t.Errorf("unknown mode: %d", code)
+	}
 	if code := sec.do("GET", "/api/v1/deliveries", nil, nil); code != 200 {
 		t.Errorf("security deliveries: %d", code)
 	}

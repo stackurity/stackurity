@@ -66,6 +66,10 @@ func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 403, "forbidden", err.Error())
 		return
 	}
+	project, anyAsset, ok := s.uploadProject(w, r)
+	if !ok {
+		return
+	}
 	var tokenID int64
 	if p := principal(r); p.Token != nil {
 		tokenID = p.Token.ID
@@ -75,7 +79,94 @@ func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	if !s.fileUpload(w, r, res, project, anyAsset) {
+		return
+	}
 	writeJSON(w, 201, res)
+}
+
+// FeatureUploadProject, in GET /meta's features, says that uploads honour
+// project_id. Servers before it ignore the parameter on /ingest, so the CLI
+// checks for it before it uploads with --project.
+const FeatureUploadProject = "upload_project"
+
+// uploadProject decides which project an upload (POST /ingest, POST
+// /sbom/import) files its asset in, from project_id or the switcher's
+// header. It returns 0 when none applies, and whether the project takes any
+// asset (an admin's choice) or only one the upload creates (a collector
+// token made for the project, which also files what it creates without
+// asking). On a refusal it has written the error and ok is false.
+//
+//   - Filing assets in projects is for organisation admins, as everywhere
+//     else; members with project access only cannot reach upload routes.
+//   - A collector token made for a project may name that project (an
+//     assertion, for stackurity scan --project) but never another one
+//     (403): its project was chosen by the admin who made it.
+//   - Other callers (engineers, security, collector tokens without a
+//     project) get 403 for project_id. The switcher's header alone is
+//     ignored for them, as before, so a dashboard upload is not refused.
+func (s *Server) uploadProject(w http.ResponseWriter, r *http.Request) (project int64, anyAsset, ok bool) {
+	p := principal(r)
+	project = p.Project
+	if project == 0 {
+		return 0, false, true
+	}
+	explicit := r.URL.Query().Get("project_id") != ""
+	admin := p.Role.AtLeast(auth.RoleAdmin)
+	var tokenProject int64
+	if p.Token != nil && p.Token.ProjectID != nil {
+		tokenProject = *p.Token.ProjectID
+	}
+	switch {
+	case !admin && !explicit:
+		return 0, false, true
+	case project < 0:
+		s.fail(w, r, badRequest("project_id must be a project id"))
+		return 0, false, false
+	case admin:
+		anyAsset = true
+	case tokenProject == 0:
+		writeError(w, 403, "forbidden", "adding an asset to a project needs the admin role, or a collector token made for the project")
+		return 0, false, false
+	case project != tokenProject:
+		writeError(w, 403, "forbidden", fmt.Sprintf("this token adds the assets it creates to project %d; it cannot add them to project %d", tokenProject, project))
+		return 0, false, false
+	}
+	if active, err := s.Store.ActiveProject(r.Context(), project); err != nil {
+		s.fail(w, r, err)
+		return 0, false, false
+	} else if !active {
+		writeError(w, 404, "not_found", "no such project")
+		return 0, false, false
+	}
+	return project, anyAsset, true
+}
+
+// fileUpload adds an uploaded asset to the project uploadProject chose (any
+// asset for an admin; a collector token's new assets were added by the
+// ingest itself) and says so in the result.
+func (s *Server) fileUpload(w http.ResponseWriter, r *http.Request, res *store.IngestResult, project int64, anyAsset bool) bool {
+	if project == 0 {
+		return true
+	}
+	if anyAsset {
+		n, err := s.Store.AddProjectAssets(r.Context(), project, []int64{res.AssetID})
+		if err != nil {
+			s.fail(w, r, err)
+			return false
+		}
+		if n > 0 {
+			_ = s.Store.Audit(r.Context(), principal(r).Actor(r), "project.assets_add", "project", itoa(project),
+				map[string]any{"asset_ids": []int64{res.AssetID}, "requested": 1, "changed": n, "via": "upload"})
+		}
+	}
+	in, err := s.Store.AssetInProject(r.Context(), project, res.AssetID)
+	if err != nil {
+		s.fail(w, r, err)
+		return false
+	}
+	res.ProjectID, res.InProject = project, &in
+	return true
 }
 
 func (s *Server) importSBOM(w http.ResponseWriter, r *http.Request) {
@@ -108,29 +199,11 @@ func (s *Server) importSBOM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := principal(r)
-	// project_id adds the asset to a project (the first-run flow's upload);
-	// filing assets in projects is for admins. The switcher's header alone
-	// is ignored for other roles.
-	project := p.Project
-	if project != 0 && !p.Role.AtLeast(auth.RoleAdmin) {
-		if q.Get("project_id") != "" {
-			writeError(w, 403, "forbidden", "adding an asset to a project needs the admin role")
-			return
-		}
-		project = 0
-	}
-	if project < 0 {
-		s.fail(w, r, badRequest("project_id must be a project"))
+	// project_id adds the asset to a project (the first-run flow's upload,
+	// stackurity sbom import --project); see uploadProject.
+	project, anyAsset, ok := s.uploadProject(w, r)
+	if !ok {
 		return
-	}
-	if project > 0 {
-		if ok, err := s.Store.ActiveProject(r.Context(), project); err != nil {
-			s.fail(w, r, err)
-			return
-		} else if !ok {
-			writeError(w, 404, "not_found", "no such project")
-			return
-		}
 	}
 	var tokenID int64
 	if p.Token != nil {
@@ -141,11 +214,8 @@ func (s *Server) importSBOM(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	if project > 0 {
-		if _, err := s.Store.AddProjectAssets(r.Context(), project, []int64{res.AssetID}); err != nil {
-			s.fail(w, r, err)
-			return
-		}
+	if !s.fileUpload(w, r, res, project, anyAsset) {
+		return
 	}
 	_ = s.Store.Audit(r.Context(), p.Actor(r), "sbom.import", "asset", itoa(res.AssetID),
 		map[string]any{"collector": b.Collector.ID, "components": len(b.Observations), "project_id": project})

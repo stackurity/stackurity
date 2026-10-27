@@ -240,7 +240,7 @@ func (d *Dispatcher) Plan(ctx context.Context) error {
 	}
 
 	people := func(r store.Route) bool {
-		return r.Enabled && !tracker[r.ChannelID] && r.Mode == store.ModeUrgentSummary
+		return r.Enabled && !tracker[r.ChannelID] && sendsUrgent(r)
 	}
 	// Issues that came back after a fix are urgent whatever their priority.
 	regressedAll, regressedUpTo, err := d.Store.RegressedToAnnounce(ctx)
@@ -366,6 +366,14 @@ func (d *Dispatcher) Plan(ctx context.Context) error {
 	if err := d.planSummaries(ctx, routes, tracker); err != nil {
 		return err
 	}
+	// Jira routes limited to a project: after the incidents above were
+	// marked announced, so their announcement counts (jira_projects.go).
+	if err := d.planProjectIssues(ctx, routes, tracker); err != nil {
+		return err
+	}
+	if err := d.planProjectIssueUpdates(ctx, routes, tracker); err != nil {
+		return err
+	}
 	return d.planIssueUpdates(ctx)
 }
 
@@ -394,6 +402,12 @@ func (d *Dispatcher) planOverdue(ctx context.Context, routes []store.Route, trac
 			continue
 		}
 		r := r
+		if pid, ok := projectTracker(r, tracker); ok {
+			if err := d.planProjectEscalations(ctx, r, pid, esc); err != nil {
+				return err
+			}
+			continue
+		}
 		if tracker[r.ChannelID] {
 			for _, in := range incs {
 				in.EscalationLevel = esc[in.ID]
@@ -407,7 +421,7 @@ func (d *Dispatcher) planOverdue(ctx context.Context, routes []store.Route, trac
 			}
 			continue
 		}
-		if r.Mode != store.ModeUrgentSummary {
+		if !sendsUrgent(r) {
 			continue // the overdue section of the summary covers it
 		}
 		crossed := false
@@ -486,7 +500,8 @@ func (d *Dispatcher) planIssueUpdates(ctx context.Context) error {
 // the priority the incident reached.
 func routeMatches(r store.Route, in store.Incident) bool {
 	// Tracker issues describe the whole incident, across every asset, so a
-	// route limited to projects never creates or updates them.
+	// route limited to projects never creates or updates them: it keeps
+	// issues of its own about its project's part (jira_projects.go).
 	if len(r.ProjectIDs) > 0 || !inScope(r, in) {
 		return false
 	}
@@ -619,13 +634,17 @@ func (d *Dispatcher) Deliver(ctx context.Context) error {
 				}
 				continue
 			}
-			if route.MaxPerHour > 0 && del.Event != EventSummary {
+			if route.MaxPerHour > 0 && del.Event != EventSummary && del.Event != EventDigest {
 				sent, err := d.Store.RouteSentSince(ctx, route.ID, d.now().Add(-time.Hour))
 				if err != nil {
 					return err
 				}
 				if sent >= route.MaxPerHour {
-					if err := d.Store.HoldDelivery(ctx, del.ID, "hourly limit reached; counted in the next summary"); err != nil {
+					why := "hourly limit reached; counted in the next summary"
+					if !sendsSummary(*route) {
+						why = "hourly limit reached; sent in the next hourly digest"
+					}
+					if err := d.Store.HoldDelivery(ctx, del.ID, why); err != nil {
 						return err
 					}
 					continue
@@ -721,8 +740,9 @@ func (d *Dispatcher) SendTest(ctx context.Context, ch *store.Channel) error {
 
 // Digest runs hourly. Messages a route's hourly limit held are taken in
 // by that route's next summary, never sent one by one; this plans the
-// summaries that are due (as every Tick does) and, for held messages whose
-// route was deleted, sends one digest per channel.
+// summaries that are due (as every Tick does), sends one digest per route
+// that has no summary (urgent only) and, for held messages whose route was
+// deleted, one digest per channel.
 func (d *Dispatcher) Digest(ctx context.Context) error {
 	routes, err := d.Store.ListRoutes(ctx)
 	if err != nil {
@@ -740,6 +760,9 @@ func (d *Dispatcher) Digest(ctx context.Context) error {
 		return err
 	}
 	stamp := d.now().UTC().Format("2006-01-02T15")
+	if err := d.digestRoutes(ctx, routes, held, stamp); err != nil {
+		return err
+	}
 	for chID, list := range held {
 		var lines []string
 		var ids []int64
@@ -759,9 +782,9 @@ func (d *Dispatcher) Digest(ctx context.Context) error {
 			lines = append(lines[:20], fmt.Sprintf("+%d more", len(lines)-20))
 		}
 		key := "digest:" + stamp
-		msg := Message{Event: "digest", Title: fmt.Sprintf("Stackurity: %s held by an hourly limit", plural(len(ids), "notification")),
+		msg := Message{Event: EventDigest, Title: fmt.Sprintf("Stackurity: %s held by an hourly limit", plural(len(ids), "notification")),
 			Summary: lines, At: d.now().UTC(), Link: d.url("/settings/notifications", url.Values{"tab": {"deliveries"}})}
-		if _, err := d.Store.EnqueueDelivery(ctx, chID, nil, nil, "digest", key, msg); err != nil {
+		if _, err := d.Store.EnqueueDelivery(ctx, chID, nil, nil, EventDigest, key, msg); err != nil {
 			return err
 		}
 		if err := d.Store.MarkDigested(ctx, ids, key); err != nil {
@@ -769,6 +792,55 @@ func (d *Dispatcher) Digest(ctx context.Context) error {
 		}
 	}
 	return d.Deliver(ctx)
+}
+
+// digestRoutes sends, for each route without a summary (urgent only), one
+// message listing the urgent messages its hourly limit held, which a
+// summary would otherwise take in. It goes to the route, so its quiet hours
+// apply; the hourly limit does not.
+func (d *Dispatcher) digestRoutes(ctx context.Context, routes []store.Route, held map[int64][]store.Delivery, stamp string) error {
+	byRoute := map[int64][]store.Delivery{}
+	for _, list := range held {
+		for _, del := range list {
+			if del.RouteID != nil {
+				byRoute[*del.RouteID] = append(byRoute[*del.RouteID], del)
+			}
+		}
+	}
+	for _, r := range routes {
+		list := byRoute[r.ID]
+		if len(list) == 0 || sendsSummary(r) || !r.Enabled {
+			continue
+		}
+		var lines []string
+		var ids []int64
+		for _, del := range list {
+			if del.ChannelID != r.ChannelID {
+				continue // queued before the route moved to another channel
+			}
+			var m Message
+			_ = json.Unmarshal(del.Payload, &m)
+			lines = append(lines, m.Subject())
+			ids = append(ids, del.ID)
+		}
+		if len(ids) == 0 {
+			continue
+		}
+		if len(lines) > 20 {
+			lines = append(lines[:20], fmt.Sprintf("+%d more", len(lines)-20))
+		}
+		key := fmt.Sprintf("digest:%d:%s", r.ID, stamp)
+		msg := Message{Event: EventDigest, Title: fmt.Sprintf("Stackurity: %s held by the hourly limit", plural(len(ids), "urgent message")),
+			Route: r.Name, Summary: lines, At: d.now().UTC(),
+			Link: inProject(d.url("/settings/notifications", url.Values{"tab": {"deliveries"}}), routeProject(r, 0))}
+		if err := d.enqueueRouted(ctx, r, EventDigest, key, msg); err != nil {
+			return err
+		}
+		if err := d.Store.MarkDigested(ctx, ids, key); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // quietUntil reports whether now is within the route's quiet hours and, if

@@ -7,10 +7,12 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,6 +24,10 @@ type Client struct {
 	Token   string
 	HTTP    *http.Client
 	UA      string
+	// Project, when not 0, scopes every request to this project
+	// (X-Stackurity-Project), and uploads (Ingest, ImportSBOM) ask the
+	// server to file their asset in it (project_id).
+	Project int64
 }
 
 func New(base, token, version string) (*Client, error) {
@@ -61,6 +67,9 @@ func (c *Client) Do(ctx context.Context, method, path string, body io.Reader, he
 		req.Header.Set("Authorization", "Bearer "+c.Token)
 	}
 	req.Header.Set("User-Agent", c.UA)
+	if c.Project > 0 {
+		req.Header.Set("X-Stackurity-Project", strconv.FormatInt(c.Project, 10))
+	}
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
@@ -106,6 +115,31 @@ type IngestResult struct {
 	Removed      int64   `json:"removed"`
 	NewAsset     bool    `json:"new_asset"`
 	Conflict     []int64 `json:"identity_conflict"`
+	// ProjectID is the project the server filed the upload under (0 when
+	// none was asked for, or the server is older than 0.10); InProject
+	// whether the asset is in it now.
+	ProjectID int64 `json:"project_id"`
+	InProject *bool `json:"in_project"`
+}
+
+// ErrProjectIgnored: an upload asked for a project and the server's answer
+// does not name it, so the server ignored project_id.
+var ErrProjectIgnored = errors.New("the server stored the upload without the project: it does not support project_id on uploads (Stackurity 0.10 or later is needed); add the asset to the project in Settings > Projects and access")
+
+// projectQuery is the query string an upload adds for c.Project.
+func (c *Client) projectQuery() string {
+	if c.Project <= 0 {
+		return ""
+	}
+	return "project_id=" + strconv.FormatInt(c.Project, 10)
+}
+
+// checkProject fails an upload whose answer shows the project was ignored.
+func (c *Client) checkProject(res *IngestResult) error {
+	if c.Project > 0 && res.ProjectID != c.Project {
+		return ErrProjectIgnored
+	}
+	return nil
 }
 
 // Ingest submits a batch, gzip-compressed, retrying transient failures.
@@ -118,11 +152,15 @@ func (c *Client) Ingest(ctx context.Context, b *model.ObservationBatch) (*Ingest
 		if err != nil {
 			return nil, err
 		}
-		err = c.Do(ctx, "POST", "/api/v1/ingest", buf, map[string]string{
+		path := "/api/v1/ingest"
+		if q := c.projectQuery(); q != "" {
+			path += "?" + q
+		}
+		err = c.Do(ctx, "POST", path, buf, map[string]string{
 			"Content-Type": "application/json", "Content-Encoding": "gzip",
 		}, &res)
 		if err == nil {
-			return &res, nil
+			return &res, c.checkProject(&res)
 		}
 		if ae, ok := err.(*APIError); ok && ae.Status < 500 && ae.Status != 429 {
 			return nil, err // client errors are not retried
@@ -145,9 +183,70 @@ func (c *Client) ImportSBOM(ctx context.Context, doc io.Reader, assetName, asset
 	if env != "" {
 		q.Set("environment", env)
 	}
+	if c.Project > 0 {
+		q.Set("project_id", strconv.FormatInt(c.Project, 10))
+	}
 	var res IngestResult
-	err := c.Do(ctx, "POST", "/api/v1/sbom/import?"+q.Encode(), doc, map[string]string{"Content-Type": "application/json"}, &res)
-	return &res, err
+	if err := c.Do(ctx, "POST", "/api/v1/sbom/import?"+q.Encode(), doc, map[string]string{"Content-Type": "application/json"}, &res); err != nil {
+		return &res, err
+	}
+	return &res, c.checkProject(&res)
+}
+
+// FeatureUploadProject, in Meta.Features, means the server files uploads
+// in the project named by project_id (0.10). Older servers ignore it.
+const FeatureUploadProject = "upload_project"
+
+// Meta is the server's anonymous description of itself (GET /meta).
+type Meta struct {
+	Version       string   `json:"version"`
+	SetupRequired bool     `json:"setup_required"`
+	Features      []string `json:"features"`
+}
+
+func (c *Client) Meta(ctx context.Context) (*Meta, error) {
+	var m Meta
+	if err := c.Do(ctx, "GET", "/api/v1/meta", nil, nil, &m); err != nil {
+		return nil, err
+	}
+	return &m, nil
+}
+
+// Has reports whether the server lists a feature.
+func (m *Meta) Has(feature string) bool {
+	for _, f := range m.Features {
+		if f == feature {
+			return true
+		}
+	}
+	return false
+}
+
+// Project is a project as GET /projects lists it.
+type Project struct {
+	ID         int64      `json:"id"`
+	Name       string     `json:"name"`
+	ArchivedAt *time.Time `json:"archived_at"`
+}
+
+// Projects lists the active projects the caller can see.
+func (c *Client) Projects(ctx context.Context) ([]Project, error) {
+	var out struct {
+		Items []Project `json:"items"`
+	}
+	err := c.Do(ctx, "GET", "/api/v1/projects", nil, nil, &out)
+	return out.Items, err
+}
+
+// GetProject reads one project.
+func (c *Client) GetProject(ctx context.Context, id int64) (*Project, error) {
+	var out struct {
+		Project Project `json:"project"`
+	}
+	if err := c.Do(ctx, "GET", fmt.Sprintf("/api/v1/projects/%d", id), nil, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out.Project, nil
 }
 
 // AgentAction is a remediation action dispatched to this host.
@@ -246,12 +345,22 @@ type Enrollment struct {
 	Environment  string   `json:"environment"`
 	AppDirs      []string `json:"app_dirs"`
 	DiscoverApps bool     `json:"discover_apps"`
+	// ProjectID is the project the code adds hosts to (nil: none, or a
+	// server older than 0.10, which does not say).
+	ProjectID *int64 `json:"project_id"`
 }
 
 // Enroll exchanges a one-time enrollment code for a collector token. The
-// client needs no token of its own.
-func (c *Client) Enroll(ctx context.Context, code, hostname string) (*Enrollment, error) {
-	body, _ := json.Marshal(map[string]string{"code": code, "hostname": hostname})
+// client needs no token of its own. With project (not 0) the server first
+// checks that the code adds hosts to that project, and refuses (403)
+// without using the code up if not; servers before 0.10 refuse the unknown
+// field (400), also without using the code.
+func (c *Client) Enroll(ctx context.Context, code, hostname string, project int64) (*Enrollment, error) {
+	req := map[string]any{"code": code, "hostname": hostname}
+	if project > 0 {
+		req["project_id"] = project
+	}
+	body, _ := json.Marshal(req)
 	var e Enrollment
 	err := c.Do(ctx, "POST", "/api/v1/enroll", bytes.NewReader(body),
 		map[string]string{"Content-Type": "application/json", "X-Stackurity-CSRF": "1"}, &e)

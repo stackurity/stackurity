@@ -26,6 +26,10 @@ import (
 //     fix deadline (licensed builds, routes with escalation);
 //   - connected: an asset's first scan, instead of alerts for its backlog.
 //
+// A route's mode picks them: urgent_summary sends all of them, urgent_only
+// all but summaries, daily and weekly only summaries (with an overdue
+// section instead of the overdue message).
+//
 // Every item links to the dashboard. Jira channels keep one issue per
 // incident (see Plan); none of this applies to them.
 const (
@@ -33,7 +37,19 @@ const (
 	EventSummary   = "summary"
 	EventOverdue   = "overdue"
 	EventConnected = "connected"
+	// EventDigest lists messages an hourly limit held, for a route
+	// without summaries or a deleted route.
+	EventDigest = "digest"
 )
+
+// sendsUrgent: the route's mode sends urgent, overdue and connected
+// messages as they happen.
+func sendsUrgent(r store.Route) bool {
+	return r.Mode == store.ModeUrgentSummary || r.Mode == store.ModeUrgentOnly
+}
+
+// sendsSummary: the route's mode sends a daily or weekly summary.
+func sendsSummary(r store.Route) bool { return r.Mode != store.ModeUrgentOnly }
 
 const (
 	maxAssetItems = 5 // assets listed in one section, then "+N more"
@@ -775,6 +791,14 @@ func (d *Dispatcher) planSummaries(ctx context.Context, routes []store.Route, tr
 		}
 		stamp, due := summaryDue(r, now)
 		if !due {
+			continue
+		}
+		if !sendsSummary(r) {
+			// No summary, but the period moves on, so a route switched to a
+			// summary mode later does not start with one covering months.
+			if _, err := d.Store.ClaimSummary(ctx, r.ID, r.LastSummaryAt, now); err != nil {
+				return err
+			}
 			continue
 		}
 		msg, changed, err := d.summaryMessage(r, data, r.LastSummaryAt, now, overdue && r.Escalation)

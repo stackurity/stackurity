@@ -104,7 +104,8 @@ type Route struct {
 	MaxPerHour   int       `json:"max_per_hour"`
 	CreatedAt    time.Time `json:"created_at"`
 	// Mode is urgent_summary (urgent alerts right away and a daily
-	// summary), daily or weekly (summary only).
+	// summary), urgent_only (urgent alerts, no summary), daily or weekly
+	// (summary only).
 	Mode string `json:"mode"`
 	// SummaryTime ("HH:MM") and SummaryDay (weekday, for weekly summaries)
 	// are in Timezone.
@@ -125,6 +126,7 @@ type Route struct {
 // Route modes.
 const (
 	ModeUrgentSummary = "urgent_summary"
+	ModeUrgentOnly    = "urgent_only"
 	ModeDaily         = "daily"
 	ModeWeekly        = "weekly"
 )

@@ -19,6 +19,9 @@ type IssueRef struct {
 	Key       string `json:"key"`
 	URL       string `json:"url"`
 	ChannelID *int64 `json:"channel_id"`
+	// ProjectID is set for the issue of a Jira route limited to a
+	// project, which describes only that project's part of the incident.
+	ProjectID *int64 `json:"project_id,omitempty"`
 }
 
 // IssueLink is the issue an incident has in one tracker channel and what the
@@ -49,8 +52,15 @@ func (s *Store) issueRefs(ctx context.Context, incidentIDs []int64) (map[int64][
 	if len(incidentIDs) == 0 || tenant.Narrowed(ctx) {
 		return out, nil
 	}
-	rows, err := s.Pool.Query(ctx, `SELECT incident_id, tracker, issue_key, issue_url, channel_id FROM incident_issues
-		WHERE incident_id = ANY($1) AND issue_key <> '' ORDER BY id`, incidentIDs)
+	// Whole-incident issues first, then those of routes limited to a
+	// project, each in the order they were made.
+	rows, err := s.Pool.Query(ctx, `SELECT incident_id, tracker, issue_key, issue_url, channel_id, project_id FROM (
+		  SELECT 0 AS src, id, incident_id, tracker, issue_key, issue_url, channel_id, NULL::bigint AS project_id FROM incident_issues
+		  WHERE incident_id = ANY($1) AND issue_key <> ''
+		  UNION ALL
+		  SELECT 1, id, incident_id, tracker, issue_key, issue_url, channel_id, project_id FROM route_issues
+		  WHERE incident_id = ANY($1) AND issue_key <> '') x
+		ORDER BY src, id`, incidentIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +68,7 @@ func (s *Store) issueRefs(ctx context.Context, incidentIDs []int64) (map[int64][
 	for rows.Next() {
 		var id int64
 		var r IssueRef
-		if err := rows.Scan(&id, &r.Tracker, &r.Key, &r.URL, &r.ChannelID); err != nil {
+		if err := rows.Scan(&id, &r.Tracker, &r.Key, &r.URL, &r.ChannelID, &r.ProjectID); err != nil {
 			return nil, err
 		}
 		out[id] = append(out[id], r)

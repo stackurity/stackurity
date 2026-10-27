@@ -54,7 +54,7 @@ After the first administrator signs in, a new organisation with no assets opens 
    - **Upload an SBOM** (CycloneDX or SPDX JSON). First results in under a minute.
 3. **Wait** while it reports: the page shows the packages found and when the check is done.
 4. **The first result**, in plain words: "We found 1,676 packages on commmerceblog. 3 fixes matter now.", with links to them.
-5. **Notifications** for the project: Slack (an incoming webhook URL) or email (your SMTP server), urgent issues right away with a daily summary, or a weekly summary. The webhook URL or SMTP password is stored as an encrypted secret, which needs `STACKURITY_SECRET_KEY` (see [Configuration](#configuration)); without it, set channels up under **Settings → Notifications** with `env:` references.
+5. **Notifications** for the project: Slack (an incoming webhook URL) or email (your SMTP server), urgent issues right away with a daily summary, urgent issues only (no summary), or a weekly summary. The webhook URL or SMTP password is stored as an encrypted secret, which needs `STACKURITY_SECRET_KEY` (see [Configuration](#configuration)); without it, set channels up under **Settings → Notifications** with `env:` references.
 6. **Invite people** by email with a role on the project. The link works once, for 7 days. It is emailed through the organisation's first email channel; without one, the dashboard shows it to copy and send yourself.
 
 Connecting an asset is quiet: one "connected" message, and no alerts, Jira issues, escalations or overdue reminders for what it already had. See [A quiet first scan](api.md#a-quiet-first-scan).
@@ -151,6 +151,8 @@ Stackurity can sign people in through any OpenID Connect provider: Google Worksp
 ```sh
 curl -fsSL https://stackurity.example.com/install/agent.sh | sudo STACKURITY_ENROLL_CODE=enr_... sh
 ```
+
+To put the server in a project, create the code from the project (it then carries the project). Hosts enrolled with it are added to the project when they first report. `stackurity enroll --project <id>` (or `STACKURITY_PROJECT`) checks that the code is for that project and refuses, without using the code, if it is not; it never changes the code's project. `stackurity agent --project` makes the same assertion on every report.
 
 The script downloads the agent from your Stackurity server and checks its SHA-256. It then creates an unprivileged `stackurity` user and exchanges the one-time code for a collector token. Finally it writes `/etc/stackurity/agent.env` with the settings you chose and starts a hardened systemd service that reports every 6 hours. The code works once (or as many times as you allowed) and expires after 24 hours by default, so a leaked command is short-lived, and no long-lived token is ever typed into a shell. To upgrade the agent later, run the same command without the code. Read the script first if you prefer: it is served at `/install/agent.sh`.
 
@@ -261,6 +263,19 @@ There are two ways to collect repository inventory:
   scanned. When the directory is in a git work tree and `git` is installed,
   paths git ignores are skipped too, counted in one "gitignored" line.
 
+  To put the repository in a project, add `--project` with the project's id
+  or name (or set `STACKURITY_PROJECT`). Use a collector token made for that
+  project (**Settings → API tokens**, or the first-run flow): it files the
+  assets it creates in the project and may name only that project. A
+  collector token cannot read project names, so give it the id. An admin's
+  token may name any project and also files an asset that already exists.
+  The command checks that the server supports this (0.10 or later) before
+  uploading, and fails rather than storing the scan outside the project:
+
+  ```sh
+  stackurity scan . --git-url "$CI_REPOSITORY_URL" --project 12
+  ```
+
   A scan replaces the asset's inventory. For merge-request pipelines, give the
   scan its own `--name` (without `--git-url`) so the default branch's
   inventory is not overwritten by a branch that may never merge.
@@ -326,6 +341,8 @@ stackurity sbom import image.cdx.json          # CycloneDX or SPDX JSON
 stackurity sbom export --asset 12 -o asset.cdx.json
 ```
 
+`--project <id or name>` (or `STACKURITY_PROJECT`) on `sbom import` files the asset in that project (an admin's token, or a collector token made for the project); on `sbom export` it scopes the request, so an asset outside the project is not found.
+
 ## Intelligence
 
 Once inventory exists, Stackurity creates feeds for the ecosystems it contains: OSV vulnerability data, CISA KEV, endoflife.date, and the package registries (npm, Packagist, PyPI, the Go module proxy, crates.io, RubyGems, NuGet, Maven Central and pub.dev) for latest releases. Inventory is evaluated whenever a feed changes and after every collection. The **Intelligence** page shows each feed's freshness and errors, plus the components that could *not* be evaluated (*evaluation gaps*).
@@ -347,7 +364,8 @@ Under **Settings → Notifications**, add a channel. Credentials always go in a 
 Then add routes:
 
 - one to the team channel in the default mode, **Urgent right away + daily summary**, urgent from P1, with quiet hours;
-- optionally one in **Daily summary only** or **Weekly summary only** mode for a lead or the security owner, with **Overdue reminders** (Pro).
+- optionally one in **Daily summary only** or **Weekly summary only** mode for a lead or the security owner, with **Overdue reminders** (Pro);
+- or, for an on-call channel that should only hear what needs action now, **Urgent only, no summary**.
 
 People get a few messages that bring them to the dashboard, not one per incident: at most one urgent message per route each time the dispatcher runs (every minute), summarised per asset with the fixes that clear the issues ("commmerceblog: 6 new urgent issues. Top fix: Install security updates and reboot (clears 2,913 issues)"); a daily or weekly summary of what is new, what was fixed and by what, the top fixes still open and what is overdue; and, with overdue reminders, at most one message a day when urgent issues pass their fix deadline. A new server's first scan sends one "connected" message ("commmerceblog connected: 1,676 packages checked, 412 issues found, 3 fixes need you") instead of alerts, Jira issues, escalations or overdue reminders for its backlog. Each fix in a message has **Assign to me**, **Snooze** and **Open** links (buttons in Slack, with a plain incoming webhook) that open it in the dashboard, where you confirm (or, with a Slack app, act from inside Slack: see [Acting from Slack](#acting-from-slack)); links of a route limited to projects open in its project. Resolved incidents are counted in the summary, never announced one by one. Incidents raised while a route is disabled are recorded as announced and not sent later. See [the API reference](api.md#incidents-and-notifications) for the details and the webhook message.
 

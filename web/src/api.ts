@@ -1572,7 +1572,7 @@ export interface Route {
   timezone: string;
   max_per_hour: number;
   created_at?: string;
-  /** urgent_summary: urgent alerts right away and a daily summary; daily or weekly: summary only. */
+  /** urgent_summary: urgent alerts right away and a daily summary; urgent_only: urgent alerts, no summary; daily or weekly: summary only. */
   mode: RouteMode;
   /** "HH:MM" in `timezone`. */
   summary_time: string;
@@ -1584,8 +1584,8 @@ export interface Route {
   project_ids?: number[] | null;
 }
 
-export type RouteMode = "urgent_summary" | "daily" | "weekly";
-export const ROUTE_MODES: RouteMode[] = ["urgent_summary", "daily", "weekly"];
+export type RouteMode = "urgent_summary" | "urgent_only" | "daily" | "weekly";
+export const ROUTE_MODES: RouteMode[] = ["urgent_summary", "urgent_only", "daily", "weekly"];
 export const WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const;
 
 export interface SOSRule {

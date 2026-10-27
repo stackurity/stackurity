@@ -19,7 +19,7 @@ A workspace (shown as the organisation in the dashboard) groups its assets into 
 
 - **Members with project access only** (`GET /auth/me` returns `"access": "projects"` and an empty `role`) see only the assets of their projects and asset grants, and everything that hangs off them: findings, fix groups, incidents (their counts, names and priority recomputed from what they can see), components and their counts, search hits, reports, audit events about those objects, and exports. Routes for organisation data (users, teams, integrations, channels, routes, deliveries, jobs, secrets, enrollments, remediation plans and policies, ingest) answer 403. The database enforces this with row-level security, not only the API.
 - **Roles from grants act per asset.** `GET /auth/me` returns `project_role`, the highest role from any grant. A change (`PATCH /assets/{id}`, relations, finding and incident actions) needs that role on each asset it touches; otherwise 403. An organisation-wide viewer with `engineer` on one project can act on that project's findings only.
-- **Choosing a project.** Send `X-Stackurity-Project: <id>` (the dashboard does) or `?project_id=<id>` on any request; `0` or nothing means all projects. Project-scoped routes (the reading routes above, `GET /reports/evidence`, `GET /assets/{id}/sbom`, search, audit) then return only that project's assets and what hangs off them; other routes ignore it. A project the caller cannot see answers 404, a value that is not a number 400.
+- **Choosing a project.** Send `X-Stackurity-Project: <id>` (the dashboard does) or `?project_id=<id>` on any request; `0` or nothing means all projects. Project-scoped routes (the reading routes above, `GET /reports/evidence`, `GET /assets/{id}/sbom`, search, audit) then return only that project's assets and what hangs off them; other routes ignore it. A project the caller cannot see answers 404, a value that is not a number 400. The CLI sends the header for `--project` (or `STACKURITY_PROJECT`).
 - **People and links.** Someone who assigns through a project role (their organisation role alone may not assign) can assign only to the people and teams of their projects (400 otherwise), and `GET /users/directory` gives them only those people. Grants are audited as object type `access_grant` and asset merges as `asset_merge`, which project-only members never see. Incidents shown to them carry no tracker `issues`, no `notified_priority`, and priority, SOS and escalation from their findings; `priority=`, `sos=` and `escalated=` filter on those.
 - **Checks, ignore rules and requests** follow their assets. Ignoring an issue on every asset (`scope: everywhere`), approving such a request and ending such a rule need an organisation-wide `security` or `admin` role (403 otherwise). With `security` through a project grant, `GET /ignore-requests` lists the caller's own requests and those whose issues are all on assets where they hold it (`can_decide` is true), and they decide only those.
 - **Tokens** of a member with project access only act as that member, never above their highest grant. Collector and host-bound agent tokens belong to the workspace and are not limited by projects.
@@ -28,16 +28,16 @@ A workspace (shown as the organisation in the dashboard) groups its assets into 
 
 | Method & path | Role | Purpose |
 |---|---|---|
-| `GET /meta` | none | Version and whether first-time setup is required |
+| `GET /meta` | none | Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project` |
 | `POST /setup` | setup token | Create the first admin |
 | `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` | none / any | Session handling |
 | `POST /feedback` | any signed-in user (rate limited, 10 an hour) | Send feedback to the Stackurity team: `kind` (`bug`, `idea`, `question`), `message` (up to 5000 characters), optional `email` and `page` (a path). The server adds its version and edition and forwards it to `STACKURITY_FEEDBACK_URL`; answers 202 when delivered, 502 when the feedback service cannot be reached, and 404 when feedback is turned off (`GET /auth/me` then has `feedback_enabled: false`). See [network.md](network.md#feedback) |
 | `POST /auth/password` | any signed-in user | Change your own password (`current_password`, `new_password`). Your other sessions are signed out |
-| `POST /enroll` | none (rate limited) | Exchange a one-time enrollment code (`{"code", "hostname"}`) for a collector token and the agent settings chosen with it. Refusals do not say why |
+| `POST /enroll` | none (rate limited) | Exchange a one-time enrollment code (`{"code", "hostname"}`) for a collector token and the agent settings chosen with it, including the code's `project_id` (null when it has none). Refusals of a code do not say why. Optional `project_id` (`stackurity enroll --project`) is a check, not a choice: when the code adds hosts to another project or to none, the answer is 403 and the code keeps its use. Servers before 0.10 answer 400 to the unknown field, also without using the code |
 | `GET`/`POST /enrollments`, `DELETE /enrollments/{id}` | admin | Create, list and revoke enrollment codes: `label`, `environment`, `app_dirs`, `discover_apps`, `uses` (1–500, default 1), `ttl_hours` (1–720, default 24), `project_id` (hosts enrolled with the code, and the assets their agent reports, are added to that project when first created). The code is returned once |
 | `GET /install/agent.sh`, `GET /download/agent/linux-{amd64,arm64}[.sha256]` | none | The agent installer and the agent builds it downloads (bundled in the server image; `STACKURITY_AGENT_DIR`) |
-| `POST /ingest` | collector, engineer+ | Submit an `ObservationBatch` (gzip accepted) |
-| `POST /sbom/import?asset_name=&asset_kind=&environment=&project_id=` | collector, engineer+ | Import a CycloneDX or SPDX JSON document. `project_id` (admins; 403 for others) adds the asset to that project. A collector token made for a project adds the assets it creates to it |
+| `POST /ingest?project_id=` | collector, engineer+ | Submit an `ObservationBatch` (gzip accepted). `project_id` files the asset in a project, see [Uploads into a project](#uploads-into-a-project) |
+| `POST /sbom/import?asset_name=&asset_kind=&environment=&project_id=` | collector, engineer+ | Import a CycloneDX or SPDX JSON document. `project_id` files the asset in a project, see [Uploads into a project](#uploads-into-a-project). A collector token made for a project adds the assets it creates to it |
 | `GET /collections/{id}/result` | collector (own submissions), engineer+ | Whether a submitted collection has been evaluated (`status`: `pending`, `scoring` (matched, findings not prioritised yet), `evaluated` (matched and prioritised), `failed`), then the asset's open findings and its count of `evaluation_gaps`. Used by `stackurity scan --fail-on` |
 | `GET /overview` | viewer | Inventory, coverage and status counts, including assets by coverage state (`asset_coverage`) and components by row coverage (`component_coverage`) |
 | `GET /search?q=&limit=` | viewer | Global search of the current workspace, see [Search](#search) |
@@ -134,7 +134,7 @@ A workspace (shown as the organisation in the dashboard) groups its assets into 
 | `POST /risk-policy/preview` | admin | Validates a proposed policy like `PUT` and returns its effect on the workspace's open findings without saving anything: `before` / `after` counts per priority, `sos_before` / `sos_after`, `priority_changed` (`raised`, `lowered`), `sos_changed`, `score_changed`, `stored_differs`, and `sample` (at most `sample_limit`, 50) of changed findings with factor deltas ([risk.md](risk.md#reproducibility-and-audit)) |
 | `GET /channels`, `GET /routes`, `GET /deliveries?status=&incident_id=` | security | Notification configuration and delivery log |
 | `POST`/`PATCH`/`DELETE /channels/{id}`, `POST /channels/{id}/test` | admin | Email, Slack, Teams, webhook and Jira channels; for Jira, test checks access without creating an issue |
-| `POST /routes`, `PUT`/`DELETE /routes/{id}` | admin | Which incidents go to which channel. `project_ids` limits a route to those projects' assets: its messages count and name only them, and only their collection and coverage problems. Not available for Jira channels (400) |
+| `POST /routes`, `PUT`/`DELETE /routes/{id}` | admin | Which incidents go to which channel. `project_ids` limits a route to those projects' assets: its messages count and name only them, and only their collection and coverage problems. For a Jira channel, at most one project (400 otherwise): its issues then describe only that project's part of each incident, see [Incidents and notifications](#incidents-and-notifications). `mode`: `urgent_summary`, `urgent_only`, `daily`, `weekly` |
 | `POST /deliveries/{id}/retry` | admin | Retry a failed or held delivery |
 | `GET /users/directory` | engineer | Active users (id, email, name) for assignment. Members with project access only get themselves and the people granted one of their projects |
 | `GET /remediation/policies` | security | Remediation policies |
@@ -166,6 +166,16 @@ stands), with `text`, `subject`, `upstream_eol`, `distribution` and
 `distribution_eol` ([compatibility.md](compatibility.md#lifecycle-of-distribution-packages)).
 
 Lists return `{"items": [...], "total": N, "limit": L, "offset": O}`. Pass `?limit=` (max 500) and `?offset=`.
+
+## Uploads into a project
+
+`POST /ingest` and `POST /sbom/import` take `?project_id=` (0.10; `/sbom/import` took it from admins since 0.9). It is what `stackurity scan`, `stackurity agent` and `stackurity sbom import` send for `--project`.
+
+- An organisation **admin** (a session or an admin's token) files the uploaded asset in the project, whether the upload created it or not. The addition is audited as `project.assets_add`.
+- A **collector token made for a project** (`POST /tokens` with `project_id`, or an enrollment code with one) may name that project, which it fills anyway with the assets it creates. It never moves an asset that already existed. Naming any other project is 403.
+- **Anyone else** (engineers and security, collector tokens without a project) gets 403 for `project_id`: filing assets in projects is for admins. Members with project access only cannot upload at all. `X-Stackurity-Project` alone is ignored for them, so a dashboard upload with a project chosen is not refused.
+- The project must exist, be active and belong to the caller's workspace (404 otherwise); a value that is not a number is 400. A refused upload stores nothing.
+- The answer adds `project_id` and `in_project` (whether the asset is in the project now). A server before 0.10 ignores `project_id` on `/ingest` and answers without these fields; `GET /meta` lists `upload_project` in `features` so clients can check first.
 
 ## Onboarding
 
@@ -371,6 +381,7 @@ Routes send to channels and filter by SOS only, kinds, environments and owner te
 | `mode` | Sends |
 |---|---|
 | `urgent_summary` (default) | urgent messages right away and a daily summary |
+| `urgent_only` | urgent messages right away (with issues that came back, `connected` and, with `escalation`, `overdue` messages), no summary |
 | `daily` | a daily summary only |
 | `weekly` | a weekly summary only, on `summary_day` |
 
@@ -380,11 +391,11 @@ The `event` of each message:
 
 - `urgent`: at most one per route per evaluation cycle, only when the cycle produced new urgent issues for the route (at `min_priority` or above, SOS, or known exploited), or a problem with collection, feeds or the platform at that priority. Summarised per asset (up to 5, then "+N more") with up to 3 fixes each from **Fixes**.
 - `summary`: daily or weekly at `summary_time`: new issues by asset, issues fixed (with the fix that closed them, when `send_resolved`), the top 3 fixes still open, overdue counts (when `escalation`, licensed), and open problems. Skipped when nothing changed. A summary is never held by `max_per_hour`.
-- `overdue` (licensed, routes with `escalation`, `urgent_summary` mode): at most one per route per day, when urgent (P1 or SOS) issues have just passed their fix deadline; groups every overdue urgent issue by fix. Escalation levels (1: acknowledgement deadline passed, 2: fix deadline passed) are still recorded on incidents and findings.
+- `overdue` (licensed, routes with `escalation`, `urgent_summary` or `urgent_only` mode): at most one per route per day, when urgent (P1 or SOS) issues have just passed their fix deadline; groups every overdue urgent issue by fix. Escalation levels (1: acknowledgement deadline passed, 2: fix deadline passed) are still recorded on incidents and findings.
 - `connected`: when a new asset's first complete collection has been evaluated (or six hours after it appeared, if no complete collection arrives): "commmerceblog connected: 1,676 packages checked, 412 issues found, 3 fixes need you". See [A quiet first scan](#a-quiet-first-scan).
 - `test`: **Send test**.
 
-Resolved incidents are not announced; summaries count fixed issues. Quiet hours delay everything except SOS. When `max_per_hour` is reached, further messages are held and counted in the route's next summary, never sent one by one. Failed deliveries are retried with backoff up to 8 times, no sooner than a receiver's `Retry-After`. A delivery that cannot succeed until the configuration changes (Jira rejecting the credentials, an unknown project) fails at once.
+Resolved incidents are not announced; summaries count fixed issues. Quiet hours delay everything except SOS. When `max_per_hour` is reached, further messages are held and counted in the route's next summary, never sent one by one; a route in `urgent_only` mode, which has no summary, gets them in one `digest` message an hour instead ("Stackurity: 4 urgent messages held by the hourly limit", one line per held message). Failed deliveries are retried with backoff up to 8 times, no sooner than a receiver's `Retry-After`. A delivery that cannot succeed until the configuration changes (Jira rejecting the credentials, an unknown project) fails at once.
 
 Jira channels (`"kind": "jira"`) keep one issue per incident instead, whatever the route's `mode`: the first matching event (`opened`, `priority_raised`) creates the issue, later changes are queued as `updated` deliveries (findings joined or left, priority changed), `escalated` for routes marked `escalation` (one comment per issue) and `resolved`. Quiet hours, limits and summaries do not apply to them. Incidents in lists and in `GET /incidents/{id}` carry the issues that follow them:
 
@@ -393,6 +404,13 @@ Jira channels (`"kind": "jira"`) keep one issue per incident instead, whatever t
 ```
 
 `channel_id` is `null` once the channel is deleted; the link is kept.
+
+A route to Jira may be limited to one project (`project_ids` with one id; more than one is 400). It keeps its own issue per incident, describing only that project's part: the project's assets and findings, their counts and priority, escalations, and links opened in the project (`?project=`). The content is read through a connection narrowed to the project, so row-level security keeps other projects' assets out. The issue is created when the project's part matches the route (announced, or the project's finding appeared or came back, after the route was created), updated as that part changes, resolved when none of the project's findings remain open (even while the incident stays open elsewhere), and told if they open again. Its label adds `-route-<route>-project-<project>` to the incident's label. An unscoped route on the same channel keeps its whole-incident issue. Such issues are listed with their project for organisation-wide roles, and never shown to members with project access:
+
+```json
+"issues": [{"tracker": "jira", "key": "SEC-42", "url": "...", "channel_id": 7},
+           {"tracker": "jira", "key": "SHOP-9", "url": "...", "channel_id": 8, "project_id": 3}]
+```
 
 ```json
 {"kind": "jira", "name": "security-jira", "secret_ref": "secret:JIRA_TOKEN",
@@ -433,7 +451,7 @@ Webhook channels receive each message as JSON. Fields are only ever added, never
 - `counts` keys: `urgent`, `assets`, `problems`, `regressed` (urgent); `new`, `new_urgent`, `fixed`, `connected`, `connected_issues`, `regressed`, `open_fixes`, `overdue`, `overdue_urgent`, `ack_overdue`, `problems`, `held` (summary); `overdue_urgent`, `fixes` (overdue); `assets`, `issues` (connected).
 - Each fix in a message (an item whose `link` is `/fixes/{id}`) has `actions`: `[{"kind": "assign", "label": "Assign to me", "link": ".../fixes/{id}?action=assign"}, {"kind": "snooze", ...}, {"kind": "open", ...}]`. Each action also carries `fix`, the fix group id. Slack shows them as URL buttons (on up to 8 items per message), email and Teams as links. They open the fix in the dashboard with the action ready; the person confirms it there after signing in. Following a link changes nothing. On a Slack channel with a signing secret, Assign to me and Snooze 1 week act from inside Slack instead (see [Acting from Slack](#acting-from-slack)).
 - A route limited to projects (`project_ids`) opens every link in its project (`?project=N`): its only project, or for a route on several the first of them the item's asset is in.
-- Issues that came back after a fix are urgent whatever their priority: the next urgent message on routes in **Urgent right away + daily summary** mode lists them per asset ("web-1: 3 issues came back after a fix"), once, and summaries count them in their own section rather than as new issues.
+- Issues that came back after a fix are urgent whatever their priority: the next urgent message on routes in **Urgent right away + daily summary** or **Urgent only** mode lists them per asset ("web-1: 3 issues came back after a fix"), once, and summaries count them in their own section rather than as new issues.
 - Summaries also carry `"period": {"from": "...", "to": "..."}`.
 
 ### Acting from Slack

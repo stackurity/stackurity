@@ -33,11 +33,23 @@ type conn struct {
 	server    string
 	token     string
 	tokenFile string
+	// project is --project: an id or name, resolved by connect.
+	project string
 }
 
 func (c *conn) flags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&c.server, "server", os.Getenv("STACKURITY_SERVER"), "server URL (env STACKURITY_SERVER)")
 	cmd.Flags().StringVar(&c.tokenFile, "token-file", os.Getenv("STACKURITY_TOKEN_FILE"), "file containing the API token (env STACKURITY_TOKEN_FILE)")
+	projectFlag(cmd, &c.project, projectHelp)
+}
+
+// noProjectOffline refuses an explicit --project on a run that writes to a
+// file instead of the server (STACKURITY_PROJECT alone is ignored there).
+func noProjectOffline(cmd *cobra.Command) error {
+	if cmd.Flags().Changed("project") {
+		return errors.New("--project applies to what is sent to the server; it cannot be combined with --output")
+	}
+	return nil
 }
 
 // client builds an API client. Tokens come from a file or STACKURITY_TOKEN,
@@ -78,6 +90,13 @@ func printResult(r *client.IngestResult) {
 		fmt.Print(", new asset")
 	}
 	fmt.Println()
+	if r.ProjectID > 0 {
+		if r.InProject != nil && !*r.InProject {
+			fmt.Printf("warning: asset %d already existed and is not in project %d: a collector token adds only the assets it creates; an admin can add it under Settings > Projects and access\n", r.AssetID, r.ProjectID)
+		} else {
+			fmt.Printf("asset %d is in project %d\n", r.AssetID, r.ProjectID)
+		}
+	}
 	if len(r.Conflict) > 0 {
 		fmt.Printf("warning: identifiers match several assets %v; an admin should resolve the conflict\n", r.Conflict)
 	}
@@ -177,6 +196,13 @@ allowlist file. Each change is dry-run first, applied through the package
 manager, health-checked, and followed by a fresh inventory collection so the
 server can verify it. Remediation needs a token bound to this host.
 
+With --project (or STACKURITY_PROJECT) the hosts and applications the agent
+reports for the first time are added to that project. The agent's collector
+token must have been made for that project (an enrollment code or token with
+a project); the server refuses another project, and an admin's token may
+name any. An existing asset is not moved. Servers before 0.10 are refused
+before anything is sent, since they would ignore the project.
+
 Between collections the agent asks the server about once a minute whether
 someone pressed Check again in the dashboard, and reports at once if so
 (--check-interval, 0 turns it off). The question is a small GET with the
@@ -201,13 +227,16 @@ agent's own token; it never changes anything on the host.`,
 				return bs, nil
 			}
 			if output != "" {
+				if err := noProjectOffline(cmd); err != nil {
+					return err
+				}
 				bs, err := collect(cmd.Context())
 				if err != nil {
 					return err
 				}
 				return writeJSON(output, bs)
 			}
-			cl, err := c.client()
+			cl, err := c.connect(cmd.Context(), true)
 			if err != nil {
 				return err
 			}
@@ -412,7 +441,14 @@ support yet are reported as unsupported coverage.
 With --fail-on, --fail-on-priority or --fail-on-kev the command waits for the
 server to evaluate the scan and exits with status 3 when an open finding meets
 the threshold, so it can gate a CI pipeline. Findings that are suppressed or
-risk-accepted on the server do not count.`,
+risk-accepted on the server do not count.
+
+With --project (an id or name; or STACKURITY_PROJECT) a new asset is added
+to that project, and an admin's token also adds an existing one. A collector
+token must have been made for that project (Settings > API tokens, or the
+first-run flow) and may name only it; a name needs a token that can read
+projects, so give a collector token the id. The command checks that the
+server supports this (0.10 or later) before it uploads anything.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := g.validate(); err != nil {
@@ -420,6 +456,11 @@ risk-accepted on the server do not count.`,
 			}
 			if g.enabled() && output != "" {
 				return errors.New("--fail-on flags need the server's evaluation; they cannot be combined with --output")
+			}
+			if output != "" {
+				if err := noProjectOffline(cmd); err != nil {
+					return err
+				}
 			}
 			dir, err := filepath.Abs(args[0])
 			if err != nil {
@@ -434,14 +475,18 @@ risk-accepted on the server do not count.`,
 			} else {
 				asset.Identifiers = []model.Identifier{{Scheme: "name:repository", Value: name}}
 			}
+			// The client is made (and --project resolved) before scanning,
+			// so a wrong token or project fails fast.
+			var cl *client.Client
+			if output == "" {
+				if cl, err = c.connect(cmd.Context(), true); err != nil {
+					return err
+				}
+			}
 			// Packs installed on the server read more file types; they run
 			// here, so repository contents never leave this machine.
 			var exts []lockfile.Extension
-			if output == "" && !noPacks {
-				cl, err := c.client()
-				if err != nil {
-					return err
-				}
+			if cl != nil && !noPacks {
 				var done func()
 				exts, done = remotePacks(cl)(cmd.Context())
 				defer done()
@@ -460,10 +505,6 @@ risk-accepted on the server do not count.`,
 			}
 			if output != "" {
 				return writeBatch(output, b)
-			}
-			cl, err := c.client()
-			if err != nil {
-				return err
 			}
 			r, err := cl.Ingest(cmd.Context(), b)
 			if err != nil {
@@ -498,7 +539,13 @@ func sbomCmd() *cobra.Command {
 	imp := &cobra.Command{
 		Use:   "import FILE",
 		Short: "Import a CycloneDX or SPDX JSON SBOM",
-		Args:  cobra.ExactArgs(1),
+		Long: `Uploads a CycloneDX or SPDX JSON document; it is checked here first.
+
+With --project (an id or name; or STACKURITY_PROJECT) the asset is added to
+that project. That needs an admin's token, or a collector token made for that
+project (which adds only an asset the upload creates). The command checks
+that the server supports this (0.10 or later) before it uploads anything.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			f, err := os.Open(args[0])
 			if err != nil {
@@ -512,7 +559,7 @@ func sbomCmd() *cobra.Command {
 			if _, err := f.Seek(0, io.SeekStart); err != nil {
 				return err
 			}
-			cl, err := ic.client()
+			cl, err := ic.connect(cmd.Context(), true)
 			if err != nil {
 				return err
 			}
@@ -535,8 +582,12 @@ func sbomCmd() *cobra.Command {
 	exp := &cobra.Command{
 		Use:   "export",
 		Short: "Export an asset's inventory as CycloneDX 1.6 JSON",
+		Long: `Writes an asset's inventory as CycloneDX 1.6 JSON.
+
+With --project (an id or name; or STACKURITY_PROJECT) the request is scoped to
+that project: an asset outside it is not found.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cl, err := ec.client()
+			cl, err := ec.connect(cmd.Context(), false)
 			if err != nil {
 				return err
 			}
@@ -590,6 +641,21 @@ func diagnosticsCmd() *cobra.Command {
 				return fmt.Errorf("auth failed: %w", err)
 			}
 			fmt.Printf("auth: ok, role %v\n", me["role"])
+			if strings.TrimSpace(c.project) != "" {
+				id, name, err := resolveProject(cmd.Context(), cl, c.project)
+				if err != nil {
+					return fmt.Errorf("project: %w", err)
+				}
+				if name == "" {
+					name = "name not readable with this token"
+				}
+				fmt.Printf("project: %d (%s)\n", id, name)
+				if err := requireUploadProject(cmd.Context(), anon); err != nil {
+					fmt.Println("uploads:", err)
+				} else {
+					fmt.Println("uploads: the server files uploads in the project")
+				}
+			}
 			return nil
 		},
 	}

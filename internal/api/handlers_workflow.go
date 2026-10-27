@@ -532,8 +532,8 @@ func (s *Server) saveRoute(w http.ResponseWriter, r *http.Request, id int64) {
 	case !priorities[rt.MinPriority]:
 		s.fail(w, r, badRequest("min_priority must be P1-P4"))
 		return
-	case rt.Mode != store.ModeUrgentSummary && rt.Mode != store.ModeDaily && rt.Mode != store.ModeWeekly:
-		s.fail(w, r, badRequest("mode must be urgent_summary, daily or weekly"))
+	case !slices.Contains([]string{store.ModeUrgentSummary, store.ModeUrgentOnly, store.ModeDaily, store.ModeWeekly}, rt.Mode):
+		s.fail(w, r, badRequest("mode must be urgent_summary, urgent_only, daily or weekly"))
 		return
 	case !notify.ValidQuietTime(rt.SummaryTime):
 		s.fail(w, r, badRequest("summary_time must be HH:MM"))
@@ -569,10 +569,12 @@ func (s *Server) saveRoute(w http.ResponseWriter, r *http.Request, id int64) {
 			s.fail(w, r, badRequest("a route can name at most 100 projects"))
 			return
 		}
-		// A Jira issue describes the whole incident across every asset, so
-		// it cannot be limited to a project's assets.
-		if ch, err := s.Store.GetChannel(r.Context(), rt.ChannelID); err == nil && ch.Kind == notify.KindJira {
-			s.fail(w, r, badRequest("routes to Jira cannot be limited to projects yet; use an email, Slack, Teams or webhook channel"))
+		// A Jira route limited to a project keeps its own issue per
+		// incident, describing only that project's part, read with a
+		// connection narrowed to the project. That narrowing names one
+		// project, so such a route names one too.
+		if ch, err := s.Store.GetChannel(r.Context(), rt.ChannelID); err == nil && ch.Kind == notify.KindJira && len(rt.ProjectIDs) > 1 {
+			s.fail(w, r, badRequest("a route to Jira can be limited to one project; add a route for each project"))
 			return
 		}
 	}

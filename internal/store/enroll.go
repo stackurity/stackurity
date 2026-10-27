@@ -89,6 +89,19 @@ func (s *Store) RevokeEnrollment(ctx context.Context, id int64) error {
 // signed in, so the code is found in system scope and the token is issued in
 // the code's workspace.
 func (s *Store) RedeemEnrollment(ctx context.Context, code, hostname string) (*Enrollment, string, error) {
+	return s.RedeemEnrollmentFor(ctx, code, hostname, 0)
+}
+
+// ErrEnrollmentProject: the redeemer asked for a project (stackurity enroll
+// --project) and the code adds hosts to another project, or to none. The
+// code is not used up. Only someone holding a valid code learns this.
+var ErrEnrollmentProject = errors.New("this enrollment code does not add hosts to the project you asked for; ask an administrator for a code made for that project")
+
+// RedeemEnrollmentFor is RedeemEnrollment that, when project is not 0,
+// first checks that the code adds hosts to that project. A redeemer can
+// never choose or change the code's project: the administrator who made the
+// code decides it.
+func (s *Store) RedeemEnrollmentFor(ctx context.Context, code, hostname string, project int64) (*Enrollment, string, error) {
 	ctx = tenant.System(ctx)
 	var e *Enrollment
 	var secret string
@@ -105,6 +118,9 @@ func (s *Store) RedeemEnrollment(ctx context.Context, code, hostname string) (*E
 		}
 		if err != nil {
 			return err
+		}
+		if project != 0 && (e.ProjectID == nil || *e.ProjectID != project) {
+			return ErrEnrollmentProject // rolls the use back
 		}
 		// At the limit the code is not used up: the host could not be
 		// monitored, and the code works once the organisation has room.

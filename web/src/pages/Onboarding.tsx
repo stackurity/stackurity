@@ -608,7 +608,19 @@ function ResultStep({ project, since, onNext }: { project: Project; since: strin
 // --- 5. notifications
 
 type Kind = "slack" | "email";
-type Mode = "urgent_summary" | "weekly";
+type Mode = "urgent_summary" | "urgent_only" | "weekly";
+
+const MODE_ROUTE_NAME: Record<Mode, string> = {
+  urgent_summary: "urgent and daily summary",
+  urgent_only: "urgent only",
+  weekly: "weekly summary",
+};
+
+const MODE_DONE: Record<Mode, string> = {
+  urgent_summary: "Urgent issues arrive right away, with a summary each day at 09:00.",
+  urgent_only: "Urgent issues arrive right away, with no summary.",
+  weekly: "A summary arrives on Mondays at 09:00.",
+};
 
 function secretName(project: Project, kind: Kind): string {
   const slug = project.name.toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 30) || "PROJECT";
@@ -645,7 +657,7 @@ function NotifyStep({ project, onNext }: { project: Project; onNext: () => void 
       const ch = await api.post<{ id: number }>("/channels", { kind, name: `${project.name} (${kind === "slack" ? "Slack" : "email"})`, config, secret_ref: ref });
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
       await api.post("/routes", {
-        name: `${project.name}: ${mode === "weekly" ? "weekly summary" : "urgent and daily summary"}`,
+        name: `${project.name}: ${MODE_ROUTE_NAME[mode]}`,
         channel_id: ch.id,
         enabled: true,
         project_ids: [project.id],
@@ -672,7 +684,7 @@ function NotifyStep({ project, onNext }: { project: Project; onNext: () => void 
     return (
       <StepCard>
         <Notice kind="success">
-          Notifications are on for {project.name}. {mode === "weekly" ? "A summary arrives on Mondays at 09:00." : "Urgent issues arrive right away, with a summary each day at 09:00."}
+          Notifications are on for {project.name}. {MODE_DONE[mode]}
         </Notice>
         {tested && <Notice kind={tested.startsWith("Test message") ? "success" : "warn"}>{tested}</Notice>}
         <ErrorBox error={act.error} title="Could not send a test" />
@@ -749,6 +761,15 @@ function NotifyStep({ project, onNext }: { project: Project; onNext: () => void 
                 <span>
                   <strong>Urgent issues right away</strong>
                   <span className="hint"> P1, SOS and known exploited, with a short summary each day.</span>
+                </span>
+              </label>
+            </li>
+            <li>
+              <label className="choice">
+                <input type="radio" name="ob-mode" checked={mode === "urgent_only"} onChange={() => setMode("urgent_only")} />
+                <span>
+                  <strong>Urgent issues only</strong>
+                  <span className="hint"> P1, SOS, known exploited and issues that came back, right away. No summaries.</span>
                 </span>
               </label>
             </li>

@@ -130,17 +130,25 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Code     string `json:"code"`
 		Hostname string `json:"hostname"`
+		// ProjectID (stackurity enroll --project) is a check, not a
+		// choice: the code must add hosts to this project, or nothing is
+		// redeemed (403).
+		ProjectID int64 `json:"project_id"`
 	}
 	if err := decode(r, &req); err != nil {
 		s.fail(w, r, err)
+		return
+	}
+	if req.ProjectID < 0 {
+		s.fail(w, r, badRequest("project_id must be a project id"))
 		return
 	}
 	host := strings.TrimSpace(req.Hostname)
 	if len(host) > 253 {
 		host = host[:253]
 	}
-	e, token, err := s.Store.RedeemEnrollment(r.Context(), strings.TrimSpace(req.Code), host)
-	if errors.Is(err, store.ErrEnrollmentInvalid) {
+	e, token, err := s.Store.RedeemEnrollmentFor(r.Context(), strings.TrimSpace(req.Code), host, req.ProjectID)
+	if errors.Is(err, store.ErrEnrollmentInvalid) || errors.Is(err, store.ErrEnrollmentProject) {
 		writeError(w, 403, "forbidden", err.Error())
 		return
 	}
@@ -151,7 +159,7 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 	_ = s.Store.Audit(tenant.WithWorkspace(r.Context(), e.WorkspaceID), store.Actor{Type: "enrollment", Name: e.Prefix, RemoteAddr: clientIP(r)},
 		"enrollment.redeem", "enrollment", itoa(e.ID), map[string]any{"hostname": host})
 	writeJSON(w, 200, map[string]any{"token": token, "environment": e.Environment, "app_dirs": e.AppDirs,
-		"discover_apps": e.DiscoverApps})
+		"discover_apps": e.DiscoverApps, "project_id": e.ProjectID})
 }
 
 // installScript serves the agent installer with this server's URL filled in.

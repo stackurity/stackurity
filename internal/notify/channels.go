@@ -48,6 +48,11 @@ type Message struct {
 	Escalation int            `json:"escalation_level,omitempty"`
 	Detail     map[string]any `json:"detail,omitempty"`
 	At         time.Time      `json:"at"`
+	// ProjectID marks a Jira delivery of a route limited to that project:
+	// its issue describes only the project's part of the incident, built
+	// when it is sent (see jira_projects.go). The payload carries nothing
+	// else about the incident.
+	ProjectID int64 `json:"project_id,omitempty"`
 	// Grouped messages only.
 	Route        string         `json:"route,omitempty"`  // the route that sent it
 	Period       *Period        `json:"period,omitempty"` // summaries: what they cover

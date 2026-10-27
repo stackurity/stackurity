@@ -488,6 +488,23 @@ func newOrg(t *testing.T) *org {
 		t.Fatalf("slack link: %d", code)
 	}
 	o.ids["beta-slacklink"] = link.ID
+	// And the issue a Jira route limited to Beta keeps for Beta's part of
+	// the shared incident (0.10): a narrowed connection never sees it.
+	bch, err := e.st.CreateChannel(ws, "jira", "jira-beta",
+		[]byte(`{"url": "https://beta.atlassian.net", "username": "a@x.io", "project": "BETA"}`), "env:STACKURITY_SECRET_JIRA")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var brt store.Route
+	if code := o.admin.do("POST", "/api/v1/routes", map[string]any{"name": "beta-jira", "channel_id": bch.ID, "enabled": true,
+		"project_ids": []int64{o.id("beta-project")}}, &brt); code != 201 {
+		t.Fatalf("jira route: %d", code)
+	}
+	if _, err := e.st.Pool.Exec(ws, `INSERT INTO route_issues (route_id, project_id, channel_id, incident_id, issue_key, issue_url)
+		VALUES ($1, $2, $3, $4, 'BETA-43', 'https://beta.atlassian.net/browse/BETA-43')`,
+		brt.ID, o.id("beta-project"), bch.ID, o.id("shared-incident")); err != nil {
+		t.Fatal(err)
+	}
 	return o
 }
 
@@ -1390,14 +1407,20 @@ func TestProjectSuggestions(t *testing.T) {
 	if !actions["project.create"] || !actions["project.assets_add"] {
 		t.Errorf("audit of Project Alpha: %v", actions)
 	}
-	// Routes to Jira cannot be limited to projects.
-	var ch store.Channel
-	if code := o.admin.do("POST", "/api/v1/channels", map[string]any{"kind": "jira", "name": "jira",
-		"config": map[string]any{"base_url": "https://x.atlassian.net", "email": "a@x.io", "project": "SEC"}, "secret_ref": "env:X"}, &ch); code == 201 {
-		if code := o.admin.do("POST", "/api/v1/routes", map[string]any{"name": "j", "channel_id": ch.ID, "enabled": true,
-			"project_ids": []int64{o.id("alpha-project")}}, nil); code != 400 {
-			t.Errorf("Jira route limited to a project: %d, want 400", code)
-		}
+	// Routes to Jira can be limited to one project (their issues then
+	// describe only its part of each incident), not to several.
+	ch, err := o.e.st.CreateChannel(tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace), "jira", "jira",
+		[]byte(`{"url": "https://x.atlassian.net", "username": "a@x.io", "project": "SEC"}`), "env:STACKURITY_SECRET_JIRA")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code := o.admin.do("POST", "/api/v1/routes", map[string]any{"name": "j", "channel_id": ch.ID, "enabled": true,
+		"project_ids": []int64{o.id("alpha-project")}}, nil); code != 201 {
+		t.Errorf("Jira route limited to one project: %d, want 201", code)
+	}
+	if code := o.admin.do("POST", "/api/v1/routes", map[string]any{"name": "j2", "channel_id": ch.ID, "enabled": true,
+		"project_ids": []int64{o.id("alpha-project"), o.id("beta-project")}}, nil); code != 400 {
+		t.Errorf("Jira route limited to two projects: %d, want 400", code)
 	}
 	var hook store.Channel
 	if code := o.admin.do("POST", "/api/v1/channels", map[string]any{"kind": "webhook", "name": "hook",
@@ -1477,12 +1500,12 @@ func TestProjectPeopleAndLinks(t *testing.T) {
 	}
 
 	// Tracker links describe the whole incident: not shown to Alpha.
-	if _, body := viewer.do("GET", "/api/v1/incidents/"+o.s("shared-incident"), nil); strings.Contains(body, "BETA-42") {
+	if _, body := viewer.do("GET", "/api/v1/incidents/"+o.s("shared-incident"), nil); strings.Contains(body, "BETA-42") || strings.Contains(body, "BETA-43") {
 		t.Errorf("Jira key shown to Alpha: %s", body)
 	}
 	var inc struct{ Incident store.Incident }
 	get(sessionMember("admin", o.admin, nil), "/api/v1/incidents/"+o.s("shared-incident"), &inc)
-	if len(inc.Incident.Issues) != 1 {
+	if len(inc.Incident.Issues) != 2 || inc.Incident.Issues[1].Key != "BETA-43" {
 		t.Errorf("the organisation's view lost the Jira link: %+v", inc.Incident.Issues)
 	}
 
