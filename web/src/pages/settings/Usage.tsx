@@ -49,7 +49,7 @@ export function UsageMeter({ used, limit }: { used: number; limit: number | null
 
 const refusedColumns: Column<RefusedAsset>[] = [
   { key: "kind", header: "Kind", cell: (r) => KIND_WORDS[r.kind] ?? r.kind },
-  { key: "name", header: "Name", cell: (r) => <span className="break">{r.name}</span> },
+  { key: "name", header: "Name", cell: (r) => <span className="break cell-name">{r.name}</span> },
   { key: "source", header: "Sent by", cell: (r) => <span className="break">{r.source || <span className="muted">unknown</span>}</span> },
   { key: "attempts", header: "Attempts", cell: (r) => r.attempts, numeric: true },
   { key: "last", header: "Last tried", cell: (r) => <RelativeTime iso={r.last_refused_at} /> },

@@ -110,7 +110,7 @@ function Current({ b: cur, onChanged }: { b: Billing; onChanged: (b: Billing) =>
           being checked either way.
         </Notice>
       )}
-      {cur.notice && <p>{cur.notice}</p>}
+      {cur.notice && !cur.grace_until && <p>{cur.notice}</p>}
       {cur.payment_url && (cur.status === "awaiting_payment" || cur.status === "past_due" || cur.status === "halted") && (
         <p>
           <a className="btn btn-primary" href={cur.payment_url}>
