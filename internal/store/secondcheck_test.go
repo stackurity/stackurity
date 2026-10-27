@@ -2,6 +2,8 @@ package store_test
 
 import (
 	"context"
+	"fmt"
+	"strconv"
 	"testing"
 
 	"github.com/stackurity/stackurity/internal/store"
@@ -157,5 +159,40 @@ func TestSecondCheckCandidates(t *testing.T) {
 	}
 	if waiting, err := s.SecondCheckWaiting(ctx); err != nil || waiting {
 		t.Errorf("waiting after the check: %v %v", waiting, err)
+	}
+}
+
+// A check made under older second-check rules is redone: a false
+// disagreement from a rule that has since been fixed clears itself on the
+// next run, though the match did not change.
+func TestSecondCheckRedoneWhenRulesChange(t *testing.T) {
+	ctx, s := loopStore(t)
+	web := ingestHost(t, s, ctx, "web-1", "pkg:npm/lodash@4.17.15")
+	syncFix(t, s, ctx, web, map[string]string{"CVE-L": "lodash"}, map[string]string{"CVE-L": "1.0.1"})
+	f := one(t, s, ctx, web, "CVE-L")
+	c := candidate(t, s, ctx, true, f.ID)
+	if _, err := s.RecordSecondChecks(ctx, []store.SecondCheckResult{disagreed(c)}); err != nil {
+		t.Fatal(err)
+	}
+	if candidate(t, s, ctx, true, f.ID) != nil {
+		t.Fatal("a current check was offered again")
+	}
+	sc, _ := s.FindingSecondCheck(ctx, f.ID)
+	if fmt.Sprint(sc.Independent["checker"]) != strconv.Itoa(store.SecondCheckRules) {
+		t.Fatalf("checker version not stored: %v", sc.Independent)
+	}
+	if _, err := s.Pool.Exec(ctx, `UPDATE second_checks SET independent = jsonb_set(independent, '{checker}', '1')`); err != nil {
+		t.Fatal(err)
+	}
+	if candidate(t, s, ctx, true, f.ID) == nil {
+		t.Fatal("a check made under older rules is not redone")
+	}
+	agreed := disagreed(c)
+	agreed.Result, agreed.Reason, agreed.Differences = store.SecondCheckAgreed, "", nil
+	if _, err := s.RecordSecondChecks(ctx, []store.SecondCheckResult{agreed}); err != nil {
+		t.Fatal(err)
+	}
+	if f = one(t, s, ctx, web, "CVE-L"); f.SecondCheck != store.SecondCheckAgreed {
+		t.Fatalf("the false disagreement did not clear: %q", f.SecondCheck)
 	}
 }

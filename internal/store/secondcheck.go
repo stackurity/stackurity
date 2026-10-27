@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -26,6 +27,12 @@ const (
 const secondCheckWanted = `f.status = 'open' AND f.kind IN ('vulnerability', 'end_of_life') AND (
 	f.priority = 'P1' OR f.sos OR f.regressed_at IS NOT NULL OR f.verification = 'needs_validation'
 	OR (f.evidence->>'known_exploited') = 'true' OR f.evidence->'match' ? 'ambiguous')`
+
+// SecondCheckRules is the version of internal/secondcheck's rules, stored
+// with each result (independent.checker). Raise it whenever those rules
+// change: every check made under older rules is then redone on the next
+// runs, so a false disagreement clears itself (2: kernel source packages).
+const SecondCheckRules = 2
 
 // secondCheckMaxAge is how long a check stands when the match has not
 // changed: advisory records can change without changing the match.
@@ -78,8 +85,9 @@ func (s *Store) SecondCheckCandidates(ctx context.Context, limit int, all bool) 
 		WHERE `+wanted+`
 		  -- NOT IN, not NOT EXISTS: one hashed scan of the (small) checks table
 		  -- whatever its statistics say, instead of a nested loop per finding.
-		  AND f.id NOT IN (SELECT s.finding_id FROM second_checks s WHERE s.checked_at > now() - make_interval(secs => $2))
-		ORDER BY f.sos DESC, f.priority, f.id LIMIT $1`, limit, secondCheckMaxAge.Seconds())
+		  AND f.id NOT IN (SELECT s.finding_id FROM second_checks s WHERE s.checked_at > now() - make_interval(secs => $2)
+		    AND s.independent->>'checker' = $3)
+		ORDER BY f.sos DESC, f.priority, f.id LIMIT $1`, limit, secondCheckMaxAge.Seconds(), strconv.Itoa(SecondCheckRules))
 	if err != nil {
 		return nil, err
 	}
@@ -104,8 +112,9 @@ func (s *Store) SecondCheckWaiting(ctx context.Context) (bool, error) {
 	var waiting bool
 	err := s.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
 		WHERE `+secondCheckWanted+`
-		  AND f.id NOT IN (SELECT s.finding_id FROM second_checks s WHERE s.checked_at > now() - make_interval(secs => $1)))`,
-		secondCheckMaxAge.Seconds()).Scan(&waiting)
+		  AND f.id NOT IN (SELECT s.finding_id FROM second_checks s WHERE s.checked_at > now() - make_interval(secs => $1)
+		    AND s.independent->>'checker' = $2))`,
+		secondCheckMaxAge.Seconds(), strconv.Itoa(SecondCheckRules)).Scan(&waiting)
 	return waiting, err
 }
 
@@ -174,10 +183,12 @@ func (s *Store) RecordSecondChecks(ctx context.Context, results []SecondCheckRes
 		diffsOf := make([][]byte, len(results))
 		for i, r := range results {
 			diffsOf[i], _ = json.Marshal(noNilSlice(r.Differences))
-			ind, _ := json.Marshal(r.Independent)
-			if r.Independent == nil {
-				ind = []byte("{}")
+			independent := map[string]any{}
+			for k, v := range r.Independent {
+				independent[k] = v
 			}
+			independent["checker"] = SecondCheckRules
+			ind, _ := json.Marshal(independent)
 			batch.Queue(`INSERT INTO second_checks (finding_id, basis, result, reason, differences, independent, checked_at)
 				SELECT f.id, $2, $3, $4, $5, $6, now() FROM findings f WHERE f.id = $1 AND `+matchBasis("f")+` = $2
 				ON CONFLICT (finding_id) DO UPDATE SET basis = EXCLUDED.basis, result = EXCLUDED.result, reason = EXCLUDED.reason,

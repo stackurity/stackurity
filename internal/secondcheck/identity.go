@@ -68,6 +68,72 @@ type target struct {
 	version   string
 	family    family
 	fips      bool
+	// kernel: a Debian or Ubuntu package built from a kernel source.
+	// kernelSource: the source package it was derived from is known (from
+	// the upstream qualifier or the source_package evidence), so a record
+	// for another kernel source is a real mismatch; without it the kernel
+	// source stream cannot be told from the binary name alone.
+	kernel, kernelSource bool
+}
+
+// Debian and Ubuntu kernels, read by the second check's own rules.
+//
+// A running kernel is several binary packages (linux-image-*, linux-modules-*,
+// linux-modules-extra-*, linux-image-unsigned-*, ...) whose names carry the
+// kernel ABI and flavour (linux-image-5.15.0-1050-aws). Their version is the
+// kernel source's version (5.15.0-1050.55, 5.15.0-91.101~20.04.1 for a
+// backported stream), so it compares directly with the advisory's. Advisories
+// name the kernel source: linux, or a stream such as linux-aws,
+// linux-aws-5.15, linux-hwe-5.15, linux-gcp, linux-azure, linux-oracle,
+// linux-lowlatency. The signed image comes from a wrapper source
+// (linux-signed, linux-signed-aws-5.15, linux-signed-hwe-6.5) whose advisories
+// are published under the kernel source it wraps, and Debian names its signed
+// wrappers per architecture (linux-signed-amd64).
+//
+// Metapackages (linux-image-generic-hwe-22.04, from linux-meta-hwe-6.5) are
+// not mapped: they carry no kernel code and their versions use another
+// scheme (6.5.0.35.35~22.04.1, not 6.5.0-35.35~22.04.1), so comparing them
+// with the kernel's records would give wrong answers.
+var kernelABI = regexp.MustCompile(`\d+\.\d+\.\d+-\d+`)
+
+var debianArch = map[string]bool{"amd64": true, "arm64": true, "i386": true, "armhf": true, "armel": true, "ppc64el": true,
+	"s390x": true, "mips64el": true, "riscv64": true}
+
+// kernelSourceName maps a source package to the kernel source its
+// advisories use: linux-signed-aws-5.15 -> linux-aws-5.15, linux-signed ->
+// linux, and for Debian linux-signed-amd64 -> linux,
+// linux-signed-5.10-amd64 -> linux-5.10. ok is false for a name that is not
+// a kernel source (linux-firmware, linux-base, a linux-meta-* metapackage
+// source).
+func kernelSourceName(ecosystem, src string) (string, bool) {
+	if (src != "linux" && !strings.HasPrefix(src, "linux-")) || strings.HasPrefix(src, "linux-meta") {
+		return "", false
+	}
+	parts := strings.Split(src, "-")
+	out := []string{parts[0]}
+	for _, p := range parts[1:] {
+		if p == "signed" {
+			continue
+		}
+		out = append(out, p)
+	}
+	if ecosystem == "Debian" && len(out) > 1 && debianArch[out[len(out)-1]] && strings.Contains(src, "-signed") {
+		out = out[:len(out)-1]
+	}
+	name := strings.Join(out, "-")
+	// Packages that share the linux- prefix but are not built from a kernel
+	// source (linux-base, linux-firmware) keep their own name.
+	switch {
+	case name == "linux-base", name == "linux-sysctl-defaults", strings.HasPrefix(name, "linux-firmware"):
+		return "", false
+	}
+	return name, true
+}
+
+// isKernelBinary reports a Debian or Ubuntu binary package tied to one kernel
+// version: its name carries the kernel ABI (5.15.0-91).
+func isKernelBinary(name string) bool {
+	return strings.HasPrefix(name, "linux-") && kernelABI.MatchString(name)
 }
 
 var pypiSep = regexp.MustCompile(`[-_.]+`)
@@ -157,6 +223,16 @@ func deriveTarget(rawPurl, invVersion string, ev map[string]string) (target, err
 		add(p.name)
 		add(p.qualifiers["upstream"])
 		add(ev["source_package"])
+		t.kernel = isKernelBinary(p.name)
+		for _, src := range []string{p.qualifiers["upstream"], ev["source_package"]} {
+			if i := strings.IndexByte(src, ' '); i > 0 {
+				src = src[:i]
+			}
+			if k, ok := kernelSourceName(t.ecosystem, src); ok {
+				add(k)
+				t.kernel, t.kernelSource = true, true
+			}
+		}
 	case "apk":
 		t.family = famAPK
 		distro := p.qualifiers["distro"]
