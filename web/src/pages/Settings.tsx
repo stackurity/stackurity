@@ -12,6 +12,8 @@ interface Entry {
   min?: UserRole;
   instanceAdmin?: boolean;
   feature?: Feature;
+  /** Shown only where the server offers billing (a hosted edition). */
+  billing?: boolean;
 }
 
 const GROUPS: { title: string; entries: Entry[] }[] = [
@@ -54,6 +56,13 @@ const GROUPS: { title: string; entries: Entry[] }[] = [
     ],
   },
   {
+    title: "Plan and usage",
+    entries: [
+      { to: "/settings/usage", label: "Usage", about: "Monitored assets against this organisation's limit, and new assets refused at the limit.", min: "admin" },
+      { to: "/settings/billing", label: "Plan and billing", about: "Your plan, the assets you pay for, payments and invoices.", min: "admin", billing: true },
+    ],
+  },
+  {
     title: "Maintenance",
     entries: [
       { to: "/settings/plugins", label: "Plugins", about: "Collectors installed on this server.", min: "admin" },
@@ -65,7 +74,7 @@ const GROUPS: { title: string; entries: Entry[] }[] = [
   {
     title: "This installation",
     entries: [
-      { to: "/admin/workspaces", label: "Workspaces", about: "Create workspaces and set their plan.", instanceAdmin: true },
+      { to: "/admin/workspaces", label: "Workspaces", about: "Create workspaces, set their plan and their limit on monitored assets.", instanceAdmin: true },
       { to: "/admin/health", label: "Platform health", about: "Whether feeds, jobs and collectors are working.", instanceAdmin: true },
       { to: "/admin/packs", label: "Stack packs", about: "Extra file readers for stacks Stackurity does not read on its own.", instanceAdmin: true },
       { to: "/admin/license", label: "Licence", about: "Edition, limits and expiry.", instanceAdmin: true },
@@ -76,8 +85,9 @@ const GROUPS: { title: string; entries: Entry[] }[] = [
 
 /** Settings: every setting in one place, grouped by what it is for. */
 export function SettingsPage() {
-  const { can, has, me } = useAuth();
-  const visible = (e: Entry) => (e.instanceAdmin ? Boolean(me?.user?.instance_admin) : !e.min || can(e.min));
+  const { can, has, me, meta } = useAuth();
+  const visible = (e: Entry) =>
+    (!e.billing || Boolean(meta?.billing)) && (e.instanceAdmin ? Boolean(me?.user?.instance_admin) : !e.min || can(e.min));
   return (
     <>
       <PageHeader title="Settings" sub="How Stackurity checks, decides and alerts in this workspace, and who can use it." />

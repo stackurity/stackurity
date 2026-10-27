@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { api, type List, type User, type Workspace } from "../../api";
+import { api, type List, type User, type Workspace, type WorkspaceUpdate } from "../../api";
 import { useAction, useLoad } from "../../hooks";
 import { Badge } from "../../components/Badge";
 import { Table, type Column } from "../../components/Table";
@@ -19,9 +19,9 @@ export function WorkspacesPage() {
   const [msg, setMsg] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
-  const update = async (w: Workspace, body: Record<string, unknown>, done: string) => {
+  const update = async (w: Workspace, body: WorkspaceUpdate, done: string) => {
     setMsg(null);
-    if (await act.run(() => api.patch<Workspace>(`/admin/workspaces/${w.id}`, body))) {
+    if (await act.run(() => api.updateWorkspace(w.id, body))) {
       setMsg(done);
       res.reload();
     }
@@ -52,7 +52,7 @@ export function WorkspacesPage() {
             id={`plan-${w.id}`}
             value={w.plan}
             disabled={act.pending}
-            onChange={(e) => void update(w, { plan: e.target.value }, `${w.name} is now on ${PLAN_LABEL[e.target.value]}.`)}
+            onChange={(e) => void update(w, { plan: e.target.value as Workspace["plan"] }, `${w.name} is now on ${PLAN_LABEL[e.target.value]}.`)}
           >
             {Object.entries(PLAN_LABEL).map(([k, v]) => (
               <option key={k} value={k}>
@@ -65,6 +65,19 @@ export function WorkspacesPage() {
     },
     { key: "members", header: "Members", cell: (w) => w.member_count },
     { key: "assets", header: "Assets", cell: (w) => w.asset_count },
+    {
+      key: "limit",
+      header: "Monitored / limit",
+      cell: (w) => (
+        <AssetLimitEditor
+          w={w}
+          pending={act.pending}
+          onSave={(limit) =>
+            void update(w, { asset_limit: limit ?? -1 }, limit === null ? `${w.name} has no asset limit now.` : `${w.name} may monitor up to ${limit} assets.`)
+          }
+        />
+      ),
+    },
     { key: "status", header: "Status", cell: (w) => (w.disabled_at ? <Badge status="disabled" /> : <Badge status="active" />) },
     { key: "created", header: "Created", cell: (w) => <RelativeTime iso={w.created_at} /> },
     {
@@ -105,7 +118,12 @@ export function WorkspacesPage() {
     <>
       <PageHeader
         title="Workspaces"
-        sub="Each organisation on this installation works in its own workspace and cannot see the others."
+        sub={
+          <>
+            Each organisation on this installation works in its own workspace and cannot see the others. A limit on monitored assets refuses new assets
+            only; everything already monitored keeps being checked.
+          </>
+        }
         actions={
           !creating && (
             <button type="button" className="btn btn-primary" onClick={() => setCreating(true)}>
@@ -177,5 +195,47 @@ function CreateWorkspace({ onCancel, onCreated }: { onCancel: () => void; onCrea
         </div>
       </form>
     </Card>
+  );
+}
+
+/**
+ * Monitored assets against the workspace's limit, and a field to change the
+ * limit. An empty field removes it.
+ */
+function AssetLimitEditor({ w, pending, onSave }: { w: Workspace; pending: boolean; onSave: (limit: number | null) => void }) {
+  const [value, setValue] = useState(w.asset_limit === null ? "" : String(w.asset_limit));
+  const parsed = value.trim() === "" ? null : Number(value);
+  const valid = parsed === null || (Number.isInteger(parsed) && parsed >= 0);
+  const changed = parsed !== w.asset_limit;
+  const over = w.asset_limit !== null && w.monitored >= w.asset_limit;
+  return (
+    <form
+      className="limit-editor"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (valid && changed) onSave(parsed);
+      }}
+    >
+      <span className={over ? "limit-reached" : undefined}>
+        {w.monitored} / {w.asset_limit === null ? "no limit" : w.asset_limit}
+      </span>
+      <label className="sr-only" htmlFor={`limit-${w.id}`}>
+        Asset limit for {w.name} (empty for no limit)
+      </label>
+      <input
+        id={`limit-${w.id}`}
+        type="number"
+        min={0}
+        step={1}
+        inputMode="numeric"
+        placeholder="No limit"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        aria-invalid={!valid}
+      />
+      <button type="submit" className="btn btn-sm" disabled={pending || !valid || !changed}>
+        Set
+      </button>
+    </form>
   );
 }

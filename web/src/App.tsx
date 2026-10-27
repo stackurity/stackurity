@@ -7,6 +7,9 @@ import { ErrorBox, Loading } from "./components/ui";
 import { LoginPage, SetupPage } from "./pages/Login";
 import { AcceptInvitePage } from "./pages/AcceptInvite";
 import { OnboardingPage } from "./pages/Onboarding";
+import { SignupPage, VerifySignupPage } from "./pages/Signup";
+import { UsagePage } from "./pages/settings/Usage";
+import { BillingPage } from "./pages/settings/Billing";
 import { HomePage } from "./pages/Home";
 import { AutomaticFixPoliciesPage, SettingsPage } from "./pages/Settings";
 import { AssetsPage } from "./pages/Assets";
@@ -97,6 +100,10 @@ export function App() {
 
   // An invitation link works signed in or not, before any other page.
   if (pathname === "/invite" && (state.phase === "login" || state.phase === "ready")) return <AcceptInvitePage />;
+  // Sign-up, where the server offers it (a hosted edition).
+  const signup = "meta" in state ? state.meta.signup : undefined;
+  if (signup && pathname === "/signup/verify" && (state.phase === "login" || state.phase === "ready")) return <VerifySignupPage />;
+  if (signup && pathname === "/signup" && state.phase === "login") return <SignupPage signup={signup} />;
 
   switch (state.phase) {
     case "loading":
@@ -193,6 +200,22 @@ export function App() {
         <Route path="checks" element={<ChecksPage />} />
         <Route path="settings/approvals" element={<ApprovalsPage />} />
         <Route path="settings/tokens" element={<TokensPage />} />
+        <Route
+          path="settings/usage"
+          element={
+            <RequireRole min="admin">
+              <UsagePage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="settings/billing"
+          element={
+            <RequireRole min="admin">
+              <BillingPage />
+            </RequireRole>
+          }
+        />
         <Route path="settings/risk-policy" element={<RiskPolicyPage />} />
         <Route
           path="settings/plugins"
