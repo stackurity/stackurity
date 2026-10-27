@@ -231,7 +231,8 @@ function ChoosePlan({ b, onChanged }: { b: Billing; onChanged: (b: Billing) => v
                     ))}
                 </select>
                 <p className="hint" id="bill-country-hint">
-                  Asked once: it sets the currency you pay in{currency ? ` (${currency})` : ""} and the tax on your invoices.
+                  Customers in India must choose India. Asked once: it sets the currency you pay in{currency ? ` (${currency})` : ""} and the tax
+                  on your invoices.
                 </p>
               </div>
             )}

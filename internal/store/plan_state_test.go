@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/stackurity/stackurity/internal/model"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
@@ -241,9 +243,24 @@ func TestDeleteWorkspace(t *testing.T) {
 	if err := s.Audit(b, store.Actor{Type: "system"}, "test.event", "x", "1", nil); err != nil {
 		t.Fatal(err)
 	}
-	d, err := s.DeleteWorkspace(bg, wsB.ID)
-	if err != nil {
-		t.Fatal(err)
+	// A guard that refuses stops everything; the workspace is intact.
+	stop := errors.New("paid meanwhile")
+	if _, err := s.DeleteWorkspace(bg, wsB.ID, func(ctx context.Context, tx pgx.Tx) error {
+		var locked bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM workspaces WHERE id = $1)`, wsB.ID).Scan(&locked); err != nil || !locked {
+			t.Errorf("guard ran without the workspace: %v", err)
+		}
+		return stop
+	}); !errors.Is(err, stop) {
+		t.Fatalf("refusing guard: %v", err)
+	}
+	if u, err := s.AssetUsage(b); err != nil || u.Monitored != 1 {
+		t.Fatalf("Beta after a refused deletion: %+v %v", u, err)
+	}
+	ran := false
+	d, err := s.DeleteWorkspace(bg, wsB.ID, func(context.Context, pgx.Tx) error { ran = true; return nil })
+	if err != nil || !ran {
+		t.Fatal(err, ran)
 	}
 	if d.Name != "Beta" || d.Assets != 1 || len(d.Users) != 1 || d.Users[0] != "admin-b@x.io" {
 		t.Errorf("deleted: %+v", d)
@@ -266,10 +283,10 @@ func TestDeleteWorkspace(t *testing.T) {
 	if u, err := s.AssetUsage(c); err != nil || u.Monitored != 1 || u.Projects != 1 {
 		t.Errorf("Gamma after Beta was deleted: %+v %v", u, err)
 	}
-	if _, err := s.DeleteWorkspace(bg, tenant.DefaultWorkspace); !errors.Is(err, store.ErrConflict) {
+	if _, err := s.DeleteWorkspace(bg, tenant.DefaultWorkspace, nil); !errors.Is(err, store.ErrConflict) {
 		t.Errorf("default workspace: %v", err)
 	}
-	if _, err := s.DeleteWorkspace(bg, wsB.ID); !errors.Is(err, store.ErrNotFound) {
+	if _, err := s.DeleteWorkspace(bg, wsB.ID, nil); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("twice: %v", err)
 	}
 }

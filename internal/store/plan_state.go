@@ -252,7 +252,13 @@ type DeletedWorkspace struct {
 // administrators. The default workspace cannot be deleted. Nothing in the
 // core calls it; a hosted edition does, for organisations whose data its
 // terms say is removed. One transaction: all of it goes, or none.
-func (s *Store) DeleteWorkspace(ctx context.Context, ws int64) (*DeletedWorkspace, error) {
+//
+// guard, when not nil, runs in that transaction once the workspace row is
+// locked (FOR UPDATE), before anything is deleted: an error from it stops
+// the deletion and is returned. A caller re-checks there what must still
+// hold (the workspace is still read-only, nothing was paid), and removes
+// rows of its own tables that do not cascade.
+func (s *Store) DeleteWorkspace(ctx context.Context, ws int64, guard func(ctx context.Context, tx pgx.Tx) error) (*DeletedWorkspace, error) {
 	if ws == tenant.DefaultWorkspace {
 		return nil, fmt.Errorf("the default workspace cannot be deleted: %w", ErrConflict)
 	}
@@ -261,6 +267,11 @@ func (s *Store) DeleteWorkspace(ctx context.Context, ws int64) (*DeletedWorkspac
 	err := pgx.BeginFunc(sys, s.Pool, func(tx pgx.Tx) error {
 		if err := tx.QueryRow(sys, `SELECT name, slug FROM workspaces WHERE id = $1 FOR UPDATE`, ws).Scan(&d.Name, &d.Slug); err != nil {
 			return notFound(err)
+		}
+		if guard != nil {
+			if err := guard(sys, tx); err != nil {
+				return err
+			}
 		}
 		if err := tx.QueryRow(sys, `SELECT count(*) FROM assets WHERE workspace_id = $1 AND merged_into IS NULL`, ws).Scan(&d.Assets); err != nil {
 			return err
