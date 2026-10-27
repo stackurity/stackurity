@@ -19,8 +19,9 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	members := principal(r).Role.AtLeast(auth.RoleEngineer)
-	res, err := s.Store.SearchWith(r.Context(), q, store.SearchOptions{Limit: limit, Members: members})
+	p := principal(r)
+	members := p.Role.AtLeast(auth.RoleEngineer)
+	res, err := s.Store.SearchWith(r.Context(), q, store.SearchOptions{Limit: limit, Members: members, ProjectOnly: p.boundToProject()})
 	if err != nil {
 		s.fail(w, r, err)
 		return

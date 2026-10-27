@@ -1,8 +1,18 @@
 // Package mcp serves Stackurity to AI assistants over the Model Context
-// Protocol (stdio transport: newline-delimited JSON-RPC 2.0). Every tool is
-// read-only and goes through the HTTP API with the caller's token, so the
-// assistant sees exactly what that token's user may see, and nothing it does
-// can change findings, plans or hosts.
+// Protocol: on standard input and output (stdio, newline-delimited JSON-RPC
+// 2.0) for `stackurity mcp`, and over Streamable HTTP for the server's /mcp
+// endpoint (http.go). Both use the same tools, and every tool goes through
+// the HTTP API with the caller's credentials, so the assistant sees and may
+// change exactly what that user may. Tools that change something are offered
+// only when the server allows them (AllowWrites: "Allow changes" on the
+// connection, or stackurity mcp --allow-writes), and each first answers a
+// preview and changes nothing until called again with the preview's code
+// (write.go), which guards against a model's mistakes, not against the
+// person.
+//
+// Both protocol eras are served: the per-request metadata of 2026-07-28 and
+// later (server/discover, no handshake), and the initialize handshake of
+// 2024-11-05 to 2025-11-25.
 package mcp
 
 import (
@@ -19,10 +29,34 @@ import (
 	"github.com/stackurity/stackurity/internal/client"
 )
 
-// ProtocolVersion is the newest MCP revision this server implements.
-const ProtocolVersion = "2025-06-18"
+// ProtocolVersion is the newest MCP revision this server implements;
+// LegacyVersion the newest one that starts with initialize.
+const (
+	ProtocolVersion = "2026-07-28"
+	LegacyVersion   = "2025-11-25"
+)
 
-var supportedVersions = map[string]bool{"2025-06-18": true, "2025-03-26": true, "2024-11-05": true}
+// modernVersions carry their version in every request's _meta;
+// legacyVersions negotiate it with initialize.
+var (
+	modernVersions = map[string]bool{"2026-07-28": true}
+	legacyVersions = map[string]bool{"2025-11-25": true, "2025-06-18": true, "2025-03-26": true, "2024-11-05": true}
+	// SupportedVersions, newest first, as server/discover and the
+	// unsupported-version error list them.
+	SupportedVersions = []string{"2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"}
+)
+
+const metaVersion = "io.modelcontextprotocol/protocolVersion"
+
+// JSON-RPC and MCP error codes.
+const (
+	codeParse              = -32700
+	codeInvalidRequest     = -32600
+	codeMethodNotFound     = -32601
+	codeInvalidParams      = -32602
+	codeHeaderMismatch     = -32020
+	codeUnsupportedVersion = -32022
+)
 
 // API is the subset of the HTTP client the tools use.
 type API interface {
@@ -34,7 +68,13 @@ var _ API = (*client.Client)(nil)
 type Server struct {
 	API     API
 	Version string
-	mu      sync.Mutex
+	// BaseURL is the server's public URL, for the install command that
+	// create_enrollment returns.
+	BaseURL string
+	// AllowWrites offers the tools that change something; without it only
+	// the read-only tools are listed or callable.
+	AllowWrites bool
+	mu          sync.Mutex
 }
 
 type request struct {
@@ -47,6 +87,7 @@ type request struct {
 type rpcError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
+	Data    any    `json:"data,omitempty"`
 }
 
 type response struct {
@@ -75,7 +116,7 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 		}
 		var req request
 		if err := json.Unmarshal([]byte(line), &req); err != nil {
-			write(response{JSONRPC: "2.0", ID: json.RawMessage("null"), Error: &rpcError{-32700, "parse error"}})
+			write(response{JSONRPC: "2.0", ID: json.RawMessage("null"), Error: &rpcError{Code: codeParse, Message: "parse error"}})
 			continue
 		}
 		if len(req.ID) == 0 {
@@ -87,44 +128,102 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 	return sc.Err()
 }
 
+// requestVersion returns the protocol version a modern request declares in
+// params._meta, or "" for a request of the initialize era.
+func requestVersion(params json.RawMessage) string {
+	var p struct {
+		Meta map[string]any `json:"_meta"`
+	}
+	_ = json.Unmarshal(params, &p)
+	v, _ := p.Meta[metaVersion].(string)
+	if _, ok := p.Meta[metaVersion]; ok && v == "" {
+		return "?" // present but not a string: unsupported
+	}
+	return v
+}
+
+func unsupportedVersion(requested string) *rpcError {
+	return &rpcError{Code: codeUnsupportedVersion, Message: "Unsupported protocol version",
+		Data: map[string]any{"supported": SupportedVersions, "requested": requested}}
+}
+
+const instructions = "Stackurity inventories software across hosts, deployed applications, repositories and images, and reports " +
+	"vulnerabilities and end-of-life components. Use search to look up a CVE, package, host or team. Start with " +
+	"list_assets to find the project or server, then action_plan for what to upgrade (each group lists the packages " +
+	"and target versions), asset_stack for every layer an application relies on, and list_findings or get_finding " +
+	"for details. explain_finding cites why a finding matched and why it has its priority, upgrade_recommendation and remediation_plan " +
+	"give versions to move to (from stored data only), and verify_since checks what was fixed after a change."
+
+const readOnlyNote = " This connection is read-only: no tool changes anything."
+
+const writeNote = " Tools that change something (create_project, rename_project, add_assets_to_project, remove_assets_from_project, " +
+	"create_enrollment, assign, snooze, ignore, check_again, invite_to_project) first answer with a preview of what they " +
+	"would do and change nothing. Show the preview to the user and call the tool again with the same arguments and the " +
+	"preview's confirm code only when they ask for the change. Every change is limited by the user's role and recorded in " +
+	"the activity log under their name."
+
+func (s *Server) instructions() string {
+	if s.AllowWrites {
+		return instructions + writeNote
+	}
+	return instructions + readOnlyNote
+}
+
 func (s *Server) handle(ctx context.Context, req request) (any, *rpcError) {
+	modern := requestVersion(req.Params)
+	if modern != "" && !modernVersions[modern] {
+		return nil, unsupportedVersion(modern)
+	}
+	result, rerr := s.dispatch(ctx, req, modern != "")
+	if m, ok := result.(map[string]any); ok && modern != "" {
+		m["resultType"] = "complete"
+	}
+	return result, rerr
+}
+
+func (s *Server) dispatch(ctx context.Context, req request, modern bool) (any, *rpcError) {
 	switch req.Method {
 	case "initialize":
 		var p struct {
 			ProtocolVersion string `json:"protocolVersion"`
 		}
 		_ = json.Unmarshal(req.Params, &p)
-		v := ProtocolVersion
-		if supportedVersions[p.ProtocolVersion] {
+		v := LegacyVersion
+		if legacyVersions[p.ProtocolVersion] {
 			v = p.ProtocolVersion
 		}
 		return map[string]any{
 			"protocolVersion": v,
 			"capabilities":    map[string]any{"tools": map[string]any{}},
 			"serverInfo":      map[string]any{"name": "stackurity", "version": s.Version},
-			"instructions": "Stackurity inventories software across hosts, deployed applications, repositories and images, and reports " +
-				"vulnerabilities and end-of-life components. Use search to look up a CVE, package, host or team. Start with " +
-				"list_assets to find the project or server, then action_plan for what to upgrade (each group lists the packages " +
-				"and target versions), asset_stack for every layer an application relies on, and list_findings or get_finding " +
-				"for details. explain_finding cites why a finding matched and why it has its priority, upgrade_recommendation and remediation_plan " +
-				"give versions to move to (from stored data only), and verify_since checks what was fixed after a change. " +
-				"All tools are read-only.",
+			"instructions":    s.instructions(),
+		}, nil
+	case "server/discover":
+		return map[string]any{
+			"supportedVersions": SupportedVersions,
+			"capabilities":      map[string]any{"tools": map[string]any{}},
+			"_meta":             map[string]any{"io.modelcontextprotocol/serverInfo": map[string]any{"name": "stackurity", "version": s.Version}},
+			"instructions":      s.instructions(),
 		}, nil
 	case "ping":
 		return map[string]any{}, nil
 	case "tools/list":
-		return map[string]any{"tools": toolList()}, nil
+		return map[string]any{"tools": toolList(s.AllowWrites)}, nil
 	case "tools/call":
 		var p struct {
 			Name      string          `json:"name"`
 			Arguments json.RawMessage `json:"arguments"`
 		}
 		if err := json.Unmarshal(req.Params, &p); err != nil {
-			return nil, &rpcError{-32602, "invalid params"}
+			return nil, &rpcError{Code: codeInvalidParams, Message: "invalid params"}
 		}
 		t, ok := tools[p.Name]
 		if !ok {
-			return nil, &rpcError{-32602, "unknown tool " + p.Name}
+			return nil, &rpcError{Code: codeInvalidParams, Message: "unknown tool " + p.Name}
+		}
+		if t.write != nil && !s.AllowWrites {
+			return nil, &rpcError{Code: codeInvalidParams, Message: "unknown tool " + p.Name + ": this connection is read-only " +
+				"(allow changes for it in Stackurity under Settings, Connected assistants; for stackurity mcp, --allow-writes)"}
 		}
 		args := map[string]any{}
 		if len(p.Arguments) > 0 && string(p.Arguments) != "null" {
@@ -132,14 +231,20 @@ func (s *Server) handle(ctx context.Context, req request) (any, *rpcError) {
 				return toolError("arguments must be a JSON object"), nil
 			}
 		}
-		out, err := t.run(ctx, s.API, args)
+		var out any
+		var err error
+		if t.write != nil {
+			out, err = s.runWrite(ctx, p.Name, t.write, args)
+		} else {
+			out, err = t.run(ctx, s.API, args)
+		}
 		if err != nil {
 			return toolError(err.Error()), nil
 		}
 		text, _ := json.MarshalIndent(out, "", " ")
 		return map[string]any{"content": []map[string]any{{"type": "text", "text": string(text)}}}, nil
 	}
-	return nil, &rpcError{-32601, "method not found: " + req.Method}
+	return nil, &rpcError{Code: codeMethodNotFound, Message: "method not found: " + req.Method}
 }
 
 func toolError(msg string) map[string]any {
@@ -152,6 +257,9 @@ type tool struct {
 	description string
 	schema      map[string]any
 	run         func(ctx context.Context, api API, args map[string]any) (any, error)
+	// write is set for tools that change something (write.go); run is
+	// then unused.
+	write *writeTool
 }
 
 func obj(props map[string]any, required ...string) map[string]any {
@@ -567,14 +675,26 @@ type finding struct {
 	FixDue         *string `json:"fix_due"`
 }
 
-func toolList() []map[string]any {
-	names := []string{"search", "list_assets", "action_plan", "asset_stack", "list_findings", "get_finding", "find_component",
-		"explain_finding", "upgrade_recommendation", "remediation_plan", "verify_since"}
-	out := make([]map[string]any, 0, len(names))
-	for _, n := range names {
+// readTools and writeTools are listed in this order (a stable order lets
+// clients cache the list).
+var readTools = []string{"search", "list_assets", "action_plan", "asset_stack", "list_findings", "get_finding", "find_component",
+	"explain_finding", "upgrade_recommendation", "remediation_plan", "verify_since"}
+
+func toolList(writes bool) []map[string]any {
+	out := make([]map[string]any, 0, len(readTools)+len(writeTools))
+	for _, n := range readTools {
 		t := tools[n]
 		out = append(out, map[string]any{"name": n, "description": t.description, "inputSchema": t.schema,
 			"annotations": map[string]any{"readOnlyHint": true, "openWorldHint": false}})
+	}
+	for _, n := range writeTools {
+		if !writes {
+			break
+		}
+		t := tools[n]
+		out = append(out, map[string]any{"name": n, "title": t.write.title, "description": t.description, "inputSchema": t.schema,
+			"annotations": map[string]any{"title": t.write.title, "readOnlyHint": false, "destructiveHint": t.write.destructive,
+				"idempotentHint": t.write.idempotent, "openWorldHint": false}})
 	}
 	return out
 }

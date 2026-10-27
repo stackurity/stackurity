@@ -10,13 +10,21 @@ import (
 
 func mcpCmd() *cobra.Command {
 	var c conn
+	var writes bool
 	cmd := &cobra.Command{
 		Use:   "mcp",
 		Short: "Serve Stackurity to AI assistants over the Model Context Protocol (stdio)",
-		Long: `Runs a read-only MCP server on standard input and output, for AI assistants
-and coding agents. It answers through the HTTP API with your token, so use a
-viewer token: the assistant can see inventory, findings and action plans but
-cannot change anything.
+		Long: `Runs an MCP server on standard input and output, for AI assistants and
+coding agents. It answers through the HTTP API with your token, so the
+assistant sees exactly what the token may. It is read-only unless you add
+--allow-writes: then tools that change something (create a project, assign,
+snooze, ignore, check again, ...) are offered too, within the token's role.
+Each first shows what it would do and changes nothing until it is called
+again with the preview's confirm code, which guards against the model's
+mistakes; what may change at all is decided by --allow-writes and the role.
+
+Most assistants can connect to the server's /mcp endpoint directly instead,
+with no install (docs/ai-assistants.md).
 
 Example client configuration:
 
@@ -34,10 +42,11 @@ start; servers before 0.8, which have no projects, are refused.`,
 			if err != nil {
 				return err
 			}
-			s := &mcp.Server{API: cl, Version: version}
+			s := &mcp.Server{API: cl, Version: version, BaseURL: cl.BaseURL, AllowWrites: writes}
 			return s.Serve(cmd.Context(), os.Stdin, os.Stdout)
 		},
 	}
 	c.flags(cmd)
+	cmd.Flags().BoolVar(&writes, "allow-writes", false, "also offer the tools that change something (within the token's role)")
 	return cmd
 }

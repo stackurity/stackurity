@@ -91,9 +91,14 @@ type Server struct {
 	// SlackRespond posts an answer to a Slack response_url (already checked
 	// to be Slack's); nil posts it over HTTPS. Tests capture answers here.
 	SlackRespond func(ctx context.Context, responseURL string, body []byte) error
+	// ClientMetadataHTTP fetches OAuth client ID metadata documents; nil
+	// uses a client through the outbound address guard. Tests set it.
+	ClientMetadataHTTP *http.Client
 	// limiter counts sign-in, setup and enrollment attempts in the database,
 	// shared by every replica (ratelimit.go).
 	limiter *rateLimiter
+	// router serves the API to the MCP tools in process (assistants.go).
+	router http.Handler
 }
 
 func (s *Server) Handler() http.Handler {
@@ -105,7 +110,8 @@ func (s *Server) Handler() http.Handler {
 	if s.TrustProxy {
 		r.Use(middleware.RealIP)
 	}
-	r.Use(s.instrument, middleware.RequestID, s.recoverer, s.securityHeaders, s.logRequests)
+	r.Use(s.instrument, middleware.RequestID, s.recoverer, s.securityHeaders, s.logRequests, assistantCORS)
+	s.router = r
 
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]string{"status": "ok"}) })
 	r.Get("/readyz", s.ready)
@@ -115,6 +121,9 @@ func (s *Server) Handler() http.Handler {
 	if editionRootRoutes != nil {
 		editionRootRoutes(s, r)
 	}
+
+	// AI assistants: the MCP endpoint and OAuth sign-in (assistants.go).
+	s.assistantRoutes(r)
 
 	r.Get("/install/agent.sh", s.installScript)
 	r.Get("/download/agent/{platform}", s.downloadAgent)
@@ -153,6 +162,13 @@ func (s *Server) Handler() http.Handler {
 			r.Delete("/slack/links/{id}", s.deleteSlackLink)
 			r.Post("/slack/links/preview", s.previewSlackLink)
 			r.Post("/slack/links/confirm", s.confirmSlackLink)
+			// Connecting an AI assistant: the consent page, and the
+			// caller's connected assistants (assistants.go).
+			r.Post("/oauth/authorize/preview", s.previewAuthorize)
+			r.Post("/oauth/authorize", s.decideAuthorize)
+			r.Get("/assistants", s.listAssistants)
+			r.Patch("/assistants/{id}", s.updateAssistant)
+			r.Delete("/assistants/{id}", s.disconnectAssistant)
 			r.Get("/packs", s.listPacks)
 			r.Get("/packs/{id}/archive", s.packArchive)
 			r.Route("/admin/license", func(r chi.Router) {

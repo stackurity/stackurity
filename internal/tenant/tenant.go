@@ -29,6 +29,9 @@ type scope struct {
 	member int64
 	// project is the project the caller chose (0: all they may see).
 	project int64
+	// bound: the project cannot be dropped (an AI assistant connected to
+	// that project only); WithoutProject keeps it.
+	bound bool
 }
 
 type ctxKey struct{}
@@ -65,12 +68,32 @@ func WithProject(ctx context.Context, projectID int64) context.Context {
 	return context.WithValue(ctx, ctxKey{}, s)
 }
 
+// WithBoundProject narrows a workspace scope to one project for good: for a
+// caller who may see nothing else (an AI assistant connected to that
+// project), WithoutProject keeps the narrowing, so code that widens to the
+// whole workspace for everyone else fails closed for them.
+func WithBoundProject(ctx context.Context, projectID int64) context.Context {
+	s, _ := ctx.Value(ctxKey{}).(scope)
+	if s.kind != workspace || projectID <= 0 {
+		return ctx
+	}
+	s.project, s.bound = projectID, true
+	return context.WithValue(ctx, ctxKey{}, s)
+}
+
+// Bound reports whether ctx is bound to its project (WithBoundProject).
+func Bound(ctx context.Context) bool {
+	s, _ := ctx.Value(ctxKey{}).(scope)
+	return s.bound
+}
+
 // WithoutProject keeps the workspace and member of ctx but drops the chosen
 // project, for work on the whole workspace (settings, pickers) while a
-// project is selected. A member stays narrowed to their own access.
+// project is selected. A member stays narrowed to their own access, and a
+// project bound with WithBoundProject stays.
 func WithoutProject(ctx context.Context) context.Context {
 	s, _ := ctx.Value(ctxKey{}).(scope)
-	if s.project == 0 {
+	if s.project == 0 || s.bound {
 		return ctx
 	}
 	s.project = 0

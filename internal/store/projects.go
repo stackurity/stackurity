@@ -821,6 +821,31 @@ func (s *Store) ProjectColleagues(ctx context.Context, userID int64) (map[int64]
 	return out, nil
 }
 
+// ProjectPeople returns who can see projectID: the organisation's members
+// with an organisation-wide role, and the people granted the project
+// directly or through a team.
+func (s *Store) ProjectPeople(ctx context.Context, projectID int64) (map[int64]bool, error) {
+	ws, ok := tenant.Workspace(ctx)
+	if !ok {
+		return nil, fmt.Errorf("project people need a workspace: %w", ErrInvalid)
+	}
+	rows, err := s.Pool.Query(tenant.WithoutProject(ctx), `SELECT user_id FROM workspace_members WHERE workspace_id = $1 AND role IS NOT NULL
+		UNION SELECT g.user_id FROM access_grants g WHERE g.user_id IS NOT NULL AND g.project_id = $2
+		UNION SELECT tm.user_id FROM access_grants g JOIN team_members tm ON tm.team_id = g.team_id WHERE g.project_id = $2`, ws, projectID)
+	if err != nil {
+		return nil, err
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[int64])
+	if err != nil {
+		return nil, err
+	}
+	out := map[int64]bool{}
+	for _, id := range ids {
+		out[id] = true
+	}
+	return out, nil
+}
+
 // FixGroupAsset returns the asset of a fix group the caller can see.
 func (s *Store) FixGroupAsset(ctx context.Context, id string) (int64, error) {
 	var a int64

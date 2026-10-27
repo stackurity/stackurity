@@ -54,6 +54,18 @@ var projectScopes = map[string]string{
 	// signing secret of the channel the click names, then acts as the
 	// linked user with their project access (slack_test.go).
 	"POST /api/v1/integrations/slack/actions": "public",
+	// AI assistants: discovery, OAuth and the MCP endpoint take no session;
+	// the tools behind /mcp call the API in process with the caller's
+	// credentials, so its project rules apply (assistants_test.go).
+	"GET /.well-known/oauth-protected-resource":     "public",
+	"GET /.well-known/oauth-protected-resource/mcp": "public",
+	"GET /.well-known/oauth-authorization-server":   "public",
+	"POST /oauth/register":                          "public",
+	"POST /oauth/token":                             "public",
+	"POST /oauth/revoke":                            "public",
+	"POST /mcp":                                     "public",
+	"GET /mcp":                                      "public",
+	"DELETE /mcp":                                   "public",
 
 	"GET /api/v1/auth/me":                   "account",
 	"POST /api/v1/auth/password":            "account",
@@ -68,6 +80,11 @@ var projectScopes = map[string]string{
 	"DELETE /api/v1/slack/links/{id}":       "account",
 	"POST /api/v1/slack/links/preview":      "account",
 	"POST /api/v1/slack/links/confirm":      "account",
+	"POST /api/v1/oauth/authorize/preview":  "account",
+	"POST /api/v1/oauth/authorize":          "account",
+	"GET /api/v1/assistants":                "account",
+	"DELETE /api/v1/assistants/{id}":        "account",
+	"PATCH /api/v1/assistants/{id}":         "account",
 
 	"GET /api/v1/packs":              "global",
 	"GET /api/v1/packs/{id}/archive": "global",
@@ -701,7 +718,7 @@ func (o *org) betaFixture() *tenantFx {
 	ids["slacktoken"] = "slk_guessed"
 	ids["fixgroup"] = o.fixGroup
 	for _, k := range []string{"user", "job", "channel", "route", "delivery", "integration", "enrollment", "token", "conflict",
-		"plan", "policy", "action", "collector-token", "invitation"} {
+		"plan", "policy", "action", "collector-token", "invitation", "assistant", "oauthclient"} {
 		ids[k] = "999999999"
 	}
 	ids["secret"] = "BETA_TOKEN"
