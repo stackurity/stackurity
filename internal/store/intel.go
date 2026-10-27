@@ -238,7 +238,10 @@ func (s *Store) ReplaceKnownExploited(ctx context.Context, rows [][]any) error {
 			[]string{"cve", "vendor", "product", "name", "added", "due_date", "ransomware"}, pgx.CopyFromRows(rows)); err != nil {
 			return err
 		}
-		_, err := tx.Exec(ctx, `UPDATE advisories a SET known_exploited = EXISTS (
+		// Only the advisories whose flag changes are written (and locked):
+		// rewriting every row each time left as many dead rows behind.
+		_, err := tx.Exec(ctx, `UPDATE advisories a SET known_exploited = NOT a.known_exploited
+			WHERE a.known_exploited <> EXISTS (
 			SELECT 1 FROM known_exploited k WHERE k.cve = a.group_key OR k.cve = ANY(a.aliases))`)
 		return err
 	})

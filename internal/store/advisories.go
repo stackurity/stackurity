@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"slices"
 	"sort"
 	"time"
 
@@ -228,7 +229,13 @@ func (s *Store) UpsertAdvisories(ctx context.Context, feed string, vulns []*osv.
 		batch := &pgx.Batch{}
 		var nID, nBase, nEco, nName, nAff []string
 		var nHash [][]byte
-		for _, id := range changed {
+		// The advisory rows are locked in id order, so two syncs storing
+		// overlapping advisories (an advisory in the npm and the PyPI
+		// archive) wait for each other instead of deadlocking. The package
+		// rows below keep the order the feed lists the records in.
+		locking := slices.Clone(changed)
+		slices.Sort(locking)
+		for _, id := range locking {
 			r := byID[id]
 			modified := r.modified
 			if modified.IsZero() {
@@ -246,7 +253,9 @@ func (s *Store) UpsertAdvisories(ctx context.Context, feed string, vulns []*osv.
 				  content_hash = EXCLUDED.content_hash`,
 				r.id, r.feed, r.groupKey, r.aliases, r.summary, r.level, r.score, r.vector, r.source,
 				r.published, modified, r.withdrawn, r.refs, r.hash)
-			for _, p := range r.rows {
+		}
+		for _, id := range changed {
+			for _, p := range byID[id].rows {
 				nID, nBase, nEco, nName, nAff = append(nID, id), append(nBase, p.base), append(nEco, p.ecosystem),
 					append(nName, p.name), append(nAff, string(p.affected))
 				nHash = append(nHash, p.hash)
@@ -280,10 +289,14 @@ func (s *Store) UpsertAdvisories(ctx context.Context, feed string, vulns []*osv.
 			return err
 		}
 		if len(nID) > 0 {
+			// ORDER BY: an anti-join plan may return the rows in another
+			// order, and the stored order is the order they are read in.
 			if _, err := tx.Exec(ctx, `INSERT INTO advisory_packages (advisory_id, base_ecosystem, ecosystem, name, affected_hash)
-				SELECT u.id, u.base, u.eco, u.name, u.hash FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::bytea[]) AS u(id, base, eco, name, hash)
+				SELECT u.id, u.base, u.eco, u.name, u.hash
+				FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::bytea[]) WITH ORDINALITY AS u(id, base, eco, name, hash, ord)
 				WHERE NOT EXISTS (SELECT 1 FROM advisory_packages p WHERE p.advisory_id = u.id AND p.ecosystem = u.eco
-				  AND p.name = u.name AND p.affected_hash = u.hash)`,
+				  AND p.name = u.name AND p.affected_hash = u.hash)
+				ORDER BY u.ord`,
 				nID, nBase, nEco, nName, nHash); err != nil {
 				return err
 			}
@@ -306,8 +319,10 @@ func addPending(ctx context.Context, tx pgx.Tx, pkgs map[PackageRef]bool) error 
 	for p := range pkgs {
 		bases, names = append(bases, p.BaseEcosystem), append(names, p.Name)
 	}
+	// In a fixed order, so concurrent syncs touching the same packages
+	// (through different advisories) lock their rows in the same order.
 	_, err := tx.Exec(ctx, `INSERT INTO pending_packages (base_ecosystem, name)
-		SELECT b, n FROM unnest($1::text[], $2::text[]) AS u(b, n)
+		SELECT b, n FROM unnest($1::text[], $2::text[]) AS u(b, n) ORDER BY b, n
 		ON CONFLICT (base_ecosystem, name) DO UPDATE SET added_at = clock_timestamp()`, bases, names)
 	return err
 }

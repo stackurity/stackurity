@@ -236,7 +236,7 @@ Before migration `0036`, every feed sync deleted and re-inserted the package row
    FROM advisory_packages;
    ```
 
-   `old_rows` should be 0 or close to it (rows of advisories that are no longer in any archive keep the old form; they are read as before). Expect roughly 165 bytes per row, including indexes and `affected_values`, after the rewrite.
+   `old_rows` should be 0 or close to it (rows of advisories that are no longer in any archive keep the old form; they are read as before). Expect roughly 190 bytes per row, including indexes and `affected_values`, after the rewrite.
 3. **Rewrite the tables in a quiet moment:**
 
    ```sql
@@ -246,9 +246,9 @@ Before migration `0036`, every feed sync deleted and re-inserted the package row
    VACUUM FULL affected_values;
    ```
 
-   Each command holds an exclusive lock on its table while it copies the live rows into a new file and rebuilds its indexes. While `advisory_packages` or `advisories` is locked, evaluations, feed syncs, the finding page and the second check wait for it; they continue when it finishes, and nothing fails unless it waits longer than a job's timeout (minutes, not seconds). Ingest, sign-in and lists that do not read advisories are not affected. The time is about one read of the old file plus one write of the new, much smaller one: 24 seconds for 1.28 million rows on a laptop, a few minutes for 3.5 million rows on a server with an SSD. It needs free disk space for the new copy (a fraction of the old size) until it finishes.
+   Each command holds an exclusive lock on its table while it copies the live rows into a new file and rebuilds its indexes. While `advisory_packages` or `advisories` is locked, evaluations, feed syncs, the finding page and the second check wait for it; they continue when it finishes, and nothing fails unless it waits longer than a job's timeout (minutes, not seconds). Ingest, sign-in and lists that do not read advisories are not affected. The time is about one read of the old file plus one write of the new, much smaller one: 16 seconds for a 1.1 GB table of 670,000 rows on a laptop, a few minutes for 3.5 million rows on a server with an SSD. It needs free disk space for the new copy (a fraction of the old size) until it finishes.
 
-   `pg_repack` would avoid the long lock, but it needs a primary key, and `advisory_packages` has none. A plain `VACUUM` (no lock) does not shrink the file, but it makes the dead space reusable; the table then stays at its current size.
+   `pg_repack` avoids the long lock (it locks each table only briefly at the start and the end), but it needs a primary key or a unique index on NOT NULL columns, and `advisory_packages` has neither. Once `old_rows` is 0, one can be added without a long lock and removed afterwards: add `CHECK (affected_hash IS NOT NULL) NOT VALID`, `VALIDATE` it, `ALTER COLUMN affected_hash SET NOT NULL` (instant with the validated check), drop the check, `CREATE UNIQUE INDEX CONCURRENTLY` on `(advisory_id, ecosystem, name, affected_hash)`, run `pg_repack -t advisory_packages -t advisories -t affected_values` without `--order-by` (the matcher reads a package's rows in stored order), then drop the index and the NOT NULL. On the test data the whole sequence took 36 seconds, the repack itself 21. A plain `VACUUM` (no lock) does not shrink the file, but it makes the dead space reusable; the table then stays at its current size.
 
 ## Drills
 
