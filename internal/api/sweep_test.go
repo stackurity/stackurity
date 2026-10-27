@@ -163,6 +163,7 @@ var routeRules = map[string]routeRule{
 	"GET /api/v1/onboarding":           {class: "list"},
 	"GET /api/v1/onboarding/results":   {class: "list", query: "?since=2000-01-01T00:00:00Z"},
 	"GET /api/v1/invitations":          {class: "list", query: "?project_id={project}"},
+	"GET /api/v1/usage":                {class: "list"},
 
 	// A's objects by id.
 	"GET /api/v1/assets/{id}":                      {class: "object", obj: id("asset")},
@@ -534,6 +535,18 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 		t.Fatal(err)
 	}
 	f.tokens["agent"] = agent
+	// A monitored-asset limit the workspace is at, and a host it refused:
+	// the Usage page names it, so a leak would show the tag.
+	u, err := e.st.AssetUsage(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.st.SetAssetLimit(ctx, ws, &u.Monitored); err != nil {
+		t.Fatal(err)
+	}
+	if code, body := bearerBody(e, collector, "POST", "/api/v1/ingest", hostBatch(model.AssetHost, "refused-"+tag, "machine-id")); code != 402 {
+		t.Fatalf("%s refused host: %d %s", tag, code, body)
+	}
 	if eeFixtures != nil {
 		eeFixtures(t, e, f)
 	}

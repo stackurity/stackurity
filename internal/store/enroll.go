@@ -106,6 +106,11 @@ func (s *Store) RedeemEnrollment(ctx context.Context, code, hostname string) (*E
 		if err != nil {
 			return err
 		}
+		// At the limit the code is not used up: the host could not be
+		// monitored, and the code works once the organisation has room.
+		if err := s.workspaceAtLimit(ctx, tx, e.WorkspaceID); err != nil {
+			return err
+		}
 		token, prefix, err := auth.NewToken("stk")
 		if err != nil {
 			return err

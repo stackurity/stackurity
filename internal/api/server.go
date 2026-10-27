@@ -85,6 +85,9 @@ type Server struct {
 	// FeedbackHTTP forwards feedback; nil uses a client with a 10 second
 	// timeout that follows no redirects.
 	FeedbackHTTP *http.Client
+	// WidgetOrigins are origins the dashboard may load scripts and frames
+	// from (a hosted edition's sign-up challenge); empty allows none.
+	WidgetOrigins []string
 	// limiter counts sign-in, setup and enrollment attempts in the database,
 	// shared by every replica (ratelimit.go).
 	limiter *rateLimiter
@@ -96,10 +99,16 @@ func (s *Server) Handler() http.Handler {
 	if s.TrustProxy {
 		r.Use(middleware.RealIP)
 	}
-	r.Use(s.instrument, middleware.RequestID, s.recoverer, securityHeaders, s.logRequests)
+	r.Use(s.instrument, middleware.RequestID, s.recoverer, s.securityHeaders, s.logRequests)
 
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]string{"status": "ok"}) })
 	r.Get("/readyz", s.ready)
+
+	// Routes an edition serves outside the API's session and CSRF checks
+	// (signed callbacks from outside services); none in the Community build.
+	if editionRootRoutes != nil {
+		editionRootRoutes(s, r)
+	}
 
 	r.Get("/install/agent.sh", s.installScript)
 	r.Get("/download/agent/{platform}", s.downloadAgent)
@@ -204,6 +213,7 @@ func (s *Server) Handler() http.Handler {
 				r.Get("/incidents", s.listIncidents)
 				r.Get("/incidents/{id}", s.getIncident)
 				r.Get("/risk-policy", s.getRiskPolicy)
+				r.Get("/usage", s.assetUsage)
 				r.Get("/onboarding/results", s.firstResults)
 				r.Get("/checks", s.listChecks)
 				r.Get("/checks/{id}", s.getCheck)
@@ -352,6 +362,8 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, 409, "conflict", err.Error())
 	case errors.Is(err, store.ErrInvalid):
 		writeError(w, 400, "bad_request", err.Error())
+	case errors.Is(err, store.ErrAssetLimit):
+		writeError(w, 402, "asset_limit", err.Error())
 	case errors.Is(err, errForbidden):
 		writeError(w, 403, "forbidden", err.Error())
 	case errors.As(err, &ve):

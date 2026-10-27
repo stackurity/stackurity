@@ -158,12 +158,12 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) ([]string, error) {
 		if applied[name] {
 			continue
 		}
-		sql, err := migrations.ReadFile("migrations/" + name + ".sql")
+		sql, err := migrationSQL(name)
 		if err != nil {
 			return done, err
 		}
 		err = pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
-			if _, err := tx.Exec(ctx, string(sql)); err != nil {
+			if _, err := tx.Exec(ctx, sql); err != nil {
 				return err
 			}
 			_, err := tx.Exec(ctx, `INSERT INTO schema_migrations (name) VALUES ($1)`, name)
