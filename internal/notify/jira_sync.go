@@ -54,6 +54,9 @@ func (d *Dispatcher) syncJira(ctx context.Context, ch *store.Channel, del store.
 	if del.IncidentID == nil {
 		return nil
 	}
+	if msg.ProjectID != 0 {
+		return d.syncProjectJira(ctx, ch, del, attempts, msg)
+	}
 	ws, ok := tenant.Workspace(ctx)
 	if !ok {
 		return errors.New("jira delivery outside a workspace")
@@ -211,8 +214,22 @@ func (d *Dispatcher) incidentURL(id int64) string {
 	return strings.TrimSuffix(d.BaseURL, "/") + fmt.Sprintf("/incidents/%d", id)
 }
 
+// issueScope is what an issue describes: the whole incident (zero), or
+// one project's part of it, for a Jira route limited to that project.
+type issueScope struct {
+	ProjectID int64
+	Project   string // its name
+}
+
+// in opens a dashboard link in the scope's project.
+func (sc issueScope) in(link string) string { return inProject(link, sc.ProjectID) }
+
 func (d *Dispatcher) footer(incidentID int64, marker string) []jiraInline {
-	if u := d.incidentURL(incidentID); u != "" {
+	return d.footerIn(incidentID, marker, issueScope{})
+}
+
+func (d *Dispatcher) footerIn(incidentID int64, marker string, sc issueScope) []jiraInline {
+	if u := sc.in(d.incidentURL(incidentID)); u != "" {
 		return []jiraInline{{Text: "Open in Stackurity", Href: u}, {Text: " (" + marker + ")"}}
 	}
 	return plain("(" + marker + ")")
@@ -245,6 +262,15 @@ func issueSummary(in store.Incident) string {
 // issueDescription explains the incident: priority and why, what is
 // affected, and how to fix it. Lists are bounded; the full detail is linked.
 func (d *Dispatcher) issueDescription(in store.Incident, brief *store.IncidentBrief) jiraDoc {
+	return d.issueDescriptionIn(in, brief, issueScope{})
+}
+
+// issueDescriptionIn is issueDescription for a scope. For a project, in
+// and brief must have been read with a connection narrowed to it, so they
+// hold only its findings and assets; the text then says so, leaves out the
+// owner team (which may come from another project's asset) and opens every
+// link in the project.
+func (d *Dispatcher) issueDescriptionIn(in store.Incident, brief *store.IncidentBrief, sc issueScope) jiraDoc {
 	m := d.message(in, "opened")
 	var det struct {
 		Severity       string   `json:"severity"`
@@ -255,7 +281,10 @@ func (d *Dispatcher) issueDescription(in store.Incident, brief *store.IncidentBr
 	}
 	_ = json.Unmarshal(in.Detail, &det)
 	intro := []jiraInline{{Text: fmt.Sprintf("Stackurity opened this issue for incident #%d (%s) and keeps it updated: findings that join or leave and priority changes are added as comments, and it is commented on when the incident resolves. ", in.ID, in.Title)}}
-	if u := d.incidentURL(in.ID); u != "" {
+	if sc.ProjectID != 0 {
+		intro = []jiraInline{{Text: fmt.Sprintf("Stackurity opened this issue for incident #%d (%s) in project %s. It describes only the project's assets, and is kept updated: findings that join or leave and priority changes are added as comments, and it is commented on when none of the project's findings remain open. ", in.ID, in.Title, sc.Project)}}
+	}
+	if u := sc.in(d.incidentURL(in.ID)); u != "" {
 		intro = append(intro, jiraInline{Text: "Open the incident in Stackurity", Href: u})
 	}
 	doc := jiraDoc{{Para: intro}, {Heading: "Risk"}}
@@ -278,11 +307,15 @@ func (d *Dispatcher) issueDescription(in store.Incident, brief *store.IncidentBr
 		} else {
 			facts = append(facts, plain("Not listed as known exploited (CISA KEV)"))
 		}
-		facts = append(facts, plain(fmt.Sprintf("Scope: %s on %s", plural(in.FindingCount, "finding"), plural(in.AssetCount, "asset"))))
+		scope := fmt.Sprintf("Scope: %s on %s", plural(in.FindingCount, "finding"), plural(in.AssetCount, "asset"))
+		if sc.ProjectID != 0 {
+			scope += " in project " + sc.Project
+		}
+		facts = append(facts, plain(scope))
 		if len(det.Environments) > 0 {
 			facts = append(facts, plain("Environments: "+strings.Join(firstN(det.Environments, 10), ", ")))
 		}
-		if in.OwnerTeam != "" {
+		if in.OwnerTeam != "" && sc.ProjectID == 0 {
 			facts = append(facts, plain("Owner team: "+in.OwnerTeam))
 		}
 	} else {
@@ -320,7 +353,7 @@ func (d *Dispatcher) issueDescription(in store.Incident, brief *store.IncidentBr
 		}
 		if more := in.FindingCount - len(brief.Affected); more > 0 {
 			item := plain(fmt.Sprintf("…and %s more", plural(more, "finding")))
-			if u := d.incidentURL(in.ID); u != "" {
+			if u := sc.in(d.incidentURL(in.ID)); u != "" {
 				item = append(item, jiraInline{Text: ": "}, jiraInline{Text: "see all in Stackurity", Href: u})
 			}
 			as = append(as, item)
@@ -330,7 +363,7 @@ func (d *Dispatcher) issueDescription(in store.Incident, brief *store.IncidentBr
 	if m.Action != "" {
 		fix := plain(m.Action + ".")
 		if d.BaseURL != "" && vuln {
-			fix = append(fix, jiraInline{Text: " "}, jiraInline{Text: "See the fixes", Href: strings.TrimSuffix(d.BaseURL, "/") + "/fixes"})
+			fix = append(fix, jiraInline{Text: " "}, jiraInline{Text: "See the fixes", Href: sc.in(strings.TrimSuffix(d.BaseURL, "/") + "/fixes")})
 		}
 		doc = append(doc, jiraBlock{Heading: "Fix"}, jiraBlock{Para: fix})
 	}

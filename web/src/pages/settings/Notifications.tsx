@@ -851,7 +851,25 @@ function RouteForm({
       />
       {projects.length > 0 &&
         (channels.find((c) => c.id === r.channel_id)?.kind === "jira" ? (
-          <p className="hint">Routes to Jira cannot be limited to projects yet: a Jira issue describes the whole incident.</p>
+          <div className="field">
+            <label htmlFor={`${idp}-proj`}>Project</label>
+            <select
+              id={`${idp}-proj`}
+              value={String(r.project_ids?.[0] ?? "")}
+              onChange={(e) => set("project_ids", e.target.value ? [Number(e.target.value)] : [])}
+            >
+              <option value="">Every asset (one issue per incident)</option>
+              {projects.map((p) => (
+                <option key={p.id} value={String(p.id)}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <p className="hint">
+              With a project, each issue describes only that project's part of an incident: its assets, counts and links, never
+              another project's. A route to Jira names one project; add a route for each.
+            </p>
+          </div>
         ) : (
           <CheckGroup
             legend="Projects"

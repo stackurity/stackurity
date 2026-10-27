@@ -522,6 +522,22 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 		t.Fatalf("%s deliveries: %v %v", tag, ds, err)
 	}
 	set("delivery", ds[0].ID)
+	// A Jira route limited to the project keeps its own issue (0.10).
+	var jch store.Channel
+	if code := admin.do("POST", "/api/v1/channels", map[string]any{"kind": "jira", "name": "jira-" + tag,
+		"config":     map[string]any{"url": "https://" + tag + ".atlassian.net", "username": "bot@" + tag + ".example", "project": "SEC"},
+		"secret_ref": "secret:" + f.ids["secret"]}, &jch); code != 201 {
+		t.Fatalf("%s jira channel: %d", tag, code)
+	}
+	var jrt struct{ ID int64 }
+	if code := admin.do("POST", "/api/v1/routes", map[string]any{"name": "jira-route-" + tag, "channel_id": jch.ID, "enabled": true,
+		"project_ids": []int64{proj.ID}}, &jrt); code != 201 {
+		t.Fatalf("%s jira route: %d", tag, code)
+	}
+	if _, err := e.st.Pool.Exec(ctx, `INSERT INTO route_issues (route_id, project_id, channel_id, incident_id, issue_key, issue_url)
+		VALUES ($1, $2, $3, $4, $5, $6)`, jrt.ID, proj.ID, jch.ID, incident, "ISSUE-"+tag, "https://"+tag+".atlassian.net/browse/ISSUE-"+tag); err != nil {
+		t.Fatal(err)
+	}
 	var integ store.Integration
 	if code := admin.do("POST", "/api/v1/integrations", map[string]any{"kind": "git_repository",
 		"config": map[string]string{"url": "https://github.com/" + tag + "/repo"}, "secret_ref": "secret:" + f.ids["secret"]}, &integ); code != 201 {

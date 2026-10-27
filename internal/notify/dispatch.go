@@ -366,6 +366,14 @@ func (d *Dispatcher) Plan(ctx context.Context) error {
 	if err := d.planSummaries(ctx, routes, tracker); err != nil {
 		return err
 	}
+	// Jira routes limited to a project: after the incidents above were
+	// marked announced, so their announcement counts (jira_projects.go).
+	if err := d.planProjectIssues(ctx, routes, tracker); err != nil {
+		return err
+	}
+	if err := d.planProjectIssueUpdates(ctx, routes, tracker); err != nil {
+		return err
+	}
 	return d.planIssueUpdates(ctx)
 }
 
@@ -394,6 +402,12 @@ func (d *Dispatcher) planOverdue(ctx context.Context, routes []store.Route, trac
 			continue
 		}
 		r := r
+		if pid, ok := projectTracker(r, tracker); ok {
+			if err := d.planProjectEscalations(ctx, r, pid, esc); err != nil {
+				return err
+			}
+			continue
+		}
 		if tracker[r.ChannelID] {
 			for _, in := range incs {
 				in.EscalationLevel = esc[in.ID]
@@ -486,7 +500,8 @@ func (d *Dispatcher) planIssueUpdates(ctx context.Context) error {
 // the priority the incident reached.
 func routeMatches(r store.Route, in store.Incident) bool {
 	// Tracker issues describe the whole incident, across every asset, so a
-	// route limited to projects never creates or updates them.
+	// route limited to projects never creates or updates them: it keeps
+	// issues of its own about its project's part (jira_projects.go).
 	if len(r.ProjectIDs) > 0 || !inScope(r, in) {
 		return false
 	}

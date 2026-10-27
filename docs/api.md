@@ -134,7 +134,7 @@ A workspace (shown as the organisation in the dashboard) groups its assets into 
 | `POST /risk-policy/preview` | admin | Validates a proposed policy like `PUT` and returns its effect on the workspace's open findings without saving anything: `before` / `after` counts per priority, `sos_before` / `sos_after`, `priority_changed` (`raised`, `lowered`), `sos_changed`, `score_changed`, `stored_differs`, and `sample` (at most `sample_limit`, 50) of changed findings with factor deltas ([risk.md](risk.md#reproducibility-and-audit)) |
 | `GET /channels`, `GET /routes`, `GET /deliveries?status=&incident_id=` | security | Notification configuration and delivery log |
 | `POST`/`PATCH`/`DELETE /channels/{id}`, `POST /channels/{id}/test` | admin | Email, Slack, Teams, webhook and Jira channels; for Jira, test checks access without creating an issue |
-| `POST /routes`, `PUT`/`DELETE /routes/{id}` | admin | Which incidents go to which channel. `project_ids` limits a route to those projects' assets: its messages count and name only them, and only their collection and coverage problems. Not available for Jira channels (400) |
+| `POST /routes`, `PUT`/`DELETE /routes/{id}` | admin | Which incidents go to which channel. `project_ids` limits a route to those projects' assets: its messages count and name only them, and only their collection and coverage problems. For a Jira channel, at most one project (400 otherwise): its issues then describe only that project's part of each incident, see [Incidents and notifications](#incidents-and-notifications). `mode`: `urgent_summary`, `urgent_only`, `daily`, `weekly` |
 | `POST /deliveries/{id}/retry` | admin | Retry a failed or held delivery |
 | `GET /users/directory` | engineer | Active users (id, email, name) for assignment. Members with project access only get themselves and the people granted one of their projects |
 | `GET /remediation/policies` | security | Remediation policies |
@@ -404,6 +404,13 @@ Jira channels (`"kind": "jira"`) keep one issue per incident instead, whatever t
 ```
 
 `channel_id` is `null` once the channel is deleted; the link is kept.
+
+A route to Jira may be limited to one project (`project_ids` with one id; more than one is 400). It keeps its own issue per incident, describing only that project's part: the project's assets and findings, their counts and priority, escalations, and links opened in the project (`?project=`). The content is read through a connection narrowed to the project, so row-level security keeps other projects' assets out. The issue is created when the project's part matches the route (announced, or the project's finding appeared or came back, after the route was created), updated as that part changes, resolved when none of the project's findings remain open (even while the incident stays open elsewhere), and told if they open again. Its label adds `-route-<route>-project-<project>` to the incident's label. An unscoped route on the same channel keeps its whole-incident issue. Such issues are listed with their project for organisation-wide roles, and never shown to members with project access:
+
+```json
+"issues": [{"tracker": "jira", "key": "SEC-42", "url": "...", "channel_id": 7},
+           {"tracker": "jira", "key": "SHOP-9", "url": "...", "channel_id": 8, "project_id": 3}]
+```
 
 ```json
 {"kind": "jira", "name": "security-jira", "secret_ref": "secret:JIRA_TOKEN",
