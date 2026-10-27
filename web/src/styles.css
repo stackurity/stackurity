@@ -1944,6 +1944,17 @@ details.json pre {
   gap: var(--s2);
   align-items: center;
 }
+.fix-places p {
+  margin: 0 0 var(--s1);
+}
+.fix-place-list {
+  margin: 0;
+  padding-left: var(--s4);
+  overflow-wrap: anywhere;
+}
+.fix-place-list li + li {
+  margin-top: 2px;
+}
 .fix-packages summary {
   cursor: pointer;
   color: var(--text-2);

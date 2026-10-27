@@ -50,6 +50,7 @@ import { PluginsPage } from "./pages/settings/Plugins";
 import { FixesPage, FixGroupDetailPage } from "./pages/ActionPlan";
 import { NotificationsPage } from "./pages/settings/Notifications";
 import { RiskPolicyPage } from "./pages/settings/RiskPolicy";
+import { FixGroupingPage } from "./pages/settings/FixGrouping";
 import { ProjectDetailPage, ProjectsPage } from "./pages/settings/Projects";
 
 // The help articles are large and rarely needed, so they load on demand.
@@ -229,6 +230,7 @@ export function App() {
         <Route path="settings/slack" element={<SlackAccountsPage />} />
         <Route path="settings/assistants" element={<AssistantsPage />} />
         <Route path="settings/risk-policy" element={<RiskPolicyPage />} />
+        <Route path="settings/fix-grouping" element={<FixGroupingPage />} />
         <Route
           path="settings/plugins"
           element={

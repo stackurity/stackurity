@@ -30,6 +30,21 @@ func (s *Server) listFixGroups(w http.ResponseWriter, r *http.Request) {
 		}
 		f.ProductionEnvs = pol.ProductionEnvironments
 	}
+	// The same fix in several places is one entry unless the workspace, or
+	// this request, asks for one per asset.
+	by := q.Get("group_by")
+	if by == "" {
+		var err error
+		if by, err = s.Store.FixGrouping(r.Context()); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+	}
+	if by != store.FixGroupingFix && by != store.FixGroupingAsset {
+		s.fail(w, r, badRequest("group_by must be fix or asset"))
+		return
+	}
+	f.ByFix = by == store.FixGroupingFix
 	items, total, err := s.Store.ListFixGroups(r.Context(), f)
 	if err != nil {
 		s.fail(w, r, err)
@@ -80,4 +95,32 @@ func (s *Server) getFixGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, map[string]any{"group": json.RawMessage(g), "findings": paged(findings, total, p)})
+}
+
+type fixGroupingBody struct {
+	FixGrouping string `json:"fix_grouping"`
+}
+
+// getFixGrouping says how fix lists show the same fix in several places.
+func (s *Server) getFixGrouping(w http.ResponseWriter, r *http.Request) {
+	v, err := s.Store.FixGrouping(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, 200, fixGroupingBody{v})
+}
+
+func (s *Server) putFixGrouping(w http.ResponseWriter, r *http.Request) {
+	var b fixGroupingBody
+	if err := decode(r, &b); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if err := s.Store.SetFixGrouping(r.Context(), b.FixGrouping); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	_ = s.Store.Audit(r.Context(), principal(r).Actor(r), "settings.update", "settings", "fix_grouping", b)
+	s.getFixGrouping(w, r)
 }

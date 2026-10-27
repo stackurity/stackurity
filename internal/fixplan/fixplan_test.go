@@ -159,3 +159,40 @@ func TestPlural(t *testing.T) {
 		}
 	}
 }
+
+// The same library at the same version in two apps (phpMyAdmin twice on one
+// server) is one fix in two places; a different version is a different fix.
+func TestSameFixInSeveralPlaces(t *testing.T) {
+	app := func(id, asset int64, dir, ver, key, prio string) Row {
+		return Row{FindingID: id, Kind: "vulnerability", Key: key, AssetID: asset, AssetName: "phpmyadmin on DBC", AssetKind: "application",
+			AppDir: dir, ComponentID: 7, PurlType: "npm", Component: "jquery", Version: ver, FixedVersion: "3.5.0", Priority: prio, Severity: "medium"}
+	}
+	rows := []Row{
+		app(1, 10, "/var/www/html/phpmyadmin", "3.3.1", "CVE-2019-11358", "P2"),
+		app(2, 10, "/var/www/html/phpmyadmin", "3.3.1", "CVE-2020-11022", "P3"),
+		app(3, 11, "/var/www/html/demo/phpmyadmin", "3.3.1", "CVE-2019-11358", "P1"),
+		app(4, 11, "/var/www/html/demo/phpmyadmin", "3.3.1", "CVE-2020-11022", "P3"),
+		app(5, 12, "/srv/old", "3.2.0", "CVE-2019-11358", "P2"),
+	}
+	groups, _ := Build(rows, nil)
+	byKey := map[string][]Group{}
+	for _, g := range groups {
+		byKey[g.FixKey] = append(byKey[g.FixKey], *g)
+	}
+	same := byKey["package_upgrade:npm:jquery:3.3.1>3.5.0"]
+	if len(byKey) != 2 || len(same) != 2 {
+		t.Fatalf("fix keys = %v", byKey)
+	}
+	m := Merge(same)
+	if m.FindingCount != 4 || m.UniqueIssues != 2 || m.TopPriority != "P1" || m.ByPriority["P3"] != 2 || len(m.Places) != 2 {
+		t.Errorf("merged = %+v", m)
+	}
+	if m.Places[0].AppDir == m.Places[1].AppDir || m.Places[0].AppDir == "" {
+		t.Errorf("places should name each app directory: %+v", m.Places)
+	}
+	for _, g := range groups {
+		if g.Kind != PackageUpgrade && g.FixKey != g.ID {
+			t.Errorf("%s groups stay per asset: %q", g.Kind, g.FixKey)
+		}
+	}
+}
