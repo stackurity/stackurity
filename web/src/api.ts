@@ -1979,6 +1979,11 @@ export interface FixGroup {
   note?: string;
   /** Package upgrades: the newest stable release in the major line at or above to_version, from release data. */
   recommended_version?: string;
+  /**
+   * Package upgrades: the version the title and action name. recommended_version when it is in the same major
+   * line as to_version (the minimum fixed version), otherwise to_version.
+   */
+  target_version?: string;
   change_type?: string;
   requires_major?: boolean;
   recommended_yanked?: boolean;
@@ -2114,7 +2119,8 @@ export interface Onboarding {
   has_assets: boolean;
   project_id: number;
   project: Project | null;
-  steps: { project: boolean; asset: boolean; notifications: boolean; invite: boolean };
+  /** assistant: someone connected an AI assistant to the organisation. */
+  steps: { project: boolean; asset: boolean; notifications: boolean; invite: boolean; assistant: boolean };
 }
 
 /** GET /onboarding/results: an asset the waiting screen reports on. */

@@ -4,6 +4,24 @@ All notable changes to Stackurity. Versions follow [Semantic Versioning](https:/
 
 Each release's section is published as its GitHub release notes, and a tag without a section here cannot be released (`go run ./tools/changelog -version vX.Y.Z` prints it). New changes go under **Unreleased**, which is renamed to the version when it is tagged. Subsections are **Security**, **Added**, **Changed**, **Fixed** and **Upgrading**. Put fixes for vulnerabilities under `### Security`, first: installations treat a release with that heading as a security release and show administrators a banner they can only snooze.
 
+## Unreleased
+
+### Added
+
+- **Settings → AI assistants: connect an assistant step by step.** The page shows the server's MCP address with a Copy button and short numbered steps for Claude, ChatGPT, Cursor, VS Code, Claude Code and assistants that run `stackurity mcp`, checked against each vendor's documentation. Connected assistants, with Allow changes and Disconnect, are listed below. Without `STACKURITY_BASE_URL` it explains how to turn assistants on. It is linked from the account menu (**Connect an AI assistant**) and from Help. `GET /assistants` now returns `mcp_url`. The old address, `/settings/assistants`, opens it.
+- **Create a team where you need one.** Giving a team access to a project offers **Create a team** in place, and selects the new team. Team dropdowns with no teams (asset owner, assigning issues, remediation policies) say where teams are made. Community's one-team limit still applies.
+- **Home's first-run checklist** also asks to connect an AI assistant, and each item opens the page that does it: add a server, connect an AI assistant, turn on notifications, invite your team. `GET /onboarding` has a new `steps.assistant`.
+
+### Changed
+
+- **Upgrade advice leads with the recommended version.** A package upgrade's title and action name the newest stable release in the minimum fix's major line when release data has one: "Upgrade ip-address 10.1.0 → 10.7.5", with "fixes from 10.7.4" beside it, where it read "→ 10.7.4". Home, Fixes, a fix's page, Slack and email messages that list fixes, and the MCP `action_plan` and `remediation_plan` tools show it. Fix groups have a new `target_version`; `to_version` stays the minimum fixed version. A major upgrade or a withdrawn release never heads the title.
+- **Install commands look for websites and apps by default.** **Also check websites and apps on this server** is ticked under Add server and in the first-run flow, so the agent finds applications under `/srv`, `/var/www`, `/opt`, `/app` and home directories. The MCP `create_enrollment` tool does the same unless `check_apps` is false. `stackurity agent` itself is unchanged: without `--discover-apps` it does not look.
+- Application discovery is bounded: at most 20,000 directories read and 200 applications reported per run. The installer's service now runs at a low CPU and disk priority (`Nice=10`, best-effort I/O priority 7).
+
+### Fixed
+
+- The project switcher in the header shows a project created in the first-run flow at once, and choosing it at the end of the flow works, instead of needing a page reload.
+
 ## 0.11.0
 
 ### Added

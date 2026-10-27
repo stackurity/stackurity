@@ -14,7 +14,7 @@ import { useAuth } from "../auth";
 import { useProject } from "../project";
 import { useAction, useLoad } from "../hooks";
 import { plural } from "../format";
-import { installCommand } from "./AddServer";
+import { CheckApps, installCommand } from "./AddServer";
 import { InviteForm } from "../components/Invite";
 import { CodeBlock, ErrorBox, Loading, Notice } from "../components/ui";
 
@@ -22,7 +22,8 @@ import { CodeBlock, ErrorBox, Loading, Notice } from "../components/ui";
  * The first-run flow (0.9): a new organisation's first ten minutes.
  * 1 name a project, 2 add an asset, 3 wait for it to report, 4 the first
  * result in plain words, 5 notifications, 6 invite people. Each step can be
- * skipped; Home keeps a checklist until every step is done.
+ * skipped; Home keeps a checklist (which also asks to connect an AI
+ * assistant) until every step is done or it is hidden.
  */
 
 type Step = "project" | "asset" | "waiting" | "result" | "notify" | "invite";
@@ -157,6 +158,7 @@ function StepCard({ children }: { children: ReactNode }) {
 // --- 1. project
 
 function ProjectStep({ onDone }: { onDone: (p: Project) => void }) {
+  const { refresh } = useAuth();
   const existing = useLoad(() => api.getAll<{ items: Project[] }>("/projects"), []);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -169,7 +171,11 @@ function ProjectStep({ onDone }: { onDone: (p: Project) => void }) {
       await api.put("/onboarding", { project_id: created.id });
       return created;
     });
-    if (p) onDone(p);
+    if (p) {
+      // The header's project switcher reads the projects from /auth/me.
+      await refresh();
+      onDone(p);
+    }
   };
   const use = async (p: Project) => {
     const ok = await act.run(() => api.put("/onboarding", { project_id: p.id }));
@@ -269,10 +275,11 @@ function AssetStep({
 
 function ServerSource({ project, onWaiting }: { project: Project; onWaiting: (name: string) => void }) {
   const [created, setCreated] = useState<EnrollmentCreated | null>(null);
+  const [apps, setApps] = useState(true);
   const act = useAction();
   const make = async () => {
     const c = await act.run(() =>
-      api.post<EnrollmentCreated>("/enrollments", { label: project.name, project_id: project.id, uses: 5, ttl_hours: 24 }),
+      api.post<EnrollmentCreated>("/enrollments", { label: project.name, project_id: project.id, uses: 5, ttl_hours: 24, discover_apps: apps }),
     );
     if (c) setCreated(c);
   };
@@ -280,6 +287,9 @@ function ServerSource({ project, onWaiting }: { project: Project; onWaiting: (na
     return (
       <div className="form">
         <p>Linux with systemd, root or sudo, and outbound HTTPS from the server to this dashboard.</p>
+        <div className="field">
+          <CheckApps id="ob-apps" checked={apps} onChange={setApps} />
+        </div>
         <ErrorBox error={act.error} title="Could not create the install command" />
         <div className="form-actions">
           <button type="button" className="btn btn-primary" onClick={make} disabled={act.pending}>
@@ -827,11 +837,14 @@ function InviteStep({ project, onFinish, pending }: { project: Project; onFinish
  */
 export function SetupChecklist({ o, onChange }: { o: Onboarding; onChange: () => void }) {
   const act = useAction();
-  const items: { done: boolean; text: string; step: Step }[] = [
-    { done: o.steps.project, text: "Create a project", step: "project" },
-    { done: o.steps.asset, text: "Add a server, repository or SBOM", step: "asset" },
-    { done: o.steps.notifications, text: "Turn on notifications", step: "notify" },
-    { done: o.steps.invite, text: "Invite people", step: "invite" },
+  // Each item is one click to the screen that does it. A project comes
+  // first only while there is none: adding a server needs one.
+  const items: { done: boolean; text: string; to: string }[] = [
+    ...(o.steps.project ? [] : [{ done: false, text: "Create a project", to: "/get-started?step=project" }]),
+    { done: o.steps.asset, text: "Add a server, repository or SBOM", to: o.steps.project ? "/get-started?step=asset" : "/assets/add" },
+    { done: Boolean(o.steps.assistant), text: "Connect an AI assistant", to: "/settings/ai-assistants" },
+    { done: o.steps.notifications, text: "Turn on notifications", to: "/settings/notifications" },
+    { done: o.steps.invite, text: "Invite your team", to: "/settings/users" },
   ];
   const left = items.filter((i) => !i.done).length;
   const hide = async () => {
@@ -849,7 +862,7 @@ export function SetupChecklist({ o, onChange }: { o: Onboarding; onChange: () =>
       <ErrorBox error={act.error} title="Could not hide the checklist" />
       <ul className="setup-list">
         {items.map((i) => (
-          <li key={i.step} className={i.done ? "done" : undefined}>
+          <li key={i.text} className={i.done ? "done" : undefined}>
             <span className="onboard-dot" aria-hidden="true">
               {i.done ? "✓" : ""}
             </span>
@@ -859,7 +872,7 @@ export function SetupChecklist({ o, onChange }: { o: Onboarding; onChange: () =>
                 <span className="sr-only"> (done)</span>
               </span>
             ) : (
-              <Link to={`/get-started?step=${i.step}`}>{i.text}</Link>
+              <Link to={i.to}>{i.text}</Link>
             )}
           </li>
         ))}

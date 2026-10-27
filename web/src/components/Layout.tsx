@@ -495,7 +495,10 @@ function AvatarMenu({ onFeedback, onLogout, version }: { onFeedback?: () => void
           <Link to="/settings/slack" role="menuitem" className="menu-item" onClick={() => pop.setOpen(false)}>
             <span className="menu-item-main">Linked Slack accounts</span>
           </Link>
-          <Link to="/settings/assistants" role="menuitem" className="menu-item" onClick={() => pop.setOpen(false)}>
+          <Link to="/settings/ai-assistants" role="menuitem" className="menu-item" onClick={() => pop.setOpen(false)}>
+            <span className="menu-item-main">Connect an AI assistant</span>
+          </Link>
+          <Link to="/settings/ai-assistants#connected" role="menuitem" className="menu-item" onClick={() => pop.setOpen(false)}>
             <span className="menu-item-main">Connected assistants</span>
           </Link>
           {onFeedback && (

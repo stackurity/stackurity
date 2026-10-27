@@ -23,7 +23,7 @@ func (f *fakeAPI) Do(_ context.Context, method, path string, _ io.Reader, _ map[
 		body = `{"items":[{"id":7,"key":"CVE-1","severity":"critical","asset_name":"shop","fixed_version":"1.2.3","evidence":{"big":"x"}}],"total":1}`
 	case strings.HasPrefix(path, "/api/v1/fix-groups?"):
 		body = `{"items":[{"id":"3:package_upgrade:9","kind":"package_upgrade","asset_id":3,"component":"lodash","from_version":"4.17.15",
-			"to_version":"4.17.21","recommended_version":"4.17.23","change_type":"patch","finding_count":2,"top_priority":"P2",
+			"to_version":"4.17.21","recommended_version":"4.17.23","target_version":"4.17.23","change_type":"patch","finding_count":2,"top_priority":"P2",
 			"by_severity":{"high":2}}],"total":1}`
 	case strings.HasSuffix(path, "/explain"), strings.HasSuffix(path, "/upgrade"), strings.HasPrefix(path, "/api/v1/findings/verify?"):
 		body = `{"ok":true}`
@@ -143,7 +143,7 @@ func TestAssistantTools(t *testing.T) {
 		t.Errorf("requests = %v", api.paths)
 	}
 	plan := text(4)
-	for _, s := range []string{`"minimum_fixed_version": "4.17.21"`, `"recommended_version": "4.17.23"`, `"installed_version": "4.17.15"`, `"shown": 1`} {
+	for _, s := range []string{`"minimum_fixed_version": "4.17.21"`, `"recommended_version": "4.17.23"`, `"target_version": "4.17.23"`, `"installed_version": "4.17.15"`, `"shown": 1`} {
 		if !strings.Contains(plan, s) {
 			t.Errorf("remediation_plan lacks %s: %s", s, plan)
 		}
@@ -282,6 +282,15 @@ func TestWriteToolsNeedConfirmation(t *testing.T) {
 	cmd, _ := done["result"].(map[string]any)["install_command"].(string)
 	if cmd != "curl -fsSL http://stk.internal:8080/install/agent.sh | sudo STACKURITY_ENROLL_CODE=enr_abc STACKURITY_ALLOW_HTTP=1 sh" {
 		t.Errorf("install command = %q", cmd)
+	}
+	// Servers enrolled from a chat look for websites and apps too, unless told not to.
+	if w := api.writes(); len(w) != 1 || !strings.Contains(w[0], `"discover_apps":true`) {
+		t.Errorf("create_enrollment sent %v", w)
+	}
+	pv = callTool(t, s, "create_enrollment", map[string]any{"servers": 1.0, "check_apps": false})
+	callTool(t, s, "create_enrollment", map[string]any{"servers": 1.0, "check_apps": false, "confirm": pv["confirm"]})
+	if w := api.writes(); len(w) != 2 || !strings.Contains(w[1], `"discover_apps":false`) {
+		t.Errorf("create_enrollment without apps sent %v", w)
 	}
 	api = &writeAPI{role: "engineer"}
 	s = &Server{API: api, AllowWrites: true}

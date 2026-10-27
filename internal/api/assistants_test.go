@@ -825,3 +825,22 @@ func TestAssistantProjectIsolation(t *testing.T) {
 		t.Errorf("connection to an archived project: %s", text)
 	}
 }
+
+// Settings, AI assistants shows the address to add, or that assistants are
+// off until STACKURITY_BASE_URL is set.
+func TestAssistantsListMCPURL(t *testing.T) {
+	e := newEnv(t)
+	e.user("admin@x.io", auth.RoleAdmin)
+	s := e.login("admin@x.io")
+	var res struct {
+		Items  []map[string]any `json:"items"`
+		MCPURL *string          `json:"mcp_url"`
+	}
+	if code := s.do("GET", "/api/v1/assistants", nil, &res); code != 200 || res.MCPURL == nil || *res.MCPURL != "" || res.Items == nil {
+		t.Fatalf("without a base URL: %d %+v", code, res)
+	}
+	withBaseURL(e)
+	if code := s.do("GET", "/api/v1/assistants", nil, &res); code != 200 || res.MCPURL == nil || *res.MCPURL != e.srv.URL+"/mcp" {
+		t.Fatalf("with a base URL: %d %v", code, res.MCPURL)
+	}
+}

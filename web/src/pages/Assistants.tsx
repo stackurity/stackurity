@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Link, useLocation } from "react-router";
 import { api, ApiError, type AssistantConnection, type AssistantConsent, type List, type UserRole } from "../api";
 import { useAuth } from "../auth";
 import { useAction, useLoad } from "../hooks";
-import { EmptyState, ErrorBox, Loading, Notice, PageHeader, RelativeTime } from "../components/ui";
+import { Card, CodeBlock, CopyBox, ErrorBox, Loading, Notice, PageHeader, RelativeTime, Tabs } from "../components/ui";
 
 const ROLE_ABOUT: Record<UserRole, string> = {
   viewer: "read only: inventory, issues, fixes and reports",
@@ -160,7 +160,7 @@ export function ConnectAssistantPage() {
           </button>
         </div>
         <p className="small muted">
-          It stays connected until you disconnect it in <Link to="/settings/assistants">Connected assistants</Link>, or it is unused for{" "}
+          It stays connected until you disconnect it in <Link to="/settings/ai-assistants#connected">Connected assistants</Link>, or it is unused for{" "}
           {pv.idle_days} days. Not you?{" "}
           <button type="button" className="btn-link" onClick={() => void logout()}>
             Sign out
@@ -183,10 +183,205 @@ export function ConnectAssistantPage() {
   );
 }
 
-/** Settings, Connected assistants: the signed-in person's own connections, in every organisation. */
+/** GET /assistants: the connections, and the address to add in an assistant ("" while assistants are off). */
+interface AssistantList extends List<AssistantConnection> {
+  mcp_url?: string;
+}
+
+type Client = "claude" | "chatgpt" | "cursor" | "vscode" | "claude-code" | "other";
+
+const CLIENTS: { id: Client; label: string }[] = [
+  { id: "claude", label: "Claude" },
+  { id: "chatgpt", label: "ChatGPT" },
+  { id: "cursor", label: "Cursor" },
+  { id: "vscode", label: "VS Code" },
+  { id: "claude-code", label: "Claude Code" },
+  { id: "other", label: "Other" },
+];
+
+const SIGN_IN = "Sign in to Stackurity in the page that opens. Choose the organisation and what it can see (everything, or one project). Tick Allow changes only if it should make changes for you. Click Allow.";
+
+function Steps({ children }: { children: ReactNode }) {
+  return <ol className="assistant-steps">{children}</ol>;
+}
+
+/*
+ * How each client adds a remote MCP server, checked against the vendors'
+ * documentation on 2026-10-27:
+ * - Claude: https://claude.com/docs/connectors/custom/remote-mcp and
+ *   https://support.claude.com/en/articles/11175166-getting-started-with-custom-connectors-using-remote-mcp
+ *   (Customize > Connectors > Add custom connector; Team and Enterprise
+ *   owners add it under Organization settings > Connectors first).
+ * - ChatGPT: https://developers.openai.com/api/docs/guides/custom-mcp-server and
+ *   https://developers.openai.com/plugins/deploy/connect-chatgpt (Plugins >
+ *   + > Add custom MCP server; OAuth with dynamic client registration when
+ *   no client ID is given). The help centre article could not be read and
+ *   menu names have changed often, so the steps say what to look for.
+ * - Cursor: https://cursor.com/docs/context/mcp (mcpServers with "url";
+ *   OAuth with dynamic client registration). How sign-in starts for a
+ *   server added by hand is not documented, hence "If Cursor asks".
+ * - VS Code: https://code.visualstudio.com/docs/copilot/reference/mcp-configuration and
+ *   https://code.visualstudio.com/docs/copilot/chat/mcp-servers ("servers",
+ *   "type": "http"; MCP: Add Server; a browser sign-in on first use).
+ * - Claude Code: https://code.claude.com/docs/en/mcp (claude mcp add
+ *   --transport http, then /mcp to sign in).
+ */
+function ClientSteps({ client, url }: { client: Client; url: string }) {
+  switch (client) {
+    case "claude":
+      return (
+        <>
+          <p className="small muted">claude.ai and Claude Desktop</p>
+          <Steps>
+            <li>
+              In Claude, open <strong>Customize</strong>, then <strong>Connectors</strong> (older versions: <strong>Settings</strong>,{" "}
+              <strong>Connectors</strong>).
+            </li>
+            <li>
+              Click <strong>Add custom connector</strong>. You may need to click <strong>+</strong> first.
+            </li>
+            <li>
+              Name it Stackurity and paste the address above as the server URL. If Claude asks how to sign in, choose{" "}
+              <strong>Register automatically</strong>, or leave the client ID and secret empty.
+            </li>
+            <li>
+              Click <strong>Add</strong>, then <strong>Connect</strong>.
+            </li>
+            <li>{SIGN_IN}</li>
+            <li>
+              In a chat, click <strong>+</strong>, then <strong>Connectors</strong>, and turn Stackurity on.
+            </li>
+          </Steps>
+          <p className="hint">
+            On a Team or Enterprise plan, an owner adds it first under <strong>Organization settings</strong>, <strong>Connectors</strong>. Then
+            everyone clicks <strong>Connect</strong> under Customize, Connectors. Claude connects from the internet, so this server must be
+            reachable from it.
+          </p>
+        </>
+      );
+    case "chatgpt":
+      return (
+        <>
+          <Steps>
+            <li>
+              In ChatGPT on the web, open <strong>Plugins</strong>, click <strong>+</strong>, then <strong>Add custom MCP server</strong>. If your
+              ChatGPT has no Plugins page, go to <strong>Settings</strong>, <strong>Apps &amp; Connectors</strong>, turn on{" "}
+              <strong>Developer mode</strong> under Advanced settings, and click <strong>Create</strong>.
+            </li>
+            <li>Name it Stackurity and paste the address above as the server URL.</li>
+            <li>
+              For authentication, choose <strong>OAuth</strong>. Leave the client ID and secret empty: Stackurity registers ChatGPT by itself.
+            </li>
+            <li>Accept the warning about custom servers, then create it.</li>
+            <li>{SIGN_IN}</li>
+          </Steps>
+          <p className="hint">
+            If your assistant asks for a transport, choose Streamable HTTP. Your plan, or your workspace admin, decides whether custom servers
+            are allowed.
+          </p>
+        </>
+      );
+    case "cursor":
+      return (
+        <>
+          <Steps>
+            <li>
+              Open <code>~/.cursor/mcp.json</code> (for all your projects) or <code>.cursor/mcp.json</code> in one project. Create it if it is
+              not there.
+            </li>
+            <li>Add Stackurity to it and save:</li>
+          </Steps>
+          <CodeBlock label="Cursor mcp.json" text={JSON.stringify({ mcpServers: { stackurity: { url } } }, null, 2)} />
+          <p className="hint">If Cursor asks you to sign in to Stackurity, do it, then click Allow. {SIGN_IN.split(". ").slice(1, 3).join(". ")}.</p>
+        </>
+      );
+    case "vscode":
+      return (
+        <>
+          <Steps>
+            <li>
+              Open the Command Palette and run <strong>MCP: Add Server</strong>. Choose <strong>HTTP</strong>, paste the address above and name it
+              stackurity.
+            </li>
+            <li>
+              Or add it to <code>.vscode/mcp.json</code> in your project:
+            </li>
+          </Steps>
+          <CodeBlock label="VS Code mcp.json" text={JSON.stringify({ servers: { stackurity: { type: "http", url } } }, null, 2)} />
+          <p className="hint">The first time Copilot uses it, VS Code opens Stackurity in your browser. {SIGN_IN.split(". ").slice(1).join(". ")}</p>
+        </>
+      );
+    case "claude-code":
+      return (
+        <>
+          <Steps>
+            <li>Run this in a terminal:</li>
+          </Steps>
+          <CodeBlock label="Claude Code command" text={`claude mcp add --transport http stackurity ${url}`} />
+          <Steps>
+            <li>
+              In Claude Code, type <code>/mcp</code>, choose stackurity and sign in.
+            </li>
+            <li>{SIGN_IN}</li>
+          </Steps>
+        </>
+      );
+    case "other":
+      return <OtherClient url={url} />;
+  }
+}
+
+/** Assistants that start a local program (stdio), or that use a token instead of signing in. */
+function OtherClient({ url }: { url: string }) {
+  const server = window.location.origin;
+  const config = {
+    mcpServers: {
+      stackurity: {
+        command: "stackurity",
+        args: ["mcp"],
+        env: { STACKURITY_SERVER: server, STACKURITY_TOKEN_FILE: "/home/me/.config/stackurity/token" },
+      },
+    },
+  };
+  return (
+    <>
+      {url && (
+        <p>
+          Most assistants that support remote MCP servers work like the others: add the address above and sign in when asked. If your assistant asks
+          for a client ID, leave it empty.
+        </p>
+      )}
+      <p>
+        <strong>Assistants that start a program on your computer</strong> run <code>stackurity mcp</code>. It needs the{" "}
+        <code>stackurity</code> program and a personal token:
+      </p>
+      <Steps>
+        <li>
+          Create a token under <Link to="/settings/tokens">Settings, API tokens</Link>, with the role the assistant should have (viewer for
+          read only). Save it in a file only you can read.
+        </li>
+        <li>Add this to the assistant&apos;s MCP settings, with your token file:</li>
+      </Steps>
+      <CodeBlock label="MCP settings for stackurity mcp" text={JSON.stringify(config, null, 2)} />
+      <p className="hint">
+        It only reads unless you add <code>--allow-writes</code> to <code>args</code>. Add <code>&quot;--project&quot;, &quot;Shop&quot;</code> to limit it
+        to one project.
+      </p>
+    </>
+  );
+}
+
+/**
+ * Settings, AI assistants: how to connect Claude, ChatGPT or an editor
+ * (the MCP address and steps per client), and the signed-in person's
+ * connected assistants in every organisation, with Allow changes and
+ * Disconnect.
+ */
 export function AssistantsPage() {
-  const res = useLoad(() => api.getAll<List<AssistantConnection>>("/assistants"), []);
+  const res = useLoad(() => api.getAll<AssistantList>("/assistants"), []);
   const act = useAction();
+  const [client, setClient] = useState<Client>("claude");
+  const { hash } = useLocation();
   const disconnect = async (c: AssistantConnection) => {
     if (!window.confirm(`Disconnect ${c.client_name || "this assistant"}? It stops working at once; connect it again from the assistant to use it.`)) return;
     const ok = await act.run(() => api.del(`/assistants/${c.id}`).then(() => true));
@@ -196,21 +391,56 @@ export function AssistantsPage() {
     const ok = await act.run(() => api.patch(`/assistants/${c.id}`, { allow_changes: allow }).then(() => true));
     if (ok) res.reload();
   };
+  useEffect(() => {
+    if (hash === "#connected" && res.data) document.getElementById("connected")?.scrollIntoView();
+  }, [hash, res.data]);
   const items = res.data?.items ?? [];
-  const mcpURL = `${window.location.origin}/mcp`;
+  const url = res.data?.mcp_url ?? "";
+  const off = Boolean(res.data) && !url;
+  const shown = off ? "other" : client;
+
   return (
     <>
-      <PageHeader title="Connected assistants" sub="AI assistants you allowed to use Stackurity as you, in any of your organisations." />
+      <PageHeader
+        title="AI assistants"
+        sub="Ask Claude, ChatGPT or your code editor what is installed, what is vulnerable and what to upgrade. It sees only what you allow."
+      />
       <ErrorBox error={res.error ?? act.error} title="Could not load or change the connections" />
-      {!res.data && !res.error ? (
-        <Loading />
-      ) : items.length === 0 ? (
-        <EmptyState title="No connected assistants">
-          <p>
-            To connect Claude, ChatGPT or another assistant, add <code>{mcpURL}</code> as a custom connector (MCP server) in the assistant and sign in when it asks.
+      {!res.data && !res.error && <Loading />}
+      {res.data && (
+        <Card title="Connect an assistant">
+          {off ? (
+            <Notice kind="warn">
+              <strong>Assistants cannot sign in to this server yet.</strong> Whoever runs it has to set <code>STACKURITY_BASE_URL</code> to its
+              public https:// address (for example <code>https://stackurity.example.com</code>) and restart it. The address to add in an assistant
+              is then that address followed by <code>/mcp</code>. Until then, assistants that start a program on your computer work, as below.
+            </Notice>
+          ) : (
+            <div className="field">
+              <p className="assistant-url-label">
+                <strong>The address to add in your assistant</strong>
+              </p>
+              <CopyBox value={url} label="MCP server address" />
+              <p className="hint">Paste it where your assistant adds a custom connector or MCP server. Then sign in when it asks.</p>
+            </div>
+          )}
+          {!off && <Tabs label="Assistant" tabs={CLIENTS} value={client} onChange={setClient} />}
+          <div role={off ? undefined : "tabpanel"} id={`panel-${shown}`} aria-labelledby={off ? undefined : `tab-${shown}`} className="assistant-panel">
+            <ClientSteps client={shown} url={url} />
+          </div>
+          <p className="small muted">
+            Every change an assistant makes is checked against your role and recorded in the activity log under your name. More in{" "}
+            <Link to="/help/ai-assistants">Help</Link>.
           </p>
-        </EmptyState>
-      ) : (
+        </Card>
+      )}
+
+      <h2 className="section-title" id="connected">
+        Connected assistants
+      </h2>
+      <p className="small muted">Assistants you allowed to use Stackurity as you, in any of your organisations.</p>
+      {res.data && items.length === 0 && <p className="muted">None yet. They appear here once you click Allow in Stackurity.</p>}
+      {items.length > 0 && (
         <ul className="card slack-links">
           {items.map((c) => (
             <li key={c.id} className="slack-link-row">
@@ -236,9 +466,6 @@ export function AssistantsPage() {
           ))}
         </ul>
       )}
-      <p className="hint">
-        The address to add in an assistant is <code>{mcpURL}</code>. See <Link to="/help">Help</Link> or docs/ai-assistants.md.
-      </p>
     </>
   );
 }

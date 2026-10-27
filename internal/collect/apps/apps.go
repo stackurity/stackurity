@@ -36,6 +36,11 @@ const (
 	MaxPackagesPerApp = 100_000
 	maxManifestSize   = 1 << 20
 	maxNodeDepth      = 32
+	// Discovery reads at most this many directories and reports at most
+	// this many applications per run, however many home directories or
+	// checkouts a server has.
+	maxDiscoverDirs = 20_000
+	MaxDiscoverApps = 200
 )
 
 // Scanner reads applications under Root ("/" on a live host).
@@ -73,23 +78,34 @@ var DiscoverBases = []string{"/srv", "/var/www", "/opt", "/app", "/home/*", "/ho
 // Discover returns project directories up to three levels below the usual
 // deployment bases. A release layout (releases/ plus a current link) yields
 // only the current release.
+//
+// It only lists directories and checks for marker files: nothing is opened
+// or run, symbolic links to directories are not followed, hidden and
+// dependency directories are skipped, and the walk stops after
+// maxDiscoverDirs directories or MaxDiscoverApps applications.
 func (s *Scanner) Discover() []string {
+	return s.discover(maxDiscoverDirs, MaxDiscoverApps)
+}
+
+func (s *Scanner) discover(maxDirs, maxApps int) []string {
 	seen := map[string]bool{}
 	var out []string
+	budget := maxDirs
 	for _, pattern := range DiscoverBases {
 		bases, _ := filepath.Glob(s.path(pattern))
 		sort.Strings(bases)
 		for _, base := range bases {
-			s.discoverIn(s.hostPath(base), 0, seen, &out)
+			s.discoverIn(s.hostPath(base), 0, seen, &out, &budget, maxApps)
 		}
 	}
 	return out
 }
 
-func (s *Scanner) discoverIn(dir string, depth int, seen map[string]bool, out *[]string) {
-	if depth > 3 || seen[dir] {
+func (s *Scanner) discoverIn(dir string, depth int, seen map[string]bool, out *[]string, budget *int, maxApps int) {
+	if depth > 3 || seen[dir] || *budget <= 0 || len(*out) >= maxApps {
 		return
 	}
+	*budget--
 	if cur, ok := s.currentRelease(dir); ok {
 		dir = cur
 		if seen[dir] {
@@ -111,7 +127,7 @@ func (s *Scanner) discoverIn(dir string, depth int, seen map[string]bool, out *[
 		if !e.IsDir() || skipDiscover[e.Name()] || strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
-		s.discoverIn(path.Join(dir, e.Name()), depth+1, seen, out)
+		s.discoverIn(path.Join(dir, e.Name()), depth+1, seen, out, budget, maxApps)
 	}
 }
 

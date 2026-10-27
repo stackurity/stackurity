@@ -227,7 +227,8 @@ export function App() {
           }
         />
         <Route path="settings/slack" element={<SlackAccountsPage />} />
-        <Route path="settings/assistants" element={<AssistantsPage />} />
+        <Route path="settings/ai-assistants" element={<AssistantsPage />} />
+        <Route path="settings/assistants" element={<Navigate replace to="/settings/ai-assistants#connected" />} />
         <Route path="settings/risk-policy" element={<RiskPolicyPage />} />
         <Route
           path="settings/plugins"

@@ -1666,7 +1666,7 @@
    "get": {
     "operationId": "get_assistants",
     "summary": "The caller's connected assistants in every organisation they belong to",
-    "description": "The caller's connected assistants in every organisation they belong to: `client_name`, `redirect_host`, `workspace_name`, `project_name`, `role`, `allow_changes`, `created_at`, `last_used_at`\n\nRole: a browser session",
+    "description": "The caller's connected assistants in every organisation they belong to: `client_name`, `redirect_host`, `workspace_name`, `project_name`, `role`, `allow_changes`, `created_at`, `last_used_at`. `mcp_url` is the address to add in an assistant, empty while the server has no `STACKURITY_BASE_URL` (assistants are off).\n\nRole: a browser session",
     "tags": [
      "Account"
     ],

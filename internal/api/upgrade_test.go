@@ -181,7 +181,8 @@ func TestUpgradeAndOutcomeEndpoints(t *testing.T) {
 	}
 	view.do("GET", "/api/v1/fix-groups?kind=package_upgrade", nil, &groups)
 	if len(groups.Items) != 1 || groups.Items[0]["to_version"] != "4.17.21" || groups.Items[0]["recommended_version"] != "4.17.23" ||
-		groups.Items[0]["change_type"] != "patch" || !strings.Contains(groups.Items[0]["action"].(string), "Recommended: 4.17.23") {
+		groups.Items[0]["change_type"] != "patch" || groups.Items[0]["target_version"] != "4.17.23" ||
+		groups.Items[0]["title"] != "Upgrade lodash 4.17.15 → 4.17.23" || !strings.Contains(groups.Items[0]["action"].(string), "Any version from 4.17.21") {
 		t.Errorf("fix groups = %+v", groups.Items)
 	}
 

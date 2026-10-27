@@ -500,7 +500,9 @@ func init() {
 			"label":       str("A label for the code, such as what the servers are for"),
 			"environment": str("Environment label for the servers, e.g. production (letters, digits, . _ -)"),
 			"project_id":  num("Add the servers to this project"),
-			"confirm":     confirmProp(),
+			"check_apps": map[string]any{"type": "boolean",
+				"description": "Also look for websites and applications deployed on the servers (default true); false reads only the operating system's packages"},
+			"confirm": confirmProp(),
 		}),
 		write: &writeTool{title: "Create a server install code", plan: func(ctx context.Context, s *Server, a map[string]any) (*change, error) {
 			uses, ttl := 1, 24
@@ -515,8 +517,14 @@ func init() {
 			if uses < 1 || uses > maxEnrollUses || ttl < 1 || ttl > maxEnrollHours {
 				return nil, fmt.Errorf("servers must be 1 to %d and valid_hours 1 to %d; create larger codes in Stackurity under Add servers", maxEnrollUses, maxEnrollHours)
 			}
-			body := map[string]any{"uses": uses, "ttl_hours": ttl, "label": text(a, "label"), "environment": text(a, "environment")}
-			details := map[string]any{"servers": uses, "valid_hours": ttl, "label": body["label"], "environment": body["environment"]}
+			apps := true
+			if b, ok := a["check_apps"].(bool); ok {
+				apps = b
+			}
+			body := map[string]any{"uses": uses, "ttl_hours": ttl, "label": text(a, "label"), "environment": text(a, "environment"),
+				"discover_apps": apps}
+			details := map[string]any{"servers": uses, "valid_hours": ttl, "label": body["label"], "environment": body["environment"],
+				"check_apps": apps}
 			where := ""
 			if _, ok := a["project_id"]; ok {
 				id, err := positive(a, "project_id")

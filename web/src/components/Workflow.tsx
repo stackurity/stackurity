@@ -19,6 +19,7 @@ import { useAction, useExceptionMaxDays, useLoad } from "../hooks";
 import { absTime, plural, relTime } from "../format";
 import { IGNORE_REASON_LABEL } from "./Badge";
 import { ErrorBox, Notice } from "./ui";
+import { NoTeamsHint } from "./Teams";
 
 /** A deadline with relative time; overdue ones are flagged in text, not just colour. */
 export function DueDate({ iso, overdue, label }: { iso: string | null | undefined; overdue?: boolean; label?: string }) {
@@ -725,6 +726,7 @@ function AssignPanel({
               </option>
             ))}
           </select>
+          {teams.data && teams.data.items.length === 0 && <NoTeamsHint what="assign issues to a team" />}
         </div>
       </div>
       <div className="form-actions">

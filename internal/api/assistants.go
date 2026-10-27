@@ -860,7 +860,14 @@ func (s *Server) listAssistants(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	writeJSON(w, 200, all(gs))
+	// mcp_url is the address to add in an assistant; empty while the
+	// server has no STACKURITY_BASE_URL and /mcp is off.
+	url := ""
+	if s.BaseURL != "" {
+		url = s.mcpResource(r)
+	}
+	l := all(gs)
+	writeJSON(w, 200, map[string]any{"items": l.Items, "total": l.Total, "mcp_url": url})
 }
 
 func (s *Server) disconnectAssistant(w http.ResponseWriter, r *http.Request) {

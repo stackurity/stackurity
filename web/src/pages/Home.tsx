@@ -8,7 +8,7 @@ import { useLoad } from "../hooks";
 import { plural } from "../format";
 import { Badge } from "../components/Badge";
 import { IntelBanners } from "../components/Findings";
-import { changeText, FixKindIcon, urgencyOf } from "../components/FixGroups";
+import { changeText, fixesFrom, FixKindIcon, urgencyOf } from "../components/FixGroups";
 import { PackSuggestions } from "../components/PackSuggestions";
 import { IconHelp } from "../components/Icons";
 import { Code, EmptyState, ErrorBox, Loading, PageHeader, RelativeTime } from "../components/ui";
@@ -45,6 +45,7 @@ function HomeFixCard({ g }: { g: FixGroup }) {
           <FixKindIcon kind={g.kind} />
         </span>
         <Link to={href}>{g.title}</Link>
+        {fixesFrom(g) && <span className="home-fix-from small muted"> {fixesFrom(g)}</span>}
       </h3>
       <p className="home-fix-where small">
         <Link to={`/assets/${g.asset_id}`}>{g.asset_name}</Link>

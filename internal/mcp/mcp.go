@@ -347,7 +347,8 @@ var tools = map[string]tool{
 	},
 	"action_plan": {
 		description: "What to fix, grouped into concrete actions (upgrade X to version Y, move off an end-of-life runtime), " +
-			"ordered by urgency, with how many findings each action clears. Omit asset_id for every asset.",
+			"ordered by urgency, with how many findings each action clears. For package upgrades, target_version is the version " +
+			"to move to (the title names it), to_version the lowest version that fixes them all. Omit asset_id for every asset.",
 		schema: obj(map[string]any{"asset_id": num("Limit to one asset")}),
 		run: func(ctx context.Context, api API, a map[string]any) (any, error) {
 			q := url.Values{"limit": {"100"}}
@@ -567,6 +568,7 @@ func init() {
 					FromVersion       string   `json:"from_version"`
 					ToVersion         string   `json:"to_version"`
 					Recommended       string   `json:"recommended_version"`
+					TargetVersion     string   `json:"target_version"`
 					ChangeType        string   `json:"change_type"`
 					RequiresMajor     bool     `json:"requires_major"`
 					RecommendedYanked bool     `json:"recommended_yanked"`
@@ -598,6 +600,7 @@ func init() {
 				Installed      string   `json:"installed_version,omitempty"`
 				MinimumFixed   string   `json:"minimum_fixed_version,omitempty"`
 				Recommended    string   `json:"recommended_version,omitempty"`
+				Target         string   `json:"target_version,omitempty"`
 				ChangeType     string   `json:"change_type,omitempty"`
 				RequiresMajor  bool     `json:"requires_major,omitempty"`
 				Withdrawn      bool     `json:"recommended_withdrawn,omitempty"`
@@ -615,12 +618,14 @@ func init() {
 			out := []group{}
 			for _, g := range res.Items {
 				out = append(out, group{g.ID, g.Kind, g.Title, g.Action, g.AssetID, g.AssetName, g.Environment, g.Component,
-					g.FromVersion, g.ToVersion, g.Recommended, g.ChangeType, g.RequiresMajor, g.RecommendedYanked, g.Packages,
+					g.FromVersion, g.ToVersion, g.Recommended, g.TargetVersion, g.ChangeType, g.RequiresMajor, g.RecommendedYanked, g.Packages,
 					g.PackageCount, g.FindingCount, g.UniqueIssues, g.TopPriority, g.SOS, g.KnownExploited, paidChannel(g.Needs), g.Effort, g.Note})
 			}
 			return map[string]any{"groups": out, "total": res.Total, "shown": len(out),
-				"note": "minimum_fixed_version fixes every finding in the group; recommended_version comes from registry release " +
-					"data and is absent when there is none. Use upgrade_recommendation for the reasons. action is the free path; " +
+				"note": "target_version is the version to tell people to move to (the title and action name it): recommended_version " +
+					"when it is in the same major line, otherwise minimum_fixed_version. minimum_fixed_version is the lowest version " +
+					"that fixes every finding in the group; recommended_version comes from registry release data and is absent when " +
+					"there is none. Use upgrade_recommendation for the reasons. action is the free path; " +
 					"paid_channel names a paid subscription (Ubuntu Pro, SUSE LTSS) that also publishes fixes for some findings, " +
 					"an option to mention, never the recommendation."}, nil
 		},

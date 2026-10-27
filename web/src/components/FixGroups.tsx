@@ -65,6 +65,17 @@ export function urgencyOf(g: FixGroup): { label: string; tone: Tone; title: stri
 }
 
 /** What kind of change a fix is, in words. */
+/** "10.1.0 → 10.7.5": what is installed and the version to move to (the recommended one when the server leads with it). */
+export function versionsText(g: FixGroup): string {
+  const to = g.target_version || g.to_version;
+  return g.from_version || to ? `${g.from_version ?? "?"} → ${to ?? "?"}` : "";
+}
+
+/** "fixes from 10.7.4" when the version to move to is newer than the minimum fix. */
+export function fixesFrom(g: FixGroup): string {
+  return g.target_version && g.to_version && g.target_version !== g.to_version ? `fixes from ${g.to_version}` : "";
+}
+
 export function changeText(g: FixGroup): string {
   if (g.requires_major || g.change_type === "major") return "major upgrade, may break things";
   if (g.change_type === "minor") return "minor upgrade";
@@ -167,7 +178,8 @@ export function GroupFindings({ groupId, hideAsset }: { groupId: string; hideAss
 export function FixGroupCard({ g, hideAsset, defaultOpen }: { g: FixGroup; hideAsset?: boolean; defaultOpen?: boolean }) {
   const [open, setOpen] = useState(Boolean(defaultOpen));
   const titleId = `fg-${g.id.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
-  const versions = g.from_version || g.to_version ? `${g.from_version ?? "?"} → ${g.to_version ?? "?"}` : "";
+  const versions = versionsText(g);
+  const from = fixesFrom(g);
   return (
     <article className={`fix-card fix-${g.kind}${g.sos ? " fix-sos" : ""}`} aria-labelledby={titleId}>
       <div className="fix-icon" title={FIX_KIND_HELP[g.kind]}>
@@ -189,7 +201,8 @@ export function FixGroupCard({ g, hideAsset, defaultOpen }: { g: FixGroup; hideA
                     {[g.component, versions].filter(Boolean).join(" ")}
                   </span>
                 ),
-                g.recommended_version && g.recommended_version !== g.to_version && (
+                from && <span key="f">{from}</span>,
+                g.recommended_version && g.recommended_version !== (g.target_version || g.to_version) && (
                   <span key="r" title={(g.rationale ?? []).join(" ")}>
                     recommended <span className="mono">{g.recommended_version}</span>
                   </span>

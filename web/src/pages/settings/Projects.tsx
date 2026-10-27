@@ -17,6 +17,7 @@ import { useAction, useLoad } from "../../hooks";
 import { absTime, plural, humanize } from "../../format";
 import { AssetPicker } from "../../components/AssetPicker";
 import { InviteForm } from "../../components/Invite";
+import { NewTeamInline } from "../../components/Teams";
 import { Card, EmptyState, ErrorBox, Loading, Notice, PageHeader } from "../../components/ui";
 
 /*
@@ -240,8 +241,11 @@ function AddAccess({ target, onAdded }: { target: { project_id: number } | { ass
   const [team, setTeam] = useState("");
   const [role, setRole] = useState<UserRole>("viewer");
   const [created, setCreated] = useState<string | null>(null);
+  const [newTeam, setNewTeam] = useState(false);
   const act = useAction();
   const idp = "project_id" in target ? `pa${target.project_id}` : `aa${target.asset_id}`;
+  const teamList = teams.data?.items ?? [];
+  const noTeams = Boolean(teams.data) && teamList.length === 0;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -289,16 +293,48 @@ function AddAccess({ target, onAdded }: { target: { project_id: number } | { ass
           </>
         ) : (
           <div className="field">
-            <label htmlFor={`${idp}-team`}>Team</label>
-            <select id={`${idp}-team`} required value={team} onChange={(e) => setTeam(e.target.value)}>
-              <option value="">Choose a team</option>
-              {(teams.data?.items ?? []).map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-            <p className="hint">Everyone in the team gets this role, including people who join it later.</p>
+            {noTeams ? (
+              <>
+                <p className="small">There are no teams yet. Create one here.</p>
+                <NewTeamInline
+                  id={`${idp}-newteam`}
+                  teams={0}
+                  onCreated={(t) => {
+                    teams.reload();
+                    setTeam(String(t.id));
+                  }}
+                />
+              </>
+            ) : (
+              <>
+                <label htmlFor={`${idp}-team`}>Team</label>
+                <select id={`${idp}-team`} required value={team} onChange={(e) => setTeam(e.target.value)}>
+                  <option value="">Choose a team</option>
+                  {teamList.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="hint">Everyone in the team gets this role, including people who join it later.</p>
+                {newTeam ? (
+                  <NewTeamInline
+                    id={`${idp}-newteam`}
+                    teams={teamList.length}
+                    onCancel={() => setNewTeam(false)}
+                    onCreated={(t) => {
+                      setNewTeam(false);
+                      teams.reload();
+                      setTeam(String(t.id));
+                    }}
+                  />
+                ) : (
+                  <button type="button" className="btn btn-link btn-sm" onClick={() => setNewTeam(true)}>
+                    Create a team
+                  </button>
+                )}
+              </>
+            )}
           </div>
         )}
         <div className="field">
@@ -306,7 +342,7 @@ function AddAccess({ target, onAdded }: { target: { project_id: number } | { ass
           <RoleSelect id={`${idp}-role`} value={role} onChange={setRole} />
         </div>
       </div>
-      <button type="submit" className="btn btn-primary" disabled={act.pending}>
+      <button type="submit" className="btn btn-primary" disabled={act.pending || (kind === "team" && !team)}>
         Give access
       </button>
     </form>

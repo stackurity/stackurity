@@ -6,17 +6,26 @@ There is nothing to install. Your server's MCP endpoint is **`https://<your serv
 
 ## Connect an assistant
 
-Paste `https://<your server>/mcp` into your assistant as a custom connector (it may be called a remote MCP server or an integration), then sign in when it asks:
+**Settings → AI assistants** (also **Connect an AI assistant** in the account menu, and **Help → Connect an AI assistant**) shows your server's MCP address with a Copy button, and step-by-step instructions for each assistant. Paste `https://<your server>/mcp` into your assistant as a custom connector (it may be called a remote MCP server, an app or a plugin), then sign in when it asks:
 
 1. The assistant opens a Stackurity page in your browser. Sign in if you are not already.
 2. The page says which assistant is asking and where it will return. Choose what it can see (the whole organisation, or one project) and its role (viewer, engineer, security or admin; never more than your own). If you belong to several organisations, choose the organisation there too. Tick **Allow changes** only if it should make changes for you; without it the connection only reads, whatever the role.
 3. Click **Allow**. The browser goes back to the assistant, which is now connected.
 
-In **Claude** (claude.ai or Claude Desktop): **Settings → Connectors → Add custom connector**, name it Stackurity, paste the URL, click **Add**, then **Connect**. In ChatGPT, add it as a connector (MCP server) in the same way. In Claude Code: `claude mcp add --transport http stackurity https://<your server>/mcp`, then `/mcp` to sign in. Other clients that support remote MCP servers with OAuth work the same way.
+Stackurity registers each assistant itself (OAuth dynamic client registration), so leave any client ID and client secret fields empty.
 
-**Settings → Connected assistants** (also in the account menu) lists the assistants you connected, in every organisation, with what they can see and do and when they were last used. **Allow changes** can be turned on or off there, and **Disconnect** stops one at once.
+Per assistant (checked against each vendor's documentation in October 2026; menus change, so the dashboard says what to look for where a step could not be confirmed):
 
-`/mcp` and the sign-in endpoints are on only when `STACKURITY_BASE_URL` is set to the server's public `https://` address (see [install.md](install.md)): the sign-in metadata and tokens name that address, and the server never takes it from a request's `Host` header. Without it they answer 404 and the server logs why at startup.
+- **Claude** (claude.ai and Claude Desktop): **Customize → Connectors** (older versions: **Settings → Connectors**) → **Add custom connector** → name it Stackurity and paste the URL (if asked how to sign in, choose **Register automatically**) → **Add** → **Connect** → sign in and **Allow**. In a chat, turn it on under **+ → Connectors**. On Team and Enterprise plans an owner adds it first under **Organization settings → Connectors**. Claude connects from Anthropic's servers, so the server must be reachable from the internet. [Claude docs](https://claude.com/docs/connectors/custom/remote-mcp)
+- **ChatGPT** (web): **Plugins → + → Add custom MCP server** (or, where ChatGPT still has it, **Settings → Apps & Connectors → Advanced settings → Developer mode → Create**) → name Stackurity, server URL, authentication **OAuth** with the client ID and secret empty → accept the warning and create it → sign in and **Allow**. There is no transport choice; if a client asks, it is Streamable HTTP. Whether custom servers are allowed depends on the plan and the workspace admin. [OpenAI docs](https://developers.openai.com/api/docs/guides/custom-mcp-server)
+- **Cursor**: add `{"mcpServers": {"stackurity": {"url": "https://<your server>/mcp"}}}` to `~/.cursor/mcp.json` (all projects) or `.cursor/mcp.json` (one project), then sign in when Cursor asks. [Cursor docs](https://cursor.com/docs/context/mcp)
+- **VS Code** (GitHub Copilot): **MCP: Add Server** → **HTTP** → the URL, or add `{"servers": {"stackurity": {"type": "http", "url": "https://<your server>/mcp"}}}` to `.vscode/mcp.json`. VS Code opens the sign-in page on first use. [VS Code docs](https://code.visualstudio.com/docs/copilot/reference/mcp-configuration)
+- **Claude Code**: `claude mcp add --transport http stackurity https://<your server>/mcp`, then `/mcp` in Claude Code to sign in. [Claude Code docs](https://code.claude.com/docs/en/mcp)
+- **Other clients** that support remote MCP servers with OAuth work the same way. Clients that start a local program use `stackurity mcp` (below).
+
+**Connected assistants**, on the same page (and in the account menu), lists the assistants you connected, in every organisation, with what they can see and do and when they were last used. **Allow changes** can be turned on or off there, and **Disconnect** stops one at once.
+
+`/mcp` and the sign-in endpoints are on only when `STACKURITY_BASE_URL` is set to the server's public `https://` address (see [install.md](install.md)): the sign-in metadata and tokens name that address, and the server never takes it from a request's `Host` header. Without it they answer 404, the server logs why at startup, and **Settings → AI assistants** explains how to turn them on and shows the `stackurity mcp` set-up instead.
 
 ### Clients that use a token instead
 
@@ -53,7 +62,7 @@ Every tool calls the HTTP API as you, so the assistant sees exactly what you may
 |---|---|
 | `search` | Anything by id or name at once: a CVE or other advisory id, a package (optionally with version), a host, image or repository, or a team |
 | `list_assets` | Which hosts, deployed applications, repositories and images exist, and their ids |
-| `action_plan` | What to upgrade, as concrete actions ("upgrade next 15.5.20 → 15.5.28"), most urgent first, with how many findings each clears |
+| `action_plan` | What to upgrade, as concrete actions ("upgrade next 15.5.20 → 15.5.28"), most urgent first, with how many findings each clears. For package upgrades `target_version` is the version to move to (the newest stable release in the minimum fix's major line, when release data has one) and `to_version` the lowest version that fixes them all |
 | `asset_stack` | Everything an application relies on (host, OS, web server, runtime, libraries, repository) with findings by layer |
 | `list_findings` | Open findings with installed and fixed versions, filterable by asset, severity, priority and known exploitation |
 | `get_finding` | One finding in full, with evidence and history |
@@ -70,7 +79,7 @@ Every tool calls the HTTP API as you, so the assistant sees exactly what you may
 | `create_project` | Create a project, optionally with assets | admin |
 | `rename_project` | Rename a project | admin |
 | `add_assets_to_project`, `remove_assets_from_project` | Put assets in a project or take them out (up to 100) | admin |
-| `create_enrollment` | Create an install code for N servers (at most 50, valid at most 24 hours) and return the one-line install command ("set up 3 servers") | admin |
+| `create_enrollment` | Create an install code for N servers (at most 50, valid at most 24 hours) and return the one-line install command ("set up 3 servers"). The servers also look for websites and apps unless `check_apps` is false | admin |
 | `assign` | Assign issues, or every open issue of a fix, to you, a user id or an email | engineer on the issues' assets |
 | `snooze` | Snooze issues until a date or until a free fix exists | security |
 | `ignore` | Ignore issues with a reason and an expiry; without the security role it files a request for approval instead, and the preview says which | security, or anyone to ask |

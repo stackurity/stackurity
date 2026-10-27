@@ -77,7 +77,12 @@ type Group struct {
 	Note           string         `json:"note,omitempty"`
 	// Package upgrades: the version to move to, from release data (see
 	// internal/upgrade). ToVersion stays the minimum fixed version.
-	Recommended       string            `json:"recommended_version,omitempty"`
+	Recommended string `json:"recommended_version,omitempty"`
+	// TargetVersion is the version the title and action name: the
+	// recommended version when it is in the same major line as the minimum
+	// fix, otherwise the minimum fixed version. Clients show it as the
+	// headline and ToVersion as "fixes from".
+	TargetVersion     string            `json:"target_version,omitempty"`
 	ChangeType        string            `json:"change_type,omitempty"`
 	RequiresMajor     bool              `json:"requires_major,omitempty"`
 	RecommendedYanked bool              `json:"recommended_yanked,omitempty"`
@@ -311,12 +316,13 @@ func describe(g *Group, osEOL map[int64]Row, advice map[string]Advice) {
 	case PackageUpgrade:
 		from := sortedKeys(g.fromVersions)
 		g.FromVersion = strings.Join(from, ", ")
+		g.TargetVersion = g.ToVersion
 		g.Title = fmt.Sprintf("Upgrade %s %s → %s", g.Component, g.FromVersion, g.ToVersion)
 		g.Action = fmt.Sprintf("Update %s to %s or later in the lockfile and redeploy.", g.Component, g.ToVersion)
 		g.Effort = "medium"
 		if len(from) > 0 {
 			if ct, err := version.ChangeType(g.purlType, from[0], g.ToVersion); err == nil {
-				g.Effort = map[string]string{"distro": "low", "patch": "low", "minor": "medium", "major": "high"}[ct]
+				g.Effort = effortOf(ct)
 			}
 		}
 	case NoFix:
@@ -332,19 +338,56 @@ func describe(g *Group, osEOL map[int64]Row, advice map[string]Advice) {
 	}
 }
 
-// SetRecommendation records the recommended version for a package upgrade
-// and mentions it in the action when it differs from the minimum fix.
+func effortOf(changeType string) string {
+	if e, ok := map[string]string{"distro": "low", "patch": "low", "minor": "medium", "major": "high"}[changeType]; ok {
+		return e
+	}
+	return "medium"
+}
+
+// SetRecommendation records the recommended version for a package upgrade.
+// When it is a newer stable release in the minimum fix's own major line,
+// the title and action lead with it ("Upgrade ip-address 10.1.0 →
+// 10.7.5") and ToVersion stays the minimum fix. A major upgrade, or a
+// recommendation the registry withdrew, never becomes the headline: the
+// title keeps the minimum fix and the action mentions the recommendation.
 func (g *Group) SetRecommendation(recommended, changeType string, major, yanked bool, rationale []string) {
 	if g.Kind != PackageUpgrade || recommended == "" {
 		return
 	}
 	g.Recommended, g.ChangeType, g.RequiresMajor, g.RecommendedYanked, g.Rationale = recommended, changeType, major, yanked, rationale
-	if recommended != g.ToVersion {
+	g.TargetVersion = g.ToVersion
+	switch {
+	case g.leadsWith(recommended, major, yanked):
+		g.TargetVersion = recommended
+		g.Title = fmt.Sprintf("Upgrade %s %s → %s", g.Component, g.FromVersion, recommended)
+		g.Action = fmt.Sprintf("Update %s to %s, the newest stable release in its line, in the lockfile and redeploy. Any version from %s fixes these issues.",
+			g.Component, recommended, g.ToVersion)
+		if changeType != "" {
+			g.Effort = effortOf(changeType)
+		}
+	case recommended != g.ToVersion:
 		g.Action += fmt.Sprintf(" Recommended: %s, the newest stable release in its major line.", recommended)
 	}
 	if major {
 		g.Action += " This is a major upgrade."
 	}
+}
+
+// leadsWith reports whether the recommended version can head the group: a
+// stable release above the minimum fix in the same major line, and not a
+// major upgrade from what is installed.
+func (g *Group) leadsWith(recommended string, major, yanked bool) bool {
+	if major || yanked || recommended == g.ToVersion || g.ToVersion == "" {
+		return false
+	}
+	eco := version.ForPurlType(g.purlType)
+	line := version.MajorLine(eco, g.ToVersion)
+	if line == "" || version.MajorLine(eco, recommended) != line {
+		return false
+	}
+	c, err := version.For(eco)(recommended, g.ToVersion)
+	return err == nil && c > 0
 }
 
 // needsChannel is the Group.Needs value for a paid channel that also

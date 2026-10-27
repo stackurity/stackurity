@@ -128,13 +128,50 @@ func TestRepositoryGrouping(t *testing.T) {
 	if none == nil || none.FindingCount != 1 {
 		t.Errorf("no fix = %+v", none)
 	}
+	if up.TargetVersion != "4.17.21" {
+		t.Errorf("target before a recommendation = %q", up.TargetVersion)
+	}
 	up.SetRecommendation("4.17.23", "patch", false, false, []string{"why"})
-	if up.Recommended != "4.17.23" || up.ToVersion != "4.17.21" || !strings.Contains(up.Action, "Recommended: 4.17.23") {
+	if up.Recommended != "4.17.23" || up.ToVersion != "4.17.21" || up.TargetVersion != "4.17.23" ||
+		up.Title != "Upgrade lodash 4.17.15 → 4.17.23" || !strings.Contains(up.Action, "to 4.17.23") || !strings.Contains(up.Action, "from 4.17.21") {
 		t.Errorf("recommendation = %+v", up)
 	}
 	none.SetRecommendation("1.0", "patch", false, false, nil)
 	if none.Recommended != "" {
 		t.Error("a recommendation was set on a no-fix group")
+	}
+}
+
+// The recommended version heads the group only inside the minimum fix's
+// major line; a major upgrade or a withdrawn release keeps the minimum fix
+// as the headline.
+func TestRecommendationHeadline(t *testing.T) {
+	build := func() *Group {
+		groups, _ := Build([]Row{{FindingID: 1, Kind: "vulnerability", Key: "GHSA-1", AssetID: 2, AssetName: "shop", ComponentID: 10,
+			PurlType: "npm", Component: "ip-address", Version: "10.1.0", FixedVersion: "10.7.4", Priority: "P2", Severity: "high"}}, nil)
+		return groups[0]
+	}
+	cases := []struct {
+		name, rec, ct    string
+		major, yanked    bool
+		title, target    string
+		actionMentionsRe bool
+	}{
+		{"same line", "10.7.5", "minor", false, false, "Upgrade ip-address 10.1.0 → 10.7.5", "10.7.5", false},
+		{"is the minimum", "10.7.4", "minor", false, false, "Upgrade ip-address 10.1.0 → 10.7.4", "10.7.4", false},
+		{"major", "11.2.0", "major", true, false, "Upgrade ip-address 10.1.0 → 10.7.4", "10.7.4", true},
+		{"other line, not flagged major", "11.2.0", "minor", false, false, "Upgrade ip-address 10.1.0 → 10.7.4", "10.7.4", true},
+		{"withdrawn", "10.7.5", "minor", false, true, "Upgrade ip-address 10.1.0 → 10.7.4", "10.7.4", true},
+	}
+	for _, c := range cases {
+		g := build()
+		g.SetRecommendation(c.rec, c.ct, c.major, c.yanked, nil)
+		if g.Title != c.title || g.TargetVersion != c.target || g.ToVersion != "10.7.4" || g.Recommended != c.rec {
+			t.Errorf("%s: title %q target %q to %q", c.name, g.Title, g.TargetVersion, g.ToVersion)
+		}
+		if got := strings.Contains(g.Action, "Recommended: "+c.rec); got != c.actionMentionsRe {
+			t.Errorf("%s: action %q", c.name, g.Action)
+		}
 	}
 }
 

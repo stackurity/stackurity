@@ -41,9 +41,12 @@ type OnboardingSteps struct {
 	Asset         bool `json:"asset"`         // an asset (in the chosen project) has reported
 	Notifications bool `json:"notifications"` // a notification route is on
 	Invite        bool `json:"invite"`        // someone was invited, or the organisation has other members
+	Assistant     bool `json:"assistant"`     // someone connected an AI assistant (OAuth) to the organisation
 }
 
-func (s OnboardingSteps) all() bool { return s.Project && s.Asset && s.Notifications && s.Invite }
+func (s OnboardingSteps) all() bool {
+	return s.Project && s.Asset && s.Notifications && s.Invite && s.Assistant
+}
 
 // GetOnboarding returns the workspace's onboarding state. When every step
 // is done the state becomes done, and the checklist stops showing.
@@ -75,8 +78,9 @@ func (s *Store) GetOnboarding(ctx context.Context) (*Onboarding, error) {
 		  EXISTS (SELECT 1 FROM routes r WHERE CASE WHEN cardinality(r.project_ids) > 0 THEN r.project_enabled ELSE r.enabled END
 		    AND (cardinality(r.project_ids) = 0 OR $1 = ANY(r.project_ids) OR $1::bigint = 0)),
 		  EXISTS (SELECT 1 FROM invitations WHERE revoked_at IS NULL)
-		    OR (SELECT count(*) FROM workspace_members WHERE workspace_id = $2) > 1`, o.ProjectID, ws).
-		Scan(&o.HasAssets, &o.Steps.Project, &o.Steps.Asset, &o.Steps.Notifications, &o.Steps.Invite)
+		    OR (SELECT count(*) FROM workspace_members WHERE workspace_id = $2) > 1,
+		  EXISTS (SELECT 1 FROM oauth_grants WHERE workspace_id = $2)`, o.ProjectID, ws).
+		Scan(&o.HasAssets, &o.Steps.Project, &o.Steps.Asset, &o.Steps.Notifications, &o.Steps.Invite, &o.Steps.Assistant)
 	if err != nil {
 		return nil, err
 	}

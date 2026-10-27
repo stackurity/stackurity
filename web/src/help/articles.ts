@@ -41,6 +41,36 @@ export const ARTICLES: Article[] = [
         ],
       },
       { note: "Running the server yourself? See the install guide (docs/install.md) for the first start, the setup token and backups." },
+      { h: "The checklist on Home" },
+      {
+        p: "Until you hide it, Home lists what is left: add a server, connect an AI assistant, turn on notifications and invite your team. Each item opens the right page, and is ticked once it is done.",
+      },
+    ],
+  },
+  {
+    id: "ai-assistants",
+    title: "Connect an AI assistant",
+    section: "Getting started",
+    summary: "Ask Claude, ChatGPT, Cursor, VS Code or Claude Code what is installed, what is vulnerable and what to upgrade.",
+    where: ["Settings", "AI assistants"],
+    keywords: "ai assistant claude chatgpt cursor vs code copilot claude code mcp connector model context protocol oauth connected assistants allow changes",
+    body: [
+      {
+        p: "Stackurity is an MCP server: an AI assistant can read your inventory, issues and fixes as you, and, if you allow it, make changes for you, such as assigning or snoozing issues.",
+      },
+      {
+        steps: [
+          "Open [Settings ▸ AI assistants](/settings/ai-assistants) and copy the address shown there.",
+          "Pick your assistant's tab and follow its steps: add the address as a custom connector or MCP server.",
+          "Sign in to Stackurity when the assistant asks. Choose the organisation and what it can see. Tick **Allow changes** only if it should make changes for you. Click **Allow**.",
+        ],
+      },
+      {
+        p: "**Connected assistants**, on the same page, lists the assistants you allowed. Turn **Allow changes** on or off there, or click **Disconnect** to stop one at once.",
+      },
+      {
+        note: "On a server you run yourself, assistants can sign in only once `STACKURITY_BASE_URL` is set to the server's public https:// address. Until then, the page shows how to run `stackurity mcp` on your own computer instead.",
+      },
     ],
   },
   {
@@ -186,7 +216,7 @@ export const ARTICLES: Article[] = [
         steps: [
           "Open [Assets](/assets) and click **Add server** (admins only).",
           "Optionally enter a **Label** (e.g. `web servers`) and an **Environment** (e.g. `production`; production counts towards priority).",
-          "Under **Application directories**, list deployed apps to inventory, one per line, e.g. `/srv/shop` or `/var/www/site`. Tick **Also look for applications under /srv, /var/www, /opt and home directories** to find others.",
+          "**Also check websites and apps on this server** is ticked by default: the agent looks in /srv, /var/www, /opt, /app and home directories for sites and apps, and lists the libraries they use. It only reads. Under **Application directories**, add apps that live somewhere else, one per line, e.g. `/data/shop`.",
           "Under **Options**, set how many servers the code can enroll (default 1) and how long it is valid (default 24 hours).",
           "Click **Create install command** and copy it. The code in it is shown only once.",
           "Run it on the new server as a user with sudo.",
