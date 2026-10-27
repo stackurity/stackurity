@@ -4,7 +4,7 @@ All notable changes to Stackurity. Versions follow [Semantic Versioning](https:/
 
 Each release's section is published as its GitHub release notes, and a tag without a section here cannot be released (`go run ./tools/changelog -version vX.Y.Z` prints it). New changes go under **Unreleased**, which is renamed to the version when it is tagged. Subsections are **Security**, **Added**, **Changed**, **Fixed** and **Upgrading**. Put fixes for vulnerabilities under `### Security`, first: installations treat a release with that heading as a security release and show administrators a banner they can only snooze.
 
-## Unreleased
+## 0.10.0
 
 ### Added
 
@@ -23,8 +23,6 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 - A collector token made for a project may now pass that project's `project_id` to `POST /sbom/import`; other callers who are not admins still get 403.
 - **Periodic tasks run independently, so a slow one never delays alerts.** Each background task (alert dispatching, digests, feed and integration scheduling, housekeeping and the others) now has its own schedule instead of waiting its turn behind the others, so a slow or stuck task no longer holds up notifications. At most 4 run at the same time in one server, which keeps them to at most 8 of the 20 database connections, and a task never runs twice at once. `ensure-feeds` now also queues the feeds that are due, so a new feed still syncs at once. On shutdown a running task has the 30-second shutdown deadline to finish before it is cancelled and handed to another replica. See `docs/reliability.md`, "Periodic tasks".
-
-### Changed
 
 - **Feed syncs write only what changed.** Each advisory now keeps a hash of what is stored for it. A sync skips a record whose hash is unchanged and, for a changed one, updates the advisory and deletes or inserts only the package rows that differ. Before, every sync deleted and re-inserted all package rows of every record it read, so a full re-read of Ubuntu rewrote millions of rows and left them as dead space. On a copy of the Debian, npm and PyPI archives and a sixteenth of Ubuntu's (666,000 package rows), a full re-read of unchanged data went from deleting and re-inserting 664,480 rows in 4 minutes 32 seconds to writing nothing in 36 seconds (laptop, PostgreSQL 17 in Docker), and re-evaluates no components (it re-evaluated every component of those ecosystems).
 - **Advisory package data takes about an eighth of the space.** An affected entry keeps only its ranges and listed versions, which is all the matcher and the second check read (the package is in the row's own columns; severities and other feed fields were already read when the record was synced). Identical entries are stored once in `affected_values`: 666,000 rows share 68,000 distinct entries. On the same data, the table with its TOAST and indexes went from 644 MB to 121 MB including `affected_values`, after `VACUUM FULL` (1,008 to 191 bytes per row); after a full re-read with the old code and before `VACUUM FULL` it was 1,118 MB.
