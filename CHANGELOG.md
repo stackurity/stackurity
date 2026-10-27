@@ -4,11 +4,11 @@ All notable changes to Stackurity. Versions follow [Semantic Versioning](https:/
 
 Each release's section is published as its GitHub release notes, and a tag without a section here cannot be released (`go run ./tools/changelog -version vX.Y.Z` prints it). New changes go under **Unreleased**, which is renamed to the version when it is tagged. Subsections are **Security**, **Added**, **Changed**, **Fixed** and **Upgrading**. Put fixes for vulnerabilities under `### Security`, first: installations treat a release with that heading as a security release and show administrators a banner they can only snooze.
 
-## Unreleased
+## 0.9.0
 
 ### Security
 
-Proof (1.0): what Stackurity checked, why it believes a finding, and limits on scan jobs.
+Proof: what Stackurity checked, why it believes a finding, and limits on scan jobs.
 
 - **Scan jobs outside the packs sandbox have size, count and time limits, and their output is cleaned before it is stored.** A repository clone may use at most 1 GiB on disk and an image scan at most 4 GiB of layers, measured while git or Syft runs; past that, or at the deadline, the whole process group is killed (killing only git or Syft left their helpers running). Lockfile walks stop at 500,000 entries and 64 levels and with the scan's deadline (a cancelled repository scan kept walking), hold at most 512 MiB for stack packs, and cap coverage at 1,000 items. Host collections stop after 30 minutes. Every batch has NUL and control characters removed from its text (one NUL failed the whole ingest), control characters refused in purls and versions, environment, provider and region limited to 256 bytes, and link values with a `javascript:`, `data:`, `vbscript:` or `file:` scheme dropped. Plugin metadata is bounded and its homepage must be an http or https address. See `docs/security-audit.md`, "Scan jobs outside the packs sandbox".
 
@@ -20,7 +20,7 @@ Proof (1.0): what Stackurity checked, why it believes a finding, and limits on s
 - **Links open in the route's project.** Every link in a message of a route limited to projects carries `?project=`, so the dashboard opens scoped to it.
 - Collector tokens and enrollment codes take `project_id`, and an admin's SBOM upload `?project_id=`: the assets they create are added to that project.
 
-Proof (1.0):
+Proof:
 
 - **Why it matched, in one sentence, on every finding.** For example: "Installed 6.10.0 (from web/package-lock.json, seen 2 h ago) is in the affected range < 7.0.7 of GHSA-xxxx (osv:npm, refreshed 3 h ago), compared with SemVer rules; fixed in 7.0.7." The matcher stores the rule that matched when it makes the finding (`evidence.match`: the rule, the deciding record, a SEMVER range, a distro backport, a normalised version, why it is ambiguous), so the sentence is the rule that really matched. It leads the finding page and is `why` in `GET /findings/{id}`, `GET /findings/{id}/explain` and the `explain_finding` tool, with the version evidence, the source and its last refresh, the evidence state, **Missing information** (what exactly would resolve a finding that is not confirmed) and typed detail for package advisories, OS packages, container images and end of life.
 - **An independent second check of high-impact findings.** P1, SOS, known exploited, regressed, unconfirmed and ambiguous findings are re-derived from the raw stored advisory record and the raw reported version by separate, deliberately simple code (its own package URL parser, release rules, version comparators and range reading). The result is recorded apart from detection: agreed, disagreed (with what differs) or could not check (with why). A disagreement is never silently accepted and never hides an issue: the finding and lists say "Needs validation: the second check disagreed (what differs)" and **Home** counts it for review, while its priority, SOS and urgent alerts stay as they are (the second check is deliberately simple, so a mistake in it fails toward alerting). It is counted on **Coverage** and in `stackurity_second_check_findings` and `stackurity_second_check_disagreements_total`, and logged with its inputs for new matching tests. `GET /second-checks`, `GET /findings?second_check=disagreed`. It runs in the background, 500 findings per workspace per minute; over the matching corpus it agrees with every finding it can read (0 disagreements on 156 findings).
@@ -31,7 +31,7 @@ Proof (1.0):
 - **A quiet first scan is quiet everywhere.** A new asset's backlog (what it reported before its "connected" message) no longer creates Jira issues, is never escalated, and is not counted in overdue reminders or in summaries' overdue and not-acknowledged counts; a late part of it, and an issue that comes back before the asset is announced, raise no alert either. Issues found after the first scan alert, escalate and become overdue as before.
 - Connected messages and summaries say how much an asset's first scan found: "commmerceblog connected: 1,676 packages checked, 412 issues found, 3 fixes need you", and "1 asset connected, 412 issues found" rather than new issues. `counts` gains `connected_issues` (summary) and `issues` (connected).
 
-Proof (1.0):
+Proof:
 
 - Wording: a confirmed finding is described as a confirmed advisory match, not proof that the issue can be exploited on the asset, and "known exploited" as exploited somewhere (CISA's catalogue), not on this asset.
 - Findings carry `second_check` and `second_check_reason`, and `GET /findings/summary` counts `second_check_disagreed`. A second-check disagreement never changes `verification` or lowers priority.
@@ -47,7 +47,7 @@ Proof (1.0):
 - Migration `0033` adds `invitations` (with row-level security per workspace), `workspaces.onboarding_state` and `onboarding_project_id`, `project_id` on `enrollments` and `api_tokens`, and `assets.quiet_backlog`. All are new tables, nullable columns or constant defaults, so no table is rewritten. Workspaces that already have assets are marked as onboarded. Existing assets keep `quiet_backlog` false: their findings keep escalating as before; every asset created after the upgrade gets a quiet first scan.
 - Storing a Slack webhook URL or SMTP password from the first-run flow needs `STACKURITY_SECRET_KEY`; without it the flow says so, and channels can still be set up with `env:` references.
 
-Proof (1.0):
+Proof:
 
 - Migration `0034` creates `second_checks` and `second_check_disagreements` (row-level security per workspace, narrowed to the caller's projects) and one partial index on open high-impact findings (`findings_second_check`). It adds no column to `findings` and rewrites no rows. Findings get their stored match rule (`evidence.match`) when they are next evaluated (the daily evaluation does all of them); until then their explanation says the rule was not recorded. The first second-check pass over a large workspace takes about an hour in the background (about 70 runs for 34,000 covered findings).
 
