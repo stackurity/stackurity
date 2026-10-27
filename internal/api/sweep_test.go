@@ -80,6 +80,19 @@ var routeRules = map[string]routeRule{
 	// Choosing another workspace's project as the default must fail.
 	"PUT /api/v1/auth/default-project": {class: "create", body: func(a *tenantFx) any { return map[string]any{"project_id": a.int("project")} }},
 
+	// Slack's interactivity Request URL: public, verified by the signing
+	// secret of the channel the click names (slack_test.go covers it). A
+	// body that names A's channel is refused without saying why.
+	"POST /api/v1/integrations/slack/actions": {class: "public", body: func(a *tenantFx) any {
+		return map[string]string{"payload": `{"type":"block_actions","actions":[{"value":"stk1|` + a.ids["channel"] + `|assign|` + a.ids["fixgroup"] + `"}]}`}
+	}},
+	// The caller's own linked Slack accounts. A's link token must not
+	// preview or link for B, and A's link must not be removed.
+	"GET /api/v1/slack/links":          {class: "list"},
+	"DELETE /api/v1/slack/links/{id}":  {class: "object", obj: id("slacklink")},
+	"POST /api/v1/slack/links/preview": {class: "create", body: func(a *tenantFx) any { return map[string]string{"token": a.ids["slacktoken"]} }},
+	"POST /api/v1/slack/links/confirm": {class: "create", body: func(a *tenantFx) any { return map[string]string{"token": a.ids["slacktoken"]} }},
+
 	// Sends what the user typed to the feedback URL outside the
 	// installation, nothing of the workspace; see feedback_test.go.
 	"POST /api/v1/feedback": {class: "skip"},
@@ -556,6 +569,20 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 	if code, body := bearerBody(e, collector, "POST", "/api/v1/ingest", hostBatch(model.AssetHost, "refused-"+tag, "machine-id")); code != 402 {
 		t.Fatalf("%s refused host: %d %s", tag, code, body)
 	}
+	// A Slack account linked to A's admin, and a pending link for another
+	// Slack user of A's.
+	slackToken, _, err := e.st.CreateSlackLinkRequest(ctx, ch.ID, "TS"+strings.ToUpper(tag), "slack-team-"+tag, "U"+strings.ToUpper(tag)+"1", "slack-user-"+tag)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var link store.SlackLink
+	if code := admin.do("POST", "/api/v1/slack/links/confirm", map[string]string{"token": slackToken}, &link); code != 200 {
+		t.Fatalf("%s slack link: %d", tag, code)
+	}
+	set("slacklink", link.ID)
+	if f.ids["slacktoken"], _, err = e.st.CreateSlackLinkRequest(ctx, ch.ID, "TS"+strings.ToUpper(tag), "slack-team-"+tag, "U"+strings.ToUpper(tag)+"2", "slack-user2-"+tag); err != nil {
+		t.Fatal(err)
+	}
 	if eeFixtures != nil {
 		eeFixtures(t, e, f)
 	}
@@ -846,6 +873,11 @@ func TestIsolationSweep(t *testing.T) {
 	if after := e.snapshot(t, a); after != snapshot {
 		t.Errorf("A's data changed during B's sweep:\nbefore %s\nafter  %s", snapshot, after)
 	}
+	// A's pending Slack link was neither used nor previewed into B's
+	// workspace: A's admin can still preview it.
+	if code := a.sess["admin"].do("POST", "/api/v1/slack/links/preview", map[string]string{"token": a.ids["slacktoken"]}, nil); code != 200 {
+		t.Errorf("A's Slack link token after the sweep: %d", code)
+	}
 	if v, err := e.st.SecretValue(tenant.WithWorkspace(ctx, a.ws), box, a.ids["secret"]); err != nil || v != a.secret {
 		t.Errorf("A's secret after the sweep: %q %v", v, err)
 	}
@@ -903,12 +935,28 @@ func (e *env) snapshot(t *testing.T, a *tenantFx) string {
 		"/api/v1/checks?asset_id={asset}", "/api/v1/checks/{check}", "/api/v1/ignore-rules?status=all", "/api/v1/ignore-requests?status=all",
 		"/api/v1/second-checks",
 		"/api/v1/projects/{project}", "/api/v1/access-grants", "/api/v1/assets?project_id={project}",
-		"/api/v1/invitations", "/api/v1/onboarding", "/api/v1/usage",
+		"/api/v1/invitations", "/api/v1/onboarding", "/api/v1/usage", "/api/v1/slack/links",
 	}, editionSnapshotPaths...) {
 		resp := a.sess["admin"].req("GET", fill(p, a.ids), nil, nil)
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		fmt.Fprintf(&b, "%s %d %s\n", p, resp.StatusCode, normalise(string(body)))
 	}
+	b.WriteString(slackRows(t, e.st, a.ws))
 	return b.String()
+}
+
+// slackRows lists a workspace's Slack links and link requests as stored,
+// for snapshots: the API shows each person only their own.
+func slackRows(t *testing.T, st *store.Store, ws int64) string {
+	t.Helper()
+	var out string
+	err := st.Pool.QueryRow(tenant.System(context.Background()), `SELECT
+		COALESCE((SELECT string_agg(concat_ws(':', id, team_id, slack_user_id, user_id), ',' ORDER BY id) FROM slack_links WHERE workspace_id = $1), '') || ' | ' ||
+		COALESCE((SELECT string_agg(concat_ws(':', id, slack_user_id, used_at IS NOT NULL, used_by), ',' ORDER BY id) FROM slack_link_requests WHERE workspace_id = $1), '')`,
+		ws).Scan(&out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return "slack " + out + "\n"
 }

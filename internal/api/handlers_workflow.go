@@ -113,9 +113,14 @@ func (s *Server) applyAction(w http.ResponseWriter, r *http.Request, ids []int64
 		}
 		done++
 	}
-	_ = s.Store.Audit(r.Context(), actor, "finding."+req.Action, "finding", joinIDs(ids),
-		map[string]any{"note": req.Note, "mitigation": req.Mitigation, "until": req.Until, "user_id": req.UserID, "team_id": req.TeamID,
-			"until_fix": req.UntilFix, "reason": req.Reason, "scope": req.Scope, "expiry": req.Expiry, "applied": done})
+	detail := map[string]any{"note": req.Note, "mitigation": req.Mitigation, "until": req.Until, "user_id": req.UserID, "team_id": req.TeamID,
+		"until_fix": req.UntilFix, "reason": req.Reason, "scope": req.Scope, "expiry": req.Expiry, "applied": done}
+	// An action taken from Slack (slack.go) says so.
+	if o, ok := originOf(r.Context()); ok {
+		detail["source"] = o.Source
+		detail["slack_user_id"], detail["slack_team_id"] = o.SlackUser, o.SlackTeam
+	}
+	_ = s.Store.Audit(r.Context(), actor, "finding."+req.Action, "finding", joinIDs(ids), detail)
 	if done == 0 && len(failures) > 0 {
 		writeError(w, 400, "invalid_action", "no finding was changed", failures...)
 		return
@@ -350,7 +355,20 @@ func (s *Server) validateChannel(kind string, cfgRaw json.RawMessage, secretRef 
 	if err := notify.ValidateChannel(kind, cfg, secretRef != "", s.AllowHTTPWebhooks); err != nil {
 		return badRequest(err.Error())
 	}
+	if cfg.SigningSecretRef != "" {
+		if err := s.Secrets.Validate(cfg.SigningSecretRef); err != nil {
+			return badRequest("signing_secret_ref: " + err.Error())
+		}
+	}
 	return nil
+}
+
+// signingSecretRef is a Slack channel's signing secret reference, which,
+// like secret_ref, may name a server secret only for instance admins.
+func signingSecretRef(cfgRaw json.RawMessage) string {
+	var cfg notify.ChannelConfig
+	_ = json.Unmarshal(cfgRaw, &cfg)
+	return cfg.SigningSecretRef
 }
 
 func (s *Server) listChannels(w http.ResponseWriter, r *http.Request) {
@@ -384,6 +402,10 @@ func (s *Server) createChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := checkSecretRef(r, ref); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if err := checkSecretRef(r, signingSecretRef(req.Config)); err != nil {
 		s.fail(w, r, err)
 		return
 	}
@@ -424,6 +446,10 @@ func (s *Server) updateChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := checkSecretRef(r, ref); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if err := checkSecretRef(r, signingSecretRef(cfg)); err != nil {
 		s.fail(w, r, err)
 		return
 	}

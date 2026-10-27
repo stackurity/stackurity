@@ -88,6 +88,9 @@ type Server struct {
 	// WidgetOrigins are origins the dashboard may load scripts and frames
 	// from (a hosted edition's sign-up challenge); empty allows none.
 	WidgetOrigins []string
+	// SlackRespond posts an answer to a Slack response_url (already checked
+	// to be Slack's); nil posts it over HTTPS. Tests capture answers here.
+	SlackRespond func(ctx context.Context, responseURL string, body []byte) error
 	// limiter counts sign-in, setup and enrollment attempts in the database,
 	// shared by every replica (ratelimit.go).
 	limiter *rateLimiter
@@ -116,6 +119,11 @@ func (s *Server) Handler() http.Handler {
 	r.Get("/install/agent.sh", s.installScript)
 	r.Get("/download/agent/{platform}", s.downloadAgent)
 
+	// Slack's interactivity Request URL. Public, outside the session and
+	// CSRF checks (Slack sends neither): every request is verified with the
+	// signing secret of the channel it names (slack.go).
+	r.With(s.limitAddress("slack-actions", limitSlackActions, "too many requests")).Post("/api/v1/integrations/slack/actions", s.slackActions)
+
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(s.authenticate, csrfGuard)
 		r.Get("/meta", s.meta)
@@ -140,6 +148,11 @@ func (s *Server) Handler() http.Handler {
 			r.Put("/auth/default-project", s.setDefaultProject)
 			r.Post("/auth/password", s.changePassword)
 			r.Post("/feedback", s.sendFeedback)
+			// Linking the caller's Slack account (slack.go).
+			r.Get("/slack/links", s.listSlackLinks)
+			r.Delete("/slack/links/{id}", s.deleteSlackLink)
+			r.Post("/slack/links/preview", s.previewSlackLink)
+			r.Post("/slack/links/confirm", s.confirmSlackLink)
 			r.Get("/packs", s.listPacks)
 			r.Get("/packs/{id}/archive", s.packArchive)
 			r.Route("/admin/license", func(r chi.Router) {

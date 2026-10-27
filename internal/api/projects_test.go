@@ -50,6 +50,10 @@ var projectScopes = map[string]string{
 	"POST /api/v1/invitations/accept":  "public",
 	"GET /api/v1/auth/oidc/login":      "public",
 	"GET /api/v1/auth/oidc/callback":   "public",
+	// Slack's interactivity Request URL: no session; verified by the
+	// signing secret of the channel the click names, then acts as the
+	// linked user with their project access (slack_test.go).
+	"POST /api/v1/integrations/slack/actions": "public",
 
 	"GET /api/v1/auth/me":                   "account",
 	"POST /api/v1/auth/password":            "account",
@@ -60,6 +64,10 @@ var projectScopes = map[string]string{
 	"GET /api/v1/tokens":                    "account",
 	"POST /api/v1/tokens":                   "account",
 	"DELETE /api/v1/tokens/{id}":            "account",
+	"GET /api/v1/slack/links":               "account",
+	"DELETE /api/v1/slack/links/{id}":       "account",
+	"POST /api/v1/slack/links/preview":      "account",
+	"POST /api/v1/slack/links/confirm":      "account",
 
 	"GET /api/v1/packs":              "global",
 	"GET /api/v1/packs/{id}/archive": "global",
@@ -469,6 +477,17 @@ func newOrg(t *testing.T) *org {
 		o.id("shared-incident")); err != nil {
 		t.Fatal(err)
 	}
+	// A Slack account linked to Beta's viewer (a member with access to
+	// Project Beta only).
+	slackToken, _, err := e.st.CreateSlackLinkRequest(ws, 0, "TBETA", "slack-beta", "UBETA1", "slack-user-beta")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var link store.SlackLink
+	if code := e.signIn("beta-viewer@x.io").do("POST", "/api/v1/slack/links/confirm", map[string]string{"token": slackToken}, &link); code != 200 {
+		t.Fatalf("slack link: %d", code)
+	}
+	o.ids["beta-slacklink"] = link.ID
 	return o
 }
 
@@ -661,6 +680,8 @@ func (o *org) betaFixture() *tenantFx {
 	set("check", "beta-check")
 	set("ignorerequest", "beta-ignorerequest")
 	set("ignorerule", "beta-ignorerule")
+	set("slacklink", "beta-slacklink")
+	ids["slacktoken"] = "slk_guessed"
 	ids["fixgroup"] = o.fixGroup
 	for _, k := range []string{"user", "job", "channel", "route", "delivery", "integration", "enrollment", "token", "conflict",
 		"plan", "policy", "action", "collector-token", "invitation"} {
@@ -688,6 +709,7 @@ func (o *org) betaSnapshot(t *testing.T) string {
 		resp.Body.Close()
 		fmt.Fprintf(&b, "%s %d %s\n", p, resp.StatusCode, normalise(string(body)))
 	}
+	b.WriteString(slackRows(t, o.e.st, tenant.DefaultWorkspace))
 	return b.String()
 }
 
