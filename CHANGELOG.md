@@ -6,6 +6,10 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+### Added
+
+- **Monitored-asset limits per organisation.** An instance administrator can limit how many assets each workspace monitors (**Settings → Workspaces**, or `PATCH /admin/workspaces/{id}` with `asset_limit`; `-1` removes it). Self-hosted installs have no limit unless one is set. A monitored asset is a host, application, repository, image, cluster, managed service or SBOM that is not merged into another; Kubernetes workloads are not counted. At the limit, new assets are refused wherever they would be created (agent and collector uploads, CI scans, SBOM imports, image scans, integrations, enrollment codes) with `402 asset_limit` and a message that says so, while every asset already monitored keeps being collected, evaluated and alerted on. A banner shows when the organisation is at its limit, and **Settings → Usage** shows usage against the limit by kind and the assets that were refused. `GET /usage`. See `docs/asset-limits.md`.
+
 ### Fixed
 
 - **Add an asset** in a project's settings no longer offers assets already in the project: they show as "already in this project" and cannot be picked.
@@ -15,6 +19,7 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ### Upgrading
 
+- Migration `0039` adds `workspaces.asset_limit` (empty: no limit) and the `refused_assets` table. Nothing changes until a limit is set.
 - Migration `0035` updates `assets.announced_at` for the assets that existed when `0030` ran (one row per asset, no lock on findings).
 
 ## 0.9.0

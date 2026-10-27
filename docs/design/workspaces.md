@@ -11,7 +11,7 @@ Stackurity becomes a platform: one installation serves many organisations, each 
 - Users are global and can belong to several workspaces with a different role in each.
 - Public intelligence (OSV, KEV, lifecycle, registry releases) is stored once and shared.
 
-Out of scope here: self-service sign-up, billing, per-workspace quotas, data residency, a silo database per customer. These build on this design.
+Out of scope here: self-service sign-up, billing, data residency, a silo database per customer. These build on this design. Per-workspace limits on monitored assets are a generic mechanism in the core (`workspaces.asset_limit`, see [asset-limits.md](../asset-limits.md)); a hosted service only sets the limits.
 
 ## Model
 
@@ -73,7 +73,7 @@ Some features are safe when one organisation runs its own server but not when st
 | Server-side requests to internal addresses (Git clones, webhooks, registries, plugin targets) | Resolve the host and refuse loopback, private, link-local, CGNAT and metadata ranges unless an instance admin allows a CIDR. Checked again at connect time to defeat DNS rebinding |
 | Plugins using ambient credentials (for example the AWS instance role) | Require explicit credentials outside workspace 1 |
 | Plugin executables | Installed only by instance admins; available to workspaces as an allowlist |
-| One workspace exhausting shared resources | Per-workspace rate limits on ingest and API, job concurrency caps; quotas come with billing |
+| One workspace exhausting shared resources | Per-workspace rate limits on ingest and API, job concurrency caps, and an optional limit on monitored assets ([asset-limits.md](../asset-limits.md)) |
 | Audit | Audit events belong to a workspace; platform events (logins, workspace creation) have no workspace and are visible to instance admins |
 
 ## Migration of an existing install
