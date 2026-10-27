@@ -19,6 +19,7 @@ This page covers PRD FR-18: a repeatable, evidence-led way to review Stackurity'
 | Server → plugins | Plugin output | **Untrusted executables**, installed by an admin | Admin-only directory, permission checks, clean environment, scratch directory, deadline, output caps, batches validated, no remediation path |
 | Server → agents (`/agent/actions`) | Approved changes | Agents trust the server, within their local allowlist | Host-bound tokens, policy and approval re-checked at dispatch, local allowlist, strict name/version patterns, no shell, dry run first |
 | Server → notification channels | Outbound messages | Admin-configured endpoints | Secrets referenced not stored, redirects never followed, HTTPS required by default, signed webhooks |
+| Slack → `/integrations/slack/actions` | Button clicks (Slack's payload) | **Unauthenticated** endpoint; trusted only once Slack's signature verifies | The channel named in the button's value must be an enabled Slack channel with a signing secret, in an enabled workspace; that channel's secret must verify the `v0` HMAC-SHA256 signature over the exact body (constant-time compare); timestamp within 5 minutes; each signature accepted once; the Slack workspace must match the channel's webhook; answers only to `hooks.slack.com` response URLs; the clicker acts only through a linked account (see [Acting from Slack](#acting-from-slack)) |
 | Operator → secrets | Credentials | Trusted | Only `env:STACKURITY_SECRET_*` or `file:` under the secrets directory; tokens and sessions stored as SHA-256 hashes; passwords hashed with argon2id |
 
 ### Privileged operations
@@ -31,7 +32,7 @@ This page covers PRD FR-18: a repeatable, evidence-led way to review Stackurity'
 
 ### Input surfaces to review
 
-- HTTP handlers in `internal/api`.
+- HTTP handlers in `internal/api`, including the public Slack interactivity endpoint (`internal/api/slack.go`).
 - Every parser in `internal/collect`, `internal/sbom`, `internal/intel` and `internal/osv`.
 - Plugin I/O in `internal/plugins`.
 - Agent actions in `internal/agentfix`.
@@ -121,6 +122,10 @@ The documentation is the test specification. Each control stated on this page, i
 | Tokens, sessions and enrollment codes are stored only as hashes; passwords with argon2id | `TestSecretsAtRest` |
 | No credential in logs, API answers (other than the one that hands it out) or audit entries | `TestSecretsNeverLogged`, `TestWebhookURLsNeverInErrors`, `TestCloneHardening`, `TestImageScanUsesGuardedProxy`, `TestHostilePluginOutput` |
 | Enrollment codes: single or limited use, expiring, revocable, one refusal for every failure | `TestEnrollmentAndInstaller` |
+| Slack clicks: only a request signed with the signing secret of the channel its button names is acted on; bad signature, another channel's or workspace's secret, a channel without a secret or disabled, a timestamp over 5 minutes old or ahead, a replay, another Slack workspace and a foreign `response_url` are refused | `TestSlackSignatureVerification` |
+| Linking a Slack account: single use, 15 minutes, in the channel's workspace only, a browser session only, never taking over an account linked to someone else; each person lists and removes only their own links | `TestSlackAccountLinking`, `TestIsolationSweep`, `TestProjectIsolationSweep` |
+| A linked Slack click has the person's dashboard permissions (role, project access, removed members refused) and is audited like the dashboard with source `slack` | `TestSlackActionPermissions` |
+| Channels without a signing secret send exactly the earlier link buttons; interactive buttons only when the secret resolves; the secret never appears in messages | `TestSlackInteractiveButtons`, `TestDispatcherInteractiveOnlyWithSigningSecret`, `TestSlackChannelSigningSecretRef` |
 
 ### Outbound connections (SSRF)
 
@@ -171,6 +176,16 @@ Stack packs run in their own sandbox ([packs.md](packs.md)). Everything else tha
 What scan output can trigger: findings, notifications (text, never commands) and the completion of a **Check again**. Remediation commands come from the stored advisory data and an allowlist, never from scanner text ([remediation.md](remediation.md)). A scanner's output is never executed and never followed as a URL by the server.
 
 Not added, on purpose: a per-package-count limit in the Linux and Windows collectors (the server's 200,000 observations per batch applies), and a size limit on the agent's own reads of the package database (it is the host's own data, read by its owner).
+
+### Acting from Slack
+
+Slack channels set up with a Slack app's signing secret carry interactive **Assign to me** and **Snooze 1 week** buttons, and Slack sends each click to the public `POST /api/v1/integrations/slack/actions` (`internal/api/slack.go`).
+
+**Signature verification.** The endpoint reads at most 64 KiB, then the button's value (`stk1|<channel>|<action>|<fix>`). It looks the channel up across workspaces (it must be an enabled `slack` channel of an enabled workspace with `signing_secret_ref`), resolves that channel's signing secret in the channel's workspace, and compares `v0=` HMAC-SHA256 of `v0:<X-Slack-Request-Timestamp>:<body>` with `X-Slack-Signature` in constant time. The workspace therefore comes from the channel whose secret verified the exact bytes, never from the payload alone: a payload naming another channel fails unless signed with that channel's secret. Every failure before verification gets the same 401, so channel ids and their configuration cannot be probed. The timestamp must be within 5 minutes either way, and the SHA-256 of the signature is stored per workspace (`slack_seen_requests`, kept 10 minutes): a replay is refused. After verification, the team and user ids must look like Slack ids, the click must come from the Slack workspace of the channel's webhook URL (when it can be told), and `response_url` must be `https://hooks.slack.com/...` (or `hooks.slack-gov.com`), so a signed payload can never make the server post elsewhere. Answers go out without redirects, through the same address checks as other outbound requests, and the response URL is never logged. The signing secret is a secret reference like every other (env: and file: references for instance administrators only) and is never returned, logged or put in a message; if it cannot be read, messages fall back to link buttons and clicks are refused.
+
+**Account linking.** Without a bot token Stackurity cannot read a Slack user's email, so a Slack user is never matched to an account by name or email. The first click of a Slack user gets an ephemeral reply (visible to them only) with `/slack/link#<token>`: 32 random bytes, stored as SHA-256 in the channel's workspace (`slack_link_requests`), single use, 15 minutes; a new click replaces an unused one. The token travels in the URL fragment and request bodies only. Confirming needs a signed-in browser session (API tokens are refused) in the same workspace (row-level security makes another workspace's token unknown), shows the Slack user and workspace being linked, and refuses a Slack account already linked to someone else (409; they must unlink first), so a forwarded link cannot take over a linked account. Links (`slack_links`) are per workspace with row-level security; a member with project access only sees only their own, and the API lists and deletes only the caller's. The linked user must be a member (database trigger). Linking and unlinking are audited (`slack_link.create`, `slack_link.delete`).
+
+**Acting.** A linked click runs as the linked person: their current membership (removed or disabled accounts are refused), organisation role and project roles are read at click time, the request is scoped like theirs (workspace, and member narrowing for project-only members), and the dashboard's own handler (`POST /findings/actions`, with `requireRole(engineer)`, `checkAction` and the per-asset role check) does the change in batches of 500 over the fix's open issues as that person sees them (at most 2,000). Audit entries and finding history are the dashboard's, with `source: slack` and the Slack ids. The risk of the design: anyone who controls a linked Slack account acts as its Stackurity user, as with any single sign-on; people should only link their own Slack account (the confirmation page says so) and can unlink at any time.
 
 ### Not provable by a test
 

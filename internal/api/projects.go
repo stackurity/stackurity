@@ -53,6 +53,11 @@ var projectRoutes = map[string]projectScope{
 	"GET /api/v1/tokens":                    accountScope,
 	"POST /api/v1/tokens":                   accountScope,
 	"DELETE /api/v1/tokens/{id}":            accountScope,
+	// The caller's own linked Slack accounts (rows narrowed to them too).
+	"GET /api/v1/slack/links":          accountScope,
+	"DELETE /api/v1/slack/links/{id}":  accountScope,
+	"POST /api/v1/slack/links/preview": accountScope,
+	"POST /api/v1/slack/links/confirm": accountScope,
 
 	// Shared by every workspace.
 	"GET /api/v1/packs":              globalScope,

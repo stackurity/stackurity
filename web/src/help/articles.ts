@@ -1067,14 +1067,14 @@ stackurity.exe agent --interval 6h`,
     section: "Settings and administration",
     summary: "A few messages that bring people to the dashboard: urgent alerts, daily or weekly summaries, overdue reminders. Slack, Teams, email, webhooks or Jira.",
     where: ["Settings", "Notifications"],
-    keywords: "slack teams email webhook jira issue ticket route channel urgent summary daily weekly overdue escalation quiet hours digest rate limit connected first scan",
+    keywords: "slack teams email webhook jira issue ticket route channel urgent summary daily weekly overdue escalation quiet hours digest rate limit connected first scan slack app interactivity signing secret link slack account assign snooze",
     body: [
       { h: "1. Add a channel (admin)" },
       {
         table: [
           ["Channel", "Configuration", "Secret reference"],
           ["Email", "SMTP host, port, from, recipients, username, encryption (STARTTLS by default)", "The SMTP password (optional)"],
-          ["Slack", "none", "The incoming webhook URL (required)"],
+          ["Slack", "Optional: the Slack app's signing secret reference, to act from inside Slack", "The incoming webhook URL (required)"],
           ["Microsoft Teams", "none", "The Workflows webhook URL (required)"],
           ["Webhook", "URL (HTTPS)", "HMAC signing key (optional)"],
           ["Jira", "Site URL, Cloud or Data Center, project key, issue type, account email (Cloud), optional labels, priority mapping and resolve transition", "API token (Cloud) or personal access token (required)"],
@@ -1111,6 +1111,26 @@ stackurity.exe agent --interval 6h`,
       { h: "Assign to me, Snooze, Open" },
       {
         p: "Each fix in a message has three links. In Slack they are buttons, and work with a plain incoming webhook: no Slack app is needed. **Assign to me** opens the fix and asks you to confirm, after you sign in; **Snooze** opens the fix with the snooze form ready; **Open** opens the fix. Following a link never changes anything by itself. A route limited to projects opens every link in its project.",
+      },
+      { h: "Act from inside Slack (optional Slack app)" },
+      {
+        p: "With a Slack app, **Assign to me** and **Snooze 1 week** work inside Slack: the message says \"Assigned to Nirmal\" or \"Snoozed until 3 Nov by Nirmal\" under the fix. **Open** still opens Stackurity. An administrator sets it up once per channel:",
+      },
+      {
+        steps: [
+          "Go to api.slack.com/apps, **Create New App**, **From scratch**, name it (for example Stackurity) and pick your Slack workspace.",
+          "**Incoming Webhooks**: turn it on, **Add New Webhook to Workspace**, pick the channel, and copy the webhook URL. No other scopes or OAuth settings are needed.",
+          "**Interactivity & Shortcuts**: turn it on and set the **Request URL** to `https://<your Stackurity address>/api/v1/integrations/slack/actions`. Save.",
+          "**Basic Information**, **App Credentials**: copy the **Signing Secret**.",
+          "In [Settings, Secrets](/settings/secrets), store the webhook URL and the signing secret (for example SLACK_WEBHOOK and SLACK_SIGNING).",
+          "In [Settings, Notifications](/settings/notifications), add (or edit) a Slack channel: webhook URL reference `secret:SLACK_WEBHOOK`, signing secret reference `secret:SLACK_SIGNING`. Use **Send test**.",
+        ],
+      },
+      {
+        p: "Your Stackurity server must be reachable from Slack at that address over HTTPS. Each person links their Slack account once: the first time they click, Slack shows them (only them) a link that works once, for 15 minutes; they sign in to Stackurity and confirm. After that their clicks act as them, with their role and projects: engineers and above can assign, security and admin can snooze, and people with access to some projects only can act on those projects' fixes. Refusals are explained to them in Slack. Every action is in the activity log as theirs, marked as from Slack. Linked accounts are listed, and can be unlinked, under the account menu, **Linked Slack accounts**.",
+      },
+      {
+        note: "Without the signing secret the buttons stay links to Stackurity, exactly as before. Each click is checked with the signing secret of the channel it came from, must be less than 5 minutes old and is accepted once.",
       },
       { h: "Jira issues" },
       {

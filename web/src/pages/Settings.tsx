@@ -53,6 +53,7 @@ const GROUPS: { title: string; entries: Entry[] }[] = [
       },
       { to: "/settings/teams", label: "Teams", about: "Owner teams for assets, alert routing and escalation.", min: "admin" },
       { to: "/settings/tokens", label: "API tokens", about: "Tokens for the API, CI scans and collectors." },
+      { to: "/settings/slack", label: "Linked Slack accounts", about: "Slack accounts whose Assign to me and Snooze clicks act as you." },
     ],
   },
   {

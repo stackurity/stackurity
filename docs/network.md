@@ -69,6 +69,8 @@ The server hands each plugin run the workspace's private-network policy, and the
 
 Only the channels you configure are contacted: your SMTP server, Slack or Teams webhook URLs, your webhook endpoints and your Jira site. Redirects are never followed. Destinations are checked against the workspace's private-network policy when the connection is made, so a name that later resolves to an internal address is refused too. Messages contain incident titles, asset and component names, and links to the dashboard.
 
+A Slack channel set up with a Slack app's signing secret (see [Acting from Slack](install.md#acting-from-slack)) also answers clicks on its buttons: the server posts once or twice per click to the `response_url` Slack sent with it, only on `hooks.slack.com` (or `hooks.slack-gov.com`), over HTTPS, without following redirects. The answer is an updated copy of the message (with "Assigned to ..." or "Snoozed until ... by ...") or a short reply only the clicker sees: why a click was refused, or a link to the dashboard to link their Slack account.
+
 A Jira channel calls the REST API of the configured site only (`/rest/api/3` on Jira Cloud, `/rest/api/2` on Data Center and Server): it checks the account and project (`/myself`, `/project/<key>`, `/priority`), searches the project for the incident's label, creates the issue, and later adds comments, sets the priority and reads and applies transitions. Issues contain the incident's title, priority and risk factors, up to 20 affected asset names with component versions and environments, the fix, and links to the dashboard; nothing from other incidents or workspaces. A Jira site on a private address is subject to the same `STACKURITY_PRIVATE_TARGETS` policy as webhooks.
 
 ### Container image integrations
@@ -78,6 +80,10 @@ Syft fetches image manifests and layers from the registry in the image reference
 ### Air-gapped installs
 
 Mirror the OSV bucket layout (`<ecosystem>/all.zip`, `<ecosystem>/modified_id.csv`, `<ecosystem>/<id>.json`) and point `STACKURITY_OSV_URL` at it. Do the same for the other `STACKURITY_*_URL` variables. Any feed you cannot mirror shows as stale, and the components it covers are listed as evaluation gaps. They are never treated as clean.
+
+### Inbound: Slack's interactivity requests
+
+The only inbound request from a third party is optional. A Slack app set up to act from inside Slack sends each button click to `POST /api/v1/integrations/slack/actions` on your server, from Slack's addresses, over HTTPS. It carries Slack's payload (the Slack workspace and user ids and names, the message, the button's value with the channel id and fix id, and a `response_url`) and is verified with the channel's signing secret before anything is read from the database beyond that channel. Without a Slack app nothing calls it, and every request to it is refused (401). To allow it through a firewall or reverse proxy, allow that one path from the internet; it needs no session and no other path. It is limited to 600 requests a minute per address.
 
 ## Restricting egress
 
