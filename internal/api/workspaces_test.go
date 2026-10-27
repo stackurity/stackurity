@@ -133,14 +133,14 @@ func TestWorkspaceIsolation(t *testing.T) {
 	}
 
 	// Lists seen from B never mention A.
-	for _, path := range []string{
+	for _, path := range append([]string{
 		"/api/v1/overview", "/api/v1/facets", "/api/v1/assets", "/api/v1/components", "/api/v1/components?q=alpha",
 		"/api/v1/inventory", "/api/v1/findings", "/api/v1/findings/summary", "/api/v1/fix-groups", "/api/v1/evaluation-gaps",
 		"/api/v1/incidents", "/api/v1/coverage", "/api/v1/teams", "/api/v1/users", "/api/v1/users/directory", "/api/v1/tokens",
 		"/api/v1/audit", "/api/v1/channels", "/api/v1/routes", "/api/v1/deliveries", "/api/v1/integrations", "/api/v1/jobs",
 		"/api/v1/enrollments", "/api/v1/conflicts", "/api/v1/remediation/policies", "/api/v1/remediation/plans",
 		"/api/v1/reports/evidence", "/api/v1/workspaces", "/api/v1/auth/me", "/api/v1/usage",
-	} {
+	}, editionIsolationLists...) {
 		code, body := get(betaSess, path)
 		if code >= 500 {
 			t.Errorf("GET %s: %d %s", path, code, body)

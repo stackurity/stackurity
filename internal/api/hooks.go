@@ -10,6 +10,10 @@ import (
 // an init function. Each is nil in the Community build, and nil does nothing,
 // so an edition that does not use one needs no code for it.
 var (
+	// editionPrepare runs at the start of Handler, before any middleware is
+	// set up, to adjust the server from the edition's configuration (for
+	// example WidgetOrigins).
+	editionPrepare func(s *Server)
 	// editionRootRoutes adds routes outside /api/v1, so outside the session
 	// and CSRF checks: callbacks from outside services that prove who they
 	// are some other way (a signature).

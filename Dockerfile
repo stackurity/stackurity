@@ -10,7 +10,8 @@ COPY web/ ./
 RUN npm run build
 
 # The licensed edition's files. Empty for Community; the ee image is built
-# with --build-context pro=PATH-TO-stackurity-pro --build-arg EDITION=ee.
+# with --build-context pro=PATH-TO-stackurity-pro --build-arg EDITION=ee;
+# EE_TAGS adds build tags an edition built on it needs (default "ee").
 FROM scratch AS pro
 
 FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine AS build
@@ -21,9 +22,10 @@ COPY . .
 COPY --from=web /src/web/dist ./web/dist
 ARG VERSION=dev
 ARG EDITION=community
+ARG EE_TAGS=ee
 ARG TARGETARCH
 RUN --mount=type=bind,from=pro,target=/pro set -e; FLAGS=""; \
-    if [ "$EDITION" = ee ]; then go run ./tools/eeoverlay -pro /pro > /tmp/ee.json; FLAGS="-tags ee -overlay /tmp/ee.json"; fi; \
+    if [ "$EDITION" = ee ]; then go run ./tools/eeoverlay -pro /pro > /tmp/ee.json; FLAGS="-tags $EE_TAGS -overlay /tmp/ee.json"; fi; \
     export GOOS=linux GOARCH=${TARGETARCH:-amd64}; \
     CGO_ENABLED=0 go build $FLAGS -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/stackurity ./cmd/stackurity; \
     for p in aws-managed kubernetes; do \

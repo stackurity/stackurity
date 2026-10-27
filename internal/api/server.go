@@ -94,6 +94,9 @@ type Server struct {
 }
 
 func (s *Server) Handler() http.Handler {
+	if editionPrepare != nil {
+		editionPrepare(s)
+	}
 	s.limiter = newRateLimiter(s.Store, s.Log)
 	r := chi.NewRouter()
 	if s.TrustProxy {

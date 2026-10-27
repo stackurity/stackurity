@@ -1,7 +1,10 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 # Checkout of the private stackurity-pro repository, for the licensed edition.
 PRO ?= ../stackurity-pro
-EE_FLAGS = -tags ee -overlay ee-overlay.json
+# Build tags of the licensed edition; an edition built on it adds its own
+# (EE_TAGS=ee,NAME).
+EE_TAGS ?= ee
+EE_FLAGS = -tags $(EE_TAGS) -overlay ee-overlay.json
 
 # First-party plugins, built next to the server and shipped in the image.
 PLUGINS = aws-managed kubernetes
@@ -39,7 +42,7 @@ test-ee: ee-overlay
 	go test $(EE_FLAGS) ./...
 
 image-ee:
-	docker build --build-context pro=$(PRO) --build-arg EDITION=ee --build-arg VERSION=$(VERSION) -t stackurity-ee:$(VERSION) .
+	docker build --build-context pro=$(PRO) --build-arg EDITION=ee --build-arg EE_TAGS=$(EE_TAGS) --build-arg VERSION=$(VERSION) -t stackurity-ee:$(VERSION) .
 
 clean:
 	rm -rf bin web/dist/assets web/dist/index.html
