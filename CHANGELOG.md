@@ -26,6 +26,7 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ### Fixed
 
+- **Evaluations and the priority pass no longer deadlock.** An evaluation changed findings in the order the matcher listed them, while the priority pass changed them in no fixed order, so the two could each hold a finding the other wanted; Postgres then aborted one of them (nothing was lost: the job failed an attempt and succeeded on its retry). Writers of many findings now lock them in id order before changing any: an evaluation, the priority pass, resolving findings whose component is gone, ignoring an issue (one finding or an approved request), ending an ignore rule, snooze expiry, escalation, and merging assets. The rest of the minute-by-minute upkeep of findings (ignore rules, fix plans, incidents) no longer runs while an evaluation of the workspace does: it waits up to 5 seconds, then delivers what is queued and leaves the upkeep to the next minute (after three such minutes in a row it waits up to 30 seconds). Recording second checks, and an evaluation's own priority pass, run under the evaluation lock too.
 - **Add an asset** in a project's settings no longer offers assets already in the project: they show as "already in this project" and cannot be picked.
 - The asset page header has a separator before the project chips (it read "first seen 15 min agoIn Shop").
 - A fix that is urgent because it matches an SOS rule, not because it is P1, says **Urgent: SOS rule**, so the label does not look wrong next to a P2 badge.

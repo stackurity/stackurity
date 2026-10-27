@@ -72,12 +72,14 @@ func applyExceptions(ctx context.Context, db q, ruleID int64, cond string) (int6
 		    AND f.status = 'open' AND f.state IN ('new', 'acknowledged', 'in_progress') AND f.exception_id IS DISTINCT FROM e.id
 		    AND NOT (e.until_fix AND `+freeFix("f")+`) AND (`+cond+`)
 		  ORDER BY f.id, e.created_at DESC),
+		-- Locked in id order before they change (see SyncFindings).
+		l AS (SELECT f.id FROM findings f JOIN m ON m.fid = f.id ORDER BY f.id FOR NO KEY UPDATE OF f),
 		u AS (
 		  UPDATE findings f SET state = 'risk_accepted', ignore_reason = m.reason, state_reason = m.note, mitigation = m.mitigation,
 		    suppressed_until = m.expires_at, until_fix = m.until_fix, exception_id = m.rid,
 		    verification_before = CASE WHEN m.reason = 'false_positive' AND f.verification_before = '' THEN f.verification ELSE f.verification_before END,
 		    verification = CASE WHEN m.reason = 'false_positive' THEN 'rejected' ELSE f.verification END
-		  FROM m WHERE f.id = m.fid
+		  FROM m JOIN l ON l.id = m.fid WHERE f.id = m.fid
 		  RETURNING f.workspace_id, f.id, m.from_state, m.rid, m.reason, m.everywhere)
 		INSERT INTO finding_events (workspace_id, finding_id, actor_type, actor_name, action, from_state, to_state, note, detail)
 		SELECT workspace_id, id, 'system', 'ignore rule', 'ignored', from_state, 'risk_accepted', 'ignore rule #' || rid,
@@ -108,8 +110,15 @@ const unIgnore = `suppressed_until = NULL, until_fix = false, ignore_reason = ''
 func (s *Store) ExpireSuppressions(ctx context.Context) (int64, error) {
 	var n int64
 	err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
+		// What both statements below change is locked first, in id order
+		// (see SyncFindings): one after the other, they would not be.
+		if _, err := tx.Exec(ctx, `SELECT f.id FROM findings f WHERE f.state IN ('suppressed', 'risk_accepted')
+			AND (f.suppressed_until <= now() OR (f.until_fix AND f.status = 'open' AND `+freeFix("f")+`))
+			ORDER BY f.id FOR UPDATE`); err != nil {
+			return err
+		}
 		lapsed, err := tx.Exec(ctx, `WITH o AS (
-			  SELECT id, state FROM findings WHERE state IN ('suppressed', 'risk_accepted') AND suppressed_until <= now() FOR UPDATE),
+			  SELECT id, state FROM findings WHERE state IN ('suppressed', 'risk_accepted') AND suppressed_until <= now() ORDER BY id FOR UPDATE),
 			u AS (UPDATE findings f SET state = 'new', `+unIgnore+` FROM o WHERE f.id = o.id
 			  RETURNING f.workspace_id, f.id, o.state AS from_state, f.state_reason)
 			INSERT INTO finding_events (workspace_id, finding_id, actor_type, actor_name, action, from_state, to_state, note)
@@ -119,7 +128,7 @@ func (s *Store) ExpireSuppressions(ctx context.Context) (int64, error) {
 		}
 		shipped, err := tx.Exec(ctx, `WITH o AS (
 			  SELECT f.id, f.state FROM findings f WHERE f.state IN ('suppressed', 'risk_accepted') AND f.until_fix
-			    AND f.status = 'open' AND `+freeFix("f")+` FOR UPDATE),
+			    AND f.status = 'open' AND `+freeFix("f")+` ORDER BY f.id FOR UPDATE),
 			u AS (UPDATE findings f SET state = 'new', `+unIgnore+` FROM o WHERE f.id = o.id
 			  RETURNING f.workspace_id, f.id, o.state AS from_state, f.fixed_version)
 			INSERT INTO finding_events (workspace_id, finding_id, actor_type, actor_name, action, from_state, to_state, note)
@@ -207,6 +216,19 @@ func (sp *IgnoreSpec) resolve(maxDays int, now time.Time) (*time.Time, error) {
 		return nil, nil
 	}
 	return nil, fmt.Errorf("%w: expiry must be date, until_fix or never", ErrInvalidAction)
+}
+
+// lockIssueFindings locks, in id order, every finding of the same issue
+// (kind, key and component) as the given ones. Ignoring a finding changes
+// it, the findings of the rule it replaces and those the new rule covers,
+// all of that issue, in three statements; locked as they go, they would
+// be locked out of id order and could deadlock with an evaluation or the
+// priority pass, which lock findings in id order (see SyncFindings).
+func lockIssueFindings(ctx context.Context, tx pgx.Tx, ids []int64) error {
+	_, err := tx.Exec(ctx, `SELECT f.id FROM findings f
+		WHERE (f.kind, f.key, f.component_id) IN (SELECT kind, key, component_id FROM findings WHERE id = ANY($1))
+		ORDER BY f.id FOR UPDATE`, ids)
+	return err
 }
 
 // ignoreFinding ignores finding id inside tx: it records a rule for the
@@ -344,6 +366,12 @@ func (s *Store) EndIgnoreRule(ctx context.Context, id int64, actor Actor) (int64
 				return ErrNotFound
 			}
 			return fmt.Errorf("%w: the rule has already ended", ErrConflict)
+		}
+		// The findings both statements below change are locked first, in id
+		// order, as an evaluation locks them (see SyncFindings).
+		if _, err := tx.Exec(ctx, `SELECT id FROM findings WHERE exception_id = $1 AND state = 'risk_accepted'
+			ORDER BY id FOR NO KEY UPDATE`, id); err != nil {
+			return err
 		}
 		// Fixed findings it covered lose the ignore quietly, so they do not
 		// stay ignored if they come back.
@@ -570,6 +598,11 @@ func (s *Store) DecideIgnoreRequest(ctx context.Context, id int64, approve bool,
 			sp := IgnoreSpec{Reason: r.Reason, Scope: r.Scope, Expiry: r.Expiry, Until: r.ExpiresAt, Note: r.Note, Mitigation: r.Mitigation}
 			expires, err := sp.resolve(maxDays, time.Now())
 			if err != nil {
+				return err
+			}
+			// Everything the approval may change is locked first, in id
+			// order (see lockIssueFindings).
+			if err := lockIssueFindings(ctx, tx, r.FindingIDs); err != nil {
 				return err
 			}
 			for _, fid := range r.FindingIDs {
@@ -926,7 +959,7 @@ func (s *Store) MarkFixApplied(ctx context.Context, fixGroup string, actor Actor
 			return ErrNotFound
 		}
 		tag, err := tx.Exec(ctx, `WITH o AS (
-			  SELECT id, state FROM findings WHERE fix_group = $1 AND status = 'open' AND state IN ('new', 'acknowledged', 'in_progress') FOR UPDATE),
+			  SELECT id, state FROM findings WHERE fix_group = $1 AND status = 'open' AND state IN ('new', 'acknowledged', 'in_progress') ORDER BY id FOR UPDATE),
 			u AS (UPDATE findings f SET state = 'in_progress', state_reason = $5 FROM o WHERE f.id = o.id
 			  RETURNING f.workspace_id, f.id, o.state AS from_state)
 			INSERT INTO finding_events (workspace_id, finding_id, actor_type, actor_id, actor_name, action, from_state, to_state, note, detail)
@@ -972,8 +1005,14 @@ func (s *Store) RegressedToAnnounce(ctx context.Context) ([]IssueCount, time.Tim
 // MarkRegressedNotified records that the regressions up to upto have been
 // announced (or that no route wanted them).
 func (s *Store) MarkRegressedNotified(ctx context.Context, upto time.Time) error {
-	_, err := s.Pool.Exec(ctx, `UPDATE findings SET regressed_notified_at = now()
-		WHERE status = 'open' AND regressed_at IS NOT NULL AND regressed_at <= $1
-		  AND (regressed_notified_at IS NULL OR regressed_notified_at < regressed_at)`, upto)
+	// Locked in id order before they change (see SyncFindings): this runs
+	// while an evaluation may.
+	_, err := s.Pool.Exec(ctx, `WITH l AS (SELECT id FROM findings
+		  WHERE status = 'open' AND regressed_at IS NOT NULL AND regressed_at <= $1
+		    AND (regressed_notified_at IS NULL OR regressed_notified_at < regressed_at)
+		  ORDER BY id FOR NO KEY UPDATE)
+		UPDATE findings f SET regressed_notified_at = now() FROM l
+		WHERE f.id = l.id AND f.status = 'open' AND f.regressed_at IS NOT NULL AND f.regressed_at <= $1
+		  AND (f.regressed_notified_at IS NULL OR f.regressed_notified_at < f.regressed_at)`, upto)
 	return err
 }

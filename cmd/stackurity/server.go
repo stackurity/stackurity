@@ -637,6 +637,16 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 	// job per workspace; the job checks a batch of 500 findings.
 	checker := &secondcheck.Runner{Store: st, Log: log}
 	w.Handle("second.check", func(ctx context.Context, _ json.RawMessage) error {
+		// Recording second checks writes rows an evaluation deletes and
+		// rewrites: not while one runs.
+		release, err := st.LockEvaluations(ctx)
+		if errors.Is(err, store.ErrEvaluationBusy) {
+			return worker.Defer(5*time.Second+mrand.N(10*time.Second), "an evaluation of this workspace is running")
+		}
+		if err != nil {
+			return err
+		}
+		defer release()
 		n, err := checker.Run(ctx)
 		if n.Checked > 0 {
 			log.Info("second check", "checked", n.Checked, "agreed", n.Agreed, "disagreed", n.Disagreed, "could_not_check", n.CouldNotCheck)
@@ -976,12 +986,20 @@ func registerIntel(w *worker.Worker, st *store.Store, dataDir string, log *slog.
 		if err != nil {
 			return err
 		}
-		stats, err := eval.Evaluate(ctx, comps, p.AssetID)
+		// The evaluation, and the priorities of what it found, run under the
+		// workspace's evaluation lock: the dispatcher's upkeep of the same
+		// findings waits for it rather than lock them in another order.
+		release, err := st.LockEvaluations(ctx)
 		if errors.Is(err, store.ErrEvaluationBusy) {
 			// Another evaluation of this workspace runs: try again shortly,
 			// leaving the worker slot to other jobs meanwhile.
 			return worker.Defer(5*time.Second+mrand.N(10*time.Second), "another evaluation of this workspace is running")
 		}
+		if err != nil {
+			return err
+		}
+		defer release()
+		stats, err := eval.EvaluateLocked(ctx, comps, p.AssetID)
 		if err != nil {
 			return err
 		}

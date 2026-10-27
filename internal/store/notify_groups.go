@@ -243,9 +243,14 @@ func (s *Store) SetIncidentEscalations(ctx context.Context, levels map[int64]int
 			return err
 		}
 		// A first-scan backlog is not escalated (see BacklogFinding).
-		_, err := tx.Exec(ctx, `UPDATE findings f SET escalation_level = GREATEST(f.escalation_level, x.level), escalated_at = now()
-			FROM unnest($1::bigint[], $2::int[]) AS x(id, level), assets a
-			WHERE f.incident_id = x.id AND f.status = 'open' AND a.id = f.asset_id AND NOT `+BacklogFinding, ids, lv)
+		// Locked in id order before they change (see SyncFindings): this
+		// runs while an evaluation may.
+		_, err := tx.Exec(ctx, `WITH l AS (SELECT f.id FROM findings f JOIN assets a ON a.id = f.asset_id
+			  WHERE f.incident_id = ANY($1) AND f.status = 'open' AND NOT `+BacklogFinding+`
+			  ORDER BY f.id FOR NO KEY UPDATE OF f)
+			UPDATE findings f SET escalation_level = GREATEST(f.escalation_level, x.level), escalated_at = now()
+			FROM unnest($1::bigint[], $2::int[]) AS x(id, level), assets a, l
+			WHERE l.id = f.id AND f.incident_id = x.id AND f.status = 'open' AND a.id = f.asset_id AND NOT `+BacklogFinding, ids, lv)
 		return err
 	})
 }

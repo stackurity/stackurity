@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/stackurity/stackurity/internal/fixplan/planner"
@@ -47,6 +48,19 @@ type Dispatcher struct {
 	PlatformTarget func(ctx context.Context) (id int64, why string, err error)
 }
 
+// tickSkips counts, per store and workspace, the ticks in a row whose
+// upkeep waited for an evaluation (Dispatcher values are copied, so the
+// count lives outside them).
+var (
+	tickSkipsMu sync.Mutex
+	tickSkips   = map[tickSkipKey]int{}
+)
+
+type tickSkipKey struct {
+	st *store.Store
+	ws int64
+}
+
 func (d *Dispatcher) now() time.Time {
 	if d.Now != nil {
 		return d.Now()
@@ -54,9 +68,71 @@ func (d *Dispatcher) now() time.Time {
 	return time.Now()
 }
 
+// tickLockWait is how long a tick waits for a running evaluation of its
+// workspace before it leaves the upkeep of findings to the next tick;
+// after a few ticks in a row without it, it waits longer, so a workspace
+// that evaluates all the time still gets its upkeep.
+const (
+	tickLockWait     = 5 * time.Second
+	tickLockWaitLong = 30 * time.Second
+	tickSkipsBefore  = 3
+)
+
 // Tick runs one full cycle: workflow upkeep, prioritisation, correlation,
 // system checks, planning and delivery.
+//
+// Everything up to planning writes findings an evaluation also writes
+// (states, priorities, fix groups, incidents), many rows per statement.
+// Run at the same time, the two could lock the same rows in opposite
+// orders and deadlock, so this part holds the workspace's evaluation lock
+// (Store.LockEvaluationsWait). When an evaluation runs longer than the
+// wait, the tick delivers what is queued and leaves the rest to the next.
 func (d *Dispatcher) Tick(ctx context.Context) error {
+	ws, _ := tenant.Workspace(ctx)
+	wait := tickLockWait
+	if d.skipped(ws, false) >= tickSkipsBefore {
+		wait = tickLockWaitLong
+	}
+	release, err := d.Store.LockEvaluationsWait(ctx, wait)
+	switch {
+	case errors.Is(err, store.ErrEvaluationBusy):
+		n := d.skipped(ws, true)
+		if d.Log != nil {
+			d.Log.Info("an evaluation is running: findings upkeep waits for the next tick", "workspace", ws, "waited", wait, "ticks_skipped", n)
+		}
+		return d.Deliver(ctx)
+	case err != nil:
+		return fmt.Errorf("evaluation lock: %w", err)
+	}
+	d.resetSkips(ws)
+	err = d.upkeep(ctx)
+	release()
+	if err != nil {
+		return err
+	}
+	return d.Deliver(ctx)
+}
+
+// skipped returns how many ticks in a row the workspace's upkeep was left
+// for later, counting one more when add.
+func (d *Dispatcher) skipped(ws int64, add bool) int {
+	tickSkipsMu.Lock()
+	defer tickSkipsMu.Unlock()
+	k := tickSkipKey{d.Store, ws}
+	if add {
+		tickSkips[k]++
+	}
+	return tickSkips[k]
+}
+
+func (d *Dispatcher) resetSkips(ws int64) {
+	tickSkipsMu.Lock()
+	defer tickSkipsMu.Unlock()
+	delete(tickSkips, tickSkipKey{d.Store, ws})
+}
+
+// upkeep is the part of a tick that writes findings and plans messages.
+func (d *Dispatcher) upkeep(ctx context.Context) error {
 	if _, err := d.Store.ExpireSuppressions(ctx); err != nil {
 		return fmt.Errorf("expire suppressions: %w", err)
 	}
@@ -98,7 +174,7 @@ func (d *Dispatcher) Tick(ctx context.Context) error {
 	if err := d.Plan(ctx); err != nil {
 		return fmt.Errorf("plan: %w", err)
 	}
-	return d.Deliver(ctx)
+	return nil
 }
 
 // platformHere reports whether platform incidents belong to the workspace

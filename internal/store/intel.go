@@ -469,6 +469,23 @@ func (s *Store) SyncFindings(ctx context.Context, kinds []string, inventoryIDs [
 				"fixed_version", "sources", "evidence"}, pgx.CopyFromRows(rows)); err != nil {
 			return err
 		}
+		// Lock the findings this transaction may change, in id order, before
+		// changing any: the upsert, the ignore rules and the resolutions
+		// below would otherwise lock them in whatever order they find them
+		// (the upsert in the matcher's order), and a writer of the same rows
+		// that locks them in id order (the priority pass, workflow actions)
+		// could deadlock with it. That is the wanted findings (the upsert),
+		// and the open ones on the evaluated rows and assets (ignore rules,
+		// resolutions); rows the upsert inserts are new. NO KEY UPDATE is
+		// the lock those statements take anyway.
+		if _, err := tx.Exec(ctx, `SELECT f.id FROM findings f WHERE f.id IN (
+			  SELECT o.id FROM findings o JOIN want_findings w ON w.inventory_id = o.inventory_id AND w.kind = o.kind AND w.key = o.key
+			  UNION ALL
+			  SELECT o.id FROM findings o WHERE o.status = 'open'
+			    AND (o.inventory_id = ANY($1) OR o.asset_id IN (SELECT asset_id FROM want_findings)))
+			ORDER BY f.id FOR NO KEY UPDATE`, inventoryIDs); err != nil {
+			return err
+		}
 		// Findings detected again after being resolved are recorded before
 		// the upsert reopens them, with the resolution they had.
 		if _, err := tx.Exec(ctx, `INSERT INTO finding_events (workspace_id, finding_id, actor_type, actor_name, action, note, detail)
@@ -535,7 +552,10 @@ func (s *Store) SyncFindings(ctx context.Context, kinds []string, inventoryIDs [
 // ResolveRemovedFindings closes findings whose inventory row is gone, saying
 // why: fixed by a remediation plan, upgraded to another version, or removed.
 func (s *Store) ResolveRemovedFindings(ctx context.Context) (int64, error) {
-	tag, err := s.Pool.Exec(ctx, `WITH r AS (UPDATE findings f SET status = 'resolved', resolved_at = now(),
+	// Locked in id order before they change (see SyncFindings).
+	tag, err := s.Pool.Exec(ctx, `WITH l AS (SELECT f.id FROM findings f JOIN inventory i ON i.id = f.inventory_id
+		  WHERE f.status = 'open' AND i.removed_at IS NOT NULL ORDER BY f.id FOR NO KEY UPDATE OF f),
+		r AS (UPDATE findings f SET status = 'resolved', resolved_at = now(),
 		resolution = COALESCE(
 		  (SELECT 'fixed by remediation plan #' || ra.plan_id || ' (upgraded to ' || ra.to_version || ')'
 		     FROM remediation_actions ra WHERE ra.inventory_id = f.inventory_id AND ra.status = 'verified'
@@ -544,7 +564,7 @@ func (s *Store) ResolveRemovedFindings(ctx context.Context) (int64, error) {
 		     WHERE cur.asset_id = f.asset_id AND cur.component_id = f.component_id AND cur.removed_at IS NULL
 		     ORDER BY cur.last_seen DESC LIMIT 1),
 		  'component no longer installed')
-		FROM inventory i WHERE i.id = f.inventory_id AND f.status = 'open' AND i.removed_at IS NOT NULL
+		FROM inventory i, l WHERE l.id = f.id AND i.id = f.inventory_id AND f.status = 'open' AND i.removed_at IS NOT NULL
 		RETURNING f.workspace_id, f.id, f.resolution)
 		`+resolvedEvents)
 	return tag.RowsAffected(), err

@@ -167,7 +167,8 @@ func riskRows(ctx context.Context, db q, now time.Time, assetID int64) ([]riskRo
 		i.scope, f.verification, f.first_seen, COALESCE((f.evidence->>'not_running_kernel')::boolean, false),
 		f.priority, f.state, f.fix_due, f.title, f.key, a.id, a.name
 		FROM findings f JOIN assets a ON a.id = f.asset_id JOIN inventory i ON i.id = f.inventory_id
-		WHERE f.status = 'open' AND ($1::bigint = 0 OR f.asset_id = $1)`, assetID)
+		WHERE f.status = 'open' AND ($1::bigint = 0 OR f.asset_id = $1)
+		ORDER BY f.id`, assetID)
 	if err != nil {
 		return nil, err
 	}
@@ -210,6 +211,9 @@ func (s *Store) PrioritizeAsset(ctx context.Context, p risk.Policy, now time.Tim
 		res            risk.Result
 		ackDue, fixDue time.Time
 	}
+	// Rows come in id order and are updated in that order (one batch, one
+	// transaction), the order an evaluation locks findings in, so the two
+	// cannot deadlock (see SyncFindings).
 	ups := make([]upd, 0, len(rows))
 	version := p.Version()
 	for _, r := range rows {
@@ -269,6 +273,13 @@ var stateFor = map[string]string{
 // ApplyFindingAction changes a finding's workflow state and records history.
 func (s *Store) ApplyFindingAction(ctx context.Context, id int64, a FindingAction, actor Actor) error {
 	return pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
+		if a.Action == "ignore" {
+			// The rule changes other findings of the issue too: lock them
+			// all in id order first.
+			if err := lockIssueFindings(ctx, tx, []int64{id}); err != nil {
+				return err
+			}
+		}
 		var state, status string
 		var hasFix bool
 		if err := tx.QueryRow(ctx, `SELECT state, status, `+freeFix("f")+` FROM findings f WHERE id = $1 FOR UPDATE`, id).Scan(&state, &status, &hasFix); err != nil {
@@ -820,8 +831,10 @@ func (s *Store) SetIncidentEscalation(ctx context.Context, id int64, level int) 
 		if _, err := tx.Exec(ctx, `UPDATE incidents SET escalation_level = $2 WHERE id = $1`, id, level); err != nil {
 			return err
 		}
-		_, err := tx.Exec(ctx, `UPDATE findings SET escalation_level = GREATEST(escalation_level, $2), escalated_at = now()
-			WHERE incident_id = $1 AND status = 'open'`, id, level)
+		// Locked in id order before they change (see SyncFindings).
+		_, err := tx.Exec(ctx, `WITH l AS (SELECT id FROM findings WHERE incident_id = $1 AND status = 'open' ORDER BY id FOR NO KEY UPDATE)
+			UPDATE findings f SET escalation_level = GREATEST(f.escalation_level, $2), escalated_at = now()
+			FROM l WHERE f.id = l.id AND f.incident_id = $1 AND f.status = 'open'`, id, level)
 		return err
 	})
 }
