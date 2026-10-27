@@ -2,11 +2,13 @@ package api
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -100,15 +102,24 @@ func (s *Server) clientKeySet(ctx context.Context, c *store.OAuthClient, kid str
 	return set, nil
 }
 
-// assertionIssuer reads the client_id an assertion claims, before checking
-// it, to find the client when the request does not name it.
+// assertionIssuer reads which client an assertion names, to find that
+// client when the request does not send client_id (RFC 7523 allows it).
+// It is only a lookup key: nothing is trusted until verifyClientAssertion
+// has checked the signature against that client's own keys and iss, sub,
+// aud, exp and jti.
 func assertionIssuer(assertion string) string {
-	tok, err := jwt.ParseSigned(assertion, assertionAlgs)
+	parts := strings.Split(assertion, ".")
+	if len(parts) != 3 || len(parts[1]) > 8<<10 {
+		return ""
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
 		return ""
 	}
-	var c jwt.Claims
-	if err := tok.UnsafeClaimsWithoutVerification(&c); err != nil {
+	var c struct {
+		Issuer string `json:"iss"`
+	}
+	if json.Unmarshal(payload, &c) != nil {
 		return ""
 	}
 	return c.Issuer
