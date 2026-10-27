@@ -6,6 +6,10 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+### Security
+
+- go-jose is upgraded to 4.1.6 for GHSA-mgcc-cww5-fp2q (high). Stackurity uses it to check single sign-on tokens and, new in this release, assistants' signed client assertions.
+
 ### Added
 
 - **Settings → AI assistants: connect an assistant step by step.** The page shows the server's MCP address with a Copy button and a card per assistant (Claude, Claude Code, ChatGPT, Cursor, Visual Studio Code, Windsurf, Gemini CLI, Replit, other) that opens short numbered steps checked against each vendor's documentation, with one-click install links for Cursor, VS Code and Replit, and questions to try. Connected assistants, with Allow changes and Disconnect, are listed below. Without `STACKURITY_BASE_URL` it explains how to turn assistants on. It is linked from the account menu (**Connect an AI assistant**) and from Help. `GET /assistants` now returns `mcp_url`. The old address, `/settings/assistants`, opens it.
