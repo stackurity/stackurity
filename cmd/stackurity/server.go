@@ -231,19 +231,29 @@ func serverCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			trustedProxies, err := api.ParseTrustedProxies(os.Getenv("STACKURITY_TRUSTED_PROXIES"))
+			if err != nil {
+				return err
+			}
+			trustProxy := os.Getenv("STACKURITY_TRUST_PROXY") == "true"
+			if !trustProxy && (os.Getenv("STACKURITY_TRUSTED_PROXIES") != "" || os.Getenv("STACKURITY_TRUSTED_PROXY_HEADER") != "") {
+				log.Warn("STACKURITY_TRUSTED_PROXIES and STACKURITY_TRUSTED_PROXY_HEADER apply only with STACKURITY_TRUST_PROXY=true")
+			}
 			srv := &api.Server{
 				OpenAIAppsChallenge: challenge,
 				Pro:                 proCfg,
 				Dispatcher:          dispatcher, AllowHTTPWebhooks: allowHTTPHooks, Plugins: pluginRunner,
 				Store: st, Log: log, Secrets: res, Version: version, SetupToken: setupToken,
 				BaseURL: os.Getenv("STACKURITY_BASE_URL"), AgentDir: os.Getenv("STACKURITY_AGENT_DIR"),
-				CookieSecure: cookieSecure,
-				TrustProxy:   os.Getenv("STACKURITY_TRUST_PROXY") == "true",
-				Schema:       schema,
-				UI:           web.Dist(),
-				SecretBox:    box,
-				Packs:        packMgr,
-				Licence:      holder, Gate: gate, LicenceFromEnv: licFromEnv,
+				CookieSecure:       cookieSecure,
+				TrustProxy:         trustProxy,
+				TrustedProxyHeader: strings.TrimSpace(os.Getenv("STACKURITY_TRUSTED_PROXY_HEADER")),
+				TrustedProxies:     trustedProxies,
+				Schema:             schema,
+				UI:                 web.Dist(),
+				SecretBox:          box,
+				Packs:              packMgr,
+				Licence:            holder, Gate: gate, LicenceFromEnv: licFromEnv,
 				Health: checker, UpdateCheck: updateCfg.Enabled,
 				FeedbackURL: feedbackURL,
 			}

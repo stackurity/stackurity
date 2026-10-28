@@ -278,7 +278,7 @@ func TestInvitationSecurity(t *testing.T) {
 	anonFrom := func() *session {
 		visitors++
 		s := e.anon()
-		s.hdr = map[string]string{"X-Forwarded-For": fmt.Sprintf("192.0.2.%d", visitors)}
+		s.hdr = map[string]string{"CF-Connecting-IP": fmt.Sprintf("192.0.2.%d", visitors)}
 		return s
 	}
 	ctx := context.Background()

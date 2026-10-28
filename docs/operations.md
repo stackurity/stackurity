@@ -221,6 +221,14 @@ At least five more assets went stale within an hour (an asset is stale when noth
 
 Some assets have not reported for over a day after being marked stale. Their inventory and findings are out of date, their coverage says so, and each workspace has a collection incident for them. Decommissioned hosts belong deleted (or merged), so they stop counting; others need their agent or integration fixed.
 
+### Sign-in refused: too many login attempts
+
+Failed sign-ins back off per account and client address (five are free, then 30 seconds doubling to 15 minutes), and an account takes at most 100 failures every 15 minutes from all addresses together ([limits](install.md#running-several-replicas)). The answer carries `Retry-After`.
+
+- Look at the audit log for `auth.login_failed`, `auth.login_backoff` and `auth.login_locked` on the account. A backoff only holds up the address that failed: the owner can sign in from another network, through single sign-on, or after the wait. A successful sign-in clears its address's count.
+- If every event shows the same private address (your proxy, a tunnel connector, or the Docker bridge gateway), the server is not seeing client addresses, and everyone shares one count. Check `STACKURITY_TRUST_PROXY=true`, that `STACKURITY_TRUSTED_PROXY_HEADER` is the header your proxy sets, and that the proxy's address is in `STACKURITY_TRUSTED_PROXIES`; the server logs a warning naming an untrusted peer that sent the header ([Client addresses behind a proxy](install.md#client-addresses-behind-a-proxy)).
+- To lift every sign-in backoff and account cap at once (for example after fixing the above), connect with `psql` and run `DELETE FROM rate_limits WHERE key LIKE 'login-fail:%' OR key LIKE 'login-account-fail:%';`. Keys are hashed, so one account cannot be picked out.
+
 ## Memory
 
 The server's memory is mostly the Go heap. Background work is built to hold a bounded amount whatever the data: a vulnerability feed sync stores OSV records in batches of at most 500 records and 16 MiB of JSON (Ubuntu kernel records run to megabytes each), and an evaluation reads a package's advisories for the release it evaluates only, and keeps them only while it evaluates that package's rows.

@@ -47,3 +47,59 @@ func (s *Store) PurgeRateLimits(ctx context.Context) (int64, error) {
 	}
 	return tag.RowsAffected(), nil
 }
+
+// Failure counters (login backoff). A counter is one rate_limits row whose
+// window_start is the epoch, so it never meets a fixed-window row: hits is
+// the number of failures in a row, and expires_at is the last failure plus
+// the memory passed in, after which the failures are forgotten (and the
+// hourly housekeeping deletes the row). Times come from the database clock,
+// so replicas agree.
+
+// failureEpoch is the window_start that marks a failure counter.
+const failureEpoch = "epoch"
+
+// RecordFailure counts one failure for subject in bucket and returns the
+// failures in a row, this one included, and the database time of this one.
+func (s *Store) RecordFailure(ctx context.Context, bucket, subject string, memory time.Duration) (int, time.Time, error) {
+	if memory < time.Second {
+		return 0, time.Time{}, fmt.Errorf("failure memory %s is shorter than a second: %w", memory, ErrInvalid)
+	}
+	var n int
+	var at time.Time
+	err := s.Pool.QueryRow(tenant.System(ctx), `INSERT INTO rate_limits AS r (key, window_start, hits, expires_at)
+		VALUES ($1, $3::timestamptz, 1, now() + make_interval(secs => $2))
+		ON CONFLICT (key, window_start) DO UPDATE
+		SET hits = CASE WHEN r.expires_at < now() THEN 1 ELSE r.hits + 1 END, expires_at = EXCLUDED.expires_at
+		RETURNING hits, now()`, rateLimitKey(bucket, subject), memory.Seconds(), failureEpoch).Scan(&n, &at)
+	return n, at, err
+}
+
+// Failures returns subject's failures in a row in bucket, the database time
+// of the last one and the database's current time; no failures is 0.
+func (s *Store) Failures(ctx context.Context, bucket, subject string, memory time.Duration) (n int, last, now time.Time, err error) {
+	err = s.Pool.QueryRow(tenant.System(ctx), `SELECT COALESCE(max(hits), 0),
+			COALESCE(max(expires_at) - make_interval(secs => $2), now()), now()
+		FROM rate_limits WHERE key = $1 AND window_start = $3::timestamptz AND expires_at >= now()`,
+		rateLimitKey(bucket, subject), memory.Seconds(), failureEpoch).Scan(&n, &last, &now)
+	return n, last, now, err
+}
+
+// ClearFailures forgets subject's failures in bucket.
+func (s *Store) ClearFailures(ctx context.Context, bucket, subject string) error {
+	_, err := s.Pool.Exec(tenant.System(ctx), `DELETE FROM rate_limits WHERE key = $1 AND window_start = $2::timestamptz`,
+		rateLimitKey(bucket, subject), failureEpoch)
+	return err
+}
+
+// RateLimitCount returns subject's hits in bucket in the current window of
+// length window, without counting one.
+func (s *Store) RateLimitCount(ctx context.Context, bucket, subject string, window time.Duration) (int, error) {
+	if window < time.Second {
+		return 0, fmt.Errorf("rate limit window %s is shorter than a second: %w", window, ErrInvalid)
+	}
+	var hits int
+	err := s.Pool.QueryRow(tenant.System(ctx), `SELECT COALESCE(max(hits), 0) FROM rate_limits
+		WHERE key = $1 AND window_start = to_timestamp(floor(extract(epoch FROM now()) / $2) * $2)`,
+		rateLimitKey(bucket, subject), window.Seconds()).Scan(&hits)
+	return hits, err
+}
