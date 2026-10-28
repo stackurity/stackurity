@@ -61,6 +61,7 @@ var projectScopes = map[string]string{
 	"GET /.well-known/oauth-protected-resource":     "public",
 	"GET /.well-known/oauth-protected-resource/mcp": "public",
 	"GET /.well-known/oauth-authorization-server":   "public",
+	"GET /.well-known/openai-apps-challenge":        "public",
 	"POST /oauth/register":                          "public",
 	"POST /oauth/token":                             "public",
 	"POST /oauth/revoke":                            "public",

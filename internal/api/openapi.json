@@ -1666,7 +1666,7 @@
    "get": {
     "operationId": "get_assistants",
     "summary": "The caller's connected assistants in every organisation they belong to",
-    "description": "The caller's connected assistants in every organisation they belong to: `client_name`, `redirect_host`, `workspace_name`, `project_name`, `role`, `allow_changes`, `created_at`, `last_used_at`\n\nRole: a browser session",
+    "description": "The caller's connected assistants in every organisation they belong to: `client_name`, `redirect_host`, `workspace_name`, `project_name`, `role`, `allow_changes`, `created_at`, `last_used_at`. `mcp_url` is the address to add in an assistant, empty while the server has no `STACKURITY_BASE_URL` (assistants are off).\n\nRole: a browser session",
     "tags": [
      "Account"
     ],
@@ -3729,7 +3729,7 @@
    "get": {
     "operationId": "get_fix_groups_summary",
     "summary": "Fix groups and findings per kind and bucket",
-    "description": "Groups and findings per kind, plus `focus`: the number of focus groups and their findings, groups and findings per other bucket (`hidden`), and the assets with focus groups\n\nRole: viewer",
+    "description": "Groups and findings per kind, plus `focus`: the number of focus groups and their findings, groups and findings per other bucket (`hidden`), and the assets with focus groups. Counts follow `group_by` as `GET /fix-groups` does: grouped by fix, the same fix in several places counts once\n\nRole: viewer",
     "tags": [
      "Findings and fixes"
     ],
@@ -3741,6 +3741,18 @@
       "required": false,
       "schema": {
        "type": "string"
+      }
+     },
+     {
+      "name": "group_by",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "enum": [
+        "fix",
+        "asset"
+       ]
       }
      }
     ],

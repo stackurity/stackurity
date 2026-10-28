@@ -25,12 +25,14 @@ import {
   changeText,
   FIX_KIND_HELP,
   FIX_KIND_LABEL,
+  fixesFrom,
   FixGroupCard,
   FixKindIcon,
   GroupBadges,
   PRIO_CLASS,
   SEV_CLASS,
   urgencyOf,
+  versionsText,
 } from "../components/FixGroups";
 import { Badge } from "../components/Badge";
 import { assignGroup, FindingActions, GROUP_ACTION_MAX } from "../components/Workflow";
@@ -283,7 +285,8 @@ export function FixGroupDetailPage() {
   const g = res.data.group;
   const page = res.data.findings?.items ?? [];
   const total = res.data.findings?.total ?? 0;
-  const versions = g.from_version || g.to_version ? `${g.from_version ?? "?"} → ${g.to_version ?? "?"}` : null;
+  const versions = versionsText(g) || null;
+  const from = fixesFrom(g);
   const issuesLink = `/fixes/issues?fix_group=${encodeURIComponent(g.id)}`;
   const u = urgencyOf(g);
   const locations = [...new Set(page.map((f) => f.location).filter(Boolean))];
@@ -353,6 +356,7 @@ export function FixGroupDetailPage() {
               {versions && (
                 <>
                   , <span className="mono break">{versions}</span>
+                  {from && <span className="muted"> ({from})</span>}
                 </>
               )}
             </p>
@@ -403,7 +407,16 @@ export function FixGroupDetailPage() {
             )}
             {g.recommended_version && g.recommended_version !== g.to_version && (
               <p className="small">
-                <strong>Recommended:</strong> <span className="mono">{g.recommended_version}</span>, the newest stable release in that line.
+                {g.target_version === g.recommended_version ? (
+                  <>
+                    <strong>Why {g.recommended_version}:</strong> it is the newest stable release in that line. Any version from{" "}
+                    <span className="mono">{g.to_version}</span> fixes these issues.
+                  </>
+                ) : (
+                  <>
+                    <strong>Recommended:</strong> <span className="mono">{g.recommended_version}</span>, the newest stable release in that line.
+                  </>
+                )}
                 {g.rationale && g.rationale.length > 0 && <span className="muted"> {g.rationale.join(" ")}</span>}
               </p>
             )}

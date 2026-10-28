@@ -4,6 +4,36 @@ All notable changes to Stackurity. Versions follow [Semantic Versioning](https:/
 
 Each release's section is published as its GitHub release notes, and a tag without a section here cannot be released (`go run ./tools/changelog -version vX.Y.Z` prints it). New changes go under **Unreleased**, which is renamed to the version when it is tagged. Subsections are **Security**, **Added**, **Changed**, **Fixed** and **Upgrading**. Put fixes for vulnerabilities under `### Security`, first: installations treat a release with that heading as a security release and show administrators a banner they can only snooze.
 
+## Unreleased
+
+### Security
+
+- go-jose is upgraded to 4.1.6 for GHSA-mgcc-cww5-fp2q (high). Stackurity uses it to check single sign-on tokens and, new in this release, assistants' signed client assertions.
+
+### Added
+
+- **Settings → AI assistants: connect an assistant step by step.** The page shows the server's MCP address with a Copy button and a card per assistant (Claude, Claude Code, ChatGPT, Cursor, Visual Studio Code, Windsurf, Gemini CLI, Replit, other) that opens short numbered steps checked against each vendor's documentation, with one-click install links for Cursor, VS Code and Replit, and questions to try. Connected assistants, with Allow changes and Disconnect, are listed below. Without `STACKURITY_BASE_URL` it explains how to turn assistants on. It is linked from the account menu (**Connect an AI assistant**) and from Help. `GET /assistants` now returns `mcp_url`. The old address, `/settings/assistants`, opens it.
+- **Create a team where you need one.** Giving a team access to a project offers **Create a team** in place, and selects the new team. Team dropdowns with no teams (asset owner, assigning issues, remediation policies) say where teams are made. Community's one-team limit still applies.
+- **Home's first-run checklist** also asks to connect an AI assistant, and each item opens the page that does it: add a server, connect an AI assistant, turn on notifications, invite your team. `GET /onboarding` has a new `steps.assistant`.
+- **ChatGPT can sign in.** Clients whose metadata document declares `private_key_jwt` (ChatGPT's, https://chatgpt.com/oauth/client.json, does) authenticate at the token endpoint with a signed client assertion (RFC 7523), checked against the keys at their `jwks_uri`: issuer, subject, audience, expiry, and a `jti` that cannot be used twice. Migration 0043 adds the method, the client's keys and the used assertions; it is additive.
+- `GET /.well-known/openai-apps-challenge` serves `STACKURITY_OPENAI_APPS_CHALLENGE` (or `_FILE`) as text for OpenAI's domain check, and 404 when it is unset (it used to return the dashboard).
+- **Data handling** in docs/ai-assistants.md: what an assistant can read and change, how your role caps it, how to disconnect, and that Stackurity never receives or stores prompts.
+
+### Changed
+
+- Every MCP tool has a title and sets `readOnlyHint`, `destructiveHint` and `openWorldHint` explicitly, as assistant directories require. Renaming a project, removing assets from one, assigning, snoozing and ignoring are marked destructive; inviting someone is marked open-world (it emails any address).
+- **OAuth limits suit hosted assistants**, which reach the server from their vendor's shared addresses: token requests are limited per code or refresh token (10 a minute), per client (600), in all (6,000) and per address only as an outer bound (1,200, was 60). Registration allows 200 an hour per address (was 20) and 2,000 in all; `/mcp` allows 300 failed tokens a minute per address (was 30).
+- **Upgrade advice leads with the recommended version.** A package upgrade's title and action name the newest stable release in the minimum fix's major line when release data has one: "Upgrade ip-address 10.1.0 → 10.7.5", with "fixes from 10.7.4" beside it, where it read "→ 10.7.4". Home, Fixes, a fix's page, Slack and email messages that list fixes, and the MCP `action_plan` and `remediation_plan` tools show it. Fix groups have a new `target_version`; `to_version` stays the minimum fixed version. A major upgrade, a withdrawn release, or below 1.0 another minor line (0.21 to 0.34) never heads the title.
+- **Install commands look for websites and apps by default.** **Also check websites and apps on this server** is ticked under Add server and in the first-run flow, so the agent finds applications under `/srv`, `/var/www`, `/opt`, `/app` and home directories. The MCP `create_enrollment` tool does the same unless `check_apps` is false. `stackurity agent` itself is unchanged: without `--discover-apps` it does not look.
+- Application discovery is bounded: at most 20,000 directories read and 200 applications reported per run. The installer's service now runs at a low CPU and disk priority (`Nice=10`, best-effort I/O priority 7).
+- **Fix cards count and act like one fix.** With fixes grouped by fix (the default since 0.12.0), the counts on Home and Fixes ("4 fixes need you", "8 fixes in all") count a fix needed in several places once, as the list shows it; `GET /fix-groups/summary` takes `group_by` like `GET /fix-groups`. Home's focus list shows such a fix as one card listing its places, and a fix card can **Assign, snooze or ignore in all N places** at once, reporting partial results. The MCP `action_plan` tool lists the places of each fix.
+- **Two copies of an application on one host are told apart.** The second copy of "phpmyadmin on DBC" is named by its path ("phpmyadmin (/demo/phpmyadmin) on DBC"), and the first is renamed to match while it still has its generated name. A name a person set is never changed (migration 0044 records which names those are). Application paths show beside the name on Assets, Home and in the MCP `list_assets` tool.
+- **Approvals moved to Activity** (`/approvals`, with the Activity tabs); `/settings/approvals` redirects there, and the count of requests waiting shows on Activity.
+
+### Fixed
+
+- The project switcher in the header shows a project created in the first-run flow at once, and choosing it at the end of the flow works, instead of needing a page reload.
+
 ## 0.12.0
 
 ### Added

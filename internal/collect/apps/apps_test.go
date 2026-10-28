@@ -2,6 +2,7 @@ package apps
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -193,6 +194,28 @@ func TestDiscoverAndReleases(t *testing.T) {
 		if !found {
 			t.Errorf("missing %s in %v", w, got)
 		}
+	}
+}
+
+// Discovery stops at its limits and never follows a link to a directory
+// outside the deployment bases.
+func TestDiscoverIsBounded(t *testing.T) {
+	tr := newTree(t)
+	for i := range 5 {
+		tr.file(fmt.Sprintf("srv/app%d/package.json", i), `{}`)
+	}
+	tr.file("etc/secret/package.json", `{}`)
+	tr.link("srv/zlink", "../etc/secret")
+	sc := &Scanner{Root: tr.root}
+	if got := sc.Discover(); len(got) != 5 {
+		t.Errorf("discovered %v", got)
+	}
+	if got := sc.discover(1000, 2); len(got) != 2 {
+		t.Errorf("app limit: %v", got)
+	}
+	// /srv itself, then two of its directories.
+	if got := sc.discover(3, 100); len(got) != 2 {
+		t.Errorf("directory limit: %v", got)
 	}
 }
 

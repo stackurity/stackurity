@@ -229,6 +229,7 @@ func (s *Store) UpdateAsset(ctx context.Context, id int64, u AssetUpdate) error 
 	}
 	tag, err := s.Pool.Exec(ctx, `UPDATE assets SET
 		name = COALESCE($2, name),
+		name_by_person = name_by_person OR $2::text IS NOT NULL,
 		environment = COALESCE($3, environment),
 		owner_team_id = CASE WHEN $4 THEN NULL ELSE COALESCE($5, owner_team_id) END,
 		criticality = COALESCE($6, criticality),

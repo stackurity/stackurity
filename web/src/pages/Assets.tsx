@@ -83,7 +83,9 @@ export function AssetsPage() {
                     .join(" · ")
                 : at.os === "windows"
                   ? [at.os_name || "Windows", at.os_release].filter(Boolean).join(" ")
-                  : "";
+                  : a.kind === "application" && at.app_dir
+                    ? at.app_dir
+                    : "";
         return (
           <>
             <Link to={`/assets/${a.id}`}>{a.name}</Link>

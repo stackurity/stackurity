@@ -290,7 +290,7 @@ Findings also carry `display_state`, `regressed_at`, `until_fix`, `ignore_reason
 - `lifecycle`, `target_lifecycle` and `supported_line`: release lines with `status` `supported`, `security_only` or `end_of_life`.
 - `fixes` and `unfixed`: the finding keys the recommended version resolves and those it does not. `rationale` gives the reasons in plain language.
 
-Package upgrade groups in the action plan (`GET /fix-groups`) carry `recommended_version`, `change_type`, `requires_major`, `recommended_yanked` and `rationale`; `to_version` stays the minimum fixed version. A group's `needs` (`ubuntu-pro`, `SUSE LTSS`) says a paid channel also publishes fixes for some of its findings; it is informational, and `action` is always the free path.
+Package upgrade groups in the action plan (`GET /fix-groups`) carry `recommended_version`, `target_version`, `change_type`, `requires_major`, `recommended_yanked` and `rationale`; `to_version` stays the minimum fixed version. `target_version` is the version the `title` and `action` name: the recommended version when it is a newer stable release in the minimum fix's own major line ("Upgrade ip-address 10.1.0 → 10.7.5", with 10.7.4 in `to_version`), otherwise `to_version`. A major upgrade or a withdrawn release never heads the title; the action then mentions the recommendation. Below 1.0 the recommendation heads the title only within the same minor line (0.33 to 0.33.x, not 0.34). `GET /fix-groups/summary` takes `group_by` like `GET /fix-groups`: grouped by fix, a fix needed in several places counts once. A group's `needs` (`ubuntu-pro`, `SUSE LTSS`) says a paid channel also publishes fixes for some of its findings; it is informational, and `action` is always the free path.
 
 ## Remediation outcomes
 

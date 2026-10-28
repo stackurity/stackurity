@@ -102,6 +102,7 @@ var routeRules = map[string]routeRule{
 	"GET /.well-known/oauth-protected-resource":     {class: "public"},
 	"GET /.well-known/oauth-protected-resource/mcp": {class: "public"},
 	"GET /.well-known/oauth-authorization-server":   {class: "public"},
+	"GET /.well-known/openai-apps-challenge":        {class: "public"},
 	"POST /oauth/register":                          {class: "skip"},
 	"POST /oauth/token":                             {class: "skip"},
 	"POST /oauth/revoke":                            {class: "skip"},

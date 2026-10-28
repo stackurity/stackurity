@@ -28,7 +28,7 @@ type onboardingState struct {
 	HasAssets bool   `json:"has_assets"`
 	ProjectID int64  `json:"project_id"`
 	Steps     struct {
-		Project, Asset, Notifications, Invite bool
+		Project, Asset, Notifications, Invite, Assistant bool
 	} `json:"steps"`
 }
 
@@ -144,11 +144,18 @@ func TestOnboardingFlow(t *testing.T) {
 		"project_ids": []int64{p.ID}, "mode": "urgent_summary"}, nil); code != 201 {
 		t.Fatalf("route: %d", code)
 	}
-	// 6. An invitation: every step is done, and so is the flow.
+	// 6. An invitation.
 	if code := admin.do("POST", "/api/v1/invitations", map[string]any{"email": "dev@x.io", "project_id": p.ID, "role": "engineer"}, nil); code != 201 {
 		t.Fatalf("invite: %d", code)
 	}
-	if code := admin.do("GET", "/api/v1/onboarding", nil, &o); code != 200 || o.State != "done" || !o.Steps.Notifications || !o.Steps.Invite {
+	if code := admin.do("GET", "/api/v1/onboarding", nil, &o); code != 200 || o.State != "new" || !o.Steps.Notifications || !o.Steps.Invite ||
+		o.Steps.Assistant {
+		t.Fatalf("before an assistant: %+v", o)
+	}
+	// 7. A connected assistant: every step is done, and so is the flow.
+	withBaseURL(e)
+	registerAssistant(t, e).connect(t, admin, auth.RoleViewer, 0)
+	if code := admin.do("GET", "/api/v1/onboarding", nil, &o); code != 200 || o.State != "done" || !o.Steps.Assistant {
 		t.Fatalf("all steps done: %+v", o)
 	}
 	// Skipping and resuming.

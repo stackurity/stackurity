@@ -4289,3 +4289,88 @@ h6.md-h {
   overflow-wrap: anywhere;
   word-break: break-all;
 }
+
+/* --- creating a team where it is needed */
+.new-team-inline {
+  margin-top: 8px;
+}
+.new-team-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.new-team-row input {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+/* --- Settings, AI assistants */
+.assistant-url-label {
+  margin: 0 0 6px;
+}
+.assistant-panel {
+  margin-bottom: var(--s4);
+}
+.assistant-steps {
+  padding-left: 1.4em;
+  margin: 0 0 12px;
+}
+.assistant-steps li {
+  margin-bottom: 6px;
+}
+.assistant-panel .codeblock {
+  margin-bottom: 12px;
+}
+
+/* "fixes from 10.7.4" after an upgrade's title */
+.home-fix-from {
+  font-weight: 400;
+  white-space: nowrap;
+}
+.assistant-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+  margin: var(--s4) 0;
+}
+.assistant-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-height: 44px;
+  padding: 12px 14px;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.assistant-card:hover {
+  border-color: var(--border-strong);
+}
+.assistant-card.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.assistant-panel h3 {
+  margin-top: 0;
+}
+.assistant-ask {
+  padding-left: 1.2em;
+  margin: 0 0 12px;
+}
+@media (max-width: 480px) {
+  .assistant-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+.assistant-install {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+

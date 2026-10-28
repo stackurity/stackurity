@@ -285,9 +285,13 @@ func resolveAsset(ctx context.Context, tx pgx.Tx, b *model.ObservationBatch) (in
 			return 0, false, nil, err
 		}
 		isNew = true
+		name, err := appName(ctx, tx, b)
+		if err != nil {
+			return 0, false, nil, err
+		}
 		err = tx.QueryRow(ctx, `INSERT INTO assets (kind, name, environment, provider, region, attributes, first_seen, last_seen)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$7) RETURNING id`,
-			b.Asset.Kind, b.Asset.Name, b.Asset.Environment, b.Asset.Provider, b.Asset.Region, attrs, b.ObservedAt).Scan(&assetID)
+			b.Asset.Kind, name, b.Asset.Environment, b.Asset.Provider, b.Asset.Region, attrs, b.ObservedAt).Scan(&assetID)
 		if err != nil {
 			return 0, false, nil, err
 		}

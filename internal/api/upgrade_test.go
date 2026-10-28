@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"context"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -181,7 +182,8 @@ func TestUpgradeAndOutcomeEndpoints(t *testing.T) {
 	}
 	view.do("GET", "/api/v1/fix-groups?kind=package_upgrade", nil, &groups)
 	if len(groups.Items) != 1 || groups.Items[0]["to_version"] != "4.17.21" || groups.Items[0]["recommended_version"] != "4.17.23" ||
-		groups.Items[0]["change_type"] != "patch" || !strings.Contains(groups.Items[0]["action"].(string), "Recommended: 4.17.23") {
+		groups.Items[0]["change_type"] != "patch" || groups.Items[0]["target_version"] != "4.17.23" ||
+		groups.Items[0]["title"] != "Upgrade lodash 4.17.15 → 4.17.23" || !strings.Contains(groups.Items[0]["action"].(string), "Any version from 4.17.21") {
 		t.Errorf("fix groups = %+v", groups.Items)
 	}
 
@@ -202,5 +204,99 @@ func TestUpgradeAndOutcomeEndpoints(t *testing.T) {
 	ver = store.VerifyReport{}
 	if code := beta.do("GET", "/api/v1/findings/verify?since="+since, nil, &ver); code != 200 || ver.NewSince != 0 || len(ver.Assets) != 0 {
 		t.Errorf("beta verify: %d %+v", code, ver)
+	}
+}
+
+// Grouped by fix, the same upgrade in several places is one item and counts
+// once in the summary; filters apply first, so one asset is not merged.
+func TestMergedFixGroups(t *testing.T) {
+	e := newEnv(t)
+	e.user("view@x.io", auth.RoleViewer)
+	view := e.login("view@x.io")
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	host := func(name, version string) int64 {
+		b := model.NewBatch(model.Collector{ID: "agent", Method: "agent"}, model.AssetRef{Kind: model.AssetHost, Name: name,
+			Identifiers: []model.Identifier{{Scheme: "machine-id", Value: name}}})
+		b.Observations = []model.Observation{{Purl: "pkg:npm/lodash@" + version, Confidence: model.ConfidenceConfirmed}}
+		b.Complete = true
+		if err := b.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		res, err := e.st.Ingest(ctx, b, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rows, _, err := e.st.ListInventory(ctx, store.InventoryFilter{AssetID: res.AssetID})
+		if err != nil || len(rows) != 1 {
+			t.Fatalf("inventory: %v %v", rows, err)
+		}
+		r := rows[0]
+		in := []store.FindingInput{
+			{Kind: "vulnerability", Key: "CVE-2021-23337", InventoryID: r.ID, AssetID: res.AssetID, ComponentID: r.ComponentID,
+				Verification: "confirmed", Severity: "high", FixedVersion: "4.17.21", Sources: []string{"GHSA-1"}, Evidence: map[string]any{}},
+			{Kind: "vulnerability", Key: "CVE-2020-8203", InventoryID: r.ID, AssetID: res.AssetID, ComponentID: r.ComponentID,
+				Verification: "confirmed", Severity: "high", FixedVersion: "4.17.19", Sources: []string{"GHSA-2"}, Evidence: map[string]any{}}}
+		if _, _, err := e.st.SyncFindings(ctx, []string{"vulnerability"}, []int64{r.ID}, in); err != nil {
+			t.Fatal(err)
+		}
+		return res.AssetID
+	}
+	a := host("web-1", "4.17.15")
+	host("web-2", "4.17.15")
+	host("web-3", "4.17.10") // another installed version: its own fix
+	if _, err := planner.Rebuild(ctx, e.st, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	type item struct {
+		ID           string `json:"id"`
+		FindingCount int    `json:"finding_count"`
+		Places       []struct {
+			GroupID      string `json:"group_id"`
+			FindingCount int    `json:"finding_count"`
+		} `json:"places"`
+	}
+	var list struct {
+		Items []item `json:"items"`
+		Total int    `json:"total"`
+	}
+	if code := view.do("GET", "/api/v1/fix-groups?kind=package_upgrade&group_by=fix", nil, &list); code != 200 || list.Total != 2 || len(list.Items) != 2 {
+		t.Fatalf("by fix: %d %+v", code, list)
+	}
+	var merged *item
+	for i := range list.Items {
+		if len(list.Items[i].Places) > 1 {
+			merged = &list.Items[i]
+		}
+	}
+	if merged == nil || len(merged.Places) != 2 || merged.FindingCount != 4 {
+		t.Fatalf("merged item = %+v", merged)
+	}
+	// Each place's own group still opens.
+	for _, x := range merged.Places {
+		if code := view.do("GET", "/api/v1/fix-groups/"+url.PathEscape(x.GroupID), nil, nil); code != 200 || x.FindingCount != 2 {
+			t.Errorf("group %s: %d", x.GroupID, code)
+		}
+	}
+	list.Items = nil
+	if view.do("GET", "/api/v1/fix-groups?kind=package_upgrade&group_by=asset", nil, &list); list.Total != 3 {
+		t.Errorf("by asset: %d", list.Total)
+	}
+	// One asset in view is never merged.
+	list.Items = nil
+	if view.do("GET", "/api/v1/fix-groups?group_by=fix&asset_id="+itoa(a), nil, &list); list.Total != 1 || len(list.Items[0].Places) > 1 {
+		t.Errorf("one asset: %+v", list)
+	}
+	// Counts follow the grouping: the same fix in two places counts once.
+	var sum struct {
+		Groups int `json:"groups"`
+	}
+	view.do("GET", "/api/v1/fix-groups/summary?group_by=fix", nil, &sum)
+	byFix := sum.Groups
+	view.do("GET", "/api/v1/fix-groups/summary?group_by=asset", nil, &sum)
+	if byFix != sum.Groups-1 {
+		t.Errorf("summary: by fix %d, by asset %d", byFix, sum.Groups)
+	}
+	if code := view.do("GET", "/api/v1/fix-groups/summary?group_by=nope", nil, nil); code != 400 {
+		t.Errorf("bad group_by: %d", code)
 	}
 }

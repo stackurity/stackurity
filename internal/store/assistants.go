@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -43,9 +45,13 @@ type OAuthClient struct {
 	MetadataURL  bool     `json:"-"`
 	SecretHash   []byte   `json:"-"`
 	FetchedAt    *time.Time
+	// private_key_jwt: the client's public keys, at JWKSURI or inline
+	// (a JSON Web Key Set).
+	JWKSURI string          `json:"-"`
+	JWKS    json.RawMessage `json:"-"`
 }
 
-const oauthClientCols = `id, name, client_uri, redirect_uris, auth_method, metadata_url, secret_hash, fetched_at`
+const oauthClientCols = `id, name, client_uri, redirect_uris, auth_method, metadata_url, secret_hash, fetched_at, jwks_uri, jwks`
 
 // RegisterOAuthClient stores a client registered by dynamic client
 // registration and returns its secret (empty for a public client). Clients
@@ -79,12 +85,35 @@ func (s *Store) RegisterOAuthClient(ctx context.Context, c OAuthClient) (*OAuthC
 // SaveMetadataClient stores (or refreshes) a client read from its client ID
 // metadata document; the id is the document's HTTPS URL.
 func (s *Store) SaveMetadataClient(ctx context.Context, c OAuthClient) error {
-	_, err := s.Pool.Exec(tenant.System(ctx), `INSERT INTO oauth_clients (id, name, client_uri, redirect_uris, auth_method, metadata_url, fetched_at)
-		VALUES ($1, $2, $3, $4, 'none', true, now())
+	method := c.AuthMethod
+	if method == "" {
+		method = "none"
+	}
+	var jwks any
+	if len(c.JWKS) > 0 {
+		jwks = c.JWKS
+	}
+	_, err := s.Pool.Exec(tenant.System(ctx), `INSERT INTO oauth_clients (id, name, client_uri, redirect_uris, auth_method, metadata_url, fetched_at, jwks_uri, jwks)
+		VALUES ($1, $2, $3, $4, $5, true, now(), $6, $7)
 		ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, client_uri = EXCLUDED.client_uri,
-		redirect_uris = EXCLUDED.redirect_uris, fetched_at = now() WHERE oauth_clients.metadata_url`,
-		c.ID, c.Name, c.ClientURI, c.RedirectURIs)
+		redirect_uris = EXCLUDED.redirect_uris, auth_method = EXCLUDED.auth_method, jwks_uri = EXCLUDED.jwks_uri,
+		jwks = EXCLUDED.jwks, fetched_at = now() WHERE oauth_clients.metadata_url`,
+		c.ID, c.Name, c.ClientURI, c.RedirectURIs, method, c.JWKSURI, jwks)
 	return err
+}
+
+// UseClientAssertion records a private_key_jwt assertion's jti until it
+// expires, and reports false when the client already used it (a replay).
+func (s *Store) UseClientAssertion(ctx context.Context, clientID, jti string, expires time.Time) (bool, error) {
+	sys := tenant.System(ctx)
+	_, _ = s.Pool.Exec(sys, `DELETE FROM oauth_client_assertions WHERE expires_at < now()`)
+	sum := sha256.Sum256([]byte(clientID + "\x00" + jti))
+	tag, err := s.Pool.Exec(sys, `INSERT INTO oauth_client_assertions (jti_hash, client_id, expires_at) VALUES ($1, $2, $3)
+		ON CONFLICT (jti_hash) DO NOTHING`, sum[:], clientID, expires)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() == 1, nil
 }
 
 func (s *Store) GetOAuthClient(ctx context.Context, id string) (*OAuthClient, error) {

@@ -23,7 +23,7 @@ func (f *fakeAPI) Do(_ context.Context, method, path string, _ io.Reader, _ map[
 		body = `{"items":[{"id":7,"key":"CVE-1","severity":"critical","asset_name":"shop","fixed_version":"1.2.3","evidence":{"big":"x"}}],"total":1}`
 	case strings.HasPrefix(path, "/api/v1/fix-groups?"):
 		body = `{"items":[{"id":"3:package_upgrade:9","kind":"package_upgrade","asset_id":3,"component":"lodash","from_version":"4.17.15",
-			"to_version":"4.17.21","recommended_version":"4.17.23","change_type":"patch","finding_count":2,"top_priority":"P2",
+			"to_version":"4.17.21","recommended_version":"4.17.23","target_version":"4.17.23","change_type":"patch","finding_count":2,"top_priority":"P2",
 			"by_severity":{"high":2}}],"total":1}`
 	case strings.HasSuffix(path, "/explain"), strings.HasSuffix(path, "/upgrade"), strings.HasPrefix(path, "/api/v1/findings/verify?"):
 		body = `{"ok":true}`
@@ -77,6 +77,15 @@ func TestProtocol(t *testing.T) {
 	}
 	for i, x := range tl {
 		ann := x.(map[string]any)["annotations"].(map[string]any)
+		// Directories require a title and all three behaviour hints on every tool.
+		if title, _ := x.(map[string]any)["title"].(string); title == "" || ann["title"] != title {
+			t.Errorf("tool without a title: %v", x)
+		}
+		for _, h := range []string{"readOnlyHint", "destructiveHint", "openWorldHint"} {
+			if _, ok := ann[h].(bool); !ok {
+				t.Errorf("tool %v does not set %s", x.(map[string]any)["name"], h)
+			}
+		}
 		if ann["readOnlyHint"] != (i < len(readTools)) {
 			t.Errorf("tool %d marked readOnlyHint %v: %v", i, ann["readOnlyHint"], x)
 		}
@@ -86,6 +95,19 @@ func TestProtocol(t *testing.T) {
 	}
 	if len(tools) != len(tl) {
 		t.Errorf("%d tools implemented, %d listed", len(tools), len(tl))
+	}
+	hints := map[string][2]bool{} // destructive, open world
+	for _, x := range tl {
+		ann := x.(map[string]any)["annotations"].(map[string]any)
+		hints[x.(map[string]any)["name"].(string)] = [2]bool{ann["destructiveHint"].(bool), ann["openWorldHint"].(bool)}
+	}
+	for _, n := range []string{"rename_project", "assign", "snooze", "ignore", "remove_assets_from_project"} {
+		if !hints[n][0] {
+			t.Errorf("%s is not marked destructive", n)
+		}
+	}
+	if !hints["invite_to_project"][1] || hints["create_project"][1] || hints["search"][0] {
+		t.Errorf("hints = %v", hints)
 	}
 	call := res[2]["result"].(map[string]any)
 	text := call["content"].([]any)[0].(map[string]any)["text"].(string)
@@ -143,7 +165,7 @@ func TestAssistantTools(t *testing.T) {
 		t.Errorf("requests = %v", api.paths)
 	}
 	plan := text(4)
-	for _, s := range []string{`"minimum_fixed_version": "4.17.21"`, `"recommended_version": "4.17.23"`, `"installed_version": "4.17.15"`, `"shown": 1`} {
+	for _, s := range []string{`"minimum_fixed_version": "4.17.21"`, `"recommended_version": "4.17.23"`, `"target_version": "4.17.23"`, `"installed_version": "4.17.15"`, `"shown": 1`} {
 		if !strings.Contains(plan, s) {
 			t.Errorf("remediation_plan lacks %s: %s", s, plan)
 		}
@@ -282,6 +304,15 @@ func TestWriteToolsNeedConfirmation(t *testing.T) {
 	cmd, _ := done["result"].(map[string]any)["install_command"].(string)
 	if cmd != "curl -fsSL http://stk.internal:8080/install/agent.sh | sudo STACKURITY_ENROLL_CODE=enr_abc STACKURITY_ALLOW_HTTP=1 sh" {
 		t.Errorf("install command = %q", cmd)
+	}
+	// Servers enrolled from a chat look for websites and apps too, unless told not to.
+	if w := api.writes(); len(w) != 1 || !strings.Contains(w[0], `"discover_apps":true`) {
+		t.Errorf("create_enrollment sent %v", w)
+	}
+	pv = callTool(t, s, "create_enrollment", map[string]any{"servers": 1.0, "check_apps": false})
+	callTool(t, s, "create_enrollment", map[string]any{"servers": 1.0, "check_apps": false, "confirm": pv["confirm"]})
+	if w := api.writes(); len(w) != 2 || !strings.Contains(w[1], `"discover_apps":false`) {
+		t.Errorf("create_enrollment without apps sent %v", w)
 	}
 	api = &writeAPI{role: "engineer"}
 	s = &Server{API: api, AllowWrites: true}

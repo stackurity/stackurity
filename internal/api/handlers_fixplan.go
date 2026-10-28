@@ -30,21 +30,11 @@ func (s *Server) listFixGroups(w http.ResponseWriter, r *http.Request) {
 		}
 		f.ProductionEnvs = pol.ProductionEnvironments
 	}
-	// The same fix in several places is one entry unless the workspace, or
-	// this request, asks for one per asset.
-	by := q.Get("group_by")
-	if by == "" {
-		var err error
-		if by, err = s.Store.FixGrouping(r.Context()); err != nil {
-			s.fail(w, r, err)
-			return
-		}
-	}
-	if by != store.FixGroupingFix && by != store.FixGroupingAsset {
-		s.fail(w, r, badRequest("group_by must be fix or asset"))
+	byFix, ok := s.groupByFix(w, r)
+	if !ok {
 		return
 	}
-	f.ByFix = by == store.FixGroupingFix
+	f.ByFix = byFix
 	items, total, err := s.Store.ListFixGroups(r.Context(), f)
 	if err != nil {
 		s.fail(w, r, err)
@@ -53,9 +43,33 @@ func (s *Server) listFixGroups(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, paged(items, total, f.Page))
 }
 
+// groupByFix reads group_by (fix or asset; the workspace's setting when
+// absent): whether the same fix in several places is one entry.
+func (s *Server) groupByFix(w http.ResponseWriter, r *http.Request) (bool, bool) {
+	by := r.URL.Query().Get("group_by")
+	if by == "" {
+		var err error
+		if by, err = s.Store.FixGrouping(r.Context()); err != nil {
+			s.fail(w, r, err)
+			return false, false
+		}
+	}
+	if by != store.FixGroupingFix && by != store.FixGroupingAsset {
+		s.fail(w, r, badRequest("group_by must be fix or asset"))
+		return false, false
+	}
+	return by == store.FixGroupingFix, true
+}
+
+// fixPlanSummary counts fixes as the list shows them: grouped by fix, the
+// same fix in several places counts once.
 func (s *Server) fixPlanSummary(w http.ResponseWriter, r *http.Request) {
 	assetID := qInt(r, "asset_id")
-	sum, err := s.Store.SummarizeFixPlan(r.Context(), assetID)
+	byFix, ok := s.groupByFix(w, r)
+	if !ok {
+		return
+	}
+	sum, err := s.Store.SummarizeFixPlan(r.Context(), assetID, byFix)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -65,7 +79,7 @@ func (s *Server) fixPlanSummary(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	focus, err := s.Store.SummarizeFixFocus(r.Context(), assetID, pol.ProductionEnvironments)
+	focus, err := s.Store.SummarizeFixFocus(r.Context(), assetID, pol.ProductionEnvironments, byFix)
 	if err != nil {
 		s.fail(w, r, err)
 		return

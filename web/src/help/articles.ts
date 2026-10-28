@@ -41,6 +41,36 @@ export const ARTICLES: Article[] = [
         ],
       },
       { note: "Running the server yourself? See the install guide (docs/install.md) for the first start, the setup token and backups." },
+      { h: "The checklist on Home" },
+      {
+        p: "Until you hide it, Home lists what is left: add a server, connect an AI assistant, turn on notifications and invite your team. Each item opens the right page, and is ticked once it is done.",
+      },
+    ],
+  },
+  {
+    id: "ai-assistants",
+    title: "Connect an AI assistant",
+    section: "Getting started",
+    summary: "Ask Claude, ChatGPT, Cursor, VS Code, Windsurf, Gemini CLI or Replit what is installed, what is vulnerable and what to upgrade.",
+    where: ["Settings", "AI assistants"],
+    keywords: "ai assistant claude chatgpt cursor vs code copilot claude code windsurf gemini cli replit mcp connector model context protocol oauth connected assistants allow changes",
+    body: [
+      {
+        p: "Stackurity is an MCP server: an AI assistant can read your inventory, issues and fixes as you, and, if you allow it, make changes for you, such as assigning or snoozing issues.",
+      },
+      {
+        steps: [
+          "Open [Settings ▸ AI assistants](/settings/ai-assistants) and copy the address shown there.",
+          "Click your assistant's card and follow its steps. Cursor, VS Code and Replit have an install button; the others take the address as a custom connector or MCP server.",
+          "Sign in to Stackurity when the assistant asks. Choose the organisation and what it can see. Tick **Allow changes** only if it should make changes for you. Click **Allow**.",
+        ],
+      },
+      {
+        p: "**Connected assistants**, on the same page, lists the assistants you allowed. Turn **Allow changes** on or off there, or click **Disconnect** to stop one at once.",
+      },
+      {
+        note: "On a server you run yourself, assistants can sign in only once `STACKURITY_BASE_URL` is set to the server's public https:// address. Until then, the page shows how to run `stackurity mcp` on your own computer instead.",
+      },
     ],
   },
   {
@@ -186,7 +216,7 @@ export const ARTICLES: Article[] = [
         steps: [
           "Open [Assets](/assets) and click **Add server** (admins only).",
           "Optionally enter a **Label** (e.g. `web servers`) and an **Environment** (e.g. `production`; production counts towards priority).",
-          "Under **Application directories**, list deployed apps to inventory, one per line, e.g. `/srv/shop` or `/var/www/site`. Tick **Also look for applications under /srv, /var/www, /opt and home directories** to find others.",
+          "**Also check websites and apps on this server** is ticked by default: the agent looks in /srv, /var/www, /opt, /app and home directories for sites and apps, and lists the libraries they use. It only reads. Under **Application directories**, add apps that live somewhere else, one per line, e.g. `/data/shop`.",
           "Under **Options**, set how many servers the code can enroll (default 1) and how long it is valid (default 24 hours).",
           "Click **Create install command** and copy it. The code in it is shown only once.",
           "Run it on the new server as a user with sudo.",
@@ -683,7 +713,7 @@ stackurity.exe agent --interval 6h`,
           "**Never**: for false positives only. Other reasons need an end, so someone looks again.",
         ],
       },
-      { p: "When an ignore ends, its issues return to new with an event in their history. Each ignore is a rule, listed under [Approvals ▸ Ignore rules](/settings/approvals?tab=rules), where security can end it early. Reopening one issue takes it out of its rule for good." },
+      { p: "When an ignore ends, its issues return to new with an event in their history. Each ignore is a rule, listed under [Activity ▸ Approvals ▸ Ignore rules](/approvals?tab=rules), where security can end it early. Reopening one issue takes it out of its rule for good." },
     ],
   },
   {
@@ -691,13 +721,13 @@ stackurity.exe agent --interval 6h`,
     title: "The approval inbox",
     section: "Daily work",
     summary: "Engineers and viewers ask to ignore issues; security and admin users approve or decline.",
-    where: ["Settings", "Approvals"],
+    where: ["Activity", "Approvals"],
     keywords: "approve decline request ignore inbox approval",
     body: [
       { p: "Only the **security** and **admin** roles can snooze or ignore issues. Everyone else sees **Ask to ignore…** on an issue, a selection or a fix. The request records who asked, the reason, the scope and the expiry. Nothing changes until someone decides." },
       {
         steps: [
-          "Open [Settings ▸ Approvals](/settings/approvals). Security and admin users see every request; a count on **Settings** says how many wait.",
+          "Open [Activity ▸ Approvals](/approvals). Security and admin users see every request; a count on **Activity** says how many wait.",
           "Read the request: the issues, why, where and until when.",
           "**Approve** ignores the issues that are still open, as if you had done it. **Decline** leaves them as they are. Add a note either way.",
         ],

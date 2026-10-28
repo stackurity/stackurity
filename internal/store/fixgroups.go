@@ -309,14 +309,18 @@ type FixPlanSummary struct {
 	FixableFindings int64 `json:"fixable_findings"`
 }
 
-func (s *Store) SummarizeFixPlan(ctx context.Context, assetID int64) (*FixPlanSummary, error) {
+// SummarizeFixPlan counts fixes and their findings. With byFix, the same fix
+// in several places counts once, as a list grouped by fix shows it.
+func (s *Store) SummarizeFixPlan(ctx context.Context, assetID int64, byFix bool) (*FixPlanSummary, error) {
 	sum := &FixPlanSummary{ByKind: map[string]map[string]int64{}}
 	w := &where{}
 	if assetID > 0 {
-		w.add("asset_id = ?", assetID)
+		w.add("g.asset_id = ?", assetID)
 	}
-	rows, err := s.Pool.Query(ctx, `SELECT kind, count(*), sum((data->>'finding_count')::int), count(*) FILTER (WHERE (data->>'sos')::boolean)
-		FROM fix_groups`+w.sql()+` GROUP BY kind`, w.args...)
+	key := groupKeySQL(byFix)
+	rows, err := s.Pool.Query(ctx, `SELECT g.kind, count(DISTINCT `+key+`), sum((g.data->>'finding_count')::int),
+		count(DISTINCT CASE WHEN (g.data->>'sos')::boolean THEN `+key+` END)
+		FROM fix_groups g`+w.sql()+` GROUP BY g.kind`, w.args...)
 	if err != nil {
 		return nil, err
 	}
@@ -369,7 +373,7 @@ type FocusAsset struct {
 }
 
 // SummarizeFixFocus sorts the fix groups into buckets (see FixBuckets).
-func (s *Store) SummarizeFixFocus(ctx context.Context, assetID int64, productionEnvs []string) (*FixFocus, error) {
+func (s *Store) SummarizeFixFocus(ctx context.Context, assetID int64, productionEnvs []string, byFix bool) (*FixFocus, error) {
 	out := &FixFocus{Hidden: map[string]map[string]int64{}, Assets: []FocusAsset{}}
 	args := []any{lowerAll(productionEnvs)}
 	cond := ""
@@ -377,7 +381,7 @@ func (s *Store) SummarizeFixFocus(ctx context.Context, assetID int64, production
 		args = append(args, assetID)
 		cond = " WHERE g.asset_id = $2"
 	}
-	rows, err := s.Pool.Query(ctx, `SELECT `+fixBucketSQL(1)+` AS bucket, count(*), COALESCE(sum((g.data->>'finding_count')::bigint), 0)
+	rows, err := s.Pool.Query(ctx, `SELECT `+fixBucketSQL(1)+` AS bucket, count(DISTINCT `+groupKeySQL(byFix)+`), COALESCE(sum((g.data->>'finding_count')::bigint), 0)
 		FROM fix_groups g`+cond+` GROUP BY 1`, args...)
 	if err != nil {
 		return nil, err
@@ -414,4 +418,13 @@ func (s *Store) SummarizeFixFocus(ctx context.Context, assetID int64, production
 		out.Assets = append(out.Assets, a)
 	}
 	return out, arows.Err()
+}
+
+// groupKeySQL is what one fix is when counting: the fix key when lists
+// group by fix, otherwise the group.
+func groupKeySQL(byFix bool) string {
+	if byFix {
+		return fixKeySQL
+	}
+	return "g.id"
 }

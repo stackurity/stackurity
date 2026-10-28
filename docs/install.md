@@ -49,7 +49,7 @@ After the first administrator signs in, a new organisation with no assets opens 
 
 1. **Create your first project**: a name and, if you like, a description.
 2. **Add an asset**, which lands in that project:
-   - **A Linux server**: one install command (an enrollment code for up to 5 servers, valid 24 hours). First results in about 2 minutes. The server needs systemd, sudo and outbound HTTPS to the dashboard.
+   - **A Linux server**: one install command (an enrollment code for up to 5 servers, valid 24 hours). First results in about 2 minutes. The server needs systemd, sudo and outbound HTTPS to the dashboard. **Also check websites and apps on this server** is ticked by default, as under Add server.
    - **A code repository**: a collector token to save as the CI secret `STACKURITY_TOKEN`, and a GitHub Actions step (`stackurity/scan-action@v1`) or the `stackurity scan .` command for other CI. First results on the next CI run.
    - **Upload an SBOM** (CycloneDX or SPDX JSON). First results in under a minute.
 3. **Wait** while it reports: the page shows the packages found and when the check is done.
@@ -81,6 +81,7 @@ Connecting an asset is quiet: one "connected" message, and no alerts, Jira issue
 | `STACKURITY_UPDATE_URL` | GitHub's release list | Mirror of `https://api.github.com/repos/stackurity/stackurity/releases?per_page=20`, for installs that cannot reach GitHub |
 | `STACKURITY_OSV_URL`, `STACKURITY_KEV_URL`, `STACKURITY_ENDOFLIFE_URL`, `STACKURITY_NPM_REGISTRY`, `STACKURITY_PACKAGIST_URL`, `STACKURITY_PYPI_URL`, `STACKURITY_GOPROXY_URL`, `STACKURITY_CRATES_INDEX_URL`, `STACKURITY_RUBYGEMS_URL`, `STACKURITY_NUGET_URL`, `STACKURITY_MAVEN_URL`, `STACKURITY_PUB_URL` | public sources | Mirrors for offline or air-gapped installs ([network.md](network.md)) |
 | `STACKURITY_BASE_URL` | — | Public dashboard URL, used for links in notifications and by the agent installer |
+| `STACKURITY_OPENAI_APPS_CHALLENGE` (or `_FILE`) | — | The token OpenAI gives when you submit Stackurity as a ChatGPT app; served as text at `/.well-known/openai-apps-challenge` (404 when unset) |
 | `STACKURITY_AGENT_DIR` | `/usr/local/lib/stackurity/agents` in the image | Agent builds served to new hosts by **Add server** |
 | `STACKURITY_ALLOW_HTTP_WEBHOOKS` | `false` | Allow `http://` webhook URLs, for internal receivers |
 | `STACKURITY_PLUGIN_DIR` | `/usr/local/lib/stackurity/plugins` in the image | Directory of plugin executables |
@@ -146,7 +147,7 @@ Stackurity can sign people in through any OpenID Connect provider: Google Worksp
 
 ### Linux hosts
 
-**The quick way.** Under **Assets → Add server**, choose the environment and, optionally, the application directories to inventory, and create an install command. Run it on the host:
+**The quick way.** Under **Assets → Add server**, choose the environment and, optionally, the application directories to inventory, and create an install command. **Also check websites and apps on this server** is ticked by default: the agent then also looks for deployed applications (`STACKURITY_DISCOVER_APPS=true`, see [Applications deployed on the host](#applications-deployed-on-the-host)). Untick it to read only the operating system's packages and runtimes. Run the command on the host:
 
 ```sh
 curl -fsSL https://stackurity.example.com/install/agent.sh | sudo STACKURITY_ENROLL_CODE=enr_... sh
@@ -215,9 +216,11 @@ stackurity agent --app-dir /srv/shop --app-dir /var/www/blog   # or STACKURITY_A
 stackurity agent --discover-apps                               # or STACKURITY_DISCOVER_APPS=true
 ```
 
-For each application directory the agent reads what is installed: every package in `node_modules` (npm, yarn and pnpm layouts), Python packages in virtual environments (`*.dist-info`), and Composer's `vendor/composer/installed.json`. Where nothing is installed for an ecosystem (a Go or Rust service, or PHP deployed without `vendor/`), it reads the lockfiles instead. If what is installed differs from the lockfile, what is installed wins. Nothing is executed. `--discover-apps` also looks for projects up to three levels below `/srv`, `/var/www`, `/opt`, `/app` and home directories. In a release layout (`releases/` plus a `current` link), only the current release is read.
+For each application directory the agent reads what is installed: every package in `node_modules` (npm, yarn and pnpm layouts), Python packages in virtual environments (`*.dist-info`), and Composer's `vendor/composer/installed.json`. Where nothing is installed for an ecosystem (a Go or Rust service, or PHP deployed without `vendor/`), it reads the lockfiles instead. If what is installed differs from the lockfile, what is installed wins. Nothing is executed. `--discover-apps` also looks for projects up to three levels below `/srv`, `/var/www`, `/opt`, `/app` and home directories. In a release layout (`releases/` plus a `current` link), only the current release is read. Install commands from the dashboard turn it on unless you untick **Also check websites and apps on this server**; `stackurity agent` without the flag or `STACKURITY_DISCOVER_APPS=true` does not look.
 
-Each application becomes its own asset, named after its `package.json` or `composer.json`, and is linked to the host with a `runs_on` relation. When the directory is a Git checkout whose origin matches a repository Stackurity already knows, it is also linked to that repository (`built_from`). The asset's **Stack** tab then shows every open finding from the edge down: web server, operating system, runtime, data stores, installed libraries and what the repository declares. Host-wide libraries, such as global npm packages and pip installs that no OS package owns, are reported on the host itself.
+Discovery is read-only and bounded. It lists directories and checks for a lockfile or manifest (`package.json`, `composer.json`, `requirements.txt`, `go.mod` and the like); it opens nothing else until a directory is found to be an application, and runs nothing. Hidden directories, `node_modules`, `vendor`, `cache`, `tmp` and `logs` are skipped, symbolic links to directories are not followed, and each run reads at most 20,000 directories and reports at most 200 applications. Each application's own scan is limited too (100,000 packages, 1 MiB per manifest), and the whole collection stops after 30 minutes. The installer's service runs as the unprivileged `stackurity` user with a read-only view of the system (`ProtectSystem=strict`, `ProtectHome=read-only`, no capabilities) at a low CPU and disk priority (`Nice=10`, `IOSchedulingClass=best-effort`, `IOSchedulingPriority=7`).
+
+Each application becomes its own asset, named after its `package.json` or `composer.json` ("shop on web-1"); when another application on the same host would have the same name, both get their path below the directory they share ("phpmyadmin (/phpmyadmin) on DBC" and "phpmyadmin (/demo/phpmyadmin) on DBC"), and a name someone set under the asset's settings is never changed. Each is linked to the host with a `runs_on` relation. When the directory is a Git checkout whose origin matches a repository Stackurity already knows, it is also linked to that repository (`built_from`). The asset's **Stack** tab then shows every open finding from the edge down: web server, operating system, runtime, data stores, installed libraries and what the repository declares. Host-wide libraries, such as global npm packages and pip installs that no OS package owns, are reported on the host itself.
 
 The agent user needs read access to the application directories. Add it to the deploying user's group, or grant read access with an ACL (`setfacl -R -m u:stackurity:rX /srv/shop`). With `ProtectHome=yes`, applications under `/home` are invisible; use `ProtectHome=read-only`. Applications running inside containers are not read this way; scan their images with a container image integration.
 

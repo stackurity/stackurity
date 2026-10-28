@@ -59,6 +59,7 @@ import {
   Tabs,
   YesNo,
 } from "../components/ui";
+import { NoTeamsHint } from "../components/Teams";
 
 type Tab = "action-plan" | "stack" | "findings" | "inventory" | "coverage" | "collections" | "relations" | "drift" | "remediation";
 const TABS: Tab[] = ["action-plan", "stack", "findings", "inventory", "coverage", "collections", "relations", "drift", "remediation"];
@@ -429,6 +430,7 @@ function OwnershipCard({ asset, editable, onSaved }: { asset: Asset; editable: b
               </option>
             ))}
           </select>
+          {teams.data && teams.data.items.length === 0 && <NoTeamsHint what="say who looks after this asset" />}
         </div>
         <div className="field">
           <label htmlFor="ed-crit">Criticality</label>

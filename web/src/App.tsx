@@ -209,7 +209,8 @@ export function App() {
         <Route path="outcomes" element={<OutcomesPage />} />
         <Route path="audit" element={<AuditPage />} />
         <Route path="checks" element={<ChecksPage />} />
-        <Route path="settings/approvals" element={<ApprovalsPage />} />
+        <Route path="approvals" element={<ApprovalsPage />} />
+        <Route path="settings/approvals" element={<Moved to={() => "/approvals"} />} />
         <Route path="settings/tokens" element={<TokensPage />} />
         <Route
           path="settings/usage"
@@ -228,7 +229,8 @@ export function App() {
           }
         />
         <Route path="settings/slack" element={<SlackAccountsPage />} />
-        <Route path="settings/assistants" element={<AssistantsPage />} />
+        <Route path="settings/ai-assistants" element={<AssistantsPage />} />
+        <Route path="settings/assistants" element={<Navigate replace to="/settings/ai-assistants#connected" />} />
         <Route path="settings/risk-policy" element={<RiskPolicyPage />} />
         <Route path="settings/fix-grouping" element={<FixGroupingPage />} />
         <Route
