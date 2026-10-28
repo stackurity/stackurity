@@ -4,6 +4,12 @@ All notable changes to Stackurity. Versions follow [Semantic Versioning](https:/
 
 Each release's section is published as its GitHub release notes, and a tag without a section here cannot be released (`go run ./tools/changelog -version vX.Y.Z` prints it). New changes go under **Unreleased**, which is renamed to the version when it is tagged. Subsections are **Security**, **Added**, **Changed**, **Fixed** and **Upgrading**. Put fixes for vulnerabilities under `### Security`, first: installations treat a release with that heading as a security release and show administrators a banner they can only snooze.
 
+## Unreleased
+
+### Fixed
+
+- Stackurity Cloud: upgrading a plan paid by an Indian card works. Razorpay refuses to change such a plan even at the end of the period ("Only offers can be updated for subscriptions when payment mode is domestic card."), so the upgrade from 0.13.1 was refused with the plan unchanged. It now answers like a plan paid by UPI: Plan and billing offers **Cancel and subscribe again**, the current plan keeps the period it paid for, and the new one starts at once when authorised on the payment page with the difference for the rest of the period, billed in full from the end of the period. A replacement left unpaid and replaced again has its payment link (the add-on invoice) cancelled too.
+
 ## 0.13.1
 
 ### Added

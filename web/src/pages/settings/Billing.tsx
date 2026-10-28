@@ -213,11 +213,12 @@ function ChoosePlan({ b, onChanged }: { b: Billing; onChanged: (b: Billing) => v
     e.preventDefault();
     await send(false);
   };
-  /** The subscription cannot be changed (UPI, e-mandate): replaced by the bigger plan. */
+  /** The payment provider cannot change the subscription's plan (UPI, e-mandate, an Indian card): it is replaced by the bigger plan. */
   const replace = async () => {
     const ok = window.confirm(
-      "Your current subscription is cancelled now and nothing more is charged on it. The new plan starts as soon as you pay the difference " +
-        "for the rest of this period on the payment page, and is billed in full from the end of the period. Until you pay, your current plan continues.",
+      "Your current subscription is cancelled now and nothing more is charged on it; its plan continues until you pay. On the payment page " +
+        "you authorise the new plan with your card or UPI and pay the difference for the rest of this period; the new plan then starts at " +
+        "once and is billed in full from the end of the period.",
     );
     if (ok) await send(true);
   };
