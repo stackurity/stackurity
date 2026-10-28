@@ -940,6 +940,24 @@
       "schema": {
        "type": "string"
       }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "description": "Page size (default 100, at most 500)",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "offset",
+      "in": "query",
+      "required": false,
+      "description": "Items to skip",
+      "schema": {
+       "type": "string"
+      }
      }
     ],
     "responses": {
@@ -1183,6 +1201,24 @@
       "schema": {
        "type": "string"
       }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "description": "Page size (default 100, at most 500)",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "offset",
+      "in": "query",
+      "required": false,
+      "description": "Items to skip",
+      "schema": {
+       "type": "string"
+      }
      }
     ],
     "responses": {
@@ -1345,6 +1381,24 @@
       "name": "coverage",
       "in": "query",
       "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "description": "Page size (default 100, at most 500)",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "offset",
+      "in": "query",
+      "required": false,
+      "description": "Items to skip",
       "schema": {
        "type": "string"
       }
@@ -1792,6 +1846,24 @@
       "name": "object_id",
       "in": "query",
       "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "description": "Page size (default 100, at most 500)",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "offset",
+      "in": "query",
+      "required": false,
+      "description": "Items to skip",
       "schema": {
        "type": "string"
       }
@@ -2426,6 +2498,24 @@
       "schema": {
        "type": "string"
       }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "description": "Page size (default 100, at most 500)",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "offset",
+      "in": "query",
+      "required": false,
+      "description": "Items to skip",
+      "schema": {
+       "type": "string"
+      }
      }
     ],
     "responses": {
@@ -2660,6 +2750,33 @@
       "schema": {
        "type": "string"
       }
+     },
+     {
+      "name": "asset_id",
+      "in": "query",
+      "required": false,
+      "description": "One asset",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "description": "Page size (default 100, at most 500)",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "offset",
+      "in": "query",
+      "required": false,
+      "description": "Items to skip",
+      "schema": {
+       "type": "string"
+      }
      }
     ],
     "responses": {
@@ -2704,6 +2821,33 @@
       "name": "incident_id",
       "in": "query",
       "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "channel_id",
+      "in": "query",
+      "required": false,
+      "description": "One channel",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "description": "Page size (default 100, at most 500)",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "offset",
+      "in": "query",
+      "required": false,
+      "description": "Items to skip",
       "schema": {
        "type": "string"
       }
@@ -2981,7 +3125,27 @@
      "5XX": {
       "$ref": "#/components/responses/Error"
      }
-    }
+    },
+    "parameters": [
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "description": "Page size (default 100, at most 500)",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "offset",
+      "in": "query",
+      "required": false,
+      "description": "Items to skip",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ]
    }
   },
   "/facets": {
@@ -3183,7 +3347,7 @@
    "get": {
     "operationId": "get_findings",
     "summary": "Vulnerability and end-of-life findings, SOS, priority, known-exploited and most severe first",
-    "description": "Vulnerability and end-of-life findings, SOS, priority, known-exploited and most severe first. `new_within=N` keeps findings first seen in the last N days, `resolved_within=N` those resolved in the last N days (with `status=resolved`), `resolution_kind` (comma-separated: remediated, removed, superseded, advisory_withdrawn, advisory_changed, not_evaluated, other) those closed for that reason, and `sort=asset` orders by asset name first\n\nRole: viewer",
+    "description": "Vulnerability and end-of-life findings, SOS, priority, known-exploited and most severe first. `new_within=N` keeps findings first seen in the last N days, `resolved_within=N` those resolved in the last N days (with `status=resolved`), `resolution_kind` (comma-separated: remediated, removed, superseded, advisory_withdrawn, advisory_changed, not_evaluated, other) those closed for that reason, and `sort=asset` orders by asset name first. Also filters by `priority`, `state`, `sos`, `overdue`, assignee (`assignee_user`, `assignee_team`, `assignee=none`), `fix_group`, `incident_id` and `second_check`; paged with `limit` and `offset`\n\nRole: viewer",
     "tags": [
      "Findings and fixes"
     ],
@@ -3297,6 +3461,114 @@
       "name": "sort",
       "in": "query",
       "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "priority",
+      "in": "query",
+      "required": false,
+      "description": "P1 to P4, comma-separated",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "state",
+      "in": "query",
+      "required": false,
+      "description": "active, new, acknowledged, in_progress, suppressed, risk_accepted or regressed",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "sos",
+      "in": "query",
+      "required": false,
+      "description": "true: SOS findings only",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "overdue",
+      "in": "query",
+      "required": false,
+      "description": "true: past their fix deadline",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "assignee_user",
+      "in": "query",
+      "required": false,
+      "description": "Assigned to this user id",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "assignee_team",
+      "in": "query",
+      "required": false,
+      "description": "Assigned to this team id",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "assignee",
+      "in": "query",
+      "required": false,
+      "description": "none: unassigned findings",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "fix_group",
+      "in": "query",
+      "required": false,
+      "description": "In this fix group (its id)",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "incident_id",
+      "in": "query",
+      "required": false,
+      "description": "In this incident",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "second_check",
+      "in": "query",
+      "required": false,
+      "description": "agreed, disagreed or could_not_check",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "description": "Page size (default 100, at most 500)",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "offset",
+      "in": "query",
+      "required": false,
+      "description": "Items to skip",
       "schema": {
        "type": "string"
       }
@@ -3710,6 +3982,24 @@
         "fix",
         "asset"
        ]
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "description": "Page size (default 100, at most 500)",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "offset",
+      "in": "query",
+      "required": false,
+      "description": "Items to skip",
+      "schema": {
+       "type": "string"
       }
      }
     ],
@@ -4134,6 +4424,24 @@
       "schema": {
        "type": "string"
       }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "description": "Page size (default 100, at most 500)",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "offset",
+      "in": "query",
+      "required": false,
+      "description": "Items to skip",
+      "schema": {
+       "type": "string"
+      }
      }
     ],
     "responses": {
@@ -4234,6 +4542,33 @@
       "name": "team_id",
       "in": "query",
       "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "escalated",
+      "in": "query",
+      "required": false,
+      "description": "true: escalated incidents only",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "description": "Page size (default 100, at most 500)",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "offset",
+      "in": "query",
+      "required": false,
+      "description": "Items to skip",
       "schema": {
        "type": "string"
       }
@@ -4666,6 +5001,60 @@
       "name": "coverage",
       "in": "query",
       "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "q",
+      "in": "query",
+      "required": false,
+      "description": "Search",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "type",
+      "in": "query",
+      "required": false,
+      "description": "Component type",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "direct",
+      "in": "query",
+      "required": false,
+      "description": "true or false: direct dependencies only, or transitive only",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "include_removed",
+      "in": "query",
+      "required": false,
+      "description": "true: include removed rows",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "description": "Page size (default 100, at most 500)",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "offset",
+      "in": "query",
+      "required": false,
+      "description": "Items to skip",
       "schema": {
        "type": "string"
       }

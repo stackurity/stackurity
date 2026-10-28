@@ -43,6 +43,7 @@ Each release's section is published as its GitHub release notes, and a tag witho
 - `GET /findings/verify` and the MCP tool `verify_since` give each resolved finding its `resolution_kind` and `counts_as_remediation`, and the totals `remediated`, `closed_not_remediation` and `resolved_by_kind`.
 - The finding page and its history say why it closed ("Closed: Ubuntu withdrew this advisory on 27 Oct"), and that such a closure is not counted as remediation. `GET /findings` takes `resolution_kind` (comma-separated).
 - Durations in the dashboard are pluralised ("1 hour", "1 day", not "1 hours").
+- **docs/api.md is reorganised by area** (one short entry per route instead of one wide table), and every route the server serves is documented, including health checks, OAuth and `/mcp`, the licensed and Stackurity Cloud routes; `internal/api/openapi.json` gains the query parameters it was missing (`GET /findings` filters, `limit` and `offset` on paged lists).
 
 ### Fixed
 
