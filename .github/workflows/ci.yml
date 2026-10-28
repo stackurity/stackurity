@@ -52,6 +52,9 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go test -count=1 ./tools/docslint ./tools/releaselint
+      # The licensed build's modules (tools/eedeps) are still in go.mod and
+      # go.sum: go mod tidy cannot see stackurity-pro's imports.
+      - run: go test -count=1 ./tools/eedeps
       - run: go test -count=1 -run TestCLIDocumented ./cmd/stackurity
 
   # Kills the real server with SIGKILL during a feed import, an ingest, a

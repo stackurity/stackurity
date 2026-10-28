@@ -24,6 +24,7 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 - Cancelling on Slack's page, or coming back with a used, expired or someone else's request, explains what happened and offers to start again.
 - The secret reference field of email, webhook and Teams integrations suggested a Slack name.
+- The licensed build compiles again: `go.mod` keeps the modules only `stackurity-pro` imports (`tools/eedeps`), which `go mod tidy` in a Dependabot update had removed. A test now fails when one of them is dropped.
 
 ## 0.13.2
 
