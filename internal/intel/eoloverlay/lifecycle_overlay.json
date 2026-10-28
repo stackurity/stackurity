@@ -1,0 +1,716 @@
+{
+  "schema": 1,
+  "version": "2026-10-28.1",
+  "description": "Stackurity's lifecycle mappings on top of endoflife.date. Every product entry was checked against the vendor's or distribution's own package index (sources) on the date given. endoflife.date's own identifiers win unless an entry sets override.",
+  "namespace_families": [
+    {
+      "type": "rpm",
+      "namespaces": [
+        "redhat",
+        "rhel",
+        "centos",
+        "rocky",
+        "almalinux",
+        "ol"
+      ],
+      "why": "Red Hat Enterprise Linux and its rebuilds ship the same package names. The agent reports RHEL packages as pkg:rpm/rhel/..., Syft as pkg:rpm/redhat/..., and endoflife.date lists only some namespaces (redhat, centos), so Rocky Linux, AlmaLinux, Oracle Linux and agent-reported RHEL packages matched nothing."
+    },
+    {
+      "type": "deb",
+      "namespaces": [
+        "debian",
+        "ubuntu"
+      ],
+      "why": "Ubuntu is built from Debian and keeps its binary package names; endoflife.date often lists one of the two (pkg:deb/ubuntu/postgresql, pkg:deb/ubuntu/python3.12)."
+    }
+  ],
+  "products": [
+    {
+      "product": "electron",
+      "purls": [
+        "pkg:npm/electron"
+      ],
+      "sources": [
+        "https://registry.npmjs.org/electron/latest",
+        "https://endoflife.date/api/v1/products/electron"
+      ],
+      "verified": "2026-10-28",
+      "note": "endoflife.date tracks Electron (release lines are majors) but lists no package identifier."
+    },
+    {
+      "product": "mongodb",
+      "purls": [
+        "pkg:deb/*/mongodb-org-server",
+        "pkg:rpm/*/mongodb-org-server"
+      ],
+      "vendor_only": "MongoDB's repository (repo.mongodb.org)",
+      "sources": [
+        "https://repo.mongodb.org/apt/ubuntu/dists/noble/mongodb-org/8.0/multiverse/binary-amd64/Packages.gz",
+        "https://repo.mongodb.org/apt/debian/dists/bookworm/mongodb-org/8.0/main/binary-amd64/Packages.gz",
+        "https://repo.mongodb.org/yum/redhat/9/mongodb-org/8.0/x86_64/repodata/repomd.xml"
+      ],
+      "verified": "2026-10-28",
+      "note": "mongodb-org-server 8.0.34 (deb) and 8.0.9-1.el9 (rpm). endoflife.date lists pkg:deb/*/mongodb, which is not what MongoDB's repository installs, and the rpm name only for redhat, centos and amzn."
+    },
+    {
+      "product": "redis",
+      "purls": [
+        "pkg:deb/*/redis-server"
+      ],
+      "vendor_builds": [
+        {
+          "repository": "Redis's repository (packages.redis.io)",
+          "version": "rl\\d+~[a-z]+\\d*$"
+        }
+      ],
+      "sources": [
+        "https://packages.redis.io/deb/dists/noble/main/binary-amd64/Packages.gz",
+        "http://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.xz",
+        "http://deb.debian.org/debian/dists/bookworm/main/binary-amd64/Packages.xz"
+      ],
+      "verified": "2026-10-28",
+      "note": "The server binary is in redis-server (Ubuntu 5:7.0.15-1build2, Debian 5:7.0.15-1~deb12u7, Redis 6:8.10.3-1rl1~noble1); endoflife.date lists only the redis metapackage."
+    },
+    {
+      "product": "docker-engine",
+      "purls": [
+        "pkg:deb/*/docker-ce",
+        "pkg:rpm/*/docker-ce"
+      ],
+      "vendor_only": "Docker's repository (download.docker.com)",
+      "sources": [
+        "https://download.docker.com/linux/ubuntu/dists/noble/stable/binary-amd64/Packages.gz",
+        "https://download.docker.com/linux/debian/dists/bookworm/stable/binary-amd64/Packages.gz",
+        "https://download.docker.com/linux/rhel/9/x86_64/stable/repodata/repomd.xml",
+        "http://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.xz"
+      ],
+      "verified": "2026-10-28",
+      "note": "docker-ce 5:29.9.2-1~ubuntu.24.04~noble (deb), 3:29.9.2-1.el9 (rpm); docker.io is the distributions' own build (Ubuntu 24.0.7-0ubuntu4). docker-ce is only in Docker's repository."
+    },
+    {
+      "product": "docker-engine",
+      "purls": [
+        "pkg:deb/*/docker.io"
+      ],
+      "sources": [
+        "http://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.xz",
+        "http://deb.debian.org/debian/dists/bookworm/main/binary-amd64/Packages.xz"
+      ],
+      "verified": "2026-10-28",
+      "note": "The distributions' own Docker build (Ubuntu 24.0.7-0ubuntu4, Debian 20.10.24+dfsg1-1+deb12u1+b6)."
+    },
+    {
+      "product": "containerd",
+      "purls": [
+        "pkg:deb/*/containerd.io"
+      ],
+      "vendor_only": "Docker's repository (download.docker.com)",
+      "sources": [
+        "https://download.docker.com/linux/ubuntu/dists/noble/stable/binary-amd64/Packages.gz"
+      ],
+      "verified": "2026-10-28",
+      "note": "Docker's build of containerd (2.4.2-3~ubuntu.24.04~noble)."
+    },
+    {
+      "product": "containerd",
+      "purls": [
+        "pkg:deb/*/containerd"
+      ],
+      "sources": [
+        "http://archive.ubuntu.com/ubuntu/dists/noble/main/binary-amd64/Packages.xz"
+      ],
+      "verified": "2026-10-28",
+      "note": "The distributions' own build (Ubuntu 1.7.12-0ubuntu4)."
+    },
+    {
+      "product": "postgresql",
+      "purls": [
+        "pkg:deb/*/postgresql-{cycle}",
+        "pkg:rpm/*/postgresql{cycle}-server"
+      ],
+      "sources": [
+        "https://apt.postgresql.org/pub/repos/apt/dists/noble-pgdg/main/binary-amd64/Packages.gz",
+        "https://download.postgresql.org/pub/repos/yum/16/redhat/rhel-9-x86_64/repodata/repomd.xml",
+        "http://archive.ubuntu.com/ubuntu/dists/noble/main/binary-amd64/Packages.xz"
+      ],
+      "verified": "2026-10-28",
+      "note": "The server is postgresql-<major> on Debian and Ubuntu (Ubuntu 16.2-1ubuntu4, PGDG 16.15-1.pgdg24.04+2) and postgresql<major>-server from PGDG's yum repository (16.9-3PGDG.rhel9). PGDG builds are recognised by 'pgdg' in the version."
+    },
+    {
+      "product": "nodejs",
+      "purls": [
+        "pkg:deb/*/nodejs"
+      ],
+      "sources": [
+        "https://deb.nodesource.com/node_22.x/dists/nodistro/main/binary-amd64/Packages.gz",
+        "https://rpm.nodesource.com/pub_22.x/nodistro/nodejs/x86_64/repodata/repomd.xml",
+        "http://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.xz"
+      ],
+      "verified": "2026-10-28",
+      "note": "NodeSource 22.23.4-1nodesource1, Ubuntu 18.19.1+dfsg-6ubuntu5. NodeSource's rpm is nodejs with epoch 2 (2:22.9.0-1nodesource), which endoflife.date's pkg:rpm/redhat/nodejs covers through the rpm family. NodeSource builds are recognised by 'nodesource' in the version."
+    },
+    {
+      "product": "elasticsearch",
+      "purls": [
+        "pkg:deb/*/elasticsearch",
+        "pkg:rpm/*/elasticsearch"
+      ],
+      "vendor_only": "Elastic's repository (artifacts.elastic.co)",
+      "sources": [
+        "https://artifacts.elastic.co/packages/8.x/apt/dists/stable/main/binary-amd64/Packages.gz",
+        "https://artifacts.elastic.co/packages/9.x/apt/dists/stable/main/binary-amd64/Packages.gz",
+        "https://artifacts.elastic.co/packages/8.x/yum/repodata/repomd.xml"
+      ],
+      "verified": "2026-10-28",
+      "note": "Same names as endoflife.date's identifiers; the entry marks them as vendor builds (no distribution ships elasticsearch)."
+    },
+    {
+      "product": "kibana",
+      "purls": [
+        "pkg:deb/*/kibana",
+        "pkg:rpm/*/kibana"
+      ],
+      "vendor_only": "Elastic's repository (artifacts.elastic.co)",
+      "sources": [
+        "https://artifacts.elastic.co/packages/9.x/apt/dists/stable/main/binary-amd64/Packages.gz",
+        "https://artifacts.elastic.co/packages/8.x/yum/repodata/repomd.xml"
+      ],
+      "verified": "2026-10-28"
+    },
+    {
+      "product": "logstash",
+      "purls": [
+        "pkg:deb/*/logstash",
+        "pkg:rpm/*/logstash"
+      ],
+      "vendor_only": "Elastic's repository (artifacts.elastic.co)",
+      "sources": [
+        "https://artifacts.elastic.co/packages/9.x/apt/dists/stable/main/binary-amd64/Packages.gz",
+        "https://artifacts.elastic.co/packages/8.x/yum/repodata/repomd.xml"
+      ],
+      "verified": "2026-10-28",
+      "note": "Versions carry epoch 1 (1:9.5.5-1)."
+    },
+    {
+      "product": "opensearch",
+      "purls": [
+        "pkg:deb/*/opensearch"
+      ],
+      "vendor_only": "OpenSearch's repository (artifacts.opensearch.org)",
+      "sources": [
+        "https://artifacts.opensearch.org/releases/bundle/opensearch/2.x/apt/dists/stable/main/binary-amd64/Packages.gz"
+      ],
+      "verified": "2026-10-28"
+    },
+    {
+      "product": "grafana",
+      "purls": [
+        "pkg:deb/*/grafana",
+        "pkg:deb/*/grafana-enterprise",
+        "pkg:rpm/*/grafana",
+        "pkg:rpm/*/grafana-enterprise"
+      ],
+      "vendor_only": "Grafana's repository (apt.grafana.com, rpm.grafana.com)",
+      "sources": [
+        "https://apt.grafana.com/dists/stable/main/binary-amd64/Packages.gz",
+        "https://rpm.grafana.com/repodata/repomd.xml"
+      ],
+      "verified": "2026-10-28"
+    },
+    {
+      "product": "influxdb",
+      "purls": [
+        "pkg:deb/*/influxdb2",
+        "pkg:deb/*/influxdb3-core",
+        "pkg:deb/*/influxdb3-enterprise"
+      ],
+      "vendor_only": "InfluxData's repository (repos.influxdata.com)",
+      "sources": [
+        "https://repos.influxdata.com/debian/dists/stable/main/binary-amd64/Packages.gz"
+      ],
+      "verified": "2026-10-28",
+      "note": "influxdb2 2.9.1-1, influxdb3-core 3.9.3-1; only in InfluxData's repository."
+    },
+    {
+      "product": "influxdb",
+      "purls": [
+        "pkg:deb/*/influxdb"
+      ],
+      "sources": [
+        "https://repos.influxdata.com/debian/dists/stable/main/binary-amd64/Packages.gz",
+        "http://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.xz"
+      ],
+      "verified": "2026-10-28",
+      "note": "InfluxDB 1.x: both a distribution package and InfluxData's (1.11.7-1), which cannot be told apart by version."
+    },
+    {
+      "product": "telegraf",
+      "purls": [
+        "pkg:deb/*/telegraf"
+      ],
+      "vendor_only": "InfluxData's repository (repos.influxdata.com)",
+      "sources": [
+        "https://repos.influxdata.com/debian/dists/stable/main/binary-amd64/Packages.gz"
+      ],
+      "verified": "2026-10-28"
+    },
+    {
+      "product": "mysql",
+      "purls": [
+        "pkg:deb/*/mysql-community-server",
+        "pkg:rpm/*/mysql-community-server"
+      ],
+      "vendor_only": "MySQL's repository (repo.mysql.com)",
+      "sources": [
+        "https://repo.mysql.com/apt/ubuntu/dists/noble/mysql-8.4-lts/binary-amd64/Packages.gz",
+        "https://repo.mysql.com/yum/mysql-8.4-community/el/9/x86_64/repodata/repomd.xml"
+      ],
+      "verified": "2026-10-28"
+    },
+    {
+      "product": "mariadb",
+      "purls": [
+        "pkg:deb/*/mariadb-server"
+      ],
+      "vendor_builds": [
+        {
+          "repository": "MariaDB's repository (dlm.mariadb.com)",
+          "version": "\\+maria~"
+        }
+      ],
+      "sources": [
+        "https://dlm.mariadb.com/repo/mariadb-server/11.4/repo/ubuntu/dists/noble/main/binary-amd64/Packages.gz",
+        "http://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.xz",
+        "http://deb.debian.org/debian/dists/bookworm/main/binary-amd64/Packages.xz"
+      ],
+      "verified": "2026-10-28",
+      "note": "endoflife.date lists pkg:deb/*/mariadb, the source package; the binary installed is mariadb-server (Debian 1:10.11.18-0+deb12u1, MariaDB 1:11.4.13+maria~ubu2404)."
+    },
+    {
+      "product": "apache-http-server",
+      "purls": [
+        "pkg:deb/*/apache2"
+      ],
+      "sources": [
+        "http://archive.ubuntu.com/ubuntu/dists/noble/main/binary-amd64/Packages.xz",
+        "http://deb.debian.org/debian/dists/bookworm/main/binary-amd64/Packages.xz"
+      ],
+      "verified": "2026-10-28",
+      "note": "endoflife.date lists httpd for rpm only."
+    },
+    {
+      "product": "tomcat",
+      "purls": [
+        "pkg:deb/*/tomcat9",
+        "pkg:deb/*/tomcat10",
+        "pkg:deb/*/tomcat11",
+        "pkg:maven/org.apache.tomcat.embed/tomcat-embed-core"
+      ],
+      "sources": [
+        "http://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.xz",
+        "https://repo1.maven.org/maven2/org/apache/tomcat/embed/tomcat-embed-core/maven-metadata.xml"
+      ],
+      "verified": "2026-10-28",
+      "note": "tomcat-embed-core is the Tomcat in every Spring Boot web application; its versions follow Tomcat's (10.1.x, 11.0.x)."
+    },
+    {
+      "product": "rabbitmq",
+      "purls": [
+        "pkg:deb/*/rabbitmq-server"
+      ],
+      "sources": [
+        "https://deb1.rabbitmq.com/rabbitmq-server/ubuntu/noble/dists/noble/main/binary-amd64/Packages.gz",
+        "http://archive.ubuntu.com/ubuntu/dists/noble/main/binary-amd64/Packages.xz"
+      ],
+      "verified": "2026-10-28",
+      "note": "Team RabbitMQ's builds (4.0.2-1) cannot be told apart from a distribution's by version, so they are treated as the distribution's."
+    },
+    {
+      "product": "kubernetes",
+      "purls": [
+        "pkg:deb/*/kubelet",
+        "pkg:rpm/*/kubelet"
+      ],
+      "vendor_only": "the Kubernetes project's repository (pkgs.k8s.io)",
+      "sources": [
+        "https://pkgs.k8s.io/core:/stable:/v1.34/deb/Packages.gz",
+        "https://pkgs.k8s.io/core:/stable:/v1.34/rpm/repodata/repomd.xml"
+      ],
+      "verified": "2026-10-28",
+      "note": "kubelet only, one finding per node; kubeadm and kubectl share its version."
+    },
+    {
+      "product": "gitlab",
+      "purls": [
+        "pkg:deb/*/gitlab-ce",
+        "pkg:rpm/*/gitlab-ce"
+      ],
+      "vendor_only": "GitLab's repository (packages.gitlab.com)",
+      "sources": [
+        "https://packages.gitlab.com/gitlab/gitlab-ce/ubuntu/dists/noble/main/binary-amd64/Packages.gz",
+        "https://packages.gitlab.com/gitlab/gitlab-ce/el/9/x86_64/repodata/repomd.xml"
+      ],
+      "verified": "2026-10-28"
+    },
+    {
+      "product": "jenkins",
+      "purls": [
+        "pkg:deb/*/jenkins",
+        "pkg:rpm/*/jenkins"
+      ],
+      "vendor_only": "the Jenkins project's repository (pkg.jenkins.io)",
+      "sources": [
+        "https://pkg.jenkins.io/debian-stable/binary/Packages.gz",
+        "https://pkg.jenkins.io/redhat-stable/repodata/repomd.xml"
+      ],
+      "verified": "2026-10-28",
+      "note": "An LTS version (2.528.1) matches its LTS line when endoflife.date lists it, and the weekly line (2) otherwise."
+    },
+    {
+      "product": "mssqlserver",
+      "purls": [
+        "pkg:deb/*/mssql-server"
+      ],
+      "vendor_only": "Microsoft's repository (packages.microsoft.com)",
+      "sources": [
+        "https://packages.microsoft.com/ubuntu/22.04/mssql-server-2022/dists/jammy/main/binary-amd64/Packages.gz"
+      ],
+      "verified": "2026-10-28",
+      "note": "Versions are the engine's (16.0.4212.1-3 for SQL Server 2022), as are endoflife.date's release lines (16.0)."
+    },
+    {
+      "product": "dotnet",
+      "purls": [
+        "pkg:deb/*/dotnet-runtime-{cycle}",
+        "pkg:deb/*/aspnetcore-runtime-{cycle}",
+        "pkg:rpm/*/dotnet-runtime-{cycle}"
+      ],
+      "sources": [
+        "https://packages.microsoft.com/ubuntu/22.04/prod/dists/jammy/main/binary-amd64/Packages.gz",
+        "http://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.xz"
+      ],
+      "verified": "2026-10-28"
+    },
+    {
+      "product": "eclipse-temurin",
+      "purls": [
+        "pkg:deb/*/temurin-{cycle}-jdk",
+        "pkg:deb/*/temurin-{cycle}-jre"
+      ],
+      "vendor_only": "Adoptium's repository (packages.adoptium.net)",
+      "sources": [
+        "https://packages.adoptium.net/artifactory/deb/dists/noble/main/binary-amd64/Packages.gz"
+      ],
+      "verified": "2026-10-28"
+    },
+    {
+      "product": "amazon-corretto",
+      "purls": [
+        "pkg:deb/*/java-{cycle}-amazon-corretto-jdk"
+      ],
+      "cycle_aliases": {
+        "1.8.0": "8"
+      },
+      "vendor_only": "Amazon's Corretto repository (apt.corretto.aws)",
+      "sources": [
+        "https://apt.corretto.aws/dists/stable/main/binary-amd64/Packages.gz"
+      ],
+      "verified": "2026-10-28"
+    },
+    {
+      "product": "go",
+      "purls": [
+        "pkg:deb/*/golang-{cycle}-go"
+      ],
+      "sources": [
+        "http://archive.ubuntu.com/ubuntu/dists/noble/main/binary-amd64/Packages.xz",
+        "http://deb.debian.org/debian/dists/bookworm/main/binary-amd64/Packages.xz"
+      ],
+      "verified": "2026-10-28"
+    },
+    {
+      "product": "hashicorp-vault",
+      "purls": [
+        "pkg:deb/*/vault"
+      ],
+      "vendor_only": "HashiCorp's repository (apt.releases.hashicorp.com)",
+      "sources": [
+        "https://apt.releases.hashicorp.com/dists/noble/main/binary-amd64/Packages.gz"
+      ],
+      "verified": "2026-10-28"
+    },
+    {
+      "product": "consul",
+      "purls": [
+        "pkg:deb/*/consul"
+      ],
+      "vendor_only": "HashiCorp's repository (apt.releases.hashicorp.com)",
+      "sources": [
+        "https://apt.releases.hashicorp.com/dists/noble/main/binary-amd64/Packages.gz"
+      ],
+      "verified": "2026-10-28"
+    },
+    {
+      "product": "terraform",
+      "purls": [
+        "pkg:deb/*/terraform"
+      ],
+      "vendor_only": "HashiCorp's repository (apt.releases.hashicorp.com)",
+      "sources": [
+        "https://apt.releases.hashicorp.com/dists/noble/main/binary-amd64/Packages.gz"
+      ],
+      "verified": "2026-10-28"
+    },
+    {
+      "product": "nomad",
+      "purls": [
+        "pkg:deb/*/nomad"
+      ],
+      "vendor_only": "HashiCorp's repository (apt.releases.hashicorp.com)",
+      "sources": [
+        "https://apt.releases.hashicorp.com/dists/noble/main/binary-amd64/Packages.gz"
+      ],
+      "verified": "2026-10-28"
+    },
+    {
+      "product": "openssl",
+      "purls": [
+        "pkg:deb/*/openssl",
+        "pkg:rpm/*/openssl"
+      ],
+      "sources": [
+        "http://archive.ubuntu.com/ubuntu/dists/noble/main/binary-amd64/Packages.xz"
+      ],
+      "verified": "2026-10-28",
+      "note": "A distribution package: on a supported release the inventory row gets the upstream note, not a finding."
+    },
+    {
+      "product": "exim",
+      "purls": [
+        "pkg:deb/*/exim4-base"
+      ],
+      "sources": [
+        "http://archive.ubuntu.com/ubuntu/dists/noble/main/binary-amd64/Packages.xz"
+      ],
+      "verified": "2026-10-28"
+    },
+    {
+      "product": "postfix",
+      "purls": [
+        "pkg:deb/*/postfix"
+      ],
+      "sources": [
+        "http://archive.ubuntu.com/ubuntu/dists/noble/main/binary-amd64/Packages.xz"
+      ],
+      "verified": "2026-10-28"
+    },
+    {
+      "product": "dovecot",
+      "purls": [
+        "pkg:deb/*/dovecot-core"
+      ],
+      "sources": [
+        "http://archive.ubuntu.com/ubuntu/dists/noble/main/binary-amd64/Packages.xz"
+      ],
+      "verified": "2026-10-28"
+    },
+    {
+      "product": "prometheus",
+      "purls": [
+        "pkg:deb/*/prometheus"
+      ],
+      "sources": [
+        "http://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.xz",
+        "http://deb.debian.org/debian/dists/bookworm/main/binary-amd64/Packages.xz"
+      ],
+      "verified": "2026-10-28"
+    },
+    {
+      "product": "erlang",
+      "purls": [
+        "pkg:deb/*/erlang-base"
+      ],
+      "sources": [
+        "http://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.xz"
+      ],
+      "verified": "2026-10-28"
+    },
+    {
+      "product": "podman",
+      "purls": [
+        "pkg:deb/*/podman"
+      ],
+      "sources": [
+        "http://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.xz"
+      ],
+      "verified": "2026-10-28"
+    },
+    {
+      "product": "symfony",
+      "purls": [
+        "pkg:composer/symfony/http-kernel"
+      ],
+      "sources": [
+        "https://repo.packagist.org/p2/symfony/http-kernel.json"
+      ],
+      "verified": "2026-10-28",
+      "note": "The kernel every Symfony application (and Laravel) loads; its versions follow Symfony's release lines."
+    },
+    {
+      "product": "cakephp",
+      "purls": [
+        "pkg:composer/cakephp/cakephp"
+      ],
+      "sources": [
+        "https://repo.packagist.org/p2/cakephp/cakephp.json"
+      ],
+      "verified": "2026-10-28"
+    },
+    {
+      "product": "twig",
+      "purls": [
+        "pkg:composer/twig/twig"
+      ],
+      "sources": [
+        "https://repo.packagist.org/p2/twig/twig.json"
+      ],
+      "verified": "2026-10-28"
+    },
+    {
+      "product": "craft-cms",
+      "purls": [
+        "pkg:composer/craftcms/cms"
+      ],
+      "sources": [
+        "https://repo.packagist.org/p2/craftcms/cms.json"
+      ],
+      "verified": "2026-10-28"
+    },
+    {
+      "product": "shopware",
+      "purls": [
+        "pkg:composer/shopware/core"
+      ],
+      "sources": [
+        "https://repo.packagist.org/p2/shopware/core.json"
+      ],
+      "verified": "2026-10-28"
+    },
+    {
+      "product": "kotlin",
+      "purls": [
+        "pkg:maven/org.jetbrains.kotlin/kotlin-stdlib"
+      ],
+      "sources": [
+        "https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/maven-metadata.xml"
+      ],
+      "verified": "2026-10-28"
+    },
+    {
+      "product": "quarkus-framework",
+      "purls": [
+        "pkg:maven/io.quarkus/quarkus-core"
+      ],
+      "sources": [
+        "https://repo1.maven.org/maven2/io/quarkus/quarkus-core/maven-metadata.xml"
+      ],
+      "verified": "2026-10-28",
+      "note": "endoflife.date lists only the platform BOM, which is not in an application's dependency list."
+    },
+    {
+      "product": "apache-kafka",
+      "purls": [
+        "pkg:maven/org.apache.kafka/kafka_2.13",
+        "pkg:maven/org.apache.kafka/kafka_2.12"
+      ],
+      "sources": [
+        "https://repo1.maven.org/maven2/org/apache/kafka/kafka_2.13/maven-metadata.xml",
+        "https://repo1.maven.org/maven2/org/apache/kafka/kafka_2.12/maven-metadata.xml"
+      ],
+      "verified": "2026-10-28",
+      "note": "The broker jar, read from a Kafka installation's libs directory by the Java stack pack; kafka-clients is a library and is not mapped."
+    },
+    {
+      "product": "apache-lucene",
+      "purls": [
+        "pkg:maven/org.apache.lucene/lucene-core"
+      ],
+      "sources": [
+        "https://repo1.maven.org/maven2/org/apache/lucene/lucene-core/maven-metadata.xml"
+      ],
+      "verified": "2026-10-28"
+    },
+    {
+      "product": "liquibase",
+      "purls": [
+        "pkg:maven/org.liquibase/liquibase-core"
+      ],
+      "sources": [
+        "https://repo1.maven.org/maven2/org/liquibase/liquibase-core/maven-metadata.xml"
+      ],
+      "verified": "2026-10-28"
+    }
+  ],
+  "untracked": [
+    {
+      "label": "NestJS",
+      "purls": [
+        "pkg:npm/%40nestjs/core"
+      ],
+      "why": "endoflife.date does not track NestJS and the project publishes no end-of-life dates.",
+      "sources": [
+        "https://registry.npmjs.org/@nestjs%2Fcore/latest",
+        "https://endoflife.date/api/v1/products/full"
+      ],
+      "checked": "2026-10-28"
+    },
+    {
+      "label": "Flask",
+      "purls": [
+        "pkg:pypi/flask"
+      ],
+      "why": "endoflife.date does not track Flask.",
+      "sources": [
+        "https://pypi.org/pypi/flask/json",
+        "https://endoflife.date/api/v1/products/full"
+      ],
+      "checked": "2026-10-28"
+    },
+    {
+      "label": "FastAPI",
+      "purls": [
+        "pkg:pypi/fastapi"
+      ],
+      "why": "endoflife.date does not track FastAPI.",
+      "sources": [
+        "https://pypi.org/pypi/fastapi/json",
+        "https://endoflife.date/api/v1/products/full"
+      ],
+      "checked": "2026-10-28"
+    },
+    {
+      "label": "CodeIgniter",
+      "purls": [
+        "pkg:composer/codeigniter4/framework"
+      ],
+      "why": "endoflife.date does not track CodeIgniter.",
+      "sources": [
+        "https://repo.packagist.org/p2/codeigniter4/framework.json",
+        "https://endoflife.date/api/v1/products/full"
+      ],
+      "checked": "2026-10-28"
+    },
+    {
+      "label": "Varnish",
+      "purls": [
+        "pkg:deb/*/varnish"
+      ],
+      "why": "endoflife.date does not track Varnish Cache.",
+      "sources": [
+        "http://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.xz",
+        "https://endoflife.date/api/v1/products/full"
+      ],
+      "checked": "2026-10-28"
+    }
+  ]
+}

@@ -406,6 +406,28 @@ export interface LicenseInfo {
   managed_by_env: boolean;
 }
 
+/** One kind of gap in GET /admin/coverage-gaps: counts and type names only. */
+export interface CoverageGap {
+  kind: string;
+  label: string;
+  detail?: string;
+  assets: number;
+  workspaces: number;
+  /** Distinct components (no_vulnerability_source only). */
+  components?: number;
+}
+
+/** GET /admin/coverage-gaps: what Stackurity cannot check, across every workspace. */
+export interface CoverageGapReport {
+  checked_at: string;
+  workspaces: number;
+  assets: number;
+  overlay_version: string;
+  unread_files: CoverageGap[];
+  no_vulnerability_source: CoverageGap[];
+  no_lifecycle: CoverageGap[];
+}
+
 /** GET /admin/health: whether the installation itself is working. */
 /** What a platform problem affects. Items are named only in the viewer's active workspace. */
 export interface HealthScope {

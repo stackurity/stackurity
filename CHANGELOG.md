@@ -18,6 +18,21 @@ Each release's section is published as its GitHub release notes, and a tag witho
 - Releases are gated: a tag publishes nothing while govulncheck reports a reachable vulnerability, npm audit reports a high or critical advisory, or the built image has a fixable high or critical vulnerability. Every pull request and a daily run on `main` check the same. Exceptions need a reason and an expiry (`.trivyignore.yaml`, `web/audit-allow.json`). `make vulncheck` and `make scan-image IMAGE=...` run the checks locally.
 - GitHub Actions used by the build and release workflows are pinned to commit SHAs.
 
+### Added
+
+- End-of-life detection for products endoflife.date tracks without the package names their installs use: Stackurity's own lifecycle overlay, a versioned data file checked against each vendor's package index, maps MongoDB's `mongodb-org-server`, Docker's `docker-ce`, `containerd.io`, Electron on npm, `redis-server`, `postgresql-<major>` and PGDG's `postgresql<major>-server`, NodeSource's `nodejs`, Elastic, Grafana, InfluxData, MySQL, MariaDB, HashiCorp, Kubernetes (`kubelet`), GitLab, Jenkins, SQL Server, .NET, Temurin, Corretto, Go, Tomcat (including Spring Boot's embedded Tomcat), Symfony, Kotlin, Quarkus, Kafka and more. RHEL, Rocky Linux, AlmaLinux and Oracle Linux packages now use endoflife.date's Red Hat identifiers, and Debian packages its Ubuntu ones. endoflife.date's own mappings always win. See [Lifecycle mappings](docs/compatibility.md#lifecycle-mappings).
+- **Settings → Coverage gaps** for instance administrators (`GET /api/v1/admin/coverage-gaps`): across every workspace, files nothing reads (by kind), components with no vulnerability source (by type and reason) and products with no lifecycle match, counted by assets and workspaces. It names no workspace, asset, path or package.
+- Scans report more files they find but cannot read as unsupported coverage: `Package.swift`, `Package.resolved`, `Podfile.lock`, `conanfile.txt`, `conanfile.py`, `conan.lock`, `vcpkg.json`, `uv.lock`, `pdm.lock`, `rebar.lock`, `packages.config`, `deno.lock`, `bun.lock` and `build.sbt`.
+
+### Changed
+
+- Packages built by a vendor's repository (MongoDB, Docker, Elastic, Grafana, PGDG, NodeSource, Redis, nginx.org, MariaDB, MySQL, Ondřej Surý's PHP, Remi and others) are no longer matched against the distribution's advisories, which describe the distribution's own builds and showed them as clean. Their coverage is now `unsupported` ("built by <repository>, not by the distribution"), so assets running them show an evaluation gap; findings that matching produced on them are resolved. Their end of life uses upstream dates, and the inventory note names the repository. See [Packages from vendor repositories](docs/compatibility.md#packages-from-vendor-repositories).
+
+### Fixed
+
+- A Debian or RPM epoch no longer stops the release line from being read (`5:7.0.15` is Redis 7.0, `1:10.11.6` MariaDB 10.11).
+- An upstream pre-release version such as `2.0~beta` is no longer taken for a build named after a release codename.
+
 ### Upgrading
 
 - Behind Cloudflare (including Cloudflare Tunnel), nothing changes: keep `STACKURITY_TRUST_PROXY=true`. The tunnel connector reaches Stackurity from loopback or a private (Docker network) address, which are trusted by default.
