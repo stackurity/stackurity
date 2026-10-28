@@ -32,12 +32,14 @@ var (
 	// limitPerAddress applies to each client address on sign-in, setup,
 	// password change, enrollment and the start of single sign-on.
 	limitPerAddress = rateLimit{10, time.Minute}
-	// limitPerAccount caps sign-in attempts on one account from any number
-	// of addresses, and password changes by one user. Successful attempts
-	// count too, so the counter cannot be reset by an attacker; a user
-	// locked out by someone else's guessing can sign in again when the
-	// window ends, or through single sign-on.
+	// limitPerAccount caps password changes by one signed-in user.
 	limitPerAccount = rateLimit{20, 15 * time.Minute}
+	// limitAccountFailures caps failed sign-ins on one account from all
+	// addresses together. It is looser than the per-address backoff below,
+	// which is what stops a single guesser; this one stops guessing spread
+	// over many addresses. Only failures count, so signing in never adds to
+	// it.
+	limitAccountFailures = rateLimit{100, 15 * time.Minute}
 	// limitSetupTotal caps setup attempts from all addresses together, in
 	// case STACKURITY_SETUP_TOKEN was set to something guessable. It only
 	// matters before the first admin exists.
@@ -161,4 +163,84 @@ func (l *localLimiter) allow(key string, lim rateLimit) bool {
 	}
 	w.n++
 	return w.n <= lim.n
+}
+
+// Sign-in backoff. Failed sign-ins are counted per account and client
+// address together (addressKey: the address, or an IPv6 /64), so someone
+// guessing a password from their own address slows only themselves: the
+// account's owner, signing in from elsewhere, is not held up. The first
+// loginFreeFailures failures in a row cost nothing; after that each attempt
+// waits loginBackoffBase, doubling with each further failure up to
+// loginBackoffMax. A successful sign-in from that address clears its count;
+// failures are otherwise forgotten loginFailureMemory after the last one.
+// Accounts that do not exist are counted the same way, so the answers never
+// say whether an account exists.
+const (
+	loginFreeFailures  = 5
+	loginBackoffBase   = 30 * time.Second
+	loginBackoffMax    = 15 * time.Minute
+	loginFailureMemory = 24 * time.Hour
+)
+
+// loginBackoff is how long to wait after n failures in a row.
+func loginBackoff(n int) time.Duration {
+	if n < loginFreeFailures {
+		return 0
+	}
+	d := loginBackoffBase
+	for i := loginFreeFailures; i < n; i++ {
+		d *= 2
+		if d >= loginBackoffMax {
+			return loginBackoffMax
+		}
+	}
+	return d
+}
+
+// loginSubject is the account and address a sign-in backoff counts.
+func loginSubject(account string, r *http.Request) string {
+	return account + "\x00" + addressKey(r)
+}
+
+// loginWait is how long the account must wait before another sign-in from
+// this address, or zero.
+func (s *Server) loginWait(ctx context.Context, account, subject string) (time.Duration, error) {
+	n, last, now, err := s.Store.Failures(ctx, "login-fail", subject, loginFailureMemory)
+	if err != nil {
+		return 0, err
+	}
+	var wait time.Duration
+	if d := loginBackoff(n); d > 0 {
+		wait = max(wait, last.Add(d).Sub(now))
+	}
+	total, err := s.Store.RateLimitCount(ctx, "login-account-fail", account, limitAccountFailures.window)
+	if err != nil {
+		return 0, err
+	}
+	if total >= limitAccountFailures.n {
+		win := limitAccountFailures.window.Milliseconds()
+		end := time.UnixMilli(now.UnixMilli() - now.UnixMilli()%win + win)
+		wait = max(wait, end.Sub(now))
+	}
+	return wait, nil
+}
+
+// loginFailed counts a failed sign-in and records in the audit log when it
+// starts or lengthens a backoff, and when the account reaches its cap.
+func (s *Server) loginFailed(r *http.Request, actor store.Actor, account, subject string) {
+	ctx := r.Context()
+	n, _, err := s.Store.RecordFailure(ctx, "login-fail", subject, loginFailureMemory)
+	if err != nil {
+		s.Log.Error("counting a failed sign-in", "err", err)
+	} else if d := loginBackoff(n); d > 0 {
+		s.Log.Info("sign-in backoff", "failures", n, "wait", d)
+		_ = s.Store.Audit(ctx, actor, "auth.login_backoff", "user", "", map[string]any{"failures": n, "wait_seconds": int(d.Seconds())})
+	}
+	total, err := s.Store.RateLimitHit(ctx, "login-account-fail", account, limitAccountFailures.window)
+	if err != nil {
+		s.Log.Error("counting a failed sign-in", "err", err)
+	} else if total == limitAccountFailures.n {
+		s.Log.Warn("sign-in failures for one account reached the cap", "cap", limitAccountFailures.n, "window", limitAccountFailures.window)
+		_ = s.Store.Audit(ctx, actor, "auth.login_locked", "user", "", map[string]any{"failures": total, "window_seconds": int(limitAccountFailures.window.Seconds())})
+	}
 }

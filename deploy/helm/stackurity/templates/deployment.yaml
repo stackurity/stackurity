@@ -37,6 +37,12 @@ spec:
             - {name: STACKURITY_SECRETS_DIR, value: /run/secrets}
             - {name: STACKURITY_COOKIE_SECURE, value: {{ .Values.config.cookieSecure | quote }}}
             - {name: STACKURITY_TRUST_PROXY, value: {{ .Values.config.trustProxy | quote }}}
+            {{- with .Values.config.trustedProxyHeader }}
+            - {name: STACKURITY_TRUSTED_PROXY_HEADER, value: {{ . | quote }}}
+            {{- end }}
+            {{- with .Values.config.trustedProxies }}
+            - {name: STACKURITY_TRUSTED_PROXIES, value: {{ . | quote }}}
+            {{- end }}
             - {name: STACKURITY_FEEDS, value: {{ .Values.config.feeds | quote }}}
             - {name: STACKURITY_STALE_AFTER, value: {{ .Values.config.staleAfter | quote }}}
             - {name: STACKURITY_LOG_FORMAT, value: {{ .Values.config.logFormat | quote }}}

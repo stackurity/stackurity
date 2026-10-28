@@ -174,7 +174,7 @@ func (s *Server) publicURL(r *http.Request) string {
 		return strings.TrimRight(s.BaseURL, "/")
 	}
 	scheme := "http"
-	if r.TLS != nil || (s.TrustProxy && r.Header.Get("X-Forwarded-Proto") == "https") {
+	if r.TLS != nil || (s.TrustProxy && viaTrustedProxy(r) && r.Header.Get("X-Forwarded-Proto") == "https") {
 		scheme = "https"
 	}
 	return scheme + "://" + r.Host

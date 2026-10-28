@@ -56,6 +56,11 @@ config:
   baseURL: ""            # public URL, used in notification links
   cookieSecure: true
   trustProxy: true       # behind an ingress controller
+  # The header the ingress controller overwrites with the client address,
+  # read only from trustedProxies; X-Forwarded-For is read from the right.
+  # CF-Connecting-IP when Cloudflare is in front.
+  trustedProxyHeader: X-Forwarded-For
+  trustedProxies: ""     # CIDRs; empty is loopback and the private ranges
   feeds: "on"            # "off" for air-gapped installs (see docs/network.md)
   staleAfter: 48h
   logFormat: json
