@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"net/http"
 	"regexp"
 	"strings"
 	"testing"
@@ -31,9 +32,14 @@ func parsePermissionsPolicy(t *testing.T, h string) map[string]string {
 // what Razorpay Checkout's frame asks for to Razorpay's origins only.
 func TestPermissionsPolicy(t *testing.T) {
 	e := newEnv(t)
+	// Redirects are not followed: the header checked is the one on the
+	// path's own response (the licensed build sends a signed-out visitor of
+	// the payment page to sign in).
+	client := e.anon()
+	client.http.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	get := func(path string) map[string]string {
 		t.Helper()
-		resp := e.anon().req("GET", path, nil, nil)
+		resp := client.req("GET", path, nil, nil)
 		resp.Body.Close()
 		return parsePermissionsPolicy(t, resp.Header.Get("Permissions-Policy"))
 	}
