@@ -33,6 +33,12 @@ Each release's section is published as its GitHub release notes, and a tag witho
 ### Fixed
 
 - The project switcher in the header shows a project created in the first-run flow at once, and choosing it at the end of the flow works, instead of needing a page reload.
+- **Incidents load in well under a second with a project chosen.** With a project selected in the switcher (or for a member who sees only some assets), **Activity → Incidents** took 8 to 27 seconds and could sit on "Loading…": deciding which incidents were visible read every finding of every organisation, open and resolved, on each request, and the list then looked up each incident's findings one by one. Visibility now starts from the findings of the visible assets, read from a new index, and each incident's visible priority, SOS and escalation are worked out in one pass. The page and its total come from one query. What a narrowed caller sees is unchanged. On a copy of a production database (240,000 findings, 2 vCPUs) the list went from 8.5–15.5 s to about 0.2–0.3 s; the organisation-wide list was already fast and stays so.
+- **The findings summary** (the tiles above **Findings**) took 1 to 2 seconds after a large rescan resolved many findings, because "resolved this week" read each of them from the table. It now reads an index only (about 0.15 s on the same copy).
+
+### Upgrading
+
+- Migration `0046` builds the index `findings_asset_incident`, rebuilds `findings_resolved_at` with two more columns, and replaces the row-level security policy on `incidents` with an equivalent one. Migrations run in a transaction, so the indexes are built without `CONCURRENTLY`: writes to findings (uploads, evaluation) wait while they are built (reading is blocked only for the moment before the commit), 1.5 to 11 seconds (depending on load and cache) on a copy of a 1.2 GB production database with 240,000 findings (2 CPUs, 768 MB memory limit). Upgrading takes that much longer to start.
 
 ## 0.12.0
 
