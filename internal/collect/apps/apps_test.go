@@ -2,6 +2,7 @@ package apps
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -131,6 +132,33 @@ func TestScanPythonComposerAndLockfileFallback(t *testing.T) {
 	validate(t, site)
 }
 
+// A webroot holding another application (phpMyAdmin under a CodeIgniter
+// site) must not report the inner one's libraries as its own.
+func TestNestedAppReportedOnce(t *testing.T) {
+	tr := newTree(t)
+	tr.file("var/www/html/composer.json", `{"name":"codeigniter/framework"}`)
+	tr.file("var/www/html/composer.lock", `{"packages":[{"name":"psr/log","version":"1.1.0"}]}`)
+	tr.file("var/www/html/phpmyadmin/composer.json", `{"name":"phpmyadmin/phpmyadmin"}`)
+	tr.file("var/www/html/phpmyadmin/yarn.lock", "jquery@3.3.1:\n  version \"3.3.1\"\n")
+	tr.npm("var/www/html/demo/pma/node_modules/jquery", "jquery", "3.3.1")
+	tr.file("var/www/html/demo/pma/package.json", `{"name":"pma","dependencies":{"jquery":"3.3.1"}}`)
+
+	s := &Scanner{Root: tr.root, Apps: []string{"/var/www/html", "/var/www/html/phpmyadmin", "/var/www/html/demo/pma"}}
+	outer := purls(s.ScanApp(context.Background(), "/var/www/html").Observations)
+	if len(outer) != 1 {
+		t.Errorf("webroot should report only its own psr/log, got %v", keys(outer))
+	}
+	for _, dir := range []string{"/var/www/html/phpmyadmin", "/var/www/html/demo/pma"} {
+		if _, ok := purls(s.ScanApp(context.Background(), dir).Observations)["pkg:npm/jquery@3.3.1"]; !ok {
+			t.Errorf("%s lost its own jquery", dir)
+		}
+	}
+	// Without the list of applications the webroot still sees everything.
+	if all := purls((&Scanner{Root: tr.root}).ScanApp(context.Background(), "/var/www/html").Observations); len(all) < 2 {
+		t.Errorf("unscoped scan = %v", keys(all))
+	}
+}
+
 func TestPnpmLayout(t *testing.T) {
 	tr := newTree(t)
 	tr.file("srv/web/package.json", `{"name":"web","dependencies":{"next":"14"}}`)
@@ -166,6 +194,28 @@ func TestDiscoverAndReleases(t *testing.T) {
 		if !found {
 			t.Errorf("missing %s in %v", w, got)
 		}
+	}
+}
+
+// Discovery stops at its limits and never follows a link to a directory
+// outside the deployment bases.
+func TestDiscoverIsBounded(t *testing.T) {
+	tr := newTree(t)
+	for i := range 5 {
+		tr.file(fmt.Sprintf("srv/app%d/package.json", i), `{}`)
+	}
+	tr.file("etc/secret/package.json", `{}`)
+	tr.link("srv/zlink", "../etc/secret")
+	sc := &Scanner{Root: tr.root}
+	if got := sc.Discover(); len(got) != 5 {
+		t.Errorf("discovered %v", got)
+	}
+	if got := sc.discover(1000, 2); len(got) != 2 {
+		t.Errorf("app limit: %v", got)
+	}
+	// /srv itself, then two of its directories.
+	if got := sc.discover(3, 100); len(got) != 2 {
+		t.Errorf("directory limit: %v", got)
 	}
 }
 

@@ -128,13 +128,66 @@ func TestRepositoryGrouping(t *testing.T) {
 	if none == nil || none.FindingCount != 1 {
 		t.Errorf("no fix = %+v", none)
 	}
+	if up.TargetVersion != "4.17.21" {
+		t.Errorf("target before a recommendation = %q", up.TargetVersion)
+	}
 	up.SetRecommendation("4.17.23", "patch", false, false, []string{"why"})
-	if up.Recommended != "4.17.23" || up.ToVersion != "4.17.21" || !strings.Contains(up.Action, "Recommended: 4.17.23") {
+	if up.Recommended != "4.17.23" || up.ToVersion != "4.17.21" || up.TargetVersion != "4.17.23" ||
+		up.Title != "Upgrade lodash 4.17.15 → 4.17.23" || !strings.Contains(up.Action, "to 4.17.23") || !strings.Contains(up.Action, "from 4.17.21") {
 		t.Errorf("recommendation = %+v", up)
 	}
 	none.SetRecommendation("1.0", "patch", false, false, nil)
 	if none.Recommended != "" {
 		t.Error("a recommendation was set on a no-fix group")
+	}
+}
+
+// The recommended version heads the group only inside the minimum fix's
+// major line; a major upgrade or a withdrawn release keeps the minimum fix
+// as the headline.
+func TestRecommendationHeadline(t *testing.T) {
+	build := func() *Group {
+		groups, _ := Build([]Row{{FindingID: 1, Kind: "vulnerability", Key: "GHSA-1", AssetID: 2, AssetName: "shop", ComponentID: 10,
+			PurlType: "npm", Component: "ip-address", Version: "10.1.0", FixedVersion: "10.7.4", Priority: "P2", Severity: "high"}}, nil)
+		return groups[0]
+	}
+	cases := []struct {
+		name, rec, ct    string
+		major, yanked    bool
+		title, target    string
+		actionMentionsRe bool
+	}{
+		{"same line", "10.7.5", "minor", false, false, "Upgrade ip-address 10.1.0 → 10.7.5", "10.7.5", false},
+		{"is the minimum", "10.7.4", "minor", false, false, "Upgrade ip-address 10.1.0 → 10.7.4", "10.7.4", false},
+		{"major", "11.2.0", "major", true, false, "Upgrade ip-address 10.1.0 → 10.7.4", "10.7.4", true},
+		{"other line, not flagged major", "11.2.0", "minor", false, false, "Upgrade ip-address 10.1.0 → 10.7.4", "10.7.4", true},
+		{"withdrawn", "10.7.5", "minor", false, true, "Upgrade ip-address 10.1.0 → 10.7.4", "10.7.4", true},
+	}
+	// Below 1.0, only the same minor line leads.
+	zero := func() *Group {
+		groups, _ := Build([]Row{{FindingID: 1, Kind: "vulnerability", Key: "GHSA-2", AssetID: 2, AssetName: "shop", ComponentID: 11,
+			PurlType: "npm", Component: "axios", Version: "0.21.1", FixedVersion: "0.30.2", Priority: "P2", Severity: "high"}}, nil)
+		return groups[0]
+	}
+	z := zero()
+	z.SetRecommendation("0.34.0", "minor", false, false, nil)
+	if z.TargetVersion != "0.30.2" || z.Title != "Upgrade axios 0.21.1 → 0.30.2" {
+		t.Errorf("0.x across minor lines: %q %q", z.Title, z.TargetVersion)
+	}
+	z = zero()
+	z.SetRecommendation("0.30.5", "minor", false, false, nil)
+	if z.TargetVersion != "0.30.5" {
+		t.Errorf("0.x in the same minor line: %q", z.TargetVersion)
+	}
+	for _, c := range cases {
+		g := build()
+		g.SetRecommendation(c.rec, c.ct, c.major, c.yanked, nil)
+		if g.Title != c.title || g.TargetVersion != c.target || g.ToVersion != "10.7.4" || g.Recommended != c.rec {
+			t.Errorf("%s: title %q target %q to %q", c.name, g.Title, g.TargetVersion, g.ToVersion)
+		}
+		if got := strings.Contains(g.Action, "Recommended: "+c.rec); got != c.actionMentionsRe {
+			t.Errorf("%s: action %q", c.name, g.Action)
+		}
 	}
 }
 
@@ -156,6 +209,43 @@ func TestPlural(t *testing.T) {
 	for n, want := range map[int]string{1: "1 finding", 999: "999 findings", 19558: "19,558 findings", 1234567: "1,234,567 findings"} {
 		if got := plural(n, "finding"); got != want {
 			t.Errorf("plural(%d) = %q, want %q", n, got, want)
+		}
+	}
+}
+
+// The same library at the same version in two apps (phpMyAdmin twice on one
+// server) is one fix in two places; a different version is a different fix.
+func TestSameFixInSeveralPlaces(t *testing.T) {
+	app := func(id, asset int64, dir, ver, key, prio string) Row {
+		return Row{FindingID: id, Kind: "vulnerability", Key: key, AssetID: asset, AssetName: "phpmyadmin on DBC", AssetKind: "application",
+			AppDir: dir, ComponentID: 7, PurlType: "npm", Component: "jquery", Version: ver, FixedVersion: "3.5.0", Priority: prio, Severity: "medium"}
+	}
+	rows := []Row{
+		app(1, 10, "/var/www/html/phpmyadmin", "3.3.1", "CVE-2019-11358", "P2"),
+		app(2, 10, "/var/www/html/phpmyadmin", "3.3.1", "CVE-2020-11022", "P3"),
+		app(3, 11, "/var/www/html/demo/phpmyadmin", "3.3.1", "CVE-2019-11358", "P1"),
+		app(4, 11, "/var/www/html/demo/phpmyadmin", "3.3.1", "CVE-2020-11022", "P3"),
+		app(5, 12, "/srv/old", "3.2.0", "CVE-2019-11358", "P2"),
+	}
+	groups, _ := Build(rows, nil)
+	byKey := map[string][]Group{}
+	for _, g := range groups {
+		byKey[g.FixKey] = append(byKey[g.FixKey], *g)
+	}
+	same := byKey["package_upgrade:npm:jquery:3.3.1>3.5.0"]
+	if len(byKey) != 2 || len(same) != 2 {
+		t.Fatalf("fix keys = %v", byKey)
+	}
+	m := Merge(same)
+	if m.FindingCount != 4 || m.UniqueIssues != 2 || m.TopPriority != "P1" || m.ByPriority["P3"] != 2 || len(m.Places) != 2 {
+		t.Errorf("merged = %+v", m)
+	}
+	if m.Places[0].AppDir == m.Places[1].AppDir || m.Places[0].AppDir == "" {
+		t.Errorf("places should name each app directory: %+v", m.Places)
+	}
+	for _, g := range groups {
+		if g.Kind != PackageUpgrade && g.FixKey != g.ID {
+			t.Errorf("%s groups stay per asset: %q", g.Kind, g.FixKey)
 		}
 	}
 }

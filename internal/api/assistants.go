@@ -58,17 +58,49 @@ const (
 	assistantScope = "stackurity"
 )
 
+// Limits for assistants. Hosted assistants reach the server from their
+// vendor's shared addresses (every Claude user from Anthropic's, every
+// ChatGPT user from OpenAI's), so the per-address limits are only a
+// generous outer bound; the real limits are per credential, per client
+// and in all.
 var (
 	// limitMCP caps the messages one credential sends to /mcp.
 	limitMCP = rateLimit{300, time.Minute}
-	// limitOAuthToken caps token and revocation requests per address.
-	limitOAuthToken = rateLimit{60, time.Minute}
-	// limitOAuthRegister caps client registrations per address (IPv6: /64).
-	limitOAuthRegister = rateLimit{20, time.Hour}
+	// Token and revocation requests: per authorization code or refresh
+	// token, per client_id (one for all users of a hosted assistant), in
+	// all, and per address as an outer bound.
+	limitOAuthTokenCredential = rateLimit{10, time.Minute}
+	limitOAuthTokenClient     = rateLimit{600, time.Minute}
+	limitOAuthTokenAll        = rateLimit{6000, time.Minute}
+	limitOAuthTokenAddress    = rateLimit{1200, time.Minute}
+	// Client registrations: per address (IPv6: /64) as an outer bound,
+	// and in all; registration is also refused while too many
+	// registrations are unused (maxUnusedClients).
+	limitOAuthRegister    = rateLimit{200, time.Hour}
+	limitOAuthRegisterAll = rateLimit{2000, time.Hour}
 	// limitMCPBadToken caps requests to /mcp with a token that does not
 	// work, per address (IPv6: /64).
-	limitMCPBadToken = rateLimit{30, time.Minute}
+	limitMCPBadToken = rateLimit{300, time.Minute}
 )
+
+// tokenLimited applies the token endpoint's limits to a parsed request.
+func (s *Server) tokenLimited(w http.ResponseWriter, r *http.Request) bool {
+	f := r.PostForm
+	client := f.Get("client_id")
+	if id, _, ok := r.BasicAuth(); ok {
+		client, _ = url.QueryUnescape(id)
+	}
+	if client == "" {
+		client = assertionIssuer(f.Get("client_assertion"))
+	}
+	cred := f.Get("code") + "\x00" + f.Get("refresh_token") + "\x00" + f.Get("token")
+	sum := sha256.Sum256([]byte(cred))
+	return s.limited(w, r, "too many token requests; wait a minute",
+		limitHit{"oauth-token-address", addressKey(r), limitOAuthTokenAddress},
+		limitHit{"oauth-token-client", client, limitOAuthTokenClient},
+		limitHit{"oauth-token-credential", base64.RawURLEncoding.EncodeToString(sum[:]), limitOAuthTokenCredential},
+		limitHit{"oauth-token-all", "all", limitOAuthTokenAll})
+}
 
 // maxUnusedClients caps registered clients that were never used; the
 // housekeeping task removes them after 7 days.
@@ -96,8 +128,8 @@ func (s *Server) assistantRoutes(r chi.Router) {
 	r.Get("/.well-known/oauth-protected-resource/mcp", s.protectedResourceMetadata)
 	r.Get("/.well-known/oauth-authorization-server", s.authorizationServerMetadata)
 	r.Post("/oauth/register", s.registerClient)
-	r.With(s.limitAddress("oauth-token", limitOAuthToken, "too many token requests; wait a minute")).Post("/oauth/token", s.oauthToken)
-	r.With(s.limitAddress("oauth-token", limitOAuthToken, "too many token requests; wait a minute")).Post("/oauth/revoke", s.oauthRevoke)
+	r.Post("/oauth/token", s.oauthToken)
+	r.Post("/oauth/revoke", s.oauthRevoke)
 	r.Post("/mcp", s.mcpEndpoint)
 	r.Get("/mcp", s.mcpEndpoint)
 	r.Delete("/mcp", s.mcpEndpoint)
@@ -190,20 +222,21 @@ func (s *Server) protectedResourceMetadata(w http.ResponseWriter, r *http.Reques
 func (s *Server) authorizationServerMetadata(w http.ResponseWriter, r *http.Request) {
 	base := s.assistantBase()
 	writeJSON(w, 200, map[string]any{
-		"issuer":                                         base,
-		"authorization_endpoint":                         base + "/oauth/authorize",
-		"token_endpoint":                                 base + "/oauth/token",
-		"registration_endpoint":                          base + "/oauth/register",
-		"revocation_endpoint":                            base + "/oauth/revoke",
-		"response_types_supported":                       []string{"code"},
-		"grant_types_supported":                          []string{"authorization_code", "refresh_token"},
-		"code_challenge_methods_supported":               []string{"S256"},
-		"token_endpoint_auth_methods_supported":          []string{"none", "client_secret_post", "client_secret_basic"},
-		"revocation_endpoint_auth_methods_supported":     []string{"none", "client_secret_post", "client_secret_basic"},
-		"scopes_supported":                               []string{assistantScope},
-		"client_id_metadata_document_supported":          true,
-		"authorization_response_iss_parameter_supported": true,
-		"service_documentation":                          "https://github.com/stackurity/stackurity/blob/main/docs/ai-assistants.md",
+		"issuer":                                           base,
+		"authorization_endpoint":                           base + "/oauth/authorize",
+		"token_endpoint":                                   base + "/oauth/token",
+		"registration_endpoint":                            base + "/oauth/register",
+		"revocation_endpoint":                              base + "/oauth/revoke",
+		"response_types_supported":                         []string{"code"},
+		"grant_types_supported":                            []string{"authorization_code", "refresh_token"},
+		"code_challenge_methods_supported":                 []string{"S256"},
+		"token_endpoint_auth_methods_supported":            []string{"none", "client_secret_post", "client_secret_basic", "private_key_jwt"},
+		"token_endpoint_auth_signing_alg_values_supported": algNames(),
+		"revocation_endpoint_auth_methods_supported":       []string{"none", "client_secret_post", "client_secret_basic", "private_key_jwt"},
+		"scopes_supported":                                 []string{assistantScope},
+		"client_id_metadata_document_supported":            true,
+		"authorization_response_iss_parameter_supported":   true,
+		"service_documentation":                            "https://github.com/stackurity/stackurity/blob/main/docs/ai-assistants.md",
 	})
 }
 
@@ -301,10 +334,12 @@ type registrationRequest struct {
 
 // registerClient implements dynamic client registration (RFC 7591).
 // Registration needs no credentials, so it is rate limited per address and
+// in all, and
 // unused registrations are removed after 30 days. Other metadata (logo,
 // contacts, software id) is accepted and ignored.
 func (s *Server) registerClient(w http.ResponseWriter, r *http.Request) {
-	if s.limited(w, r, "too many client registrations from this address; wait an hour", limitHit{"oauth-register", addressKey(r), limitOAuthRegister}) {
+	if s.limited(w, r, "too many client registrations; wait an hour", limitHit{"oauth-register", addressKey(r), limitOAuthRegister},
+		limitHit{"oauth-register-all", "all", limitOAuthRegisterAll}) {
 		return
 	}
 	if n, err := s.Store.UnusedOAuthClients(r.Context()); err != nil {
@@ -441,11 +476,13 @@ func (s *Server) fetchClientMetadata(ctx context.Context, id string) (*store.OAu
 		return nil, fmt.Errorf("answered %d", resp.StatusCode)
 	}
 	var doc struct {
-		ClientID                string   `json:"client_id"`
-		ClientName              string   `json:"client_name"`
-		ClientURI               string   `json:"client_uri"`
-		RedirectURIs            []string `json:"redirect_uris"`
-		TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method"`
+		ClientID                string          `json:"client_id"`
+		ClientName              string          `json:"client_name"`
+		ClientURI               string          `json:"client_uri"`
+		RedirectURIs            []string        `json:"redirect_uris"`
+		TokenEndpointAuthMethod string          `json:"token_endpoint_auth_method"`
+		JWKSURI                 string          `json:"jwks_uri"`
+		JWKS                    json.RawMessage `json:"jwks"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&doc); err != nil {
 		return nil, errors.New("not a JSON document")
@@ -453,8 +490,31 @@ func (s *Server) fetchClientMetadata(ctx context.Context, id string) (*store.OAu
 	if doc.ClientID != id {
 		return nil, errors.New("its client_id is not its own URL")
 	}
-	if doc.TokenEndpointAuthMethod != "" && doc.TokenEndpointAuthMethod != "none" {
-		return nil, errors.New("only public clients (token_endpoint_auth_method none) are supported")
+	method := doc.TokenEndpointAuthMethod
+	switch method {
+	case "", "none":
+		method = "none"
+		doc.JWKSURI, doc.JWKS = "", nil
+	case "private_key_jwt":
+		// A document has no secret to share, but it can name public keys
+		// (draft-ietf-oauth-client-id-metadata-document): the client then
+		// signs an assertion at the token endpoint.
+		switch {
+		case len(doc.JWKS) > 0 && string(doc.JWKS) != "null":
+			var set struct {
+				Keys []json.RawMessage `json:"keys"`
+			}
+			if json.Unmarshal(doc.JWKS, &set) != nil || len(set.Keys) == 0 {
+				return nil, errors.New("its jwks is not a key set")
+			}
+			doc.JWKSURI = ""
+		case metadataClientID(doc.JWKSURI):
+			doc.JWKS = nil
+		default:
+			return nil, errors.New("private_key_jwt needs jwks or an https jwks_uri")
+		}
+	default:
+		return nil, errors.New("token_endpoint_auth_method must be none or private_key_jwt")
 	}
 	if len(doc.RedirectURIs) == 0 || len(doc.RedirectURIs) > 10 {
 		return nil, errors.New("it must list 1 to 10 redirect_uris")
@@ -475,7 +535,8 @@ func (s *Server) fetchClientMetadata(ctx context.Context, id string) (*store.OAu
 	if len(cu) > 2048 {
 		cu = ""
 	}
-	return &store.OAuthClient{ID: id, Name: name, ClientURI: cu, RedirectURIs: doc.RedirectURIs, AuthMethod: "none"}, nil
+	return &store.OAuthClient{ID: id, Name: name, ClientURI: cu, RedirectURIs: doc.RedirectURIs, AuthMethod: method, JWKSURI: doc.JWKSURI,
+		JWKS: doc.JWKS}, nil
 }
 
 // --- the authorization request and the consent page
@@ -740,11 +801,36 @@ func (s *Server) tokenClient(r *http.Request) (*store.OAuthClient, bool) {
 	} else {
 		id, secret = r.PostForm.Get("client_id"), r.PostForm.Get("client_secret")
 	}
+	assertion := r.PostForm.Get("client_assertion")
+	if assertion != "" {
+		// private_key_jwt: client_id may be left out; the assertion names it.
+		if basic || secret != "" || r.PostForm.Get("client_assertion_type") != assertionType {
+			return nil, false
+		}
+		if iss := assertionIssuer(assertion); id == "" {
+			id = iss
+		} else if iss != id {
+			return nil, false
+		}
+	}
 	if id == "" {
 		return nil, false
 	}
 	c, err := s.oauthClient(r.Context(), id)
 	if err != nil {
+		return nil, false
+	}
+	if c.AuthMethod == "private_key_jwt" {
+		if assertion == "" {
+			return nil, false
+		}
+		if err := s.verifyClientAssertion(r.Context(), c, assertion); err != nil {
+			s.Log.Info("client assertion refused", "client_id", c.ID, "err", err.Error())
+			return nil, false
+		}
+		return c, true
+	}
+	if assertion != "" {
 		return nil, false
 	}
 	if c.AuthMethod == "none" {
@@ -760,6 +846,9 @@ func (s *Server) oauthToken(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
 	if err := r.ParseForm(); err != nil || !strings.HasPrefix(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded") {
 		oauthError(w, 400, "invalid_request", "send the parameters form-encoded (application/x-www-form-urlencoded)")
+		return
+	}
+	if s.tokenLimited(w, r) {
 		return
 	}
 	c, ok := s.tokenClient(r)
@@ -826,6 +915,9 @@ func (s *Server) oauthRevoke(w http.ResponseWriter, r *http.Request) {
 		oauthError(w, 400, "invalid_request", "send the parameters form-encoded")
 		return
 	}
+	if s.tokenLimited(w, r) {
+		return
+	}
 	c, ok := s.tokenClient(r)
 	if !ok {
 		oauthError(w, 401, "invalid_client", "unknown client, or wrong client credentials")
@@ -860,7 +952,14 @@ func (s *Server) listAssistants(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	writeJSON(w, 200, all(gs))
+	// mcp_url is the address to add in an assistant; empty while the
+	// server has no STACKURITY_BASE_URL and /mcp is off.
+	url := ""
+	if s.BaseURL != "" {
+		url = s.mcpResource(r)
+	}
+	l := all(gs)
+	writeJSON(w, 200, map[string]any{"items": l.Items, "total": l.Total, "mcp_url": url})
 }
 
 func (s *Server) disconnectAssistant(w http.ResponseWriter, r *http.Request) {

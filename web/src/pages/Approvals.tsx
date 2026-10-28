@@ -239,7 +239,7 @@ export function ApprovalsPage() {
           {tabs.map((t) => (
             <li key={t.id}>
               <Link
-                to={`/settings/approvals${t.id === "pending" ? "" : `?tab=${t.id}`}`}
+                to={`/approvals${t.id === "pending" ? "" : `?tab=${t.id}`}`}
                 className={`tab${tab === t.id ? " tab-active" : ""}`}
                 aria-current={tab === t.id ? "page" : undefined}
                 onClick={() => setParams(t.id === "pending" ? {} : { tab: t.id }, { replace: true })}

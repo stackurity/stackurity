@@ -19,6 +19,25 @@ export function installCommand(code: string): { command: string; insecure: boole
   return { command: `curl -fsSL ${origin}/install/agent.sh | sudo ${env} sh`, insecure };
 }
 
+/**
+ * "Also check websites and apps on this server": the install code then
+ * turns on the agent's application discovery (discover_apps). On by
+ * default; the agent only lists directories and reads lockfiles.
+ */
+export function CheckApps({ id, checked, onChange }: { id: string; checked: boolean; onChange: (on: boolean) => void }) {
+  return (
+    <>
+      <label className="check" htmlFor={id}>
+        <input id={id} type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} /> Also check websites and apps on this server
+      </label>
+      <p className="hint">
+        Looks in /srv, /var/www, /opt, /app and home directories for sites and apps (Node.js, PHP, Python, Ruby, Go and more), and lists the
+        libraries they use. It only reads.
+      </p>
+    </>
+  );
+}
+
 export function AddServerPage() {
   const res = useLoad(() => api.get<{ items: Enrollment[] | null }>("/enrollments"), []);
   const act = useAction();
@@ -172,7 +191,7 @@ function CreateEnrollment({ onCreated }: { onCreated: (c: EnrollmentCreated) => 
   const [label, setLabel] = useState("");
   const [environment, setEnvironment] = useState("");
   const [dirs, setDirs] = useState("");
-  const [discover, setDiscover] = useState(false);
+  const [discover, setDiscover] = useState(true);
   const [uses, setUses] = useState("1");
   const [ttl, setTtl] = useState("24");
   const act = useAction();
@@ -225,16 +244,15 @@ function CreateEnrollment({ onCreated }: { onCreated: (c: EnrollmentCreated) => 
               id="en-dirs"
               className="mono"
               rows={3}
-              placeholder={"/srv/shop\n/var/www/site"}
+              placeholder={"/data/shop"}
               value={dirs}
               onChange={(e) => setDirs(e.target.value)}
             />
-            <p className="hint">Optional, one per line. Deployed apps to inventory, e.g. /srv/shop or /var/www/site.</p>
+            <p className="hint">Optional, one per line, for apps outside the usual places, e.g. /data/shop.</p>
           </div>
-          <label className="check field-span">
-            <input type="checkbox" checked={discover} onChange={(e) => setDiscover(e.target.checked)} /> Also look for
-            applications under /srv, /var/www, /opt and home directories
-          </label>
+          <div className="field field-span">
+            <CheckApps checked={discover} onChange={setDiscover} id="en-apps" />
+          </div>
         </div>
         <details className="schema-help">
           <summary>Options</summary>

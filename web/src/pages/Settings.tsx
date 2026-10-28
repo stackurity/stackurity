@@ -23,7 +23,12 @@ const GROUPS: { title: string; entries: Entry[] }[] = [
       { to: "/settings/integrations", label: "Integrations", about: "Everything Stackurity connects to: Slack, email, Jira, Git repositories, cloud accounts, AI assistants.", min: "engineer" },
       { to: "/settings/risk-policy", label: "Risk policy", about: "How issues get their priority, SOS rules, deadlines and the longest snooze." },
       {
-        to: "/settings/approvals",
+        to: "/settings/fix-grouping",
+        label: "Fix grouping",
+        about: "Show a fix needed in several places as one card listing them, or one card per asset.",
+      },
+      {
+        to: "/approvals",
         label: "Approvals and ignore rules",
         about: "Requests to ignore issues, and the ignore rules in force for one asset or every asset.",
       },
@@ -57,7 +62,11 @@ const GROUPS: { title: string; entries: Entry[] }[] = [
       { to: "/settings/teams", label: "Teams", about: "Owner teams for assets, alert routing and escalation.", min: "admin" },
       { to: "/settings/tokens", label: "API tokens", about: "Tokens for the API, CI scans and collectors." },
       { to: "/settings/slack", label: "Linked Slack accounts", about: "Slack accounts whose Assign to me and Snooze clicks act as you." },
-      { to: "/settings/assistants", label: "Connected assistants", about: "AI assistants (Claude, ChatGPT, IDEs) you allowed to use Stackurity as you." },
+      {
+        to: "/settings/ai-assistants",
+        label: "AI assistants",
+        about: "Connect Claude, ChatGPT or your code editor, and see the assistants you allowed to use Stackurity as you.",
+      },
     ],
   },
   {

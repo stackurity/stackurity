@@ -31,6 +31,7 @@ import {
   TargetLabel,
 } from "../components/Remediation";
 import { Card, EmptyState, ErrorBox, Loading, Notice, PageHeader, Pager, RelativeTime } from "../components/ui";
+import { NoTeamsHint } from "../components/Teams";
 
 export function SafetyNote() {
   return (
@@ -652,6 +653,7 @@ function PolicyForm({ policy, teams, onCancel, onSaved }: { policy?: Remediation
         label={(id) => teams.find((t) => t.id === id)?.name ?? `team #${id}`}
         hint="None ticked = all teams."
       />
+      {teams.length === 0 && <NoTeamsHint what="limit the policy to the assets a team owns" />}
       <div className="field">
         <label htmlFor={`${idp}-tags`}>Asset tags (optional)</label>
         <input id={`${idp}-tags`} value={tags} onChange={(e) => setTags(e.target.value)} placeholder="comma-separated; an asset with any of these tags matches" />

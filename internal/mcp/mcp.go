@@ -336,21 +336,30 @@ var tools = map[string]tool{
 				Components  int64  `json:"components"`
 				OS          string `json:"os,omitempty"`
 				Reboot      string `json:"reboot_required,omitempty"`
+				Path        string `json:"path,omitempty"` // an application's directory on its host
 			}
 			out := []item{}
 			for _, x := range res.Items {
+				path := ""
+				if x.Kind == "application" {
+					path = x.Attributes["app_dir"]
+				}
 				out = append(out, item{x.ID, x.Kind, x.Name, x.Environment, x.Status, x.LastSeen, x.Components,
-					x.Attributes["os_name"], x.Attributes["reboot_required"]})
+					x.Attributes["os_name"], x.Attributes["reboot_required"], path})
 			}
 			return map[string]any{"assets": out, "total": res.Total}, nil
 		},
 	},
 	"action_plan": {
 		description: "What to fix, grouped into concrete actions (upgrade X to version Y, move off an end-of-life runtime), " +
-			"ordered by urgency, with how many findings each action clears. Omit asset_id for every asset.",
+			"ordered by urgency, with how many findings each action clears. For package upgrades, target_version is the version " +
+			"to move to (the title names it), to_version the lowest version that fixes them all. The same fix in several places is " +
+			"one action listing each place (asset, app_dir, its own group_id and finding count) under places. Omit asset_id for every asset.",
 		schema: obj(map[string]any{"asset_id": num("Limit to one asset")}),
 		run: func(ctx context.Context, api API, a map[string]any) (any, error) {
-			q := url.Values{"limit": {"100"}}
+			// The same fix in several places is one action, listing each
+			// place (its own group) under places.
+			q := url.Values{"limit": {"100"}, "group_by": {"fix"}}
 			set(q, "asset_id", a["asset_id"])
 			var groups, summary any
 			if err := api.Do(ctx, "GET", "/api/v1/fix-groups?"+q.Encode(), nil, nil, &groups); err != nil {
@@ -567,6 +576,7 @@ func init() {
 					FromVersion       string   `json:"from_version"`
 					ToVersion         string   `json:"to_version"`
 					Recommended       string   `json:"recommended_version"`
+					TargetVersion     string   `json:"target_version"`
 					ChangeType        string   `json:"change_type"`
 					RequiresMajor     bool     `json:"requires_major"`
 					RecommendedYanked bool     `json:"recommended_yanked"`
@@ -598,6 +608,7 @@ func init() {
 				Installed      string   `json:"installed_version,omitempty"`
 				MinimumFixed   string   `json:"minimum_fixed_version,omitempty"`
 				Recommended    string   `json:"recommended_version,omitempty"`
+				Target         string   `json:"target_version,omitempty"`
 				ChangeType     string   `json:"change_type,omitempty"`
 				RequiresMajor  bool     `json:"requires_major,omitempty"`
 				Withdrawn      bool     `json:"recommended_withdrawn,omitempty"`
@@ -615,12 +626,14 @@ func init() {
 			out := []group{}
 			for _, g := range res.Items {
 				out = append(out, group{g.ID, g.Kind, g.Title, g.Action, g.AssetID, g.AssetName, g.Environment, g.Component,
-					g.FromVersion, g.ToVersion, g.Recommended, g.ChangeType, g.RequiresMajor, g.RecommendedYanked, g.Packages,
+					g.FromVersion, g.ToVersion, g.Recommended, g.TargetVersion, g.ChangeType, g.RequiresMajor, g.RecommendedYanked, g.Packages,
 					g.PackageCount, g.FindingCount, g.UniqueIssues, g.TopPriority, g.SOS, g.KnownExploited, paidChannel(g.Needs), g.Effort, g.Note})
 			}
 			return map[string]any{"groups": out, "total": res.Total, "shown": len(out),
-				"note": "minimum_fixed_version fixes every finding in the group; recommended_version comes from registry release " +
-					"data and is absent when there is none. Use upgrade_recommendation for the reasons. action is the free path; " +
+				"note": "target_version is the version to tell people to move to (the title and action name it): recommended_version " +
+					"when it is in the same major line, otherwise minimum_fixed_version. minimum_fixed_version is the lowest version " +
+					"that fixes every finding in the group; recommended_version comes from registry release data and is absent when " +
+					"there is none. Use upgrade_recommendation for the reasons. action is the free path; " +
 					"paid_channel names a paid subscription (Ubuntu Pro, SUSE LTSS) that also publishes fixes for some findings, " +
 					"an option to mention, never the recommendation."}, nil
 		},
@@ -680,12 +693,32 @@ type finding struct {
 var readTools = []string{"search", "list_assets", "action_plan", "asset_stack", "list_findings", "get_finding", "find_component",
 	"explain_finding", "upgrade_recommendation", "remediation_plan", "verify_since"}
 
+// readTitles are the read tools' short human titles (directories show them).
+var readTitles = map[string]string{
+	"search":                 "Search",
+	"list_assets":            "List assets",
+	"action_plan":            "What to fix first",
+	"asset_stack":            "An asset's stack",
+	"list_findings":          "List issues",
+	"get_finding":            "Get an issue",
+	"find_component":         "Find a package",
+	"explain_finding":        "Explain an issue's priority",
+	"upgrade_recommendation": "Upgrade recommendation",
+	"remediation_plan":       "Remediation plan",
+	"verify_since":           "What changed since",
+}
+
+// toolList lists the tools with a title and every behaviour hint set
+// explicitly: read tools only read Stackurity's own data; write tools say
+// whether they overwrite or hide something, are safe to repeat, or reach
+// outside Stackurity.
 func toolList(writes bool) []map[string]any {
 	out := make([]map[string]any, 0, len(readTools)+len(writeTools))
 	for _, n := range readTools {
 		t := tools[n]
-		out = append(out, map[string]any{"name": n, "description": t.description, "inputSchema": t.schema,
-			"annotations": map[string]any{"readOnlyHint": true, "openWorldHint": false}})
+		out = append(out, map[string]any{"name": n, "title": readTitles[n], "description": t.description, "inputSchema": t.schema,
+			"annotations": map[string]any{"title": readTitles[n], "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true,
+				"openWorldHint": false}})
 	}
 	for _, n := range writeTools {
 		if !writes {
@@ -694,7 +727,7 @@ func toolList(writes bool) []map[string]any {
 		t := tools[n]
 		out = append(out, map[string]any{"name": n, "title": t.write.title, "description": t.description, "inputSchema": t.schema,
 			"annotations": map[string]any{"title": t.write.title, "readOnlyHint": false, "destructiveHint": t.write.destructive,
-				"idempotentHint": t.write.idempotent, "openWorldHint": false}})
+				"idempotentHint": t.write.idempotent, "openWorldHint": t.write.openWorld}})
 	}
 	return out
 }

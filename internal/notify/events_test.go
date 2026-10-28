@@ -62,7 +62,7 @@ func TestMigratedRoutesKeepTheirMode(t *testing.T) {
 	routes, _ := f.st.ListRoutes(ctx)
 	r := routes[0]
 	for _, m := range []string{store.ModeUrgentOnly, store.ModeDaily, store.ModeWeekly, store.ModeUrgentSummary} {
-		// As 0043 found them: the mode set, events from the column default.
+		// As 0047 found them: the mode set, events from the column default.
 		if _, err := f.st.Pool.Exec(ctx, `UPDATE routes SET mode = $2, events = '{urgent,regressed,overdue,connected,problems,daily_summary}'
 			WHERE id = $1`, r.ID, m); err != nil {
 			t.Fatal(err)
@@ -333,5 +333,23 @@ func TestPlatformEmail(t *testing.T) {
 	}
 	if n, ws, err := st.EmailQuotaHeld(ctx); err != nil || n != 1 || ws != 1 {
 		t.Errorf("platform health: %d in %d (%v)", n, ws, err)
+	}
+}
+
+// Per-incident text names the action plan's target version, with the
+// minimum fix as "fixes from", as the dashboard does.
+func TestUpgradeAction(t *testing.T) {
+	for _, c := range []struct {
+		in   []store.UpgradeTarget
+		want string
+	}{
+		{nil, ""},
+		{[]store.UpgradeTarget{{Target: "4.17.21", Minimum: "4.17.21"}}, "Upgrade to 4.17.21 or later"},
+		{[]store.UpgradeTarget{{Target: "10.7.5", Minimum: "10.1.0"}}, "Upgrade to 10.7.5 (fixes from 10.1.0)"},
+		{[]store.UpgradeTarget{{Target: "2.0.1", Minimum: "2.0.1"}, {Target: "1.9.9", Minimum: "1.9.4"}}, "Upgrade to 2.0.1 or later / 1.9.9 (fixes from 1.9.4)"},
+	} {
+		if got := upgradeAction(c.in); got != c.want {
+			t.Errorf("%v = %q, want %q", c.in, got, c.want)
+		}
 	}
 }

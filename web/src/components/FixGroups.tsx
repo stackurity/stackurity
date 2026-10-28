@@ -1,11 +1,12 @@
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router";
-import { api, PRIORITIES, type Finding, type FixGroup, type FixGroupDetail, type FixGroupSummary, type List } from "../api";
+import { api, PRIORITIES, type Finding, type FixGroup, type FixGroupDetail, type FixGroupSummary, type FixPlace, type List } from "../api";
 import { plural } from "../format";
 import { Badge, PriorityBadge, SosBadge, type Tone } from "./Badge";
 import { FindingsTable } from "./Findings";
 import { IconBan, IconClock, IconKernel, IconPackage, IconReleaseUp, IconUpdates } from "./Icons";
 import { CodeBlock, ErrorBox, Loading, Pager } from "./ui";
+import { FindingActions } from "./Workflow";
 import { useLoad } from "../hooks";
 
 export const FIX_KIND_LABEL: Record<string, string> = {
@@ -65,6 +66,17 @@ export function urgencyOf(g: FixGroup): { label: string; tone: Tone; title: stri
 }
 
 /** What kind of change a fix is, in words. */
+/** "10.1.0 → 10.7.5": what is installed and the version to move to (the recommended one when the server leads with it). */
+export function versionsText(g: FixGroup): string {
+  const to = g.target_version || g.to_version;
+  return g.from_version || to ? `${g.from_version ?? "?"} → ${to ?? "?"}` : "";
+}
+
+/** "fixes from 10.7.4" when the version to move to is newer than the minimum fix. */
+export function fixesFrom(g: FixGroup): string {
+  return g.target_version && g.to_version && g.target_version !== g.to_version ? `fixes from ${g.to_version}` : "";
+}
+
 export function changeText(g: FixGroup): string {
   if (g.requires_major || g.change_type === "major") return "major upgrade, may break things";
   if (g.change_type === "minor") return "minor upgrade";
@@ -167,7 +179,10 @@ export function GroupFindings({ groupId, hideAsset }: { groupId: string; hideAss
 export function FixGroupCard({ g, hideAsset, defaultOpen }: { g: FixGroup; hideAsset?: boolean; defaultOpen?: boolean }) {
   const [open, setOpen] = useState(Boolean(defaultOpen));
   const titleId = `fg-${g.id.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
-  const versions = g.from_version || g.to_version ? `${g.from_version ?? "?"} → ${g.to_version ?? "?"}` : "";
+  const versions = versionsText(g);
+  const from = fixesFrom(g);
+  // One fix needed in several places (Settings, Fix grouping): the card lists them.
+  const places = g.places && g.places.length > 1 ? g.places : null;
   return (
     <article className={`fix-card fix-${g.kind}${g.sos ? " fix-sos" : ""}`} aria-labelledby={titleId}>
       <div className="fix-icon" title={FIX_KIND_HELP[g.kind]}>
@@ -182,14 +197,21 @@ export function FixGroupCard({ g, hideAsset, defaultOpen }: { g: FixGroup; hideA
             </h3>
             <p className="fix-meta small">
               {[
-                !hideAsset && <Link key="a" to={`/assets/${g.asset_id}?tab=action-plan`}>{g.asset_name}</Link>,
-                !hideAsset && g.environment && <span key="e">{g.environment}</span>,
+                places && <strong key="n">{places.length} places</strong>,
+                !places && !hideAsset && <Link key="a" to={`/assets/${g.asset_id}?tab=action-plan`}>{g.asset_name}</Link>,
+                !places && g.app_dir && (
+                  <span key="d" className="mono">
+                    {g.app_dir}
+                  </span>
+                ),
+                !places && !hideAsset && g.environment && <span key="e">{g.environment}</span>,
                 (g.component || versions) && (
                   <span key="c" className="mono">
                     {[g.component, versions].filter(Boolean).join(" ")}
                   </span>
                 ),
-                g.recommended_version && g.recommended_version !== g.to_version && (
+                from && <span key="f">{from}</span>,
+                g.recommended_version && g.recommended_version !== (g.target_version || g.to_version) && (
                   <span key="r" title={(g.rationale ?? []).join(" ")}>
                     recommended <span className="mono">{g.recommended_version}</span>
                   </span>
@@ -211,13 +233,17 @@ export function FixGroupCard({ g, hideAsset, defaultOpen }: { g: FixGroup; hideA
             <span className="fix-count">{g.finding_count.toLocaleString()}</span>
             <span className="small">{g.finding_count === 1 ? "issue cleared" : "issues cleared"}</span>
             {g.unique_issues !== undefined && g.unique_issues !== g.finding_count && (
-              <span className="small muted">{plural(g.unique_issues, "distinct vulnerability", "distinct vulnerabilities")}</span>
+              <span className="small muted">
+                {plural(g.unique_issues, "distinct vulnerability", "distinct vulnerabilities")}
+                {places && ` in ${places.length} places`}
+              </span>
             )}
           </div>
         </div>
         <GroupBadges g={g} />
         <BreakdownBar counts={g.by_priority} order={PRIORITIES} classes={PRIO_CLASS} label="By priority" />
         <ActionInstruction action={g.action} />
+        {places && <FixPlaces g={g} places={places} />}
         {g.note && <p className="hint">{g.note}</p>}
         {g.packages && g.packages.length > 0 && (
           <details className="fix-packages">
@@ -242,9 +268,45 @@ export function FixGroupCard({ g, hideAsset, defaultOpen }: { g: FixGroup; hideA
             How to fix
           </Link>
         </div>
-        {open && <GroupFindings groupId={g.id} hideAsset={hideAsset} />}
+        {open && <GroupFindings groupId={places ? places.map((p) => p.group_id).join(",") : g.id} hideAsset={hideAsset && !places} />}
       </div>
     </article>
+  );
+}
+
+/**
+ * The places one fix is needed in, each with its count and its own fix page
+ * (Check again, I applied this, Assign, Snooze), and the same workflow for
+ * all of them at once.
+ */
+export function FixPlaces({ g, places }: { g: FixGroup; places: FixPlace[] }) {
+  const [acting, setActing] = useState(false);
+  return (
+    <div className="fix-places">
+      <p className="small">
+        <strong>Needed in {places.length} places</strong>
+      </p>
+      <ul className="fix-place-list">
+        {places.map((p) => (
+          <li key={p.group_id}>
+            <Link to={`/assets/${p.asset_id}?tab=action-plan`}>{p.asset_name}</Link>
+            {p.app_dir && <span className="mono small"> {p.app_dir}</span>}
+            <span className="small muted">
+              {p.environment && ` · ${p.environment}`} · {plural(p.finding_count, "issue")} ·{" "}
+              <Link to={`/fixes/${encodeURIComponent(p.group_id)}`}>
+                details<span className="sr-only"> for {p.asset_name}</span>
+              </Link>
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="small">
+        <button type="button" className="btn btn-link btn-sm" aria-expanded={acting} onClick={() => setActing(!acting)}>
+          {acting ? "Close" : `Assign, snooze or ignore in all ${places.length} places`}
+        </button>
+      </p>
+      {acting && <FindingActions target={{ type: "groups", ids: places.map((p) => p.group_id), count: g.finding_count }} onDone={() => {}} />}
+    </div>
   );
 }
 

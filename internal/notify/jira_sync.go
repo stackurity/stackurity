@@ -265,6 +265,24 @@ func (d *Dispatcher) issueDescription(in store.Incident, brief *store.IncidentBr
 	return d.issueDescriptionIn(in, brief, issueScope{})
 }
 
+// upgradeAction names the versions to move to as the dashboard does: the
+// action plan's target version, with "fixes from" the minimum fixed
+// version when they differ. Empty without package upgrades.
+func upgradeAction(ups []store.UpgradeTarget) string {
+	var parts []string
+	for _, u := range ups {
+		if u.Minimum == "" || u.Minimum == u.Target {
+			parts = append(parts, u.Target+" or later")
+		} else {
+			parts = append(parts, u.Target+" (fixes from "+u.Minimum+")")
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "Upgrade to " + strings.Join(parts, " / ")
+}
+
 // issueDescriptionIn is issueDescription for a scope. For a project, in
 // and brief must have been read with a connection narrowed to it, so they
 // hold only its findings and assets; the text then says so, leaves out the
@@ -272,6 +290,9 @@ func (d *Dispatcher) issueDescription(in store.Incident, brief *store.IncidentBr
 // link in the project.
 func (d *Dispatcher) issueDescriptionIn(in store.Incident, brief *store.IncidentBrief, sc issueScope) jiraDoc {
 	m := d.message(in, "opened")
+	if a := upgradeAction(brief.Upgrades); a != "" && in.Kind == "vulnerability" {
+		m.Action = a
+	}
 	var det struct {
 		Severity       string   `json:"severity"`
 		KnownExploited bool     `json:"known_exploited"`

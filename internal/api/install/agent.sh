@@ -98,6 +98,10 @@ ProtectControlGroups=yes
 RestrictSUIDSGID=yes
 LockPersonality=yes
 CapabilityBoundingSet=
+# A background job: the server's own work comes first.
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
 
 [Install]
 WantedBy=multi-user.target

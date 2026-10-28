@@ -32,6 +32,7 @@ type Row struct {
 	AssetName      string
 	AssetKind      string
 	Environment    string
+	AppDir         string // deployed application's directory, when the asset is one
 	OS             string // os-release ID, e.g. ubuntu
 	OSVersion      string
 	OSName         string
@@ -52,14 +53,19 @@ type Row struct {
 }
 
 type Group struct {
-	ID             string         `json:"id"`
-	Kind           string         `json:"kind"`
-	Title          string         `json:"title"`
-	Action         string         `json:"action"`
-	AssetID        int64          `json:"asset_id"`
-	AssetName      string         `json:"asset_name"`
-	AssetKind      string         `json:"asset_kind"`
-	Environment    string         `json:"environment"`
+	ID          string `json:"id"`
+	Kind        string `json:"kind"`
+	Title       string `json:"title"`
+	Action      string `json:"action"`
+	AssetID     int64  `json:"asset_id"`
+	AssetName   string `json:"asset_name"`
+	AssetKind   string `json:"asset_kind"`
+	Environment string `json:"environment"`
+	AppDir      string `json:"app_dir,omitempty"`
+	// FixKey is the same for groups that make the same change in different
+	// places (jquery 3.3.1 → 3.5.0 in two apps), so a list can show them as
+	// one fix. Groups that only make sense per asset use their ID.
+	FixKey         string         `json:"fix_key"`
 	Component      string         `json:"component,omitempty"`
 	FromVersion    string         `json:"from_version,omitempty"`
 	ToVersion      string         `json:"to_version,omitempty"`
@@ -77,17 +83,25 @@ type Group struct {
 	Note           string         `json:"note,omitempty"`
 	// Package upgrades: the version to move to, from release data (see
 	// internal/upgrade). ToVersion stays the minimum fixed version.
-	Recommended       string            `json:"recommended_version,omitempty"`
-	ChangeType        string            `json:"change_type,omitempty"`
-	RequiresMajor     bool              `json:"requires_major,omitempty"`
-	RecommendedYanked bool              `json:"recommended_yanked,omitempty"`
-	Rationale         []string          `json:"rationale,omitempty"`
-	FindingIDs        []int64           `json:"-"`
-	pkgs              map[string]bool   `json:"-"`
-	purlType          string            `json:"-"`
-	fromVersions      map[string]bool   `json:"-"`
-	extra             map[string]string `json:"-"`
-	keys              map[string]bool   `json:"-"`
+	Recommended string `json:"recommended_version,omitempty"`
+	// TargetVersion is the version the title and action name: the
+	// recommended version when it is in the same major line as the minimum
+	// fix, otherwise the minimum fixed version. Clients show it as the
+	// headline and ToVersion as "fixes from".
+	TargetVersion     string   `json:"target_version,omitempty"`
+	ChangeType        string   `json:"change_type,omitempty"`
+	RequiresMajor     bool     `json:"requires_major,omitempty"`
+	RecommendedYanked bool     `json:"recommended_yanked,omitempty"`
+	Rationale         []string `json:"rationale,omitempty"`
+	// Places lists every asset the fix applies to, when groups are merged
+	// by FixKey (see Merge); empty for a single asset's group.
+	Places       []Place           `json:"places,omitempty"`
+	FindingIDs   []int64           `json:"-"`
+	pkgs         map[string]bool   `json:"-"`
+	purlType     string            `json:"-"`
+	fromVersions map[string]bool   `json:"-"`
+	extra        map[string]string `json:"-"`
+	keys         map[string]bool   `json:"-"`
 }
 
 // Advice gives the newest supported release of an OS, for release-upgrade
@@ -140,7 +154,7 @@ func Build(rows []Row, advice map[string]Advice) ([]*Group, map[int64]string) {
 		g := groups[id]
 		if g == nil {
 			g = &Group{ID: id, Kind: kind, AssetID: r.AssetID, AssetName: r.AssetName, AssetKind: r.AssetKind,
-				Environment: r.Environment, ByPriority: map[string]int{}, BySeverity: map[string]int{},
+				Environment: r.Environment, AppDir: r.AppDir, ByPriority: map[string]int{}, BySeverity: map[string]int{},
 				TopPriority: "P4", pkgs: map[string]bool{}, purlType: r.PurlType, fromVersions: map[string]bool{},
 				extra: map[string]string{}, keys: map[string]bool{}}
 			groups[id] = g
@@ -243,6 +257,7 @@ func less(a, b *Group) bool {
 }
 
 func describe(g *Group, osEOL map[int64]Row, advice map[string]Advice) {
+	g.FixKey = g.ID
 	for p := range g.pkgs {
 		g.Packages = append(g.Packages, p)
 	}
@@ -307,16 +322,19 @@ func describe(g *Group, osEOL map[int64]Row, advice map[string]Advice) {
 		}
 		g.Action += "; move to a supported version."
 		g.Note = fmt.Sprintf("Installed package: %s %s.", g.Component, g.FromVersion)
+		g.FixKey = fmt.Sprintf("%s:%s:%s:%s", EndOfLife, g.purlType, g.Component, g.FromVersion)
 		g.Effort = "medium"
 	case PackageUpgrade:
 		from := sortedKeys(g.fromVersions)
 		g.FromVersion = strings.Join(from, ", ")
+		g.TargetVersion = g.ToVersion
 		g.Title = fmt.Sprintf("Upgrade %s %s → %s", g.Component, g.FromVersion, g.ToVersion)
 		g.Action = fmt.Sprintf("Update %s to %s or later in the lockfile and redeploy.", g.Component, g.ToVersion)
+		g.FixKey = fmt.Sprintf("%s:%s:%s:%s>%s", PackageUpgrade, g.purlType, g.Component, g.FromVersion, g.ToVersion)
 		g.Effort = "medium"
 		if len(from) > 0 {
 			if ct, err := version.ChangeType(g.purlType, from[0], g.ToVersion); err == nil {
-				g.Effort = map[string]string{"distro": "low", "patch": "low", "minor": "medium", "major": "high"}[ct]
+				g.Effort = effortOf(ct)
 			}
 		}
 	case NoFix:
@@ -332,19 +350,101 @@ func describe(g *Group, osEOL map[int64]Row, advice map[string]Advice) {
 	}
 }
 
-// SetRecommendation records the recommended version for a package upgrade
-// and mentions it in the action when it differs from the minimum fix.
+// Place is one asset a fix applies to, when one fix is shown for several.
+type Place struct {
+	GroupID      string `json:"group_id"`
+	AssetID      int64  `json:"asset_id"`
+	AssetName    string `json:"asset_name"`
+	AssetKind    string `json:"asset_kind"`
+	AppDir       string `json:"app_dir,omitempty"`
+	Environment  string `json:"environment"`
+	FindingCount int    `json:"finding_count"`
+}
+
+// Merge shows groups with the same FixKey as one fix: the first group (the
+// most urgent, as stored) with the counts of all of them and the places they
+// are in. Distinct issues are not added up: the same library at the same
+// version has the same vulnerabilities everywhere.
+func Merge(gs []Group) Group {
+	m := gs[0]
+	m.ByPriority, m.BySeverity = map[string]int{}, map[string]int{}
+	m.FindingCount, m.KnownExploited = 0, 0
+	for _, g := range gs {
+		m.Places = append(m.Places, Place{GroupID: g.ID, AssetID: g.AssetID, AssetName: g.AssetName, AssetKind: g.AssetKind,
+			AppDir: g.AppDir, Environment: g.Environment, FindingCount: g.FindingCount})
+		m.FindingCount += g.FindingCount
+		m.KnownExploited += g.KnownExploited
+		m.UniqueIssues = max(m.UniqueIssues, g.UniqueIssues)
+		m.PackageCount = max(m.PackageCount, g.PackageCount)
+		m.SOS = m.SOS || g.SOS
+		if g.TopPriority < m.TopPriority {
+			m.TopPriority = g.TopPriority
+		}
+		for k, n := range g.ByPriority {
+			m.ByPriority[k] += n
+		}
+		for k, n := range g.BySeverity {
+			m.BySeverity[k] += n
+		}
+	}
+	return m
+}
+
+func effortOf(changeType string) string {
+	if e, ok := map[string]string{"distro": "low", "patch": "low", "minor": "medium", "major": "high"}[changeType]; ok {
+		return e
+	}
+	return "medium"
+}
+
+// SetRecommendation records the recommended version for a package upgrade.
+// When it is a newer stable release in the minimum fix's own major line,
+// the title and action lead with it ("Upgrade ip-address 10.1.0 →
+// 10.7.5") and ToVersion stays the minimum fix. A major upgrade, or a
+// recommendation the registry withdrew, never becomes the headline: the
+// title keeps the minimum fix and the action mentions the recommendation.
 func (g *Group) SetRecommendation(recommended, changeType string, major, yanked bool, rationale []string) {
 	if g.Kind != PackageUpgrade || recommended == "" {
 		return
 	}
 	g.Recommended, g.ChangeType, g.RequiresMajor, g.RecommendedYanked, g.Rationale = recommended, changeType, major, yanked, rationale
-	if recommended != g.ToVersion {
+	g.TargetVersion = g.ToVersion
+	switch {
+	case g.leadsWith(recommended, major, yanked):
+		g.TargetVersion = recommended
+		g.Title = fmt.Sprintf("Upgrade %s %s → %s", g.Component, g.FromVersion, recommended)
+		g.Action = fmt.Sprintf("Update %s to %s, the newest stable release in its line, in the lockfile and redeploy. Any version from %s fixes these issues.",
+			g.Component, recommended, g.ToVersion)
+		if changeType != "" {
+			g.Effort = effortOf(changeType)
+		}
+	case recommended != g.ToVersion:
 		g.Action += fmt.Sprintf(" Recommended: %s, the newest stable release in its major line.", recommended)
 	}
 	if major {
 		g.Action += " This is a major upgrade."
 	}
+}
+
+// leadsWith reports whether the recommended version can head the group: a
+// stable release above the minimum fix in the same major line, and not a
+// major upgrade from what is installed.
+func (g *Group) leadsWith(recommended string, major, yanked bool) bool {
+	if major || yanked || recommended == g.ToVersion || g.ToVersion == "" {
+		return false
+	}
+	eco := version.ForPurlType(g.purlType)
+	line := version.MajorLine(eco, g.ToVersion)
+	if line == "" || version.MajorLine(eco, recommended) != line {
+		return false
+	}
+	// Below 1.0 a minor release may break things (0.21 to 0.34), so the
+	// headline stays within the same 0.x minor line.
+	if line == "0" && minorLine(recommended) != minorLine(g.ToVersion) {
+		return false
+	}
+	c, err := version.For(eco)(recommended, g.ToVersion)
+	return err == nil && c > 0
 }
 
 // needsChannel is the Group.Needs value for a paid channel that also
@@ -444,4 +544,18 @@ func sortedKeys(m map[string]bool) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// minorLine is "0.21" for "0.21.4" (the leading two numbers), or "".
+func minorLine(v string) string {
+	v = strings.TrimPrefix(strings.TrimPrefix(strings.TrimSpace(v), "v"), "V")
+	parts := strings.SplitN(v, ".", 3)
+	if len(parts) < 2 {
+		return ""
+	}
+	end := 0
+	for end < len(parts[1]) && parts[1][end] >= '0' && parts[1][end] <= '9' {
+		end++
+	}
+	return parts[0] + "." + parts[1][:end]
 }
