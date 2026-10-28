@@ -24,6 +24,7 @@ STACKURITY_SAML_IDP_INITIATED  SAML single sign-on, licensed build
 STACKURITY_SAML_IDP_METADATA_FILE  SAML single sign-on, licensed build
 STACKURITY_SAML_IDP_METADATA_URL  SAML single sign-on, licensed build
 STACKURITY_SAML_LABEL  SAML single sign-on, licensed build
+STACKURITY_SAML_LINK_EXISTING  SAML single sign-on, licensed build
 STACKURITY_SAML_NAME_ATTRIBUTE  SAML single sign-on, licensed build
 STACKURITY_SAML_ROLE_MAP  SAML single sign-on, licensed build
 STACKURITY_SAML_SP_CERT_FILE  SAML single sign-on, licensed build
