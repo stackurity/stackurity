@@ -13,7 +13,7 @@ body:
     attributes:
       label: Stackurity version
       description: Shown at the bottom of the sidebar, or `stackurity --version`.
-      placeholder: v0.5.0
+      placeholder: Output of stackurity --version
     validations:
       required: true
   - type: input

@@ -151,3 +151,27 @@ jobs:
             exit 0
           fi
           gh workflow run update.yml -R stackurity/homebrew-tap -f version="$GITHUB_REF_NAME"
+
+  # Tell the website a release is out, so it can update the version, the
+  # release notes and the download links it shows. WEBSITE_DISPATCH_TOKEN
+  # may only send repository_dispatch events to stackurity/website (a
+  # fine-grained token with Contents: read and write on that repository);
+  # without it (forks) this is skipped with a warning and the release
+  # still succeeds. The website repository handles the stackurity-release
+  # event.
+  website:
+    needs: release
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Notify the website
+        env:
+          GH_TOKEN: ${{ secrets.WEBSITE_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::WEBSITE_DISPATCH_TOKEN is not set; update the website by hand for $GITHUB_REF_NAME"
+            exit 0
+          fi
+          gh api repos/stackurity/website/dispatches -f event_type=stackurity-release \
+            -f "client_payload[version]=${GITHUB_REF_NAME#v}" -f "client_payload[tag]=$GITHUB_REF_NAME"
