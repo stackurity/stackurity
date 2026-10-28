@@ -18,6 +18,18 @@ Each release's section is published as its GitHub release notes, and a tag witho
 - Releases are gated: a tag publishes nothing while govulncheck reports a reachable vulnerability, npm audit reports a high or critical advisory, or the built image has a fixable high or critical vulnerability. Every pull request and a daily run on `main` check the same. Exceptions need a reason and an expiry (`.trivyignore.yaml`, `web/audit-allow.json`). `make vulncheck` and `make scan-image IMAGE=...` run the checks locally.
 - GitHub Actions used by the build and release workflows are pinned to commit SHAs.
 
+### Added
+
+- **Three official stack packs** (Settings → Stack packs; Home names them when a repository holds their files). As with the Java and Rust packs, they ship inside the server and read nothing until an instance administrator installs them. See [Stack packs](docs/packs.md).
+  - **`swift`**: Swift Package Manager's `Package.resolved` (formats 1, 2 and 3, Xcode projects and package registries) and CocoaPods' `Podfile.lock`. Swift packages are checked against OSV's SwiftURL advisories (GitHub's Swift advisories; a few dozen packages, mostly SwiftNIO, Vapor and their servers). OSV has no CocoaPods advisories, so pods are inventoried and shown as having no vulnerability source.
+  - **`hex`**: Elixir and Erlang `mix.lock` (every format since Mix 1.0), checked against OSV's Hex advisories (GitHub and the Erlang Ecosystem Foundation). Latest releases come from hex.pm (`releases:hex`, at most 100 lookups a minute as hex.pm asks; `STACKURITY_HEX_URL` for a mirror), with retired releases never offered as the latest.
+  - **`cpp`**: Conan `conan.lock` (Conan 1 and 2), vcpkg `vcpkg.json` (exact only where pinned under `overrides`) and the `vcpkg.spdx.json` vcpkg writes for each installed port. No public vulnerability database covers ConanCenter or vcpkg ports, so C and C++ libraries are inventory only.
+- Files these packs read (`Package.resolved`, `Podfile.lock`, `conan.lock`, `vcpkg.json`, `vcpkg.spdx.json`) are reported as unsupported coverage without the pack, as `mix.lock` already was, instead of being ignored.
+
+### Changed
+
+- Repository scans skip `.build`, Swift Package Manager's build directory, which holds a checkout of every dependency.
+
 ### Upgrading
 
 - Behind Cloudflare (including Cloudflare Tunnel), nothing changes: keep `STACKURITY_TRUST_PROXY=true`. The tunnel connector reaches Stackurity from loopback or a private (Docker network) address, which are trusted by default.
