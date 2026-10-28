@@ -188,29 +188,58 @@ function ChoosePlan({ b, onChanged }: { b: Billing; onChanged: (b: Billing) => v
   const subscribed = b.plan !== null && (b.status === "active" || b.status === "past_due" || b.status === "halted");
   const unchanged = subscribed && b.plan?.id === planId && (b.extra_assets ?? 0) === n;
 
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
+  const send = async (replace: boolean) => {
     if (!valid || !plan) return;
     setDone(null);
     setPaymentUrl(null);
     const r = await act.run(() =>
-      api.post<{ billing: Billing; payment_url: string | null }>("/billing/subscribe", { plan_id: plan.id, extra_assets: n, country }),
+      api.post<{ billing: Billing; payment_url: string | null; message?: string }>("/billing/subscribe", {
+        plan_id: plan.id,
+        extra_assets: n,
+        country,
+        ...(replace ? { replace: true } : {}),
+      }),
     );
     if (!r) return;
     onChanged(r.billing);
-    if (r.payment_url) setPaymentUrl(r.payment_url);
+    if (r.payment_url) {
+      setPaymentUrl(r.payment_url);
+      if (r.message) setDone(r.message);
+    } else if (r.message) setDone(r.message);
     else if (r.billing.scheduled_change) setDone(`Saved. ${plan.name} from the next period.`);
     else setDone(`Saved. You are on ${plan.name} now.`);
   };
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    await send(false);
+  };
+  /** The subscription cannot be changed (UPI, e-mandate): replaced by the bigger plan. */
+  const replace = async () => {
+    const ok = window.confirm(
+      "Your current subscription is cancelled now and nothing more is charged on it. The new plan starts as soon as you pay the difference " +
+        "for the rest of this period on the payment page, and is billed in full from the end of the period. Until you pay, your current plan continues.",
+    );
+    if (ok) await send(true);
+  };
+  const replaceRequired = act.error?.code === "replace_required";
 
   return (
     <Card title={subscribed ? "Change your plan" : "Choose a plan"}>
       <form className="form" onSubmit={submit}>
-        <ErrorBox error={act.error} title="Could not change the plan" />
-        {done && <Notice kind="success">{done}</Notice>}
+        {replaceRequired ? (
+          <Notice kind="warn">
+            <p>{act.error?.message}</p>
+            <button type="button" className="btn btn-primary" onClick={() => void replace()} disabled={act.pending}>
+              Cancel and subscribe again
+            </button>
+          </Notice>
+        ) : (
+          <ErrorBox error={act.error} title="Could not change the plan" />
+        )}
+        {done && !paymentUrl && <Notice kind="success">{done}</Notice>}
         {paymentUrl ? (
           <Notice kind="info">
-            <p>Almost done. Confirm the payment method on the payment page to start the plan.</p>
+            <p>{done ?? "Almost done. Confirm the payment method on the payment page to start the plan."}</p>
             <button type="button" className="btn btn-primary" onClick={() => window.location.assign(paymentUrl)}>
               Continue to the payment page
             </button>
