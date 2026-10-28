@@ -37,6 +37,23 @@ jobs:
           GOOS=windows GOARCH=amd64 go build -o /dev/null ./cmd/stackurity
           go build -o /dev/null ./plugins/... ./examples/...
 
+  # Documentation and release metadata in step with the code, as its own
+  # check so a failure says what drifted: every environment variable, CLI
+  # command and flag, and API route is documented (tools/docslint,
+  # TestCLIDocumented), version references name the newest release and the
+  # upgrade matrix includes it (tools/releaselint). The go job runs these
+  # too; this one needs no database and finishes in seconds.
+  docs:
+    name: Docs and release metadata
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go test -count=1 ./tools/docslint ./tools/releaselint
+      - run: go test -count=1 -run TestCLIDocumented ./cmd/stackurity
+
   # Kills the real server with SIGKILL during a feed import, an ingest, a
   # notification send, a periodic task and a job, restarts it and checks the
   # outcome (docs/reliability.md); cuts it off from PostgreSQL mid-sync and

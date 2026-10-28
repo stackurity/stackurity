@@ -1,0 +1,50 @@
+# Routes the server registers that docs/api.md does not name yet, as
+# "METHOD /path" with /api/v1 removed. TestRoutesDocumented (routes_test.go)
+# reads this file.
+#
+# Entries must only be removed, never added: document a route in
+# docs/api.md (and internal/api/openapi.json), then delete its line here.
+# The test fails while a documented route is still listed, so the list
+# shrinks as the docs catch up. A new route is documented in the same pull
+# request that adds it.
+#
+# Outside /api/v1: discovery, OAuth and MCP (described in ai-assistants.md),
+# health checks (install.md, operations.md) and OpenAI's domain check.
+GET /.well-known/oauth-authorization-server
+GET /.well-known/oauth-protected-resource
+GET /.well-known/oauth-protected-resource/mcp
+GET /.well-known/openai-apps-challenge
+GET /healthz
+GET /readyz
+DELETE /mcp
+GET /mcp
+POST /mcp
+POST /oauth/register
+POST /oauth/revoke
+POST /oauth/token
+
+# Under /api/v1.
+DELETE /admin/license
+GET /admin/license
+PUT /admin/license
+GET /admin/packs
+POST /admin/packs/install
+POST /admin/packs/upload
+DELETE /admin/packs/{id}
+PATCH /admin/packs/{id}
+POST /admin/packs/{id}/rollback
+GET /packs
+GET /packs/{id}/archive
+GET /secrets
+DELETE /secrets/{name}
+PUT /secrets/{name}
+DELETE /users/{id}
+GET /updates
+GET /workspaces
+POST /workspaces/{id}/activate
+
+# docs/api.md writes these as POST /channels/{id}, POST /integrations/{id}
+# and POST /teams/{id}, which the server does not serve.
+POST /channels
+POST /integrations
+POST /teams
