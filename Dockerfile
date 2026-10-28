@@ -2,7 +2,7 @@
 
 # The web and Go stages run on the build machine and cross-compile; only the
 # final stage is per target platform, so arm64 images need no emulation.
-FROM --platform=$BUILDPLATFORM node:22.11.0-alpine3.20 AS web
+FROM --platform=$BUILDPLATFORM node:22.23.4-alpine3.24 AS web
 WORKDIR /src/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci --ignore-scripts

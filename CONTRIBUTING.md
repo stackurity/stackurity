@@ -12,7 +12,7 @@ git commit -s -m "Add yarn.lock parser"
 
 ## Development
 
-Requirements: Go 1.27+, Node 22+, and PostgreSQL 16+ (or Docker).
+Requirements: Go 1.27+, Node 22.22+, and PostgreSQL 16+ (or Docker).
 
 ```sh
 # backend tests (database tests are skipped without this variable)
