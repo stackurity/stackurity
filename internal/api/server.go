@@ -126,6 +126,9 @@ type Server struct {
 	// platform's mail on a hosted edition, STACKURITY_SMTP_* otherwise; nil
 	// means administrators reset passwords.
 	AccountMail notify.Mailer
+	// Breached refuses passwords found in data breaches (Pwned Passwords,
+	// k-anonymity); nil turns the check off.
+	Breached *auth.BreachChecker
 }
 
 func (s *Server) Handler() http.Handler {

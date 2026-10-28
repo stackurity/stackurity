@@ -8,8 +8,24 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/stackurity/stackurity/internal/auth"
 	"github.com/stackurity/stackurity/internal/notify"
 )
+
+// breachChecker is the breached-password check (docs/network.md):
+// STACKURITY_BREACHED_PASSWORD_CHECK=off turns it off, and
+// STACKURITY_BREACHED_PASSWORD_URL points it at a mirror of the range API.
+func breachChecker(log *slog.Logger) (*auth.BreachChecker, error) {
+	switch v := strings.ToLower(strings.TrimSpace(os.Getenv("STACKURITY_BREACHED_PASSWORD_CHECK"))); v {
+	case "", "on":
+	case "off":
+		log.Info("breached-password check is off")
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("STACKURITY_BREACHED_PASSWORD_CHECK must be on or off, not %q", v)
+	}
+	return &auth.BreachChecker{URL: strings.TrimSpace(os.Getenv("STACKURITY_BREACHED_PASSWORD_URL"))}, nil
+}
 
 // accountMailer is how the server emails people about their own account
 // (password reset links): the platform's mail where an edition provides it

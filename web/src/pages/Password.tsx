@@ -152,7 +152,7 @@ function NewPasswordFields({ value, onChange }: { value: { password: string; con
           aria-describedby="new-password-hint"
         />
         <p className="hint" id="new-password-hint">
-          At least 12 characters. A passphrase of a few words is easy to remember and hard to guess.
+          At least 12 characters. A passphrase of a few words is easy to remember and hard to guess. Passwords found in known data breaches are refused.
         </p>
       </div>
       <div className="field">

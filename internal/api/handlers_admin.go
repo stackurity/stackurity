@@ -54,6 +54,12 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, badRequest("role must be viewer, engineer, security, admin, or none (access through projects only)"))
 		return
 	}
+	if req.Password != "" {
+		if err := s.checkNewPassword(r.Context(), req.Password); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+	}
 	u, err := s.Store.CreateUser(r.Context(), req.Email, req.Name, req.Role, req.Password)
 	if err != nil {
 		s.fail(w, r, err)

@@ -108,6 +108,7 @@ Connecting an asset is quiet: one "connected" message, and no alerts, Jira issue
 | `STACKURITY_LICENSE` / `_FILE` | — | Licence key; when set, the dashboard cannot change it |
 | `STACKURITY_PACK_TRUSTED_KEYS` | — | File of `publisher base64-key` lines: publishers whose [stack packs](packs.md) are accepted besides official ones |
 | `STACKURITY_PACK_ALLOW_UNSIGNED` | `false` | Accept unsigned stack packs (pack development only) |
+| `STACKURITY_BREACHED_PASSWORD_CHECK` | `on` | `off` stops checking new passwords against known data breaches; `STACKURITY_BREACHED_PASSWORD_URL` points the check at a mirror ([network.md](network.md#breached-password-check)) |
 | `STACKURITY_SMTP_HOST`, `STACKURITY_SMTP_PORT` (`587`), `STACKURITY_SMTP_USERNAME`, `STACKURITY_SMTP_PASSWORD` / `_FILE`, `STACKURITY_SMTP_FROM`, `STACKURITY_SMTP_TLS` (`starttls`, `tls` or `none`) | — | The mail server for email about people's own accounts: password reset links ([Forgotten passwords](#forgotten-passwords)). Needs `STACKURITY_BASE_URL`. Not used for notifications, which each organisation sets up |
 
 Secrets are never stored in the database. Integrations hold a *reference*: `env:STACKURITY_SECRET_GITHUB` or `file:/run/secrets/github_token`.
@@ -167,6 +168,10 @@ Anyone can turn on two-factor sign-in under **Your account → Two-factor sign-i
 Every step is in the activity log: `auth.mfa_enabled`, `auth.mfa_disabled`, `auth.mfa_failed`, `auth.mfa_recovery_code_used`, `auth.mfa_recovery_codes_replaced`, and `auth.login` with `"mfa": "totp"` or `"recovery_code"`.
 
 Passkeys and security keys (WebAuthn) are not supported yet.
+
+### Passwords
+
+Passwords are 12 to 256 characters, stored with argon2id. A new password is also checked against known data breaches (Have I Been Pwned's Pwned Passwords, with only five characters of its SHA-1 sent: see [network.md](network.md#breached-password-check)) and refused if found; if the check cannot be reached the password is accepted and a warning logged. `STACKURITY_BREACHED_PASSWORD_CHECK=off` turns the check off.
 
 ### Forgotten passwords
 

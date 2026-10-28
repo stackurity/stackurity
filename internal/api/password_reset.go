@@ -185,9 +185,13 @@ func (s *Server) confirmPasswordReset(w http.ResponseWriter, r *http.Request) {
 }
 
 // checkNewPassword applies the password rules to a password someone
-// chooses: length, and (when configured) the breached-password check.
+// chooses: 12 to 256 characters, and not in known data breaches when the
+// check is on (STACKURITY_BREACHED_PASSWORD_CHECK). An unreachable check
+// is logged and the password accepted.
 func (s *Server) checkNewPassword(ctx context.Context, pw string) error {
-	return auth.ValidPassword(pw)
+	return auth.CheckNewPassword(ctx, s.Breached, pw, func(err error) {
+		s.Log.Warn("breached-password check unavailable; password accepted without it", "err", err)
+	})
 }
 
 func (s *Server) passwordResetRoutes(r chi.Router) {

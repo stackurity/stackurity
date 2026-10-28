@@ -60,6 +60,10 @@ func (s *Server) setup(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, badRequest("a valid email is required"))
 		return
 	}
+	if err := s.checkNewPassword(r.Context(), req.Password); err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	u, err := s.Store.CreateFirstAdmin(r.Context(), req.Email, req.Name, req.Password)
 	if err != nil {
 		s.fail(w, r, err)
@@ -404,6 +408,10 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 		New     string `json:"new_password"`
 	}
 	if err := decode(r, &req); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if err := s.checkNewPassword(r.Context(), req.New); err != nil {
 		s.fail(w, r, err)
 		return
 	}

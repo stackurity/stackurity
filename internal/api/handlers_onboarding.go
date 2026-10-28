@@ -297,6 +297,13 @@ func (s *Server) acceptInvitation(w http.ResponseWriter, r *http.Request) {
 	if p != nil && p.User != nil {
 		signedIn = p.User.ID
 	}
+	// A new account's password follows the same rules as any other.
+	if signedIn == 0 && req.Password != "" {
+		if err := s.checkNewPassword(r.Context(), req.Password); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+	}
 	res, err := s.Store.AcceptInvitation(r.Context(), strings.TrimSpace(req.Token), signedIn, req.Name, req.Password)
 	switch {
 	case errors.Is(err, store.ErrInvitationInvalid):

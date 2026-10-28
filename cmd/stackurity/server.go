@@ -260,6 +260,9 @@ func serverCmd() *cobra.Command {
 			if srv.AccountMail, err = accountMailer(dispatcher, log); err != nil {
 				return err
 			}
+			if srv.Breached, err = breachChecker(log); err != nil {
+				return err
+			}
 			if srv.AccountMail != nil && srv.BaseURL == "" {
 				log.Warn("password reset links are off: they need STACKURITY_BASE_URL (never the request's Host header)")
 			}
