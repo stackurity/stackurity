@@ -154,12 +154,21 @@ Stackurity can sign people in through any OpenID Connect provider: Google Worksp
 | `STACKURITY_OIDC_CLIENT_ID` | | From the provider |
 | `STACKURITY_OIDC_CLIENT_SECRET` or `_FILE` | | From the provider |
 | `STACKURITY_OIDC_LABEL` | `Google` | Text on the sign-in button |
-| `STACKURITY_OIDC_ALLOWED_DOMAINS` | `example.com` | Only these email domains may sign in (recommended for Google and other shared providers) |
+| `STACKURITY_OIDC_ALLOWED_DOMAINS` | `example.com` | Only these email domains may sign in. Set it: with a shared provider such as Google, anyone with an account there could otherwise sign in. `*` allows any domain on purpose; when it is empty the server logs a warning at start |
 | `STACKURITY_OIDC_ROLE_MAP` | `stackurity-admins=admin,security-team=security,engineering=engineer` | Groups (from `STACKURITY_OIDC_ROLE_CLAIM`, default `groups`) that grant each role. When set, the provider decides the role on every sign-in |
 | `STACKURITY_OIDC_DEFAULT_ROLE` | `viewer` | Role for people in no mapped group; `none` refuses them |
 | `STACKURITY_OIDC_SCOPES` | `openid,email,profile,groups` | Scopes to request; add the one your provider needs for group claims |
+| `STACKURITY_OIDC_REQUIRE_EMAIL_VERIFIED` | `true` | Refuse ID tokens without `email_verified: true`. Microsoft Entra ID sends no such claim; set `false` for it, and set `STACKURITY_OIDC_ALLOWED_DOMAINS` to your verified domains |
+| `STACKURITY_OIDC_LINK_EXISTING` | `false` | `true` lets a first sign-in link an existing account with the same email (see below) |
 
-`STACKURITY_BASE_URL` must be set (or `STACKURITY_OIDC_REDIRECT_URL`). The sign-in page then shows **Sign in with …**. The first sign-in creates the account, or links an existing account with the same verified email address. Password sign-in keeps working for local accounts, so keep one admin account with a password as a way back in if the provider is down.
+`STACKURITY_BASE_URL` must be set (or `STACKURITY_OIDC_REDIRECT_URL`). The sign-in page then shows **Sign in with …**. Password sign-in keeps working for local accounts, so keep one admin account with a password as a way back in if the provider is down.
+
+How a sign-in finds its account:
+
+- An account already linked to the provider's identity (issuer and subject) is used.
+- Otherwise, if no account has the email, a new one is made with the mapped role.
+- Otherwise the sign-in is refused: an existing account is not taken over by whoever the provider vouches for. With `STACKURITY_OIDC_LINK_EXISTING=true` it is linked, but only if it is already a member of `STACKURITY_OIDC_WORKSPACE`, is not an instance administrator, and is not linked to another identity. Instance administrators always sign in with their password.
+- With `STACKURITY_OIDC_ROLE_MAP` the provider decides each member's role on every sign-in, except that the workspace's last admin is never demoted.
 
 ## Collecting inventory
 
