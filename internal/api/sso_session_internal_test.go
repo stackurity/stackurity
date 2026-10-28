@@ -93,13 +93,15 @@ func TestSSOSessions(t *testing.T) {
 	// An ordinary session in a workspace that requires its own sign-on is
 	// refused there (no workspace, no data), told where to sign in, and
 	// can still switch to another workspace.
+	// The edition's own hook (the cloud build sets one) comes back after.
+	prev := editionSessionAccess
+	defer func() { editionSessionAccess = prev }()
 	editionSessionAccess = func(s *Server, r *http.Request, user *store.User, ws, sso int64) *SSORequired {
 		if ws == ws2.ID && sso != ws2.ID {
 			return &SSORequired{WorkspaceID: ws2.ID, WorkspaceName: "Acme", LoginURL: "/sso/k/login"}
 		}
 		return nil
 	}
-	defer func() { editionSessionAccess = nil }()
 	plain, err := st.CreateSession(bg, u.ID, ws2.ID)
 	if err != nil {
 		t.Fatal(err)
