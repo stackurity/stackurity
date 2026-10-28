@@ -12,3 +12,12 @@ updates:
     directory: /
     schedule:
       interval: weekly
+  # Base images in the Dockerfile (Node, Go, Alpine) and the compose example.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker-compose
+    directory: /deploy
+    schedule:
+      interval: weekly

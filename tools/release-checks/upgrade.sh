@@ -28,7 +28,7 @@ set -euo pipefail
 
 PREV=${1:?previous release image}
 CUR=${2:?current build image}
-PG_IMAGE=${PG_IMAGE:-postgres:17.6-alpine}
+PG_IMAGE=${PG_IMAGE:-postgres:17.11-alpine3.24}
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 ID=stk-rc-$$
 NET=$ID-net
