@@ -9,6 +9,7 @@ import (
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/upgrade"
 	"github.com/stackurity/stackurity/internal/version"
+	"github.com/stackurity/stackurity/internal/winrelease"
 )
 
 // osProducts maps os-release IDs to endoflife.date products (the table the
@@ -32,6 +33,11 @@ func Rebuild(ctx context.Context, st *store.Store, now time.Time) (int, error) {
 		}
 		seen[key] = true
 		product := osProducts[r.OS]
+		if r.OS == "windows" && strings.HasPrefix(r.OSName, "Windows Server") {
+			// Advice is the target only: the release and its date come
+			// from the finding (its os_version is a build, not a cycle).
+			product = winrelease.ProductServer
+		}
 		if product == "" {
 			continue
 		}

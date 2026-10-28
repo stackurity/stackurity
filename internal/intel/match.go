@@ -32,24 +32,34 @@ type EvalStats struct {
 	Gaps     int   `json:"gaps"`
 }
 
-// versionedDeb matches Debian and Ubuntu packages that carry the upstream
-// release in their name, which endoflife.date's package identifiers do not
-// cover. One package per installation is matched (PHP's -common is always
-// installed) so each runtime yields one finding, not one per module.
-var versionedDeb = regexp.MustCompile(`^pkg:deb/[^/]+/(php)(\d+\.\d+)-common$|^pkg:deb/[^/]+/(ruby)(\d+\.\d+)$`)
+// versionedPackages match distro packages that carry the upstream release
+// in their name, which endoflife.date's package identifiers do not cover
+// (its dotnet identifiers name pkg:rpm/redhat/dotnet-sdk-X.Y, a namespace
+// the agent never reports). One package per installation is matched (PHP's
+// -common is always installed, as is dotnet-runtime-X.Y under the SDK and
+// ASP.NET Core runtime) so each runtime yields one finding, not one per
+// module.
+var versionedPackages = []struct {
+	re      *regexp.Regexp // the first group is the release
+	product string
+}{
+	{regexp.MustCompile(`^pkg:deb/[^/]+/php(\d+\.\d+)-common$`), "php"},
+	{regexp.MustCompile(`^pkg:deb/[^/]+/ruby(\d+\.\d+)$`), "ruby"},
+	// Ubuntu's and Microsoft's deb packages, RHEL's and Microsoft's rpm
+	// packages: dotnet-runtime-8.0 is .NET 8 (endoflife.date cycle "8").
+	{regexp.MustCompile(`^pkg:(?:deb|rpm)/[^/]+/dotnet-runtime-(\d+\.\d+)$`), "dotnet"},
+}
 
 // versionedDebProduct returns the endoflife.date product and release cycle
-// named by a versioned distro package, e.g. php7.4-common -> php 7.4.
+// named by a versioned distro package, e.g. php7.4-common -> php 7.4,
+// dotnet-runtime-8.0 -> dotnet 8.0.
 func versionedDebProduct(purlKey string) (product, cycle string, ok bool) {
-	m := versionedDeb.FindStringSubmatch(purlKey)
-	switch {
-	case m == nil:
-		return "", "", false
-	case m[1] != "":
-		return m[1], m[2], true
-	default:
-		return m[3], m[4], true
+	for _, p := range versionedPackages {
+		if m := p.re.FindStringSubmatch(purlKey); m != nil {
+			return p.product, m[1], true
+		}
 	}
+	return "", "", false
 }
 
 // osProducts maps os-release IDs to endoflife.date product names.
@@ -236,6 +246,22 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 		product, cycleVersion := "", r.Version
 		if r.Type == "generic" && r.Evidence["kind"] == "operating-system" {
 			name := strings.TrimPrefix(r.PurlKey, "pkg:generic/")
+			if name == "windows" {
+				f, gap, err := e.windowsLifecycle(ctx, r, cycleCache, now)
+				if err != nil {
+					return nil, err
+				}
+				if gap != "" {
+					// Never left looking supported: the host's release is
+					// unknown, so is its end of life.
+					coverage[ci].State, coverage[ci].Reason = store.CoverageNotEvaluated, gap
+					stats.Gaps++
+				}
+				if f != nil {
+					want = append(want, *f)
+				}
+				continue
+			}
 			product = osProducts[name]
 		} else {
 			product = purlProducts[strings.ToLower(r.PurlKey)]
@@ -244,7 +270,7 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 			if name := strings.TrimPrefix(r.PurlKey, "pkg:generic/"); product == "" && r.Type == "generic" && productNames[name] {
 				product = name
 			}
-			if product == "" && r.Type == "deb" {
+			if product == "" && (r.Type == "deb" || r.Type == "rpm") {
 				if p, cycle, ok := versionedDebProduct(r.PurlKey); ok && productNames[p] {
 					product, cycleVersion = p, cycle
 				}
@@ -612,7 +638,7 @@ func matchCycle(cycles []store.LifecycleCycle, v string) *store.LifecycleCycle {
 // eolMatch records how the release line was chosen (evidence "match"):
 // exact_cycle (the version is the cycle), version_prefix (its longest dotted
 // prefix is) or package_name (a versioned distro package such as
-// php8.1-common names the line).
+// php8.1-common names the line); windows_build is set by windowsLifecycle.
 func eolMatch(installed, compared, cycle string) map[string]any {
 	switch {
 	case compared != installed:

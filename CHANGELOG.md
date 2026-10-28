@@ -4,6 +4,13 @@ All notable changes to Stackurity. Versions follow [Semantic Versioning](https:/
 
 Each release's section is published as its GitHub release notes, and a tag without a section here cannot be released (`go run ./tools/changelog -version vX.Y.Z` prints it). New changes go under **Unreleased**, which is renamed to the version when it is tagged. Subsections are **Security**, **Added**, **Changed**, **Fixed** and **Upgrading**. Put fixes for vulnerabilities under `### Security`, first: installations treat a release with that heading as a security release and show administrators a banner they can only snooze.
 
+## Unreleased
+
+### Fixed
+
+- Windows Server hosts now get end-of-life findings; the docs said they did but no finding was raised. The release comes from the build number (14393 is Windows Server 2016, 17763 is 2019 or 1809 by product name, 20348 is 2022), with the product name and edition as a cross-check, and Windows 10 and 11 hosts are mapped by build and edition. A build that does not name one release is a coverage gap with the reason, never supported. The Windows agent now also reports `EditionID` on the operating system row. See [Windows end of life](docs/compatibility.md#windows-end-of-life).
+- .NET installed from distribution packages gets end-of-life findings: `dotnet-runtime-X.Y` (deb or rpm) is .NET X.Y. Red Hat's and Microsoft's packages take Microsoft's date, since neither supports .NET past it; Ubuntu's own archive packages follow the Ubuntu release. See [.NET end of life](docs/compatibility.md#net-end-of-life).
+
 ## 0.13.3
 
 ### Added

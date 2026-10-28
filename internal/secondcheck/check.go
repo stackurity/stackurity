@@ -408,6 +408,16 @@ func eolPackage(name string) (product, cycle string) {
 	return "", ""
 }
 
+// windowsBuild returns the third dotted field of a Windows version
+// ("10.0.14393.7428", "6.3.9600"), or "".
+func windowsBuild(v string) string {
+	parts := strings.Split(v, ".")
+	if len(parts) < 3 {
+		return ""
+	}
+	return parts[2]
+}
+
 // CheckEndOfLife re-derives an end-of-life finding from the stored release
 // lines of its product: the line is the version itself or its longest
 // dotted prefix (or, for a versioned distro package, the line its name
@@ -432,6 +442,32 @@ func CheckEndOfLife(c Claim, o Observed, cycles []store.LifecycleCycle, now time
 	v := o.Version
 	if v == "" {
 		return couldNot("no installed version was reported")
+	}
+	if product == "windows-server" || product == "windows" {
+		// Windows releases are not dotted prefixes of the version
+		// (10.0.14393.7428 is "2016"): the build is checked against the
+		// build endoflife.date lists as each release's latest, which the
+		// matcher does not use. Several releases share a build (2019 and
+		// 1809 SAC; Home and Enterprise editions), so the claim agrees when
+		// its release is one of them.
+		ind["matched_by"] = "build"
+		build := windowsBuild(v)
+		var lines []string
+		for _, cy := range cycles {
+			if build != "" && windowsBuild(cy.Latest) == build {
+				lines = append(lines, cy.Cycle)
+				if cy.Cycle == claimCycle {
+					line = cy.Cycle
+				}
+			}
+		}
+		if line == "" {
+			indep := fmt.Sprintf("no release line of %s lists build %s", product, orNone(build))
+			if len(lines) > 0 {
+				indep = fmt.Sprintf("build %s is %s", build, strings.Join(lines, " or "))
+			}
+			return disagree(ind, store.SecondCheckDifference{Field: "release_line", Matcher: claimCycle, Independent: indep})
+		}
 	}
 	if line == "" {
 		ind["matched_by"] = "version"
