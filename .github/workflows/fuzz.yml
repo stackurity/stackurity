@@ -35,7 +35,7 @@ jobs:
         run: go test -run '^$' -fuzz='^${{ matrix.target.name }}$' -fuzztime='${{ inputs.fuzztime }}' ${{ matrix.target.pkg }}
       - name: Keep failing inputs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fuzz-${{ matrix.target.name }}
           path: '**/testdata/fuzz/**'
