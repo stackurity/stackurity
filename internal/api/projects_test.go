@@ -608,10 +608,18 @@ func assetNames(t *testing.T, m member, query string) []string {
 
 var betaTagged = regexp.MustCompile(`(?i)[a-z0-9_:.@-]*beta[a-z0-9_:.@-]*`)
 
-// withoutBetaEchoes drops from resp the words naming Beta that the caller
-// itself sent (a search term, a path), as whole words only: echoing "beta"
-// does not hide "host-beta".
+// generatedSecret matches the secrets auth.NewToken makes (and their
+// prefixes), for every kind the server issues: 32 random bytes in lower-case
+// base32, whose alphabet spells "beta". About one secret in 21,000 does, so
+// a token minted in the sweep could fail it without telling anything about
+// Project Beta.
+var generatedSecret = regexp.MustCompile(`\b(?:sess|stk[acrsx]?|inv|enr|slk)_[a-z2-7]{8}(?:[a-z2-7]{44})?\b`)
+
+// withoutBetaEchoes drops from resp the secrets the server generated and the
+// words naming Beta that the caller itself sent (a search term, a path), as
+// whole words only: echoing "beta" does not hide "host-beta".
 func withoutBetaEchoes(resp string, sent ...string) string {
+	resp = generatedSecret.ReplaceAllString(resp, "")
 	for _, s := range sent {
 		for _, m := range betaTagged.FindAllString(s, -1) {
 			word := regexp.MustCompile(`(?i)(^|[^a-z0-9_:.@-])` + regexp.QuoteMeta(m) + `($|[^a-z0-9_:.@-])`)
@@ -619,6 +627,32 @@ func withoutBetaEchoes(resp string, sent ...string) string {
 		}
 	}
 	return resp
+}
+
+// TestWithoutBetaEchoesSecrets: a generated secret that happens to spell
+// "beta" is not a leak (the sweep failed once on POST /api/v1/tokens when a
+// new token's secret did), and real names of Beta's objects still are.
+func TestWithoutBetaEchoesSecrets(t *testing.T) {
+	leaks := func(resp string) bool { return strings.Contains(strings.ToLower(withoutBetaEchoes(resp)), "beta") }
+	for _, kind := range []string{"sess", "stk", "stkc", "stks", "stkx", "stka", "stkr", "inv", "enr", "slk"} {
+		secret, _, err := auth.NewToken(kind)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// "beta" inside the 8 characters of the prefix and in the rest.
+		r := len(kind) + 1
+		secret = secret[:r+2] + "beta" + secret[r+6:r+20] + "beta" + secret[r+24:]
+		prefix := secret[:r+8]
+		resp := fmt.Sprintf(`{"secret":%q,"token":{"id":10,"name":"sweep","prefix":%q,"user_email":"pa-viewer@x.io","project_id":null}}`, secret, prefix)
+		if !generatedSecret.MatchString(secret) || leaks(resp) {
+			t.Errorf("%s: generated secret taken for a leak: %s", kind, resp)
+		}
+		for _, leak := range []string{`"name":"Project Beta"`, `"name":"beta-asset"`, `"tag":"stk_beta"`, `"x":"` + secret + `beta"`} {
+			if !leaks(resp[:len(resp)-1] + "," + leak + "}") {
+				t.Errorf("%s: %s hidden by the secret filter", kind, leak)
+			}
+		}
+	}
 }
 
 // restrictedMembers creates the members of Project Alpha the sweep uses,
