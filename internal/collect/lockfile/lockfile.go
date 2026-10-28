@@ -43,6 +43,9 @@ var skipDirs = map[string]bool{
 	"bower_components": true, ".venv": true, "venv": true, "__pycache__": true, "target": true, ".yarn": true,
 	// Coding agents (Claude Code) keep worktrees of the repository here.
 	".claude": true,
+	// Swift Package Manager's build directory, with a checkout of every
+	// dependency (and their own Package.resolved files).
+	".build": true,
 }
 
 // Coverage scopes for parts of the tree a scan leaves out on purpose. They
@@ -86,9 +89,17 @@ var unsupported = map[string]string{
 	"gradle.lockfile":  "maven:gradle.lockfile",
 	"build.gradle":     "maven:build.gradle",
 	"build.gradle.kts": "maven:build.gradle.kts",
-	"mix.lock":         "hex:mix.lock",
 	// Read by the Cargo stack pack (packs/cargo).
 	"Cargo.lock": "cargo:Cargo.lock",
+	// Read by the Swift stack pack (packs/swift).
+	"Package.resolved": "swift:Package.resolved",
+	"Podfile.lock":     "cocoapods:Podfile.lock",
+	// Read by the Hex stack pack (packs/hex).
+	"mix.lock": "hex:mix.lock",
+	// Read by the C and C++ stack pack (packs/cpp).
+	"conan.lock":      "conan:conan.lock",
+	"vcpkg.json":      "vcpkg:vcpkg.json",
+	"vcpkg.spdx.json": "vcpkg:vcpkg.spdx.json",
 }
 
 type parser func(fsys fs.FS, dir, file string) ([]model.Observation, error)

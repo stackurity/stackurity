@@ -1,0 +1,68 @@
+{
+  "pins" : [
+    {
+      "identity" : "staticsite",
+      "kind" : "localSourceControl",
+      "location" : "/Users/chris/objc.io/StaticSite",
+      "state" : {
+        "branch" : "main",
+        "revision" : "bd16a2beef20488820971783433e953e693f7436"
+      }
+    },
+    {
+      "identity" : "swift-cmark",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-cmark.git",
+      "state" : {
+        "branch" : "gfm",
+        "revision" : "25d503f19658c6d94210b5b6ca6190f0f162e5a1"
+      }
+    },
+    {
+      "identity" : "swift-crypto",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-crypto.git",
+      "state" : {
+        "revision" : "ddb07e896a2a8af79512543b1c7eb9797f8898a5",
+        "version" : "1.1.7"
+      }
+    },
+    {
+      "identity" : "swift-markdown",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-markdown",
+      "state" : {
+        "branch" : "main",
+        "revision" : "6c8c6f47a22bed109ce937af6c353c7fe1cbc6c1"
+      }
+    },
+    {
+      "identity" : "swift-syntax",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-syntax.git",
+      "state" : {
+        "branch" : "main",
+        "revision" : "ac4f8f3ee2d3866152bcd555a62cb8317ea3cb11"
+      }
+    },
+    {
+      "identity" : "swim",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/robb/Swim.git",
+      "state" : {
+        "branch" : "main",
+        "revision" : "d3dde8cf781507ada3b7549996bea94f8d57181f"
+      }
+    },
+    {
+      "identity" : "yams",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/jpsim/Yams",
+      "state" : {
+        "revision" : "c947a306d2e80ecb2c0859047b35c73b8e1ca27f",
+        "version" : "2.0.0"
+      }
+    }
+  ],
+  "version" : 2
+}
