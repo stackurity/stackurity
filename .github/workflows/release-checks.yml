@@ -74,7 +74,7 @@ jobs:
       fail-fast: false
       matrix:
         # Published releases a site may upgrade from. Add each new minor.
-        from: ["0.2.0", "0.3.0", "0.3.1", "0.4.0", "0.5.0", "0.5.1", "0.6.0", "0.8.0", "0.9.0", "0.10.0", "0.11.0"]
+        from: ["0.2.0", "0.3.0", "0.3.1", "0.4.0", "0.5.0", "0.5.1", "0.6.0", "0.8.0", "0.9.0", "0.10.0", "0.11.0", "0.12.0"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
