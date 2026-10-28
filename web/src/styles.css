@@ -4598,3 +4598,23 @@ h6.md-h {
   background: none;
   text-decoration: underline;
 }
+/* Sections of a settings fieldset (grid, options, filters) with room between them. */
+.field-sections {
+  gap: var(--s4);
+}
+.check-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+/* A ticked event's Slack channel: always on its own indented row, under the
+   event's label (and its time) and help text. */
+.trigger-list .trigger-dest {
+  flex-basis: calc(100% - 24px);
+  margin-left: 24px;
+}
+.trigger-list .trigger-dest select {
+  flex: 0 1 auto;
+  min-width: 0;
+}

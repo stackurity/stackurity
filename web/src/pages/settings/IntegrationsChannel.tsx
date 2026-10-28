@@ -242,7 +242,7 @@ function RuleFields({
       )}
       {jira && <Notice kind="info">Jira keeps one issue per incident, so there are no events to choose. These filters decide which incidents get an issue.</Notice>}
 
-      <fieldset className="field">
+      <fieldset className="field field-sections">
         <legend className="h-sm">Notification settings</legend>
         <div className="form-grid">
           {showName && (
@@ -323,22 +323,25 @@ function RuleFields({
             </>
           )}
         </div>
-        <div className="btn-group">
-          {/* One rule: the page's Disable switches the integration off; the rule's own switch only to turn a switched-off rule back on. */}
-          {(showName || !r.enabled) && (
+        <fieldset className="field">
+          <legend>Options</legend>
+          <div className="check-stack">
+            {/* One rule: the page's Disable switches the integration off; the rule's own switch only to turn a switched-off rule back on. */}
+            {(showName || !r.enabled) && (
+              <label className="check">
+                <input type="checkbox" checked={r.enabled} onChange={(e) => set("enabled", e.target.checked)} /> {showName ? "Enabled" : "This rule is on"}
+              </label>
+            )}
             <label className="check">
-              <input type="checkbox" checked={r.enabled} onChange={(e) => set("enabled", e.target.checked)} /> {showName ? "Enabled" : "This rule is on"}
+              <input type="checkbox" checked={r.sos_only} onChange={(e) => set("sos_only", e.target.checked)} /> SOS incidents only
             </label>
-          )}
-          <label className="check">
-            <input type="checkbox" checked={r.sos_only} onChange={(e) => set("sos_only", e.target.checked)} /> SOS incidents only
-          </label>
-          {!jira && (
-            <label className="check">
-              <input type="checkbox" checked={r.send_resolved} onChange={(e) => set("send_resolved", e.target.checked)} /> Also send when issues are fixed
-            </label>
-          )}
-        </div>
+            {!jira && (
+              <label className="check">
+                <input type="checkbox" checked={r.send_resolved} onChange={(e) => set("send_resolved", e.target.checked)} /> Also send when issues are fixed
+              </label>
+            )}
+          </div>
+        </fieldset>
         {projects.length > 0 &&
           (jira ? (
             <div className="field">
