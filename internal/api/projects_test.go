@@ -51,6 +51,9 @@ var projectScopes = map[string]string{
 	"POST /api/v1/invitations/accept":  "public",
 	"GET /api/v1/auth/oidc/login":      "public",
 	"GET /api/v1/auth/oidc/callback":   "public",
+	"GET /saml/metadata":               "public",
+	"GET /saml/login":                  "public",
+	"POST /saml/acs":                   "public",
 	// Slack's interactivity Request URL: no session; verified by the
 	// signing secret of the channel the click names, then acts as the
 	// linked user with their project access (slack_test.go).
