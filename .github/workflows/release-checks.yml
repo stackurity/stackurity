@@ -59,7 +59,7 @@ jobs:
           cache-from: type=gha,scope=release-check
           cache-to: type=gha,mode=max,scope=release-check
       - run: docker save stackurity:release-check | gzip -1 > image.tar.gz
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-check-image
           path: image.tar.gz

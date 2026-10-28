@@ -66,5 +66,5 @@ jobs:
       - uses: actions/setup-go@v7
         with: {go-version-file: go.mod}
       - run: go run ./cmd/stackurity scan . --name stackurity -o stackurity-inventory.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with: {name: stackurity-inventory, path: stackurity-inventory.json}
