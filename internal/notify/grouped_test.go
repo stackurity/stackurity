@@ -130,6 +130,11 @@ func TestSummaryContents(t *testing.T) {
 	// web-1 is fixed (upgraded), web-2 has a new issue.
 	f.findingsOn(map[string][]string{"web-2": {"CVE-2020-8203"}})
 	f.tick()
+	// The finding was dropped with the version unchanged; an upgrade
+	// records it as remediated (only remediation counts as fixed).
+	if _, err := f.st.Pool.Exec(ctx, `UPDATE findings SET resolution_kind = 'remediated' WHERE status = 'resolved'`); err != nil {
+		t.Fatal(err)
+	}
 	f.tick()
 	if ev := f.hook.events(); len(ev) != 0 {
 		t.Fatalf("a summary-only route sent %v", ev)
@@ -250,16 +255,16 @@ func TestSummaryDue(t *testing.T) {
 		{time.Date(2026, 3, 10, 3, 31, 0, 0, time.UTC), true, "09:01 IST the next day"},
 		{time.Date(2026, 3, 12, 20, 0, 0, 0, time.UTC), true, "days later"},
 	} {
-		if _, due := summaryDue(ist, c.now); due != c.due {
+		if _, due := summaryDue(ist, false, c.now); due != c.due {
 			t.Errorf("daily, %s: due = %v", c.desc, due)
 		}
 	}
 	weekly := store.Route{Mode: store.ModeWeekly, SummaryTime: "08:00", SummaryDay: "friday", Timezone: "UTC",
 		LastSummaryAt: time.Date(2026, 3, 6, 8, 0, 0, 0, time.UTC)} // Friday 6 March
-	if _, due := summaryDue(weekly, time.Date(2026, 3, 12, 9, 0, 0, 0, time.UTC)); due {
+	if _, due := summaryDue(weekly, true, time.Date(2026, 3, 12, 9, 0, 0, 0, time.UTC)); due {
 		t.Error("weekly: due on Thursday")
 	}
-	stamp, due := summaryDue(weekly, time.Date(2026, 3, 13, 8, 1, 0, 0, time.UTC))
+	stamp, due := summaryDue(weekly, true, time.Date(2026, 3, 13, 8, 1, 0, 0, time.UTC))
 	if !due || stamp != "2026-03-13T08:00" {
 		t.Errorf("weekly on Friday: %s %v", stamp, due)
 	}
@@ -435,7 +440,7 @@ func TestRegressedIsUrgent(t *testing.T) {
 	// The summary has the section, and the issue is not also "new".
 	routes, _ := f.st.ListRoutes(ctx)
 	data := &summaryData{d: f.d, ctx: ctx, cache: map[string][]store.IssueCount{}}
-	sm, changed, err := f.d.summaryMessage(routes[0], data, before, time.Now().Add(time.Minute), false)
+	sm, changed, err := f.d.summaryMessage(routes[0], false, data, before, time.Now().Add(time.Minute), false)
 	if err != nil || !changed {
 		t.Fatalf("summary: %v %v", changed, err)
 	}

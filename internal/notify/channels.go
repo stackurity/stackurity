@@ -59,6 +59,10 @@ type Message struct {
 	Counts       map[string]int `json:"counts,omitempty"` // totals, e.g. new, urgent, fixed, overdue
 	Sections     []Section      `json:"sections,omitempty"`
 	SettingsLink string         `json:"settings_link,omitempty"` // where the route is changed
+
+	// Email sent by Stackurity, per recipient: the page that stops these
+	// emails, and its one-click address for the List-Unsubscribe header.
+	unsubscribe, unsubscribeLabel, oneClick string
 }
 
 // Section is a titled list of items in a grouped message.
@@ -117,7 +121,7 @@ func (m Message) Subject() string {
 		return fmt.Sprintf("%s[resolved] %s", prefix, m.Title)
 	case "escalated":
 		return fmt.Sprintf("%s[%s escalated] %s", prefix, m.Priority, m.Title)
-	case "digest", "test", "invitation", EventSummary, EventOverdue, EventConnected:
+	case "digest", "test", "invitation", "confirm_email", EventSummary, EventOverdue, EventConnected:
 		return m.Title
 	case EventUrgent:
 		return prefix + m.Title
@@ -143,6 +147,9 @@ func (m Message) Text() string {
 		if m.SettingsLink != "" {
 			b.WriteString("Change these notifications: " + m.SettingsLink + "\n")
 		}
+		if m.unsubscribe != "" {
+			b.WriteString(m.footerLabel() + ": " + m.unsubscribe + "\n")
+		}
 		return b.String()
 	}
 	for _, l := range m.Summary {
@@ -157,7 +164,17 @@ func (m Message) Text() string {
 	if m.Link != "" {
 		b.WriteString("\n" + m.Link + "\n")
 	}
+	if m.unsubscribe != "" {
+		b.WriteString("\n" + m.footerLabel() + ": " + m.unsubscribe + "\n")
+	}
 	return b.String()
+}
+
+func (m Message) footerLabel() string {
+	if m.unsubscribeLabel != "" {
+		return m.unsubscribeLabel
+	}
+	return "Stop these emails"
 }
 
 func writeItems(b *strings.Builder, items []Item, indent string) {
@@ -198,6 +215,10 @@ const (
 	KindTeams   = "teams"
 	KindWebhook = "webhook"
 	KindJira    = "jira"
+	// KindStackurityEmail is email sent by Stackurity through the
+	// platform's own mail server (Dispatcher.PlatformMail), to members and
+	// to addresses that confirmed; hosted installations only.
+	KindStackurityEmail = "stackurity_email"
 )
 
 // ChannelConfig is the non-secret part of a channel. Secrets (SMTP password,
@@ -225,9 +246,26 @@ type ChannelConfig struct {
 	// clicks are verified with it (internal/api/slack.go).
 	SigningSecretRef string `json:"signing_secret_ref,omitempty"`
 
+	// stackurity_email: members of the organisation (user ids) who get
+	// the messages; To holds the other addresses, which must confirm first.
+	UserIDs []int64 `json:"user_ids,omitempty"`
+	// slack, added with the Stackurity Slack app ("Add to Slack"): the
+	// Slack workspace and channel the app's webhook posts to. Clicks are
+	// verified with the app's signing secret.
+	SlackApp         bool   `json:"slack_app,omitempty"`
+	TeamID           string `json:"team_id,omitempty"`
+	TeamName         string `json:"team_name,omitempty"`
+	SlackChannel     string `json:"slack_channel,omitempty"`
+	SlackChannelID   string `json:"slack_channel_id,omitempty"`
+	ConfigurationURL string `json:"configuration_url,omitempty"`
+
 	// interactive is the channel's id when its messages get interactive
 	// buttons; set by the dispatcher, never stored.
 	interactive int64
+	// headerTo replaces the To header (the envelope still names every
+	// recipient), so recipients of email sent by Stackurity do not see
+	// each other's addresses.
+	headerTo string
 }
 
 // ValidateChannel checks configuration before it is stored.
@@ -235,7 +273,22 @@ func ValidateChannel(kind string, c ChannelConfig, hasSecret, allowHTTP bool) er
 	if c.SigningSecretRef != "" && kind != KindSlack {
 		return errors.New("signing_secret_ref is for Slack channels")
 	}
+	if c.SlackApp && kind != KindSlack {
+		return errors.New("slack_app is for Slack channels")
+	}
 	switch kind {
+	case KindStackurityEmail:
+		if len(c.UserIDs)+len(c.To) == 0 {
+			return errors.New("pick at least one member or address")
+		}
+		for _, t := range c.To {
+			if a, err := mail.ParseAddress(t); err != nil || a.Address != t {
+				return fmt.Errorf("invalid address %q", t)
+			}
+		}
+		if c.Host != "" || c.Username != "" || c.From != "" {
+			return errors.New("email sent by Stackurity takes no mail server settings")
+		}
 	case KindEmail:
 		if c.Host == "" || c.Port <= 0 || c.Port > 65535 {
 			return errors.New("email needs host and port")
@@ -267,7 +320,7 @@ func ValidateChannel(kind string, c ChannelConfig, hasSecret, allowHTTP bool) er
 	case KindJira:
 		return validateJira(c, hasSecret, allowHTTP)
 	default:
-		return errors.New("kind must be email, slack, teams, webhook or jira")
+		return errors.New("kind must be email, stackurity_email, slack, teams, webhook or jira")
 	}
 	return nil
 }
@@ -494,7 +547,11 @@ func (s *Sender) sendEmail(ctx context.Context, c ChannelConfig, password string
 	if err != nil {
 		return err
 	}
-	if _, err := w.Write(buildEmail(c.From, c.To, m)); err != nil {
+	to := c.To
+	if c.headerTo != "" {
+		to = []string{c.headerTo}
+	}
+	if _, err := w.Write(buildEmail(c.From, to, m)); err != nil {
 		return err
 	}
 	if err := w.Close(); err != nil {

@@ -1,0 +1,35 @@
+# Slack app manifest for the Stackurity Slack app ("Add to Slack").
+#
+# Paste it at https://api.slack.com/apps -> Create New App -> From an app
+# manifest. It is written for Stackurity Cloud (https://app.stackurity.dev);
+# on your own server, replace https://app.stackurity.dev with your
+# STACKURITY_BASE_URL in the three URLs. Then follow docs/slack-app.md.
+display_information:
+  name: Stackurity
+  description: Security notifications from Stackurity, with Assign to me and Snooze buttons.
+  long_description: Stackurity tells your team about new urgent issues, issues that came back after a fix, overdue fixes and daily or weekly summaries, grouped per check and per fix, never one message per issue. Each fix has buttons to assign it to yourself or snooze it from Slack after you link your Slack account once. Stackurity posts only to the channel you pick when you add the app.
+  background_color: "#1f2937"
+features:
+  bot_user:
+    display_name: Stackurity
+    always_online: false
+oauth_config:
+  redirect_urls:
+    - https://app.stackurity.dev/integrations/slack/oauth/callback
+  scopes:
+    bot:
+      # The channel picker on Slack's consent page and that channel's
+      # webhook. Interactivity and the uninstall events need no scope.
+      - incoming-webhook
+settings:
+  event_subscriptions:
+    request_url: https://app.stackurity.dev/api/v1/integrations/slack/events
+    bot_events:
+      - app_uninstalled
+      - tokens_revoked
+  interactivity:
+    is_enabled: true
+    request_url: https://app.stackurity.dev/api/v1/integrations/slack/actions
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

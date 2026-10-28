@@ -54,7 +54,7 @@ After the first administrator signs in, a new organisation with no assets opens 
    - **Upload an SBOM** (CycloneDX or SPDX JSON). First results in under a minute.
 3. **Wait** while it reports: the page shows the packages found and when the check is done.
 4. **The first result**, in plain words: "We found 1,676 packages on commmerceblog. 3 fixes matter now.", with links to them.
-5. **Notifications** for the project: Slack (an incoming webhook URL) or email (your SMTP server), urgent issues right away with a daily summary, urgent issues only (no summary), or a weekly summary. The webhook URL or SMTP password is stored as an encrypted secret, which needs `STACKURITY_SECRET_KEY` (see [Configuration](#configuration)); without it, set channels up under **Settings → Notifications** with `env:` references.
+5. **Notifications** for the project: Slack (**Add to Slack** when the server has a [Slack app](slack-app.md), otherwise an incoming webhook URL) or email (your SMTP server, with presets for common providers, or on Stackurity Cloud email sent by Stackurity), then two questions: what to send right away (urgent issues, all new issues, or nothing) and which summary (daily, weekly or none), see [Notifications](#notifications). The webhook URL or SMTP password is stored as an encrypted secret, which needs `STACKURITY_SECRET_KEY` (see [Configuration](#configuration)); without it, set integrations up under **Settings → Integrations** with `env:` references.
 6. **Invite people** by email with a role on the project. The link works once, for 7 days. It is emailed through the organisation's first email channel; without one, the dashboard shows it to copy and send yourself.
 
 Connecting an asset is quiet: one "connected" message, and no alerts, Jira issues, escalations or overdue reminders for what it already had. See [A quiet first scan](api.md#a-quiet-first-scan).
@@ -83,6 +83,7 @@ Connecting an asset is quiet: one "connected" message, and no alerts, Jira issue
 | `STACKURITY_BASE_URL` | — | Public dashboard URL, used for links in notifications and by the agent installer |
 | `STACKURITY_OPENAI_APPS_CHALLENGE` (or `_FILE`) | — | The token OpenAI gives when you submit Stackurity as a ChatGPT app; served as text at `/.well-known/openai-apps-challenge` (404 when unset) |
 | `STACKURITY_AGENT_DIR` | `/usr/local/lib/stackurity/agents` in the image | Agent builds served to new hosts by **Add server** |
+| `STACKURITY_SLACK_CLIENT_ID`, `STACKURITY_SLACK_CLIENT_SECRET` / `_FILE`, `STACKURITY_SLACK_SIGNING_SECRET` / `_FILE` | — | Your Slack app, for **Add to Slack** ([slack-app.md](slack-app.md)). All three or none; needs `STACKURITY_BASE_URL` and `STACKURITY_SECRET_KEY` |
 | `STACKURITY_ALLOW_HTTP_WEBHOOKS` | `false` | Allow `http://` webhook URLs, for internal receivers |
 | `STACKURITY_PLUGIN_DIR` | `/usr/local/lib/stackurity/plugins` in the image | Directory of plugin executables |
 | `STACKURITY_SYFT` | `syft` | Path to the Syft binary used for container image scans (bundled in the image) |
@@ -354,25 +355,66 @@ The first OSV download for an ecosystem can be large (see [network.md](network.m
 
 ## Notifications
 
-Under **Settings → Notifications**, add a channel. Credentials always go in a secret reference, never in the configuration:
+Everything Stackurity connects to is under **Settings → Integrations**: the **Active integrations** with their status (last delivery, last error) and a gear for their settings, and **Add an integration** with cards in three groups: **Notifications** (email, Slack, Microsoft Teams, Jira, webhook), **Sources** (every way to connect something: Linux and Windows servers through the agent, which open **Add server**; Git repositories; CI pipelines with `stackurity scan` or the GitHub Action; container images and registries; Kubernetes clusters; AWS managed services; SBOM upload; other plugins) and **AI assistants**. Active integrations also show servers with the agent, with their count and last report. The old **Settings → Notifications** links lead there.
+
+The first-run flow asks two questions and sets up one notification integration for the new project:
+
+| Send right away | Summary | Sends (`events`) |
+|---|---|---|
+| **Urgent issues** (exploited, critical, or came back after a fix) | **Daily at 9:00** / **Weekly, Mondays at 9:00** / **No summary** | `urgent`, `regressed`, `connected`, `problems`, plus `daily_summary` or `weekly_summary` |
+| **All new issues** | same | as above plus `new_issues` (every priority) |
+| **Nothing right away** | **Daily** or **Weekly** (not "No summary") | `daily_summary` or `weekly_summary` |
+
+The times are in the browser's time zone, shown next to the choice. "Nothing right away" with "No summary" cannot be saved. You can fine-tune it later under **Settings → Integrations**.
+
+### What an integration sends
+
+Each notification integration's page has the connection (where messages go, **Send test**), then a **Trigger** section of checkboxes:
+
+| Trigger | Event | Sends |
+|---|---|---|
+| New urgent issues (exploited, critical, came back after a fix) | `urgent` | new issues at **Urgent from** (P1 by default), SOS or known exploited |
+| All new issues | `new_issues` | every new issue at the **minimum priority for all new issues** (P4 by default) |
+| Issues that came back after a fix | `regressed` | issues that return after an upgrade or removal fixed them |
+| Fix overdue (Pro) | `overdue` | at most one message a day when urgent issues pass their fix deadline |
+| New asset connected | `connected` | one message for a new asset's first scan, instead of alerts for its backlog |
+| Collection, feed or platform problems | `problems` | stale agents, failing integrations, feeds and platform problems at the urgent priority |
+| Daily summary at [time] | `daily_summary` | what is new, what was fixed and by what, the top fixes still open, what is overdue |
+| Weekly summary on [day] at [time] | `weekly_summary` | the same, once a week |
+
+For Slack, each ticked trigger can go to another Slack channel of the organisation (by default, the integration's own channel). While that channel is switched off, or after it is deleted, those messages go to the integration's own channel. Then **Notification settings**: projects, environments, kinds, owner teams, the two priorities above, quiet hours and time zone, hourly limit, and **Also send when issues are fixed**. Integrations set up before this release keep exactly what their mode sent (see [the API reference](api.md#incidents-and-notifications)).
+
+People get a few messages that bring them to the dashboard, not one per incident: at most one message per integration and destination each time the dispatcher runs (every minute), summarised per asset with the fixes that clear the issues ("commmerceblog: 6 new urgent issues. Top fix: Install security updates and reboot (clears 2,913 issues)"), and the summaries. A new server's first scan sends one "connected" message ("commmerceblog connected: 1,676 packages checked, 412 issues found, 3 fixes need you") instead of alerts, Jira issues, escalations or overdue reminders for its backlog. Each fix in a message has **Assign to me**, **Snooze** and **Open** links (buttons in Slack) that open it in the dashboard, where you confirm (or, with a Slack app, act from inside Slack: see [Acting from Slack](#acting-from-slack)); links of an integration limited to projects open in its project. Resolved incidents are counted in the summary, never announced one by one. Incidents raised while an integration is off are recorded as announced and not sent later. See [the API reference](api.md#incidents-and-notifications) for the details and the webhook message.
+
+### Channels
+
+Credentials always go in a secret reference, never in the configuration:
 
 | Channel | Configuration | Secret reference |
 |---|---|---|
-| Email | `host`, `port`, `from`, `to[]`, `username`, `tls` (`starttls` by default, `tls`, or `none`) | SMTP password |
-| Slack | optional `signing_secret_ref`: a reference to the Slack app's signing secret, to act from inside Slack (see below) | The incoming webhook URL |
+| Email (your mail server) | `host`, `port`, `from`, `to[]`, `username`, `tls` (`starttls` by default, `tls`, or `none`) | SMTP password |
+| Email (sent by Stackurity), hosted only | `user_ids[]` (members), `to[]` (other addresses, which confirm first) | none |
+| Slack | added with **Add to Slack** ([slack-app.md](slack-app.md)); or, with a webhook, optional `signing_secret_ref`: a reference to the Slack app's signing secret, to act from inside Slack (see below) | none with Add to Slack; otherwise the incoming webhook URL |
 | Microsoft Teams | none | The Workflows webhook URL ("Post to a channel when a webhook request is received") |
 | Webhook | `url` (HTTPS) | The HMAC signing key (optional) |
 | Jira | `url` (the site, HTTPS), `deployment` (`cloud` by default, or `datacenter`), `project` (key), `issue_type` (`Task` by default), `username` (the account email, Cloud only), optional `labels[]`, `priorities` (`{"P1": "Highest", ...}`) and `resolve_transition` (e.g. `Done`) | Cloud: an [Atlassian API token](https://id.atlassian.com/manage-profile/security/api-tokens). Data Center and Server: a personal access token |
 
-Then add routes:
+**Email with your own mail server.** The form has provider presets that fill the host, port and encryption; you add the username, password and From address. Every provider below works over SMTP; no API key integration is needed.
 
-- one to the team channel in the default mode, **Urgent right away + daily summary**, urgent from P1, with quiet hours;
-- optionally one in **Daily summary only** or **Weekly summary only** mode for a lead or the security owner, with **Overdue reminders** (Pro);
-- or, for an on-call channel that should only hear what needs action now, **Urgent only, no summary**.
+| Provider | Host | Port, encryption | Credentials |
+|---|---|---|---|
+| Amazon SES | `email-smtp.<region>.amazonaws.com` (pick the region) | 587, STARTTLS | SES console → **SMTP settings** → **Create SMTP credentials**. The From address must be a verified identity |
+| SendGrid | `smtp.sendgrid.net` | 587, STARTTLS | Username `apikey`, password an API key with Mail Send permission |
+| Postmark | `smtp.postmarkapp.com` | 587, STARTTLS | Username and password: the Server API token |
+| Mailgun | `smtp.mailgun.org` (EU: `smtp.eu.mailgun.org`) | 587, STARTTLS | **Sending → Domain settings → SMTP credentials** |
+| ZeptoMail | `smtp.zeptomail.com` (India: `smtp.zeptomail.in`) | 587, STARTTLS | Username `emailapikey`, password a Send Mail token (**Mail Agent → SMTP**) |
+| Gmail / Google Workspace | `smtp.gmail.com` | 587, STARTTLS | Username the full address, password an app password (needs 2-Step Verification) |
 
-People get a few messages that bring them to the dashboard, not one per incident: at most one urgent message per route each time the dispatcher runs (every minute), summarised per asset with the fixes that clear the issues ("commmerceblog: 6 new urgent issues. Top fix: Install security updates and reboot (clears 2,913 issues)"); a daily or weekly summary of what is new, what was fixed and by what, the top fixes still open and what is overdue; and, with overdue reminders, at most one message a day when urgent issues pass their fix deadline. A new server's first scan sends one "connected" message ("commmerceblog connected: 1,676 packages checked, 412 issues found, 3 fixes need you") instead of alerts, Jira issues, escalations or overdue reminders for its backlog. Each fix in a message has **Assign to me**, **Snooze** and **Open** links (buttons in Slack, with a plain incoming webhook) that open it in the dashboard, where you confirm (or, with a Slack app, act from inside Slack: see [Acting from Slack](#acting-from-slack)); links of a route limited to projects open in its project. Resolved incidents are counted in the summary, never announced one by one. Incidents raised while a route is disabled are recorded as announced and not sent later. See [the API reference](api.md#incidents-and-notifications) for the details and the webhook message.
+**Email sent by Stackurity** (Stackurity Cloud). The service's own mail server sends it, so there is nothing to configure: pick members of the organisation, or type other addresses. Members get it once they have signed in at least once or accepted an invitation (on Stackurity Cloud people join only by invitation). Another address gets one email with a link to confirm, valid 7 days, and receives nothing until it is clicked; **Resend** sends a new link (at most every 10 minutes). Editing the integration does not ask again. The confirmation email has a fixed subject ("Confirm you want Stackurity alerts"), the organisation's name only quoted in the text, and a **Never email me again** link that blocks the address for every organisation. An address gets at most one pending confirmation at a time, across organisations, and at most 3 a week. Every email is sent to each recipient separately with a **Stop these emails** link and one-click unsubscribe headers (`List-Unsubscribe`, RFC 8058); it takes the address out of that organisation's email integrations. Each organisation has limits per minute, per hour and per day, counted in emails (one per recipient) and shown on the form. A message over a limit is never dropped: an urgent, connected or overdue message is held and counted in the next summary ("Includes 2 urgent messages held back by the email limit"), or, for an integration without a summary, listed in the hourly digest; a summary or digest over the limit waits until the limit frees. The delivery log shows held messages with the reason.
 
 ### Acting from Slack
+
+With **Add to Slack** ([slack-app.md](slack-app.md)) this works with no setup. The steps below are for a Slack app of your own used through a webhook.
 
 With a plain incoming webhook, Slack buttons open the dashboard. With a Slack app, **Assign to me** and **Snooze 1 week** act from inside Slack, and the message says "Assigned to Nirmal" or "Snoozed until 3 Nov by Nirmal". **Open** still opens the dashboard. The app needs no OAuth scopes beyond the incoming webhook, and no bot token. Your Stackurity server must be reachable from Slack over HTTPS at `STACKURITY_BASE_URL`.
 
@@ -381,7 +423,7 @@ With a plain incoming webhook, Slack buttons open the dashboard. With a Slack ap
 3. **Interactivity & Shortcuts**: turn on **Interactivity** and set the **Request URL** to `https://<your Stackurity address>/api/v1/integrations/slack/actions`. **Save Changes**.
 4. **Basic Information**, **App Credentials**: **Show** and copy the **Signing Secret** (not the client secret or verification token).
 5. In Stackurity, **Settings → Secrets**: store the webhook URL (for example as `SLACK_WEBHOOK`) and the signing secret (`SLACK_SIGNING`). Instance administrators can use `env:STACKURITY_SECRET_...` or `file:` references instead.
-6. **Settings → Notifications**, add a Slack channel (or edit the existing one, if it uses this app's webhook): webhook URL reference `secret:SLACK_WEBHOOK`, **Slack app signing secret reference** `secret:SLACK_SIGNING`. **Send test**. Messages from then on carry the interactive buttons.
+6. **Settings → Integrations**, add Slack with **Advanced: use a webhook** (or edit the existing one, if it uses this app's webhook): webhook URL reference `secret:SLACK_WEBHOOK`, **Slack app signing secret reference** `secret:SLACK_SIGNING`. **Send test**. Messages from then on carry the interactive buttons.
 
 Each person links their Slack account once. The first time they click, Slack shows them (only them) a link that works once, for 15 minutes; they sign in to Stackurity and confirm "link Slack user X in Slack workspace T to my account". From then on their clicks act as them, with their role and projects, as in the dashboard: engineers and above can assign, security and admin can snooze, people with access to some projects only can act on those projects' fixes. Refusals are explained to them in Slack. Every action is audited as theirs with source `slack`. People see and remove their links under the account menu, **Linked Slack accounts** (also in **Settings**).
 
@@ -395,7 +437,7 @@ A route to a Jira channel creates one issue per incident it matches, for example
 - escalations (Pro) are added as comments, when the route has **Overdue reminders** (`escalation`);
 - when the incident resolves, a comment is added and, with `resolve_transition`, the issue is moved through that transition (or to that status). An issue already done is left alone.
 
-The incident, in the list and on its page, links to its issue. Jira channels ignore the route's mode (no urgent messages or summaries), quiet hours and hourly limits. Rate limiting by Jira (HTTP 429) is retried after the `Retry-After` time; rejected credentials or a missing project fail the delivery at once with the reason in the delivery log, and it can be retried after the fix.
+The incident, in the list and on its page, links to its issue. Jira channels ignore the triggers (no urgent messages or summaries), quiet hours and hourly limits. Rate limiting by Jira (HTTP 429) is retried after the `Retry-After` time; rejected credentials or a missing project fail the delivery at once with the reason in the delivery log, and it can be retried after the fix.
 
 There is never more than one issue per incident and channel, across retries and replicas: an attempt claims the creation in the database first, and each issue carries the label `stackurity-incident-<workspace>-<incident>`, which is searched for before creating, so an attempt that died after creating the issue is picked up instead of repeated. Do not remove that label.
 

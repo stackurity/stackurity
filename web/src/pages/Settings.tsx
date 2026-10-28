@@ -20,7 +20,7 @@ const GROUPS: { title: string; entries: Entry[] }[] = [
   {
     title: "What Stackurity checks and how it decides",
     entries: [
-      { to: "/integrations", label: "Integrations", about: "Git repositories, container images and cloud accounts to scan on a schedule.", min: "engineer" },
+      { to: "/settings/integrations", label: "Integrations", about: "Everything Stackurity connects to: Slack, email, Jira, Git repositories, cloud accounts, AI assistants.", min: "engineer" },
       { to: "/settings/risk-policy", label: "Risk policy", about: "How issues get their priority, SOS rules, deadlines and the longest snooze." },
       {
         to: "/settings/fix-grouping",
@@ -44,7 +44,10 @@ const GROUPS: { title: string; entries: Entry[] }[] = [
   },
   {
     title: "Alerts",
-    entries: [{ to: "/settings/notifications", label: "Notifications", about: "Email, Slack, webhooks and Jira: who hears about what.", min: "security" }],
+    entries: [
+      { to: "/settings/integrations", label: "Notifications", about: "Email, Slack, Teams, webhooks and Jira: who hears about what, under Integrations.", min: "security" },
+      { to: "/settings/integrations?tab=deliveries", label: "Delivery log", about: "Every message sent, held or failed.", min: "security" },
+    ],
   },
   {
     title: "People and access",

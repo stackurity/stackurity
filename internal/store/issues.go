@@ -235,6 +235,16 @@ type IncidentBrief struct {
 	Factors  []risk.Factor
 	SOSRule  string
 	Affected []AffectedItem
+	// Upgrades are the package upgrades that fix the incident's open
+	// findings, as the action plan names them: the version to move to
+	// (target_version) and the minimum fixed version (to_version).
+	Upgrades []UpgradeTarget
+}
+
+// UpgradeTarget is one package upgrade of an incident.
+type UpgradeTarget struct {
+	Target  string
+	Minimum string
 }
 
 // IncidentBrief returns up to limit affected items, most urgent first.
@@ -269,5 +279,28 @@ func (s *Store) IncidentBrief(ctx context.Context, incidentID int64, limit int) 
 		}
 		b.Affected = append(b.Affected, a)
 	}
-	return b, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+	up, err := s.Pool.Query(ctx, `SELECT COALESCE(NULLIF(g.data->>'target_version', ''), g.data->>'to_version', ''), COALESCE(g.data->>'to_version', ''),
+		  count(*) AS n
+		FROM findings f JOIN fix_groups g ON g.id = f.fix_group
+		WHERE f.incident_id = $1 AND f.status = 'open' AND g.kind = 'package_upgrade'
+		GROUP BY 1, 2 ORDER BY n DESC, 1 LIMIT 3`, incidentID)
+	if err != nil {
+		return nil, err
+	}
+	defer up.Close()
+	for up.Next() {
+		var u UpgradeTarget
+		var n int
+		if err := up.Scan(&u.Target, &u.Minimum, &n); err != nil {
+			return nil, err
+		}
+		if u.Target != "" {
+			b.Upgrades = append(b.Upgrades, u)
+		}
+	}
+	return b, up.Err()
 }

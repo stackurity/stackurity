@@ -7,6 +7,8 @@ import { ErrorBox, Loading } from "./components/ui";
 import { LoginPage, SetupPage } from "./pages/Login";
 import { AcceptInvitePage } from "./pages/AcceptInvite";
 import { SlackAccountsPage, SlackLinkPage } from "./pages/SlackLink";
+import { SlackOAuthCallbackPage } from "./pages/SlackOAuthCallback";
+import { EmailConfirmPage, EmailStopPage } from "./pages/EmailConfirm";
 import { AssistantsPage, ConnectAssistantPage } from "./pages/Assistants";
 import { OnboardingPage } from "./pages/Onboarding";
 import { SignupPage, VerifySignupPage } from "./pages/Signup";
@@ -48,7 +50,8 @@ import { AutomaticFixesPage } from "./pages/Remediation";
 import { PlanDetailPage } from "./pages/PlanDetail";
 import { PluginsPage } from "./pages/settings/Plugins";
 import { FixesPage, FixGroupDetailPage } from "./pages/ActionPlan";
-import { NotificationsPage } from "./pages/settings/Notifications";
+import { IntegrationsHubPage } from "./pages/settings/Integrations";
+import { IntegrationAddPage, IntegrationChannelPage } from "./pages/settings/IntegrationsChannel";
 import { RiskPolicyPage } from "./pages/settings/RiskPolicy";
 import { FixGroupingPage } from "./pages/settings/FixGrouping";
 import { ProjectDetailPage, ProjectsPage } from "./pages/settings/Projects";
@@ -115,6 +118,14 @@ export function App() {
   // The address and its query stay the same while signing in.
   if (pathname === "/oauth/authorize" && state.phase === "login") return <LoginPage />;
   if (pathname === "/oauth/authorize" && state.phase === "ready") return <ConnectAssistantPage />;
+  // Back from "Add to Slack": sign in first; the address and query stay.
+  if (pathname === "/integrations/slack/oauth/callback" && state.phase === "login") return <LoginPage />;
+  if (pathname === "/integrations/slack/oauth/callback" && state.phase === "ready") return <SlackOAuthCallbackPage />;
+  // Confirming an email address for notifications works signed in or not.
+  if (pathname === "/email/confirm" && (state.phase === "login" || state.phase === "ready")) return <EmailConfirmPage />;
+  // Stopping email sent by Stackurity, signed in or not.
+  if (pathname === "/email/unsubscribe" && (state.phase === "login" || state.phase === "ready")) return <EmailStopPage kind="unsubscribe" />;
+  if (pathname === "/email/block" && (state.phase === "login" || state.phase === "ready")) return <EmailStopPage kind="block" />;
 
   switch (state.phase) {
     case "loading":
@@ -243,9 +254,29 @@ export function App() {
         />
         <Route
           path="settings/notifications"
+          element={<Moved to={(_p, q) => (q.get("tab") === "deliveries" ? "/settings/integrations?tab=deliveries" : "/settings/integrations")} />}
+        />
+        <Route
+          path="settings/integrations"
+          element={
+            <RequireRole min="engineer">
+              <IntegrationsHubPage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="settings/integrations/channels/:id"
           element={
             <RequireRole min="security">
-              <NotificationsPage />
+              <IntegrationChannelPage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="settings/integrations/new/:kind"
+          element={
+            <RequireRole min="admin">
+              <IntegrationAddPage />
             </RequireRole>
           }
         />

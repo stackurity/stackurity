@@ -44,6 +44,11 @@ func buildEmail(from string, to []string, m Message) []byte {
 	if m.Event != "" {
 		hdr("X-Stackurity-Event", m.Event)
 	}
+	if m.oneClick != "" {
+		// One-click unsubscribe (RFC 8058): mail clients POST to it.
+		hdr("List-Unsubscribe", "<"+m.oneClick+">")
+		hdr("List-Unsubscribe-Post", "List-Unsubscribe=One-Click")
+	}
 	if len(m.Sections) == 0 {
 		hdr("Content-Type", "text/plain; charset=utf-8")
 		hdr("Content-Transfer-Encoding", "8bit")
@@ -108,6 +113,9 @@ func emailHTML(m Message) string {
 	}
 	if m.SettingsLink != "" {
 		b.WriteString(" &middot; " + link("Change these notifications", m.SettingsLink))
+	}
+	if m.unsubscribe != "" {
+		b.WriteString(" &middot; " + link(m.footerLabel(), m.unsubscribe))
 	}
 	b.WriteString("</p>\n</body></html>\n")
 	return b.String()

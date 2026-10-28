@@ -187,7 +187,7 @@ export function IncidentsPage() {
         <EmptyState title={filtered ? "No incidents match these filters" : "No open incidents"} help="incidents">
           <p>
             Incidents open automatically for prioritised findings and for system problems. Configure who is told under{" "}
-            <Link to="/settings/notifications">Settings → Notifications</Link>.
+            <Link to="/settings/integrations">Settings → Integrations</Link>.
           </p>
         </EmptyState>
       )}

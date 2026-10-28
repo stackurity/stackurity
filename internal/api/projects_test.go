@@ -55,6 +55,17 @@ var projectScopes = map[string]string{
 	// signing secret of the channel the click names, then acts as the
 	// linked user with their project access (slack_test.go).
 	"POST /api/v1/integrations/slack/actions": "public",
+	"POST /api/v1/integrations/slack/events":  "public",
+	"POST /api/v1/email-recipients/confirm":   "public",
+	"POST /api/v1/email-recipients/block":     "public",
+	"POST /api/v1/email/unsubscribe":          "public",
+	"POST /email/unsubscribe/one-click":       "public",
+	"POST /email/block/one-click":             "public",
+	"POST /api/v1/integrations/slack/install": "org",
+	"POST /api/v1/integrations/slack/oauth":   "org",
+	"GET /api/v1/notification-options":        "org",
+	"GET /api/v1/email-recipients":            "org",
+	"POST /api/v1/email-recipients/resend":    "org",
 	// AI assistants: discovery, OAuth and the MCP endpoint take no session;
 	// the tools behind /mcp call the API in process with the caller's
 	// credentials, so its project rules apply (assistants_test.go).

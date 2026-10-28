@@ -129,7 +129,7 @@ function Deliveries({ items, onRetried }: { items: Delivery[]; onRetried: () => 
       <ErrorBox error={act.error} title="Retry failed" />
       {items.length === 0 ? (
         <p className="muted">
-          No notifications for this incident. Check the routes under <Link to="/settings/notifications">Settings → Notifications</Link>.
+          No notifications for this incident. Check the routes under <Link to="/settings/integrations">Settings → Integrations</Link>.
         </p>
       ) : (
         <Table caption="Deliveries" columns={cols} rows={items} rowKey={(d) => d.id} />

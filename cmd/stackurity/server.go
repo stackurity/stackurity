@@ -208,6 +208,24 @@ func serverCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// The Stackurity Slack app ("Add to Slack"), when configured.
+			if dispatcher.SlackApp, err = notify.SlackAppFromEnv(); err != nil {
+				return err
+			}
+			if dispatcher.SlackApp != nil {
+				base := strings.TrimRight(os.Getenv("STACKURITY_BASE_URL"), "/")
+				log.Info("Slack app enabled (Add to Slack)", "redirect_url", base+"/integrations/slack/oauth/callback",
+					"interactivity_url", base+"/api/v1/integrations/slack/actions", "events_url", base+"/api/v1/integrations/slack/events")
+				if box == nil {
+					log.Warn("Add to Slack needs stored secrets to keep the webhooks and tokens it gets", "fix", "set STACKURITY_SECRET_KEY")
+				}
+			}
+			// An edition may deliver email sent by Stackurity (hosted).
+			if editionNotify != nil {
+				if err := editionNotify(dispatcher, log); err != nil {
+					return err
+				}
+			}
 			challenge, err := envOrFile("STACKURITY_OPENAI_APPS_CHALLENGE")
 			if err != nil {
 				return err
@@ -310,6 +328,11 @@ func serverCmd() *cobra.Command {
 		},
 	}
 }
+
+// editionNotify lets an edition built on the core configure notifications
+// further (Stackurity Cloud sets the platform mail server for email sent by
+// Stackurity, and its limits). Nil in the Community build.
+var editionNotify func(d *notify.Dispatcher, log *slog.Logger) error
 
 // shutdownTimeout is how long a stopping server lets requests and running
 // periodic tasks finish.

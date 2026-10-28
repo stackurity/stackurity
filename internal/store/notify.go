@@ -70,11 +70,34 @@ func (s *Store) UpdateChannel(ctx context.Context, id int64, name *string, confi
 }
 
 func (s *Store) DeleteChannel(ctx context.Context, id int64) error {
-	tag, err := s.Pool.Exec(ctx, `DELETE FROM channels WHERE id = $1`, id)
-	if err == nil && tag.RowsAffected() == 0 {
-		return ErrNotFound
-	}
+	_, err := s.DeleteChannelFromRoutes(ctx, id)
 	return err
+}
+
+// DeleteChannelFromRoutes deletes a channel and, in the same transaction,
+// takes it out of every route that sends some events to it
+// (event_channels): those events go to the route's own channel again. It
+// returns the names of the routes changed.
+func (s *Store) DeleteChannelFromRoutes(ctx context.Context, id int64) ([]string, error) {
+	var changed []string
+	err := pgx.BeginTxFunc(ctx, s.Pool, pgx.TxOptions{}, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `UPDATE routes SET event_channels = (SELECT COALESCE(jsonb_object_agg(e.key, e.value), '{}')
+				FROM jsonb_each(event_channels) e WHERE e.value <> to_jsonb($1::bigint))
+			WHERE event_channels @? ('$.* ? (@ == ' || $1::bigint || ')')::jsonpath AND channel_id <> $1
+			RETURNING name`, id)
+		if err != nil {
+			return err
+		}
+		if changed, err = pgx.CollectRows(rows, pgx.RowTo[string]); err != nil {
+			return err
+		}
+		tag, err := tx.Exec(ctx, `DELETE FROM channels WHERE id = $1`, id)
+		if err == nil && tag.RowsAffected() == 0 {
+			return ErrNotFound
+		}
+		return err
+	})
+	return changed, err
 }
 
 func (s *Store) ChannelResult(ctx context.Context, id int64, sendErr error) error {
@@ -121,6 +144,121 @@ type Route struct {
 	// AssetProject is, for each of those assets, the first of the route's
 	// projects it is in: links in the route's messages open it.
 	AssetProject map[int64]int64 `json:"-" db:"-"`
+	// Events are what the route sends (Event* constants). Mode is derived
+	// from them when the route is saved (ModeCustom when no older mode
+	// matches); a request that names only a mode gets its events.
+	Events []string `json:"events"`
+	// EventChannels sends some events to another channel of the route's
+	// kind instead of ChannelID (Slack only).
+	EventChannels map[string]int64 `json:"event_channels"`
+	// NewMinPriority is the lowest priority the new_issues event sends.
+	NewMinPriority string `json:"new_min_priority"`
+	// LastWeeklySummaryAt is the end of the period the last weekly summary
+	// covered (LastSummaryAt is the daily summary's). Kept by the dispatcher.
+	LastWeeklySummaryAt time.Time `json:"last_weekly_summary_at"`
+}
+
+// Route events.
+const (
+	EventUrgent        = "urgent"
+	EventNewIssues     = "new_issues"
+	EventRegressed     = "regressed"
+	EventOverdue       = "overdue"
+	EventConnected     = "connected"
+	EventProblems      = "problems"
+	EventDailySummary  = "daily_summary"
+	EventWeeklySummary = "weekly_summary"
+)
+
+// RouteEvents lists every route event.
+var RouteEvents = []string{EventUrgent, EventNewIssues, EventRegressed, EventOverdue, EventConnected, EventProblems, EventDailySummary, EventWeeklySummary}
+
+// rightAway is what the older modes that sent messages as they happened
+// sent: everything but summaries.
+var rightAway = []string{EventUrgent, EventRegressed, EventOverdue, EventConnected, EventProblems}
+
+// EventsForMode is the events an older mode sent; nil for an unknown mode.
+func EventsForMode(mode string) []string {
+	switch mode {
+	case ModeUrgentSummary:
+		return append(append([]string{}, rightAway...), EventDailySummary)
+	case ModeUrgentWeekly:
+		return append(append([]string{}, rightAway...), EventWeeklySummary)
+	case ModeUrgentOnly:
+		return append([]string{}, rightAway...)
+	case ModeDaily:
+		return []string{EventDailySummary}
+	case ModeWeekly:
+		return []string{EventWeeklySummary}
+	}
+	return nil
+}
+
+// ModeForEvents names the older mode that sends exactly these events, or
+// ModeCustom.
+func ModeForEvents(events []string) string {
+	have := map[string]bool{}
+	for _, e := range events {
+		have[e] = true
+	}
+	for _, m := range []string{ModeUrgentSummary, ModeUrgentWeekly, ModeUrgentOnly, ModeDaily, ModeWeekly} {
+		want := EventsForMode(m)
+		if len(want) != len(have) {
+			continue
+		}
+		same := true
+		for _, e := range want {
+			same = same && have[e]
+		}
+		if same {
+			return m
+		}
+	}
+	return ModeCustom
+}
+
+// ResolveEvents is what a saved route sends, from the mode and events a
+// caller gave. Events win, except over an older mode that disagrees with
+// them: an older client that read a route and changed only its mode. With
+// neither, the default mode's.
+func ResolveEvents(mode string, events []string) ([]string, error) {
+	if mode != "" && mode != ModeCustom && (events == nil || ModeForEvents(events) != mode) {
+		if e := EventsForMode(mode); e != nil {
+			return e, nil
+		}
+		return nil, fmt.Errorf("unknown mode %q: %w", mode, ErrInvalid)
+	}
+	if events == nil {
+		return EventsForMode(ModeUrgentSummary), nil
+	}
+	return events, nil
+}
+
+// HasEvent reports whether the route sends event. A route built without
+// events (not read from the database) sends its mode's.
+func (r Route) HasEvent(event string) bool {
+	events := r.Events
+	if events == nil {
+		mode := r.Mode
+		if mode == "" {
+			mode = ModeUrgentSummary
+		}
+		events = EventsForMode(mode)
+	}
+	for _, e := range events {
+		if e == event {
+			return true
+		}
+	}
+	return false
+}
+
+// ChannelFor is the channel an event of the route goes to.
+func (r Route) ChannelFor(event string) int64 {
+	if id := r.EventChannels[event]; id > 0 {
+		return id
+	}
+	return r.ChannelID
 }
 
 // Route modes.
@@ -129,6 +267,10 @@ const (
 	ModeUrgentOnly    = "urgent_only"
 	ModeDaily         = "daily"
 	ModeWeekly        = "weekly"
+	// ModeUrgentWeekly: urgent messages right away and a weekly summary.
+	ModeUrgentWeekly = "urgent_weekly"
+	// ModeCustom: events no older mode matches.
+	ModeCustom = "custom"
 )
 
 // Weekdays are the values of Route.SummaryDay.
@@ -139,7 +281,8 @@ var Weekdays = []string{"sunday", "monday", "tuesday", "wednesday", "thursday", 
 // which ignores project_ids, sees it switched off instead of sending every
 // project's alerts to that project's channel.
 const routeCols = `id, name, channel_id, CASE WHEN cardinality(project_ids) > 0 THEN project_enabled ELSE enabled END, min_priority, sos_only, kinds, environments, team_ids, escalation, send_resolved,
-	quiet_start, quiet_end, timezone, max_per_hour, created_at, mode, summary_time, summary_day, last_summary_at, project_ids`
+	quiet_start, quiet_end, timezone, max_per_hour, created_at, mode, summary_time, summary_day, last_summary_at, project_ids,
+	events, event_channels, new_min_priority, last_weekly_summary_at`
 
 func (s *Store) ListRoutes(ctx context.Context) ([]Route, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT `+routeCols+` FROM routes ORDER BY name`)
@@ -225,8 +368,16 @@ func (s *Store) SaveRoute(ctx context.Context, r Route) (*Route, error) {
 	if r.MinPriority == "" {
 		r.MinPriority = "P1"
 	}
-	if r.Mode == "" {
-		r.Mode = ModeUrgentSummary
+	events, err := ResolveEvents(r.Mode, r.Events)
+	if err != nil {
+		return nil, err
+	}
+	r.Events, r.Mode = events, ModeForEvents(events)
+	if r.EventChannels == nil {
+		r.EventChannels = map[string]int64{}
+	}
+	if r.NewMinPriority == "" {
+		r.NewMinPriority = "P4"
 	}
 	if r.SummaryTime == "" {
 		r.SummaryTime = "09:00"
@@ -235,9 +386,9 @@ func (s *Store) SaveRoute(ctx context.Context, r Route) (*Route, error) {
 		r.SummaryDay = "monday"
 	}
 	var rows pgx.Rows
-	var err error
 	args := []any{r.Name, r.ChannelID, r.Enabled, r.MinPriority, r.SOSOnly, r.Kinds, r.Environments, r.TeamIDs, r.Escalation,
-		r.SendResolved, r.QuietStart, r.QuietEnd, r.Timezone, r.MaxPerHour, r.Mode, r.SummaryTime, r.SummaryDay, r.ProjectIDs}
+		r.SendResolved, r.QuietStart, r.QuietEnd, r.Timezone, r.MaxPerHour, r.Mode, r.SummaryTime, r.SummaryDay, r.ProjectIDs,
+		r.Events, r.EventChannels, r.NewMinPriority}
 	if len(r.ProjectIDs) > 0 {
 		var known int
 		if err := s.Pool.QueryRow(ctx, `SELECT count(*) FROM projects WHERE id = ANY($1)`, r.ProjectIDs).Scan(&known); err != nil {
@@ -250,15 +401,15 @@ func (s *Store) SaveRoute(ctx context.Context, r Route) (*Route, error) {
 	if r.ID == 0 {
 		rows, err = s.Pool.Query(ctx, `INSERT INTO routes (name, channel_id, enabled, min_priority, sos_only, kinds, environments,
 			team_ids, escalation, send_resolved, quiet_start, quiet_end, timezone, max_per_hour, mode, summary_time, summary_day, project_ids,
-			project_enabled)
+			project_enabled, events, event_channels, new_min_priority)
 			VALUES ($1,$2,$3 AND cardinality($18::bigint[]) = 0,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
-			  $3 AND cardinality($18::bigint[]) > 0) RETURNING `+routeCols, args...)
+			  $3 AND cardinality($18::bigint[]) > 0, $19, $20, $21) RETURNING `+routeCols, args...)
 	} else {
 		rows, err = s.Pool.Query(ctx, `UPDATE routes SET name=$1, channel_id=$2, enabled=$3 AND cardinality($18::bigint[]) = 0,
 			project_enabled = $3 AND cardinality($18::bigint[]) > 0, min_priority=$4, sos_only=$5, kinds=$6,
 			environments=$7, team_ids=$8, escalation=$9, send_resolved=$10, quiet_start=$11, quiet_end=$12, timezone=$13, max_per_hour=$14,
-			mode=$15, summary_time=$16, summary_day=$17, project_ids=$18
-			WHERE id = $19 RETURNING `+routeCols, append(args, r.ID)...)
+			mode=$15, summary_time=$16, summary_day=$17, project_ids=$18, events=$19, event_channels=$20, new_min_priority=$21
+			WHERE id = $22 RETURNING `+routeCols, append(args, r.ID)...)
 	}
 	if err != nil {
 		return nil, err
@@ -297,10 +448,12 @@ type Delivery struct {
 	LastError   string          `json:"last_error"`
 	CreatedAt   time.Time       `json:"created_at"`
 	SentAt      *time.Time      `json:"sent_at"`
+	// HeldBy is why it was held: "", hourly_limit or email_quota.
+	HeldBy string `json:"held_by"`
 }
 
 const deliveryCols = `d.id, d.channel_id, c.name, c.kind, d.route_id, d.incident_id, d.event, d.dedupe_key, d.payload, d.status,
-	d.attempts, d.next_attempt, d.last_error, d.created_at, d.sent_at`
+	d.attempts, d.next_attempt, d.last_error, d.created_at, d.sent_at, d.held_by`
 
 // EnqueueDelivery queues a message once per (channel, dedupe key).
 func (s *Store) EnqueueDelivery(ctx context.Context, channelID int64, routeID, incidentID *int64, event, dedupe string, payload any) (bool, error) {
@@ -404,13 +557,12 @@ func (s *Store) DeferDelivery(ctx context.Context, id int64, until time.Time) er
 // HoldDelivery keeps a due delivery for the next digest (rate limits). It
 // does nothing to a delivery another replica has claimed.
 func (s *Store) HoldDelivery(ctx context.Context, id int64, reason string) error {
-	_, err := s.Pool.Exec(ctx, `UPDATE deliveries SET status = 'held', last_error = $2 WHERE id = $1 AND status = 'pending' AND next_attempt <= now()`, id, reason)
-	return err
+	return s.HoldDeliveryBy(ctx, id, HeldHourlyLimit, reason)
 }
 
 // RetryDelivery puts a failed delivery back in the queue.
 func (s *Store) RetryDelivery(ctx context.Context, id int64) error {
-	tag, err := s.Pool.Exec(ctx, `UPDATE deliveries SET status = 'pending', next_attempt = now(), failed_at = NULL WHERE id = $1 AND status IN ('failed', 'held')`, id)
+	tag, err := s.Pool.Exec(ctx, `UPDATE deliveries SET status = 'pending', next_attempt = now(), failed_at = NULL, held_by = '' WHERE id = $1 AND status IN ('failed', 'held')`, id)
 	if err == nil && tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}

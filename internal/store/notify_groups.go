@@ -20,14 +20,33 @@ func (s *Store) ClaimSummary(ctx context.Context, routeID int64, prev, to time.T
 	return err == nil && tag.RowsAffected() == 1, err
 }
 
-// HeldForRoute returns the ids of a route's deliveries held by its hourly
-// limit, which its next summary takes in.
-func (s *Store) HeldForRoute(ctx context.Context, routeID int64) ([]int64, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT id FROM deliveries WHERE route_id = $1 AND status = 'held' ORDER BY id`, routeID)
+// ClaimWeeklySummary is ClaimSummary for the weekly summary.
+func (s *Store) ClaimWeeklySummary(ctx context.Context, routeID int64, prev, to time.Time) (bool, error) {
+	tag, err := s.Pool.Exec(ctx, `UPDATE routes SET last_weekly_summary_at = $3 WHERE id = $1 AND last_weekly_summary_at = $2`, routeID, prev, to)
+	return err == nil && tag.RowsAffected() == 1, err
+}
+
+// HeldForRoute returns the ids of a route's held deliveries, which its
+// next summary takes in, and how many of them the organisation's email
+// limits held (the rest, its hourly limit).
+func (s *Store) HeldForRoute(ctx context.Context, routeID int64) (ids []int64, byQuota int, err error) {
+	rows, err := s.Pool.Query(ctx, `SELECT id, held_by = 'email_quota' FROM deliveries WHERE route_id = $1 AND status = 'held' ORDER BY id`, routeID)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	return pgx.CollectRows(rows, pgx.RowTo[int64])
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var quota bool
+		if err := rows.Scan(&id, &quota); err != nil {
+			return nil, 0, err
+		}
+		ids = append(ids, id)
+		if quota {
+			byQuota++
+		}
+	}
+	return ids, byQuota, rows.Err()
 }
 
 // NewAsset is an asset notifications have not described yet.
@@ -98,7 +117,8 @@ const (
 	// IssuesNew: active findings first seen in [from, to) on assets that
 	// were already announced (an asset's first scan is not "new issues").
 	IssuesNew IssueSet = iota
-	// IssuesFixed: findings resolved in [from, to).
+	// IssuesFixed: findings fixed in [from, to): resolved because the
+	// installed version changed or the component was removed.
 	IssuesFixed
 	// IssuesOverdue: active findings past their fix deadline now.
 	IssuesOverdue
@@ -108,6 +128,9 @@ const (
 	IssuesAckOverdue
 	// IssuesRegressed: findings that came back after a fix in [from, to).
 	IssuesRegressed
+	// IssuesNoLongerAffected: findings closed in [from, to) with no fix,
+	// because their advisory was withdrawn or changed.
+	IssuesNoLongerAffected
 )
 
 const activeFinding = `f.status = 'open' AND f.state IN ('new', 'acknowledged', 'in_progress')`
@@ -130,8 +153,10 @@ func (s *Store) CountIssues(ctx context.Context, set IssueSet, from, to time.Tim
 		cond = activeFinding + ` AND f.first_seen >= $1 AND f.first_seen < $2 AND a.announced_at IS NOT NULL AND f.first_seen > a.announced_at
 			AND (f.regressed_at IS NULL OR f.regressed_at < $1)`
 	case IssuesFixed:
-		cond = `f.status = 'resolved' AND f.resolved_at >= $1 AND f.resolved_at < $2`
+		cond = `f.status = 'resolved' AND f.resolved_at >= $1 AND f.resolved_at < $2 AND f.resolution_kind IN ('remediated', 'removed')`
 		fix, title = "f.resolved_fix_group", "f.resolved_fix_title"
+	case IssuesNoLongerAffected:
+		cond = `f.status = 'resolved' AND f.resolved_at >= $1 AND f.resolved_at < $2 AND f.resolution_kind IN ('advisory_withdrawn', 'advisory_changed')`
 	case IssuesOverdue:
 		cond = activeFinding + ` AND f.fix_due < $2 AND $1::timestamptz IS NOT NULL AND NOT ` + BacklogFinding
 	case IssuesNewlyOverdue:

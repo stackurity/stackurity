@@ -22,7 +22,7 @@ const KIND_PAGE: Partial<Record<HealthProblem["kind"], [string, string]>> = {
   intelligence: ["/intelligence", "Intelligence"],
   jobs: ["/settings/jobs", "Background jobs"],
   integration: ["/integrations", "Integrations"],
-  notification: ["/settings/notifications", "Notifications"],
+  notification: ["/settings/integrations", "Integrations"],
   collector: ["/assets?status=stale", "Assets"],
   coverage: ["/coverage", "Coverage"],
 };
