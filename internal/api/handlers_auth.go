@@ -66,7 +66,7 @@ func (s *Server) setup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = s.Store.Audit(r.Context(), store.Actor{Type: "system", Name: "setup", RemoteAddr: clientIP(r)}, "setup.admin_created", "user", itoa(u.ID), nil)
-	s.startSession(w, r, u)
+	s.completePasswordLogin(w, r, u)
 }
 
 type loginRequest struct {
@@ -119,11 +119,19 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	if err := s.Store.ClearFailures(r.Context(), "login-fail", subject); err != nil {
 		s.Log.Error("clearing sign-in failures", "err", err)
 	}
-	s.startSession(w, r, u)
+	s.completePasswordLogin(w, r, u)
 }
 
-// startSession signs u in, working in their first workspace.
+// startSession signs u in, working in their first workspace, without a
+// password check of its own (single sign-on). Password sign-ins go
+// through completePasswordLogin (mfa.go).
 func (s *Server) startSession(w http.ResponseWriter, r *http.Request, u *store.User) {
+	s.startSessionWith(w, r, u, store.SessionOpts{}, nil)
+}
+
+// startSessionWith signs u in as opts says; detail is added to the
+// auth.login event.
+func (s *Server) startSessionWith(w http.ResponseWriter, r *http.Request, u *store.User, opts store.SessionOpts, detail map[string]any) {
 	ms, err := s.Store.Memberships(r.Context(), u.ID)
 	if err != nil {
 		s.fail(w, r, err)
@@ -133,7 +141,7 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, u *store.U
 	if len(ms) > 0 {
 		ws = ms[0].WorkspaceID
 	}
-	secret, err := s.Store.CreateSession(r.Context(), u.ID, ws)
+	secret, err := s.Store.CreateSessionWith(r.Context(), u.ID, ws, opts)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -142,12 +150,47 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, u *store.U
 		s.fail(w, r, err)
 		return
 	}
+	s.setSessionCookie(w, secret)
+	var d any
+	if detail != nil {
+		d = detail
+	}
+	_ = s.Store.Audit(tenant.WithWorkspace(r.Context(), ws), store.Actor{Type: "user", ID: u.ID, Name: u.Email, RemoteAddr: clientIP(r)}, "auth.login", "user", itoa(u.ID), d)
+	writeJSON(w, 200, u)
+}
+
+func (s *Server) setSessionCookie(w http.ResponseWriter, secret string) {
 	http.SetCookie(w, &http.Cookie{
 		Name: sessionCookie, Value: secret, Path: "/", HttpOnly: true, Secure: s.CookieSecure,
 		SameSite: http.SameSiteStrictMode, Expires: time.Now().Add(store.SessionTTL),
 	})
-	_ = s.Store.Audit(tenant.WithWorkspace(r.Context(), ws), store.Actor{Type: "user", ID: u.ID, Name: u.Email, RemoteAddr: clientIP(r)}, "auth.login", "user", itoa(u.ID), nil)
-	writeJSON(w, 200, u)
+}
+
+// sessionSecret is the request's session cookie ("" without one).
+func sessionSecret(r *http.Request) string {
+	if c, err := r.Cookie(sessionCookie); err == nil {
+		return c.Value
+	}
+	return ""
+}
+
+// rotateSession replaces the caller's session with a new one (a new
+// session ID) in the same workspace, signed in as opts says. It is used
+// when what the session may do changes: two-factor sign-in turned on, a
+// new password.
+func (s *Server) rotateSession(w http.ResponseWriter, r *http.Request, opts store.SessionOpts) error {
+	p := principal(r)
+	secret, err := s.Store.CreateSessionWith(r.Context(), p.User.ID, p.Workspace, opts)
+	if err != nil {
+		return err
+	}
+	if old := sessionSecret(r); old != "" {
+		if err := s.Store.DeleteSession(r.Context(), old); err != nil {
+			return err
+		}
+	}
+	s.setSessionCookie(w, secret)
+	return nil
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
@@ -168,7 +211,8 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	}
 	out := map[string]any{"user": p.User, "role": p.Role, "token": p.Token, "workspace": nil, "workspaces": []store.Membership{},
 		"edition": ed, "features": features, "feedback_enabled": s.FeedbackURL != "" && p.User != nil,
-		"access": "organisation", "project_role": p.ProjectRole, "projects": []store.Project{}, "default_project_id": 0}
+		"access": "organisation", "project_role": p.ProjectRole, "projects": []store.Project{}, "default_project_id": 0,
+		"mfa_enrolment_required": p.NeedsMFAEnrolment}
 	if p.Restricted {
 		out["access"] = "projects"
 	}

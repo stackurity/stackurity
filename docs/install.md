@@ -144,6 +144,29 @@ An instance administrator can also limit how many assets each workspace monitors
 
 When you host other organisations, also set `STACKURITY_PRIVATE_TARGETS=none` and `STACKURITY_SECRET_KEY`. Workspace admins then keep credentials as stored secrets, and only instance administrators can reference the server's own `env:` and `file:` secrets.
 
+## Signing in
+
+People sign in with an email and password, or with [single sign-on](#single-sign-on) where it is set up.
+
+### Two-factor sign-in
+
+Anyone can turn on two-factor sign-in under **Your account → Two-factor sign-in**: after their password, Stackurity asks for a six-digit code from an authenticator app (TOTP, RFC 6238: 1Password, Google Authenticator, Microsoft Authenticator, Authy and others). Setting it up asks for the password again, shows a QR code (and the key as text), and is confirmed with a code. It then shows ten one-time **recovery codes** once; each signs in once instead of a code, for a lost phone. **New recovery codes** replaces the set.
+
+- The secret is encrypted with `STACKURITY_SECRET_KEY` (AES-256-GCM, as stored secrets are), so two-factor sign-in needs that key; without it the page says so. Recovery codes are stored as hashes.
+- A code is accepted once: the same code (or an earlier one) cannot sign in again, even within its 90-second window (the current 30-second step and one either side, for clock drift).
+- Wrong codes are limited: five end the sign-in (the password must be entered again), and ten tries per account in 15 minutes from any address.
+- Turning it on signs out the account's other sessions. Turning it off asks for the password, and is refused while an organisation of theirs requires it.
+- **API tokens and connected AI assistants are not asked for a code**, as with GitHub: they are credentials of their own. The page lists how many the person has, with links to review them.
+- People who sign in with single sign-on are not asked for a Stackurity code: their identity provider does the second factor.
+
+**Require it for an organisation.** An admin can turn on **Settings → Users → Require two-factor sign-in for all members** (their own account needs it first). Members who sign in with a password and have none are then sent to set it up before they can do anything else; members using single sign-on are not affected. The page counts the members without it.
+
+**A lost phone.** An admin resets a member's two-factor sign-in with **Reset two-factor** on **Settings → Users**; it is recorded in the activity log (`user.mfa_reset`) and ends the member's sessions. As with passwords, only an instance administrator can reset it for an account that also belongs to other organisations, or for an instance administrator.
+
+Every step is in the activity log: `auth.mfa_enabled`, `auth.mfa_disabled`, `auth.mfa_failed`, `auth.mfa_recovery_code_used`, `auth.mfa_recovery_codes_replaced`, and `auth.login` with `"mfa": "totp"` or `"recovery_code"`.
+
+Passkeys and security keys (WebAuthn) are not supported yet.
+
 ## Single sign-on
 
 Stackurity can sign people in through any OpenID Connect provider: Google Workspace, Microsoft Entra ID, Okta, Keycloak, GitLab and others. Register a web application with the provider, with the redirect URL `https://<your Stackurity>/api/v1/auth/oidc/callback`, then set:

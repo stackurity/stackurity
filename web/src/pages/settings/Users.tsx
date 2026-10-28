@@ -5,6 +5,7 @@ import { useAction, useLoad } from "../../hooks";
 import { Badge } from "../../components/Badge";
 import { Table, type Column } from "../../components/Table";
 import { Card, EmptyState, ErrorBox, Loading, Notice, PageHeader, RelativeTime } from "../../components/ui";
+import { RequireMfaCard } from "../TwoFactor";
 
 /** Organisation-wide roles, and "none": access only to the projects someone is given. */
 const ORG_ROLES: (UserRole | "none")[] = [...USER_ROLES, "none"];
@@ -72,6 +73,7 @@ export function UsersPage() {
       ),
     },
     { key: "status", header: "Status", cell: (u) => (u.disabled ? <Badge status="disabled" /> : <Badge status="active" />) },
+    { key: "mfa", header: "Two-factor", cell: (u) => (u.mfa_enabled ? "On" : <span className="muted">Off</span>) },
     { key: "teams", header: "Teams", cell: (u) => (u.teams?.length ? u.teams.join(", ") : <span className="muted">—</span>) },
     { key: "login", header: "Last sign-in", cell: (u) => <RelativeTime iso={u.last_login_at} /> },
     { key: "created", header: "Created", cell: (u) => <RelativeTime iso={u.created_at} /> },
@@ -83,6 +85,30 @@ export function UsersPage() {
           <button type="button" className="btn btn-sm" onClick={() => setResetFor(resetFor === u.id ? null : u.id)}>
             Reset password
           </button>
+          {u.mfa_enabled && u.id !== me?.user?.id && (
+            <button
+              type="button"
+              className="btn btn-sm"
+              disabled={act.pending}
+              onClick={() => {
+                if (!window.confirm(`Reset two-factor sign-in for ${u.email}? Their sessions end; they sign in with their password and set it up again.`)) return;
+                setMsg(null);
+                void act
+                  .run(async () => {
+                    await api.del(`/users/${u.id}/mfa`);
+                    return true;
+                  })
+                  .then((ok) => {
+                    if (ok) {
+                      setMsg(`Two-factor sign-in for ${u.email} was reset.`);
+                      res.reload();
+                    }
+                  });
+              }}
+            >
+              Reset two-factor
+            </button>
+          )}
           {u.id !== me?.user?.id && (
             <button
               type="button"
@@ -140,6 +166,7 @@ export function UsersPage() {
       />
       {msg && <Notice kind="success">{msg}</Notice>}
       <ErrorBox error={act.error} title="Update failed" />
+      <RequireMfaCard />
       {showCreate && (
         <CreateUser
           onCancel={() => setShowCreate(false)}

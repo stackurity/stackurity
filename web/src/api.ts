@@ -65,6 +65,8 @@ export interface User {
   instance_admin: boolean;
   /** "organisation": a role on everything; "projects": access through projects only (role is then empty). */
   access?: Access;
+  /** Two-factor sign-in is on for this account. */
+  mfa_enabled?: boolean;
 }
 
 /** How a member reaches a workspace's data. */
@@ -389,6 +391,8 @@ export interface Me {
   features: Feature[];
   /** Whether Send feedback is on (STACKURITY_FEEDBACK_URL) for this signed-in user. */
   feedback_enabled?: boolean;
+  /** The organisation requires two-factor sign-in and this session has none: only enrolment is possible. */
+  mfa_enrolment_required?: boolean;
 }
 
 export type Edition = "community" | "pro" | "enterprise";
@@ -2551,7 +2555,7 @@ export const api = {
   meta: () => request<Meta>("GET", "/meta"),
   me: () => request<Me>("GET", "/auth/me", undefined, { quiet401: true }),
   login: (email: string, password: string) =>
-    request<User>("POST", "/auth/login", { email, password }, { quiet401: true }),
+    request<User & { mfa_required?: boolean }>("POST", "/auth/login", { email, password }, { quiet401: true }),
   setup: (b: { setup_token: string; email: string; name: string; password: string }) =>
     request<User>("POST", "/setup", b, { quiet401: true }),
   logout: () => request<void>("POST", "/auth/logout", undefined, { quiet401: true }),

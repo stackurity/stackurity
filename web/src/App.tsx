@@ -5,6 +5,7 @@ import { useAuth } from "./auth";
 import { Layout } from "./components/Layout";
 import { ErrorBox, Loading } from "./components/ui";
 import { LoginPage, SetupPage } from "./pages/Login";
+import { MfaEnrolmentPage } from "./pages/TwoFactor";
 import { AcceptInvitePage } from "./pages/AcceptInvite";
 import { SlackLinkPage } from "./pages/SlackLink";
 import { AccountPage } from "./pages/Account";
@@ -141,6 +142,9 @@ export function App() {
   // Stopping email sent by Stackurity, signed in or not.
   if (pathname === "/email/unsubscribe" && (state.phase === "login" || state.phase === "ready")) return <EmailStopPage kind="unsubscribe" />;
   if (pathname === "/email/block" && (state.phase === "login" || state.phase === "ready")) return <EmailStopPage kind="block" />;
+
+  // An organisation that requires two-factor sign-in: set it up first.
+  if (state.phase === "ready" && state.me.mfa_enrolment_required) return <MfaEnrolmentPage />;
 
   switch (state.phase) {
     case "loading":

@@ -45,7 +45,13 @@ A workspace (shown as the organisation in the dashboard) groups its assets into 
 
 **Who:** anyone
 
-Signs in with `email` and `password` and starts a session (cookie). Limited per address and per account; 401 for a wrong email or password.
+Signs in with `email` and `password` and starts a session (cookie). Limited per address and per account; 401 for a wrong email or password. When the account has two-factor sign-in, the answer is `{"mfa_required": true, "methods": ["totp", "recovery_code"]}` with a short-lived challenge cookie instead, and `POST /auth/mfa/verify` finishes the sign-in.
+
+### `POST /auth/mfa/verify`
+
+**Who:** anyone with the challenge cookie from `POST /auth/login`
+
+`{"code": "123456"}`, or a recovery code: starts the session and answers the user, as `POST /auth/login` does. 401 `mfa_invalid` for a wrong or already-used code; after five, or after five minutes, 401 `mfa_expired` (sign in again). Limited per address and to ten codes per account in 15 minutes. See [Two-factor sign-in](install.md#two-factor-sign-in).
 
 ### `POST /auth/logout`
 
@@ -57,7 +63,7 @@ Ends the session.
 
 **Who:** any signed-in user or token
 
-The caller: `user`, `role`, `workspace`, `workspaces`, `edition` and `features`, `access` (`organisation` or `projects`), `project_role`, `projects`, `default_project_id`, `read_only`, `report_mode` and `feedback_enabled`.
+The caller: `user`, `role`, `workspace`, `workspaces`, `edition` and `features`, `access` (`organisation` or `projects`), `project_role`, `projects`, `default_project_id`, `read_only`, `report_mode`, `feedback_enabled` and `mfa_enrolment_required` (the organisation requires two-factor sign-in and this session has none: until it is set up, other routes answer 403 `mfa_enrolment_required`). Each user has `mfa_enabled`.
 
 ### `PUT /auth/default-project`
 
@@ -70,6 +76,36 @@ The caller: `user`, `role`, `workspace`, `workspaces`, `edition` and `features`,
 **Who:** any signed-in user
 
 Changes your own password (`current_password`, `new_password`). Your other sessions are signed out.
+
+### `GET /auth/mfa`
+
+**Who:** any signed-in user (browser session)
+
+Your two-factor sign-in: `enabled`, `enabled_at`, `recovery_codes_left`, `required` (the current organisation requires it), `available` (the server has `STACKURITY_SECRET_KEY`), and how many `tokens` and `assistants` you have (they are not asked for a code).
+
+### `POST /auth/mfa/totp`
+
+**Who:** any signed-in user (browser session)
+
+`{"password": "..."}`: starts setting up an authenticator app. Answers `secret` (base32), `otpauth_url` and `qr_png` (a `data:` URL). Nothing changes until it is confirmed. 409 when it is already on.
+
+### `POST /auth/mfa/totp/confirm`
+
+**Who:** any signed-in user (browser session)
+
+`{"code": "123456"}` from the app: turns two-factor sign-in on and answers `recovery_codes` (ten, shown only now), `status` and `other_sessions_ended`. Your other sessions end, and this one gets a new session cookie.
+
+### `POST /auth/mfa/recovery-codes`
+
+**Who:** any signed-in user (browser session)
+
+`{"password": "..."}`: ten new `recovery_codes`; the old ones stop working.
+
+### `DELETE /auth/mfa`
+
+**Who:** any signed-in user (browser session)
+
+`{"password": "..."}`: turns two-factor sign-in off. 409 `mfa_required` while one of your organisations requires it.
 
 ### `GET /auth/oidc/login`
 
@@ -622,6 +658,18 @@ How fix lists show the same fix in several places: `fix_grouping` is `fix` (one 
 
 Changes `fix_grouping`; audited as `settings.update`.
 
+### `GET /settings/security`
+
+**Who:** admin
+
+`require_mfa`: whether members who sign in with a password must use two-factor sign-in, and `members_without_mfa`.
+
+### `PUT /settings/security`
+
+**Who:** admin
+
+`{"require_mfa": true}` or `false`. Turning it on needs two-factor sign-in on your own account first (409 `mfa_required`). Audited as `settings.require_mfa`.
+
 ## Projects and people
 
 ### `GET /projects`
@@ -767,6 +815,12 @@ Changes a member's role, name or status.
 **Who:** admin
 
 Removes a member from the organisation; their account and other organisations are untouched. The organisation must keep an active admin. Audited as `user.remove`.
+
+### `DELETE /users/{id}/mfa`
+
+**Who:** admin
+
+Resets a member's two-factor sign-in (a lost phone): removes it and their recovery codes and ends their sessions. Only an instance administrator may for an account in other organisations too, or for an instance administrator (409). 409 when they have none. Audited as `user.mfa_reset`.
 
 ### `GET /users/directory`
 

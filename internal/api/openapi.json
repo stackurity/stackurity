@@ -2130,6 +2130,222 @@
     }
    }
   },
+  "/auth/mfa/verify": {
+   "post": {
+    "operationId": "post_auth_mfa_verify",
+    "summary": "Second step of a password sign-in: a TOTP or recovery code",
+    "description": "After `POST /auth/login` answered `mfa_required`: `{\"code\": \"123456\"}` (or a recovery code) with the challenge cookie starts the session\n\nRole: none",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "none",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/mfa": {
+   "get": {
+    "operationId": "get_auth_mfa",
+    "summary": "Your two-factor sign-in status",
+    "description": "Your two-factor sign-in status\n\nRole: any signed-in user (session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (session)",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "delete_auth_mfa",
+    "summary": "Turn off your two-factor sign-in (password)",
+    "description": "Turn off your two-factor sign-in (password)\n\nRole: any signed-in user (session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (session)",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/mfa/totp": {
+   "post": {
+    "operationId": "post_auth_mfa_totp",
+    "summary": "Start setting up TOTP (password): secret, otpauth URL and QR code",
+    "description": "Start setting up TOTP (password): secret, otpauth URL and QR code\n\nRole: any signed-in user (session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (session)",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/mfa/totp/confirm": {
+   "post": {
+    "operationId": "post_auth_mfa_totp_confirm",
+    "summary": "Confirm TOTP with a code; returns ten recovery codes once",
+    "description": "Confirm TOTP with a code; returns ten recovery codes once\n\nRole: any signed-in user (session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (session)",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/mfa/recovery-codes": {
+   "post": {
+    "operationId": "post_auth_mfa_recovery_codes",
+    "summary": "Replace your recovery codes (password)",
+    "description": "Replace your recovery codes (password)\n\nRole: any signed-in user (session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (session)",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/channels": {
    "get": {
     "operationId": "get_channels",
@@ -7647,6 +7863,38 @@
     }
    }
   },
+  "/users/{id}/mfa": {
+   "delete": {
+    "operationId": "delete_users_id_mfa",
+    "summary": "Reset a member's two-factor sign-in",
+    "description": "Reset a member's two-factor sign-in\n\nRole: admin",
+    "tags": [
+     "Projects and people"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/workspaces": {
    "get": {
     "operationId": "get_workspaces",
@@ -8029,6 +8277,72 @@
     "operationId": "put_fix_grouping",
     "summary": "Change how fix lists group the same fix",
     "description": "How fix lists show the same fix in several places: `fix_grouping` is `fix` (one entry per fix listing its places; the default) or `asset` (one entry per asset). `PUT` writes a `settings.update` audit event\n\nRole: admin",
+    "tags": [
+     "Findings and fixes"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/settings/security": {
+   "get": {
+    "operationId": "get_settings_security",
+    "summary": "Require two-factor sign-in for all members, and how many have none",
+    "description": "Require two-factor sign-in for all members, and how many have none\n\nRole: admin",
+    "tags": [
+     "Findings and fixes"
+    ],
+    "x-stackurity-role": "admin",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "put": {
+    "operationId": "put_settings_security",
+    "summary": "Require (or stop requiring) two-factor sign-in for all members",
+    "description": "Require (or stop requiring) two-factor sign-in for all members\n\nRole: admin",
     "tags": [
      "Findings and fixes"
     ],

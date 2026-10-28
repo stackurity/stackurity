@@ -30,6 +30,8 @@ type User struct {
 	// role, "projects" for one with project access only (Role is then
 	// empty), and "" for someone who is not a member.
 	Access string `json:"access"`
+	// MFAEnabled: the account has two-factor sign-in turned on.
+	MFAEnabled bool `json:"mfa_enabled"`
 }
 
 const userCols = `u.id, u.email, u.name,
@@ -38,7 +40,8 @@ const userCols = `u.id, u.email, u.name,
 	COALESCE((SELECT array_agg(t.name ORDER BY t.name) FROM team_members m JOIN teams t ON t.id = m.team_id WHERE m.user_id = u.id), '{}'),
 	u.instance_admin,
 	COALESCE((SELECT CASE WHEN wm.role IS NULL THEN 'projects' ELSE 'organisation' END FROM workspace_members wm
-	  WHERE wm.user_id = u.id AND wm.workspace_id = stackurity_ws()), '')`
+	  WHERE wm.user_id = u.id AND wm.workspace_id = stackurity_ws()), ''),
+	EXISTS (SELECT 1 FROM user_mfa m WHERE m.user_id = u.id AND m.enabled_at IS NOT NULL)`
 
 func (s *Store) CountUsers(ctx context.Context) (int64, error) {
 	var n int64
@@ -311,6 +314,22 @@ const SessionTTL = 12 * time.Hour
 
 // CreateSession starts a browser session working in workspaceID (0: none yet).
 func (s *Store) CreateSession(ctx context.Context, userID, workspaceID int64) (string, error) {
+	return s.CreateSessionWith(ctx, userID, workspaceID, SessionOpts{})
+}
+
+// SessionOpts says how a session was signed in.
+type SessionOpts struct {
+	// PasswordLogin: with a local password. Such a session is sent to
+	// two-factor enrolment when its workspace requires it and the user has
+	// none; sessions from single sign-on, invitations and sign-up links are
+	// not (the identity provider, or a fresh account, covers them).
+	PasswordLogin bool
+	// MFA: a second factor was checked.
+	MFA bool
+}
+
+// CreateSessionWith starts a browser session signed in as opts says.
+func (s *Store) CreateSessionWith(ctx context.Context, userID, workspaceID int64, opts SessionOpts) (string, error) {
 	secret, _, err := auth.NewToken("sess")
 	if err != nil {
 		return "", err
@@ -319,10 +338,27 @@ func (s *Store) CreateSession(ctx context.Context, userID, workspaceID int64) (s
 	if workspaceID > 0 {
 		ws = &workspaceID
 	}
-	_, err = s.Pool.Exec(ctx, `INSERT INTO sessions (token_hash, user_id, expires_at, workspace_id)
-		VALUES ($1, $2, now() + make_interval(secs => $3), $4)`,
-		auth.HashToken(secret), userID, SessionTTL.Seconds(), ws)
+	var mfaAt *time.Time
+	if opts.MFA {
+		now := time.Now()
+		mfaAt = &now
+	}
+	_, err = s.Pool.Exec(ctx, `INSERT INTO sessions (token_hash, user_id, expires_at, workspace_id, password_login, mfa_at)
+		VALUES ($1, $2, now() + make_interval(secs => $3), $4, $5, $6)`,
+		auth.HashToken(secret), userID, SessionTTL.Seconds(), ws, opts.PasswordLogin, mfaAt)
 	return secret, err
+}
+
+// Session is a resolved browser session.
+type Session struct {
+	User      *User
+	Workspace int64
+	// NeedsMFAEnrolment: signed in with a password, without a second
+	// factor, in a workspace that requires one. Only enrolment, signing
+	// out and switching workspace are allowed until it is set up.
+	NeedsMFAEnrolment bool
+	// PasswordLogin: signed in with a local password.
+	PasswordLogin bool
 }
 
 // SessionUser resolves a browser session to its user and the workspace it
@@ -330,17 +366,28 @@ func (s *Store) CreateSession(ctx context.Context, userID, workspaceID int64) (s
 // user's first workspace is used; 0 means the user belongs to none. The
 // returned user's Role is their role in that workspace.
 func (s *Store) SessionUser(ctx context.Context, secret string) (*User, int64, error) {
+	sess, err := s.SessionInfo(ctx, secret)
+	if err != nil {
+		return nil, 0, err
+	}
+	return sess.User, sess.Workspace, nil
+}
+
+// SessionInfo is SessionUser with how the session was signed in.
+func (s *Store) SessionInfo(ctx context.Context, secret string) (*Session, error) {
 	var id int64
 	var ws *int64
-	err := s.Pool.QueryRow(ctx, `SELECT s.user_id, s.workspace_id FROM sessions s JOIN users u ON u.id = s.user_id
-		WHERE s.token_hash = $1 AND s.expires_at > now() AND NOT u.disabled`, auth.HashToken(secret)).Scan(&id, &ws)
+	var passwordLogin bool
+	var mfaAt *time.Time
+	err := s.Pool.QueryRow(ctx, `SELECT s.user_id, s.workspace_id, s.password_login, s.mfa_at FROM sessions s JOIN users u ON u.id = s.user_id
+		WHERE s.token_hash = $1 AND s.expires_at > now() AND NOT u.disabled`, auth.HashToken(secret)).Scan(&id, &ws, &passwordLogin, &mfaAt)
 	if err != nil {
-		return nil, 0, notFound(err)
+		return nil, notFound(err)
 	}
 	var wsID int64
 	if ws != nil {
 		if member, err := s.IsMember(ctx, *ws, id); err != nil {
-			return nil, 0, err
+			return nil, err
 		} else if member {
 			wsID = *ws
 		}
@@ -348,7 +395,7 @@ func (s *Store) SessionUser(ctx context.Context, secret string) (*User, int64, e
 	if wsID == 0 {
 		ms, err := s.Memberships(ctx, id)
 		if err != nil {
-			return nil, 0, err
+			return nil, err
 		}
 		if len(ms) > 0 {
 			wsID = ms[0].WorkspaceID
@@ -356,7 +403,16 @@ func (s *Store) SessionUser(ctx context.Context, secret string) (*User, int64, e
 		}
 	}
 	u, err := s.GetUser(tenant.WithWorkspace(ctx, wsID), id)
-	return u, wsID, err
+	if err != nil {
+		return nil, err
+	}
+	sess := &Session{User: u, Workspace: wsID, PasswordLogin: passwordLogin}
+	if passwordLogin && mfaAt == nil && !u.MFAEnabled && wsID > 0 {
+		if sess.NeedsMFAEnrolment, err = s.WorkspaceRequiresMFA(ctx, wsID); err != nil {
+			return nil, err
+		}
+	}
+	return sess, nil
 }
 
 func (s *Store) DeleteSession(ctx context.Context, secret string) error {
@@ -365,6 +421,9 @@ func (s *Store) DeleteSession(ctx context.Context, secret string) error {
 }
 
 func (s *Store) PurgeExpiredSessions(ctx context.Context) error {
+	if _, err := s.Pool.Exec(ctx, `DELETE FROM mfa_challenges WHERE expires_at < now()`); err != nil {
+		return err
+	}
 	_, err := s.Pool.Exec(ctx, `DELETE FROM sessions WHERE expires_at < now()`)
 	return err
 }

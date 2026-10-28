@@ -176,6 +176,7 @@ func (s *Server) Handler() http.Handler {
 		r.Post("/setup", s.setup)
 		r.Post("/auth/login", s.login)
 		r.Post("/auth/logout", s.logout)
+		s.mfaPublicRoutes(r)
 		r.Post("/enroll", s.enroll)
 		// Following an invitation link: the person may have no account yet.
 		r.Post("/invitations/preview", s.previewInvitation)
@@ -198,6 +199,7 @@ func (s *Server) Handler() http.Handler {
 			r.Get("/auth/me", s.me)
 			r.Put("/auth/default-project", s.setDefaultProject)
 			r.Post("/auth/password", s.changePassword)
+			s.mfaAccountRoutes(r)
 			r.Post("/feedback", s.sendFeedback)
 			// Linking the caller's Slack account (slack.go).
 			r.Get("/slack/links", s.listSlackLinks)
@@ -355,6 +357,7 @@ func (s *Server) Handler() http.Handler {
 				r.Post("/users", s.createUser)
 				r.Patch("/users/{id}", s.updateUser)
 				r.Delete("/users/{id}", s.removeMember)
+				s.mfaAdminRoutes(r)
 				r.Post("/teams", s.createTeam)
 				r.Patch("/teams/{id}", s.updateTeam)
 				r.Delete("/teams/{id}", s.deleteTeam)

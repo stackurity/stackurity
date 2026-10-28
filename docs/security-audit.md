@@ -126,6 +126,8 @@ The documentation is the test specification. Each control stated on this page, i
 | Linking a Slack account: single use, 15 minutes, in the channel's workspace only, a browser session only, never taking over an account linked to someone else; each person lists and removes only their own links | `TestSlackAccountLinking`, `TestIsolationSweep`, `TestProjectIsolationSweep` |
 | A linked Slack click has the person's dashboard permissions (role, project access, removed members refused) and is audited like the dashboard with source `slack` | `TestSlackActionPermissions` |
 | Channels without a signing secret send exactly the earlier link buttons; interactive buttons only when the secret resolves; the secret never appears in messages | `TestSlackInteractiveButtons`, `TestDispatcherInteractiveOnlyWithSigningSecret`, `TestSlackChannelSigningSecretRef` |
+| Two-factor sign-in: the password alone does not sign in; TOTP per RFC 6238 within one step either side; a code (including the one that confirmed enrolment) is never accepted twice; recovery codes work once and are stored hashed; five wrong codes end the sign-in, ten per account per 15 minutes; API tokens unaffected | `TestTOTPVectors`, `TestCheckTOTPWindow`, `TestRecoveryCodes`, `TestMFASignIn`, `TestMFAChallengeEndsAfterFailures` |
+| "Require two-factor sign-in": a password session without a second factor can only enrol (no data, no tokens) and cannot turn it off; single sign-on sessions are not affected; an admin reset ends the member's sessions and is audited; a workspace admin cannot reset an instance admin's | `TestRequireMFAForMembers`, `TestResetMFAOfInstanceAdmin` |
 
 ### Outbound connections (SSRF)
 

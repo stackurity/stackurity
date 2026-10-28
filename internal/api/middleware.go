@@ -42,6 +42,11 @@ type Principal struct {
 	// (assistants.go). Its requests come only from the tools behind /mcp;
 	// Token then describes it, so it is capped like an API token.
 	Assistant *store.AssistantGrant
+	// PasswordSession: a browser session signed in with a local password.
+	PasswordSession bool
+	// NeedsMFAEnrolment: such a session without a second factor in a
+	// workspace that requires one (mfa.go); it may only set one up.
+	NeedsMFAEnrolment bool
 }
 
 func (p *Principal) Actor(r *http.Request) store.Actor {
@@ -97,10 +102,15 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 				return
 			}
 		} else if c, err := r.Cookie(sessionCookie); err == nil && c.Value != "" {
-			user, ws, err := s.Store.SessionUser(r.Context(), c.Value)
+			sess, err := s.Store.SessionInfo(r.Context(), c.Value)
 			switch {
 			case err == nil:
-				p = &Principal{User: user, Role: user.Role, Session: true, Workspace: ws}
+				p = &Principal{User: sess.User, Role: sess.User.Role, Session: true, Workspace: sess.Workspace,
+					PasswordSession: sess.PasswordLogin, NeedsMFAEnrolment: sess.NeedsMFAEnrolment}
+				if p.NeedsMFAEnrolment && !mfaEnrolmentAllows(r) {
+					writeError(w, 403, "mfa_enrolment_required", "your organisation requires two-factor sign-in; set it up to continue")
+					return
+				}
 			case !errors.Is(err, store.ErrNotFound):
 				s.credentialsUnavailable(w, r, err)
 				return
