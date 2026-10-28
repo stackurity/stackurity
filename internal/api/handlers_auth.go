@@ -83,10 +83,19 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	// Guessing one account's password from many addresses is limited per
-	// account, whether or not the account exists.
+	// Failed sign-ins back off per account and address (ratelimit.go);
+	// the same for accounts that do not exist.
 	account := strings.ToLower(strings.TrimSpace(req.Email))
-	if s.limited(w, r, "too many login attempts for this account; wait a few minutes", limitHit{"login-account", account, limitPerAccount}) {
+	subject := loginSubject(account, r)
+	wait, err := s.loginWait(r.Context(), account, subject)
+	if err != nil {
+		s.Log.Error("rate limit unavailable; refusing the request", "bucket", "login-fail", "err", err)
+		writeError(w, http.StatusServiceUnavailable, "unavailable", "the server cannot check rate limits right now; try again shortly")
+		return
+	}
+	if wait > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(int((wait+time.Second-1)/time.Second)))
+		writeError(w, http.StatusTooManyRequests, "rate_limited", "too many login attempts; wait a few minutes and try again")
 		return
 	}
 	u, err := s.Store.Authenticate(r.Context(), req.Email, req.Password)
@@ -98,12 +107,17 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 			if ok, _ := s.Store.UserExists(r.Context(), account); ok {
 				name = account
 			}
-			_ = s.Store.Audit(r.Context(), store.Actor{Type: "anonymous", Name: name, RemoteAddr: clientIP(r)}, "auth.login_failed", "user", "", nil)
+			actor := store.Actor{Type: "anonymous", Name: name, RemoteAddr: clientIP(r)}
+			_ = s.Store.Audit(r.Context(), actor, "auth.login_failed", "user", "", nil)
+			s.loginFailed(r, actor, account, subject)
 			writeError(w, 401, "unauthorized", "invalid email or password")
 			return
 		}
 		s.fail(w, r, err)
 		return
+	}
+	if err := s.Store.ClearFailures(r.Context(), "login-fail", subject); err != nil {
+		s.Log.Error("clearing sign-in failures", "err", err)
 	}
 	s.startSession(w, r, u)
 }

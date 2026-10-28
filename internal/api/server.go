@@ -11,8 +11,10 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -41,9 +43,20 @@ type Server struct {
 	// tests; zero means MaxIngestBody and MaxIngestInflow.
 	IngestLimits [2]int64
 	UI           fs.FS // built dashboard; nil serves a placeholder
-	// TrustProxy honours X-Forwarded-For / X-Real-IP. Enable only behind a
-	// reverse proxy that overwrites those headers.
+	// TrustProxy takes the client address from TrustedProxyHeader on
+	// requests whose TCP peer is in TrustedProxies (clientip.go). Other
+	// forwarding headers are never read.
 	TrustProxy bool
+	// TrustedProxyHeader is the header the proxy overwrites with the client
+	// address; empty is CF-Connecting-IP. X-Forwarded-For is read from the
+	// right, taking the first hop that is not a trusted proxy.
+	TrustedProxyHeader string
+	// TrustedProxies are the peers allowed to set TrustedProxyHeader; empty
+	// is loopback and the private ranges.
+	TrustedProxies []netip.Prefix
+	// untrustedPeerWarned limits the "header from an untrusted peer" warning
+	// to once per process.
+	untrustedPeerWarned atomic.Bool
 	// Dispatcher sends channel test messages; nil disables them.
 	Dispatcher        *notify.Dispatcher
 	AllowHTTPWebhooks bool
@@ -118,7 +131,7 @@ func (s *Server) Handler() http.Handler {
 	s.limiter = newRateLimiter(s.Store, s.Log)
 	r := chi.NewRouter()
 	if s.TrustProxy {
-		r.Use(middleware.RealIP)
+		r.Use(s.realIP)
 	}
 	r.Use(s.instrument, middleware.RequestID, s.recoverer, s.securityHeaders, s.logRequests, assistantCORS)
 	s.router = r
