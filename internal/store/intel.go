@@ -163,15 +163,19 @@ const (
 	affectedColumn = `COALESCE(v.affected, p.affected)`
 )
 
-// AdvisoriesFor returns every affected entry for a package in a base
-// ecosystem. Callers filter by exact ecosystem with osv.MatchEcosystem.
+// AdvisoriesFor returns the affected entries for a package in a base
+// ecosystem whose ecosystem osv.MatchEcosystem matches to target (every
+// entry when target is ""). Entries for other releases are skipped before
+// their ranges are decoded: an Ubuntu kernel package has some 70,000
+// entries across every release and channel, a few hundred megabytes once
+// decoded, of which one release's are wanted.
 //
 // The rows come in stored order, which is the order the index on
 // (base_ecosystem, name) returned them in before entries were read from
 // affected_values. The matcher keeps the first record it meets among equals
 // (the deciding record, the order of matched_ranges), so a join plan must
 // not reorder them: the same stored data gives the same evidence.
-func (s *Store) AdvisoriesFor(ctx context.Context, base, name string) ([]AdvisoryMatch, error) {
+func (s *Store) AdvisoriesFor(ctx context.Context, base, name, target string) ([]AdvisoryMatch, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT a.id, a.group_key, a.aliases, a.summary, a.severity_level, a.severity_score,
 		a.withdrawn, a.known_exploited, a.feed, p.ecosystem, `+affectedColumn+`
 		FROM advisory_packages p JOIN advisories a ON a.id = p.advisory_id
@@ -189,6 +193,9 @@ func (s *Store) AdvisoriesFor(ctx context.Context, base, name string) ([]Advisor
 		if err := rows.Scan(&m.ID, &m.GroupKey, &m.Aliases, &m.Summary, &m.SeverityLevel, &m.SeverityScore,
 			&m.Withdrawn, &m.KnownExploited, &m.Feed, &m.Ecosystem, &aff); err != nil {
 			return nil, err
+		}
+		if target != "" && !osv.MatchEcosystem(m.Ecosystem, target) {
+			continue
 		}
 		if err := json.Unmarshal(aff, &m.Affected); err != nil {
 			return nil, err

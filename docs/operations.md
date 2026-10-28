@@ -13,6 +13,7 @@ What happens to background work when a server dies is in [reliability.md](reliab
 | Platform health | **Settings → Platform health** (instance admins), `GET /api/v1/admin/health` | Problems with their errors: stale or failing feeds, background tasks that do not succeed, failed jobs, job and notification backlogs, failed notifications, failing channels |
 | Platform incidents | The operators' workspace (`STACKURITY_PLATFORM_WORKSPACE`) | Critical platform problems as incidents, sent through that workspace's notification routes |
 | Metrics | `STACKURITY_METRICS_ADDR` (`/metrics`, no authentication, separate listener) | Everything above as Prometheus series, plus HTTP, database pool and process metrics |
+| Memory profiles | `STACKURITY_METRICS_ADDR` (`/debug/pprof/heap`, `/debug/pprof/goroutine`) | What holds memory now; see [Memory](#memory) |
 | Server log | stdout, JSON by default | Errors with context; each problem below names the lines to look for |
 
 Platform incidents are raised by the alerts task itself, so they stop when that task is stuck or the database is down. Alert on the metrics from outside as well: that is what the rules below are for.
@@ -89,7 +90,7 @@ No server reports metrics: every replica is down, or Prometheus stopped scraping
 A server keeps restarting. The common causes, from its last log lines before each start:
 
 - `connect to database` at start: the database is unreachable or refuses the login ([database interruption](#database-interruption)).
-- Killed without a log line: out of memory. Raise the memory limit; the first OSV download of a large ecosystem and very large ingests use the most.
+- Killed without a log line: out of memory. Look for `heap growing during background work` just before it: it names the job or task ([Memory](#memory)). The kernel log (`journalctl -k | grep -i oom`) confirms the kill.
 - `no space left on device`: [disk exhaustion](#disk-exhaustion).
 - A migration error after an upgrade: stop every replica and follow [Rolling back](install.md#rolling-back).
 
@@ -219,6 +220,31 @@ At least five more assets went stale within an hour (an asset is stale when noth
 ### StackurityAssetsStale
 
 Some assets have not reported for over a day after being marked stale. Their inventory and findings are out of date, their coverage says so, and each workspace has a collection incident for them. Decommissioned hosts belong deleted (or merged), so they stop counting; others need their agent or integration fixed.
+
+## Memory
+
+The server's memory is mostly the Go heap. Background work is built to hold a bounded amount whatever the data: a vulnerability feed sync stores OSV records in batches of at most 500 records and 16 MiB of JSON (Ubuntu kernel records run to megabytes each), and an evaluation reads a package's advisories for the release it evaluates only, and keeps them only while it evaluates that package's rows.
+
+**Which work used the memory.** While a job or periodic task runs, the worker reads the heap every second. When the heap has grown more than 256 MiB since the work started, it logs one warning while the work is still running, so the name is in the log even if the process is then killed:
+
+```
+level=WARN msg="heap growing during background work" work="job feed.sync" job=657 heap_start_mib=60 heap_now_mib=420 grew_mib=360 threshold_mib=256 running="[job feed.sync task alerts]"
+```
+
+and, when it ends, `background work made the heap grow` with the peak. `running` lists everything that was running at the time: the growth belongs to one of them. Set `STACKURITY_HEAP_WARN_MIB` to change the threshold (in MiB), or to `off`.
+
+**Profiles.** With `STACKURITY_METRICS_ADDR` set, the same private listener as `/metrics` also serves Go's heap and goroutine profiles. They are never served on the API port, and nothing else from `net/http/pprof` (no CPU profile or trace) is served at all. The listener has no authentication: keep it on a private network, as for `/metrics`.
+
+```sh
+# from the host (Docker: publish the metrics port to 127.0.0.1 only, or docker exec)
+go tool pprof -top http://127.0.0.1:9090/debug/pprof/heap      # what holds memory
+curl -s 'http://127.0.0.1:9090/debug/pprof/heap?gc=1&debug=1' | head   # text, after a GC
+curl -s 'http://127.0.0.1:9090/debug/pprof/goroutine?debug=2' > goroutines.txt  # every goroutine's stack
+```
+
+Take a heap profile while the warning above is current: it shows which function holds the memory.
+
+**GOMEMLIMIT.** Set it to about 70% of the container's memory limit (`GOMEMLIMIT=1100MiB` for a 1.5 GiB limit). The rest covers what the Go heap does not count: goroutine stacks, the runtime, the WebAssembly runtime for stack packs, and buffers. It is a soft limit: the garbage collector works harder as the heap nears it, which smooths peaks of garbage, but it cannot free memory that is still in use. Work that needs more than the container has is still killed, so treat a kill with `GOMEMLIMIT` set as a bug and report it with the warning line and a heap profile.
 
 ## Maintenance
 

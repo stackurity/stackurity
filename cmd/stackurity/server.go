@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -272,6 +273,11 @@ func serverCmd() *cobra.Command {
 			if tm.JobLock > 0 {
 				w.JobRenew = min(w.JobRenew, tm.JobLock/6)
 			}
+			// A job or task that makes the heap grow past this is named in a
+			// warning, while it runs (docs/operations.md, "Memory").
+			if w.HeapWarn, err = heapWarn(os.Getenv("STACKURITY_HEAP_WARN_MIB")); err != nil {
+				return err
+			}
 			registerJobs(w, st, res, dataDir, log, pluginRunner, packMgr)
 			// Prioritise, correlate, plan and deliver notifications; none
 			// for a read-only workspace.
@@ -302,10 +308,12 @@ func serverCmd() *cobra.Command {
 				mux := http.NewServeMux()
 				mux.Handle("/metrics", &metrics.Handler{Store: st, Health: checker, HTTP: srv.HTTPMetrics, Log: log,
 					Version: version, Edition: edition, Started: time.Now()})
+				// Heap and goroutine profiles, on this private port only.
+				metrics.Profiles(mux)
 				metricsSrv = &http.Server{Addr: metricsAddr, Handler: mux, ReadHeaderTimeout: 10 * time.Second,
 					ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second}
 				go func() {
-					log.Info("serving metrics", "addr", metricsAddr, "path", "/metrics")
+					log.Info("serving metrics", "addr", metricsAddr, "path", "/metrics", "profiles", "/debug/pprof/heap, /debug/pprof/goroutine")
 					errc <- metricsSrv.ListenAndServe()
 				}()
 			}
@@ -1110,6 +1118,23 @@ func truncateLog(s string) string {
 func assetLimitNote(refused, total int) error {
 	return fmt.Errorf("%d of %d assets were not added because this organisation is at its monitored-asset limit; "+
 		"the assets already monitored were updated. See Settings, Usage: %w", refused, total, store.ErrAssetLimit)
+}
+
+// heapWarn parses STACKURITY_HEAP_WARN_MIB: the heap growth, in MiB,
+// during one job or periodic task above which a warning names it. Empty is
+// the default (worker.DefaultHeapWarn), "off" turns the warning off.
+func heapWarn(v string) (int64, error) {
+	switch v = strings.TrimSpace(v); v {
+	case "":
+		return 0, nil
+	case "off":
+		return -1, nil
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil || n <= 0 {
+		return 0, fmt.Errorf("STACKURITY_HEAP_WARN_MIB must be a positive number of MiB or off, not %q", v)
+	}
+	return n << 20, nil
 }
 
 // envOrFile reads NAME, or the file NAME_FILE names (which wins), trimmed.
