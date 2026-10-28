@@ -26,13 +26,20 @@ export interface List<T> {
   offset?: number;
 }
 
+export interface SSOProvider {
+  label: string;
+  login_url: string;
+  protocol: "oidc" | "saml";
+}
+
 export interface Meta {
   name: string;
   version: string;
   api: string;
   setup_required: boolean;
-  /** Present when single sign-on is configured. */
-  sso?: { label: string; login_url: string };
+  /** Present when single sign-on is configured: the first provider, and
+   *  every provider (OpenID Connect, SAML) in providers. */
+  sso?: { label: string; login_url: string; providers?: SSOProvider[] };
   /** Present when people may create their own organisation (a hosted edition). */
   signup?: SignupMeta;
   /** True when organisations manage their plan and billing here (a hosted edition). */

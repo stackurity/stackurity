@@ -15,3 +15,17 @@ STACKURITY_OIDC_ROLE_CLAIM  single sign-on, licensed build
 STACKURITY_OIDC_ROLE_MAP  single sign-on, licensed build
 STACKURITY_OIDC_SCOPES  single sign-on, licensed build
 STACKURITY_OIDC_WORKSPACE  single sign-on, licensed build
+STACKURITY_SAML_ALLOWED_DOMAINS  SAML single sign-on, licensed build
+STACKURITY_SAML_DEFAULT_ROLE  SAML single sign-on, licensed build
+STACKURITY_SAML_EMAIL_ATTRIBUTE  SAML single sign-on, licensed build
+STACKURITY_SAML_ENTITY_ID  SAML single sign-on, licensed build
+STACKURITY_SAML_GROUPS_ATTRIBUTE  SAML single sign-on, licensed build
+STACKURITY_SAML_IDP_INITIATED  SAML single sign-on, licensed build
+STACKURITY_SAML_IDP_METADATA_FILE  SAML single sign-on, licensed build
+STACKURITY_SAML_IDP_METADATA_URL  SAML single sign-on, licensed build
+STACKURITY_SAML_LABEL  SAML single sign-on, licensed build
+STACKURITY_SAML_NAME_ATTRIBUTE  SAML single sign-on, licensed build
+STACKURITY_SAML_ROLE_MAP  SAML single sign-on, licensed build
+STACKURITY_SAML_SP_CERT_FILE  SAML single sign-on, licensed build
+STACKURITY_SAML_SP_KEY_FILE  SAML single sign-on, licensed build
+STACKURITY_SAML_WORKSPACE  SAML single sign-on, licensed build
