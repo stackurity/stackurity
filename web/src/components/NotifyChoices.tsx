@@ -173,7 +173,7 @@ export function StackurityEmailFields({
             ))}
           </div>
         )}
-        <p className="hint">Members get messages straight away.</p>
+        <p className="hint">Members get messages once they have signed in to Stackurity at least once.</p>
       </fieldset>
       <div className="field field-span">
         <label htmlFor={`${idp}-others`}>Other addresses (optional)</label>

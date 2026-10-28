@@ -209,9 +209,10 @@ func (s *Server) slackActions(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "bad_request", "unexpected payload")
 		return
 	}
-	if cfg.SlackApp && cfg.TeamID != p.Team.ID {
+	if cfg.SlackApp && cfg.TeamID != p.Team.ID && cfg.TeamID != p.User.TeamID {
 		// One app serves every organisation: a click is accepted only from
-		// the Slack workspace this channel's install belongs to.
+		// the Slack workspace this channel's install belongs to, or (Slack
+		// Connect) from a person of that workspace in a shared channel.
 		s.Log.Warn("slack action: Slack workspace does not match the channel's install", "channel", ch.ID)
 		slackRefuse(w)
 		return

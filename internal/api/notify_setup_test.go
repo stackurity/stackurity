@@ -2,8 +2,10 @@ package api_test
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
+	"net/url"
 	"regexp"
 	"slices"
 	"strings"
@@ -64,6 +66,7 @@ func TestPlatformEmailChannels(t *testing.T) {
 	e.user("admin@x.io", auth.RoleAdmin)
 	e.user("member@x.io", auth.RoleViewer)
 	admin := e.login("admin@x.io")
+	e.login("member@x.io") // a member's address counts once they have signed in
 	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
 	users, _ := e.st.ListUsers(ctx)
 	var memberID int64
@@ -107,7 +110,8 @@ func TestPlatformEmailChannels(t *testing.T) {
 		t.Fatalf("create: %d", code)
 	}
 	token := box.token("outside@example.com")
-	if token == "" || len(box.msgs) != 1 || !strings.Contains(box.msgs[0].Title, "Confirm Stackurity notifications") {
+	if token == "" || len(box.msgs) != 1 || box.msgs[0].Title != "Confirm you want Stackurity alerts" ||
+		!strings.Contains(strings.Join(box.msgs[0].Summary, " "), `named "Default"`) {
 		t.Fatalf("confirmation emails: %v %+v", box.to, box.msgs)
 	}
 	var list struct{ Items []store.EmailRecipient }
@@ -142,9 +146,147 @@ func TestPlatformEmailChannels(t *testing.T) {
 	if code := admin.do("POST", "/api/v1/channels/"+itoa(ch.ID)+"/test", nil, &res); code != 200 || !res.OK {
 		t.Fatalf("test: %d %+v", code, res)
 	}
-	last := box.to[len(box.to)-1]
-	if !slices.Equal(last, []string{"member@x.io", "outside@example.com"}) {
-		t.Errorf("test went to %v", last)
+	n := len(box.to)
+	if !slices.Equal(box.to[n-2], []string{"member@x.io"}) || !slices.Equal(box.to[n-1], []string{"outside@example.com"}) {
+		t.Errorf("test went to %v", box.to[n-2:])
+	}
+}
+
+func platformEmailEnv(t *testing.T, box *apiMailbox) *env {
+	t.Helper()
+	e := newEnvWith(t, func(s *api.Server) {
+		s.Dispatcher = &notify.Dispatcher{Store: s.Store, Sender: notify.NewSender(false), BaseURL: "https://stk.example",
+			Log: slog.New(slog.NewTextHandler(io.Discard, nil)), PlatformMail: box}
+		s.InviteOnly = true
+	})
+	e.user("admin@x.io", auth.RoleAdmin)
+	return e
+}
+
+// Confirmation emails cannot be used to mail a stranger again and again:
+// one pending request at a time across organisations, none again on an
+// edit, at most 3 a week, a fixed subject, and "never email me again".
+func TestEmailConfirmationLimits(t *testing.T) {
+	box := &apiMailbox{}
+	e := platformEmailEnv(t, box)
+	admin := e.login("admin@x.io")
+	var a store.Channel
+	if code := admin.do("POST", "/api/v1/channels", map[string]any{"kind": "stackurity_email", "name": "mail",
+		"config": map[string]any{"to": []string{"target@example.com"}}}, &a); code != 201 || len(box.msgs) != 1 {
+		t.Fatalf("create: %d, %d emails", code, len(box.msgs))
+	}
+	// Editing the channel does not ask again.
+	if code := admin.do("PATCH", "/api/v1/channels/"+itoa(a.ID), map[string]any{"name": "mail 2",
+		"config": map[string]any{"to": []string{"target@example.com", "second@example.com"}}}, nil); code != 200 || len(box.msgs) != 2 ||
+		box.to[1][0] != "second@example.com" {
+		t.Fatalf("edit: %d, sent to %v", code, box.to)
+	}
+	// Another organisation asking for the same address while one is pending: no email.
+	ctx := context.Background()
+	if _, _, err := e.st.CreateWorkspace(ctx, "Beta", "", "beta@x.io", "", pw); err != nil {
+		t.Fatal(err)
+	}
+	beta := e.login("beta@x.io")
+	if code := beta.do("POST", "/api/v1/channels", map[string]any{"kind": "stackurity_email", "name": "mail",
+		"config": map[string]any{"to": []string{"target@example.com"}}}, nil); code != 201 || len(box.msgs) != 2 {
+		t.Fatalf("second organisation: %d, %d emails", code, len(box.msgs))
+	}
+	// The address says never again: blocked for every organisation.
+	token := box.token("target@example.com")
+	if !strings.Contains(strings.Join(box.msgs[0].Summary, " "), "#"+token) {
+		t.Fatal("no confirmation link")
+	}
+	anon := e.anon()
+	if code := anon.do("POST", "/api/v1/email-recipients/block", map[string]string{"token": "emc_guessed"}, nil); code != 410 {
+		t.Errorf("guessed block token: %d", code)
+	}
+	if code := anon.do("POST", "/api/v1/email-recipients/block", map[string]string{"token": token}, nil); code != 200 {
+		t.Fatalf("block: %d", code)
+	}
+	if blocked, _ := e.st.EmailBlocked(ctx, "Target@Example.com"); !blocked {
+		t.Fatal("not blocked")
+	}
+	if code := anon.do("POST", "/api/v1/email-recipients/confirm", map[string]string{"token": token}, nil); code != 410 {
+		t.Errorf("confirm after block: %d", code)
+	}
+	if code := beta.do("POST", "/api/v1/channels", map[string]any{"kind": "stackurity_email", "name": "mail 2",
+		"config": map[string]any{"to": []string{"target@example.com"}}}, nil); code != 201 || len(box.msgs) != 2 {
+		t.Errorf("blocked address emailed: %d, %d emails", code, len(box.msgs))
+	}
+	// At most 3 confirmation emails a week to one address.
+	wctx := tenant.WithWorkspace(ctx, tenant.DefaultWorkspace)
+	sent := 0
+	for i := 0; i < 5; i++ {
+		if _, err := e.st.Pool.Exec(wctx, `UPDATE email_recipients SET expires_at = now() - interval '1 second' WHERE email = 'weekly@example.com'`); err != nil {
+			t.Fatal(err)
+		}
+		tok, err := e.st.RequestEmailConfirmations(wctx, []string{"weekly@example.com"}, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if tok["weekly@example.com"] != "" {
+			sent++
+		}
+	}
+	if sent != 3 {
+		t.Errorf("%d confirmation emails in a week, want 3", sent)
+	}
+	// Accounts are made by invitation on such a service.
+	if code := admin.do("POST", "/api/v1/users", map[string]any{"email": "made-up@example.com", "role": "viewer", "password": pw}, nil); code != 403 {
+		t.Errorf("direct account creation: %d", code)
+	}
+}
+
+// Every email sent by Stackurity has a signed one-click unsubscribe.
+func TestEmailUnsubscribe(t *testing.T) {
+	box := &apiMailbox{}
+	e := platformEmailEnv(t, box)
+	e.user("member@x.io", auth.RoleViewer)
+	admin := e.login("admin@x.io")
+	e.login("member@x.io")
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	users, _ := e.st.ListUsers(ctx)
+	var memberID int64
+	for _, u := range users {
+		if u.Email == "member@x.io" {
+			memberID = u.ID
+		}
+	}
+	var ch store.Channel
+	if code := admin.do("POST", "/api/v1/channels", map[string]any{"kind": "stackurity_email", "name": "mail",
+		"config": map[string]any{"user_ids": []int64{memberID}, "to": []string{"outside@example.com"}}}, &ch); code != 201 {
+		t.Fatalf("create: %d", code)
+	}
+	key, err := e.st.PlatformKey(ctx, "email-unsubscribe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	anon := e.anon()
+	bad := notify.UnsubscribeToken([]byte("guessed key"), tenant.DefaultWorkspace, "outside@example.com")
+	if code := anon.do("POST", "/api/v1/email/unsubscribe", map[string]string{"token": bad}, nil); code != 410 {
+		t.Errorf("forged token: %d", code)
+	}
+	var out map[string]string
+	if code := anon.do("POST", "/api/v1/email/unsubscribe", map[string]string{"token": notify.UnsubscribeToken(key, tenant.DefaultWorkspace, "outside@example.com")}, &out); code != 200 ||
+		out["email"] != "outside@example.com" || out["organisation"] != "Default" {
+		t.Fatalf("unsubscribe: %d %v", code, out)
+	}
+	// The mail client's one-click POST (RFC 8058), for the member.
+	resp := anon.req("POST", "/email/unsubscribe/one-click?t="+url.QueryEscape(notify.UnsubscribeToken(key, tenant.DefaultWorkspace, "member@x.io")),
+		strings.NewReader("List-Unsubscribe=One-Click"), map[string]string{"Content-Type": "application/x-www-form-urlencoded"})
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("one-click: %d", resp.StatusCode)
+	}
+	got, _ := e.st.GetChannel(ctx, ch.ID)
+	var cfg notify.ChannelConfig
+	_ = json.Unmarshal(got.Config, &cfg)
+	if len(cfg.To) != 0 || len(cfg.UserIDs) != 0 {
+		t.Errorf("still subscribed: %+v", cfg)
+	}
+	var list struct{ Items []store.EmailRecipient }
+	if admin.do("GET", "/api/v1/email-recipients", nil, &list); len(list.Items) != 0 {
+		t.Errorf("recipients kept: %+v", list.Items)
 	}
 }
 
@@ -204,5 +346,49 @@ func TestRouteEventsAPI(t *testing.T) {
 		"events": []string{"urgent", "daily_summary"}, "event_channels": map[string]int64{"daily_summary": slackB.ID, "urgent": slackA.ID}}, &r); code != 201 ||
 		len(r.EventChannels) != 1 || r.EventChannels["daily_summary"] != slackB.ID || r.Mode != "custom" {
 		t.Fatalf("slack overrides: %d %+v", code, r)
+	}
+	// A new client changes the events only: mode is ignored when it is the
+	// stored one or custom, and fields left out keep their values.
+	r = store.Route{ID: r.ID}
+	if code := admin.do("PUT", "/api/v1/routes/"+itoa(r.ID), map[string]any{"name": "slack", "channel_id": slackA.ID, "enabled": true,
+		"events": []string{"urgent", "weekly_summary"}}, &r); code != 200 ||
+		!slices.Equal(r.Events, []string{"urgent", "weekly_summary"}) || len(r.EventChannels) != 0 {
+		t.Fatalf("new client: %d %+v", code, r)
+	}
+	// Overrides are kept when left out, for events the route still sends.
+	if code := admin.do("PUT", "/api/v1/routes/"+itoa(r.ID), map[string]any{"name": "slack", "channel_id": slackA.ID, "enabled": true,
+		"events": []string{"urgent", "weekly_summary", "daily_summary"}, "event_channels": map[string]int64{"daily_summary": slackB.ID},
+		"new_min_priority": "P3"}, &r); code != 200 || r.EventChannels["daily_summary"] != slackB.ID {
+		t.Fatalf("set override: %d %+v", code, r)
+	}
+	r = store.Route{ID: r.ID}
+	if code := admin.do("PUT", "/api/v1/routes/"+itoa(r.ID), map[string]any{"name": "slack", "channel_id": slackA.ID, "enabled": false,
+		"mode": "custom"}, &r); code != 200 || !slices.Equal(r.Events, []string{"urgent", "weekly_summary", "daily_summary"}) || r.Enabled ||
+		r.EventChannels["daily_summary"] != slackB.ID || r.NewMinPriority != "P3" {
+		t.Fatalf("no events sent: %d %+v", code, r)
+	}
+	// A mode change that contradicts events the client also changed: 400.
+	if code := admin.do("PUT", "/api/v1/routes/"+itoa(r.ID), map[string]any{"name": "slack", "channel_id": slackA.ID, "enabled": true,
+		"mode": "daily", "events": []string{"connected"}}, nil); code != 400 {
+		t.Errorf("conflicting mode and events: %d", code)
+	}
+	r = store.Route{ID: r.ID}
+	// An older client round-trips the whole route with a new mode.
+	var rt map[string]any
+	admin.do("GET", "/api/v1/routes", nil, nil)
+	var list struct{ Items []map[string]any }
+	admin.do("GET", "/api/v1/routes", nil, &list)
+	for _, x := range list.Items {
+		if x["name"] == "slack" {
+			rt = x
+		}
+	}
+	for _, k := range []string{"id", "created_at", "last_summary_at", "last_weekly_summary_at"} {
+		delete(rt, k)
+	}
+	rt["mode"] = "daily"
+	if code := admin.do("PUT", "/api/v1/routes/"+itoa(r.ID), rt, &r); code != 200 || !slices.Equal(r.Events, []string{"daily_summary"}) ||
+		r.Mode != "daily" || r.EventChannels["daily_summary"] != slackB.ID || r.NewMinPriority != "P3" {
+		t.Fatalf("old client round-trip: %d %+v", code, r)
 	}
 }

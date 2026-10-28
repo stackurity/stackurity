@@ -7,7 +7,7 @@ Stackurity Cloud has this app. On your own server it is optional: without it, Sl
 ## What the app asks for
 
 - **Scope: `incoming-webhook` only.** Slack's consent page then shows a channel picker, and Stackurity receives that channel's webhook and a bot token. It cannot read messages, list channels or post anywhere else.
-- **Interactivity** at `/api/v1/integrations/slack/actions`, for the buttons. Clicks on channels added with the app are verified with the app's signing secret, must be at most 5 minutes old, are accepted once, and must come from the Slack workspace the app was installed into from that organisation (a click from any other Slack workspace is refused). The person then acts as their linked Stackurity account, exactly as described in [Acting from Slack](install.md#acting-from-slack).
+- **Interactivity** at `/api/v1/integrations/slack/actions`, for the buttons. Clicks on channels added with the app are verified with the app's signing secret, must be at most 5 minutes old, are accepted once (events too), and must come from the Slack workspace the app was installed into from that organisation (a click from any other Slack workspace is refused). The person then acts as their linked Stackurity account, exactly as described in [Acting from Slack](install.md#acting-from-slack).
 - **Events** `app_uninstalled` and `tokens_revoked` at `/api/v1/integrations/slack/events`: when someone removes the app from Slack, every organisation's Slack integrations for that Slack workspace are switched off with a note ("The Stackurity app was removed from this Slack workspace. Add to Slack again to resume."), and their webhooks and tokens are deleted.
 
 ## How it works
@@ -16,7 +16,8 @@ Stackurity Cloud has this app. On your own server it is optional: without it, Sl
 2. Slack sends the browser back to `/integrations/slack/oauth/callback?code=...&state=...`. That dashboard page, in the signed-in session, posts the code and state to `POST /api/v1/integrations/slack/oauth`. A state that is unknown, used, expired, another person's or another organisation's is refused before Slack is called.
 3. The server exchanges the code with Slack (`oauth.v2.access`, with the client ID and secret), checks the webhook is on `hooks.slack.com`, and creates a Slack integration named after the channel and Slack workspace.
 4. The webhook URL is stored as an encrypted workspace secret (`slack-app-<team>-<channel>`), and the bot token sealed the same way (AES-GCM with `STACKURITY_SECRET_KEY`, bound to the organisation) in `slack_installations`. Neither is ever returned by the API or shown in the dashboard. **Add to Slack needs `STACKURITY_SECRET_KEY`.**
-5. Deleting the last such integration for a Slack workspace removes the app from that Slack workspace (`apps.uninstall`) unless another organisation on the server still uses it there.
+5. Adding the app to a Slack channel that already has an integration refreshes it (new webhook, switched back on). Each integration's webhook is its own secret.
+6. Deleting the last such integration for a Slack workspace removes the app from that Slack workspace (`apps.uninstall`) unless another organisation on the server still uses it there.
 
 One Slack app serves every organisation on the server. A Slack workspace can be connected from several organisations; each gets its own channel webhook.
 

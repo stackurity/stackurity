@@ -3,6 +3,7 @@ package notify
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"regexp"
 	"strconv"
 
@@ -53,6 +54,18 @@ func (d *Dispatcher) enqueueTo(ctx context.Context, r store.Route, channelID int
 		}
 		return nil
 	}
-	_, err := d.Store.EnqueueDelivery(ctx, channelID, &r.ID, nil, event, key, msg)
-	return err
+	if _, err := d.Store.EnqueueDelivery(ctx, channelID, &r.ID, nil, event, key, msg); err != nil {
+		// One route's message that cannot be queued must not stop every
+		// other route's: it is logged, and the route's channel shows the
+		// error (Platform health lists failing channels).
+		if ctx.Err() != nil {
+			return err
+		}
+		if d.Log != nil {
+			d.Log.Error("notification could not be queued; skipped", "route", r.ID, "channel", channelID, "event", event, "err", err)
+		}
+		_ = d.Store.ChannelResult(context.WithoutCancel(ctx), r.ChannelID, fmt.Errorf("a %s message of route %q could not be queued: %w", event, r.Name, err))
+		return nil
+	}
+	return nil
 }

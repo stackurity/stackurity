@@ -263,14 +263,37 @@ func TestPlatformEmail(t *testing.T) {
 		t.Fatalf("tokens %v %v", tokens, err)
 	}
 
-	// Three issues on three assets: one message, to the member only.
+	// A member who never signed in (an account an admin made) gets
+	// nothing: the address is not proven.
 	f.addAsset("a", "production", true)
 	f.addAsset("b", "production", true)
 	f.addAsset("c", "production", true)
+	if to, err := d.recipients(ctx, ch); err != nil || len(to) != 0 {
+		t.Fatalf("unproven member is a recipient: %v %v", to, err)
+	}
+	if _, err := st.Pool.Exec(ctx, `UPDATE users SET last_login_at = now() WHERE id = $1`, u.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Three issues on three assets: one message, to the member only, with
+	// a link to stop these emails and one-click unsubscribe headers.
 	f.setFindings("a", "b", "c")
 	f.tick()
 	if box.count() != 1 || !slices.Equal(box.sent[0], []string{"member@example.com"}) || box.msgs[0].Event != EventUrgent {
 		t.Fatalf("sent %v %+v", box.sent, box.msgs)
+	}
+	m := box.msgs[0]
+	raw := string(buildEmail("x@y.z", []string{"member@example.com"}, m))
+	if !strings.HasPrefix(m.unsubscribe, "https://stk.example/email/unsubscribe#") || !strings.Contains(m.Text(), "Stop these emails: https://stk.example/email/unsubscribe#") ||
+		!strings.Contains(raw, "List-Unsubscribe: <https://stk.example/email/unsubscribe/one-click?t=") || !strings.Contains(raw, "List-Unsubscribe-Post: List-Unsubscribe=One-Click") {
+		t.Errorf("unsubscribe link and headers missing:\n%s", raw[:min(len(raw), 800)])
+	}
+	key, _ := st.PlatformKey(ctx, unsubscribeKeyName)
+	if w, e, ok := ParseUnsubscribeToken(key, strings.SplitN(m.unsubscribe, "#", 2)[1]); !ok || w != tenant.DefaultWorkspace || e != "member@example.com" {
+		t.Errorf("token = %d %q %v", w, e, ok)
+	}
+	if _, _, ok := ParseUnsubscribeToken(key, UnsubscribeToken([]byte("other key"), tenant.DefaultWorkspace, "member@example.com")); ok {
+		t.Error("a token signed with another key was accepted")
 	}
 
 	// The outside address confirms and receives from then on.
@@ -312,13 +335,13 @@ func TestPlatformEmail(t *testing.T) {
 	if err := d.Deliver(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if box.count() != 2 {
+	if box.count() != 3 {
 		t.Fatalf("summary not sent after the limit freed: %d", box.count())
 	}
 	sum := box.msgs[1]
 	if sum.Event != EventSummary || sum.Counts["held"] != 1 || !strings.Contains(strings.Join(sum.Summary, "\n"), "held back by the email limit") ||
-		!slices.Equal(box.sent[1], []string{"member@example.com", "outside@example.com"}) {
-		t.Errorf("summary = %+v to %v", sum.Summary, box.sent[1])
+		box.count() != 3 || !slices.Equal(box.sent[1], []string{"member@example.com"}) || !slices.Equal(box.sent[2], []string{"outside@example.com"}) {
+		t.Errorf("summary = %+v to %v", sum.Summary, box.sent[1:])
 	}
 	held, _, _ = st.ListDeliveries(ctx, store.DeliveryFilter{Status: "held"})
 	all, _, _ := st.ListDeliveries(ctx, store.DeliveryFilter{})
@@ -379,5 +402,66 @@ func TestSummaryFixedIsRemediationOnly(t *testing.T) {
 	if sm.Counts["fixed"] != 1 || sm.Counts["no_longer_affected"] != 1 || !strings.Contains(sm.Title, "1 fixed") ||
 		!strings.Contains(text, "1 issue closed without a fix") {
 		t.Errorf("summary %q counts %v\n%s", sm.Title, sm.Counts, text)
+	}
+}
+
+// A channel some events go to (event_channels) that is disabled, deleted
+// or otherwise gone never stops notifications: the events go to the
+// route's own channel, deleting the channel takes it out of the routes,
+// and a message that cannot be queued is skipped, not the whole pass.
+func TestEventChannelGone(t *testing.T) {
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	f := setup(t)
+	other := &hook{}
+	os := httptest.NewServer(other)
+	t.Cleanup(os.Close)
+	cfg, _ := json.Marshal(ChannelConfig{URL: os.URL})
+	ch, _ := f.st.CreateChannel(ctx, KindWebhook, "other", cfg, "")
+	routes, _ := f.st.ListRoutes(ctx)
+	r := routes[0]
+	r.Mode, r.Events, r.EventChannels = "", store.EventsForMode(store.ModeUrgentSummary), map[string]int64{store.EventUrgent: ch.ID}
+	if _, err := f.st.SaveRoute(ctx, r); err != nil {
+		t.Fatal(err)
+	}
+	// Disabled: urgent goes to the route's own channel.
+	off := false
+	if err := f.st.UpdateChannel(ctx, ch.ID, nil, nil, nil, &off); err != nil {
+		t.Fatal(err)
+	}
+	f.addAsset("a", "production", true)
+	f.setFindings("a")
+	f.tick()
+	if ev := f.hook.events(); len(ev) != 1 || !strings.HasPrefix(ev[0], "urgent") || len(other.events()) != 0 {
+		t.Fatalf("disabled override: route channel %v, other %v", ev, other.events())
+	}
+	// Deleted: the route no longer names it.
+	changed, err := f.st.DeleteChannelFromRoutes(ctx, ch.ID)
+	if err != nil || len(changed) != 1 || changed[0] != "main" {
+		t.Fatalf("delete: %v %v", changed, err)
+	}
+	got, _ := f.st.GetRoute(ctx, r.ID)
+	if len(got.EventChannels) != 0 {
+		t.Errorf("event_channels after delete: %v", got.EventChannels)
+	}
+	// A reference to no channel at all (written before this fix): the
+	// pass still runs and the message goes to the route's channel.
+	if _, err := f.st.Pool.Exec(ctx, `UPDATE routes SET event_channels = '{"urgent": 999999}' WHERE id = $1`, r.ID); err != nil {
+		t.Fatal(err)
+	}
+	f.addAsset("d", "production", true)
+	f.setFindings("a", "d")
+	if _, err := f.st.Pool.Exec(ctx, `UPDATE findings SET key = 'CVE-NEW' WHERE asset_id = $1`, f.asset["d"]); err != nil {
+		t.Fatal(err)
+	}
+	f.tick()
+	if ev := f.hook.events(); len(ev) != 2 {
+		t.Fatalf("stale reference: %v", ev)
+	}
+	// A message that cannot be queued is skipped and shown on the channel.
+	if err := f.d.enqueueTo(ctx, r, 999999, EventUrgent, "k", Message{Event: EventUrgent, Title: "x"}); err != nil {
+		t.Fatalf("enqueue failure aborted: %v", err)
+	}
+	if c, _ := f.st.GetChannel(ctx, r.ChannelID); !strings.Contains(c.LastError, "could not be queued") {
+		t.Errorf("channel error = %q", c.LastError)
 	}
 }

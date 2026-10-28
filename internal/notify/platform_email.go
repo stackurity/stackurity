@@ -2,11 +2,18 @@ package notify
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/stackurity/stackurity/internal/tenant"
 
 	"github.com/stackurity/stackurity/internal/store"
 )
@@ -87,7 +94,7 @@ func (d *Dispatcher) recipients(ctx context.Context, ch *store.Channel) ([]strin
 	if err := json.Unmarshal(ch.Config, &cfg); err != nil {
 		return nil, err
 	}
-	out, err := d.Store.MemberEmails(ctx, cfg.UserIDs)
+	out, err := d.Store.MemberEmails(ctx, cfg.UserIDs, true)
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +149,10 @@ func (d *Dispatcher) quotaCheck(ctx context.Context, ch *store.Channel, del stor
 	return 0, false, d.Store.HoldDeliveryBy(ctx, del.ID, store.HeldEmailQuota, why)
 }
 
-// sendPlatformEmail delivers to a stackurity_email channel.
+// sendPlatformEmail delivers to a stackurity_email channel: one email per
+// recipient, each with its own link to stop these emails and the
+// List-Unsubscribe headers (RFC 8058). If some recipients fail, the
+// delivery is retried for all, so delivery is at least once.
 func (d *Dispatcher) sendPlatformEmail(ctx context.Context, ch *store.Channel, msg Message) error {
 	if d.PlatformMail == nil {
 		return &PermanentError{Err: errors.New("email sent by Stackurity is not available on this server")}
@@ -154,31 +164,95 @@ func (d *Dispatcher) sendPlatformEmail(ctx context.Context, ch *store.Channel, m
 	if len(to) == 0 {
 		return errNoRecipients
 	}
-	sctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	return d.PlatformMail.SendMail(sctx, to, msg)
+	ws, _ := tenant.Workspace(ctx)
+	key, err := d.Store.PlatformKey(ctx, unsubscribeKeyName)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, addr := range to {
+		m := msg
+		token := UnsubscribeToken(key, ws, addr)
+		m.unsubscribe, m.oneClick = d.url("/email/unsubscribe", nil)+"#"+token, d.url("/email/unsubscribe/one-click", url.Values{"t": {token}})
+		sctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		err := d.PlatformMail.SendMail(sctx, []string{addr}, m)
+		cancel()
+		if err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
+
+const unsubscribeKeyName = "email-unsubscribe"
+
+// UnsubscribeToken is the signed token in a recipient's "Stop these
+// emails" link: the organisation and address, and an HMAC over them with
+// the installation's key, so nobody can make one for another address.
+func UnsubscribeToken(key []byte, ws int64, email string) string {
+	payload := strconv.FormatInt(ws, 10) + ":" + strings.ToLower(email)
+	mac := hmac.New(sha256.New, key)
+	mac.Write([]byte("unsubscribe:" + payload))
+	return base64.RawURLEncoding.EncodeToString([]byte(payload)) + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil)[:18])
+}
+
+// ParseUnsubscribeToken checks a token and returns its organisation and
+// address.
+func ParseUnsubscribeToken(key []byte, token string) (ws int64, email string, ok bool) {
+	p, sig, found := strings.Cut(token, ".")
+	if !found || len(token) > 600 {
+		return 0, "", false
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(p)
+	if err != nil {
+		return 0, "", false
+	}
+	id, addr, found := strings.Cut(string(raw), ":")
+	if !found {
+		return 0, "", false
+	}
+	if ws, err = strconv.ParseInt(id, 10, 64); err != nil || ws <= 0 {
+		return 0, "", false
+	}
+	want := UnsubscribeToken(key, ws, addr)
+	if !hmac.Equal([]byte(want), []byte(p+"."+sig)) {
+		return 0, "", false
+	}
+	return ws, addr, true
+}
+
+// UnsubscribeKey is the key that signs unsubscribe links.
+func (d *Dispatcher) UnsubscribeKey(ctx context.Context) ([]byte, error) {
+	return d.Store.PlatformKey(ctx, unsubscribeKeyName)
+}
+
+// confirmSubject is the subject of every confirmation email. It is fixed:
+// nothing an organisation types goes in it.
+const confirmSubject = "Confirm you want Stackurity alerts"
 
 // SendEmailConfirmations emails a confirmation link to each address of the
 // context's workspace that must confirm before email sent by Stackurity
-// reaches it. organisation and inviter name who asks.
-func (d *Dispatcher) SendEmailConfirmations(ctx context.Context, tokens map[string]string, organisation, inviter string) error {
+// reaches it. The organisation's name is quoted and shortened in the body;
+// the subject is fixed. Each email has a "Never email me again" link that
+// blocks the address for every organisation.
+func (d *Dispatcher) SendEmailConfirmations(ctx context.Context, tokens map[string]string, organisation string) error {
 	if d.PlatformMail == nil || len(tokens) == 0 {
 		return nil
 	}
+	org := strings.Join(strings.Fields(organisation), " ")
+	if r := []rune(org); len(r) > 60 {
+		org = string(r[:60]) + "…"
+	}
 	var errs []error
 	for email, token := range tokens {
-		link := strings.TrimSuffix(d.BaseURL, "/") + "/email/confirm#" + token
-		who := organisation
-		if inviter != "" {
-			who = inviter + " at " + organisation
-		}
-		m := Message{Event: "confirm_email", Title: "Confirm Stackurity notifications from " + organisation, At: d.now().UTC(),
+		m := Message{Event: "confirm_email", Title: confirmSubject, At: d.now().UTC(),
 			Summary: []string{
-				who + " wants to send Stackurity security notifications to this address.",
-				"To receive them, confirm within 7 days: " + link,
-				"If you do not know them, ignore this email: nothing will be sent to you.",
+				fmt.Sprintf("An organisation on Stackurity named %q asked to send security alerts to this address.", org),
+				"To receive them, confirm within 7 days: " + d.url("/email/confirm", nil) + "#" + token,
+				"If you did not expect this, ignore this email: nothing will be sent to you.",
 			}}
+		m.unsubscribe, m.unsubscribeLabel = d.url("/email/block", nil)+"#"+token, "Never email me again (from any organisation)"
+		m.oneClick = d.url("/email/block/one-click", url.Values{"t": {token}})
 		id, err := d.Store.ReserveEmails(ctx, 1, d.EmailLimits())
 		if err != nil {
 			errs = append(errs, err)

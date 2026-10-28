@@ -1,9 +1,11 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"github.com/stackurity/stackurity/internal/license"
+	"io"
 	"net/http"
 	"slices"
 	"strings"
@@ -433,7 +435,7 @@ func (s *Server) createChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = s.Store.Audit(r.Context(), principal(r).Actor(r), "channel.create", "channel", itoa(c.ID), map[string]string{"kind": c.Kind, "name": c.Name})
 	if c.Kind == notify.KindStackurityEmail {
-		s.requestConfirmations(r, c)
+		s.requestConfirmations(r, c, nil)
 	}
 	writeJSON(w, 201, c)
 }
@@ -494,7 +496,7 @@ func (s *Server) updateChannel(w http.ResponseWriter, r *http.Request) {
 	_ = s.Store.Audit(r.Context(), principal(r).Actor(r), "channel.update", "channel", itoa(id), map[string]any{"name": req.Name, "enabled": req.Enabled})
 	c, _ := s.Store.GetChannel(r.Context(), id)
 	if c != nil && c.Kind == notify.KindStackurityEmail && len(req.Config) > 0 {
-		s.requestConfirmations(r, c)
+		s.requestConfirmations(r, c, cur.Config)
 	}
 	writeJSON(w, 200, c)
 }
@@ -510,12 +512,18 @@ func (s *Server) deleteChannel(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	if err := s.Store.DeleteChannel(r.Context(), id); err != nil {
+	changed, err := s.Store.DeleteChannelFromRoutes(r.Context(), id)
+	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
 	s.forgetSlackApp(r.Context(), cur)
-	_ = s.Store.Audit(r.Context(), principal(r).Actor(r), "channel.delete", "channel", itoa(id), nil)
+	var detail map[string]any
+	if len(changed) > 0 {
+		// Events these routes sent to the channel go to their own channel.
+		detail = map[string]any{"routes_changed": changed}
+	}
+	_ = s.Store.Audit(r.Context(), principal(r).Actor(r), "channel.delete", "channel", itoa(id), detail)
 	w.WriteHeader(204)
 }
 
@@ -545,8 +553,29 @@ func (s *Server) testChannel(w http.ResponseWriter, r *http.Request) {
 var priorities = map[string]bool{"P1": true, "P2": true, "P3": true, "P4": true}
 
 func (s *Server) saveRoute(w http.ResponseWriter, r *http.Request, id int64) {
+	body, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, maxJSONBody))
+	if err != nil {
+		s.fail(w, r, badRequest("request too large"))
+		return
+	}
+	r.Body = io.NopCloser(bytes.NewReader(body))
 	var rt store.Route
 	if err := decode(r, &rt); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	// Which fields the request names: fields left out keep their value on
+	// PUT (event_channels, new_min_priority, events).
+	var sent map[string]json.RawMessage
+	_ = json.Unmarshal(body, &sent)
+	var cur *store.Route
+	if id > 0 {
+		if cur, err = s.Store.GetRoute(r.Context(), id); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+	}
+	if err := resolveRouteEvents(&rt, cur, sent); err != nil {
 		s.fail(w, r, err)
 		return
 	}
@@ -558,12 +587,6 @@ func (s *Server) saveRoute(w http.ResponseWriter, r *http.Request, id int64) {
 	if rt.MinPriority == "" {
 		rt.MinPriority = "P1"
 	}
-	events, err := store.ResolveEvents(rt.Mode, rt.Events)
-	if err != nil {
-		s.fail(w, r, badRequest("mode must be urgent_summary, urgent_weekly, urgent_only, daily or weekly (or send events)"))
-		return
-	}
-	rt.Events = events
 	if rt.NewMinPriority == "" {
 		rt.NewMinPriority = "P4"
 	}
@@ -642,6 +665,82 @@ func (s *Server) saveRoute(w http.ResponseWriter, r *http.Request, id int64) {
 	}
 	_ = s.Store.Audit(r.Context(), principal(r).Actor(r), action, "route", itoa(out.ID), out)
 	writeJSON(w, map[bool]int{true: 201, false: 200}[id == 0], out)
+}
+
+// resolveRouteEvents decides what a saved route sends from the request
+// and, on PUT, the stored route:
+//
+//   - mode absent, custom, or the stored mode: the events sent, or else
+//     the stored ones (POST: the default mode's);
+//   - mode changed to a named mode: that mode's events. Events sent with it
+//     must match the mode, or be the stored events unchanged (an older
+//     client sending back what it read); otherwise 400;
+//   - event_channels and new_min_priority keep their stored value unless
+//     the request names them.
+func resolveRouteEvents(rt, cur *store.Route, sent map[string]json.RawMessage) error {
+	_, hasEvents := sent["events"]
+	mode := rt.Mode
+	named := mode != "" && mode != store.ModeCustom
+	changed := named && (cur == nil || mode != cur.Mode)
+	same := sameStrings
+	switch {
+	case changed:
+		modeEvents := store.EventsForMode(mode)
+		if modeEvents == nil {
+			return badRequest("mode must be urgent_summary, urgent_weekly, urgent_only, daily or weekly (or send events)")
+		}
+		if hasEvents && !same(rt.Events, modeEvents) && (cur == nil || !same(rt.Events, cur.Events)) {
+			return badRequest("mode and events disagree: send events only (mode is kept for older clients)")
+		}
+		rt.Events = modeEvents
+	case hasEvents:
+		if rt.Events == nil {
+			rt.Events = []string{}
+		}
+	case cur != nil:
+		rt.Events = cur.Events
+	default:
+		rt.Events = store.EventsForMode(store.ModeUrgentSummary)
+	}
+	if _, ok := sent["event_channels"]; !ok && cur != nil {
+		// Kept, except for events the route no longer sends.
+		sends := uniqueStrings(rt.Events)
+		rt.EventChannels = map[string]int64{}
+		for e, id := range cur.EventChannels {
+			if sends[e] {
+				rt.EventChannels[e] = id
+			}
+		}
+	}
+	if _, ok := sent["new_min_priority"]; !ok && cur != nil {
+		rt.NewMinPriority = cur.NewMinPriority
+	}
+	rt.Mode = "" // derived from the events when saved
+	return nil
+}
+
+func sameStrings(a, b []string) bool {
+	set := map[string]bool{}
+	for _, x := range a {
+		set[x] = true
+	}
+	if len(set) != len(uniqueStrings(b)) {
+		return false
+	}
+	for _, x := range b {
+		if !set[x] {
+			return false
+		}
+	}
+	return true
+}
+
+func uniqueStrings(a []string) map[string]bool {
+	out := map[string]bool{}
+	for _, x := range a {
+		out[x] = true
+	}
+	return out
 }
 
 // checkRouteEvents validates a route's events and the channels some of

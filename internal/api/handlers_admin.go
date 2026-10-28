@@ -37,6 +37,10 @@ type userRequest struct {
 }
 
 func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
+	if s.InviteOnly {
+		writeError(w, 403, "invite_only", "people join this service by invitation: invite them (Settings → Users, or a project's Invite) and they set up their own account")
+		return
+	}
 	var req userRequest
 	if err := decode(r, &req); err != nil {
 		s.fail(w, r, err)

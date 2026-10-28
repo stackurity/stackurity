@@ -130,3 +130,23 @@ CREATE TRIGGER slack_oauth_states_user_id_same_ws BEFORE INSERT OR UPDATE OF use
 ALTER TABLE slack_oauth_states ENABLE ROW LEVEL SECURITY, FORCE ROW LEVEL SECURITY;
 CREATE POLICY ws ON slack_oauth_states USING (workspace_id = stackurity_ws()) WITH CHECK (workspace_id = stackurity_ws());
 CREATE POLICY sys ON slack_oauth_states USING (stackurity_system()) WITH CHECK (stackurity_system());
+
+-- 5. Addresses that asked never to be emailed by Stackurity again (the
+-- "Never email me again" link in a confirmation email), for every
+-- organisation. Only the SHA-256 of the lower-cased address is kept.
+CREATE TABLE email_blocks (
+    email_hash  bytea PRIMARY KEY,
+    blocked_at  timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE email_blocks ENABLE ROW LEVEL SECURITY, FORCE ROW LEVEL SECURITY;
+CREATE POLICY sys ON email_blocks USING (stackurity_system()) WITH CHECK (stackurity_system());
+
+-- Keys the installation makes for itself, such as the one that signs
+-- unsubscribe links. System only.
+CREATE TABLE platform_keys (
+    name        text PRIMARY KEY,
+    key         bytea NOT NULL,
+    created_at  timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE platform_keys ENABLE ROW LEVEL SECURITY, FORCE ROW LEVEL SECURITY;
+CREATE POLICY sys ON platform_keys USING (stackurity_system()) WITH CHECK (stackurity_system());

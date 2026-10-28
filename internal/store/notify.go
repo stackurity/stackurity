@@ -70,11 +70,34 @@ func (s *Store) UpdateChannel(ctx context.Context, id int64, name *string, confi
 }
 
 func (s *Store) DeleteChannel(ctx context.Context, id int64) error {
-	tag, err := s.Pool.Exec(ctx, `DELETE FROM channels WHERE id = $1`, id)
-	if err == nil && tag.RowsAffected() == 0 {
-		return ErrNotFound
-	}
+	_, err := s.DeleteChannelFromRoutes(ctx, id)
 	return err
+}
+
+// DeleteChannelFromRoutes deletes a channel and, in the same transaction,
+// takes it out of every route that sends some events to it
+// (event_channels): those events go to the route's own channel again. It
+// returns the names of the routes changed.
+func (s *Store) DeleteChannelFromRoutes(ctx context.Context, id int64) ([]string, error) {
+	var changed []string
+	err := pgx.BeginTxFunc(ctx, s.Pool, pgx.TxOptions{}, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `UPDATE routes SET event_channels = (SELECT COALESCE(jsonb_object_agg(e.key, e.value), '{}')
+				FROM jsonb_each(event_channels) e WHERE e.value <> to_jsonb($1::bigint))
+			WHERE event_channels @? ('$.* ? (@ == ' || $1::bigint || ')')::jsonpath AND channel_id <> $1
+			RETURNING name`, id)
+		if err != nil {
+			return err
+		}
+		if changed, err = pgx.CollectRows(rows, pgx.RowTo[string]); err != nil {
+			return err
+		}
+		tag, err := tx.Exec(ctx, `DELETE FROM channels WHERE id = $1`, id)
+		if err == nil && tag.RowsAffected() == 0 {
+			return ErrNotFound
+		}
+		return err
+	})
+	return changed, err
 }
 
 func (s *Store) ChannelResult(ctx context.Context, id int64, sendErr error) error {

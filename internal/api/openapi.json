@@ -7928,6 +7928,86 @@
      }
     }
    }
+  },
+  "/email-recipients/block": {
+   "post": {
+    "operationId": "post_email_recipients_block",
+    "summary": "Never email this address again",
+    "description": "`{\"token\"}` from a confirmation email's \"Never email me again\" link (`/email/block#emc_...`): the address is blocked for every organisation on the server and its pending requests removed. Answers `email`; 410 `link_invalid`\n\nRole: none (rate limited)",
+    "tags": [
+     "Notifications"
+    ],
+    "x-stackurity-role": "none (rate limited)",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/email/unsubscribe": {
+   "post": {
+    "operationId": "post_email_unsubscribe",
+    "summary": "Stop email sent by Stackurity to an address",
+    "description": "`{\"token\"}` from an email's \"Stop these emails\" link (`/email/unsubscribe#...`), signed for one organisation and address: the address is taken out of that organisation's `stackurity_email` channels. Answers `email` and `organisation`; 410 `link_invalid`. Mail clients use the one-click address in the `List-Unsubscribe` header (RFC 8058), `POST /email/unsubscribe/one-click?t=...`, outside /api/v1\n\nRole: none (rate limited)",
+    "tags": [
+     "Notifications"
+    ],
+    "x-stackurity-role": "none (rate limited)",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
   }
  },
  "components": {

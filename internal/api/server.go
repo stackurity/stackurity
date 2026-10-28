@@ -56,6 +56,11 @@ type Server struct {
 	// AgentDir holds agent builds served to new hosts (stackurity-linux-amd64
 	// and its .sha256); empty disables downloads.
 	AgentDir string
+	// InviteOnly refuses creating accounts directly (POST /users): people
+	// join by invitation, which proves they own their address. Stackurity
+	// Cloud sets it, so email sent by Stackurity cannot be pointed at an
+	// address through a made-up account.
+	InviteOnly bool
 	// SecretBox encrypts secrets workspaces store themselves; nil disables
 	// stored secrets.
 	SecretBox *secrets.Box
@@ -141,6 +146,10 @@ func (s *Server) Handler() http.Handler {
 	// The Stackurity Slack app's Event Subscriptions Request URL (uninstall
 	// and revoked tokens), verified with the app's signing secret.
 	r.With(s.limitAddress("slack-events", limitSlackEvents, "too many requests")).Post("/api/v1/integrations/slack/events", s.slackEvents)
+	// One-click unsubscribe and "never email me again" from mail clients
+	// (RFC 8058), signed or single-use tokens in the address.
+	r.With(s.limitAddress("email-links", limitEmailConfirm, "too many attempts; wait a minute")).Post("/email/unsubscribe/one-click", s.oneClick(s.answerUnsubscribe))
+	r.With(s.limitAddress("email-links", limitEmailConfirm, "too many attempts; wait a minute")).Post("/email/block/one-click", s.oneClick(s.answerBlock))
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(s.authenticate, csrfGuard)
@@ -156,6 +165,8 @@ func (s *Server) Handler() http.Handler {
 		// Following an email confirmation link (email sent by Stackurity):
 		// the person may have no account.
 		r.With(s.limitAddress("email-confirm", limitEmailConfirm, "too many attempts; wait a minute")).Post("/email-recipients/confirm", s.confirmEmailRecipient)
+		r.With(s.limitAddress("email-confirm", limitEmailConfirm, "too many attempts; wait a minute")).Post("/email-recipients/block", s.blockEmail)
+		r.With(s.limitAddress("email-confirm", limitEmailConfirm, "too many attempts; wait a minute")).Post("/email/unsubscribe", s.unsubscribeEmail)
 		r.Group(func(r chi.Router) {
 			// Single sign-on in the licensed build: the callback exchanges
 			// the code with the identity provider, so the whole flow is
@@ -349,7 +360,7 @@ func (s *Server) Handler() http.Handler {
 				r.Delete("/routes/{id}", s.deleteRoute)
 				r.Post("/email-recipients/resend", s.resendEmailRecipient)
 				r.With(s.requireWritable).Post("/integrations/slack/install", s.startSlackInstall)
-				r.Post("/integrations/slack/oauth", s.finishSlackInstall)
+				r.With(s.requireWritable).Post("/integrations/slack/oauth", s.finishSlackInstall)
 				r.With(s.requireWritable).Post("/deliveries/{id}/retry", s.retryDelivery)
 				s.proAdminRoutes(r)
 				r.Get("/secrets", s.listSecrets)

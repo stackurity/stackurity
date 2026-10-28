@@ -8,7 +8,7 @@ import { LoginPage, SetupPage } from "./pages/Login";
 import { AcceptInvitePage } from "./pages/AcceptInvite";
 import { SlackAccountsPage, SlackLinkPage } from "./pages/SlackLink";
 import { SlackOAuthCallbackPage } from "./pages/SlackOAuthCallback";
-import { EmailConfirmPage } from "./pages/EmailConfirm";
+import { EmailConfirmPage, EmailStopPage } from "./pages/EmailConfirm";
 import { AssistantsPage, ConnectAssistantPage } from "./pages/Assistants";
 import { OnboardingPage } from "./pages/Onboarding";
 import { SignupPage, VerifySignupPage } from "./pages/Signup";
@@ -123,6 +123,9 @@ export function App() {
   if (pathname === "/integrations/slack/oauth/callback" && state.phase === "ready") return <SlackOAuthCallbackPage />;
   // Confirming an email address for notifications works signed in or not.
   if (pathname === "/email/confirm" && (state.phase === "login" || state.phase === "ready")) return <EmailConfirmPage />;
+  // Stopping email sent by Stackurity, signed in or not.
+  if (pathname === "/email/unsubscribe" && (state.phase === "login" || state.phase === "ready")) return <EmailStopPage kind="unsubscribe" />;
+  if (pathname === "/email/block" && (state.phase === "login" || state.phase === "ready")) return <EmailStopPage kind="block" />;
 
   switch (state.phase) {
     case "loading":

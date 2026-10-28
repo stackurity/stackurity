@@ -52,11 +52,39 @@ func newEmailToken() (token string, hash []byte, err error) {
 	return token, sum[:], nil
 }
 
+// Limits on confirmation emails to one address, across every organisation,
+// so the service cannot be used to send them to a stranger again and again.
+const (
+	// emailConfirmPerWeek: confirmation emails one address may get a week.
+	emailConfirmPerWeek = 3
+	emailConfirmWeek    = 7 * 24 * time.Hour
+)
+
+func emailHash(email string) []byte {
+	sum := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(email))))
+	return sum[:]
+}
+
+// EmailBlocked reports whether an address asked never to be emailed again.
+func (s *Store) EmailBlocked(ctx context.Context, email string) (bool, error) {
+	var blocked bool
+	err := s.Pool.QueryRow(tenant.System(ctx), `SELECT EXISTS (SELECT 1 FROM email_blocks WHERE email_hash = $1)`, emailHash(email)).Scan(&blocked)
+	return blocked, err
+}
+
 // RequestEmailConfirmations records addresses of the context's workspace
-// that must confirm, and returns a fresh token for each that is not
-// confirmed and was not asked in the last few minutes (or ever), to email
-// it. Addresses are lower-cased.
+// that must confirm, and returns a fresh token for each that should be
+// emailed now. An address gets a confirmation only when it has none
+// pending here (or its link expired), has none pending from another
+// organisation, has not asked never to be emailed, and has had fewer than
+// 3 confirmation emails in the last week from any organisation; resend
+// also allows one when the last was sent more than 10 minutes ago.
+// Addresses are lower-cased.
 func (s *Store) RequestEmailConfirmations(ctx context.Context, emails []string, by int64) (map[string]string, error) {
+	return s.requestConfirmations(ctx, emails, by, false)
+}
+
+func (s *Store) requestConfirmations(ctx context.Context, emails []string, by int64, resend bool) (map[string]string, error) {
 	out := map[string]string{}
 	var requester *int64
 	if by > 0 {
@@ -67,6 +95,21 @@ func (s *Store) RequestEmailConfirmations(ctx context.Context, emails []string, 
 		if e == "" || out[e] != "" {
 			continue
 		}
+		var blocked, elsewhere bool
+		if err := s.Pool.QueryRow(tenant.System(ctx), `SELECT
+			EXISTS (SELECT 1 FROM email_blocks WHERE email_hash = $1),
+			EXISTS (SELECT 1 FROM email_recipients WHERE email = $2 AND workspace_id <> $3 AND confirmed_at IS NULL AND expires_at > now())`,
+			emailHash(e), e, wsOf(ctx)).Scan(&blocked, &elsewhere); err != nil {
+			return nil, err
+		}
+		if blocked || elsewhere {
+			// Recorded as pending here, with no link: nothing is sent.
+			if _, err := s.Pool.Exec(ctx, `INSERT INTO email_recipients (email, requested_by) VALUES ($1, $2)
+				ON CONFLICT (workspace_id, email) DO NOTHING`, e, requester); err != nil {
+				return nil, err
+			}
+			continue
+		}
 		token, hash, err := newEmailToken()
 		if err != nil {
 			return nil, err
@@ -75,21 +118,39 @@ func (s *Store) RequestEmailConfirmations(ctx context.Context, emails []string, 
 			VALUES ($1, $2, $3, now(), now() + make_interval(secs => $4))
 			ON CONFLICT (workspace_id, email) DO UPDATE SET token_hash = EXCLUDED.token_hash, requested_by = EXCLUDED.requested_by,
 				requested_at = now(), expires_at = EXCLUDED.expires_at
-			WHERE r.confirmed_at IS NULL AND r.requested_at < now() - make_interval(secs => $5)`,
-			e, hash, requester, EmailConfirmTTL.Seconds(), emailResendAfter.Seconds())
+			WHERE r.confirmed_at IS NULL AND (r.expires_at IS NULL OR r.expires_at < now()
+				OR $6 AND r.requested_at < now() - make_interval(secs => $5))`,
+			e, hash, requester, EmailConfirmTTL.Seconds(), emailResendAfter.Seconds(), resend)
 		if err != nil {
 			return nil, err
 		}
-		if tag.RowsAffected() == 1 {
-			out[e] = token
+		if tag.RowsAffected() != 1 {
+			continue
 		}
+		// The weekly cap across organisations. Over it the link exists but
+		// is not emailed; the admin can resend later.
+		n, err := s.RateLimitHit(ctx, "email-confirm-week", e, emailConfirmWeek)
+		if err != nil {
+			return nil, err
+		}
+		if n > emailConfirmPerWeek {
+			continue
+		}
+		out[e] = token
 	}
 	return out, nil
 }
 
+func wsOf(ctx context.Context) int64 {
+	ws, _ := tenant.Workspace(ctx)
+	return ws
+}
+
 // ResendEmailConfirmation returns a new token for a pending address of the
 // context's workspace: ErrNotFound when it is unknown or already
-// confirmed, ErrTooSoon when one was sent a few minutes ago.
+// confirmed, ErrTooSoon when one was sent a few minutes ago or the
+// address may not get another now (pending elsewhere, blocked, or the
+// weekly cap).
 func (s *Store) ResendEmailConfirmation(ctx context.Context, email string, by int64) (string, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 	var confirmed bool
@@ -100,7 +161,7 @@ func (s *Store) ResendEmailConfirmation(ctx context.Context, email string, by in
 	if err != nil {
 		return "", err
 	}
-	tokens, err := s.RequestEmailConfirmations(ctx, []string{email}, by)
+	tokens, err := s.requestConfirmations(ctx, []string{email}, by, true)
 	if err != nil {
 		return "", err
 	}
@@ -108,6 +169,72 @@ func (s *Store) ResendEmailConfirmation(ctx context.Context, email string, by in
 		return "", ErrTooSoon
 	}
 	return tokens[email], nil
+}
+
+// BlockEmail follows a "Never email me again" link (a confirmation token):
+// the address is blocked for every organisation and its pending requests
+// are removed. It returns the address.
+func (s *Store) BlockEmail(ctx context.Context, token string) (string, error) {
+	sum := sha256.Sum256([]byte(token))
+	ctx = tenant.System(ctx)
+	var email string
+	err := pgx.BeginTxFunc(ctx, s.Pool, pgx.TxOptions{}, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `SELECT email FROM email_recipients WHERE token_hash = $1`, sum[:]).Scan(&email); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO email_blocks (email_hash) VALUES ($1) ON CONFLICT DO NOTHING`, emailHash(email)); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `DELETE FROM email_recipients WHERE email = $1`, email)
+		return err
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrEmailConfirmInvalid
+	}
+	return email, err
+}
+
+// PlatformKey returns the installation's key with this name, made at random
+// the first time; every replica gets the same.
+func (s *Store) PlatformKey(ctx context.Context, name string) ([]byte, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return nil, err
+	}
+	ctx = tenant.System(ctx)
+	if _, err := s.Pool.Exec(ctx, `INSERT INTO platform_keys (name, key) VALUES ($1, $2) ON CONFLICT DO NOTHING`, name, b); err != nil {
+		return nil, err
+	}
+	var key []byte
+	err := s.Pool.QueryRow(ctx, `SELECT key FROM platform_keys WHERE name = $1`, name).Scan(&key)
+	return key, err
+}
+
+// UnsubscribeEmail takes an address out of every stackurity_email channel
+// of a workspace (other addresses, and members with that address) and
+// forgets its confirmation. It returns the organisation's name.
+func (s *Store) UnsubscribeEmail(ctx context.Context, ws int64, email string) (string, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	ctx = tenant.System(ctx)
+	var org string
+	err := pgx.BeginTxFunc(ctx, s.Pool, pgx.TxOptions{}, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `SELECT name FROM workspaces WHERE id = $1`, ws).Scan(&org); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE channels SET config = jsonb_set(jsonb_set(config, '{to}',
+				COALESCE((SELECT jsonb_agg(t) FROM jsonb_array_elements_text(COALESCE(config->'to', '[]')) t WHERE lower(t) <> $2), '[]')),
+				'{user_ids}', COALESCE((SELECT jsonb_agg(u) FROM jsonb_array_elements(COALESCE(config->'user_ids', '[]')) u
+					WHERE (u #>> '{}')::bigint NOT IN (SELECT id FROM users WHERE lower(email) = $2)), '[]'))
+			WHERE workspace_id = $1 AND kind = 'stackurity_email'`, ws, email); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `DELETE FROM email_recipients WHERE workspace_id = $1 AND email = $2`, ws, email)
+		return err
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	return org, err
 }
 
 // ListEmailRecipients lists the context's workspace's addresses.
@@ -122,7 +249,7 @@ func (s *Store) ListEmailRecipients(ctx context.Context) ([]EmailRecipient, erro
 
 // ConfirmedEmails returns which of emails may receive email sent by
 // Stackurity in the context's workspace: confirmed addresses, and the
-// addresses of its enabled members.
+// addresses of its enabled members who signed in or accepted an invitation.
 func (s *Store) ConfirmedEmails(ctx context.Context, emails []string) (map[string]bool, error) {
 	lower := make([]string, len(emails))
 	for i, e := range emails {
@@ -130,16 +257,24 @@ func (s *Store) ConfirmedEmails(ctx context.Context, emails []string) (map[strin
 	}
 	rows, err := s.Pool.Query(ctx, `SELECT email FROM email_recipients WHERE email = ANY($1) AND confirmed_at IS NOT NULL
 		UNION SELECT lower(u.email) FROM users u WHERE lower(u.email) = ANY($1) AND NOT u.disabled
-		  AND EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.user_id = u.id AND wm.workspace_id = stackurity_ws())`, lower)
+		  AND EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.user_id = u.id AND wm.workspace_id = stackurity_ws())
+		  AND `+provenMember, lower)
 	if err != nil {
 		return nil, err
 	}
 	list, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, err
+	}
 	out := map[string]bool{}
 	for _, e := range list {
-		out[e] = true
+		if blocked, err := s.EmailBlocked(ctx, e); err != nil {
+			return nil, err
+		} else if !blocked {
+			out[e] = true
+		}
 	}
-	return out, err
+	return out, nil
 }
 
 // ConfirmEmail confirms the address a token was sent to, in whichever
@@ -158,16 +293,25 @@ func (s *Store) ConfirmEmail(ctx context.Context, token string) (email, organisa
 	return email, organisation, err
 }
 
+// provenMember: the user has shown they control their address, by signing
+// in at least once or accepting an invitation to the context's workspace.
+// An account an admin created that was never used is not enough for email
+// sent by Stackurity to reach it.
+const provenMember = `(u.last_login_at IS NOT NULL
+	OR EXISTS (SELECT 1 FROM invitations i WHERE i.accepted_by = u.id AND i.workspace_id = stackurity_ws() AND i.accepted_at IS NOT NULL))`
+
 // MemberEmails returns the addresses of the given members of the context's
-// workspace that are enabled (others are left out).
-func (s *Store) MemberEmails(ctx context.Context, ids []int64) ([]string, error) {
+// workspace that are enabled (others are left out); with proven, only of
+// those who signed in or accepted an invitation (see provenMember).
+func (s *Store) MemberEmails(ctx context.Context, ids []int64, proven bool) ([]string, error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
 	rows, err := s.Pool.Query(ctx, `SELECT lower(u.email) FROM users u
 		WHERE u.id = ANY($1) AND NOT u.disabled
 		  AND EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.user_id = u.id AND wm.workspace_id = stackurity_ws())
-		ORDER BY u.email`, ids)
+		  AND (NOT $2 OR `+provenMember+`)
+		ORDER BY u.email`, ids, proven)
 	if err != nil {
 		return nil, err
 	}

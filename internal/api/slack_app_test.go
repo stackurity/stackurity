@@ -47,16 +47,21 @@ func (f *fakeSlack) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/oauth.v2.access":
 		id, secret, ok := r.BasicAuth()
-		if !ok || id != "client-1" || secret != "client-secret-1" || r.PostForm.Get("code") != "good-code" ||
+		code := r.PostForm.Get("code")
+		if !ok || id != "client-1" || secret != "client-secret-1" || code != "good-code" && code != "ops-code" ||
 			r.PostForm.Get("redirect_uri") != "https://stk.example/integrations/slack/oauth/callback" {
 			_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "error": "invalid_code"})
 			return
 		}
 		f.codes++
+		channel, channelID, hook := "#security", "C0SEC", appHookURL
+		if code == "ops-code" {
+			channel, channelID, hook = "#ops", "C0OPS", "https://hooks.slack.com/services/T0APP/B0OPS/opsPath"
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "app_id": "A0APP", "access_token": appBotToken, "token_type": "bot",
 			"scope": "incoming-webhook", "bot_user_id": "U0BOT", "team": map[string]string{"id": "T0APP", "name": "Acme"},
-			"incoming_webhook": map[string]string{"channel": "#security", "channel_id": "C0SEC", "configuration_url": "https://acme.slack.com/services/B0HOOK",
-				"url": appHookURL}})
+			"incoming_webhook": map[string]string{"channel": channel, "channel_id": channelID, "configuration_url": "https://acme.slack.com/services/B0HOOK",
+				"url": hook}})
 	case "/apps.uninstall":
 		if r.Header.Get("Authorization") == "Bearer "+appBotToken && r.PostForm.Get("client_id") == "client-1" {
 			f.uninstalled = append(f.uninstalled, appBotToken)
@@ -163,7 +168,7 @@ func TestSlackAppOAuthState(t *testing.T) {
 	var cfg notify.ChannelConfig
 	_ = json.Unmarshal(got.Channel.Config, &cfg)
 	if got.Channel.Kind != "slack" || !cfg.SlackApp || cfg.TeamID != "T0APP" || cfg.SlackChannel != "#security" || got.ReturnTo != "/settings/integrations" ||
-		got.Channel.SecretRef != "secret:slack-app-T0APP-C0SEC" || got.Channel.Name != "Slack #security (Acme)" {
+		got.Channel.SecretRef != "secret:slack-app-channel-"+itoa(got.Channel.ID) || cfg.SlackChannelID != "C0SEC" || got.Channel.Name != "Slack #security (Acme)" {
 		t.Fatalf("install = %+v %+v", got, cfg)
 	}
 	if code := admin.do("POST", "/api/v1/integrations/slack/oauth", map[string]string{"code": "good-code", "state": state}, nil); code != 400 {
@@ -187,8 +192,9 @@ func TestSlackAppOAuthState(t *testing.T) {
 	admin.do("POST", "/api/v1/integrations/slack/install", map[string]string{"return_to": "//evil.example/x"}, &out)
 	u, _ := url.Parse(out.URL)
 	var back installAnswer
-	if code := admin.do("POST", "/api/v1/integrations/slack/oauth", map[string]string{"code": "good-code", "state": u.Query().Get("state")}, &back); code != 201 ||
-		back.ReturnTo != "/settings/integrations" {
+	// (The same Slack channel again: the integration is reused.)
+	if code := admin.do("POST", "/api/v1/integrations/slack/oauth", map[string]string{"code": "good-code", "state": u.Query().Get("state")}, &back); code != 200 ||
+		back.ReturnTo != "/settings/integrations" || back.Channel.ID != got.Channel.ID {
 		t.Errorf("return_to = %q (%d)", back.ReturnTo, code)
 	}
 	// App channels are made only by the install, and keep their webhook.
@@ -218,7 +224,7 @@ func TestSlackAppTokenEncryption(t *testing.T) {
 	if err := e.st.Pool.QueryRow(ctx, `SELECT bot_token FROM slack_installations WHERE team_id = 'T0APP'`).Scan(&sealedToken); err != nil {
 		t.Fatal(err)
 	}
-	if err := e.st.Pool.QueryRow(ctx, `SELECT sealed FROM workspace_secrets WHERE name = 'slack-app-T0APP-C0SEC'`).Scan(&sealedHook); err != nil {
+	if err := e.st.Pool.QueryRow(ctx, `SELECT sealed FROM workspace_secrets WHERE name LIKE 'slack-app-channel-%'`).Scan(&sealedHook); err != nil {
 		t.Fatal(err)
 	}
 	if len(sealedToken) == 0 || bytes.Contains(sealedToken, []byte(appBotToken)) || bytes.Contains(sealedToken, []byte("xoxb")) {
@@ -264,6 +270,14 @@ func TestSlackAppWrongTeam(t *testing.T) {
 	}
 	if code, _ := sf.send(t, click{channel: ch, kind: "open", fix: "1:x", team: "T0APP", user: "U1"}); code != 200 {
 		t.Errorf("click from the install's workspace: %d", code)
+	}
+	// Slack Connect: a person of the install's workspace in a channel
+	// shared from another; someone of the other workspace is refused.
+	if code, _ := sf.send(t, click{channel: ch, kind: "open", fix: "1:x", team: "T0SHARED", userTeam: "T0APP", user: "U2"}); code != 200 {
+		t.Errorf("Slack Connect click by the install's person: %d", code)
+	}
+	if code, _ := sf.send(t, click{channel: ch, kind: "open", fix: "1:x", team: "T0SHARED", userTeam: "T0SHARED", user: "U3"}); code != 401 {
+		t.Errorf("Slack Connect click by another workspace's person: %d", code)
 	}
 	// A channel with its own signing secret is not verified with the app's.
 	t.Setenv("STACKURITY_SECRET_SLACK_SIGNING", "own-secret")
@@ -326,7 +340,8 @@ func TestSlackAppUninstall(t *testing.T) {
 	if ch, _ := e.st.GetChannel(ctx, got.Channel.ID); !ch.Enabled {
 		t.Fatal("another team's uninstall disabled the channel")
 	}
-	if code, _ := signedEvent(t, e, appSigning, uninstall, time.Now()); code != 200 {
+	stamp := time.Now()
+	if code, _ := signedEvent(t, e, appSigning, uninstall, stamp); code != 200 {
 		t.Fatalf("uninstall: %d", code)
 	}
 	ch, _ := e.st.GetChannel(ctx, got.Channel.ID)
@@ -342,8 +357,28 @@ func TestSlackAppUninstall(t *testing.T) {
 	// Installed again, then the channel deleted in Stackurity: the app is
 	// removed from Slack, since no organisation uses it there.
 	var again installAnswer
-	if code := admin.do("POST", "/api/v1/integrations/slack/oauth", map[string]string{"code": "good-code", "state": f.start(t, admin)}, &again); code != 201 {
-		t.Fatalf("install again: %d", code)
+	if code := admin.do("POST", "/api/v1/integrations/slack/oauth", map[string]string{"code": "good-code", "state": f.start(t, admin)}, &again); code != 200 ||
+		again.Channel.ID != got.Channel.ID || !again.Channel.Enabled || again.Channel.LastError != "" {
+		t.Fatalf("install again: %d %+v", code, again.Channel)
+	}
+	// The same signed uninstall sent again (a replay) changes nothing.
+	if code, _ := signedEvent(t, e, appSigning, uninstall, stamp); code != 200 {
+		t.Fatalf("replay: %d", code)
+	}
+	if ch, _ := e.st.GetChannel(ctx, again.Channel.ID); !ch.Enabled {
+		t.Fatal("a replayed uninstall disabled the reinstalled channel")
+	}
+	// A read-only organisation cannot finish Add to Slack.
+	state := f.start(t, admin)
+	now := time.Now()
+	if err := e.st.SetReadOnly(context.Background(), tenant.DefaultWorkspace, &now, "test"); err != nil {
+		t.Fatal(err)
+	}
+	if code := admin.do("POST", "/api/v1/integrations/slack/oauth", map[string]string{"code": "good-code", "state": state}, nil); code != 402 {
+		t.Errorf("read-only finish: %d", code)
+	}
+	if err := e.st.SetReadOnly(context.Background(), tenant.DefaultWorkspace, nil, ""); err != nil {
+		t.Fatal(err)
 	}
 	if code := admin.do("DELETE", "/api/v1/channels/"+itoa(again.Channel.ID), nil, nil); code != 204 {
 		t.Fatalf("delete: %d", code)
@@ -376,5 +411,37 @@ func TestSlackAppOff(t *testing.T) {
 	}
 	if code, _ := signedEvent(t, e, appSigning, map[string]string{"type": "url_verification"}, time.Now()); code != 404 {
 		t.Errorf("events without the app: %d", code)
+	}
+}
+
+// Two Slack channels of one Slack workspace: deleting one keeps the other
+// working (its own webhook) and keeps the app installed.
+func TestSlackAppTwoChannels(t *testing.T) {
+	f := slackAppSetup(t)
+	e := f.e
+	admin := e.login("admin@x.io")
+	var sec, ops installAnswer
+	if code := admin.do("POST", "/api/v1/integrations/slack/oauth", map[string]string{"code": "good-code", "state": f.start(t, admin)}, &sec); code != 201 {
+		t.Fatalf("security: %d", code)
+	}
+	if code := admin.do("POST", "/api/v1/integrations/slack/oauth", map[string]string{"code": "ops-code", "state": f.start(t, admin)}, &ops); code != 201 ||
+		ops.Channel.ID == sec.Channel.ID || ops.Channel.SecretRef == sec.Channel.SecretRef {
+		t.Fatalf("ops: %d %+v", code, ops.Channel)
+	}
+	if code := admin.do("DELETE", "/api/v1/channels/"+itoa(sec.Channel.ID), nil, nil); code != 204 {
+		t.Fatalf("delete: %d", code)
+	}
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	hook, err := e.api.Secrets.Resolve(ctx, ops.Channel.SecretRef)
+	if err != nil || !strings.Contains(hook, "opsPath") {
+		t.Errorf("the other channel's webhook: %q %v", hook, err)
+	}
+	var installs int
+	_ = e.st.Pool.QueryRow(ctx, `SELECT count(*) FROM slack_installations`).Scan(&installs)
+	f.slack.mu.Lock()
+	removed := len(f.slack.uninstalled)
+	f.slack.mu.Unlock()
+	if installs != 1 || removed != 0 {
+		t.Errorf("install kept %d, apps.uninstall called %d", installs, removed)
 	}
 }

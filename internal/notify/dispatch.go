@@ -229,7 +229,7 @@ func (d *Dispatcher) PlatformFallback(ctx context.Context) error {
 // grouped.go) and, for Jira channels, issue creation and updates per
 // incident.
 func (d *Dispatcher) Plan(ctx context.Context) error {
-	routes, err := d.Store.ListRoutes(ctx)
+	routes, err := d.routes(ctx)
 	if err != nil {
 		return err
 	}
@@ -574,6 +574,33 @@ func (d *Dispatcher) planOverdue(ctx context.Context, routes []store.Route, trac
 	return nil
 }
 
+// routes lists the workspace's routes for planning. An event sent to
+// another channel (event_channels) goes to the route's own channel instead
+// while that channel is missing or disabled, so a deleted or switched-off
+// channel never stops the route.
+func (d *Dispatcher) routes(ctx context.Context) ([]store.Route, error) {
+	routes, err := d.Store.ListRoutes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	chs, err := d.Store.ListChannels(ctx)
+	if err != nil {
+		return nil, err
+	}
+	usable := map[int64]bool{}
+	for _, c := range chs {
+		usable[c.ID] = c.Enabled && c.Kind != KindJira
+	}
+	for i := range routes {
+		for e, id := range routes[i].EventChannels {
+			if !usable[id] {
+				delete(routes[i].EventChannels, e)
+			}
+		}
+	}
+	return routes, nil
+}
+
 // trackerChannels returns the ids of the workspace's tracker (Jira) channels.
 func (d *Dispatcher) trackerChannels(ctx context.Context) (map[int64]bool, error) {
 	chs, err := d.Store.ListChannels(ctx)
@@ -894,7 +921,7 @@ func (d *Dispatcher) SendTest(ctx context.Context, ch *store.Channel) error {
 // that has no summary (urgent only) and, for held messages whose route was
 // deleted, one digest per channel.
 func (d *Dispatcher) Digest(ctx context.Context) error {
-	routes, err := d.Store.ListRoutes(ctx)
+	routes, err := d.routes(ctx)
 	if err != nil {
 		return err
 	}

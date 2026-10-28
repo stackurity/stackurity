@@ -59,6 +59,10 @@ type Message struct {
 	Counts       map[string]int `json:"counts,omitempty"` // totals, e.g. new, urgent, fixed, overdue
 	Sections     []Section      `json:"sections,omitempty"`
 	SettingsLink string         `json:"settings_link,omitempty"` // where the route is changed
+
+	// Email sent by Stackurity, per recipient: the page that stops these
+	// emails, and its one-click address for the List-Unsubscribe header.
+	unsubscribe, unsubscribeLabel, oneClick string
 }
 
 // Section is a titled list of items in a grouped message.
@@ -143,6 +147,9 @@ func (m Message) Text() string {
 		if m.SettingsLink != "" {
 			b.WriteString("Change these notifications: " + m.SettingsLink + "\n")
 		}
+		if m.unsubscribe != "" {
+			b.WriteString(m.footerLabel() + ": " + m.unsubscribe + "\n")
+		}
 		return b.String()
 	}
 	for _, l := range m.Summary {
@@ -157,7 +164,17 @@ func (m Message) Text() string {
 	if m.Link != "" {
 		b.WriteString("\n" + m.Link + "\n")
 	}
+	if m.unsubscribe != "" {
+		b.WriteString("\n" + m.footerLabel() + ": " + m.unsubscribe + "\n")
+	}
 	return b.String()
+}
+
+func (m Message) footerLabel() string {
+	if m.unsubscribeLabel != "" {
+		return m.unsubscribeLabel
+	}
+	return "Stop these emails"
 }
 
 func writeItems(b *strings.Builder, items []Item, indent string) {
@@ -239,6 +256,7 @@ type ChannelConfig struct {
 	TeamID           string `json:"team_id,omitempty"`
 	TeamName         string `json:"team_name,omitempty"`
 	SlackChannel     string `json:"slack_channel,omitempty"`
+	SlackChannelID   string `json:"slack_channel_id,omitempty"`
 	ConfigurationURL string `json:"configuration_url,omitempty"`
 
 	// interactive is the channel's id when its messages get interactive

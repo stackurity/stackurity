@@ -95,6 +95,12 @@ var routeRules = map[string]routeRule{
 	// Confirming an address for email sent by Stackurity: no session; a
 	// token B does not have is refused (notify_setup_test.go).
 	"POST /api/v1/email-recipients/confirm": {class: "public", body: func(*tenantFx) any { return map[string]string{"token": "emc_guessed"} }},
+	"POST /api/v1/email-recipients/block":   {class: "public", body: func(*tenantFx) any { return map[string]string{"token": "emc_guessed"} }},
+	// Unsubscribe links are signed with the installation's key; a guessed
+	// token is refused (notify_setup_test.go).
+	"POST /api/v1/email/unsubscribe":    {class: "public", body: func(*tenantFx) any { return map[string]string{"token": "MTpmb28.bad"} }},
+	"POST /email/unsubscribe/one-click": {class: "public", query: "t=MTpmb28.bad"},
+	"POST /email/block/one-click":       {class: "public", query: "t=emc_guessed"},
 	// Add to Slack: B's install starts in B; a state of A's (or a
 	// guessed one) is refused (slack_app_test.go).
 	"POST /api/v1/integrations/slack/install": {class: "create", body: func(*tenantFx) any { return map[string]string{"return_to": "/settings/integrations"} }},

@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -13,6 +15,7 @@ import (
 
 	"github.com/stackurity/stackurity/internal/notify"
 	"github.com/stackurity/stackurity/internal/store"
+	"github.com/stackurity/stackurity/internal/tenant"
 )
 
 // Simpler notification setup: what the server offers (notification
@@ -71,7 +74,7 @@ func (s *Server) checkPlatformEmail(r *http.Request, cfgRaw json.RawMessage) err
 		return badRequest("at most " + strconv.Itoa(max) + " recipients")
 	}
 	if len(cfg.UserIDs) > 0 {
-		emails, err := s.Store.MemberEmails(r.Context(), cfg.UserIDs)
+		emails, err := s.Store.MemberEmails(r.Context(), cfg.UserIDs, false)
 		if err != nil {
 			return err
 		}
@@ -91,12 +94,19 @@ func uniqueInts(ids []int64) map[int64]bool {
 }
 
 // requestConfirmations emails a confirmation link to the channel's
-// addresses that are not members and have not confirmed. A failure to send
-// is logged; the address stays pending and can be sent again.
-func (s *Server) requestConfirmations(r *http.Request, ch *store.Channel) {
-	var cfg notify.ChannelConfig
+// addresses that are not members and have not confirmed; before, when
+// given, is the channel's config before an update, whose addresses are not
+// asked again (only Resend does that). A failure to send is logged; the
+// address stays pending and can be sent again.
+func (s *Server) requestConfirmations(r *http.Request, ch *store.Channel, before json.RawMessage) {
+	var cfg, old notify.ChannelConfig
 	if err := json.Unmarshal(ch.Config, &cfg); err != nil || len(cfg.To) == 0 {
 		return
+	}
+	_ = json.Unmarshal(before, &old)
+	had := map[string]bool{}
+	for _, t := range old.To {
+		had[strings.ToLower(t)] = true
 	}
 	ctx := r.Context()
 	members, _ := s.Store.ListUsers(ctx)
@@ -106,14 +116,14 @@ func (s *Server) requestConfirmations(r *http.Request, ch *store.Channel) {
 	}
 	var ask []string
 	for _, t := range cfg.To {
-		if !isMember[strings.ToLower(t)] {
+		if !isMember[strings.ToLower(t)] && !had[strings.ToLower(t)] {
 			ask = append(ask, t)
 		}
 	}
 	p := principal(r)
 	tokens, err := s.Store.RequestEmailConfirmations(ctx, ask, userID(p))
 	if err == nil {
-		err = s.Dispatcher.SendEmailConfirmations(ctx, tokens, s.orgName(ctx, p), displayName(p))
+		err = s.Dispatcher.SendEmailConfirmations(ctx, tokens, s.orgName(ctx, p))
 	}
 	if err != nil {
 		s.Log.Warn("email confirmations could not be sent", "channel", ch.ID, "err", err)
@@ -178,7 +188,7 @@ func (s *Server) resendEmailRecipient(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	email := strings.ToLower(strings.TrimSpace(req.Email))
-	if err := s.Dispatcher.SendEmailConfirmations(r.Context(), map[string]string{email: token}, s.orgName(r.Context(), p), displayName(p)); err != nil {
+	if err := s.Dispatcher.SendEmailConfirmations(r.Context(), map[string]string{email: token}, s.orgName(r.Context(), p)); err != nil {
 		s.Log.Warn("email confirmation could not be sent", "err", err)
 		writeError(w, 502, "send_failed", "the confirmation could not be sent; try again in a few minutes")
 		return
@@ -299,11 +309,6 @@ func (s *Server) finishSlackInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	hook := in.IncomingWebhook
-	secretName := "slack-app-" + in.Team.ID + "-" + sanitizeSlackID(hook.ChannelID)
-	if err := s.Store.PutSecret(ctx, s.SecretBox, secretName, hook.URL, userID(p)); err != nil {
-		s.fail(w, r, err)
-		return
-	}
 	if err := s.Store.SaveSlackInstallation(ctx, s.SecretBox, store.SlackInstallation{TeamID: in.Team.ID, TeamName: truncate(in.Team.Name, 200),
 		AppID: truncate(in.AppID, 32), BotUserID: truncate(in.BotUserID, 32), Scopes: truncate(in.Scope, 1000), BotToken: in.AccessToken}, userID(p)); err != nil {
 		s.fail(w, r, err)
@@ -314,13 +319,52 @@ func (s *Server) finishSlackInstall(w http.ResponseWriter, r *http.Request) {
 		channelName = "#" + channelName
 	}
 	cfg, _ := json.Marshal(notify.ChannelConfig{SlackApp: true, TeamID: in.Team.ID, TeamName: truncate(in.Team.Name, 200),
-		SlackChannel: truncate(channelName, 200), ConfigurationURL: truncate(hook.ConfigurationURL, 500)})
+		SlackChannel: truncate(channelName, 200), SlackChannelID: truncate(sanitizeSlackID(hook.ChannelID), 32), ConfigurationURL: truncate(hook.ConfigurationURL, 500)})
+	// The same Slack channel added again (after an uninstall, or twice):
+	// its integration gets the new webhook and is switched on again.
+	if cur, err := s.Store.SlackAppChannel(ctx, in.Team.ID, sanitizeSlackID(hook.ChannelID)); err == nil {
+		name := strings.TrimPrefix(cur.SecretRef, "secret:")
+		if !strings.HasPrefix(name, "slack-app-") {
+			name = "slack-app-channel-" + itoa(cur.ID)
+		}
+		if err := s.Store.PutSecret(ctx, s.SecretBox, name, hook.URL, userID(p)); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		ref := "secret:" + name
+		if err := s.Store.UpdateChannel(ctx, cur.ID, nil, nil, &ref, nil); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		if err := s.Store.ReviveChannel(ctx, cur.ID, cfg); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		ch, _ := s.Store.GetChannel(ctx, cur.ID)
+		_ = s.Store.Audit(ctx, p.Actor(r), "channel.update", "channel", itoa(ch.ID),
+			map[string]string{"source": "slack_app", "slack_team_id": in.Team.ID, "reinstalled": "true"})
+		writeJSON(w, 200, map[string]any{"channel": ch, "return_to": returnTo, "team_name": in.Team.Name, "slack_channel": channelName, "reused": true})
+		return
+	}
 	name := truncate("Slack "+channelName+" ("+in.Team.Name+")", 100)
-	ch, err := s.createUniqueChannel(ctx, notify.KindSlack, name, cfg, "secret:"+secretName)
+	ch, err := s.createUniqueChannel(ctx, notify.KindSlack, name, cfg, "secret:slack-app-pending")
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
+	// The webhook is a secret of this channel alone.
+	secretName := "slack-app-channel-" + itoa(ch.ID)
+	ref := "secret:" + secretName
+	err = s.Store.PutSecret(ctx, s.SecretBox, secretName, hook.URL, userID(p))
+	if err == nil {
+		err = s.Store.UpdateChannel(ctx, ch.ID, nil, nil, &ref, nil)
+	}
+	if err != nil {
+		_ = s.Store.DeleteChannel(ctx, ch.ID)
+		s.fail(w, r, err)
+		return
+	}
+	ch.SecretRef = ref
 	_ = s.Store.Audit(ctx, p.Actor(r), "channel.create", "channel", itoa(ch.ID),
 		map[string]string{"kind": ch.Kind, "name": ch.Name, "source": "slack_app", "slack_team_id": in.Team.ID})
 	writeJSON(w, 201, map[string]any{"channel": ch, "return_to": returnTo, "team_name": in.Team.Name, "slack_channel": channelName})
@@ -407,6 +451,16 @@ func (s *Server) slackEvents(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 401, "unauthorized", "the request is too old")
 		return
 	}
+	// Each signed request is accepted once (Slack's retries are signed
+	// again); a repeat is acknowledged and ignored.
+	digest := sha256.Sum256([]byte(sig))
+	if n, err := s.Store.RateLimitHit(r.Context(), "slack-event-seen", hex.EncodeToString(digest[:]), 2*slackMaxSkew); err != nil {
+		s.fail(w, r, err)
+		return
+	} else if n > 1 {
+		w.WriteHeader(200)
+		return
+	}
 	var ev struct {
 		Type      string `json:"type"`
 		Challenge string `json:"challenge"`
@@ -443,4 +497,89 @@ func (s *Server) slackEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Log.Info("slack app removed from a Slack workspace", "team", ev.TeamID, "event", ev.Event.Type, "channels_disabled", n)
 	w.WriteHeader(200)
+}
+
+// blockEmail follows "Never email me again" from a confirmation email: the
+// address is blocked for every organisation on the service.
+func (s *Server) blockEmail(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Token string `json:"token"`
+	}
+	if err := decode(r, &req); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.answerBlock(w, r, req.Token)
+}
+
+func (s *Server) answerBlock(w http.ResponseWriter, r *http.Request, token string) {
+	if !strings.HasPrefix(token, "emc_") || len(token) > 100 {
+		writeError(w, 410, "link_invalid", store.ErrEmailConfirmInvalid.Error())
+		return
+	}
+	email, err := s.Store.BlockEmail(r.Context(), token)
+	switch {
+	case errors.Is(err, store.ErrEmailConfirmInvalid):
+		writeError(w, 410, "link_invalid", err.Error())
+		return
+	case err != nil:
+		s.fail(w, r, err)
+		return
+	}
+	_ = s.Store.Audit(r.Context(), store.Actor{Type: "anonymous", RemoteAddr: clientIP(r)}, "email.blocked", "email", "", nil)
+	writeJSON(w, 200, map[string]string{"email": email})
+}
+
+// unsubscribeEmail follows "Stop these emails": the address is taken out
+// of the organisation's email sent by Stackurity. The signed token names
+// the organisation and the address.
+func (s *Server) unsubscribeEmail(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Token string `json:"token"`
+	}
+	if err := decode(r, &req); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.answerUnsubscribe(w, r, req.Token)
+}
+
+func (s *Server) answerUnsubscribe(w http.ResponseWriter, r *http.Request, token string) {
+	if s.Dispatcher == nil {
+		writeError(w, 404, "not_found", "no such endpoint")
+		return
+	}
+	key, err := s.Dispatcher.UnsubscribeKey(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	ws, email, ok := notify.ParseUnsubscribeToken(key, token)
+	if !ok {
+		writeError(w, 410, "link_invalid", "this link is not valid")
+		return
+	}
+	org, err := s.Store.UnsubscribeEmail(r.Context(), ws, email)
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, 410, "link_invalid", "this link is not valid")
+		return
+	}
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	_ = s.Store.Audit(tenant.WithWorkspace(r.Context(), ws), store.Actor{Type: "anonymous", Name: email, RemoteAddr: clientIP(r)},
+		"email.unsubscribed", "email", email, nil)
+	writeJSON(w, 200, map[string]string{"email": email, "organisation": org})
+}
+
+// oneClick answers a mail client's RFC 8058 one-click request (a POST with
+// List-Unsubscribe=One-Click to the address in the List-Unsubscribe
+// header), outside /api/v1: it has no session or CSRF header.
+func (s *Server) oneClick(answer func(http.ResponseWriter, *http.Request, string)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 4096)
+		_ = r.ParseForm()
+		answer(w, r, r.URL.Query().Get("t"))
+	}
 }

@@ -64,3 +64,72 @@ export function EmailConfirmPage() {
     </div>
   );
 }
+
+/*
+ * /email/unsubscribe#<token> ("Stop these emails" in an email sent by
+ * Stackurity) and /email/block#<token> ("Never email me again" in a
+ * confirmation email). Nothing happens until the person presses the
+ * button, so mail scanners that open links change nothing.
+ */
+export function EmailStopPage({ kind }: { kind: "unsubscribe" | "block" }) {
+  const [token] = useState(() => window.location.hash.replace(/^#/, "").trim());
+  const [done, setDone] = useState<{ email: string; organisation?: string } | null>(null);
+  const [error, setError] = useState<ApiError | null>(null);
+  const [pending, setPending] = useState(false);
+
+  const go = async () => {
+    setPending(true);
+    setError(null);
+    try {
+      const r = await api.post<{ email: string; organisation?: string }>(kind === "block" ? "/email-recipients/block" : "/email/unsubscribe", { token });
+      window.history.replaceState(null, "", kind === "block" ? "/email/block" : "/email/unsubscribe");
+      setDone(r);
+    } catch (e) {
+      setError(e instanceof ApiError ? e : new ApiError(0, "client", String(e)));
+    } finally {
+      setPending(false);
+    }
+  };
+
+  let body: ReactNode;
+  if (!token || error?.status === 410) {
+    body = <Notice kind="warn">This link is not valid any more.</Notice>;
+  } else if (done) {
+    body =
+      kind === "block" ? (
+        <Notice kind="success">Done: Stackurity will not email {done.email} again, from any organisation.</Notice>
+      ) : (
+        <Notice kind="success">
+          Done: {done.email} will get no more Stackurity emails from {done.organisation}.
+        </Notice>
+      );
+  } else {
+    body = (
+      <>
+        <p>
+          {kind === "block"
+            ? "Stackurity will never email this address again, whichever organisation asks. Nothing else changes."
+            : "This address will stop getting Stackurity notifications from this organisation. Members can change what they get under Settings → Integrations."}
+        </p>
+        <ErrorBox error={error} title="Could not do that" />
+        <div className="form-actions">
+          <button type="button" className="btn btn-primary" onClick={go} disabled={pending}>
+            {kind === "block" ? "Never email me again" : "Stop these emails"}
+          </button>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <div className="center-screen">
+      <div className="auth-card">
+        <div className="auth-logo">
+          <img src="/logo-login.png" alt="Stackurity" width={120} height={120} />
+        </div>
+        <h1 className="auth-title">Email notifications</h1>
+        {body}
+      </div>
+    </div>
+  );
+}

@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -71,6 +72,7 @@ type click struct {
 	ts          time.Time
 	responseURL string
 	value       string // overrides the button value
+	userTeam    string // the user's own Slack workspace, when not team (Slack Connect)
 }
 
 // send posts a click as Slack would, signed with c.secret.
@@ -93,7 +95,7 @@ func (f *slackFx) body(c click) string {
 	p := map[string]any{
 		"type":         "block_actions",
 		"team":         map[string]string{"id": c.team, "domain": "acme"},
-		"user":         map[string]string{"id": c.user, "username": strings.ToLower(c.user), "name": "Slack " + c.user, "team_id": c.team},
+		"user":         map[string]string{"id": c.user, "username": strings.ToLower(c.user), "name": "Slack " + c.user, "team_id": cmp.Or(c.userTeam, c.team)},
 		"response_url": c.responseURL,
 		// As in Slack's payloads, each click has its own trigger and time.
 		"trigger_id": fmt.Sprint(time.Now().UnixNano()),

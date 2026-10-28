@@ -123,11 +123,10 @@ func (s *Store) ForgetSlackChannel(ctx context.Context, team, secretName string)
 				return err
 			}
 		}
-		// Other app channels still connected (an uninstall from Slack
-		// leaves them disabled, without their webhook).
+		// Other app channels of that Slack workspace here, connected or
+		// switched off after an uninstall from Slack.
 		var others int
-		if err := tx.QueryRow(ctx, `SELECT count(*) FROM channels c WHERE c.kind = 'slack' AND c.config->>'slack_app' = 'true' AND c.config->>'team_id' = $1
-			AND EXISTS (SELECT 1 FROM workspace_secrets s WHERE 'secret:' || s.name = c.secret_ref)`,
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM channels WHERE kind = 'slack' AND config->>'slack_app' = 'true' AND config->>'team_id' = $1`,
 			team).Scan(&others); err != nil {
 			return err
 		}
@@ -196,4 +195,23 @@ func (s *Store) SlackAppRemoved(ctx context.Context, team, note string) (int, er
 		return err
 	})
 	return n, err
+}
+
+// SlackAppChannel finds the context's workspace's app channel for a Slack
+// workspace and channel, so adding the app to the same channel again
+// refreshes it instead of making a second one.
+func (s *Store) SlackAppChannel(ctx context.Context, team, channelID string) (*Channel, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT `+channelCols+` FROM channels WHERE kind = 'slack' AND config->>'slack_app' = 'true'
+		AND config->>'team_id' = $1 AND config->>'slack_channel_id' = $2 ORDER BY id LIMIT 1`, team, channelID)
+	if err != nil {
+		return nil, err
+	}
+	c, err := pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByPos[Channel])
+	return c, notFound(err)
+}
+
+// ReviveChannel switches a channel on again and clears its last error.
+func (s *Store) ReviveChannel(ctx context.Context, id int64, config []byte) error {
+	_, err := s.Pool.Exec(ctx, `UPDATE channels SET enabled = true, last_error = '', config = COALESCE($2, config) WHERE id = $1`, id, config)
+	return err
 }
