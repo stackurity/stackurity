@@ -6,15 +6,15 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
-### Fixed
-
-- A vulnerability feed sync no longer runs the server out of memory when many large records change at once. An incremental OSV sync fetched every changed record (up to 5,000) and held them all before storing any; when Ubuntu republished 4,815 records (2.1 GB of JSON, kernel records of up to 3 MB each), every attempt was killed for running out of memory, the server restarted about every 35 minutes, and each restart queued the sync again. Records are now fetched eight at a time and stored in batches of at most 500 records and 16 MiB of JSON, in incremental and full syncs alike. Releases since incremental sync was added were affected; 0.12.0 and 0.13.0 both were.
-- An evaluation uses less memory. It reads a package's advisories only for the release being evaluated (an Ubuntu kernel package has some 70,000 entries across releases and channels, a few hundred megabytes once read, of which one release's apply), and drops them once it has evaluated that package's rows, instead of keeping every package's advisories until it ends. A full evaluation of a workspace with 8,800 installed rows peaked at 765 MiB of heap before. Results are unchanged.
-
 ### Added
 
 - The worker logs a warning naming a job or periodic task, while it runs, when the heap has grown by more than 256 MiB since it started (`STACKURITY_HEAP_WARN_MIB` changes the threshold or turns it off), so a memory spike names its cause even when the process is then killed.
 - With `STACKURITY_METRICS_ADDR` set, the metrics listener also serves Go heap and goroutine profiles at `/debug/pprof/heap` and `/debug/pprof/goroutine`; never on the API port. See [Memory](docs/operations.md#memory).
+
+### Fixed
+
+- A vulnerability feed sync no longer runs the server out of memory when many large records change at once. An incremental OSV sync fetched every changed record (up to 5,000) and held them all before storing any; when Ubuntu republished 4,815 records (2.1 GB of JSON, kernel records of up to 3 MB each), every attempt was killed for running out of memory, the server restarted about every 35 minutes, and each restart queued the sync again. Records are now fetched eight at a time and stored in batches of at most 500 records and 16 MiB of JSON, in incremental and full syncs alike. Releases since incremental sync was added were affected; 0.12.0 and 0.13.0 both were.
+- An evaluation uses less memory. It reads a package's advisories only for the release being evaluated (an Ubuntu kernel package has some 70,000 entries across releases and channels, a few hundred megabytes once read, of which one release's apply), and drops them once it has evaluated that package's rows, instead of keeping every package's advisories until it ends. A full evaluation of a workspace with 8,800 installed rows peaked at 765 MiB of heap before. Results are unchanged.
 
 ## 0.13.0
 
