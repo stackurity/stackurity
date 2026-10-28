@@ -68,6 +68,10 @@ type Syncer struct {
 	// error or a crash in between cannot lose the re-evaluation.
 	Changed func(ctx context.Context, feed string, res *SyncResult) error
 	f       *fetcher
+	// Tests: batchLimits overrides osvBatch and osvBatchBytes; onBatch sees
+	// each batch of OSV records before it is stored.
+	batchLimits func() (count int, bytes int64)
+	onBatch     func(count int, bytes int64)
 }
 
 func NewSyncer(s *store.Store, log *slog.Logger, cfg Config) *Syncer {
@@ -215,7 +219,69 @@ func sameSet(list []string, set map[string]bool) bool {
 
 // --- OSV
 
-const osvBatch = 500
+// OSV records are stored in batches of at most osvBatch records and about
+// osvBatchBytes of JSON, and an incremental sync has at most osvFetchers
+// records in flight, so a sync holds a bounded amount of advisory data
+// whatever the number or size of the records that changed. Record sizes vary
+// by three orders of magnitude: an Ubuntu kernel record can list every
+// kernel flavour and run to several megabytes, and when Ubuntu republished
+// 4,815 records (2.1 GB of JSON) the sync that held them all at once ran the
+// server out of memory.
+const (
+	osvBatch      = 500
+	osvBatchBytes = 16 << 20
+	osvFetchers   = 8
+)
+
+// osvBatcher collects records and stores them a batch at a time.
+type osvBatcher struct {
+	ctx      context.Context
+	s        *Syncer
+	feed     string
+	res      *SyncResult
+	maxCount int
+	maxBytes int64
+	batch    []*osv.Vulnerability
+	bytes    int64
+}
+
+func (s *Syncer) newBatcher(ctx context.Context, feed string, res *SyncResult) *osvBatcher {
+	b := &osvBatcher{ctx: ctx, s: s, feed: feed, res: res, maxCount: osvBatch, maxBytes: osvBatchBytes}
+	if s.batchLimits != nil {
+		b.maxCount, b.maxBytes = s.batchLimits()
+	}
+	return b
+}
+
+// add queues a record of size bytes (its JSON), storing the batch when it
+// is full.
+func (b *osvBatcher) add(v *osv.Vulnerability, size int64) error {
+	b.batch = append(b.batch, v)
+	b.bytes += size
+	if len(b.batch) >= b.maxCount || b.bytes >= b.maxBytes {
+		return b.flush()
+	}
+	return nil
+}
+
+func (b *osvBatcher) flush() error {
+	if len(b.batch) == 0 {
+		return nil
+	}
+	if b.s.onBatch != nil {
+		b.s.onBatch(len(b.batch), b.bytes)
+	}
+	n, err := b.s.Store.UpsertAdvisories(b.ctx, b.feed, b.batch)
+	if err != nil {
+		return err
+	}
+	b.res.noteEcosystems(osvBase(b.feed), b.batch)
+	b.res.Changed += n
+	// The records are not kept: clear the slots so they can be collected.
+	clear(b.batch)
+	b.batch, b.bytes = b.batch[:0], 0
+	return nil
+}
 
 func (s *Syncer) syncOSV(ctx context.Context, feed, eco, cursor string) (*SyncResult, string, error) {
 	base := strings.TrimSuffix(s.f.cfg.OSVBaseURL, "/") + "/" + url.PathEscape(eco)
@@ -258,17 +324,7 @@ func (s *Syncer) osvFull(ctx context.Context, feed, base string) (*SyncResult, s
 		return nil, "", err
 	}
 	res := &SyncResult{Full: true, Packages: map[store.PackageRef]bool{}}
-	var batch []*osv.Vulnerability
-	flush := func() error {
-		if len(batch) == 0 {
-			return nil
-		}
-		n, err := s.Store.UpsertAdvisories(ctx, feed, batch)
-		res.noteEcosystems(osvBase(feed), batch)
-		res.Changed += n
-		batch = batch[:0]
-		return err
-	}
+	b := s.newBatcher(ctx, feed, res)
 	for _, zf := range zr.File {
 		if ctx.Err() != nil {
 			return nil, "", ctx.Err()
@@ -281,14 +337,11 @@ func (s *Syncer) osvFull(ctx context.Context, feed, base string) (*SyncResult, s
 			s.Log.Warn("skipping unreadable OSV record", "feed", feed, "file", zf.Name, "err", err)
 			continue
 		}
-		batch = append(batch, v)
-		if len(batch) >= osvBatch {
-			if err := flush(); err != nil {
-				return nil, "", err
-			}
+		if err := b.add(v, int64(zf.UncompressedSize64)); err != nil {
+			return nil, "", err
 		}
 	}
-	if err := flush(); err != nil {
+	if err := b.flush(); err != nil {
 		return nil, "", err
 	}
 	// The cursor is the download start: modified_id.csv entries after this
@@ -355,50 +408,55 @@ func (s *Syncer) osvIncremental(ctx context.Context, feed, base, cursor string) 
 	if len(ids) == 0 {
 		return res, cursor, nil
 	}
-	vulns := make([]*osv.Vulnerability, len(ids))
-	errs := make([]error, len(ids))
-	sem := make(chan struct{}, 8)
-	var wg sync.WaitGroup
-	for i, id := range ids {
-		wg.Add(1)
-		go func(i int, id string) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			b, err := s.f.download(ctx, base+"/"+url.PathEscape(id)+".json", 64<<20)
-			if err != nil {
-				errs[i] = err
-				return
-			}
-			var v osv.Vulnerability
-			if err := json.Unmarshal(b, &v); err != nil {
-				errs[i] = err
-				return
-			}
-			vulns[i] = &v
-		}(i, id)
+	// The records are fetched osvFetchers at a time and stored as batches
+	// fill, never all held at once. A failure keeps the old cursor, so the
+	// next sync fetches them all again; those already stored are unchanged
+	// then, and the packages they touched are still queued for
+	// re-evaluation (collectPending).
+	b := s.newBatcher(ctx, feed, res)
+	type fetched struct {
+		v    *osv.Vulnerability
+		size int64
+		err  error
 	}
-	wg.Wait()
-	var got []*osv.Vulnerability
-	for i, v := range vulns {
-		if errs[i] != nil {
-			var se *statusError
-			if errors.As(errs[i], &se) && se.Status == 404 {
-				continue // record moved or removed upstream
+	window := make([]fetched, osvFetchers)
+	for start := 0; start < len(ids); start += osvFetchers {
+		part := ids[start:min(start+osvFetchers, len(ids))]
+		var wg sync.WaitGroup
+		for i, id := range part {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				raw, err := s.f.download(ctx, base+"/"+url.PathEscape(id)+".json", 64<<20)
+				if err != nil {
+					window[i] = fetched{err: err}
+					return
+				}
+				var v osv.Vulnerability
+				if err := json.Unmarshal(raw, &v); err != nil {
+					window[i] = fetched{err: err}
+					return
+				}
+				window[i] = fetched{v: &v, size: int64(len(raw))}
+			}()
+		}
+		wg.Wait()
+		for i, f := range window[:len(part)] {
+			window[i] = fetched{}
+			if f.err != nil {
+				var se *statusError
+				if errors.As(f.err, &se) && se.Status == 404 {
+					continue // record moved or removed upstream
+				}
+				return nil, "", fmt.Errorf("fetch %s: %w", part[i], f.err)
 			}
-			// Keep the old cursor so the failed records are retried.
-			return nil, "", fmt.Errorf("fetch %s: %w", ids[i], errs[i])
+			if err := b.add(f.v, f.size); err != nil {
+				return nil, "", err
+			}
 		}
-		got = append(got, v)
 	}
-	for i := 0; i < len(got); i += osvBatch {
-		end := min(i+osvBatch, len(got))
-		n, err := s.Store.UpsertAdvisories(ctx, feed, got[i:end])
-		if err != nil {
-			return nil, "", err
-		}
-		res.noteEcosystems(osvBase(feed), got[i:end])
-		res.Changed += n
+	if err := b.flush(); err != nil {
+		return nil, "", err
 	}
 	return res, newest.Format(time.RFC3339Nano), nil
 }

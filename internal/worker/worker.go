@@ -74,11 +74,15 @@ type Worker struct {
 	// context ends may take to finish before they are cancelled (and their
 	// lease released). No task starts after the context ends.
 	ShutdownGrace time.Duration
-	handlers      map[string]Handler
-	timeouts      map[string]time.Duration
-	periodic      []periodic
-	running       map[string]*atomic.Bool
-	id            string
+	// HeapWarn is the growth of the Go heap during one job or periodic task
+	// above which a warning names it (zero: DefaultHeapWarn; negative: off).
+	HeapWarn int64
+	heap     *heapWatch
+	handlers map[string]Handler
+	timeouts map[string]time.Duration
+	periodic []periodic
+	running  map[string]*atomic.Bool
+	id       string
 }
 
 type periodic struct {
@@ -176,6 +180,18 @@ func (w *Worker) Run(ctx context.Context) {
 		w.PeriodicSlots = 4
 	}
 	var wg sync.WaitGroup
+	if w.HeapWarn >= 0 {
+		limit := w.HeapWarn
+		if limit == 0 {
+			limit = DefaultHeapWarn
+		}
+		w.heap = newHeapWatch(limit, w.Log)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			w.heap.run(ctx)
+		}()
+	}
 	for i := 0; i < w.Concurrency; i++ {
 		wg.Add(1)
 		go func(n int) {
@@ -255,6 +271,7 @@ func (w *Worker) run(ctx context.Context, job *store.Job, owner string) {
 		}
 	}()
 	start := time.Now()
+	endHeap := w.heap.begin("job "+job.Kind, "job", job.ID)
 	err := func() (err error) {
 		defer func() {
 			if r := recover(); r != nil {
@@ -263,6 +280,7 @@ func (w *Worker) run(ctx context.Context, job *store.Job, owner string) {
 		}()
 		return h(jctx, job.Payload)
 	}()
+	endHeap()
 	var deferred *Deferred
 	if errors.As(err, &deferred) {
 		log.Debug("job deferred", "reason", deferred.Reason, "after", deferred.After)
@@ -437,6 +455,7 @@ func (w *Worker) runPeriodic(ctx context.Context, p periodic) error {
 		w.heartbeat(ctx, p.name, done, func() { close(lost); cancel() })
 	}()
 	start := time.Now()
+	endHeap := w.heap.begin("task " + p.name)
 	runErr := func() (err error) {
 		defer func() {
 			if r := recover(); r != nil {
@@ -445,6 +464,7 @@ func (w *Worker) runPeriodic(ctx context.Context, p periodic) error {
 		}()
 		return p.fn(tctx)
 	}()
+	endHeap()
 	close(done)
 	hb.Wait()
 	// Recording the outcome must survive shutdown of the parent context.

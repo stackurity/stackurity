@@ -112,7 +112,24 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 		feedState[f.Name] = f
 	}
 
-	advCache := map[store.PackageRef][]store.AdvisoryMatch{}
+	// A package's advisories are read once and dropped after the last row
+	// that needs them, so an evaluation holds the advisories of the packages
+	// it is working on rather than of every package it has seen: a full
+	// evaluation of a workspace with 8,800 installed rows reached 765 MiB of
+	// heap with every package's advisories kept to the end.
+	// Entries are read for the row's own ecosystem (release), so the cache
+	// is per package and ecosystem.
+	type advKey struct {
+		pkg       store.PackageRef
+		ecosystem string
+	}
+	advCache := map[advKey][]store.AdvisoryMatch{}
+	lastUse := map[advKey]int{}
+	for i, r := range rows {
+		if t, ok := osv.TargetFor(r.Purl, r.Version, r.Evidence); ok {
+			lastUse[advKey{store.PackageRef{BaseEcosystem: osv.BaseEcosystem(t.Ecosystem), Name: t.Name}, t.Ecosystem}] = i
+		}
+	}
 	cycleCache := map[string][]store.LifecycleCycle{}
 	releaseCache := map[string]bool{}
 	var want []store.FindingInput
@@ -120,7 +137,7 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 	invIDs := make([]int64, 0, len(rows))
 	stats := &EvalStats{Rows: len(rows)}
 
-	for _, r := range rows {
+	for ri, r := range rows {
 		invIDs = append(invIDs, r.InventoryID)
 
 		// --- vulnerabilities. Every row ends up evaluated, unsupported or
@@ -170,13 +187,16 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 			if rc.State != store.CoverageEvaluated {
 				break
 			}
-			key := store.PackageRef{BaseEcosystem: base, Name: t.Name}
+			key := advKey{store.PackageRef{BaseEcosystem: base, Name: t.Name}, t.Ecosystem}
 			advs, cached := advCache[key]
 			if !cached {
-				if advs, err = e.Store.AdvisoriesFor(ctx, base, t.Name); err != nil {
+				if advs, err = e.Store.AdvisoriesFor(ctx, base, t.Name, t.Ecosystem); err != nil {
 					return nil, err
 				}
 				advCache[key] = advs
+			}
+			if lastUse[key] == ri {
+				delete(advCache, key)
 			}
 			found, perr := matchAdvisories(r, t, advs, feed)
 			if perr != "" {
