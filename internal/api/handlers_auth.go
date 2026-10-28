@@ -124,6 +124,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	if err := s.Store.ClearFailures(r.Context(), "login-fail", subject); err != nil {
 		s.Log.Error("clearing sign-in failures", "err", err)
 	}
+	s.rememberAddress(r, subject)
 	s.completePasswordLogin(w, r, u)
 }
 
