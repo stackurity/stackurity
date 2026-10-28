@@ -314,8 +314,13 @@ func (s *Store) SetSessionWorkspace(ctx context.Context, secret string, userID, 
 	if !member {
 		return ErrNotFound
 	}
-	_, err = s.Pool.Exec(ctx, `UPDATE sessions SET workspace_id = $3 WHERE token_hash = $1 AND user_id = $2`,
+	// A session pinned to a workspace (CreateSSOSession) stays there.
+	tag, err := s.Pool.Exec(ctx, `UPDATE sessions SET workspace_id = $3 WHERE token_hash = $1 AND user_id = $2
+		AND (sso_workspace_id IS NULL OR sso_workspace_id = $3)`,
 		auth.HashToken(secret), userID, workspaceID)
+	if err == nil && tag.RowsAffected() == 0 {
+		return fmt.Errorf("this session was started by an organisation's single sign-on and works only there; sign in again to use another organisation: %w", ErrConflict)
+	}
 	return err
 }
 

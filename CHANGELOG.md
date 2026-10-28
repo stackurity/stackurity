@@ -4,6 +4,12 @@ All notable changes to Stackurity. Versions follow [Semantic Versioning](https:/
 
 Each release's section is published as its GitHub release notes, and a tag without a section here cannot be released (`go run ./tools/changelog -version vX.Y.Z` prints it). New changes go under **Unreleased**, which is renamed to the version when it is tagged. Subsections are **Security**, **Added**, **Changed**, **Fixed** and **Upgrading**. Put fixes for vulnerabilities under `### Security`, first: installations treat a release with that heading as a security release and show administrators a banner they can only snooze.
 
+## Unreleased
+
+### Added
+
+- **Stackurity Cloud: each organisation's own single sign-on** (on plans whose `features` in `cloud-plans.json` include `sso`; the pricing page lists it under Enterprise). Admins connect a SAML identity provider under **Settings → Single sign-on** (metadata URL or file, attribute and role mapping, the addresses to give the provider), prove their email domains with a DNS TXT record (a domain can be verified by one organisation only), test the connection (required before switching on, and again after any change), and can require single sign-on for members, with the owner keeping password access. People find their organisation's sign-in from their email on the sign-in page. Everything is scoped to the organisation under row-level security, and a session started by an organisation's single sign-on works only in that organisation (migration `0049_sso_sessions`). Existing accounts are linked only when the organisation allows it, and only its own members that are not instance administrators.
+
 ## 0.13.5
 
 ### Security
