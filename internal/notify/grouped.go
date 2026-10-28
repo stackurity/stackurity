@@ -956,6 +956,12 @@ func (d *Dispatcher) summaryMessage(r store.Route, weekly bool, data *summaryDat
 	if err != nil {
 		return Message{}, false, err
 	}
+	// Closed because an advisory was withdrawn or changed: not a fix, so
+	// never counted as fixed; told apart in the Fixed section.
+	gone, err := data.counts(store.IssuesNoLongerAffected, from, to)
+	if err != nil {
+		return Message{}, false, err
+	}
 	connected, err := d.Store.AssetsAnnounced(data.ctx, from, to)
 	if err != nil {
 		return Message{}, false, err
@@ -971,8 +977,14 @@ func (d *Dispatcher) summaryMessage(r store.Route, weekly bool, data *summaryDat
 		backAssets = nil
 	}
 	nBack, _ := total(backAssets)
+	nGone := 0
+	for _, c := range gone {
+		if scope(c) {
+			nGone += c.Count
+		}
+	}
 	if !r.SendResolved {
-		nFixed, fixedAssets = 0, nil
+		nFixed, fixedAssets, nGone = 0, nil, 0
 	}
 	var conn []store.NewAsset
 	if assetsWanted(r) {
@@ -989,7 +1001,8 @@ func (d *Dispatcher) summaryMessage(r store.Route, weekly bool, data *summaryDat
 	for _, a := range conn {
 		connIssues += a.Issues
 	}
-	counts := map[string]int{"new": nNew, "new_urgent": nUrgent, "fixed": nFixed, "connected": len(conn), "connected_issues": connIssues, "regressed": nBack}
+	counts := map[string]int{"new": nNew, "new_urgent": nUrgent, "fixed": nFixed, "connected": len(conn), "connected_issues": connIssues, "regressed": nBack,
+		"no_longer_affected": nGone}
 	var sections []Section
 
 	if len(backAssets) > 0 {
@@ -1038,6 +1051,15 @@ func (d *Dispatcher) summaryMessage(r store.Route, weekly bool, data *summaryDat
 			items = append(items, Item{Text: fixedText(a), Link: d.findingsURL(a.ID, fixedQ), asset: a.ID})
 		}
 		sections = append(sections, Section{Title: "Fixed", Items: items})
+	}
+	if nGone > 0 {
+		text := fmt.Sprintf("%s closed without a fix: the advisory was withdrawn or no longer lists the installed version", plural(nGone, "issue"))
+		item := Item{Text: text, Link: d.findingsURL(0, fixedQ)}
+		if len(sections) > 0 && sections[len(sections)-1].Title == "Fixed" {
+			sections[len(sections)-1].Items = append(sections[len(sections)-1].Items, item)
+		} else {
+			sections = append(sections, Section{Title: "Fixed", Items: []Item{item}})
+		}
 	}
 
 	// The top fixes still open, for this route's assets.
@@ -1160,7 +1182,7 @@ func (d *Dispatcher) summaryMessage(r store.Route, weekly bool, data *summaryDat
 	m := d.grouped(r, EventSummary, title, sections)
 	m.Period = &Period{From: from.UTC(), To: to.UTC()}
 	m.Counts = counts
-	changed := nNew > 0 || nFixed > 0 || len(conn) > 0 || newlyOverdue > 0 || newSys > 0 || nBack > 0
+	changed := nNew > 0 || nFixed > 0 || nGone > 0 || len(conn) > 0 || newlyOverdue > 0 || newSys > 0 || nBack > 0
 	return m, changed, nil
 }
 

@@ -117,7 +117,8 @@ const (
 	// IssuesNew: active findings first seen in [from, to) on assets that
 	// were already announced (an asset's first scan is not "new issues").
 	IssuesNew IssueSet = iota
-	// IssuesFixed: findings resolved in [from, to).
+	// IssuesFixed: findings fixed in [from, to): resolved because the
+	// installed version changed or the component was removed.
 	IssuesFixed
 	// IssuesOverdue: active findings past their fix deadline now.
 	IssuesOverdue
@@ -127,6 +128,9 @@ const (
 	IssuesAckOverdue
 	// IssuesRegressed: findings that came back after a fix in [from, to).
 	IssuesRegressed
+	// IssuesNoLongerAffected: findings closed in [from, to) with no fix,
+	// because their advisory was withdrawn or changed.
+	IssuesNoLongerAffected
 )
 
 const activeFinding = `f.status = 'open' AND f.state IN ('new', 'acknowledged', 'in_progress')`
@@ -149,8 +153,10 @@ func (s *Store) CountIssues(ctx context.Context, set IssueSet, from, to time.Tim
 		cond = activeFinding + ` AND f.first_seen >= $1 AND f.first_seen < $2 AND a.announced_at IS NOT NULL AND f.first_seen > a.announced_at
 			AND (f.regressed_at IS NULL OR f.regressed_at < $1)`
 	case IssuesFixed:
-		cond = `f.status = 'resolved' AND f.resolved_at >= $1 AND f.resolved_at < $2`
+		cond = `f.status = 'resolved' AND f.resolved_at >= $1 AND f.resolved_at < $2 AND f.resolution_kind IN ('remediated', 'removed')`
 		fix, title = "f.resolved_fix_group", "f.resolved_fix_title"
+	case IssuesNoLongerAffected:
+		cond = `f.status = 'resolved' AND f.resolved_at >= $1 AND f.resolved_at < $2 AND f.resolution_kind IN ('advisory_withdrawn', 'advisory_changed')`
 	case IssuesOverdue:
 		cond = activeFinding + ` AND f.fix_due < $2 AND $1::timestamptz IS NOT NULL AND NOT ` + BacklogFinding
 	case IssuesNewlyOverdue:

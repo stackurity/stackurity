@@ -615,7 +615,7 @@ stackurity.exe agent --interval 6h`,
         table: [
           ["Filter", "Use"],
           ["Search", "CVE, package, title or asset name."],
-          ["Status", "Open (default), resolved, or all. Findings resolve on their own when the component is upgraded or removed."],
+          ["Status", "Open (default), resolved, or all. Findings resolve on their own when the component is upgraded or removed, and close when the advisory is withdrawn or changed; each resolved issue says why ([Why an issue closed](help:remediation-outcomes))."],
           ["Workflow state", "New, To do, In progress, Snoozed, Accepted (ignored), **Regressed** (came back after a fix), or **Active** (anything not snoozed or accepted)."],
           ["Fix", "Only the issues that one fix clears."],
           ["Priority / Severity", "Tick one or more."],
@@ -936,9 +936,39 @@ stackurity.exe agent --interval 6h`,
       {
         steps: [
           "Choose **From** and **To** (one day to one year; UTC days).",
-          "Read the sections: coverage and assets, open findings by severity and priority, overdue findings, resolution within deadlines and median days to fix, every active exception with its reason, mitigation and expiry, and drift for each replica.",
+          "Read the sections: coverage and assets, open findings by severity and priority, overdue findings, remediation within deadlines and median time to fix, every active exception with its reason, mitigation and expiry, and drift for each replica.",
           "Click **Print** (or print to PDF) for a clean light-theme copy, or **Download JSON** for the raw data.",
         ],
+      },
+      {
+        p: "**Remediated** counts only issues fixed on the asset in the period: upgraded, fixed by a remediation plan, or removed. Issues that closed with nothing changed on the asset, such as an advisory withdrawn by its source, are shown on their own line as **closed, not remediation**, with a link to the list, and are never in the deadline share or the median. See [Why an issue closed](help:remediation-outcomes).",
+      },
+    ],
+  },
+  {
+    id: "remediation-outcomes",
+    title: "Remediation outcomes and why an issue closed",
+    section: "Daily work",
+    summary: "What counts as remediation in Outcomes and the evidence report, and what does not.",
+    where: ["Activity", "Outcomes"],
+    keywords: "outcomes remediation time to remedy mttr sla resolved closed withdrawn advisory changed superseded not counted",
+    body: [
+      {
+        p: "Every resolved issue records why it closed. Only a change on the asset is remediation: **Outcomes** and the **Evidence report** count those in resolved, time to remedy and SLA, and list the rest apart with a link to them.",
+      },
+      {
+        table: [
+          ["Why it closed", "Counted as remediation?"],
+          ["**Upgraded or fixed**: a newer inventory shows another version, or a remediation plan was verified", "Yes"],
+          ["**Removed**: a complete inventory no longer lists the component", "Yes"],
+          ["**Advisory withdrawn**: the source withdrew every advisory behind it (“Ubuntu withdrew this advisory on 27 Oct”)", "No"],
+          ["**Advisory changed**: the advisory or lifecycle data no longer lists the installed version, which did not change", "No"],
+          ["**Upgraded but still affected**: the issue continues as an issue on the new version", "No"],
+          ["**No longer evaluated**: the feed was disabled or the version could not be compared", "No"],
+        ],
+      },
+      {
+        p: "The issue page and its history show the specific reason. In **Fixes ▸ All issues**, the link from Outcomes lists the issues closed without remediation in the window.",
       },
     ],
   },

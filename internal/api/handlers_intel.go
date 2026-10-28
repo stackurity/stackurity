@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -40,6 +41,15 @@ func (s *Server) listFindings(w http.ResponseWriter, r *http.Request) {
 	}
 	f.AssigneeTeam = qInt(r, "assignee_team")
 	f.IncidentID = qInt(r, "incident_id")
+	if rk := q.Get("resolution_kind"); rk != "" {
+		for _, k := range strings.Split(rk, ",") {
+			if !slices.Contains(store.ResolutionKinds, k) {
+				s.fail(w, r, badRequest("resolution_kind must be one or more of "+strings.Join(store.ResolutionKinds, ", ")))
+				return
+			}
+			f.ResolutionKind = append(f.ResolutionKind, k)
+		}
+	}
 	f.ResolvedWithinDays = withinDays(qInt(r, "resolved_within"))
 	f.NewWithinDays = withinDays(qInt(r, "new_within"))
 	switch q.Get("sort") {

@@ -17,10 +17,10 @@ import (
 
 // fixedByInventory is true when a resolved finding (alias a) was closed
 // because the component was upgraded or removed, not because the
-// intelligence changed ("no longer affected (re-evaluated ...)"). Only an
-// issue fixed this way can regress.
+// intelligence changed (advisory withdrawn or changed, see resolution.go).
+// Only an issue fixed this way can regress.
 func fixedByInventory(a string) string {
-	return a + `.resolution NOT LIKE 'no longer affected%'`
+	return a + `.resolution_kind IN ('remediated', 'removed', 'superseded')`
 }
 
 // freeFix is true when finding a has a fixed version that needs no paid

@@ -130,6 +130,11 @@ func TestSummaryContents(t *testing.T) {
 	// web-1 is fixed (upgraded), web-2 has a new issue.
 	f.findingsOn(map[string][]string{"web-2": {"CVE-2020-8203"}})
 	f.tick()
+	// The finding was dropped with the version unchanged; an upgrade
+	// records it as remediated (only remediation counts as fixed).
+	if _, err := f.st.Pool.Exec(ctx, `UPDATE findings SET resolution_kind = 'remediated' WHERE status = 'resolved'`); err != nil {
+		t.Fatal(err)
+	}
 	f.tick()
 	if ev := f.hook.events(); len(ev) != 0 {
 		t.Fatalf("a summary-only route sent %v", ev)

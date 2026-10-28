@@ -639,9 +639,12 @@ func init() {
 		},
 	}
 	tools["verify_since"] = tool{
-		description: "What changed since a time, e.g. when a fix was deployed: findings resolved since then and why (upgraded, " +
-			"removed, fixed by remediation, or re-evaluated against new advisory data), findings that existed then and are still " +
-			"open, and when each asset last sent a complete inventory, to tell 'fixed' from 'not re-scanned yet'.",
+		description: "What changed since a time, e.g. when a fix was deployed: findings resolved since then and why (cause: " +
+			"upgraded, remediation, removed; or, with nothing changed on the asset, advisory_withdrawn, advisory_changed, superseded " +
+			"(upgraded but still affected), not_evaluated), with counts_as_remediation per finding and the totals remediated and " +
+			"closed_not_remediation; findings that existed then and are still open; and when each asset last sent a complete " +
+			"inventory, to tell 'fixed' from 'not re-scanned yet'. Only remediated findings were fixed: never report a withdrawn " +
+			"or changed advisory as a fix.",
 		schema: obj(map[string]any{
 			"since":    str("RFC 3339 time (2026-10-20T14:00:00Z) or a date (2026-10-20)"),
 			"asset_id": num("Limit to one asset"),

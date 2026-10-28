@@ -353,3 +353,31 @@ func TestUpgradeAction(t *testing.T) {
 		}
 	}
 }
+
+// Summaries count only real fixes (an upgrade or a removal) as fixed;
+// issues closed because their advisory was withdrawn or changed are told
+// apart.
+func TestSummaryFixedIsRemediationOnly(t *testing.T) {
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	f := setup(t)
+	f.addAsset("a", "production", true)
+	f.addAsset("b", "production", true)
+	f.setFindings("a", "b")
+	f.tick()
+	before := time.Now().Add(-time.Hour)
+	if _, err := f.st.Pool.Exec(ctx, `UPDATE findings SET status = 'resolved', resolved_at = now(),
+		resolution_kind = CASE WHEN asset_id = $1 THEN 'remediated' ELSE 'advisory_withdrawn' END`, f.asset["a"]); err != nil {
+		t.Fatal(err)
+	}
+	routes, _ := f.st.ListRoutes(ctx)
+	data := &summaryData{d: f.d, ctx: ctx, cache: map[string][]store.IssueCount{}}
+	sm, changed, err := f.d.summaryMessage(routes[0], false, data, before, time.Now().Add(time.Minute), false)
+	if err != nil || !changed {
+		t.Fatalf("summary: %v %v", changed, err)
+	}
+	text := strings.Join(sm.Summary, "\n")
+	if sm.Counts["fixed"] != 1 || sm.Counts["no_longer_affected"] != 1 || !strings.Contains(sm.Title, "1 fixed") ||
+		!strings.Contains(text, "1 issue closed without a fix") {
+		t.Errorf("summary %q counts %v\n%s", sm.Title, sm.Counts, text)
+	}
+}

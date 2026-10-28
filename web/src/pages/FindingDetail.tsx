@@ -11,6 +11,7 @@ import { EvidenceStateBadge, Provenance } from "../components/Provenance";
 import { UpgradeCard } from "../components/Upgrade";
 import { WhyMatched } from "../components/Why";
 import { Card, ErrorBox, KeyValues, Loading, Notice, PageHeader, RelativeTime } from "../components/ui";
+import { closedReason, countsAsRemediation } from "../resolution";
 
 const CVE_RE = /^CVE-\d{4}-\d{4,}$/i;
 const CVE_IN = /CVE-\d{4}-\d{4,}/i;
@@ -23,6 +24,32 @@ function ExtLink({ href, children }: { href: string | null; children: ReactNode 
       {children}
       <span className="sr-only"> (opens in a new tab)</span>
     </a>
+  );
+}
+
+/** Why the finding closed: remediation, or a closure with nothing fixed on the asset, which reports do not count. */
+function ClosedNotice({ f }: { f: Finding }) {
+  const kind = f.resolution_kind ?? "";
+  const reason = closedReason(kind, f.resolution, f.resolution_detail);
+  const successor = f.resolution_detail?.successor;
+  if (countsAsRemediation(kind) || kind === "") {
+    return (
+      <Notice kind="success">
+        Resolved <RelativeTime iso={f.resolved_at} />: {reason}.
+      </Notice>
+    );
+  }
+  return (
+    <Notice kind="info">
+      <strong>Closed: {reason}.</strong> Closed <RelativeTime iso={f.resolved_at} />. Nothing was fixed on this asset, so this is not counted as
+      remediation in the outcomes or evidence reports.
+      {successor ? (
+        <>
+          {" "}
+          The issue continues as <Link to={`/findings/${successor}`}>finding #{successor}</Link>.
+        </>
+      ) : null}
+    </Notice>
   );
 }
 
@@ -214,12 +241,7 @@ export function FindingDetailPage() {
         }
       />
       {res.data.why && <WhyMatched why={res.data.why} />}
-      {f.status !== "open" && (
-        <Notice kind="success">
-          Resolved <RelativeTime iso={f.resolved_at} />
-          {f.resolution ? `: ${f.resolution}` : ""}.
-        </Notice>
-      )}
+      {f.status !== "open" && <ClosedNotice f={f} />}
       {f.known_exploited && (
         <div className="alert alert-error" role="alert">
           <strong>Known exploited:</strong> this vulnerability is in the CISA Known Exploited Vulnerabilities catalog: attackers are

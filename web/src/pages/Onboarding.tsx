@@ -971,7 +971,7 @@ export function SetupChecklist({ o, onChange }: { o: Onboarding; onChange: () =>
     ...(o.steps.project ? [] : [{ done: false, text: "Create a project", to: "/get-started?step=project" }]),
     { done: o.steps.asset, text: "Add a server, repository or SBOM", to: o.steps.project ? "/get-started?step=asset" : "/assets/add" },
     { done: Boolean(o.steps.assistant), text: "Connect an AI assistant", to: "/settings/ai-assistants" },
-    { done: o.steps.notifications, text: "Turn on notifications", to: "/settings/notifications" },
+    { done: o.steps.notifications, text: "Turn on notifications", to: "/settings/integrations" },
     { done: o.steps.invite, text: "Invite your team", to: "/settings/users" },
   ];
   const left = items.filter((i) => !i.done).length;

@@ -42,6 +42,25 @@ export function plural(n: number, word: string, pluralWord = word + "s"): string
   return `${n.toLocaleString()} ${n === 1 ? word : pluralWord}`;
 }
 
+/** A duration given in days, pluralised and without false precision:
+ * "under a minute", "1 minute", "1 hour", "5 hours", "1 day", "2.5 days", "12 days". */
+export function durationDays(v: number): string {
+  const minutes = v * 1440;
+  if (minutes < 1) return "under a minute";
+  if (minutes < 59.5) return plural(Math.round(minutes), "minute");
+  if (v * 24 < 23.5) return plural(Math.round(v * 24), "hour");
+  if (v < 9.95) {
+    const d = Math.round(v * 10) / 10;
+    return `${d.toLocaleString()} ${d === 1 ? "day" : "days"}`;
+  }
+  return plural(Math.round(v), "day");
+}
+
+/** "1 day", "30 days": a whole number of days. */
+export function dayCount(n: number): string {
+  return plural(n, "day");
+}
+
 export function humanize(s: string): string {
   return s.replace(/_/g, " ");
 }

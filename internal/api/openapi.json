@@ -3183,7 +3183,7 @@
    "get": {
     "operationId": "get_findings",
     "summary": "Vulnerability and end-of-life findings, SOS, priority, known-exploited and most severe first",
-    "description": "Vulnerability and end-of-life findings, SOS, priority, known-exploited and most severe first. `new_within=N` keeps findings first seen in the last N days, `resolved_within=N` those resolved in the last N days (with `status=resolved`), and `sort=asset` orders by asset name first\n\nRole: viewer",
+    "description": "Vulnerability and end-of-life findings, SOS, priority, known-exploited and most severe first. `new_within=N` keeps findings first seen in the last N days, `resolved_within=N` those resolved in the last N days (with `status=resolved`), `resolution_kind` (comma-separated: remediated, removed, superseded, advisory_withdrawn, advisory_changed, not_evaluated, other) those closed for that reason, and `sort=asset` orders by asset name first\n\nRole: viewer",
     "tags": [
      "Findings and fixes"
     ],
@@ -3279,6 +3279,14 @@
      },
      {
       "name": "resolved_within",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "resolution_kind",
       "in": "query",
       "required": false,
       "schema": {
@@ -3386,7 +3394,7 @@
    "get": {
     "operationId": "get_findings_verify",
     "summary": "What was resolved, and what is still open, since a time",
-    "description": "What changed since `since` (RFC 3339 time or `YYYY-MM-DD`): findings `resolved` since then with their `cause`, findings that existed then and are `still_open`, `opened_since`, and each asset's last complete collection. `asset_rescanned_since` tells \"fixed\" from \"not scanned again yet\". Lists are capped at `limit` (default 100, max 500) with a `total`\n\nRole: viewer",
+    "description": "What changed since `since` (RFC 3339 time or `YYYY-MM-DD`): findings `resolved` since then with their `cause`, `resolution_kind` and whether it `counts_as_remediation` (the totals `remediated` and `closed_not_remediation`, and `resolved_by_kind`), findings that existed then and are `still_open`, `opened_since`, and each asset's last complete collection. `asset_rescanned_since` tells \"fixed\" from \"not scanned again yet\". Lists are capped at `limit` (default 100, max 500) with a `total`\n\nRole: viewer",
     "tags": [
      "Findings and fixes"
     ],
@@ -3441,7 +3449,7 @@
    "get": {
     "operationId": "get_findings_id",
     "summary": "One finding, with every source advisory in its group and, while it is open, its upgrade recommendation",
-    "description": "One finding, with every source advisory in its group and, while it is open, its `upgrade` recommendation\n\nRole: viewer",
+    "description": "One finding (with `resolution_kind` and `resolution_detail` once resolved), with every source advisory in its group and, while it is open, its `upgrade` recommendation\n\nRole: viewer",
     "tags": [
      "Findings and fixes"
     ],
@@ -6013,7 +6021,7 @@
    "get": {
     "operationId": "get_reports_evidence",
     "summary": "Patch-management evidence for a period (licensed edition)",
-    "description": "Patch-management evidence for a period (dates, `to` inclusive; default the last 30 days, at most a year): assets and their collection status, hosts needing a reboot, evaluation gaps, open findings by severity and priority, overdue findings, findings resolved in the period with the share resolved within their deadline and the median days from first detection to resolution, every active exception with its reason, mitigation and expiry, and drift for each `replica_of` pair\n\nRole: viewer",
+    "description": "Patch-management evidence for a period (dates, `to` inclusive; default the last 30 days, at most a year): assets and their collection status, hosts needing a reboot, evaluation gaps, open findings by severity and priority, overdue findings, findings remediated in the period (upgraded, fixed or removed) with the share resolved within their deadline and the median days from first detection to resolution, findings closed without remediation (advisory withdrawn or changed) counted apart, every active exception with its reason, mitigation and expiry, and drift for each `replica_of` pair\n\nRole: viewer",
     "tags": [
      "Reports"
     ],
@@ -6060,7 +6068,7 @@
    "get": {
     "operationId": "get_reports_outcomes",
     "summary": "Remediation outcomes over the last days (1 to 365, default 90)",
-    "description": "Remediation outcomes over the last `days` (1 to 365, default 90)\n\nRole: viewer",
+    "description": "Remediation outcomes over the last `days` (1 to 365, default 90). `resolved`, time to remedy and SLA count remediated and removed findings only; findings closed with nothing changed on the asset (advisory withdrawn or changed, still affected after an upgrade, no longer evaluated) are counted apart in `closed_not_remediation` by `resolution_kind`\n\nRole: viewer",
     "tags": [
      "Reports"
     ],

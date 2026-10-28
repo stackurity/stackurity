@@ -3,6 +3,7 @@ import { Link, useLocation } from "react-router";
 import { api, ApiError, type AssistantConnection, type AssistantConsent, type List, type UserRole } from "../api";
 import { useAuth } from "../auth";
 import { useAction, useLoad } from "../hooks";
+import { plural } from "../format";
 import { Card, CodeBlock, CopyBox, ErrorBox, Loading, Notice, PageHeader, RelativeTime } from "../components/ui";
 
 const ROLE_ABOUT: Record<UserRole, string> = {
@@ -161,7 +162,7 @@ export function ConnectAssistantPage() {
         </div>
         <p className="small muted">
           It stays connected until you disconnect it in <Link to="/settings/ai-assistants#connected">Connected assistants</Link>, or it is unused for{" "}
-          {pv.idle_days} days. Not you?{" "}
+          {plural(pv.idle_days, "day")}. Not you?{" "}
           <button type="button" className="btn-link" onClick={() => void logout()}>
             Sign out
           </button>

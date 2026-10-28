@@ -413,7 +413,7 @@ function SnoozePanel({
               <input type="radio" name={`${id}-mode`} checked={mode === "fix"} onChange={() => setMode("fix")} />
               <span>
                 A fix ships
-                <span className="hint"> It comes back when a free fixed version exists, or after {maxDays.toLocaleString()} days at most.</span>
+                <span className="hint"> It comes back when a free fixed version exists, or after {plural(maxDays, "day")} at most.</span>
               </span>
             </label>
           </li>
@@ -530,7 +530,7 @@ export function IgnorePanel({
               <input type="radio" name={`${id}-expiry`} checked={expiry === "until_fix"} onChange={() => setExpiry("until_fix")} />
               <span>
                 A fix ships
-                <span className="hint"> Or after {maxDays.toLocaleString()} days at most, the limit in the risk policy.</span>
+                <span className="hint"> Or after {plural(maxDays, "day")} at most, the limit in the risk policy.</span>
               </span>
             </label>
           </li>
@@ -580,7 +580,7 @@ function DateField({ id, day, setDay, maxDays }: { id: string; day: string; setD
         onChange={(e) => setDay(e.target.value)}
       />
       <p className="hint" id={`${id}-until-hint`}>
-        At most {maxDays.toLocaleString()} days from today, set in the risk policy.
+        At most {plural(maxDays, "day")} from today, set in the risk policy.
       </p>
     </div>
   );
@@ -689,7 +689,7 @@ function NotePanel({
             onChange={(e) => setDay(e.target.value)}
           />
           <p className="hint" id={`${id}-until-hint`}>
-            At most {maxDays.toLocaleString()} days from today, set in the risk policy.
+            At most {plural(maxDays, "day")} from today, set in the risk policy.
           </p>
         </div>
       )}
