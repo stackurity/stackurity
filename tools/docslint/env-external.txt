@@ -8,7 +8,9 @@ STACKURITY_OIDC_CLIENT_SECRET_FILE  single sign-on, licensed build
 STACKURITY_OIDC_DEFAULT_ROLE  single sign-on, licensed build
 STACKURITY_OIDC_ISSUER  single sign-on, licensed build
 STACKURITY_OIDC_LABEL  single sign-on, licensed build
+STACKURITY_OIDC_LINK_EXISTING  single sign-on, licensed build
 STACKURITY_OIDC_REDIRECT_URL  single sign-on, licensed build
+STACKURITY_OIDC_REQUIRE_EMAIL_VERIFIED  single sign-on, licensed build
 STACKURITY_OIDC_ROLE_CLAIM  single sign-on, licensed build
 STACKURITY_OIDC_ROLE_MAP  single sign-on, licensed build
 STACKURITY_OIDC_SCOPES  single sign-on, licensed build

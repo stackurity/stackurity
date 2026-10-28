@@ -4,6 +4,16 @@ All notable changes to Stackurity. Versions follow [Semantic Versioning](https:/
 
 Each release's section is published as its GitHub release notes, and a tag without a section here cannot be released (`go run ./tools/changelog -version vX.Y.Z` prints it). New changes go under **Unreleased**, which is renamed to the version when it is tagged. Subsections are **Security**, **Added**, **Changed**, **Fixed** and **Upgrading**. Put fixes for vulnerabilities under `### Security`, first: installations treat a release with that heading as a security release and show administrators a banner they can only snooze.
 
+## Unreleased
+
+### Security
+
+- Single sign-on (OpenID Connect, licensed build) no longer takes over existing accounts. Before, a first sign-in linked any account with the same email, including an instance administrator or a member of another workspace, and with a role map could demote the only admin. Now an existing account is linked only with `STACKURITY_OIDC_LINK_EXISTING=true`, and then only a member of the single sign-on workspace that is not an instance administrator; the last admin is never demoted; and ID tokens without `email_verified: true` are refused (`STACKURITY_OIDC_REQUIRE_EMAIL_VERIFIED=false` for Microsoft Entra ID, which does not send it). The server warns at start when `STACKURITY_OIDC_ALLOWED_DOMAINS` is empty.
+
+### Upgrading
+
+- Single sign-on (OpenID Connect): accounts already linked keep working. People whose password account was never linked are refused at their first single sign-on until they use their password, or until the operator sets `STACKURITY_OIDC_LINK_EXISTING=true`. With Microsoft Entra ID set `STACKURITY_OIDC_REQUIRE_EMAIL_VERIFIED=false` and `STACKURITY_OIDC_ALLOWED_DOMAINS`.
+
 ## 0.13.3
 
 ### Added
