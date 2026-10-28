@@ -26,6 +26,8 @@ var globalTables = map[string]string{
 	"license_key":        "installation licence",
 	"oidc_logins":        "sign-in flow state, before a workspace is known",
 	"packs":              "stack packs, installed by instance admins",
+	"saml_assertions":    "used SAML assertion IDs, checked before a session exists",
+	"saml_requests":      "sign-in flow state, read before a session exists; queries filter by workspace_id themselves",
 	"schema_migrations":  "migration bookkeeping",
 	"users":              "accounts are global; roles live in workspace_members",
 	"workspaces":         "the workspaces themselves",
