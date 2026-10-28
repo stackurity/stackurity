@@ -4,6 +4,20 @@ All notable changes to Stackurity. Versions follow [Semantic Versioning](https:/
 
 Each release's section is published as its GitHub release notes, and a tag without a section here cannot be released (`go run ./tools/changelog -version vX.Y.Z` prints it). New changes go under **Unreleased**, which is renamed to the version when it is tagged. Subsections are **Security**, **Added**, **Changed**, **Fixed** and **Upgrading**. Put fixes for vulnerabilities under `### Security`, first: installations treat a release with that heading as a security release and show administrators a banner they can only snooze.
 
+## Unreleased
+
+### Security
+
+- **The client address can no longer be forged behind a proxy.** With `STACKURITY_TRUST_PROXY=true` the server used `True-Client-IP`, `X-Real-IP` or the leftmost `X-Forwarded-For`, which a client can set, so per-address rate limits (sign-in, sign-up, assistant sign-in, enrollment) could be bypassed and any address recorded in the activity log. Now one header is read, `STACKURITY_TRUSTED_PROXY_HEADER` (default `CF-Connecting-IP`), and only from a peer in `STACKURITY_TRUSTED_PROXIES` (default loopback and private ranges); `X-Forwarded-For` mode takes the rightmost untrusted hop. Cloudflare Tunnel and same-network reverse proxies need no change.
+- **Sign-in lockout can no longer be used against someone else.** The per-account limit counted successful sign-ins and applied to every address, so anyone could lock out a known email for 15 minutes. Failures are now counted per account and address: five free, then a delay from 30 seconds doubling to 15 minutes, cleared by a successful sign-in, with a looser cap per account across all addresses. Delays and the cap are recorded in the activity log.
+- **Client addresses behind a proxy can no longer be forged.** With `STACKURITY_TRUST_PROXY=true`, the client address was read from `True-Client-IP`, `X-Real-IP` or the leftmost `X-Forwarded-For`, all of which a client can set itself. That let a client get around the per-address rate limits (sign-in, setup, password change, enrollment, invitations, assistant sign-in and the MCP endpoint) and write any address into the audit log. Now only one header is read, `CF-Connecting-IP` by default (`STACKURITY_TRUSTED_PROXY_HEADER`), and only from a peer in `STACKURITY_TRUSTED_PROXIES` (default: loopback and the private ranges); anything else uses the connection's own address. With `X-Forwarded-For` as the header, the client is the rightmost address that is not a trusted proxy. `X-Forwarded-Proto` is likewise believed only from a trusted proxy.
+- **Failed sign-ins no longer lock an account for everyone.** The per-account sign-in limit counted successful sign-ins too and applied to every address, so anyone who knew an email address could keep its owner from signing in for 15 minutes at a time. Failed sign-ins are now counted per account and client address: five are free, then each attempt from that address waits 30 seconds, doubling up to 15 minutes, and a successful sign-in clears the count. A looser cap of 100 failures every 15 minutes per account, from all addresses together, stops guessing spread over many addresses. Successful sign-ins never count. The answers are the same whether or not the account exists. Backoffs and the account cap are recorded in the audit log (`auth.login_backoff`, `auth.login_locked`).
+
+### Upgrading
+
+- Behind Cloudflare (including Cloudflare Tunnel), nothing changes: keep `STACKURITY_TRUST_PROXY=true`. The tunnel connector reaches Stackurity from loopback or a private (Docker network) address, which are trusted by default.
+- Behind another reverse proxy (Caddy, nginx, Traefik, an ingress controller), set `STACKURITY_TRUSTED_PROXY_HEADER=X-Forwarded-For` (or the header your proxy overwrites, such as `X-Real-IP`). If the proxy reaches Stackurity from a public address, list it in `STACKURITY_TRUSTED_PROXIES`. The Helm chart sets `X-Forwarded-For` by default (`config.trustedProxyHeader`). A warning is logged once when the header arrives from a peer that is not trusted.
+
 ## 0.13.3
 
 ### Added
