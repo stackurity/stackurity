@@ -4,7 +4,7 @@ All notable changes to Stackurity. Versions follow [Semantic Versioning](https:/
 
 Each release's section is published as its GitHub release notes, and a tag without a section here cannot be released (`go run ./tools/changelog -version vX.Y.Z` prints it). New changes go under **Unreleased**, which is renamed to the version when it is tagged. Subsections are **Security**, **Added**, **Changed**, **Fixed** and **Upgrading**. Put fixes for vulnerabilities under `### Security`, first: installations treat a release with that heading as a security release and show administrators a banner they can only snooze.
 
-## Unreleased
+## 0.13.1
 
 ### Added
 
@@ -15,6 +15,11 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 - A vulnerability feed sync no longer runs the server out of memory when many large records change at once. An incremental OSV sync fetched every changed record (up to 5,000) and held them all before storing any; when Ubuntu republished 4,815 records (2.1 GB of JSON, kernel records of up to 3 MB each), every attempt was killed for running out of memory, the server restarted about every 35 minutes, and each restart queued the sync again. Records are now fetched eight at a time and stored in batches of at most 500 records and 16 MiB of JSON, in incremental and full syncs alike. Releases since incremental sync was added were affected; 0.12.0 and 0.13.0 both were.
 - An evaluation uses less memory. It reads a package's advisories only for the release being evaluated (an Ubuntu kernel package has some 70,000 entries across releases and channels, a few hundred megabytes once read, of which one release's apply), and drops them once it has evaluated that package's rows, instead of keeping every package's advisories until it ends. A full evaluation of a workspace with 8,800 installed rows peaked at 765 MiB of heap before. Results are unchanged.
+- Stackurity Cloud: upgrading a plan paid by an Indian card no longer fails. Razorpay changes a subscription on a card mandate only at the end of the period, and the upgrade was refused ("the payment provider refused the change"). The bigger plan now applies at once; the plan change is scheduled in Razorpay for the end of the period, and the difference for the rest of the period, pro-rated by the second with tax, is added to the next invoice, so that invoice is the new plan's price plus that difference and nothing is charged again for the old plan. A plan paid by UPI or e-mandate, which Razorpay cannot change, offers **Cancel and subscribe again**: the current plan keeps the period it paid for and the new one starts at its end, with the difference charged on the payment page. `POST /billing/subscribe` takes `replace` and answers `message`; `GET /billing` has `upgrade`.
+
+### Upgrading
+
+- No action needed. Stackurity Cloud builds apply the additive migration `cloud/0003_upgrades`. A vulnerability feed you turned off because its sync ran out of memory can be turned on again; it resumes from where it stopped.
 
 ## 0.13.0
 
