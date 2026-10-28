@@ -57,7 +57,10 @@ type Document struct {
 type Family struct {
 	Type       string   `json:"type"`
 	Namespaces []string `json:"namespaces"`
-	Why        string   `json:"why"`
+	// Except are package names the family does not apply to: an exact name,
+	// or a prefix followed by "*".
+	Except []string `json:"except,omitempty"`
+	Why    string   `json:"why"`
 }
 
 // Entry maps purl patterns to one endoflife.date product.
@@ -106,6 +109,7 @@ type Overlay struct {
 	rules    map[string][]*rule // by purl type
 	untrack  map[string][]*rule
 	families map[string]map[string][]string // type -> namespace -> the others
+	except   map[string][]string            // type -> names (or prefixes ending in "*") outside the family rule
 }
 
 type rule struct {
@@ -132,10 +136,14 @@ func Parse(b []byte) (*Overlay, error) {
 	if d.Version == "" {
 		return nil, errors.New("lifecycle overlay: no version")
 	}
-	o := &Overlay{doc: d, rules: map[string][]*rule{}, untrack: map[string][]*rule{}, families: map[string]map[string][]string{}}
+	o := &Overlay{doc: d, rules: map[string][]*rule{}, untrack: map[string][]*rule{}, families: map[string]map[string][]string{},
+		except: map[string][]string{}}
 	for _, f := range d.Families {
 		if f.Type == "" || len(f.Namespaces) < 2 {
 			return nil, fmt.Errorf("lifecycle overlay: family %q needs a type and two or more namespaces", f.Type)
+		}
+		for _, x := range f.Except {
+			o.except[f.Type] = append(o.except[f.Type], strings.ToLower(x))
 		}
 		m := o.families[f.Type]
 		if m == nil {
@@ -263,6 +271,17 @@ func (r *rule) match(ns, name string) (cycle string, ok bool) {
 	return m[1], true
 }
 
+// familyOf returns the other namespaces of ns's family for a package name,
+// or nil when the name is excepted.
+func (o *Overlay) familyOf(typ, ns, name string) []string {
+	for _, x := range o.except[typ] {
+		if prefix, ok := strings.CutSuffix(x, "*"); (ok && strings.HasPrefix(name, prefix)) || x == name {
+			return nil
+		}
+	}
+	return o.families[typ][ns]
+}
+
 var (
 	defaultOnce sync.Once
 	defaultOv   *Overlay
@@ -324,7 +343,7 @@ func (o *Overlay) Product(key string, edl func(key string) string) (Match, bool)
 		if p := edl(strings.ToLower(key)); p != "" {
 			return Match{Product: p, Rule: "endoflife.date"}, true
 		}
-		for _, other := range o.families[typ][ns] {
+		for _, other := range o.familyOf(typ, ns, name) {
 			if p := edl("pkg:" + typ + "/" + other + "/" + name); p != "" {
 				return Match{Product: p, Rule: "namespace_family"}, true
 			}
@@ -407,7 +426,7 @@ func (o *Overlay) FamilyKeys(keys []string) []string {
 		if !ok {
 			continue
 		}
-		for _, other := range o.families[typ][ns] {
+		for _, other := range o.familyOf(typ, ns, name) {
 			out = append(out, "pkg:"+typ+"/"+other+"/"+name)
 		}
 	}

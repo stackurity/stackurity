@@ -137,7 +137,8 @@ package URL maps to an endoflife.date product, in this order:
    `almalinux`, `ol`), and `pkg:deb/` `debian` and `ubuntu`. endoflife.date
    lists `pkg:rpm/redhat/nginx`, so `pkg:rpm/rocky/nginx` and agent-reported
    RHEL packages (`pkg:rpm/rhel/...`) matched nothing before. Amazon Linux and
-   Fedora are not in a family: their package names differ.
+   Fedora are not in a family: their package names differ. `dotnet-sdk-*` is
+   left out, so .NET keeps one finding per release from `dotnet-runtime-X.Y`.
 4. The rest of the overlay
    ([`internal/intel/eoloverlay/lifecycle_overlay.json`](../internal/intel/eoloverlay/lifecycle_overlay.json)),
    a versioned data file embedded in the binary. Each entry names the index
@@ -156,7 +157,7 @@ package URL maps to an endoflife.date product, in this order:
 | MySQL, MariaDB | `mysql-community-server` deb and rpm, `mariadb-server` deb |
 | Apache HTTP Server, Tomcat | `apache2` deb; `tomcat9`, `tomcat10`, `tomcat11` deb and `org.apache.tomcat.embed:tomcat-embed-core` (Spring Boot) |
 | RabbitMQ, Kubernetes, GitLab, Jenkins, SQL Server | `rabbitmq-server` deb; `kubelet` deb and rpm; `gitlab-ce` and `jenkins` deb and rpm; `mssql-server` deb |
-| .NET, Eclipse Temurin, Amazon Corretto, Go | `dotnet-runtime-<v>`, `aspnetcore-runtime-<v>`; `temurin-<v>-jdk`/`-jre`; `java-<v>-amazon-corretto-jdk`; `golang-<v>-go` (release line from the name) |
+| Eclipse Temurin, Amazon Corretto, Go | `temurin-<v>-jdk`/`-jre`; `java-<v>-amazon-corretto-jdk`; `golang-<v>-go` (release line from the name) |
 | HashiCorp Vault, Consul, Terraform, Nomad | Their deb packages from HashiCorp's repository |
 | OpenSSL, Exim, Postfix, Dovecot, Prometheus, Erlang, Podman | Distribution packages (`openssl`, `exim4-base`, `postfix`, `dovecot-core`, `prometheus`, `erlang-base`, `podman`); on a supported release they get the upstream note, not a finding |
 | Symfony, CakePHP, Twig, Craft CMS, Shopware | `symfony/http-kernel`, `cakephp/cakephp`, `twig/twig`, `craftcms/cms`, `shopware/core` (Composer) |

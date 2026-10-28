@@ -179,9 +179,6 @@ func TestOverlayRealisticPurls(t *testing.T) {
 		{"pkg:deb/ubuntu/gitlab-ce@17.5.1-ce.0?arch=amd64&distro=ubuntu-22.04", "gitlab", "17.5", "overlay", true},
 		{"pkg:deb/ubuntu/jenkins@2.462.3?arch=all&distro=ubuntu-22.04", "jenkins", "2.462", "overlay", true},
 		{"pkg:deb/ubuntu/mssql-server@16.0.4145.4-1?arch=amd64&distro=ubuntu-22.04", "mssqlserver", "16.0", "overlay", true},
-		{"pkg:deb/ubuntu/dotnet-runtime-8.0@8.0.10-1?arch=amd64&distro=ubuntu-22.04", "dotnet", "8", "overlay", false},
-		{"pkg:deb/ubuntu/aspnetcore-runtime-6.0@6.0.36-0ubuntu1~22.04.1?arch=amd64&distro=ubuntu-22.04", "dotnet", "6", "overlay", false},
-		{"pkg:rpm/rhel/dotnet-runtime-8.0@8.0.10-1.el9_4?arch=x86_64&distro=rhel-9.4", "dotnet", "8", "overlay", false},
 		{"pkg:deb/ubuntu/temurin-17-jdk@17.0.12.0.0+7?arch=amd64&distro=ubuntu-22.04", "eclipse-temurin", "17", "overlay", true},
 		{"pkg:deb/ubuntu/java-1.8.0-amazon-corretto-jdk@1:8.432.06-1?arch=amd64&distro=ubuntu-22.04", "amazon-corretto", "8", "overlay", true},
 		{"pkg:deb/debian/java-21-amazon-corretto-jdk@1:21.0.5.11-1?arch=amd64&distro=debian-12", "amazon-corretto", "21", "overlay", true},
@@ -209,6 +206,8 @@ func TestOverlayRealisticPurls(t *testing.T) {
 		{"pkg:maven/org.apache.lucene/lucene-core@9.11.1", "apache-lucene", "9", "overlay", false},
 		{"pkg:maven/org.liquibase/liquibase-core@4.29.2", "liquibase", "4", "overlay", false},
 		{"pkg:rpm/rocky/nginx@1.20.1-14.el9_2.1?arch=x86_64&distro=rocky-9.4&epoch=1", "nginx", "1.20", "namespace_family", false},
+		// .NET is mapped by dotnet-runtime-X.Y in intel, not by the overlay;
+		// the SDK must not add a second finding through the rpm family.
 		{"pkg:rpm/rocky/nginx@1.26.2-1.el9.ngx?arch=x86_64&distro=rocky-9.4&epoch=1", "nginx", "1.26", "namespace_family", true},
 	}
 	covered := map[string]bool{}
@@ -240,6 +239,15 @@ func TestOverlayRealisticPurls(t *testing.T) {
 		if !covered[e.Product] {
 			t.Errorf("overlay product %s has no realistic purl case", e.Product)
 		}
+	}
+
+	lr.byPurl["pkg:rpm/redhat/dotnet-sdk-8.0"] = "dotnet"
+	lr.names["dotnet"] = true
+	if m, ok := lr.resolve("rpm", "pkg:rpm/rocky/dotnet-sdk-8.0", "8.0.110-1.el9_4", ""); ok {
+		t.Errorf("dotnet-sdk on Rocky Linux mapped through the rpm family: %+v", m)
+	}
+	if m, ok := lr.resolve("rpm", "pkg:rpm/redhat/dotnet-sdk-8.0", "8.0.110-1.el9_4", ""); !ok || m.product != "dotnet" {
+		t.Errorf("endoflife.date's own dotnet-sdk identifier still applies: %+v %v", m, ok)
 	}
 
 	// Products no lifecycle source tracks are recognised, never mapped.
