@@ -122,6 +122,10 @@ type Server struct {
 	limiter *rateLimiter
 	// router serves the API to the MCP tools in process (assistants.go).
 	router http.Handler
+	// AccountMail sends password reset links (password_reset.go): the
+	// platform's mail on a hosted edition, STACKURITY_SMTP_* otherwise; nil
+	// means administrators reset passwords.
+	AccountMail notify.Mailer
 }
 
 func (s *Server) Handler() http.Handler {
@@ -177,6 +181,7 @@ func (s *Server) Handler() http.Handler {
 		r.Post("/auth/login", s.login)
 		r.Post("/auth/logout", s.logout)
 		s.mfaPublicRoutes(r)
+		s.passwordResetRoutes(r)
 		r.Post("/enroll", s.enroll)
 		// Following an invitation link: the person may have no account yet.
 		r.Post("/invitations/preview", s.previewInvitation)

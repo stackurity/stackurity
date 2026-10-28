@@ -7,6 +7,7 @@ func init() {
 		"user_mfa":           "an account's second factor; accounts are global",
 		"mfa_recovery_codes": "an account's recovery codes; accounts are global",
 		"mfa_challenges":     "sign-in flow state, before a workspace is known",
+		"password_resets":    "password reset links, used before anyone is signed in",
 	} {
 		globalTables[name] = why
 	}

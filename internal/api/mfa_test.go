@@ -45,14 +45,21 @@ func init() {
 	}
 }
 
-func newMFAEnv(t *testing.T) *env {
+func newMFAEnv(t *testing.T) *env { return newMFAEnvWith(t, nil) }
+
+func newMFAEnvWith(t *testing.T, adjust func(*api.Server)) *env {
 	key := make([]byte, 32)
 	_, _ = rand.Read(key)
 	box, err := secrets.NewBox(key)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return newEnvWith(t, func(s *api.Server) { s.SecretBox = box })
+	return newEnvWith(t, func(s *api.Server) {
+		s.SecretBox = box
+		if adjust != nil {
+			adjust(s)
+		}
+	})
 }
 
 func totpAt(t *testing.T, secret string, d time.Duration) string {

@@ -37,6 +37,8 @@ export interface Meta {
   signup?: SignupMeta;
   /** True when organisations manage their plan and billing here (a hosted edition). */
   billing?: boolean;
+  /** "email": reset links are emailed; "admin": an administrator sets a temporary password. */
+  password_reset?: "email" | "admin";
 }
 
 export interface SignupMeta {
@@ -393,6 +395,8 @@ export interface Me {
   feedback_enabled?: boolean;
   /** The organisation requires two-factor sign-in and this session has none: only enrolment is possible. */
   mfa_enrolment_required?: boolean;
+  /** An administrator set a temporary password: only changing it is possible. */
+  password_change_required?: boolean;
 }
 
 export type Edition = "community" | "pro" | "enterprise";

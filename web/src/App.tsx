@@ -6,6 +6,7 @@ import { Layout } from "./components/Layout";
 import { ErrorBox, Loading } from "./components/ui";
 import { LoginPage, SetupPage } from "./pages/Login";
 import { MfaEnrolmentPage } from "./pages/TwoFactor";
+import { ChangeTemporaryPasswordPage, ForgotPasswordPage, ResetPasswordPage } from "./pages/Password";
 import { AcceptInvitePage } from "./pages/AcceptInvite";
 import { SlackLinkPage } from "./pages/SlackLink";
 import { AccountPage } from "./pages/Account";
@@ -143,6 +144,11 @@ export function App() {
   if (pathname === "/email/unsubscribe" && (state.phase === "login" || state.phase === "ready")) return <EmailStopPage kind="unsubscribe" />;
   if (pathname === "/email/block" && (state.phase === "login" || state.phase === "ready")) return <EmailStopPage kind="block" />;
 
+  // Forgotten passwords: ask for a link, and the link it emails.
+  if (pathname === "/forgot-password" && state.phase === "login") return <ForgotPasswordPage />;
+  if (pathname === "/reset-password" && (state.phase === "login" || state.phase === "ready")) return <ResetPasswordPage />;
+  // A temporary password set by an administrator: choose your own first.
+  if (state.phase === "ready" && state.me.password_change_required) return <ChangeTemporaryPasswordPage />;
   // An organisation that requires two-factor sign-in: set it up first.
   if (state.phase === "ready" && state.me.mfa_enrolment_required) return <MfaEnrolmentPage />;
 

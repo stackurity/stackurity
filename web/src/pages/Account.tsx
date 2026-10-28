@@ -4,6 +4,7 @@ import { useAuth } from "../auth";
 import { Card, KeyValues, PageHeader } from "../components/ui";
 import { LinkedSlackAccounts } from "./SlackLink";
 import { TwoFactorCard } from "./TwoFactor";
+import { PasswordCard } from "./Password";
 
 /**
  * /account: the signed-in person, their organisations, and what acts as
@@ -48,6 +49,7 @@ export function AccountPage() {
           ]}
         />
       </Card>
+      <PasswordCard />
       <TwoFactorCard />
       <section id="slack" className="card">
         <header className="card-head">

@@ -47,6 +47,24 @@ A workspace (shown as the organisation in the dashboard) groups its assets into 
 
 Signs in with `email` and `password` and starts a session (cookie). Limited per address and per account; 401 for a wrong email or password. When the account has two-factor sign-in, the answer is `{"mfa_required": true, "methods": ["totp", "recovery_code"]}` with a short-lived challenge cookie instead, and `POST /auth/mfa/verify` finishes the sign-in.
 
+### `POST /auth/password-reset`
+
+**Who:** anyone (5 per 15 minutes per address, 3 an hour per email address)
+
+`{"email": "..."}`: emails a link to choose a new password when an account uses the address. Always 202 with the same answer. 404 `password_reset_unavailable` when the server cannot send email (`GET /meta` says `password_reset: "admin"`). See [Forgotten passwords](install.md#forgotten-passwords).
+
+### `POST /auth/password-reset/preview`
+
+**Who:** anyone with a reset link's token
+
+`{"token": "pwr_..."}`: the account's `email`, and how many API `tokens` and `assistants` it has. 410 `reset_invalid` for an unknown, used or expired link.
+
+### `POST /auth/password-reset/confirm`
+
+**Who:** anyone with a reset link's token
+
+`{"token": "pwr_...", "new_password": "...", "revoke_tokens": true}`: sets the password, spends the link, ends every session and disconnects AI assistants; with `revoke_tokens`, revokes the account's API tokens too. Answers `revoked` (`sessions`, `tokens`, `assistants`). 410 `reset_invalid` as above.
+
 ### `POST /auth/mfa/verify`
 
 **Who:** anyone with the challenge cookie from `POST /auth/login`
@@ -63,7 +81,7 @@ Ends the session.
 
 **Who:** any signed-in user or token
 
-The caller: `user`, `role`, `workspace`, `workspaces`, `edition` and `features`, `access` (`organisation` or `projects`), `project_role`, `projects`, `default_project_id`, `read_only`, `report_mode`, `feedback_enabled` and `mfa_enrolment_required` (the organisation requires two-factor sign-in and this session has none: until it is set up, other routes answer 403 `mfa_enrolment_required`). Each user has `mfa_enabled`.
+The caller: `user`, `role`, `workspace`, `workspaces`, `edition` and `features`, `access` (`organisation` or `projects`), `project_role`, `projects`, `default_project_id`, `read_only`, `report_mode`, `feedback_enabled` `password_change_required` (an administrator set a temporary password: until it is changed with `POST /auth/password`, other routes answer 403 `password_change_required`) and `mfa_enrolment_required` (the organisation requires two-factor sign-in and this session has none: until it is set up, other routes answer 403 `mfa_enrolment_required`). Each user has `mfa_enabled`.
 
 ### `PUT /auth/default-project`
 
@@ -808,7 +826,7 @@ Adds a user to the organisation with a role (`none` allowed). Off on Stackurity 
 
 **Who:** admin
 
-Changes a member's role, name or status.
+Changes a member's role, name, status or password. A `password` set for someone else is temporary: their sessions end, and they must choose their own at their next sign-in.
 
 ### `DELETE /users/{id}`
 

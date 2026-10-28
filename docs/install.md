@@ -108,6 +108,7 @@ Connecting an asset is quiet: one "connected" message, and no alerts, Jira issue
 | `STACKURITY_LICENSE` / `_FILE` | — | Licence key; when set, the dashboard cannot change it |
 | `STACKURITY_PACK_TRUSTED_KEYS` | — | File of `publisher base64-key` lines: publishers whose [stack packs](packs.md) are accepted besides official ones |
 | `STACKURITY_PACK_ALLOW_UNSIGNED` | `false` | Accept unsigned stack packs (pack development only) |
+| `STACKURITY_SMTP_HOST`, `STACKURITY_SMTP_PORT` (`587`), `STACKURITY_SMTP_USERNAME`, `STACKURITY_SMTP_PASSWORD` / `_FILE`, `STACKURITY_SMTP_FROM`, `STACKURITY_SMTP_TLS` (`starttls`, `tls` or `none`) | — | The mail server for email about people's own accounts: password reset links ([Forgotten passwords](#forgotten-passwords)). Needs `STACKURITY_BASE_URL`. Not used for notifications, which each organisation sets up |
 
 Secrets are never stored in the database. Integrations hold a *reference*: `env:STACKURITY_SECRET_GITHUB` or `file:/run/secrets/github_token`.
 
@@ -166,6 +167,18 @@ Anyone can turn on two-factor sign-in under **Your account → Two-factor sign-i
 Every step is in the activity log: `auth.mfa_enabled`, `auth.mfa_disabled`, `auth.mfa_failed`, `auth.mfa_recovery_code_used`, `auth.mfa_recovery_codes_replaced`, and `auth.login` with `"mfa": "totp"` or `"recovery_code"`.
 
 Passkeys and security keys (WebAuthn) are not supported yet.
+
+### Forgotten passwords
+
+**Forgot your password?** on the sign-in page emails a link to choose a new password, when the server can send email: on Stackurity Cloud always, and on your own server when `STACKURITY_SMTP_HOST` and `STACKURITY_SMTP_FROM` are set (any provider in [Channels](#channels) works) together with `STACKURITY_BASE_URL`. The link is built from `STACKURITY_BASE_URL`, never from the request, so nobody can make the email point elsewhere.
+
+- The answer is the same whether or not an account uses the address, and the email is sent after the answer, so the timing does not tell either.
+- The link works once, for 15 minutes; asking again replaces it. Only a hash of it is stored.
+- Requests are limited to 5 per 15 minutes per address and 3 an hour per email address.
+- Choosing a new password signs out every session, disconnects the account's AI assistants, and revokes its API tokens if the person ticks **Also revoke my API tokens** (ticked by default). It does not sign in, and two-factor sign-in still applies.
+- The activity log records `auth.password_reset_requested` and `auth.password_reset` (with what was ended).
+
+Without email, the page says to ask an administrator. An admin sets a temporary password with **Reset password** on **Settings → Users**: the member's sessions end, and at their next sign-in they must choose their own password before doing anything else. (An admin setting their own password this way is not asked to change it.)
 
 ## Single sign-on
 

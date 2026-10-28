@@ -4,6 +4,7 @@ import { useAuth } from "../auth";
 import { useAction } from "../hooks";
 import { Code, ErrorBox } from "../components/ui";
 import { MfaLoginStep } from "./TwoFactor";
+import { ForgotPasswordLink } from "./Password";
 
 export function LoginPage() {
   const { refresh, state } = useAuth();
@@ -62,6 +63,7 @@ export function LoginPage() {
         <button type="submit" className={sso ? "btn btn-block" : "btn btn-primary btn-block"} disabled={act.pending}>
           {act.pending ? "Signing in…" : "Sign in"}
         </button>
+        <ForgotPasswordLink />
         {signup && (
           <p className="small" style={{ textAlign: "center" }}>
             New here? <a href="/signup">Create an account</a>

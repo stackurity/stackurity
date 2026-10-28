@@ -47,6 +47,9 @@ type Principal struct {
 	// NeedsMFAEnrolment: such a session without a second factor in a
 	// workspace that requires one (mfa.go); it may only set one up.
 	NeedsMFAEnrolment bool
+	// PasswordChangeRequired: an administrator set a temporary password
+	// (password_reset.go); the session may only change it.
+	PasswordChangeRequired bool
 }
 
 func (p *Principal) Actor(r *http.Request) store.Actor {
@@ -106,9 +109,9 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 			switch {
 			case err == nil:
 				p = &Principal{User: sess.User, Role: sess.User.Role, Session: true, Workspace: sess.Workspace,
-					PasswordSession: sess.PasswordLogin, NeedsMFAEnrolment: sess.NeedsMFAEnrolment}
-				if p.NeedsMFAEnrolment && !mfaEnrolmentAllows(r) {
-					writeError(w, 403, "mfa_enrolment_required", "your organisation requires two-factor sign-in; set it up to continue")
+					PasswordSession: sess.PasswordLogin, NeedsMFAEnrolment: sess.NeedsMFAEnrolment,
+					PasswordChangeRequired: sess.PasswordChangeRequired}
+				if sessionGate(w, r, p) {
 					return
 				}
 			case !errors.Is(err, store.ErrNotFound):

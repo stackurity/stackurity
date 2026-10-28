@@ -257,6 +257,12 @@ func serverCmd() *cobra.Command {
 				Health: checker, UpdateCheck: updateCfg.Enabled,
 				FeedbackURL: feedbackURL,
 			}
+			if srv.AccountMail, err = accountMailer(dispatcher, log); err != nil {
+				return err
+			}
+			if srv.AccountMail != nil && srv.BaseURL == "" {
+				log.Warn("password reset links are off: they need STACKURITY_BASE_URL (never the request's Host header)")
+			}
 			// Metrics have their own listener, off by default, so they are
 			// never reachable on the public API port.
 			metricsAddr := os.Getenv("STACKURITY_METRICS_ADDR")

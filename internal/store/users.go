@@ -213,6 +213,9 @@ type UserUpdate struct {
 	Role     *auth.Role `json:"role"`
 	Disabled *bool      `json:"disabled"`
 	Password *string    `json:"password"`
+	// Temporary: the password is set by an administrator for someone
+	// else; they must choose their own at their next sign-in.
+	Temporary bool `json:"-"`
 }
 
 // UpdateUser changes a member of the context's workspace. The role is the
@@ -262,7 +265,9 @@ func (s *Store) UpdateUser(ctx context.Context, id int64, u UserUpdate, instance
 			return fmt.Errorf("this account is an instance admin; only an instance admin can change its name, password or status: %w", ErrConflict)
 		}
 		if _, err := tx.Exec(ctx, `UPDATE users SET name = COALESCE($2, name), disabled = COALESCE($3, disabled),
-			password_hash = COALESCE($4, password_hash) WHERE id = $1`, id, u.Name, u.Disabled, hash); err != nil {
+			password_hash = COALESCE($4, password_hash),
+			password_change_required = CASE WHEN $4::text IS NULL THEN password_change_required ELSE $5 END
+			WHERE id = $1`, id, u.Name, u.Disabled, hash, u.Temporary); err != nil {
 			return err
 		}
 		if u.Role != nil {
@@ -359,6 +364,9 @@ type Session struct {
 	NeedsMFAEnrolment bool
 	// PasswordLogin: signed in with a local password.
 	PasswordLogin bool
+	// PasswordChangeRequired: an administrator set a temporary password;
+	// only changing it is allowed until then.
+	PasswordChangeRequired bool
 }
 
 // SessionUser resolves a browser session to its user and the workspace it
@@ -379,8 +387,10 @@ func (s *Store) SessionInfo(ctx context.Context, secret string) (*Session, error
 	var ws *int64
 	var passwordLogin bool
 	var mfaAt *time.Time
-	err := s.Pool.QueryRow(ctx, `SELECT s.user_id, s.workspace_id, s.password_login, s.mfa_at FROM sessions s JOIN users u ON u.id = s.user_id
-		WHERE s.token_hash = $1 AND s.expires_at > now() AND NOT u.disabled`, auth.HashToken(secret)).Scan(&id, &ws, &passwordLogin, &mfaAt)
+	var changePassword bool
+	err := s.Pool.QueryRow(ctx, `SELECT s.user_id, s.workspace_id, s.password_login, s.mfa_at, u.password_change_required
+		FROM sessions s JOIN users u ON u.id = s.user_id
+		WHERE s.token_hash = $1 AND s.expires_at > now() AND NOT u.disabled`, auth.HashToken(secret)).Scan(&id, &ws, &passwordLogin, &mfaAt, &changePassword)
 	if err != nil {
 		return nil, notFound(err)
 	}
@@ -406,7 +416,7 @@ func (s *Store) SessionInfo(ctx context.Context, secret string) (*Session, error
 	if err != nil {
 		return nil, err
 	}
-	sess := &Session{User: u, Workspace: wsID, PasswordLogin: passwordLogin}
+	sess := &Session{User: u, Workspace: wsID, PasswordLogin: passwordLogin, PasswordChangeRequired: changePassword}
 	if passwordLogin && mfaAt == nil && !u.MFAEnabled && wsID > 0 {
 		if sess.NeedsMFAEnrolment, err = s.WorkspaceRequiresMFA(ctx, wsID); err != nil {
 			return nil, err
@@ -422,6 +432,9 @@ func (s *Store) DeleteSession(ctx context.Context, secret string) error {
 
 func (s *Store) PurgeExpiredSessions(ctx context.Context) error {
 	if _, err := s.Pool.Exec(ctx, `DELETE FROM mfa_challenges WHERE expires_at < now()`); err != nil {
+		return err
+	}
+	if err := s.PurgePasswordResets(ctx); err != nil {
 		return err
 	}
 	_, err := s.Pool.Exec(ctx, `DELETE FROM sessions WHERE expires_at < now()`)
@@ -718,7 +731,7 @@ func (s *Store) ChangeOwnPassword(ctx context.Context, userID int64, current, ne
 		return err
 	}
 	return pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `UPDATE users SET password_hash = $2 WHERE id = $1`, userID, h); err != nil {
+		if _, err := tx.Exec(ctx, `UPDATE users SET password_hash = $2, password_change_required = false WHERE id = $1`, userID, h); err != nil {
 			return err
 		}
 		_, err := tx.Exec(ctx, `DELETE FROM sessions WHERE user_id = $1 AND token_hash <> $2`, userID, auth.HashToken(keepSession))

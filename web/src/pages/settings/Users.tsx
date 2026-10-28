@@ -218,7 +218,7 @@ function ResetPassword({ user, onDone, onCancel }: { user: User; onDone: () => v
       <div className="field">
         <label htmlFor={`pw-${user.id}`}>New password for {user.email}</label>
         <input id={`pw-${user.id}`} type="password" autoComplete="new-password" minLength={12} required value={pw} onChange={(e) => setPw(e.target.value)} />
-        <p className="hint">At least 12 characters.</p>
+        <p className="hint">At least 12 characters. It is temporary: {user.email} chooses their own at their next sign-in, and their sessions end now.</p>
       </div>
       <div className="form-actions">
         <button type="submit" className="btn btn-primary btn-sm" disabled={act.pending || pw.length < 12}>

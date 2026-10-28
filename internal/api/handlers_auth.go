@@ -23,7 +23,7 @@ func (s *Server) meta(w http.ResponseWriter, r *http.Request) {
 	// ignore: "upload_project" means POST /ingest and POST /sbom/import
 	// honour project_id (the CLI's --project).
 	meta := map[string]any{"name": "stackurity", "version": s.Version, "api": "v1", "setup_required": n == 0,
-		"features": []string{FeatureUploadProject}}
+		"features": []string{FeatureUploadProject}, "password_reset": s.passwordResetMode()}
 	if sso := s.ssoMeta(r); sso != nil {
 		meta["sso"] = sso
 	}
@@ -212,7 +212,7 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{"user": p.User, "role": p.Role, "token": p.Token, "workspace": nil, "workspaces": []store.Membership{},
 		"edition": ed, "features": features, "feedback_enabled": s.FeedbackURL != "" && p.User != nil,
 		"access": "organisation", "project_role": p.ProjectRole, "projects": []store.Project{}, "default_project_id": 0,
-		"mfa_enrolment_required": p.NeedsMFAEnrolment}
+		"mfa_enrolment_required": p.NeedsMFAEnrolment, "password_change_required": p.PasswordChangeRequired}
 	if p.Restricted {
 		out["access"] = "projects"
 	}

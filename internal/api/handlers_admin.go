@@ -74,11 +74,20 @@ func (s *Server) updateUser(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	if u.Password != nil {
+		if err := s.checkNewPassword(r.Context(), *u.Password); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		// A password an admin sets for someone else is temporary: they
+		// choose their own at their next sign-in.
+		u.Temporary = id != principal(r).User.ID
+	}
 	if err := s.Store.UpdateUser(r.Context(), id, u, principal(r).User.InstanceAdmin); err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	detail := map[string]any{"role": u.Role, "disabled": u.Disabled, "password_changed": u.Password != nil, "name": u.Name}
+	detail := map[string]any{"role": u.Role, "disabled": u.Disabled, "password_changed": u.Password != nil, "temporary_password": u.Temporary, "name": u.Name}
 	_ = s.Store.Audit(r.Context(), principal(r).Actor(r), "user.update", "user", itoa(id), detail)
 	us, err := s.Store.GetUser(r.Context(), id)
 	if err != nil {
