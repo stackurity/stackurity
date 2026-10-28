@@ -136,7 +136,7 @@ To limit it to one project, add `"args": ["mcp", "--project", "Shop"]` (an id or
 
 ## What an assistant can do
 
-Every tool calls the HTTP API as you, so the assistant sees exactly what you may see within what you allowed. The tools that change something are offered only to a connection with **Allow changes** (or `stackurity mcp --allow-writes`, or a personal token above viewer); every change is checked against your role on each asset it touches and recorded in the activity log (as `you (assistant Claude)`, actor type `assistant`).
+Every tool calls the HTTP API as you, so the assistant sees exactly what you may see within what you allowed. The tools that change something are offered only to a connection with **Allow changes** (or `stackurity mcp --allow-writes`, or any personal token sent to `/mcp`, a viewer's included); every change is checked against your role on each asset it touches, so a viewer's change is refused, and recorded in the activity log (as `you (assistant Claude)`, actor type `assistant`).
 
 ### Reading
 

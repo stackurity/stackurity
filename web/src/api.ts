@@ -266,6 +266,8 @@ export interface Billing {
   grace_until: string | null;
   payment_url: string | null;
   scheduled_change: { plan: BillingPlan | null; extra_assets: number; at: string | null } | null;
+  /** An upgrade that applies now and is billed from the next invoice (the provider changes the plan at the period's end). */
+  upgrade: { from_plan: BillingPlan | null; charge: { at: string; amount: number; currency: string }; message: string } | null;
   notice: string;
   /** Asked once, at the first subscription; it decides the currency. */
   billing_country: string | null;

@@ -71,3 +71,29 @@ func TestUpgradeMatrixHasOneSource(t *testing.T) {
 		t.Error("docs/install.md should point at release-checks.yml for the upgrade sources")
 	}
 }
+
+// TestUpgradeMatrixHasNewestRelease fails when the newest published release
+// is not a source in the release-checks upgrade matrix, so every later
+// release is tested as an upgrade from it. With an "Unreleased" heading in
+// CHANGELOG.md, that is the first version below it. Without one, the change
+// is a release that renamed Unreleased to its version and cannot be in the
+// matrix before it is published, so the version before it must be.
+func TestUpgradeMatrixHasNewestRelease(t *testing.T) {
+	changelog := read(t, "CHANGELOG.md")
+	versions := regexp.MustCompile(`(?m)^## (\d+\.\d+\.\d+)\s*$`).FindAllStringSubmatch(changelog, -1)
+	published := 0
+	if !regexp.MustCompile(`(?m)^## Unreleased\s*$`).MatchString(changelog) {
+		published = 1
+	}
+	if len(versions) <= published {
+		return // nothing published yet to upgrade from
+	}
+	v := versions[published][1]
+	m := regexp.MustCompile(`from: \[([^\]]*)\]`).FindStringSubmatch(read(t, ".github/workflows/release-checks.yml"))
+	if m == nil {
+		t.Fatal("release-checks.yml: no from: list of versions")
+	}
+	if !strings.Contains(m[1], `"`+v+`"`) {
+		t.Errorf("release-checks.yml: the upgrade matrix (from: [%s]) does not include %s, the newest published release in CHANGELOG.md; add it", m[1], v)
+	}
+}

@@ -1,0 +1,4 @@
+# STACKURITY_* variables the Go code reads that README.md and docs/*.md need
+# not name. One per line: the name, two spaces, the reason. Keep it to test
+# hooks; anything an operator or user may set belongs in the docs.
+# TestEnvVarsDocumented (envvars_test.go) reads this file.

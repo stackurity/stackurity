@@ -179,7 +179,7 @@ func (s *Server) projectGate(next http.Handler) http.Handler {
 				return
 			}
 			if !a.AllowWrites && r.Method != http.MethodGet {
-				writeError(w, 403, "forbidden", "this assistant is read-only: allow changes for it under Settings, Connected assistants")
+				writeError(w, 403, "forbidden", "this assistant is read-only: allow changes for it under Settings → AI assistants")
 				return
 			}
 			if a.ProjectID != nil {

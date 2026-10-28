@@ -80,7 +80,7 @@ Some features are safe when one organisation runs its own server but not when st
 
 Migration 0010, in one transaction:
 
-1. Create `workspaces` and insert workspace 1, named from `STACKURITY_DEFAULT_WORKSPACE_NAME` or "Default" (renamable later).
+1. Create `workspaces` and insert workspace 1, named "Default" (renamable later under **Settings → Workspaces** or with `stackurity admin rename-workspace`).
 2. Add `workspace_id` to every workspace table, fill it with 1, set NOT NULL and the default.
 3. Rebuild unique constraints with `workspace_id` first: asset identifiers `(workspace_id, scheme, value)`, team, channel, route and policy names, the open-incident key, plan and action keys, `settings (workspace_id, key)`. Update the matching `ON CONFLICT` targets in the store.
 4. Create `workspace_members` from `users.role`; mark existing admins `instance_admin`.

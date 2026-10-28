@@ -112,7 +112,7 @@ elif cmd == "collect":
 stackurity plugin test ./my-plugin --config config.json --secrets secrets.json
 ```
 
-This runs `metadata`, `validate` (with your config, then with an unknown field), `health` and `collect`. It checks every response against the protocol and exits non-zero if any check fails. Run it in your plugin's CI.
+This runs `metadata`, `validate` (with your config, then with an unknown field), `health` and `collect`. It checks every response against the protocol and exits non-zero if any check fails. `collect` is given 5 minutes; `--timeout 10m` allows longer. Run it in your plugin's CI.
 
 ## Installing
 

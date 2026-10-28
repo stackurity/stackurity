@@ -23,7 +23,7 @@ Open-source, self-hosted software inventory and upgrade intelligence. Stackurity
 - **Team workflow:** acknowledge, assign, risk acceptance (security role, with a reason, an expiry capped by policy, and the mitigation in place) and deadlines, with full history. Several teams with routing by team and escalation of overdue issues are part of Pro.
 - **Remediation outcomes:** time to remedy by priority, SLA compliance against the risk policy, findings resolved by a fresh inventory versus by changed advisory data, findings that came back after being resolved, and remediation success, failures and rollbacks, always with the counts behind each rate.
 - **Evidence (Pro):** a periodic patch-management report for audits and security questionnaires: coverage, open and overdue findings, time to resolve, active exceptions and replica drift.
-- **AI assistants:** paste `https://<your server>/mcp` into Claude, ChatGPT or any assistant that supports remote MCP servers and sign in, nothing to install. Assistants can ask what is vulnerable, why it has its priority, which version to upgrade to, and whether a change fixed it, with cited ids and sources, and, if you allow changes, create projects, add servers, assign, snooze or ignore issues and check fixes again ([docs/ai-assistants.md](docs/ai-assistants.md)).
+- **AI assistants:** with `STACKURITY_BASE_URL` set to the server's public `https://` address, paste `https://<your server>/mcp` into Claude, ChatGPT or any assistant that supports remote MCP servers and sign in, nothing to install. Assistants can ask what is vulnerable, why it has its priority, which version to upgrade to, and whether a change fixed it, with cited ids and sources, and, if you allow changes, create projects, add servers, assign, snooze or ignore issues and check fixes again ([docs/ai-assistants.md](docs/ai-assistants.md)).
 - **Notifications:** email, Slack, Microsoft Teams and signed webhooks: a few messages that bring people to the dashboard (urgent issues right away, grouped per asset and fix; a daily or weekly summary; a quiet "connected" message for a new server's first scan), with routing by priority, team and environment, quiet hours, hourly limits, retries and a delivery log. Feed, collector and coverage failures alert too.
 - **Jira:** one issue per incident in Jira Cloud or Data Center, kept up to date as findings join and priority changes, commented on and optionally transitioned when the incident resolves, and linked from the dashboard.
 - **Controlled remediation (Pro):** opt-in, policy-scoped upgrades with approval gates, maintenance windows, canary then staged rollout, verification against freshly collected inventory and health checks, and halt-on-failure with best-effort rollback where the package manager supports it. Hosts are enrolled one at a time with a bound token and a local allowlist. Repositories get Renovate pull requests, so code review stays in place. See [docs/remediation.md](docs/remediation.md).
@@ -33,6 +33,8 @@ Open-source, self-hosted software inventory and upgrade intelligence. Stackurity
 ## Quick start
 
 Stackurity is self-hosted: your inventory and findings stay on your own server, and your hosts and pipelines send data to it. Nothing needs inbound access to your machines.
+
+If you would rather not run a server, **Stackurity Cloud** runs the same release for you at [app.stackurity.dev](https://app.stackurity.dev): sign up for a 14-day free trial, no card needed, then choose a [plan](https://stackurity.dev/pricing.html). Self-hosting the Community edition stays free, with no account and no asset limit; nothing below needs Stackurity Cloud.
 
 There are two ways to run it. Both keep the session cookie `Secure`, as production does: Chrome, Edge and Firefox treat `http://localhost` as a secure origin, so a trial on your own machine needs no security setting changed.
 
@@ -59,7 +61,7 @@ docker compose exec stackurity stackurity admin load-demo        # --remove dele
 **3. Connect your own estate:**
 
 - **Servers:** under **Assets → Add server**, create an install command and run it on each Linux host. The agent is read-only and unprivileged, and it reports OS packages, runtimes and the libraries your deployed applications have installed.
-- **Code:** add repositories under **Integrations**, or run `stackurity scan . --fail-on critical` in CI to block vulnerable changes.
+- **Code:** add repositories under **Settings → Integrations**, or run `stackurity scan . --fail-on critical` in CI to block vulnerable changes.
 - **Cloud:** the AWS plugin reads managed service versions with a read-only role, and the Kubernetes plugin reads a cluster's workloads, images and exposure with a read-only service account.
 - **People and tools:** invite your team (or turn on single sign-on with Pro), route alerts to Slack, Teams or email, and connect AI assistants to `/mcp` with the organisation, project and role you choose.
 
