@@ -182,3 +182,27 @@ jobs:
           fi
           gh api repos/stackurity/website/dispatches -f event_type=stackurity-release \
             -f "client_payload[version]=${GITHUB_REF_NAME#v}" -f "client_payload[tag]=$GITHUB_REF_NAME"
+
+  # Start the licensed (ee,cloud) image build in the private stackurity-pro
+  # repository: its ee-image workflow builds this tag with the pro commit
+  # tagged the same, scans, pushes, signs and attests it. PRO_DISPATCH_TOKEN
+  # may only send repository_dispatch events to stackurity/stackurity-pro (a
+  # fine-grained token with Contents: read and write on that repository);
+  # without it (forks) this is skipped with a warning and the release still
+  # succeeds. Prereleases are built by hand there if needed.
+  pro-image:
+    needs: release
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Start the stackurity-ee image build
+        env:
+          GH_TOKEN: ${{ secrets.PRO_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::PRO_DISPATCH_TOKEN is not set; run ee-image.yml in stackurity-pro by hand with core_tag=$GITHUB_REF_NAME"
+            exit 0
+          fi
+          gh api repos/stackurity/stackurity-pro/dispatches -f event_type=stackurity-release \
+            -f "client_payload[version]=${GITHUB_REF_NAME#v}" -f "client_payload[tag]=$GITHUB_REF_NAME"
