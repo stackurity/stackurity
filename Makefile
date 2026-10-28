@@ -38,8 +38,12 @@ ee-overlay:
 build-ee: web ee-overlay
 	CGO_ENABLED=0 go build $(EE_FLAGS) -trimpath -ldflags "-s -w -X main.version=$(VERSION)-ee" -o bin/stackurity-ee ./cmd/stackurity
 
+# The API package alone runs close to go test's default 10 minutes in the
+# licensed and cloud builds on CI runners.
+TEST_TIMEOUT ?= 25m
+
 test-ee: ee-overlay
-	go test $(EE_FLAGS) ./...
+	go test $(EE_FLAGS) -timeout $(TEST_TIMEOUT) ./...
 
 image-ee:
 	docker build --build-context pro=$(PRO) --build-arg EDITION=ee --build-arg EE_TAGS=$(EE_TAGS) --build-arg VERSION=$(VERSION) -t stackurity-ee:$(VERSION) .
