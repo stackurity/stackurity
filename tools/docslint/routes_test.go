@@ -46,60 +46,42 @@ func servedRoutes(t *testing.T) []string {
 	return out
 }
 
-var (
-	backtick  = regexp.MustCompile("`([^`]+)`")
-	verbOnly  = regexp.MustCompile(`^(GET|POST|PUT|PATCH|DELETE)$`)
-	verbRoute = regexp.MustCompile(`^(?:(GET|POST|PUT|PATCH|DELETE) )?(/\S*)$`)
-)
+// routeHeading is how docs/api.md documents a route: one heading per method
+// and path, followed by a "**Who:**" line.
+var routeHeading = regexp.MustCompile("^### `(GET|POST|PUT|PATCH|DELETE) (/[^`\\s]*)`\\s*$")
 
-// documentedRoutes reads the routes docs/api.md names, line by line, from
-// its code spans, in the forms it uses:
-//
-//	`GET /assets/{id}`                     one method and path
-//	`GET`/`POST /tokens`                   several methods for one path
-//	`GET /assets/{id}/coverage`, `/collections`
-//	                                       a sibling of the previous path,
-//	                                       with its methods
-//
-// A query string or a suffix in brackets ([.sha256]) is dropped. A path
-// with no method anywhere before it on the line counts for no method.
-func documentedRoutes(doc string) map[string][]string {
-	out := map[string][]string{} // method -> paths
-	for _, line := range strings.Split(doc, "\n") {
-		var pending, last []string
-		var lastPath string
-		for _, m := range backtick.FindAllStringSubmatch(line, -1) {
-			span := strings.TrimSpace(m[1])
-			if verbOnly.MatchString(span) {
-				pending = append(pending, span)
-				continue
+// docRoute is one route heading in docs/api.md.
+type docRoute struct {
+	method, path string
+	line         int
+	// notServed is true for routes the Who line marks "licensed build" or
+	// "Stackurity Cloud": the Community server these tests build may not
+	// register them.
+	notServed bool
+}
+
+// documentedRoutes reads the route headings of docs/api.md, with the /api/v1
+// base path removed. A route named only in prose does not count: every route
+// has its own entry.
+func documentedRoutes(doc string) []docRoute {
+	var out []docRoute
+	lines := strings.Split(doc, "\n")
+	for i, line := range lines {
+		m := routeHeading.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		r := docRoute{method: m[1], path: strings.TrimPrefix(m[2], "/api/v1"), line: i + 1}
+		for _, next := range lines[i+1:] {
+			if strings.HasPrefix(next, "#") {
+				break
 			}
-			v := verbRoute.FindStringSubmatch(span)
-			if v == nil {
-				continue
-			}
-			path := strings.TrimPrefix(v[2], "/api/v1")
-			path, _, _ = strings.Cut(path, "?")
-			if i := strings.Index(path, "["); i > 0 {
-				path = path[:i]
-			}
-			methods := pending
-			if v[1] != "" {
-				methods = append(methods, v[1])
-			}
-			pending = nil
-			if len(methods) == 0 && lastPath != "" && strings.Count(path, "/") == 1 {
-				// `/collections` after `GET /assets/{id}/coverage`.
-				path = lastPath[:strings.LastIndex(lastPath, "/")] + path
-				methods = last
-			}
-			if len(methods) > 0 {
-				last, lastPath = methods, path
-			}
-			for _, method := range methods {
-				out[method] = append(out[method], path)
+			if strings.HasPrefix(next, "**Who:**") {
+				r.notServed = strings.Contains(next, "licensed build") || strings.Contains(next, "Stackurity Cloud")
+				break
 			}
 		}
+		out = append(out, r)
 	}
 	return out
 }
@@ -123,8 +105,8 @@ func matches(route, doc string) bool {
 	return true
 }
 
-// TestRoutesDocumented fails when the server registers a route that
-// docs/api.md does not name with its method. The routes not documented yet
+// TestRoutesDocumented fails when the server registers a route that has no
+// heading of its own in docs/api.md. The routes not documented yet
 // are listed in api-known-gaps.txt; a listed route that docs/api.md now
 // names, or that the server no longer registers, fails too, so the list only
 // shrinks.
@@ -136,8 +118,8 @@ func TestRoutesDocumented(t *testing.T) {
 		served[r] = true
 		method, path, _ := strings.Cut(r, " ")
 		documented := false
-		for _, d := range doc[method] {
-			if matches(path, d) {
+		for _, d := range doc {
+			if d.method == method && matches(path, d.path) {
 				documented = true
 				break
 			}
@@ -156,32 +138,62 @@ func TestRoutesDocumented(t *testing.T) {
 	}
 }
 
-// TestDocumentedRoutesForms checks the forms documentedRoutes understands.
-func TestDocumentedRoutesForms(t *testing.T) {
-	doc := documentedRoutes("| `GET`/`POST /tokens`, `DELETE /tokens/{id}` | any |\n" +
-		"| `GET /assets/{id}/coverage`, `/collections` | viewer |\n" +
-		"| `GET /install/agent.sh`, `GET /download/agent/linux-{amd64,arm64}[.sha256]` | none |\n" +
-		"| `GET /assets?kind=` | viewer |\n" +
-		"Connect to `/mcp`.\n")
-	for _, c := range []struct {
-		method, route string
-		want          bool
-	}{
-		{"GET", "/tokens", true},
-		{"POST", "/tokens", true},
-		{"DELETE", "/tokens/{id}", true},
-		{"GET", "/tokens/{id}", false},
-		{"GET", "/assets/{id}/collections", true},
-		{"GET", "/download/agent/{platform}", true},
-		{"GET", "/assets", true},
-		{"GET", "/mcp", false},
-	} {
-		got := false
-		for _, d := range doc[c.method] {
-			got = got || matches(c.route, d)
+// TestDocumentedRoutesServed fails when docs/api.md has a heading for a
+// route the server does not register (a wrong path or method, or a removed
+// route), unless the heading's Who line marks it licensed build or
+// Stackurity Cloud.
+func TestDocumentedRoutesServed(t *testing.T) {
+	served := servedRoutes(t)
+	for _, d := range documentedRoutes(read(t, "docs/api.md")) {
+		if d.notServed {
+			continue
 		}
-		if got != c.want {
-			t.Errorf("%s %s documented = %v, want %v", c.method, c.route, got, c.want)
+		found := false
+		for _, r := range served {
+			method, path, _ := strings.Cut(r, " ")
+			if method == d.method && matches(path, d.path) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("docs/api.md:%d: %s %s is not a route the server registers: fix the heading, or mark it licensed build or Stackurity Cloud on its Who line", d.line, d.method, d.path)
+		}
+	}
+}
+
+// TestDocumentedRoutesForms checks what documentedRoutes reads.
+func TestDocumentedRoutesForms(t *testing.T) {
+	got := documentedRoutes("## Tokens\n\n" +
+		"### `GET /tokens`\n\n**Who:** any signed-in user\n\nLists tokens; see `DELETE /tokens/{id}`.\n\n" +
+		"### `POST /api/v1/assistants`\n\n**Who:** admin · licensed build\n\n" +
+		"### `GET /billing`\n\n**Who:** admin · Stackurity Cloud\n\n" +
+		"### `GET /healthz`\n\nNo Who line.\n\n### Not a route\n\n**Who:** licensed build\n")
+	want := []docRoute{
+		{method: "GET", path: "/tokens", line: 3},
+		{method: "POST", path: "/assistants", line: 9, notServed: true},
+		{method: "GET", path: "/billing", line: 13, notServed: true},
+		{method: "GET", path: "/healthz", line: 17},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("documentedRoutes = %+v, want %+v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("route %d = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+	for _, c := range []struct {
+		route, doc string
+		want       bool
+	}{
+		{"/tokens/{id}", "/tokens/{id}", true},
+		{"/download/agent/{platform}", "/download/agent/linux-amd64", true},
+		{"/channels", "/channels/{id}", false},
+		{"/tokens", "/tokens/", true},
+	} {
+		if got := matches(c.route, c.doc); got != c.want {
+			t.Errorf("matches(%q, %q) = %v, want %v", c.route, c.doc, got, c.want)
 		}
 	}
 }
