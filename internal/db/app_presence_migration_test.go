@@ -109,7 +109,7 @@ func TestAppNameBackfill(t *testing.T) {
 		t.Errorf("proves_absence default: %v %v", proves, err)
 	}
 	var def string
-	if err := owner.QueryRow(context.Background(), `SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'checks_outcome_check'`).Scan(&def); err != nil ||
+	if err := owner.QueryRow(context.Background(), `SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'checks_outcome_check' AND conrelid = 'checks'::regclass`).Scan(&def); err != nil ||
 		!strings.Contains(def, "incomplete") || !strings.Contains(def, "expired") {
 		t.Errorf("checks_outcome_check = %q %v", def, err)
 	}
