@@ -180,6 +180,7 @@ var projectScopes = map[string]string{
 	"POST /api/v1/admin/packs/{id}/rollback":       "org",
 	"DELETE /api/v1/admin/packs/{id}":              "org",
 	"GET /api/v1/admin/health":                     "org",
+	"GET /api/v1/admin/coverage-gaps":              "org",
 	"GET /api/v1/updates":                          "org",
 	"GET /api/v1/admin/workspaces/":                "org",
 	"POST /api/v1/admin/workspaces/":               "org",
