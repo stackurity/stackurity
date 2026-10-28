@@ -26,7 +26,7 @@ jobs:
     timeout-minutes: 20
     services:
       postgres:
-        image: postgres:17.6-alpine
+        image: postgres:17.11-alpine3.24
         env:
           POSTGRES_USER: stackurity
           POSTGRES_PASSWORD: stackurity
@@ -37,8 +37,8 @@ jobs:
     env:
       STACKURITY_TEST_DATABASE_URL: postgres://stackurity:stackurity@localhost:5432/stackurity_test?sslmode=disable
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
       - run: tools/release-checks/isolation.sh
@@ -48,10 +48,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
       - name: Build
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           load: true
@@ -59,7 +59,7 @@ jobs:
           cache-from: type=gha,scope=release-check
           cache-to: type=gha,mode=max,scope=release-check
       - run: docker save stackurity:release-check | gzip -1 > image.tar.gz
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-check-image
           path: image.tar.gz
@@ -76,8 +76,8 @@ jobs:
         # Published releases a site may upgrade from. Add each new minor.
         from: ["0.2.0", "0.3.0", "0.3.1", "0.4.0", "0.5.0", "0.5.1", "0.6.0", "0.8.0", "0.9.0", "0.10.0", "0.11.0", "0.12.0", "0.13.0", "0.13.1", "0.13.2", "0.13.3"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v8
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-check-image
       - run: gunzip -c image.tar.gz | docker load

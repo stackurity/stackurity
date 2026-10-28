@@ -1,0 +1,13 @@
+# Documented exceptions for the container image scan (.github/workflows/
+# security-gate.yml, `make scan-image`). The scan fails on any HIGH or
+# CRITICAL vulnerability that has a fixed version; list one here only when
+# it cannot be fixed yet and does not affect the image. Every entry needs a
+# statement (why) and expired_at (when to look again); after that date the
+# entry stops applying and the scan fails again.
+#
+# vulnerabilities:
+#   - id: CVE-2026-00000
+#     paths: ["usr/local/bin/syft"]
+#     statement: Why it is safe for now, and what fixes it.
+#     expired_at: 2026-12-31
+vulnerabilities: []
