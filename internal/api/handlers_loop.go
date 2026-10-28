@@ -175,6 +175,46 @@ func (s *Server) listChecks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, paged(items, total, f.Page))
 }
 
+// checkOptions says, for each fix group (fix_group) or asset (asset_id),
+// whether Check again gets a fresh report within minutes and, if not, why
+// (removed, agent, upload), with the latest check. Repeat a parameter or
+// separate values with commas; at most 50 in all.
+func (s *Server) checkOptions(w http.ResponseWriter, r *http.Request) {
+	var groups []string
+	var assets []int64
+	for _, v := range r.URL.Query()["fix_group"] {
+		for _, g := range strings.Split(v, ",") {
+			if g = strings.TrimSpace(g); g != "" {
+				groups = append(groups, g)
+			}
+		}
+	}
+	for _, v := range r.URL.Query()["asset_id"] {
+		for _, part := range strings.Split(v, ",") {
+			id, err := strconv.ParseInt(strings.TrimSpace(part), 10, 64)
+			if err != nil || id <= 0 {
+				s.fail(w, r, badRequest("asset_id must be asset ids"))
+				return
+			}
+			assets = append(assets, id)
+		}
+	}
+	if len(groups)+len(assets) == 0 {
+		s.fail(w, r, badRequest("send fix_group or asset_id"))
+		return
+	}
+	if len(groups)+len(assets) > store.MaxCheckOptions {
+		s.fail(w, r, badRequest("at most 50 fix groups and assets at once"))
+		return
+	}
+	items, err := s.Store.CheckOptions(r.Context(), groups, assets)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"items": nonNil(items)})
+}
+
 func (s *Server) getCheck(w http.ResponseWriter, r *http.Request) {
 	id, err := idParam(r, "id")
 	if err != nil {

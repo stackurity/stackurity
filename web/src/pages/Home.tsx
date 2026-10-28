@@ -10,6 +10,7 @@ import { Badge } from "../components/Badge";
 import { IntelBanners } from "../components/Findings";
 import { changeText, fixesFrom, FixKindIcon, FixPlaces, urgencyOf } from "../components/FixGroups";
 import { PackSuggestions } from "../components/PackSuggestions";
+import { fixPlaces, FixVerify, useCheckOptions, type CheckOptions } from "../components/FixVerify";
 import { IconHelp } from "../components/Icons";
 import { Code, EmptyState, ErrorBox, Loading, PageHeader, RelativeTime } from "../components/ui";
 
@@ -31,7 +32,7 @@ function Tile({ to, value, label, tone, sub }: { to: string; value: number; labe
 }
 
 /** One fix needed in several places: one card, the places inside. */
-function HomeFixPlacesCard({ g }: { g: FixGroup }) {
+function HomeFixPlacesCard({ g, options }: { g: FixGroup; options: CheckOptions }) {
   const u = urgencyOf(g);
   const [open, setOpen] = useState(false);
   const id = `hf-${g.id.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
@@ -56,18 +57,19 @@ function HomeFixPlacesCard({ g }: { g: FixGroup }) {
         {g.known_exploited > 0 && <strong className="text-bad"> · {g.known_exploited.toLocaleString()} known exploited</strong>}
       </p>
       <div className="home-fix-actions">
-        <button type="button" className="btn btn-sm btn-primary" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <button type="button" className="btn btn-sm" aria-expanded={open} onClick={() => setOpen(!open)}>
           {open ? "Hide the places" : `Show the ${places.length} places`}
         </button>
       </div>
       {open && <FixPlaces g={g} places={places} />}
+      <FixVerify g={g} options={options} />
     </article>
   );
 }
 
-function HomeFixCard({ g }: { g: FixGroup }) {
+function HomeFixCard({ g, options }: { g: FixGroup; options: CheckOptions }) {
   const { canAct: can } = useAuth();
-  if ((g.places?.length ?? 0) > 1) return <HomeFixPlacesCard g={g} />;
+  if ((g.places?.length ?? 0) > 1) return <HomeFixPlacesCard g={g} options={options} />;
   const u = urgencyOf(g);
   const href = `/fixes/${encodeURIComponent(g.id)}`;
   return (
@@ -110,6 +112,7 @@ function HomeFixCard({ g }: { g: FixGroup }) {
           </Link>
         )}
       </div>
+      <FixVerify g={g} options={options} />
     </article>
   );
 }
@@ -153,6 +156,7 @@ export function HomePage() {
   const top = useLoad(() => api.get<List<FixGroup>>("/fix-groups", { bucket: "focus", limit: TOP }), []);
   const fs = useLoad(() => api.get<FindingSummary>("/findings/summary"), []);
   const assets = useLoad(() => api.get<List<Asset>>("/assets", { limit: 200 }), []);
+  const checkOptions = useCheckOptions((top.data?.items ?? []).flatMap(fixPlaces).map((p) => p.group_id));
 
   if (ob.data?.show_flow) return <Navigate replace to="/get-started" />;
   if (ov.error) return <ErrorBox error={ov.error} title="Could not load Home" />;
@@ -215,7 +219,7 @@ export function HomePage() {
     });
   }
   for (const a of assets.data?.items ?? []) {
-    if (a.collection_status !== "ok" && !attention.some((x) => x.id === a.id))
+    if (a.collection_status !== "ok" && a.collection_status !== "removed" && !attention.some((x) => x.id === a.id))
       attention.push({
         id: a.id,
         name: a.name,
@@ -259,7 +263,7 @@ export function HomePage() {
       {top.data && top.data.items.length > 0 && (
         <section aria-label="Fixes that need you" className="home-fixes">
           {top.data.items.map((g) => (
-            <HomeFixCard key={g.id} g={g} />
+            <HomeFixCard key={g.id} g={g} options={checkOptions} />
           ))}
           {n > top.data.items.length && (
             <p className="small">
