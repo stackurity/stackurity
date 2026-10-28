@@ -126,6 +126,36 @@ The documentation is the test specification. Each control stated on this page, i
 | Linking a Slack account: single use, 15 minutes, in the channel's workspace only, a browser session only, never taking over an account linked to someone else; each person lists and removes only their own links | `TestSlackAccountLinking`, `TestIsolationSweep`, `TestProjectIsolationSweep` |
 | A linked Slack click has the person's dashboard permissions (role, project access, removed members refused) and is audited like the dashboard with source `slack` | `TestSlackActionPermissions` |
 | Channels without a signing secret send exactly the earlier link buttons; interactive buttons only when the secret resolves; the secret never appears in messages | `TestSlackInteractiveButtons`, `TestDispatcherInteractiveOnlyWithSigningSecret`, `TestSlackChannelSigningSecretRef` |
+| Security headers on every response: `Content-Security-Policy`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`, and a `Permissions-Policy` that turns off browser features the dashboard does not use (camera, microphone, geolocation, USB, serial, HID, Bluetooth, MIDI, screen capture, sensors, autoplay, Topics and others) for the page and any frame in it. `payment`, `publickey-credentials-get`/`-create` (passkeys and security keys), `clipboard-write` and `fullscreen` keep the browser's default (this origin only). The hosted edition's payment page (`/billing/pay/…`) delegates what Razorpay Checkout's frame asks for (payment, camera for scanning a card, one-time codes, web share, passkeys) to `api.razorpay.com` and `checkout.razorpay.com` only | `TestPermissionsPolicy` |
+
+### Audit log
+
+The audit log (`audit_events`) is append-only and tamper-evident from migration `0052`.
+
+| Control | Tests |
+|---|---|
+| The application role can record and read audit events (in its workspace, or in system scope) and do nothing else: row-level security has SELECT and INSERT policies only, so an UPDATE or DELETE matches no rows, in any scope; the role has no TRUNCATE privilege | `TestAuditAppendOnlyForApp` |
+| A trigger refuses UPDATE, DELETE and TRUNCATE for every role, the table owner included, except (1) the rows of a workspace that no longer exists, which is the `ON DELETE CASCADE` when a whole workspace is deleted, and (2) a transaction that ran `SET LOCAL stackurity.audit_maintenance = 'on'` as the table owner (the application role gains nothing from it) | `TestAuditGuardForOwner`, `TestAuditWorkspaceDeletion` |
+| Each workspace's events, and the platform's own events, form a hash chain written by the insert trigger, whatever inserted the row; concurrent inserts are ordered by a row lock on the chain's head | `TestAuditChainVerifies` |
+| `stackurity admin verify-audit` finds a changed event, a removed one (first, middle or newest), a rewritten hash and an event taken out of the chain, each written by a superuser with the triggers disabled, and reports the first break of each chain | `TestAuditTamperDetected`, `TestAuditUnchainedBeforeMigration` |
+| Workspaces see and record only their own events; the chain heads are readable in system scope only | `TestAuditIsolation`, `TestEveryTenantTableHasRowLevelSecurity` |
+
+**The chain.** Columns `chain_seq` (1, 2, 3 … per chain), `prev_hash` and `hash`, with `hash = sha256(prev_hash || stackurity_audit_payload(event))` in hex. The payload is a JSON array (version 1) of the event's id, time (UTC, microseconds), workspace, actor type, id and name, action, object type and id, detail, remote address and `chain_seq`. The first event of each chain has `chain_seq` 1 and a `prev_hash` of 64 zeros; that is where the chain starts. `audit_chain_heads` keeps each chain's newest position and hash, so removing the newest events also shows. Events recorded before migration `0052` are not rewritten (the migration does not touch existing rows, which on a large installation would hold a long lock); they keep the chain columns empty and `verify-audit` counts them as "earlier events not chained". An unchained event recorded after the chain started is a break.
+
+**Who may remove audit events.** Deleting a whole workspace removes its events and its chain head (`Store.DeleteWorkspace`, which Stackurity Cloud uses for organisations read-only for 30 days after a trial or plan ended); the event recording that deletion is a platform event and stays. Nothing else in Stackurity changes or removes audit events: there is no retention job and deleting a user keeps the events that name them (`actor_id` has no foreign key). Tests drop their whole schema. An operator who must remove events (a court order, a retention policy of their own) does it in psql as the database login role (the table owner):
+
+```sql
+BEGIN;
+SET LOCAL stackurity.audit_maintenance = 'on';
+DELETE FROM audit_events WHERE at < now() - interval '2 years';
+COMMIT;
+```
+
+When chained events are removed, `verify-audit` then reports a break there; that is intended: the chain shows that something was removed.
+
+**What it does not protect against.** A database superuser, or the owner of the tables, can disable the triggers or rewrite the chain in full, recomputing every hash after the change, and `verify-audit` cannot tell. Keeping the latest hash of each chain somewhere else (the output of `verify-audit` in a ticket or log, or `SELECT workspace_id, seq, hash FROM audit_chain_heads` kept off the server) lets you prove later that nothing before it was rewritten. Where the application connects as the table owner and the migration could not create the `stackurity_app` role (some managed databases), the application role is the owner and the trigger's protection is only as strong as the owner's restraint. Running `verify-audit` needs read access in system scope, like the other `admin` commands.
+
+**Rolling back.** Migration `0052` adds nullable columns, a table, functions, triggers and policies. A release from before it keeps working against it while both run during an upgrade: its inserts name only the old columns and the trigger fills in the chain, and its only removal path, deleting a workspace, is the cascade the trigger allows. Running an older release after the upgrade is refused as for every migration (restore the backup taken before the upgrade).
 
 ### Outbound connections (SSRF)
 

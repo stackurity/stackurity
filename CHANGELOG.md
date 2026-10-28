@@ -15,12 +15,19 @@ Each release's section is published as its GitHub release notes, and a tag witho
 - The image is based on Alpine 3.24 (was 3.22), and the example `deploy/docker-compose.yml` uses PostgreSQL 17.11 (was 17.6, whose image has OpenSSL, zlib, musl and util-linux vulnerabilities with fixes, including critical CVE-2026-31789). PostgreSQL 17.11 is a minor update: replace the image and restart, no dump or restore.
 - Releases are gated: a tag publishes nothing while govulncheck reports a reachable vulnerability, npm audit reports a high or critical advisory, or the built image has a fixable high or critical vulnerability. Every pull request and a daily run on `main` check the same. Exceptions need a reason and an expiry (`.trivyignore.yaml`, `web/audit-allow.json`). `make vulncheck` and `make scan-image IMAGE=...` run the checks locally.
 - GitHub Actions used by the build and release workflows are pinned to commit SHAs.
+- **The audit log is append-only.** The application's database role could change and delete audit events in its workspace (row-level security had UPDATE and DELETE policies); it can now only record and read them, and a database trigger refuses changes and removals by any role, the table owner included. Audit events are still removed with their workspace when a whole workspace is deleted (Stackurity Cloud, 30 days after a trial or plan ended), and an operator can remove events on purpose as described under [Audit log](docs/security-audit.md#audit-log).
+- **Browser features the dashboard does not use are turned off.** The `Permissions-Policy` header denies them (camera, microphone, geolocation, USB, serial, HID, Bluetooth, MIDI, screen capture, sensors and others) to every page and any frame in it. Payment, passkeys and security keys (WebAuthn) keep the browser's default; the payment page of Stackurity Cloud lets Razorpay Checkout use what it needs.
+
+### Added
+
+- **The audit log is tamper-evident.** Each workspace's events, and the platform's own, form a hash chain written by the database as each event is recorded. `stackurity admin verify-audit` checks the chains and reports the first break of each (a changed, removed or inserted event). See [Verifying the audit log](docs/operations.md#verifying-the-audit-log).
 
 ### Upgrading
 
 - Behind Cloudflare (including Cloudflare Tunnel), nothing changes: keep `STACKURITY_TRUST_PROXY=true`. The tunnel connector reaches Stackurity from loopback or a private (Docker network) address, which are trusted by default.
 - Behind another reverse proxy (Caddy, nginx, Traefik, an ingress controller), set `STACKURITY_TRUSTED_PROXY_HEADER=X-Forwarded-For` (or the header your proxy overwrites, such as `X-Real-IP`). If the proxy reaches Stackurity from a public address, list it in `STACKURITY_TRUSTED_PROXIES`. The Helm chart sets `X-Forwarded-For` by default (`config.trustedProxyHeader`). A warning is logged once when the header arrives from a peer that is not trusted.
 - Single sign-on (OpenID Connect): accounts already linked keep working. People whose password account was never linked are refused at their first single sign-on until they use their password, or until the operator sets `STACKURITY_OIDC_LINK_EXISTING=true`. With Microsoft Entra ID set `STACKURITY_OIDC_REQUIRE_EMAIL_VERIFIED=false` and `STACKURITY_OIDC_ALLOWED_DOMAINS`.
+- Migration `0052` adds the chain columns and triggers without rewriting existing audit events, which stay as they were and are reported as "earlier events not chained"; each chain starts with the first event recorded after the upgrade. It builds one index on `audit_events` (seconds for a few hundred thousand events).
 
 ## 0.13.3
 
