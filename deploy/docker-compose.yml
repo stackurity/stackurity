@@ -3,7 +3,7 @@ name: stackurity
 
 services:
   postgres:
-    image: postgres:17.6-alpine
+    image: postgres:17.11-alpine3.24
     restart: unless-stopped
     environment:
       POSTGRES_USER: stackurity
@@ -36,6 +36,11 @@ services:
       # Public dashboard URL (https://... behind your proxy), used in links.
       STACKURITY_BASE_URL: ${STACKURITY_BASE_URL:-}
       STACKURITY_TRUST_PROXY: ${STACKURITY_TRUST_PROXY:-false}
+      # Read only with STACKURITY_TRUST_PROXY=true (docs/install.md, Client
+      # addresses behind a proxy). Empty is CF-Connecting-IP, from loopback
+      # and private (Docker network) peers.
+      STACKURITY_TRUSTED_PROXY_HEADER: ${STACKURITY_TRUSTED_PROXY_HEADER:-}
+      STACKURITY_TRUSTED_PROXIES: ${STACKURITY_TRUSTED_PROXIES:-}
       STACKURITY_SECRETS_DIR: /run/secrets
       # Repository tokens are referenced as env:STACKURITY_SECRET_<NAME>.
       STACKURITY_SECRET_GITHUB: ${STACKURITY_SECRET_GITHUB:-}

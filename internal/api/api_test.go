@@ -62,7 +62,7 @@ func newEnvWith(t *testing.T, adjust func(*api.Server)) *env {
 type session struct {
 	e    *env
 	http *http.Client
-	// hdr is sent with every request (such as X-Forwarded-For).
+	// hdr is sent with every request (such as CF-Connecting-IP).
 	hdr map[string]string
 }
 

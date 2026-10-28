@@ -9,7 +9,7 @@ EE_FLAGS = -tags $(EE_TAGS) -overlay ee-overlay.json
 # First-party plugins, built next to the server and shipped in the image.
 PLUGINS = aws-managed kubernetes
 
-.PHONY: build plugins web test lint image clean ee-overlay build-ee test-ee image-ee
+.PHONY: build plugins web test lint image clean ee-overlay build-ee test-ee image-ee vulncheck scan-image
 
 build: web plugins
 	CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$(VERSION)" -o bin/stackurity ./cmd/stackurity
@@ -47,6 +47,20 @@ test-ee: ee-overlay
 
 image-ee:
 	docker build --build-context pro=$(PRO) --build-arg EDITION=ee --build-arg EE_TAGS=$(EE_TAGS) --build-arg VERSION=$(VERSION) -t stackurity-ee:$(VERSION) .
+
+# The checks of .github/workflows/security-gate.yml, to run before deploying an
+# image built here (make scan-image IMAGE=stackurity-ee:v1.2.3). Fixable HIGH
+# and CRITICAL vulnerabilities fail; exceptions live in .trivyignore.yaml and
+# web/audit-allow.json, each with a reason and an expiry.
+IMAGE ?= stackurity:$(VERSION)
+
+vulncheck:
+	go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+	node tools/npm-audit-gate/gate.mjs web web/audit-allow.json
+
+scan-image:
+	trivy image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 \
+	  --ignorefile .trivyignore.yaml $(IMAGE)
 
 clean:
 	rm -rf bin web/dist/assets web/dist/index.html
