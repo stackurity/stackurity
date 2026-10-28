@@ -8,6 +8,7 @@ import { EscalationBadge, PriorityBadge, SosBadge, FindingStateBadge, IGNORE_REA
 import { Card, ErrorBox, KeyValues, Loading, Notice, RelativeTime } from "./ui";
 import { Assignee, DueDate, FindingActions } from "./Workflow";
 import { FindingRemediation } from "./RemediationSummary";
+import { closedReason, countsAsRemediation } from "../resolution";
 
 function FactorTable({ f }: { f: Finding }) {
   const factors = f.priority_factors ?? [];
@@ -178,7 +179,16 @@ function describe(e: FindingEvent): string {
     expired: "ended the snooze or ignore",
     fix_available: "returned it: a fix shipped",
   };
+  const kind = e.detail?.resolution_kind;
+  if (e.action === "resolved" && typeof kind === "string" && kind && !countsAsRemediation(kind)) return "closed it (not remediation)";
   return verb[e.action] ?? e.action.replace(/_/g, " ");
+}
+
+/** The note shown under an event: for the matcher's closures, the specific reason. */
+function eventNote(e: FindingEvent): string {
+  const kind = e.detail?.resolution_kind;
+  if (e.action === "resolved" && typeof kind === "string" && kind) return closedReason(kind, e.note, e.detail);
+  return e.note;
 }
 
 export function FindingHistory({ id, tick }: { id: number; tick: number }) {
@@ -222,7 +232,7 @@ export function FindingHistory({ id, tick }: { id: number; tick: number }) {
                   )}
                   {extra.length > 0 && <span className="muted"> · {extra.join(" · ")}</span>} · <RelativeTime iso={e.at} />
                 </div>
-                {e.note && <p className="note">{e.note}</p>}
+                {eventNote(e) && <p className="note">{eventNote(e)}</p>}
                 {typeof d.mitigation === "string" && d.mitigation && (
                   <p className="note">
                     <span className="muted">Mitigation:</span> {d.mitigation}

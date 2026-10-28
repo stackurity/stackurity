@@ -5,7 +5,8 @@ import { ProNotice } from "../components/ProNotice";
 import { Link, useSearchParams } from "react-router";
 import { api, ASSET_STATUSES, EVIDENCE_STATE_LABEL, PRIORITIES, SEVERITIES, type EvidenceReport, type ReportDrift, type ReportException } from "../api";
 import { useLoad } from "../hooks";
-import { absTime, assetKindLabel, humanize } from "../format";
+import { absTime, assetKindLabel, durationDays, humanize, plural } from "../format";
+import { NOT_REMEDIATION_KINDS, RESOLUTION_KIND_LABEL } from "../resolution";
 import { PriorityBadge, SeverityBadge, StateBadge } from "../components/Badge";
 import { Table, type Column } from "../components/Table";
 import { Card, ErrorBox, KeyValues, Loading, PageHeader } from "../components/ui";
@@ -41,7 +42,7 @@ function Counts({ m, order, label }: { m: Record<string, number> | null | undefi
 
 function days(v: number | null | undefined): ReactNode {
   if (!v) return <span className="muted">—</span>;
-  return `${v.toFixed(1)} days`;
+  return durationDays(v);
 }
 
 const DRIFT_COLUMNS: [string, string][] = [
@@ -128,19 +129,28 @@ function EvidenceReportPage() {
         <p className="hint">The period can be one day to one year. Dates are UTC days.</p>
       </form>
       <p className="hint">
-        Current state (assets, coverage, open findings, exceptions, drift) is as of the time the report was generated. “Resolved” counts
-        findings resolved in the period by any means: an upgrade, removal of the component, or the advisory no longer applying.
+        Current state (assets, coverage, open findings, exceptions, drift) is as of the time the report was generated. “Remediated” counts
+        findings fixed in the period on the asset: an upgrade, a verified remediation, or removal of the component. Findings that closed with
+        nothing changed on the asset, such as an advisory withdrawn by its source, are listed apart and are not counted.
       </p>
 
       <ErrorBox error={res.error} title="Could not build the report" />
       <TrialBanner trial={r?.trial} />
       {!r && !res.error && <Loading />}
-      {r && <ReportBody r={r} />}
+      {r && <ReportBody r={r} from={from} />}
     </div>
   );
 }
 
-function ReportBody({ r }: { r: EvidenceReport }) {
+function ReportBody({ r, from }: { r: EvidenceReport; from: string }) {
+  const notRemediation = r.closed_not_remediation ?? { total: 0, by_kind: {} };
+  // The issue list filters by days before today, so the link covers the period start until today.
+  const sinceFrom = Math.max(1, Math.ceil((Date.now() - new Date(`${from}T00:00:00Z`).getTime()) / 86400000));
+  const notRemediationList = `/fixes/issues?${new URLSearchParams({
+    status: "resolved",
+    resolution_kind: NOT_REMEDIATION_KINDS.join(","),
+    resolved_within: String(sinceFrom),
+  }).toString()}`;
   const withinPct = r.resolved.total > 0 ? Math.round((r.resolved.within_sla / r.resolved.total) * 100) : null;
   const byPrio = r.open.by_priority ?? {};
   const overdueByPrio = r.open.overdue_by_priority ?? {};
@@ -229,10 +239,16 @@ function ReportBody({ r }: { r: EvidenceReport }) {
             ]}
           />
         </Card>
-        <Card title="Resolution">
+        <Card title="Remediation">
           <KeyValues
             entries={[
-              ["resolved in period", n(r.resolved.total)],
+              ["remediated in period", n(r.resolved.total)],
+              ...(r.resolved.remediated !== undefined
+                ? ([
+                    ["upgraded or fixed", n(r.resolved.remediated)],
+                    ["component removed", n(r.resolved.removed)],
+                  ] as [string, ReactNode][])
+                : []),
               [
                 "within deadline",
                 withinPct === null ? (
@@ -243,10 +259,40 @@ function ReportBody({ r }: { r: EvidenceReport }) {
                   </>
                 ),
               ],
-              ["median days to resolve", days(r.resolved.median_days)],
+              ["median time to resolve", days(r.resolved.median_days)],
+              [
+                "closed, not remediation",
+                notRemediation.total > 0 ? (
+                  <>
+                    {n(notRemediation.total)}{" "}
+                    <span className="muted">
+                      (
+                      {Object.entries(notRemediation.by_kind ?? {})
+                        .map(([k, v]) => `${n(v)} ${(RESOLUTION_KIND_LABEL[k] ?? humanize(k)).toLowerCase()}`)
+                        .join("; ")}
+                      )
+                    </span>
+                  </>
+                ) : (
+                  n(0)
+                ),
+              ],
             ]}
           />
-          <p className="hint">Days from first detection to resolution.</p>
+          <p className="hint">
+            Time from first detection to resolution, for remediated findings only.
+            {notRemediation.total > 0 && (
+              <>
+                {" "}
+                {plural(notRemediation.total, "finding")} closed because the advisory was withdrawn or changed, or for another reason with
+                nothing fixed on the asset; {notRemediation.total === 1 ? "it is" : "they are"} not counted as remediation.{" "}
+                <Link to={notRemediationList} className="no-print">
+                  See the list
+                </Link>
+                .
+              </>
+            )}
+          </p>
         </Card>
         <Card title="By priority">
           <div className="table-wrap">
@@ -262,7 +308,7 @@ function ReportBody({ r }: { r: EvidenceReport }) {
                     Overdue
                   </th>
                   <th scope="col" className="num">
-                    Median days to resolve
+                    Median time to resolve
                   </th>
                 </tr>
               </thead>

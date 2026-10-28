@@ -4,7 +4,7 @@ import { api, FINDING_STATES, PRIORITIES, SEVERITIES, VERIFICATIONS, type Findin
 import { useAuth } from "../auth";
 import { FindingActions } from "../components/Workflow";
 import { useDebounced, useFacets, useLoad } from "../hooks";
-import { plural } from "../format";
+import { humanize, plural } from "../format";
 import { FindingCards, FindingsTable, FindingTiles, IntelBanners, PriorityTiles } from "../components/Findings";
 import { EmptyState, ErrorBox, FilterPanel, Loading, PageHeader, Pager, PresetChips } from "../components/ui";
 
@@ -42,6 +42,7 @@ const PARAMS = [
   "asset_id",
   "component_id",
   "resolved_within",
+  "resolution_kind",
   "new_within",
 ] as const;
 
@@ -132,6 +133,7 @@ export function IssuesPage() {
     get("key"),
     get("assignee_team") && `team #${get("assignee_team")}`,
     get("assignee_user") && !mine && `user #${get("assignee_user")}`,
+    get("resolution_kind") && `closed as ${get("resolution_kind").split(",").map(humanize).join(" or ")}`,
   ].filter(Boolean);
   const rows = res.data?.items ?? [];
   const assetName = assetId ? rows[0]?.asset_name : undefined;
@@ -299,7 +301,9 @@ export function IssuesPage() {
           <button
             type="button"
             className="btn btn-sm btn-link"
-            onClick={() => update({ asset_id: "", component_id: "", incident_id: "", key: "", assignee_team: "", assignee_user: mine ? get("assignee_user") : "" })}
+            onClick={() =>
+              update({ asset_id: "", component_id: "", incident_id: "", key: "", assignee_team: "", resolution_kind: "", assignee_user: mine ? get("assignee_user") : "" })
+            }
           >
             Remove
           </button>

@@ -76,22 +76,24 @@ func setFinding(t *testing.T, s *store.Store, ctx context.Context, key, priority
 	}
 }
 
-// newOutcomeFixture: CVE-1 is resolved by re-evaluation, reopened and
-// resolved again; CVE-2 is resolved by an upgrade, CVE-3 by removal; CVE-4
-// stays open.
+// newOutcomeFixture: CVE-1 closes because its advisory changed, is
+// reopened and is then fixed by an upgrade; CVE-2 is fixed by the same
+// upgrade, CVE-3 by removal; CVE-5 closes because its advisory changed
+// (not remediation); CVE-4 stays open.
 func newOutcomeFixture(t *testing.T) *outcomeFixture {
 	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
 	s := store.New(testdb.New(t))
 	f := &outcomeFixture{s: s, ctx: ctx}
 	f.asset = ingestHost(t, s, ctx, "web-1", "pkg:npm/lodash@4.17.15", "pkg:deb/debian/openssl@3.0.2-1?distro=debian-12", "pkg:npm/express@4.0.0")
-	syncOpen(t, s, ctx, f.asset, map[string]string{"CVE-1": "lodash", "CVE-2": "lodash", "CVE-3": "openssl", "CVE-4": "express"})
+	all := map[string]string{"CVE-1": "lodash", "CVE-2": "lodash", "CVE-3": "openssl", "CVE-4": "express", "CVE-5": "express"}
+	syncOpen(t, s, ctx, f.asset, all)
 	setFinding(t, s, ctx, "CVE-1", "P2", 10*24*time.Hour)
 	setFinding(t, s, ctx, "CVE-3", "P1", 100*24*time.Hour)
 	setFinding(t, s, ctx, "CVE-4", "P1", 20*24*time.Hour)
+	setFinding(t, s, ctx, "CVE-5", "P1", 30*24*time.Hour)
 	f.before = time.Now().Add(-time.Second)
-	syncOpen(t, s, ctx, f.asset, map[string]string{"CVE-2": "lodash", "CVE-3": "openssl", "CVE-4": "express"})                    // CVE-1 resolved
-	syncOpen(t, s, ctx, f.asset, map[string]string{"CVE-1": "lodash", "CVE-2": "lodash", "CVE-3": "openssl", "CVE-4": "express"}) // reopened
-	syncOpen(t, s, ctx, f.asset, map[string]string{"CVE-2": "lodash", "CVE-3": "openssl", "CVE-4": "express"})                    // resolved again
+	syncOpen(t, s, ctx, f.asset, map[string]string{"CVE-2": "lodash", "CVE-3": "openssl", "CVE-4": "express"})                    // CVE-1, CVE-5 close
+	syncOpen(t, s, ctx, f.asset, map[string]string{"CVE-1": "lodash", "CVE-2": "lodash", "CVE-3": "openssl", "CVE-4": "express"}) // CVE-1 reopened
 	// A newer complete inventory: lodash upgraded, openssl gone.
 	ingestHost(t, s, ctx, "web-1", "pkg:npm/lodash@4.17.21", "pkg:npm/express@4.0.0")
 	syncOpen(t, s, ctx, f.asset, map[string]string{"CVE-4": "express"})
@@ -106,21 +108,24 @@ func TestOutcomesReport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Resolved != 3 {
-		t.Errorf("resolved = %d, want 3", r.Resolved)
+	// CVE-5 closed with nothing changed on the asset: not remediation.
+	if r.Resolved != 3 || r.Remediated != 2 || r.Removed != 1 || r.NotRemediation.Total != 1 ||
+		r.NotRemediation.ByKind["advisory_changed"] != 1 {
+		t.Errorf("resolved = %d (remediated %d, removed %d), not remediation %+v; want 3 (2, 1), 1 advisory_changed",
+			r.Resolved, r.Remediated, r.Removed, r.NotRemediation)
 	}
 	causes := map[string]int64{}
 	for _, c := range r.Causes {
 		causes[c.Cause] = c.Count
-		if (c.Cause == "reevaluated") != (c.Evidence == "intelligence") {
+		if (c.Cause == "advisory_changed") != (c.Evidence == "intelligence") || c.Remediation == (c.Cause == "advisory_changed") {
 			t.Errorf("cause %+v", c)
 		}
 	}
-	if causes["reevaluated"] != 1 || causes["upgraded"] != 1 || causes["removed"] != 1 {
+	if causes["advisory_changed"] != 1 || causes["upgraded"] != 2 || causes["removed"] != 1 {
 		t.Errorf("causes = %+v", r.Causes)
 	}
-	if r.Reopened.Events != 1 || r.Reopened.Findings != 1 || r.Reopened.ResolutionEvents != 4 || r.Reopened.LaterReopened != 1 ||
-		r.Reopened.Rate == nil || *r.Reopened.Rate != 0.25 || len(r.Reopened.Recent) != 1 || r.Reopened.Recent[0].Key != "CVE-1" ||
+	if r.Reopened.Events != 1 || r.Reopened.Findings != 1 || r.Reopened.ResolutionEvents != 5 || r.Reopened.LaterReopened != 1 ||
+		r.Reopened.Rate == nil || *r.Reopened.Rate != 0.2 || len(r.Reopened.Recent) != 1 || r.Reopened.Recent[0].Key != "CVE-1" ||
 		r.Reopened.Recent[0].PreviousResolution == "" {
 		t.Errorf("reopened = %+v", r.Reopened)
 	}
@@ -145,6 +150,7 @@ func TestOutcomesReport(t *testing.T) {
 	for _, x := range r.SLA {
 		sla[x.Priority] = x
 	}
+	// CVE-5 (P1) is not in the SLA: only CVE-3 was remediated.
 	if p := sla["P1"]; p.FixDays != 3 || p.Resolved != 1 || p.ResolvedInSLA != 0 || p.Rate == nil || *p.Rate != 0 ||
 		p.OpenActive != 1 || p.OpenOverdue != 1 {
 		t.Errorf("P1 SLA = %+v", p)
@@ -215,14 +221,20 @@ func TestVerifySince(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Resolved.Total != 3 || r.StillOpen.Total != 1 || r.StillOpen.Items[0].Key != "CVE-4" || !r.StillOpen.Items[0].Rescanned {
+	if r.Resolved.Total != 4 || r.StillOpen.Total != 1 || r.StillOpen.Items[0].Key != "CVE-4" || !r.StillOpen.Items[0].Rescanned {
 		t.Fatalf("verify = %+v", r)
+	}
+	if r.Remediated != 3 || r.ClosedNotRemediation != 1 || r.ResolvedByKind["remediated"] != 2 || r.ResolvedByKind["advisory_changed"] != 1 {
+		t.Errorf("remediated %d, not remediation %d, by kind %v", r.Remediated, r.ClosedNotRemediation, r.ResolvedByKind)
 	}
 	causes := map[string]string{}
 	for _, x := range r.Resolved.Items {
 		causes[x.Key] = x.Cause
+		if x.Remediation != (x.Key != "CVE-5") {
+			t.Errorf("%s counts as remediation = %v (%s)", x.Key, x.Remediation, x.ResolutionKind)
+		}
 	}
-	if causes["CVE-1"] != "reevaluated" || causes["CVE-2"] != "upgraded" || causes["CVE-3"] != "removed" {
+	if causes["CVE-1"] != "upgraded" || causes["CVE-2"] != "upgraded" || causes["CVE-3"] != "removed" || causes["CVE-5"] != "advisory_changed" {
 		t.Errorf("causes = %v", causes)
 	}
 	if len(r.Assets) != 1 || r.Assets[0].LastComplete == nil || !r.Assets[0].Rescanned {

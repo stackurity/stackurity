@@ -20,13 +20,23 @@ type OutcomesReport struct {
 	// reopenings; reopen counts before it are unknown.
 	EventsSince *time.Time `json:"events_since"`
 
-	Resolved     int64            `json:"resolved"`       // findings resolved in the window and still resolved
-	TimeToRemedy []OutcomeTiming  `json:"time_to_remedy"` // by priority and kind, plus totals
-	Causes       []OutcomeCause   `json:"causes"`
-	SLA          []OutcomeSLA     `json:"sla"`
-	Reopened     OutcomeReopened  `json:"reopened"`
-	Open         OutcomeOpen      `json:"open"`
-	Remediation  *OutcomeRemedies `json:"remediation"` // nil when no plan or action falls in the window
+	// Resolved counts findings remediated in the window and still resolved:
+	// Remediated (the installed version changed) plus Removed (the
+	// component is gone). Time to remedy and SLA count the same findings.
+	Resolved   int64 `json:"resolved"`
+	Remediated int64 `json:"remediated"`
+	Removed    int64 `json:"removed"`
+	// NotRemediation counts findings that closed in the window with nothing
+	// changed on the asset (advisory withdrawn or changed, still affected
+	// after an upgrade, no longer evaluated). They are not in Resolved,
+	// time to remedy or SLA.
+	NotRemediation OutcomeNotRemediation `json:"closed_not_remediation"`
+	TimeToRemedy   []OutcomeTiming       `json:"time_to_remedy"` // by priority and kind, plus totals
+	Causes         []OutcomeCause        `json:"causes"`
+	SLA            []OutcomeSLA          `json:"sla"`
+	Reopened       OutcomeReopened       `json:"reopened"`
+	Open           OutcomeOpen           `json:"open"`
+	Remediation    *OutcomeRemedies      `json:"remediation"` // nil when no plan or action falls in the window
 }
 
 // OutcomeTiming is the time from detection (or the last reopening) to
@@ -39,13 +49,27 @@ type OutcomeTiming struct {
 	MedianDays *float64 `json:"median_days"`
 }
 
-// OutcomeCause groups resolutions by what closed them. Evidence is
-// "fresh_collection" when a newer complete inventory showed the change, and
-// "intelligence" when advisory or lifecycle data changed instead.
+// OutcomeNotRemediation counts closures that are not remediation, by
+// resolution kind (advisory_withdrawn, advisory_changed, superseded,
+// not_evaluated, other).
+type OutcomeNotRemediation struct {
+	Total  int64            `json:"total"`
+	ByKind map[string]int64 `json:"by_kind"`
+}
+
+// OutcomeCause groups closures by what closed them. Evidence is
+// "fresh_collection" when a newer complete inventory showed the change,
+// "intelligence" when advisory or lifecycle data changed instead, and
+// "coverage" when the row could no longer be evaluated. Remediation is true
+// for the causes counted as remediation (upgraded, remediation, removed).
 type OutcomeCause struct {
-	Cause    string `json:"cause"` // upgraded, remediation, removed, reevaluated, other
-	Evidence string `json:"evidence"`
-	Count    int64  `json:"count"`
+	// upgraded, remediation, removed, superseded, advisory_withdrawn,
+	// advisory_changed, not_evaluated, other
+	Cause       string `json:"cause"`
+	Kind        string `json:"resolution_kind"`
+	Evidence    string `json:"evidence"`
+	Count       int64  `json:"count"`
+	Remediation bool   `json:"counts_as_remediation"`
 }
 
 // OutcomeSLA compares findings with the risk policy's fix deadline for
@@ -147,21 +171,31 @@ type OutcomeFailure struct {
 
 const outcomeRecent = 20
 
-// resolvedInWindow selects findings resolved in [$1, $2) with the start of
-// their last open episode.
-const resolvedInWindow = `WITH res AS (
+// closedInWindow selects findings resolved in [$1, $2), whatever closed
+// them, with their cause (resolutionCause) and whether that is remediation.
+var closedInWindow = `WITH res AS (
+	SELECT f.id, f.kind, f.priority, f.resolution_kind, ` + resolutionCause("f") + ` AS cause, ` + remedied("f") + ` AS counted
+	FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
+	WHERE f.status = 'resolved' AND f.resolved_at >= $1 AND f.resolved_at < $2)
+`
+
+// resolvedInWindow selects findings remediated in [$1, $2) (see remedied)
+// with the start of their last open episode. Findings closed with nothing
+// changed on the asset are not remediation and are left out.
+var resolvedInWindow = `WITH res AS (
 	SELECT f.id, f.kind, f.priority, f.resolution, f.first_seen, f.resolved_at,
 	  COALESCE((SELECT max(e.at) FROM finding_events e WHERE e.finding_id = f.id AND e.action = 'reopened'
 	    AND e.at <= f.resolved_at), f.first_seen) AS opened_at
 	FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
-	WHERE f.status = 'resolved' AND f.resolved_at >= $1 AND f.resolved_at < $2)
+	WHERE f.status = 'resolved' AND f.resolved_at >= $1 AND f.resolved_at < $2 AND ` + remedied("f") + `)
 `
 
 // OutcomesReport builds the report for [from, to). fixDays is the risk
 // policy's fix deadline per priority.
 func (s *Store) OutcomesReport(ctx context.Context, from, to time.Time, fixDays map[string]int) (*OutcomesReport, error) {
 	r := &OutcomesReport{From: from, To: to, GeneratedAt: time.Now().UTC(), TimeToRemedy: []OutcomeTiming{}, Causes: []OutcomeCause{},
-		SLA: []OutcomeSLA{}, Reopened: OutcomeReopened{Recent: []OutcomeReopen{}, RecentTruncatedAt: outcomeRecent}}
+		NotRemediation: OutcomeNotRemediation{ByKind: map[string]int64{}},
+		SLA:            []OutcomeSLA{}, Reopened: OutcomeReopened{Recent: []OutcomeReopen{}, RecentTruncatedAt: outcomeRecent}}
 	var since time.Time
 	if err := s.Pool.QueryRow(ctx, `SELECT applied_at FROM schema_migrations WHERE name = '0019_upgrade_outcomes'`).Scan(&since); err == nil {
 		r.EventsSince = &since
@@ -185,16 +219,34 @@ func (s *Store) OutcomesReport(ctx context.Context, from, to time.Time, fixDays 
 		}
 	}
 
-	// Causes, from the resolution the matcher wrote.
-	rows, err = s.Pool.Query(ctx, resolvedInWindow+`SELECT c, CASE WHEN c = 'reevaluated' THEN 'intelligence'
-		  WHEN c = 'other' THEN 'unknown' ELSE 'fresh_collection' END, count(*)
-		FROM (SELECT `+resolutionCause("resolution")+` AS c FROM res) x
-		GROUP BY 1 ORDER BY 3 DESC, 1`, from, to)
+	// Causes, from the resolution kind the matcher recorded: remediation
+	// first, then what closed findings without it.
+	rows, err = s.Pool.Query(ctx, closedInWindow+`SELECT cause, resolution_kind,
+		  CASE WHEN resolution_kind IN ('advisory_withdrawn', 'advisory_changed') THEN 'intelligence'
+		    WHEN resolution_kind = 'not_evaluated' THEN 'coverage'
+		    WHEN resolution_kind IN ('remediated', 'removed', 'superseded') THEN 'fresh_collection' ELSE 'unknown' END,
+		  count(*), counted
+		FROM res GROUP BY 1, 2, 5 ORDER BY 5 DESC, 4 DESC, 1`, from, to)
 	if err != nil {
 		return nil, err
 	}
 	if r.Causes, err = pgx.CollectRows(rows, pgx.RowToStructByPos[OutcomeCause]); err != nil {
 		return nil, err
+	}
+	for _, c := range r.Causes {
+		switch {
+		case c.Kind == ResolutionRemediated:
+			r.Remediated += c.Count
+		case c.Kind == ResolutionRemoved:
+			r.Removed += c.Count
+		default:
+			k := c.Kind
+			if k == "" {
+				k = ResolutionOther
+			}
+			r.NotRemediation.ByKind[k] += c.Count
+			r.NotRemediation.Total += c.Count
+		}
 	}
 
 	// SLA, against the current policy's fix deadline per priority.
