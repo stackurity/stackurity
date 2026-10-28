@@ -38,21 +38,23 @@ RUN --mount=type=bind,from=pro,target=/pro set -e; FLAGS=""; \
       (cd /out/agents && sha256sum stackurity-linux-$arch > stackurity-linux-$arch.sha256); \
     done
 
-FROM --platform=$BUILDPLATFORM alpine:3.22 AS syft
+FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine AS syft
 # Syft generates container image SBOMs from registries (no container runtime).
-ARG SYFT_VERSION=1.54.1
+# Built from source with this toolchain rather than taking the release
+# binary: Syft's own builds lag Go security releases. SYFT_DEPS raises
+# modules whose fixes Syft has not picked up yet; drop an entry once Syft's
+# go.mod has it. Modules come from the Go proxy and are verified against the
+# checksum database. The image scan in CI fails on anything fixable left.
+ARG SYFT_VERSION=1.55.0
+ARG SYFT_DEPS="github.com/go-jose/go-jose/v4@v4.1.6 golang.org/x/net@v0.62.0"
 ARG TARGETARCH
-RUN apk add --no-cache curl \
- && case "$TARGETARCH" in \
-      amd64) sum=c069905b391cc4c20a5ba65ad5c10be2a7ba074f8ea6ad203e24d14e303dad47 ;; \
-      arm64) sum=dfdf0537610113edbefe1f1fc6548bc957b2d77439636ec824fcf0e10d46d054 ;; \
-      *) echo "unsupported arch $TARGETARCH" && exit 1 ;; \
-    esac \
- && curl -fsSLo /tmp/syft.tgz "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_linux_${TARGETARCH}.tar.gz" \
- && echo "$sum  /tmp/syft.tgz" | sha256sum -c - \
- && tar -xzf /tmp/syft.tgz -C /usr/local/bin syft
+WORKDIR /syft
+RUN go mod init syft-build \
+ && go get github.com/anchore/syft/cmd/syft@v${SYFT_VERSION} ${SYFT_DEPS} \
+ && CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH:-amd64} go build -trimpath \
+      -ldflags "-s -w -X main.version=${SYFT_VERSION}" -o /usr/local/bin/syft github.com/anchore/syft/cmd/syft
 
-FROM alpine:3.22
+FROM alpine:3.24
 # git: shallow clones for repository scanning (data only, never executed).
 RUN apk add --no-cache ca-certificates git tzdata \
  && adduser -D -H -u 10001 stackurity \

@@ -1,0 +1,58 @@
+# The vulnerability gate: nothing ships with a known fixable HIGH or
+# CRITICAL vulnerability. Called on every pull request and push to main
+# (security.yml) and by release.yml before anything is published.
+#
+# Exceptions, each with a reason and an expiry:
+#   Go       govulncheck fails only on vulnerabilities the code can reach;
+#            module-level notes without a fix are recorded in osv-scanner.toml.
+#   npm      web/audit-allow.json (tools/npm-audit-gate)
+#   image    .trivyignore.yaml
+name: security-gate
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  govulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with: {go-version-file: go.mod}
+      - name: govulncheck (reachable vulnerabilities)
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+
+  npm-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with: {node-version: 22}
+      - name: npm audit, high and critical (runtime and build dependencies)
+        run: node tools/npm-audit-gate/gate.mjs web web/audit-allow.json
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - name: Build the image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: stackurity:gate
+      - name: Scan the image (fixable HIGH and CRITICAL fail)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.76.1
+          image-ref: stackurity:gate
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          trivyignores: .trivyignore.yaml

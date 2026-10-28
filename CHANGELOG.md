@@ -4,6 +4,15 @@ All notable changes to Stackurity. Versions follow [Semantic Versioning](https:/
 
 Each release's section is published as its GitHub release notes, and a tag without a section here cannot be released (`go run ./tools/changelog -version vX.Y.Z` prints it). New changes go under **Unreleased**, which is renamed to the version when it is tagged. Subsections are **Security**, **Added**, **Changed**, **Fixed** and **Upgrading**. Put fixes for vulnerabilities under `### Security`, first: installations treat a release with that heading as a security release and show administrators a banner they can only snooze.
 
+## Unreleased
+
+### Security
+
+- The image's Syft (container image SBOMs from registries) is built from source with Go 1.27.3, go-jose 4.1.6 and golang.org/x/net 0.62.0. The Syft 1.54.1 release binary in 0.13.3 was built with Go 1.26.8 and carried fixable vulnerabilities: CVE-2026-116587 (go-jose, high), CVE-2026-78669 (x/net, high) and Go standard library CVE-2026-111943, CVE-2026-78667 and CVE-2026-97031 (high), plus medium ones. Syft is now 1.55.0.
+- The image is based on Alpine 3.24 (was 3.22), and the example `deploy/docker-compose.yml` uses PostgreSQL 17.11 (was 17.6, whose image has OpenSSL, zlib, musl and util-linux vulnerabilities with fixes, including critical CVE-2026-31789). PostgreSQL 17.11 is a minor update: replace the image and restart, no dump or restore.
+- Releases are gated: a tag publishes nothing while govulncheck reports a reachable vulnerability, npm audit reports a high or critical advisory, or the built image has a fixable high or critical vulnerability. Every pull request and a daily run on `main` check the same. Exceptions need a reason and an expiry (`.trivyignore.yaml`, `web/audit-allow.json`). `make vulncheck` and `make scan-image IMAGE=...` run the checks locally.
+- GitHub Actions used by the build and release workflows are pinned to commit SHAs.
+
 ## 0.13.3
 
 ### Added
