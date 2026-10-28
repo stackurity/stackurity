@@ -224,6 +224,7 @@ var routeRules = map[string]routeRule{
 	"GET /api/v1/secrets":               {class: "list"},
 	"GET /api/v1/enrollments":           {class: "list"},
 	"GET /api/v1/checks":                {class: "list", query: "?asset_id={asset}"},
+	"GET /api/v1/checks/options":        {class: "list", query: "?asset_id={asset}"},
 	"GET /api/v1/ignore-rules":          {class: "list", query: "?status=all"},
 	"GET /api/v1/ignore-requests":       {class: "list", query: "?status=all"},
 	"GET /api/v1/projects":              {class: "list"},
