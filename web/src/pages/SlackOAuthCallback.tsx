@@ -3,11 +3,19 @@ import { Link, useNavigate } from "react-router";
 import { api, ApiError, SLACK_PENDING_KEY, type SlackOAuthResult, type SlackPendingRoute } from "../api";
 import { useAuth } from "../auth";
 import { ErrorBox, Loading, Notice } from "../components/ui";
+import { SLACK_ADD_PATH } from "../slackInstall";
 
 /*
  * /integrations/slack/oauth/callback?code=…&state=…: Slack sends the browser
  * here after "Add to Slack". The state works once, so the exchange runs once
  * per state even when React runs effects twice (StrictMode).
+ *
+ * Installs started from Slack's side (its Install App page, the shareable
+ * link, the Marketplace) come back with a code but no state of ours. That
+ * code is never exchanged: anyone could send such a link to an admin and add
+ * their own Slack channel to the admin's organisation. The page offers a
+ * proper install instead (SLACK_ADD_PATH: sign in, pick the organisation,
+ * Slack asks once more). It is shown signed out too (App.tsx).
  */
 
 type Outcome = { result: SlackOAuthResult; routeError: ApiError | null };
@@ -112,42 +120,64 @@ export function SlackOAuthCallbackPage() {
     if (denied) dropPending();
   }, [denied]);
 
+  const startAgain = (label: string) => (
+    <div className="slack-link-actions">
+      <Link className="btn btn-primary btn-block" to={SLACK_ADD_PATH}>
+        {label}
+      </Link>
+      <Link className="btn btn-block" to={fromOnboarding ? backTo : "/"}>
+        {fromOnboarding ? "Back to setup" : "Go to Stackurity"}
+      </Link>
+    </div>
+  );
+
+  let title = "Add to Slack";
   let body: ReactNode;
-  if (!admin) {
+  if (denied) {
+    body = (
+      <>
+        <Notice kind="info">
+          {denied === "access_denied"
+            ? "You cancelled on Slack's page, so nothing was added to Slack."
+            : `Slack did not finish adding Stackurity (${denied}). Nothing was added.`}
+        </Notice>
+        {startAgain("Try again")}
+      </>
+    );
+  } else if (!state) {
+    title = "Finish adding Stackurity to Slack";
+    body = (
+      <>
+        <p>
+          Stackurity was added from Slack&apos;s side. To choose which Stackurity organisation gets the messages, continue here: you sign in if needed, pick the
+          organisation, and Slack asks you to confirm the channel once more.
+        </p>
+        {startAgain("Continue")}
+      </>
+    );
+  } else if (!code) {
+    body = (
+      <>
+        <Notice kind="warn">This page needs the whole address Slack sent you back to. Nothing was added.</Notice>
+        {startAgain("Start again")}
+      </>
+    );
+  } else if (!admin) {
     body = <Notice kind="warn">Only administrators can connect Slack. Ask one to do it.</Notice>;
-  } else if (denied) {
-    body = (
-      <>
-        <Notice kind="info">Slack was not connected{denied === "access_denied" ? ": it was cancelled in Slack." : "."}</Notice>
-        <p>
-          <Link to={backTo}>Go back</Link>
-        </p>
-      </>
-    );
-  } else if (!code || !state) {
-    body = (
-      <>
-        <Notice kind="warn">This page needs the whole address Slack sent you back to. Start again with Add to Slack.</Notice>
-        <p>
-          <Link to={backTo}>Go back</Link>
-        </p>
-      </>
-    );
   } else if (error) {
     body = (
       <>
         {error.status === 400 ? (
-          <Notice kind="warn">This link from Slack does not work any more (it is used or too old). Start again with Add to Slack.</Notice>
+          <Notice kind="warn">
+            This Add to Slack request cannot be used: it was started by someone else or in another organisation, it was already used, or it is more than 10
+            minutes old. Nothing was added.
+          </Notice>
         ) : error.status === 502 ? (
           <Notice kind="warn">Slack refused the connection: {error.message}</Notice>
         ) : (
           <ErrorBox error={error} title="Could not connect Slack" />
         )}
-        <div className="form-actions">
-          <Link className="btn btn-primary" to={backTo}>
-            Try again
-          </Link>
-        </div>
+        {startAgain("Start again")}
       </>
     );
   } else if (outcome) {
@@ -176,7 +206,7 @@ export function SlackOAuthCallbackPage() {
         <div className="auth-logo">
           <img src="/logo-login.png" alt="Stackurity" width={120} height={120} />
         </div>
-        <h1 className="auth-title">Add to Slack</h1>
+        <h1 className="auth-title">{title}</h1>
         {body}
       </div>
     </div>

@@ -6,9 +6,24 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+### Added
+
+- Adding Stackurity to Slack from Slack's side. `/integrations/slack/install` is the Slack app's Direct install URL: signed in, it asks which organisation (only those where you are an admin) and goes to Slack; signed out, it sends you to Slack's consent page as Slack requires. Installs started from Slack (its Install App page, the shareable link, the Marketplace) come back to **Finish adding Stackurity to Slack**, which starts a proper install instead of exchanging Slack's code: a link from someone else can never add their Slack channel to your organisation. See [Installs started from Slack](docs/slack-app.md#installs-started-from-slack).
+- **Your account** in the account menu: your organisations and linked Slack accounts, with Unlink. A Slack integration added with the Stackurity app shows **Your Slack account** (linked as @name, or when you will be asked) on its page.
+
 ### Changed
 
 - The dashboard is built with React 19, react-router 8, Vite 8 and TypeScript 7. Pages look and work as before. Building it from source needs Node.js 22.22 or later; the image's build stage uses Node.js 22.23.4.
+- Integration pages have one **Save changes** for the connection and what it sends, sticky at the bottom while something is unsaved, with **Discard** and a warning before leaving with unsaved changes. The kind is shown next to the name instead of as a read-only field.
+- Sending one event to another Slack channel is a small **+ Add another channel** next to that event, instead of an **Add to Slack** button among the triggers; back from Slack, the new channel is already picked for that event.
+- Quiet hours are one setting, **Off** or **On** from … to …, instead of two time fields that looked set when they were not. Inputs and selects in forms have one height; empty Environments and Owner teams filters are hidden; a single rule's **Enabled** box is gone (the page's **Disable** does that).
+- Linked Slack accounts moved from Settings to **Your account**; `/settings/slack` opens it.
+- The Integrations list shows Slack integrations as "Slack (Stackurity app)" or "Slack (webhook)", and drops the settings button that repeated the name's link.
+
+### Fixed
+
+- Cancelling on Slack's page, or coming back with a used, expired or someone else's request, explains what happened and offers to start again.
+- The secret reference field of email, webhook and Teams integrations suggested a Slack name.
 
 ## 0.13.2
 

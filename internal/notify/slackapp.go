@@ -105,7 +105,12 @@ func (a *SlackApp) AuthorizeURL(state, redirect string) string {
 	if base == "" {
 		base = "https://slack.com/oauth/v2/authorize"
 	}
-	q := url.Values{"client_id": {a.ClientID}, "scope": {SlackAppScopes}, "redirect_uri": {redirect}, "state": {state}}
+	q := url.Values{"client_id": {a.ClientID}, "scope": {SlackAppScopes}, "redirect_uri": {redirect}}
+	// Without a state (the Direct install URL, signed out) Slack's consent
+	// page still works; the callback then starts a proper install.
+	if state != "" {
+		q.Set("state", state)
+	}
 	return base + "?" + q.Encode()
 }
 

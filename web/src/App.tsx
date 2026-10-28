@@ -6,8 +6,10 @@ import { Layout } from "./components/Layout";
 import { ErrorBox, Loading } from "./components/ui";
 import { LoginPage, SetupPage } from "./pages/Login";
 import { AcceptInvitePage } from "./pages/AcceptInvite";
-import { SlackAccountsPage, SlackLinkPage } from "./pages/SlackLink";
+import { SlackLinkPage } from "./pages/SlackLink";
+import { AccountPage } from "./pages/Account";
 import { SlackOAuthCallbackPage } from "./pages/SlackOAuthCallback";
+import { SlackInstallPage } from "./pages/SlackInstall";
 import { EmailConfirmPage, EmailStopPage } from "./pages/EmailConfirm";
 import { AssistantsPage, ConnectAssistantPage } from "./pages/Assistants";
 import { OnboardingPage } from "./pages/Onboarding";
@@ -100,6 +102,12 @@ function RequireInstanceAdmin({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+/** Back from Slack with a code and our state: the exchange needs the signed-in person. */
+function slackCallbackNeedsSession(): boolean {
+  const q = new URLSearchParams(window.location.search);
+  return Boolean(q.get("code") && q.get("state") && !q.get("error"));
+}
+
 export function App() {
   const { state, refresh } = useAuth();
   const { pathname } = useLocation();
@@ -119,8 +127,15 @@ export function App() {
   if (pathname === "/oauth/authorize" && state.phase === "login") return <LoginPage />;
   if (pathname === "/oauth/authorize" && state.phase === "ready") return <ConnectAssistantPage />;
   // Back from "Add to Slack": sign in first; the address and query stay.
-  if (pathname === "/integrations/slack/oauth/callback" && state.phase === "login") return <LoginPage />;
+  // Without our state (an install Slack started) or with an error (Cancel
+  // on Slack's page) there is nothing to exchange: the page explains, signed
+  // in or not.
+  if (pathname === "/integrations/slack/oauth/callback" && state.phase === "login") return slackCallbackNeedsSession() ? <LoginPage /> : <SlackOAuthCallbackPage />;
   if (pathname === "/integrations/slack/oauth/callback" && state.phase === "ready") return <SlackOAuthCallbackPage />;
+  // Adding Stackurity to Slack from outside the dashboard (the Slack app's
+  // Direct install URL): sign in, pick the organisation, go to Slack.
+  if ((pathname === "/integrations/slack/install" || pathname === "/integrations/slack/add") && state.phase === "login") return <LoginPage />;
+  if ((pathname === "/integrations/slack/install" || pathname === "/integrations/slack/add") && state.phase === "ready") return <SlackInstallPage />;
   // Confirming an email address for notifications works signed in or not.
   if (pathname === "/email/confirm" && (state.phase === "login" || state.phase === "ready")) return <EmailConfirmPage />;
   // Stopping email sent by Stackurity, signed in or not.
@@ -239,7 +254,9 @@ export function App() {
             </RequireRole>
           }
         />
-        <Route path="settings/slack" element={<SlackAccountsPage />} />
+        <Route path="account" element={<AccountPage />} />
+        {/* Linked Slack accounts moved to Your account. */}
+        <Route path="settings/slack" element={<Navigate replace to="/account#slack" />} />
         <Route path="settings/ai-assistants" element={<AssistantsPage />} />
         <Route path="settings/assistants" element={<Navigate replace to="/settings/ai-assistants#connected" />} />
         <Route path="settings/risk-policy" element={<RiskPolicyPage />} />

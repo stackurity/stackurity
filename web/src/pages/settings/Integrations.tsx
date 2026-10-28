@@ -6,7 +6,7 @@ import { useLoad } from "../../hooks";
 import { Badge } from "../../components/Badge";
 import { Table, type Column } from "../../components/Table";
 import { CodeBlock, ErrorBox, Loading, PageHeader, RelativeTime, Tabs } from "../../components/ui";
-import { channelTarget, DeliveriesTab, KIND_LABEL } from "./Notifications";
+import { channelTarget, DeliveriesTab, kindLabel } from "./Notifications";
 
 /*
  * Settings, Integrations: everything Stackurity connects to. Notification
@@ -79,6 +79,8 @@ interface Active {
   name: string;
   kindLabel: string;
   target: string;
+  /** The target is an address or reference (monospace), not words. */
+  targetMono?: boolean;
   enabled: boolean;
   ok: string | null;
   error: string;
@@ -92,8 +94,9 @@ function fromChannel(c: Channel): Active {
     key: `ch${c.id}`,
     kind: c.kind,
     name: c.name,
-    kindLabel: KIND_LABEL[c.kind] ?? c.kind,
+    kindLabel: kindLabel(c),
     target: channelTarget(c, undefined),
+    targetMono: !(c.kind === "slack" && c.config?.slack_app) && c.kind !== "stackurity_email",
     enabled: c.enabled,
     ok: c.last_ok_at,
     error: c.last_error,
@@ -256,7 +259,7 @@ export function IntegrationsHubPage() {
               <strong>{a.name}</strong>
             </Link>
             <div className="muted small">{a.kindLabel}</div>
-            {a.target && <div className="mono small muted break">{a.target}</div>}
+            {a.target && <div className={`${a.targetMono ? "mono " : ""}small muted break`}>{a.target}</div>}
           </div>
         </div>
       ),
@@ -277,18 +280,6 @@ export function IntegrationsHubPage() {
     },
     { key: "ok", header: "Last success / report", cell: (a) => <RelativeTime iso={a.ok} /> },
     { key: "err", header: "Last error", cell: (a) => (a.error ? <span className="text-bad small break">{a.error}</span> : <span className="muted">—</span>) },
-    {
-      key: "gear",
-      header: <span className="sr-only">Settings</span>,
-      cell: (a) => (
-        <Link className="btn btn-sm" to={a.to} aria-label={`Settings for ${a.name}`} title="Settings">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-            <circle cx="12" cy="12" r="3" />
-            <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
-          </svg>
-        </Link>
-      ),
-    },
   ];
 
   const groups: { title: string; cards: AddCard[] }[] = [];

@@ -14,10 +14,10 @@ import {
   type List,
   type Route,
 } from "../../api";
-import { useAction, useLoad, type Loaded } from "../../hooks";
+import { useAction, useLoad, useUnsavedChanges, type Loaded } from "../../hooks";
 import { Badge } from "../../components/Badge";
 import { Table, type Column } from "../../components/Table";
-import { Card, Code, EmptyState, ErrorBox, Loading, Notice, Pager, RelativeTime } from "../../components/ui";
+import { Card, Code, EmptyState, ErrorBox, Loading, Notice, Pager, RelativeTime, SaveBar } from "../../components/ui";
 import { ProNotice } from "../../components/ProNotice";
 import { AddToSlackButton, parseAddresses, SmtpProviderPicker, StackurityEmailFields } from "../../components/NotifyChoices";
 import { DeliveryStatus } from "../IncidentDetail";
@@ -37,6 +37,12 @@ export const KIND_LABEL: Record<string, string> = {
   webhook: "Webhook",
   jira: "Jira issues",
 };
+
+/** The kind, as shown next to an integration's name. */
+export function kindLabel(c: Pick<Channel, "kind" | "config">): string {
+  if (c.kind === "slack") return c.config?.slack_app ? "Slack (Stackurity app)" : "Slack (webhook)";
+  return KIND_LABEL[c.kind] ?? c.kind;
+}
 
 export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
@@ -145,6 +151,11 @@ export function ChannelForm({
   afterCreate,
   returnTo = "/settings/integrations",
   submitLabel,
+  title = "Connection",
+  connectionExtra,
+  extraDirty = false,
+  afterSave,
+  onDiscard,
 }: {
   channel?: Channel;
   kind?: ChannelKind;
@@ -157,6 +168,16 @@ export function ChannelForm({
   afterCreate?: (c: Channel) => Promise<unknown>;
   returnTo?: string;
   submitLabel?: string;
+  /** The heading of the card around the connection fields. */
+  title?: string;
+  /** Shown at the end of the connection card (outside the form's fields). */
+  connectionExtra?: ReactNode;
+  /** An existing channel: whether `extra` (the trigger and settings) has unsaved changes. */
+  extraDirty?: boolean;
+  /** An existing channel: saves `extra`, inside the same Save, when extraDirty. */
+  afterSave?: (c: Channel) => Promise<unknown>;
+  /** An existing channel: Discard was clicked (the parent resets `extra` and remounts this form). */
+  onDiscard?: () => void;
 }) {
   const cfg = channel?.config ?? {};
   const [group, setGroup] = useState<Group>(() => {
@@ -189,6 +210,13 @@ export function ChannelForm({
   const [localErr, setLocalErr] = useState<string | null>(null);
   const act = useAction();
   const idp = channel ? `ch${channel.id}` : "chnew";
+  // What the fields hold, to tell whether the connection changed.
+  const snapshot = JSON.stringify([name, secretRef, url, host, port, from, to, username, tls, deployment, project, issueType, labels, priorities, transition, signingRef, userIds, others]);
+  const baseline = useRef(snapshot);
+  const ownDirty = Boolean(channel) && snapshot !== baseline.current;
+  const dirty = ownDirty || (Boolean(channel) && extraDirty);
+  const [saved, setSaved] = useState(false);
+  useUnsavedChanges(dirty);
 
   const kind: ChannelKind = channel
     ? (channel.kind as ChannelKind)
@@ -203,16 +231,25 @@ export function ChannelForm({
   const maxRecipients = options.platform_email.max_recipients ?? 20;
 
   const save = async (body: Record<string, unknown>) => {
+    setSaved(false);
+    const at = snapshot;
     const ch = await act.run(async () => {
-      const existing = channel ?? created.current;
-      const c = existing ? await api.patch<Channel>(`/channels/${existing.id}`, body) : await api.post<Channel>("/channels", { ...body, kind });
-      if (!channel) {
-        created.current = c;
-        if (afterCreate) await afterCreate(c);
+      if (channel) {
+        // One Save for the page: the connection if it changed, then the rest.
+        const c = ownDirty ? await api.patch<Channel>(`/channels/${channel.id}`, body) : channel;
+        baseline.current = at;
+        if (extraDirty && afterSave) await afterSave(c);
+        return c;
       }
+      const c = created.current ? await api.patch<Channel>(`/channels/${created.current.id}`, body) : await api.post<Channel>("/channels", { ...body, kind });
+      created.current = c;
+      if (afterCreate) await afterCreate(c);
       return c;
     });
-    if (ch) onSaved(ch);
+    if (ch) {
+      setSaved(true);
+      onSaved(ch);
+    }
   };
 
   const submit = async (e: FormEvent) => {
@@ -279,8 +316,8 @@ export function ChannelForm({
   const addToSlack = !channel && slackApp;
   const showSecret = !addToSlack && !slackApp && kind !== "stackurity_email";
 
-  const form = (
-    <form className="form" onSubmit={submit}>
+  const problems = (
+    <>
       {act.error?.status === 402 ? (
         <ProNotice feature="teams">Untick Fix overdue to save without it.</ProNotice>
       ) : (
@@ -291,12 +328,17 @@ export function ChannelForm({
           {localErr}
         </div>
       )}
+    </>
+  );
+  const form = (
+    <form className="form" onSubmit={submit}>
+      <Card title={title}>
+      <div className="form">
       <div className="form-grid">
-        <div className="field">
-          <label htmlFor={`${idp}-kind`}>Kind</label>
-          {channel || fixedKind ? (
-            <input id={`${idp}-kind`} value={KIND_LABEL[kind] ?? kind} disabled />
-          ) : (
+        {/* The kind is in the page's heading; it is chosen only when nothing fixed it. */}
+        {!channel && !fixedKind && (
+          <div className="field">
+            <label htmlFor={`${idp}-kind`}>Kind</label>
             <select id={`${idp}-kind`} value={group} onChange={(e) => setGroup(e.target.value as Group)}>
               {GROUPS.map((g) => (
                 <option key={g.key} value={g.key}>
@@ -304,9 +346,8 @@ export function ChannelForm({
                 </option>
               ))}
             </select>
-          )}
-          {channel && <p className="hint">The kind cannot be changed; create a new channel instead.</p>}
-        </div>
+          </div>
+        )}
         {!addToSlack && (
           <div className="field">
             <label htmlFor={`${idp}-name`}>Name</label>
@@ -476,7 +517,17 @@ export function ChannelForm({
               value={secretRef}
               required={kind === "slack" || kind === "teams" || kind === "jira"}
               onChange={(e) => setSecretRef(e.target.value)}
-              placeholder={kind === "jira" ? "secret:JIRA_TOKEN" : "env:STACKURITY_SECRET_SLACK"}
+              placeholder={
+                kind === "jira"
+                  ? "secret:JIRA_TOKEN"
+                  : kind === "email"
+                    ? "secret:SMTP_PASSWORD"
+                    : kind === "webhook"
+                      ? "secret:WEBHOOK_SIGNING_KEY"
+                      : kind === "teams"
+                        ? "secret:TEAMS_WEBHOOK_URL"
+                        : "secret:SLACK_WEBHOOK_URL"
+              }
             />
             <p className="hint">
               Secrets are never stored here. Store the{" "}
@@ -521,31 +572,55 @@ export function ChannelForm({
       </div>
       {!channel && group === "slack" && options.slack_app && (
         <p className="small">
-          <button type="button" className="btn btn-link" onClick={() => setSlackWebhook(!slackWebhook)} aria-expanded={slackWebhook}>
+          <button type="button" className="btn btn-link btn-inline" onClick={() => setSlackWebhook(!slackWebhook)} aria-expanded={slackWebhook}>
             {slackWebhook ? "Use Add to Slack instead" : "Advanced: use a webhook"}
           </button>
         </p>
       )}
       {!channel && !fixedKind && group === "email" && options.platform_email.enabled && (
         <p className="small">
-          <button type="button" className="btn btn-link" onClick={() => setOwnSmtp(!ownSmtp)} aria-expanded={ownSmtp}>
+          <button type="button" className="btn btn-link btn-inline" onClick={() => setOwnSmtp(!ownSmtp)} aria-expanded={ownSmtp}>
             {ownSmtp ? "Let Stackurity send the email" : "Advanced: use your own mail server"}
           </button>
         </p>
       )}
-      {!addToSlack && extra}
-      <div className="form-actions">
-        {!addToSlack && (
-          <button type="submit" className="btn btn-primary" disabled={act.pending}>
-            {submitLabel ?? (channel ? "Save" : "Add")}
-          </button>
-        )}
-        {onCancel && (
+      {connectionExtra}
+      {addToSlack && onCancel && (
+        <div className="form-actions">
           <button type="button" className="btn" onClick={onCancel}>
             Cancel
           </button>
-        )}
+        </div>
+      )}
       </div>
+      </Card>
+      {!addToSlack && extra}
+      {!addToSlack && problems}
+      {channel ? (
+        <SaveBar
+          dirty={dirty}
+          pending={act.pending}
+          saved={saved && !act.error}
+          onDiscard={() => {
+            act.clear();
+            setLocalErr(null);
+            onDiscard?.();
+          }}
+        />
+      ) : (
+        !addToSlack && (
+          <div className="form-actions">
+            <button type="submit" className="btn btn-primary" disabled={act.pending}>
+              {act.pending ? "Saving…" : submitLabel ?? "Add"}
+            </button>
+            {onCancel && (
+              <button type="button" className="btn" onClick={onCancel}>
+                Cancel
+              </button>
+            )}
+          </div>
+        )
+      )}
     </form>
   );
   return form;

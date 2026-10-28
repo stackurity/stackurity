@@ -390,3 +390,40 @@ export function PresetChips({ label, chips }: { label: string; chips: { to: stri
     </nav>
   );
 }
+
+/**
+ * The one Save of a settings page, at the end of its form: sticky at the
+ * bottom of the window while something is unsaved, disabled otherwise.
+ */
+export function SaveBar({
+  dirty,
+  pending,
+  saved,
+  onDiscard,
+  label = "Save changes",
+}: {
+  dirty: boolean;
+  pending: boolean;
+  /** Just saved: says so until the next change. */
+  saved?: boolean;
+  onDiscard?: () => void;
+  label?: string;
+}) {
+  return (
+    <div className={`save-bar${dirty ? " save-bar-dirty" : ""}`}>
+      <span className="save-bar-state small" role="status" aria-live="polite">
+        {dirty ? "You have unsaved changes." : saved ? "Saved." : ""}
+      </span>
+      <div className="form-actions">
+        {dirty && onDiscard && (
+          <button type="button" className="btn" onClick={onDiscard} disabled={pending}>
+            Discard
+          </button>
+        )}
+        <button type="submit" className="btn btn-primary" disabled={!dirty || pending}>
+          {pending ? "Saving…" : label}
+        </button>
+      </div>
+    </div>
+  );
+}

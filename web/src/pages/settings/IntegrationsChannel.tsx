@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import {
   api,
@@ -22,11 +22,12 @@ import {
   type Project,
   type Route,
   type RouteEvent,
+  type SlackLink,
   type Team,
 } from "../../api";
 import { useAuth } from "../../auth";
 import { useAction, useFacets, useLoad } from "../../hooks";
-import { Badge } from "../../components/Badge";
+import { Badge, Chip } from "../../components/Badge";
 import { Card, ErrorBox, Loading, Notice, PageHeader } from "../../components/ui";
 import { ProNotice } from "../../components/ProNotice";
 import { AddToSlackButton } from "../../components/NotifyChoices";
@@ -38,6 +39,7 @@ import {
   dayLabel,
   EmailRecipients,
   KIND_LABEL,
+  kindLabel,
   routeBody,
   slackAppTarget,
   TZ_SUGGESTIONS,
@@ -144,6 +146,9 @@ function RuleFields({
   const jira = kind === "jira";
   const slack = kind === "slack";
   const others = slackChannels.filter((c) => c.id !== channelId);
+  // Adding a Slack channel for one event comes back to this integration's page.
+  const canAddChannel = slack && options.slack_app && channelId > 0;
+  const quiet = Boolean(r.quiet_start || r.quiet_end);
   const envOptions = [...new Set([...(facets?.environments ?? []), ...(r.environments ?? [])])];
   const hasSummary = (ev: RouteEvent[]) => ev.includes("daily_summary") || ev.includes("weekly_summary");
 
@@ -199,19 +204,31 @@ function RuleFields({
                     </span>
                   )}
                   {EVENT_HINT[e] && <span className="hint trigger-hint">{EVENT_HINT[e]}</span>}
-                  {slack && on && others.length > 0 && (
-                    <span className="trigger-extra">
-                      <label className="sr-only" htmlFor={`${idp}-dest-${e}`}>
-                        Slack channel for {ROUTE_EVENT_LABEL[e]}
-                      </label>
-                      <select id={`${idp}-dest-${e}`} value={String(r.event_channels?.[e] ?? "")} onChange={(ev) => setDest(e, Number(ev.target.value))}>
-                        <option value="">Same as this integration</option>
-                        {others.map((c) => (
-                          <option key={c.id} value={String(c.id)}>
-                            {c.config?.slack_app ? slackAppTarget(c.config) : c.name}
-                          </option>
-                        ))}
-                      </select>
+                  {slack && on && (others.length > 0 || canAddChannel) && (
+                    <span className="trigger-extra trigger-dest">
+                      {others.length > 0 && (
+                        <>
+                          <label className="sr-only" htmlFor={`${idp}-dest-${e}`}>
+                            Slack channel for {ROUTE_EVENT_LABEL[e]}
+                          </label>
+                          <select id={`${idp}-dest-${e}`} value={String(r.event_channels?.[e] ?? "")} onChange={(ev) => setDest(e, Number(ev.target.value))}>
+                            <option value="">Same channel</option>
+                            {others.map((c) => (
+                              <option key={c.id} value={String(c.id)}>
+                                {c.config?.slack_app ? slackAppTarget(c.config) : c.name}
+                              </option>
+                            ))}
+                          </select>
+                        </>
+                      )}
+                      {canAddChannel && (
+                        <AddToSlackButton
+                          variant="link"
+                          label={others.length > 0 ? "+ Add another channel" : "+ Send to another channel"}
+                          title={`Add a Slack channel for ${ROUTE_EVENT_LABEL[e]}`}
+                          returnTo={`${returnTo}?for=${e}`}
+                        />
+                      )}
                     </span>
                   )}
                 </li>
@@ -221,17 +238,11 @@ function RuleFields({
           {(events.includes("daily_summary") || events.includes("weekly_summary")) && (
             <p className="hint">Summaries are skipped when nothing changed. Daily and weekly summaries share the time.</p>
           )}
-          {slack && options.slack_app && (
-            <div className="trigger-add">
-              <p className="hint">Send some events to another Slack channel: add it, then pick it next to the event.</p>
-              <AddToSlackButton returnTo={returnTo} />
-            </div>
-          )}
         </fieldset>
       )}
       {jira && <Notice kind="info">Jira keeps one issue per incident, so there are no events to choose. These filters decide which incidents get an issue.</Notice>}
 
-      <fieldset className="field">
+      <fieldset className="field field-sections">
         <legend className="h-sm">Notification settings</legend>
         <div className="form-grid">
           {showName && (
@@ -266,15 +277,6 @@ function RuleFields({
           {!jira && (
             <>
               <div className="field">
-                <label htmlFor={`${idp}-qs`}>Quiet from (optional)</label>
-                <input id={`${idp}-qs`} type="time" value={r.quiet_start} onChange={(e) => set("quiet_start", e.target.value)} />
-              </div>
-              <div className="field">
-                <label htmlFor={`${idp}-qe`}>Quiet until</label>
-                <input id={`${idp}-qe`} type="time" value={r.quiet_end} onChange={(e) => set("quiet_end", e.target.value)} />
-                <p className="hint">Quiet hours delay everything except SOS.</p>
-              </div>
-              <div className="field">
                 <label htmlFor={`${idp}-tz`}>Time zone</label>
                 <input id={`${idp}-tz`} list={`${idp}-tzs`} value={r.timezone} onChange={(e) => set("timezone", e.target.value)} placeholder="UTC" />
                 <datalist id={`${idp}-tzs`}>
@@ -296,22 +298,50 @@ function RuleFields({
                 />
                 <p className="hint">Messages an hour; 0 = no limit. Extra messages go into the next summary, or one message an hour without a summary.</p>
               </div>
+              <fieldset className="field field-span">
+                <legend>Quiet hours</legend>
+                <div className="inline-controls">
+                  <select
+                    aria-label="Quiet hours"
+                    value={quiet ? "on" : "off"}
+                    onChange={(e) => setR({ ...r, quiet_start: e.target.value === "on" ? "22:00" : "", quiet_end: e.target.value === "on" ? "07:00" : "" })}
+                  >
+                    <option value="off">Off</option>
+                    <option value="on">On</option>
+                  </select>
+                  {quiet && (
+                    <>
+                      <label htmlFor={`${idp}-qs`}>from</label>
+                      <input id={`${idp}-qs`} type="time" required value={r.quiet_start} onChange={(e) => set("quiet_start", e.target.value)} />
+                      <label htmlFor={`${idp}-qe`}>to</label>
+                      <input id={`${idp}-qe`} type="time" required value={r.quiet_end} onChange={(e) => set("quiet_end", e.target.value)} />
+                    </>
+                  )}
+                </div>
+                <p className="hint">Quiet hours hold everything except SOS until they end, in the time zone above.</p>
+              </fieldset>
             </>
           )}
         </div>
-        <div className="btn-group">
-          <label className="check">
-            <input type="checkbox" checked={r.enabled} onChange={(e) => set("enabled", e.target.checked)} /> Enabled
-          </label>
-          <label className="check">
-            <input type="checkbox" checked={r.sos_only} onChange={(e) => set("sos_only", e.target.checked)} /> SOS incidents only
-          </label>
-          {!jira && (
+        <fieldset className="field">
+          <legend>Options</legend>
+          <div className="check-stack">
+            {/* One rule: the page's Disable switches the integration off; the rule's own switch only to turn a switched-off rule back on. */}
+            {(showName || !r.enabled) && (
+              <label className="check">
+                <input type="checkbox" checked={r.enabled} onChange={(e) => set("enabled", e.target.checked)} /> {showName ? "Enabled" : "This rule is on"}
+              </label>
+            )}
             <label className="check">
-              <input type="checkbox" checked={r.send_resolved} onChange={(e) => set("send_resolved", e.target.checked)} /> Also send when issues are fixed
+              <input type="checkbox" checked={r.sos_only} onChange={(e) => set("sos_only", e.target.checked)} /> SOS incidents only
             </label>
-          )}
-        </div>
+            {!jira && (
+              <label className="check">
+                <input type="checkbox" checked={r.send_resolved} onChange={(e) => set("send_resolved", e.target.checked)} /> Also send when issues are fixed
+              </label>
+            )}
+          </div>
+        </fieldset>
         {projects.length > 0 &&
           (jira ? (
             <div className="field">
@@ -336,7 +366,9 @@ function RuleFields({
               hint="None ticked = every asset. Ticked: messages name only these projects' assets."
             />
           ))}
-        <CheckGroup legend="Environments" options={envOptions} value={r.environments ?? []} onChange={(v) => set("environments", v)} hint="None ticked = all environments." />
+        {envOptions.length > 0 && (
+          <CheckGroup legend="Environments" options={envOptions} value={r.environments ?? []} onChange={(v) => set("environments", v)} hint="None ticked = all environments." />
+        )}
         <CheckGroup
           legend="Incident kinds"
           options={[...INCIDENT_KINDS] as string[]}
@@ -345,14 +377,16 @@ function RuleFields({
           label={(k) => k.replace(/_/g, " ")}
           hint="None ticked = all kinds."
         />
-        <CheckGroup
-          legend="Owner teams"
-          options={teams.map((t) => t.id)}
-          value={r.team_ids ?? []}
-          onChange={(v) => set("team_ids", v)}
-          label={(id) => teams.find((t) => t.id === id)?.name ?? `team #${id}`}
-          hint="None ticked = all teams, including unowned incidents."
-        />
+        {teams.length > 0 && (
+          <CheckGroup
+            legend="Owner teams"
+            options={teams.map((t) => t.id)}
+            value={r.team_ids ?? []}
+            onChange={(v) => set("team_ids", v)}
+            label={(id) => teams.find((t) => t.id === id)?.name ?? `team #${id}`}
+            hint="None ticked = all teams, including unowned incidents."
+          />
+        )}
       </fieldset>
     </>
   );
@@ -474,6 +508,130 @@ function statusBadge(c: Channel) {
   return <Badge status="untested" tone="warn" label="not used yet" />;
 }
 
+/**
+ * The signed-in person's Slack account for a Slack workspace the Stackurity
+ * app is in: linked or not, and Unlink. All links are on Your account.
+ */
+function SlackAccountPanel({ teamId, teamName }: { teamId: string; teamName: string }) {
+  const links = useLoad(() => api.get<List<SlackLink>>("/slack/links"), []);
+  const act = useAction();
+  const mine = (links.data?.items ?? []).filter((l) => l.team_id === teamId);
+  const unlink = async (l: SlackLink) => {
+    if (!window.confirm(`Unlink ${l.slack_user_name || l.slack_user_id}? Its clicks in Slack will ask to link again.`)) return;
+    const ok = await act.run(() => api.del(`/slack/links/${l.id}`).then(() => true));
+    if (ok) links.reload();
+  };
+  return (
+    <div className="slack-account">
+      <div className="slack-account-text">
+        <span className="label">Your Slack account</span>
+        {links.error ? (
+          <ErrorBox error={links.error} title="Could not load your Slack account" />
+        ) : !links.data ? (
+          <span className="muted small">Loading…</span>
+        ) : mine.length === 0 ? (
+          <span>
+            Not linked yet. You are asked once, the first time you click <strong>Assign to me</strong> or <strong>Snooze</strong> in a message in {teamName}.
+          </span>
+        ) : (
+          mine.map((l) => (
+            <span key={l.id}>
+              Linked as <strong>@{l.slack_user_name || l.slack_user_id}</strong> in {l.team_name || teamName}: your clicks in Slack act as you.{" "}
+              <button type="button" className="btn btn-sm btn-link-danger" onClick={() => void unlink(l)} disabled={act.pending}>
+                Unlink
+              </button>
+            </span>
+          ))
+        )}
+        <ErrorBox error={act.error} title="Could not unlink" />
+      </div>
+      <Link className="small" to="/account#slack">
+        All your linked Slack accounts
+      </Link>
+    </div>
+  );
+}
+
+/** Where an event was sent before "+ Add another channel" went to Slack (?for=event&channel=id). */
+function presetFrom(params: URLSearchParams, channel: Channel, slackChannels: Channel[]): { event: RouteEvent; channel: Channel } | null {
+  const e = params.get("for") as RouteEvent | null;
+  const id = Number(params.get("channel")) || 0;
+  const c = slackChannels.find((x) => x.id === id && x.id !== channel.id);
+  return e && (ROUTE_EVENTS as readonly string[]).includes(e) && c ? { event: e, channel: c } : null;
+}
+
+/**
+ * An integration with at most one rule: its connection and what it sends,
+ * in one form with one Save.
+ */
+function ChannelEditor({
+  channel,
+  rule,
+  ctx,
+  members,
+  preset,
+  connectionExtra,
+  onSaved,
+  onDiscard,
+}: {
+  channel: Channel;
+  rule: Route | undefined;
+  ctx: Ctx;
+  members: DirectoryUser[] | undefined;
+  preset: { event: RouteEvent; channel: Channel } | null;
+  connectionExtra?: ReactNode;
+  onSaved: () => void;
+  onDiscard: () => void;
+}) {
+  const jira = channel.kind === "jira";
+  const [base, setBase] = useState(() => JSON.stringify(rule ? draftOf(rule) : newRule(channel.id, channel.name)));
+  const [r, setR] = useState<Route>(() => {
+    const d = rule ? draftOf(rule) : newRule(channel.id, channel.name);
+    if (!preset) return d;
+    const events = d.events?.includes(preset.event) ? d.events : ROUTE_EVENTS.filter((x) => x === preset.event || d.events?.includes(x));
+    return { ...d, events, event_channels: { ...(d.event_channels ?? {}), [preset.event]: preset.channel.id } };
+  });
+  const ruleId = useRef(rule?.id ?? 0);
+  // No rule yet: nothing is sent until it is saved.
+  const extraDirty = ruleId.current === 0 || JSON.stringify(r) !== base;
+  return (
+    <ChannelForm
+      channel={channel}
+      options={ctx.options}
+      members={members}
+      onSaved={onSaved}
+      onDiscard={onDiscard}
+      connectionExtra={connectionExtra}
+      validate={() => ruleProblem(r, jira)}
+      extraDirty={extraDirty}
+      afterSave={async (c) => {
+        const body = ruleBody(r, c);
+        const saved = ruleId.current ? await api.put<Route>(`/routes/${ruleId.current}`, body) : await api.post<Route>("/routes", body);
+        ruleId.current = saved.id;
+        setBase(JSON.stringify(r));
+      }}
+      extra={
+        <Card title={ruleId.current === 0 ? "What to send (not saved yet)" : "What to send"}>
+          <div className="form">
+            <RuleFields
+              idp={rule ? `rule${rule.id}` : `rulenew${channel.id}`}
+              r={r}
+              setR={setR}
+              kind={channel.kind}
+              channelId={channel.id}
+              slackChannels={ctx.slackChannels}
+              projects={ctx.projects}
+              teams={ctx.teams}
+              options={ctx.options}
+              returnTo={`/settings/integrations/channels/${channel.id}`}
+            />
+          </div>
+        </Card>
+      }
+    />
+  );
+}
+
 /** /settings/integrations/channels/:id */
 export function IntegrationChannelPage() {
   const { id } = useParams();
@@ -498,6 +656,7 @@ export function IntegrationChannelPage() {
   const [test, setTest] = useState<{ ok: boolean; error?: string } | null>(null);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<number | null>(null);
+  const [draft, setDraft] = useState(0);
 
   if (channels.error) return <ErrorBox error={channels.error} title="Could not load the integration" />;
   if (!channels.data) return <Loading />;
@@ -510,10 +669,13 @@ export function IntegrationChannelPage() {
 
   const rules = (routes.data?.items ?? []).filter((r) => r.channel_id === channel.id);
   const newSlack = another ? channels.data.items.find((c) => c.id === another) : undefined;
+  const preset = presetFrom(params, channel, ctx.slackChannels);
   const reload = () => {
     channels.reload();
     routes.reload();
   };
+  const cfg = channel.config ?? {};
+  const slackAccount = channel.kind === "slack" && cfg.slack_app && cfg.team_id ? <SlackAccountPanel teamId={cfg.team_id} teamName={cfg.team_name || "Slack"} /> : null;
 
   const sendTest = async () => {
     setTest(null);
@@ -548,9 +710,9 @@ export function IntegrationChannelPage() {
           </span>
         }
         sub={
-          <>
-            {KIND_LABEL[channel.kind] ?? channel.kind} · {statusBadge(channel)}
-          </>
+          <span className="int-sub">
+            <Chip>{kindLabel(channel)}</Chip> {statusBadge(channel)}
+          </span>
         }
         actions={
           admin && (
@@ -568,12 +730,17 @@ export function IntegrationChannelPage() {
           )
         }
       />
-      {added && <Notice kind="success">Connected. Choose what it sends below, then save.</Notice>}
-      {newSlack && (
-        <Notice kind="success">
-          Added {newSlack.config?.slack_app ? slackAppTarget(newSlack.config) : newSlack.name}. Pick it next to an event under Trigger, then save.
-        </Notice>
-      )}
+      {added && <Notice kind="success">Connected. Choose what it sends below, then Save changes.</Notice>}
+      {newSlack &&
+        (preset ? (
+          <Notice kind="success">
+            Added {slackAppTarget(preset.channel.config ?? {})}. It is picked for {ROUTE_EVENT_LABEL[preset.event]} below: Save changes to keep it.
+          </Notice>
+        ) : (
+          <Notice kind="success">
+            Added {newSlack.config?.slack_app ? slackAppTarget(newSlack.config) : newSlack.name}. Pick it next to an event under Trigger, then Save changes.
+          </Notice>
+        ))}
       <ErrorBox error={act.error} title="Action failed" />
       {test &&
         (test.ok ? (
@@ -591,95 +758,118 @@ export function IntegrationChannelPage() {
         </div>
       )}
 
-      <Card title="Connection">
-        {admin ? (
-          <ChannelForm key={channel.id} channel={channel} options={ctx.options} members={members.data?.items} onSaved={() => channels.reload()} submitLabel="Save connection" />
-        ) : (
-          <p className="mono small break">{channelTarget(channel, recipients.data?.items)}</p>
-        )}
-      </Card>
-      {isPlatformEmail && <EmailRecipients res={recipients} admin={admin} />}
-
       <ErrorBox error={routes.error} title="Could not load the settings" />
-      {!routes.data && !routes.error && <Loading />}
-      {routes.data && !admin && (
-        <Card title="What it sends">
-          {rules.length === 0 ? (
-            <p className="muted">Nothing yet: no rule uses this integration.</p>
-          ) : (
-            <ul>
+      {!admin && (
+        <>
+          <Card title="Connection">
+            <p className="break">{channelTarget(channel, recipients.data?.items)}</p>
+            {slackAccount}
+          </Card>
+          {isPlatformEmail && <EmailRecipients res={recipients} admin={admin} />}
+          {routes.data && (
+            <Card title="What it sends">
+              {rules.length === 0 ? (
+                <p className="muted">Nothing yet: no rule uses this integration.</p>
+              ) : (
+                <ul>
+                  {rules.map((r) => (
+                    <li key={r.id}>
+                      <strong>{r.name}</strong>: {describeRoute(r)}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="hint">Only administrators can change it.</p>
+            </Card>
+          )}
+        </>
+      )}
+      {admin && !routes.data && !routes.error && <Loading />}
+      {admin && routes.data && rules.length <= 1 && (
+        <>
+          <ChannelEditor
+            key={`${channel.id}-${draft}`}
+            channel={channel}
+            rule={rules[0]}
+            ctx={ctx}
+            members={members.data?.items}
+            preset={preset}
+            connectionExtra={slackAccount}
+            onSaved={reload}
+            onDiscard={() => setDraft((d) => d + 1)}
+          />
+          {isPlatformEmail && <EmailRecipients res={recipients} admin={admin} />}
+          {rules.length === 1 && !adding && (
+            <p className="small">
+              <button type="button" className="btn btn-link btn-wrap btn-inline" onClick={() => setAdding(true)}>
+                Add another rule (for example, different settings for one project)
+              </button>
+            </p>
+          )}
+          {rules.length === 1 && adding && (
+            <Card title="Another rule">
+              <RuleEditor
+                channel={channel}
+                ctx={ctx}
+                showName
+                onSaved={() => {
+                  setAdding(false);
+                  reload();
+                }}
+                onCancel={() => setAdding(false)}
+              />
+            </Card>
+          )}
+        </>
+      )}
+      {admin && routes.data && rules.length > 1 && (
+        <>
+          <ChannelForm
+            key={`${channel.id}-${draft}`}
+            channel={channel}
+            options={ctx.options}
+            members={members.data?.items}
+            connectionExtra={slackAccount}
+            onSaved={() => channels.reload()}
+            onDiscard={() => setDraft((d) => d + 1)}
+          />
+          {isPlatformEmail && <EmailRecipients res={recipients} admin={admin} />}
+          <Card title="Rules">
+            <p className="hint">This integration has several rules, for example one per project. Each sends on its own and is saved on its own.</p>
+            <ul className="rule-list">
               {rules.map((r) => (
                 <li key={r.id}>
-                  <strong>{r.name}</strong>: {describeRoute(r)}
+                  <div className="rule-head">
+                    <div>
+                      <strong>{r.name}</strong> {!r.enabled && <Badge status="disabled" />}
+                      <div className="small muted">{describeRoute(r)}</div>
+                    </div>
+                    <button type="button" className="btn btn-sm" onClick={() => setEditing(editing === r.id ? null : r.id)} aria-expanded={editing === r.id}>
+                      {editing === r.id ? "Close" : "Edit"}
+                    </button>
+                  </div>
+                  {editing === r.id && <RuleEditor channel={channel} route={r} ctx={ctx} showName canDelete onSaved={reload} />}
                 </li>
               ))}
             </ul>
-          )}
-          <p className="hint">Only administrators can change it.</p>
-        </Card>
-      )}
-      {routes.data && admin && rules.length <= 1 && (
-        <Card title={rules.length === 0 ? "What to send (not saved yet)" : "What to send"}>
-          <RuleEditor key={rules[0]?.id ?? "new"} channel={channel} route={rules[0]} ctx={ctx} onSaved={reload} />
-        </Card>
-      )}
-      {routes.data && admin && rules.length > 1 && (
-        <Card title="Rules">
-          <p className="hint">This integration has several rules, for example one per project. Each sends on its own.</p>
-          <ul className="rule-list">
-            {rules.map((r) => (
-              <li key={r.id}>
-                <div className="rule-head">
-                  <div>
-                    <strong>{r.name}</strong> {!r.enabled && <Badge status="disabled" />}
-                    <div className="small muted">{describeRoute(r)}</div>
-                  </div>
-                  <button type="button" className="btn btn-sm" onClick={() => setEditing(editing === r.id ? null : r.id)} aria-expanded={editing === r.id}>
-                    {editing === r.id ? "Close" : "Edit"}
-                  </button>
-                </div>
-                {editing === r.id && <RuleEditor channel={channel} route={r} ctx={ctx} showName canDelete onSaved={reload} />}
-              </li>
-            ))}
-          </ul>
-          {adding ? (
-            <RuleEditor
-              channel={channel}
-              ctx={ctx}
-              showName
-              onSaved={() => {
-                setAdding(false);
-                reload();
-              }}
-              onCancel={() => setAdding(false)}
-            />
-          ) : (
-            <button type="button" className="btn" onClick={() => setAdding(true)}>
-              Add another rule
-            </button>
-          )}
-        </Card>
-      )}
-      {routes.data && admin && rules.length === 1 && (
-        <p className="small">
-          <button type="button" className="btn btn-link" style={{ whiteSpace: "normal", textAlign: "left" }} onClick={() => setAdding(true)} hidden={adding}>
-            Add another rule (for example, different settings for one project)
-          </button>
-        </p>
-      )}
-      {routes.data && admin && rules.length === 1 && adding && (
-        <Card title="Another rule">
-          <RuleEditor
-            channel={channel}
-            ctx={ctx}
-            showName
-            onSaved={() => {
-              setAdding(false);
-              reload();
-            }}
-            onCancel={() => setAdding(false)}
-          />
-        </Card>
+            {adding ? (
+              <RuleEditor
+                channel={channel}
+                ctx={ctx}
+                showName
+                onSaved={() => {
+                  setAdding(false);
+                  reload();
+                }}
+                onCancel={() => setAdding(false)}
+              />
+            ) : (
+              <button type="button" className="btn" onClick={() => setAdding(true)}>
+                Add another rule
+              </button>
+            )}
+          </Card>
+        </>
       )}
     </>
   );
@@ -719,7 +909,6 @@ export function IntegrationAddPage() {
           </span>
         }
       />
-      <Card title="Connection">
         <ChannelForm
           kind={kind}
           options={options.data}
@@ -731,21 +920,24 @@ export function IntegrationAddPage() {
           returnTo="/settings/integrations"
           submitLabel="Add integration"
           extra={
-            <RuleFields
-              idp="addrule"
-              r={r}
-              setR={setR}
-              kind={kind}
-              channelId={0}
-              slackChannels={ctx.slackChannels}
-              projects={ctx.projects}
-              teams={ctx.teams}
-              options={ctx.options}
-              returnTo="/settings/integrations"
-            />
+            <Card title="What to send">
+              <div className="form">
+                <RuleFields
+                  idp="addrule"
+                  r={r}
+                  setR={setR}
+                  kind={kind}
+                  channelId={0}
+                  slackChannels={ctx.slackChannels}
+                  projects={ctx.projects}
+                  teams={ctx.teams}
+                  options={ctx.options}
+                  returnTo="/settings/integrations"
+                />
+              </div>
+            </Card>
           }
         />
-      </Card>
     </>
   );
 }

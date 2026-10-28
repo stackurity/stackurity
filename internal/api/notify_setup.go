@@ -262,6 +262,37 @@ func (s *Server) startSlackInstall(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]string{"url": app.AuthorizeURL(state, s.slackRedirectURL())})
 }
 
+// slackDirectInstall is GET /integrations/slack/install, the Slack app's
+// Direct install URL. Slack wants it to answer with a 302 to its consent
+// page, and checks that when the URL is saved, signed out. So:
+//
+//   - signed out (or no Slack app): a 302 to Slack's consent page without a
+//     state. Slack sends the person back to the callback with a code but no
+//     state; the code is never exchanged then (anyone could send such a
+//     link to an admin and push their Slack channel into the admin's
+//     organisation). The callback page asks them to sign in and start a
+//     proper install instead (/integrations/slack/add);
+//   - signed in: the dashboard page, which picks the organisation (one where
+//     they are an admin) and starts Add to Slack with a state bound to them.
+func (s *Server) slackDirectInstall(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	if app := s.slackApp(); app != nil && s.baseURL() != "" && !s.signedIn(r) {
+		http.Redirect(w, r, app.AuthorizeURL("", s.slackRedirectURL()), http.StatusFound)
+		return
+	}
+	s.uiHandler().ServeHTTP(w, r)
+}
+
+// signedIn reports whether the request carries a live dashboard session.
+func (s *Server) signedIn(r *http.Request) bool {
+	c, err := r.Cookie(sessionCookie)
+	if err != nil || c.Value == "" {
+		return false
+	}
+	_, _, err = s.Store.SessionUser(r.Context(), c.Value)
+	return err == nil
+}
+
 // safeReturn keeps a dashboard path only, never another site.
 func safeReturn(p string) string {
 	if !strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") || strings.ContainsAny(p, "\\\r\n") || len(p) > 300 {

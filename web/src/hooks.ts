@@ -174,3 +174,33 @@ export function useExceptionMaxDays(): number {
   const n = r.data?.exception_max_days;
   return n && n > 0 ? n : DEFAULT_EXCEPTION_MAX_DAYS;
 }
+
+/**
+ * Asks before leaving a page with unsaved changes: closing or reloading the
+ * tab, and following a link inside the dashboard.
+ */
+export function useUnsavedChanges(dirty: boolean, message = "You have unsaved changes. Leave without saving?") {
+  useEffect(() => {
+    if (!dirty) return;
+    const beforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    const click = (e: MouseEvent) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const a = (e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
+      if (!a || a.target === "_blank" || a.origin !== window.location.origin) return;
+      if (a.pathname === window.location.pathname && a.search === window.location.search) return;
+      if (!window.confirm(message)) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    window.addEventListener("beforeunload", beforeUnload);
+    document.addEventListener("click", click, true);
+    return () => {
+      window.removeEventListener("beforeunload", beforeUnload);
+      document.removeEventListener("click", click, true);
+    };
+  }, [dirty, message]);
+}

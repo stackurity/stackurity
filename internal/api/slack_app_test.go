@@ -445,3 +445,129 @@ func TestSlackAppTwoChannels(t *testing.T) {
 		t.Errorf("install kept %d, apps.uninstall called %d", installs, removed)
 	}
 }
+
+// Installs started from Slack's side (the Direct install URL, Slack's own
+// install page or shareable link): Slack sends the person back with a code
+// but without a state of ours. The code is never exchanged then; the person
+// starts a proper install from the dashboard instead.
+func TestSlackAppInstallFromSlack(t *testing.T) {
+	f := slackAppSetup(t)
+	e := f.e
+	noFollow := func(s *session) *session {
+		s.http.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+		return s
+	}
+
+	// Signed out, the Direct install URL is a 302 to Slack's consent page,
+	// as Slack requires, without a state (nobody to bind it to yet).
+	resp := noFollow(e.anon()).req("GET", "/integrations/slack/install", nil, nil)
+	resp.Body.Close()
+	loc, _ := url.Parse(resp.Header.Get("Location"))
+	if resp.StatusCode != 302 || loc == nil || loc.Host != "slack.com" || loc.Path != "/oauth/v2/authorize" {
+		t.Fatalf("signed out: %d %q", resp.StatusCode, resp.Header.Get("Location"))
+	}
+	if q := loc.Query(); q.Get("client_id") != "client-1" || q.Get("scope") != "incoming-webhook" ||
+		q.Get("redirect_uri") != "https://stk.example/integrations/slack/oauth/callback" || q.Has("state") {
+		t.Errorf("direct install query %v", q)
+	}
+	if cc := resp.Header.Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("Cache-Control %q", cc)
+	}
+	// Signed in, it is the dashboard page that picks the organisation.
+	admin := noFollow(e.login("admin@x.io"))
+	resp = admin.req("GET", "/integrations/slack/install", nil, nil)
+	resp.Body.Close()
+	if resp.StatusCode != 200 || resp.Header.Get("Location") != "" || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/html") {
+		t.Errorf("signed in: %d %q", resp.StatusCode, resp.Header.Get("Location"))
+	}
+
+	// Back from Slack with a code and no state (or an empty one): refused
+	// before Slack is called, so a crafted link cannot add someone else's
+	// Slack channel to this organisation.
+	for _, body := range []map[string]string{{"code": "good-code"}, {"code": "good-code", "state": ""}} {
+		if code := admin.do("POST", "/api/v1/integrations/slack/oauth", body, nil); code != 400 {
+			t.Errorf("no state %v: %d", body, code)
+		}
+	}
+	if f.slack.codes != 0 {
+		t.Fatalf("Slack was asked %d times for a code without our state", f.slack.codes)
+	}
+	var chans struct{ Items []store.Channel }
+	admin.do("GET", "/api/v1/channels", nil, &chans)
+	if len(chans.Items) != 0 {
+		t.Fatalf("channels after refused installs: %+v", chans.Items)
+	}
+}
+
+// The start page acts in the organisation the person picked (an
+// organisation where they are an admin); the state is bound to it.
+func TestSlackAppInstallChoosesOrganisation(t *testing.T) {
+	f := slackAppSetup(t)
+	e := f.e
+	ctx := context.Background()
+	beta, _, err := e.st.CreateWorkspace(ctx, "Beta", "", "beta@x.io", "", pw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gamma, _, err := e.st.CreateWorkspace(ctx, "Gamma", "", "gamma@x.io", "", pw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.st.AddMember(tenant.WithWorkspace(ctx, beta.ID), "admin@x.io", "", auth.RoleViewer, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.st.AddMember(tenant.WithWorkspace(ctx, gamma.ID), "admin@x.io", "", auth.RoleAdmin, ""); err != nil {
+		t.Fatal(err)
+	}
+	s := e.login("admin@x.io")
+	var me struct {
+		Workspaces []struct {
+			WorkspaceID int64  `json:"workspace_id"`
+			Role        string `json:"role"`
+		}
+	}
+	s.do("GET", "/api/v1/auth/me", nil, &me)
+	roles := map[int64]string{}
+	for _, m := range me.Workspaces {
+		roles[m.WorkspaceID] = m.Role
+	}
+	if roles[tenant.DefaultWorkspace] != "admin" || roles[beta.ID] != "viewer" || roles[gamma.ID] != "admin" {
+		t.Fatalf("memberships %v", roles)
+	}
+
+	// Not an admin in Beta: no install there.
+	if code := s.do("POST", "/api/v1/workspaces/"+itoa(beta.ID)+"/activate", nil, nil); code != 200 && code != 204 {
+		t.Fatalf("activate beta: %d", code)
+	}
+	if code := s.do("POST", "/api/v1/integrations/slack/install", map[string]string{}, nil); code != 403 {
+		t.Errorf("install as a viewer: %d", code)
+	}
+	// An admin in Gamma: the install lands in Gamma, not in the first
+	// organisation, and the state does not work from another one.
+	if code := s.do("POST", "/api/v1/workspaces/"+itoa(gamma.ID)+"/activate", nil, nil); code != 200 && code != 204 {
+		t.Fatalf("activate gamma: %d", code)
+	}
+	state := f.start(t, s)
+	if code := s.do("POST", "/api/v1/workspaces/"+itoa(tenant.DefaultWorkspace)+"/activate", nil, nil); code != 200 && code != 204 {
+		t.Fatal("activate default")
+	}
+	if code := s.do("POST", "/api/v1/integrations/slack/oauth", map[string]string{"code": "good-code", "state": state}, nil); code != 400 {
+		t.Errorf("Gamma's state finished from the default organisation: %d", code)
+	}
+	s.do("POST", "/api/v1/workspaces/"+itoa(gamma.ID)+"/activate", nil, nil)
+	var got installAnswer
+	if code := s.do("POST", "/api/v1/integrations/slack/oauth", map[string]string{"code": "good-code", "state": state}, &got); code != 201 {
+		t.Fatalf("finish in gamma: %d", code)
+	}
+	var chans struct{ Items []store.Channel }
+	s.do("GET", "/api/v1/channels", nil, &chans)
+	if len(chans.Items) != 1 || chans.Items[0].ID != got.Channel.ID {
+		t.Errorf("gamma channels %+v", chans.Items)
+	}
+	s.do("POST", "/api/v1/workspaces/"+itoa(tenant.DefaultWorkspace)+"/activate", nil, nil)
+	chans.Items = nil
+	s.do("GET", "/api/v1/channels", nil, &chans)
+	if len(chans.Items) != 0 {
+		t.Errorf("the install leaked into the default organisation: %+v", chans.Items)
+	}
+}
