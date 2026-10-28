@@ -1,0 +1,39 @@
+{
+ "id": "GHSA-g3hp-f6mg-559v",
+ "modified": "2026-09-10T03:50:46.751806526Z",
+ "published": "2026-05-29T19:47:19Z",
+ "aliases": [
+  "CVE-2026-47122"
+ ],
+ "summary": "Sparkle's AppInstaller post-stage-1 XPC listener accepts unvalidated connections, allowing spoofed appcast item data injection",
+ "severity": [
+  {
+   "type": "CVSS_V3",
+   "score": "CVSS:3.1/AV:L/AC:H/PR:L/UI:N/S:C/C:N/I:L/A:L"
+  }
+ ],
+ "database_specific": {
+  "severity": "MODERATE"
+ },
+ "affected": [
+  {
+   "package": {
+    "ecosystem": "SwiftURL",
+    "name": "github.com/sparkle-project/Sparkle"
+   },
+   "ranges": [
+    {
+     "type": "SEMVER",
+     "events": [
+      {
+       "introduced": "0"
+      },
+      {
+       "last_affected": "2.9.1"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

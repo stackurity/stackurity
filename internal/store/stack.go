@@ -246,7 +246,7 @@ var (
 	dataStoreNames = []string{"mysql", "mariadb", "postgresql", "postgres", "redis", "valkey", "mongodb", "mongod", "memcached",
 		"meilisearch", "elasticsearch", "opensearch", "rabbitmq", "kafka", "clickhouse", "cassandra"}
 	libraryTypes = map[string]bool{"npm": true, "pypi": true, "composer": true, "golang": true, "cargo": true, "gem": true,
-		"nuget": true, "maven": true, "pub": true, "hex": true}
+		"nuget": true, "maven": true, "pub": true, "hex": true, "swift": true, "cocoapods": true, "conan": true}
 )
 
 func hasNamePrefix(name string, prefixes []string) bool {
@@ -274,8 +274,8 @@ func findingLayer(f Finding, assetKind string) string {
 		return "web_server"
 	case hasNamePrefix(f.ComponentName, dataStoreNames):
 		return "data_store"
-	case libraryTypes[f.ComponentType]:
-		return "libraries"
+	case libraryTypes[f.ComponentType], f.ComponentType == "generic" && strings.HasPrefix(f.ComponentName, "vcpkg/"):
+		return "libraries" // vcpkg ports are pkg:generic/vcpkg/<port>
 	case f.ComponentType == "deb" || f.ComponentType == "rpm" || f.ComponentType == "apk":
 		return "os"
 	case f.ComponentType == "generic" && runtimeProducts[strings.ToLower(f.ComponentName)]:

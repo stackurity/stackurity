@@ -38,6 +38,7 @@ var registryFixtures = map[string]string{
 	"/nuget/awssdk.core/page/4.1.0-preview.1/4.1.0-preview.2.json": "nuget-awssdk.core-page3.json",
 	"/maven/org/springframework/spring-core/maven-metadata.xml":    "maven-spring-core.xml",
 	"/pub/api/packages/pedantic":                                   "pub-pedantic.json",
+	"/hex/api/packages/cowboy":                                     "hex-cowboy.json",
 }
 
 type fixtureRegistry struct {
@@ -91,6 +92,7 @@ func registryConfig(base string) Config {
 	cfg := DefaultConfig()
 	cfg.PyPIURL, cfg.GoProxyURL, cfg.CratesIndexURL = base+"/pypi", base+"/go", base+"/crates"
 	cfg.RubyGemsURL, cfg.NuGetURL, cfg.MavenURL, cfg.PubURL = base+"/rubygems", base+"/nuget", base+"/maven", base+"/pub"
+	cfg.HexURL = base + "/hex"
 	return cfg
 }
 
@@ -187,6 +189,16 @@ func TestRegistryLookups(t *testing.T) {
 			yanked:     map[string]string{"1.11.1": "retracted"},
 			deprecated: "Discontinued by its publisher. Replaced by lints.",
 		},
+		{
+			name: "hex: retired version skipped, pre-release newer than stable", feed: FeedHex,
+			cand:   store.ReleaseCandidate{Type: "hex", Name: "cowboy"},
+			latest: "2.21.0-rc.1", stable: "2.20.0", published: "2026-10-08T12:26:28.985587Z",
+			yanked: map[string]string{"2.6.2": "retired (invalid): cowlib version 2.7.2 retired"},
+		},
+		{
+			name: "hex: a private organisation's package is not looked up", feed: FeedHex,
+			cand: store.ReleaseCandidate{Type: "hex", Namespace: "acme", Name: "cowboy"}, wantErr: "private Hex organisation",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -275,6 +287,7 @@ func TestRegistryFeeds(t *testing.T) {
 		confirmed("pkg:nuget/WindowsAzure.Storage@9.3.2", nil),
 		confirmed("pkg:maven/org.springframework/spring-core@6.2.12", nil),
 		confirmed("pkg:pub/pedantic@1.9.0", nil),
+		confirmed("pkg:hex/cowboy@2.12.0", nil),
 	)
 	if err := EnsureFeeds(ctx, st); err != nil {
 		t.Fatal(err)
@@ -284,7 +297,7 @@ func TestRegistryFeeds(t *testing.T) {
 	for _, f := range feeds {
 		have[f.Name] = true
 	}
-	all := []string{FeedPyPI, FeedGo, FeedCrates, FeedRubyGems, FeedNuGet, FeedMaven, FeedPub}
+	all := []string{FeedPyPI, FeedGo, FeedCrates, FeedRubyGems, FeedNuGet, FeedMaven, FeedPub, FeedHex}
 	for _, f := range all {
 		if !have[f] {
 			t.Errorf("feed %s not created (have %v)", f, have)
@@ -315,6 +328,7 @@ func TestRegistryFeeds(t *testing.T) {
 		"gem":    {"8.1.4", "major", ""},
 		"nuget":  {"9.3.3", "patch", "8.1.2"},
 		"maven":  {"7.0.10", "major", ""},
+		"hex":    {"2.20.0", "minor", "2.6.2"},
 	}
 	rows, _, err := st.ListInventory(ctx, store.InventoryFilter{})
 	if err != nil {

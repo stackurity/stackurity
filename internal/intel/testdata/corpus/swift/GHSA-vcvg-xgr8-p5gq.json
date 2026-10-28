@@ -1,0 +1,39 @@
+{
+ "id": "GHSA-vcvg-xgr8-p5gq",
+ "modified": "2026-07-08T06:00:43.200510340Z",
+ "published": "2023-06-09T19:31:32Z",
+ "aliases": [
+  "CVE-2020-15230"
+ ],
+ "summary": "Arbitrary file read using percent-encoded relative paths in FileMiddleware",
+ "severity": [
+  {
+   "type": "CVSS_V3",
+   "score": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N"
+  }
+ ],
+ "database_specific": {
+  "severity": "MODERATE"
+ },
+ "affected": [
+  {
+   "package": {
+    "ecosystem": "SwiftURL",
+    "name": "github.com/vapor/vapor"
+   },
+   "ranges": [
+    {
+     "type": "SEMVER",
+     "events": [
+      {
+       "introduced": "4.0.0-rc.2.5"
+      },
+      {
+       "fixed": "4.29.4"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

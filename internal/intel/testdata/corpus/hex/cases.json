@@ -1,0 +1,18 @@
+{
+ "ecosystem": "Hex",
+ "feed": "osv:Hex",
+ "cases": [
+  {"name": "plug-phoenix-1.2.1", "purl": "pkg:hex/plug@1.1.6", "affected": {"CVE-2017-1000052": "1.1.7", "CVE-2018-1000883": "1.1.9"}, "note": "the version locked in the Hex pack's phoenix-1.2.1 fixture (packs/hex/testdata); per-minor ranges"},
+  {"name": "plug-first-fix", "purl": "pkg:hex/plug@1.1.7", "affected": {"CVE-2018-1000883": "1.1.9"}, "note": "fixed for one advisory, not the other"},
+  {"name": "plug-fixed-1.1", "purl": "pkg:hex/plug@1.1.9", "affected": {}, "note": "fixed on the 1.1 line"},
+  {"name": "plug-eef-and-ghsa", "purl": "pkg:hex/plug@1.16.0", "affected": {"CVE-2026-8468": "1.16.3"}, "note": "the EEF CNA and GitHub publish the same CVE: one finding"},
+  {"name": "plug-fixed-1.19", "purl": "pkg:hex/plug@1.19.2", "affected": {}, "note": "fixed on the 1.19 line"},
+  {"name": "earmark-no-fix", "purl": "pkg:hex/earmark@1.4.10", "affected": {"CVE-2026-48591": ""}, "note": "last_affected 1.5.0-pre1, no fixed release (the package is retired)"},
+  {"name": "earmark-before", "purl": "pkg:hex/earmark@1.4.0", "affected": {}, "note": "before introduced"},
+  {"name": "phoenix-rc", "purl": "pkg:hex/phoenix@1.7.0-rc.2", "affected": {"CVE-2026-56812": "1.7.24"}, "note": "a pre-release inside a range introduced by 1.7.0-rc.0"},
+  {"name": "phoenix-before", "purl": "pkg:hex/phoenix@1.1.0", "affected": {}, "note": "before 1.2.0-rc.0"},
+  {"name": "hackney-withdrawn", "purl": "pkg:hex/hackney@3.0.0", "affected": {}, "note": "GHSA-76v6-f83q-pxvh is withdrawn"},
+  {"name": "private-organisation", "purl": "pkg:hex/acme/plug@1.1.6", "affected": {}, "coverage": "unsupported", "reason": "private Hex organisation", "note": "a private organisation's package of the same name is another package"},
+  {"name": "unparseable", "purl": "pkg:hex/plug@1.x", "affected": {}, "coverage": "not_evaluated", "reason": "could not be compared", "note": "a requirement, not a version"}
+ ]
+}

@@ -44,6 +44,15 @@ func TestTargetFor(t *testing.T) {
 		{"pkg:rpm/ol/bash@4.4.20-4.el8?distro=ol-8.9", "", nil, "", "", false},
 		{"pkg:generic/debian@12", "", nil, "", "", false},
 		{"pkg:deb/debian/bash@5.2", "", nil, "", "", false}, // no distro qualifier
+		// Swift packages are named by repository URL (OSV's SwiftURL),
+		// compared in lower case.
+		{"pkg:swift/github.com/apple/swift-nio@2.38.0", "", nil, "SwiftURL", "github.com/apple/swift-nio", true},
+		{"pkg:swift/github.com/sparkle-project/Sparkle@2.6.0", "", nil, "SwiftURL", "github.com/sparkle-project/sparkle", true},
+		{"pkg:swift/mona/LinkedList@1.1.0", "", nil, "", "", false}, // a registry identity
+		{"pkg:hex/plug@1.1.6", "", nil, "Hex", "plug", true},
+		{"pkg:hex/acme/plug@1.1.6", "", nil, "", "", false}, // a private organisation's package
+		{"pkg:cocoapods/Alamofire@5.4.0", "", nil, "", "", false},
+		{"pkg:conan/openssl@1.1.1n", "", nil, "", "", false},
 	}
 	for _, c := range cases {
 		got, ok := TargetFor(c.purl, c.ver, c.ev)
@@ -298,7 +307,12 @@ func TestWhyNoTarget(t *testing.T) {
 		{"pkg:deb/kali/bash@5.2?distro=kali-2024.1", "", `from "kali" have no vulnerability source`, true},
 		{"pkg:apk/wolfi/openssl@3.3.0-r0?distro=wolfi-20230201", "", `from "wolfi" have no vulnerability source`, true},
 		{"pkg:deb/debian/bash@5.2?distro=bookworm", "", `distro release "bookworm" is not understood`, false},
-		{"pkg:hex/phoenix@1.7.0", "", "no vulnerability source for hex packages", true},
+		{"pkg:hex/acme/phoenix@1.7.0", "", `private Hex organisation or repository "acme" have no vulnerability source`, true},
+		{"pkg:hex/phoenix", "", "no installed version", false},
+		{"pkg:swift/mona/LinkedList@1.1.0", "", "matched by repository URL", true},
+		{"pkg:cocoapods/Alamofire@5.4.0", "", "OSV publishes no CocoaPods advisories", true},
+		{"pkg:conan/openssl@1.1.1n?user=conan&channel=stable", "", "OSV publishes no ConanCenter advisories", true},
+		{"pkg:generic/vcpkg/curl@8.13.0", "", "vcpkg ports have no vulnerability source", true},
 		{"pkg:generic/openssl@3.0.2", "", "no vulnerability source for generic packages", true},
 		{"pkg:npm/lodash", "", "no installed version", false},
 	}

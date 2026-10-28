@@ -107,7 +107,7 @@ func newAdvisoryRecord(feed string, v *osv.Vulnerability) *advisoryRecord {
 				continue
 			}
 			aff := CompactAffected(a)
-			row := packageRow{osv.BaseEcosystem(a.Package.Ecosystem), a.Package.Ecosystem, a.Package.Name, aff, affectedHash(aff)}
+			row := packageRow{osv.BaseEcosystem(a.Package.Ecosystem), a.Package.Ecosystem, osv.PackageName(a.Package.Ecosystem, a.Package.Name), aff, affectedHash(aff)}
 			// An identical entry listed twice matches the same way once.
 			k := row.ecosystem + "\x00" + row.name + "\x00" + string(row.affected)
 			if seen[k] {
