@@ -33,3 +33,12 @@ settings:
   org_deploy_enabled: false
   socket_mode_enabled: false
   token_rotation_enabled: false
+# Direct install (installs started from the Slack Marketplace listing): Slack
+# sends people to this URL, which must answer with a 302 to Slack's consent
+# page; Stackurity's does, and lets them pick the organisation when signed
+# in. It applies once the app is listed in the Slack Marketplace; it can also
+# be set under Basic Information -> Installing Your App. See
+# docs/slack-app.md#installs-started-from-slack.
+# app_directory:
+#   use_direct_install: true
+#   direct_install_url: https://app.stackurity.dev/integrations/slack/install

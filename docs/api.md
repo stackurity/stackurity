@@ -990,11 +990,17 @@ Deletes a stored secret. Audited as `secret.delete`.
 
 Starts Add to Slack: `{"return_to"}` (a dashboard path); answers `url`, Slack's consent page. 404 `not_configured` without the Slack app ([slack-app.md](slack-app.md)).
 
+### `GET /integrations/slack/install`
+
+**Who:** anyone · outside `/api/v1`
+
+The Slack app's Direct install URL ([slack-app.md](slack-app.md#installs-started-from-slack)). Signed out: 302 to Slack's consent page without a state, as Slack requires; Slack then returns to `/integrations/slack/oauth/callback` with a code that is never exchanged, and the page there starts a proper install. Signed in: the dashboard page that picks the organisation (one where the person is an admin) and calls `POST /integrations/slack/install`.
+
 ### `POST /integrations/slack/oauth`
 
 **Who:** admin
 
-Finishes Add to Slack with `{"code", "state"}` from Slack's redirect to `/integrations/slack/oauth/callback`: 201 with `channel`, `return_to`, `team_name` and `slack_channel`. 400 `slack_state` for a state that is unknown, used, expired (10 minutes) or someone else's; 502 `slack_refused`.
+Finishes Add to Slack with `{"code", "state"}` from Slack's redirect to `/integrations/slack/oauth/callback`: 201 with `channel`, `return_to`, `team_name` and `slack_channel`. 400 `slack_state` for a state that is missing (an install started from Slack's side), unknown, used, expired (10 minutes) or someone else's, before Slack is called; 502 `slack_refused`.
 
 ### `POST /integrations/slack/events`
 

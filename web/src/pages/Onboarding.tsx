@@ -871,7 +871,7 @@ function NotifyStep({ project, onNext }: { project: Project; onNext: () => void 
         )}
         {kind === "slack" && opts.slack_app && (
           <p className="small">
-            <button type="button" className="btn btn-link" onClick={() => setSlackWebhook(!slackWebhook)} aria-expanded={slackWebhook}>
+            <button type="button" className="btn btn-link btn-inline" onClick={() => setSlackWebhook(!slackWebhook)} aria-expanded={slackWebhook}>
               {slackWebhook ? "Use Add to Slack instead" : "Advanced: use a webhook"}
             </button>
           </p>
@@ -893,7 +893,7 @@ function NotifyStep({ project, onNext }: { project: Project; onNext: () => void 
         {kind === "email" && !platformEmail && smtpFields}
         {kind === "email" && opts.platform_email.enabled && (
           <p className="small">
-            <button type="button" className="btn btn-link" onClick={() => setOwnSmtp(!ownSmtp)} aria-expanded={ownSmtp}>
+            <button type="button" className="btn btn-link btn-inline" onClick={() => setOwnSmtp(!ownSmtp)} aria-expanded={ownSmtp}>
               {ownSmtp ? "Let Stackurity send the email" : "Advanced: use your own mail server"}
             </button>
           </p>

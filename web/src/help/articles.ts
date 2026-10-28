@@ -1209,7 +1209,7 @@ stackurity.exe agent --interval 6h`,
         ],
       },
       {
-        p: "Your Stackurity server must be reachable from Slack at that address over HTTPS. Each person links their Slack account once: the first time they click, Slack shows them (only them) a link that works once, for 15 minutes; they sign in to Stackurity and confirm. After that their clicks act as them, with their role and projects: engineers and above can assign, security and admin can snooze, and people with access to some projects only can act on those projects' fixes. Refusals are explained to them in Slack. Every action is in the activity log as theirs, marked as from Slack. Linked accounts are listed, and can be unlinked, under the account menu, **Linked Slack accounts**.",
+        p: "Your Stackurity server must be reachable from Slack at that address over HTTPS. Each person links their Slack account once: the first time they click, Slack shows them (only them) a link that works once, for 15 minutes; they sign in to Stackurity and confirm. After that their clicks act as them, with their role and projects: engineers and above can assign, security and admin can snooze, and people with access to some projects only can act on those projects' fixes. Refusals are explained to them in Slack. Every action is in the activity log as theirs, marked as from Slack. Linked accounts are listed, and can be unlinked, under the account menu, **Your account**; a Slack integration's page shows yours for its Slack workspace.",
       },
       {
         note: "Without the signing secret the buttons stay links to Stackurity, exactly as before. Each click is checked with the signing secret of the channel it came from, must be less than 5 minutes old and is accepted once.",

@@ -146,6 +146,11 @@ func (s *Server) Handler() http.Handler {
 	// The Stackurity Slack app's Event Subscriptions Request URL (uninstall
 	// and revoked tokens), verified with the app's signing secret.
 	r.With(s.limitAddress("slack-events", limitSlackEvents, "too many requests")).Post("/api/v1/integrations/slack/events", s.slackEvents)
+	// The Slack app's Direct install URL, for installs started from Slack
+	// (the Slack Marketplace): signed out, a 302 to Slack's consent page as
+	// Slack requires; signed in, the dashboard page that picks the
+	// organisation and starts Add to Slack (notify_setup.go).
+	r.Get("/integrations/slack/install", s.slackDirectInstall)
 	// One-click unsubscribe and "never email me again" from mail clients
 	// (RFC 8058), signed or single-use tokens in the address.
 	r.With(s.limitAddress("email-links", limitEmailConfirm, "too many attempts; wait a minute")).Post("/email/unsubscribe/one-click", s.oneClick(s.answerUnsubscribe))

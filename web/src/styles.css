@@ -4372,9 +4372,6 @@ h6.md-h {
   flex-basis: 100%;
   margin: 0 0 0 24px;
 }
-.trigger-add {
-  margin-top: var(--s2);
-}
 .rule-list {
   list-style: none;
   margin: 0 0 var(--s3);
@@ -4483,3 +4480,121 @@ h6.md-h {
   gap: 8px;
 }
 
+
+/* --- uniform forms: one control height for inputs and selects (time,
+   number, text and select alike), as in filter bars */
+.form {
+  --control-h: 36px;
+}
+.form input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]),
+.form select {
+  height: var(--control-h);
+  min-height: var(--control-h);
+  box-sizing: border-box;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.form input[type="time"] {
+  width: 8.5rem;
+}
+.form > .card {
+  margin-bottom: 0;
+}
+/* Controls on one line with short words between them ("Off" / "from … to …"). */
+.inline-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.inline-controls > label {
+  font-weight: 400;
+  color: var(--text-2);
+}
+.inline-controls select {
+  width: auto;
+}
+.btn-wrap {
+  white-space: normal;
+  text-align: left;
+}
+
+/* The one Save of a settings page: sticky while something is unsaved. */
+.save-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--s2) var(--s3);
+  padding: var(--s2) var(--s4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.save-bar .form-actions {
+  margin-left: auto;
+}
+.save-bar-dirty {
+  position: sticky;
+  bottom: var(--s2);
+  z-index: 20;
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  box-shadow: var(--shadow);
+}
+.save-bar-state {
+  color: var(--text-2);
+}
+
+/* Integration pages: kind and status under the name; per-event channel. */
+.int-sub {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.trigger-dest .btn-link {
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
+/* The signed-in person's Slack account, on a Slack (Stackurity app) integration. */
+.slack-account {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s2) var(--s4);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--border);
+}
+.slack-account-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 320px;
+}
+.slack-account .label {
+  font-weight: 600;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+@media (max-width: 720px) {
+  /* Above the phone tab bar (56px and the safe area). */
+  .save-bar-dirty {
+    bottom: calc(56px + 8px + env(safe-area-inset-bottom));
+  }
+  .save-bar {
+    padding: var(--s2) var(--s3);
+  }
+}
+/* A text button that lines up with the text around it. */
+.btn-inline {
+  padding-left: 0;
+  padding-right: 0;
+  min-height: 0;
+}
+.btn-inline:hover {
+  background: none;
+  text-decoration: underline;
+}

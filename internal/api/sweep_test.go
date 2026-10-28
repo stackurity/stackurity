@@ -101,6 +101,9 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/email/unsubscribe":    {class: "public", body: func(*tenantFx) any { return map[string]string{"token": "MTpmb28.bad"} }},
 	"POST /email/unsubscribe/one-click": {class: "public", query: "t=MTpmb28.bad"},
 	"POST /email/block/one-click":       {class: "public", query: "t=emc_guessed"},
+	// The Slack app's Direct install URL: a redirect to Slack's consent page
+	// or the dashboard page, never data (slack_app_test.go).
+	"GET /integrations/slack/install": {class: "public"},
 	// Add to Slack: B's install starts in B; a state of A's (or a
 	// guessed one) is refused (slack_app_test.go).
 	"POST /api/v1/integrations/slack/install": {class: "create", body: func(*tenantFx) any { return map[string]string{"return_to": "/settings/integrations"} }},

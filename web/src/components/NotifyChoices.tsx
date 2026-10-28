@@ -98,22 +98,58 @@ export function RouteQuestions({
   );
 }
 
-/** A primary "Add to Slack" button: asks the server for Slack's address and goes there. */
-export function AddToSlackButton({ returnTo, beforeRedirect, disabled }: { returnTo: string; beforeRedirect?: () => void; disabled?: boolean }) {
+/**
+ * "Add to Slack": asks the server for Slack's address and goes there. A
+ * primary button where adding Slack is the page's main action; a small link
+ * (variant "link") next to something else, such as one event's channel.
+ */
+export function AddToSlackButton({
+  returnTo,
+  beforeRedirect,
+  disabled,
+  variant = "primary",
+  label = "Add to Slack",
+  title,
+}: {
+  returnTo: string;
+  beforeRedirect?: () => void;
+  disabled?: boolean;
+  variant?: "primary" | "link";
+  label?: string;
+  title?: string;
+}) {
   const act = useAction();
   const go = async () => {
     beforeRedirect?.();
     const r = await act.run(() => api.post<{ url: string }>("/integrations/slack/install", { return_to: returnTo }));
     if (r?.url) window.location.assign(r.url);
   };
+  const button = (
+    <button
+      type="button"
+      className={variant === "link" ? "btn btn-sm btn-link" : "btn btn-primary"}
+      onClick={() => void go()}
+      disabled={disabled || act.pending}
+      title={title}
+    >
+      {act.pending ? "Opening Slack…" : label}
+    </button>
+  );
+  if (variant === "link")
+    return (
+      <>
+        {button}
+        {act.error && (
+          <span className="text-bad small" role="alert">
+            Could not open Slack: {act.error.message}
+          </span>
+        )}
+      </>
+    );
   return (
     <>
       <ErrorBox error={act.error} title="Could not open Slack" />
-      <div>
-        <button type="button" className="btn btn-primary" onClick={() => void go()} disabled={disabled || act.pending}>
-          {act.pending ? "Opening Slack…" : "Add to Slack"}
-        </button>
-      </div>
+      <div>{button}</div>
     </>
   );
 }

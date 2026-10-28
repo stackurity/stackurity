@@ -61,6 +61,7 @@ var projectScopes = map[string]string{
 	"POST /api/v1/email/unsubscribe":          "public",
 	"POST /email/unsubscribe/one-click":       "public",
 	"POST /email/block/one-click":             "public",
+	"GET /integrations/slack/install":         "public",
 	"POST /api/v1/integrations/slack/install": "org",
 	"POST /api/v1/integrations/slack/oauth":   "org",
 	"GET /api/v1/notification-options":        "org",

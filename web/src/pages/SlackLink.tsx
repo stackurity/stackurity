@@ -4,7 +4,7 @@ import { api, ApiError, type List, type SlackLink, type SlackLinkPreview } from 
 import { useAuth } from "../auth";
 import { useAction, useLoad } from "../hooks";
 import { absTime } from "../format";
-import { EmptyState, ErrorBox, Loading, Notice, PageHeader, RelativeTime } from "../components/ui";
+import { ErrorBox, Loading, Notice, RelativeTime } from "../components/ui";
 
 function slackWho(l: { slack_user_name: string; slack_user_id: string; team_name: string; team_id: string }) {
   return (
@@ -61,7 +61,7 @@ export function SlackLinkPage() {
         </Notice>
         <p>Go back to Slack and click the button again.</p>
         <p className="small">
-          <Link to="/settings/slack">Linked Slack accounts</Link> · <Link to="/">Home</Link>
+          <Link to="/account#slack">Your linked Slack accounts</Link> · <Link to="/">Home</Link>
         </p>
       </>
     );
@@ -84,14 +84,14 @@ export function SlackLinkPage() {
           {slackWho(pv.link)} is already linked to your account. Go back to Slack and click the button again.
         </Notice>
         <p className="small">
-          <Link to="/settings/slack">Linked Slack accounts</Link>
+          <Link to="/account#slack">Your linked Slack accounts</Link>
         </p>
       </>
     );
   } else if (pv.link.linked_to_other) {
     body = (
       <Notice kind="warn">
-        This Slack account is already linked to another Stackurity account in {org}. That person has to unlink it first (Settings, Linked Slack accounts).
+        This Slack account is already linked to another Stackurity account in {org}. That person has to unlink it first (account menu, Your account).
       </Notice>
     );
   } else {
@@ -137,8 +137,12 @@ export function SlackLinkPage() {
   );
 }
 
-/** Settings, Linked Slack accounts: the signed-in person's own links. */
-export function SlackAccountsPage() {
+/**
+ * The signed-in person's linked Slack accounts in this organisation, with
+ * Unlink: on Your account (/account#slack). Clicks in Slack by these
+ * accounts act as the person.
+ */
+export function LinkedSlackAccounts() {
   const res = useLoad(() => api.get<List<SlackLink>>("/slack/links"), []);
   const act = useAction();
   const unlink = async (l: SlackLink) => {
@@ -149,20 +153,16 @@ export function SlackAccountsPage() {
   const items = res.data?.items ?? [];
   return (
     <>
-      <PageHeader
-        title="Linked Slack accounts"
-        help="notifications"
-        sub="Slack accounts whose clicks on Assign to me and Snooze in Slack act as you in this organisation."
-      />
       <ErrorBox error={res.error ?? act.error} title="Could not load or change the links" />
       {!res.data && !res.error ? (
         <Loading />
       ) : items.length === 0 ? (
-        <EmptyState title="No linked Slack accounts" help="notifications" helpLabel="Acting from Slack">
-          <p>When a Slack channel is set up with a Slack app, the first time you click Assign to me or Snooze in Slack you get a link to connect your Slack account here.</p>
-        </EmptyState>
+        <p className="muted">
+          None yet. The first time you click Assign to me or Snooze in a Stackurity message in Slack, Slack shows you a link to connect your Slack account.{" "}
+          <Link to="/help/notifications">Acting from Slack</Link>
+        </p>
       ) : (
-        <ul className="card slack-links">
+        <ul className="slack-links">
           {items.map((l) => (
             <li key={l.id} className="slack-link-row">
               <div className="slack-link-who">
