@@ -16,8 +16,9 @@ var (
 	// longer literals and do not match; a prefix ("STACKURITY_SECRET_") ends
 	// in an underscore and does not match either.
 	envLiteral = regexp.MustCompile(`"(STACKURITY_[A-Z0-9_]*[A-Z0-9])"`)
-	// envOrFile reads NAME and NAME_FILE (cmd/stackurity/server.go).
-	envOrFileCall = regexp.MustCompile(`envOrFile\("(STACKURITY_[A-Z0-9_]*[A-Z0-9])"\)`)
+	// fileHelper is a function or closure that reads NAME and NAME_FILE, such
+	// as envOrFile in cmd/stackurity/server.go: its name, then its parameter.
+	fileHelper = regexp.MustCompile(`(?s)(?:func (\w+)|(\w+) :?= func)\((\w+) string\)[^}]*?Getenv\((\w+) \+ "_FILE"\)`)
 	// shellVar is a variable a shell script or Docker Compose expands
 	// (${STACKURITY_ALLOW_HTTP:-}, ${STACKURITY_PORT:-8080}).
 	shellVar = regexp.MustCompile(`\$\{(STACKURITY_[A-Z0-9_]*[A-Z0-9])`)
@@ -62,8 +63,16 @@ func envReads(t *testing.T, dirs ...string) (code, tests map[string]bool) {
 			for _, m := range envLiteral.FindAllStringSubmatch(src, -1) {
 				into[m[1]] = true
 			}
-			for _, m := range envOrFileCall.FindAllStringSubmatch(src, -1) {
-				into[m[1]+"_FILE"] = true
+			// A variable passed to a helper in the same file that also
+			// reads NAME_FILE is read with _FILE too.
+			for _, h := range fileHelper.FindAllStringSubmatch(src, -1) {
+				if h[3] != h[4] {
+					continue
+				}
+				call := regexp.MustCompile(`\b` + h[1] + h[2] + `\("(STACKURITY_[A-Z0-9_]*[A-Z0-9])"\)`)
+				for _, m := range call.FindAllStringSubmatch(src, -1) {
+					into[m[1]+"_FILE"] = true
+				}
 			}
 			return nil
 		})
