@@ -1238,7 +1238,7 @@ The organisation's plan: status (`trial`, `trial_ended`, `awaiting_payment`, `ac
 
 **Who:** admin, a browser session · Stackurity Cloud
 
-`plan_id`, `extra_assets`, `country` (asked once; decides the currency), `replace`. Answers `billing`, `payment_url` (a page to pay on, or null) and `message` (what happened, for the admin; empty for an ordinary change). An upgrade the payment provider applies only at the end of the period (an Indian card mandate) applies now: `message` and `billing.upgrade` say what is added to the next invoice. 409 `replace_required` when the subscription cannot be changed (UPI, e-mandate): asked again with `"replace": true`, it is cancelled and replaced by the bigger plan, paid on `payment_url`. 503 `billing_off` while billing is off; 409 while a payment is being confirmed.
+`plan_id`, `extra_assets`, `country` (asked once; decides the currency), `replace`. Answers `billing`, `payment_url` (a page to pay on, or null) and `message` (what happened, for the admin; empty for an ordinary change). An upgrade the payment provider applies only at the end of the period (a card mandate it changes then) applies now: `message` and `billing.upgrade` say what is added to the next invoice. 409 `replace_required` when the payment provider cannot change the subscription's plan (UPI, e-mandate, an Indian card): asked again with `"replace": true`, it is cancelled and replaced by the bigger plan, paid on `payment_url`. 503 `billing_off` while billing is off; 409 while a payment is being confirmed.
 
 ### `POST /billing/cancel`
 
