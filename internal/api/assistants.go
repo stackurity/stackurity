@@ -43,7 +43,7 @@ import (
 //     active one), optionally one project, and a role no higher than their
 //     own;
 //   - one-hour access tokens and rotating refresh tokens (a replayed one
-//     ends the connection), revocation (RFC 7009), and Settings, Connected
+//     ends the connection), revocation (RFC 7009), and Settings → AI
 //     assistants to disconnect.
 //
 // An access token works only through /mcp: the tools call the API in

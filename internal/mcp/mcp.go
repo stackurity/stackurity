@@ -223,7 +223,7 @@ func (s *Server) dispatch(ctx context.Context, req request, modern bool) (any, *
 		}
 		if t.write != nil && !s.AllowWrites {
 			return nil, &rpcError{Code: codeInvalidParams, Message: "unknown tool " + p.Name + ": this connection is read-only " +
-				"(allow changes for it in Stackurity under Settings, Connected assistants; for stackurity mcp, --allow-writes)"}
+				"(allow changes for it in Stackurity under Settings → AI assistants; for stackurity mcp, --allow-writes)"}
 		}
 		args := map[string]any{}
 		if len(p.Arguments) > 0 && string(p.Arguments) != "null" {

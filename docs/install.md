@@ -73,6 +73,7 @@ Connecting an asset is quiet: one "connected" message, and no alerts, Jira issue
 | `STACKURITY_STALE_AFTER` | `48h` | An asset not seen for this long is marked stale |
 | `STACKURITY_SETUP_TOKEN` | random | Fixed setup token, for automated installs |
 | `STACKURITY_LOG_FORMAT` | `json` | `json` or `text` |
+| `STACKURITY_LOG_LEVEL` | `info` | `debug` adds debug messages to the log |
 | `STACKURITY_PLATFORM_WORKSPACE` | `1` | Workspace (id or slug) where platform incidents are raised for the operators ([Health](#health)) |
 | `STACKURITY_METRICS_ADDR` | off | Address for a separate Prometheus metrics listener, for example `127.0.0.1:9100` ([Health](#health)). Never the API port |
 | `STACKURITY_FEEDS` | on | `off` disables all intelligence feeds |
@@ -108,7 +109,7 @@ Without a licence Stackurity runs as **Community**: all detection, intelligence,
 
 [editions.md](editions.md) lists every capability by edition with its limits and prerequisites, and which features need the licensed build rather than only a licence.
 
-Install a licence under **Settings → Licence**, with `stackurity admin set-license`, or with `STACKURITY_LICENSE` / `STACKURITY_LICENSE_FILE` (which then wins). Licences are checked on the server and never phone home. When one expires, paid features keep working for 30 days, then stop. Detection and alerts are never affected, and an asset count above the licence's limit only shows a warning.
+Install a licence under **Settings → Licence**, with `stackurity admin set-license` (which reads the key from `STACKURITY_LICENSE_KEY`, or asks for it, and applies it when the server restarts), or with `STACKURITY_LICENSE` / `STACKURITY_LICENSE_FILE` (which then wins). Licences are checked on the server and never phone home. When one expires, paid features keep working for 30 days, then stop. Detection and alerts are never affected, and an asset count above the licence's limit only shows a warning.
 
 On a server that hosts several organisations, each workspace also has a **plan** (Settings → Workspaces). A workspace gets the lower of its plan and the licence; "As licensed" gives it the licence's edition.
 
@@ -119,7 +120,10 @@ One installation can serve several organisations, each in its own workspace; non
 ```sh
 docker compose exec stackurity stackurity admin create-workspace --name "Acme" --admin-email ops@acme.example
 docker compose exec stackurity stackurity admin list-workspaces
+docker compose exec stackurity stackurity admin rename-workspace --workspace 2 --name "Acme Ltd"
 ```
+
+`create-workspace` takes `--slug` for the short id in URLs (by default made from the name) and `--admin-name` for the display name of a new admin account; a new account's password is read from `STACKURITY_PASSWORD` or asked for. The other `admin` commands act in workspace 1 unless given `--workspace <id>` (for example `admin create-token --workspace 2`).
 
 Isolation is enforced by PostgreSQL row-level security as well as by the application ([design](design/workspaces.md)). The server switches to a role without superuser rights on every connection; if the database role would bypass row-level security, it refuses to serve more than one workspace.
 
@@ -154,7 +158,7 @@ Stackurity can sign people in through any OpenID Connect provider: Google Worksp
 curl -fsSL https://stackurity.example.com/install/agent.sh | sudo STACKURITY_ENROLL_CODE=enr_... sh
 ```
 
-To put the server in a project, create the code from the project (it then carries the project). Hosts enrolled with it are added to the project when they first report. `stackurity enroll --project <id>` (or `STACKURITY_PROJECT`) checks that the code is for that project and refuses, without using the code, if it is not; it never changes the code's project. `stackurity agent --project` makes the same assertion on every report.
+To put the server in a project, create the code from the project (it then carries the project). Hosts enrolled with it are added to the project when they first report. `stackurity enroll --project <id>` (or `STACKURITY_PROJECT`) checks that the code is for that project and refuses, without using the code, if it is not; it never changes the code's project. `stackurity agent --project` makes the same assertion on every report. `stackurity enroll`, which the script runs, writes the token and `agent.env` to `/etc/stackurity` (`--dir` for another directory) and does not replace an existing token unless given `--force`.
 
 The script downloads the agent from your Stackurity server and checks its SHA-256. It then creates an unprivileged `stackurity` user and exchanges the one-time code for a collector token. Finally it writes `/etc/stackurity/agent.env` with the settings you chose and starts a hardened systemd service that reports every 6 hours. The code works once (or as many times as you allowed) and expires after 24 hours by default, so a leaked command is short-lived, and no long-lived token is ever typed into a shell. To upgrade the agent later, run the same command without the code. Read the script first if you prefer: it is served at `/install/agent.sh`.
 
@@ -166,7 +170,11 @@ The host needs systemd, root for the install, and HTTPS access to the Stackurity
 docker compose exec stackurity stackurity admin create-token --name hosts
 ```
 
-Get the `stackurity` binary from the [latest release](https://github.com/stackurity/stackurity/releases/latest) (signed; see [security-audit.md](security-audit.md) to verify it), copy it out of the server image (`docker compose cp stackurity:/usr/local/bin/stackurity ./stackurity`), or build it with `make build` (or `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o stackurity ./cmd/stackurity`). The same binary is the server, the agent and the CLI.
+The token never expires unless you add `--ttl`, for example `admin create-token --name hosts --ttl 8760h` for a year.
+
+Get the `stackurity` binary from the [latest release](https://github.com/stackurity/stackurity/releases/latest) (signed; see [security-audit.md](security-audit.md) to verify it), copy it out of the server image (`docker compose cp stackurity:/usr/local/bin/stackurity ./stackurity`), or build it with `make build` (or `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o stackurity ./cmd/stackurity`). The same binary is the server (`stackurity server`), the agent and the CLI.
+
+On a workstation, for `stackurity scan`, `sbom` and `mcp`, install the CLI with Homebrew on macOS or Linux (`brew install stackurity/tap/stackurity`), or download `stackurity_<version>_<os>_<arch>` for Linux or macOS (amd64 or arm64) or Windows (amd64) from the [latest release](https://github.com/stackurity/stackurity/releases/latest) and put it on your `PATH`. Every command that talks to the server takes `--server` and `--token-file` (or `STACKURITY_SERVER` and `STACKURITY_TOKEN_FILE`).
 
 On each host, create the agent user and its directory, install the binary and save the token:
 
@@ -200,7 +208,7 @@ PrivateTmp=yes
 WantedBy=multi-user.target
 ```
 
-The agent reads `/etc/os-release` and the dpkg, rpm or apk database. It does not install or change software. It also reports whether the host needs a reboot to run what is installed: the distro's `/run/reboot-required` flag (Debian, Ubuntu), or a newer kernel of the same flavour in `/lib/modules` than the one running. Patched packages protect nothing until the process or kernel restarts, so these hosts are listed under **Assets → Reboot pending**. Inside a container the state is reported as unknown. RPM hosts need the `rpm` binary, which is always present on them. Use `stackurity agent --once -o -` to see exactly what would be sent: a JSON list of batches, the OS packages first, then the host's other software, then one per application.
+The agent reads `/etc/os-release` and the dpkg, rpm or apk database. It does not install or change software. It also reports whether the host needs a reboot to run what is installed: the distro's `/run/reboot-required` flag (Debian, Ubuntu), or a newer kernel of the same flavour in `/lib/modules` than the one running. Patched packages protect nothing until the process or kernel restarts, so these hosts are listed under **Assets → Reboot pending**. Inside a container the state is reported as unknown. RPM hosts need the `rpm` binary, which is always present on them. Use `stackurity agent --once --output -` to see exactly what would be sent: a JSON list of batches, the OS packages first, then the host's other software, then one per application.
 
 Enable it with `sudo systemctl enable --now stackurity-agent`; the host appears under **Assets** after the first run. Each host uses the same unit, so adding servers means repeating these steps (one token can serve many hosts, or create one per host so it can be revoked alone).
 
@@ -229,14 +237,14 @@ The agent user needs read access to the application directories. Add it to the d
 
 There are two ways to collect repository inventory:
 
-- **Server-side.** Under **Integrations**, add a Git repository (HTTPS only). Private repositories need a read-only token referenced as `env:STACKURITY_SECRET_<NAME>`. The server makes a shallow clone, reads the lockfiles and deletes the clone. Hooks, submodules, LFS and scripts are never run.
+- **Server-side.** Under **Settings → Integrations**, add a Git repository (HTTPS only). Private repositories need a read-only token referenced as `env:STACKURITY_SECRET_<NAME>`. The server makes a shallow clone, reads the lockfiles and deletes the clone. Hooks, submodules, LFS and scripts are never run.
 - **CI.** Run this in your pipeline:
 
   ```sh
   stackurity scan . --git-url "$CI_REPOSITORY_URL" --environment production
   ```
 
-  Use the same `--git-url` as the integration so both land on one asset.
+  Use the same `--git-url` (or `STACKURITY_GIT_URL`) as the integration so both land on one asset.
 
   To fail the pipeline on findings, add a threshold. The command uploads the
   scan, waits for the server to evaluate it and prioritise its findings,
@@ -336,7 +344,7 @@ Plugins are executables in `STACKURITY_PLUGIN_DIR`. To add your own, read [plugi
 
 ### Container images
 
-Under **Integrations**, add a container image such as `ghcr.io/acme/shop:1.4`. The bundled Syft reads the image straight from the registry: no Docker daemon is needed and nothing in the image runs. For a private registry, set a secret reference (a token, or a password together with `username`).
+Under **Settings → Integrations**, add a container image such as `ghcr.io/acme/shop:1.4`. The bundled Syft reads the image straight from the registry: no Docker daemon is needed and nothing in the image runs. For a private registry, set a secret reference (a token, or a password together with `username`).
 
 ### SBOMs
 
@@ -345,7 +353,7 @@ stackurity sbom import image.cdx.json          # CycloneDX or SPDX JSON
 stackurity sbom export --asset 12 -o asset.cdx.json
 ```
 
-`--project <id or name>` (or `STACKURITY_PROJECT`) on `sbom import` files the asset in that project (an admin's token, or a collector token made for the project); on `sbom export` it scopes the request, so an asset outside the project is not found.
+`sbom import` derives the asset from the document; `--asset-name` attaches it to the asset of that name instead, of the kind `--asset-kind` gives (default `application`), and `--environment` sets its environment label. `--project <id or name>` (or `STACKURITY_PROJECT`) on `sbom import` files the asset in that project (an admin's token, or a collector token made for the project); on `sbom export` it scopes the request, so an asset outside the project is not found.
 
 ## Intelligence
 

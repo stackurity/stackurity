@@ -122,7 +122,7 @@ ExecStart=/usr/local/bin/stackurity agent --remediate --interval 6h --action-int
 WantedBy=multi-user.target
 ```
 
-The remediation agent must run as root to use the package manager. Hosts you don't enrol keep running the unprivileged, read-only agent.
+The agent reads the allowlist from `/etc/stackurity/remediation-allow`; `stackurity agent --remediate --allowlist <file>` reads another file. The remediation agent must run as root to use the package manager. Hosts you don't enrol keep running the unprivileged, read-only agent.
 
 ## Repositories
 
