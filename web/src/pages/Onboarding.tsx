@@ -447,7 +447,7 @@ const POLL_MS = 3000;
 function useResults(project: Project, since: string, live: boolean) {
   const [data, setData] = useState<FirstResult[] | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
-  const timer = useRef<number>();
+  const timer = useRef<number>(undefined);
   useEffect(() => {
     let stop = false;
     const tick = async () => {
