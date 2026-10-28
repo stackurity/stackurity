@@ -277,7 +277,7 @@ func requireIngest(next http.Handler) http.Handler {
 }
 
 func (s *Server) securityHeaders(next http.Handler) http.Handler {
-	csp := "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+	csp := "default-src 'self'; img-src 'self' data:; style-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
 	if len(s.WidgetOrigins) > 0 {
 		o := strings.Join(s.WidgetOrigins, " ")
 		csp += "; script-src 'self' " + o + "; frame-src " + o

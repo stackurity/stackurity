@@ -116,6 +116,7 @@ The documentation is the test specification. Each control stated on this page, i
 |---|---|
 | CSRF header on cookie requests that change state; no anonymous access | `TestCSRFAndAuth` |
 | Session cookie is HttpOnly, SameSite=Strict, Secure when configured | `TestSessionCookieAttributes` |
+| Content-Security-Policy allows no inline styles or scripts (`style-src 'self'`; every dashboard page was checked in a browser for violations), and no `Server` or `X-Powered-By` header names the software | `TestCSPHasNoUnsafeInline` |
 | Role-based access | `TestRoles`, `TestWorkflowRoles`, `TestIsolationSweep` |
 | Sign-in, setup and password change are rate limited across replicas and fail closed | `TestSignInLimitPerAddressAcrossReplicas`, `TestSignInLimitPerAccount`, `TestSetupLimitAcrossReplicas`, `TestSignInLimitFailsClosed` |
 | First-admin setup needs the setup token | `TestSetup` |
