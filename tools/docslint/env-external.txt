@@ -1,0 +1,15 @@
+# STACKURITY_* variables the docs name that only the licensed build reads
+# (its code is not in this repository). One per line: the name, two spaces,
+# the reason. TestDocumentedEnvVarsExist (envvars_test.go) reads this file.
+STACKURITY_OIDC_ALLOWED_DOMAINS  single sign-on, licensed build
+STACKURITY_OIDC_CLIENT_ID  single sign-on, licensed build
+STACKURITY_OIDC_CLIENT_SECRET  single sign-on, licensed build
+STACKURITY_OIDC_CLIENT_SECRET_FILE  single sign-on, licensed build
+STACKURITY_OIDC_DEFAULT_ROLE  single sign-on, licensed build
+STACKURITY_OIDC_ISSUER  single sign-on, licensed build
+STACKURITY_OIDC_LABEL  single sign-on, licensed build
+STACKURITY_OIDC_REDIRECT_URL  single sign-on, licensed build
+STACKURITY_OIDC_ROLE_CLAIM  single sign-on, licensed build
+STACKURITY_OIDC_ROLE_MAP  single sign-on, licensed build
+STACKURITY_OIDC_SCOPES  single sign-on, licensed build
+STACKURITY_OIDC_WORKSPACE  single sign-on, licensed build

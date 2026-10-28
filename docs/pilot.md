@@ -4,20 +4,21 @@ A pilot answers one question: **does Stackurity find something important on your
 
 ## Two ways to run it
 
-| | Hosted workspace | On your own server |
+| | Stackurity Cloud | On your own server |
 |---|---|---|
 | What you install | Only the agents and, if you like, a CI step | Stackurity itself (Docker Compose or Helm) plus the agents |
-| Where your inventory lives | In your own workspace on app.stackurity.dev, isolated from every other workspace by the database itself. At the end of the pilot the workspace is disabled, and its data is removed when you ask | On your server; nothing leaves it except anonymous downloads of public vulnerability data |
+| How to start | Sign up at [app.stackurity.dev](https://app.stackurity.dev) for a 14-day free trial, no card needed | [install.md](install.md) |
+| Where your inventory lives | In your own organisation on app.stackurity.dev, isolated from every other organisation by the database itself. If you do not choose a [plan](https://stackurity.dev/pricing.html) by the end of the trial, the organisation becomes read-only (you can still sign in and export), and its data is deleted after 30 days read-only | On your server; nothing leaves it except anonymous downloads of public vulnerability data |
 | Setup time | About 15 minutes | About 30 minutes |
 | Best when | You want to see results quickly | Your policies do not allow inventory data to leave your network |
 
-Both run the same release, and everything in the [Community edition](editions.md) is available. Pro features (automatic fixing, several teams, the evidence report, single sign-on) can be switched on for the pilot with a time-limited licence.
+Both run the same release, and everything in the [Community edition](editions.md) is available. The Cloud trial includes the Pro features of the Team plan, with up to 20 assets and 3 projects, and its reports are shortened and marked as a trial. On your own server, Pro features (automatic fixing, several teams, the evidence report, single sign-on) can be switched on for the pilot with a time-limited licence.
 
 ## Week by week
 
 **Day 1: connect.** About 30 minutes together on a call.
 - Install the agent on a few Linux servers, including at least one in production (**Assets → Add server** gives a one-line command; the agent is read-only and unprivileged, see [install.md](install.md)).
-- Add two or three repositories under **Integrations**, or add [`stackurity/scan-action`](https://github.com/marketplace/actions/stackurity-scan) to one CI pipeline.
+- Add two or three repositories under **Settings → Integrations**, or add [`stackurity/scan-action`](https://github.com/marketplace/actions/stackurity-scan) to one CI pipeline.
 - Optional: container images, a Kubernetes cluster ([kubernetes.md](kubernetes.md)) or AWS managed services.
 
 **Week 1: look.** On your own, 30 to 60 minutes.

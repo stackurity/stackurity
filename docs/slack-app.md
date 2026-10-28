@@ -30,7 +30,7 @@ One Slack app serves every organisation on the server. A Slack workspace can be 
 
    | Variable | Value |
    |---|---|
-   | `STACKURITY_SLACK_CLIENT_ID` | Client ID |
+   | `STACKURITY_SLACK_CLIENT_ID` (or `_FILE`) | Client ID |
    | `STACKURITY_SLACK_CLIENT_SECRET` (or `_FILE`, a file holding it) | Client Secret |
    | `STACKURITY_SLACK_SIGNING_SECRET` (or `_FILE`) | Signing Secret |
 

@@ -1,0 +1,12 @@
+# Routes the server registers that have no heading of their own in
+# docs/api.md yet, as
+# "METHOD /path" with /api/v1 removed. TestRoutesDocumented (routes_test.go)
+# reads this file.
+#
+# Entries must only be removed, never added: document a route in
+# docs/api.md (and internal/api/openapi.json), then delete its line here.
+# The test fails while a documented route is still listed, so the list
+# shrinks as the docs catch up. A new route is documented in the same pull
+# request that adds it.
+#
+# Empty since docs/api.md gave every route its own heading (0.13.0).

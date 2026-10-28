@@ -39,7 +39,7 @@ type SlackApp struct {
 	HTTP      *http.Client
 }
 
-// SlackAppFromEnv reads STACKURITY_SLACK_CLIENT_ID,
+// SlackAppFromEnv reads STACKURITY_SLACK_CLIENT_ID (or _FILE),
 // STACKURITY_SLACK_CLIENT_SECRET (or _FILE) and
 // STACKURITY_SLACK_SIGNING_SECRET (or _FILE). With none the app is off
 // (nil); with some but not all it is a configuration error.
