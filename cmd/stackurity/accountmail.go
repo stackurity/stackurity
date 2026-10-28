@@ -7,10 +7,29 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/stackurity/stackurity/internal/auth"
 	"github.com/stackurity/stackurity/internal/notify"
+	"github.com/stackurity/stackurity/internal/store"
 )
+
+// sessionIdleTimeout reads STACKURITY_SESSION_IDLE_TIMEOUT: a Go duration
+// (30m by default) after which an unused browser session ends, or off.
+func sessionIdleTimeout() (time.Duration, error) {
+	v := strings.TrimSpace(os.Getenv("STACKURITY_SESSION_IDLE_TIMEOUT"))
+	switch v {
+	case "":
+		return 30 * time.Minute, nil
+	case "off", "0":
+		return 0, nil
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d < time.Minute || d > store.SessionTTL {
+		return 0, fmt.Errorf("STACKURITY_SESSION_IDLE_TIMEOUT must be a duration from 1m to 12h (for example 30m), or off")
+	}
+	return d, nil
+}
 
 // breachChecker is the breached-password check (docs/network.md):
 // STACKURITY_BREACHED_PASSWORD_CHECK=off turns it off, and

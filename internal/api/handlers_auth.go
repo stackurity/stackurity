@@ -2,6 +2,7 @@ package api
 
 import (
 	"crypto/subtle"
+	"errors"
 	"github.com/stackurity/stackurity/internal/license"
 	"net/http"
 	"strconv"
@@ -150,6 +151,14 @@ func (s *Server) startSessionWith(w http.ResponseWriter, r *http.Request, u *sto
 		s.fail(w, r, err)
 		return
 	}
+	// A new session ID at every sign-in: a session the browser already
+	// had (someone else's, or one planted in it) ends here.
+	if old := sessionSecret(r); old != "" {
+		if err := s.Store.DeleteSession(r.Context(), old); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+	}
 	if u, err = s.Store.GetUser(tenant.WithWorkspace(r.Context(), ws), u.ID); err != nil {
 		s.fail(w, r, err)
 		return
@@ -199,7 +208,13 @@ func (s *Server) rotateSession(w http.ResponseWriter, r *http.Request, opts stor
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(sessionCookie); err == nil {
-		_ = s.Store.DeleteSession(r.Context(), c.Value)
+		if uid, ws, email, err := s.Store.EndSession(r.Context(), c.Value); err == nil && uid > 0 {
+			ctx := r.Context()
+			if ws > 0 {
+				ctx = tenant.WithWorkspace(ctx, ws)
+			}
+			_ = s.Store.Audit(ctx, store.Actor{Type: "user", ID: uid, Name: email, RemoteAddr: clientIP(r)}, "auth.logout", "user", itoa(uid), nil)
+		}
 	}
 	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", HttpOnly: true, Secure: s.CookieSecure,
 		SameSite: http.SameSiteStrictMode, MaxAge: -1})
@@ -391,8 +406,11 @@ func (s *Server) revokeToken(w http.ResponseWriter, r *http.Request) {
 
 func itoa(i int64) string { return strconv.FormatInt(i, 10) }
 
-// changePassword lets a signed-in user change their own password. Other
-// sessions are signed out; API tokens are unaffected.
+// changePassword lets a signed-in user change their own password. Their
+// other sessions end, and this one gets a new session ID. Connected AI
+// assistants are disconnected unless revoke_assistants is false; API tokens
+// are kept unless revoke_tokens is true, and the answer says how many were
+// kept so the page can list them.
 func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 	p := principal(r)
 	if p.User == nil || !p.Session {
@@ -404,27 +422,51 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Current string `json:"current_password"`
-		New     string `json:"new_password"`
+		Current          string `json:"current_password"`
+		New              string `json:"new_password"`
+		RevokeTokens     bool   `json:"revoke_tokens"`
+		RevokeAssistants *bool  `json:"revoke_assistants"`
 	}
 	if err := decode(r, &req); err != nil {
 		s.fail(w, r, err)
+		return
+	}
+	wrong := func() {
+		_ = s.Store.Audit(r.Context(), p.Actor(r), "auth.password_change_failed", "user", itoa(p.User.ID), nil)
+		writeError(w, 400, "bad_request", "current password is incorrect")
+	}
+	if ok, err := s.Store.CheckOwnPassword(r.Context(), p.User.ID, req.Current); err != nil {
+		s.fail(w, r, err)
+		return
+	} else if !ok {
+		wrong()
 		return
 	}
 	if err := s.checkNewPassword(r.Context(), req.New); err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	c, _ := r.Cookie(sessionCookie)
-	if err := s.Store.ChangeOwnPassword(r.Context(), p.User.ID, req.Current, req.New, c.Value); err != nil {
-		if err == store.ErrNotFound {
-			_ = s.Store.Audit(r.Context(), p.Actor(r), "auth.password_change_failed", "user", itoa(p.User.ID), nil)
-			writeError(w, 400, "bad_request", "current password is incorrect")
-			return
-		}
+	rv := store.Revoke{Tokens: req.RevokeTokens, Assistants: req.RevokeAssistants == nil || *req.RevokeAssistants}
+	out, err := s.Store.ChangePassword(r.Context(), p.User.ID, req.Current, req.New, sessionSecret(r), rv)
+	if errors.Is(err, store.ErrNotFound) {
+		wrong()
+		return
+	}
+	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	_ = s.Store.Audit(r.Context(), p.Actor(r), "auth.password_changed", "user", itoa(p.User.ID), nil)
-	w.WriteHeader(204)
+	_ = s.Store.Audit(r.Context(), p.Actor(r), "auth.password_changed", "user", itoa(p.User.ID), out)
+	// What the session may do changed (a temporary password is gone): a
+	// new session ID, signed in as before.
+	if err := s.rotateSession(w, r, store.SessionOpts{PasswordLogin: p.PasswordSession, MFA: p.User.MFAEnabled && p.PasswordSession}); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	tokens, _, err := s.Store.CountCredentials(r.Context(), p.User.ID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"revoked": out, "tokens_kept": tokens})
 }

@@ -25,6 +25,9 @@ type Store struct {
 	// JobLockTimeout is how long a job stays claimed without its worker
 	// renewing the lock; zero means DefaultJobLockTimeout. Tests shorten it.
 	JobLockTimeout time.Duration
+	// SessionIdle ends a browser session unused for this long, on top of
+	// SessionTTL; zero means no idle timeout (STACKURITY_SESSION_IDLE_TIMEOUT).
+	SessionIdle time.Duration
 }
 
 func New(pool *pgxpool.Pool) *Store { return &Store{Pool: pool} }

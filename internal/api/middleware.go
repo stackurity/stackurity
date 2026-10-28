@@ -117,6 +117,8 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 			case !errors.Is(err, store.ErrNotFound):
 				s.credentialsUnavailable(w, r, err)
 				return
+			default:
+				s.sessionEnded(r, err)
 			}
 		}
 		if p != nil {

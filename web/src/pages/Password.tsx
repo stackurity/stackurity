@@ -1,4 +1,5 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { Link } from "react-router";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { useAction } from "../hooks";
@@ -171,18 +172,41 @@ interface ChangeResult {
 /** Your account → Password, and the screen after an administrator set a temporary password. */
 export function ChangePasswordForm({ onDone }: { onDone?: (r: ChangeResult | undefined) => void }) {
   const [f, setF] = useState({ current: "", password: "", confirm: "" });
+  const [revoke, setRevoke] = useState({ assistants: true, tokens: false });
   const [localErr, setLocalErr] = useState<string | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
+  const [msg, setMsg] = useState<ReactNode>(null);
   const act = useAction();
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setLocalErr(null);
     setMsg(null);
     if (f.password !== f.confirm) return setLocalErr("Passwords do not match.");
-    const r = await act.run(() => api.post<ChangeResult | undefined>("/auth/password", { current_password: f.current, new_password: f.password }).then((x) => x ?? {}));
+    const r = await act.run(() =>
+      api
+        .post<ChangeResult | undefined>("/auth/password", {
+          current_password: f.current,
+          new_password: f.password,
+          revoke_assistants: revoke.assistants,
+          revoke_tokens: revoke.tokens,
+        })
+        .then((x) => x ?? {}),
+    );
     if (r === undefined) return;
     setF({ current: "", password: "", confirm: "" });
-    setMsg("Your password was changed. Your other sessions were signed out.");
+    const kept = r.tokens_kept ?? 0;
+    setMsg(
+      <>
+        Your password was changed. Your other sessions were signed out
+        {r.revoked?.assistants ? `, ${r.revoked.assistants} AI assistant${r.revoked.assistants === 1 ? " was" : "s were"} disconnected` : ""}
+        {r.revoked?.tokens ? ` and ${r.revoked.tokens} API token${r.revoked.tokens === 1 ? " was" : "s were"} revoked` : ""}.
+        {kept > 0 && (
+          <>
+            {" "}
+            {kept} API token{kept === 1 ? " still works" : "s still work"}: <Link to="/settings/tokens">review them</Link>.
+          </>
+        )}
+      </>,
+    );
     onDone?.(r);
   };
   return (
@@ -199,6 +223,14 @@ export function ChangePasswordForm({ onDone }: { onDone?: (r: ChangeResult | und
         <input id="current-password" type="password" required autoComplete="current-password" value={f.current} onChange={(e) => setF({ ...f, current: e.target.value })} />
       </div>
       <NewPasswordFields value={f} onChange={(v) => setF({ ...f, ...v })} />
+      <p className="hint">Your other sessions are signed out.</p>
+      <label className="check">
+        <input type="checkbox" checked={revoke.assistants} onChange={(e) => setRevoke({ ...revoke, assistants: e.target.checked })} /> Also disconnect my AI
+        assistants
+      </label>
+      <label className="check">
+        <input type="checkbox" checked={revoke.tokens} onChange={(e) => setRevoke({ ...revoke, tokens: e.target.checked })} /> Also revoke my API tokens
+      </label>
       <div className="form-actions">
         <button type="submit" className="btn btn-primary" disabled={act.pending}>
           Change password

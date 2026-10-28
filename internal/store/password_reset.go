@@ -151,8 +151,7 @@ func revokeCredentials(ctx context.Context, tx pgx.Tx, userID int64, keep string
 }
 
 // ChangePassword verifies the current password, sets the new one, and ends
-// every other session of the user plus what rv names. It is
-// ChangeOwnPassword with a choice of what else to revoke.
+// every other session of the user (keepSession stays) plus what rv names.
 func (s *Store) ChangePassword(ctx context.Context, userID int64, current, next, keepSession string, rv Revoke) (Revoked, error) {
 	var out Revoked
 	var hash string

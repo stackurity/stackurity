@@ -108,6 +108,7 @@ Connecting an asset is quiet: one "connected" message, and no alerts, Jira issue
 | `STACKURITY_LICENSE` / `_FILE` | — | Licence key; when set, the dashboard cannot change it |
 | `STACKURITY_PACK_TRUSTED_KEYS` | — | File of `publisher base64-key` lines: publishers whose [stack packs](packs.md) are accepted besides official ones |
 | `STACKURITY_PACK_ALLOW_UNSIGNED` | `false` | Accept unsigned stack packs (pack development only) |
+| `STACKURITY_SESSION_IDLE_TIMEOUT` | `30m` | A browser session unused this long ends (1m to 12h, or `off`), on top of the 12 hours from sign-in ([Sessions](#sessions)) |
 | `STACKURITY_BREACHED_PASSWORD_CHECK` | `on` | `off` stops checking new passwords against known data breaches; `STACKURITY_BREACHED_PASSWORD_URL` points the check at a mirror ([network.md](network.md#breached-password-check)) |
 | `STACKURITY_SMTP_HOST`, `STACKURITY_SMTP_PORT` (`587`), `STACKURITY_SMTP_USERNAME`, `STACKURITY_SMTP_PASSWORD` / `_FILE`, `STACKURITY_SMTP_FROM`, `STACKURITY_SMTP_TLS` (`starttls`, `tls` or `none`) | — | The mail server for email about people's own accounts: password reset links ([Forgotten passwords](#forgotten-passwords)). Needs `STACKURITY_BASE_URL`. Not used for notifications, which each organisation sets up |
 
@@ -172,6 +173,14 @@ Passkeys and security keys (WebAuthn) are not supported yet.
 ### Passwords
 
 Passwords are 12 to 256 characters, stored with argon2id. A new password is also checked against known data breaches (Have I Been Pwned's Pwned Passwords, with only five characters of its SHA-1 sent: see [network.md](network.md#breached-password-check)) and refused if found; if the check cannot be reached the password is accepted and a warning logged. `STACKURITY_BREACHED_PASSWORD_CHECK=off` turns the check off.
+
+### Sessions
+
+A browser session ends 30 minutes after it was last used (`STACKURITY_SESSION_IDLE_TIMEOUT`), and in any case 12 hours after sign-in. The session cookie is `HttpOnly`, `SameSite=Strict`, and `Secure` unless `STACKURITY_COOKIE_SECURE=false`; only a hash of it is stored.
+
+- Every sign-in gets a new session ID, and a session the browser already had ends. Turning on two-factor sign-in and changing your password replace the current session's ID too. Roles are read on every request, so a role change takes effect at once without one.
+- Changing your password (**Your account → Password**) signs out your other sessions and, unless you untick it, disconnects your AI assistants. API tokens keep working unless you tick **Also revoke my API tokens**; the page then says how many still work, with a link to review them.
+- The activity log records `auth.login`, `auth.logout`, and `auth.session_expired` with `reason` `idle` or `absolute` (when the session is next used, or by the hourly housekeeping if it never is).
 
 ### Forgotten passwords
 

@@ -75,7 +75,7 @@ Signs in with `email` and `password` and starts a session (cookie). Limited per 
 
 **Who:** any signed-in user
 
-Ends the session.
+Ends the session; audited as `auth.logout`.
 
 ### `GET /auth/me`
 
@@ -93,7 +93,7 @@ The caller: `user`, `role`, `workspace`, `workspaces`, `edition` and `features`,
 
 **Who:** any signed-in user
 
-Changes your own password (`current_password`, `new_password`). Your other sessions are signed out.
+Changes your own password (`current_password`, `new_password`). Your other sessions are signed out and this one gets a new session cookie. `revoke_assistants` (default `true`) disconnects your AI assistants; `revoke_tokens` (default `false`) revokes your API tokens. Answers 200 with `revoked` (`sessions`, `tokens`, `assistants`) and `tokens_kept`.
 
 ### `GET /auth/mfa`
 

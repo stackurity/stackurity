@@ -646,7 +646,7 @@ func TestChangeOwnPassword(t *testing.T) {
 	if code := a.do("POST", "/api/v1/auth/password", map[string]string{"current_password": pw, "new_password": "short"}, nil); code != 400 {
 		t.Errorf("weak new password: %d", code)
 	}
-	if code := a.do("POST", "/api/v1/auth/password", map[string]string{"current_password": pw, "new_password": "another long passphrase"}, nil); code != 204 {
+	if code := a.do("POST", "/api/v1/auth/password", map[string]string{"current_password": pw, "new_password": "another long passphrase"}, nil); code != 200 {
 		t.Fatalf("change: %d", code)
 	}
 	if code := a.do("GET", "/api/v1/auth/me", nil, nil); code != 200 {

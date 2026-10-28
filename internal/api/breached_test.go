@@ -48,7 +48,7 @@ func TestBreachedPasswordsRefused(t *testing.T) {
 	if code := admin.do("PATCH", fmt.Sprintf("/api/v1/users/%d", me.User.ID), map[string]string{"password": breached}, nil); code != 400 {
 		t.Errorf("admin sets a breached password: %d", code)
 	}
-	if code := admin.do("POST", "/api/v1/auth/password", map[string]string{"current_password": pw, "new_password": "not in any list at all"}, nil); code != 204 {
+	if code := admin.do("POST", "/api/v1/auth/password", map[string]string{"current_password": pw, "new_password": "not in any list at all"}, nil); code != 200 {
 		t.Errorf("change to a fine password: %d", code)
 	}
 	if calls.Load() == 0 || badPrefix.Load() {
@@ -57,7 +57,7 @@ func TestBreachedPasswordsRefused(t *testing.T) {
 
 	// Unreachable: accepted (and logged).
 	hibp.Close()
-	if code := admin.do("POST", "/api/v1/auth/password", map[string]string{"current_password": "not in any list at all", "new_password": breached}, nil); code != 204 {
+	if code := admin.do("POST", "/api/v1/auth/password", map[string]string{"current_password": "not in any list at all", "new_password": breached}, nil); code != 200 {
 		t.Errorf("check unreachable: %d, want the password accepted", code)
 	}
 }

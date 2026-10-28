@@ -224,3 +224,12 @@ func sessionGate(w http.ResponseWriter, r *http.Request, p *Principal) bool {
 	}
 	return false
 }
+
+// sessionEnded records a session found past its idle or absolute limit at
+// a request (the request then continues signed out).
+func (s *Server) sessionEnded(r *http.Request, err error) {
+	var exp *store.SessionExpired
+	if errors.As(err, &exp) {
+		s.Store.AuditSessionExpired(r.Context(), exp, clientIP(r))
+	}
+}

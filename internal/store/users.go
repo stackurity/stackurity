@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -381,18 +382,59 @@ func (s *Store) SessionUser(ctx context.Context, secret string) (*User, int64, e
 	return sess.User, sess.Workspace, nil
 }
 
-// SessionInfo is SessionUser with how the session was signed in.
+// SessionExpired is a session that ended because it was unused for too
+// long ("idle") or reached SessionTTL ("absolute"). It is deleted when
+// found; the caller records it.
+type SessionExpired struct {
+	Reason    string
+	UserID    int64
+	Email     string
+	Workspace int64
+}
+
+func (e *SessionExpired) Error() string { return "session expired (" + e.Reason + ")" }
+
+// Unwrap makes an expired session ErrNotFound to callers that only check
+// whether it is valid.
+func (e *SessionExpired) Unwrap() error { return ErrNotFound }
+
+// SessionInfo is SessionUser with how the session was signed in. A session
+// past its idle or absolute limit is deleted and returned as
+// *SessionExpired (which is ErrNotFound).
 func (s *Store) SessionInfo(ctx context.Context, secret string) (*Session, error) {
 	var id int64
 	var ws *int64
 	var passwordLogin bool
 	var mfaAt *time.Time
-	var changePassword bool
-	err := s.Pool.QueryRow(ctx, `SELECT s.user_id, s.workspace_id, s.password_login, s.mfa_at, u.password_change_required
+	var changePassword, absolute, idle, touch bool
+	var email string
+	err := s.Pool.QueryRow(ctx, `SELECT s.user_id, s.workspace_id, s.password_login, s.mfa_at, u.password_change_required, u.email,
+		s.expires_at <= now(), $2 > 0 AND s.last_seen_at < now() - make_interval(secs => $2), s.last_seen_at < now() - interval '1 minute'
 		FROM sessions s JOIN users u ON u.id = s.user_id
-		WHERE s.token_hash = $1 AND s.expires_at > now() AND NOT u.disabled`, auth.HashToken(secret)).Scan(&id, &ws, &passwordLogin, &mfaAt, &changePassword)
+		WHERE s.token_hash = $1 AND NOT u.disabled`, auth.HashToken(secret), s.SessionIdle.Seconds()).
+		Scan(&id, &ws, &passwordLogin, &mfaAt, &changePassword, &email, &absolute, &idle, &touch)
 	if err != nil {
 		return nil, notFound(err)
+	}
+	if absolute || idle {
+		tag, err := s.Pool.Exec(ctx, `DELETE FROM sessions WHERE token_hash = $1`, auth.HashToken(secret))
+		if err != nil {
+			return nil, err
+		}
+		if tag.RowsAffected() == 0 {
+			return nil, ErrNotFound // another request ended it and records it
+		}
+		e := &SessionExpired{Reason: "idle", UserID: id, Email: email}
+		if absolute {
+			e.Reason = "absolute"
+		}
+		if ws != nil {
+			e.Workspace = *ws
+		}
+		return nil, e
+	}
+	if touch {
+		_, _ = s.Pool.Exec(ctx, `UPDATE sessions SET last_seen_at = now() WHERE token_hash = $1`, auth.HashToken(secret))
 	}
 	var wsID int64
 	if ws != nil {
@@ -430,6 +472,21 @@ func (s *Store) DeleteSession(ctx context.Context, secret string) error {
 	return err
 }
 
+// EndSession signs a session out and returns whose it was (userID 0 when
+// there was none), for the activity log.
+func (s *Store) EndSession(ctx context.Context, secret string) (userID, workspace int64, email string, err error) {
+	var ws *int64
+	err = s.Pool.QueryRow(ctx, `DELETE FROM sessions s USING users u WHERE s.token_hash = $1 AND u.id = s.user_id
+		RETURNING s.user_id, s.workspace_id, u.email`, auth.HashToken(secret)).Scan(&userID, &ws, &email)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, 0, "", nil
+	}
+	if ws != nil {
+		workspace = *ws
+	}
+	return userID, workspace, email, err
+}
+
 func (s *Store) PurgeExpiredSessions(ctx context.Context) error {
 	if _, err := s.Pool.Exec(ctx, `DELETE FROM mfa_challenges WHERE expires_at < now()`); err != nil {
 		return err
@@ -437,8 +494,22 @@ func (s *Store) PurgeExpiredSessions(ctx context.Context) error {
 	if err := s.PurgePasswordResets(ctx); err != nil {
 		return err
 	}
-	_, err := s.Pool.Exec(ctx, `DELETE FROM sessions WHERE expires_at < now()`)
-	return err
+	// Sessions nobody came back to: each ending is recorded where it was
+	// working, as when one is found expired at a request.
+	rows, err := s.Pool.Query(ctx, `DELETE FROM sessions s USING users u
+		WHERE u.id = s.user_id AND (s.expires_at < now() OR ($1 > 0 AND s.last_seen_at < now() - make_interval(secs => $1)))
+		RETURNING CASE WHEN s.expires_at < now() THEN 'absolute' ELSE 'idle' END, s.user_id, u.email, COALESCE(s.workspace_id, 0)`, s.SessionIdle.Seconds())
+	if err != nil {
+		return err
+	}
+	ended, err := pgx.CollectRows(rows, pgx.RowToStructByPos[SessionExpired])
+	if err != nil {
+		return err
+	}
+	for _, e := range ended {
+		s.AuditSessionExpired(ctx, &e, "")
+	}
+	return nil
 }
 
 type Token struct {
@@ -710,31 +781,12 @@ func (s *Store) ListAudit(ctx context.Context, objectType, objectID string, p Pa
 	return out, total, err
 }
 
-// ChangeOwnPassword verifies the current password, sets the new one and ends
-// every other session of the user.
-func (s *Store) ChangeOwnPassword(ctx context.Context, userID int64, current, next, keepSession string) error {
-	var hash string
-	if err := s.Pool.QueryRow(ctx, `SELECT password_hash FROM users WHERE id = $1 AND NOT disabled`, userID).Scan(&hash); err != nil {
-		return notFound(err)
+// AuditSessionExpired records a session that ended by itself, in the
+// workspace it was working in (the platform's log when none).
+func (s *Store) AuditSessionExpired(ctx context.Context, e *SessionExpired, remoteAddr string) {
+	if e.Workspace > 0 {
+		ctx = tenant.WithWorkspace(ctx, e.Workspace)
 	}
-	if !auth.CheckPassword(hash, current) {
-		return ErrNotFound
-	}
-	if err := auth.ValidPassword(next); err != nil {
-		return err
-	}
-	if current == next {
-		return fmt.Errorf("the new password must differ from the current one: %w", ErrConflict)
-	}
-	h, err := auth.HashPassword(next)
-	if err != nil {
-		return err
-	}
-	return pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `UPDATE users SET password_hash = $2, password_change_required = false WHERE id = $1`, userID, h); err != nil {
-			return err
-		}
-		_, err := tx.Exec(ctx, `DELETE FROM sessions WHERE user_id = $1 AND token_hash <> $2`, userID, auth.HashToken(keepSession))
-		return err
-	})
+	_ = s.Audit(ctx, Actor{Type: "user", ID: e.UserID, Name: e.Email, RemoteAddr: remoteAddr}, "auth.session_expired", "user",
+		strconv.FormatInt(e.UserID, 10), map[string]any{"reason": e.Reason})
 }

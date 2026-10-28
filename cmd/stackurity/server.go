@@ -110,6 +110,9 @@ func serverCmd() *cobra.Command {
 			}
 			defer st.Pool.Close()
 			st.JobLockTimeout = tm.JobLock
+			if st.SessionIdle, err = sessionIdleTimeout(); err != nil {
+				return err
+			}
 			applied, err := db.Migrate(ctx, st.Pool)
 			if err != nil {
 				return err
