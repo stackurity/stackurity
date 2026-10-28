@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router";
-import { api, type ApiError, type CheckOption, type Finding, type FixGroup, type List } from "../api";
+import {
+  api,
+  type ApiError,
+  type CheckOption,
+  type Finding,
+  type FixGroup,
+  type List,
+} from "../api";
 import { useAuth } from "../auth";
 import { useAction, useLoad } from "../hooks";
 import { absTime, plural } from "../format";
@@ -23,7 +30,12 @@ export interface VerifyPlace {
 }
 
 export function fixPlaces(g: FixGroup): VerifyPlace[] {
-  if (g.places && g.places.length > 1) return g.places.map((p) => ({ group_id: p.group_id, asset_id: p.asset_id, asset_name: p.asset_name }));
+  if (g.places && g.places.length > 1)
+    return g.places.map((p) => ({
+      group_id: p.group_id,
+      asset_id: p.asset_id,
+      asset_name: p.asset_name,
+    }));
   return [{ group_id: g.id, asset_id: g.asset_id, asset_name: g.asset_name }];
 }
 
@@ -52,11 +64,21 @@ export function useCheckOptions(groupIds: string[]): CheckOptions {
   const res = useLoad(async () => {
     const ids = key ? key.split(",") : [];
     const chunks: string[][] = [];
-    for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK));
-    const lists = await Promise.all(chunks.map((c) => api.get<{ items: CheckOption[] }>("/checks/options", { fix_group: c.join(",") })));
+    for (let i = 0; i < ids.length; i += CHUNK)
+      chunks.push(ids.slice(i, i + CHUNK));
+    const lists = await Promise.all(
+      chunks.map((c) =>
+        api.get<{ items: CheckOption[] }>("/checks/options", {
+          fix_group: c.join(","),
+        }),
+      ),
+    );
     return lists.flatMap((l) => l.items);
   }, [key]);
-  const byGroup = useMemo(() => new Map((res.data ?? []).map((o) => [o.fix_group ?? "", o])), [res.data]);
+  const byGroup = useMemo(
+    () => new Map((res.data ?? []).map((o) => [o.fix_group ?? "", o])),
+    [res.data],
+  );
   const waiting = (res.data ?? []).some(pending);
   const { reload } = res;
   useEffect(() => {
@@ -72,14 +94,34 @@ function source(o: CheckOption): string {
   return o.host_name || o.asset_name;
 }
 
+/** "16:05" today, "Oct 27, 16:05" before: when a scan answered. */
 function when(iso: string | null | undefined): ReactNode {
-  return iso ? <time dateTime={iso}>{absTime(iso)}</time> : null;
+  if (!iso) return null;
+  const d = new Date(iso);
+  const today = d.toDateString() === new Date().toDateString();
+  const hm = d.toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const text = today
+    ? hm
+    : `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}, ${hm}`;
+  return (
+    <time dateTime={iso} title={absTime(iso)}>
+      {text}
+    </time>
+  );
 }
 
 /** What is still found for one place after a check: version and location of its open issues. */
 function StillThere({ o }: { o: CheckOption }) {
   const res = useLoad(
-    () => api.get<List<Finding>>("/findings", { fix_group: o.fix_group, status: "open", limit: 50 }),
+    () =>
+      api.get<List<Finding>>("/findings", {
+        fix_group: o.fix_group,
+        status: "open",
+        limit: 50,
+      }),
     [o.fix_group, o.last_check?.id],
   );
   const seen = new Map<string, Finding>();
@@ -110,28 +152,40 @@ function StillThere({ o }: { o: CheckOption }) {
 }
 
 /** One place's state: waiting, the result of the last check, or why it cannot be checked on demand. */
-function PlaceState({ o, recentOnly, many }: { o: CheckOption; recentOnly: boolean; many: boolean }) {
+function PlaceState({
+  o,
+  recentOnly,
+  many,
+}: {
+  o: CheckOption;
+  recentOnly: boolean;
+  many: boolean;
+}) {
   const c = o.last_check;
   const where = many ? <strong>{o.asset_name}</strong> : null;
   if (c && c.status !== "done") {
     return (
       <p className="small verify-pending" role="status">
         <span className="spinner" aria-hidden="true" />
-        {where}
-        {where && ": "}
-        {c.method === "integration" ? (
-          <>Scanning {o.asset_name} again… this takes a minute or two.</>
-        ) : c.status === "evaluating" ? (
-          <>The new scan of {source(o)} arrived; checking it now…</>
-        ) : c.method === "agent" ? (
-          <>Checking {source(o)}… usually within a minute.</>
-        ) : (
-          <>Waiting for the next scan of {o.asset_name}.</>
-        )}
+        <span>
+          {where}
+          {where && ": "}
+          {c.method === "integration" ? (
+            <>Scanning {o.asset_name} again… this takes a minute or two.</>
+          ) : c.status === "evaluating" ? (
+            <>The new scan of {source(o)} arrived; checking it now…</>
+          ) : c.method === "agent" ? (
+            <>Checking {source(o)}… usually within a minute.</>
+          ) : (
+            <>Waiting for the next scan of {o.asset_name}.</>
+          )}
+        </span>
       </p>
     );
   }
-  const recent = c?.completed_at && Date.now() - new Date(c.completed_at).getTime() < RECENT_MS;
+  const recent =
+    c?.completed_at &&
+    Date.now() - new Date(c.completed_at).getTime() < RECENT_MS;
   if (c && c.status === "done" && (recent || !recentOnly)) {
     switch (c.outcome) {
       case "passed":
@@ -139,7 +193,18 @@ function PlaceState({ o, recentOnly, many }: { o: CheckOption; recentOnly: boole
           <p className="small verify-ok" role="status">
             {where}
             {where && ": "}
-            Fixed, confirmed by a new scan of {source(o)} at {when(c.completed_at)}.
+            {o.reason === "removed" ? (
+              <>
+                No longer on {o.host_name || "its server"}: the directory is
+                gone, so its issues closed. Confirmed by a new scan at{" "}
+                {when(c.completed_at)}.
+              </>
+            ) : (
+              <>
+                Fixed, confirmed by a new scan{many ? "" : ` of ${source(o)}`}{" "}
+                at {when(c.completed_at)}.
+              </>
+            )}
           </p>
         );
       case "partly_fixed":
@@ -149,8 +214,11 @@ function PlaceState({ o, recentOnly, many }: { o: CheckOption; recentOnly: boole
             <p className="verify-bad">
               {where}
               {where && ": "}
-              {c.outcome === "partly_fixed" ? `Partly fixed (${c.fixed.toLocaleString()} gone). ` : ""}
-              Still found on {source(o)} by the scan at {when(c.completed_at)}:
+              {c.outcome === "partly_fixed"
+                ? `Partly fixed (${c.fixed.toLocaleString()} gone). `
+                : ""}
+              Still found {many ? "" : `on ${source(o)} `}by the scan at{" "}
+              {when(c.completed_at)}:
             </p>
             <StillThere o={o} />
           </div>
@@ -160,8 +228,12 @@ function PlaceState({ o, recentOnly, many }: { o: CheckOption; recentOnly: boole
           <p className="small verify-bad" role="status">
             {where}
             {where && ": "}
-            The scan of {source(o)} at {when(c.completed_at)} could not read everything, so what is left could not be confirmed gone.{" "}
-            <Link to={`/assets/${o.asset_id}?tab=coverage`}>See what it could not read</Link>.
+            The scan of {source(o)} at {when(c.completed_at)} could not read
+            everything, so what is left could not be confirmed gone.{" "}
+            <Link to={`/assets/${o.asset_id}?tab=coverage`}>
+              See what it could not read
+            </Link>
+            .
           </p>
         );
       case "expired":
@@ -179,7 +251,15 @@ function PlaceState({ o, recentOnly, many }: { o: CheckOption; recentOnly: boole
 }
 
 /** Why a place cannot be checked now, and what to do instead. */
-function NotOnDemand({ o, where, compact }: { o: CheckOption; where: ReactNode; compact: boolean }) {
+function NotOnDemand({
+  o,
+  where,
+  compact,
+}: {
+  o: CheckOption;
+  where: ReactNode;
+  compact: boolean;
+}) {
   const lead = (
     <>
       {where}
@@ -189,18 +269,30 @@ function NotOnDemand({ o, where, compact }: { o: CheckOption; where: ReactNode; 
   if (compact) {
     // Cards: one line; the fix's page has the commands.
     const line: Record<string, ReactNode> = {
-      removed: <>{o.app_dir ? <span className="mono">{o.app_dir}</span> : o.asset_name} is no longer on {o.host_name || "its server"}.</>,
+      removed: (
+        <>
+          {o.app_dir ? <span className="mono">{o.app_dir}</span> : o.asset_name}{" "}
+          is no longer on {o.host_name || "its server"}.
+        </>
+      ),
       agent: (
         <>
-          The agent on {source(o)} reports every 6 hours (last <RelativeTime iso={o.last_seen} />) and does not take check requests: restart it
-          to report now.
+          The agent on {source(o)} reports every 6 hours (last{" "}
+          <RelativeTime iso={o.last_seen} />) and does not take check requests:
+          restart it to report now.
         </>
       ),
       upload:
         o.asset_kind === "repository" ? (
-          <>{o.asset_name} is scanned in CI: after merging the fix, re-run the pipeline.</>
+          <>
+            {o.asset_name} is scanned in CI: after merging the fix, re-run the
+            pipeline.
+          </>
         ) : (
-          <>{o.asset_name} was uploaded: upload the new scan or SBOM after the fix.</>
+          <>
+            {o.asset_name} was uploaded: upload the new scan or SBOM after the
+            fix.
+          </>
         ),
     };
     const l = o.reason ? line[o.reason] : null;
@@ -216,7 +308,12 @@ function NotOnDemand({ o, where, compact }: { o: CheckOption; where: ReactNode; 
       return (
         <p className="small muted">
           {lead}
-          {o.app_dir ? <span className="mono">{o.app_dir}</span> : o.asset_name} is no longer on {o.host_name || "its server"}; its issues closed as
+          {o.app_dir ? (
+            <span className="mono">{o.app_dir}</span>
+          ) : (
+            o.asset_name
+          )}{" "}
+          is no longer on {o.host_name || "its server"}; its issues closed as
           removed.
         </p>
       );
@@ -225,10 +322,15 @@ function NotOnDemand({ o, where, compact }: { o: CheckOption; where: ReactNode; 
         <div className="small">
           <p>
             {lead}
-            The agent on {source(o)} does not take check requests (it is older than 0.7, or not running): it reports every 6 hours, last{" "}
-            <RelativeTime iso={o.last_seen} />. To report now, restart it on the server, or upgrade it so this works within a minute:
+            The agent on {source(o)} does not take check requests (it is older
+            than 0.7, or not running): it reports every 6 hours, last{" "}
+            <RelativeTime iso={o.last_seen} />. To report now, restart it on the
+            server, or upgrade it so this works within a minute:
           </p>
-          <CodeBlock label="Report now" text="sudo systemctl restart stackurity-agent" />
+          <CodeBlock
+            label="Report now"
+            text="sudo systemctl restart stackurity-agent"
+          />
         </div>
       );
     case "upload":
@@ -237,23 +339,30 @@ function NotOnDemand({ o, where, compact }: { o: CheckOption; where: ReactNode; 
           <div className="small">
             <p>
               {lead}
-              {o.asset_name} is scanned in CI: merge the fix, then re-run the pipeline (or scan it yourself with a collector token in{" "}
-              <span className="mono">STACKURITY_TOKEN</span>). The issues close when that scan no longer finds them.
+              {o.asset_name} is scanned in CI: merge the fix, then re-run the
+              pipeline (or scan it yourself with a collector token in{" "}
+              <span className="mono">STACKURITY_TOKEN</span>). The issues close
+              when that scan no longer finds them.
             </p>
-            <CodeBlock label="Scan now" text={`stackurity scan . --git-url "${o.git_url || "$CI_REPOSITORY_URL"}"`} />
+            <CodeBlock
+              label="Scan now"
+              text={`stackurity scan . --git-url "${o.git_url || "$CI_REPOSITORY_URL"}"`}
+            />
           </div>
         );
       if (o.asset_kind === "image")
         return (
           <p className="small">
-            {lead}Build and push the fixed image, then scan it again (<span className="mono">stackurity scan-image</span> in CI). The issues close
-            when the new scan no longer finds them.
+            {lead}Build and push the fixed image, then scan it again (
+            <span className="mono">stackurity scan-image</span> in CI). The
+            issues close when the new scan no longer finds them.
           </p>
         );
       return (
         <p className="small">
           {lead}
-          {o.asset_name} was uploaded (an SBOM or a scan): upload the new one after the fix. The issues close when it no longer lists them.
+          {o.asset_name} was uploaded (an SBOM or a scan): upload the new one
+          after the fix. The issues close when it no longer lists them.
         </p>
       );
     default:
@@ -281,7 +390,9 @@ export function FixVerify({
   const act = useAction();
   const [asked, setAsked] = useState(false);
   const places = fixPlaces(g);
-  const opts = places.map((p) => options.byGroup.get(p.group_id)).filter((o): o is CheckOption => Boolean(o));
+  const opts = places
+    .map((p) => options.byGroup.get(p.group_id))
+    .filter((o): o is CheckOption => Boolean(o));
   if (!options.loaded && !options.error) return null;
   const many = places.length > 1;
   const checkable = opts.filter((o) => o.on_demand);
@@ -290,31 +401,60 @@ export function FixVerify({
   const run = async () => {
     // "I applied this" for each place: its issues show as applied, waiting
     // for a check, and its agent (or integration) is asked to report now.
-    const ok = await act.run(() => Promise.all(checkable.map((o) => api.post(`/fix-groups/${encodeURIComponent(o.fix_group ?? "")}/applied`))));
+    const ok = await act.run(() =>
+      Promise.all(
+        checkable.map((o) =>
+          api.post(
+            `/fix-groups/${encodeURIComponent(o.fix_group ?? "")}/applied`,
+          ),
+        ),
+      ),
+    );
     if (ok) {
       setAsked(true);
       options.reload();
       onChecked?.();
     }
   };
-  const states = opts.map((o) => <PlaceState key={o.fix_group} o={o} recentOnly={recentOnly && !asked} many={many} />);
+  const states = opts.map((o) => (
+    <PlaceState
+      key={o.fix_group}
+      o={o}
+      recentOnly={recentOnly && !asked}
+      many={many}
+    />
+  ));
   const canAsk = canAct("engineer") && checkable.length > 0;
   return (
     <div className="fix-verify" aria-live="polite">
       {canAsk && !waiting && (
         <div className="fix-verify-ask">
-          <button type="button" className="btn btn-sm" disabled={act.pending} onClick={run}>
+          <button
+            type="button"
+            className="btn btn-sm"
+            disabled={act.pending}
+            onClick={run}
+          >
             {act.pending ? "Asking…" : "I've fixed it — check now"}
           </button>
           <span className="small muted">
-            Asks {hosts.length === 1 ? `${hosts[0]}` : plural(hosts.length, "source")} for a new scan
-            {many && checkable.length < places.length ? ` (${checkable.length} of ${places.length} places)` : ""}. Issues close only when it no
-            longer finds them.
+            Asks{" "}
+            {hosts.length === 1
+              ? `${hosts[0]}`
+              : plural(hosts.length, "source")}{" "}
+            for a new scan
+            {many && checkable.length < places.length
+              ? ` (${checkable.length} of ${places.length} places)`
+              : ""}
+            . Issues close only when it no longer finds them.
           </span>
         </div>
       )}
       {states}
-      <ErrorBox error={act.error ?? options.error} title="Could not ask for a new scan" />
+      <ErrorBox
+        error={act.error ?? options.error}
+        title="Could not ask for a new scan"
+      />
     </div>
   );
 }

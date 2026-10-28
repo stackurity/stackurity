@@ -16,7 +16,7 @@ import {
 } from "../api";
 import { useAuth } from "../auth";
 import { useAction, useDebounced, useFacets, useLoad } from "../hooks";
-import { plural } from "../format";
+import { assetKindLabel, plural } from "../format";
 import { FindingCards, FindingsTable } from "../components/Findings";
 import {
   ActionInstruction,
@@ -342,7 +342,10 @@ export function FixGroupDetailPage() {
         <Card title="Where">
           <p>
             <Link to={`/assets/${g.asset_id}`}>{g.asset_name}</Link>
-            <span className="muted"> · {g.environment || "no environment"}</span>
+            <span className="muted">
+              {" "}
+              · {assetKindLabel(g.asset_kind)} · {g.environment || "no environment"}
+            </span>
           </p>
           {g.component && (
             <p className="small">

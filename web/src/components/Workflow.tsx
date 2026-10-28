@@ -290,7 +290,7 @@ export function FindingActions({
             onClick={() => send({ action: "reopen", note: "" })}
             title="Return snoozed or ignored issues to new"
           >
-            Reopen
+            {closed ? "Reopen" : "Reopen snoozed or ignored"}
           </button>
         )}
       </div>

@@ -5,7 +5,7 @@ import { SetupChecklist } from "./Onboarding";
 import { useAuth } from "../auth";
 import { useProject } from "../project";
 import { useLoad } from "../hooks";
-import { plural } from "../format";
+import { assetDistinctions, plural } from "../format";
 import { Badge } from "../components/Badge";
 import { IntelBanners } from "../components/Findings";
 import { changeText, fixesFrom, FixKindIcon, FixPlaces, urgencyOf } from "../components/FixGroups";
@@ -200,6 +200,8 @@ export function HomePage() {
 
   // Assets with fixes that need you first, then assets that stopped reporting.
   const byId = new Map((assets.data?.items ?? []).map((a) => [a.id, a]));
+  // "commmerceblog (server)" next to "commmerceblog (repository)".
+  const distinct = assetDistinctions(assets.data?.items ?? []);
   const attention: { id: number; name: string; path?: string; why: ReactNode; seen?: string }[] = [];
   const appDir = (id: number) => {
     const a = byId.get(id);
@@ -328,7 +330,11 @@ export function HomePage() {
               <li key={a.id}>
                 <span className="home-asset-name">
                   <Link to={`/assets/${a.id}`}>{a.name}</Link>
-                  {a.path && <span className="small muted mono break"> {a.path}</span>}
+                  {a.path ? (
+                    <span className="small muted mono break"> {a.path}</span>
+                  ) : (
+                    distinct.has(a.id) && <span className="small muted"> ({distinct.get(a.id)})</span>
+                  )}
                 </span>
                 <span className="small">{a.why}</span>
                 <span className="small muted">

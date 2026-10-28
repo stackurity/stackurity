@@ -60,7 +60,20 @@ func (s *Store) CheckOptions(ctx context.Context, fixGroups []string, assetIDs [
 				return nil, err
 			}
 			if o.LastCheck != nil {
-				o.AssetID, o.AssetName, o.AssetKind = o.LastCheck.AssetID, o.LastCheck.AssetName, o.LastCheck.AssetKind
+				// Fixed and gone from the plan: describe its asset as before
+				// (the server's name, removed or not) with the fix's last check.
+				full, err := s.checkOption(ctx, o.LastCheck.AssetID, g)
+				switch {
+				case err == nil:
+					if full.Reason == "" {
+						full.Reason, full.OnDemand = RecheckNotFound, false
+					}
+					o = *full
+				case errors.Is(err, ErrNotFound):
+					o.AssetID, o.AssetName, o.AssetKind = o.LastCheck.AssetID, o.LastCheck.AssetName, o.LastCheck.AssetKind
+				default:
+					return nil, err
+				}
 			}
 			out = append(out, o)
 			continue
