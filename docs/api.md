@@ -1,18 +1,19 @@
 # API v1
 
-Base path: `/api/v1`. Requests and responses are JSON. Every operation is also described in an [OpenAPI 3.1 document](../internal/api/openapi.json), which each server serves at `GET /api/v1/openapi.json` (no sign-in needed): load it into Swagger UI, Postman or a client generator. It lists each operation's summary, role (`x-stackurity-role`), parameters and authentication; this page describes the response bodies. Errors look like this:
+Base path: `/api/v1`. Requests and responses are JSON.
 
-```json
-{"error": {"code": "invalid", "message": "validation failed", "details": ["observations[3].purl \"x\" is not a valid purl"]}}
-```
+- **Reference:** every operation, with its parameters, role and authentication, is in the [rendered API reference](https://stackurity.dev/api.html) and in the OpenAPI 3.1 document each server serves at `GET /api/v1/openapi.json` (no sign-in needed; the source is [internal/api/openapi.json](../internal/api/openapi.json)). Load it into Swagger UI, Postman or a client generator.
+- **This page** lists every route the server serves, grouped by area, and describes what the answers contain.
+
+Contents: [Authentication](#authentication) · [Projects and access](#projects-and-access) · [Conventions](#conventions) · Endpoints: [Account](#account), [Setup](#setup), [Agents and uploads](#agents-and-uploads), [Inventory](#inventory), [Findings and fixes](#findings-and-fixes), [Projects and people](#projects-and-people), [Notifications](#notifications), [Integrations](#integrations), [Intelligence](#intelligence), [Reports](#reports), [Automatic fixes](#automatic-fixes), [Instance administration](#instance-administration), [AI assistants, OAuth and MCP](#ai-assistants-oauth-and-mcp), [Health and discovery](#health-and-discovery) · Topics: [Inventory coverage](#inventory-coverage), [Uploads into a project](#uploads-into-a-project), [Onboarding](#onboarding), [Invitations](#invitations), [Search](#search), [ObservationBatch](#observationbatch), [Findings](#findings), [Upgrade recommendations](#upgrade-recommendations), [Remediation outcomes](#remediation-outcomes), [Workflow](#workflow), [Check again](#check-again), [Priority and SOS](#priority-and-sos), [Incidents and notifications](#incidents-and-notifications)
 
 ## Authentication
 
 - **API tokens** (`Authorization: Bearer stk_...`) for the CLI, agents and integrations. User tokens carry a role no higher than their owner's *current* role. Collector tokens can only submit observations and SBOMs.
 - **Session cookie** for the dashboard (`POST /auth/login`). Requests that use cookie authentication and change state must send `X-Stackurity-CSRF: 1`.
-- **AI assistants** connect to `/mcp` (outside `/api/v1`) and sign in with OAuth 2.1; their access tokens (`stka_...`) work only there, not on this API. See [ai-assistants.md](ai-assistants.md).
+- **AI assistants** connect to `/mcp` (outside `/api/v1`) and sign in with OAuth 2.1; their access tokens (`stka_...`) work only there, not on this API. See [AI assistants, OAuth and MCP](#ai-assistants-oauth-and-mcp) and [ai-assistants.md](ai-assistants.md).
 
-Roles, from least to most access: `viewer` (read, including the audit log; ask to ignore issues), `engineer` (edit assets, trigger scans, check again; ask to ignore issues), `security` (snooze, ignore and risk acceptance, deciding ignore requests, notification channels and routes, remediation policies, plan approval), `admin` (users, teams, tokens, integrations, conflicts, deletion).
+Roles, from least to most access: `viewer` (read, including the audit log; ask to ignore issues), `engineer` (edit assets, trigger scans, check again; ask to ignore issues), `security` (snooze, ignore and risk acceptance, deciding ignore requests, notification channels and routes, remediation policies, plan approval), `admin` (users, teams, tokens, integrations, conflicts, deletion). An **instance admin** operates the whole installation (workspaces, licence, stack packs, feeds, platform health), whatever their role in a workspace.
 
 ## Projects and access
 
@@ -25,164 +26,1385 @@ A workspace (shown as the organisation in the dashboard) groups its assets into 
 - **Checks, ignore rules and requests** follow their assets. Ignoring an issue on every asset (`scope: everywhere`), approving such a request and ending such a rule need an organisation-wide `security` or `admin` role (403 otherwise). With `security` through a project grant, `GET /ignore-requests` lists the caller's own requests and those whose issues are all on assets where they hold it (`can_decide` is true), and they decide only those.
 - **Tokens** of a member with project access only act as that member, never above their highest grant. Collector and host-bound agent tokens belong to the workspace and are not limited by projects.
 
-## Endpoints
+## Conventions
 
-| Method & path | Role | Purpose |
-|---|---|---|
-| `GET /meta` | none | Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project` |
-| `GET /openapi.json` | none | This API as an OpenAPI 3.1 document |
-| `POST /setup` | setup token | Create the first admin |
-| `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` | none / any | Session handling |
-| `POST /feedback` | any signed-in user (rate limited, 10 an hour) | Send feedback to the Stackurity team: `kind` (`bug`, `idea`, `question`), `message` (up to 5000 characters), optional `email` and `page` (a path). The server adds its version and edition and forwards it to `STACKURITY_FEEDBACK_URL`; answers 202 when delivered, 502 when the feedback service cannot be reached, and 404 when feedback is turned off (`GET /auth/me` then has `feedback_enabled: false`). See [network.md](network.md#feedback) |
-| `POST /auth/password` | any signed-in user | Change your own password (`current_password`, `new_password`). Your other sessions are signed out |
-| `POST /enroll` | none (rate limited) | Exchange a one-time enrollment code (`{"code", "hostname"}`) for a collector token and the agent settings chosen with it, including the code's `project_id` (null when it has none). Refusals of a code do not say why. Optional `project_id` (`stackurity enroll --project`) is a check, not a choice: when the code adds hosts to another project or to none, the answer is 403 and the code keeps its use. Servers before 0.10 answer 400 to the unknown field, also without using the code |
-| `GET`/`POST /enrollments`, `DELETE /enrollments/{id}` | admin | Create, list and revoke enrollment codes: `label`, `environment`, `app_dirs`, `discover_apps`, `uses` (1–500, default 1), `ttl_hours` (1–720, default 24), `project_id` (hosts enrolled with the code, and the assets their agent reports, are added to that project when first created). The code is returned once |
-| `GET /install/agent.sh`, `GET /download/agent/linux-{amd64,arm64}[.sha256]` | none | The agent installer and the agent builds it downloads (bundled in the server image; `STACKURITY_AGENT_DIR`) |
-| `POST /ingest?project_id=` | collector, engineer+ | Submit an `ObservationBatch` (gzip accepted). `project_id` files the asset in a project, see [Uploads into a project](#uploads-into-a-project) |
-| `POST /sbom/import?asset_name=&asset_kind=&environment=&project_id=` | collector, engineer+ | Import a CycloneDX or SPDX JSON document. `project_id` files the asset in a project, see [Uploads into a project](#uploads-into-a-project). A collector token made for a project adds the assets it creates to it |
-| `GET /collections/{id}/result` | collector (own submissions), engineer+ | Whether a submitted collection has been evaluated (`status`: `pending`, `scoring` (matched, findings not prioritised yet), `evaluated` (matched and prioritised), `failed`), then the asset's open findings and its count of `evaluation_gaps`. Used by `stackurity scan --fail-on` |
-| `GET /overview` | viewer | Inventory, coverage and status counts, including assets by coverage state (`asset_coverage`) and components by row coverage (`component_coverage`) |
-| `GET /search?q=&limit=` | viewer | Global search of the current workspace, see [Search](#search) |
-| `GET /assets?kind=&environment=&status=&owner_team_id=&q=&reboot_required=true&exposed=&unfiled=true` | viewer | List assets. `reboot_required=true` lists hosts that run older code than is installed. `exposed=true` or `false` filters by `exposed`, the exposure risk scoring uses: `internet_exposed` when set by hand, else what a collector observed (a Kubernetes workload's `exposure`, or for an image the workloads deployed as it). `unfiled=true` lists the assets in no active project. Each asset has `projects`, the active projects it is in that the caller can see |
-| `GET /assets/{id}` | viewer | Asset and identifiers |
-| `PATCH /assets/{id}` | engineer | Set name, environment, owner, criticality, exposure, tags |
-| `DELETE /assets/{id}` | admin | Delete an asset and its history |
-| `GET /assets/{id}/inventory?q=&type=&direct=&include_removed=&coverage=` | viewer | Components on the asset, with evidence and coverage (see below) |
-| `GET /assets/{id}/coverage-summary` | viewer | How far the asset's findings can be trusted: its [coverage states](compatibility.md#coverage-states) with reasons, components by coverage, gap reasons and stale feeds |
-| `GET /assets/{id}/coverage`, `/collections`, `/relations` | viewer | Coverage ledger, collection history, relations |
-| `POST`/`DELETE /assets/{id}/relations` | engineer | Add or remove `runs_on`, `built_from`, `deployed_as`, `contains`, `depends_on`, `replica_of` (a standby, staging or DR copy that should run the same versions as the target) |
-| `GET /assets/{id}/stack` | viewer | Everything the asset relies on, followed through relations, with open findings grouped by layer (`web_server`, `os`, `runtime`, `data_store`, `libraries`, `declared`, `managed_service`, `platform`, `other`). For an application this is its hosts, repository, images and dependencies (up to three hops); for a host, the applications running on it; for a cluster, its workloads and their images; for an image, the workloads deployed as it; for a repository, its deployments and their hosts |
-| `GET /assets/{id}/drift?with=` | viewer | Components whose versions differ from another asset (`with`, or the asset this one is a `replica_of`). Each item is `behind`, `ahead`, `differs`, `only_here` or `only_there`, compared by the component's ecosystem rules |
-| `GET /assets/{id}/sbom` | viewer | CycloneDX 1.6 export |
-| `GET /components?q=&type=`, `GET /components/{id}` | viewer | Component explorer |
-| `GET /components/{id}/upgrade` | viewer | An [upgrade recommendation](#upgrade-recommendations) for each installed version with open findings (most findings first, at most 50; `total` counts all), with `version`, `distro` and `asset_count` |
-| `GET /inventory?component_id=&asset_id=&coverage=` | viewer | Where a component is used |
-| `GET /coverage?problems=true` | viewer | Coverage ledger across assets |
-| `GET /reports/evidence?from=&to=` | viewer | Patch-management evidence for a period (dates, `to` inclusive; default the last 30 days, at most a year): assets and their collection status, hosts needing a reboot, evaluation gaps, open findings by severity and priority, overdue findings, findings remediated in the period (upgraded, fixed or removed) with the share resolved within their deadline and the median days from first detection to resolution, findings closed without remediation (advisory withdrawn or changed) counted apart, every active exception with its reason, mitigation and expiry, and drift for each `replica_of` pair |
-| `GET /reports/outcomes?days=` | viewer | [Remediation outcomes](#remediation-outcomes) over the last `days` (1 to 365, default 90) |
-| `GET /audit?object_type=&object_id=` | viewer | Audit events |
-| `GET /usage` | viewer (organisation-wide) | [Monitored assets](asset-limits.md) against the organisation's limit: `monitored`, `limit` (null: none), `at_limit`, `by_kind`, `stale`, `workloads` (not counted), `refused` (the most recent new assets refused at the limit) and `refused_recently` (last 7 days); `projects`, `project_limit` (null: none), `projects_at_limit`, `read_only` (`since`, `reason`; null when not) and `report_mode` (`full` or `trial`). At the limit, requests that would create an asset answer `402` with code `asset_limit`, and a new project `402 project_limit`; while read-only, uploads, enrollment, integrations, checks and notifications answer `402 read_only` |
-| `GET`/`POST /tokens`, `DELETE /tokens/{id}` | any user | Personal tokens (admins: all tokens and collector tokens). A collector token can name a `project_id`: assets it creates are added to that project (the first-run flow's repository step) |
-| `PUT /auth/default-project` | any signed-in user | `{"project_id": N}` (0: all projects): the project the dashboard opens with. `GET /auth/me` returns it as `default_project_id`, with `projects` (the projects the caller can choose), `access` and `project_role` |
-| `GET /projects?archived=true` | viewer, or any grant | Projects the caller can see (members with project access only: theirs, each with their `role`), with `asset_count`; organisation-wide callers also get `unfiled_assets`, the assets in no active project. `archived=true` (admins) includes archived projects |
-| `GET /projects/{id}` | viewer, or a grant on it | A project; for admins also its `grants` |
-| `POST /projects` | admin | `{"name", "description", "asset_ids"}` |
-| `PATCH /projects/{id}` | admin | `name`, `description`, `archived` (true archives: grants on it stop giving access and routes limited to it stop matching; false restores) |
-| `POST`/`DELETE /projects/{id}/assets` | admin | `{"asset_ids": [...]}` (1 to 5000): add or remove assets; returns `changed` |
-| `GET /access-grants?project_id=&asset_id=&user_id=&team_id=` | admin | Access grants, with project, asset, person and team names |
-| `POST /access-grants` | admin | `{"project_id" or "asset_id", "user_id" or "team_id" or "email", "role"}`. With `email`, someone who is not a member joins with no organisation-wide role (an account is created with `password` when there is none; `account_created` says so). A grant that exists for the same person or team and project or asset has its role changed (200); a new one is 201 |
-| `PATCH`/`DELETE /access-grants/{id}` | admin | Change a grant's `role`, or remove it. Takes effect on the next request |
-| `GET /project-suggestions`, `POST /project-suggestions/dismiss` | admin | Groupings proposed from `runs_on`, `built_from` and `deployed_as` relations: assets in no project related to a project's assets (`project_id`), or related assets all in no project (`suggested_name`). Nothing changes until someone adds the assets; `{"key"}` hides one until its assets change |
-| `GET /onboarding` | admin | The [first-run flow](#onboarding): `state` (`new`, `skipped`, `done`), `show_flow` (state `new` and no assets yet), `has_assets`, `project_id` and `project` (chosen in the flow), and `steps` (`project`, `asset`, `notifications`, `invite`), each read from what exists. When every step is done the state becomes `done` |
-| `PUT /onboarding` | admin | `{"state": "new" \| "skipped" \| "done", "project_id": N}`; audited as `onboarding.update` |
-| `GET /onboarding/results?since=` | viewer | The waiting screen's poll: assets created since `since` (RFC 3339; default the last 24 hours), newest first, at most 20, in the chosen project (`project_id` or the header). Each has `packages`, `issues` (active), `checked` (its first complete report has been evaluated, so the counts are final) and `fixes_now` (fixes in Home's focus) |
-| `GET /invitations?project_id=` | admin | [Invitations](#invitations): open ones, and the others of the last 30 days, with `status` (`pending`, `accepted`, `revoked`, `expired`). Never the link |
-| `POST /invitations` | admin (30 an hour per organisation) | `{"email", "name", "role", "project_id"}` (`project_id` 0: an organisation-wide role). 201 with `invitation` and `emailed`; when the email was not sent, `link` (shown once) and `email_problem`. Inviting the same person to the same project again replaces the open invitation. Someone already a member gets the project role at once (`granted`, `grant`); an organisation-wide invitation for a member is 409 |
-| `DELETE /invitations/{id}` | admin | Withdraw a pending invitation: its link stops working |
-| `POST /invitations/preview` | none (rate limited) | `{"token"}`: what the link is for (`workspace`, `project`, `role`, `email`, `invited_by`, `expires_at`, `account_exists`) and `signed_in_as`. 410 for any link that does not work, without saying why |
-| `POST /invitations/accept` | none, or the invitee's session (rate limited) | `{"token", "name", "password"}`. Joins the invitation's organisation with its role (see [Invitations](#invitations)); answers `workspace_id`, `project_id`, `role`, `account_created` and `joined`, and the browser session then works in that organisation. 410: the link does not work; 409 `sign_in_required` or `wrong_account` |
-| `POST /integrations/slack/actions` | none: Slack's signature (see [Acting from Slack](#acting-from-slack)) | Slack's interactivity Request URL. Form-encoded `payload` as Slack sends it, with `X-Slack-Request-Timestamp` and `X-Slack-Signature`. 200 once verified (the answer goes to Slack's `response_url`), 401 for any request that cannot be verified, is older than 5 minutes or was already received, 400 for a verified payload with an unexpected team, user or `response_url` |
-| `POST /oauth/authorize/preview` | a browser session | The [consent page](ai-assistants.md#connect-an-assistant)'s view of an authorization request (its `response_type`, `client_id`, `redirect_uri`, `code_challenge`, `code_challenge_method`, `state`, `scope`, `resource`): the `client` (name, `redirect_host`), `signed_in_as`, the active `workspace`, the `projects` and the `roles` (up to the caller's own) the person may give. 400 with `error.redirect` (the client's redirect URI with the error) when the request is wrong, or without it when the client or redirect URI cannot be trusted |
-| `POST /oauth/authorize` | a browser session | The same parameters with `decision` (`allow` or `deny`), `workspace_id` (the organisation the page showed; 409 if the session switched), `project_id` (0: the whole organisation), `role` and `allow_changes` (default false: read only): answers `redirect`, the client's redirect URI with a single-use `code` (2 minutes) or `error=access_denied`, plus `state` and `iss`. A role above the caller's is 403. Audited as `assistant.authorize` |
-| `GET /assistants` | a browser session | The caller's connected assistants in every organisation they belong to: `client_name`, `redirect_host`, `workspace_name`, `project_name`, `role`, `allow_changes`, `created_at`, `last_used_at` |
-| `PATCH /assistants/{id}` | a browser session | `{"allow_changes": true \| false}` for one of the caller's assistants (404 for anyone else's). Audited as `assistant.update` |
-| `DELETE /assistants/{id}` | a browser session | Disconnect one of the caller's assistants: its tokens stop working at once (404 for anyone else's). Audited as `assistant.revoke` |
-| `GET /slack/links` | any signed-in user | The caller's linked Slack accounts in the current organisation (`team_id`, `team_name`, `slack_user_id`, `slack_user_name`, `created_at`, `last_used_at`) |
-| `DELETE /slack/links/{id}` | any signed-in user | Unlink one of the caller's Slack accounts (404 for anyone else's). Audited as `slack_link.delete` |
-| `POST /slack/links/preview` | a browser session | `{"token"}` from the link offered in Slack: the Slack account it would link, `linked_to_you`, `linked_to_other`, and `signed_in_as`. 410: the link was used, expired (15 minutes) or belongs to another organisation |
-| `POST /slack/links/confirm` | a browser session | `{"token"}`: links that Slack account to the caller (single use). 410 as above; 409 when it is linked to another account, which has to unlink it first. API tokens get 403. Audited as `slack_link.create` |
-| `GET /teams` | viewer | Teams |
-| `POST`/`PATCH`/`DELETE /teams/{id}` | admin | Manage teams and members (members must belong to the workspace) |
-| `GET`/`POST /users`, `PATCH /users/{id}` | admin | Manage users. `role` `none` keeps someone a member with no organisation-wide role (access through projects only); each user has `access`: `organisation` or `projects` |
-| `GET /integrations`, `POST /integrations/{id}/run` | engineer | List integrations, trigger a run |
-| `POST`/`PATCH`/`DELETE /integrations/{id}` | admin | Manage integrations |
-| `GET /conflicts`, `POST /conflicts/{id}/resolve` | admin | Resolve asset identity conflicts by merging assets. The answer lists `projects_joined` and `grants_moved`, with a `notice`, when the kept asset joins the merged assets' projects or takes their access grants |
-| `GET /jobs?state=` | admin | Background job queue |
-| `GET /plugins` | admin | Installed plugins with their declared permissions, credentials and network access |
-| `GET /jobs/{id}` | engineer | Status of one job, e.g. after *Run now* |
-| `GET`/`POST /admin/workspaces`, `PATCH /admin/workspaces/{id}` | instance admin | Workspaces with `member_count`, `asset_count`, `monitored` and `asset_limit` (null: none). `PATCH` takes `name`, `disabled`, `plan`, `asset_limit` and `project_limit` (`-1` removes a limit), `read_only` with `read_only_reason`, and `report_mode` (`full` or `trial`); see [asset-limits.md](asset-limits.md). The list also returns `projects`, `project_limit`, `read_only_at`, `read_only_reason` and `report_mode` |
-| `GET /admin/health` | instance admin | Platform health across workspaces: `status` (`ok`, `warning`, `critical`), `problems` (each with `last_success`, `last_error`, `scope`, `next_step` and `docs`; objects are named only for the caller's active workspace), background `tasks` with their last success and error, job counts by kind and state, jobs that failed in the last 24 hours, notification `deliveries` by channel kind and state, the age of the oldest due notification, `failing_channels`, and `email_quota` (`held_24h`, `workspaces`: messages the email limits held in the last 24 hours, a warning problem `notifications/email-quota` when any) ([install.md](install.md#health)) |
-| `GET /facets` | viewer | Distinct environments, asset kinds and component types |
-| `GET /findings?status=&kind=&severity=&verification=&asset_id=&component_id=&environment=&known_exploited=&q=&key=&new_within=&resolved_within=&sort=` | viewer | Vulnerability and end-of-life findings, SOS, priority, known-exploited and most severe first. `new_within=N` keeps findings first seen in the last N days, `resolved_within=N` those resolved in the last N days (with `status=resolved`), and `sort=asset` orders by asset name first |
-| `GET /findings/summary` | viewer | Counts by severity, kind, verification, priority and state, plus SOS, overdue, unassigned, stale feeds, evaluation gaps and `resolved_7d` (resolved in the last 7 days) |
-| `GET /fix-groups?asset_id=&kind=&environment=&q=&bucket=&group_by=` | viewer | Fixes (fix groups), most urgent first. `bucket` is `focus` (a fix exists, SOS or P1, on a production asset or one with no environment), `no_fix`, `old_kernels`, `non_production` or `lower_priority`; every group is in exactly one, checked in that order. `group_by` is `fix` (the same change in several places is one entry with `places`: group, asset, app directory and finding count per place; counts are added up, `unique_issues` is not) or `asset` (one entry per asset); the default is the workspace's setting (`/settings/fix-grouping`) |
-| `GET /fix-groups/summary?asset_id=` | viewer | Groups and findings per kind, plus `focus`: the number of focus groups and their findings, groups and findings per other bucket (`hidden`), and the assets with focus groups |
-| `GET /fix-groups/{id}?limit=&offset=` | viewer | One fix group with its findings, paged |
-| `POST /fix-groups/{id}/check` | engineer | [Check again](#check-again) the fix: asks the asset's agent (or a server-side scan) for a fresh report. 201 with the new check, or 200 with the check already waiting for a report |
-| `POST /fix-groups/{id}/applied` | engineer | "I applied this": the fix's active issues go to `in_progress` with the reason "applied, waiting for a check", and a check is requested. Nothing is resolved by this call. Returns `updated` and `check` |
-| `POST /assets/{id}/check` | engineer | Check the whole asset again |
-| `GET /checks?asset_id=&fix_group=&open=true&limit=&offset=` | viewer | Checks, newest first; `open=true` keeps the ones not done |
-| `GET /checks/{id}` | viewer | One check |
-| `GET /findings/{id}` | viewer | One finding, with every source advisory in its group and, while it is open, its `upgrade` recommendation |
-| `GET /findings/{id}/upgrade` | viewer | The [upgrade recommendation](#upgrade-recommendations) for the installed copy the finding is on, covering every open finding on it |
-| `GET /findings/{id}/explain` | viewer | Why the finding matched (`why`, as in `GET /findings/{id}`) and why it has its priority: `risk` (priority, score, each factor with its points, `policy_version`: the risk policy that produced this priority, `current_policy_version` and `policy_changed`, the current thresholds, the SLA for the priority, deadlines), the stored `evidence`, the matched `advisories` (id, feed, severity, dates, an osv.dev link), the freshness of the `feeds` they came from, and the asset's last (complete) `collection` time |
-| `GET /findings/verify?since=&asset_id=&limit=` | viewer | What changed since `since` (RFC 3339 time or `YYYY-MM-DD`): findings `resolved` since then with their `cause`, findings that existed then and are `still_open`, `opened_since`, and each asset's last complete collection. `asset_rescanned_since` tells "fixed" from "not scanned again yet". Lists are capped at `limit` (default 100, max 500) with a `total` |
-| `GET /advisories/{id-or-CVE}` | viewer | Advisories in a group |
-| `GET /components/{id}/intel` | viewer | Release data (latest stable, publish date, deprecation) and lifecycle cycles |
-| `GET /feeds` | viewer | Intelligence feeds and their freshness |
-| `POST /feeds/{name}/refresh` | engineer | Queue a manual refresh |
-| `PATCH /feeds/{name}` | instance admin | Enable or disable a feed (feeds are shared by every workspace) |
-| `GET /second-checks` | viewer | The independent second check of high-impact findings: open findings `agreed`, `disagreed` and `could_not_check`, `pending` (covered, not checked yet), `logged_30d` and the 50 latest logged disagreements with their differences and inputs. `GET /findings?second_check=disagreed` (or `agreed`, `could_not_check`) lists the findings; every finding carries `second_check` and `second_check_reason`, and `GET /findings/summary` counts `second_check_disagreed`. A disagreement never changes a finding's verification, priority, SOS or alerts. Narrowed to the caller's projects |
-| `GET /evaluation-gaps` | viewer | Components that could not be evaluated, one entry per component and reason, with `coverage` (`unsupported` or `not_evaluated`) |
-| `POST /evaluate` | engineer | Queue a full re-evaluation |
-| `POST /findings/{id}/actions` | engineer (security for `suppress`, `accept_risk`, `ignore`, `reopen`) | Workflow action, see below |
-| `POST /findings/actions` | as above | The same action on up to 500 findings (`ids`) |
-| `GET /findings/{id}/events` | viewer | A finding's workflow history |
-| `GET /incidents?status=&kind=&priority=&sos=&team_id=` | viewer | Incidents: findings grouped by issue and owner team |
-| `GET /incidents/{id}` | viewer | An incident with its findings (and deliveries, for security and above) |
-| `POST /incidents/{id}/actions` | as findings | Apply an action to every open finding in the incident |
-| `POST /ignore-requests` | viewer | Ask to ignore issues: `finding_ids` (up to 2,000 open findings) or `fix_group` (its active issues), with `reason`, `scope`, `expiry`, `until`, `note` and `mitigation` as for the `ignore` action. Validated like an ignore; 201 with the request |
-| `GET /ignore-requests?status=&limit=&offset=` | viewer | The approval inbox. `status` is `pending` (default), `approved`, `declined` or `all`. Security and admin users see every request; others see their own. `can_decide` says which |
-| `GET /ignore-requests/{id}` | viewer | One request (its requester, or security and admin users) |
-| `POST /ignore-requests/{id}/decision` | security | `{"decision": "approve" \| "decline", "note": "..."}`. Approval ignores the request's issues that are still open and active, as the decider; 409 when already decided |
-| `GET /ignore-rules?status=all` | viewer | [Ignore rules](#ignore-rules) in force (or every one with `status=all`), with the open findings each ignores |
-| `DELETE /ignore-rules/{id}` | security | End a rule: the open findings it ignores return to `new` |
-| `GET /risk-policy` / `PUT /risk-policy` | viewer / admin | Priority weights, thresholds, deadlines and SOS rules, with the policy `version`. `PUT` replaces the policy (fields left out take their defaults; unknown fields are rejected), returns `version`, `previous_version` and the `changed` fields, and writes a `risk_policy.update` audit event holding the policy before and after. `GET` includes `last_change` (who, when, versions, changed fields; null when never changed) |
-| `GET /settings/fix-grouping` / `PUT /settings/fix-grouping` | viewer / admin | How fix lists show the same fix in several places: `fix_grouping` is `fix` (one entry per fix listing its places; the default) or `asset` (one entry per asset). `PUT` writes a `settings.update` audit event |
-| `POST /risk-policy/preview` | admin | Validates a proposed policy like `PUT` and returns its effect on the workspace's open findings without saving anything: `before` / `after` counts per priority, `sos_before` / `sos_after`, `priority_changed` (`raised`, `lowered`), `sos_changed`, `score_changed`, `stored_differs`, and `sample` (at most `sample_limit`, 50) of changed findings with factor deltas ([risk.md](risk.md#reproducibility-and-audit)) |
-| `GET /channels`, `GET /routes`, `GET /deliveries?status=&incident_id=` | security | Notification configuration and delivery log. Deliveries carry `held_by`: `""`, `hourly_limit` or `email_quota` |
-| `GET /notification-options` | security | What the server offers: `slack_app` (Add to Slack), `platform_email` (`enabled`; when enabled `from`, `max_recipients`, `quota` with `per_minute`, `per_hour`, `per_day`), `secrets` (stored secrets work), `base_url` |
-| `POST`/`PATCH`/`DELETE /channels/{id}`, `POST /channels/{id}/test` | admin | Email, email sent by Stackurity (`stackurity_email`, hosted only), Slack, Teams, webhook and Jira channels; for Jira, test checks access without creating an issue. Slack channels added with Add to Slack (`config.slack_app`) can only be renamed, switched on or off and deleted; deleting the last one of a Slack workspace removes the app from it |
-| `POST /routes`, `PUT`/`DELETE /routes/{id}` | admin | Which incidents go to which channel, and what is sent (`events`, see [Incidents and notifications](#incidents-and-notifications)). `project_ids` limits a route to those projects' assets: its messages count and name only them, and only their collection and coverage problems. For a Jira channel, at most one project (400 otherwise): its issues then describe only that project's part of each incident |
-| `GET /email-recipients` | security | Addresses of `stackurity_email` channels that are not members, with `status` `pending` (not confirmed yet) or `confirmed` |
-| `POST /email-recipients/resend` | admin | `{"email"}`: a new confirmation link to a pending address; 429 `too_soon` within 10 minutes of the last |
-| `POST /email-recipients/block` | none (rate limited) | `{"token"}` from a confirmation email's "Never email me again" link (`/email/block#emc_...`): the address is blocked for every organisation; 410 `link_invalid` |
-| `POST /email/unsubscribe` | none (rate limited) | `{"token"}` from "Stop these emails" (`/email/unsubscribe#...`, signed for one organisation and address): the address leaves that organisation's `stackurity_email` channels. Mail clients POST to `/email/unsubscribe/one-click?t=...` from the `List-Unsubscribe` header (RFC 8058) |
-| `POST /email-recipients/confirm` | none (rate limited) | `{"token"}` from the link `/email/confirm#emc_...` (7 days, once): answers `email` and `organisation`; 410 `link_invalid` |
-| `POST /integrations/slack/install` | admin | Starts Add to Slack: `{"return_to"}` (a dashboard path); answers `url`, Slack's consent page. 404 `not_configured` without the Slack app ([slack-app.md](slack-app.md)) |
-| `POST /integrations/slack/oauth` | admin | Finishes Add to Slack with `{"code", "state"}` from Slack's redirect to `/integrations/slack/oauth/callback`: 201 with `channel`, `return_to`, `team_name`, `slack_channel`; 400 `slack_state` for a state that is unknown, used, expired (10 minutes) or another person's or organisation's; 502 `slack_refused` |
-| `POST /integrations/slack/events` | Slack's signature | The Slack app's events: `url_verification`, and `app_uninstalled` or `tokens_revoked`, which switch that Slack workspace's app channels off in every organisation and delete their webhooks and tokens |
-| `POST /deliveries/{id}/retry` | admin | Retry a failed or held delivery |
-| `GET /users/directory` | engineer | Active users (id, email, name) for assignment. Members with project access only get themselves and the people granted one of their projects |
-| `GET /remediation/policies` | security | Remediation policies |
-| `POST /remediation/policies`, `PUT`/`DELETE /remediation/policies/{id}` | admin | Manage policies ([remediation.md](remediation.md)) |
-| `POST /remediation/policies/preview?id=` | admin | Which fixable packages and assets a proposed policy would authorise or stop authorising, without saving ([remediation.md](remediation.md#previewing-a-policy-change)) |
-| `GET /remediation/plans?status=`, `GET /remediation/plans/{id}` | viewer | Plans and their per-asset actions |
-| `POST /remediation/plans/{id}/decision` | security (admin for major) | `{"decision": "approve" \| "reject" \| "cancel", "note": "..."}` |
-| `GET /assets/{id}/remediation` | viewer | Remediation actions for an asset |
-| `POST /assets/{id}/remediation-token` | admin | Collector token bound to this host, required for remediation |
-| `GET /agent/actions`, `POST /agent/actions/{id}/report` | host-bound token | Agent fetches approved changes and reports results |
-| `GET /agent/check?asset_id=` | collector, engineer | The agent's [check-again poll](#agent-poll): `{"check": true, "poll_seconds": 45}` when someone asked for a fresh report from one of the listed assets |
-| `GET /remediation/renovate.json?repository=&mode=exclusive` | collector, engineer | Renovate rules for approved repository plans |
+- **Errors** look like this:
 
-Inventory rows carry `coverage`, whether vulnerability intelligence covered
-that row: `evaluated`, `stale_intelligence` (evaluated against a feed that is
-stale or failing), `not_evaluated` or `unsupported` (with `coverage_reason`),
-or `awaiting` (not evaluated yet). `coverage_feed` names the feed used and
-`evaluated_at` when. The `coverage` filter takes one of these or `gaps`
-(`not_evaluated` and `unsupported`). An evaluated row can carry a
-`coverage_reason` too, saying how it is reported: kernel headers ("not
-running code") and the other packages of a kernel version, whose findings are
-on the kernel image ([compatibility.md](compatibility.md#kernels)).
+  ```json
+  {"error": {"code": "invalid", "message": "validation failed", "details": ["observations[3].purl \"x\" is not a valid purl"]}}
+  ```
 
-`lifecycle_note` is set on a distribution package whose upstream release is
-end of life: `status` is `distribution_supported` (no finding: the
-distribution release still provides security updates), `distribution_ended`
-(the release itself is end of life) or `third_party_build` (the finding
-stands), with `text`, `subject`, `upstream_eol`, `distribution` and
-`distribution_eol` ([compatibility.md](compatibility.md#lifecycle-of-distribution-packages)).
+- **Lists** return `{"items": [...], "total": N, "limit": L, "offset": O}`. Routes that page take `?limit=` (default 100, at most 500) and `?offset=`.
+- **Limits and read-only organisations.** A request that would create an asset past the organisation's limit answers `402 asset_limit`, a new project past its limit `402 project_limit`. While an organisation is read-only, uploads, enrollment, integrations, checks and notifications answer `402 read_only`. See [asset-limits.md](asset-limits.md).
+- **Editions.** Routes marked **licensed build** exist only in Stackurity Pro and Enterprise; in the Community build some answer `402` with the plan they need, and the others are not served. Routes marked **Stackurity Cloud** exist only on the hosted service. See [editions.md](editions.md).
+- **Rate limits** answer `429`. Routes that need no sign-in are limited per address.
 
-Lists return `{"items": [...], "total": N, "limit": L, "offset": O}`. Pass `?limit=` (max 500) and `?offset=`.
+## Account
+
+### `POST /auth/login`
+
+**Who:** anyone
+
+Signs in with `email` and `password` and starts a session (cookie). Limited per address and per account; 401 for a wrong email or password.
+
+### `POST /auth/logout`
+
+**Who:** any signed-in user
+
+Ends the session.
+
+### `GET /auth/me`
+
+**Who:** any signed-in user or token
+
+The caller: `user`, `role`, `workspace`, `workspaces`, `edition` and `features`, `access` (`organisation` or `projects`), `project_role`, `projects`, `default_project_id`, `read_only`, `report_mode` and `feedback_enabled`.
+
+### `PUT /auth/default-project`
+
+**Who:** any signed-in user
+
+`{"project_id": N}` (0: all projects): the project the dashboard opens with. `GET /auth/me` returns it as `default_project_id`.
+
+### `POST /auth/password`
+
+**Who:** any signed-in user
+
+Changes your own password (`current_password`, `new_password`). Your other sessions are signed out.
+
+### `GET /auth/oidc/login`
+
+**Who:** anyone · licensed build
+
+Starts single sign-on with the configured OpenID Connect provider ([install.md](install.md#single-sign-on)).
+
+### `GET /auth/oidc/callback`
+
+**Who:** anyone · licensed build
+
+Where the identity provider sends the browser back: signs the person in and starts a session.
+
+### `POST /feedback`
+
+**Who:** any signed-in user (10 an hour)
+
+Sends feedback to the Stackurity team: `kind` (`bug`, `idea`, `question`), `message` (up to 5000 characters), optional `email` and `page`. 202 when delivered, 502 when the feedback service cannot be reached, 404 when feedback is turned off (`feedback_enabled: false`). See [network.md](network.md#feedback).
+
+### `GET /tokens`
+
+**Who:** any user
+
+Your API tokens; admins see every token, including collector tokens.
+
+### `POST /tokens`
+
+**Who:** any user
+
+Creates a token; the secret is returned once. A collector token can name a `project_id`: assets it creates are added to that project.
+
+### `DELETE /tokens/{id}`
+
+**Who:** any user (admins: any token)
+
+Revokes a token.
+
+### `GET /workspaces`
+
+**Who:** any signed-in user
+
+The organisations the caller belongs to, each with `workspace_id`, `name`, `slug`, `role` and `access`.
+
+### `POST /workspaces/{id}/activate`
+
+**Who:** a browser session
+
+Switches the session to another of the caller's organisations and answers the caller as in that organisation. Tokens belong to one organisation and get 403. Audited as `workspace.enter`.
+
+### `GET /slack/links`
+
+**Who:** any signed-in user
+
+The caller's linked Slack accounts in the current organisation (`team_id`, `team_name`, `slack_user_id`, `slack_user_name`, `created_at`, `last_used_at`).
+
+### `DELETE /slack/links/{id}`
+
+**Who:** any signed-in user
+
+Unlinks one of the caller's Slack accounts (404 for anyone else's). Audited as `slack_link.delete`.
+
+### `POST /slack/links/preview`
+
+**Who:** a browser session
+
+`{"token"}` from the link offered in Slack: the Slack account it would link, `linked_to_you`, `linked_to_other` and `signed_in_as`. 410 when the link was used, expired (15 minutes) or belongs to another organisation.
+
+### `POST /slack/links/confirm`
+
+**Who:** a browser session
+
+`{"token"}`: links that Slack account to the caller (single use). 410 as above; 409 when it is linked to another account, which has to unlink it first. Audited as `slack_link.create`.
+
+### `POST /signup`
+
+**Who:** anyone · Stackurity Cloud
+
+Starts a sign-up: email, name, organisation, password, challenge token (action `signup`) and `accept_terms`. Answers `202 check_email` whatever the address's state.
+
+### `POST /signup/verify`
+
+**Who:** anyone · Stackurity Cloud
+
+Uses the emailed token once: creates the account and the organisation on its trial, and starts a session.
+
+The assistants a person has connected (`/assistants`) and the OAuth consent page are under [AI assistants, OAuth and MCP](#ai-assistants-oauth-and-mcp).
+
+## Setup
+
+### `GET /meta`
+
+**Who:** anyone
+
+Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project`.
+
+### `GET /openapi.json`
+
+**Who:** anyone
+
+This API as an OpenAPI 3.1 document.
+
+### `POST /setup`
+
+**Who:** the setup token
+
+Creates the first admin (`setup_token` from the server log, `email`, `name`, `password`) and signs them in.
+
+## Agents and uploads
+
+### `POST /enroll`
+
+**Who:** anyone (rate limited)
+
+Exchanges a one-time enrollment code (`{"code", "hostname"}`) for a collector token and the agent settings chosen with it, including the code's `project_id`. Refusals do not say why. An optional `project_id` (`stackurity enroll --project`) is a check, not a choice: when the code adds hosts to another project or none, the answer is 403 and the code keeps its use.
+
+### `GET /enrollments`
+
+**Who:** admin
+
+Enrollment codes.
+
+### `POST /enrollments`
+
+**Who:** admin
+
+Creates an enrollment code, returned once: `label`, `environment`, `app_dirs`, `discover_apps`, `uses` (1–500, default 1), `ttl_hours` (1–720, default 24) and `project_id` (hosts enrolled with it, and the assets their agent reports, join that project when first created).
+
+### `DELETE /enrollments/{id}`
+
+**Who:** admin
+
+Revokes an enrollment code.
+
+### `GET /install/agent.sh`
+
+**Who:** anyone · outside `/api/v1`
+
+The agent installer script.
+
+### `GET /download/agent/{platform}`
+
+**Who:** anyone · outside `/api/v1`
+
+The agent builds the installer downloads: `linux-amd64` and `linux-arm64`, each with a `.sha256`. They are bundled in the server image (`STACKURITY_AGENT_DIR`).
+
+### `POST /ingest`
+
+**Who:** collector token, engineer and above
+
+Submits an [ObservationBatch](#observationbatch) (gzip accepted). `?project_id=` files the asset in a project; see [Uploads into a project](#uploads-into-a-project).
+
+### `POST /sbom/import`
+
+**Who:** collector token, engineer and above
+
+Imports a CycloneDX or SPDX JSON document. Query: `asset_name`, `asset_kind`, `environment`, `project_id` (see [Uploads into a project](#uploads-into-a-project)). A collector token made for a project adds the assets it creates to it.
+
+### `GET /collections/{id}/result`
+
+**Who:** collector token (its own submissions), engineer and above
+
+Whether a submitted collection has been evaluated (`status`: `pending`, `scoring`, `evaluated`, `failed`), then the asset's open findings and its count of `evaluation_gaps`. Used by `stackurity scan --fail-on`.
+
+### `GET /agent/check`
+
+**Who:** collector token, engineer and above
+
+The agent's [check-again poll](#agent-poll) for the assets given as `asset_id` (repeated): `{"check": true, "poll_seconds": 45}` when someone asked for a fresh report.
+
+### `GET /agent/actions`
+
+**Who:** host-bound token
+
+Approved remediation actions waiting for this host's agent (licensed build; always empty in Community). See [remediation.md](remediation.md).
+
+### `POST /agent/actions/{id}/report`
+
+**Who:** host-bound token · licensed build
+
+The agent reports the progress and result of a remediation action.
+
+## Inventory
+
+### `GET /overview`
+
+**Who:** viewer
+
+Inventory, coverage and status counts, including assets by coverage state (`asset_coverage`) and components by row coverage (`component_coverage`).
+
+### `GET /facets`
+
+**Who:** viewer
+
+Distinct environments, asset kinds and component types, for filters.
+
+### `GET /search`
+
+**Who:** viewer
+
+Searches the current workspace for one query (`q`, `limit`). See [Search](#search).
+
+### `GET /assets`
+
+**Who:** viewer
+
+Lists assets, paged. Query: `kind`, `environment`, `status`, `owner_team_id`, `q`, `reboot_required=true` (hosts running older code than is installed), `exposed=true|false` and `unfiled=true` (assets in no active project). Each asset has `projects`, the active projects it is in that the caller can see.
+
+`exposed` is the exposure risk scoring uses: `internet_exposed` when set by hand, else what a collector observed (a Kubernetes workload's `exposure`, or for an image the workloads deployed as it).
+
+### `GET /assets/{id}`
+
+**Who:** viewer
+
+One asset with its identifiers, and `agent_polled_at` (see [Check again](#check-again)).
+
+### `PATCH /assets/{id}`
+
+**Who:** engineer
+
+Sets the name, environment, owner, criticality, exposure and tags.
+
+### `DELETE /assets/{id}`
+
+**Who:** admin
+
+Deletes an asset and its history.
+
+### `GET /assets/{id}/inventory`
+
+**Who:** viewer
+
+Components on the asset with evidence and [coverage](#inventory-coverage), paged. Query: `q`, `type`, `direct`, `include_removed`, `coverage`.
+
+### `GET /assets/{id}/coverage-summary`
+
+**Who:** viewer
+
+How far the asset's findings can be trusted: its [coverage states](compatibility.md#coverage-states) with reasons, components by coverage, gap reasons and stale feeds.
+
+### `GET /assets/{id}/coverage`
+
+**Who:** viewer
+
+The asset's coverage ledger, paged.
+
+### `GET /assets/{id}/collections`
+
+**Who:** viewer
+
+The asset's last 50 collections.
+
+### `GET /assets/{id}/relations`
+
+**Who:** viewer
+
+The asset's relations to other assets.
+
+### `POST /assets/{id}/relations`
+
+**Who:** engineer
+
+Adds a relation: `runs_on`, `built_from`, `deployed_as`, `contains`, `depends_on` or `replica_of` (a standby, staging or DR copy that should run the same versions as the target).
+
+### `DELETE /assets/{id}/relations`
+
+**Who:** engineer
+
+Removes a relation.
+
+### `GET /assets/{id}/stack`
+
+**Who:** viewer
+
+Everything the asset relies on, followed through relations (up to three hops), with open findings grouped by layer (`web_server`, `os`, `runtime`, `data_store`, `libraries`, `declared`, `managed_service`, `platform`, `other`). For an application: its hosts, repository, images and dependencies; for a host, its applications; for a cluster, its workloads and images.
+
+### `GET /assets/{id}/drift`
+
+**Who:** viewer
+
+Components whose versions differ from another asset (`with`, or the asset this one is a `replica_of`). Each item is `behind`, `ahead`, `differs`, `only_here` or `only_there`, compared by the component's ecosystem rules.
+
+### `GET /assets/{id}/sbom`
+
+**Who:** viewer
+
+The asset's inventory as CycloneDX 1.6.
+
+### `POST /assets/{id}/check`
+
+**Who:** engineer
+
+[Checks](#check-again) the whole asset again.
+
+### `GET /components`
+
+**Who:** viewer
+
+The component explorer, paged. Query: `q`, `type`.
+
+### `GET /components/{id}`
+
+**Who:** viewer
+
+One component.
+
+### `GET /components/{id}/intel`
+
+**Who:** viewer
+
+Release data (latest stable, publish date, deprecation) and lifecycle cycles.
+
+### `GET /components/{id}/upgrade`
+
+**Who:** viewer
+
+An [upgrade recommendation](#upgrade-recommendations) for each installed version with open findings (most findings first, at most 50; `total` counts all), with `version`, `distro` and `asset_count`.
+
+### `GET /inventory`
+
+**Who:** viewer
+
+Where components are used, paged. Query: `component_id`, `asset_id`, `q`, `type`, `direct`, `include_removed`, `coverage`.
+
+### `GET /coverage`
+
+**Who:** viewer
+
+The coverage ledger across assets, paged. Query: `asset_id`, `problems=true`.
+
+### `GET /evaluation-gaps`
+
+**Who:** viewer
+
+Components that could not be evaluated, one entry per component and reason, with `coverage` (`unsupported` or `not_evaluated`); paged.
+
+### `GET /conflicts`
+
+**Who:** admin
+
+Asset identity conflicts: assets that look like the same thing.
+
+### `POST /conflicts/{id}/resolve`
+
+**Who:** admin
+
+Resolves a conflict by merging assets. The answer lists `projects_joined` and `grants_moved`, with a `notice`, when the kept asset joins the merged assets' projects or takes their access grants.
+
+## Findings and fixes
+
+### `GET /findings`
+
+**Who:** viewer
+
+Vulnerability and end-of-life findings, paged; SOS, priority, known-exploited and most severe first (`sort=asset` orders by asset name first). Resolved findings carry `resolution_kind` and `resolution_detail` ([Why a finding closed](#why-a-finding-closed)).
+
+Query:
+
+- `status` (`open`, `resolved`, `all`), `state` (`active`, `new`, `acknowledged`, `in_progress`, `suppressed`, `risk_accepted`, `regressed`), `kind`, `severity` and `priority` (comma-separated), `verification`, `known_exploited=true`, `sos=true`, `overdue=true`
+- `asset_id`, `component_id`, `environment`, `key`, `q`, `fix_group` (a fix group id), `incident_id`
+- `assignee_user`, `assignee_team`, `assignee=none` (unassigned)
+- `new_within=N` (first seen in the last N days), `resolved_within=N` (resolved in the last N days, with `status=resolved`), `resolution_kind` (comma-separated)
+- `second_check` (`agreed`, `disagreed`, `could_not_check`), `sort`, `limit`, `offset`
+
+### `GET /findings/summary`
+
+**Who:** viewer
+
+Counts by severity, kind, verification, priority and state, plus SOS, overdue, unassigned, stale feeds, evaluation gaps, `regressed`, `until_fix`, `second_check_disagreed` and `resolved_7d`.
+
+### `GET /findings/verify`
+
+**Who:** viewer
+
+What changed since `since` (RFC 3339 or `YYYY-MM-DD`; optional `asset_id`): findings `resolved` since then with their `cause`, `resolution_kind` and `counts_as_remediation`, the findings still open, those opened since, and each asset's last complete collection. `asset_rescanned_since` tells "fixed" from "not scanned again yet". Lists are capped at `limit` (default 100, at most 500) with a `total`; totals `remediated`, `closed_not_remediation` and `resolved_by_kind`.
+
+### `GET /findings/{id}`
+
+**Who:** viewer
+
+One finding with every source advisory in its group, its `why` ([Findings](#findings)) and, while open, its `upgrade` recommendation.
+
+### `GET /findings/{id}/explain`
+
+**Who:** viewer
+
+Why the finding matched (`why`) and why it has its priority: `risk` (score, each factor with its points, the policy version that produced it, the SLA and deadlines), the stored `evidence`, the matched `advisories`, the freshness of their `feeds`, and the asset's last complete `collection`. Includes `resolution_kind`, `resolution_detail` and `counts_as_remediation`. See [risk.md](risk.md).
+
+### `GET /findings/{id}/upgrade`
+
+**Who:** viewer
+
+The [upgrade recommendation](#upgrade-recommendations) for the installed copy the finding is on, covering every open finding on it.
+
+### `GET /findings/{id}/events`
+
+**Who:** viewer
+
+The finding's workflow history.
+
+### `POST /findings/{id}/actions`
+
+**Who:** engineer; security for `suppress`, `accept_risk`, `ignore`, `reopen`
+
+Applies a [workflow action](#workflow) to the finding.
+
+### `POST /findings/actions`
+
+**Who:** as above
+
+The same action on up to 500 findings (`ids`).
+
+### `GET /fix-groups`
+
+**Who:** viewer
+
+Fixes (fix groups), most urgent first, paged. Query: `asset_id`, `kind`, `environment`, `q`, `bucket`, `group_by`. Package upgrades carry `target_version`, the version the title names ([Upgrade recommendations](#upgrade-recommendations)).
+
+- `bucket`: `focus` (a fix exists, SOS or P1, on a production asset or one with no environment), `no_fix`, `old_kernels`, `non_production` or `lower_priority`. Every group is in exactly one, checked in that order.
+- `group_by`: `fix` (the same change in several places is one entry with `places`, each with its group, asset, app directory and finding count) or `asset` (one entry per asset). The default is the workspace's setting (`GET /settings/fix-grouping`).
+
+### `GET /fix-groups/summary`
+
+**Who:** viewer
+
+Groups and findings per kind, plus `focus` (focus groups, their findings and assets) and `hidden` (groups and findings per other bucket). Query: `asset_id`, `group_by` as for `GET /fix-groups`: grouped by fix, a fix needed in several places counts once.
+
+### `GET /fix-groups/{id}`
+
+**Who:** viewer
+
+One fix group with its findings, paged.
+
+### `POST /fix-groups/{id}/check`
+
+**Who:** engineer
+
+[Checks the fix again](#check-again): asks the asset's agent (or a server-side scan) for a fresh report. 201 with the new check, or 200 with the check already waiting.
+
+### `POST /fix-groups/{id}/applied`
+
+**Who:** engineer
+
+"I applied this": the fix's active issues go to `in_progress` ("applied, waiting for a check") and a check is requested. Nothing is resolved by this call; returns `updated` and `check`.
+
+### `GET /checks`
+
+**Who:** viewer
+
+Checks, newest first, paged. Query: `asset_id`, `fix_group`, `open=true` (not done yet).
+
+### `GET /checks/{id}`
+
+**Who:** viewer
+
+One check.
+
+### `GET /incidents`
+
+**Who:** viewer
+
+Incidents: findings grouped by issue and owner team, paged. Query: `status`, `kind`, `priority`, `sos=true`, `escalated=true`, `team_id`.
+
+### `GET /incidents/{id}`
+
+**Who:** viewer
+
+An incident with its findings, tracker `issues`, and (for security and above) its deliveries.
+
+### `POST /incidents/{id}/actions`
+
+**Who:** as for findings
+
+Applies a workflow action to every open finding in the incident.
+
+### `POST /ignore-requests`
+
+**Who:** viewer
+
+Asks to ignore issues: `finding_ids` (up to 2,000 open findings) or `fix_group`, with `reason`, `scope`, `expiry`, `until`, `note` and `mitigation` as for the `ignore` action. Validated like an ignore; 201 with the request. See [Approval inbox](#approval-inbox).
+
+### `GET /ignore-requests`
+
+**Who:** viewer
+
+The approval inbox, paged. `status`: `pending` (default), `approved`, `declined` or `all`. Security and admin users see every request, others their own; `can_decide` says which they may decide.
+
+### `GET /ignore-requests/{id}`
+
+**Who:** viewer (the requester, or security and admin users)
+
+One request.
+
+### `POST /ignore-requests/{id}/decision`
+
+**Who:** security
+
+`{"decision": "approve" | "decline", "note": "..."}`. Approval ignores the request's issues that are still open and active, as the decider; 409 when already decided.
+
+### `GET /ignore-rules`
+
+**Who:** viewer
+
+[Ignore rules](#ignore-rules) in force (or all with `status=all`), with the open findings each ignores; paged.
+
+### `DELETE /ignore-rules/{id}`
+
+**Who:** security
+
+Ends a rule: the open findings it ignores return to `new`.
+
+### `GET /second-checks`
+
+**Who:** viewer
+
+The independent [second check](verification.md#second-check) of high-impact findings: open findings `agreed`, `disagreed` and `could_not_check`, `pending`, `logged_30d` and the 50 latest disagreements with their differences. A disagreement never changes a finding's verification, priority, SOS or alerts. `GET /findings?second_check=disagreed` lists the findings.
+
+### `POST /evaluate`
+
+**Who:** engineer
+
+Queues a full re-evaluation of the workspace's inventory.
+
+### `GET /risk-policy`
+
+**Who:** viewer
+
+Priority weights, thresholds, deadlines and SOS rules, with the policy `version` and `last_change` (who, when, versions, changed fields; null when never changed).
+
+### `PUT /risk-policy`
+
+**Who:** admin
+
+Replaces the policy (fields left out take their defaults; unknown fields are rejected). Returns `version`, `previous_version` and the `changed` fields; audited as `risk_policy.update` with the policy before and after.
+
+### `POST /risk-policy/preview`
+
+**Who:** admin
+
+Validates a proposed policy like `PUT` and returns its effect on open findings without saving: counts per priority and SOS `before` and `after`, what was raised or lowered, and a `sample` of up to 50 changed findings ([risk.md](risk.md#reproducibility-and-audit)).
+
+### `GET /settings/fix-grouping`
+
+**Who:** viewer
+
+How fix lists show the same fix in several places: `fix_grouping` is `fix` (one entry per fix listing its places; the default) or `asset` (one entry per asset).
+
+### `PUT /settings/fix-grouping`
+
+**Who:** admin
+
+Changes `fix_grouping`; audited as `settings.update`.
+
+## Projects and people
+
+### `GET /projects`
+
+**Who:** viewer, or any grant
+
+Projects the caller can see, with `asset_count` (members with project access only: theirs, each with their `role`). Organisation-wide callers also get `unfiled_assets`. `archived=true` (admins) includes archived projects.
+
+### `GET /projects/{id}`
+
+**Who:** viewer, or a grant on it
+
+A project; for admins also its `grants`.
+
+### `POST /projects`
+
+**Who:** admin
+
+`{"name", "description", "asset_ids"}`. `402 project_limit` at the organisation's project limit.
+
+### `PATCH /projects/{id}`
+
+**Who:** admin
+
+`name`, `description`, `archived` (true archives: grants on it stop giving access and routes limited to it stop matching; false restores).
+
+### `POST /projects/{id}/assets`
+
+**Who:** admin
+
+`{"asset_ids": [...]}` (1 to 5000): adds assets; returns `changed`.
+
+### `DELETE /projects/{id}/assets`
+
+**Who:** admin
+
+The same body: removes assets; returns `changed`.
+
+### `GET /access-grants`
+
+**Who:** admin
+
+Access grants with project, asset, person and team names. Query: `project_id`, `asset_id`, `user_id`, `team_id`.
+
+### `POST /access-grants`
+
+**Who:** admin
+
+`{"project_id" or "asset_id", "user_id" or "team_id" or "email", "role"}`. With `email`, someone who is not a member joins with no organisation-wide role (an account is created with `password` when there is none; `account_created` says so). An existing grant for the same person or team and object has its role changed (200); a new one is 201.
+
+### `PATCH /access-grants/{id}`
+
+**Who:** admin
+
+Changes a grant's `role`. Takes effect on the next request.
+
+### `DELETE /access-grants/{id}`
+
+**Who:** admin
+
+Removes a grant.
+
+### `GET /project-suggestions`
+
+**Who:** admin
+
+Groupings proposed from `runs_on`, `built_from` and `deployed_as` relations: unfiled assets related to a project's assets (`project_id`), or related assets all in no project (`suggested_name`). Nothing changes until someone adds the assets.
+
+### `POST /project-suggestions/dismiss`
+
+**Who:** admin
+
+`{"key"}` hides a suggestion until its assets change.
+
+### `GET /onboarding`
+
+**Who:** admin
+
+The [first-run flow](#onboarding): `state` (`new`, `skipped`, `done`), `show_flow`, `has_assets`, `project_id` and `project`, and `steps` (`project`, `asset`, `notifications`, `invite`, `assistant`), each read from what exists.
+
+### `PUT /onboarding`
+
+**Who:** admin
+
+`{"state": "new" | "skipped" | "done", "project_id": N}`; audited as `onboarding.update`.
+
+### `GET /onboarding/results`
+
+**Who:** viewer
+
+The waiting screen's poll: assets created since `since` (RFC 3339; default the last 24 hours) in the chosen project, newest first, at most 20. Each has `packages`, `issues`, `checked` (its first complete report is evaluated) and `fixes_now`.
+
+### `GET /invitations`
+
+**Who:** admin
+
+[Invitations](#invitations): open ones, and the others of the last 30 days, with `status` (`pending`, `accepted`, `revoked`, `expired`). Never the link. Query: `project_id`.
+
+### `POST /invitations`
+
+**Who:** admin (30 an hour per organisation)
+
+`{"email", "name", "role", "project_id"}` (`project_id` 0: an organisation-wide role). 201 with `invitation` and `emailed`; when the email was not sent, `link` (shown once) and `email_problem`. A member gets the project role at once (`granted`, `grant`); an organisation-wide invitation for a member is 409.
+
+### `DELETE /invitations/{id}`
+
+**Who:** admin
+
+Withdraws a pending invitation: its link stops working.
+
+### `POST /invitations/preview`
+
+**Who:** anyone (rate limited)
+
+`{"token"}`: what the link is for (`workspace`, `project`, `role`, `email`, `invited_by`, `expires_at`, `account_exists`) and `signed_in_as`. 410 for any link that does not work, without saying why.
+
+### `POST /invitations/accept`
+
+**Who:** anyone, or the invitee's session (rate limited)
+
+`{"token", "name", "password"}`: joins the invitation's organisation with its role and answers `workspace_id`, `project_id`, `role`, `account_created` and `joined`. 410 when the link does not work; 409 `sign_in_required` or `wrong_account`.
+
+### `GET /users`
+
+**Who:** admin
+
+Members of the organisation. Each has `role` (`none`: a member with no organisation-wide role, access through projects only) and `access` (`organisation` or `projects`).
+
+### `POST /users`
+
+**Who:** admin
+
+Adds a user to the organisation with a role (`none` allowed). Off on Stackurity Cloud, where people join by invitation.
+
+### `PATCH /users/{id}`
+
+**Who:** admin
+
+Changes a member's role, name or status.
+
+### `DELETE /users/{id}`
+
+**Who:** admin
+
+Removes a member from the organisation; their account and other organisations are untouched. The organisation must keep an active admin. Audited as `user.remove`.
+
+### `GET /users/directory`
+
+**Who:** engineer
+
+Active users (id, email, name) for assignment. Members with project access only get themselves and the people granted one of their projects.
+
+### `GET /teams`
+
+**Who:** viewer
+
+Teams.
+
+### `POST /teams`
+
+**Who:** admin
+
+Creates a team with its members (who must belong to the organisation).
+
+### `PATCH /teams/{id}`
+
+**Who:** admin
+
+Changes a team and its members.
+
+### `DELETE /teams/{id}`
+
+**Who:** admin
+
+Deletes a team.
+
+## Notifications
+
+How incidents become messages, the route `events` and the webhook format are in [Incidents and notifications](#incidents-and-notifications).
+
+### `GET /notification-options`
+
+**Who:** security
+
+What the server offers: `slack_app` (Add to Slack), `platform_email` (`enabled`; when enabled `from`, `max_recipients` and `quota` with `per_minute`, `per_hour`, `per_day`), `secrets` (stored secrets work) and `base_url`.
+
+### `GET /channels`
+
+**Who:** security
+
+Notification channels.
+
+### `POST /channels`
+
+**Who:** admin
+
+Creates a channel: email, email sent by Stackurity (`stackurity_email`, hosted only), Slack, Teams, webhook or Jira. Slack channels made with Add to Slack come from `POST /integrations/slack/oauth` instead.
+
+### `PATCH /channels/{id}`
+
+**Who:** admin
+
+Changes a channel. Add to Slack channels (`config.slack_app`) can only be renamed and switched on or off.
+
+### `DELETE /channels/{id}`
+
+**Who:** admin
+
+Deletes a channel and takes it out of every route's `event_channels`. Deleting the last Add to Slack channel of a Slack workspace removes the app from it.
+
+### `POST /channels/{id}/test`
+
+**Who:** admin
+
+Sends a test message; for Jira, checks access without creating an issue.
+
+### `GET /routes`
+
+**Who:** security
+
+Notification routes.
+
+### `POST /routes`
+
+**Who:** admin
+
+Creates a route: which incidents go to which channel, and what is sent. Fields include `channel_id`, `events`, `event_channels` (Slack only: some events to other Slack channels), `min_priority`, `new_min_priority` (the threshold of `new_issues`), `project_ids`, summary time and day, quiet hours and `max_per_hour`. `mode` is still accepted; see [Incidents and notifications](#incidents-and-notifications).
+
+### `PUT /routes/{id}`
+
+**Who:** admin
+
+Replaces a route. Without `events`, the route keeps its events; `event_channels` and `new_min_priority` keep their values unless sent.
+
+### `DELETE /routes/{id}`
+
+**Who:** admin
+
+Deletes a route.
+
+### `GET /deliveries`
+
+**Who:** security
+
+The delivery log, paged. Query: `status`, `incident_id`, `channel_id`. Each delivery has `held_by`: `""`, `hourly_limit` or `email_quota`.
+
+### `POST /deliveries/{id}/retry`
+
+**Who:** admin
+
+Retries a failed or held delivery.
+
+### `GET /email-recipients`
+
+**Who:** security
+
+Addresses of `stackurity_email` channels that are not members, with `status` `pending` (not confirmed yet) or `confirmed`.
+
+### `POST /email-recipients/resend`
+
+**Who:** admin
+
+`{"email"}`: a new confirmation link to a pending address. 202; 429 `too_soon` within 10 minutes of the last; 404 for an unknown or confirmed address.
+
+### `POST /email-recipients/confirm`
+
+**Who:** anyone (rate limited)
+
+`{"token"}` from the link `/email/confirm#emc_...` (7 days, once): answers `email` and `organisation`; 410 `link_invalid`.
+
+### `POST /email-recipients/block`
+
+**Who:** anyone (rate limited)
+
+`{"token"}` from a confirmation email's "Never email me again" link (`/email/block#emc_...`): the address is blocked for every organisation on the server and its pending requests removed. Answers `email`; 410 `link_invalid`.
+
+### `POST /email/unsubscribe`
+
+**Who:** anyone (rate limited)
+
+`{"token"}` from an email's "Stop these emails" link (`/email/unsubscribe#...`, signed for one organisation and address): the address leaves that organisation's `stackurity_email` channels. Answers `email` and `organisation`; 410 `link_invalid`.
+
+### `POST /email/unsubscribe/one-click`
+
+**Who:** anyone (rate limited) · outside `/api/v1`
+
+One-click unsubscribe (RFC 8058) from the `List-Unsubscribe` header, with the token as `?t=`. Same effect and answers as `POST /api/v1/email/unsubscribe`.
+
+### `POST /email/block/one-click`
+
+**Who:** anyone (rate limited) · outside `/api/v1`
+
+One-click "never email me again" with the token as `?t=`. Same effect and answers as `POST /api/v1/email-recipients/block`.
+
+## Integrations
+
+### `GET /integrations`
+
+**Who:** engineer
+
+Integrations (repository and image scans, plugins).
+
+### `POST /integrations`
+
+**Who:** admin
+
+Creates an integration.
+
+### `PATCH /integrations/{id}`
+
+**Who:** admin
+
+Changes an integration.
+
+### `DELETE /integrations/{id}`
+
+**Who:** admin
+
+Deletes an integration.
+
+### `POST /integrations/{id}/run`
+
+**Who:** engineer
+
+Runs an integration now; follow it with `GET /jobs/{id}`.
+
+### `GET /jobs`
+
+**Who:** admin
+
+The background job queue (the latest 200). Query: `state`.
+
+### `GET /jobs/{id}`
+
+**Who:** engineer
+
+Status of one job, for example after *Run now*.
+
+### `GET /plugins`
+
+**Who:** admin
+
+Installed plugins with their declared permissions, credentials and network access ([plugins.md](plugins.md)).
+
+### `GET /secrets`
+
+**Who:** admin
+
+Names of the organisation's stored secrets (never values), and `enabled`: whether the server can store secrets. Channels and integrations refer to them as `secret:NAME`.
+
+### `PUT /secrets/{name}`
+
+**Who:** admin
+
+`{"value"}` (up to 16 KiB): stores or replaces a secret, encrypted. Names use letters, digits, `.`, `-` and `_` (up to 64). 409 when the server has no `STACKURITY_SECRET_KEY`. Audited as `secret.put`.
+
+### `DELETE /secrets/{name}`
+
+**Who:** admin
+
+Deletes a stored secret. Audited as `secret.delete`.
+
+### `POST /integrations/slack/install`
+
+**Who:** admin
+
+Starts Add to Slack: `{"return_to"}` (a dashboard path); answers `url`, Slack's consent page. 404 `not_configured` without the Slack app ([slack-app.md](slack-app.md)).
+
+### `POST /integrations/slack/oauth`
+
+**Who:** admin
+
+Finishes Add to Slack with `{"code", "state"}` from Slack's redirect to `/integrations/slack/oauth/callback`: 201 with `channel`, `return_to`, `team_name` and `slack_channel`. 400 `slack_state` for a state that is unknown, used, expired (10 minutes) or someone else's; 502 `slack_refused`.
+
+### `POST /integrations/slack/events`
+
+**Who:** Slack (the app's signing secret)
+
+The Slack app's Event Subscriptions URL: `url_verification`, and `app_uninstalled` or `tokens_revoked`, which switch that Slack workspace's app channels off in every organisation and delete their webhooks and tokens.
+
+### `POST /integrations/slack/actions`
+
+**Who:** Slack (a channel's signing secret)
+
+Slack's interactivity Request URL: the form-encoded `payload` with `X-Slack-Request-Timestamp` and `X-Slack-Signature`. 200 once verified (the answer goes to Slack's `response_url`); 401 for a request that cannot be verified, is older than 5 minutes or was already received. See [Acting from Slack](#acting-from-slack).
+
+## Intelligence
+
+### `GET /advisories/{key}`
+
+**Who:** viewer
+
+The advisories in a group, by group key or CVE id.
+
+### `GET /feeds`
+
+**Who:** viewer
+
+Intelligence feeds and their freshness.
+
+### `POST /feeds/{name}/refresh`
+
+**Who:** engineer
+
+Queues a manual refresh of a feed.
+
+### `PATCH /feeds/{name}`
+
+**Who:** instance admin
+
+Enables or disables a feed. Feeds are shared by every workspace.
+
+### `GET /packs`
+
+**Who:** any signed-in user
+
+The enabled [stack packs](packs.md) (`installed`) and, in a workspace, `suggestions`: packs that would read files its repositories hold. 404 when packs are off on the server.
+
+### `GET /packs/{id}/archive`
+
+**Who:** any signed-in user
+
+Downloads an enabled pack, for clients that run it themselves (`stackurity scan`, the agent); they check its signature first.
+
+## Reports
+
+### `GET /reports/evidence`
+
+**Who:** viewer · licensed build (402 in Community)
+
+Patch-management evidence for a period (`from`, `to`: dates, `to` inclusive; default the last 30 days, at most a year). See [Evidence report](#evidence-report).
+
+### `GET /reports/outcomes`
+
+**Who:** viewer
+
+[Remediation outcomes](#remediation-outcomes) over the last `days` (1 to 365, default 90).
+
+### `GET /audit`
+
+**Who:** viewer
+
+Audit events, paged. Query: `object_type`, `object_id`.
+
+### `GET /usage`
+
+**Who:** viewer (organisation-wide)
+
+[Monitored assets](asset-limits.md) against the organisation's limits: `monitored`, `limit` (null: none), `at_limit`, `by_kind`, `stale`, `workloads` (not counted), `refused` and `refused_recently`; `projects`, `project_limit`, `projects_at_limit`; `read_only` (`since`, `reason`; null when not) and `report_mode` (`full` or `trial`).
+
+## Automatic fixes
+
+Automatic fixing is in the licensed build ([remediation.md](remediation.md)). In the Community build `GET /agent/actions` and `GET /assets/{id}/remediation` answer an empty list; the policy list, plan list, plan decisions, new policies, the remediation token and Renovate rules answer 402; the other routes are not served.
+
+### `GET /remediation/policies`
+
+**Who:** security · licensed build (402 in Community)
+
+Remediation policies.
+
+### `POST /remediation/policies`
+
+**Who:** admin · licensed build
+
+Creates a policy.
+
+### `PUT /remediation/policies/{id}`
+
+**Who:** admin · licensed build
+
+Replaces a policy.
+
+### `DELETE /remediation/policies/{id}`
+
+**Who:** admin · licensed build
+
+Deletes a policy.
+
+### `POST /remediation/policies/preview`
+
+**Who:** admin · licensed build
+
+Which fixable packages and assets a proposed policy (optionally replacing policy `?id=`) would authorise or stop authorising, without saving ([remediation.md](remediation.md#previewing-a-policy-change)).
+
+### `GET /remediation/plans`
+
+**Who:** viewer · licensed build (402 in Community)
+
+Plans and their per-asset actions. Query: `status`.
+
+### `GET /remediation/plans/{id}`
+
+**Who:** viewer · licensed build
+
+One plan with its actions.
+
+### `POST /remediation/plans/{id}/decision`
+
+**Who:** security (admin for a major upgrade) · licensed build
+
+`{"decision": "approve" | "reject" | "cancel", "note": "..."}`.
+
+### `GET /assets/{id}/remediation`
+
+**Who:** viewer
+
+Remediation actions for an asset (always empty in Community).
+
+### `POST /assets/{id}/remediation-token`
+
+**Who:** admin · licensed build
+
+A collector token bound to this host, which remediation requires.
+
+### `GET /remediation/renovate.json`
+
+**Who:** collector token, engineer and above · licensed build
+
+Renovate rules for the approved plans of a repository. Query: `repository`, `mode=exclusive`.
+
+## Instance administration
+
+### `GET /admin/workspaces`
+
+**Who:** instance admin
+
+Workspaces with `member_count`, `asset_count`, `monitored`, `asset_limit` (null: none), `projects`, `project_limit`, `read_only_at`, `read_only_reason` and `report_mode`.
+
+### `POST /admin/workspaces`
+
+**Who:** instance admin
+
+Creates a workspace (`name`, `slug`) and its first admin (`admin_email`, `admin_name`, `admin_password`). 201 with `workspace` and `admin`. See [install.md](install.md#workspaces).
+
+### `PATCH /admin/workspaces/{id}`
+
+**Who:** instance admin
+
+Takes `name`, `disabled`, `plan`, `asset_limit` and `project_limit` (`-1` removes a limit), `read_only` with `read_only_reason`, and `report_mode` (`full` or `trial`). See [asset-limits.md](asset-limits.md).
+
+### `GET /admin/health`
+
+**Who:** instance admin
+
+Platform health across workspaces: `status` (`ok`, `warning`, `critical`), `problems` (each with `last_success`, `last_error`, `scope`, `next_step` and `docs`), background `tasks`, jobs, notification `deliveries`, `failing_channels` and `email_quota`. See [install.md](install.md#health).
+
+### `GET /updates`
+
+**Who:** instance admin
+
+Whether a newer release exists: `enabled`, `current`, `latest`, `update_available`, `security`, `checked_at` and the newer `releases` with their notes. It reads the stored result of the periodic release check and contacts nothing itself ([network.md](network.md#update-check)).
+
+### `GET /admin/license`
+
+**Who:** instance admin
+
+The installation's licence `status`, `active_assets`, and `managed_by_env` (set by `STACKURITY_LICENSE`). See [install.md](install.md#editions-and-licences).
+
+### `PUT /admin/license`
+
+**Who:** instance admin
+
+`{"key"}`: installs a licence key. 400 for a key that is not valid; 409 when the licence is set by `STACKURITY_LICENSE`. Audited as `license.install`.
+
+### `DELETE /admin/license`
+
+**Who:** instance admin
+
+Removes the licence key (409 when set by `STACKURITY_LICENSE`). Audited as `license.remove`.
+
+### `GET /admin/packs`
+
+**Who:** instance admin
+
+[Stack packs](packs.md): `installed`, the built-in `catalog`, and `suggestions` from the unsupported files across workspaces.
+
+### `POST /admin/packs/install`
+
+**Who:** instance admin
+
+`{"id"}`: installs a pack from the built-in catalogue. Answers `id`, `version`, `trust` and `rescans_queued`.
+
+### `POST /admin/packs/upload`
+
+**Who:** instance admin
+
+Installs a pack file sent as the request body (at most 32 MiB). Its signature must be trusted ([packs.md](packs.md#signatures)); 400 `invalid` or `rejected` otherwise.
+
+### `PATCH /admin/packs/{id}`
+
+**Who:** instance admin
+
+`{"enabled": true | false}`.
+
+### `POST /admin/packs/{id}/rollback`
+
+**Who:** instance admin
+
+Reinstalls the pack's previous version.
+
+### `DELETE /admin/packs/{id}`
+
+**Who:** instance admin
+
+Removes a pack: its files show as unsupported again from the next scan.
+
+### `GET /billing`
+
+**Who:** admin · Stackurity Cloud
+
+The organisation's plan: status (`trial`, `trial_ended`, `awaiting_payment`, `active`, `past_due`, `halted`, `cancelling`, `cancelled`), plans, limits, read-only and deletion dates, `billing_enabled` and `contact_url`.
+
+### `POST /billing/subscribe`
+
+**Who:** admin, a browser session · Stackurity Cloud
+
+`plan_id`, `extra_assets`, `country` (asked once; decides the currency). 503 `billing_off` while billing is off; 409 while a payment is being confirmed.
+
+### `POST /billing/cancel`
+
+**Who:** admin, a browser session · Stackurity Cloud
+
+Cancels the plan at the end of the period; the organisation then becomes read-only.
+
+### `GET /billing/invoices`
+
+**Who:** admin · Stackurity Cloud
+
+Invoices of the organisation's subscriptions.
+
+### `PUT /admin/trials/{id}`
+
+**Who:** instance admin · Stackurity Cloud
+
+`trial_ends_at` (RFC 3339, in the future and within a year): extends one organisation's trial at once. Audited as `cloud.trial_extended`.
+
+### `GET /billing/pay/{id}`
+
+**Who:** admin, a browser session · Stackurity Cloud · outside `/api/v1`
+
+The payment page for a subscription.
+
+### `POST /billing/pay/{id}`
+
+**Who:** admin, a browser session · Stackurity Cloud · outside `/api/v1`
+
+The payment provider's answer from the payment page. A valid signature sends the admin to Plan and billing, which shows the payment as being confirmed until it is.
+
+### `POST /webhooks/razorpay`
+
+**Who:** Razorpay (its signature) · Stackurity Cloud · outside `/api/v1`
+
+Payment events from Razorpay.
+
+## AI assistants, OAuth and MCP
+
+Assistants connect to `/mcp` and sign in with OAuth 2.1 (authorization code with PKCE). [ai-assistants.md](ai-assistants.md#how-sign-in-works) describes the flow, its limits and what is audited. Everything here except the consent and connection routes under `/api/v1` is at the server root, and all of it needs `STACKURITY_BASE_URL` (404 without it).
+
+### `GET /.well-known/oauth-protected-resource/mcp`
+
+**Who:** anyone
+
+Protected resource metadata (RFC 9728) for `/mcp`. A request to `/mcp` without a token gets 401 with `WWW-Authenticate` pointing here.
+
+### `GET /.well-known/oauth-protected-resource`
+
+**Who:** anyone
+
+The same metadata, at the root location.
+
+### `GET /.well-known/oauth-authorization-server`
+
+**Who:** anyone
+
+Authorization server metadata (RFC 8414): the registration, authorization, token and revocation endpoints and what they support.
+
+### `POST /oauth/register`
+
+**Who:** anyone (rate limited)
+
+Dynamic client registration (RFC 7591). Assistants can instead use an HTTPS client id that points to their client metadata document.
+
+### `POST /oauth/token`
+
+**Who:** a registered client
+
+Exchanges an authorization code (with its PKCE verifier) or a refresh token for a one-hour access token (`stka_...`) and a new refresh token.
+
+### `POST /oauth/revoke`
+
+**Who:** a registered client
+
+Revokes a token (RFC 7009), ending the connection.
+
+### `POST /mcp`
+
+**Who:** an assistant's access token, or an API token
+
+The MCP endpoint (Streamable HTTP, stateless): one JSON answer per request. Honours `X-Stackurity-Project`.
+
+### `GET /mcp`
+
+**Who:** anyone
+
+405: the endpoint keeps no session and opens no event stream.
+
+### `DELETE /mcp`
+
+**Who:** anyone
+
+405, for the same reason.
+
+### `POST /api/v1/oauth/authorize/preview`
+
+**Who:** a browser session
+
+The consent page's view of an authorization request (`response_type`, `client_id`, `redirect_uri`, `code_challenge`, `code_challenge_method`, `state`, `scope`, `resource`): the `client`, `signed_in_as`, the active `workspace`, and the `projects` and `roles` the person may give. 400 with `error.redirect` when the request is wrong, or without it when the client or redirect URI cannot be trusted.
+
+### `POST /api/v1/oauth/authorize`
+
+**Who:** a browser session
+
+The same parameters with `decision` (`allow` or `deny`), `workspace_id` (409 if the session switched organisation), `project_id` (0: the whole organisation), `role` and `allow_changes` (default false). Answers `redirect`: the client's redirect URI with a single-use `code` (2 minutes) or `error=access_denied`, plus `state` and `iss`. A role above the caller's is 403. Audited as `assistant.authorize`.
+
+### `GET /api/v1/assistants`
+
+**Who:** a browser session
+
+The caller's connected assistants in every organisation (`client_name`, `redirect_host`, `workspace_name`, `project_name`, `role`, `allow_changes`, `created_at`, `last_used_at`), and `mcp_url`: the address to add in an assistant (empty while `/mcp` is off).
+
+### `PATCH /api/v1/assistants/{id}`
+
+**Who:** a browser session
+
+`{"allow_changes": true | false}` for one of the caller's assistants (404 for anyone else's). Audited as `assistant.update`.
+
+### `DELETE /api/v1/assistants/{id}`
+
+**Who:** a browser session
+
+Disconnects one of the caller's assistants: its tokens stop working at once (404 for anyone else's). Audited as `assistant.revoke`.
+
+## Health and discovery
+
+These are at the server root, outside `/api/v1`, and need no sign-in. See [install.md](install.md#health).
+
+### `GET /healthz`
+
+**Who:** anyone
+
+Liveness: `{"status": "ok"}` while the process serves requests.
+
+### `GET /readyz`
+
+**Who:** anyone
+
+Readiness: 200 `{"status": "ready"}`, or 503 `database_unavailable` (the database does not answer within 2 seconds) or `schema_newer` (a newer version migrated the database; see [install.md](install.md#upgrading)).
+
+### `GET /.well-known/openai-apps-challenge`
+
+**Who:** anyone
+
+The token from `STACKURITY_OPENAI_APPS_CHALLENGE`, as text, for OpenAI's domain check when Stackurity is submitted as a ChatGPT app; 404 when unset.
+
+## Inventory coverage
+
+Inventory rows carry `coverage`, whether vulnerability intelligence covered that row: `evaluated`, `stale_intelligence` (evaluated against a feed that is stale or failing), `not_evaluated` or `unsupported` (with `coverage_reason`), or `awaiting` (not evaluated yet). `coverage_feed` names the feed used and `evaluated_at` when. The `coverage` filter takes one of these or `gaps` (`not_evaluated` and `unsupported`).
+
+An evaluated row can carry a `coverage_reason` too, saying how it is reported: kernel headers ("not running code") and the other packages of a kernel version, whose findings are on the kernel image ([compatibility.md](compatibility.md#kernels)).
+
+`lifecycle_note` is set on a distribution package whose upstream release is end of life: `status` is `distribution_supported` (no finding: the distribution release still provides security updates), `distribution_ended` (the release itself is end of life) or `third_party_build` (the finding stands), with `text`, `subject`, `upstream_eol`, `distribution` and `distribution_eol` ([compatibility.md](compatibility.md#lifecycle-of-distribution-packages)).
+
+## Evidence report
+
+`GET /reports/evidence` (licensed build) covers a period:
+
+- assets and their collection status, hosts needing a reboot, and evaluation gaps;
+- open findings by severity, priority and evidence state (`open.by_evidence`), and overdue findings;
+- findings remediated in the period (upgraded, fixed or removed), with the share resolved within their deadline and the median days from first detection to resolution; findings closed without remediation (advisory withdrawn or changed) are counted apart;
+- every active exception with its reason, mitigation, expiry and `verification`;
+- drift for each `replica_of` pair.
+
+In trial report mode every report and export carries a watermark ([asset-limits.md](asset-limits.md#trial-reports)).
 
 ## Uploads into a project
 
@@ -288,15 +1510,15 @@ A resolved finding has a `resolution` sentence and a machine-readable `resolutio
 
 | `resolution_kind` | When | Remediation? |
 | --- | --- | --- |
-| `remediated` | The installed version changed: "upgraded to V", or "fixed by remediation plan #N (upgraded to V)" | yes |
+| `remediated` | The installed version changed ("upgraded to V") | yes |
 | `removed` | A complete inventory no longer lists the component ("component no longer installed") | yes |
 | `superseded` | Upgraded, but the new version is still affected: the issue continues as finding `resolution_detail.successor` | no |
-| `advisory_withdrawn` | Every advisory behind it was withdrawn by its source: "advisory withdrawn by Ubuntu on 2026-10-27" (`source`, `feed`, `withdrawn_at`) | no |
-| `advisory_changed` | The advisory or lifecycle data no longer lists the installed version, which did not change: "advisory updated: UBUNTU-CVE-2026-2 no longer lists mysql-8.0 8.0.42" | no |
+| `advisory_withdrawn` | Every advisory behind it was withdrawn by its source (`source`, `feed`, `withdrawn_at`) | no |
+| `advisory_changed` | The advisory or lifecycle data no longer lists the installed version, which did not change | no |
 | `not_evaluated` | The row could no longer be evaluated (its feed was disabled, or the version could not be compared) | no |
 | `other` | A resolution recorded before 0.13 that could not be classified | no |
 
-Reports count only `remediated` and `removed` as remediation. `GET /findings?status=resolved&resolution_kind=advisory_withdrawn,advisory_changed` lists the others. The matcher's `resolved` history events carry the kind and facts in `detail`.
+The `resolution` sentence gives the facts, for example "fixed by remediation plan #N (upgraded to V)", "advisory withdrawn by Ubuntu on 2026-10-27" or "advisory updated: UBUNTU-CVE-2026-2 no longer lists mysql-8.0 8.0.42". Reports count only `remediated` and `removed` as remediation. `GET /findings?status=resolved&resolution_kind=advisory_withdrawn,advisory_changed` lists the others. The matcher's `resolved` history events carry the kind and facts in `detail`.
 
 Findings also carry `display_state`, `regressed_at`, `until_fix`, `ignore_reason` and `exception_id`; see [The seven states](#the-seven-states).
 
@@ -343,10 +1565,15 @@ Each finding has a detection `status` (`open` or `resolved`), set automatically,
 | `reset` | `new` | |
 | `assign` | unchanged | `user_id` and/or `team_id`; `0` clears |
 | `comment` | unchanged | `note` is recorded in the history |
-| `suppress` | `suppressed` | Security role ("Snooze" in the dashboard). `note` (reason) and `until` are required; `until` may be at most the risk policy's `exception_max_days` (default 365) ahead. Optional `mitigation` records what reduces the risk meanwhile. With `"until_fix": true` the issue is snoozed until a fix ships: `until` is optional and defaults to the exception limit as a backstop; refused when a free fixed version already exists |
-| `accept_risk` | `risk_accepted` | Security role. Same fields and limit as `suppress`; sets `ignore_reason` `accepted_risk` |
-| `ignore` | `risk_accepted` | Security role. See [Ignore rules](#ignore-rules): `reason`, `scope`, `expiry`, `until` (for `expiry: date`), `note` (required) and `mitigation` |
-| `reopen` | `new` | Security role, from `suppressed` or `risk_accepted`. A finding reopened from an ignore rule is not ignored by that rule again |
+| `suppress` | `suppressed` | Security role ("Snooze"); see below |
+| `accept_risk` | `risk_accepted` | Security role; fields as `suppress` |
+| `ignore` | `risk_accepted` | Security role; see [Ignore rules](#ignore-rules) |
+| `reopen` | `new` | Security role; see below |
+
+- **`suppress`** ("Snooze" in the dashboard): `note` (the reason) and `until` are required; `until` may be at most the risk policy's `exception_max_days` (default 365) ahead. Optional `mitigation` records what reduces the risk meanwhile. With `"until_fix": true` the issue is snoozed until a fix ships: `until` is optional and defaults to the exception limit as a backstop; refused when a free fixed version already exists.
+- **`accept_risk`** takes the same fields and limit as `suppress`, and sets `ignore_reason` `accepted_risk`.
+- **`ignore`** takes `reason`, `scope`, `expiry`, `until` (for `expiry: date`), `note` (required) and `mitigation`.
+- **`reopen`** works from `suppressed` or `risk_accepted`. A finding reopened from an ignore rule is not ignored by that rule again.
 
 When a snooze, risk acceptance or ignore expires, or a free fixed version appears for one that waits for a fix, the finding returns to `new` with an `expired` or `fix_available` event and is announced again. Every action is recorded in the finding's history and in the audit log. Engineers and viewers cannot snooze or ignore: they ask through the [approval inbox](#approval-inbox).
 
