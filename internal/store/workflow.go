@@ -154,6 +154,8 @@ type riskRow struct {
 	assetID   int64
 	assetName string
 	priority  string // stored
+	// xmin is the row version read; Prioritize writes only that version.
+	xmin string
 }
 
 // epssFactor matches stored priority_factors that include the EPSS factor.
@@ -175,7 +177,7 @@ func riskRows(ctx context.Context, db q, now time.Time, assetID int64) ([]riskRo
 		  AND COALESCE(f.evidence->>'requires_subscription', '') = '',
 		i.scope, f.verification, f.first_seen, COALESCE((f.evidence->>'not_running_kernel')::boolean, false),
 		f.priority, f.state, f.fix_due, f.title, f.key, a.id, a.name,
-		ep.score, COALESCE(f.priority_factors @> $2::jsonb, false)
+		ep.score, COALESCE(f.priority_factors @> $2::jsonb, false), f.xmin::text
 		FROM findings f JOIN assets a ON a.id = f.asset_id JOIN inventory i ON i.id = f.inventory_id
 		LEFT JOIN epss_scores ep ON f.kind = 'vulnerability' AND ep.cve = f.key
 		WHERE f.status = 'open' AND ($1::bigint = 0 OR f.asset_id = $1)
@@ -193,7 +195,7 @@ func riskRows(ctx context.Context, db q, now time.Time, assetID int64) ([]riskRo
 		)
 		if err := rows.Scan(&r.id, &r.in.Kind, &r.in.Severity, &r.in.Score, &r.in.KnownExploited, &r.in.InternetExposed, &r.in.ExposureSource,
 			&r.in.Environment, &r.in.Criticality, &r.in.FixAvailable, &r.in.Scope, &r.in.Verification, &r.firstSeen, &r.in.KernelNotRunning,
-			&r.priority, &state, &fixDue, &r.title, &r.key, &r.assetID, &r.assetName, &r.in.EPSS, &r.in.EPSSCounted); err != nil {
+			&r.priority, &state, &fixDue, &r.title, &r.key, &r.assetID, &r.assetName, &r.in.EPSS, &r.in.EPSSCounted, &r.xmin); err != nil {
 			return nil, err
 		}
 		r.in.Overdue = fixDue != nil && now.After(*fixDue) && (state == "new" || state == "acknowledged" || state == "in_progress")
@@ -231,6 +233,15 @@ func (s *Store) Prioritize(ctx context.Context, p risk.Policy, now time.Time) (i
 // chunks written stay written; the next pass reads every finding again and
 // leaves alone those whose stored result is already right, so it finishes
 // the job without rewriting what was done.
+//
+// A chunk is written up to a pass's length after the read (tens of seconds
+// on a large workspace), so each write applies only to the row version that
+// was read, and only while the finding is open. A finding resolved since is
+// left with the priority it closed with; one changed since (an evaluation,
+// which rescores it itself, or a workflow action) is left as it now is, and
+// the next pass scores it from what it is then. The rows are not locked
+// when read: locking every open finding every minute would write to each
+// of them (and the WAL) even when nothing changes.
 func (s *Store) PrioritizeAsset(ctx context.Context, p risk.Policy, now time.Time, assetID int64) (int, error) {
 	rows, err := riskRows(ctx, s.Pool, now, assetID)
 	if err != nil {
@@ -268,11 +279,11 @@ func (s *Store) writePriorities(ctx context.Context, p risk.Policy, version stri
 		batch.Queue(`UPDATE findings SET priority = $2, priority_score = $3, priority_factors = $4, sos = $5, sos_rule = $8,
 			ack_due = $6, fix_due = $7, priority_policy = $9,
 			assignee_team_id = COALESCE(assignee_team_id, (SELECT owner_team_id FROM assets WHERE id = findings.asset_id))
-			WHERE id = $1 AND (
+			WHERE id = $1 AND status = 'open' AND xmin::text = $10 AND (
 			  (priority, priority_score, priority_factors, sos, sos_rule, ack_due, fix_due, priority_policy)
 			    IS DISTINCT FROM ($2::text, $3::real, $4::jsonb, $5::boolean, $8::text, $6::timestamptz, $7::timestamptz, $9::text)
 			  OR (assignee_team_id IS NULL AND (SELECT owner_team_id FROM assets WHERE id = findings.asset_id) IS NOT NULL))`,
-			r.id, res.Priority, res.Score, factors, res.SOS, ackDue, fixDue, res.SOSRule, version)
+			r.id, res.Priority, res.Score, factors, res.SOS, ackDue, fixDue, res.SOSRule, version, r.xmin)
 	}
 	return s.Pool.SendBatch(ctx, batch).Close()
 }
