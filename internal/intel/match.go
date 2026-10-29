@@ -416,9 +416,24 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 		return cur
 	}
 	fipsBuild := strings.HasPrefix(t.Ecosystem, "Ubuntu:") && osv.FIPSBuild(t.Version)
+	// Oracle's Ksplice and FIPS builds (another epoch) are matched against
+	// their own channel's records, and a regular build never is. Records of
+	// the regular packages apply to every build, as in Oracle's OVAL, but
+	// their "not affected" says nothing about a Ksplice or FIPS build.
+	oracle := strings.HasPrefix(t.Ecosystem, "Oracle Linux:")
+	oracleBuild := ""
+	if oracle {
+		oracleBuild = osv.OracleBuild(t.Version)
+	}
 	for _, a := range advs {
 		if a.Withdrawn != nil || !osv.MatchEcosystem(a.Ecosystem, t.Ecosystem) {
 			continue
+		}
+		recordChannel := ""
+		if oracle {
+			if recordChannel = osv.OracleChannel(a.Ecosystem); recordChannel != "" && recordChannel != oracleBuild {
+				continue
+			}
 		}
 		// Ubuntu's FIPS channels describe FIPS builds only, and a FIPS build
 		// takes its fixes from them, never from the regular channels.
@@ -444,7 +459,7 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 			freeChecked[a.GroupKey] = true
 		}
 		if !m.Affected {
-			if !pro {
+			if !pro && recordChannel == oracleBuild {
 				freeClear[a.GroupKey]++
 			}
 			continue

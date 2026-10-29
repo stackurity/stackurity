@@ -22,7 +22,7 @@ var distroFeeds = map[string]string{
 	"deb:debian": "Debian", "deb:ubuntu": "Ubuntu", "apk:alpine": "Alpine",
 	"rpm:rocky": "Rocky Linux", "rpm:almalinux": "AlmaLinux", "rpm:rhel": "Red Hat",
 	"rpm:sles": "SUSE", "rpm:sles_sap": "SUSE", "rpm:sled": "SUSE", "rpm:opensuse-leap": "openSUSE",
-	"rpm:amzn": "Amazon Linux",
+	"rpm:amzn": "Amazon Linux", "rpm:ol": "Oracle Linux",
 }
 
 // purlTypesFor lists the purl types whose components an OSV ecosystem covers.
@@ -92,8 +92,13 @@ func EnsureFeeds(ctx context.Context, s *store.Store) error {
 				continue
 			}
 			refresh, stale := time.Hour, 6*time.Hour
-			if eco == "Amazon Linux" {
+			switch eco {
+			case "Amazon Linux":
 				// A full read of every repository; Amazon publishes a few times a week.
+				refresh, stale = 6*time.Hour, 48*time.Hour
+			case "Oracle Linux":
+				// A full read of each release's file (4 to 6 MB); Oracle
+				// publishes several times a day.
 				refresh, stale = 6*time.Hour, 48*time.Hour
 			}
 			if err := ensure(VulnFeed(eco), "vulnerability", refresh, stale); err != nil {
@@ -115,7 +120,7 @@ func ComponentsToEvaluate(ctx context.Context, s *store.Store, feed string, res 
 		return s.ComponentsOfTypes(ctx, allTypes())
 	case feed == FeedMSRC:
 		return s.ComponentsWithPurlKey(ctx, windowsPurlKey)
-	case strings.HasPrefix(feed, "osv:") || feed == FeedAmazonLinux:
+	case strings.HasPrefix(feed, "osv:") || feed == FeedAmazonLinux || feed == FeedOracleLinux:
 		base, _ := feedEcosystem(feed)
 		types := purlTypesFor(base)
 		if len(types) == 0 {

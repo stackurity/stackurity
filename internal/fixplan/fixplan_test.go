@@ -104,6 +104,12 @@ func TestSubscriptionChannels(t *testing.T) {
 	if u, _ := manager("amzn", "2023"); u != "sudo dnf upgrade --refresh" {
 		t.Errorf("Amazon Linux 2023 = %q", u)
 	}
+	if u, _ := manager("ol", "7.9"); u != "sudo yum update" {
+		t.Errorf("Oracle Linux 7 has no dnf: %q", u)
+	}
+	if u, _ := manager("ol", "9.4"); u != "sudo dnf upgrade --refresh" {
+		t.Errorf("Oracle Linux 9 = %q", u)
+	}
 }
 
 func TestRepositoryGrouping(t *testing.T) {

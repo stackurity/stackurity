@@ -22,6 +22,7 @@ type Config struct {
 	NpmRegistry      string // https://registry.npmjs.org
 	PackagistURL     string // https://repo.packagist.org
 	AmazonLinuxURL   string // https://cdn.amazonlinux.com
+	OracleLinuxURL   string // https://linux.oracle.com/security/oval (ELSA OVAL files)
 	PyPIURL          string // https://pypi.org
 	GoProxyURL       string // https://proxy.golang.org
 	CratesIndexURL   string // https://index.crates.io (the sparse index)
@@ -48,6 +49,7 @@ func DefaultConfig() Config {
 		NpmRegistry:      "https://registry.npmjs.org",
 		PackagistURL:     "https://repo.packagist.org",
 		AmazonLinuxURL:   "https://cdn.amazonlinux.com",
+		OracleLinuxURL:   "https://linux.oracle.com/security/oval",
 		PyPIURL:          "https://pypi.org",
 		GoProxyURL:       "https://proxy.golang.org",
 		CratesIndexURL:   "https://index.crates.io",

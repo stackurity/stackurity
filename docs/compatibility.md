@@ -26,7 +26,8 @@ Release binaries: linux/amd64, linux/arm64, windows/amd64, darwin/amd64 and darw
 | SUSE Linux Enterprise | rpm | Yes, LTSS fixes labelled (0.2+), and fixes only published for SAP or HPC products | OSV (SUSE) |
 | openSUSE Leap | rpm | Yes (0.2+) | OSV (openSUSE) |
 | Amazon Linux 2023 and 2 | rpm | Yes (0.2+); Amazon Linux 2 extras topics with a version line | ALAS from Amazon's repositories |
-| CentOS, Oracle Linux, Fedora, Amazon Linux 1 | rpm | No: evaluation gap | |
+| Oracle Linux 7, 8, 9 and 10 (and 6) | rpm | Yes: the Unbreakable Enterprise Kernel per line, module streams named by version, Ksplice and FIPS builds against their own fixes; see [Oracle Linux](#oracle-linux) | ELSA (OVAL) from `linux.oracle.com` |
+| CentOS, Fedora, Amazon Linux 1, Oracle Linux 5 | rpm | No: evaluation gap | |
 | Windows 10, 11, Server 2016, 2019, 2022, 2025 | Registry (installed programs, OS build) | Operating system vulnerabilities through cumulative updates: the build and update revision against Microsoft's fixed builds, one finding per missing CVE naming its update (KB); see [Windows missing updates](#windows-missing-updates). Lifecycle for the operating system (see [Windows end of life](#windows-end-of-life)). Installed programs are not matched; installed KBs and Store apps are unsupported coverage; hotpatched hosts, .NET Framework, Office and servicing stack updates are not evaluated | Microsoft Security Update Guide (MSRC CVRF); endoflife.date `windows-server`, `windows` |
 | Windows Server 2012 R2 and older, Windows 7, 8, 8.1 | Registry | No: lifecycle only; paid Extended Security Updates are not evaluated (unsupported coverage) | endoflife.date |
 | Runtimes outside a package manager | Detected | No: lifecycle only | endoflife.date |
@@ -230,6 +231,29 @@ reason (vendor builds per repository); and products with no lifecycle match.
 Each is counted by assets and workspaces. The report names no workspace,
 asset, path or package. The new file kinds are reported by agents and scans
 from this release on; older agents report only the kinds they knew.
+
+## Oracle Linux
+
+OSV has no Oracle Linux data. Oracle publishes its security advisories (ELSA) as OVAL, one file per release (`https://linux.oracle.com/security/oval/com.oracle.elsa-ol9.xml.bz2`; Oracle Linux 7: 3.4 MB, 8: 5.8 MB, 9: 3.6 MB, 10: 1.3 MB compressed, as of October 2026). The feed `elsa:Oracle Linux` is created when an Oracle Linux host or image is in inventory (`distro=ol-<version>`), reads every 6 hours the files of the releases in inventory and no others, and parses each as a stream: it holds a compact record of each definition and the test, object and state index, never the document (the Oracle Linux 8 file, 110 MB of XML, peaks at about 150 MB of memory and parses in about 4 s). Files are refused above 64 MB compressed or 1 GiB uncompressed.
+
+**What is stored.** Each ELSA becomes one advisory per release, `OL9-ELSA-2023-12850`, aliased to `ELSA-2023-12850` and to its CVEs (so KEV, EPSS and search apply, and the finding is keyed by the CVE as for Red Hat advisories), with Oracle's severity, the highest CVSS v3 vector of its CVEs, and links to Oracle's errata and CVE pages. Bug fix and enhancement advisories (ELBA, ELEA) are not read. One definition can cover several releases (an Unbreakable Enterprise Kernel advisory for Oracle Linux 8 and 9), so each release's file contributes only its own release's branches and owns its own advisories.
+
+**Matching.** Packages are matched by binary package name and compared with rpm rules, epoch included, so Oracle's rebuilds of Red Hat packages (`2.34-60.0.3.el9`, `.0.1` releases) compare as rpm compares them: `7.76.1-23.0.1.el9_2.1` is at or above Red Hat's `7.76.1-23.el9_2.1`. Where a release's branch says more than "earlier than":
+
+- **Unbreakable Enterprise Kernel.** `kernel-uek*` and UEK's `bpftool` carry their line (UEK R6 `5.4.17`, R7 `5.15.0`, R8 `6.12.0`) in Oracle's own data; each fix applies only to its line, so a UEK R7 kernel is never compared with an R8 fix, nor the Red Hat compatible kernel's `bpftool` 4.18 with UEK's. The `el9uek` releases compare like any rpm release. Kernel findings are then reported once per kernel version (see [Kernels](#kernels)).
+- **Ksplice and FIPS builds.** Ksplice userspace builds (`glibc-2:2.34-60.0.3.ksplice1.el9`) and FIPS builds (`gnutls-10:3.7.6-23.el9_3.4_fips`) carry another epoch and have their own advisories. A package whose release says `ksplice` or `fips` is matched against those, and a regular build never is (otherwise every regular host would be "below" an epoch 2 or 10 fix). Advisories for the regular packages apply to every build, as in Oracle's OVAL.
+- **Module streams.** When the stream is the start of the fixed version (`nodejs:18` and `1:18.20.4-1.module+el8.10.0...`), the fix applies only to that stream's versions, as for the UEK lines.
+- Where a branch lists two fixes for one package (one per architecture, or a z-stream rebuild), the higher one counts: OVAL reads them as alternatives, and the agent does not report the architecture.
+
+**Robustness.** A file that cannot be read (an outage, a truncated or corrupted download, a size limit) does not hold up the other releases: the sync stores what it read, re-evaluates, succeeds with a warning (shown as the feed's last error) and reads that file again next time, keeping what it last read of that release meanwhile. A file that lists no advisory for its release, or fewer than half of those stored for it, is refused the same way, so a truncated download never withdraws a release's advisories. An advisory a good file no longer lists is withdrawn and its findings close as withdrawn. The sync fails only when no file could be read. A release Oracle publishes no file for is "not evaluated" with the reason, never clean; Oracle Linux 5 and older have no source.
+
+**Not checked** (the same as for the OSV-based Red Hat family unless said):
+
+- Module streams that are not a version (`container-tools:ol8`, `virt:ol`, `perl:5.32` for a package not versioned 5.32), and packages of a stream whose version is not the stream's (`npm`, `nodejs-packaging`): Oracle's data says which stream must be enabled, and the agent does not report enabled streams, so these are compared across streams. A host on an older stream can be reported against a newer stream's fix.
+- The signing key and architecture Oracle's tests also check: a package of the same name from another vendor is compared as Oracle's (packages from known vendor repositories are excluded, see [Packages from vendor repositories](#packages-from-vendor-repositories)).
+- Ksplice live kernel patches (`uptrack`): a kernel patched in memory is reported until its package is updated.
+
+The second check re-derives these findings with its own reading of the release and build channel.
 
 ## Windows missing updates
 
