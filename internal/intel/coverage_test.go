@@ -301,8 +301,8 @@ func TestCoverageInvariants(t *testing.T) {
 				syncNpm(t, ctx, sy, up)
 			},
 			state: store.StatePartiallyEvaluated, row: store.CoverageNotEvaluated, reason: "could not be compared", summary: gaps},
-		{name: "unsupported ecosystem", obs: confirmed("pkg:hex/phoenix@1.7.0", nil),
-			state: store.StateUnsupported, row: store.CoverageUnsupported, reason: "no vulnerability source for hex", summary: gaps},
+		{name: "unsupported ecosystem", obs: confirmed("pkg:cocoapods/AFNetworking@4.0.1", nil),
+			state: store.StateUnsupported, row: store.CoverageUnsupported, reason: "CocoaPods packages have no vulnerability source", summary: gaps},
 		{name: "runtime outside a package manager", obs: confirmed("pkg:generic/nodejs@20.11.1", map[string]string{"kind": "runtime", "install": "unmanaged"}),
 			state: store.StateUnsupported, row: store.CoverageUnsupported, reason: "outside a package manager", summary: gaps},
 		{name: "never evaluated", obs: lodash,

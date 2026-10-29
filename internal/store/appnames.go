@@ -16,12 +16,17 @@ import (
 // would clash gets its path, relative to the directory the copies share:
 // "phpmyadmin (/phpmyadmin) on DBC" and "phpmyadmin (/demo/phpmyadmin) on
 // DBC". An earlier copy still carrying exactly the generated name is
-// renamed the same way; a name a person set is never changed.
+// renamed the same way; a name a person set is never changed. The same
+// runs for an existing copy each time it reports, so copies named alike
+// before this existed are told apart too (migration 0050 renamed those
+// already in the database).
 
-// appName returns the name a new asset is created with: the batch's name,
-// with the application's path added when needed. It renames clashing
-// earlier copies in the same transaction.
-func appName(ctx context.Context, tx pgx.Tx, b *model.ObservationBatch) (string, error) {
+// appName returns the name for the batch's application: the batch's name,
+// with the application's path added when another copy on the host has the
+// same one. It renames clashing copies in the same transaction. self is
+// the asset when it exists already (0 for a new one); its own row is
+// renamed here only while it carries the plain generated name.
+func appName(ctx context.Context, tx pgx.Tx, b *model.ObservationBatch, self int64) (string, error) {
 	name := b.Asset.Name
 	if b.Asset.Kind != model.AssetApplication || len(b.Asset.Identifiers) != 1 || b.Asset.Identifiers[0].Scheme != model.AppPathScheme {
 		return name, nil
@@ -65,6 +70,9 @@ func appName(ctx context.Context, tx pgx.Tx, b *model.ObservationBatch) (string,
 			rows.Close()
 			return "", err
 		}
+		if s.id == self {
+			continue
+		}
 		s.dir = strings.TrimPrefix(v, prefix)
 		// Copies of the same application: the plain generated name, or one
 		// with a path already added.
@@ -93,7 +101,13 @@ func appName(ctx context.Context, tx pgx.Tx, b *model.ObservationBatch) (string,
 			return "", err
 		}
 	}
-	return app + " (" + label[path.Clean(dir)] + ")" + suffix, nil
+	named := app + " (" + label[path.Clean(dir)] + ")" + suffix
+	if self != 0 {
+		if _, err := tx.Exec(ctx, `UPDATE assets SET name = $3 WHERE id = $1 AND name = $2 AND NOT name_by_person`, self, name, named); err != nil {
+			return "", err
+		}
+	}
+	return named, nil
 }
 
 // appPaths labels each directory by its path below the directory they all

@@ -82,7 +82,7 @@ export function displayPurl(purl: string): string {
 }
 
 export const ASSET_KIND_LABEL: Record<string, string> = {
-  host: "Host",
+  host: "Server",
   repository: "Repository",
   image: "Container image",
   application: "Application",
@@ -94,4 +94,90 @@ export const ASSET_KIND_LABEL: Record<string, string> = {
 
 export function assetKindLabel(kind: string): string {
   return ASSET_KIND_LABEL[kind] ?? humanize(kind);
+}
+
+/** Plural kind headings for grouped asset lists ("Hosts", "Repositories"). */
+export const ASSET_KIND_GROUP: Record<string, string> = {
+  host: "Servers",
+  application: "Applications",
+  repository: "Repositories",
+  image: "Container images",
+  managed_service: "Managed services",
+  sbom: "SBOMs",
+  cluster: "Kubernetes clusters",
+  workload: "Workloads",
+};
+
+/** Lower-case kind words for telling assets apart: "commmerceblog (server)". */
+export const ASSET_KIND_SHORT: Record<string, string> = {
+  host: "server",
+  application: "app",
+  repository: "repository",
+  image: "image",
+  managed_service: "managed service",
+  sbom: "SBOM",
+  cluster: "cluster",
+  workload: "workload",
+};
+
+/** The order kinds are grouped in: servers, then what runs on them, then the rest. */
+const KIND_ORDER = ["host", "application", "repository", "image", "workload", "cluster", "managed_service", "sbom"];
+
+interface NamedAsset {
+  id: number;
+  name: string;
+  kind: string;
+  environment?: string;
+  collection_status?: string;
+  attributes?: Record<string, string> | null;
+}
+
+/**
+ * What tells an asset apart from others with the same name in a list:
+ * nothing when its name is unique; the kind when the others are of another
+ * kind (a server and a repository both called "commmerceblog"); otherwise
+ * an application's path, the environment or the id. "removed" is added for
+ * an application that is gone from its host.
+ */
+export function assetDistinctions<T extends NamedAsset>(list: T[]): Map<number, string> {
+  const byName = new Map<string, T[]>();
+  for (const a of list) byName.set(a.name, [...(byName.get(a.name) ?? []), a]);
+  const out = new Map<number, string>();
+  for (const a of list) {
+    const same = byName.get(a.name) ?? [];
+    const parts: string[] = [];
+    if (same.length > 1) {
+      const sameKind = same.filter((x) => x.kind === a.kind);
+      if (sameKind.length < same.length) parts.push(ASSET_KIND_SHORT[a.kind] ?? humanize(a.kind));
+      if (sameKind.length > 1) {
+        const dir = a.kind === "application" ? a.attributes?.app_dir : "";
+        const envs = new Set(sameKind.map((x) => x.environment ?? ""));
+        parts.push(dir || (envs.size === sameKind.length && a.environment ? a.environment : `#${a.id}`));
+      }
+    }
+    if (a.collection_status === "removed") parts.push("removed");
+    if (parts.length) out.set(a.id, parts.join(", "));
+  }
+  return out;
+}
+
+/** "commmerceblog (Repository)": the name with what tells it apart, if anything does. */
+export function assetLabel(a: NamedAsset, distinctions: Map<number, string>): string {
+  const d = distinctions.get(a.id);
+  return d ? `${a.name} (${d})` : a.name;
+}
+
+/** Assets grouped by kind, in a stable kind order, names sorted within each. */
+export function groupAssetsByKind<T extends NamedAsset>(list: T[]): { kind: string; label: string; items: T[] }[] {
+  const groups = new Map<string, T[]>();
+  for (const a of list) groups.set(a.kind, [...(groups.get(a.kind) ?? []), a]);
+  const kinds = [...groups.keys()].sort((x, y) => {
+    const ix = KIND_ORDER.indexOf(x), iy = KIND_ORDER.indexOf(y);
+    return (ix < 0 ? 99 : ix) - (iy < 0 ? 99 : iy) || x.localeCompare(y);
+  });
+  return kinds.map((k) => ({
+    kind: k,
+    label: ASSET_KIND_GROUP[k] ?? humanize(k),
+    items: [...groups.get(k)!].sort((x, y) => x.name.localeCompare(y.name) || x.id - y.id),
+  }));
 }

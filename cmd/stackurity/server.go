@@ -255,7 +255,8 @@ func serverCmd() *cobra.Command {
 				Packs:              packMgr,
 				Licence:            holder, Gate: gate, LicenceFromEnv: licFromEnv,
 				Health: checker, UpdateCheck: updateCfg.Enabled,
-				FeedbackURL: feedbackURL,
+				CoverageGaps: func(ctx context.Context) (any, error) { return intel.CoverageGaps(ctx, st, nil) },
+				FeedbackURL:  feedbackURL,
 			}
 			// Metrics have their own listener, off by default, so they are
 			// never reachable on the public API port.
@@ -948,7 +949,28 @@ func adminCmd() *cobra.Command {
 		},
 	}
 
-	c.AddCommand(createUser, createToken, loadDemo, createWorkspace, listWorkspaces, renameWorkspace, setLicence)
+	verifyAudit := &cobra.Command{
+		Use:   "verify-audit",
+		Short: "Verify the audit log's hash chains and report the first break of each (every workspace, or only --workspace; 0 is the platform's events)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			st, err := openStore(cmd.Context())
+			if err != nil {
+				return err
+			}
+			defer st.Pool.Close()
+			var only *int64
+			if cmd.Flags().Changed("workspace") {
+				only = &workspace
+			}
+			chains, err := st.VerifyAudit(cmd.Context(), only)
+			if err != nil {
+				return err
+			}
+			return printAuditChains(cmd.OutOrStdout(), chains)
+		},
+	}
+
+	c.AddCommand(createUser, createToken, loadDemo, createWorkspace, listWorkspaces, renameWorkspace, setLicence, verifyAudit)
 	return c
 }
 

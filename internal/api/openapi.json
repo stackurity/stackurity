@@ -244,6 +244,35 @@
     }
    }
   },
+  "/admin/coverage-gaps": {
+   "get": {
+    "operationId": "get_admin_coverage_gaps",
+    "summary": "What Stackurity cannot check, across workspaces",
+    "description": "What Stackurity cannot check across every active workspace, as counts of assets and workspaces by type: `unread_files` (files no built-in reader or installed stack pack reads, by kind such as `hex:mix.lock`), `no_vulnerability_source` (components with unsupported coverage, by package type and reason, vendor builds by repository) and `no_lifecycle` (products no lifecycle source tracks, release lines missing from the data, runtimes and operating systems with no lifecycle product), with `workspaces`, `assets` and the lifecycle `overlay_version`. Names no workspace, asset, path or package (compatibility.md)\n\nRole: instance admin",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "instance admin",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/admin/health": {
    "get": {
     "operationId": "get_admin_health",
@@ -2368,6 +2397,53 @@
      },
      {
       "name": "offset",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/checks/options": {
+   "get": {
+    "operationId": "get_checks_options",
+    "summary": "How each fix group or asset can be checked again",
+    "description": "How each fix group (fix_group) or asset (asset_id) can be checked again: on_demand when a check gets a fresh report within minutes, else reason (removed, agent, upload, not_found), with method, host_name and the latest check (last_check). Repeat a parameter or separate values with commas; at most 50.\n\nRole: viewer",
+    "tags": [
+     "Findings and fixes"
+    ],
+    "x-stackurity-role": "viewer",
+    "parameters": [
+     {
+      "name": "fix_group",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "asset_id",
       "in": "query",
       "required": false,
       "schema": {
@@ -8378,6 +8454,302 @@
       }
      }
     },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/sso": {
+   "get": {
+    "operationId": "get_sso",
+    "summary": "The organisation's own single sign-on (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. `available` (the plan includes it), `config` (provider, attribute mapping, `version`, `tested_version`, `test_result`, `enabled`, `require_sso`, `link_existing`), `service_provider` (`entity_id`, `acs_url`, `metadata_url`, `login_url`), `domains`, `owner_id`\n\nRole: admin",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "admin",
+    "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "put": {
+    "operationId": "put_sso",
+    "summary": "Save the organisation's SAML identity provider (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. `idp_metadata_url` (https) or `idp_metadata` (XML; neither keeps the saved one), `label`, `email_attribute`, `name_attribute`, `groups_attribute`, `role_map`, `default_role`, `link_existing`. The metadata is checked at once. A save is a new version and switches single sign-on off until a test passes. `402 plan_required` without the plan\n\nRole: admin",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "delete_sso",
+    "summary": "Remove the organisation's single sign-on (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. Removes the provider and switches single sign-on off\n\nRole: admin",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "admin",
+    "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/sso/state": {
+   "put": {
+    "operationId": "put_sso_state",
+    "summary": "Switch the organisation's single sign-on on or off (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. `enabled`, `require_sso`. Switching on needs a passed test of the current version and a verified domain; requiring it needs it on. The owner can always sign in with a password\n\nRole: admin",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/sso/domains": {
+   "post": {
+    "operationId": "post_sso_domains",
+    "summary": "Claim an email domain for single sign-on (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. `domain`. Answers the TXT `record_name` and `record_value` that prove it\n\nRole: admin",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/sso/domains/{id}/verify": {
+   "post": {
+    "operationId": "post_sso_domains_id_verify",
+    "summary": "Verify a claimed domain by its DNS TXT record (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. `409` when another organisation verified the domain first\n\nRole: admin",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/sso/domains/{id}": {
+   "delete": {
+    "operationId": "delete_sso_domains_id",
+    "summary": "Remove a claimed domain (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. Sign-ins with the domain's addresses stop\n\nRole: admin",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/sso/discover": {
+   "post": {
+    "operationId": "post_auth_sso_discover",
+    "summary": "Find an organisation's single sign-on from an email (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. `email`. Answers `login_url` and `label` for the organisation that verified the address's domain, if its single sign-on is on; otherwise 404\n\nRole: anyone",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "anyone",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "x-stackurity-edition": "cloud",
     "responses": {
      "2XX": {
       "description": "Success",
