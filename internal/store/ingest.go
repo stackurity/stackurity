@@ -27,6 +27,9 @@ type IngestResult struct {
 	// only the assets it creates, so an existing asset may not be.
 	ProjectID int64 `json:"project_id,omitempty"`
 	InProject *bool `json:"in_project,omitempty"`
+	// AppsRemoved lists the applications on this host that the batch's
+	// app list (apps.dirs) no longer names, marked removed.
+	AppsRemoved []int64 `json:"apps_removed,omitempty"`
 }
 
 // AssetInProject reports whether an asset is in a project.
@@ -112,15 +115,23 @@ func (s *Store) Ingest(ctx context.Context, b *model.ObservationBatch, tokenID i
 		if err != nil {
 			return err
 		}
-		// Only a complete collection can prove that something is gone.
-		if b.Complete {
+		// A complete collection proves that whatever it left out is gone.
+		// An incomplete one proves it outside the paths it could not read
+		// (an unreadable cache directory must not keep an upgraded
+		// application's old libraries open forever).
+		if blind, ok := blindPaths(b); ok {
 			tag, err := tx.Exec(ctx, `UPDATE inventory SET removed_at = $3
-				WHERE asset_id = $1 AND collector_id = $2 AND removed_at IS NULL AND last_collection_id <> $4`,
-				assetID, b.Collector.ID, b.ObservedAt, res.CollectionID)
+				WHERE asset_id = $1 AND collector_id = $2 AND removed_at IS NULL AND last_collection_id <> $4
+				  AND (cardinality($5::text[]) = 0 OR (location LIKE '/%' AND NOT EXISTS (SELECT 1 FROM unnest($5::text[]) p
+				    WHERE location = p OR starts_with(location, rtrim(p, '/') || '/'))))`,
+				assetID, b.Collector.ID, b.ObservedAt, res.CollectionID, blind)
 			if err != nil {
 				return err
 			}
 			res.Removed = tag.RowsAffected()
+			if _, err := tx.Exec(ctx, `UPDATE collections SET proves_absence = true WHERE id = $1`, res.CollectionID); err != nil {
+				return err
+			}
 		}
 		if err := writeCoverage(ctx, tx, assetID, res.CollectionID, b); err != nil {
 			return err
@@ -128,6 +139,11 @@ func (s *Store) Ingest(ctx context.Context, b *model.ObservationBatch, tokenID i
 		if b.Relations != nil {
 			if err := writeRelations(ctx, tx, assetID, b); err != nil {
 				return fmt.Errorf("relations: %w", err)
+			}
+		}
+		if b.Apps != nil && b.Asset.Kind == model.AssetHost {
+			if res.AppsRemoved, err = removeGoneApps(ctx, tx, assetID, b, tok); err != nil {
+				return fmt.Errorf("removed applications: %w", err)
 			}
 		}
 		status := "ok"
@@ -285,7 +301,7 @@ func resolveAsset(ctx context.Context, tx pgx.Tx, b *model.ObservationBatch) (in
 			return 0, false, nil, err
 		}
 		isNew = true
-		name, err := appName(ctx, tx, b)
+		name, err := appName(ctx, tx, b, 0)
 		if err != nil {
 			return 0, false, nil, err
 		}
@@ -297,6 +313,9 @@ func resolveAsset(ctx context.Context, tx pgx.Tx, b *model.ObservationBatch) (in
 		}
 	} else {
 		assetID = ids[0]
+		if _, err := appName(ctx, tx, b, assetID); err != nil {
+			return 0, false, nil, err
+		}
 		if len(ids) > 1 {
 			conflict = ids
 			idsJSON, _ := json.Marshal(b.Asset.Identifiers)
@@ -337,7 +356,7 @@ func nonNil(m map[string]string) map[string]string {
 // visible, never healthy). Returns the number newly marked.
 func (s *Store) MarkStaleAssets(ctx context.Context, maxAge time.Duration) (int64, error) {
 	tag, err := s.Pool.Exec(ctx, `UPDATE assets SET collection_status = 'stale'
-		WHERE merged_into IS NULL AND collection_status <> 'stale' AND last_seen < now() - make_interval(secs => $1)`,
+		WHERE merged_into IS NULL AND collection_status NOT IN ('stale', 'removed') AND last_seen < now() - make_interval(secs => $1)`,
 		maxAge.Seconds())
 	return tag.RowsAffected(), err
 }

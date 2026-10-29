@@ -299,7 +299,8 @@ var tools = map[string]tool{
 	},
 	"list_assets": {
 		description: "List inventoried assets: hosts, deployed applications, repositories, container images and managed services. " +
-			"Use it to find the asset_id of a project or server.",
+			"Use it to find the asset_id of a project or server. Names can repeat (a host and a repository of the same name); " +
+			"label tells them apart. collection_status removed means an application is gone from its host.",
 		schema: obj(map[string]any{
 			"kind":        map[string]any{"type": "string", "enum": []string{"host", "application", "repository", "image", "managed_service", "sbom", "cluster", "workload"}},
 			"query":       str("Name contains this text"),
@@ -337,15 +338,39 @@ var tools = map[string]tool{
 				OS          string `json:"os,omitempty"`
 				Reboot      string `json:"reboot_required,omitempty"`
 				Path        string `json:"path,omitempty"` // an application's directory on its host
+				// Label tells assets with the same name apart: the name, with
+				// the kind (and the path or environment) when another asset in
+				// the list has the same name ("commmerceblog (repository)").
+				Label string `json:"label"`
 			}
 			out := []item{}
+			names := map[string]int{}
+			kinds := map[string]int{}
+			for _, x := range res.Items {
+				names[x.Name]++
+				kinds[x.Name+"\x00"+x.Kind]++
+			}
 			for _, x := range res.Items {
 				path := ""
 				if x.Kind == "application" {
 					path = x.Attributes["app_dir"]
 				}
+				label := x.Name
+				if names[x.Name] > 1 {
+					detail := strings.ReplaceAll(x.Kind, "_", " ")
+					switch {
+					case kinds[x.Name+"\x00"+x.Kind] == 1:
+					case path != "":
+						detail += ", " + path
+					case x.Environment != "":
+						detail += ", " + x.Environment
+					default:
+						detail += fmt.Sprintf(", #%d", x.ID)
+					}
+					label += " (" + detail + ")"
+				}
 				out = append(out, item{x.ID, x.Kind, x.Name, x.Environment, x.Status, x.LastSeen, x.Components,
-					x.Attributes["os_name"], x.Attributes["reboot_required"], path})
+					x.Attributes["os_name"], x.Attributes["reboot_required"], path, label})
 			}
 			return map[string]any{"assets": out, "total": res.Total}, nil
 		},

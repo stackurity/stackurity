@@ -197,6 +197,11 @@ func (c *Client) ImportSBOM(ctx context.Context, doc io.Reader, assetName, asset
 // in the project named by project_id (0.10). Older servers ignore it.
 const FeatureUploadProject = "upload_project"
 
+// FeatureAppList, in Meta.Features, means the server takes a host batch's
+// list of application directories (apps.dirs) and marks the applications
+// missing from it removed (0.14). Older servers refuse the field.
+const FeatureAppList = "app_list"
+
 // Meta is the server's anonymous description of itself (GET /meta).
 type Meta struct {
 	Version       string   `json:"version"`

@@ -92,33 +92,46 @@ var markers = []string{"package.json", "package-lock.json", "yarn.lock", "pnpm-l
 var DiscoverBases = []string{"/srv", "/var/www", "/opt", "/app", "/home/*", "/home/*/apps", "/home/*/www"}
 
 // Discover returns project directories up to three levels below the usual
-// deployment bases. A release layout (releases/ plus a current link) yields
-// only the current release.
+// deployment bases. A release layout (releases/ or versions/ plus a
+// current link) yields only the current release.
 //
 // It only lists directories and checks for marker files: nothing is opened
 // or run, symbolic links to directories are not followed, hidden and
 // dependency directories are skipped, and the walk stops after
 // maxDiscoverDirs directories or MaxDiscoverApps applications.
 func (s *Scanner) Discover() []string {
+	dirs, _ := s.discover(maxDiscoverDirs, MaxDiscoverApps)
+	return dirs
+}
+
+// DiscoverAll is Discover, and whether the walk saw everything: false when
+// it stopped at its limits, so an application missing from the list may
+// still be on disk.
+func (s *Scanner) DiscoverAll() ([]string, bool) {
 	return s.discover(maxDiscoverDirs, MaxDiscoverApps)
 }
 
-func (s *Scanner) discover(maxDirs, maxApps int) []string {
+func (s *Scanner) discover(maxDirs, maxApps int) ([]string, bool) {
 	seen := map[string]bool{}
 	var out []string
 	budget := maxDirs
+	full := true
 	for _, pattern := range DiscoverBases {
 		bases, _ := filepath.Glob(s.path(pattern))
 		sort.Strings(bases)
 		for _, base := range bases {
-			s.discoverIn(s.hostPath(base), 0, seen, &out, &budget, maxApps)
+			s.discoverIn(s.hostPath(base), 0, seen, &out, &budget, maxApps, &full)
 		}
 	}
-	return out
+	return out, full
 }
 
-func (s *Scanner) discoverIn(dir string, depth int, seen map[string]bool, out *[]string, budget *int, maxApps int) {
-	if depth > 3 || seen[dir] || *budget <= 0 || len(*out) >= maxApps {
+func (s *Scanner) discoverIn(dir string, depth int, seen map[string]bool, out *[]string, budget *int, maxApps int, full *bool) {
+	if depth > 3 || seen[dir] {
+		return
+	}
+	if *budget <= 0 || len(*out) >= maxApps {
+		*full = false
 		return
 	}
 	*budget--
@@ -143,18 +156,22 @@ func (s *Scanner) discoverIn(dir string, depth int, seen map[string]bool, out *[
 		if !e.IsDir() || skipDiscover[e.Name()] || strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
-		s.discoverIn(path.Join(dir, e.Name()), depth+1, seen, out, budget, maxApps)
+		s.discoverIn(path.Join(dir, e.Name()), depth+1, seen, out, budget, maxApps, full)
 	}
 }
 
 var skipDiscover = map[string]bool{"node_modules": true, "vendor": true, "releases": true, "shared": true, "cache": true, "tmp": true, "logs": true}
 
-// currentRelease follows Capistrano/Deployer-style layouts, where old
-// releases stay on disk but only "current" runs.
+// releaseDirs hold a release layout's releases: Capistrano, Deployer and
+// Envoyer keep them in releases/, Ghost-CLI in versions/. Only the one
+// "current" links to runs; the others are old releases kept for rollback.
+var releaseDirs = []string{"releases", "versions"}
+
+// currentRelease follows a release layout: dir has a releases/ (or
+// versions/) directory and a "current" link to one release in it, as
+// Capistrano, Deployer, Envoyer and Ghost-CLI (/var/www/ghost/current ->
+// versions/6.52.0) deploy. Old releases stay on disk but only current runs.
 func (s *Scanner) currentRelease(dir string) (string, bool) {
-	if fi, err := os.Stat(s.path(path.Join(dir, "releases"))); err != nil || !fi.IsDir() {
-		return "", false
-	}
 	target, err := os.Readlink(s.path(path.Join(dir, "current")))
 	if err != nil {
 		return "", false
@@ -163,8 +180,16 @@ func (s *Scanner) currentRelease(dir string) (string, bool) {
 		target = path.Join(dir, target)
 	}
 	target = path.Clean(target)
-	if !strings.HasPrefix(target, dir+"/") {
-		return "", false // a release must live under the application
+	inRelease := false
+	for _, r := range releaseDirs {
+		base := path.Join(dir, r)
+		if fi, err := os.Stat(s.path(base)); err == nil && fi.IsDir() && strings.HasPrefix(target, base+"/") {
+			inRelease = true
+			break
+		}
+	}
+	if !inRelease {
+		return "", false // a release must live in the application's releases
 	}
 	// The release itself (releases/2) may be another link: what it finally
 	// resolves to must be inside the application as well.
@@ -174,6 +199,14 @@ func (s *Scanner) currentRelease(dir string) (string, bool) {
 		return "", false
 	}
 	return target, true
+}
+
+// isReleaseDir reports whether host path p is the versions/ (or
+// releases/) directory of a release layout: its parent has a current link
+// into it.
+func (s *Scanner) isReleaseDir(p string) bool {
+	cur, ok := s.currentRelease(path.Dir(p))
+	return ok && strings.HasPrefix(cur, p+"/")
 }
 
 func (s *Scanner) hostPath(p string) string {
@@ -275,6 +308,8 @@ func (s *Scanner) ScanApp(ctx context.Context, dir string) App {
 			return fs.SkipDir
 		case name == ".git" || name == "releases" && host != dir:
 			return fs.SkipDir
+		case name == "versions" && host != dir && s.isReleaseDir(host):
+			return fs.SkipDir // Ghost-CLI's old releases, next to current
 		}
 		return nil
 	})
