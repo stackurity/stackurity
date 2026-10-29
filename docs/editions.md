@@ -12,12 +12,12 @@ What Community, Pro and Enterprise include, their limits and what each capabilit
 | Notifications: email, Slack, Teams, webhooks, Jira; urgent messages and daily or weekly summaries; routing by priority, kind and environment, quiet hours, hourly limits | ✓ | ✓ | ✓ | |
 | CI gates, MCP server for AI assistants, API and CLI, audit log | ✓ | ✓ | ✓ | |
 | Workspaces (several organisations on one installation, isolated by row-level security) | ✓ | ✓ | ✓ | Each workspace has a plan; it gets the lower of its plan and the licence |
-| Official stack packs (Java, Cargo) | ✓ | ✓ | ✓ | Installed by an instance admin ([packs.md](packs.md)) |
+| Official stack packs (Java, Cargo, Swift, Hex, C/C++) | ✓ | ✓ | ✓ | Installed by an instance admin ([packs.md](packs.md)) |
 | Teams | One | Any number | Any number | Community: creating a second team answers `402 plan_required` |
 | Routing alerts by team | | ✓ | ✓ | Community: a route with teams answers `402 plan_required` |
 | Escalation of overdue incidents (overdue reminders: summary section, daily overdue message, Jira comments) | | ✓ | ✓ | Licensed build only. Community: an escalation route answers `402 plan_required` |
 | Evidence report (patch-management evidence for audits) | | ✓ | ✓ | Licensed build only. Periods of up to a year, default the last 30 days |
-| Single sign-on (OpenID Connect or SAML) | | ✓ | ✓ | Licensed build only. The `STACKURITY_OIDC_*` or `STACKURITY_SAML_*` settings ([install.md](install.md#single-sign-on)), one provider of each kind per installation; people join `STACKURITY_OIDC_WORKSPACE` or `STACKURITY_SAML_WORKSPACE`, whose plan must include it. On Stackurity Cloud each organisation connects its own SAML provider instead (Enterprise plan; [install.md](install.md#your-organisations-own-single-sign-on-stackurity-cloud)) |
+| Single sign-on (OpenID Connect or SAML) | | ✓ | ✓ | Licensed build only. The `STACKURITY_OIDC_*` or `STACKURITY_SAML_*` settings ([install.md](install.md#single-sign-on)), one provider of each kind per installation; people join `STACKURITY_OIDC_WORKSPACE` or `STACKURITY_SAML_WORKSPACE`, whose plan must include it. On Stackurity Cloud each organisation connects its own SAML provider instead (on plans that include it; [install.md](install.md#your-organisations-own-single-sign-on-stackurity-cloud)) |
 | Automatic fixing on hosts | | ✓ | ✓ | Licensed build only. See [prerequisites](#automatic-fixing-prerequisites) below |
 | Renovate pull requests for repositories | | ✓ | ✓ | Licensed build only. npm and Composer; you run Renovate, which reads the configuration from Stackurity with a token |
 | Enterprise stack packs | | | ✓ | Packs whose manifest says `"edition": "enterprise"`; installing one needs an Enterprise licence. None ship in this repository |
