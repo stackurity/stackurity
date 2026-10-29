@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -417,6 +418,50 @@ func TestCheckAgainAPI(t *testing.T) {
 	if err := l.st.Pool.QueryRow(l.ctx, `SELECT EXISTS (SELECT 1 FROM jobs WHERE kind = 'integration.run' AND dedupe_key = $1 AND done_at IS NULL)`,
 		fmt.Sprintf("integration:%d", integ.ID)).Scan(&queued); err != nil || !queued {
 		t.Errorf("scan queued: %v %v", queued, err)
+	}
+}
+
+// GET /checks/options says where Check again does something: a host whose
+// agent polls (on demand), a repository uploaded from CI (not: re-run CI),
+// a fix that is gone from the plan (not_found, with its last check).
+func TestCheckOptionsAPI(t *testing.T) {
+	l := newLoopEnv(t)
+	l.poll(l.asset)
+	b := model.NewBatch(model.Collector{ID: "lockfile", Version: "1", Method: "lockfile"}, model.AssetRef{Kind: model.AssetRepository,
+		Name: "web-1", Identifiers: []model.Identifier{{Scheme: "git-url", Value: "https://github.com/x/web"}}})
+	b.Observations = []model.Observation{{Purl: "pkg:npm/lodash@4.17.15", Confidence: model.ConfidenceConfirmed}}
+	b.Complete = true
+	repo := l.send(l.collector, b)
+	type opt struct {
+		FixGroup  string       `json:"fix_group"`
+		AssetID   int64        `json:"asset_id"`
+		HostName  string       `json:"host_name"`
+		Method    string       `json:"method"`
+		OnDemand  bool         `json:"on_demand"`
+		Reason    string       `json:"reason"`
+		LastCheck *store.Check `json:"last_check"`
+	}
+	var res struct{ Items []opt }
+	if code := l.view.do("GET", fmt.Sprintf("/api/v1/checks/options?fix_group=%s,gone-fix&asset_id=%d", url.QueryEscape(l.group), repo), nil, &res); code != 200 || len(res.Items) != 3 {
+		t.Fatalf("options: %d %+v", code, res)
+	}
+	if o := res.Items[0]; o.FixGroup != l.group || !o.OnDemand || o.Method != "agent" || o.HostName != "web-1" || o.LastCheck != nil {
+		t.Errorf("host fix: %+v", o)
+	}
+	if o := res.Items[1]; o.Reason != "not_found" || o.OnDemand {
+		t.Errorf("gone fix: %+v", o)
+	}
+	if o := res.Items[2]; o.AssetID != repo || o.OnDemand || o.Reason != "upload" || o.Method != "report" {
+		t.Errorf("repository: %+v", o)
+	}
+	// After a check, it is the fix's last check.
+	l.eng.do("POST", fmt.Sprintf("/api/v1/fix-groups/%s/check", l.group), nil, nil)
+	l.view.do("GET", "/api/v1/checks/options?fix_group="+url.QueryEscape(l.group), nil, &res)
+	if len(res.Items) != 1 || res.Items[0].LastCheck == nil || res.Items[0].LastCheck.Status != "waiting" {
+		t.Errorf("last check: %+v", res.Items)
+	}
+	if code := l.view.do("GET", "/api/v1/checks/options", nil, nil); code != 400 {
+		t.Errorf("no ids: %d", code)
 	}
 }
 

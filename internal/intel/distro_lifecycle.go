@@ -38,6 +38,28 @@ import (
 //   - The version shows a build from another repository (Ondrej Sury's PHP
 //     packages, nginx.org, NodeSource, PGDG, Remi, MySQL's APT
 //     repository): the distribution does not maintain it, the finding stays.
+//   - The package's maintainer follows the upstream lifecycle for the
+//     product (followsUpstream): the finding stays.
+
+// followsUpstream reports distribution packages that stop getting fixes
+// when upstream support ends although the distribution release goes on.
+//
+// .NET: Red Hat's .NET life cycle is Microsoft's ("Microsoft establishes and
+// maintains the life cycle support policy for .NET on Red Hat Enterprise
+// Linux"), and Microsoft's own deb and rpm packages (packages.microsoft.com,
+// the only source on Debian) end with the release. Canonical supports the
+// .NET packages in Ubuntu's own archive for the lifetime of the Ubuntu
+// release, beyond Microsoft's date, so those keep the distribution rule;
+// its .NET backports PPA (versions with "~ppa") does not extend past
+// Microsoft's date.
+func followsUpstream(product, purlType, version string) bool {
+	if product != "dotnet" {
+		return false
+	}
+	v := strings.ToLower(version)
+	canonical := purlType == "deb" && strings.Contains(v, "ubuntu") && !strings.Contains(v, "~ppa")
+	return !canonical
+}
 
 // distroIDs are the os-release IDs a distro qualifier starts with, longest
 // first, so "opensuse-leap-15.5" is not read as another ID.
@@ -127,6 +149,10 @@ func distroLifecycle(r store.EvalRow, upstream, dist *store.LifecycleCycle, osOn
 	case thirdPartyBuild(r.Type, r.Version, release):
 		note["status"] = "third_party_build"
 		note["text"] = text + "; the version is a build from another repository, not " + label + "'s own package, so the distribution's security support does not apply."
+		return note, true
+	case !cycleEnded(dist, now) && followsUpstream(upstream.Product, r.Type, r.Version):
+		note["status"] = "follows_upstream"
+		note["text"] = text + "; this package is not supported past the upstream date even on " + label + ", so the upstream date applies."
 		return note, true
 	case !cycleEnded(dist, now):
 		note["status"] = "distribution_supported"

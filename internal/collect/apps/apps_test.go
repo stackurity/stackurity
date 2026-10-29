@@ -197,6 +197,41 @@ func TestDiscoverAndReleases(t *testing.T) {
 	}
 }
 
+// Ghost-CLI keeps old releases in versions/<v> next to current: only the
+// current one is an application; an old one named explicitly is scanned.
+func TestDiscoverGhostVersions(t *testing.T) {
+	tr := newTree(t)
+	tr.npm("var/www/ghost/versions/6.22.0/node_modules/express", "express", "4.18.0")
+	tr.file("var/www/ghost/versions/6.22.0/package.json", `{"name":"ghost","version":"6.22.0"}`)
+	tr.npm("var/www/ghost/versions/6.52.0/node_modules/express", "express", "4.21.2")
+	tr.file("var/www/ghost/versions/6.52.0/package.json", `{"name":"ghost","version":"6.52.0"}`)
+	tr.file("var/www/ghost/config.production.json", `{}`)
+	tr.link("var/www/ghost/current", "/var/www/ghost/versions/6.52.0")
+	sc := &Scanner{Root: tr.root}
+	got, full := sc.DiscoverAll()
+	if len(got) != 1 || got[0] != "/var/www/ghost/versions/6.52.0" || !full {
+		t.Fatalf("discovered %v (full %v)", got, full)
+	}
+	// Pointing at the install directory scans the current release only.
+	app := sc.ScanApp(context.Background(), "/var/www/ghost")
+	if m := purls(app.Observations); app.Dir != "/var/www/ghost/versions/6.52.0" || len(m) != 1 {
+		t.Errorf("install dir scanned %s: %v", app.Dir, keys(m))
+	}
+	// An old version named explicitly is scanned as asked.
+	old := sc.ScanApp(context.Background(), "/var/www/ghost/versions/6.22.0")
+	if _, ok := purls(old.Observations)["pkg:npm/express@4.18.0"]; !ok || old.Dir != "/var/www/ghost/versions/6.22.0" {
+		t.Errorf("explicit old version: %s %v", old.Dir, keys(purls(old.Observations)))
+	}
+	// A versions/ directory without a current link into it is not a release
+	// layout: both copies are found, as before.
+	tr2 := newTree(t)
+	tr2.file("srv/tool/versions/1/package.json", `{"name":"tool"}`)
+	tr2.file("srv/tool/versions/2/package.json", `{"name":"tool"}`)
+	if got := (&Scanner{Root: tr2.root}).Discover(); len(got) != 2 {
+		t.Errorf("versions without current: %v", got)
+	}
+}
+
 // Discovery stops at its limits and never follows a link to a directory
 // outside the deployment bases.
 func TestDiscoverIsBounded(t *testing.T) {
@@ -210,11 +245,11 @@ func TestDiscoverIsBounded(t *testing.T) {
 	if got := sc.Discover(); len(got) != 5 {
 		t.Errorf("discovered %v", got)
 	}
-	if got := sc.discover(1000, 2); len(got) != 2 {
-		t.Errorf("app limit: %v", got)
+	if got, full := sc.discover(1000, 2); len(got) != 2 || full {
+		t.Errorf("app limit: %v (full %v)", got, full)
 	}
 	// /srv itself, then two of its directories.
-	if got := sc.discover(3, 100); len(got) != 2 {
+	if got, _ := sc.discover(3, 100); len(got) != 2 {
 		t.Errorf("directory limit: %v", got)
 	}
 }

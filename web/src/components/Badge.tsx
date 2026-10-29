@@ -15,6 +15,7 @@ const TONES: Record<string, Tone> = {
   inferred: "warn",
   pending: "warn",
   stale: "bad",
+  removed: "muted",
   failed: "bad",
   unknown: "bad",
   error: "bad",

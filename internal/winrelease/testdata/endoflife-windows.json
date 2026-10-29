@@ -1,0 +1,643 @@
+{
+ "name": "windows",
+ "label": "Microsoft Windows",
+ "releases": [
+  {
+   "name": "11-26h2-e",
+   "label": "11 26H2 (E)",
+   "releaseDate": "2026-09-29",
+   "isLts": false,
+   "eoasFrom": "2029-10-09",
+   "isEol": false,
+   "eolFrom": "2029-10-09",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.26300"
+   }
+  },
+  {
+   "name": "11-26h2-w",
+   "label": "11 26H2 (W)",
+   "releaseDate": "2026-09-29",
+   "isLts": false,
+   "eoasFrom": "2028-10-10",
+   "isEol": false,
+   "eolFrom": "2028-10-10",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.26300"
+   }
+  },
+  {
+   "name": "11-26h1-e",
+   "label": "11 26H1 (E)",
+   "releaseDate": "2026-02-10",
+   "isLts": false,
+   "eoasFrom": "2029-03-13",
+   "isEol": false,
+   "eolFrom": "2029-03-13",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.28000"
+   }
+  },
+  {
+   "name": "11-26h1-w",
+   "label": "11 26H1 (W)",
+   "releaseDate": "2026-02-10",
+   "isLts": false,
+   "eoasFrom": "2028-03-14",
+   "isEol": false,
+   "eolFrom": "2028-03-14",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.28000"
+   }
+  },
+  {
+   "name": "11-25h2-e",
+   "label": "11 25H2 (E)",
+   "releaseDate": "2025-09-30",
+   "isLts": false,
+   "eoasFrom": "2028-10-10",
+   "isEol": false,
+   "eolFrom": "2028-10-10",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.26200"
+   }
+  },
+  {
+   "name": "11-25h2-w",
+   "label": "11 25H2 (W)",
+   "releaseDate": "2025-09-30",
+   "isLts": false,
+   "eoasFrom": "2027-10-12",
+   "isEol": false,
+   "eolFrom": "2027-10-12",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.26200"
+   }
+  },
+  {
+   "name": "11-24h2-iot-lts",
+   "label": "11 24H2 IoT (LTS)",
+   "releaseDate": "2024-10-01",
+   "isLts": true,
+   "eoasFrom": "2029-10-09",
+   "isEol": false,
+   "eolFrom": "2034-10-10",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.26100"
+   }
+  },
+  {
+   "name": "11-24h2-e-lts",
+   "label": "11 24H2 (E) (LTS)",
+   "releaseDate": "2024-10-01",
+   "isLts": true,
+   "eoasFrom": "2029-10-09",
+   "isEol": false,
+   "eolFrom": "2029-10-09",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.26100"
+   }
+  },
+  {
+   "name": "11-24h2-e",
+   "label": "11 24H2 (E)",
+   "releaseDate": "2024-10-01",
+   "isLts": false,
+   "eoasFrom": "2027-10-12",
+   "isEol": false,
+   "eolFrom": "2027-10-12",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.26100"
+   }
+  },
+  {
+   "name": "11-24h2-w",
+   "label": "11 24H2 (W)",
+   "releaseDate": "2024-10-01",
+   "isLts": false,
+   "eoasFrom": "2026-10-13",
+   "isEol": true,
+   "eolFrom": "2026-10-13",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.26100"
+   }
+  },
+  {
+   "name": "11-23h2-e",
+   "label": "11 23H2 (E)",
+   "releaseDate": "2023-10-31",
+   "isLts": false,
+   "eoasFrom": "2026-11-10",
+   "isEol": false,
+   "eolFrom": "2026-11-10",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.22631"
+   }
+  },
+  {
+   "name": "11-23h2-w",
+   "label": "11 23H2 (W)",
+   "releaseDate": "2023-10-31",
+   "isLts": false,
+   "eoasFrom": "2025-11-11",
+   "isEol": true,
+   "eolFrom": "2025-11-11",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.22631"
+   }
+  },
+  {
+   "name": "10-22h2",
+   "label": "10 22H2",
+   "releaseDate": "2022-10-18",
+   "isLts": false,
+   "eoasFrom": "2025-10-14",
+   "isEol": true,
+   "eolFrom": "2025-10-14",
+   "eoesFrom": "2028-10-10",
+   "latest": {
+    "name": "10.0.19045"
+   }
+  },
+  {
+   "name": "11-22h2-e",
+   "label": "11 22H2 (E)",
+   "releaseDate": "2022-09-20",
+   "isLts": false,
+   "eoasFrom": "2025-10-14",
+   "isEol": true,
+   "eolFrom": "2025-10-14",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.22621"
+   }
+  },
+  {
+   "name": "11-22h2-w",
+   "label": "11 22H2 (W)",
+   "releaseDate": "2022-09-20",
+   "isLts": false,
+   "eoasFrom": "2024-10-08",
+   "isEol": true,
+   "eolFrom": "2024-10-08",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.22621"
+   }
+  },
+  {
+   "name": "10-21h2-iot-lts",
+   "label": "10 21H2 IoT (LTS)",
+   "releaseDate": "2021-11-16",
+   "isLts": true,
+   "eoasFrom": "2027-01-12",
+   "isEol": false,
+   "eolFrom": "2032-01-13",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.19044"
+   }
+  },
+  {
+   "name": "10-21h2-e-lts",
+   "label": "10 21H2 (E) (LTS)",
+   "releaseDate": "2021-11-16",
+   "isLts": true,
+   "eoasFrom": "2027-01-12",
+   "isEol": false,
+   "eolFrom": "2027-01-12",
+   "eoesFrom": "2030-01-12",
+   "latest": {
+    "name": "10.0.19044"
+   }
+  },
+  {
+   "name": "10-21h2-e",
+   "label": "10 21H2 (E)",
+   "releaseDate": "2021-11-16",
+   "isLts": false,
+   "eoasFrom": "2024-06-11",
+   "isEol": true,
+   "eolFrom": "2024-06-11",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.19044"
+   }
+  },
+  {
+   "name": "10-21h2-w",
+   "label": "10 21H2 (W)",
+   "releaseDate": "2021-11-16",
+   "isLts": false,
+   "eoasFrom": "2023-06-13",
+   "isEol": true,
+   "eolFrom": "2023-06-13",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.19044"
+   }
+  },
+  {
+   "name": "11-21h2-e",
+   "label": "11 21H2 (E)",
+   "releaseDate": "2021-10-04",
+   "isLts": false,
+   "eoasFrom": "2024-10-08",
+   "isEol": true,
+   "eolFrom": "2024-10-08",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.22000"
+   }
+  },
+  {
+   "name": "11-21h2-w",
+   "label": "11 21H2 (W)",
+   "releaseDate": "2021-10-04",
+   "isLts": false,
+   "eoasFrom": "2023-10-10",
+   "isEol": true,
+   "eolFrom": "2023-10-10",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.22000"
+   }
+  },
+  {
+   "name": "10-21h1",
+   "label": "10 21H1",
+   "releaseDate": "2021-05-18",
+   "isLts": false,
+   "eoasFrom": "2022-12-13",
+   "isEol": true,
+   "eolFrom": "2022-12-13",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.19043"
+   }
+  },
+  {
+   "name": "10-20h2-e",
+   "label": "10 20H2 (E)",
+   "releaseDate": "2020-10-20",
+   "isLts": false,
+   "eoasFrom": "2023-05-09",
+   "isEol": true,
+   "eolFrom": "2023-05-09",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.19042"
+   }
+  },
+  {
+   "name": "10-20h2-w",
+   "label": "10 20H2 (W)",
+   "releaseDate": "2020-10-20",
+   "isLts": false,
+   "eoasFrom": "2022-05-10",
+   "isEol": true,
+   "eolFrom": "2022-05-10",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.19042"
+   }
+  },
+  {
+   "name": "10-2004",
+   "label": "10 2004",
+   "releaseDate": "2020-05-27",
+   "isLts": false,
+   "eoasFrom": "2021-12-14",
+   "isEol": true,
+   "eolFrom": "2021-12-14",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.19041"
+   }
+  },
+  {
+   "name": "10-1909-e",
+   "label": "10 1909 (E)",
+   "releaseDate": "2019-11-12",
+   "isLts": false,
+   "eoasFrom": "2022-05-10",
+   "isEol": true,
+   "eolFrom": "2022-05-10",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.18363"
+   }
+  },
+  {
+   "name": "10-1909-w",
+   "label": "10 1909 (W)",
+   "releaseDate": "2019-11-12",
+   "isLts": false,
+   "eoasFrom": "2021-05-11",
+   "isEol": true,
+   "eolFrom": "2021-05-11",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.18363"
+   }
+  },
+  {
+   "name": "10-1903",
+   "label": "10 1903",
+   "releaseDate": "2019-05-21",
+   "isLts": false,
+   "eoasFrom": "2020-12-08",
+   "isEol": true,
+   "eolFrom": "2020-12-08",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.18362"
+   }
+  },
+  {
+   "name": "10-1809-e-lts",
+   "label": "10 1809 (E) (LTS)",
+   "releaseDate": "2018-11-13",
+   "isLts": true,
+   "eoasFrom": "2024-01-09",
+   "isEol": false,
+   "eolFrom": "2029-01-09",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.17763"
+   }
+  },
+  {
+   "name": "10-1809-e",
+   "label": "10 1809 (E)",
+   "releaseDate": "2018-11-13",
+   "isLts": false,
+   "eoasFrom": "2021-05-11",
+   "isEol": true,
+   "eolFrom": "2021-05-11",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.17763"
+   }
+  },
+  {
+   "name": "10-1809-w",
+   "label": "10 1809 (W)",
+   "releaseDate": "2018-11-13",
+   "isLts": false,
+   "eoasFrom": "2020-11-10",
+   "isEol": true,
+   "eolFrom": "2020-11-10",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.17763"
+   }
+  },
+  {
+   "name": "10-1803-e",
+   "label": "10 1803 (E)",
+   "releaseDate": "2018-04-30",
+   "isLts": false,
+   "eoasFrom": "2020-05-11",
+   "isEol": true,
+   "eolFrom": "2021-05-11",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.17134"
+   }
+  },
+  {
+   "name": "10-1803-w",
+   "label": "10 1803 (W)",
+   "releaseDate": "2018-04-30",
+   "isLts": false,
+   "eoasFrom": "2019-11-12",
+   "isEol": true,
+   "eolFrom": "2019-11-12",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.17134"
+   }
+  },
+  {
+   "name": "10-1709-e",
+   "label": "10 1709 (E)",
+   "releaseDate": "2017-10-17",
+   "isLts": false,
+   "eoasFrom": "2020-10-13",
+   "isEol": true,
+   "eolFrom": "2020-10-13",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.16299"
+   }
+  },
+  {
+   "name": "10-1709-w",
+   "label": "10 1709 (W)",
+   "releaseDate": "2017-10-17",
+   "isLts": false,
+   "eoasFrom": "2019-04-09",
+   "isEol": true,
+   "eolFrom": "2019-04-09",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.16299"
+   }
+  },
+  {
+   "name": "10-1703-e",
+   "label": "10 1703 (E)",
+   "releaseDate": "2017-04-11",
+   "isLts": false,
+   "eoasFrom": "2019-10-08",
+   "isEol": true,
+   "eolFrom": "2019-10-08",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.15063"
+   }
+  },
+  {
+   "name": "10-1703-w",
+   "label": "10 1703 (W)",
+   "releaseDate": "2017-04-11",
+   "isLts": false,
+   "eoasFrom": "2018-10-09",
+   "isEol": true,
+   "eolFrom": "2018-10-09",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.15063"
+   }
+  },
+  {
+   "name": "10-1607-e-lts",
+   "label": "10 1607 (E) (LTS)",
+   "releaseDate": "2016-08-02",
+   "isLts": true,
+   "eoasFrom": "2021-10-12",
+   "isEol": true,
+   "eolFrom": "2026-10-13",
+   "eoesFrom": "2029-10-13",
+   "latest": {
+    "name": "10.0.14393"
+   }
+  },
+  {
+   "name": "10-1607-e",
+   "label": "10 1607 (E)",
+   "releaseDate": "2016-08-02",
+   "isLts": false,
+   "eoasFrom": "2019-04-09",
+   "isEol": true,
+   "eolFrom": "2019-04-09",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.14393"
+   }
+  },
+  {
+   "name": "10-1607-w",
+   "label": "10 1607 (W)",
+   "releaseDate": "2016-08-02",
+   "isLts": false,
+   "eoasFrom": "2018-04-10",
+   "isEol": true,
+   "eolFrom": "2018-04-10",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.14393"
+   }
+  },
+  {
+   "name": "10-1511",
+   "label": "10 1511",
+   "releaseDate": "2015-11-10",
+   "isLts": false,
+   "eoasFrom": "2017-10-10",
+   "isEol": true,
+   "eolFrom": "2017-10-10",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.10586"
+   }
+  },
+  {
+   "name": "10-1507-e-lts",
+   "label": "10 1507 (E) (LTS)",
+   "releaseDate": "2015-07-29",
+   "isLts": true,
+   "eoasFrom": "2020-10-13",
+   "isEol": true,
+   "eolFrom": "2025-10-14",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.10240"
+   }
+  },
+  {
+   "name": "10-1507",
+   "label": "10 1507",
+   "releaseDate": "2015-07-29",
+   "isLts": false,
+   "eoasFrom": "2017-05-09",
+   "isEol": true,
+   "eolFrom": "2017-05-09",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.10240"
+   }
+  },
+  {
+   "name": "10-1507-iot",
+   "label": "10 1507 IOT",
+   "releaseDate": "2015-04-29",
+   "isLts": false,
+   "eoasFrom": "2020-11-10",
+   "isEol": true,
+   "eolFrom": "2020-11-10",
+   "eoesFrom": null,
+   "latest": {
+    "name": "10.0.10240"
+   }
+  },
+  {
+   "name": "8.1",
+   "label": "8.1",
+   "releaseDate": "2013-11-13",
+   "isLts": false,
+   "eoasFrom": "2018-01-09",
+   "isEol": true,
+   "eolFrom": "2023-01-10",
+   "eoesFrom": null,
+   "latest": {
+    "name": "6.3.9600"
+   }
+  },
+  {
+   "name": "8",
+   "label": "8",
+   "releaseDate": "2012-10-30",
+   "isLts": false,
+   "eoasFrom": "2016-01-12",
+   "isEol": true,
+   "eolFrom": "2016-01-12",
+   "eoesFrom": null,
+   "latest": {
+    "name": "6.2.9200"
+   }
+  },
+  {
+   "name": "7-sp1",
+   "label": "7 SP1",
+   "releaseDate": "2011-02-22",
+   "isLts": false,
+   "eoasFrom": "2015-01-13",
+   "isEol": true,
+   "eolFrom": "2020-01-14",
+   "eoesFrom": null,
+   "latest": {
+    "name": "6.1.7601"
+   }
+  },
+  {
+   "name": "6-sp2",
+   "label": "Vista SP2",
+   "releaseDate": "2009-04-29",
+   "isLts": false,
+   "eoasFrom": "2012-04-10",
+   "isEol": true,
+   "eolFrom": "2017-04-11",
+   "eoesFrom": null,
+   "latest": {
+    "name": "6.0.6002"
+   }
+  },
+  {
+   "name": "5-sp3",
+   "label": "XP SP3",
+   "releaseDate": "2008-04-21",
+   "isLts": false,
+   "eoasFrom": "2009-04-14",
+   "isEol": true,
+   "eolFrom": "2014-04-08",
+   "eoesFrom": null,
+   "latest": {
+    "name": "5.1.2600"
+   }
+  }
+ ]
+}
