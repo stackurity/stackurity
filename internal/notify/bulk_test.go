@@ -63,7 +63,6 @@ func TestPrefsToken(t *testing.T) {
 	}
 }
 
-
 // bulkBox records bulk email as it would go to the mail server.
 type bulkBox struct {
 	mu   sync.Mutex
