@@ -17,8 +17,8 @@ docker compose up -d                   # pulls ghcr.io/stackurity/stackurity:lat
 docker compose logs stackurity | grep -A2 "one-time token"
 ```
 
-To pin a release, set `STACKURITY_IMAGE=ghcr.io/stackurity/stackurity:0.13.3` in `deploy/.env`. The same signed image is on Docker Hub as `stackurity/stackurity:0.13.3` (`docker pull stackurity/stackurity`); GHCR is the default because Docker Hub limits anonymous pulls. Images are signed; check one with
-`cosign verify ghcr.io/stackurity/stackurity:0.13.3 --certificate-identity-regexp '^https://github.com/stackurity/stackurity/.github/workflows/release.yml@refs/tags/' --certificate-oidc-issuer https://token.actions.githubusercontent.com` (see [security-audit.md](security-audit.md)).
+To pin a release, set `STACKURITY_IMAGE=ghcr.io/stackurity/stackurity:0.13.5` in `deploy/.env`. The same signed image is on Docker Hub as `stackurity/stackurity:0.13.5` (`docker pull stackurity/stackurity`); GHCR is the default because Docker Hub limits anonymous pulls. Images are signed; check one with
+`cosign verify ghcr.io/stackurity/stackurity:0.13.5 --certificate-identity-regexp '^https://github.com/stackurity/stackurity/.github/workflows/release.yml@refs/tags/' --certificate-oidc-issuer https://token.actions.githubusercontent.com` (see [security-audit.md](security-audit.md)).
 
 Open the dashboard through your HTTPS proxy (see [TLS](#tls)), or at http://localhost:8080 in a browser on the server itself, enter the one-time setup token from the log, and create the first administrator. The token only works while no users exist.
 
@@ -104,7 +104,8 @@ Connecting an asset is quiet: one "connected" message, and no alerts, Jira issue
 | `STACKURITY_SECRET_KEY` / `_FILE` | — | 32 random bytes, base64 (`openssl rand -base64 32`). Enables secrets that workspaces store themselves (`secret:NAME`). Keep it safe: without it stored secrets cannot be decrypted |
 | `STACKURITY_PRIVATE_TARGETS` | `default` | Which workspaces may make the server connect to private, loopback or link-local addresses: `default` (workspace 1 only), `all`, or `none` (recommended when hosting other organisations) |
 | `STACKURITY_PRIVATE_CIDRS` | — | Comma-separated ranges every workspace may reach anyway, for example an internal Git server |
-| `STACKURITY_OIDC_WORKSPACE` | `1` | Workspace that people signing in through single sign-on join |
+| `STACKURITY_OIDC_WORKSPACE` | `1` | Workspace that people signing in through OpenID Connect single sign-on join |
+| `STACKURITY_SAML_WORKSPACE` | `1` | Workspace that people signing in through SAML single sign-on join |
 | `STACKURITY_LICENSE` / `_FILE` | — | Licence key; when set, the dashboard cannot change it |
 | `STACKURITY_PACK_TRUSTED_KEYS` | — | File of `publisher base64-key` lines: publishers whose [stack packs](packs.md) are accepted besides official ones |
 | `STACKURITY_PACK_ALLOW_UNSIGNED` | `false` | Accept unsigned stack packs (pack development only) |
@@ -117,7 +118,7 @@ Without a licence Stackurity runs as **Community**: all detection, intelligence,
 
 | Edition | Adds |
 | --- | --- |
-| Pro | Automatic fixing (policies, approvals, rollouts, Renovate pull requests), several teams with routing by team and escalation, the evidence report, single sign-on |
+| Pro | Automatic fixing (policies, approvals, rollouts, Renovate pull requests), several teams with routing by team and escalation, the evidence report, single sign-on (OpenID Connect or SAML) |
 | Enterprise | Pro, plus Enterprise stack packs (none published yet; see [editions.md](editions.md)) |
 
 [editions.md](editions.md) lists every capability by edition with its limits and prerequisites, and which features need the licensed build rather than only a licence.
@@ -167,8 +168,69 @@ How a sign-in finds its account:
 
 - An account already linked to the provider's identity (issuer and subject) is used.
 - Otherwise, if no account has the email, a new one is made with the mapped role.
-- Otherwise the sign-in is refused: an existing account is not taken over by whoever the provider vouches for. With `STACKURITY_OIDC_LINK_EXISTING=true` it is linked, but only if it is already a member of `STACKURITY_OIDC_WORKSPACE`, is not an instance administrator, and is not linked to another identity. Instance administrators always sign in with their password.
+- Otherwise the sign-in is refused: an existing account is not taken over by whoever the provider vouches for. With `STACKURITY_OIDC_LINK_EXISTING=true` it is linked, but only if it is a member of `STACKURITY_OIDC_WORKSPACE` and of no other workspace (otherwise it could switch to them with this provider), is not an instance administrator, is not disabled, and is not linked to another identity. Instance administrators always sign in with their password.
 - With `STACKURITY_OIDC_ROLE_MAP` the provider decides each member's role on every sign-in, except that the workspace's last admin is never demoted.
+
+Single sign-on is in the licensed build, needs a Pro or Enterprise licence, and admits people into one workspace, whose plan must include it. OpenID Connect and SAML can be configured together; the sign-in page then shows a button for each.
+
+### SAML
+
+Stackurity can also sign people in through a SAML 2.0 identity provider (Okta, Microsoft Entra ID, Google Workspace, ADFS, Keycloak and others), with the Web Browser SSO profile: the request goes to the provider by HTTP-Redirect and the response comes back by HTTP-POST. Stackurity is the service provider:
+
+| What the provider asks for | Value |
+|---|---|
+| Entity ID / Audience URI / Identifier | `https://<your Stackurity>/saml/metadata` (or `STACKURITY_SAML_ENTITY_ID`) |
+| Assertion Consumer Service (ACS) URL / Single sign-on URL / Reply URL | `https://<your Stackurity>/saml/acs` |
+| Name ID format | Email address (persistent also works) |
+| Service provider metadata | `https://<your Stackurity>/saml/metadata` (add `?download=1` for a file), for providers that import it |
+
+Then set:
+
+| Variable | Example | Meaning |
+|---|---|---|
+| `STACKURITY_SAML_IDP_METADATA_URL` | `https://acme.okta.com/app/exk.../sso/saml/metadata` | The provider's metadata, fetched when first needed and again every day so a new signing certificate is picked up. Must be `https` |
+| `STACKURITY_SAML_IDP_METADATA_FILE` | `/run/secrets/idp-metadata.xml` | Instead of the URL: the provider's metadata file. Replace the file and restart when the provider's certificate changes |
+| `STACKURITY_SAML_LABEL` | `Okta` | Text on the sign-in button |
+| `STACKURITY_SAML_ALLOWED_DOMAINS` | `example.com` | Required: only these email domains may sign in. `*` allows any domain the provider vouches for, on purpose |
+| `STACKURITY_SAML_LINK_EXISTING` | `false` | `true` lets a first sign-in link an existing account with the same email (see below) |
+| `STACKURITY_SAML_ROLE_MAP` | `stackurity-admins=admin,security-team=security,engineering=engineer` | Groups that grant each role. When set, the provider decides the role on every sign-in |
+| `STACKURITY_SAML_DEFAULT_ROLE` | `viewer` | Role for people in no mapped group; `none` refuses them |
+| `STACKURITY_SAML_EMAIL_ATTRIBUTE` | `email` | Attribute with the email address. Unset: `email`, `mail`, the Microsoft `.../claims/emailaddress` claim or the LDAP `mail` OID, else the name ID when its format is email address (an unspecified or persistent name ID is never taken as the email) |
+| `STACKURITY_SAML_NAME_ATTRIBUTE` | `displayName` | Attribute with the person's name. Unset: `name`, `displayName` and the usual claims, else first name and last name |
+| `STACKURITY_SAML_GROUPS_ATTRIBUTE` | `groups` | Attribute with the groups for `STACKURITY_SAML_ROLE_MAP`. Unset: `groups`, `memberOf` and the Microsoft `.../claims/groups` claim |
+| `STACKURITY_SAML_SP_KEY_FILE`, `STACKURITY_SAML_SP_CERT_FILE` | `/run/secrets/saml.key`, `/run/secrets/saml.crt` | Optional RSA key and certificate. With them Stackurity signs its requests and the provider may encrypt assertions to it; the service provider metadata then includes the certificate. Make them with `openssl req -x509 -newkey rsa:3072 -nodes -keyout saml.key -out saml.crt -days 3650 -subj /CN=stackurity-saml` |
+| `STACKURITY_SAML_IDP_INITIATED` | `false` | `true` also accepts sign-ins started from the provider's app dashboard. Off by default: such a response is not tied to the browser that receives it, so someone could sign a victim's browser into the attacker's own account (login CSRF). A RelayState may name a page on Stackurity to open, never another site |
+| `STACKURITY_SAML_ENTITY_ID` | | This service provider's entity ID, if the provider needs another value |
+
+`STACKURITY_BASE_URL` must be set and must be the `https` address people use: the ACS URL and the audience are derived from it.
+
+What Stackurity checks on every response: the assertion is signed with a key from the provider's metadata, with RSA-SHA256 or stronger (SHA-1 signatures and digests are refused), by a signature on the assertion itself or on the whole response that contains it (anything else is refused, and an encrypted assertion must be signed too; the service provider metadata therefore does not ask for the assertion's own signature), the issuer is the provider, the audience is this entity ID, the recipient and destination are the ACS URL, the response answers a sign-in this browser started in the last 10 minutes, `NotBefore`, `NotOnOrAfter` and the issue time are within 60 seconds of the server's clock (keep it synchronised with NTP), and each assertion is used once. A response with more than one assertion, or with a document type declaration, is refused. Encrypted assertions are accepted when the key above is set (AES-CBC or AES-128-GCM content encryption, RSA-OAEP key transport; RSA PKCS #1 v1.5 and Triple DES are refused); unencrypted ones always are. The provider's certificates are keys pinned by its metadata: their expiry dates are not checked, so an expired self-signed certificate keeps working, and the server logs a warning to update the metadata. A metadata URL is fetched only over https and is not followed to a plain http address. On https the browser binding is a `__Host-` cookie, which a neighbouring subdomain cannot plant.
+
+Accounts are found like OpenID Connect ones: by the provider and the name ID with its format (an email name ID compares without case; a transient one is replaced by the email address; SAML identities never match OpenID Connect ones, even from the same URL). If no account has the email, a new one is made with the mapped role. An existing account with the email is refused, unless `STACKURITY_SAML_LINK_EXISTING=true`; then it is linked only if it is a member of `STACKURITY_SAML_WORKSPACE` and of no other workspace (otherwise it could switch to them with this provider), is not an instance administrator, is not disabled, and is not linked to another identity. The role map never demotes the workspace's last admin. Refusals of validly signed responses are in the audit log as `auth.sso_refused` with `"method": "saml"` and the reason; responses that fail before their signature is checked are only logged. Successful sign-ins are `auth.login` with `"method": "saml"`. Signing out of Stackurity does not sign out of the provider (single logout is not supported).
+
+#### Okta
+
+1. In the Okta Admin Console, **Applications → Applications → Create App Integration → SAML 2.0**, and name it Stackurity.
+2. **Single sign-on URL**: `https://<your Stackurity>/saml/acs`, with **Use this for Recipient URL and Destination URL** ticked. **Audience URI (SP Entity ID)**: `https://<your Stackurity>/saml/metadata`. **Name ID format**: EmailAddress; **Application username**: Email.
+3. **Attribute Statements**: `email` = `user.email`, `firstName` = `user.firstName`, `lastName` = `user.lastName`. For roles, **Group Attribute Statements**: `groups`, with a filter such as *Starts with* `stackurity-`.
+4. Optional encryption: under **Show Advanced Settings**, set **Assertion Encryption** to Encrypted and upload `saml.crt`.
+5. Finish, assign the people or groups, and on the **Sign On** tab copy the **Metadata URL** into `STACKURITY_SAML_IDP_METADATA_URL`.
+
+#### Microsoft Entra ID
+
+1. In the Entra admin center, **Enterprise applications → New application → Create your own application**, choose *Integrate any other application you don't find in the gallery*, then **Single sign-on → SAML**.
+2. **Basic SAML Configuration**: **Identifier (Entity ID)** `https://<your Stackurity>/saml/metadata`, **Reply URL (Assertion Consumer Service URL)** `https://<your Stackurity>/saml/acs` (or **Upload metadata file** with Stackurity's metadata).
+3. **Attributes & Claims**: the default claims work (email address, given name, surname; the name ID is the user principal name). For roles, **Add a group claim** with *Groups assigned to the application* and source attribute *Group ID*; Entra sends group object IDs, so `STACKURITY_SAML_ROLE_MAP` names those IDs (`5e1c0b0a-...=admin`).
+4. Optional encryption: **Token encryption** → import `saml.crt` and activate it.
+5. Copy **App Federation Metadata Url** (under **SAML Certificates**) into `STACKURITY_SAML_IDP_METADATA_URL`, and assign the users and groups under **Users and groups**.
+
+#### Google Workspace
+
+1. In the Google Admin console, **Apps → Web and mobile apps → Add app → Add custom SAML app**, and name it Stackurity.
+2. On **Google Identity Provider details**, **Download metadata** and set `STACKURITY_SAML_IDP_METADATA_FILE` to that file (Google publishes no metadata URL).
+3. **Service provider details**: **ACS URL** `https://<your Stackurity>/saml/acs`, **Entity ID** `https://<your Stackurity>/saml/metadata`, **Name ID format** EMAIL, **Name ID** *Basic Information > Primary email*.
+4. **Attribute mapping**: *Primary email* → `email`, *First name* → `firstName`, *Last name* → `lastName`; for roles, **Group membership** → `groups` with the groups to send, and map the group values Google sends in `STACKURITY_SAML_ROLE_MAP`.
+5. Turn the app **ON** for the organisational units or groups that may sign in. Google does not encrypt assertions. Its **Test SAML login** button starts the sign-in from Google, which needs `STACKURITY_SAML_IDP_INITIATED=true`; otherwise test from Stackurity's sign-in page.
 
 ## Collecting inventory
 
@@ -531,7 +593,7 @@ If a replica of the old version was missed, it refuses to start, or, if it was s
 
 The chart's `updateStrategy` is `Recreate`: Kubernetes deletes every pod of the old version before it creates the new ones, so two versions never share the database. CI checks that the chart renders `Recreate` by default. Do not override it with `RollingUpdate` for a version upgrade: during a rolling update, pods of both versions run together against a schema only the new one understands. (Old pods then fail `/readyz` and stop their background work, so the damage is limited, but it is not a supported way to upgrade.) A rolling restart of the *same* version (`kubectl rollout restart`) is safe with either strategy.
 
-Before a release is published, CI installs each earlier release listed under `from:` in [`.github/workflows/release-checks.yml`](../.github/workflows/release-checks.yml) (the supported upgrade sources), loads data, starts the new version on the same database, checks that the previous version then refuses that database (for releases that have the check), restores a backup of the result into a new PostgreSQL server, and runs the rollback below, checking readiness and counts at each step. The script is `tools/release-checks/upgrade.sh`; you can run it against your own build: `tools/release-checks/upgrade.sh ghcr.io/stackurity/stackurity:0.13.3 stackurity:mybuild`.
+Before a release is published, CI installs each earlier release listed under `from:` in [`.github/workflows/release-checks.yml`](../.github/workflows/release-checks.yml) (the supported upgrade sources), loads data, starts the new version on the same database, checks that the previous version then refuses that database (for releases that have the check), restores a backup of the result into a new PostgreSQL server, and runs the rollback below, checking readiness and counts at each step. The script is `tools/release-checks/upgrade.sh`; you can run it against your own build: `tools/release-checks/upgrade.sh ghcr.io/stackurity/stackurity:0.13.5 stackurity:mybuild`.
 
 ### Rolling back
 
@@ -552,13 +614,13 @@ Upgrading again later works as before; the migrations run again. With Helm, rest
 
 ```sh
 kubectl create secret generic stackurity-db --from-literal=url='postgres://stackurity:...@db:5432/stackurity?sslmode=require'
-helm install stackurity oci://ghcr.io/stackurity/charts/stackurity --version 0.13.3 \
+helm install stackurity oci://ghcr.io/stackurity/charts/stackurity --version 0.13.5 \
   --set database.existingSecret=stackurity-db \
   --set ingress.enabled=true --set ingress.host=stackurity.example.com \
   --set config.baseURL=https://stackurity.example.com
 ```
 
-The chart is published with each release from 0.4.0 and signed with Sigstore (`cosign verify ghcr.io/stackurity/charts/stackurity:0.13.3 --certificate-identity-regexp '^https://github.com/stackurity/stackurity/.github/workflows/release.yml@refs/tags/' --certificate-oidc-issuer https://token.actions.githubusercontent.com`). You can also install from a checkout: `helm install stackurity deploy/helm/stackurity ...`.
+The chart is published with each release from 0.4.0 and signed with Sigstore (`cosign verify ghcr.io/stackurity/charts/stackurity:0.13.5 --certificate-identity-regexp '^https://github.com/stackurity/stackurity/.github/workflows/release.yml@refs/tags/' --certificate-oidc-issuer https://token.actions.githubusercontent.com`). You can also install from a checkout: `helm install stackurity deploy/helm/stackurity ...`.
 
 Behind an ingress controller the chart reads the client address from `X-Forwarded-For` (`config.trustedProxyHeader`; use `CF-Connecting-IP` when Cloudflare is in front), trusting the private ranges where pods and nodes live; list your controller's addresses in `config.trustedProxies` to narrow that ([Client addresses behind a proxy](#client-addresses-behind-a-proxy)). The chart runs the same hardened container: non-root, read-only root filesystem, all capabilities dropped, `RuntimeDefault` seccomp, and no service-account token. PostgreSQL isn't bundled; use a managed database or an operator. Set `replicaCount` above 1 for availability (see [Running several replicas](#running-several-replicas)); the chart keeps the `Recreate` update strategy so an upgrade never runs two versions at once; do not switch it to `RollingUpdate` for upgrades ([Upgrading](#helm-and-the-update-strategy)). `metrics.enabled=true` serves Prometheus metrics on port 9100 through a separate `<release>-metrics` Service, never through the ingress. With the Prometheus Operator, add `metrics.serviceMonitor.enabled=true` (and `metrics.serviceMonitor.labels` matching your Prometheus's `serviceMonitorSelector`, for example `release: kube-prometheus-stack`) for a ServiceMonitor that scrapes it every `metrics.serviceMonitor.interval` (30s). It is created only when the cluster serves `monitoring.coreos.com/v1`; with `helm template`, pass `--api-versions monitoring.coreos.com/v1/ServiceMonitor`. `metrics.prometheusRule.enabled=true` adds the [recommended alerts](operations.md#recommended-alerts) as a PrometheusRule (with `metrics.prometheusRule.labels` for your Prometheus's `ruleSelector`), under the same condition.
 

@@ -148,3 +148,66 @@ func TestAdminCoverageGaps(t *testing.T) {
 		}
 	}
 }
+
+// TestAdminCoverageGapsWindowsAndDotnet: a Windows host is evaluated by its
+// build number, not through an endoflife.date product, so it is no "operating
+// system with no lifecycle product" gap; a .NET runtime rpm is found by the
+// versioned package names (matched by the database's regular expression) and
+// reported when its release line is missing.
+func TestAdminCoverageGapsWindowsAndDotnet(t *testing.T) {
+	e := newEnv(t)
+	e.user("owner@x.io", auth.RoleAdmin)
+	e.instanceAdmin("owner@x.io")
+	owner := e.login("owner@x.io")
+	bg := context.Background()
+	sys := tenant.System(bg)
+	if err := e.st.ReplaceLifecycle(sys,
+		[][]any{
+			{"rhel", "Red Hat Enterprise Linux", []string{}, "https://endoflife.date/rhel"},
+			{"dotnet", ".NET", []string{}, "https://endoflife.date/dotnet"},
+		},
+		[][]any{
+			{"rhel", "9", "9", nil, true, nil, time.Date(2032, 5, 31, 0, 0, 0, 0, time.UTC), false, "", nil},
+			{"dotnet", "9", "9", nil, false, nil, time.Date(2026, 11, 10, 0, 0, 0, 0, time.UTC), false, "", nil},
+		}); err != nil {
+		t.Fatal(err)
+	}
+	ingest := func(name string, obs ...model.Observation) {
+		t.Helper()
+		b := model.NewBatch(model.Collector{ID: "t-" + name, Method: "test"},
+			model.AssetRef{Kind: model.AssetHost, Name: name, Identifiers: []model.Identifier{{Scheme: "test", Value: name}}})
+		b.Observations, b.Complete = obs, true
+		if err := b.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.st.Ingest(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), b, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	win := model.Observation{Purl: "pkg:generic/windows@10.0.20348.2227", Version: "10.0.20348.2227", Confidence: model.ConfidenceConfirmed,
+		Evidence: map[string]string{"kind": "operating-system", "product_name": "Windows Server 2022 Standard", "edition_id": "ServerStandard"}}
+	ingest("win-1", win)
+	ingest("rhel-1",
+		model.Observation{Purl: "pkg:generic/rhel@9.4", Confidence: model.ConfidenceConfirmed, Evidence: map[string]string{"kind": "operating-system"}},
+		model.Observation{Purl: "pkg:rpm/rhel/dotnet-runtime-8.0@8.0.10-1.el9_4?arch=x86_64&distro=rhel-9.4", Confidence: model.ConfidenceConfirmed})
+	ev := &intel.Evaluator{Store: e.st, Now: func() time.Time { return time.Date(2026, 10, 28, 0, 0, 0, 0, time.UTC) }}
+	if _, err := ev.Evaluate(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), nil, 0); err != nil {
+		t.Fatal(err)
+	}
+	var rep intel.GapReport
+	if code := owner.do("GET", "/api/v1/admin/coverage-gaps", nil, &rep); code != 200 {
+		t.Fatalf("instance admin: %d", code)
+	}
+	var dotnet bool
+	for _, g := range rep.NoLifecycle {
+		if strings.Contains(g.Kind, "windows") {
+			t.Errorf("Windows reported as a lifecycle gap: %+v", g)
+		}
+		if g.Kind == "no_release_line|dotnet" && g.Assets == 1 {
+			dotnet = true
+		}
+	}
+	if !dotnet {
+		t.Errorf("no .NET 8.0 release-line gap in %+v", rep.NoLifecycle)
+	}
+}

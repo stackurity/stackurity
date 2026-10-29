@@ -296,6 +296,7 @@ func (s *Server) Handler() http.Handler {
 				r.Get("/usage", s.assetUsage)
 				r.Get("/onboarding/results", s.firstResults)
 				r.Get("/checks", s.listChecks)
+				r.Get("/checks/options", s.checkOptions)
 				r.Get("/checks/{id}", s.getCheck)
 				r.Get("/ignore-rules", s.listIgnoreRules)
 				// Anyone may ask for an ignore; security and admin decide.

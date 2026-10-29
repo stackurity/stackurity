@@ -2,6 +2,8 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import {
   api,
+  ASSET_STATUS_HELP,
+  ASSET_STATUS_LABEL,
   CRITICALITIES,
   RELATION_KINDS,
   safeHttpUrl,
@@ -179,7 +181,8 @@ export function AssetDetailPage() {
       <PageHeader help="assets"
         title={
           <>
-            {a.name} <Badge status={a.collection_status} title="Collection status" />{" "}
+            {a.name}{" "}
+            <Badge status={a.collection_status} label={ASSET_STATUS_LABEL[a.collection_status]} title={ASSET_STATUS_HELP[a.collection_status]} />{" "}
             {coverage.data && <AssetStateBadge state={coverage.data.state} label={coverage.data.label} />}
           </>
         }
@@ -216,7 +219,14 @@ export function AssetDetailPage() {
           </a>
         }
       />
-      {coverage.data ? (
+      {a.collection_status === "removed" && (
+        <Notice kind="info">
+          <strong>No longer present:</strong> the agent on {at.host || "its server"} no longer reports{" "}
+          {at.app_dir ? <span className="mono">{at.app_dir}</span> : "this application"} (the directory was deleted, is an old release next to
+          the current one, or is no longer configured). Its issues were resolved as removed. If it comes back, the next scan reports it again.
+        </Notice>
+      )}
+      {a.collection_status === "removed" ? null : coverage.data ? (
         <AssetCoverageNotice summary={coverage.data} inventoryLink={`/assets/${a.id}?tab=inventory&coverage=gaps`} />
       ) : (
         <>
@@ -1138,7 +1148,7 @@ function AssetHealth({ asset, findingCount }: { asset: Asset; findingCount: numb
           <Loading />
         )}
       </div>
-      <CheckAgain asset={asset} />
+      {asset.collection_status !== "removed" && <CheckAgain asset={asset} />}
     </section>
   );
 }

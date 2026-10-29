@@ -62,7 +62,7 @@ func (lr *lifecycleResolver) resolve(purlType, purlKey, version, kind string) (l
 	if name := strings.TrimPrefix(purlKey, "pkg:generic/"); purlType == "generic" && lr.names[name] {
 		return lifecycleMatch{name, version, "name"}, true
 	}
-	if purlType == "deb" {
+	if purlType == "deb" || purlType == "rpm" {
 		if p, cycle, ok := versionedDebProduct(purlKey); ok && lr.names[p] {
 			return lifecycleMatch{p, cycle, "package_name"}, true
 		}

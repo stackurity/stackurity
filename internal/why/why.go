@@ -84,7 +84,7 @@ type Source struct {
 // Rule is the matching rule that was applied.
 type Rule struct {
 	// Kind: range, last_affected, no_fix_listed, listed_version (advisories);
-	// exact_cycle, version_prefix, package_name (end of life).
+	// exact_cycle, version_prefix, package_name, windows_build (end of life).
 	Kind       string `json:"kind"`
 	Range      string `json:"range,omitempty"`
 	Comparator string `json:"comparator,omitempty"`
@@ -181,6 +181,8 @@ func Build(in Input, now time.Time) Explanation {
 			e.Rule.Text = fmt.Sprintf("the version is release line %s", lc.Cycle)
 		case "version_prefix":
 			e.Rule.Text = fmt.Sprintf("release line %s is the longest dotted prefix of the version", lc.Cycle)
+		case "windows_build":
+			e.Rule.Text = fmt.Sprintf("Windows build %v is release line %s (with the product name and edition telling Server from client)", m["build"], lc.Cycle)
 		default:
 			e.Rule.Text = fmt.Sprintf("release line %s was matched from the version (stored before 1.0, rule not recorded)", lc.Cycle)
 		}

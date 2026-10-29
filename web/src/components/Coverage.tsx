@@ -109,6 +109,7 @@ const LIFECYCLE_NOTE_BADGES: Record<string, { tone: Tone; label: string }> = {
   distribution_supported: { tone: "info", label: "maintained by the distribution" },
   distribution_ended: { tone: "warn", label: "release end of life" },
   third_party_build: { tone: "warn", label: "upstream end of life" },
+  follows_upstream: { tone: "warn", label: "upstream end of life" },
 };
 
 /**

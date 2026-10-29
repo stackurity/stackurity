@@ -30,7 +30,7 @@ const (
 	Teams Feature = "teams"
 	// EvidenceReport: the patch-management evidence report for audits.
 	EvidenceReport Feature = "evidence_report"
-	// SSO: sign-in through an OpenID Connect provider.
+	// SSO: sign-in through an OpenID Connect or SAML 2.0 provider.
 	SSO Feature = "sso"
 	// EnterprisePacks: stack packs for enterprise technologies (SAP, Oracle, ...).
 	EnterprisePacks Feature = "enterprise_packs"

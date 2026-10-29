@@ -162,7 +162,7 @@ func lifecycleGaps(ctx context.Context, st *store.Store, ov *eoloverlay.Overlay)
 		keys = append(keys, k)
 	}
 	keys = append(keys, ov.FamilyKeys(keys)...)
-	cands, err := st.LifecycleCandidates(ctx, keys, ov.LikePatterns(), versionedDeb.String())
+	cands, err := st.LifecycleCandidates(ctx, keys, ov.LikePatterns(), versionedPackagesPattern())
 	if err != nil {
 		return nil, err
 	}
@@ -193,6 +193,11 @@ func lifecycleGaps(ctx context.Context, st *store.Store, ov *eoloverlay.Overlay)
 		}
 		m, ok := lr.resolve(c.Type, c.PurlKey, c.Version, c.Kind)
 		if !ok {
+			if c.Type == "generic" && c.PurlKey == "pkg:generic/windows" {
+				// Windows is evaluated by its build number (windowsLifecycle),
+				// not through an endoflife.date product of osProducts.
+				continue
+			}
 			if c.Type == "generic" {
 				// Names of runtimes, operating systems, clusters and managed
 				// services come from Stackurity's own collectors.

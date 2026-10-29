@@ -269,10 +269,21 @@ agent's own token; it never changes anything on the host.`,
 			// assetIDs are the assets the last report went to, which the
 			// agent asks about when it polls for check-again requests.
 			var assetIDs []int64
+			// Servers before 0.14 refuse a batch with an app list (unknown
+			// field); ask once what the server takes.
+			appList := false
+			if m, err := cl.Meta(ctx); err == nil {
+				appList = m.Has(client.FeatureAppList)
+			}
 			report := func() (*model.ObservationBatch, error) {
 				bs, err := collect(ctx)
 				if err != nil {
 					return nil, err
+				}
+				if !appList {
+					for _, b := range bs {
+						b.Apps = nil
+					}
 				}
 				var ids []int64
 				for i, b := range bs {

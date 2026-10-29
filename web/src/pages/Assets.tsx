@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
-import { api, ASSET_KINDS, ASSET_STATUSES, type Asset, type List, type Team } from "../api";
+import { api, ASSET_KINDS, ASSET_STATUS_HELP, ASSET_STATUS_LABEL, ASSET_STATUSES, type Asset, type List, type Team } from "../api";
 import { useAuth } from "../auth";
 import { useProject } from "../project";
 import { useDebounced, useFacets, useLoad } from "../hooks";
@@ -130,7 +130,13 @@ export function AssetsPage() {
         ]
       : []),
     { key: "count", header: "Components", numeric: true, cell: (a) => a.component_count.toLocaleString() },
-    { key: "status", header: "Status", cell: (a) => <Badge status={a.collection_status} /> },
+    {
+      key: "status",
+      header: "Status",
+      cell: (a) => (
+        <Badge status={a.collection_status} label={ASSET_STATUS_LABEL[a.collection_status]} title={ASSET_STATUS_HELP[a.collection_status]} />
+      ),
+    },
     { key: "seen", header: "Last seen", cell: (a) => <RelativeTime iso={a.last_seen} /> },
   ];
 
@@ -189,7 +195,7 @@ export function AssetsPage() {
             <option value="">Any status</option>
             {ASSET_STATUSES.map((s) => (
               <option key={s} value={s}>
-                {s}
+                {ASSET_STATUS_LABEL[s] ?? s}
               </option>
             ))}
           </select>

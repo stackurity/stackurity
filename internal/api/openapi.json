@@ -2424,6 +2424,53 @@
     }
    }
   },
+  "/checks/options": {
+   "get": {
+    "operationId": "get_checks_options",
+    "summary": "How each fix group or asset can be checked again",
+    "description": "How each fix group (fix_group) or asset (asset_id) can be checked again: on_demand when a check gets a fresh report within minutes, else reason (removed, agent, upload, not_found), with method, host_name and the latest check (last_check). Repeat a parameter or separate values with commas; at most 50.\n\nRole: viewer",
+    "tags": [
+     "Findings and fixes"
+    ],
+    "x-stackurity-role": "viewer",
+    "parameters": [
+     {
+      "name": "fix_group",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "asset_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/checks/{id}": {
    "get": {
     "operationId": "get_checks_id",

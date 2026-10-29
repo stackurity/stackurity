@@ -7,7 +7,6 @@ import {
   PRIORITIES,
   SEVERITIES,
   type Asset,
-  type AssetDetail,
   type Check,
   type FixBucket,
   type FixGroup,
@@ -17,7 +16,7 @@ import {
 } from "../api";
 import { useAuth } from "../auth";
 import { useAction, useDebounced, useFacets, useLoad } from "../hooks";
-import { plural } from "../format";
+import { assetKindLabel, plural } from "../format";
 import { FindingCards, FindingsTable } from "../components/Findings";
 import {
   ActionInstruction,
@@ -35,8 +34,10 @@ import {
   versionsText,
 } from "../components/FixGroups";
 import { Badge } from "../components/Badge";
+import { AssetSelect } from "../components/AssetPicker";
 import { assignGroup, FindingActions, GROUP_ACTION_MAX } from "../components/Workflow";
-import { CheckAgain, CheckBadge, CheckResultText } from "../components/CheckAgain";
+import { CheckBadge, CheckResultText } from "../components/CheckAgain";
+import { fixPlaces, FixVerify, useCheckOptions } from "../components/FixVerify";
 import { Card, EmptyState, ErrorBox, FilterPanel, Loading, Notice, PageHeader, Pager, PresetChips, RelativeTime } from "../components/ui";
 
 const LIMIT = 20;
@@ -80,6 +81,7 @@ export function FixGroupList({
     () => api.get<List<FixGroup>>("/fix-groups", { asset_id: assetId, kind, environment, q, bucket, limit: LIMIT, offset }),
     [assetId, kind, environment, q, bucket, offset],
   );
+  const checkOptions = useCheckOptions((res.data?.items ?? []).flatMap(fixPlaces).map((p) => p.group_id));
   return (
     <>
       <ErrorBox error={res.error} title="Could not load the fixes" />
@@ -98,7 +100,7 @@ export function FixGroupList({
         <>
           <div className="fix-list">
             {res.data.items.map((g) => (
-              <FixGroupCard key={g.id} g={g} hideAsset={Boolean(assetId)} />
+              <FixGroupCard key={g.id} g={g} hideAsset={Boolean(assetId)} options={checkOptions} />
             ))}
           </div>
           <Pager total={res.data.total} limit={LIMIT} offset={offset} onChange={setOffset} />
@@ -200,14 +202,7 @@ export function FixesPage() {
         </div>
         <div className="field">
           <label htmlFor="ap-asset">Asset</label>
-          <select id="ap-asset" value={assetId} onChange={(e) => update({ asset_id: e.target.value })}>
-            <option value="">All assets</option>
-            {assets.data?.items.map((a) => (
-              <option key={a.id} value={String(a.id)}>
-                {a.name}
-              </option>
-            ))}
-          </select>
+          <AssetSelect id="ap-asset" value={assetId} onChange={(v) => update({ asset_id: v })} assets={assets.data?.items} />
         </div>
         <div className="field">
           <label htmlFor="ap-env">Environment</label>
@@ -256,8 +251,7 @@ export function FixGroupDetailPage() {
     () => api.get<FixGroupDetail>(`/fix-groups/${encodeURIComponent(id)}`, { limit: DETAIL_LIMIT, offset }),
     [id, offset],
   );
-  const assetId = res.data?.group.asset_id;
-  const asset = useLoad(() => (assetId ? api.get<AssetDetail>(`/assets/${assetId}`) : Promise.resolve(null)), [assetId]);
+  const checkOptions = useCheckOptions(res.data ? fixPlaces(res.data.group).map((p) => p.group_id) : []);
   const initialPanel =
     hash === "#assign" ? "assign" : hash === "#snooze" || linkAction === "snooze" ? "suppress" : hash === "#accept" ? "accept_risk" : undefined;
   const clearAction = () => {
@@ -348,7 +342,10 @@ export function FixGroupDetailPage() {
         <Card title="Where">
           <p>
             <Link to={`/assets/${g.asset_id}`}>{g.asset_name}</Link>
-            <span className="muted"> · {g.environment || "no environment"}</span>
+            <span className="muted">
+              {" "}
+              · {assetKindLabel(g.asset_kind)} · {g.environment || "no environment"}
+            </span>
           </p>
           {g.component && (
             <p className="small">
@@ -389,7 +386,14 @@ export function FixGroupDetailPage() {
               </p>
             </details>
           )}
-          <CheckAgain asset={asset.data?.asset} fixGroup={g.id} onChanged={res.reload} />
+          <FixVerify g={g} options={checkOptions} recentOnly={false} />
+          <p className="hint">
+            Issues close only when a new scan no longer finds them. Not fixing it now?{" "}
+            <Link to={{ search: params.toString(), hash: g.kind === "release_upgrade" || g.kind === "end_of_life" ? "#accept" : "#snooze" }}>
+              Snooze it or accept the risk
+            </Link>{" "}
+            below.
+          </p>
         </Card>
         <Card title="How to fix">
           <div className="form-compact form">
@@ -454,7 +458,12 @@ export function FixGroupDetailPage() {
               Applies to all {plural(g.finding_count, "issue")} of this fix. Snoozing and ignoring need the security role and a reason; other
               roles can ask to ignore, and security decides.
             </p>
-            <FindingActions target={{ type: "group", id: g.id, count: g.finding_count }} onDone={res.reload} initialPanel={initialPanel} />
+            <FindingActions
+              key={initialPanel ?? "none"}
+              target={{ type: "group", id: g.id, count: g.finding_count }}
+              onDone={res.reload}
+              initialPanel={initialPanel}
+            />
           </>
         )}
         {g.finding_count <= GROUP_ACTION_MAX && (
