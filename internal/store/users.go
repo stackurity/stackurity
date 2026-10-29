@@ -371,6 +371,11 @@ func (s *Store) SessionUserSSO(ctx context.Context, secret string) (*User, int64
 			wsID = *pinned
 		}
 		u, err := s.GetUser(tenant.WithWorkspace(ctx, wsID), id)
+		if u != nil {
+			// An organisation's identity provider vouches for membership of
+			// that organisation only, never for operating the installation.
+			u.InstanceAdmin = false
+		}
 		return u, wsID, *pinned, err
 	}
 	var wsID int64

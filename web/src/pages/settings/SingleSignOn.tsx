@@ -346,7 +346,8 @@ export function SingleSignOnPage() {
                     <span className="hint">
                       {" "}
                       Members can then work here only after signing in with single sign-on. The organisation's owner can always sign in with their password, as a
-                      way back in if the identity provider is down{isOwner ? " (that is you)" : ""}.
+                      way back in if the identity provider is down{isOwner ? " (that is you)" : ""}. API tokens and connected AI assistants made before
+                      keep working; revoke existing tokens if you need to.
                     </span>
                   </span>
                 </label>

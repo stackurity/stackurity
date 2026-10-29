@@ -79,6 +79,25 @@ func TestSSOSessions(t *testing.T) {
 	if m := me(pinned); m.Workspace == nil || m.Workspace.ID != ws2.ID {
 		t.Errorf("after the refused switch: %+v", m.Workspace)
 	}
+	// A pinned session never carries instance-admin rights, even for an
+	// instance administrator; an ordinary session of theirs does.
+	if _, err := st.UpdateUserInstanceAdmin(bg, "both@acme.io", true); err != nil {
+		t.Fatal(err)
+	}
+	if status, _ := call(pinned, "GET", "/api/v1/admin/workspaces"); status != 403 {
+		t.Errorf("pinned session as instance admin: %d", status)
+	}
+	ordinary, err := st.CreateSession(bg, u.ID, tenant.DefaultWorkspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status, _ := call(ordinary, "GET", "/api/v1/admin/workspaces"); status != 200 {
+		t.Errorf("password session of an instance admin: %d", status)
+	}
+	if _, err := st.UpdateUserInstanceAdmin(bg, "both@acme.io", false); err != nil {
+		t.Fatal(err)
+	}
+
 	// Removed from workspace 2: no workspace at all, never workspace 1.
 	if _, err := st.Pool.Exec(tenant.System(bg), `DELETE FROM workspace_members WHERE workspace_id = $1 AND user_id = $2`, ws2.ID, u.ID); err != nil {
 		t.Fatal(err)
