@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router";
-import { api, type DirectoryUser, type Finding, type FindingEvent, type List, type Team } from "../api";
+import { api, type DirectoryUser, type EpssDetail, type Finding, type FindingEvent, type List, type Team } from "../api";
 import { useAuth } from "../auth";
 import { useLoad } from "../hooks";
 import { absTime } from "../format";
@@ -59,7 +59,7 @@ function FactorTable({ f }: { f: Finding }) {
   );
 }
 
-export function WorkflowPanel({ f, onChanged }: { f: Finding; onChanged: () => void }) {
+export function WorkflowPanel({ f, onChanged, epss }: { f: Finding; onChanged: () => void; epss?: EpssDetail | null }) {
   const active = f.status === "open" && (f.state === "new" || f.state === "acknowledged" || f.state === "in_progress");
   const closedByDecision = f.state === "suppressed" || f.state === "risk_accepted";
   return (
@@ -143,6 +143,7 @@ export function WorkflowPanel({ f, onChanged }: { f: Finding; onChanged: () => v
         <div>
           <h3 className="h-sm">Why this priority</h3>
           <FactorTable f={f} />
+          {epss && <p className="small">{epss.text}</p>}
           <p className="hint">
             Weights, thresholds and deadlines come from the <Link to="/settings/risk-policy">risk policy</Link>
             {f.priority_policy_version ? (

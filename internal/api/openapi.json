@@ -3759,7 +3759,7 @@
    "get": {
     "operationId": "get_findings",
     "summary": "Vulnerability and end-of-life findings, SOS, priority, known-exploited and most severe first",
-    "description": "Vulnerability and end-of-life findings, SOS, priority, known-exploited and most severe first. `new_within=N` keeps findings first seen in the last N days, `resolved_within=N` those resolved in the last N days (with `status=resolved`), `resolution_kind` (comma-separated: remediated, removed, superseded, advisory_withdrawn, advisory_changed, not_evaluated, other) those closed for that reason, and `sort=asset` orders by asset name first. Also filters by `priority`, `state`, `sos`, `overdue`, assignee (`assignee_user`, `assignee_team`, `assignee=none`), `fix_group`, `incident_id` and `second_check`; paged with `limit` and `offset`\n\nRole: viewer",
+    "description": "Vulnerability and end-of-life findings, SOS, priority, known-exploited and most severe first. `new_within=N` keeps findings first seen in the last N days, `resolved_within=N` those resolved in the last N days (with `status=resolved`), `resolution_kind` (comma-separated: remediated, removed, superseded, advisory_withdrawn, advisory_changed, not_evaluated, other) those closed for that reason, and `sort=asset` orders by asset name first. `epss_min` (0 to 1) keeps findings whose CVE has at least that EPSS. Each finding carries `epss`, `epss_percentile`, `epss_date` and `epss_model_version` (null without a score). Also filters by `priority`, `state`, `sos`, `overdue`, assignee (`assignee_user`, `assignee_team`, `assignee=none`), `fix_group`, `incident_id` and `second_check`; paged with `limit` and `offset`\n\nRole: viewer",
     "tags": [
      "Findings and fixes"
     ],
@@ -3825,6 +3825,15 @@
       "name": "known_exploited",
       "in": "query",
       "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "epss_min",
+      "in": "query",
+      "required": false,
+      "description": "Vulnerability findings whose CVE has a FIRST EPSS of at least this probability, 0 to 1 (0.1 is 10%)",
       "schema": {
        "type": "string"
       }
@@ -4260,7 +4269,7 @@
    "get": {
     "operationId": "get_findings_id_explain",
     "summary": "Why the finding matched (why, as in GET /findings/{id}) and why it has its priority",
-    "description": "Why the finding matched (`why`, as in `GET /findings/{id}`) and why it has its priority: `risk` (priority, score, each factor with its points, `policy_version`: the risk policy that produced this priority, `current_policy_version` and `policy_changed`, the current thresholds, the SLA for the priority, deadlines), the stored `evidence`, the matched `advisories` (id, feed, severity, dates, an osv.dev link), the freshness of the `feeds` they came from, and the asset's last (complete) `collection` time\n\nRole: viewer",
+    "description": "Why the finding matched (`why`, as in `GET /findings/{id}`) and why it has its priority: `risk` (priority, score, each factor with its points, `policy_version`: the risk policy that produced this priority, `current_policy_version` and `policy_changed`, the current thresholds, the SLA for the priority, deadlines, and `epss`: FIRST's EPSS score, percentile, model and date for the CVE, the policy threshold and whether and why it counts, also under `why.epss`), the stored `evidence`, the matched `advisories` (id, feed, severity, dates, an osv.dev link), the freshness of the `feeds` they came from, and the asset's last (complete) `collection` time\n\nRole: viewer",
     "tags": [
      "Findings and fixes"
     ],

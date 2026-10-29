@@ -4,6 +4,17 @@ All notable changes to Stackurity. Versions follow [Semantic Versioning](https:/
 
 Each release's section is published as its GitHub release notes, and a tag without a section here cannot be released (`go run ./tools/changelog -version vX.Y.Z` prints it). New changes go under **Unreleased**, which is renamed to the version when it is tagged. Subsections are **Security**, **Added**, **Changed**, **Fixed** and **Upgrading**. Put fixes for vulnerabilities under `### Security`, first: installations treat a release with that heading as a security release and show administrators a banner they can only snooze.
 
+## Unreleased
+
+### Added
+
+- **Exploit prediction (FIRST EPSS) in priorities.** A daily feed, `epss:first`, downloads FIRST's EPSS scores for every CVE (one bulk file from `epss.empiricalsecurity.com`, about 3 MB; `STACKURITY_EPSS_URL` for a mirror) and stores each CVE's probability of exploitation in the next 30 days, its percentile, the model version and the score date (migration `0056_epss`). The risk policy gets an EPSS factor: `epss` points (1.5 by default) while a finding's CVE is at or above `epss_threshold` (10% by default), not for CVEs already in CISA KEV, and never more than the known-exploited points. So that daily movement does not churn priorities and alerts, the factor is all or nothing, its text names the threshold rather than the day's score, and a finding that crossed the threshold keeps it until its EPSS falls below 80% of it. Priorities read the scores directly every minute; nothing is re-evaluated when the file changes. Measured on 130,000 open findings and 400,000 scores, the prioritisation pass that runs every minute took about 4.7 s with or without EPSS (reading and scoring 0.8 s against 0.6 s), and three days of small score changes rewrote only findings that crossed the threshold (`TestPrioritizeEPSSPerformance`). See [Predicted exploitation (EPSS)](docs/risk.md#predicted-exploitation-epss).
+- Findings carry `epss`, `epss_percentile`, `epss_date` and `epss_model_version`; `GET /findings` filters by `epss_min` (0 to 1). **All issues** has an **EPSS** column and an **Exploit prediction (EPSS)** filter, **Settings → Risk policy** the EPSS points and threshold, and **Why this priority** on the finding page, `GET /findings/{id}/explain` (`risk.epss`, `why.epss`) and the AI assistants' `explain_finding` say what EPSS predicts for the CVE and why it counts or not. `list_findings` takes `epss_min` and returns `epss`.
+
+### Upgrading
+
+- Migration `0056_epss` creates the `epss_scores` table and allows the new feed kind `prediction`; it rewrites nothing. The risk policy gains `epss` and `epss_threshold` with their defaults (a saved policy whose `known_exploited` is below 1.5 gets that value for `epss`), so its version changes once and the first prioritisation after the upgrade records the new version on every open finding. EPSS starts counting after the first `epss:first` sync, within minutes of the start; set `epss` to 0 in the risk policy to leave it out.
+
 ## 0.13.6
 
 ### Security

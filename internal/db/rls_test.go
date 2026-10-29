@@ -21,6 +21,7 @@ var globalTables = map[string]string{
 	"pending_packages":   "public intelligence: packages a feed sync changed, before re-evaluation is queued",
 	"feeds":              "public intelligence; changed only by instance admins",
 	"known_exploited":    "public intelligence",
+	"epss_scores":        "public intelligence",
 	"lifecycle_cycles":   "public intelligence",
 	"lifecycle_products": "public intelligence",
 	"license_key":        "installation licence",

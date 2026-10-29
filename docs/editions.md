@@ -7,7 +7,7 @@ What Community, Pro and Enterprise include, their limits and what each capabilit
 | Capability | Community | Pro | Enterprise | Limits and prerequisites |
 |---|:-:|:-:|:-:|---|
 | Inventory: Linux and Windows agents, repositories, CI scans, container images, SBOM import and export, AWS and Kubernetes plugins | ✓ | ✓ | ✓ | What each source can assess: [compatibility.md](compatibility.md) |
-| Vulnerability, known-exploitation, release and end-of-life intelligence | ✓ | ✓ | ✓ | Outbound access to the sources or mirrors ([network.md](network.md)) |
+| Vulnerability, known-exploitation, exploit-prediction (EPSS), release and end-of-life intelligence | ✓ | ✓ | ✓ | Outbound access to the sources or mirrors ([network.md](network.md)) |
 | Priorities (P1 to P4, SOS), incidents, coverage ledger, Action plan, upgrade recommendations | ✓ | ✓ | ✓ | |
 | Notifications: email, Slack, Teams, webhooks, Jira; urgent messages and daily or weekly summaries; routing by priority, kind and environment, quiet hours, hourly limits | ✓ | ✓ | ✓ | |
 | CI gates, MCP server for AI assistants, API and CLI, audit log | ✓ | ✓ | ✓ | |

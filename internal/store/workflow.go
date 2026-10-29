@@ -156,19 +156,30 @@ type riskRow struct {
 	priority  string // stored
 }
 
+// epssFactor matches stored priority_factors that include the EPSS factor.
+var epssFactor = func() string {
+	b, _ := json.Marshal([]map[string]string{{"name": risk.FactorEPSS}})
+	return string(b)
+}()
+
 // riskRows reads every open finding's risk inputs. Prioritize and the policy
 // preview share it, so a preview scores exactly what a save would.
 // assetID 0 means every asset.
 func riskRows(ctx context.Context, db q, now time.Time, assetID int64) ([]riskRow, error) {
+	// EPSS is joined by the finding's key, which is its CVE when it has one
+	// (osv.GroupKey); whether the finding already had the EPSS factor is
+	// read from its stored factors, for the policy's hysteresis.
 	rows, err := db.Query(ctx, `SELECT f.id, f.kind, f.severity, f.score, COALESCE((f.evidence->>'known_exploited')::boolean, false),
 		`+effectiveExposure+`, `+exposureSource+`, a.environment, a.criticality,
 		f.fixed_version <> '' AND NOT COALESCE((f.evidence->>'requires_ubuntu_pro')::boolean, false)
 		  AND COALESCE(f.evidence->>'requires_subscription', '') = '',
 		i.scope, f.verification, f.first_seen, COALESCE((f.evidence->>'not_running_kernel')::boolean, false),
-		f.priority, f.state, f.fix_due, f.title, f.key, a.id, a.name
+		f.priority, f.state, f.fix_due, f.title, f.key, a.id, a.name,
+		ep.score, COALESCE(f.priority_factors @> $2::jsonb, false)
 		FROM findings f JOIN assets a ON a.id = f.asset_id JOIN inventory i ON i.id = f.inventory_id
+		LEFT JOIN epss_scores ep ON f.kind = 'vulnerability' AND ep.cve = f.key
 		WHERE f.status = 'open' AND ($1::bigint = 0 OR f.asset_id = $1)
-		ORDER BY f.id`, assetID)
+		ORDER BY f.id`, assetID, epssFactor)
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +193,7 @@ func riskRows(ctx context.Context, db q, now time.Time, assetID int64) ([]riskRo
 		)
 		if err := rows.Scan(&r.id, &r.in.Kind, &r.in.Severity, &r.in.Score, &r.in.KnownExploited, &r.in.InternetExposed, &r.in.ExposureSource,
 			&r.in.Environment, &r.in.Criticality, &r.in.FixAvailable, &r.in.Scope, &r.in.Verification, &r.firstSeen, &r.in.KernelNotRunning,
-			&r.priority, &state, &fixDue, &r.title, &r.key, &r.assetID, &r.assetName); err != nil {
+			&r.priority, &state, &fixDue, &r.title, &r.key, &r.assetID, &r.assetName, &r.in.EPSS, &r.in.EPSSCounted); err != nil {
 			return nil, err
 		}
 		r.in.Overdue = fixDue != nil && now.After(*fixDue) && (state == "new" || state == "acknowledged" || state == "in_progress")

@@ -18,7 +18,12 @@ function feedStatus(f: Feed): { label: string; tone: Tone; title: string } {
   return { label: "OK", tone: "good", title: "Synced recently" };
 }
 
-const KIND_LABEL: Record<string, string> = { vulnerability: "Vulnerabilities", release: "Releases", lifecycle: "Lifecycle" };
+const KIND_LABEL: Record<string, string> = {
+  vulnerability: "Vulnerabilities",
+  release: "Releases",
+  lifecycle: "Lifecycle",
+  prediction: "Exploit prediction",
+};
 
 const GAP_LIMIT = 100;
 

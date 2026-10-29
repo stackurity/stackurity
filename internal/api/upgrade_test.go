@@ -15,6 +15,7 @@ import (
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
 	"github.com/stackurity/stackurity/internal/upgrade"
+	"github.com/stackurity/stackurity/internal/why"
 )
 
 // upgradeFixture: one host with lodash 4.17.15 (two advisories, release data
@@ -123,7 +124,11 @@ func TestUpgradeAndOutcomeEndpoints(t *testing.T) {
 			SLA                  struct {
 				FixDays int `json:"fix_days"`
 			} `json:"sla"`
+			EPSS *why.EPSSDetail `json:"epss"`
 		} `json:"risk"`
+		Why struct {
+			EPSS *why.EPSSDetail `json:"epss"`
+		} `json:"why"`
 		Advisories []struct {
 			ID, Feed, URL string
 		} `json:"advisories"`
@@ -131,6 +136,19 @@ func TestUpgradeAndOutcomeEndpoints(t *testing.T) {
 			Name string `json:"name"`
 		} `json:"feeds"`
 		Collection map[string]*time.Time `json:"collection"`
+	}
+	// FIRST's EPSS for the CVE counts towards the priority and is explained.
+	epssRows := []store.EPSSRow{{CVE: "CVE-2021-23337", Score: 0.42, Percentile: 0.97}}
+	if _, err := e.st.ReplaceEPSS(tenant.System(context.Background()), "v2026.06.15", time.Date(2026, 10, 28, 0, 0, 0, 0, time.UTC),
+		func() (*store.EPSSRow, error) {
+			if len(epssRows) == 0 {
+				return nil, nil
+			}
+			r := &epssRows[0]
+			epssRows = epssRows[1:]
+			return r, nil
+		}); err != nil {
+		t.Fatal(err)
 	}
 	// The version recorded is the one that prioritised the finding.
 	if _, err := e.st.Prioritize(tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace), risk.DefaultPolicy(), time.Now()); err != nil {
@@ -141,6 +159,26 @@ func TestUpgradeAndOutcomeEndpoints(t *testing.T) {
 		ex.Risk.SLA.FixDays == 0 || len(ex.Advisories) != 1 || !strings.Contains(ex.Advisories[0].URL, "GHSA-35jh-r3h4-6jhm") ||
 		len(ex.Feeds) != 1 || ex.Feeds[0].Name != "osv:npm" || ex.Collection["last_complete_collection_at"] == nil {
 		t.Errorf("explain: %d %+v", code, ex)
+	}
+	if d := ex.Risk.EPSS; d == nil || !d.Counted || d.Score == nil || *d.Score != 0.42 || d.ModelVersion != "v2026.06.15" ||
+		d.Date != "2026-10-28" || d.Threshold != 0.1 || !strings.Contains(d.Text, "42% chance") || ex.Why.EPSS == nil {
+		t.Errorf("explain EPSS: %+v %+v", ex.Risk.EPSS, ex.Why.EPSS)
+	}
+	var list struct {
+		Items []store.Finding `json:"items"`
+		Total int64           `json:"total"`
+	}
+	if code := view.do("GET", "/api/v1/findings?epss_min=0.4", nil, &list); code != 200 || list.Total != 1 || list.Items[0].EPSS == nil ||
+		*list.Items[0].EPSS != 0.42 || list.Items[0].EPSSPercentile == nil {
+		t.Errorf("epss_min=0.4: %d %+v", code, list)
+	}
+	if code := view.do("GET", "/api/v1/findings?epss_min=0.5", nil, &list); code != 200 || list.Total != 0 {
+		t.Errorf("epss_min=0.5: %d %d", code, list.Total)
+	}
+	for _, q := range []string{"10", "-0.1", "x"} {
+		if code := view.do("GET", "/api/v1/findings?epss_min="+q, nil, nil); code != 400 {
+			t.Errorf("epss_min=%s: %d", q, code)
+		}
 	}
 
 	since := time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
