@@ -25,7 +25,7 @@ func TestFeedImportCrash(t *testing.T) {
 	v1 := append([]advisory{openssl, curl}, fillers("OLD", 2000, t0)...)
 	e.serveIntel(v1, openssl.cve)
 	s := e.start()
-	waitFor(t, 60*time.Second, "first Debian sync and evaluation", func() bool {
+	waitFor(t, firstEvaluation, "first Debian sync and evaluation", func() bool {
 		f := e.findings(host)
 		return e.when(`SELECT last_success FROM feeds WHERE name = 'osv:Debian'`) != nil && len(f) == 2 &&
 			e.evaluationsDone()

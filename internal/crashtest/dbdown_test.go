@@ -191,7 +191,7 @@ func TestDatabaseOutageDuringFeedSync(t *testing.T) {
 	token := e.collectorToken()
 	e.serveIntel(append([]advisory{openssl, curl}, fillers("OLD", 200, t0)...), openssl.cve)
 	s := e.start("STACKURITY_DATABASE_URL=" + p.url(e))
-	waitFor(t, 60*time.Second, "first Debian sync and evaluation", func() bool {
+	waitFor(t, firstEvaluation, "first Debian sync and evaluation", func() bool {
 		return e.when(`SELECT last_success FROM feeds WHERE name = 'osv:Debian'`) != nil && len(e.findings(host)) == 2 &&
 			e.evaluationsDone()
 	})
