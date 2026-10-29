@@ -16,7 +16,7 @@ import (
 	"github.com/stackurity/stackurity/internal/testdb"
 )
 
-// Migration 0049 renames copies of one application on a host that carry
+// Migration 0050 renames copies of one application on a host that carry
 // the same generated name. The production case: "ghost on commmerceblog"
 // for /var/www/ghost/versions/6.22.0 and .../6.52.0, both created before
 // 0.13 named new copies by their paths.
@@ -85,7 +85,7 @@ func TestAppNameBackfill(t *testing.T) {
 	exec(`UPDATE assets SET name = 'adminer on DBC' WHERE id = $1`, mine2)
 	exec(`UPDATE assets SET name = 'adminer on DBC', name_by_person = true WHERE id = $1`, mine)
 	exec(`ALTER TABLE collections DROP COLUMN proves_absence`)
-	exec(`DELETE FROM schema_migrations WHERE name = '0049_app_presence'`)
+	exec(`DELETE FROM schema_migrations WHERE name = '0050_app_presence'`)
 	if _, err := db.Migrate(context.Background(), pool); err != nil {
 		t.Fatal(err)
 	}

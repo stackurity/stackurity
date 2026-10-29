@@ -26,7 +26,7 @@ Each release's section is published as its GitHub release notes, and a tag witho
 ### Changed
 
 - Application discovery follows Ghost-CLI installs like Capistrano, Deployer and Envoyer ones: with `versions/` (or `releases/`) and a `current` link, only the current release is an application. Old versions kept for rollback (`/var/www/ghost/versions/6.22.0` next to `current -> 6.52.0`) are no longer scanned as live applications, and ones reported before are resolved as removed on the next collection. A directory named with `--app-dir` is scanned as given.
-- Copies of one application on a server always get distinct names ("ghost (/6.22.0) on commmerceblog"), also when both existed before 0.13; migration 0049 renames those already alike. A name a person set is never changed.
+- Copies of one application on a server always get distinct names ("ghost (/6.22.0) on commmerceblog"), also when both existed before 0.13; migration 0050 renames those already alike. A name a person set is never changed.
 - "I applied this" and Check again on a fix are one button, **I've fixed it — check now**. The asset page keeps Check again for the whole asset.
 - Asset status reads as words: Reporting, Last scan incomplete, Stopped reporting, Removed. Hosts are called servers in asset kinds.
 - Smaller consistency fixes: on Home, Show the places of a fix needed in several places is a plain button like Show issues, not a primary one; Home's Assets needing attention and a fix's Where say which kind a same-named asset is; on a fix's issues, Reopen reads "Reopen snoozed or ignored" (it only changes those).

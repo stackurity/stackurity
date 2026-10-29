@@ -18,7 +18,7 @@ import (
 // DBC". An earlier copy still carrying exactly the generated name is
 // renamed the same way; a name a person set is never changed. The same
 // runs for an existing copy each time it reports, so copies named alike
-// before this existed are told apart too (migration 0049 renamed those
+// before this existed are told apart too (migration 0050 renamed those
 // already in the database).
 
 // appName returns the name for the batch's application: the batch's name,
