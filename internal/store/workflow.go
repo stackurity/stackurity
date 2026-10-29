@@ -202,6 +202,17 @@ func riskRows(ctx context.Context, db q, now time.Time, assetID int64) ([]riskRo
 	return out, rows.Err()
 }
 
+// PrioritizeChunk is how many findings Prioritize writes in one transaction.
+// A pass that changes every finding (a new risk policy, such as the one an
+// upgrade brings) then holds row locks on one chunk at a time, for well
+// under a second, rather than on every open finding until the pass ends, so
+// evaluations, workflow actions and the API are not kept waiting.
+var PrioritizeChunk = 1000
+
+// afterPriorityChunk, when set (tests only), runs after each chunk is
+// committed; an error stops the pass there, as a crash would.
+var afterPriorityChunk func(written int) error
+
 // Prioritize recomputes priority, SOS and deadlines for every open finding.
 // Deadlines run from first detection; they move only when priority changes.
 func (s *Store) Prioritize(ctx context.Context, p risk.Policy, now time.Time) (int, error) {
@@ -212,29 +223,45 @@ func (s *Store) Prioritize(ctx context.Context, p risk.Policy, now time.Time) (i
 // evaluate job runs it right after matching, so a collection reported as
 // evaluated also has its priorities, and a CI gate never reads the defaults
 // of findings the periodic pass has not scored yet.
+//
+// Every open finding is read in one query (reading takes no locks), then
+// scored and written in chunks of PrioritizeChunk in id order, each chunk
+// one short transaction. Every finding read is written at most once, in
+// exactly one chunk. If the pass stops part way (an error, a restart), the
+// chunks written stay written; the next pass reads every finding again and
+// leaves alone those whose stored result is already right, so it finishes
+// the job without rewriting what was done.
 func (s *Store) PrioritizeAsset(ctx context.Context, p risk.Policy, now time.Time, assetID int64) (int, error) {
 	rows, err := riskRows(ctx, s.Pool, now, assetID)
 	if err != nil {
 		return 0, err
 	}
-	type upd struct {
-		id             int64
-		res            risk.Result
-		ackDue, fixDue time.Time
-	}
-	// Rows come in id order and are updated in that order (one batch, one
-	// transaction), the order an evaluation locks findings in, so the two
-	// cannot deadlock (see SyncFindings).
-	ups := make([]upd, 0, len(rows))
 	version := p.Version()
+	for start := 0; start < len(rows); start += PrioritizeChunk {
+		end := min(start+PrioritizeChunk, len(rows))
+		if err := s.writePriorities(ctx, p, version, rows[start:end]); err != nil {
+			return start, err
+		}
+		if afterPriorityChunk != nil {
+			if err := afterPriorityChunk(end); err != nil {
+				return end, err
+			}
+		}
+	}
+	return len(rows), nil
+}
+
+// writePriorities scores one chunk of findings and stores the results that
+// changed, in one transaction (one batch).
+func (s *Store) writePriorities(ctx context.Context, p risk.Policy, version string, rows []riskRow) error {
+	// Rows come in id order and are updated in that order, the order an
+	// evaluation locks findings in, so the two cannot deadlock (see
+	// SyncFindings).
+	batch := &pgx.Batch{}
 	for _, r := range rows {
 		res := p.Evaluate(r.in)
-		ack, fix := p.Deadlines(res.Priority, r.firstSeen)
-		ups = append(ups, upd{r.id, res, ack, fix})
-	}
-	batch := &pgx.Batch{}
-	for _, u := range ups {
-		factors, _ := json.Marshal(u.res.Factors)
+		ackDue, fixDue := p.Deadlines(res.Priority, r.firstSeen)
+		factors, _ := json.Marshal(res.Factors)
 		// Rows whose result has not changed are left alone. This runs every
 		// minute over every open finding; rewriting them all bloated the
 		// table and kept the findings list from using index-only scans.
@@ -245,12 +272,9 @@ func (s *Store) PrioritizeAsset(ctx context.Context, p risk.Policy, now time.Tim
 			  (priority, priority_score, priority_factors, sos, sos_rule, ack_due, fix_due, priority_policy)
 			    IS DISTINCT FROM ($2::text, $3::real, $4::jsonb, $5::boolean, $8::text, $6::timestamptz, $7::timestamptz, $9::text)
 			  OR (assignee_team_id IS NULL AND (SELECT owner_team_id FROM assets WHERE id = findings.asset_id) IS NOT NULL))`,
-			u.id, u.res.Priority, u.res.Score, factors, u.res.SOS, u.ackDue, u.fixDue, u.res.SOSRule, version)
+			r.id, res.Priority, res.Score, factors, res.SOS, ackDue, fixDue, res.SOSRule, version)
 	}
-	if err := s.Pool.SendBatch(ctx, batch).Close(); err != nil {
-		return 0, err
-	}
-	return len(ups), nil
+	return s.Pool.SendBatch(ctx, batch).Close()
 }
 
 // FindingAction is a workflow change requested by a person.
