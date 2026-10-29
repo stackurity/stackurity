@@ -4,6 +4,16 @@ All notable changes to Stackurity. Versions follow [Semantic Versioning](https:/
 
 Each release's section is published as its GitHub release notes, and a tag without a section here cannot be released (`go run ./tools/changelog -version vX.Y.Z` prints it). New changes go under **Unreleased**, which is renamed to the version when it is tagged. Subsections are **Security**, **Added**, **Changed**, **Fixed** and **Upgrading**. Put fixes for vulnerabilities under `### Security`, first: installations treat a release with that heading as a security release and show administrators a banner they can only snooze.
 
+## Unreleased
+
+### Added
+
+- **Windows missing updates.** Windows 10, 11 and Server 2016, 2019, 2022 and 2025 hosts are now checked for operating system vulnerabilities, not only end of life: the build and update revision the agent already reports (`10.0.20348.4171`) are compared with the fixed builds Microsoft publishes in its Security Update Guide, with no agent change. Each missing CVE is a finding naming the update that fixes it (KB, fixed build, link), with KEV and EPSS applied as for any finding; the action plan has one fix per host, **Install Windows update KB…**, the newest cumulative update among its findings, which fixes all of them. Fixes that come only with paid Extended Security Updates after a release's end of life are labelled and go to the release upgrade. The new feed `msrc:Windows` reads the last 24 months of monthly documents (`STACKURITY_MSRC_MONTHS`) from `api.msrc.microsoft.com` (`STACKURITY_MSRC_URL` for a mirror), checks for changes every 6 hours so a Patch Tuesday release is read the same evening, and rereads everything every 30 days. Hotpatched hosts (Azure Edition, hotpatch builds), Windows Server 2012 R2 and older (paid Extended Security Updates), .NET Framework, Office and servicing stack updates are not evaluated, and say so in the host's coverage and under **Settings → Coverage gaps**. Migration `0058_windows_updates`. See [Windows missing updates](docs/compatibility.md#windows-missing-updates).
+
+### Upgrading
+
+- Windows hosts now get vulnerability findings and a new feed, `msrc:Windows`, which downloads about 140 MB from `api.msrc.microsoft.com` on its first sync (see [network.md](docs/network.md#intelligence-feeds)); disable it under **Intelligence**, or mirror it for air-gapped servers.
+
 ## 0.13.6
 
 ### Security

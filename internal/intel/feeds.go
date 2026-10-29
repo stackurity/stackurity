@@ -39,8 +39,11 @@ const FeedAmazonLinux = "alas:Amazon Linux"
 
 // VulnFeed names the feed that holds advisories for a base ecosystem.
 func VulnFeed(baseEcosystem string) string {
-	if baseEcosystem == "Amazon Linux" {
+	switch baseEcosystem {
+	case "Amazon Linux":
 		return FeedAmazonLinux
+	case "Windows":
+		return FeedMSRC
 	}
 	return OSVFeed(baseEcosystem)
 }
@@ -52,8 +55,11 @@ func osvBase(feed string) string {
 
 // feedEcosystem returns the base ecosystem a vulnerability feed covers.
 func feedEcosystem(feed string) (string, bool) {
-	if feed == FeedAmazonLinux {
+	switch feed {
+	case FeedAmazonLinux:
 		return "Amazon Linux", true
+	case FeedMSRC:
+		return "Windows", true
 	}
 	return strings.CutPrefix(feed, "osv:")
 }
@@ -72,6 +78,15 @@ type Syncer struct {
 	// each batch of OSV records before it is stored.
 	batchLimits func() (count int, bytes int64)
 	onBatch     func(count int, bytes int64)
+	// now, in tests, is the time the Windows updates window is read at.
+	now func() time.Time
+}
+
+func (s *Syncer) clock() time.Time {
+	if s.now != nil {
+		return s.now().UTC()
+	}
+	return time.Now().UTC()
 }
 
 func NewSyncer(s *store.Store, log *slog.Logger, cfg Config) *Syncer {
@@ -130,6 +145,8 @@ func (s *Syncer) Sync(ctx context.Context, name string) (*SyncResult, error) {
 		res, cursor, err = s.syncOSV(ctx, name, strings.TrimPrefix(name, "osv:"), feed.Cursor)
 	case name == FeedAmazonLinux:
 		res, err = s.syncAmazonLinux(ctx, name)
+	case name == FeedMSRC:
+		res, cursor, err = s.syncMSRC(ctx, name, feed.Cursor)
 	case name == FeedKEV:
 		res, err = s.syncKEV(ctx)
 	case name == FeedEndOfLife:

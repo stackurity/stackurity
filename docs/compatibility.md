@@ -27,7 +27,8 @@ Release binaries: linux/amd64, linux/arm64, windows/amd64, darwin/amd64 and darw
 | openSUSE Leap | rpm | Yes (0.2+) | OSV (openSUSE) |
 | Amazon Linux 2023 and 2 | rpm | Yes (0.2+); Amazon Linux 2 extras topics with a version line | ALAS from Amazon's repositories |
 | CentOS, Oracle Linux, Fedora, Amazon Linux 1 | rpm | No: evaluation gap | |
-| Windows | Registry (installed programs, OS build) | No: lifecycle only for the operating system (see [Windows end of life](#windows-end-of-life)); installed programs are not matched; hotfixes and Store apps are unsupported coverage | endoflife.date `windows-server`, `windows` |
+| Windows 10, 11, Server 2016, 2019, 2022, 2025 | Registry (installed programs, OS build) | Operating system vulnerabilities through cumulative updates: the build and update revision against Microsoft's fixed builds, one finding per missing CVE naming its update (KB); see [Windows missing updates](#windows-missing-updates). Lifecycle for the operating system (see [Windows end of life](#windows-end-of-life)). Installed programs are not matched; installed KBs and Store apps are unsupported coverage; hotpatched hosts, .NET Framework, Office and servicing stack updates are not evaluated | Microsoft Security Update Guide (MSRC CVRF); endoflife.date `windows-server`, `windows` |
+| Windows Server 2012 R2 and older, Windows 7, 8, 8.1 | Registry | No: lifecycle only; paid Extended Security Updates are not evaluated (unsupported coverage) | endoflife.date |
 | Runtimes outside a package manager | Detected | No: lifecycle only | endoflife.date |
 | Packages from a vendor's own repository (MongoDB, Docker, Elastic, Grafana, PGDG, NodeSource, Redis, nginx.org, MariaDB, MySQL, HashiCorp, Kubernetes and others, see [below](#packages-from-vendor-repositories)) | dpkg, rpm | No: evaluation gap; lifecycle with upstream dates | endoflife.date |
 
@@ -216,6 +217,38 @@ reason (vendor builds per repository); and products with no lifecycle match.
 Each is counted by assets and workspaces. The report names no workspace,
 asset, path or package. The new file kinds are reported by agents and scans
 from this release on; older agents report only the kinds they knew.
+
+## Windows missing updates
+
+Windows does not install security fixes package by package: each month's cumulative update replaces the operating system files and raises the build's update revision (the registry's `UBR`, the last part of `10.0.20348.4294`), and contains every earlier fix. Microsoft's [Security Update Guide](https://msrc.microsoft.com/update-guide) publishes, for each CVE and each Windows release, the update (KB) that fixes it and the build it brings. Stackurity compares the host's build and update revision with those builds: no agent change is needed, and the agent's existing `os_version` is enough.
+
+**Feed.** `msrc:Windows` reads the Security Update Guide's CVRF API (`api.msrc.microsoft.com/cvrf/v3.0`, one document per month) and is created when a Windows host is in inventory. Every 6 hours it reads the index (about 50 KB), which says when each monthly document last changed, and downloads only the changed documents: a Patch Tuesday release (about 17:00 UTC on the second Tuesday) and later revisions are read within 6 hours. Every 30 days it reads every document in its window again. A document that cannot be read fails the sync and is retried; what was read is kept. Each CVE of a document is stored as an advisory `MSRC-<month>-<CVE>` (aliased to the CVE, so KEV and EPSS apply as for any finding), with Microsoft's severity rating and CVSS vector.
+
+**Window: the last 24 months** (`STACKURITY_MSRC_MONTHS`, 1 to 120). Cumulative updates make the window a question of how many old CVEs are named, never of whether a host is reported: a host older than the window is below every fixed build in it, so it gets a finding for every CVE in the window (about 3,800, 43 of them in KEV, as of October 2026) and the fix to the latest update, and its coverage and fix say its build predates the data. 24 months covers the whole life of Windows Server 2025 and Windows 11 24H2 so far and the whole 24-month servicing of a Windows 11 Home or Pro release, at about 140 MB for the first sync (the monthly documents have grown to 5 to 30 MB in 2026). Documents that leave the window are kept.
+
+**Update lines.** Every edition, Server Core installation and processor architecture of a release take the same update and build, so a release is one line:
+
+| Host | Line | Build |
+|---|---|---|
+| Windows Server 2016, 2019, 2022, 2025 | Server 2016, 2019, 2022, 2025 | 14393, 17763, 20348, 26100 |
+| Windows Server, version 23H2 (annual channel) | Server 23H2 | 25398 |
+| Windows 10 1507, 1607, 1809 (LTSB/LTSC) | 10 1507, 10 1607, 10 1809 | 10240, 14393, 17763 |
+| Windows 10 21H2, 22H2 | 10 21H2, 10 22H2 | 19044, 19045 |
+| Windows 11 22H2, 23H2, 24H2, 25H2, 26H1, 26H2 | 11 22H2 ... 11 26H2 | 22621, 22631, 26100, 26200, 28000, 26300 |
+
+The build decides the line, as for end of life; the product name tells Server from client (Windows 11 calls itself "Windows 10" in `ProductName`), and the edition does not matter. Windows Server 2019 and the 1809 semi-annual channel release share build 17763; the year in the name tells them apart. The agent does not report the architecture, and does not need to: Microsoft lists the same fixed build for x64, ARM64 and 32-bit. Where Microsoft gives a sibling release's build (10.0.19044.x for Windows 10 22H2, 10.0.22631.x for Windows 11 22H2: releases that share one update through an enablement package), the update revision is what counts. A fixed build of any other line is ignored.
+
+**Findings.** One finding per CVE whose fixed build is above the host's (compared as numbers: .887 is before .4294), keyed by the CVE, with the fixed build as the fixed version and in the evidence `kb` ("KB5066782"), `kb_url`, `fixed_build`, `installed_build`, `update_line` and `update_released` (the Patch Tuesday of the update's month). When Microsoft lists two fixes for one release in a month (the Patch Tuesday update and an out-of-band one that completed the fix, as for CVE-2025-59287), the higher build is the fix. A CVE in several monthly documents is grouped by CVE and the highest fixed build counts. A release Microsoft lists as affected without a fixed build is not reported. When a release has passed its end of life, a fix released after that date comes only with paid Extended Security Updates: the finding says so (`requires_subscription`), as for Ubuntu Pro, and the action plan puts it in the release upgrade.
+
+**Action plan.** Cumulative updates contain every earlier fix, so a host's findings are one fix: install the newest update among them ("Install Windows update KB5126655", with the build and month), listing the updates the findings were first fixed in. Hosts that need the same update are one fix in the plan's "by fix" view.
+
+**Not evaluated, and shown as such** (coverage `unsupported` with the reason, counted under **Settings → Coverage gaps** as "Windows hosts", never shown as fully patched):
+
+- **Hotpatching**: Windows Server 2022 Datacenter: Azure Edition always; Windows Server 2025 and Windows 11 Enterprise hosts enrolled in hotpatching while their build is a hotpatch build Microsoft lists. Hotpatch builds are not numbered like cumulative updates.
+- **Windows Server 2012 R2 and older, Windows 7, 8 and 8.1**: their updates are paid Extended Security Updates or have ended, and their builds are numbered 6.x. End of life is evaluated.
+- **.NET Framework, Office and servicing stack updates**: they are not part of the cumulative update's build. Every evaluated Windows row says "cumulative updates only", and the agent's unsupported `windows:hotfixes` scope (installed KBs are not read) is counted under unread files in the coverage-gap report.
+
+Not evaluated (`not_evaluated`, with the reason): a version without an update revision, a release with no updates in the window (Windows 11 21H2, semi-annual channel Server), and any release whose line cannot be told (see below). The second check re-derives these findings with its own table of lines and its own dotted-number comparison.
 
 ## Windows end of life
 

@@ -57,6 +57,9 @@ func (s *Store) UnreadFileGaps(ctx context.Context, known []string) ([]GapRow, e
 func (s *Store) VulnerabilitySourceGaps(ctx context.Context) ([]GapRow, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT x.kind, count(DISTINCT x.asset_id), count(DISTINCT x.workspace_id), count(DISTINCT x.component_id)
 		FROM (SELECT i.asset_id, a.workspace_id, i.component_id, c.type || '|' || CASE
+		    WHEN c.purl_key = 'pkg:generic/windows' AND i.coverage_reason ILIKE '%hotpatch%' THEN 'windows_hotpatch'
+		    WHEN c.purl_key = 'pkg:generic/windows' AND i.coverage_reason LIKE '%Extended Security Updates%' THEN 'windows_esu'
+		    WHEN c.purl_key = 'pkg:generic/windows' THEN 'windows_release'
 		    WHEN i.coverage_reason LIKE 'built by %, not by the distribution%' THEN 'vendor_build|' || substring(i.coverage_reason from '^built by (.*?), not by the distribution')
 		    WHEN i.coverage_reason LIKE 'runtime installed outside a package manager%' THEN 'runtime'
 		    WHEN i.coverage_reason LIKE 'Kubernetes component%' THEN 'kubernetes'

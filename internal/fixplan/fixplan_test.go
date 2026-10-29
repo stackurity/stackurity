@@ -249,3 +249,56 @@ func TestSameFixInSeveralPlaces(t *testing.T) {
 		}
 	}
 }
+
+// A Windows host's findings with a free fix are one cumulative update: the
+// newest among them. A fix only in paid Extended Security Updates goes to
+// the release upgrade when the release has ended, else to "no free fix".
+func TestWindowsUpdateGrouping(t *testing.T) {
+	win := func(id, asset int64, f Row) Row {
+		f.FindingID, f.AssetID, f.AssetName, f.AssetKind, f.OS, f.OSName = id, asset, "ws", "host", "windows", "Windows Server 2022 Datacenter"
+		f.PurlType, f.Component, f.IsOS, f.Priority = "generic", "windows", true, "P3"
+		if f.Kind == "" {
+			f.Kind = "vulnerability"
+		}
+		if f.Version == "" {
+			f.Version = "10.0.20348.4052"
+		}
+		return f
+	}
+	rows := []Row{
+		win(1, 1, Row{Key: "CVE-1", FixedVersion: "10.0.20348.4171", KB: "KB5065432", KBReleased: "2025-09-09"}),
+		// .887 < .4294 as numbers, although not as text.
+		win(2, 1, Row{Key: "CVE-2", FixedVersion: "10.0.20348.4294", KB: "KB5066782", KBReleased: "2025-10-14", KnownExploited: true}),
+		win(3, 1, Row{Key: "CVE-3", FixedVersion: "10.0.20348.887", KB: "KB5016627", KBReleased: "2022-08-09"}),
+		// No KB known for the build: grouped by the build.
+		win(4, 2, Row{Key: "CVE-1", FixedVersion: "10.0.20348.4171", Version: "10.0.20348.4000"}),
+		// Ended release: the ESU-only fix goes to the release upgrade.
+		win(5, 3, Row{Key: "CVE-4", FixedVersion: "10.0.19045.7807", KB: "KB5126657", RequiresPro: true, Subscription: "Windows Extended Security Updates"}),
+		win(6, 3, Row{Kind: "end_of_life", Key: "windows:10-22h2", EOLTitle: "Windows 10 22H2 is end-of-life since 2025-10-14"}),
+		// Not ended: the ESU-only fix has no free fix yet.
+		win(7, 4, Row{Key: "CVE-4", FixedVersion: "10.0.19045.7807", RequiresPro: true, Subscription: "Windows Extended Security Updates"}),
+	}
+	groups, assign := Build(rows, nil)
+	byID := map[string]*Group{}
+	for _, g := range groups {
+		byID[g.ID] = g
+	}
+	g := byID["1:windows_update:KB5066782"]
+	if g == nil || g.FindingCount != 3 || g.ToVersion != "10.0.20348.4294" || g.KnownExploited != 1 || g.Title != "Install Windows update KB5066782" ||
+		g.Action != "Install KB5066782 (build 10.0.20348.4294, the October 2025 update) through Windows Update, WSUS or the Microsoft Update Catalog, then restart. "+
+			"It is cumulative, so it fixes these issues whichever update first fixed them; any later cumulative update does too." ||
+		g.Note != "3 findings on Windows Server 2022 Datacenter are fixed by this update (first fixed in 3 updates: KB5016627, KB5065432, KB5066782)." {
+		t.Errorf("host 1 = %+v", g)
+	}
+	if g := byID["2:windows_update:10.0.20348.4171"]; g == nil || g.Title != "Install the cumulative update for build 10.0.20348.4171" ||
+		!strings.HasPrefix(g.Action, "Install the cumulative update for build 10.0.20348.4171 through") ||
+		g.Note != "1 finding on Windows Server 2022 Datacenter is fixed by this update." {
+		t.Errorf("host 2 = %+v", g)
+	}
+	if assign[5] != "3:release_upgrade" || assign[7] != "4:no_fix" {
+		t.Errorf("ESU-only fixes assigned %q and %q", assign[5], assign[7])
+	}
+	if g := byID["3:release_upgrade"]; g == nil || g.Needs != "Windows Extended Security Updates" {
+		t.Errorf("host 3 release upgrade = %+v", g)
+	}
+}

@@ -232,19 +232,27 @@ func Build(in Input, now time.Time) Explanation {
 		fix := "; no fixed version is listed"
 		sub := str(ev, "requires_subscription")
 		backport := m["backport"] == true
+		fixed := f.FixedVersion
+		if kb := str(ev, "kb"); kb != "" && fixed != "" {
+			fixed += " (" + kb + ")" // a Windows build and the update that brings it
+		}
 		switch {
 		case f.FixedVersion != "" && sub != "":
-			fix = fmt.Sprintf("; fixed in %s, only with %s", f.FixedVersion, sub)
+			fix = fmt.Sprintf("; fixed in %s, only with %s", fixed, sub)
 		case f.FixedVersion != "" && backport:
 			fix = fmt.Sprintf("; fixed in %s (the distribution backported the fix to this upstream release)", f.FixedVersion)
 		case f.FixedVersion != "":
-			fix = "; fixed in " + f.FixedVersion
+			fix = "; fixed in " + fixed
 		}
 		e.Sentence = fmt.Sprintf("%s %s (%s, %s), compared with %s%s.", installed, verdict, e.Source.Feed, refreshed, cmpText, fix)
 
 		purlType := f.ComponentType
-		switch purlType {
-		case "deb", "rpm", "apk":
+		switch {
+		case str(ev, "update_line") != "":
+			// A Windows host's build against Microsoft's fixed builds.
+			e.Type = TypeOSPackage
+			e.OS = &OSDetail{Release: str(ev, "update_line"), Subscription: sub}
+		case purlType == "deb" || purlType == "rpm" || purlType == "apk":
 			e.Type = TypeOSPackage
 			e.OS = &OSDetail{Release: str(ev, "target_ecosystem"), SourcePackage: str(ev, "osv_package"), Backport: backport, Subscription: sub}
 		default:

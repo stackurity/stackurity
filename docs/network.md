@@ -55,6 +55,7 @@ Feeds are created automatically for the ecosystems present in your inventory. Ea
 |---|---|---|---|
 | `osv:<ecosystem>` | `storage.googleapis.com/osv-vulnerabilities` (`STACKURITY_OSV_URL`) | Hourly | First run: `<ecosystem>/all.zip` (Ubuntu ≈ 750 MB, npm ≈ 220 MB, Debian ≈ 75 MB, others smaller). Then `modified_id.csv` and changed records only |
 | `alas:Amazon Linux` | `cdn.amazonlinux.com` (`STACKURITY_AMAZON_LINUX_URL`) | Every 6 h | `mirror.list`, `repomd.xml` and `updateinfo.xml.gz` of the Amazon Linux 2023 and 2 core repositories and of the Amazon Linux 2 extras topics with a version line (about 5 MB in all) |
+| `msrc:Windows` (only with Windows hosts in inventory) | `api.msrc.microsoft.com` (`STACKURITY_MSRC_URL`, default `https://api.msrc.microsoft.com/cvrf/v3.0`) | Every 6 h; documents only when changed, all of them every 30 days | `GET /updates` (the index, about 50 KB), then `GET /cvrf/<month>` (for example `/cvrf/2025-Oct`) for each monthly Security Update Guide document of the last 24 months (`STACKURITY_MSRC_MONTHS`) that changed: about 140 MB on the first sync, 5 to 30 MB a month after. `Accept: application/json`; no key or account |
 | `kev:cisa` | `www.cisa.gov` (`STACKURITY_KEV_URL`) | Daily | The Known Exploited Vulnerabilities catalogue |
 | `lifecycle:endoflife` | `endoflife.date` (`STACKURITY_ENDOFLIFE_URL`) | Daily | The full product lifecycle catalogue |
 | `releases:npm` | `registry.npmjs.org` (`STACKURITY_NPM_REGISTRY`) | Every 6 h; each package at most daily | Package metadata, by name |
@@ -97,7 +98,7 @@ When an AI assistant identifies itself with a client ID metadata document (its c
 
 ### Air-gapped installs
 
-Mirror the OSV bucket layout (`<ecosystem>/all.zip`, `<ecosystem>/modified_id.csv`, `<ecosystem>/<id>.json`) and point `STACKURITY_OSV_URL` at it. Do the same for the other `STACKURITY_*_URL` variables. Any feed you cannot mirror shows as stale, and the components it covers are listed as evaluation gaps. They are never treated as clean.
+Mirror the OSV bucket layout (`<ecosystem>/all.zip`, `<ecosystem>/modified_id.csv`, `<ecosystem>/<id>.json`) and point `STACKURITY_OSV_URL` at it. Do the same for the other `STACKURITY_*_URL` variables. For Windows updates, save `https://api.msrc.microsoft.com/cvrf/v3.0/updates` as `updates` and each monthly document `https://api.msrc.microsoft.com/cvrf/v3.0/cvrf/<month>` (requested with `Accept: application/json`) as `cvrf/<month>`, and point `STACKURITY_MSRC_URL` at the folder; only the document ids are read from the index, never its URLs. Any feed you cannot mirror shows as stale, and the components it covers are listed as evaluation gaps. They are never treated as clean.
 
 ### Inbound: Slack's interactivity requests
 

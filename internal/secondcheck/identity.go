@@ -293,6 +293,16 @@ func deriveTarget(rawPurl, invVersion string, ev map[string]string) (target, err
 		} else if e := p.qualifiers["epoch"]; e != "" && e != "0" && !strings.Contains(t.version, ":") {
 			t.version = e + ":" + t.version
 		}
+	case "generic":
+		if strings.ToLower(p.name) != "windows" || ev["kind"] != "operating-system" {
+			return t, fmt.Errorf("no advisory source for %s packages", p.typ)
+		}
+		line, err := windowsLine(t.version, ev)
+		if err != nil {
+			return t, err
+		}
+		t.ecosystem = "Windows:" + line
+		add("windows")
 	default:
 		return t, fmt.Errorf("no advisory source for %s packages", p.typ)
 	}
@@ -300,6 +310,45 @@ func deriveTarget(rawPurl, invVersion string, ev map[string]string) (target, err
 		return t, fmt.Errorf("no installed version was reported")
 	}
 	return t, nil
+}
+
+// windowsServerLines and windowsClientLines are the second check's own
+// reading of a Windows build (10.0.<build>.<revision>) as the update line
+// Microsoft's Security Update Guide publishes fixed builds for.
+var (
+	windowsServerLines = map[string]string{"14393": "Server 2016", "17763": "Server 2019", "20348": "Server 2022",
+		"25398": "Server 23H2", "26100": "Server 2025"}
+	windowsClientLines = map[string]string{"10240": "10 1507", "14393": "10 1607", "17763": "10 1809", "19044": "10 21H2",
+		"19045": "10 22H2", "22621": "11 22H2", "22631": "11 23H2", "26100": "11 24H2", "26200": "11 25H2", "26300": "11 26H2",
+		"28000": "11 26H1"}
+)
+
+// windowsLine reads the update line of a Windows host from its version and
+// product name. Server is told from client by the product name (or, without
+// one, a Server edition); Windows Server 2019 and the 1809 semi-annual
+// channel release share build 17763, and only the former has a year.
+func windowsLine(v string, ev map[string]string) (string, error) {
+	parts := strings.Split(v, ".")
+	if len(parts) != 4 || parts[0] != "10" || parts[1] != "0" {
+		return "", fmt.Errorf("Windows version %q is not 10.0.<build>.<revision>", v)
+	}
+	name, edition := ev["product_name"], strings.ToLower(ev["edition_id"])
+	if strings.Contains(name, "Azure Edition") || strings.HasPrefix(edition, "serverturbine") {
+		return "", fmt.Errorf("Azure Edition hosts run hotpatch builds, which the second check does not re-derive")
+	}
+	switch {
+	case strings.HasPrefix(name, "Windows Server") || (name == "" && strings.HasPrefix(edition, "server")):
+		line, ok := windowsServerLines[parts[2]]
+		if !ok || (parts[2] == "17763" && !strings.Contains(name, "2019")) {
+			return "", fmt.Errorf("Windows Server build %s is not an update line the second check knows", parts[2])
+		}
+		return line, nil
+	case strings.HasPrefix(name, "Windows 1"):
+		if line, ok := windowsClientLines[parts[2]]; ok {
+			return line, nil
+		}
+	}
+	return "", fmt.Errorf("Windows build %s (%q) is not an update line the second check knows", parts[2], name)
 }
 
 // srpmName reads the package name from "name-version-release.src.rpm".
