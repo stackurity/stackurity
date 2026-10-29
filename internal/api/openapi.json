@@ -244,6 +244,35 @@
     }
    }
   },
+  "/admin/coverage-gaps": {
+   "get": {
+    "operationId": "get_admin_coverage_gaps",
+    "summary": "What Stackurity cannot check, across workspaces",
+    "description": "What Stackurity cannot check across every active workspace, as counts of assets and workspaces by type: `unread_files` (files no built-in reader or installed stack pack reads, by kind such as `hex:mix.lock`), `no_vulnerability_source` (components with unsupported coverage, by package type and reason, vendor builds by repository) and `no_lifecycle` (products no lifecycle source tracks, release lines missing from the data, runtimes and operating systems with no lifecycle product), with `workspaces`, `assets` and the lifecycle `overlay_version`. Names no workspace, asset, path or package (compatibility.md)\n\nRole: instance admin",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "instance admin",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/admin/health": {
    "get": {
     "operationId": "get_admin_health",

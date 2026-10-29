@@ -122,7 +122,10 @@ func cycleEnded(c *store.LifecycleCycle, now time.Time) bool {
 // package stands (keep) and returns the note recorded on the inventory row.
 // osOnAsset is the asset's operating system as "product|version" ("" when
 // the asset has none).
-func distroLifecycle(r store.EvalRow, upstream, dist *store.LifecycleCycle, osOnAsset string, cache map[string][]store.LifecycleCycle,
+//
+// vendor names the repository that built the package when it is not the
+// distribution's own build (thirdPartyRepo), or is "".
+func distroLifecycle(r store.EvalRow, upstream, dist *store.LifecycleCycle, osOnAsset, vendor string, cache map[string][]store.LifecycleCycle,
 	now time.Time) (note map[string]any, keep bool) {
 	if dist == nil {
 		return nil, true
@@ -141,14 +144,11 @@ func distroLifecycle(r store.EvalRow, upstream, dist *store.LifecycleCycle, osOn
 		distDate = dist.EOLUntil.Format("2006-01-02")
 		note["distribution_eol"] = distDate
 	}
-	release := ""
-	if pu, err := packageurl.FromString(r.Purl); err == nil {
-		_, release = distroProduct(pu.Qualifiers.Map()["distro"])
-	}
 	switch {
-	case thirdPartyBuild(r.Type, r.Version, release):
+	case vendor != "":
 		note["status"] = "third_party_build"
-		note["text"] = text + "; the version is a build from another repository, not " + label + "'s own package, so the distribution's security support does not apply."
+		note["repository"] = vendor
+		note["text"] = text + "; this is a build from " + vendor + ", not " + label + "'s own package, so the distribution's security support does not apply."
 		return note, true
 	case !cycleEnded(dist, now) && followsUpstream(upstream.Product, r.Type, r.Version):
 		note["status"] = "follows_upstream"
@@ -191,9 +191,11 @@ func osMatches(osOnAsset string, dist *store.LifecycleCycle, cache map[string][]
 }
 
 // debCodenameSuffix matches repository builds named after the release
-// codename: nginx.org "1.24.0-1~jammy", Docker "5:27.3.1-1~ubuntu.22.04~jammy".
-// Distribution updates end in digits ("~22.04.1", "+deb12u1").
-var debCodenameSuffix = regexp.MustCompile(`~[a-z]+$`)
+// codename after the package revision: nginx.org "1.24.0-1~jammy", Docker
+// "5:27.3.1-1~ubuntu.22.04~jammy". Distribution updates end in digits
+// ("~22.04.1", "+deb12u1"), and an upstream pre-release ("2.0~beta") has
+// no revision before it.
+var debCodenameSuffix = regexp.MustCompile(`-[0-9][^~]*~(?:[a-z]+\.[0-9.]+~)?[a-z]+$`)
 
 // thirdPartyBuild reports versions that show a package was built by another
 // repository rather than the distribution. The agent does not record the

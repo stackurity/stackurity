@@ -1271,6 +1271,12 @@ Takes `name`, `disabled`, `plan`, `asset_limit` and `project_limit` (`-1` remove
 
 Platform health across workspaces: `status` (`ok`, `warning`, `critical`), `problems` (each with `last_success`, `last_error`, `scope`, `next_step` and `docs`), background `tasks`, jobs, notification `deliveries`, `failing_channels` and `email_quota`. See [install.md](install.md#health).
 
+### `GET /admin/coverage-gaps`
+
+**Who:** instance admin
+
+What Stackurity cannot check, across every active workspace: `unread_files` (files a scan found that no built-in reader or installed stack pack reads, by `kind` such as `hex:mix.lock` or `swift:Package.resolved`), `no_vulnerability_source` (components whose coverage is `unsupported`, by package type and reason; vendor builds are counted per repository) and `no_lifecycle` (products no lifecycle source tracks, such as NestJS; installed release lines the lifecycle data does not list; runtimes and operating systems with no lifecycle product). Each entry has `kind`, `label`, `detail`, `assets` and `workspaces` (and `components` for vulnerability sources). Also `workspaces`, `assets`, `checked_at` and the lifecycle `overlay_version`. Counts and type names only: no workspace, asset, path or package is named. See [compatibility.md](compatibility.md#what-stackurity-cannot-check).
+
 ### `GET /updates`
 
 **Who:** instance admin

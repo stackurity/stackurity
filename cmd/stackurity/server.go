@@ -255,7 +255,8 @@ func serverCmd() *cobra.Command {
 				Packs:              packMgr,
 				Licence:            holder, Gate: gate, LicenceFromEnv: licFromEnv,
 				Health: checker, UpdateCheck: updateCfg.Enabled,
-				FeedbackURL: feedbackURL,
+				CoverageGaps: func(ctx context.Context) (any, error) { return intel.CoverageGaps(ctx, st, nil) },
+				FeedbackURL:  feedbackURL,
 			}
 			// Metrics have their own listener, off by default, so they are
 			// never reachable on the public API port.

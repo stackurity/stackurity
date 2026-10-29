@@ -2,9 +2,11 @@ package intel
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/stackurity/stackurity/internal/intel/eoloverlay"
 	"github.com/stackurity/stackurity/internal/model"
 	"github.com/stackurity/stackurity/internal/store"
 )
@@ -172,5 +174,57 @@ func TestReopenedFindingClearsItsKind(t *testing.T) {
 	if err := e.st.Pool.QueryRow(e.ctx, `SELECT e.detail->>'resolution_kind' FROM finding_events e JOIN findings f ON f.id = e.finding_id
 		WHERE f.key = 'CVE-2024-0001' AND e.action = 'reopened'`).Scan(&kind); err != nil || kind != store.ResolutionAdvisoryWithdrawn {
 		t.Errorf("reopened event kind = %q %v", kind, err)
+	}
+}
+
+// A package found to be a vendor's build (here by a newer lifecycle overlay)
+// is no longer matched against the distribution's advisories: its open
+// vulnerability finding closes as not evaluated, which the outcomes report
+// counts as a coverage change, not remediation.
+func TestVendorBuildClosesAsNotEvaluated(t *testing.T) {
+	e := newChangeEnv(t)
+	e.evaluate(e.sync(baseRecords))
+	if c := e.closures()["CVE-2024-0002 curl"]; c.status != "open" {
+		t.Fatalf("curl before the overlay: %+v", c)
+	}
+
+	ov, err := eoloverlay.Parse([]byte(`{"schema":1,"version":"test.1","namespace_families":[],"untracked":[],
+	 "products":[{"product":"curl","purls":["pkg:deb/*/curl"],
+	   "vendor_builds":[{"repository":"Example's repository","version":"^7\\.88\\.1-10\\+deb12u5$"}],
+	   "sources":["https://example.org/Packages.gz"],"verified":"2026-10-28"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.ev.Overlay = ov
+	if _, err := e.ev.Evaluate(e.ctx, nil, 0); err != nil {
+		t.Fatal(err)
+	}
+	c := e.closures()["CVE-2024-0002 curl"]
+	if c.status != "resolved" || c.kind != store.ResolutionNotEvaluated ||
+		!strings.HasPrefix(c.resolution, "no longer evaluated: built by Example's repository") ||
+		!strings.Contains(c.detail["reason"].(string), "Example's repository") {
+		t.Errorf("vendor-built curl: %+v", c)
+	}
+	if o := e.closures()["CVE-2024-0001 openssl"]; o.status != "open" {
+		t.Errorf("openssl is the distribution's own package: %+v", o)
+	}
+
+	now := time.Now()
+	r, err := e.st.OutcomesReport(e.ctx, now.Add(-time.Hour), now.Add(time.Minute), map[string]int{"P1": 3, "P2": 14, "P3": 45, "P4": 90})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var coverage int64
+	for _, cs := range r.Causes {
+		if cs.Kind == store.ResolutionNotEvaluated {
+			if cs.Evidence != "coverage" || cs.Remediation {
+				t.Errorf("not evaluated cause: %+v", cs)
+			}
+			coverage += cs.Count
+		}
+	}
+	if coverage != 1 || r.Remediated != 0 || r.Resolved != 0 || r.NotRemediation.ByKind[store.ResolutionNotEvaluated] != 1 {
+		t.Errorf("outcomes: coverage %d, remediated %d, resolved %d, not remediation %+v (causes %+v)",
+			coverage, r.Remediated, r.Resolved, r.NotRemediation, r.Causes)
 	}
 }

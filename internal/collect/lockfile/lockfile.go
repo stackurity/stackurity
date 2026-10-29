@@ -88,7 +88,33 @@ var unsupported = map[string]string{
 	"build.gradle.kts": "maven:build.gradle.kts",
 	"mix.lock":         "hex:mix.lock",
 	// Read by the Cargo stack pack (packs/cargo).
-	"Cargo.lock": "cargo:Cargo.lock",
+	"Cargo.lock":       "cargo:Cargo.lock",
+	"rebar.lock":       "hex:rebar.lock",
+	"Package.resolved": "swift:Package.resolved",
+	"Package.swift":    "swift:Package.swift",
+	"Podfile.lock":     "cocoapods:Podfile.lock",
+	"conanfile.txt":    "conan:conanfile.txt",
+	"conanfile.py":     "conan:conanfile.py",
+	"conan.lock":       "conan:conan.lock",
+	"vcpkg.json":       "vcpkg:vcpkg.json",
+	"uv.lock":          "pypi:uv.lock",
+	"pdm.lock":         "pypi:pdm.lock",
+	"packages.config":  "nuget:packages.config",
+	"deno.lock":        "npm:deno.lock",
+	"bun.lock":         "npm:bun.lock",
+	"build.sbt":        "maven:build.sbt",
+}
+
+// UnsupportedKinds are the coverage scope prefixes ("hex:mix.lock") of the
+// files a scan recognises but no built-in reader parses. A scope is the kind,
+// a colon and the file's path.
+func UnsupportedKinds() []string {
+	out := make([]string, 0, len(unsupported))
+	for _, k := range unsupported {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 type parser func(fsys fs.FS, dir, file string) ([]model.Observation, error)

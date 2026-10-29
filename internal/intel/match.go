@@ -10,6 +10,7 @@ import (
 
 	"github.com/package-url/packageurl-go"
 
+	"github.com/stackurity/stackurity/internal/intel/eoloverlay"
 	"github.com/stackurity/stackurity/internal/osv"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/upgrade"
@@ -20,6 +21,9 @@ import (
 type Evaluator struct {
 	Store *store.Store
 	Now   func() time.Time
+	// Overlay is the lifecycle mapping data applied on top of
+	// endoflife.date; nil uses the one embedded in the binary.
+	Overlay *eoloverlay.Overlay
 	// afterRead, in tests, runs once everything is read and before
 	// anything is written.
 	afterRead func()
@@ -48,6 +52,17 @@ var versionedPackages = []struct {
 	// Ubuntu's and Microsoft's deb packages, RHEL's and Microsoft's rpm
 	// packages: dotnet-runtime-8.0 is .NET 8 (endoflife.date cycle "8").
 	{regexp.MustCompile(`^pkg:(?:deb|rpm)/[^/]+/dotnet-runtime-(\d+\.\d+)$`), "dotnet"},
+}
+
+// versionedPackagesPattern is every versionedPackages expression as one
+// alternation, for a database regular-expression match (Postgres ~ reads the
+// same \d, [^/] and (?:...) syntax).
+func versionedPackagesPattern() string {
+	res := make([]string, len(versionedPackages))
+	for i, p := range versionedPackages {
+		res[i] = p.re.String()
+	}
+	return strings.Join(res, "|")
 }
 
 // versionedDebProduct returns the endoflife.date product and release cycle
@@ -101,11 +116,8 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 	if e.Now != nil {
 		now = e.Now()
 	}
-	purlProducts, err := e.Store.LifecycleProductsByPurl(ctx)
-	if err != nil {
-		return nil, err
-	}
-	productNames, err := e.Store.LifecycleProductNames(ctx)
+	ov := e.overlay()
+	lifecycle, err := newLifecycleResolver(ctx, e.Store, ov)
 	if err != nil {
 		return nil, err
 	}
@@ -156,6 +168,7 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 		unsupported := func(reason string) { rc.State, rc.Reason = store.CoverageUnsupported, reason }
 		notEvaluated := func(reason string) { rc.State, rc.Reason = store.CoverageNotEvaluated, reason }
 		t, ok := osv.TargetFor(r.Purl, r.Version, r.Evidence)
+		vendor := thirdPartyRepo(ov, r.Type, r.PurlKey, r.Purl, r.Version)
 		switch {
 		case r.Type == "generic" && r.Evidence["kind"] == "operating-system":
 			// The OS itself is covered by lifecycle, its packages by the distro feed.
@@ -165,6 +178,12 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 			unsupported("Kubernetes component reported by the API server: lifecycle is tracked, vulnerabilities are not matched")
 		case r.Type == "generic" && r.Evidence["kind"] == "managed-service":
 			unsupported("managed service: the provider patches the engine and publishes its own advisories; lifecycle is tracked")
+		case ok && vendor != "":
+			// A vendor's build (MongoDB's mongodb-org-server, Docker's
+			// docker-ce, PGDG's postgresql-16): the distribution's advisories
+			// describe the distribution's own builds and versions, so they
+			// would match nothing, or the wrong thing, and look clean.
+			unsupported(fmt.Sprintf("built by %s, not by the distribution: the distribution's advisories do not cover it and no other vulnerability source is used for it", vendor))
 		case !ok:
 			if reason, none := osv.WhyNoTarget(r.Purl, r.Version); none {
 				unsupported(reason)
@@ -243,42 +262,27 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 		coverage = append(coverage, rc)
 
 		// --- lifecycle
-		product, cycleVersion := "", r.Version
-		if r.Type == "generic" && r.Evidence["kind"] == "operating-system" {
-			name := strings.TrimPrefix(r.PurlKey, "pkg:generic/")
-			if name == "windows" {
-				f, gap, err := e.windowsLifecycle(ctx, r, cycleCache, now)
-				if err != nil {
-					return nil, err
-				}
-				if gap != "" {
-					// Never left looking supported: the host's release is
-					// unknown, so is its end of life.
-					coverage[ci].State, coverage[ci].Reason = store.CoverageNotEvaluated, gap
-					stats.Gaps++
-				}
-				if f != nil {
-					want = append(want, *f)
-				}
-				continue
+		if r.Type == "generic" && r.Evidence["kind"] == "operating-system" && strings.TrimPrefix(r.PurlKey, "pkg:generic/") == "windows" {
+			f, gap, err := e.windowsLifecycle(ctx, r, cycleCache, now)
+			if err != nil {
+				return nil, err
 			}
-			product = osProducts[name]
-		} else {
-			product = purlProducts[strings.ToLower(r.PurlKey)]
-			// pkg:generic/<name> where <name> is an endoflife.date product
-			// (e.g. amazon-eks, aws-lambda, nginx).
-			if name := strings.TrimPrefix(r.PurlKey, "pkg:generic/"); product == "" && r.Type == "generic" && productNames[name] {
-				product = name
+			if gap != "" {
+				// Never left looking supported: the host's release is
+				// unknown, so is its end of life.
+				coverage[ci].State, coverage[ci].Reason = store.CoverageNotEvaluated, gap
+				stats.Gaps++
 			}
-			if product == "" && (r.Type == "deb" || r.Type == "rpm") {
-				if p, cycle, ok := versionedDebProduct(r.PurlKey); ok && productNames[p] {
-					product, cycleVersion = p, cycle
-				}
+			if f != nil {
+				want = append(want, *f)
 			}
-		}
-		if product == "" {
 			continue
 		}
+		lm, ok := lifecycle.resolve(r.Type, r.PurlKey, r.Version, r.Evidence["kind"])
+		if !ok {
+			continue
+		}
+		product, cycleVersion := lm.product, lm.cycleVersion
 		cycles, cached := cycleCache[product]
 		if !cached {
 			if cycles, err = e.Store.LifecycleCycles(ctx, product); err != nil {
@@ -289,11 +293,16 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 		if c := matchCycle(cycles, cycleVersion); c != nil {
 			if f := eolFinding(r, c, now); f != nil {
 				f.Evidence["match"] = eolMatch(r.Version, cycleVersion, c.Cycle)
+				if lm.rule == "overlay" || lm.rule == "namespace_family" {
+					// Mapped by Stackurity's lifecycle overlay, not by
+					// endoflife.date's own identifiers.
+					f.Evidence["mapping"] = map[string]any{"rule": lm.rule, "overlay_version": ov.Version()}
+				}
 				dist, err := e.distroCycle(ctx, r, cycleCache)
 				if err != nil {
 					return nil, err
 				}
-				note, keep := distroLifecycle(r, c, dist, assetOS[r.AssetID], cycleCache, now)
+				note, keep := distroLifecycle(r, c, dist, assetOS[r.AssetID], vendor, cycleCache, now)
 				coverage[ci].Lifecycle = note
 				if keep {
 					if note != nil {
@@ -323,6 +332,13 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 	n, err := e.Store.ResolveRemovedFindings(ctx)
 	stats.Resolved += n
 	return stats, err
+}
+
+func (e *Evaluator) overlay() *eoloverlay.Overlay {
+	if e.Overlay != nil {
+		return e.Overlay
+	}
+	return eoloverlay.Default()
 }
 
 // coversRelease reports whether a feed holding advisories for ecosystems

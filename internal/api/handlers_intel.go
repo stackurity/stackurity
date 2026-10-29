@@ -255,12 +255,12 @@ func (s *Server) componentIntel(w http.ResponseWriter, r *http.Request) {
 		rel.VersionDates = nil // large; not needed here
 		resp["release"] = rel
 	}
-	prods, err := s.Store.LifecycleProductsByPurl(r.Context())
+	product, err := s.Store.LifecycleProductFor(r.Context(), c.PurlKey)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	if product := prods[strings.ToLower(c.PurlKey)]; product != "" {
+	if product != "" {
 		cycles, err := s.Store.LifecycleCycles(r.Context(), product)
 		if err != nil {
 			s.fail(w, r, err)

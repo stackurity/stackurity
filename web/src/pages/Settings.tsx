@@ -90,6 +90,12 @@ const GROUPS: { title: string; entries: Entry[] }[] = [
     entries: [
       { to: "/admin/workspaces", label: "Workspaces", about: "Create workspaces, set their plan and their limit on monitored assets.", instanceAdmin: true },
       { to: "/admin/health", label: "Platform health", about: "Whether feeds, jobs and collectors are working.", instanceAdmin: true },
+      {
+        to: "/admin/coverage-gaps",
+        label: "Coverage gaps",
+        about: "What Stackurity cannot check across every workspace: unread files, components and products without data.",
+        instanceAdmin: true,
+      },
       { to: "/admin/packs", label: "Stack packs", about: "Extra file readers for stacks Stackurity does not read on its own.", instanceAdmin: true },
       { to: "/admin/license", label: "Licence", about: "Edition, limits and expiry.", instanceAdmin: true },
       { to: "/updates", label: "What's new", about: "Release notes and updates for this server.", instanceAdmin: true },
