@@ -71,7 +71,7 @@ const debOpenssl = `{"id":"DSA-5532-1","modified":"2024-01-01T00:00:00Z","upstre
  "affected":[{"package":{"ecosystem":"Debian:12","name":"openssl"},"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"0"},{"fixed":"3.0.11-1~deb12u2"}]}]},
              {"package":{"ecosystem":"Debian:11","name":"openssl"},"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"0"},{"fixed":"1.1.1w-0+deb11u1"}]}]}]}`
 
-const kev = `{"vulnerabilities":[{"cveID":"CVE-2021-23337","vendorProject":"lodash","product":"lodash","vulnerabilityName":"x","dateAdded":"2024-02-01","dueDate":"2024-02-22","knownRansomwareCampaignUse":"Unknown"}]}`
+const kev = `{"vulnerabilities":[{"cveID":"CVE-2021-23337","vendorProject":"lodash","product":"lodash","vulnerabilityName":"x","shortDescription":"lodash contains a prototype pollution vulnerability.","dateAdded":"2024-02-01","dueDate":"2024-02-22","knownRansomwareCampaignUse":"Unknown"}]}`
 
 const eol = `{"result":[
  {"name":"debian","label":"Debian","links":{"html":"https://endoflife.date/debian"},"identifiers":[],
@@ -172,6 +172,11 @@ func TestEndToEnd(t *testing.T) {
 		if _, err := sy.Sync(ctx, f); err != nil {
 			t.Fatalf("sync %s: %v", f, err)
 		}
+	}
+	// The KEV sync keeps CISA's short description (digests show it).
+	if adds, err := st.KEVAddedBetween(ctx, time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC)); err != nil ||
+		len(adds) != 1 || adds[0].ShortDescription != "lodash contains a prototype pollution vulnerability." {
+		t.Errorf("KEV additions: %v %+v", err, adds)
 	}
 	if _, err := sy.Sync(ctx, "osv:PyPI"); err == nil {
 		t.Error("PyPI archive is missing upstream; sync must report an error")

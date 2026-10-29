@@ -29,7 +29,7 @@ func TestReplaceKnownExploitedWritesOnlyChangedFlags(t *testing.T) {
 		t.Helper()
 		var rows [][]any
 		for _, c := range cves {
-			rows = append(rows, []any{c, "v", "p", "n", time.Now(), time.Now(), false})
+			rows = append(rows, []any{c, "v", "p", "n", time.Now(), time.Now(), false, "d"})
 		}
 		if err := s.ReplaceKnownExploited(ctx, rows); err != nil {
 			t.Fatal(err)
