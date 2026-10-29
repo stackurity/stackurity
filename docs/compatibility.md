@@ -60,6 +60,19 @@ The same rules apply to container images scanned through the bundled Syft and to
 | Conan (`conan.lock`, Conan 1 and 2) | C and C++ stack pack | No: OSV has no ConanCenter data. Inventory only | No |
 | vcpkg (`vcpkg.json`, installed ports' `vcpkg.spdx.json`) | C and C++ stack pack (`vcpkg.json` exact only for ports pinned under `overrides`) | No: no public advisory source covers vcpkg ports. Inventory only | No |
 
+## SBOM and VEX formats
+
+| Format | Import | Export |
+|---|---|---|
+| CycloneDX JSON (1.2 to 1.6) | Yes, including VEX embedded in the BOM | 1.6 (inventory) |
+| SPDX JSON 2.x | Yes | No |
+| OpenVEX | v0.2.0, and the older v0.0.1 shape | v0.2.0 |
+| CycloneDX VEX | 1.4 to 1.6, standalone or embedded; BOM-Link references | 1.6 |
+| In-toto attestations of OpenVEX or CycloneDX (DSSE envelope, Sigstore bundle) | Yes; key-based signatures verified, keyless ones shown as unverified | No |
+| CSAF (VEX profile) | No | No |
+
+How VEX products are matched to assets and components, and when a statement is not applied because the match is ambiguous, is in [vex.md](vex.md#matching).
+
 ## Remediation (Pro)
 
 | Target | Manager | Rollback |

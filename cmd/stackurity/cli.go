@@ -100,6 +100,12 @@ func printResult(r *client.IngestResult) {
 	if len(r.Conflict) > 0 {
 		fmt.Printf("warning: identifiers match several assets %v; an admin should resolve the conflict\n", r.Conflict)
 	}
+	if r.VEX != nil {
+		fmt.Printf("VEX in the SBOM: %d statements matched, %d not; %d not_affected statements wait for approval under Approvals\n",
+			r.VEX.Matched, r.VEX.Unmatched, r.VEX.Pending)
+	} else if r.VEXNote != "" {
+		fmt.Println("note: " + r.VEXNote)
+	}
 }
 
 // hostOptions configures the platform's host collector.

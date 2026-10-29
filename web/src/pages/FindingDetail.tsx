@@ -4,7 +4,7 @@ import { api, safeHttpUrl, type Advisory, type Finding, type FindingDetail, type
 import { useLoad } from "../hooks";
 import { absTime } from "../format";
 import { Badge, Chip, KevBadge, SeverityBadge, VERIFICATION_EXPLAINED } from "../components/Badge";
-import { EvidencePills, kindLabel } from "../components/Findings";
+import { EvidencePills, kindLabel, VexBadge, vexSummary } from "../components/Findings";
 import { FindingFixGroup } from "../components/FixGroups";
 import { FindingHistory, WorkflowPanel } from "../components/FindingWorkflow";
 import { EvidenceStateBadge, Provenance } from "../components/Provenance";
@@ -236,6 +236,7 @@ export function FindingDetailPage() {
             {f.known_exploited && <KevBadge />}
             <EvidenceStateBadge f={f} />
             <EvidencePills f={f} />
+            <VexBadge f={f} />
             <Badge status={f.status} />
           </span>
         }
@@ -261,6 +262,19 @@ export function FindingDetailPage() {
         <Notice kind="warn">
           The <Link to="/intelligence">{String(ev.feed ?? "")}</Link> feed was stale when this was evaluated; newer advisory data may
           change the result.
+        </Notice>
+      )}
+      {f.vex && (
+        <Notice kind={f.vex.status === "affected" ? "warn" : "info"}>
+          <strong>{vexSummary(f.vex)}</strong>{" "}
+          {f.vex.status === "not_affected" && !f.vex.applied && f.vex.request_status === "pending" && (
+            <>
+              A security or admin user decides it under <Link to="/approvals">Approvals</Link>; until then the issue stays open.
+            </>
+          )}
+          {f.vex.status === "affected" && "The vendor says this component version is affected: plan the upgrade."}
+          {f.vex.status === "under_investigation" && "The vendor has not decided yet."}{" "}
+          <Link to={`/settings/vex/${f.vex.document_id}`}>The VEX document</Link>
         </Notice>
       )}
       <FindingFixGroup f={f} />

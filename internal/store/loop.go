@@ -71,6 +71,8 @@ func applyExceptions(ctx context.Context, db q, ruleID int64, cond string) (int6
 		  WHERE e.ended_at IS NULL AND (e.expires_at IS NULL OR e.expires_at > now()) AND ($1::bigint = 0 OR e.id = $1)
 		    AND f.status = 'open' AND f.state IN ('new', 'acknowledged', 'in_progress') AND f.exception_id IS DISTINCT FROM e.id
 		    AND NOT (e.until_fix AND `+freeFix("f")+`) AND (`+cond+`)
+		    AND (e.version = '' OR EXISTS (SELECT 1 FROM inventory iv WHERE iv.id = f.inventory_id AND iv.version = e.version))
+		    AND (e.digest = '' OR `+digestMatches("f.asset_id", "e.digest")+`)
 		  ORDER BY f.id, e.created_at DESC),
 		-- Locked in id order before they change (see SyncFindings).
 		l AS (SELECT f.id FROM findings f JOIN m ON m.fid = f.id ORDER BY f.id FOR NO KEY UPDATE OF f),
@@ -318,6 +320,12 @@ type IgnoreRule struct {
 	EndedAt       *time.Time `json:"ended_at"`
 	EndedByName   string     `json:"ended_by"`
 	EndedReason   string     `json:"ended_reason"`
+	// VEXStatementID is the imported VEX statement the rule was made from;
+	// such a rule applies only while the component is at Version (and the
+	// image has Digest), and ends by itself when it no longer is.
+	VEXStatementID *int64 `json:"vex_statement_id"`
+	Version        string `json:"version"`
+	Digest         string `json:"digest"`
 	// Findings counts the open findings the rule ignores now.
 	Findings int64 `json:"findings"`
 }
@@ -325,6 +333,7 @@ type IgnoreRule struct {
 const ruleCols = `e.id, e.kind, e.key, e.component_id, CASE WHEN c.namespace = '' THEN c.name ELSE c.namespace || '/' || c.name END,
 	e.asset_id, COALESCE(a.name, ''), CASE WHEN e.asset_id IS NULL THEN 'everywhere' ELSE 'asset' END, e.reason, e.note, e.mitigation,
 	e.expires_at, e.until_fix, e.created_by_name, e.request_id, e.created_at, e.ended_at, e.ended_by_name, e.ended_reason,
+	e.vex_statement_id, e.version, e.digest,
 	(SELECT count(*) FROM findings f WHERE f.exception_id = e.id AND f.status = 'open' AND f.state = 'risk_accepted')`
 
 const ruleFrom = ` FROM finding_exceptions e JOIN components c ON c.id = e.component_id LEFT JOIN assets a ON a.id = e.asset_id`
@@ -352,45 +361,52 @@ func (s *Store) ListIgnoreRules(ctx context.Context, all bool, p Page) ([]Ignore
 func (s *Store) EndIgnoreRule(ctx context.Context, id int64, actor Actor) (int64, error) {
 	var n int64
 	err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx, `UPDATE finding_exceptions SET ended_at = now(), ended_by_name = $2, ended_reason = 'ended'
-			WHERE id = $1 AND ended_at IS NULL`, id, actor.Name)
-		if err != nil {
-			return err
-		}
-		if tag.RowsAffected() == 0 {
-			var exists bool
-			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM finding_exceptions WHERE id = $1)`, id).Scan(&exists); err != nil {
-				return err
-			}
-			if !exists {
-				return ErrNotFound
-			}
-			return fmt.Errorf("%w: the rule has already ended", ErrConflict)
-		}
-		// The findings both statements below change are locked first, in id
-		// order, as an evaluation locks them (see SyncFindings).
-		if _, err := tx.Exec(ctx, `SELECT id FROM findings WHERE exception_id = $1 AND state = 'risk_accepted'
-			ORDER BY id FOR NO KEY UPDATE`, id); err != nil {
-			return err
-		}
-		// Fixed findings it covered lose the ignore quietly, so they do not
-		// stay ignored if they come back.
-		if _, err := tx.Exec(ctx, `UPDATE findings SET state = 'new', `+unIgnore+`
-			WHERE exception_id = $1 AND state = 'risk_accepted' AND status = 'resolved'`, id); err != nil {
-			return err
-		}
-		res, err := tx.Exec(ctx, `WITH u AS (UPDATE findings SET state = 'new', `+unIgnore+`
-			  WHERE exception_id = $1 AND state = 'risk_accepted' AND status = 'open' RETURNING workspace_id, id)
-			INSERT INTO finding_events (workspace_id, finding_id, actor_type, actor_id, actor_name, action, from_state, to_state, note, detail)
-			SELECT workspace_id, id, $2, $3, $4, 'reopen', 'risk_accepted', 'new', 'ignore rule ended', jsonb_build_object('rule_id', $1::bigint) FROM u`,
-			id, actor.Type, userIDOnly(actor), actor.Name)
-		if err != nil {
-			return err
-		}
-		n = res.RowsAffected()
-		return nil
+		var err error
+		n, err = endRule(ctx, tx, id, actor, "ended", "ignore rule ended")
+		return err
 	})
 	return n, err
+}
+
+// endRule ends rule id inside tx with endedReason, returning the open
+// findings it ignored to new with an event that says note.
+func endRule(ctx context.Context, tx pgx.Tx, id int64, actor Actor, endedReason, note string) (int64, error) {
+	tag, err := tx.Exec(ctx, `UPDATE finding_exceptions SET ended_at = now(), ended_by_name = $2, ended_reason = $3
+		WHERE id = $1 AND ended_at IS NULL`, id, actor.Name, endedReason)
+	if err != nil {
+		return 0, err
+	}
+	if tag.RowsAffected() == 0 {
+		var exists bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM finding_exceptions WHERE id = $1)`, id).Scan(&exists); err != nil {
+			return 0, err
+		}
+		if !exists {
+			return 0, ErrNotFound
+		}
+		return 0, fmt.Errorf("%w: the rule has already ended", ErrConflict)
+	}
+	// The findings both statements below change are locked first, in id
+	// order, as an evaluation locks them (see SyncFindings).
+	if _, err := tx.Exec(ctx, `SELECT id FROM findings WHERE exception_id = $1 AND state = 'risk_accepted'
+		ORDER BY id FOR NO KEY UPDATE`, id); err != nil {
+		return 0, err
+	}
+	// Fixed findings it covered lose the ignore quietly, so they do not
+	// stay ignored if they come back.
+	if _, err := tx.Exec(ctx, `UPDATE findings SET state = 'new', `+unIgnore+`
+		WHERE exception_id = $1 AND state = 'risk_accepted' AND status = 'resolved'`, id); err != nil {
+		return 0, err
+	}
+	res, err := tx.Exec(ctx, `WITH u AS (UPDATE findings SET state = 'new', `+unIgnore+`
+		  WHERE exception_id = $1 AND state = 'risk_accepted' AND status = 'open' RETURNING workspace_id, id)
+		INSERT INTO finding_events (workspace_id, finding_id, actor_type, actor_id, actor_name, action, from_state, to_state, note, detail)
+		SELECT workspace_id, id, $2, $3, $4, 'reopen', 'risk_accepted', 'new', $5, jsonb_build_object('rule_id', $1::bigint, 'ended_reason', $6::text) FROM u`,
+		id, actor.Type, userIDOnly(actor), actor.Name, note, endedReason)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected(), nil
 }
 
 // --- the approval inbox
@@ -417,11 +433,20 @@ type IgnoreRequest struct {
 	DecidedAt       *time.Time `json:"decided_at"`
 	DecisionNote    string     `json:"decision_note"`
 	Applied         int        `json:"applied"`
+	// VEXStatementID: the request was made by a VEX import for this
+	// statement (VEX describes it); only organisation-wide security and
+	// admin users decide it.
+	VEXStatementID *int64 `json:"vex_statement_id"`
+	// VEXAssets limits the request to these assets of the statement's
+	// matches (null: all of them): a trusted source's statement is split
+	// into what applied on its own and what waits.
+	VEXAssets []int64     `json:"vex_assets"`
+	VEX       *RequestVEX `json:"vex,omitempty" db:"-"`
 }
 
 const requestCols = `r.id, r.finding_ids, r.title, r.fix_group, r.asset_id, COALESCE(a.name, ''), r.reason, r.note, r.mitigation,
 	r.scope, r.expiry, r.expires_at, r.status, r.requested_by, r.requested_by_name, r.requested_at, r.decided_by_name,
-	r.decided_at, r.decision_note, r.applied`
+	r.decided_at, r.decision_note, r.applied, r.vex_statement_id, r.vex_assets`
 
 // NewIgnoreRequest is what a requester sends: the issues (finding ids, or
 // a fix's open issues) and the ignore they ask for.
@@ -527,7 +552,13 @@ func (s *Store) GetIgnoreRequest(ctx context.Context, id int64) (*IgnoreRequest,
 		return nil, err
 	}
 	r, err := pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByPos[IgnoreRequest])
-	return r, notFound(err)
+	if err != nil {
+		return nil, notFound(err)
+	}
+	if err := s.fillRequestVEX(ctx, []*IgnoreRequest{r}); err != nil {
+		return nil, err
+	}
+	return r, nil
 }
 
 // IgnoreRequestFilter selects requests: by status (pending, approved,
@@ -566,7 +597,14 @@ func (s *Store) ListIgnoreRequests(ctx context.Context, f IgnoreRequestFilter) (
 		return nil, 0, err
 	}
 	out, err := pgx.CollectRows(rows, pgx.RowToStructByPos[IgnoreRequest])
-	return out, total, err
+	if err != nil {
+		return nil, 0, err
+	}
+	ptrs := make([]*IgnoreRequest, len(out))
+	for i := range out {
+		ptrs[i] = &out[i]
+	}
+	return out, total, s.fillRequestVEX(ctx, ptrs)
 }
 
 // DecideIgnoreRequest approves or declines a pending request. Approval
@@ -594,7 +632,11 @@ func (s *Store) DecideIgnoreRequest(ctx context.Context, id int64, approve bool,
 			return err
 		}
 		applied := 0
-		if approve {
+		if approve && r.VEXStatementID != nil {
+			if applied, err = approveVEX(ctx, tx, *r.VEXStatementID, r, actor); err != nil {
+				return err
+			}
+		} else if approve {
 			sp := IgnoreSpec{Reason: r.Reason, Scope: r.Scope, Expiry: r.Expiry, Until: r.ExpiresAt, Note: r.Note, Mitigation: r.Mitigation}
 			expires, err := sp.resolve(maxDays, time.Now())
 			if err != nil {

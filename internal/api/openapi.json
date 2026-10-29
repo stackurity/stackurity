@@ -62,6 +62,9 @@
   },
   {
    "name": "Setup"
+  },
+  {
+   "name": "VEX"
   }
  ],
  "paths": {
@@ -9346,6 +9349,485 @@
        "application/json": {
         "schema": {
          "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/vex/import": {
+   "post": {
+    "operationId": "post_vex_import",
+    "summary": "Import a VEX document",
+    "description": "The body is an OpenVEX or CycloneDX VEX document (or a CycloneDX BOM with VEX embedded), plain or as a DSSE envelope or Sigstore bundle; at most 16 MiB. `source_id` names a source, `asset_id` or `project_id` limits matching, `filename` is recorded. not_affected statements wait in the approval inbox unless the source is trusted to apply and every pin held. Answers what matched, what waits, what applied and why statements did not match\n\nRole: engineer+",
+    "tags": [
+     "VEX"
+    ],
+    "x-stackurity-role": "engineer+",
+    "parameters": [
+     {
+      "name": "source_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "asset_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "filename",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "description": "The VEX document",
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/vex/documents": {
+   "get": {
+    "operationId": "get_vex_documents",
+    "summary": "Imported VEX documents",
+    "description": "Imported documents, newest first, paged\n\nRole: viewer",
+    "tags": [
+     "VEX"
+    ],
+    "x-stackurity-role": "viewer",
+    "parameters": [
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "offset",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/vex/documents/{id}": {
+   "get": {
+    "operationId": "get_vex_documents_id",
+    "summary": "One imported VEX document",
+    "description": "One document\n\nRole: viewer",
+    "tags": [
+     "VEX"
+    ],
+    "x-stackurity-role": "viewer",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/vex/documents/{id}/statements": {
+   "get": {
+    "operationId": "get_vex_documents_id_statements",
+    "summary": "A VEX document's statements",
+    "description": "Statements with what each matched, its problems and its approval request. `outcome`: matched, unmatched or pending\n\nRole: viewer",
+    "tags": [
+     "VEX"
+    ],
+    "x-stackurity-role": "viewer",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "outcome",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "offset",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/vex/documents/{id}/decision": {
+   "post": {
+    "operationId": "post_vex_documents_id_decision",
+    "summary": "Approve or decline a VEX document's pending statements",
+    "description": "`{\"decision\": \"approve\" | \"decline\", \"note\": \"...\"}` for every pending request of the document; organisation-wide security or admin only\n\nRole: security",
+    "tags": [
+     "VEX"
+    ],
+    "x-stackurity-role": "security",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/vex/sources": {
+   "get": {
+    "operationId": "get_vex_sources",
+    "summary": "VEX sources",
+    "description": "Sources and how far each is trusted\n\nRole: security",
+    "tags": [
+     "VEX"
+    ],
+    "x-stackurity-role": "security",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "post": {
+    "operationId": "post_vex_sources",
+    "summary": "Add a VEX source",
+    "description": "`name`, `auto_apply`, `token_id`, `public_key` (PEM). auto_apply needs a public key or a token\n\nRole: admin",
+    "tags": [
+     "VEX"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/vex/sources/{id}": {
+   "patch": {
+    "operationId": "patch_vex_sources_id",
+    "summary": "Change a VEX source",
+    "description": "Changes the fields sent; `token_id: 0` and `public_key: \"\"` remove a pin\n\nRole: admin",
+    "tags": [
+     "VEX"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "delete_vex_sources_id",
+    "summary": "Remove a VEX source",
+    "description": "Its documents keep its name\n\nRole: admin",
+    "tags": [
+     "VEX"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/vex/export": {
+   "get": {
+    "operationId": "get_vex_export",
+    "summary": "Export decisions as VEX",
+    "description": "False positives, mitigations and imported statements about open issues. `format`: openvex (default) or cyclonedx; `asset_id` or `project_id` narrows it\n\nRole: viewer",
+    "tags": [
+     "VEX"
+    ],
+    "x-stackurity-role": "viewer",
+    "parameters": [
+     {
+      "name": "format",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "asset_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "The document",
+      "content": {
+       "application/octet-stream": {
+        "schema": {
+         "type": "string"
         }
        }
       }

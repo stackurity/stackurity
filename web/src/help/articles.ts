@@ -488,6 +488,28 @@ stackurity.exe agent --interval 6h`,
     ],
   },
   {
+    id: "vex",
+    title: "Import and export VEX",
+    section: "Adding servers and sources",
+    summary: "Vendors' statements that a vulnerability does or does not affect their product, approved before they hide anything; your own decisions as OpenVEX or CycloneDX VEX.",
+    keywords: "vex openvex cyclonedx not affected false positive mitigated cosign attestation",
+    where: ["Settings", "VEX"],
+    body: [
+      { code: "stackurity vex import vendor.openvex.json --source 3", label: "Import" },
+      {
+        list: [
+          "OpenVEX and CycloneDX VEX, also embedded in a CycloneDX SBOM or as a signed attestation (`cosign attest`).",
+          "Products match by image digest, package URL with a version, or CPE. A product that could be more than one thing is not applied and is listed as not matched.",
+          "A **not affected** statement waits under **Approvals** until an organisation-wide security or admin user approves it. Only a source pinned to a public key or an API token can be trusted to apply on its own.",
+          "An approved statement ignores the issue as a false positive or mitigated, only while the component stays at that version (and the image at that digest).",
+          "**Affected**, **fixed** and **under investigation** are shown on the issue with a **VEX** badge and change nothing.",
+        ],
+      },
+      { code: "stackurity vex export --asset 12 --format cyclonedx -o asset.vex.cdx.json", label: "Export" },
+      { p: "In the dashboard, every asset page has **Export VEX**, and **Settings → VEX** exports every asset you can see." },
+    ],
+  },
+  {
     id: "container-images",
     title: "Scan a container image",
     section: "Adding servers and sources",

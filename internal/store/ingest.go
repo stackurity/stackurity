@@ -30,6 +30,10 @@ type IngestResult struct {
 	// AppsRemoved lists the applications on this host that the batch's
 	// app list (apps.dirs) no longer names, marked removed.
 	AppsRemoved []int64 `json:"apps_removed,omitempty"`
+	// VEX is what importing the VEX embedded in an uploaded CycloneDX SBOM
+	// did (POST /sbom/import), and VEXNote why it was not imported.
+	VEX     *VEXImportResult `json:"vex,omitempty"`
+	VEXNote string           `json:"vex_note,omitempty"`
 }
 
 // AssetInProject reports whether an asset is in a project.

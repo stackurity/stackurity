@@ -4,6 +4,17 @@ All notable changes to Stackurity. Versions follow [Semantic Versioning](https:/
 
 Each release's section is published as its GitHub release notes, and a tag without a section here cannot be released (`go run ./tools/changelog -version vX.Y.Z` prints it). New changes go under **Unreleased**, which is renamed to the version when it is tagged. Subsections are **Security**, **Added**, **Changed**, **Fixed** and **Upgrading**. Put fixes for vulnerabilities under `### Security`, first: installations treat a release with that heading as a security release and show administrators a banner they can only snooze.
 
+## Unreleased
+
+### Added
+
+- **VEX import and export.** `stackurity vex import`, **Settings → VEX** and `POST /vex/import` read OpenVEX (v0.2, and v0.0.1) and CycloneDX VEX, standalone or embedded in a CycloneDX SBOM (an SBOM uploaded with `sbom import` has its VEX imported too), plain or as a signed in-toto attestation (DSSE envelope or Sigstore bundle). Statements (`not_affected` with its justification, `affected`, `fixed`, `under_investigation`) are matched to component versions by image digest, package URL with a version, application package URL or BOM serial number (also BOM-Links), or CPE; a product that could be more than one thing (no version, two versions in one image, a CPE that fits two packages, a tag instead of a digest, version ranges) is not applied and is listed as not matched with the reason. **An imported `not_affected` statement never hides anything by itself**: it waits under **Approvals** (marked VEX, with the file, its SHA-256, the source and the justification) for an organisation-wide security or admin user, unless it comes from a source an admin trusts to apply on its own, which must be pinned to a public key its attestation verifies with or to the uploading API token (a document's author is never trusted); even then it applies on its own only on the assets the signed attestation is about (the rest of a bare package match waits), and never from a document older than one already imported from the source. An approved statement becomes ignore rules (`false_positive` or `mitigated`) pinned to the component version and image digest it matched; they end by themselves after an upgrade or a new image, or when a newer statement says affected. `affected`, `fixed` and `under_investigation` are shown on the finding with a **VEX** badge and change nothing. Imports, decisions (file, statement, approver) and source changes are in the activity log. See [docs/vex.md](docs/vex.md).
+- **VEX export.** `stackurity vex export`, **Export VEX** on an asset's page and in **Settings → VEX**, and `GET /vex/export` write the decisions about open issues (false positives, mitigations, and imported statements) as OpenVEX or CycloneDX VEX, for one asset, one project or every asset you can see; people's ignore notes and mitigations are included only on request by a security or admin user. Findings carry `vex`, ignore requests and rules `vex_statement_id`, and the AI assistants' `list_findings` and `get_finding` return the VEX statement.
+
+### Upgrading
+
+- Migration `0061_vex` creates `vex_sources`, `vex_documents`, `vex_statements` and `vex_matches` and adds nullable or constant-default columns to `finding_exceptions` (`vex_statement_id`, `version`, `digest`) and `ignore_requests` (`vex_statement_id`, `vex_assets`), and replaces the `ignore_requests` row-level security policy so that members with project access only do not see VEX requests; it rewrites nothing.
+
 ## 0.13.7
 
 ### Added
