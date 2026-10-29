@@ -110,6 +110,13 @@ func (s *Store) FeedResult(ctx context.Context, name, cursor string, changed int
 	return err
 }
 
+// FeedWarning records a problem a successful sync worked around as the
+// feed's last error, after FeedResult has recorded the success.
+func (s *Store) FeedWarning(ctx context.Context, name, msg string) error {
+	_, err := s.Pool.Exec(ctx, `UPDATE feeds SET last_error = $2 WHERE name = $1`, name, truncateText("warning: "+msg, 2000))
+	return err
+}
+
 // UpdateFeedEcosystems records the ecosystems a vulnerability feed covers.
 // A full sync replaces the list; an incremental one adds to it, reading the
 // stored advisories of the base ecosystem when nothing is known yet.

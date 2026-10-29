@@ -112,8 +112,12 @@ func (s *Syncer) syncMSRC(ctx context.Context, feed, cursor string) (*SyncResult
 			return nil, "", ctx.Err()
 		}
 		if err := s.syncMSRCDocument(ctx, feed, base, d, res); err != nil {
-			s.Log.Warn("Security Update Guide document unreadable", "document", d.ID, "err", err)
+			if ctx.Err() != nil {
+				return nil, "", ctx.Err()
+			}
+			s.Log.Warn("Security Update Guide document not read", "document", d.ID, "err", err)
 			failed = append(failed, d.ID+": "+err.Error())
+			delete(next.Docs, d.ID) // read again by the next sync
 			continue
 		}
 		next.Docs[d.ID] = d.CurrentReleaseDate
@@ -125,14 +129,25 @@ func (s *Syncer) syncMSRC(ctx context.Context, feed, cursor string) (*SyncResult
 		// rows, so all of them are evaluated again.
 		res.All = true
 	}
+	if len(failed) == len(docs) {
+		// Not one document of the window could be read (a broken mirror,
+		// an outage): the feed fails and keeps its cursor.
+		return nil, "", fmt.Errorf("no Security Update Guide document could be read: %s", strings.Join(failed, "; "))
+	}
 	if len(failed) > 0 {
-		// What was read is stored; the feed reports the failure and the
-		// next sync reads those documents again.
-		return res, "", fmt.Errorf("%d Security Update Guide documents could not be read: %s", len(failed), strings.Join(failed, "; "))
+		// One bad month must not hold up the rest: what was read is stored,
+		// its cursor saved and its findings re-evaluated, and the sync
+		// succeeds with a warning. Only the failed documents are read again
+		// next time; their stored data is kept meanwhile.
+		res.Warning = fmt.Sprintf("%d Security Update Guide documents could not be read and are kept as last read: %s",
+			len(failed), strings.Join(failed, "; "))
 	}
 	if full {
+		// The full read is done; documents that failed have no cursor
+		// entry, so the next sync reads them again.
 		next.Full = now
-		res.Full = true // every document in the window was read: Ecosystems is complete
+		// Ecosystems is complete only when every document was read.
+		res.Full = len(failed) == 0
 	}
 	b, _ := json.Marshal(next)
 	return res, string(b), nil
@@ -208,6 +223,18 @@ func (s *Syncer) syncMSRCDocument(ctx context.Context, feed, base string, d msrc
 		s.Log.Info("Security Update Guide fixed builds skipped", "document", d.ID, "count", doc.anomalies,
 			"why", "the build is not one of the product's own line")
 	}
+	stored, err := s.Store.AdvisoryIDs(ctx, feed, msrcPrefix(d.ID))
+	if err != nil {
+		return err
+	}
+	// A truncated or broken document would withdraw a month of advisories
+	// and close their findings as withdrawn. Microsoft revises documents,
+	// but never drops most of a month's CVEs: such a document is refused and
+	// the stored month kept.
+	if len(stored) > 0 && (len(doc.vulns) == 0 || 2*len(doc.vulns) < len(stored)) {
+		return fmt.Errorf("lists %d Windows CVEs where %d are stored; refusing a document that lost more than half of them (the stored ones are kept)",
+			len(doc.vulns), len(stored))
+	}
 	keep := map[string]bool{}
 	for i := 0; i < len(doc.vulns); i += osvBatch {
 		batch := doc.vulns[i:min(i+osvBatch, len(doc.vulns))]
@@ -220,10 +247,6 @@ func (s *Syncer) syncMSRCDocument(ctx context.Context, feed, base string, d msrc
 		}
 		res.noteEcosystems("Windows", batch)
 		res.Changed += n
-	}
-	stored, err := s.Store.AdvisoryIDs(ctx, feed, msrcPrefix(d.ID))
-	if err != nil {
-		return err
 	}
 	var gone []*osv.Vulnerability
 	now := s.clock()
@@ -368,8 +391,15 @@ func parseCVRF(r io.Reader, docID string) (*cvrfDoc, error) {
 				names[p.ProductID] = p.Value
 			}
 		case "Vulnerability":
-			if err := expectDelim(dec, '['); err != nil {
+			tok, err := dec.Token()
+			if err != nil {
 				return nil, fmt.Errorf("parse %s: %w", docID, err)
+			}
+			if tok == nil {
+				continue // null: no CVEs (syncMSRCDocument refuses losing a month)
+			}
+			if d, ok := tok.(json.Delim); !ok || d != '[' {
+				return nil, fmt.Errorf("parse %s: expected \"[\", found %v", docID, tok)
 			}
 			for dec.More() {
 				var v cvrfVuln

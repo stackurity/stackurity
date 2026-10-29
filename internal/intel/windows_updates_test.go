@@ -3,6 +3,7 @@ package intel
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -326,16 +327,103 @@ func TestWindowsUpdatesIncremental(t *testing.T) {
 		t.Errorf("monthly full read %v", up.requests)
 	}
 
-	// A document that cannot be read fails the sync and keeps the cursor;
-	// the others are stored.
-	before, _ := st.GetFeed(ctx, FeedMSRC)
+	// One document that cannot be read does not hold up the others: the
+	// sync succeeds with a warning, saves the cursor of what it read and
+	// queues re-evaluation, and only that document is read again.
+	sepDoc, _ := os.ReadFile(filepath.Join("testdata", "msrc", "2025-Sep.json"))
 	up.set("/msrc/cvrf/2025-Sep", `{"DocumentTracking":`)
-	sy.now = func() time.Time { return msrcNow.Add(62 * 24 * time.Hour) }
-	if _, err := sy.Sync(ctx, FeedMSRC); err == nil || !strings.Contains(err.Error(), "2025-Sep") {
+	sy.now = func() time.Time { return msrcNow.Add(62 * 24 * time.Hour) } // a full read is due
+	before, _ := st.GetFeed(ctx, FeedMSRC)
+	queued := 0
+	sy.Changed = func(context.Context, string, *SyncResult) error { queued++; return nil }
+	up.requests = nil
+	res, err = sy.Sync(ctx, FeedMSRC)
+	if err != nil || res.Full || !res.All || queued != 1 || len(up.requests) != 4 {
+		t.Fatalf("partial sync: %+v %v, re-evaluations %d, requests %v", res, err, queued, up.requests)
+	}
+	f, _ := st.GetFeed(ctx, FeedMSRC)
+	var cur msrcCursor
+	_ = json.Unmarshal([]byte(f.Cursor), &cur)
+	if !strings.HasPrefix(f.LastError, "warning: 1 Security Update Guide documents could not be read") || !strings.Contains(f.LastError, "2025-Sep") ||
+		f.LastSuccess == nil || !f.LastSuccess.After(*before.LastSuccess) || cur.Docs["2025-Sep"] != "" || cur.Docs["2025-Oct"] == "" ||
+		!cur.Full.Equal(msrcNow.Add(62*24*time.Hour)) {
+		t.Errorf("after a partial sync: %+v, cursor %+v", f, cur)
+	}
+	// Its stored advisories stay, and so do the findings they give.
+	if _, err := ev.Evaluate(ctx, nil, 0); err != nil {
+		t.Fatal(err)
+	}
+	if got := sortedFindingKeys(openKeys(t, st, ctx, host)); got != "CVE-2025-59230 CVE-2025-59287 CVE-2026-69950" {
+		t.Errorf("after the partial sync: %q", got)
+	}
+	up.requests = nil
+	if _, err := sy.Sync(ctx, FeedMSRC); err != nil || !slices.Equal(up.requests, []string{"/msrc/updates", "/msrc/cvrf/2025-Sep"}) {
+		t.Errorf("retry read %v (%v); want only the failed document", up.requests, err)
+	}
+	up.set("/msrc/cvrf/2025-Sep", string(sepDoc))
+	up.requests = nil
+	if _, err := sy.Sync(ctx, FeedMSRC); err != nil || !slices.Equal(up.requests, []string{"/msrc/updates", "/msrc/cvrf/2025-Sep"}) {
+		t.Errorf("repaired read %v (%v)", up.requests, err)
+	}
+	if f, _ := st.GetFeed(ctx, FeedMSRC); f.LastError != "" {
+		t.Errorf("a clean sync clears the warning: %q", f.LastError)
+	}
+
+	// Nothing readable at all: the sync fails and keeps its cursor.
+	before, _ = st.GetFeed(ctx, FeedMSRC)
+	for _, d := range []string{"2025-Sep", "2025-Oct", "2026-Oct"} {
+		up.set("/msrc/cvrf/"+d, "Service Unavailable")
+	}
+	sy.now = func() time.Time { return msrcNow.Add(93 * 24 * time.Hour) }
+	if _, err := sy.Sync(ctx, FeedMSRC); err == nil || !strings.Contains(err.Error(), "no Security Update Guide document could be read") {
 		t.Errorf("err = %v", err)
 	}
-	if f, _ := st.GetFeed(ctx, FeedMSRC); f.Cursor != before.Cursor || !strings.Contains(f.LastError, "2025-Sep") {
+	if f, _ := st.GetFeed(ctx, FeedMSRC); f.Cursor != before.Cursor || !strings.Contains(f.LastError, "no Security Update Guide document") {
 		t.Errorf("after the failure: %+v", f)
+	}
+}
+
+// A document that suddenly lists far fewer CVEs than are stored for its
+// month (truncated, or broken upstream) is refused: the month's advisories
+// are not withdrawn and their findings stay open.
+func TestWindowsUpdatesShrunkDocument(t *testing.T) {
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	st, sy, ev, up := setup(t)
+	host := ingestWindows(t, st, "ws2022", winOS("10.0.20348.4171", "Windows Server 2022 Datacenter", "ServerDatacenter", "21H2"))
+	syncWindowsUpdates(t, ctx, st, sy, up)
+	idx, _ := os.ReadFile(filepath.Join("testdata", "msrc", "updates.json"))
+	b, _ := os.ReadFile(filepath.Join("testdata", "msrc", "2025-Oct.json"))
+	for i, keep := range []int{0, 1} { // 4 stored: none listed, then 1
+		var doc map[string]any
+		_ = json.Unmarshal(b, &doc)
+		vs := doc["Vulnerability"].([]any)
+		var kept []any
+		for _, v := range vs {
+			if c := v.(map[string]any)["CVE"]; len(kept) < keep && c != "CVE-2025-55247" {
+				kept = append(kept, v)
+			}
+		}
+		doc["Vulnerability"] = kept
+		out, _ := json.Marshal(doc)
+		up.set("/msrc/cvrf/2025-Oct", string(out))
+		up.set("/msrc/updates", strings.Replace(string(idx), `"CurrentReleaseDate":"2026-10-28T01:49:06Z"`,
+			fmt.Sprintf(`"CurrentReleaseDate":"2026-10-29T0%d:00:00Z"`, i+8), 1))
+		if _, err := sy.Sync(ctx, FeedMSRC); err != nil {
+			t.Fatal(err)
+		}
+		f, _ := st.GetFeed(ctx, FeedMSRC)
+		if !strings.Contains(f.LastError, fmt.Sprintf("2025-Oct: lists %d Windows CVEs where 4 are stored; refusing", keep)) {
+			t.Errorf("listing %d: last error %q", keep, f.LastError)
+		}
+		if ids, _ := st.AdvisoryIDs(ctx, FeedMSRC, "MSRC-2025-Oct-"); len(ids) != 4 {
+			t.Errorf("listing %d: stored October advisories %v", keep, ids)
+		}
+		if _, err := ev.Evaluate(ctx, nil, 0); err != nil {
+			t.Fatal(err)
+		}
+		if got := sortedFindingKeys(openKeys(t, st, ctx, host)); got != "CVE-2016-9535 CVE-2025-59230 CVE-2025-59287 CVE-2026-69950" {
+			t.Errorf("listing %d: findings %q", keep, got)
+		}
 	}
 }
 

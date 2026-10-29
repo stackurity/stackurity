@@ -114,6 +114,10 @@ type SyncResult struct {
 	All bool
 	// Ecosystems seen in the records read, e.g. "Debian:12".
 	Ecosystems map[string]bool
+	// Warning is a problem the sync worked around (a source document it
+	// could not read and kept as last read): the sync succeeds and the feed
+	// shows the warning as its last error until a sync without one.
+	Warning string
 }
 
 // noteEcosystems records the ecosystem strings of base that vs name.
@@ -174,6 +178,11 @@ func (s *Syncer) Sync(ctx context.Context, name string) (*SyncResult, error) {
 	}
 	if rerr := s.Store.FeedResult(context.WithoutCancel(ctx), name, cursor, changed, err); rerr != nil && err == nil {
 		err = rerr
+	}
+	if err == nil && res != nil && res.Warning != "" {
+		if werr := s.Store.FeedWarning(context.WithoutCancel(ctx), name, res.Warning); werr != nil {
+			err = werr
+		}
 	}
 	if base, ok := feedEcosystem(name); ok && err == nil {
 		// Re-evaluation of the pending packages is queued: they are done.
