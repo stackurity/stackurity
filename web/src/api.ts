@@ -57,6 +57,8 @@ export interface Meta {
   signup?: SignupMeta;
   /** True when organisations manage their plan and billing here (a hosted edition). */
   billing?: boolean;
+  /** "email": reset links are emailed; "admin": an administrator sets a temporary password. */
+  password_reset?: "email" | "admin";
   /** True when people can find their organisation's single sign-on from their email (a hosted edition). */
   sso_discovery?: boolean;
 }
@@ -87,6 +89,8 @@ export interface User {
   instance_admin: boolean;
   /** "organisation": a role on everything; "projects": access through projects only (role is then empty). */
   access?: Access;
+  /** Two-factor sign-in is on for this account. */
+  mfa_enabled?: boolean;
 }
 
 /** How a member reaches a workspace's data. */
@@ -411,6 +415,10 @@ export interface Me {
   features: Feature[];
   /** Whether Send feedback is on (STACKURITY_FEEDBACK_URL) for this signed-in user. */
   feedback_enabled?: boolean;
+  /** The organisation requires two-factor sign-in and this session has none: only enrolment is possible. */
+  mfa_enrolment_required?: boolean;
+  /** An administrator set a temporary password: only changing it is possible. */
+  password_change_required?: boolean;
   /** Set when the session's workspace requires its own single sign-on, which this session did not use; workspace is then null. */
   sso_required?: SSORequired;
 }
@@ -2697,7 +2705,7 @@ export const api = {
   discoverSSO: (email: string) => request<{ login_url: string; label: string }>("POST", "/auth/sso/discover", { email }, { quiet401: true }),
   me: () => request<Me>("GET", "/auth/me", undefined, { quiet401: true }),
   login: (email: string, password: string) =>
-    request<User>("POST", "/auth/login", { email, password }, { quiet401: true }),
+    request<User & { mfa_required?: boolean }>("POST", "/auth/login", { email, password }, { quiet401: true }),
   setup: (b: { setup_token: string; email: string; name: string; password: string }) =>
     request<User>("POST", "/setup", b, { quiet401: true }),
   logout: () => request<void>("POST", "/auth/logout", undefined, { quiet401: true }),

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,6 +31,8 @@ type User struct {
 	// role, "projects" for one with project access only (Role is then
 	// empty), and "" for someone who is not a member.
 	Access string `json:"access"`
+	// MFAEnabled: the account has two-factor sign-in turned on.
+	MFAEnabled bool `json:"mfa_enabled"`
 }
 
 const userCols = `u.id, u.email, u.name,
@@ -38,7 +41,8 @@ const userCols = `u.id, u.email, u.name,
 	COALESCE((SELECT array_agg(t.name ORDER BY t.name) FROM team_members m JOIN teams t ON t.id = m.team_id WHERE m.user_id = u.id), '{}'),
 	u.instance_admin,
 	COALESCE((SELECT CASE WHEN wm.role IS NULL THEN 'projects' ELSE 'organisation' END FROM workspace_members wm
-	  WHERE wm.user_id = u.id AND wm.workspace_id = stackurity_ws()), '')`
+	  WHERE wm.user_id = u.id AND wm.workspace_id = stackurity_ws()), ''),
+	EXISTS (SELECT 1 FROM user_mfa m WHERE m.user_id = u.id AND m.enabled_at IS NOT NULL)`
 
 func (s *Store) CountUsers(ctx context.Context) (int64, error) {
 	var n int64
@@ -210,6 +214,9 @@ type UserUpdate struct {
 	Role     *auth.Role `json:"role"`
 	Disabled *bool      `json:"disabled"`
 	Password *string    `json:"password"`
+	// Temporary: the password is set by an administrator for someone
+	// else; they must choose their own at their next sign-in.
+	Temporary bool `json:"-"`
 }
 
 // UpdateUser changes a member of the context's workspace. The role is the
@@ -259,7 +266,9 @@ func (s *Store) UpdateUser(ctx context.Context, id int64, u UserUpdate, instance
 			return fmt.Errorf("this account is an instance admin; only an instance admin can change its name, password or status: %w", ErrConflict)
 		}
 		if _, err := tx.Exec(ctx, `UPDATE users SET name = COALESCE($2, name), disabled = COALESCE($3, disabled),
-			password_hash = COALESCE($4, password_hash) WHERE id = $1`, id, u.Name, u.Disabled, hash); err != nil {
+			password_hash = COALESCE($4, password_hash),
+			password_change_required = CASE WHEN $4::text IS NULL THEN password_change_required ELSE $5 END
+			WHERE id = $1`, id, u.Name, u.Disabled, hash, u.Temporary); err != nil {
 			return err
 		}
 		if u.Role != nil {
@@ -311,17 +320,54 @@ const SessionTTL = 12 * time.Hour
 
 // CreateSession starts a browser session working in workspaceID (0: none yet).
 func (s *Store) CreateSession(ctx context.Context, userID, workspaceID int64) (string, error) {
+	return s.CreateSessionWith(ctx, userID, workspaceID, SessionOpts{})
+}
+
+// SessionOpts says how a session was signed in.
+type SessionOpts struct {
+	// PasswordLogin: with a local password. Such a session is sent to
+	// two-factor enrolment when its workspace requires it and the user has
+	// none; sessions from single sign-on, invitations and sign-up links are
+	// not (the identity provider, or a fresh account, covers them).
+	PasswordLogin bool
+	// MFA: a second factor was checked.
+	MFA bool
+	// Pinned is the workspace a sign-in through that workspace's own
+	// identity provider pins the session to (CreateSSOSession); 0: none.
+	// A session that replaces a pinned one keeps its pin.
+	Pinned int64
+	// Expires keeps a replaced session's end; zero: SessionTTL from now.
+	Expires time.Time
+}
+
+// CreateSessionWith starts a browser session signed in as opts says.
+func (s *Store) CreateSessionWith(ctx context.Context, userID, workspaceID int64, opts SessionOpts) (string, error) {
+	if opts.Pinned > 0 {
+		workspaceID = opts.Pinned
+	}
 	secret, _, err := auth.NewToken("sess")
 	if err != nil {
 		return "", err
 	}
-	var ws *int64
+	var ws, pinned *int64
 	if workspaceID > 0 {
 		ws = &workspaceID
 	}
-	_, err = s.Pool.Exec(ctx, `INSERT INTO sessions (token_hash, user_id, expires_at, workspace_id)
-		VALUES ($1, $2, now() + make_interval(secs => $3), $4)`,
-		auth.HashToken(secret), userID, SessionTTL.Seconds(), ws)
+	if opts.Pinned > 0 {
+		pinned = &opts.Pinned
+	}
+	var mfaAt *time.Time
+	if opts.MFA {
+		now := time.Now()
+		mfaAt = &now
+	}
+	expires := opts.Expires
+	if expires.IsZero() {
+		expires = time.Now().Add(SessionTTL)
+	}
+	_, err = s.Pool.Exec(ctx, `INSERT INTO sessions (token_hash, user_id, expires_at, workspace_id, password_login, mfa_at, sso_workspace_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		auth.HashToken(secret), userID, expires, ws, opts.PasswordLogin, mfaAt, pinned)
 	return secret, err
 }
 
@@ -332,14 +378,30 @@ func (s *Store) CreateSSOSession(ctx context.Context, userID, workspaceID int64)
 	if workspaceID <= 0 {
 		return "", fmt.Errorf("a pinned session needs a workspace: %w", ErrInvalid)
 	}
-	secret, _, err := auth.NewToken("sess")
-	if err != nil {
-		return "", err
-	}
-	_, err = s.Pool.Exec(ctx, `INSERT INTO sessions (token_hash, user_id, expires_at, workspace_id, sso_workspace_id)
-		VALUES ($1, $2, now() + make_interval(secs => $3), $4, $4)`,
-		auth.HashToken(secret), userID, SessionTTL.Seconds(), workspaceID)
-	return secret, err
+	return s.CreateSessionWith(ctx, userID, workspaceID, SessionOpts{Pinned: workspaceID})
+}
+
+// Session is a resolved browser session.
+type Session struct {
+	User      *User
+	Workspace int64
+	// SSOWorkspace is the workspace the session is pinned to
+	// (CreateSSOSession), 0 for an ordinary session. A pinned session works
+	// only there: if the user has left it, Workspace is 0, never another.
+	SSOWorkspace int64
+	// NeedsMFAEnrolment: signed in with a password, without a second
+	// factor, in a workspace that requires one. Only enrolment, signing
+	// out and switching workspace are allowed until it is set up.
+	NeedsMFAEnrolment bool
+	// PasswordLogin: signed in with a local password.
+	PasswordLogin bool
+	// MFA: a second factor was checked for this session.
+	MFA bool
+	// PasswordChangeRequired: an administrator set a temporary password;
+	// only changing it is allowed until then.
+	PasswordChangeRequired bool
+	// ExpiresAt is the session's absolute end.
+	ExpiresAt time.Time
 }
 
 // SessionUser resolves a browser session to its user and the workspace it
@@ -347,41 +409,100 @@ func (s *Store) CreateSSOSession(ctx context.Context, userID, workspaceID int64)
 // user's first workspace is used; 0 means the user belongs to none. The
 // returned user's Role is their role in that workspace.
 func (s *Store) SessionUser(ctx context.Context, secret string) (*User, int64, error) {
-	u, ws, _, err := s.SessionUserSSO(ctx, secret)
-	return u, ws, err
+	sess, err := s.SessionInfo(ctx, secret)
+	if err != nil {
+		return nil, 0, err
+	}
+	return sess.User, sess.Workspace, nil
 }
 
 // SessionUserSSO is SessionUser that also returns the workspace the session
-// is pinned to (CreateSSOSession), 0 for an ordinary session. A pinned
-// session works only in its workspace: if the user has left it, the session
-// has no workspace rather than another one.
+// is pinned to (CreateSSOSession), 0 for an ordinary session.
 func (s *Store) SessionUserSSO(ctx context.Context, secret string) (*User, int64, int64, error) {
+	sess, err := s.SessionInfo(ctx, secret)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	return sess.User, sess.Workspace, sess.SSOWorkspace, nil
+}
+
+// SessionExpired is a session that ended because it was unused for too
+// long ("idle") or reached SessionTTL ("absolute"). It is deleted when
+// found; the caller records it.
+type SessionExpired struct {
+	Reason    string
+	UserID    int64
+	Email     string
+	Workspace int64
+}
+
+func (e *SessionExpired) Error() string { return "session expired (" + e.Reason + ")" }
+
+// Unwrap makes an expired session ErrNotFound to callers that only check
+// whether it is valid.
+func (e *SessionExpired) Unwrap() error { return ErrNotFound }
+
+// SessionInfo is SessionUser with how the session was signed in. A session
+// past its idle or absolute limit is deleted and returned as
+// *SessionExpired (which is ErrNotFound).
+func (s *Store) SessionInfo(ctx context.Context, secret string) (*Session, error) {
 	var id int64
 	var ws, pinned *int64
-	err := s.Pool.QueryRow(ctx, `SELECT s.user_id, s.workspace_id, s.sso_workspace_id FROM sessions s JOIN users u ON u.id = s.user_id
-		WHERE s.token_hash = $1 AND s.expires_at > now() AND NOT u.disabled`, auth.HashToken(secret)).Scan(&id, &ws, &pinned)
+	var passwordLogin bool
+	var mfaAt *time.Time
+	var expiresAt time.Time
+	var changePassword, absolute, idle, touch bool
+	var email string
+	err := s.Pool.QueryRow(ctx, `SELECT s.user_id, s.workspace_id, s.sso_workspace_id, s.password_login, s.mfa_at, s.expires_at,
+		u.password_change_required, u.email,
+		s.expires_at <= now(), $2 > 0 AND s.last_seen_at < now() - make_interval(secs => $2), s.last_seen_at < now() - interval '1 minute'
+		FROM sessions s JOIN users u ON u.id = s.user_id
+		WHERE s.token_hash = $1 AND NOT u.disabled`, auth.HashToken(secret), s.SessionIdle.Seconds()).
+		Scan(&id, &ws, &pinned, &passwordLogin, &mfaAt, &expiresAt, &changePassword, &email, &absolute, &idle, &touch)
 	if err != nil {
-		return nil, 0, 0, notFound(err)
+		return nil, notFound(err)
+	}
+	if absolute || idle {
+		tag, err := s.Pool.Exec(ctx, `DELETE FROM sessions WHERE token_hash = $1`, auth.HashToken(secret))
+		if err != nil {
+			return nil, err
+		}
+		if tag.RowsAffected() == 0 {
+			return nil, ErrNotFound // another request ended it and records it
+		}
+		e := &SessionExpired{Reason: "idle", UserID: id, Email: email}
+		if absolute {
+			e.Reason = "absolute"
+		}
+		if ws != nil {
+			e.Workspace = *ws
+		}
+		return nil, e
+	}
+	if touch {
+		_, _ = s.Pool.Exec(ctx, `UPDATE sessions SET last_seen_at = now() WHERE token_hash = $1`, auth.HashToken(secret))
 	}
 	if pinned != nil {
 		var wsID int64
 		if member, err := s.IsMember(ctx, *pinned, id); err != nil {
-			return nil, 0, 0, err
+			return nil, err
 		} else if member {
 			wsID = *pinned
 		}
 		u, err := s.GetUser(tenant.WithWorkspace(ctx, wsID), id)
-		if u != nil {
-			// An organisation's identity provider vouches for membership of
-			// that organisation only, never for operating the installation.
-			u.InstanceAdmin = false
+		if err != nil {
+			return nil, err
 		}
-		return u, wsID, *pinned, err
+		// An organisation's identity provider vouches for membership of
+		// that organisation only, never for operating the installation.
+		u.InstanceAdmin = false
+		return &Session{User: u, Workspace: wsID, SSOWorkspace: *pinned, PasswordLogin: passwordLogin, MFA: mfaAt != nil,
+			PasswordChangeRequired: changePassword, ExpiresAt: expiresAt}, nil
 	}
 	var wsID int64
 	if ws != nil {
 		if member, err := s.IsMember(ctx, *ws, id); err != nil {
-			return nil, 0, 0, err
+			return nil, err
 		} else if member {
 			wsID = *ws
 		}
@@ -389,7 +510,7 @@ func (s *Store) SessionUserSSO(ctx context.Context, secret string) (*User, int64
 	if wsID == 0 {
 		ms, err := s.Memberships(ctx, id)
 		if err != nil {
-			return nil, 0, 0, err
+			return nil, err
 		}
 		if len(ms) > 0 {
 			wsID = ms[0].WorkspaceID
@@ -397,7 +518,17 @@ func (s *Store) SessionUserSSO(ctx context.Context, secret string) (*User, int64
 		}
 	}
 	u, err := s.GetUser(tenant.WithWorkspace(ctx, wsID), id)
-	return u, wsID, 0, err
+	if err != nil {
+		return nil, err
+	}
+	sess := &Session{User: u, Workspace: wsID, PasswordLogin: passwordLogin, MFA: mfaAt != nil, PasswordChangeRequired: changePassword,
+		ExpiresAt: expiresAt}
+	if passwordLogin && mfaAt == nil && !u.MFAEnabled && wsID > 0 {
+		if sess.NeedsMFAEnrolment, err = s.WorkspaceRequiresMFA(ctx, wsID); err != nil {
+			return nil, err
+		}
+	}
+	return sess, nil
 }
 
 func (s *Store) DeleteSession(ctx context.Context, secret string) error {
@@ -405,9 +536,44 @@ func (s *Store) DeleteSession(ctx context.Context, secret string) error {
 	return err
 }
 
+// EndSession signs a session out and returns whose it was (userID 0 when
+// there was none), for the activity log.
+func (s *Store) EndSession(ctx context.Context, secret string) (userID, workspace int64, email string, err error) {
+	var ws *int64
+	err = s.Pool.QueryRow(ctx, `DELETE FROM sessions s USING users u WHERE s.token_hash = $1 AND u.id = s.user_id
+		RETURNING s.user_id, s.workspace_id, u.email`, auth.HashToken(secret)).Scan(&userID, &ws, &email)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, 0, "", nil
+	}
+	if ws != nil {
+		workspace = *ws
+	}
+	return userID, workspace, email, err
+}
+
 func (s *Store) PurgeExpiredSessions(ctx context.Context) error {
-	_, err := s.Pool.Exec(ctx, `DELETE FROM sessions WHERE expires_at < now()`)
-	return err
+	if _, err := s.Pool.Exec(ctx, `DELETE FROM mfa_challenges WHERE expires_at < now()`); err != nil {
+		return err
+	}
+	if err := s.PurgePasswordResets(ctx); err != nil {
+		return err
+	}
+	// Sessions nobody came back to: each ending is recorded where it was
+	// working, as when one is found expired at a request.
+	rows, err := s.Pool.Query(ctx, `DELETE FROM sessions s USING users u
+		WHERE u.id = s.user_id AND (s.expires_at < now() OR ($1 > 0 AND s.last_seen_at < now() - make_interval(secs => $1)))
+		RETURNING CASE WHEN s.expires_at < now() THEN 'absolute' ELSE 'idle' END, s.user_id, u.email, COALESCE(s.workspace_id, 0)`, s.SessionIdle.Seconds())
+	if err != nil {
+		return err
+	}
+	ended, err := pgx.CollectRows(rows, pgx.RowToStructByPos[SessionExpired])
+	if err != nil {
+		return err
+	}
+	for _, e := range ended {
+		s.AuditSessionExpired(ctx, &e, "")
+	}
+	return nil
 }
 
 type Token struct {
@@ -679,31 +845,12 @@ func (s *Store) ListAudit(ctx context.Context, objectType, objectID string, p Pa
 	return out, total, err
 }
 
-// ChangeOwnPassword verifies the current password, sets the new one and ends
-// every other session of the user.
-func (s *Store) ChangeOwnPassword(ctx context.Context, userID int64, current, next, keepSession string) error {
-	var hash string
-	if err := s.Pool.QueryRow(ctx, `SELECT password_hash FROM users WHERE id = $1 AND NOT disabled`, userID).Scan(&hash); err != nil {
-		return notFound(err)
+// AuditSessionExpired records a session that ended by itself, in the
+// workspace it was working in (the platform's log when none).
+func (s *Store) AuditSessionExpired(ctx context.Context, e *SessionExpired, remoteAddr string) {
+	if e.Workspace > 0 {
+		ctx = tenant.WithWorkspace(ctx, e.Workspace)
 	}
-	if !auth.CheckPassword(hash, current) {
-		return ErrNotFound
-	}
-	if err := auth.ValidPassword(next); err != nil {
-		return err
-	}
-	if current == next {
-		return fmt.Errorf("the new password must differ from the current one: %w", ErrConflict)
-	}
-	h, err := auth.HashPassword(next)
-	if err != nil {
-		return err
-	}
-	return pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `UPDATE users SET password_hash = $2 WHERE id = $1`, userID, h); err != nil {
-			return err
-		}
-		_, err := tx.Exec(ctx, `DELETE FROM sessions WHERE user_id = $1 AND token_hash <> $2`, userID, auth.HashToken(keepSession))
-		return err
-	})
+	_ = s.Audit(ctx, Actor{Type: "user", ID: e.UserID, Name: e.Email, RemoteAddr: remoteAddr}, "auth.session_expired", "user",
+		strconv.FormatInt(e.UserID, 10), map[string]any{"reason": e.Reason})
 }

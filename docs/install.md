@@ -109,6 +109,9 @@ Connecting an asset is quiet: one "connected" message, and no alerts, Jira issue
 | `STACKURITY_LICENSE` / `_FILE` | — | Licence key; when set, the dashboard cannot change it |
 | `STACKURITY_PACK_TRUSTED_KEYS` | — | File of `publisher base64-key` lines: publishers whose [stack packs](packs.md) are accepted besides official ones |
 | `STACKURITY_PACK_ALLOW_UNSIGNED` | `false` | Accept unsigned stack packs (pack development only) |
+| `STACKURITY_SESSION_IDLE_TIMEOUT` | `30m` | A browser session unused this long ends (1m to 12h, or `off`), on top of the 12 hours from sign-in ([Sessions](#sessions)) |
+| `STACKURITY_BREACHED_PASSWORD_CHECK` | `on` | `off` stops checking new passwords against known data breaches; `STACKURITY_BREACHED_PASSWORD_URL` points the check at a mirror ([network.md](network.md#breached-password-check)) |
+| `STACKURITY_SMTP_HOST`, `STACKURITY_SMTP_PORT` (`587`), `STACKURITY_SMTP_USERNAME`, `STACKURITY_SMTP_PASSWORD` / `_FILE`, `STACKURITY_SMTP_FROM`, `STACKURITY_SMTP_TLS` (`starttls`, `tls` or `none`) | — | The mail server for email about people's own accounts: password reset links ([Forgotten passwords](#forgotten-passwords)). Needs `STACKURITY_BASE_URL`. Not used for notifications, which each organisation sets up |
 
 Secrets are never stored in the database. Integrations hold a *reference*: `env:STACKURITY_SECRET_GITHUB` or `file:/run/secrets/github_token`.
 
@@ -144,6 +147,53 @@ Isolation is enforced by PostgreSQL row-level security as well as by the applica
 An instance administrator can also limit how many assets each workspace monitors (**Settings → Workspaces**). At the limit new assets are refused and everything already monitored keeps being checked. A project limit, a read-only state and shortened trial reports work the same way, and none is set unless an administrator sets it; see [Monitored-asset limits](asset-limits.md).
 
 When you host other organisations, also set `STACKURITY_PRIVATE_TARGETS=none` and `STACKURITY_SECRET_KEY`. Workspace admins then keep credentials as stored secrets, and only instance administrators can reference the server's own `env:` and `file:` secrets.
+
+## Signing in
+
+People sign in with an email and password, or with [single sign-on](#single-sign-on) where it is set up.
+
+### Two-factor sign-in
+
+Anyone can turn on two-factor sign-in under **Your account → Two-factor sign-in**: after their password, Stackurity asks for a six-digit code from an authenticator app (TOTP, RFC 6238: 1Password, Google Authenticator, Microsoft Authenticator, Authy and others). Setting it up asks for the password again, shows a QR code (and the key as text), and is confirmed with a code. It then shows ten one-time **recovery codes** once; each signs in once instead of a code, for a lost phone. **New recovery codes** replaces the set.
+
+- The secret is encrypted with `STACKURITY_SECRET_KEY` (AES-256-GCM, as stored secrets are), so two-factor sign-in needs that key; without it the page says so. Recovery codes are stored as hashes.
+- A code is accepted once: the same code (or an earlier one) cannot sign in again, even within its 90-second window (the current 30-second step and one either side, for clock drift).
+- Wrong codes are limited: five end the sign-in (the password must be entered again), and ten tries per account in 15 minutes from any address.
+- Turning it on signs out the account's other sessions. Turning it off asks for the password, and is refused while an organisation of theirs requires it.
+- **API tokens and connected AI assistants are not asked for a code**, as with GitHub: they are credentials of their own. The page lists how many the person has, with links to review them.
+- People who sign in with single sign-on are not asked for a Stackurity code: their identity provider does the second factor.
+
+**Require it for an organisation.** An admin can turn on **Settings → Users → Require two-factor sign-in for all members** (their own account needs it first). Members who sign in with a password and have none are then sent to set it up before they can do anything else; members using single sign-on are not affected. The page counts the members without it.
+
+**A lost phone.** An admin resets a member's two-factor sign-in with **Reset two-factor** on **Settings → Users**; it is recorded in the activity log (`user.mfa_reset`) and ends the member's sessions. As with passwords, only an instance administrator can reset it for an account that also belongs to other organisations, or for an instance administrator.
+
+Every step is in the activity log: `auth.mfa_enabled`, `auth.mfa_disabled`, `auth.mfa_failed`, `auth.mfa_recovery_code_used`, `auth.mfa_recovery_codes_replaced`, and `auth.login` with `"mfa": "totp"` or `"recovery_code"`.
+
+Passkeys and security keys (WebAuthn) are not supported yet.
+
+### Passwords
+
+Passwords are 12 to 256 characters, stored with argon2id. A new password is also checked against known data breaches (Have I Been Pwned's Pwned Passwords, with only five characters of its SHA-1 sent: see [network.md](network.md#breached-password-check)) and refused if found; if the check cannot be reached the password is accepted and a warning logged. `STACKURITY_BREACHED_PASSWORD_CHECK=off` turns the check off.
+
+### Sessions
+
+A browser session ends 30 minutes after it was last used (`STACKURITY_SESSION_IDLE_TIMEOUT`), and in any case 12 hours after sign-in. The session cookie is `HttpOnly`, `SameSite=Strict`, and `Secure` unless `STACKURITY_COOKIE_SECURE=false`; only a hash of it is stored.
+
+- Every sign-in gets a new session ID, and a session the browser already had ends. Turning on two-factor sign-in and changing your password replace the current session's ID too. Roles are read on every request, so a role change takes effect at once without one.
+- Changing your password (**Your account → Password**) signs out your other sessions and, unless you untick it, disconnects your AI assistants. API tokens keep working unless you tick **Also revoke my API tokens**; the page then says how many still work, with a link to review them.
+- The activity log records `auth.login`, `auth.logout`, and `auth.session_expired` with `reason` `idle` or `absolute` (when the session is next used, or by the hourly housekeeping if it never is).
+
+### Forgotten passwords
+
+**Forgot your password?** on the sign-in page emails a link to choose a new password, when the server can send email: on Stackurity Cloud always, and on your own server when `STACKURITY_SMTP_HOST` and `STACKURITY_SMTP_FROM` are set (any provider in [Channels](#channels) works) together with `STACKURITY_BASE_URL`. The link is built from `STACKURITY_BASE_URL`, never from the request, so nobody can make the email point elsewhere.
+
+- The answer is the same whether or not an account uses the address, and the email is sent after the answer, so the timing does not tell either.
+- The link works once, for 15 minutes; asking again replaces it. Only a hash of it is stored.
+- Requests are limited to 5 per 15 minutes per address and 3 an hour per email address.
+- Choosing a new password signs out every session, disconnects the account's AI assistants, and revokes its API tokens if the person ticks **Also revoke my API tokens** (ticked by default). It does not sign in, and two-factor sign-in still applies.
+- The activity log records `auth.password_reset_requested` and `auth.password_reset` (with what was ended).
+
+Without email, the page says to ask an administrator. An admin sets a temporary password with **Reset password** on **Settings → Users**: the member's sessions end, and at their next sign-in they must choose their own password before doing anything else. (An admin setting their own password this way is not asked to change it.)
 
 ## Single sign-on
 
@@ -662,7 +712,7 @@ Any number of servers can run against one PostgreSQL database, behind a load bal
   | 20 a minute per client address | both steps of single sign-on together (start and callback), about ten sign-ins |
   | 100 an hour in total | setup attempts from all addresses, in case `STACKURITY_SETUP_TOKEN` was set to something guessable |
 
-  Successful sign-ins never count, so someone guessing a password from their own addresses slows only themselves; the owner signing in from elsewhere is not held up unless the guessing reaches the account cap (100 failures in 15 minutes), which then holds password sign-in for the rest of that window. Single sign-on is unaffected. The answers are the same whether or not the account exists. Failures appear in the audit log as `auth.login_failed`, a backoff starting or lengthening as `auth.login_backoff`, and the account cap being reached as `auth.login_locked`.
+  Successful sign-ins never count, so someone guessing a password from their own addresses slows only themselves; the owner signing in from elsewhere is not held up unless the guessing reaches the account cap (100 failures in 15 minutes), which then holds password sign-in for the rest of that window, except from an address (IPv4, or IPv6 /64) the account signed in from with its password in the last 30 days: those keep only their own per-address backoff, so failing on purpose from many addresses cannot lock the owner out. Single sign-on is unaffected. The answers are the same whether or not the account exists. Failures appear in the audit log as `auth.login_failed`, a backoff starting or lengthening as `auth.login_backoff`, and the account cap being reached as `auth.login_locked`.
 - **Per replica:** the scratch directory (`STACKURITY_DATA_DIR`, temporary clones only), and HTTP and database pool metrics. Mount the same `file:` secrets and set the same environment on every replica.
 - **Crashes:** what a killed replica leaves behind (jobs, feed syncs, ingests, notifications, periodic tasks), what is guaranteed after a restart, and the crash tests that check it are in [reliability.md](reliability.md).
 - **Upgrades:** stop every replica, then start the new version (the [checklist](#checklist); the Helm chart's `Recreate` strategy does this). Mixed versions are not supported: a new schema is not guaranteed to work with the previous version's code, so an old replica refuses to start against it, and one still running fails `/readyz` and stops its background work.

@@ -8,7 +8,7 @@ import (
 )
 
 const placeholder = `<!doctype html><html><head><meta charset="utf-8"><title>Stackurity</title></head>
-<body style="font-family:system-ui;margin:3rem">
+<body>
 <h1>Stackurity</h1><p>The API is running at <code>/api/v1</code>. The dashboard was not built into this binary.</p>
 </body></html>`
 

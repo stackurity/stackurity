@@ -1,16 +1,20 @@
 package api
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stackurity/stackurity/internal/auth"
 	"github.com/stackurity/stackurity/internal/license"
+	"github.com/stackurity/stackurity/internal/secrets"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
 	"github.com/stackurity/stackurity/internal/testdb"
@@ -142,4 +146,129 @@ func TestSSOSessions(t *testing.T) {
 	if m := me(pinned); m.Workspace == nil || m.Workspace.ID != ws2.ID || m.SSORequired != nil {
 		t.Errorf("pinned session refused: %+v", m.SSORequired)
 	}
+}
+
+// Changing the password or turning on two-factor sign-in replaces the
+// session; the new one keeps the single sign-on pin and the old end, so
+// neither frees a pinned session to work in another workspace.
+func TestPinnedSessionSurvivesRotation(t *testing.T) {
+	st := store.New(testdb.New(t))
+	bg := context.Background()
+	ws1 := tenant.WithWorkspace(bg, tenant.DefaultWorkspace)
+	const password = "correct horse battery"
+	u, err := st.CreateUser(ws1, "both@acme.io", "", auth.RoleAdmin, password)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws2, _, err := st.CreateWorkspace(ws1, "Acme", "acme", "owner@acme.io", "Owner", password)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Pool.Exec(tenant.System(bg), `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1, $2, 'viewer')`, ws2.ID, u.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.UpdateUserInstanceAdmin(bg, "both@acme.io", true); err != nil {
+		t.Fatal(err)
+	}
+	key := make([]byte, 32)
+	_, _ = rand.Read(key)
+	box, err := secrets.NewBox(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	holder := &license.Holder{}
+	s := &Server{Store: st, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Licence: holder, Gate: &license.Gate{Licence: holder}, SecretBox: box}
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+
+	secret, err := st.CreateSSOSession(bg, u.ID, ws2.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expires := func() time.Time {
+		t.Helper()
+		var at time.Time
+		if err := st.Pool.QueryRow(bg, `SELECT expires_at FROM sessions WHERE token_hash = $1`, auth.HashToken(secret)).Scan(&at); err != nil {
+			t.Fatal(err)
+		}
+		return at
+	}
+	end := expires()
+	// call sends body as JSON with the current session and follows a
+	// replaced session cookie.
+	call := func(method, path string, body any, out any) int {
+		t.Helper()
+		var rd io.Reader
+		if body != nil {
+			b, _ := json.Marshal(body)
+			rd = bytes.NewReader(b)
+		}
+		req, _ := http.NewRequest(method, srv.URL+path, rd)
+		req.AddCookie(&http.Cookie{Name: sessionCookie, Value: secret})
+		req.Header.Set("X-Stackurity-CSRF", "1")
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		for _, c := range resp.Cookies() {
+			if c.Name == sessionCookie && c.Value != "" {
+				secret = c.Value
+			}
+		}
+		if out != nil {
+			_ = json.NewDecoder(resp.Body).Decode(out)
+		}
+		return resp.StatusCode
+	}
+	stillPinned := func(step string) {
+		t.Helper()
+		var me struct {
+			Workspace *struct {
+				ID int64 `json:"id"`
+			} `json:"workspace"`
+		}
+		if code := call("GET", "/api/v1/auth/me", nil, &me); code != 200 || me.Workspace == nil || me.Workspace.ID != ws2.ID {
+			t.Fatalf("%s: works in %+v (%d)", step, me.Workspace, code)
+		}
+		if code := call("POST", "/api/v1/workspaces/1/activate", nil, nil); code != 409 {
+			t.Errorf("%s: switched to workspace 1: %d", step, code)
+		}
+		if code := call("GET", "/api/v1/admin/workspaces", nil, nil); code != 403 {
+			t.Errorf("%s: instance-admin route: %d", step, code)
+		}
+		if got := expires(); !got.Equal(end) {
+			t.Errorf("%s: the session now ends %v, not %v", step, got, end)
+		}
+	}
+
+	old := secret
+	const next = "a much longer passphrase 4917"
+	if code := call("POST", "/api/v1/auth/password", map[string]string{"current_password": password, "new_password": next}, nil); code != 200 {
+		t.Fatalf("change password: %d", code)
+	}
+	if secret == old {
+		t.Fatal("the password change kept the session")
+	}
+	stillPinned("after changing the password")
+
+	var start struct {
+		Secret string `json:"secret"`
+	}
+	if code := call("POST", "/api/v1/auth/mfa/totp", map[string]string{"password": next}, &start); code != 200 {
+		t.Fatalf("start enrolment: %d", code)
+	}
+	code, err := auth.TOTPCode(start.Secret, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	old = secret
+	if status := call("POST", "/api/v1/auth/mfa/totp/confirm", map[string]string{"code": code}, nil); status != 200 {
+		t.Fatalf("confirm enrolment: %d", status)
+	}
+	if secret == old {
+		t.Fatal("turning on two-factor sign-in kept the session")
+	}
+	stillPinned("after turning on two-factor sign-in")
 }
