@@ -43,6 +43,9 @@ var skipDirs = map[string]bool{
 	"bower_components": true, ".venv": true, "venv": true, "__pycache__": true, "target": true, ".yarn": true,
 	// Coding agents (Claude Code) keep worktrees of the repository here.
 	".claude": true,
+	// Swift Package Manager's build directory, with a checkout of every
+	// dependency (and their own Package.resolved files).
+	".build": true,
 }
 
 // Coverage scopes for parts of the tree a scan leaves out on purpose. They
@@ -86,9 +89,9 @@ var unsupported = map[string]string{
 	"gradle.lockfile":  "maven:gradle.lockfile",
 	"build.gradle":     "maven:build.gradle",
 	"build.gradle.kts": "maven:build.gradle.kts",
-	"mix.lock":         "hex:mix.lock",
 	// Read by the Cargo stack pack (packs/cargo).
 	"Cargo.lock":       "cargo:Cargo.lock",
+	"mix.lock":         "hex:mix.lock",
 	"rebar.lock":       "hex:rebar.lock",
 	"Package.resolved": "swift:Package.resolved",
 	"Package.swift":    "swift:Package.swift",
@@ -97,6 +100,7 @@ var unsupported = map[string]string{
 	"conanfile.py":     "conan:conanfile.py",
 	"conan.lock":       "conan:conan.lock",
 	"vcpkg.json":       "vcpkg:vcpkg.json",
+	"vcpkg.spdx.json":  "vcpkg:vcpkg.spdx.json",
 	"uv.lock":          "pypi:uv.lock",
 	"pdm.lock":         "pypi:pdm.lock",
 	"packages.config":  "nuget:packages.config",

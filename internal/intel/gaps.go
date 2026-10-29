@@ -71,6 +71,7 @@ var unreadKinds = map[string][2]string{
 	"conan:conanfile.py":     {"conanfile.py", "Conan (C/C++)"},
 	"conan:conan.lock":       {"conan.lock", "Conan (C/C++)"},
 	"vcpkg:vcpkg.json":       {"vcpkg.json", "vcpkg (C/C++)"},
+	"vcpkg:vcpkg.spdx.json":  {"vcpkg.spdx.json", "vcpkg installed port (C/C++)"},
 	"pypi:uv.lock":           {"uv.lock", "uv (Python)"},
 	"pypi:pdm.lock":          {"pdm.lock", "PDM (Python)"},
 	"nuget:packages.config":  {"packages.config", "NuGet, legacy format"},
@@ -150,6 +151,46 @@ func CoverageGaps(ctx context.Context, st *store.Store, ov *eoloverlay.Overlay) 
 		return nil, err
 	}
 	return r, nil
+}
+
+// GapReportTTL is how long CachedCoverageGaps reuses a report.
+const GapReportTTL = 5 * time.Minute
+
+// CachedCoverageGaps is CoverageGaps behind a short cache: the report scans
+// all inventory, and the counts it gives do not need to be fresher than a few
+// minutes (CheckedAt says when it was built). One report serves every caller:
+// it is built in system scope for instance administrators only and holds
+// counts and type names, nothing of any one workspace, so there is nothing to
+// key by workspace. Each replica keeps its own copy, at most ttl old, and
+// concurrent requests on an expired cache share a single build. Errors are
+// not cached. Callers must not modify the report.
+func CachedCoverageGaps(st *store.Store, ov *eoloverlay.Overlay, ttl time.Duration) func(context.Context) (*GapReport, error) {
+	return cacheGapReport(func(ctx context.Context) (*GapReport, error) { return CoverageGaps(ctx, st, ov) }, ttl, time.Now)
+}
+
+func cacheGapReport(build func(context.Context) (*GapReport, error), ttl time.Duration, now func() time.Time) func(context.Context) (*GapReport, error) {
+	var (
+		turn = make(chan struct{}, 1) // held while reading or building
+		rep  *GapReport
+		at   time.Time
+	)
+	return func(ctx context.Context) (*GapReport, error) {
+		select {
+		case turn <- struct{}{}:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		defer func() { <-turn }()
+		if rep != nil && now().Sub(at) < ttl {
+			return rep, nil
+		}
+		r, err := build(ctx)
+		if err != nil {
+			return nil, err
+		}
+		rep, at = r, now()
+		return r, nil
+	}
 }
 
 func lifecycleGaps(ctx context.Context, st *store.Store, ov *eoloverlay.Overlay) ([]Gap, error) {

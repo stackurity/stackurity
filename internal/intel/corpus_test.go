@@ -74,8 +74,8 @@ func TestCorpus(t *testing.T) {
 		dir := filepath.Join("testdata", "corpus", d.Name())
 		t.Run(d.Name(), func(t *testing.T) { runCorpus(t, dir) })
 	}
-	if n < 18 {
-		t.Errorf("expected a corpus for each of the 18 supported ecosystems, found %d", n)
+	if n < 20 {
+		t.Errorf("expected a corpus for each of the 20 supported ecosystems, found %d", n)
 	}
 	sc := corpusSecondCheck
 	t.Logf("second check over the corpus: %d findings, %d agreed, %d could not check, %d disagreed",

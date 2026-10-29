@@ -1,0 +1,20 @@
+{
+ "ecosystem": "SwiftURL",
+ "feed": "osv:SwiftURL",
+ "cases": [
+  {"name": "nio-penny-bot", "purl": "pkg:swift/github.com/apple/swift-nio@2.38.0", "affected": {"CVE-2026-28980": "2.100.0"}, "note": "the version pinned in the penny-bot fixture of the Swift pack (packs/swift/testdata/penny-bot-v1); between the ranges of GHSA-7fj7-39wj-c64f"},
+  {"name": "nio-in-second-range", "purl": "pkg:swift/github.com/apple/swift-nio@2.39.0", "affected": {"CVE-2022-3215": "2.39.1", "CVE-2026-28980": "2.100.0"}, "note": "three SEMVER ranges in one record; the lowest fix above the installed version"},
+  {"name": "nio-fixed", "purl": "pkg:swift/github.com/apple/swift-nio@2.100.0", "affected": {}, "note": "fixed"},
+  {"name": "http2-below-fix", "purl": "pkg:swift/github.com/apple/swift-nio-http2@1.19.0", "affected": {"CVE-2022-24666": "1.19.2", "CVE-2022-0618": "1.20"}, "note": "an ECOSYSTEM range with a two-part fix (1.20); GHSA-wfvq-p7qf-vv64 covers this version but is withdrawn"},
+  {"name": "http2-between-fixes", "purl": "pkg:swift/github.com/apple/swift-nio-http2@1.19.2", "affected": {"CVE-2022-0618": "1.20"}, "note": "fixed for one advisory, not the other"},
+  {"name": "http2-fixed", "purl": "pkg:swift/github.com/apple/swift-nio-http2@1.20.0", "affected": {}, "note": "fixed"},
+  {"name": "vapor-rc-before", "purl": "pkg:swift/github.com/vapor/vapor@4.0.0-rc.2.4", "affected": {}, "note": "a pre-release before the one that introduced the bug"},
+  {"name": "vapor-rc-after", "purl": "pkg:swift/github.com/vapor/vapor@4.0.0-rc.3.1", "affected": {"CVE-2020-15230": "4.29.4"}, "note": "a pre-release after it"},
+  {"name": "sparkle", "purl": "pkg:swift/github.com/sparkle-project/Sparkle@2.6.0", "affected": {"CVE-2025-0509": "2.6.4", "CVE-2026-47122": ""}, "note": "mixed-case repository name; last_affected without a fix"},
+  {"name": "sparkle-lower-case", "purl": "pkg:swift/github.com/sparkle-project/sparkle@2.6.0", "affected": {"CVE-2025-0509": "2.6.4", "CVE-2026-47122": ""}, "note": "the same repository URL in other letter case is the same package"},
+  {"name": "sparkle-after-last-affected", "purl": "pkg:swift/github.com/sparkle-project/Sparkle@2.9.2", "affected": {}, "note": "above last_affected and the fix"},
+  {"name": "registry-identity", "purl": "pkg:swift/mona/LinkedList@1.1.0", "affected": {}, "coverage": "unsupported", "reason": "matched by repository URL", "note": "a package registry identity without the repository it mirrors"},
+  {"name": "branch", "purl": "pkg:swift/github.com/apple/swift-nio@main", "affected": {}, "coverage": "not_evaluated", "reason": "could not be compared", "note": "a branch name, not a version"},
+  {"name": "cocoapods", "purl": "pkg:cocoapods/Alamofire@5.4.0", "affected": {}, "coverage": "unsupported", "reason": "OSV publishes no CocoaPods advisories", "note": "pods (read by the same pack) have no vulnerability source"}
+ ]
+}

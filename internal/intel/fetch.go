@@ -28,6 +28,7 @@ type Config struct {
 	NuGetURL         string // https://api.nuget.org/v3/registration5-gz-semver2
 	MavenURL         string // https://repo1.maven.org/maven2
 	PubURL           string // https://pub.dev
+	HexURL           string // https://hex.pm
 	WorkDir          string // temp space for bulk downloads
 	UserAgent        string
 	IncrementalLimit int // above this many changed records, re-download the full archive
@@ -48,6 +49,7 @@ func DefaultConfig() Config {
 		NuGetURL:         "https://api.nuget.org/v3/registration5-gz-semver2",
 		MavenURL:         "https://repo1.maven.org/maven2",
 		PubURL:           "https://pub.dev",
+		HexURL:           "https://hex.pm",
 		WorkDir:          os.TempDir(),
 		UserAgent:        "stackurity",
 		IncrementalLimit: 5000,

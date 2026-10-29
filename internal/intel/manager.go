@@ -13,6 +13,8 @@ import (
 var langFeeds = map[string]string{
 	"npm": "npm", "composer": "Packagist", "pypi": "PyPI", "golang": "Go", "cargo": "crates.io",
 	"gem": "RubyGems", "maven": "Maven", "nuget": "NuGet", "pub": "Pub",
+	// Read by the Swift and Hex stack packs.
+	"swift": "SwiftURL", "hex": "Hex",
 }
 
 // distroFeeds maps the distro qualifier prefix to the OSV ecosystem.
@@ -126,5 +128,6 @@ func ComponentsToEvaluate(ctx context.Context, s *store.Store, feed string, res 
 }
 
 func allTypes() []string {
-	return []string{"npm", "composer", "pypi", "golang", "cargo", "gem", "maven", "nuget", "deb", "rpm", "apk", "generic"}
+	return []string{"npm", "composer", "pypi", "golang", "cargo", "gem", "maven", "nuget", "pub", "swift", "hex",
+		"cocoapods", "conan", "deb", "rpm", "apk", "generic"}
 }
