@@ -1,5 +1,5 @@
 // Package notify routes incidents to channels (email, Slack, Microsoft
-// Teams, webhooks, Jira issues) with deduplication, quiet hours, rate limits, retries and
+// Teams, webhooks, Jira issues, PagerDuty alerts, ServiceNow incidents) with deduplication, quiet hours, rate limits, retries and
 // escalation (FR-08, FR-09).
 package notify
 
@@ -226,11 +226,22 @@ const (
 	KindTeams   = "teams"
 	KindWebhook = "webhook"
 	KindJira    = "jira"
+	// KindPagerDuty keeps one PagerDuty alert per incident (Events API v2).
+	KindPagerDuty = "pagerduty"
+	// KindServiceNow keeps one ServiceNow incident per incident (Table API).
+	KindServiceNow = "servicenow"
 	// KindStackurityEmail is email sent by Stackurity through the
 	// platform's own mail server (Dispatcher.PlatformMail), to members and
 	// to addresses that confirmed; hosted installations only.
 	KindStackurityEmail = "stackurity_email"
 )
+
+// IsTracker reports whether channels of kind keep one record per incident
+// (a Jira issue, a PagerDuty alert, a ServiceNow incident) instead of
+// receiving grouped messages.
+func IsTracker(kind string) bool {
+	return kind == KindJira || kind == KindPagerDuty || kind == KindServiceNow
+}
 
 // ChannelConfig is the non-secret part of a channel. Secrets (SMTP password,
 // Slack/Teams webhook URL, webhook HMAC key, Jira token) come from a secret
@@ -252,6 +263,40 @@ type ChannelConfig struct {
 	Labels            []string          `json:"labels,omitempty"`
 	Priorities        map[string]string `json:"priorities,omitempty"`         // P1..P4 -> Jira priority name
 	ResolveTransition string            `json:"resolve_transition,omitempty"` // e.g. Done; empty only comments
+
+	// pagerduty: the service region (us, the default, or eu) and the
+	// PagerDuty severity per priority (default P1 critical, P2 error, P3
+	// warning, P4 info). The routing key is the secret.
+	Region     string            `json:"region,omitempty"`
+	Severities map[string]string `json:"severities,omitempty"`
+
+	// servicenow: URL is the instance's base URL. Auth is basic (Username
+	// and the password as the secret) or oauth (ClientID and the client
+	// secret as the secret, client credentials grant).
+	Auth     string `json:"auth,omitempty"`
+	ClientID string `json:"client_id,omitempty"`
+	Table    string `json:"table,omitempty"` // default incident
+	// Field mapping: set on the records Stackurity creates.
+	AssignmentGroup string `json:"assignment_group,omitempty"` // name or sys_id
+	Category        string `json:"category,omitempty"`
+	Subcategory     string `json:"subcategory,omitempty"`
+	// Urgency and Impact per priority, P1-P4 to "1"-"3" (defaults: P1 1/1,
+	// P2 1/2, P3 2/2, P4 3/2, which ServiceNow's default matrix makes
+	// priorities 1 to 4).
+	Urgency map[string]string `json:"urgency,omitempty"`
+	Impact  map[string]string `json:"impact,omitempty"`
+	// Fields are other fields set on create, by column name, such as
+	// u_business_service or caller_id.
+	Fields map[string]string `json:"fields,omitempty"`
+	// ResolveState is the state set when the incident resolves (default 6,
+	// Resolved), with CloseCode (default "Solution provided").
+	ResolveState string `json:"resolve_state,omitempty"`
+	CloseCode    string `json:"close_code,omitempty"`
+	// SyncBack reads the record's state back every few minutes; a record
+	// in one of ClosedStates (default 6, 7, 8) shows as closed there and is
+	// no longer updated.
+	SyncBack     bool     `json:"sync_back,omitempty"`
+	ClosedStates []string `json:"closed_states,omitempty"`
 	// slack: a reference to the Slack app's signing secret. When set,
 	// messages carry interactive Assign to me and Snooze buttons, and
 	// clicks are verified with it (internal/api/slack.go).
@@ -330,8 +375,12 @@ func ValidateChannel(kind string, c ChannelConfig, hasSecret, allowHTTP bool) er
 		}
 	case KindJira:
 		return validateJira(c, hasSecret, allowHTTP)
+	case KindPagerDuty:
+		return validatePagerDuty(c, hasSecret)
+	case KindServiceNow:
+		return validateServiceNow(c, hasSecret, allowHTTP)
 	default:
-		return errors.New("kind must be email, stackurity_email, slack, teams, webhook or jira")
+		return errors.New("kind must be email, stackurity_email, slack, teams, webhook, jira, pagerduty or servicenow")
 	}
 	return nil
 }
@@ -355,6 +404,10 @@ type Sender struct {
 	HTTP      *http.Client
 	AllowHTTP bool
 	Dial      func(ctx context.Context, network, addr string) (net.Conn, error)
+	// PagerDutyURL replaces PagerDuty's Events API endpoint (tests).
+	PagerDutyURL string
+	// tokens caches ServiceNow OAuth access tokens.
+	tokens tokenCache
 }
 
 func NewSender(allowHTTP bool) *Sender {
@@ -429,10 +482,10 @@ func (s *Sender) Send(ctx context.Context, kind string, c ChannelConfig, secret 
 			h["X-Stackurity-Signature"] = "sha256=" + hex.EncodeToString(mac.Sum(nil))
 		}
 		return s.post(ctx, c.URL, body, h)
-	case KindJira:
-		// Issues are kept per incident, which needs the store; see
-		// Dispatcher.syncJira.
-		return errors.New("jira channels are delivered by the dispatcher")
+	case KindJira, KindPagerDuty, KindServiceNow:
+		// Records are kept per incident, which needs the store; see
+		// Dispatcher.syncJira and Dispatcher.syncTracker.
+		return fmt.Errorf("%s channels are delivered by the dispatcher", kind)
 	}
 	return fmt.Errorf("unknown channel kind %q", kind)
 }

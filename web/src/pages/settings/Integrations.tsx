@@ -33,6 +33,13 @@ export function IntegrationIcon({ kind }: { kind: string }) {
     ),
     webhook: <path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" />,
     jira: <path d="M12 3 21 12l-9 9-9-9zM12 8l4 4-4 4-4-4z" />,
+    pagerduty: <path d="M6 21V3h7a5 5 0 0 1 0 10H6" />,
+    servicenow: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <circle cx="12" cy="13" r="3.5" />
+      </>
+    ),
     git: (
       <>
         <circle cx="6" cy="5" r="2" />
@@ -298,6 +305,8 @@ export function IntegrationsHubPage() {
       },
       { kind: "teams", title: "Microsoft Teams", text: "Post to a Teams channel through a Workflows webhook.", to: "/settings/integrations/new/teams", admin: true },
       { kind: "jira", title: "Jira", text: "Keep one Jira issue per incident, updated until it is fixed.", to: "/settings/integrations/new/jira", admin: true },
+      { kind: "pagerduty", title: "PagerDuty", text: "Page on-call: one alert per incident, acknowledged and resolved with it.", to: "/settings/integrations/new/pagerduty", admin: true },
+      { kind: "servicenow", title: "ServiceNow", text: "Keep one ServiceNow incident per incident, with your field mapping.", to: "/settings/integrations/new/servicenow", admin: true },
       { kind: "webhook", title: "Webhook", text: "Send each message as JSON to your own HTTPS endpoint.", to: "/settings/integrations/new/webhook", admin: true },
     );
     groups.push({ title: "Notifications", cards: n });

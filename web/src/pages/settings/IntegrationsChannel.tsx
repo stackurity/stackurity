@@ -51,7 +51,24 @@ import {
  * the channel's route; older setups may have several routes ("Rules").
  */
 
-const ADDABLE: ChannelKind[] = ["stackurity_email", "email", "slack", "teams", "jira", "webhook"];
+const ADDABLE: ChannelKind[] = ["stackurity_email", "email", "slack", "teams", "jira", "pagerduty", "servicenow", "webhook"];
+
+/** Kinds that keep one record per incident (no events to choose). */
+const isTracker = (kind: string) => kind === "jira" || kind === "pagerduty" || kind === "servicenow";
+
+const TRACKER_NOTICE: Record<string, string> = {
+  jira: "Jira keeps one issue per incident, so there are no events to choose. These filters decide which incidents get an issue.",
+  pagerduty:
+    "PagerDuty gets one alert per incident: triggered when it opens, acknowledged when it is acknowledged here, resolved when it resolves. There are no events to choose. These filters decide which incidents page.",
+  servicenow:
+    "ServiceNow gets one incident per Stackurity incident, updated with work notes and resolved when it resolves. There are no events to choose. These filters decide which incidents get a record.",
+};
+
+const TEST_OK: Record<string, string> = {
+  jira: "Jira connection works. No issue was created.",
+  servicenow: "ServiceNow connection works: the account can read the table and the assignment group. No record was created.",
+  pagerduty: "PagerDuty accepted a test alert (severity info) and it was resolved at once.",
+};
 
 const EVENT_HINT: Partial<Record<RouteEvent, string>> = {
   urgent: "Exploited, critical, or came back after a fix.",
@@ -90,8 +107,8 @@ function draftOf(r: Route): Route {
   return { ...r, events: eventsOf(r), event_channels: r.event_channels ?? {}, new_min_priority: r.new_min_priority ?? "P4" };
 }
 
-function ruleProblem(r: Route, jira: boolean): string | null {
-  if (!jira && (r.events ?? []).length === 0) return "Tick at least one event under Trigger.";
+function ruleProblem(r: Route, tracker: boolean): string | null {
+  if (!tracker && (r.events ?? []).length === 0) return "Tick at least one event under Trigger.";
   if (Boolean(r.quiet_start) !== Boolean(r.quiet_end)) return "Set both quiet hours start and end, or neither.";
   return null;
 }
@@ -143,7 +160,7 @@ function RuleFields({
   const facets = useFacets();
   const set = <K extends keyof Route>(k: K, v: Route[K]) => setR({ ...r, [k]: v });
   const events = (r.events ?? []) as RouteEvent[];
-  const jira = kind === "jira";
+  const jira = isTracker(kind);
   const slack = kind === "slack";
   const others = slackChannels.filter((c) => c.id !== channelId);
   // Adding a Slack channel for one event comes back to this integration's page.
@@ -240,7 +257,7 @@ function RuleFields({
           )}
         </fieldset>
       )}
-      {jira && <Notice kind="info">Jira keeps one issue per incident, so there are no events to choose. These filters decide which incidents get an issue.</Notice>}
+      {jira && <Notice kind="info">{TRACKER_NOTICE[kind]}</Notice>}
 
       <fieldset className="field field-sections">
         <legend className="h-sm">Notification settings</legend>
@@ -343,7 +360,9 @@ function RuleFields({
           </div>
         </fieldset>
         {projects.length > 0 &&
-          (jira ? (
+          kind !== "pagerduty" &&
+          kind !== "servicenow" &&
+          (kind === "jira" ? (
             <div className="field">
               <label htmlFor={`${idp}-proj`}>Project</label>
               <select id={`${idp}-proj`} value={String(r.project_ids?.[0] ?? "")} onChange={(e) => set("project_ids", e.target.value ? [Number(e.target.value)] : [])}>
@@ -420,7 +439,7 @@ function RuleEditor({
   const [saved, setSaved] = useState(false);
   const act = useAction();
   const idp = route ? `rule${route.id}` : `rulenew${channel.id}`;
-  const jira = channel.kind === "jira";
+  const jira = isTracker(channel.kind);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -583,7 +602,7 @@ function ChannelEditor({
   onSaved: () => void;
   onDiscard: () => void;
 }) {
-  const jira = channel.kind === "jira";
+  const jira = isTracker(channel.kind);
   const [base, setBase] = useState(() => JSON.stringify(rule ? draftOf(rule) : newRule(channel.id, channel.name)));
   const [r, setR] = useState<Route>(() => {
     const d = rule ? draftOf(rule) : newRule(channel.id, channel.name);
@@ -745,7 +764,7 @@ export function IntegrationChannelPage() {
       {test &&
         (test.ok ? (
           <Notice kind="success">
-            {channel.kind === "jira" ? "Jira connection works. No issue was created." : "Test message sent. Check that it arrived."}
+            {TEST_OK[channel.kind] ?? "Test message sent. Check that it arrived."}
           </Notice>
         ) : (
           <div className="alert alert-error" role="alert">
@@ -915,7 +934,7 @@ export function IntegrationAddPage() {
           members={members.data?.items}
           onCancel={() => navigate("/settings/integrations")}
           onSaved={(c) => navigate(`/settings/integrations/channels/${c.id}`)}
-          validate={() => ruleProblem(r, kind === "jira")}
+          validate={() => ruleProblem(r, isTracker(kind))}
           afterCreate={(c) => api.post<Route>("/routes", ruleBody(r, c))}
           returnTo="/settings/integrations"
           submitLabel="Add integration"

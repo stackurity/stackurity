@@ -2568,7 +2568,7 @@
    "delete": {
     "operationId": "delete_channels_id",
     "summary": "Delete a notification channel",
-    "description": "Email, Slack, Teams, webhook and Jira channels; for Jira, test checks access without creating an issue\n\nRole: admin",
+    "description": "Email, Slack, Teams, webhook, Jira, PagerDuty (`pagerduty`, Events API v2) and ServiceNow (`servicenow`, Table API) channels. Jira, PagerDuty and ServiceNow keep one record per incident. Test: Jira and ServiceNow check access without creating anything; PagerDuty triggers a test alert (severity info) and resolves it at once\n\nRole: admin",
     "tags": [
      "Notifications"
     ],
@@ -2598,7 +2598,7 @@
    "patch": {
     "operationId": "patch_channels_id",
     "summary": "Change a notification channel",
-    "description": "Email, Slack, Teams, webhook and Jira channels; for Jira, test checks access without creating an issue\n\nRole: admin",
+    "description": "Email, Slack, Teams, webhook, Jira, PagerDuty (`pagerduty`, Events API v2) and ServiceNow (`servicenow`, Table API) channels. Jira, PagerDuty and ServiceNow keep one record per incident. Test: Jira and ServiceNow check access without creating anything; PagerDuty triggers a test alert (severity info) and resolves it at once\n\nRole: admin",
     "tags": [
      "Notifications"
     ],
@@ -2646,8 +2646,8 @@
   "/channels/{id}/test": {
    "post": {
     "operationId": "post_channels_id_test",
-    "summary": "Send a test message (Jira: check access only)",
-    "description": "Email, Slack, Teams, webhook and Jira channels; for Jira, test checks access without creating an issue\n\nRole: admin",
+    "summary": "Send a test message (Jira, ServiceNow: check access only)",
+    "description": "Email, Slack, Teams, webhook, Jira, PagerDuty (`pagerduty`, Events API v2) and ServiceNow (`servicenow`, Table API) channels. Jira, PagerDuty and ServiceNow keep one record per incident. Test: Jira and ServiceNow check access without creating anything; PagerDuty triggers a test alert (severity info) and resolves it at once\n\nRole: admin",
     "tags": [
      "Notifications"
     ],
@@ -7052,7 +7052,7 @@
    "post": {
     "operationId": "post_routes",
     "summary": "Create a notification route",
-    "description": "Which incidents go to which channel. `project_ids` limits a route to those projects' assets: its messages count and name only them, and only their collection and coverage problems. For a Jira channel, at most one project (400 otherwise): its issues then describe only that project's part of each incident, see Incidents and notifications. `events`: any of `urgent`, `new_issues`, `regressed`, `overdue`, `connected`, `problems`, `daily_summary`, `weekly_summary`; `event_channels` (Slack only) sends some events to other Slack channels; `new_min_priority` is the threshold of `new_issues`. `mode` (`urgent_summary`, `urgent_weekly`, `urgent_only`, `daily`, `weekly`) is still accepted and translated to events; returned as one of them or `custom`\n\nRole: admin",
+    "description": "Which incidents go to which channel. `project_ids` limits a route to those projects' assets: its messages count and name only them, and only their collection and coverage problems. For a Jira channel, at most one project (400 otherwise): its issues then describe only that project's part of each incident, see Incidents and notifications. A route to a PagerDuty or ServiceNow channel cannot name projects (400). `events`: any of `urgent`, `new_issues`, `regressed`, `overdue`, `connected`, `problems`, `daily_summary`, `weekly_summary`; `event_channels` (Slack only) sends some events to other Slack channels; `new_min_priority` is the threshold of `new_issues`. `mode` (`urgent_summary`, `urgent_weekly`, `urgent_only`, `daily`, `weekly`) is still accepted and translated to events; returned as one of them or `custom`\n\nRole: admin",
     "tags": [
      "Notifications"
     ],
@@ -7091,7 +7091,7 @@
    "delete": {
     "operationId": "delete_routes_id",
     "summary": "Delete a notification route",
-    "description": "Which incidents go to which channel. `project_ids` limits a route to those projects' assets: its messages count and name only them, and only their collection and coverage problems. For a Jira channel, at most one project (400 otherwise): its issues then describe only that project's part of each incident, see Incidents and notifications. `mode`: `urgent_summary`, `urgent_only`, `daily`, `weekly`\n\nRole: admin",
+    "description": "Which incidents go to which channel. `project_ids` limits a route to those projects' assets: its messages count and name only them, and only their collection and coverage problems. For a Jira channel, at most one project (400 otherwise): its issues then describe only that project's part of each incident, see Incidents and notifications. A route to a PagerDuty or ServiceNow channel cannot name projects (400). `mode`: `urgent_summary`, `urgent_only`, `daily`, `weekly`\n\nRole: admin",
     "tags": [
      "Notifications"
     ],
@@ -7121,7 +7121,7 @@
    "put": {
     "operationId": "put_routes_id",
     "summary": "Replace a notification route",
-    "description": "Which incidents go to which channel. `project_ids` limits a route to those projects' assets: its messages count and name only them, and only their collection and coverage problems. For a Jira channel, at most one project (400 otherwise): its issues then describe only that project's part of each incident, see Incidents and notifications. `events`: any of `urgent`, `new_issues`, `regressed`, `overdue`, `connected`, `problems`, `daily_summary`, `weekly_summary`; `event_channels` (Slack only) sends some events to other Slack channels; `new_min_priority` is the threshold of `new_issues`. `mode` (`urgent_summary`, `urgent_weekly`, `urgent_only`, `daily`, `weekly`) is still accepted and translated to events; returned as one of them or `custom`\n\nRole: admin",
+    "description": "Which incidents go to which channel. `project_ids` limits a route to those projects' assets: its messages count and name only them, and only their collection and coverage problems. For a Jira channel, at most one project (400 otherwise): its issues then describe only that project's part of each incident, see Incidents and notifications. A route to a PagerDuty or ServiceNow channel cannot name projects (400). `events`: any of `urgent`, `new_issues`, `regressed`, `overdue`, `connected`, `problems`, `daily_summary`, `weekly_summary`; `event_channels` (Slack only) sends some events to other Slack channels; `new_min_priority` is the threshold of `new_issues`. `mode` (`urgent_summary`, `urgent_weekly`, `urgent_only`, `daily`, `weekly`) is still accepted and translated to events; returned as one of them or `custom`\n\nRole: admin",
     "tags": [
      "Notifications"
     ],

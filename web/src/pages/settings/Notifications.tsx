@@ -36,6 +36,8 @@ export const KIND_LABEL: Record<string, string> = {
   teams: "Microsoft Teams",
   webhook: "Webhook",
   jira: "Jira issues",
+  pagerduty: "PagerDuty",
+  servicenow: "ServiceNow",
 };
 
 /** The kind, as shown next to an integration's name. */
@@ -63,6 +65,9 @@ export function channelTarget(c: Channel, recipients: EmailRecipient[] | undefin
   if (c.kind === "email") return `${(cfg.to ?? []).join(", ")} via ${cfg.host ?? "?"}:${cfg.port ?? "?"}`;
   if (c.kind === "webhook") return cfg.url ?? "";
   if (c.kind === "jira") return `project ${cfg.project ?? "?"} on ${cfg.url ?? "?"}`;
+  if (c.kind === "pagerduty") return `routing key from ${c.secret_ref || "?"}${cfg.region === "eu" ? " (EU service region)" : ""}`;
+  if (c.kind === "servicenow")
+    return `${cfg.table || "incident"} on ${cfg.url ?? "?"}${cfg.assignment_group ? `, group ${cfg.assignment_group}` : ""}${cfg.sync_back ? "; state read back" : ""}`;
   if (c.kind === "slack" && cfg.slack_app) return `${slackAppTarget(cfg)}; buttons act in Slack`;
   const target = c.secret_ref ? `URL from ${c.secret_ref}` : "";
   return c.kind === "slack" && cfg.signing_secret_ref ? `${target}; buttons act in Slack` : target;
@@ -124,14 +129,36 @@ export function EmailRecipients({ res, admin }: { res: Loaded<List<EmailRecipien
   );
 }
 
-type Group = "email" | "slack" | "teams" | "webhook" | "jira";
+type Group = "email" | "slack" | "teams" | "webhook" | "jira" | "pagerduty" | "servicenow";
 const GROUPS: { key: Group; label: string }[] = [
   { key: "slack", label: "Slack" },
   { key: "email", label: "Email" },
   { key: "teams", label: "Microsoft Teams" },
   { key: "webhook", label: "Webhook" },
   { key: "jira", label: "Jira issues" },
+  { key: "pagerduty", label: "PagerDuty" },
+  { key: "servicenow", label: "ServiceNow" },
 ];
+
+/** "a=b" lines to a map, and back. */
+function parseFields(text: string): Record<string, string> | string {
+  const out: Record<string, string> = {};
+  for (const line of text.split("\n")) {
+    const t = line.trim();
+    if (!t) continue;
+    const i = t.indexOf("=");
+    if (i <= 0) return `"${t}" is not name=value.`;
+    out[t.slice(0, i).trim()] = t.slice(i + 1).trim();
+  }
+  return out;
+}
+const fieldsText = (m: Record<string, string> | undefined) =>
+  Object.entries(m ?? {})
+    .map(([k, v]) => `${k}=${v}`)
+    .join("\n");
+const SN_DEFAULT_URGENCY: Record<Priority, string> = { P1: "1", P2: "1", P3: "2", P4: "3" };
+const SN_DEFAULT_IMPACT: Record<Priority, string> = { P1: "1", P2: "2", P3: "2", P4: "2" };
+const PD_DEFAULT_SEVERITY: Record<Priority, string> = { P1: "critical", P2: "error", P3: "warning", P4: "info" };
 
 /**
  * The connection of a notification integration (a channel). For a new one,
@@ -207,11 +234,30 @@ export function ChannelForm({
   const [signingRef, setSigningRef] = useState(cfg.signing_secret_ref ?? "");
   const [userIds, setUserIds] = useState<number[]>(cfg.user_ids ?? []);
   const [others, setOthers] = useState(channel?.kind === "stackurity_email" ? (cfg.to ?? []).join(", ") : "");
+  // pagerduty
+  const [region, setRegion] = useState<string>(cfg.region || "us");
+  const [severities, setSeverities] = useState<Partial<Record<Priority, string>>>(cfg.severities ?? {});
+  // servicenow
+  const [snAuth, setSnAuth] = useState<string>(cfg.auth || "basic");
+  const [clientId, setClientId] = useState(cfg.client_id ?? "");
+  const [table, setTable] = useState(cfg.table ?? "");
+  const [assignGroup, setAssignGroup] = useState(cfg.assignment_group ?? "");
+  const [category, setCategory] = useState(cfg.category ?? "");
+  const [subcategory, setSubcategory] = useState(cfg.subcategory ?? "");
+  const [urgency, setUrgency] = useState<Partial<Record<Priority, string>>>(cfg.urgency ?? {});
+  const [impact, setImpact] = useState<Partial<Record<Priority, string>>>(cfg.impact ?? {});
+  const [fields, setFields] = useState(fieldsText(cfg.fields));
+  const [resolveState, setResolveState] = useState(cfg.resolve_state ?? "");
+  const [closeCode, setCloseCode] = useState(cfg.close_code ?? "");
+  const [syncBack, setSyncBack] = useState(Boolean(cfg.sync_back));
   const [localErr, setLocalErr] = useState<string | null>(null);
   const act = useAction();
   const idp = channel ? `ch${channel.id}` : "chnew";
   // What the fields hold, to tell whether the connection changed.
-  const snapshot = JSON.stringify([name, secretRef, url, host, port, from, to, username, tls, deployment, project, issueType, labels, priorities, transition, signingRef, userIds, others]);
+  const snapshot = JSON.stringify([
+    name, secretRef, url, host, port, from, to, username, tls, deployment, project, issueType, labels, priorities, transition, signingRef, userIds, others,
+    region, severities, snAuth, clientId, table, assignGroup, category, subcategory, urgency, impact, fields, resolveState, closeCode, syncBack,
+  ]);
   const baseline = useRef(snapshot);
   const ownDirty = Boolean(channel) && snapshot !== baseline.current;
   const dirty = ownDirty || (Boolean(channel) && extraDirty);
@@ -274,6 +320,9 @@ export function ChannelForm({
       return setLocalErr("Secret reference must look like secret:NAME, env:STACKURITY_SECRET_X or file:/run/secrets/x.");
     if ((kind === "slack" || kind === "teams") && !ref) return setLocalErr("Slack and Teams need the webhook URL as a secret reference.");
     if (kind === "jira" && !ref) return setLocalErr("Jira needs the API token or personal access token as a secret reference.");
+    if (kind === "pagerduty" && !ref) return setLocalErr("PagerDuty needs the integration key (routing key) as a secret reference.");
+    if (kind === "servicenow" && !ref)
+      return setLocalErr(snAuth === "oauth" ? "ServiceNow needs the OAuth client secret as a secret reference." : "ServiceNow needs the password as a secret reference.");
     let config: ChannelConfig = {};
     if (kind === "slack" && signingRef.trim()) {
       if (!/^(secret|env|file):.+/.test(signingRef.trim()))
@@ -307,6 +356,35 @@ export function ChannelForm({
       if (issueType.trim()) config.issue_type = issueType.trim();
       if (transition.trim()) config.resolve_transition = transition.trim();
       if (deployment === "cloud") config.username = username.trim();
+    } else if (kind === "pagerduty") {
+      const sev: ChannelConfig["severities"] = {};
+      for (const p of PRIORITIES) if (severities[p]) sev[p] = severities[p] as "critical" | "error" | "warning" | "info";
+      config = { region: region as ChannelConfig["region"], severities: sev };
+    } else if (kind === "servicenow") {
+      if (/^[a-z]+:\/\/[^/]*@/i.test(url.trim())) return setLocalErr("Do not put credentials in the URL; use the secret reference.");
+      const custom = parseFields(fields);
+      if (typeof custom === "string") return setLocalErr(`Other fields: ${custom}`);
+      const pick = (m: Partial<Record<Priority, string>>) => {
+        const out: Partial<Record<Priority, string>> = {};
+        for (const p of PRIORITIES) if (m[p]) out[p] = m[p];
+        return out;
+      };
+      config = {
+        url: url.trim().replace(/\/+$/, ""),
+        auth: snAuth as ChannelConfig["auth"],
+        urgency: pick(urgency),
+        impact: pick(impact),
+        fields: custom,
+        sync_back: syncBack,
+      };
+      if (snAuth === "oauth") config.client_id = clientId.trim();
+      else config.username = username.trim();
+      if (table.trim()) config.table = table.trim();
+      if (assignGroup.trim()) config.assignment_group = assignGroup.trim();
+      if (category.trim()) config.category = category.trim();
+      if (subcategory.trim()) config.subcategory = subcategory.trim();
+      if (resolveState.trim()) config.resolve_state = resolveState.trim();
+      if (closeCode.trim()) config.close_code = closeCode.trim();
     }
     // Always send secret_ref, including "" when cleared: an empty string removes the reference.
     return save({ name: name.trim(), config, secret_ref: ref });
@@ -454,6 +532,137 @@ export function ChannelForm({
             </fieldset>
           </>
         )}
+        {kind === "pagerduty" && (
+          <>
+            <div className="field">
+              <label htmlFor={`${idp}-region`}>Service region</label>
+              <select id={`${idp}-region`} value={region} onChange={(e) => setRegion(e.target.value)}>
+                <option value="us">US (events.pagerduty.com)</option>
+                <option value="eu">EU (events.eu.pagerduty.com)</option>
+              </select>
+              <p className="hint">The region of your PagerDuty account.</p>
+            </div>
+            <fieldset className="field field-span">
+              <legend>PagerDuty severity per Stackurity priority</legend>
+              <div className="form-grid">
+                {PRIORITIES.map((p) => (
+                  <div className="field" key={p}>
+                    <label htmlFor={`${idp}-sev-${p}`}>{p}</label>
+                    <select id={`${idp}-sev-${p}`} value={severities[p] ?? ""} onChange={(e) => setSeverities({ ...severities, [p]: e.target.value })}>
+                      <option value="">Default ({PD_DEFAULT_SEVERITY[p]})</option>
+                      {["critical", "error", "warning", "info"].map((v) => (
+                        <option key={v} value={v}>
+                          {v}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+              <p className="hint">SOS incidents are always critical. Your service's urgency rules decide who is paged.</p>
+            </fieldset>
+          </>
+        )}
+        {kind === "servicenow" && (
+          <>
+            <div className="field">
+              <label htmlFor={`${idp}-snurl`}>Instance URL</label>
+              <input id={`${idp}-snurl`} type="url" required value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://acme.service-now.com" />
+            </div>
+            <div className="field">
+              <label htmlFor={`${idp}-snauth`}>Sign-in</label>
+              <select id={`${idp}-snauth`} value={snAuth} onChange={(e) => setSnAuth(e.target.value)}>
+                <option value="basic">User name and password (Basic)</option>
+                <option value="oauth">OAuth client credentials</option>
+              </select>
+            </div>
+            {snAuth === "oauth" ? (
+              <div className="field">
+                <label htmlFor={`${idp}-sncid`}>OAuth client ID</label>
+                <input id={`${idp}-sncid`} required autoComplete="off" className="mono" value={clientId} onChange={(e) => setClientId(e.target.value)} />
+              </div>
+            ) : (
+              <div className="field">
+                <label htmlFor={`${idp}-snuser`}>User name</label>
+                <input id={`${idp}-snuser`} required autoComplete="off" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="stackurity.integration" />
+              </div>
+            )}
+            <div className="field">
+              <label htmlFor={`${idp}-sntable`}>Table</label>
+              <input id={`${idp}-sntable`} className="mono" value={table} onChange={(e) => setTable(e.target.value)} placeholder="incident" />
+            </div>
+            <div className="field">
+              <label htmlFor={`${idp}-sngroup`}>Assignment group (optional)</label>
+              <input id={`${idp}-sngroup`} value={assignGroup} onChange={(e) => setAssignGroup(e.target.value)} placeholder="Security Operations" />
+              <p className="hint">Name or sys_id. Send test checks that it exists.</p>
+            </div>
+            <div className="field">
+              <label htmlFor={`${idp}-sncat`}>Category (optional)</label>
+              <input id={`${idp}-sncat`} value={category} onChange={(e) => setCategory(e.target.value)} placeholder="software" />
+            </div>
+            <div className="field">
+              <label htmlFor={`${idp}-snsub`}>Subcategory (optional)</label>
+              <input id={`${idp}-snsub`} value={subcategory} onChange={(e) => setSubcategory(e.target.value)} />
+            </div>
+            <fieldset className="field field-span">
+              <legend>Urgency and impact per Stackurity priority</legend>
+              <div className="form-grid">
+                {PRIORITIES.map((p) => (
+                  <div className="field" key={p}>
+                    <span className="label">{p}</span>
+                    <div className="inline-controls">
+                      <label className="sr-only" htmlFor={`${idp}-urg-${p}`}>
+                        Urgency for {p}
+                      </label>
+                      <select id={`${idp}-urg-${p}`} value={urgency[p] ?? ""} onChange={(e) => setUrgency({ ...urgency, [p]: e.target.value })}>
+                        <option value="">Urgency {SN_DEFAULT_URGENCY[p]}</option>
+                        {["1", "2", "3"].map((v) => (
+                          <option key={v} value={v}>
+                            Urgency {v}
+                          </option>
+                        ))}
+                      </select>
+                      <label className="sr-only" htmlFor={`${idp}-imp-${p}`}>
+                        Impact for {p}
+                      </label>
+                      <select id={`${idp}-imp-${p}`} value={impact[p] ?? ""} onChange={(e) => setImpact({ ...impact, [p]: e.target.value })}>
+                        <option value="">Impact {SN_DEFAULT_IMPACT[p]}</option>
+                        {["1", "2", "3"].map((v) => (
+                          <option key={v} value={v}>
+                            Impact {v}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="hint">The defaults give priorities 1 to 4 with ServiceNow's standard priority matrix.</p>
+            </fieldset>
+            <div className="field field-span">
+              <label htmlFor={`${idp}-snfields`}>Other fields (optional)</label>
+              <textarea id={`${idp}-snfields`} className="mono" rows={3} value={fields} onChange={(e) => setFields(e.target.value)} placeholder={"u_business_service=Payments\ncaller_id=stackurity.integration"} />
+              <p className="hint">One column name=value per line, set when the record is created. Fields the account may not write are reported after the first record.</p>
+            </div>
+            <div className="field">
+              <label htmlFor={`${idp}-snstate`}>State when resolved</label>
+              <input id={`${idp}-snstate`} className="mono" value={resolveState} onChange={(e) => setResolveState(e.target.value)} placeholder="6" />
+            </div>
+            <div className="field">
+              <label htmlFor={`${idp}-sncode`}>Close code</label>
+              <input id={`${idp}-sncode`} value={closeCode} onChange={(e) => setCloseCode(e.target.value)} placeholder="Solution provided" />
+            </div>
+            <div className="field field-span">
+              <label className="check">
+                <input type="checkbox" checked={syncBack} onChange={(e) => setSyncBack(e.target.checked)} /> Read the state back from ServiceNow
+              </label>
+              <p className="hint">
+                Every few minutes. A record resolved, closed or canceled in ServiceNow shows so on the incident and is no longer updated; findings stay open until
+                a scan shows them fixed.
+              </p>
+            </div>
+          </>
+        )}
         {kind === "email" && (
           <>
             {!channel && (
@@ -509,18 +718,28 @@ export function ChannelForm({
                     ? deployment === "cloud"
                       ? "API token reference (required)"
                       : "Personal access token reference (required)"
-                    : "Webhook URL reference (required)"}
+                    : kind === "pagerduty"
+                      ? "Integration key (routing key) reference (required)"
+                      : kind === "servicenow"
+                        ? snAuth === "oauth"
+                          ? "OAuth client secret reference (required)"
+                          : "Password reference (required)"
+                        : "Webhook URL reference (required)"}
             </label>
             <input
               id={`${idp}-secret`}
               className="mono"
               value={secretRef}
-              required={kind === "slack" || kind === "teams" || kind === "jira"}
+              required={kind === "slack" || kind === "teams" || kind === "jira" || kind === "pagerduty" || kind === "servicenow"}
               onChange={(e) => setSecretRef(e.target.value)}
               placeholder={
                 kind === "jira"
                   ? "secret:JIRA_TOKEN"
-                  : kind === "email"
+                  : kind === "pagerduty"
+                    ? "secret:PAGERDUTY_ROUTING_KEY"
+                    : kind === "servicenow"
+                      ? "secret:SERVICENOW_PASSWORD"
+                      : kind === "email"
                     ? "secret:SMTP_PASSWORD"
                     : kind === "webhook"
                       ? "secret:WEBHOOK_SIGNING_KEY"
@@ -539,12 +758,21 @@ export function ChannelForm({
                     ? deployment === "cloud"
                       ? "Atlassian API token"
                       : "personal access token"
-                    : "incoming webhook URL (it is a credential)"}{" "}
+                    : kind === "pagerduty"
+                      ? "integration key of an Events API v2 integration on the service"
+                      : kind === "servicenow"
+                        ? snAuth === "oauth"
+                          ? "OAuth client secret"
+                          : "integration user's password"
+                        : "incoming webhook URL (it is a credential)"}{" "}
               under <Link to="/settings/secrets">Settings → Secrets</Link> and reference it as <Code>secret:NAME</Code>; instance administrators can also use{" "}
               <Code>env:STACKURITY_SECRET_…</Code> or <Code>file:/run/secrets/…</Code>.
               {kind === "jira" && " Send test checks the credentials and project access without creating an issue."}
+              {kind === "servicenow" && " Send test checks the credentials, read access to the table and the assignment group without creating a record."}
+              {kind === "pagerduty" && " Send test raises a test alert (severity info) and resolves it at once; depending on the service's rules it can notify someone."}
               {kind === "webhook" && " With a key, each request carries an X-Stackurity-Signature HMAC header."}
-              {channel && channel.secret_ref && kind !== "slack" && kind !== "teams" && kind !== "jira" && " Clear the field and save to remove the reference."}
+              {channel && channel.secret_ref && kind !== "slack" && kind !== "teams" && kind !== "jira" && kind !== "pagerduty" && kind !== "servicenow" &&
+                " Clear the field and save to remove the reference."}
             </p>
           </div>
         )}

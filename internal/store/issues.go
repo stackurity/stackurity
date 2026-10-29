@@ -22,6 +22,10 @@ type IssueRef struct {
 	// ProjectID is set for the issue of a Jira route limited to a
 	// project, which describes only that project's part of the incident.
 	ProjectID *int64 `json:"project_id,omitempty"`
+	// State is the record's state read back from the tracker when it was
+	// closed there (resolved, closed or canceled; ServiceNow with
+	// sync_back), and empty otherwise.
+	State string `json:"state,omitempty"`
 }
 
 // IssueLink is the issue an incident has in one tracker channel and what the
@@ -36,9 +40,18 @@ type IssueLink struct {
 	SyncedFindings int
 	SyncedAssets   int
 	ResolvedSynced bool
+	// SyncedAcked: the record was told the incident is acknowledged.
+	SyncedAcked bool
+	// RemoteID is the tracker's own id when it differs from IssueKey
+	// (ServiceNow sys_id).
+	RemoteID string
+	// RemoteState is the state read back from the tracker when the record
+	// was closed there; empty while it is open there.
+	RemoteState string
 }
 
-const issueLinkCols = `id, incident_id, channel_id, issue_key, issue_url, synced_priority, synced_findings, synced_assets, resolved_synced`
+const issueLinkCols = `id, incident_id, channel_id, issue_key, issue_url, synced_priority, synced_findings, synced_assets, resolved_synced,
+	synced_acked, remote_id, remote_state`
 
 // ErrIssueBeingCreated means another attempt (on this or another replica)
 // holds the claim to create the incident's issue in this channel.
@@ -54,11 +67,11 @@ func (s *Store) issueRefs(ctx context.Context, incidentIDs []int64) (map[int64][
 	}
 	// Whole-incident issues first, then those of routes limited to a
 	// project, each in the order they were made.
-	rows, err := s.Pool.Query(ctx, `SELECT incident_id, tracker, issue_key, issue_url, channel_id, project_id FROM (
-		  SELECT 0 AS src, id, incident_id, tracker, issue_key, issue_url, channel_id, NULL::bigint AS project_id FROM incident_issues
+	rows, err := s.Pool.Query(ctx, `SELECT incident_id, tracker, issue_key, issue_url, channel_id, project_id, remote_state FROM (
+		  SELECT 0 AS src, id, incident_id, tracker, issue_key, issue_url, channel_id, NULL::bigint AS project_id, remote_state FROM incident_issues
 		  WHERE incident_id = ANY($1) AND issue_key <> ''
 		  UNION ALL
-		  SELECT 1, id, incident_id, tracker, issue_key, issue_url, channel_id, project_id FROM route_issues
+		  SELECT 1, id, incident_id, tracker, issue_key, issue_url, channel_id, project_id, '' FROM route_issues
 		  WHERE incident_id = ANY($1) AND issue_key <> '') x
 		ORDER BY src, id`, incidentIDs)
 	if err != nil {
@@ -68,7 +81,7 @@ func (s *Store) issueRefs(ctx context.Context, incidentIDs []int64) (map[int64][
 	for rows.Next() {
 		var id int64
 		var r IssueRef
-		if err := rows.Scan(&id, &r.Tracker, &r.Key, &r.URL, &r.ChannelID, &r.ProjectID); err != nil {
+		if err := rows.Scan(&id, &r.Tracker, &r.Key, &r.URL, &r.ChannelID, &r.ProjectID, &r.State); err != nil {
 			return nil, err
 		}
 		out[id] = append(out[id], r)
@@ -145,6 +158,71 @@ func (s *Store) RecordIssue(ctx context.Context, channelID, incidentID int64, ke
 	return err
 }
 
+// TrackerRecord is a record created (or found) in a tracker for an
+// incident, with the state it describes.
+type TrackerRecord struct {
+	ChannelID, IncidentID int64
+	Tracker               string // jira, pagerduty, servicenow
+	Key, URL, RemoteID    string
+	Priority              string
+	Findings, Assets      int
+	Acked                 bool
+}
+
+// RecordTrackerIssue is RecordIssue for any tracker.
+func (s *Store) RecordTrackerIssue(ctx context.Context, r TrackerRecord) error {
+	tag, err := s.Pool.Exec(ctx, `INSERT INTO incident_issues (channel_id, incident_id, tracker, issue_key, issue_url, remote_id,
+		  synced_priority, synced_findings, synced_assets, synced_acked)
+		SELECT c.id, i.id, $3, $4, $5, $6, $7, $8, $9, $10 FROM channels c, incidents i WHERE c.id = $1 AND i.id = $2
+		ON CONFLICT (channel_id, incident_id) DO UPDATE SET tracker = EXCLUDED.tracker, issue_key = EXCLUDED.issue_key,
+		  issue_url = EXCLUDED.issue_url, remote_id = EXCLUDED.remote_id, synced_priority = EXCLUDED.synced_priority,
+		  synced_findings = EXCLUDED.synced_findings, synced_assets = EXCLUDED.synced_assets,
+		  synced_acked = EXCLUDED.synced_acked, creating_until = NULL, updated_at = now()`,
+		r.ChannelID, r.IncidentID, r.Tracker, r.Key, r.URL, r.RemoteID, r.Priority, r.Findings, r.Assets, r.Acked)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return err
+}
+
+// IssueAckSynced records whether the record was told the incident is
+// acknowledged.
+func (s *Store) IssueAckSynced(ctx context.Context, linkID int64, acked bool) error {
+	_, err := s.Pool.Exec(ctx, `UPDATE incident_issues SET synced_acked = $2, updated_at = now() WHERE id = $1`, linkID, acked)
+	return err
+}
+
+// RemoteCheck is a tracker record to read back.
+type RemoteCheck struct {
+	LinkID      int64
+	IncidentID  int64
+	IssueKey    string
+	RemoteID    string
+	RemoteState string
+}
+
+// RemoteChecksDue returns up to limit records of a channel whose state was
+// not read back from the tracker for every: those whose incident is open
+// in Stackurity, or resolved but not yet told.
+func (s *Store) RemoteChecksDue(ctx context.Context, channelID int64, every time.Duration, limit int) ([]RemoteCheck, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT l.id, l.incident_id, l.issue_key, l.remote_id, l.remote_state
+		FROM incident_issues l JOIN incidents i ON i.id = l.incident_id
+		WHERE l.channel_id = $1 AND l.issue_key <> '' AND l.remote_id <> '' AND NOT l.resolved_synced
+		  AND (l.remote_checked_at IS NULL OR l.remote_checked_at <= now() - $2::interval)
+		ORDER BY l.remote_checked_at NULLS FIRST, l.id LIMIT $3`, channelID, every, limit)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByPos[RemoteCheck])
+}
+
+// SetRemoteState records the state read back from the tracker ("" while
+// the record is open there) and when it was read.
+func (s *Store) SetRemoteState(ctx context.Context, linkID int64, state string) error {
+	_, err := s.Pool.Exec(ctx, `UPDATE incident_issues SET remote_state = $2, remote_checked_at = now() WHERE id = $1`, linkID, state)
+	return err
+}
+
 // IssueSynced records what the issue has now been told.
 func (s *Store) IssueSynced(ctx context.Context, linkID int64, priority string, findings, assets int, resolved bool) error {
 	_, err := s.Pool.Exec(ctx, `UPDATE incident_issues SET synced_priority = $2, synced_findings = $3, synced_assets = $4,
@@ -170,8 +248,10 @@ func (s *Store) IssueChanges(ctx context.Context) ([]IssueChange, error) {
 		FROM incident_issues l JOIN channels c ON c.id = l.channel_id AND c.enabled
 		JOIN incidents i ON i.id = l.incident_id LEFT JOIN teams t ON t.id = i.owner_team_id
 		WHERE l.issue_key <> '' AND (
-		  (i.status = 'open' AND (i.priority, i.finding_count, i.asset_count) IS DISTINCT FROM
-		     (l.synced_priority, l.synced_findings, l.synced_assets))
+		  (i.status = 'open' AND l.remote_state = '' AND ((i.priority, i.finding_count, i.asset_count) IS DISTINCT FROM
+		     (l.synced_priority, l.synced_findings, l.synced_assets)
+		     -- PagerDuty and ServiceNow are told when the incident is acknowledged.
+		     OR (c.kind IN ('pagerduty', 'servicenow') AND (i.state <> 'new') <> l.synced_acked)))
 		  OR (i.status = 'resolved' AND NOT l.resolved_synced))
 		ORDER BY l.id LIMIT 1000`)
 	if err != nil {

@@ -1509,6 +1509,25 @@ func TestProjectSuggestions(t *testing.T) {
 		"project_ids": []int64{o.id("alpha-project"), o.id("beta-project")}}, nil); code != 400 {
 		t.Errorf("Jira route limited to two projects: %d, want 400", code)
 	}
+	// PagerDuty and ServiceNow records describe whole incidents: their
+	// routes cannot be limited to projects.
+	for _, c := range []struct{ kind, cfg string }{
+		{"pagerduty", `{"region": "eu"}`},
+		{"servicenow", `{"url": "https://acme.service-now.com", "username": "bot"}`},
+	} {
+		itsm, err := o.e.st.CreateChannel(tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace), c.kind, c.kind,
+			[]byte(c.cfg), "env:STACKURITY_SECRET_ITSM")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if code := o.admin.do("POST", "/api/v1/routes", map[string]any{"name": c.kind, "channel_id": itsm.ID, "enabled": true,
+			"project_ids": []int64{o.id("alpha-project")}}, nil); code != 400 {
+			t.Errorf("%s route limited to a project: %d, want 400", c.kind, code)
+		}
+		if code := o.admin.do("POST", "/api/v1/routes", map[string]any{"name": c.kind, "channel_id": itsm.ID, "enabled": true}, nil); code != 201 {
+			t.Errorf("%s route: %d, want 201", c.kind, code)
+		}
+	}
 	var hook store.Channel
 	if code := o.admin.do("POST", "/api/v1/channels", map[string]any{"kind": "webhook", "name": "hook",
 		"config": map[string]string{"url": "https://hooks.example/x"}}, &hook); code != 201 {

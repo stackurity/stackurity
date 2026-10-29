@@ -649,8 +649,15 @@ func (s *Server) saveRoute(w http.ResponseWriter, r *http.Request, id int64) {
 		// incident, describing only that project's part, read with a
 		// connection narrowed to the project. That narrowing names one
 		// project, so such a route names one too.
-		if ch, err := s.Store.GetChannel(r.Context(), rt.ChannelID); err == nil && ch.Kind == notify.KindJira && len(rt.ProjectIDs) > 1 {
+		ch, err := s.Store.GetChannel(r.Context(), rt.ChannelID)
+		if err == nil && ch.Kind == notify.KindJira && len(rt.ProjectIDs) > 1 {
 			s.fail(w, r, badRequest("a route to Jira can be limited to one project; add a route for each project"))
+			return
+		}
+		// PagerDuty alerts and ServiceNow records describe whole incidents,
+		// across every asset.
+		if err == nil && (ch.Kind == notify.KindPagerDuty || ch.Kind == notify.KindServiceNow) {
+			s.fail(w, r, badRequest("a route to PagerDuty or ServiceNow cannot be limited to projects: its records describe whole incidents"))
 			return
 		}
 	}

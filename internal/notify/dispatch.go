@@ -56,6 +56,9 @@ type Dispatcher struct {
 	// SlackApp is the Stackurity Slack app ("Add to Slack"); nil turns it
 	// off. Its signing secret verifies clicks on channels it added.
 	SlackApp *SlackApp
+	// TrackerPoll is how often ServiceNow records of channels with
+	// sync_back are read back; zero means every 5 minutes.
+	TrackerPoll time.Duration
 }
 
 // tickSkips counts, per store and workspace, the ticks in a row whose
@@ -110,7 +113,7 @@ func (d *Dispatcher) Tick(ctx context.Context) error {
 		if d.Log != nil {
 			d.Log.Info("an evaluation is running: findings upkeep waits for the next tick", "workspace", ws, "waited", wait, "ticks_skipped", n)
 		}
-		return d.Deliver(ctx)
+		return d.deliverAndPoll(ctx)
 	case err != nil:
 		return fmt.Errorf("evaluation lock: %w", err)
 	}
@@ -120,7 +123,16 @@ func (d *Dispatcher) Tick(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return d.Deliver(ctx)
+	return d.deliverAndPoll(ctx)
+}
+
+// deliverAndPoll sends due deliveries, then reads back the state of
+// ServiceNow records (sync_back).
+func (d *Dispatcher) deliverAndPoll(ctx context.Context) error {
+	if err := d.Deliver(ctx); err != nil {
+		return err
+	}
+	return d.pollTrackers(ctx)
 }
 
 // skipped returns how many ticks in a row the workspace's upkeep was left
@@ -242,10 +254,11 @@ func (d *Dispatcher) Plan(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	// Tracker channels (Jira) keep one issue per incident: they get no
-	// grouped messages, and once an incident has an issue it is updated
-	// from the issue's state (planIssueUpdates) rather than per event.
-	tracker, err := d.trackerChannels(ctx)
+	// Tracker channels (Jira, PagerDuty, ServiceNow) keep one record per
+	// incident: they get no grouped messages, and once an incident has a
+	// record it is updated from the record's state (planIssueUpdates)
+	// rather than per event. Only Jira routes may be limited to a project.
+	tracker, jira, err := d.trackerChannels(ctx)
 	if err != nil {
 		return err
 	}
@@ -466,7 +479,7 @@ func (d *Dispatcher) Plan(ctx context.Context) error {
 		return err
 	}
 
-	if err := d.planOverdue(ctx, routes, tracker); err != nil {
+	if err := d.planOverdue(ctx, routes, tracker, jira); err != nil {
 		return err
 	}
 
@@ -492,10 +505,10 @@ func (d *Dispatcher) Plan(ctx context.Context) error {
 	}
 	// Jira routes limited to a project: after the incidents above were
 	// marked announced, so their announcement counts (jira_projects.go).
-	if err := d.planProjectIssues(ctx, routes, tracker); err != nil {
+	if err := d.planProjectIssues(ctx, routes, jira); err != nil {
 		return err
 	}
-	if err := d.planProjectIssueUpdates(ctx, routes, tracker); err != nil {
+	if err := d.planProjectIssueUpdates(ctx, routes, jira); err != nil {
 		return err
 	}
 	return d.planIssueUpdates(ctx)
@@ -506,7 +519,7 @@ func (d *Dispatcher) Plan(ctx context.Context) error {
 // urgent issues have just passed their fix deadline, one message groups
 // every overdue urgent issue by fix. Jira issues still get one comment
 // each.
-func (d *Dispatcher) planOverdue(ctx context.Context, routes []store.Route, tracker map[int64]bool) error {
+func (d *Dispatcher) planOverdue(ctx context.Context, routes []store.Route, tracker, jira map[int64]bool) error {
 	esc, err := d.escalate(ctx)
 	if err != nil || len(esc) == 0 {
 		return err
@@ -526,7 +539,7 @@ func (d *Dispatcher) planOverdue(ctx context.Context, routes []store.Route, trac
 			continue
 		}
 		r := r
-		if pid, ok := projectTracker(r, tracker); ok {
+		if pid, ok := projectTracker(r, jira); ok {
 			if err := d.planProjectEscalations(ctx, r, pid, esc); err != nil {
 				return err
 			}
@@ -598,7 +611,7 @@ func (d *Dispatcher) routes(ctx context.Context) ([]store.Route, error) {
 	}
 	usable := map[int64]bool{}
 	for _, c := range chs {
-		usable[c.ID] = c.Enabled && c.Kind != KindJira
+		usable[c.ID] = c.Enabled && !IsTracker(c.Kind)
 	}
 	for i := range routes {
 		for e, id := range routes[i].EventChannels {
@@ -610,19 +623,23 @@ func (d *Dispatcher) routes(ctx context.Context) ([]store.Route, error) {
 	return routes, nil
 }
 
-// trackerChannels returns the ids of the workspace's tracker (Jira) channels.
-func (d *Dispatcher) trackerChannels(ctx context.Context) (map[int64]bool, error) {
+// trackerChannels returns the ids of the workspace's tracker channels (Jira,
+// PagerDuty, ServiceNow), and of its Jira channels.
+func (d *Dispatcher) trackerChannels(ctx context.Context) (tracker, jira map[int64]bool, err error) {
 	chs, err := d.Store.ListChannels(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	out := map[int64]bool{}
+	tracker, jira = map[int64]bool{}, map[int64]bool{}
 	for _, c := range chs {
+		if IsTracker(c.Kind) {
+			tracker[c.ID] = true
+		}
 		if c.Kind == KindJira {
-			out[c.ID] = true
+			jira[c.ID] = true
 		}
 	}
-	return out, nil
+	return tracker, jira, nil
 }
 
 // planIssueUpdates queues an update for every tracker issue whose incident
@@ -821,7 +838,7 @@ func (d *Dispatcher) Deliver(ctx context.Context) error {
 		// Quiet hours and hourly limits are for people: an issue tracker
 		// is kept current. SOS is never delayed. A summary is never held:
 		// it is where held messages go.
-		if route != nil && !msg.SOS && del.Event != "test" && ch.Kind != KindJira {
+		if route != nil && !msg.SOS && del.Event != "test" && !IsTracker(ch.Kind) {
 			if until, quiet := quietUntil(*route, d.now()); quiet {
 				if err := d.Store.DeferDelivery(ctx, del.ID, until); err != nil {
 					return err
@@ -909,6 +926,11 @@ func (d *Dispatcher) send(ctx context.Context, ch *store.Channel, del store.Deli
 		defer cancel()
 		return d.syncJira(sctx, ch, del, attempts, msg)
 	}
+	if IsTracker(ch.Kind) {
+		sctx, cancel := context.WithTimeout(ctx, trackerTimeout)
+		defer cancel()
+		return d.syncTracker(sctx, ch, del, attempts, msg)
+	}
 	if ch.Kind == KindStackurityEmail {
 		return d.sendPlatformEmail(ctx, ch, msg)
 	}
@@ -947,6 +969,11 @@ func (d *Dispatcher) SendTest(ctx context.Context, ch *store.Channel) error {
 		_ = d.Store.ChannelResult(ctx, ch.ID, err)
 		return err
 	}
+	if IsTracker(ch.Kind) {
+		err := d.checkTracker(ctx, ch)
+		_ = d.Store.ChannelResult(ctx, ch.ID, err)
+		return err
+	}
 	msg := Message{Event: "test", Title: "Stackurity test notification", At: d.now().UTC(),
 		Summary: []string{"This channel is configured correctly."}}
 	var reservation int64
@@ -977,7 +1004,7 @@ func (d *Dispatcher) Digest(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	tracker, err := d.trackerChannels(ctx)
+	tracker, _, err := d.trackerChannels(ctx)
 	if err != nil {
 		return err
 	}
