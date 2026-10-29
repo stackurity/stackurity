@@ -13,6 +13,44 @@ export function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const act = useAction();
+  const discovery = state.phase === "login" && Boolean(state.meta.sso_discovery);
+  const [ssoMode, setSSOMode] = useState(false);
+  const find = useAction();
+
+  // Find the organisation's single sign-on from the email's domain.
+  const findSSO = async (e: FormEvent) => {
+    e.preventDefault();
+    const r = await find.run(() => api.discoverSSO(email.trim()));
+    if (r) window.location.assign(r.login_url);
+  };
+
+  if (ssoMode) {
+    return (
+      <div className="center-screen">
+        <form className="auth-card form" onSubmit={findSSO} aria-labelledby="sso-title">
+          <div className="auth-logo">
+            <img src="/logo-login.png" alt="Stackurity" width={180} height={180} />
+          </div>
+          <h1 id="sso-title" className="auth-title">
+            Sign in with single sign-on
+          </h1>
+          <ErrorBox error={find.error} title="No single sign-on found" />
+          <div className="field">
+            <label htmlFor="sso-email">Work email</label>
+            <input id="sso-email" type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} autoFocus />
+          </div>
+          <button type="submit" className="btn btn-primary btn-block" disabled={find.pending}>
+            {find.pending ? "Finding your organisation…" : "Continue"}
+          </button>
+          <p className="small" style={{ textAlign: "center" }}>
+            <button type="button" className="btn btn-link" onClick={() => setSSOMode(false)}>
+              Sign in with a password instead
+            </button>
+          </p>
+        </form>
+      </div>
+    );
+  }
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -61,6 +99,13 @@ export function LoginPage() {
         <button type="submit" className={sso ? "btn btn-block" : "btn btn-primary btn-block"} disabled={act.pending}>
           {act.pending ? "Signing in…" : "Sign in"}
         </button>
+        {discovery && (
+          <p className="small" style={{ textAlign: "center" }}>
+            <button type="button" className="btn btn-link" onClick={() => setSSOMode(true)}>
+              Sign in with single sign-on
+            </button>
+          </p>
+        )}
         {signup && (
           <p className="small" style={{ textAlign: "center" }}>
             New here? <a href="/signup">Create an account</a>

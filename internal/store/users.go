@@ -325,22 +325,63 @@ func (s *Store) CreateSession(ctx context.Context, userID, workspaceID int64) (s
 	return secret, err
 }
 
+// CreateSSOSession starts a browser session pinned to workspaceID, for a
+// sign-in through that workspace's own identity provider: SessionUser never
+// moves it to another workspace and SetSessionWorkspace refuses to.
+func (s *Store) CreateSSOSession(ctx context.Context, userID, workspaceID int64) (string, error) {
+	if workspaceID <= 0 {
+		return "", fmt.Errorf("a pinned session needs a workspace: %w", ErrInvalid)
+	}
+	secret, _, err := auth.NewToken("sess")
+	if err != nil {
+		return "", err
+	}
+	_, err = s.Pool.Exec(ctx, `INSERT INTO sessions (token_hash, user_id, expires_at, workspace_id, sso_workspace_id)
+		VALUES ($1, $2, now() + make_interval(secs => $3), $4, $4)`,
+		auth.HashToken(secret), userID, SessionTTL.Seconds(), workspaceID)
+	return secret, err
+}
+
 // SessionUser resolves a browser session to its user and the workspace it
 // works in. When the session has no workspace, or the user has left it, the
 // user's first workspace is used; 0 means the user belongs to none. The
 // returned user's Role is their role in that workspace.
 func (s *Store) SessionUser(ctx context.Context, secret string) (*User, int64, error) {
+	u, ws, _, err := s.SessionUserSSO(ctx, secret)
+	return u, ws, err
+}
+
+// SessionUserSSO is SessionUser that also returns the workspace the session
+// is pinned to (CreateSSOSession), 0 for an ordinary session. A pinned
+// session works only in its workspace: if the user has left it, the session
+// has no workspace rather than another one.
+func (s *Store) SessionUserSSO(ctx context.Context, secret string) (*User, int64, int64, error) {
 	var id int64
-	var ws *int64
-	err := s.Pool.QueryRow(ctx, `SELECT s.user_id, s.workspace_id FROM sessions s JOIN users u ON u.id = s.user_id
-		WHERE s.token_hash = $1 AND s.expires_at > now() AND NOT u.disabled`, auth.HashToken(secret)).Scan(&id, &ws)
+	var ws, pinned *int64
+	err := s.Pool.QueryRow(ctx, `SELECT s.user_id, s.workspace_id, s.sso_workspace_id FROM sessions s JOIN users u ON u.id = s.user_id
+		WHERE s.token_hash = $1 AND s.expires_at > now() AND NOT u.disabled`, auth.HashToken(secret)).Scan(&id, &ws, &pinned)
 	if err != nil {
-		return nil, 0, notFound(err)
+		return nil, 0, 0, notFound(err)
+	}
+	if pinned != nil {
+		var wsID int64
+		if member, err := s.IsMember(ctx, *pinned, id); err != nil {
+			return nil, 0, 0, err
+		} else if member {
+			wsID = *pinned
+		}
+		u, err := s.GetUser(tenant.WithWorkspace(ctx, wsID), id)
+		if u != nil {
+			// An organisation's identity provider vouches for membership of
+			// that organisation only, never for operating the installation.
+			u.InstanceAdmin = false
+		}
+		return u, wsID, *pinned, err
 	}
 	var wsID int64
 	if ws != nil {
 		if member, err := s.IsMember(ctx, *ws, id); err != nil {
-			return nil, 0, err
+			return nil, 0, 0, err
 		} else if member {
 			wsID = *ws
 		}
@@ -348,7 +389,7 @@ func (s *Store) SessionUser(ctx context.Context, secret string) (*User, int64, e
 	if wsID == 0 {
 		ms, err := s.Memberships(ctx, id)
 		if err != nil {
-			return nil, 0, err
+			return nil, 0, 0, err
 		}
 		if len(ms) > 0 {
 			wsID = ms[0].WorkspaceID
@@ -356,7 +397,7 @@ func (s *Store) SessionUser(ctx context.Context, secret string) (*User, int64, e
 		}
 	}
 	u, err := s.GetUser(tenant.WithWorkspace(ctx, wsID), id)
-	return u, wsID, err
+	return u, wsID, 0, err
 }
 
 func (s *Store) DeleteSession(ctx context.Context, secret string) error {
