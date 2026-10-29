@@ -513,9 +513,9 @@ stackurity vex export --asset 12 -o asset-12.openvex.json
 stackurity vex export --project shop --format cyclonedx -o shop.vex.cdx.json
 ```
 
-`vex import` reads the document first and uploads it with an engineer's token or higher. Its `not_affected` statements wait under **Approvals** for a security or admin user, unless `--source` names a source trusted to apply on its own (pinned to a public key the attestation must verify with, or to the uploading token). `--asset` or `--project` limits matching to that asset or project; `--asset` is needed for a document about a product with no identifier of its own. It prints what matched, what waits for approval, and each statement it could not match and why.
+`vex import` reads the document first and uploads it with an organisation-wide engineer's token or higher. Its `not_affected` statements wait under **Approvals** for a security or admin user, unless `--source` names a source trusted to apply on its own (pinned to a public key the attestation must verify with, or to the uploading token). `--asset` or `--project` limits matching to that asset or project; `--asset` is needed for a document about a product with no identifier of its own. It prints what matched, what waits for approval, and each statement it could not match and why.
 
-`vex export` writes the decisions about open issues (false positives, mitigations, and imported statements) as OpenVEX (`--format openvex`, the default) or CycloneDX VEX (`--format cyclonedx`), for one asset (`--asset`), one project (`--project`) or every asset the token can see, to `-o` or standard output. The formats, matching rules and trust model are in [vex.md](vex.md).
+`vex export` writes the decisions about open issues (false positives, mitigations, and imported statements) as OpenVEX (`--format openvex`, the default) or CycloneDX VEX (`--format cyclonedx`), for one asset (`--asset`), one project (`--project`) or every asset the token can see, to `-o` or standard output. People's ignore notes and mitigations are left out unless `--notes` is given (security or admin role). The formats, matching rules and trust model are in [vex.md](vex.md).
 
 ## Intelligence
 

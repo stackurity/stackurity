@@ -720,7 +720,7 @@ Asks to ignore issues: `finding_ids` (up to 2,000 open findings) or `fix_group`,
 
 **Who:** viewer
 
-The approval inbox, paged. `status`: `pending` (default), `approved`, `declined` or `all`. Security and admin users see every request, others their own; `can_decide` says which they may decide. A request a VEX import made has `vex_statement_id` and `vex` (the statement's `source`, `vulnerability`, `justification`, `impact_statement`, the document's `filename`, `sha256`, `signature` and `author`, and the `matches`, `assets` and unmatched `problems`); members with access through project grants only do not see those.
+The approval inbox, paged. `status`: `pending` (default), `approved`, `declined` or `all`. Security and admin users see every request, others their own; `can_decide` says which they may decide. A request a VEX import made has `vex_statement_id` and `vex` (the statement's `source`, `vulnerability`, `justification`, `impact_statement`, the document's `filename`, `sha256`, `signature` and `author`, and the `matches`, `assets` and unmatched `problems`); members with access through project grants only do not see those. `vex_assets` limits a request to some of the statement's matched assets (null: all): a trusted source's statement is split into the part on its attestation's subject, which applied, and the rest.
 
 ### `GET /ignore-requests/{id}`
 
@@ -1222,9 +1222,9 @@ Importing VEX documents and exporting decisions as VEX; see [vex.md](vex.md) for
 
 ### `POST /vex/import`
 
-**Who:** engineer and above
+**Who:** engineer and above, organisation-wide (members with access through project grants only, and project-bound tokens, get 403)
 
-The body is the document (OpenVEX, CycloneDX VEX or a CycloneDX BOM with VEX embedded, or a DSSE envelope or Sigstore bundle holding one; gzip accepted; at most 16 MiB). Query: `source_id` (a [source](#get-vexsources)), `asset_id` or `project_id` (match only there), `filename` (recorded). A source with a public key accepts only a signed attestation that verifies with it (400 otherwise). 201 with `document` (as in `GET /vex/documents/{id}`), `statements`, `matched`, `unmatched`, `skipped`, `pending` (not_affected statements now in the approval inbox), `auto_approved` and `ignored` (applied on import, for a source trusted to apply whose every pin held), `ended` (earlier VEX rules a newer affected or under_investigation statement ended) and the first 200 `problems` (`product`, `kind`: `unmatched`, `ambiguous` or `invalid`, and `reason`). Audited as `vex.import`; 402 `read_only` for a read-only organisation.
+The body is the document (OpenVEX, CycloneDX VEX or a CycloneDX BOM with VEX embedded, or a DSSE envelope or Sigstore bundle holding one; gzip accepted; at most 16 MiB). Query: `source_id` (a [source](#get-vexsources)), `asset_id` or `project_id` (match only there), `filename` (recorded). A source with a public key accepts only a signed attestation that verifies with it (400 otherwise). 201 with `document` (as in `GET /vex/documents/{id}`), `statements`, `matched`, `unmatched`, `skipped`, `pending` (not_affected statements now in the approval inbox), `auto_approved` and `ignored` (applied on import, for a source trusted to apply whose every pin held), `ended` (earlier VEX rules a newer affected or under_investigation statement ended), `outside_subject` (a trusted source's not_affected statements left for approval, wholly or in part, because they matched assets its attestation is not about or a bare package anywhere), `auto_apply_refused` (why a trusted source's document did not apply on its own: no timestamp, or older than one already imported from the source) and the first 200 `problems` (`product`, `kind`: `unmatched`, `ambiguous` or `invalid`, and `reason`). Audited as `vex.import`; 402 `read_only` for a read-only organisation.
 
 ### `GET /vex/documents`
 
@@ -1278,7 +1278,7 @@ Removes a source; its documents keep its name. Audited as `vex_source.delete`.
 
 **Who:** viewer, or any grant
 
-Decisions about open issues as a VEX document ([what is exported](vex.md#exporting)). `format`: `openvex` (default) or `cyclonedx`; `asset_id` for one asset, `project_id` (or the switcher) for one project, neither for every asset the caller sees. Sent as a download (`Content-Disposition`).
+Decisions about open issues as a VEX document ([what is exported](vex.md#exporting)). `format`: `openvex` (default) or `cyclonedx`; `notes=true` includes people's ignore notes and mitigations as impact statements (security or admin, else 403); `asset_id` for one asset, `project_id` (or the switcher) for one project, neither for every asset the caller sees. Sent as a download (`Content-Disposition`).
 
 ## Intelligence
 

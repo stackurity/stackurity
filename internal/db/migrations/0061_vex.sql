@@ -112,8 +112,12 @@ ALTER TABLE finding_exceptions
 -- The active pinned rules, which every upkeep checks still match.
 CREATE INDEX finding_exceptions_pinned ON finding_exceptions (id) WHERE ended_at IS NULL AND (version <> '' OR digest <> '');
 
--- A request in the approval inbox made by a VEX import.
-ALTER TABLE ignore_requests ADD COLUMN vex_statement_id bigint REFERENCES vex_statements(id) ON DELETE CASCADE;
+-- A request in the approval inbox made by a VEX import. vex_assets limits
+-- it to some of the statement's matched assets (NULL: all): a trusted
+-- source's statement applies on its own only on the assets its signed
+-- attestation is about, and the rest waits for a person.
+ALTER TABLE ignore_requests ADD COLUMN vex_statement_id bigint REFERENCES vex_statements(id) ON DELETE CASCADE,
+                            ADD COLUMN vex_assets bigint[];
 
 -- --- row-level security
 --

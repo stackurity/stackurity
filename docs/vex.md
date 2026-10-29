@@ -2,7 +2,7 @@
 
 VEX (Vulnerability Exploitability eXchange) documents say whether a product is affected by a vulnerability. A vendor can tell you that a CVE in a library inside their image cannot be exploited; you can tell your customers the same about your software. Stackurity imports VEX, shows it on findings and, with a person's approval, ignores the findings a `not_affected` statement covers. It exports its own decisions as VEX.
 
-VEX is part of Community. Importing needs the `engineer` role or higher; approving needs an organisation-wide `security` or `admin` role; trusting a source to apply on its own is for admins.
+VEX is part of Community. Importing needs an organisation-wide `engineer` role or higher (members with access through project grants only get 403); approving needs an organisation-wide `security` or `admin` role; trusting a source to apply on its own is for admins.
 
 ## Formats
 
@@ -68,7 +68,12 @@ A VEX document can hide real findings, so **an imported `not_affected` statement
 - a **public key** (PEM, as `cosign generate-key-pair` writes `cosign.pub`; ECDSA P-256 or P-384, Ed25519, or RSA of 2,048 bits or more): uploads for the source must then be a signed attestation that verifies with it, and plain documents or bad signatures are refused (400); and/or
 - an **API token**: only uploads made with that token apply on their own; anyone else's upload for the source waits for approval.
 
-Every pin the source has must hold. Auto-applied statements are recorded in the activity log as approvals by `VEX source <name> (auto-apply)` with `auto_apply: true`. Changing a source is audited (`vex_source.create`, `vex_source.update`, `vex_source.delete`).
+Every pin the source has must hold, and even then a trusted source's statement applies on its own only where it is safe to:
+
+- **Only on what the attestation is about.** A signed attestation names its subjects (image digests); its `not_affected` statements apply on their own only on the assets with those digests. A statement that also matches other assets (a bare package URL such as `pkg:apk/wolfi/openssl@3.1.0-r0` is installed in many places) is split: the part on the subject applies, the rest waits for approval (`outside_subject` in the answer). A document from a token-pinned source without an attestation applies on its own only where the product itself names the asset (an image digest, an application or BOM) or within the asset or project the import was limited to; a bare package matched across the workspace waits.
+- **No replays.** A document older than the newest already imported from the same source, or one without a timestamp, does not apply on its own (`auto_apply_refused` says why); its statements wait for approval.
+
+Auto-applied statements are recorded in the activity log as approvals by `VEX source <name> (auto-apply)` with `auto_apply: true`. Changing a source is audited (`vex_source.create`, `vex_source.update`, `vex_source.delete`).
 
 **Signatures.** Key-based signatures on DSSE envelopes and Sigstore bundles are verified. Keyless signatures (a Fulcio certificate with a Rekor entry, cosign's default) are not: such a document is shown as signed but unverified and can only be approved by a person. The verification is behind one interface (`vex.Verifier`), where keyless verification can be added.
 
@@ -95,12 +100,12 @@ stackurity vex export --project shop --format cyclonedx -o shop.vex.cdx.json
 
 Or **Export VEX** on an asset's page and under **Settings → VEX**, or `GET /api/v1/vex/export` (any role that can see the assets; members with project access get their projects' assets). The document lists the decisions about open issues:
 
-- issues ignored as a **false positive** (`not_affected`, `vulnerable_code_not_present`; CycloneDX `false_positive`) or **mitigated** (`not_affected`, `inline_mitigations_already_exist`; CycloneDX `not_affected`, `protected_by_mitigating_control`), with the rule's note and mitigation as the impact statement, or with the statement's own justification and impact statement when an approved VEX statement made the rule;
+- issues ignored as a **false positive** (`not_affected`, `vulnerable_code_not_present`; CycloneDX `false_positive`) or **mitigated** (`not_affected`, `inline_mitigations_already_exist`; CycloneDX `not_affected`, `protected_by_mitigating_control`), or with the statement's own justification and impact statement when an approved VEX statement made the rule;
 - the latest imported `affected`, `fixed` and `under_investigation` statements about other open issues.
 
 Accepted risks and issues ignored because no fix exists are not exported: they say nothing about exploitability. Each statement names the component version (its package URL), inside its image (a `pkg:oci` package URL with the digest) or its application (the package URL its SBOM gave it) when the asset has one. Exporting the same decisions twice gives the same document id. An exported document imports back: scope a document of package-only statements to the same asset or project.
 
-Notes and mitigations are written into the document as you wrote them; read it before you send it to anyone.
+People's ignore notes and mitigations are free text written for colleagues, so they are left out: a rule a person made is exported with its justification only. A security or admin user can include them as impact statements (`--notes`, `notes=true`); read the document before you send it to anyone.
 
 ## Limits
 

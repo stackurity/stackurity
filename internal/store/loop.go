@@ -436,13 +436,17 @@ type IgnoreRequest struct {
 	// VEXStatementID: the request was made by a VEX import for this
 	// statement (VEX describes it); only organisation-wide security and
 	// admin users decide it.
-	VEXStatementID *int64      `json:"vex_statement_id"`
-	VEX            *RequestVEX `json:"vex,omitempty" db:"-"`
+	VEXStatementID *int64 `json:"vex_statement_id"`
+	// VEXAssets limits the request to these assets of the statement's
+	// matches (null: all of them): a trusted source's statement is split
+	// into what applied on its own and what waits.
+	VEXAssets []int64     `json:"vex_assets"`
+	VEX       *RequestVEX `json:"vex,omitempty" db:"-"`
 }
 
 const requestCols = `r.id, r.finding_ids, r.title, r.fix_group, r.asset_id, COALESCE(a.name, ''), r.reason, r.note, r.mitigation,
 	r.scope, r.expiry, r.expires_at, r.status, r.requested_by, r.requested_by_name, r.requested_at, r.decided_by_name,
-	r.decided_at, r.decision_note, r.applied, r.vex_statement_id`
+	r.decided_at, r.decision_note, r.applied, r.vex_statement_id, r.vex_assets`
 
 // NewIgnoreRequest is what a requester sends: the issues (finding ids, or
 // a fix's open issues) and the ignore they ask for.

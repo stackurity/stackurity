@@ -418,7 +418,7 @@ func TestVEXExport(t *testing.T) {
 		t.Fatal(err)
 	}
 	importVEX(t, s, ctx, openVEX(time.Now(), "CVE-3", "under_investigation", "", imageProduct(digestA, "pkg:npm/minimist@1.2.5")), false)
-	rows, err := s.VEXExport(ctx, img)
+	rows, err := s.VEXExport(ctx, img, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -442,6 +442,20 @@ func TestVEXExport(t *testing.T) {
 	}
 	if r := by["CVE-3"]; r.Status != vex.StatusUnderInvestigation {
 		t.Errorf("imported statement %+v", r)
+	}
+	// Without notes, a person's note stays out; a VEX statement's own
+	// impact statement (the vendor's words) stays in.
+	rows, err = s.VEXExport(ctx, img, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range rows {
+		if r.Key == "CVE-2" && (r.ImpactStatement != "" || r.Justification != vex.JustVulnerableCodeNotPresent) {
+			t.Errorf("note exported without notes: %+v", r)
+		}
+		if r.Key == "CVE-1" && r.ImpactStatement != "TLS is terminated by the proxy" {
+			t.Errorf("vendor impact statement dropped: %+v", r)
+		}
 	}
 }
 

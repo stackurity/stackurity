@@ -100,6 +100,10 @@ function ImportCard({ sources, onDone }: { sources: VEXSource[]; onDone: () => v
           {result.pending > 0 && <>{plural(result.pending, "not affected statement")} wait for approval. </>}
           {result.auto_approved > 0 && <>{plural(result.auto_approved, "statement")} applied on import, {plural(result.ignored, "issue")} ignored. </>}
           {result.ended > 0 && <>{plural(result.ended, "earlier VEX rule")} ended by newer statements. </>}
+          {result.auto_apply_refused && <>Not applied on its own: {result.auto_apply_refused}. </>}
+          {(result.outside_subject ?? 0) > 0 && (
+            <>{plural(result.outside_subject ?? 0, "statement")} also matched assets the attestation is not about: that part waits for approval. </>
+          )}
           <Link to={`/settings/vex/${result.document.id}`}>See the document</Link>
           <Problems problems={result.problems} />
         </Notice>
@@ -317,6 +321,11 @@ export function VexPage() {
             <a className="btn" href={vexExportURL("cyclonedx")} download>
               Export CycloneDX VEX
             </a>
+            {can("security") && (
+              <a className="btn" href={vexExportURL("openvex", undefined, true)} download title="Includes people's ignore notes and mitigations: read it before you share it">
+                Export OpenVEX with notes
+              </a>
+            )}
           </>
         }
       />

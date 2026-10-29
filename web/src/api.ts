@@ -1712,6 +1712,8 @@ export interface IgnoreRequest {
   applied: number;
   /** Made by a VEX import: only organisation-wide security and admin users decide it. */
   vex_statement_id?: number | null;
+  /** Limits a VEX request to some of the statement's matched assets (null: all). */
+  vex_assets?: number[] | null;
   vex?: RequestVEX | null;
 }
 
@@ -1813,6 +1815,10 @@ export interface VEXImportResult {
   ended: number;
   skipped: number;
   problems: VEXProblem[];
+  /** Why a trusted source's document did not apply on its own. */
+  auto_apply_refused?: string;
+  /** Trusted statements left for approval: outside the attestation's subject. */
+  outside_subject?: number;
 }
 
 export interface VEXSource {
@@ -1855,8 +1861,9 @@ export async function importVEX(file: Blob, q: { filename: string; source_id?: n
 }
 
 /** The download link for a VEX export; project scoping follows the switcher. */
-export function vexExportURL(format: "openvex" | "cyclonedx", assetID?: number): string {
+export function vexExportURL(format: "openvex" | "cyclonedx", assetID?: number, notes?: boolean): string {
   const params = new URLSearchParams({ format });
+  if (notes) params.set("notes", "true");
   if (assetID) params.set("asset_id", String(assetID));
   else if (activeProject > 0) params.set("project_id", String(activeProject));
   return `/api/v1/vex/export?${params}`;

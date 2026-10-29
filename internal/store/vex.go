@@ -221,7 +221,7 @@ type VEXDocument struct {
 const docCols = `d.id, d.source_id, d.source_name, d.format, d.doc_id, d.author, d.doc_version, d.doc_timestamp, d.filename, d.sha256,
 	d.size, d.signature, d.key_fingerprint, d.scope_asset_id, d.scope_project_id, d.auto_applied, d.via, d.statements, d.matched,
 	d.imported_by_name, d.imported_at,
-	(SELECT count(*) FROM vex_statements st JOIN ignore_requests r ON r.id = st.request_id WHERE st.document_id = d.id AND r.status = 'pending')::int`
+	(SELECT count(*) FROM vex_statements st JOIN ignore_requests r ON r.vex_statement_id = st.id WHERE st.document_id = d.id AND r.status = 'pending')::int`
 
 func (s *Store) ListVEXDocuments(ctx context.Context, p Page) ([]VEXDocument, int64, error) {
 	var total int64
@@ -299,7 +299,7 @@ func (s *Store) ListVEXStatements(ctx context.Context, f VEXStatementFilter) ([]
 	case "unmatched":
 		w.conds = append(w.conds, "NOT EXISTS (SELECT 1 FROM vex_matches m WHERE m.statement_id = st.id)")
 	case "pending":
-		w.conds = append(w.conds, "EXISTS (SELECT 1 FROM ignore_requests r WHERE r.id = st.request_id AND r.status = 'pending')")
+		w.conds = append(w.conds, "EXISTS (SELECT 1 FROM ignore_requests r WHERE r.vex_statement_id = st.id AND r.status = 'pending')")
 	default:
 		return nil, 0, fmt.Errorf("outcome must be matched, unmatched or pending: %w", ErrInvalid)
 	}
@@ -367,6 +367,13 @@ type VEXImportResult struct {
 	Ignored      int          `json:"ignored"`
 	Ended        int          `json:"ended"`
 	Problems     []VEXProblem `json:"problems"`
+	// AutoApplyRefused says why a trusted source's document did not apply
+	// on its own at all ("" when it did, or the source is not trusted).
+	AutoApplyRefused string `json:"auto_apply_refused,omitempty"`
+	// OutsideSubject counts not_affected statements of a trusted source left
+	// for approval (wholly or in part) because they matched assets the
+	// signed attestation is not about, or a bare package anywhere.
+	OutsideSubject int `json:"outside_subject,omitempty"`
 	// Skipped counts CycloneDX vulnerabilities without an analysis.
 	Skipped int `json:"skipped"`
 }
@@ -375,6 +382,11 @@ type VEXImportResult struct {
 type vexTuple struct {
 	asset, component int64
 	version, digest  string
+	// pinned: the product itself named the asset (an image digest, an
+	// application or BOM, or the one asset the import was scoped to), or
+	// the import was limited to an asset or project; false for a bare
+	// package matched anywhere in the workspace.
+	pinned bool
 }
 
 type invRow struct {
@@ -846,7 +858,7 @@ func (m *vexMatcher) match(ctx context.Context, tx pgx.Tx, p vex.Product, keys [
 			return nil, nil, err
 		}
 		for rows.Next() {
-			t := vexTuple{digest: digest}
+			t := vexTuple{digest: digest, pinned: true}
 			if err := rows.Scan(&t.asset, &t.component, &t.version); err != nil {
 				rows.Close()
 				return nil, nil, err
@@ -869,7 +881,7 @@ func (m *vexMatcher) match(ctx context.Context, tx pgx.Tx, p vex.Product, keys [
 				continue
 			}
 			for _, r := range rows {
-				tuples = append(tuples, vexTuple{asset: r.asset, component: r.component, version: r.version, digest: digest})
+				tuples = append(tuples, vexTuple{asset: r.asset, component: r.component, version: r.version, digest: digest, pinned: true})
 			}
 		}
 	default:
@@ -881,7 +893,7 @@ func (m *vexMatcher) match(ctx context.Context, tx pgx.Tx, p vex.Product, keys [
 			break
 		}
 		for _, r := range rows {
-			tuples = append(tuples, vexTuple{asset: r.asset, component: r.component, version: r.version})
+			tuples = append(tuples, vexTuple{asset: r.asset, component: r.component, version: r.version, pinned: m.scope != nil})
 		}
 	}
 	return tuples, problems, nil
@@ -918,8 +930,9 @@ func (s *Store) ImportVEX(ctx context.Context, in VEXImport, actor Actor) (*VEXI
 		eff     time.Time
 	}
 	var docID int64
-	var requests []int64
+	var requests, autoRequests []int64
 	var toEnd []int64
+	auto := in.AutoApply
 	err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
 		m := &vexMatcher{}
 		if in.ScopeAssets != nil {
@@ -938,11 +951,69 @@ func (s *Store) ImportVEX(ctx context.Context, in VEXImport, actor Actor) (*VEXI
 		if doc.Timestamp != nil && doc.Timestamp.Before(now) {
 			docTime = *doc.Timestamp
 		}
+		// A trusted source applies on its own only with a document no older
+		// than the newest already imported from it: an old signed document
+		// uploaded again (a replay) must not bring back what a newer one
+		// changed. Without a timestamp nobody can tell, so it waits too.
+		if auto && sourceID != nil {
+			var newest *time.Time
+			if err := tx.QueryRow(ctx, `SELECT max(doc_timestamp) FROM vex_documents WHERE source_id = $1`, *sourceID).Scan(&newest); err != nil {
+				return err
+			}
+			switch {
+			case doc.Timestamp == nil:
+				auto, res.AutoApplyRefused = false, "the document has no timestamp, so it cannot be told from an older one: its statements wait for approval"
+			case newest != nil && doc.Timestamp.Before(*newest):
+				auto, res.AutoApplyRefused = false, "the document is older than one already imported from this source (a replay?): its statements wait for approval"
+			}
+		}
+		// What a trusted source may apply on its own: with a signed
+		// attestation, only the assets it is about (its subjects' digests);
+		// without one, only what the product itself pins or the import was
+		// limited to. Everything else waits for approval.
+		subjectAssets := map[int64]bool{}
+		withSubjects := false
+		if auto {
+			var ds []string
+			for _, sub := range doc.Subjects {
+				if sub.SHA256 != "" {
+					ds = append(ds, sub.SHA256)
+				}
+			}
+			if len(ds) > 0 {
+				withSubjects = true
+				rows, err := tx.Query(ctx, `SELECT DISTINCT a.id FROM unnest($1::text[]) d JOIN assets a ON a.merged_into IS NULL
+					AND (a.attributes->>'digest' = d OR EXISTS (SELECT 1 FROM asset_identifiers i WHERE i.asset_id = a.id
+					  AND (i.value LIKE '%@' || d OR i.value LIKE '%@' || replace(d, ':', '%3A') || '%')))`, ds)
+				if err != nil {
+					return err
+				}
+				ids, err := pgx.CollectRows(rows, pgx.RowTo[int64])
+				if err != nil {
+					return err
+				}
+				for _, id := range ids {
+					subjectAssets[id] = true
+				}
+			} else if doc.Envelope != nil {
+				// A signed attestation about nothing in particular.
+				withSubjects = true
+			}
+		}
+		autoMay := func(t vexTuple) bool {
+			if !auto {
+				return false
+			}
+			if withSubjects {
+				return subjectAssets[t.asset] && m.inScope(t.asset)
+			}
+			return t.pinned
+		}
 		if err := tx.QueryRow(ctx, `INSERT INTO vex_documents (source_id, source_name, format, doc_id, author, doc_version, doc_timestamp,
 			filename, sha256, size, signature, key_fingerprint, scope_asset_id, scope_project_id, auto_applied, via, statements,
 			imported_by, imported_by_name) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING id`,
 			sourceID, sourceName, doc.Format, doc.ID, doc.Author, doc.Version, doc.Timestamp, in.Filename, in.SHA256, in.Size,
-			in.Signature, in.KeyFingerprint, in.ScopeAssetID, in.ScopeProjectID, in.AutoApply, via, len(doc.Statements),
+			in.Signature, in.KeyFingerprint, in.ScopeAssetID, in.ScopeProjectID, false, via, len(doc.Statements),
 			userIDOnly(actor), actor.Name).Scan(&docID); err != nil {
 			return err
 		}
@@ -1043,62 +1114,114 @@ func (s *Store) ImportVEX(ctx context.Context, in VEXImport, actor Actor) (*VEXI
 				naIDs = append(naIDs, r.id)
 			}
 		}
-		findingIDs := map[int64][]int64{}
+		type stAsset struct{ statement, asset int64 }
+		findingIDs := map[stAsset][]int64{}
 		if len(naIDs) > 0 {
-			rows, err := tx.Query(ctx, `SELECT m.statement_id, array_agg(DISTINCT f.id ORDER BY f.id) FROM vex_matches m
+			rows, err := tx.Query(ctx, `SELECT DISTINCT m.statement_id, f.asset_id, f.id FROM vex_matches m
 				JOIN findings f ON f.asset_id = m.asset_id AND f.component_id = m.component_id AND f.key = m.key
 				  AND f.kind = 'vulnerability' AND f.status = 'open'
 				JOIN inventory i ON i.id = f.inventory_id AND i.version = m.version
-				WHERE m.statement_id = ANY($1) GROUP BY 1`, naIDs)
+				WHERE m.statement_id = ANY($1) ORDER BY 1, 3`, naIDs)
 			if err != nil {
 				return err
 			}
 			for rows.Next() {
-				var id int64
-				var fids []int64
-				if err := rows.Scan(&id, &fids); err != nil {
+				var k stAsset
+				var fid int64
+				if err := rows.Scan(&k.statement, &k.asset, &fid); err != nil {
 					rows.Close()
 					return err
 				}
-				findingIDs[id] = fids
+				findingIDs[k] = append(findingIDs[k], fid)
 			}
 			rows.Close()
 			if err := rows.Err(); err != nil {
 				return err
 			}
 		}
-		for _, r := range sts {
-			if r.st.Problem != "" || r.st.Status != vex.StatusNotAffected || len(r.matches) == 0 {
-				continue
+		// makeRequest asks for approval of a statement on some of the assets
+		// it matched (all of them when assets is nil).
+		makeRequest := func(r stRow, matches []vexTuple, limit []int64) (int64, error) {
+			var fids []int64
+			seenAsset := map[int64]bool{}
+			for _, t := range matches {
+				if !seenAsset[t.asset] {
+					seenAsset[t.asset] = true
+					fids = append(fids, findingIDs[stAsset{r.id, t.asset}]...)
+				}
 			}
-			fids := findingIDs[r.id]
+			fids = dedupe(fids)
 			if len(fids) > maxRequestIssues {
 				fids = fids[:maxRequestIssues]
 			}
 			var assetID *int64
-			one := r.matches[0].asset
-			for _, t := range r.matches[1:] {
-				if t.asset != one {
-					one = 0
-					break
-				}
-			}
-			if one != 0 {
+			if len(seenAsset) == 1 {
+				one := matches[0].asset
 				assetID = &one
 			}
-			reason := vex.IgnoreReason(r.st)
-			note := vexNote(sourceName, r.st)
-			title := fmt.Sprintf("VEX: %s not affected (%s), %d component version(s)", r.st.Vulnerability, sourceName, len(r.matches))
+			title := fmt.Sprintf("VEX: %s not affected (%s), %d component version(s)", r.st.Vulnerability, sourceName, len(matches))
 			var reqID int64
-			if err := tx.QueryRow(ctx, `INSERT INTO ignore_requests (finding_ids, title, asset_id, reason, note, scope, expiry,
-				requested_by, requested_by_name, vex_statement_id) VALUES ($1,$2,$3,$4,$5,'asset','never',$6,$7,$8) RETURNING id`,
-				nonNilIDs(fids), title, assetID, reason, note, userIDOnly(actor), actor.Name+" (VEX import)", r.id).Scan(&reqID); err != nil {
-				return err
+			err := tx.QueryRow(ctx, `INSERT INTO ignore_requests (finding_ids, title, asset_id, reason, note, scope, expiry,
+				requested_by, requested_by_name, vex_statement_id, vex_assets) VALUES ($1,$2,$3,$4,$5,'asset','never',$6,$7,$8,$9) RETURNING id`,
+				nonNilIDs(fids), title, assetID, vex.IgnoreReason(r.st), vexNote(sourceName, r.st), userIDOnly(actor),
+				actor.Name+" (VEX import)", r.id, limit).Scan(&reqID)
+			return reqID, err
+		}
+		for _, r := range sts {
+			if r.st.Problem != "" || r.st.Status != vex.StatusNotAffected || len(r.matches) == 0 {
+				continue
+			}
+			var mine, rest []vexTuple
+			for _, t := range r.matches {
+				if autoMay(t) {
+					mine = append(mine, t)
+				} else {
+					rest = append(rest, t)
+				}
+			}
+			assetsOf := func(ts []vexTuple) []int64 {
+				var out []int64
+				for _, t := range ts {
+					out = append(out, t.asset)
+				}
+				return dedupe(out)
+			}
+			var reqID int64
+			var err error
+			switch {
+			case len(mine) == 0:
+				if reqID, err = makeRequest(r, r.matches, nil); err != nil {
+					return err
+				}
+				requests = append(requests, reqID)
+				if auto {
+					res.OutsideSubject++
+				}
+			case len(rest) == 0:
+				if reqID, err = makeRequest(r, r.matches, nil); err != nil {
+					return err
+				}
+				requests, autoRequests = append(requests, reqID), append(autoRequests, reqID)
+			default:
+				// Split: the trusted part applies, the rest waits.
+				a, err := makeRequest(r, mine, assetsOf(mine))
+				if err != nil {
+					return err
+				}
+				if reqID, err = makeRequest(r, rest, assetsOf(rest)); err != nil {
+					return err
+				}
+				requests, autoRequests = append(requests, a, reqID), append(autoRequests, a)
+				res.OutsideSubject++
 			}
 			if _, err := tx.Exec(ctx, `UPDATE vex_statements SET request_id = $2 WHERE id = $1`, r.id, reqID); err != nil {
 				return err
 			}
-			requests = append(requests, reqID)
+		}
+		if len(autoRequests) > 0 {
+			if _, err := tx.Exec(ctx, `UPDATE vex_documents SET auto_applied = true WHERE id = $1`, docID); err != nil {
+				return err
+			}
 		}
 		// Earlier VEX ignore rules that a newer affected or
 		// under_investigation statement contradicts end (after the commit,
@@ -1130,9 +1253,9 @@ func (s *Store) ImportVEX(ctx context.Context, in VEXImport, actor Actor) (*VEXI
 		}
 		res.Ended++
 	}
-	if in.AutoApply {
+	if len(autoRequests) > 0 {
 		auto := Actor{Type: "system", Name: "VEX source " + sourceName + " (auto-apply)"}
-		for _, id := range requests {
+		for _, id := range autoRequests {
 			r, err := s.DecideIgnoreRequest(ctx, id, true, "applied on import: the source is trusted to apply on its own", in.MaxDays, auto)
 			if err != nil {
 				return nil, err
@@ -1212,10 +1335,11 @@ func approveVEX(ctx context.Context, tx pgx.Tx, statementID int64, r *IgnoreRequ
 	}
 	rows, err := tx.Query(ctx, `SELECT m.asset_id, m.component_id, m.version, m.digest, m.key FROM vex_matches m
 		JOIN vex_statements s ON s.id = m.statement_id
-		WHERE m.statement_id = $1 AND NOT EXISTS (SELECT 1 FROM vex_matches n JOIN vex_statements ns ON ns.id = n.statement_id
+		WHERE m.statement_id = $1 AND ($2::bigint[] IS NULL OR m.asset_id = ANY($2))
+		  AND NOT EXISTS (SELECT 1 FROM vex_matches n JOIN vex_statements ns ON ns.id = n.statement_id
 		  WHERE n.asset_id = m.asset_id AND n.component_id = m.component_id AND n.version = m.version AND n.key = m.key
 		    AND ns.status IN ('affected', 'under_investigation') AND (ns.effective_at, ns.id) > (s.effective_at, s.id))
-		ORDER BY 1, 2, 3, 5`, statementID)
+		ORDER BY 1, 2, 3, 5`, statementID, r.VEXAssets)
 	if err != nil {
 		return 0, err
 	}
@@ -1238,7 +1362,8 @@ func approveVEX(ctx context.Context, tx pgx.Tx, statementID int64, r *IgnoreRequ
 	// Everything the rules may change is locked first, in id order (see
 	// lockIssueFindings).
 	if _, err := tx.Exec(ctx, `SELECT f.id FROM findings f JOIN vex_matches m ON m.asset_id = f.asset_id AND m.component_id = f.component_id
-		AND m.key = f.key WHERE m.statement_id = $1 AND f.kind = 'vulnerability' ORDER BY f.id FOR UPDATE OF f`, statementID); err != nil {
+		AND m.key = f.key WHERE m.statement_id = $1 AND ($2::bigint[] IS NULL OR m.asset_id = ANY($2)) AND f.kind = 'vulnerability'
+		ORDER BY f.id FOR UPDATE OF f`, statementID, r.VEXAssets); err != nil {
 		return 0, err
 	}
 	applied := 0
@@ -1374,12 +1499,13 @@ func (s *Store) fillFindingVEX(ctx context.Context, fs []*Finding) error {
 		return nil
 	}
 	rows, err := s.Pool.Query(ctx, `SELECT DISTINCT ON (f.id) f.id, st.id, st.document_id, st.source_name, st.status, st.justification,
-		st.impact_statement, st.action_statement, st.status_notes, st.vulnerability, st.effective_at, st.request_id, COALESCE(r.status, ''),
+		st.impact_statement, st.action_statement, st.status_notes, st.vulnerability, st.effective_at, r.id, COALESCE(r.status, ''),
 		COALESCE(e.vex_statement_id = st.id AND f.state = 'risk_accepted', false)
 		FROM findings f JOIN inventory i ON i.id = f.inventory_id
 		JOIN vex_matches m ON m.asset_id = f.asset_id AND m.component_id = f.component_id AND m.key = f.key AND m.version = i.version
 		JOIN vex_statements st ON st.id = m.statement_id
-		LEFT JOIN ignore_requests r ON r.id = st.request_id
+		LEFT JOIN LATERAL (SELECT q.id, q.status FROM ignore_requests q WHERE q.vex_statement_id = st.id
+		  AND (q.vex_assets IS NULL OR f.asset_id = ANY(q.vex_assets)) ORDER BY q.id DESC LIMIT 1) r ON true
 		LEFT JOIN finding_exceptions e ON e.id = f.exception_id
 		WHERE f.id = ANY($1) AND (m.digest = '' OR `+digestMatches("f.asset_id", "m.digest")+`)
 		  AND NOT (st.status = 'not_affected' AND COALESCE(r.status, '') = 'declined')
@@ -1429,29 +1555,34 @@ func (s *Store) fillRequestVEX(ctx context.Context, rs []*IgnoreRequest) error {
 	var ids []int64
 	for _, r := range rs {
 		if r.VEXStatementID != nil {
-			ids = append(ids, *r.VEXStatementID)
+			ids = append(ids, r.ID)
 		}
 	}
 	if len(ids) == 0 {
 		return nil
 	}
-	rows, err := s.Pool.Query(ctx, `SELECT st.id, st.document_id, st.source_name, st.vulnerability, st.justification, st.impact_statement,
+	// Counts are of what the request itself covers (a trusted source's
+	// statement can be split into the part that applied and the rest).
+	rows, err := s.Pool.Query(ctx, `SELECT q.id, st.id, st.document_id, st.source_name, st.vulnerability, st.justification, st.impact_statement,
 		d.filename, d.sha256, d.signature, d.author,
-		(SELECT count(*) FROM vex_matches m WHERE m.statement_id = st.id),
-		(SELECT count(DISTINCT m.asset_id) FROM vex_matches m WHERE m.statement_id = st.id), st.problems
-		FROM vex_statements st JOIN vex_documents d ON d.id = st.document_id WHERE st.id = ANY($1)`, ids)
+		(SELECT count(*) FROM vex_matches m WHERE m.statement_id = st.id AND (q.vex_assets IS NULL OR m.asset_id = ANY(q.vex_assets))),
+		(SELECT count(DISTINCT m.asset_id) FROM vex_matches m WHERE m.statement_id = st.id AND (q.vex_assets IS NULL OR m.asset_id = ANY(q.vex_assets))),
+		st.problems
+		FROM ignore_requests q JOIN vex_statements st ON st.id = q.vex_statement_id JOIN vex_documents d ON d.id = st.document_id
+		WHERE q.id = ANY($1)`, ids)
 	if err != nil {
 		return err
 	}
 	byID := map[int64]*RequestVEX{}
 	for rows.Next() {
 		v := &RequestVEX{}
-		if err := rows.Scan(&v.StatementID, &v.DocumentID, &v.Source, &v.Vulnerability, &v.Justification, &v.ImpactStatement,
+		var rid int64
+		if err := rows.Scan(&rid, &v.StatementID, &v.DocumentID, &v.Source, &v.Vulnerability, &v.Justification, &v.ImpactStatement,
 			&v.Filename, &v.SHA256, &v.Signature, &v.Author, &v.Matches, &v.Assets, &v.Problems); err != nil {
 			rows.Close()
 			return err
 		}
-		byID[v.StatementID] = v
+		byID[rid] = v
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
@@ -1459,7 +1590,7 @@ func (s *Store) fillRequestVEX(ctx context.Context, rs []*IgnoreRequest) error {
 	}
 	for _, r := range rs {
 		if r.VEXStatementID != nil {
-			r.VEX = byID[*r.VEXStatementID]
+			r.VEX = byID[r.ID]
 		}
 	}
 	return nil
@@ -1504,7 +1635,11 @@ type VEXExportRow struct {
 // (with the statement's own justification when a VEX statement made the
 // rule), and the latest imported affected, fixed or under_investigation
 // statement about other open findings.
-func (s *Store) VEXExport(ctx context.Context, assetID int64) ([]VEXExportRow, error) {
+//
+// People's notes and mitigations are free text written for colleagues:
+// they are written into the document only with notes; otherwise a rule
+// made by a person carries its justification alone.
+func (s *Store) VEXExport(ctx context.Context, assetID int64, notes bool) ([]VEXExportRow, error) {
 	cond := ""
 	args := []any{}
 	if assetID > 0 {
@@ -1539,9 +1674,12 @@ func (s *Store) VEXExport(ctx context.Context, assetID int64) ([]VEXExportRow, e
 		r.FalsePositive = reason == ReasonFalsePositive
 		if !fromVEX {
 			r.Justification = vex.JustificationFor(reason)
-			r.ImpactStatement = strings.TrimSpace(note)
-			if mitigation != "" {
-				r.ImpactStatement = strings.TrimSpace(r.ImpactStatement + " Mitigation: " + mitigation)
+			r.ImpactStatement = ""
+			if notes {
+				r.ImpactStatement = strings.TrimSpace(note)
+				if mitigation != "" {
+					r.ImpactStatement = strings.TrimSpace(r.ImpactStatement + " Mitigation: " + mitigation)
+				}
 			}
 		}
 		k := fmt.Sprintf("%d %s %s", r.AssetID, r.Purl, r.Key)

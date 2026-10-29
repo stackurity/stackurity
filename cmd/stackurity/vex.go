@@ -33,7 +33,11 @@ type vexImportResult struct {
 	Ignored      int `json:"ignored"`
 	Ended        int `json:"ended"`
 	Skipped      int `json:"skipped"`
-	Problems     []struct {
+	// AutoApplyRefused and OutsideSubject: why a trusted source's
+	// statements still wait for approval.
+	AutoApplyRefused string `json:"auto_apply_refused"`
+	OutsideSubject   int    `json:"outside_subject"`
+	Problems         []struct {
 		Product string `json:"product"`
 		Kind    string `json:"kind"`
 		Reason  string `json:"reason"`
@@ -96,6 +100,12 @@ that asset or project's assets.`,
 			if r.AutoApproved > 0 {
 				fmt.Printf("%d not_affected statements applied on import (trusted source): %d issues ignored\n", r.AutoApproved, r.Ignored)
 			}
+			if r.AutoApplyRefused != "" {
+				fmt.Println("not applied on its own: " + r.AutoApplyRefused)
+			}
+			if r.OutsideSubject > 0 {
+				fmt.Printf("%d not_affected statements matched assets the attestation is not about (or a bare package anywhere): that part waits for approval\n", r.OutsideSubject)
+			}
 			if r.Pending > 0 {
 				fmt.Printf("%d not_affected statements wait for approval under Approvals\n", r.Pending)
 			}
@@ -122,6 +132,7 @@ that asset or project's assets.`,
 	var ec conn
 	var exportAsset int64
 	var format, out string
+	var notes bool
 	exp := &cobra.Command{
 		Use:   "export",
 		Short: "Export decisions (false positives, mitigations, imported VEX) as OpenVEX or CycloneDX VEX",
@@ -132,7 +143,10 @@ under_investigation statements. Each statement names the component version,
 inside its image (by digest) or application when the asset has one.
 
 --asset limits it to one asset; --project (an id or name; or
-STACKURITY_PROJECT) to one project; neither, every asset you can see.`,
+STACKURITY_PROJECT) to one project; neither, every asset you can see.
+
+People's ignore notes and mitigations stay out unless --notes is given
+(security or admin role): read the document before you share it.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if format != vex.FormatOpenVEX && format != vex.FormatCycloneDX {
 				return errors.New("--format must be openvex or cyclonedx")
@@ -144,6 +158,9 @@ STACKURITY_PROJECT) to one project; neither, every asset you can see.`,
 			q := url.Values{"format": {format}}
 			if exportAsset > 0 {
 				q.Set("asset_id", strconv.FormatInt(exportAsset, 10))
+			}
+			if notes {
+				q.Set("notes", "true")
 			}
 			var w io.Writer = os.Stdout
 			if out != "-" {
@@ -161,6 +178,7 @@ STACKURITY_PROJECT) to one project; neither, every asset you can see.`,
 	exp.Flags().Int64Var(&exportAsset, "asset", 0, "export only this asset's decisions")
 	exp.Flags().StringVar(&format, "format", vex.FormatOpenVEX, "openvex or cyclonedx")
 	exp.Flags().StringVarP(&out, "output", "o", "-", "output file")
+	exp.Flags().BoolVar(&notes, "notes", false, "include people's ignore notes and mitigations as impact statements (security or admin role)")
 
 	c.AddCommand(imp, exp)
 	return c

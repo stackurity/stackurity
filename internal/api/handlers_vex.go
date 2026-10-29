@@ -15,6 +15,7 @@ import (
 
 	"github.com/stackurity/stackurity/internal/auth"
 	"github.com/stackurity/stackurity/internal/store"
+	"github.com/stackurity/stackurity/internal/tenant"
 	"github.com/stackurity/stackurity/internal/vex"
 )
 
@@ -107,6 +108,10 @@ func trust(p *Principal, src *store.VEXSource, doc *vex.Document) (signature, fi
 // attestation. source_id names a source, asset_id or project_id limits
 // matching, filename records the file name.
 func (s *Server) importVEX(w http.ResponseWriter, r *http.Request) {
+	if !importsVEX(r) {
+		writeError(w, 403, "forbidden", "importing VEX needs an organisation-wide engineer, security or admin role: documents and their statements belong to the whole organisation")
+		return
+	}
 	data, err := s.readVEXBody(w, r, vex.MaxDocumentSize)
 	if err != nil {
 		s.fail(w, r, err)
@@ -160,6 +165,14 @@ func (s *Server) importVEX(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 201, res)
 }
 
+// importsVEX: VEX documents are organisation-wide, so importing needs an
+// organisation-wide engineer role or higher on a connection that is not
+// narrowed to some projects (row-level security would refuse the rows).
+func importsVEX(r *http.Request) bool {
+	p := principal(r)
+	return p != nil && !p.Restricted && !p.boundToProject() && !tenant.Narrowed(r.Context()) && p.Role.AtLeast(auth.RoleEngineer)
+}
+
 func (s *Server) auditVEXImport(r *http.Request, actor store.Actor, res *store.VEXImportResult) {
 	d := res.Document
 	_ = s.Store.Audit(r.Context(), actor, "vex.import", "vex_document", itoa(d.ID), map[string]any{
@@ -179,8 +192,9 @@ func (s *Server) importEmbeddedVEX(r *http.Request, data []byte, res *store.Inge
 		return
 	}
 	p := principal(r)
-	if !auth.Higher(p.Role, p.ProjectRole).AtLeast(auth.RoleEngineer) {
-		res.VEXNote = "the SBOM has VEX statements; a collector token does not import them: run stackurity vex import with an engineer, security or admin token"
+	if !importsVEX(r) {
+		res.VEXNote = "the SBOM has VEX statements; they are imported only for an organisation-wide engineer, security or admin token " +
+			"(not a collector or project token): run stackurity vex import with one"
 		return
 	}
 	maxDays, err := s.exceptionMaxDays(r)
@@ -424,6 +438,16 @@ func (s *Server) exportVEX(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, badRequest("format must be openvex or cyclonedx"))
 		return
 	}
+	// People's notes and mitigations are internal: only security and admin
+	// users may put them in a document meant for others, and only when
+	// they ask (notes=true).
+	notes := r.URL.Query().Get("notes") == "true"
+	if notes {
+		if p := principal(r); !auth.Higher(p.Role, p.ProjectRole).AtLeast(auth.RoleSecurity) {
+			writeError(w, 403, "forbidden", "exporting notes and mitigations needs the security or admin role")
+			return
+		}
+	}
 	assetID := qInt(r, "asset_id")
 	scope, file := "workspace", "stackurity"
 	if assetID > 0 {
@@ -435,7 +459,7 @@ func (s *Server) exportVEX(w http.ResponseWriter, r *http.Request) {
 	} else if p := principal(r).Project; p > 0 {
 		scope, file = fmt.Sprintf("project %d", p), fmt.Sprintf("project-%d", p)
 	}
-	rows, err := s.Store.VEXExport(r.Context(), assetID)
+	rows, err := s.Store.VEXExport(r.Context(), assetID, notes)
 	if err != nil {
 		s.fail(w, r, err)
 		return

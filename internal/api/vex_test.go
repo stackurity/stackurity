@@ -282,17 +282,142 @@ func TestVEXTrustedSources(t *testing.T) {
 		t.Fatalf("token source: %d", code)
 	}
 	host := v.findings["CVE-L1"]
-	lodash := []byte(`{"@context":"https://openvex.dev/ns/v0.2.0","@id":"urn:t","author":"CI","statements":[{"vulnerability":{"name":"CVE-L1"},
+	lodash := []byte(`{"@context":"https://openvex.dev/ns/v0.2.0","@id":"urn:t","author":"CI","timestamp":"` + time.Now().Add(-time.Minute).Format(time.RFC3339) + `","statements":[{"vulnerability":{"name":"CVE-L1"},
 		"products":[{"@id":"pkg:npm/lodash@4.17.15"}],"status":"not_affected","justification":"vulnerable_code_not_present"}]}`)
 	tpath := fmt.Sprintf("/api/v1/vex/import?source_id=%d", tsrc.ID)
 	if code, res, _ := v.post(v.admin, "", tpath, lodash); code != 201 || res.AutoApproved != 0 || res.Pending != 1 {
 		t.Errorf("another uploader for a token source: %d %+v", code, res)
 	}
-	if code, res, body := v.post(nil, tok.Secret, tpath, lodash); code != 201 || res.AutoApproved != 1 {
-		t.Errorf("the source's token: %d %s", code, body)
+	// The source's own token, unscoped: a bare package anywhere in the
+	// workspace is not something the source pins, so it waits.
+	if code, res, body := v.post(nil, tok.Secret, tpath, lodash); code != 201 || res.AutoApproved != 0 || res.OutsideSubject != 1 {
+		t.Errorf("the source's token, unscoped: %d %s", code, body)
+	}
+	if f := v.finding(host); f.State != "new" {
+		t.Errorf("unscoped bare package applied: %+v", f)
+	}
+	// Limited to the asset: applies.
+	if code, res, body := v.post(nil, tok.Secret, tpath+fmt.Sprintf("&asset_id=%d", v.asset), lodash); code != 201 || res.AutoApproved != 1 {
+		t.Errorf("the source's token, scoped: %d %s", code, body)
 	}
 	if f := v.finding(host); f.State != "risk_accepted" || f.IgnoreReason != "false_positive" {
 		t.Errorf("token source applied: %+v", f)
+	}
+}
+
+// The review's case: a vendor's signed attestation about its own image,
+// with a statement about a bare package, uploaded without a scope. It
+// applies on its own only on the vendor's image (the attestation's
+// subject); the same package elsewhere waits for a person. An older
+// document from the source, or one without a timestamp, applies nowhere.
+func TestVEXAutoApplyOnlyOnTheSubject(t *testing.T) {
+	v := newVEXEnv(t)
+	// Our own server has the same openssl, with the same finding.
+	b := model.NewBatch(model.Collector{ID: "agent", Version: "1", Method: "agent"},
+		model.AssetRef{Kind: model.AssetHost, Name: "ours-1", Identifiers: []model.Identifier{{Scheme: "machine-id", Value: "ours-1"}}})
+	b.Observations = []model.Observation{{Purl: "pkg:deb/debian/openssl@3.0.11?distro=debian-12", Confidence: model.ConfidenceConfirmed}}
+	ours := v.send(v.collector, b)
+	rows, _, err := v.st.ListInventory(v.ctx, store.InventoryFilter{AssetID: ours})
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("inventory %v %v", rows, err)
+	}
+	if _, _, err := v.st.SyncFindings(v.ctx, []string{"vulnerability"}, []int64{rows[0].ID}, []store.FindingInput{{Kind: "vulnerability",
+		Key: "CVE-2024-0001", InventoryID: rows[0].ID, AssetID: ours, ComponentID: rows[0].ComponentID, Verification: "confirmed",
+		Severity: "high", Sources: []string{"GHSA-aaaa-bbbb-cccc"}, Evidence: map[string]any{}}}); err != nil {
+		t.Fatal(err)
+	}
+	fs, _, _ := v.st.ListFindings(v.ctx, store.FindingFilter{AssetID: ours})
+	oursFinding := fs[0].ID
+
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	var src store.VEXSource
+	if code := v.admin.do("POST", "/api/v1/vex/sources", map[string]any{"name": "Vendor", "auto_apply": true, "public_key": pubPEM(key)}, &src); code != 201 {
+		t.Fatalf("source: %d", code)
+	}
+	path := fmt.Sprintf("/api/v1/vex/import?source_id=%d", src.ID)
+	bare := func(at time.Time, withTime bool) []byte {
+		ts := ""
+		if withTime {
+			ts = fmt.Sprintf(`"timestamp":%q,`, at.Format(time.RFC3339Nano))
+		}
+		return []byte(fmt.Sprintf(`{"@context":"https://openvex.dev/ns/v0.2.0","@id":"urn:vendor:%d","author":"Vendor",%s
+			"statements":[{"vulnerability":{"name":"CVE-2024-0001"},"products":[{"@id":"pkg:deb/debian/openssl@3.0.11"}],
+			"status":"not_affected","justification":"vulnerable_code_not_in_execute_path"}]}`, at.UnixNano(), ts))
+	}
+	now := time.Now().Add(-time.Minute)
+	code, res, body := v.post(v.eng, "", path, signVEX(key, bare(now, true)))
+	if code != 201 || res.AutoApproved != 1 || res.OutsideSubject != 1 || res.Pending != 1 {
+		t.Fatalf("signed bare package: %d %s", code, body)
+	}
+	if f := v.finding(v.openssl); f.State != "risk_accepted" {
+		t.Errorf("the vendor's image (the subject) was not ignored: %+v", f)
+	}
+	f := v.finding(oursFinding)
+	if f.State != "new" || f.VEX == nil || f.VEX.Applied || f.VEX.RequestStatus != "pending" {
+		t.Fatalf("our own server: state %s vex %+v", f.State, f.VEX)
+	}
+	// The part that waits covers only our server, and a person can approve it.
+	req := v.pendingVEX()
+	if len(req.VEXAssets) != 1 || req.VEXAssets[0] != ours || req.VEX.Assets != 1 || len(req.FindingIDs) != 1 || req.FindingIDs[0] != oursFinding {
+		t.Fatalf("pending part: %+v %+v", req, req.VEX)
+	}
+	if code := v.sec.do("POST", fmt.Sprintf("/api/v1/ignore-requests/%d/decision", req.ID), map[string]any{"decision": "decline"}, nil); code != 200 {
+		t.Fatalf("decline: %d", code)
+	}
+	if f := v.finding(oursFinding); f.State != "new" || f.VEX != nil {
+		t.Errorf("declined part: %+v %+v", f, f.VEX)
+	}
+	if f := v.finding(v.openssl); f.State != "risk_accepted" {
+		t.Errorf("declining the rest changed the subject: %+v", f)
+	}
+
+	// Replays: an older signed document, and one without a timestamp, do
+	// not apply on their own.
+	code, res, body = v.post(v.eng, "", path+fmt.Sprintf("&asset_id=%d", v.image), signVEX(key, v.imageVEX("not_affected", vexNA, now.Add(-time.Hour))))
+	if code != 201 || res.AutoApproved != 0 || !strings.Contains(res.AutoApplyRefused, "older") {
+		t.Errorf("older document: %d %s", code, body)
+	}
+	code, res, body = v.post(v.eng, "", path, signVEX(key, bare(now, false)))
+	if code != 201 || res.AutoApproved != 0 || !strings.Contains(res.AutoApplyRefused, "timestamp") {
+		t.Errorf("no timestamp: %d %s", code, body)
+	}
+}
+
+// People's notes stay out of exports unless a security user asks; members
+// with project access only cannot import.
+func TestVEXExportNotesAndProjectMembers(t *testing.T) {
+	v := newVEXEnv(t)
+	if code := v.admin.do("POST", fmt.Sprintf("/api/v1/findings/%d/actions", v.openssl), map[string]any{"action": "ignore",
+		"reason": "false_positive", "note": "internal: ticket SEC-123", "scope": "asset", "expiry": "never"}, nil); code != 200 {
+		t.Fatalf("ignore: %d", code)
+	}
+	get := func(s *session, q string) (int, string) {
+		resp := s.req("GET", fmt.Sprintf("/api/v1/vex/export?asset_id=%d%s", v.image, q), nil, nil)
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return resp.StatusCode, string(b)
+	}
+	if code, doc := get(v.view, ""); code != 200 || strings.Contains(doc, "SEC-123") || !strings.Contains(doc, "vulnerable_code_not_present") {
+		t.Errorf("default export: %d %s", code, doc)
+	}
+	if code, _ := get(v.view, "&notes=true"); code != 403 {
+		t.Errorf("viewer asks for notes: %d", code)
+	}
+	if code, doc := get(v.sec, "&notes=true"); code != 200 || !strings.Contains(doc, "SEC-123") {
+		t.Errorf("security asks for notes: %d %s", code, doc)
+	}
+	var proj store.Project
+	if code := v.admin.do("POST", "/api/v1/projects", map[string]any{"name": "shop", "asset_ids": []int64{v.image}}, &proj); code != 201 {
+		t.Fatalf("project: %d", code)
+	}
+	if code := v.admin.do("POST", "/api/v1/access-grants", map[string]any{"email": "pm@x.io", "password": pw, "role": "engineer",
+		"project_id": proj.ID}, nil); code != 201 && code != 200 {
+		t.Fatalf("grant: %d", code)
+	}
+	pm := v.login("pm@x.io")
+	if code, _, body := v.post(pm, "", fmt.Sprintf("/api/v1/vex/import?project_id=%d", proj.ID), v.imageVEX("fixed", "", time.Now())); code != 403 ||
+		!strings.Contains(body, "organisation-wide") && !strings.Contains(body, "organisation") {
+		t.Errorf("project member import: %d %s", code, body)
 	}
 }
 
@@ -306,7 +431,7 @@ func TestVEXExportImportRoundTrip(t *testing.T) {
 				"reason": "false_positive", "note": "openssl is not in the runtime layer", "scope": "asset", "expiry": "never"}, nil); code != 200 {
 				t.Fatalf("ignore: %d", code)
 			}
-			resp := v.view.req("GET", fmt.Sprintf("/api/v1/vex/export?format=%s&asset_id=%d", format, v.image), nil, nil)
+			resp := v.admin.req("GET", fmt.Sprintf("/api/v1/vex/export?format=%s&asset_id=%d&notes=true", format, v.image), nil, nil)
 			doc, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
 			if resp.StatusCode != 200 || !strings.Contains(resp.Header.Get("Content-Disposition"), fmt.Sprintf("asset-%d", v.image)) {
