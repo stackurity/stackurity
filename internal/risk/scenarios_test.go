@@ -102,6 +102,35 @@ func scenarios() []scenario {
 			}),
 			pri: "P4", factors: []string{"CVSS base score +7.8", "Known exploited +3", "Internet exposed +1.5", "Production +1", "Asset criticality +1", "Fix available +0.5", "Kernel not running -10"}},
 
+		// --- Predicted exploitation (EPSS)
+		{name: "medium with a likely exploit (EPSS 42%) on internal production", why: "a high predicted chance of exploitation lifts a medium production issue to P2, below KEV and never SOS on its own",
+			in: with(vuln("medium", cvss(6.5)), func(in *Input) {
+				in.Environment, in.InternetExposed, in.ExposureSource, in.EPSS = "production", internal, ExposureOperator, cvss(0.42)
+			}),
+			pri: "P2", factors: []string{"CVSS base score +6.5", "Exploit prediction (EPSS) +1.5", "Production +1"},
+			evidence: map[string]string{"Exploit prediction (EPSS)": "EPSS of 10% or more"}},
+		{name: "same medium, EPSS 3%", why: "an unlikely exploit adds nothing: P3 as without EPSS",
+			in: with(vuln("medium", cvss(6.5)), func(in *Input) {
+				in.Environment, in.InternetExposed, in.ExposureSource, in.EPSS = "production", internal, ExposureOperator, cvss(0.03)
+			}),
+			pri: "P3", factors: []string{"CVSS base score +6.5", "Production +1"}},
+		{name: "same medium, EPSS fell to 9% after crossing 10%", why: "a finding that crossed the threshold keeps the factor down to 8%, so a daily dip does not move its priority",
+			in: with(vuln("medium", cvss(6.5)), func(in *Input) {
+				in.Environment, in.InternetExposed, in.ExposureSource, in.EPSS, in.EPSSCounted = "production", internal, ExposureOperator, cvss(0.09), true
+			}),
+			pri: "P2", factors: []string{"CVSS base score +6.5", "Exploit prediction (EPSS) +1.5", "Production +1"}},
+		{name: "same medium, EPSS 9% never crossed", why: "below the threshold and not counted before: no points",
+			in: with(vuln("medium", cvss(6.5)), func(in *Input) {
+				in.Environment, in.InternetExposed, in.ExposureSource, in.EPSS = "production", internal, ExposureOperator, cvss(0.09)
+			}),
+			pri: "P3", factors: []string{"CVSS base score +6.5", "Production +1"}},
+		{name: "KEV with EPSS 97%", why: "known exploitation is evidence; the prediction adds nothing on top of it",
+			in: with(vuln("high", cvss(7.5)), func(in *Input) {
+				prodExposed(in)
+				in.KnownExploited, in.FixAvailable, in.EPSS = true, true, cvss(0.97)
+			}),
+			pri: "P1", sos: kevProd, factors: []string{"CVSS base score +7.5", "Known exploited +3", "Internet exposed +1.5", "Production +1", "Fix available +0.5"}},
+
 		// --- Severity without exploitation
 		{name: "critical on exposed production", why: "a critical, reachable production issue is P1 and SOS without KEV",
 			in: with(vuln("critical", cvss(9.8)), func(in *Input) {
@@ -337,6 +366,13 @@ func expectedFactors(p Policy, in Input) map[string]bool {
 		add("Severity", true, base)
 	}
 	add("Known exploited", in.KnownExploited, p.KnownExploited)
+	if in.EPSS != nil && !in.KnownExploited {
+		limit := p.EPSSThreshold
+		if in.EPSSCounted {
+			limit *= EPSSRelease
+		}
+		add(FactorEPSS, *in.EPSS >= float32(limit), p.EPSS)
+	}
 	add("Exposure unknown", in.InternetExposed == nil, p.ExposureUnknown)
 	add("Internet exposed", in.InternetExposed != nil && *in.InternetExposed, p.InternetExposed)
 	prod := false
@@ -373,7 +409,10 @@ func randInput(r *rand.Rand) Input {
 	pick := func(s []string) string { return s[r.Intn(len(s))] }
 	in := Input{Kind: "vulnerability", Severity: pick(severities), Environment: pick(environments), Criticality: pick(criticalities),
 		Verification: pick(verifications), ExposureSource: pick(sources), KnownExploited: r.Intn(3) == 0, FixAvailable: r.Intn(2) == 0,
-		Overdue: r.Intn(4) == 0, KernelNotRunning: r.Intn(8) == 0}
+		Overdue: r.Intn(4) == 0, KernelNotRunning: r.Intn(8) == 0, EPSSCounted: r.Intn(3) == 0}
+	if r.Intn(3) > 0 {
+		in.EPSS = cvss(float32(math.Round(r.Float64()*1000) / 1000))
+	}
 	if r.Intn(8) == 0 {
 		in.Kind = "end_of_life"
 	}
@@ -398,6 +437,7 @@ func randPolicy(r *rand.Rand) Policy {
 	w := func(max float64) float64 { return math.Round(r.Float64()*max*10) / 10 }
 	p.KnownExploited, p.InternetExposed, p.Production, p.FixAvailable, p.Overdue = w(6), w(4), w(3), w(2), w(3)
 	p.ExposureUnknown, p.EnvironmentUnknown = w(p.InternetExposed), w(p.Production)
+	p.EPSS, p.EPSSThreshold = w(p.KnownExploited), 0.01+math.Round(r.Float64()*99)/100
 	p.DevDependency, p.KernelNotRunning = -w(4), -w(12)
 	p.NeedsValidationMul, p.StaleMul = 0.1+w(0.9), 0.1+w(0.9)
 	low := w(3)
@@ -423,6 +463,15 @@ type raise struct {
 
 var raises = []raise{
 	{"becomes known exploited", func(in *Input) bool { r := !in.KnownExploited; in.KnownExploited = true; return r }},
+	{"EPSS rises", func(in *Input) bool {
+		if in.EPSS == nil || *in.EPSS >= 1 {
+			return false
+		}
+		in.EPSS = cvss(float32(math.Min(1, float64(*in.EPSS)+0.15)))
+		return true
+	}},
+	{"EPSS published", func(in *Input) bool { r := in.EPSS == nil; in.EPSS = cvss(0.5); return r }},
+	{"EPSS was counted before", func(in *Input) bool { r := !in.EPSSCounted; in.EPSSCounted = true; return r }},
 	{"internal -> unknown exposure", func(in *Input) bool {
 		r := in.InternetExposed != nil && !*in.InternetExposed
 		if r {
@@ -607,12 +656,13 @@ func TestInvariantReproducible(t *testing.T) {
 	}
 	base := DefaultPolicy()
 	for name, mut := range map[string]func(*Policy){
-		"weight":     func(p *Policy) { p.KnownExploited += 0.1 },
-		"map weight": func(p *Policy) { p.CriticalityBonus["high"] += 0.1 },
-		"threshold":  func(p *Policy) { p.Thresholds.P2 -= 0.1 },
-		"SOS rule":   func(p *Policy) { p.SOS = p.SOS[:1] },
-		"env list":   func(p *Policy) { p.ProductionEnvironments = append(p.ProductionEnvironments, "live") },
-		"multiplier": func(p *Policy) { p.StaleMul = 0.75 },
+		"weight":         func(p *Policy) { p.KnownExploited += 0.1 },
+		"map weight":     func(p *Policy) { p.CriticalityBonus["high"] += 0.1 },
+		"threshold":      func(p *Policy) { p.Thresholds.P2 -= 0.1 },
+		"SOS rule":       func(p *Policy) { p.SOS = p.SOS[:1] },
+		"env list":       func(p *Policy) { p.ProductionEnvironments = append(p.ProductionEnvironments, "live") },
+		"multiplier":     func(p *Policy) { p.StaleMul = 0.75 },
+		"EPSS threshold": func(p *Policy) { p.EPSSThreshold = 0.2 },
 	} {
 		p := DefaultPolicy()
 		mut(&p)

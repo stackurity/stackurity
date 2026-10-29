@@ -366,6 +366,23 @@ export function RiskPolicyPage() {
           <Card title="Adjustments (points added)">
             <div className="form-grid">
               <NumField id="kev" label="Known exploited (CISA KEV)" value={p.known_exploited} onChange={(n) => set("known_exploited", n)} />
+              <NumField
+                id="epss"
+                label="Likely exploit (FIRST EPSS)"
+                value={p.epss ?? 0}
+                onChange={(n) => set("epss", n)}
+                hint="Added at or above the EPSS threshold, not for KEV entries. At most the known exploited value."
+              />
+              <NumField
+                id="epss-threshold"
+                label="EPSS threshold (%)"
+                value={Math.round((p.epss_threshold ?? 0.1) * 100000) / 1000}
+                step={1}
+                min={0.001}
+                max={100}
+                onChange={(n) => set("epss_threshold", Math.round(n * 1000) / 100000)}
+                hint="Chance of exploitation in the next 30 days. A finding keeps the points until it falls below 80% of this, so daily changes do not move its priority."
+              />
               <NumField id="exp" label="Internet exposed" value={p.internet_exposed} onChange={(n) => set("internet_exposed", n)} />
               <NumField id="expu" label="Exposure unknown" value={p.exposure_unknown} onChange={(n) => set("exposure_unknown", n)} />
               <NumField id="prod" label="Production environment" value={p.production} onChange={(n) => set("production", n)} />

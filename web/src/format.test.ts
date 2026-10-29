@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assetDistinctions, assetLabel, groupAssetsByKind } from "./format.ts";
+import { assetDistinctions, assetLabel, epssTitle, groupAssetsByKind, percent } from "./format.ts";
 
 // The owner's case (Fixes, Asset filter): a server and a repository both
 // called commmerceblog, and two Ghost directories on it with one name.
@@ -37,5 +37,18 @@ test("grouped by kind, servers first", () => {
   assert.deepEqual(
     g[2].items.map((a) => a.id),
     [9, 7],
+  );
+});
+
+test("EPSS probabilities read as percentages", () => {
+  assert.equal(percent(0.1), "10%");
+  assert.equal(percent(0.42137), "42.1%");
+  assert.equal(percent(0.00042), "0.042%");
+  assert.equal(percent(0), "0%");
+  assert.equal(percent(1), "100%");
+  assert.equal(percent(0.99999), "99.99%");
+  assert.equal(
+    epssTitle(0.04753, 0.91849, "2026-10-28T00:00:00Z"),
+    "FIRST EPSS 4.8%: the chance this CVE is exploited in the next 30 days, higher than 91.8% of scored CVEs (scores of 2026-10-28)",
   );
 });

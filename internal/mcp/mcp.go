@@ -397,14 +397,17 @@ var tools = map[string]tool{
 		},
 	},
 	"list_findings": {
-		description: "Open vulnerability and end-of-life findings, most urgent first, with the installed and fixed versions.",
+		description: "Open vulnerability and end-of-life findings, most urgent first, with the installed and fixed versions and " +
+			"FIRST's EPSS (epss: the probability, 0 to 1, that the CVE is exploited in the next 30 days).",
 		schema: obj(map[string]any{
 			"asset_id":        num("Limit to one asset"),
 			"severity":        str("Comma-separated: critical, high, medium, low"),
 			"priority":        str("Comma-separated: P1, P2, P3, P4"),
 			"query":           str("Component name or advisory id contains this text"),
 			"known_exploited": map[string]any{"type": "boolean", "description": "Only findings on the CISA known exploited list"},
-			"limit":           num("At most this many (default 50, max 200)"),
+			"epss_min": map[string]any{"type": "number", "minimum": 0, "maximum": 1,
+				"description": "Only findings whose CVE has an EPSS of at least this probability (0.1 is 10%)"},
+			"limit": num("At most this many (default 50, max 200)"),
 		}),
 		run: func(ctx context.Context, api API, a map[string]any) (any, error) {
 			limit := 50
@@ -418,6 +421,9 @@ var tools = map[string]tool{
 			set(q, "q", a["query"])
 			if b, _ := a["known_exploited"].(bool); b {
 				q.Set("known_exploited", "true")
+			}
+			if v, ok := a["epss_min"].(float64); ok && v > 0 {
+				q.Set("epss_min", strconv.FormatFloat(v, 'f', -1, 64))
 			}
 			var res struct {
 				Items []finding `json:"items"`
@@ -535,7 +541,9 @@ func init() {
 			"which source refreshed when, and the fix; why also gives the evidence state (confirmed, needs_validation, stale, " +
 			"rejected), the missing information that would resolve a finding that is not confirmed, and the independent second " +
 			"check (agreed, disagreed with what differs, or could not check and why). A confirmed match is not proof that the issue " +
-			"can be exploited on the asset. Also: each risk factor and its points, the risk policy version and its SLA, the stored " +
+			"can be exploited on the asset. Also: each risk factor and its points, FIRST's EPSS for the CVE (why.epss: the probability " +
+			"of exploitation in the next 30 days, its percentile, model and date, the policy threshold, and whether and why it counts " +
+			"towards the priority), the risk policy version and its SLA, the stored " +
 			"evidence, the advisories that matched (ids, feeds, links), how fresh those feeds are, and when the asset last reported.",
 		schema: obj(map[string]any{"finding_id": num("The id of a finding")}, "finding_id"),
 		run: func(ctx context.Context, api API, a map[string]any) (any, error) {
@@ -697,23 +705,24 @@ func init() {
 
 // finding is the part of a finding an assistant needs to act on it.
 type finding struct {
-	ID             int64   `json:"id"`
-	Kind           string  `json:"kind"`
-	Key            string  `json:"key"`
-	Severity       string  `json:"severity"`
-	Priority       string  `json:"priority"`
-	State          string  `json:"state"`
-	AssetID        int64   `json:"asset_id"`
-	AssetName      string  `json:"asset_name"`
-	ComponentName  string  `json:"component_name"`
-	Version        string  `json:"version"`
-	FixedVersion   string  `json:"fixed_version"`
-	Location       string  `json:"location"`
-	Direct         *bool   `json:"direct"`
-	Title          string  `json:"title"`
-	KnownExploited bool    `json:"known_exploited"`
-	Overdue        bool    `json:"overdue"`
-	FixDue         *string `json:"fix_due"`
+	ID             int64    `json:"id"`
+	Kind           string   `json:"kind"`
+	Key            string   `json:"key"`
+	Severity       string   `json:"severity"`
+	Priority       string   `json:"priority"`
+	State          string   `json:"state"`
+	AssetID        int64    `json:"asset_id"`
+	AssetName      string   `json:"asset_name"`
+	ComponentName  string   `json:"component_name"`
+	Version        string   `json:"version"`
+	FixedVersion   string   `json:"fixed_version"`
+	Location       string   `json:"location"`
+	Direct         *bool    `json:"direct"`
+	Title          string   `json:"title"`
+	KnownExploited bool     `json:"known_exploited"`
+	EPSS           *float32 `json:"epss"`
+	Overdue        bool     `json:"overdue"`
+	FixDue         *string  `json:"fix_due"`
 }
 
 // readTools and writeTools are listed in this order (a stable order lets

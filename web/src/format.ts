@@ -181,3 +181,20 @@ export function groupAssetsByKind<T extends NamedAsset>(list: T[]): { kind: stri
     items: [...groups.get(k)!].sort((x, y) => x.name.localeCompare(y.name) || x.id - y.id),
   }));
 }
+
+/** A probability (0–1) as a percentage with at most one decimal: 0.1 → "10%", 0.00042 → "0.042%". */
+export function percent(p: number): string {
+  const pc = p * 100;
+  if (pc > 0 && pc < 0.1) return `${Number(pc.toPrecision(2))}%`;
+  // Never round a probability below 1 up to a certainty (0.99999 is 99.99%).
+  if (p < 1 && Math.round(pc * 10) / 10 >= 100) return `${Math.floor(pc * 100) / 100}%`;
+  return `${Math.round(pc * 10) / 10}%`;
+}
+
+/** An EPSS score for a cell or badge, with its percentile and day for the tooltip. */
+export function epssTitle(score: number, percentile?: number | null, date?: string | null): string {
+  let t = `FIRST EPSS ${percent(score)}: the chance this CVE is exploited in the next 30 days`;
+  if (percentile != null) t += `, higher than ${percent(percentile)} of scored CVEs`;
+  if (date) t += ` (scores of ${date.slice(0, 10)})`;
+  return t;
+}

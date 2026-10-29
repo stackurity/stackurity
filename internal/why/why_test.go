@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stackurity/stackurity/internal/risk"
 	"github.com/stackurity/stackurity/internal/store"
 )
 
@@ -113,5 +114,54 @@ func TestEndOfLifeSentence(t *testing.T) {
 		"which reached end of life on 2024-10-07 (endoflife.date, refreshed 30 h ago); release line 3.8 is the longest dotted prefix of the version."
 	if e.Sentence != want || e.Type != TypeEndOfLife || !strings.Contains(e.StateText, "not a known vulnerability") {
 		t.Fatalf("got  %s\nwant %s", e.Sentence, want)
+	}
+}
+
+// The EPSS part of "why this priority" gives the score with its model and
+// day, and says whether and why it counts: above the threshold, kept within
+// the band after crossing it, below it, or replaced by KEV.
+func TestEPSSExplanation(t *testing.T) {
+	p := risk.DefaultPolicy()
+	day := time.Date(2026, 10, 28, 0, 0, 0, 0, time.UTC)
+	model := "v2026.06.15"
+	counted := []byte(`[{"name":"CVSS base score","points":7.5,"detail":"CVSS 7.5"},{"name":"` + risk.FactorEPSS + `","points":1.5,"detail":"x"}]`)
+	build := func(score *float32, factors []byte, kev bool) *EPSSDetail {
+		in := vuln(npmEvidence())
+		in.Policy = &p
+		f := in.Finding
+		f.EPSS, f.PriorityFactors, f.KnownExploited = score, factors, kev
+		if score != nil {
+			pct := float32(0.9185)
+			f.EPSSPercentile, f.EPSSDate, f.EPSSModel = &pct, &day, &model
+		}
+		return Build(in, now).EPSS
+	}
+	s := func(v float32) *float32 { return &v }
+	for _, c := range []struct {
+		name    string
+		score   *float32
+		factors []byte
+		kev     bool
+		counted bool
+		want    string
+	}{
+		{"above", s(0.42), counted, false, true, "a 42% chance of exploitation in the next 30 days, higher than 91.9% of scored CVEs (model v2026.06.15, scores of 2026-10-28). That is at or above the risk policy's 10% threshold, so it adds 1.5 points; it keeps them until it falls below 8%."},
+		{"band", s(0.09), counted, false, true, "crossed the risk policy's 10% threshold earlier and is still at 8% or more, so it keeps its 1.5 points"},
+		{"below", s(0.03), []byte(`[]`), false, false, "below the risk policy's 10% threshold, so it adds nothing"},
+		{"not yet prioritised", s(0.5), []byte(`[]`), false, false, "from the next prioritisation"},
+		{"KEV", s(0.97), []byte(`[]`), true, false, "CISA KEV, which already counts exploitation"},
+		{"no score", nil, []byte(`[]`), false, false, "has no score for CVE-2099-1 yet"},
+	} {
+		d := build(c.score, c.factors, c.kev)
+		if d == nil || d.Counted != c.counted || !strings.Contains(d.Text, c.want) || d.Threshold != 0.1 {
+			t.Errorf("%s: %+v", c.name, d)
+		}
+	}
+	// No CVE, no EPSS.
+	in := vuln(npmEvidence())
+	in.Policy = &p
+	in.Finding.Key = "GHSA-xxxx"
+	if e := Build(in, now); e.EPSS != nil {
+		t.Errorf("EPSS for a finding without a CVE: %+v", e.EPSS)
 	}
 }

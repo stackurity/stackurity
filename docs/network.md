@@ -49,13 +49,14 @@ The request goes from the server, not the browser, with a 10 second timeout, and
 
 ### Intelligence feeds
 
-Feeds are created automatically for the ecosystems present in your inventory. Each one can be disabled under **Intelligence** by an instance administrator (feeds are shared by every workspace), and `STACKURITY_FEEDS=off` turns all of them off. No inventory data is sent to any of them: OSV, KEV and endoflife.date are bulk downloads, and registry lookups send only a public package name. A release feed exists only while its ecosystem is in inventory.
+Feeds are created automatically for the ecosystems present in your inventory. Each one can be disabled under **Intelligence** by an instance administrator (feeds are shared by every workspace), and `STACKURITY_FEEDS=off` turns all of them off. No inventory data is sent to any of them: OSV, KEV, EPSS and endoflife.date are bulk downloads, and registry lookups send only a public package name. A release feed exists only while its ecosystem is in inventory.
 
 | Feed | Destination | Schedule | What is requested |
 |---|---|---|---|
 | `osv:<ecosystem>` | `storage.googleapis.com/osv-vulnerabilities` (`STACKURITY_OSV_URL`) | Hourly | First run: `<ecosystem>/all.zip` (Ubuntu ≈ 750 MB, npm ≈ 220 MB, Debian ≈ 75 MB, others smaller). Then `modified_id.csv` and changed records only |
 | `alas:Amazon Linux` | `cdn.amazonlinux.com` (`STACKURITY_AMAZON_LINUX_URL`) | Every 6 h | `mirror.list`, `repomd.xml` and `updateinfo.xml.gz` of the Amazon Linux 2023 and 2 core repositories and of the Amazon Linux 2 extras topics with a version line (about 5 MB in all) |
 | `kev:cisa` | `www.cisa.gov` (`STACKURITY_KEV_URL`) | Daily | The Known Exploited Vulnerabilities catalogue |
+| `epss:first` | `epss.empiricalsecurity.com` (`STACKURITY_EPSS_URL`) | Daily | FIRST's EPSS scores for every CVE: `epss_scores-current.csv.gz`, which redirects to the day's `epss_scores-YYYY-MM-DD.csv.gz` (about 3 MB; refused above 64 MB, or 256 MB uncompressed). FIRST publishes the file through Empirical Security; the per-CVE API at `api.first.org` is not used, so no CVE list leaves the server |
 | `lifecycle:endoflife` | `endoflife.date` (`STACKURITY_ENDOFLIFE_URL`) | Daily | The full product lifecycle catalogue |
 | `releases:npm` | `registry.npmjs.org` (`STACKURITY_NPM_REGISTRY`) | Every 6 h; each package at most daily | Package metadata, by name |
 | `releases:packagist` | `repo.packagist.org` (`STACKURITY_PACKAGIST_URL`) | Every 6 h; each package at most daily | Package metadata, by name |
@@ -97,7 +98,7 @@ When an AI assistant identifies itself with a client ID metadata document (its c
 
 ### Air-gapped installs
 
-Mirror the OSV bucket layout (`<ecosystem>/all.zip`, `<ecosystem>/modified_id.csv`, `<ecosystem>/<id>.json`) and point `STACKURITY_OSV_URL` at it. Do the same for the other `STACKURITY_*_URL` variables. Any feed you cannot mirror shows as stale, and the components it covers are listed as evaluation gaps. They are never treated as clean.
+Mirror the OSV bucket layout (`<ecosystem>/all.zip`, `<ecosystem>/modified_id.csv`, `<ecosystem>/<id>.json`) and point `STACKURITY_OSV_URL` at it. Do the same for the other `STACKURITY_*_URL` variables; for EPSS, copy the day's file and point `STACKURITY_EPSS_URL` at it (gzipped or plain CSV, with its `#model_version:...,score_date:...` first line). Any feed you cannot mirror shows as stale, and the components it covers are listed as evaluation gaps. They are never treated as clean.
 
 ### Inbound: Slack's interactivity requests
 
