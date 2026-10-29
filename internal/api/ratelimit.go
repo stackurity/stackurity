@@ -217,7 +217,7 @@ func (s *Server) loginWait(ctx context.Context, account, subject string) (time.D
 	if err != nil {
 		return 0, err
 	}
-	if total >= limitAccountFailures.n {
+	if total >= limitAccountFailures.n && !s.knownAddress(ctx, subject) {
 		win := limitAccountFailures.window.Milliseconds()
 		end := time.UnixMilli(now.UnixMilli() - now.UnixMilli()%win + win)
 		wait = max(wait, end.Sub(now))

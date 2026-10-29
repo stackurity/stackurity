@@ -6,6 +6,14 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+### Security
+
+- **A botnet cannot lock an account out with failed sign-ins.** Addresses an account signed in from with its password in the last 30 days are exempt from the per-account cap of 100 failures in 15 minutes; they keep their own per-address backoff.
+- The dashboard's Content-Security-Policy no longer allows inline styles (`style-src 'self'`, without `'unsafe-inline'`); every page was checked in a browser without a violation.
+- **Sessions end after 30 minutes unused** (`STACKURITY_SESSION_IDLE_TIMEOUT`, `off` to keep only the 12-hour limit), and an expired session and signing out are recorded in the activity log (`auth.session_expired` with `idle` or `absolute`, `auth.logout`). Signing in always ends the session the browser already had, and turning on two-factor sign-in or changing your password gives the current session a new ID. Changing your password also disconnects AI assistants unless you choose otherwise, and can revoke API tokens; the answer says how many tokens still work. Migration `0055_session_idle`.
+- **Breached passwords are refused.** A new password (setup, change, reset, invitation, an admin's, and sign-up on Stackurity Cloud) is checked against Have I Been Pwned's Pwned Passwords with k-anonymity: only the first five hex characters of its SHA-1 are sent. On by default; `STACKURITY_BREACHED_PASSWORD_CHECK=off` turns it off, `STACKURITY_BREACHED_PASSWORD_URL` uses a mirror, and an unreachable service is logged and does not block anyone. Passwords stay 12 to 256 characters. See [network.md](docs/network.md#breached-password-check).
+- **Password reset by email.** **Forgot your password?** emails a single-use link that works for 15 minutes (only its hash is stored), with the same answer whether or not the account exists, limited per address and per email. A new password ends every session, disconnects AI assistants and, if chosen, revokes API tokens; two-factor sign-in still applies. It works on Stackurity Cloud and on servers with the new `STACKURITY_SMTP_*` settings and `STACKURITY_BASE_URL`; elsewhere the sign-in page says to ask an administrator, and a password an admin sets for someone else is now temporary: it must be changed at the next sign-in. **Your account** has a **Password** card. Migration `0054_password_reset`. See [Forgotten passwords](docs/install.md#forgotten-passwords).
+
 ### Added
 
 - **Email preferences for bulk email** (hosted installations; Stackurity Cloud turns them on). Product updates (**Marketing**) and **Vulnerability news** are the only email people can unsubscribe from: **Your account → Email preferences** has a switch for each and lists what is always sent (account and security, billing, the organisation's own notifications) and why. Every such email carries one-click unsubscribe headers (`List-Unsubscribe`, `List-Unsubscribe-Post`, RFC 8058), an unsubscribe link and an Email preferences link that work without signing in (signed for one person; an unsubscribe link only turns its own category off), and the sender's postal address. They are sent through one path that checks each recipient's choice just before their email goes, waits between emails, and records each recipient before sending, so a retry never sends twice. `stackurity admin email-suppress` unsubscribes an address on its owner's request. New endpoints `GET`/`PUT /api/v1/auth/email-preferences`, `POST /api/v1/email/preferences`, `POST /api/v1/email/preferences/update` and `POST /email/preferences/one-click` (migration `0056_email_preferences`). See [Email preferences](docs/install.md#email-preferences-product-updates-and-vulnerability-news).
@@ -19,6 +27,7 @@ Each release's section is published as its GitHub release notes, and a tag witho
   - **`hex`**: Elixir and Erlang `mix.lock` (every format since Mix 1.0), checked against OSV's Hex advisories (GitHub and the Erlang Ecosystem Foundation). Latest releases come from hex.pm (`releases:hex`, at most 100 lookups a minute as hex.pm asks; `STACKURITY_HEX_URL` for a mirror), with retired releases never offered as the latest.
   - **`cpp`**: Conan `conan.lock` (Conan 1 and 2), vcpkg `vcpkg.json` (exact only where pinned under `overrides`) and the `vcpkg.spdx.json` vcpkg writes for each installed port. No public vulnerability database covers ConanCenter or vcpkg ports, so C and C++ libraries are inventory only.
 - Files these packs read (`Package.resolved`, `Podfile.lock`, `conan.lock`, `vcpkg.json`, `vcpkg.spdx.json`) are reported as unsupported coverage without the pack, as `mix.lock` already was, instead of being ignored.
+- **Two-factor sign-in** with an authenticator app (TOTP, RFC 6238) under **Your account**: a QR code, a code to confirm, and ten one-time recovery codes stored as hashes. The secret is encrypted with `STACKURITY_SECRET_KEY`. A code is accepted once, wrong codes are limited (five per sign-in, ten per account in 15 minutes), and API tokens and AI assistants are not affected (the page lists them). Admins can **Require two-factor sign-in for all members** (members who sign in with a password are sent to set it up; single sign-on is not affected) and **Reset two-factor** for a member, recorded in the activity log. Home recommends it to admins. Migration `0053_mfa` adds the tables. See [Two-factor sign-in](docs/install.md#two-factor-sign-in).
 
 ### Changed
 
@@ -32,6 +41,14 @@ Each release's section is published as its GitHub release notes, and a tag witho
 - The coverage-gap report (`GET /api/v1/admin/coverage-gaps`) no longer scans all inventory on every request: each server reuses a report for up to 5 minutes (`checked_at` says when it was built).
 - A Debian or RPM epoch no longer stops the release line from being read (`5:7.0.15` is Redis 7.0, `1:10.11.6` MariaDB 10.11).
 - An upstream pre-release version such as `2.0~beta` is no longer taken for a build named after a release codename.
+
+### Upgrading
+
+- `POST /auth/password` answers 200 with a JSON body (what was revoked, and `tokens_kept`) instead of 204, and disconnects AI assistants by default; send `"revoke_assistants": false` to keep them.
+- Browser sessions now end after 30 minutes without use. Set `STACKURITY_SESSION_IDLE_TIMEOUT` (for example `2h`, or `off`) to change it.
+- To email password reset links from a self-hosted server, set `STACKURITY_SMTP_HOST`, `STACKURITY_SMTP_FROM` (and username, password, port, TLS as needed) and `STACKURITY_BASE_URL`.
+- New passwords are checked against known breaches by default (an outbound request to `api.pwnedpasswords.com`, see [network.md](docs/network.md#breached-password-check)); set `STACKURITY_BREACHED_PASSWORD_CHECK=off` for none.
+- Two-factor sign-in needs `STACKURITY_SECRET_KEY`.
 
 ## 0.13.5
 

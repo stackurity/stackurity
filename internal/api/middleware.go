@@ -42,6 +42,21 @@ type Principal struct {
 	// (assistants.go). Its requests come only from the tools behind /mcp;
 	// Token then describes it, so it is capped like an API token.
 	Assistant *store.AssistantGrant
+	// PasswordSession: a browser session signed in with a local password.
+	PasswordSession bool
+	// NeedsMFAEnrolment: such a session without a second factor in a
+	// workspace that requires one (mfa.go); it may only set one up.
+	NeedsMFAEnrolment bool
+	// PasswordChangeRequired: an administrator set a temporary password
+	// (password_reset.go); the session may only change it.
+	PasswordChangeRequired bool
+	// SSOWorkspace is the workspace the session is pinned to by an
+	// organisation's single sign-on (0: none); a session that replaces it
+	// keeps the pin.
+	SSOWorkspace int64
+	// SessionExpires is the session's absolute end; a session that replaces
+	// it keeps it.
+	SessionExpires time.Time
 	// SSORequired is set when the session's workspace requires its own
 	// single sign-on, which this session did not use; Workspace is then 0.
 	SSORequired *SSORequired
@@ -100,19 +115,26 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 				return
 			}
 		} else if c, err := r.Cookie(sessionCookie); err == nil && c.Value != "" {
-			user, ws, pinned, err := s.Store.SessionUserSSO(r.Context(), c.Value)
+			sess, err := s.Store.SessionInfo(r.Context(), c.Value)
 			switch {
 			case err == nil:
-				p = &Principal{User: user, Role: user.Role, Session: true, Workspace: ws}
-				if ws > 0 && editionSessionAccess != nil {
-					if req := editionSessionAccess(s, r, user, ws, pinned); req != nil {
+				p = &Principal{User: sess.User, Role: sess.User.Role, Session: true, Workspace: sess.Workspace,
+					PasswordSession: sess.PasswordLogin, NeedsMFAEnrolment: sess.NeedsMFAEnrolment,
+					PasswordChangeRequired: sess.PasswordChangeRequired, SSOWorkspace: sess.SSOWorkspace, SessionExpires: sess.ExpiresAt}
+				if p.Workspace > 0 && editionSessionAccess != nil {
+					if req := editionSessionAccess(s, r, sess.User, p.Workspace, sess.SSOWorkspace); req != nil {
 						// Fail closed: no workspace, so no workspace data.
-						p.Workspace, p.Role, p.SSORequired = 0, "", req
+						p.Workspace, p.Role, p.SSORequired, p.NeedsMFAEnrolment = 0, "", req, false
 					}
+				}
+				if sessionGate(w, r, p) {
+					return
 				}
 			case !errors.Is(err, store.ErrNotFound):
 				s.credentialsUnavailable(w, r, err)
 				return
+			default:
+				s.sessionEnded(r, err)
 			}
 		}
 		if p != nil {
@@ -271,7 +293,7 @@ func requireIngest(next http.Handler) http.Handler {
 }
 
 func (s *Server) securityHeaders(next http.Handler) http.Handler {
-	csp := "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+	csp := "default-src 'self'; img-src 'self' data:; style-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
 	if len(s.WidgetOrigins) > 0 {
 		o := strings.Join(s.WidgetOrigins, " ")
 		csp += "; script-src 'self' " + o + "; frame-src " + o

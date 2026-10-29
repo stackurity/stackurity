@@ -1,0 +1,95 @@
+package main
+
+import (
+	"fmt"
+	"log/slog"
+	"net"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/stackurity/stackurity/internal/auth"
+	"github.com/stackurity/stackurity/internal/notify"
+	"github.com/stackurity/stackurity/internal/store"
+)
+
+// sessionIdleTimeout reads STACKURITY_SESSION_IDLE_TIMEOUT: a Go duration
+// (30m by default) after which an unused browser session ends, or off.
+func sessionIdleTimeout() (time.Duration, error) {
+	v := strings.TrimSpace(os.Getenv("STACKURITY_SESSION_IDLE_TIMEOUT"))
+	switch v {
+	case "":
+		return 30 * time.Minute, nil
+	case "off", "0":
+		return 0, nil
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d < time.Minute || d > store.SessionTTL {
+		return 0, fmt.Errorf("STACKURITY_SESSION_IDLE_TIMEOUT must be a duration from 1m to 12h (for example 30m), or off")
+	}
+	return d, nil
+}
+
+// breachChecker is the breached-password check (docs/network.md):
+// STACKURITY_BREACHED_PASSWORD_CHECK=off turns it off, and
+// STACKURITY_BREACHED_PASSWORD_URL points it at a mirror of the range API.
+func breachChecker(log *slog.Logger) (*auth.BreachChecker, error) {
+	switch v := strings.ToLower(strings.TrimSpace(os.Getenv("STACKURITY_BREACHED_PASSWORD_CHECK"))); v {
+	case "", "on":
+	case "off":
+		log.Info("breached-password check is off")
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("STACKURITY_BREACHED_PASSWORD_CHECK must be on or off, not %q", v)
+	}
+	return &auth.BreachChecker{URL: strings.TrimSpace(os.Getenv("STACKURITY_BREACHED_PASSWORD_URL"))}, nil
+}
+
+// accountMailer is how the server emails people about their own account
+// (password reset links): the platform's mail where an edition provides it
+// (Stackurity Cloud), otherwise the operator's mail server from
+// STACKURITY_SMTP_*. Nil when neither is set: administrators then reset
+// passwords by hand. The operator chose this server, so it may be on a
+// private address (a local relay); workspaces' own mail servers are still
+// checked against their network policy.
+func accountMailer(d *notify.Dispatcher, log *slog.Logger) (notify.Mailer, error) {
+	if d != nil && d.PlatformMail != nil {
+		return d.PlatformMail, nil
+	}
+	host := strings.TrimSpace(os.Getenv("STACKURITY_SMTP_HOST"))
+	if host == "" {
+		return nil, nil
+	}
+	from := strings.TrimSpace(os.Getenv("STACKURITY_SMTP_FROM"))
+	if from == "" {
+		return nil, fmt.Errorf("STACKURITY_SMTP_FROM is required with STACKURITY_SMTP_HOST")
+	}
+	port := 587
+	if v := os.Getenv("STACKURITY_SMTP_PORT"); v != "" {
+		p, err := strconv.Atoi(v)
+		if err != nil || p < 1 || p > 65535 {
+			return nil, fmt.Errorf("STACKURITY_SMTP_PORT must be a port number")
+		}
+		port = p
+	}
+	tls := strings.TrimSpace(os.Getenv("STACKURITY_SMTP_TLS"))
+	switch tls {
+	case "", "starttls", "tls", "none":
+	default:
+		return nil, fmt.Errorf("STACKURITY_SMTP_TLS must be starttls, tls or none")
+	}
+	password := os.Getenv("STACKURITY_SMTP_PASSWORD")
+	if f := os.Getenv("STACKURITY_SMTP_PASSWORD_FILE"); f != "" {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			return nil, fmt.Errorf("read STACKURITY_SMTP_PASSWORD_FILE: %w", err)
+		}
+		password = strings.TrimSpace(string(b))
+	}
+	sender := notify.NewSender(false)
+	sender.Dial = (&net.Dialer{}).DialContext
+	log.Info("account email enabled (password reset links)", "smtp_host", host, "from", from)
+	return &notify.SMTPMailer{Sender: sender, Password: password, Config: notify.ChannelConfig{
+		Host: host, Port: port, Username: os.Getenv("STACKURITY_SMTP_USERNAME"), From: from, TLS: tls}}, nil
+}

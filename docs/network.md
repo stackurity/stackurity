@@ -1,6 +1,6 @@
 # Outbound network access
 
-Stackurity has no telemetry. Every outbound connection is listed below. The only requests that are not for your own data or integrations are the [update check](#update-check), which sends nothing about you, and [feedback](#feedback), which a user sends on purpose. Both can be turned off.
+Stackurity has no telemetry. Every outbound connection is listed below. The only requests that are not for your own data or integrations are the [update check](#update-check), which sends nothing about you, the [breached-password check](#breached-password-check), which sends five characters of a hash, and [feedback](#feedback), which a user sends on purpose. All three can be turned off.
 
 | Component | Destination | When | Data sent |
 |---|---|---|---|
@@ -20,6 +20,19 @@ The response is compared with the running version on your server, and the result
 
 - `STACKURITY_UPDATE_CHECK=off` turns it off: no request is made at all.
 - `STACKURITY_UPDATE_URL` points it at a mirror that serves the same JSON (for example a copy of the GitHub response on an internal web server).
+
+### Breached-password check
+
+When someone chooses a password (first-admin setup, **Your account → Password**, a password reset link, an invitation, an admin adding a member or setting a temporary password, and sign-up on Stackurity Cloud), the server asks [Have I Been Pwned's Pwned Passwords](https://haveibeenpwned.com/API/v3#PwnedPasswords) whether it appears in known data breaches, and refuses it if so.
+
+| Destination | When | What is sent |
+|---|---|---|
+| `api.pwnedpasswords.com` (`STACKURITY_BREACHED_PASSWORD_URL`) | Each time a password is chosen (not at sign-in) | `GET /range/<first 5 hex characters of the password's SHA-1>` with `Add-Padding: true` and `User-Agent: stackurity`. Nothing else: not the password, the rest of its hash, the email or the server |
+
+This is k-anonymity: the five characters match about a thousand different hashes, the answer lists all of them (padded with fake entries so its size says nothing), and the comparison happens on your server. The request has a 3-second timeout and follows no redirects. If the service cannot be reached, the server logs `breached-password check unavailable` at warning level and accepts the password (fail open), so an air-gapped server keeps working.
+
+- On by default, on Stackurity Cloud and self-hosted alike. `STACKURITY_BREACHED_PASSWORD_CHECK=off` turns it off: no request is made at all.
+- `STACKURITY_BREACHED_PASSWORD_URL` points it at a mirror that serves the same range API (for example [a local copy](https://github.com/HaveIBeenPwned/PwnedPasswordsDownloader) behind an internal web server); the five characters are appended to it.
 
 ### Feedback
 

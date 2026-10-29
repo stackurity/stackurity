@@ -4630,6 +4630,25 @@ h6.md-h {
   min-width: 0;
 }
 
+/* Two-factor sign-in (TwoFactor.tsx) */
+.mfa-qr {
+  margin: 0.75rem 0;
+}
+.mfa-qr img {
+  image-rendering: pixelated;
+  background: #fff;
+  padding: 8px;
+  border-radius: 6px;
+}
+.mfa-codes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: 0.25rem 1rem;
+  list-style: none;
+  padding: 0;
+  margin: 0.75rem 0;
+}
+
 /* "I've fixed it — check now" on fix cards and the fix detail (FixVerify). */
 .fix-verify {
   display: grid;

@@ -965,6 +965,7 @@ function InviteStep({ project, onFinish, pending }: { project: Project; onFinish
  */
 export function SetupChecklist({ o, onChange }: { o: Onboarding; onChange: () => void }) {
   const act = useAction();
+  const { me } = useAuth();
   // Each item is one click to the screen that does it. A project comes
   // first only while there is none: adding a server needs one.
   const items: { done: boolean; text: string; to: string }[] = [
@@ -973,6 +974,8 @@ export function SetupChecklist({ o, onChange }: { o: Onboarding; onChange: () =>
     { done: Boolean(o.steps.assistant), text: "Connect an AI assistant", to: "/settings/ai-assistants" },
     { done: o.steps.notifications, text: "Turn on notifications", to: "/settings/integrations" },
     { done: o.steps.invite, text: "Invite your team", to: "/settings/users" },
+    // Recommended for admins: their account can change everything.
+    { done: Boolean(me?.user?.mfa_enabled), text: "Turn on two-factor sign-in for your account", to: "/account#mfa" },
   ];
   const left = items.filter((i) => !i.done).length;
   const hide = async () => {

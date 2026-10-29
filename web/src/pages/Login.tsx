@@ -3,6 +3,8 @@ import { api } from "../api";
 import { useAuth } from "../auth";
 import { useAction } from "../hooks";
 import { Code, ErrorBox } from "../components/ui";
+import { MfaLoginStep } from "./TwoFactor";
+import { ForgotPasswordLink } from "./Password";
 
 export function LoginPage() {
   const { refresh, state } = useAuth();
@@ -13,6 +15,8 @@ export function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const act = useAction();
+  // The password was right and the account has two-factor sign-in.
+  const [mfa, setMfa] = useState(false);
   const discovery = state.phase === "login" && Boolean(state.meta.sso_discovery);
   const [ssoMode, setSSOMode] = useState(false);
   const find = useAction();
@@ -55,8 +59,10 @@ export function LoginPage() {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     const ok = await act.run(() => api.login(email.trim(), password));
-    if (ok) await refresh();
+    if (ok?.mfa_required) setMfa(true);
+    else if (ok) await refresh();
   };
+  if (mfa) return <MfaLoginStep onDone={refresh} onRestart={() => (setMfa(false), setPassword(""))} />;
 
   return (
     <div className="center-screen">
@@ -99,6 +105,7 @@ export function LoginPage() {
         <button type="submit" className={sso ? "btn btn-block" : "btn btn-primary btn-block"} disabled={act.pending}>
           {act.pending ? "Signing in…" : "Sign in"}
         </button>
+        <ForgotPasswordLink />
         {discovery && (
           <p className="small" style={{ textAlign: "center" }}>
             <button type="button" className="btn btn-link" onClick={() => setSSOMode(true)}>

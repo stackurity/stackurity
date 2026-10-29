@@ -52,4 +52,5 @@ require (
 	github.com/mattermost/xml-roundtrip-validator v0.1.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
+	rsc.io/qr v0.2.0 // indirect
 )

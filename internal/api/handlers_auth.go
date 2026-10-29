@@ -2,6 +2,7 @@ package api
 
 import (
 	"crypto/subtle"
+	"errors"
 	"github.com/stackurity/stackurity/internal/license"
 	"net/http"
 	"strconv"
@@ -24,7 +25,7 @@ func (s *Server) meta(w http.ResponseWriter, r *http.Request) {
 	// honour project_id (the CLI's --project); "app_list" means a host
 	// batch may list its application directories (apps.dirs).
 	meta := map[string]any{"name": "stackurity", "version": s.Version, "api": "v1", "setup_required": n == 0,
-		"features": []string{FeatureUploadProject, FeatureAppList}}
+		"features": []string{FeatureUploadProject, FeatureAppList}, "password_reset": s.passwordResetMode()}
 	if sso := s.ssoMeta(r); sso != nil {
 		meta["sso"] = sso
 	}
@@ -64,13 +65,17 @@ func (s *Server) setup(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, badRequest("a valid email is required"))
 		return
 	}
+	if err := s.checkNewPassword(r.Context(), req.Password); err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	u, err := s.Store.CreateFirstAdmin(r.Context(), req.Email, req.Name, req.Password)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
 	_ = s.Store.Audit(r.Context(), store.Actor{Type: "system", Name: "setup", RemoteAddr: clientIP(r)}, "setup.admin_created", "user", itoa(u.ID), nil)
-	s.startSession(w, r, u)
+	s.completePasswordLogin(w, r, u)
 }
 
 type loginRequest struct {
@@ -120,14 +125,32 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	s.completePasswordLogin(w, r, u)
+}
+
+// loginSucceeded forgets the account's failed sign-ins from this address
+// and remembers the address as one it signs in from. It runs only once the
+// sign-in is complete (after the second factor, if the account has one), so
+// knowing the password alone neither clears the back-off nor makes an
+// address known.
+func (s *Server) loginSucceeded(r *http.Request, u *store.User) {
+	subject := loginSubject(strings.ToLower(strings.TrimSpace(u.Email)), r)
 	if err := s.Store.ClearFailures(r.Context(), "login-fail", subject); err != nil {
 		s.Log.Error("clearing sign-in failures", "err", err)
 	}
-	s.startSession(w, r, u)
+	s.rememberAddress(r, subject)
 }
 
-// startSession signs u in, working in their first workspace.
+// startSession signs u in, working in their first workspace, without a
+// password check of its own (single sign-on). Password sign-ins go
+// through completePasswordLogin (mfa.go).
 func (s *Server) startSession(w http.ResponseWriter, r *http.Request, u *store.User) {
+	s.startSessionWith(w, r, u, store.SessionOpts{}, nil)
+}
+
+// startSessionWith signs u in as opts says; detail is added to the
+// auth.login event.
+func (s *Server) startSessionWith(w http.ResponseWriter, r *http.Request, u *store.User, opts store.SessionOpts, detail map[string]any) {
 	ms, err := s.Store.Memberships(r.Context(), u.ID)
 	if err != nil {
 		s.fail(w, r, err)
@@ -137,26 +160,78 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, u *store.U
 	if len(ms) > 0 {
 		ws = ms[0].WorkspaceID
 	}
-	secret, err := s.Store.CreateSession(r.Context(), u.ID, ws)
+	secret, err := s.Store.CreateSessionWith(r.Context(), u.ID, ws, opts)
 	if err != nil {
 		s.fail(w, r, err)
 		return
+	}
+	// A new session ID at every sign-in: a session the browser already
+	// had (someone else's, or one planted in it) ends here.
+	if old := sessionSecret(r); old != "" {
+		if err := s.Store.DeleteSession(r.Context(), old); err != nil {
+			s.fail(w, r, err)
+			return
+		}
 	}
 	if u, err = s.Store.GetUser(tenant.WithWorkspace(r.Context(), ws), u.ID); err != nil {
 		s.fail(w, r, err)
 		return
 	}
+	s.setSessionCookie(w, secret)
+	var d any
+	if detail != nil {
+		d = detail
+	}
+	_ = s.Store.Audit(tenant.WithWorkspace(r.Context(), ws), store.Actor{Type: "user", ID: u.ID, Name: u.Email, RemoteAddr: clientIP(r)}, "auth.login", "user", itoa(u.ID), d)
+	writeJSON(w, 200, u)
+}
+
+func (s *Server) setSessionCookie(w http.ResponseWriter, secret string) {
 	http.SetCookie(w, &http.Cookie{
 		Name: sessionCookie, Value: secret, Path: "/", HttpOnly: true, Secure: s.CookieSecure,
 		SameSite: http.SameSiteStrictMode, Expires: time.Now().Add(store.SessionTTL),
 	})
-	_ = s.Store.Audit(tenant.WithWorkspace(r.Context(), ws), store.Actor{Type: "user", ID: u.ID, Name: u.Email, RemoteAddr: clientIP(r)}, "auth.login", "user", itoa(u.ID), nil)
-	writeJSON(w, 200, u)
+}
+
+// sessionSecret is the request's session cookie ("" without one).
+func sessionSecret(r *http.Request) string {
+	if c, err := r.Cookie(sessionCookie); err == nil {
+		return c.Value
+	}
+	return ""
+}
+
+// rotateSession replaces the caller's session with a new one (a new
+// session ID) in the same workspace, signed in as opts says. It is used
+// when what the session may do changes: two-factor sign-in turned on, a
+// new password.
+func (s *Server) rotateSession(w http.ResponseWriter, r *http.Request, opts store.SessionOpts) error {
+	p := principal(r)
+	// The new session replaces this one: it keeps its single sign-on pin and
+	// its end, so rotating never frees a pinned session or extends one.
+	opts.Pinned, opts.Expires = p.SSOWorkspace, p.SessionExpires
+	secret, err := s.Store.CreateSessionWith(r.Context(), p.User.ID, p.Workspace, opts)
+	if err != nil {
+		return err
+	}
+	if old := sessionSecret(r); old != "" {
+		if err := s.Store.DeleteSession(r.Context(), old); err != nil {
+			return err
+		}
+	}
+	s.setSessionCookie(w, secret)
+	return nil
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(sessionCookie); err == nil {
-		_ = s.Store.DeleteSession(r.Context(), c.Value)
+		if uid, ws, email, err := s.Store.EndSession(r.Context(), c.Value); err == nil && uid > 0 {
+			ctx := r.Context()
+			if ws > 0 {
+				ctx = tenant.WithWorkspace(ctx, ws)
+			}
+			_ = s.Store.Audit(ctx, store.Actor{Type: "user", ID: uid, Name: email, RemoteAddr: clientIP(r)}, "auth.logout", "user", itoa(uid), nil)
+		}
 	}
 	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", HttpOnly: true, Secure: s.CookieSecure,
 		SameSite: http.SameSiteStrictMode, MaxAge: -1})
@@ -172,7 +247,8 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	}
 	out := map[string]any{"user": p.User, "role": p.Role, "token": p.Token, "workspace": nil, "workspaces": []store.Membership{},
 		"edition": ed, "features": features, "feedback_enabled": s.FeedbackURL != "" && p.User != nil,
-		"access": "organisation", "project_role": p.ProjectRole, "projects": []store.Project{}, "default_project_id": 0}
+		"access": "organisation", "project_role": p.ProjectRole, "projects": []store.Project{}, "default_project_id": 0,
+		"mfa_enrolment_required": p.NeedsMFAEnrolment, "password_change_required": p.PasswordChangeRequired}
 	if p.Restricted {
 		out["access"] = "projects"
 	}
@@ -350,8 +426,11 @@ func (s *Server) revokeToken(w http.ResponseWriter, r *http.Request) {
 
 func itoa(i int64) string { return strconv.FormatInt(i, 10) }
 
-// changePassword lets a signed-in user change their own password. Other
-// sessions are signed out; API tokens are unaffected.
+// changePassword lets a signed-in user change their own password. Their
+// other sessions end, and this one gets a new session ID. Connected AI
+// assistants are disconnected unless revoke_assistants is false; API tokens
+// are kept unless revoke_tokens is true, and the answer says how many were
+// kept so the page can list them.
 func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 	p := principal(r)
 	if p.User == nil || !p.Session {
@@ -363,23 +442,51 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Current string `json:"current_password"`
-		New     string `json:"new_password"`
+		Current          string `json:"current_password"`
+		New              string `json:"new_password"`
+		RevokeTokens     bool   `json:"revoke_tokens"`
+		RevokeAssistants *bool  `json:"revoke_assistants"`
 	}
 	if err := decode(r, &req); err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	c, _ := r.Cookie(sessionCookie)
-	if err := s.Store.ChangeOwnPassword(r.Context(), p.User.ID, req.Current, req.New, c.Value); err != nil {
-		if err == store.ErrNotFound {
-			_ = s.Store.Audit(r.Context(), p.Actor(r), "auth.password_change_failed", "user", itoa(p.User.ID), nil)
-			writeError(w, 400, "bad_request", "current password is incorrect")
-			return
-		}
+	wrong := func() {
+		_ = s.Store.Audit(r.Context(), p.Actor(r), "auth.password_change_failed", "user", itoa(p.User.ID), nil)
+		writeError(w, 400, "bad_request", "current password is incorrect")
+	}
+	if ok, err := s.Store.CheckOwnPassword(r.Context(), p.User.ID, req.Current); err != nil {
+		s.fail(w, r, err)
+		return
+	} else if !ok {
+		wrong()
+		return
+	}
+	if err := s.checkNewPassword(r.Context(), req.New); err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	_ = s.Store.Audit(r.Context(), p.Actor(r), "auth.password_changed", "user", itoa(p.User.ID), nil)
-	w.WriteHeader(204)
+	rv := store.Revoke{Tokens: req.RevokeTokens, Assistants: req.RevokeAssistants == nil || *req.RevokeAssistants}
+	out, err := s.Store.ChangePassword(r.Context(), p.User.ID, req.Current, req.New, sessionSecret(r), rv)
+	if errors.Is(err, store.ErrNotFound) {
+		wrong()
+		return
+	}
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	_ = s.Store.Audit(r.Context(), p.Actor(r), "auth.password_changed", "user", itoa(p.User.ID), out)
+	// What the session may do changed (a temporary password is gone): a
+	// new session ID, signed in as before.
+	if err := s.rotateSession(w, r, store.SessionOpts{PasswordLogin: p.PasswordSession, MFA: p.User.MFAEnabled && p.PasswordSession}); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	tokens, _, err := s.Store.CountCredentials(r.Context(), p.User.ID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"revoked": out, "tokens_kept": tokens})
 }

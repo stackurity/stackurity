@@ -12,7 +12,7 @@ import { changeText, fixesFrom, FixKindIcon, FixPlaces, urgencyOf } from "../com
 import { PackSuggestions } from "../components/PackSuggestions";
 import { fixPlaces, FixVerify, useCheckOptions, type CheckOptions } from "../components/FixVerify";
 import { IconHelp } from "../components/Icons";
-import { Code, EmptyState, ErrorBox, Loading, PageHeader, RelativeTime } from "../components/ui";
+import { Code, EmptyState, ErrorBox, Loading, Notice, PageHeader, RelativeTime } from "../components/ui";
 
 const TOP = 5;
 
@@ -161,7 +161,15 @@ export function HomePage() {
   if (ob.data?.show_flow) return <Navigate replace to="/get-started" />;
   if (ov.error) return <ErrorBox error={ov.error} title="Could not load Home" />;
   if (!ov.data) return <Loading />;
-  const checklist = ob.data && ob.data.state !== "done" ? <SetupChecklist o={ob.data} onChange={ob.reload} /> : null;
+  const checklist =
+    ob.data && ob.data.state !== "done" ? (
+      <SetupChecklist o={ob.data} onChange={ob.reload} />
+    ) : admin && me?.user && !me.user.mfa_enabled && !me.token ? (
+      // After the checklist: an admin account without a second factor.
+      <Notice kind="warn">
+        Your admin account signs in with a password only. <Link to="/account#mfa">Turn on two-factor sign-in</Link>.
+      </Notice>
+    ) : null;
   const o = ov.data;
   const totalAssets = sum(o.assets);
   const workspace = [me?.workspace?.name, project?.name].filter(Boolean).join(" · ");
