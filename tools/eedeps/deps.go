@@ -12,4 +12,10 @@ import (
 	// GO-2026-4753 (signature bypass), newer than crewjam/saml asks for.
 	_ "github.com/crewjam/saml"
 	_ "github.com/russellhaering/goxmldsig"
+
+	// Disposable email domains refused at Stackurity Cloud sign-up
+	// (internal/cloud in stackurity-pro): international domain names and
+	// the public suffix list.
+	_ "golang.org/x/net/idna"
+	_ "golang.org/x/net/publicsuffix"
 )
