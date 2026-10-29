@@ -142,7 +142,7 @@ func normaliseName(eco, n string) string {
 	switch eco {
 	case "PyPI":
 		return strings.ToLower(pypiSep.ReplaceAllString(n, "-"))
-	case "Packagist", "NuGet":
+	case "Packagist", "NuGet", "SwiftURL":
 		return strings.ToLower(n)
 	}
 	return n
@@ -204,6 +204,20 @@ func deriveTarget(rawPurl, invVersion string, ev map[string]string) (target, err
 		add(p.name)
 	case "pub":
 		t.ecosystem = "Pub"
+		add(p.name)
+	case "swift":
+		// OSV's SwiftURL names a package by its repository URL; a registry
+		// identity (scope/name, no host) has no advisories.
+		if host, _, _ := strings.Cut(p.namespace, "/"); !strings.Contains(host, ".") {
+			return t, fmt.Errorf("a Swift package without a repository URL has no advisory source")
+		}
+		t.ecosystem = "SwiftURL"
+		add(p.namespace + "/" + p.name)
+	case "hex":
+		if p.namespace != "" {
+			return t, fmt.Errorf("packages from a private Hex organisation or repository have no advisory source")
+		}
+		t.ecosystem = "Hex"
 		add(p.name)
 	case "deb":
 		t.family = famDpkg

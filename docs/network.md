@@ -66,6 +66,7 @@ Feeds are created automatically for the ecosystems present in your inventory. Ea
 | `releases:nuget` | `api.nuget.org` (`STACKURITY_NUGET_URL`) | Every 6 h; each package at most daily | The package's registration index, and for large packages its newest pages |
 | `releases:maven` | `repo1.maven.org` (`STACKURITY_MAVEN_URL`) | Every 6 h; each artifact at most daily | `maven-metadata.xml` |
 | `releases:pub` | `pub.dev` (`STACKURITY_PUB_URL`) | Every 6 h; each package at most daily | `/api/packages/<name>` |
+| `releases:hex` | `hex.pm` (`STACKURITY_HEX_URL`) | Every 6 h; each package at most daily, at most 100 requests a minute | `/api/packages/<name>` (public packages only; private organisations' packages are never looked up) |
 
 ### Plugins
 

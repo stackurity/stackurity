@@ -1,0 +1,39 @@
+{
+ "id": "GHSA-q36x-r5x4-h4q6",
+ "modified": "2026-09-10T03:49:24.681193232Z",
+ "published": "2023-06-09T19:32:49Z",
+ "aliases": [
+  "CVE-2022-0618"
+ ],
+ "summary": "Denial of service via HTTP/2 HEADERS frames padding",
+ "severity": [
+  {
+   "type": "CVSS_V3",
+   "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+  }
+ ],
+ "database_specific": {
+  "severity": "HIGH"
+ },
+ "affected": [
+  {
+   "package": {
+    "ecosystem": "SwiftURL",
+    "name": "github.com/apple/swift-nio-http2"
+   },
+   "ranges": [
+    {
+     "type": "ECOSYSTEM",
+     "events": [
+      {
+       "introduced": "1.0.0"
+      },
+      {
+       "fixed": "1.20"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

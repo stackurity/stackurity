@@ -1,0 +1,26 @@
+{
+  "abi": "stackurity-pack/2",
+  "id": "hex",
+  "version": "1.0.0",
+  "name": "Elixir and Erlang (Hex)",
+  "publisher": "stackurity",
+  "license": "Apache-2.0",
+  "description": "Reads Mix's mix.lock (every format since Mix 1.0): every Hex package with its exact version, including transitive ones and packages renamed in mix.exs. Packages are checked against OSV's Hex advisories (GitHub and the Erlang Ecosystem Foundation's CNA).",
+  "homepage": "https://stackurity.dev/packs/hex",
+  "files": [
+    "mix.lock"
+  ],
+  "purl_types": [
+    "hex"
+  ],
+  "handles": [
+    "hex"
+  ],
+  "max_memory_mb": 128,
+  "timeout_seconds": 60,
+  "known_limitations": [
+    "Git and path dependencies have no released version and are not listed; the file's coverage counts them",
+    "Packages from a private Hex organisation or a self-hosted repository are inventoried but have no vulnerability source",
+    "mix.lock does not say which packages are only for :dev or :test, so all are reported"
+  ]
+}

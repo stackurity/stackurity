@@ -111,3 +111,37 @@ func TestParseRejects(t *testing.T) {
 		}
 	}
 }
+
+// TestHashiCorpDistroBuilds: Debian and Ubuntu shipped their own consul and
+// nomad (always versioned +dfsg or ~dfsg), so only HashiCorp's own version
+// format marks a vendor build; the distributions' packages are still
+// evaluated against their advisories.
+func TestHashiCorpDistroBuilds(t *testing.T) {
+	o := Default()
+	for _, c := range []struct {
+		key, version string
+		vendor       bool
+	}{
+		{"pkg:deb/ubuntu/consul", "1.20.1-1", true},
+		{"pkg:deb/debian/consul", "1.20.1", true},
+		{"pkg:deb/ubuntu/consul", "1.8.7+dfsg1-3", false},            // Ubuntu 22.04
+		{"pkg:deb/ubuntu/consul", "0.6.4~dfsg-3", false},             // Ubuntu 18.04
+		{"pkg:deb/ubuntu/consul", "1.10.12+dfsg1-1ubuntu0.1", false}, // Ubuntu 23.10 security
+		{"pkg:deb/debian/consul", "1.0.7~dfsg1-5+b21", false},        // Debian 10
+		{"pkg:deb/debian/consul", "1.8.7+dfsg1-2+b3", false},         // Debian 11
+		{"pkg:deb/ubuntu/nomad", "2.0.7-1", true},
+		{"pkg:deb/ubuntu/nomad", "0.8.7+dfsg1-1ubuntu1", false}, // Ubuntu 20.04
+		{"pkg:deb/ubuntu/nomad", "0.4.0+dfsg-1", false},         // Ubuntu 18.04
+		{"pkg:deb/ubuntu/vault", "1.18.0-1", true},              // still vendor-only
+	} {
+		repo, ok := o.VendorBuild(c.key, c.version)
+		if ok != c.vendor {
+			t.Errorf("%s %s: vendor build %v (%q), want %v", c.key, c.version, ok, repo, c.vendor)
+		}
+	}
+	for key, want := range map[string]string{"pkg:deb/ubuntu/consul": "consul", "pkg:deb/debian/nomad": "nomad"} {
+		if m, ok := o.Product(key, nil); !ok || m.Product != want {
+			t.Errorf("%s: %+v %v, want %s", key, m, ok, want)
+		}
+	}
+}

@@ -32,6 +32,7 @@ const (
 	FeedNuGet    = "releases:nuget"
 	FeedMaven    = "releases:maven"
 	FeedPub      = "releases:pub"
+	FeedHex      = "releases:hex"
 )
 
 // registry describes how one release feed looks packages up.
@@ -55,6 +56,8 @@ var registries = map[string]registry{
 	FeedNuGet:    {purlType: "nuget", workers: 4, lookup: (*Syncer).nugetRelease},
 	FeedMaven:    {purlType: "maven", workers: 4, lookup: (*Syncer).mavenRelease},
 	FeedPub:      {purlType: "pub", workers: 4, lookup: (*Syncer).pubRelease},
+	// hex.pm allows 100 API requests a minute per IP address.
+	FeedHex: {purlType: "hex", workers: 1, gap: 650 * time.Millisecond, lookup: (*Syncer).hexRelease},
 }
 
 func isReleaseFeed(name string) bool {
@@ -638,5 +641,55 @@ func (s *Syncer) pubRelease(ctx context.Context, c store.ReleaseCandidate) (stor
 			r.Deprecated += " Replaced by " + doc.ReplacedBy + "."
 		}
 	}
+	return r, nil
+}
+
+// --- Hex
+
+var hexName = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
+
+// hexRelease reads hex.pm's package API. A retired release is still
+// installable but its publisher asks people to move off it, so, like a
+// yanked one, it is never offered as the latest.
+func (s *Syncer) hexRelease(ctx context.Context, c store.ReleaseCandidate) (store.Release, error) {
+	r := store.Release{Source: FeedHex, SourceURL: "https://hex.pm/packages/" + c.Name}
+	if c.Namespace != "" {
+		return r, fmt.Errorf("%s/%s is from a private Hex organisation or repository, not looked up on hex.pm", c.Namespace, c.Name)
+	}
+	if !hexName.MatchString(c.Name) {
+		return r, fmt.Errorf("invalid Hex package name %q", c.Name)
+	}
+	b, err := s.f.download(ctx, registryURL(s.f.cfg.HexURL, "api", "packages", c.Name), 16<<20)
+	if err != nil {
+		return r, err
+	}
+	var doc struct {
+		Releases []struct {
+			Version    string `json:"version"`
+			InsertedAt string `json:"inserted_at"`
+		} `json:"releases"`
+		Retirements map[string]struct {
+			Reason  string `json:"reason"`
+			Message string `json:"message"`
+		} `json:"retirements"`
+	}
+	if err := json.Unmarshal(b, &doc); err != nil {
+		return r, err
+	}
+	var vs []regVersion
+	for _, v := range doc.Releases {
+		rv := regVersion{version: v.Version, published: v.InsertedAt, pre: version.SemverPrerelease(v.Version)}
+		if ret, ok := doc.Retirements[v.Version]; ok {
+			rv.withdrawn, rv.reason = true, "retired"
+			if ret.Reason != "" {
+				rv.reason += " (" + ret.Reason + ")"
+			}
+			if ret.Message != "" {
+				rv.reason += ": " + ret.Message
+			}
+		}
+		vs = append(vs, rv)
+	}
+	fill(&r, version.SemVer, vs)
 	return r, nil
 }

@@ -74,6 +74,12 @@ func suggestions(unsupported map[string]int64, installed map[string]store.Instal
 	if err != nil {
 		return nil, err
 	}
+	return suggestFrom(cat, unsupported, installed), nil
+}
+
+// suggestFrom names the packs in cat, not installed and enabled, whose
+// handles cover files reported as unsupported.
+func suggestFrom(cat []packs.CatalogEntry, unsupported map[string]int64, installed map[string]store.InstalledPack) []packSuggestion {
 	out := []packSuggestion{}
 	for _, e := range cat {
 		if p, ok := installed[e.Manifest.ID]; ok && p.Enabled {
@@ -87,7 +93,7 @@ func suggestions(unsupported map[string]int64, installed map[string]store.Instal
 			out = append(out, packSuggestion{ID: e.Manifest.ID, Name: e.Manifest.Name, Description: e.Manifest.Description, Files: n})
 		}
 	}
-	return out, nil
+	return out
 }
 
 // listPacks shows the installed packs, and to people working in a workspace,

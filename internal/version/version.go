@@ -54,7 +54,7 @@ func For(e Ecosystem) Comparator {
 // ForPurlType maps a purl type to its comparator family.
 func ForPurlType(t string) Ecosystem {
 	switch t {
-	case "npm", "cargo", "golang", "pub":
+	case "npm", "cargo", "golang", "pub", "swift", "hex":
 		return SemVer
 	case "pypi":
 		return PEP440

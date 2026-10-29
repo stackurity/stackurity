@@ -242,6 +242,7 @@ func serverCmd() *cobra.Command {
 			if !trustProxy && (os.Getenv("STACKURITY_TRUSTED_PROXIES") != "" || os.Getenv("STACKURITY_TRUSTED_PROXY_HEADER") != "") {
 				log.Warn("STACKURITY_TRUSTED_PROXIES and STACKURITY_TRUSTED_PROXY_HEADER apply only with STACKURITY_TRUST_PROXY=true")
 			}
+			coverageGaps := intel.CachedCoverageGaps(st, nil, intel.GapReportTTL)
 			srv := &api.Server{
 				OpenAIAppsChallenge: challenge,
 				Pro:                 proCfg,
@@ -258,7 +259,7 @@ func serverCmd() *cobra.Command {
 				Packs:              packMgr,
 				Licence:            holder, Gate: gate, LicenceFromEnv: licFromEnv,
 				Health: checker, UpdateCheck: updateCfg.Enabled,
-				CoverageGaps: func(ctx context.Context) (any, error) { return intel.CoverageGaps(ctx, st, nil) },
+				CoverageGaps: func(ctx context.Context) (any, error) { return coverageGaps(ctx) },
 				FeedbackURL:  feedbackURL,
 			}
 			if srv.AccountMail, err = accountMailer(dispatcher, log); err != nil {
@@ -1003,6 +1004,7 @@ func intelConfig(dataDir string) intel.Config {
 	cfg.NuGetURL = env("STACKURITY_NUGET_URL", cfg.NuGetURL)
 	cfg.MavenURL = env("STACKURITY_MAVEN_URL", cfg.MavenURL)
 	cfg.PubURL = env("STACKURITY_PUB_URL", cfg.PubURL)
+	cfg.HexURL = env("STACKURITY_HEX_URL", cfg.HexURL)
 	cfg.WorkDir = filepath.Join(dataDir, "work")
 	// Registries ask automated clients to identify themselves.
 	cfg.UserAgent = "stackurity/" + version + " (+https://github.com/stackurity/stackurity)"
