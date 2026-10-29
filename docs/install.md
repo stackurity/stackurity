@@ -17,8 +17,8 @@ docker compose up -d                   # pulls ghcr.io/stackurity/stackurity:lat
 docker compose logs stackurity | grep -A2 "one-time token"
 ```
 
-To pin a release, set `STACKURITY_IMAGE=ghcr.io/stackurity/stackurity:0.13.4` in `deploy/.env`. The same signed image is on Docker Hub as `stackurity/stackurity:0.13.4` (`docker pull stackurity/stackurity`); GHCR is the default because Docker Hub limits anonymous pulls. Images are signed; check one with
-`cosign verify ghcr.io/stackurity/stackurity:0.13.4 --certificate-identity-regexp '^https://github.com/stackurity/stackurity/.github/workflows/release.yml@refs/tags/' --certificate-oidc-issuer https://token.actions.githubusercontent.com` (see [security-audit.md](security-audit.md)).
+To pin a release, set `STACKURITY_IMAGE=ghcr.io/stackurity/stackurity:0.13.5` in `deploy/.env`. The same signed image is on Docker Hub as `stackurity/stackurity:0.13.5` (`docker pull stackurity/stackurity`); GHCR is the default because Docker Hub limits anonymous pulls. Images are signed; check one with
+`cosign verify ghcr.io/stackurity/stackurity:0.13.5 --certificate-identity-regexp '^https://github.com/stackurity/stackurity/.github/workflows/release.yml@refs/tags/' --certificate-oidc-issuer https://token.actions.githubusercontent.com` (see [security-audit.md](security-audit.md)).
 
 Open the dashboard through your HTTPS proxy (see [TLS](#tls)), or at http://localhost:8080 in a browser on the server itself, enter the one-time setup token from the log, and create the first administrator. The token only works while no users exist.
 
@@ -593,7 +593,7 @@ If a replica of the old version was missed, it refuses to start, or, if it was s
 
 The chart's `updateStrategy` is `Recreate`: Kubernetes deletes every pod of the old version before it creates the new ones, so two versions never share the database. CI checks that the chart renders `Recreate` by default. Do not override it with `RollingUpdate` for a version upgrade: during a rolling update, pods of both versions run together against a schema only the new one understands. (Old pods then fail `/readyz` and stop their background work, so the damage is limited, but it is not a supported way to upgrade.) A rolling restart of the *same* version (`kubectl rollout restart`) is safe with either strategy.
 
-Before a release is published, CI installs each earlier release listed under `from:` in [`.github/workflows/release-checks.yml`](../.github/workflows/release-checks.yml) (the supported upgrade sources), loads data, starts the new version on the same database, checks that the previous version then refuses that database (for releases that have the check), restores a backup of the result into a new PostgreSQL server, and runs the rollback below, checking readiness and counts at each step. The script is `tools/release-checks/upgrade.sh`; you can run it against your own build: `tools/release-checks/upgrade.sh ghcr.io/stackurity/stackurity:0.13.4 stackurity:mybuild`.
+Before a release is published, CI installs each earlier release listed under `from:` in [`.github/workflows/release-checks.yml`](../.github/workflows/release-checks.yml) (the supported upgrade sources), loads data, starts the new version on the same database, checks that the previous version then refuses that database (for releases that have the check), restores a backup of the result into a new PostgreSQL server, and runs the rollback below, checking readiness and counts at each step. The script is `tools/release-checks/upgrade.sh`; you can run it against your own build: `tools/release-checks/upgrade.sh ghcr.io/stackurity/stackurity:0.13.5 stackurity:mybuild`.
 
 ### Rolling back
 
@@ -614,13 +614,13 @@ Upgrading again later works as before; the migrations run again. With Helm, rest
 
 ```sh
 kubectl create secret generic stackurity-db --from-literal=url='postgres://stackurity:...@db:5432/stackurity?sslmode=require'
-helm install stackurity oci://ghcr.io/stackurity/charts/stackurity --version 0.13.4 \
+helm install stackurity oci://ghcr.io/stackurity/charts/stackurity --version 0.13.5 \
   --set database.existingSecret=stackurity-db \
   --set ingress.enabled=true --set ingress.host=stackurity.example.com \
   --set config.baseURL=https://stackurity.example.com
 ```
 
-The chart is published with each release from 0.4.0 and signed with Sigstore (`cosign verify ghcr.io/stackurity/charts/stackurity:0.13.4 --certificate-identity-regexp '^https://github.com/stackurity/stackurity/.github/workflows/release.yml@refs/tags/' --certificate-oidc-issuer https://token.actions.githubusercontent.com`). You can also install from a checkout: `helm install stackurity deploy/helm/stackurity ...`.
+The chart is published with each release from 0.4.0 and signed with Sigstore (`cosign verify ghcr.io/stackurity/charts/stackurity:0.13.5 --certificate-identity-regexp '^https://github.com/stackurity/stackurity/.github/workflows/release.yml@refs/tags/' --certificate-oidc-issuer https://token.actions.githubusercontent.com`). You can also install from a checkout: `helm install stackurity deploy/helm/stackurity ...`.
 
 Behind an ingress controller the chart reads the client address from `X-Forwarded-For` (`config.trustedProxyHeader`; use `CF-Connecting-IP` when Cloudflare is in front), trusting the private ranges where pods and nodes live; list your controller's addresses in `config.trustedProxies` to narrow that ([Client addresses behind a proxy](#client-addresses-behind-a-proxy)). The chart runs the same hardened container: non-root, read-only root filesystem, all capabilities dropped, `RuntimeDefault` seccomp, and no service-account token. PostgreSQL isn't bundled; use a managed database or an operator. Set `replicaCount` above 1 for availability (see [Running several replicas](#running-several-replicas)); the chart keeps the `Recreate` update strategy so an upgrade never runs two versions at once; do not switch it to `RollingUpdate` for upgrades ([Upgrading](#helm-and-the-update-strategy)). `metrics.enabled=true` serves Prometheus metrics on port 9100 through a separate `<release>-metrics` Service, never through the ingress. With the Prometheus Operator, add `metrics.serviceMonitor.enabled=true` (and `metrics.serviceMonitor.labels` matching your Prometheus's `serviceMonitorSelector`, for example `release: kube-prometheus-stack`) for a ServiceMonitor that scrapes it every `metrics.serviceMonitor.interval` (30s). It is created only when the cluster serves `monitoring.coreos.com/v1`; with `helm template`, pass `--api-versions monitoring.coreos.com/v1/ServiceMonitor`. `metrics.prometheusRule.enabled=true` adds the [recommended alerts](operations.md#recommended-alerts) as a PrometheusRule (with `metrics.prometheusRule.labels` for your Prometheus's `ruleSelector`), under the same condition.
 
