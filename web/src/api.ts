@@ -78,6 +78,8 @@ export interface SignupMeta {
   /** The notice shown under the form about product emails, and its version (sent back with the sign-up). */
   email_notice?: string;
   email_notice_version?: string;
+  /** Where people can reach us, for example when their email address is refused. */
+  contact_url?: string;
 }
 
 export type EmailCategory = "marketing" | "vulnerability_news";
