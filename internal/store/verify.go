@@ -94,7 +94,7 @@ func (s *Store) VerifySince(ctx context.Context, since time.Time, assetID int64,
 	const cols = `f.id, f.kind, f.key, f.priority, f.severity, f.asset_id, a.name,
 		CASE WHEN c.namespace = '' THEN c.name ELSE c.namespace || '/' || c.name END, i.version, f.fixed_version, f.first_seen,
 		f.resolved_at, f.resolution, `
-	rescanned := `EXISTS (SELECT 1 FROM collections co WHERE co.asset_id = f.asset_id AND co.complete AND co.observed_at >= $1)`
+	rescanned := `EXISTS (SELECT 1 FROM collections co WHERE co.asset_id = f.asset_id AND (co.complete OR co.proves_absence) AND co.observed_at >= $1)`
 	resolved := ` WHERE f.status = 'resolved' AND f.resolved_at >= $1` + scope
 	open := ` WHERE f.status = 'open' AND f.first_seen < $1` + scope
 	if err := s.Pool.QueryRow(ctx, `SELECT (SELECT count(*)`+from+resolved+`), (SELECT count(*)`+from+open+`),
@@ -168,7 +168,7 @@ func (s *Store) VerifySince(ctx context.Context, since time.Time, assetID int64,
 	}
 	rows, err = s.Pool.Query(ctx, `SELECT a.id, a.name, a.collection_status,
 		(SELECT max(observed_at) FROM collections co WHERE co.asset_id = a.id),
-		(SELECT max(observed_at) FROM collections co WHERE co.asset_id = a.id AND co.complete), false
+		(SELECT max(observed_at) FROM collections co WHERE co.asset_id = a.id AND (co.complete OR co.proves_absence)), false
 		FROM assets a WHERE a.id = ANY($1) AND a.merged_into IS NULL ORDER BY a.name, a.id`, list)
 	if err != nil {
 		return nil, err

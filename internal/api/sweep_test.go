@@ -74,6 +74,9 @@ var routeRules = map[string]routeRule{
 	}},
 	"GET /api/v1/auth/oidc/login":           {class: "skip", edition: "ee"},
 	"GET /api/v1/auth/oidc/callback":        {class: "skip", edition: "ee"},
+	"GET /saml/metadata":                    {class: "skip", edition: "ee"},
+	"GET /saml/login":                       {class: "skip", edition: "ee"},
+	"POST /saml/acs":                        {class: "skip", edition: "ee"},
 	"GET /api/v1/auth/me":                   {class: "account"},
 	"POST /api/v1/auth/password":            {class: "skip"},
 	"GET /api/v1/workspaces":                {class: "account"},
@@ -171,6 +174,7 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/admin/packs/{id}/rollback": {class: "instance"},
 	"DELETE /api/v1/admin/packs/{id}":        {class: "instance"},
 	"GET /api/v1/admin/health":               {class: "instance"},
+	"GET /api/v1/admin/coverage-gaps":        {class: "instance"},
 	"GET /api/v1/updates":                    {class: "instance"},
 	"GET /api/v1/admin/workspaces/":          {class: "instance"},
 	"POST /api/v1/admin/workspaces/":         {class: "instance"},
@@ -224,6 +228,7 @@ var routeRules = map[string]routeRule{
 	"GET /api/v1/secrets":               {class: "list"},
 	"GET /api/v1/enrollments":           {class: "list"},
 	"GET /api/v1/checks":                {class: "list", query: "?asset_id={asset}"},
+	"GET /api/v1/checks/options":        {class: "list", query: "?asset_id={asset}"},
 	"GET /api/v1/ignore-rules":          {class: "list", query: "?status=all"},
 	"GET /api/v1/ignore-requests":       {class: "list", query: "?status=all"},
 	"GET /api/v1/projects":              {class: "list"},
@@ -738,7 +743,12 @@ func fill(s string, ids map[string]string) string {
 func (r routeRule) routePath(pattern string, a *tenantFx) string {
 	p := strings.TrimSuffix(pattern, "/*")
 	for param, key := range r.obj {
-		p = strings.ReplaceAll(p, "{"+param+"}", a.ids[key])
+		v := a.ids[key]
+		if v == "" {
+			// A fixture this sweep does not make (an edition's object).
+			v = "999999999"
+		}
+		p = strings.ReplaceAll(p, "{"+param+"}", v)
 	}
 	p = strings.NewReplacer("{platform}", "linux-amd64", "{name}", "osv:npm", "{key}", "CVE-2099-0001", "{id}", "999999999").Replace(p)
 	return p + fill(r.query, a.ids)

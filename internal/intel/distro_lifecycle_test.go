@@ -197,6 +197,11 @@ func TestThirdPartyBuild(t *testing.T) {
 		{"deb", "8.0.39-1debian12", "12", true},
 		{"deb", "16.20.2-1nodesource1", "22.04", true},
 		{"deb", "16.4-1.pgdg22.04+1", "22.04", true},
+		// An upstream pre-release is not a codename.
+		{"deb", "2.0~beta", "22.04", false},
+		{"deb", "1.4.0~rc1-2", "22.04", false},
+		// redis.io's codename ends in a digit; the overlay recognises it.
+		{"deb", "6:7.4.1-1rl1~jammy1", "22.04", false},
 		{"rpm", "8.0.30-1.el9_2", "9.4", false},
 		{"rpm", "8.1.30-1.el9.remi", "9.4", true},
 		{"rpm", "1.26.2-1.el9.ngx", "9.4", true},

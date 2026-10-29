@@ -27,8 +27,9 @@ Release binaries: linux/amd64, linux/arm64, windows/amd64, darwin/amd64 and darw
 | openSUSE Leap | rpm | Yes (0.2+) | OSV (openSUSE) |
 | Amazon Linux 2023 and 2 | rpm | Yes (0.2+); Amazon Linux 2 extras topics with a version line | ALAS from Amazon's repositories |
 | CentOS, Oracle Linux, Fedora, Amazon Linux 1 | rpm | No: evaluation gap | |
-| Windows | Registry (installed programs, OS build) | No: lifecycle only; hotfixes and Store apps are unsupported coverage | |
+| Windows | Registry (installed programs, OS build) | No: lifecycle only for the operating system (see [Windows end of life](#windows-end-of-life)); installed programs are not matched; hotfixes and Store apps are unsupported coverage | endoflife.date `windows-server`, `windows` |
 | Runtimes outside a package manager | Detected | No: lifecycle only | endoflife.date |
+| Packages from a vendor's own repository (MongoDB, Docker, Elastic, Grafana, PGDG, NodeSource, Redis, nginx.org, MariaDB, MySQL, HashiCorp, Kubernetes and others, see [below](#packages-from-vendor-repositories)) | dpkg, rpm | No: evaluation gap; lifecycle with upstream dates | endoflife.date |
 
 The same rules apply to container images scanned through the bundled Syft and to imported SBOMs: the purl's `distro` qualifier selects the source.
 
@@ -108,18 +109,145 @@ product:
 | A distribution package (deb, rpm or apk with a `distro` qualifier) on a supported distribution release | None. The inventory row records "nginx 1.18 is end of life upstream since 2021-04-20; this is Ubuntu 22.04's own package, and Ubuntu 22.04 provides security updates until 2027-06-30", shown on the component and asset pages (`lifecycle_note`) |
 | A distribution package on a release that is itself end of life (Ubuntu 20.04 after 2025-05-31) | None of its own: the operating system's end-of-life finding says its packages no longer get free fixes, and the action plan's release upgrade lists them. If the asset has no operating system row (some SBOMs), the package finding stays |
 | A distribution package whose release is not in the lifecycle data, or without a `distro` qualifier | Upstream dates: the distribution's support cannot be confirmed |
-| A build from another repository, recognised by its version: Ondřej Surý's PHP (`deb.sury.org`), nginx.org (`~jammy`), Docker, NodeSource, PGDG, Remi (`.remi`), nginx.org rpm (`.ngx`), MySQL's APT repository (`-1ubuntu22.04`) | Upstream dates: the distribution does not maintain it |
+| A build from another repository: a package name only a vendor ships (`mongodb-org-server`, `docker-ce`, `elasticsearch`, `grafana`, ...) or a version that shows the repository: Ondřej Surý's PHP (`deb.sury.org`), nginx.org (`1.24.0-1~jammy`), Docker (`~ubuntu.24.04~noble`), Redis (`-1rl1~noble1`), MariaDB (`+maria~`), NodeSource, PGDG, Remi (`.remi`), nginx.org rpm (`.ngx`), MySQL's APT repository (`-1ubuntu22.04`) | Upstream dates: the distribution does not maintain it. The inventory row's note names the repository |
+| .NET (`dotnet-runtime-X.Y`) from Red Hat, from Microsoft's repository (packages.microsoft.com, the only source on Debian) or from Ubuntu's .NET backports PPA (`~ppa`) | Upstream dates: Red Hat's .NET life cycle is Microsoft's, and Microsoft's and the PPA's packages end with the release. Ubuntu's own archive packages (`-0ubuntu1~22.04.1`) follow the Ubuntu row above, since Canonical supports them for the Ubuntu release's lifetime |
 
 The distribution's date is the endoflife.date end of its standard security
 support (`eol`), the same date the operating system's own finding uses; paid
 extensions (Ubuntu Pro, SUSE LTSS, RHEL ELS) do not count. Limits: the agent
 does not record which repository a package came from, so a third-party build
-whose version looks like the distribution's own is treated as the
-distribution's; Ubuntu's security support covers the `main` repository, and
+whose name and version look like the distribution's own is treated as the
+distribution's (Team RabbitMQ's `rabbitmq-server` `4.0.2-1`, Microsoft's
+`dotnet-runtime-8.0` `8.0.3-1`, InfluxDB 1.x, Redis's rpm); Ubuntu's security support covers the `main` repository, and
 `universe` packages get security fixes only through Ubuntu Pro, which the
 package data does not distinguish; RHEL Application Streams modules can
 retire before the release does. Vulnerability matching is unaffected:
 fixes that only a paid channel publishes are still reported.
+
+## What Stackurity cannot check
+
+### Lifecycle mappings
+
+End-of-life dates come from endoflife.date. A component gets them when its
+package URL maps to an endoflife.date product, in this order:
+
+1. An entry of Stackurity's lifecycle overlay marked `override` (none today).
+2. endoflife.date's own package identifiers.
+3. The same package name in another namespace of a family: `pkg:rpm/` RHEL,
+   its rebuilds and Syft's name for it (`redhat`, `rhel`, `centos`, `rocky`,
+   `almalinux`, `ol`), and `pkg:deb/` `debian` and `ubuntu`. endoflife.date
+   lists `pkg:rpm/redhat/nginx`, so `pkg:rpm/rocky/nginx` and agent-reported
+   RHEL packages (`pkg:rpm/rhel/...`) matched nothing before. Amazon Linux and
+   Fedora are not in a family: their package names differ. `dotnet-sdk-*` is
+   left out, so .NET keeps one finding per release from `dotnet-runtime-X.Y`.
+4. The rest of the overlay
+   ([`internal/intel/eoloverlay/lifecycle_overlay.json`](../internal/intel/eoloverlay/lifecycle_overlay.json)),
+   a versioned data file embedded in the binary. Each entry names the index
+   it was checked against. It adds:
+
+| Product | Package URLs |
+|---|---|
+| Electron | `pkg:npm/electron` (endoflife.date tracks it with no identifier) |
+| MongoDB | `mongodb-org-server` deb and rpm (MongoDB's repository; endoflife.date lists `pkg:deb/*/mongodb`) |
+| Redis | `redis-server` deb (endoflife.date lists only the `redis` metapackage) |
+| Docker Engine, containerd | `docker-ce` deb and rpm, `docker.io`, `containerd.io`, `containerd` |
+| PostgreSQL | `postgresql-<major>` deb, PGDG's `postgresql<major>-server` rpm (the release line is read from the name) |
+| Node.js | `nodejs` deb (NodeSource and the distributions) |
+| Elasticsearch, Kibana, Logstash, OpenSearch, Grafana | Their own repositories' deb and rpm packages |
+| InfluxDB, Telegraf | `influxdb`, `influxdb2`, `influxdb3-core`, `influxdb3-enterprise`, `telegraf` deb |
+| MySQL, MariaDB | `mysql-community-server` deb and rpm, `mariadb-server` deb |
+| Apache HTTP Server, Tomcat | `apache2` deb; `tomcat9`, `tomcat10`, `tomcat11` deb and `org.apache.tomcat.embed:tomcat-embed-core` (Spring Boot) |
+| RabbitMQ, Kubernetes, GitLab, Jenkins, SQL Server | `rabbitmq-server` deb; `kubelet` deb and rpm; `gitlab-ce` and `jenkins` deb and rpm; `mssql-server` deb |
+| Eclipse Temurin, Amazon Corretto, Go | `temurin-<v>-jdk`/`-jre`; `java-<v>-amazon-corretto-jdk`; `golang-<v>-go` (release line from the name) |
+| HashiCorp Vault, Consul, Terraform, Nomad | Their deb packages from HashiCorp's repository |
+| OpenSSL, Exim, Postfix, Dovecot, Prometheus, Erlang, Podman | Distribution packages (`openssl`, `exim4-base`, `postfix`, `dovecot-core`, `prometheus`, `erlang-base`, `podman`); on a supported release they get the upstream note, not a finding |
+| Symfony, CakePHP, Twig, Craft CMS, Shopware | `symfony/http-kernel`, `cakephp/cakephp`, `twig/twig`, `craftcms/cms`, `shopware/core` (Composer) |
+| Kotlin, Quarkus, Apache Kafka, Apache Lucene, Liquibase | `kotlin-stdlib`, `quarkus-core`, `kafka_2.13`/`kafka_2.12` (the broker), `lucene-core`, `liquibase-core` (Maven) |
+
+A Debian or RPM epoch is ignored when the release line is read
+(`5:27.3.1-1~ubuntu.24.04~noble` is Docker 27). An end-of-life finding mapped
+by the overlay says so in its evidence (`mapping`: `overlay` or
+`namespace_family`, with `overlay_version`).
+
+Not covered: products endoflife.date does not track (NestJS, Flask, FastAPI,
+CodeIgniter, Varnish; the overlay lists them so the coverage-gap report counts
+them, and no dates are invented for them), release lines endoflife.date does
+not list (Elasticsearch 8.15, for example), packages whose names were not
+checked against a vendor's index (MongoDB Enterprise, `gitlab-ee`, PGDG and
+RHEL `postgresql-server`, HashiCorp rpm packages), and Amazon Corretto 8
+installed as `java-1.8.0-amazon-corretto-jdk` is read as line 8.
+
+### Packages from vendor repositories
+
+Debian, Ubuntu and RHEL-family advisories describe the distribution's own
+builds. A package from a vendor's repository either has no record there
+(`mongodb-org-server`, `docker-ce`) or carries a different version from the
+distribution's build, so matching it against them showed it as clean. Such a
+package (recognised as in the lifecycle table above: a vendor-only name or a
+version that shows the repository) is now coverage `unsupported`, with the
+reason "built by <repository>, not by the distribution", and its end of life
+uses upstream dates. This includes builds from Ondřej Surý's PHP, nginx.org,
+NodeSource, PGDG, Remi and MySQL's repository, which were matched against the
+distribution's advisories before.
+
+Vulnerabilities of these packages are not matched: none of these servers has
+an upstream ecosystem in OSV that their versions can be compared in without
+guesswork (MongoDB, Redis, nginx, PostgreSQL and Node.js are not packages of
+an OSV ecosystem; Docker and Grafana are Go modules whose module versions do
+not follow the release numbers). Use the vendor's security advisories for
+them.
+
+### Coverage-gap report
+
+Instance administrators see what Stackurity cannot check across every
+workspace under **Settings → Coverage gaps** (`GET /api/v1/admin/coverage-gaps`):
+files a scan found that no built-in reader or installed stack pack reads, by
+kind (`mix.lock`, `rebar.lock`, `Package.swift`, `Package.resolved`,
+`Podfile.lock`, `conanfile.txt`, `conanfile.py`, `conan.lock`, `vcpkg.json`,
+`uv.lock`, `pdm.lock`, `packages.config`, `deno.lock`, `bun.lock`,
+`bun.lockb`, `build.sbt`, and Maven, Gradle and Cargo files without their
+stack pack); components with no vulnerability source, by package type and
+reason (vendor builds per repository); and products with no lifecycle match.
+Each is counted by assets and workspaces. The report names no workspace,
+asset, path or package. The new file kinds are reported by agents and scans
+from this release on; older agents report only the kinds they knew.
+
+## Windows end of life
+
+The Windows agent reports the operating system as `pkg:generic/windows@10.0.<CurrentBuild>.<UBR>` with the registry's `ProductName`, `EditionID` and `DisplayVersion`. The build number decides the endoflife.date release; the product name and edition tell Server from client and pick between releases that share a build. Server Core, Datacenter, Standard, Essentials, Evaluation and Azure Edition installs of a release share its dates.
+
+| Build | Windows Server release (endoflife.date `windows-server`) |
+|---|---|
+| 6002, 6003 | 2008 SP2 (`2008-sp2`) |
+| 7601 | 2008 R2 SP1 (`2008-r2-sp1`) |
+| 9200 | 2012 |
+| 9600 | 2012 R2 (`2012-r2`) |
+| 14393 | 2016 |
+| 16299, 17134 | 1709, 1803 (semi-annual channel) |
+| 17763 | 2019 when the product name says 2019; 1809 (semi-annual channel, `1809-sac`) when it has no year ("Windows Server Datacenter") |
+| 18362, 18363, 19041, 19042 | 1903, 1909, 2004, 20H2 (semi-annual channel) |
+| 20348 | 2022 |
+| 25398 | 23H2 (annual channel, `23h2-ac`) |
+| 26100 | 2025 |
+
+Windows client (endoflife.date `windows`) is mapped too: the build gives the version (19045 is Windows 10 22H2, 22631 Windows 11 23H2, 26100 Windows 11 24H2; Windows 7 SP1, 8 and 8.1 by build), and the edition the support policy: Home and Pro (including Pro Education and Pro for Workstations) take the `-w` release, Enterprise, Education and Enterprise multi-session the `-e` release, Enterprise LTSC/LTSB `-e-lts` and IoT Enterprise LTSC `-iot-lts`. Windows 11 reports "Windows 10" in its product name; the build decides. Agents older than this change do not send the edition; the product name is used instead.
+
+A finding is raised when the release's endoflife.date `eol` date (end of Microsoft's extended support; for Windows Server 2016, 2027-01-12) has passed, titled "Windows Server 2016 is end-of-life since 2027-01-12", like Linux releases: there is no finding ahead of the date. Paid Extended Security Updates (endoflife.date `eoes`, Windows Server 2012 R2 to 2026-10-13) do not count, as Ubuntu Pro and RHEL ELS do not. The action plan's release upgrade for Windows Server names the newest supported LTSC release.
+
+When the release cannot be told, the operating system row is a coverage gap (`not_evaluated`) with the reason, never supported: a build not in the tables (Insider and newer builds until Stackurity adds them), Windows Server 2003 (one build for RTM, SP1 and SP2) and 2008 R2 without SP1, build 17763 without a product name, a product name whose year disagrees with the build, a client `DisplayVersion` that disagrees with the build, an edition the tables do not know, and products endoflife.date does not track as Windows (Azure Stack HCI, Hyper-V Server). A release missing from the endoflife.date data is a gap too.
+
+## .NET end of life
+
+endoflife.date `dotnet` releases are "8", "6", "3.1". Flagged when the release has ended:
+
+- **Linux distribution packages**: `dotnet-runtime-X.Y` (deb or rpm, any distribution) is .NET X.Y; one finding per installed release, since the SDK and ASP.NET Core runtime pull it in. Red Hat's packages, Microsoft's (packages.microsoft.com) and Ubuntu's .NET backports PPA get the upstream date; Ubuntu's own archive packages are maintained by Canonical while the Ubuntu release is supported (see [Lifecycle of distribution packages](#lifecycle-of-distribution-packages)).
+- **NuGet**: `pkg:nuget/Microsoft.NETCore.App` and the runtime packs (`Microsoft.NETCore.App.Runtime.linux-x64` and the like), in a `packages.lock.json` (self-contained apps list the runtime pack), an image scan or an imported SBOM.
+
+Not flagged:
+
+- .NET installed outside a package manager on Linux (the `dotnet-install` script, a tarball under `/usr/share/dotnet`, `/opt/dotnet` or `~/.dotnet`): the agent does not look for it.
+- .NET on Windows: the installed programs ("Microsoft .NET Runtime - 8.0.10 (x64)", "Microsoft ASP.NET Core 8.0.10 - Shared Framework") are inventoried by name and not matched to endoflife.date, nor is .NET Framework.
+- An application's target framework (`<TargetFramework>net6.0</TargetFramework>` in a project file): project files are not read, and a framework-dependent app's `packages.lock.json` does not list the runtime.
 
 ## Paid support channels
 

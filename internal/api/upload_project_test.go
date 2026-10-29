@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
@@ -162,7 +163,7 @@ func TestIngestProject(t *testing.T) {
 	// GET /meta tells clients that uploads honour project_id.
 	var meta struct{ Features []string }
 	e.anon().do("GET", "/api/v1/meta", nil, &meta)
-	if strings.Join(meta.Features, ",") != "upload_project" {
+	if !slices.Contains(meta.Features, "upload_project") || !slices.Contains(meta.Features, "app_list") {
 		t.Errorf("meta features: %v", meta.Features)
 	}
 }

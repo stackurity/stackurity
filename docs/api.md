@@ -83,6 +83,97 @@ Starts single sign-on with the configured OpenID Connect provider ([install.md](
 
 Where the identity provider sends the browser back: signs the person in and starts a session.
 
+### `GET /saml/metadata`
+
+**Who:** anyone · licensed build · outside `/api/v1`
+
+This service provider's SAML metadata (`application/samlmetadata+xml`; `?download=1` as a file), for setting up the identity provider ([install.md](install.md#saml)). 404 when SAML is not configured.
+
+### `GET /saml/login`
+
+**Who:** anyone · licensed build · outside `/api/v1`
+
+Starts single sign-on with the configured SAML identity provider. Optional `return_to`, a page on this server to open afterwards (anything else opens the dashboard).
+
+### `POST /saml/acs`
+
+**Who:** the identity provider, through the browser (a signed response) · licensed build · outside `/api/v1`
+
+The Assertion Consumer Service: verifies the provider's response (`SAMLResponse`, `RelayState`), signs the person in and starts a session.
+
+
+### `POST /auth/sso/discover`
+
+**Who:** anyone · Stackurity Cloud
+
+Finds where someone signs in from their `email`: the organisation that verified the address's domain, if its single sign-on is on. Answers `login_url` and `label`, or 404.
+
+### `GET /sso`
+
+**Who:** admin · Stackurity Cloud
+
+The organisation's own single sign-on: `available` (the plan includes it), `config` (provider, attribute mapping, `version` and `tested_version`, `test_result`, `enabled`, `require_sso`, `link_existing`), `service_provider` (`entity_id`, `acs_url`, `metadata_url`, `login_url`), `domains` and `owner_id`.
+
+### `PUT /sso`
+
+**Who:** admin · Stackurity Cloud
+
+Saves the identity provider (`idp_metadata_url` or `idp_metadata`; neither keeps the saved one), `label`, `email_attribute`, `name_attribute`, `groups_attribute`, `role_map`, `default_role` and `link_existing`. The metadata is checked at once. A save is a new version and switches single sign-on off until a test passes. 402 without the plan.
+
+### `PUT /sso/state`
+
+**Who:** admin · Stackurity Cloud
+
+Switches single sign-on (`enabled`) and requiring it (`require_sso`) on or off. Switching on needs a passed test of the current version and a verified domain.
+
+### `DELETE /sso`
+
+**Who:** admin · Stackurity Cloud
+
+Removes the organisation's single sign-on.
+
+### `POST /sso/domains`
+
+**Who:** admin · Stackurity Cloud
+
+Claims an email `domain`; the answer has the TXT `record_name` and `record_value` that prove it.
+
+### `POST /sso/domains/{id}/verify`
+
+**Who:** admin · Stackurity Cloud
+
+Looks for the domain's TXT record and marks it verified. 409 when another organisation verified it first.
+
+### `DELETE /sso/domains/{id}`
+
+**Who:** admin · Stackurity Cloud
+
+Removes a domain; sign-ins with its addresses stop.
+
+### `GET /sso/{key}/metadata`
+
+**Who:** anyone · Stackurity Cloud · outside `/api/v1`
+
+The organisation's service provider metadata (`?download=1` as a file).
+
+### `GET /sso/{key}/login`
+
+**Who:** anyone · Stackurity Cloud · outside `/api/v1`
+
+Starts a sign-in through the organisation's identity provider (`return_to` as for `/saml/login`).
+
+### `GET /sso/{key}/test`
+
+**Who:** admin of the organisation, a browser session · Stackurity Cloud · outside `/api/v1`
+
+Starts a test sign-in; the result is shown under Settings → Single sign-on and signs nobody in.
+
+### `POST /sso/{key}/acs`
+
+**Who:** the organisation's identity provider, through the browser (a signed response) · Stackurity Cloud · outside `/api/v1`
+
+The organisation's Assertion Consumer Service. A session it starts is pinned to the organisation.
+
 ### `POST /feedback`
 
 **Who:** any signed-in user (10 an hour)
@@ -163,7 +254,7 @@ The assistants a person has connected (`/assistants`) and the OAuth consent page
 
 **Who:** anyone
 
-Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project`.
+Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project`. `app_list` means `POST /ingest` takes a host batch's `apps` (see [ObservationBatch](#observationbatch)); agents send it only to servers that list it (0.14).
 
 ### `GET /openapi.json`
 
@@ -275,7 +366,7 @@ Searches the current workspace for one query (`q`, `limit`). See [Search](#searc
 
 **Who:** viewer
 
-Lists assets, paged. Query: `kind`, `environment`, `status`, `owner_team_id`, `q`, `reboot_required=true` (hosts running older code than is installed), `exposed=true|false` and `unfiled=true` (assets in no active project). Each asset has `projects`, the active projects it is in that the caller can see.
+Lists assets, paged. Query: `kind`, `environment`, `status` (`collection_status`: `ok`, `partial`, `stale`, or `removed` for an application gone from its server), `owner_team_id`, `q`, `reboot_required=true` (hosts running older code than is installed), `exposed=true|false` and `unfiled=true` (assets in no active project). Each asset has `projects`, the active projects it is in that the caller can see.
 
 `exposed` is the exposure risk scoring uses: `internet_exposed` when set by hand, else what a collector observed (a Kubernetes workload's `exposure`, or for an image the workloads deployed as it).
 
@@ -519,6 +610,12 @@ One fix group with its findings, paged.
 **Who:** viewer
 
 Checks, newest first, paged. Query: `asset_id`, `fix_group`, `open=true` (not done yet).
+
+### `GET /checks/options`
+
+**Who:** viewer
+
+How each fix group (`fix_group`) or asset (`asset_id`) can be [checked again](#check-again), so a client offers Check again only where it does something. Repeat a parameter or separate values with commas; at most 50 in all. Returns `{"items": [...]}`, one per value, each with `fix_group`, `asset_id`, `asset_name`, `asset_kind`, `app_dir`, `host_name` (the server it is, or runs on), `git_url`, `collection_status`, `last_seen`, `agent_polled_at` (an application's own poll or its host's), `method` (as a check would use: `agent`, `integration` or `report`), `on_demand` (true when a check gets a fresh report within minutes: an agent that polled in the last 15 minutes, or an integration), `reason` when it does not (`removed`: the application is gone from its server; `agent`: the agent does not ask for checks, being older than 0.7 or stopped; `upload`: only the next upload shows it, such as a CI scan or an SBOM; `not_found`: no such fix any more, or no such asset) and `last_check`, the latest check of that fix (or asset) or null.
 
 ### `GET /checks/{id}`
 
@@ -1174,6 +1271,12 @@ Takes `name`, `disabled`, `plan`, `asset_limit` and `project_limit` (`-1` remove
 
 Platform health across workspaces: `status` (`ok`, `warning`, `critical`), `problems` (each with `last_success`, `last_error`, `scope`, `next_step` and `docs`), background `tasks`, jobs, notification `deliveries`, `failing_channels` and `email_quota`. See [install.md](install.md#health).
 
+### `GET /admin/coverage-gaps`
+
+**Who:** instance admin
+
+What Stackurity cannot check, across every active workspace: `unread_files` (files a scan found that no built-in reader or installed stack pack reads, by `kind` such as `hex:mix.lock` or `swift:Package.resolved`), `no_vulnerability_source` (components whose coverage is `unsupported`, by package type and reason; vendor builds are counted per repository) and `no_lifecycle` (products no lifecycle source tracks, such as NestJS; installed release lines the lifecycle data does not list; runtimes and operating systems with no lifecycle product). Each entry has `kind`, `label`, `detail`, `assets` and `workspaces` (and `components` for vulnerability sources). Also `workspaces`, `assets`, `checked_at` and the lifecycle `overlay_version`. Counts and type names only: no workspace, asset, path or package is named. See [compatibility.md](compatibility.md#what-stackurity-cannot-check).
+
 ### `GET /updates`
 
 **Who:** instance admin
@@ -1398,7 +1501,7 @@ Inventory rows carry `coverage`, whether vulnerability intelligence covered that
 
 An evaluated row can carry a `coverage_reason` too, saying how it is reported: kernel headers ("not running code") and the other packages of a kernel version, whose findings are on the kernel image ([compatibility.md](compatibility.md#kernels)).
 
-`lifecycle_note` is set on a distribution package whose upstream release is end of life: `status` is `distribution_supported` (no finding: the distribution release still provides security updates), `distribution_ended` (the release itself is end of life) or `third_party_build` (the finding stands), with `text`, `subject`, `upstream_eol`, `distribution` and `distribution_eol` ([compatibility.md](compatibility.md#lifecycle-of-distribution-packages)).
+`lifecycle_note` is set on a distribution package whose upstream release is end of life: `status` is `distribution_supported` (no finding: the distribution release still provides security updates), `distribution_ended` (the release itself is end of life) `third_party_build` (the finding stands) or `follows_upstream` (the package's maintainer stops fixing it on the upstream date, as Red Hat and Microsoft do for .NET; the finding stands), with `text`, `subject`, `upstream_eol`, `distribution` and `distribution_eol` ([compatibility.md](compatibility.md#lifecycle-of-distribution-packages)).
 
 ## Evidence report
 
@@ -1488,7 +1591,8 @@ The single ingest contract for agents, scanners, SBOM imports and plugins. See [
 - An application on a host is identified as `{"scheme": "app-path", "value": "/srv/shop"}`, its only identifier, with a `runs_on` relation to the host. The server scopes the path to that host, which must already exist. A host-bound token may only report applications on its own host, and plugins cannot use this scheme.
 - `asset.kind` is `host`, `repository`, `image`, `application`, `managed_service`, `sbom`, `cluster` or `workload`.
 - An asset attribute `exposure` of `external` or `internal` (set on Kubernetes workloads) is used as the asset's internet exposure for risk scoring unless an operator set it by hand. An image takes the exposure of the workloads deployed as it.
-- `complete: true` tells the server that this batch is the collector's whole view of the asset. Components missing from it are marked removed, and history is kept. Partial batches never remove anything.
+- `complete: true` tells the server that this batch is the collector's whole view of the asset. Components missing from it are marked removed, and history is kept. A batch that is not complete still removes what it left out outside the paths it could not read: when every `coverage` item that is not `checked` names an absolute path (`path:/srv/app/tmp`, `lockfile:/srv/app/yarn.lock`, `npm-installed:/srv/app/node_modules`; Composer's `vendor/composer/installed.json` stands for its `vendor` directory), components located at or below those paths are kept and the others are marked removed. When any such item names no path (`walk`, `depth`, `dpkg`, `invalid-entries`), nothing is removed. (Before 0.14 only complete batches removed anything, so an application with one unreadable cache directory kept an upgraded version's old libraries for good; its next collection removes them.)
+- `apps` (optional, host batches only, servers listing the `app_list` feature): `{"dirs": ["/var/www/html/phpmyadmin", ...]}`, every application directory the host's agent reports in this run, at most 1,000. The host's applications (`app-path` assets) not in the list are marked removed: each gets an empty complete collection (its findings resolve as `removed`), a `skipped` coverage note on `app:<dir>` saying why, and `collection_status` `removed`; the result lists them in `apps_removed`. An application that reports again is present again. Agents leave `apps` out when discovery stopped at its limits, so a missing directory is never guessed.
 - `coverage[].status` is one of `checked`, `skipped`, `failed`, `unsupported` or `partial`.
 - Limits: 200,000 observations, 64 MiB on the wire, 256 MiB after decompression.
 
@@ -1618,8 +1722,9 @@ Engineers and viewers ask for an ignore with `POST /ignore-requests`; the reques
 A check asks for fresh evidence about an asset or about one fix on it. An action reported as done never closes an issue: only a fresh report does, and issues close on their own when it no longer has them.
 
 - `method` says who has to report: `agent` (the agent on a host, which [polls](#agent-poll)), `integration` (a server-side scan of a Git repository or image, queued at once) or `report` (the next upload, such as `stackurity scan` in CI).
-- `status`: `waiting` (no report yet), `evaluating` (a complete report arrived after the request and is being matched) or `done`.
-- `outcome` when done: `passed` (none of the issues it was about is left), `partly_fixed` (some are gone, `remaining` are left), `still_open` (none is gone) or `expired` (no report within 7 days). `fixed`, `remaining` and, for a whole asset, `new_issues` give the counts; an issue counts as left when it is open on the asset in any state, on any version.
+- `status`: `waiting` (no report yet), `evaluating` (a report arrived after the request and is being matched) or `done`. Any report completes a check (before 0.14 only a complete one did, so an application with an unreadable directory kept its check, and its agent reporting, for a week).
+- An application its agent no longer reports (a deleted directory) is still picked up: the host's agent polls with its host, and checks on the applications that run on it count. Its next report's app list marks the application removed and the check passes.
+- `outcome` when done: `passed` (none of the issues it was about is left), `partly_fixed` (some are gone, `remaining` are left), `still_open` (none is gone), `incomplete` (the report could not read everything and proved nothing gone, so `remaining` could not be confirmed; see the asset's coverage) or `expired` (no report within 7 days). `fixed`, `remaining` and, for a whole asset, `new_issues` give the counts; an issue counts as left when it is open on the asset in any state, on any version.
 - `reason` is `check`, or `applied` for "I applied this". `requested_by`, `requested_at`, `picked_up_at` (when the agent asked for it), `collection_id` (the report that answered it) and `completed_at` record what happened. `agent_polled_at` (also on `GET /assets/{id}`) is when the asset's agent last polled: null for agents older than 0.7.
 
 Requesting a check while one with the same scope is still waiting for a report returns that check.

@@ -61,7 +61,10 @@ func (c *Collector) Collect(ctx context.Context, hostname string) (*model.Observ
 	b.Observations = append(b.Observations, model.Observation{
 		Purl: packageurl.NewPackageURL("generic", "", "windows", ver, nil, "").ToString(), Version: ver,
 		Location: `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion`, Scope: "os", Confidence: model.ConfidenceConfirmed,
-		Evidence: map[string]string{"kind": "operating-system", "product_name": osi["ProductName"], "display_version": osi["DisplayVersion"]},
+		// The build, product name and edition decide the endoflife.date
+		// release (internal/winrelease).
+		Evidence: map[string]string{"kind": "operating-system", "product_name": osi["ProductName"], "display_version": osi["DisplayVersion"],
+			"edition_id": osi["EditionID"]},
 	})
 	seen := map[string]bool{}
 	for _, view := range []string{"native", "wow64"} {

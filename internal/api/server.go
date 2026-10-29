@@ -89,6 +89,10 @@ type Server struct {
 	ParseLicence func(string) (*license.License, error)
 	// Health checks the platform for instance admins; nil disables it.
 	Health *health.Checker
+	// CoverageGaps builds the instance-wide coverage-gap report
+	// (intel.CoverageGaps; the api package cannot import intel); nil
+	// disables GET /admin/coverage-gaps.
+	CoverageGaps func(ctx context.Context) (any, error)
 	// UpdateCheck is false when the operator turned the release check off
 	// (STACKURITY_UPDATE_CHECK=off); GET /updates then says so.
 	UpdateCheck bool
@@ -229,6 +233,7 @@ func (s *Server) Handler() http.Handler {
 				r.Delete("/{id}", s.removePack)
 			})
 			r.With(requireInstanceAdmin).Get("/admin/health", s.adminHealth)
+			r.With(requireInstanceAdmin).Get("/admin/coverage-gaps", s.adminCoverageGaps)
 			r.With(requireInstanceAdmin).Get("/updates", s.updatesStatus)
 			r.Get("/workspaces", s.listMyWorkspaces)
 			r.Post("/workspaces/{id}/activate", s.activateWorkspace)
@@ -291,6 +296,7 @@ func (s *Server) Handler() http.Handler {
 				r.Get("/usage", s.assetUsage)
 				r.Get("/onboarding/results", s.firstResults)
 				r.Get("/checks", s.listChecks)
+				r.Get("/checks/options", s.checkOptions)
 				r.Get("/checks/{id}", s.getCheck)
 				r.Get("/ignore-rules", s.listIgnoreRules)
 				// Anyone may ask for an ignore; security and admin decide.

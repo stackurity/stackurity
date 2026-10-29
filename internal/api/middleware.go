@@ -42,6 +42,9 @@ type Principal struct {
 	// (assistants.go). Its requests come only from the tools behind /mcp;
 	// Token then describes it, so it is capped like an API token.
 	Assistant *store.AssistantGrant
+	// SSORequired is set when the session's workspace requires its own
+	// single sign-on, which this session did not use; Workspace is then 0.
+	SSORequired *SSORequired
 }
 
 func (p *Principal) Actor(r *http.Request) store.Actor {
@@ -97,10 +100,16 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 				return
 			}
 		} else if c, err := r.Cookie(sessionCookie); err == nil && c.Value != "" {
-			user, ws, err := s.Store.SessionUser(r.Context(), c.Value)
+			user, ws, pinned, err := s.Store.SessionUserSSO(r.Context(), c.Value)
 			switch {
 			case err == nil:
 				p = &Principal{User: user, Role: user.Role, Session: true, Workspace: ws}
+				if ws > 0 && editionSessionAccess != nil {
+					if req := editionSessionAccess(s, r, user, ws, pinned); req != nil {
+						// Fail closed: no workspace, so no workspace data.
+						p.Workspace, p.Role, p.SSORequired = 0, "", req
+					}
+				}
 			case !errors.Is(err, store.ErrNotFound):
 				s.credentialsUnavailable(w, r, err)
 				return
@@ -273,6 +282,7 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "same-origin")
 		h.Set("Content-Security-Policy", csp)
+		h.Set("Permissions-Policy", permissionsPolicyFor(r.URL.Path))
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			h.Set("Cache-Control", "no-store")
 		}
