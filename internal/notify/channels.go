@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/stackurity/stackurity/internal/netguard"
+	"github.com/stackurity/stackurity/internal/store"
 	"io"
 	"net"
 	"net/http"
@@ -59,10 +60,15 @@ type Message struct {
 	Counts       map[string]int `json:"counts,omitempty"` // totals, e.g. new, urgent, fixed, overdue
 	Sections     []Section      `json:"sections,omitempty"`
 	SettingsLink string         `json:"settings_link,omitempty"` // where the route is changed
+	// LinkLabel names Link in bulk email (bulk.go), such as "Read the
+	// release notes".
+	LinkLabel string `json:"link_label,omitempty"`
 
 	// Email sent by Stackurity, per recipient: the page that stops these
 	// emails, and its one-click address for the List-Unsubscribe header.
 	unsubscribe, unsubscribeLabel, oneClick string
+	// Bulk email (bulk.go): the recipient's footer.
+	bulk *bulkFooter
 }
 
 // Section is a titled list of items in a grouped message.
@@ -125,6 +131,11 @@ func (m Message) Subject() string {
 		return m.Title
 	case EventUrgent:
 		return prefix + m.Title
+	case store.CategoryMarketing, store.CategoryVulnerabilityNews:
+		if m.bulk != nil && m.bulk.test {
+			return "[Test] " + m.Title
+		}
+		return m.Title
 	}
 	return fmt.Sprintf("%s[%s] %s", prefix, m.Priority, m.Title)
 }
@@ -557,5 +568,9 @@ func (s *Sender) sendEmail(ctx context.Context, c ChannelConfig, password string
 	if err := w.Close(); err != nil {
 		return err
 	}
-	return cl.Quit()
+	// The server accepted the message when DATA ended (w.Close); a failed
+	// QUIT after that does not make it unsent, and reporting it as an
+	// error would send it again on retry.
+	_ = cl.Quit()
+	return nil
 }

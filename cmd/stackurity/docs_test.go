@@ -53,7 +53,9 @@ func TestCLIDocumented(t *testing.T) {
 	root := newRootCmd()
 	var walk func(c *cobra.Command, visit func(*cobra.Command))
 	walk = func(c *cobra.Command, visit func(*cobra.Command)) {
-		if c.Hidden {
+		// An edition's commands are documented in the edition's
+		// repository (editionAdminCommands).
+		if c.Hidden || c.Annotations[docsElsewhere] != "" {
 			return
 		}
 		visit(c)

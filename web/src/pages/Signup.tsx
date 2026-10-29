@@ -118,6 +118,8 @@ export function SignupPage({ signup }: { signup: SignupMeta }) {
         password: f.password,
         turnstile_token: token,
         accept_terms: true,
+        // Which notice about product emails was on screen.
+        email_notice_version: signup.email_notice ? signup.email_notice_version : undefined,
       }),
     );
     if (r) setSentTo(email);
@@ -208,6 +210,11 @@ export function SignupPage({ signup }: { signup: SignupMeta }) {
             .
           </span>
         </label>
+        {signup.email_notice && (
+          <p className="small muted" id="su-email-notice">
+            {signup.email_notice}
+          </p>
+        )}
         <Challenge siteKey={signup.turnstile_site_key} onToken={setToken} resetKey={resetKey} />
         <p className="small muted">Your data is stored in {signup.region_label}.</p>
         <button type="submit" className="btn btn-primary btn-block" disabled={act.pending}>

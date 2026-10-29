@@ -74,6 +74,11 @@ type Server struct {
 	// Cloud sets it, so email sent by Stackurity cannot be pointed at an
 	// address through a made-up account.
 	InviteOnly bool
+	// EmailPreferences: this server sends bulk email (product updates,
+	// vulnerability news; internal/notify/bulk.go), so people get email
+	// preferences under Your account and on the page their emails link
+	// to. A hosted edition sets it.
+	EmailPreferences bool
 	// SecretBox encrypts secrets workspaces store themselves; nil disables
 	// stored secrets.
 	SecretBox *secrets.Box
@@ -172,6 +177,9 @@ func (s *Server) Handler() http.Handler {
 	// (RFC 8058), signed or single-use tokens in the address.
 	r.With(s.limitAddress("email-links", limitEmailConfirm, "too many attempts; wait a minute")).Post("/email/unsubscribe/one-click", s.oneClick(s.answerUnsubscribe))
 	r.With(s.limitAddress("email-links", limitEmailConfirm, "too many attempts; wait a minute")).Post("/email/block/one-click", s.oneClick(s.answerBlock))
+	// One-click unsubscribe from a category of bulk email (RFC 8058),
+	// signed for one person and category (email_preferences.go).
+	r.With(s.limitAddress("email-links", limitEmailConfirm, "too many attempts; wait a minute")).Post("/email/preferences/one-click", s.oneClickEmailPreferences)
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(s.authenticate, csrfGuard)
@@ -189,6 +197,9 @@ func (s *Server) Handler() http.Handler {
 		r.With(s.limitAddress("email-confirm", limitEmailConfirm, "too many attempts; wait a minute")).Post("/email-recipients/confirm", s.confirmEmailRecipient)
 		r.With(s.limitAddress("email-confirm", limitEmailConfirm, "too many attempts; wait a minute")).Post("/email-recipients/block", s.blockEmail)
 		r.With(s.limitAddress("email-confirm", limitEmailConfirm, "too many attempts; wait a minute")).Post("/email/unsubscribe", s.unsubscribeEmail)
+		// The bulk email preference page, from a signed link (no session).
+		r.With(s.limitAddress("email-confirm", limitEmailConfirm, "too many attempts; wait a minute")).Post("/email/preferences", s.linkEmailPreferences)
+		r.With(s.limitAddress("email-confirm", limitEmailConfirm, "too many attempts; wait a minute")).Post("/email/preferences/update", s.updateLinkEmailPreferences)
 		r.Group(func(r chi.Router) {
 			// Single sign-on in the licensed build: the callback exchanges
 			// the code with the identity provider, so the whole flow is
@@ -202,6 +213,8 @@ func (s *Server) Handler() http.Handler {
 			r.Get("/auth/me", s.me)
 			r.Put("/auth/default-project", s.setDefaultProject)
 			r.Post("/auth/password", s.changePassword)
+			r.Get("/auth/email-preferences", s.myEmailPreferences)
+			r.Put("/auth/email-preferences", s.setMyEmailPreferences)
 			r.Post("/feedback", s.sendFeedback)
 			// Linking the caller's Slack account (slack.go).
 			r.Get("/slack/links", s.listSlackLinks)

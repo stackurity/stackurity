@@ -46,6 +46,8 @@ var projectRoutes = map[string]projectScope{
 	// The caller's own account.
 	"GET /api/v1/auth/me":                   accountScope,
 	"POST /api/v1/auth/password":            accountScope,
+	"GET /api/v1/auth/email-preferences":    accountScope,
+	"PUT /api/v1/auth/email-preferences":    accountScope,
 	"PUT /api/v1/auth/default-project":      accountScope,
 	"POST /api/v1/feedback":                 accountScope,
 	"GET /api/v1/workspaces":                accountScope,

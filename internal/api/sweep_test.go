@@ -72,13 +72,17 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/invitations/accept": {class: "public", body: func(*tenantFx) any {
 		return map[string]string{"token": "inv_guessed", "password": pw}
 	}},
-	"GET /api/v1/auth/oidc/login":           {class: "skip", edition: "ee"},
-	"GET /api/v1/auth/oidc/callback":        {class: "skip", edition: "ee"},
-	"GET /saml/metadata":                    {class: "skip", edition: "ee"},
-	"GET /saml/login":                       {class: "skip", edition: "ee"},
-	"POST /saml/acs":                        {class: "skip", edition: "ee"},
-	"GET /api/v1/auth/me":                   {class: "account"},
-	"POST /api/v1/auth/password":            {class: "skip"},
+	"GET /api/v1/auth/oidc/login":    {class: "skip", edition: "ee"},
+	"GET /api/v1/auth/oidc/callback": {class: "skip", edition: "ee"},
+	"GET /saml/metadata":             {class: "skip", edition: "ee"},
+	"GET /saml/login":                {class: "skip", edition: "ee"},
+	"POST /saml/acs":                 {class: "skip", edition: "ee"},
+	"GET /api/v1/auth/me":            {class: "account"},
+	"POST /api/v1/auth/password":     {class: "skip"},
+	// The caller's own email preferences, keyed by their user, never a
+	// workspace's (email_preferences_test.go).
+	"GET /api/v1/auth/email-preferences":    {class: "account"},
+	"PUT /api/v1/auth/email-preferences":    {class: "skip"},
 	"GET /api/v1/workspaces":                {class: "account"},
 	"POST /api/v1/workspaces/{id}/activate": {class: "object", obj: id("workspace")},
 	// Choosing another workspace's project as the default must fail.
@@ -104,6 +108,12 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/email/unsubscribe":    {class: "public", body: func(*tenantFx) any { return map[string]string{"token": "MTpmb28.bad"} }},
 	"POST /email/unsubscribe/one-click": {class: "public", query: "t=MTpmb28.bad"},
 	"POST /email/block/one-click":       {class: "public", query: "t=emc_guessed"},
+	// Bulk email preference links are signed per person with the
+	// installation's key; a guessed token is refused
+	// (email_preferences_test.go). 404 unless the server sends bulk email.
+	"POST /api/v1/email/preferences":        {class: "public", body: func(*tenantFx) any { return map[string]string{"token": "djE6cDox.bad"} }},
+	"POST /api/v1/email/preferences/update": {class: "public", body: func(*tenantFx) any { return map[string]any{"token": "djE6cDox.bad", "marketing": true} }},
+	"POST /email/preferences/one-click":     {class: "public", query: "t=djE6cDox.bad"},
 	// The Slack app's Direct install URL: a redirect to Slack's consent page
 	// or the dashboard page, never data (slack_app_test.go).
 	"GET /integrations/slack/install": {class: "public"},

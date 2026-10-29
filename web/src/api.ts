@@ -59,6 +59,8 @@ export interface Meta {
   billing?: boolean;
   /** True when people can find their organisation's single sign-on from their email (a hosted edition). */
   sso_discovery?: boolean;
+  /** True when this server sends product updates or vulnerability news, so people have email preferences (a hosted edition). */
+  email_preferences?: boolean;
 }
 
 export interface SignupMeta {
@@ -71,7 +73,36 @@ export interface SignupMeta {
   region_label: string;
   /** Days a new organisation is free for, without a card; absent when there is no trial. */
   trial_days?: number;
+  /** The notice shown under the form about product emails, and its version (sent back with the sign-up). */
+  email_notice?: string;
+  email_notice_version?: string;
 }
+
+export type EmailCategory = "marketing" | "vulnerability_news";
+
+export interface EmailPreference {
+  category: EmailCategory;
+  subscribed: boolean;
+  /** How it was last changed: link, header (one-click), settings or support; absent when never changed. */
+  source?: string;
+  changed_at?: string;
+  label: string;
+  description: string;
+}
+
+export interface EmailPreferences {
+  categories: EmailPreference[];
+  /** Email that cannot be turned off here, and why. */
+  locked: { label: string; description: string }[];
+  /** From a link in an email: "unsubscribe" (one category) or "preferences" (both). */
+  kind?: "unsubscribe" | "preferences";
+  /** From a link: the address, partly hidden. */
+  email?: string;
+  /** From an unsubscribe link: its category. */
+  category?: EmailCategory;
+}
+
+export type EmailPreferencesChange = Partial<Record<EmailCategory, boolean>>;
 
 export interface User {
   id: number;
@@ -2703,7 +2734,20 @@ export const api = {
   logout: () => request<void>("POST", "/auth/logout", undefined, { quiet401: true }),
   usage: () => request<AssetUsage>("GET", "/usage", undefined, { allProjects: true }),
   updateWorkspace: (id: number, b: WorkspaceUpdate) => request<Workspace>("PATCH", `/admin/workspaces/${id}`, b),
-  signup: (b: { email: string; name: string; organisation: string; password: string; turnstile_token: string; accept_terms: true }) =>
+  myEmailPreferences: () => request<EmailPreferences>("GET", "/auth/email-preferences"),
+  setMyEmailPreferences: (b: EmailPreferencesChange) => request<EmailPreferences>("PUT", "/auth/email-preferences", b),
+  linkEmailPreferences: (token: string) => request<EmailPreferences>("POST", "/email/preferences", { token }, { quiet401: true }),
+  updateLinkEmailPreferences: (token: string, b: EmailPreferencesChange) =>
+    request<EmailPreferences>("POST", "/email/preferences/update", { token, ...b }, { quiet401: true }),
+  signup: (b: {
+    email: string;
+    name: string;
+    organisation: string;
+    password: string;
+    turnstile_token: string;
+    accept_terms: true;
+    email_notice_version?: string;
+  }) =>
     request<{ status: string }>("POST", "/signup", b, { quiet401: true }),
   verifySignup: (token: string) => request<{ workspace_id: number }>("POST", "/signup/verify", { token }, { quiet401: true }),
 };
