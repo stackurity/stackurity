@@ -41,7 +41,11 @@ func TestTargetFor(t *testing.T) {
 		{"pkg:rpm/amazon/curl-minimal@8.3.0-1.amzn2023.0.2?distro=amzn-2023", "", nil, "Amazon Linux:2023", "curl-minimal", true},
 		{"pkg:rpm/amzn/curl@7.61.1-12.95.amzn1?distro=amzn-2018.03", "", nil, "", "", false}, // Amazon Linux 1
 		{"pkg:rpm/centos/bash@4.2.46-35.el7?distro=centos-7", "", nil, "", "", false},
-		{"pkg:rpm/ol/bash@4.4.20-4.el8?distro=ol-8.9", "", nil, "", "", false},
+		// Oracle advisories (ELSA) name binary packages, per major release.
+		{"pkg:rpm/ol/bash@4.4.20-4.el8?distro=ol-8.9", "", nil, "Oracle Linux:8", "bash", true},
+		{"pkg:rpm/oracle/glibc@2.34-60.0.3.el9?distro=ol-9.4", "", map[string]string{"source_rpm": "glibc-2.34-60.0.3.el9.src.rpm"}, "Oracle Linux:9", "glibc", true},
+		{"pkg:rpm/ol/kernel-uek@6.12.0-100.28.2.el10uek?distro=ol-10.0", "", nil, "Oracle Linux:10", "kernel-uek", true},
+		{"pkg:rpm/ol/bash@3.2-33.el5?distro=ol-5.11", "", nil, "", "", false}, // no ELSA data before Oracle Linux 6
 		{"pkg:generic/debian@12", "", nil, "", "", false},
 		{"pkg:deb/debian/bash@5.2", "", nil, "", "", false}, // no distro qualifier
 		// Swift packages are named by repository URL (OSV's SwiftURL),
@@ -302,6 +306,8 @@ func TestWhyNoTarget(t *testing.T) {
 	}{
 		{"pkg:rpm/centos/bash@4.2.46-35.el7?distro=centos-7", "", "centos has no vulnerability source", true},
 		{"pkg:rpm/amzn/curl@7.61.1-12.95.amzn1?distro=amzn-2018.03", "", "Amazon Linux 2018.03 has no vulnerability source", true},
+		{"pkg:rpm/ol/bash@3.2-33.el5?distro=ol-5.11", "", "Oracle Linux 5.11 has no vulnerability source (Oracle Linux 6 and later are supported)", true},
+		{"pkg:rpm/fedora/bash@5.2?distro=fedora-40", "", "fedora has no vulnerability source (supported rpm distributions: RHEL, Rocky Linux, AlmaLinux, Oracle Linux,", true},
 		{"pkg:deb/debian/bash@5.2", "", "no distro qualifier", false},
 		{"pkg:rpm/rhel/bash@5.1", "", "no distro qualifier", false},
 		{"pkg:deb/kali/bash@5.2?distro=kali-2024.1", "", `from "kali" have no vulnerability source`, true},

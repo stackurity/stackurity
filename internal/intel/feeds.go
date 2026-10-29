@@ -43,6 +43,8 @@ func VulnFeed(baseEcosystem string) string {
 	switch baseEcosystem {
 	case "Amazon Linux":
 		return FeedAmazonLinux
+	case "Oracle Linux":
+		return FeedOracleLinux
 	case "Windows":
 		return FeedMSRC
 	}
@@ -59,6 +61,8 @@ func feedEcosystem(feed string) (string, bool) {
 	switch feed {
 	case FeedAmazonLinux:
 		return "Amazon Linux", true
+	case FeedOracleLinux:
+		return "Oracle Linux", true
 	case FeedMSRC:
 		return "Windows", true
 	}
@@ -150,6 +154,8 @@ func (s *Syncer) Sync(ctx context.Context, name string) (*SyncResult, error) {
 		res, cursor, err = s.syncOSV(ctx, name, strings.TrimPrefix(name, "osv:"), feed.Cursor)
 	case name == FeedAmazonLinux:
 		res, err = s.syncAmazonLinux(ctx, name)
+	case name == FeedOracleLinux:
+		res, err = s.syncOracleLinux(ctx, name)
 	case name == FeedMSRC:
 		res, cursor, err = s.syncMSRC(ctx, name, feed.Cursor)
 	case name == FeedKEV:

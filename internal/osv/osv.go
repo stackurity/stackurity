@@ -14,6 +14,7 @@ import (
 
 	"github.com/package-url/packageurl-go"
 
+	"github.com/stackurity/stackurity/internal/oraclebuild"
 	"github.com/stackurity/stackurity/internal/version"
 )
 
@@ -180,14 +181,14 @@ func TargetFor(purl, ver string, evidence map[string]string) (Target, bool) {
 		t.Ecosystem, t.Name = "Alpine:v"+majorMinor(rel), name
 	case "rpm":
 		// distro is "<os-release ID>-<VERSION_ID>": rocky-9.3, rhel-9.4,
-		// sles-15.5, opensuse-leap-15.5, amzn-2023. The agent uses the ID as
+		// sles-15.5, opensuse-leap-15.5, amzn-2023, ol-9.4. The agent uses the ID as
 		// namespace; Syft uses vendor names (redhat, amazon), so the
 		// qualifier decides.
 		id, rel := rpmDistro(q["distro"])
 		if id == "" {
 			return Target{}, false
 		}
-		// Red Hat, Alma and Amazon advisories name binary packages; Rocky
+		// Red Hat, Alma, Amazon and Oracle advisories name binary packages; Rocky
 		// and SUSE advisories name the source package (RLSA records list
 		// "openssl", never "openssl-libs").
 		name := p.Name
@@ -213,6 +214,11 @@ func TargetFor(purl, ver string, evidence map[string]string) (Target, bool) {
 				return Target{}, false // Amazon Linux 1 and unknown releases
 			}
 			t.Ecosystem = "Amazon Linux:" + rel
+		case "ol":
+			if !oracleRelease(rel) {
+				return Target{}, false // Oracle publishes no ELSA data before Oracle Linux 6
+			}
+			t.Ecosystem = "Oracle Linux:" + majorOf(rel)
 		case "sles", "sles_sap", "sled":
 			sp := suseServicePack(rel)
 			if sp == "" {
@@ -298,9 +304,11 @@ func WhyNoTarget(purl, ver string) (reason string, unsupported bool) {
 		switch {
 		case id == "":
 			name, _, _ := strings.Cut(distro, "-")
-			return fmt.Sprintf("%s has no vulnerability source (supported rpm distributions: RHEL, Rocky Linux, AlmaLinux, SUSE, openSUSE Leap, Amazon Linux 2 and 2023)", name), true
+			return fmt.Sprintf("%s has no vulnerability source (supported rpm distributions: RHEL, Rocky Linux, AlmaLinux, Oracle Linux, SUSE, openSUSE Leap, Amazon Linux 2 and 2023)", name), true
 		case id == "amzn":
 			return fmt.Sprintf("Amazon Linux %s has no vulnerability source (Amazon Linux 2 and 2023 are supported)", rel), true
+		case id == "ol" && !oracleRelease(rel):
+			return fmt.Sprintf("Oracle Linux %s has no vulnerability source (Oracle Linux 6 and later are supported)", rel), true
 		case ver == "":
 			return "no installed version was reported", false
 		}
@@ -354,9 +362,74 @@ func majorOf(v string) string {
 }
 
 // rpmDistros are the os-release IDs with an advisory source, longest first
-// so "sles_sap" is not read as "sles". CentOS, Oracle Linux and Fedora have
-// none yet.
-var rpmDistros = []string{"opensuse-leap", "almalinux", "sles_sap", "rocky", "rhel", "amzn", "sles", "sled"}
+// so "sles_sap" is not read as "sles". CentOS and Fedora have none yet.
+var rpmDistros = []string{"opensuse-leap", "almalinux", "sles_sap", "rocky", "rhel", "amzn", "sles", "sled", "ol"}
+
+// oracleRelease reports whether an Oracle Linux VERSION_ID ("9.4") is a
+// release Oracle publishes ELSA data for: 6 and later.
+func oracleRelease(rel string) bool {
+	n, err := strconv.Atoi(majorOf(rel))
+	return err == nil && n >= 6 && n < 100
+}
+
+// OracleChannel names the build channel of an Oracle Linux advisory
+// ecosystem: "ksplice" for "Oracle Linux:9:ksplice" (Ksplice userspace
+// builds), "fips" for "Oracle Linux:9:fips", "" for the release's regular
+// packages.
+func OracleChannel(ecosystem string) string {
+	rest, ok := strings.CutPrefix(ecosystem, "Oracle Linux:")
+	if !ok {
+		return ""
+	}
+	_, ch, _ := strings.Cut(rest, ":")
+	return ch
+}
+
+// OracleBuild names the channel an installed Oracle Linux package version
+// was built for, from its release: "ksplice" (2:2.34-60.0.3.ksplice1.el9),
+// "fips" (10:3.5.8-2.0.1.el9_8_fips) or "" for a regular build. Such builds
+// carry their own epoch, so records for the other builds of the package do
+// not describe them. The second check reads it with the same function.
+func OracleBuild(version string) string { return oraclebuild.Channel(version) }
+
+// UnlistedLine reports an Oracle Linux affected entry for versions on none
+// of the version lines its advisory has fixes for (see intel's
+// elsaRanges): a match through it needs validation. Such an entry is the
+// only Oracle Linux range that ends in a limit with no fix, so it is told
+// by its shape, which is all that is stored of an entry.
+func UnlistedLine(ecosystem string, a Affected) bool {
+	if !strings.HasPrefix(ecosystem, "Oracle Linux:") || len(a.Ranges) != 1 {
+		return false
+	}
+	limit := false
+	for _, e := range a.Ranges[0].Events {
+		if e.Fixed != "" || e.LastAffected != "" {
+			return false
+		}
+		limit = limit || e.Limit != ""
+	}
+	return limit
+}
+
+// OtherLine reports an entry whose every range starts above the installed
+// version: it describes another version line (a UEK release, a module
+// stream, one of several lines of an advisory), so its "not affected" says
+// nothing about this version.
+func OtherLine(a Affected, t Target) bool {
+	if len(a.Ranges) == 0 || len(a.Versions) > 0 {
+		return false
+	}
+	cmp := version.For(t.Compare)
+	for _, r := range a.Ranges {
+		if len(r.Events) == 0 || r.Events[0].Introduced == "" || r.Events[0].Introduced == "0" {
+			return false
+		}
+		if c, err := cmp(r.Events[0].Introduced, t.Version); err != nil || c <= 0 {
+			return false
+		}
+	}
+	return true
+}
 
 // rpmDistro splits a distro qualifier ("rhel-9.4") into a supported ID and
 // its release.
@@ -436,7 +509,8 @@ func BaseEcosystem(eco string) string {
 // target "SUSE:15 SP5" matches every product of that service pack
 // ("SUSE:Linux Enterprise Module for Basesystem 15 SP5") and its extended
 // support channels ("... 15 SP5-LTSS"). Use Subscription to tell
-// subscription-only fixes apart.
+// subscription-only fixes apart. An Oracle Linux target "Oracle Linux:9"
+// matches its release and the release's Ksplice and FIPS build channels.
 func MatchEcosystem(advisory, target string) bool {
 	if advisory == target {
 		return true
@@ -458,6 +532,11 @@ func MatchEcosystem(advisory, target string) bool {
 		if rel, ok := strings.CutPrefix(target, "Red Hat:enterprise_linux:"); ok && strings.Contains(rel, ".") {
 			return strings.HasPrefix(advisory, "Red Hat:enterprise_linux:"+majorOf(rel)+"::")
 		}
+	case strings.HasPrefix(target, "Oracle Linux:") && strings.HasPrefix(advisory, target+":"):
+		// The Ksplice and FIPS build channels of the release
+		// ("Oracle Linux:9:ksplice"); the matcher applies them only to
+		// such builds (OracleBuild).
+		return true
 	case target == "Packagist":
 		// Packages served by another Composer repository carry its URL:
 		// Drupal contrib modules are "Packagist:https://packages.drupal.org/8".

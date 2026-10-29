@@ -376,8 +376,12 @@ type groupMatch struct {
 	ranges     []string
 	ecosystems []string
 	exploited  bool
-	freeHit    bool // a free-channel advisory says the version is affected
-	proHit     bool // a Pro advisory says it is affected
+	// lined: a record matched on a version line it has a fix for;
+	// unlisted: one matched only because the version is on none of the
+	// lines its advisory lists fixes for (osv.UnlistedLine).
+	lined, unlisted bool
+	freeHit         bool // a free-channel advisory says the version is affected
+	proHit          bool // a Pro advisory says it is affected
 	// The record that decided the verdict in each channel: the one whose
 	// fixed version is recommended, else the first that matched.
 	freeRec, proRec decisive
@@ -416,9 +420,24 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 		return cur
 	}
 	fipsBuild := strings.HasPrefix(t.Ecosystem, "Ubuntu:") && osv.FIPSBuild(t.Version)
+	// Oracle's Ksplice and FIPS builds (another epoch) are matched against
+	// their own channel's records, and a regular build never is. Records of
+	// the regular packages apply to every build, as in Oracle's OVAL, but
+	// their "not affected" says nothing about a Ksplice or FIPS build.
+	oracle := strings.HasPrefix(t.Ecosystem, "Oracle Linux:")
+	oracleBuild := ""
+	if oracle {
+		oracleBuild = osv.OracleBuild(t.Version)
+	}
 	for _, a := range advs {
 		if a.Withdrawn != nil || !osv.MatchEcosystem(a.Ecosystem, t.Ecosystem) {
 			continue
+		}
+		recordChannel := ""
+		if oracle {
+			if recordChannel = osv.OracleChannel(a.Ecosystem); recordChannel != "" && recordChannel != oracleBuild {
+				continue
+			}
 		}
 		// Ubuntu's FIPS channels describe FIPS builds only, and a FIPS build
 		// takes its fixes from them, never from the regular channels.
@@ -444,7 +463,10 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 			freeChecked[a.GroupKey] = true
 		}
 		if !m.Affected {
-			if !pro {
+			// A record for another version line (or for versions on no
+			// listed line) says nothing about this version's line.
+			otherLine := oracle && (osv.OtherLine(a.Affected, t) || osv.UnlistedLine(a.Ecosystem, a.Affected))
+			if !pro && recordChannel == oracleBuild && !otherLine {
 				freeClear[a.GroupKey]++
 			}
 			continue
@@ -483,6 +505,11 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 			}
 		}
 		g.exploited = g.exploited || a.KnownExploited
+		if osv.UnlistedLine(a.Ecosystem, a.Affected) {
+			g.unlisted = true
+		} else {
+			g.lined = true
+		}
 	}
 	// Keep a group if the free channel says affected, or only Pro has data.
 	kept := order[:0]
@@ -509,6 +536,15 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 	var out []store.FindingInput
 	for _, k := range order {
 		g := groups[k]
+		verification := verification
+		// Matched only for being on none of the version lines the advisory
+		// fixes (an Oracle Cloud Native Environment kubeadm 1.20 against
+		// fixes for 1.22, 1.23 and 1.24): it may be affected or never have
+		// been, so it needs validation rather than a plain match.
+		lineUnlisted := g.unlisted && !g.lined
+		if lineUnlisted && verification == "confirmed" {
+			verification = "needs_validation"
+		}
 		sev := g.severity
 		if verification == "needs_validation" {
 			// FR-15: no definitive severity until the version is confirmed.
@@ -561,6 +597,9 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 		}
 		if g.freeHit && freeClear[k] > 0 {
 			ambiguous = append(ambiguous, "sources_disagree")
+		}
+		if lineUnlisted {
+			ambiguous = append(ambiguous, "version_line_unlisted")
 		}
 		ev["match"] = matchExplanation(r, t, rec, fixed, ambiguous)
 		if pu, err := packageurl.FromString(r.Purl); err == nil && osv.KernelNotRunning(r.Type, pu.Name, r.Version, r.RunningKernel) {

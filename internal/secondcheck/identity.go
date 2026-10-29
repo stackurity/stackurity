@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+
+	"github.com/stackurity/stackurity/internal/oraclebuild"
 )
 
 // purl is a package URL read by the second check's own parser: type,
@@ -68,6 +70,10 @@ type target struct {
 	version   string
 	family    family
 	fips      bool
+	// oracleBuild is the build channel of an Oracle Linux package, read
+	// from its release: "ksplice" (2:2.34-60.0.3.ksplice1.el9), "fips"
+	// (10:3.5.8-2.0.1.el9_8_fips) or "" for a regular build.
+	oracleBuild string
 	// kernel: a Debian or Ubuntu package built from a kernel source.
 	// kernelSource: the source package it was derived from is known (from
 	// the upstream qualifier or the source_package evidence), so a record
@@ -261,7 +267,7 @@ func deriveTarget(rawPurl, invVersion string, ev map[string]string) (target, err
 		t.family = famRPM
 		distro := p.qualifiers["distro"]
 		id, rel := "", ""
-		for _, d := range []string{"almalinux", "rocky", "rhel", "amzn", "opensuse-leap", "sles_sap", "sles", "sled"} {
+		for _, d := range []string{"almalinux", "rocky", "rhel", "amzn", "ol", "opensuse-leap", "sles_sap", "sles", "sled"} {
 			if r, ok := strings.CutPrefix(distro, d+"-"); ok {
 				id, rel = d, r
 				break
@@ -276,6 +282,8 @@ func deriveTarget(rawPurl, invVersion string, ev map[string]string) (target, err
 			t.ecosystem = "Red Hat"
 		case "amzn":
 			t.ecosystem = "Amazon Linux"
+		case "ol":
+			t.ecosystem = "Oracle Linux"
 		case "":
 			return t, fmt.Errorf("the rpm distribution %q has no advisory source", distro)
 		default:
@@ -292,6 +300,11 @@ func deriveTarget(rawPurl, invVersion string, ev map[string]string) (target, err
 			t.version = evr
 		} else if e := p.qualifiers["epoch"]; e != "" && e != "0" && !strings.Contains(t.version, ":") {
 			t.version = e + ":" + t.version
+		}
+		if t.ecosystem == "Oracle Linux" {
+			// Shared with the matcher on purpose: it reads Oracle's naming
+			// of builds, not matching rules.
+			t.oracleBuild = oraclebuild.Channel(t.version)
 		}
 	case "generic":
 		if strings.ToLower(p.name) != "windows" || ev["kind"] != "operating-system" {
@@ -399,6 +412,13 @@ func (t target) recordApplies(eco string) (applies, paid bool) {
 		return eco == t.ecosystem+":"+major, false
 	case "Amazon Linux":
 		return eco == "Amazon Linux:"+t.release, false
+	case "Oracle Linux":
+		// Regular records apply to every build (as in Oracle's OVAL); a
+		// Ksplice or FIPS channel only to that kind of build.
+		if eco == "Oracle Linux:"+major {
+			return true, false
+		}
+		return t.oracleBuild != "" && eco == "Oracle Linux:"+major+":"+t.oracleBuild, false
 	case "Red Hat":
 		stream, ok := strings.CutPrefix(eco, "Red Hat:enterprise_linux:")
 		if !ok {

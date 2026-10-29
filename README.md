@@ -77,7 +77,7 @@ For TLS, backups, upgrades, Kubernetes (Helm), the agents and plugins, see [docs
 ## Known limitations
 
 - Several server replicas can share one database, but versions cannot be mixed: an upgrade stops every replica before the new version starts ([upgrade checklist](docs/install.md#upgrading)). A server whose database a newer version has migrated refuses to start, and one already running fails `/readyz`.
-- Vulnerability matching covers language packages, Debian, Ubuntu (not Pro), Alpine, Rocky, Alma, RHEL, SUSE, openSUSE Leap and Amazon Linux 2 and 2023. CentOS, Oracle Linux, Fedora and Amazon Linux 1 packages are inventoried but listed as evaluation gaps.
+- Vulnerability matching covers language packages, Debian, Ubuntu (not Pro), Alpine, Rocky, Alma, RHEL, Oracle Linux, SUSE, openSUSE Leap and Amazon Linux 2 and 2023. CentOS, Fedora and Amazon Linux 1 packages are inventoried but listed as evaluation gaps.
 - Red Hat advisories are matched against the main stream of each major release; Extended Update Support (EUS, AUS) streams are not modelled, so a host held on an EUS minor release can show fixes it already has through EUS. SUSE publishes no severity in its advisory data, so SUSE findings show severity "unknown" and are prioritised on the other risk factors.
 - Amazon Linux 2 extras topics are read when the topic name carries its version line (kernel-5.10, php8.2, postgresql14); packages from other topics (docker, epel and similar) are matched against core advisories only.
 - Release (latest-version) data covers the language registries above, not OS packages. Maven Central publishes no release dates, and RubyGems hides yanked versions, so neither is shown for those. Lifecycle data covers everything endoflife.date tracks.

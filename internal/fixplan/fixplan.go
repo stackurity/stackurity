@@ -130,7 +130,13 @@ func manager(osID, osVersion string) (update, autoremove string) {
 			return "sudo yum update", "sudo package-cleanup --oldkernels --count=1"
 		}
 		return "sudo dnf upgrade --refresh", "sudo dnf remove --oldinstallonly"
-	case "rhel", "rocky", "almalinux", "centos", "fedora", "ol":
+	case "rhel", "centos", "ol":
+		if v, _, _ := strings.Cut(osVersion, "."); v == "7" {
+			// Release 7 has yum, not dnf.
+			return "sudo yum update", "sudo package-cleanup --oldkernels --count=1"
+		}
+		return "sudo dnf upgrade --refresh", "sudo dnf remove --oldinstallonly"
+	case "rocky", "almalinux", "fedora":
 		return "sudo dnf upgrade --refresh", "sudo dnf remove --oldinstallonly"
 	case "sles", "sles_sap", "sled", "opensuse-leap":
 		return "sudo zypper refresh && sudo zypper patch", "sudo zypper purge-kernels"

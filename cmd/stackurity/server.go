@@ -1040,6 +1040,7 @@ func intelConfig(dataDir string) intel.Config {
 	cfg.EndOfLifeURL = env("STACKURITY_ENDOFLIFE_URL", cfg.EndOfLifeURL)
 	cfg.NpmRegistry = env("STACKURITY_NPM_REGISTRY", cfg.NpmRegistry)
 	cfg.AmazonLinuxURL = env("STACKURITY_AMAZON_LINUX_URL", cfg.AmazonLinuxURL)
+	cfg.OracleLinuxURL = env("STACKURITY_ORACLE_LINUX_URL", cfg.OracleLinuxURL)
 	cfg.PackagistURL = env("STACKURITY_PACKAGIST_URL", cfg.PackagistURL)
 	cfg.PyPIURL = env("STACKURITY_PYPI_URL", cfg.PyPIURL)
 	cfg.GoProxyURL = env("STACKURITY_GOPROXY_URL", cfg.GoProxyURL)

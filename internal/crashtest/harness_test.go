@@ -215,6 +215,7 @@ func (e *env) start(extra ...string) *server {
 		"STACKURITY_EPSS_URL="+up+"/epss.csv",
 		"STACKURITY_ENDOFLIFE_URL="+up+"/eol.json",
 		"STACKURITY_AMAZON_LINUX_URL="+up+"/al",
+		"STACKURITY_ORACLE_LINUX_URL="+up+"/oval",
 	)
 	for _, k := range []string{"NPM_REGISTRY", "PACKAGIST_URL", "PYPI_URL", "GOPROXY_URL", "CRATES_INDEX_URL", "RUBYGEMS_URL", "NUGET_URL", "MAVEN_URL", "PUB_URL"} {
 		s.cmd.Env = append(s.cmd.Env, "STACKURITY_"+k+"="+up+"/registry")

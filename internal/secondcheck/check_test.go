@@ -64,6 +64,22 @@ func TestSecondCheckAgrees(t *testing.T) {
 		{name: "RHEL stream", purl: "pkg:rpm/redhat/bash@5.1.8-6.el9?distro=rhel-9.4",
 			recs:  []store.RawAdvisoryRecord{rec("RHSA-1", "Red Hat:enterprise_linux:9::baseos", "bash", rng(`{"introduced":"0"},{"fixed":"0:5.1.8-9.el9"}`))},
 			fixed: "0:5.1.8-9.el9"},
+		{name: "Oracle Linux release, Ksplice channel ignored for a regular build", purl: "pkg:rpm/ol/glibc@2.34-60.0.2.el9?distro=ol-9.4",
+			recs: []store.RawAdvisoryRecord{
+				rec("OL9-ELSA-2023-12850", "Oracle Linux:9", "glibc", rng(`{"introduced":"0"},{"fixed":"0:2.34-60.0.3.el9"}`)),
+				rec("OL9-ELSA-2023-12854", "Oracle Linux:9:ksplice", "glibc", rng(`{"introduced":"0"},{"fixed":"2:2.34-60.0.3.ksplice1.el9"}`)),
+				rec("OL8-ELSA-2023-12851", "Oracle Linux:8", "glibc", rng(`{"introduced":"0"},{"fixed":"0:2.28-225.0.4.el8"}`)),
+			}, fixed: "0:2.34-60.0.3.el9"},
+		{name: "Oracle Linux Ksplice build", purl: "pkg:rpm/ol/glibc@2.34-60.0.2.ksplice1.el9?distro=ol-9.2", ev: map[string]string{"evr": "2:2.34-60.0.2.ksplice1.el9"},
+			recs: []store.RawAdvisoryRecord{
+				rec("OL9-ELSA-2023-12850", "Oracle Linux:9", "glibc", rng(`{"introduced":"0"},{"fixed":"0:2.34-60.0.3.el9"}`)),
+				rec("OL9-ELSA-2023-12854", "Oracle Linux:9:ksplice", "glibc", rng(`{"introduced":"0"},{"fixed":"2:2.34-60.0.3.ksplice1.el9"}`)),
+			}, fixed: "2:2.34-60.0.3.ksplice1.el9"},
+		{name: "Oracle Linux UEK line", purl: "pkg:rpm/ol/kernel-uek@5.15.0-6.80.3.el9uek?distro=ol-9.4",
+			recs: []store.RawAdvisoryRecord{
+				rec("OL9-ELSA-2023-12017", "Oracle Linux:9", "kernel-uek", rng(`{"introduced":"0:5.15.0"},{"fixed":"0:5.15.0-6.80.3.1.el9uek"}`)),
+				rec("OL9-ELSA-2025-20368", "Oracle Linux:9", "kernel-uek", rng(`{"introduced":"0:6.12.0"},{"fixed":"0:6.12.0-100.28.2.el9uek"}`)),
+			}, fixed: "0:5.15.0-6.80.3.1.el9uek"},
 		{name: "Alpine release", purl: "pkg:apk/alpine/busybox@1.36.1-r15?distro=alpine-3.19.1",
 			recs:  []store.RawAdvisoryRecord{rec("ALPINE-1", "Alpine:v3.19", "busybox", rng(`{"introduced":"0"},{"fixed":"1.36.1-r16"}`))},
 			fixed: "1.36.1-r16"},
@@ -132,6 +148,12 @@ func TestSecondCheckDisagrees(t *testing.T) {
 		out := CheckVulnerability(claim("4.17.20", nil), Observed{Purl: "pkg:npm/lodash@4.17.15"},
 			[]store.RawAdvisoryRecord{rec("GHSA-1", "npm", "lodash", rng(`{"introduced":"0"},{"fixed":"4.17.21"}`))})
 		want(t, out, "fixed_version", "4.17.21")
+	})
+	t.Run("Oracle Linux FIPS record for a regular build", func(t *testing.T) {
+		// A FIPS build's fix (epoch 10) never applies to a regular build.
+		out := CheckVulnerability(claim("10:3.7.6-23.el9_3.4_fips", nil), Observed{Purl: "pkg:rpm/ol/gnutls@3.7.6-23.el9_3.3?distro=ol-9.4"},
+			[]store.RawAdvisoryRecord{rec("OL9-ELSA-2024-12336", "Oracle Linux:9:fips", "gnutls", rng(`{"introduced":"0"},{"fixed":"10:3.7.6-23.el9_3.4_fips"}`))})
+		want(t, out, "package", "no record of CVE-2099-1 applies to Oracle Linux 9.4")
 	})
 	t.Run("subscription", func(t *testing.T) {
 		out := CheckVulnerability(claim("7.68.0-1ubuntu2.21", nil), Observed{Purl: "pkg:deb/ubuntu/curl@7.68.0-1ubuntu2.20?distro=ubuntu-20.04"},

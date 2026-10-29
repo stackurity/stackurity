@@ -316,6 +316,13 @@ func Build(in Input, now time.Time) Explanation {
 				"A version read from the package database or a lockfile, for example by the agent on the host, would confirm or clear this finding.",
 				orUnknown(inv.CollectorID), orUnknown(f.Version), inv.Confidence, how))
 		}
+		for _, a := range e.Rule.Ambiguous {
+			if a == "version_line_unlisted" {
+				e.Missing = append(e.Missing, fmt.Sprintf("Whether the advisory covers this version line. It lists fixes for other lines of %s only, "+
+					"and %s is on none of them: check the vendor's advisory for this line, or move to a listed line's fixed version.",
+					orUnknown(f.ComponentName), orUnknown(f.Version)))
+			}
+		}
 	case "stale":
 		e.StateText = "Stale: this was true when the asset last reported, but nothing has reported it since."
 		e.Missing = append(e.Missing, fmt.Sprintf("A fresh report from the asset. It was last seen %s; a new collection (Check again) would confirm or clear this finding.",
