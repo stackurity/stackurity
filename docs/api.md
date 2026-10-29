@@ -125,6 +125,18 @@ Your two-factor sign-in: `enabled`, `enabled_at`, `recovery_codes_left`, `requir
 
 `{"password": "..."}`: turns two-factor sign-in off. 409 `mfa_required` while one of your organisations requires it.
 
+### `GET /auth/email-preferences`
+
+**Who:** any signed-in user · hosted installations that send bulk email (`email_preferences` in `GET /meta`), else 404
+
+Your choices for bulk email: `categories`, one per category (`marketing`, `vulnerability_news`) with `subscribed` (true unless you unsubscribed), `source` and `changed_at` of the last change (`link`, `header`, `settings` or `support`; absent when never changed), `label` and `description`; and `locked`, the email that cannot be turned off here, each with `label` and `description`.
+
+### `PUT /auth/email-preferences`
+
+**Who:** any signed-in user · as above
+
+`{"marketing": false}`, `{"vulnerability_news": true}` or both: changes your choices at once and answers as `GET`. Subscribing again lifts a suppression of your address for that category. Any other field is a 400.
+
 ### `GET /auth/oidc/login`
 
 **Who:** anyone · licensed build
@@ -308,7 +320,7 @@ The assistants a person has connected (`/assistants`) and the OAuth consent page
 
 **Who:** anyone
 
-Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project`. `app_list` means `POST /ingest` takes a host batch's `apps` (see [ObservationBatch](#observationbatch)); agents send it only to servers that list it (0.14).
+Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project`. `app_list` means `POST /ingest` takes a host batch's `apps` (see [ObservationBatch](#observationbatch)); agents send it only to servers that list it (0.14). `email_preferences: true` means this server sends bulk email (product updates, vulnerability news), so people have email preferences.
 
 ### `GET /openapi.json`
 
@@ -1087,6 +1099,24 @@ One-click unsubscribe (RFC 8058) from the `List-Unsubscribe` header, with the to
 **Who:** anyone (rate limited) · outside `/api/v1`
 
 One-click "never email me again" with the token as `?t=`. Same effect and answers as `POST /api/v1/email-recipients/block`.
+
+### `POST /email/preferences`
+
+**Who:** anyone (rate limited) · hosted installations that send bulk email, else 404
+
+`{"token"}` from a bulk email's link (`/email/preferences#...`). Changes nothing. An Email preferences link (90 days) answers `kind` `preferences`, `email` (partly hidden), `categories` and `locked` as `GET /auth/email-preferences`; an unsubscribe link (2 years) answers `kind` `unsubscribe`, its `category`, and that category only. 410 `link_expired` for a correctly signed link past its time (sign in instead), 410 `link_invalid` for anything else.
+
+### `POST /email/preferences/update`
+
+**Who:** anyone (rate limited) · as above
+
+`{"token", "marketing"?, "vulnerability_news"?}`: changes the link's person's choices and answers as `POST /email/preferences`. An unsubscribe link can only set its own category to `false` (403 otherwise); an Email preferences link can change both. Same 410 answers.
+
+### `POST /email/preferences/one-click`
+
+**Who:** anyone (rate limited) · outside `/api/v1` · as above
+
+One-click unsubscribe (RFC 8058) from a bulk email's `List-Unsubscribe` header, with an unsubscribe link's token as `?t=`: that category is turned off for that person (`source` `header`). Answers 200 `{"status": "unsubscribed", "category"}`, also when it was already off, and never redirects. The body must be the form field `List-Unsubscribe=One-Click` (URL-encoded or multipart), else 400 `one_click_required` and nothing changes. A `GET` changes nothing. Same 410 answers; an Email preferences token is `link_invalid` here.
 
 ## Integrations
 

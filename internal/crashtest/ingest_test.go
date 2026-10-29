@@ -44,7 +44,7 @@ func TestIngestCrash(t *testing.T) {
 		t.Fatal(err)
 	}
 	host := first.AssetID
-	waitFor(t, 60*time.Second, "the first collection to be evaluated", func() bool {
+	waitFor(t, firstEvaluation, "the first collection to be evaluated", func() bool {
 		return e.when(`SELECT last_success FROM feeds WHERE name = 'osv:Debian'`) != nil && e.evaluationsDone() &&
 			collectionStatus(t, s.addr, token, first.CollectionID) == "evaluated" && len(e.findings(host)) == 1
 	})

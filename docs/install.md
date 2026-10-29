@@ -260,7 +260,7 @@ Accounts are found like OpenID Connect ones: by the provider and the name ID wit
 
 #### Your organisation's own single sign-on (Stackurity Cloud)
 
-On Stackurity Cloud the settings above are not used. Instead each organisation connects its own SAML identity provider under **Settings → Single sign-on** (admins; on a plan that includes it, Enterprise). Everything is per organisation: its provider and certificates, its sign-in addresses, its used assertions and its links to accounts.
+On Stackurity Cloud the settings above are not used. Instead each organisation connects its own SAML identity provider under **Settings → Single sign-on** (admins; on a plan that includes it). Everything is per organisation: its provider and certificates, its sign-in addresses, its used assertions and its links to accounts.
 
 1. **Your identity provider.** Give the metadata URL (`https://` only; fetched from the public internet) or upload the metadata file, and optionally the attribute names, groups that grant each role, the role for people in no listed group, and whether existing members may be linked by email. Save, then give your provider the **Entity ID** and **ACS URL** shown (each organisation has its own), or its service provider metadata URL. The steps for Okta, Microsoft Entra ID and Google Workspace below apply, with these addresses.
 2. **Email domains.** Add each domain your people's addresses use and publish the TXT record shown (`_stackurity-verification.<domain>` with the value `stackurity-domain-verification=…`) at your DNS provider, then **Check**. Single sign-on works only for addresses in verified domains, and a domain can be verified by one organisation only, so no other organisation can claim yours.
@@ -565,6 +565,23 @@ Credentials always go in a secret reference, never in the configuration:
 | Gmail / Google Workspace | `smtp.gmail.com` | 587, STARTTLS | Username the full address, password an app password (needs 2-Step Verification) |
 
 **Email sent by Stackurity** (Stackurity Cloud). The service's own mail server sends it, so there is nothing to configure: pick members of the organisation, or type other addresses. Members get it once they have signed in at least once or accepted an invitation (on Stackurity Cloud people join only by invitation). Another address gets one email with a link to confirm, valid 7 days, and receives nothing until it is clicked; **Resend** sends a new link (at most every 10 minutes). Editing the integration does not ask again. The confirmation email has a fixed subject ("Confirm you want Stackurity alerts"), the organisation's name only quoted in the text, and a **Never email me again** link that blocks the address for every organisation. An address gets at most one pending confirmation at a time, across organisations, and at most 3 a week. Every email is sent to each recipient separately with a **Stop these emails** link and one-click unsubscribe headers (`List-Unsubscribe`, RFC 8058); it takes the address out of that organisation's email integrations. Each organisation has limits per minute, per hour and per day, counted in emails (one per recipient) and shown on the form. A message over a limit is never dropped: an urgent, connected or overdue message is held and counted in the next summary ("Includes 2 urgent messages held back by the email limit"), or, for an integration without a summary, listed in the hourly digest; a summary or digest over the limit waits until the limit frees. The delivery log shows held messages with the reason.
+
+### Email preferences (product updates and vulnerability news)
+
+A hosted installation (Stackurity Cloud) may also send **bulk email** in two categories people can unsubscribe from: **Marketing** (product updates, such as what changed in a release) and **Vulnerability news**. Everything else is not bulk email and cannot be turned off here: account and security email (sign-up, password reset, two-factor authentication, invitations), billing email, and the organisation's own notifications, which are set under **Settings → Integrations**. A self-hosted installation sends no bulk email and shows none of this.
+
+- **Your account → Email preferences** has a switch per category and lists the email that is always sent, with why.
+- Every bulk email has an **Unsubscribe from Marketing** (or Vulnerability news) link, an **Email preferences** link, the sender's postal address, and one-click unsubscribe headers (`List-Unsubscribe` and `List-Unsubscribe-Post`, RFC 8058). The links open `/email/preferences` without signing in. Each is signed for one person: an unsubscribe link can only turn its own category off (it works for 2 years), and an Email preferences link can change both categories for 90 days. Nothing changes until the person presses a button, so mail scanners that open links change nothing.
+- An unsubscribe applies at once, also to an email already being sent to many people: each recipient is checked just before their email goes. It is kept by a hash of the address, so it also holds if the account is deleted.
+- Each bulk email is sent one recipient at a time, a fixed interval apart, and recorded per recipient before it is handed to the mail server, so running it again never sends anyone a second copy.
+
+To unsubscribe someone who asks by other means (support), run:
+
+```sh
+docker compose exec stackurity stackurity admin email-suppress --email person@example.com --category all
+```
+
+`--category` is `marketing`, `vulnerability_news` or `all` (the default). The address is suppressed even when no account has it.
 
 ### Acting from Slack
 

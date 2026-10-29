@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Link, useLocation } from "react-router";
 import { useAuth } from "../auth";
 import { Card, KeyValues, PageHeader } from "../components/ui";
+import { MyEmailPreferences } from "./EmailPreferences";
 import { LinkedSlackAccounts } from "./SlackLink";
 import { TwoFactorCard } from "./TwoFactor";
 import { PasswordCard } from "./Password";
@@ -11,10 +12,10 @@ import { PasswordCard } from "./Password";
  * them elsewhere (linked Slack accounts, AI assistants).
  */
 export function AccountPage() {
-  const { me } = useAuth();
+  const { me, meta } = useAuth();
   const { hash } = useLocation();
 
-  // Links to #slack and #mfa land on that section once it is on screen.
+  // Links to #slack, #mfa or #email land on that section once it is on screen.
   useEffect(() => {
     if (!hash) return;
     const t = setTimeout(() => document.getElementById(hash.slice(1))?.scrollIntoView({ block: "start" }), 50);
@@ -51,6 +52,7 @@ export function AccountPage() {
       </Card>
       <PasswordCard />
       <TwoFactorCard />
+      {meta?.email_preferences && <MyEmailPreferences />}
       <section id="slack" className="card">
         <header className="card-head">
           <h2>Linked Slack accounts</h2>

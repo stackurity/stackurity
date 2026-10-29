@@ -49,7 +49,12 @@ func buildEmail(from string, to []string, m Message) []byte {
 		hdr("List-Unsubscribe", "<"+m.oneClick+">")
 		hdr("List-Unsubscribe-Post", "List-Unsubscribe=One-Click")
 	}
-	if len(m.Sections) == 0 {
+	if m.bulk != nil {
+		hdr("X-Stackurity-Category", m.bulk.category)
+		hdr("Precedence", "bulk")
+		hdr("Auto-Submitted", "auto-generated")
+	}
+	if len(m.Sections) == 0 && m.bulk == nil {
 		hdr("Content-Type", "text/plain; charset=utf-8")
 		hdr("Content-Transfer-Encoding", "8bit")
 		b.WriteString("\r\n")
@@ -58,6 +63,9 @@ func buildEmail(from string, to []string, m Message) []byte {
 	}
 	// Grouped messages: plain text and HTML, so every item is a link.
 	text, page := crlf(m.Text()), crlf(emailHTML(m))
+	if m.bulk != nil {
+		text, page = crlf(bulkText(m)), crlf(bulkHTML(m))
+	}
 	sum := sha256.Sum256([]byte(text + page))
 	boundary := "stackurity-" + hex.EncodeToString(sum[:12])
 	hdr("Content-Type", `multipart/alternative; boundary="`+boundary+`"`)
