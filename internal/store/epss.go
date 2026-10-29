@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/stackurity/stackurity/internal/risk"
 )
 
 // EPSSScore is FIRST's EPSS for one CVE: the probability (0 to 1) that it is
@@ -18,6 +20,72 @@ type EPSSScore struct {
 	Percentile   float32   `json:"percentile"`
 	ModelVersion string    `json:"model_version"`
 	Date         time.Time `json:"date"`
+}
+
+// findingCVEs lists a vulnerability finding's CVEs as rows of fc(cve), for
+// the finding (or distinct key and sources) under alias x: its key (the
+// lowest CVE of its advisories, osv.GroupKey) and every id its advisories
+// (sources) give as an alias or upstream id. A distribution advisory fixing
+// several CVEs (a DSA, an RHSA) lists all but the lowest only there, and a
+// GHSA or GO record can have several CVE aliases. Ids that are not CVEs
+// never match an EPSS score.
+func findingCVEs(x string) string {
+	return `(SELECT ` + x + `.key AS cve UNION
+	  SELECT unnest(ad.aliases || ad.upstream) FROM advisories ad WHERE ad.id = ANY(` + x + `.sources)) fc`
+}
+
+// findingEPSSCVE is the CVE whose EPSS finding f uses: the one prioritisation
+// chose among its CVEs (findings.epss_cve, see chooseEPSS), else its key.
+// Reading its score is one primary-key lookup in epss_scores, and the
+// findings that use a CVE are found by the index findings_epss_cve.
+const findingEPSSCVE = `COALESCE(f.epss_cve, f.key)`
+
+// EPSSSwitch and EPSSSwitchPoints say how much higher another of a
+// finding's CVEs must score before the finding's EPSS moves to it from the
+// CVE it uses now: by more than a tenth and by more than one percentage
+// point (its current CVE is kept while it scores at least 90% of the
+// highest, or within 0.01 of it), and it always moves when the two are on
+// different sides of the risk policy's threshold. Two CVEs whose scores
+// cross each other from day to day, most of them near zero, then do not
+// rewrite the finding each day.
+const (
+	EPSSSwitch       = 0.9
+	EPSSSwitchPoints = 0.01
+)
+
+// chooseEPSS picks the CVE whose EPSS finding r uses and sets r.in.EPSS to
+// its score: the highest-scored of its CVEs, unless the CVE it uses now is
+// close to it (EPSSSwitch, EPSSSwitchPoints) and on the same side of policy
+// p's threshold. It
+// returns the CVE to store, nil when it is the finding's key or there is no
+// score.
+func chooseEPSS(p risk.Policy, r *riskRow) *string {
+	r.in.EPSS = nil
+	if len(r.epssCVEs) == 0 {
+		return nil
+	}
+	i := 0           // the highest: scores come highest first
+	current := r.key // a finding with no stored CVE uses its key
+	if r.epssStored != nil {
+		current = *r.epssStored
+	}
+	for j, c := range r.epssCVEs {
+		if c != current {
+			continue
+		}
+		best, cur := r.epssScores[0], r.epssScores[j]
+		if (cur >= best*EPSSSwitch || best-cur <= EPSSSwitchPoints) && p.EPSSCounts(cur, r.in.EPSSCounted) == p.EPSSCounts(best, r.in.EPSSCounted) {
+			i = j
+		}
+		break
+	}
+	score := r.epssScores[i]
+	r.in.EPSS = &score
+	if r.epssCVEs[i] == r.key {
+		return nil
+	}
+	c := r.epssCVEs[i]
+	return &c
 }
 
 // EPSSRow is one parsed line of an EPSS file.

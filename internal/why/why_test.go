@@ -165,3 +165,31 @@ func TestEPSSExplanation(t *testing.T) {
 		t.Errorf("EPSS for a finding without a CVE: %+v", e.EPSS)
 	}
 }
+
+// When the score is another CVE's than the finding's key (an alias of a
+// GHSA, another CVE fixed by the same distribution advisory), the
+// explanation names the CVE the score is for.
+func TestEPSSExplanationNamesTheCVE(t *testing.T) {
+	p := risk.DefaultPolicy()
+	score, other := float32(0.42), "CVE-2024-1001"
+	for _, c := range []struct{ key, want string }{
+		{"CVE-2024-1000", "FIRST EPSS gives CVE-2024-1001 (the highest score among the CVEs this issue's advisories cover; the issue is listed as CVE-2024-1000) a 42% chance"},
+		{"GHSA-xxxx-yyyy-zzzz", "FIRST EPSS gives CVE-2024-1001 (the highest-scored CVE behind GHSA-xxxx-yyyy-zzzz) a 42% chance"},
+		{"CVE-2024-1001", "FIRST EPSS gives CVE-2024-1001 a 42% chance"},
+	} {
+		in := vuln(npmEvidence())
+		in.Policy = &p
+		in.Finding.Key, in.Finding.EPSS, in.Finding.EPSSCVE = c.key, &score, &other
+		d := Build(in, now).EPSS
+		if d == nil || d.CVE != other || !strings.Contains(d.Text, c.want) {
+			t.Errorf("key %s: %+v", c.key, d)
+		}
+	}
+	// A finding keyed by a GHSA without a scored CVE has no EPSS part.
+	in := vuln(npmEvidence())
+	in.Policy = &p
+	in.Finding.Key = "GHSA-xxxx-yyyy-zzzz"
+	if d := Build(in, now).EPSS; d != nil {
+		t.Errorf("GHSA without a score: %+v", d)
+	}
+}

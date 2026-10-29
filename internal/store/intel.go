@@ -895,6 +895,11 @@ type Finding struct {
 	EPSSPercentile *float32   `json:"epss_percentile"`
 	EPSSDate       *time.Time `json:"epss_date"`
 	EPSSModel      *string    `json:"epss_model_version"`
+	// EPSSCVE is the CVE the score is FIRST's for: the highest-scored of the
+	// finding's CVEs (its key and the CVEs its advisories list as aliases or
+	// upstream ids), as chosen at the last prioritisation (chooseEPSS). It
+	// differs from Key when the advisory covers several CVEs.
+	EPSSCVE *string `json:"epss_cve"`
 
 	// VEX is the latest imported VEX statement about this component version
 	// and vulnerability (null when none): informational for affected, fixed
@@ -925,7 +930,7 @@ type FindingFilter struct {
 	Search       string
 	Key          string
 	Exploited    bool
-	// EPSSMin keeps vulnerability findings whose CVE has an EPSS of at
+	// EPSSMin keeps vulnerability findings whose EPSS (EPSSCVE's) is at
 	// least this probability (0 to 1); 0 means no filter.
 	EPSSMin      float64
 	State        string // new, acknowledged, in_progress, suppressed, risk_accepted, active (= not suppressed/accepted), regressed
@@ -962,13 +967,13 @@ const findingCols = `f.id, f.kind, f.key, f.inventory_id, f.asset_id, a.name, a.
 	COALESCE(f.status = 'open' AND f.state IN ('new', 'acknowledged', 'in_progress') AND f.fix_due < now(), false), f.fix_group,
 	f.priority_policy, f.regressed_at, f.until_fix, f.ignore_reason, f.exception_id, ` + displayState + `,
 	COALESCE(sc.result, ''), COALESCE(sc.reason, ''), f.resolution_kind, f.resolution_detail,
-	ep.score, ep.percentile, ep.score_date, ep.model_version`
+	ep.score, ep.percentile, ep.score_date, ep.model_version, ep.cve`
 
-const findingFrom = ` FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
+var findingFrom = ` FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
 	JOIN components c ON c.id = f.component_id JOIN inventory i ON i.id = f.inventory_id
 	LEFT JOIN users au ON au.id = f.assignee_user_id LEFT JOIN teams ateam ON ateam.id = f.assignee_team_id
 	LEFT JOIN second_checks sc ON sc.finding_id = f.id
-	LEFT JOIN epss_scores ep ON f.kind = 'vulnerability' AND ep.cve = f.key`
+	LEFT JOIN epss_scores ep ON f.kind = 'vulnerability' AND ep.cve = ` + findingEPSSCVE
 
 func (s *Store) ListFindings(ctx context.Context, f FindingFilter) ([]Finding, int64, error) {
 	w := &where{}
@@ -1067,10 +1072,13 @@ func (s *Store) ListFindings(ctx context.Context, f FindingFilter) ([]Finding, i
 	if f.EPSSMin > 0 {
 		// The count tests EXISTS; the list filters its own EPSS join
 		// (findingFrom), as the planner otherwise joins every open finding
-		// before testing the EXISTS (a few hundred ms on 130,000).
+		// before testing the condition. Both read the score of the CVE in
+		// use (epss_cve, else the key) by primary key, as they read the
+		// key's before; forms that start from the CVEs at or above the
+		// minimum were slower at 130,000 findings.
 		w.args = append(w.args, f.EPSSMin)
 		n := len(w.args)
-		countWhere = andWhere(countWhere, fmt.Sprintf("f.kind = 'vulnerability' AND EXISTS (SELECT 1 FROM epss_scores e WHERE e.cve = f.key AND e.score >= $%d::real)", n))
+		countWhere = andWhere(countWhere, fmt.Sprintf("f.kind = 'vulnerability' AND EXISTS (SELECT 1 FROM epss_scores e WHERE e.cve = "+findingEPSSCVE+" AND e.score >= $%d::real)", n))
 		listWhere = andWhere(listWhere, fmt.Sprintf("ep.score >= $%d::real", n))
 	}
 	var total int64

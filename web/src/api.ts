@@ -1125,6 +1125,8 @@ export interface Finding {
   /** The day the EPSS scores were published. */
   epss_date?: string | null;
   epss_model_version?: string | null;
+  /** The CVE the EPSS is for: the highest-scored of the finding's CVEs (its key, or an alias or upstream id of its advisories). */
+  epss_cve?: string | null;
   /** The latest imported VEX statement about this component version and vulnerability. */
   vex?: FindingVEX | null;
 }

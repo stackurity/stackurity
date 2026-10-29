@@ -390,9 +390,9 @@ export function fixGroupKindLabel(id: string): string {
 /** Hints from evidence that change what the fix is. */
 /** The EPSS column: the probability, or a dash for findings without a score. */
 export function EpssCell({ f }: { f: Finding }) {
-  if (f.epss == null) return <span className="muted" title={f.kind === "vulnerability" ? "No EPSS score for this finding's CVE" : undefined}>—</span>;
+  if (f.epss == null) return <span className="muted" title={f.kind === "vulnerability" ? "No EPSS score for this finding's CVEs" : undefined}>—</span>;
   return (
-    <span className="mono" title={epssTitle(f.epss, f.epss_percentile, f.epss_date)}>
+    <span className="mono" title={epssTitle(f.epss, f.epss_percentile, f.epss_date, f.epss_cve !== f.key ? f.epss_cve : null)}>
       {percent(f.epss)}
     </span>
   );
@@ -428,7 +428,7 @@ export function VexBadge({ f }: { f: Finding }) {
 /** EPSS on a phone card. */
 export function EpssBadge({ f }: { f: Finding }) {
   if (f.epss == null) return null;
-  return <Badge status="epss" tone="muted" label={`EPSS ${percent(f.epss)}`} title={epssTitle(f.epss, f.epss_percentile, f.epss_date)} />;
+  return <Badge status="epss" tone="muted" label={`EPSS ${percent(f.epss)}`} title={epssTitle(f.epss, f.epss_percentile, f.epss_date, f.epss_cve !== f.key ? f.epss_cve : null)} />;
 }
 
 export function EvidencePills({ f }: { f: Finding }) {
