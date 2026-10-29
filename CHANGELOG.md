@@ -13,7 +13,25 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ### Added
 
+- **I've fixed it — check now** on fix cards (Home and Fixes) and on a fix's page. It asks every place the fix covers for a new scan (the server's agent reports within a minute; a connected repository is scanned again), shows that it is waiting ("Checking DBC… usually within a minute"), then what the scan found: "Fixed, confirmed by a new scan at 16:05", or "Still found on DBC: jquery 3.3.1 at /var/www/html/phpmyadmin/yarn.lock". Places that cannot report on demand say what to do instead: re-run the CI scan for a repository, upload the new SBOM, or restart an agent older than 0.7. Nothing is closed without evidence; the fix's page points to Snooze and Accept for now for a fix you are not making.
+- `GET /api/v1/checks/options`: for fix groups or assets, whether Check again gets a fresh report within minutes (`on_demand`) and, if not, why (`removed`, `agent`, `upload`), with the latest check.
+- Applications that are gone are marked **Removed**. The agent sends the list of application directories it reports with its server's batch (`apps`, to servers listing the `app_list` feature), and an application missing from it (a deleted directory, an old release next to the current one, a directory no longer configured) is resolved: its issues close as removed, the asset shows "No longer present", and it no longer turns stale. A configured `--app-dir` that does not exist is reported as removed instead of as a failed scan.
+- Asset pickers group assets by kind (Servers, Applications, Repositories…) and tell same-named assets apart: "commmerceblog (server)" and "commmerceblog (repository)", or an application's path. MCP `list_assets` returns the same as `label`.
 - **The audit log is tamper-evident.** Each workspace's events, and the platform's own, form a hash chain written by the database as each event is recorded. `stackurity admin verify-audit` checks the chains and reports the first break of each (a changed, removed or inserted event). See [Verifying the audit log](docs/operations.md#verifying-the-audit-log).
+
+### Changed
+
+- Application discovery follows Ghost-CLI installs like Capistrano, Deployer and Envoyer ones: with `versions/` (or `releases/`) and a `current` link, only the current release is an application. Old versions kept for rollback (`/var/www/ghost/versions/6.22.0` next to `current -> 6.52.0`) are no longer scanned as live applications, and ones reported before are resolved as removed on the next collection. A directory named with `--app-dir` is scanned as given.
+- Copies of one application on a server always get distinct names ("ghost (/6.22.0) on commmerceblog"), also when both existed before 0.13; migration 0050 renames those already alike. A name a person set is never changed.
+- "I applied this" and Check again on a fix are one button, **I've fixed it — check now**. The asset page keeps Check again for the whole asset.
+- Asset status reads as words: Reporting, Last scan incomplete, Stopped reporting, Removed. Hosts are called servers in asset kinds.
+- Smaller consistency fixes: on Home, Show the places of a fix needed in several places is a plain button like Show issues, not a primary one; Home's Assets needing attention and a fix's Where say which kind a same-named asset is; on a fix's issues, Reopen reads "Reopen snoozed or ignored" (it only changes those).
+
+### Fixed
+
+- An upgraded application kept its old version's libraries, and their issues, for good when one of its directories could not be read. phpMyAdmin's `tmp/twig` cache belongs to the web server user, so every scan of phpMyAdmin was incomplete, and incomplete scans removed nothing: after an upgrade from 4.8.0 to 5.2.3, twig 1.35.3 and jquery 3.3.1 stayed listed next to twig 3.11.3 and jquery 3.7.1. A scan now removes what it no longer lists outside the paths it could not read; the next collection clears what earlier ones left. Servers' OS packages were not affected.
+- A check on an asset whose scans are incomplete waited for a week, and its agent was asked to report again every minute meanwhile. Any report now completes it; one that could not read everything ends as **Scan incomplete** instead of claiming the issues are still there.
+- A check on an application its agent no longer reports (a deleted directory) was never picked up; the server's agent now picks it up.
 
 ### Upgrading
 

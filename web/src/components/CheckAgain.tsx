@@ -14,6 +14,7 @@ export const OUTCOME: Record<string, { label: string; tone: Tone }> = {
   passed: { label: "Passed", tone: "good" },
   partly_fixed: { label: "Partly fixed", tone: "warn" },
   still_open: { label: "Still open", tone: "bad" },
+  incomplete: { label: "Scan incomplete", tone: "warn" },
   expired: { label: "No report", tone: "muted" },
 };
 
@@ -93,6 +94,15 @@ export function CheckResultText({ c, issuesLink }: { c: Check; issuesLink?: stri
         <>
           Still open {when}: none of the {issuesLink ? <Link to={issuesLink}>{plural(c.remaining, "issue")}</Link> : plural(c.remaining, "issue")} is
           gone{whole && c.new_issues > 0 ? `, and it found ${plural(c.new_issues, "new issue")}` : ""}.
+        </>
+      );
+      break;
+    case "incomplete":
+      text = (
+        <>
+          Scan incomplete {when}: the report could not read everything, so the{" "}
+          {issuesLink ? <Link to={issuesLink}>{plural(c.remaining, "issue")} left</Link> : `${plural(c.remaining, "issue")} left`} could not be
+          confirmed gone. See the asset&apos;s Coverage for what it could not read.
         </>
       );
       break;

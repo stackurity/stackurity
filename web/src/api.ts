@@ -14,7 +14,20 @@ export function atLeast(role: Role | undefined, min: UserRole): boolean {
 }
 
 export const ASSET_KINDS = ["host", "repository", "image", "application", "managed_service", "sbom", "cluster", "workload"] as const;
-export const ASSET_STATUSES = ["ok", "partial", "stale"] as const;
+export const ASSET_STATUSES = ["ok", "partial", "stale", "removed"] as const;
+/** Plain words for collection_status. */
+export const ASSET_STATUS_LABEL: Record<string, string> = {
+  ok: "Reporting",
+  partial: "Last scan incomplete",
+  stale: "Stopped reporting",
+  removed: "Removed",
+};
+export const ASSET_STATUS_HELP: Record<string, string> = {
+  ok: "The last collection read everything.",
+  partial: "The last collection could not read everything (see Coverage); issues it could not see stay open.",
+  stale: "Nothing has reported this asset recently.",
+  removed: "The application's directory is no longer reported by its server's agent: it was deleted, is an old release, or is no longer configured. Its issues were resolved as removed.",
+};
 export const CRITICALITIES = ["unknown", "low", "medium", "high", "critical"] as const;
 export const RELATION_KINDS = ["runs_on", "built_from", "deployed_as", "contains", "depends_on", "replica_of"] as const;
 export const COVERAGE_STATUSES = ["checked", "partial", "skipped", "failed", "unsupported"] as const;
@@ -1448,13 +1461,34 @@ export interface Check {
   picked_up_at: string | null;
   collection_id: number | null;
   completed_at: string | null;
-  outcome: "" | "passed" | "partly_fixed" | "still_open" | "expired";
+  outcome: "" | "passed" | "partly_fixed" | "still_open" | "incomplete" | "expired";
   open_before: number;
   fixed: number;
   remaining: number;
   new_issues: number;
   status: "waiting" | "evaluating" | "done";
   agent_polled_at: string | null;
+}
+
+/** GET /checks/options: how one place of a fix (or an asset) can be checked again. */
+export interface CheckOption {
+  fix_group?: string;
+  asset_id: number;
+  asset_name: string;
+  asset_kind: string;
+  app_dir?: string;
+  /** The server the asset is (or runs on). */
+  host_name?: string;
+  git_url?: string;
+  collection_status: string;
+  last_seen: string;
+  agent_polled_at: string | null;
+  method: "agent" | "integration" | "report" | string;
+  /** Check again gets a fresh report within minutes. */
+  on_demand: boolean;
+  /** Why not: removed (gone from its server), agent (does not ask for checks), upload (CI scan or SBOM), not_found (fixed and gone from the plan). */
+  reason?: "removed" | "agent" | "upload" | "not_found" | string;
+  last_check: Check | null;
 }
 
 /** An ignore decision for one issue on one asset, or on every asset. */
