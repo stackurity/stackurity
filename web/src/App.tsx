@@ -61,6 +61,7 @@ import { IntegrationsHubPage } from "./pages/settings/Integrations";
 import { IntegrationAddPage, IntegrationChannelPage } from "./pages/settings/IntegrationsChannel";
 import { RiskPolicyPage } from "./pages/settings/RiskPolicy";
 import { FixGroupingPage } from "./pages/settings/FixGrouping";
+import { VexDocumentPage, VexPage } from "./pages/settings/Vex";
 import { ProjectDetailPage, ProjectsPage } from "./pages/settings/Projects";
 
 // The help articles are large and rarely needed, so they load on demand.
@@ -285,6 +286,8 @@ export function App() {
         <Route path="settings/assistants" element={<Navigate replace to="/settings/ai-assistants#connected" />} />
         <Route path="settings/risk-policy" element={<RiskPolicyPage />} />
         <Route path="settings/fix-grouping" element={<FixGroupingPage />} />
+        <Route path="settings/vex" element={<VexPage />} />
+        <Route path="settings/vex/:id" element={<VexDocumentPage />} />
         <Route
           path="settings/plugins"
           element={

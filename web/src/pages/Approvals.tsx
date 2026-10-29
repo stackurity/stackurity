@@ -32,6 +32,53 @@ function RequestBody({ r }: { r: IgnoreRequest }) {
   ) : (
     plural(r.finding_ids.length, "issue")
   );
+  const v = r.vex;
+  if (v) {
+    return (
+      <>
+        <p className="small">
+          <strong>{IGNORE_REASON_LABEL[r.reason] ?? r.reason}</strong> · <span className="mono">{v.vulnerability}</span> not affected
+          {v.justification ? ` (${v.justification.replace(/_/g, " ")})` : ""} · {plural(v.matches, "component version")} on{" "}
+          {plural(v.assets, "asset")} · {plural(r.finding_ids.length, "open issue")} now · applies only while each stays at that version
+        </p>
+        {v.impact_statement && (
+          <p className="small">
+            <span className="muted">Impact statement:</span> {v.impact_statement}
+          </p>
+        )}
+        <p className="small">
+          <span className="muted">From:</span> {v.source}
+          {v.author && v.author !== v.source ? ` (document author: ${v.author})` : ""} ·{" "}
+          <Link to={`/settings/vex/${v.document_id}`}>{v.filename || "VEX document"}</Link> ·{" "}
+          {v.signature === "verified" ? "signature verified" : v.signature === "unverified" ? "signed, not verified" : "not signed"} ·{" "}
+          <span className="mono" title={v.sha256}>
+            sha256 {v.sha256.slice(0, 12)}…
+          </span>
+        </p>
+        {v.problems?.length > 0 && (
+          <p className="small muted">
+            Not matched: {v.problems.slice(0, 3).map((p) => `${p.product} (${p.reason})`).join("; ")}
+            {v.problems.length > 3 ? `; ${v.problems.length - 3} more` : ""}
+          </p>
+        )}
+        <p className="small muted">
+          Imported by {r.requested_by || "someone"} <RelativeTime iso={r.requested_at} />
+          {r.decided_at && (
+            <>
+              {" "}
+              · {r.status} by {r.decided_by || "someone"} <RelativeTime iso={r.decided_at} />
+              {r.status === "approved" ? `, ${plural(r.applied, "issue")} ignored` : ""}
+            </>
+          )}
+        </p>
+        {r.decision_note && (
+          <p className="small">
+            <span className="muted">Decision note:</span> {r.decision_note}
+          </p>
+        )}
+      </>
+    );
+  }
   return (
     <>
       <p className="small">
@@ -91,6 +138,7 @@ function Decide({ r, onDone }: { r: IgnoreRequest; onDone: () => void }) {
 }
 
 function Requests({ status }: { status: "pending" | "all" }) {
+  const { can: orgCan } = useAuth();
   const [offset, setOffset] = useState(0);
   const [done, setDone] = useState<string | null>(null);
   const res = useLoad(() => api.get<IgnoreRequestList>("/ignore-requests", { status, limit: LIMIT, offset }), [status, offset]);
@@ -98,6 +146,8 @@ function Requests({ status }: { status: "pending" | "all" }) {
   if (!res.data) return <Loading />;
   const items = res.data.items;
   const canDecide = res.data.can_decide;
+  // VEX requests are decided by organisation-wide security and admin users.
+  const orgSecurity = orgCan("security");
   return (
     <>
       {!canDecide && (
@@ -116,10 +166,11 @@ function Requests({ status }: { status: "pending" | "all" }) {
             <li key={r.id} className="approval">
               <h3 className="badges">
                 <Badge status={r.status} tone={STATUS_TONE[r.status]} label={r.status} />
+                {r.vex && <Badge status="vex" tone="info" label="VEX" />}
                 <span className="break">{r.title || `Request #${r.id}`}</span>
               </h3>
               <RequestBody r={r} />
-              {canDecide && r.status === "pending" && (
+              {canDecide && r.status === "pending" && (!r.vex || orgSecurity) && (
                 <Decide
                   r={r}
                   onDone={() => {
@@ -178,7 +229,14 @@ function Rules() {
             <li key={r.id} className="approval">
               <h3 className="badges">
                 <Badge status={r.reason} tone="muted" label={IGNORE_REASON_LABEL[r.reason] ?? r.reason} />
-                {r.ended_at && <Badge status="ended" tone="muted" label={r.ended_reason === "expired" ? "expired" : "ended"} />}
+                {r.ended_at && (
+                  <Badge
+                    status="ended"
+                    tone="muted"
+                    label={r.ended_reason === "expired" ? "expired" : r.ended_reason === "no_longer_matches" ? "no longer matches" : r.ended_reason === "vex_superseded" ? "superseded by VEX" : "ended"}
+                  />
+                )}
+                {r.vex_statement_id && <Badge status="vex" tone="info" label={r.version ? `VEX · ${r.version}` : "VEX"} title={r.digest ? `image ${r.digest}` : undefined} />}
                 <span className="break">
                   <span className="mono">{r.key}</span> in {r.component_name}
                 </span>

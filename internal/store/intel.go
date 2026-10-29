@@ -887,6 +887,12 @@ type Finding struct {
 	EPSSPercentile *float32   `json:"epss_percentile"`
 	EPSSDate       *time.Time `json:"epss_date"`
 	EPSSModel      *string    `json:"epss_model_version"`
+
+	// VEX is the latest imported VEX statement about this component version
+	// and vulnerability (null when none): informational for affected, fixed
+	// and under_investigation; for not_affected, whether it was approved and
+	// ignores the finding (applied).
+	VEX *FindingVEX `json:"vex" db:"-"`
 }
 
 // displayState maps stored status and state to the seven states shown to
@@ -1086,7 +1092,14 @@ func (s *Store) ListFindings(ctx context.Context, f FindingFilter) ([]Finding, i
 		return nil, 0, err
 	}
 	out, err := pgx.CollectRows(rows, pgx.RowToStructByPos[Finding])
-	return out, total, err
+	if err != nil {
+		return nil, 0, err
+	}
+	ptrs := make([]*Finding, len(out))
+	for i := range out {
+		ptrs[i] = &out[i]
+	}
+	return out, total, s.fillFindingVEX(ctx, ptrs)
 }
 
 // andWhere adds a condition to a WHERE clause built by where.sql.
@@ -1103,7 +1116,10 @@ func (s *Store) GetFinding(ctx context.Context, id int64) (*Finding, error) {
 		return nil, err
 	}
 	f, err := pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByPos[Finding])
-	return f, notFound(err)
+	if err != nil {
+		return nil, notFound(err)
+	}
+	return f, s.fillFindingVEX(ctx, []*Finding{f})
 }
 
 type FindingSummary struct {

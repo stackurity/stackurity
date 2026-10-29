@@ -150,6 +150,11 @@ func (d *Dispatcher) upkeep(ctx context.Context) error {
 	if _, err := d.Store.ApplyExceptions(ctx); err != nil {
 		return fmt.Errorf("ignore rules: %w", err)
 	}
+	// Ignore rules made from VEX statements end once the component version
+	// or image they were made for is gone.
+	if _, err := d.Store.EndStaleVEXRules(ctx); err != nil {
+		return fmt.Errorf("vex rules: %w", err)
+	}
 	policy, err := d.Store.RiskPolicy(ctx)
 	if err != nil {
 		return err

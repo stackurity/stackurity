@@ -1123,6 +1123,8 @@ export interface Finding {
   /** The day the EPSS scores were published. */
   epss_date?: string | null;
   epss_model_version?: string | null;
+  /** The latest imported VEX statement about this component version and vulnerability. */
+  vex?: FindingVEX | null;
 }
 
 export interface FindingSummary {
@@ -1679,6 +1681,10 @@ export interface IgnoreRule {
   ended_at: string | null;
   ended_by: string;
   ended_reason: string;
+  /** Made from an approved VEX statement: applies only at this version (and image digest). */
+  vex_statement_id?: number | null;
+  version?: string;
+  digest?: string;
   findings: number;
 }
 
@@ -1704,6 +1710,156 @@ export interface IgnoreRequest {
   decided_at: string | null;
   decision_note: string;
   applied: number;
+  /** Made by a VEX import: only organisation-wide security and admin users decide it. */
+  vex_statement_id?: number | null;
+  vex?: RequestVEX | null;
+}
+
+export type VEXStatus = "not_affected" | "affected" | "fixed" | "under_investigation";
+
+export interface FindingVEX {
+  statement_id: number;
+  document_id: number;
+  source: string;
+  status: VEXStatus | string;
+  justification: string;
+  impact_statement: string;
+  action_statement: string;
+  status_notes: string;
+  vulnerability: string;
+  effective_at: string;
+  request_id: number | null;
+  request_status: "" | "pending" | "approved" | "declined" | string;
+  applied: boolean;
+}
+
+export interface VEXProblem {
+  product: string;
+  kind: "unmatched" | "ambiguous" | "invalid" | string;
+  reason: string;
+}
+
+export interface RequestVEX {
+  statement_id: number;
+  document_id: number;
+  source: string;
+  vulnerability: string;
+  justification: string;
+  impact_statement: string;
+  filename: string;
+  sha256: string;
+  signature: string;
+  author: string;
+  matches: number;
+  assets: number;
+  problems: VEXProblem[];
+}
+
+export interface VEXDocument {
+  id: number;
+  source_id: number | null;
+  source: string;
+  format: "openvex" | "cyclonedx";
+  doc_id: string;
+  author: string;
+  doc_version: string;
+  doc_timestamp: string | null;
+  filename: string;
+  sha256: string;
+  size: number;
+  signature: "none" | "verified" | "unverified";
+  key_fingerprint: string;
+  scope_asset_id: number | null;
+  scope_project_id: number | null;
+  auto_applied: boolean;
+  via: "vex" | "sbom";
+  statements: number;
+  matched: number;
+  imported_by: string;
+  imported_at: string;
+  pending: number;
+}
+
+export interface VEXStatement {
+  id: number;
+  document_id: number;
+  source: string;
+  vulnerability: string;
+  aliases: string[];
+  status: string;
+  justification: string;
+  original_state: string;
+  original_justification: string;
+  impact_statement: string;
+  action_statement: string;
+  status_notes: string;
+  problems: VEXProblem[];
+  effective_at: string;
+  request_id: number | null;
+  request_status: string;
+  matches: number;
+  assets: number;
+  findings: number;
+}
+
+export interface VEXImportResult {
+  document: VEXDocument;
+  statements: number;
+  matched: number;
+  unmatched: number;
+  pending: number;
+  auto_approved: number;
+  ignored: number;
+  ended: number;
+  skipped: number;
+  problems: VEXProblem[];
+}
+
+export interface VEXSource {
+  id: number;
+  name: string;
+  auto_apply: boolean;
+  token_id: number | null;
+  token_name: string;
+  key_fingerprint: string;
+  public_key: string;
+  created_by: string;
+  created_at: string;
+  documents: number;
+}
+
+/** Uploads a VEX document as it is (the server reads JSON, envelopes and bundles). */
+export async function importVEX(file: Blob, q: { filename: string; source_id?: number; asset_id?: number; project_id?: number }): Promise<VEXImportResult> {
+  const params = new URLSearchParams({ filename: q.filename });
+  if (q.source_id) params.set("source_id", String(q.source_id));
+  if (q.asset_id) params.set("asset_id", String(q.asset_id));
+  if (q.project_id) params.set("project_id", String(q.project_id));
+  const res = await fetch(`/api/v1/vex/import?${params}`, {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json", "X-Stackurity-CSRF": "1" },
+    credentials: "same-origin",
+    body: file,
+  });
+  const text = await res.text();
+  let data: unknown = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = null;
+  }
+  if (!res.ok) {
+    const err = (data as { error?: { code?: string; message?: string; details?: string[] } } | null)?.error;
+    throw new ApiError(res.status, err?.code ?? "http_" + res.status, err?.message ?? `Upload failed (${res.status})`, err?.details ?? []);
+  }
+  return data as VEXImportResult;
+}
+
+/** The download link for a VEX export; project scoping follows the switcher. */
+export function vexExportURL(format: "openvex" | "cyclonedx", assetID?: number): string {
+  const params = new URLSearchParams({ format });
+  if (assetID) params.set("asset_id", String(assetID));
+  else if (activeProject > 0) params.set("project_id", String(activeProject));
+  return `/api/v1/vex/export?${params}`;
 }
 
 export interface IgnoreRequestList extends List<IgnoreRequest> {

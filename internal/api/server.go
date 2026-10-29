@@ -322,6 +322,12 @@ func (s *Server) Handler() http.Handler {
 				r.Get("/checks/options", s.checkOptions)
 				r.Get("/checks/{id}", s.getCheck)
 				r.Get("/ignore-rules", s.listIgnoreRules)
+				// VEX (handlers_vex.go): what was imported, and our own
+				// decisions as OpenVEX or CycloneDX VEX.
+				r.Get("/vex/documents", s.listVEXDocuments)
+				r.Get("/vex/documents/{id}", s.getVEXDocument)
+				r.Get("/vex/documents/{id}/statements", s.listVEXStatements)
+				r.Get("/vex/export", s.exportVEX)
 				// Anyone may ask for an ignore; security and admin decide.
 				r.Get("/ignore-requests", s.listIgnoreRequests)
 				r.Post("/ignore-requests", s.createIgnoreRequest)
@@ -351,6 +357,10 @@ func (s *Server) Handler() http.Handler {
 				r.With(s.requireWritable).Post("/assets/{id}/check", s.checkAsset)
 				r.With(s.requireWritable).Post("/fix-groups/{id}/check", s.checkFixGroup)
 				r.Post("/fix-groups/{id}/applied", s.fixApplied)
+				// A VEX import only asks: its not_affected statements wait
+				// for a security or admin user, unless a trusted source's
+				// pins all hold (handlers_vex.go).
+				r.With(s.requireWritable).Post("/vex/import", s.importVEX)
 				r.Get("/users/directory", s.userDirectory)
 				r.Get("/jobs/{id}", s.getJob)
 			})
@@ -363,6 +373,8 @@ func (s *Server) Handler() http.Handler {
 				r.Get("/email-recipients", s.listEmailRecipients)
 				r.Post("/ignore-requests/{id}/decision", s.decideIgnoreRequest)
 				r.Delete("/ignore-rules/{id}", s.endIgnoreRule)
+				r.Post("/vex/documents/{id}/decision", s.decideVEXDocument)
+				r.Get("/vex/sources", s.listVEXSources)
 				s.proSecurityRoutes(r)
 			})
 			r.Group(func(r chi.Router) {
@@ -398,6 +410,10 @@ func (s *Server) Handler() http.Handler {
 				r.With(requireInstanceAdmin).Patch("/feeds/{name}", s.updateFeed)
 				r.Put("/risk-policy", s.putRiskPolicy)
 				r.Put("/settings/fix-grouping", s.putFixGrouping)
+				// Which VEX sources may apply on their own is the admins' call.
+				r.Post("/vex/sources", s.saveVEXSource(true))
+				r.Patch("/vex/sources/{id}", s.saveVEXSource(false))
+				r.Delete("/vex/sources/{id}", s.deleteVEXSource)
 				r.Post("/risk-policy/preview", s.previewRiskPolicy)
 				r.Post("/channels", s.createChannel)
 				r.Patch("/channels/{id}", s.updateChannel)

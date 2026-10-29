@@ -501,6 +501,22 @@ stackurity sbom export --asset 12 -o asset.cdx.json
 
 `sbom import` derives the asset from the document; `--asset-name` attaches it to the asset of that name instead, of the kind `--asset-kind` gives (default `application`), and `--environment` sets its environment label. `--project <id or name>` (or `STACKURITY_PROJECT`) on `sbom import` files the asset in that project (an admin's token, or a collector token made for the project); on `sbom export` it scopes the request, so an asset outside the project is not found.
 
+VEX embedded in a CycloneDX SBOM is imported with it, for approval (with an engineer's token or higher; a collector token's upload keeps it out).
+
+### VEX
+
+```sh
+stackurity vex import vendor.openvex.json                 # OpenVEX, CycloneDX VEX, or a signed attestation
+stackurity vex import api.intoto.json --source 3          # from a source an admin set up under Settings → VEX
+stackurity vex import product-abc.vex.cdx.json --asset 12 # a document about asset 12
+stackurity vex export --asset 12 -o asset-12.openvex.json
+stackurity vex export --project shop --format cyclonedx -o shop.vex.cdx.json
+```
+
+`vex import` reads the document first and uploads it with an engineer's token or higher. Its `not_affected` statements wait under **Approvals** for a security or admin user, unless `--source` names a source trusted to apply on its own (pinned to a public key the attestation must verify with, or to the uploading token). `--asset` or `--project` limits matching to that asset or project; `--asset` is needed for a document about a product with no identifier of its own. It prints what matched, what waits for approval, and each statement it could not match and why.
+
+`vex export` writes the decisions about open issues (false positives, mitigations, and imported statements) as OpenVEX (`--format openvex`, the default) or CycloneDX VEX (`--format cyclonedx`), for one asset (`--asset`), one project (`--project`) or every asset the token can see, to `-o` or standard output. The formats, matching rules and trust model are in [vex.md](vex.md).
+
 ## Intelligence
 
 Once inventory exists, Stackurity creates feeds for the ecosystems it contains: OSV vulnerability data, CISA KEV, FIRST EPSS, endoflife.date, and the package registries (npm, Packagist, PyPI, the Go module proxy, crates.io, RubyGems, NuGet, Maven Central, pub.dev and hex.pm) for latest releases. Inventory is evaluated whenever a feed changes and after every collection. The **Intelligence** page shows each feed's freshness and errors, plus the components that could *not* be evaluated (*evaluation gaps*).

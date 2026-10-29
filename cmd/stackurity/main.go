@@ -32,7 +32,7 @@ func newRootCmd() *cobra.Command {
 		SilenceErrors: true,
 		Version:       version,
 	}
-	root.AddCommand(serverCmd(), migrateCmd(), adminCmd(), agentCmd(), scanCmd(), sbomCmd(), diagnosticsCmd(), pluginCmd(), packCmd(), mcpCmd(), enrollCmd())
+	root.AddCommand(serverCmd(), migrateCmd(), adminCmd(), agentCmd(), scanCmd(), sbomCmd(), vexCmd(), diagnosticsCmd(), pluginCmd(), packCmd(), mcpCmd(), enrollCmd())
 	return root
 }
 

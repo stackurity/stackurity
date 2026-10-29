@@ -37,6 +37,7 @@ export function FindingCards({ rows, hideAsset }: { rows: Finding[]; hideAsset?:
               <SeverityBadge severity={f.severity} score={f.score} />
               {f.known_exploited && <KevBadge />}
               {f.epss != null && <EpssBadge f={f} />}
+              <VexBadge f={f} />
             </span>
             <FindingStateBadge f={f} detail />
           </div>
@@ -170,6 +171,12 @@ export function FindingsTable({
             </>
           )}
           <EvidencePills f={f} />
+          {f.vex && (
+            <>
+              {" "}
+              <VexBadge f={f} />
+            </>
+          )}
           <span className="finding-title small">{f.title !== f.key ? f.title : ""}</span>
         </>
       ),
@@ -389,6 +396,33 @@ export function EpssCell({ f }: { f: Finding }) {
       {percent(f.epss)}
     </span>
   );
+}
+
+const VEX_STATUS_LABEL: Record<string, string> = {
+  not_affected: "not affected",
+  affected: "affected",
+  fixed: "fixed",
+  under_investigation: "under investigation",
+};
+
+/** One line saying what a VEX statement says and where it stands. */
+export function vexSummary(v: NonNullable<Finding["vex"]>): string {
+  let s = `VEX from ${v.source}: ${VEX_STATUS_LABEL[v.status] ?? v.status}`;
+  if (v.justification) s += ` (${v.justification.replace(/_/g, " ")})`;
+  if (v.status === "not_affected") {
+    s += v.applied ? "; approved, ignores this issue" : v.request_status === "pending" ? "; waiting for approval" : "";
+  }
+  const text = v.impact_statement || v.action_statement || v.status_notes;
+  return text ? `${s}. ${text}` : s;
+}
+
+/** A VEX badge: the statement's status, with the justification and source on hover. */
+export function VexBadge({ f }: { f: Finding }) {
+  const v = f.vex;
+  if (!v) return null;
+  const tone = v.status === "affected" ? "warn" : v.status === "not_affected" ? (v.applied ? "good" : "info") : "muted";
+  const pending = v.status === "not_affected" && !v.applied && v.request_status === "pending";
+  return <Badge status="vex" tone={tone} label={`VEX: ${VEX_STATUS_LABEL[v.status] ?? v.status}${pending ? " (pending)" : ""}`} title={vexSummary(v)} />;
 }
 
 /** EPSS on a phone card. */
