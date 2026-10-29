@@ -6,12 +6,18 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+### Security
+
+- **The audit log is append-only.** The application's database role could change and delete audit events in its workspace (row-level security had UPDATE and DELETE policies); it can now only record and read them, and a database trigger refuses changes and removals by any role, the table owner included. Audit events are still removed with their workspace when a whole workspace is deleted (Stackurity Cloud, 30 days after a trial or plan ended), and an operator can remove events on purpose as described under [Audit log](docs/security-audit.md#audit-log).
+- **Browser features the dashboard does not use are turned off.** The `Permissions-Policy` header denies them (camera, microphone, geolocation, USB, serial, HID, Bluetooth, MIDI, screen capture, sensors and others) to every page and any frame in it. Payment, passkeys and security keys (WebAuthn) keep the browser's default; the payment page of Stackurity Cloud lets Razorpay Checkout use what it needs.
+
 ### Added
 
 - **I've fixed it — check now** on fix cards (Home and Fixes) and on a fix's page. It asks every place the fix covers for a new scan (the server's agent reports within a minute; a connected repository is scanned again), shows that it is waiting ("Checking DBC… usually within a minute"), then what the scan found: "Fixed, confirmed by a new scan at 16:05", or "Still found on DBC: jquery 3.3.1 at /var/www/html/phpmyadmin/yarn.lock". Places that cannot report on demand say what to do instead: re-run the CI scan for a repository, upload the new SBOM, or restart an agent older than 0.7. Nothing is closed without evidence; the fix's page points to Snooze and Accept for now for a fix you are not making.
 - `GET /api/v1/checks/options`: for fix groups or assets, whether Check again gets a fresh report within minutes (`on_demand`) and, if not, why (`removed`, `agent`, `upload`), with the latest check.
 - Applications that are gone are marked **Removed**. The agent sends the list of application directories it reports with its server's batch (`apps`, to servers listing the `app_list` feature), and an application missing from it (a deleted directory, an old release next to the current one, a directory no longer configured) is resolved: its issues close as removed, the asset shows "No longer present", and it no longer turns stale. A configured `--app-dir` that does not exist is reported as removed instead of as a failed scan.
 - Asset pickers group assets by kind (Servers, Applications, Repositories…) and tell same-named assets apart: "commmerceblog (server)" and "commmerceblog (repository)", or an application's path. MCP `list_assets` returns the same as `label`.
+- **The audit log is tamper-evident.** Each workspace's events, and the platform's own, form a hash chain written by the database as each event is recorded. `stackurity admin verify-audit` checks the chains and reports the first break of each (a changed, removed or inserted event). See [Verifying the audit log](docs/operations.md#verifying-the-audit-log).
 
 ### Changed
 
@@ -26,6 +32,10 @@ Each release's section is published as its GitHub release notes, and a tag witho
 - An upgraded application kept its old version's libraries, and their issues, for good when one of its directories could not be read. phpMyAdmin's `tmp/twig` cache belongs to the web server user, so every scan of phpMyAdmin was incomplete, and incomplete scans removed nothing: after an upgrade from 4.8.0 to 5.2.3, twig 1.35.3 and jquery 3.3.1 stayed listed next to twig 3.11.3 and jquery 3.7.1. A scan now removes what it no longer lists outside the paths it could not read; the next collection clears what earlier ones left. Servers' OS packages were not affected.
 - A check on an asset whose scans are incomplete waited for a week, and its agent was asked to report again every minute meanwhile. Any report now completes it; one that could not read everything ends as **Scan incomplete** instead of claiming the issues are still there.
 - A check on an application its agent no longer reports (a deleted directory) was never picked up; the server's agent now picks it up.
+
+### Upgrading
+
+- Migration `0052` adds the chain columns and triggers without rewriting existing audit events, which stay as they were and are reported as "earlier events not chained"; each chain starts with the first event recorded after the upgrade. It builds one index on `audit_events` (seconds for a few hundred thousand events).
 
 ## 0.13.4
 
