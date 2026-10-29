@@ -580,11 +580,12 @@ Resolves a conflict by merging assets. The answer lists `projects_joined` and `g
 
 **Who:** viewer
 
-Vulnerability and end-of-life findings, paged; SOS, priority, known-exploited and most severe first (`sort=asset` orders by asset name first). Resolved findings carry `resolution_kind` and `resolution_detail` ([Why a finding closed](#why-a-finding-closed)).
+Vulnerability and end-of-life findings, paged; SOS, priority, known-exploited and most severe first (`sort=asset` orders by asset name first). Resolved findings carry `resolution_kind` and `resolution_detail` ([Why a finding closed](#why-a-finding-closed)). Each finding carries FIRST's EPSS for its CVE: `epss` (the probability, 0 to 1, of exploitation in the next 30 days), `epss_percentile`, `epss_date` and `epss_model_version`, all null when the finding has no CVE or the CVE has no score.
 
 Query:
 
 - `status` (`open`, `resolved`, `all`), `state` (`active`, `new`, `acknowledged`, `in_progress`, `suppressed`, `risk_accepted`, `regressed`), `kind`, `severity` and `priority` (comma-separated), `verification`, `known_exploited=true`, `sos=true`, `overdue=true`
+- `epss_min` (0 to 1; `0.1` is 10%): vulnerability findings whose CVE has at least that EPSS
 - `asset_id`, `component_id`, `environment`, `key`, `q`, `fix_group` (a fix group id), `incident_id`
 - `assignee_user`, `assignee_team`, `assignee=none` (unassigned)
 - `new_within=N` (first seen in the last N days), `resolved_within=N` (resolved in the last N days, with `status=resolved`), `resolution_kind` (comma-separated)
@@ -612,7 +613,9 @@ One finding with every source advisory in its group, its `why` ([Findings](#find
 
 **Who:** viewer
 
-Why the finding matched (`why`) and why it has its priority: `risk` (score, each factor with its points, the policy version that produced it, the SLA and deadlines), the stored `evidence`, the matched `advisories`, the freshness of their `feeds`, and the asset's last complete `collection`. Includes `resolution_kind`, `resolution_detail` and `counts_as_remediation`. See [risk.md](risk.md).
+Why the finding matched (`why`) and why it has its priority: `risk` (score, each factor with its points, the policy version that produced it, the SLA and deadlines, and `epss`), the stored `evidence`, the matched `advisories`, the freshness of their `feeds`, and the asset's last complete `collection`. Includes `resolution_kind`, `resolution_detail` and `counts_as_remediation`. See [risk.md](risk.md).
+
+`risk.epss` (also `why.epss`; absent for a finding without a CVE) is FIRST's EPSS for the CVE and what it does to the priority: `score` and `percentile` (null when FIRST has not scored the CVE), `date`, `model_version`, the policy's `threshold`, `release_below` (80% of it), `points`, `counted` (the stored priority includes the EPSS factor) and `text`, one sentence that says why it counts or not ([risk.md, "Predicted exploitation (EPSS)"](risk.md#predicted-exploitation-epss)).
 
 ### `GET /findings/{id}/upgrade`
 
@@ -759,7 +762,7 @@ Queues a full re-evaluation of the workspace's inventory.
 
 **Who:** viewer
 
-Priority weights, thresholds, deadlines and SOS rules, with the policy `version` and `last_change` (who, when, versions, changed fields; null when never changed).
+Priority weights (including `epss` and `epss_threshold`), thresholds, deadlines and SOS rules, with the policy `version` and `last_change` (who, when, versions, changed fields; null when never changed).
 
 ### `PUT /risk-policy`
 
@@ -1710,6 +1713,7 @@ A finding is one issue on one inventory row:
 - `GET /findings/{id}` and `GET /findings/{id}/explain` include `why`: one `sentence` saying why it matched (installed version and where it was read, the advisory range and version rules, the source and its last refresh, the fix), with the evidence state, `missing_information` and the independent `second_check`. See [verification.md, "Why it matched"](verification.md#why-it-matched).
 - `fixed_version` is the highest "first fixed" version across the matching sources, so every source agrees the target is fixed. It is empty when no source lists a fix.
 - `evidence` records the matched ranges, the OSV package and ecosystem, the comparator used, the feed and its last successful sync, and whether the CVE is in CISA KEV.
+- `epss`, `epss_percentile`, `epss_date` and `epss_model_version` are FIRST's current EPSS for the CVE in `key`, read when the finding is read (null without one). Whether it counts towards the priority is in `priority_factors`.
 - The finding page shows this as **How this was decided**: each matched advisory (linked to osv.dev) with its feed, the advisory ecosystem and the affected range that matched, the installed version and ecosystem, and the version rules used (`comparator`: `debian` is Debian version rules, `rpm` RPM epoch:version-release, `apk` Alpine, `semver` SemVer, `pep440`, `rubygems`, `maven`, `nuget`, `composer`, `generic`), plus the evidence state with a one-line reason. The evidence state is the `verification`, except that a confirmed finding evaluated while its feed was stale (`evidence.feed_stale`) is shown as `stale_intelligence` (confirmed version, stale advisory data). `GET /reports/outcomes` counts open findings by evidence state in `open.by_evidence`; the evidence report (Pro) does the same in `open.by_evidence` and lists each exception's `verification`.
 
 Findings resolve automatically when the component is upgraded or removed, or when an advisory is withdrawn. If the issue comes back, the finding reopens. Both are recorded in the finding's history (`GET /findings/{id}/events`) as `resolved` (the note is the resolution) and `reopened` (with the earlier resolution in `detail`), by actor `matcher`.
@@ -1837,7 +1841,7 @@ Agents from 0.7 on ask `GET /agent/check?asset_id=1&asset_id=2` between collecti
 
 ## Priority and SOS
 
-Every open finding gets a priority from P1 to P4. The score is built from the CVSS score (CVSS v3.x or v4.0, whichever rates the advisory higher; `severity_source` on the advisory says which) or the severity when there is none, CISA KEV, internet exposure (unknown exposure counts a little), production environment (no environment counts a little), asset criticality, fix availability, whether it is overdue, and dev-only scope. It is then scaled down for unverified or stale evidence (a score at or below zero is not scaled). SOS rules that require an exposed or production asset also match an asset whose exposure or environment is unknown. [risk.md](risk.md) explains every factor and the guarantees the scoring keeps. `priority_factors` lists each contribution and `priority_policy_version` the risk policy version that produced them. Weights, thresholds and per-priority deadlines are configured in `/risk-policy`.
+Every open finding gets a priority from P1 to P4. The score is built from the CVSS score (CVSS v3.x or v4.0, whichever rates the advisory higher; `severity_source` on the advisory says which) or the severity when there is none, CISA KEV, FIRST EPSS at or above the policy's threshold (`epss_threshold`, 10% by default; not for KEV entries), internet exposure (unknown exposure counts a little), production environment (no environment counts a little), asset criticality, fix availability, whether it is overdue, and dev-only scope. It is then scaled down for unverified or stale evidence (a score at or below zero is not scaled). SOS rules that require an exposed or production asset also match an asset whose exposure or environment is unknown. [risk.md](risk.md) explains every factor and the guarantees the scoring keeps. `priority_factors` lists each contribution and `priority_policy_version` the risk policy version that produced them. Weights, thresholds and per-priority deadlines are configured in `/risk-policy`.
 
 SOS rules are conditions over the same inputs. A rule based only on severity is rejected. Only confirmed findings can trigger SOS.
 

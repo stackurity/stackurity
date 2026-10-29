@@ -4,7 +4,7 @@ import { api, FINDING_STATES, PRIORITIES, SEVERITIES, VERIFICATIONS, type Findin
 import { useAuth } from "../auth";
 import { FindingActions } from "../components/Workflow";
 import { useDebounced, useFacets, useLoad } from "../hooks";
-import { humanize, plural } from "../format";
+import { humanize, percent, plural } from "../format";
 import { FindingCards, FindingsTable, FindingTiles, IntelBanners, PriorityTiles } from "../components/Findings";
 import { EmptyState, ErrorBox, FilterPanel, Loading, PageHeader, Pager, PresetChips } from "../components/ui";
 
@@ -19,6 +19,14 @@ const STATE_FILTER_LABEL: Record<string, string> = {
   risk_accepted: "Accepted (ignored)",
 };
 
+/** EPSS minimums offered in the filter: [epss_min, label]. */
+const EPSS_MIN: [string, string][] = [
+  ["0.01", "1% or more"],
+  ["0.1", "10% or more"],
+  ["0.5", "50% or more"],
+  ["0.9", "90% or more"],
+];
+
 /** Filters that the preset chips and the panel share, as URL parameters. */
 const PARAMS = [
   "status",
@@ -28,6 +36,7 @@ const PARAMS = [
   "second_check",
   "environment",
   "known_exploited",
+  "epss_min",
   "q",
   "priority",
   "state",
@@ -246,6 +255,20 @@ export function IssuesPage() {
               <option value="disagreed">Disagreed</option>
               <option value="agreed">Agreed</option>
               <option value="could_not_check">Could not check</option>
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="fd-epss">Exploit prediction (EPSS)</label>
+            <select id="fd-epss" value={get("epss_min")} onChange={(e) => update({ epss_min: e.target.value })}>
+              <option value="">Any</option>
+              {EPSS_MIN.map(([v, label]) => (
+                <option key={v} value={v}>
+                  {label}
+                </option>
+              ))}
+              {get("epss_min") && !EPSS_MIN.some(([v]) => v === get("epss_min")) && (
+                <option value={get("epss_min")}>{percent(Number(get("epss_min")))} or more</option>
+              )}
             </select>
           </div>
           <div className="field">

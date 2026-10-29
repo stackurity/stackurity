@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -22,7 +23,15 @@ type Policy struct {
 	SeverityBase map[string]float64 `json:"severity_base"`
 	EOLBase      float64            `json:"eol_base"`
 
-	KnownExploited     float64            `json:"known_exploited"`
+	KnownExploited float64 `json:"known_exploited"`
+	// EPSS is added while FIRST's EPSS probability of exploitation in the
+	// next 30 days is at or above EPSSThreshold (0 to 1), and not for a CVE
+	// already in CISA KEV, which counts as evidence rather than a prediction.
+	// A finding that crossed the threshold keeps the points until its EPSS
+	// falls below EPSSRelease × the threshold, so a score that moves a
+	// little around the threshold from day to day does not move its priority.
+	EPSS               float64            `json:"epss"`
+	EPSSThreshold      float64            `json:"epss_threshold"`
 	InternetExposed    float64            `json:"internet_exposed"`
 	ExposureUnknown    float64            `json:"exposure_unknown"`
 	Production         float64            `json:"production"`
@@ -78,6 +87,8 @@ func DefaultPolicy() Policy {
 		SeverityBase:           map[string]float64{"critical": 9.5, "high": 7.5, "medium": 5, "low": 2.5, "none": 0.5, "unknown": 5},
 		EOLBase:                6,
 		KnownExploited:         3,
+		EPSS:                   1.5,
+		EPSSThreshold:          0.1,
 		InternetExposed:        1.5,
 		ExposureUnknown:        0.5,
 		Production:             1,
@@ -121,6 +132,9 @@ func (p Policy) Validate() error {
 	if p.ExceptionMaxDays < 0 || p.ExceptionMaxDays > 730 {
 		return errors.New("exception_max_days must be between 1 and 730 (0 for the default of 365)")
 	}
+	if p.EPSSThreshold <= 0 || p.EPSSThreshold > 1 {
+		return errors.New("epss_threshold must be a probability above 0 and at most 1 (0.1 is 10%)")
+	}
 	if p.NeedsValidationMul <= 0 || p.NeedsValidationMul > 1 || p.StaleMul <= 0 || p.StaleMul > 1 {
 		return errors.New("multipliers must be in (0, 1]")
 	}
@@ -151,11 +165,14 @@ func (p Policy) validateDirections() error {
 	for _, w := range []struct {
 		name string
 		v    float64
-	}{{"known_exploited", p.KnownExploited}, {"internet_exposed", p.InternetExposed}, {"exposure_unknown", p.ExposureUnknown},
+	}{{"known_exploited", p.KnownExploited}, {"epss", p.EPSS}, {"internet_exposed", p.InternetExposed}, {"exposure_unknown", p.ExposureUnknown},
 		{"production", p.Production}, {"environment_unknown", p.EnvironmentUnknown}, {"overdue", p.Overdue}} {
 		if w.v < 0 {
 			return fmt.Errorf("%s must not be negative: it marks higher risk", w.name)
 		}
+	}
+	if p.EPSS > p.KnownExploited {
+		return errors.New("epss must not exceed known_exploited: a prediction of exploitation never counts for more than evidence of it")
 	}
 	if p.ExposureUnknown > p.InternetExposed {
 		return errors.New("exposure_unknown must not exceed internet_exposed")
@@ -182,10 +199,16 @@ func (p Policy) validateDirections() error {
 
 // Input is everything the model looks at.
 type Input struct {
-	Kind            string // vulnerability, end_of_life
-	Severity        string
-	Score           *float32 // CVSS base score when known
-	KnownExploited  bool
+	Kind           string // vulnerability, end_of_life
+	Severity       string
+	Score          *float32 // CVSS base score when known
+	KnownExploited bool
+	// EPSS is FIRST's EPSS probability for the finding's CVE, nil when it
+	// has none (no CVE, not scored yet, or the feed is off).
+	EPSS *float32
+	// EPSSCounted says the finding had the EPSS factor when it was last
+	// prioritised; it then keeps it down to EPSSRelease × the threshold.
+	EPSSCounted     bool
 	InternetExposed *bool
 	// ExposureSource says where InternetExposed came from (Exposure*
 	// constants), so the explanation names the evidence.
@@ -224,6 +247,42 @@ func exposureDetail(exposed *bool, source string) string {
 		return "a running workload deployed as this image is reachable from outside"
 	}
 	return "asset is reachable from the internet"
+}
+
+// FactorEPSS names the EPSS factor in priority_factors. Prioritize reads it
+// back to know whether a finding had already crossed the threshold, so it
+// must not change.
+const FactorEPSS = "Exploit prediction (EPSS)"
+
+// EPSSRelease is the share of the EPSS threshold below which a finding that
+// had crossed it loses the factor again (hysteresis): with the default
+// threshold of 10% it is counted from 10% and kept down to 8%.
+const EPSSRelease = 0.8
+
+// EPSSCounts reports whether an EPSS probability earns the EPSS factor:
+// at or above the threshold, or, for a finding that already had the factor,
+// at or above EPSSRelease × the threshold.
+func (p Policy) EPSSCounts(score float32, counted bool) bool {
+	// Scores are stored as float32 (real): compare at that precision, so a
+	// score of exactly 8% is at 80% of a 10% threshold.
+	if counted {
+		return score >= float32(p.EPSSThreshold*EPSSRelease)
+	}
+	return score >= float32(p.EPSSThreshold)
+}
+
+// Percent formats a probability as a percentage with at most one decimal
+// (0.1 -> "10%", 0.025 -> "2.5%", 0.00042 -> "0.042%").
+func Percent(v float64) string {
+	pc := v * 100
+	if pc > 0 && pc < 0.1 {
+		return strconv.FormatFloat(pc, 'g', 2, 64) + "%"
+	}
+	// Never round a probability below 1 up to a certainty (0.99999 is 99.99%).
+	if v < 1 && math.Round(pc*10)/10 >= 100 {
+		return strconv.FormatFloat(math.Floor(pc*100)/100, 'f', -1, 64) + "%"
+	}
+	return strconv.FormatFloat(math.Round(pc*10)/10, 'f', -1, 64) + "%"
 }
 
 var verificationDetail = map[string]string{
@@ -285,6 +344,11 @@ func (p Policy) Evaluate(in Input) Result {
 	}
 	if in.KnownExploited {
 		add("Known exploited", p.KnownExploited, "listed in CISA KEV")
+	} else if in.EPSS != nil && p.EPSSCounts(*in.EPSS, in.EPSSCounted) {
+		// The detail names the threshold, not the day's score, so the stored
+		// factors stay the same while the score moves within the band.
+		add(FactorEPSS, p.EPSS, fmt.Sprintf("FIRST EPSS of %s or more (the chance of exploitation in the next 30 days); kept until it falls below %s",
+			Percent(p.EPSSThreshold), Percent(p.EPSSThreshold*EPSSRelease)))
 	}
 	switch {
 	case in.InternetExposed == nil:
@@ -405,6 +469,12 @@ func DecodePolicy(raw []byte, strict bool) (Policy, error) {
 	}
 	if _, ok := keys["sos_rules"]; !ok {
 		p.SOS = defaultRules
+	}
+	// A policy saved before EPSS existed gets the default EPSS points, but
+	// never more than its own known_exploited weight (Validate's rule): an
+	// admin who lowered known exploitation lowered predicted exploitation too.
+	if _, ok := keys["epss"]; !ok && p.EPSS > p.KnownExploited {
+		p.EPSS = max(p.KnownExploited, 0)
 	}
 	return p, nil
 }

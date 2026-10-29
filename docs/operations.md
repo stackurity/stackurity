@@ -51,7 +51,7 @@ The rules are unit tested with `promtool test rules` ([`stackurity-alerts_test.y
 | [StackurityIngestErrors](#stackurityingesterrors) | warning | `/api/v1/ingest` or `/api/v1/sbom/import` answers 5xx | 15m |
 | [StackurityHealthCritical](#stackurityhealthcritical) | critical | Platform health reports a critical problem | 15m |
 | [StackurityVulnerabilityFeedStale](#stackurityvulnerabilityfeedstale) | critical | A vulnerability feed is past its freshness limit | 10m |
-| [StackurityFeedStale](#stackurityfeedstale) | warning | A KEV, release or lifecycle feed is past its freshness limit | 30m |
+| [StackurityFeedStale](#stackurityfeedstale) | warning | An EPSS, release or lifecycle feed is past its freshness limit | 30m |
 | [StackurityFeedFailing](#stackurityfeedfailing) | warning | A feed's syncs fail but its data is still fresh | 2h |
 | [StackurityTaskNotSucceeding](#stackuritytasknotsucceeding) | critical | A periodic task's last success is older than 3 intervals (at least 10 minutes) | 5m |
 | [StackurityTaskNeverSucceeded](#stackuritytaskneversucceeded) | warning | A registered periodic task has never succeeded | 1h |
@@ -65,7 +65,7 @@ The rules are unit tested with `promtool test rules` ([`stackurity-alerts_test.y
 | [StackurityAssetsStoppedReporting](#stackurityassetsstoppedreporting) | warning | 5 or more assets went stale within an hour | |
 | [StackurityAssetsStale](#stackurityassetsstale) | info | Any asset has been stale for a day | 24h |
 
-The thresholds follow the server's own limits: feeds are stale after their `stale_after` (6 hours for OSV ecosystems and distributions, 48 hours for Amazon Linux, 72 hours for CISA KEV and the package registries, 7 days for endoflife.date); periodic tasks are flagged after three intervals, as Platform health does; the job backlog warning matches Platform health's 30 minutes.
+The thresholds follow the server's own limits: feeds are stale after their `stale_after` (6 hours for OSV ecosystems and distributions, 48 hours for Amazon Linux, 72 hours for CISA KEV, FIRST EPSS and the package registries, 7 days for endoflife.date); periodic tasks are flagged after three intervals, as Platform health does; the job backlog warning matches Platform health's 30 minutes.
 
 ## Runbooks
 
@@ -154,7 +154,7 @@ Once fixed, **Refresh** on the Intelligence page (`POST /api/v1/feeds/{name}/ref
 
 ### StackurityFeedStale
 
-As [StackurityVulnerabilityFeedStale](#stackurityvulnerabilityfeedstale), for CISA KEV (known exploitation), the package registries (latest releases) or endoflife.date (lifecycle). Priorities that depend on known exploitation, upgrade recommendations or end-of-life dates are older than promised.
+As [StackurityVulnerabilityFeedStale](#stackurityvulnerabilityfeedstale), for FIRST EPSS (exploit prediction, feed kind `prediction`), the package registries (latest releases) or endoflife.date (lifecycle). CISA KEV is a `vulnerability` feed and alerts as one. Priorities that depend on predicted exploitation, upgrade recommendations or end-of-life dates are older than promised; a stale EPSS feed keeps its last scores, opens a P3 feed incident and is a warning on Platform health.
 
 ### StackurityFeedFailing
 

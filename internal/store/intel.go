@@ -869,6 +869,16 @@ type Finding struct {
 	// facts (advisories, source, withdrawn_at, version, plan_id, successor).
 	ResolutionKind   string          `json:"resolution_kind"`
 	ResolutionDetail json.RawMessage `json:"resolution_detail"`
+
+	// EPSS is FIRST's probability (0 to 1) that the finding's CVE is
+	// exploited in the next 30 days, EPSSPercentile its rank among all
+	// scored CVEs, from model EPSSModel scored on EPSSDate. All nil when the
+	// finding has no CVE or the CVE has no score. The current score is shown;
+	// whether it counts towards priority is in priority_factors.
+	EPSS           *float32   `json:"epss"`
+	EPSSPercentile *float32   `json:"epss_percentile"`
+	EPSSDate       *time.Time `json:"epss_date"`
+	EPSSModel      *string    `json:"epss_model_version"`
 }
 
 // displayState maps stored status and state to the seven states shown to
@@ -893,6 +903,9 @@ type FindingFilter struct {
 	Search       string
 	Key          string
 	Exploited    bool
+	// EPSSMin keeps vulnerability findings whose CVE has an EPSS of at
+	// least this probability (0 to 1); 0 means no filter.
+	EPSSMin      float64
 	State        string // new, acknowledged, in_progress, suppressed, risk_accepted, active (= not suppressed/accepted), regressed
 	Priority     []string
 	SOS          bool
@@ -926,12 +939,14 @@ const findingCols = `f.id, f.kind, f.key, f.inventory_id, f.asset_id, a.name, a.
 	f.mitigation, f.escalation_level, f.incident_id,
 	COALESCE(f.status = 'open' AND f.state IN ('new', 'acknowledged', 'in_progress') AND f.fix_due < now(), false), f.fix_group,
 	f.priority_policy, f.regressed_at, f.until_fix, f.ignore_reason, f.exception_id, ` + displayState + `,
-	COALESCE(sc.result, ''), COALESCE(sc.reason, ''), f.resolution_kind, f.resolution_detail`
+	COALESCE(sc.result, ''), COALESCE(sc.reason, ''), f.resolution_kind, f.resolution_detail,
+	ep.score, ep.percentile, ep.score_date, ep.model_version`
 
 const findingFrom = ` FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
 	JOIN components c ON c.id = f.component_id JOIN inventory i ON i.id = f.inventory_id
 	LEFT JOIN users au ON au.id = f.assignee_user_id LEFT JOIN teams ateam ON ateam.id = f.assignee_team_id
-	LEFT JOIN second_checks sc ON sc.finding_id = f.id`
+	LEFT JOIN second_checks sc ON sc.finding_id = f.id
+	LEFT JOIN epss_scores ep ON f.kind = 'vulnerability' AND ep.cve = f.key`
 
 func (s *Store) ListFindings(ctx context.Context, f FindingFilter) ([]Finding, int64, error) {
 	w := &where{}
@@ -1026,8 +1041,18 @@ func (s *Store) ListFindings(ctx context.Context, f FindingFilter) ([]Finding, i
 	if f.Search != "" {
 		countFrom += ` JOIN components c ON c.id = f.component_id`
 	}
+	countWhere, listWhere := w.sql(), w.sql()
+	if f.EPSSMin > 0 {
+		// The count tests EXISTS; the list filters its own EPSS join
+		// (findingFrom), as the planner otherwise joins every open finding
+		// before testing the EXISTS (a few hundred ms on 130,000).
+		w.args = append(w.args, f.EPSSMin)
+		n := len(w.args)
+		countWhere = andWhere(countWhere, fmt.Sprintf("f.kind = 'vulnerability' AND EXISTS (SELECT 1 FROM epss_scores e WHERE e.cve = f.key AND e.score >= $%d::real)", n))
+		listWhere = andWhere(listWhere, fmt.Sprintf("ep.score >= $%d::real", n))
+	}
 	var total int64
-	if err := s.Pool.QueryRow(ctx, `SELECT count(*)`+countFrom+w.sql(), w.args...).Scan(&total); err != nil {
+	if err := s.Pool.QueryRow(ctx, `SELECT count(*)`+countFrom+countWhere, w.args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 	p := f.Page.norm()
@@ -1045,7 +1070,7 @@ func (s *Store) ListFindings(ctx context.Context, f FindingFilter) ([]Finding, i
 		// index, so the planner filters first.
 		order = "CASE WHEN f.sos THEN 0 ELSE 1 END, "
 	}
-	rows, err := s.Pool.Query(ctx, `SELECT `+findingCols+findingFrom+w.sql()+fmt.Sprintf(`
+	rows, err := s.Pool.Query(ctx, `SELECT `+findingCols+findingFrom+listWhere+fmt.Sprintf(`
 		ORDER BY %sf.sos DESC, f.priority, COALESCE((f.evidence->>'known_exploited')::boolean, false) DESC,
 		  CASE f.severity WHEN 'critical' THEN 5 WHEN 'high' THEN 4 WHEN 'medium' THEN 3 WHEN 'low' THEN 2 WHEN 'unknown' THEN 1 ELSE 0 END DESC,
 		  f.score DESC NULLS LAST, f.first_seen DESC, f.id LIMIT %d OFFSET %d`, order, p.Limit, p.Offset), w.args...)
@@ -1054,6 +1079,14 @@ func (s *Store) ListFindings(ctx context.Context, f FindingFilter) ([]Finding, i
 	}
 	out, err := pgx.CollectRows(rows, pgx.RowToStructByPos[Finding])
 	return out, total, err
+}
+
+// andWhere adds a condition to a WHERE clause built by where.sql.
+func andWhere(clause, cond string) string {
+	if clause == "" {
+		return " WHERE " + cond
+	}
+	return clause + " AND " + cond
 }
 
 func (s *Store) GetFinding(ctx context.Context, id int64) (*Finding, error) {

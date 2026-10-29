@@ -268,6 +268,7 @@ export function FindingDetailPage() {
       {f.status === "open" && res.data.upgrade && <UpgradeCard rec={res.data.upgrade} />}
       <WorkflowPanel
         f={f}
+        epss={res.data.why?.epss}
         onChanged={() => {
           res.reload();
           setTick((t) => t + 1);

@@ -1036,6 +1036,7 @@ func intelConfig(dataDir string) intel.Config {
 	cfg := intel.DefaultConfig()
 	cfg.OSVBaseURL = env("STACKURITY_OSV_URL", cfg.OSVBaseURL)
 	cfg.KEVURL = env("STACKURITY_KEV_URL", cfg.KEVURL)
+	cfg.EPSSURL = env("STACKURITY_EPSS_URL", cfg.EPSSURL)
 	cfg.EndOfLifeURL = env("STACKURITY_ENDOFLIFE_URL", cfg.EndOfLifeURL)
 	cfg.NpmRegistry = env("STACKURITY_NPM_REGISTRY", cfg.NpmRegistry)
 	cfg.AmazonLinuxURL = env("STACKURITY_AMAZON_LINUX_URL", cfg.AmazonLinuxURL)

@@ -57,6 +57,9 @@ func EnsureFeeds(ctx context.Context, s *store.Store) error {
 	if err := ensure(FeedEndOfLife, "lifecycle", 24*time.Hour, 7*24*time.Hour); err != nil {
 		return err
 	}
+	if err := ensure(FeedEPSS, "prediction", 24*time.Hour, 72*time.Hour); err != nil {
+		return err
+	}
 	for t := range p.Types {
 		if eco, ok := langFeeds[t]; ok {
 			if err := ensure(OSVFeed(eco), "vulnerability", time.Hour, 6*time.Hour); err != nil {
@@ -124,7 +127,9 @@ func ComponentsToEvaluate(ctx context.Context, s *store.Store, feed string, res 
 		}
 		return out, nil
 	}
-	return nil, nil // release data does not change findings
+	// Release data does not change findings, and EPSS changes only
+	// priorities, which the next prioritisation reads directly.
+	return nil, nil
 }
 
 func allTypes() []string {
