@@ -250,7 +250,7 @@ func (s *Store) ReplaceKnownExploited(ctx context.Context, rows [][]any) error {
 			return err
 		}
 		if _, err := tx.CopyFrom(ctx, pgx.Identifier{"known_exploited"},
-			[]string{"cve", "vendor", "product", "name", "added", "due_date", "ransomware"}, pgx.CopyFromRows(rows)); err != nil {
+			[]string{"cve", "vendor", "product", "name", "added", "due_date", "ransomware", "short_description"}, pgx.CopyFromRows(rows)); err != nil {
 			return err
 		}
 		// Only the advisories whose flag changes are written (and locked):

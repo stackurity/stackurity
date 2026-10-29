@@ -503,6 +503,7 @@ func (s *Syncer) syncKEV(ctx context.Context) (*SyncResult, error) {
 			Vendor     string `json:"vendorProject"`
 			Product    string `json:"product"`
 			Name       string `json:"vulnerabilityName"`
+			Desc       string `json:"shortDescription"`
 			Added      string `json:"dateAdded"`
 			Due        string `json:"dueDate"`
 			Ransomware string `json:"knownRansomwareCampaignUse"`
@@ -521,7 +522,8 @@ func (s *Syncer) syncKEV(ctx context.Context) (*SyncResult, error) {
 			continue
 		}
 		seen[v.CVE] = true
-		rows = append(rows, []any{v.CVE, v.Vendor, v.Product, v.Name, parseDate(v.Added), parseDate(v.Due), strings.EqualFold(v.Ransomware, "Known")})
+		rows = append(rows, []any{v.CVE, v.Vendor, v.Product, v.Name, parseDate(v.Added), parseDate(v.Due), strings.EqualFold(v.Ransomware, "Known"),
+			strings.ToValidUTF8(truncate(strings.TrimSpace(v.Desc), 2000), "")})
 	}
 	if err := s.Store.ReplaceKnownExploited(ctx, rows); err != nil {
 		return nil, err
