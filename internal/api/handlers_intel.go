@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -49,6 +50,14 @@ func (s *Server) listFindings(w http.ResponseWriter, r *http.Request) {
 			}
 			f.ResolutionKind = append(f.ResolutionKind, k)
 		}
+	}
+	if v := q.Get("epss_min"); v != "" {
+		n, err := strconv.ParseFloat(v, 64)
+		if err != nil || !(n >= 0 && n <= 1) {
+			s.fail(w, r, badRequest("epss_min must be a probability from 0 to 1 (0.1 is 10%)"))
+			return
+		}
+		f.EPSSMin = n
 	}
 	f.ResolvedWithinDays = withinDays(qInt(r, "resolved_within"))
 	f.NewWithinDays = withinDays(qInt(r, "new_within"))

@@ -2,6 +2,7 @@ package risk
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -200,5 +201,106 @@ func TestDecodePolicyKeepsRulesAsWritten(t *testing.T) {
 	raw, _ := json.Marshal(def)
 	if q, err := DecodePolicy(raw, true); err != nil || q.Version() != def.Version() {
 		t.Errorf("round trip changed the version: %v", err)
+	}
+}
+
+// EPSS adds its points from the threshold up, and a finding that crossed it
+// keeps them until its EPSS falls below EPSSRelease × the threshold, so daily
+// movement around the threshold does not change its priority. The factor's
+// text names the threshold, not the day's score, so stored factors do not
+// change with every daily score either.
+func TestEPSSThresholdAndHysteresis(t *testing.T) {
+	p := DefaultPolicy()
+	in := Input{Kind: "vulnerability", Severity: "high", Score: f32(7.5), InternetExposed: b(false), Environment: "staging",
+		Verification: "confirmed"}
+	eval := func(score float32, counted bool) Result {
+		x := in
+		x.EPSS, x.EPSSCounted = f32(score), counted
+		return p.Evaluate(x)
+	}
+	none := p.Evaluate(in)
+	if hasFactor(none, FactorEPSS) {
+		t.Fatal("EPSS factor without a score")
+	}
+	for _, c := range []struct {
+		score   float32
+		counted bool
+		want    bool
+	}{
+		{0.05, false, false}, {0.0999, false, false}, {0.1, false, true}, {0.6, false, true},
+		{0.0999, true, true}, {0.08, true, true}, {0.0799, true, false}, {0.01, true, false},
+	} {
+		r := eval(c.score, c.counted)
+		if hasFactor(r, FactorEPSS) != c.want {
+			t.Errorf("EPSS %.4f (counted before: %v): factor %v, want %v", c.score, c.counted, hasFactor(r, FactorEPSS), c.want)
+		}
+	}
+	a, b2 := eval(0.11, false), eval(0.93, true)
+	if !reflect.DeepEqual(a.Factors, b2.Factors) {
+		t.Errorf("factors differ for two scores above the threshold:\n%+v\n%+v", a.Factors, b2.Factors)
+	}
+	if got := eval(0.2, false).Score - none.Score; got != p.EPSS {
+		t.Errorf("EPSS added %.1f points, want %.1f", got, p.EPSS)
+	}
+	// A KEV entry already counts exploitation; EPSS adds nothing more.
+	k := in
+	k.KnownExploited, k.EPSS = true, f32(0.97)
+	if r := p.Evaluate(k); hasFactor(r, FactorEPSS) || !hasFactor(r, "Known exploited") {
+		t.Errorf("KEV with EPSS: %+v", r.Factors)
+	}
+	// Zero points turn the factor off.
+	p.EPSS = 0
+	if hasFactor(eval(0.9, false), FactorEPSS) {
+		t.Error("EPSS factor with zero points")
+	}
+}
+
+// A daily wobble across the threshold changes nothing once the finding has
+// crossed it; only a real drop does.
+func TestEPSSWobbleKeepsPriority(t *testing.T) {
+	p := DefaultPolicy()
+	in := Input{Kind: "vulnerability", Severity: "high", Score: f32(7.5), InternetExposed: b(false), Environment: "staging",
+		Verification: "confirmed"}
+	counted := false
+	var priorities []string
+	for _, s := range []float32{0.098, 0.101, 0.097, 0.102, 0.095, 0.099, 0.085, 0.07} {
+		x := in
+		x.EPSS, x.EPSSCounted = f32(s), counted
+		r := p.Evaluate(x)
+		counted = hasFactor(r, FactorEPSS)
+		priorities = append(priorities, r.Priority)
+	}
+	if got := strings.Join(priorities, " "); got != "P3 P2 P2 P2 P2 P2 P2 P3" {
+		t.Errorf("priorities over the days: %s", got)
+	}
+}
+
+func TestEPSSPolicyRules(t *testing.T) {
+	for name, mut := range map[string]func(*Policy){
+		"negative EPSS":          func(p *Policy) { p.EPSS = -1 },
+		"EPSS above KEV":         func(p *Policy) { p.EPSS = p.KnownExploited + 1 },
+		"zero threshold":         func(p *Policy) { p.EPSSThreshold = 0 },
+		"threshold above one":    func(p *Policy) { p.EPSSThreshold = 1.5 },
+		"threshold as a percent": func(p *Policy) { p.EPSSThreshold = 10 },
+	} {
+		p := DefaultPolicy()
+		mut(&p)
+		if p.Validate() == nil {
+			t.Errorf("%s accepted", name)
+		}
+	}
+	// A policy saved before EPSS gets the default, capped by its own KEV weight.
+	p, err := DecodePolicy([]byte(`{"known_exploited": 1}`), false)
+	if err != nil || p.EPSS != 1 || p.EPSSThreshold != 0.1 || p.Validate() != nil {
+		t.Errorf("old policy with KEV 1: epss %v threshold %v, %v %v", p.EPSS, p.EPSSThreshold, err, p.Validate())
+	}
+	p, err = DecodePolicy([]byte(`{"known_exploited": 1, "epss": 0.5, "epss_threshold": 0.3}`), true)
+	if err != nil || p.EPSS != 0.5 || p.EPSSThreshold != 0.3 {
+		t.Errorf("saved EPSS settings: %v %v %v", p.EPSS, p.EPSSThreshold, err)
+	}
+	for v, want := range map[float64]string{0.1: "10%", 0.08: "8%", 0.025: "2.5%", 0.123456: "12.3%", 0.00042: "0.042%", 1: "100%", 0: "0%", 0.99999: "99.99%"} {
+		if got := Percent(v); got != want {
+			t.Errorf("Percent(%v) = %q, want %q", v, got, want)
+		}
 	}
 }

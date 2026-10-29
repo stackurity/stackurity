@@ -166,8 +166,11 @@ func (s *Server) explainFinding(w http.ResponseWriter, r *http.Request) {
 			"current_policy_version": pol.Version(),
 			"policy_changed":         f.PriorityPolicy != pol.Version(),
 			"thresholds":             map[string]float64{"P1": pol.Thresholds.P1, "P2": pol.Thresholds.P2, "P3": pol.Thresholds.P3},
-			"sla":                    map[string]int{"ack_hours": sla.AckHours, "fix_days": sla.FixDays},
-			"ack_due":                f.AckDue, "fix_due": f.FixDue, "overdue": f.Overdue,
+			// FIRST's exploit prediction and what it does to the priority
+			// (also under why.epss); nil for findings without a CVE.
+			"epss":    expl.EPSS,
+			"sla":     map[string]int{"ack_hours": sla.AckHours, "fix_days": sla.FixDays},
+			"ack_due": f.AckDue, "fix_due": f.FixDue, "overdue": f.Overdue,
 			"note": "Priority, score, factors and SOS were stored when the finding was last prioritised, under policy_version; " +
 				"open findings are re-prioritised within minutes when the policy or the evidence changes. Thresholds and SLA are " +
 				"those of the current policy (current_policy_version). The audit log (risk_policy.update) holds every earlier policy.",

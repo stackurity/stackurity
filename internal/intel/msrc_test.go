@@ -200,7 +200,7 @@ func TestParseCVRFLimits(t *testing.T) {
 	}
 	defer f.Close()
 	// Cut short by the size cap: an error, never a partial document.
-	if _, err := parseCVRF(&capReader{r: f, left: 4096}, "2025-Oct"); err == nil || !strings.Contains(err.Error(), "larger than") {
+	if _, err := parseCVRF(&msrcCapReader{r: f, left: 4096}, "2025-Oct"); err == nil || !strings.Contains(err.Error(), "larger than") {
 		t.Errorf("err = %v", err)
 	}
 	for _, bad := range []string{`[]`, `{"Vulnerability":[]}`, `{"ProductTree":{"FullProductName":[{"ProductID":"1","Value":"Windows Server 2022"}]}}`} {

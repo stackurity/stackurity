@@ -94,6 +94,7 @@ func setup(t *testing.T) (*store.Store, *Syncer, *Evaluator, *upstream) {
 	cfg.NpmRegistry, cfg.PackagistURL = srv.URL+"/npm", srv.URL+"/packagist"
 	cfg.AmazonLinuxURL = srv.URL + "/al"
 	cfg.MSRCURL = srv.URL + "/msrc"
+	cfg.EPSSURL = srv.URL + "/epss_scores-current.csv.gz"
 	cfg.WorkDir = t.TempDir()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	return st, NewSyncer(st, log, cfg), &Evaluator{Store: st}, up
@@ -144,7 +145,7 @@ func TestEndToEnd(t *testing.T) {
 	for _, f := range feeds {
 		names[f.Name] = true
 	}
-	for _, want := range []string{"osv:npm", "osv:Debian", "osv:PyPI", FeedKEV, FeedEndOfLife, FeedNpm, FeedPyPI} {
+	for _, want := range []string{"osv:npm", "osv:Debian", "osv:PyPI", FeedKEV, FeedEPSS, FeedEndOfLife, FeedNpm, FeedPyPI} {
 		if !names[want] {
 			t.Errorf("feed %s not created: %v", want, names)
 		}
@@ -166,7 +167,8 @@ func TestEndToEnd(t *testing.T) {
 	up.set("/osv/Debian/all.zip", zipOf(t, map[string]string{"DSA-5532-1.json": debOpenssl}))
 	up.set("/kev.json", kev)
 	up.set("/eol.json", eol)
-	for _, f := range []string{FeedKEV, FeedEndOfLife, "osv:npm", "osv:Debian"} {
+	up.set("/epss_scores-current.csv.gz", gz(t, epssDay1))
+	for _, f := range []string{FeedKEV, FeedEPSS, FeedEndOfLife, "osv:npm", "osv:Debian"} {
 		if _, err := sy.Sync(ctx, f); err != nil {
 			t.Fatalf("sync %s: %v", f, err)
 		}

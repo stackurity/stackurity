@@ -1085,6 +1085,13 @@ export interface Finding {
   /** Independent second check (1.0): agreed, disagreed, could_not_check, or "" when none. */
   second_check?: string;
   second_check_reason?: string;
+  /** FIRST EPSS: probability (0–1) that the CVE is exploited in the next 30 days; null without a score. */
+  epss?: number | null;
+  /** The CVE's EPSS percentile among all scored CVEs (0–1). */
+  epss_percentile?: number | null;
+  /** The day the EPSS scores were published. */
+  epss_date?: string | null;
+  epss_model_version?: string | null;
 }
 
 export interface FindingSummary {
@@ -1289,6 +1296,23 @@ export interface FindingWhy {
   second_check_text: string;
   /** The second check disagrees: shown for review; priority and SOS are unchanged. */
   needs_review?: boolean;
+  /** FIRST EPSS for the finding's CVE and what it does to the priority; absent without a CVE. */
+  epss?: EpssDetail | null;
+}
+
+/** The EPSS part of "why this priority" (internal/why). */
+export interface EpssDetail {
+  cve: string;
+  score: number | null;
+  percentile: number | null;
+  date?: string;
+  model_version?: string;
+  threshold: number;
+  release_below: number;
+  points: number;
+  /** The stored priority includes the EPSS factor. */
+  counted: boolean;
+  text: string;
 }
 
 export interface SecondCheckDisagreement {
@@ -2023,6 +2047,10 @@ export interface RiskPolicy {
   severity_base: Record<string, number>;
   eol_base: number;
   known_exploited: number;
+  /** Points while FIRST EPSS is at or above epss_threshold (not for CISA KEV entries); at most known_exploited. */
+  epss?: number;
+  /** EPSS probability (0–1) from which the EPSS points apply; kept down to 80% of it. */
+  epss_threshold?: number;
   internet_exposed: number;
   exposure_unknown: number;
   production: number;

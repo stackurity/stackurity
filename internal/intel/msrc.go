@@ -200,7 +200,7 @@ func (s *Syncer) syncMSRCDocument(ctx context.Context, feed, base string, d msrc
 		return err
 	}
 	defer resp.Body.Close()
-	doc, err := parseCVRF(&capReader{r: resp.Body, left: msrcDocMax}, d.ID)
+	doc, err := parseCVRF(&msrcCapReader{r: resp.Body, left: msrcDocMax}, d.ID)
 	if err != nil {
 		return err
 	}
@@ -245,14 +245,14 @@ func (s *Syncer) syncMSRCDocument(ctx context.Context, feed, base string, d msrc
 
 func msrcPrefix(doc string) string { return "MSRC-" + doc + "-" }
 
-// capReader fails a read past its limit, so an oversized document is an
+// msrcCapReader fails a read past its limit, so an oversized document is an
 // error rather than a truncated (and silently partial) parse.
-type capReader struct {
+type msrcCapReader struct {
 	r    io.Reader
 	left int64
 }
 
-func (c *capReader) Read(p []byte) (int, error) {
+func (c *msrcCapReader) Read(p []byte) (int, error) {
 	if c.left <= 0 {
 		return 0, fmt.Errorf("Security Update Guide document larger than %d bytes", msrcDocMax)
 	}

@@ -23,8 +23,12 @@ func (s *Server) findingWhy(ctx context.Context, f *store.Finding) (*why.Explana
 	if err != nil {
 		return nil, err
 	}
+	pol, err := s.Store.RiskPolicy(ctx)
+	if err != nil {
+		return nil, err
+	}
 	e := why.Build(why.Input{Finding: f, Evidence: ev, Inventory: in.Inventory, Feed: in.Feed, SecondCheck: in.SecondCheck,
-		Covered: in.Covered}, time.Now())
+		Covered: in.Covered, Policy: &pol}, time.Now())
 	return &e, nil
 }
 

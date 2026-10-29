@@ -17,6 +17,7 @@ import (
 type Config struct {
 	OSVBaseURL       string // https://storage.googleapis.com/osv-vulnerabilities
 	KEVURL           string
+	EPSSURL          string // https://epss.empiricalsecurity.com/epss_scores-current.csv.gz
 	EndOfLifeURL     string // https://endoflife.date/api/v1/products/full
 	NpmRegistry      string // https://registry.npmjs.org
 	PackagistURL     string // https://repo.packagist.org
@@ -38,8 +39,11 @@ type Config struct {
 
 func DefaultConfig() Config {
 	return Config{
-		OSVBaseURL:       "https://storage.googleapis.com/osv-vulnerabilities",
-		KEVURL:           "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
+		OSVBaseURL: "https://storage.googleapis.com/osv-vulnerabilities",
+		KEVURL:     "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
+		// FIRST publishes EPSS through Empirical Security, which redirects
+		// "current" to the day's file (epss_scores-YYYY-MM-DD.csv.gz).
+		EPSSURL:          "https://epss.empiricalsecurity.com/epss_scores-current.csv.gz",
 		EndOfLifeURL:     "https://endoflife.date/api/v1/products/full",
 		NpmRegistry:      "https://registry.npmjs.org",
 		PackagistURL:     "https://repo.packagist.org",

@@ -212,6 +212,7 @@ func (e *env) start(extra ...string) *server {
 		"STACKURITY_UPDATE_CHECK=off",
 		"STACKURITY_OSV_URL="+up+"/osv",
 		"STACKURITY_KEV_URL="+up+"/kev.json",
+		"STACKURITY_EPSS_URL="+up+"/epss.csv",
 		"STACKURITY_ENDOFLIFE_URL="+up+"/eol.json",
 		"STACKURITY_AMAZON_LINUX_URL="+up+"/al",
 	)
@@ -550,14 +551,15 @@ func modifiedCSV(advs []advisory, at time.Time) []byte {
 	return []byte(b.String())
 }
 
-// serveIntel publishes a Debian archive, a KEV catalogue listing kevCVE and a
-// small endoflife.date document.
+// serveIntel publishes a Debian archive, a KEV catalogue listing kevCVE, an
+// EPSS file scoring it and a small endoflife.date document.
 func (e *env) serveIntel(advs []advisory, kevCVE string) {
 	e.up.set("/osv/Debian/all.zip", osvArchive(e.t, advs))
 	e.up.set("/kev.json", []byte(`{"vulnerabilities":[{"cveID":"`+kevCVE+`","vendorProject":"x","product":"x","vulnerabilityName":"x",`+
 		`"dateAdded":"2024-02-01","dueDate":"2024-02-22","knownRansomwareCampaignUse":"Unknown"}]}`))
 	e.up.set("/eol.json", []byte(`{"result":[{"name":"debian","label":"Debian","links":{"html":"https://endoflife.date/debian"},"identifiers":[],`+
 		`"releases":[{"name":"12","label":"12","releaseDate":"2023-06-10","isLts":false,"isEol":false,"eolFrom":"2028-06-10"}]}]}`))
+	e.up.set("/epss.csv", []byte("#model_version:v2026.06.15,score_date:2026-10-28T00:00:00Z\ncve,epss,percentile\n"+kevCVE+",0.5,0.99\n"))
 }
 
 // upstream fakes OSV, KEV and endoflife.date. A slow path is sent in 32 KiB

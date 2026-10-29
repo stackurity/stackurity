@@ -1,7 +1,7 @@
 import type { MouseEvent, ReactNode } from "react";
 import { Link, useNavigate } from "react-router";
 import { PRIORITIES, SEVERITIES, type Finding, type FindingSummary } from "../api";
-import { plural } from "../format";
+import { epssTitle, percent, plural } from "../format";
 import { Badge, KevBadge, PriorityBadge, SeverityBadge, SosBadge, FindingStateBadge } from "./Badge";
 import { EvidenceStateBadge } from "./Provenance";
 import { Assignee, DueDate } from "./Workflow";
@@ -36,6 +36,7 @@ export function FindingCards({ rows, hideAsset }: { rows: Finding[]; hideAsset?:
               {f.sos && <SosBadge rule={f.sos_rule} />}
               <SeverityBadge severity={f.severity} score={f.score} />
               {f.known_exploited && <KevBadge />}
+              {f.epss != null && <EpssBadge f={f} />}
             </span>
             <FindingStateBadge f={f} detail />
           </div>
@@ -207,6 +208,12 @@ export function FindingsTable({
   else
     cols.push({ key: "version", header: "Version", cell: (f) => <span className="mono">{f.version || "?"}</span> });
   cols.push(
+    {
+      key: "epss",
+      header: <abbr title="FIRST EPSS: the chance the CVE is exploited in the next 30 days">EPSS</abbr>,
+      numeric: true,
+      cell: (f) => <EpssCell f={f} />,
+    },
     { key: "fix", header: "Fix", cell: (f) => <FixCell f={f} /> },
     ...(hideGroup
       ? []
@@ -374,6 +381,22 @@ export function fixGroupKindLabel(id: string): string {
 }
 
 /** Hints from evidence that change what the fix is. */
+/** The EPSS column: the probability, or a dash for findings without a score. */
+export function EpssCell({ f }: { f: Finding }) {
+  if (f.epss == null) return <span className="muted" title={f.kind === "vulnerability" ? "No EPSS score for this finding's CVE" : undefined}>—</span>;
+  return (
+    <span className="mono" title={epssTitle(f.epss, f.epss_percentile, f.epss_date)}>
+      {percent(f.epss)}
+    </span>
+  );
+}
+
+/** EPSS on a phone card. */
+export function EpssBadge({ f }: { f: Finding }) {
+  if (f.epss == null) return null;
+  return <Badge status="epss" tone="muted" label={`EPSS ${percent(f.epss)}`} title={epssTitle(f.epss, f.epss_percentile, f.epss_date)} />;
+}
+
 export function EvidencePills({ f }: { f: Finding }) {
   const ev = f.evidence ?? {};
   return (

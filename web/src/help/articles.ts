@@ -140,7 +140,7 @@ export const ARTICLES: Article[] = [
     id: "glossary",
     title: "Glossary",
     section: "Getting started",
-    summary: "Asset, component, finding, unique vulnerability, incident, action, SOS, KEV, P1–P4, Ubuntu Pro, idle kernel, coverage, evidence.",
+    summary: "Asset, component, finding, unique vulnerability, incident, action, SOS, KEV, EPSS, P1–P4, Ubuntu Pro, idle kernel, coverage, evidence.",
     keywords: "terms definitions vocabulary",
     body: [
       {
@@ -157,6 +157,7 @@ export const ARTICLES: Article[] = [
           ["Priority (P1–P4)", "How urgent a finding is, from a score: severity or CVSS, plus known exploitation, internet exposure, production, asset criticality and so on. P1 is the most urgent. Each priority has an acknowledge and fix deadline."],
           ["SOS", "A finding that matches one of the SOS rules in the risk policy, e.g. “known exploited in production”. SOS findings ignore quiet hours."],
           ["KEV", "CISA's Known Exploited Vulnerabilities catalogue: vulnerabilities attackers are actually using."],
+          ["EPSS", "FIRST's Exploit Prediction Scoring System: the daily probability that a CVE is exploited in the next 30 days. Shown with each issue; at or above the risk policy's threshold it raises the priority."],
           ["Ubuntu Pro / ESM", "Canonical's paid subscription for commercial use (free for limited personal use) that publishes security fixes for releases past standard support and for the universe repository. Findings marked “no free fix” have a fixed build only there; the recommended action stays the free one: upgrade to a supported release, or install the update when Ubuntu publishes it. SUSE LTSS is treated the same way."],
           ["Idle kernel", "A kernel version that is installed but not running. Its vulnerabilities can't be exploited until it is booted, so they get a low priority and the action is to remove old kernels."],
           ["Reboot pending", "The host runs older code than is installed (the distro's reboot flag, or a newer kernel than the running one)."],
@@ -1093,7 +1094,7 @@ stackurity.exe agent --interval 6h`,
     section: "Settings and administration",
     summary: "How the P1–P4 score is built, the deadlines per priority, exception limits and SOS rules.",
     where: ["Settings", "Risk policy"],
-    keywords: "priority score weights thresholds sla deadlines sos rules exception max days",
+    keywords: "priority score weights thresholds sla deadlines sos rules exception max days epss exploit prediction first",
     body: [
       { p: "Everyone can view the risk policy; only admins can change it. Changes apply on the next notification cycle (within a few minutes). **Reset to default** restores the values below." },
       {
@@ -1102,6 +1103,11 @@ stackurity.exe agent --interval 6h`,
           ["Base score by severity", "critical 9.5, high 7.5, medium 5, low 2.5, none 0.5, unknown 5", "Used when there is no CVSS score."],
           ["End of life", "6", "Base score for end-of-life findings."],
           ["Known exploited (KEV)", "+3", ""],
+          [
+            "Likely exploit (FIRST EPSS) / EPSS threshold",
+            "+1.5 / 10%",
+            "Added while the CVE's EPSS (the chance of exploitation in the next 30 days) is at or above the threshold, and kept until it falls below 80% of it, so daily changes do not move priorities. Not added for KEV entries; at most the KEV points.",
+          ],
           ["Internet exposed / exposure unknown", "+1.5 / +0.5", "Set exposure on the asset to get this right."],
           ["Production environment", "+1", "Environments named in *Production environments* (default `production`, `prod`)."],
           ["Environment unknown", "+0.5", "The asset has no environment. Set it to get this right."],

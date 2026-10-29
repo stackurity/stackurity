@@ -7,11 +7,13 @@
 package why
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"strings"
 	"time"
 
+	"github.com/stackurity/stackurity/internal/risk"
 	"github.com/stackurity/stackurity/internal/store"
 )
 
@@ -56,10 +58,34 @@ type Explanation struct {
 	// does not cover this finding, or has not run yet.
 	SecondCheckText string `json:"second_check_text"`
 
+	// EPSS is FIRST's exploit prediction for the finding's CVE and what it
+	// does to the priority; nil for findings without a CVE.
+	EPSS *EPSSDetail `json:"epss,omitempty"`
+
 	Package   *PackageDetail   `json:"package,omitempty"`
 	OS        *OSDetail        `json:"os_package,omitempty"`
 	Image     *ImageDetail     `json:"container_image,omitempty"`
 	Lifecycle *LifecycleDetail `json:"end_of_life,omitempty"`
+}
+
+// EPSSDetail is the EPSS part of "why this priority".
+type EPSSDetail struct {
+	CVE string `json:"cve"`
+	// Score is the probability (0 to 1) of exploitation in the next 30
+	// days and Percentile its rank among all scored CVEs; nil when FIRST has
+	// not scored the CVE (yet).
+	Score        *float32 `json:"score"`
+	Percentile   *float32 `json:"percentile"`
+	Date         string   `json:"date,omitempty"`
+	ModelVersion string   `json:"model_version,omitempty"`
+	// Threshold is the policy's, and Release the score below which a
+	// finding that crossed it loses the points again.
+	Threshold float64 `json:"threshold"`
+	Release   float64 `json:"release_below"`
+	Points    float64 `json:"points"`
+	// Counted says the stored priority includes the EPSS factor.
+	Counted bool   `json:"counted"`
+	Text    string `json:"text"`
 }
 
 // Installed is the version evidence: what was observed, where and when.
@@ -128,6 +154,9 @@ type Input struct {
 	SecondCheck *store.SecondCheck
 	// Covered says the finding is one the second check covers.
 	Covered bool
+	// Policy is the current risk policy, for the EPSS threshold; nil leaves
+	// EPSS out.
+	Policy *risk.Policy
 }
 
 var comparatorText = map[string]string{
@@ -260,6 +289,9 @@ func Build(in Input, now time.Time) Explanation {
 			e.Package = &PackageDetail{Ecosystem: str(ev, "target_ecosystem"), Name: str(ev, "osv_package"), Direct: f.Direct, Location: f.Location}
 		}
 	}
+	if in.Policy != nil && f.Kind == "vulnerability" && strings.HasPrefix(f.Key, "CVE-") {
+		e.EPSS = epssDetail(f, *in.Policy)
+	}
 	if f.AssetKind == "image" {
 		e.Image = &ImageDetail{Image: f.AssetName, Inner: e.Type}
 		e.Type = TypeContainerImage
@@ -316,6 +348,58 @@ func Build(in Input, now time.Time) Explanation {
 		e.SecondCheckText = "The independent second check could not check this finding: " + sc.Reason + "."
 	}
 	return e
+}
+
+// epssDetail says what FIRST's EPSS predicts for the finding's CVE and
+// whether, and why, it counts towards the stored priority.
+func epssDetail(f *store.Finding, p risk.Policy) *EPSSDetail {
+	d := &EPSSDetail{CVE: f.Key, Score: f.EPSS, Percentile: f.EPSSPercentile, Threshold: p.EPSSThreshold,
+		Release: p.EPSSThreshold * risk.EPSSRelease, Points: p.EPSS, Counted: hasFactor(f, risk.FactorEPSS)}
+	if f.EPSSDate != nil {
+		d.Date = f.EPSSDate.Format("2006-01-02")
+	}
+	if f.EPSSModel != nil {
+		d.ModelVersion = *f.EPSSModel
+	}
+	thr, rel := risk.Percent(d.Threshold), risk.Percent(d.Release)
+	if f.EPSS == nil {
+		d.Text = fmt.Sprintf("FIRST EPSS has no score for %s yet (new CVEs are usually scored within a few days), so it adds nothing to the priority.", f.Key)
+		return d
+	}
+	pct := ""
+	if f.EPSSPercentile != nil {
+		pct = fmt.Sprintf(", higher than %s of scored CVEs", risk.Percent(float64(*f.EPSSPercentile)))
+	}
+	text := fmt.Sprintf("FIRST EPSS gives %s a %s chance of exploitation in the next 30 days%s (model %s, scores of %s).",
+		f.Key, risk.Percent(float64(*f.EPSS)), pct, orUnknown(d.ModelVersion), orUnknown(d.Date))
+	score := *f.EPSS
+	switch {
+	case d.Counted && p.EPSSCounts(score, false):
+		text += fmt.Sprintf(" That is at or above the risk policy's %s threshold, so it adds %.1f points; it keeps them until it falls below %s.", thr, p.EPSS, rel)
+	case d.Counted:
+		text += fmt.Sprintf(" It crossed the risk policy's %s threshold earlier and is still at %s or more, so it keeps its %.1f points: a small daily change does not move the priority.", thr, rel, p.EPSS)
+	case f.KnownExploited:
+		text += " It adds nothing: the CVE is in CISA KEV, which already counts exploitation."
+	case p.EPSS == 0:
+		text += " The risk policy gives EPSS no points."
+	case p.EPSSCounts(score, false):
+		text += fmt.Sprintf(" That is at or above the risk policy's %s threshold; it adds %.1f points from the next prioritisation, within minutes.", thr, p.EPSS)
+	default:
+		text += fmt.Sprintf(" That is below the risk policy's %s threshold, so it adds nothing.", thr)
+	}
+	d.Text = text
+	return d
+}
+
+func hasFactor(f *store.Finding, name string) bool {
+	var fs []risk.Factor
+	_ = json.Unmarshal(f.PriorityFactors, &fs)
+	for _, x := range fs {
+		if x.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 // versionSource names where the version came from: the file it was read

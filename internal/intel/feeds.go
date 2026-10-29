@@ -26,6 +26,7 @@ import (
 // Feed names.
 const (
 	FeedKEV       = "kev:cisa"
+	FeedEPSS      = "epss:first"
 	FeedEndOfLife = "lifecycle:endoflife"
 	FeedNpm       = "releases:npm"
 	FeedPackagist = "releases:packagist"
@@ -149,6 +150,8 @@ func (s *Syncer) Sync(ctx context.Context, name string) (*SyncResult, error) {
 		res, cursor, err = s.syncMSRC(ctx, name, feed.Cursor)
 	case name == FeedKEV:
 		res, err = s.syncKEV(ctx)
+	case name == FeedEPSS:
+		res, err = s.syncEPSS(ctx)
 	case name == FeedEndOfLife:
 		res, err = s.syncEndOfLife(ctx)
 	case isReleaseFeed(name):

@@ -58,7 +58,7 @@ func TestProtocol(t *testing.T) {
 		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}`,
 		`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
 		`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`,
-		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_findings","arguments":{"asset_id":3,"severity":"critical,high","known_exploited":true}}}`,
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_findings","arguments":{"asset_id":3,"severity":"critical,high","known_exploited":true,"epss_min":0.1}}}`,
 		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"get_finding","arguments":{}}}`,
 		`{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"nope"}}`,
 		`{"jsonrpc":"2.0","id":6,"method":"resources/list"}`,
@@ -115,7 +115,7 @@ func TestProtocol(t *testing.T) {
 		t.Errorf("list_findings text = %s", text)
 	}
 	if got := api.paths[0]; !strings.Contains(got, "asset_id=3") || !strings.Contains(got, "known_exploited=true") ||
-		!strings.Contains(got, "severity=critical%2Chigh") {
+		!strings.Contains(got, "severity=critical%2Chigh") || !strings.Contains(got, "epss_min=0.1") {
 		t.Errorf("request = %s", got)
 	}
 	if res[3]["result"].(map[string]any)["isError"] != true {
