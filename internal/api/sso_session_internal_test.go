@@ -245,7 +245,7 @@ func TestPinnedSessionSurvivesRotation(t *testing.T) {
 
 	old := secret
 	const next = "a much longer passphrase 4917"
-	if code := call("POST", "/api/v1/auth/password", map[string]string{"current_password": password, "new_password": next}, nil); code != 204 {
+	if code := call("POST", "/api/v1/auth/password", map[string]string{"current_password": password, "new_password": next}, nil); code != 200 {
 		t.Fatalf("change password: %d", code)
 	}
 	if secret == old {
