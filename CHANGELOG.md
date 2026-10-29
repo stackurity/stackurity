@@ -13,7 +13,7 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ### Upgrading
 
-- Migration `0061_vex` creates `vex_sources`, `vex_documents`, `vex_statements` and `vex_matches` and adds nullable or constant-default columns to `finding_exceptions` (`vex_statement_id`, `version`, `digest`) and `ignore_requests` (`vex_statement_id`), and replaces the `ignore_requests` row-level security policy so that members with project access only do not see VEX requests; it rewrites nothing.
+- Migration `0061_vex` creates `vex_sources`, `vex_documents`, `vex_statements` and `vex_matches` and adds nullable or constant-default columns to `finding_exceptions` (`vex_statement_id`, `version`, `digest`) and `ignore_requests` (`vex_statement_id`, `vex_assets`), and replaces the `ignore_requests` row-level security policy so that members with project access only do not see VEX requests; it rewrites nothing.
 
 ## 0.13.7
 
