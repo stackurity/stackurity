@@ -51,8 +51,14 @@ func parseELSAFixture(t *testing.T, name, release string) map[string]*osv.Vulner
 // entries lists an advisory's affected entries as "ecosystem name introduced fixed".
 func entries(v *osv.Vulnerability) []string {
 	var out []string
+	if v == nil {
+		return nil
+	}
 	for _, a := range v.Affected {
 		ev := a.Ranges[0].Events
+		if ev[1].Fixed == "" {
+			continue // an unlisted version line (no fix)
+		}
 		out = append(out, a.Package.Ecosystem+" "+a.Package.Name+" "+ev[0].Introduced+" "+ev[1].Fixed)
 	}
 	return out
@@ -64,8 +70,16 @@ func hasEntry(v *osv.Vulnerability, want string) bool {
 
 func TestParseELSA(t *testing.T) {
 	ol9 := parseELSAFixture(t, "ol9", "9")
-	if len(ol9) != 8 {
-		t.Errorf("Oracle Linux 9: %d advisories, want 8: %v", len(ol9), keys(ol9))
+	if len(ol9) != 9 {
+		t.Errorf("Oracle Linux 9: %d advisories, want 9: %v", len(ol9), keys(ol9))
+	}
+	// An id with Oracle's revision suffix (it has no unsuffixed twin) is
+	// read, keeps the suffix in its id and link, and is aliased to the base id.
+	tar := ol9["OL9-ELSA-2026-61581-0"]
+	if !hasEntry(tar, "Oracle Linux:9 tar 0 2:1.34-13.el9_8") || len(tar.Aliases) < 3 ||
+		!slices.Equal(tar.Aliases[:2], []string{"ELSA-2026-61581-0", "ELSA-2026-61581"}) ||
+		tar.References[0].URL != "https://linux.oracle.com/errata/ELSA-2026-61581-0.html" || !strings.HasPrefix(tar.Summary, "tar security") {
+		t.Errorf("suffixed ELSA: %+v", tar)
 	}
 	glibc := ol9["OL9-ELSA-2023-12850"]
 	if glibc == nil {
@@ -125,8 +139,30 @@ func TestParseELSA(t *testing.T) {
 	}
 
 	ol8 := parseELSAFixture(t, "ol8", "8")
-	if len(ol8) != 8 {
-		t.Errorf("Oracle Linux 8: %d advisories, want 8: %v", len(ol8), keys(ol8))
+	if len(ol8) != 9 {
+		t.Errorf("Oracle Linux 8: %d advisories, want 9: %v", len(ol8), keys(ol8))
+	}
+	// Fixes for three kubeadm lines in one definition, with no version
+	// pattern: one range per line, and versions on none of them unlisted.
+	kube := ol8["OL8-ELSA-2022-10036"]
+	for _, want := range []string{"Oracle Linux:8 kubeadm 0:1.22 0:1.22.16-1.el8", "Oracle Linux:8 kubeadm 0:1.23 0:1.23.14-1.el8",
+		"Oracle Linux:8 kubeadm 0:1.24 0:1.24.8-1.el8", "Oracle Linux:8 olcnectl 0 0:1.5.8-4.el8"} {
+		if !hasEntry(kube, want) {
+			t.Errorf("OLCNE entries: want %q in %v", want, entries(kube))
+		}
+	}
+	unlisted := 0
+	for _, a := range kube.Affected {
+		if osv.UnlistedLine(a.Package.Ecosystem, a) {
+			unlisted++
+			if a.Package.Name != "kubeadm" && a.Package.Name != "kubectl" && a.Package.Name != "kubelet" ||
+				a.Ranges[0].Events[0].Introduced != "0" || a.Ranges[0].Events[1].Limit != "0:1.22" {
+				t.Errorf("unlisted range: %+v", a)
+			}
+		}
+	}
+	if unlisted != 3 {
+		t.Errorf("unlisted ranges: %d, want 3 (below 1.22 for kubeadm, kubectl, kubelet)", unlisted)
 	}
 	if v := ol8["OL8-ELSA-2023-12017"]; !hasEntry(v, "Oracle Linux:8 kernel-uek 0:5.15.0 0:5.15.0-6.80.3.1.el8uek") {
 		t.Errorf("UEK R7 on Oracle Linux 8 = %v", entries(v))
@@ -301,7 +337,10 @@ func TestOracleLinux(t *testing.T) {
 		"glibc@0:2.28-225.0.4.el8",                         // exactly the fix
 		"kernel-uek@0:5.4.17-2011.5.3.el8uek",              // UEK R6: only R6 advisories
 		"bpftool@0:4.18.0-477.10.1.el8_8",                  // RHCK's bpftool: UEK's do not apply
-		"nodejs@1:18.20.2-1.module+el8.9.0+90319+0b1e7189") // nodejs:18 below its fix
+		"nodejs@1:18.20.2-1.module+el8.9.0+90319+0b1e7189", // nodejs:18 below its fix
+		"kubeadm@0:1.22.10-1.el8")                          // on the 1.22 line, below its fix
+	kubeNew := olHost(t, st, "ol8-kube-1.23", "ol-8.10", "kubeadm@0:1.23.14-1.el8") // its own line's fix: not affected by the 1.24 one
+	kubeOld := olHost(t, st, "ol8-kube-1.20", "ol-8.10", "kubeadm@0:1.20.5-1.el8")  // on no listed line: needs validation
 
 	if err := EnsureFeeds(ctx, st); err != nil {
 		t.Fatal(err)
@@ -325,7 +364,7 @@ func TestOracleLinux(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !res.Full || res.Warning != "" || res.Changed != 16 {
+	if !res.Full || res.Warning != "" || res.Changed != 18 {
 		t.Errorf("sync result: %+v", res)
 	}
 	// Only the releases in inventory are downloaded.
@@ -335,7 +374,7 @@ func TestOracleLinux(t *testing.T) {
 		}
 	}
 	f, _ := st.GetFeed(ctx, FeedOracleLinux)
-	if f.Records != 16 || f.LastError != "" || !slices.Equal(f.Ecosystems, []string{"Oracle Linux:8", "Oracle Linux:8:fips", "Oracle Linux:8:ksplice",
+	if f.Records != 18 || f.LastError != "" || !slices.Equal(f.Ecosystems, []string{"Oracle Linux:8", "Oracle Linux:8:fips", "Oracle Linux:8:ksplice",
 		"Oracle Linux:9", "Oracle Linux:9:fips", "Oracle Linux:9:ksplice"}) {
 		t.Errorf("feed after sync: records %d, error %q, ecosystems %v", f.Records, f.LastError, f.Ecosystems)
 	}
@@ -389,7 +428,17 @@ func TestOracleLinux(t *testing.T) {
 		"CVE-2021-3156":  "0:1.8.29-6.el8_3.1",
 		"CVE-2020-10751": "0:5.4.17-2011.6.2.el8uek",
 		"CVE-2024-22020": "1:18.20.4-1.module+el8.10.0+90402+68b79193",
+		"CVE-2022-3162":  "0:1.22.16-1.el8",
 	})
+	if g := f8["CVE-2022-3162"]; g.Verification != "confirmed" || strings.Contains(string(g.Evidence), "ambiguous") {
+		t.Errorf("kubeadm 1.22 on its own line: %s", g.Verification)
+	}
+	check(kubeNew, map[string]string{})
+	fo := check(kubeOld, map[string]string{"CVE-2022-3162": ""})
+	if g := fo["CVE-2022-3162"]; g.Verification != "needs_validation" || g.Severity != "unknown" ||
+		!strings.Contains(string(g.Evidence), "version_line_unlisted") {
+		t.Errorf("kubeadm on no listed line: %s %s %s", g.Verification, g.Severity, g.Evidence)
+	}
 	if g := f8["CVE-2021-3156"]; !g.KnownExploited || !slices.Equal(g.Sources, []string{"OL8-ELSA-2021-0218"}) {
 		t.Errorf("sudo finding: KEV %v, sources %v", g.KnownExploited, g.Sources)
 	}
@@ -399,8 +448,8 @@ func TestOracleLinux(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats.Checked != 10 || stats.Agreed != stats.Checked {
-		for _, h := range []int64{ol9, uek8, ksplice, ol8} {
+	if stats.Checked != 12 || stats.Agreed != stats.Checked {
+		for _, h := range []int64{ol9, uek8, ksplice, ol8, kubeOld} {
 			for _, g := range openKeys(t, st, ctx, h) {
 				if sc, _ := st.FindingSecondCheck(ctx, g.ID); sc != nil && sc.Result != store.SecondCheckAgreed {
 					t.Errorf("second check on %s %s: %+v", g.ComponentName, g.Key, sc)
@@ -474,7 +523,7 @@ func TestOracleLinuxBadFile(t *testing.T) {
 	serveELSA(t, up, map[string]string{"ol8": "ol8"})
 	setRaw("ol9", truncated("ol9"))
 	sync("Oracle Linux 9: ")
-	if n := len(stored("8")); n != 8 {
+	if n := len(stored("8")); n != 9 {
 		t.Errorf("Oracle Linux 8 advisories stored: %d", n)
 	}
 	if n := len(stored("9")); n != 0 {
@@ -491,7 +540,7 @@ func TestOracleLinuxBadFile(t *testing.T) {
 	serveELSA(t, up, map[string]string{"ol9": "ol9"})
 	sync("")
 	before := stored("9")
-	if len(before) != 8 {
+	if len(before) != 9 {
 		t.Fatalf("Oracle Linux 9 advisories: %v", before)
 	}
 	if got := openKeys(t, st, ctx, ol9); len(got) != 2 {
@@ -521,7 +570,7 @@ func TestOracleLinuxBadFile(t *testing.T) {
 	if _, err := sy.Sync(ctx, FeedOracleLinux); err == nil || !strings.Contains(err.Error(), "no ELSA file could be read") {
 		t.Errorf("both files broken: %v", err)
 	}
-	if len(stored("8")) != 8 || len(stored("9")) != 8 {
+	if len(stored("8")) != 9 || len(stored("9")) != 9 {
 		t.Errorf("stored after a failed sync: %d %d", len(stored("8")), len(stored("9")))
 	}
 
@@ -532,7 +581,7 @@ func TestOracleLinuxBadFile(t *testing.T) {
 	if got := openKeys(t, st, ctx, ol9); len(got) != 1 || got["CVE-2023-4911"].ID == 0 {
 		t.Errorf("after the revision, Oracle Linux 9 findings: %s", sortedFindingKeys(got))
 	}
-	if after := stored("9"); len(after) != 7 || slices.Contains(after, "OL9-ELSA-2023-2650") {
+	if after := stored("9"); len(after) != 8 || slices.Contains(after, "OL9-ELSA-2023-2650") {
 		t.Errorf("after the revision: %v", after)
 	}
 	if adv, _ := st.AdvisoryGroup(ctx, "OL9-ELSA-2023-2650"); len(adv) != 1 || adv[0].Withdrawn == nil || adv[0].GroupKey != "CVE-2023-27535" {

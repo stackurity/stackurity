@@ -14,6 +14,7 @@ import (
 
 	"github.com/package-url/packageurl-go"
 
+	"github.com/stackurity/stackurity/internal/oraclebuild"
 	"github.com/stackurity/stackurity/internal/version"
 )
 
@@ -388,16 +389,46 @@ func OracleChannel(ecosystem string) string {
 // was built for, from its release: "ksplice" (2:2.34-60.0.3.ksplice1.el9),
 // "fips" (10:3.5.8-2.0.1.el9_8_fips) or "" for a regular build. Such builds
 // carry their own epoch, so records for the other builds of the package do
-// not describe them.
-func OracleBuild(version string) string {
-	v := strings.ToLower(version)
-	switch {
-	case strings.Contains(v, "ksplice"):
-		return "ksplice"
-	case strings.Contains(v, "fips"):
-		return "fips"
+// not describe them. The second check reads it with the same function.
+func OracleBuild(version string) string { return oraclebuild.Channel(version) }
+
+// UnlistedLine reports an Oracle Linux affected entry for versions on none
+// of the version lines its advisory has fixes for (see intel's
+// elsaRanges): a match through it needs validation. Such an entry is the
+// only Oracle Linux range that ends in a limit with no fix, so it is told
+// by its shape, which is all that is stored of an entry.
+func UnlistedLine(ecosystem string, a Affected) bool {
+	if !strings.HasPrefix(ecosystem, "Oracle Linux:") || len(a.Ranges) != 1 {
+		return false
 	}
-	return ""
+	limit := false
+	for _, e := range a.Ranges[0].Events {
+		if e.Fixed != "" || e.LastAffected != "" {
+			return false
+		}
+		limit = limit || e.Limit != ""
+	}
+	return limit
+}
+
+// OtherLine reports an entry whose every range starts above the installed
+// version: it describes another version line (a UEK release, a module
+// stream, one of several lines of an advisory), so its "not affected" says
+// nothing about this version.
+func OtherLine(a Affected, t Target) bool {
+	if len(a.Ranges) == 0 || len(a.Versions) > 0 {
+		return false
+	}
+	cmp := version.For(t.Compare)
+	for _, r := range a.Ranges {
+		if len(r.Events) == 0 || r.Events[0].Introduced == "" || r.Events[0].Introduced == "0" {
+			return false
+		}
+		if c, err := cmp(r.Events[0].Introduced, t.Version); err != nil || c <= 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // rpmDistro splits a distro qualifier ("rhel-9.4") into a supported ID and

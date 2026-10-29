@@ -77,7 +77,10 @@ const (
 )
 
 var (
-	elsaID       = regexp.MustCompile(`^ELSA-\d{4}-\d{1,8}$`)
+	// elsaID is an advisory id, with Oracle's revision suffix on some
+	// ("ELSA-2025-20518-0", "ELSA-2022-9065-1"): those have no
+	// unsuffixed twin, and the suffixed id is the one their page has.
+	elsaID       = regexp.MustCompile(`^(ELSA-\d{4}-\d{1,8})(?:-\d{1,3})?$`)
 	elsaModule   = regexp.MustCompile(`^Module (\S+) is enabled$`)
 	elsaLine     = regexp.MustCompile(`^\d+(?:\.\d+)*$`)
 	errNoRelease = errors.New("not published")
@@ -566,7 +569,7 @@ func elsaVersionLine(p string) (string, bool) {
 }
 
 // walk collects the affected entries of a criteria tree for the release.
-func (r *elsaResolver) walk(c ovalCriteria, ctx elsaContext, out map[elsaKey]string) {
+func (r *elsaResolver) walk(c ovalCriteria, ctx elsaContext, out map[elsaKey][]string) {
 	if c.Negate {
 		r.doc.anomalies++
 		return
@@ -598,9 +601,7 @@ func (r *elsaResolver) walk(c ovalCriteria, ctx elsaContext, out map[elsaKey]str
 			continue
 		}
 		k := elsaKey{channel: ctx.channel, name: x.pkg, introduced: elsaIntroduced(x, ctx)}
-		if cur, ok := out[k]; !ok || compareRPM(x.fixed, cur) > 0 {
-			out[k] = x.fixed
-		}
+		out[k] = appendUnique(out[k], x.fixed)
 	}
 	for _, sub := range c.Criteria {
 		r.walk(sub, ctx, out)
@@ -637,12 +638,16 @@ func compareRPM(a, b string) int {
 // record turns a definition into the release's advisory; nil when it has no
 // entry for the release.
 func (r *elsaResolver) record(d elsaDef) *osv.Vulnerability {
-	entries := map[elsaKey]string{}
+	entries := map[elsaKey][]string{}
 	r.walk(d.criteria, elsaContext{}, entries)
 	if len(entries) == 0 {
 		return nil
 	}
-	v := &osv.Vulnerability{ID: elsaPrefix(r.release) + d.id, Aliases: append([]string{d.id}, d.cves...),
+	aliases := []string{d.id}
+	if base := elsaID.FindStringSubmatch(d.id); base != nil && base[1] != d.id {
+		aliases = append(aliases, base[1]) // ELSA-2025-20518 for ELSA-2025-20518-0
+	}
+	v := &osv.Vulnerability{ID: elsaPrefix(r.release) + d.id, Aliases: append(aliases, d.cves...),
 		Summary: d.title, Details: d.description, Published: d.issued, Modified: d.issued}
 	if v.Summary == "" {
 		v.Summary = d.id
@@ -676,12 +681,91 @@ func (r *elsaResolver) record(d elsaDef) *osv.Vulnerability {
 		if k.channel != "" {
 			eco += ":" + k.channel
 		}
-		v.Affected = append(v.Affected, osv.Affected{
-			Package: osv.Package{Ecosystem: eco, Name: k.name},
-			Ranges:  []osv.Range{{Type: "ECOSYSTEM", Events: []osv.Event{{Introduced: k.introduced}, {Fixed: entries[k]}}}},
-		})
+		for _, e := range elsaRanges(k.introduced, entries[k]) {
+			v.Affected = append(v.Affected, osv.Affected{Package: osv.Package{Ecosystem: eco, Name: k.name},
+				Ranges: []osv.Range{{Type: "ECOSYSTEM", Events: e.events}}})
+		}
 	}
 	return v
+}
+
+// elsaRange is one affected range of a package. A range for versions on
+// none of the listed lines ends in a limit with no fix, which is how the
+// matcher tells it (osv.UnlistedLine).
+type elsaRange struct {
+	events []osv.Event
+}
+
+// elsaRanges turns the fixes a definition lists for one package into
+// ranges. Fixes on one version line are alternatives (one per architecture,
+// or a z-stream rebuild): the higher one counts, as OVAL's OR reads them.
+// Some definitions list fixes for several lines of a package without a
+// version pattern (Oracle Cloud Native Environment's kubeadm 1.22.16,
+// 1.23.14 and 1.24.8 in one advisory); the highest fix would flag a 1.22
+// host whose own line is fixed, so each line (major.minor) gets its own
+// range, and a version between or below the listed lines gets an
+// "unlisted" range with no fix: the matcher reports it as needing
+// validation, never as a plain match. A version above every listed line is
+// past every fix, as in OVAL.
+func elsaRanges(introduced string, fixes []string) []elsaRange {
+	highest := func(vs []string) string {
+		best := vs[0]
+		for _, v := range vs[1:] {
+			if compareRPM(v, best) > 0 {
+				best = v
+			}
+		}
+		return best
+	}
+	single := []elsaRange{{events: []osv.Event{{Introduced: introduced}, {Fixed: highest(fixes)}}}}
+	if introduced != "0" || len(fixes) < 2 {
+		return single
+	}
+	type line struct {
+		epoch, name  string
+		major, minor int
+		fixes        []string
+	}
+	byLine := map[string]*line{}
+	for _, f := range fixes {
+		epoch, ver := "0", f
+		if e, rest, ok := strings.Cut(f, ":"); ok && isDigits(e) {
+			epoch, ver = e, rest
+		}
+		upstream, _, _ := strings.Cut(ver, "-")
+		parts := strings.SplitN(upstream, ".", 3)
+		if len(parts) < 2 || !isDigits(parts[0]) || !isDigits(parts[1]) {
+			return single // not a dotted version: the lines cannot be told
+		}
+		major, _ := strconv.Atoi(parts[0])
+		minor, _ := strconv.Atoi(parts[1])
+		name := epoch + ":" + parts[0] + "." + parts[1]
+		if byLine[name] == nil {
+			byLine[name] = &line{epoch: epoch, name: parts[0] + "." + parts[1], major: major, minor: minor}
+		}
+		byLine[name].fixes = append(byLine[name].fixes, f)
+	}
+	if len(byLine) < 2 {
+		return single
+	}
+	lines := make([]*line, 0, len(byLine))
+	for _, l := range byLine {
+		lines = append(lines, l)
+	}
+	sort.Slice(lines, func(i, j int) bool {
+		return compareRPM(lines[i].epoch+":"+lines[i].name, lines[j].epoch+":"+lines[j].name) < 0
+	})
+	var out []elsaRange
+	from := "0"
+	for _, l := range lines {
+		start := l.epoch + ":" + l.name
+		if from == "0" || compareRPM(from, start) < 0 {
+			out = append(out, elsaRange{events: []osv.Event{{Introduced: from}, {Limit: start}}})
+		}
+		out = append(out, elsaRange{events: []osv.Event{{Introduced: start}, {Fixed: highest(l.fixes)}}})
+		from = fmt.Sprintf("%s:%d.%d", l.epoch, l.major, l.minor+1) // the next line starts there
+	}
+	return out
 }
 
 func isDigits(s string) bool {

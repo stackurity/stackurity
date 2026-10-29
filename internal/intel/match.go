@@ -376,8 +376,12 @@ type groupMatch struct {
 	ranges     []string
 	ecosystems []string
 	exploited  bool
-	freeHit    bool // a free-channel advisory says the version is affected
-	proHit     bool // a Pro advisory says it is affected
+	// lined: a record matched on a version line it has a fix for;
+	// unlisted: one matched only because the version is on none of the
+	// lines its advisory lists fixes for (osv.UnlistedLine).
+	lined, unlisted bool
+	freeHit         bool // a free-channel advisory says the version is affected
+	proHit          bool // a Pro advisory says it is affected
 	// The record that decided the verdict in each channel: the one whose
 	// fixed version is recommended, else the first that matched.
 	freeRec, proRec decisive
@@ -459,7 +463,10 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 			freeChecked[a.GroupKey] = true
 		}
 		if !m.Affected {
-			if !pro && recordChannel == oracleBuild {
+			// A record for another version line (or for versions on no
+			// listed line) says nothing about this version's line.
+			otherLine := oracle && (osv.OtherLine(a.Affected, t) || osv.UnlistedLine(a.Ecosystem, a.Affected))
+			if !pro && recordChannel == oracleBuild && !otherLine {
 				freeClear[a.GroupKey]++
 			}
 			continue
@@ -498,6 +505,11 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 			}
 		}
 		g.exploited = g.exploited || a.KnownExploited
+		if osv.UnlistedLine(a.Ecosystem, a.Affected) {
+			g.unlisted = true
+		} else {
+			g.lined = true
+		}
 	}
 	// Keep a group if the free channel says affected, or only Pro has data.
 	kept := order[:0]
@@ -524,6 +536,15 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 	var out []store.FindingInput
 	for _, k := range order {
 		g := groups[k]
+		verification := verification
+		// Matched only for being on none of the version lines the advisory
+		// fixes (an Oracle Cloud Native Environment kubeadm 1.20 against
+		// fixes for 1.22, 1.23 and 1.24): it may be affected or never have
+		// been, so it needs validation rather than a plain match.
+		lineUnlisted := g.unlisted && !g.lined
+		if lineUnlisted && verification == "confirmed" {
+			verification = "needs_validation"
+		}
 		sev := g.severity
 		if verification == "needs_validation" {
 			// FR-15: no definitive severity until the version is confirmed.
@@ -576,6 +597,9 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 		}
 		if g.freeHit && freeClear[k] > 0 {
 			ambiguous = append(ambiguous, "sources_disagree")
+		}
+		if lineUnlisted {
+			ambiguous = append(ambiguous, "version_line_unlisted")
 		}
 		ev["match"] = matchExplanation(r, t, rec, fixed, ambiguous)
 		if pu, err := packageurl.FromString(r.Purl); err == nil && osv.KernelNotRunning(r.Type, pu.Name, r.Version, r.RunningKernel) {

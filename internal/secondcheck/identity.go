@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+
+	"github.com/stackurity/stackurity/internal/oraclebuild"
 )
 
 // purl is a package URL read by the second check's own parser: type,
@@ -300,17 +302,9 @@ func deriveTarget(rawPurl, invVersion string, ev map[string]string) (target, err
 			t.version = e + ":" + t.version
 		}
 		if t.ecosystem == "Oracle Linux" {
-			// Its own reading of the release, not the matcher's.
-			rel := strings.ToLower(t.version)
-			if i := strings.LastIndexByte(rel, '-'); i >= 0 {
-				rel = rel[i+1:]
-			}
-			switch {
-			case strings.Contains(rel, "ksplice"):
-				t.oracleBuild = "ksplice"
-			case strings.Contains(rel, "fips"):
-				t.oracleBuild = "fips"
-			}
+			// Shared with the matcher on purpose: it reads Oracle's naming
+			// of builds, not matching rules.
+			t.oracleBuild = oraclebuild.Channel(t.version)
 		}
 	case "generic":
 		if strings.ToLower(p.name) != "windows" || ev["kind"] != "operating-system" {

@@ -5,7 +5,8 @@
 // own package URL parser, ecosystem and release rules, version comparators
 // and a plain reading of OSV ranges. It imports nothing from the matcher
 // (internal/intel, internal/osv, internal/version), so a defect there is not
-// repeated here.
+// repeated here. It shares only internal/oraclebuild, a reading of Oracle's
+// build naming (Ksplice, FIPS), so the two cannot drift apart.
 //
 // It reads less than the matcher on purpose. Whatever it cannot read (a
 // pre-release, a SUSE product channel, a FIPS build, a GIT range) is "could

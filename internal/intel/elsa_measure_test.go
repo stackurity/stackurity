@@ -18,6 +18,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stackurity/stackurity/internal/osv"
 )
 
 func TestMeasureELSA(t *testing.T) {
@@ -60,9 +62,16 @@ func TestMeasureELSA(t *testing.T) {
 		}
 		var after runtime.MemStats
 		runtime.ReadMemStats(&after)
-		entries, ksplice, fips, lines, cves := 0, 0, 0, 0, 0
+		entries, ksplice, fips, lines, cves, suffixed, unlisted := 0, 0, 0, 0, 0, 0, 0
 		for _, v := range doc.vulns {
-			cves += len(v.Aliases) - 1
+			for _, a := range v.Aliases {
+				if strings.HasPrefix(a, "CVE-") {
+					cves++
+				}
+			}
+			if elsaID.FindStringSubmatch(strings.TrimPrefix(v.ID, elsaPrefix(rel)))[1] != strings.TrimPrefix(v.ID, elsaPrefix(rel)) {
+				suffixed++ // ELSA-2025-20518-0
+			}
 			for _, a := range v.Affected {
 				entries++
 				switch {
@@ -74,10 +83,13 @@ func TestMeasureELSA(t *testing.T) {
 				if a.Ranges[0].Events[0].Introduced != "0" {
 					lines++
 				}
+				if osv.UnlistedLine(a.Package.Ecosystem, a) {
+					unlisted++
+				}
 			}
 		}
-		t.Logf("Oracle Linux %s: %d advisories, %d CVE aliases, %d entries (%d Ksplice, %d FIPS, %d limited to a line), %d criteria not understood, %s, %d MiB allocated, peak heap %d MiB",
-			rel, len(doc.vulns), cves, entries, ksplice, fips, lines, doc.anomalies, time.Since(start).Round(time.Millisecond),
+		t.Logf("Oracle Linux %s: %d advisories (%d with a revision suffix), %d CVE aliases, %d entries (%d Ksplice, %d FIPS, %d limited to a line, %d on no listed line), %d criteria not understood, %s, %d MiB allocated, peak heap %d MiB",
+			rel, len(doc.vulns), suffixed, cves, entries, ksplice, fips, lines, unlisted, doc.anomalies, time.Since(start).Round(time.Millisecond),
 			(after.TotalAlloc-before.TotalAlloc)>>20, (peak-min(peak, before.HeapAlloc))>>20)
 	}
 }

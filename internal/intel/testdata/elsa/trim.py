@@ -16,13 +16,15 @@ KEEP = {
             'ELSA-2023-12017',                     # UEK R7 for Oracle Linux 8 and 9 in one definition
             'ELSA-2020-5848',                      # UEK R6 (5.4.17) for Oracle Linux 7 and 8
             'ELSA-2024-6148', 'ELSA-2024-5814',    # nodejs:18 and nodejs:20 module streams
-            'ELSA-2024-12135'],                    # FIPS build
+            'ELSA-2024-12135',                     # FIPS build
+            'ELSA-2022-10036'],                    # kubeadm etc. fixed on three version lines, no pattern
     'ol9': ['ELSA-2023-12850', 'ELSA-2023-12854',  # glibc .0.3 rebuild, CVE-2023-4911 (KEV); its Ksplice build
             'ELSA-2023-2650',                      # curl: two alternative fixes for one package
             'ELSA-2023-12017',                     # UEK R7 for Oracle Linux 8 and 9
             'ELSA-2025-20368',                     # UEK R8 (6.12)
             'ELSA-2024-1503', 'ELSA-2024-1688',    # nodejs:18 and nodejs:20 module streams
-            'ELSA-2024-12336'],                    # openssl FIPS build (epoch 10)
+            'ELSA-2024-12336',                     # openssl FIPS build (epoch 10)
+            'ELSA-2026-61581-0'],                  # an id with Oracle's revision suffix
     'ol10': ['ELSA-2025-20371'],                   # UEK R8 on Oracle Linux 10
 }
 # Variants of ol9: "shrunk" keeps one definition (a file that lost most of
@@ -65,7 +67,7 @@ def build(txt, keep):
     defs = {}
     for m in DEF.finditer(txt, ds, de):
         blk = m.group(0)
-        m = re.search(r'ref_id="(ELSA-[0-9-]+)"', blk)
+        m = re.search(r'ref_id="(ELSA-[0-9]+-[0-9]+(?:-[0-9]+)?)"', blk)
         i = m and m.group(1)  # bug fix advisories (ELBA) have none
         if i in keep:
             defs[i] = re.sub(r'(<description>\n)(.*?)(</description>)', short_description, blk, flags=re.S)
