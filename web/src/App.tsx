@@ -16,6 +16,7 @@ import { OnboardingPage } from "./pages/Onboarding";
 import { SignupPage, VerifySignupPage } from "./pages/Signup";
 import { UsagePage } from "./pages/settings/Usage";
 import { BillingPage } from "./pages/settings/Billing";
+import { SingleSignOnPage } from "./pages/settings/SingleSignOn";
 import { HomePage } from "./pages/Home";
 import { AutomaticFixPoliciesPage, SettingsPage } from "./pages/Settings";
 import { AssetsPage } from "./pages/Assets";
@@ -244,6 +245,14 @@ export function App() {
           element={
             <RequireRole min="admin">
               <UsagePage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="settings/sso"
+          element={
+            <RequireRole min="admin">
+              <SingleSignOnPage />
             </RequireRole>
           }
         />

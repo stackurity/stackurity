@@ -743,7 +743,12 @@ func fill(s string, ids map[string]string) string {
 func (r routeRule) routePath(pattern string, a *tenantFx) string {
 	p := strings.TrimSuffix(pattern, "/*")
 	for param, key := range r.obj {
-		p = strings.ReplaceAll(p, "{"+param+"}", a.ids[key])
+		v := a.ids[key]
+		if v == "" {
+			// A fixture this sweep does not make (an edition's object).
+			v = "999999999"
+		}
+		p = strings.ReplaceAll(p, "{"+param+"}", v)
 	}
 	p = strings.NewReplacer("{platform}", "linux-amd64", "{name}", "osv:npm", "{key}", "CVE-2099-0001", "{id}", "999999999").Replace(p)
 	return p + fill(r.query, a.ids)

@@ -73,6 +73,7 @@ const GROUPS: { title: string; entries: Entry[] }[] = [
     entries: [
       { to: "/settings/usage", label: "Usage", about: "Monitored assets against this organisation's limit, and new assets refused at the limit.", min: "admin" },
       { to: "/settings/billing", label: "Plan and billing", about: "Your plan, the assets you pay for, payments and invoices.", min: "admin", billing: true },
+      { to: "/settings/sso", label: "Single sign-on", about: "Sign in with your organisation's SAML identity provider, for the email domains you own.", min: "admin", billing: true },
     ],
   },
   {

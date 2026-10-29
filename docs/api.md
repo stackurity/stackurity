@@ -101,6 +101,79 @@ Starts single sign-on with the configured SAML identity provider. Optional `retu
 
 The Assertion Consumer Service: verifies the provider's response (`SAMLResponse`, `RelayState`), signs the person in and starts a session.
 
+
+### `POST /auth/sso/discover`
+
+**Who:** anyone · Stackurity Cloud
+
+Finds where someone signs in from their `email`: the organisation that verified the address's domain, if its single sign-on is on. Answers `login_url` and `label`, or 404.
+
+### `GET /sso`
+
+**Who:** admin · Stackurity Cloud
+
+The organisation's own single sign-on: `available` (the plan includes it), `config` (provider, attribute mapping, `version` and `tested_version`, `test_result`, `enabled`, `require_sso`, `link_existing`), `service_provider` (`entity_id`, `acs_url`, `metadata_url`, `login_url`), `domains` and `owner_id`.
+
+### `PUT /sso`
+
+**Who:** admin · Stackurity Cloud
+
+Saves the identity provider (`idp_metadata_url` or `idp_metadata`; neither keeps the saved one), `label`, `email_attribute`, `name_attribute`, `groups_attribute`, `role_map`, `default_role` and `link_existing`. The metadata is checked at once. A save is a new version and switches single sign-on off until a test passes. 402 without the plan.
+
+### `PUT /sso/state`
+
+**Who:** admin · Stackurity Cloud
+
+Switches single sign-on (`enabled`) and requiring it (`require_sso`) on or off. Switching on needs a passed test of the current version and a verified domain.
+
+### `DELETE /sso`
+
+**Who:** admin · Stackurity Cloud
+
+Removes the organisation's single sign-on.
+
+### `POST /sso/domains`
+
+**Who:** admin · Stackurity Cloud
+
+Claims an email `domain`; the answer has the TXT `record_name` and `record_value` that prove it.
+
+### `POST /sso/domains/{id}/verify`
+
+**Who:** admin · Stackurity Cloud
+
+Looks for the domain's TXT record and marks it verified. 409 when another organisation verified it first.
+
+### `DELETE /sso/domains/{id}`
+
+**Who:** admin · Stackurity Cloud
+
+Removes a domain; sign-ins with its addresses stop.
+
+### `GET /sso/{key}/metadata`
+
+**Who:** anyone · Stackurity Cloud · outside `/api/v1`
+
+The organisation's service provider metadata (`?download=1` as a file).
+
+### `GET /sso/{key}/login`
+
+**Who:** anyone · Stackurity Cloud · outside `/api/v1`
+
+Starts a sign-in through the organisation's identity provider (`return_to` as for `/saml/login`).
+
+### `GET /sso/{key}/test`
+
+**Who:** admin of the organisation, a browser session · Stackurity Cloud · outside `/api/v1`
+
+Starts a test sign-in; the result is shown under Settings → Single sign-on and signs nobody in.
+
+### `POST /sso/{key}/acs`
+
+**Who:** the organisation's identity provider, through the browser (a signed response) · Stackurity Cloud · outside `/api/v1`
+
+The organisation's Assertion Consumer Service. A session it starts is pinned to the organisation.
+
 ### `POST /feedback`
 
 **Who:** any signed-in user (10 an hour)

@@ -57,6 +57,8 @@ export interface Meta {
   signup?: SignupMeta;
   /** True when organisations manage their plan and billing here (a hosted edition). */
   billing?: boolean;
+  /** True when people can find their organisation's single sign-on from their email (a hosted edition). */
+  sso_discovery?: boolean;
 }
 
 export interface SignupMeta {
@@ -409,6 +411,79 @@ export interface Me {
   features: Feature[];
   /** Whether Send feedback is on (STACKURITY_FEEDBACK_URL) for this signed-in user. */
   feedback_enabled?: boolean;
+  /** Set when the session's workspace requires its own single sign-on, which this session did not use; workspace is then null. */
+  sso_required?: SSORequired;
+}
+
+export interface SSORequired {
+  workspace_id: number;
+  workspace_name: string;
+  login_url: string;
+}
+
+/** An organisation's own single sign-on (Stackurity Cloud). */
+export interface OrgSSOConfig {
+  key: string;
+  label: string;
+  idp_metadata_url: string;
+  idp_entity_id: string;
+  email_attribute: string;
+  name_attribute: string;
+  groups_attribute: string;
+  role_map: Record<string, UserRole>;
+  default_role: UserRole | "";
+  link_existing: boolean;
+  version: number;
+  tested_version: number;
+  tested_at: string | null;
+  test_result: OrgSSOTestResult | null;
+  enabled: boolean;
+  require_sso: boolean;
+  updated_at: string;
+}
+
+export interface OrgSSOTestResult {
+  passed: boolean;
+  reason?: string;
+  idp_entity_id: string;
+  subject: string;
+  email: string;
+  name: string;
+  groups: string[];
+  role: UserRole | "";
+  domain_verified: boolean;
+  at: string;
+}
+
+export interface OrgSSODomain {
+  id: number;
+  domain: string;
+  verified_at: string | null;
+  checked_at: string | null;
+  created_at: string;
+  record_name: string;
+  record_value: string;
+}
+
+export interface OrgSSO {
+  available: boolean;
+  plan_message?: string;
+  config: OrgSSOConfig | null;
+  service_provider?: { entity_id: string; acs_url: string; metadata_url: string; login_url: string };
+  domains: OrgSSODomain[];
+  owner_id: number;
+}
+
+export interface OrgSSOChange {
+  label: string;
+  idp_metadata_url: string;
+  idp_metadata: string;
+  email_attribute: string;
+  name_attribute: string;
+  groups_attribute: string;
+  role_map: Record<string, UserRole>;
+  default_role: UserRole | "";
+  link_existing: boolean;
 }
 
 export type Edition = "community" | "pro" | "enterprise";
@@ -2612,6 +2687,14 @@ export const api = {
   del: <T = void>(path: string, body?: unknown) => request<T>("DELETE", path, body),
 
   meta: () => request<Meta>("GET", "/meta"),
+  orgSSO: () => request<OrgSSO>("GET", "/sso"),
+  saveOrgSSO: (b: OrgSSOChange) => request<OrgSSO>("PUT", "/sso", b),
+  setOrgSSOState: (b: { enabled: boolean; require_sso: boolean }) => request<OrgSSO>("PUT", "/sso/state", b),
+  deleteOrgSSO: () => request<void>("DELETE", "/sso"),
+  addOrgSSODomain: (domain: string) => request<OrgSSODomain>("POST", "/sso/domains", { domain }),
+  verifyOrgSSODomain: (id: number) => request<OrgSSODomain>("POST", `/sso/domains/${id}/verify`),
+  deleteOrgSSODomain: (id: number) => request<void>("DELETE", `/sso/domains/${id}`),
+  discoverSSO: (email: string) => request<{ login_url: string; label: string }>("POST", "/auth/sso/discover", { email }, { quiet401: true }),
   me: () => request<Me>("GET", "/auth/me", undefined, { quiet401: true }),
   login: (email: string, password: string) =>
     request<User>("POST", "/auth/login", { email, password }, { quiet401: true }),

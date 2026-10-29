@@ -173,6 +173,9 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	if p.Restricted {
 		out["access"] = "projects"
 	}
+	if p.SSORequired != nil {
+		out["sso_required"] = p.SSORequired
+	}
 	if p.Workspace > 0 {
 		ws, err := s.Store.GetWorkspace(r.Context(), p.Workspace)
 		if err != nil {
