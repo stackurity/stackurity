@@ -17,7 +17,7 @@ import (
 // from, suppressed addresses, and the record of each bulk email (campaign)
 // and who it went to. All of it is platform data (system scope); callers
 // act for one person, found from their session or a signed link. See
-// internal/notify/bulk.go and migration 0056_email_preferences.
+// internal/notify/bulk.go and migration 0057_email_preferences.
 
 // Bulk email categories.
 const (
