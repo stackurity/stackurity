@@ -19,6 +19,8 @@ Every open finding gets a priority from P1 (most urgent) to P4, an SOS flag for 
 | Kernel not running | The finding is on an installed kernel version that is not the one running. Kernel findings are one per CVE per installed kernel version, and none on headers ([compatibility.md](compatibility.md#kernels)), so a CVE in the running kernel is scored once. |
 | Verification | `confirmed`, `needs_validation` (the installed version came from a low-confidence source) or `stale` (the asset has stopped reporting); `rejected` findings are false positives a person ignored. The definitions are in [verification.md, "Evidence states"](verification.md#evidence-states). **A second-check disagreement never lowers priority**: it does not change verification, the score, SOS or alerts; it is shown for a person to review ([verification.md, "Second check"](verification.md#second-check)). |
 
+**VEX statements never change a priority.** An imported `affected`, `fixed` or `under_investigation` statement is shown on the finding and nothing else. A `not_affected` statement hides a finding only once a security or admin user approved it (or a source an admin trusts applied it), as an ignore rule with the reason `false_positive` or `mitigated`, pinned to the component version and image it was about; an ignored finding leaves prioritisation like any other. See [vex.md](vex.md#the-trust-model).
+
 ## Score
 
 The score starts from a base and adds points. Each contribution is stored with the finding as a factor (`priority_factors`) with its points and the evidence behind it, and shown under **Why this priority**.

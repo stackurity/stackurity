@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import {
   api,
+  vexExportURL,
   ASSET_STATUS_HELP,
   ASSET_STATUS_LABEL,
   CRITICALITIES,
@@ -209,6 +210,10 @@ export function AssetDetailPage() {
           </>
         }
         actions={
+          <>
+          <a className="btn" href={vexExportURL("openvex", a.id)} download title="Decisions about this asset's open issues as OpenVEX">
+            Export VEX
+          </a>
           <a
             className="btn"
             href={`/api/v1/assets/${a.id}/sbom`}
@@ -217,6 +222,7 @@ export function AssetDetailPage() {
           >
             Download CycloneDX{me?.workspace?.report_mode === "trial" ? " (trial)" : ""}
           </a>
+          </>
         }
       />
       {a.collection_status === "removed" && (

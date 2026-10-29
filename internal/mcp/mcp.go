@@ -398,7 +398,9 @@ var tools = map[string]tool{
 	},
 	"list_findings": {
 		description: "Open vulnerability and end-of-life findings, most urgent first, with the installed and fixed versions and " +
-			"FIRST's EPSS (epss: the probability, 0 to 1, that the CVE is exploited in the next 30 days).",
+			"FIRST's EPSS (epss: the probability, 0 to 1, that the CVE is exploited in the next 30 days), and vex: the latest " +
+			"imported VEX statement about it (status not_affected, affected, fixed or under_investigation; for not_affected, " +
+			"applied says whether it was approved and ignores the finding).",
 		schema: obj(map[string]any{
 			"asset_id":        num("Limit to one asset"),
 			"severity":        str("Comma-separated: critical, high, medium, low"),
@@ -439,8 +441,9 @@ var tools = map[string]tool{
 		},
 	},
 	"get_finding": {
-		description: "One finding in full: advisory text, evidence, where the component was found, workflow state and history.",
-		schema:      obj(map[string]any{"finding_id": num("The id of a finding, as list_findings and asset_stack return it")}, "finding_id"),
+		description: "One finding in full: advisory text, evidence, where the component was found, workflow state, the latest " +
+			"VEX statement about it (finding.vex) and history.",
+		schema: obj(map[string]any{"finding_id": num("The id of a finding, as list_findings and asset_stack return it")}, "finding_id"),
 		run: func(ctx context.Context, api API, a map[string]any) (any, error) {
 			id, ok := intArg(a["finding_id"])
 			if !ok || id <= 0 {
@@ -721,8 +724,22 @@ type finding struct {
 	Title          string   `json:"title"`
 	KnownExploited bool     `json:"known_exploited"`
 	EPSS           *float32 `json:"epss"`
-	Overdue        bool     `json:"overdue"`
-	FixDue         *string  `json:"fix_due"`
+	// VEX is the latest imported VEX statement about the finding (status,
+	// justification, source, and whether it was approved and applies).
+	VEX     *findingVEX `json:"vex,omitempty"`
+	Overdue bool        `json:"overdue"`
+	FixDue  *string     `json:"fix_due"`
+}
+
+// findingVEX is the part of a finding's VEX statement an assistant needs.
+type findingVEX struct {
+	Status          string `json:"status"`
+	Justification   string `json:"justification,omitempty"`
+	ImpactStatement string `json:"impact_statement,omitempty"`
+	ActionStatement string `json:"action_statement,omitempty"`
+	Source          string `json:"source"`
+	RequestStatus   string `json:"request_status,omitempty"`
+	Applied         bool   `json:"applied"`
 }
 
 // readTools and writeTools are listed in this order (a stable order lets

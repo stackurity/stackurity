@@ -382,7 +382,7 @@ Submits an [ObservationBatch](#observationbatch) (gzip accepted). `?project_id=`
 
 **Who:** collector token, engineer and above
 
-Imports a CycloneDX or SPDX JSON document. Query: `asset_name`, `asset_kind`, `environment`, `project_id` (see [Uploads into a project](#uploads-into-a-project)). A collector token made for a project adds the assets it creates to it.
+Imports a CycloneDX or SPDX JSON document. Query: `asset_name`, `asset_kind`, `environment`, `project_id` (see [Uploads into a project](#uploads-into-a-project)). A collector token made for a project adds the assets it creates to it. VEX embedded in a CycloneDX SBOM is imported for the asset, for approval ([VEX](#vex)): the answer's `vex` is what [`POST /vex/import`](#post-veximport) would answer; with a collector token it is not imported and `vex_note` says so.
 
 ### `GET /collections/{id}/result`
 
@@ -580,7 +580,7 @@ Resolves a conflict by merging assets. The answer lists `projects_joined` and `g
 
 **Who:** viewer
 
-Vulnerability and end-of-life findings, paged; SOS, priority, known-exploited and most severe first (`sort=asset` orders by asset name first). Resolved findings carry `resolution_kind` and `resolution_detail` ([Why a finding closed](#why-a-finding-closed)). Each finding carries FIRST's EPSS for its CVE: `epss` (the probability, 0 to 1, of exploitation in the next 30 days), `epss_percentile`, `epss_date` and `epss_model_version`, all null when the finding has no CVE or the CVE has no score.
+Vulnerability and end-of-life findings, paged; SOS, priority, known-exploited and most severe first (`sort=asset` orders by asset name first). Resolved findings carry `resolution_kind` and `resolution_detail` ([Why a finding closed](#why-a-finding-closed)). Each finding carries FIRST's EPSS for its CVE: `epss` (the probability, 0 to 1, of exploitation in the next 30 days), `epss_percentile`, `epss_date` and `epss_model_version`, all null when the finding has no CVE or the CVE has no score. `vex` is the latest imported [VEX](#vex) statement about the finding's component version and vulnerability (null when none): `statement_id`, `document_id`, `source`, `vulnerability`, `status`, `justification`, `impact_statement`, `action_statement`, `status_notes`, `effective_at`, and for `not_affected` the approval request (`request_id`, `request_status`) and whether it ignores the finding now (`applied`). Declined statements are not shown.
 
 Query:
 
@@ -720,7 +720,7 @@ Asks to ignore issues: `finding_ids` (up to 2,000 open findings) or `fix_group`,
 
 **Who:** viewer
 
-The approval inbox, paged. `status`: `pending` (default), `approved`, `declined` or `all`. Security and admin users see every request, others their own; `can_decide` says which they may decide.
+The approval inbox, paged. `status`: `pending` (default), `approved`, `declined` or `all`. Security and admin users see every request, others their own; `can_decide` says which they may decide. A request a VEX import made has `vex_statement_id` and `vex` (the statement's `source`, `vulnerability`, `justification`, `impact_statement`, the document's `filename`, `sha256`, `signature` and `author`, and the `matches`, `assets` and unmatched `problems`); members with access through project grants only do not see those. `vex_assets` limits a request to some of the statement's matched assets (null: all): a trusted source's statement is split into the part on its attestation's subject, which applied, and the rest.
 
 ### `GET /ignore-requests/{id}`
 
@@ -732,13 +732,13 @@ One request.
 
 **Who:** security
 
-`{"decision": "approve" | "decline", "note": "..."}`. Approval ignores the request's issues that are still open and active, as the decider; 409 when already decided.
+`{"decision": "approve" | "decline", "note": "..."}`. Approval ignores the request's issues that are still open and active, as the decider; 409 when already decided. A VEX request needs an organisation-wide `security` or `admin` role, and its approval makes rules pinned to the matched versions ([VEX](#vex)).
 
 ### `GET /ignore-rules`
 
 **Who:** viewer
 
-[Ignore rules](#ignore-rules) in force (or all with `status=all`), with the open findings each ignores; paged.
+[Ignore rules](#ignore-rules) in force (or all with `status=all`), with the open findings each ignores; paged. A rule made from a VEX statement has `vex_statement_id`, and the component `version` (and image `digest`) it applies to.
 
 ### `DELETE /ignore-rules/{id}`
 
@@ -1215,6 +1215,70 @@ The Slack app's Event Subscriptions URL: `url_verification`, and `app_uninstalle
 **Who:** Slack (a channel's signing secret)
 
 Slack's interactivity Request URL: the form-encoded `payload` with `X-Slack-Request-Timestamp` and `X-Slack-Signature`. 200 once verified (the answer goes to Slack's `response_url`); 401 for a request that cannot be verified, is older than 5 minutes or was already received. See [Acting from Slack](#acting-from-slack).
+
+## VEX
+
+Importing VEX documents and exporting decisions as VEX; see [vex.md](vex.md) for the formats, matching rules and trust model. Sources and documents are organisation-wide: members with access through project grants only get 403, except for `GET /vex/export`.
+
+### `POST /vex/import`
+
+**Who:** engineer and above, organisation-wide (members with access through project grants only, and project-bound tokens, get 403)
+
+The body is the document (OpenVEX, CycloneDX VEX or a CycloneDX BOM with VEX embedded, or a DSSE envelope or Sigstore bundle holding one; gzip accepted; at most 16 MiB). Query: `source_id` (a [source](#get-vexsources)), `asset_id` or `project_id` (match only there), `filename` (recorded). A source with a public key accepts only a signed attestation that verifies with it (400 otherwise). 201 with `document` (as in `GET /vex/documents/{id}`), `statements`, `matched`, `unmatched`, `skipped`, `pending` (not_affected statements now in the approval inbox), `auto_approved` and `ignored` (applied on import, for a source trusted to apply whose every pin held), `ended` (earlier VEX rules a newer affected or under_investigation statement ended), `outside_subject` (a trusted source's not_affected statements left for approval, wholly or in part, because they matched assets its attestation is not about or a bare package anywhere), `auto_apply_refused` (why a trusted source's document did not apply on its own: no timestamp, or older than one already imported from the source) and the first 200 `problems` (`product`, `kind`: `unmatched`, `ambiguous` or `invalid`, and `reason`). Audited as `vex.import`; 402 `read_only` for a read-only organisation.
+
+### `GET /vex/documents`
+
+**Who:** viewer
+
+Imported documents, newest first, paged: `source`, `format`, `doc_id`, `author`, `filename`, `sha256`, `size`, `signature` (`none`, `verified`, `unverified`), `key_fingerprint`, `scope_asset_id`, `scope_project_id`, `auto_applied`, `via` (`vex` or `sbom`), `statements`, `matched`, `pending`, `imported_by`, `imported_at`.
+
+### `GET /vex/documents/{id}`
+
+**Who:** viewer
+
+One document.
+
+### `GET /vex/documents/{id}/statements`
+
+**Who:** viewer
+
+A document's statements, paged: `vulnerability`, `aliases`, `status`, `justification` (OpenVEX), `original_state` and `original_justification` (CycloneDX), `impact_statement`, `action_statement`, `status_notes`, `products` as read, `problems`, `effective_at`, `request_id`, `request_status`, and what it matched (`matches`, `assets`, open `findings`). `outcome`: `matched`, `unmatched` or `pending`.
+
+### `POST /vex/documents/{id}/decision`
+
+**Who:** security (organisation-wide)
+
+`{"decision": "approve" | "decline", "note": "..."}` for every pending request of the document; answers `decided` and `applied`. Each decision is audited like `POST /ignore-requests/{id}/decision`.
+
+### `GET /vex/sources`
+
+**Who:** security
+
+Sources: `name`, `auto_apply`, `token_id` and `token_name`, `key_fingerprint`, `public_key`, `documents`.
+
+### `POST /vex/sources`
+
+**Who:** admin
+
+`{"name": "...", "auto_apply": false, "token_id": 12, "public_key": "-----BEGIN PUBLIC KEY-----..."}`. `auto_apply` needs a `public_key` (ECDSA P-256 or P-384, Ed25519 or RSA, PEM) or a `token_id` of an active token (400 otherwise). Audited as `vex_source.create`.
+
+### `PATCH /vex/sources/{id}`
+
+**Who:** admin
+
+Changes the fields sent; `token_id: 0` and `public_key: ""` remove a pin (refused while `auto_apply` needs it). Audited as `vex_source.update`.
+
+### `DELETE /vex/sources/{id}`
+
+**Who:** admin
+
+Removes a source; its documents keep its name. Audited as `vex_source.delete`.
+
+### `GET /vex/export`
+
+**Who:** viewer, or any grant
+
+Decisions about open issues as a VEX document ([what is exported](vex.md#exporting)). `format`: `openvex` (default) or `cyclonedx`; `notes=true` includes people's ignore notes and mitigations as impact statements (security or admin, else 403); `asset_id` for one asset, `project_id` (or the switcher) for one project, neither for every asset the caller sees. Sent as a download (`Content-Disposition`).
 
 ## Intelligence
 
@@ -1817,7 +1881,7 @@ The dashboard shows seven states. They map onto the stored `status` and `state`,
 - `scope`: `asset` (the default) or `everywhere`: every asset in the workspace with the same component and advisory, including assets and findings found later.
 - `expiry`: `date` (with `until`, at most `exception_max_days` ahead), `until_fix` (until a free fixed version exists, with `exception_max_days` as a backstop; refused when one exists already) or `never` (false positives only).
 
-Each ignore is stored as a rule for one issue (component and advisory) on one asset or everywhere; a new ignore with the same scope replaces the earlier rule. Every minute the rules are applied to new and regressed findings they cover, with an `ignored` event. When a rule's date passes it ends (`ended_reason: expired`) and its findings return to `new`. `DELETE /ignore-rules/{id}` ends a rule by hand.
+Each ignore is stored as a rule for one issue (component and advisory) on one asset or everywhere; a new ignore with the same scope replaces the earlier rule. Every minute the rules are applied to new and regressed findings they cover, with an `ignored` event. When a rule's date passes it ends (`ended_reason: expired`) and its findings return to `new`. `DELETE /ignore-rules/{id}` ends a rule by hand. Rules made from approved VEX statements apply only to the component version (and image digest) they matched, and end by themselves when it is gone (`no_longer_matches`) or a newer statement says the component is affected (`vex_superseded`); see [vex.md](vex.md#when-a-statement-stops-applying).
 
 ### Approval inbox
 

@@ -33,6 +33,11 @@ const GROUPS: { title: string; entries: Entry[] }[] = [
         about: "Requests to ignore issues, and the ignore rules in force for one asset or every asset.",
       },
       {
+        to: "/settings/vex",
+        label: "VEX",
+        about: "Import vendors' VEX statements (approved before they hide anything), trusted sources, and export your decisions as OpenVEX or CycloneDX.",
+      },
+      {
         to: "/settings/automatic-fixes",
         label: "Automatic fixes",
         about: "Policies that let Stackurity apply upgrades for you, with approval and canary hosts.",

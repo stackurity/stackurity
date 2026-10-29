@@ -241,6 +241,9 @@ var routeRules = map[string]routeRule{
 	"GET /api/v1/checks/options":        {class: "list", query: "?asset_id={asset}"},
 	"GET /api/v1/ignore-rules":          {class: "list", query: "?status=all"},
 	"GET /api/v1/ignore-requests":       {class: "list", query: "?status=all"},
+	"GET /api/v1/vex/documents":         {class: "list"},
+	"GET /api/v1/vex/sources":           {class: "list"},
+	"GET /api/v1/vex/export":            {class: "list", query: "?format=cyclonedx"},
 	"GET /api/v1/projects":              {class: "list"},
 	"GET /api/v1/project-suggestions":   {class: "list"},
 	"GET /api/v1/access-grants":         {class: "list", query: "?project_id={project}"},
@@ -289,6 +292,11 @@ var routeRules = map[string]routeRule{
 	"DELETE /api/v1/ignore-rules/{id}":             {class: "object", obj: id("ignorerule")},
 	"GET /api/v1/ignore-requests/{id}":             {class: "object", obj: id("ignorerequest")},
 	"POST /api/v1/ignore-requests/{id}/decision":   {class: "object", obj: id("ignorerequest"), body: func(*tenantFx) any { return map[string]any{"decision": "approve"} }},
+	"GET /api/v1/vex/documents/{id}":               {class: "object", obj: id("vexdoc")},
+	"GET /api/v1/vex/documents/{id}/statements":    {class: "object", obj: id("vexdoc")},
+	"POST /api/v1/vex/documents/{id}/decision":     {class: "object", obj: id("vexdoc"), body: func(*tenantFx) any { return map[string]any{"decision": "approve"} }},
+	"PATCH /api/v1/vex/sources/{id}":               {class: "object", obj: id("vexsource"), body: func(*tenantFx) any { return map[string]any{"name": "hacked"} }},
+	"DELETE /api/v1/vex/sources/{id}":              {class: "object", obj: id("vexsource")},
 	"PATCH /api/v1/users/{id}":                     {class: "object", obj: id("user"), body: func(*tenantFx) any { return map[string]any{"role": "viewer"} }},
 	"DELETE /api/v1/users/{id}":                    {class: "object", obj: id("user")},
 	"PATCH /api/v1/teams/{id}":                     {class: "object", obj: id("team"), body: func(*tenantFx) any { return map[string]any{"name": "hacked"} }},
@@ -324,6 +332,12 @@ var routeRules = map[string]routeRule{
 	"PUT /api/v1/risk-policy": {class: "create", body: func(*tenantFx) any { return map[string]any{} }},
 	"PUT /api/v1/settings/fix-grouping": {class: "create", body: func(*tenantFx) any {
 		return map[string]any{"fix_grouping": "asset"}
+	}},
+	// A VEX document about A's package (and A's asset by id) imported by
+	// B matches nothing of A's.
+	"POST /api/v1/vex/import": {class: "create", query: "?asset_id={asset}", body: func(a *tenantFx) any { return a.vexDoc() }},
+	"POST /api/v1/vex/sources": {class: "create", body: func(a *tenantFx) any {
+		return map[string]any{"name": "sweep-source", "token_id": a.int("collector-token")}
 	}},
 	"POST /api/v1/ignore-requests": {class: "create", body: func(a *tenantFx) any {
 		return map[string]any{"finding_ids": []int64{a.int("finding")}, "reason": "false_positive", "note": "sweep", "scope": "everywhere", "expiry": "never"}
@@ -547,6 +561,19 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 		t.Fatalf("%s ignore rules: %+v", tag, rules)
 	}
 	set("ignorerule", rules.Items[0].ID)
+	// VEX: a source, and a document naming the private package, waiting
+	// for approval.
+	var vsrc store.VEXSource
+	if code := admin.do("POST", "/api/v1/vex/sources", map[string]any{"name": "vendor-" + tag}, &vsrc); code != 201 {
+		t.Fatalf("%s vex source: %d", tag, code)
+	}
+	set("vexsource", vsrc.ID)
+	var vimp store.VEXImportResult
+	if code := admin.do("POST", "/api/v1/vex/import?filename="+tag+".vex.json&source_id="+f.ids["vexsource"], f.vexDoc(), &vimp); code != 201 ||
+		vimp.Matched != 1 || vimp.Pending != 1 {
+		t.Fatalf("%s vex import: %d %+v", tag, code, vimp)
+	}
+	set("vexdoc", vimp.Document.ID)
 
 	var team store.Team
 	if code := admin.do("POST", "/api/v1/teams", map[string]any{"name": "team-" + tag, "members": []int64{me.User.ID}}, &team); code != 201 {
@@ -1020,6 +1047,14 @@ func TestIsolationSweep(t *testing.T) {
 	}
 }
 
+// vexDoc is an OpenVEX document saying the tenant's private package is not
+// affected by the fixture's vulnerability.
+func (f *tenantFx) vexDoc() json.RawMessage {
+	return json.RawMessage(`{"@context":"https://openvex.dev/ns/v0.2.0","@id":"urn:sweep:` + f.tag + `","author":"vendor-` + f.tag + `",
+		"statements":[{"vulnerability":{"name":"CVE-2099-0001"},"products":[{"@id":"pkg:npm/` + f.tag + `-private-lib@1.0.0"}],
+		"status":"not_affected","justification":"vulnerable_code_not_present"}]}`)
+}
+
 // recordDisagreement stores a disagreeing second check for each finding, as
 // the second check would after re-deriving it differently.
 func recordDisagreement(t *testing.T, st *store.Store, ctx context.Context, ids ...int64) {
@@ -1060,7 +1095,7 @@ func (e *env) snapshot(t *testing.T, a *tenantFx) string {
 		"/api/v1/users", "/api/v1/secrets", "/api/v1/tokens", "/api/v1/conflicts", "/api/v1/risk-policy", "/api/v1/collections/{collection}/result",
 		"/api/v1/remediation/policies", "/api/v1/remediation/plans", "/api/v1/workspaces",
 		"/api/v1/checks?asset_id={asset}", "/api/v1/checks/{check}", "/api/v1/ignore-rules?status=all", "/api/v1/ignore-requests?status=all",
-		"/api/v1/second-checks",
+		"/api/v1/second-checks", "/api/v1/vex/documents", "/api/v1/vex/sources", "/api/v1/vex/documents/{vexdoc}/statements",
 		"/api/v1/projects/{project}", "/api/v1/access-grants", "/api/v1/assets?project_id={project}",
 		"/api/v1/invitations", "/api/v1/onboarding", "/api/v1/usage", "/api/v1/slack/links",
 	}, editionSnapshotPaths...) {

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"compress/gzip"
 	"encoding/json"
 	"errors"
@@ -190,7 +191,12 @@ func (s *Server) importSBOM(w http.ResponseWriter, r *http.Request) {
 		asset = &model.AssetRef{Kind: kind, Name: name, Environment: q.Get("environment"),
 			Identifiers: []model.Identifier{{Scheme: "name:" + string(kind), Value: name}}}
 	}
-	b, err := sbom.Import(rd, asset, s.Version)
+	data, err := io.ReadAll(io.LimitReader(rd, sbom.MaxDocumentSize+1))
+	if err != nil {
+		s.fail(w, r, badRequest("could not read the SBOM"))
+		return
+	}
+	b, err := sbom.Import(bytes.NewReader(data), asset, s.Version)
 	if err != nil {
 		s.fail(w, r, badRequest(err.Error()))
 		return
@@ -224,6 +230,11 @@ func (s *Server) importSBOM(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = s.Store.Audit(r.Context(), p.Actor(r), "sbom.import", "asset", itoa(res.AssetID),
 		map[string]any{"collector": b.Collector.ID, "components": len(b.Observations), "project_id": project})
+	// VEX embedded in a CycloneDX SBOM is imported for this asset, for
+	// approval (handlers_vex.go).
+	if b.Collector.ID == "cyclonedx-import" {
+		s.importEmbeddedVEX(r, data, res)
+	}
 	writeJSON(w, 201, res)
 }
 

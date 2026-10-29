@@ -120,6 +120,14 @@ type IngestResult struct {
 	// whether the asset is in it now.
 	ProjectID int64 `json:"project_id"`
 	InProject *bool `json:"in_project"`
+	// VEX is what the server did with the VEX embedded in an uploaded
+	// CycloneDX SBOM, and VEXNote why it did nothing (0.14).
+	VEX *struct {
+		Matched   int `json:"matched"`
+		Unmatched int `json:"unmatched"`
+		Pending   int `json:"pending"`
+	} `json:"vex"`
+	VEXNote string `json:"vex_note"`
 }
 
 // ErrProjectIgnored: an upload asked for a project and the server's answer

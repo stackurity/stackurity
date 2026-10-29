@@ -454,6 +454,9 @@ func (s *Server) decideIgnoreRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	if cur.VEXStatementID != nil && !s.decidesVEX(w, r) {
+		return
+	}
 	if !principal(r).Role.AtLeast(auth.RoleSecurity) {
 		assets, err := s.Store.FindingAssets(ctx, cur.FindingIDs)
 		if err != nil {
@@ -480,8 +483,12 @@ func (s *Server) decideIgnoreRequest(w http.ResponseWriter, r *http.Request) {
 		s.failAction(w, r, err)
 		return
 	}
-	_ = s.Store.Audit(r.Context(), actor, "ignore_request."+b.Decision, "ignore_request", itoa(id),
-		map[string]any{"note": b.Note, "applied": req.Applied, "requested_by": req.RequestedByName})
+	if req.VEXStatementID != nil {
+		s.auditVEXDecision(r, actor, b.Decision, req, b.Note)
+	} else {
+		_ = s.Store.Audit(r.Context(), actor, "ignore_request."+b.Decision, "ignore_request", itoa(id),
+			map[string]any{"note": b.Note, "applied": req.Applied, "requested_by": req.RequestedByName})
+	}
 	writeJSON(w, 200, req)
 }
 

@@ -1,0 +1,9 @@
+Real-world VEX samples used as test fixtures (Apache-2.0):
+
+openvex-*.json   github.com/openvex/vexctl (examples/ and pkg/ctl/testdata/)
+cdx-*.json       github.com/CycloneDX/bom-examples (VEX/)
+cdx-bom-embedded.json  cdx-bom.json with the vulnerability of cdx-vex-bomlink.json
+                 embedded, its reference rewritten to the local bom-ref
+cosign-openvex.bundle.json  openvex-nginx-history.json attested with
+                 `cosign attest-blob --type openvex` (cosign 3, key-based, no
+                 transparency log); cosign.pub is its public key
