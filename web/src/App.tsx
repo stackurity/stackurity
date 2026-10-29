@@ -13,6 +13,7 @@ import { AccountPage } from "./pages/Account";
 import { SlackOAuthCallbackPage } from "./pages/SlackOAuthCallback";
 import { SlackInstallPage } from "./pages/SlackInstall";
 import { EmailConfirmPage, EmailStopPage } from "./pages/EmailConfirm";
+import { EmailPreferencesPage } from "./pages/EmailPreferences";
 import { AssistantsPage, ConnectAssistantPage } from "./pages/Assistants";
 import { OnboardingPage } from "./pages/Onboarding";
 import { SignupPage, VerifySignupPage } from "./pages/Signup";
@@ -145,6 +146,9 @@ export function App() {
   // Stopping email sent by Stackurity, signed in or not.
   if (pathname === "/email/unsubscribe" && (state.phase === "login" || state.phase === "ready")) return <EmailStopPage kind="unsubscribe" />;
   if (pathname === "/email/block" && (state.phase === "login" || state.phase === "ready")) return <EmailStopPage kind="block" />;
+  // Product update and vulnerability news preferences, from a signed link
+  // in those emails, signed in or not.
+  if (pathname === "/email/preferences" && (state.phase === "login" || state.phase === "ready")) return <EmailPreferencesPage />;
 
   // Forgotten passwords: ask for a link, and the link it emails.
   if (pathname === "/forgot-password" && state.phase === "login") return <ForgotPasswordPage />;

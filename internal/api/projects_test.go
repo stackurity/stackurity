@@ -64,6 +64,9 @@ var projectScopes = map[string]string{
 	"POST /api/v1/email/unsubscribe":          "public",
 	"POST /email/unsubscribe/one-click":       "public",
 	"POST /email/block/one-click":             "public",
+	"POST /api/v1/email/preferences":          "public",
+	"POST /api/v1/email/preferences/update":   "public",
+	"POST /email/preferences/one-click":       "public",
 	"GET /integrations/slack/install":         "public",
 	"POST /api/v1/integrations/slack/install": "org",
 	"POST /api/v1/integrations/slack/oauth":   "org",
@@ -86,6 +89,8 @@ var projectScopes = map[string]string{
 
 	"GET /api/v1/auth/me":                   "account",
 	"POST /api/v1/auth/password":            "account",
+	"GET /api/v1/auth/email-preferences":    "account",
+	"PUT /api/v1/auth/email-preferences":    "account",
 	"PUT /api/v1/auth/default-project":      "account",
 	"POST /api/v1/feedback":                 "account",
 	"GET /api/v1/workspaces":                "account",

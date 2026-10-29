@@ -4194,6 +4194,17 @@ h6.md-h {
   margin-top: 3px;
   flex: none;
 }
+.email-prefs li {
+  margin: var(--s2) 0;
+}
+.email-prefs .hint {
+  display: block;
+  margin: 2px 0 0;
+}
+.email-prefs-locked-title {
+  font-size: 15px;
+  margin: var(--s4) 0 var(--s1);
+}
 .challenge {
   min-height: 65px;
   max-width: 100%;

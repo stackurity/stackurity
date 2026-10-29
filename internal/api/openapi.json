@@ -9212,6 +9212,152 @@
      }
     }
    }
+  },
+  "/auth/email-preferences": {
+   "get": {
+    "operationId": "get_auth_email_preferences",
+    "summary": "Your bulk email preferences (hosted installations)",
+    "description": "Your choices for bulk email: `categories` (`marketing`, `vulnerability_news`) with `subscribed`, `source` and `changed_at` of the last change, `label` and `description`; and `locked`, the email that cannot be turned off here. 404 on servers that send no bulk email (`email_preferences` in `GET /meta`)\n\nRole: any signed-in user",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "put": {
+    "operationId": "put_auth_email_preferences",
+    "summary": "Change your bulk email preferences",
+    "description": "`{\"marketing\": false}`, `{\"vulnerability_news\": true}` or both: changes your choices at once and answers as `GET`. Subscribing again lifts a suppression of your address for that category\n\nRole: any signed-in user",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/email/preferences": {
+   "post": {
+    "operationId": "post_email_preferences",
+    "summary": "Open the bulk email preference page from a signed link",
+    "description": "`{\"token\"}` from a bulk email's link (`/email/preferences#...`). Changes nothing. Answers `kind` (`preferences` or `unsubscribe`), `email` (partly hidden), `categories` and `locked`; an unsubscribe link answers its `category` only. 410 `link_expired` or `link_invalid`\n\nRole: none (rate limited)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "none (rate limited)",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/email/preferences/update": {
+   "post": {
+    "operationId": "post_email_preferences_update",
+    "summary": "Change bulk email preferences from a signed link",
+    "description": "`{\"token\", \"marketing\"?, \"vulnerability_news\"?}`. An unsubscribe link can only set its own category to `false` (403 otherwise); an Email preferences link can change both. Mail clients use the one-click address in the `List-Unsubscribe` header (RFC 8058), `POST /email/preferences/one-click?t=...`, outside /api/v1\n\nRole: none (rate limited)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "none (rate limited)",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
   }
  },
  "components": {

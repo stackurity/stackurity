@@ -29,6 +29,9 @@ func (s *Server) meta(w http.ResponseWriter, r *http.Request) {
 	if sso := s.ssoMeta(r); sso != nil {
 		meta["sso"] = sso
 	}
+	if s.EmailPreferences {
+		meta["email_preferences"] = true
+	}
 	if editionMeta != nil {
 		editionMeta(s, r, meta)
 	}

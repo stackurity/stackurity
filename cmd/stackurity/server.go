@@ -361,6 +361,14 @@ func serverCmd() *cobra.Command {
 	}
 }
 
+// editionAdminCommands are an edition's own "stackurity admin" commands.
+// Their documentation is the edition's: annotate each with
+// docsElsewhere so TestCLIDocumented does not look for it here.
+var editionAdminCommands []func() *cobra.Command
+
+// docsElsewhere marks a command documented outside this repository.
+const docsElsewhere = "stackurity.dev/docs-elsewhere"
+
 // editionNotify lets an edition built on the core configure notifications
 // further (Stackurity Cloud sets the platform mail server for email sent by
 // Stackurity, and its limits). Nil in the Community build.
@@ -983,7 +991,42 @@ func adminCmd() *cobra.Command {
 		},
 	}
 
-	c.AddCommand(createUser, createToken, loadDemo, createWorkspace, listWorkspaces, renameWorkspace, setLicence, verifyAudit)
+	var suppressEmail, suppressCategory string
+	emailSuppress := &cobra.Command{
+		Use:   "email-suppress",
+		Short: "Unsubscribe an address from bulk email (product updates, vulnerability news) on its owner's request",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cats := []string{suppressCategory}
+			if suppressCategory == "all" {
+				cats = store.EmailCategories
+			}
+			st, err := openStore(cmd.Context())
+			if err != nil {
+				return err
+			}
+			defer st.Pool.Close()
+			account, err := st.SuppressEmail(cmd.Context(), suppressEmail, cats, store.EmailSourceSupport)
+			if err != nil {
+				return err
+			}
+			_ = st.Audit(tenant.System(cmd.Context()), store.Actor{Type: "system", Name: "cli"}, "email.suppressed", "email", "",
+				map[string]any{"categories": cats, "source": store.EmailSourceSupport, "account": account})
+			who := "no account has this address; it is suppressed for when one does"
+			if account {
+				who = "the account with this address is unsubscribed"
+			}
+			fmt.Printf("suppressed %v: %s\n", cats, who)
+			return nil
+		},
+	}
+	emailSuppress.Flags().StringVar(&suppressEmail, "email", "", "the address (required)")
+	emailSuppress.Flags().StringVar(&suppressCategory, "category", "all", "marketing, vulnerability_news or all")
+	_ = emailSuppress.MarkFlagRequired("email")
+
+	c.AddCommand(createUser, createToken, loadDemo, createWorkspace, listWorkspaces, renameWorkspace, setLicence, verifyAudit, emailSuppress)
+	for _, f := range editionAdminCommands {
+		c.AddCommand(f())
+	}
 	return c
 }
 
