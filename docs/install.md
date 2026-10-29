@@ -260,7 +260,7 @@ Accounts are found like OpenID Connect ones: by the provider and the name ID wit
 
 #### Your organisation's own single sign-on (Stackurity Cloud)
 
-On Stackurity Cloud the settings above are not used. Instead each organisation connects its own SAML identity provider under **Settings → Single sign-on** (admins; on a plan that includes it, Enterprise). Everything is per organisation: its provider and certificates, its sign-in addresses, its used assertions and its links to accounts.
+On Stackurity Cloud the settings above are not used. Instead each organisation connects its own SAML identity provider under **Settings → Single sign-on** (admins; on a plan that includes it). Everything is per organisation: its provider and certificates, its sign-in addresses, its used assertions and its links to accounts.
 
 1. **Your identity provider.** Give the metadata URL (`https://` only; fetched from the public internet) or upload the metadata file, and optionally the attribute names, groups that grant each role, the role for people in no listed group, and whether existing members may be linked by email. Save, then give your provider the **Entity ID** and **ACS URL** shown (each organisation has its own), or its service provider metadata URL. The steps for Okta, Microsoft Entra ID and Google Workspace below apply, with these addresses.
 2. **Email domains.** Add each domain your people's addresses use and publish the TXT record shown (`_stackurity-verification.<domain>` with the value `stackurity-domain-verification=…`) at your DNS provider, then **Check**. Single sign-on works only for addresses in verified domains, and a domain can be verified by one organisation only, so no other organisation can claim yours.
