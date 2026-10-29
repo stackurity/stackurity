@@ -270,7 +270,18 @@ func (s *Server) oneClickEmailPreferences(w http.ResponseWriter, r *http.Request
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 4096)
-	_ = r.ParseForm()
+	// RFC 8058: the mail client posts List-Unsubscribe=One-Click, as a
+	// URL-encoded or multipart form. Anything else (a prefetch, a stray
+	// POST) changes nothing.
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+		_ = r.ParseMultipartForm(4096)
+	} else {
+		_ = r.ParseForm()
+	}
+	if r.PostFormValue("List-Unsubscribe") != "One-Click" {
+		writeError(w, 400, "one_click_required", "a one-click unsubscribe posts List-Unsubscribe=One-Click (RFC 8058)")
+		return
+	}
 	c, u, ok := s.prefsLink(w, r, r.URL.Query().Get("t"))
 	if !ok {
 		return

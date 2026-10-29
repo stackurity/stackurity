@@ -1,8 +1,10 @@
 package api_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"mime/multipart"
 	"net/url"
 	"strings"
 	"testing"
@@ -211,6 +213,46 @@ func TestEmailPreferenceLinks(t *testing.T) {
 	// Again: the same answer.
 	if code, _ := oneClick(anon, unsub(other, store.CategoryVulnerabilityNews), ""); code != 200 {
 		t.Errorf("one-click again: %d", code)
+	}
+	// Without the RFC 8058 body (List-Unsubscribe=One-Click) nothing
+	// changes: 400, whatever the token.
+	if _, err := e.st.SetEmailPreference(ctx, me, store.CategoryVulnerabilityNews, true, store.EmailSourceSettings); err != nil {
+		t.Fatal(err)
+	}
+	vuln := unsub(me, store.CategoryVulnerabilityNews)
+	for name, body := range map[string]struct{ body, ctype string }{
+		"empty":       {"", "application/x-www-form-urlencoded"},
+		"wrong value": {"List-Unsubscribe=Yes", "application/x-www-form-urlencoded"},
+		"json":        {`{"List-Unsubscribe":"One-Click"}`, "application/json"},
+		"in query":    {"", "application/x-www-form-urlencoded"},
+	} {
+		path := "/email/preferences/one-click?t=" + url.QueryEscape(vuln)
+		if name == "in query" {
+			path += "&List-Unsubscribe=One-Click"
+		}
+		resp := anon.req("POST", path, strings.NewReader(body.body), map[string]string{"Content-Type": body.ctype})
+		var a prefsAnswer
+		_ = json.NewDecoder(resp.Body).Decode(&a)
+		resp.Body.Close()
+		if resp.StatusCode != 400 || a.Error.Code != "one_click_required" {
+			t.Errorf("%s: %d %q", name, resp.StatusCode, a.Error.Code)
+		}
+	}
+	if sub, _ := prefs(me).subscribed(store.CategoryVulnerabilityNews); !sub {
+		t.Fatal("a one-click without its body unsubscribed")
+	}
+	// A multipart form is accepted too (RFC 8058 allows both).
+	var mp bytes.Buffer
+	mw := multipart.NewWriter(&mp)
+	_ = mw.WriteField("List-Unsubscribe", "One-Click")
+	_ = mw.Close()
+	mresp := anon.req("POST", "/email/preferences/one-click?t="+url.QueryEscape(vuln), &mp, map[string]string{"Content-Type": mw.FormDataContentType()})
+	mresp.Body.Close()
+	if mresp.StatusCode != 200 {
+		t.Errorf("multipart one-click: %d", mresp.StatusCode)
+	}
+	if sub, src := prefs(me).subscribed(store.CategoryVulnerabilityNews); sub || src != "header" {
+		t.Errorf("after multipart one-click: %v %q", sub, src)
 	}
 	// A preference-page token cannot be used for one-click.
 	if code, _ := oneClick(anon, centre, ""); code != 410 {

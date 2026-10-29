@@ -1113,7 +1113,7 @@ One-click "never email me again" with the token as `?t=`. Same effect and answer
 
 **Who:** anyone (rate limited) · outside `/api/v1` · as above
 
-One-click unsubscribe (RFC 8058) from a bulk email's `List-Unsubscribe` header, with an unsubscribe link's token as `?t=`: that category is turned off for that person (`source` `header`). Answers 200 `{"status": "unsubscribed", "category"}`, also when it was already off, and never redirects. A `GET` changes nothing. Same 410 answers; an Email preferences token is `link_invalid` here.
+One-click unsubscribe (RFC 8058) from a bulk email's `List-Unsubscribe` header, with an unsubscribe link's token as `?t=`: that category is turned off for that person (`source` `header`). Answers 200 `{"status": "unsubscribed", "category"}`, also when it was already off, and never redirects. The body must be the form field `List-Unsubscribe=One-Click` (URL-encoded or multipart), else 400 `one_click_required` and nothing changes. A `GET` changes nothing. Same 410 answers; an Email preferences token is `link_invalid` here.
 
 ## Integrations
 
