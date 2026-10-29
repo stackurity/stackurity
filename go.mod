@@ -27,8 +27,10 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/crypto v0.58.0
 	golang.org/x/mod v0.42.0
+	golang.org/x/net v0.62.0
 	golang.org/x/oauth2 v0.37.0
 	golang.org/x/sys v0.49.0
+	rsc.io/qr v0.2.0
 )
 
 require (
@@ -52,5 +54,4 @@ require (
 	github.com/mattermost/xml-roundtrip-validator v0.1.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
-	rsc.io/qr v0.2.0 // indirect
 )

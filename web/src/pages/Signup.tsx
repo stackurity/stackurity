@@ -127,6 +127,11 @@ export function SignupPage({ signup }: { signup: SignupMeta }) {
     else setResetKey((k) => k + 1);
   };
 
+  // A refused email domain (a disposable service, or one that takes no
+  // mail) is shown at the email field, with a way to reach us.
+  const emailRefused = act.error?.code === "email_not_accepted" ? act.error : null;
+  const contact = safeLink(signup.contact_url ?? emailRefused?.details[0]);
+
   if (sentTo) {
     return (
       <div className="center-screen">
@@ -158,7 +163,7 @@ export function SignupPage({ signup }: { signup: SignupMeta }) {
             : "Create your organisation."}{" "}
           You can invite your team and add servers, repositories and images right after.
         </p>
-        <ErrorBox error={act.error} title="Sign-up failed" />
+        {!emailRefused && <ErrorBox error={act.error} title="Sign-up failed" />}
         {localErr && (
           <div className="alert alert-error" role="alert">
             {localErr}
@@ -166,7 +171,30 @@ export function SignupPage({ signup }: { signup: SignupMeta }) {
         )}
         <div className="field">
           <label htmlFor="su-email">Work email</label>
-          <input id="su-email" type="email" required autoComplete="email" value={f.email} onChange={set("email")} autoFocus />
+          <input
+            id="su-email"
+            type="email"
+            required
+            autoComplete="email"
+            value={f.email}
+            onChange={set("email")}
+            autoFocus
+            aria-invalid={emailRefused ? true : undefined}
+            aria-describedby={emailRefused ? "su-email-error" : undefined}
+          />
+          {emailRefused && (
+            <p className="hint hint-error" id="su-email-error" role="alert">
+              {emailRefused.message}
+              {contact && (
+                <>
+                  {" "}
+                  <a href={contact} target="_blank" rel="noopener noreferrer">
+                    Contact us
+                  </a>
+                </>
+              )}
+            </p>
+          )}
         </div>
         <div className="field">
           <label htmlFor="su-name">Your name</label>
@@ -283,4 +311,9 @@ export function VerifySignupPage() {
       </div>
     </div>
   );
+}
+
+/** A link from the server, kept only when it is https: or mailto:. */
+function safeLink(u: string | undefined): string | undefined {
+  return u && /^(https:|mailto:)/i.test(u) ? u : undefined;
 }
