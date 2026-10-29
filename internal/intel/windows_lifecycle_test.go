@@ -101,6 +101,7 @@ func TestWindowsLifecycle(t *testing.T) {
 	if _, err := sy.Sync(ctx, FeedEndOfLife); err != nil {
 		t.Fatal(err)
 	}
+	syncWindowsUpdates(t, ctx, st, sy, up)
 	now := time.Date(2026, 10, 28, 0, 0, 0, 0, time.UTC)
 	ev.Now = func() time.Time { return now }
 	if _, err := ev.Evaluate(ctx, nil, 0); err != nil {
@@ -165,7 +166,8 @@ func TestWindowsLifecycle(t *testing.T) {
 		t.Errorf("a mapped Windows Server release must be evaluated, got %s", c)
 	}
 	// An unknown build is a coverage gap, never supported.
-	if c, reason := coverage(unknown, "windows"); c != store.CoverageNotEvaluated || !strings.Contains(reason, "build 27000 is not a known release") {
+	if c, reason := coverage(unknown, "windows"); c != store.CoverageNotEvaluated ||
+		reason != "end of life and missing updates not evaluated: Windows Server build 27000 is not a known release" {
 		t.Errorf("unknown build coverage = %s %q", c, reason)
 	}
 	gaps, _, err := st.ListEvaluationGaps(ctx, store.Page{})
@@ -178,8 +180,13 @@ func TestWindowsLifecycle(t *testing.T) {
 			winGaps = append(winGaps, g.Reason)
 		}
 	}
-	if len(winGaps) != 1 {
-		t.Errorf("Windows gaps = %q, want the unknown build only", winGaps)
+	// Besides the unknown build: 2012 R2 (paid updates) and the 1809
+	// semi-annual channel release (no updates since it ended) have no
+	// missing-update check; their end of life is known.
+	joined := strings.Join(winGaps, "\n")
+	if len(winGaps) != 3 || !strings.Contains(joined, "Windows Server 2012 R2: missing updates are not evaluated") ||
+		!strings.Contains(joined, "1809-sac, semi-annual channel") || !strings.Contains(joined, "build 27000") {
+		t.Errorf("Windows gaps = %q", winGaps)
 	}
 
 	// The finding on 2012 R2 names the release and how it was matched.
@@ -233,7 +240,7 @@ func TestWindowsLifecycle(t *testing.T) {
 	if _, err := planner.Rebuild(ctx, st, now); err != nil {
 		t.Fatal(err)
 	}
-	raw, _, err := st.ListFixGroups(ctx, store.FixGroupFilter{AssetID: ws2016})
+	raw, _, err := st.ListFixGroups(ctx, store.FixGroupFilter{AssetID: ws2016, Kind: fixplan.ReleaseUpgrade})
 	if err != nil || len(raw) != 1 {
 		t.Fatalf("2016 groups = %d %v", len(raw), err)
 	}

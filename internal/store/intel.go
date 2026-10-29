@@ -103,9 +103,17 @@ func (s *Store) FeedResult(ctx context.Context, name, cursor string, changed int
 	_, err := s.Pool.Exec(ctx, `UPDATE feeds SET last_success = now(), last_error = '', cursor = $2, last_changed = $3,
 		records = CASE
 		  WHEN name LIKE 'osv:%' THEN (SELECT count(*) FROM advisories WHERE feed = $1)
+		  WHEN name LIKE 'msrc:%' THEN (SELECT count(*) FROM advisories WHERE feed = $1 AND withdrawn IS NULL)
 		  WHEN name LIKE 'releases:%' THEN (SELECT count(*) FROM package_releases WHERE source = $1 AND last_error = '')
 		  ELSE records END
 		WHERE name = $1`, name, cursor, changed)
+	return err
+}
+
+// FeedWarning records a problem a successful sync worked around as the
+// feed's last error, after FeedResult has recorded the success.
+func (s *Store) FeedWarning(ctx context.Context, name, msg string) error {
+	_, err := s.Pool.Exec(ctx, `UPDATE feeds SET last_error = $2 WHERE name = $1`, name, truncateText("warning: "+msg, 2000))
 	return err
 }
 

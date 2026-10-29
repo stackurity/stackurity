@@ -93,6 +93,7 @@ func setup(t *testing.T) (*store.Store, *Syncer, *Evaluator, *upstream) {
 	cfg.OSVBaseURL, cfg.KEVURL, cfg.EndOfLifeURL = srv.URL+"/osv", srv.URL+"/kev.json", srv.URL+"/eol.json"
 	cfg.NpmRegistry, cfg.PackagistURL = srv.URL+"/npm", srv.URL+"/packagist"
 	cfg.AmazonLinuxURL = srv.URL + "/al"
+	cfg.MSRCURL = srv.URL + "/msrc"
 	cfg.EPSSURL = srv.URL + "/epss_scores-current.csv.gz"
 	cfg.WorkDir = t.TempDir()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))

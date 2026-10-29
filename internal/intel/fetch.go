@@ -30,6 +30,8 @@ type Config struct {
 	MavenURL         string // https://repo1.maven.org/maven2
 	PubURL           string // https://pub.dev
 	HexURL           string // https://hex.pm
+	MSRCURL          string // https://api.msrc.microsoft.com/cvrf/v3.0 (Security Update Guide)
+	MSRCMonths       int    // months of Security Update Guide documents read (DefaultMSRCMonths)
 	WorkDir          string // temp space for bulk downloads
 	UserAgent        string
 	IncrementalLimit int // above this many changed records, re-download the full archive
@@ -54,6 +56,8 @@ func DefaultConfig() Config {
 		MavenURL:         "https://repo1.maven.org/maven2",
 		PubURL:           "https://pub.dev",
 		HexURL:           "https://hex.pm",
+		MSRCURL:          "https://api.msrc.microsoft.com/cvrf/v3.0",
+		MSRCMonths:       DefaultMSRCMonths,
 		WorkDir:          os.TempDir(),
 		UserAgent:        "stackurity",
 		IncrementalLimit: 5000,

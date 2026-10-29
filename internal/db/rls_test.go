@@ -31,6 +31,7 @@ var globalTables = map[string]string{
 	"saml_requests":      "sign-in flow state, read before a session exists; queries filter by workspace_id themselves",
 	"schema_migrations":  "migration bookkeeping",
 	"users":              "accounts are global; roles live in workspace_members",
+	"windows_updates":    "public intelligence: Windows updates and their builds (migration 0058)",
 	"workspaces":         "the workspaces themselves",
 	"sessions":           "looked up before the workspace is known; carries the active workspace",
 	"workspace_members":  "memberships span workspaces; read by user id",

@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/stackurity/stackurity/internal/version"
 )
@@ -16,6 +17,7 @@ import (
 // Kinds of action, roughly from cheapest to most involved.
 const (
 	SecurityUpdates = "security_updates" // OS packages with a fix in this release
+	WindowsUpdate   = "windows_update"   // a Windows host's latest cumulative update (one KB)
 	OldKernels      = "old_kernels"      // installed kernels that are not running
 	PackageUpgrade  = "package_upgrade"  // one application dependency
 	EndOfLife       = "end_of_life"      // non-OS software past end of life
@@ -50,6 +52,12 @@ type Row struct {
 	Subscription   string // that channel: "Ubuntu Pro", "SUSE LTSS"
 	IsOS           bool   // the operating system component itself
 	EOLTitle       string // finding title for end_of_life findings
+	// Windows updates (evidence of msrc:Windows findings): the update that
+	// brings the fixed build ("KB5066782"), its release date, and the month
+	// of the oldest update read when the host's build is older than that.
+	KB            string
+	KBReleased    string
+	OlderThanData string
 }
 
 type Group struct {
@@ -102,6 +110,7 @@ type Group struct {
 	fromVersions map[string]bool   `json:"-"`
 	extra        map[string]string `json:"-"`
 	keys         map[string]bool   `json:"-"`
+	kbs          map[string]bool   `json:"-"` // Windows updates the findings were first fixed in
 }
 
 // Advice gives the newest supported release of an OS, for release-upgrade
@@ -133,6 +142,12 @@ func manager(osID, osVersion string) (update, autoremove string) {
 
 func isOSPackage(t string) bool { return t == "deb" || t == "rpm" || t == "apk" }
 
+// windowsFix reports whether a row is a Windows update finding with a free
+// fix: the operating system row itself, with a fixed build.
+func windowsFix(r Row) bool {
+	return r.IsOS && r.Kind == "vulnerability" && r.FixedVersion != "" && !r.RequiresPro
+}
+
 // Build assigns every row to exactly one group and returns the groups
 // (sorted by urgency) and the finding → group mapping.
 func Build(rows []Row, advice map[string]Advice) ([]*Group, map[int64]string) {
@@ -142,6 +157,19 @@ func Build(rows []Row, advice map[string]Advice) ([]*Group, map[int64]string) {
 	for _, r := range rows {
 		if r.Kind == "end_of_life" && r.IsOS {
 			osEOL[r.AssetID] = r
+		}
+	}
+	// A Windows host's cumulative updates contain every earlier fix, so
+	// its findings with a free fix are one action: the newest update among
+	// them (the highest fixed build), whichever update fixed each first.
+	winLatest := map[int64]Row{}
+	for _, r := range rows {
+		if !windowsFix(r) {
+			continue
+		}
+		cur, ok := winLatest[r.AssetID]
+		if c, err := version.CompareGeneric(r.FixedVersion, cur.FixedVersion); !ok || (err == nil && c > 0) {
+			winLatest[r.AssetID] = r
 		}
 	}
 	groups := map[string]*Group{}
@@ -169,11 +197,31 @@ func Build(rows []Row, advice map[string]Advice) ([]*Group, map[int64]string) {
 		case r.Kind == "end_of_life":
 			g = get(r, EndOfLife, fmt.Sprint(r.ComponentID))
 			g.Component, g.FromVersion, g.extra["title"] = r.Component, r.Version, r.EOLTitle
+		case windowsFix(r):
+			latest := winLatest[r.AssetID]
+			key := latest.KB
+			if key == "" {
+				key = latest.FixedVersion
+			}
+			g = get(r, WindowsUpdate, key)
+			g.Component, g.ToVersion = r.Component, latest.FixedVersion
+			g.fromVersions[r.Version] = true
+			g.extra["kb"], g.extra["kbdate"] = latest.KB, latest.KBReleased
+			if r.OlderThanData != "" {
+				g.extra["older"] = r.OlderThanData
+			}
+			if r.KB != "" {
+				if g.kbs == nil {
+					g.kbs = map[string]bool{}
+				}
+				g.kbs[r.KB] = true
+			}
 		case isOSPackage(r.PurlType) && r.KernelIdle:
 			g = get(r, OldKernels, "")
 		case isOSPackage(r.PurlType) && r.FixedVersion != "" && !r.RequiresPro:
 			g = get(r, SecurityUpdates, "")
-		case isOSPackage(r.PurlType):
+		case isOSPackage(r.PurlType) || (r.IsOS && r.Kind == "vulnerability"):
+			// For Windows: a fix only in paid Extended Security Updates.
 			if _, eol := osEOL[r.AssetID]; eol {
 				g = get(r, ReleaseUpgrade, "")
 			} else {
@@ -235,7 +283,7 @@ func Build(rows []Row, advice map[string]Advice) ([]*Group, map[int64]string) {
 	return out, assign
 }
 
-var kindRank = map[string]int{ReleaseUpgrade: 0, SecurityUpdates: 1, PackageUpgrade: 2, EndOfLife: 3, NoFix: 4, OldKernels: 5}
+var kindRank = map[string]int{ReleaseUpgrade: 0, SecurityUpdates: 1, WindowsUpdate: 1, PackageUpgrade: 2, EndOfLife: 3, NoFix: 4, OldKernels: 5}
 
 func less(a, b *Group) bool {
 	if a.SOS != b.SOS {
@@ -279,6 +327,8 @@ func describe(g *Group, osEOL map[int64]Row, advice map[string]Advice) {
 		g.Action = update
 		g.Effort = "low"
 		g.Note = fmt.Sprintf("%s across %s are fixed by updates already published for %s.", issues, plural(g.PackageCount, "package"), osLabel)
+	case WindowsUpdate:
+		describeWindowsUpdate(g, osLabel)
 	case OldKernels:
 		g.Title = "Remove kernels that are no longer running"
 		g.Action = autoremove
@@ -347,6 +397,48 @@ func describe(g *Group, osEOL map[int64]Row, advice map[string]Advice) {
 			g.Action = "Install updates when " + osLabel + " publishes free fixes; meanwhile consider mitigations or replacing the affected packages. " +
 				"Fixed in " + paidLabel(ch) + "; without it, wait for the free fix or upgrade to a newer supported release."
 		}
+	}
+}
+
+// describeWindowsUpdate words a Windows update group: install the newest
+// cumulative update among the findings, which fixes all of them.
+func describeWindowsUpdate(g *Group, osLabel string) {
+	kb, build := g.extra["kb"], g.ToVersion
+	g.FromVersion = strings.Join(sortedKeys(g.fromVersions), ", ")
+	g.TargetVersion = build
+	subject, details := kb, []string{"build " + build}
+	g.Title = "Install Windows update " + kb
+	if kb == "" {
+		subject, details = "the cumulative update for build "+build, nil
+		g.Title = "Install " + subject
+	}
+	if d, err := time.Parse("2006-01-02", g.extra["kbdate"]); err == nil {
+		details = append(details, "the "+d.Format("January 2006")+" update")
+	}
+	g.Action = "Install " + subject
+	if len(details) > 0 {
+		g.Action += " (" + strings.Join(details, ", ") + ")"
+	}
+	g.Action += " through Windows Update, WSUS or the Microsoft Update Catalog, then restart. " +
+		"It is cumulative, so it fixes these issues whichever update first fixed them; any later cumulative update does too."
+	g.Effort = "low"
+	g.FixKey = fmt.Sprintf("%s:%s>%s", WindowsUpdate, kb, build)
+	kbs := sortedKeys(g.kbs)
+	verb := "are"
+	if g.FindingCount == 1 {
+		verb = "is"
+	}
+	g.Note = fmt.Sprintf("%s on %s %s fixed by this update", plural(g.FindingCount, "finding"), osLabel, verb)
+	if len(kbs) > 1 {
+		g.Note += fmt.Sprintf(" (first fixed in %s: %s)", plural(len(kbs), "update"), strings.Join(kbs, ", "))
+	}
+	g.Note += "."
+	if m := g.extra["older"]; m != "" {
+		if t, err := time.Parse("2006-01", m); err == nil {
+			m = t.Format("January 2006")
+		}
+		g.Note += " The installed build is older than the oldest update Stackurity reads (" + m +
+			"), so this update fixes more issues than are listed here."
 	}
 }
 

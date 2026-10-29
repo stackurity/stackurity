@@ -22,7 +22,8 @@ func (s *Store) FixPlanRows(ctx context.Context) ([]fixplan.Row, error) {
 		COALESCE((f.evidence->>'not_running_kernel')::boolean, false),
 		COALESCE(f.evidence->>'requires_subscription',
 		  CASE WHEN (f.evidence->>'requires_ubuntu_pro')::boolean THEN 'Ubuntu Pro' ELSE '' END),
-		COALESCE(i.evidence->>'kind', '') = 'operating-system', f.title
+		COALESCE(i.evidence->>'kind', '') = 'operating-system', f.title,
+		COALESCE(f.evidence->>'kb', ''), COALESCE(f.evidence->>'update_released', ''), COALESCE(f.evidence->>'older_than_data', '')
 		FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
 		JOIN components c ON c.id = f.component_id JOIN inventory i ON i.id = f.inventory_id
 		WHERE f.status = 'open' AND f.state IN ('new', 'acknowledged', 'in_progress')`)
@@ -35,7 +36,8 @@ func (s *Store) FixPlanRows(ctx context.Context) ([]fixplan.Row, error) {
 		var r fixplan.Row
 		if err := rows.Scan(&r.FindingID, &r.Kind, &r.Key, &r.AssetID, &r.AssetName, &r.AssetKind, &r.Environment, &r.AppDir,
 			&r.OS, &r.OSVersion, &r.OSName, &r.ComponentID, &r.PurlType, &r.Component, &r.Version, &r.FixedVersion,
-			&r.Priority, &r.Severity, &r.SOS, &r.KnownExploited, &r.KernelIdle, &r.Subscription, &r.IsOS, &r.EOLTitle); err != nil {
+			&r.Priority, &r.Severity, &r.SOS, &r.KnownExploited, &r.KernelIdle, &r.Subscription, &r.IsOS, &r.EOLTitle,
+			&r.KB, &r.KBReleased, &r.OlderThanData); err != nil {
 			return nil, err
 		}
 		r.RequiresPro = r.Subscription != ""

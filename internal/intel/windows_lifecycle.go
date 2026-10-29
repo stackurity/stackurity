@@ -18,31 +18,32 @@ import (
 //
 // It returns the finding when the release has ended, and gap, the coverage
 // reason, when the release cannot be told or is not in the lifecycle data:
-// such a host is never reported as supported.
+// such a host is never reported as supported. c is the release, when known
+// (windowsUpdates reads its end of life).
 func (e *Evaluator) windowsLifecycle(ctx context.Context, r store.EvalRow, cache map[string][]store.LifecycleCycle,
-	now time.Time) (f *store.FindingInput, gap string, err error) {
+	now time.Time) (f *store.FindingInput, gap string, c *store.LifecycleCycle, err error) {
 	rel, why := winrelease.Map(winrelease.Info{Version: r.Version, ProductName: r.Evidence["product_name"],
 		EditionID: r.Evidence["edition_id"], DisplayVersion: r.Evidence["display_version"]})
 	if why != "" {
-		return nil, "end of life not evaluated: " + why, nil
+		return nil, "end of life not evaluated: " + why, nil, nil
 	}
 	cycles, ok := cache[rel.Product]
 	if !ok {
 		if cycles, err = e.Store.LifecycleCycles(ctx, rel.Product); err != nil {
-			return nil, "", err
+			return nil, "", nil, err
 		}
 		cache[rel.Product] = cycles
 	}
-	c := exactCycle(cycles, rel.Cycles)
+	c = exactCycle(cycles, rel.Cycles)
 	if c == nil {
 		if len(cycles) == 0 {
-			return nil, fmt.Sprintf("end of life not evaluated: no endoflife.date data for %s yet (the endoflife.date feed has not synced)", rel.Product), nil
+			return nil, fmt.Sprintf("end of life not evaluated: no endoflife.date data for %s yet (the endoflife.date feed has not synced)", rel.Product), nil, nil
 		}
-		return nil, fmt.Sprintf("end of life not evaluated: endoflife.date %s has no release %s", rel.Product, strings.Join(rel.Cycles, " or ")), nil
+		return nil, fmt.Sprintf("end of life not evaluated: endoflife.date %s has no release %s", rel.Product, strings.Join(rel.Cycles, " or ")), nil, nil
 	}
 	f = eolFinding(r, c, now)
 	if f == nil {
-		return nil, "", nil
+		return nil, "", c, nil
 	}
 	subject := winrelease.Subject(c.Product, c.Cycle, c.Label)
 	f.Title = subject + " is end-of-life"
@@ -51,7 +52,7 @@ func (e *Evaluator) windowsLifecycle(ctx context.Context, r store.EvalRow, cache
 	}
 	build, _ := winrelease.Build(r.Version)
 	f.Evidence["match"] = map[string]any{"rule": "windows_build", "build": build}
-	return f, "", nil
+	return f, "", c, nil
 }
 
 // exactCycle returns the first of names present in cycles.

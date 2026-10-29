@@ -2347,7 +2347,7 @@ export interface PluginList extends List<InstalledPlugin> {
 
 // --- Action plan (fix groups)
 
-export const FIX_GROUP_KINDS = ["security_updates", "old_kernels", "release_upgrade", "end_of_life", "package_upgrade", "no_fix"] as const;
+export const FIX_GROUP_KINDS = ["security_updates", "windows_update", "old_kernels", "release_upgrade", "end_of_life", "package_upgrade", "no_fix"] as const;
 export type FixGroupKind = (typeof FIX_GROUP_KINDS)[number];
 
 export interface FixGroup {

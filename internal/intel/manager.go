@@ -72,6 +72,20 @@ func EnsureFeeds(ctx context.Context, s *store.Store) error {
 			}
 		}
 	}
+	if p.Types["generic"] > 0 {
+		win, err := s.ComponentsWithPurlKey(ctx, windowsPurlKey)
+		if err != nil {
+			return err
+		}
+		if len(win) > 0 {
+			// The index is about 50 KB and says which monthly documents
+			// changed, so checking every 6 hours reads a Patch Tuesday
+			// release (about 17:00 UTC) the same evening.
+			if err := ensure(FeedMSRC, "vulnerability", 6*time.Hour, 72*time.Hour); err != nil {
+				return err
+			}
+		}
+	}
 	for d := range p.Distros {
 		for prefix, eco := range distroFeeds {
 			if !strings.HasPrefix(d, prefix+"-") {
@@ -99,6 +113,8 @@ func ComponentsToEvaluate(ctx context.Context, s *store.Store, feed string, res 
 	switch {
 	case feed == FeedKEV || feed == FeedEndOfLife:
 		return s.ComponentsOfTypes(ctx, allTypes())
+	case feed == FeedMSRC:
+		return s.ComponentsWithPurlKey(ctx, windowsPurlKey)
 	case strings.HasPrefix(feed, "osv:") || feed == FeedAmazonLinux:
 		base, _ := feedEcosystem(feed)
 		types := purlTypesFor(base)

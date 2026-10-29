@@ -12,6 +12,7 @@ import { FixVerify, type CheckOptions } from "./FixVerify";
 
 export const FIX_KIND_LABEL: Record<string, string> = {
   security_updates: "Security updates",
+  windows_update: "Windows update",
   old_kernels: "Old kernels",
   release_upgrade: "Release upgrade",
   end_of_life: "End of life",
@@ -21,6 +22,7 @@ export const FIX_KIND_LABEL: Record<string, string> = {
 
 export const FIX_KIND_HELP: Record<string, string> = {
   security_updates: "OS packages with a fix in the current release: one package-manager upgrade fixes them all.",
+  windows_update: "A Windows host behind on cumulative updates: installing the newest one (one KB) fixes every issue listed, since each contains the earlier fixes.",
   old_kernels: "Findings on kernels that are installed but not running: removing the old kernels clears them.",
   release_upgrade: "The OS release is end-of-life, or these issues have no free fix in this release: upgrade the release.",
   end_of_life: "Software that no longer receives security fixes: move to a supported version.",
@@ -31,6 +33,7 @@ export const FIX_KIND_HELP: Record<string, string> = {
 export function FixKindIcon({ kind }: { kind: string }) {
   switch (kind) {
     case "security_updates":
+    case "windows_update":
       return <IconUpdates />;
     case "old_kernels":
       return <IconKernel />;
@@ -85,6 +88,8 @@ export function changeText(g: FixGroup): string {
   switch (g.kind) {
     case "security_updates":
       return "routine package updates";
+    case "windows_update":
+      return "cumulative update and restart";
     case "old_kernels":
       return "remove unused kernels";
     case "release_upgrade":

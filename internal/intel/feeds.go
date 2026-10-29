@@ -40,8 +40,11 @@ const FeedAmazonLinux = "alas:Amazon Linux"
 
 // VulnFeed names the feed that holds advisories for a base ecosystem.
 func VulnFeed(baseEcosystem string) string {
-	if baseEcosystem == "Amazon Linux" {
+	switch baseEcosystem {
+	case "Amazon Linux":
 		return FeedAmazonLinux
+	case "Windows":
+		return FeedMSRC
 	}
 	return OSVFeed(baseEcosystem)
 }
@@ -53,8 +56,11 @@ func osvBase(feed string) string {
 
 // feedEcosystem returns the base ecosystem a vulnerability feed covers.
 func feedEcosystem(feed string) (string, bool) {
-	if feed == FeedAmazonLinux {
+	switch feed {
+	case FeedAmazonLinux:
 		return "Amazon Linux", true
+	case FeedMSRC:
+		return "Windows", true
 	}
 	return strings.CutPrefix(feed, "osv:")
 }
@@ -73,6 +79,15 @@ type Syncer struct {
 	// each batch of OSV records before it is stored.
 	batchLimits func() (count int, bytes int64)
 	onBatch     func(count int, bytes int64)
+	// now, in tests, is the time the Windows updates window is read at.
+	now func() time.Time
+}
+
+func (s *Syncer) clock() time.Time {
+	if s.now != nil {
+		return s.now().UTC()
+	}
+	return time.Now().UTC()
 }
 
 func NewSyncer(s *store.Store, log *slog.Logger, cfg Config) *Syncer {
@@ -99,6 +114,10 @@ type SyncResult struct {
 	All bool
 	// Ecosystems seen in the records read, e.g. "Debian:12".
 	Ecosystems map[string]bool
+	// Warning is a problem the sync worked around (a source document it
+	// could not read and kept as last read): the sync succeeds and the feed
+	// shows the warning as its last error until a sync without one.
+	Warning string
 }
 
 // noteEcosystems records the ecosystem strings of base that vs name.
@@ -131,6 +150,8 @@ func (s *Syncer) Sync(ctx context.Context, name string) (*SyncResult, error) {
 		res, cursor, err = s.syncOSV(ctx, name, strings.TrimPrefix(name, "osv:"), feed.Cursor)
 	case name == FeedAmazonLinux:
 		res, err = s.syncAmazonLinux(ctx, name)
+	case name == FeedMSRC:
+		res, cursor, err = s.syncMSRC(ctx, name, feed.Cursor)
 	case name == FeedKEV:
 		res, err = s.syncKEV(ctx)
 	case name == FeedEPSS:
@@ -157,6 +178,11 @@ func (s *Syncer) Sync(ctx context.Context, name string) (*SyncResult, error) {
 	}
 	if rerr := s.Store.FeedResult(context.WithoutCancel(ctx), name, cursor, changed, err); rerr != nil && err == nil {
 		err = rerr
+	}
+	if err == nil && res != nil && res.Warning != "" {
+		if werr := s.Store.FeedWarning(context.WithoutCancel(ctx), name, res.Warning); werr != nil {
+			err = werr
+		}
 	}
 	if base, ok := feedEcosystem(name); ok && err == nil {
 		// Re-evaluation of the pending packages is queued: they are done.

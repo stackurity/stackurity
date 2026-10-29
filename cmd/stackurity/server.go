@@ -1049,6 +1049,10 @@ func intelConfig(dataDir string) intel.Config {
 	cfg.MavenURL = env("STACKURITY_MAVEN_URL", cfg.MavenURL)
 	cfg.PubURL = env("STACKURITY_PUB_URL", cfg.PubURL)
 	cfg.HexURL = env("STACKURITY_HEX_URL", cfg.HexURL)
+	cfg.MSRCURL = env("STACKURITY_MSRC_URL", cfg.MSRCURL)
+	if n, err := strconv.Atoi(os.Getenv("STACKURITY_MSRC_MONTHS")); err == nil && n > 0 && n <= 120 {
+		cfg.MSRCMonths = n
+	}
 	cfg.WorkDir = filepath.Join(dataDir, "work")
 	// Registries ask automated clients to identify themselves.
 	cfg.UserAgent = "stackurity/" + version + " (+https://github.com/stackurity/stackurity)"

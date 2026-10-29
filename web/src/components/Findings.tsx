@@ -366,6 +366,7 @@ export function PriorityTiles({ s, openIncidents }: { s: FindingSummary; openInc
 
 const GROUP_KIND_LABEL: Record<string, string> = {
   security_updates: "Security updates",
+  windows_update: "Windows update",
   old_kernels: "Old kernels",
   release_upgrade: "Release upgrade",
   end_of_life: "End of life",

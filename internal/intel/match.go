@@ -153,6 +153,7 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 		}
 	}
 	cycleCache := map[string][]store.LifecycleCycle{}
+	updateCache := map[string]*lineUpdates{}
 	releaseCache := map[string]bool{}
 	var want []store.FindingInput
 	coverage := make([]store.RowCoverage, 0, len(rows))
@@ -170,6 +171,9 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 		t, ok := osv.TargetFor(r.Purl, r.Version, r.Evidence)
 		vendor := thirdPartyRepo(ov, r.Type, r.PurlKey, r.Purl, r.Version)
 		switch {
+		case isWindowsOS(r):
+			// Its build is evaluated against Windows updates below, with
+			// its end of life.
 		case r.Type == "generic" && r.Evidence["kind"] == "operating-system":
 			// The OS itself is covered by lifecycle, its packages by the distro feed.
 		case r.Type == "generic" && r.Evidence["kind"] == "runtime":
@@ -262,15 +266,21 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 		coverage = append(coverage, rc)
 
 		// --- lifecycle
-		if r.Type == "generic" && r.Evidence["kind"] == "operating-system" && strings.TrimPrefix(r.PurlKey, "pkg:generic/") == "windows" {
-			f, gap, err := e.windowsLifecycle(ctx, r, cycleCache, now)
+		if isWindowsOS(r) {
+			f, gap, cycle, err := e.windowsLifecycle(ctx, r, cycleCache, now)
 			if err != nil {
 				return nil, err
 			}
-			if gap != "" {
-				// Never left looking supported: the host's release is
-				// unknown, so is its end of life.
-				coverage[ci].State, coverage[ci].Reason = store.CoverageNotEvaluated, gap
+			msrc, configured := feedState[FeedMSRC]
+			found, vc, err := e.windowsUpdates(ctx, r, msrc, configured, cycle, windowsReleaseEnded(cycle, now), updateCache)
+			if err != nil {
+				return nil, err
+			}
+			want = append(want, found...)
+			// Never left looking supported: a host whose release is
+			// unknown has an unknown end of life too.
+			coverage[ci] = mergeWindowsCoverage(vc, gap)
+			if coverage[ci].State != store.CoverageEvaluated {
 				stats.Gaps++
 			}
 			if f != nil {

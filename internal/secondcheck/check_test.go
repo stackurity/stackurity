@@ -243,6 +243,39 @@ func TestSecondCheckWindows(t *testing.T) {
 	want(t, CheckEndOfLife(claim("2016"), obs("10.0.20348.1"), cycles, now), "release_line", "no release line of windows-server lists build 20348")
 }
 
+// Windows updates: the host's build against the fixed build of its own
+// update line, with the second check's own reading of the line.
+func TestSecondCheckWindowsUpdates(t *testing.T) {
+	recs := []store.RawAdvisoryRecord{
+		rec("MSRC-2025-Oct-CVE-2099-1", "Windows:Server 2022", "windows", rng(`{"introduced":"0"},{"fixed":"10.0.20348.4294"}`)),
+		rec("MSRC-2025-Oct-CVE-2099-1", "Windows:Server 2019", "windows", rng(`{"introduced":"0"},{"fixed":"10.0.17763.7919"}`)),
+		rec("MSRC-2025-Oct-CVE-2099-1", "Windows:11 24H2", "windows", rng(`{"introduced":"0"},{"fixed":"10.0.26100.6899"}`)),
+	}
+	obs := func(v, name, edition string) Observed {
+		return Observed{Purl: "pkg:generic/windows@" + v, Version: v,
+			Evidence: map[string]string{"kind": "operating-system", "product_name": name, "edition_id": edition}}
+	}
+	// .887 is below .4294 as numbers (not as text).
+	if out := CheckVulnerability(claim("10.0.20348.4294", nil), obs("10.0.20348.887", "Windows Server 2022 Datacenter", "ServerDatacenter"), recs); out.Result != store.SecondCheckAgreed {
+		t.Fatalf("Server 2022: %s %s", out.Result, out.Reason)
+	}
+	// Windows 11 reports "Windows 10" in its product name; Server 2025 shares its build but not its line.
+	if out := CheckVulnerability(claim("10.0.26100.6899", nil), obs("10.0.26100.6584", "Windows 10 Pro", "Professional"), recs); out.Result != store.SecondCheckAgreed {
+		t.Fatalf("Windows 11 24H2: %s %s", out.Result, out.Reason)
+	}
+	want(t, CheckVulnerability(claim("10.0.20348.4294", nil), obs("10.0.20348.4294", "Windows Server 2022 Datacenter", ""), recs), "affected", "")
+	for _, c := range []struct{ v, name, edition, reason string }{
+		{"10.0.20348.4171", "Windows Server 2022 Datacenter: Azure Edition", "ServerTurbine", "hotpatch"},
+		{"10.0.17763.1577", "Windows Server Datacenter", "ServerDatacenterACor", "not an update line"},
+		{"10.0.20348", "Windows Server 2022 Datacenter", "", "10.0.<build>.<revision>"},
+	} {
+		if out := CheckVulnerability(claim("10.0.20348.4294", nil), obs(c.v, c.name, c.edition), recs); out.Result != store.SecondCheckCouldNotCheck ||
+			!strings.Contains(out.Reason, c.reason) {
+			t.Errorf("%s %s: %s %q, want could not check with %q", c.v, c.name, out.Result, out.Reason, c.reason)
+		}
+	}
+}
+
 func TestComparators(t *testing.T) {
 	type pair struct {
 		a, b string

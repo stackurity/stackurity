@@ -76,7 +76,7 @@ var unreadKinds = map[string][2]string{
 	"pypi:pdm.lock":          {"pdm.lock", "PDM (Python)"},
 	"nuget:packages.config":  {"packages.config", "NuGet, legacy format"},
 	"os-packages":            {"no package database", "a host with no dpkg, rpm or apk database"},
-	"windows:hotfixes":       {"Windows updates (KBs)", "installed Windows updates are not inventoried"},
+	"windows:hotfixes":       {"Windows updates (KBs)", "installed KBs are not read: cumulative updates are judged from the build number, and .NET Framework, Office and servicing stack updates are not checked"},
 	"windows:store-apps":     {"Microsoft Store apps", "AppX packages are not inventoried"},
 	"other":                  {"other", "other scopes reported as unsupported"},
 }
@@ -99,13 +99,16 @@ func unreadLabel(kind string) (label, detail string) {
 }
 
 var vulnReasons = map[string]string{
-	"vendor_build":    "built by a vendor's repository; the distribution's advisories do not cover it",
-	"runtime":         "runtime installed outside a package manager (lifecycle only)",
-	"kubernetes":      "Kubernetes component version (lifecycle only)",
-	"managed_service": "managed service version (lifecycle only)",
-	"distribution":    "distribution without a vulnerability source",
-	"ecosystem":       "package type without a vulnerability source",
-	"other":           "other",
+	"vendor_build":     "built by a vendor's repository; the distribution's advisories do not cover it",
+	"runtime":          "runtime installed outside a package manager (lifecycle only)",
+	"kubernetes":       "Kubernetes component version (lifecycle only)",
+	"managed_service":  "managed service version (lifecycle only)",
+	"distribution":     "distribution without a vulnerability source",
+	"ecosystem":        "package type without a vulnerability source",
+	"windows_hotpatch": "Windows hosts on hotpatch builds (Azure Edition, hotpatch enrolment): missing updates are not evaluated",
+	"windows_esu":      "Windows Server 2012 R2 and older: paid Extended Security Updates are not evaluated (end of life is)",
+	"windows_release":  "Windows releases whose missing updates are not evaluated (Windows 7 and 8.x, other products)",
+	"other":            "other",
 }
 
 // CoverageGaps builds the report across every active workspace. It reads in
@@ -141,6 +144,9 @@ func CoverageGaps(ctx context.Context, st *store.Store, ov *eoloverlay.Overlay) 
 		parts := strings.SplitN(g.Kind, "|", 3)
 		typ, cat := parts[0], parts[1]
 		gap := Gap{Kind: g.Kind, Label: typ + " packages", Detail: vulnReasons[cat], Assets: g.Assets, Workspaces: g.Workspaces, Components: g.Components}
+		if strings.HasPrefix(cat, "windows_") {
+			gap.Label = "Windows hosts"
+		}
 		if cat == "vendor_build" && len(parts) == 3 {
 			gap.Detail = "built by " + parts[2] + "; the distribution's advisories do not cover it"
 		}
