@@ -3,8 +3,11 @@ package store
 import (
 	"context"
 	"strconv"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/stackurity/stackurity/internal/intel/eoloverlay"
 )
 
 // UpgradeIssue is one distinct open issue on an installed version of a
@@ -74,16 +77,35 @@ func (s *Store) UpgradeAssetCounts(ctx context.Context, componentID int64) (map[
 }
 
 // LifecycleProductFor returns the endoflife.date product for a component, as
-// the matcher finds it: by purl, or for pkg:generic/<name> by product name.
-// It returns "" when there is none.
+// the matcher finds it: by purl (endoflife.date's identifiers and the
+// lifecycle overlay, see eoloverlay), or for pkg:generic/<name> by product
+// name. It returns "" when there is none.
 func (s *Store) LifecycleProductFor(ctx context.Context, purlKey string) (string, error) {
-	var product string
-	err := s.Pool.QueryRow(ctx, `SELECT product FROM lifecycle_products
-		WHERE EXISTS (SELECT 1 FROM unnest(purls) p WHERE lower(p) = lower($1))
-		   OR ($1 LIKE 'pkg:generic/%' AND product = substring($1 from 13))
-		ORDER BY (product = substring($1 from 13)), product LIMIT 1`, purlKey).Scan(&product)
-	if err == pgx.ErrNoRows {
+	var lookupErr error
+	edl := func(key string) string {
+		var product string
+		err := s.Pool.QueryRow(ctx, `SELECT product FROM lifecycle_products
+			WHERE EXISTS (SELECT 1 FROM unnest(purls) p WHERE lower(p) = $1) ORDER BY product LIMIT 1`, key).Scan(&product)
+		if err != nil && err != pgx.ErrNoRows && lookupErr == nil {
+			lookupErr = err
+		}
+		return product
+	}
+	m, ok := eoloverlay.Default().Product(purlKey, edl)
+	if lookupErr != nil {
+		return "", lookupErr
+	}
+	product := ""
+	if ok {
+		product = m.Product
+	} else if name, generic := strings.CutPrefix(purlKey, "pkg:generic/"); generic {
+		product = name
+	} else {
 		return "", nil
 	}
-	return product, err
+	var exists bool
+	if err := s.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM lifecycle_products WHERE product = $1)`, product).Scan(&exists); err != nil || !exists {
+		return "", err
+	}
+	return product, nil
 }

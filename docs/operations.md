@@ -284,6 +284,27 @@ Before migration `0036`, every feed sync deleted and re-inserted the package row
 
    `pg_repack` avoids the long lock (it locks each table only briefly at the start and the end), but it needs a primary key or a unique index on NOT NULL columns, and `advisory_packages` has neither. Once `old_rows` is 0, one can be added without a long lock and removed afterwards: add `CHECK (affected_hash IS NOT NULL) NOT VALID`, `VALIDATE` it, `ALTER COLUMN affected_hash SET NOT NULL` (instant with the validated check), drop the check, `CREATE UNIQUE INDEX CONCURRENTLY` on `(advisory_id, ecosystem, name, affected_hash)`, run `pg_repack -t advisory_packages -t advisories -t affected_values` without `--order-by` (the matcher reads a package's rows in stored order), then drop the index and the NOT NULL. On the test data the whole sequence took 36 seconds, the repack itself 21. A plain `VACUUM` (no lock) does not shrink the file, but it makes the dead space reusable; the table then stays at its current size.
 
+### Verifying the audit log
+
+The audit log is append-only and each workspace's events form a hash chain (migration `0052`; [security-audit.md, Audit log](security-audit.md#audit-log)). Check it with
+
+```sh
+stackurity admin verify-audit                 # every workspace, and the platform's own events
+stackurity admin verify-audit --workspace 3   # one workspace; --workspace 0 is the platform's events
+```
+
+It reads one consistent snapshot, so it can run while the server works, and prints one line per chain:
+
+```text
+platform: ok, 41 events verified (ids 9120 to 9311)
+workspace 1: ok, 1532 events verified (ids 9118 to 9310); 210544 earlier events not chained
+workspace 3: BROKEN at event 9204 (chain position 17): hash does not match the event's content: the event was changed; 16 events before it verified (ids 9150 to 9198)
+```
+
+"Earlier events not chained" are those recorded before the upgrade to the release with migration `0052`: they are kept as they were. The command exits with status 1 when any chain is broken. A break means someone with database owner or superuser rights changed or removed events: treat it as an incident (keep a `pg_dump` and the database logs, then follow [Tenant-isolation incidents](security-audit.md#6-tenant-isolation-incidents) for the triage). Running it daily from cron and keeping its output somewhere else (a log system, a ticket) also keeps a record of each chain's newest hash outside the database.
+
+Removing audit events on purpose (a retention policy of your own) is described under [Who may remove audit events](security-audit.md#audit-log).
+
 ## Drills
 
 Run these on a staging installation, or in production during a quiet window with people watching. Each lists the steps, what you should see and how it is checked automatically. The commands assume the Compose install in `deploy/`; with Kubernetes, use the matching `kubectl` commands.
@@ -378,5 +399,5 @@ Automated: `TestAgentStopsReporting` in `internal/crashtest`.
 
 - Platform health shows no problem, and the alerts above have resolved.
 - Failed jobs and failed notifications from the incident window were retried or are understood.
-- The audit log (`GET /api/v1/audit`) shows no unexpected changes made during it.
+- The audit log (`GET /api/v1/audit`) shows no unexpected changes made during it, and `stackurity admin verify-audit` reports no break.
 - If anything was not as described here, report it: the drills are part of the test suite, and a difference is a bug.

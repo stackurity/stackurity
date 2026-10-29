@@ -18,6 +18,7 @@ import { OnboardingPage } from "./pages/Onboarding";
 import { SignupPage, VerifySignupPage } from "./pages/Signup";
 import { UsagePage } from "./pages/settings/Usage";
 import { BillingPage } from "./pages/settings/Billing";
+import { SingleSignOnPage } from "./pages/settings/SingleSignOn";
 import { HomePage } from "./pages/Home";
 import { AutomaticFixPoliciesPage, SettingsPage } from "./pages/Settings";
 import { AssetsPage } from "./pages/Assets";
@@ -38,6 +39,7 @@ import { WorkspacesPage } from "./pages/admin/Workspaces";
 import { PacksPage } from "./pages/admin/Packs";
 import { LicensePage } from "./pages/admin/License";
 import { HealthPage } from "./pages/admin/Health";
+import { CoverageGapsPage } from "./pages/admin/CoverageGaps";
 import { UpdatesPage } from "./pages/admin/Updates";
 import { TeamsPage } from "./pages/settings/Teams";
 import { TokensPage } from "./pages/settings/Tokens";
@@ -257,6 +259,14 @@ export function App() {
           }
         />
         <Route
+          path="settings/sso"
+          element={
+            <RequireRole min="admin">
+              <SingleSignOnPage />
+            </RequireRole>
+          }
+        />
+        <Route
           path="settings/billing"
           element={
             <RequireRole min="admin">
@@ -384,6 +394,14 @@ export function App() {
           element={
             <RequireInstanceAdmin>
               <HealthPage />
+            </RequireInstanceAdmin>
+          }
+        />
+        <Route
+          path="admin/coverage-gaps"
+          element={
+            <RequireInstanceAdmin>
+              <CoverageGapsPage />
             </RequireInstanceAdmin>
           }
         />

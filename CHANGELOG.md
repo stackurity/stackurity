@@ -16,7 +16,20 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ### Added
 
+- **Stackurity Cloud: each organisation's own single sign-on** (on plans whose `features` in `cloud-plans.json` include `sso`; the pricing page lists it under Enterprise). Admins connect a SAML identity provider under **Settings → Single sign-on** (metadata URL or file, attribute and role mapping, the addresses to give the provider), prove their email domains with a DNS TXT record (a domain can be verified by one organisation only), test the connection (required before switching on, and again after any change), and can require single sign-on for members, with the owner keeping password access. People find their organisation's sign-in from their email on the sign-in page. Everything is scoped to the organisation under row-level security, and a session started by an organisation's single sign-on works only in that organisation (migration `0049_sso_sessions`). Existing accounts are linked only when the organisation allows it, and only its own members that are not instance administrators.
+- End-of-life detection for products endoflife.date tracks without the package names their installs use: Stackurity's own lifecycle overlay, a versioned data file checked against each vendor's package index, maps MongoDB's `mongodb-org-server`, Docker's `docker-ce`, `containerd.io`, Electron on npm, `redis-server`, `postgresql-<major>` and PGDG's `postgresql<major>-server`, NodeSource's `nodejs`, Elastic, Grafana, InfluxData, MySQL, MariaDB, HashiCorp, Kubernetes (`kubelet`), GitLab, Jenkins, SQL Server, Temurin, Corretto, Go, Tomcat (including Spring Boot's embedded Tomcat), Symfony, Kotlin, Quarkus, Kafka and more. RHEL, Rocky Linux, AlmaLinux and Oracle Linux packages now use endoflife.date's Red Hat identifiers, and Debian packages its Ubuntu ones. endoflife.date's own mappings always win. See [Lifecycle mappings](docs/compatibility.md#lifecycle-mappings).
+- **Settings → Coverage gaps** for instance administrators (`GET /api/v1/admin/coverage-gaps`): across every workspace, files nothing reads (by kind), components with no vulnerability source (by type and reason) and products with no lifecycle match, counted by assets and workspaces. It names no workspace, asset, path or package.
+- Scans report more files they find but cannot read as unsupported coverage: `Package.swift`, `Package.resolved`, `Podfile.lock`, `conanfile.txt`, `conanfile.py`, `conan.lock`, `vcpkg.json`, `uv.lock`, `pdm.lock`, `rebar.lock`, `packages.config`, `deno.lock`, `bun.lock` and `build.sbt`.
 - **Two-factor sign-in** with an authenticator app (TOTP, RFC 6238) under **Your account**: a QR code, a code to confirm, and ten one-time recovery codes stored as hashes. The secret is encrypted with `STACKURITY_SECRET_KEY`. A code is accepted once, wrong codes are limited (five per sign-in, ten per account in 15 minutes), and API tokens and AI assistants are not affected (the page lists them). Admins can **Require two-factor sign-in for all members** (members who sign in with a password are sent to set it up; single sign-on is not affected) and **Reset two-factor** for a member, recorded in the activity log. Home recommends it to admins. Migration `0053_mfa` adds the tables. See [Two-factor sign-in](docs/install.md#two-factor-sign-in).
+
+### Changed
+
+- Packages built by a vendor's repository (MongoDB, Docker, Elastic, Grafana, PGDG, NodeSource, Redis, nginx.org, MariaDB, MySQL, Ondřej Surý's PHP, Remi and others) are no longer matched against the distribution's advisories, which describe the distribution's own builds and showed them as clean. Their coverage is now `unsupported` ("built by <repository>, not by the distribution"), so assets running them show an evaluation gap; findings that matching produced on them are resolved. Their end of life uses upstream dates, and the inventory note names the repository. See [Packages from vendor repositories](docs/compatibility.md#packages-from-vendor-repositories).
+
+### Fixed
+
+- A Debian or RPM epoch no longer stops the release line from being read (`5:7.0.15` is Redis 7.0, `1:10.11.6` MariaDB 10.11).
+- An upstream pre-release version such as `2.0~beta` is no longer taken for a build named after a release codename.
 
 ### Upgrading
 
@@ -25,6 +38,43 @@ Each release's section is published as its GitHub release notes, and a tag witho
 - To email password reset links from a self-hosted server, set `STACKURITY_SMTP_HOST`, `STACKURITY_SMTP_FROM` (and username, password, port, TLS as needed) and `STACKURITY_BASE_URL`.
 - New passwords are checked against known breaches by default (an outbound request to `api.pwnedpasswords.com`, see [network.md](docs/network.md#breached-password-check)); set `STACKURITY_BREACHED_PASSWORD_CHECK=off` for none.
 - Two-factor sign-in needs `STACKURITY_SECRET_KEY`.
+
+## 0.13.5
+
+### Security
+
+- **The audit log is append-only.** The application's database role could change and delete audit events in its workspace (row-level security had UPDATE and DELETE policies); it can now only record and read them, and a database trigger refuses changes and removals by any role, the table owner included. Audit events are still removed with their workspace when a whole workspace is deleted (Stackurity Cloud, 30 days after a trial or plan ended), and an operator can remove events on purpose as described under [Audit log](docs/security-audit.md#audit-log).
+- **Browser features the dashboard does not use are turned off.** The `Permissions-Policy` header denies them (camera, microphone, geolocation, USB, serial, HID, Bluetooth, MIDI, screen capture, sensors and others) to every page and any frame in it. Payment, passkeys and security keys (WebAuthn) keep the browser's default; the payment page of Stackurity Cloud lets Razorpay Checkout use what it needs.
+- Single sign-on (OpenID Connect, licensed build) with `STACKURITY_OIDC_LINK_EXISTING=true` no longer links a disabled account (enabling it again later would have handed it to the identity) or an account that also belongs to another workspace (it could then switch there through the provider).
+
+### Added
+
+- **I've fixed it — check now** on fix cards (Home and Fixes) and on a fix's page. It asks every place the fix covers for a new scan (the server's agent reports within a minute; a connected repository is scanned again), shows that it is waiting ("Checking DBC… usually within a minute"), then what the scan found: "Fixed, confirmed by a new scan at 16:05", or "Still found on DBC: jquery 3.3.1 at /var/www/html/phpmyadmin/yarn.lock". Places that cannot report on demand say what to do instead: re-run the CI scan for a repository, upload the new SBOM, or restart an agent older than 0.7. Nothing is closed without evidence; the fix's page points to Snooze and Accept for now for a fix you are not making.
+- `GET /api/v1/checks/options`: for fix groups or assets, whether Check again gets a fresh report within minutes (`on_demand`) and, if not, why (`removed`, `agent`, `upload`), with the latest check.
+- Applications that are gone are marked **Removed**. The agent sends the list of application directories it reports with its server's batch (`apps`, to servers listing the `app_list` feature), and an application missing from it (a deleted directory, an old release next to the current one, a directory no longer configured) is resolved: its issues close as removed, the asset shows "No longer present", and it no longer turns stale. A configured `--app-dir` that does not exist is reported as removed instead of as a failed scan.
+- Asset pickers group assets by kind (Servers, Applications, Repositories…) and tell same-named assets apart: "commmerceblog (server)" and "commmerceblog (repository)", or an application's path. MCP `list_assets` returns the same as `label`.
+- **The audit log is tamper-evident.** Each workspace's events, and the platform's own, form a hash chain written by the database as each event is recorded. `stackurity admin verify-audit` checks the chains and reports the first break of each (a changed, removed or inserted event). See [Verifying the audit log](docs/operations.md#verifying-the-audit-log).
+- **SAML single sign-on** (licensed build, Pro and Enterprise), next to OpenID Connect: SP-initiated sign-in from the sign-in page, optional sign-in started from the identity provider (`STACKURITY_SAML_IDP_INITIATED`, off by default), this server's metadata at `/saml/metadata`, the provider's metadata by URL (refreshed daily) or file, signed assertions required, encrypted assertions accepted with an optional key, email, name and group attributes with the same domain allowlist and group-to-role mapping as OpenID Connect, each assertion used once, SHA-1 signatures refused, and the same account rules as OpenID Connect (an existing account is linked only with `STACKURITY_SAML_LINK_EXISTING=true`, and never an instance administrator); `STACKURITY_SAML_ALLOWED_DOMAINS` is required. Setup for Okta, Microsoft Entra ID and Google Workspace is in [install.md](docs/install.md#saml). The sign-in page shows a button for each configured provider. Migration `0048_saml` adds the tables for sign-ins in progress and used assertions.
+
+### Changed
+
+- Application discovery follows Ghost-CLI installs like Capistrano, Deployer and Envoyer ones: with `versions/` (or `releases/`) and a `current` link, only the current release is an application. Old versions kept for rollback (`/var/www/ghost/versions/6.22.0` next to `current -> 6.52.0`) are no longer scanned as live applications, and ones reported before are resolved as removed on the next collection. A directory named with `--app-dir` is scanned as given.
+- Copies of one application on a server always get distinct names ("ghost (/6.22.0) on commmerceblog"), also when both existed before 0.13; migration 0050 renames those already alike. A name a person set is never changed.
+- "I applied this" and Check again on a fix are one button, **I've fixed it — check now**. The asset page keeps Check again for the whole asset.
+- Asset status reads as words: Reporting, Last scan incomplete, Stopped reporting, Removed. Hosts are called servers in asset kinds.
+- Smaller consistency fixes: on Home, Show the places of a fix needed in several places is a plain button like Show issues, not a primary one; Home's Assets needing attention and a fix's Where say which kind a same-named asset is; on a fix's issues, Reopen reads "Reopen snoozed or ignored" (it only changes those).
+
+### Fixed
+
+- An upgraded application kept its old version's libraries, and their issues, for good when one of its directories could not be read. phpMyAdmin's `tmp/twig` cache belongs to the web server user, so every scan of phpMyAdmin was incomplete, and incomplete scans removed nothing: after an upgrade from 4.8.0 to 5.2.3, twig 1.35.3 and jquery 3.3.1 stayed listed next to twig 3.11.3 and jquery 3.7.1. A scan now removes what it no longer lists outside the paths it could not read; the next collection clears what earlier ones left. Servers' OS packages were not affected.
+- A check on an asset whose scans are incomplete waited for a week, and its agent was asked to report again every minute meanwhile. Any report now completes it; one that could not read everything ends as **Scan incomplete** instead of claiming the issues are still there.
+- A check on an application its agent no longer reports (a deleted directory) was never picked up; the server's agent now picks it up.
+- Windows Server hosts now get end-of-life findings; the docs said they did but no finding was raised. The release comes from the build number (14393 is Windows Server 2016, 17763 is 2019 or 1809 by product name, 20348 is 2022), with the product name and edition as a cross-check, and Windows 10 and 11 hosts are mapped by build and edition. A build that does not name one release is a coverage gap with the reason, never supported. The Windows agent now also reports `EditionID` on the operating system row. See [Windows end of life](docs/compatibility.md#windows-end-of-life).
+- .NET installed from distribution packages gets end-of-life findings: `dotnet-runtime-X.Y` (deb or rpm) is .NET X.Y. Red Hat's and Microsoft's packages take Microsoft's date, since neither supports .NET past it; Ubuntu's own archive packages follow the Ubuntu release. See [.NET end of life](docs/compatibility.md#net-end-of-life).
+
+### Upgrading
+
+- Migration `0052` adds the chain columns and triggers without rewriting existing audit events, which stay as they were and are reported as "earlier events not chained"; each chain starts with the first event recorded after the upgrade. It builds one index on `audit_events` (seconds for a few hundred thousand events).
 
 ## 0.13.4
 
@@ -43,6 +93,7 @@ Each release's section is published as its GitHub release notes, and a tag witho
 - Behind Cloudflare (including Cloudflare Tunnel), nothing changes: keep `STACKURITY_TRUST_PROXY=true`. The tunnel connector reaches Stackurity from loopback or a private (Docker network) address, which are trusted by default.
 - Behind another reverse proxy (Caddy, nginx, Traefik, an ingress controller), set `STACKURITY_TRUSTED_PROXY_HEADER=X-Forwarded-For` (or the header your proxy overwrites, such as `X-Real-IP`). If the proxy reaches Stackurity from a public address, list it in `STACKURITY_TRUSTED_PROXIES`. The Helm chart sets `X-Forwarded-For` by default (`config.trustedProxyHeader`). A warning is logged once when the header arrives from a peer that is not trusted.
 - Single sign-on (OpenID Connect): accounts already linked keep working. People whose password account was never linked are refused at their first single sign-on until they use their password, or until the operator sets `STACKURITY_OIDC_LINK_EXISTING=true`. With Microsoft Entra ID set `STACKURITY_OIDC_REQUIRE_EMAIL_VERIFIED=false` and `STACKURITY_OIDC_ALLOWED_DOMAINS`.
+
 
 ## 0.13.3
 

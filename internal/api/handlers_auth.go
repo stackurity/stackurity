@@ -22,9 +22,10 @@ func (s *Server) meta(w http.ResponseWriter, r *http.Request) {
 	}
 	// features lets clients check what an older server would silently
 	// ignore: "upload_project" means POST /ingest and POST /sbom/import
-	// honour project_id (the CLI's --project).
+	// honour project_id (the CLI's --project); "app_list" means a host
+	// batch may list its application directories (apps.dirs).
 	meta := map[string]any{"name": "stackurity", "version": s.Version, "api": "v1", "setup_required": n == 0,
-		"features": []string{FeatureUploadProject}, "password_reset": s.passwordResetMode()}
+		"features": []string{FeatureUploadProject, FeatureAppList}, "password_reset": s.passwordResetMode()}
 	if sso := s.ssoMeta(r); sso != nil {
 		meta["sso"] = sso
 	}
@@ -121,11 +122,20 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	s.completePasswordLogin(w, r, u)
+}
+
+// loginSucceeded forgets the account's failed sign-ins from this address
+// and remembers the address as one it signs in from. It runs only once the
+// sign-in is complete (after the second factor, if the account has one), so
+// knowing the password alone neither clears the back-off nor makes an
+// address known.
+func (s *Server) loginSucceeded(r *http.Request, u *store.User) {
+	subject := loginSubject(strings.ToLower(strings.TrimSpace(u.Email)), r)
 	if err := s.Store.ClearFailures(r.Context(), "login-fail", subject); err != nil {
 		s.Log.Error("clearing sign-in failures", "err", err)
 	}
 	s.rememberAddress(r, subject)
-	s.completePasswordLogin(w, r, u)
 }
 
 // startSession signs u in, working in their first workspace, without a
@@ -194,6 +204,9 @@ func sessionSecret(r *http.Request) string {
 // new password.
 func (s *Server) rotateSession(w http.ResponseWriter, r *http.Request, opts store.SessionOpts) error {
 	p := principal(r)
+	// The new session replaces this one: it keeps its single sign-on pin and
+	// its end, so rotating never frees a pinned session or extends one.
+	opts.Pinned, opts.Expires = p.SSOWorkspace, p.SessionExpires
 	secret, err := s.Store.CreateSessionWith(r.Context(), p.User.ID, p.Workspace, opts)
 	if err != nil {
 		return err
@@ -235,6 +248,9 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 		"mfa_enrolment_required": p.NeedsMFAEnrolment, "password_change_required": p.PasswordChangeRequired}
 	if p.Restricted {
 		out["access"] = "projects"
+	}
+	if p.SSORequired != nil {
+		out["sso_required"] = p.SSORequired
 	}
 	if p.Workspace > 0 {
 		ws, err := s.Store.GetWorkspace(r.Context(), p.Workspace)

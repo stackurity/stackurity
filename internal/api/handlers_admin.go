@@ -620,3 +620,21 @@ func (s *Server) adminHealth(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, rep)
 }
+
+// adminCoverageGaps reports what Stackurity cannot check across every
+// workspace: files no reader or pack reads, components with no vulnerability
+// source, and products with no lifecycle data. Instance admins only. It
+// returns counts of assets and workspaces with type names, never workspace or
+// asset names, paths or package lists.
+func (s *Server) adminCoverageGaps(w http.ResponseWriter, r *http.Request) {
+	if s.CoverageGaps == nil {
+		writeError(w, 404, "not_found", "the coverage-gap report is not enabled on this server")
+		return
+	}
+	rep, err := s.CoverageGaps(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, 200, rep)
+}

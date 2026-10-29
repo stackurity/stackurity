@@ -26,11 +26,17 @@ var globalTables = map[string]string{
 	"license_key":        "installation licence",
 	"oidc_logins":        "sign-in flow state, before a workspace is known",
 	"packs":              "stack packs, installed by instance admins",
+	"saml_assertions":    "used SAML assertion IDs, checked before a session exists",
+	"saml_requests":      "sign-in flow state, read before a session exists; queries filter by workspace_id themselves",
 	"schema_migrations":  "migration bookkeeping",
 	"users":              "accounts are global; roles live in workspace_members",
 	"workspaces":         "the workspaces themselves",
 	"sessions":           "looked up before the workspace is known; carries the active workspace",
 	"workspace_members":  "memberships span workspaces; read by user id",
+	// Not FORCEd so that the owner's insert trigger can write it; it has
+	// row-level security with a system-scope SELECT policy only, so the
+	// application role can never change it (TestAuditAppendOnlyForApp).
+	"audit_chain_heads": "the audit log's hash chain heads (migration 0052), written only by the insert trigger",
 }
 
 func TestEveryTenantTableHasRowLevelSecurity(t *testing.T) {

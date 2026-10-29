@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, Outlet, useLocation } from "react-router";
-import { api, type IgnoreRequest, type Incident, type List, type Plan, type ReadOnlyState } from "../api";
-import { useLoad } from "../hooks";
+import { api, type IgnoreRequest, type Incident, type List, type Membership, type Plan, type ReadOnlyState, type SSORequired } from "../api";
+import { useAction, useLoad } from "../hooks";
 import { useAuth } from "../auth";
 import { ProjectProvider, useProject } from "../project";
 import { GlobalSearch } from "./Search";
@@ -10,6 +10,7 @@ import { PlatformHealthBanner } from "../pages/admin/Health";
 import { UpdateBanner } from "../pages/admin/Updates";
 import { IconActionPlan, IconActivity, IconChevron, IconHelp, IconInventory, IconMessage, IconMore, IconOverview, IconSettings, IconSidebar } from "./Icons";
 import { sectionOf, SectionTabsFor, type Section } from "./nav";
+import { ErrorBox } from "./ui";
 
 const STORE_KEY = "stackurity.nav";
 
@@ -198,7 +199,9 @@ function Shell() {
             </nav>
           )}
           {me?.workspace && <SectionTabsFor path={pathname} />}
-          {me && !me.workspace && !pathname.startsWith("/admin") ? (
+          {me && !me.workspace && me.sso_required && !pathname.startsWith("/admin") ? (
+            <SSORequiredNotice req={me.sso_required} others={(me.workspaces ?? []).filter((w) => w.workspace_id !== me.sso_required?.workspace_id)} />
+          ) : me && !me.workspace && !pathname.startsWith("/admin") ? (
             <NoWorkspace instanceAdmin={Boolean(me.user?.instance_admin)} />
           ) : (
             // A new project choice remounts the page, so nothing of the
@@ -573,6 +576,46 @@ function ReadOnlyBanner({ state }: { state: ReadOnlyState }) {
       ) : (
         <span>Ask your administrator.</span>
       )}
+    </div>
+  );
+}
+
+/**
+ * The session's organisation requires its own single sign-on, which this
+ * session did not use: sign in through it, or work in another organisation.
+ */
+function SSORequiredNotice({ req, others }: { req: SSORequired; others: Membership[] }) {
+  const { refresh } = useAuth();
+  const act = useAction();
+  const go = async (id: number) => {
+    if (await act.run(() => api.post(`/workspaces/${id}/activate`))) await refresh();
+  };
+  return (
+    <div className="alert alert-warn" role="alert">
+      <p>
+        {req.workspace_name || "This organisation"} requires single sign-on. Sign in through your organisation&apos;s identity provider to work here.
+      </p>
+      <p>
+        {/* A full-page navigation: the identity provider takes over. */}
+        <a className="btn btn-primary" href={req.login_url}>
+          Sign in with single sign-on
+        </a>
+      </p>
+      {others.length > 0 && (
+        <p>
+          Or work in{" "}
+          {others.map((w, i) => (
+            <span key={w.workspace_id}>
+              {i > 0 && ", "}
+              <button type="button" className="btn btn-link" disabled={act.pending} onClick={() => void go(w.workspace_id)}>
+                {w.name}
+              </button>
+            </span>
+          ))}
+          .
+        </p>
+      )}
+      <ErrorBox error={act.error} title="Could not switch" />
     </div>
   );
 }

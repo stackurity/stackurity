@@ -15,5 +15,6 @@ ee-overlay.json
 * [0-9].*
 * [0-9][0-9].*
 
-# Binary from `go build ./cmd/stackurity` at the repo root
+# Agent binaries built at the repository root (go build ./cmd/stackurity)
 /stackurity
+/stackurity.exe

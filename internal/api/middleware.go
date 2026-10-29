@@ -50,6 +50,16 @@ type Principal struct {
 	// PasswordChangeRequired: an administrator set a temporary password
 	// (password_reset.go); the session may only change it.
 	PasswordChangeRequired bool
+	// SSOWorkspace is the workspace the session is pinned to by an
+	// organisation's single sign-on (0: none); a session that replaces it
+	// keeps the pin.
+	SSOWorkspace int64
+	// SessionExpires is the session's absolute end; a session that replaces
+	// it keeps it.
+	SessionExpires time.Time
+	// SSORequired is set when the session's workspace requires its own
+	// single sign-on, which this session did not use; Workspace is then 0.
+	SSORequired *SSORequired
 }
 
 func (p *Principal) Actor(r *http.Request) store.Actor {
@@ -110,7 +120,13 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 			case err == nil:
 				p = &Principal{User: sess.User, Role: sess.User.Role, Session: true, Workspace: sess.Workspace,
 					PasswordSession: sess.PasswordLogin, NeedsMFAEnrolment: sess.NeedsMFAEnrolment,
-					PasswordChangeRequired: sess.PasswordChangeRequired}
+					PasswordChangeRequired: sess.PasswordChangeRequired, SSOWorkspace: sess.SSOWorkspace, SessionExpires: sess.ExpiresAt}
+				if p.Workspace > 0 && editionSessionAccess != nil {
+					if req := editionSessionAccess(s, r, sess.User, p.Workspace, sess.SSOWorkspace); req != nil {
+						// Fail closed: no workspace, so no workspace data.
+						p.Workspace, p.Role, p.SSORequired, p.NeedsMFAEnrolment = 0, "", req, false
+					}
+				}
 				if sessionGate(w, r, p) {
 					return
 				}
@@ -288,6 +304,7 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "same-origin")
 		h.Set("Content-Security-Policy", csp)
+		h.Set("Permissions-Policy", permissionsPolicyFor(r.URL.Path))
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			h.Set("Cache-Control", "no-store")
 		}

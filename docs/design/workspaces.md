@@ -21,7 +21,7 @@ Out of scope here: self-service sign-up, billing, data residency, a silo databas
 | `workspace_members` | global | (workspace_id, user_id, role); replaces `users.role` |
 | `users` | global | gains `instance_admin` (operates the installation); `role` kept for one release, then dropped |
 | `sessions` | global | gains `workspace_id`: the workspace the browser is working in |
-| `oidc_logins`, `jobs` | global | `jobs` gains a nullable `workspace_id`; handlers run in that workspace |
+| `oidc_logins`, `saml_requests`, `saml_assertions`, `jobs` | global | `jobs` gains a nullable `workspace_id`; handlers run in that workspace |
 | Intelligence: `feeds`, `advisories`, `advisory_packages`, `affected_values`, `pending_packages`, `known_exploited`, `lifecycle_*` | global, shared | Public data. No tenant information |
 | Component catalogue: `components`, `package_releases`, `evaluation_gaps` | global, filtered | Purls can reveal private package names, so rows are visible only when the current workspace's inventory references them (see RLS) |
 | Everything else: assets, identifiers, relations, conflicts, collections, inventory, coverage, findings, finding events, incidents, teams, team members, channels, routes, deliveries, integrations, API tokens, enrollments, remediation policies, plans and actions, fix groups, settings, audit events | workspace | `workspace_id bigint NOT NULL REFERENCES workspaces` |

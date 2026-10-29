@@ -9,11 +9,12 @@ import (
 // Known addresses. The per-account cap on failed sign-ins (ratelimit.go,
 // limitAccountFailures) stops guessing spread over many addresses, but
 // on its own it would let a botnet keep the owner out by failing on
-// purpose. An address (IPv4, or IPv6 /64) the account signed in from with
-// the right password in the last knownAddressMemory is exempt from that
-// cap. It still has its own per-address backoff, so a guesser who once
-// signed in from an address gains nothing there, and a guesser who knows
-// the password needs the second factor anyway.
+// purpose. An address (IPv4, or IPv6 /64) the account completed a sign-in
+// from (the password, and the second factor if it has one) in the last
+// knownAddressMemory is exempt from that cap. It still has its own
+// per-address backoff, so a guesser who once signed in from an address
+// gains nothing there, and knowing the password alone makes no address
+// known.
 const knownAddressMemory = 30 * 24 * time.Hour
 
 func (s *Server) rememberAddress(r *http.Request, subject string) {

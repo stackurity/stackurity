@@ -506,6 +506,11 @@ func lineOf(product string, c *store.LifecycleCycle, now time.Time) *Line {
 // dotted prefix ("3.19.1" -> "3.19" -> "3").
 func MatchCycle(cycles []store.LifecycleCycle, v string) *store.LifecycleCycle {
 	v = strings.TrimPrefix(v, "v")
+	// A Debian or RPM epoch ("5:27.3.1-1~ubuntu.24.04~noble", Docker; "1:10.11.6",
+	// MariaDB) is not part of the upstream release.
+	if e, rest, ok := strings.Cut(v, ":"); ok && e != "" && strings.Trim(e, "0123456789") == "" {
+		v = rest
+	}
 	if i := strings.IndexAny(v, "-+~_ "); i > 0 {
 		v = v[:i]
 	}

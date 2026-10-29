@@ -332,42 +332,76 @@ type SessionOpts struct {
 	PasswordLogin bool
 	// MFA: a second factor was checked.
 	MFA bool
+	// Pinned is the workspace a sign-in through that workspace's own
+	// identity provider pins the session to (CreateSSOSession); 0: none.
+	// A session that replaces a pinned one keeps its pin.
+	Pinned int64
+	// Expires keeps a replaced session's end; zero: SessionTTL from now.
+	Expires time.Time
 }
 
 // CreateSessionWith starts a browser session signed in as opts says.
 func (s *Store) CreateSessionWith(ctx context.Context, userID, workspaceID int64, opts SessionOpts) (string, error) {
+	if opts.Pinned > 0 {
+		workspaceID = opts.Pinned
+	}
 	secret, _, err := auth.NewToken("sess")
 	if err != nil {
 		return "", err
 	}
-	var ws *int64
+	var ws, pinned *int64
 	if workspaceID > 0 {
 		ws = &workspaceID
+	}
+	if opts.Pinned > 0 {
+		pinned = &opts.Pinned
 	}
 	var mfaAt *time.Time
 	if opts.MFA {
 		now := time.Now()
 		mfaAt = &now
 	}
-	_, err = s.Pool.Exec(ctx, `INSERT INTO sessions (token_hash, user_id, expires_at, workspace_id, password_login, mfa_at)
-		VALUES ($1, $2, now() + make_interval(secs => $3), $4, $5, $6)`,
-		auth.HashToken(secret), userID, SessionTTL.Seconds(), ws, opts.PasswordLogin, mfaAt)
+	expires := opts.Expires
+	if expires.IsZero() {
+		expires = time.Now().Add(SessionTTL)
+	}
+	_, err = s.Pool.Exec(ctx, `INSERT INTO sessions (token_hash, user_id, expires_at, workspace_id, password_login, mfa_at, sso_workspace_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		auth.HashToken(secret), userID, expires, ws, opts.PasswordLogin, mfaAt, pinned)
 	return secret, err
+}
+
+// CreateSSOSession starts a browser session pinned to workspaceID, for a
+// sign-in through that workspace's own identity provider: SessionUser never
+// moves it to another workspace and SetSessionWorkspace refuses to.
+func (s *Store) CreateSSOSession(ctx context.Context, userID, workspaceID int64) (string, error) {
+	if workspaceID <= 0 {
+		return "", fmt.Errorf("a pinned session needs a workspace: %w", ErrInvalid)
+	}
+	return s.CreateSessionWith(ctx, userID, workspaceID, SessionOpts{Pinned: workspaceID})
 }
 
 // Session is a resolved browser session.
 type Session struct {
 	User      *User
 	Workspace int64
+	// SSOWorkspace is the workspace the session is pinned to
+	// (CreateSSOSession), 0 for an ordinary session. A pinned session works
+	// only there: if the user has left it, Workspace is 0, never another.
+	SSOWorkspace int64
 	// NeedsMFAEnrolment: signed in with a password, without a second
 	// factor, in a workspace that requires one. Only enrolment, signing
 	// out and switching workspace are allowed until it is set up.
 	NeedsMFAEnrolment bool
 	// PasswordLogin: signed in with a local password.
 	PasswordLogin bool
+	// MFA: a second factor was checked for this session.
+	MFA bool
 	// PasswordChangeRequired: an administrator set a temporary password;
 	// only changing it is allowed until then.
 	PasswordChangeRequired bool
+	// ExpiresAt is the session's absolute end.
+	ExpiresAt time.Time
 }
 
 // SessionUser resolves a browser session to its user and the workspace it
@@ -380,6 +414,16 @@ func (s *Store) SessionUser(ctx context.Context, secret string) (*User, int64, e
 		return nil, 0, err
 	}
 	return sess.User, sess.Workspace, nil
+}
+
+// SessionUserSSO is SessionUser that also returns the workspace the session
+// is pinned to (CreateSSOSession), 0 for an ordinary session.
+func (s *Store) SessionUserSSO(ctx context.Context, secret string) (*User, int64, int64, error) {
+	sess, err := s.SessionInfo(ctx, secret)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	return sess.User, sess.Workspace, sess.SSOWorkspace, nil
 }
 
 // SessionExpired is a session that ended because it was unused for too
@@ -403,16 +447,18 @@ func (e *SessionExpired) Unwrap() error { return ErrNotFound }
 // *SessionExpired (which is ErrNotFound).
 func (s *Store) SessionInfo(ctx context.Context, secret string) (*Session, error) {
 	var id int64
-	var ws *int64
+	var ws, pinned *int64
 	var passwordLogin bool
 	var mfaAt *time.Time
+	var expiresAt time.Time
 	var changePassword, absolute, idle, touch bool
 	var email string
-	err := s.Pool.QueryRow(ctx, `SELECT s.user_id, s.workspace_id, s.password_login, s.mfa_at, u.password_change_required, u.email,
+	err := s.Pool.QueryRow(ctx, `SELECT s.user_id, s.workspace_id, s.sso_workspace_id, s.password_login, s.mfa_at, s.expires_at,
+		u.password_change_required, u.email,
 		s.expires_at <= now(), $2 > 0 AND s.last_seen_at < now() - make_interval(secs => $2), s.last_seen_at < now() - interval '1 minute'
 		FROM sessions s JOIN users u ON u.id = s.user_id
 		WHERE s.token_hash = $1 AND NOT u.disabled`, auth.HashToken(secret), s.SessionIdle.Seconds()).
-		Scan(&id, &ws, &passwordLogin, &mfaAt, &changePassword, &email, &absolute, &idle, &touch)
+		Scan(&id, &ws, &pinned, &passwordLogin, &mfaAt, &expiresAt, &changePassword, &email, &absolute, &idle, &touch)
 	if err != nil {
 		return nil, notFound(err)
 	}
@@ -436,6 +482,23 @@ func (s *Store) SessionInfo(ctx context.Context, secret string) (*Session, error
 	if touch {
 		_, _ = s.Pool.Exec(ctx, `UPDATE sessions SET last_seen_at = now() WHERE token_hash = $1`, auth.HashToken(secret))
 	}
+	if pinned != nil {
+		var wsID int64
+		if member, err := s.IsMember(ctx, *pinned, id); err != nil {
+			return nil, err
+		} else if member {
+			wsID = *pinned
+		}
+		u, err := s.GetUser(tenant.WithWorkspace(ctx, wsID), id)
+		if err != nil {
+			return nil, err
+		}
+		// An organisation's identity provider vouches for membership of
+		// that organisation only, never for operating the installation.
+		u.InstanceAdmin = false
+		return &Session{User: u, Workspace: wsID, SSOWorkspace: *pinned, PasswordLogin: passwordLogin, MFA: mfaAt != nil,
+			PasswordChangeRequired: changePassword, ExpiresAt: expiresAt}, nil
+	}
 	var wsID int64
 	if ws != nil {
 		if member, err := s.IsMember(ctx, *ws, id); err != nil {
@@ -458,7 +521,8 @@ func (s *Store) SessionInfo(ctx context.Context, secret string) (*Session, error
 	if err != nil {
 		return nil, err
 	}
-	sess := &Session{User: u, Workspace: wsID, PasswordLogin: passwordLogin, PasswordChangeRequired: changePassword}
+	sess := &Session{User: u, Workspace: wsID, PasswordLogin: passwordLogin, MFA: mfaAt != nil, PasswordChangeRequired: changePassword,
+		ExpiresAt: expiresAt}
 	if passwordLogin && mfaAt == nil && !u.MFAEnabled && wsID > 0 {
 		if sess.NeedsMFAEnrolment, err = s.WorkspaceRequiresMFA(ctx, wsID); err != nil {
 			return nil, err

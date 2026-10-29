@@ -331,3 +331,37 @@ func TestResetMFAOfInstanceAdmin(t *testing.T) {
 		}
 	}
 }
+
+// Knowing the password of an account with two-factor sign-in neither
+// makes the address a known one (exempt from the per-account cap on
+// failed sign-ins) nor clears its failures: only a completed sign-in does.
+func TestMFAPasswordAloneMakesNoAddressKnown(t *testing.T) {
+	e := newMFAEnv(t)
+	e.user("ann@x.io", auth.RoleAdmin)
+	secret, _ := enrol(t, e.login("ann@x.io"))
+	known := func() int {
+		t.Helper()
+		var n int
+		if err := e.st.Pool.QueryRow(tenant.System(context.Background()),
+			`SELECT count(*) FROM rate_limits WHERE key LIKE 'login-known:%'`).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	if _, err := e.st.Pool.Exec(tenant.System(context.Background()), `DELETE FROM rate_limits WHERE key LIKE 'login-known:%'`); err != nil {
+		t.Fatal(err)
+	}
+	s, asked := passwordStep(t, e, "ann@x.io")
+	if !asked {
+		t.Fatal("no code asked for")
+	}
+	if n := known(); n != 0 {
+		t.Fatalf("the password alone made %d address(es) known", n)
+	}
+	if code := s.do("POST", "/api/v1/auth/mfa/verify", map[string]string{"code": totpAt(t, secret, 30*time.Second)}, nil); code != 200 {
+		t.Fatalf("code: %d", code)
+	}
+	if n := known(); n != 1 {
+		t.Fatalf("after the code: %d known addresses; want 1", n)
+	}
+}

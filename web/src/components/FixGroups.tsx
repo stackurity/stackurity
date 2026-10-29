@@ -8,6 +8,7 @@ import { IconBan, IconClock, IconKernel, IconPackage, IconReleaseUp, IconUpdates
 import { CodeBlock, ErrorBox, Loading, Pager } from "./ui";
 import { FindingActions } from "./Workflow";
 import { useLoad } from "../hooks";
+import { FixVerify, type CheckOptions } from "./FixVerify";
 
 export const FIX_KIND_LABEL: Record<string, string> = {
   security_updates: "Security updates",
@@ -176,7 +177,18 @@ export function GroupFindings({ groupId, hideAsset }: { groupId: string; hideAss
   );
 }
 
-export function FixGroupCard({ g, hideAsset, defaultOpen }: { g: FixGroup; hideAsset?: boolean; defaultOpen?: boolean }) {
+export function FixGroupCard({
+  g,
+  hideAsset,
+  defaultOpen,
+  options,
+}: {
+  g: FixGroup;
+  hideAsset?: boolean;
+  defaultOpen?: boolean;
+  /** Check-again options for the page (useCheckOptions); without them no verify block. */
+  options?: CheckOptions;
+}) {
   const [open, setOpen] = useState(Boolean(defaultOpen));
   const titleId = `fg-${g.id.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
   const versions = versionsText(g);
@@ -268,6 +280,7 @@ export function FixGroupCard({ g, hideAsset, defaultOpen }: { g: FixGroup; hideA
             How to fix
           </Link>
         </div>
+        {options && <FixVerify g={g} options={options} />}
         {open && <GroupFindings groupId={places ? places.map((p) => p.group_id).join(",") : g.id} hideAsset={hideAsset && !places} />}
       </div>
     </article>

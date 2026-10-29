@@ -116,7 +116,8 @@ var projectRoutes = map[string]projectScope{
 	// Members with project access only see the people of their projects.
 	"GET /api/v1/users/directory": scopedRead,
 	// The loop (0.7): checks, ignore rules and the approval inbox.
-	"GET /api/v1/checks": scopedRead,
+	"GET /api/v1/checks":         scopedRead,
+	"GET /api/v1/checks/options": scopedRead,
 	// Proof (1.0): second checks follow their findings' assets.
 	"GET /api/v1/second-checks":        scopedRead,
 	"GET /api/v1/checks/{id}":          scopedRead,

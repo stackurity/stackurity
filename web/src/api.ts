@@ -14,7 +14,20 @@ export function atLeast(role: Role | undefined, min: UserRole): boolean {
 }
 
 export const ASSET_KINDS = ["host", "repository", "image", "application", "managed_service", "sbom", "cluster", "workload"] as const;
-export const ASSET_STATUSES = ["ok", "partial", "stale"] as const;
+export const ASSET_STATUSES = ["ok", "partial", "stale", "removed"] as const;
+/** Plain words for collection_status. */
+export const ASSET_STATUS_LABEL: Record<string, string> = {
+  ok: "Reporting",
+  partial: "Last scan incomplete",
+  stale: "Stopped reporting",
+  removed: "Removed",
+};
+export const ASSET_STATUS_HELP: Record<string, string> = {
+  ok: "The last collection read everything.",
+  partial: "The last collection could not read everything (see Coverage); issues it could not see stay open.",
+  stale: "Nothing has reported this asset recently.",
+  removed: "The application's directory is no longer reported by its server's agent: it was deleted, is an old release, or is no longer configured. Its issues were resolved as removed.",
+};
 export const CRITICALITIES = ["unknown", "low", "medium", "high", "critical"] as const;
 export const RELATION_KINDS = ["runs_on", "built_from", "deployed_as", "contains", "depends_on", "replica_of"] as const;
 export const COVERAGE_STATUSES = ["checked", "partial", "skipped", "failed", "unsupported"] as const;
@@ -26,19 +39,28 @@ export interface List<T> {
   offset?: number;
 }
 
+export interface SSOProvider {
+  label: string;
+  login_url: string;
+  protocol: "oidc" | "saml";
+}
+
 export interface Meta {
   name: string;
   version: string;
   api: string;
   setup_required: boolean;
-  /** Present when single sign-on is configured. */
-  sso?: { label: string; login_url: string };
+  /** Present when single sign-on is configured: the first provider, and
+   *  every provider (OpenID Connect, SAML) in providers. */
+  sso?: { label: string; login_url: string; providers?: SSOProvider[] };
   /** Present when people may create their own organisation (a hosted edition). */
   signup?: SignupMeta;
   /** True when organisations manage their plan and billing here (a hosted edition). */
   billing?: boolean;
   /** "email": reset links are emailed; "admin": an administrator sets a temporary password. */
   password_reset?: "email" | "admin";
+  /** True when people can find their organisation's single sign-on from their email (a hosted edition). */
+  sso_discovery?: boolean;
 }
 
 export interface SignupMeta {
@@ -397,6 +419,79 @@ export interface Me {
   mfa_enrolment_required?: boolean;
   /** An administrator set a temporary password: only changing it is possible. */
   password_change_required?: boolean;
+  /** Set when the session's workspace requires its own single sign-on, which this session did not use; workspace is then null. */
+  sso_required?: SSORequired;
+}
+
+export interface SSORequired {
+  workspace_id: number;
+  workspace_name: string;
+  login_url: string;
+}
+
+/** An organisation's own single sign-on (Stackurity Cloud). */
+export interface OrgSSOConfig {
+  key: string;
+  label: string;
+  idp_metadata_url: string;
+  idp_entity_id: string;
+  email_attribute: string;
+  name_attribute: string;
+  groups_attribute: string;
+  role_map: Record<string, UserRole>;
+  default_role: UserRole | "";
+  link_existing: boolean;
+  version: number;
+  tested_version: number;
+  tested_at: string | null;
+  test_result: OrgSSOTestResult | null;
+  enabled: boolean;
+  require_sso: boolean;
+  updated_at: string;
+}
+
+export interface OrgSSOTestResult {
+  passed: boolean;
+  reason?: string;
+  idp_entity_id: string;
+  subject: string;
+  email: string;
+  name: string;
+  groups: string[];
+  role: UserRole | "";
+  domain_verified: boolean;
+  at: string;
+}
+
+export interface OrgSSODomain {
+  id: number;
+  domain: string;
+  verified_at: string | null;
+  checked_at: string | null;
+  created_at: string;
+  record_name: string;
+  record_value: string;
+}
+
+export interface OrgSSO {
+  available: boolean;
+  plan_message?: string;
+  config: OrgSSOConfig | null;
+  service_provider?: { entity_id: string; acs_url: string; metadata_url: string; login_url: string };
+  domains: OrgSSODomain[];
+  owner_id: number;
+}
+
+export interface OrgSSOChange {
+  label: string;
+  idp_metadata_url: string;
+  idp_metadata: string;
+  email_attribute: string;
+  name_attribute: string;
+  groups_attribute: string;
+  role_map: Record<string, UserRole>;
+  default_role: UserRole | "";
+  link_existing: boolean;
 }
 
 export type Edition = "community" | "pro" | "enterprise";
@@ -412,6 +507,28 @@ export interface LicenseInfo {
   };
   active_assets: number;
   managed_by_env: boolean;
+}
+
+/** One kind of gap in GET /admin/coverage-gaps: counts and type names only. */
+export interface CoverageGap {
+  kind: string;
+  label: string;
+  detail?: string;
+  assets: number;
+  workspaces: number;
+  /** Distinct components (no_vulnerability_source only). */
+  components?: number;
+}
+
+/** GET /admin/coverage-gaps: what Stackurity cannot check, across every workspace. */
+export interface CoverageGapReport {
+  checked_at: string;
+  workspaces: number;
+  assets: number;
+  overlay_version: string;
+  unread_files: CoverageGap[];
+  no_vulnerability_source: CoverageGap[];
+  no_lifecycle: CoverageGap[];
 }
 
 /** GET /admin/health: whether the installation itself is working. */
@@ -574,8 +691,8 @@ export interface InventoryRow {
 }
 
 export interface LifecycleNote {
-  /** distribution_supported (no finding), distribution_ended or third_party_build. */
-  status?: "distribution_supported" | "distribution_ended" | "third_party_build";
+  /** distribution_supported (no finding), distribution_ended, third_party_build or follows_upstream. */
+  status?: "distribution_supported" | "distribution_ended" | "third_party_build" | "follows_upstream";
   text?: string;
   product?: string;
   cycle?: string;
@@ -1456,13 +1573,34 @@ export interface Check {
   picked_up_at: string | null;
   collection_id: number | null;
   completed_at: string | null;
-  outcome: "" | "passed" | "partly_fixed" | "still_open" | "expired";
+  outcome: "" | "passed" | "partly_fixed" | "still_open" | "incomplete" | "expired";
   open_before: number;
   fixed: number;
   remaining: number;
   new_issues: number;
   status: "waiting" | "evaluating" | "done";
   agent_polled_at: string | null;
+}
+
+/** GET /checks/options: how one place of a fix (or an asset) can be checked again. */
+export interface CheckOption {
+  fix_group?: string;
+  asset_id: number;
+  asset_name: string;
+  asset_kind: string;
+  app_dir?: string;
+  /** The server the asset is (or runs on). */
+  host_name?: string;
+  git_url?: string;
+  collection_status: string;
+  last_seen: string;
+  agent_polled_at: string | null;
+  method: "agent" | "integration" | "report" | string;
+  /** Check again gets a fresh report within minutes. */
+  on_demand: boolean;
+  /** Why not: removed (gone from its server), agent (does not ask for checks), upload (CI scan or SBOM), not_found (fixed and gone from the plan). */
+  reason?: "removed" | "agent" | "upload" | "not_found" | string;
+  last_check: Check | null;
 }
 
 /** An ignore decision for one issue on one asset, or on every asset. */
@@ -2557,6 +2695,14 @@ export const api = {
   del: <T = void>(path: string, body?: unknown) => request<T>("DELETE", path, body),
 
   meta: () => request<Meta>("GET", "/meta"),
+  orgSSO: () => request<OrgSSO>("GET", "/sso"),
+  saveOrgSSO: (b: OrgSSOChange) => request<OrgSSO>("PUT", "/sso", b),
+  setOrgSSOState: (b: { enabled: boolean; require_sso: boolean }) => request<OrgSSO>("PUT", "/sso/state", b),
+  deleteOrgSSO: () => request<void>("DELETE", "/sso"),
+  addOrgSSODomain: (domain: string) => request<OrgSSODomain>("POST", "/sso/domains", { domain }),
+  verifyOrgSSODomain: (id: number) => request<OrgSSODomain>("POST", `/sso/domains/${id}/verify`),
+  deleteOrgSSODomain: (id: number) => request<void>("DELETE", `/sso/domains/${id}`),
+  discoverSSO: (email: string) => request<{ login_url: string; label: string }>("POST", "/auth/sso/discover", { email }, { quiet401: true }),
   me: () => request<Me>("GET", "/auth/me", undefined, { quiet401: true }),
   login: (email: string, password: string) =>
     request<User & { mfa_required?: boolean }>("POST", "/auth/login", { email, password }, { quiet401: true }),

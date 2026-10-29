@@ -4637,3 +4637,41 @@ h6.md-h {
   padding: 0;
   margin: 0.75rem 0;
 }
+
+/* "I've fixed it — check now" on fix cards and the fix detail (FixVerify). */
+.fix-verify {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+.fix-verify:empty {
+  display: none;
+}
+.fix-verify p {
+  margin: 0;
+}
+.fix-verify-ask {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+.verify-pending {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--info-fg, inherit);
+}
+.verify-ok {
+  color: var(--good-fg);
+}
+.verify-ok::before {
+  content: "✓ ";
+  font-weight: 700;
+}
+.verify-bad {
+  color: var(--warn-fg, inherit);
+}
+.verify-left {
+  margin: 4px 0 0;
+}

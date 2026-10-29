@@ -671,11 +671,14 @@ type Check struct {
 	PickedUpAt      *time.Time `json:"picked_up_at"`
 	CollectionID    *int64     `json:"collection_id"`
 	CompletedAt     *time.Time `json:"completed_at"`
-	Outcome         string     `json:"outcome"` // '', passed, partly_fixed, still_open, expired
-	OpenBefore      int        `json:"open_before"`
-	Fixed           int        `json:"fixed"`
-	Remaining       int        `json:"remaining"`
-	NewIssues       int        `json:"new_issues"`
+	// Outcome: '', passed, partly_fixed, still_open, incomplete (the
+	// report could not read everything, so what is left could not be
+	// confirmed gone; see the asset's coverage) or expired.
+	Outcome    string `json:"outcome"`
+	OpenBefore int    `json:"open_before"`
+	Fixed      int    `json:"fixed"`
+	Remaining  int    `json:"remaining"`
+	NewIssues  int    `json:"new_issues"`
 	// Status: waiting (no report yet), evaluating (a report arrived and is
 	// being checked) or done.
 	Status string `json:"status"`
@@ -687,7 +690,7 @@ type Check struct {
 const checkCols = `k.id, k.asset_id, a.name, a.kind, k.fix_group, k.fix_title, k.reason, k.method, k.integration_id, k.requested_by_name,
 	k.requested_at, k.picked_up_at, k.collection_id, k.completed_at, k.outcome, k.open_before, k.fixed, k.remaining, k.new_issues,
 	CASE WHEN k.completed_at IS NOT NULL THEN 'done'
-	  WHEN EXISTS (SELECT 1 FROM collections c WHERE c.asset_id = COALESCE(a.merged_into, a.id) AND c.complete AND c.received_at > k.requested_at)
+	  WHEN EXISTS (SELECT 1 FROM collections c WHERE c.asset_id = COALESCE(a.merged_into, a.id) AND c.received_at > k.requested_at)
 	  THEN 'evaluating' ELSE 'waiting' END,
 	a.agent_polled_at`
 
@@ -728,7 +731,7 @@ func (s *Store) RequestCheck(ctx context.Context, in CheckRequest, actor Actor) 
 		}
 		// A check waiting for its report already asks for the same thing.
 		err := tx.QueryRow(ctx, `SELECT k.id FROM checks k WHERE k.asset_id = $1 AND k.fix_group = $2 AND k.completed_at IS NULL
-			AND NOT EXISTS (SELECT 1 FROM collections c WHERE c.asset_id = k.asset_id AND c.complete AND c.received_at > k.requested_at)
+			AND NOT EXISTS (SELECT 1 FROM collections c WHERE c.asset_id = k.asset_id AND c.received_at > k.requested_at)
 			ORDER BY k.id DESC LIMIT 1`, in.AssetID, in.FixGroup).Scan(&id)
 		if err == nil {
 			return nil
@@ -835,8 +838,12 @@ func (s *Store) AgentCheckDue(ctx context.Context, assetIDs []int64) (bool, erro
 			return err
 		}
 		tag, err := tx.Exec(ctx, `UPDATE checks k SET picked_up_at = COALESCE(k.picked_up_at, now())
-			WHERE k.asset_id = ANY($1) AND k.completed_at IS NULL AND k.method <> 'integration'
-			  AND NOT EXISTS (SELECT 1 FROM collections c WHERE c.asset_id = k.asset_id AND c.complete AND c.received_at > k.requested_at)`, assetIDs)
+			WHERE (k.asset_id = ANY($1)
+			    -- An application its agent no longer reports (a deleted
+			    -- directory): the host's next report says it is gone.
+			    OR k.asset_id IN (SELECT r.from_asset FROM asset_relations r WHERE r.kind = 'runs_on' AND r.to_asset = ANY($1)))
+			  AND k.completed_at IS NULL AND k.method <> 'integration'
+			  AND NOT EXISTS (SELECT 1 FROM collections c WHERE c.asset_id = k.asset_id AND c.received_at > k.requested_at)`, assetIDs)
 		if err != nil {
 			return err
 		}
@@ -861,11 +868,17 @@ func (s *Store) CompleteChecks(ctx context.Context) (int, error) {
 		received    *time.Time
 		evaluatedAt *time.Time
 		pending     bool
+		proven      bool
 	}
+	// The first report after the request decides. One that could not read
+	// everything still completes the check (incomplete), so an agent is
+	// not asked to report again and again for a directory it cannot read.
 	rows, err := s.Pool.Query(ctx, `SELECT k.id, t.id, k.fix_group, k.finding_ids, k.open_before, k.requested_at, c.id, c.received_at, t.evaluated_at,
-		  EXISTS (SELECT 1 FROM jobs j WHERE j.dedupe_key = 'evaluate:asset:' || t.id AND j.done_at IS NULL AND j.failed_at IS NULL)
+		  EXISTS (SELECT 1 FROM jobs j WHERE j.dedupe_key = 'evaluate:asset:' || t.id AND j.done_at IS NULL AND j.failed_at IS NULL),
+		  COALESCE(c.proven, false)
 		FROM checks k JOIN assets a ON a.id = k.asset_id JOIN assets t ON t.id = COALESCE(a.merged_into, a.id)
-		LEFT JOIN LATERAL (SELECT c.id, c.received_at FROM collections c WHERE c.asset_id = t.id AND c.complete AND c.received_at > k.requested_at
+		LEFT JOIN LATERAL (SELECT c.id, c.received_at, c.complete OR c.proves_absence AS proven FROM collections c
+		  WHERE c.asset_id = t.id AND c.received_at > k.requested_at
 		  ORDER BY c.received_at LIMIT 1) c ON true
 		WHERE k.completed_at IS NULL ORDER BY k.id LIMIT 1000`)
 	if err != nil {
@@ -874,7 +887,7 @@ func (s *Store) CompleteChecks(ctx context.Context) (int, error) {
 	var list []open
 	for rows.Next() {
 		var o open
-		if err := rows.Scan(&o.id, &o.asset, &o.fix, &o.ids, &o.before, &o.requested, &o.coll, &o.received, &o.evaluatedAt, &o.pending); err != nil {
+		if err := rows.Scan(&o.id, &o.asset, &o.fix, &o.ids, &o.before, &o.requested, &o.coll, &o.received, &o.evaluatedAt, &o.pending, &o.proven); err != nil {
 			rows.Close()
 			return 0, err
 		}
@@ -923,6 +936,9 @@ func (s *Store) CompleteChecks(ctx context.Context) (int, error) {
 			fixed = max(0, o.before-remaining)
 		}
 		outcome := CheckOutcome(fixed, remaining)
+		if !o.proven && remaining > 0 {
+			outcome = "incomplete"
+		}
 		if _, err := s.Pool.Exec(ctx, `UPDATE checks SET completed_at = now(), collection_id = $2, outcome = $3, fixed = $4, remaining = $5,
 			new_issues = $6 WHERE id = $1 AND completed_at IS NULL`, o.id, o.coll, outcome, fixed, remaining, fresh); err != nil {
 			return done, err

@@ -139,6 +139,20 @@ func (b *ObservationBatch) Validate() error {
 			add("an %s identifier needs an application asset, an absolute path, no other identifiers and a runs_on relation", AppPathScheme)
 		}
 	}
+	if b.Apps != nil {
+		if b.Asset.Kind != AssetHost {
+			add("apps is only allowed on a host's batch")
+		}
+		if len(b.Apps.Dirs) > MaxAppDirs {
+			add("apps.dirs has more than %d directories", MaxAppDirs)
+		}
+		for i, d := range b.Apps.Dirs {
+			if !strings.HasPrefix(d, "/") || long(d) || hasControl(d) {
+				add("apps.dirs[%d] must be an absolute path", i)
+				break
+			}
+		}
+	}
 	for i, c := range b.Coverage {
 		switch c.Status {
 		case "checked", "skipped", "failed", "unsupported", "partial":

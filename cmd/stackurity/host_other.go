@@ -4,8 +4,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
 
 	"github.com/stackurity/stackurity/internal/collect/apps"
 	"github.com/stackurity/stackurity/internal/collect/gitrepo"
@@ -49,13 +52,24 @@ func hostCollector(o *hostOptions) (func(context.Context) ([]*model.ObservationB
 		// Every application is known before any is scanned, so one inside
 		// another is reported once, by itself.
 		dirs := append([]string{}, o.appDirs...)
+		full := true // the list names every application on the host
 		if o.discoverApps {
-			dirs = append(dirs, scanner.Discover()...)
+			found, all := scanner.DiscoverAll()
+			dirs = append(dirs, found...)
+			full = all
 		}
 		scanner.Apps = dirs
 		seen := map[string]bool{}
+		reported := []string{}
 		for i, dir := range dirs {
 			explicit := i < len(o.appDirs)
+			// A configured directory that no longer exists (an application
+			// that was deleted) is not reported: the host's app list leaves
+			// it out, and the server resolves its issues as removed.
+			if explicit && missingDir(o.root, dir) {
+				fmt.Fprintf(os.Stderr, "application directory %s does not exist; it is reported as removed\n", dir)
+				continue
+			}
 			app := scanner.ScanApp(ctx, dir)
 			if seen[app.Dir] {
 				continue
@@ -67,9 +81,20 @@ func hostCollector(o *hostOptions) (func(context.Context) ([]*model.ObservationB
 				continue
 			}
 			batches = append(batches, appBatch(app, osBatch.Asset))
+			reported = append(reported, app.Dir)
+		}
+		if full && len(reported) <= model.MaxAppDirs {
+			osBatch.Apps = &model.AppList{Dirs: reported}
 		}
 		return batches, nil
 	}, nil
+}
+
+// missingDir reports whether a configured application directory is gone
+// (not merely unreadable).
+func missingDir(root, dir string) bool {
+	_, err := os.Stat(filepath.Join(root, dir))
+	return errors.Is(err, fs.ErrNotExist)
 }
 
 // appBatch describes one deployed application as its own asset, linked to

@@ -53,6 +53,7 @@ func (s *Server) completePasswordLogin(w http.ResponseWriter, r *http.Request, u
 		return
 	}
 	if !has {
+		s.loginSucceeded(r, u)
 		s.startSessionWith(w, r, u, store.SessionOpts{PasswordLogin: true}, nil)
 		return
 	}
@@ -148,6 +149,7 @@ func (s *Server) verifyMFA(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = s.Store.DeleteMFAChallenge(r.Context(), c.Value)
 	s.clearMFACookie(w)
+	s.loginSucceeded(r, u)
 	s.startSessionWith(w, r, u, store.SessionOpts{PasswordLogin: true, MFA: true}, map[string]any{"mfa": method})
 }
 

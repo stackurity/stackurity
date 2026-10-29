@@ -117,7 +117,24 @@ type ObservationBatch struct {
 	// Relations are optional; when present they replace the relations this
 	// collector reported for the asset before.
 	Relations []RelationRef `json:"relations,omitempty"`
+	// Apps, on a host's batch, lists every application directory the agent
+	// reports for the host in this run (each in its own batch after this
+	// one). An application on the host it reported before that is not in
+	// the list is gone: its directory was removed, it is no longer the
+	// current release, or it is no longer configured. Nil when the agent
+	// does not know the full list (an older agent, or discovery that
+	// stopped at its limits). Sent only to servers that list the
+	// "app_list" feature in GET /meta.
+	Apps *AppList `json:"apps,omitempty"`
 }
+
+// AppList is the set of application directories a host's agent reports.
+type AppList struct {
+	Dirs []string `json:"dirs"`
+}
+
+// MaxAppDirs bounds AppList.Dirs.
+const MaxAppDirs = 1000
 
 func NewBatch(c Collector, a AssetRef) *ObservationBatch {
 	return &ObservationBatch{

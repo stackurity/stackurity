@@ -90,6 +90,11 @@ func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 // checks for it before it uploads with --project.
 const FeatureUploadProject = "upload_project"
 
+// FeatureAppList, in GET /meta's features, says that POST /ingest takes a
+// host batch's apps.dirs and marks the host's applications missing from it
+// removed. Agents send the list only to servers that say so.
+const FeatureAppList = "app_list"
+
 // uploadProject decides which project an upload (POST /ingest, POST
 // /sbom/import) files its asset in, from project_id or the switcher's
 // header. It returns 0 when none applies, and whether the project takes any

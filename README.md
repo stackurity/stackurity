@@ -85,7 +85,7 @@ For TLS, backups, upgrades, Kubernetes (Helm), the agents and plugins, see [docs
 - Runtimes found outside the package manager get lifecycle (end-of-life) tracking only; vulnerabilities are not matched for them.
 - A distribution package past its upstream end of life (nginx 1.18 on Ubuntu 22.04) raises no end-of-life finding while the distribution release is supported. The agent does not record which repository a package came from: builds from Ondřej Surý's PHP repository, nginx.org, NodeSource, PGDG, Remi and MySQL's APT repository are recognised by their version and keep the upstream date, other third-party builds are taken as the distribution's own. Ubuntu `universe` packages, which get security fixes only through Ubuntu Pro, are not told apart from `main` ([details](docs/compatibility.md#lifecycle-of-distribution-packages)).
 - Java needs the Java stack pack; from a `pom.xml` alone it sees direct dependencies only. Windows hotfixes and Microsoft Store apps are reported as unsupported coverage.
-- Single sign-on supports OpenID Connect; SAML is not implemented.
+- Single sign-on (OpenID Connect or SAML) admits people into one workspace per installation; SAML single logout is not supported.
 - Kubernetes exposure covers Services, Ingresses and host networking, not Gateway API routes or service meshes. Running images are scanned without registry credentials, so images behind pull secrets show as failed coverage unless added as container image integrations. Kubernetes CVEs are not matched (lifecycle only).
 - Remediation applies to Linux packages (apt, dnf, yum, zypper, apk) and to repositories through Renovate. Kernels and other packages installed side by side in several versions are not upgraded automatically on rpm systems.
 
