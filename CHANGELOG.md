@@ -45,6 +45,11 @@ Each release's section is published as its GitHub release notes, and a tag witho
 - Behind another reverse proxy (Caddy, nginx, Traefik, an ingress controller), set `STACKURITY_TRUSTED_PROXY_HEADER=X-Forwarded-For` (or the header your proxy overwrites, such as `X-Real-IP`). If the proxy reaches Stackurity from a public address, list it in `STACKURITY_TRUSTED_PROXIES`. The Helm chart sets `X-Forwarded-For` by default (`config.trustedProxyHeader`). A warning is logged once when the header arrives from a peer that is not trusted.
 - Single sign-on (OpenID Connect): accounts already linked keep working. People whose password account was never linked are refused at their first single sign-on until they use their password, or until the operator sets `STACKURITY_OIDC_LINK_EXISTING=true`. With Microsoft Entra ID set `STACKURITY_OIDC_REQUIRE_EMAIL_VERIFIED=false` and `STACKURITY_OIDC_ALLOWED_DOMAINS`.
 
+### Fixed
+
+- Windows Server hosts now get end-of-life findings; the docs said they did but no finding was raised. The release comes from the build number (14393 is Windows Server 2016, 17763 is 2019 or 1809 by product name, 20348 is 2022), with the product name and edition as a cross-check, and Windows 10 and 11 hosts are mapped by build and edition. A build that does not name one release is a coverage gap with the reason, never supported. The Windows agent now also reports `EditionID` on the operating system row. See [Windows end of life](docs/compatibility.md#windows-end-of-life).
+- .NET installed from distribution packages gets end-of-life findings: `dotnet-runtime-X.Y` (deb or rpm) is .NET X.Y. Red Hat's and Microsoft's packages take Microsoft's date, since neither supports .NET past it; Ubuntu's own archive packages follow the Ubuntu release. See [.NET end of life](docs/compatibility.md#net-end-of-life).
+
 ## 0.13.3
 
 ### Added

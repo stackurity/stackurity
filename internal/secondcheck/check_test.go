@@ -217,6 +217,32 @@ func TestSecondCheckEndOfLife(t *testing.T) {
 	}
 }
 
+// Windows releases are checked by build against endoflife.date's latest
+// build for each release, not by the matcher's table.
+func TestSecondCheckWindows(t *testing.T) {
+	past, future := time.Date(2020, 11, 10, 0, 0, 0, 0, time.UTC), time.Date(2029, 1, 9, 0, 0, 0, 0, time.UTC)
+	now := time.Date(2027, 2, 1, 0, 0, 0, 0, time.UTC)
+	ended := time.Date(2027, 1, 12, 0, 0, 0, 0, time.UTC)
+	cycles := []store.LifecycleCycle{
+		{Product: "windows-server", Cycle: "2019", Latest: "10.0.17763", EOLUntil: &future},
+		{Product: "windows-server", Cycle: "1809-sac", Latest: "10.0.17763", EOLUntil: &past, IsEOL: true},
+		{Product: "windows-server", Cycle: "2016", Latest: "10.0.14393", EOLUntil: &ended},
+	}
+	claim := func(cycle string) Claim {
+		return Claim{Kind: "end_of_life", Evidence: map[string]any{"product": "windows-server", "cycle": cycle}}
+	}
+	obs := func(v string) Observed { return Observed{Purl: "pkg:generic/windows@" + v, Version: v} }
+	if out := CheckEndOfLife(claim("2016"), obs("10.0.14393.7428"), cycles, now); out.Result != store.SecondCheckAgreed {
+		t.Fatalf("2016: %s %s", out.Result, out.Reason)
+	}
+	if out := CheckEndOfLife(claim("1809-sac"), obs("10.0.17763.1577"), cycles, now); out.Result != store.SecondCheckAgreed {
+		t.Fatalf("1809 SAC: %s %s", out.Result, out.Reason)
+	}
+	want(t, CheckEndOfLife(claim("2019"), obs("10.0.17763.6532"), cycles, now), "end_of_life", "supported until 2029-01-09")
+	want(t, CheckEndOfLife(claim("2016"), obs("10.0.17763.6532"), cycles, now), "release_line", "build 17763 is 2019 or 1809-sac")
+	want(t, CheckEndOfLife(claim("2016"), obs("10.0.20348.1"), cycles, now), "release_line", "no release line of windows-server lists build 20348")
+}
+
 func TestComparators(t *testing.T) {
 	type pair struct {
 		a, b string

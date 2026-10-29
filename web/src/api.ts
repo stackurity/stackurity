@@ -579,8 +579,8 @@ export interface InventoryRow {
 }
 
 export interface LifecycleNote {
-  /** distribution_supported (no finding), distribution_ended or third_party_build. */
-  status?: "distribution_supported" | "distribution_ended" | "third_party_build";
+  /** distribution_supported (no finding), distribution_ended, third_party_build or follows_upstream. */
+  status?: "distribution_supported" | "distribution_ended" | "third_party_build" | "follows_upstream";
   text?: string;
   product?: string;
   cycle?: string;
