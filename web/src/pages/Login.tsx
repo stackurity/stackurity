@@ -7,6 +7,8 @@ import { Code, ErrorBox } from "../components/ui";
 export function LoginPage() {
   const { refresh, state } = useAuth();
   const sso = state.phase === "login" ? state.meta.sso : undefined;
+  // Servers before SAML send one provider without the list.
+  const providers = sso ? (sso.providers ?? [sso]) : [];
   const signup = state.phase === "login" ? state.meta.signup : undefined;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -31,9 +33,11 @@ export function LoginPage() {
         {sso && (
           <>
             {/* A full-page navigation: the identity provider takes over from here. */}
-            <a className="btn btn-primary btn-block" href={sso.login_url}>
-              Sign in with {sso.label}
-            </a>
+            {providers.map((p) => (
+              <a key={p.login_url} className="btn btn-primary btn-block" href={p.login_url}>
+                Sign in with {p.label}
+              </a>
+            ))}
             <p className="muted small" style={{ textAlign: "center" }}>
               or use an email and password
             </p>

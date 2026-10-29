@@ -83,6 +83,24 @@ Starts single sign-on with the configured OpenID Connect provider ([install.md](
 
 Where the identity provider sends the browser back: signs the person in and starts a session.
 
+### `GET /saml/metadata`
+
+**Who:** anyone · licensed build · outside `/api/v1`
+
+This service provider's SAML metadata (`application/samlmetadata+xml`; `?download=1` as a file), for setting up the identity provider ([install.md](install.md#saml)). 404 when SAML is not configured.
+
+### `GET /saml/login`
+
+**Who:** anyone · licensed build · outside `/api/v1`
+
+Starts single sign-on with the configured SAML identity provider. Optional `return_to`, a page on this server to open afterwards (anything else opens the dashboard).
+
+### `POST /saml/acs`
+
+**Who:** the identity provider, through the browser (a signed response) · licensed build · outside `/api/v1`
+
+The Assertion Consumer Service: verifies the provider's response (`SAMLResponse`, `RelayState`), signs the person in and starts a session.
+
 ### `POST /feedback`
 
 **Who:** any signed-in user (10 an hour)
