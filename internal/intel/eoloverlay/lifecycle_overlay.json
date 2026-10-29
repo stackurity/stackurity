@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "2026-10-28.1",
+  "version": "2026-10-29.1",
   "description": "Stackurity's lifecycle mappings on top of endoflife.date. Every product entry was checked against the vendor's or distribution's own package index (sources) on the date given. endoflife.date's own identifiers win unless an entry sets override.",
   "namespace_families": [
     {
@@ -434,11 +434,20 @@
       "purls": [
         "pkg:deb/*/consul"
       ],
-      "vendor_only": "HashiCorp's repository (apt.releases.hashicorp.com)",
-      "sources": [
-        "https://apt.releases.hashicorp.com/dists/noble/main/binary-amd64/Packages.gz"
+      "vendor_builds": [
+        {
+          "repository": "HashiCorp's repository (apt.releases.hashicorp.com)",
+          "version": "^(\\d+:)?\\d+\\.\\d+\\.\\d+(-\\d+)?(\\+ent)?(-\\d+)?$"
+        }
       ],
-      "verified": "2026-10-28"
+      "sources": [
+        "https://apt.releases.hashicorp.com/dists/noble/main/binary-amd64/Packages.gz",
+        "https://qa.debian.org/madison.php?package=consul&table=archived",
+        "https://qa.debian.org/madison.php?package=consul&table=ubuntu",
+        "https://launchpad.net/ubuntu/+source/consul"
+      ],
+      "verified": "2026-10-29",
+      "note": "Debian and Ubuntu shipped their own consul (Debian 10 1.0.7~dfsg1-5, Debian 11 1.8.7+dfsg1-2, Ubuntu 18.04 0.6.4~dfsg-3, 20.04 1.5.2+dfsg2-14, 22.04 1.8.7+dfsg1-3, 23.10 1.10.12+dfsg1-1build1), so only HashiCorp's version format (1.20.1-1, 1.20.1+ent-1) marks a vendor build; every distribution build has +dfsg or ~dfsg."
     },
     {
       "product": "terraform",
@@ -456,11 +465,20 @@
       "purls": [
         "pkg:deb/*/nomad"
       ],
-      "vendor_only": "HashiCorp's repository (apt.releases.hashicorp.com)",
-      "sources": [
-        "https://apt.releases.hashicorp.com/dists/noble/main/binary-amd64/Packages.gz"
+      "vendor_builds": [
+        {
+          "repository": "HashiCorp's repository (apt.releases.hashicorp.com)",
+          "version": "^(\\d+:)?\\d+\\.\\d+\\.\\d+(-\\d+)?(\\+ent)?(-\\d+)?$"
+        }
       ],
-      "verified": "2026-10-28"
+      "sources": [
+        "https://apt.releases.hashicorp.com/dists/noble/main/binary-amd64/Packages.gz",
+        "https://qa.debian.org/madison.php?package=nomad&table=archived",
+        "https://qa.debian.org/madison.php?package=nomad&table=ubuntu",
+        "https://launchpad.net/ubuntu/+source/nomad"
+      ],
+      "verified": "2026-10-29",
+      "note": "Ubuntu shipped its own nomad (18.04 0.4.0+dfsg-1, 20.04 0.8.7+dfsg1-1ubuntu1, 20.10-21.04 0.10.5+dfsg1-1ubuntu2; Debian's only reached unstable), so only HashiCorp's version format (2.0.7-1, 1.9.3+ent-1) marks a vendor build; every distribution build has +dfsg."
     },
     {
       "product": "openssl",

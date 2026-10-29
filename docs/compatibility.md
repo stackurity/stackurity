@@ -159,7 +159,7 @@ package URL maps to an endoflife.date product, in this order:
 | Apache HTTP Server, Tomcat | `apache2` deb; `tomcat9`, `tomcat10`, `tomcat11` deb and `org.apache.tomcat.embed:tomcat-embed-core` (Spring Boot) |
 | RabbitMQ, Kubernetes, GitLab, Jenkins, SQL Server | `rabbitmq-server` deb; `kubelet` deb and rpm; `gitlab-ce` and `jenkins` deb and rpm; `mssql-server` deb |
 | Eclipse Temurin, Amazon Corretto, Go | `temurin-<v>-jdk`/`-jre`; `java-<v>-amazon-corretto-jdk`; `golang-<v>-go` (release line from the name) |
-| HashiCorp Vault, Consul, Terraform, Nomad | Their deb packages from HashiCorp's repository |
+| HashiCorp Vault, Consul, Terraform, Nomad | Their deb packages from HashiCorp's repository; the distributions' own `consul` (Debian 10-11, Ubuntu 18.04-23.10) and `nomad` (Ubuntu 18.04-21.04), versioned `+dfsg`, stay distribution packages |
 | OpenSSL, Exim, Postfix, Dovecot, Prometheus, Erlang, Podman | Distribution packages (`openssl`, `exim4-base`, `postfix`, `dovecot-core`, `prometheus`, `erlang-base`, `podman`); on a supported release they get the upstream note, not a finding |
 | Symfony, CakePHP, Twig, Craft CMS, Shopware | `symfony/http-kernel`, `cakephp/cakephp`, `twig/twig`, `craftcms/cms`, `shopware/core` (Composer) |
 | Kotlin, Quarkus, Apache Kafka, Apache Lucene, Liquibase | `kotlin-stdlib`, `quarkus-core`, `kafka_2.13`/`kafka_2.12` (the broker), `lucene-core`, `liquibase-core` (Maven) |

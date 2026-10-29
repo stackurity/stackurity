@@ -239,6 +239,7 @@ func serverCmd() *cobra.Command {
 			if !trustProxy && (os.Getenv("STACKURITY_TRUSTED_PROXIES") != "" || os.Getenv("STACKURITY_TRUSTED_PROXY_HEADER") != "") {
 				log.Warn("STACKURITY_TRUSTED_PROXIES and STACKURITY_TRUSTED_PROXY_HEADER apply only with STACKURITY_TRUST_PROXY=true")
 			}
+			coverageGaps := intel.CachedCoverageGaps(st, nil, intel.GapReportTTL)
 			srv := &api.Server{
 				OpenAIAppsChallenge: challenge,
 				Pro:                 proCfg,
@@ -255,7 +256,7 @@ func serverCmd() *cobra.Command {
 				Packs:              packMgr,
 				Licence:            holder, Gate: gate, LicenceFromEnv: licFromEnv,
 				Health: checker, UpdateCheck: updateCfg.Enabled,
-				CoverageGaps: func(ctx context.Context) (any, error) { return intel.CoverageGaps(ctx, st, nil) },
+				CoverageGaps: func(ctx context.Context) (any, error) { return coverageGaps(ctx) },
 				FeedbackURL:  feedbackURL,
 			}
 			// Metrics have their own listener, off by default, so they are

@@ -19,6 +19,8 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ### Fixed
 
+- The `consul` and `nomad` packages Debian (10, 11) and Ubuntu (18.04 to 23.10) built themselves are no longer taken for HashiCorp's builds: the lifecycle overlay now recognises HashiCorp's repository by its version format (`1.20.1-1`), so distribution builds (`1.8.7+dfsg1-3`) are still matched against the distribution's advisories (overlay `2026-10-29.1`).
+- The coverage-gap report (`GET /api/v1/admin/coverage-gaps`) no longer scans all inventory on every request: each server reuses a report for up to 5 minutes (`checked_at` says when it was built).
 - A Debian or RPM epoch no longer stops the release line from being read (`5:7.0.15` is Redis 7.0, `1:10.11.6` MariaDB 10.11).
 - An upstream pre-release version such as `2.0~beta` is no longer taken for a build named after a release codename.
 
