@@ -131,6 +131,20 @@ func TargetFor(purl, ver string, evidence map[string]string) (Target, bool) {
 		t.Ecosystem, t.Name = "NuGet", p.Name
 	case "pub":
 		t.Ecosystem, t.Name = "Pub", p.Name
+	case "swift":
+		// OSV names Swift packages by repository URL without the scheme:
+		// pkg:swift/github.com/apple/swift-nio is "github.com/apple/swift-nio".
+		if !swiftURL(p.Namespace) {
+			return Target{}, false // a registry identity (scope/name): no URL to match
+		}
+		t.Ecosystem, t.Name = "SwiftURL", PackageName("SwiftURL", p.Namespace+"/"+p.Name)
+	case "hex":
+		// A namespace is a private organisation or another repository, which
+		// public advisories do not cover; the same name there is another package.
+		if p.Namespace != "" {
+			return Target{}, false
+		}
+		t.Ecosystem, t.Name = "Hex", p.Name
 	case "deb":
 		distro := q["distro"] // e.g. debian-12, ubuntu-22.04
 		name := p.Name
@@ -247,9 +261,23 @@ func WhyNoTarget(purl, ver string) (reason string, unsupported bool) {
 	distro := p.Qualifiers.Map()["distro"]
 	ns := strings.ToLower(p.Namespace)
 	switch p.Type {
-	case "npm", "composer", "pypi", "golang", "cargo", "gem", "maven", "nuget", "pub":
+	case "npm", "composer", "pypi", "golang", "cargo", "gem", "maven", "nuget", "pub", "swift", "hex":
+		if p.Type == "swift" && !swiftURL(p.Namespace) {
+			return "Swift packages are matched by repository URL, and this one has none (a package registry identity only)", true
+		}
+		if p.Type == "hex" && p.Namespace != "" {
+			return fmt.Sprintf("packages from the private Hex organisation or repository %q have no vulnerability source", p.Namespace), true
+		}
 		if ver == "" {
 			return "no installed version was reported", false
+		}
+	case "cocoapods":
+		return "CocoaPods packages have no vulnerability source: OSV publishes no CocoaPods advisories", true
+	case "conan":
+		return "Conan packages have no vulnerability source: OSV publishes no ConanCenter advisories", true
+	case "generic":
+		if ns == "vcpkg" {
+			return "vcpkg ports have no vulnerability source: no public advisory database covers them", true
 		}
 	case "deb", "apk":
 		if (p.Type == "deb" && ns != "debian" && ns != "ubuntu") || (p.Type == "apk" && ns != "alpine") {
@@ -279,6 +307,26 @@ func WhyNoTarget(purl, ver string) (reason string, unsupported bool) {
 		return fmt.Sprintf("the distro release %q is not understood", distro), false
 	}
 	return fmt.Sprintf("no vulnerability source for %s packages", p.Type), true
+}
+
+// PackageName is the form of an advisory's package name that matching
+// compares. Swift packages are named by repository URL, and the hosts
+// (GitHub, GitLab) treat a repository path in any letter case as the same
+// repository, so "github.com/sparkle-project/Sparkle" is stored and looked
+// up in lower case. Other names are kept as published.
+func PackageName(ecosystem, name string) string {
+	if BaseEcosystem(ecosystem) == "SwiftURL" {
+		return strings.ToLower(name)
+	}
+	return name
+}
+
+// swiftURL reports whether a Swift purl's namespace starts with a host
+// (github.com/apple), as a package named by its repository URL does, rather
+// than a package registry scope.
+func swiftURL(ns string) bool {
+	host, _, _ := strings.Cut(ns, "/")
+	return strings.Contains(host, ".")
 }
 
 func joinNS(ns, name string) string {

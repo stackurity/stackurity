@@ -1,0 +1,30 @@
+{
+  "abi": "stackurity-pack/2",
+  "id": "cpp",
+  "version": "1.0.0",
+  "name": "C and C++ (Conan and vcpkg)",
+  "publisher": "stackurity",
+  "license": "Apache-2.0",
+  "description": "Inventories C and C++ libraries: Conan lock files (Conan 1 and 2) with exact versions, vcpkg manifests (vcpkg.json, exact only where pinned under overrides) and the vcpkg.spdx.json record of every installed vcpkg port. No public vulnerability database covers ConanCenter or vcpkg ports, so these libraries are inventoried but not checked for vulnerabilities.",
+  "homepage": "https://stackurity.dev/packs/cpp",
+  "files": [
+    "conan.lock",
+    "vcpkg.json",
+    "vcpkg.spdx.json"
+  ],
+  "purl_types": [
+    "conan",
+    "generic"
+  ],
+  "handles": [
+    "conan",
+    "vcpkg"
+  ],
+  "max_memory_mb": 128,
+  "timeout_seconds": 60,
+  "known_limitations": [
+    "No vulnerability source: OSV has no ConanCenter or vcpkg advisories, so these libraries are shown as not checked (inventory and search only)",
+    "vcpkg.json gives exact versions only for ports pinned under overrides; the rest are resolved by vcpkg from builtin-baseline, which needs the vcpkg registry, and are counted in the file's coverage",
+    "conanfile.txt and conanfile.py are not read; create a lock file with conan lock create"
+  ]
+}

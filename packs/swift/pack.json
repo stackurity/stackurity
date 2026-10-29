@@ -1,0 +1,30 @@
+{
+  "abi": "stackurity-pack/2",
+  "id": "swift",
+  "version": "1.0.0",
+  "name": "Swift and CocoaPods",
+  "publisher": "stackurity",
+  "license": "Apache-2.0",
+  "description": "Reads Swift Package Manager's Package.resolved (formats 1, 2 and 3, including Xcode projects and package registries) and CocoaPods' Podfile.lock: every pinned package with its exact version. Swift packages are checked against OSV's SwiftURL advisories. OSV publishes no CocoaPods advisories, so pods are inventoried but cannot be checked for vulnerabilities.",
+  "homepage": "https://stackurity.dev/packs/swift",
+  "files": [
+    "Package.resolved",
+    "Podfile.lock"
+  ],
+  "purl_types": [
+    "swift",
+    "cocoapods"
+  ],
+  "handles": [
+    "swift",
+    "cocoapods"
+  ],
+  "max_memory_mb": 128,
+  "timeout_seconds": 60,
+  "known_limitations": [
+    "CocoaPods has no vulnerability source in OSV: pods are inventoried with their versions and shown as not checked",
+    "Swift packages pinned to a branch or a commit have no version and are not listed; the file's coverage counts them",
+    "Local packages (localSourceControl, CocoaPods :path:) are the project's own code and are not listed",
+    "OSV names Swift packages by repository URL; a package whose URL differs in letter case from the advisory's is not matched"
+  ]
+}

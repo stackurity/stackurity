@@ -53,6 +53,11 @@ The same rules apply to container images scanned through the bundled Syft and to
 | Dart and Flutter (pub) | Yes | OSV | pub.dev (0.2+) |
 | Maven, Gradle | Java stack pack | OSV | Maven Central (0.2+) |
 | Cargo | Rust stack pack | OSV | crates.io (0.2+) |
+| Swift Package Manager (`Package.resolved` v1-v3) | Swift stack pack | OSV (SwiftURL: GitHub's Swift advisories, a few dozen packages, mostly SwiftNIO, Vapor and server libraries). Packages pinned to a branch or commit, and registry packages without their source URL: not checked | No: SwiftPM has no central registry |
+| CocoaPods (`Podfile.lock`) | Swift stack pack | No: OSV publishes no CocoaPods advisories. Pods are inventoried and shown as unsupported | No |
+| Elixir and Erlang (`mix.lock`) | Hex stack pack | OSV (Hex: GitHub and the Erlang Ecosystem Foundation, the best-covered of these three). Git dependencies and private organisations' packages: not checked | hex.pm |
+| Conan (`conan.lock`, Conan 1 and 2) | C and C++ stack pack | No: OSV has no ConanCenter data. Inventory only | No |
+| vcpkg (`vcpkg.json`, installed ports' `vcpkg.spdx.json`) | C and C++ stack pack (`vcpkg.json` exact only for ports pinned under `overrides`) | No: no public advisory source covers vcpkg ports. Inventory only | No |
 
 ## Remediation (Pro)
 
@@ -317,6 +322,8 @@ evaluate, with the explicit response expected.
 | crates.io | `crates/` | Several introduced/fixed pairs in one range, pre-releases, advisories without a CVE, withdrawn records | A requirement (`1.x`): not checked |
 | NuGet | `nuget/` | Per-major ranges, `last_affected` without a fix, pre-releases, withdrawn records | More than four version parts: not checked |
 | Pub | `pub/` | `+build` versions, pre-release fixes, single-version advisories, withdrawn records | A constraint (`any`): not checked |
+| SwiftURL | `swift/` | Several ranges per record, an ECOSYSTEM range with a two-part fix, pre-releases, `last_affected`, repository names in any letter case, withdrawn records | A branch name: not checked; a registry identity without a URL, CocoaPods: unsupported |
+| Hex | `hex/` | Per-minor ranges, the same CVE from the EEF CNA and GitHub, `last_affected` without a fix, pre-releases, withdrawn records | A requirement (`1.x`): not checked; a private organisation's package: unsupported |
 | Debian | `debian/` | `+debNuM` backports, epochs (and a version reported without one), per-release fixes, binary to source mapping, withdrawn records | A release without advisories, no distro qualifier, a malformed epoch: not checked; derivatives: unsupported |
 | Ubuntu, including Pro | `ubuntu/` | `ubuntu0.22.04.N` updates, Pro-only (ESM) fixes and universe packages, FIPS builds and the FIPS-updates channel, kernel modules against the `linux` source while headers, `linux-libc-dev` and `linux-tools-common` get no findings | A release without advisories: not checked |
 | Alpine | `alpine/` | `-rN` revisions, per-release fixes, `_alpha` pre-releases | A release without advisories, no distro qualifier: not checked; other apk distributions: unsupported |

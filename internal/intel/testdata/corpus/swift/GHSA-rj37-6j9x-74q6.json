@@ -1,0 +1,39 @@
+{
+ "id": "GHSA-rj37-6j9x-74q6",
+ "modified": "2026-09-10T03:50:50.289971195Z",
+ "published": "2026-06-12T15:07:53Z",
+ "aliases": [
+  "CVE-2026-28980"
+ ],
+ "summary": "SwiftNIO NIOHTTP1:  HTTPDecoder accepts unbounded HTTP/1 header blocks, enabling remote DoS",
+ "severity": [
+  {
+   "type": "CVSS_V4",
+   "score": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:N/VA:H/SC:N/SI:N/SA:N"
+  }
+ ],
+ "database_specific": {
+  "severity": "HIGH"
+ },
+ "affected": [
+  {
+   "package": {
+    "ecosystem": "SwiftURL",
+    "name": "github.com/apple/swift-nio"
+   },
+   "ranges": [
+    {
+     "type": "SEMVER",
+     "events": [
+      {
+       "introduced": "0"
+      },
+      {
+       "fixed": "2.100.0"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

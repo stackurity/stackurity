@@ -71,6 +71,7 @@ var unreadKinds = map[string][2]string{
 	"conan:conanfile.py":     {"conanfile.py", "Conan (C/C++)"},
 	"conan:conan.lock":       {"conan.lock", "Conan (C/C++)"},
 	"vcpkg:vcpkg.json":       {"vcpkg.json", "vcpkg (C/C++)"},
+	"vcpkg:vcpkg.spdx.json":  {"vcpkg.spdx.json", "vcpkg installed port (C/C++)"},
 	"pypi:uv.lock":           {"uv.lock", "uv (Python)"},
 	"pypi:pdm.lock":          {"pdm.lock", "PDM (Python)"},
 	"nuget:packages.config":  {"packages.config", "NuGet, legacy format"},

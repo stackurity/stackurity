@@ -992,6 +992,7 @@ func intelConfig(dataDir string) intel.Config {
 	cfg.NuGetURL = env("STACKURITY_NUGET_URL", cfg.NuGetURL)
 	cfg.MavenURL = env("STACKURITY_MAVEN_URL", cfg.MavenURL)
 	cfg.PubURL = env("STACKURITY_PUB_URL", cfg.PubURL)
+	cfg.HexURL = env("STACKURITY_HEX_URL", cfg.HexURL)
 	cfg.WorkDir = filepath.Join(dataDir, "work")
 	// Registries ask automated clients to identify themselves.
 	cfg.UserAgent = "stackurity/" + version + " (+https://github.com/stackurity/stackurity)"

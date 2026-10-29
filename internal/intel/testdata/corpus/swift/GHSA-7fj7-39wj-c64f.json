@@ -1,0 +1,77 @@
+{
+ "id": "GHSA-7fj7-39wj-c64f",
+ "modified": "2026-07-08T06:28:22.007836654Z",
+ "published": "2023-06-07T16:01:53Z",
+ "aliases": [
+  "CVE-2022-3215"
+ ],
+ "summary": "SwiftNIO vulnerable to Improper Neutralization of CRLF Sequences in HTTP Headers ('HTTP Response Splitting')",
+ "severity": [
+  {
+   "type": "CVSS_V3",
+   "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:L/A:N"
+  }
+ ],
+ "database_specific": {
+  "severity": "MODERATE"
+ },
+ "affected": [
+  {
+   "package": {
+    "ecosystem": "SwiftURL",
+    "name": "github.com/apple/swift-nio"
+   },
+   "ranges": [
+    {
+     "type": "SEMVER",
+     "events": [
+      {
+       "introduced": "2.41.0"
+      },
+      {
+       "fixed": "2.42.0"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "package": {
+    "ecosystem": "SwiftURL",
+    "name": "github.com/apple/swift-nio"
+   },
+   "ranges": [
+    {
+     "type": "SEMVER",
+     "events": [
+      {
+       "introduced": "2.39.0"
+      },
+      {
+       "fixed": "2.39.1"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "package": {
+    "ecosystem": "SwiftURL",
+    "name": "github.com/apple/swift-nio"
+   },
+   "ranges": [
+    {
+     "type": "SEMVER",
+     "events": [
+      {
+       "introduced": "0"
+      },
+      {
+       "fixed": "2.29.1"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

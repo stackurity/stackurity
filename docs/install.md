@@ -93,7 +93,7 @@ Connecting an asset is quiet: one "connected" message, and no alerts, Jira issue
 | `STACKURITY_UPDATE_CHECK` | on | `off` disables the release check: no request is made at all ([Upgrading](#upgrading)) |
 | `STACKURITY_FEEDBACK_URL` | `https://stackurity.dev/feedback` | Where **Send feedback** delivers what users write. Set it empty (`STACKURITY_FEEDBACK_URL=`) or `off` to hide the button and turn feedback off ([network.md](network.md#feedback)) |
 | `STACKURITY_UPDATE_URL` | GitHub's release list | Mirror of `https://api.github.com/repos/stackurity/stackurity/releases?per_page=20`, for installs that cannot reach GitHub |
-| `STACKURITY_OSV_URL`, `STACKURITY_KEV_URL`, `STACKURITY_ENDOFLIFE_URL`, `STACKURITY_NPM_REGISTRY`, `STACKURITY_PACKAGIST_URL`, `STACKURITY_PYPI_URL`, `STACKURITY_GOPROXY_URL`, `STACKURITY_CRATES_INDEX_URL`, `STACKURITY_RUBYGEMS_URL`, `STACKURITY_NUGET_URL`, `STACKURITY_MAVEN_URL`, `STACKURITY_PUB_URL` | public sources | Mirrors for offline or air-gapped installs ([network.md](network.md)) |
+| `STACKURITY_OSV_URL`, `STACKURITY_KEV_URL`, `STACKURITY_ENDOFLIFE_URL`, `STACKURITY_NPM_REGISTRY`, `STACKURITY_PACKAGIST_URL`, `STACKURITY_PYPI_URL`, `STACKURITY_GOPROXY_URL`, `STACKURITY_CRATES_INDEX_URL`, `STACKURITY_RUBYGEMS_URL`, `STACKURITY_NUGET_URL`, `STACKURITY_MAVEN_URL`, `STACKURITY_PUB_URL`, `STACKURITY_HEX_URL` | public sources | Mirrors for offline or air-gapped installs ([network.md](network.md)) |
 | `STACKURITY_BASE_URL` | — | Public dashboard URL, used for links in notifications and by the agent installer |
 | `STACKURITY_OPENAI_APPS_CHALLENGE` (or `_FILE`) | — | The token OpenAI gives when you submit Stackurity as a ChatGPT app; served as text at `/.well-known/openai-apps-challenge` (404 when unset) |
 | `STACKURITY_AGENT_DIR` | `/usr/local/lib/stackurity/agents` in the image | Agent builds served to new hosts by **Add server** |
@@ -453,7 +453,7 @@ stackurity sbom export --asset 12 -o asset.cdx.json
 
 ## Intelligence
 
-Once inventory exists, Stackurity creates feeds for the ecosystems it contains: OSV vulnerability data, CISA KEV, endoflife.date, and the package registries (npm, Packagist, PyPI, the Go module proxy, crates.io, RubyGems, NuGet, Maven Central and pub.dev) for latest releases. Inventory is evaluated whenever a feed changes and after every collection. The **Intelligence** page shows each feed's freshness and errors, plus the components that could *not* be evaluated (*evaluation gaps*).
+Once inventory exists, Stackurity creates feeds for the ecosystems it contains: OSV vulnerability data, CISA KEV, endoflife.date, and the package registries (npm, Packagist, PyPI, the Go module proxy, crates.io, RubyGems, NuGet, Maven Central, pub.dev and hex.pm) for latest releases. Inventory is evaluated whenever a feed changes and after every collection. The **Intelligence** page shows each feed's freshness and errors, plus the components that could *not* be evaluated (*evaluation gaps*).
 
 The first OSV download for an ecosystem can be large (see [network.md](network.md)) and is processed in batches. Allow a few minutes before findings appear.
 

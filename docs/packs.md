@@ -6,10 +6,25 @@ A stack pack teaches Stackurity to read one technology's dependency files. Packs
 | --- | --- | --- |
 | `java` | `.jar`, `.war`, `.ear`, `gradle.lockfile`, `pom.xml`, `build.gradle(.kts)` | Deployed archives give every bundled library from its Maven metadata (Spring Boot `BOOT-INF/lib`, `WEB-INF/lib`, EARs), skipping the application's own module. Lockfiles give exact versions, transitive included. `pom.xml` gives direct dependencies, resolving properties, `dependencyManagement` and parent poms found in the same repository, and is reported as partial coverage. |
 | `cargo` | `Cargo.lock` | The Rust reader that used to be built in. |
+| `swift` | `Package.resolved`, `Podfile.lock` | Swift Package Manager formats 1, 2 and 3 (Xcode projects included) as `pkg:swift/<host>/<owner>/<repo>`, the way OSV's SwiftURL ecosystem names them; registry pins by the repository they mirror when the file records it. CocoaPods pods as `pkg:cocoapods/<pod>`, subspecs counted once, development pods (`:path:`) skipped. Packages pinned to a branch or commit have no version: the file's coverage is partial and counts them. |
+| `hex` | `mix.lock` | Every format since Mix 1.0, as `pkg:hex/<package>` (the Hex package, also when `mix.exs` renames it); private organisations' packages as `pkg:hex/<org>/<package>`. Git dependencies have no version: the file's coverage is partial and counts them. |
+| `cpp` | `conan.lock`, `vcpkg.json`, `vcpkg.spdx.json` | Conan 1 (graph lockfiles 0.1-0.4) and Conan 2 (0.5) as `pkg:conan/<name>@<version>` with `user` and `channel`, build requirements scoped `build`. vcpkg has no lock file: `vcpkg.json` gives exact versions only for ports pinned under `overrides` (the rest are picked from `builtin-baseline` by vcpkg, which needs its registry, and are counted as partial coverage); each installed port's `share/<port>/vcpkg.spdx.json` gives its exact version. Ports are `pkg:generic/vcpkg/<port>`, as purl has no vcpkg type. |
+
+### What each pack can check
+
+A pack only inventories; findings come from the vulnerability sources Stackurity syncs for the package type it reports ([compatibility.md](compatibility.md#application-dependencies)).
+
+| Pack | Inventory | Vulnerabilities | Latest releases |
+| --- | --- | --- | --- |
+| `java` | Yes | OSV (Maven), well covered | Maven Central |
+| `cargo` | Yes | OSV (crates.io, RustSec), well covered | crates.io |
+| `hex` | Yes | OSV (Hex): GitHub and the Erlang Ecosystem Foundation's CNA publish Hex advisories, several hundred, covering the common web stack (Plug, Phoenix, Cowboy, hackney, Mint, Bandit) | hex.pm |
+| `swift` | Yes | Swift packages: OSV (SwiftURL), GitHub's Swift advisories only, a few dozen packages (SwiftNIO, Vapor, gRPC Swift, async-http-client, Sparkle and others); most Swift packages have none. Repository URLs are compared in any letter case. CocoaPods: none, OSV has no CocoaPods data, so pods are shown as having no vulnerability source | None (SwiftPM and CocoaPods have no registry Stackurity reads) |
+| `cpp` | Yes | None: OSV lists a ConanCenter ecosystem but publishes no records for it, and no public database covers vcpkg ports. C and C++ libraries are shown as having no vulnerability source; use the inventory to find where a library is used when an advisory for it is published | None |
 
 ## For administrators
 
-Instance administrators manage packs under **Settings → Stack packs**. The official packs ship inside the server but stay inactive until someone installs them. When a repository holds files the core cannot read, such as a `pom.xml`, Home names the pack that would read them. Installing a pack:
+Instance administrators manage packs under **Settings → Stack packs**. The official packs ship inside the server but stay inactive until someone installs them. When a repository holds files the core cannot read, such as a `pom.xml`, a `Package.resolved` or a `mix.lock`, Home names the pack that would read them. Installing a pack:
 
 - checks its signature (see below) and that its module compiles;
 - applies to every workspace;
@@ -37,6 +52,8 @@ A pack is a WebAssembly module run by [wazero](https://wazero.io), a runtime wri
 ## Signatures
 
 Each pack file carries an Ed25519 signature over its id, version and the SHA-256 of its manifest and module. The server accepts a pack only if a trusted key signed it, and only if that key belongs to the publisher the manifest names, so nobody can sign a pack in someone else's name. The official key is built into Stackurity. Signatures are checked again whenever a pack is loaded, so a pack altered in the database is not run.
+
+The official packs are built and signed by a maintainer with the official key, which never leaves their machine and is not used in CI: `stackurity pack build packs/<id> --key <official key> -o internal/packs/official/<id>.stkpack`. A test (`tools/releaselint`) checks that every archive was built from its `pack.json` and carries the official signature, and the release workflow refuses to release while a pack under `packs/` has no signed archive. Until its archive is added, a pack is not offered under **Settings → Stack packs** and Home does not name it. Pack tests build the sources unsigned, as `STACKURITY_PACK_ALLOW_UNSIGNED=true` does for development.
 
 Ed25519 keys work offline and in air-gapped installs. Sigstore keyless signing with transparency logs is planned for packs published through a public registry.
 

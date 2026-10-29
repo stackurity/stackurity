@@ -20,7 +20,7 @@ func updateType(purlType, installed, latest string) string {
 		return ""
 	}
 	switch purlType {
-	case "npm", "composer", "pypi", "golang", "cargo", "gem", "nuget", "maven", "pub":
+	case "npm", "composer", "pypi", "golang", "cargo", "gem", "nuget", "maven", "pub", "hex":
 		t, err := version.ChangeType(purlType, installed, latest)
 		if err != nil {
 			return "" // not newer, or not comparable
