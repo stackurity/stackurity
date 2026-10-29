@@ -295,6 +295,11 @@ func tail(path string, n int) string {
 }
 
 // waitFor polls cond until it holds or the timeout passes.
+// firstEvaluation is how long a freshly started server may take for its
+// first feed sync and evaluation: on a busy CI runner that is the slowest
+// step (it took over a minute on GitHub's runners, 30-40 s locally).
+const firstEvaluation = 2 * time.Minute
+
 func waitFor(t *testing.T, timeout time.Duration, what string, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)

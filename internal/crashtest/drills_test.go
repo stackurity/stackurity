@@ -71,7 +71,7 @@ func TestUpstreamOutage(t *testing.T) {
 	e.serveIntel(advs, "CVE-2024-0001")
 	e.up.set("/osv/Debian/modified_id.csv", modifiedCSV(advs, t0))
 	s := e.start()
-	waitFor(t, 60*time.Second, "first Debian sync and evaluation", func() bool {
+	waitFor(t, firstEvaluation, "first Debian sync and evaluation", func() bool {
 		return e.when(`SELECT last_success FROM feeds WHERE name = 'osv:Debian'`) != nil && len(e.findings(host)) == 1 && e.evaluationsDone()
 	})
 	before := e.findings(host)
