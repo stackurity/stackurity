@@ -4,6 +4,16 @@ All notable changes to Stackurity. Versions follow [Semantic Versioning](https:/
 
 Each release's section is published as its GitHub release notes, and a tag without a section here cannot be released (`go run ./tools/changelog -version vX.Y.Z` prints it). New changes go under **Unreleased**, which is renamed to the version when it is tagged. Subsections are **Security**, **Added**, **Changed**, **Fixed** and **Upgrading**. Put fixes for vulnerabilities under `### Security`, first: installations treat a release with that heading as a security release and show administrators a banner they can only snooze.
 
+## Unreleased
+
+### Security
+
+- Single sign-on (OpenID Connect, licensed build) with `STACKURITY_OIDC_LINK_EXISTING=true` no longer links a disabled account (enabling it again later would have handed it to the identity) or an account that also belongs to another workspace (it could then switch there through the provider).
+
+### Added
+
+- **SAML single sign-on** (licensed build, Pro and Enterprise), next to OpenID Connect: SP-initiated sign-in from the sign-in page, optional sign-in started from the identity provider (`STACKURITY_SAML_IDP_INITIATED`, off by default), this server's metadata at `/saml/metadata`, the provider's metadata by URL (refreshed daily) or file, signed assertions required, encrypted assertions accepted with an optional key, email, name and group attributes with the same domain allowlist and group-to-role mapping as OpenID Connect, each assertion used once, SHA-1 signatures refused, and the same account rules as OpenID Connect (an existing account is linked only with `STACKURITY_SAML_LINK_EXISTING=true`, and never an instance administrator); `STACKURITY_SAML_ALLOWED_DOMAINS` is required. Setup for Okta, Microsoft Entra ID and Google Workspace is in [install.md](docs/install.md#saml). The sign-in page shows a button for each configured provider. Migration `0048_saml` adds the tables for sign-ins in progress and used assertions.
+
 ## 0.13.4
 
 ### Security
@@ -15,10 +25,6 @@ Each release's section is published as its GitHub release notes, and a tag witho
 - The image is based on Alpine 3.24 (was 3.22), and the example `deploy/docker-compose.yml` uses PostgreSQL 17.11 (was 17.6, whose image has OpenSSL, zlib, musl and util-linux vulnerabilities with fixes, including critical CVE-2026-31789). PostgreSQL 17.11 is a minor update: replace the image and restart, no dump or restore.
 - Releases are gated: a tag publishes nothing while govulncheck reports a reachable vulnerability, npm audit reports a high or critical advisory, or the built image has a fixable high or critical vulnerability. Every pull request and a daily run on `main` check the same. Exceptions need a reason and an expiry (`.trivyignore.yaml`, `web/audit-allow.json`). `make vulncheck` and `make scan-image IMAGE=...` run the checks locally.
 - GitHub Actions used by the build and release workflows are pinned to commit SHAs.
-
-### Added
-
-- **SAML single sign-on** (licensed build, Pro and Enterprise), next to OpenID Connect: SP-initiated sign-in from the sign-in page, optional sign-in started from the identity provider (`STACKURITY_SAML_IDP_INITIATED`, off by default), this server's metadata at `/saml/metadata`, the provider's metadata by URL (refreshed daily) or file, signed assertions required, encrypted assertions accepted with an optional key, email, name and group attributes with the same domain allowlist and group-to-role mapping as OpenID Connect, each assertion used once, SHA-1 signatures refused, and the same account rules as OpenID Connect (an existing account is linked only with `STACKURITY_SAML_LINK_EXISTING=true`, and never an instance administrator); `STACKURITY_SAML_ALLOWED_DOMAINS` is required. Setup for Okta, Microsoft Entra ID and Google Workspace is in [install.md](docs/install.md#saml). The sign-in page shows a button for each configured provider. Migration `0048_saml` adds the tables for sign-ins in progress and used assertions.
 
 ### Upgrading
 
