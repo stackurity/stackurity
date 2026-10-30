@@ -71,7 +71,7 @@ func TestPeriodicRunsOncePerIntervalAcrossReplicas(t *testing.T) {
 			wg.Add(1)
 			go func(w *Worker) {
 				defer wg.Done()
-				w.runPeriodic(ctx, w.periodic[0])
+				w.runPeriodic(context.Background(), ctx, w.periodic[0])
 			}(w)
 		}
 		wg.Wait()
@@ -99,12 +99,12 @@ func TestPeriodicLeaseExpiryHandsTaskOver(t *testing.T) {
 	var runs atomic.Int32
 	b := newWorker(st)
 	b.Every("crashy", time.Hour, func(context.Context) error { runs.Add(1); return nil })
-	b.runPeriodic(ctx, b.periodic[0])
+	b.runPeriodic(context.Background(), ctx, b.periodic[0])
 	if runs.Load() != 0 {
 		t.Fatal("ran while another replica held the lease")
 	}
 	time.Sleep(700 * time.Millisecond)
-	b.runPeriodic(ctx, b.periodic[0])
+	b.runPeriodic(context.Background(), ctx, b.periodic[0])
 	if runs.Load() != 1 {
 		t.Fatal("an unfinished run whose lease expired should be taken over at once, not after the interval")
 	}
@@ -147,7 +147,7 @@ func TestPeriodicHeartbeatKeepsLongTask(t *testing.T) {
 	b.Every("long", time.Millisecond, func(context.Context) error { bRuns.Add(1); return nil })
 	a.register(ctx)
 	done := make(chan struct{})
-	go func() { a.runPeriodic(ctx, a.periodic[0]); close(done) }()
+	go func() { a.runPeriodic(context.Background(), ctx, a.periodic[0]); close(done) }()
 	<-started
 	// The task runs until the test releases it, so the second replica's
 	// attempts all fall while the first holds it, however slowly this
@@ -159,7 +159,7 @@ func TestPeriodicHeartbeatKeepsLongTask(t *testing.T) {
 		t.Fatal(err)
 	}
 	for {
-		b.runPeriodic(ctx, b.periodic[0])
+		b.runPeriodic(context.Background(), ctx, b.periodic[0])
 		var past bool
 		if err := st.Pool.QueryRow(ctx, `SELECT now() > $1`, firstLease.Add(lease)).Scan(&past); err != nil {
 			t.Fatal(err)
@@ -195,7 +195,7 @@ func TestPeriodicFailuresAndShutdown(t *testing.T) {
 	w.register(ctx)
 	for i := 0; i < 3; i++ {
 		time.Sleep(5 * time.Millisecond)
-		w.runPeriodic(ctx, w.periodic[0])
+		w.runPeriodic(context.Background(), ctx, w.periodic[0])
 	}
 	tk := task(t, st, "flaky")
 	if tk.ConsecutiveFailures != 3 || tk.LastSuccessAt != nil || tk.LastError != "panic: boom" {
@@ -212,7 +212,7 @@ func TestPeriodicFailuresAndShutdown(t *testing.T) {
 		return ctx.Err()
 	})
 	s.register(ctx)
-	s.runPeriodic(sctx, s.periodic[0])
+	s.runPeriodic(context.Background(), sctx, s.periodic[0])
 	tk = task(t, st, "slow")
 	if tk.LockedBy != nil || tk.ConsecutiveFailures != 0 || tk.LastFinishedAt != nil {
 		t.Errorf("after shutdown: %+v", tk)
@@ -237,7 +237,7 @@ func TestEveryWorkspaceScopes(t *testing.T) {
 		return nil
 	})
 	w.register(ctx)
-	w.runPeriodic(ctx, w.periodic[0])
+	w.runPeriodic(context.Background(), ctx, w.periodic[0])
 	if len(seen) != 1 || seen[0] != tenant.DefaultWorkspace {
 		t.Errorf("workspaces = %v", seen)
 	}
@@ -594,12 +594,12 @@ func TestTaskNeverRunsTwiceInOneProcess(t *testing.T) {
 	})
 	s.register(ctx)
 	first := make(chan struct{})
-	go func() { s.runPeriodic(ctx, s.periodic[0]); close(first) }()
+	go func() { s.runPeriodic(context.Background(), ctx, s.periodic[0]); close(first) }()
 	<-started
 	if _, err := st.Pool.Exec(ctx, `UPDATE periodic_tasks SET locked_by = NULL, locked_until = NULL WHERE name = 'stuck'`); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.runPeriodic(ctx, s.periodic[0]); err != nil {
+	if err := s.runPeriodic(context.Background(), ctx, s.periodic[0]); err != nil {
 		t.Fatal(err)
 	}
 	if n := stuckRuns.Load(); n != 1 {
@@ -700,8 +700,50 @@ func TestPeriodicShutdownWaitsThenCancels(t *testing.T) {
 	if tk := task(t, st, "hangs"); tk.LastFinishedAt != nil || tk.LockedBy != nil {
 		t.Errorf("a cancelled task should be released without an outcome: %+v", tk)
 	}
-	// A claim already under way when shutdown began may still start.
-	if d := time.Duration(lastFast.Load() - shutdownAt.Load()); d > 100*time.Millisecond {
-		t.Errorf("a task started %v after shutdown began", d)
+	// Run has returned: nothing starts any more. (A claim in flight when
+	// shutdown began is released rather than started; see
+	// TestPeriodicClaimDuringShutdownDoesNotStart.)
+	after := lastFast.Load()
+	time.Sleep(50 * time.Millisecond)
+	if lastFast.Load() != after {
+		t.Error("a task started after Run returned")
+	}
+}
+
+// A claim still in flight when shutdown begins comes back after it: the
+// task is released, not started, and not recorded as run. Before, it
+// started, up to a claim's round trip after shutdown began.
+func TestPeriodicClaimDuringShutdownDoesNotStart(t *testing.T) {
+	st := store.New(testdb.New(t))
+	w := newWorker(st)
+	claimed, proceed := make(chan struct{}), make(chan struct{})
+	w.afterClaim = func(name string) {
+		if name == "late" {
+			close(claimed)
+			<-proceed // the claim "returns" only once shutdown has begun
+		}
+	}
+	var ran atomic.Bool
+	w.Every("late", time.Hour, func(context.Context) error { ran.Store(true); return nil })
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { w.Run(ctx); close(done) }()
+	select {
+	case <-claimed:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the task was never claimed")
+	}
+	cancel() // shutdown begins while the claim is in flight
+	close(proceed)
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("Run did not return")
+	}
+	if ran.Load() {
+		t.Error("a task claimed before shutdown started after it began")
+	}
+	if tk := task(t, st, "late"); tk.LockedBy != nil || tk.LastFinishedAt != nil {
+		t.Errorf("the claim must be released without an outcome: %+v", tk)
 	}
 }

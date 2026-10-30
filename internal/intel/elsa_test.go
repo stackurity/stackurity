@@ -431,7 +431,7 @@ func TestOracleLinux(t *testing.T) {
 		"CVE-2022-3162":  "0:1.22.16-1.el8",
 	})
 	if g := f8["CVE-2022-3162"]; g.Verification != "confirmed" || strings.Contains(string(g.Evidence), "ambiguous") {
-		t.Errorf("kubeadm 1.22 on its own line: %s", g.Verification)
+		t.Errorf("kubeadm 1.22 on its own line: %s %s", g.Verification, g.Evidence)
 	}
 	check(kubeNew, map[string]string{})
 	fo := check(kubeOld, map[string]string{"CVE-2022-3162": ""})

@@ -74,6 +74,9 @@ type Worker struct {
 	// context ends may take to finish before they are cancelled (and their
 	// lease released). No task starts after the context ends.
 	ShutdownGrace time.Duration
+	// afterClaim, in tests, runs after a periodic task's claim returns and
+	// before the task starts.
+	afterClaim func(name string)
 	// HeapWarn is the growth of the Go heap during one job or periodic task
 	// above which a warning names it (zero: DefaultHeapWarn; negative: off).
 	HeapWarn int64
@@ -367,7 +370,7 @@ func (w *Worker) loopPeriodic(ctx, runCtx context.Context, p periodic, slots cha
 			<-slots
 			return
 		}
-		err := w.runPeriodic(runCtx, p)
+		err := w.runPeriodic(ctx, runCtx, p)
 		<-slots
 		if err != nil {
 			failures.add(p.name, err)
@@ -428,7 +431,12 @@ func (w *Worker) register(ctx context.Context) bool {
 // progress in this process (one that lost its lease and has not returned yet)
 // means p is skipped. It returns the error of a claim that failed (not of the
 // task, which is recorded).
-func (w *Worker) runPeriodic(ctx context.Context, p periodic) error {
+//
+// stopping is the scheduler's context, which ends when shutdown begins; ctx
+// outlives it by the shutdown grace so that a run in progress can finish. A
+// claim still in flight when shutdown begins can return after it: the task
+// is then released, not started.
+func (w *Worker) runPeriodic(stopping, ctx context.Context, p periodic) error {
 	if !p.running.CompareAndSwap(false, true) {
 		return nil
 	}
@@ -443,7 +451,18 @@ func (w *Worker) runPeriodic(ctx context.Context, p periodic) error {
 	if !ok {
 		return nil
 	}
+	if w.afterClaim != nil {
+		w.afterClaim(p.name)
+	}
 	log := w.Log.With("task", p.name)
+	if stopping.Err() != nil {
+		// Shutdown began while the claim was in flight: no task starts
+		// after shutdown begins. Release it so another replica runs it.
+		if err := w.Store.ReleasePeriodic(context.WithoutCancel(ctx), p.name, w.id); err != nil {
+			log.Error("release periodic task", "err", err)
+		}
+		return nil
+	}
 	tctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	done := make(chan struct{})
