@@ -28,21 +28,27 @@ const (
 	KindCMS = "cms"
 )
 
-// wpVersionLine is the assignment WordPress's own code reads. A comment
-// naming the variable ("@global string $wp_version") does not match.
+// wpVersionLine is an assignment of the variable WordPress's own code
+// reads. A comment naming it ("@global string $wp_version") does not match.
 var wpVersionLine = regexp.MustCompile(`(?m)^[ \t]*\$wp_version[ \t]*=[ \t]*['"]([^'"\r\n]{1,64})['"][ \t]*;`)
 
 // wpRelease is a WordPress release: 6.4.2, 6.5, and pre-releases and
 // development builds (6.5-RC1, 6.6-beta2, 6.7-alpha-58576-src).
 var wpRelease = regexp.MustCompile(`^\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?$`)
 
-// parseWPVersion returns the release in the head of version.php.
+// parseWPVersion returns the release in the head of version.php: the last
+// assignment, as PHP runs it, once comments are removed, so an old
+// "$wp_version = '3.0';" left in a /* */ block or after // is not read.
 func parseWPVersion(data []byte) (string, bool) {
-	m := wpVersionLine.FindSubmatch(data)
-	if m == nil || !wpRelease.Match(m[1]) {
+	all := wpVersionLine.FindAllSubmatch(stripComments("version.php", data), -1)
+	if len(all) == 0 {
 		return "", false
 	}
-	return string(m[1]), true
+	v := all[len(all)-1][1]
+	if !wpRelease.Match(v) {
+		return "", false
+	}
+	return string(v), true
 }
 
 // wordpressCore reports the WordPress core of the application in dir (host

@@ -418,6 +418,12 @@ func describe(g *Group, osEOL map[int64]Row, advice map[string]Advice) {
 		g.TargetVersion = g.ToVersion
 		g.Title = fmt.Sprintf("Upgrade %s %s → %s", g.Component, g.FromVersion, g.ToVersion)
 		g.Action = fmt.Sprintf("Update %s to %s or later in the lockfile and redeploy.", g.Component, g.ToVersion)
+		if g.purlType == "generic" && g.Component == "wordpress" {
+			// WordPress core behind its branch's latest release
+			// (internal/intel/behind.go): no lockfile, WordPress updates itself.
+			g.Title = fmt.Sprintf("Update WordPress core %s → %s", g.FromVersion, g.ToVersion)
+			g.Action = fmt.Sprintf("Update WordPress core to %s or later (Dashboard → Updates, or wp core update).", g.ToVersion)
+		}
 		g.FixKey = fmt.Sprintf("%s:%s:%s:%s>%s", PackageUpgrade, g.purlType, g.Component, g.FromVersion, g.ToVersion)
 		g.Effort = "medium"
 		if len(from) > 0 {

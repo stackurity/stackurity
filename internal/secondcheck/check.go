@@ -610,3 +610,69 @@ func sameLine(a rawAffected, line string, lineOf func(string) string) (rawAffect
 	}
 	return out, unknown
 }
+
+// CheckBehindRelease re-derives a finding for a version behind its release
+// line's latest release (WordPress core, internal/intel/behind.go): the
+// line from the version, that line's latest release from the stored
+// lifecycle data, and whether the version is lower, compared number by
+// number. A pre-release or development build is never behind.
+func CheckBehindRelease(c Claim, o Observed, cycles []store.LifecycleCycle) Outcome {
+	product, _ := c.Evidence["product"].(string)
+	claimCycle, _ := c.Evidence["cycle"].(string)
+	if product == "" || claimCycle == "" {
+		return couldNot("the finding does not name its product and release line")
+	}
+	if len(cycles) == 0 {
+		return couldNot("no release lines of %s are stored", product)
+	}
+	v := o.Version
+	if v == "" {
+		return couldNot("no installed version was reported")
+	}
+	ind := map[string]any{"product": product, "matched_by": "version"}
+	var line *store.LifecycleCycle
+	for i, cy := range cycles {
+		if (v == cy.Cycle || strings.HasPrefix(v, cy.Cycle+".")) && (line == nil || len(cy.Cycle) > len(line.Cycle)) {
+			line = &cycles[i]
+		}
+	}
+	if line == nil {
+		return disagree(ind, store.SecondCheckDifference{Field: "release_line", Matcher: claimCycle,
+			Independent: fmt.Sprintf("no release line of %s matches version %s", product, v)})
+	}
+	ind["cycle"], ind["latest_in_cycle"] = line.Cycle, line.Latest
+	if line.Cycle != claimCycle {
+		return disagree(ind, store.SecondCheckDifference{Field: "release_line", Matcher: claimCycle, Independent: line.Cycle})
+	}
+	if !numericLess(v, line.Latest) {
+		return disagree(ind, store.SecondCheckDifference{Field: "behind", Matcher: "behind " + c.FixedVersion,
+			Independent: fmt.Sprintf("%s is not lower than the line's latest release %s", v, orNone(line.Latest))})
+	}
+	if line.Latest != c.FixedVersion {
+		return disagree(ind, store.SecondCheckDifference{Field: "fixed_version", Matcher: c.FixedVersion, Independent: line.Latest})
+	}
+	return Outcome{Result: store.SecondCheckAgreed, Independent: ind}
+}
+
+// numericLess reports whether dotted all-number version a is lower than b
+// (a missing part is 0); false when either has anything but numbers.
+func numericLess(a, b string) bool {
+	pa, pb := strings.Split(a, "."), strings.Split(b, ".")
+	for i := 0; i < len(pa) || i < len(pb); i++ {
+		var x, y int
+		if i < len(pa) {
+			if _, err := fmt.Sscanf(pa[i], "%d", &x); err != nil || fmt.Sprint(x) != pa[i] {
+				return false
+			}
+		}
+		if i < len(pb) {
+			if _, err := fmt.Sscanf(pb[i], "%d", &y); err != nil || fmt.Sprint(y) != pb[i] {
+				return false
+			}
+		}
+		if x != y {
+			return x < y
+		}
+	}
+	return false
+}

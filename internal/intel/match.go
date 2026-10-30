@@ -344,6 +344,15 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 					}
 					want = append(want, *f)
 				}
+			} else if coverage[ci].State != store.CoverageEvaluated && lm.cycleVersion == r.Version {
+				// A supported branch, behind its latest release, for a product
+				// whose point releases are its security fixes (behind.go). Not
+				// for an ended branch: its end-of-life finding names the latest
+				// release already. Not once a vulnerability source evaluates
+				// the row: its findings replace this one.
+				if f := behindFinding(r, c); f != nil {
+					want = append(want, *f)
+				}
 			}
 		}
 	}

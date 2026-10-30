@@ -26,6 +26,13 @@ func TestParseWPVersion(t *testing.T) {
 		"$wp_version = '6.6-beta2';":           "6.6-beta2",
 		"$wp_version = '6.7-alpha-58576-src';": "6.7-alpha-58576-src",
 		"\t$wp_version=\"4.6.3\" ;":            "4.6.3",
+		// PHP runs the last assignment; commented-out ones are not code.
+		"/*\n$wp_version = '3.0';\n*/\n$wp_version = '6.8.1';": "6.8.1",
+		"$wp_version = '6.8.1';\n/*\n$wp_version = '3.0';\n*/": "6.8.1",
+		"$wp_version = '6.8.1';\n// $wp_version = '3.0';":      "6.8.1",
+		"$wp_version = '6.8.1';\n# $wp_version = '3.0';":       "6.8.1",
+		"$wp_version = '6.5.3';\n$wp_version = '6.5.14';":      "6.5.14",
+		"$wp_version = '6.8.1';\n$wp_version = 'unknown';":     "",
 		// Not a release WordPress writes, or not the assignment itself.
 		"$wp_version = '6';":                                 "",
 		"$wp_version = 'latest';":                            "",

@@ -234,3 +234,26 @@ func TestEPSSExplanationNamesTheCVE(t *testing.T) {
 		t.Errorf("GHSA without a score: %+v", d)
 	}
 }
+
+// A WordPress version behind its branch's latest release says what that
+// means and that CVEs are not matched.
+func TestBehindReleaseSentence(t *testing.T) {
+	in := Input{
+		Finding: &store.Finding{Kind: "vulnerability", Key: "behind:wordpress:6.5", Version: "6.5.3", FixedVersion: "6.5.14",
+			Verification: "confirmed", ComponentType: "generic", ComponentName: "wordpress", AssetKind: "application"},
+		Evidence: map[string]any{"product": "wordpress", "cycle": "6.5", "latest_in_cycle": "6.5.14", "releases_behind": float64(11),
+			"feed": "lifecycle:endoflife", "match": map[string]any{"rule": "behind_latest_release"}},
+		Inventory: store.InventoryProvenance{CollectorID: "linux-agent", Location: "/var/www/shop/wp-includes/version.php", Confidence: "confirmed",
+			Evidence: map[string]string{"kind": "cms", "product": "WordPress core", "source": "version-file"}, LastSeen: at(time.Hour)},
+		Feed: &store.Feed{Name: "lifecycle:endoflife", LastSuccess: at(5 * time.Hour)},
+	}
+	e := Build(in, now)
+	want := "Installed 6.5.3 (from WordPress core, read from /var/www/shop/wp-includes/version.php, seen 1 h ago) is 11 releases behind 6.5.14, " +
+		"the latest release of WordPress release line 6.5 (lifecycle:endoflife, refreshed 5 h ago). WordPress point releases on a supported release line " +
+		"are its security and maintenance releases; vulnerability (CVE) matching for WordPress core is not available yet, so the missing releases are " +
+		"reported instead. Update to 6.5.14."
+	if e.Sentence != want || e.Type != TypeBehindRelease || e.Lifecycle == nil || e.Lifecycle.Latest != "6.5.14" ||
+		e.Rule.Kind != "behind_latest_release" || !strings.Contains(e.StateText, "below its release line's latest release") || e.EPSS != nil {
+		t.Fatalf("got  %s\nwant %s\n%+v", e.Sentence, want, e)
+	}
+}
