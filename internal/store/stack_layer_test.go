@@ -21,3 +21,15 @@ func TestFindingLayerPackLibraries(t *testing.T) {
 		}
 	}
 }
+
+// WordPress core (pkg:generic/wordpress, read from wp-includes/version.php)
+// is its own layer on an application, not "other".
+func TestFindingLayerWordPressCore(t *testing.T) {
+	f := Finding{ComponentType: "generic", ComponentName: "wordpress"}
+	if got := findingLayer(f, "application"); got != "cms" {
+		t.Errorf("layer %q", got)
+	}
+	if got := findingLayer(Finding{ComponentType: "composer", ComponentName: "roots/wordpress"}, "application"); got != "libraries" {
+		t.Errorf("Composer-installed WordPress: layer %q", got)
+	}
+}

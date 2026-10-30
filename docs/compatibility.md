@@ -31,6 +31,7 @@ Release binaries: linux/amd64, linux/arm64, windows/amd64, darwin/amd64 and darw
 | Windows 10, 11, Server 2016, 2019, 2022, 2025 | Registry (installed programs, OS build) | Operating system vulnerabilities through cumulative updates: the build and update revision against Microsoft's fixed builds, one finding per missing CVE naming its update (KB); see [Windows missing updates](#windows-missing-updates). Lifecycle for the operating system (see [Windows end of life](#windows-end-of-life)). Installed programs of the curated catalogue (Chrome, Edge, Firefox, 7-Zip, Acrobat, .NET and others) are matched against their vendor's advisories or NVD; others are coverage gaps with the reason (see [Windows programs](#windows-programs)). Per-user installs, installed KBs and Store apps are unsupported coverage; hotpatched hosts, .NET Framework, Office and servicing stack updates are not evaluated | Microsoft Security Update Guide (MSRC CVRF); Mozilla's security advisories; NVD; endoflife.date `windows-server`, `windows` |
 | Windows Server 2012 R2 and older, Windows 7, 8, 8.1 | Registry | No: lifecycle only; paid Extended Security Updates are not evaluated (unsupported coverage) | endoflife.date |
 | Runtimes outside a package manager | Detected | No: lifecycle only | endoflife.date |
+| WordPress core on a deployed site | `$wp_version` in `wp-includes/version.php` | No: lifecycle only. No vulnerability source Stackurity reads lists WordPress core with version ranges (OSV has no WordPress ecosystem; NVD is read only for the Windows program catalogue) | endoflife.date `wordpress` |
 | Packages from a vendor's own repository (MongoDB, Docker, Elastic, Grafana, PGDG, NodeSource, Redis, nginx.org, MariaDB, MySQL, HashiCorp, Kubernetes and others, see [below](#packages-from-vendor-repositories)) | dpkg, rpm | No: evaluation gap; lifecycle with upstream dates | endoflife.date |
 
 The same rules apply to container images scanned through the bundled Syft and to imported SBOMs: the purl's `distro` qualifier selects the source.
@@ -185,6 +186,15 @@ package URL maps to an endoflife.date product, in this order:
 | OpenSSL, Exim, Postfix, Dovecot, Prometheus, Erlang, Podman | Distribution packages (`openssl`, `exim4-base`, `postfix`, `dovecot-core`, `prometheus`, `erlang-base`, `podman`); on a supported release they get the upstream note, not a finding |
 | Symfony, CakePHP, Twig, Craft CMS, Shopware | `symfony/http-kernel`, `cakephp/cakephp`, `twig/twig`, `craftcms/cms`, `shopware/core` (Composer) |
 | Kotlin, Quarkus, Apache Kafka, Apache Lucene, Liquibase | `kotlin-stdlib`, `quarkus-core`, `kafka_2.13`/`kafka_2.12` (the broker), `lucene-core`, `liquibase-core` (Maven) |
+
+Products Stackurity's own collectors report outside a package manager are
+`pkg:generic/<product>`, named by their endoflife.date product, and match it
+by name: runtimes (`pkg:generic/nodejs`, `php`, `python`), operating systems,
+managed services and WordPress core (`pkg:generic/wordpress@6.8.1`, read from
+a site's `wp-includes/version.php`). WordPress's release lines are its
+major.minor branches: `6.9-RC1` and `6.8.1` are lines 6.9 and 6.8, and a
+development build of a line endoflife.date does not list yet
+(`7.2-alpha-61234-src`) is counted in the coverage-gap report instead.
 
 A Debian or RPM epoch is ignored when the release line is read
 (`5:27.3.1-1~ubuntu.24.04~noble` is Docker 27). An end-of-life finding mapped

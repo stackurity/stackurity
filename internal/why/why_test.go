@@ -140,6 +140,24 @@ func TestEndOfLifeSentence(t *testing.T) {
 	}
 }
 
+// WordPress core names itself and the file its release was read from.
+func TestEndOfLifeSentenceWordPress(t *testing.T) {
+	in := Input{
+		Finding: &store.Finding{Kind: "end_of_life", Version: "4.6.3", Verification: "confirmed", ComponentType: "generic", ComponentName: "wordpress"},
+		Evidence: map[string]any{"product": "wordpress", "cycle": "4.6", "eol_date": "2025-07-31", "latest_in_cycle": "4.6.30",
+			"source": "lifecycle:endoflife", "match": map[string]any{"rule": "version_prefix"}},
+		Inventory: store.InventoryProvenance{CollectorID: "linux-agent", Location: "/var/www/blog/wp-includes/version.php", Confidence: "confirmed",
+			Evidence: map[string]string{"kind": "cms", "product": "WordPress core", "source": "version-file"}, LastSeen: at(time.Hour)},
+		Feed: &store.Feed{Name: "lifecycle:endoflife", LastSuccess: at(5 * time.Hour)},
+	}
+	e := Build(in, now)
+	want := "Installed 4.6.3 (from WordPress core, read from /var/www/blog/wp-includes/version.php, seen 1 h ago) belongs to wordpress release line 4.6, " +
+		"which reached end of life on 2025-07-31 (lifecycle:endoflife, refreshed 5 h ago); release line 4.6 is the longest dotted prefix of the version."
+	if e.Sentence != want || e.Lifecycle == nil || e.Lifecycle.Latest != "4.6.30" {
+		t.Fatalf("got  %s\nwant %s", e.Sentence, want)
+	}
+}
+
 // The EPSS part of "why this priority" gives the score with its model and
 // day, and says whether and why it counts: above the threshold, kept within
 // the band after crossing it, below it, or replaced by KEV.

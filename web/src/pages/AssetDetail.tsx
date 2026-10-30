@@ -653,6 +653,11 @@ function InventoryTab({ assetId }: { assetId: number }) {
           </Link>
           {r.evidence?.publisher && <div className="muted small">{r.evidence.publisher}</div>}
           {r.evidence?.kind === "managed-service" && <div className="muted small">managed by the provider</div>}
+          {r.evidence?.kind === "cms" && r.evidence.product && (
+            <div className="muted small break">
+              {r.evidence.product}, read from {r.location}
+            </div>
+          )}
           {r.evidence?.install === "unmanaged" && (
             <>
               {" "}

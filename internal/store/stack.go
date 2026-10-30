@@ -50,7 +50,7 @@ type Stack struct {
 }
 
 // Layer order, most exposed first.
-var stackLayers = []string{"web_server", "os", "runtime", "data_store", "libraries", "declared", "managed_service", "platform", "other"}
+var stackLayers = []string{"web_server", "cms", "os", "runtime", "data_store", "libraries", "declared", "managed_service", "platform", "other"}
 
 // outgoing relations followed from any member, and the role of the target.
 var stackRoles = map[string]string{"runs_on": "host", "built_from": "source", "deployed_as": "image", "depends_on": "dependency", "contains": "dependency"}
@@ -280,6 +280,8 @@ func findingLayer(f Finding, assetKind string) string {
 		return "os"
 	case f.ComponentType == "generic" && runtimeProducts[strings.ToLower(f.ComponentName)]:
 		return "runtime"
+	case f.ComponentType == "generic" && cmsProducts[strings.ToLower(f.ComponentName)]:
+		return "cms" // WordPress core, read from wp-includes/version.php
 	case f.ComponentType == "generic" && assetKind == "host":
 		return "os" // the operating system release itself
 	}
@@ -291,3 +293,7 @@ var osReleaseNames = map[string]bool{"debian": true, "ubuntu": true, "alpine": t
 	"centos": true, "amzn": true, "fedora": true, "opensuse-leap": true, "sles": true, "ol": true}
 
 var runtimeProducts = map[string]bool{"nodejs": true, "python": true, "go": true, "ruby": true, "php": true}
+
+// cmsProducts are the content management systems whose core the
+// application scan reports as pkg:generic/<name> (apps.KindCMS).
+var cmsProducts = map[string]bool{"wordpress": true}

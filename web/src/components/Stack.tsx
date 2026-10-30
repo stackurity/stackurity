@@ -21,6 +21,7 @@ export const STACK_ROLE_TEXT: Record<string, string> = {
 
 export const STACK_LAYER_LABEL: Record<string, string> = {
   web_server: "Web server / proxy",
+  cms: "WordPress core", // the only CMS whose core is read so far
   os: "Operating system",
   runtime: "Runtime",
   data_store: "Data store",
