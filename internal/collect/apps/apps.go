@@ -157,7 +157,10 @@ func (s *Scanner) discover(maxDirs, maxApps int) ([]Discovered, bool) {
 	full := true
 	bases := s.discoverBases()
 	for _, base := range bases {
-		s.discoverIn(base, 0, seen, &out, &budget, maxApps, &full)
+		// Under /opt, directories only root may list are common
+		// (containerd's, a vendor agent's) and are not sites.
+		unreadable := base != "/opt" && !strings.HasPrefix(base, "/opt/")
+		s.discoverIn(base, 0, unreadable, seen, &out, &budget, maxApps, &full)
 	}
 	// Document roots from the web server configuration. One the walk found,
 	// or one inside an application it found (Laravel's public/), is part of
@@ -194,7 +197,11 @@ func (s *Scanner) discover(maxDirs, maxApps int) ([]Discovered, bool) {
 	return out, full
 }
 
-func (s *Scanner) discoverIn(dir string, depth int, seen map[string]bool, out *[]Discovered, budget *int, maxApps int, full *bool) {
+// discoverIn walks dir, depth levels below a base. With unreadable set, a
+// directory below the base that the agent's user may not list is reported
+// as an application: it may be a site, and its scan says it could not be
+// read instead of the site being missing without a word.
+func (s *Scanner) discoverIn(dir string, depth int, unreadable bool, seen map[string]bool, out *[]Discovered, budget *int, maxApps int, full *bool) {
 	if depth > 3 || seen[dir] {
 		return
 	}
@@ -216,13 +223,17 @@ func (s *Scanner) discoverIn(dir string, depth int, seen map[string]bool, out *[
 	}
 	entries, err := os.ReadDir(s.path(dir))
 	if err != nil {
+		if unreadable && depth > 0 && errors.Is(err, fs.ErrPermission) {
+			seen[dir] = true
+			*out = append(*out, Discovered{Dir: dir, By: []string{"unreadable"}})
+		}
 		return
 	}
 	for _, e := range entries {
 		if !e.IsDir() || skipDiscover[e.Name()] || strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
-		s.discoverIn(path.Join(dir, e.Name()), depth+1, seen, out, budget, maxApps, full)
+		s.discoverIn(path.Join(dir, e.Name()), depth+1, unreadable, seen, out, budget, maxApps, full)
 	}
 }
 
@@ -321,7 +332,13 @@ func (s *Scanner) ScanApp(ctx context.Context, dir string) App {
 		dir = cur
 	}
 	app := App{Dir: dir, Name: path.Base(dir)}
+	den := &denied{}
 	fi, err := os.Stat(s.path(dir))
+	if den.note(dir, err) {
+		c, _ := den.coverage(dir)
+		app.Coverage = append(app.Coverage, c)
+		return app
+	}
 	if err != nil || !fi.IsDir() {
 		reason := "not a directory"
 		if err != nil {
@@ -359,12 +376,13 @@ func (s *Scanner) ScanApp(ctx context.Context, dir string) App {
 			app.Observations = append(app.Observations, o)
 		}
 	}
-	web := &webAssets{s: s, dir: dir, seen: map[string]bool{}}
+	web := &webAssets{s: s, dir: dir, seen: map[string]bool{}, denied: den}
 	err = filepath.WalkDir(s.path(dir), func(full string, d fs.DirEntry, err error) error {
 		if cerr := ctx.Err(); cerr != nil {
 			return cerr // the collection's time limit stops the walk
 		}
 		if err != nil {
+			den.note(s.hostPath(full), err)
 			return nil
 		}
 		if !d.IsDir() {
@@ -455,7 +473,16 @@ func (s *Scanner) ScanApp(ctx context.Context, dir string) App {
 			if s.nestedApp(dir, c.Scope[i+1:]) {
 				continue
 			}
+			// A directory or lockfile the agent may not read is counted
+			// with the others below, not listed one by one.
+			if kind := c.Scope[:i]; (kind == "path" || kind == "lockfile") && c.Status == "failed" && permissionText(c.Reason) {
+				den.note(c.Scope[i+1:], fs.ErrPermission)
+				continue
+			}
 		}
+		app.Coverage = append(app.Coverage, c)
+	}
+	if c, ok := den.coverage(dir); ok {
 		app.Coverage = append(app.Coverage, c)
 	}
 	if len(app.Coverage) == 0 {

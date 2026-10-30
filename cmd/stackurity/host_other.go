@@ -82,7 +82,9 @@ func hostCollector(o *hostOptions) (func(context.Context) ([]*model.ObservationB
 			seen[app.Dir] = true
 			// A discovered directory with nothing installed and no lockfile
 			// is a tool or an empty checkout, not an application to track.
-			if !explicit && len(app.Observations) == 0 {
+			// One the agent may not read is reported, so that it does not
+			// look clean.
+			if !explicit && len(app.Observations) == 0 && !app.Unreadable() {
 				continue
 			}
 			b := appBatch(app, osBatch.Asset)

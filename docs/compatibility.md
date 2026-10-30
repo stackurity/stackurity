@@ -228,7 +228,7 @@ kind (`mix.lock`, `rebar.lock`, `Package.swift`, `Package.resolved`,
 `Podfile.lock`, `conanfile.txt`, `conanfile.py`, `conan.lock`, `vcpkg.json`,
 `uv.lock`, `pdm.lock`, `packages.config`, `deno.lock`, `bun.lock`,
 `bun.lockb`, `build.sbt`, and Maven, Gradle and Cargo files without their
-stack pack); components with no vulnerability source, by package type and
+stack pack), and application files the agent's user may not read; components with no vulnerability source, by package type and
 reason (vendor builds per repository); and products with no lifecycle match.
 Each is counted by assets and workspaces. The report names no workspace,
 asset, path or package. The new file kinds are reported by agents and scans

@@ -9,6 +9,7 @@ package apps
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"io/fs"
 	"os"
@@ -182,11 +183,12 @@ func (s *Scanner) resolveFile(p string) (string, bool) {
 }
 
 // siteDir checks a document root from configuration: an existing directory
-// outside the system directories, below (not at or above) a discovery
-// base, with no hidden part, reached without following a link other than
-// a release layout's current link (the rule the walk follows). A document
-// root whose parent has a manifest (Laravel's or Symfony's public/) is
-// that parent's application.
+// outside the system directories, not at or above a discovery base, with
+// no hidden part, reached without following a link other than a release
+// layout's current link (the rule the walk follows). A document root whose
+// parent has a manifest (Laravel's or Symfony's public/) is that parent's
+// application. One the agent's user may not reach is taken as written:
+// its scan reports that it could not be read.
 func (s *Scanner) siteDir(dir string, bases []string) (string, bool) {
 	if !path.IsAbs(dir) || strings.ContainsAny(dir, "$*?[]{}%\\") {
 		return "", false
@@ -195,13 +197,17 @@ func (s *Scanner) siteDir(dir string, bases []string) (string, bool) {
 	if dir == "/" || underAny(dir, systemDirs) {
 		return "", false
 	}
-	cur := "/"
+	cur, denied := "/", false
 	for _, part := range strings.Split(strings.TrimPrefix(dir, "/"), "/") {
 		if strings.HasPrefix(part, ".") {
 			return "", false
 		}
 		next := path.Join(cur, part)
 		fi, err := os.Lstat(s.path(next))
+		if errors.Is(err, fs.ErrPermission) {
+			cur, denied = dir, true
+			break
+		}
 		if err != nil {
 			return "", false
 		}
@@ -224,7 +230,7 @@ func (s *Scanner) siteDir(dir string, bases []string) (string, bool) {
 			return "", false // the walk reads the base, one application at a time
 		}
 	}
-	if parent := path.Dir(cur); parent != "/" && !underAny(parent, systemDirs) && !slices.Contains(bases, parent) && s.marker(parent, markers) != "" {
+	if parent := path.Dir(cur); !denied && parent != "/" && !underAny(parent, systemDirs) && !slices.Contains(bases, parent) && s.marker(parent, markers) != "" {
 		return parent, true
 	}
 	return cur, true
