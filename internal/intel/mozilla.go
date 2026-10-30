@@ -181,7 +181,9 @@ func mozillaRecords(p *winprograms.Program, docs []mfsaDoc) []*osv.Vulnerability
 	for cve, g := range byCVE {
 		ranges := rollingFixRange(g.fixes)
 		if p.Source.PerLine {
-			ranges = lineFixRanges(g.fixes, dates.patchedSince(p.ID, g.first))
+			// Mozilla's dates are fixes: a line not fixed since an issue has
+			// ended for it, with no grace (an ended ESR stays affected).
+			ranges = lineFixRanges(g.fixes, dates.patchedSince(p.ID, g.first, 0))
 		}
 		if len(ranges) == 0 {
 			continue

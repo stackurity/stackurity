@@ -80,7 +80,7 @@ type msrcCursor struct {
 	// Lines is, per program and major version, when a document last listed
 	// a fix on it (lineDates), so a document read alone still knows about
 	// later ones.
-	Lines map[string]map[string]time.Time `json:"lines,omitempty"`
+	Lines map[string]map[string]lineSpan `json:"lines,omitempty"`
 }
 
 // msrcReads is the current version of what a document is read for (2:
@@ -116,10 +116,10 @@ func (s *Syncer) syncMSRC(ctx context.Context, feed, cursor string) (*SyncResult
 	}
 	known, old := lineDates{}, lineDates{}
 	for p, ms := range cur.Lines {
-		for m, at := range ms {
+		for m, sp := range ms {
 			if n, err := strconv.Atoi(m); err == nil {
-				known.note(p, n, at)
-				old.note(p, n, at)
+				known.span(p, n, sp)
+				old.span(p, n, sp)
 			}
 		}
 	}
@@ -193,11 +193,11 @@ func (s *Syncer) syncMSRC(ctx context.Context, feed, cursor string) (*SyncResult
 		res.Warning = fmt.Sprintf("%d Security Update Guide documents could not be read and are kept as last read: %s",
 			len(failed), strings.Join(failed, "; "))
 	}
-	next.Lines = map[string]map[string]time.Time{}
+	next.Lines = map[string]map[string]lineSpan{}
 	for p, ms := range known {
-		next.Lines[p] = map[string]time.Time{}
-		for m, at := range ms {
-			next.Lines[p][strconv.Itoa(m)] = at
+		next.Lines[p] = map[string]lineSpan{}
+		for m, sp := range ms {
+			next.Lines[p][strconv.Itoa(m)] = sp
 		}
 	}
 	if full {
@@ -738,7 +738,7 @@ func cvrfRecord(c cvrfCompact, docID string, released, revised time.Time, lines 
 	for prog, fixes := range progFixes {
 		var patched func(int) bool
 		if dates != nil {
-			patched = dates.patchedSince(prog, at)
+			patched = dates.patchedSince(prog, at, coListedGrace)
 		}
 		if r := lineFixRanges(fixes, patched); len(r) > 0 {
 			progRanges[prog] = r
@@ -932,36 +932,73 @@ func mergeUnlisted(rs []osv.Range) []osv.Range {
 	return out
 }
 
-// lineDates records, per program and major version, the latest date a
-// source listed a fix on that major: a major is still updated for an issue
-// when it has a fix at or after the issue's date.
-type lineDates map[string]map[int]time.Time
+// lineDates records, per program and major version, the first and the
+// latest date a source listed a fix on that major (for Microsoft's
+// programs, listed it next to a higher major): a major is still updated for
+// an issue when it has such a listing at or after the issue's date.
+type lineDates map[string]map[int]lineSpan
+
+type lineSpan struct {
+	First time.Time `json:"first"`
+	Last  time.Time `json:"last"`
+}
+
+// coListedGrace is how long after its last listing next to a higher major
+// a line listed so on two or more days is taken as still updated. Edge's
+// Extended Stable is listed next to Stable every few weeks (09-14, 10-16
+// and 10-26 in 2026), and the Stable-only CVEs in between are not its; a
+// line listed on one day only (a Stable major superseded during a
+// release) is not given the benefit.
+const coListedGrace = 8 * 7 * 24 * time.Hour
 
 func (d lineDates) note(program string, major int, at time.Time) {
-	if at.IsZero() {
+	d.span(program, major, lineSpan{First: at, Last: at})
+}
+
+func (d lineDates) span(program string, major int, s lineSpan) {
+	if s.Last.IsZero() {
 		return
 	}
 	if d[program] == nil {
-		d[program] = map[int]time.Time{}
+		d[program] = map[int]lineSpan{}
 	}
-	if at.After(d[program][major]) {
-		d[program][major] = at
+	cur, ok := d[program][major]
+	if !ok {
+		d[program][major] = s
+		return
 	}
+	if s.First.Before(cur.First) {
+		cur.First = s.First
+	}
+	if s.Last.After(cur.Last) {
+		cur.Last = s.Last
+	}
+	d[program][major] = cur
 }
 
 func (d lineDates) merge(o lineDates) {
 	for p, ms := range o {
-		for m, at := range ms {
-			d.note(p, m, at)
+		for m, s := range ms {
+			d.span(p, m, s)
 		}
 	}
 }
 
-// patchedSince is the test lineFixRanges takes for one program and issue.
-func (d lineDates) patchedSince(program string, at time.Time) func(int) bool {
+// patchedSince is the test lineFixRanges takes for one program and issue:
+// a major listed at or after the issue's day, or, with a grace, one listed
+// on two or more days whose last listing is at most grace before the issue.
+func (d lineDates) patchedSince(program string, at time.Time, grace time.Duration) func(int) bool {
+	day := at.Truncate(24 * time.Hour)
 	return func(major int) bool {
-		last, ok := d[program][major]
-		return ok && !last.Before(at.Truncate(24*time.Hour))
+		s, ok := d[program][major]
+		switch {
+		case !ok:
+			return false
+		case !s.Last.Before(day):
+			return true
+		}
+		twice := s.First.Truncate(24 * time.Hour).Before(s.Last.Truncate(24 * time.Hour))
+		return grace > 0 && twice && day.Sub(s.Last.Truncate(24*time.Hour)) <= grace
 	}
 }
 
@@ -1044,8 +1081,10 @@ func cvrfTime(s string) time.Time {
 func linesAdvanced(old, now lineDates) (time.Time, bool) {
 	var since time.Time
 	for p, ms := range now {
-		for m, at := range ms {
-			prev, had := old[p][m]
+		for m, sp := range ms {
+			at := sp.Last
+			pspan, had := old[p][m]
+			prev := pspan.Last
 			var from time.Time
 			switch {
 			case !had:

@@ -382,16 +382,17 @@ func TestWindowsPrograms(t *testing.T) {
 		t.Errorf("Firefox CVE-2024-9680 fixed %q", g.FixedVersion)
 	}
 
-	// Extended Stable 152.0.4191.137: the CVEs of 10-22 and 10-26 (fixed on
-	// Stable only, while 152 was still updated) are a note, not findings;
-	// that of 10-27, after 152's last listed fix, is affected.
+	// Extended Stable 152.0.4191.137, listed next to Stable on 10-16 and
+	// 10-26: the Stable-only CVEs of 10-22 and 10-26 are not its, nor is that
+	// of 10-27, within coListedGrace of its last listing. One note, no
+	// findings.
 	c := programKeys(t, st, ctx, hostC)
-	if len(c) != 1 || c["CVE-2026-20942"].FixedVersion != "156.0.4314.42" || c["CVE-2026-20942"].Verification != "confirmed" {
+	if len(c) != 0 {
 		t.Errorf("Extended Stable findings: %s", sortedFindingKeys(c))
 	}
 	rowsC, _, _ := st.ListInventory(ctx, store.InventoryFilter{AssetID: hostC, Page: store.Page{Limit: 100}})
 	for _, r := range rowsC {
-		if r.Name == "Microsoft Edge" && !strings.Contains(r.CoverageReason, "2 CVEs name only other release lines of Microsoft Edge, with no fix listed for 152.0.4191.137's line") {
+		if r.Name == "Microsoft Edge" && !strings.Contains(r.CoverageReason, "3 CVEs name only other release lines of Microsoft Edge, with no fix listed for 152.0.4191.137's line") {
 			t.Errorf("Extended Stable coverage: %q", r.CoverageReason)
 		}
 	}
@@ -646,7 +647,8 @@ func TestWindowsProgramsLinesReread(t *testing.T) {
 	if _, err := ev.Evaluate(ctx, nil, 0); err != nil {
 		t.Fatal(err)
 	}
-	// 152 was last listed next to Stable on 10-16: the 10-22 CVE is affected.
+	// 152 was listed next to Stable on 10-16 only: once, so no grace, and
+	// the 10-22 CVE is affected.
 	if g := programKeys(t, st, ctx, host)["CVE-2026-112992"]; g.FixedVersion != "156.0.4314.42" {
 		t.Fatalf("before: %s", sortedFindingKeys(programKeys(t, st, ctx, host)))
 	}
@@ -669,7 +671,8 @@ func TestWindowsProgramsLinesReread(t *testing.T) {
 	if _, ok := got["CVE-2026-112992"]; ok {
 		t.Errorf("after: 152 was still updated on 10-26, so CVE-2026-112992 is a note: %s", sortedFindingKeys(got))
 	}
-	if g := got["CVE-2026-20942"]; g.FixedVersion != "156.0.4314.42" {
-		t.Errorf("after: the 10-27 CVE stays affected: %s", sortedFindingKeys(got))
+	// Listed on two days now, 152 is still updated for the 10-27 CVE too.
+	if len(got) != 0 {
+		t.Errorf("after: %s", sortedFindingKeys(got))
 	}
 }

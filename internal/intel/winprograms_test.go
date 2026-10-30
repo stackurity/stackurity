@@ -493,3 +493,44 @@ func TestSameLineOnly(t *testing.T) {
 		t.Error("the cached advisories must not be changed")
 	}
 }
+
+// A Microsoft line listed next to a higher major on two or more days stays
+// still updated for up to coListedGrace after its last such listing; one
+// listed on a single day, or longer ago, does not.
+func TestCoListedGrace(t *testing.T) {
+	day := func(s string) time.Time { d, _ := time.Parse("2006-01-02", s); return d }
+	dates := lineDates{}
+	for _, d := range []string{"2026-09-14", "2026-10-16", "2026-10-26"} {
+		dates.note("microsoft-edge", 152, day(d)) // Extended Stable
+	}
+	dates.note("microsoft-edge", 153, day("2026-09-18")) // a Stable major, listed once
+	for _, c := range []struct {
+		major int
+		cve   string
+		grace time.Duration
+		want  bool
+	}{
+		{152, "2026-10-20", coListedGrace, true},  // before its last listing
+		{152, "2026-10-27", coListedGrace, true},  // the gap after it
+		{152, "2026-12-21", coListedGrace, true},  // 8 weeks after
+		{152, "2026-12-30", coListedGrace, false}, // longer: ended
+		{153, "2026-09-18", coListedGrace, true},
+		{153, "2026-09-25", coListedGrace, false}, // listed once: no grace
+		{152, "2026-10-27", 0, false},             // Mozilla: no grace
+		{154, "2026-09-01", coListedGrace, false}, // never listed
+	} {
+		if got := dates.patchedSince("microsoft-edge", day(c.cve), c.grace)(c.major); got != c.want {
+			t.Errorf("%d for a CVE of %s (grace %v): %v", c.major, c.cve, c.grace, got)
+		}
+	}
+	// Through lineFixRanges: a Stable-only fix on 10-27.
+	stable := []string{"156.0.4314.42"}
+	v := &osv.Vulnerability{ID: "x", Affected: lineEntries("Windows programs:p", "p",
+		lineFixRanges(stable, dates.patchedSince("microsoft-edge", day("2026-10-27"), coListedGrace)))}
+	if hit, _, unlisted := lineVerdict(t, v, "152.0.4191.137"); hit || !unlisted {
+		t.Errorf("Extended Stable in the gap: affected %v unlisted %v", hit, unlisted)
+	}
+	if hit, fix, _ := lineVerdict(t, v, "153.0.4200.10"); !hit || fix != "156.0.4314.42" {
+		t.Errorf("superseded 153: affected %v fix %s", hit, fix)
+	}
+}
