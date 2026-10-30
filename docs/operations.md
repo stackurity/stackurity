@@ -65,7 +65,7 @@ The rules are unit tested with `promtool test rules` ([`stackurity-alerts_test.y
 | [StackurityAssetsStoppedReporting](#stackurityassetsstoppedreporting) | warning | 5 or more assets went stale within an hour | |
 | [StackurityAssetsStale](#stackurityassetsstale) | info | Any asset has been stale for a day | 24h |
 
-The thresholds follow the server's own limits: feeds are stale after their `stale_after` (6 hours for OSV ecosystems and distributions, 48 hours for Amazon Linux, 72 hours for CISA KEV, FIRST EPSS and the package registries, 7 days for endoflife.date); periodic tasks are flagged after three intervals, as Platform health does; the job backlog warning matches Platform health's 30 minutes.
+The thresholds follow the server's own limits: feeds are stale after their `stale_after` (6 hours for OSV ecosystems and distributions, 12 hours for CISA KEV, 48 hours for Amazon Linux, 72 hours for FIRST EPSS and the package registries, 7 days for endoflife.date); periodic tasks are flagged after three intervals, as Platform health does; the job backlog warning matches Platform health's 30 minutes.
 
 ## Runbooks
 
@@ -151,6 +151,8 @@ A vulnerability feed has not synced within its freshness limit. New advisories f
 4. No error and no recent attempt: the scheduler is not running; see [StackurityTaskNotSucceeding](#stackuritytasknotsucceeding) for `enqueue-due-feeds` and [StackurityJobQueueBacklog](#stackurityjobqueuebacklog).
 
 Once fixed, **Refresh** on the Intelligence page (`POST /api/v1/feeds/{name}/refresh`) queues a sync at once; the feed incident resolves after it succeeds.
+
+The operators' workspace (`STACKURITY_PLATFORM_WORKSPACE`) is told both ways, once each: its routes with the `problems` event get the stale feed right away, and the same routes get a `resolved` message ("Intelligence feed kev:cisa has recovered") when it syncs again. The server logs `intelligence feed is stale` at warn level and `intelligence feed recovered` at info level, once each, with the feed's name.
 
 ### StackurityFeedStale
 

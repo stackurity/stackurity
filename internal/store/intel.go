@@ -59,6 +59,14 @@ func (s *Store) EnsureFeed(ctx context.Context, name, kind string, refresh, stal
 	return err
 }
 
+// RetuneFeed moves a feed from old default intervals to new ones. A feed
+// whose intervals were changed by hand keeps them.
+func (s *Store) RetuneFeed(ctx context.Context, name string, oldRefresh, oldStale, refresh, staleAfter time.Duration) error {
+	_, err := s.Pool.Exec(ctx, `UPDATE feeds SET refresh = $4, stale_after = $5
+		WHERE name = $1 AND refresh = $2 AND stale_after = $3`, name, oldRefresh, oldStale, refresh, staleAfter)
+	return err
+}
+
 func (s *Store) SetFeedEnabled(ctx context.Context, name string, enabled bool) error {
 	tag, err := s.Pool.Exec(ctx, `UPDATE feeds SET enabled = $2 WHERE name = $1`, name, enabled)
 	if err == nil && tag.RowsAffected() == 0 {

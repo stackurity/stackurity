@@ -4,7 +4,9 @@ import (
 	"archive/zip"
 	"bufio"
 	"context"
+	"crypto/sha256"
 	"encoding/csv"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -159,7 +161,7 @@ func (s *Syncer) Sync(ctx context.Context, name string) (*SyncResult, error) {
 	case name == FeedMSRC:
 		res, cursor, err = s.syncMSRC(ctx, name, feed.Cursor)
 	case name == FeedKEV:
-		res, err = s.syncKEV(ctx)
+		res, cursor, err = s.syncKEV(ctx, feed.Cursor)
 	case name == FeedEPSS:
 		res, err = s.syncEPSS(ctx)
 	case name == FeedEndOfLife:
@@ -498,10 +500,35 @@ func (s *Syncer) osvIncremental(ctx context.Context, feed, base, cursor string) 
 
 // --- CISA KEV
 
-func (s *Syncer) syncKEV(ctx context.Context) (*SyncResult, error) {
-	b, err := s.f.download(ctx, s.f.cfg.KEVURL, 64<<20)
+// kevCursor describes the copy of the catalogue last stored. The feed is
+// checked hourly and CISA changes it a few times a week, so a check of an
+// unchanged catalogue (about 1.5 MB) is a conditional GET, and when the
+// server ignores that (a mirror), a file with the same SHA-256 is not
+// parsed or stored again. Validators of another URL are not sent.
+type kevCursor struct {
+	URL string `json:"url"`
+	validators
+	SHA256 string `json:"sha256"`
+}
+
+func (s *Syncer) syncKEV(ctx context.Context, cursor string) (*SyncResult, string, error) {
+	url := s.f.cfg.KEVURL
+	var prev kevCursor
+	if json.Unmarshal([]byte(cursor), &prev) != nil || prev.URL != url {
+		prev = kevCursor{}
+	}
+	b, v, unchanged, err := s.f.downloadIfChanged(ctx, url, prev.validators, 64<<20)
 	if err != nil {
-		return nil, err
+		return nil, cursor, err
+	}
+	if unchanged {
+		return &SyncResult{Full: true}, cursor, nil
+	}
+	sum := sha256.Sum256(b)
+	digest := hex.EncodeToString(sum[:])
+	next, _ := json.Marshal(kevCursor{URL: url, validators: v, SHA256: digest})
+	if digest == prev.SHA256 {
+		return &SyncResult{Full: true}, string(next), nil
 	}
 	var doc struct {
 		Vulnerabilities []struct {
@@ -516,10 +543,10 @@ func (s *Syncer) syncKEV(ctx context.Context) (*SyncResult, error) {
 		} `json:"vulnerabilities"`
 	}
 	if err := json.Unmarshal(b, &doc); err != nil {
-		return nil, fmt.Errorf("parse KEV: %w", err)
+		return nil, cursor, fmt.Errorf("parse KEV: %w", err)
 	}
 	if len(doc.Vulnerabilities) == 0 {
-		return nil, errors.New("KEV catalogue is empty; refusing to clear existing data")
+		return nil, cursor, errors.New("KEV catalogue is empty; refusing to clear existing data")
 	}
 	seen := map[string]bool{}
 	var rows [][]any
@@ -532,10 +559,10 @@ func (s *Syncer) syncKEV(ctx context.Context) (*SyncResult, error) {
 			strings.ToValidUTF8(truncate(strings.TrimSpace(v.Desc), 2000), "")})
 	}
 	if err := s.Store.ReplaceKnownExploited(ctx, rows); err != nil {
-		return nil, err
+		return nil, cursor, err
 	}
 	_ = s.Store.SetFeedRecords(ctx, FeedKEV, int64(len(rows)))
-	return &SyncResult{Changed: len(rows), Full: true}, nil
+	return &SyncResult{Changed: len(rows), Full: true}, string(next), nil
 }
 
 func parseDate(s string) *time.Time {
