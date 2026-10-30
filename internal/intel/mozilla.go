@@ -136,6 +136,17 @@ func mozillaRecords(p *winprograms.Program, docs []mfsaDoc) []*osv.Vulnerability
 		advisories []string
 	}
 	byCVE := map[string]*agg{}
+	// When each major version last had a fix: the archive holds them all.
+	dates := lineDates{}
+	for _, d := range docs {
+		for _, prod := range p.Source.Products {
+			for _, v := range d.fixed[prod] {
+				if m, ok := majorOf(v); ok {
+					dates.note(p.ID, m, d.announced)
+				}
+			}
+		}
+	}
 	for _, d := range docs {
 		var fixes []string
 		for _, prod := range p.Source.Products {
@@ -170,7 +181,7 @@ func mozillaRecords(p *winprograms.Program, docs []mfsaDoc) []*osv.Vulnerability
 	for cve, g := range byCVE {
 		ranges := rollingFixRange(g.fixes)
 		if p.Source.PerLine {
-			ranges = lineFixRanges(g.fixes)
+			ranges = lineFixRanges(g.fixes, dates.patchedSince(p.ID, g.first))
 		}
 		if len(ranges) == 0 {
 			continue

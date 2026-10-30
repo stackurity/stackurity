@@ -12,12 +12,14 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 	"unicode/utf8"
 
 	"github.com/stackurity/stackurity/internal/osv"
+	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/version"
 	"github.com/stackurity/stackurity/internal/winprograms"
 )
@@ -67,33 +69,48 @@ func lineVerdict(t *testing.T, v *osv.Vulnerability, ver string) (hit bool, fix 
 }
 
 // The fixes a source lists per line: a version on a line with a fix is
-// compared with that fix; one on no listed line needs validation (it is
-// never given another line's fix); one above every line is not affected.
+// compared with that fix; one on a line with no listed fix needs validation
+// while that line is still updated, and is affected with the next listed
+// line's fix once it is not; one above every line is not affected.
 func TestLineFixRanges(t *testing.T) {
+	still := func(ms ...int) func(int) bool {
+		return func(m int) bool { return slices.Contains(ms, m) }
+	}
 	for _, c := range []struct {
+		name      string
 		fixes     []string
+		patched   func(int) bool
 		installed string
 		hit       bool
 		fix       string
 		unlisted  bool
 	}{
-		// The review's probes: patched hosts on a line the fix does not name.
-		{[]string{"143"}, "140.3.1", false, "", true},                  // Thunderbird ESR 140 vs a monthly fix
-		{[]string{"153.2.0"}, "115.30.0", false, "", true},             // Firefox ESR 115 vs ESR 153's fix
-		{[]string{"156.0.4314.42"}, "152.0.4191.137", false, "", true}, // Edge Extended Stable vs Stable's fix
-		{[]string{"152.0.4191.137", "155.0.4283.60"}, "152.0.4191.137", false, "", false},
-		{[]string{"152.0.4191.137", "155.0.4283.60"}, "152.0.4191.100", true, "152.0.4191.137", false},
-		{[]string{"152.0.4191.137", "155.0.4283.60"}, "154.0.4258.50", false, "", true}, // between the lines
-		{[]string{"152.0.4191.137", "155.0.4283.60"}, "155.0.4283.50", true, "155.0.4283.60", false},
-		{[]string{"152.0.4191.137", "155.0.4283.60"}, "157.0.1", false, "", false}, // above every line
-		{[]string{"115.16.1", "128.3.1"}, "128.3.0", true, "128.3.1", false},
-		{[]string{"8.0.32", "9.0.21"}, "9.0.10", true, "9.0.21", false},
-		{[]string{"8.0.32", "9.0.21"}, "8.0.32", false, "", false},
+		// The first review's probes: patched hosts on a line still updated.
+		{"Thunderbird ESR 140 vs a monthly fix", []string{"143"}, still(140), "140.3.1", false, "", true},
+		{"Firefox ESR 115 vs ESR 153's fix", []string{"153.2.0"}, still(115), "115.30.0", false, "", true},
+		{"Edge Extended Stable vs Stable's fix", []string{"156.0.4314.42"}, still(152), "152.0.4191.137", false, "", true},
+		// The second review's: lines no longer updated are affected.
+		{"Edge 154, an older Stable", []string{"156.0.4314.42"}, still(152), "154.0.4258.62", true, "156.0.4314.42", false},
+		{"Edge 155, an older Stable", []string{"156.0.4314.42"}, still(152), "155.0.4283.60", true, "156.0.4314.42", false},
+		{"Thunderbird 157, an older monthly", []string{"159", "153.6"}, still(153), "157.0", true, "159", false},
+		{"Thunderbird 158, an older monthly", []string{"159", "153.6"}, still(153), "158.0", true, "159", false},
+		{"Firefox ESR 128, ended", []string{"153.6", "115.44"}, still(115), "128.3.0", true, "153.6", false},
+		{".NET 6, out of support", []string{"8.0.32", "9.0.21"}, nil, "6.0.36", true, "8.0.32", false},
+		{"no dates: unlisted", []string{"156.0.4314.42"}, nil, "154.0.4258.62", false, "", true},
+		{"own line's fix", []string{"152.0.4191.137", "155.0.4283.60"}, still(152), "152.0.4191.100", true, "152.0.4191.137", false},
+		{"past own line's fix", []string{"152.0.4191.137", "155.0.4283.60"}, still(152), "152.0.4191.137", false, "", false},
+		{"between, not updated", []string{"152.0.4191.137", "155.0.4283.60"}, still(152), "154.0.4258.50", true, "155.0.4283.60", false},
+		{"above every line", []string{"152.0.4191.137", "155.0.4283.60"}, still(152), "157.0.1", false, "", false},
+		{".NET 9 on its line", []string{"8.0.32", "9.0.21"}, still(8, 9), "9.0.10", true, "9.0.21", false},
 	} {
-		v := &osv.Vulnerability{ID: "x", Affected: lineEntries("Windows programs:p", "p", lineFixRanges(c.fixes))}
+		patched := c.patched
+		if c.name == ".NET 6, out of support" {
+			patched = still(8, 9)
+		}
+		v := &osv.Vulnerability{ID: "x", Affected: lineEntries("Windows programs:p", "p", lineFixRanges(c.fixes, patched))}
 		hit, fix, unlisted := lineVerdict(t, v, c.installed)
 		if hit != c.hit || fix != c.fix || unlisted != c.unlisted {
-			t.Errorf("%v against %s: affected %v fix %q unlisted %v; want %v %q %v", c.fixes, c.installed, hit, fix, unlisted, c.hit, c.fix, c.unlisted)
+			t.Errorf("%s: %v against %s: affected %v fix %q unlisted %v; want %v %q %v", c.name, c.fixes, c.installed, hit, fix, unlisted, c.hit, c.fix, c.unlisted)
 		}
 	}
 	// One rolling line (Firefox's rapid release): every earlier version is affected.
@@ -250,11 +267,11 @@ func TestMozillaRecords(t *testing.T) {
 		{ff, "131.0.2", false, ""},
 		{esr, "128.3.0", true, "128.3.1"},
 		{esr, "115.16.0", true, "115.16.1"},
-		{esr, "115.16.1", false, ""}, // its own line's fix, although below 128.3.1
-		{esr, "120.0", false, ""},    // between two lines: needs validation, not affected
+		{esr, "115.16.1", false, ""},    // its own line's fix, although below 128.3.1
+		{esr, "120.0", true, "128.3.1"}, // between two lines, never updated: the next line's fix
 		{tb, "128.2.0", true, "128.3.1"},
 		{tb, "131.0.0", true, "131.0.1"},
-		{tb, "130.0", false, ""}, // between two lines
+		{tb, "130.0", true, "131.0.1"}, // an older monthly release: the next line's fix
 	} {
 		v := c.recs["CVE-2024-9680"]
 		if v == nil {
@@ -287,10 +304,14 @@ func TestMozillaRecords(t *testing.T) {
 				t.Fatalf("%s: a release fix applied to ESR", v.ID)
 			}
 		}
-		// A CVE fixed only on other ESR lines (153.6, 115.44) is not
-		// reported affected on ESR 140.
-		if hit, fix, _ := lineVerdict(t, v, "140.17"); hit {
-			t.Fatalf("%s: ESR 140 given another line's fix %s", v.ID, fix)
+		// A CVE of 27 October 2026 fixed only in ESR 153.6 and 115.44:
+		// ESR 115 was updated that day, so a 115 install between those
+		// fixes needs validation; ESR 128 had ended, so it is affected
+		// with ESR 153's fix.
+		if v.Published.Year() == 2026 && v.Published.Month() == 10 && v.Published.Day() == 27 {
+			if hit, fix, unlisted := lineVerdict(t, v, "128.3.0"); len(v.Affected) > 2 && (!hit || fix != "153.6" || unlisted) {
+				t.Fatalf("%s on ended ESR 128: %v %s %v", v.ID, hit, fix, unlisted)
+			}
 		}
 	}
 }
@@ -345,12 +366,14 @@ func TestMSRCPrograms(t *testing.T) {
 		}
 	}
 	for cve, want := range map[string]map[string]string{
-		"CVE-2026-102299": {"microsoft-edge": "0 limit 154 | 154 154.0.4258.53 | "},
-		// Extended Stable (152) and Stable (155) fixes: each fixes its line;
-		// 153 and 154 are on no listed line.
-		"CVE-2026-110144": {"microsoft-edge": "0 limit 152 | 152 152.0.4191.137 | 153 limit 155 | 155 155.0.4283.60 | "},
+		"CVE-2026-102299": {"microsoft-edge": "0 limit 154 154.0.4258.53 | 154 154.0.4258.53 | "},
+		// Extended Stable (152) and Stable (155) fixes: each fixes its line.
+		// 153 had no fix in the document at or after this CVE's date: it is
+		// affected with 155's fix. 154 still had one: it needs validation.
+		// Majors below 152 are affected with 152's fix.
+		"CVE-2026-110144": {"microsoft-edge": "0 limit 152 152.0.4191.137 | 152 152.0.4191.137 | 153 limit 154 155.0.4283.60 | 154 limit 155 | 155 155.0.4283.60 | "},
 		// .NET runtime fixes per line; the preview (11.0.0-rc.2) is not read.
-		"CVE-2026-105016": {"dotnet-runtime": "0 limit 8 | 8 8.0.32 | 9 9.0.21 | 10 10.0.14 | "},
+		"CVE-2026-105016": {"dotnet-runtime": "0 limit 8 8.0.32 | 8 8.0.32 | 9 9.0.21 | 10 10.0.14 | "},
 		// SDK versions only (8.0.427): no runtime fix.
 		"CVE-2026-114148": nil,
 	} {
@@ -431,5 +454,27 @@ func TestNVDKeyStaysOnHost(t *testing.T) {
 	}
 	if len(gotKey) != 3 || gotKey[0] != "secret-key" || gotKey[1] != "secret-key" || gotKey[2] != "" {
 		t.Errorf("apiKey seen as %q: kept on the same host, dropped on another", gotKey)
+	}
+}
+
+// A side-by-side program's ranges whose fix is on another line are not
+// applied: NVD's "< 3.12.4" for every Python says nothing about 3.11.
+func TestSameLineOnly(t *testing.T) {
+	py := winprograms.Default().Program("python")
+	rng := func(fixed string) osv.Range {
+		return osv.Range{Type: "ECOSYSTEM", Events: []osv.Event{{Introduced: "0"}, {Fixed: fixed}}}
+	}
+	advs := []store.AdvisoryMatch{
+		{ID: "a", Affected: osv.Affected{Ranges: []osv.Range{rng("3.12.4")}}},
+		{ID: "b", Affected: osv.Affected{Ranges: []osv.Range{rng("3.11.9"), rng("3.12.4")}}},
+		{ID: "c", Affected: osv.Affected{Versions: []string{"3.11.2", "3.12.1"}}},
+	}
+	got := sameLineOnly(py, "3.11", advs)
+	if len(got) != 2 || got[0].ID != "b" || len(got[0].Affected.Ranges) != 1 || got[0].Affected.Ranges[0].Events[1].Fixed != "3.11.9" ||
+		got[1].ID != "c" || !slices.Equal(got[1].Affected.Versions, []string{"3.11.2"}) {
+		t.Errorf("same line only: %+v", got)
+	}
+	if advs[1].Affected.Ranges[1].Events[1].Fixed != "3.12.4" {
+		t.Error("the cached advisories must not be changed")
 	}
 }

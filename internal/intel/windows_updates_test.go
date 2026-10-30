@@ -322,8 +322,9 @@ func TestWindowsUpdatesIncremental(t *testing.T) {
 	if _, err := sy.Sync(ctx, FeedMSRC); err != nil {
 		t.Fatal(err)
 	}
-	// November 2026: the window is December 2024 to November 2026.
-	if !slices.Equal(up.requests, []string{"/msrc/updates", "/msrc/cvrf/2025-Sep", "/msrc/cvrf/2025-Oct", "/msrc/cvrf/2026-Oct"}) {
+	// November 2026: the window is December 2024 to November 2026. Newest
+	// first, so an older document knows when programs' lines were last fixed.
+	if !slices.Equal(up.requests, []string{"/msrc/updates", "/msrc/cvrf/2026-Oct", "/msrc/cvrf/2025-Oct", "/msrc/cvrf/2025-Sep"}) {
 		t.Errorf("monthly full read %v", up.requests)
 	}
 

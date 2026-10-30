@@ -383,3 +383,44 @@ func TestSecondCheckWindowsPrograms(t *testing.T) {
 		}
 	}
 }
+
+// The second check compares the verification a line's records call for.
+func TestSecondCheckLineVerification(t *testing.T) {
+	recs := []store.RawAdvisoryRecord{
+		rec("MSRC-2026-Oct-CVE-2099-1", "Windows programs:microsoft-edge", "microsoft-edge", rng(`{"introduced":"152"},{"limit":"153"}`)),
+		rec("MSRC-2026-Oct-CVE-2099-1", "Windows programs:microsoft-edge", "microsoft-edge", rng(`{"introduced":"153"},{"limit":"156"},{"fixed":"156.0.4314.42"}`)),
+		rec("MSRC-2026-Oct-CVE-2099-1", "Windows programs:microsoft-edge", "microsoft-edge", rng(`{"introduced":"156"},{"fixed":"156.0.4314.42"}`)),
+	}
+	edge := func(v string) Observed {
+		return Observed{Purl: "pkg:generic/Microsoft%20Edge@" + v, Version: v,
+			Evidence: map[string]string{"registry_view": "native", "publisher": "Microsoft Corporation"}}
+	}
+	c := claim("156.0.4314.42", nil)
+	c.Verification = "confirmed"
+	// An older Stable (154): affected, with the next line's fix.
+	if out := CheckVulnerability(c, edge("154.0.4258.62"), recs); out.Result != store.SecondCheckAgreed {
+		t.Errorf("Edge 154: %s %s", out.Result, out.Reason)
+	}
+	// Extended Stable (152): only the unlisted-line record matches, so a
+	// confirmed claim is a disagreement on verification.
+	c152 := claim("", nil)
+	c152.Verification = "confirmed"
+	want(t, CheckVulnerability(c152, edge("152.0.4191.137"), recs), "verification", "needs_validation")
+	c152.Verification = "needs_validation"
+	c152.Evidence = map[string]any{"match": map[string]any{"ambiguous": []any{"version_line_unlisted"}}}
+	if out := CheckVulnerability(c152, edge("152.0.4191.137"), recs); out.Result != store.SecondCheckAgreed {
+		t.Errorf("Edge 152 needing validation: %s %s", out.Result, out.Reason)
+	}
+	// A claim of an unlisted line where the version's own line has a fix.
+	c156 := claim("156.0.4314.42", map[string]any{"match": map[string]any{"ambiguous": []any{"version_line_unlisted"}}})
+	c156.Verification = "needs_validation"
+	want(t, CheckVulnerability(c156, edge("156.0.4314.10"), recs), "verification", "confirmed")
+	// Python 3.11 against NVD's "< 3.12.4" and "< 3.11.9": its own line's fix.
+	py := []store.RawAdvisoryRecord{rec("NVD-python-CVE-2099-1", "Windows programs:python", "python",
+		`{"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"0"},{"fixed":"3.12.4"}]},{"type":"ECOSYSTEM","events":[{"introduced":"3.11.0"},{"fixed":"3.11.9"}]}]}`)}
+	obs := Observed{Purl: "pkg:generic/Python%203.11.5%20%2864-bit%29@3.11.5150.0", Version: "3.11.5150.0",
+		Evidence: map[string]string{"registry_view": "native", "publisher": "Python Software Foundation"}}
+	if out := CheckVulnerability(claim("3.11.9", nil), obs, py); out.Result != store.SecondCheckAgreed {
+		t.Errorf("Python 3.11: %s %s", out.Result, out.Reason)
+	}
+}

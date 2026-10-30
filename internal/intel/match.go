@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -142,6 +143,8 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 	for _, f := range feeds {
 		feedState[f.Name] = f
 	}
+	// The unfixed counts in the Windows programs feed's cursor, read once.
+	programUnfixed := programsUnfixed(feedState[FeedWindowsPrograms].Cursor)
 
 	// A package's advisories are read once and dropped after the last row
 	// that needs them, so an evaluation holds the advisories of the packages
@@ -186,7 +189,7 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 		case isWindowsProgram(r):
 			// An installed program: matched only if the curated catalogue
 			// lists it (internal/winprograms).
-			found, err := e.evaluateProgram(ctx, r, programs[r.InventoryID], feedState, programAdvs, &rc)
+			found, err := e.evaluateProgram(ctx, r, programs[r.InventoryID], feedState, programAdvs, programUnfixed, &rc)
 			if err != nil {
 				return nil, err
 			}
@@ -443,7 +446,8 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 	// their "not affected" says nothing about a Ksplice or FIPS build.
 	oracle := strings.HasPrefix(t.Ecosystem, "Oracle Linux:")
 	// Advisories with a fix per version line, one affected entry per line.
-	perLine := oracle || strings.HasPrefix(t.Ecosystem, winprograms.Ecosystem+":")
+	program := strings.HasPrefix(t.Ecosystem, winprograms.Ecosystem+":")
+	perLine := oracle || program
 	oracleBuild := ""
 	if oracle {
 		oracleBuild = osv.OracleBuild(t.Version)
@@ -484,7 +488,8 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 		if !m.Affected {
 			// A record for another version line (or for versions on no
 			// listed line) says nothing about this version's line.
-			otherLine := perLine && (osv.OtherLine(a.Affected, t) || osv.UnlistedLine(a.Ecosystem, a.Affected))
+			otherLine := perLine && (osv.OtherLine(a.Affected, t) || osv.UnlistedLine(a.Ecosystem, a.Affected) ||
+				(program && otherMajor(a.Affected, t.Version)))
 			if !pro && recordChannel == oracleBuild && !otherLine {
 				freeClear[a.GroupKey]++
 			}
@@ -799,4 +804,24 @@ func latestComposer(vs []string) string {
 		}
 	}
 	return best
+}
+
+// otherMajor reports a Windows program entry that starts on another major
+// version than the installed one: a line's fix ([8, 8.0.32) for a .NET 9
+// install), whose "not affected" says nothing about the installed line.
+func otherMajor(a osv.Affected, installed string) bool {
+	m, ok := majorOf(installed)
+	if !ok || len(a.Ranges) == 0 {
+		return false
+	}
+	for _, r := range a.Ranges {
+		if len(r.Events) == 0 {
+			return false
+		}
+		start, _, _ := strings.Cut(r.Events[0].Introduced, ".")
+		if s, err := strconv.Atoi(start); err != nil || s == m {
+			return false
+		}
+	}
+	return true
 }

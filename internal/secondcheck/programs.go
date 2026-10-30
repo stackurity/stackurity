@@ -27,7 +27,10 @@ type scProgram struct {
 		Pattern string `json:"pattern"`
 		Format  string `json:"format"`
 	} `json:"version"`
-	Source *json.RawMessage `json:"source"`
+	Source *struct {
+		Type string `json:"type"`
+	} `json:"source"`
+	SideBySide string `json:"side_by_side"`
 }
 
 type scCatalogue struct {
@@ -70,10 +73,10 @@ func matchAny(patterns []string, s string) (bool, error) {
 
 // windowsProgram derives the target of an installed Windows program: the
 // catalogued program it is, and its version read by the entry's rule.
-func windowsProgram(name, version string, ev map[string]string) (eco, id, v string, err error) {
+func windowsProgram(name, version string, ev map[string]string) (eco, id, v, line string, lineOf func(string) string, err error) {
 	cat := programCatalogue()
 	if cat.err != nil {
-		return "", "", "", fmt.Errorf("the Windows program catalogue could not be read by the second check: %v", cat.err)
+		return "", "", "", "", nil, fmt.Errorf("the Windows program catalogue could not be read by the second check: %v", cat.err)
 	}
 	name, version = strings.TrimSpace(name), strings.TrimSpace(version)
 	pub := strings.TrimSpace(ev["publisher"])
@@ -97,15 +100,15 @@ func windowsProgram(name, version string, ev map[string]string) (eco, id, v stri
 			}
 		}
 		if hit != nil {
-			return "", "", "", fmt.Errorf("%q matches two catalogue entries", name)
+			return "", "", "", "", nil, fmt.Errorf("%q matches two catalogue entries", name)
 		}
 		hit = p
 	}
 	switch {
 	case hit == nil:
-		return "", "", "", fmt.Errorf("%q is not a catalogued Windows program", name)
+		return "", "", "", "", nil, fmt.Errorf("%q is not a catalogued Windows program", name)
 	case hit.Source == nil:
-		return "", "", "", fmt.Errorf("%s is recognised but not matched", hit.ID)
+		return "", "", "", "", nil, fmt.Errorf("%s is recognised but not matched", hit.ID)
 	}
 	in := version
 	if hit.Version.From == "display_name" {
@@ -113,11 +116,11 @@ func windowsProgram(name, version string, ev map[string]string) (eco, id, v stri
 	}
 	re, err := regexp.Compile("(?i)" + hit.Version.Pattern)
 	if err != nil {
-		return "", "", "", err
+		return "", "", "", "", nil, err
 	}
 	m := re.FindStringSubmatch(in)
 	if m == nil {
-		return "", "", "", fmt.Errorf("version %q of %s is not in the catalogue's form", in, hit.ID)
+		return "", "", "", "", nil, fmt.Errorf("version %q of %s is not in the catalogue's form", in, hit.ID)
 	}
 	out := scRef.ReplaceAllStringFunc(hit.Version.Format, func(ref string) string {
 		var n int
@@ -135,7 +138,21 @@ func windowsProgram(name, version string, ev map[string]string) (eco, id, v stri
 	}
 	v = strings.Join(parts, ".")
 	if !scNums.MatchString(v) {
-		return "", "", "", fmt.Errorf("version %q of %s does not read as numbers", in, hit.ID)
+		return "", "", "", "", nil, fmt.Errorf("version %q of %s does not read as numbers", in, hit.ID)
 	}
-	return "Windows programs:" + hit.ID, hit.ID, v, nil
+	if hit.SideBySide != "" && hit.Source.Type == "nvd_cpe" {
+		n := 1
+		if hit.SideBySide == "major.minor" {
+			n = 2
+		}
+		lineOf = func(s string) string {
+			parts := strings.SplitN(s, ".", n+1)
+			if len(parts) < n {
+				return s
+			}
+			return strings.Join(parts[:n], ".")
+		}
+		line = lineOf(v)
+	}
+	return "Windows programs:" + hit.ID, hit.ID, v, line, lineOf, nil
 }

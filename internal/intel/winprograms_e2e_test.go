@@ -183,8 +183,9 @@ func TestWindowsPrograms(t *testing.T) {
 			prog("Contoso Line of Business App", "Contoso", "4.2"),
 			prog("Zoom Workplace (64-bit)", "Zoom", "7.0.33767"),
 			prog("Microsoft .NET Runtime - 8.0.20 (x64)", "Microsoft Corporation", "64.80.25123"),
-			// A second .NET line installed side by side.
+			// A second .NET line installed side by side, and one out of support.
 			prog("Microsoft .NET Runtime - 9.0.10 (x64)", "Microsoft Corporation", "72.40.25123"),
+			prog("Microsoft .NET Runtime - 6.0.36 (x64)", "Microsoft Corporation", "48.144.23141"),
 			prog("Adobe Acrobat (64-bit)", "Adobe", "24.001.30264"),
 		},
 		// 32-bit installs: the same 7-Zip and .NET runtime seen again.
@@ -278,7 +279,6 @@ func TestWindowsPrograms(t *testing.T) {
 		"CVE-2025-0411":   "24.09",
 		"CVE-2026-14266":  "26.02",
 		"CVE-2026-102299": "154.0.4258.53",
-		"CVE-2026-110144": "",             // 154 is on neither listed line (152, 155): needs validation
 		"CVE-2026-81997":  "24.001.30429", // the Classic track's fix, not Continuous'
 		"CVE-2024-9680":   "128.3.1",
 	} {
@@ -296,13 +296,18 @@ func TestWindowsPrograms(t *testing.T) {
 	}
 	// Each .NET line gets its own line's fix.
 	for _, f := range allFindings(t, st, ctx, hostA) {
-		want := map[string]string{"Microsoft .NET Runtime - 8.0.20 (x64)": "8.0.32", "Microsoft .NET Runtime - 9.0.10 (x64)": "9.0.21"}[f.ComponentName]
-		if f.Key == "CVE-2026-105016" && f.ComponentName != "windows" && f.FixedVersion != want {
+		// .NET 6 has no fixes any more: affected, with the next line's fix.
+		want := map[string]string{"Microsoft .NET Runtime - 8.0.20 (x64)": "8.0.32", "Microsoft .NET Runtime - 9.0.10 (x64)": "9.0.21",
+			"Microsoft .NET Runtime - 6.0.36 (x64)": "8.0.32"}[f.ComponentName]
+		if f.Key == "CVE-2026-105016" && f.ComponentName != "windows" && (f.FixedVersion != want || f.Verification != "confirmed") {
 			t.Errorf("%s: fixed %q, want %q", f.ComponentName, f.FixedVersion, want)
 		}
 	}
-	if g := a["CVE-2026-110144"]; g.Verification != "needs_validation" || g.Severity != "unknown" || !strings.Contains(string(g.Evidence), "version_line_unlisted") {
-		t.Errorf("Edge on no listed line: %s %s %s", g.Verification, g.Severity, g.Evidence)
+	// CVE-2026-110144 lists fixes for 152 and 155; 154 still had fixes
+	// after it, so it is on a line still updated with no fix listed: a
+	// note on the row, not a finding.
+	if g, ok := a["CVE-2026-110144"]; ok {
+		t.Errorf("Edge 154 on a line still updated: finding %s %s", g.Verification, g.FixedVersion)
 	}
 	if !a["CVE-2025-0411"].KnownExploited || !a["CVE-2024-9680"].KnownExploited {
 		t.Error("7-Zip and Firefox KEV findings must say so")
@@ -324,8 +329,8 @@ func TestWindowsPrograms(t *testing.T) {
 		}
 		return n
 	}
-	// .NET 8 (x64 and x86 entries: once) and .NET 9: one finding per line.
-	if n, m := count(hostA, "CVE-2025-0411"), count(hostA, "CVE-2026-105016"); n != 1 || m != 2 {
+	// .NET 8 (x64 and x86 entries: once), 9 and 6: one finding per line.
+	if n, m := count(hostA, "CVE-2025-0411"), count(hostA, "CVE-2026-105016"); n != 1 || m != 3 {
 		t.Errorf("7-Zip findings %d, .NET findings %d: the duplicate registry entries must be reported once", n, m)
 	}
 
@@ -346,6 +351,7 @@ func TestWindowsPrograms(t *testing.T) {
 		"7-Zip 24.08":                           {store.CoverageEvaluated, `the same 7-Zip 24.08 as "7-Zip 24.08 (x64)"`},
 		"7-Zip 24.08 (x64)":                     {store.CoverageEvaluated, "NVD also names 7-Zip in 1 CVE with no fixed version or no version bound, which are not matched; NVD has not analysed most of 7-Zip's recent CVEs"},
 		"Google Chrome":                         {store.CoverageEvaluated, ""},
+		"Microsoft Edge":                        {store.CoverageEvaluated, "1 CVE names only other release lines of Microsoft Edge, with no fix listed for 154.0.4258.50's line"},
 		"Microsoft .NET Runtime - 8.0.20 (x86)": {store.CoverageEvaluated, "the same .NET Runtime 8.0.20"},
 	} {
 		r, ok := cov[name]
@@ -406,12 +412,13 @@ func TestWindowsPrograms(t *testing.T) {
 	}
 	for label, title := range map[string]string{
 		"Google Chrome":  "Update Google Chrome to 156.0.8078.73",
-		"Microsoft Edge": "Update Microsoft Edge to 154.0.4258.53", // not Stable's 155 fix: 154 is on no listed line
+		"Microsoft Edge": "Update Microsoft Edge to 154.0.4258.53", // not Stable's 155 fix: 154 is still updated
 		// One update per side-by-side line, never "update to 9.0.21" for both.
 		".NET Runtime 8": "Update .NET Runtime 8 to 8.0.32",
 		".NET Runtime 9": "Update .NET Runtime 9 to 9.0.21",
-		// 128 is past its line's fix for the ESR 153/115 CVEs: needs validation, not "update to 153.6".
-		"Mozilla Firefox ESR":                        "Update Mozilla Firefox ESR to 128.3.1",
+		// ESR 128 has ended: affected by the ESR 153/115 CVEs, fixed in 153.6.
+		"Mozilla Firefox ESR":                        "Update Mozilla Firefox ESR to 153.6",
+		".NET Runtime 6":                             "Update .NET Runtime 6 to 8.0.32",
 		"Adobe Acrobat and Acrobat Reader (Classic)": "Update Adobe Acrobat and Acrobat Reader (Classic) to 24.001.30429",
 	} {
 		if g := ga[label]; g.Title != title {

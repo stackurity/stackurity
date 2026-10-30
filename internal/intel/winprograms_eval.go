@@ -3,6 +3,7 @@ package intel
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 
 	"github.com/package-url/packageurl-go"
@@ -116,7 +117,7 @@ func (e *Evaluator) withProgramSiblings(ctx context.Context, rows []store.EvalRo
 // evaluateProgram matches one Windows program row. It sets rc's state and
 // reason and returns the findings.
 func (e *Evaluator) evaluateProgram(ctx context.Context, r store.EvalRow, pp *programPlan, feeds map[string]store.Feed,
-	cache map[string][]store.AdvisoryMatch, rc *store.RowCoverage) ([]store.FindingInput, error) {
+	cache map[string][]store.AdvisoryMatch, unfixed map[string]int, rc *store.RowCoverage) ([]store.FindingInput, error) {
 	unsupported := func(reason string) { rc.State, rc.Reason = store.CoverageUnsupported, reason }
 	notEvaluated := func(reason string) { rc.State, rc.Reason = store.CoverageNotEvaluated, reason }
 	p := pp.ident.Program
@@ -165,6 +166,12 @@ func (e *Evaluator) evaluateProgram(ctx context.Context, r store.EvalRow, pp *pr
 		}
 		cache[p.ID] = advs
 	}
+	if p.SideBySide != "" && p.Source.Type == winprograms.SourceNVD {
+		// Lines installed side by side are fixed each on its own line: a
+		// range whose fix is on another line (NVD's "< 3.12.4" for every
+		// Python) says nothing about this one.
+		advs = sameLineOnly(p, p.Line(pp.version), advs)
+	}
 	t := osv.Target{Ecosystem: p.Ecosystem(), Name: p.ID, Version: pp.version, Compare: version.Generic}
 	row := r
 	if pp.ident.PublisherMissing && row.Confidence == "confirmed" {
@@ -185,7 +192,26 @@ func (e *Evaluator) evaluateProgram(ctx context.Context, r store.EvalRow, pp *pr
 		}
 		rc.Reason += s
 	}
-	if n := programsUnfixed(feed.Cursor)[p.ID]; n > 0 && feed.Name == FeedWindowsPrograms {
+	// Issues whose fixes are all on other lines while this line is still
+	// updated (a patched Extended Stable or ESR install) are one note, not
+	// one finding each: there is nothing to do on this host.
+	kept, otherLines := found[:0], 0
+	for _, f := range found {
+		if m, _ := f.Evidence["match"].(map[string]any); m != nil && slices.Contains(asStrings(m["ambiguous"]), "version_line_unlisted") {
+			otherLines++
+			continue
+		}
+		kept = append(kept, f)
+	}
+	found = kept
+	if otherLines > 0 {
+		cves := fmt.Sprintf("%d CVEs name", otherLines)
+		if otherLines == 1 {
+			cves = "1 CVE names"
+		}
+		note(fmt.Sprintf("%s only other release lines of %s, with no fix listed for %s's line, which is still updated: they are not reported as findings", cves, p.Label, pp.version))
+	}
+	if n := unfixed[p.ID]; n > 0 && feed.Name == FeedWindowsPrograms {
 		cves := fmt.Sprintf("%d CVEs", n)
 		if n == 1 {
 			cves = "1 CVE"
@@ -250,4 +276,53 @@ func programComponents(ctx context.Context, s *store.Store, res *SyncResult) ([]
 		}
 	}
 	return out, nil
+}
+
+// sameLineOnly drops the ranges and listed versions of a side-by-side
+// program's advisories that are on another line than line.
+func sameLineOnly(p *winprograms.Program, line string, advs []store.AdvisoryMatch) []store.AdvisoryMatch {
+	out := make([]store.AdvisoryMatch, 0, len(advs))
+	for _, a := range advs {
+		aff := a.Affected
+		aff.Ranges, aff.Versions = nil, nil
+		for _, r := range a.Affected.Ranges {
+			keep := true
+			for _, e := range r.Events {
+				if v := e.Fixed + e.LastAffected; v != "" && p.Line(v) != line {
+					keep = false
+				}
+			}
+			if keep {
+				aff.Ranges = append(aff.Ranges, r)
+			}
+		}
+		for _, v := range a.Affected.Versions {
+			if p.Line(v) == line {
+				aff.Versions = append(aff.Versions, v)
+			}
+		}
+		if len(aff.Ranges) == 0 && len(aff.Versions) == 0 {
+			continue
+		}
+		a.Affected = aff
+		out = append(out, a)
+	}
+	return out
+}
+
+// asStrings reads a JSON-ish list of strings.
+func asStrings(v any) []string {
+	switch x := v.(type) {
+	case []string:
+		return x
+	case []any:
+		out := make([]string, 0, len(x))
+		for _, s := range x {
+			if str, ok := s.(string); ok {
+				out = append(out, str)
+			}
+		}
+		return out
+	}
+	return nil
 }
