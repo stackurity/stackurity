@@ -24,6 +24,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -94,20 +95,41 @@ var markers = []string{"package.json", "package-lock.json", "yarn.lock", "pnpm-l
 	"requirements.txt", "pyproject.toml", "poetry.lock", "Pipfile.lock", "Gemfile.lock", "go.mod", "Cargo.lock", "pubspec.lock",
 	"wp-config.php", "wp-includes/version.php"}
 
+// webIndexes mark a plain PHP or HTML site, which has no manifest. Like any
+// marker, one makes the whole directory one application: a Composer
+// project kept inside the site (a mail library under public/mail) is read
+// as part of it. They do not count in a discovery base itself (/var/www,
+// a home directory), in a directory whose name says it is documentation,
+// examples or tests (skipWebDir), or for a web server's or distribution's
+// placeholder page (Debian's /var/www/html/index.html), so discovery goes
+// on below such a directory as before.
+var webIndexes = []string{"index.php", "index.html", "index.htm"}
+
 // DiscoverBases are searched by Discover. Home directories are included
 // because many servers deploy under a service user's home.
 var DiscoverBases = []string{"/srv", "/var/www", "/opt", "/app", "/home/*", "/home/*/apps", "/home/*/www"}
 
+// Discovered is an application directory found by discovery and what
+// found it: the marker file ("composer.json", "index.php") and the web
+// server configuration files naming it as a document root
+// ("nginx:/etc/nginx/sites-enabled/shop").
+type Discovered struct {
+	Dir string
+	By  []string
+}
+
 // Discover returns project directories up to three levels below the usual
-// deployment bases. A release layout (releases/ or versions/ plus a
-// current link) yields only the current release.
+// deployment bases, and the document roots Apache and nginx serve
+// (webconf.go). A release layout (releases/ or versions/ plus a current
+// link) yields only the current release.
 //
-// It only lists directories and checks for marker files: nothing is opened
-// or run, symbolic links to directories are not followed, hidden and
-// dependency directories are skipped, and the walk stops after
-// maxDiscoverDirs directories or MaxDiscoverApps applications.
+// It only lists directories, checks for marker files and reads web server
+// configuration and placeholder pages: nothing else is opened or run,
+// symbolic links to directories are not followed, hidden and dependency
+// directories are skipped, and the walk stops after maxDiscoverDirs
+// directories or MaxDiscoverApps applications.
 func (s *Scanner) Discover() []string {
-	dirs, _ := s.discover(maxDiscoverDirs, MaxDiscoverApps)
+	dirs, _ := s.DiscoverAll()
 	return dirs
 }
 
@@ -115,25 +137,64 @@ func (s *Scanner) Discover() []string {
 // it stopped at its limits, so an application missing from the list may
 // still be on disk.
 func (s *Scanner) DiscoverAll() ([]string, bool) {
+	found, full := s.DiscoverSites()
+	dirs := make([]string, len(found))
+	for i, d := range found {
+		dirs[i] = d.Dir
+	}
+	return dirs, full
+}
+
+// DiscoverSites is DiscoverAll with what found each directory.
+func (s *Scanner) DiscoverSites() ([]Discovered, bool) {
 	return s.discover(maxDiscoverDirs, MaxDiscoverApps)
 }
 
-func (s *Scanner) discover(maxDirs, maxApps int) ([]string, bool) {
+func (s *Scanner) discover(maxDirs, maxApps int) ([]Discovered, bool) {
 	seen := map[string]bool{}
-	var out []string
+	var out []Discovered
 	budget := maxDirs
 	full := true
-	for _, pattern := range DiscoverBases {
-		bases, _ := filepath.Glob(s.path(pattern))
-		sort.Strings(bases)
-		for _, base := range bases {
-			s.discoverIn(s.hostPath(base), 0, seen, &out, &budget, maxApps, &full)
+	bases := s.discoverBases()
+	for _, base := range bases {
+		s.discoverIn(base, 0, seen, &out, &budget, maxApps, &full)
+	}
+	// Document roots from the web server configuration. One the walk found,
+	// or one inside an application it found (Laravel's public/), is part of
+	// that application; one inside another document root is part of that
+	// site, so the outer ones are taken first. An application the walk found
+	// inside a document root that has no marker of its own stays its own
+	// application, and the document root's scan leaves it out (Apps).
+	roots := s.configRoots()
+	sort.SliceStable(roots, func(i, j int) bool { return len(roots[i].dir) < len(roots[j].dir) })
+	for _, r := range roots {
+		dir, ok := s.siteDir(r.dir, bases)
+		if !ok {
+			continue
 		}
+		in := -1
+		for i, d := range out {
+			if d.Dir == dir || strings.HasPrefix(dir, d.Dir+"/") {
+				in = i
+				break
+			}
+		}
+		if in >= 0 {
+			if !slices.Contains(out[in].By, r.source) {
+				out[in].By = append(out[in].By, r.source)
+			}
+			continue
+		}
+		if len(out) >= maxApps {
+			full = false
+			break
+		}
+		out = append(out, Discovered{Dir: dir, By: []string{r.source}})
 	}
 	return out, full
 }
 
-func (s *Scanner) discoverIn(dir string, depth int, seen map[string]bool, out *[]string, budget *int, maxApps int, full *bool) {
+func (s *Scanner) discoverIn(dir string, depth int, seen map[string]bool, out *[]Discovered, budget *int, maxApps int, full *bool) {
 	if depth > 3 || seen[dir] {
 		return
 	}
@@ -148,12 +209,10 @@ func (s *Scanner) discoverIn(dir string, depth int, seen map[string]bool, out *[
 			return
 		}
 	}
-	for _, m := range markers {
-		if fi, err := os.Lstat(s.path(path.Join(dir, m))); err == nil && fi.Mode().IsRegular() {
-			seen[dir] = true
-			*out = append(*out, dir)
-			return // lockfiles below are found by the app scan itself
-		}
+	if m := s.siteMarker(dir, depth); m != "" {
+		seen[dir] = true
+		*out = append(*out, Discovered{Dir: dir, By: []string{m}})
+		return // lockfiles below are found by the app scan itself
 	}
 	entries, err := os.ReadDir(s.path(dir))
 	if err != nil {
@@ -165,6 +224,37 @@ func (s *Scanner) discoverIn(dir string, depth int, seen map[string]bool, out *[
 		}
 		s.discoverIn(path.Join(dir, e.Name()), depth+1, seen, out, budget, maxApps, full)
 	}
+}
+
+// marker returns the first of names that is a regular file in dir.
+func (s *Scanner) marker(dir string, names []string) string {
+	for _, m := range names {
+		if fi, err := os.Lstat(s.path(path.Join(dir, m))); err == nil && fi.Mode().IsRegular() {
+			return m
+		}
+	}
+	return ""
+}
+
+// siteMarker returns the marker that makes dir, depth levels below a
+// discovery base, an application: a manifest, or a web index file (see
+// webIndexes for where those do not count).
+func (s *Scanner) siteMarker(dir string, depth int) string {
+	if m := s.marker(dir, markers); m != "" || depth == 0 {
+		return m
+	}
+	parts := strings.Split(dir, "/")
+	for _, part := range parts[max(len(parts)-depth, 0):] {
+		if skipWebDir[part] {
+			return ""
+		}
+	}
+	for _, m := range webIndexes {
+		if s.marker(dir, []string{m}) != "" && (m == "index.php" || !s.defaultPage(dir, m)) {
+			return m
+		}
+	}
+	return ""
 }
 
 var skipDiscover = map[string]bool{"node_modules": true, "vendor": true, "releases": true, "shared": true, "cache": true, "tmp": true, "logs": true}

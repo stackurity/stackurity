@@ -6,6 +6,14 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+### Added
+
+- **Sites without a manifest are discovered.** `--discover-apps` now finds a plain PHP or HTML site by its `index.php`, `index.html` or `index.htm`, so the front-end libraries it keeps a copy of or loads from a CDN (an old jQuery in `js/`) are read. It also reads the Apache (`/etc/apache2`, `/etc/httpd`) and nginx (`/etc/nginx`) configuration as a list of sites, and adds each existing `DocumentRoot`, `Alias`, `root` and `alias` directory, wherever it is: includes are followed two levels deep, at most 256 files of 1 MiB each are read, a path with a variable, a pattern or a relative path is skipped rather than expanded, links are resolved inside `--root`, and a document root reached through a link, in a system directory (`/usr`, `/var/lib` and the like) or at or above a discovery base is not added. A document root inside an application discovery found (Laravel's `public/`) is part of it, and one whose parent has a manifest is the parent's application. An index file does not count in a base itself (`/var/www`), in a `docs`, `examples`, `test` or similar directory, or when it is a placeholder page (Debian's and Ubuntu's Apache default page, Apache's "It works!", nginx's welcome page), so a phpMyAdmin under the default `/var/www/html` is still its own application, and a directory with no libraries, such as the default page, is not reported. Each discovered application has a `discovered_by` attribute naming its marker file and the configuration files that serve it. Caddy, lighttpd, IIS and web roots inside containers are not read. See [Applications deployed on the host](docs/install.md#applications-deployed-on-the-host).
+
+### Changed
+
+- **A Composer or npm project inside a site is part of the site.** As with any application discovery finds, it does not look below a site it found by its index file: `/var/www/example.com/public/mail` with its own `composer.lock` is read as part of `/var/www/example.com/public`, and each library is reported once, by the site. Where such a project was reported as an application of its own before, that application is now reported as removed and its libraries, and their findings, appear on the site. An application named with `--app-dir` keeps its own libraries as before.
+
 ### Fixed
 
 - **Front-end libraries: more inline scripts read as JavaScript.** A `<script>` whose type carries parameters (`text/javascript; charset=utf-8`), or is `text/ecmascript` or `application/x-javascript`, was taken for a template, so a CDN address in a comment inside it was reported as loaded; its comments are now removed. A `data-type=` attribute, or `?type=` in the script's address, is no longer read as its type.
