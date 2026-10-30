@@ -82,6 +82,9 @@ type App struct {
 	Observations []model.Observation
 	Coverage     []model.CoverageItem
 	Truncated    bool
+	// Unreadable: the agent's user may not read the directory itself, so
+	// nothing in it was inventoried (see PermissionScope).
+	Unreadable bool
 }
 
 func (s *Scanner) path(hostPath string) string { return filepath.Join(s.Root, hostPath) }
@@ -90,32 +93,52 @@ func (s *Scanner) path(hostPath string) string { return filepath.Join(s.Root, ho
 // usually has no manifest: its wp-config.php (which may sit one level above
 // the install) or wp-includes/version.php marks it. Its plugins and themes
 // under wp-content are part of the site, never applications of their own:
-// discovery does not look below a directory it has found.
+// discovery does not look below a directory a marker here has found (an
+// index file is different, see webIndexes).
 var markers = []string{"package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "composer.json", "composer.lock",
 	"requirements.txt", "pyproject.toml", "poetry.lock", "Pipfile.lock", "Gemfile.lock", "go.mod", "Cargo.lock", "pubspec.lock",
 	"wp-config.php", "wp-includes/version.php"}
 
-// webIndexes mark a plain PHP or HTML site, which has no manifest. Like any
-// marker, one makes the whole directory one application: a Composer
-// project kept inside the site (a mail library under public/mail) is read
-// as part of it. They do not count in a discovery base itself (/var/www,
-// a home directory), in a directory whose name says it is documentation,
-// examples or tests (skipWebDir), or for a web server's or distribution's
-// placeholder page (Debian's /var/www/html/index.html), so discovery goes
-// on below such a directory as before.
+// webIndexes mark a plain PHP or HTML site, which has no manifest. They do
+// not count in a discovery base (/var/www, a home directory, /home/*/www),
+// in a directory whose name says it is documentation, examples or tests
+// (skipWebDir), or for a web server's or distribution's placeholder page
+// (Debian's /var/www/html/index.html): discovery goes on below such a
+// directory as before.
+//
+// Unlike a manifest, an index file does not end the walk: a site's
+// directory often holds other applications (a WordPress blog under /blog,
+// a Laravel app served by a virtual host of its own, a cPanel addon
+// domain). Below a site, a directory is an application of its own when it
+// is a WordPress site, a document root of its own in the web server
+// configuration (or holds one), or has an index file and a manifest of
+// its own; a project with only a manifest (a mail library under
+// public/mail) is part of the site and read by its scan.
 var webIndexes = []string{"index.php", "index.html", "index.htm"}
+
+// wpMarkers are the markers of a WordPress site.
+var wpMarkers = []string{"wp-config.php", "wp-includes/version.php"}
+
+// unreadableSites are directory names that hold a site in shared hosting
+// (cPanel, Plesk, XAMPP). One the agent may not list is reported, as is one
+// directly below /var/www or /srv.
+var unreadableSites = map[string]bool{"public_html": true, "htdocs": true, "httpdocs": true}
 
 // DiscoverBases are searched by Discover. Home directories are included
 // because many servers deploy under a service user's home.
 var DiscoverBases = []string{"/srv", "/var/www", "/opt", "/app", "/home/*", "/home/*/apps", "/home/*/www"}
 
 // Discovered is an application directory found by discovery and what
-// found it: the marker file ("composer.json", "index.php") and the web
-// server configuration files naming it as a document root
+// found it: the marker file ("composer.json", "index.php"), "unreadable"
+// for a directory the agent's user may not list, and the web server
+// configuration files naming it as a document root
 // ("nginx:/etc/nginx/sites-enabled/shop").
 type Discovered struct {
 	Dir string
 	By  []string
+	// site: found by an index file or as a document root, so other
+	// applications below it stay their own.
+	site bool
 }
 
 // Discover returns project directories up to three levels below the usual
@@ -150,82 +173,117 @@ func (s *Scanner) DiscoverSites() ([]Discovered, bool) {
 	return s.discover(maxDiscoverDirs, MaxDiscoverApps)
 }
 
-func (s *Scanner) discover(maxDirs, maxApps int) ([]Discovered, bool) {
-	seen := map[string]bool{}
-	var out []Discovered
-	budget := maxDirs
-	full := true
-	bases := s.discoverBases()
-	for _, base := range bases {
-		// Under /opt, directories only root may list are common
-		// (containerd's, a vendor agent's) and are not sites.
-		unreadable := base != "/opt" && !strings.HasPrefix(base, "/opt/")
-		s.discoverIn(base, 0, unreadable, seen, &out, &budget, maxApps, &full)
-	}
-	// Document roots from the web server configuration. One the walk found,
-	// or one inside an application it found (Laravel's public/), is part of
-	// that application; one inside another document root is part of that
-	// site, so the outer ones are taken first. An application the walk found
-	// inside a document root that has no marker of its own stays its own
-	// application, and the document root's scan leaves it out (Apps).
-	roots := s.configRoots()
-	sort.SliceStable(roots, func(i, j int) bool { return len(roots[i].dir) < len(roots[j].dir) })
-	for _, r := range roots {
-		dir, ok := s.siteDir(r.dir, bases)
-		if !ok {
-			continue
-		}
-		in := -1
-		for i, d := range out {
-			if d.Dir == dir || strings.HasPrefix(dir, d.Dir+"/") {
-				in = i
-				break
-			}
-		}
-		if in >= 0 {
-			if !slices.Contains(out[in].By, r.source) {
-				out[in].By = append(out[in].By, r.source)
-			}
-			continue
-		}
-		if len(out) >= maxApps {
-			full = false
-			break
-		}
-		out = append(out, Discovered{Dir: dir, By: []string{r.source}})
-	}
-	return out, full
+// walk is the state of one discovery walk.
+type walk struct {
+	seen    map[string]bool
+	out     []Discovered
+	budget  int
+	maxApps int
+	full    bool
+	bases   map[string]bool
+	docs    []string // document roots (not aliases) from the configuration
 }
 
-// discoverIn walks dir, depth levels below a base. With unreadable set, a
-// directory below the base that the agent's user may not list is reported
-// as an application: it may be a site, and its scan says it could not be
-// read instead of the site being missing without a word.
-func (s *Scanner) discoverIn(dir string, depth int, unreadable bool, seen map[string]bool, out *[]Discovered, budget *int, maxApps int, full *bool) {
-	if depth > 3 || seen[dir] {
+func (s *Scanner) discover(maxDirs, maxApps int) ([]Discovered, bool) {
+	bases := s.discoverBases()
+	// Document roots from the web server configuration, checked first: the
+	// walk needs to know which directories a virtual host serves.
+	conf, complete := s.configRoots()
+	type root struct {
+		dir, source string
+		alias       bool
+	}
+	var roots []root
+	w := &walk{seen: map[string]bool{}, budget: maxDirs, maxApps: maxApps, full: complete, bases: map[string]bool{}}
+	for _, r := range conf {
+		if dir, ok := s.siteDir(r.dir, bases); ok {
+			roots = append(roots, root{dir, r.source, r.alias})
+			if !r.alias {
+				w.docs = append(w.docs, dir)
+			}
+		}
+	}
+	for _, b := range bases {
+		w.bases[b] = true
+	}
+	for _, base := range bases {
+		s.discoverIn(w, base, base, 0, "")
+	}
+	// A document root the walk found is that application. One inside an
+	// application found by its manifest (Laravel's public/), and an alias
+	// target inside any application, are part of it. Otherwise a document
+	// root is a site of its own, also inside another site (an addon
+	// domain), whose scan then leaves it out (Apps); outer ones are taken
+	// first.
+	sort.SliceStable(roots, func(i, j int) bool { return len(roots[i].dir) < len(roots[j].dir) })
+	for _, r := range roots {
+		in := -1
+		for i, d := range w.out {
+			if (d.Dir == r.dir || strings.HasPrefix(r.dir, d.Dir+"/")) && (in < 0 || len(d.Dir) > len(w.out[in].Dir)) {
+				in = i
+			}
+		}
+		if in >= 0 && (w.out[in].Dir == r.dir || !w.out[in].site || r.alias) {
+			if !slices.Contains(w.out[in].By, r.source) {
+				w.out[in].By = append(w.out[in].By, r.source)
+			}
+			continue
+		}
+		if len(w.out) >= maxApps {
+			w.full = false
+			break
+		}
+		w.out = append(w.out, Discovered{Dir: r.dir, By: []string{r.source}, site: !r.alias})
+	}
+	return w.out, w.full
+}
+
+// discoverIn walks dir, depth levels below base. site is the site (found
+// by its index file) dir is in, "" when none.
+func (s *Scanner) discoverIn(w *walk, base, dir string, depth int, site string) {
+	if depth > 3 || w.seen[dir] {
 		return
 	}
-	if *budget <= 0 || len(*out) >= maxApps {
-		*full = false
+	if w.budget <= 0 || len(w.out) >= w.maxApps {
+		w.full = false
 		return
 	}
-	*budget--
+	w.budget--
 	if cur, ok := s.currentRelease(dir); ok {
 		dir = cur
-		if seen[dir] {
+		if w.seen[dir] {
 			return
 		}
 	}
-	if m := s.siteMarker(dir, depth); m != "" {
-		seen[dir] = true
-		*out = append(*out, Discovered{Dir: dir, By: []string{m}})
-		return // lockfiles below are found by the app scan itself
+	manifest := s.marker(dir, markers)
+	index := ""
+	if !w.bases[dir] {
+		index = s.webIndex(dir, depth)
+	}
+	if manifest != "" || index != "" {
+		own := site == "" || s.marker(dir, wpMarkers) != "" || manifest != "" && index != "" || w.servesBelow(dir)
+		if own {
+			w.seen[dir] = true
+			w.out = append(w.out, Discovered{Dir: dir, By: []string{firstNonEmpty(manifest, index)}, site: manifest == ""})
+		}
+		if manifest != "" {
+			return // lockfiles below are found by the app scan itself
+		}
+		if own {
+			site = dir
+		}
 	}
 	entries, err := os.ReadDir(s.path(dir))
 	if err != nil {
-		if unreadable && depth > 0 && errors.Is(err, fs.ErrPermission) {
-			seen[dir] = true
-			*out = append(*out, Discovered{Dir: dir, By: []string{"unreadable"}})
+		// A site the agent may not list is reported rather than missed:
+		// directly below /var/www or /srv, or named like a shared host's
+		// site. Elsewhere (/opt, home directories) directories only their
+		// owner may list are common and are not sites.
+		name := path.Base(dir)
+		if site == "" && depth > 0 && !w.bases[dir] && errors.Is(err, fs.ErrPermission) &&
+			(depth == 1 && (base == "/var/www" || base == "/srv") || unreadableSites[name]) {
+			w.seen[dir] = true
+			w.out = append(w.out, Discovered{Dir: dir, By: []string{"unreadable"}})
 		}
 		return
 	}
@@ -233,8 +291,19 @@ func (s *Scanner) discoverIn(dir string, depth int, unreadable bool, seen map[st
 		if !e.IsDir() || skipDiscover[e.Name()] || strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
-		s.discoverIn(path.Join(dir, e.Name()), depth+1, unreadable, seen, out, budget, maxApps, full)
+		s.discoverIn(w, base, path.Join(dir, e.Name()), depth+1, site)
 	}
+}
+
+// servesBelow reports whether a document root of the configuration is dir
+// or below it.
+func (w *walk) servesBelow(dir string) bool {
+	for _, d := range w.docs {
+		if d == dir || strings.HasPrefix(d, dir+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // marker returns the first of names that is a regular file in dir.
@@ -247,12 +316,11 @@ func (s *Scanner) marker(dir string, names []string) string {
 	return ""
 }
 
-// siteMarker returns the marker that makes dir, depth levels below a
-// discovery base, an application: a manifest, or a web index file (see
-// webIndexes for where those do not count).
-func (s *Scanner) siteMarker(dir string, depth int) string {
-	if m := s.marker(dir, markers); m != "" || depth == 0 {
-		return m
+// webIndex returns the index file that marks dir, depth levels below a
+// discovery base, as a site (see webIndexes for where none does).
+func (s *Scanner) webIndex(dir string, depth int) string {
+	if depth == 0 {
+		return ""
 	}
 	parts := strings.Split(dir, "/")
 	for _, part := range parts[max(len(parts)-depth, 0):] {
@@ -268,7 +336,8 @@ func (s *Scanner) siteMarker(dir string, depth int) string {
 	return ""
 }
 
-var skipDiscover = map[string]bool{"node_modules": true, "vendor": true, "releases": true, "shared": true, "cache": true, "tmp": true, "logs": true}
+var skipDiscover = map[string]bool{"node_modules": true, "vendor": true, "releases": true, "shared": true, "cache": true, "tmp": true, "logs": true,
+	"lost+found": true}
 
 // releaseDirs hold a release layout's releases: Capistrano, Deployer and
 // Envoyer keep them in releases/, Ghost-CLI in versions/. Only the one
@@ -332,11 +401,11 @@ func (s *Scanner) ScanApp(ctx context.Context, dir string) App {
 		dir = cur
 	}
 	app := App{Dir: dir, Name: path.Base(dir)}
-	den := &denied{}
+	den := &denied{dir: dir}
 	fi, err := os.Stat(s.path(dir))
 	if den.note(dir, err) {
-		c, _ := den.coverage(dir)
-		app.Coverage = append(app.Coverage, c)
+		c, _ := den.coverage()
+		app.Coverage, app.Unreadable = append(app.Coverage, c), true
 		return app
 	}
 	if err != nil || !fi.IsDir() {
@@ -399,6 +468,7 @@ func (s *Scanner) ScanApp(ctx context.Context, dir string) App {
 			obs, cov := s.scanNodeModules(project, host)
 			add(obs)
 			app.Coverage = append(app.Coverage, cov)
+			den.noteTree(host, cov)
 			if len(obs) > 0 {
 				note(project, "npm")
 			}
@@ -408,16 +478,20 @@ func (s *Scanner) ScanApp(ctx context.Context, dir string) App {
 			obs, cov := s.scanSitePackages(host)
 			add(obs)
 			app.Coverage = append(app.Coverage, cov)
+			den.noteTree(host, cov)
 			if len(obs) > 0 {
 				note(project, "pypi")
 			}
 			return fs.SkipDir
 		case name == "vendor":
-			if _, err := os.Stat(path.Join(full, "composer", "installed.json")); err == nil {
+			if _, err := os.Stat(path.Join(full, "composer", "installed.json")); den.note(host, err) {
+				// Composer's or a site's own: nothing says which.
+			} else if err == nil {
 				project := path.Dir(host)
 				obs, cov := s.scanComposerInstalled(host)
 				add(obs)
 				app.Coverage = append(app.Coverage, cov)
+				den.noteTree(host, cov)
 				if len(obs) > 0 {
 					note(project, "composer")
 				}
@@ -476,15 +550,20 @@ func (s *Scanner) ScanApp(ctx context.Context, dir string) App {
 			// A directory or lockfile the agent may not read is counted
 			// with the others below, not listed one by one.
 			if kind := c.Scope[:i]; (kind == "path" || kind == "lockfile") && c.Status == "failed" && permissionText(c.Reason) {
-				den.note(c.Scope[i+1:], fs.ErrPermission)
+				if kind == "lockfile" {
+					den.noteManifest(c.Scope[i+1:])
+				} else {
+					den.note(c.Scope[i+1:], fs.ErrPermission)
+				}
 				continue
 			}
 		}
 		app.Coverage = append(app.Coverage, c)
 	}
-	if c, ok := den.coverage(dir); ok {
+	if c, ok := den.coverage(); ok {
 		app.Coverage = append(app.Coverage, c)
 	}
+	app.Unreadable = den.root
 	if len(app.Coverage) == 0 {
 		app.Coverage = append(app.Coverage, model.CoverageItem{Scope: "app:" + dir, Status: "skipped", Reason: "no installed libraries or supported lockfiles found"})
 	}

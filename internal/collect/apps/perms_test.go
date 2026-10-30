@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -27,19 +28,20 @@ func (tr *tree) unreadable(p string) {
 	tr.t.Cleanup(func() { os.Chmod(full, 0o755) })
 }
 
-func permissionGap(t *testing.T, a App) model.CoverageItem {
+func permissionGap(t *testing.T, a App, status string) model.CoverageItem {
 	t.Helper()
 	var found []model.CoverageItem
 	for _, c := range a.Coverage {
 		if strings.HasPrefix(c.Scope, PermissionScope) {
 			found = append(found, c)
 		}
-		if strings.Contains(c.Reason, "permission denied") && !strings.HasPrefix(c.Scope, PermissionScope) {
+		if strings.Contains(c.Reason, "permission denied") && !strings.HasPrefix(c.Scope, PermissionScope) &&
+			!strings.HasPrefix(c.Scope, "npm-installed:") {
 			t.Errorf("permission error listed on its own: %+v", c)
 		}
 	}
-	if len(found) != 1 || found[0].Status != "unsupported" || found[0].Scope != PermissionScope+a.Dir || !a.Unreadable() {
-		t.Fatalf("want one unsupported %s item, coverage %+v", PermissionScope, a.Coverage)
+	if len(found) != 1 || found[0].Status != status || found[0].Scope != PermissionScope+a.Dir {
+		t.Fatalf("want one %s %s item, coverage %+v", status, PermissionScope, a.Coverage)
 	}
 	return found[0]
 }
@@ -48,22 +50,43 @@ func TestUnreadableFiles(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		setup  func(tr *tree)
+		status string // of the item; "" for none
+		root   bool   // App.Unreadable
 		reason string // the start of the item's reason
 		more   int    // further paths counted
 		want   []string
 	}{
-		{"app directory", func(tr *tree) { tr.unreadable("var/www/site") }, "cannot read /var/www/site: permission denied (agent runs as ", 0, nil},
-		{"js directory", func(tr *tree) { tr.unreadable("var/www/site/js") }, "cannot read /var/www/site/js: ", 0,
+		{"app directory", func(tr *tree) { tr.unreadable("var/www/site") }, "unsupported", true,
+			"cannot read /var/www/site: permission denied (agent runs as ", 0, nil},
+		{"js directory", func(tr *tree) { tr.unreadable("var/www/site/js") }, "partial", false, "cannot read /var/www/site/js: ", 0,
 			[]string{"pkg:npm/bootstrap@3.3.6"}},
-		{"a file that cannot be opened", func(tr *tree) { tr.unreadable("var/www/site/js/jquery.min.js") }, "cannot read /var/www/site/js/jquery.min.js: ", 0,
-			[]string{"pkg:npm/bootstrap@3.3.6"}},
+		{"a file that cannot be opened", func(tr *tree) { tr.unreadable("var/www/site/js/jquery.min.js") }, "partial", false,
+			"cannot read /var/www/site/js/jquery.min.js: ", 0, []string{"pkg:npm/bootstrap@3.3.6"}},
 		{"a lockfile and many files, counted", func(tr *tree) {
 			for i := range 40 {
 				tr.file(fmt.Sprintf("var/www/site/lib/f%02d.js", i), "x")
 				tr.unreadable(fmt.Sprintf("var/www/site/lib/f%02d.js", i))
 			}
 			tr.unreadable("var/www/site/mail/composer.lock")
-		}, "cannot read /var/www/site/lib/f00.js: ", 40, []string{"pkg:npm/bootstrap@3.3.6", "pkg:npm/jquery@2.2.1"}},
+		}, "unsupported", false, "cannot read /var/www/site/lib/f00.js: ", 40, []string{"pkg:npm/bootstrap@3.3.6", "pkg:npm/jquery@2.2.1"}},
+		{"node_modules", func(tr *tree) {
+			tr.npm("var/www/site/node_modules/lodash", "lodash", "4.17.20")
+			tr.unreadable("var/www/site/node_modules")
+		}, "unsupported", false, "cannot read /var/www/site/node_modules: ", 0, nil},
+		// Hardened WordPress: wp-config.php and .env are not readable by
+		// others, and nothing reads them; neither are uploads or a cache.
+		{"files nothing reads", func(tr *tree) {
+			tr.file("var/www/site/wp-config.php", "<?php")
+			tr.file("var/www/site/.env", "APP_KEY=x")
+			tr.file("var/www/site/wp-content/uploads/2024/a.php", "<?php")
+			tr.file("var/www/site/wp-content/cache/page.html", "<html>")
+			tr.file("var/www/site/logs/x.log", "")
+			tr.unreadable("var/www/site/wp-config.php")
+			tr.unreadable("var/www/site/.env")
+			tr.unreadable("var/www/site/wp-content/uploads")
+			tr.unreadable("var/www/site/wp-content/cache")
+			tr.unreadable("var/www/site/logs")
+		}, "", false, "", 0, []string{"pkg:npm/bootstrap@3.3.6", "pkg:npm/jquery@2.2.1"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tr := newTree(t)
@@ -73,12 +96,8 @@ func TestUnreadableFiles(t *testing.T) {
 			tr.file("var/www/site/mail/composer.lock", `{"packages":[{"name":"sendgrid/sendgrid","version":"5.6.2"}]}`)
 			tc.setup(tr)
 			a := (&Scanner{Root: tr.root}).ScanApp(context.Background(), "/var/www/site")
-			c := permissionGap(t, a)
-			if !strings.HasPrefix(c.Reason, tc.reason) {
-				t.Errorf("reason %q", c.Reason)
-			}
-			if more := fmt.Sprintf("; %d more paths", tc.more); tc.more > 0 != strings.Contains(c.Reason, more) {
-				t.Errorf("reason %q, want %d more", c.Reason, tc.more)
+			if a.Unreadable != tc.root {
+				t.Errorf("Unreadable = %v", a.Unreadable)
 			}
 			m := purls(a.Observations)
 			for _, w := range tc.want {
@@ -87,28 +106,43 @@ func TestUnreadableFiles(t *testing.T) {
 				}
 			}
 			validate(t, a)
+			if tc.status == "" {
+				for _, c := range a.Coverage {
+					if strings.HasPrefix(c.Scope, PermissionScope) || c.Status == "failed" {
+						t.Errorf("coverage %+v", c)
+					}
+				}
+				return
+			}
+			c := permissionGap(t, a, tc.status)
+			if !strings.HasPrefix(c.Reason, tc.reason) {
+				t.Errorf("reason %q", c.Reason)
+			}
+			if more := fmt.Sprintf("; %d more paths", tc.more); tc.more > 0 != strings.Contains(c.Reason, more) {
+				t.Errorf("reason %q, want %d more", c.Reason, tc.more)
+			}
 		})
-	}
-	// Nothing unreadable: no item.
-	tr := newTree(t)
-	tr.file("var/www/site/index.php", "<?php")
-	if a := (&Scanner{Root: tr.root}).ScanApp(context.Background(), "/var/www/site"); a.Unreadable() {
-		t.Errorf("coverage %+v", a.Coverage)
 	}
 }
 
 // Discovery reports a site it may not read, from the walk and from the
-// web server configuration, instead of missing it.
+// web server configuration, instead of missing it; other directories only
+// their owner may list are not sites.
 func TestDiscoverUnreadable(t *testing.T) {
 	tr := newTree(t)
 	tr.file("var/www/vwoods.in/public/index.php", "<?php")
 	tr.file("var/www/open/index.php", "<?php")
+	tr.file("var/www/group/deep/x", "")
 	tr.file("opt/containerd/bin/x", "")
+	tr.file("srv/lost+found/x", "")
+	tr.file("home/bob/Maildir/new/x", "")
+	tr.file("home/bob/public_html/index.php", "<?php")
 	tr.file("home/site/public_html/index.php", "<?php")
 	tr.file("etc/nginx/conf.d/site.conf", "server { root /home/site/public_html; }")
-	tr.unreadable("var/www/vwoods.in")
-	tr.unreadable("opt/containerd")
-	tr.unreadable("home/site")
+	for _, p := range []string{"var/www/vwoods.in", "var/www/group/deep", "opt/containerd", "srv/lost+found", "home/bob/Maildir",
+		"home/bob/public_html", "home/site"} {
+		tr.unreadable(p)
+	}
 	s := &Scanner{Root: tr.root}
 	found, _ := s.DiscoverSites()
 	got := map[string]string{}
@@ -118,19 +152,24 @@ func TestDiscoverUnreadable(t *testing.T) {
 	want := map[string]string{
 		"/var/www/open":          "index.php",
 		"/var/www/vwoods.in":     "unreadable",
+		"/home/bob/public_html":  "unreadable",
 		"/home/site/public_html": "nginx:/etc/nginx/conf.d/site.conf",
 	}
-	if len(got) != len(want) {
-		t.Fatalf("discovered %v", got)
-	}
-	for d, by := range want {
-		if got[d] != by {
-			t.Errorf("%s: %q, want %q (all %v)", d, got[d], by, got)
-		}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("discovered %v, want %v", got, want)
 	}
 	for _, d := range []string{"/var/www/vwoods.in", "/home/site/public_html"} {
-		if c := permissionGap(t, s.ScanApp(context.Background(), d)); !strings.Contains(c.Reason, "cannot read "+d+":") {
+		a := s.ScanApp(context.Background(), d)
+		if c := permissionGap(t, a, "unsupported"); !strings.Contains(c.Reason, "cannot read "+d+":") || !a.Unreadable {
 			t.Errorf("%s: %q", d, c.Reason)
 		}
+	}
+	// A tool under /opt with one directory only root may read is not an
+	// application the agent may not read.
+	tr.file("opt/tool/package.json", `{"name":"tool"}`)
+	tr.file("opt/tool/secret/x", "")
+	tr.unreadable("opt/tool/secret")
+	if a := s.ScanApp(context.Background(), "/opt/tool"); a.Unreadable || len(a.Observations) != 0 {
+		t.Errorf("/opt/tool: unreadable %v, %v", a.Unreadable, a.Coverage)
 	}
 }

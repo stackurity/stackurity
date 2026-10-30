@@ -2,6 +2,7 @@ package apps
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -52,8 +53,8 @@ func TestParseApache(t *testing.T) {
 		{"crlf and a missing argument", "DocumentRoot\r\nDocumentRoot /var/www/x\r\n", []string{"/var/www/x"}, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			roots, includes := parseApache(tc.conf)
-			if !reflect.DeepEqual(roots, tc.roots) || !reflect.DeepEqual(includes, tc.include) {
+			roots, aliases, includes := parseApache(tc.conf)
+			if roots = append(roots, aliases...); !reflect.DeepEqual(roots, tc.roots) || !reflect.DeepEqual(includes, tc.include) {
 				t.Errorf("roots %q includes %q", roots, includes)
 			}
 		})
@@ -73,11 +74,21 @@ func TestParseNginx(t *testing.T) {
 		{"names in other directives", "types { text/html html; } fastcgi_param root /x; index root;", nil, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			roots, includes := parseNginx(tc.conf)
-			if !reflect.DeepEqual(roots, tc.roots) || !reflect.DeepEqual(includes, tc.include) {
+			roots, aliases, includes := parseNginx(tc.conf)
+			if roots = append(roots, aliases...); !reflect.DeepEqual(roots, tc.roots) || !reflect.DeepEqual(includes, tc.include) {
 				t.Errorf("roots %q includes %q", roots, includes)
 			}
 		})
+	}
+}
+
+// Alias targets are told from document roots: they serve part of a site.
+func TestParseAliases(t *testing.T) {
+	if r, a, _ := parseApache("DocumentRoot /a\nAlias /x /b\n"); !reflect.DeepEqual(r, []string{"/a"}) || !reflect.DeepEqual(a, []string{"/b"}) {
+		t.Errorf("apache roots %q aliases %q", r, a)
+	}
+	if r, a, _ := parseNginx("root /a; location /x { alias /b/; }"); !reflect.DeepEqual(r, []string{"/a"}) || !reflect.DeepEqual(a, []string{"/b/"}) {
+		t.Errorf("nginx roots %q aliases %q", r, a)
 	}
 }
 
@@ -229,20 +240,107 @@ func TestWebRootSiteInventory(t *testing.T) {
 	}
 }
 
-// Configuration is bounded: files beyond maxConfFiles, and includes more
-// than maxIncludeDepth levels down, are not read.
+// Configuration is bounded: files beyond maxConfFiles per web server,
+// and includes more than maxIncludeDepth levels down, are not read, and
+// discovery then says it did not see everything. One web server's many
+// files do not keep the other's from being read.
 func TestConfigRootsBounded(t *testing.T) {
 	tr := newTree(t)
 	for i := range maxConfFiles + 10 {
-		tr.file("etc/nginx/conf.d/"+strings.Repeat("a", 1+i/26)+string(rune('a'+i%26))+".conf", "root /srv/x;")
+		tr.file(fmt.Sprintf("etc/apache2/sites-enabled/s%03d.conf", i), "DocumentRoot /srv/x\n")
 	}
-	if got := (&Scanner{Root: tr.root}).configRoots(); len(got) != maxConfFiles {
-		t.Errorf("read %d files", len(got))
+	tr.file("etc/nginx/conf.d/shop.conf", "server { root /data/shop; }")
+	tr.file("data/shop/index.php", "<?php")
+	s := &Scanner{Root: tr.root}
+	got, complete := s.configRoots()
+	if len(got) != maxConfFiles+1 || complete {
+		t.Errorf("read %d roots, complete %v", len(got), complete)
 	}
-	// A file including itself is read once.
+	found, full := s.DiscoverSites()
+	if full || len(found) != 1 || found[0].Dir != "/data/shop" {
+		t.Errorf("discovered %v (full %v)", found, full)
+	}
+	// Within the limits everything is read, and discovery is complete.
 	tr = newTree(t)
-	tr.file("etc/nginx/nginx.conf", "include nginx.conf; root /srv/x;")
-	if got := (&Scanner{Root: tr.root}).configRoots(); len(got) != 1 {
-		t.Errorf("self include: %v", got)
+	tr.file("etc/nginx/nginx.conf", "include nginx.conf; root /srv/x;") // a file including itself is read once
+	if got, complete := (&Scanner{Root: tr.root}).configRoots(); len(got) != 1 || !complete {
+		t.Errorf("self include: %v (complete %v)", got, complete)
+	}
+	if _, full := (&Scanner{Root: tr.root}).DiscoverSites(); !full {
+		t.Error("discovery within the limits is not full")
+	}
+	// A file larger than maxConfSize is read in part.
+	tr = newTree(t)
+	tr.file("etc/nginx/nginx.conf", "root /srv/x;\n"+strings.Repeat("#", maxConfSize))
+	if got, complete := (&Scanner{Root: tr.root}).configRoots(); len(got) != 1 || complete {
+		t.Errorf("large file: %v (complete %v)", got, complete)
+	}
+}
+
+// Below a site found by its index file, other applications stay their own
+// (a WordPress blog, an app with a virtual host of its own, a cPanel addon
+// domain); a project with only a manifest is part of the site. Index files
+// do not count in any discovery base, however it is reached.
+func TestDiscoverInsideSites(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		files map[string]string
+		want  []string
+	}{
+		{"apps under a custom /var/www/html", map[string]string{
+			"var/www/html/index.php":            "<?php",
+			"var/www/html/app/composer.json":    `{"name":"acme/app"}`,
+			"var/www/html/app/public/index.php": "<?php",
+			"etc/nginx/conf.d/app.conf":         "server { root /var/www/html/app/public; }",
+			"var/www/html/blog/wp-config.php":   "<?php",
+			"var/www/html/mail/composer.lock":   `{"packages":[]}`,
+			"var/www/html/admin/index.php":      "<?php",
+			"var/www/html/pma/index.php":        "<?php",
+			"var/www/html/pma/composer.json":    `{"name":"phpmyadmin/phpmyadmin"}`,
+		}, []string{"/var/www/html", "/var/www/html/app", "/var/www/html/blog", "/var/www/html/pma"}},
+		{"cPanel addon domains", map[string]string{
+			"home/u/public_html/index.php":                    "<?php",
+			"home/u/public_html/addon.com/index.php":          "<?php",
+			"home/u/public_html/sub/index.php":                "<?php",
+			"etc/apache2/sites-enabled/addon.conf":            "DocumentRoot /home/u/public_html/addon.com\n",
+			"home/u/public_html/addon.com/deep/x/a/index.php": "<?php",
+			"etc/apache2/sites-enabled/deep.conf":             "DocumentRoot /home/u/public_html/addon.com/deep/x/a\nAlias /img /home/u/public_html/img\n",
+			"home/u/public_html/img/a.png":                    "",
+		}, []string{"/home/u/public_html", "/home/u/public_html/addon.com", "/home/u/public_html/addon.com/deep/x/a"}},
+		{"a home's www is a base", map[string]string{
+			"home/alice/www/index.php":           "<?php",
+			"home/alice/www/site1/wp-config.php": "<?php",
+			"home/alice/www/site2/composer.json": `{"name":"acme/site2"}`,
+		}, []string{"/home/alice/www/site1", "/home/alice/www/site2"}},
+		{"a manifest still ends the walk", map[string]string{
+			"srv/shop/package.json":        `{"name":"shop"}`,
+			"srv/shop/public/index.html":   "<html>",
+			"srv/shop/admin/wp-config.php": "<?php",
+		}, []string{"/srv/shop"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tr := newTree(t)
+			for p, data := range tc.files {
+				tr.file(p, data)
+			}
+			got := (&Scanner{Root: tr.root}).Discover()
+			sort.Strings(got)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("discovered %v, want %v", got, tc.want)
+			}
+		})
+	}
+	// The site's scan leaves the applications inside it to themselves.
+	tr := newTree(t)
+	tr.file("var/www/html/index.php", `<script src="https://code.jquery.com/jquery-1.12.4.min.js"></script>`)
+	tr.file("var/www/html/blog/wp-config.php", "<?php")
+	tr.file("var/www/html/blog/index.php", `<script src="https://code.jquery.com/jquery-3.4.1.min.js"></script>`)
+	s := &Scanner{Root: tr.root}
+	s.Apps = s.Discover()
+	if m := purls(s.ScanApp(context.Background(), "/var/www/html").Observations); len(m) != 1 {
+		t.Errorf("site = %v", keys(m))
+	}
+	if m := purls(s.ScanApp(context.Background(), "/var/www/html/blog").Observations); len(m) != 1 {
+		t.Errorf("blog = %v", keys(m))
 	}
 }

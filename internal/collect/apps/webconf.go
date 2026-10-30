@@ -15,14 +15,13 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
 )
 
 // Limits on reading web server configuration.
 const (
-	maxConfFiles     = 256     // configuration files read per run, in total
+	maxConfFiles     = 256     // configuration files read per run, for each web server
 	maxConfSize      = 1 << 20 // read from each file
 	maxIncludeDepth  = 2       // levels of Include/include followed below a top file
 	maxConfRoots     = 1000    // document roots taken from configuration
@@ -36,11 +35,11 @@ type webServer struct {
 	name   string
 	root   string // ServerRoot (Apache) or the configuration prefix (nginx)
 	files  []string
-	parser func(data string) (roots, includes []string)
+	parser func(data string) (roots, aliases, includes []string)
 }
 
 var webServers = []webServer{
-	{name: "apache", root: "/etc/apache2", files: []string{"/etc/apache2/apache2.conf", "/etc/apache2/sites-enabled/*"}, parser: parseApache},
+	{name: "apache", root: "/etc/apache2", files: []string{"/etc/apache2/apache2.conf", "/etc/apache2/sites-enabled/*.conf"}, parser: parseApache},
 	{name: "apache", root: "/etc/httpd", files: []string{"/etc/httpd/conf/httpd.conf", "/etc/httpd/conf.d/*.conf"}, parser: parseApache},
 	{name: "nginx", root: "/etc/nginx", files: []string{"/etc/nginx/nginx.conf", "/etc/nginx/sites-enabled/*", "/etc/nginx/conf.d/*.conf"}, parser: parseNginx},
 }
@@ -55,14 +54,19 @@ var systemDirs = []string{"/usr", "/etc", "/proc", "/sys", "/dev", "/run", "/boo
 // configRoot is a document root named by a web server configuration file.
 type configRoot struct {
 	dir, source string // host paths; source is "nginx:/etc/nginx/sites-enabled/shop"
+	// alias: an Alias or alias target, which serves part of a site rather
+	// than a site of its own.
+	alias bool
 }
 
 // configRoots reads the document roots Apache and nginx serve. Each file
-// is read once, at most maxConfFiles in all and maxConfSize each. The top
-// files (sites-enabled/* and the like) are read first, as level 0 even
-// when the main file includes them, and includes are followed
-// maxIncludeDepth levels below them.
-func (s *Scanner) configRoots() []configRoot {
+// is read once, at most maxConfFiles per web server and maxConfSize each.
+// The top files (sites-enabled/*.conf and the like) are read first, as
+// level 0 even when the main file includes them, and includes are
+// followed maxIncludeDepth levels below them. complete is false when a
+// limit left configuration unread, so a site missing from the list may
+// still be served.
+func (s *Scanner) configRoots() (out []configRoot, complete bool) {
 	type item struct {
 		ws    webServer
 		host  string
@@ -76,13 +80,17 @@ func (s *Scanner) configRoots() []configRoot {
 			}
 		}
 	}
-	var out []configRoot
+	complete = true
 	read := map[string]bool{}
-	for files := 0; len(queue) > 0 && files < maxConfFiles && len(out) < maxConfRoots; {
+	files := map[string]int{} // by web server
+	for ; len(queue) > 0; queue = queue[1:] {
 		it := queue[0]
-		queue = queue[1:]
 		real, ok := s.resolveFile(it.host)
 		if !ok || read[real] {
+			continue
+		}
+		if files[it.ws.name] >= maxConfFiles || len(out) >= maxConfRoots {
+			complete = false
 			continue
 		}
 		read[real] = true
@@ -90,17 +98,22 @@ func (s *Scanner) configRoots() []configRoot {
 		if err != nil {
 			continue
 		}
-		data, err := io.ReadAll(io.LimitReader(f, maxConfSize))
+		data, err := io.ReadAll(io.LimitReader(f, maxConfSize+1))
 		f.Close()
 		if err != nil {
 			continue
 		}
-		files++
-		roots, includes := it.ws.parser(string(data))
-		for _, r := range roots {
-			if len(out) < maxConfRoots {
-				out = append(out, configRoot{dir: r, source: it.ws.name + ":" + it.host})
+		if len(data) > maxConfSize {
+			data, complete = data[:maxConfSize], false
+		}
+		files[it.ws.name]++
+		roots, aliases, includes := it.ws.parser(string(data))
+		for i, r := range append(roots, aliases...) {
+			if len(out) >= maxConfRoots {
+				complete = false
+				break
 			}
+			out = append(out, configRoot{dir: r, source: it.ws.name + ":" + it.host, alias: i >= len(roots)})
 		}
 		if it.depth >= maxIncludeDepth {
 			continue
@@ -110,13 +123,15 @@ func (s *Scanner) configRoots() []configRoot {
 				inc = path.Join(it.ws.root, inc)
 			}
 			for _, m := range s.globConf(inc) {
-				if len(queue) < 4*maxConfFiles {
-					queue = append(queue, item{it.ws, m, it.depth + 1})
+				if len(queue) >= 8*maxConfFiles {
+					complete = false
+					break
 				}
+				queue = append(queue, item{it.ws, m, it.depth + 1})
 			}
 		}
 	}
-	return out
+	return out, complete
 }
 
 // globConf lists the files a configuration path or glob names, as host
@@ -197,11 +212,14 @@ func (s *Scanner) siteDir(dir string, bases []string) (string, bool) {
 	if dir == "/" || underAny(dir, systemDirs) {
 		return "", false
 	}
-	cur, denied := "/", false
-	for _, part := range strings.Split(strings.TrimPrefix(dir, "/"), "/") {
+	parts := strings.Split(strings.TrimPrefix(dir, "/"), "/")
+	for _, part := range parts {
 		if strings.HasPrefix(part, ".") {
 			return "", false
 		}
+	}
+	cur, denied := "/", false
+	for _, part := range parts {
 		next := path.Join(cur, part)
 		fi, err := os.Lstat(s.path(next))
 		if errors.Is(err, fs.ErrPermission) {
@@ -225,12 +243,10 @@ func (s *Scanner) siteDir(dir string, bases []string) (string, bool) {
 	if underAny(cur, systemDirs) {
 		return "", false
 	}
-	for _, b := range bases {
-		if cur == b || strings.HasPrefix(b, cur+"/") {
-			return "", false // the walk reads the base, one application at a time
-		}
+	if atOrAbove(cur, bases) {
+		return "", false // the walk reads the base, one application at a time
 	}
-	if parent := path.Dir(cur); !denied && parent != "/" && !underAny(parent, systemDirs) && !slices.Contains(bases, parent) && s.marker(parent, markers) != "" {
+	if parent := path.Dir(cur); !denied && parent != "/" && !underAny(parent, systemDirs) && !atOrAbove(parent, bases) && s.marker(parent, markers) != "" {
 		return parent, true
 	}
 	return cur, true
@@ -255,7 +271,7 @@ func (s *Scanner) discoverBases() []string {
 // Include/IncludeOptional arguments of an Apache configuration file.
 // Directives are matched without regard to case; lines continue after a
 // trailing backslash; a line starting with # is a comment.
-func parseApache(data string) (roots, includes []string) {
+func parseApache(data string) (roots, aliases, includes []string) {
 	lines := strings.Split(strings.ReplaceAll(data, "\r\n", "\n"), "\n")
 	for i := 0; i < len(lines); i++ {
 		line := lines[i]
@@ -272,20 +288,20 @@ func parseApache(data string) (roots, includes []string) {
 			roots = append(roots, args[1])
 		case "alias":
 			if len(args) >= 3 {
-				roots = append(roots, args[2])
+				aliases = append(aliases, args[2])
 			}
 		case "include", "includeoptional":
 			includes = append(includes, args[1])
 		}
 	}
-	return roots, includes
+	return roots, aliases, includes
 }
 
 // --- nginx
 
 // parseNginx returns the root and alias arguments and the include globs
 // of an nginx configuration file, in any block.
-func parseNginx(data string) (roots, includes []string) {
+func parseNginx(data string) (roots, aliases, includes []string) {
 	stmt := []string{}
 	for _, tok := range confFields(data, true) {
 		if tok != ";" && tok != "{" && tok != "}" {
@@ -294,15 +310,17 @@ func parseNginx(data string) (roots, includes []string) {
 		}
 		if tok == ";" && len(stmt) == 2 {
 			switch stmt[0] {
-			case "root", "alias":
+			case "root":
 				roots = append(roots, stmt[1])
+			case "alias":
+				aliases = append(aliases, stmt[1])
 			case "include":
 				includes = append(includes, stmt[1])
 			}
 		}
 		stmt = stmt[:0]
 	}
-	return roots, includes
+	return roots, aliases, includes
 }
 
 // confFields splits configuration text into words: quotes ("..." or
@@ -369,6 +387,16 @@ func (s *Scanner) defaultPage(dir, index string) bool {
 	for _, title := range []string{"Apache2 Debian Default Page", "Apache2 Ubuntu Default Page", "Apache2 Default Page",
 		"Test Page for the Apache HTTP Server", "Test Page for the HTTP Server", "Welcome to nginx!", "<h1>It works!</h1>"} {
 		if bytes.Contains(data, []byte(title)) {
+			return true
+		}
+	}
+	return false
+}
+
+// atOrAbove reports whether p is one of bases or a directory above one.
+func atOrAbove(p string, bases []string) bool {
+	for _, b := range bases {
+		if p == b || strings.HasPrefix(b, p+"/") {
 			return true
 		}
 	}

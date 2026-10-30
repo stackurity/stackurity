@@ -80,11 +80,7 @@ func hostCollector(o *hostOptions) (func(context.Context) ([]*model.ObservationB
 				continue
 			}
 			seen[app.Dir] = true
-			// A discovered directory with nothing installed and no lockfile
-			// is a tool or an empty checkout, not an application to track.
-			// One the agent may not read is reported, so that it does not
-			// look clean.
-			if !explicit && len(app.Observations) == 0 && !app.Unreadable() {
+			if !reportable(app, explicit, foundBy[dir]) {
 				continue
 			}
 			b := appBatch(app, osBatch.Asset)
@@ -99,6 +95,17 @@ func hostCollector(o *hostOptions) (func(context.Context) ([]*model.ObservationB
 		}
 		return batches, nil
 	}, nil
+}
+
+// reportable reports whether an application is sent. A discovered
+// directory with nothing installed and no lockfile is a tool or an empty
+// checkout, not an application to track, unless the agent may not read the
+// directory at all (a site owned by its own user): that one is sent with
+// its coverage gap, so that it does not look clean or go missing. One
+// with only some files unreadable (a vendor tool under /opt with a
+// root-only directory) is not.
+func reportable(app apps.App, explicit bool, foundBy string) bool {
+	return explicit || len(app.Observations) > 0 || app.Unreadable || foundBy == "unreadable"
 }
 
 // clipAttr keeps an attribute value within the batch's field limit.
