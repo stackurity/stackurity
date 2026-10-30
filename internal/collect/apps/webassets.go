@@ -390,8 +390,11 @@ func stripComments(name string, data []byte) []byte {
 	return data
 }
 
-// scriptType reads the type attribute of a <script ...> tag ("" if none).
-var scriptType = regexp.MustCompile(`(?i)\btype\s*=\s*["']?([^"'\s>]+)`)
+// scriptType reads the type attribute of a <script ...> tag, without its
+// parameters ("text/javascript; charset=utf-8" is text/javascript). The
+// attribute must follow whitespace, so data-type= or a ?type= in the src
+// address is not taken for it.
+var scriptType = regexp.MustCompile(`(?i)\stype\s*=\s*["']?([^"'\s>;]+)`)
 
 // jsScript reports whether a <script> tag holds JavaScript, not a template
 // (text/template, text/x-handlebars-template) or data (application/json),
@@ -402,7 +405,7 @@ func jsScript(tag []byte) bool {
 		return true
 	}
 	switch strings.ToLower(string(m[1])) {
-	case "text/javascript", "application/javascript", "module", "text/babel":
+	case "text/javascript", "application/javascript", "text/ecmascript", "application/x-javascript", "module", "text/babel":
 		return true
 	}
 	return false
