@@ -682,8 +682,8 @@ func (s *Server) saveRoute(w http.ResponseWriter, r *http.Request, id int64) {
 //   - mode changed to a named mode: that mode's events. Events sent with it
 //     must match the mode, or be the stored events unchanged (an older
 //     client sending back what it read); otherwise 400;
-//   - event_channels and new_min_priority keep their stored value unless
-//     the request names them.
+//   - event_channels, new_min_priority and summary_updates keep their
+//     stored value unless the request names them.
 func resolveRouteEvents(rt, cur *store.Route, sent map[string]json.RawMessage) error {
 	_, hasEvents := sent["events"]
 	mode := rt.Mode
@@ -721,6 +721,9 @@ func resolveRouteEvents(rt, cur *store.Route, sent map[string]json.RawMessage) e
 	}
 	if _, ok := sent["new_min_priority"]; !ok && cur != nil {
 		rt.NewMinPriority = cur.NewMinPriority
+	}
+	if _, ok := sent["summary_updates"]; !ok && cur != nil {
+		rt.SummaryUpdates = cur.SummaryUpdates
 	}
 	rt.Mode = "" // derived from the events when saved
 	return nil

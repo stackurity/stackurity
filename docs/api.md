@@ -458,7 +458,7 @@ Deletes an asset and its history.
 
 **Who:** viewer
 
-Components on the asset with evidence and [coverage](#inventory-coverage), paged. Query: `q`, `type`, `direct`, `include_removed`, `coverage`.
+Components on the asset with evidence and [coverage](#inventory-coverage), paged. Query: `q`, `type`, `direct`, `include_removed`, `coverage`, `update_type` (see [`GET /inventory`](#get-inventory)).
 
 ### `GET /assets/{id}/coverage-summary`
 
@@ -548,7 +548,23 @@ An [upgrade recommendation](#upgrade-recommendations) for each installed version
 
 **Who:** viewer
 
-Where components are used, paged. Query: `component_id`, `asset_id`, `q`, `type`, `direct`, `include_removed`, `coverage`.
+Where components are used, paged. Query: `component_id`, `asset_id`, `q`, `type`, `direct`, `include_removed`, `coverage`, `update_type`.
+
+Each row has `latest_stable` (the package registry's newest stable release; a pre-release never is) and `update_type`: `patch`, `minor` or `major` when that release is newer than the installed version, empty when it is current or unknown. Only registry packages (npm, Composer, PyPI, Go, crates.io, RubyGems, NuGet, Maven, pub, Hex) have one: `pkg:generic` and distribution packages never do, nor a package the collector marked as not from the registry (evidence `wordpress_org` `no`). `update_type=patch|minor|major` keeps the rows with that update type, `any` those with any; 400 for another value.
+
+### `GET /inventory/updates`
+
+**Who:** viewer
+
+Updates available: installs older than their package's latest stable release (the rows `update_type=any` lists), whether or not a vulnerability is involved. They are never findings, priorities or incidents. Query: `asset_id`, `update_type` (`patch`, `minor`, `major` or `any`: only list packages with that update type), `limit` (default 20, at most 100).
+
+```json
+{"counts": {"patch": 41, "minor": 12, "major": 3, "total": 56}, "components": 18,
+ "top": [{"component_id": 9, "type": "npm", "namespace": "", "name": "bootstrap", "installed_versions": ["5.3.2", "5.3.3"],
+          "latest_stable": "5.3.8", "update_type": "patch", "installs": 7, "assets": 5}]}
+```
+
+`counts` are installs (inventory rows) by update type, for the asset when `asset_id` is given; `update_type` does not change them. `components` is how many packages match, `top` the first `limit` of them, most installs behind first; a package's `update_type` is the largest among its installs.
 
 ### `GET /coverage`
 
@@ -1038,7 +1054,7 @@ Creates a route: which incidents go to which channel, and what is sent. Fields i
 
 **Who:** admin
 
-Replaces a route. Without `events`, the route keeps its events; `event_channels` and `new_min_priority` keep their values unless sent.
+Replaces a route. Without `events`, the route keeps its events; `event_channels`, `new_min_priority` and `summary_updates` keep their values unless sent.
 
 ### `DELETE /routes/{id}`
 
@@ -1931,6 +1947,8 @@ Routes send to channels and filter by SOS only, kinds, environments, owner teams
 | `daily_summary` | a daily summary at `summary_time` |
 | `weekly_summary` | a weekly summary on `summary_day` at `summary_time` |
 
+`summary_updates` (default `false`) adds an **Updates available** section to the route's summaries; see `summary` below.
+
 Everything sent right away in one evaluation cycle goes in one `urgent` message per route and destination. `event_channels` (Slack routes only) sends some events to other Slack channels of the organisation instead of the route's, as `{"daily_summary": 12}`; every other event goes to `channel_id`. A route may send both summaries; each keeps its own period (`last_summary_at` for the daily one, `last_weekly_summary_at` for the weekly one, both read-only).
 
 `mode` is still accepted and returned, for older clients:
@@ -1950,7 +1968,7 @@ A route's `mode` is the one its events match, or `custom`. On `POST` and `PUT`: 
 The `event` of each message:
 
 - `urgent`: at most one per route and destination per evaluation cycle, only when the cycle produced what the route sends right away: new issues (`urgent`: at `min_priority` or above, SOS, or known exploited; `new_issues`: at `new_min_priority` or above, then titled "N new issues" with the urgent ones counted), issues that came back (`regressed`), or a problem with collection, feeds or the platform at `min_priority` (`problems`). Summarised per asset (up to 5, then "+N more") with up to 3 fixes each from **Fixes**.
-- `summary`: daily or weekly at `summary_time` (`daily_summary`, `weekly_summary`): new issues by asset, issues fixed (with the fix that closed them, when `send_resolved`), the top 3 fixes still open, overdue counts (when `escalation`, licensed), and open problems. Skipped when nothing changed. A summary is never held by `max_per_hour`.
+- `summary`: daily or weekly at `summary_time` (`daily_summary`, `weekly_summary`): new issues by asset, issues fixed (with the fix that closed them, when `send_resolved`), the top 3 fixes still open, overdue counts (when `escalation`, licensed), and open problems. Skipped when nothing changed. A summary is never held by `max_per_hour`. With `summary_updates`, it ends with **Updates available**: installs behind their package's latest stable release within the route's projects, teams and environments, by update type, and the 10 packages with the most installs behind, each linking to its component page (counts `updates`, `updates_patch`, `updates_minor`, `updates_major`). These are not security fixes and never make a summary urgent; they send a weekly summary on their own when nothing else changed, never a daily one.
 - `overdue` (licensed, routes with `escalation` and the `overdue` event): at most one per route per day, when urgent (P1 or SOS) issues have just passed their fix deadline; groups every overdue urgent issue by fix. Escalation levels (1: acknowledgement deadline passed, 2: fix deadline passed) are still recorded on incidents and findings.
 - `connected` (the `connected` event): when a new asset's first complete collection has been evaluated (or six hours after it appeared, if no complete collection arrives): "commmerceblog connected: 1,676 packages checked, 412 issues found, 3 fixes need you". See [A quiet first scan](#a-quiet-first-scan).
 - `test`: **Send test**.

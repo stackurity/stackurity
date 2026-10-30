@@ -63,15 +63,16 @@ export function FixesTabs() {
   );
 }
 
-/** Assets: the assets themselves, the components in them, and coverage. */
+/** Assets: the assets themselves, the components in them, coverage, and updates that are not security fixes. */
 export function AssetsTabs() {
   return (
     <LinkTabs
       label="Assets"
       tabs={[
         { to: "/assets", label: "Assets" },
-        { to: "/components", label: "Components" },
+        { to: "/components", label: "Components", match: (p) => under(p, "/components") && !under(p, "/components/updates") },
         { to: "/coverage", label: "Coverage" },
+        { to: "/components/updates", label: "Updates available" },
       ]}
     />
   );
@@ -97,7 +98,7 @@ export function ActivityTabs() {
 /** The tab bar of a place, on its list pages (not on detail pages). */
 export function SectionTabsFor({ path }: { path: string }) {
   if (["/fixes", "/fixes/issues", "/fixes/automatic"].includes(path)) return <FixesTabs />;
-  if (["/assets", "/components", "/coverage"].includes(path)) return <AssetsTabs />;
+  if (["/assets", "/components", "/components/updates", "/coverage"].includes(path)) return <AssetsTabs />;
   if (["/incidents", "/checks", "/approvals", "/outcomes", "/reports", "/audit"].includes(path)) return <ActivityTabs />;
   return null;
 }

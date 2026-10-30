@@ -29,6 +29,10 @@ func updateType(purlType, namespace, installed, latest string) string {
 	if latest == "" || installed == "" {
 		return ""
 	}
+	// A pre-release is never the latest stable release.
+	if version.Prerelease(version.ForPurlType(purlType), latest) || isWordPressExtension(purlType, namespace) && wpPreRelease.MatchString(latest) {
+		return ""
+	}
 	if isWordPressExtension(purlType, namespace) {
 		// Authors write 2.0 and 2.0.0 for one release.
 		trim := func(v string) string {
@@ -386,6 +390,9 @@ type InventoryFilter struct {
 	// Coverage limits rows to one effective coverage state, or "gaps" for
 	// unsupported and not_evaluated together.
 	Coverage string
+	// UpdateType limits rows to those with a newer stable release of this
+	// update type (patch, minor or major), or of any ("any").
+	UpdateType string
 	Page
 }
 
@@ -417,13 +424,34 @@ func (s *Store) ListInventory(ctx context.Context, f InventoryFilter) ([]Invento
 	default:
 		w.add("("+rowCoverageSQL+") = ?", f.Coverage)
 	}
-	from := ` FROM inventory i JOIN components c ON c.id = i.component_id JOIN assets a ON a.id = i.asset_id
-		LEFT JOIN package_releases pr ON pr.component_id = c.id` + w.sql()
-	var total int64
-	if err := s.Pool.QueryRow(ctx, `SELECT count(*)`+from, w.args...).Scan(&total); err != nil {
-		return nil, 0, err
-	}
+	const join = ` FROM inventory i JOIN components c ON c.id = i.component_id JOIN assets a ON a.id = i.asset_id
+		LEFT JOIN package_releases pr ON pr.component_id = c.id`
 	p := f.Page.norm()
+	page := fmt.Sprintf(` LIMIT %d OFFSET %d`, p.Limit, p.Offset)
+	var total int64
+	if f.UpdateType != "" {
+		// The update type comes from each ecosystem's version rules, so
+		// the rows that may be behind are classified here, then the page
+		// is read by id.
+		if !validUpdateFilter(f.UpdateType) {
+			return nil, 0, fmt.Errorf("update_type must be patch, minor, major or any: %w", ErrInvalid)
+		}
+		w.addBehind()
+		ids, err := s.behindIDs(ctx, join+w.sql(), w.args, f.UpdateType)
+		if err != nil {
+			return nil, 0, err
+		}
+		total = int64(len(ids))
+		ids = ids[min(p.Offset, len(ids)):min(p.Offset+p.Limit, len(ids))]
+		w, page = &where{}, ""
+		w.add("i.id = ANY(?)", ids)
+	}
+	from := join + w.sql()
+	if f.UpdateType == "" {
+		if err := s.Pool.QueryRow(ctx, `SELECT count(*)`+from, w.args...).Scan(&total); err != nil {
+			return nil, 0, err
+		}
+	}
 	rows, err := s.Pool.Query(ctx, `SELECT i.id, i.asset_id, a.name, a.kind, c.id, c.type, c.namespace, c.name, i.purl, i.version,
 		i.location, i.collector_id, i.direct, i.scope, i.confidence, i.evidence, i.first_seen, i.last_seen,
 		i.last_collection_id, i.removed_at,
@@ -436,7 +464,7 @@ func (s *Store) ListInventory(ctx context.Context, f InventoryFilter) ([]Invento
 		    WHEN pr.last_error <> '' AND COALESCE(pr.latest_stable, '') = '' THEN pr.last_error
 		    ELSE '' END
 		  ELSE '' END`+from+
-		fmt.Sprintf(` ORDER BY c.type, c.namespace, c.name, i.version, i.id LIMIT %d OFFSET %d`, p.Limit, p.Offset), w.args...)
+		` ORDER BY c.type, c.namespace, c.name, i.version, i.id`+page, w.args...)
 	if err != nil {
 		return nil, 0, err
 	}

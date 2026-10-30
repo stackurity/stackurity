@@ -1410,6 +1410,21 @@
       }
      },
      {
+      "name": "update_type",
+      "in": "query",
+      "required": false,
+      "description": "patch, minor, major or any: only rows with a newer stable release of that update type (registry packages only; not findings)",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "patch",
+        "minor",
+        "major",
+        "any"
+       ]
+      }
+     },
+     {
       "name": "coverage",
       "in": "query",
       "required": false,
@@ -5466,6 +5481,21 @@
       }
      },
      {
+      "name": "update_type",
+      "in": "query",
+      "required": false,
+      "description": "patch, minor, major or any: only rows with a newer stable release of that update type (registry packages only; not findings)",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "patch",
+        "minor",
+        "major",
+        "any"
+       ]
+      }
+     },
+     {
       "name": "limit",
       "in": "query",
       "required": false,
@@ -5479,6 +5509,70 @@
       "in": "query",
       "required": false,
       "description": "Items to skip",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/inventory/updates": {
+   "get": {
+    "operationId": "get_inventory_updates",
+    "summary": "Updates available: installs behind their latest stable release",
+    "description": "Updates available: installs older than their package's latest stable release, whether or not a vulnerability is involved (they are never findings). `counts` gives installs by `update_type` (`patch`, `minor`, `major`, `total`), `components` the packages with any install behind, `top` the packages with the most installs behind (`component_id`, `type`, `namespace`, `name`, `installed_versions`, `latest_stable`, `update_type`, `installs`, `assets`)\n\nRole: viewer",
+    "tags": [
+     "Inventory"
+    ],
+    "x-stackurity-role": "viewer",
+    "parameters": [
+     {
+      "name": "asset_id",
+      "in": "query",
+      "required": false,
+      "description": "Only this asset",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "update_type",
+      "in": "query",
+      "required": false,
+      "description": "patch, minor, major or any: only list packages with this update type (counts are not filtered)",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "patch",
+        "minor",
+        "major",
+        "any"
+       ]
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "description": "Packages listed (default 20, at most 100)",
       "schema": {
        "type": "string"
       }
@@ -7052,7 +7146,7 @@
    "post": {
     "operationId": "post_routes",
     "summary": "Create a notification route",
-    "description": "Which incidents go to which channel. `project_ids` limits a route to those projects' assets: its messages count and name only them, and only their collection and coverage problems. For a Jira channel, at most one project (400 otherwise): its issues then describe only that project's part of each incident, see Incidents and notifications. A route to a PagerDuty or ServiceNow channel cannot name projects (400). `events`: any of `urgent`, `new_issues`, `regressed`, `overdue`, `connected`, `problems`, `daily_summary`, `weekly_summary`; `event_channels` (Slack only) sends some events to other Slack channels; `new_min_priority` is the threshold of `new_issues`. `mode` (`urgent_summary`, `urgent_weekly`, `urgent_only`, `daily`, `weekly`) is still accepted and translated to events; returned as one of them or `custom`\n\nRole: admin",
+    "description": "Which incidents go to which channel. `project_ids` limits a route to those projects' assets: its messages count and name only them, and only their collection and coverage problems. For a Jira channel, at most one project (400 otherwise): its issues then describe only that project's part of each incident, see Incidents and notifications. A route to a PagerDuty or ServiceNow channel cannot name projects (400). `events`: any of `urgent`, `new_issues`, `regressed`, `overdue`, `connected`, `problems`, `daily_summary`, `weekly_summary`; `event_channels` (Slack only) sends some events to other Slack channels; `new_min_priority` is the threshold of `new_issues`; `summary_updates` (default false) adds an Updates available section to the route's summaries. `mode` (`urgent_summary`, `urgent_weekly`, `urgent_only`, `daily`, `weekly`) is still accepted and translated to events; returned as one of them or `custom`\n\nRole: admin",
     "tags": [
      "Notifications"
     ],
@@ -7121,7 +7215,7 @@
    "put": {
     "operationId": "put_routes_id",
     "summary": "Replace a notification route",
-    "description": "Which incidents go to which channel. `project_ids` limits a route to those projects' assets: its messages count and name only them, and only their collection and coverage problems. For a Jira channel, at most one project (400 otherwise): its issues then describe only that project's part of each incident, see Incidents and notifications. A route to a PagerDuty or ServiceNow channel cannot name projects (400). `events`: any of `urgent`, `new_issues`, `regressed`, `overdue`, `connected`, `problems`, `daily_summary`, `weekly_summary`; `event_channels` (Slack only) sends some events to other Slack channels; `new_min_priority` is the threshold of `new_issues`. `mode` (`urgent_summary`, `urgent_weekly`, `urgent_only`, `daily`, `weekly`) is still accepted and translated to events; returned as one of them or `custom`\n\nRole: admin",
+    "description": "Which incidents go to which channel. `project_ids` limits a route to those projects' assets: its messages count and name only them, and only their collection and coverage problems. For a Jira channel, at most one project (400 otherwise): its issues then describe only that project's part of each incident, see Incidents and notifications. A route to a PagerDuty or ServiceNow channel cannot name projects (400). `events`: any of `urgent`, `new_issues`, `regressed`, `overdue`, `connected`, `problems`, `daily_summary`, `weekly_summary`; `event_channels` (Slack only) sends some events to other Slack channels; `new_min_priority` is the threshold of `new_issues`; `summary_updates` (default false) adds an Updates available section to the route's summaries. `mode` (`urgent_summary`, `urgent_weekly`, `urgent_only`, `daily`, `weekly`) is still accepted and translated to events; returned as one of them or `custom`\n\nRole: admin",
     "tags": [
      "Notifications"
     ],

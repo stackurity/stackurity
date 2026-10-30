@@ -879,6 +879,33 @@ stackurity.exe agent --interval 6h`,
     ],
   },
   {
+    id: "updates-available",
+    title: "Updates available",
+    section: "Daily work",
+    summary: "Packages behind their latest stable release, with or without a known vulnerability.",
+    where: ["Assets", "Updates available"],
+    keywords: "outdated newer release latest stable patch minor major upgrade behind dependencies bootstrap npm",
+    body: [
+      {
+        p: "A newer release that fixes no known vulnerability is not an issue: it never appears in **Fixes**, gets no priority and raises no incident or alert. **Updates available** lists these upgrades for when you plan maintenance.",
+      },
+      {
+        steps: [
+          "Open **Assets ▸ Updates available**. The counts show installs behind their latest stable release by **patch**, **minor** and **major**.",
+          "Filter by update type or by asset. **Packages most behind** groups installs per package with the versions in use; open a package for its release data and every asset using it.",
+          "**Installs** lists each one, with its asset.",
+        ],
+      },
+      {
+        list: [
+          "Only packages from a registry (npm, Packagist, PyPI, Go, crates.io, RubyGems, NuGet, Maven, pub, Hex) are covered. Operating system packages, generic components and plugins updated from elsewhere (such as a WordPress plugin whose Update URI names another host) are left out.",
+          "A pre-release is never the latest stable release.",
+          "To get them in a daily or weekly summary, tick **Include updates available in summaries** on a notification integration (off by default). See [Notifications](help:notifications).",
+        ],
+      },
+    ],
+  },
+  {
     id: "coverage-intelligence",
     title: "Coverage, Intelligence feeds and gaps",
     section: "Daily work",
@@ -1191,6 +1218,7 @@ stackurity.exe agent --interval 6h`,
           "**Issues that came back after a fix**, **New asset connected** and **Collection, feed or platform problems**.",
           "**Fix overdue** (Pro): at most once a day, when urgent issues pass their fix deadline; summaries then also have an overdue section.",
           "**Daily summary** at a time, and **Weekly summary** on a day at that time. Skipped when nothing changed.",
+          "**Include updates available in summaries** (off by default): adds the packages behind their latest stable release, by patch, minor and major, with the 10 most behind. Not security issues: they never raise issues or urgent messages, and send a weekly summary on their own, never a daily one. See [Updates available](help:updates-available).",
           "Slack integrations can send each event to a different Slack channel: pick it next to the event (**Same as this integration** by default).",
         ],
       },

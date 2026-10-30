@@ -2252,6 +2252,8 @@ export interface Route {
   new_min_priority?: Priority;
   /** End of the period the last weekly summary covered (read-only). */
   last_weekly_summary_at?: string;
+  /** Summaries end with "Updates available" (non-security newer releases). Off by default. */
+  summary_updates?: boolean;
 }
 
 export type RouteMode = "urgent_summary" | "urgent_weekly" | "urgent_only" | "daily" | "weekly" | "custom";

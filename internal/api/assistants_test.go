@@ -337,7 +337,7 @@ func TestAssistantOAuth(t *testing.T) {
 	if !strings.HasPrefix(access, "stka_") || !strings.HasPrefix(refresh, "stkr_") {
 		t.Fatalf("tokens: %s %s", access, refresh)
 	}
-	if code, out, _ := mcpPost(e, access, map[string]any{"id": 1, "method": "tools/list"}); code != 200 || len(out["result"].(map[string]any)["tools"].([]any)) != 21 {
+	if code, out, _ := mcpPost(e, access, map[string]any{"id": 1, "method": "tools/list"}); code != 200 || len(out["result"].(map[string]any)["tools"].([]any)) != 22 {
 		t.Errorf("tools/list: %d %v", code, out)
 	}
 	if status, _ := o.token(url.Values{"grant_type": {"authorization_code"}, "code": {code3}, "code_verifier": {v}, "redirect_uri": {redirectURI}}); status != 400 {
@@ -444,7 +444,7 @@ func TestAssistantOAuth(t *testing.T) {
 	// even if a tool were reached; it can be turned on in Settings.
 	ro := &oauthFx{e: e, clientID: o.clientID, readOnly: true}
 	roToken := ro.connect(t, admin, auth.RoleAdmin, 0)
-	if _, out, _ := mcpPost(e, roToken, map[string]any{"id": 1, "method": "tools/list"}); len(out["result"].(map[string]any)["tools"].([]any)) != 11 {
+	if _, out, _ := mcpPost(e, roToken, map[string]any{"id": 1, "method": "tools/list"}); len(out["result"].(map[string]any)["tools"].([]any)) != 12 {
 		t.Errorf("read-only connection lists %v", out)
 	}
 	if code, out, _ := mcpPost(e, roToken, map[string]any{"id": 1, "method": "tools/call", "params": map[string]any{"name": "create_project",
@@ -461,7 +461,7 @@ func TestAssistantOAuth(t *testing.T) {
 	if code := admin.do("PATCH", fmt.Sprint("/api/v1/assistants/", list.Items[0].ID), map[string]any{"allow_changes": true}, nil); code != 200 {
 		t.Errorf("allow changes: %d", code)
 	}
-	if _, out, _ := mcpPost(e, roToken, map[string]any{"id": 1, "method": "tools/list"}); len(out["result"].(map[string]any)["tools"].([]any)) != 21 {
+	if _, out, _ := mcpPost(e, roToken, map[string]any{"id": 1, "method": "tools/list"}); len(out["result"].(map[string]any)["tools"].([]any)) != 22 {
 		t.Errorf("after allowing changes: %v", out)
 	}
 	// Tokens that do not work are limited per address.
@@ -664,6 +664,7 @@ func assistantCalls(ids map[string]string) map[string]map[string]any {
 		"upgrade_recommendation":     {"component_id": n("component")},
 		"remediation_plan":           {"asset_id": n("asset")},
 		"verify_since":               {"since": "2000-01-01", "asset_id": n("asset")},
+		"updates_available":          {"asset_id": n("asset")},
 		"create_project":             {"name": "new " + ids["tag"], "asset_ids": []any{n("asset")}},
 		"rename_project":             {"project_id": n("project"), "name": "renamed"},
 		"add_assets_to_project":      {"project_id": n("project"), "asset_ids": []any{n("asset2")}},

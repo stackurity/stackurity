@@ -816,6 +816,22 @@ type summaryData struct {
 	infos map[string]store.FixInfo
 	sys   []store.Incident
 	ready bool
+	// behind: installs with an update available, read once for the
+	// routes whose summaries list them.
+	behind      []store.BehindInstall
+	behindReady bool
+}
+
+func (s *summaryData) updates() ([]store.BehindInstall, error) {
+	if s.behindReady {
+		return s.behind, nil
+	}
+	var err error
+	if s.behind, err = s.d.Store.BehindInstalls(s.ctx, 0); err != nil {
+		return nil, err
+	}
+	s.behindReady = true
+	return s.behind, nil
 }
 
 func (s *summaryData) counts(set store.IssueSet, from, to time.Time) ([]store.IssueCount, error) {
@@ -1146,6 +1162,31 @@ func (d *Dispatcher) summaryMessage(r store.Route, weekly bool, data *summaryDat
 	}
 	counts["problems"] = len(sys)
 
+	// Updates available, for routes that asked: after everything else,
+	// never a finding or an urgent item.
+	nUpdates := 0
+	if r.SummaryUpdates {
+		all, err := data.updates()
+		if err != nil {
+			return Message{}, false, err
+		}
+		var mine []store.BehindInstall
+		for _, b := range all {
+			if assetInScope(r, b.AssetID, b.Environment, b.OwnerTeamID) {
+				mine = append(mine, b)
+			}
+		}
+		sum := store.SummarizeUpdates(mine, "", maxUpdateItems)
+		nUpdates = sum.Counts["total"]
+		for _, t := range store.UpdateTypes {
+			counts["updates_"+t] = sum.Counts[t]
+		}
+		counts["updates"] = nUpdates
+		if nUpdates > 0 {
+			sections = append(sections, d.updatesSection(sum))
+		}
+	}
+
 	period := "Daily"
 	if weekly {
 		period = "Weekly"
@@ -1172,6 +1213,9 @@ func (d *Dispatcher) summaryMessage(r store.Route, weekly bool, data *summaryDat
 	if len(parts) == 0 && counts["overdue"] > 0 {
 		parts = append(parts, thousands(counts["overdue"])+" overdue")
 	}
+	if len(parts) == 0 && nUpdates > 0 {
+		parts = append(parts, plural(nUpdates, "update")+" available")
+	}
 	title := period + " summary"
 	if len(parts) > 0 {
 		title += ": " + strings.Join(parts, ", ")
@@ -1183,7 +1227,52 @@ func (d *Dispatcher) summaryMessage(r store.Route, weekly bool, data *summaryDat
 	m.Period = &Period{From: from.UTC(), To: to.UTC()}
 	m.Counts = counts
 	changed := nNew > 0 || nFixed > 0 || nGone > 0 || len(conn) > 0 || newlyOverdue > 0 || newSys > 0 || nBack > 0
+	// Updates are a standing list, not news: they send a weekly summary
+	// on their own, never a daily one.
+	changed = changed || weekly && nUpdates > 0
 	return m, changed, nil
+}
+
+const maxUpdateItems = 10 // packages listed under Updates available
+
+// updatesSection lists the updates available: counts by update type, then
+// the packages with the most installs behind, each linking to its page.
+func (d *Dispatcher) updatesSection(sum store.UpdatesSummary) Section {
+	var kinds []string
+	for _, t := range []string{"major", "minor", "patch"} {
+		if n := sum.Counts[t]; n > 0 {
+			kinds = append(kinds, thousands(n)+" "+t)
+		}
+	}
+	items := []Item{{Text: fmt.Sprintf("%s behind the latest stable release (%s), in %s; none fixes a known vulnerability",
+		plural(sum.Counts["total"], "install"), strings.Join(kinds, ", "), plural(sum.Components, "package")),
+		Link: d.url("/components/updates", nil)}}
+	for _, c := range sum.Top {
+		items = append(items, Item{Text: updateText(c), Link: d.url("/components/"+strconv.FormatInt(c.ComponentID, 10), nil)})
+	}
+	if more := sum.Components - len(sum.Top); more > 0 {
+		items = append(items, Item{Text: fmt.Sprintf("+%s", plural(more, "more package")), Link: d.url("/components/updates", nil)})
+	}
+	return Section{Title: "Updates available", Items: items}
+}
+
+// updateText: "bootstrap 5.3.3 → 5.3.8 (patch) on 4 assets", or with
+// several versions "lodash 4.17.15, 4.17.20 → 4.17.21 (patch), 6 installs
+// on 4 assets".
+func updateText(c store.ComponentUpdate) string {
+	name := c.Name
+	if c.Namespace != "" {
+		name = c.Namespace + "/" + c.Name
+	}
+	versions := strings.Join(firstN(c.InstalledVersions, 3), ", ")
+	if n := len(c.InstalledVersions) - 3; n > 0 {
+		versions += fmt.Sprintf(" +%d", n)
+	}
+	where := " on " + plural(c.Assets, "asset")
+	if c.Installs != c.Assets {
+		where = ", " + plural(c.Installs, "install") + where
+	}
+	return fmt.Sprintf("%s %s → %s (%s)%s", shorten(name, maxNameLen), versions, c.LatestStable, c.UpdateType, where)
 }
 
 // fixedText: "commmerceblog: 1,240 closed after Install security updates

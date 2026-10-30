@@ -153,6 +153,7 @@ Every tool calls the HTTP API as you, so the assistant sees exactly what you may
 | `upgrade_recommendation` | Which version to move a component to (by `finding_id` or `component_id`): installed, minimum fixed and recommended versions, change type, major-upgrade and withdrawn-version warnings, release-line support and the reasons. Built only from stored advisory, release and end-of-life data; when data is missing it says so |
 | `remediation_plan` | Open findings grouped into actions per asset and package, with installed, minimum fixed and recommended versions and how many findings each clears (at most 100 groups) |
 | `verify_since` | After a change: what was resolved since a time and how (remediated, removed, or closed with nothing changed on the asset, such as a withdrawn advisory, which is not a fix), what is still open, and when each asset last sent a complete inventory, so "fixed" can be told from "not re-scanned yet" (at most 200 per list) |
+| `updates_available` | Which installed packages are behind their latest stable release, whether or not a vulnerability is involved (not findings): installs by update type (patch, minor, major) and the packages with the most installs behind, with installed versions and the latest stable release. Optionally for one asset or one update type |
 
 ### Changing things
 
