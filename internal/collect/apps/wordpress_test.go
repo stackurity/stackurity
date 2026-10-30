@@ -114,3 +114,110 @@ func TestWordPressCoreNotRead(t *testing.T) {
 		t.Error("/srv/outer/blog: WordPress core missing")
 	}
 }
+
+// Plugins, must-use plugins and themes are read from their header comment,
+// as WordPress reads them, and reported by slug; those not updated from
+// wordpress.org say why.
+func TestWordPressPluginsAndThemes(t *testing.T) {
+	tr := newTree(t)
+	wp := "var/www/shop"
+	tr.file(wp+"/wp-config.php", "<?php")
+	tr.file(wp+"/wp-includes/version.php", versionPHP("$wp_version = '6.8.1';"))
+	pl := wp + "/wp-content/plugins/"
+	// A WooCommerce-like plugin: its main file is <slug>.php; other
+	// top-level files have no header.
+	tr.file(pl+"woocommerce/includes/class-wc.php", "<?php\n/**\n * Plugin Name: Not The Main File\n * Version: 0.0.1\n */")
+	tr.file(pl+"woocommerce/uninstall.php", "<?php // nothing")
+	tr.file(pl+"woocommerce/woocommerce.php", "<?php\r\n/**\r\n * Plugin Name: WooCommerce\r\n * Plugin URI: https://woocommerce.com/\r\n"+
+		" * Description: An ecommerce toolkit.\r\n * Version: 9.9.5\r\n * Author: Automattic\r\n * Requires at least: 6.6\r\n */")
+	// A single-file plugin, and one whose main file is not named after it.
+	tr.file(pl+"hello.php", "<?php\n/*\nPlugin Name: Hello Dolly\nVersion: 1.7.2\n*/")
+	tr.file(pl+"classic-editor/main.php", "<?php\n/**\n * Plugin Name:  Classic Editor \n * Version:      1.6.7 */")
+	// A premium plugin updated from its vendor, one that turns updates off,
+	// and one that names wordpress.org.
+	tr.file(pl+"acme-pro/acme-pro.php", "<?php\n/**\n * Plugin Name: Acme Pro\n * Version: 3.2.1\n * Update URI: https://updates.acme.example/acme-pro\n */")
+	tr.file(pl+"in-house/in-house.php", "<?php\n/* Plugin Name: In House\n * Version: 2.0\n * Update URI: false */")
+	tr.file(pl+"akismet/akismet.php", "<?php\n/* Plugin Name: Akismet Anti-spam: Spam Protection\n * Version: 5.3\n * Update URI: https://wordpress.org/plugins/akismet/ */")
+	// A folder name wordpress.org would not use.
+	tr.file(pl+"My_Custom/My_Custom.php", "<?php\n/* Plugin Name: Mine\n * Version: 1.0.0 */")
+	// Not plugins: no header, no version, a header past 8 KB, a link.
+	tr.file(pl+"assets-only/readme.txt", "Plugin Name: Nope\nVersion: 1.0")
+	tr.file(pl+"no-version/no-version.php", "<?php\n/* Plugin Name: No Version */")
+	tr.file(pl+"padded/padded.php", "<?php\n"+strings.Repeat("// padding\n", 1000)+"/* Plugin Name: Padded\n * Version: 1.0 */")
+	tr.file("srv/elsewhere/elsewhere.php", "<?php\n/* Plugin Name: Elsewhere\n * Version: 1.0 */")
+	tr.link(pl+"linked", tr.root+"/srv/elsewhere")
+	// Must-use plugins: only top-level files load.
+	tr.file(wp+"/wp-content/mu-plugins/loader.php", "<?php\n/* Plugin Name: Site Loader\n * Version: 1.0.0 */")
+	tr.file(wp+"/wp-content/mu-plugins/sub/inner.php", "<?php\n/* Plugin Name: Inner\n * Version: 1.0.0 */")
+	// Themes, a child theme, and a theme folder without style.css.
+	tr.file(wp+"/wp-content/themes/astra/style.css", "/*\nTheme Name: Astra\nVersion: 4.6.0\nRequires PHP: 5.3\n*/\nbody{}")
+	tr.file(wp+"/wp-content/themes/astra-child/style.css", "/*\n Theme Name: Astra Child\n Template: astra\n Version: 1.0.0\n*/")
+	tr.file(wp+"/wp-content/themes/broken/index.php", "<?php")
+
+	a := (&Scanner{Root: tr.root}).ScanApp(context.Background(), "/"+wp)
+	got := map[string]model.Observation{}
+	for _, o := range a.Observations {
+		if strings.HasPrefix(o.Purl, "pkg:generic/wordpress-") {
+			got[o.Purl] = o
+		}
+	}
+	want := map[string]struct{ name, file, notOrg string }{
+		"pkg:generic/wordpress-plugin/woocommerce@9.9.5":    {"WooCommerce", pl + "woocommerce/woocommerce.php", ""},
+		"pkg:generic/wordpress-plugin/hello@1.7.2":          {"Hello Dolly", pl + "hello.php", ""},
+		"pkg:generic/wordpress-plugin/classic-editor@1.6.7": {"Classic Editor", pl + "classic-editor/main.php", ""},
+		"pkg:generic/wordpress-plugin/acme-pro@3.2.1":       {"Acme Pro", pl + "acme-pro/acme-pro.php", "its Update URI names updates.acme.example"},
+		"pkg:generic/wordpress-plugin/in-house@2.0":         {"In House", pl + "in-house/in-house.php", "its Update URI names false"},
+		"pkg:generic/wordpress-plugin/akismet@5.3":          {"Akismet Anti-spam: Spam Protection", pl + "akismet/akismet.php", ""},
+		"pkg:generic/wordpress-plugin/My_Custom@1.0.0":      {"Mine", pl + "My_Custom/My_Custom.php", "its folder name is not a wordpress.org slug"},
+		"pkg:generic/wordpress-plugin/loader@1.0.0": {"Site Loader", wp + "/wp-content/mu-plugins/loader.php",
+			"a must-use plugin, which WordPress does not update from wordpress.org"},
+		"pkg:generic/wordpress-theme/astra@4.6.0":       {"Astra", wp + "/wp-content/themes/astra/style.css", ""},
+		"pkg:generic/wordpress-theme/astra-child@1.0.0": {"Astra Child", wp + "/wp-content/themes/astra-child/style.css", ""},
+	}
+	for p, w := range want {
+		o, ok := got[p]
+		if !ok {
+			t.Errorf("%s missing; have %v", p, keys(got))
+			continue
+		}
+		kind := WPPlugin
+		if strings.Contains(p, WPTheme) {
+			kind = WPTheme
+		}
+		if o.Location != "/"+w.file || o.Evidence["kind"] != kind || o.Evidence["name"] != w.name || o.Confidence != model.ConfidenceConfirmed ||
+			o.Evidence["wordpress_org_reason"] != w.notOrg || (w.notOrg != "") != (o.Evidence["wordpress_org"] == "no") {
+			t.Errorf("%s: %+v", p, o)
+		}
+	}
+	if got["pkg:generic/wordpress-plugin/loader@1.0.0"].Evidence["must_use"] != "true" ||
+		got["pkg:generic/wordpress-theme/astra-child@1.0.0"].Evidence["template"] != "astra" {
+		t.Errorf("must-use or child theme evidence: %+v", got)
+	}
+	if len(got) != len(want) {
+		t.Errorf("reported %v", keys(got))
+	}
+	validate(t, a)
+}
+
+func TestWPHeader(t *testing.T) {
+	for data, want := range map[string]string{
+		"<?php\n/**\n * Plugin Name: WooCommerce\n */":       "WooCommerce",
+		"<?php /* Plugin Name: One Line */ ?>":               "One Line",
+		"# Plugin Name: Hash\n":                              "Hash",
+		"<?php\n * plugin name: lower case\n":                "lower case",
+		"<?php\n$x = 'Plugin Name: in code';\n":              "",
+		"<?php\n * Plugin Name: \x01Control\x7f Chars\n":     "Control Chars",
+		"<?php\n * Plugin Name:\n * Version: 1\n":            "",
+		"<?php\n * Plugin Name: " + strings.Repeat("x", 300): strings.Repeat("x", 200),
+	} {
+		if got := wpHeader([]byte(data), "Plugin Name"); got != want {
+			t.Errorf("%q = %q, want %q", data, got, want)
+		}
+	}
+	for uri, want := range map[string]string{"": "", "https://wordpress.org/plugins/x/": "", "w.org/plugin/x": "",
+		"https://updates.example.com/x": "updates.example.com", "false": "false", "example.com": "example.com"} {
+		if got := updateURIElsewhere(uri); got != want {
+			t.Errorf("Update URI %q = %q, want %q", uri, got, want)
+		}
+	}
+}

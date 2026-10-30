@@ -161,7 +161,13 @@ function ReleaseCard({ intel }: { intel: ComponentIntel }) {
     <Card title="Releases">
       {r.deprecated && (
         <Notice kind="warn">
-          <strong>Deprecated by its maintainers:</strong> {r.deprecated}
+          {r.source === "releases:wordpress.org" ? (
+            <strong>wordpress.org: {r.deprecated}.</strong>
+          ) : (
+            <>
+              <strong>Deprecated by its maintainers:</strong> {r.deprecated}
+            </>
+          )}
         </Notice>
       )}
       {withdrawn.length > 0 && (

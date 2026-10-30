@@ -713,6 +713,8 @@ export interface InventoryRow {
   removed_at: string | null;
   latest_stable?: string;
   update_type?: "patch" | "minor" | "major" | "";
+  /** Why a WordPress plugin or theme has no latest release: not from wordpress.org, not found or closed there. */
+  release_note?: string;
   open_findings?: number;
   /** Whether vulnerability intelligence covered this row (docs/compatibility.md, "Coverage states"). */
   coverage?: RowCoverage;

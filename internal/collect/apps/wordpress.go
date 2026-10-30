@@ -76,28 +76,37 @@ func (s *Scanner) wordpressCore(dir string, den *denied) []model.Observation {
 		if !s.hasWPCore(root) {
 			continue
 		}
-		host := path.Join(root, wpVersionFile)
-		if s.Owned != nil && s.Owned(host) {
-			continue
+		if o, ok := s.wordpressVersion(root, den); ok {
+			out = append(out, o)
 		}
-		f, err := openRegular(s.path(host))
-		if err != nil {
-			den.note(host, err)
-			continue
-		}
-		data, _ := io.ReadAll(io.LimitReader(f, wpVersionSize))
-		f.Close()
-		v, ok := parseWPVersion(data)
-		if !ok {
-			continue
-		}
-		out = append(out, model.Observation{
-			Purl: packageurl.NewPackageURL("generic", "", "wordpress", v, nil, "").ToString(), Version: v,
-			Location: clip(host), Direct: boolp(true), Scope: "runtime", Confidence: model.ConfidenceConfirmed,
-			Evidence: map[string]string{"kind": KindCMS, "product": "WordPress core", "source": "version-file"},
-		})
+		// Its plugins and themes (wpextensions.go).
+		out = append(out, s.wordpressExtensions(root, den)...)
 	}
 	return out
+}
+
+// wordpressVersion reads the core release of the install at root.
+func (s *Scanner) wordpressVersion(root string, den *denied) (model.Observation, bool) {
+	host := path.Join(root, wpVersionFile)
+	if s.Owned != nil && s.Owned(host) {
+		return model.Observation{}, false
+	}
+	f, err := openRegular(s.path(host))
+	if err != nil {
+		den.note(host, err)
+		return model.Observation{}, false
+	}
+	data, _ := io.ReadAll(io.LimitReader(f, wpVersionSize))
+	f.Close()
+	v, ok := parseWPVersion(data)
+	if !ok {
+		return model.Observation{}, false
+	}
+	return model.Observation{
+		Purl: packageurl.NewPackageURL("generic", "", "wordpress", v, nil, "").ToString(), Version: v,
+		Location: clip(host), Direct: boolp(true), Scope: "runtime", Confidence: model.ConfidenceConfirmed,
+		Evidence: map[string]string{"kind": KindCMS, "product": "WordPress core", "source": "version-file"},
+	}, true
 }
 
 // hasWPCore reports whether host path dir has WordPress core files: a

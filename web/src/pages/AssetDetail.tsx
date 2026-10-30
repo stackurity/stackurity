@@ -554,6 +554,12 @@ export function EvidencePanel({ row }: { row: InventoryRow }) {
 }
 
 export function LatestCell({ row }: { row: InventoryRow }) {
+  if (!row.latest_stable && row.release_note)
+    return row.release_note.startsWith("closed on wordpress.org") ? (
+      <Badge status="closed" tone="warn" label={row.release_note} />
+    ) : (
+      <span className="muted small break">{row.release_note}</span>
+    );
   if (!row.latest_stable) return <span className="muted">unknown</span>;
   if (!row.update_type) return <span className="mono small" title="Installed version is the latest stable release">{row.latest_stable} ✓</span>;
   return (
@@ -653,6 +659,12 @@ function InventoryTab({ assetId }: { assetId: number }) {
           </Link>
           {r.evidence?.publisher && <div className="muted small">{r.evidence.publisher}</div>}
           {r.evidence?.kind === "managed-service" && <div className="muted small">managed by the provider</div>}
+          {(r.evidence?.kind === "wordpress-plugin" || r.evidence?.kind === "wordpress-theme") && r.evidence.name && (
+            <div className="muted small break">
+              WordPress {r.evidence.kind === "wordpress-plugin" ? (r.evidence.must_use ? "must-use plugin" : "plugin") : "theme"}:{" "}
+              {r.evidence.name}
+            </div>
+          )}
           {r.evidence?.kind === "cms" && r.evidence.product && (
             <div className="muted small break">
               {r.evidence.product}, read from {r.location}

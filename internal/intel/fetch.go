@@ -32,6 +32,7 @@ type Config struct {
 	MavenURL         string // https://repo1.maven.org/maven2
 	PubURL           string // https://pub.dev
 	HexURL           string // https://hex.pm
+	WordPressOrgURL  string // https://api.wordpress.org (plugin and theme info)
 	MSRCURL          string // https://api.msrc.microsoft.com/cvrf/v3.0 (Security Update Guide)
 	MSRCMonths       int    // months of Security Update Guide documents read (DefaultMSRCMonths)
 	WorkDir          string // temp space for bulk downloads
@@ -66,6 +67,7 @@ func DefaultConfig() Config {
 		MavenURL:         "https://repo1.maven.org/maven2",
 		PubURL:           "https://pub.dev",
 		HexURL:           "https://hex.pm",
+		WordPressOrgURL:  "https://api.wordpress.org",
 		MSRCURL:          "https://api.msrc.microsoft.com/cvrf/v3.0",
 		MSRCMonths:       DefaultMSRCMonths,
 		WorkDir:          os.TempDir(),
@@ -110,6 +112,12 @@ func (e *statusError) Error() string { return fmt.Sprintf("GET %s: HTTP %d", e.U
 // get performs a GET with retries on transient failures. The caller closes
 // the body.
 func (f *fetcher) get(ctx context.Context, url string, headers map[string]string) (*http.Response, error) {
+	return f.getAllowing(ctx, url, headers, 0)
+}
+
+// getAllowing is get that also returns a response with status allow (a
+// 404 whose body says why), not as an error. 0 allows nothing more.
+func (f *fetcher) getAllowing(ctx context.Context, url string, headers map[string]string, allow int) (*http.Response, error) {
 	var lastErr error
 	for attempt := 0; attempt < 4; attempt++ {
 		if attempt > 0 {
@@ -132,7 +140,7 @@ func (f *fetcher) get(ctx context.Context, url string, headers map[string]string
 			lastErr = err
 			continue
 		}
-		if resp.StatusCode == 200 || resp.StatusCode == 304 && conditional(headers) {
+		if resp.StatusCode == 200 || resp.StatusCode == 304 && conditional(headers) || allow != 0 && resp.StatusCode == allow {
 			return resp, nil
 		}
 		io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))

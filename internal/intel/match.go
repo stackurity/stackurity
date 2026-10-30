@@ -202,6 +202,10 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 			// WordPress core: no vulnerability source used here lists it
 			// (OSV has no WordPress ecosystem).
 			unsupported("content management system core: lifecycle is tracked, vulnerabilities are not matched (no vulnerability source lists it)")
+		case r.Type == "generic" && (r.Evidence["kind"] == "wordpress-plugin" || r.Evidence["kind"] == "wordpress-theme"):
+			// Their latest release comes from wordpress.org (wporg.go); no
+			// vulnerability source is read for them yet.
+			unsupported("WordPress plugin or theme: vulnerabilities are not matched yet (the latest release is read from wordpress.org)")
 		case r.Type == "generic" && r.Evidence["kind"] == "kubernetes":
 			unsupported("Kubernetes component reported by the API server: lifecycle is tracked, vulnerabilities are not matched")
 		case r.Type == "generic" && r.Evidence["kind"] == "managed-service":

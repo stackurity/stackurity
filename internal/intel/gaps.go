@@ -104,6 +104,7 @@ var vulnReasons = map[string]string{
 	"vendor_build":              "built by a vendor's repository; the distribution's advisories do not cover it",
 	"runtime":                   "runtime installed outside a package manager (lifecycle only)",
 	"cms":                       "content management system core, such as WordPress (lifecycle only)",
+	"wordpress_extension":       "WordPress plugins and themes: vulnerabilities are not matched yet",
 	"kubernetes":                "Kubernetes component version (lifecycle only)",
 	"managed_service":           "managed service version (lifecycle only)",
 	"distribution":              "distribution without a vulnerability source",
@@ -156,6 +157,8 @@ func CoverageGaps(ctx context.Context, st *store.Store, ov *eoloverlay.Overlay) 
 			gap.Label = "Windows hosts"
 		case cat == "cms":
 			gap.Label = "WordPress core"
+		case cat == "wordpress_extension":
+			gap.Label = "WordPress plugins and themes"
 		}
 		if cat == "vendor_build" && len(parts) == 3 {
 			gap.Detail = "built by " + parts[2] + "; the distribution's advisories do not cover it"

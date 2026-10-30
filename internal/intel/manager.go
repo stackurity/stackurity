@@ -80,6 +80,14 @@ func EnsureFeeds(ctx context.Context, s *store.Store) error {
 		}
 	}
 	if p.Types["generic"] > 0 {
+		// WordPress plugins and themes: their latest releases on wordpress.org.
+		if wp, err := s.HasComponentsIn(ctx, "generic", store.WordPressNamespaces); err != nil {
+			return err
+		} else if wp {
+			if err := ensure(FeedWordPressOrg, "release", 6*time.Hour, 72*time.Hour); err != nil {
+				return err
+			}
+		}
 		win, err := s.ComponentsWithPurlKey(ctx, windowsPurlKey)
 		if err != nil {
 			return err

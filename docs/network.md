@@ -71,6 +71,7 @@ Feeds are created automatically for the ecosystems present in your inventory. Ea
 | `releases:maven` | `repo1.maven.org` (`STACKURITY_MAVEN_URL`) | Every 6 h; each artifact at most daily | `maven-metadata.xml` |
 | `releases:pub` | `pub.dev` (`STACKURITY_PUB_URL`) | Every 6 h; each package at most daily | `/api/packages/<name>` |
 | `releases:hex` | `hex.pm` (`STACKURITY_HEX_URL`) | Every 6 h; each package at most daily, at most 100 requests a minute | `/api/packages/<name>` (public packages only; private organisations' packages are never looked up) |
+| `releases:wordpress.org` (only with WordPress plugins or themes in inventory) | `api.wordpress.org` (`STACKURITY_WORDPRESS_ORG_URL`) | Every 6 h; each plugin or theme at most daily, at most 4 requests a second | `/plugins/info/1.2/?action=plugin_information&request[slug]=<slug>` and `/themes/info/1.2/?action=theme_information&request[slug]=<slug>`, no key. Only the slugs installed somewhere, never one the agent marked as not from wordpress.org (an `Update URI` naming another host, a must-use plugin, a folder name that is no slug); no site, host or version is sent |
 
 ### Plugins
 

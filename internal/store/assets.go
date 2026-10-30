@@ -12,12 +12,38 @@ import (
 	"github.com/stackurity/stackurity/internal/version"
 )
 
+// WordPressNamespaces are the pkg:generic namespaces of WordPress plugins
+// and themes (collect/apps/wpextensions.go), whose latest releases come
+// from wordpress.org (releases:wordpress.org).
+var WordPressNamespaces = []string{"wordpress-plugin", "wordpress-theme"}
+
+func isWordPressExtension(purlType, namespace string) bool {
+	return purlType == "generic" && (namespace == WordPressNamespaces[0] || namespace == WordPressNamespaces[1])
+}
+
 // updateType classifies the gap between installed and latest stable as
 // "major", "minor" or "patch", using the ecosystem's own comparator, for
 // the ecosystems that have release feeds.
-func updateType(purlType, installed, latest string) string {
+func updateType(purlType, namespace, installed, latest string) string {
 	if latest == "" || installed == "" {
 		return ""
+	}
+	if isWordPressExtension(purlType, namespace) {
+		// Authors write 2.0 and 2.0.0 for one release.
+		trim := func(v string) string {
+			for strings.HasSuffix(v, ".0") && strings.Count(v, ".") > 1 {
+				v = strings.TrimSuffix(v, ".0")
+			}
+			return v
+		}
+		if trim(installed) == trim(latest) {
+			return ""
+		}
+		t, err := version.ChangeType(purlType, installed, latest)
+		if err != nil {
+			return ""
+		}
+		return t
 	}
 	switch purlType {
 	case "npm", "composer", "pypi", "golang", "cargo", "gem", "nuget", "maven", "pub", "hex":
@@ -302,7 +328,11 @@ type InventoryRow struct {
 	RemovedAt    *time.Time        `json:"removed_at"`
 	LatestStable string            `json:"latest_stable"`
 	UpdateType   string            `json:"update_type"` // patch, minor, major; empty when current or unknown
-	OpenFindings int64             `json:"open_findings"`
+	// ReleaseNote says why a WordPress plugin or theme has no latest
+	// release: not from wordpress.org (and why), not found there, or
+	// closed there.
+	ReleaseNote  string `json:"release_note,omitempty"`
+	OpenFindings int64  `json:"open_findings"`
 	// Coverage says whether vulnerability intelligence covered this row:
 	// evaluated, stale_intelligence (evaluated against a feed that is stale
 	// or failing), unsupported, not_evaluated or awaiting. CoverageReason
@@ -374,9 +404,16 @@ func (s *Store) ListInventory(ctx context.Context, f InventoryFilter) ([]Invento
 	p := f.Page.norm()
 	rows, err := s.Pool.Query(ctx, `SELECT i.id, i.asset_id, a.name, a.kind, c.id, c.type, c.namespace, c.name, i.purl, i.version,
 		i.location, i.collector_id, i.direct, i.scope, i.confidence, i.evidence, i.first_seen, i.last_seen,
-		i.last_collection_id, i.removed_at, COALESCE(pr.latest_stable, ''),
+		i.last_collection_id, i.removed_at,
+		CASE WHEN COALESCE(i.evidence->>'wordpress_org', '') = 'no' THEN '' ELSE COALESCE(pr.latest_stable, '') END,
 		(SELECT count(*) FROM findings f WHERE f.inventory_id = i.id AND f.status = 'open'),
-		`+rowCoverageSQL+`, i.coverage_reason, i.coverage_feed, i.evaluated_at, i.lifecycle_note`+from+
+		`+rowCoverageSQL+`, i.coverage_reason, i.coverage_feed, i.evaluated_at, i.lifecycle_note,
+		CASE WHEN c.type = 'generic' AND c.namespace IN ('wordpress-plugin', 'wordpress-theme') THEN
+		  CASE WHEN i.evidence->>'wordpress_org' = 'no' THEN 'not from wordpress.org: ' || COALESCE(i.evidence->>'wordpress_org_reason', '')
+		    WHEN pr.deprecated <> '' THEN pr.deprecated
+		    WHEN pr.last_error <> '' AND COALESCE(pr.latest_stable, '') = '' THEN pr.last_error
+		    ELSE '' END
+		  ELSE '' END`+from+
 		fmt.Sprintf(` ORDER BY c.type, c.namespace, c.name, i.version, i.id LIMIT %d OFFSET %d`, p.Limit, p.Offset), w.args...)
 	if err != nil {
 		return nil, 0, err
@@ -389,14 +426,14 @@ func (s *Store) ListInventory(ctx context.Context, f InventoryFilter) ([]Invento
 		if err := rows.Scan(&r.ID, &r.AssetID, &r.AssetName, &r.AssetKind, &r.ComponentID, &r.Type, &r.Namespace, &r.Name,
 			&r.Purl, &r.Version, &r.Location, &r.CollectorID, &r.Direct, &r.Scope, &r.Confidence, &ev,
 			&r.FirstSeen, &r.LastSeen, &r.CollectionID, &r.RemovedAt, &r.LatestStable, &r.OpenFindings,
-			&r.Coverage, &r.CoverageReason, &r.CoverageFeed, &r.EvaluatedAt, &note); err != nil {
+			&r.Coverage, &r.CoverageReason, &r.CoverageFeed, &r.EvaluatedAt, &note, &r.ReleaseNote); err != nil {
 			return nil, 0, err
 		}
 		_ = json.Unmarshal(ev, &r.Evidence)
 		if len(note) > 0 {
 			_ = json.Unmarshal(note, &r.LifecycleNote)
 		}
-		r.UpdateType = updateType(r.Type, r.Version, r.LatestStable)
+		r.UpdateType = updateType(r.Type, r.Namespace, r.Version, r.LatestStable)
 		out = append(out, r)
 	}
 	return out, total, rows.Err()

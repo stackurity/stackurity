@@ -41,6 +41,10 @@ type registry struct {
 	workers  int           // concurrent lookups
 	gap      time.Duration // minimum spacing between lookups, for registries with a rate limit
 	lookup   func(*Syncer, context.Context, store.ReleaseCandidate) (store.Release, error)
+	// namespaces limit the registry to components of purlType in these
+	// namespaces (wordpress.org: pkg:generic/wordpress-plugin/...). Its
+	// feed is then created for them only (EnsureFeeds), not for the type.
+	namespaces []string
 }
 
 var registries = map[string]registry{
@@ -58,6 +62,10 @@ var registries = map[string]registry{
 	FeedPub:      {purlType: "pub", workers: 4, lookup: (*Syncer).pubRelease},
 	// hex.pm allows 100 API requests a minute per IP address.
 	FeedHex: {purlType: "hex", workers: 1, gap: 650 * time.Millisecond, lookup: (*Syncer).hexRelease},
+	// wordpress.org publishes no rate limit for its info API: a few
+	// requests a second, as WordPress sites themselves make.
+	FeedWordPressOrg: {purlType: "generic", namespaces: store.WordPressNamespaces, workers: 2, gap: 250 * time.Millisecond,
+		lookup: (*Syncer).wordpressRelease},
 }
 
 func isReleaseFeed(name string) bool {
@@ -68,7 +76,7 @@ func isReleaseFeed(name string) bool {
 // releaseFeedFor returns the release feed for a purl type, or "".
 func releaseFeedFor(purlType string) string {
 	for name, r := range registries {
-		if r.purlType == purlType {
+		if r.purlType == purlType && r.namespaces == nil {
 			return name
 		}
 	}
@@ -80,7 +88,13 @@ const releaseRefresh = 24 * time.Hour
 
 func (s *Syncer) syncReleases(ctx context.Context, feed string) (*SyncResult, error) {
 	reg := registries[feed]
-	cands, err := s.Store.ReleaseCandidates(ctx, []string{reg.purlType}, releaseRefresh, 2000)
+	var cands []store.ReleaseCandidate
+	var err error
+	if reg.namespaces != nil {
+		cands, err = s.Store.ReleaseCandidatesIn(ctx, reg.purlType, reg.namespaces, releaseRefresh, 2000)
+	} else {
+		cands, err = s.Store.ReleaseCandidates(ctx, []string{reg.purlType}, releaseRefresh, 2000)
+	}
 	if err != nil {
 		return nil, err
 	}
