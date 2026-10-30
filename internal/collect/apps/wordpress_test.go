@@ -2,6 +2,7 @@ package apps
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -163,10 +164,10 @@ func TestWordPressPluginsAndThemes(t *testing.T) {
 	}
 	want := map[string]struct{ name, file, notOrg string }{
 		"pkg:generic/wordpress-plugin/woocommerce@9.9.5":    {"WooCommerce", pl + "woocommerce/woocommerce.php", ""},
-		"pkg:generic/wordpress-plugin/hello@1.7.2":          {"Hello Dolly", pl + "hello.php", ""},
+		"pkg:generic/wordpress-plugin/hello-dolly@1.7.2":    {"Hello Dolly", pl + "hello.php", ""},
 		"pkg:generic/wordpress-plugin/classic-editor@1.6.7": {"Classic Editor", pl + "classic-editor/main.php", ""},
-		"pkg:generic/wordpress-plugin/acme-pro@3.2.1":       {"Acme Pro", pl + "acme-pro/acme-pro.php", "its Update URI names updates.acme.example"},
-		"pkg:generic/wordpress-plugin/in-house@2.0":         {"In House", pl + "in-house/in-house.php", "its Update URI names false"},
+		"pkg:generic/wordpress-plugin/acme-pro@3.2.1":       {"Acme Pro", pl + "acme-pro/acme-pro.php", "its Update URI header says it is updated from updates.acme.example"},
+		"pkg:generic/wordpress-plugin/in-house@2.0":         {"In House", pl + "in-house/in-house.php", "its Update URI header is false: updates from wordpress.org are turned off"},
 		"pkg:generic/wordpress-plugin/akismet@5.3":          {"Akismet Anti-spam: Spam Protection", pl + "akismet/akismet.php", ""},
 		"pkg:generic/wordpress-plugin/My_Custom@1.0.0":      {"Mine", pl + "My_Custom/My_Custom.php", "its folder name is not a wordpress.org slug"},
 		"pkg:generic/wordpress-plugin/loader@1.0.0": {"Site Loader", wp + "/wp-content/mu-plugins/loader.php",
@@ -220,4 +221,75 @@ func TestWPHeader(t *testing.T) {
 			t.Errorf("Update URI %q = %q, want %q", uri, got, want)
 		}
 	}
+}
+
+// A folder whose own <slug>.php has a header is that plugin; otherwise each
+// top-level file with a header is one, as WordPress lists them.
+func TestWordPressPluginFolders(t *testing.T) {
+	tr := newTree(t)
+	wp := "srv/site"
+	tr.file(wp+"/wp-includes/version.php", versionPHP("$wp_version = '6.8.1';"))
+	pl := wp + "/wp-content/plugins/"
+	tr.file(pl+"jetpack/a-helper.php", "<?php\n/* Plugin Name: Jetpack Helper\n * Version: 0.1 */")
+	tr.file(pl+"jetpack/jetpack.php", "<?php\n/* Plugin Name: Jetpack\n * Version: 14.0 */")
+	tr.file(pl+"bundle/one.php", "<?php\n/* Plugin Name: Bundle One\n * Version: 1.0 */")
+	tr.file(pl+"bundle/two.php", "<?php\n/* Plugin Name: Bundle Two\n * Version: 2.0 */")
+	got := map[string]string{}
+	for _, o := range (&Scanner{Root: tr.root}).ScanApp(context.Background(), "/"+wp).Observations {
+		if strings.HasPrefix(o.Purl, "pkg:generic/wordpress-plugin/") {
+			got[o.Purl] = o.Evidence["name"]
+		}
+	}
+	want := map[string]string{"pkg:generic/wordpress-plugin/jetpack@14.0": "Jetpack",
+		"pkg:generic/wordpress-plugin/bundle@1.0": "Bundle One", "pkg:generic/wordpress-plugin/bundle@2.0": "Bundle Two"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v", got)
+	}
+	for p, n := range want {
+		if got[p] != n {
+			t.Errorf("%s = %q, want %q", p, got[p], n)
+		}
+	}
+}
+
+// Plugins, must-use plugins and themes have budgets of their own; what a
+// budget leaves out is a partial coverage item, never silent.
+func TestWordPressExtensionBudgets(t *testing.T) {
+	defer func(p, m, th int) { maxWPPlugins, maxWPMustUse, maxWPThemes = p, m, th }(maxWPPlugins, maxWPMustUse, maxWPThemes)
+	maxWPPlugins, maxWPMustUse, maxWPThemes = 2, 1, 5
+	tr := newTree(t)
+	wp := "srv/big"
+	tr.file(wp+"/wp-includes/version.php", versionPHP("$wp_version = '6.8.1';"))
+	for i := 0; i < 4; i++ {
+		tr.file(fmt.Sprintf("%s/wp-content/plugins/p%d/p%d.php", wp, i, i), fmt.Sprintf("<?php\n/* Plugin Name: P%d\n * Version: 1.0 */", i))
+	}
+	for i := 0; i < 3; i++ {
+		tr.file(fmt.Sprintf("%s/wp-content/mu-plugins/m%d.php", wp, i), fmt.Sprintf("<?php\n/* Plugin Name: M%d\n * Version: 1.0 */", i))
+	}
+	tr.file(wp+"/wp-content/themes/child/style.css", "/* Theme Name: Child\nTemplate: parent\nVersion: 1.0 */")
+	a := (&Scanner{Root: tr.root}).ScanApp(context.Background(), "/"+wp)
+	n := map[string]int{}
+	for _, o := range a.Observations {
+		switch {
+		case o.Evidence["must_use"] == "true":
+			n["mu"]++
+		case o.Evidence["kind"] == WPPlugin:
+			n["plugins"]++
+		case o.Evidence["kind"] == WPTheme:
+			n["themes"]++
+		}
+	}
+	if n["plugins"] != 2 || n["mu"] != 1 || n["themes"] != 1 {
+		t.Errorf("reported %v", n)
+	}
+	reasons := map[string]bool{}
+	for _, c := range a.Coverage {
+		if c.Scope == wpExtScope+"/"+wp && c.Status == "partial" {
+			reasons[c.Reason] = true
+		}
+	}
+	if !reasons["stopped after 2 plugins; 2 more were not read"] || !reasons["stopped after 1 must-use plugins; 2 more were not read"] || len(reasons) != 2 {
+		t.Errorf("coverage %+v", a.Coverage)
+	}
+	validate(t, a)
 }

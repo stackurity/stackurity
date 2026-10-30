@@ -17,12 +17,12 @@ package apps
 // covers them yet.
 
 import (
+	"fmt"
 	"io"
 	"net/url"
 	"os"
 	"path"
 	"regexp"
-	"sort"
 	"strings"
 
 	"github.com/package-url/packageurl-go"
@@ -37,9 +37,14 @@ const (
 	WPPlugin = "wordpress-plugin"
 	WPTheme  = "wordpress-theme"
 
-	maxWPExtensions = 2000 // plugins and themes read per install
-	maxWPPluginPHP  = 100  // top-level .php files opened per plugin folder
+	maxWPPluginPHP = 100 // top-level .php files opened per plugin folder
+	wpExtScope     = "wordpress-extensions:"
 )
+
+// Plugins, must-use plugins and themes read per install, each with its own
+// budget so a site with thousands of plugins still reports its themes; past
+// one, the install has partial coverage (wpExtScope). Tests lower them.
+var maxWPPlugins, maxWPMustUse, maxWPThemes = 2000, 200, 500
 
 // wpHeader reads one header field as WordPress does (get_file_data and
 // _cleanup_header_comment): a line, possibly after "<?php" and comment
@@ -132,8 +137,10 @@ func (e wpExtension) observation() (model.Observation, bool) {
 	switch {
 	case e.mustUse:
 		reason = "a must-use plugin, which WordPress does not update from wordpress.org"
+	case strings.EqualFold(strings.TrimSpace(e.updateURI), "false"):
+		reason = "its Update URI header is false: updates from wordpress.org are turned off"
 	case updateURIElsewhere(e.updateURI) != "":
-		reason = "its Update URI names " + clipText(updateURIElsewhere(e.updateURI), 200)
+		reason = "its Update URI header says it is updated from " + clipText(updateURIElsewhere(e.updateURI), 200)
 	case !wpSlug.MatchString(e.slug):
 		reason = "its folder name is not a wordpress.org slug"
 	}
@@ -156,48 +163,77 @@ func (e wpExtension) observation() (model.Observation, bool) {
 // wordpressExtensions reports the plugins, must-use plugins and themes of
 // the WordPress install at root (host path), in wp-content. Links are not
 // followed; files an OS package installed are left to the package database.
-func (s *Scanner) wordpressExtensions(root string, den *denied) []model.Observation {
+// A partial coverage item says when a budget stopped the reading.
+func (s *Scanner) wordpressExtensions(root string, den *denied) ([]model.Observation, []model.CoverageItem) {
 	content := path.Join(root, "wp-content")
 	var found []wpExtension
-	budget := maxWPExtensions
-	add := func(e wpExtension, ok bool) {
-		if ok && budget > 0 {
-			budget--
+	var cov []model.CoverageItem
+	// Each kind has its own budget; what is left out is counted.
+	budgeted := func(what string, max int, read func(add func(wpExtension))) {
+		n, more := 0, 0
+		read(func(e wpExtension) {
+			if n >= max {
+				more++
+				return
+			}
+			n++
 			found = append(found, e)
+		})
+		if more > 0 {
+			cov = append(cov, model.CoverageItem{Scope: clipScope(wpExtScope + root), Status: "partial",
+				Reason: fmt.Sprintf("stopped after %d %s; %d more were not read", max, what, more)})
 		}
 	}
-	// Plugins: a folder's top-level .php file with a Plugin Name header
-	// (<slug>.php first), or a single .php file in plugins/.
-	for _, e := range s.wpEntries(path.Join(content, "plugins"), den) {
-		full := path.Join(content, "plugins", e.Name())
-		switch {
-		case e.IsDir():
-			add(s.wpPluginDir(full, e.Name(), den))
-		case e.Type().IsRegular() && strings.HasSuffix(e.Name(), ".php"):
-			add(s.wpHeaderFile(WPPlugin, strings.TrimSuffix(e.Name(), ".php"), full, "Plugin Name", den))
+	// Plugins: a folder's top-level .php files with a Plugin Name header
+	// (wpPluginDir), or a single .php file in plugins/. Hello Dolly ships
+	// as hello.php; its wordpress.org slug is hello-dolly.
+	budgeted("plugins", maxWPPlugins, func(add func(wpExtension)) {
+		for _, e := range s.wpEntries(path.Join(content, "plugins"), den) {
+			full := path.Join(content, "plugins", e.Name())
+			switch {
+			case e.IsDir():
+				for _, x := range s.wpPluginDir(full, e.Name(), den) {
+					add(x)
+				}
+			case e.Type().IsRegular() && strings.HasSuffix(e.Name(), ".php"):
+				slug := strings.TrimSuffix(e.Name(), ".php")
+				if e.Name() == "hello.php" {
+					slug = "hello-dolly"
+				}
+				if x, ok := s.wpHeaderFile(WPPlugin, slug, full, "Plugin Name", den); ok {
+					add(x)
+				}
+			}
 		}
-	}
+	})
 	// Must-use plugins: WordPress loads only the top-level .php files.
-	for _, e := range s.wpEntries(path.Join(content, "mu-plugins"), den) {
-		if e.Type().IsRegular() && strings.HasSuffix(e.Name(), ".php") {
-			x, ok := s.wpHeaderFile(WPPlugin, strings.TrimSuffix(e.Name(), ".php"), path.Join(content, "mu-plugins", e.Name()), "Plugin Name", den)
-			x.mustUse = true
-			add(x, ok)
+	budgeted("must-use plugins", maxWPMustUse, func(add func(wpExtension)) {
+		for _, e := range s.wpEntries(path.Join(content, "mu-plugins"), den) {
+			if e.Type().IsRegular() && strings.HasSuffix(e.Name(), ".php") {
+				if x, ok := s.wpHeaderFile(WPPlugin, strings.TrimSuffix(e.Name(), ".php"), path.Join(content, "mu-plugins", e.Name()), "Plugin Name", den); ok {
+					x.mustUse = true
+					add(x)
+				}
+			}
 		}
-	}
+	})
 	// Themes: style.css of each folder.
-	for _, e := range s.wpEntries(path.Join(content, "themes"), den) {
-		if e.IsDir() {
-			add(s.wpHeaderFile(WPTheme, e.Name(), path.Join(content, "themes", e.Name(), "style.css"), "Theme Name", den))
+	budgeted("themes", maxWPThemes, func(add func(wpExtension)) {
+		for _, e := range s.wpEntries(path.Join(content, "themes"), den) {
+			if e.IsDir() {
+				if x, ok := s.wpHeaderFile(WPTheme, e.Name(), path.Join(content, "themes", e.Name(), "style.css"), "Theme Name", den); ok {
+					add(x)
+				}
+			}
 		}
-	}
+	})
 	var out []model.Observation
 	for _, e := range found {
 		if o, ok := e.observation(); ok {
 			out = append(out, o)
 		}
 	}
-	return out
+	return out, cov
 }
 
 // wpEntries lists a directory (host path) without following links, hidden
@@ -217,25 +253,33 @@ func (s *Scanner) wpEntries(dir string, den *denied) []os.DirEntry {
 	return out
 }
 
-// wpPluginDir finds the plugin in a folder of plugins/: the first
-// top-level .php file with a Plugin Name header, <slug>.php first.
-func (s *Scanner) wpPluginDir(dir, slug string, den *denied) (wpExtension, bool) {
+// wpPluginDir finds the plugins in a folder of plugins/: <slug>.php when
+// it has a Plugin Name header, the folder's own plugin; otherwise every
+// top-level .php file with one, as WordPress lists each of them.
+func (s *Scanner) wpPluginDir(dir, slug string, den *denied) []wpExtension {
 	var files []string
 	for _, e := range s.wpEntries(dir, den) {
 		if e.Type().IsRegular() && strings.HasSuffix(e.Name(), ".php") {
 			files = append(files, e.Name())
 		}
 	}
-	sort.SliceStable(files, func(i, j int) bool { return files[i] == slug+".php" && files[j] != slug+".php" })
+	for _, f := range files {
+		if f == slug+".php" {
+			if e, ok := s.wpHeaderFile(WPPlugin, slug, path.Join(dir, f), "Plugin Name", den); ok {
+				return []wpExtension{e}
+			}
+		}
+	}
 	if len(files) > maxWPPluginPHP {
 		files = files[:maxWPPluginPHP]
 	}
+	var out []wpExtension
 	for _, f := range files {
 		if e, ok := s.wpHeaderFile(WPPlugin, slug, path.Join(dir, f), "Plugin Name", den); ok {
-			return e, true
+			out = append(out, e)
 		}
 	}
-	return wpExtension{}, false
+	return out
 }
 
 // wpHeaderFile reads a plugin or theme header from host path file; ok when

@@ -49,7 +49,7 @@ The request goes from the server, not the browser, with a 10 second timeout, and
 
 ### Intelligence feeds
 
-Feeds are created automatically for the ecosystems present in your inventory. Each one can be disabled under **Intelligence** by an instance administrator (feeds are shared by every workspace), and `STACKURITY_FEEDS=off` turns all of them off. No inventory data is sent to any of them: OSV, KEV, EPSS and endoflife.date are bulk downloads, and registry lookups send only a public package name. A release feed exists only while its ecosystem is in inventory.
+Feeds are created automatically for the ecosystems present in your inventory. Each one can be disabled under **Intelligence** by an instance administrator (feeds are shared by every workspace), and `STACKURITY_FEEDS=off` turns all of them off. No inventory data is sent to any of them: OSV, KEV, EPSS and endoflife.date are bulk downloads, and registry lookups send only a public package name (for WordPress plugins and themes, only a slug found in wordpress.org's public list). A release feed exists only while its ecosystem is in inventory.
 
 | Feed | Destination | Schedule | What is requested |
 |---|---|---|---|
@@ -71,7 +71,7 @@ Feeds are created automatically for the ecosystems present in your inventory. Ea
 | `releases:maven` | `repo1.maven.org` (`STACKURITY_MAVEN_URL`) | Every 6 h; each artifact at most daily | `maven-metadata.xml` |
 | `releases:pub` | `pub.dev` (`STACKURITY_PUB_URL`) | Every 6 h; each package at most daily | `/api/packages/<name>` |
 | `releases:hex` | `hex.pm` (`STACKURITY_HEX_URL`) | Every 6 h; each package at most daily, at most 100 requests a minute | `/api/packages/<name>` (public packages only; private organisations' packages are never looked up) |
-| `releases:wordpress.org` (only with WordPress plugins or themes in inventory) | `api.wordpress.org` (`STACKURITY_WORDPRESS_ORG_URL`) | Every 6 h; each plugin or theme at most daily, at most 4 requests a second | `/plugins/info/1.2/?action=plugin_information&request[slug]=<slug>` and `/themes/info/1.2/?action=theme_information&request[slug]=<slug>`, no key. Only the slugs installed somewhere, never one the agent marked as not from wordpress.org (an `Update URI` naming another host, a must-use plugin, a folder name that is no slug); no site, host or version is sent |
+| `releases:wordpress.org` (only with WordPress plugins or themes in inventory) | `plugins.svn.wordpress.org` and `themes.svn.wordpress.org` (`STACKURITY_WORDPRESS_PLUGINS_LIST_URL`, `STACKURITY_WORDPRESS_THEMES_LIST_URL`); `api.wordpress.org` (`STACKURITY_WORDPRESS_ORG_URL`) | Every 6 h; each plugin or theme at most daily, at most 4 requests a second | First the public slug lists: the root listing of each repository (plugins about 131,000 slugs, 9 MB, 1.4 MB compressed; themes about 32,000, 1.7 MB, 0.24 MB compressed), each about once a day, only when a slug of that kind is due; a truncated listing, or one with fewer than half the slugs of the last, is refused and nothing is looked up. Then `/plugins/info/1.2/?action=plugin_information&request[slug]=<slug>` and `/themes/info/1.2/?action=theme_information&request[slug]=<slug>`, no key, only for installed slugs that are in the public list. An in-house plugin's or theme's folder name is never sent: one not in the list is marked not on wordpress.org locally, as is one the agent marked as not from wordpress.org (an `Update URI` naming another host, a must-use plugin, a folder name that is no slug). No site, host or version is sent |
 
 ### Plugins
 

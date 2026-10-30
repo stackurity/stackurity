@@ -561,6 +561,12 @@ export function LatestCell({ row }: { row: InventoryRow }) {
       <span className="muted small break">{row.release_note}</span>
     );
   if (!row.latest_stable) return <span className="muted">unknown</span>;
+  if (row.update_type === "ahead")
+    return (
+      <span className="mono small" title="The installed version is newer than the latest stable release: a pre-release or development build">
+        {row.latest_stable} <span className="muted">(installed is newer)</span>
+      </span>
+    );
   if (!row.update_type) return <span className="mono small" title="Installed version is the latest stable release">{row.latest_stable} ✓</span>;
   return (
     <span className="badges">

@@ -1044,6 +1044,8 @@ func intelConfig(dataDir string) intel.Config {
 	cfg.PackagistURL = env("STACKURITY_PACKAGIST_URL", cfg.PackagistURL)
 	cfg.PyPIURL = env("STACKURITY_PYPI_URL", cfg.PyPIURL)
 	cfg.WordPressOrgURL = env("STACKURITY_WORDPRESS_ORG_URL", cfg.WordPressOrgURL)
+	cfg.WordPressPluginsListURL = env("STACKURITY_WORDPRESS_PLUGINS_LIST_URL", cfg.WordPressPluginsListURL)
+	cfg.WordPressThemesListURL = env("STACKURITY_WORDPRESS_THEMES_LIST_URL", cfg.WordPressThemesListURL)
 	cfg.GoProxyURL = env("STACKURITY_GOPROXY_URL", cfg.GoProxyURL)
 	cfg.CratesIndexURL = env("STACKURITY_CRATES_INDEX_URL", cfg.CratesIndexURL)
 	cfg.RubyGemsURL = env("STACKURITY_RUBYGEMS_URL", cfg.RubyGemsURL)

@@ -56,7 +56,7 @@ func parseWPVersion(data []byte) (string, bool) {
 // one level above the install (as WordPress allows), that of each directory
 // directly below it. A copy an OS package installed is reported by the
 // package database instead.
-func (s *Scanner) wordpressCore(dir string, den *denied) []model.Observation {
+func (s *Scanner) wordpressCore(dir string, den *denied) ([]model.Observation, []model.CoverageItem) {
 	roots := []string{dir}
 	if !s.hasWPCore(dir) && s.marker(dir, []string{"wp-config.php"}) != "" {
 		roots = nil
@@ -72,6 +72,7 @@ func (s *Scanner) wordpressCore(dir string, den *denied) []model.Observation {
 		}
 	}
 	var out []model.Observation
+	var cov []model.CoverageItem
 	for _, root := range roots {
 		if !s.hasWPCore(root) {
 			continue
@@ -80,9 +81,10 @@ func (s *Scanner) wordpressCore(dir string, den *denied) []model.Observation {
 			out = append(out, o)
 		}
 		// Its plugins and themes (wpextensions.go).
-		out = append(out, s.wordpressExtensions(root, den)...)
+		obs, c := s.wordpressExtensions(root, den)
+		out, cov = append(out, obs...), append(cov, c...)
 	}
-	return out
+	return out, cov
 }
 
 // wordpressVersion reads the core release of the install at root.

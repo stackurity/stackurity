@@ -98,6 +98,20 @@ func (s *Syncer) syncReleases(ctx context.Context, feed string) (*SyncResult, er
 	if err != nil {
 		return nil, err
 	}
+	failed := s.lookupReleases(ctx, reg, cands)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if len(cands) > 0 && failed == len(cands) {
+		return nil, fmt.Errorf("all %d registry lookups failed", failed)
+	}
+	return &SyncResult{Changed: len(cands) - failed}, nil
+}
+
+// lookupReleases looks each candidate up in the registry, reg.workers at a
+// time and reg.gap apart, stores what it finds (or the error, keeping what
+// was stored), and returns how many lookups failed.
+func (s *Syncer) lookupReleases(ctx context.Context, reg registry, cands []store.ReleaseCandidate) int {
 	var tick <-chan time.Time
 	if reg.gap > 0 {
 		t := time.NewTicker(reg.gap)
@@ -135,13 +149,7 @@ func (s *Syncer) syncReleases(ctx context.Context, feed string) (*SyncResult, er
 		}(c)
 	}
 	wg.Wait()
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	if len(cands) > 0 && failed == len(cands) {
-		return nil, fmt.Errorf("all %d registry lookups failed", failed)
-	}
-	return &SyncResult{Changed: len(cands) - failed}, nil
+	return failed
 }
 
 // regVersion is one published version as a registry reports it.

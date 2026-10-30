@@ -16,28 +16,32 @@ import (
 // Config holds source locations so installations can point at mirrors or
 // offline copies (FR-05).
 type Config struct {
-	OSVBaseURL       string // https://storage.googleapis.com/osv-vulnerabilities
-	KEVURL           string
-	EPSSURL          string // https://epss.empiricalsecurity.com/epss_scores-current.csv.gz
-	EndOfLifeURL     string // https://endoflife.date/api/v1/products/full
-	NpmRegistry      string // https://registry.npmjs.org
-	PackagistURL     string // https://repo.packagist.org
-	AmazonLinuxURL   string // https://cdn.amazonlinux.com
-	OracleLinuxURL   string // https://linux.oracle.com/security/oval (ELSA OVAL files)
-	PyPIURL          string // https://pypi.org
-	GoProxyURL       string // https://proxy.golang.org
-	CratesIndexURL   string // https://index.crates.io (the sparse index)
-	RubyGemsURL      string // https://rubygems.org
-	NuGetURL         string // https://api.nuget.org/v3/registration5-gz-semver2
-	MavenURL         string // https://repo1.maven.org/maven2
-	PubURL           string // https://pub.dev
-	HexURL           string // https://hex.pm
-	WordPressOrgURL  string // https://api.wordpress.org (plugin and theme info)
-	MSRCURL          string // https://api.msrc.microsoft.com/cvrf/v3.0 (Security Update Guide)
-	MSRCMonths       int    // months of Security Update Guide documents read (DefaultMSRCMonths)
-	WorkDir          string // temp space for bulk downloads
-	UserAgent        string
-	IncrementalLimit int // above this many changed records, re-download the full archive
+	OSVBaseURL      string // https://storage.googleapis.com/osv-vulnerabilities
+	KEVURL          string
+	EPSSURL         string // https://epss.empiricalsecurity.com/epss_scores-current.csv.gz
+	EndOfLifeURL    string // https://endoflife.date/api/v1/products/full
+	NpmRegistry     string // https://registry.npmjs.org
+	PackagistURL    string // https://repo.packagist.org
+	AmazonLinuxURL  string // https://cdn.amazonlinux.com
+	OracleLinuxURL  string // https://linux.oracle.com/security/oval (ELSA OVAL files)
+	PyPIURL         string // https://pypi.org
+	GoProxyURL      string // https://proxy.golang.org
+	CratesIndexURL  string // https://index.crates.io (the sparse index)
+	RubyGemsURL     string // https://rubygems.org
+	NuGetURL        string // https://api.nuget.org/v3/registration5-gz-semver2
+	MavenURL        string // https://repo1.maven.org/maven2
+	PubURL          string // https://pub.dev
+	HexURL          string // https://hex.pm
+	WordPressOrgURL string // https://api.wordpress.org (plugin and theme info)
+	// wordpress.org's public plugin and theme slugs: the Subversion
+	// repositories' root listings.
+	WordPressPluginsListURL string // https://plugins.svn.wordpress.org/
+	WordPressThemesListURL  string // https://themes.svn.wordpress.org/
+	MSRCURL                 string // https://api.msrc.microsoft.com/cvrf/v3.0 (Security Update Guide)
+	MSRCMonths              int    // months of Security Update Guide documents read (DefaultMSRCMonths)
+	WorkDir                 string // temp space for bulk downloads
+	UserAgent               string
+	IncrementalLimit        int // above this many changed records, re-download the full archive
 
 	// NVD's CVE API, read for the curated Windows program catalogue.
 	NVDURL     string        // DefaultNVDURL
@@ -53,30 +57,32 @@ func DefaultConfig() Config {
 		KEVURL:     "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
 		// FIRST publishes EPSS through Empirical Security, which redirects
 		// "current" to the day's file (epss_scores-YYYY-MM-DD.csv.gz).
-		EPSSURL:          "https://epss.empiricalsecurity.com/epss_scores-current.csv.gz",
-		EndOfLifeURL:     "https://endoflife.date/api/v1/products/full",
-		NpmRegistry:      "https://registry.npmjs.org",
-		PackagistURL:     "https://repo.packagist.org",
-		AmazonLinuxURL:   "https://cdn.amazonlinux.com",
-		OracleLinuxURL:   "https://linux.oracle.com/security/oval",
-		PyPIURL:          "https://pypi.org",
-		GoProxyURL:       "https://proxy.golang.org",
-		CratesIndexURL:   "https://index.crates.io",
-		RubyGemsURL:      "https://rubygems.org",
-		NuGetURL:         "https://api.nuget.org/v3/registration5-gz-semver2",
-		MavenURL:         "https://repo1.maven.org/maven2",
-		PubURL:           "https://pub.dev",
-		HexURL:           "https://hex.pm",
-		WordPressOrgURL:  "https://api.wordpress.org",
-		MSRCURL:          "https://api.msrc.microsoft.com/cvrf/v3.0",
-		MSRCMonths:       DefaultMSRCMonths,
-		WorkDir:          os.TempDir(),
-		UserAgent:        "stackurity",
-		IncrementalLimit: 5000,
-		NVDURL:           DefaultNVDURL,
-		NVDDelay:         6500 * time.Millisecond,
-		NVDBackoff:       35 * time.Second,
-		MozillaURL:       DefaultMozillaURL,
+		EPSSURL:                 "https://epss.empiricalsecurity.com/epss_scores-current.csv.gz",
+		EndOfLifeURL:            "https://endoflife.date/api/v1/products/full",
+		NpmRegistry:             "https://registry.npmjs.org",
+		PackagistURL:            "https://repo.packagist.org",
+		AmazonLinuxURL:          "https://cdn.amazonlinux.com",
+		OracleLinuxURL:          "https://linux.oracle.com/security/oval",
+		PyPIURL:                 "https://pypi.org",
+		GoProxyURL:              "https://proxy.golang.org",
+		CratesIndexURL:          "https://index.crates.io",
+		RubyGemsURL:             "https://rubygems.org",
+		NuGetURL:                "https://api.nuget.org/v3/registration5-gz-semver2",
+		MavenURL:                "https://repo1.maven.org/maven2",
+		PubURL:                  "https://pub.dev",
+		HexURL:                  "https://hex.pm",
+		WordPressOrgURL:         "https://api.wordpress.org",
+		WordPressPluginsListURL: "https://plugins.svn.wordpress.org/",
+		WordPressThemesListURL:  "https://themes.svn.wordpress.org/",
+		MSRCURL:                 "https://api.msrc.microsoft.com/cvrf/v3.0",
+		MSRCMonths:              DefaultMSRCMonths,
+		WorkDir:                 os.TempDir(),
+		UserAgent:               "stackurity",
+		IncrementalLimit:        5000,
+		NVDURL:                  DefaultNVDURL,
+		NVDDelay:                6500 * time.Millisecond,
+		NVDBackoff:              35 * time.Second,
+		MozillaURL:              DefaultMozillaURL,
 	}
 }
 

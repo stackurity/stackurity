@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -39,19 +40,40 @@ func updateType(purlType, namespace, installed, latest string) string {
 		if trim(installed) == trim(latest) {
 			return ""
 		}
-		t, err := version.ChangeType(purlType, installed, latest)
-		if err != nil {
-			return ""
+		// A pre-release (2.0-beta1) is compared by its release: behind
+		// when that is not newer than the latest stable release.
+		if base, _, pre := strings.Cut(installed, "-"); pre && wpPreRelease.MatchString(installed) {
+			if c, err := version.CompareGeneric(base, latest); err == nil && c > 0 {
+				return "ahead"
+			} else if trim(base) == trim(latest) {
+				return "patch"
+			}
+			installed = base
 		}
-		return t
+		return changeOrAhead(purlType, installed, latest, true)
 	}
 	switch purlType {
 	case "npm", "composer", "pypi", "golang", "cargo", "gem", "nuget", "maven", "pub", "hex":
-		t, err := version.ChangeType(purlType, installed, latest)
-		if err != nil {
-			return "" // not newer, or not comparable
-		}
+		// Ahead only for a pre-release: a newer stable version is one the
+		// registry withdrew (yanked, retracted), not one to call newer.
+		return changeOrAhead(purlType, installed, latest, version.Prerelease(version.ForPurlType(purlType), installed))
+	}
+	return ""
+}
+
+// wpPreRelease marks a WordPress plugin or theme pre-release or build.
+var wpPreRelease = regexp.MustCompile(`(?i)(alpha|beta|rc|dev|pre|nightly)`)
+
+// changeOrAhead is the update from installed to latest, or, when ahead may
+// be said, "ahead" when the installed version is newer than the latest
+// stable release (a pre-release or development build); "" when it is the
+// latest or not comparable.
+func changeOrAhead(purlType, installed, latest string, ahead bool) string {
+	if t, err := version.ChangeType(purlType, installed, latest); err == nil {
 		return t
+	}
+	if c, err := version.For(version.ForPurlType(purlType))(installed, latest); ahead && err == nil && c > 0 {
+		return "ahead"
 	}
 	return ""
 }
@@ -327,7 +349,7 @@ type InventoryRow struct {
 	CollectionID int64             `json:"collection_id"`
 	RemovedAt    *time.Time        `json:"removed_at"`
 	LatestStable string            `json:"latest_stable"`
-	UpdateType   string            `json:"update_type"` // patch, minor, major; empty when current or unknown
+	UpdateType   string            `json:"update_type"` // patch, minor, major; ahead (newer than the latest stable release); empty when current or unknown
 	// ReleaseNote says why a WordPress plugin or theme has no latest
 	// release: not from wordpress.org (and why), not found there, or
 	// closed there.
