@@ -362,43 +362,81 @@ const (
 	scriptBlock                   // <script ...> ... </script>
 )
 
+// markupExts are templates that are HTML with inline scripts; only their
+// <script> elements are code.
+var markupExts = []string{".html", ".htm", ".twig", ".vue", ".erb", ".ejs", ".hbs"}
+
 // stripComments removes code comments from a template, where an old
 // address is often left behind ("// old: https://code.jquery.com/...").
-// Only code is touched: in a .php or .phtml file, PHP blocks and inline
-// scripts; the HTML and CSS around them are left alone, since a "//" or
-// "/*" there is text (url(//fonts...), "src/*.js"). A .js, .jsx or .tsx
-// file is code throughout. Other templates are returned as they are.
+// Only code is touched: PHP blocks in a .php or .phtml file, and inline
+// scripts in it and in the HTML templates (markupExts); the HTML and CSS
+// around them are left alone, since a "//" or "/*" there is text
+// (url(//fonts...), "src/*.js"). A .js, .jsx or .tsx file is code
+// throughout.
 func stripComments(name string, data []byte) []byte {
 	name = strings.ToLower(name)
 	switch {
 	case strings.HasSuffix(name, ".php") || strings.HasSuffix(name, ".phtml"):
-		out := make([]byte, 0, len(data))
-		for i := 0; i < len(data); {
-			switch {
-			case hasAt(data, i, "<?php", true):
-				out = append(out, data[i:i+5]...)
-				out, i = stripCode(out, data, i+5, phpBlock)
-			case hasAt(data, i, "<?=", false):
-				out = append(out, data[i:i+3]...)
-				out, i = stripCode(out, data, i+3, phpBlock)
-			case hasAt(data, i, "<script", true):
-				j := bytes.IndexByte(data[i:], '>')
-				if j < 0 {
-					return append(out, data[i:]...)
-				}
-				out = append(out, data[i:i+j+1]...)
-				out, i = stripCode(out, data, i+j+1, scriptBlock)
-			default:
-				out = append(out, data[i])
-				i++
-			}
-		}
-		return out
+		return stripMarkup(data, true)
 	case strings.HasSuffix(name, ".js") || strings.HasSuffix(name, ".jsx") || strings.HasSuffix(name, ".tsx"):
 		out, _ := stripCode(make([]byte, 0, len(data)), data, 0, jsFile)
 		return out
 	}
+	for _, e := range markupExts {
+		if strings.HasSuffix(name, e) {
+			return stripMarkup(data, false)
+		}
+	}
 	return data
+}
+
+// scriptType reads the type attribute of a <script ...> tag ("" if none).
+var scriptType = regexp.MustCompile(`(?i)\btype\s*=\s*["']?([^"'\s>]+)`)
+
+// jsScript reports whether a <script> tag holds JavaScript, not a template
+// (text/template, text/x-handlebars-template) or data (application/json),
+// whose "//" is text.
+func jsScript(tag []byte) bool {
+	m := scriptType.FindSubmatch(tag)
+	if m == nil {
+		return true
+	}
+	switch strings.ToLower(string(m[1])) {
+	case "text/javascript", "application/javascript", "module", "text/babel":
+		return true
+	}
+	return false
+}
+
+// stripMarkup removes the comments of the code in an HTML template: its
+// inline scripts and, if php, its PHP blocks.
+func stripMarkup(data []byte, php bool) []byte {
+	out := make([]byte, 0, len(data))
+	for i := 0; i < len(data); {
+		switch {
+		case php && hasAt(data, i, "<?php", true):
+			out = append(out, data[i:i+5]...)
+			out, i = stripCode(out, data, i+5, phpBlock)
+		case php && hasAt(data, i, "<?=", false):
+			out = append(out, data[i:i+3]...)
+			out, i = stripCode(out, data, i+3, phpBlock)
+		case hasAt(data, i, "<script", true):
+			j := bytes.IndexByte(data[i:], '>')
+			if j < 0 {
+				return append(out, data[i:]...)
+			}
+			tag := data[i : i+j+1]
+			out = append(out, tag...)
+			i += j + 1
+			if jsScript(tag) {
+				out, i = stripCode(out, data, i, scriptBlock)
+			}
+		default:
+			out = append(out, data[i])
+			i++
+		}
+	}
+	return out
 }
 
 // stripCode copies the code region starting at data[i] to out without its
@@ -408,7 +446,8 @@ func stripComments(name string, data []byte) []byte {
 // of ;{},= . So "url(//", "src/*.js", "\/*" and "/\/\//" stay. A /* that
 // is never closed is not a comment. Quoted strings are copied as they are,
 // and end at a line break too, so a stray apostrophe cannot hide the rest
-// of the file. PHP inside an inline script is copied as it is.
+// of the file. PHP inside an inline script, and a PHP heredoc or nowdoc
+// (see heredocEnd), are copied as they are.
 func stripCode(out, data []byte, i int, region codeRegion) ([]byte, int) {
 	start := i
 	var quote byte
@@ -437,6 +476,12 @@ func stripCode(out, data []byte, i int, region codeRegion) ([]byte, int) {
 		switch {
 		case c == '"' || c == '\'' || c == '`':
 			quote = c
+		case region == phpBlock && hasAt(data, i, "<<<", false):
+			if end := heredocEnd(data, i); end > i {
+				out = append(out, data[i:end]...)
+				i = end
+				continue
+			}
 		case region == scriptBlock && hasAt(data, i, "<?", false):
 			j := bytes.Index(data[i:], []byte("?>"))
 			if j < 0 {
@@ -461,6 +506,48 @@ func stripCode(out, data []byte, i int, region codeRegion) ([]byte, int) {
 		i++
 	}
 	return out, i
+}
+
+var heredocStart = regexp.MustCompile(`^<<<[ \t]*(["']?)([A-Za-z_][A-Za-z0-9_]*)(["']?)\r?\n`)
+
+// heredocEnd returns where the PHP heredoc or nowdoc starting at data[i]
+// (<<<ID, <<<"ID" or <<<'ID') ends: after its closing identifier, which
+// since PHP 7.3 may be indented and followed by anything that cannot
+// continue the name (";", ",", ")"). The text in between is a string, so
+// a "#fff" or "//" in it is not a comment. A heredoc that is never closed
+// runs to the end of the data; i when data[i] does not start one.
+func heredocEnd(data []byte, i int) int {
+	m := heredocStart.FindSubmatchIndex(data[i:])
+	if m == nil {
+		return i
+	}
+	open, closing := string(data[i+m[2]:i+m[3]]), string(data[i+m[6]:i+m[7]])
+	if open != closing {
+		return i
+	}
+	id := data[i+m[4] : i+m[5]]
+	for p := i + m[1]; p < len(data); {
+		line := p
+		for line < len(data) && (data[line] == ' ' || data[line] == '\t') {
+			line++
+		}
+		if bytes.HasPrefix(data[line:], id) {
+			after := line + len(id)
+			if after == len(data) || !identChar(data[after]) {
+				return after
+			}
+		}
+		nl := bytes.IndexByte(data[p:], '\n')
+		if nl < 0 {
+			break
+		}
+		p += nl + 1
+	}
+	return len(data)
+}
+
+func identChar(b byte) bool {
+	return b == '_' || b >= '0' && b <= '9' || b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' || b >= 0x80
 }
 
 func commentBoundary(b byte) bool {
