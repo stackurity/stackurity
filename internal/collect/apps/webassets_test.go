@@ -355,7 +355,25 @@ func TestStripComments(t *testing.T) {
 		{"a.js", "a /* https://unpkg.com/react@16.0.0/x.js */ b", "a   b"},
 		{"a.js", "x /* never closed https://unpkg.com/react@16.0.0/x.js", "x /* never closed https://unpkg.com/react@16.0.0/x.js"},
 		{"a.jsx", "const a = 1; // https://unpkg.com/vue@2.0.0/dist/vue.js\n", "const a = 1; \n"},
-		{"a.html", "<script>// https://unpkg.com/vue@2.0.0/dist/vue.js\n</script>", "<script>// https://unpkg.com/vue@2.0.0/dist/vue.js\n</script>"},
+		// Inline scripts in HTML templates are code; the HTML around them,
+		// and scripts that hold templates or data, are not.
+		{"a.html", "<script>// https://unpkg.com/vue@2.0.0/dist/vue.js\n</script>", "<script>\n</script>"},
+		{"a.htm", "<p>a // b</p><SCRIPT type=\"text/javascript\">/* https://unpkg.com/vue@2.0.0/x.js */ go();</SCRIPT>", "<p>a // b</p><SCRIPT type=\"text/javascript\">  go();</SCRIPT>"},
+		{"a.twig", "{# x #}<script>\n  // old: https://code.jquery.com/jquery-1.8.3.min.js\n</script>", "{# x #}<script>\n  \n</script>"},
+		{"a.vue", "<template><a href=\"//x\">x</a></template>\n<script>\n// https://unpkg.com/vue@2.0.0/x.js\nexport default {}\n</script>", "<template><a href=\"//x\">x</a></template>\n<script>\n\nexport default {}\n</script>"},
+		{"a.erb", "<script>var a = 1; // https://code.jquery.com/jquery-1.8.3.min.js\n</script>", "<script>var a = 1; \n</script>"},
+		{"a.ejs", "<script type=module>// https://unpkg.com/vue@2.0.0/x.js\n</script>", "<script type=module>\n</script>"},
+		{"a.hbs", "<script type=\"text/x-handlebars-template\"><a href= //x>{{y}}</a></script>", "<script type=\"text/x-handlebars-template\"><a href= //x>{{y}}</a></script>"},
+		{"a.html", "<style>.a{background:url(//example.com/x.png)}</style>", "<style>.a{background:url(//example.com/x.png)}</style>"},
+		{"a.erb", "<p>text // with slashes</p>", "<p>text // with slashes</p>"},
+		// PHP heredoc and nowdoc are strings: "#fff" or "//" in them is text.
+		{"a.php", "<?php\necho <<<HTML\n<style>a{color: #fff}</style><script src=\"https://code.jquery.com/jquery-3.5.1.min.js\"></script>\nHTML;\n# https://code.jquery.com/jquery-1.5.0.min.js\n",
+			"<?php\necho <<<HTML\n<style>a{color: #fff}</style><script src=\"https://code.jquery.com/jquery-3.5.1.min.js\"></script>\nHTML;\n\n"},
+		{"a.php", "<?php\n$a = [<<<'EOT'\n  a // b\n  EOT, 1]; // c\n", "<?php\n$a = [<<<'EOT'\n  a // b\n  EOT, 1]; \n"},
+		{"a.php", "<?php\nf(<<<\"X\"\n # y\n    X);", "<?php\nf(<<<\"X\"\n # y\n    X);"},
+		{"a.php", "<?php\n$s = <<<HTML\nHTMLX is not the end # z\nHTML;", "<?php\n$s = <<<HTML\nHTMLX is not the end # z\nHTML;"},
+		{"a.php", "<?php\n$s = <<<HTML\n// never closed", "<?php\n$s = <<<HTML\n// never closed"},
+		{"a.php", "<?php $x = $a <<< 2; // c\n", "<?php $x = $a <<< 2; \n"},
 	}
 	for _, c := range cases {
 		if got := string(stripComments(c.name, []byte(c.in))); got != c.want {
@@ -375,6 +393,13 @@ func TestParseTemplateKeepsLoadedAddresses(t *testing.T) {
 		{"a.php", "<style>@import url(//fonts.googleapis.com/css?family=Roboto);</style>\n<script src=\"https://code.jquery.com/jquery-3.5.1.min.js\"></script>", "jquery@3.5.1"},
 		{"a.php", "<?php\n# https://code.jquery.com/jquery-1.5.0.min.js\n?>", ""},
 		{"a.php", "<?php\n/* unclosed\n?>\n<script src=\"https://code.jquery.com/jquery-3.5.1.min.js\"></script>", "jquery@3.5.1"},
+		// A heredoc's "#fff" must not hide the address after it on that line.
+		{"a.php", "<?php\necho <<<HTML\n<style>a{color: #fff}</style><script src=\"https://code.jquery.com/jquery-3.5.1.min.js\"></script>\nHTML;\n", "jquery@3.5.1"},
+		{"a.php", "<?php\necho <<<'EOT'\n  <a href=\"x\">// x</a><script src=\"https://code.jquery.com/jquery-3.5.1.min.js\"></script>\n  EOT;\n", "jquery@3.5.1"},
+		// Commented addresses in inline scripts of HTML templates are not loaded.
+		{"a.html", "<script>\n// <script src=\"https://code.jquery.com/jquery-1.8.3.min.js\">\n</script>\n<script src=\"https://code.jquery.com/jquery-3.5.1.min.js\"></script>", "jquery@3.5.1"},
+		{"a.vue", "<script>\n/* import 'https://unpkg.com/vue@2.0.0/dist/vue.js' */\n</script>", ""},
+		{"a.twig", "<script>loadScript('https://unpkg.com/vue@2.6.10/dist/vue.js'); // was 2.0.0\n</script>", "vue@2.6.10"},
 	}
 	for _, c := range cases {
 		var got []string
