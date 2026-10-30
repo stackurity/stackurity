@@ -85,9 +85,14 @@ type App struct {
 
 func (s *Scanner) path(hostPath string) string { return filepath.Join(s.Root, hostPath) }
 
-// markers identify a project directory during discovery.
+// markers identify a project directory during discovery. A WordPress site
+// usually has no manifest: its wp-config.php (which may sit one level above
+// the install) or wp-includes/version.php marks it. Its plugins and themes
+// under wp-content are part of the site, never applications of their own:
+// discovery does not look below a directory it has found.
 var markers = []string{"package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "composer.json", "composer.lock",
-	"requirements.txt", "pyproject.toml", "poetry.lock", "Pipfile.lock", "Gemfile.lock", "go.mod", "Cargo.lock", "pubspec.lock"}
+	"requirements.txt", "pyproject.toml", "poetry.lock", "Pipfile.lock", "Gemfile.lock", "go.mod", "Cargo.lock", "pubspec.lock",
+	"wp-config.php", "wp-includes/version.php"}
 
 // DiscoverBases are searched by Discover. Home directories are included
 // because many servers deploy under a service user's home.

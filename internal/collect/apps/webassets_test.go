@@ -247,3 +247,56 @@ func TestWebAssetsBounded(t *testing.T) {
 		t.Errorf("coverage = %+v", a.Coverage)
 	}
 }
+
+// A WordPress site has no manifest: wp-config.php or wp-includes/version.php
+// makes it an application, and its core, plugins and themes are read as
+// part of it, never as applications of their own.
+func TestWordPressSite(t *testing.T) {
+	tr := newTree(t)
+	wp := "var/www/blog"
+	tr.file(wp+"/wp-config.php", "<?php define('DB_NAME', 'blog');")
+	tr.file(wp+"/wp-includes/version.php", "<?php\n$wp_version = '6.4.2';\n")
+	tr.file(wp+"/wp-includes/js/jquery/jquery.min.js", "/*! jQuery v3.7.1 | (c) OpenJS Foundation and other contributors | jquery.org/license */")
+	tr.file(wp+"/wp-content/plugins/contact/composer.json", `{"name":"acme/contact"}`)
+	tr.file(wp+"/wp-content/plugins/contact/assets/js/select2.min.js", "/*! Select2 4.0.13 | https://github.com/select2/select2/blob/master/LICENSE.md */")
+	tr.file(wp+"/wp-content/plugins/gallery/package.json", `{"name":"gallery","version":"1.0.0"}`)
+	tr.file(wp+"/wp-content/themes/twenty/header.php",
+		`<?php wp_enqueue_style('bs', 'https://cdn.jsdelivr.net/npm/bootstrap@4.3.1/dist/css/bootstrap.min.css'); ?>`)
+	// wp-config.php one level above the install, as WordPress allows.
+	tr.file("var/www/shop/wp-config.php", "<?php")
+	tr.file("var/www/shop/public/wp-includes/version.php", "<?php\n$wp_version = '5.8.1';\n")
+	tr.file("var/www/shop/public/wp-includes/js/jquery/jquery.js", "/*!\n * jQuery JavaScript Library v3.6.0\n")
+	// Only version.php: still a site.
+	tr.file("srv/press/wp-includes/version.php", "<?php\n$wp_version = '6.0.0';\n")
+
+	s := &Scanner{Root: tr.root}
+	got, full := s.DiscoverAll()
+	want := map[string]bool{"/var/www/blog": true, "/var/www/shop": true, "/srv/press": true}
+	if len(got) != len(want) || !full {
+		t.Fatalf("discovered %v (full %v)", got, full)
+	}
+	for _, g := range got {
+		if !want[g] {
+			t.Errorf("unexpected application %s in %v", g, got)
+		}
+	}
+	s.Apps = got
+	blog := s.ScanApp(context.Background(), "/var/www/blog")
+	m := purls(blog.Observations)
+	for p, loc := range map[string]string{
+		"pkg:npm/jquery@3.7.1":    "/var/www/blog/wp-includes/js/jquery/jquery.min.js",
+		"pkg:npm/select2@4.0.13":  "/var/www/blog/wp-content/plugins/contact/assets/js/select2.min.js",
+		"pkg:npm/bootstrap@4.3.1": "/var/www/blog/wp-content/themes/twenty/header.php",
+	} {
+		if o, ok := m[p]; !ok || o.Location != loc {
+			t.Errorf("%s = %+v; have %v", p, o, keys(m))
+		}
+	}
+	if blog.Name != "blog" || len(m) != 3 {
+		t.Errorf("blog %q: %v", blog.Name, keys(m))
+	}
+	validate(t, blog)
+	if _, ok := purls(s.ScanApp(context.Background(), "/var/www/shop").Observations)["pkg:npm/jquery@3.6.0"]; !ok {
+		t.Error("shop: jquery below public/ missing")
+	}
+}
