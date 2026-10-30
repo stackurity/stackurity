@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/stackurity/stackurity/internal/model"
 )
 
 func TestParseCDNURL(t *testing.T) {
@@ -12,7 +14,7 @@ func TestParseCDNURL(t *testing.T) {
 		{"https://cdn.jsdelivr.net/npm/bootstrap@4.3.1/dist/js/bootstrap.min.js", "bootstrap", "4.3.1"},
 		{"//cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js", "@popperjs/core", "2.11.8"},
 		{"https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js", "jquery", "3.3.1"},
-		{"https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.3.1/css/bootstrap.min.css", "bootstrap", "4.3.1"},
+		{"https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.3.1/js/bootstrap.min.js", "bootstrap", "4.3.1"},
 		{"https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.11/lodash.min.js", "lodash", "4.17.11"},
 		{"https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.9.4/Chart.min.js", "chart.js", "2.9.4"},
 		{"https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css", "font-awesome", "4.7.0"},
@@ -46,6 +48,14 @@ func TestParseCDNURL(t *testing.T) {
 		{"https://cdn.ckeditor.com/ckeditor5/35.0.0/classic/ckeditor.js", "", ""},
 		{"https://cdn.datatables.net/buttons/1.5.6/js/dataTables.buttons.min.js", "", ""},
 		{"https://example.com/npm/bootstrap@4.3.1/x.js", "", ""},
+		// A stylesheet is the library only for a stylesheet library: Bootstrap's
+		// CSS or a jQuery UI theme says nothing about the scripts.
+		{"https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.7/css/bootstrap.min.css", "", ""},
+		{"https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css?v=2", "", ""},
+		{"https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css", "", ""},
+		{"https://code.jquery.com/ui/1.12.1/themes/smoothness/jquery-ui.css", "", ""},
+		{"https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css", "font-awesome", "4.7.0"},
+		{"https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css", "@fortawesome/fontawesome-free", "6.4.0"},
 	}
 	for _, c := range cases {
 		name, version, ok := parseCDNURL(c.url)
@@ -68,7 +78,11 @@ func TestParseBanner(t *testing.T) {
 		{"jquery-migrate.min.js", "/*! jQuery Migrate v3.0.0 | (c) jQuery Foundation and other contributors */", "jquery-migrate@3.0.0"},
 		{"jquery.validate.min.js", "/*!\n * jQuery Validation Plugin v1.19.0\n", "jquery-validation@1.19.0"},
 		{"bootstrap.min.js", "/*!\n  * Bootstrap v4.3.1 (https://getbootstrap.com/)\n", "bootstrap@4.3.1"},
-		{"bootstrap.min.css", "/*!\n * Bootstrap v3.3.7 (http://getbootstrap.com)\n", "bootstrap@3.3.7"},
+		{"bootstrap.js", "/*!\n * Bootstrap v3.3.7 (http://getbootstrap.com)\n", "bootstrap@3.3.7"},
+		// Stylesheets of script libraries are not the library.
+		{"bootstrap.min.css", "/*!\n * Bootstrap v3.3.7 (http://getbootstrap.com)\n", ""},
+		{"jquery-ui-rtl.css", "/*! jQuery UI - v1.11.4 - 2016-01-05\n* http://jqueryui.com", ""},
+		{"jquery-ui.css", "/*! jQuery UI - v1.12.1 - 2016-09-14\n* http://jqueryui.com\n* Includes: core.css", ""},
 		{"bootstrap-datepicker.js", "/*!\n * Datepicker for Bootstrap v1.9.0 (https://github.com/uxsolutions/bootstrap-datepicker)\n", ""},
 		{"bootstrap-select.min.js", "/*!\n * Bootstrap-select v1.13.1 (https://developer.snapappointments.com/bootstrap-select)\n", "bootstrap-select@1.13.1"},
 		{"angular.min.js", "/*\n AngularJS v1.7.8\n (c) 2010-2018 Google, Inc. http://angularjs.org\n", "angular@1.7.8"},
@@ -246,6 +260,11 @@ func TestWebAssetsBounded(t *testing.T) {
 	if !partial {
 		t.Errorf("coverage = %+v", a.Coverage)
 	}
+	for _, c := range a.Coverage {
+		if c.Scope == "web-assets:/srv/big" && c.Reason != "stopped after 20 files of templates and scripts" {
+			t.Errorf("reason = %q", c.Reason)
+		}
+	}
 }
 
 // A WordPress site has no manifest: wp-config.php or wp-includes/version.php
@@ -261,7 +280,8 @@ func TestWordPressSite(t *testing.T) {
 	tr.file(wp+"/wp-content/plugins/contact/assets/js/select2.min.js", "/*! Select2 4.0.13 | https://github.com/select2/select2/blob/master/LICENSE.md */")
 	tr.file(wp+"/wp-content/plugins/gallery/package.json", `{"name":"gallery","version":"1.0.0"}`)
 	tr.file(wp+"/wp-content/themes/twenty/header.php",
-		`<?php wp_enqueue_style('bs', 'https://cdn.jsdelivr.net/npm/bootstrap@4.3.1/dist/css/bootstrap.min.css'); ?>`)
+		`<?php wp_enqueue_script('bs', 'https://cdn.jsdelivr.net/npm/bootstrap@4.3.1/dist/js/bootstrap.min.js'); ?>`)
+	tr.file(wp+"/wp-includes/js/tinymce/tinymce.min.js", "// 4.9.11 (2020-07-13)\n!function(V){}")
 	// wp-config.php one level above the install, as WordPress allows.
 	tr.file("var/www/shop/wp-config.php", "<?php")
 	tr.file("var/www/shop/public/wp-includes/version.php", "<?php\n$wp_version = '5.8.1';\n")
@@ -287,16 +307,94 @@ func TestWordPressSite(t *testing.T) {
 		"pkg:npm/jquery@3.7.1":    "/var/www/blog/wp-includes/js/jquery/jquery.min.js",
 		"pkg:npm/select2@4.0.13":  "/var/www/blog/wp-content/plugins/contact/assets/js/select2.min.js",
 		"pkg:npm/bootstrap@4.3.1": "/var/www/blog/wp-content/themes/twenty/header.php",
+		"pkg:npm/tinymce@4.9.11":  "/var/www/blog/wp-includes/js/tinymce/tinymce.min.js",
 	} {
 		if o, ok := m[p]; !ok || o.Location != loc {
 			t.Errorf("%s = %+v; have %v", p, o, keys(m))
 		}
 	}
-	if blog.Name != "blog" || len(m) != 3 {
+	// Copies WordPress core maintains need validation; a plugin's own do not.
+	for p, conf := range map[string]model.Confidence{"pkg:npm/jquery@3.7.1": model.ConfidenceInferred,
+		"pkg:npm/tinymce@4.9.11": model.ConfidenceInferred, "pkg:npm/select2@4.0.13": model.ConfidenceConfirmed} {
+		if o := m[p]; o.Confidence != conf || (conf == model.ConfidenceInferred) != (o.Evidence["bundled_with"] == "WordPress") {
+			t.Errorf("%s: confidence %s, evidence %v", p, o.Confidence, o.Evidence)
+		}
+	}
+	if blog.Name != "blog" || len(m) != 4 {
 		t.Errorf("blog %q: %v", blog.Name, keys(m))
 	}
 	validate(t, blog)
 	if _, ok := purls(s.ScanApp(context.Background(), "/var/www/shop").Observations)["pkg:npm/jquery@3.6.0"]; !ok {
 		t.Error("shop: jquery below public/ missing")
+	}
+}
+
+func TestStripCodeComments(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"<?php // old: https://code.jquery.com/jquery-1.8.3.min.js\n$x = 1;", "<?php \n$x = 1;"},
+		{"<?php // old ?><script src=\"https://code.jquery.com/jquery-3.5.1.min.js\"></script>", "<?php ?><script src=\"https://code.jquery.com/jquery-3.5.1.min.js\"></script>"},
+		{"a /* https://unpkg.com/react@16.0.0/x.js */ b", "a   b"},
+		{"$u = 'https://code.jquery.com/jquery-3.5.1.min.js'; // note", "$u = 'https://code.jquery.com/jquery-3.5.1.min.js'; "},
+		{`$u = "//code.jquery.com/jquery-3.5.1.min.js";`, `$u = "//code.jquery.com/jquery-3.5.1.min.js";`},
+		{`$s = 'it\'s // not a comment';`, `$s = 'it\'s // not a comment';`},
+		{"<p>Don't</p>\n<?php // https://code.jquery.com/jquery-1.8.3.min.js\n", "<p>Don't</p>\n<?php \n"},
+		{"see https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js here", "see https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js here"},
+		{"x /* never closed https://unpkg.com/react@16.0.0/x.js", "x "},
+	}
+	for _, c := range cases {
+		if got := string(stripCodeComments([]byte(c.in))); got != c.want {
+			t.Errorf("%q\n got %q\nwant %q", c.in, got, c.want)
+		}
+	}
+}
+
+// What a site never loads is not reported: addresses in code comments, a
+// library's own examples, docs and tests, and page caches (which would
+// also use up the per-application limits).
+func TestWebAssetsNotLoaded(t *testing.T) {
+	defer func(f, b int) { webFiles, webBytes = f, b }(webFiles, webBytes)
+	webFiles = 50
+	tr := newTree(t)
+	site := "var/www/site"
+	tr.file(site+"/wp-config.php", "<?php")
+	tr.file(site+"/header.php", "<?php // old: https://code.jquery.com/jquery-1.8.3.min.js\n"+
+		"/* wp_enqueue_script('x', 'https://unpkg.com/react@15.0.0/dist/react.min.js'); */\n"+
+		"wp_enqueue_script('jq', 'https://code.jquery.com/jquery-3.5.1.min.js?ver=1#top'); ?>\n"+
+		`<script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.24.0/moment.min.js"></script>`)
+	tr.file(site+"/app.jsx", "// import from https://unpkg.com/vue@2.0.0/dist/vue.js\nconst u = 'https://unpkg.com/vue@2.6.10/dist/vue.js';")
+	tr.file(site+"/wp-content/plugins/tables/datatables/examples/basic.html", `<script src="https://code.jquery.com/jquery-1.11.3.min.js"></script>`)
+	tr.file(site+"/wp-content/plugins/tables/docs/index.html", `<script src="https://code.jquery.com/jquery-1.10.0.min.js"></script>`)
+	tr.file(site+"/wp-content/plugins/tables/tests/jquery.js", "/*! jQuery v1.9.1 | (c) */")
+	tr.file(site+"/wp-content/plugins/tables/js/select2.min.js", "/*! Select2 4.0.13 | https://github.com/select2/select2 */")
+	tr.file(site+"/wp-content/uploads/2020/jquery.min.js", "/*! jQuery v1.6.4 | (c) */")
+	// A page cache far larger than the limits, walked before the plugins.
+	for i := range 200 {
+		tr.file(fmt.Sprintf(site+"/wp-content/cache/supercache/site/page%03d/index.html", i),
+			`<script src="https://code.jquery.com/jquery-1.7.2.min.js"></script>`+strings.Repeat("x", 4096))
+	}
+	// A copy patched by WordPress, outside wp-includes.
+	tr.file(site+"/wp-content/plugins/old/jquery.js", "/*! jQuery v1.12.4-wp | (c) jQuery Foundation */")
+
+	a := (&Scanner{Root: tr.root}).ScanApp(context.Background(), "/"+site)
+	m := purls(a.Observations)
+	want := []string{"pkg:npm/jquery@3.5.1", "pkg:npm/moment@2.24.0", "pkg:npm/vue@2.6.10", "pkg:npm/select2@4.0.13", "pkg:npm/jquery@1.12.4-wp"}
+	if len(m) != len(want) {
+		t.Errorf("found %v, want %v", keys(m), want)
+	}
+	for _, w := range want {
+		if _, ok := m[w]; !ok {
+			t.Errorf("missing %s; have %v", w, keys(m))
+		}
+	}
+	if u := m["pkg:npm/jquery@3.5.1"].Evidence["url"]; u != "https://code.jquery.com/jquery-3.5.1.min.js" {
+		t.Errorf("stored url %q", u)
+	}
+	if o := m["pkg:npm/jquery@1.12.4-wp"]; o.Confidence != model.ConfidenceInferred || o.Evidence["bundled_with"] != "WordPress" {
+		t.Errorf("-wp copy = %+v", o)
+	}
+	for _, c := range a.Coverage {
+		if strings.HasPrefix(c.Scope, "web-assets:") && c.Status != "checked" {
+			t.Errorf("the cache used up the limits: %+v", c)
+		}
 	}
 }

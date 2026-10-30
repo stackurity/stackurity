@@ -11,6 +11,7 @@ package apps
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -59,7 +60,12 @@ type webLib struct {
 	cdn []string
 	// npm5 is the npm package of versions 5 and later, when the library
 	// moved (Font Awesome is @fortawesome/fontawesome-free from 5.0).
-	npm5    string
+	npm5 string
+	// css: the library is a stylesheet (Font Awesome), so a .css file or
+	// address is the library itself. For the others a stylesheet is only
+	// the styling (a jQuery UI theme, Bootstrap's CSS without its scripts)
+	// and says nothing about the code the advisories are about.
+	css     bool
 	banners []banner
 }
 
@@ -126,8 +132,8 @@ var webLibs = []webLib{
 	{npm: "highlight.js", hint: "highlight.js", cdn: []string{"highlight.js"}, banners: bs(lineStart + `[Hh]ighlight\.js v?` + ver)},
 	{npm: "prismjs", hint: "prismjs", cdn: []string{"prism"}, banners: bs(lineStart + `PrismJS ` + ver)},
 	{npm: "summernote", hint: "wysiwyg", cdn: []string{"summernote"}, banners: bs(lineStart + `Super simple (?:WYSIWYG|wysiwyg) editor v` + ver)},
-	{npm: "font-awesome", hint: "font awesome", cdn: []string{"font-awesome"}, npm5: "@fortawesome/fontawesome-free", banners: bs(lineStart + `Font Awesome ` + ver)},
-	{npm: "@fortawesome/fontawesome-free", hint: "font awesome", banners: bs(lineStart + `Font Awesome Free ` + ver)},
+	{npm: "font-awesome", hint: "font awesome", cdn: []string{"font-awesome"}, npm5: "@fortawesome/fontawesome-free", css: true, banners: bs(lineStart + `Font Awesome ` + ver)},
+	{npm: "@fortawesome/fontawesome-free", hint: "font awesome", css: true, banners: bs(lineStart + `Font Awesome Free ` + ver)},
 }
 
 // cdnNames maps a CDN's library name (lower case) to its entry in webLibs.
@@ -136,6 +142,20 @@ var cdnNames = func() map[string]*webLib {
 	for i := range webLibs {
 		for _, n := range webLibs[i].cdn {
 			m[n] = &webLibs[i]
+		}
+	}
+	return m
+}()
+
+// cssLibs are the npm packages whose stylesheet is the library.
+var cssLibs = func() map[string]bool {
+	m := map[string]bool{}
+	for _, l := range webLibs {
+		if l.css {
+			m[l.npm] = true
+			if l.npm5 != "" {
+				m[l.npm5] = true
+			}
 		}
 	}
 	return m
@@ -162,9 +182,19 @@ var (
 )
 
 // parseCDNURL returns the npm package and exact version a CDN address
-// loads. An address without an exact version (@latest, a major only, none)
-// or of an unknown library gives ok false.
+// loads. An address without an exact version (@latest, a major only, none),
+// of an unknown library, or of a stylesheet of a library that is not one
+// (see webLib.css) gives ok false.
 func parseCDNURL(raw string) (name, version string, ok bool) {
+	name, version, ok = parseCDNPath(raw)
+	if ok && !cssLibs[name] && strings.HasSuffix(strings.ToLower(cdnPath(raw)), ".css") {
+		return "", "", false
+	}
+	return name, version, ok
+}
+
+// cdnPath is raw without its scheme, query and fragment.
+func cdnPath(raw string) string {
 	u := raw
 	if i := strings.Index(u, "//"); i >= 0 && i <= len("https:") {
 		u = u[i+2:]
@@ -172,7 +202,11 @@ func parseCDNURL(raw string) (name, version string, ok bool) {
 	if i := strings.IndexAny(u, "?#"); i >= 0 {
 		u = u[:i]
 	}
-	host, p, _ := strings.Cut(u, "/")
+	return u
+}
+
+func parseCDNPath(raw string) (name, version string, ok bool) {
+	host, p, _ := strings.Cut(cdnPath(raw), "/")
 	host = strings.ToLower(host)
 	seg := strings.Split(p, "/")
 	switch host {
@@ -253,13 +287,15 @@ func cdnLib(lib, version string) (string, string, bool) {
 }
 
 // parseBanner returns the libraries whose banner is in head, the first
-// bytes of a file called name.
+// bytes of a file called name. A stylesheet counts only for a library that
+// is one (see webLib.css).
 func parseBanner(name string, head []byte) (out [][2]string) {
 	name = strings.ToLower(name)
+	css := strings.HasSuffix(name, ".css")
 	lower := bytes.ToLower(head)
 	for i := range webLibs {
 		l := &webLibs[i]
-		if !bytes.Contains(lower, []byte(l.hint)) && !strings.Contains(name, l.hint) {
+		if css && !l.css || !bytes.Contains(lower, []byte(l.hint)) && !strings.Contains(name, l.hint) {
 			continue
 		}
 		for _, bn := range l.banners {
@@ -296,35 +332,105 @@ var htmlComment = regexp.MustCompile(`(?s)<!--.*?-->`)
 // templateExts are the files read for CDN addresses (.blade.php is a .php).
 var templateExts = []string{".html", ".htm", ".php", ".phtml", ".twig", ".erb", ".ejs", ".hbs", ".vue", ".jsx", ".tsx"}
 
-// parseTemplate returns the CDN addresses in a template that name a
-// package, each once. Addresses in HTML comments are ignored.
-func parseTemplate(data []byte) (out [][3]string) {
+// codeExts are templates whose // and /* */ comments are removed before
+// addresses are read: PHP and script files, where an old address is
+// commonly left in a comment ("// old: https://code.jquery.com/...").
+var codeExts = []string{".php", ".phtml", ".js", ".jsx", ".tsx"}
+
+// parseTemplate returns the CDN addresses in a template called name that
+// name a package, each once, with the address's query and fragment
+// removed. Addresses in HTML comments, and in code comments of the files
+// in codeExts, are ignored.
+func parseTemplate(name string, data []byte) (out [][3]string) {
 	data = htmlComment.ReplaceAll(data, nil)
+	for _, e := range codeExts {
+		if strings.HasSuffix(strings.ToLower(name), e) {
+			data = stripCodeComments(data)
+			break
+		}
+	}
 	seen := map[string]bool{}
 	for _, m := range cdnAddress.FindAll(data, -1) {
 		u := string(m)
 		if name, version, ok := parseCDNURL(u); ok && !seen[name+"@"+version] {
 			seen[name+"@"+version] = true
+			if i := strings.IndexAny(u, "?#"); i >= 0 {
+				u = u[:i] // a query may carry a key or a cache-buster
+			}
 			out = append(out, [3]string{name, version, u})
 		}
 	}
 	return out
 }
 
-// webAssets collects one application's CDN and copied libraries.
-type webAssets struct {
-	s         *Scanner
-	dir       string // the application's host path
-	files     int
-	bytes     int
-	truncated bool
-	seen      map[string]bool
-	obs       []model.Observation
+// stripCodeComments removes // and /* */ comments from PHP or JavaScript,
+// leaving string literals alone, so an address in quotes survives and one
+// in a comment does not. "//" after ":" is an address (https://), not a
+// comment. A PHP line comment also ends at "?>". Quoted strings end at a
+// line break too, so an apostrophe in HTML text ("don't") cannot hide the
+// rest of the file.
+func stripCodeComments(data []byte) []byte {
+	out := make([]byte, 0, len(data))
+	var quote byte
+	for i := 0; i < len(data); i++ {
+		c := data[i]
+		if quote != 0 {
+			out = append(out, c)
+			switch {
+			case c == '\\' && i+1 < len(data):
+				i++
+				out = append(out, data[i])
+			case c == quote || c == '\n' && quote != '`':
+				quote = 0
+			}
+			continue
+		}
+		switch {
+		case c == '"' || c == '\'' || c == '`':
+			quote = c
+		case c == '/' && i+1 < len(data) && data[i+1] == '/' && (i == 0 || data[i-1] != ':'):
+			for i < len(data) && data[i] != '\n' && !(data[i] == '?' && i+1 < len(data) && data[i+1] == '>') {
+				i++
+			}
+			i-- // keep the line break or "?>"
+			continue
+		case c == '/' && i+1 < len(data) && data[i+1] == '*':
+			end := bytes.Index(data[i+2:], []byte("*/"))
+			if end < 0 {
+				return out
+			}
+			i += end + 3
+			out = append(out, ' ')
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
 }
 
-// skipWebDir: directories whose files are not the application's own web
-// assets (virtualenvs and caches), besides hidden ones.
-var skipWebDir = map[string]bool{"node_modules": true, "venv": true, "__pycache__": true, "site-packages": true, "dist-packages": true}
+// webAssets collects one application's CDN and copied libraries.
+type webAssets struct {
+	s     *Scanner
+	dir   string // the application's host path
+	files int
+	bytes int
+	limit string // the limit that stopped reading, "" when none did
+	seen  map[string]bool
+	obs   []model.Observation
+}
+
+// skipWebDir: directories whose files are not what the application loads,
+// besides hidden ones: other package managers' trees, virtualenvs,
+// generated or uploaded content (a page cache writes one .html per URL,
+// WordPress keeps uploads), and a library's own examples, documentation
+// and tests, which load other versions from a CDN and are never served
+// as part of the site.
+var skipWebDir = map[string]bool{
+	"node_modules": true, "venv": true, "__pycache__": true, "site-packages": true, "dist-packages": true,
+	"cache": true, "tmp": true, "logs": true, "uploads": true,
+	"examples": true, "example": true, "demo": true, "demos": true, "docs": true, "doc": true,
+	"test": true, "tests": true, "spec": true, "samples": true,
+}
 
 // consider reads one file if it is a template or a script or stylesheet.
 // full is its path under the scanner's root.
@@ -354,15 +460,19 @@ func (w *webAssets) consider(full string, d fs.DirEntry) {
 	if w.s.Owned != nil && w.s.Owned(host) {
 		return
 	}
-	if w.files >= webFiles || w.bytes >= webBytes {
-		w.truncated = true
+	switch {
+	case w.files >= webFiles:
+		w.limit = fmt.Sprintf("stopped after %d files of templates and scripts", webFiles)
+		return
+	case w.bytes >= webBytes:
+		w.limit = fmt.Sprintf("stopped after reading %d MiB of templates and scripts", webBytes>>20)
 		return
 	}
 	limit := int64(bannerSize)
 	if isTemplate {
 		limit = maxTemplateSize
 	}
-	f, err := os.Open(full)
+	f, err := openRegular(full)
 	if err != nil {
 		return
 	}
@@ -370,28 +480,45 @@ func (w *webAssets) consider(full string, d fs.DirEntry) {
 	f.Close()
 	w.files++
 	w.bytes += len(data)
+	// WordPress core keeps its own copies of jQuery, TinyMCE and others in
+	// wp-includes, some patched in place ("1.12.4-wp"), and updates them
+	// with WordPress: the version alone does not say what the copy fixes.
+	wpCore := false
+	for _, part := range strings.Split(rel, "/") {
+		wpCore = wpCore || part == "wp-includes"
+	}
 	if isTemplate {
-		for _, m := range parseTemplate(data) {
-			w.add(m[0], m[1], host, map[string]string{"source": "cdn", "url": clip(m[2])})
+		for _, m := range parseTemplate(name, data) {
+			w.add(m[0], m[1], host, false, map[string]string{"source": "cdn", "url": clip(m[2])})
 		}
 		return
 	}
 	for _, m := range parseBanner(name, data) {
-		w.add(m[0], m[1], host, map[string]string{"source": "vendored"})
+		ev := map[string]string{"source": "vendored"}
+		bundled := wpCore || strings.HasSuffix(m[1], "-wp")
+		if bundled {
+			ev["bundled_with"] = "WordPress"
+		}
+		w.add(m[0], m[1], host, bundled, ev)
 	}
 }
 
-// add keeps the first place each package and version was seen.
-func (w *webAssets) add(name, version, location string, ev map[string]string) {
+// add keeps the first place each package and version was seen. The
+// address or banner names the exact release, as package.json does for a
+// package in node_modules, so the version is confirmed; a copy WordPress
+// core maintains (bundled) needs validation.
+func (w *webAssets) add(name, version, location string, bundled bool, ev map[string]string) {
 	purl := npmPurl(name, version)
 	if w.seen[purl] {
 		return
 	}
 	w.seen[purl] = true
-	// The address or banner names the exact release, as package.json does
-	// for a package in node_modules.
+	conf := model.ConfidenceConfirmed
+	if bundled {
+		conf = model.ConfidenceInferred
+	}
 	w.obs = append(w.obs, model.Observation{Purl: purl, Version: version, Location: clip(location), Direct: boolp(true),
-		Scope: "runtime", Confidence: model.ConfidenceConfirmed, Evidence: ev})
+		Scope: "runtime", Confidence: conf, Evidence: ev})
 }
 
 // walk reads the web assets below one directory (host path) that the main

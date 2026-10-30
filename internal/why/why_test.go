@@ -54,6 +54,15 @@ func TestSentenceForWebAssets(t *testing.T) {
 	if e := Build(in, now); e.Installed.From != "the version banner of /var/www/site/js/jquery.min.js" {
 		t.Errorf("vendored: %s", e.Installed.From)
 	}
+	// A copy WordPress core maintains needs validation, and says why.
+	in.Finding.Verification, in.Finding.ComponentName, in.Finding.Version = "needs_validation", "tinymce", "4.9.11"
+	in.Inventory.Confidence, in.Inventory.Location = "inferred", "/var/www/site/wp-includes/js/tinymce/tinymce.min.js"
+	in.Inventory.Evidence = map[string]string{"source": "vendored", "bundled_with": "WordPress"}
+	e := Build(in, now)
+	if !strings.HasSuffix(e.Installed.From, ", a copy WordPress maintains") || len(e.Missing) != 1 ||
+		!strings.Contains(e.Missing[0], "WordPress maintains the copy of tinymce 4.9.11") {
+		t.Errorf("bundled: %s; missing %v", e.Installed.From, e.Missing)
+	}
 }
 
 func TestRulesAndTypes(t *testing.T) {

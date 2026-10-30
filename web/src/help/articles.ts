@@ -217,7 +217,7 @@ export const ARTICLES: Article[] = [
         steps: [
           "Open [Assets](/assets) and click **Add server** (admins only).",
           "Optionally enter a **Label** (e.g. `web servers`) and an **Environment** (e.g. `production`; production counts towards priority).",
-          "**Also check websites and apps on this server** is ticked by default: the agent looks in /srv, /var/www, /opt, /app and home directories for sites and apps (including WordPress sites), and lists the libraries they use: what npm, pip and Composer installed, and front-end libraries such as jQuery or Bootstrap that a site loads from a CDN or keeps a copy of. It only reads. Under **Application directories**, add apps that live somewhere else, one per line, e.g. `/data/shop`.",
+          "**Also check websites and apps on this server** is ticked by default: the agent looks in /srv, /var/www, /opt, /app and home directories for sites and apps (including WordPress sites), and lists the libraries they use: what npm, pip and Composer installed, and front-end libraries such as jQuery or Bootstrap that a site loads from a CDN or keeps a copy of (copies WordPress itself maintains are marked as needing validation). It only reads. Under **Application directories**, add apps that live somewhere else, one per line, e.g. `/data/shop`.",
           "Under **Options**, set how many servers the code can enroll (default 1) and how long it is valid (default 24 hours).",
           "Click **Create install command** and copy it. The code in it is shown only once.",
           "Run it on the new server as a user with sudo.",
@@ -923,7 +923,7 @@ stackurity.exe agent --interval 6h`,
       {
         table: [
           ["State", "What it means", "What resolves it"],
-          ["Confirmed", "The installed version was read from an authoritative source (package database, lockfile, or a front-end library's exact CDN address or version banner) and is in the advisory's affected range, or its release line has ended.", "Nothing: act on it."],
+          ["Confirmed", "The installed version was read from an authoritative source (package database, lockfile, or a front-end library's exact CDN address or script banner) and is in the advisory's affected range, or its release line has ended.", "Nothing: act on it."],
           ["Needs validation", "The match cannot be relied on yet because the version was inferred or has low confidence. It scores lower and is never SOS. An issue the second check disagreed with also says **Needs validation: the second check disagreed**, but keeps its priority, SOS and alerts.", "The **Missing information** box says exactly what: a confirmed version, or a person comparing the version with the advisory."],
           ["Stale", "The asset has stopped reporting. This was true when it was last seen.", "A fresh report: **Check again**, or get the agent reporting."],
           ["Rejected", "A person marked it a false positive with an ignore rule. Stackurity keeps it rejected while the match stays the same.", "Reopen it, or end the ignore rule."],

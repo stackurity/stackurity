@@ -352,10 +352,10 @@ func (s *Scanner) ScanApp(ctx context.Context, dir string) App {
 	// Libraries loaded from a CDN or copied into the application, unless a
 	// manifest already reported the same package and version.
 	add(unlisted(web.obs, app.Observations))
-	if web.files > 0 || web.truncated {
+	if web.files > 0 || web.limit != "" {
 		c := model.CoverageItem{Scope: clipScope(webAssetsScopeID + dir), Status: "checked"}
-		if web.truncated {
-			c.Status, c.Reason = "partial", fmt.Sprintf("stopped after %d files or %d MiB of templates and scripts", webFiles, webBytes>>20)
+		if web.limit != "" {
+			c.Status, c.Reason = "partial", web.limit
 		}
 		app.Coverage = append(app.Coverage, c)
 	}
