@@ -664,10 +664,10 @@ function InventoryTab({ assetId }: { assetId: number }) {
               )}
             </>
           )}
-          {(r.evidence?.source === "installed" || r.evidence?.source === "lockfile") && (
+          {r.evidence?.source && ["installed", "lockfile", "cdn", "vendored"].includes(r.evidence.source) && (
             <>
               {" "}
-              <AppSourceBadge source={r.evidence.source} />
+              <AppSourceBadge source={r.evidence.source} url={r.evidence.url} />
             </>
           )}
           {r.evidence?.global === "true" && (

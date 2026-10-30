@@ -1,9 +1,11 @@
 // Package apps inventories applications deployed on a host: the libraries an
 // application actually has installed (node_modules, Python site-packages,
 // Composer's vendor directory) and, where nothing is installed, its
-// lockfiles. Repositories describe what a project declares; a deployed
-// directory shows what runs, which can differ (an old release, a manual
-// install, a package added on the server).
+// lockfiles. Front-end libraries a site loads from a CDN or keeps a copy of
+// are read from its templates and file banners (webassets.go).
+// Repositories describe what a project declares; a deployed directory shows
+// what runs, which can differ (an old release, a manual install, a package
+// added on the server).
 //
 // Everything is read as data. No package manager, script or application
 // code is run, and symbolic links are only followed for a release layout's
@@ -83,9 +85,14 @@ type App struct {
 
 func (s *Scanner) path(hostPath string) string { return filepath.Join(s.Root, hostPath) }
 
-// markers identify a project directory during discovery.
+// markers identify a project directory during discovery. A WordPress site
+// usually has no manifest: its wp-config.php (which may sit one level above
+// the install) or wp-includes/version.php marks it. Its plugins and themes
+// under wp-content are part of the site, never applications of their own:
+// discovery does not look below a directory it has found.
 var markers = []string{"package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "composer.json", "composer.lock",
-	"requirements.txt", "pyproject.toml", "poetry.lock", "Pipfile.lock", "Gemfile.lock", "go.mod", "Cargo.lock", "pubspec.lock"}
+	"requirements.txt", "pyproject.toml", "poetry.lock", "Pipfile.lock", "Gemfile.lock", "go.mod", "Cargo.lock", "pubspec.lock",
+	"wp-config.php", "wp-includes/version.php"}
 
 // DiscoverBases are searched by Discover. Home directories are included
 // because many servers deploy under a service user's home.
@@ -262,6 +269,7 @@ func (s *Scanner) ScanApp(ctx context.Context, dir string) App {
 			app.Observations = append(app.Observations, o)
 		}
 	}
+	web := &webAssets{s: s, dir: dir, seen: map[string]bool{}}
 	err = filepath.WalkDir(s.path(dir), func(full string, d fs.DirEntry, err error) error {
 		if cerr := ctx.Err(); cerr != nil {
 			return cerr // the collection's time limit stops the walk
@@ -270,6 +278,7 @@ func (s *Scanner) ScanApp(ctx context.Context, dir string) App {
 			return nil
 		}
 		if !d.IsDir() {
+			web.consider(full, d)
 			return nil
 		}
 		host := s.hostPath(full)
@@ -304,6 +313,8 @@ func (s *Scanner) ScanApp(ctx context.Context, dir string) App {
 				if len(obs) > 0 {
 					note(project, "composer")
 				}
+			} else if !composerVendor(full) {
+				web.walk(ctx, host) // a site's own copies (assets/vendor/jquery/...)
 			}
 			return fs.SkipDir
 		case name == ".git" || name == "releases" && host != dir:
@@ -338,6 +349,16 @@ func (s *Scanner) ScanApp(ctx context.Context, dir string) App {
 		kept = append(kept, o)
 	}
 	add(kept)
+	// Libraries loaded from a CDN or copied into the application, unless a
+	// manifest already reported the same package and version.
+	add(unlisted(web.obs, app.Observations))
+	if web.files > 0 || web.limit != "" {
+		c := model.CoverageItem{Scope: clipScope(webAssetsScopeID + dir), Status: "checked"}
+		if web.limit != "" {
+			c.Status, c.Reason = "partial", web.limit
+		}
+		app.Coverage = append(app.Coverage, c)
+	}
 	for _, c := range lcov {
 		if i := strings.Index(c.Scope, ":"); i > 0 {
 			c.Scope = c.Scope[:i+1] + path.Join(dir, c.Scope[i+1:])

@@ -311,7 +311,11 @@ func Build(in Input, now time.Time) Explanation {
 		}
 	case "needs_validation":
 		e.StateText = "Needs validation: the match cannot be relied on until the missing information below is resolved."
-		if inv.Confidence != "" && inv.Confidence != "confirmed" {
+		if by := inv.Evidence["bundled_with"]; by != "" && inv.Confidence != "confirmed" {
+			e.Missing = append(e.Missing, fmt.Sprintf("Whether %s's own copy is affected. %s maintains the copy of %s %s it bundles "+
+				"and updates it with its own releases, sometimes patching it without changing its version: check %s's security releases, "+
+				"and update %s rather than the library.", by, by, orUnknown(f.ComponentName), orUnknown(f.Version), by, by))
+		} else if inv.Confidence != "" && inv.Confidence != "confirmed" {
 			how := ""
 			if d := inv.Evidence["detected_by"]; d != "" {
 				how = " (detected by " + d + ")"
@@ -433,6 +437,19 @@ func versionSource(inv store.InventoryProvenance) string {
 	for _, k := range []string{"lockfile", "lock_path"} {
 		if v := inv.Evidence[k]; v != "" {
 			return v
+		}
+	}
+	// Front-end libraries a site loads from a CDN or keeps a copy of.
+	switch inv.Evidence["source"] {
+	case "cdn":
+		if u := inv.Evidence["url"]; u != "" {
+			return fmt.Sprintf("the CDN address %s in %s", u, orUnknown(inv.Location))
+		}
+	case "vendored":
+		if inv.Location != "" && inv.Evidence["bundled_with"] != "" {
+			return "the version banner of " + inv.Location + ", a copy " + inv.Evidence["bundled_with"] + " maintains"
+		} else if inv.Location != "" {
+			return "the version banner of " + inv.Location
 		}
 	}
 	if inv.Location != "" {

@@ -291,7 +291,7 @@ export function UnmanagedBadge({ title }: { title?: string }) {
 // --- Stage 7: applications discovered on hosts
 
 /** Where an application's library was read from: its installed files or only a lockfile. */
-export function AppSourceBadge({ source }: { source: string | undefined }) {
+export function AppSourceBadge({ source, url }: { source: string | undefined; url?: string }) {
   if (source === "installed")
     return <Badge status="installed" tone="muted" label="installed" title="Read from the application's installed files" />;
   if (source === "lockfile")
@@ -303,6 +303,17 @@ export function AppSourceBadge({ source }: { source: string | undefined }) {
         title="Read from a lockfile only; the installed files were not found, so the deployed version may differ"
       />
     );
+  if (source === "cdn")
+    return (
+      <Badge
+        status="cdn"
+        tone="muted"
+        label="from CDN"
+        title={`Loaded from a CDN address in the application's templates${url ? `: ${url}` : ""}`}
+      />
+    );
+  if (source === "vendored")
+    return <Badge status="vendored" tone="muted" label="copied file" title="Read from the version banner of a library file kept in the application" />;
   return null;
 }
 

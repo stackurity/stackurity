@@ -36,7 +36,7 @@ type Confidence string
 
 const (
 	ConfidenceConfirmed Confidence = "confirmed" // read from an authoritative local source (package DB, lockfile)
-	ConfidenceInferred  Confidence = "inferred"  // derived (manifest range, filename, banner)
+	ConfidenceInferred  Confidence = "inferred"  // derived (manifest range, filename, binary banner)
 	ConfidenceLow       Confidence = "low"
 	ConfidenceUnknown   Confidence = "unknown" // version missing
 )

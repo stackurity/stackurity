@@ -42,6 +42,29 @@ func TestSentenceForAPackageAdvisory(t *testing.T) {
 	}
 }
 
+// A library a site loads from a CDN or keeps a copy of says where.
+func TestSentenceForWebAssets(t *testing.T) {
+	in := vuln(npmEvidence())
+	in.Inventory = store.InventoryProvenance{CollectorID: "linux-agent", Location: "/var/www/site/header.php", Confidence: "confirmed",
+		Evidence: map[string]string{"source": "cdn", "url": "https://code.jquery.com/jquery-1.12.4.min.js"}, LastSeen: at(time.Hour)}
+	if e := Build(in, now); e.Installed.From != "the CDN address https://code.jquery.com/jquery-1.12.4.min.js in /var/www/site/header.php" {
+		t.Errorf("cdn: %s", e.Installed.From)
+	}
+	in.Inventory.Location, in.Inventory.Evidence = "/var/www/site/js/jquery.min.js", map[string]string{"source": "vendored"}
+	if e := Build(in, now); e.Installed.From != "the version banner of /var/www/site/js/jquery.min.js" {
+		t.Errorf("vendored: %s", e.Installed.From)
+	}
+	// A copy WordPress core maintains needs validation, and says why.
+	in.Finding.Verification, in.Finding.ComponentName, in.Finding.Version = "needs_validation", "tinymce", "4.9.11"
+	in.Inventory.Confidence, in.Inventory.Location = "inferred", "/var/www/site/wp-includes/js/tinymce/tinymce.min.js"
+	in.Inventory.Evidence = map[string]string{"source": "vendored", "bundled_with": "WordPress"}
+	e := Build(in, now)
+	if !strings.HasSuffix(e.Installed.From, ", a copy WordPress maintains") || len(e.Missing) != 1 ||
+		!strings.Contains(e.Missing[0], "WordPress maintains the copy of tinymce 4.9.11") {
+		t.Errorf("bundled: %s; missing %v", e.Installed.From, e.Missing)
+	}
+}
+
 func TestRulesAndTypes(t *testing.T) {
 	ev := npmEvidence()
 	ev["match"] = map[string]any{"rule": "last_affected", "record": "GHSA-xxxx"}
