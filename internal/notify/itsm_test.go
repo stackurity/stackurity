@@ -126,6 +126,18 @@ func (f *fakePagerDuty) actions(key string) []string {
 	return out
 }
 
+// index is the position of the first event of action on key, or -1.
+func (f *fakePagerDuty) index(key, action string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i, e := range f.events {
+		if e.DedupKey == key && e.EventAction == action {
+			return i
+		}
+	}
+	return -1
+}
+
 func (f *fakePagerDuty) state(key string) string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -556,9 +568,9 @@ func TestPagerDutyRetriesAndDedup(t *testing.T) {
 	}
 	f.allSent(ctx, ch.ID)
 
-	// The priority rises: paged again with a new alert under the next key
-	// (the old one resolved). The reply to the new trigger is lost: the
-	// retry resolves the same alert and triggers the same key, so one page.
+	// The priority rises: paged again with a new alert under the next key,
+	// then the old one resolved. The reply to the new trigger is lost: the
+	// retry triggers the same key and resolves the same alert, so one page.
 	fp.mu.Lock()
 	fp.failOn = "trigger"
 	fp.mu.Unlock()
@@ -572,13 +584,18 @@ func TestPagerDutyRetriesAndDedup(t *testing.T) {
 	f.tick()
 	f.tick()
 	key2 := key + "-2"
-	if got := fp.actions(key); strings.Join(got, ",") != "trigger,trigger,resolve,resolve" || fp.state(key) != "resolved" {
+	if got := fp.actions(key); strings.Join(got, ",") != "trigger,trigger,resolve" || fp.state(key) != "resolved" {
 		t.Fatalf("old alert after the priority rose: %v %s", got, fp.state(key))
+	}
+	// The new alert is triggered before the old one is resolved, so a
+	// trigger that keeps failing leaves the old alert open.
+	if first, last := fp.index(key2, "trigger"), fp.index(key, "resolve"); first < 0 || last < 0 || first > last {
+		t.Errorf("order: trigger %s at %d, resolve %s at %d", key2, first, key, last)
 	}
 	if got := fp.actions(key2); strings.Join(got, ",") != "trigger,trigger" || fp.opened != 2 || fp.state(key2) != "triggered" {
 		t.Fatalf("new alert: %v, pages %d", got, fp.opened)
 	}
-	if sev := fp.events[len(fp.events)-1].Payload.Severity; sev != "critical" && sev != "error" {
+	if sev := fp.events[fp.index(key2, "trigger")].Payload.Severity; sev != "critical" && sev != "error" {
 		t.Errorf("new alert severity = %s", sev)
 	}
 	if inc := f.onlyIncident(ctx); inc.Issues[0].Key != key2 {
@@ -599,6 +616,58 @@ func TestPagerDutyRetriesAndDedup(t *testing.T) {
 	var pe *PermanentError
 	if err := f.d.SendTest(ctx, bad); !errors.As(err, &pe) {
 		t.Errorf("wrong routing key is not permanent: %v", err)
+	}
+}
+
+// A trigger that keeps failing leaves the old alert open; an escalation
+// retried after it paged under a new key does not page a third time.
+func TestPagerDutyEscalationPagesOnce(t *testing.T) {
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	f := setup(t)
+	fp, srv := newFakePagerDuty(t)
+	f.d.Sender.PagerDutyURL = srv.URL + "/v2/enqueue"
+	ch := f.addTracker(ctx, KindPagerDuty, ChannelConfig{}, fp.key)
+	f.addAsset("web-1", "production", true)
+	f.setFindings("web-1")
+	f.tick()
+	inc := f.onlyIncident(ctx)
+	key := IncidentLabel(tenant.DefaultWorkspace, inc.ID)
+	esc := store.Delivery{ID: 987654, Event: "escalated", IncidentID: &inc.ID}
+
+	// The new alert's trigger is refused: the old alert stays open.
+	fp.mu.Lock()
+	fp.limit = 1
+	fp.mu.Unlock()
+	if err := f.d.syncTracker(ctx, ch, esc, 1, Message{}); err == nil {
+		t.Fatal("escalation with a refused trigger succeeded")
+	}
+	if fp.state(key) != "triggered" || len(fp.actions(key+"-2")) != 0 {
+		t.Fatalf("old alert %s, new %v", fp.state(key), fp.actions(key+"-2"))
+	}
+	// Retried: pages under -2 and resolves the old alert.
+	if err := f.d.syncTracker(ctx, ch, esc, 2, Message{}); err != nil {
+		t.Fatal(err)
+	}
+	if fp.state(key) != "resolved" || fp.state(key+"-2") != "triggered" || fp.opened != 2 {
+		t.Fatalf("after escalation: %s %s, pages %d", fp.state(key), fp.state(key+"-2"), fp.opened)
+	}
+	// The same delivery again (its result was not recorded): no new page.
+	if err := f.d.syncTracker(ctx, ch, esc, 3, Message{}); err != nil {
+		t.Fatal(err)
+	}
+	if fp.opened != 2 || len(fp.actions(key+"-3")) != 0 || fp.state(key+"-2") != "triggered" {
+		t.Fatalf("retried escalation paged again: pages %d, -3 %v", fp.opened, fp.actions(key+"-3"))
+	}
+	// A later escalation (another delivery) pages again.
+	esc.ID++
+	if err := f.d.syncTracker(ctx, ch, esc, 1, Message{}); err != nil {
+		t.Fatal(err)
+	}
+	if fp.opened != 3 || fp.state(key+"-3") != "triggered" || fp.state(key+"-2") != "resolved" {
+		t.Fatalf("next escalation: pages %d", fp.opened)
+	}
+	if inc := f.onlyIncident(ctx); inc.Issues[0].Key != key+"-3" {
+		t.Errorf("incident issues = %+v", inc.Issues)
 	}
 }
 

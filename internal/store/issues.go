@@ -48,10 +48,13 @@ type IssueLink struct {
 	// RemoteState is the state read back from the tracker when the record
 	// was closed there; empty while it is open there.
 	RemoteState string
+	// PagedDelivery is the delivery that last paged again under a new key
+	// (PagerDuty).
+	PagedDelivery *int64
 }
 
 const issueLinkCols = `id, incident_id, channel_id, issue_key, issue_url, synced_priority, synced_findings, synced_assets, resolved_synced,
-	synced_acked, remote_id, remote_state`
+	synced_acked, remote_id, remote_state, paged_delivery`
 
 // ErrIssueBeingCreated means another attempt (on this or another replica)
 // holds the claim to create the incident's issue in this channel.
@@ -167,18 +170,20 @@ type TrackerRecord struct {
 	Priority              string
 	Findings, Assets      int
 	Acked                 bool
+	// PagedDelivery is the delivery that paged again under this key.
+	PagedDelivery *int64
 }
 
 // RecordTrackerIssue is RecordIssue for any tracker.
 func (s *Store) RecordTrackerIssue(ctx context.Context, r TrackerRecord) error {
 	tag, err := s.Pool.Exec(ctx, `INSERT INTO incident_issues (channel_id, incident_id, tracker, issue_key, issue_url, remote_id,
-		  synced_priority, synced_findings, synced_assets, synced_acked)
-		SELECT c.id, i.id, $3, $4, $5, $6, $7, $8, $9, $10 FROM channels c, incidents i WHERE c.id = $1 AND i.id = $2
+		  synced_priority, synced_findings, synced_assets, synced_acked, paged_delivery)
+		SELECT c.id, i.id, $3, $4, $5, $6, $7, $8, $9, $10, $11 FROM channels c, incidents i WHERE c.id = $1 AND i.id = $2
 		ON CONFLICT (channel_id, incident_id) DO UPDATE SET tracker = EXCLUDED.tracker, issue_key = EXCLUDED.issue_key,
 		  issue_url = EXCLUDED.issue_url, remote_id = EXCLUDED.remote_id, synced_priority = EXCLUDED.synced_priority,
 		  synced_findings = EXCLUDED.synced_findings, synced_assets = EXCLUDED.synced_assets,
-		  synced_acked = EXCLUDED.synced_acked, creating_until = NULL, updated_at = now()`,
-		r.ChannelID, r.IncidentID, r.Tracker, r.Key, r.URL, r.RemoteID, r.Priority, r.Findings, r.Assets, r.Acked)
+		  synced_acked = EXCLUDED.synced_acked, paged_delivery = EXCLUDED.paged_delivery, creating_until = NULL, updated_at = now()`,
+		r.ChannelID, r.IncidentID, r.Tracker, r.Key, r.URL, r.RemoteID, r.Priority, r.Findings, r.Assets, r.Acked, r.PagedDelivery)
 	if err == nil && tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}

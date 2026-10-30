@@ -151,9 +151,9 @@ func (d *Dispatcher) syncPagerDuty(ctx context.Context, cfg ChannelConfig, secre
 		}
 		return d.Sender.pagerDuty(ctx, cfg, pagerDutyEvent{RoutingKey: secret, EventAction: action, DedupKey: key})
 	}
-	record := func(key string) error {
+	record := func(key string, paged *int64) error {
 		return d.Store.RecordTrackerIssue(bg, store.TrackerRecord{ChannelID: ch.ID, IncidentID: in.ID, Tracker: KindPagerDuty, Key: key,
-			Priority: in.Priority, Findings: in.FindingCount, Assets: in.AssetCount, Acked: acked(in)})
+			Priority: in.Priority, Findings: in.FindingCount, Assets: in.AssetCount, Acked: acked(in), PagedDelivery: paged})
 	}
 	if link == nil {
 		if in.Status != "open" {
@@ -169,7 +169,7 @@ func (d *Dispatcher) syncPagerDuty(ctx context.Context, cfg ChannelConfig, secre
 				return err
 			}
 		}
-		return record(base)
+		return record(base, nil)
 	}
 	if in.Status != "open" {
 		if link.ResolvedSynced {
@@ -184,22 +184,28 @@ func (d *Dispatcher) syncPagerDuty(ctx context.Context, cfg ChannelConfig, secre
 	// new findings arrived after it was acknowledged. A trigger with the
 	// open alert's dedup key would only be added to that alert's log (an
 	// acknowledged alert stays acknowledged, and its severity does not
-	// change), so the alert is resolved and a new one triggered under the
-	// next key (…-2, …-3). Both steps are idempotent: a retry before the new
-	// key is recorded resolves the same alert and triggers the same key.
+	// change), so a new alert is triggered under the next key (…-2, …-3)
+	// and then the old one resolved: if the trigger keeps failing, the old
+	// alert stays open (briefly two is better than none). Both steps are
+	// idempotent, and the new key is recorded only after both: a retry
+	// before that triggers the same key and resolves the same alert. The
+	// delivery that paged is recorded too, so its own retry after that
+	// (an escalation still says "escalated") does not page a third time.
 	// Findings that join or leave otherwise change nothing in PagerDuty.
 	raised := link.SyncedPriority != "" && in.Priority < link.SyncedPriority
-	if raised || del.Event == "escalated" || (link.SyncedAcked && !acked(in)) {
+	repaged := link.PagedDelivery != nil && del.ID != 0 && *link.PagedDelivery == del.ID
+	if !repaged && (raised || del.Event == "escalated" || (link.SyncedAcked && !acked(in))) {
 		next := nextPagerDutyKey(base, link.IssueKey)
-		if err := send("resolve", link.IssueKey); err != nil {
+		if err := send("trigger", next); err != nil {
 			return err
 		}
-		if err := send("trigger", next); err != nil {
+		if err := send("resolve", link.IssueKey); err != nil {
 			return err
 		}
 		// The new alert stays triggered until someone acknowledges it in
 		// PagerDuty, even when the incident is acknowledged here.
-		return record(next)
+		id := del.ID
+		return record(next, &id)
 	}
 	if acked(in) && !link.SyncedAcked {
 		if err := send("acknowledge", link.IssueKey); err != nil {

@@ -19,8 +19,12 @@ ALTER TABLE channels ADD CONSTRAINT channels_kind_check
 -- remote_state: the record's state read back from the tracker when it was
 -- closed there (resolved, closed, canceled); empty while it is open there
 -- or not read back. remote_checked_at: when it was last read.
+-- paged_delivery: the delivery that last paged again under a new PagerDuty
+-- dedup key, so a retry of that delivery does not page a third time (no
+-- foreign key: deliveries are purged).
 ALTER TABLE incident_issues
     ADD COLUMN synced_acked      boolean NOT NULL DEFAULT false,
     ADD COLUMN remote_id         text NOT NULL DEFAULT '',
     ADD COLUMN remote_state      text NOT NULL DEFAULT '',
-    ADD COLUMN remote_checked_at timestamptz;
+    ADD COLUMN remote_checked_at timestamptz,
+    ADD COLUMN paged_delivery    bigint;
