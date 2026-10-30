@@ -1961,7 +1961,7 @@ export interface Incident {
   notified_priority: string;
   notified_at: string | null;
   escalation_level: number;
-  /** Tracker issues (Jira) that follow this incident. */
+  /** Tracker records (Jira issues, PagerDuty alerts, ServiceNow incidents) that follow this incident. */
   issues?: IssueRef[] | null;
 }
 
@@ -1970,6 +1970,8 @@ export interface IssueRef {
   key: string;
   url: string;
   channel_id: number | null;
+  /** Read back from ServiceNow (sync_back): resolved, closed or canceled there; empty while open. */
+  state?: string;
 }
 
 export interface Delivery {
@@ -1998,7 +2000,7 @@ export interface IncidentResponse {
   deliveries?: Delivery[] | null;
 }
 
-export const CHANNEL_KINDS = ["email", "slack", "teams", "webhook", "jira", "stackurity_email"] as const;
+export const CHANNEL_KINDS = ["email", "slack", "teams", "webhook", "jira", "pagerduty", "servicenow", "stackurity_email"] as const;
 export type ChannelKind = (typeof CHANNEL_KINDS)[number];
 
 export interface ChannelConfig {
@@ -2016,6 +2018,24 @@ export interface ChannelConfig {
   labels?: string[];
   priorities?: Partial<Record<Priority, string>>;
   resolve_transition?: string;
+  // pagerduty: service region and severity per priority; the routing key is the secret.
+  region?: "us" | "eu" | "";
+  severities?: Partial<Record<Priority, "critical" | "error" | "warning" | "info">>;
+  // servicenow: url is the instance; basic (username + password secret) or
+  // oauth (client_id + client secret).
+  auth?: "basic" | "oauth" | "";
+  client_id?: string;
+  table?: string;
+  assignment_group?: string;
+  category?: string;
+  subcategory?: string;
+  urgency?: Partial<Record<Priority, string>>;
+  impact?: Partial<Record<Priority, string>>;
+  fields?: Record<string, string>;
+  resolve_state?: string;
+  close_code?: string;
+  sync_back?: boolean;
+  closed_states?: string[];
   // slack: the Slack app's signing secret (a reference). When set, Assign
   // to me and Snooze act from inside Slack.
   signing_secret_ref?: string;

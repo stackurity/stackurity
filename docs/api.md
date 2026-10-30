@@ -1002,7 +1002,7 @@ Notification channels.
 
 **Who:** admin
 
-Creates a channel: email, email sent by Stackurity (`stackurity_email`, hosted only), Slack, Teams, webhook or Jira. Slack channels made with Add to Slack come from `POST /integrations/slack/oauth` instead.
+Creates a channel: email, email sent by Stackurity (`stackurity_email`, hosted only), Slack, Teams, webhook, Jira, PagerDuty (`pagerduty`) or ServiceNow (`servicenow`); configuration fields are listed in [install.md](install.md#notifications). Slack channels made with Add to Slack come from `POST /integrations/slack/oauth` instead.
 
 ### `PATCH /channels/{id}`
 
@@ -1020,7 +1020,7 @@ Deletes a channel and takes it out of every route's `event_channels`. Deleting t
 
 **Who:** admin
 
-Sends a test message; for Jira, checks access without creating an issue.
+Sends a test message; for Jira and ServiceNow, checks access without creating anything; for PagerDuty, triggers an `info` test alert and resolves it at once.
 
 ### `GET /routes`
 
@@ -1955,7 +1955,7 @@ The `event` of each message:
 - `connected` (the `connected` event): when a new asset's first complete collection has been evaluated (or six hours after it appeared, if no complete collection arrives): "commmerceblog connected: 1,676 packages checked, 412 issues found, 3 fixes need you". See [A quiet first scan](#a-quiet-first-scan).
 - `test`: **Send test**.
 
-Resolved incidents are not announced; summaries count fixed issues. Quiet hours delay everything except SOS. When `max_per_hour` is reached, further messages are held (`held_by` `hourly_limit`) and counted in the route's next summary, never sent one by one; a route without a summary gets them in one `digest` message an hour instead ("Stackurity: 4 urgent messages held by the hourly limit", one line per held message). Email sent by Stackurity (`stackurity_email`) also counts against the organisation's email limits per minute, hour and day (in emails, one per recipient): over them, a message is held the same way (`held_by` `email_quota`, "email limit per hour reached; included in the next summary"), and a summary or digest waits until the limit frees. Held messages are never dropped. Failed deliveries are retried with backoff up to 8 times, no sooner than a receiver's `Retry-After`. A delivery that cannot succeed until the configuration changes (Jira rejecting the credentials, an unknown project) fails at once.
+Resolved incidents are not announced; summaries count fixed issues. Quiet hours delay everything except SOS. When `max_per_hour` is reached, further messages are held (`held_by` `hourly_limit`) and counted in the route's next summary, never sent one by one; a route without a summary gets them in one `digest` message an hour instead ("Stackurity: 4 urgent messages held by the hourly limit", one line per held message). Email sent by Stackurity (`stackurity_email`) also counts against the organisation's email limits per minute, hour and day (in emails, one per recipient): over them, a message is held the same way (`held_by` `email_quota`, "email limit per hour reached; included in the next summary"), and a summary or digest waits until the limit frees. Held messages are never dropped. Failed deliveries are retried with backoff up to 8 times, no sooner than a receiver's `Retry-After`. A delivery that cannot succeed until the configuration changes (Jira, PagerDuty or ServiceNow rejecting the credentials, an unknown project, a ServiceNow access control rule) fails at once.
 
 Jira channels (`"kind": "jira"`) keep one issue per incident instead, whatever the route's `mode`: the first matching event (`opened`, `priority_raised`) creates the issue, later changes are queued as `updated` deliveries (findings joined or left, priority changed), `escalated` for routes marked `escalation` (one comment per issue) and `resolved`. Quiet hours, limits and summaries do not apply to them. Incidents in lists and in `GET /incidents/{id}` carry the issues that follow them:
 
@@ -1977,6 +1977,28 @@ A route to Jira may be limited to one project (`project_ids` with one id; more t
  "config": {"url": "https://acme.atlassian.net", "deployment": "cloud", "username": "bot@acme.io", "project": "SEC",
             "issue_type": "Task", "labels": ["security"], "priorities": {"P1": "Highest", "P2": "High"},
             "resolve_transition": "Done"}}
+```
+
+PagerDuty (`"kind": "pagerduty"`) and ServiceNow (`"kind": "servicenow"`) channels keep one record per incident in the same way, with the same deliveries (`opened`, `priority_raised`, `updated`, `escalated`, `resolved`); an `updated` delivery is also queued when the incident is acknowledged (none of its findings is new) or no longer is. A PagerDuty alert is triggered, acknowledged and resolved; when the priority rises, the incident escalates or new findings arrive after acknowledgement, a new alert is triggered (a page) under the next dedup key and the old one then resolved. The first key is `stackurity-incident-<workspace>-<incident>`, then `-2`, `-3`; the current one is the `key` in `issues` (with an empty `url`). A ServiceNow record is created with `correlation_id` set to that label, updated with work notes (and `urgency` and `impact` when the priority changes), and resolved; its `key` is the record's number and `url` its page. Routes to them cannot name `project_ids` (400). With `sync_back`, a ServiceNow record closed there carries its state:
+
+```json
+"issues": [{"tracker": "servicenow", "key": "INC0010042", "url": "https://acme.service-now.com/incident.do?sys_id=...", "channel_id": 9, "state": "resolved"},
+           {"tracker": "pagerduty", "key": "stackurity-incident-1-812", "url": "", "channel_id": 10}]
+```
+
+`state` is `resolved`, `closed`, `canceled` (states 6, 7 and 8) or `closed (state N)` for other `closed_states`; it is left out while the record is open there. Stackurity then stops updating the record, and records `incident.tracker_closed` (or `incident.tracker_reopened`) in the activity log; the incident itself stays open until its findings are fixed, ignored or accepted. `POST /channels/{id}/test` checks a ServiceNow channel's credentials, table and assignment group without creating anything; for PagerDuty, which cannot check a routing key otherwise, it triggers an `info` test alert and resolves it at once.
+
+```json
+{"kind": "pagerduty", "name": "oncall", "secret_ref": "secret:PAGERDUTY_ROUTING_KEY",
+ "config": {"region": "eu", "severities": {"P3": "error"}}}
+```
+
+```json
+{"kind": "servicenow", "name": "itsm", "secret_ref": "secret:SERVICENOW_CLIENT_SECRET",
+ "config": {"url": "https://acme.service-now.com", "auth": "oauth", "client_id": "3f1c...",
+            "assignment_group": "Security Operations", "category": "software",
+            "urgency": {"P1": "1", "P2": "2"}, "impact": {"P1": "1", "P2": "2"},
+            "fields": {"u_business_service": "Payments"}, "sync_back": true}}
 ```
 
 ### Notification messages
@@ -2023,7 +2045,7 @@ A Slack channel added with **Add to Slack** ([slack-app.md](slack-app.md), `conf
 - A linked click runs as that person, exactly like `POST /findings/actions` from the dashboard on the fix's open issues (up to 2,000): Assign to me needs engineer (or a project role of engineer on every issue's asset), Snooze needs security, and people with access to some projects only cannot touch other projects' fixes. Snooze sets `suppress` until 7 days later with the note "Snoozed for 1 week from Slack". Audit entries are the dashboard's (`finding.assign`, `finding.suppress`) with `"source": "slack"`, `slack_user_id` and `slack_team_id` in `detail`.
 - The answer goes to `response_url`: the message is updated with a line under the clicked buttons ("Assigned to Nirmal (3 issues)", "Snoozed until 3 Nov by Nirmal (3 issues)"), or an ephemeral reply says why the click was refused.
 - Every `link` is a dashboard page: the home page, an asset, a fix (`/fixes/{id}`) or a filtered **All issues** list (`/fixes/issues?...`; summaries add `new_within` or `resolved_within` for their period). Links need `STACKURITY_BASE_URL`.
-- Jira issue events (`opened`, `priority_raised`, `escalated`, `resolved`, `updated`) and `test` keep the per-incident shape: `incident_id`, `kind`, `key`, `title`, `priority`, `summary`, `recommended_action`, `link`.
+- Jira, PagerDuty and ServiceNow events (`opened`, `priority_raised`, `escalated`, `resolved`, `updated`) and `test` keep the per-incident shape: `incident_id`, `kind`, `key`, `title`, `priority`, `summary`, `recommended_action`, `link`.
 
 ### A quiet first scan
 

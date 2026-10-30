@@ -90,6 +90,10 @@ A Slack channel set up with a Slack app's signing secret (see [Acting from Slack
 
 A Jira channel calls the REST API of the configured site only (`/rest/api/3` on Jira Cloud, `/rest/api/2` on Data Center and Server): it checks the account and project (`/myself`, `/project/<key>`, `/priority`), searches the project for the incident's label, creates the issue, and later adds comments, sets the priority and reads and applies transitions. Issues contain the incident's title, priority and risk factors, up to 20 affected asset names with component versions and environments, the fix, and links to the dashboard; nothing from other incidents or workspaces. A Jira site on a private address is subject to the same `STACKURITY_PRIVATE_TARGETS` policy as webhooks.
 
+A PagerDuty channel posts events to `https://events.pagerduty.com/v2/enqueue`, or `https://events.eu.pagerduty.com/v2/enqueue` for the EU service region (outbound HTTPS 443). Events carry the incident's title, priority, counts, environments, first component, owner team, recommended fix and a link to the dashboard.
+
+A ServiceNow channel calls the configured instance only: the Table API (`/api/now/table/<table>`, and `/api/now/table/sys_user_group` for Send test when an assignment group is set) and, with OAuth, `/oauth_token.do`. Records contain what a Jira issue does; with `sync_back`, only the state of the records Stackurity created is read. An instance on a private address is subject to the same `STACKURITY_PRIVATE_TARGETS` policy as webhooks.
+
 ### Container image integrations
 
 Syft fetches image manifests and layers from the registry in the image reference. With a secret reference configured, the credential is sent to that registry only. For a workspace that may not reach private networks, Syft connects through a proxy inside the server that checks every connection (including redirects to blob storage) against the same policy.
