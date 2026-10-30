@@ -37,7 +37,13 @@ type fakePagerDuty struct {
 	key    string
 	events []pdEvent
 	alerts map[string]string // dedup key -> triggered, acknowledged, resolved
-	opened int               // alerts opened (a trigger with no open alert)
+	// opened counts pages: a trigger opens (and pages) an alert only when
+	// its dedup key has no open alert. As in PagerDuty, a trigger with the
+	// key of a triggered or acknowledged alert is only added to its log:
+	// the alert keeps its state and severity, and nobody is paged.
+	opened int
+	// failOn accepts the next event of this action but answers 502.
+	failOn string
 	// limit answers this many events with 429.
 	limit int
 	// failAfter accepts the event but answers 502 this many times, as if
@@ -96,6 +102,11 @@ func (f *fakePagerDuty) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if f.failAfter > 0 {
 		f.failAfter--
+		w.WriteHeader(502)
+		return
+	}
+	if f.failOn != "" && f.failOn == ev.EventAction {
+		f.failOn = ""
 		w.WriteHeader(502)
 		return
 	}
@@ -454,6 +465,31 @@ func TestPagerDutyLifecycle(t *testing.T) {
 		t.Fatalf("after ack: %v %s", got, fp.state(key))
 	}
 
+	// New findings after the acknowledgement: paged again. The acknowledged
+	// alert is resolved and a new one opened under the next key, because
+	// a trigger on the acknowledged alert would page nobody.
+	f.addAsset("web-4", "production", true)
+	f.setFindings("web-1", "web-2", "web-3", "web-4")
+	f.tick()
+	f.tick()
+	key2 := key + "-2"
+	if got := fp.actions(key); strings.Join(got, ",") != "trigger,acknowledge,resolve" || fp.state(key) != "resolved" {
+		t.Fatalf("old alert after new findings: %v %s", got, fp.state(key))
+	}
+	if got := fp.actions(key2); strings.Join(got, ",") != "trigger" || fp.state(key2) != "triggered" || fp.opened != 3 {
+		t.Fatalf("new alert: %v %s, pages %d", got, fp.state(key2), fp.opened)
+	}
+	if inc := f.onlyIncident(ctx); len(inc.Issues) != 1 || inc.Issues[0].Key != key2 {
+		t.Errorf("incident issues = %+v", inc.Issues)
+	}
+	// Acknowledged again: the new alert is acknowledged.
+	f.ackAll(ctx)
+	f.tick()
+	f.tick()
+	if got := fp.actions(key2); strings.Join(got, ",") != "trigger,acknowledge" {
+		t.Fatalf("second ack: %v", got)
+	}
+
 	// The priority drops: no page. Resolution: resolved, once.
 	pol := risk.DefaultPolicy()
 	pol.Thresholds.P1, pol.Thresholds.P2, pol.Thresholds.P3 = 300, 200, 100
@@ -464,11 +500,14 @@ func TestPagerDutyLifecycle(t *testing.T) {
 	f.setFindings()
 	f.tick()
 	f.tick()
-	if got := fp.actions(key); strings.Join(got, ",") != "trigger,acknowledge,resolve" || fp.state(key) != "resolved" {
-		t.Fatalf("after resolve: %v %s", got, fp.state(key))
+	if got := fp.actions(key2); strings.Join(got, ",") != "trigger,acknowledge,resolve" || fp.state(key2) != "resolved" {
+		t.Fatalf("after resolve: %v %s", got, fp.state(key2))
+	}
+	if got := fp.actions(key); len(got) != 3 {
+		t.Errorf("the first alert was told again: %v", got)
 	}
 	f.allSent(ctx, ch.ID)
-	if fp.opened != 2 { // the test alert and the incident's
+	if fp.opened != 3 { // the test alert and the incident's two
 		t.Errorf("alerts opened: %d", fp.opened)
 	}
 }
@@ -517,16 +556,39 @@ func TestPagerDutyRetriesAndDedup(t *testing.T) {
 	}
 	f.allSent(ctx, ch.ID)
 
-	// The priority rises: triggered again on the same alert, with the
-	// higher severity.
+	// The priority rises: paged again with a new alert under the next key
+	// (the old one resolved). The reply to the new trigger is lost: the
+	// retry resolves the same alert and triggers the same key, so one page.
+	fp.mu.Lock()
+	fp.failOn = "trigger"
+	fp.mu.Unlock()
 	if err := f.st.SetRiskPolicy(ctx, risk.DefaultPolicy()); err != nil {
 		t.Fatal(err)
 	}
 	f.tick()
+	if _, err := f.st.Pool.Exec(ctx, `UPDATE deliveries SET next_attempt = now() WHERE channel_id = $1 AND status = 'pending'`, ch.ID); err != nil {
+		t.Fatal(err)
+	}
 	f.tick()
-	got := fp.actions(key)
-	if sev := fp.events[len(fp.events)-1].Payload.Severity; strings.Join(got, ",") != "trigger,trigger,trigger" || fp.opened != 1 || (sev != "critical" && sev != "error") {
-		t.Fatalf("priority raised: %v opened %d", got, fp.opened)
+	f.tick()
+	key2 := key + "-2"
+	if got := fp.actions(key); strings.Join(got, ",") != "trigger,trigger,resolve,resolve" || fp.state(key) != "resolved" {
+		t.Fatalf("old alert after the priority rose: %v %s", got, fp.state(key))
+	}
+	if got := fp.actions(key2); strings.Join(got, ",") != "trigger,trigger" || fp.opened != 2 || fp.state(key2) != "triggered" {
+		t.Fatalf("new alert: %v, pages %d", got, fp.opened)
+	}
+	if sev := fp.events[len(fp.events)-1].Payload.Severity; sev != "critical" && sev != "error" {
+		t.Errorf("new alert severity = %s", sev)
+	}
+	if inc := f.onlyIncident(ctx); inc.Issues[0].Key != key2 {
+		t.Errorf("incident issues = %+v", inc.Issues)
+	}
+	f.allSent(ctx, ch.ID)
+	// Nothing more changes: no further pages.
+	f.tick()
+	if fp.opened != 2 || len(fp.actions(key+"-3")) != 0 {
+		t.Errorf("paged again without a change: %d", fp.opened)
 	}
 
 	// A wrong routing key fails at once with PagerDuty's reason.
@@ -537,6 +599,15 @@ func TestPagerDutyRetriesAndDedup(t *testing.T) {
 	var pe *PermanentError
 	if err := f.d.SendTest(ctx, bad); !errors.As(err, &pe) {
 		t.Errorf("wrong routing key is not permanent: %v", err)
+	}
+}
+
+func TestNextPagerDutyKey(t *testing.T) {
+	base := "stackurity-incident-1-5"
+	for cur, want := range map[string]string{base: base + "-2", base + "-2": base + "-3", base + "-9": base + "-10", "": base + "-2"} {
+		if got := nextPagerDutyKey(base, cur); got != want {
+			t.Errorf("%q: %s, want %s", cur, got, want)
+		}
 	}
 }
 

@@ -59,7 +59,7 @@ const isTracker = (kind: string) => kind === "jira" || kind === "pagerduty" || k
 const TRACKER_NOTICE: Record<string, string> = {
   jira: "Jira keeps one issue per incident, so there are no events to choose. These filters decide which incidents get an issue.",
   pagerduty:
-    "PagerDuty gets one alert per incident: triggered when it opens, acknowledged when it is acknowledged here, resolved when it resolves. There are no events to choose. These filters decide which incidents page.",
+    "PagerDuty gets one alert per incident: triggered when it opens, acknowledged when it is acknowledged here, resolved when it resolves. A rising priority, an escalation or new findings after acknowledgement page again with a new alert. There are no events to choose. These filters decide which incidents page.",
   servicenow:
     "ServiceNow gets one incident per Stackurity incident, updated with work notes and resolved when it resolves. There are no events to choose. These filters decide which incidents get a record.",
 };

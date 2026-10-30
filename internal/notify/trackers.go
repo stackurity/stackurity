@@ -144,12 +144,16 @@ func (d *Dispatcher) source() string {
 func (d *Dispatcher) syncPagerDuty(ctx context.Context, cfg ChannelConfig, secret string, ch *store.Channel, ws int64, in *store.Incident,
 	link *store.IssueLink, del store.Delivery) error {
 	bg := context.WithoutCancel(ctx)
-	key := IncidentLabel(ws, in.ID)
-	send := func(action string) error {
+	base := IncidentLabel(ws, in.ID)
+	send := func(action, key string) error {
 		if action == "trigger" {
 			return d.Sender.pagerDuty(ctx, cfg, d.pagerDutyTrigger(cfg, secret, key, in, del.Event))
 		}
 		return d.Sender.pagerDuty(ctx, cfg, pagerDutyEvent{RoutingKey: secret, EventAction: action, DedupKey: key})
+	}
+	record := func(key string) error {
+		return d.Store.RecordTrackerIssue(bg, store.TrackerRecord{ChannelID: ch.ID, IncidentID: in.ID, Tracker: KindPagerDuty, Key: key,
+			Priority: in.Priority, Findings: in.FindingCount, Assets: in.AssetCount, Acked: acked(in)})
 	}
 	if link == nil {
 		if in.Status != "open" {
@@ -157,37 +161,48 @@ func (d *Dispatcher) syncPagerDuty(ctx context.Context, cfg ChannelConfig, secre
 		}
 		// The Events API deduplicates by key: a retry, or another replica
 		// sending the same event, lands on the same alert.
-		if err := send("trigger"); err != nil {
+		if err := send("trigger", base); err != nil {
 			return err
 		}
 		if acked(in) {
-			if err := send("acknowledge"); err != nil {
+			if err := send("acknowledge", base); err != nil {
 				return err
 			}
 		}
-		return d.Store.RecordTrackerIssue(bg, store.TrackerRecord{ChannelID: ch.ID, IncidentID: in.ID, Tracker: KindPagerDuty, Key: key,
-			Priority: in.Priority, Findings: in.FindingCount, Assets: in.AssetCount, Acked: acked(in)})
+		return record(base)
 	}
 	if in.Status != "open" {
 		if link.ResolvedSynced {
 			return nil
 		}
-		if err := send("resolve"); err != nil {
+		if err := send("resolve", link.IssueKey); err != nil {
 			return err
 		}
 		return d.Store.IssueSynced(bg, link.ID, link.SyncedPriority, link.SyncedFindings, link.SyncedAssets, true)
 	}
-	// Trigger again only when it is worth paging about: the priority rose,
-	// it escalated, or new findings arrived after it was acknowledged.
+	// Page again when it is worth it: the priority rose, it escalated, or
+	// new findings arrived after it was acknowledged. A trigger with the
+	// open alert's dedup key would only be added to that alert's log (an
+	// acknowledged alert stays acknowledged, and its severity does not
+	// change), so the alert is resolved and a new one triggered under the
+	// next key (…-2, …-3). Both steps are idempotent: a retry before the new
+	// key is recorded resolves the same alert and triggers the same key.
 	// Findings that join or leave otherwise change nothing in PagerDuty.
 	raised := link.SyncedPriority != "" && in.Priority < link.SyncedPriority
 	if raised || del.Event == "escalated" || (link.SyncedAcked && !acked(in)) {
-		if err := send("trigger"); err != nil {
+		next := nextPagerDutyKey(base, link.IssueKey)
+		if err := send("resolve", link.IssueKey); err != nil {
 			return err
 		}
+		if err := send("trigger", next); err != nil {
+			return err
+		}
+		// The new alert stays triggered until someone acknowledges it in
+		// PagerDuty, even when the incident is acknowledged here.
+		return record(next)
 	}
 	if acked(in) && !link.SyncedAcked {
-		if err := send("acknowledge"); err != nil {
+		if err := send("acknowledge", link.IssueKey); err != nil {
 			return err
 		}
 	}
@@ -197,6 +212,18 @@ func (d *Dispatcher) syncPagerDuty(ctx context.Context, cfg ChannelConfig, secre
 		}
 	}
 	return d.Store.IssueSynced(bg, link.ID, in.Priority, in.FindingCount, in.AssetCount, false)
+}
+
+// nextPagerDutyKey is the dedup key of the incident's next alert: base,
+// then base-2, base-3 and so on.
+func nextPagerDutyKey(base, current string) string {
+	n := 1
+	if rest, ok := strings.CutPrefix(current, base+"-"); ok {
+		if v, err := strconv.Atoi(rest); err == nil && v > 1 {
+			n = v
+		}
+	}
+	return fmt.Sprintf("%s-%d", base, n+1)
 }
 
 // --- ServiceNow
