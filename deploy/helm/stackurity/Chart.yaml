@@ -2,8 +2,8 @@ apiVersion: v2
 name: stackurity
 description: Self-hosted software inventory, vulnerability and lifecycle intelligence, and controlled remediation
 type: application
-version: 0.13.8
-appVersion: "0.13.8"
+version: 0.13.9
+appVersion: "0.13.9"
 home: https://github.com/stackurity/stackurity
 sources: [https://github.com/stackurity/stackurity]
 license: Apache-2.0
