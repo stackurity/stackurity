@@ -111,9 +111,10 @@ var markers = []string{"package.json", "package-lock.json", "yarn.lock", "pnpm-l
 // a Laravel app served by a virtual host of its own, a cPanel addon
 // domain). Below a site, a directory is an application of its own when it
 // is a WordPress site, a document root of its own in the web server
-// configuration (or holds one), or has an index file and a manifest of
-// its own; a project with only a manifest (a mail library under
-// public/mail) is part of the site and read by its scan.
+// configuration (or holds one), or has a manifest and an entry point of
+// its own (appEntry); a library the site's code uses, with only a
+// manifest (a mail library under public/mail with its composer.lock and
+// vendor/), is part of the site and read by its scan.
 var webIndexes = []string{"index.php", "index.html", "index.htm"}
 
 // wpMarkers are the markers of a WordPress site.
@@ -261,7 +262,7 @@ func (s *Scanner) discoverIn(w *walk, base, dir string, depth int, site string) 
 		index = s.webIndex(dir, depth)
 	}
 	if manifest != "" || index != "" {
-		own := site == "" || s.marker(dir, wpMarkers) != "" || manifest != "" && index != "" || w.servesBelow(dir)
+		own := site == "" || s.marker(dir, wpMarkers) != "" || manifest != "" && (index != "" || s.appEntry(dir)) || w.servesBelow(dir)
 		if own {
 			w.seen[dir] = true
 			w.out = append(w.out, Discovered{Dir: dir, By: []string{firstNonEmpty(manifest, index)}, site: manifest == ""})
@@ -293,6 +294,28 @@ func (s *Scanner) discoverIn(w *walk, base, dir string, depth int, site string) 
 		}
 		s.discoverIn(w, base, path.Join(dir, e.Name()), depth+1, site)
 	}
+}
+
+// appEntry reports whether a project directory runs as an application of
+// its own rather than being a library: it has an entry point one level
+// down (Laravel's or Symfony's public/index.php, Drupal's web/index.php),
+// a framework's launcher (Laravel's artisan, Django's manage.py, Rack's
+// config.ru), or a package.json naming what it runs (main, or a start
+// script).
+func (s *Scanner) appEntry(dir string) bool {
+	for _, sub := range []string{"public", "web"} {
+		if s.marker(path.Join(dir, sub), webIndexes) != "" {
+			return true
+		}
+	}
+	if s.marker(dir, []string{"artisan", "manage.py", "config.ru"}) != "" {
+		return true
+	}
+	var p struct {
+		Main    string            `json:"main"`
+		Scripts map[string]string `json:"scripts"`
+	}
+	return readJSON(s.path(path.Join(dir, "package.json")), &p) == nil && (p.Main != "" || p.Scripts["start"] != "")
 }
 
 // servesBelow reports whether a document root of the configuration is dir

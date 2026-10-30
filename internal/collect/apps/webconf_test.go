@@ -240,40 +240,50 @@ func TestWebRootSiteInventory(t *testing.T) {
 	}
 }
 
-// Configuration is bounded: files beyond maxConfFiles per web server,
-// and includes more than maxIncludeDepth levels down, are not read, and
-// discovery then says it did not see everything. One web server's many
-// files do not keep the other's from being read.
+// Configuration is bounded by file count and total bytes, and discovery
+// then says it did not see everything. Many virtual hosts and a large
+// generated file (a block list) are within the limits, so such a host's
+// discovery stays complete and removed applications are resolved.
 func TestConfigRootsBounded(t *testing.T) {
 	tr := newTree(t)
-	for i := range maxConfFiles + 10 {
+	for i := range 300 {
 		tr.file(fmt.Sprintf("etc/apache2/sites-enabled/s%03d.conf", i), "DocumentRoot /srv/x\n")
 	}
 	tr.file("etc/nginx/conf.d/shop.conf", "server { root /data/shop; }")
+	tr.file("etc/nginx/conf.d/geo.conf", "geo $blocked {\n"+strings.Repeat("10.0.0.0/8 1;\n", 100_000)+"}\n") // 1.4 MB
 	tr.file("data/shop/index.php", "<?php")
 	s := &Scanner{Root: tr.root}
-	got, complete := s.configRoots()
-	if len(got) != maxConfFiles+1 || complete {
+	if got, complete := s.configRoots(); len(got) != 301 || !complete {
 		t.Errorf("read %d roots, complete %v", len(got), complete)
 	}
-	found, full := s.DiscoverSites()
-	if full || len(found) != 1 || found[0].Dir != "/data/shop" {
+	if found, full := s.DiscoverSites(); !full || len(found) != 1 || found[0].Dir != "/data/shop" {
 		t.Errorf("discovered %v (full %v)", found, full)
 	}
-	// Within the limits everything is read, and discovery is complete.
+	// A file over maxConfFileSize is generated data: skipped, and the
+	// list stays complete.
+	tr.file("etc/nginx/conf.d/huge.conf", "server { root /data/huge; }\n"+strings.Repeat("#", maxConfFileSize))
+	tr.file("data/huge/index.php", "<?php")
+	if got, complete := s.configRoots(); len(got) != 301 || !complete {
+		t.Errorf("huge file: %d roots, complete %v", len(got), complete)
+	}
+	// Past the file count or the byte budget, discovery is incomplete.
+	for _, lim := range []struct {
+		name         string
+		files, bytes int64
+	}{{"files", 10, maxConfBytes}, {"bytes", maxConfFiles, 1 << 20}} {
+		confFiles, confBytes = lim.files, lim.bytes
+		_, complete := s.configRoots()
+		_, full := s.DiscoverSites()
+		confFiles, confBytes = maxConfFiles, maxConfBytes
+		if complete || full {
+			t.Errorf("%s limit: complete %v, full %v", lim.name, complete, full)
+		}
+	}
+	// A file including itself is read once.
 	tr = newTree(t)
-	tr.file("etc/nginx/nginx.conf", "include nginx.conf; root /srv/x;") // a file including itself is read once
+	tr.file("etc/nginx/nginx.conf", "include nginx.conf; root /srv/x;")
 	if got, complete := (&Scanner{Root: tr.root}).configRoots(); len(got) != 1 || !complete {
 		t.Errorf("self include: %v (complete %v)", got, complete)
-	}
-	if _, full := (&Scanner{Root: tr.root}).DiscoverSites(); !full {
-		t.Error("discovery within the limits is not full")
-	}
-	// A file larger than maxConfSize is read in part.
-	tr = newTree(t)
-	tr.file("etc/nginx/nginx.conf", "root /srv/x;\n"+strings.Repeat("#", maxConfSize))
-	if got, complete := (&Scanner{Root: tr.root}).configRoots(); len(got) != 1 || complete {
-		t.Errorf("large file: %v (complete %v)", got, complete)
 	}
 }
 
@@ -298,6 +308,22 @@ func TestDiscoverInsideSites(t *testing.T) {
 			"var/www/html/pma/index.php":        "<?php",
 			"var/www/html/pma/composer.json":    `{"name":"phpmyadmin/phpmyadmin"}`,
 		}, []string{"/var/www/html", "/var/www/html/app", "/var/www/html/blog", "/var/www/html/pma"}},
+		// Without a virtual host of their own: an application has an entry
+		// point; a library the site's PHP uses does not.
+		{"apps and libraries under a custom /var/www/html", map[string]string{
+			"var/www/html/index.php":                           "<?php",
+			"var/www/html/crm/composer.json":                   `{"name":"acme/crm"}`,
+			"var/www/html/crm/composer.lock":                   `{"packages":[]}`,
+			"var/www/html/crm/artisan":                         "#!/usr/bin/env php",
+			"var/www/html/crm/public/index.php":                "<?php",
+			"var/www/html/shop/composer.json":                  `{"name":"acme/shop"}`,
+			"var/www/html/shop/web/index.php":                  "<?php",
+			"var/www/html/api/package.json":                    `{"name":"api","scripts":{"start":"node server.js"}}`,
+			"var/www/html/worker/package.json":                 `{"name":"worker","main":"index.js"}`,
+			"var/www/html/mail/composer.lock":                  `{"packages":[]}`,
+			"var/www/html/mail/vendor/composer/installed.json": `{"packages":[]}`,
+			"var/www/html/theme/package.json":                  `{"name":"theme","scripts":{"build":"sass"}}`,
+		}, []string{"/var/www/html", "/var/www/html/api", "/var/www/html/crm", "/var/www/html/shop", "/var/www/html/worker"}},
 		{"cPanel addon domains", map[string]string{
 			"home/u/public_html/index.php":                    "<?php",
 			"home/u/public_html/addon.com/index.php":          "<?php",

@@ -21,13 +21,18 @@ import (
 
 // Limits on reading web server configuration.
 const (
-	maxConfFiles     = 256     // configuration files read per run, for each web server
-	maxConfSize      = 1 << 20 // read from each file
-	maxIncludeDepth  = 2       // levels of Include/include followed below a top file
-	maxConfRoots     = 1000    // document roots taken from configuration
-	maxLinkHops      = 16      // links resolved in one configuration file path
+	maxConfFiles     = 4096     // configuration files read per run
+	maxConfBytes     = 64 << 20 // bytes read per run, in total
+	maxConfFileSize  = 8 << 20  // a larger file is not read (see configRoots)
+	maxIncludeDepth  = 2        // levels of Include/include followed below a top file
+	maxConfRoots     = 20_000   // document roots taken from configuration
+	maxLinkHops      = 16       // links resolved in one configuration file path
 	defaultPageBytes = 16 << 10
 )
+
+// confFiles and confBytes are maxConfFiles and maxConfBytes; tests lower
+// them.
+var confFiles, confBytes int64 = maxConfFiles, maxConfBytes
 
 // webServer is one web server's configuration: its top files (globs) and
 // the directory relative includes are resolved against.
@@ -60,12 +65,16 @@ type configRoot struct {
 }
 
 // configRoots reads the document roots Apache and nginx serve. Each file
-// is read once, at most maxConfFiles per web server and maxConfSize each.
-// The top files (sites-enabled/*.conf and the like) are read first, as
-// level 0 even when the main file includes them, and includes are
-// followed maxIncludeDepth levels below them. complete is false when a
-// limit left configuration unread, so a site missing from the list may
-// still be served.
+// is read once, at most maxConfFiles and maxConfBytes in all. The top
+// files (sites-enabled/*.conf and the like) are read first, as level 0
+// even when the main file includes them, and includes are followed
+// maxIncludeDepth levels below them. complete is false when a limit, or a
+// file the agent's user may not read, left configuration unread, so a
+// site missing from the list may still be served. A file larger than
+// maxConfFileSize is skipped without making the list incomplete: such a
+// file is generated data (a geo or IP block list), not virtual hosts, and
+// counting it as unread would leave every run incomplete, so removed
+// applications would never be resolved.
 func (s *Scanner) configRoots() (out []configRoot, complete bool) {
 	type item struct {
 		ws    webServer
@@ -82,31 +91,48 @@ func (s *Scanner) configRoots() (out []configRoot, complete bool) {
 	}
 	complete = true
 	read := map[string]bool{}
-	files := map[string]int{} // by web server
+	files, total := int64(0), int64(0)
 	for ; len(queue) > 0; queue = queue[1:] {
 		it := queue[0]
 		real, ok := s.resolveFile(it.host)
-		if !ok || read[real] {
+		if !ok {
+			if _, err := os.Lstat(s.path(it.host)); errors.Is(err, fs.ErrPermission) {
+				complete = false
+			}
 			continue
 		}
-		if files[it.ws.name] >= maxConfFiles || len(out) >= maxConfRoots {
+		if read[real] {
+			continue
+		}
+		if files >= confFiles || len(out) >= maxConfRoots {
 			complete = false
 			continue
 		}
 		read[real] = true
 		f, err := openRegular(s.path(real))
 		if err != nil {
+			if errors.Is(err, fs.ErrPermission) {
+				complete = false
+			}
 			continue
 		}
-		data, err := io.ReadAll(io.LimitReader(f, maxConfSize+1))
+		fi, err := f.Stat()
+		if err != nil || fi.Size() > maxConfFileSize {
+			f.Close()
+			continue
+		}
+		if total+fi.Size() > confBytes {
+			f.Close()
+			complete = false
+			continue
+		}
+		data, err := io.ReadAll(io.LimitReader(f, maxConfFileSize))
 		f.Close()
 		if err != nil {
 			continue
 		}
-		if len(data) > maxConfSize {
-			data, complete = data[:maxConfSize], false
-		}
-		files[it.ws.name]++
+		files++
+		total += int64(len(data))
 		roots, aliases, includes := it.ws.parser(string(data))
 		for i, r := range append(roots, aliases...) {
 			if len(out) >= maxConfRoots {

@@ -40,6 +40,11 @@ var unneededDirs = map[string]bool{"cache": true, "tmp": true, "logs": true, "up
 	"examples": true, "example": true, "demo": true, "demos": true, "docs": true, "doc": true,
 	"test": true, "tests": true, "spec": true, "samples": true, "lost+found": true}
 
+// secretFiles hold a CMS's database credentials (WordPress, Drupal's
+// sites/*/settings.php, Joomla), which hardening keeps from other users
+// and which nothing the scan looks for is in.
+var secretFiles = map[string]bool{"wp-config.php": true, "settings.php": true, "settings.local.php": true, "configuration.php": true}
+
 // denied collects the paths one application scan skipped because the
 // agent's user may not read them.
 type denied struct {
@@ -52,7 +57,7 @@ type denied struct {
 
 // note records host path p when err is a permission error (EACCES or
 // EPERM) and reports whether it was one. A path nothing needs (see
-// unneededDirs, wp-config.php, .env files) is not recorded.
+// unneededDirs, secretFiles, .env files) is not recorded.
 func (d *denied) note(p string, err error) bool {
 	if err == nil || !errors.Is(err, fs.ErrPermission) {
 		return false
@@ -70,7 +75,7 @@ func (d *denied) note(p string, err error) bool {
 		inTree = inTree || packageTrees[part]
 	}
 	name := parts[len(parts)-1]
-	if name == "wp-config.php" || strings.HasPrefix(name, ".env") || unneededDirs[name] {
+	if secretFiles[name] || strings.HasPrefix(name, ".env") || unneededDirs[name] {
 		return true
 	}
 	switch {

@@ -173,3 +173,34 @@ func TestDiscoverUnreadable(t *testing.T) {
 		t.Errorf("/opt/tool: unreadable %v, %v", a.Unreadable, a.Coverage)
 	}
 }
+
+// A configuration file the agent may not read leaves the list of sites
+// incomplete.
+func TestUnreadableConfig(t *testing.T) {
+	tr := newTree(t)
+	tr.file("etc/nginx/conf.d/a.conf", "server { root /srv/a; }")
+	tr.file("etc/nginx/conf.d/b.conf", "server { root /srv/b; }")
+	tr.unreadable("etc/nginx/conf.d/b.conf")
+	s := &Scanner{Root: tr.root}
+	if got, complete := s.configRoots(); len(got) != 1 || complete {
+		t.Errorf("roots %v, complete %v", got, complete)
+	}
+	if _, full := s.DiscoverSites(); full {
+		t.Error("discovery is full")
+	}
+}
+
+// Credentials files a CMS keeps from other users are not gaps.
+func TestUnreadableSecrets(t *testing.T) {
+	tr := newTree(t)
+	tr.file("var/www/site/index.php", "<?php")
+	tr.file("var/www/site/sites/default/settings.php", "<?php")
+	tr.file("var/www/site/configuration.php", "<?php")
+	tr.unreadable("var/www/site/sites/default/settings.php")
+	tr.unreadable("var/www/site/configuration.php")
+	for _, c := range (&Scanner{Root: tr.root}).ScanApp(context.Background(), "/var/www/site").Coverage {
+		if strings.HasPrefix(c.Scope, PermissionScope) {
+			t.Errorf("coverage %+v", c)
+		}
+	}
+}
