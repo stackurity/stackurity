@@ -65,6 +65,11 @@ type Row struct {
 	// Chrome").
 	Program      string
 	ProgramLabel string
+	// ProgramLine is the release line of a program whose lines install
+	// side by side (.NET "8", Python "3.12"); ProgramVersion the version as
+	// the catalogue reads it (8.0.20, where the registry says 64.80.25123).
+	ProgramLine    string
+	ProgramVersion string
 }
 
 type Group struct {
@@ -231,11 +236,21 @@ func Build(rows []Row, advice map[string]Advice) ([]*Group, map[int64]string) {
 			}
 		case r.Program != "" && r.FixedVersion != "" && r.Kind == "vulnerability":
 			// An installed program: one update per host fixes all its
-			// findings, so the group is the program, to its highest fix.
-			g = get(r, ProgramUpdate, r.Program)
-			g.Component = r.ProgramLabel
-			g.extra["program"] = r.Program
-			g.fromVersions[r.Version] = true
+			// findings, so the group is the program, to its highest fix;
+			// per line for programs whose lines install side by side
+			// (.NET 8 and 9), as updating one line fixes nothing on the other.
+			key, label := r.Program, r.ProgramLabel
+			if r.ProgramLine != "" {
+				key, label = r.Program+"@"+r.ProgramLine, r.ProgramLabel+" "+r.ProgramLine
+			}
+			g = get(r, ProgramUpdate, key)
+			g.Component = label
+			g.extra["program"], g.extra["programkey"] = r.Program, key
+			from := r.Version
+			if r.ProgramVersion != "" {
+				from = r.ProgramVersion
+			}
+			g.fromVersions[from] = true
 			if c, err := version.CompareGeneric(r.FixedVersion, g.ToVersion); g.ToVersion == "" || (err == nil && c > 0) {
 				g.ToVersion = r.FixedVersion
 			}
@@ -486,7 +501,7 @@ func describeProgramUpdate(g *Group) {
 		verb = "is"
 	}
 	g.Note = fmt.Sprintf("%s in %s %s %s fixed by this version.", plural(g.FindingCount, "finding"), label, g.FromVersion, verb)
-	g.FixKey = fmt.Sprintf("%s:%s>%s", ProgramUpdate, g.extra["program"], g.ToVersion)
+	g.FixKey = fmt.Sprintf("%s:%s>%s", ProgramUpdate, g.extra["programkey"], g.ToVersion)
 	g.Effort = "low"
 }
 

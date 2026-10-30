@@ -179,11 +179,21 @@ func (e *Evaluator) evaluateProgram(ctx context.Context, r store.EvalRow, pp *pr
 		return nil, nil
 	}
 	rc.Feed = feed.Name
-	if p.CoverageNote != "" {
+	note := func(s string) {
 		if rc.Reason != "" {
 			rc.Reason += "; "
 		}
-		rc.Reason += p.CoverageNote
+		rc.Reason += s
+	}
+	if n := programsUnfixed(feed.Cursor)[p.ID]; n > 0 && feed.Name == FeedWindowsPrograms {
+		cves := fmt.Sprintf("%d CVEs", n)
+		if n == 1 {
+			cves = "1 CVE"
+		}
+		note(fmt.Sprintf("NVD also names %s in %s with no fixed version or no version bound, which are not matched", p.Label, cves))
+	}
+	if p.CoverageNote != "" {
+		note(p.CoverageNote)
 	}
 	for i := range found {
 		ev := found[i].Evidence
@@ -191,6 +201,10 @@ func (e *Evaluator) evaluateProgram(ctx context.Context, r store.EvalRow, pp *pr
 		ev["program_label"] = p.Label
 		ev["catalogue_version"] = e.catalogue().Version()
 		ev["display_name"] = programName(r)
+		ev["program_version"] = pp.version
+		if line := p.Line(pp.version); line != "" {
+			ev["program_line"] = line
+		}
 		if pp.ident.PublisherMissing {
 			ev["publisher_missing"] = true
 		}

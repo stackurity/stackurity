@@ -668,8 +668,7 @@ func cvrfRecord(c cvrfCompact, docID string, released, revised time.Time, lines 
 		}
 	}
 	for _, prog := range sortedKeys(progRanges) {
-		v.Affected = append(v.Affected, osv.Affected{Package: osv.Package{Ecosystem: winprograms.Ecosystem + ":" + prog, Name: prog},
-			Ranges: progRanges[prog]})
+		v.Affected = append(v.Affected, lineEntries(winprograms.Ecosystem+":"+prog, prog, progRanges[prog])...)
 	}
 	sort.Strings(kbs)
 	for _, kb := range kbs {
@@ -733,14 +732,22 @@ func (p msrcProduct) accepts(v string) bool {
 }
 
 // lineFixRanges turns the fixed versions a source lists for one issue into
-// ranges, reading each as the fix for its own major version. Edge can list
-// a fix per channel (Stable 155.0.4283.60, Extended Stable 152.0.4191.137)
-// and Mozilla a fix per release line (Firefox ESR 115.16.1 and 128.3.1): a
-// version of that major at or above its fix is fixed, and a version between
-// two listed majors is below the next fix, so [0, 152.0.4191.137) and
-// [153, 155.0.4283.60). Of two fixes for one major (an update that completed
-// the fix), the higher counts. Versions that are not dotted numbers are
-// ignored.
+// ranges, one per affected entry, reading each fix as the fix for its own
+// major version. Edge can list a fix per channel (Stable 155.0.4283.60,
+// Extended Stable 152.0.4191.137) and Mozilla one per release line (Firefox
+// ESR 115.16.1 and 128.3.1): a version of that major below its fix is
+// affected, and one at or above it is fixed, whatever another line's fix.
+// A version on no listed major, below the lowest or between two, ends in a
+// limit with no fix: it may be on a line the issue never affected, or one
+// whose fix is not listed (Edge's Extended Stable when only Stable's fix is
+// given, an ESR line), so the matcher reports it as needing validation
+// (osv.UnlistedLine), never as plainly affected with another line's fix. A
+// version above every listed major is past every fix: not affected. Of two
+// fixes for one major (an update that completed the fix), the higher
+// counts. Versions that are not dotted numbers are ignored.
+//
+// For [152.0.4191.137, 155.0.4283.60]: [0, limit 152), [152, 152.0.4191.137),
+// [153, limit 155), [155, 155.0.4283.60).
 func lineFixRanges(versions []string) []osv.Range {
 	best := map[int]string{}
 	for _, b := range versions {
@@ -762,12 +769,39 @@ func lineFixRanges(versions []string) []osv.Range {
 	}
 	sort.Ints(majors)
 	var out []osv.Range
-	for i, m := range majors {
-		from := "0"
-		if i > 0 {
-			from = strconv.Itoa(majors[i-1] + 1)
+	from := 0
+	for _, m := range majors {
+		if from < m {
+			out = append(out, osv.Range{Type: "ECOSYSTEM", Events: []osv.Event{{Introduced: strconv.Itoa(from)}, {Limit: strconv.Itoa(m)}}})
 		}
-		out = append(out, osv.Range{Type: "ECOSYSTEM", Events: []osv.Event{{Introduced: from}, {Fixed: best[m]}}})
+		out = append(out, osv.Range{Type: "ECOSYSTEM", Events: []osv.Event{{Introduced: strconv.Itoa(m)}, {Fixed: best[m]}}})
+		from = m + 1
+	}
+	return out
+}
+
+// rollingFixRange is the range of a program with one release line (Firefox's
+// rapid release): every earlier version is affected, up to the highest fix
+// listed.
+func rollingFixRange(versions []string) []osv.Range {
+	hi := ""
+	for _, v := range versions {
+		if dottedVersion.MatchString(v) && (hi == "" || compareBuild(v, hi) > 0) {
+			hi = v
+		}
+	}
+	if hi == "" {
+		return nil
+	}
+	return []osv.Range{{Type: "ECOSYSTEM", Events: []osv.Event{{Introduced: "0"}, {Fixed: hi}}}}
+}
+
+// lineEntries makes one affected entry per range, as osv.UnlistedLine and
+// osv.OtherLine read them.
+func lineEntries(ecosystem, name string, ranges []osv.Range) []osv.Affected {
+	out := make([]osv.Affected, len(ranges))
+	for i, r := range ranges {
+		out[i] = osv.Affected{Package: osv.Package{Ecosystem: ecosystem, Name: name}, Ranges: []osv.Range{r}}
 	}
 	return out
 }

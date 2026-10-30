@@ -392,13 +392,14 @@ func OracleChannel(ecosystem string) string {
 // not describe them. The second check reads it with the same function.
 func OracleBuild(version string) string { return oraclebuild.Channel(version) }
 
-// UnlistedLine reports an Oracle Linux affected entry for versions on none
-// of the version lines its advisory has fixes for (see intel's
-// elsaRanges): a match through it needs validation. Such an entry is the
-// only Oracle Linux range that ends in a limit with no fix, so it is told
-// by its shape, which is all that is stored of an entry.
+// UnlistedLine reports an Oracle Linux or Windows program affected entry
+// for versions on none of the version lines its advisory has fixes for (see
+// intel's elsaRanges and lineFixRanges): a match through it needs
+// validation. Such an entry is the only range of those ecosystems that ends
+// in a limit with no fix, so it is told by its shape, which is all that is
+// stored of an entry.
 func UnlistedLine(ecosystem string, a Affected) bool {
-	if !strings.HasPrefix(ecosystem, "Oracle Linux:") || len(a.Ranges) != 1 {
+	if !(strings.HasPrefix(ecosystem, "Oracle Linux:") || strings.HasPrefix(ecosystem, "Windows programs:")) || len(a.Ranges) != 1 {
 		return false
 	}
 	limit := false

@@ -342,3 +342,27 @@ func TestProgramUpdateGrouping(t *testing.T) {
 		t.Errorf("a finding without a fix goes to no_fix, got %q", assign[4])
 	}
 }
+
+// Two .NET lines installed side by side on one host are two updates: one
+// "update to 9.0.21" would leave 8.0 vulnerable.
+func TestProgramUpdateSideBySide(t *testing.T) {
+	row := func(id int64, line, version, fixed string) Row {
+		return Row{FindingID: id, Kind: "vulnerability", Key: "CVE-2026-105016", AssetID: 1, AssetName: "WIN", AssetKind: "host", OS: "windows",
+			ComponentID: id, PurlType: "generic", Component: "Microsoft .NET Runtime - " + version + " (x64)", Version: "64.80.25123",
+			FixedVersion: fixed, Priority: "P2", Severity: "high", Program: "dotnet-runtime", ProgramLabel: ".NET Runtime",
+			ProgramLine: line, ProgramVersion: version}
+	}
+	groups, _ := Build([]Row{row(1, "8", "8.0.20", "8.0.32"), row(2, "9", "9.0.10", "9.0.21")}, nil)
+	got := map[string]*Group{}
+	for _, g := range groups {
+		got[g.Component] = g
+	}
+	g8, g9 := got[".NET Runtime 8"], got[".NET Runtime 9"]
+	if len(groups) != 2 || g8 == nil || g9 == nil {
+		t.Fatalf("groups %d: %v", len(groups), got)
+	}
+	if g8.Title != "Update .NET Runtime 8 to 8.0.32" || g8.FromVersion != "8.0.20" || g8.FixKey != "program_update:dotnet-runtime@8>8.0.32" ||
+		g9.Title != "Update .NET Runtime 9 to 9.0.21" || g9.FixKey != "program_update:dotnet-runtime@9>9.0.21" {
+		t.Errorf("groups %+v %+v", g8, g9)
+	}
+}

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "2026-10-30.1",
+  "version": "2026-10-30.2",
   "description": "Stackurity's curated catalogue of Windows programs matched against vulnerability data. Names, publishers and version forms were checked against real Add/Remove Programs entries (internal/winprograms/testdata/registry); each source was checked against the advisories it returns (go test -tags measure ./internal/intel -run TestMeasureWindowsPrograms). Programs not listed are coverage gaps, never clean.",
   "programs": [
     {
@@ -55,7 +55,7 @@
         "https://learn.microsoft.com/en-us/DeployEdge/microsoft-edge-relnotes-security"
       ],
       "verified": "2026-10-30",
-      "note": "Microsoft's Security Update Guide lists the Edge build fixing each CVE, including the Chromium CVEs Edge takes in (709 CVEs in the 2026-Oct document). NVD's edge_chromium CPE lists only Edge's own CVEs, so it is not used."
+      "note": "Microsoft's Security Update Guide lists the Edge build fixing each CVE, including the Chromium CVEs Edge takes in (709 CVEs in the 2026-Oct document). NVD's edge_chromium CPE lists only Edge's own CVEs, so it is not used. A version on a major Microsoft lists no fix for (Extended Stable when only Stable's fix is given) needs validation rather than being reported affected."
     },
     {
       "id": "microsoft-edge-webview2",
@@ -122,7 +122,8 @@
         "type": "mfsa",
         "products": [
           "Firefox ESR"
-        ]
+        ],
+        "per_line": true
       },
       "update": "Install the latest Firefox ESR release of the same ESR line.",
       "sources": [
@@ -130,7 +131,7 @@
         "https://www.mozilla.org/en-US/security/known-vulnerabilities/firefox-esr/"
       ],
       "verified": "2026-10-30",
-      "note": "Mozilla lists a fix per ESR line (ESR 115.16.1 and ESR 128.3.1): each fixes its own line."
+      "note": "Mozilla lists a fix per ESR line (ESR 115.16.1 and ESR 128.3.1): each fixes its own line. A version on a line Mozilla lists no fix for (a CVE fixed only on the 153 line, on a 115 host) needs validation rather than being reported affected."
     },
     {
       "id": "mozilla-thunderbird",
@@ -152,7 +153,8 @@
         "products": [
           "Thunderbird",
           "Thunderbird ESR"
-        ]
+        ],
+        "per_line": true
       },
       "update": "Thunderbird updates itself; managed estates deploy Thunderbird's MSI.",
       "sources": [
@@ -160,7 +162,7 @@
         "https://www.thunderbird.net/en-US/security/"
       ],
       "verified": "2026-10-30",
-      "note": "Mozilla lists a fix per Thunderbird line (128.3.1 and 131.0.1): each fixes its own line."
+      "note": "Mozilla lists a fix per Thunderbird line (the ESR 140.3 and the monthly 143): each fixes its own line. The registry does not tell an ESR install from a monthly one, so a version on a line with no listed fix needs validation."
     },
     {
       "id": "7-zip",
@@ -377,7 +379,8 @@
       ],
       "verified": "2026-10-30",
       "note": "Only the installer's bundle entry is matched; its parts (\"Python 3.12.3 Core Interpreter (64-bit)\") are not. The registry version (3.12.3150.0) encodes the release level, so the version is read from the name. Pre-releases are not matched. The default per-user install (HKCU) is not inventoried.",
-      "coverage_note": "Findings come from the CVEs NVD has analysed (2 of 4 CPython CVEs published in the 120 days to 2026-10-30 had no configuration), so a version can be vulnerable without a finding."
+      "coverage_note": "Findings come from the CVEs NVD has analysed (2 of 4 CPython CVEs published in the 120 days to 2026-10-30 had no configuration), so a version can be vulnerable without a finding.",
+      "side_by_side": "major.minor"
     },
     {
       "id": "nodejs",
@@ -598,7 +601,8 @@
         "https://dotnet.microsoft.com/en-us/download/dotnet"
       ],
       "verified": "2026-10-30",
-      "note": "Microsoft's Security Update Guide lists the runtime version fixing each CVE per .NET line (\".NET 8.0 runtime installed on Windows\": 8.0.32); SDK versions (8.0.427) are not read. The registry version of these entries (64.108.52182) is the MSI's, so the version is read from the name. Host, Host FX Resolver, SDK and targeting pack entries are not matched. .NET Framework is part of Windows and is not evaluated."
+      "note": "Microsoft's Security Update Guide lists the runtime version fixing each CVE per .NET line (\".NET 8.0 runtime installed on Windows\": 8.0.32); SDK versions (8.0.427) are not read. The registry version of these entries (64.108.52182) is the MSI's, so the version is read from the name. Host, Host FX Resolver, SDK and targeting pack entries are not matched. .NET Framework is part of Windows and is not evaluated.",
+      "side_by_side": "major"
     },
     {
       "id": "aspnetcore-runtime",
@@ -624,7 +628,8 @@
         "https://dotnet.microsoft.com/en-us/download/dotnet"
       ],
       "verified": "2026-10-30",
-      "note": "Microsoft's Security Update Guide lists the version fixing each CVE per ASP.NET Core line (\"ASP.NET Core 8.0\": 8.0.32). The runtime bundle and its shared framework are two entries for one installation: findings are reported once."
+      "note": "Microsoft's Security Update Guide lists the version fixing each CVE per ASP.NET Core line (\"ASP.NET Core 8.0\": 8.0.32). The runtime bundle and its shared framework are two entries for one installation: findings are reported once.",
+      "side_by_side": "major"
     },
     {
       "id": "wireshark",

@@ -71,6 +71,10 @@ type Program struct {
 	// recognised but not matched (Unmatched says why).
 	Source    *Source `json:"source,omitempty"`
 	Unmatched string  `json:"unmatched,omitempty"`
+	// SideBySide is "major" or "major.minor" for a program whose release
+	// lines install side by side (.NET 8 and 9, Python 3.12 and 3.13): each
+	// line is updated on its own, so the action plan has one update per line.
+	SideBySide string `json:"side_by_side,omitempty"`
 	// CoverageNote is shown on every evaluated row of the program: what its
 	// source is known not to cover (NVD's backlog for the product).
 	CoverageNote string `json:"coverage_note,omitempty"`
@@ -126,6 +130,11 @@ type Source struct {
 	CPEs []string `json:"cpes,omitempty"`
 	// Products are the MFSA product names read ("Firefox ESR").
 	Products []string `json:"products,omitempty"`
+	// PerLine reads an MFSA source's fixes per major version (Firefox ESR
+	// 115.16.1 and 128.3.1 each fix their own line), as the Security Update
+	// Guide's always are; without it the program has one rolling line
+	// (Firefox's rapid release) and every earlier version is affected.
+	PerLine bool `json:"per_line,omitempty"`
 	// Version reads NVD's version strings when they are not already dotted
 	// numbers in the same form as the installed version; it is matched
 	// against "<version>" or, when the CPE has an update field,
@@ -273,6 +282,9 @@ func Parse(b []byte) (*Catalogue, error) {
 			}
 			p.versionMatch = re
 		}
+		if p.SideBySide != "" && p.SideBySide != "major" && p.SideBySide != "major.minor" {
+			return nil, fail(fmt.Errorf("side_by_side %q is not major or major.minor", p.SideBySide))
+		}
 		if p.Version.Pattern != "" || p.Source != nil {
 			vr, err := compileRule(p.Version, true)
 			if err != nil {
@@ -298,6 +310,8 @@ func Parse(b []byte) (*Catalogue, error) {
 						return nil, fail(fmt.Errorf("MFSA product %q is not one this version reads", prod))
 					}
 				}
+			case p.Source.PerLine:
+				return nil, fail(errors.New("per_line is read for mfsa sources only"))
 			case p.Source.Type == SourceMSRC:
 				// Read by the Windows updates feed, which knows one product.
 				if !msrcPrograms[p.ID] || len(p.Source.CPEs) > 0 || len(p.Source.Products) > 0 || p.Source.Version != nil {
@@ -552,4 +566,18 @@ func CPEVersion(criteria string) string {
 		return v + ":" + u
 	}
 	return v
+}
+
+// Line is the release line a normalised version is on, for a program whose
+// lines install side by side ("8" for .NET 8.0.20, "3.12" for Python
+// 3.12.10); "" for other programs.
+func (p *Program) Line(version string) string {
+	parts := strings.Split(version, ".")
+	switch {
+	case p.SideBySide == "major":
+		return parts[0]
+	case p.SideBySide == "major.minor" && len(parts) >= 2:
+		return parts[0] + "." + parts[1]
+	}
+	return ""
 }

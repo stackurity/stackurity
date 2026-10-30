@@ -5,6 +5,7 @@ package intel
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -83,7 +84,20 @@ type fetcher struct {
 }
 
 func newFetcher(cfg Config) *fetcher {
-	return &fetcher{cfg: cfg, http: &http.Client{Timeout: 30 * time.Minute}}
+	return &fetcher{cfg: cfg, http: &http.Client{Timeout: 30 * time.Minute, CheckRedirect: sameHostSecrets}}
+}
+
+// sameHostSecrets follows redirects as Go's default policy does (at most
+// 10), but drops the NVD API key from a request redirected to another host:
+// Go drops Authorization and cookies there, not custom headers.
+func sameHostSecrets(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return errors.New("stopped after 10 redirects")
+	}
+	if req.URL.Host != via[0].URL.Host {
+		req.Header.Del("apiKey")
+	}
+	return nil
 }
 
 type statusError struct {

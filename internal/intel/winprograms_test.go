@@ -3,12 +3,18 @@ package intel
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/stackurity/stackurity/internal/osv"
@@ -34,15 +40,67 @@ func nvdFixture(t *testing.T, name string) []nvdCVE {
 	return out
 }
 
-// affectedAt reports whether an advisory says v is affected, and the fix.
+// affectedAt reports whether an advisory says v is affected on a listed
+// line, and the fix; a match only through an unlisted-line entry is
+// reported as not affected, with unlisted set.
 func affectedAt(t *testing.T, v *osv.Vulnerability, ver string) (bool, string) {
+	hit, fix, _ := lineVerdict(t, v, ver)
+	return hit, fix
+}
+
+func lineVerdict(t *testing.T, v *osv.Vulnerability, ver string) (hit bool, fix string, unlisted bool) {
 	t.Helper()
-	a := v.Affected[0]
-	m, err := osv.Check(a, osv.Target{Ecosystem: a.Package.Ecosystem, Name: a.Package.Name, Version: ver, Compare: version.Generic})
-	if err != nil {
-		t.Fatal(err)
+	for _, a := range v.Affected {
+		m, err := osv.Check(a, osv.Target{Ecosystem: a.Package.Ecosystem, Name: a.Package.Name, Version: ver, Compare: version.Generic})
+		if err != nil {
+			t.Fatal(err)
+		}
+		switch {
+		case !m.Affected:
+		case osv.UnlistedLine(a.Package.Ecosystem, a):
+			unlisted = true
+		default:
+			hit, fix = true, m.FixedVersion
+		}
 	}
-	return m.Affected, m.FixedVersion
+	return hit, fix, unlisted
+}
+
+// The fixes a source lists per line: a version on a line with a fix is
+// compared with that fix; one on no listed line needs validation (it is
+// never given another line's fix); one above every line is not affected.
+func TestLineFixRanges(t *testing.T) {
+	for _, c := range []struct {
+		fixes     []string
+		installed string
+		hit       bool
+		fix       string
+		unlisted  bool
+	}{
+		// The review's probes: patched hosts on a line the fix does not name.
+		{[]string{"143"}, "140.3.1", false, "", true},                  // Thunderbird ESR 140 vs a monthly fix
+		{[]string{"153.2.0"}, "115.30.0", false, "", true},             // Firefox ESR 115 vs ESR 153's fix
+		{[]string{"156.0.4314.42"}, "152.0.4191.137", false, "", true}, // Edge Extended Stable vs Stable's fix
+		{[]string{"152.0.4191.137", "155.0.4283.60"}, "152.0.4191.137", false, "", false},
+		{[]string{"152.0.4191.137", "155.0.4283.60"}, "152.0.4191.100", true, "152.0.4191.137", false},
+		{[]string{"152.0.4191.137", "155.0.4283.60"}, "154.0.4258.50", false, "", true}, // between the lines
+		{[]string{"152.0.4191.137", "155.0.4283.60"}, "155.0.4283.50", true, "155.0.4283.60", false},
+		{[]string{"152.0.4191.137", "155.0.4283.60"}, "157.0.1", false, "", false}, // above every line
+		{[]string{"115.16.1", "128.3.1"}, "128.3.0", true, "128.3.1", false},
+		{[]string{"8.0.32", "9.0.21"}, "9.0.10", true, "9.0.21", false},
+		{[]string{"8.0.32", "9.0.21"}, "8.0.32", false, "", false},
+	} {
+		v := &osv.Vulnerability{ID: "x", Affected: lineEntries("Windows programs:p", "p", lineFixRanges(c.fixes))}
+		hit, fix, unlisted := lineVerdict(t, v, c.installed)
+		if hit != c.hit || fix != c.fix || unlisted != c.unlisted {
+			t.Errorf("%v against %s: affected %v fix %q unlisted %v; want %v %q %v", c.fixes, c.installed, hit, fix, unlisted, c.hit, c.fix, c.unlisted)
+		}
+	}
+	// One rolling line (Firefox's rapid release): every earlier version is affected.
+	v := &osv.Vulnerability{ID: "x", Affected: lineEntries("Windows programs:p", "p", rollingFixRange([]string{"159", "131.0.2"}))}
+	if hit, fix, _ := lineVerdict(t, v, "131.0.1"); !hit || fix != "159" {
+		t.Errorf("rolling: %v %s", hit, fix)
+	}
 }
 
 func TestNVDRecords(t *testing.T) {
@@ -192,10 +250,11 @@ func TestMozillaRecords(t *testing.T) {
 		{ff, "131.0.2", false, ""},
 		{esr, "128.3.0", true, "128.3.1"},
 		{esr, "115.16.0", true, "115.16.1"},
-		{esr, "115.16.1", false, ""},    // its own line's fix, although below 128.3.1
-		{esr, "120.0", true, "128.3.1"}, // between two lines
+		{esr, "115.16.1", false, ""}, // its own line's fix, although below 128.3.1
+		{esr, "120.0", false, ""},    // between two lines: needs validation, not affected
 		{tb, "128.2.0", true, "128.3.1"},
-		{tb, "130.0", true, "131.0.1"},
+		{tb, "131.0.0", true, "131.0.1"},
+		{tb, "130.0", false, ""}, // between two lines
 	} {
 		v := c.recs["CVE-2024-9680"]
 		if v == nil {
@@ -223,10 +282,15 @@ func TestMozillaRecords(t *testing.T) {
 		t.Errorf("%d CVEs fixed in Firefox 159", newest)
 	}
 	for _, v := range esr {
-		for _, r := range v.Affected[0].Ranges {
-			if r.Events[1].Fixed == "159" {
+		for _, a := range v.Affected {
+			if a.Ranges[0].Events[1].Fixed == "159" {
 				t.Fatalf("%s: a release fix applied to ESR", v.ID)
 			}
+		}
+		// A CVE fixed only on other ESR lines (153.6, 115.44) is not
+		// reported affected on ESR 140.
+		if hit, fix, _ := lineVerdict(t, v, "140.17"); hit {
+			t.Fatalf("%s: ESR 140 given another line's fix %s", v.ID, fix)
 		}
 	}
 }
@@ -261,7 +325,7 @@ func TestMSRCPrograms(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ranges := map[string]map[string]string{} // CVE -> program -> ranges
+	ranges := map[string]map[string]string{} // CVE -> program -> its entries' ranges
 	for _, v := range doc.vulns {
 		for _, a := range v.Affected {
 			if osv.BaseEcosystem(a.Package.Ecosystem) != winprograms.Ecosystem {
@@ -270,15 +334,23 @@ func TestMSRCPrograms(t *testing.T) {
 			if ranges[v.Aliases[0]] == nil {
 				ranges[v.Aliases[0]] = map[string]string{}
 			}
-			ranges[v.Aliases[0]][a.Package.Name] = fmt.Sprint(a.Ranges)
+			for _, e := range a.Ranges[0].Events {
+				ranges[v.Aliases[0]][a.Package.Name] += e.Introduced + e.Fixed
+				if e.Limit != "" {
+					ranges[v.Aliases[0]][a.Package.Name] += "limit " + e.Limit
+				}
+				ranges[v.Aliases[0]][a.Package.Name] += " "
+			}
+			ranges[v.Aliases[0]][a.Package.Name] += "| "
 		}
 	}
 	for cve, want := range map[string]map[string]string{
-		"CVE-2026-102299": {"microsoft-edge": "[{ECOSYSTEM [{0   } { 154.0.4258.53  }]}]"},
-		// Extended Stable (152) and Stable (155) fixes: each fixes its line.
-		"CVE-2026-110144": {"microsoft-edge": "[{ECOSYSTEM [{0   } { 152.0.4191.137  }]} {ECOSYSTEM [{153   } { 155.0.4283.60  }]}]"},
+		"CVE-2026-102299": {"microsoft-edge": "0 limit 154 | 154 154.0.4258.53 | "},
+		// Extended Stable (152) and Stable (155) fixes: each fixes its line;
+		// 153 and 154 are on no listed line.
+		"CVE-2026-110144": {"microsoft-edge": "0 limit 152 | 152 152.0.4191.137 | 153 limit 155 | 155 155.0.4283.60 | "},
 		// .NET runtime fixes per line; the preview (11.0.0-rc.2) is not read.
-		"CVE-2026-105016": {"dotnet-runtime": "[{ECOSYSTEM [{0   } { 8.0.32  }]} {ECOSYSTEM [{9   } { 9.0.21  }]} {ECOSYSTEM [{10   } { 10.0.14  }]}]"},
+		"CVE-2026-105016": {"dotnet-runtime": "0 limit 8 | 8 8.0.32 | 9 9.0.21 | 10 10.0.14 | "},
 		// SDK versions only (8.0.427): no runtime fix.
 		"CVE-2026-114148": nil,
 	} {
@@ -327,5 +399,37 @@ func TestNVDSummary(t *testing.T) {
 	s := nvdSummaryText(long)
 	if len(s) > 500 || !utf8.ValidString(s) || !strings.HasSuffix(s, "…") {
 		t.Errorf("summary of %d bytes, valid %v", len(s), utf8.ValidString(s))
+	}
+}
+
+// The NVD API key never follows a redirect to another host.
+func TestNVDKeyStaysOnHost(t *testing.T) {
+	var gotKey []string
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotKey = append(gotKey, r.Header.Get("apiKey"))
+		_, _ = w.Write([]byte(`{"resultsPerPage":0,"startIndex":0,"totalResults":0,"vulnerabilities":[]}`))
+	}))
+	defer other.Close()
+	nvd := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotKey = append(gotKey, r.Header.Get("apiKey"))
+		if r.URL.Path == "/same" {
+			http.Redirect(w, r, "/elsewhere?"+r.URL.RawQuery, http.StatusFound)
+			return
+		}
+		if r.URL.Path == "/elsewhere" {
+			http.Redirect(w, r, other.URL+"/?"+r.URL.RawQuery, http.StatusFound)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer nvd.Close()
+	cfg := DefaultConfig()
+	cfg.NVDURL, cfg.NVDAPIKey, cfg.NVDDelay = nvd.URL+"/same", "secret-key", 0
+	s := NewSyncer(nil, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
+	if err := s.nvdQuery(context.Background(), "cpe:2.3:a:7-zip:7-zip", time.Time{}, time.Time{}, func(nvdCVE) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if len(gotKey) != 3 || gotKey[0] != "secret-key" || gotKey[1] != "secret-key" || gotKey[2] != "" {
+		t.Errorf("apiKey seen as %q: kept on the same host, dropped on another", gotKey)
 	}
 }

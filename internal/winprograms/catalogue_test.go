@@ -266,3 +266,20 @@ func TestParseRefuses(t *testing.T) {
 		t.Error("a program listed twice was accepted")
 	}
 }
+
+func TestSideBySideLines(t *testing.T) {
+	for _, c := range []struct{ id, version, want string }{
+		{"dotnet-runtime", "8.0.20", "8"},
+		{"aspnetcore-runtime", "10.0.10", "10"},
+		{"python", "3.12.10", "3.12"},
+		{"google-chrome", "156.0.8078.74", ""},
+	} {
+		if got := Default().Program(c.id).Line(c.version); got != c.want {
+			t.Errorf("%s %s line %q, want %q", c.id, c.version, got, c.want)
+		}
+	}
+	bad := `{"schema":1,"version":"t","programs":[{"id":"x","label":"X","names":["^X$"],"publishers":["^P$"],"sources":["s"],"verified":"2026-10-30","side_by_side":"minor","unmatched":"why"}]}`
+	if _, err := Parse([]byte(bad)); err == nil {
+		t.Error("side_by_side minor was accepted")
+	}
+}

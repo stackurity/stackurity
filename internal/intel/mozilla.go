@@ -168,13 +168,15 @@ func mozillaRecords(p *winprograms.Program, docs []mfsaDoc) []*osv.Vulnerability
 	}
 	out := make([]*osv.Vulnerability, 0, len(byCVE))
 	for cve, g := range byCVE {
-		ranges := lineFixRanges(g.fixes)
+		ranges := rollingFixRange(g.fixes)
+		if p.Source.PerLine {
+			ranges = lineFixRanges(g.fixes)
+		}
 		if len(ranges) == 0 {
 			continue
 		}
 		v := &osv.Vulnerability{ID: mozillaPrefix(p.ID) + cve, Aliases: []string{cve}, Published: g.first, Modified: g.last,
-			Summary:  g.title,
-			Affected: []osv.Affected{{Package: osv.Package{Ecosystem: p.Ecosystem(), Name: p.ID}, Ranges: ranges}}}
+			Summary: g.title, Affected: lineEntries(p.Ecosystem(), p.ID, ranges)}
 		if v.Summary == "" {
 			v.Summary = cve + " in " + p.Label
 		}

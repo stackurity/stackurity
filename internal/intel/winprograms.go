@@ -35,6 +35,23 @@ type programsCursor struct {
 type programCursor struct {
 	Full time.Time `json:"full"` // every CVE naming the program read
 	Read time.Time `json:"read"` // the end of the last read, full or incremental
+	// Unfixed counts, at the last complete read, the CVEs NVD names the
+	// program in with no fixed version or no version bound at all: they are
+	// not matched, and the program's rows say so.
+	Unfixed int `json:"unfixed,omitempty"`
+}
+
+// programsUnfixed reads the unfixed counts from the feed's cursor.
+func programsUnfixed(cursor string) map[string]int {
+	var c programsCursor
+	if json.Unmarshal([]byte(cursor), &c) != nil {
+		return nil
+	}
+	out := map[string]int{}
+	for id, pc := range c.Programs {
+		out[id] = pc.Unfixed
+	}
+	return out
 }
 
 func (s *Syncer) catalogue() *winprograms.Catalogue {
@@ -110,7 +127,11 @@ func (s *Syncer) syncWindowsPrograms(ctx context.Context, feed, cursor string) (
 				err = s.storeProgram(ctx, feed, p, mozillaPrefix(p.ID), mozillaRecords(p, mozilla), nil, true, now, res)
 			}
 		} else {
-			err = s.syncProgram(ctx, feed, p, full, pc.Read, now, res)
+			var unfixed int
+			unfixed, err = s.syncProgram(ctx, feed, p, full, pc.Read, now, res)
+			if err == nil && full {
+				pc.Unfixed = unfixed
+			}
 		}
 		if err != nil {
 			if ctx.Err() != nil {
@@ -154,10 +175,11 @@ func (s *Syncer) syncWindowsPrograms(ctx context.Context, feed, cursor string) (
 
 // syncProgram reads one program's CVEs: every one naming its CPE products
 // (full), or those modified since the last read, and stores them.
-func (s *Syncer) syncProgram(ctx context.Context, feed string, p *winprograms.Program, full bool, lastRead, now time.Time, res *SyncResult) error {
+func (s *Syncer) syncProgram(ctx context.Context, feed string, p *winprograms.Program, full bool, lastRead, now time.Time, res *SyncResult) (int, error) {
 	anomalies := nvdAnomalies{}
 	byCVE := map[string]*osv.Vulnerability{}
-	listed := map[string]bool{} // CVEs NVD returned, usable or not
+	listed := map[string]bool{}  // CVEs NVD returned, usable or not
+	unfixed := map[string]bool{} // CVEs named with no fix and no bound only
 	var since time.Time
 	if !full {
 		since = lastRead.Add(-nvdOverlap)
@@ -165,13 +187,16 @@ func (s *Syncer) syncProgram(ctx context.Context, feed string, p *winprograms.Pr
 	for _, cpe := range p.Source.CPEs {
 		err := s.nvdQuery(ctx, cpe, since, now, func(c nvdCVE) error {
 			listed[c.ID] = true
+			open := anomalies[nvdStartOnly] + anomalies[nvdUnbounded]
 			if v := nvdRecord(p, c, anomalies); v != nil {
 				byCVE[c.ID] = v
+			} else if anomalies[nvdStartOnly]+anomalies[nvdUnbounded] > open {
+				unfixed[c.ID] = true
 			}
 			return nil
 		})
 		if err != nil {
-			return err
+			return 0, err
 		}
 	}
 	if len(anomalies) > 0 {
@@ -182,7 +207,10 @@ func (s *Syncer) syncProgram(ctx context.Context, feed string, p *winprograms.Pr
 		vulns = append(vulns, v)
 	}
 	sort.Slice(vulns, func(i, j int) bool { return vulns[i].ID < vulns[j].ID })
-	return s.storeProgram(ctx, feed, p, nvdPrefix(p.ID), vulns, listed, full, now, res)
+	for id := range byCVE {
+		delete(unfixed, id) // read through another of its CPEs
+	}
+	return len(unfixed), s.storeProgram(ctx, feed, p, nvdPrefix(p.ID), vulns, listed, full, now, res)
 }
 
 // storeProgram stores one program's advisories (ids starting with prefix)

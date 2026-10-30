@@ -442,6 +442,8 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 	// the regular packages apply to every build, as in Oracle's OVAL, but
 	// their "not affected" says nothing about a Ksplice or FIPS build.
 	oracle := strings.HasPrefix(t.Ecosystem, "Oracle Linux:")
+	// Advisories with a fix per version line, one affected entry per line.
+	perLine := oracle || strings.HasPrefix(t.Ecosystem, winprograms.Ecosystem+":")
 	oracleBuild := ""
 	if oracle {
 		oracleBuild = osv.OracleBuild(t.Version)
@@ -482,7 +484,7 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 		if !m.Affected {
 			// A record for another version line (or for versions on no
 			// listed line) says nothing about this version's line.
-			otherLine := oracle && (osv.OtherLine(a.Affected, t) || osv.UnlistedLine(a.Ecosystem, a.Affected))
+			otherLine := perLine && (osv.OtherLine(a.Affected, t) || osv.UnlistedLine(a.Ecosystem, a.Affected))
 			if !pro && recordChannel == oracleBuild && !otherLine {
 				freeClear[a.GroupKey]++
 			}
