@@ -1,9 +1,11 @@
 // Package apps inventories applications deployed on a host: the libraries an
 // application actually has installed (node_modules, Python site-packages,
 // Composer's vendor directory) and, where nothing is installed, its
-// lockfiles. Repositories describe what a project declares; a deployed
-// directory shows what runs, which can differ (an old release, a manual
-// install, a package added on the server).
+// lockfiles. Front-end libraries a site loads from a CDN or keeps a copy of
+// are read from its templates and file banners (webassets.go).
+// Repositories describe what a project declares; a deployed directory shows
+// what runs, which can differ (an old release, a manual install, a package
+// added on the server).
 //
 // Everything is read as data. No package manager, script or application
 // code is run, and symbolic links are only followed for a release layout's
@@ -262,6 +264,7 @@ func (s *Scanner) ScanApp(ctx context.Context, dir string) App {
 			app.Observations = append(app.Observations, o)
 		}
 	}
+	web := &webAssets{s: s, dir: dir, seen: map[string]bool{}}
 	err = filepath.WalkDir(s.path(dir), func(full string, d fs.DirEntry, err error) error {
 		if cerr := ctx.Err(); cerr != nil {
 			return cerr // the collection's time limit stops the walk
@@ -270,6 +273,7 @@ func (s *Scanner) ScanApp(ctx context.Context, dir string) App {
 			return nil
 		}
 		if !d.IsDir() {
+			web.consider(full, d)
 			return nil
 		}
 		host := s.hostPath(full)
@@ -304,6 +308,8 @@ func (s *Scanner) ScanApp(ctx context.Context, dir string) App {
 				if len(obs) > 0 {
 					note(project, "composer")
 				}
+			} else if !composerVendor(full) {
+				web.walk(ctx, host) // a site's own copies (assets/vendor/jquery/...)
 			}
 			return fs.SkipDir
 		case name == ".git" || name == "releases" && host != dir:
@@ -338,6 +344,16 @@ func (s *Scanner) ScanApp(ctx context.Context, dir string) App {
 		kept = append(kept, o)
 	}
 	add(kept)
+	// Libraries loaded from a CDN or copied into the application, unless a
+	// manifest already reported the same package and version.
+	add(unlisted(web.obs, app.Observations))
+	if web.files > 0 || web.truncated {
+		c := model.CoverageItem{Scope: clipScope(webAssetsScopeID + dir), Status: "checked"}
+		if web.truncated {
+			c.Status, c.Reason = "partial", fmt.Sprintf("stopped after %d files or %d MiB of templates and scripts", webFiles, webBytes>>20)
+		}
+		app.Coverage = append(app.Coverage, c)
+	}
 	for _, c := range lcov {
 		if i := strings.Index(c.Scope, ":"); i > 0 {
 			c.Scope = c.Scope[:i+1] + path.Join(dir, c.Scope[i+1:])

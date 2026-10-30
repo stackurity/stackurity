@@ -435,6 +435,17 @@ func versionSource(inv store.InventoryProvenance) string {
 			return v
 		}
 	}
+	// Front-end libraries a site loads from a CDN or keeps a copy of.
+	switch inv.Evidence["source"] {
+	case "cdn":
+		if u := inv.Evidence["url"]; u != "" {
+			return fmt.Sprintf("the CDN address %s in %s", u, orUnknown(inv.Location))
+		}
+	case "vendored":
+		if inv.Location != "" {
+			return "the version banner of " + inv.Location
+		}
+	}
 	if inv.Location != "" {
 		return inv.Location
 	}

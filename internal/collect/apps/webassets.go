@@ -1,0 +1,454 @@
+package apps
+
+// Front-end libraries outside a package manager. PHP, WordPress and older
+// sites load Bootstrap, jQuery, TinyMCE and the like from a CDN address in
+// a template, or from a copy of the library's file kept with the site.
+// Neither shows up in a manifest. Both name an exact release: the CDN
+// address in its path, the copied file in the banner its build writes at
+// the top. They are reported as the npm packages they were published as,
+// so the usual npm advisories and latest-release checks apply.
+
+import (
+	"bytes"
+	"context"
+	"io"
+	"io/fs"
+	"os"
+	"path"
+	"path/filepath"
+	"regexp"
+	"strings"
+
+	"github.com/package-url/packageurl-go"
+
+	"github.com/stackurity/stackurity/internal/collect/lockfile"
+	"github.com/stackurity/stackurity/internal/model"
+)
+
+// Limits on reading an application's templates and scripts. A WordPress
+// site with its plugins has tens of thousands of .php and .js files.
+const (
+	bannerSize       = 4 << 10   // read from the top of each .js or .css file
+	maxTemplateSize  = 256 << 10 // read from each template
+	maxWebFiles      = 50_000    // files opened per application
+	maxWebBytes      = 256 << 20 // bytes read per application, in total
+	webAssetsScopeID = "web-assets:"
+)
+
+// webFiles and webBytes are maxWebFiles and maxWebBytes; tests lower them.
+var webFiles, webBytes = maxWebFiles, maxWebBytes
+
+// ver is an exact release: three numbers, optionally a pre-release. A
+// shorter or open version ("3", "3.x", "latest") is not reported.
+const ver = `(\d+\.\d+\.\d+(?:-[0-9A-Za-z][0-9A-Za-z.]*)?)`
+
+var exactVersion = regexp.MustCompile(`^` + ver + `$`)
+
+// lineStart anchors a banner to the start of a comment line, so a plugin
+// that mentions "for Bootstrap v4.3.1" is not taken for Bootstrap.
+const lineStart = `(?m)^[\t /*!]*`
+
+// webLib is one library that is recognised outside a package manager.
+type webLib struct {
+	npm string
+	// hint is in every banner of the library or in its file name (lower
+	// case); the banners are only tried on a file that has it.
+	hint string
+	// cdn lists the library's names on cdnjs, Google Hosted Libraries and
+	// BootstrapCDN, which differ from npm in places.
+	cdn []string
+	// npm5 is the npm package of versions 5 and later, when the library
+	// moved (Font Awesome is @fortawesome/fontawesome-free from 5.0).
+	npm5    string
+	banners []banner
+}
+
+// banner finds the version at the head of a file. The version is the
+// regexp's groups joined with "." (TinyMCE keeps it as majorVersion "5"
+// and minorVersion "10.2").
+type banner struct {
+	re   *regexp.Regexp
+	file string // the file name must contain this; "" for any .js or .css file
+}
+
+func b(re string) banner        { return banner{re: regexp.MustCompile(re)} }
+func bf(file, re string) banner { return banner{re: regexp.MustCompile(re), file: file} }
+func bs(res ...string) (out []banner) {
+	for _, re := range res {
+		out = append(out, b(re))
+	}
+	return out
+}
+
+// webLibs are the libraries recognised by banner or by a CDN's own name
+// for them: widely used, with a history of advisories. A banner of any
+// other library is ignored. An address on jsDelivr or unpkg names the npm
+// package itself, so any package there is reported.
+var webLibs = []webLib{
+	{npm: "jquery", hint: "jquery", cdn: []string{"jquery"}, banners: bs(lineStart + `jQuery (?:JavaScript Library )?v` + ver)},
+	{npm: "jquery-ui", hint: "jquery", cdn: []string{"jqueryui"}, banners: bs(lineStart + `jQuery UI (?:- )?v?` + ver)},
+	{npm: "jquery-migrate", hint: "jquery", cdn: []string{"jquery-migrate"}, banners: bs(lineStart + `jQuery Migrate (?:- )?v` + ver)},
+	{npm: "jquery-validation", hint: "jquery", cdn: []string{"jquery-validate"}, banners: bs(lineStart + `jQuery Validation Plugin (?:- )?v` + ver)},
+	{npm: "bootstrap", hint: "bootstrap", cdn: []string{"twitter-bootstrap", "bootstrap"}, banners: bs(lineStart + `Bootstrap v` + ver)},
+	{npm: "bootstrap-select", hint: "bootstrap", cdn: []string{"bootstrap-select"}, banners: bs(lineStart + `Bootstrap-select v` + ver)},
+	{npm: "angular", hint: "angularjs", cdn: []string{"angular.js", "angularjs"}, banners: bs(lineStart + `(?:@license )?AngularJS v` + ver)},
+	{npm: "vue", hint: "vue", cdn: []string{"vue"}, banners: bs(lineStart+`Vue\.js v`+ver, lineStart+`vue v`+ver)},
+	// React 16 and 17 share one banner line between packages; the next line
+	// names the file. React 18 has no version in its banner.
+	{npm: "react", hint: "react", cdn: []string{"react"}, banners: bs(
+		lineStart+`@license React v`+ver+`\s*\n[\t /*]*react\.(?:production|development)`,
+		lineStart+`React v`+ver+`[\t ]*$`)},
+	{npm: "react-dom", hint: "react", cdn: []string{"react-dom"}, banners: bs(
+		lineStart+`@license React v`+ver+`\s*\n[\t /*]*react-dom\.(?:production|development)`,
+		lineStart+`ReactDOM v`+ver)},
+	{npm: "lodash", hint: "lodash", cdn: []string{"lodash.js"}, banners: bs(
+		lineStart+`lodash v?`+ver,
+		`(?s)[Ll]odash <https://lodash\.com/>.{0,1000}?var VERSION = '`+ver+`'`)},
+	{npm: "underscore", hint: "underscore.js", cdn: []string{"underscore.js"}, banners: bs(lineStart + `Underscore\.js ` + ver)},
+	{npm: "moment", hint: "moment.js", cdn: []string{"moment.js"}, banners: bs(`(?m)^//! moment\.js\s*\n//! version : ` + ver)},
+	{npm: "handlebars", hint: "handlebars", cdn: []string{"handlebars.js"}, banners: bs(lineStart + `handlebars v` + ver)},
+	{npm: "knockout", hint: "knockout", cdn: []string{"knockout"}, banners: bs(lineStart + `Knockout JavaScript library v` + ver)},
+	{npm: "tinymce", hint: "tiny", cdn: []string{"tinymce"}, banners: []banner{
+		b(lineStart + `TinyMCE version ` + ver),              // 6 and later
+		b(`(?s)Tiny Technologies.{0,512}?Version: ` + ver),   // 5
+		bf("tinymce", `(?m)^// `+ver+` \(\d{4}-\d\d-\d\d\)`), // 4
+		bf("tinymce", `majorVersion\s*:\s*["'](\d+)["']\s*,\s*minorVersion\s*:\s*["'](\d+\.\d+)["']`),
+	}},
+	{npm: "ckeditor4", hint: "ckeditor", cdn: []string{"ckeditor"}, banners: []banner{
+		bf("ckeditor", `(?s)CKEDITOR.{0,1000}?version\s*:\s*["']`+ver),
+	}},
+	{npm: "datatables.net", hint: "datatables", cdn: []string{"datatables"}, banners: bs(lineStart + `DataTables ` + ver)},
+	{npm: "select2", hint: "select2", cdn: []string{"select2"}, banners: bs(lineStart + `Select2 ` + ver)},
+	{npm: "chart.js", hint: "chart.js", cdn: []string{"chart.js"}, banners: bs(lineStart + `Chart\.js v?` + ver)},
+	{npm: "d3", hint: "d3js", cdn: []string{"d3"}, banners: bs(lineStart + `https://d3js\.org v` + ver)},
+	{npm: "axios", hint: "axios", cdn: []string{"axios"}, banners: bs(lineStart + `[Aa]xios v` + ver)},
+	{npm: "dompurify", hint: "dompurify", cdn: []string{"dompurify"}, banners: bs(lineStart + `@license DOMPurify v?` + ver)},
+	{npm: "highlight.js", hint: "highlight.js", cdn: []string{"highlight.js"}, banners: bs(lineStart + `[Hh]ighlight\.js v?` + ver)},
+	{npm: "prismjs", hint: "prismjs", cdn: []string{"prism"}, banners: bs(lineStart + `PrismJS ` + ver)},
+	{npm: "summernote", hint: "wysiwyg", cdn: []string{"summernote"}, banners: bs(lineStart + `Super simple (?:WYSIWYG|wysiwyg) editor v` + ver)},
+	{npm: "font-awesome", hint: "font awesome", cdn: []string{"font-awesome"}, npm5: "@fortawesome/fontawesome-free", banners: bs(lineStart + `Font Awesome ` + ver)},
+	{npm: "@fortawesome/fontawesome-free", hint: "font awesome", banners: bs(lineStart + `Font Awesome Free ` + ver)},
+}
+
+// cdnNames maps a CDN's library name (lower case) to its entry in webLibs.
+var cdnNames = func() map[string]*webLib {
+	m := map[string]*webLib{}
+	for i := range webLibs {
+		for _, n := range webLibs[i].cdn {
+			m[n] = &webLibs[i]
+		}
+	}
+	return m
+}()
+
+// fromCDNName returns the npm package of a library the CDN calls name.
+func fromCDNName(name, version string) (string, bool) {
+	l, ok := cdnNames[strings.ToLower(name)]
+	if !ok {
+		return "", false
+	}
+	if l.npm5 != "" {
+		if major, _, _ := strings.Cut(version, "."); len(major) > 1 || major >= "5" {
+			return l.npm5, true
+		}
+	}
+	return l.npm, true
+}
+
+var (
+	npmName       = regexp.MustCompile(`^(?:@[a-z0-9][a-z0-9._~-]*/)?[a-z0-9][a-z0-9._~-]*$`)
+	jqueryFile    = regexp.MustCompile(`^jquery-` + ver + `(?:\.slim)?(?:\.min)?\.js$`)
+	jqMigrateFile = regexp.MustCompile(`^jquery-migrate-` + ver + `(?:\.min)?\.js$`)
+)
+
+// parseCDNURL returns the npm package and exact version a CDN address
+// loads. An address without an exact version (@latest, a major only, none)
+// or of an unknown library gives ok false.
+func parseCDNURL(raw string) (name, version string, ok bool) {
+	u := raw
+	if i := strings.Index(u, "//"); i >= 0 && i <= len("https:") {
+		u = u[i+2:]
+	}
+	if i := strings.IndexAny(u, "?#"); i >= 0 {
+		u = u[:i]
+	}
+	host, p, _ := strings.Cut(u, "/")
+	host = strings.ToLower(host)
+	seg := strings.Split(p, "/")
+	switch host {
+	case "cdn.jsdelivr.net":
+		if len(seg) < 2 || seg[0] != "npm" {
+			return "", "", false // gh/, combine/, wp/: not an npm package
+		}
+		return npmSpec(seg[1:])
+	case "unpkg.com":
+		return npmSpec(seg)
+	case "cdnjs.cloudflare.com", "ajax.googleapis.com":
+		if len(seg) < 4 || seg[0] != "ajax" || seg[1] != "libs" {
+			return "", "", false
+		}
+		return cdnLib(seg[2], seg[3])
+	case "stackpath.bootstrapcdn.com", "maxcdn.bootstrapcdn.com", "netdna.bootstrapcdn.com":
+		if len(seg) < 3 {
+			return "", "", false
+		}
+		return cdnLib(seg[0], seg[1])
+	case "code.jquery.com":
+		if len(seg) >= 3 && seg[0] == "ui" && exactVersion.MatchString(seg[1]) {
+			return "jquery-ui", seg[1], true
+		}
+		if len(seg) == 1 {
+			if m := jqueryFile.FindStringSubmatch(seg[0]); m != nil {
+				return "jquery", m[1], true
+			}
+			if m := jqMigrateFile.FindStringSubmatch(seg[0]); m != nil {
+				return "jquery-migrate", m[1], true
+			}
+		}
+	case "cdn.ckeditor.com":
+		// cdn.ckeditor.com/4.11.4/standard/ckeditor.js; CKEditor 5 builds
+		// (ckeditor5/...) are several npm packages and are not reported.
+		if len(seg) >= 3 && strings.HasPrefix(seg[0], "4.") && exactVersion.MatchString(seg[0]) {
+			return "ckeditor4", seg[0], true
+		}
+	case "cdn.datatables.net":
+		// cdn.datatables.net/1.10.19/js/jquery.dataTables.min.js; extensions
+		// (buttons/1.5.6/...) and bundles (v/dt/...) are other packages.
+		if len(seg) >= 3 && exactVersion.MatchString(seg[0]) {
+			return "datatables.net", seg[0], true
+		}
+	}
+	return "", "", false
+}
+
+// npmSpec reads "name@version" or "@scope/name@version" from the start of
+// a jsDelivr or unpkg path.
+func npmSpec(seg []string) (string, string, bool) {
+	spec := seg[0]
+	if strings.HasPrefix(spec, "@") {
+		if len(seg) < 2 {
+			return "", "", false
+		}
+		spec += "/" + seg[1]
+	}
+	at := strings.LastIndex(spec, "@")
+	if at <= 0 {
+		return "", "", false // no version: the CDN serves the latest
+	}
+	name, version := strings.ToLower(spec[:at]), spec[at+1:]
+	if !npmName.MatchString(name) || !exactVersion.MatchString(version) {
+		return "", "", false
+	}
+	return name, version, true
+}
+
+func cdnLib(lib, version string) (string, string, bool) {
+	if !exactVersion.MatchString(version) {
+		return "", "", false
+	}
+	if name, ok := fromCDNName(lib, version); ok {
+		return name, version, true
+	}
+	return "", "", false
+}
+
+// parseBanner returns the libraries whose banner is in head, the first
+// bytes of a file called name.
+func parseBanner(name string, head []byte) (out [][2]string) {
+	name = strings.ToLower(name)
+	lower := bytes.ToLower(head)
+	for i := range webLibs {
+		l := &webLibs[i]
+		if !bytes.Contains(lower, []byte(l.hint)) && !strings.Contains(name, l.hint) {
+			continue
+		}
+		for _, bn := range l.banners {
+			if bn.file != "" && !strings.Contains(name, bn.file) {
+				continue
+			}
+			m := bn.re.FindSubmatch(head)
+			if m == nil {
+				continue
+			}
+			var parts []string
+			for _, g := range m[1:] {
+				if len(g) > 0 {
+					parts = append(parts, string(g))
+				}
+			}
+			if v := strings.Join(parts, "."); exactVersion.MatchString(v) {
+				out = append(out, [2]string{l.npm, v})
+				break
+			}
+		}
+	}
+	return out
+}
+
+// cdnAddress finds addresses on the CDNs parseCDNURL reads, with or without
+// a scheme, anywhere in a template: in a script or link tag, or passed to
+// wp_enqueue_script and the like.
+var cdnAddress = regexp.MustCompile(`(?i)(?:https?:)?//(?:cdn\.jsdelivr\.net|unpkg\.com|cdnjs\.cloudflare\.com|code\.jquery\.com|` +
+	`(?:stackpath|maxcdn|netdna)\.bootstrapcdn\.com|ajax\.googleapis\.com|cdn\.ckeditor\.com|cdn\.datatables\.net)/[^\s"'<>()\\` + "`" + `]+`)
+
+var htmlComment = regexp.MustCompile(`(?s)<!--.*?-->`)
+
+// templateExts are the files read for CDN addresses (.blade.php is a .php).
+var templateExts = []string{".html", ".htm", ".php", ".phtml", ".twig", ".erb", ".ejs", ".hbs", ".vue", ".jsx", ".tsx"}
+
+// parseTemplate returns the CDN addresses in a template that name a
+// package, each once. Addresses in HTML comments are ignored.
+func parseTemplate(data []byte) (out [][3]string) {
+	data = htmlComment.ReplaceAll(data, nil)
+	seen := map[string]bool{}
+	for _, m := range cdnAddress.FindAll(data, -1) {
+		u := string(m)
+		if name, version, ok := parseCDNURL(u); ok && !seen[name+"@"+version] {
+			seen[name+"@"+version] = true
+			out = append(out, [3]string{name, version, u})
+		}
+	}
+	return out
+}
+
+// webAssets collects one application's CDN and copied libraries.
+type webAssets struct {
+	s         *Scanner
+	dir       string // the application's host path
+	files     int
+	bytes     int
+	truncated bool
+	seen      map[string]bool
+	obs       []model.Observation
+}
+
+// skipWebDir: directories whose files are not the application's own web
+// assets (virtualenvs and caches), besides hidden ones.
+var skipWebDir = map[string]bool{"node_modules": true, "venv": true, "__pycache__": true, "site-packages": true, "dist-packages": true}
+
+// consider reads one file if it is a template or a script or stylesheet.
+// full is its path under the scanner's root.
+func (w *webAssets) consider(full string, d fs.DirEntry) {
+	if !d.Type().IsRegular() {
+		return // a link is never followed, in or out of the application
+	}
+	name := strings.ToLower(d.Name())
+	isAsset := strings.HasSuffix(name, ".js") || strings.HasSuffix(name, ".css")
+	isTemplate := false
+	for _, e := range templateExts {
+		isTemplate = isTemplate || strings.HasSuffix(name, e)
+	}
+	if !isAsset && !isTemplate {
+		return
+	}
+	host := w.s.hostPath(full)
+	rel := strings.TrimPrefix(host, w.dir+"/")
+	if strings.Count(rel, "/") >= lockfile.MaxWalkDepth {
+		return
+	}
+	for _, part := range strings.Split(path.Dir(rel), "/") {
+		if strings.HasPrefix(part, ".") && part != "." || skipWebDir[part] {
+			return
+		}
+	}
+	if w.s.Owned != nil && w.s.Owned(host) {
+		return
+	}
+	if w.files >= webFiles || w.bytes >= webBytes {
+		w.truncated = true
+		return
+	}
+	limit := int64(bannerSize)
+	if isTemplate {
+		limit = maxTemplateSize
+	}
+	f, err := os.Open(full)
+	if err != nil {
+		return
+	}
+	data, _ := io.ReadAll(io.LimitReader(f, limit))
+	f.Close()
+	w.files++
+	w.bytes += len(data)
+	if isTemplate {
+		for _, m := range parseTemplate(data) {
+			w.add(m[0], m[1], host, map[string]string{"source": "cdn", "url": clip(m[2])})
+		}
+		return
+	}
+	for _, m := range parseBanner(name, data) {
+		w.add(m[0], m[1], host, map[string]string{"source": "vendored"})
+	}
+}
+
+// add keeps the first place each package and version was seen.
+func (w *webAssets) add(name, version, location string, ev map[string]string) {
+	purl := npmPurl(name, version)
+	if w.seen[purl] {
+		return
+	}
+	w.seen[purl] = true
+	// The address or banner names the exact release, as package.json does
+	// for a package in node_modules.
+	w.obs = append(w.obs, model.Observation{Purl: purl, Version: version, Location: clip(location), Direct: boolp(true),
+		Scope: "runtime", Confidence: model.ConfidenceConfirmed, Evidence: ev})
+}
+
+// walk reads the web assets below one directory (host path) that the main
+// walk does not enter: a front-end vendor/ directory, which is not
+// Composer's.
+func (w *webAssets) walk(ctx context.Context, dir string) {
+	_ = filepath.WalkDir(w.s.path(dir), func(full string, d fs.DirEntry, err error) error {
+		if cerr := ctx.Err(); cerr != nil {
+			return cerr
+		}
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if host := w.s.hostPath(full); host != dir && (skipWebDir[d.Name()] || strings.HasPrefix(d.Name(), ".") || w.s.nestedApp(w.dir, host)) {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		w.consider(full, d)
+		return nil
+	})
+}
+
+// composerVendor reports whether vendor directory full (under the root)
+// is Composer's rather than a site's own copies of front-end libraries.
+func composerVendor(full string) bool {
+	for _, p := range []string{"composer", "autoload.php"} {
+		if _, err := os.Lstat(filepath.Join(full, p)); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// unlisted returns the observations whose package and version none of
+// manifest has: a copy of a library the application also installs through
+// npm (a build step copying it to public/) is reported once, from npm.
+func unlisted(found, manifest []model.Observation) []model.Observation {
+	have := map[string]bool{}
+	for _, o := range manifest {
+		if p, err := packageurl.FromString(o.Purl); err == nil && p.Type == "npm" {
+			have[npmPurl(path.Join(p.Namespace, p.Name), firstNonEmpty(p.Version, o.Version))] = true
+		}
+	}
+	var out []model.Observation
+	for _, o := range found {
+		if !have[o.Purl] {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
+func firstNonEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
+}
