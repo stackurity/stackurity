@@ -55,7 +55,7 @@
         "https://learn.microsoft.com/en-us/DeployEdge/microsoft-edge-relnotes-security"
       ],
       "verified": "2026-10-30",
-      "note": "Microsoft's Security Update Guide lists the Edge build fixing each CVE, including the Chromium CVEs Edge takes in (709 CVEs in the 2026-Oct document). NVD's edge_chromium CPE lists only Edge's own CVEs, so it is not used. A version on a major Microsoft lists no fix for (Extended Stable when only Stable's fix is given) needs validation rather than being reported affected.",
+      "note": "Microsoft's Security Update Guide lists the Edge build fixing each CVE, including the Chromium CVEs Edge takes in (709 CVEs in the 2026-Oct document). NVD's edge_chromium CPE lists only Edge's own CVEs, so it is not used. Fixes are read per major. A version on a major Microsoft lists no fix for depends on whether that line is still updated: Extended Stable (even majors, listed next to Stable) keeps an 8-week grace after its last such listing, and the CVEs fixed only on other lines are one coverage note on its rows; an older Stable major, or an Extended Stable line taken over by the next, is confirmed affected with the next listed line's fix.",
       "extended_parity": "even"
     },
     {
@@ -132,7 +132,7 @@
         "https://www.mozilla.org/en-US/security/known-vulnerabilities/firefox-esr/"
       ],
       "verified": "2026-10-30",
-      "note": "Mozilla lists a fix per ESR line (ESR 115.16.1 and ESR 128.3.1): each fixes its own line. A version on a line Mozilla lists no fix for (a CVE fixed only on the 153 line, on a 115 host) needs validation rather than being reported affected."
+      "note": "Mozilla lists a fix per ESR line (ESR 115.16.1 and ESR 128.3.1): each fixes its own line. A version on a line Mozilla lists no fix for depends on whether Mozilla still fixes that line: a supported ESR line (a CVE fixed only on the 153 line, on a patched 115 host) gets the CVE as part of a coverage note, not a finding; an ended ESR line (128 after its last release) is confirmed affected with the next listed line's fix."
     },
     {
       "id": "mozilla-thunderbird",
@@ -163,7 +163,7 @@
         "https://www.thunderbird.net/en-US/security/"
       ],
       "verified": "2026-10-30",
-      "note": "Mozilla lists a fix per Thunderbird line (the ESR 140.3 and the monthly 143): each fixes its own line. The registry does not tell an ESR install from a monthly one, so a version on a line with no listed fix needs validation."
+      "note": "Mozilla lists a fix per Thunderbird line (the ESR 153.6 and the monthly 159): each fixes its own line. A version on a line with no listed fix depends on whether Mozilla still fixes that line: Thunderbird's ESR gets such CVEs as part of a coverage note, not findings; an older monthly release is confirmed affected with the next listed line's fix."
     },
     {
       "id": "7-zip",
@@ -602,7 +602,7 @@
         "https://dotnet.microsoft.com/en-us/download/dotnet"
       ],
       "verified": "2026-10-30",
-      "note": "Microsoft's Security Update Guide lists the runtime version fixing each CVE per .NET line (\".NET 8.0 runtime installed on Windows\": 8.0.32); SDK versions (8.0.427) are not read. The registry version of these entries (64.108.52182) is the MSI's, so the version is read from the name. Host, Host FX Resolver, SDK and targeting pack entries are not matched. .NET Framework is part of Windows and is not evaluated.",
+      "note": "Microsoft's Security Update Guide lists the runtime version fixing each CVE per .NET line (\".NET 8.0 runtime installed on Windows\": 8.0.32); SDK versions (8.0.427) are not read. The registry version of these entries (64.108.52182) is the MSI's, so the version is read from the name. Host, Host FX Resolver, SDK and targeting pack entries are not matched. .NET Framework is part of Windows and is not evaluated. A line Microsoft no longer lists a fix for (an out-of-support .NET 6) is confirmed affected with the next listed line's fix; supported lines are always listed together.",
       "side_by_side": "major"
     },
     {
@@ -629,7 +629,7 @@
         "https://dotnet.microsoft.com/en-us/download/dotnet"
       ],
       "verified": "2026-10-30",
-      "note": "Microsoft's Security Update Guide lists the version fixing each CVE per ASP.NET Core line (\"ASP.NET Core 8.0\": 8.0.32). The runtime bundle and its shared framework are two entries for one installation: findings are reported once.",
+      "note": "Microsoft's Security Update Guide lists the version fixing each CVE per ASP.NET Core line (\"ASP.NET Core 8.0\": 8.0.32). The runtime bundle and its shared framework are two entries for one installation: findings are reported once. A line Microsoft no longer lists a fix for (an out-of-support ASP.NET Core 6) is confirmed affected with the next listed line's fix.",
       "side_by_side": "major"
     },
     {
