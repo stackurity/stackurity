@@ -4,6 +4,12 @@ All notable changes to Stackurity. Versions follow [Semantic Versioning](https:/
 
 Each release's section is published as its GitHub release notes, and a tag without a section here cannot be released (`go run ./tools/changelog -version vX.Y.Z` prints it). New changes go under **Unreleased**, which is renamed to the version when it is tagged. Subsections are **Security**, **Added**, **Changed**, **Fixed** and **Upgrading**. Put fixes for vulnerabilities under `### Security`, first: installations treat a release with that heading as a security release and show administrators a banner they can only snooze.
 
+## Unreleased
+
+### Fixed
+
+- **Front-end libraries: more inline scripts read as JavaScript.** A `<script>` whose type carries parameters (`text/javascript; charset=utf-8`), or is `text/ecmascript` or `application/x-javascript`, was taken for a template, so a CDN address in a comment inside it was reported as loaded; its comments are now removed. A `data-type=` attribute, or `?type=` in the script's address, is no longer read as its type.
+
 ## 0.13.9
 
 ### Added

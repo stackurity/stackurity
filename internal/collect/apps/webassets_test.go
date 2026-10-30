@@ -329,6 +329,39 @@ func TestWordPressSite(t *testing.T) {
 	}
 }
 
+func TestJSScript(t *testing.T) {
+	cases := []struct {
+		tag  string
+		want bool
+	}{
+		{`<script>`, true},
+		{`<script src="https://code.jquery.com/jquery-3.5.1.min.js">`, true},
+		{`<script type="text/javascript">`, true},
+		{`<script type="text/javascript; charset=utf-8">`, true},
+		{`<script type='text/javascript;charset=utf-8'>`, true},
+		{`<script TYPE=application/javascript>`, true},
+		{`<script type="text/ecmascript">`, true},
+		{`<script type="application/x-javascript">`, true},
+		{`<script type=module>`, true},
+		{"<script\ttype=\"text/javascript\">", true},
+		// Not an attribute named type: data-type=, or ?type= in the address.
+		{`<script data-type="text/template">`, true},
+		{`<script src="/x.js?type=text/template">`, true},
+		{`<script src="/x.js?v=1&type=json" data-type=json>`, true},
+		// Templates and data.
+		{`<script type="text/template">`, false},
+		{`<script type="text/x-handlebars-template">`, false},
+		{`<script type="application/json">`, false},
+		{`<script type="application/ld+json">`, false},
+		{`<script data-type="x" type="text/template">`, false},
+	}
+	for _, c := range cases {
+		if got := jsScript([]byte(c.tag)); got != c.want {
+			t.Errorf("%s = %v, want %v", c.tag, got, c.want)
+		}
+	}
+}
+
 func TestStripComments(t *testing.T) {
 	cases := []struct{ name, in, want string }{
 		{"a.php", "<?php // old: https://code.jquery.com/jquery-1.8.3.min.js\n$x = 1;", "<?php \n$x = 1;"},
@@ -400,6 +433,8 @@ func TestParseTemplateKeepsLoadedAddresses(t *testing.T) {
 		{"a.html", "<script>\n// <script src=\"https://code.jquery.com/jquery-1.8.3.min.js\">\n</script>\n<script src=\"https://code.jquery.com/jquery-3.5.1.min.js\"></script>", "jquery@3.5.1"},
 		{"a.vue", "<script>\n/* import 'https://unpkg.com/vue@2.0.0/dist/vue.js' */\n</script>", ""},
 		{"a.twig", "<script>loadScript('https://unpkg.com/vue@2.6.10/dist/vue.js'); // was 2.0.0\n</script>", "vue@2.6.10"},
+		{"a.html", "<script type=\"text/javascript; charset=utf-8\">\n// https://code.jquery.com/jquery-1.8.3.min.js\n</script>", ""},
+		{"a.html", "<script src=\"/app.js?type=x\" data-type=\"tpl\">\n// https://code.jquery.com/jquery-1.8.3.min.js\n</script>", ""},
 	}
 	for _, c := range cases {
 		var got []string
