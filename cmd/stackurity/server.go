@@ -1249,7 +1249,17 @@ func envOrFile(name string) (string, error) {
 
 // evaluationLockWait is how long an evaluation job waits in line for its
 // workspace's evaluation lock before it gives up and is deferred.
-const evaluationLockWait = 30 * time.Second
+//
+// The lock is held by another evaluation of the workspace or by the
+// notification tick's upkeep. A steady tick holds it for about 2 s at
+// 40,000 open findings and 7 s at 130,000 (measured on a laptop), so the
+// wait covers it. A tick after a mass change (a first correlation, or a
+// daily EPSS update that rewrites many priorities) can hold it for 15 to
+// 50 s at 130,000; the evaluation is then deferred once and runs after it.
+// The wait is kept short because it occupies one of the replica's job
+// slots (2 by default): during one workspace's backlog of evaluations,
+// each would otherwise idle a slot for as long as the one ahead of it.
+const evaluationLockWait = 10 * time.Second
 
 // lockForEvaluation takes the workspace's evaluation lock for an evaluation
 // job, waiting in line up to wait. The dispatcher's tick holds the lock for
