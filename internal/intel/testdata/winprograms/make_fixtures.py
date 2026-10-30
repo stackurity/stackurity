@@ -44,7 +44,9 @@ for cpe, cves in NVD.items():
 
 # Security Update Guide: Edge (one fix; Stable and Extended Stable fixes),
 # .NET runtime fixes per line, SDK versions only, ASP.NET Core, Windows.
-CVRF_CVES = ["CVE-2026-102299", "CVE-2026-110144", "CVE-2026-105016", "CVE-2026-114148", "CVE-2026-69950"]
+# Edge: 156 only on 10-22 and 10-27, 152 next to 155 on 10-16 and 10-26.
+CVRF_CVES = ["CVE-2026-102299", "CVE-2026-110144", "CVE-2026-110913", "CVE-2026-112992", "CVE-2026-20942",
+             "CVE-2026-105016", "CVE-2026-114148", "CVE-2026-69950"]
 want = re.compile(r"^(Microsoft Edge \(Chromium-based\)|\.NET (8|9|10)\.0( runtime)? installed on Windows|ASP\.NET Core (8|9|10)\.0|"
                   r"Windows Server 2022( \(Server Core installation\))?)$")
 d = json.load(open(cvrf))

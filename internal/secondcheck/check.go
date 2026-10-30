@@ -122,15 +122,25 @@ func CheckVulnerability(c Claim, o Observed, recs []store.RawAdvisoryRecord) Out
 		if err := json.Unmarshal(r.Affected, &a); err != nil {
 			return couldNot("record %s could not be read", r.ID)
 		}
+		var unknown rawAffected
 		if t.line != "" {
-			a = sameLine(a, t.line, t.lineOf)
+			a, unknown = sameLine(a, t.line, t.lineOf)
 		}
-		v, err := evaluate(a, t.version, cmp)
-		if err != nil {
-			return couldNot("record %s: %v", r.ID, err)
+		var v verdict
+		if t.line == "" || len(a.Ranges) > 0 || len(a.Versions) > 0 {
+			if v, err = evaluate(a, t.version, cmp); err != nil {
+				return couldNot("record %s: %v", r.ID, err)
+			}
 		}
 		v.id, v.ecosystem, v.paid = r.ID, r.Ecosystem, isPaid
 		v.unlisted = v.affected && unlistedShape(r.Ecosystem, a)
+		if !v.affected && len(unknown.Ranges) > 0 {
+			// Below a fix on another line, with no start: whether this
+			// line was affected is not known.
+			if u, err := evaluate(unknown, t.version, cmp); err == nil && u.affected {
+				v.affected, v.unlisted, v.fixed = true, true, ""
+			}
+		}
 		if isPaid {
 			paid = append(paid, v)
 		} else {
@@ -572,20 +582,25 @@ func unlistedShape(eco string, a rawAffected) bool {
 	return limit
 }
 
-// sameLine drops the ranges and versions of an entry whose fix is on
-// another release line than line, for programs whose lines install side by
-// side.
-func sameLine(a rawAffected, line string, lineOf func(string) string) rawAffected {
-	out := rawAffected{}
+// sameLine keeps the ranges and versions of an entry on the installed
+// release line, for programs whose lines install side by side; a range
+// with no start fixed on another line is returned apart, as introduced..limit
+// (whether this line was affected is not known).
+func sameLine(a rawAffected, line string, lineOf func(string) string) (rawAffected, rawAffected) {
+	var out, unknown rawAffected
 	for _, r := range a.Ranges {
-		keep := true
+		keep, fix := true, ""
 		for _, e := range r.Events {
 			if v := e["fixed"] + e["last_affected"]; v != "" && lineOf(v) != line {
-				keep = false
+				keep, fix = false, v
 			}
 		}
-		if keep {
+		switch {
+		case keep:
 			out.Ranges = append(out.Ranges, r)
+		case len(r.Events) > 0 && r.Events[0]["introduced"] == "0":
+			r.Events = []map[string]string{{"introduced": "0"}, {"limit": fix}}
+			unknown.Ranges = append(unknown.Ranges, r)
 		}
 	}
 	for _, v := range a.Versions {
@@ -593,5 +608,5 @@ func sameLine(a rawAffected, line string, lineOf func(string) string) rawAffecte
 			out.Versions = append(out.Versions, v)
 		}
 	}
-	return out
+	return out, unknown
 }

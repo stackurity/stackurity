@@ -3,6 +3,7 @@ package intel
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -197,10 +198,14 @@ func TestWindowsPrograms(t *testing.T) {
 	hostB := ingestRegistry(t, st, "WIN-B", fakeRegistry{os: server2022,
 		native: []map[string]string{
 			prog("Google Chrome", "", "151.0.7922.108"), // no publisher recorded
+			prog("Microsoft Edge", "Microsoft Corporation", "155.0.4283.60"),
 			prog("Mozilla Firefox (x64 en-US)", "Mozilla", "131.0.1"),
 			prog("7-Zip 24.08 (x64)", "Igor Pavlov", "24.08"),
 		}})
 
+	// Edge Extended Stable, patched: listed next to Stable on 10-16 and 10-26.
+	hostC := ingestRegistry(t, st, "WIN-C", fakeRegistry{os: server2022,
+		native: []map[string]string{prog("Microsoft Edge", "Microsoft Corporation", "152.0.4191.137")}})
 	if err := EnsureFeeds(ctx, st); err != nil {
 		t.Fatal(err)
 	}
@@ -303,11 +308,13 @@ func TestWindowsPrograms(t *testing.T) {
 			t.Errorf("%s: fixed %q, want %q", f.ComponentName, f.FixedVersion, want)
 		}
 	}
-	// CVE-2026-110144 lists fixes for 152 and 155; 154 still had fixes
-	// after it, so it is on a line still updated with no fix listed: a
-	// note on the row, not a finding.
-	if g, ok := a["CVE-2026-110144"]; ok {
-		t.Errorf("Edge 154 on a line still updated: finding %s %s", g.Verification, g.FixedVersion)
+	// Edge 154, an older Stable major never listed next to a higher one:
+	// affected, with the next listed line's fix.
+	for key, fixed := range map[string]string{"CVE-2026-110144": "155.0.4283.60", "CVE-2026-110913": "155.0.4283.62",
+		"CVE-2026-112992": "156.0.4314.42", "CVE-2026-20942": "156.0.4314.42"} {
+		if g := a[key]; g.FixedVersion != fixed || g.Verification != "confirmed" {
+			t.Errorf("Edge 154 %s: %q %s, want %q confirmed", key, g.FixedVersion, g.Verification, fixed)
+		}
 	}
 	if !a["CVE-2025-0411"].KnownExploited || !a["CVE-2024-9680"].KnownExploited {
 		t.Error("7-Zip and Firefox KEV findings must say so")
@@ -351,7 +358,6 @@ func TestWindowsPrograms(t *testing.T) {
 		"7-Zip 24.08":                           {store.CoverageEvaluated, `the same 7-Zip 24.08 as "7-Zip 24.08 (x64)"`},
 		"7-Zip 24.08 (x64)":                     {store.CoverageEvaluated, "NVD also names 7-Zip in 1 CVE with no fixed version or no version bound, which are not matched; NVD has not analysed most of 7-Zip's recent CVEs"},
 		"Google Chrome":                         {store.CoverageEvaluated, ""},
-		"Microsoft Edge":                        {store.CoverageEvaluated, "1 CVE names only other release lines of Microsoft Edge, with no fix listed for 154.0.4258.50's line"},
 		"Microsoft .NET Runtime - 8.0.20 (x86)": {store.CoverageEvaluated, "the same .NET Runtime 8.0.20"},
 	} {
 		r, ok := cov[name]
@@ -364,8 +370,30 @@ func TestWindowsPrograms(t *testing.T) {
 	if g := b["CVE-2026-118359"]; g.Verification != "needs_validation" || g.Severity != "unknown" || g.FixedVersion != "156.0.8078.73" {
 		t.Errorf("Chrome without a publisher: %s %s %s", g.Verification, g.Severity, g.FixedVersion)
 	}
+	// Edge 155.0.4283.60, an older Stable: its own line's fix, then the
+	// current Stable's.
+	if g := b["CVE-2026-110913"]; g.FixedVersion != "155.0.4283.62" || g.Verification != "confirmed" {
+		t.Errorf("Edge 155 CVE-2026-110913: %q %s", g.FixedVersion, g.Verification)
+	}
+	if g := b["CVE-2026-112992"]; g.FixedVersion != "156.0.4314.42" || g.Verification != "confirmed" {
+		t.Errorf("Edge 155 CVE-2026-112992: %q %s", g.FixedVersion, g.Verification)
+	}
 	if g := b["CVE-2024-9680"]; g.FixedVersion != "131.0.2" {
 		t.Errorf("Firefox CVE-2024-9680 fixed %q", g.FixedVersion)
+	}
+
+	// Extended Stable 152.0.4191.137: the CVEs of 10-22 and 10-26 (fixed on
+	// Stable only, while 152 was still updated) are a note, not findings;
+	// that of 10-27, after 152's last listed fix, is affected.
+	c := programKeys(t, st, ctx, hostC)
+	if len(c) != 1 || c["CVE-2026-20942"].FixedVersion != "156.0.4314.42" || c["CVE-2026-20942"].Verification != "confirmed" {
+		t.Errorf("Extended Stable findings: %s", sortedFindingKeys(c))
+	}
+	rowsC, _, _ := st.ListInventory(ctx, store.InventoryFilter{AssetID: hostC, Page: store.Page{Limit: 100}})
+	for _, r := range rowsC {
+		if r.Name == "Microsoft Edge" && !strings.Contains(r.CoverageReason, "2 CVEs name only other release lines of Microsoft Edge, with no fix listed for 152.0.4191.137's line") {
+			t.Errorf("Extended Stable coverage: %q", r.CoverageReason)
+		}
 	}
 
 	// The coverage-gap report counts the programs not matched, by why.
@@ -407,12 +435,15 @@ func TestWindowsPrograms(t *testing.T) {
 		g.FindingCount != 3 || g.KnownExploited != 1 || !strings.Contains(g.Action, "7-zip.org") {
 		t.Errorf("7-Zip on WIN-A: %+v", g)
 	}
+	if gb["Microsoft Edge"].FixKey != ga["Microsoft Edge"].FixKey || gb["Microsoft Edge"].Title != "Update Microsoft Edge to 156.0.4314.42" {
+		t.Errorf("one Edge fix across older Stable hosts: %+v %+v", gb["Microsoft Edge"], ga["Microsoft Edge"])
+	}
 	if gb["7-Zip"].FixKey != ga["7-Zip"].FixKey {
 		t.Errorf("one 7-Zip fix across hosts: %q %q", gb["7-Zip"].FixKey, ga["7-Zip"].FixKey)
 	}
 	for label, title := range map[string]string{
 		"Google Chrome":  "Update Google Chrome to 156.0.8078.73",
-		"Microsoft Edge": "Update Microsoft Edge to 154.0.4258.53", // not Stable's 155 fix: 154 is still updated
+		"Microsoft Edge": "Update Microsoft Edge to 156.0.4314.42", // an older Stable: the current Stable's fix
 		// One update per side-by-side line, never "update to 9.0.21" for both.
 		".NET Runtime 8": "Update .NET Runtime 8 to 8.0.32",
 		".NET Runtime 9": "Update .NET Runtime 9 to 9.0.21",
@@ -441,7 +472,7 @@ func TestWindowsPrograms(t *testing.T) {
 	}
 	t.Logf("second check: %+v", stats)
 	if stats.Checked < 300 || stats.Agreed != stats.Checked {
-		for _, h := range []int64{hostA, hostB} {
+		for _, h := range []int64{hostA, hostB, hostC} {
 			for _, g := range allFindings(t, st, ctx, h) {
 				if sc, _ := st.FindingSecondCheck(ctx, g.ID); sc != nil && sc.Result != store.SecondCheckAgreed {
 					t.Errorf("second check on %s %s: %+v", g.ComponentName, g.Key, sc)
@@ -565,5 +596,80 @@ func TestWindowsProgramsBadSources(t *testing.T) {
 	ev.Now = sy.now
 	if _, ok := evaluate()["CVE-2026-48103"]; ok {
 		t.Error("the withdrawn CVE's finding must close")
+	}
+}
+
+// When a later document lists Extended Stable next to Stable again, the
+// documents read before it are read again, so CVEs fixed on Stable only
+// while Extended Stable was still updated stop being reported on it.
+func TestWindowsProgramsLinesReread(t *testing.T) {
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	st, sy, ev, up, _ := setupPrograms(t)
+	host := ingestRegistry(t, st, "WIN-X", fakeRegistry{os: server2022,
+		native: []map[string]string{prog("Microsoft Edge", "Microsoft Corporation", "152.0.4191.137")}})
+	raw, err := os.ReadFile(filepath.Join("testdata", "winprograms", "msrc-2026-Oct.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// October without CVE-2026-110913 (152 next to 155 on 10-26); a
+	// "November" document with only that CVE.
+	split := func(keep func(string) bool) string {
+		var doc map[string]any
+		_ = json.Unmarshal(raw, &doc)
+		var vs []any
+		for _, v := range doc["Vulnerability"].([]any) {
+			if keep(v.(map[string]any)["CVE"].(string)) {
+				vs = append(vs, v)
+			}
+		}
+		doc["Vulnerability"] = vs
+		b, _ := json.Marshal(doc)
+		return string(b)
+	}
+	up.set("/msrc/cvrf/2026-Oct", split(func(c string) bool { return c != "CVE-2026-110913" }))
+	up.set("/msrc/cvrf/2026-Nov", split(func(c string) bool { return c == "CVE-2026-110913" || c == "CVE-2026-69950" }))
+	index := func(months ...string) string {
+		var vs []string
+		for _, m := range months {
+			vs = append(vs, fmt.Sprintf(`{"ID":%q,"InitialReleaseDate":"2026-10-14T07:00:00Z","CurrentReleaseDate":"2026-10-28T01:00:00Z"}`, m))
+		}
+		return `{"value":[` + strings.Join(vs, ",") + `]}`
+	}
+	up.set("/msrc/updates", index("2026-Oct"))
+	if err := EnsureFeeds(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sy.Sync(ctx, FeedMSRC); err != nil {
+		t.Fatal(err)
+	}
+	ev.Now = sy.now
+	if _, err := ev.Evaluate(ctx, nil, 0); err != nil {
+		t.Fatal(err)
+	}
+	// 152 was last listed next to Stable on 10-16: the 10-22 CVE is affected.
+	if g := programKeys(t, st, ctx, host)["CVE-2026-112992"]; g.FixedVersion != "156.0.4314.42" {
+		t.Fatalf("before: %s", sortedFindingKeys(programKeys(t, st, ctx, host)))
+	}
+	// November's document lists 152 next to 155 on 10-26: October is read
+	// again although it has not changed.
+	sy.now = func() time.Time { return time.Date(2026, 11, 12, 12, 0, 0, 0, time.UTC) }
+	up.set("/msrc/updates", index("2026-Oct", "2026-Nov"))
+	up.requests = nil
+	if _, err := sy.Sync(ctx, FeedMSRC); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(up.requests, []string{"/msrc/updates", "/msrc/cvrf/2026-Nov", "/msrc/cvrf/2026-Oct"}) {
+		t.Errorf("requests %v", up.requests)
+	}
+	ev.Now = sy.now
+	if _, err := ev.Evaluate(ctx, nil, 0); err != nil {
+		t.Fatal(err)
+	}
+	got := programKeys(t, st, ctx, host)
+	if _, ok := got["CVE-2026-112992"]; ok {
+		t.Errorf("after: 152 was still updated on 10-26, so CVE-2026-112992 is a note: %s", sortedFindingKeys(got))
+	}
+	if g := got["CVE-2026-20942"]; g.FixedVersion != "156.0.4314.42" {
+		t.Errorf("after: the 10-27 CVE stays affected: %s", sortedFindingKeys(got))
 	}
 }

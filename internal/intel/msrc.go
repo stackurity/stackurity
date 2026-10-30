@@ -114,17 +114,34 @@ func (s *Syncer) syncMSRC(ctx context.Context, feed, cursor string) (*SyncResult
 	for id, at := range cur.Docs {
 		next.Docs[id] = at
 	}
-	known := lineDates{}
+	known, old := lineDates{}, lineDates{}
 	for p, ms := range cur.Lines {
 		for m, at := range ms {
 			if n, err := strconv.Atoi(m); err == nil {
 				known.note(p, n, at)
+				old.note(p, n, at)
 			}
 		}
 	}
+	readNow := map[string]bool{}
 	res := &SyncResult{Packages: map[store.PackageRef]bool{}}
 	var failed []string
 	read := 0
+	readDoc := func(d msrcIndexEntry) error {
+		readNow[d.ID] = true
+		if err := s.syncMSRCDocument(ctx, feed, base, d, res, known); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			s.Log.Warn("Security Update Guide document not read", "document", d.ID, "err", err)
+			failed = append(failed, d.ID+": "+err.Error())
+			delete(next.Docs, d.ID) // read again by the next sync
+			return nil
+		}
+		next.Docs[d.ID] = d.CurrentReleaseDate
+		read++
+		return nil
+	}
 	// Newest first: whether a program's older major version was still
 	// fixed after an issue is told by the documents after it.
 	for i := len(docs) - 1; i >= 0; i-- {
@@ -135,17 +152,27 @@ func (s *Syncer) syncMSRC(ctx context.Context, feed, cursor string) (*SyncResult
 		if ctx.Err() != nil {
 			return nil, "", ctx.Err()
 		}
-		if err := s.syncMSRCDocument(ctx, feed, base, d, res, known); err != nil {
+		if err := readDoc(d); err != nil {
+			return nil, "", err
+		}
+	}
+	// A line fixed again since the last sync (Extended Stable's next
+	// update) is still updated for the issues after its previous fix, which
+	// older documents read before it classed as no longer updated: those
+	// documents are read again now rather than at the next full read.
+	if since, ok := linesAdvanced(old, known); ok {
+		for i := len(docs) - 1; i >= 0; i-- {
+			d := docs[i]
+			if readNow[d.ID] || d.month.Before(since) {
+				continue
+			}
 			if ctx.Err() != nil {
 				return nil, "", ctx.Err()
 			}
-			s.Log.Warn("Security Update Guide document not read", "document", d.ID, "err", err)
-			failed = append(failed, d.ID+": "+err.Error())
-			delete(next.Docs, d.ID) // read again by the next sync
-			continue
+			if err := readDoc(d); err != nil {
+				return nil, "", err
+			}
 		}
-		next.Docs[d.ID] = d.CurrentReleaseDate
-		read++
 	}
 	if read > 0 {
 		// A changed update (its KB, its date, a hotpatch build) changes
@@ -489,18 +516,39 @@ func parseCVRFWith(r io.Reader, docID string, known lineDates) (*cvrfDoc, error)
 			programs[id] = p
 		}
 	}
+	// A program's major version is still updated when a CVE lists a fix on
+	// it next to a fix on a higher major: Extended Stable next to Stable,
+	// .NET 8 next to .NET 10. Microsoft adds Chromium CVEs to the guide up
+	// to a month after Edge fixed them, naming the Stable build of the day,
+	// so a major listed alone (an old Stable) says nothing about whether
+	// it is still updated, and its CVE date is not when it was fixed.
 	doc := &cvrfDoc{lines: lineDates{}}
 	for _, c := range vulns {
 		at := c.published
 		if at.IsZero() {
 			at = released
 		}
+		majors := map[string]map[int]bool{}
 		for _, f := range c.fixes {
 			for _, pid := range f.products {
 				if mp, ok := programs[pid]; ok && mp.accepts(f.build) {
 					if m, ok := majorOf(f.build); ok {
-						doc.lines.note(mp.program, m, at)
+						if majors[mp.program] == nil {
+							majors[mp.program] = map[int]bool{}
+						}
+						majors[mp.program][m] = true
 					}
+				}
+			}
+		}
+		for prog, ms := range majors {
+			top := 0
+			for m := range ms {
+				top = max(top, m)
+			}
+			for m := range ms {
+				if m < top {
+					doc.lines.note(prog, m, at)
 				}
 			}
 		}
@@ -987,4 +1035,30 @@ func cvrfTime(s string) time.Time {
 		}
 	}
 	return time.Time{}
+}
+
+// linesAdvanced reports whether any program's line was fixed later than the
+// cursor knew, and the first month whose documents can have classed it as
+// no longer updated: the month of its previous last fix, or for a line not
+// known before, the month before its first.
+func linesAdvanced(old, now lineDates) (time.Time, bool) {
+	var since time.Time
+	for p, ms := range now {
+		for m, at := range ms {
+			prev, had := old[p][m]
+			var from time.Time
+			switch {
+			case !had:
+				from = time.Date(at.Year(), at.Month(), 1, 0, 0, 0, 0, time.UTC).AddDate(0, -1, 0)
+			case at.After(prev):
+				from = time.Date(prev.Year(), prev.Month(), 1, 0, 0, 0, 0, time.UTC)
+			default:
+				continue
+			}
+			if since.IsZero() || from.Before(since) {
+				since = from
+			}
+		}
+	}
+	return since, !since.IsZero()
 }

@@ -197,7 +197,8 @@ func (e *Evaluator) evaluateProgram(ctx context.Context, r store.EvalRow, pp *pr
 	// one finding each: there is nothing to do on this host.
 	kept, otherLines := found[:0], 0
 	for _, f := range found {
-		if m, _ := f.Evidence["match"].(map[string]any); m != nil && slices.Contains(asStrings(m["ambiguous"]), "version_line_unlisted") {
+		if m, _ := f.Evidence["match"].(map[string]any); p.Source.Type != winprograms.SourceNVD && m != nil &&
+			slices.Contains(asStrings(m["ambiguous"]), "version_line_unlisted") {
 			otherLines++
 			continue
 		}
@@ -278,22 +279,30 @@ func programComponents(ctx context.Context, s *store.Store, res *SyncResult) ([]
 	return out, nil
 }
 
-// sameLineOnly drops the ranges and listed versions of a side-by-side
-// program's advisories that are on another line than line.
+// sameLineOnly keeps, of a side-by-side program's advisories, the ranges
+// and listed versions on the installed line. A range with no start whose
+// fix is on another line (NVD's "before 3.12.4" for every Python) does not
+// say whether this line was ever affected: it becomes an entry for versions
+// on no listed line (a limit with no fix, osv.UnlistedLine), so a version
+// below that fix needs validation, with no fix offered.
 func sameLineOnly(p *winprograms.Program, line string, advs []store.AdvisoryMatch) []store.AdvisoryMatch {
 	out := make([]store.AdvisoryMatch, 0, len(advs))
 	for _, a := range advs {
 		aff := a.Affected
 		aff.Ranges, aff.Versions = nil, nil
+		var unknown []osv.Range
 		for _, r := range a.Affected.Ranges {
-			keep := true
+			keep, fix := true, ""
 			for _, e := range r.Events {
 				if v := e.Fixed + e.LastAffected; v != "" && p.Line(v) != line {
-					keep = false
+					keep, fix = false, v
 				}
 			}
-			if keep {
+			switch {
+			case keep:
 				aff.Ranges = append(aff.Ranges, r)
+			case len(r.Events) > 0 && r.Events[0].Introduced == "0":
+				unknown = append(unknown, osv.Range{Type: r.Type, Events: []osv.Event{{Introduced: "0"}, {Limit: fix}}})
 			}
 		}
 		for _, v := range a.Affected.Versions {
@@ -301,11 +310,16 @@ func sameLineOnly(p *winprograms.Program, line string, advs []store.AdvisoryMatc
 				aff.Versions = append(aff.Versions, v)
 			}
 		}
-		if len(aff.Ranges) == 0 && len(aff.Versions) == 0 {
-			continue
+		if len(aff.Ranges) > 0 || len(aff.Versions) > 0 {
+			kept := a
+			kept.Affected = aff
+			out = append(out, kept)
 		}
-		a.Affected = aff
-		out = append(out, a)
+		for _, r := range unknown {
+			u := a
+			u.Affected = osv.Affected{Package: a.Affected.Package, Ranges: []osv.Range{r}}
+			out = append(out, u)
+		}
 	}
 	return out
 }

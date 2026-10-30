@@ -366,12 +366,13 @@ func TestMSRCPrograms(t *testing.T) {
 		}
 	}
 	for cve, want := range map[string]map[string]string{
-		"CVE-2026-102299": {"microsoft-edge": "0 limit 154 154.0.4258.53 | 154 154.0.4258.53 | "},
+		// A Chromium CVE added on 10-26 for 154: Extended Stable 152 was
+		// listed next to Stable that day, so it is still updated.
+		"CVE-2026-102299": {"microsoft-edge": "0 limit 152 154.0.4258.53 | 152 limit 153 | 153 limit 154 154.0.4258.53 | 154 154.0.4258.53 | "},
 		// Extended Stable (152) and Stable (155) fixes: each fixes its line.
-		// 153 had no fix in the document at or after this CVE's date: it is
-		// affected with 155's fix. 154 still had one: it needs validation.
-		// Majors below 152 are affected with 152's fix.
-		"CVE-2026-110144": {"microsoft-edge": "0 limit 152 152.0.4191.137 | 152 152.0.4191.137 | 153 limit 154 155.0.4283.60 | 154 limit 155 | 155 155.0.4283.60 | "},
+		// 153 and 154, old Stable majors never listed next to a higher one,
+		// are affected with 155's fix; majors below 152 with 152's.
+		"CVE-2026-110144": {"microsoft-edge": "0 limit 152 152.0.4191.137 | 152 152.0.4191.137 | 153 limit 155 155.0.4283.60 | 155 155.0.4283.60 | "},
 		// .NET runtime fixes per line; the preview (11.0.0-rc.2) is not read.
 		"CVE-2026-105016": {"dotnet-runtime": "0 limit 8 8.0.32 | 8 8.0.32 | 9 9.0.21 | 10 10.0.14 | "},
 		// SDK versions only (8.0.427): no runtime fix.
@@ -457,22 +458,36 @@ func TestNVDKeyStaysOnHost(t *testing.T) {
 	}
 }
 
-// A side-by-side program's ranges whose fix is on another line are not
-// applied: NVD's "< 3.12.4" for every Python says nothing about 3.11.
+// A side-by-side program's ranges whose fix is on another line are not that
+// line's fix: NVD's "before 3.12.4" for every Python does not say whether
+// 3.11 was affected, so a 3.11 install needs validation, with no fix.
 func TestSameLineOnly(t *testing.T) {
 	py := winprograms.Default().Program("python")
-	rng := func(fixed string) osv.Range {
-		return osv.Range{Type: "ECOSYSTEM", Events: []osv.Event{{Introduced: "0"}, {Fixed: fixed}}}
+	rng := func(from, fixed string) osv.Range {
+		return osv.Range{Type: "ECOSYSTEM", Events: []osv.Event{{Introduced: from}, {Fixed: fixed}}}
 	}
+	eco := py.Ecosystem()
 	advs := []store.AdvisoryMatch{
-		{ID: "a", Affected: osv.Affected{Ranges: []osv.Range{rng("3.12.4")}}},
-		{ID: "b", Affected: osv.Affected{Ranges: []osv.Range{rng("3.11.9"), rng("3.12.4")}}},
-		{ID: "c", Affected: osv.Affected{Versions: []string{"3.11.2", "3.12.1"}}},
+		{ID: "a", Ecosystem: eco, Affected: osv.Affected{Ranges: []osv.Range{rng("0", "3.12.4")}}},
+		{ID: "b", Ecosystem: eco, Affected: osv.Affected{Ranges: []osv.Range{rng("3.11.0", "3.11.9"), rng("3.12.0", "3.12.4")}}},
+		{ID: "c", Ecosystem: eco, Affected: osv.Affected{Versions: []string{"3.11.2", "3.12.1"}}},
 	}
 	got := sameLineOnly(py, "3.11", advs)
-	if len(got) != 2 || got[0].ID != "b" || len(got[0].Affected.Ranges) != 1 || got[0].Affected.Ranges[0].Events[1].Fixed != "3.11.9" ||
-		got[1].ID != "c" || !slices.Equal(got[1].Affected.Versions, []string{"3.11.2"}) {
-		t.Errorf("same line only: %+v", got)
+	var ids []string
+	for _, a := range got {
+		ids = append(ids, a.ID)
+	}
+	if !slices.Equal(ids, []string{"a", "b", "c"}) || !slices.Equal(got[2].Affected.Versions, []string{"3.11.2"}) ||
+		len(got[1].Affected.Ranges) != 1 || got[1].Affected.Ranges[0].Events[1].Fixed != "3.11.9" {
+		t.Fatalf("same line only: %+v", got)
+	}
+	// "a": an entry for versions on no listed line, read as needing validation.
+	if !osv.UnlistedLine(eco, got[0].Affected) {
+		t.Errorf("before 3.12.4 on 3.11: %+v", got[0].Affected)
+	}
+	v := &osv.Vulnerability{ID: "a", Affected: []osv.Affected{{Package: osv.Package{Ecosystem: eco, Name: "python"}, Ranges: got[0].Affected.Ranges}}}
+	if hit, fix, unlisted := lineVerdict(t, v, "3.11.5"); hit || fix != "" || !unlisted {
+		t.Errorf("3.11.5: affected %v fix %q unlisted %v", hit, fix, unlisted)
 	}
 	if advs[1].Affected.Ranges[1].Events[1].Fixed != "3.12.4" {
 		t.Error("the cached advisories must not be changed")

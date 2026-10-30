@@ -423,4 +423,14 @@ func TestSecondCheckLineVerification(t *testing.T) {
 	if out := CheckVulnerability(claim("3.11.9", nil), obs, py); out.Result != store.SecondCheckAgreed {
 		t.Errorf("Python 3.11: %s %s", out.Result, out.Reason)
 	}
+	// Only "before 3.12.4", with no start: unknown on 3.11, so the finding
+	// needs validation with no fix.
+	py2 := []store.RawAdvisoryRecord{rec("NVD-python-CVE-2099-1", "Windows programs:python", "python", rng(`{"introduced":"0"},{"fixed":"3.12.4"}`))}
+	cu := claim("", map[string]any{"match": map[string]any{"ambiguous": []any{"version_line_unlisted"}}})
+	cu.Verification = "needs_validation"
+	if out := CheckVulnerability(cu, obs, py2); out.Result != store.SecondCheckAgreed {
+		t.Errorf("Python 3.11 below another line's fix: %s %s", out.Result, out.Reason)
+	}
+	cu.Verification = "confirmed"
+	want(t, CheckVulnerability(cu, obs, py2), "verification", "needs_validation")
 }
