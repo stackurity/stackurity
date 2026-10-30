@@ -194,6 +194,8 @@ The alert clears 24 hours after the last failure.
 
 The oldest due job has waited over 30 minutes for a worker. Workers are busy with long jobs (a first OSV import, a large image scan), stuck, or not running. `SELECT kind, count(*), min(run_at) FROM jobs WHERE done_at IS NULL AND failed_at IS NULL AND run_at <= now() GROUP BY 1;` shows what waits; `SELECT id, kind, locked_by, locked_at FROM jobs WHERE locked_at IS NOT NULL AND done_at IS NULL AND failed_at IS NULL;` what runs. A burst after an outage drains by itself. Persistent backlog: add replicas.
 
+During a long backlog of evaluations in one workspace, that workspace's notification tick may wait in line for the evaluation lock (a PostgreSQL advisory lock, granted first come, first served) behind them. Upkeep of findings (priorities, the action plan) and incident planning are then delayed until the backlog drains, but due deliveries still go out on every tick.
+
 ### StackurityJobQueueStalled
 
 The backlog has lasted over two hours: evaluations, feed syncs and integration runs are not happening. Check that at least one server is running and ready, then follow [StackurityJobQueueBacklog](#stackurityjobqueuebacklog).

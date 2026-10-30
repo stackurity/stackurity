@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stackurity/stackurity/internal/api"
 	"github.com/stackurity/stackurity/internal/auth"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
@@ -15,15 +16,17 @@ import (
 // account signed in from recently is exempt from the per-account cap, and
 // any other address is still held at it.
 //
-// The cap counts per fixed 15-minute window of the database clock. A run
-// that crosses a window boundary (100 password checks can take longer than
-// any margin on a loaded machine) counts in two windows and proves
-// nothing, so it is detected by the database clock and run again, with a
-// fresh account, once the window has room for twice the first run.
+// The cap counts per fixed window of the database clock (15 minutes; 2 in
+// this test, so any wait below stays short). A run that crosses a window
+// boundary (100 password checks can take longer than any margin on a
+// loaded machine) counts in two windows and proves nothing, so it is
+// detected by the database clock and run again, with a fresh account, once
+// the window has room for twice the first run: at most one window's wait.
 func TestSignInAccountCapSparesKnownAddress(t *testing.T) {
 	srv, st := replicaServers(t, 3)
 	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
-	const window = 15 * time.Minute
+	const window = 2 * time.Minute
+	t.Cleanup(api.SetAccountFailureWindow(window))
 	dbNow := func() time.Time {
 		now, err := st.DBNow(ctx)
 		if err != nil {
