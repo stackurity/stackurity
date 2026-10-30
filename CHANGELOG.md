@@ -16,7 +16,6 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ### Changed
 
-- **An evaluation waits at most 10 seconds for its workspace's evaluation lock**, then is deferred and retried 5 to 15 seconds later. A replica runs 2 jobs at a time, and during a backlog of evaluations in one workspace each waiting evaluation kept a slot idle while other workspaces' jobs shared the other. A steady notification tick holds the lock for about 2 seconds at 40,000 open findings and 7 seconds at 130,000, so it still fits in the wait.
 - **A project inside a site is part of the site.** Below a site found by its index file, a library the site's code uses, with a manifest but no entry point of its own, is read as part of the site, and each library is reported once, by the site: for example, `/var/www/example.com/public/mail` with its own `composer.lock` and `vendor/`. Where such a project was reported as an application of its own before, that application is now reported as removed, and its libraries and their findings appear on the site. These stay their own applications: a WordPress site; an application with a document root of its own in the web server configuration; and a project with an entry point. An entry point is an index file in the project or in its `public/` or `web/`, `artisan`, `manage.py`, `config.ru`, or a `package.json` with `main` or a `start` script, as in a Laravel app or a Node API in a subdirectory. Applications named with `--app-dir` also stay their own.
 
 ### Fixed
