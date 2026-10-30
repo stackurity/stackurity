@@ -1913,7 +1913,7 @@ SOS rules are conditions over the same inputs. A rule based only on severity is 
 
 Findings with the same `kind` and `key` whose assets belong to the same owner team form one incident, so one CVE across fifty servers produces one alert. System problems also open incidents, and these resolve on their own once the problem is gone:
 
-- a stale or failing feed (`feed`)
+- a stale or failing feed (`feed`); in the operators' workspace, routes that were sent it also get a `resolved` message when the feed syncs again
 - a stale asset or failing integration (`collection`)
 - a drop of more than half in an asset's collected inventory (`coverage`)
 - in the operators' workspace only (the default workspace, or `STACKURITY_PLATFORM_WORKSPACE`), a critical problem with the installation itself, such as a background task that keeps failing or intelligence that never synced (`platform`)

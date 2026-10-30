@@ -51,7 +51,13 @@ func EnsureFeeds(ctx context.Context, s *store.Store) error {
 	ensure := func(name, kind string, refresh, stale time.Duration) error {
 		return s.EnsureFeed(ctx, name, kind, refresh, stale)
 	}
-	if err := ensure(FeedKEV, "vulnerability", 24*time.Hour, 72*time.Hour); err != nil {
+	// CISA adds to KEV a few times a week, at any hour; an unchanged
+	// catalogue costs one conditional GET (syncKEV). Before 0.13.9 it was
+	// checked daily: a feed still on those settings moves to these.
+	if err := s.RetuneFeed(ctx, FeedKEV, 24*time.Hour, 72*time.Hour, time.Hour, 12*time.Hour); err != nil {
+		return err
+	}
+	if err := ensure(FeedKEV, "vulnerability", time.Hour, 12*time.Hour); err != nil {
 		return err
 	}
 	if err := ensure(FeedEndOfLife, "lifecycle", 24*time.Hour, 7*24*time.Hour); err != nil {

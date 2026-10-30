@@ -107,7 +107,7 @@ func (f *fetcher) get(ctx context.Context, url string, headers map[string]string
 			lastErr = err
 			continue
 		}
-		if resp.StatusCode == 200 {
+		if resp.StatusCode == 200 || resp.StatusCode == 304 && conditional(headers) {
 			return resp, nil
 		}
 		io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
@@ -120,18 +120,47 @@ func (f *fetcher) get(ctx context.Context, url string, headers map[string]string
 	return nil, lastErr
 }
 
+func conditional(headers map[string]string) bool {
+	return headers["If-None-Match"] != "" || headers["If-Modified-Since"] != ""
+}
+
 func (f *fetcher) download(ctx context.Context, url string, max int64) ([]byte, error) {
-	resp, err := f.get(ctx, url, nil)
+	b, _, _, err := f.downloadIfChanged(ctx, url, validators{}, max)
+	return b, err
+}
+
+// validators identify the copy of a file last read, for a conditional GET.
+type validators struct {
+	ETag         string `json:"etag,omitempty"`
+	LastModified string `json:"last_modified,omitempty"`
+}
+
+// downloadIfChanged is download with a conditional GET: when the server
+// says the file has not changed since the copy prev describes (HTTP 304),
+// it returns unchanged and no body. Otherwise it returns the file and its
+// validators, which are empty when the server sends none.
+func (f *fetcher) downloadIfChanged(ctx context.Context, url string, prev validators, max int64) (b []byte, next validators, unchanged bool, err error) {
+	headers := map[string]string{}
+	if prev.ETag != "" {
+		headers["If-None-Match"] = prev.ETag
+	}
+	if prev.LastModified != "" {
+		headers["If-Modified-Since"] = prev.LastModified
+	}
+	resp, err := f.get(ctx, url, headers)
 	if err != nil {
-		return nil, err
+		return nil, prev, false, err
 	}
 	defer resp.Body.Close()
-	b, err := io.ReadAll(io.LimitReader(resp.Body, max+1))
+	if resp.StatusCode == 304 {
+		return nil, prev, true, nil
+	}
+	b, err = io.ReadAll(io.LimitReader(resp.Body, max+1))
 	if err != nil {
-		return nil, err
+		return nil, prev, false, err
 	}
 	if int64(len(b)) > max {
-		return nil, fmt.Errorf("GET %s: response larger than %d bytes", url, max)
+		return nil, prev, false, fmt.Errorf("GET %s: response larger than %d bytes", url, max)
 	}
-	return b, nil
+	return b, validators{ETag: resp.Header.Get("ETag"), LastModified: resp.Header.Get("Last-Modified")}, false, nil
 }

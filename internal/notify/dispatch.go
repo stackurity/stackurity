@@ -471,9 +471,13 @@ func (d *Dispatcher) Plan(ctx context.Context) error {
 	}
 
 	// Resolved incidents are counted in summaries (findings fixed), never
-	// announced one by one; Jira issues are resolved by planIssueUpdates.
+	// announced one by one, except a stale feed's in the operators'
+	// workspace (feedStalls); Jira issues are resolved by planIssueUpdates.
 	resolved, err := d.Store.ResolvedToAnnounce(ctx)
 	if err != nil {
+		return err
+	}
+	if err := d.feedStalls(ctx, announce, resolved, routes, people); err != nil {
 		return err
 	}
 	done := make([]int64, len(resolved))
@@ -737,9 +741,52 @@ func (d *Dispatcher) message(in store.Incident, event string) Message {
 		}
 	case "resolved":
 		m.Summary = []string{"No open findings remain for this incident"}
+		if in.Kind == "feed" {
+			m.Title = "Intelligence feed " + in.Key + " has recovered"
+			m.Summary = []string{"The feed has synced again and its data is within its freshness limit"}
+		}
 		m.Action = ""
 	}
 	return m
+}
+
+// feedStalls tells the operators when an intelligence feed passes its stale
+// limit and when it recovers, once each. Every workspace gets a feed
+// incident while a feed is stale (store.DetectSystemProblems), announced
+// like any problem; in the operators' workspace the server also logs both
+// changes, and the routes the stale feed was sent to right away are told
+// when it syncs again. announce and resolved are this cycle's incidents to
+// announce and resolved incidents not yet announced as such.
+func (d *Dispatcher) feedStalls(ctx context.Context, announce, resolved []store.Incident, routes []store.Route, people func(store.Route) bool) error {
+	here, err := d.platformHere(ctx)
+	if err != nil || !here {
+		return err
+	}
+	for _, in := range announce {
+		if in.Kind == "feed" && in.NotifiedPriority == "" && d.Log != nil {
+			var det map[string]any
+			_ = json.Unmarshal(in.Detail, &det)
+			d.Log.Warn("intelligence feed is stale", "feed", in.Key, "last_success", det["last_success"], "last_error", det["last_error"])
+		}
+	}
+	for _, in := range resolved {
+		if in.Kind != "feed" {
+			continue
+		}
+		if d.Log != nil {
+			d.Log.Info("intelligence feed recovered", "feed", in.Key)
+		}
+		for _, r := range routes {
+			if !people(r) || !urgentIncident(r, in) {
+				continue
+			}
+			key := fmt.Sprintf("incident:%d:resolved:%d", in.ID, r.ID)
+			if err := d.enqueueTo(ctx, r, r.ChannelFor(store.EventProblems), "resolved", key, d.message(in, "resolved")); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // Deliver sends due deliveries, honouring quiet hours and rate limits.

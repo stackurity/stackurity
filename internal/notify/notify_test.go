@@ -417,6 +417,98 @@ func TestSystemIncidents(t *testing.T) {
 	}
 }
 
+// In the operators' workspace a feed that passes its stale limit is sent
+// once and logged at warn level, and its recovery is sent and logged once;
+// nothing repeats while it stays stale. Other workspaces get the stale
+// alert only, as before.
+func TestFeedStallOperatorAlerts(t *testing.T) {
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	f := setup(t)
+	var logged strings.Builder
+	f.d.Log = slog.New(slog.NewTextHandler(&logged, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	f.d.Platform = func(ctx context.Context) ([]store.SystemIncident, error) { return nil, nil }
+	other, _, err := f.st.CreateWorkspace(context.Background(), "Other", "other", "o@x.io", "", "correct horse battery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	octx := tenant.WithWorkspace(context.Background(), other.ID)
+	// Its webhook is never reached (internal address); what it is sent is
+	// read from its queued deliveries.
+	cfg, _ := json.Marshal(ChannelConfig{URL: "https://hooks.example/other"})
+	ch, err := f.st.CreateChannel(octx, KindWebhook, "hook", cfg, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.st.SaveRoute(octx, store.Route{Name: "main", ChannelID: ch.ID, Enabled: true, MinPriority: "P2", Timezone: "UTC", MaxPerHour: 20}); err != nil {
+		t.Fatal(err)
+	}
+	tickBoth := func() {
+		t.Helper()
+		f.tick()
+		if err := f.d.Tick(octx); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	sys := tenant.System(context.Background())
+	if err := f.st.EnsureFeed(sys, "kev:cisa", "vulnerability", time.Hour, 12*time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.st.FeedAttempt(sys, "kev:cisa"); err != nil {
+		t.Fatal(err)
+	}
+	_ = f.st.FeedResult(sys, "kev:cisa", "", 0, nil)
+	if _, err := f.st.Pool.Exec(sys, `UPDATE feeds SET last_success = now() - interval '13 hours' WHERE name = 'kev:cisa'`); err != nil {
+		t.Fatal(err)
+	}
+	_ = f.st.FeedResult(sys, "kev:cisa", "", 0, io.ErrUnexpectedEOF)
+	for i := 0; i < 3; i++ {
+		tickBoth()
+	}
+	if ev := f.hook.events(); len(ev) != 1 || ev[0] != "urgent:P2" {
+		t.Fatalf("operators, stale: %v", ev)
+	}
+	otherEvents := func() []string {
+		t.Helper()
+		dels, _, err := f.st.ListDeliveries(octx, store.DeliveryFilter{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, d := range dels {
+			out = append(out, d.Event)
+		}
+		return out
+	}
+	if ev := otherEvents(); len(ev) != 1 || ev[0] != EventUrgent {
+		t.Fatalf("other workspace, stale: %v", ev)
+	}
+	if n := strings.Count(logged.String(), "level=WARN msg=\"intelligence feed is stale\" feed=kev:cisa"); n != 1 {
+		t.Errorf("stale logged %d times: %s", n, logged.String())
+	}
+
+	_ = f.st.FeedResult(sys, "kev:cisa", "", 0, nil)
+	for i := 0; i < 3; i++ {
+		tickBoth()
+	}
+	ev := f.hook.events()
+	if len(ev) != 2 || ev[1] != "resolved:P2" {
+		t.Fatalf("operators, recovered: %v", ev)
+	}
+	if m := f.hook.got[1]; m.Title != "Intelligence feed kev:cisa has recovered" || m.Subject() != "[resolved] Intelligence feed kev:cisa has recovered" {
+		t.Errorf("recovery message = %+v", m)
+	}
+	if ev := otherEvents(); len(ev) != 1 {
+		t.Errorf("other workspace, recovered: %v", ev)
+	}
+	if n := strings.Count(logged.String(), "msg=\"intelligence feed recovered\" feed=kev:cisa"); n != 1 {
+		t.Errorf("recovery logged %d times: %s", n, logged.String())
+	}
+	if incs, _, _ := f.st.ListIncidents(ctx, store.IncidentFilter{Kind: "feed"}); len(incs) != 0 {
+		t.Errorf("feed incident should resolve: %+v", incs)
+	}
+}
+
 // Platform problems are raised in the operator's (default) workspace only,
 // notified like other system incidents, and resolved when they clear.
 func TestPlatformIncidents(t *testing.T) {

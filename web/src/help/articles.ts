@@ -893,7 +893,7 @@ stackurity.exe agent --interval 6h`,
         p: "Each asset has a **coverage state**: **Healthy and recently evaluated**, or one or more of **Failed collection**, **Stale intelligence**, **Partially evaluated**, **Unsupported** and **Awaiting verification**, each with its reason. The asset page shows them above the tabs, the Findings tab says how many components the findings do not cover, and the Inventory tab marks each component as **Not checked**, **Unsupported**, **Stale intelligence** or **Awaiting verification** (filter by **Coverage**).",
       },
       {
-        p: "**Intelligence** (Settings ▸ Intelligence and feeds) lists the data feeds: OSV per ecosystem (hourly), CISA KEV and endoflife.date (daily), and the npm and Packagist registries. Each shows OK, Stale, Error, Never synced or Disabled.",
+        p: "**Intelligence** (Settings ▸ Intelligence and feeds) lists the data feeds: OSV per ecosystem (hourly), CISA KEV (hourly), endoflife.date (daily), and the npm and Packagist registries. Each shows OK, Stale, Error, Never synced or Disabled.",
       },
       {
         list: [

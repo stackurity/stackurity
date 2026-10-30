@@ -4,6 +4,17 @@ All notable changes to Stackurity. Versions follow [Semantic Versioning](https:/
 
 Each release's section is published as its GitHub release notes, and a tag without a section here cannot be released (`go run ./tools/changelog -version vX.Y.Z` prints it). New changes go under **Unreleased**, which is renamed to the version when it is tagged. Subsections are **Security**, **Added**, **Changed**, **Fixed** and **Upgrading**. Put fixes for vulnerabilities under `### Security`, first: installations treat a release with that heading as a security release and show administrators a banner they can only snooze.
 
+## Unreleased
+
+### Changed
+
+- **CISA KEV is checked hourly** instead of daily, so a CVE CISA adds to its Known Exploited Vulnerabilities catalogue marks findings known exploited, and raises their urgent alerts, within the hour. Each check is a conditional GET (`If-None-Match`, `If-Modified-Since`): an unchanged catalogue costs one small request and nothing is parsed, stored or re-evaluated; from a mirror that ignores conditional requests, a file identical to the last one is not stored again either. A copy last downloaded more than 24 hours ago is downloaded in full whatever the server says, so a cache that keeps answering `304` cannot hold the catalogue back while the feed shows fresh. Before, every daily sync rewrote the catalogue and re-evaluated every component. The `kev:cisa` feed is now stale after 12 hours without a successful sync (was 72), so **every workspace**, not only the operators', gets the P2 "Intelligence feed kev:cisa is stale" incident after 12 hours of failed syncs instead of 72. Weekly vulnerability news reads KEV entries by the date CISA added them, so it is unaffected.
+- **Operators hear when an intelligence feed recovers.** A feed past its freshness limit already opened a feed incident in every workspace; in the operators' workspace (the default one, or `STACKURITY_PLATFORM_WORKSPACE`) the routes that were sent the stale feed now also get one `resolved` message when it syncs again, and the server logs `intelligence feed is stale` at warn level and `intelligence feed recovered`, once each. Both messages go to routes with the `problems` event whose minimum priority is P2 or lower (P3 or lower for feeds other than vulnerability feeds); a route with a P1 minimum gets neither. A stall that ends before it was announced gets no recovery message. See [StackurityVulnerabilityFeedStale](docs/operations.md#stackurityvulnerabilityfeedstale).
+
+### Upgrading
+
+- An existing `kev:cisa` feed still on the old daily settings (refresh 24 hours, stale after 72) moves to hourly and 12 hours on start; one whose settings were changed by hand keeps them. No migration.
+
 ## 0.13.8
 
 ### Added
