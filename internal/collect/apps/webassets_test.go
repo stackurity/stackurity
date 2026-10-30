@@ -329,21 +329,60 @@ func TestWordPressSite(t *testing.T) {
 	}
 }
 
-func TestStripCodeComments(t *testing.T) {
-	cases := []struct{ in, want string }{
-		{"<?php // old: https://code.jquery.com/jquery-1.8.3.min.js\n$x = 1;", "<?php \n$x = 1;"},
-		{"<?php // old ?><script src=\"https://code.jquery.com/jquery-3.5.1.min.js\"></script>", "<?php ?><script src=\"https://code.jquery.com/jquery-3.5.1.min.js\"></script>"},
-		{"a /* https://unpkg.com/react@16.0.0/x.js */ b", "a   b"},
-		{"$u = 'https://code.jquery.com/jquery-3.5.1.min.js'; // note", "$u = 'https://code.jquery.com/jquery-3.5.1.min.js'; "},
-		{`$u = "//code.jquery.com/jquery-3.5.1.min.js";`, `$u = "//code.jquery.com/jquery-3.5.1.min.js";`},
-		{`$s = 'it\'s // not a comment';`, `$s = 'it\'s // not a comment';`},
-		{"<p>Don't</p>\n<?php // https://code.jquery.com/jquery-1.8.3.min.js\n", "<p>Don't</p>\n<?php \n"},
-		{"see https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js here", "see https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js here"},
-		{"x /* never closed https://unpkg.com/react@16.0.0/x.js", "x "},
+func TestStripComments(t *testing.T) {
+	cases := []struct{ name, in, want string }{
+		{"a.php", "<?php // old: https://code.jquery.com/jquery-1.8.3.min.js\n$x = 1;", "<?php \n$x = 1;"},
+		{"a.php", "<?php // old ?><script src=\"https://code.jquery.com/jquery-3.5.1.min.js\"></script>", "<?php ?><script src=\"https://code.jquery.com/jquery-3.5.1.min.js\"></script>"},
+		{"a.php", "<?php $u = 'https://code.jquery.com/jquery-3.5.1.min.js'; // note\n", "<?php $u = 'https://code.jquery.com/jquery-3.5.1.min.js'; \n"},
+		{"a.php", `<?php $u = "//code.jquery.com/jquery-3.5.1.min.js";`, `<?php $u = "//code.jquery.com/jquery-3.5.1.min.js";`},
+		{"a.php", `<?php $s = 'it\'s // not a comment';`, `<?php $s = 'it\'s // not a comment';`},
+		{"a.php", "<p>Don't</p>\n<?php // https://code.jquery.com/jquery-1.8.3.min.js\n", "<p>Don't</p>\n<?php \n"},
+		{"a.php", "<?php /* https://unpkg.com/react@16.0.0/x.js */ $a = 1;", "<?php   $a = 1;"},
+		// PHP # comments; a # inside a string or an attribute stays.
+		{"a.php", "<?php # https://code.jquery.com/jquery-1.5.0.min.js\n$a = 1;", "<?php \n$a = 1;"},
+		{"a.php", "<?php preg_match('#^//#', $u); ?>", "<?php preg_match('#^//#', $u); ?>"},
+		{"a.php", "<?php #[Attr]\nfunction f() {}", "<?php #[Attr]\nfunction f() {}"},
+		// HTML and CSS around the code are text, not code.
+		{"a.php", "<p>Use glob src/*.js here</p>", "<p>Use glob src/*.js here</p>"},
+		{"a.php", "<style>.a{background:url(//example.com/x.png)}</style>", "<style>.a{background:url(//example.com/x.png)}</style>"},
+		{"a.php", "<style>@import url(//fonts.googleapis.com/css?family=Roboto);</style>", "<style>@import url(//fonts.googleapis.com/css?family=Roboto);</style>"},
+		// Inline scripts are code.
+		{"a.php", "<script>\n// https://code.jquery.com/jquery-1.5.0.min.js\nvar a = 1;</script>", "<script>\n\nvar a = 1;</script>"},
+		{"a.php", "<script>s.replace(/^\\/*/, '')</script>", "<script>s.replace(/^\\/*/, '')</script>"},
+		{"a.php", "<script>var u = \"<?php echo 'x' ?>\"; // https://code.jquery.com/jquery-1.5.0.min.js\n</script>", "<script>var u = \"<?php echo 'x' ?>\"; \n</script>"},
+		// Script files: where a comment can start.
+		{"a.js", "f(url(//example.com/x.png)); g('src/*.js'); r = /\\/\\//; q = /\\/*/;", "f(url(//example.com/x.png)); g('src/*.js'); r = /\\/\\//; q = /\\/*/;"},
+		{"a.js", "a /* https://unpkg.com/react@16.0.0/x.js */ b", "a   b"},
+		{"a.js", "x /* never closed https://unpkg.com/react@16.0.0/x.js", "x /* never closed https://unpkg.com/react@16.0.0/x.js"},
+		{"a.jsx", "const a = 1; // https://unpkg.com/vue@2.0.0/dist/vue.js\n", "const a = 1; \n"},
+		{"a.html", "<script>// https://unpkg.com/vue@2.0.0/dist/vue.js\n</script>", "<script>// https://unpkg.com/vue@2.0.0/dist/vue.js\n</script>"},
 	}
 	for _, c := range cases {
-		if got := string(stripCodeComments([]byte(c.in))); got != c.want {
-			t.Errorf("%q\n got %q\nwant %q", c.in, got, c.want)
+		if got := string(stripComments(c.name, []byte(c.in))); got != c.want {
+			t.Errorf("%s %q\n got %q\nwant %q", c.name, c.in, got, c.want)
+		}
+	}
+}
+
+// The review's probes on a real WordPress site: text in HTML and CSS, and
+// regular expressions in inline scripts, must not hide the addresses after
+// them.
+func TestParseTemplateKeepsLoadedAddresses(t *testing.T) {
+	cases := []struct{ name, in, want string }{
+		{"a.php", "<p>Use glob src/*.js here</p>\n<script src=\"https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.24.0/moment.min.js\"></script>", "moment@2.24.0"},
+		{"a.php", "<script>s.replace(/^\\/*/, '')</script>\n<script src=\"https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.min.js\"></script>", "bootstrap@4.6.2"},
+		{"a.php", "<style>.a{background:url(//example.com/x.png)}</style><script src=\"https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js\"></script>", "lodash@4.17.21"},
+		{"a.php", "<style>@import url(//fonts.googleapis.com/css?family=Roboto);</style>\n<script src=\"https://code.jquery.com/jquery-3.5.1.min.js\"></script>", "jquery@3.5.1"},
+		{"a.php", "<?php\n# https://code.jquery.com/jquery-1.5.0.min.js\n?>", ""},
+		{"a.php", "<?php\n/* unclosed\n?>\n<script src=\"https://code.jquery.com/jquery-3.5.1.min.js\"></script>", "jquery@3.5.1"},
+	}
+	for _, c := range cases {
+		var got []string
+		for _, m := range parseTemplate(c.name, []byte(c.in)) {
+			got = append(got, m[0]+"@"+m[1])
+		}
+		if c.want == "" && len(got) != 0 || c.want != "" && (len(got) != 1 || got[0] != c.want) {
+			t.Errorf("%q = %v, want %q", c.in, got, c.want)
 		}
 	}
 }

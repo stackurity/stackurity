@@ -332,23 +332,12 @@ var htmlComment = regexp.MustCompile(`(?s)<!--.*?-->`)
 // templateExts are the files read for CDN addresses (.blade.php is a .php).
 var templateExts = []string{".html", ".htm", ".php", ".phtml", ".twig", ".erb", ".ejs", ".hbs", ".vue", ".jsx", ".tsx"}
 
-// codeExts are templates whose // and /* */ comments are removed before
-// addresses are read: PHP and script files, where an old address is
-// commonly left in a comment ("// old: https://code.jquery.com/...").
-var codeExts = []string{".php", ".phtml", ".js", ".jsx", ".tsx"}
-
 // parseTemplate returns the CDN addresses in a template called name that
 // name a package, each once, with the address's query and fragment
-// removed. Addresses in HTML comments, and in code comments of the files
-// in codeExts, are ignored.
+// removed. Addresses in HTML comments, and in code comments (see
+// stripComments), are ignored.
 func parseTemplate(name string, data []byte) (out [][3]string) {
-	data = htmlComment.ReplaceAll(data, nil)
-	for _, e := range codeExts {
-		if strings.HasSuffix(strings.ToLower(name), e) {
-			data = stripCodeComments(data)
-			break
-		}
-	}
+	data = stripComments(name, htmlComment.ReplaceAll(data, nil))
 	seen := map[string]bool{}
 	for _, m := range cdnAddress.FindAll(data, -1) {
 		u := string(m)
@@ -363,16 +352,74 @@ func parseTemplate(name string, data []byte) (out [][3]string) {
 	return out
 }
 
-// stripCodeComments removes // and /* */ comments from PHP or JavaScript,
-// leaving string literals alone, so an address in quotes survives and one
-// in a comment does not. "//" after ":" is an address (https://), not a
-// comment. A PHP line comment also ends at "?>". Quoted strings end at a
-// line break too, so an apostrophe in HTML text ("don't") cannot hide the
-// rest of the file.
-func stripCodeComments(data []byte) []byte {
-	out := make([]byte, 0, len(data))
+// codeRegion is the kind of code stripCode reads, which decides where it
+// ends and which comments it knows.
+type codeRegion int
+
+const (
+	jsFile      codeRegion = iota // a whole .js, .jsx or .tsx file
+	phpBlock                      // <?php ... ?> (or to the end of the file)
+	scriptBlock                   // <script ...> ... </script>
+)
+
+// stripComments removes code comments from a template, where an old
+// address is often left behind ("// old: https://code.jquery.com/...").
+// Only code is touched: in a .php or .phtml file, PHP blocks and inline
+// scripts; the HTML and CSS around them are left alone, since a "//" or
+// "/*" there is text (url(//fonts...), "src/*.js"). A .js, .jsx or .tsx
+// file is code throughout. Other templates are returned as they are.
+func stripComments(name string, data []byte) []byte {
+	name = strings.ToLower(name)
+	switch {
+	case strings.HasSuffix(name, ".php") || strings.HasSuffix(name, ".phtml"):
+		out := make([]byte, 0, len(data))
+		for i := 0; i < len(data); {
+			switch {
+			case hasAt(data, i, "<?php", true):
+				out = append(out, data[i:i+5]...)
+				out, i = stripCode(out, data, i+5, phpBlock)
+			case hasAt(data, i, "<?=", false):
+				out = append(out, data[i:i+3]...)
+				out, i = stripCode(out, data, i+3, phpBlock)
+			case hasAt(data, i, "<script", true):
+				j := bytes.IndexByte(data[i:], '>')
+				if j < 0 {
+					return append(out, data[i:]...)
+				}
+				out = append(out, data[i:i+j+1]...)
+				out, i = stripCode(out, data, i+j+1, scriptBlock)
+			default:
+				out = append(out, data[i])
+				i++
+			}
+		}
+		return out
+	case strings.HasSuffix(name, ".js") || strings.HasSuffix(name, ".jsx") || strings.HasSuffix(name, ".tsx"):
+		out, _ := stripCode(make([]byte, 0, len(data)), data, 0, jsFile)
+		return out
+	}
+	return data
+}
+
+// stripCode copies the code region starting at data[i] to out without its
+// comments and returns where the region ends (its "?>" or "</script", not
+// copied). Comments are // and /* */, and # in PHP, and only where a
+// comment can start: at the start of the region or after whitespace or one
+// of ;{},= . So "url(//", "src/*.js", "\/*" and "/\/\//" stay. A /* that
+// is never closed is not a comment. Quoted strings are copied as they are,
+// and end at a line break too, so a stray apostrophe cannot hide the rest
+// of the file. PHP inside an inline script is copied as it is.
+func stripCode(out, data []byte, i int, region codeRegion) ([]byte, int) {
+	start := i
 	var quote byte
-	for i := 0; i < len(data); i++ {
+	ends := func(i int) bool {
+		return region == phpBlock && quote == 0 && hasAt(data, i, "?>", false) ||
+			region == scriptBlock && hasAt(data, i, "</script", true)
+	}
+	for i < len(data) {
+		if ends(i) {
+			return out, i
+		}
 		c := data[i]
 		if quote != 0 {
 			out = append(out, c)
@@ -383,29 +430,56 @@ func stripCodeComments(data []byte) []byte {
 			case c == quote || c == '\n' && quote != '`':
 				quote = 0
 			}
+			i++
 			continue
 		}
+		canStart := i == start || commentBoundary(data[i-1])
 		switch {
 		case c == '"' || c == '\'' || c == '`':
 			quote = c
-		case c == '/' && i+1 < len(data) && data[i+1] == '/' && (i == 0 || data[i-1] != ':'):
-			for i < len(data) && data[i] != '\n' && !(data[i] == '?' && i+1 < len(data) && data[i+1] == '>') {
+		case region == scriptBlock && hasAt(data, i, "<?", false):
+			j := bytes.Index(data[i:], []byte("?>"))
+			if j < 0 {
+				return append(out, data[i:]...), len(data)
+			}
+			out = append(out, data[i:i+j+2]...)
+			i += j + 2
+			continue
+		case canStart && (hasAt(data, i, "//", false) || region == phpBlock && c == '#' && !hasAt(data, i, "#[", false)):
+			for i < len(data) && data[i] != '\n' && !ends(i) {
 				i++
 			}
-			i-- // keep the line break or "?>"
 			continue
-		case c == '/' && i+1 < len(data) && data[i+1] == '*':
-			end := bytes.Index(data[i+2:], []byte("*/"))
-			if end < 0 {
-				return out
+		case canStart && hasAt(data, i, "/*", false):
+			if j := bytes.Index(data[i+2:], []byte("*/")); j >= 0 {
+				out = append(out, ' ')
+				i += j + 4
+				continue
 			}
-			i += end + 3
-			out = append(out, ' ')
-			continue
 		}
 		out = append(out, c)
+		i++
 	}
-	return out
+	return out, i
+}
+
+func commentBoundary(b byte) bool {
+	switch b {
+	case ' ', '\t', '\n', '\r', ';', '{', '}', ',', '=':
+		return true
+	}
+	return false
+}
+
+// hasAt reports whether data has s at i, ignoring ASCII case if fold.
+func hasAt(data []byte, i int, s string, fold bool) bool {
+	if i+len(s) > len(data) {
+		return false
+	}
+	if fold {
+		return bytes.EqualFold(data[i:i+len(s)], []byte(s))
+	}
+	return string(data[i:i+len(s)]) == s
 }
 
 // webAssets collects one application's CDN and copied libraries.
