@@ -278,7 +278,7 @@ func TestWindowsPrograms(t *testing.T) {
 		"CVE-2025-0411":   "24.09",
 		"CVE-2026-14266":  "26.02",
 		"CVE-2026-102299": "154.0.4258.53",
-		"CVE-2026-110144": "", // 154 is on neither listed line (152, 155): needs validation
+		"CVE-2026-110144": "",             // 154 is on neither listed line (152, 155): needs validation
 		"CVE-2026-81997":  "24.001.30429", // the Classic track's fix, not Continuous'
 		"CVE-2024-9680":   "128.3.1",
 	} {
