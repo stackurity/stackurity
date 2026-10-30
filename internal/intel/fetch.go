@@ -5,6 +5,7 @@ package intel
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -36,6 +37,13 @@ type Config struct {
 	WorkDir          string // temp space for bulk downloads
 	UserAgent        string
 	IncrementalLimit int // above this many changed records, re-download the full archive
+
+	// NVD's CVE API, read for the curated Windows program catalogue.
+	NVDURL     string        // DefaultNVDURL
+	NVDAPIKey  string        // optional; raises NVD's rate limit
+	NVDDelay   time.Duration // wait before each request (NVD asks for about 6 s without a key)
+	NVDBackoff time.Duration // wait after NVD refuses a request for the rate
+	MozillaURL string        // DefaultMozillaURL: Mozilla's security advisories
 }
 
 func DefaultConfig() Config {
@@ -63,6 +71,10 @@ func DefaultConfig() Config {
 		WorkDir:          os.TempDir(),
 		UserAgent:        "stackurity",
 		IncrementalLimit: 5000,
+		NVDURL:           DefaultNVDURL,
+		NVDDelay:         6500 * time.Millisecond,
+		NVDBackoff:       35 * time.Second,
+		MozillaURL:       DefaultMozillaURL,
 	}
 }
 
@@ -72,7 +84,20 @@ type fetcher struct {
 }
 
 func newFetcher(cfg Config) *fetcher {
-	return &fetcher{cfg: cfg, http: &http.Client{Timeout: 30 * time.Minute}}
+	return &fetcher{cfg: cfg, http: &http.Client{Timeout: 30 * time.Minute, CheckRedirect: sameHostSecrets}}
+}
+
+// sameHostSecrets follows redirects as Go's default policy does (at most
+// 10), but drops the NVD API key from a request redirected to another host:
+// Go drops Authorization and cookies there, not custom headers.
+func sameHostSecrets(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return errors.New("stopped after 10 redirects")
+	}
+	if req.URL.Host != via[0].URL.Host {
+		req.Header.Del("apiKey")
+	}
+	return nil
 }
 
 type statusError struct {

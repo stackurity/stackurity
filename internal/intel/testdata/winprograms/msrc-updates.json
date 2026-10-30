@@ -1,0 +1,1 @@
+{"@odata.context":"https://api.msrc.microsoft.com/$metadata#Updates","value":[{"ID":"2026-Oct","Alias":"2026-Oct","DocumentTitle":"October 2026 Security Updates","Severity":null,"InitialReleaseDate":"2026-10-13T07:00:00Z","CurrentReleaseDate":"2026-10-29T07:00:00Z","CvrfUrl":"https://api.msrc.microsoft.com/cvrf/v3.0/cvrf/2026-Oct"}]}

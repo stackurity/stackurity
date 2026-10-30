@@ -308,3 +308,61 @@ func TestWindowsUpdateGrouping(t *testing.T) {
 		t.Errorf("host 3 release upgrade = %+v", g)
 	}
 }
+
+func TestProgramUpdateGrouping(t *testing.T) {
+	row := func(id, asset int64, key, version, fixed string, kev bool) Row {
+		return Row{FindingID: id, Kind: "vulnerability", Key: key, AssetID: asset, AssetName: "WIN", AssetKind: "host",
+			OS: "windows", ComponentID: 10 + asset, PurlType: "generic", Component: "7-Zip 24.08 (x64)", Version: version, FixedVersion: fixed,
+			Priority: "P2", Severity: "high", KnownExploited: kev, Program: "7-zip", ProgramLabel: "7-Zip"}
+	}
+	rows := []Row{
+		row(1, 1, "CVE-2025-0411", "24.08", "24.09", true),
+		row(2, 1, "CVE-2026-14266", "24.08", "26.02", false),
+		row(3, 2, "CVE-2026-14266", "26.00", "26.02", false),
+		// No fixed version: not an update to name.
+		row(4, 2, "CVE-2026-0001", "26.00", "", false),
+	}
+	groups, assign := Build(rows, nil)
+	byID := map[string]*Group{}
+	for _, g := range groups {
+		byID[g.ID] = g
+	}
+	g1, g2 := byID["1:program_update:7-zip"], byID["2:program_update:7-zip"]
+	if g1 == nil || g2 == nil {
+		t.Fatalf("groups %v", assign)
+	}
+	if g1.Title != "Update 7-Zip to 26.02" || g1.FindingCount != 2 || g1.KnownExploited != 1 || g1.FromVersion != "24.08" ||
+		g1.FixKey != "program_update:7-zip>26.02" || g1.Effort != "low" || !strings.Contains(g1.Action, "7-zip.org") {
+		t.Errorf("WIN-1 group %+v", g1)
+	}
+	if g2.FixKey != g1.FixKey || g2.FindingCount != 1 {
+		t.Errorf("one fix across hosts: %+v", g2)
+	}
+	if assign[4] != "2:no_fix" {
+		t.Errorf("a finding without a fix goes to no_fix, got %q", assign[4])
+	}
+}
+
+// Two .NET lines installed side by side on one host are two updates: one
+// "update to 9.0.21" would leave 8.0 vulnerable.
+func TestProgramUpdateSideBySide(t *testing.T) {
+	row := func(id int64, line, version, fixed string) Row {
+		return Row{FindingID: id, Kind: "vulnerability", Key: "CVE-2026-105016", AssetID: 1, AssetName: "WIN", AssetKind: "host", OS: "windows",
+			ComponentID: id, PurlType: "generic", Component: "Microsoft .NET Runtime - " + version + " (x64)", Version: "64.80.25123",
+			FixedVersion: fixed, Priority: "P2", Severity: "high", Program: "dotnet-runtime", ProgramLabel: ".NET Runtime",
+			ProgramLine: line, ProgramVersion: version}
+	}
+	groups, _ := Build([]Row{row(1, "8", "8.0.20", "8.0.32"), row(2, "9", "9.0.10", "9.0.21")}, nil)
+	got := map[string]*Group{}
+	for _, g := range groups {
+		got[g.Component] = g
+	}
+	g8, g9 := got[".NET Runtime 8"], got[".NET Runtime 9"]
+	if len(groups) != 2 || g8 == nil || g9 == nil {
+		t.Fatalf("groups %d: %v", len(groups), got)
+	}
+	if g8.Title != "Update .NET Runtime 8 to 8.0.32" || g8.FromVersion != "8.0.20" || g8.FixKey != "program_update:dotnet-runtime@8>8.0.32" ||
+		g9.Title != "Update .NET Runtime 9 to 9.0.21" || g9.FixKey != "program_update:dotnet-runtime@9>9.0.21" {
+		t.Errorf("groups %+v %+v", g8, g9)
+	}
+}

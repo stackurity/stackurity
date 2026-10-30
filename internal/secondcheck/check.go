@@ -28,6 +28,7 @@ import (
 type Claim struct {
 	Kind         string
 	Key          string
+	Verification string // confirmed, needs_validation, stale ("" when not known)
 	FixedVersion string
 	Sources      []string
 	Evidence     map[string]any
@@ -65,8 +66,12 @@ type rawAffected struct {
 
 // verdict is one record's answer.
 type verdict struct {
-	id, ecosystem  string
-	affected       bool
+	id, ecosystem string
+	affected      bool
+	// unlisted: the record says affected only because the version is on
+	// none of the lines it lists fixes for (one range ending in a limit,
+	// with no fix), which needs validation rather than a plain match.
+	unlisted       bool
 	fixed          string // lowest fix above the installed version
 	fixedAtOrBelow string // a fix at or below the installed version, when not affected
 	paid           bool
@@ -117,11 +122,25 @@ func CheckVulnerability(c Claim, o Observed, recs []store.RawAdvisoryRecord) Out
 		if err := json.Unmarshal(r.Affected, &a); err != nil {
 			return couldNot("record %s could not be read", r.ID)
 		}
-		v, err := evaluate(a, t.version, cmp)
-		if err != nil {
-			return couldNot("record %s: %v", r.ID, err)
+		var unknown rawAffected
+		if t.line != "" {
+			a, unknown = sameLine(a, t.line, t.lineOf)
+		}
+		var v verdict
+		if t.line == "" || len(a.Ranges) > 0 || len(a.Versions) > 0 {
+			if v, err = evaluate(a, t.version, cmp); err != nil {
+				return couldNot("record %s: %v", r.ID, err)
+			}
 		}
 		v.id, v.ecosystem, v.paid = r.ID, r.Ecosystem, isPaid
+		v.unlisted = v.affected && unlistedShape(r.Ecosystem, a)
+		if !v.affected && len(unknown.Ranges) > 0 {
+			// Below a fix on another line, with no start: whether this
+			// line was affected is not known.
+			if u, err := evaluate(unknown, t.version, cmp); err == nil && u.affected {
+				v.affected, v.unlisted, v.fixed = true, true, ""
+			}
+		}
 		if isPaid {
 			paid = append(paid, v)
 		} else {
@@ -174,6 +193,33 @@ func CheckVulnerability(c Claim, o Observed, recs []store.RawAdvisoryRecord) Out
 		lines = append(lines, fmt.Sprintf("%s (%s): %s", v.id, v.ecosystem, state))
 	}
 	ind["affected"], ind["records"] = affected, lines
+	// Matched only through unlisted-line records: the finding needs
+	// validation; matched through a line's own record: it does not need it
+	// for that reason.
+	unlistedOnly := affected
+	for _, v := range used {
+		if v.affected && !v.unlisted {
+			unlistedOnly = false
+		}
+	}
+	claimUnlisted := false
+	if m, ok := c.Evidence["match"].(map[string]any); ok {
+		if amb, ok := m["ambiguous"].([]any); ok {
+			for _, x := range amb {
+				claimUnlisted = claimUnlisted || x == "version_line_unlisted"
+			}
+		}
+	}
+	if affected {
+		switch {
+		case unlistedOnly && c.Verification == "confirmed":
+			return disagree(ind, store.SecondCheckDifference{Field: "verification", Matcher: "confirmed", Independent: "needs_validation",
+				Note: "the version is on none of the release lines the records list fixes for"})
+		case !unlistedOnly && claimUnlisted:
+			return disagree(ind, store.SecondCheckDifference{Field: "verification", Matcher: "needs_validation (version_line_unlisted)",
+				Independent: "confirmed", Note: "a record lists a fix for the version's own release line"})
+		}
+	}
 	if fixed != "" {
 		ind["fixed_version"] = fixed
 	}
@@ -514,4 +560,53 @@ func kernelRecords(names []string) bool {
 		}
 	}
 	return len(names) > 0
+}
+
+// unlistedShape is the second check's own reading of an entry for versions
+// on no listed release line: Oracle Linux and Windows program records whose
+// one range ends in a limit with no fix.
+func unlistedShape(eco string, a rawAffected) bool {
+	if !strings.HasPrefix(eco, "Oracle Linux:") && !strings.HasPrefix(eco, "Windows programs:") {
+		return false
+	}
+	if len(a.Ranges) != 1 || len(a.Versions) > 0 {
+		return false
+	}
+	limit := false
+	for _, e := range a.Ranges[0].Events {
+		if e["fixed"] != "" || e["last_affected"] != "" {
+			return false
+		}
+		limit = limit || e["limit"] != ""
+	}
+	return limit
+}
+
+// sameLine keeps the ranges and versions of an entry on the installed
+// release line, for programs whose lines install side by side; a range
+// with no start fixed on another line is returned apart, as introduced..limit
+// (whether this line was affected is not known).
+func sameLine(a rawAffected, line string, lineOf func(string) string) (rawAffected, rawAffected) {
+	var out, unknown rawAffected
+	for _, r := range a.Ranges {
+		keep, fix := true, ""
+		for _, e := range r.Events {
+			if v := e["fixed"] + e["last_affected"]; v != "" && lineOf(v) != line {
+				keep, fix = false, v
+			}
+		}
+		switch {
+		case keep:
+			out.Ranges = append(out.Ranges, r)
+		case len(r.Events) > 0 && r.Events[0]["introduced"] == "0":
+			r.Events = []map[string]string{{"introduced": "0"}, {"limit": fix}}
+			unknown.Ranges = append(unknown.Ranges, r)
+		}
+	}
+	for _, v := range a.Versions {
+		if lineOf(v) == line {
+			out.Versions = append(out.Versions, v)
+		}
+	}
+	return out, unknown
 }

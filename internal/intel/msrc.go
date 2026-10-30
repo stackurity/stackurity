@@ -14,6 +14,7 @@ import (
 	"github.com/stackurity/stackurity/internal/osv"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/version"
+	"github.com/stackurity/stackurity/internal/winprograms"
 	"github.com/stackurity/stackurity/internal/winrelease"
 )
 
@@ -72,7 +73,19 @@ var (
 type msrcCursor struct {
 	Docs map[string]string `json:"docs"` // document id -> CurrentReleaseDate when it was read
 	Full time.Time         `json:"full"` // when every document in the window was last read
+	// Reads is what the documents were read for: msrcReads once Microsoft
+	// Edge's, .NET's and ASP.NET Core's fixes are read too. An older cursor
+	// reads every document again.
+	Reads int `json:"reads,omitempty"`
+	// Lines is, per program and major version, when a document last listed
+	// a fix on it (lineDates), so a document read alone still knows about
+	// later ones.
+	Lines map[string]map[string]lineSpan `json:"lines,omitempty"`
 }
+
+// msrcReads is the current version of what a document is read for (2:
+// Windows updates, and the programs of msrcPrograms).
+const msrcReads = 2
 
 type msrcIndexEntry struct {
 	ID                 string `json:"ID"`
@@ -96,32 +109,70 @@ func (s *Syncer) syncMSRC(ctx context.Context, feed, cursor string) (*SyncResult
 	if cursor != "" {
 		_ = json.Unmarshal([]byte(cursor), &cur) // unusable: read everything
 	}
-	full := cur.Full.IsZero() || now.Sub(cur.Full) >= msrcFullRead
-	next := msrcCursor{Docs: map[string]string{}, Full: cur.Full}
+	full := cur.Full.IsZero() || now.Sub(cur.Full) >= msrcFullRead || cur.Reads < msrcReads
+	next := msrcCursor{Docs: map[string]string{}, Full: cur.Full, Reads: msrcReads}
 	for id, at := range cur.Docs {
 		next.Docs[id] = at
 	}
+	known, old := lineDates{}, lineDates{}
+	for p, ms := range cur.Lines {
+		for m, sp := range ms {
+			if n, err := strconv.Atoi(m); err == nil {
+				known.span(p, n, sp)
+				old.span(p, n, sp)
+			}
+		}
+	}
+	readNow := map[string]bool{}
 	res := &SyncResult{Packages: map[store.PackageRef]bool{}}
 	var failed []string
 	read := 0
-	for _, d := range docs {
+	readDoc := func(d msrcIndexEntry) error {
+		readNow[d.ID] = true
+		if err := s.syncMSRCDocument(ctx, feed, base, d, res, known); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			s.Log.Warn("Security Update Guide document not read", "document", d.ID, "err", err)
+			failed = append(failed, d.ID+": "+err.Error())
+			delete(next.Docs, d.ID) // read again by the next sync
+			return nil
+		}
+		next.Docs[d.ID] = d.CurrentReleaseDate
+		read++
+		return nil
+	}
+	// Newest first: whether a program's older major version was still
+	// fixed after an issue is told by the documents after it.
+	for i := len(docs) - 1; i >= 0; i-- {
+		d := docs[i]
 		if !full && cur.Docs[d.ID] == d.CurrentReleaseDate {
 			continue
 		}
 		if ctx.Err() != nil {
 			return nil, "", ctx.Err()
 		}
-		if err := s.syncMSRCDocument(ctx, feed, base, d, res); err != nil {
+		if err := readDoc(d); err != nil {
+			return nil, "", err
+		}
+	}
+	// A line fixed again since the last sync (Extended Stable's next
+	// update) is still updated for the issues after its previous fix, which
+	// older documents read before it classed as no longer updated: those
+	// documents are read again now rather than at the next full read.
+	if since, ok := linesAdvanced(old, known); ok {
+		for i := len(docs) - 1; i >= 0; i-- {
+			d := docs[i]
+			if readNow[d.ID] || d.month.Before(since) {
+				continue
+			}
 			if ctx.Err() != nil {
 				return nil, "", ctx.Err()
 			}
-			s.Log.Warn("Security Update Guide document not read", "document", d.ID, "err", err)
-			failed = append(failed, d.ID+": "+err.Error())
-			delete(next.Docs, d.ID) // read again by the next sync
-			continue
+			if err := readDoc(d); err != nil {
+				return nil, "", err
+			}
 		}
-		next.Docs[d.ID] = d.CurrentReleaseDate
-		read++
 	}
 	if read > 0 {
 		// A changed update (its KB, its date, a hotpatch build) changes
@@ -141,6 +192,13 @@ func (s *Syncer) syncMSRC(ctx context.Context, feed, cursor string) (*SyncResult
 		// next time; their stored data is kept meanwhile.
 		res.Warning = fmt.Sprintf("%d Security Update Guide documents could not be read and are kept as last read: %s",
 			len(failed), strings.Join(failed, "; "))
+	}
+	next.Lines = map[string]map[string]lineSpan{}
+	for p, ms := range known {
+		next.Lines[p] = map[string]lineSpan{}
+		for m, sp := range ms {
+			next.Lines[p][strconv.Itoa(m)] = sp
+		}
 	}
 	if full {
 		// The full read is done; documents that failed have no cursor
@@ -209,16 +267,17 @@ func (s *Syncer) msrcGet(ctx context.Context, url string, max int64) ([]byte, er
 
 // syncMSRCDocument reads one monthly document and stores its advisories and
 // updates. Advisories of the document that it no longer lists are withdrawn.
-func (s *Syncer) syncMSRCDocument(ctx context.Context, feed, base string, d msrcIndexEntry, res *SyncResult) error {
+func (s *Syncer) syncMSRCDocument(ctx context.Context, feed, base string, d msrcIndexEntry, res *SyncResult, known lineDates) error {
 	resp, err := s.f.get(ctx, base+"/cvrf/"+d.ID, map[string]string{"Accept": "application/json"})
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	doc, err := parseCVRF(&msrcCapReader{r: resp.Body, left: msrcDocMax}, d.ID)
+	doc, err := parseCVRFWith(&msrcCapReader{r: resp.Body, left: msrcDocMax}, d.ID, known)
 	if err != nil {
 		return err
 	}
+	known.merge(doc.lines)
 	if doc.anomalies > 0 {
 		s.Log.Info("Security Update Guide fixed builds skipped", "document", d.ID, "count", doc.anomalies,
 			"why", "the build is not one of the product's own line")
@@ -246,6 +305,14 @@ func (s *Syncer) syncMSRCDocument(ctx context.Context, feed, base string, d msrc
 			return err
 		}
 		res.noteEcosystems("Windows", batch)
+		for _, v := range batch {
+			for _, a := range v.Affected {
+				if osv.BaseEcosystem(a.Package.Ecosystem) == winprograms.Ecosystem {
+					// These programs' coverage is this feed's.
+					res.Ecosystems[a.Package.Ecosystem] = true
+				}
+			}
+		}
 		res.Changed += n
 	}
 	var gone []*osv.Vulnerability
@@ -325,6 +392,9 @@ type cvrfVuln struct {
 type cvrfDoc struct {
 	vulns   []*osv.Vulnerability
 	updates []store.WindowsUpdate
+	// lines is when the document last lists a fix on each program's major
+	// versions.
+	lines lineDates
 	// anomalies counts fixed builds skipped because their build is not the
 	// product's own (Microsoft lists a Windows 7 build for Windows 11 22H2
 	// in CVE-2024-43583).
@@ -354,6 +424,13 @@ type cvrfScore struct {
 // parseCVRF streams a CVRF document (JSON), holding one Vulnerability element
 // at a time, and keeps only vendor fixes with a Windows 10.0 build.
 func parseCVRF(r io.Reader, docID string) (*cvrfDoc, error) {
+	return parseCVRFWith(r, docID, nil)
+}
+
+// parseCVRFWith is parseCVRF with what newer documents (or the last full
+// read) say about when each program's major versions were last fixed, for
+// lineFixRanges; the document adds its own.
+func parseCVRFWith(r io.Reader, docID string, known lineDates) (*cvrfDoc, error) {
 	dec := json.NewDecoder(r)
 	if err := expectDelim(dec, '{'); err != nil {
 		return nil, err
@@ -430,18 +507,64 @@ func parseCVRF(r io.Reader, docID string) (*cvrfDoc, error) {
 		return nil, fmt.Errorf("parse %s: no release date", docID)
 	}
 	lines := map[string]string{}
+	programs := map[string]msrcProduct{}
 	for id, n := range names {
 		if l := winrelease.CVRFLine(n); l != "" {
 			lines[id] = l
 		}
+		if p, ok := msrcProgram(n); ok {
+			programs[id] = p
+		}
 	}
-	doc := &cvrfDoc{}
+	// A program's major version is still updated when a CVE lists a fix on
+	// it next to a fix on a higher major: Extended Stable next to Stable,
+	// .NET 8 next to .NET 10. Microsoft adds Chromium CVEs to the guide up
+	// to a month after Edge fixed them, naming the Stable build of the day,
+	// so a major listed alone (an old Stable) says nothing about whether
+	// it is still updated, and its CVE date is not when it was fixed.
+	doc := &cvrfDoc{lines: lineDates{}}
+	for _, c := range vulns {
+		at := c.published
+		if at.IsZero() {
+			at = released
+		}
+		majors := map[string]map[int]bool{}
+		for _, f := range c.fixes {
+			for _, pid := range f.products {
+				if mp, ok := programs[pid]; ok && mp.accepts(f.build) {
+					if m, ok := majorOf(f.build); ok {
+						if majors[mp.program] == nil {
+							majors[mp.program] = map[int]bool{}
+						}
+						majors[mp.program][m] = true
+					}
+				}
+			}
+		}
+		for prog, ms := range majors {
+			top := 0
+			for m := range ms {
+				top = max(top, m)
+			}
+			for m := range ms {
+				if m < top {
+					doc.lines.note(prog, m, at)
+				}
+			}
+		}
+	}
+	dates := lineDates{}
+	dates.merge(known)
+	dates.merge(doc.lines)
 	updates := map[[3]string]store.WindowsUpdate{}
 	uses := map[[2]string]int{} // line, build -> CVEs fixed by it
 	for _, c := range vulns {
-		if v := cvrfRecord(c, docID, released, revised, lines, updates, doc); v != nil {
+		if v := cvrfRecord(c, docID, released, revised, lines, programs, dates, updates, doc); v != nil {
 			doc.vulns = append(doc.vulns, v)
 			for _, a := range v.Affected {
+				if !strings.HasPrefix(a.Package.Ecosystem, "Windows:") {
+					continue
+				}
 				uses[[2]string{strings.TrimPrefix(a.Package.Ecosystem, "Windows:"), a.Ranges[0].Events[1].Fixed}]++
 			}
 		}
@@ -493,7 +616,10 @@ func compactCVRF(v cvrfVuln) (cvrfCompact, bool) {
 		return c, false // ADV advisories and others without a CVE
 	}
 	for _, r := range v.Remediations {
-		if r.Type != 2 || !strings.HasPrefix(strings.TrimSpace(r.FixedBuild), "10.0.") {
+		// Windows builds (10.0.<build>.<revision>) and the programs'
+		// versions (Edge 156.0.4314.42, .NET 8.0.32); which product a fix
+		// is for is read later.
+		if b := strings.TrimSpace(r.FixedBuild); r.Type != 2 || !dottedVersion.MatchString(b) {
 			continue
 		}
 		c.fixes = append(c.fixes, cvrfFix{kb: strings.TrimPrefix(strings.TrimSpace(r.Description.Value), "KB"),
@@ -538,8 +664,8 @@ func hotpatch(subType string) bool { return strings.Contains(strings.ToLower(sub
 
 // cvrfRecord turns one CVE of a document into an advisory, adding the
 // updates it names to updates. nil when no update line has a usable fix.
-func cvrfRecord(c cvrfCompact, docID string, released, revised time.Time, lines map[string]string,
-	updates map[[3]string]store.WindowsUpdate, doc *cvrfDoc) *osv.Vulnerability {
+func cvrfRecord(c cvrfCompact, docID string, released, revised time.Time, lines map[string]string, programs map[string]msrcProduct,
+	dates lineDates, updates map[[3]string]store.WindowsUpdate, doc *cvrfDoc) *osv.Vulnerability {
 	type best struct {
 		ubr   int
 		build string
@@ -548,10 +674,24 @@ func cvrfRecord(c cvrfCompact, docID string, released, revised time.Time, lines 
 	fixed := map[string]best{}
 	severity, label := cvrfScore{}, ""
 	var kbs []string
+	progFixes := map[string][]string{}
 	for _, f := range c.fixes {
 		for _, pid := range f.products {
+			if mp, ok := programs[pid]; ok {
+				if !mp.accepts(f.build) {
+					continue
+				}
+				progFixes[mp.program] = append(progFixes[mp.program], f.build)
+				if s := c.cvss[pid]; s.score > severity.score {
+					severity = s
+				}
+				if l := c.severity[pid]; osv.LevelRank(msrcLevel(l)) > osv.LevelRank(msrcLevel(label)) {
+					label = l
+				}
+				continue
+			}
 			line := lines[pid]
-			if line == "" {
+			if line == "" || !strings.HasPrefix(f.build, "10.0.") {
 				continue
 			}
 			lb, _ := winrelease.LineBuild(line)
@@ -590,7 +730,21 @@ func cvrfRecord(c cvrfCompact, docID string, released, revised time.Time, lines 
 			}
 		}
 	}
-	if len(fixed) == 0 {
+	progRanges := map[string][]osv.Range{}
+	at := c.published
+	if at.IsZero() {
+		at = released
+	}
+	for prog, fixes := range progFixes {
+		var patched func(int) bool
+		if dates != nil {
+			patched = dates.patchedSince(prog, at, coListedGrace)
+		}
+		if r := lineFixRanges(fixes, patched); len(r) > 0 {
+			progRanges[prog] = r
+		}
+	}
+	if len(fixed) == 0 && len(progRanges) == 0 {
 		return nil
 	}
 	v := &osv.Vulnerability{ID: msrcPrefix(docID) + c.cve, Aliases: []string{c.cve}, Summary: c.title,
@@ -620,6 +774,9 @@ func cvrfRecord(c cvrfCompact, docID string, released, revised time.Time, lines 
 			kbs = appendUnique(kbs, f.kb)
 		}
 	}
+	for _, prog := range sortedKeys(progRanges) {
+		v.Affected = append(v.Affected, lineEntries(winprograms.Ecosystem+":"+prog, prog, progRanges[prog])...)
+	}
 	sort.Strings(kbs)
 	for _, kb := range kbs {
 		v.References = append(v.References, osv.Reference{Type: "WEB", URL: "https://support.microsoft.com/help/" + kb})
@@ -632,6 +789,275 @@ func cvrfRecord(c cvrfCompact, docID string, released, revised time.Time, lines 
 	}
 	return v
 }
+
+// The same documents list fixes for programs of the curated Windows
+// program catalogue (internal/winprograms): Microsoft Edge, with the Edge
+// build that fixes each CVE (most are Chromium's, which Edge takes in), and
+// the .NET and ASP.NET Core runtimes, per release line. Their fixes are
+// stored as affected entries of the CVE's advisory.
+const edgeProgram = "microsoft-edge"
+
+// msrcProduct is a Security Update Guide product that is a catalogued
+// program.
+type msrcProduct struct {
+	program string
+	line    string // the major version a .NET product is ("8"); "" for Edge
+}
+
+var (
+	fourPartBuild = regexp.MustCompile(`^\d+\.\d+\.\d+\.\d+$`)
+	// ".NET 8.0 runtime installed on Windows"; some documents name the
+	// runtime ".NET 10.0 installed on Windows", which others use for the SDK.
+	msrcDotnet = regexp.MustCompile(`^\.NET (\d+)\.0( runtime)? installed on Windows$`)
+	msrcASPNET = regexp.MustCompile(`^ASP\.NET Core (\d+)\.0$`)
+)
+
+// msrcProgram maps a product name to a catalogued program.
+func msrcProgram(name string) (msrcProduct, bool) {
+	name = strings.TrimSpace(name)
+	switch {
+	case name == "Microsoft Edge (Chromium-based)":
+		return msrcProduct{program: edgeProgram}, true
+	case msrcDotnet.MatchString(name):
+		return msrcProduct{program: "dotnet-runtime", line: msrcDotnet.FindStringSubmatch(name)[1]}, true
+	case msrcASPNET.MatchString(name):
+		return msrcProduct{program: "aspnetcore-runtime", line: msrcASPNET.FindStringSubmatch(name)[1]}, true
+	}
+	return msrcProduct{}, false
+}
+
+// accepts reports whether a fixed version is the product's own: an Edge
+// build (four parts, not Windows'), or a runtime version of the product's
+// line. SDK versions (8.0.427: a feature band of 100 or more) and previews
+// (11.0.0-rc.2) are not runtime versions.
+func (p msrcProduct) accepts(v string) bool {
+	if p.line == "" {
+		return fourPartBuild.MatchString(v) && !strings.HasPrefix(v, "10.0.")
+	}
+	parts := strings.Split(v, ".")
+	return len(parts) == 3 && parts[0] == p.line && parts[1] == "0" && len(parts[2]) <= 2 && dottedVersion.MatchString(v)
+}
+
+// lineFixRanges turns the fixed versions a source lists for one issue into
+// ranges, one per affected entry, reading each fix as the fix for its own
+// major version. Edge can list a fix per channel (Stable 155.0.4283.60,
+// Extended Stable 152.0.4191.137) and Mozilla one per release line (Firefox
+// ESR 115.16.1 and 128.3.1): a version of that major below its fix is
+// affected, and one at or above it is fixed, whatever another line's fix. A
+// version above every listed major is past every fix: not affected.
+//
+// A version on a major the issue lists no fix for, below the lowest or
+// between two, depends on whether that major is still updated (patched
+// reports whether the source lists a fix on it at or after this issue's):
+//   - still updated (Edge's Extended Stable, a supported ESR line): the
+//     issue may never have reached it or its fix is not listed, so the
+//     entry ends in a limit with no fix and the matcher reports it as
+//     needing validation (osv.UnlistedLine), never with another line's fix;
+//   - no longer updated (an older Stable major, an ended ESR line, .NET 6):
+//     it is affected, and the fix is the next listed line's, so the entry
+//     is introduced..limit (its run of such majors) with that line's fix.
+//
+// A nil patched treats every unlisted major as still updated. Of two fixes
+// for one major (an update that completed the fix), the higher counts.
+// Versions that are not dotted numbers are ignored.
+//
+// For [152.0.4191.137, 155.0.4283.60] with only 152 still updated:
+// [0, limit 152, fixed 152.0.4191.137), [152, 152.0.4191.137),
+// [153, limit 155, fixed 155.0.4283.60), [155, 155.0.4283.60).
+func lineFixRanges(versions []string, patched func(major int) bool) []osv.Range {
+	best := map[int]string{}
+	for _, b := range versions {
+		if !dottedVersion.MatchString(b) {
+			continue
+		}
+		head, _, _ := strings.Cut(b, ".")
+		major, err := strconv.Atoi(head)
+		if err != nil {
+			continue
+		}
+		if cur, ok := best[major]; !ok || compareBuild(b, cur) > 0 {
+			best[major] = b
+		}
+	}
+	majors := make([]int, 0, len(best))
+	for m := range best {
+		majors = append(majors, m)
+	}
+	sort.Ints(majors)
+	rng := func(events ...osv.Event) osv.Range { return osv.Range{Type: "ECOSYSTEM", Events: events} }
+	var out []osv.Range
+	from := 0
+	for _, m := range majors {
+		fix := best[m]
+		run := -1 // start of a run of majors no longer updated
+		endRun := func(at int) {
+			if run >= 0 {
+				out = append(out, rng(osv.Event{Introduced: strconv.Itoa(run)}, osv.Event{Limit: strconv.Itoa(at)}, osv.Event{Fixed: fix}))
+				run = -1
+			}
+		}
+		for x := from; x < m; x++ {
+			if patched == nil || patched(x) {
+				endRun(x)
+				out = append(out, rng(osv.Event{Introduced: strconv.Itoa(x)}, osv.Event{Limit: strconv.Itoa(x + 1)}))
+			} else if run < 0 {
+				run = x
+			}
+		}
+		endRun(m)
+		out = append(out, rng(osv.Event{Introduced: strconv.Itoa(m)}, osv.Event{Fixed: fix}))
+		from = m + 1
+	}
+	if patched == nil {
+		return mergeUnlisted(out)
+	}
+	return out
+}
+
+// mergeUnlisted joins adjacent unlisted ranges ([0, limit 1), [1, limit 2)
+// ...) into one, for sources with no line dates.
+func mergeUnlisted(rs []osv.Range) []osv.Range {
+	var out []osv.Range
+	for _, r := range rs {
+		n := len(out)
+		if len(r.Events) == 2 && r.Events[1].Limit != "" && n > 0 {
+			prev := out[n-1]
+			if len(prev.Events) == 2 && prev.Events[1].Limit == r.Events[0].Introduced {
+				out[n-1].Events[1].Limit = r.Events[1].Limit
+				continue
+			}
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
+// lineDates records, per program and major version, the first and the
+// latest date a source listed a fix on that major (for Microsoft's
+// programs, listed it next to a higher major): a major is still updated for
+// an issue when it has such a listing at or after the issue's date.
+type lineDates map[string]map[int]lineSpan
+
+type lineSpan struct {
+	First time.Time `json:"first"`
+	Last  time.Time `json:"last"`
+}
+
+// coListedGrace is how long after its last listing next to a higher major
+// a line listed so on two or more days is taken as still updated. Edge's
+// Extended Stable is listed next to Stable every few weeks (09-14, 10-16
+// and 10-26 in 2026), and the Stable-only CVEs in between are not its; a
+// line listed on one day only (a Stable major superseded during a
+// release) is not given the benefit.
+const coListedGrace = 8 * 7 * 24 * time.Hour
+
+func (d lineDates) note(program string, major int, at time.Time) {
+	d.span(program, major, lineSpan{First: at, Last: at})
+}
+
+func (d lineDates) span(program string, major int, s lineSpan) {
+	if s.Last.IsZero() {
+		return
+	}
+	if d[program] == nil {
+		d[program] = map[int]lineSpan{}
+	}
+	cur, ok := d[program][major]
+	if !ok {
+		d[program][major] = s
+		return
+	}
+	if s.First.Before(cur.First) {
+		cur.First = s.First
+	}
+	if s.Last.After(cur.Last) {
+		cur.Last = s.Last
+	}
+	d[program][major] = cur
+}
+
+func (d lineDates) merge(o lineDates) {
+	for p, ms := range o {
+		for m, s := range ms {
+			d.span(p, m, s)
+		}
+	}
+}
+
+// patchedSince is the test lineFixRanges takes for one program and issue:
+// a major listed at or after the issue's day is still updated. With a
+// grace (Microsoft's programs), so is one listed up to grace before the
+// issue, if it is an established line and no newer line has taken over:
+//   - established: listed on two or more days, or it took over from an
+//     older line (its first listing came after that line's last), as a
+//     new Extended Stable does from the previous one;
+//   - taken over: a higher major was first listed after this line's last
+//     listing and on or before the issue's day. Extended Stable moves to
+//     the next even major, and the old line's hosts must upgrade, so its
+//     Stable-only CVEs are reported from then on.
+//
+// A line listed on a single day that took over nothing (Stable 153 on
+// 09-18, while 152 went on being listed) gets no grace.
+func (d lineDates) patchedSince(program string, at time.Time, grace time.Duration) func(int) bool {
+	day := at.Truncate(24 * time.Hour)
+	trunc := func(t time.Time) time.Time { return t.Truncate(24 * time.Hour) }
+	return func(major int) bool {
+		s, ok := d[program][major]
+		switch {
+		case !ok:
+			return false
+		case !s.Last.Before(day):
+			return true
+		case grace <= 0 || day.Sub(trunc(s.Last)) > grace:
+			return false
+		}
+		established := trunc(s.First).Before(trunc(s.Last))
+		for m, o := range d[program] {
+			switch {
+			case m < major && trunc(o.Last).Before(trunc(s.First)):
+				established = true // took over from an older line
+			case m > major && trunc(o.First).After(trunc(s.Last)) && !trunc(o.First).After(day):
+				return false // a newer line took over
+			}
+		}
+		return established
+	}
+}
+
+// majorOf reads a dotted version's major.
+func majorOf(v string) (int, bool) {
+	head, _, _ := strings.Cut(v, ".")
+	m, err := strconv.Atoi(head)
+	return m, err == nil && dottedVersion.MatchString(v)
+}
+
+// rollingFixRange is the range of a program with one release line (Firefox's
+// rapid release): every earlier version is affected, up to the highest fix
+// listed.
+func rollingFixRange(versions []string) []osv.Range {
+	hi := ""
+	for _, v := range versions {
+		if dottedVersion.MatchString(v) && (hi == "" || compareBuild(v, hi) > 0) {
+			hi = v
+		}
+	}
+	if hi == "" {
+		return nil
+	}
+	return []osv.Range{{Type: "ECOSYSTEM", Events: []osv.Event{{Introduced: "0"}, {Fixed: hi}}}}
+}
+
+// lineEntries makes one affected entry per range, as osv.UnlistedLine and
+// osv.OtherLine read them.
+func lineEntries(ecosystem, name string, ranges []osv.Range) []osv.Affected {
+	out := make([]osv.Affected, len(ranges))
+	for i, r := range ranges {
+		out[i] = osv.Affected{Package: osv.Package{Ecosystem: ecosystem, Name: name}, Ranges: []osv.Range{r}}
+	}
+	return out
+}
+
+var dottedVersion = regexp.MustCompile(`^\d+(?:\.\d+)*$`)
 
 // compareBuild compares two Windows builds "10.0.<build>.<ubr>" numerically.
 func compareBuild(a, b string) int {
@@ -668,4 +1094,32 @@ func cvrfTime(s string) time.Time {
 		}
 	}
 	return time.Time{}
+}
+
+// linesAdvanced reports whether any program's line was fixed later than the
+// cursor knew, and the first month whose documents can have classed it as
+// no longer updated: the month of its previous last fix, or for a line not
+// known before, the month before its first.
+func linesAdvanced(old, now lineDates) (time.Time, bool) {
+	var since time.Time
+	for p, ms := range now {
+		for m, sp := range ms {
+			at := sp.Last
+			pspan, had := old[p][m]
+			prev := pspan.Last
+			var from time.Time
+			switch {
+			case !had:
+				from = time.Date(at.Year(), at.Month(), 1, 0, 0, 0, 0, time.UTC).AddDate(0, -1, 0)
+			case at.After(prev):
+				from = time.Date(prev.Year(), prev.Month(), 1, 0, 0, 0, 0, time.UTC)
+			default:
+				continue
+			}
+			if since.IsZero() || from.Before(since) {
+				since = from
+			}
+		}
+	}
+	return since, !since.IsZero()
 }

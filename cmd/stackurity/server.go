@@ -1054,6 +1054,13 @@ func intelConfig(dataDir string) intel.Config {
 	if n, err := strconv.Atoi(os.Getenv("STACKURITY_MSRC_MONTHS")); err == nil && n > 0 && n <= 120 {
 		cfg.MSRCMonths = n
 	}
+	// Windows programs of the curated catalogue (internal/winprograms).
+	cfg.NVDURL = env("STACKURITY_NVD_URL", cfg.NVDURL)
+	cfg.MozillaURL = env("STACKURITY_MOZILLA_ADVISORIES_URL", cfg.MozillaURL)
+	if k := os.Getenv("STACKURITY_NVD_API_KEY"); k != "" {
+		// NVD allows 50 requests in 30 seconds with a key, 5 without.
+		cfg.NVDAPIKey, cfg.NVDDelay = k, 700*time.Millisecond
+	}
 	cfg.WorkDir = filepath.Join(dataDir, "work")
 	// Registries ask automated clients to identify themselves.
 	cfg.UserAgent = "stackurity/" + version + " (+https://github.com/stackurity/stackurity)"

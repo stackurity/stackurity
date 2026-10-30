@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/upgrade"
 	"github.com/stackurity/stackurity/internal/version"
+	"github.com/stackurity/stackurity/internal/winprograms"
 )
 
 // Evaluator turns inventory plus intelligence into findings.
@@ -24,6 +26,8 @@ type Evaluator struct {
 	// Overlay is the lifecycle mapping data applied on top of
 	// endoflife.date; nil uses the one embedded in the binary.
 	Overlay *eoloverlay.Overlay
+	// Programs is the Windows program catalogue; nil uses the embedded one.
+	Programs *winprograms.Catalogue
 	// afterRead, in tests, runs once everything is read and before
 	// anything is written.
 	afterRead func()
@@ -109,8 +113,14 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 		if rows, err = e.withKernelSiblings(ctx, rows); err != nil {
 			return nil, err
 		}
+		// A program seen twice on a host is reported once, on one of its rows.
+		if rows, err = e.withProgramSiblings(ctx, rows); err != nil {
+			return nil, err
+		}
 	}
 	kernels := planKernels(rows)
+	programs := planPrograms(e.catalogue(), rows)
+	programAdvs := map[string][]store.AdvisoryMatch{}
 	kernelFound := map[string]map[int64][]store.FindingInput{}
 	now := time.Now()
 	if e.Now != nil {
@@ -133,6 +143,8 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 	for _, f := range feeds {
 		feedState[f.Name] = f
 	}
+	// The unfixed counts in the Windows programs feed's cursor, read once.
+	programUnfixed := programsUnfixed(feedState[FeedWindowsPrograms].Cursor)
 
 	// A package's advisories are read once and dropped after the last row
 	// that needs them, so an evaluation holds the advisories of the packages
@@ -174,6 +186,14 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 		case isWindowsOS(r):
 			// Its build is evaluated against Windows updates below, with
 			// its end of life.
+		case isWindowsProgram(r):
+			// An installed program: matched only if the curated catalogue
+			// lists it (internal/winprograms).
+			found, err := e.evaluateProgram(ctx, r, programs[r.InventoryID], feedState, programAdvs, programUnfixed, &rc)
+			if err != nil {
+				return nil, err
+			}
+			want = append(want, found...)
 		case r.Type == "generic" && r.Evidence["kind"] == "operating-system":
 			// The OS itself is covered by lifecycle, its packages by the distro feed.
 		case r.Type == "generic" && r.Evidence["kind"] == "runtime":
@@ -425,6 +445,9 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 	// the regular packages apply to every build, as in Oracle's OVAL, but
 	// their "not affected" says nothing about a Ksplice or FIPS build.
 	oracle := strings.HasPrefix(t.Ecosystem, "Oracle Linux:")
+	// Advisories with a fix per version line, one affected entry per line.
+	program := strings.HasPrefix(t.Ecosystem, winprograms.Ecosystem+":")
+	perLine := oracle || program
 	oracleBuild := ""
 	if oracle {
 		oracleBuild = osv.OracleBuild(t.Version)
@@ -465,7 +488,8 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 		if !m.Affected {
 			// A record for another version line (or for versions on no
 			// listed line) says nothing about this version's line.
-			otherLine := oracle && (osv.OtherLine(a.Affected, t) || osv.UnlistedLine(a.Ecosystem, a.Affected))
+			otherLine := perLine && (osv.OtherLine(a.Affected, t) || osv.UnlistedLine(a.Ecosystem, a.Affected) ||
+				(program && otherMajor(a.Affected, t.Version)))
 			if !pro && recordChannel == oracleBuild && !otherLine {
 				freeClear[a.GroupKey]++
 			}
@@ -780,4 +804,24 @@ func latestComposer(vs []string) string {
 		}
 	}
 	return best
+}
+
+// otherMajor reports a Windows program entry that starts on another major
+// version than the installed one: a line's fix ([8, 8.0.32) for a .NET 9
+// install), whose "not affected" says nothing about the installed line.
+func otherMajor(a osv.Affected, installed string) bool {
+	m, ok := majorOf(installed)
+	if !ok || len(a.Ranges) == 0 {
+		return false
+	}
+	for _, r := range a.Ranges {
+		if len(r.Events) == 0 {
+			return false
+		}
+		start, _, _ := strings.Cut(r.Events[0].Introduced, ".")
+		if s, err := strconv.Atoi(start); err != nil || s == m {
+			return false
+		}
+	}
+	return true
 }

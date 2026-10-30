@@ -1,0 +1,826 @@
+{
+  "schema": 1,
+  "version": "2026-10-30.2",
+  "description": "Stackurity's curated catalogue of Windows programs matched against vulnerability data. Names, publishers and version forms were checked against real Add/Remove Programs entries (internal/winprograms/testdata/registry); each source was checked against the advisories it returns (go test -tags measure ./internal/intel -run TestMeasureWindowsPrograms). Programs not listed are coverage gaps, never clean.",
+  "programs": [
+    {
+      "id": "google-chrome",
+      "label": "Google Chrome",
+      "names": [
+        "^Google Chrome$"
+      ],
+      "publishers": [
+        "^Google LLC$",
+        "^Google Inc\\.?$",
+        "^Google$"
+      ],
+      "version": {
+        "pattern": "^(\\d+)\\.(\\d+)\\.(\\d+)\\.(\\d+)$",
+        "format": "$1.$2.$3.$4"
+      },
+      "source": {
+        "type": "nvd_cpe",
+        "cpes": [
+          "cpe:2.3:a:google:chrome"
+        ]
+      },
+      "update": "Chrome updates itself when restarted; managed estates deploy the Chrome Enterprise installer.",
+      "sources": [
+        "https://nvd.nist.gov/products/cpe/search/results?keyword=cpe:2.3:a:google:chrome",
+        "https://chromereleases.googleblog.com/"
+      ],
+      "verified": "2026-10-30",
+      "note": "Beta, Dev and Canary channels have other names and are not matched. Per-user installs (HKCU) are not inventoried."
+    },
+    {
+      "id": "microsoft-edge",
+      "label": "Microsoft Edge",
+      "names": [
+        "^Microsoft Edge$"
+      ],
+      "publishers": [
+        "^Microsoft Corporation$",
+        "^Microsoft$"
+      ],
+      "version": {
+        "pattern": "^(\\d+)\\.(\\d+)\\.(\\d+)\\.(\\d+)$",
+        "format": "$1.$2.$3.$4"
+      },
+      "source": {
+        "type": "msrc"
+      },
+      "update": "Edge updates itself when restarted; managed estates use Microsoft Edge Update policies or the Edge MSI.",
+      "sources": [
+        "https://api.msrc.microsoft.com/cvrf/v3.0/cvrf/2026-Oct",
+        "https://learn.microsoft.com/en-us/DeployEdge/microsoft-edge-relnotes-security"
+      ],
+      "verified": "2026-10-30",
+      "note": "Microsoft's Security Update Guide lists the Edge build fixing each CVE, including the Chromium CVEs Edge takes in (709 CVEs in the 2026-Oct document). NVD's edge_chromium CPE lists only Edge's own CVEs, so it is not used. A version on a major Microsoft lists no fix for (Extended Stable when only Stable's fix is given) needs validation rather than being reported affected."
+    },
+    {
+      "id": "microsoft-edge-webview2",
+      "label": "Microsoft Edge WebView2 Runtime",
+      "names": [
+        "^Microsoft Edge WebView2 Runtime$"
+      ],
+      "publishers": [
+        "^Microsoft Corporation$",
+        "^Microsoft$"
+      ],
+      "unmatched": "Microsoft's advisories list Microsoft Edge, not the WebView2 Runtime, and no source states which runtime builds fix which CVEs",
+      "sources": [
+        "https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution"
+      ],
+      "verified": "2026-10-30"
+    },
+    {
+      "id": "mozilla-firefox",
+      "label": "Mozilla Firefox",
+      "names": [
+        "^Mozilla Firefox( \\d+(\\.\\d+)*)?( \\([^)]*\\))?$"
+      ],
+      "exclude": [
+        "^Mozilla Firefox( \\d+(\\.\\d+)*)? ESR( \\([^)]*\\))?$"
+      ],
+      "publishers": [
+        "^Mozilla$",
+        "^Mozilla Corporation$"
+      ],
+      "version": {
+        "pattern": "^(\\d+)\\.(\\d+)(?:\\.(\\d+))?$",
+        "format": "$1.$2.$3"
+      },
+      "source": {
+        "type": "mfsa",
+        "products": [
+          "Firefox"
+        ]
+      },
+      "update": "Firefox updates itself; managed estates deploy Mozilla's MSI.",
+      "sources": [
+        "https://github.com/mozilla/foundation-security-advisories",
+        "https://www.mozilla.org/en-US/security/advisories/"
+      ],
+      "verified": "2026-10-30",
+      "note": "Mozilla's advisories list the Firefox release fixing each CVE. NVD has not analysed close to half of Mozilla's recent CVEs (263 of 573 mentioning Firefox in the 120 days to 2026-10-30), so it is not used. Per-user installs (HKCU) are not inventoried."
+    },
+    {
+      "id": "mozilla-firefox-esr",
+      "label": "Mozilla Firefox ESR",
+      "names": [
+        "^Mozilla Firefox( \\d+(\\.\\d+)*)? ESR( \\([^)]*\\))?$"
+      ],
+      "publishers": [
+        "^Mozilla$",
+        "^Mozilla Corporation$"
+      ],
+      "version": {
+        "pattern": "^(\\d+)\\.(\\d+)(?:\\.(\\d+))?$",
+        "format": "$1.$2.$3"
+      },
+      "source": {
+        "type": "mfsa",
+        "products": [
+          "Firefox ESR"
+        ],
+        "per_line": true
+      },
+      "update": "Install the latest Firefox ESR release of the same ESR line.",
+      "sources": [
+        "https://github.com/mozilla/foundation-security-advisories",
+        "https://www.mozilla.org/en-US/security/known-vulnerabilities/firefox-esr/"
+      ],
+      "verified": "2026-10-30",
+      "note": "Mozilla lists a fix per ESR line (ESR 115.16.1 and ESR 128.3.1): each fixes its own line. A version on a line Mozilla lists no fix for (a CVE fixed only on the 153 line, on a 115 host) needs validation rather than being reported affected."
+    },
+    {
+      "id": "mozilla-thunderbird",
+      "label": "Mozilla Thunderbird",
+      "names": [
+        "^Mozilla Thunderbird( \\d+(\\.\\d+)*)?( \\([^)]*\\))?$"
+      ],
+      "publishers": [
+        "^Mozilla$",
+        "^Mozilla Corporation$",
+        "^MZLA Technologies Corporation$"
+      ],
+      "version": {
+        "pattern": "^(\\d+)\\.(\\d+)(?:\\.(\\d+))?$",
+        "format": "$1.$2.$3"
+      },
+      "source": {
+        "type": "mfsa",
+        "products": [
+          "Thunderbird",
+          "Thunderbird ESR"
+        ],
+        "per_line": true
+      },
+      "update": "Thunderbird updates itself; managed estates deploy Thunderbird's MSI.",
+      "sources": [
+        "https://github.com/mozilla/foundation-security-advisories",
+        "https://www.thunderbird.net/en-US/security/"
+      ],
+      "verified": "2026-10-30",
+      "note": "Mozilla lists a fix per Thunderbird line (the ESR 140.3 and the monthly 143): each fixes its own line. The registry does not tell an ESR install from a monthly one, so a version on a line with no listed fix needs validation."
+    },
+    {
+      "id": "7-zip",
+      "label": "7-Zip",
+      "names": [
+        "^7-Zip( \\d+\\.\\d+)?( \\(x64( edition)?\\)| \\(x86\\))?$"
+      ],
+      "publishers": [
+        "^Igor Pavlov$"
+      ],
+      "version": {
+        "pattern": "^(\\d+)\\.(\\d+)(?:\\.\\d+)*$",
+        "format": "$1.$2"
+      },
+      "source": {
+        "type": "nvd_cpe",
+        "cpes": [
+          "cpe:2.3:a:7-zip:7-zip"
+        ]
+      },
+      "update": "7-Zip does not update itself: install the new version from 7-zip.org over the old one.",
+      "sources": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2025-0411",
+        "https://www.7-zip.org/history.txt"
+      ],
+      "verified": "2026-10-30",
+      "note": "The MSI records 26.02.00.0 for 26.02; only major.minor is compared, as 7-Zip numbers its releases.",
+      "coverage_note": "NVD has not analysed most of 7-Zip's recent CVEs (6 of 8 published in the 120 days to 2026-10-30 have no configuration): findings come from the CVEs NVD has analysed, so a version can be vulnerable without a finding."
+    },
+    {
+      "id": "winrar",
+      "label": "WinRAR",
+      "names": [
+        "^WinRAR \\d+\\.\\d+( \\((32|64)-bit\\))?$"
+      ],
+      "publishers": [
+        "^win\\.rar GmbH$",
+        "^Alexander Roshal$"
+      ],
+      "version": {
+        "pattern": "^(\\d+)\\.(\\d+)(?:\\.\\d+)?$",
+        "format": "$1.$2"
+      },
+      "source": {
+        "type": "nvd_cpe",
+        "cpes": [
+          "cpe:2.3:a:rarlab:winrar"
+        ]
+      },
+      "update": "WinRAR does not update itself: install the new version from rarlab.com over the old one.",
+      "sources": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2023-38831",
+        "https://www.rarlab.com/rarnew.htm"
+      ],
+      "verified": "2026-10-30",
+      "note": "Beta builds (\"WinRAR 7.20 beta 1\") are not matched.",
+      "coverage_note": "Findings come from the CVEs NVD has analysed."
+    },
+    {
+      "id": "notepad-plus-plus",
+      "label": "Notepad++",
+      "names": [
+        "^Notepad\\+\\+( \\((32|64)-bit (x86|x64|ARM64)\\))?$"
+      ],
+      "publishers": [
+        "^Notepad\\+\\+ Team$"
+      ],
+      "version": {
+        "pattern": "^(\\d+)\\.(\\d+)(?:\\.(\\d+))?(?:\\.(\\d+))?$",
+        "format": "$1.$2.$3.$4"
+      },
+      "source": {
+        "type": "nvd_cpe",
+        "cpes": [
+          "cpe:2.3:a:notepad-plus-plus:notepad\\+\\+",
+          "cpe:2.3:a:don_ho:notepad\\+\\+"
+        ]
+      },
+      "update": "Use Notepad++'s updater, or install the new version from notepad-plus-plus.org.",
+      "sources": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2025-49144",
+        "https://notepad-plus-plus.org/news/"
+      ],
+      "verified": "2026-10-30",
+      "coverage_note": "NVD has not analysed Notepad++'s recent CVEs (none of 12 published in the 120 days to 2026-10-30 has a configuration): findings come from the CVEs NVD has analysed, so a version can be vulnerable without a finding."
+    },
+    {
+      "id": "putty",
+      "label": "PuTTY",
+      "names": [
+        "^PuTTY release \\d+\\.\\d+( \\((32|64)-bit\\))?$"
+      ],
+      "publishers": [
+        "^Simon Tatham$"
+      ],
+      "version": {
+        "pattern": "^(\\d+)\\.(\\d+)(?:\\.\\d+)*$",
+        "format": "$1.$2"
+      },
+      "source": {
+        "type": "nvd_cpe",
+        "cpes": [
+          "cpe:2.3:a:putty:putty",
+          "cpe:2.3:a:simon_tatham:putty"
+        ]
+      },
+      "update": "PuTTY does not update itself: install the new MSI from the PuTTY download page.",
+      "sources": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2024-31497",
+        "https://www.chiark.greenend.org.uk/~sgtatham/putty/changes.html"
+      ],
+      "verified": "2026-10-30",
+      "note": "The MSI records 0.83.0.0 for 0.83.",
+      "coverage_note": "Findings come from the CVEs NVD has analysed."
+    },
+    {
+      "id": "winscp",
+      "label": "WinSCP",
+      "names": [
+        "^WinSCP \\d+(\\.\\d+)*$"
+      ],
+      "publishers": [
+        "^Martin Prikryl$"
+      ],
+      "version": {
+        "pattern": "^(\\d+)\\.(\\d+)(?:\\.(\\d+))?(?:\\.\\d+)?$",
+        "format": "$1.$2.$3"
+      },
+      "source": {
+        "type": "nvd_cpe",
+        "cpes": [
+          "cpe:2.3:a:winscp:winscp"
+        ]
+      },
+      "update": "Use WinSCP's update check, or install the new version from winscp.net.",
+      "sources": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2021-3331",
+        "https://winscp.net/eng/docs/history"
+      ],
+      "verified": "2026-10-30",
+      "coverage_note": "Findings come from the CVEs NVD has analysed."
+    },
+    {
+      "id": "vlc-media-player",
+      "label": "VLC media player",
+      "names": [
+        "^VLC media player( \\d+(\\.\\d+)*)?$"
+      ],
+      "publishers": [
+        "^VideoLAN$"
+      ],
+      "sources": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2024-46461",
+        "https://www.videolan.org/security/"
+      ],
+      "verified": "2026-10-30",
+      "unmatched": "NVD has analysed none of VLC's CVEs since 2023 (7 published in the 120 days to 2026-10-30 have no configuration), so current releases would look clean"
+    },
+    {
+      "id": "git-for-windows",
+      "label": "Git for Windows",
+      "names": [
+        "^Git$",
+        "^Git version \\d+(\\.\\d+)*$"
+      ],
+      "publishers": [
+        "^The Git Development Community$"
+      ],
+      "version": {
+        "pattern": "^(\\d+)\\.(\\d+)\\.(\\d+)(?:\\.(\\d+))?$",
+        "format": "$1.$2.$3.$4"
+      },
+      "source": {
+        "type": "nvd_cpe",
+        "cpes": [
+          "cpe:2.3:a:git-scm:git",
+          "cpe:2.3:a:git_for_windows_project:git_for_windows"
+        ]
+      },
+      "update": "Run \"git update-git-for-windows\", or install the new version from gitforwindows.org.",
+      "sources": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2024-32002",
+        "https://github.com/git-for-windows/git/releases"
+      ],
+      "verified": "2026-10-30",
+      "note": "Git for Windows numbers its own rebuilds as a fourth part (2.53.0.2 is v2.53.0.windows.2), which is kept.",
+      "coverage_note": "Findings come from the CVEs NVD has analysed; NVD analyses Git for Windows' CVEs late, so a version can be vulnerable without a finding."
+    },
+    {
+      "id": "python",
+      "label": "Python",
+      "names": [
+        "^Python 3\\.\\d+\\.\\d+( \\((32|64)-bit\\)| \\(ARM64\\))?$"
+      ],
+      "publishers": [
+        "^Python Software Foundation$",
+        "^Python Software$"
+      ],
+      "version": {
+        "from": "display_name",
+        "pattern": "^Python (\\d+)\\.(\\d+)\\.(\\d+)(?: .*)?$",
+        "format": "$1.$2.$3"
+      },
+      "source": {
+        "type": "nvd_cpe",
+        "cpes": [
+          "cpe:2.3:a:python:python"
+        ]
+      },
+      "update": "Install the latest release of the same Python line from python.org.",
+      "sources": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2024-6232",
+        "https://www.python.org/downloads/windows/"
+      ],
+      "verified": "2026-10-30",
+      "note": "Only the installer's bundle entry is matched; its parts (\"Python 3.12.3 Core Interpreter (64-bit)\") are not. The registry version (3.12.3150.0) encodes the release level, so the version is read from the name. Pre-releases are not matched. The default per-user install (HKCU) is not inventoried.",
+      "coverage_note": "Findings come from the CVEs NVD has analysed (2 of 4 CPython CVEs published in the 120 days to 2026-10-30 had no configuration), so a version can be vulnerable without a finding.",
+      "side_by_side": "major.minor"
+    },
+    {
+      "id": "nodejs",
+      "label": "Node.js",
+      "names": [
+        "^Node\\.js$"
+      ],
+      "publishers": [
+        "^Node\\.js Foundation$",
+        "^OpenJS Foundation$",
+        "^Node\\.js$"
+      ],
+      "version": {
+        "pattern": "^(\\d+)\\.(\\d+)\\.(\\d+)$",
+        "format": "$1.$2.$3"
+      },
+      "source": {
+        "type": "nvd_cpe",
+        "cpes": [
+          "cpe:2.3:a:nodejs:node.js"
+        ]
+      },
+      "update": "Install the latest release of the same Node.js line from nodejs.org.",
+      "sources": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2024-27980",
+        "https://nodejs.org/en/blog/vulnerability"
+      ],
+      "verified": "2026-10-30",
+      "coverage_note": "Findings come from the CVEs NVD has analysed; NVD analyses Node.js CVEs late, so a version can be vulnerable without a finding."
+    },
+    {
+      "id": "openssl-shining-light",
+      "label": "OpenSSL for Windows (Shining Light)",
+      "names": [
+        "^OpenSSL \\d+\\.\\d+\\.\\d+( Light)?( \\((32|64)-bit\\))?$"
+      ],
+      "publishers": [
+        "^OpenSSL Win(32|64|ARM) Installer Team$"
+      ],
+      "version": {
+        "pattern": "^(\\d+)\\.(\\d+)\\.(\\d+)$",
+        "format": "$1.$2.$3"
+      },
+      "source": {
+        "type": "nvd_cpe",
+        "cpes": [
+          "cpe:2.3:a:openssl:openssl"
+        ]
+      },
+      "update": "Install the new build from slproweb.com.",
+      "sources": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2024-12797",
+        "https://slproweb.com/products/Win32OpenSSL.html"
+      ],
+      "verified": "2026-10-30",
+      "note": "OpenSSL 1.1.1 and older use letter suffixes (1.1.1w), which are not read: those installs are not evaluated. OpenSSL linked into other programs is not seen.",
+      "coverage_note": "Findings come from the CVEs NVD has analysed, so a version can be vulnerable without a finding."
+    },
+    {
+      "id": "oracle-virtualbox",
+      "label": "Oracle VirtualBox",
+      "names": [
+        "^Oracle (VM )?VirtualBox \\d+(\\.\\d+)*$"
+      ],
+      "publishers": [
+        "^Oracle and/or its affiliates$",
+        "^Oracle Corporation$"
+      ],
+      "sources": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2026-87284",
+        "https://www.oracle.com/security-alerts/"
+      ],
+      "verified": "2026-10-30",
+      "unmatched": "NVD records Oracle's VirtualBox CVEs as the latest affected release only (\"the supported version that is affected is 7.2.16\"), so earlier releases would look clean"
+    },
+    {
+      "id": "anydesk",
+      "label": "AnyDesk",
+      "names": [
+        "^AnyDesk$"
+      ],
+      "publishers": [
+        "^AnyDesk Software GmbH$",
+        "^philandro Software GmbH$"
+      ],
+      "sources": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2026-15682",
+        "https://anydesk.com/en/changelog/windows"
+      ],
+      "verified": "2026-10-30",
+      "note": "The registry records \"ad 9.0.9\"; the \"ad\" prefix is dropped.",
+      "unmatched": "NVD lists most of AnyDesk's recent CVEs as the one version tested (9.0.4), not as a range, so earlier versions would look clean"
+    },
+    {
+      "id": "zoom-workplace",
+      "label": "Zoom Workplace",
+      "names": [
+        "^Zoom Workplace( \\((32|64)-bit\\))?$",
+        "^Zoom$",
+        "^Zoom \\((32|64)-bit\\)$"
+      ],
+      "publishers": [
+        "^Zoom( Video)? Communications(, Inc\\.)?$",
+        "^Zoom$"
+      ],
+      "version": {
+        "pattern": "^(\\d+)\\.(\\d+)\\.(\\d+) \\(\\d+\\)$",
+        "format": "$1.$2.$3"
+      },
+      "source": {
+        "type": "nvd_cpe",
+        "cpes": [
+          "cpe:2.3:a:zoom:workplace_desktop",
+          "cpe:2.3:a:zoom:workplace",
+          "cpe:2.3:a:zoom:zoom",
+          "cpe:2.3:a:zoom:meetings"
+        ]
+      },
+      "update": "Zoom updates itself unless updates are disabled; otherwise deploy the new installer from zoom.us/download.",
+      "sources": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2024-24691",
+        "https://www.zoom.com/en/trust/security-bulletin/"
+      ],
+      "verified": "2026-10-30",
+      "note": "The per-machine (MSI) install records major.minor.build (7.0.33767), which does not name the release, so it is not evaluated; the user installer records \"7.0.6 (43848)\". Ranges NVD records for macOS, Linux and mobile clients only are not applied.",
+      "coverage_note": "Findings come from the CVEs NVD has analysed (Zoom's 2 CVEs published in the 120 days to 2026-10-30 had no configuration yet), so a version can be vulnerable without a finding."
+    },
+    {
+      "id": "adobe-acrobat",
+      "label": "Adobe Acrobat and Acrobat Reader (Continuous)",
+      "names": [
+        "^Adobe Acrobat( Reader)?( DC)?( \\((32|64)-bit\\))?$",
+        "^Adobe Acrobat( Reader)? DC( - [A-Za-z ]+)?$",
+        "^Adobe Acrobat Reader( DC)? MUI$"
+      ],
+      "publishers": [
+        "^Adobe$",
+        "^Adobe Inc\\.$",
+        "^Adobe Systems Incorporated$",
+        "^Adobe Systems, Inc\\.$"
+      ],
+      "version_match": "^\\d+\\.\\d+\\.2\\d{4}$",
+      "version": {
+        "pattern": "^(\\d+)\\.(\\d+)\\.(\\d+)$",
+        "format": "$1.$2.$3"
+      },
+      "source": {
+        "type": "nvd_cpe",
+        "cpes": [
+          "cpe:2.3:a:adobe:acrobat_dc:*:*:*:*:continuous",
+          "cpe:2.3:a:adobe:acrobat_reader_dc:*:*:*:*:continuous",
+          "cpe:2.3:a:adobe:acrobat_reader"
+        ]
+      },
+      "update": "Acrobat updates itself unless updates are disabled; otherwise use Help, Check for Updates or deploy Adobe's update package.",
+      "sources": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2026-81997",
+        "https://helpx.adobe.com/security/products/acrobat.html"
+      ],
+      "verified": "2026-10-30",
+      "note": "Reader and Acrobat share one installer and version since 2023 (\"Adobe Acrobat (64-bit)\" for both). The Continuous track's versions end in a 2xxxx build (26.001.21346); the Classic track (3xxxx) has its own entry. Ranges NVD records for the Classic track are never applied to Continuous installs."
+    },
+    {
+      "id": "adobe-acrobat-classic",
+      "label": "Adobe Acrobat and Acrobat Reader (Classic)",
+      "names": [
+        "^Adobe Acrobat( Reader)?( DC)?( \\((32|64)-bit\\))?$",
+        "^Adobe Acrobat( Reader)? (2017|2020|2024)( MUI)?$",
+        "^Adobe Acrobat( Reader)? DC( - [A-Za-z ]+)?$"
+      ],
+      "publishers": [
+        "^Adobe$",
+        "^Adobe Inc\\.$",
+        "^Adobe Systems Incorporated$",
+        "^Adobe Systems, Inc\\.$"
+      ],
+      "version_match": "^\\d+\\.\\d+\\.3\\d{4}$",
+      "version": {
+        "pattern": "^(\\d+)\\.(\\d+)\\.(\\d+)$",
+        "format": "$1.$2.$3"
+      },
+      "source": {
+        "type": "nvd_cpe",
+        "cpes": [
+          "cpe:2.3:a:adobe:acrobat:*:*:*:*:classic",
+          "cpe:2.3:a:adobe:acrobat_reader:*:*:*:*:classic"
+        ]
+      },
+      "update": "Install the latest update of the same Classic track (2020 or 2024) from Adobe.",
+      "sources": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2024-20726",
+        "https://helpx.adobe.com/acrobat/release-note/release-notes-acrobat-reader.html"
+      ],
+      "verified": "2026-10-30",
+      "note": "Classic track versions end in a 3xxxx build (20.005.30574, 24.001.30429)."
+    },
+    {
+      "id": "dotnet-runtime",
+      "label": ".NET Runtime",
+      "names": [
+        "^Microsoft \\.NET Runtime - \\d+\\.\\d+\\.\\d+ \\((x64|x86|arm64)\\)$",
+        "^Microsoft \\.NET Core Runtime - \\d+\\.\\d+\\.\\d+ \\((x64|x86|arm64)\\)$"
+      ],
+      "publishers": [
+        "^Microsoft Corporation$"
+      ],
+      "version": {
+        "from": "display_name",
+        "pattern": "^Microsoft \\.NET (?:Core )?Runtime - (\\d+)\\.(\\d+)\\.(\\d+) \\(.*\\)$",
+        "format": "$1.$2.$3"
+      },
+      "source": {
+        "type": "msrc"
+      },
+      "update": "Install the latest .NET runtime of the same major version from dot.net, or through Microsoft Update.",
+      "sources": [
+        "https://api.msrc.microsoft.com/cvrf/v3.0/cvrf/2026-Oct",
+        "https://dotnet.microsoft.com/en-us/download/dotnet"
+      ],
+      "verified": "2026-10-30",
+      "note": "Microsoft's Security Update Guide lists the runtime version fixing each CVE per .NET line (\".NET 8.0 runtime installed on Windows\": 8.0.32); SDK versions (8.0.427) are not read. The registry version of these entries (64.108.52182) is the MSI's, so the version is read from the name. Host, Host FX Resolver, SDK and targeting pack entries are not matched. .NET Framework is part of Windows and is not evaluated.",
+      "side_by_side": "major"
+    },
+    {
+      "id": "aspnetcore-runtime",
+      "label": "ASP.NET Core Runtime",
+      "names": [
+        "^Microsoft ASP\\.NET Core Runtime - \\d+\\.\\d+\\.\\d+ \\((x64|x86|arm64)\\)$",
+        "^Microsoft ASP\\.NET Core \\d+\\.\\d+\\.\\d+( -)? Shared Framework \\((x64|x86|arm64)\\)$"
+      ],
+      "publishers": [
+        "^Microsoft Corporation$"
+      ],
+      "version": {
+        "from": "display_name",
+        "pattern": "^Microsoft ASP\\.NET Core (?:Runtime - )?(\\d+)\\.(\\d+)\\.(\\d+) .*$",
+        "format": "$1.$2.$3"
+      },
+      "source": {
+        "type": "msrc"
+      },
+      "update": "Install the latest ASP.NET Core runtime (or Hosting Bundle) of the same major version from dot.net, or through Microsoft Update.",
+      "sources": [
+        "https://api.msrc.microsoft.com/cvrf/v3.0/cvrf/2026-Oct",
+        "https://dotnet.microsoft.com/en-us/download/dotnet"
+      ],
+      "verified": "2026-10-30",
+      "note": "Microsoft's Security Update Guide lists the version fixing each CVE per ASP.NET Core line (\"ASP.NET Core 8.0\": 8.0.32). The runtime bundle and its shared framework are two entries for one installation: findings are reported once.",
+      "side_by_side": "major"
+    },
+    {
+      "id": "wireshark",
+      "label": "Wireshark",
+      "names": [
+        "^Wireshark \\d+\\.\\d+\\.\\d+ (x64|x86|arm64)$",
+        "^Wireshark \\d+\\.\\d+\\.\\d+ \\((32|64)-bit\\)$"
+      ],
+      "publishers": [
+        "^The Wireshark developer community, https://www\\.wireshark\\.org$",
+        "^Wireshark Developer Community,? https://www\\.wireshark\\.org$",
+        "^The Wireshark developer community$"
+      ],
+      "version": {
+        "pattern": "^(\\d+)\\.(\\d+)\\.(\\d+)$",
+        "format": "$1.$2.$3"
+      },
+      "source": {
+        "type": "nvd_cpe",
+        "cpes": [
+          "cpe:2.3:a:wireshark:wireshark"
+        ]
+      },
+      "update": "Use Wireshark's update check, or install the latest release of the same line from wireshark.org.",
+      "sources": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2024-24476",
+        "https://www.wireshark.org/security/"
+      ],
+      "verified": "2026-10-30"
+    },
+    {
+      "id": "libreoffice",
+      "label": "LibreOffice",
+      "names": [
+        "^LibreOffice \\d+(\\.\\d+)+$"
+      ],
+      "publishers": [
+        "^The Document Foundation$"
+      ],
+      "version": {
+        "pattern": "^(\\d+)\\.(\\d+)\\.(\\d+)(?:\\.\\d+)?$",
+        "format": "$1.$2.$3"
+      },
+      "source": {
+        "type": "nvd_cpe",
+        "cpes": [
+          "cpe:2.3:a:libreoffice:libreoffice"
+        ]
+      },
+      "update": "Install the latest release of the same LibreOffice line from libreoffice.org.",
+      "sources": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2024-3044",
+        "https://www.libreoffice.org/about-us/security/"
+      ],
+      "verified": "2026-10-30",
+      "note": "The fourth part of the registry version (25.8.3.2) is a build number and is not compared. Help packs and language packs are separate entries and are not matched.",
+      "coverage_note": "Findings come from the CVEs NVD has analysed; NVD has deferred several recent LibreOffice CVEs, so a version can be vulnerable without a finding."
+    },
+    {
+      "id": "foxit-pdf-reader",
+      "label": "Foxit PDF Reader",
+      "names": [
+        "^Foxit PDF Reader$",
+        "^Foxit Reader$"
+      ],
+      "publishers": [
+        "^Foxit Software( Inc\\.)?$",
+        "^Foxit Software Incorporated$"
+      ],
+      "version": {
+        "pattern": "^(\\d+)\\.(\\d+)\\.(\\d+)\\.(\\d+)$",
+        "format": "$1.$2.$3.$4"
+      },
+      "source": {
+        "type": "nvd_cpe",
+        "cpes": [
+          "cpe:2.3:a:foxit:pdf_reader"
+        ]
+      },
+      "update": "Use Help, Check for Updates, or install the new version from foxit.com.",
+      "sources": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2024-28888",
+        "https://www.foxit.com/support/security-bulletins.html"
+      ],
+      "verified": "2026-10-30"
+    },
+    {
+      "id": "filezilla-client",
+      "label": "FileZilla Client",
+      "names": [
+        "^FileZilla( Client)? \\d+(\\.\\d+)+$"
+      ],
+      "publishers": [
+        "^Tim Kosse$"
+      ],
+      "sources": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2019-25683",
+        "https://filezilla-project.org/versions.php"
+      ],
+      "verified": "2026-10-30",
+      "unmatched": "NVD lists most of FileZilla's recent CVEs as single versions, not as ranges, so other versions would look clean"
+    },
+    {
+      "id": "keepass",
+      "label": "KeePass Password Safe",
+      "names": [
+        "^KeePass Password Safe \\d+(\\.\\d+)+$"
+      ],
+      "publishers": [
+        "^Dominik Reichl$"
+      ],
+      "sources": [
+        "https://nvd.nist.gov/products/cpe/search/results?keyword=cpe:2.3:a:keepass:keepass",
+        "https://keepass.info/news/news_all.html"
+      ],
+      "verified": "2026-10-30",
+      "unmatched": "NVD has analysed none of KeePass's CVEs since 2023, so current releases would look clean"
+    },
+    {
+      "id": "vmware-tools",
+      "label": "VMware Tools",
+      "names": [
+        "^VMware Tools$"
+      ],
+      "publishers": [
+        "^VMware, Inc\\.$",
+        "^Broadcom( Inc\\.)?$"
+      ],
+      "unmatched": "NVD deferred analysis of VMware Tools' recent CVEs (CVE-2025-22230, CVE-2025-22247), so they would look clean; Broadcom's advisories are not read yet",
+      "sources": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2025-22230",
+        "https://support.broadcom.com/web/ecx/security-advisory"
+      ],
+      "verified": "2026-10-30"
+    },
+    {
+      "id": "teamviewer",
+      "label": "TeamViewer",
+      "names": [
+        "^TeamViewer( \\d+)?$",
+        "^TeamViewer Host$"
+      ],
+      "publishers": [
+        "^TeamViewer$",
+        "^TeamViewer GmbH$",
+        "^TeamViewer Germany GmbH$"
+      ],
+      "unmatched": "NVD deferred analysis of TeamViewer's CVEs since 2024 (CVE-2024-7479; 17 published in the 120 days to 2026-10-30 have no configuration), so they would look clean",
+      "sources": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2024-7479",
+        "https://www.teamviewer.com/en/resources/trust-center/security-bulletins/"
+      ],
+      "verified": "2026-10-30"
+    },
+    {
+      "id": "oracle-java",
+      "label": "Oracle Java SE",
+      "names": [
+        "^Java \\d+ Update \\d+( \\((32|64)-bit\\))?$",
+        "^Java SE Development Kit \\d+ Update \\d+( \\((32|64)-bit\\))?$",
+        "^Java\\(TM\\) SE Development Kit \\d+(\\.\\d+)* \\((32|64)-bit\\)$"
+      ],
+      "publishers": [
+        "^Oracle Corporation$",
+        "^Oracle$",
+        "^Oracle and/or its affiliates$"
+      ],
+      "unmatched": "NVD records Oracle's Java CVEs as the latest affected update of each supported line only (8u491, 17.0.19), so earlier updates and unsupported lines (Java 24) would look clean; Oracle's Critical Patch Update data is not read yet",
+      "sources": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2026-62574",
+        "https://www.oracle.com/security-alerts/"
+      ],
+      "verified": "2026-10-30",
+      "note": "\"Java Auto Updater\" is a separate entry and is not Java."
+    },
+    {
+      "id": "eclipse-temurin",
+      "label": "Eclipse Temurin",
+      "names": [
+        "^Eclipse Temurin (JDK|JRE) with Hotspot \\d+(\\.\\d+)*\\+\\d+ \\((x64|x86|aarch64)\\)$"
+      ],
+      "publishers": [
+        "^Eclipse Adoptium$",
+        "^Eclipse Foundation$"
+      ],
+      "unmatched": "no advisory source names Temurin builds (NVD has no Temurin CPE), and Oracle's Java SE CVEs do not all apply to OpenJDK builds",
+      "sources": [
+        "https://adoptium.net/support/",
+        "https://openjdk.org/groups/vulnerability/advisories/"
+      ],
+      "verified": "2026-10-30"
+    }
+  ]
+}

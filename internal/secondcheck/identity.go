@@ -80,6 +80,10 @@ type target struct {
 	// for another kernel source is a real mismatch; without it the kernel
 	// source stream cannot be told from the binary name alone.
 	kernel, kernelSource bool
+	// line: a side-by-side program's installed release line ("3.11"), and
+	// lineOf reads a version's; fixes on other lines are not this line's.
+	line   string
+	lineOf func(string) string
 }
 
 // Debian and Ubuntu kernels, read by the second check's own rules.
@@ -307,6 +311,16 @@ func deriveTarget(rawPurl, invVersion string, ev map[string]string) (target, err
 			t.oracleBuild = oraclebuild.Channel(t.version)
 		}
 	case "generic":
+		if ev["registry_view"] != "" && ev["kind"] == "" {
+			// An installed Windows program (an Add/Remove Programs entry).
+			eco, id, v, line, lineOf, err := windowsProgram(p.name, t.version, ev)
+			if err != nil {
+				return t, err
+			}
+			t.ecosystem, t.version, t.line, t.lineOf = eco, v, line, lineOf
+			add(id)
+			break
+		}
 		if strings.ToLower(p.name) != "windows" || ev["kind"] != "operating-system" {
 			return t, fmt.Errorf("no advisory source for %s packages", p.typ)
 		}

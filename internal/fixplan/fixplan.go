@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/stackurity/stackurity/internal/version"
+	"github.com/stackurity/stackurity/internal/winprograms"
 )
 
 // Kinds of action, roughly from cheapest to most involved.
@@ -20,6 +21,7 @@ const (
 	WindowsUpdate   = "windows_update"   // a Windows host's latest cumulative update (one KB)
 	OldKernels      = "old_kernels"      // installed kernels that are not running
 	PackageUpgrade  = "package_upgrade"  // one application dependency
+	ProgramUpdate   = "program_update"   // one installed Windows program (internal/winprograms)
 	EndOfLife       = "end_of_life"      // non-OS software past end of life
 	ReleaseUpgrade  = "release_upgrade"  // OS end of life + OS issues with no free fix
 	NoFix           = "no_fix"           // nothing published yet
@@ -58,6 +60,16 @@ type Row struct {
 	KB            string
 	KBReleased    string
 	OlderThanData string
+	// Installed programs (evidence of findings on catalogued Windows
+	// programs): the catalogue's id and label ("google-chrome", "Google
+	// Chrome").
+	Program      string
+	ProgramLabel string
+	// ProgramLine is the release line of a program whose lines install
+	// side by side (.NET "8", Python "3.12"); ProgramVersion the version as
+	// the catalogue reads it (8.0.20, where the registry says 64.80.25123).
+	ProgramLine    string
+	ProgramVersion string
 }
 
 type Group struct {
@@ -222,6 +234,26 @@ func Build(rows []Row, advice map[string]Advice) ([]*Group, map[int64]string) {
 				}
 				g.kbs[r.KB] = true
 			}
+		case r.Program != "" && r.FixedVersion != "" && r.Kind == "vulnerability":
+			// An installed program: one update per host fixes all its
+			// findings, so the group is the program, to its highest fix;
+			// per line for programs whose lines install side by side
+			// (.NET 8 and 9), as updating one line fixes nothing on the other.
+			key, label := r.Program, r.ProgramLabel
+			if r.ProgramLine != "" {
+				key, label = r.Program+"@"+r.ProgramLine, r.ProgramLabel+" "+r.ProgramLine
+			}
+			g = get(r, ProgramUpdate, key)
+			g.Component = label
+			g.extra["program"], g.extra["programkey"] = r.Program, key
+			from := r.Version
+			if r.ProgramVersion != "" {
+				from = r.ProgramVersion
+			}
+			g.fromVersions[from] = true
+			if c, err := version.CompareGeneric(r.FixedVersion, g.ToVersion); g.ToVersion == "" || (err == nil && c > 0) {
+				g.ToVersion = r.FixedVersion
+			}
 		case isOSPackage(r.PurlType) && r.KernelIdle:
 			g = get(r, OldKernels, "")
 		case isOSPackage(r.PurlType) && r.FixedVersion != "" && !r.RequiresPro:
@@ -289,7 +321,7 @@ func Build(rows []Row, advice map[string]Advice) ([]*Group, map[int64]string) {
 	return out, assign
 }
 
-var kindRank = map[string]int{ReleaseUpgrade: 0, SecurityUpdates: 1, WindowsUpdate: 1, PackageUpgrade: 2, EndOfLife: 3, NoFix: 4, OldKernels: 5}
+var kindRank = map[string]int{ReleaseUpgrade: 0, SecurityUpdates: 1, WindowsUpdate: 1, PackageUpgrade: 2, ProgramUpdate: 2, EndOfLife: 3, NoFix: 4, OldKernels: 5}
 
 func less(a, b *Group) bool {
 	if a.SOS != b.SOS {
@@ -393,6 +425,8 @@ func describe(g *Group, osEOL map[int64]Row, advice map[string]Advice) {
 				g.Effort = effortOf(ct)
 			}
 		}
+	case ProgramUpdate:
+		describeProgramUpdate(g)
 	case NoFix:
 		g.Title = "Issues with no fix published yet"
 		g.Action = "Watch for fixes; consider mitigations or replacing the affected components."
@@ -446,6 +480,29 @@ func describeWindowsUpdate(g *Group, osLabel string) {
 		g.Note += " The installed build is older than the oldest update Stackurity reads (" + m +
 			"), so this update fixes more issues than are listed here."
 	}
+}
+
+// describeProgramUpdate words an installed program's group: update it to
+// the highest fixed version among its findings, which fixes all of them.
+// Hosts that need the same program at the same version share a fix key, so
+// the by-fix view shows one "Update Google Chrome to 156.0.8078.73" across
+// them, whatever version each has.
+func describeProgramUpdate(g *Group) {
+	label := g.Component
+	g.FromVersion = strings.Join(sortedKeys(g.fromVersions), ", ")
+	g.TargetVersion = g.ToVersion
+	g.Title = fmt.Sprintf("Update %s to %s", label, g.ToVersion)
+	g.Action = fmt.Sprintf("Update %s to %s or later.", label, g.ToVersion)
+	if p := winprograms.Default().Program(g.extra["program"]); p != nil && p.Update != "" {
+		g.Action += " " + p.Update
+	}
+	verb := "are"
+	if g.FindingCount == 1 {
+		verb = "is"
+	}
+	g.Note = fmt.Sprintf("%s in %s %s %s fixed by this version.", plural(g.FindingCount, "finding"), label, g.FromVersion, verb)
+	g.FixKey = fmt.Sprintf("%s:%s>%s", ProgramUpdate, g.extra["programkey"], g.ToVersion)
+	g.Effort = "low"
 }
 
 // Place is one asset a fix applies to, when one fix is shown for several.

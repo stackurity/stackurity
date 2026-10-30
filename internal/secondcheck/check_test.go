@@ -341,3 +341,96 @@ func TestParsePurl(t *testing.T) {
 		t.Error("a purl without a name was read")
 	}
 }
+
+func TestSecondCheckWindowsPrograms(t *testing.T) {
+	recs := []store.RawAdvisoryRecord{
+		rec("NVD-google-chrome-CVE-2099-1", "Windows programs:google-chrome", "google-chrome", rng(`{"introduced":"0"},{"fixed":"138.0.7204.96"}`)),
+		rec("NVD-7-zip-CVE-2099-1", "Windows programs:7-zip", "7-zip", rng(`{"introduced":"0"},{"fixed":"24.09"}`)),
+		rec("MSRC-2026-Oct-CVE-2099-1", "Windows programs:dotnet-runtime", "dotnet-runtime",
+			`{"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"0"},{"fixed":"8.0.32"}]},{"type":"ECOSYSTEM","events":[{"introduced":"9"},{"fixed":"9.0.21"}]}]}`),
+	}
+	obs := func(name, pub, v string) Observed {
+		ev := map[string]string{"registry_view": "native"}
+		if pub != "" {
+			ev["publisher"] = pub
+		}
+		return Observed{Purl: "pkg:generic/" + strings.ReplaceAll(name, " ", "%20") + "@" + v, Version: v, Evidence: ev}
+	}
+	for _, c := range []struct {
+		o     Observed
+		fixed string
+	}{
+		{obs("Google Chrome", "Google LLC", "138.0.7204.93"), "138.0.7204.96"}, // .93 < .96 as numbers
+		{obs("7-Zip 24.08 (x64)", "Igor Pavlov", "24.08"), "24.09"},
+		{obs("7-Zip 24.08", "", "24.08"), "24.09"},
+		// The version is read from the name; 9.0.3 is on the 9 line.
+		{obs("Microsoft .NET Runtime - 9.0.3 (x64)", "Microsoft Corporation", "72.12.29501"), "9.0.21"},
+	} {
+		if out := CheckVulnerability(claim(c.fixed, nil), c.o, recs); out.Result != store.SecondCheckAgreed {
+			t.Errorf("%s: %s %s", c.o.Purl, out.Result, out.Reason)
+		}
+	}
+	// A wrong claim is found: the matcher said 8.0.32 for a 9.0 runtime.
+	want(t, CheckVulnerability(claim("8.0.32", nil), obs("Microsoft .NET Runtime - 9.0.3 (x64)", "Microsoft Corporation", "72.12.29501"), recs), "fixed_version", "9.0.21")
+	// Programs the catalogue does not match cannot be checked.
+	for name, reason := range map[string]string{
+		"Contoso App":                "not a catalogued Windows program",
+		"Java 8 Update 491 (64-bit)": "recognised but not matched",
+	} {
+		pub := "Oracle Corporation"
+		if out := CheckVulnerability(claim("1", nil), obs(name, pub, "1.0"), recs); out.Result != store.SecondCheckCouldNotCheck || !strings.Contains(out.Reason, reason) {
+			t.Errorf("%s: %s %q", name, out.Result, out.Reason)
+		}
+	}
+}
+
+// The second check compares the verification a line's records call for.
+func TestSecondCheckLineVerification(t *testing.T) {
+	recs := []store.RawAdvisoryRecord{
+		rec("MSRC-2026-Oct-CVE-2099-1", "Windows programs:microsoft-edge", "microsoft-edge", rng(`{"introduced":"152"},{"limit":"153"}`)),
+		rec("MSRC-2026-Oct-CVE-2099-1", "Windows programs:microsoft-edge", "microsoft-edge", rng(`{"introduced":"153"},{"limit":"156"},{"fixed":"156.0.4314.42"}`)),
+		rec("MSRC-2026-Oct-CVE-2099-1", "Windows programs:microsoft-edge", "microsoft-edge", rng(`{"introduced":"156"},{"fixed":"156.0.4314.42"}`)),
+	}
+	edge := func(v string) Observed {
+		return Observed{Purl: "pkg:generic/Microsoft%20Edge@" + v, Version: v,
+			Evidence: map[string]string{"registry_view": "native", "publisher": "Microsoft Corporation"}}
+	}
+	c := claim("156.0.4314.42", nil)
+	c.Verification = "confirmed"
+	// An older Stable (154): affected, with the next line's fix.
+	if out := CheckVulnerability(c, edge("154.0.4258.62"), recs); out.Result != store.SecondCheckAgreed {
+		t.Errorf("Edge 154: %s %s", out.Result, out.Reason)
+	}
+	// Extended Stable (152): only the unlisted-line record matches, so a
+	// confirmed claim is a disagreement on verification.
+	c152 := claim("", nil)
+	c152.Verification = "confirmed"
+	want(t, CheckVulnerability(c152, edge("152.0.4191.137"), recs), "verification", "needs_validation")
+	c152.Verification = "needs_validation"
+	c152.Evidence = map[string]any{"match": map[string]any{"ambiguous": []any{"version_line_unlisted"}}}
+	if out := CheckVulnerability(c152, edge("152.0.4191.137"), recs); out.Result != store.SecondCheckAgreed {
+		t.Errorf("Edge 152 needing validation: %s %s", out.Result, out.Reason)
+	}
+	// A claim of an unlisted line where the version's own line has a fix.
+	c156 := claim("156.0.4314.42", map[string]any{"match": map[string]any{"ambiguous": []any{"version_line_unlisted"}}})
+	c156.Verification = "needs_validation"
+	want(t, CheckVulnerability(c156, edge("156.0.4314.10"), recs), "verification", "confirmed")
+	// Python 3.11 against NVD's "< 3.12.4" and "< 3.11.9": its own line's fix.
+	py := []store.RawAdvisoryRecord{rec("NVD-python-CVE-2099-1", "Windows programs:python", "python",
+		`{"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"0"},{"fixed":"3.12.4"}]},{"type":"ECOSYSTEM","events":[{"introduced":"3.11.0"},{"fixed":"3.11.9"}]}]}`)}
+	obs := Observed{Purl: "pkg:generic/Python%203.11.5%20%2864-bit%29@3.11.5150.0", Version: "3.11.5150.0",
+		Evidence: map[string]string{"registry_view": "native", "publisher": "Python Software Foundation"}}
+	if out := CheckVulnerability(claim("3.11.9", nil), obs, py); out.Result != store.SecondCheckAgreed {
+		t.Errorf("Python 3.11: %s %s", out.Result, out.Reason)
+	}
+	// Only "before 3.12.4", with no start: unknown on 3.11, so the finding
+	// needs validation with no fix.
+	py2 := []store.RawAdvisoryRecord{rec("NVD-python-CVE-2099-1", "Windows programs:python", "python", rng(`{"introduced":"0"},{"fixed":"3.12.4"}`))}
+	cu := claim("", map[string]any{"match": map[string]any{"ambiguous": []any{"version_line_unlisted"}}})
+	cu.Verification = "needs_validation"
+	if out := CheckVulnerability(cu, obs, py2); out.Result != store.SecondCheckAgreed {
+		t.Errorf("Python 3.11 below another line's fix: %s %s", out.Result, out.Reason)
+	}
+	cu.Verification = "confirmed"
+	want(t, CheckVulnerability(cu, obs, py2), "verification", "needs_validation")
+}

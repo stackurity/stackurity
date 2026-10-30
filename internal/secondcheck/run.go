@@ -51,7 +51,7 @@ func (r *Runner) Run(ctx context.Context) (Stats, error) {
 	for _, c := range cands {
 		var ev map[string]any
 		_ = json.Unmarshal(c.Evidence, &ev)
-		claim := Claim{Kind: c.Kind, Key: c.Key, FixedVersion: c.FixedVersion, Sources: c.Sources, Evidence: ev}
+		claim := Claim{Kind: c.Kind, Key: c.Key, Verification: c.Verification, FixedVersion: c.FixedVersion, Sources: c.Sources, Evidence: ev}
 		obs := Observed{Purl: c.Purl, Version: c.Version, Evidence: c.InvEvidence}
 		var out Outcome
 		switch c.Kind {
