@@ -715,11 +715,15 @@ type ReleaseCandidate struct {
 	Namespace   string
 	Name        string
 	Purl        string // one inventory purl as collected, before purl case normalisation
+	// Names are the names the installed copies give themselves (a
+	// WordPress plugin's header), for a registry that checks them
+	// (ReleaseCandidatesIn); nil otherwise.
+	Names []string
 }
 
 func (s *Store) ReleaseCandidates(ctx context.Context, types []string, maxAge time.Duration, limit int) ([]ReleaseCandidate, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT c.id, c.type, c.namespace, c.name,
-		  COALESCE((SELECT i.purl FROM inventory i WHERE i.component_id = c.id AND i.removed_at IS NULL LIMIT 1), '')
+		  COALESCE((SELECT i.purl FROM inventory i WHERE i.component_id = c.id AND i.removed_at IS NULL LIMIT 1), ''), NULL::text[]
 		FROM components c
 		LEFT JOIN package_releases r ON r.component_id = c.id
 		WHERE c.type = ANY($1)
@@ -730,6 +734,37 @@ func (s *Store) ReleaseCandidates(ctx context.Context, types []string, maxAge ti
 		return nil, err
 	}
 	return pgx.CollectRows(rows, pgx.RowToStructByPos[ReleaseCandidate])
+}
+
+// ReleaseCandidatesIn is ReleaseCandidates for components of one purl type
+// in the given namespaces (pkg:generic/wordpress-plugin/...), with the
+// names their installed copies give themselves. Copies the collector
+// marked as not from the registry (evidence wordpress_org "no": updated
+// from elsewhere, must-use) are left out, and a component with no other
+// copy is not a candidate.
+func (s *Store) ReleaseCandidatesIn(ctx context.Context, typ string, namespaces []string, maxAge time.Duration, limit int) ([]ReleaseCandidate, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT c.id, c.type, c.namespace, c.name, min(i.purl),
+		  array_agg(DISTINCT i.evidence->>'name') FILTER (WHERE COALESCE(i.evidence->>'name', '') <> '')
+		FROM components c
+		JOIN inventory i ON i.component_id = c.id AND i.removed_at IS NULL AND COALESCE(i.evidence->>'wordpress_org', '') <> 'no'
+		LEFT JOIN package_releases r ON r.component_id = c.id
+		WHERE c.type = $1 AND c.namespace = ANY($2)
+		  AND (r.checked_at IS NULL OR r.checked_at < now() - make_interval(secs => $3))
+		GROUP BY c.id, r.checked_at
+		ORDER BY r.checked_at NULLS FIRST, c.id LIMIT $4`, typ, namespaces, maxAge.Seconds(), limit)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByPos[ReleaseCandidate])
+}
+
+// HasComponentsIn reports whether anything installed is a component of
+// purl type typ in one of the namespaces.
+func (s *Store) HasComponentsIn(ctx context.Context, typ string, namespaces []string) (bool, error) {
+	var ok bool
+	err := s.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM components c WHERE c.type = $1 AND c.namespace = ANY($2)
+		AND EXISTS (SELECT 1 FROM inventory i WHERE i.component_id = c.id AND i.removed_at IS NULL))`, typ, namespaces).Scan(&ok)
+	return ok, err
 }
 
 type LifecycleCycle struct {

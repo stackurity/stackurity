@@ -555,7 +555,9 @@ func (s *Scanner) ScanApp(ctx context.Context, dir string) App {
 	}
 	add(kept)
 	// A WordPress site's core release (wordpress.go).
-	add(s.wordpressCore(dir, den))
+	wpObs, wpCov := s.wordpressCore(dir, den)
+	add(wpObs)
+	app.Coverage = append(app.Coverage, wpCov...)
 	// Libraries loaded from a CDN or copied into the application, unless a
 	// manifest already reported the same package and version.
 	add(unlisted(web.obs, app.Observations))

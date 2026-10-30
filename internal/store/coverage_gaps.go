@@ -65,6 +65,7 @@ func (s *Store) VulnerabilitySourceGaps(ctx context.Context) ([]GapRow, error) {
 		    WHEN i.coverage_reason LIKE 'built by %, not by the distribution%' THEN 'vendor_build|' || substring(i.coverage_reason from '^built by (.*?), not by the distribution')
 		    WHEN i.coverage_reason LIKE 'runtime installed outside a package manager%' THEN 'runtime'
 		    WHEN i.coverage_reason LIKE 'content management system core%' THEN 'cms'
+		    WHEN i.coverage_reason LIKE 'WordPress plugin or theme%' THEN 'wordpress_extension'
 		    WHEN i.coverage_reason LIKE 'Kubernetes component%' THEN 'kubernetes'
 		    WHEN i.coverage_reason LIKE 'managed service%' THEN 'managed_service'
 		    WHEN i.coverage_reason LIKE '%have no vulnerability source%' OR i.coverage_reason LIKE '%has no vulnerability source%' THEN 'distribution'

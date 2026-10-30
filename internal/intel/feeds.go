@@ -175,6 +175,8 @@ func (s *Syncer) Sync(ctx context.Context, name string) (*SyncResult, error) {
 		res, err = s.syncEPSS(ctx)
 	case name == FeedEndOfLife:
 		res, err = s.syncEndOfLife(ctx)
+	case name == FeedWordPressOrg:
+		res, cursor, err = s.syncWordPressOrg(ctx, feed.Cursor)
 	case isReleaseFeed(name):
 		res, err = s.syncReleases(ctx, name)
 	default:
