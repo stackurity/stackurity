@@ -534,3 +534,37 @@ func TestCoListedGrace(t *testing.T) {
 		t.Errorf("superseded 153: affected %v fix %s", hit, fix)
 	}
 }
+
+// When Extended Stable moves to the next even major, the old line's grace
+// ends: its Stable-only CVEs are reported from the new line's first
+// listing, and the new line (listed on one day so far) has the grace.
+func TestCoListedTakeover(t *testing.T) {
+	day := func(s string) time.Time { d, _ := time.Parse("2006-01-02", s); return d }
+	dates := lineDates{}
+	dates.note("microsoft-edge", 152, day("2026-09-14"))
+	dates.note("microsoft-edge", 152, day("2026-10-16"))
+	dates.note("microsoft-edge", 154, day("2026-11-10")) // the new Extended Stable
+	for _, c := range []struct {
+		major int
+		cve   string
+		want  bool
+	}{
+		{152, "2026-11-12", false}, // taken over: reported
+		{154, "2026-11-12", true},  // took over from 152: grace on one day
+		{152, "2026-11-05", true},  // before 154 appeared: 152's grace
+		{154, "2026-11-05", true},  // listed after the CVE (11-10): still updated, the base rule
+	} {
+		if got := dates.patchedSince("microsoft-edge", day(c.cve), coListedGrace)(c.major); got != c.want {
+			t.Errorf("%d for a CVE of %s: %v, want %v", c.major, c.cve, got, c.want)
+		}
+	}
+	// A Stable-only fix (156) on 11-12: confirmed on 152, a note on 154.
+	v := &osv.Vulnerability{ID: "x", Affected: lineEntries("Windows programs:p", "p",
+		lineFixRanges([]string{"156.0.4400.10"}, dates.patchedSince("microsoft-edge", day("2026-11-12"), coListedGrace)))}
+	if hit, fix, _ := lineVerdict(t, v, "152.0.4191.140"); !hit || fix != "156.0.4400.10" {
+		t.Errorf("152 after the takeover: affected %v fix %s", hit, fix)
+	}
+	if hit, _, unlisted := lineVerdict(t, v, "154.0.4258.80"); hit || !unlisted {
+		t.Errorf("154, the new Extended Stable: affected %v unlisted %v", hit, unlisted)
+	}
+}

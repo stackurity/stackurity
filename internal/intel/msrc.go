@@ -985,10 +985,22 @@ func (d lineDates) merge(o lineDates) {
 }
 
 // patchedSince is the test lineFixRanges takes for one program and issue:
-// a major listed at or after the issue's day, or, with a grace, one listed
-// on two or more days whose last listing is at most grace before the issue.
+// a major listed at or after the issue's day is still updated. With a
+// grace (Microsoft's programs), so is one listed up to grace before the
+// issue, if it is an established line and no newer line has taken over:
+//   - established: listed on two or more days, or it took over from an
+//     older line (its first listing came after that line's last), as a
+//     new Extended Stable does from the previous one;
+//   - taken over: a higher major was first listed after this line's last
+//     listing and on or before the issue's day. Extended Stable moves to
+//     the next even major, and the old line's hosts must upgrade, so its
+//     Stable-only CVEs are reported from then on.
+//
+// A line listed on a single day that took over nothing (Stable 153 on
+// 09-18, while 152 went on being listed) gets no grace.
 func (d lineDates) patchedSince(program string, at time.Time, grace time.Duration) func(int) bool {
 	day := at.Truncate(24 * time.Hour)
+	trunc := func(t time.Time) time.Time { return t.Truncate(24 * time.Hour) }
 	return func(major int) bool {
 		s, ok := d[program][major]
 		switch {
@@ -996,9 +1008,19 @@ func (d lineDates) patchedSince(program string, at time.Time, grace time.Duratio
 			return false
 		case !s.Last.Before(day):
 			return true
+		case grace <= 0 || day.Sub(trunc(s.Last)) > grace:
+			return false
 		}
-		twice := s.First.Truncate(24 * time.Hour).Before(s.Last.Truncate(24 * time.Hour))
-		return grace > 0 && twice && day.Sub(s.Last.Truncate(24*time.Hour)) <= grace
+		established := trunc(s.First).Before(trunc(s.Last))
+		for m, o := range d[program] {
+			switch {
+			case m < major && trunc(o.Last).Before(trunc(s.First)):
+				established = true // took over from an older line
+			case m > major && trunc(o.First).After(trunc(s.Last)) && !trunc(o.First).After(day):
+				return false // a newer line took over
+			}
+		}
+		return established
 	}
 }
 
