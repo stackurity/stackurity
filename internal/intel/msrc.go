@@ -738,7 +738,7 @@ func cvrfRecord(c cvrfCompact, docID string, released, revised time.Time, lines 
 	for prog, fixes := range progFixes {
 		var patched func(int) bool
 		if dates != nil {
-			patched = dates.patchedSince(prog, at, coListedGrace)
+			patched = dates.patchedSince(prog, at, coListedGrace, extendedLines(prog))
 		}
 		if r := lineFixRanges(fixes, patched); len(r) > 0 {
 			progRanges[prog] = r
@@ -996,11 +996,16 @@ func (d lineDates) merge(o lineDates) {
 //     the next even major, and the old line's hosts must upgrade, so its
 //     Stable-only CVEs are reported from then on.
 //
-// A line listed on a single day that took over nothing (Stable 153 on
-// 09-18, while 152 went on being listed) gets no grace.
-func (d lineDates) patchedSince(program string, at time.Time, grace time.Duration) func(int) bool {
+// extended, when set (the catalogue's extended_parity: Edge's Extended
+// Stable majors are even), says which majors can be such a line: only they
+// take over from one another or end another's grace, so a superseded
+// Stable major listed once (151 on 08-11, 153 on 09-18 in 2026) neither
+// gets the grace nor ends Extended Stable's. Any line still gets the grace
+// when listed on two or more days. Without it every major can, as for .NET.
+func (d lineDates) patchedSince(program string, at time.Time, grace time.Duration, extended func(int) bool) func(int) bool {
 	day := at.Truncate(24 * time.Hour)
 	trunc := func(t time.Time) time.Time { return t.Truncate(24 * time.Hour) }
+	eligible := func(m int) bool { return extended == nil || extended(m) }
 	return func(major int) bool {
 		s, ok := d[program][major]
 		switch {
@@ -1014,7 +1019,8 @@ func (d lineDates) patchedSince(program string, at time.Time, grace time.Duratio
 		established := trunc(s.First).Before(trunc(s.Last))
 		for m, o := range d[program] {
 			switch {
-			case m < major && trunc(o.Last).Before(trunc(s.First)):
+			case !eligible(m):
+			case m < major && eligible(major) && trunc(o.Last).Before(trunc(s.First)):
 				established = true // took over from an older line
 			case m > major && trunc(o.First).After(trunc(s.Last)) && !trunc(o.First).After(day):
 				return false // a newer line took over
@@ -1122,4 +1128,20 @@ func linesAdvanced(old, now lineDates) (time.Time, bool) {
 		}
 	}
 	return since, !since.IsZero()
+}
+
+// extendedLines reads the catalogue's extended_parity for a program: which
+// of its majors can be an extended-support line; nil when any can.
+func extendedLines(program string) func(int) bool {
+	p := winprograms.Default().Program(program)
+	if p == nil {
+		return nil
+	}
+	switch p.ExtendedParity {
+	case "even":
+		return func(m int) bool { return m%2 == 0 }
+	case "odd":
+		return func(m int) bool { return m%2 == 1 }
+	}
+	return nil
 }

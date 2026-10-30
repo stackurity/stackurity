@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "2026-10-30.2",
+  "version": "2026-10-31.1",
   "description": "Stackurity's curated catalogue of Windows programs matched against vulnerability data. Names, publishers and version forms were checked against real Add/Remove Programs entries (internal/winprograms/testdata/registry); each source was checked against the advisories it returns (go test -tags measure ./internal/intel -run TestMeasureWindowsPrograms). Programs not listed are coverage gaps, never clean.",
   "programs": [
     {
@@ -55,7 +55,8 @@
         "https://learn.microsoft.com/en-us/DeployEdge/microsoft-edge-relnotes-security"
       ],
       "verified": "2026-10-30",
-      "note": "Microsoft's Security Update Guide lists the Edge build fixing each CVE, including the Chromium CVEs Edge takes in (709 CVEs in the 2026-Oct document). NVD's edge_chromium CPE lists only Edge's own CVEs, so it is not used. A version on a major Microsoft lists no fix for (Extended Stable when only Stable's fix is given) needs validation rather than being reported affected."
+      "note": "Microsoft's Security Update Guide lists the Edge build fixing each CVE, including the Chromium CVEs Edge takes in (709 CVEs in the 2026-Oct document). NVD's edge_chromium CPE lists only Edge's own CVEs, so it is not used. A version on a major Microsoft lists no fix for (Extended Stable when only Stable's fix is given) needs validation rather than being reported affected.",
+      "extended_parity": "even"
     },
     {
       "id": "microsoft-edge-webview2",
