@@ -28,7 +28,7 @@ Release binaries: linux/amd64, linux/arm64, windows/amd64, darwin/amd64 and darw
 | Amazon Linux 2023 and 2 | rpm | Yes (0.2+); Amazon Linux 2 extras topics with a version line | ALAS from Amazon's repositories |
 | Oracle Linux 7, 8, 9 and 10 (and 6) | rpm | Yes: the Unbreakable Enterprise Kernel per line, module streams named by version, Ksplice and FIPS builds against their own fixes; see [Oracle Linux](#oracle-linux) | ELSA (OVAL) from `linux.oracle.com` |
 | CentOS, Fedora, Amazon Linux 1, Oracle Linux 5 | rpm | No: evaluation gap | |
-| Windows 10, 11, Server 2016, 2019, 2022, 2025 | Registry (installed programs, OS build) | Operating system vulnerabilities through cumulative updates: the build and update revision against Microsoft's fixed builds, one finding per missing CVE naming its update (KB); see [Windows missing updates](#windows-missing-updates). Lifecycle for the operating system (see [Windows end of life](#windows-end-of-life)). Installed programs are not matched; installed KBs and Store apps are unsupported coverage; hotpatched hosts, .NET Framework, Office and servicing stack updates are not evaluated | Microsoft Security Update Guide (MSRC CVRF); endoflife.date `windows-server`, `windows` |
+| Windows 10, 11, Server 2016, 2019, 2022, 2025 | Registry (installed programs, OS build) | Operating system vulnerabilities through cumulative updates: the build and update revision against Microsoft's fixed builds, one finding per missing CVE naming its update (KB); see [Windows missing updates](#windows-missing-updates). Lifecycle for the operating system (see [Windows end of life](#windows-end-of-life)). Installed programs of the curated catalogue (Chrome, Edge, Firefox, 7-Zip, Acrobat, .NET and others) are matched against their vendor's advisories or NVD; others are coverage gaps with the reason (see [Windows programs](#windows-programs)). Per-user installs, installed KBs and Store apps are unsupported coverage; hotpatched hosts, .NET Framework, Office and servicing stack updates are not evaluated | Microsoft Security Update Guide (MSRC CVRF); Mozilla's security advisories; NVD; endoflife.date `windows-server`, `windows` |
 | Windows Server 2012 R2 and older, Windows 7, 8, 8.1 | Registry | No: lifecycle only; paid Extended Security Updates are not evaluated (unsupported coverage) | endoflife.date |
 | Runtimes outside a package manager | Detected | No: lifecycle only | endoflife.date |
 | Packages from a vendor's own repository (MongoDB, Docker, Elastic, Grafana, PGDG, NodeSource, Redis, nginx.org, MariaDB, MySQL, HashiCorp, Kubernetes and others, see [below](#packages-from-vendor-repositories)) | dpkg, rpm | No: evaluation gap; lifecycle with upstream dates | endoflife.date |
@@ -229,7 +229,9 @@ kind (`mix.lock`, `rebar.lock`, `Package.swift`, `Package.resolved`,
 `uv.lock`, `pdm.lock`, `packages.config`, `deno.lock`, `bun.lock`,
 `bun.lockb`, `build.sbt`, and Maven, Gradle and Cargo files without their
 stack pack), and application files the agent's user may not read; components with no vulnerability source, by package type and
-reason (vendor builds per repository); and products with no lifecycle match.
+reason (vendor builds per repository; installed Windows programs outside the
+curated catalogue, and those it recognises but does not match, as "Windows
+programs"); and products with no lifecycle match.
 Each is counted by assets and workspaces. The report names no workspace,
 asset, path or package. The new file kinds are reported by agents and scans
 from this release on; older agents report only the kinds they knew.
@@ -290,6 +292,45 @@ The build decides the line, as for end of life; the product name tells Server fr
 
 Not evaluated (`not_evaluated`, with the reason): a version without an update revision, a release with no updates in the window (Windows 11 21H2, semi-annual channel Server), and any release whose line cannot be told (see below). The second check re-derives these findings with its own table of lines and its own dotted-number comparison.
 
+## Windows programs
+
+The Windows agent reads every installed program from the registry's Add/Remove Programs entries (`HKLM\...\Uninstall`, 64-bit and 32-bit views): its `DisplayName`, `Publisher` and `DisplayVersion`. Matching programs by name against NVD's product dictionary gives wrong answers ("Google Chrome Helper", "Java Auto Updater" and "Microsoft Edge Update" are not the program they name), so only programs in Stackurity's **curated catalogue** are matched: [`internal/winprograms/catalogue.json`](../internal/winprograms/catalogue.json), a versioned document embedded in the binary. Each entry gives the names and publishers it accepts (anchored patterns, so a lookalike never matches), how its version is read, and its advisory source, and was checked on 2026-10-30 against real registry entries ([`testdata/registry.json`](../internal/winprograms/testdata/registry.json), each with the published inventory it came from) and against what its source returns. A program not in the catalogue is a coverage gap (`unsupported`, "not in the curated catalogue of Windows programs"), never clean.
+
+| Program | Source | Notes |
+|---|---|---|
+| Google Chrome | NVD (`google:chrome`) | Four-part versions. Beta, Dev and Canary are other names and not matched. Configurations for other platforms (Chrome on Android, or a fix NVD records for macOS and Linux only) are not applied. |
+| Microsoft Edge | Microsoft's Security Update Guide (through `msrc:Windows`) | The Edge build that fixes each CVE, including the Chromium CVEs Edge takes in (709 in the 2026-Oct document). Where Microsoft lists a Stable and an Extended Stable fix, each fixes its own major version. |
+| Mozilla Firefox, Firefox ESR, Thunderbird | Mozilla's security advisories (MFSA) | The release fixing each CVE, per line: ESR 115.16.1 fixes the 115 line, ESR 128.3.1 the 128 line, and a version between two listed lines takes the next line's fix. ESR is never given a release-only fix. NVD has not analysed close to half of Mozilla's recent CVEs, so it is not used. |
+| .NET Runtime, ASP.NET Core Runtime | Microsoft's Security Update Guide | The runtime version fixing each CVE per line (".NET 8.0 runtime installed on Windows": 8.0.32). The version is read from the entry's name: its registry version is the MSI's (64.108.52182). SDK versions are not read. Host, Host FX Resolver, SDK and targeting pack entries are not matched. |
+| Adobe Acrobat and Acrobat Reader | NVD (`adobe:acrobat_dc`, `acrobat_reader_dc`, `acrobat_reader`: Continuous; `acrobat`, `acrobat_reader`: Classic) | Two entries, chosen by version: Continuous builds end in 2xxxx (26.001.21346), Classic in 3xxxx (24.001.30264). Ranges for one track are never applied to the other. |
+| 7-Zip, WinRAR, PuTTY, WinSCP, Notepad++, Git for Windows, Python, Node.js, Zoom Workplace, OpenSSL for Windows (Shining Light), Wireshark, LibreOffice, Foxit PDF Reader | NVD (the product's CPE) | Versions as the installers write them: 7-Zip's MSI records 26.02.00.0 for 26.02, PuTTY's 0.83.0.0 for 0.83, Python's registry version encodes the release level (3.12.10150.0), so Python's is read from the name, and Git for Windows keeps its rebuild number (2.53.0.2). Only Python's bundle entry is matched, not its parts. Zoom's per-machine MSI records major.minor.build (7.0.33767), which names no release: it is not evaluated. |
+
+Recognised but **not matched**, each with the reason on the row (`unsupported`, counted as "Windows programs" in the coverage-gap report):
+
+| Program | Why |
+|---|---|
+| Oracle Java SE (JRE and JDK) | NVD records Oracle's Java CVEs as the latest affected update of each supported line only (8u491, 17.0.19), so earlier updates and unsupported lines (Java 24) would look clean. Oracle's Critical Patch Update data is not read yet. |
+| Eclipse Temurin | No advisory source names Temurin builds, and Oracle's Java SE CVEs do not all apply to OpenJDK builds. |
+| Oracle VirtualBox | NVD records the latest affected release only ("the supported version that is affected is 7.2.16"). |
+| AnyDesk, FileZilla Client | NVD lists most of their recent CVEs as the one version tested, not as a range. |
+| VLC media player, KeePass | NVD has analysed none of their CVEs since 2023. |
+| VMware Tools, TeamViewer | NVD deferred analysis of their recent CVEs (CVE-2025-22230, CVE-2024-7479). |
+| Microsoft Edge WebView2 Runtime | Microsoft's advisories list Edge, not the WebView2 Runtime. |
+
+**Matching.** A program's version is compared as dotted numbers (`138.0.7204.93` is below `138.0.7204.96`). One installation can appear as two entries (the 32- and 64-bit registry views, "7-Zip 24.08" and "7-Zip 24.08 (x64)", or the ASP.NET Core runtime and its shared framework): per host, program and version, the findings are reported once, on the 64-bit view's entry, and the other entry's coverage says so. An entry with no `Publisher` is matched by name and its findings need validation (severity withheld, priority lowered by the risk policy's needs-validation multiplier). An entry with another publisher is not matched. Findings are keyed by CVE, so KEV and EPSS apply, and the evidence names the program, the catalogue version and the registry name. The second check re-derives each one with its own reading of the catalogue.
+
+**NVD.** For a program whose source is NVD, every CVE whose configurations name its CPE products is read, with NVD's version ranges. Configurations for another platform (an `AND` with macOS only, a `target_sw` of `android`) or another edition are not applied. Configurations NVD gives no version bound ("all versions"), only a lower bound, or pre-release versions are not used. Where NVD lists affected versions one by one instead of as a range, only those versions are matched. **NVD's backlog**: a CVE NVD has not analysed, or has deferred, has no configuration and is not matched, so a version can be vulnerable without a finding. Programs where this was measured to matter say so on every evaluated row (7-Zip: 6 of the 8 CVEs published in the 120 days to 2026-10-30 had no configuration; Notepad++: none of 12); those where NVD has analysed nothing recent are not matched at all (above). Chrome (5 of 2,000 recent CVEs unanalysed), Acrobat (0 of 33), Wireshark (0 of 12) and Foxit (1 of 33) are well covered.
+
+**Feed.** `programs:Windows` is created when a Windows host is in inventory and reads, every 6 hours, only the catalogued programs installed on some host of the installation:
+- NVD: every CVE of the program's CPEs once a week, and the CVEs modified since the last read in between (one request per CPE and 2,000 CVEs; Chrome is about 7,400 CVEs and 31 MB). Requests are spaced 6.5 s apart, as NVD asks of clients without an API key; with `STACKURITY_NVD_API_KEY` they are 0.7 s apart. A refusal for the rate (HTTP 403) is retried after 35 s.
+- Mozilla: the advisory repository's archive (about 600 KB), read completely each time.
+
+Robustness, as for the other feeds: a program that cannot be read (an HTTP error, a page out of order, fewer CVEs than NVD said it has, a count that changes between pages, a page over 128 MB, an archive over 64 MB or 512 MB uncompressed) does not hold up the others; the sync stores what it read, succeeds with a warning and reads that program again next time, keeping what it last read. A complete read that lists no usable CVE, or fewer than half of those stored for the program, is refused the same way. A CVE a complete read no longer lists is withdrawn and its findings close. The sync fails only when no program can be read. A program never read is `not_evaluated` with the reason. A catalogue change reads every program again.
+
+**Action plan.** A host's findings on one program are one fix: "Update Google Chrome to 156.0.8078.73", the highest fixed version among them, with how the program is usually updated. Hosts that need the same program at the same version are one fix in the plan's "by fix" view, whatever version each has.
+
+**Not covered**: programs installed for one user only (`HKCU`, such as Python's default install or a user's Chrome) are not inventoried (the agent's `windows:user-programs` scope is unsupported coverage); Microsoft Store apps; programs without an Add/Remove Programs entry (portable copies); OpenSSL linked into other programs; beta and pre-release builds; OpenSSL 1.1.1 and older (letter versions); and the macOS agent's programs (there is no macOS agent yet).
+
 ## Windows end of life
 
 The Windows agent reports the operating system as `pkg:generic/windows@10.0.<CurrentBuild>.<UBR>` with the registry's `ProductName`, `EditionID` and `DisplayVersion`. The build number decides the endoflife.date release; the product name and edition tell Server from client and pick between releases that share a build. Server Core, Datacenter, Standard, Essentials, Evaluation and Azure Edition installs of a release share its dates.
@@ -324,7 +365,7 @@ endoflife.date `dotnet` releases are "8", "6", "3.1". Flagged when the release h
 Not flagged:
 
 - .NET installed outside a package manager on Linux (the `dotnet-install` script, a tarball under `/usr/share/dotnet`, `/opt/dotnet` or `~/.dotnet`): the agent does not look for it.
-- .NET on Windows: the installed programs ("Microsoft .NET Runtime - 8.0.10 (x64)", "Microsoft ASP.NET Core 8.0.10 - Shared Framework") are inventoried by name and not matched to endoflife.date, nor is .NET Framework.
+- .NET on Windows: the installed programs ("Microsoft .NET Runtime - 8.0.10 (x64)", "Microsoft ASP.NET Core 8.0.10 - Shared Framework") are not matched to endoflife.date, nor is .NET Framework. Their vulnerabilities are matched (see [Windows programs](#windows-programs)).
 - An application's target framework (`<TargetFramework>net6.0</TargetFramework>` in a project file): project files are not read, and a framework-dependent app's `packages.lock.json` does not list the runtime.
 
 ## Paid support channels

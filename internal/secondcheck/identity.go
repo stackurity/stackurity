@@ -307,6 +307,16 @@ func deriveTarget(rawPurl, invVersion string, ev map[string]string) (target, err
 			t.oracleBuild = oraclebuild.Channel(t.version)
 		}
 	case "generic":
+		if ev["registry_view"] != "" && ev["kind"] == "" {
+			// An installed Windows program (an Add/Remove Programs entry).
+			eco, id, v, err := windowsProgram(p.name, t.version, ev)
+			if err != nil {
+				return t, err
+			}
+			t.ecosystem, t.version = eco, v
+			add(id)
+			break
+		}
 		if strings.ToLower(p.name) != "windows" || ev["kind"] != "operating-system" {
 			return t, fmt.Errorf("no advisory source for %s packages", p.typ)
 		}

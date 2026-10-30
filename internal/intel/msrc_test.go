@@ -184,7 +184,7 @@ func TestCVRFWrongLineBuild(t *testing.T) {
 	doc := &cvrfDoc{}
 	ups := map[[3]string]store.WindowsUpdate{}
 	v := cvrfRecord(c, "2025-Jan", cvrfTime("2025-01-14T08:00:00"), cvrfTime("2025-01-14T08:00:00"),
-		map[string]string{"2016": "Server 2016", "2022": "Server 2022"}, ups, doc)
+		map[string]string{"2016": "Server 2016", "2022": "Server 2022"}, nil, ups, doc)
 	if v == nil || len(v.Affected) != 1 || v.Affected[0].Package.Ecosystem != "Windows:Server 2022" || doc.anomalies != 1 {
 		t.Fatalf("record %+v, anomalies %d", v, doc.anomalies)
 	}

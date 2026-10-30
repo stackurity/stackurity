@@ -14,6 +14,7 @@ import (
 	"github.com/stackurity/stackurity/internal/osv"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/version"
+	"github.com/stackurity/stackurity/internal/winprograms"
 	"github.com/stackurity/stackurity/internal/winrelease"
 )
 
@@ -72,7 +73,15 @@ var (
 type msrcCursor struct {
 	Docs map[string]string `json:"docs"` // document id -> CurrentReleaseDate when it was read
 	Full time.Time         `json:"full"` // when every document in the window was last read
+	// Reads is what the documents were read for: msrcReads once Microsoft
+	// Edge's, .NET's and ASP.NET Core's fixes are read too. An older cursor
+	// reads every document again.
+	Reads int `json:"reads,omitempty"`
 }
+
+// msrcReads is the current version of what a document is read for (2:
+// Windows updates, and the programs of msrcPrograms).
+const msrcReads = 2
 
 type msrcIndexEntry struct {
 	ID                 string `json:"ID"`
@@ -96,8 +105,8 @@ func (s *Syncer) syncMSRC(ctx context.Context, feed, cursor string) (*SyncResult
 	if cursor != "" {
 		_ = json.Unmarshal([]byte(cursor), &cur) // unusable: read everything
 	}
-	full := cur.Full.IsZero() || now.Sub(cur.Full) >= msrcFullRead
-	next := msrcCursor{Docs: map[string]string{}, Full: cur.Full}
+	full := cur.Full.IsZero() || now.Sub(cur.Full) >= msrcFullRead || cur.Reads < msrcReads
+	next := msrcCursor{Docs: map[string]string{}, Full: cur.Full, Reads: msrcReads}
 	for id, at := range cur.Docs {
 		next.Docs[id] = at
 	}
@@ -246,6 +255,14 @@ func (s *Syncer) syncMSRCDocument(ctx context.Context, feed, base string, d msrc
 			return err
 		}
 		res.noteEcosystems("Windows", batch)
+		for _, v := range batch {
+			for _, a := range v.Affected {
+				if osv.BaseEcosystem(a.Package.Ecosystem) == winprograms.Ecosystem {
+					// These programs' coverage is this feed's.
+					res.Ecosystems[a.Package.Ecosystem] = true
+				}
+			}
+		}
 		res.Changed += n
 	}
 	var gone []*osv.Vulnerability
@@ -430,18 +447,25 @@ func parseCVRF(r io.Reader, docID string) (*cvrfDoc, error) {
 		return nil, fmt.Errorf("parse %s: no release date", docID)
 	}
 	lines := map[string]string{}
+	programs := map[string]msrcProduct{}
 	for id, n := range names {
 		if l := winrelease.CVRFLine(n); l != "" {
 			lines[id] = l
+		}
+		if p, ok := msrcProgram(n); ok {
+			programs[id] = p
 		}
 	}
 	doc := &cvrfDoc{}
 	updates := map[[3]string]store.WindowsUpdate{}
 	uses := map[[2]string]int{} // line, build -> CVEs fixed by it
 	for _, c := range vulns {
-		if v := cvrfRecord(c, docID, released, revised, lines, updates, doc); v != nil {
+		if v := cvrfRecord(c, docID, released, revised, lines, programs, updates, doc); v != nil {
 			doc.vulns = append(doc.vulns, v)
 			for _, a := range v.Affected {
+				if !strings.HasPrefix(a.Package.Ecosystem, "Windows:") {
+					continue
+				}
 				uses[[2]string{strings.TrimPrefix(a.Package.Ecosystem, "Windows:"), a.Ranges[0].Events[1].Fixed}]++
 			}
 		}
@@ -493,7 +517,10 @@ func compactCVRF(v cvrfVuln) (cvrfCompact, bool) {
 		return c, false // ADV advisories and others without a CVE
 	}
 	for _, r := range v.Remediations {
-		if r.Type != 2 || !strings.HasPrefix(strings.TrimSpace(r.FixedBuild), "10.0.") {
+		// Windows builds (10.0.<build>.<revision>) and the programs'
+		// versions (Edge 156.0.4314.42, .NET 8.0.32); which product a fix
+		// is for is read later.
+		if b := strings.TrimSpace(r.FixedBuild); r.Type != 2 || !dottedVersion.MatchString(b) {
 			continue
 		}
 		c.fixes = append(c.fixes, cvrfFix{kb: strings.TrimPrefix(strings.TrimSpace(r.Description.Value), "KB"),
@@ -538,7 +565,7 @@ func hotpatch(subType string) bool { return strings.Contains(strings.ToLower(sub
 
 // cvrfRecord turns one CVE of a document into an advisory, adding the
 // updates it names to updates. nil when no update line has a usable fix.
-func cvrfRecord(c cvrfCompact, docID string, released, revised time.Time, lines map[string]string,
+func cvrfRecord(c cvrfCompact, docID string, released, revised time.Time, lines map[string]string, programs map[string]msrcProduct,
 	updates map[[3]string]store.WindowsUpdate, doc *cvrfDoc) *osv.Vulnerability {
 	type best struct {
 		ubr   int
@@ -548,10 +575,24 @@ func cvrfRecord(c cvrfCompact, docID string, released, revised time.Time, lines 
 	fixed := map[string]best{}
 	severity, label := cvrfScore{}, ""
 	var kbs []string
+	progFixes := map[string][]string{}
 	for _, f := range c.fixes {
 		for _, pid := range f.products {
+			if mp, ok := programs[pid]; ok {
+				if !mp.accepts(f.build) {
+					continue
+				}
+				progFixes[mp.program] = append(progFixes[mp.program], f.build)
+				if s := c.cvss[pid]; s.score > severity.score {
+					severity = s
+				}
+				if l := c.severity[pid]; osv.LevelRank(msrcLevel(l)) > osv.LevelRank(msrcLevel(label)) {
+					label = l
+				}
+				continue
+			}
 			line := lines[pid]
-			if line == "" {
+			if line == "" || !strings.HasPrefix(f.build, "10.0.") {
 				continue
 			}
 			lb, _ := winrelease.LineBuild(line)
@@ -590,7 +631,13 @@ func cvrfRecord(c cvrfCompact, docID string, released, revised time.Time, lines 
 			}
 		}
 	}
-	if len(fixed) == 0 {
+	progRanges := map[string][]osv.Range{}
+	for prog, fixes := range progFixes {
+		if r := lineFixRanges(fixes); len(r) > 0 {
+			progRanges[prog] = r
+		}
+	}
+	if len(fixed) == 0 && len(progRanges) == 0 {
 		return nil
 	}
 	v := &osv.Vulnerability{ID: msrcPrefix(docID) + c.cve, Aliases: []string{c.cve}, Summary: c.title,
@@ -620,6 +667,10 @@ func cvrfRecord(c cvrfCompact, docID string, released, revised time.Time, lines 
 			kbs = appendUnique(kbs, f.kb)
 		}
 	}
+	for _, prog := range sortedKeys(progRanges) {
+		v.Affected = append(v.Affected, osv.Affected{Package: osv.Package{Ecosystem: winprograms.Ecosystem + ":" + prog, Name: prog},
+			Ranges: progRanges[prog]})
+	}
 	sort.Strings(kbs)
 	for _, kb := range kbs {
 		v.References = append(v.References, osv.Reference{Type: "WEB", URL: "https://support.microsoft.com/help/" + kb})
@@ -632,6 +683,96 @@ func cvrfRecord(c cvrfCompact, docID string, released, revised time.Time, lines 
 	}
 	return v
 }
+
+// The same documents list fixes for programs of the curated Windows
+// program catalogue (internal/winprograms): Microsoft Edge, with the Edge
+// build that fixes each CVE (most are Chromium's, which Edge takes in), and
+// the .NET and ASP.NET Core runtimes, per release line. Their fixes are
+// stored as affected entries of the CVE's advisory.
+const edgeProgram = "microsoft-edge"
+
+// msrcProduct is a Security Update Guide product that is a catalogued
+// program.
+type msrcProduct struct {
+	program string
+	line    string // the major version a .NET product is ("8"); "" for Edge
+}
+
+var (
+	fourPartBuild = regexp.MustCompile(`^\d+\.\d+\.\d+\.\d+$`)
+	// ".NET 8.0 runtime installed on Windows"; some documents name the
+	// runtime ".NET 10.0 installed on Windows", which others use for the SDK.
+	msrcDotnet = regexp.MustCompile(`^\.NET (\d+)\.0( runtime)? installed on Windows$`)
+	msrcASPNET = regexp.MustCompile(`^ASP\.NET Core (\d+)\.0$`)
+)
+
+// msrcProgram maps a product name to a catalogued program.
+func msrcProgram(name string) (msrcProduct, bool) {
+	name = strings.TrimSpace(name)
+	switch {
+	case name == "Microsoft Edge (Chromium-based)":
+		return msrcProduct{program: edgeProgram}, true
+	case msrcDotnet.MatchString(name):
+		return msrcProduct{program: "dotnet-runtime", line: msrcDotnet.FindStringSubmatch(name)[1]}, true
+	case msrcASPNET.MatchString(name):
+		return msrcProduct{program: "aspnetcore-runtime", line: msrcASPNET.FindStringSubmatch(name)[1]}, true
+	}
+	return msrcProduct{}, false
+}
+
+// accepts reports whether a fixed version is the product's own: an Edge
+// build (four parts, not Windows'), or a runtime version of the product's
+// line. SDK versions (8.0.427: a feature band of 100 or more) and previews
+// (11.0.0-rc.2) are not runtime versions.
+func (p msrcProduct) accepts(v string) bool {
+	if p.line == "" {
+		return fourPartBuild.MatchString(v) && !strings.HasPrefix(v, "10.0.")
+	}
+	parts := strings.Split(v, ".")
+	return len(parts) == 3 && parts[0] == p.line && parts[1] == "0" && len(parts[2]) <= 2 && dottedVersion.MatchString(v)
+}
+
+// lineFixRanges turns the fixed versions a source lists for one issue into
+// ranges, reading each as the fix for its own major version. Edge can list
+// a fix per channel (Stable 155.0.4283.60, Extended Stable 152.0.4191.137)
+// and Mozilla a fix per release line (Firefox ESR 115.16.1 and 128.3.1): a
+// version of that major at or above its fix is fixed, and a version between
+// two listed majors is below the next fix, so [0, 152.0.4191.137) and
+// [153, 155.0.4283.60). Of two fixes for one major (an update that completed
+// the fix), the higher counts. Versions that are not dotted numbers are
+// ignored.
+func lineFixRanges(versions []string) []osv.Range {
+	best := map[int]string{}
+	for _, b := range versions {
+		if !dottedVersion.MatchString(b) {
+			continue
+		}
+		head, _, _ := strings.Cut(b, ".")
+		major, err := strconv.Atoi(head)
+		if err != nil {
+			continue
+		}
+		if cur, ok := best[major]; !ok || compareBuild(b, cur) > 0 {
+			best[major] = b
+		}
+	}
+	majors := make([]int, 0, len(best))
+	for m := range best {
+		majors = append(majors, m)
+	}
+	sort.Ints(majors)
+	var out []osv.Range
+	for i, m := range majors {
+		from := "0"
+		if i > 0 {
+			from = strconv.Itoa(majors[i-1] + 1)
+		}
+		out = append(out, osv.Range{Type: "ECOSYSTEM", Events: []osv.Event{{Introduced: from}, {Fixed: best[m]}}})
+	}
+	return out
+}
+
+var dottedVersion = regexp.MustCompile(`^\d+(?:\.\d+)*$`)
 
 // compareBuild compares two Windows builds "10.0.<build>.<ubr>" numerically.
 func compareBuild(a, b string) int {

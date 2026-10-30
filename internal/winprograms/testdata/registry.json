@@ -1,0 +1,1451 @@
+[
+ {
+  "display_name": "3Dconnexion Plug-In for Acrobat 3D",
+  "display_version": "1.5.1.763",
+  "expect": "not identified",
+  "publisher": "3Dconnexion",
+  "source": "github.com/rifaterdemsahin/workstation/blob/HEAD/6_Symbols/programs/installed_programs_combined.csv"
+ },
+ {
+  "display_name": "7-Zip",
+  "display_version": "24.09",
+  "expect": "7-zip 24.09",
+  "publisher": "Igor Pavlov",
+  "source": "github.com/peternicholls/app-reinstall-workflow/blob/HEAD/installed-programs.csv"
+ },
+ {
+  "display_name": "7-Zip 19.00",
+  "display_version": "19.00",
+  "expect": "7-zip 19.00",
+  "publisher": "Igor Pavlov",
+  "source": "github.com/AndrewRathbun/ForensicImageKAPEOutput/blob/HEAD/BelkasoftCTF/InsiderThreat/Registry/20220220033425/20220220033425_UnInstall__Windows_System32_config_SOFTWARE.csv"
+ },
+ {
+  "display_name": "7-Zip 23.01 (x64)",
+  "display_version": "23.01",
+  "expect": "7-zip 23.01",
+  "publisher": "Igor Pavlov",
+  "source": "github.com/NiedBec/Inventor/blob/HEAD/Comps/DESKTOP-T68LFNU/Programs.csv"
+ },
+ {
+  "display_name": "7-Zip 24.07 (x64)",
+  "display_version": "24.07",
+  "expect": "7-zip 24.07",
+  "publisher": "Igor Pavlov",
+  "source": "github.com/rifaterdemsahin/workstation/blob/HEAD/6_Symbols/programs/installed_programs_combined.csv"
+ },
+ {
+  "display_name": "7-Zip 24.09 (x64)",
+  "display_version": "24.09",
+  "expect": "7-zip 24.09",
+  "publisher": "Igor Pavlov",
+  "source": "github.com/marreiro23/intune-cab-enrollment-guard/blob/HEAD/MDE/MDEClientAnalyzerResult1/SystemInfoLogs/AddRemovePrograms.csv"
+ },
+ {
+  "display_name": "7-Zip 26.02 (x64 edition)",
+  "display_version": "26.02.00.0",
+  "expect": "7-zip 26.02",
+  "publisher": "Igor Pavlov",
+  "source": "github.com/amomen9/Linux/blob/HEAD/migrate_to_linux_or_mac-os/migrate_to_linux/documents/B_installed_windows_software.csv"
+ },
+ {
+  "display_name": "Adobe Acrobat (64-bit)",
+  "display_version": "26.001.21346",
+  "expect": "adobe-acrobat 26.001.21346",
+  "publisher": "Adobe",
+  "source": "github.com/RareBird15/dotfiles/blob/HEAD/package-lists/windows/all_windows_software.csv"
+ },
+ {
+  "display_name": "Adobe Acrobat (64-bit)",
+  "display_version": "26.001.21691",
+  "expect": "adobe-acrobat 26.001.21691",
+  "publisher": "Adobe",
+  "source": "github.com/TEJA9391/IntelliAttend-Website/blob/HEAD/installed_apps.csv"
+ },
+ {
+  "display_name": "Adobe Acrobat (64-bit)",
+  "display_version": "26.001.21563",
+  "expect": "adobe-acrobat 26.001.21563",
+  "publisher": "Adobe",
+  "source": "github.com/ria5ingh/CTD-API-Scripts/blob/HEAD/Get_Edge_Progs/Examples/402_programs_list_20260722_123440.csv"
+ },
+ {
+  "display_name": "Adobe Digital Editions 4.5",
+  "display_version": "4.5.12",
+  "expect": "not identified",
+  "publisher": "Adobe Systems Incorporated",
+  "source": "github.com/amomen9/Linux/blob/HEAD/migrate_to_linux_or_mac-os/migrate_to_linux/History/installed_windows_software.csv"
+ },
+ {
+  "display_name": "Anaconda3 2024.10-1 (Python 3.12.7 64-bit)",
+  "display_version": "2024.10-1",
+  "expect": "not identified",
+  "publisher": "Anaconda, Inc.",
+  "source": "github.com/ShravaniTalwar/NetTwin/blob/HEAD/NetTwin/software_inventory.csv"
+ },
+ {
+  "display_name": "Anaconda3 2025.12-1 (Python 3.13.9 64-bit)",
+  "display_version": "2025.12-1",
+  "expect": "not identified",
+  "publisher": "Anaconda, Inc.",
+  "source": "github.com/amomen9/Linux/blob/HEAD/migrate_to_linux_or_mac-os/migrate_to_linux/History/installed_windows_software.csv"
+ },
+ {
+  "display_name": "AnyDesk",
+  "display_version": "ad 9.0.9",
+  "expect": "anydesk (not matched)",
+  "publisher": "AnyDesk Software GmbH",
+  "source": "github.com/O-Aditya/Aditya-Maurya/blob/HEAD/GUI_Assignment/Raw_Logs/installed_software.csv"
+ },
+ {
+  "display_name": "AnyDesk",
+  "display_version": "ad 9.6.2",
+  "expect": "anydesk (not matched)",
+  "publisher": "AnyDesk Software GmbH",
+  "source": "github.com/amomen9/Linux/blob/HEAD/migrate_to_linux_or_mac-os/migrate_to_linux/History/installed_windows_software.csv"
+ },
+ {
+  "display_name": "AnyDesk",
+  "display_version": "ad 9.7.11",
+  "expect": "anydesk (not matched)",
+  "publisher": "AnyDesk Software GmbH",
+  "source": "github.com/amomen9/Linux/blob/HEAD/migrate_to_linux_or_mac-os/migrate_to_mac-os/documents/B_installed_windows_software.csv"
+ },
+ {
+  "display_name": "Chrome Remote Desktop",
+  "display_version": "1.0",
+  "expect": "not identified",
+  "publisher": "Google\\Chrome",
+  "source": "github.com/TEJA9391/IntelliAttend-Website/blob/HEAD/installed_apps.csv"
+ },
+ {
+  "display_name": "Chrome Remote Desktop Host",
+  "display_version": "146.0.7680.5",
+  "expect": "not identified",
+  "publisher": "Google LLC",
+  "source": "github.com/TEJA9391/IntelliAttend-Website/blob/HEAD/installed_apps.csv"
+ },
+ {
+  "display_name": "Chrome Remote Desktop Host",
+  "display_version": "125.0.6422.31",
+  "expect": "not identified",
+  "publisher": "Google LLC",
+  "source": "github.com/rifaterdemsahin/workstation/blob/HEAD/6_Symbols/programs/installed_programs_combined.csv"
+ },
+ {
+  "display_name": "Eclipse Temurin JDK with Hotspot 17.0.17+10 (x64)",
+  "display_version": "17.0.17.10",
+  "expect": "eclipse-temurin (not matched)",
+  "publisher": "Eclipse Adoptium",
+  "source": "github.com/TEJA9391/IntelliAttend-Website/blob/HEAD/installed_apps.csv"
+ },
+ {
+  "display_name": "Eclipse Temurin JDK with Hotspot 17.0.19+10 (x64)",
+  "display_version": "17.0.19.10",
+  "expect": "eclipse-temurin (not matched)",
+  "publisher": "Eclipse Adoptium",
+  "source": "github.com/changwskr/nsight-tcf-framework/blob/HEAD/ztcf-다이어리/2026-07-20/installed_software_20260719_210738.csv"
+ },
+ {
+  "display_name": "Eclipse Temurin JDK with Hotspot 21.0.7+6 (x64)",
+  "display_version": "21.0.7.6",
+  "expect": "eclipse-temurin (not matched)",
+  "publisher": "Eclipse Adoptium",
+  "source": "github.com/TEJA9391/IntelliAttend-Website/blob/HEAD/installed_apps.csv"
+ },
+ {
+  "display_name": "FileZilla 3.67.1",
+  "display_version": "3.67.1",
+  "expect": "filezilla-client (not matched)",
+  "publisher": "Tim Kosse",
+  "source": "github.com/rifaterdemsahin/workstation/blob/HEAD/6_Symbols/programs/installed_programs_combined.csv"
+ },
+ {
+  "display_name": "FileZilla Client 3.55.1",
+  "display_version": "3.55.1",
+  "expect": "filezilla-client (not matched)",
+  "publisher": "Tim Kosse",
+  "source": "github.com/raivomrx/CollectorSecurityAnalyzer/blob/HEAD/tests/fixtures/home_software_inventory_sanitized.json"
+ },
+ {
+  "display_name": "Foxit PDF Reader",
+  "display_version": "2025.2.0.33046",
+  "expect": "foxit-pdf-reader 2025.2.0.33046",
+  "publisher": "Foxit Software",
+  "source": "github.com/ria5ingh/CTD-API-Scripts/blob/HEAD/Get_Edge_Progs/Examples/402_programs_list_20260722_123440.csv"
+ },
+ {
+  "display_name": "Git",
+  "display_version": "2.53.0",
+  "expect": "git-for-windows 2.53.0",
+  "publisher": "The Git Development Community",
+  "source": "github.com/ImtiazSoftEng/Windows_Registry_Forensics_Tool/blob/HEAD/output/installed_software_20260811_191806.csv"
+ },
+ {
+  "display_name": "Git",
+  "display_version": "2.50.0",
+  "expect": "git-for-windows 2.50.0",
+  "publisher": "The Git Development Community",
+  "source": "github.com/ImtiazSoftEng/Windows_Registry_Forensics_Tool/blob/HEAD/output/installed_software_20260821_125805.csv"
+ },
+ {
+  "display_name": "Git",
+  "display_version": "2.53.0.2",
+  "expect": "git-for-windows 2.53.0.2",
+  "publisher": "The Git Development Community",
+  "source": "github.com/RareBird15/dotfiles/blob/HEAD/package-lists/windows/all_windows_software.csv"
+ },
+ {
+  "display_name": "Git version 2.30.1",
+  "display_version": "2.30.1",
+  "expect": "git-for-windows 2.30.1",
+  "publisher": "The Git Development Community",
+  "source": "github.com/AndrewRathbun/ForensicImageKAPEOutput/blob/HEAD/BelkasoftCTF/InsiderThreat/Registry/20220220033425/20220220033425_UnInstall__Windows_System32_config_SOFTWARE.csv"
+ },
+ {
+  "display_name": "Git version 2.31.1",
+  "display_version": "2.31.1",
+  "expect": "git-for-windows 2.31.1",
+  "publisher": "The Git Development Community",
+  "source": "github.com/nic-c-cc-txt/-/blob/HEAD/.docker/contexts/meta/system/programs.json"
+ },
+ {
+  "display_name": "GitHub",
+  "display_version": "1.0",
+  "expect": "not identified",
+  "publisher": "Google\\Chrome",
+  "source": "github.com/ImtiazSoftEng/Windows_Registry_Forensics_Tool/blob/HEAD/output/installed_software_20260811_191806.csv"
+ },
+ {
+  "display_name": "GitHub",
+  "display_version": "1.0",
+  "expect": "not identified",
+  "publisher": "Google\\Chrome Beta",
+  "source": "github.com/RareBird15/dotfiles/blob/HEAD/package-lists/windows/all_windows_software.csv"
+ },
+ {
+  "display_name": "GitHub CLI",
+  "display_version": "2.89.0",
+  "expect": "not identified",
+  "publisher": "GitHub, Inc.",
+  "source": "github.com/RareBird15/dotfiles/blob/HEAD/package-lists/windows/all_windows_software.csv"
+ },
+ {
+  "display_name": "GitHub CLI",
+  "display_version": "2.96.0",
+  "expect": "not identified",
+  "publisher": "GitHub, Inc.",
+  "source": "github.com/TEJA9391/IntelliAttend-Website/blob/HEAD/installed_apps.csv"
+ },
+ {
+  "display_name": "GitHub CLI",
+  "display_version": "2.82.1",
+  "expect": "not identified",
+  "publisher": "GitHub, Inc.",
+  "source": "github.com/anandpktripathi-hub/master-platform/blob/HEAD/diagnostics/docker-desktop-diag/system/programs.json"
+ },
+ {
+  "display_name": "GitHub Desktop",
+  "display_version": "3.4.21",
+  "expect": "not identified",
+  "publisher": "GitHub, Inc.",
+  "source": "github.com/TEJA9391/IntelliAttend-Website/blob/HEAD/installed_apps.csv"
+ },
+ {
+  "display_name": "GitHub Desktop",
+  "display_version": "3.5.12",
+  "expect": "not identified",
+  "publisher": "GitHub, Inc.",
+  "source": "github.com/amomen9/Linux/blob/HEAD/migrate_to_linux_or_mac-os/migrate_to_linux/History/installed_windows_software.csv"
+ },
+ {
+  "display_name": "GitHub Desktop",
+  "display_version": "3.6.2",
+  "expect": "not identified",
+  "publisher": "GitHub, Inc.",
+  "source": "github.com/amomen9/Linux/blob/HEAD/migrate_to_linux_or_mac-os/migrate_to_linux/documents/B_installed_windows_software.csv"
+ },
+ {
+  "display_name": "Google Chrome",
+  "display_version": "88.0.4324.150",
+  "expect": "google-chrome 88.0.4324.150",
+  "publisher": "Google LLC",
+  "source": "github.com/AndrewRathbun/ForensicImageKAPEOutput/blob/HEAD/BelkasoftCTF/InsiderThreat/Registry/20220220033425/20220220033425_UnInstall__Windows_System32_config_SOFTWARE.csv"
+ },
+ {
+  "display_name": "Google Chrome",
+  "display_version": "151.0.7922.108",
+  "expect": "google-chrome 151.0.7922.108",
+  "publisher": "Google LLC",
+  "source": "github.com/ImtiazSoftEng/Windows_Registry_Forensics_Tool/blob/HEAD/output/installed_software_20260811_191806.csv"
+ },
+ {
+  "display_name": "Google Chrome",
+  "display_version": "151.0.7922.140",
+  "expect": "google-chrome 151.0.7922.140",
+  "publisher": "Google LLC",
+  "source": "github.com/ImtiazSoftEng/Windows_Registry_Forensics_Tool/blob/HEAD/output/installed_software_20260821_125805.csv"
+ },
+ {
+  "display_name": "Google Chrome",
+  "display_version": "148.0.7778.168",
+  "expect": "google-chrome 148.0.7778.168",
+  "publisher": "Google",
+  "source": "github.com/ria5ingh/CTD-API-Scripts/blob/HEAD/Get_Edge_Progs/Examples/402_programs_list_20260722_123440.csv"
+ },
+ {
+  "display_name": "Google Chrome Beta",
+  "display_version": "147.0.7727.24",
+  "expect": "not identified",
+  "publisher": "Google LLC",
+  "source": "github.com/RareBird15/dotfiles/blob/HEAD/package-lists/windows/all_windows_software.csv"
+ },
+ {
+  "display_name": "Java 8 Update 181",
+  "display_version": "8.0.1810.13",
+  "expect": "oracle-java (not matched)",
+  "publisher": "Oracle Corporation",
+  "source": "github.com/AndrewRathbun/ForensicImageKAPEOutput/blob/HEAD/BelkasoftCTF/InsiderThreat/Registry/20220220033425/20220220033425_UnInstall__Windows_System32_config_SOFTWARE.csv"
+ },
+ {
+  "display_name": "Java 8 Update 411 (64-bit)",
+  "display_version": "8.0.4110.9",
+  "expect": "oracle-java (not matched)",
+  "publisher": "Oracle Corporation",
+  "source": "github.com/NiedBec/Inventor/blob/HEAD/Comps/DESKTOP-T68LFNU/Programs.csv"
+ },
+ {
+  "display_name": "Java 8 Update 471 (64-bit)",
+  "display_version": "8.0.4710.9",
+  "expect": "oracle-java (not matched)",
+  "publisher": "Oracle",
+  "source": "github.com/ria5ingh/CTD-API-Scripts/blob/HEAD/Get_Edge_Progs/Examples/402_programs_list_20260722_123440.csv"
+ },
+ {
+  "display_name": "Java 8 Update 481",
+  "display_version": "8.0.4810.10",
+  "expect": "oracle-java (not matched)",
+  "publisher": "Oracle Corporation",
+  "source": "github.com/amomen9/Linux/blob/HEAD/migrate_to_linux_or_mac-os/migrate_to_linux/History/installed_windows_software.csv"
+ },
+ {
+  "display_name": "Java 8 Update 481 (64-bit)",
+  "display_version": "8.0.4810.10",
+  "expect": "oracle-java (not matched)",
+  "publisher": "Oracle Corporation",
+  "source": "github.com/anandpktripathi-hub/master-platform/blob/HEAD/diagnostics/docker-desktop-diag/system/programs.json"
+ },
+ {
+  "display_name": "Java 8 Update 491",
+  "display_version": "8.0.4910.10",
+  "expect": "oracle-java (not matched)",
+  "publisher": "Oracle Corporation",
+  "source": "github.com/amomen9/Linux/blob/HEAD/migrate_to_linux_or_mac-os/migrate_to_linux/documents/B_installed_windows_software.csv"
+ },
+ {
+  "display_name": "Java 8 Update 491 (64-bit)",
+  "display_version": "8.0.4910.10",
+  "expect": "oracle-java (not matched)",
+  "publisher": "Oracle Corporation",
+  "source": "github.com/07HaNNibal07/It-career-navigator/blob/HEAD/diagnostics/memory-2026-10-21/installed-relevant.json"
+ },
+ {
+  "display_name": "Java Auto Updater",
+  "display_version": "2.8.491.10",
+  "expect": "not identified",
+  "publisher": "Oracle Corporation",
+  "source": "github.com/07HaNNibal07/It-career-navigator/blob/HEAD/diagnostics/memory-2026-10-21/installed-relevant.json"
+ },
+ {
+  "display_name": "Java Auto Updater",
+  "display_version": "2.8.181.13",
+  "expect": "not identified",
+  "publisher": "Oracle Corporation",
+  "source": "github.com/AndrewRathbun/ForensicImageKAPEOutput/blob/HEAD/BelkasoftCTF/InsiderThreat/Registry/20220220033425/20220220033425_UnInstall__Windows_System32_config_SOFTWARE.csv"
+ },
+ {
+  "display_name": "Java Auto Updater",
+  "display_version": "2.8.471.9",
+  "expect": "not identified",
+  "publisher": "Oracle",
+  "source": "github.com/ria5ingh/CTD-API-Scripts/blob/HEAD/Get_Edge_Progs/Examples/402_programs_list_20260722_123440.csv"
+ },
+ {
+  "display_name": "Java SE Development Kit 8 Update 181",
+  "display_version": "8.0.1810.13",
+  "expect": "oracle-java (not matched)",
+  "publisher": "Oracle Corporation",
+  "source": "github.com/AndrewRathbun/ForensicImageKAPEOutput/blob/HEAD/BelkasoftCTF/InsiderThreat/Registry/20220220033425/20220220033425_UnInstall__Windows_System32_config_SOFTWARE.csv"
+ },
+ {
+  "display_name": "Java(TM) SE Development Kit 24 (64-bit)",
+  "display_version": "24.0.0.0",
+  "expect": "oracle-java (not matched)",
+  "publisher": "Oracle Corporation",
+  "source": "github.com/ShravaniTalwar/NetTwin/blob/HEAD/NetTwin/software_inventory.csv"
+ },
+ {
+  "display_name": "Java(TM) SE Development Kit 24.0.2 (64-bit)",
+  "display_version": "24.0.2.0",
+  "expect": "oracle-java (not matched)",
+  "publisher": "Oracle Corporation",
+  "source": "github.com/ImtiazSoftEng/Windows_Registry_Forensics_Tool/blob/HEAD/output/installed_software_20260811_191806.csv"
+ },
+ {
+  "display_name": "Java(TM) SE Development Kit 25 (64-bit)",
+  "display_version": "25.0.0.0",
+  "expect": "oracle-java (not matched)",
+  "publisher": "Oracle Corporation",
+  "source": "github.com/ShravaniTalwar/NetTwin/blob/HEAD/NetTwin/software_inventory.csv"
+ },
+ {
+  "display_name": "KeePass Password Safe 2.60",
+  "display_version": "2.60",
+  "expect": "keepass (not matched)",
+  "publisher": "Dominik Reichl",
+  "source": "github.com/marreiro23/intune-cab-enrollment-guard/blob/HEAD/MDE/MDEClientAnalyzerResult1/SystemInfoLogs/AddRemoveProgramsWOW64.csv"
+ },
+ {
+  "display_name": "LibreOffice 25.8.3.2",
+  "display_version": "25.8.3.2",
+  "expect": "libreoffice 25.8.3",
+  "publisher": "The Document Foundation",
+  "source": "github.com/raivomrx/CollectorSecurityAnalyzer/blob/HEAD/tests/fixtures/home_software_inventory_sanitized.json"
+ },
+ {
+  "display_name": "LibreOffice 26.2.1.2",
+  "display_version": "26.2.1.2",
+  "expect": "libreoffice 26.2.1",
+  "publisher": "The Document Foundation",
+  "source": "github.com/RareBird15/dotfiles/blob/HEAD/package-lists/windows/all_windows_software.csv"
+ },
+ {
+  "display_name": "LibreOffice 26.2.3.2",
+  "display_version": "26.2.3.2",
+  "expect": "libreoffice 26.2.3",
+  "publisher": "The Document Foundation",
+  "source": "github.com/changwskr/nsight-tcf-framework/blob/HEAD/ztcf-다이어리/2026-07-20/installed_software_20260719_210738.csv"
+ },
+ {
+  "display_name": "Microsoft .NET AppHost Pack - 8.0.27 (x64)",
+  "display_version": "64.108.52182",
+  "expect": "not identified",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/ImtiazSoftEng/Windows_Registry_Forensics_Tool/blob/HEAD/output/installed_software_20260811_191806.csv"
+ },
+ {
+  "display_name": "Microsoft .NET AppHost Pack - 8.0.27 (x64_arm64)",
+  "display_version": "64.108.52182",
+  "expect": "not identified",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/ImtiazSoftEng/Windows_Registry_Forensics_Tool/blob/HEAD/output/installed_software_20260811_191806.csv"
+ },
+ {
+  "display_name": "Microsoft .NET AppHost Pack - 8.0.27 (x64_x86)",
+  "display_version": "64.108.52182",
+  "expect": "not identified",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/ImtiazSoftEng/Windows_Registry_Forensics_Tool/blob/HEAD/output/installed_software_20260811_191806.csv"
+ },
+ {
+  "display_name": "Microsoft .NET AppHost Pack - 8.0.3 (x64)",
+  "display_version": "64.12.10343",
+  "expect": "not identified",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/NiedBec/Inventor/blob/HEAD/Comps/DESKTOP-T68LFNU/Programs.csv"
+ },
+ {
+  "display_name": "Microsoft .NET AppHost Pack - 8.0.3 (x64_arm64)",
+  "display_version": "64.12.10343",
+  "expect": "not identified",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/NiedBec/Inventor/blob/HEAD/Comps/DESKTOP-T68LFNU/Programs.csv"
+ },
+ {
+  "display_name": "Microsoft .NET AppHost Pack - 8.0.3 (x64_x86)",
+  "display_version": "64.12.10343",
+  "expect": "not identified",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/NiedBec/Inventor/blob/HEAD/Comps/DESKTOP-T68LFNU/Programs.csv"
+ },
+ {
+  "display_name": "Microsoft .NET AppHost Pack - 8.0.7 (x64)",
+  "display_version": "64.28.16731",
+  "expect": "not identified",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/rifaterdemsahin/workstation/blob/HEAD/6_Symbols/programs/installed_programs_combined.csv"
+ },
+ {
+  "display_name": "Microsoft .NET AppHost Pack - 8.0.7 (x64_arm64)",
+  "display_version": "64.28.16731",
+  "expect": "not identified",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/rifaterdemsahin/workstation/blob/HEAD/6_Symbols/programs/installed_programs_combined.csv"
+ },
+ {
+  "display_name": "Microsoft .NET AppHost Pack - 8.0.7 (x64_x86)",
+  "display_version": "64.28.16731",
+  "expect": "not identified",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/rifaterdemsahin/workstation/blob/HEAD/6_Symbols/programs/installed_programs_combined.csv"
+ },
+ {
+  "display_name": "Microsoft .NET Core Runtime - 2.1.0 (x64)",
+  "display_version": "16.64.26515",
+  "expect": "dotnet-runtime 2.1.0",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/rifaterdemsahin/workstation/blob/HEAD/6_Symbols/programs/installed_programs_combined.csv"
+ },
+ {
+  "display_name": "Microsoft .NET Core Runtime - 2.1.27 (x64)",
+  "display_version": "16.108.29916",
+  "expect": "dotnet-runtime 2.1.27",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/nic-c-cc-txt/-/blob/HEAD/.docker/contexts/meta/system/programs.json"
+ },
+ {
+  "display_name": "Microsoft .NET Core Runtime - 2.2.8 (x64)",
+  "display_version": "16.160.28209",
+  "expect": "dotnet-runtime 2.2.8",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/calebmills99/dell-install-kit/blob/HEAD/manifests/installed-apps.csv"
+ },
+ {
+  "display_name": "Microsoft .NET Host - 10.0.0 (x64)",
+  "display_version": "80.0.42495",
+  "expect": "not identified",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/calebmills99/dell-install-kit/blob/HEAD/manifests/installed-apps.csv"
+ },
+ {
+  "display_name": "Microsoft .NET Host - 10.0.10 (x64)",
+  "display_version": "80.40.55332",
+  "expect": "not identified",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/TEJA9391/IntelliAttend-Website/blob/HEAD/installed_apps.csv"
+ },
+ {
+  "display_name": "Microsoft .NET Host - 10.0.10 (x86)",
+  "display_version": "80.40.55332",
+  "expect": "not identified",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/TEJA9391/IntelliAttend-Website/blob/HEAD/installed_apps.csv"
+ },
+ {
+  "display_name": "Microsoft .NET Host FX Resolver - 10.0.0 (x64)",
+  "display_version": "80.0.42495",
+  "expect": "not identified",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/calebmills99/dell-install-kit/blob/HEAD/manifests/installed-apps.csv"
+ },
+ {
+  "display_name": "Microsoft .NET Host FX Resolver - 10.0.10 (x64)",
+  "display_version": "80.40.55332",
+  "expect": "not identified",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/TEJA9391/IntelliAttend-Website/blob/HEAD/installed_apps.csv"
+ },
+ {
+  "display_name": "Microsoft .NET Host FX Resolver - 10.0.10 (x86)",
+  "display_version": "80.40.55332",
+  "expect": "not identified",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/TEJA9391/IntelliAttend-Website/blob/HEAD/installed_apps.csv"
+ },
+ {
+  "display_name": "Microsoft .NET Runtime - 10.0.0 (x64)",
+  "display_version": "80.0.42495",
+  "expect": "dotnet-runtime 10.0.0",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/calebmills99/dell-install-kit/blob/HEAD/manifests/installed-apps.csv"
+ },
+ {
+  "display_name": "Microsoft .NET Runtime - 10.0.10 (x64)",
+  "display_version": "80.40.55332",
+  "expect": "dotnet-runtime 10.0.10",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/TEJA9391/IntelliAttend-Website/blob/HEAD/installed_apps.csv"
+ },
+ {
+  "display_name": "Microsoft .NET Runtime - 10.0.10 (x86)",
+  "display_version": "80.40.55332",
+  "expect": "dotnet-runtime 10.0.10",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/TEJA9391/IntelliAttend-Website/blob/HEAD/installed_apps.csv"
+ },
+ {
+  "display_name": "Microsoft .NET SDK 8.0.202 (x64) from Visual Studio",
+  "display_version": "8.2.224.11649",
+  "expect": "not identified",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/NiedBec/Inventor/blob/HEAD/Comps/DESKTOP-T68LFNU/Programs.csv"
+ },
+ {
+  "display_name": "Microsoft .NET SDK 8.0.303 (x64) from Visual Studio",
+  "display_version": "8.3.324.31708",
+  "expect": "not identified",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/rifaterdemsahin/workstation/blob/HEAD/6_Symbols/programs/installed_programs_combined.csv"
+ },
+ {
+  "display_name": "Microsoft ASP.NET Core 2.1.0 Shared Framework (x64)",
+  "display_version": "2.1.12916.0",
+  "expect": "aspnetcore-runtime 2.1.0",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/rifaterdemsahin/workstation/blob/HEAD/6_Symbols/programs/installed_programs_combined.csv"
+ },
+ {
+  "display_name": "Microsoft ASP.NET Core 8.0.12 Shared Framework (x64)",
+  "display_version": "8.0.12.24603",
+  "expect": "aspnetcore-runtime 8.0.12",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/anandpktripathi-hub/master-platform/blob/HEAD/diagnostics/docker-desktop-diag/system/programs.json"
+ },
+ {
+  "display_name": "Microsoft ASP.NET Core 8.0.14 - Shared Framework (x86)",
+  "display_version": "8.0.14.25112",
+  "expect": "aspnetcore-runtime 8.0.14",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/RareBird15/dotfiles/blob/HEAD/package-lists/windows/all_windows_software.csv"
+ },
+ {
+  "display_name": "Microsoft ASP.NET Core 8.0.25 - Shared Framework (x64)",
+  "display_version": "8.0.25.26112",
+  "expect": "aspnetcore-runtime 8.0.25",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/RareBird15/dotfiles/blob/HEAD/package-lists/windows/all_windows_software.csv"
+ },
+ {
+  "display_name": "Microsoft ASP.NET Core 8.0.27 Shared Framework (x64)",
+  "display_version": "8.0.27.26230",
+  "expect": "aspnetcore-runtime 8.0.27",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/ImtiazSoftEng/Windows_Registry_Forensics_Tool/blob/HEAD/output/installed_software_20260811_191806.csv"
+ },
+ {
+  "display_name": "Microsoft ASP.NET Core 8.0.27 Targeting Pack (x64)",
+  "display_version": "8.0.27.26230",
+  "expect": "not identified",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/ImtiazSoftEng/Windows_Registry_Forensics_Tool/blob/HEAD/output/installed_software_20260811_191806.csv"
+ },
+ {
+  "display_name": "Microsoft ASP.NET Core 8.0.27 Targeting Pack (x86)",
+  "display_version": "8.0.27.26230",
+  "expect": "not identified",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/ImtiazSoftEng/Windows_Registry_Forensics_Tool/blob/HEAD/output/installed_software_20260811_191806.csv"
+ },
+ {
+  "display_name": "Microsoft ASP.NET Core 8.0.3 Targeting Pack (x64)",
+  "display_version": "8.0.3.24116",
+  "expect": "not identified",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/NiedBec/Inventor/blob/HEAD/Comps/DESKTOP-T68LFNU/Programs.csv"
+ },
+ {
+  "display_name": "Microsoft ASP.NET Core Runtime - 10.0.0 (x64)",
+  "display_version": "10.0.0.35423",
+  "expect": "aspnetcore-runtime 10.0.0",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/calebmills99/dell-install-kit/blob/HEAD/manifests/installed-apps.csv"
+ },
+ {
+  "display_name": "Microsoft ASP.NET Core Runtime - 10.0.0 (x64)",
+  "display_version": "80.0.42495",
+  "expect": "aspnetcore-runtime 10.0.0",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/calebmills99/dell-install-kit/blob/HEAD/manifests/installed-apps.csv"
+ },
+ {
+  "display_name": "Microsoft ASP.NET Core Runtime - 10.0.10 (x64)",
+  "display_version": "80.40.55332",
+  "expect": "aspnetcore-runtime 10.0.10",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/TEJA9391/IntelliAttend-Website/blob/HEAD/installed_apps.csv"
+ },
+ {
+  "display_name": "Microsoft Edge",
+  "display_version": "151.0.4129.72",
+  "expect": "microsoft-edge 151.0.4129.72",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/ImtiazSoftEng/Windows_Registry_Forensics_Tool/blob/HEAD/output/installed_software_20260811_191806.csv"
+ },
+ {
+  "display_name": "Microsoft Edge",
+  "display_version": "151.0.4129.86",
+  "expect": "microsoft-edge 151.0.4129.86",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/ImtiazSoftEng/Windows_Registry_Forensics_Tool/blob/HEAD/output/installed_software_20260821_125805.csv"
+ },
+ {
+  "display_name": "Microsoft Edge",
+  "display_version": "151.0.4129.93",
+  "expect": "microsoft-edge 151.0.4129.93",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/ImtiazSoftEng/Windows_Registry_Forensics_Tool/blob/HEAD/output/installed_software_20260822_090737.csv"
+ },
+ {
+  "display_name": "Microsoft Edge",
+  "display_version": "148.0.3967.70",
+  "expect": "microsoft-edge 148.0.3967.70",
+  "publisher": "Microsoft",
+  "source": "github.com/ria5ingh/CTD-API-Scripts/blob/HEAD/Get_Edge_Progs/Examples/402_programs_list_20260722_123440.csv"
+ },
+ {
+  "display_name": "Microsoft Edge Update",
+  "display_version": "1.3.193.5",
+  "expect": "not identified",
+  "publisher": "",
+  "source": "github.com/rifaterdemsahin/workstation/blob/HEAD/6_Symbols/programs/installed_programs_combined.csv"
+ },
+ {
+  "display_name": "Microsoft Edge WebView2 Runtime",
+  "display_version": "151.0.4129.72",
+  "expect": "microsoft-edge-webview2 (not matched)",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/ImtiazSoftEng/Windows_Registry_Forensics_Tool/blob/HEAD/output/installed_software_20260811_191806.csv"
+ },
+ {
+  "display_name": "Microsoft Edge WebView2 Runtime",
+  "display_version": "150.0.4078.105",
+  "expect": "microsoft-edge-webview2 (not matched)",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/ImtiazSoftEng/Windows_Registry_Forensics_Tool/blob/HEAD/output/installed_software_20260821_125805.csv"
+ },
+ {
+  "display_name": "Microsoft Edge WebView2 Runtime",
+  "display_version": "151.0.4129.101",
+  "expect": "microsoft-edge-webview2 (not matched)",
+  "publisher": "Microsoft Corporation",
+  "source": "github.com/ImtiazSoftEng/Windows_Registry_Forensics_Tool/blob/HEAD/output/installed_software_20260822_090737.csv"
+ },
+ {
+  "display_name": "Microsoft Edge WebView2 Runtime",
+  "display_version": "148.0.3967.70",
+  "expect": "microsoft-edge-webview2 (not matched)",
+  "publisher": "Microsoft",
+  "source": "github.com/ria5ingh/CTD-API-Scripts/blob/HEAD/Get_Edge_Progs/Examples/402_programs_list_20260722_123440.csv"
+ },
+ {
+  "display_name": "Miniconda3 py313_26.3.2-2 (Python 3.13.13 64-bit)",
+  "display_version": "py313_26.3.2-2",
+  "expect": "not identified",
+  "publisher": "Anaconda, Inc.",
+  "source": "github.com/amomen9/Linux/blob/HEAD/migrate_to_linux_or_mac-os/migrate_to_linux/documents/B_installed_windows_software.csv"
+ },
+ {
+  "display_name": "Mozilla Firefox (x64 en-GB)",
+  "display_version": "128.0.2",
+  "expect": "mozilla-firefox 128.0.2",
+  "publisher": "Mozilla",
+  "source": "github.com/rifaterdemsahin/workstation/blob/HEAD/6_Symbols/programs/installed_programs_combined.csv"
+ },
+ {
+  "display_name": "Mozilla Firefox (x64 en-US)",
+  "display_version": "153.0.3",
+  "expect": "mozilla-firefox 153.0.3",
+  "publisher": "Mozilla",
+  "source": "github.com/ImtiazSoftEng/Windows_Registry_Forensics_Tool/blob/HEAD/output/installed_software_20260811_191806.csv"
+ },
+ {
+  "display_name": "Mozilla Firefox (x64 en-US)",
+  "display_version": "154.0",
+  "expect": "mozilla-firefox 154.0",
+  "publisher": "Mozilla",
+  "source": "github.com/ImtiazSoftEng/Windows_Registry_Forensics_Tool/blob/HEAD/output/installed_software_20260822_090737.csv"
+ },
+ {
+  "display_name": "Mozilla Firefox (x64 en-US)",
+  "display_version": "157.0.1",
+  "expect": "mozilla-firefox 157.0.1",
+  "publisher": "Mozilla",
+  "source": "github.com/ShravaniTalwar/NetTwin/blob/HEAD/NetTwin/software_inventory.csv"
+ },
+ {
+  "display_name": "Mozilla Firefox (x64 pt-BR)",
+  "display_version": "144.0",
+  "expect": "mozilla-firefox 144.0",
+  "publisher": "Mozilla",
+  "source": "github.com/marreiro23/intune-cab-enrollment-guard/blob/HEAD/MDE/MDEClientAnalyzerResult1/SystemInfoLogs/AddRemovePrograms.csv"
+ },
+ {
+  "display_name": "Mozilla Thunderbird 78.7.1 (x86 en-US)",
+  "display_version": "78.7.1",
+  "expect": "mozilla-thunderbird 78.7.1",
+  "publisher": "Mozilla",
+  "source": "github.com/AndrewRathbun/ForensicImageKAPEOutput/blob/HEAD/BelkasoftCTF/InsiderThreat/Registry/20220220033425/20220220033425_UnInstall__Windows_System32_config_SOFTWARE.csv"
+ },
+ {
+  "display_name": "Node.js",
+  "display_version": "24.16.0",
+  "expect": "nodejs 24.16.0",
+  "publisher": "Node.js Foundation",
+  "source": "github.com/ImtiazSoftEng/Windows_Registry_Forensics_Tool/blob/HEAD/output/installed_software_20260811_191806.csv"
+ },
+ {
+  "display_name": "Node.js",
+  "display_version": "22.18.0",
+  "expect": "nodejs 22.18.0",
+  "publisher": "Node.js Foundation",
+  "source": "github.com/ImtiazSoftEng/Windows_Registry_Forensics_Tool/blob/HEAD/output/installed_software_20260821_125805.csv"
+ },
+ {
+  "display_name": "Node.js",
+  "display_version": "25.8.2",
+  "expect": "nodejs 25.8.2",
+  "publisher": "Node.js Foundation",
+  "source": "github.com/RareBird15/dotfiles/blob/HEAD/package-lists/windows/all_windows_software.csv"
+ },
+ {
+  "display_name": "Node.js",
+  "display_version": "22.14.0",
+  "expect": "nodejs 22.14.0",
+  "publisher": "OpenJS Foundation",
+  "source": "github.com/peternicholls/app-reinstall-workflow/blob/HEAD/installed-programs.csv"
+ },
+ {
+  "display_name": "Node.js",
+  "display_version": "22.11.0",
+  "expect": "nodejs 22.11.0",
+  "publisher": "Node.js",
+  "source": "github.com/ria5ingh/CTD-API-Scripts/blob/HEAD/Get_Edge_Progs/Examples/402_programs_list_20260722_123440.csv"
+ },
+ {
+  "display_name": "Notepad++",
+  "display_version": "8.9.3",
+  "expect": "notepad-plus-plus 8.9.3",
+  "publisher": "Notepad++ Team",
+  "source": "github.com/amomen9/Linux/blob/HEAD/migrate_to_linux_or_mac-os/migrate_to_linux/History/installed_windows_software.csv"
+ },
+ {
+  "display_name": "Notepad++",
+  "display_version": "8.9.6.4",
+  "expect": "notepad-plus-plus 8.9.6.4",
+  "publisher": "Notepad++ Team",
+  "source": "github.com/amomen9/Linux/blob/HEAD/migrate_to_linux_or_mac-os/migrate_to_linux/documents/B_installed_windows_software.csv"
+ },
+ {
+  "display_name": "Notepad++",
+  "display_version": "8.9.7",
+  "expect": "notepad-plus-plus 8.9.7",
+  "publisher": "Notepad++ Team",
+  "source": "github.com/amomen9/Linux/blob/HEAD/migrate_to_linux_or_mac-os/migrate_to_mac-os/documents/B_installed_windows_software.csv"
+ },
+ {
+  "display_name": "Notepad++ (64-bit x64)",
+  "display_version": "8.6.2",
+  "expect": "notepad-plus-plus 8.6.2",
+  "publisher": "Notepad++ Team",
+  "source": "github.com/NiedBec/Inventor/blob/HEAD/Comps/DESKTOP-T68LFNU/Programs.csv"
+ },
+ {
+  "display_name": "Notepad++ (64-bit x64)",
+  "display_version": "8.9.3",
+  "expect": "notepad-plus-plus 8.9.3",
+  "publisher": "Notepad++ Team",
+  "source": "github.com/RareBird15/dotfiles/blob/HEAD/package-lists/windows/all_windows_software.csv"
+ },
+ {
+  "display_name": "Notepad++ (64-bit x64)",
+  "display_version": "8.9.5",
+  "expect": "notepad-plus-plus 8.9.5",
+  "publisher": "Notepad++ Team",
+  "source": "github.com/calebmills99/dell-install-kit/blob/HEAD/manifests/installed-apps.csv"
+ },
+ {
+  "display_name": "OpenSSL 3.3.0",
+  "display_version": "3.3.0",
+  "expect": "openssl-shining-light 3.3.0",
+  "publisher": "OpenSSL Win32 Installer Team",
+  "source": "github.com/amomen9/Linux/blob/HEAD/migrate_to_linux_or_mac-os/migrate_to_linux/History/installed_windows_software.csv"
+ },
+ {
+  "display_name": "OpenSSL 3.5.0 (64-bit)",
+  "display_version": "3.5.0",
+  "expect": "openssl-shining-light 3.5.0",
+  "publisher": "OpenSSL Win64 Installer Team",
+  "source": "github.com/ImtiazSoftEng/Windows_Registry_Forensics_Tool/blob/HEAD/output/installed_software_20260821_125805.csv"
+ },
+ {
+  "display_name": "OpenVPN Connect",
+  "display_version": "3.7.3",
+  "expect": "not identified",
+  "publisher": "OpenVPN Inc.",
+  "source": "github.com/amomen9/Linux/blob/HEAD/migrate_to_linux_or_mac-os/migrate_to_linux/History/installed_windows_software.csv"
+ },
+ {
+  "display_name": "Oracle VirtualBox 7.1.4",
+  "display_version": "7.1.4",
+  "expect": "oracle-virtualbox (not matched)",
+  "publisher": "Oracle And/Or ITS Affiliates",
+  "source": "github.com/ria5ingh/CTD-API-Scripts/blob/HEAD/Get_Edge_Progs/Examples/402_programs_list_20260722_123440.csv"
+ },
+ {
+  "display_name": "Oracle VirtualBox 7.2.12",
+  "display_version": "7.2.12",
+  "expect": "oracle-virtualbox (not matched)",
+  "publisher": "Oracle and/or its affiliates",
+  "source": "github.com/ImtiazSoftEng/Windows_Registry_Forensics_Tool/blob/HEAD/output/installed_software_20260811_191806.csv"
+ },
+ {
+  "display_name": "Oracle VirtualBox 7.2.14",
+  "display_version": "7.2.14",
+  "expect": "oracle-virtualbox (not matched)",
+  "publisher": "Oracle and/or its affiliates",
+  "source": "github.com/amomen9/Linux/blob/HEAD/migrate_to_linux_or_mac-os/migrate_to_mac-os/documents/B_installed_windows_software.csv"
+ },
+ {
+  "display_name": "Oracle VirtualBox 7.2.4",
+  "display_version": "7.2.4",
+  "expect": "oracle-virtualbox (not matched)",
+  "publisher": "Oracle and/or its affiliates",
+  "source": "github.com/ImtiazSoftEng/Windows_Registry_Forensics_Tool/blob/HEAD/output/installed_software_20260821_125805.csv"
+ },
+ {
+  "display_name": "Oracle VM VirtualBox 7.0.14",
+  "display_version": "7.0.14",
+  "expect": "oracle-virtualbox (not matched)",
+  "publisher": "Oracle and/or its affiliates",
+  "source": "github.com/NiedBec/Inventor/blob/HEAD/Comps/DESKTOP-T68LFNU/Programs.csv"
+ },
+ {
+  "display_name": "Oracle VM VirtualBox 7.0.18",
+  "display_version": "7.0.18",
+  "expect": "oracle-virtualbox (not matched)",
+  "publisher": "Oracle and/or its affiliates",
+  "source": "github.com/changwskr/nsight-tcf-framework/blob/HEAD/ztcf-다이어리/2026-07-20/installed_software_20260719_210738.csv"
+ },
+ {
+  "display_name": "PuTTY release 0.78 (64-bit)",
+  "display_version": "0.78.0.0",
+  "expect": "putty 0.78",
+  "publisher": "Simon Tatham",
+  "source": "github.com/raivomrx/CollectorSecurityAnalyzer/blob/HEAD/tests/fixtures/home_software_inventory_sanitized.json"
+ },
+ {
+  "display_name": "PuTTY release 0.83",
+  "display_version": "0.83.0.0",
+  "expect": "putty 0.83",
+  "publisher": "Simon Tatham",
+  "source": "github.com/amomen9/Linux/blob/HEAD/migrate_to_linux_or_mac-os/migrate_to_linux/History/installed_windows_software.csv"
+ },
+ {
+  "display_name": "Python 3.11.5 (64-bit)",
+  "display_version": "3.11.5150.0",
+  "expect": "python 3.11.5",
+  "publisher": "Python Software Foundation",
+  "source": "github.com/ShravaniTalwar/NetTwin/blob/HEAD/NetTwin/software_inventory.csv"
+ },
+ {
+  "display_name": "Python 3.11.5 Add to Path (64-bit)",
+  "display_version": "3.11.5150.0",
+  "expect": "not identified",
+  "publisher": "Python Software Foundation",
+  "source": "github.com/ShravaniTalwar/NetTwin/blob/HEAD/NetTwin/software_inventory.csv"
+ },
+ {
+  "display_name": "Python 3.11.5 Core Interpreter (64-bit)",
+  "display_version": "3.11.5150.0",
+  "expect": "not identified",
+  "publisher": "Python Software Foundation",
+  "source": "github.com/ShravaniTalwar/NetTwin/blob/HEAD/NetTwin/software_inventory.csv"
+ },
+ {
+  "display_name": "Python 3.11.5 Development Libraries (64-bit)",
+  "display_version": "3.11.5150.0",
+  "expect": "not identified",
+  "publisher": "Python Software Foundation",
+  "source": "github.com/ShravaniTalwar/NetTwin/blob/HEAD/NetTwin/software_inventory.csv"
+ },
+ {
+  "display_name": "Python 3.11.5 Documentation (64-bit)",
+  "display_version": "3.11.5150.0",
+  "expect": "not identified",
+  "publisher": "Python Software Foundation",
+  "source": "github.com/ShravaniTalwar/NetTwin/blob/HEAD/NetTwin/software_inventory.csv"
+ },
+ {
+  "display_name": "Python 3.11.5 Executables (64-bit)",
+  "display_version": "3.11.5150.0",
+  "expect": "not identified",
+  "publisher": "Python Software Foundation",
+  "source": "github.com/ShravaniTalwar/NetTwin/blob/HEAD/NetTwin/software_inventory.csv"
+ },
+ {
+  "display_name": "Python 3.11.5 pip Bootstrap (64-bit)",
+  "display_version": "3.11.5150.0",
+  "expect": "not identified",
+  "publisher": "Python Software Foundation",
+  "source": "github.com/ShravaniTalwar/NetTwin/blob/HEAD/NetTwin/software_inventory.csv"
+ },
+ {
+  "display_name": "Python 3.11.5 Standard Library (64-bit)",
+  "display_version": "3.11.5150.0",
+  "expect": "not identified",
+  "publisher": "Python Software Foundation",
+  "source": "github.com/ShravaniTalwar/NetTwin/blob/HEAD/NetTwin/software_inventory.csv"
+ },
+ {
+  "display_name": "Python 3.11.5 Tcl/Tk Support (64-bit)",
+  "display_version": "3.11.5150.0",
+  "expect": "not identified",
+  "publisher": "Python Software Foundation",
+  "source": "github.com/ShravaniTalwar/NetTwin/blob/HEAD/NetTwin/software_inventory.csv"
+ },
+ {
+  "display_name": "Python 3.11.5 Test Suite (64-bit)",
+  "display_version": "3.11.5150.0",
+  "expect": "not identified",
+  "publisher": "Python Software Foundation",
+  "source": "github.com/ShravaniTalwar/NetTwin/blob/HEAD/NetTwin/software_inventory.csv"
+ },
+ {
+  "display_name": "Python 3.11.5 Utility Scripts (64-bit)",
+  "display_version": "3.11.5150.0",
+  "expect": "not identified",
+  "publisher": "Python Software Foundation",
+  "source": "github.com/ShravaniTalwar/NetTwin/blob/HEAD/NetTwin/software_inventory.csv"
+ },
+ {
+  "display_name": "Python 3.12.10",
+  "display_version": "3.12.10150.0",
+  "expect": "python 3.12.10",
+  "publisher": "Python Software Foundation",
+  "source": "github.com/amomen9/Linux/blob/HEAD/migrate_to_linux_or_mac-os/migrate_to_linux/History/installed_windows_software.csv"
+ },
+ {
+  "display_name": "Python 3.12.3 Add to Path (64-bit)",
+  "display_version": "3.12.3150.0",
+  "expect": "not identified",
+  "publisher": "Python Software Foundation",
+  "source": "github.com/NiedBec/Inventor/blob/HEAD/Comps/DESKTOP-T68LFNU/Programs.csv"
+ },
+ {
+  "display_name": "Python 3.12.3 Core Interpreter (64-bit)",
+  "display_version": "3.12.3150.0",
+  "expect": "not identified",
+  "publisher": "Python Software Foundation",
+  "source": "github.com/NiedBec/Inventor/blob/HEAD/Comps/DESKTOP-T68LFNU/Programs.csv"
+ },
+ {
+  "display_name": "Python 3.12.3 Development Libraries (64-bit)",
+  "display_version": "3.12.3150.0",
+  "expect": "not identified",
+  "publisher": "Python Software Foundation",
+  "source": "github.com/NiedBec/Inventor/blob/HEAD/Comps/DESKTOP-T68LFNU/Programs.csv"
+ },
+ {
+  "display_name": "Python 3.12.3 Documentation (64-bit)",
+  "display_version": "3.12.3150.0",
+  "expect": "not identified",
+  "publisher": "Python Software Foundation",
+  "source": "github.com/NiedBec/Inventor/blob/HEAD/Comps/DESKTOP-T68LFNU/Programs.csv"
+ },
+ {
+  "display_name": "Python 3.12.3 Executables (64-bit)",
+  "display_version": "3.12.3150.0",
+  "expect": "not identified",
+  "publisher": "Python Software Foundation",
+  "source": "github.com/NiedBec/Inventor/blob/HEAD/Comps/DESKTOP-T68LFNU/Programs.csv"
+ },
+ {
+  "display_name": "Python 3.12.3 pip Bootstrap (64-bit)",
+  "display_version": "3.12.3150.0",
+  "expect": "not identified",
+  "publisher": "Python Software Foundation",
+  "source": "github.com/NiedBec/Inventor/blob/HEAD/Comps/DESKTOP-T68LFNU/Programs.csv"
+ },
+ {
+  "display_name": "Python 3.12.3 Standard Library (64-bit)",
+  "display_version": "3.12.3150.0",
+  "expect": "not identified",
+  "publisher": "Python Software Foundation",
+  "source": "github.com/NiedBec/Inventor/blob/HEAD/Comps/DESKTOP-T68LFNU/Programs.csv"
+ },
+ {
+  "display_name": "Python 3.12.3 Tcl/Tk Support (64-bit)",
+  "display_version": "3.12.3150.0",
+  "expect": "not identified",
+  "publisher": "Python Software Foundation",
+  "source": "github.com/NiedBec/Inventor/blob/HEAD/Comps/DESKTOP-T68LFNU/Programs.csv"
+ },
+ {
+  "display_name": "Python 3.12.3 Test Suite (64-bit)",
+  "display_version": "3.12.3150.0",
+  "expect": "not identified",
+  "publisher": "Python Software Foundation",
+  "source": "github.com/NiedBec/Inventor/blob/HEAD/Comps/DESKTOP-T68LFNU/Programs.csv"
+ },
+ {
+  "display_name": "Python 3.13.0b3 Core Interpreter (64-bit)",
+  "display_version": "3.13.113.0",
+  "expect": "not identified",
+  "publisher": "Python Software Foundation",
+  "source": "github.com/rifaterdemsahin/workstation/blob/HEAD/6_Symbols/programs/installed_programs_combined.csv"
+ },
+ {
+  "display_name": "Python 3.13.0b3 Development Libraries (64-bit)",
+  "display_version": "3.13.113.0",
+  "expect": "not identified",
+  "publisher": "Python Software Foundation",
+  "source": "github.com/rifaterdemsahin/workstation/blob/HEAD/6_Symbols/programs/installed_programs_combined.csv"
+ },
+ {
+  "display_name": "Python 3.13.0b3 Executables (64-bit)",
+  "display_version": "3.13.113.0",
+  "expect": "not identified",
+  "publisher": "Python Software Foundation",
+  "source": "github.com/rifaterdemsahin/workstation/blob/HEAD/6_Symbols/programs/installed_programs_combined.csv"
+ },
+ {
+  "display_name": "Python 3.13.0b3 Standard Library (64-bit)",
+  "display_version": "3.13.113.0",
+  "expect": "not identified",
+  "publisher": "Python Software Foundation",
+  "source": "github.com/rifaterdemsahin/workstation/blob/HEAD/6_Symbols/programs/installed_programs_combined.csv"
+ },
+ {
+  "display_name": "Python 3.13.0b3 Test Suite (64-bit)",
+  "display_version": "3.13.113.0",
+  "expect": "not identified",
+  "publisher": "Python Software Foundation",
+  "source": "github.com/rifaterdemsahin/workstation/blob/HEAD/6_Symbols/programs/installed_programs_combined.csv"
+ },
+ {
+  "display_name": "Python 3.13.1 (64-bit)",
+  "display_version": "3.13.1150.0",
+  "expect": "python 3.13.1",
+  "publisher": "Python Software Foundation",
+  "source": "github.com/O-Aditya/Aditya-Maurya/blob/HEAD/GUI_Assignment/Raw_Logs/installed_software.csv"
+ },
+ {
+  "display_name": "Python 3.13.1 Add to Path (64-bit)",
+  "display_version": "3.13.1150.0",
+  "expect": "not identified",
+  "publisher": "Python Software Foundation",
+  "source": "github.com/O-Aditya/Aditya-Maurya/blob/HEAD/GUI_Assignment/Raw_Logs/installed_software.csv"
+ },
+ {
+  "display_name": "Python 3.13.1 Core Interpreter (64-bit)",
+  "display_version": "3.13.1150.0",
+  "expect": "not identified",
+  "publisher": "Python Software Foundation",
+  "source": "github.com/O-Aditya/Aditya-Maurya/blob/HEAD/GUI_Assignment/Raw_Logs/installed_software.csv"
+ },
+ {
+  "display_name": "Python 3.13.1 Development Libraries (64-bit)",
+  "display_version": "3.13.1150.0",
+  "expect": "not identified",
+  "publisher": "Python Software Foundation",
+  "source": "github.com/O-Aditya/Aditya-Maurya/blob/HEAD/GUI_Assignment/Raw_Logs/installed_software.csv"
+ },
+ {
+  "display_name": "Python 3.13.1 Documentation (64-bit)",
+  "display_version": "3.13.1150.0",
+  "expect": "not identified",
+  "publisher": "Python Software Foundation",
+  "source": "github.com/O-Aditya/Aditya-Maurya/blob/HEAD/GUI_Assignment/Raw_Logs/installed_software.csv"
+ },
+ {
+  "display_name": "Python 3.13.1 Executables (64-bit)",
+  "display_version": "3.13.1150.0",
+  "expect": "not identified",
+  "publisher": "Python Software Foundation",
+  "source": "github.com/O-Aditya/Aditya-Maurya/blob/HEAD/GUI_Assignment/Raw_Logs/installed_software.csv"
+ },
+ {
+  "display_name": "Python 3.13.1 pip Bootstrap (64-bit)",
+  "display_version": "3.13.1150.0",
+  "expect": "not identified",
+  "publisher": "Python Software Foundation",
+  "source": "github.com/O-Aditya/Aditya-Maurya/blob/HEAD/GUI_Assignment/Raw_Logs/installed_software.csv"
+ },
+ {
+  "display_name": "Python 3.13.1 Standard Library (64-bit)",
+  "display_version": "3.13.1150.0",
+  "expect": "not identified",
+  "publisher": "Python Software Foundation",
+  "source": "github.com/O-Aditya/Aditya-Maurya/blob/HEAD/GUI_Assignment/Raw_Logs/installed_software.csv"
+ },
+ {
+  "display_name": "Python 3.13.1 Tcl/Tk Support (64-bit)",
+  "display_version": "3.13.1150.0",
+  "expect": "not identified",
+  "publisher": "Python Software Foundation",
+  "source": "github.com/O-Aditya/Aditya-Maurya/blob/HEAD/GUI_Assignment/Raw_Logs/installed_software.csv"
+ },
+ {
+  "display_name": "Python 3.13.1 Test Suite (64-bit)",
+  "display_version": "3.13.1150.0",
+  "expect": "not identified",
+  "publisher": "Python Software Foundation",
+  "source": "github.com/O-Aditya/Aditya-Maurya/blob/HEAD/GUI_Assignment/Raw_Logs/installed_software.csv"
+ },
+ {
+  "display_name": "Python 3.13.3 (64-bit)",
+  "display_version": "3.13.3150.0",
+  "expect": "python 3.13.3",
+  "publisher": "Python Software",
+  "source": "github.com/ria5ingh/CTD-API-Scripts/blob/HEAD/Get_Edge_Progs/Examples/402_programs_list_20260722_123440.csv"
+ },
+ {
+  "display_name": "Python 3.13.3 Add to Path (64-bit)",
+  "display_version": "3.13.3150.0",
+  "expect": "not identified",
+  "publisher": "Python Software",
+  "source": "github.com/ria5ingh/CTD-API-Scripts/blob/HEAD/Get_Edge_Progs/Examples/402_programs_list_20260722_123440.csv"
+ },
+ {
+  "display_name": "Python 3.13.3 Core Interpreter (64-bit)",
+  "display_version": "3.13.3150.0",
+  "expect": "not identified",
+  "publisher": "Python Software",
+  "source": "github.com/ria5ingh/CTD-API-Scripts/blob/HEAD/Get_Edge_Progs/Examples/402_programs_list_20260722_123440.csv"
+ },
+ {
+  "display_name": "Python 3.13.3 Development Libraries (64-bit)",
+  "display_version": "3.13.3150.0",
+  "expect": "not identified",
+  "publisher": "Python Software",
+  "source": "github.com/ria5ingh/CTD-API-Scripts/blob/HEAD/Get_Edge_Progs/Examples/402_programs_list_20260722_123440.csv"
+ },
+ {
+  "display_name": "Python 3.13.3 Documentation (64-bit)",
+  "display_version": "3.13.3150.0",
+  "expect": "not identified",
+  "publisher": "Python Software",
+  "source": "github.com/ria5ingh/CTD-API-Scripts/blob/HEAD/Get_Edge_Progs/Examples/402_programs_list_20260722_123440.csv"
+ },
+ {
+  "display_name": "Python 3.13.3 Executables (64-bit)",
+  "display_version": "3.13.3150.0",
+  "expect": "not identified",
+  "publisher": "Python Software",
+  "source": "github.com/ria5ingh/CTD-API-Scripts/blob/HEAD/Get_Edge_Progs/Examples/402_programs_list_20260722_123440.csv"
+ },
+ {
+  "display_name": "Python 3.13.3 pip Bootstrap (64-bit)",
+  "display_version": "3.13.3150.0",
+  "expect": "not identified",
+  "publisher": "Python Software",
+  "source": "github.com/ria5ingh/CTD-API-Scripts/blob/HEAD/Get_Edge_Progs/Examples/402_programs_list_20260722_123440.csv"
+ },
+ {
+  "display_name": "Python 3.13.3 Standard Library (64-bit)",
+  "display_version": "3.13.3150.0",
+  "expect": "not identified",
+  "publisher": "Python Software",
+  "source": "github.com/ria5ingh/CTD-API-Scripts/blob/HEAD/Get_Edge_Progs/Examples/402_programs_list_20260722_123440.csv"
+ },
+ {
+  "display_name": "Python 3.13.3 Tcl/Tk Support (64-bit)",
+  "display_version": "3.13.3150.0",
+  "expect": "not identified",
+  "publisher": "Python Software",
+  "source": "github.com/ria5ingh/CTD-API-Scripts/blob/HEAD/Get_Edge_Progs/Examples/402_programs_list_20260722_123440.csv"
+ },
+ {
+  "display_name": "Python 3.13.3 Test Suite (64-bit)",
+  "display_version": "3.13.3150.0",
+  "expect": "not identified",
+  "publisher": "Python Software",
+  "source": "github.com/ria5ingh/CTD-API-Scripts/blob/HEAD/Get_Edge_Progs/Examples/402_programs_list_20260722_123440.csv"
+ },
+ {
+  "display_name": "Python 3.13.5 (64-bit)",
+  "display_version": "3.13.5150.0",
+  "expect": "python 3.13.5",
+  "publisher": "Python Software Foundation",
+  "source": "github.com/ImtiazSoftEng/Windows_Registry_Forensics_Tool/blob/HEAD/output/installed_software_20260821_125805.csv"
+ },
+ {
+  "display_name": "VLC media player",
+  "display_version": "3.0.23",
+  "expect": "vlc-media-player (not matched)",
+  "publisher": "VideoLAN",
+  "source": "github.com/TEJA9391/IntelliAttend-Website/blob/HEAD/installed_apps.csv"
+ },
+ {
+  "display_name": "VLC media player",
+  "display_version": "3.0.21",
+  "expect": "vlc-media-player (not matched)",
+  "publisher": "VideoLAN",
+  "source": "github.com/peternicholls/app-reinstall-workflow/blob/HEAD/installed-programs.csv"
+ },
+ {
+  "display_name": "VLC media player",
+  "display_version": "3.0.11",
+  "expect": "vlc-media-player (not matched)",
+  "publisher": "VideoLAN",
+  "source": "github.com/raivomrx/CollectorSecurityAnalyzer/blob/HEAD/tests/fixtures/home_software_inventory_sanitized.json"
+ },
+ {
+  "display_name": "VLC media player 2.0.8",
+  "display_version": "2.0.8",
+  "expect": "vlc-media-player (not matched)",
+  "publisher": "VideoLAN",
+  "source": "github.com/ShravaniTalwar/NetTwin/blob/HEAD/NetTwin/software_inventory.csv"
+ },
+ {
+  "display_name": "VMware Workstation",
+  "display_version": "25.0.1",
+  "expect": "not identified",
+  "publisher": "VMware, Inc.",
+  "source": "github.com/ImtiazSoftEng/Windows_Registry_Forensics_Tool/blob/HEAD/output/installed_software_20260811_191806.csv"
+ },
+ {
+  "display_name": "VMware Workstation",
+  "display_version": "17.6.4",
+  "expect": "not identified",
+  "publisher": "VMware, Inc.",
+  "source": "github.com/ImtiazSoftEng/Windows_Registry_Forensics_Tool/blob/HEAD/output/installed_software_20260821_125805.csv"
+ },
+ {
+  "display_name": "VMware Workstation",
+  "display_version": "26.0.0",
+  "expect": "not identified",
+  "publisher": "VMware, Inc.",
+  "source": "github.com/amomen9/Linux/blob/HEAD/migrate_to_linux_or_mac-os/migrate_to_linux/History/installed_windows_software.csv"
+ },
+ {
+  "display_name": "VMware Workstation",
+  "display_version": "25.0.1",
+  "expect": "not identified",
+  "publisher": "VMware",
+  "source": "github.com/ria5ingh/CTD-API-Scripts/blob/HEAD/Get_Edge_Progs/Examples/402_programs_list_20260722_123440.csv"
+ },
+ {
+  "display_name": "WinRAR 5.40 (64-bit)",
+  "display_version": "5.40.0",
+  "expect": "winrar 5.40",
+  "publisher": "win.rar GmbH",
+  "source": "github.com/ImtiazSoftEng/Windows_Registry_Forensics_Tool/blob/HEAD/output/installed_software_20260811_191806.csv"
+ },
+ {
+  "display_name": "WinRAR 7.01 (64-bit)",
+  "display_version": "7.01.0",
+  "expect": "winrar 7.01",
+  "publisher": "win.rar GmbH",
+  "source": "github.com/ImtiazSoftEng/Windows_Registry_Forensics_Tool/blob/HEAD/output/installed_software_20260821_125805.csv"
+ },
+ {
+  "display_name": "WinRAR 7.13",
+  "display_version": "7.13.0",
+  "expect": "winrar 7.13",
+  "publisher": "win.rar GmbH",
+  "source": "github.com/amomen9/Linux/blob/HEAD/migrate_to_linux_or_mac-os/migrate_to_linux/History/installed_windows_software.csv"
+ },
+ {
+  "display_name": "WinRAR 7.13 (64-bit)",
+  "display_version": "7.13.0",
+  "expect": "winrar 7.13",
+  "publisher": "win.rar GmbH",
+  "source": "github.com/anandpktripathi-hub/master-platform/blob/HEAD/diagnostics/docker-desktop-diag/system/programs.json"
+ },
+ {
+  "display_name": "WinRAR 7.22",
+  "display_version": "7.22.0",
+  "expect": "winrar 7.22",
+  "publisher": "win.rar GmbH",
+  "source": "github.com/amomen9/Linux/blob/HEAD/migrate_to_linux_or_mac-os/migrate_to_linux/documents/B_installed_windows_software.csv"
+ },
+ {
+  "display_name": "WinRAR 7.23",
+  "display_version": "7.23.0",
+  "expect": "winrar 7.23",
+  "publisher": "win.rar GmbH",
+  "source": "github.com/amomen9/Linux/blob/HEAD/migrate_to_linux_or_mac-os/migrate_to_mac-os/documents/B_installed_windows_software.csv"
+ },
+ {
+  "display_name": "WinRAR archiver",
+  "display_version": "",
+  "expect": "not identified",
+  "publisher": "",
+  "source": "github.com/ShravaniTalwar/NetTwin/blob/HEAD/NetTwin/software_inventory.csv"
+ },
+ {
+  "display_name": "WinSCP 6.5.5",
+  "display_version": "6.5.5",
+  "expect": "winscp 6.5.5",
+  "publisher": "Martin Prikryl",
+  "source": "github.com/ria5ingh/CTD-API-Scripts/blob/HEAD/Get_Edge_Progs/Examples/402_programs_list_20260722_123440.csv"
+ },
+ {
+  "display_name": "Wireshark 4.4.8 x64",
+  "display_version": "4.4.8",
+  "expect": "wireshark 4.4.8",
+  "publisher": "Wireshark Developer Community Https://Www.Wireshark.Org",
+  "source": "github.com/ria5ingh/CTD-API-Scripts/blob/HEAD/Get_Edge_Progs/Examples/402_programs_list_20260722_123440.csv"
+ },
+ {
+  "display_name": "Wireshark 4.6.3 x64",
+  "display_version": "4.6.3",
+  "expect": "wireshark 4.6.3",
+  "publisher": "The Wireshark developer community, https://www.wireshark.org",
+  "source": "github.com/TEJA9391/IntelliAttend-Website/blob/HEAD/installed_apps.csv"
+ },
+ {
+  "display_name": "Wireshark 4.6.6 x64",
+  "display_version": "4.6.6",
+  "expect": "wireshark 4.6.6",
+  "publisher": "The Wireshark developer community, https://www.wireshark.org",
+  "source": "github.com/ImtiazSoftEng/Windows_Registry_Forensics_Tool/blob/HEAD/output/installed_software_20260821_125805.csv"
+ },
+ {
+  "display_name": "Wireshark 4.6.7 x64",
+  "display_version": "4.6.7",
+  "expect": "wireshark 4.6.7",
+  "publisher": "The Wireshark developer community, https://www.wireshark.org",
+  "source": "github.com/ImtiazSoftEng/Windows_Registry_Forensics_Tool/blob/HEAD/output/installed_software_20260811_191806.csv"
+ },
+ {
+  "display_name": "Zoom VDI Plugin Management(64bit)",
+  "display_version": "6.6.26970",
+  "expect": "not identified",
+  "publisher": "Zoom Communications, Inc.",
+  "source": "github.com/changwskr/nsight-tcf-framework/blob/HEAD/ztcf-다이어리/2026-07-20/installed_software_20260719_210738.csv"
+ },
+ {
+  "display_name": "Zoom Workplace",
+  "display_version": "7.0.6 (43848)",
+  "expect": "zoom-workplace 7.0.6",
+  "publisher": "Zoom Communications, Inc.",
+  "source": "github.com/ImtiazSoftEng/Windows_Registry_Forensics_Tool/blob/HEAD/output/installed_software_20260811_191806.csv"
+ },
+ {
+  "display_name": "Zoom Workplace",
+  "display_version": "6.5.12 (14128)",
+  "expect": "zoom-workplace 6.5.12",
+  "publisher": "Zoom Communications, Inc.",
+  "source": "github.com/O-Aditya/Aditya-Maurya/blob/HEAD/GUI_Assignment/Raw_Logs/installed_software.csv"
+ },
+ {
+  "display_name": "Zoom Workplace",
+  "display_version": "7.1.9 (48550)",
+  "expect": "zoom-workplace 7.1.9",
+  "publisher": "Zoom Communications, Inc.",
+  "source": "github.com/ShravaniTalwar/NetTwin/blob/HEAD/NetTwin/software_inventory.csv"
+ },
+ {
+  "display_name": "Zoom Workplace",
+  "display_version": "6.7.8 (32670)",
+  "expect": "zoom-workplace 6.7.8",
+  "publisher": "Zoom Communications",
+  "source": "github.com/ria5ingh/CTD-API-Scripts/blob/HEAD/Get_Edge_Progs/Examples/402_programs_list_20260722_123440.csv"
+ },
+ {
+  "display_name": "Zoom Workplace (64-bit)",
+  "display_version": "7.0.33767",
+  "expect": "zoom-workplace (version not read)",
+  "publisher": "Zoom",
+  "source": "github.com/RareBird15/dotfiles/blob/HEAD/package-lists/windows/all_windows_software.csv"
+ },
+ {
+  "display_name": "Zoom Workplace (64-bit)",
+  "display_version": "6.1.43316",
+  "expect": "zoom-workplace (version not read)",
+  "publisher": "Zoom",
+  "source": "github.com/rifaterdemsahin/workstation/blob/HEAD/6_Symbols/programs/installed_programs_combined.csv"
+ }
+]

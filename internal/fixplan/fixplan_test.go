@@ -308,3 +308,37 @@ func TestWindowsUpdateGrouping(t *testing.T) {
 		t.Errorf("host 3 release upgrade = %+v", g)
 	}
 }
+
+func TestProgramUpdateGrouping(t *testing.T) {
+	row := func(id, asset int64, key, version, fixed string, kev bool) Row {
+		return Row{FindingID: id, Kind: "vulnerability", Key: key, AssetID: asset, AssetName: "WIN", AssetKind: "host",
+			OS: "windows", ComponentID: 10 + asset, PurlType: "generic", Component: "7-Zip 24.08 (x64)", Version: version, FixedVersion: fixed,
+			Priority: "P2", Severity: "high", KnownExploited: kev, Program: "7-zip", ProgramLabel: "7-Zip"}
+	}
+	rows := []Row{
+		row(1, 1, "CVE-2025-0411", "24.08", "24.09", true),
+		row(2, 1, "CVE-2026-14266", "24.08", "26.02", false),
+		row(3, 2, "CVE-2026-14266", "26.00", "26.02", false),
+		// No fixed version: not an update to name.
+		row(4, 2, "CVE-2026-0001", "26.00", "", false),
+	}
+	groups, assign := Build(rows, nil)
+	byID := map[string]*Group{}
+	for _, g := range groups {
+		byID[g.ID] = g
+	}
+	g1, g2 := byID["1:program_update:7-zip"], byID["2:program_update:7-zip"]
+	if g1 == nil || g2 == nil {
+		t.Fatalf("groups %v", assign)
+	}
+	if g1.Title != "Update 7-Zip to 26.02" || g1.FindingCount != 2 || g1.KnownExploited != 1 || g1.FromVersion != "24.08" ||
+		g1.FixKey != "program_update:7-zip>26.02" || g1.Effort != "low" || !strings.Contains(g1.Action, "7-zip.org") {
+		t.Errorf("WIN-1 group %+v", g1)
+	}
+	if g2.FixKey != g1.FixKey || g2.FindingCount != 1 {
+		t.Errorf("one fix across hosts: %+v", g2)
+	}
+	if assign[4] != "2:no_fix" {
+		t.Errorf("a finding without a fix goes to no_fix, got %q", assign[4])
+	}
+}

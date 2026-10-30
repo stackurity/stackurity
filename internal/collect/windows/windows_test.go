@@ -61,6 +61,13 @@ func TestCollect(t *testing.T) {
 	if !b.Complete {
 		t.Error("expected complete")
 	}
+	scopes := map[string]string{}
+	for _, c := range b.Coverage {
+		scopes[c.Scope] = c.Status
+	}
+	if scopes["windows:user-programs"] != "unsupported" || scopes["registry:uninstall:native"] != "checked" {
+		t.Errorf("per-user installs must be reported as not inventoried: %v", scopes)
+	}
 }
 
 func TestPartialRegistry(t *testing.T) {

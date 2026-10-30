@@ -36,6 +36,13 @@ type Config struct {
 	WorkDir          string // temp space for bulk downloads
 	UserAgent        string
 	IncrementalLimit int // above this many changed records, re-download the full archive
+
+	// NVD's CVE API, read for the curated Windows program catalogue.
+	NVDURL     string        // DefaultNVDURL
+	NVDAPIKey  string        // optional; raises NVD's rate limit
+	NVDDelay   time.Duration // wait before each request (NVD asks for about 6 s without a key)
+	NVDBackoff time.Duration // wait after NVD refuses a request for the rate
+	MozillaURL string        // DefaultMozillaURL: Mozilla's security advisories
 }
 
 func DefaultConfig() Config {
@@ -63,6 +70,10 @@ func DefaultConfig() Config {
 		WorkDir:          os.TempDir(),
 		UserAgent:        "stackurity",
 		IncrementalLimit: 5000,
+		NVDURL:           DefaultNVDURL,
+		NVDDelay:         6500 * time.Millisecond,
+		NVDBackoff:       35 * time.Second,
+		MozillaURL:       DefaultMozillaURL,
 	}
 }
 

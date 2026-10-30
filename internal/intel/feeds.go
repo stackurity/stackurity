@@ -23,6 +23,7 @@ import (
 	"github.com/stackurity/stackurity/internal/osv"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/version"
+	"github.com/stackurity/stackurity/internal/winprograms"
 )
 
 // Feed names.
@@ -49,6 +50,8 @@ func VulnFeed(baseEcosystem string) string {
 		return FeedOracleLinux
 	case "Windows":
 		return FeedMSRC
+	case winprograms.Ecosystem:
+		return FeedWindowsPrograms
 	}
 	return OSVFeed(baseEcosystem)
 }
@@ -67,6 +70,8 @@ func feedEcosystem(feed string) (string, bool) {
 		return "Oracle Linux", true
 	case FeedMSRC:
 		return "Windows", true
+	case FeedWindowsPrograms:
+		return winprograms.Ecosystem, true
 	}
 	return strings.CutPrefix(feed, "osv:")
 }
@@ -87,6 +92,8 @@ type Syncer struct {
 	onBatch     func(count int, bytes int64)
 	// now, in tests, is the time the Windows updates window is read at.
 	now func() time.Time
+	// programs, in tests, replaces the embedded Windows program catalogue.
+	programs *winprograms.Catalogue
 }
 
 func (s *Syncer) clock() time.Time {
@@ -160,6 +167,8 @@ func (s *Syncer) Sync(ctx context.Context, name string) (*SyncResult, error) {
 		res, err = s.syncOracleLinux(ctx, name)
 	case name == FeedMSRC:
 		res, cursor, err = s.syncMSRC(ctx, name, feed.Cursor)
+	case name == FeedWindowsPrograms:
+		res, cursor, err = s.syncWindowsPrograms(ctx, name, feed.Cursor)
 	case name == FeedKEV:
 		res, cursor, err = s.syncKEV(ctx, feed.Cursor)
 	case name == FeedEPSS:

@@ -17,6 +17,7 @@ export const FIX_KIND_LABEL: Record<string, string> = {
   release_upgrade: "Release upgrade",
   end_of_life: "End of life",
   package_upgrade: "Package upgrade",
+  program_update: "Program update",
   no_fix: "No fix yet",
 };
 
@@ -27,6 +28,7 @@ export const FIX_KIND_HELP: Record<string, string> = {
   release_upgrade: "The OS release is end-of-life, or these issues have no free fix in this release: upgrade the release.",
   end_of_life: "Software that no longer receives security fixes: move to a supported version.",
   package_upgrade: "An application dependency with a fixed version: upgrade it in the repository.",
+  program_update: "An installed Windows program with a fixed version: updating it to that version fixes every issue listed.",
   no_fix: "No source lists a free fixed version yet: mitigate, accept the risk, or watch for a fix.",
 };
 
@@ -42,6 +44,7 @@ export function FixKindIcon({ kind }: { kind: string }) {
     case "end_of_life":
       return <IconClock />;
     case "package_upgrade":
+    case "program_update":
       return <IconPackage />;
     default:
       return <IconBan />;
@@ -90,6 +93,8 @@ export function changeText(g: FixGroup): string {
       return "routine package updates";
     case "windows_update":
       return "cumulative update and restart";
+    case "program_update":
+      return "update the program";
     case "old_kernels":
       return "remove unused kernels";
     case "release_upgrade":

@@ -79,6 +79,7 @@ var unreadKinds = map[string][2]string{
 	"windows:hotfixes":       {"Windows updates (KBs)", "installed KBs are not read: cumulative updates are judged from the build number, and .NET Framework, Office and servicing stack updates are not checked"},
 	"windows:store-apps":     {"Microsoft Store apps", "AppX packages are not inventoried"},
 	"app-permissions":        {"unreadable application files", "the agent's user may not read them; grant read access with an ACL (docs/install.md)"},
+	"windows:user-programs":  {"Programs installed for one user", "per-user installs (HKCU, such as Python's default or a user's Chrome) are not inventoried"},
 	"other":                  {"other", "other scopes reported as unsupported"},
 }
 
@@ -86,7 +87,7 @@ var unreadKinds = map[string][2]string{
 // recognises but cannot read, and the fixed unsupported scopes of the host
 // collectors. Scopes of any other kind are counted as "other".
 func UnreadKinds() []string {
-	out := append(lockfile.UnsupportedKinds(), "os-packages", "windows:hotfixes", "windows:store-apps", "app-permissions")
+	out := append(lockfile.UnsupportedKinds(), "os-packages", "windows:hotfixes", "windows:store-apps", "app-permissions", "windows:user-programs")
 	sort.Strings(out)
 	return out
 }
@@ -100,16 +101,18 @@ func unreadLabel(kind string) (label, detail string) {
 }
 
 var vulnReasons = map[string]string{
-	"vendor_build":     "built by a vendor's repository; the distribution's advisories do not cover it",
-	"runtime":          "runtime installed outside a package manager (lifecycle only)",
-	"kubernetes":       "Kubernetes component version (lifecycle only)",
-	"managed_service":  "managed service version (lifecycle only)",
-	"distribution":     "distribution without a vulnerability source",
-	"ecosystem":        "package type without a vulnerability source",
-	"windows_hotpatch": "Windows hosts on hotpatch builds (Azure Edition, hotpatch enrolment): missing updates are not evaluated",
-	"windows_esu":      "Windows Server 2012 R2 and older: paid Extended Security Updates are not evaluated (end of life is)",
-	"windows_release":  "Windows releases whose missing updates are not evaluated (Windows 7 and 8.x, other products)",
-	"other":            "other",
+	"vendor_build":              "built by a vendor's repository; the distribution's advisories do not cover it",
+	"runtime":                   "runtime installed outside a package manager (lifecycle only)",
+	"kubernetes":                "Kubernetes component version (lifecycle only)",
+	"managed_service":           "managed service version (lifecycle only)",
+	"distribution":              "distribution without a vulnerability source",
+	"ecosystem":                 "package type without a vulnerability source",
+	"windows_hotpatch":          "Windows hosts on hotpatch builds (Azure Edition, hotpatch enrolment): missing updates are not evaluated",
+	"windows_esu":               "Windows Server 2012 R2 and older: paid Extended Security Updates are not evaluated (end of life is)",
+	"windows_release":           "Windows releases whose missing updates are not evaluated (Windows 7 and 8.x, other products)",
+	"windows_program":           "installed Windows programs not in the curated catalogue (or not identified by it): not matched",
+	"windows_program_unmatched": "installed Windows programs the curated catalogue recognises but does not match (no reliable source yet)",
+	"other":                     "other",
 }
 
 // CoverageGaps builds the report across every active workspace. It reads in
@@ -145,7 +148,10 @@ func CoverageGaps(ctx context.Context, st *store.Store, ov *eoloverlay.Overlay) 
 		parts := strings.SplitN(g.Kind, "|", 3)
 		typ, cat := parts[0], parts[1]
 		gap := Gap{Kind: g.Kind, Label: typ + " packages", Detail: vulnReasons[cat], Assets: g.Assets, Workspaces: g.Workspaces, Components: g.Components}
-		if strings.HasPrefix(cat, "windows_") {
+		switch {
+		case strings.HasPrefix(cat, "windows_program"):
+			gap.Label = "Windows programs"
+		case strings.HasPrefix(cat, "windows_"):
 			gap.Label = "Windows hosts"
 		}
 		if cat == "vendor_build" && len(parts) == 3 {

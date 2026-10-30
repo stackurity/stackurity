@@ -378,6 +378,7 @@ const GROUP_KIND_LABEL: Record<string, string> = {
   release_upgrade: "Release upgrade",
   end_of_life: "End of life",
   package_upgrade: "Package upgrade",
+  program_update: "Program update",
   no_fix: "No fix yet",
 };
 

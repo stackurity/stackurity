@@ -7,6 +7,7 @@ import (
 
 	"github.com/stackurity/stackurity/internal/osv"
 	"github.com/stackurity/stackurity/internal/store"
+	"github.com/stackurity/stackurity/internal/winprograms"
 )
 
 // purl types handled by language-ecosystem OSV feeds.
@@ -90,6 +91,11 @@ func EnsureFeeds(ctx context.Context, s *store.Store) error {
 			if err := ensure(FeedMSRC, "vulnerability", 6*time.Hour, 72*time.Hour); err != nil {
 				return err
 			}
+			// Installed programs of the curated catalogue, read from NVD
+			// (only those installed somewhere).
+			if err := ensure(FeedWindowsPrograms, "vulnerability", 6*time.Hour, 72*time.Hour); err != nil {
+				return err
+			}
 		}
 	}
 	for d := range p.Distros {
@@ -125,7 +131,22 @@ func ComponentsToEvaluate(ctx context.Context, s *store.Store, feed string, res 
 	case feed == FeedKEV || feed == FeedEndOfLife:
 		return s.ComponentsOfTypes(ctx, allTypes())
 	case feed == FeedMSRC:
-		return s.ComponentsWithPurlKey(ctx, windowsPurlKey)
+		ids, err := s.ComponentsWithPurlKey(ctx, windowsPurlKey)
+		if err != nil {
+			return nil, err
+		}
+		// The same documents list fixes for catalogued programs (Edge, the
+		// .NET runtimes): their rows are evaluated again with the hosts'.
+		pkgs := map[store.PackageRef]bool{}
+		for _, p := range winprograms.Default().Programs() {
+			if p.Source != nil && p.Source.Type == winprograms.SourceMSRC {
+				pkgs[store.PackageRef{BaseEcosystem: winprograms.Ecosystem, Name: p.ID}] = true
+			}
+		}
+		progs, err := programComponents(ctx, s, &SyncResult{Packages: pkgs})
+		return append(ids, progs...), err
+	case feed == FeedWindowsPrograms:
+		return programComponents(ctx, s, res)
 	case strings.HasPrefix(feed, "osv:") || feed == FeedAmazonLinux || feed == FeedOracleLinux:
 		base, _ := feedEcosystem(feed)
 		types := purlTypesFor(base)
