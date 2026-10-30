@@ -580,7 +580,9 @@ type webAssets struct {
 	bytes int
 	limit string // the limit that stopped reading, "" when none did
 	seen  map[string]bool
-	obs   []model.Observation
+	// denied counts files and directories the agent's user may not read.
+	denied *denied
+	obs    []model.Observation
 }
 
 // skipWebDir: directories whose files are not what the application loads,
@@ -638,6 +640,7 @@ func (w *webAssets) consider(full string, d fs.DirEntry) {
 	}
 	f, err := openRegular(full)
 	if err != nil {
+		w.denied.note(host, err)
 		return
 	}
 	data, _ := io.ReadAll(io.LimitReader(f, limit))
@@ -694,6 +697,7 @@ func (w *webAssets) walk(ctx context.Context, dir string) {
 			return cerr
 		}
 		if err != nil {
+			w.denied.note(w.s.hostPath(full), err)
 			return nil
 		}
 		if d.IsDir() {

@@ -196,6 +196,7 @@ When chained events are removed, `verify-audit` then reports a break there; that
 | Output caps of subprocesses (git, plugins, packs, runtime detection) hold | `TestCapBufferHoldsUnderIOCopy`, `TestCappedHoldsUnderIOCopy`, `TestLimitedBufferHoldsUnderIOCopy` |
 | Stack packs run sandboxed and signed | `TestSandboxContainsHostilePacks`, `TestSignatures`, `TestManifestValidation` |
 | Application directories: symlinks not followed except a release `current` link that resolves inside the application, credentials stripped from Git remotes, hostile package metadata skipped | `TestScanNodeApp`, `TestDiscoverAndReleases`, `TestReleaseLinkStaysInsideApp`, `TestHostilePackageMetadata` |
+| Web server configuration read for discovery: no variable expansion, links resolved inside `--root`, document roots reached through a link, in system directories or at or above a discovery base skipped, bounded file count, size and include depth | `TestDiscoverWebServerRoots`, `TestConfigRootsBounded`, `TestDiscoverWebRoots` |
 | Runtime detection: only safely owned binaries, fixed argument, empty environment, capped output, off with `--no-runtimes` | `TestUnmanagedRuntimes`, `TestRuntimesDisabled`, `TestLimitedBufferHoldsUnderIOCopy` |
 | Agent actions: allowlist, strict names, no shell, dry run first, removals refused | `TestRefusals`, `TestAllowlistFile`, `TestDryRunRemovalsAreRefused`, `TestDryRunFailureStops`, `TestRollbackRefusesRemovals` |
 

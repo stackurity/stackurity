@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/stackurity/stackurity/internal/collect/apps"
 	"github.com/stackurity/stackurity/internal/collect/gitrepo"
@@ -53,9 +54,13 @@ func hostCollector(o *hostOptions) (func(context.Context) ([]*model.ObservationB
 		// another is reported once, by itself.
 		dirs := append([]string{}, o.appDirs...)
 		full := true // the list names every application on the host
+		foundBy := map[string]string{}
 		if o.discoverApps {
-			found, all := scanner.DiscoverAll()
-			dirs = append(dirs, found...)
+			found, all := scanner.DiscoverSites()
+			for _, d := range found {
+				dirs = append(dirs, d.Dir)
+				foundBy[d.Dir] = strings.Join(d.By, ", ")
+			}
 			full = all
 		}
 		scanner.Apps = dirs
@@ -75,12 +80,14 @@ func hostCollector(o *hostOptions) (func(context.Context) ([]*model.ObservationB
 				continue
 			}
 			seen[app.Dir] = true
-			// A discovered directory with nothing installed and no lockfile
-			// is a tool or an empty checkout, not an application to track.
-			if !explicit && len(app.Observations) == 0 {
+			if !reportable(app, explicit, foundBy[dir]) {
 				continue
 			}
-			batches = append(batches, appBatch(app, osBatch.Asset))
+			b := appBatch(app, osBatch.Asset)
+			if by := foundBy[dir]; by != "" && !explicit {
+				b.Asset.Attributes["discovered_by"] = clipAttr(by) // a manifest, an index file, a web server's configuration
+			}
+			batches = append(batches, b)
 			reported = append(reported, app.Dir)
 		}
 		if full && len(reported) <= model.MaxAppDirs {
@@ -88,6 +95,25 @@ func hostCollector(o *hostOptions) (func(context.Context) ([]*model.ObservationB
 		}
 		return batches, nil
 	}, nil
+}
+
+// reportable reports whether an application is sent. A discovered
+// directory with nothing installed and no lockfile is a tool or an empty
+// checkout, not an application to track, unless the agent may not read the
+// directory at all (a site owned by its own user): that one is sent with
+// its coverage gap, so that it does not look clean or go missing. One
+// with only some files unreadable (a vendor tool under /opt with a
+// root-only directory) is not.
+func reportable(app apps.App, explicit bool, foundBy string) bool {
+	return explicit || len(app.Observations) > 0 || app.Unreadable || foundBy == "unreadable"
+}
+
+// clipAttr keeps an attribute value within the batch's field limit.
+func clipAttr(v string) string {
+	if len(v) > 1000 {
+		return v[:1000]
+	}
+	return v
 }
 
 // missingDir reports whether a configured application directory is gone

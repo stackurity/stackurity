@@ -78,6 +78,7 @@ var unreadKinds = map[string][2]string{
 	"os-packages":            {"no package database", "a host with no dpkg, rpm or apk database"},
 	"windows:hotfixes":       {"Windows updates (KBs)", "installed KBs are not read: cumulative updates are judged from the build number, and .NET Framework, Office and servicing stack updates are not checked"},
 	"windows:store-apps":     {"Microsoft Store apps", "AppX packages are not inventoried"},
+	"app-permissions":        {"unreadable application files", "the agent's user may not read them; grant read access with an ACL (docs/install.md)"},
 	"other":                  {"other", "other scopes reported as unsupported"},
 }
 
@@ -85,7 +86,7 @@ var unreadKinds = map[string][2]string{
 // recognises but cannot read, and the fixed unsupported scopes of the host
 // collectors. Scopes of any other kind are counted as "other".
 func UnreadKinds() []string {
-	out := append(lockfile.UnsupportedKinds(), "os-packages", "windows:hotfixes", "windows:store-apps")
+	out := append(lockfile.UnsupportedKinds(), "os-packages", "windows:hotfixes", "windows:store-apps", "app-permissions")
 	sort.Strings(out)
 	return out
 }

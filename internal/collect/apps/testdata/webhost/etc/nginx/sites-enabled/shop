@@ -1,0 +1,12 @@
+server {
+	listen 80;
+	root   '/data/shop/public';   # the shop
+	location /blog { alias /srv/blog/; }
+	location ~ \.php$ {
+		root $document_root;
+		fastcgi_param SCRIPT_FILENAME "$document_root$fastcgi_script_name";
+	}
+	location /linked { root /data/linksite; }
+	location /rel { root "/data/rel/current/public"; }
+	location /fake { return 200 "root /data/fake;"; }
+}
