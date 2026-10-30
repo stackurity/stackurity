@@ -152,7 +152,7 @@ A vulnerability feed has not synced within its freshness limit. New advisories f
 
 Once fixed, **Refresh** on the Intelligence page (`POST /api/v1/feeds/{name}/refresh`) queues a sync at once; the feed incident resolves after it succeeds.
 
-The operators' workspace (`STACKURITY_PLATFORM_WORKSPACE`) is told both ways, once each: its routes with the `problems` event get the stale feed right away, and the same routes get a `resolved` message ("Intelligence feed kev:cisa has recovered") when it syncs again. The server logs `intelligence feed is stale` at warn level and `intelligence feed recovered` at info level, once each, with the feed's name.
+The operators' workspace (`STACKURITY_PLATFORM_WORKSPACE`) is told both ways, once each: its routes with the `problems` event get the stale feed right away, and the same routes get a `resolved` message ("Intelligence feed kev:cisa has recovered") when it syncs again. Both reach only routes whose minimum priority is P2 or lower for a vulnerability feed (feed incident P2), or P3 or lower for the others (P3); a route with a P1 minimum, the default, gets neither. A stall that ends before it was announced (between two dispatcher cycles) gets no recovery message. The server logs `intelligence feed is stale` at warn level and `intelligence feed recovered` at info level, once each, with the feed's name.
 
 ### StackurityFeedStale
 

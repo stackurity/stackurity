@@ -504,12 +504,17 @@ func (s *Syncer) osvIncremental(ctx context.Context, feed, base, cursor string) 
 // checked hourly and CISA changes it a few times a week, so a check of an
 // unchanged catalogue (about 1.5 MB) is a conditional GET, and when the
 // server ignores that (a mirror), a file with the same SHA-256 is not
-// parsed or stored again. Validators of another URL are not sent.
+// parsed or stored again. Validators of another URL are not sent, nor
+// those of a copy read more than kevFullEvery ago: a cache that keeps
+// answering 304 cannot hold the catalogue back while the feed shows fresh.
 type kevCursor struct {
 	URL string `json:"url"`
 	validators
-	SHA256 string `json:"sha256"`
+	SHA256 string    `json:"sha256"`
+	ReadAt time.Time `json:"read_at"` // when the body was last downloaded
 }
+
+const kevFullEvery = 24 * time.Hour
 
 func (s *Syncer) syncKEV(ctx context.Context, cursor string) (*SyncResult, string, error) {
 	url := s.f.cfg.KEVURL
@@ -517,7 +522,12 @@ func (s *Syncer) syncKEV(ctx context.Context, cursor string) (*SyncResult, strin
 	if json.Unmarshal([]byte(cursor), &prev) != nil || prev.URL != url {
 		prev = kevCursor{}
 	}
-	b, v, unchanged, err := s.f.downloadIfChanged(ctx, url, prev.validators, 64<<20)
+	now := s.clock()
+	send := prev.validators
+	if now.Sub(prev.ReadAt) > kevFullEvery {
+		send = validators{}
+	}
+	b, v, unchanged, err := s.f.downloadIfChanged(ctx, url, send, 64<<20)
 	if err != nil {
 		return nil, cursor, err
 	}
@@ -526,7 +536,7 @@ func (s *Syncer) syncKEV(ctx context.Context, cursor string) (*SyncResult, strin
 	}
 	sum := sha256.Sum256(b)
 	digest := hex.EncodeToString(sum[:])
-	next, _ := json.Marshal(kevCursor{URL: url, validators: v, SHA256: digest})
+	next, _ := json.Marshal(kevCursor{URL: url, validators: v, SHA256: digest, ReadAt: now})
 	if digest == prev.SHA256 {
 		return &SyncResult{Full: true}, string(next), nil
 	}

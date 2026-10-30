@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -17,11 +18,13 @@ import (
 
 // kevServer serves one KEV catalogue with an ETag, answering 304 to a
 // matching If-None-Match unless plain is set (a mirror that sends no
-// validators).
+// validators). stuck answers 304 to every conditional request, as a cache
+// that has stopped revalidating.
 type kevServer struct {
 	mu          sync.Mutex
 	body        string
 	plain       bool
+	stuck       bool
 	full, short int
 }
 
@@ -30,7 +33,7 @@ func (k *kevServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer k.mu.Unlock()
 	if !k.plain {
 		tag := fmt.Sprintf(`"%x"`, sha256.Sum256([]byte(k.body)))
-		if r.Header.Get("If-None-Match") == tag {
+		if r.Header.Get("If-None-Match") == tag || k.stuck && r.Header.Get("If-None-Match") != "" {
 			k.short++
 			w.WriteHeader(http.StatusNotModified)
 			return
@@ -180,4 +183,111 @@ func TestKEVRetuned(t *testing.T) {
 		t.Fatal(err)
 	}
 	check(24*60, 5*24*60)
+}
+
+// A cache that answers 304 whatever changed upstream cannot hold KEV back
+// for long: a copy read more than a day ago is downloaded in full.
+func TestKEVFullReadDaily(t *testing.T) {
+	ctx := tenant.System(context.Background())
+	st, sy, _, _ := setup(t)
+	k := &kevServer{body: kevOther}
+	srv := httptest.NewServer(k)
+	t.Cleanup(srv.Close)
+	sy.f.cfg.KEVURL = srv.URL + "/kev.json"
+	now := time.Date(2026, 10, 30, 9, 0, 0, 0, time.UTC)
+	sy.now = func() time.Time { return now }
+	if err := st.EnsureFeed(ctx, FeedKEV, "vulnerability", time.Hour, 12*time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	stored := func() int {
+		t.Helper()
+		var n int
+		if err := st.Pool.QueryRow(ctx, `SELECT count(*) FROM known_exploited WHERE cve = 'CVE-2021-23337'`).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	resync := func() {
+		t.Helper()
+		if _, err := sy.Sync(ctx, FeedKEV); err != nil {
+			t.Fatal(err)
+		}
+	}
+	resync()
+	k.mu.Lock()
+	k.body, k.stuck = kev, true // CISA changes the file; the cache keeps saying 304
+	k.mu.Unlock()
+	for _, h := range []time.Duration{1, 12, 24} {
+		now = time.Date(2026, 10, 30, 9, 0, 0, 0, time.UTC).Add(h * time.Hour)
+		resync()
+	}
+	if k.full != 1 || k.short != 3 || stored() != 0 {
+		t.Fatalf("within a day: %d full and %d short responses, stored %d", k.full, k.short, stored())
+	}
+	now = now.Add(time.Hour + time.Minute)
+	resync()
+	if k.full != 2 || k.short != 3 || stored() != 1 {
+		t.Errorf("after a day: %d full and %d short responses, stored %d", k.full, k.short, stored())
+	}
+	// The full read starts a new day of conditional requests.
+	now = now.Add(time.Hour)
+	resync()
+	if k.full != 2 || k.short != 4 {
+		t.Errorf("an hour later: %d full and %d short responses", k.full, k.short)
+	}
+}
+
+// A corrupt or empty catalogue after a good one is refused: the stored
+// entries and the cursor stay as they were, and the next good file is
+// stored.
+func TestKEVBadBodyKeepsCursor(t *testing.T) {
+	ctx := tenant.System(context.Background())
+	st, sy, _, _ := setup(t)
+	k := &kevServer{body: kevOther}
+	srv := httptest.NewServer(k)
+	t.Cleanup(srv.Close)
+	sy.f.cfg.KEVURL = srv.URL + "/kev.json"
+	if err := st.EnsureFeed(ctx, FeedKEV, "vulnerability", time.Hour, 12*time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	cves := func() []string {
+		t.Helper()
+		var out []string
+		if err := st.Pool.QueryRow(ctx, `SELECT COALESCE(array_agg(cve ORDER BY cve), '{}') FROM known_exploited`).Scan(&out); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	if _, err := sy.Sync(ctx, FeedKEV); err != nil {
+		t.Fatal(err)
+	}
+	good, _ := st.GetFeed(ctx, FeedKEV)
+	for _, bad := range []struct{ body, err string }{
+		{`{"vulnerabilities":[{"cveID":`, "parse KEV"},
+		{`{"vulnerabilities":[]}`, "empty"},
+		{``, "parse KEV"},
+	} {
+		k.set(bad.body, false)
+		if _, err := sy.Sync(ctx, FeedKEV); err == nil || !strings.Contains(err.Error(), bad.err) {
+			t.Errorf("body %q: err = %v, want %q", bad.body, err, bad.err)
+		}
+		f, _ := st.GetFeed(ctx, FeedKEV)
+		if f.Cursor != good.Cursor || !strings.Contains(f.LastError, bad.err) {
+			t.Errorf("body %q: cursor %q (was %q), error %q", bad.body, f.Cursor, good.Cursor, f.LastError)
+		}
+		if got := cves(); len(got) != 1 || got[0] != "CVE-2020-0001" {
+			t.Errorf("body %q: stored %v", bad.body, got)
+		}
+	}
+	k.set(kev, false)
+	res, err := sy.Sync(ctx, FeedKEV)
+	if err != nil || res.Changed != 1 {
+		t.Fatalf("good file after bad ones: %v %+v", err, res)
+	}
+	if f, _ := st.GetFeed(ctx, FeedKEV); f.Cursor == good.Cursor || f.LastError != "" {
+		t.Errorf("after the good file: cursor %q, error %q", f.Cursor, f.LastError)
+	}
+	if got := cves(); len(got) != 1 || got[0] != "CVE-2021-23337" {
+		t.Errorf("stored %v", got)
+	}
 }
