@@ -71,6 +71,8 @@ func applyExceptions(ctx context.Context, db q, ruleID int64, cond string) (int6
 		  WHERE e.ended_at IS NULL AND (e.expires_at IS NULL OR e.expires_at > now()) AND ($1::bigint = 0 OR e.id = $1)
 		    AND f.status = 'open' AND f.state IN ('new', 'acknowledged', 'in_progress') AND f.exception_id IS DISTINCT FROM e.id
 		    AND NOT (e.until_fix AND `+freeFix("f")+`) AND (`+cond+`)
+		    -- A VEX rule never covers a behind finding, which names no advisory.
+		    AND (e.vex_statement_id IS NULL OR `+notBehind+`)
 		    AND (e.version = '' OR EXISTS (SELECT 1 FROM inventory iv WHERE iv.id = f.inventory_id AND iv.version = e.version))
 		    AND (e.digest = '' OR `+digestMatches("f.asset_id", "e.digest")+`)
 		  ORDER BY f.id, e.created_at DESC),

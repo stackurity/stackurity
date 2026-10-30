@@ -853,7 +853,7 @@ func (m *vexMatcher) match(ctx context.Context, tx pgx.Tx, p vex.Product, keys [
 		// The whole image or application: every component version with a
 		// finding for the vulnerability.
 		rows, err := tx.Query(ctx, `SELECT DISTINCT f.asset_id, f.component_id, i.version FROM findings f JOIN inventory i ON i.id = f.inventory_id
-			WHERE f.asset_id = ANY($1) AND f.kind = 'vulnerability' AND f.key = ANY($2) AND i.removed_at IS NULL`, assets, keys)
+			WHERE f.asset_id = ANY($1) AND f.kind = 'vulnerability' AND `+notBehind+` AND f.key = ANY($2) AND i.removed_at IS NULL`, assets, keys)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -899,12 +899,38 @@ func (m *vexMatcher) match(ctx context.Context, tx pgx.Tx, p vex.Product, keys [
 	return tuples, problems, nil
 }
 
+// behindVulnID reports whether a statement's vulnerability names a behind
+// finding ("behind:wordpress:6.5", BehindRule): the key of a finding that
+// names no advisory, which no VEX statement can be about.
+func behindVulnID(id string) bool {
+	return strings.HasPrefix(strings.ToLower(vex.NormalizeVulnID(id)), "behind:")
+}
+
+// refuseBehindIDs makes a statement about a behind finding's key invalid,
+// so it matches nothing, and drops such keys from statements' aliases.
+func refuseBehindIDs(doc *vex.Document) {
+	for i := range doc.Statements {
+		st := &doc.Statements[i]
+		if st.Problem == "" && behindVulnID(st.Vulnerability) {
+			st.Problem = "not an advisory id: " + st.Vulnerability + " is the key of a release-line finding, which a VEX statement cannot be about"
+		}
+		aliases := st.Aliases[:0]
+		for _, a := range st.Aliases {
+			if !behindVulnID(a) {
+				aliases = append(aliases, a)
+			}
+		}
+		st.Aliases = aliases
+	}
+}
+
 // ImportVEX records a document, matches its statements and, for each
 // matched not_affected statement, asks for approval (or, for a trusted
 // source, approves it). Newer affected or under_investigation statements
 // end the VEX ignore rules they contradict.
 func (s *Store) ImportVEX(ctx context.Context, in VEXImport, actor Actor) (*VEXImportResult, error) {
 	doc := in.Doc
+	refuseBehindIDs(doc)
 	res := &VEXImportResult{Statements: len(doc.Statements), Skipped: doc.Skipped, Problems: []VEXProblem{}}
 	now := time.Now().UTC()
 	via := in.Via
@@ -1119,7 +1145,7 @@ func (s *Store) ImportVEX(ctx context.Context, in VEXImport, actor Actor) (*VEXI
 		if len(naIDs) > 0 {
 			rows, err := tx.Query(ctx, `SELECT DISTINCT m.statement_id, f.asset_id, f.id FROM vex_matches m
 				JOIN findings f ON f.asset_id = m.asset_id AND f.component_id = m.component_id AND f.key = m.key
-				  AND f.kind = 'vulnerability' AND f.status = 'open'
+				  AND f.kind = 'vulnerability' AND `+notBehind+` AND f.status = 'open'
 				JOIN inventory i ON i.id = f.inventory_id AND i.version = m.version
 				WHERE m.statement_id = ANY($1) ORDER BY 1, 3`, naIDs)
 			if err != nil {
@@ -1363,6 +1389,7 @@ func approveVEX(ctx context.Context, tx pgx.Tx, statementID int64, r *IgnoreRequ
 	// lockIssueFindings).
 	if _, err := tx.Exec(ctx, `SELECT f.id FROM findings f JOIN vex_matches m ON m.asset_id = f.asset_id AND m.component_id = f.component_id
 		AND m.key = f.key WHERE m.statement_id = $1 AND ($2::bigint[] IS NULL OR m.asset_id = ANY($2)) AND f.kind = 'vulnerability'
+		AND `+notBehind+`
 		ORDER BY f.id FOR UPDATE OF f`, statementID, r.VEXAssets); err != nil {
 		return 0, err
 	}
@@ -1507,7 +1534,7 @@ func (s *Store) fillFindingVEX(ctx context.Context, fs []*Finding) error {
 		LEFT JOIN LATERAL (SELECT q.id, q.status FROM ignore_requests q WHERE q.vex_statement_id = st.id
 		  AND (q.vex_assets IS NULL OR f.asset_id = ANY(q.vex_assets)) ORDER BY q.id DESC LIMIT 1) r ON true
 		LEFT JOIN finding_exceptions e ON e.id = f.exception_id
-		WHERE f.id = ANY($1) AND (m.digest = '' OR `+digestMatches("f.asset_id", "m.digest")+`)
+		WHERE f.id = ANY($1) AND `+notBehind+` AND (m.digest = '' OR `+digestMatches("f.asset_id", "m.digest")+`)
 		  AND NOT (st.status = 'not_affected' AND COALESCE(r.status, '') = 'declined')
 		ORDER BY f.id, COALESCE(e.vex_statement_id = st.id AND f.state = 'risk_accepted', false) DESC, st.effective_at DESC, st.id DESC`, ids)
 	if err != nil {
@@ -1654,7 +1681,7 @@ func (s *Store) VEXExport(ctx context.Context, assetID int64, notes bool) ([]VEX
 		FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL JOIN inventory i ON i.id = f.inventory_id
 		JOIN finding_exceptions e ON e.id = f.exception_id
 		LEFT JOIN vex_statements st ON st.id = e.vex_statement_id
-		WHERE f.kind = 'vulnerability' AND f.status = 'open' AND f.state = 'risk_accepted' AND e.ended_at IS NULL
+		WHERE f.kind = 'vulnerability' AND `+notBehind+` AND f.status = 'open' AND f.state = 'risk_accepted' AND e.ended_at IS NULL
 		  AND e.reason IN ('false_positive', 'mitigated')`+cond+`
 		ORDER BY f.id LIMIT 50000`, args...)
 	if err != nil {
@@ -1697,7 +1724,7 @@ func (s *Store) VEXExport(ctx context.Context, assetID int64, notes bool) ([]VEX
 		FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL JOIN inventory i ON i.id = f.inventory_id
 		JOIN vex_matches m ON m.asset_id = f.asset_id AND m.component_id = f.component_id AND m.key = f.key AND m.version = i.version
 		JOIN vex_statements st ON st.id = m.statement_id
-		WHERE f.kind = 'vulnerability' AND f.status = 'open' AND st.status IN ('affected', 'fixed', 'under_investigation')
+		WHERE f.kind = 'vulnerability' AND `+notBehind+` AND f.status = 'open' AND st.status IN ('affected', 'fixed', 'under_investigation')
 		  AND (m.digest = '' OR `+digestMatches("f.asset_id", "m.digest")+`)`+cond+`
 		ORDER BY f.id, st.effective_at DESC, st.id DESC LIMIT 50000`, args...)
 	if err != nil {

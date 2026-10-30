@@ -245,6 +245,12 @@ func issueSummary(in store.Incident) string {
 	s := fmt.Sprintf("[%s] %s", in.Priority, in.Title)
 	switch in.Kind {
 	case "vulnerability":
+		if in.Behind() {
+			// "behind:wordpress:6.5" names no advisory: the finding's title
+			// says what is missing.
+			s += " on " + plural(in.AssetCount, "asset")
+			break
+		}
 		s = fmt.Sprintf("[%s] %s", in.Priority, in.Key)
 		if len(det.Components) > 0 {
 			s += " in " + strings.Join(firstN(det.Components, 2), ", ")

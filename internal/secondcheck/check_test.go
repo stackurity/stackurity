@@ -434,3 +434,27 @@ func TestSecondCheckLineVerification(t *testing.T) {
 	cu.Verification = "confirmed"
 	want(t, CheckVulnerability(cu, obs, py2), "verification", "needs_validation")
 }
+
+// A WordPress version behind its release line's latest release is
+// re-derived from the lifecycle data.
+func TestSecondCheckBehindRelease(t *testing.T) {
+	cycles := []store.LifecycleCycle{{Product: "wordpress", Cycle: "6.5", Latest: "6.5.14"}, {Product: "wordpress", Cycle: "6.4", Latest: "6.4.7"}}
+	claim := Claim{Kind: "vulnerability", Key: "behind:wordpress:6.5", FixedVersion: "6.5.14",
+		Evidence: map[string]any{"product": "wordpress", "cycle": "6.5", "match": map[string]any{"rule": "behind_latest_release"}}}
+	obs := func(v string) Observed { return Observed{Purl: "pkg:generic/wordpress@" + v, Version: v} }
+	if out := CheckBehindRelease(claim, obs("6.5.3"), cycles); out.Result != store.SecondCheckAgreed {
+		t.Errorf("6.5.3: %+v", out)
+	}
+	for _, v := range []string{"6.5.14", "6.5-RC1", "6.4.3"} {
+		if out := CheckBehindRelease(claim, obs(v), cycles); out.Result != store.SecondCheckDisagreed {
+			t.Errorf("%s: %+v", v, out)
+		}
+	}
+	claim.FixedVersion = "6.5.13"
+	if out := CheckBehindRelease(claim, obs("6.5.3"), cycles); out.Result != store.SecondCheckDisagreed || out.Differences[0].Field != "fixed_version" {
+		t.Errorf("moved latest: %+v", out)
+	}
+	if out := CheckBehindRelease(claim, obs("6.5.3"), nil); out.Result != store.SecondCheckCouldNotCheck {
+		t.Errorf("no cycles: %+v", out)
+	}
+}

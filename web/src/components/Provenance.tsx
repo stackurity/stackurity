@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { safeHttpUrl, type Advisory, type Finding } from "../api";
+import { behindFacts, behindText, isBehind } from "../behind";
 import { Badge, type Tone } from "./Badge";
 import { Card, RelativeTime } from "./ui";
 
@@ -56,7 +57,9 @@ export function evidenceState(f: Finding): EvidenceState {
         explain:
           f.kind === "end_of_life"
             ? "The installed version was read from an authoritative source and its release line is past its end-of-life date."
-            : "The installed version was read from an authoritative source (package database or lockfile) and compared with the advisory's ranges. A match is not proof that it can be exploited here.",
+            : isBehind(f)
+              ? "The installed version was read from an authoritative source and is lower than its release line's latest release."
+              : "The installed version was read from an authoritative source (package database or lockfile) and compared with the advisory's ranges. A match is not proof that it can be exploited here.",
       };
     case "needs_validation":
       return {
@@ -143,6 +146,43 @@ export function Provenance({ f, matched }: { f: Finding; matched: Advisory[] }) 
             {ev.eol_date ? <>, end of life on {String(ev.eol_date)}</> : null}.
           </li>
         </ul>
+      </Card>
+    );
+  }
+  if (isBehind(f)) {
+    // No advisory: endoflife.date's latest release of the line decided it.
+    const b = behindFacts(f);
+    return (
+      <Card title="How this was decided">
+        {head}
+        <ul className="ref-list">
+          <li>
+            Source: <Link to="/intelligence">{b.source}</Link>
+            {b.link && (
+              <>
+                {" "}
+                (<ExtLink href={b.link}>release lines</ExtLink>)
+              </>
+            )}
+          </li>
+          <li>
+            Release line <span className="mono">{b.cycle || "?"}</span> of {b.product}, matched from installed version{" "}
+            <span className="mono">{b.installed}</span>.
+          </li>
+          <li>
+            Latest release of the line: <span className="mono">{b.latest || "not recorded"}</span>
+            {b.latestDate ? <>, released {b.latestDate}</> : null}.
+          </li>
+          {b.behind !== null && (
+            <li>
+              <span className="mono">{b.installed}</span> is {behindText(b.behind)}.
+            </li>
+          )}
+        </ul>
+        <p className="small">
+          {b.product} point releases on a supported release line are its security and maintenance releases. Vulnerability (CVE) matching
+          for {b.product} core is not available yet, so the missing releases are reported instead of the vulnerabilities they fix.
+        </p>
       </Card>
     );
   }

@@ -327,6 +327,7 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 		if c := matchCycle(cycles, cycleVersion); c != nil {
 			if f := eolFinding(r, c, now); f != nil {
 				f.Evidence["match"] = eolMatch(r.Version, cycleVersion, c.Cycle)
+				behindEndOfLife(f, r, c)
 				if lm.rule == "overlay" || lm.rule == "namespace_family" {
 					// Mapped by Stackurity's lifecycle overlay, not by
 					// endoflife.date's own identifiers.
@@ -342,6 +343,15 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 					if note != nil {
 						f.Evidence["distribution"] = note
 					}
+					want = append(want, *f)
+				}
+			} else if coverage[ci].State != store.CoverageEvaluated && lm.cycleVersion == r.Version {
+				// A supported branch, behind its latest release, for a product
+				// whose point releases are its security fixes (behind.go). Not
+				// for an ended branch: its end-of-life finding names the latest
+				// release already. Not once a vulnerability source evaluates
+				// the row: its findings replace this one.
+				if f := behindFinding(r, c); f != nil {
 					want = append(want, *f)
 				}
 			}

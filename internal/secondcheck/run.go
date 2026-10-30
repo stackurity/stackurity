@@ -54,8 +54,21 @@ func (r *Runner) Run(ctx context.Context) (Stats, error) {
 		claim := Claim{Kind: c.Kind, Key: c.Key, Verification: c.Verification, FixedVersion: c.FixedVersion, Sources: c.Sources, Evidence: ev}
 		obs := Observed{Purl: c.Purl, Version: c.Version, Evidence: c.InvEvidence}
 		var out Outcome
-		switch c.Kind {
-		case "vulnerability":
+		m, _ := ev["match"].(map[string]any)
+		switch {
+		case c.Kind == "vulnerability" && m["rule"] == store.BehindRule:
+			// A version behind its release line's latest release, from the
+			// lifecycle data rather than an advisory (WordPress core).
+			product, _ := ev["product"].(string)
+			cycles, ok := cycleCache[product]
+			if !ok && product != "" {
+				if cycles, err = r.Store.LifecycleCycles(ctx, product); err != nil {
+					return st, err
+				}
+				cycleCache[product] = cycles
+			}
+			out = CheckBehindRelease(claim, obs, cycles)
+		case c.Kind == "vulnerability":
 			recs, ok := recCache[c.Key]
 			if !ok {
 				if recs, err = r.Store.RawAdvisoryRecords(ctx, c.Key, c.Sources); err != nil {
@@ -65,7 +78,7 @@ func (r *Runner) Run(ctx context.Context) (Stats, error) {
 			}
 			out = CheckVulnerability(claim, obs, recs)
 			out.Records = recs
-		case "end_of_life":
+		case c.Kind == "end_of_life":
 			product, _ := ev["product"].(string)
 			cycles, ok := cycleCache[product]
 			if !ok && product != "" {

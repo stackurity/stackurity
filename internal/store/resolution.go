@@ -68,12 +68,24 @@ func advisorySource(a string) string {
 // and component c) that an evaluation no longer produced while their
 // inventory row is still installed: nothing on the asset changed. It yields
 // kind, resolution and detail for each.
+//
+// A behind finding (BehindRule) names no advisory and its row is never
+// evaluated for vulnerabilities, so it closes as advisory_changed with its
+// own reason: replaced by the end-of-life finding the evaluation made for
+// the same row (want_findings, in SyncFindings), replaced by vulnerability
+// matching once a source evaluates the row, or the lifecycle data no
+// longer puts the version behind.
 func closedByIntel() string {
 	return `CROSS JOIN LATERAL (SELECT count(*) AS total, count(a.withdrawn) AS withdrawn, max(a.withdrawn) AS withdrawn_at,
 		  string_agg(DISTINCT ` + advisorySource("a") + `, ' and ') FILTER (WHERE a.withdrawn IS NOT NULL) AS source,
 		  min(a.feed) AS feed
 		  FROM advisories a WHERE a.id = ANY(f.sources)) adv
-		CROSS JOIN LATERAL (SELECT CASE WHEN f.kind = 'vulnerability' AND i.coverage IN ('not_evaluated', 'unsupported') THEN 'not_evaluated'
+		CROSS JOIN LATERAL (SELECT CASE WHEN f.kind = 'vulnerability' AND NOT (` + notBehind + `) THEN
+		      CASE WHEN EXISTS (SELECT 1 FROM want_findings w WHERE w.inventory_id = f.inventory_id AND w.kind = 'end_of_life') THEN 'end_of_life'
+		        WHEN i.coverage = 'evaluated' THEN 'vulnerability_matching' END
+		  END AS replaced_by) b
+		CROSS JOIN LATERAL (SELECT CASE WHEN f.kind = 'vulnerability' AND NOT (` + notBehind + `) THEN 'advisory_changed'
+		    WHEN f.kind = 'vulnerability' AND i.coverage IN ('not_evaluated', 'unsupported') THEN 'not_evaluated'
 		    WHEN f.kind = 'vulnerability' AND adv.total > 0 AND adv.withdrawn = adv.total THEN 'advisory_withdrawn'
 		    ELSE 'advisory_changed' END AS kind,
 		  COALESCE(NULLIF(f.evidence->>'osv_package', ''), c.name) AS package,
@@ -82,10 +94,17 @@ func closedByIntel() string {
 		  CASE k.kind
 		    WHEN 'not_evaluated' THEN 'no longer evaluated: ' || COALESCE(NULLIF(i.coverage_reason, ''), 'the vulnerability feed could not be used')
 		    WHEN 'advisory_withdrawn' THEN 'advisory withdrawn by ' || adv.source || ' on ' || to_char(adv.withdrawn_at AT TIME ZONE 'UTC', 'YYYY-MM-DD')
-		    ELSE CASE WHEN f.kind = 'end_of_life' THEN 'lifecycle data updated: ' || k.package || ' ' || i.version || ' is no longer listed as end of life'
+		    ELSE CASE WHEN b.replaced_by = 'end_of_life' THEN 'replaced by the end-of-life finding: ' || k.package || ' '
+		        || COALESCE(f.evidence->>'cycle', i.version) || ' reached end of life'
+		      WHEN b.replaced_by = 'vulnerability_matching' THEN 'replaced by vulnerability matching: ' || k.package || ' ' || i.version
+		        || ' is now matched against advisories'
+		      WHEN f.kind = 'vulnerability' AND NOT (` + notBehind + `) THEN 'lifecycle data updated: ' || k.package || ' ' || i.version
+		        || ' is no longer behind its release line''s latest release'
+		      WHEN f.kind = 'end_of_life' THEN 'lifecycle data updated: ' || k.package || ' ' || i.version || ' is no longer listed as end of life'
 		      ELSE 'advisory updated: ' || k.ids || ' no longer lists ' || k.package || ' ' || i.version END
 		  END AS resolution,
-		  jsonb_strip_nulls(jsonb_build_object('advisories', CASE WHEN f.kind = 'vulnerability' THEN to_jsonb(f.sources) END,
+		  jsonb_strip_nulls(jsonb_build_object('advisories', CASE WHEN f.kind = 'vulnerability' AND ` + notBehind + ` THEN to_jsonb(f.sources) END,
+		    'replaced_by', b.replaced_by,
 		    'source', CASE WHEN k.kind = 'advisory_withdrawn' THEN adv.source END,
 		    'feed', CASE WHEN k.kind = 'advisory_withdrawn' THEN adv.feed END,
 		    'withdrawn_at', CASE WHEN k.kind = 'advisory_withdrawn' THEN adv.withdrawn_at END,

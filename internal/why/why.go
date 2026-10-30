@@ -24,7 +24,12 @@ const (
 	TypeOSPackage       = "os_package"       // a distro package against its distro's advisory
 	TypeContainerImage  = "container_image"  // either, found in a container image
 	TypeEndOfLife       = "end_of_life"      // a release line past its end of life
+	TypeBehindRelease   = "behind_release"   // below its supported release line's latest release
 )
+
+// behindRule is the matcher's rule for a version behind its release line's
+// latest release (internal/intel/behind.go).
+const behindRule = store.BehindRule
 
 // NotAnExploit is said wherever a match could be read as more than it is.
 const NotAnExploit = "A confirmed match means the installed version is in the advisory's affected range. " +
@@ -225,6 +230,23 @@ func Build(in Input, now time.Time) Explanation {
 		}
 		e.Sentence = fmt.Sprintf("%s belongs to %s release line %s, which %s (%s, %s); %s.",
 			installed, orUnknown(lc.Product), orUnknown(lc.Cycle), ended, e.Source.Feed, refreshed, e.Rule.Text)
+	} else if str(m, "rule") == behindRule {
+		e.Type = TypeBehindRelease
+		lc := &LifecycleDetail{Product: str(ev, "product"), Cycle: str(ev, "cycle"), Latest: str(ev, "latest_in_cycle")}
+		e.Lifecycle = lc
+		e.Rule.Kind = behindRule
+		e.Rule.Text = fmt.Sprintf("the version is lower than %s, the latest release of release line %s", orUnknown(lc.Latest), orUnknown(lc.Cycle))
+		n := fmt.Sprint(ev["releases_behind"])
+		if n == "1" {
+			n += " release"
+		} else {
+			n += " releases"
+		}
+		e.Sentence = fmt.Sprintf("%s is %s behind %s, the latest release of %s release line %s (%s, %s). "+
+			"%s point releases on a supported release line are its security and maintenance releases; "+
+			"vulnerability (CVE) matching for %s core is not available yet, so the missing releases are reported instead. Update to %s.",
+			installed, n, orUnknown(lc.Latest), productName(lc.Product), orUnknown(lc.Cycle), e.Source.Feed, refreshed,
+			productName(lc.Product), productName(lc.Product), orUnknown(lc.Latest))
 	} else {
 		e.Source.Record = str(m, "record")
 		e.Source.Ecosystem = str(ev, "target_ecosystem")
@@ -308,6 +330,10 @@ func Build(in Input, now time.Time) Explanation {
 		if f.Kind == "end_of_life" {
 			e.StateText = "Confirmed: the installed version was read from an authoritative source and its release line has ended. " +
 				"End of life means no more security fixes; it is not a known vulnerability."
+		}
+		if e.Type == TypeBehindRelease {
+			e.StateText = "Confirmed: the installed version was read from an authoritative source and is below its release line's latest release. " +
+				"It misses that release's security fixes; which vulnerabilities they fix is not matched."
 		}
 	case "needs_validation":
 		e.StateText = "Needs validation: the match cannot be relied on until the missing information below is resolved."
@@ -517,6 +543,15 @@ func strs(v any) []string {
 		return out
 	}
 	return nil
+}
+
+// productName is how a product of a behind finding is named in text:
+// WordPress, the only one so far (internal/intel/behind.go).
+func productName(product string) string {
+	if product == "wordpress" {
+		return "WordPress"
+	}
+	return orUnknown(product)
 }
 
 func orUnknown(s string) string {
