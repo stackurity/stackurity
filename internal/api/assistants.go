@@ -597,7 +597,8 @@ func (s *Server) checkAuthorize(r *http.Request, ap *authorizeParams) (*store.OA
 }
 
 // ourResource accepts this server's MCP endpoint or its base URL as an RFC
-// 8707 resource indicator (scheme and host compared without case).
+// 8707 resource indicator (scheme and host compared without case), and
+// those of its legacy hosts (legacy_hosts.go).
 func (s *Server) ourResource(r *http.Request, res string) bool {
 	norm := func(v string) string {
 		u, err := url.Parse(strings.TrimRight(v, "/"))
@@ -608,7 +609,15 @@ func (s *Server) ourResource(r *http.Request, res string) bool {
 		return u.String()
 	}
 	n := norm(res)
-	return n == norm(s.mcpResource(r)) || n == norm(s.assistantBase())
+	if n == norm(s.mcpResource(r)) || n == norm(s.assistantBase()) {
+		return true
+	}
+	for _, l := range s.legacyResources() {
+		if n == l {
+			return true
+		}
+	}
+	return false
 }
 
 // redirectWith adds the answer, state and issuer (RFC 9207) to the client's

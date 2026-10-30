@@ -17,12 +17,18 @@ const placeholder = `<!doctype html><html><head><meta charset="utf-8"><title>Sta
 func (s *Server) uiHandler() http.Handler {
 	if s.UI == nil {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if s.redirectLegacyPage(w, r) {
+				return
+			}
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			_, _ = w.Write([]byte(placeholder))
 		})
 	}
 	files := http.FileServer(http.FS(s.UI))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.redirectLegacyPage(w, r) {
+			return
+		}
 		p := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
 		if p == "" {
 			p = "index.html"

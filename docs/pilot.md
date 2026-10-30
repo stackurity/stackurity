@@ -7,8 +7,8 @@ A pilot answers one question: **does Stackurity find something important on your
 | | Stackurity Cloud | On your own server |
 |---|---|---|
 | What you install | Only the agents and, if you like, a CI step | Stackurity itself (Docker Compose or Helm) plus the agents |
-| How to start | Sign up at [app.stackurity.dev](https://app.stackurity.dev) for a 14-day free trial, no card needed | [install.md](install.md) |
-| Where your inventory lives | In your own organisation on app.stackurity.dev, isolated from every other organisation by the database itself. If you do not choose a [plan](https://stackurity.dev/pricing.html) by the end of the trial, the organisation becomes read-only (you can still sign in and export), and its data is deleted after 30 days read-only | On your server; nothing leaves it except anonymous downloads of public vulnerability data |
+| How to start | Sign up at [app.stackurity.ai](https://app.stackurity.ai) for a 14-day free trial, no card needed | [install.md](install.md) |
+| Where your inventory lives | In your own organisation on app.stackurity.ai, isolated from every other organisation by the database itself. If you do not choose a [plan](https://stackurity.ai/pricing.html) by the end of the trial, the organisation becomes read-only (you can still sign in and export), and its data is deleted after 30 days read-only | On your server; nothing leaves it except anonymous downloads of public vulnerability data |
 | Setup time | About 15 minutes | About 30 minutes |
 | Best when | You want to see results quickly | Your policies do not allow inventory data to leave your network |
 
@@ -35,7 +35,7 @@ Both run the same release, and everything in the [Community edition](editions.md
 
 ## Telling us when something is wrong
 
-This is the most valuable part of a pilot. Use the forms on GitHub (or email info@stackurity.dev if you prefer not to post publicly):
+This is the most valuable part of a pilot. Use the forms on GitHub (or email info@stackurity.ai if you prefer not to post publicly):
 
 - [Wrong finding](https://github.com/stackurity/stackurity/issues/new?template=wrong-finding.yml): a vulnerability that does not apply, for example because your distribution backported the fix.
 - [Missed vulnerability](https://github.com/stackurity/stackurity/issues/new?template=missed-vulnerability.yml): a known issue Stackurity did not report.
@@ -60,4 +60,4 @@ We share these with you at the end:
 - Two hours over the pilot: the setup call, a look at the action plan, the review call.
 - Honest feedback, including "this was not useful".
 
-To start a pilot, [get in touch](https://stackurity.dev/#contact).
+To start a pilot, [get in touch](https://stackurity.ai/#contact).

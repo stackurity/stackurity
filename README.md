@@ -35,7 +35,7 @@ Open-source, self-hosted software inventory and upgrade intelligence. Stackurity
 
 Stackurity is self-hosted: your inventory and findings stay on your own server, and your hosts and pipelines send data to it. Nothing needs inbound access to your machines.
 
-If you would rather not run a server, **Stackurity Cloud** runs the same release for you at [app.stackurity.dev](https://app.stackurity.dev): sign up for a 14-day free trial, no card needed, then choose a [plan](https://stackurity.dev/pricing.html). Self-hosting the Community edition stays free, with no account and no asset limit; nothing below needs Stackurity Cloud.
+If you would rather not run a server, **Stackurity Cloud** runs the same release for you at [app.stackurity.ai](https://app.stackurity.ai): sign up for a 14-day free trial, no card needed, then choose a [plan](https://stackurity.ai/pricing.html). Self-hosting the Community edition stays free, with no account and no asset limit; nothing below needs Stackurity Cloud.
 
 There are two ways to run it. Both keep the session cookie `Secure`, as production does: Chrome, Edge and Firefox treat `http://localhost` as a secure origin, so a trial on your own machine needs no security setting changed.
 

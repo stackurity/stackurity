@@ -1,9 +1,10 @@
 # Slack app manifest for the Stackurity Slack app ("Add to Slack").
 #
 # Paste it at https://api.slack.com/apps -> Create New App -> From an app
-# manifest. It is written for Stackurity Cloud (https://app.stackurity.dev);
-# on your own server, replace https://app.stackurity.dev with your
-# STACKURITY_BASE_URL in the three URLs. Then follow docs/slack-app.md.
+# manifest. It is written for Stackurity Cloud (https://app.stackurity.ai);
+# on your own server, replace https://app.stackurity.ai with your
+# STACKURITY_BASE_URL in the three URLs and delete the second redirect URL.
+# Then follow docs/slack-app.md.
 display_information:
   name: Stackurity
   description: Security notifications from Stackurity, with Assign to me and Snooze buttons.
@@ -15,6 +16,9 @@ features:
     always_online: false
 oauth_config:
   redirect_urls:
+    - https://app.stackurity.ai/integrations/slack/oauth/callback
+    # Stackurity Cloud's previous address, while it still routes to the
+    # server: remove it when app.stackurity.dev is retired.
     - https://app.stackurity.dev/integrations/slack/oauth/callback
   scopes:
     bot:
@@ -23,13 +27,13 @@ oauth_config:
       - incoming-webhook
 settings:
   event_subscriptions:
-    request_url: https://app.stackurity.dev/api/v1/integrations/slack/events
+    request_url: https://app.stackurity.ai/api/v1/integrations/slack/events
     bot_events:
       - app_uninstalled
       - tokens_revoked
   interactivity:
     is_enabled: true
-    request_url: https://app.stackurity.dev/api/v1/integrations/slack/actions
+    request_url: https://app.stackurity.ai/api/v1/integrations/slack/actions
   org_deploy_enabled: false
   socket_mode_enabled: false
   token_rotation_enabled: false
@@ -41,4 +45,4 @@ settings:
 # docs/slack-app.md#installs-started-from-slack.
 # app_directory:
 #   use_direct_install: true
-#   direct_install_url: https://app.stackurity.dev/integrations/slack/install
+#   direct_install_url: https://app.stackurity.ai/integrations/slack/install

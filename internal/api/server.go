@@ -66,6 +66,10 @@ type Server struct {
 	Pro ProConfig
 	// BaseURL is the public dashboard URL, used in the agent installer.
 	BaseURL string
+	// LegacyHosts are host names the server answered on before BaseURL
+	// changed (STACKURITY_LEGACY_HOSTS, ParseLegacyHosts): their dashboard
+	// pages redirect to BaseURL, the rest is served in place.
+	LegacyHosts []string
 	// AgentDir holds agent builds served to new hosts (stackurity-linux-amd64
 	// and its .sha256); empty disables downloads.
 	AgentDir string

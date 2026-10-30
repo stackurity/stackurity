@@ -242,13 +242,20 @@ func serverCmd() *cobra.Command {
 			if !trustProxy && (os.Getenv("STACKURITY_TRUSTED_PROXIES") != "" || os.Getenv("STACKURITY_TRUSTED_PROXY_HEADER") != "") {
 				log.Warn("STACKURITY_TRUSTED_PROXIES and STACKURITY_TRUSTED_PROXY_HEADER apply only with STACKURITY_TRUST_PROXY=true")
 			}
+			legacyHosts, err := api.ParseLegacyHosts(os.Getenv("STACKURITY_LEGACY_HOSTS"), os.Getenv("STACKURITY_BASE_URL"))
+			if err != nil {
+				return err
+			}
+			if len(legacyHosts) > 0 {
+				log.Info("legacy hosts: dashboard pages redirect to the base URL, the API, webhooks and /mcp are served in place", "hosts", strings.Join(legacyHosts, ","))
+			}
 			coverageGaps := intel.CachedCoverageGaps(st, nil, intel.GapReportTTL)
 			srv := &api.Server{
 				OpenAIAppsChallenge: challenge,
 				Pro:                 proCfg,
 				Dispatcher:          dispatcher, AllowHTTPWebhooks: allowHTTPHooks, Plugins: pluginRunner,
 				Store: st, Log: log, Secrets: res, Version: version, SetupToken: setupToken,
-				BaseURL: os.Getenv("STACKURITY_BASE_URL"), AgentDir: os.Getenv("STACKURITY_AGENT_DIR"),
+				BaseURL: os.Getenv("STACKURITY_BASE_URL"), LegacyHosts: legacyHosts, AgentDir: os.Getenv("STACKURITY_AGENT_DIR"),
 				CookieSecure:       cookieSecure,
 				TrustProxy:         trustProxy,
 				TrustedProxyHeader: strings.TrimSpace(os.Getenv("STACKURITY_TRUSTED_PROXY_HEADER")),
@@ -367,7 +374,7 @@ func serverCmd() *cobra.Command {
 var editionAdminCommands []func() *cobra.Command
 
 // docsElsewhere marks a command documented outside this repository.
-const docsElsewhere = "stackurity.dev/docs-elsewhere"
+const docsElsewhere = "stackurity.ai/docs-elsewhere"
 
 // editionNotify lets an edition built on the core configure notifications
 // further (Stackurity Cloud sets the platform mail server for email sent by

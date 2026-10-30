@@ -18,7 +18,7 @@ import (
 	"github.com/stackurity/stackurity/internal/tenant"
 )
 
-// feedbackSink stands in for stackurity.dev/feedback.
+// feedbackSink stands in for stackurity.ai/feedback.
 type feedbackSink struct {
 	mu     sync.Mutex
 	bodies []map[string]any
