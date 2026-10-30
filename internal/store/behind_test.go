@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stackurity/stackurity/internal/store"
 )
@@ -21,7 +22,9 @@ func syncBehind(t *testing.T, s *store.Store, ctx context.Context, asset int64, 
 	if behind {
 		in = append(in, store.FindingInput{Kind: "vulnerability", Key: "behind:wordpress:6.5", InventoryID: r.ID, AssetID: asset,
 			ComponentID: r.ComponentID, Verification: "confirmed", Severity: "high", FixedVersion: "6.5.14", Sources: []string{"lifecycle:endoflife"},
-			Evidence: map[string]any{"product": "wordpress", "cycle": "6.5", "match": map[string]any{"rule": store.BehindRule}}})
+			Title: "WordPress 6.5.3 is 11 releases behind 6.5.14, the latest WordPress 6.5 release",
+			Evidence: map[string]any{"product": "wordpress", "cycle": "6.5", "match": map[string]any{"rule": store.BehindRule},
+				"group_title": "WordPress 6.5 sites behind 6.5.14"}})
 	}
 	if eol {
 		in = append(in, store.FindingInput{Kind: "end_of_life", Key: "wordpress:6.5", InventoryID: r.ID, AssetID: asset,
@@ -75,7 +78,8 @@ func TestBehindResolutions(t *testing.T) {
 }
 
 // An incident of behind findings says so in its detail, so a summary uses
-// its title rather than its key; others do not.
+// its title rather than its key, and its title is the release line's, not
+// one site's version; others are as before.
 func TestBehindIncident(t *testing.T) {
 	ctx, s := loopStore(t)
 	wp := ingestImage(t, s, ctx, "registry.example.com/wp/site:1", digestA, "pkg:generic/wordpress@6.5.3")
@@ -93,5 +97,45 @@ func TestBehindIncident(t *testing.T) {
 		if in.Behind() != (in.Key == "behind:wordpress:6.5") {
 			t.Errorf("%s: behind %v, detail %s", in.Key, in.Behind(), in.Detail)
 		}
+		if in.Behind() && in.Title != "WordPress 6.5 sites behind 6.5.14" {
+			t.Errorf("behind incident title %q", in.Title)
+		}
+	}
+}
+
+// A VEX statement about a behind finding's key is refused at import, as
+// written, padded or in upper case, for an image's subcomponent and
+// through an alias, even from a source trusted to apply on its own: it
+// matches nothing, says why, and the finding is never accepted.
+func TestVEXImportRefusesBehind(t *testing.T) {
+	ctx, s := loopStore(t)
+	img := ingestImage(t, s, ctx, "registry.example.com/shop/api:1", digestA, "pkg:generic/wordpress@6.5.3")
+	syncBehind(t, s, ctx, img, true, false)
+	product := imageProduct(digestA, "pkg:generic/wordpress@6.5.3")
+	for i, name := range []string{"behind:wordpress:6.5", "  behind:wordpress:6.5  ", "BEHIND:wordpress:6.5", "Behind:WordPress:6.5"} {
+		for _, auto := range []bool{false, true} {
+			doc := openVEX(time.Now().Add(time.Duration(i)*time.Second), name, "not_affected", notAffected, product)
+			res := importVEX(t, s, ctx, doc, auto)
+			refused := false
+			for _, p := range res.Problems {
+				refused = refused || strings.Contains(p.Reason, "not an advisory id")
+			}
+			if res.Matched != 0 || !refused {
+				t.Errorf("%q (auto %v): matched %d, problems %+v", name, auto, res.Matched, res.Problems)
+			}
+		}
+	}
+	// Named as an alias of another id: the alias is dropped, and the
+	// statement (about CVE-2099-1, which may yet be found in this
+	// component) does not reach the behind finding.
+	doc := `{"@context":"https://openvex.dev/ns/v0.2.0","@id":"urn:test:alias","author":"Vendor","timestamp":"` + time.Now().Format(time.RFC3339Nano) + `",
+		"statements":[{"vulnerability":{"name":"CVE-2099-1","aliases":["behind:wordpress:6.5"]},"products":[` + product + `],"status":"not_affected"` + notAffected + `}]}`
+	importVEX(t, s, ctx, doc, true)
+	if _, err := s.ApplyExceptions(ctx); err != nil {
+		t.Fatal(err)
+	}
+	f := one(t, s, ctx, img, "behind:wordpress:6.5")
+	if f.State == "risk_accepted" || f.VEX != nil {
+		t.Errorf("behind finding: state %s, vex %+v", f.State, f.VEX)
 	}
 }

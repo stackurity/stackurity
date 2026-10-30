@@ -733,8 +733,8 @@ func TestJiraValidationAndRendering(t *testing.T) {
 	// A behind finding's key names no advisory: the title is the summary
 	// (Jira, PagerDuty and ServiceNow all use it).
 	if got := issueSummary(store.Incident{Kind: "vulnerability", Key: "behind:wordpress:6.5", Priority: "P2", AssetCount: 2,
-		Title:  "WordPress 6.5.3 is 11 releases behind 6.5.14, the latest WordPress 6.5 release",
-		Detail: json.RawMessage(`{"components":["wordpress"],"behind":true}`)}); got != "[P2] WordPress 6.5.3 is 11 releases behind 6.5.14, the latest WordPress 6.5 release on 2 assets" {
+		Title:  "WordPress 6.5 sites behind 6.5.14",
+		Detail: json.RawMessage(`{"components":["wordpress"],"behind":true}`)}); got != "[P2] WordPress 6.5 sites behind 6.5.14 on 2 assets" {
 		t.Errorf("behind summary = %q", got)
 	}
 	if d := retryAfter("Wed, 21 Oct 2015 07:28:00 GMT", time.Date(2015, 10, 21, 7, 27, 0, 0, time.UTC), time.Minute); d != time.Minute {

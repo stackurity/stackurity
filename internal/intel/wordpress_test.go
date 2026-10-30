@@ -111,7 +111,8 @@ func TestWordPressCoreLifecycle(t *testing.T) {
 		_ = json.Unmarshal(f.Evidence, &ev)
 		m, _ := ev["match"].(map[string]any)
 		if f.Kind != "vulnerability" || f.Key != "behind:wordpress:6.5" || f.Title != want.title || f.Severity != want.severity ||
-			f.FixedVersion != "6.5.14" || f.Verification != "confirmed" || ev["releases_behind"] != want.n || m["rule"] != "behind_latest_release" {
+			f.FixedVersion != "6.5.14" || f.Verification != "confirmed" || ev["releases_behind"] != want.n || m["rule"] != "behind_latest_release" ||
+			ev["group_title"] != "WordPress 6.5 sites behind 6.5.14" {
 			t.Errorf("finding %+v, evidence %s", f, f.Evidence)
 		}
 	}

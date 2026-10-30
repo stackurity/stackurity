@@ -598,7 +598,8 @@ func (s *Store) CorrelateIncidents(ctx context.Context) error {
 		stmts := []string{
 			`CREATE TEMP TABLE active_groups ON COMMIT DROP AS
 			 SELECT f.kind, f.key, a.owner_team_id,
-			   (array_agg(f.title ORDER BY f.priority_score DESC))[1] AS title,
+			   COALESCE((array_agg(f.evidence->>'group_title' ORDER BY f.priority_score DESC) FILTER (WHERE NOT (` + notBehind + `)))[1],
+			     (array_agg(f.title ORDER BY f.priority_score DESC))[1]) AS title,
 			   min(f.priority) AS priority, bool_or(f.sos) AS sos,
 			   CASE WHEN bool_or(f.state = 'new') THEN 'new' WHEN bool_or(f.state = 'acknowledged') THEN 'acknowledged' ELSE 'in_progress' END AS state,
 			   count(*) AS finding_count, count(DISTINCT f.asset_id) AS asset_count,

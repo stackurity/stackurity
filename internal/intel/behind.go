@@ -64,7 +64,11 @@ func behindFinding(r store.EvalRow, c *store.LifecycleCycle) *store.FindingInput
 		releases = "release"
 	}
 	ev := map[string]any{"product": c.Product, "cycle": c.Cycle, "latest_in_cycle": c.Latest, "releases_behind": n,
-		"feed": FeedEndOfLife, "source": FeedEndOfLife, "link": c.Link, "match": map[string]any{"rule": behindRule}}
+		"feed": FeedEndOfLife, "source": FeedEndOfLife, "link": c.Link, "match": map[string]any{"rule": behindRule},
+		// The incident grouping the line's findings across sites, whose
+		// installed versions differ (store.CorrelateIncidents). "Sites":
+		// WordPress is the only product listed.
+		"group_title": fmt.Sprintf("%s %s sites behind %s", label, c.Cycle, c.Latest)}
 	if c.LatestDate != nil {
 		ev["latest_date"] = c.LatestDate.Format("2006-01-02")
 	}
