@@ -760,6 +760,11 @@ func (e *env) dumpState() {
 		`SELECT name || ' started=' || COALESCE(last_started_at::text, '-') || ' finished=' || COALESCE(last_finished_at::text, '-') ||
 		   ' error=' || COALESCE(last_error, '') FROM periodic_tasks ORDER BY name`,
 		`SELECT f.id || ' ' || f.key || ' ' || f.status || ' ' || COALESCE(f.resolution, '') FROM findings f ORDER BY f.id`,
+		`SELECT id || ' ' || kind || ' ' || COALESCE(dedupe_key, '') || ' attempts=' || attempts || ' run_at=' || run_at::text ||
+		   ' done=' || COALESCE(done_at::text, '-') || ' failed=' || COALESCE(failed_at::text, '-') || ' error=' || COALESCE(last_error, '')
+		   FROM jobs ORDER BY id`,
+		`SELECT id || ' ' || name || ' evaluated=' || COALESCE(evaluated_at::text, '-') || ' announced=' || COALESCE(announced_at::text, '-')
+		   FROM assets ORDER BY id`,
 	} {
 		rows, err := e.db.Query(ctx, q)
 		if err != nil {

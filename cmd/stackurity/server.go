@@ -1133,12 +1133,7 @@ func registerIntel(w *worker.Worker, st *store.Store, dataDir string, log *slog.
 		// The evaluation, and the priorities of what it found, run under the
 		// workspace's evaluation lock: the dispatcher's upkeep of the same
 		// findings waits for it rather than lock them in another order.
-		release, err := st.LockEvaluations(ctx)
-		if errors.Is(err, store.ErrEvaluationBusy) {
-			// Another evaluation of this workspace runs: try again shortly,
-			// leaving the worker slot to other jobs meanwhile.
-			return worker.Defer(5*time.Second+mrand.N(10*time.Second), "another evaluation of this workspace is running")
-		}
+		release, err := lockForEvaluation(ctx, st, evaluationLockWait)
 		if err != nil {
 			return err
 		}
@@ -1250,4 +1245,24 @@ func envOrFile(name string) (string, error) {
 		v = string(b)
 	}
 	return strings.TrimSpace(v), nil
+}
+
+// evaluationLockWait is how long an evaluation job waits in line for its
+// workspace's evaluation lock before it gives up and is deferred.
+const evaluationLockWait = 30 * time.Second
+
+// lockForEvaluation takes the workspace's evaluation lock for an evaluation
+// job, waiting in line up to wait. The dispatcher's tick holds the lock for
+// its upkeep every Alerts interval and also waits in line for it. An
+// evaluation that only tried the lock and, finding it held, retried 5 to 15
+// seconds later could keep landing inside a tick and never run; the asset
+// it was for is then never announced. Waiting in line, it gets the lock
+// when the current holder releases it, ahead of the next tick. When another
+// evaluation holds the lock longer than wait, the job is deferred.
+func lockForEvaluation(ctx context.Context, st *store.Store, wait time.Duration) (func(), error) {
+	release, err := st.LockEvaluationsWait(ctx, wait)
+	if errors.Is(err, store.ErrEvaluationBusy) {
+		return nil, worker.Defer(5*time.Second+mrand.N(10*time.Second), "another evaluation of this workspace is running")
+	}
+	return release, err
 }

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
 )
 
@@ -38,10 +39,26 @@ func TestTickWaitsForEvaluation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	start := time.Now()
-	f.tick()
-	if waited := time.Since(start); waited < tickLockWait {
-		t.Errorf("the tick waited %s for the evaluation, want %s", waited, tickLockWait)
+	// The tick waits in line for the evaluation's lock (seen in pg_locks:
+	// a waiter, not a try that gives up at once), then gives up on its own
+	// at tickLockWait. Its wait is timed by Postgres (lock_timeout), whose
+	// clock need not agree with this process's, so it is not timed here.
+	ticked := make(chan error, 1)
+	go func() { ticked <- f.d.Tick(ctx) }()
+	deadline := time.Now().Add(30 * time.Second)
+	for !waitingForEvaluationLock(t, f.st, tenant.DefaultWorkspace) {
+		select {
+		case err := <-ticked:
+			t.Fatalf("the tick returned without waiting for the evaluation: %v", err)
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the tick never waited for the evaluation")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err := <-ticked; err != nil {
+		t.Fatal(err)
 	}
 	if p := priority(); p != "P4" {
 		t.Errorf("the priority pass ran during an evaluation: %s", p)
@@ -57,4 +74,18 @@ func TestTickWaitsForEvaluation(t *testing.T) {
 	if n := f.d.skipped(tenant.DefaultWorkspace, false); n != 0 {
 		t.Errorf("skips not reset: %d", n)
 	}
+}
+
+// waitingForEvaluationLock reports whether a session waits for the
+// workspace's evaluation lock (an advisory lock not granted).
+func waitingForEvaluationLock(t *testing.T, st *store.Store, ws int64) bool {
+	t.Helper()
+	var waiting bool
+	if err := st.Pool.QueryRow(context.Background(), `SELECT EXISTS (SELECT 1 FROM pg_locks
+		WHERE locktype = 'advisory' AND NOT granted
+		  AND ((classid::bigint << 32) | objid::bigint) = hashtextextended('stackurity.evaluate:' || current_schema() || ':' || $1::bigint, 0))`,
+		ws).Scan(&waiting); err != nil {
+		t.Fatal(err)
+	}
+	return waiting
 }
