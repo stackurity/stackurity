@@ -304,10 +304,11 @@ func TestWordPressSite(t *testing.T) {
 	blog := s.ScanApp(context.Background(), "/var/www/blog")
 	m := purls(blog.Observations)
 	for p, loc := range map[string]string{
-		"pkg:npm/jquery@3.7.1":    "/var/www/blog/wp-includes/js/jquery/jquery.min.js",
-		"pkg:npm/select2@4.0.13":  "/var/www/blog/wp-content/plugins/contact/assets/js/select2.min.js",
-		"pkg:npm/bootstrap@4.3.1": "/var/www/blog/wp-content/themes/twenty/header.php",
-		"pkg:npm/tinymce@4.9.11":  "/var/www/blog/wp-includes/js/tinymce/tinymce.min.js",
+		"pkg:npm/jquery@3.7.1":        "/var/www/blog/wp-includes/js/jquery/jquery.min.js",
+		"pkg:npm/select2@4.0.13":      "/var/www/blog/wp-content/plugins/contact/assets/js/select2.min.js",
+		"pkg:npm/bootstrap@4.3.1":     "/var/www/blog/wp-content/themes/twenty/header.php",
+		"pkg:npm/tinymce@4.9.11":      "/var/www/blog/wp-includes/js/tinymce/tinymce.min.js",
+		"pkg:generic/wordpress@6.4.2": "/var/www/blog/wp-includes/version.php",
 	} {
 		if o, ok := m[p]; !ok || o.Location != loc {
 			t.Errorf("%s = %+v; have %v", p, o, keys(m))
@@ -320,12 +321,19 @@ func TestWordPressSite(t *testing.T) {
 			t.Errorf("%s: confidence %s, evidence %v", p, o.Confidence, o.Evidence)
 		}
 	}
-	if blog.Name != "blog" || len(m) != 4 {
+	if blog.Name != "blog" || len(m) != 5 {
 		t.Errorf("blog %q: %v", blog.Name, keys(m))
 	}
 	validate(t, blog)
-	if _, ok := purls(s.ScanApp(context.Background(), "/var/www/shop").Observations)["pkg:npm/jquery@3.6.0"]; !ok {
+	shop := purls(s.ScanApp(context.Background(), "/var/www/shop").Observations)
+	if _, ok := shop["pkg:npm/jquery@3.6.0"]; !ok {
 		t.Error("shop: jquery below public/ missing")
+	}
+	if o := shop["pkg:generic/wordpress@5.8.1"]; o.Location != "/var/www/shop/public/wp-includes/version.php" {
+		t.Errorf("shop: WordPress core below public/ = %+v; have %v", o, keys(shop))
+	}
+	if _, ok := purls(s.ScanApp(context.Background(), "/srv/press").Observations)["pkg:generic/wordpress@6.0.0"]; !ok {
+		t.Error("press: WordPress core missing")
 	}
 }
 

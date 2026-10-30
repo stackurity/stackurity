@@ -64,6 +64,7 @@ func (s *Store) VulnerabilitySourceGaps(ctx context.Context) ([]GapRow, error) {
 		    WHEN c.type = 'generic' AND i.evidence->>'registry_view' IS NOT NULL THEN 'windows_program'
 		    WHEN i.coverage_reason LIKE 'built by %, not by the distribution%' THEN 'vendor_build|' || substring(i.coverage_reason from '^built by (.*?), not by the distribution')
 		    WHEN i.coverage_reason LIKE 'runtime installed outside a package manager%' THEN 'runtime'
+		    WHEN i.coverage_reason LIKE 'content management system core%' THEN 'cms'
 		    WHEN i.coverage_reason LIKE 'Kubernetes component%' THEN 'kubernetes'
 		    WHEN i.coverage_reason LIKE 'managed service%' THEN 'managed_service'
 		    WHEN i.coverage_reason LIKE '%have no vulnerability source%' OR i.coverage_reason LIKE '%has no vulnerability source%' THEN 'distribution'
@@ -96,7 +97,7 @@ type LifecycleCandidate struct {
 // LifecycleCandidates returns current inventory that the lifecycle matcher
 // could map: components whose versionless purl is one of keys, matches a
 // LIKE pattern in likes or the regular expression re, and generic runtime,
-// operating-system, Kubernetes and managed-service rows.
+// operating-system, CMS (WordPress core), Kubernetes and managed-service rows.
 func (s *Store) LifecycleCandidates(ctx context.Context, keys, likes []string, re string) ([]LifecycleCandidate, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT c.type, c.purl_key, i.version, COALESCE(i.evidence->>'kind', ''),
 		  array_agg(DISTINCT i.asset_id ORDER BY i.asset_id), array_agg(DISTINCT a.workspace_id ORDER BY a.workspace_id)
@@ -106,7 +107,7 @@ func (s *Store) LifecycleCandidates(ctx context.Context, keys, likes []string, r
 		JOIN workspaces w ON w.id = a.workspace_id AND w.disabled_at IS NULL
 		WHERE i.removed_at IS NULL AND (
 		  lower(c.purl_key) = ANY($1) OR lower(c.purl_key) LIKE ANY($2) OR c.purl_key ~ $3
-		  OR (c.type = 'generic' AND i.evidence->>'kind' IN ('runtime', 'operating-system', 'kubernetes', 'managed-service')))
+		  OR (c.type = 'generic' AND i.evidence->>'kind' IN ('runtime', 'operating-system', 'cms', 'kubernetes', 'managed-service')))
 		GROUP BY 1, 2, 3, 4`, keys, likes, re)
 	if err != nil {
 		return nil, err

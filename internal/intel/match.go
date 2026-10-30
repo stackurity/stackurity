@@ -198,6 +198,10 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 			// The OS itself is covered by lifecycle, its packages by the distro feed.
 		case r.Type == "generic" && r.Evidence["kind"] == "runtime":
 			unsupported("runtime installed outside a package manager: lifecycle is tracked, vulnerabilities are not matched")
+		case r.Type == "generic" && r.Evidence["kind"] == "cms":
+			// WordPress core: no vulnerability source used here lists it
+			// (OSV has no WordPress ecosystem).
+			unsupported("content management system core: lifecycle is tracked, vulnerabilities are not matched (no vulnerability source lists it)")
 		case r.Type == "generic" && r.Evidence["kind"] == "kubernetes":
 			unsupported("Kubernetes component reported by the API server: lifecycle is tracked, vulnerabilities are not matched")
 		case r.Type == "generic" && r.Evidence["kind"] == "managed-service":

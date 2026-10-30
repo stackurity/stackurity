@@ -831,7 +831,7 @@ export const STACK_ROLES = ["self", "host", "cluster", "source", "image", "depen
 export type StackRole = (typeof STACK_ROLES)[number];
 
 /** Layers in the order the API returns them: most exposed first. */
-export const STACK_LAYERS = ["web_server", "os", "runtime", "data_store", "libraries", "declared", "managed_service", "platform", "other"] as const;
+export const STACK_LAYERS = ["web_server", "cms", "os", "runtime", "data_store", "libraries", "declared", "managed_service", "platform", "other"] as const;
 export type StackLayerName = (typeof STACK_LAYERS)[number];
 
 export interface StackMember {

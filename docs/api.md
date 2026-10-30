@@ -500,7 +500,7 @@ Removes a relation.
 
 **Who:** viewer
 
-Everything the asset relies on, followed through relations (up to three hops), with open findings grouped by layer (`web_server`, `os`, `runtime`, `data_store`, `libraries`, `declared`, `managed_service`, `platform`, `other`). For an application: its hosts, repository, images and dependencies; for a host, its applications; for a cluster, its workloads and images.
+Everything the asset relies on, followed through relations (up to three hops), with open findings grouped by layer (`web_server`, `cms`, `os`, `runtime`, `data_store`, `libraries`, `declared`, `managed_service`, `platform`, `other`). For an application: its hosts, repository, images and dependencies; for a host, its applications; for a cluster, its workloads and images.
 
 ### `GET /assets/{id}/drift`
 

@@ -445,6 +445,11 @@ func versionSource(inv store.InventoryProvenance) string {
 		if u := inv.Evidence["url"]; u != "" {
 			return fmt.Sprintf("the CDN address %s in %s", u, orUnknown(inv.Location))
 		}
+	case "version-file":
+		// A CMS's own release file (WordPress's wp-includes/version.php).
+		if p := inv.Evidence["product"]; p != "" && inv.Location != "" {
+			return p + ", read from " + inv.Location
+		}
 	case "vendored":
 		if inv.Location != "" && inv.Evidence["bundled_with"] != "" {
 			return "the version banner of " + inv.Location + ", a copy " + inv.Evidence["bundled_with"] + " maintains"
