@@ -20,10 +20,3 @@ SELECT set_config('stackurity.scope', 'system', true);
 
 ALTER TABLE advisories ADD COLUMN IF NOT EXISTS upstream text[] NOT NULL DEFAULT '{}';
 ALTER TABLE findings ADD COLUMN IF NOT EXISTS epss_cve text;
-
--- The findings list's epss_min filter starts from the CVEs at or above the
--- minimum (few) and finds their findings by this expression, as it found
--- them by key (findings_key) before. epss_cve changes rarely, so updates of
--- a finding's priority still leave the index alone. Building it holds a
--- write lock on findings for a few seconds on a large installation.
-CREATE INDEX IF NOT EXISTS findings_epss_cve ON findings ((COALESCE(epss_cve, key)));

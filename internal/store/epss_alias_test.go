@@ -220,3 +220,92 @@ func TestPrioritizeEPSSThroughAliases(t *testing.T) {
 		t.Errorf("preview: %d stored priorities differ, %v", pv.StoredDiffers, err)
 	}
 }
+
+// The CVE a finding uses (epss_cve) is chosen again when it stops being one
+// of the finding's CVEs or loses its score: the finding moves to the
+// highest-scored CVE it still has, the stickiness notwithstanding. A
+// withdrawn advisory's CVEs do not count.
+func TestPrioritizeEPSSCVEGone(t *testing.T) {
+	ctx, s := aliasFixture(t)
+	sys := tenant.System(context.Background())
+	p := risk.DefaultPolicy()
+	mod := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	state := func() (cve string, stored *string, epss *float32) {
+		t.Helper()
+		fs, _, err := s.ListFindings(ctx, store.FindingFilter{Key: "CVE-2024-1000"})
+		if err != nil || len(fs) != 1 {
+			t.Fatalf("RHSA finding: %d %v", len(fs), err)
+		}
+		if fs[0].EPSSCVE != nil {
+			cve = *fs[0].EPSSCVE
+		}
+		if err := s.Pool.QueryRow(ctx, `SELECT epss_cve FROM findings WHERE id = $1`, fs[0].ID).Scan(&stored); err != nil {
+			t.Fatal(err)
+		}
+		return cve, stored, fs[0].EPSS
+	}
+	pass := func() {
+		t.Helper()
+		if _, err := s.Prioritize(ctx, p, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	upsertRHSA := func(upstream ...string) {
+		t.Helper()
+		if _, err := s.UpsertAdvisories(sys, "osv:Red Hat", []*osv.Vulnerability{{ID: "RHSA-2024:0001", Upstream: upstream, Modified: mod}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	setEPSS(t, s, "2026-10-01", map[string]float32{"CVE-2024-1000": 0.01, "CVE-2024-1001": 0.5, "CVE-2024-1002": 0.2})
+	pass()
+	if cve, stored, _ := state(); cve != "CVE-2024-1001" || stored == nil || *stored != "CVE-2024-1001" {
+		t.Fatalf("start: EPSS from %q (stored %v)", cve, stored)
+	}
+
+	// The advisory drops CVE-2024-1001: the finding moves to the highest
+	// it still has, CVE-2024-1002.
+	upsertRHSA("CVE-2024-1000", "CVE-2024-1002")
+	pass()
+	if cve, stored, epss := state(); cve != "CVE-2024-1002" || stored == nil || *stored != "CVE-2024-1002" || epss == nil || *epss != 0.2 {
+		t.Errorf("alias removed: EPSS %v from %q (stored %v)", epss, cve, stored)
+	}
+
+	// CVE-2024-1002 loses its score: back to the key, the only one scored.
+	setEPSS(t, s, "2026-10-02", map[string]float32{"CVE-2024-1000": 0.05, "CVE-2024-1001": 0.5})
+	pass()
+	if cve, stored, epss := state(); cve != "CVE-2024-1000" || stored != nil || epss == nil || *epss != 0.05 {
+		t.Errorf("score gone: EPSS %v from %q (stored %v)", epss, cve, stored)
+	}
+
+	// A second advisory of the finding lists a highly scored CVE; once it is
+	// withdrawn, that CVE no longer counts.
+	dsa := &osv.Vulnerability{ID: "DSA-9999-1", Upstream: []string{"CVE-2024-1003"}, Modified: mod}
+	if err := s.EnsureFeed(sys, "osv:Debian", "vulnerability", time.Hour, 6*time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.UpsertAdvisories(sys, "osv:Debian", []*osv.Vulnerability{dsa}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Pool.Exec(sys, `UPDATE findings SET sources = sources || '{DSA-9999-1}' WHERE key = 'CVE-2024-1000'`); err != nil {
+		t.Fatal(err)
+	}
+	setEPSS(t, s, "2026-10-03", map[string]float32{"CVE-2024-1000": 0.05, "CVE-2024-1003": 0.9})
+	pass()
+	if cve, _, _ := state(); cve != "CVE-2024-1003" {
+		t.Fatalf("second advisory: EPSS from %q", cve)
+	}
+	withdrawn := time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC)
+	dsa.Withdrawn, dsa.Modified = &withdrawn, withdrawn
+	if _, err := s.UpsertAdvisories(sys, "osv:Debian", []*osv.Vulnerability{dsa}); err != nil {
+		t.Fatal(err)
+	}
+	pass()
+	if cve, stored, epss := state(); cve != "CVE-2024-1000" || stored != nil || epss == nil || *epss != 0.05 {
+		t.Errorf("advisory withdrawn: EPSS %v from %q (stored %v)", epss, cve, stored)
+	}
+	fs, total, err := s.ListFindings(ctx, store.FindingFilter{EPSSMin: 0.5})
+	if err != nil || total != 0 || len(fs) != 0 {
+		t.Errorf("epss_min 0.5 after the withdrawal: %d findings, %v", total, err)
+	}
+}

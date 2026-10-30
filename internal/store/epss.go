@@ -31,13 +31,12 @@ type EPSSScore struct {
 // never match an EPSS score.
 func findingCVEs(x string) string {
 	return `(SELECT ` + x + `.key AS cve UNION
-	  SELECT unnest(ad.aliases || ad.upstream) FROM advisories ad WHERE ad.id = ANY(` + x + `.sources)) fc`
+	  SELECT unnest(ad.aliases || ad.upstream) FROM advisories ad WHERE ad.id = ANY(` + x + `.sources) AND ad.withdrawn IS NULL) fc`
 }
 
 // findingEPSSCVE is the CVE whose EPSS finding f uses: the one prioritisation
 // chose among its CVEs (findings.epss_cve, see chooseEPSS), else its key.
-// Reading its score is one primary-key lookup in epss_scores, and the
-// findings that use a CVE are found by the index findings_epss_cve.
+// Reading its score is one primary-key lookup in epss_scores.
 const findingEPSSCVE = `COALESCE(f.epss_cve, f.key)`
 
 // EPSSSwitch and EPSSSwitchPoints say how much higher another of a
