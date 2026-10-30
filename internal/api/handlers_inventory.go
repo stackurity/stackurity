@@ -439,7 +439,7 @@ func (s *Server) inventory(w http.ResponseWriter, r *http.Request, f store.Inven
 // known vulnerability.
 func (s *Server) inventoryUpdates(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	f := store.UpdatesFilter{AssetID: qInt(r, "asset_id"), UpdateType: q.Get("update_type"), Limit: int(qInt(r, "limit"))}
+	f := store.UpdatesFilter{AssetID: qInt(r, "asset_id"), UpdateType: q.Get("update_type"), Limit: int(min(max(qInt(r, "limit"), 0), 100))}
 	switch f.UpdateType {
 	case "", "any", "patch", "minor", "major":
 	default:
