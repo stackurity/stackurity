@@ -75,6 +75,11 @@ type Program struct {
 	// lines install side by side (.NET 8 and 9, Python 3.12 and 3.13): each
 	// line is updated on its own, so the action plan has one update per line.
 	SideBySide string `json:"side_by_side,omitempty"`
+	// ExtendedParity is "even" or "odd" for a program whose extended-support
+	// line has majors of that parity only (Edge's Extended Stable is even):
+	// only such majors are taken as succeeding one another when the
+	// Security Update Guide lists them next to a higher major.
+	ExtendedParity string `json:"extended_parity,omitempty"`
 	// CoverageNote is shown on every evaluated row of the program: what its
 	// source is known not to cover (NVD's backlog for the product).
 	CoverageNote string `json:"coverage_note,omitempty"`
@@ -281,6 +286,9 @@ func Parse(b []byte) (*Catalogue, error) {
 				return nil, fail(err)
 			}
 			p.versionMatch = re
+		}
+		if p.ExtendedParity != "" && p.ExtendedParity != "even" && p.ExtendedParity != "odd" {
+			return nil, fail(fmt.Errorf("extended_parity %q is not even or odd", p.ExtendedParity))
 		}
 		if p.SideBySide != "" && p.SideBySide != "major" && p.SideBySide != "major.minor" {
 			return nil, fail(fmt.Errorf("side_by_side %q is not major or major.minor", p.SideBySide))

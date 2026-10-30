@@ -255,6 +255,7 @@ func TestParseRefuses(t *testing.T) {
 		"msrc elsewhere":  entry(`"version":{"pattern":"^(\\d+)$","format":"$1"},"source":{"type":"msrc"},"update":"u"`),
 		"mfsa product":    entry(`"version":{"pattern":"^(\\d+)$","format":"$1"},"source":{"type":"mfsa","products":["Firefox for iOS"]},"update":"u"`),
 		"date":            strings.Replace(entry(good), "2026-10-30", "soon", 1),
+		"parity":          entry(good + `,"extended_parity":"third"`),
 	} {
 		if _, err := Parse([]byte(doc)); err == nil {
 			t.Errorf("%s: accepted", name)

@@ -19,6 +19,7 @@ Each release's section is published as its GitHub release notes, and a tag witho
 ### Fixed
 
 - **Front-end libraries: more inline scripts read as JavaScript.** A `<script>` whose type carries parameters (`text/javascript; charset=utf-8`), or is `text/ecmascript` or `application/x-javascript`, was taken for a template, so a CDN address in a comment inside it was reported as loaded; its comments are now removed. A `data-type=` attribute, or `?type=` in the script's address, is no longer read as its type.
+- **Edge: a superseded Stable major no longer counts as a new Extended Stable.** Microsoft's Security Update Guide sometimes lists an old Stable major once next to a higher one (151 on 08-11 and 153 on 09-18 in 2026). That counted as Extended Stable moving on, so the superseded major's hosts were not reported for up to 8 weeks, and the real Extended Stable's hosts were reported for Stable-only fixes. Only even majors are taken as Extended Stable now (catalogue `extended_parity`). .NET is unchanged.
 
 ### Upgrading
 

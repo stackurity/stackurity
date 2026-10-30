@@ -519,14 +519,14 @@ func TestCoListedGrace(t *testing.T) {
 		{152, "2026-10-27", 0, false},             // Mozilla: no grace
 		{154, "2026-09-01", coListedGrace, false}, // never listed
 	} {
-		if got := dates.patchedSince("microsoft-edge", day(c.cve), c.grace)(c.major); got != c.want {
+		if got := dates.patchedSince("microsoft-edge", day(c.cve), c.grace, extendedLines("microsoft-edge"))(c.major); got != c.want {
 			t.Errorf("%d for a CVE of %s (grace %v): %v", c.major, c.cve, c.grace, got)
 		}
 	}
 	// Through lineFixRanges: a Stable-only fix on 10-27.
 	stable := []string{"156.0.4314.42"}
 	v := &osv.Vulnerability{ID: "x", Affected: lineEntries("Windows programs:p", "p",
-		lineFixRanges(stable, dates.patchedSince("microsoft-edge", day("2026-10-27"), coListedGrace)))}
+		lineFixRanges(stable, dates.patchedSince("microsoft-edge", day("2026-10-27"), coListedGrace, extendedLines("microsoft-edge"))))}
 	if hit, _, unlisted := lineVerdict(t, v, "152.0.4191.137"); hit || !unlisted {
 		t.Errorf("Extended Stable in the gap: affected %v unlisted %v", hit, unlisted)
 	}
@@ -554,17 +554,73 @@ func TestCoListedTakeover(t *testing.T) {
 		{152, "2026-11-05", true},  // before 154 appeared: 152's grace
 		{154, "2026-11-05", true},  // listed after the CVE (11-10): still updated, the base rule
 	} {
-		if got := dates.patchedSince("microsoft-edge", day(c.cve), coListedGrace)(c.major); got != c.want {
+		if got := dates.patchedSince("microsoft-edge", day(c.cve), coListedGrace, extendedLines("microsoft-edge"))(c.major); got != c.want {
 			t.Errorf("%d for a CVE of %s: %v, want %v", c.major, c.cve, got, c.want)
 		}
 	}
 	// A Stable-only fix (156) on 11-12: confirmed on 152, a note on 154.
 	v := &osv.Vulnerability{ID: "x", Affected: lineEntries("Windows programs:p", "p",
-		lineFixRanges([]string{"156.0.4400.10"}, dates.patchedSince("microsoft-edge", day("2026-11-12"), coListedGrace)))}
+		lineFixRanges([]string{"156.0.4400.10"}, dates.patchedSince("microsoft-edge", day("2026-11-12"), coListedGrace, extendedLines("microsoft-edge"))))}
 	if hit, fix, _ := lineVerdict(t, v, "152.0.4191.140"); !hit || fix != "156.0.4400.10" {
 		t.Errorf("152 after the takeover: affected %v fix %s", hit, fix)
 	}
 	if hit, _, unlisted := lineVerdict(t, v, "154.0.4258.80"); hit || !unlisted {
 		t.Errorf("154, the new Extended Stable: affected %v unlisted %v", hit, unlisted)
+	}
+}
+
+// A superseded Stable major listed once next to a higher one (153 on 10-01)
+// after Extended Stable's last listing is not a takeover for Edge, whose
+// Extended Stable majors are even: Extended Stable 152 keeps its grace, and
+// 153 hosts stay reported. A program without extended_parity (.NET) keeps
+// the plain rule, under which 153 does take over.
+func TestCoListedSupersededStable(t *testing.T) {
+	day := func(s string) time.Time { d, _ := time.Parse("2006-01-02", s); return d }
+	if extendedLines("microsoft-edge") == nil || extendedLines("dotnet-runtime") != nil {
+		t.Fatal("Edge has extended_parity even, .NET none")
+	}
+	dates := lineDates{}
+	dates.note("microsoft-edge", 152, day("2026-09-14"))
+	dates.note("microsoft-edge", 152, day("2026-09-28"))
+	dates.note("microsoft-edge", 153, day("2026-10-01"))
+	cve := day("2026-10-05") // fixed on Stable (155) only
+	edge := extendedLines("microsoft-edge")
+	if !dates.patchedSince("microsoft-edge", cve, coListedGrace, edge)(152) {
+		t.Error("Extended Stable 152 must keep its grace")
+	}
+	if dates.patchedSince("microsoft-edge", cve, coListedGrace, edge)(153) {
+		t.Error("superseded Stable 153, listed once, must not get the grace")
+	}
+	v := &osv.Vulnerability{ID: "x", Affected: lineEntries("Windows programs:p", "p",
+		lineFixRanges([]string{"155.0.4283.60"}, dates.patchedSince("microsoft-edge", cve, coListedGrace, edge)))}
+	if hit, fix, _ := lineVerdict(t, v, "153.0.4200.10"); !hit || fix != "155.0.4283.60" {
+		t.Errorf("153 host: affected %v fix %s", hit, fix)
+	}
+	if hit, _, unlisted := lineVerdict(t, v, "152.0.4191.137"); hit || !unlisted {
+		t.Errorf("152 host: affected %v unlisted %v", hit, unlisted)
+	}
+	// Without extended_parity: unchanged (153 takes over from 152).
+	if dates.patchedSince("microsoft-edge", cve, coListedGrace, nil)(152) || !dates.patchedSince("microsoft-edge", cve, coListedGrace, nil)(153) {
+		t.Error("the rule without extended_parity changed")
+	}
+	// The real 2026 listings: 151 (08-11) and 153 (09-18) once each, both
+	// odd; 150 (even) earlier, then 152 from 09-14. A CVE on 09-16 fixed on
+	// Stable only: 152 took over from 150 and has the grace; 153 and 151 not.
+	real := lineDates{}
+	real.note("microsoft-edge", 150, day("2026-06-02"))
+	real.note("microsoft-edge", 150, day("2026-07-14"))
+	real.note("microsoft-edge", 151, day("2026-08-11"))
+	real.note("microsoft-edge", 152, day("2026-09-14"))
+	real.note("microsoft-edge", 153, day("2026-09-18"))
+	for major, want := range map[int]bool{152: true, 151: false, 150: false} {
+		if got := real.patchedSince("microsoft-edge", day("2026-09-16"), coListedGrace, edge)(major); got != want {
+			t.Errorf("%d for a CVE of 09-16: %v, want %v", major, got, want)
+		}
+	}
+	if real.patchedSince("microsoft-edge", day("2026-09-20"), coListedGrace, edge)(153) {
+		t.Error("153 for a CVE of 09-20: listed once, odd: no grace")
+	}
+	if !real.patchedSince("microsoft-edge", day("2026-09-20"), coListedGrace, edge)(152) {
+		t.Error("152 for a CVE of 09-20: 153 must not end its grace")
 	}
 }
