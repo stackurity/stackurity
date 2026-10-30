@@ -1771,7 +1771,7 @@ Schema changes follow semantic versioning on `schema_version`. A breaking change
 
 A finding is one issue on one inventory row:
 
-- `kind` is `vulnerability` or `end_of_life`.
+- `kind` is `vulnerability` or `end_of_life`. A WordPress core version behind its supported release line's latest release is a `vulnerability` finding with no advisory: its `evidence.match.rule` is `behind_latest_release`, its `key` is `behind:wordpress:<line>`, its `sources` are `["lifecycle:endoflife"]`, its `fixed_version` is the line's latest release, and its evidence names `latest_in_cycle` and `releases_behind`. Counts by kind (the findings summary's `by_kind`, the fix plan summary's `by_kind`) include these under `vulnerability`; they are never exported as VEX statements.
 - `key` is the deduplication key. For vulnerabilities it is the lowest CVE among the advisory's id and aliases, otherwise the advisory id. For lifecycle findings it is `product:cycle`. GHSA, OSV and distro advisories for the same CVE become one finding, and `sources` lists all of them.
 - `verification` says how much the finding can be trusted: `confirmed`, `needs_validation`, `stale` or `rejected`, defined in [verification.md, "Evidence states"](verification.md#evidence-states). A confirmed finding is a confirmed advisory match, not a confirmed exploit.
 - `GET /findings/{id}` and `GET /findings/{id}/explain` include `why`: one `sentence` saying why it matched (installed version and where it was read, the advisory range and version rules, the source and its last refresh, the fix), with the evidence state, `missing_information` and the independent `second_check`. See [verification.md, "Why it matched"](verification.md#why-it-matched).
@@ -1798,7 +1798,7 @@ A resolved finding has a `resolution` sentence and a machine-readable `resolutio
 | `not_evaluated` | The row could no longer be evaluated (its feed was disabled, or the version could not be compared) | no |
 | `other` | A resolution recorded before 0.13 that could not be classified | no |
 
-The `resolution` sentence gives the facts, for example "fixed by remediation plan #N (upgraded to V)", "advisory withdrawn by Ubuntu on 2026-10-27" or "advisory updated: UBUNTU-CVE-2026-2 no longer lists mysql-8.0 8.0.42". Reports count only `remediated` and `removed` as remediation. `GET /findings?status=resolved&resolution_kind=advisory_withdrawn,advisory_changed` lists the others. The matcher's `resolved` history events carry the kind and facts in `detail`.
+The `resolution` sentence gives the facts, for example "fixed by remediation plan #N (upgraded to V)", "advisory withdrawn by Ubuntu on 2026-10-27" or "advisory updated: UBUNTU-CVE-2026-2 no longer lists mysql-8.0 8.0.42". A WordPress `behind_latest_release` finding closes as `advisory_changed` with its own sentence and `resolution_detail.replaced_by`: "replaced by the end-of-life finding: wordpress 6.5 reached end of life" (`end_of_life`), "replaced by vulnerability matching: …" (`vulnerability_matching`, once a source evaluates the row), or "lifecycle data updated: … is no longer behind its release line's latest release". Reports count only `remediated` and `removed` as remediation. `GET /findings?status=resolved&resolution_kind=advisory_withdrawn,advisory_changed` lists the others. The matcher's `resolved` history events carry the kind and facts in `detail`.
 
 Findings also carry `display_state`, `regressed_at`, `until_fix`, `ignore_reason` and `exception_id`; see [The seven states](#the-seven-states).
 

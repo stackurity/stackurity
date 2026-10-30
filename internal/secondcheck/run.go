@@ -56,7 +56,7 @@ func (r *Runner) Run(ctx context.Context) (Stats, error) {
 		var out Outcome
 		m, _ := ev["match"].(map[string]any)
 		switch {
-		case c.Kind == "vulnerability" && m["rule"] == "behind_latest_release":
+		case c.Kind == "vulnerability" && m["rule"] == store.BehindRule:
 			// A version behind its release line's latest release, from the
 			// lifecycle data rather than an advisory (WordPress core).
 			product, _ := ev["product"].(string)

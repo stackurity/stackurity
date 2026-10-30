@@ -29,7 +29,7 @@ const (
 
 // behindRule is the matcher's rule for a version behind its release line's
 // latest release (internal/intel/behind.go).
-const behindRule = "behind_latest_release"
+const behindRule = store.BehindRule
 
 // NotAnExploit is said wherever a match could be read as more than it is.
 const NotAnExploit = "A confirmed match means the installed version is in the advisory's affected range. " +

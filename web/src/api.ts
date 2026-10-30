@@ -1037,6 +1037,10 @@ export interface FindingEvidence {
   link?: string;
   eol_date?: string;
   latest_in_cycle?: string;
+  // a vulnerability finding for a version behind its release line's latest
+  // release (WordPress core): match.rule "behind_latest_release"
+  releases_behind?: number;
+  latest_date?: string;
   // fix grouping hints
   not_running_kernel?: boolean;
   requires_ubuntu_pro?: boolean;

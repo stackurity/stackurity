@@ -72,16 +72,18 @@ func TestWordPressCoreLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(fs) != 1 || fs[0].Key != "wordpress:4.6" || fs[0].Kind != "end_of_life" || fs[0].Verification != "confirmed" ||
-		fs[0].Title != "WordPress 4.6 is end-of-life since 2025-07-31" {
+		fs[0].Title != "WordPress 4.6 is end-of-life since 2025-07-31" || fs[0].Severity != "high" {
 		t.Fatalf("4.6.3 findings = %+v", fs)
 	}
 	var evidence struct {
 		Product string         `json:"product"`
 		Latest  string         `json:"latest_in_cycle"`
+		Behind  int            `json:"releases_behind"`
 		Match   map[string]any `json:"match"`
 	}
+	// 27 releases behind 4.6.30 as well: high, as a behind finding would be.
 	if err := json.Unmarshal(fs[0].Evidence, &evidence); err != nil || evidence.Product != "wordpress" || evidence.Latest != "4.6.30" ||
-		evidence.Match["rule"] != "version_prefix" {
+		evidence.Behind != 27 || evidence.Match["rule"] != "version_prefix" {
 		t.Errorf("evidence = %s", fs[0].Evidence)
 	}
 	for name, id := range map[string]int64{"6.5.14": current, "6.9-RC1": rc, "7.2-alpha": dev, "nodejs 20.11.1": node} {
@@ -161,5 +163,34 @@ func TestWordPressCoreLifecycle(t *testing.T) {
 	}
 	if !cms || !line {
 		t.Errorf("coverage gaps: no vulnerability source %+v, no lifecycle %+v", rep.NoVulnerabilitySource, rep.NoLifecycle)
+	}
+
+	// 6.5 ends: the end-of-life finding replaces the behind finding, keeps
+	// its high severity, and the behind finding says why it closed.
+	up.set("/eol.json", strings.Replace(wordpressEOL, `{"name":"6.5","label":"6.5","releaseDate":"2024-04-02","isEol":false,`,
+		`{"name":"6.5","label":"6.5","releaseDate":"2024-04-02","isEol":true,"eolFrom":"2026-10-15",`, 1))
+	if _, err := sy.Sync(ctx, FeedEndOfLife); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ev.Evaluate(ctx, nil, 0); err != nil {
+		t.Fatal(err)
+	}
+	all, _, err := st.ListFindings(ctx, store.FindingFilter{AssetID: behind, Status: "all"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]store.Finding{}
+	for _, f := range all {
+		got[f.Key] = f
+	}
+	if f := got["wordpress:6.5"]; f.Status != "open" || f.Kind != "end_of_life" || f.Severity != "high" {
+		t.Errorf("end of life: %+v", f)
+	}
+	if f := got["behind:wordpress:6.5"]; f.Status != "resolved" || f.ResolutionKind != store.ResolutionAdvisoryChanged ||
+		f.Resolution != "replaced by the end-of-life finding: wordpress 6.5 reached end of life" {
+		t.Errorf("behind: %s %s %q", f.Status, f.ResolutionKind, f.Resolution)
+	}
+	if fs, _, _ := st.ListFindings(ctx, store.FindingFilter{AssetID: oneBehind}); len(fs) != 1 || fs[0].Kind != "end_of_life" || fs[0].Severity != "medium" {
+		t.Errorf("one behind, ended: %+v", fs)
 	}
 }

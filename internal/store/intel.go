@@ -809,6 +809,27 @@ func (s *Store) LifecycleProductsByPurl(ctx context.Context) (map[string]string,
 
 // --- findings queries
 
+// BehindRule is the match rule ("match"."rule" in a finding's evidence) of
+// a vulnerability finding for a version behind its release line's latest
+// release (WordPress core, internal/intel/behind.go). It names no advisory:
+// code that reads one (VEX, sources, resolutions, summaries) checks
+// IsBehind or notBehind.
+const BehindRule = "behind_latest_release"
+
+// notBehind is the SQL condition for a finding f that is not a behind
+// finding.
+const notBehind = `COALESCE(f.evidence->'match'->>'rule', '') <> '` + BehindRule + `'`
+
+// IsBehind reports whether a finding's evidence (JSON) is a behind finding.
+func IsBehind(evidence []byte) bool {
+	var ev struct {
+		Match struct {
+			Rule string `json:"rule"`
+		} `json:"match"`
+	}
+	return json.Unmarshal(evidence, &ev) == nil && ev.Match.Rule == BehindRule
+}
+
 type Finding struct {
 	ID             int64           `json:"id"`
 	Kind           string          `json:"kind"`

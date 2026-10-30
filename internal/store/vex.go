@@ -853,7 +853,7 @@ func (m *vexMatcher) match(ctx context.Context, tx pgx.Tx, p vex.Product, keys [
 		// The whole image or application: every component version with a
 		// finding for the vulnerability.
 		rows, err := tx.Query(ctx, `SELECT DISTINCT f.asset_id, f.component_id, i.version FROM findings f JOIN inventory i ON i.id = f.inventory_id
-			WHERE f.asset_id = ANY($1) AND f.kind = 'vulnerability' AND f.key = ANY($2) AND i.removed_at IS NULL`, assets, keys)
+			WHERE f.asset_id = ANY($1) AND f.kind = 'vulnerability' AND `+notBehind+` AND f.key = ANY($2) AND i.removed_at IS NULL`, assets, keys)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1119,7 +1119,7 @@ func (s *Store) ImportVEX(ctx context.Context, in VEXImport, actor Actor) (*VEXI
 		if len(naIDs) > 0 {
 			rows, err := tx.Query(ctx, `SELECT DISTINCT m.statement_id, f.asset_id, f.id FROM vex_matches m
 				JOIN findings f ON f.asset_id = m.asset_id AND f.component_id = m.component_id AND f.key = m.key
-				  AND f.kind = 'vulnerability' AND f.status = 'open'
+				  AND f.kind = 'vulnerability' AND `+notBehind+` AND f.status = 'open'
 				JOIN inventory i ON i.id = f.inventory_id AND i.version = m.version
 				WHERE m.statement_id = ANY($1) ORDER BY 1, 3`, naIDs)
 			if err != nil {
@@ -1654,7 +1654,7 @@ func (s *Store) VEXExport(ctx context.Context, assetID int64, notes bool) ([]VEX
 		FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL JOIN inventory i ON i.id = f.inventory_id
 		JOIN finding_exceptions e ON e.id = f.exception_id
 		LEFT JOIN vex_statements st ON st.id = e.vex_statement_id
-		WHERE f.kind = 'vulnerability' AND f.status = 'open' AND f.state = 'risk_accepted' AND e.ended_at IS NULL
+		WHERE f.kind = 'vulnerability' AND `+notBehind+` AND f.status = 'open' AND f.state = 'risk_accepted' AND e.ended_at IS NULL
 		  AND e.reason IN ('false_positive', 'mitigated')`+cond+`
 		ORDER BY f.id LIMIT 50000`, args...)
 	if err != nil {
@@ -1697,7 +1697,7 @@ func (s *Store) VEXExport(ctx context.Context, assetID int64, notes bool) ([]VEX
 		FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL JOIN inventory i ON i.id = f.inventory_id
 		JOIN vex_matches m ON m.asset_id = f.asset_id AND m.component_id = f.component_id AND m.key = f.key AND m.version = i.version
 		JOIN vex_statements st ON st.id = m.statement_id
-		WHERE f.kind = 'vulnerability' AND f.status = 'open' AND st.status IN ('affected', 'fixed', 'under_investigation')
+		WHERE f.kind = 'vulnerability' AND `+notBehind+` AND f.status = 'open' AND st.status IN ('affected', 'fixed', 'under_investigation')
 		  AND (m.digest = '' OR `+digestMatches("f.asset_id", "m.digest")+`)`+cond+`
 		ORDER BY f.id, st.effective_at DESC, st.id DESC LIMIT 50000`, args...)
 	if err != nil {

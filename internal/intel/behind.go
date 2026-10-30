@@ -26,7 +26,7 @@ var behindProducts = map[string]bool{"wordpress": true}
 
 // behindRule is the match rule ("match"."rule" in the evidence) that marks a
 // behind finding, for the explanation and the second check.
-const behindRule = "behind_latest_release"
+const behindRule = store.BehindRule
 
 // behindHigh is how many releases behind raises the severity to high: one
 // or two is a site between a release and its next update (WordPress applies
@@ -104,4 +104,20 @@ func pointRelease(v string) ([3]int, bool) {
 		out[i] = n
 	}
 	return out, true
+}
+
+// behindEndOfLife adds to the end-of-life finding f of a listed product how
+// far its version is behind the ended branch's last release, and raises it
+// to high from behindHigh releases behind, the severity the behind finding
+// it replaces had while the branch was supported.
+func behindEndOfLife(f *store.FindingInput, r store.EvalRow, c *store.LifecycleCycle) {
+	if !behindProducts[c.Product] {
+		return
+	}
+	if n, ok := releasesBehind(r.Version, c.Latest); ok && n > 0 {
+		f.Evidence["releases_behind"] = n
+		if n >= behindHigh {
+			f.Severity = "high"
+		}
+	}
 }

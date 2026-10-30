@@ -327,6 +327,7 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 		if c := matchCycle(cycles, cycleVersion); c != nil {
 			if f := eolFinding(r, c, now); f != nil {
 				f.Evidence["match"] = eolMatch(r.Version, cycleVersion, c.Cycle)
+				behindEndOfLife(f, r, c)
 				if lm.rule == "overlay" || lm.rule == "namespace_family" {
 					// Mapped by Stackurity's lifecycle overlay, not by
 					// endoflife.date's own identifiers.

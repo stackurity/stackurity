@@ -8,6 +8,7 @@ import { EvidencePills, kindLabel, VexBadge, vexSummary } from "../components/Fi
 import { FindingFixGroup } from "../components/FixGroups";
 import { FindingHistory, WorkflowPanel } from "../components/FindingWorkflow";
 import { EvidenceStateBadge, Provenance } from "../components/Provenance";
+import { isBehind } from "../behind";
 import { UpgradeCard } from "../components/Upgrade";
 import { WhyMatched } from "../components/Why";
 import { Card, ErrorBox, KeyValues, Loading, Notice, PageHeader, RelativeTime } from "../components/ui";
@@ -316,7 +317,7 @@ export function FindingDetailPage() {
         </Card>
       </div>
 
-      {f.kind === "vulnerability" && (
+      {f.kind === "vulnerability" && !isBehind(f) && (
         <>
           <h2 className="section-title">Sources ({matched.length})</h2>
           <p className="hint">

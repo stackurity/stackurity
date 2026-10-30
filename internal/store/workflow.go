@@ -574,6 +574,15 @@ type Incident struct {
 	Issues []IssueRef `json:"issues,omitempty" db:"-"`
 }
 
+// Behind reports whether the incident groups behind findings (BehindRule),
+// whose key ("behind:wordpress:6.5") is no advisory id: its detail says so.
+func (in Incident) Behind() bool {
+	var det struct {
+		Behind bool `json:"behind"`
+	}
+	return json.Unmarshal(in.Detail, &det) == nil && det.Behind
+}
+
 const incidentCols = `i.id, i.kind, i.key, i.owner_team_id, COALESCE(t.name, ''), i.title, i.priority, i.sos, i.status, i.state,
 	i.finding_count, i.asset_count, i.detail, i.created_at, i.updated_at, i.resolved_at, i.notified_priority, i.notified_at, i.escalation_level`
 
@@ -601,7 +610,7 @@ func (s *Store) CorrelateIncidents(ctx context.Context) error {
 			     'known_exploited', bool_or(COALESCE((f.evidence->>'known_exploited')::boolean, false)),
 			     'severity', (array_agg(f.severity ORDER BY f.priority_score DESC))[1],
 			     'sos_rules', array_agg(DISTINCT f.priority_factors::text) FILTER (WHERE f.sos)
-			   ) AS detail
+			   ) || CASE WHEN bool_or(NOT (` + notBehind + `)) THEN '{"behind": true}'::jsonb ELSE '{}'::jsonb END AS detail
 			 FROM findings f JOIN assets a ON a.id = f.asset_id JOIN components c ON c.id = f.component_id
 			 WHERE f.status = 'open' AND f.state IN ('new', 'acknowledged', 'in_progress') AND a.merged_into IS NULL
 			 GROUP BY f.kind, f.key, a.owner_team_id`,

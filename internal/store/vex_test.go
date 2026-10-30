@@ -486,3 +486,44 @@ func TestVEXSources(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A finding for a version behind its release line's latest release names
+// no advisory: accepting it as a false positive or mitigated must not
+// export a not_affected statement for "behind:wordpress:6.5".
+func TestVEXExportSkipsBehind(t *testing.T) {
+	ctx, s := loopStore(t)
+	img := ingestImage(t, s, ctx, "registry.example.com/shop/api:1", digestA, "pkg:generic/wordpress@6.5.3", "pkg:npm/lodash@4.17.20")
+	rows, _, err := s.ListInventory(ctx, store.InventoryFilter{AssetID: img})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []int64
+	var in []store.FindingInput
+	for _, r := range rows {
+		ids = append(ids, r.ID)
+		f := store.FindingInput{Kind: "vulnerability", Key: "CVE-2", InventoryID: r.ID, AssetID: img, ComponentID: r.ComponentID,
+			Verification: "confirmed", Severity: "high", FixedVersion: "4.17.21", Sources: []string{"GHSA-2"}, Evidence: map[string]any{}}
+		if r.Name == "wordpress" {
+			f.Key, f.FixedVersion, f.Sources = "behind:wordpress:6.5", "6.5.14", []string{"lifecycle:endoflife"}
+			f.Evidence = map[string]any{"product": "wordpress", "cycle": "6.5", "match": map[string]any{"rule": store.BehindRule}}
+		}
+		in = append(in, f)
+	}
+	if _, _, err := s.SyncFindings(ctx, []string{"vulnerability"}, ids, in); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"CVE-2", "behind:wordpress:6.5"} {
+		fp := store.FindingAction{Action: "ignore", Note: "patched", Ignore: store.IgnoreSpec{
+			Reason: store.ReasonFalsePositive, Scope: store.ScopeAsset, Expiry: store.ExpiryNever}}
+		if err := s.ApplyFindingAction(ctx, one(t, s, ctx, img, key).ID, fp, user); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out, err := s.VEXExport(ctx, img, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != 1 || out[0].Key != "CVE-2" {
+		t.Errorf("exported %+v", out)
+	}
+}
