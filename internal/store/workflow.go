@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -156,6 +157,12 @@ type riskRow struct {
 	priority  string // stored
 	// xmin is the row version read; Prioritize writes only that version.
 	xmin string
+	// epssCVEs are the finding's CVEs that have an EPSS score, highest
+	// first, with their scores; epssStored is the CVE it used until now
+	// (findings.epss_cve, nil for its key). chooseEPSS picks among them.
+	epssCVEs   []string
+	epssScores []float32
+	epssStored *string
 }
 
 // epssFactor matches stored priority_factors that include the EPSS factor.
@@ -168,18 +175,53 @@ var epssFactor = func() string {
 // preview share it, so a preview scores exactly what a save would.
 // assetID 0 means every asset.
 func riskRows(ctx context.Context, db q, now time.Time, assetID int64) ([]riskRow, error) {
-	// EPSS is joined by the finding's key, which is its CVE when it has one
-	// (osv.GroupKey); whether the finding already had the EPSS factor is
-	// read from its stored factors, for the policy's hysteresis.
+	// EPSS: every CVE of the finding that has a score, highest first (a tie
+	// goes to the key, then to the lowest CVE): its key and the CVEs its
+	// advisories list as aliases or upstream ids (findingCVEs). Findings
+	// share a few thousand distinct keys and sources, so the CVEs are looked
+	// up once for each, in a query of their own, and matched to the findings
+	// here: joining them in SQL on the sources array left the plan to the
+	// planner's estimates, and one plan took most of an hour on 130,000
+	// findings. chooseEPSS then picks the CVE to use.
+	type group struct {
+		cves   []string
+		scores []float32
+	}
+	groupKey := func(key string, sources []string) string { return key + "\x00" + strings.Join(sources, "\x00") }
+	groups := map[string]group{}
+	grows, err := db.Query(ctx, `SELECT d.key, d.sources,
+		  array_agg(e.cve ORDER BY e.score DESC, e.cve <> d.key, e.cve), array_agg(e.score ORDER BY e.score DESC, e.cve <> d.key, e.cve)
+		FROM (SELECT DISTINCT f.key, f.sources FROM findings f
+		  WHERE f.status = 'open' AND f.kind = 'vulnerability' AND ($1::bigint = 0 OR f.asset_id = $1)) d
+		CROSS JOIN LATERAL `+findingCVEs("d")+` JOIN epss_scores e ON e.cve = fc.cve
+		GROUP BY d.key, d.sources`, assetID)
+	if err != nil {
+		return nil, err
+	}
+	for grows.Next() {
+		var key string
+		var sources []string
+		var g group
+		if err := grows.Scan(&key, &sources, &g.cves, &g.scores); err != nil {
+			grows.Close()
+			return nil, err
+		}
+		groups[groupKey(key, sources)] = g
+	}
+	grows.Close()
+	if err := grows.Err(); err != nil {
+		return nil, err
+	}
+	// Whether the finding already had the EPSS factor is read from its
+	// stored factors, for the policy's hysteresis.
 	rows, err := db.Query(ctx, `SELECT f.id, f.kind, f.severity, f.score, COALESCE((f.evidence->>'known_exploited')::boolean, false),
 		`+effectiveExposure+`, `+exposureSource+`, a.environment, a.criticality,
 		f.fixed_version <> '' AND NOT COALESCE((f.evidence->>'requires_ubuntu_pro')::boolean, false)
 		  AND COALESCE(f.evidence->>'requires_subscription', '') = '',
 		i.scope, f.verification, f.first_seen, COALESCE((f.evidence->>'not_running_kernel')::boolean, false),
 		f.priority, f.state, f.fix_due, f.title, f.key, a.id, a.name,
-		ep.score, COALESCE(f.priority_factors @> $2::jsonb, false), f.xmin::text
+		f.sources, f.epss_cve, COALESCE(f.priority_factors @> $2::jsonb, false), f.xmin::text
 		FROM findings f JOIN assets a ON a.id = f.asset_id JOIN inventory i ON i.id = f.inventory_id
-		LEFT JOIN epss_scores ep ON f.kind = 'vulnerability' AND ep.cve = f.key
 		WHERE f.status = 'open' AND ($1::bigint = 0 OR f.asset_id = $1)
 		ORDER BY f.id`, assetID, epssFactor)
 	if err != nil {
@@ -189,14 +231,19 @@ func riskRows(ctx context.Context, db q, now time.Time, assetID int64) ([]riskRo
 	var out []riskRow
 	for rows.Next() {
 		var (
-			r      riskRow
-			state  string
-			fixDue *time.Time
+			r       riskRow
+			state   string
+			fixDue  *time.Time
+			sources []string
 		)
 		if err := rows.Scan(&r.id, &r.in.Kind, &r.in.Severity, &r.in.Score, &r.in.KnownExploited, &r.in.InternetExposed, &r.in.ExposureSource,
 			&r.in.Environment, &r.in.Criticality, &r.in.FixAvailable, &r.in.Scope, &r.in.Verification, &r.firstSeen, &r.in.KernelNotRunning,
-			&r.priority, &state, &fixDue, &r.title, &r.key, &r.assetID, &r.assetName, &r.in.EPSS, &r.in.EPSSCounted, &r.xmin); err != nil {
+			&r.priority, &state, &fixDue, &r.title, &r.key, &r.assetID, &r.assetName, &sources, &r.epssStored, &r.in.EPSSCounted, &r.xmin); err != nil {
 			return nil, err
+		}
+		if r.in.Kind == "vulnerability" {
+			g := groups[groupKey(r.key, sources)]
+			r.epssCVEs, r.epssScores = g.cves, g.scores
 		}
 		r.in.Overdue = fixDue != nil && now.After(*fixDue) && (state == "new" || state == "acknowledged" || state == "in_progress")
 		out = append(out, r)
@@ -270,6 +317,7 @@ func (s *Store) writePriorities(ctx context.Context, p risk.Policy, version stri
 	// SyncFindings).
 	batch := &pgx.Batch{}
 	for _, r := range rows {
+		cve := chooseEPSS(p, &r)
 		res := p.Evaluate(r.in)
 		ackDue, fixDue := p.Deadlines(res.Priority, r.firstSeen)
 		factors, _ := json.Marshal(res.Factors)
@@ -277,13 +325,13 @@ func (s *Store) writePriorities(ctx context.Context, p risk.Policy, version stri
 		// minute over every open finding; rewriting them all bloated the
 		// table and kept the findings list from using index-only scans.
 		batch.Queue(`UPDATE findings SET priority = $2, priority_score = $3, priority_factors = $4, sos = $5, sos_rule = $8,
-			ack_due = $6, fix_due = $7, priority_policy = $9,
+			ack_due = $6, fix_due = $7, priority_policy = $9, epss_cve = $11,
 			assignee_team_id = COALESCE(assignee_team_id, (SELECT owner_team_id FROM assets WHERE id = findings.asset_id))
 			WHERE id = $1 AND status = 'open' AND xmin::text = $10 AND (
-			  (priority, priority_score, priority_factors, sos, sos_rule, ack_due, fix_due, priority_policy)
-			    IS DISTINCT FROM ($2::text, $3::real, $4::jsonb, $5::boolean, $8::text, $6::timestamptz, $7::timestamptz, $9::text)
+			  (priority, priority_score, priority_factors, sos, sos_rule, ack_due, fix_due, priority_policy, epss_cve)
+			    IS DISTINCT FROM ($2::text, $3::real, $4::jsonb, $5::boolean, $8::text, $6::timestamptz, $7::timestamptz, $9::text, $11::text)
 			  OR (assignee_team_id IS NULL AND (SELECT owner_team_id FROM assets WHERE id = findings.asset_id) IS NOT NULL))`,
-			r.id, res.Priority, res.Score, factors, res.SOS, ackDue, fixDue, res.SOSRule, version, r.xmin)
+			r.id, res.Priority, res.Score, factors, res.SOS, ackDue, fixDue, res.SOSRule, version, r.xmin, cve)
 	}
 	return s.Pool.SendBatch(ctx, batch).Close()
 }

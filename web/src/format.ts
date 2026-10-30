@@ -192,8 +192,10 @@ export function percent(p: number): string {
 }
 
 /** An EPSS score for a cell or badge, with its percentile and day for the tooltip. */
-export function epssTitle(score: number, percentile?: number | null, date?: string | null): string {
-  let t = `FIRST EPSS ${percent(score)}: the chance this CVE is exploited in the next 30 days`;
+export function epssTitle(score: number, percentile?: number | null, date?: string | null, cve?: string | null): string {
+  let t = cve
+    ? `FIRST EPSS ${percent(score)} for ${cve}, the highest-scored CVE this issue covers: the chance it is exploited in the next 30 days`
+    : `FIRST EPSS ${percent(score)}: the chance this CVE is exploited in the next 30 days`;
   if (percentile != null) t += `, higher than ${percent(percentile)} of scored CVEs`;
   if (date) t += ` (scores of ${date.slice(0, 10)})`;
   return t;

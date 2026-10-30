@@ -93,6 +93,9 @@ func (s *Store) PreviewRiskPolicy(ctx context.Context, current, proposed risk.Po
 	}
 	var changed []PreviewFinding
 	for _, r := range rows {
+		// The CVE whose EPSS counts is chosen as a pass under the current
+		// policy would choose it.
+		chooseEPSS(current, &r)
 		b, a := current.Evaluate(r.in), proposed.Evaluate(r.in)
 		pv.Findings++
 		pv.Before[b.Priority]++

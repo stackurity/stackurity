@@ -73,25 +73,31 @@ const affectedLock = 0x5354_4b41_4646 // "STKAFF"
 type advisoryRecord struct {
 	id, feed, groupKey, summary, level, vector, source string
 	aliases                                            []string
-	score                                              *float32
-	published, withdrawn                               *time.Time
-	modified                                           time.Time // zero when the record has none
-	refs                                               []byte
-	rows                                               []packageRow
-	hash                                               string
+	// upstream is the record's upstream ids: the CVEs a distribution
+	// advisory fixes (DSA, RHSA) are listed there rather than in aliases.
+	upstream             []string
+	score                *float32
+	published, withdrawn *time.Time
+	modified             time.Time // zero when the record has none
+	refs                 []byte
+	rows                 []packageRow
+	hash                 string
 }
 
 func newAdvisoryRecord(feed string, v *osv.Vulnerability) *advisoryRecord {
 	r := osv.Rate(v)
 	rec := &advisoryRecord{id: v.ID, feed: feed, groupKey: osv.GroupKey(v.ID, v.Aliases, v.Upstream...),
 		summary: truncateText(v.Summary, 500), level: r.Level, vector: r.Vector, source: r.Source,
-		aliases: v.Aliases, modified: v.Modified, withdrawn: v.Withdrawn}
+		aliases: v.Aliases, upstream: v.Upstream, modified: v.Modified, withdrawn: v.Withdrawn}
 	if r.Score > 0 || r.Source == "cvss_v3" || r.Source == "cvss_v4" {
 		f := float32(r.Score)
 		rec.score = &f
 	}
 	if rec.aliases == nil {
 		rec.aliases = []string{}
+	}
+	if rec.upstream == nil {
+		rec.upstream = []string{}
 	}
 	if !v.Published.IsZero() {
 		rec.published = &v.Published
@@ -147,8 +153,15 @@ func (r *advisoryRecord) contentHash() string {
 		}
 		return false
 	})
-	_ = json.NewEncoder(h).Encode([]any{storedFormat, r.id, r.groupKey, r.aliases, r.summary, r.level, r.score,
-		r.vector, r.source, r.published, r.modified, r.withdrawn, json.RawMessage(r.refs), rows})
+	fields := []any{storedFormat, r.id, r.groupKey, r.aliases, r.summary, r.level, r.score,
+		r.vector, r.source, r.published, r.modified, r.withdrawn, json.RawMessage(r.refs), rows}
+	// Upstream ids are hashed only when there are some (migration 0060), so
+	// the records without any keep their hash and are not rewritten; the
+	// others are stored again once, with them.
+	if len(r.upstream) > 0 {
+		fields = append(fields, r.upstream)
+	}
+	_ = json.NewEncoder(h).Encode(fields)
 	return hex.EncodeToString(h.Sum(nil)[:16])
 }
 
@@ -242,17 +255,18 @@ func (s *Store) UpsertAdvisories(ctx context.Context, feed string, vulns []*osv.
 				modified = time.Now()
 			}
 			batch.Queue(`INSERT INTO advisories (id, feed, group_key, aliases, summary, severity_level, severity_score,
-				severity_vector, severity_source, published, modified, withdrawn, refs, known_exploited, fetched_at, content_hash)
+				severity_vector, severity_source, published, modified, withdrawn, refs, known_exploited, fetched_at, content_hash, upstream)
 				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,
-				  EXISTS (SELECT 1 FROM known_exploited k WHERE k.cve = $3 OR k.cve = ANY($4)), now(), $14)
+				  EXISTS (SELECT 1 FROM known_exploited k WHERE k.cve = $3 OR k.cve = ANY($4)), now(), $14, $15)
 				ON CONFLICT (id) DO UPDATE SET feed = EXCLUDED.feed, group_key = EXCLUDED.group_key, aliases = EXCLUDED.aliases,
+				  upstream = EXCLUDED.upstream,
 				  summary = EXCLUDED.summary, severity_level = EXCLUDED.severity_level, severity_score = EXCLUDED.severity_score,
 				  severity_vector = EXCLUDED.severity_vector, severity_source = EXCLUDED.severity_source,
 				  published = EXCLUDED.published, modified = EXCLUDED.modified, withdrawn = EXCLUDED.withdrawn,
 				  refs = EXCLUDED.refs, known_exploited = EXCLUDED.known_exploited, fetched_at = now(),
 				  content_hash = EXCLUDED.content_hash`,
 				r.id, r.feed, r.groupKey, r.aliases, r.summary, r.level, r.score, r.vector, r.source,
-				r.published, modified, r.withdrawn, r.refs, r.hash)
+				r.published, modified, r.withdrawn, r.refs, r.hash, r.upstream)
 		}
 		for _, id := range changed {
 			for _, p := range byID[id].rows {

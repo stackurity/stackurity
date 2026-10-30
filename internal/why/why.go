@@ -58,8 +58,9 @@ type Explanation struct {
 	// does not cover this finding, or has not run yet.
 	SecondCheckText string `json:"second_check_text"`
 
-	// EPSS is FIRST's exploit prediction for the finding's CVE and what it
-	// does to the priority; nil for findings without a CVE.
+	// EPSS is FIRST's exploit prediction for the finding's CVE (the
+	// highest-scored one when its advisories cover several) and what it does
+	// to the priority; nil for findings without a CVE.
 	EPSS *EPSSDetail `json:"epss,omitempty"`
 
 	Package   *PackageDetail   `json:"package,omitempty"`
@@ -70,6 +71,9 @@ type Explanation struct {
 
 // EPSSDetail is the EPSS part of "why this priority".
 type EPSSDetail struct {
+	// CVE is the CVE the score is for: the finding's key, or the CVE with
+	// the highest score among those its advisories list as aliases or
+	// upstream ids.
 	CVE string `json:"cve"`
 	// Score is the probability (0 to 1) of exploitation in the next 30
 	// days and Percentile its rank among all scored CVEs; nil when FIRST has
@@ -289,7 +293,7 @@ func Build(in Input, now time.Time) Explanation {
 			e.Package = &PackageDetail{Ecosystem: str(ev, "target_ecosystem"), Name: str(ev, "osv_package"), Direct: f.Direct, Location: f.Location}
 		}
 	}
-	if in.Policy != nil && f.Kind == "vulnerability" && strings.HasPrefix(f.Key, "CVE-") {
+	if in.Policy != nil && f.Kind == "vulnerability" && (strings.HasPrefix(f.Key, "CVE-") || f.EPSSCVE != nil) {
 		e.EPSS = epssDetail(f, *in.Policy)
 	}
 	if f.AssetKind == "image" {
@@ -360,7 +364,11 @@ func Build(in Input, now time.Time) Explanation {
 // epssDetail says what FIRST's EPSS predicts for the finding's CVE and
 // whether, and why, it counts towards the stored priority.
 func epssDetail(f *store.Finding, p risk.Policy) *EPSSDetail {
-	d := &EPSSDetail{CVE: f.Key, Score: f.EPSS, Percentile: f.EPSSPercentile, Threshold: p.EPSSThreshold,
+	cve := f.Key
+	if f.EPSSCVE != nil {
+		cve = *f.EPSSCVE
+	}
+	d := &EPSSDetail{CVE: cve, Score: f.EPSS, Percentile: f.EPSSPercentile, Threshold: p.EPSSThreshold,
 		Release: p.EPSSThreshold * risk.EPSSRelease, Points: p.EPSS, Counted: hasFactor(f, risk.FactorEPSS)}
 	if f.EPSSDate != nil {
 		d.Date = f.EPSSDate.Format("2006-01-02")
@@ -377,8 +385,18 @@ func epssDetail(f *store.Finding, p risk.Policy) *EPSSDetail {
 	if f.EPSSPercentile != nil {
 		pct = fmt.Sprintf(", higher than %s of scored CVEs", risk.Percent(float64(*f.EPSSPercentile)))
 	}
+	// The score is the highest among the finding's CVEs (its key and its
+	// advisories' aliases and upstream ids): name the one it is for.
+	which := cve
+	switch {
+	case cve == f.Key:
+	case strings.HasPrefix(f.Key, "CVE-"):
+		which = fmt.Sprintf("%s (the highest score among the CVEs this issue's advisories cover; the issue is listed as %s)", cve, f.Key)
+	default:
+		which = fmt.Sprintf("%s (the highest-scored CVE behind %s)", cve, f.Key)
+	}
 	text := fmt.Sprintf("FIRST EPSS gives %s a %s chance of exploitation in the next 30 days%s (model %s, scores of %s).",
-		f.Key, risk.Percent(float64(*f.EPSS)), pct, orUnknown(d.ModelVersion), orUnknown(d.Date))
+		which, risk.Percent(float64(*f.EPSS)), pct, orUnknown(d.ModelVersion), orUnknown(d.Date))
 	score := *f.EPSS
 	switch {
 	case d.Counted && p.EPSSCounts(score, false):

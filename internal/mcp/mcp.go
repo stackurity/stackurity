@@ -398,7 +398,8 @@ var tools = map[string]tool{
 	},
 	"list_findings": {
 		description: "Open vulnerability and end-of-life findings, most urgent first, with the installed and fixed versions and " +
-			"FIRST's EPSS (epss: the probability, 0 to 1, that the CVE is exploited in the next 30 days), and vex: the latest " +
+			"FIRST's EPSS (epss: the probability, 0 to 1, that the CVE is exploited in the next 30 days; epss_cve: the CVE it is for, " +
+			"the highest-scored when the advisory covers several), and vex: the latest " +
 			"imported VEX statement about it (status not_affected, affected, fixed or under_investigation; for not_affected, " +
 			"applied says whether it was approved and ignores the finding).",
 		schema: obj(map[string]any{
@@ -724,6 +725,7 @@ type finding struct {
 	Title          string   `json:"title"`
 	KnownExploited bool     `json:"known_exploited"`
 	EPSS           *float32 `json:"epss"`
+	EPSSCVE        *string  `json:"epss_cve,omitempty"`
 	// VEX is the latest imported VEX statement about the finding (status,
 	// justification, source, and whether it was approved and applies).
 	VEX     *findingVEX `json:"vex,omitempty"`

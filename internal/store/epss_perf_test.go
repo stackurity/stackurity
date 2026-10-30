@@ -3,6 +3,7 @@ package store_test
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
@@ -103,5 +104,37 @@ func TestPrioritizeEPSSPerformance(t *testing.T) {
 		if m >= time.Second {
 			t.Errorf("%s: %s", c.name, m)
 		}
+	}
+
+	// STACKURITY_PERF_EXPLAIN=1 logs the plans, with EXPLAIN (ANALYZE,
+	// BUFFERS), of the prioritisation read (the policy preview runs exactly
+	// its queries, and writes nothing) and of the epss_min lists, as the
+	// application runs them. It needs a server with auto_explain loaded
+	// (shared_preload_libraries); the plans are in the server log.
+	if os.Getenv("STACKURITY_PERF_EXPLAIN") != "" {
+		set := func(v string) {
+			t.Helper()
+			for _, q := range []string{
+				`ALTER SYSTEM SET auto_explain.log_min_duration = ` + v,
+				`ALTER SYSTEM SET auto_explain.log_analyze = on`,
+				`ALTER SYSTEM SET auto_explain.log_buffers = on`,
+				`SELECT pg_reload_conf()`,
+			} {
+				if _, err := d.owner.Exec(ctx, q); err != nil {
+					t.Fatal(err)
+				}
+			}
+			time.Sleep(time.Second)
+		}
+		set("0")
+		if _, err := d.st.PreviewRiskPolicy(d.ws, p, p, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range []float64{0.1, 0.9} {
+			if _, _, err := d.st.ListFindings(d.ws, store.FindingFilter{EPSSMin: m, Page: store.Page{Limit: 50}}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		set("-1")
 	}
 }

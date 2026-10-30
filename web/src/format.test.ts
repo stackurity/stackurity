@@ -51,4 +51,8 @@ test("EPSS probabilities read as percentages", () => {
     epssTitle(0.04753, 0.91849, "2026-10-28T00:00:00Z"),
     "FIRST EPSS 4.8%: the chance this CVE is exploited in the next 30 days, higher than 91.8% of scored CVEs (scores of 2026-10-28)",
   );
+  assert.equal(
+    epssTitle(0.42, null, null, "CVE-2024-0002"),
+    "FIRST EPSS 42% for CVE-2024-0002, the highest-scored CVE this issue covers: the chance it is exploited in the next 30 days",
+  );
 });
