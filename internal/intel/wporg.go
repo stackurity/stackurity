@@ -62,6 +62,53 @@ type wporgInfo struct {
 // list.
 const wporgListMax = 64 << 20 // uncompressed; the plugin list is about 9 MB
 
+// ResolveWordPressOrg applies the operator's wordpress.org settings to cfg:
+// api is STACKURITY_WORDPRESS_ORG_URL, plugins and themes the list URLs
+// (STACKURITY_WORDPRESS_PLUGINS_LIST_URL, STACKURITY_WORDPRESS_THEMES_LIST_URL),
+// each "" when unset.
+//
+// The lists are not on the API's host but on plugins.svn and
+// themes.svn.wordpress.org, and a mirror of the API has no agreed path for
+// them, so they are never derived from api. When api names a mirror and a
+// list URL is not set, that list is unavailable rather than read from
+// wordpress.org: an operator who points the API at a mirror (air-gapped,
+// or keeping traffic off wordpress.org) gets no request to wordpress.org,
+// and the feed fails naming the setting instead of half working. The
+// returned warning, for the log at startup, says so; "" when there is none.
+func ResolveWordPressOrg(cfg *Config, api, plugins, themes string) string {
+	if api != "" {
+		cfg.WordPressOrgURL = api
+	}
+	if plugins != "" {
+		cfg.WordPressPluginsListURL = plugins
+	}
+	if themes != "" {
+		cfg.WordPressThemesListURL = themes
+	}
+	if api == "" || strings.TrimSuffix(api, "/") == strings.TrimSuffix(DefaultConfig().WordPressOrgURL, "/") {
+		return ""
+	}
+	var unset []string
+	if plugins == "" {
+		cfg.WordPressPluginsListURL = ""
+		unset = append(unset, "STACKURITY_WORDPRESS_PLUGINS_LIST_URL")
+	}
+	if themes == "" {
+		cfg.WordPressThemesListURL = ""
+		unset = append(unset, "STACKURITY_WORDPRESS_THEMES_LIST_URL")
+	}
+	if len(unset) == 0 {
+		return ""
+	}
+	verb := " is"
+	if len(unset) > 1 {
+		verb = " are"
+	}
+	return "STACKURITY_WORDPRESS_ORG_URL points at a mirror but " + strings.Join(unset, " and ") + verb +
+		" not set: wordpress.org's public slug lists are never read from wordpress.org then, so those WordPress plugins or themes get no latest release " +
+		"(the releases:wordpress.org feed fails until it is set to the mirror's copy of plugins.svn.wordpress.org/ or themes.svn.wordpress.org/)"
+}
+
 // wporgCursor is the feed's cursor: the size of the last good lists.
 type wporgCursor struct {
 	Plugins int `json:"plugins,omitempty"`
@@ -96,11 +143,11 @@ func (s *Syncer) syncWordPressOrg(ctx context.Context, cursor string) (*SyncResu
 	var warnings []string
 	lists, refused, local := 0, 0, 0
 	for _, l := range []struct {
-		ns, kind, url string
-		count         *int
+		ns, kind, url, env string
+		count              *int
 	}{
-		{"wordpress-plugin", "plugin", s.f.cfg.WordPressPluginsListURL, &cur.Plugins},
-		{"wordpress-theme", "theme", s.f.cfg.WordPressThemesListURL, &cur.Themes},
+		{"wordpress-plugin", "plugin", s.f.cfg.WordPressPluginsListURL, "STACKURITY_WORDPRESS_PLUGINS_LIST_URL", &cur.Plugins},
+		{"wordpress-theme", "theme", s.f.cfg.WordPressThemesListURL, "STACKURITY_WORDPRESS_THEMES_LIST_URL", &cur.Themes},
 	} {
 		cs := byNS[l.ns]
 		if len(cs) == 0 {
@@ -111,7 +158,14 @@ func (s *Syncer) syncWordPressOrg(ctx context.Context, cursor string) (*SyncResu
 		for _, c := range cs {
 			wanted[c.Name] = true
 		}
-		found, n, err := s.wporgSlugList(ctx, l.url, wanted)
+		var found map[string]bool
+		var n int
+		if l.url == "" {
+			// A mirror without the list (ResolveWordPressOrg): fail closed.
+			err = fmt.Errorf("the public %s list is unavailable: STACKURITY_WORDPRESS_ORG_URL points at a mirror and %s is not set", l.kind, l.env)
+		} else {
+			found, n, err = s.wporgSlugList(ctx, l.url, wanted)
+		}
 		if err == nil && n < *l.count/2 {
 			err = fmt.Errorf("the public %s list has %d slugs, fewer than half of the %d last read: refused", l.kind, n, *l.count)
 		}

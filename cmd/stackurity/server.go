@@ -1031,8 +1031,10 @@ func adminCmd() *cobra.Command {
 }
 
 // intelConfig reads feed locations from the environment so air-gapped
-// installs can use mirrors (STACKURITY_OSV_URL etc.).
-func intelConfig(dataDir string) intel.Config {
+// installs can use mirrors (STACKURITY_OSV_URL etc.). Warnings are for the
+// log at startup.
+func intelConfig(dataDir string) (intel.Config, []string) {
+	var warnings []string
 	cfg := intel.DefaultConfig()
 	cfg.OSVBaseURL = env("STACKURITY_OSV_URL", cfg.OSVBaseURL)
 	cfg.KEVURL = env("STACKURITY_KEV_URL", cfg.KEVURL)
@@ -1043,9 +1045,10 @@ func intelConfig(dataDir string) intel.Config {
 	cfg.OracleLinuxURL = env("STACKURITY_ORACLE_LINUX_URL", cfg.OracleLinuxURL)
 	cfg.PackagistURL = env("STACKURITY_PACKAGIST_URL", cfg.PackagistURL)
 	cfg.PyPIURL = env("STACKURITY_PYPI_URL", cfg.PyPIURL)
-	cfg.WordPressOrgURL = env("STACKURITY_WORDPRESS_ORG_URL", cfg.WordPressOrgURL)
-	cfg.WordPressPluginsListURL = env("STACKURITY_WORDPRESS_PLUGINS_LIST_URL", cfg.WordPressPluginsListURL)
-	cfg.WordPressThemesListURL = env("STACKURITY_WORDPRESS_THEMES_LIST_URL", cfg.WordPressThemesListURL)
+	if w := intel.ResolveWordPressOrg(&cfg, os.Getenv("STACKURITY_WORDPRESS_ORG_URL"),
+		os.Getenv("STACKURITY_WORDPRESS_PLUGINS_LIST_URL"), os.Getenv("STACKURITY_WORDPRESS_THEMES_LIST_URL")); w != "" {
+		warnings = append(warnings, w)
+	}
 	cfg.GoProxyURL = env("STACKURITY_GOPROXY_URL", cfg.GoProxyURL)
 	cfg.CratesIndexURL = env("STACKURITY_CRATES_INDEX_URL", cfg.CratesIndexURL)
 	cfg.RubyGemsURL = env("STACKURITY_RUBYGEMS_URL", cfg.RubyGemsURL)
@@ -1067,11 +1070,14 @@ func intelConfig(dataDir string) intel.Config {
 	cfg.WorkDir = filepath.Join(dataDir, "work")
 	// Registries ask automated clients to identify themselves.
 	cfg.UserAgent = "stackurity/" + version + " (+https://github.com/stackurity/stackurity)"
-	return cfg
+	return cfg, warnings
 }
 
 func registerIntel(w *worker.Worker, st *store.Store, dataDir string, log *slog.Logger) {
-	cfg := intelConfig(dataDir)
+	cfg, warnings := intelConfig(dataDir)
+	for _, w := range warnings {
+		log.Warn(w)
+	}
 	syncer := intel.NewSyncer(st, log, cfg)
 	eval := &intel.Evaluator{Store: st}
 	feedsOn := os.Getenv("STACKURITY_FEEDS") != "off"
