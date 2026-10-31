@@ -1702,13 +1702,14 @@ An evaluated row can carry a `coverage_reason` too, saying how it is reported: k
 
 | `reason` | `actor` | Meaning |
 | --- | --- | --- |
-| `unreadable_version` | `user` | The installed version could not be read. Each item is a cause (`no_version`, `unparseable_version`, `unknown_release`, `unreadable_package`) with `fix` and `docs`. |
+| `unreadable_version` | `user` | The installed version could not be read. Each item is a cause with `fix` and `docs`: `no_version`, `unparseable_version`, `unknown_release`, `unreadable_package`; for Windows programs `program_no_version` and `program_version_form`; for Windows itself `windows_no_build`, `windows_no_ubr`, `windows_no_product` and `windows_mismatch`. |
+| `other` | `user` | Any other reason a vulnerability source could not be used. Items are package types; each row's `coverage_reason` says what to fix. Never filed as Stackurity's. |
 | `unreadable_files` | `user` | Applications with files the agent's user may not read (counted in `assets`): grant read access with an ACL. |
 | `unsupported` | `stackurity` | No vulnerability source for the ecosystem, distribution or kind of software yet. Items are `type\|category` (`cocoapods\|ecosystem`, `deb\|vendor_build\|<repository>`). |
-| `waiting_for_data` | `automatic` | The vulnerability source has not synced yet, or the row was checked against data that is out of date. Resolves on its own; an item is `overdue` when its source is past its staleness window or switched off. |
+| `waiting_for_data` | `automatic` | The vulnerability source has not synced yet, or the row was checked against data past its staleness window (a failed sync within the window is not counted). Resolves on its own; an item is `overdue` when its source is switched off or past its staleness window, or has been missing or never synced for over 6 hours (feeds off, an air-gapped install without a mirror). |
 | `no_advisories` | `none` | The source publishes no advisories for the release (`Debian:13`). Informational: not "may be vulnerable". |
 
-The response has `need_you` (unreadable versions plus applications with unreadable files), `not_supported`, `waiting`, `no_advisories`, `overdue` and `groups`, each group with `reason`, `actor`, `components`, `assets`, `overdue` and `items` (`key`, `label`, `components`, `assets`, and `fix`, `docs` or `overdue` where they apply).
+Only coverage `unsupported`, or a not-evaluated reason known to be Stackurity's own gap (a distribution release or Windows build it does not know), is `unsupported`. The response has `need_you` (components and applications the user can fix), split into `need_you_components` and `need_you_applications`, `not_supported`, `waiting`, `no_advisories`, `overdue` and `groups`, each group with `reason`, `actor`, `components`, `assets`, `overdue` and `items` (`key`, `label`, `components`, `assets`, and `fix`, `docs` or `overdue` where they apply).
 
 `lifecycle_note` is set on a distribution package whose upstream release is end of life: `status` is `distribution_supported` (no finding: the distribution release still provides security updates), `distribution_ended` (the release itself is end of life) `third_party_build` (the finding stands) or `follows_upstream` (the package's maintainer stops fixing it on the upstream date, as Red Hat and Microsoft do for .NET; the finding stands), with `text`, `subject`, `upstream_eol`, `distribution` and `distribution_eol` ([compatibility.md](compatibility.md#lifecycle-of-distribution-packages)).
 

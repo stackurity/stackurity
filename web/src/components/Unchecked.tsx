@@ -6,6 +6,8 @@ import { useLoad } from "../hooks";
 import { plural } from "../format";
 import {
   group,
+  groupByFix,
+  needYouText,
   uncheckedBanner,
   unreadableFilesSentence,
   unreadableSentence,
@@ -18,11 +20,6 @@ import { ErrorBox } from "./ui";
 /** Loads the breakdown for one asset, or every asset the viewer may see. */
 export function useUnchecked(assetId?: number) {
   return useLoad(() => api.get<Unchecked>("/coverage/unchecked", { asset_id: assetId || undefined }), [assetId]);
-}
-
-/** Where the components behind a reason are listed. */
-function componentsLink(reason: string, assetId?: number): string | undefined {
-  return assetId ? `/assets/${assetId}?tab=inventory&unchecked=${reason}` : undefined;
 }
 
 /**
@@ -71,35 +68,21 @@ export function UncheckedBanner({ u, assetId }: { u: Unchecked | null | undefine
 
 function NeedYou({ u, assetId, id }: { u: Unchecked; assetId?: number; id: string }) {
   const versions = group(u, "unreadable_version");
+  const other = group(u, "other");
   const files = group(u, "unreadable_files");
   return (
     <div id={id} className="unchecked-detail">
       {versions && (
-        <>
-          <p>
-            <strong>{unreadableSentence(versions)}</strong>, so Stackurity can't tell which advisories apply.
-          </p>
-          <ul className="banner-list">
-            {versions.items.map((it) => (
-              <li key={it.key}>
-                {plural(it.components, "component")}: {it.label}. {it.fix}{" "}
-                {it.docs && (
-                  <a href={it.docs} target="_blank" rel="noopener noreferrer">
-                    How
-                  </a>
-                )}
-              </li>
-            ))}
-          </ul>
-          {assetId ? (
-            <p>
-              <Link to={componentsLink("unreadable_version", assetId)!}>Show the {plural(versions.components, "component")}</Link>
-            </p>
-          ) : (
-            <UnreadableRows />
-          )}
-        </>
+        <p>
+          <strong>{unreadableSentence(versions)}</strong>, so Stackurity can't tell which advisories apply.
+        </p>
       )}
+      {other && (
+        <p>
+          <strong>{plural(other.components, "component")} could not be checked</strong> for a reason shown on {other.components === 1 ? "its" : "each"} row.
+        </p>
+      )}
+      {(versions || other) && <NeedYouRows assetId={assetId} />}
       {files && (
         <>
           <p>
@@ -119,24 +102,64 @@ function NeedYou({ u, assetId, id }: { u: Unchecked; assetId?: number; id: strin
   );
 }
 
-const ROWS = 20;
+const ROWS = 100;
 
-/** Across assets: the components themselves, each with its asset and fix. */
-function UnreadableRows() {
-  const res = useLoad(() => api.get<List<InventoryRow>>("/inventory", { unchecked: "unreadable_version", limit: ROWS }), []);
+/**
+ * The components that need the user, grouped by what to do: "Commit
+ * package-lock.json next to web/package.json: chalk, left-pad". Each
+ * component is named once, with how many assets it is on. limit caps the
+ * groups shown, with "See all" for the rest.
+ */
+export function NeedYouRows({ assetId, limit }: { assetId?: number; limit?: number }) {
+  const [all, setAll] = useState(false);
+  const res = useLoad(
+    () =>
+      Promise.all(
+        (["unreadable_version", "other"] as const).map((u) =>
+          api.get<List<InventoryRow>>(assetId ? `/assets/${assetId}/inventory` : "/inventory", { unchecked: u, limit: ROWS }),
+        ),
+      ),
+    [assetId],
+  );
+  const rows = (res.data ?? []).flatMap((l) => l.items);
+  const more = (res.data ?? []).reduce((a, l) => a + Math.max(l.total - l.items.length, 0), 0);
+  const groups = groupByFix(rows);
+  const shown = limit && !all ? groups.slice(0, limit) : groups;
+  const link = (r: InventoryRow) => `/assets/${r.asset_id}?tab=inventory&unchecked=${r.unchecked_reason ?? "unreadable_version"}`;
   return (
     <>
       <ErrorBox error={res.error} title="Could not load the components" />
       {res.data && (
         <ul className="banner-list unchecked-rows">
-          {res.data.items.map((r) => (
-            <li key={r.id}>
-              <span className="mono">{r.name}</span> on <Link to={`/assets/${r.asset_id}?tab=inventory&unchecked=unreadable_version`}>{r.asset_name}</Link>
-              {r.location && <span className="small mono break"> {r.location}</span>}
-              {r.unchecked_fix && <div className="small">{r.unchecked_fix}</div>}
+          {shown.map((g) => (
+            <li key={g.fix}>
+              {g.fix}{" "}
+              {g.docs && (
+                <a href={g.docs} target="_blank" rel="noopener noreferrer">
+                  How
+                </a>
+              )}
+              <div className="small">
+                {g.components.map((c, i) => (
+                  <span key={c.name}>
+                    {i > 0 && ", "}
+                    <Link to={link(c.first)} className="mono">
+                      {c.name}
+                    </Link>
+                    {c.assets > 1 ? ` (on ${c.assets} assets)` : !assetId ? ` (${c.first.asset_name})` : ""}
+                  </span>
+                ))}
+              </div>
             </li>
           ))}
-          {res.data.total > res.data.items.length && <li className="small">and {plural(res.data.total - res.data.items.length, "more")}, on their assets' Inventory tabs</li>}
+          {limit && !all && groups.length > limit && (
+            <li className="small">
+              <button type="button" className="btn-link unchecked-more" onClick={() => setAll(true)}>
+                See all {groups.length}
+              </button>
+            </li>
+          )}
+          {more > 0 && <li className="small">and {plural(more, "more place")}, on their assets' Inventory tabs</li>}
         </ul>
       )}
     </>
@@ -187,13 +210,14 @@ export function UncheckedBreakdown({ u }: { u: Unchecked }) {
   const b = uncheckedBanner(u);
   if (!b && u.no_advisories === 0) return <p className="coverage-ok">Every component was checked against current vulnerability data.</p>;
   const versions = group(u, "unreadable_version");
+  const other = group(u, "other");
   const files = group(u, "unreadable_files");
   const unsupported = group(u, "unsupported");
   const waiting = group(u, "waiting_for_data");
   const none = group(u, "no_advisories");
   return (
     <dl className="coverage-states unchecked-breakdown">
-      <div>
+      <div id="needs-you">
         <dt>
           Needs you <span className="mono">{u.need_you.toLocaleString()}</span>
         </dt>
@@ -202,13 +226,13 @@ export function UncheckedBreakdown({ u }: { u: Unchecked }) {
             "Every version and application file could be read."
           ) : (
             <>
-              {versions && <>{unreadableSentence(versions)}: {versions.items.map((it) => it.label).join(", ")}. </>}
+              {needYouText(u)}.{" "}
               {files && (
                 <>
-                  {unreadableFilesSentence(files)}. {files.items[0]?.fix}{" "}
+                  {unreadableFilesSentence(files)}: {files.items[0]?.fix}{" "}
                 </>
               )}
-              {versions && <UnreadableRows />}
+              {(versions || other) && <NeedYouRows limit={3} />}
             </>
           )}
         </dd>

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { uncheckedBanner, uncheckedSummaryLine, unsupportedSentence, waitingSentence } from "./unchecked.ts";
+import { groupByFix, needYouText, uncheckedBanner, uncheckedSummaryLine, unsupportedSentence, waitingSentence } from "./unchecked.ts";
 
 const empty = { need_you: 0, not_supported: 0, waiting: 0, no_advisories: 0, overdue: false, groups: [] };
 
@@ -10,16 +10,41 @@ test("no banner when everything was checked", () => {
   assert.equal(uncheckedSummaryLine(empty), "Every component was checked.");
 });
 
-test("releases with no published advisories never raise the banner", () => {
+test("releases with no published advisories never raise the banner, and are still said", () => {
   assert.equal(uncheckedBanner({ ...empty, no_advisories: 4 }), null);
+  assert.equal(uncheckedSummaryLine({ ...empty, no_advisories: 4 }), "Every component was checked; 4 releases have no published advisories.");
+});
+
+test("need you says components and applications apart", () => {
+  assert.equal(needYouText({ ...empty, need_you: 3, need_you_components: 2, need_you_applications: 1 }), "2 components and 1 application need you");
+  assert.equal(needYouText({ ...empty, need_you: 1, need_you_components: 1, need_you_applications: 0 }), "1 component needs you");
+  assert.equal(needYouText({ ...empty, need_you: 2, need_you_components: 0, need_you_applications: 2 }), "2 applications need you");
+});
+
+test("components are grouped by what to do, each named once", () => {
+  const fix = "Commit package-lock.json next to web/package.json";
+  const g = groupByFix([
+    { name: "chalk", asset_id: 1, unchecked_fix: fix },
+    { name: "left-pad", asset_id: 1, unchecked_fix: fix },
+    { name: "left-pad", asset_id: 2, unchecked_fix: fix },
+    { name: "Chrome", asset_id: 3, unchecked_fix: "Repair the program" },
+  ]);
+  assert.equal(g.length, 2);
+  assert.deepEqual(
+    g[0].components.map((c) => [c.name, c.assets]),
+    [
+      ["chalk", 1],
+      ["left-pad", 2],
+    ],
+  );
 });
 
 test("the owner's example: leads with what needs the user, warning tone", () => {
-  const b = uncheckedBanner({ ...empty, need_you: 2, not_supported: 5, waiting: 1, no_advisories: 3 })!;
+  const b = uncheckedBanner({ ...empty, need_you: 2, need_you_components: 2, need_you_applications: 0, not_supported: 5, waiting: 1, no_advisories: 3 })!;
   assert.equal(b.tone, "warn");
   assert.deepEqual(
     b.parts.map((p) => p.text),
-    ["2 need you", "5 Stackurity doesn't support yet", "1 resolves on its own"],
+    ["2 components need you", "5 Stackurity doesn't support yet", "1 resolves on its own"],
   );
   assert.equal(b.noAdvisories, 3);
 });

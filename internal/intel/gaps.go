@@ -138,6 +138,7 @@ var notCheckedReasons = map[string]string{
 	store.UncheckedNoAdvisories:      "the source publishes no advisories for this release",
 	store.UncheckedUnreadableVersion: "the installed version could not be read",
 	store.UncheckedUnsupported:       "a release or kind the matcher does not read yet",
+	store.UncheckedOther:             "another reason the workspace can act on; each component's row says why",
 }
 
 // CoverageGaps builds the report across every active workspace. It reads in

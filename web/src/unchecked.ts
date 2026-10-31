@@ -34,7 +34,7 @@ export interface Banner {
 export function uncheckedBanner(u: Unchecked | null | undefined): Banner | null {
   if (!u) return null;
   const parts: BannerPart[] = [];
-  if (u.need_you > 0) parts.push({ key: "need_you", count: u.need_you, text: `${u.need_you.toLocaleString()} need you` });
+  if (u.need_you > 0) parts.push({ key: "need_you", count: u.need_you, text: needYouText(u) });
   if (u.not_supported > 0)
     parts.push({ key: "not_supported", count: u.not_supported, text: `${u.not_supported.toLocaleString()} Stackurity doesn't support yet` });
   if (u.waiting > 0)
@@ -45,6 +45,46 @@ export function uncheckedBanner(u: Unchecked | null | undefined): Banner | null 
     });
   if (parts.length === 0) return null;
   return { tone: u.need_you > 0 || u.overdue ? "warn" : "info", parts, noAdvisories: u.no_advisories };
+}
+
+/**
+ * "2 components and 1 application need you": components and applications
+ * are counted apart, so the number reads as what it is.
+ */
+export function needYouText(u: Unchecked): string {
+  const comps = u.need_you_components ?? u.need_you;
+  const apps = u.need_you_applications ?? 0;
+  const parts = [comps > 0 && plural(comps, "component"), apps > 0 && plural(apps, "application")].filter(Boolean);
+  return `${parts.join(" and ")} need${comps + apps === 1 ? "s" : ""} you`;
+}
+
+/**
+ * Rows of components grouped by what to do: "Commit package-lock.json next
+ * to web/package.json: chalk, left-pad". Each component is named once; one
+ * found on several assets says so.
+ */
+export function groupByFix<T extends { name: string; asset_id: number; unchecked_fix?: string; unchecked_docs?: string }>(
+  rows: T[],
+): { fix: string; docs?: string; components: { name: string; assets: number; first: T }[] }[] {
+  const out: { fix: string; docs?: string; components: { name: string; assets: number; first: T }[] }[] = [];
+  const seen = new Map<string, Set<number>>();
+  for (const r of rows) {
+    const fix = r.unchecked_fix ?? "";
+    let g = out.find((x) => x.fix === fix);
+    if (!g) {
+      g = { fix, docs: r.unchecked_docs, components: [] };
+      out.push(g);
+    }
+    const key = fix + "\u0000" + r.name;
+    const assets = seen.get(key) ?? new Set<number>();
+    if (!seen.has(key)) {
+      seen.set(key, assets);
+      g.components.push({ name: r.name, assets: 0, first: r });
+    }
+    assets.add(r.asset_id);
+    g.components.find((c) => c.name === r.name)!.assets = assets.size;
+  }
+  return out;
 }
 
 export function group(u: Unchecked | null | undefined, reason: UncheckedReason): UncheckedGroup | undefined {
@@ -81,6 +121,9 @@ export const NO_ADVISORIES_NOTE = "no published advisories for this release";
  */
 export function uncheckedSummaryLine(u: Unchecked | null | undefined): string {
   const b = uncheckedBanner(u);
-  if (!b) return "Every component was checked.";
+  if (!b) {
+    const n = u?.no_advisories ?? 0;
+    return n > 0 ? `Every component was checked; ${plural(n, "release")} ${n === 1 ? "has" : "have"} no published advisories.` : "Every component was checked.";
+  }
   return b.parts.map((p) => p.text).join(" · ");
 }

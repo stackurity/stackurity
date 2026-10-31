@@ -534,7 +534,7 @@ func (s *Store) ListInventory(ctx context.Context, f InventoryFilter) ([]Invento
 		CASE WHEN COALESCE(i.evidence->>'wordpress_org', '') = 'no' THEN '' ELSE COALESCE(pr.latest_stable, '') END,
 		(SELECT count(*) FROM findings f WHERE f.inventory_id = i.id AND f.status = 'open'),
 		`+rowCoverageSQL+`, i.coverage_reason, i.coverage_feed, i.evaluated_at, i.lifecycle_note,
-		`+uncheckedReasonSQL("("+rowCoverageSQL+") = 'stale_intelligence'")+`, `+uncheckedCauseSQL+`,
+		`+uncheckedReasonSQL(overdueFeedSQL)+`, `+uncheckedCauseSQL+`,
 		CASE WHEN c.type = 'generic' AND c.namespace IN ('wordpress-plugin', 'wordpress-theme') THEN
 		  CASE WHEN i.evidence->>'wordpress_org' = 'no' THEN 'not from wordpress.org: ' || COALESCE(i.evidence->>'wordpress_org_reason', '')
 		    WHEN pr.deprecated <> '' THEN pr.deprecated
@@ -567,6 +567,9 @@ func (s *Store) ListInventory(ctx context.Context, f InventoryFilter) ([]Invento
 			r.UncheckedCause = ""
 		}
 		r.UncheckedFix, r.UncheckedDocs = UnreadableVersionFix(r.UncheckedCause, r.Location)
+		if r.UncheckedReason == UncheckedOther {
+			r.UncheckedFix = OtherFix
+		}
 		out = append(out, r)
 	}
 	return out, total, rows.Err()

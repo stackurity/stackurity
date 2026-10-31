@@ -767,7 +767,7 @@ export interface InventoryRow {
   unchecked_docs?: string;
 }
 
-export type UncheckedReason = "unreadable_version" | "unreadable_files" | "unsupported" | "waiting_for_data" | "no_advisories";
+export type UncheckedReason = "unreadable_version" | "other" | "unreadable_files" | "unsupported" | "waiting_for_data" | "no_advisories";
 export type UncheckedActor = "user" | "stackurity" | "automatic" | "none";
 
 /** One subject of an unchecked reason: an ecosystem, a vulnerability source, a release or a cause. */
@@ -793,6 +793,9 @@ export interface UncheckedGroup {
 /** GET /coverage/unchecked: components not checked, grouped by who acts. */
 export interface Unchecked {
   need_you: number;
+  /** need_you split: components (unreadable version or another reason) and applications (unreadable files). */
+  need_you_components?: number;
+  need_you_applications?: number;
   not_supported: number;
   waiting: number;
   no_advisories: number;

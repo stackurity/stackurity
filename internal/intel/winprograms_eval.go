@@ -144,18 +144,11 @@ func (e *Evaluator) evaluateProgram(ctx context.Context, r store.EvalRow, pp *pr
 	case !pp.rep:
 		rc.Reason = fmt.Sprintf("the same %s %s as %q (another registry entry): its findings are reported once, there", p.Label, pp.version, pp.repName)
 		return nil, nil
-	case !configured:
-		notEvaluated(fmt.Sprintf("vulnerability feed %s has not been set up yet", feedName))
-		return nil, nil
-	case !feed.Enabled:
-		notEvaluated(fmt.Sprintf("vulnerability feed %s is disabled", feed.Name))
-		return nil, nil
-	case feed.LastSuccess == nil:
-		notEvaluated(fmt.Sprintf("vulnerability feed %s has not completed a sync", feed.Name))
+	case feedGapReason(feedName, feed, configured) != "":
+		notEvaluated(feedGapReason(feedName, feed, configured))
 		return nil, nil
 	case feed.Ecosystems != nil && !coversRelease(feed.Ecosystems, p.Ecosystem()):
-		notEvaluated(fmt.Sprintf("the advisories of %s have not been read from %s yet (feed %s): they are read by the next sync after a host first reports it",
-			p.Label, source, feed.Name))
+		notEvaluated(programNotReadReason(p.Label, source, feed.Name))
 		return nil, nil
 	}
 	advs, ok := cache[p.ID]

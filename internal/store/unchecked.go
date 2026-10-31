@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -21,14 +22,22 @@ import (
 //	no_advisories       none        the source publishes no advisories for this
 //	                                release: informational, not "may be vulnerable"
 //	unreadable_version  user        the installed version could not be read
+//	other               user        any other reason a source could not be
+//	                                used; the row's reason says what to fix
 //	unreadable_files    user        application files the agent may not read
 //	                                (counted in assets, not components)
+//
+// The reason is classified from the text the matcher writes; there is no
+// stored code yet (TODO: a coverage_code column would make this a lookup).
+// TestUncheckedReasonsFromProducers (internal/intel) produces every reason
+// from its producer and pins its class, so a wording change fails CI.
 const (
 	UncheckedUnsupported       = "unsupported"
 	UncheckedWaitingForData    = "waiting_for_data"
 	UncheckedNoAdvisories      = "no_advisories"
 	UncheckedUnreadableVersion = "unreadable_version"
 	UncheckedUnreadableFiles   = "unreadable_files"
+	UncheckedOther             = "other"
 )
 
 // Who acts on an unchecked reason.
@@ -43,47 +52,76 @@ const (
 var UncheckedActors = map[string]string{
 	UncheckedUnreadableVersion: ActorUser,
 	UncheckedUnreadableFiles:   ActorUser,
+	UncheckedOther:             ActorUser,
 	UncheckedUnsupported:       ActorStackurity,
 	UncheckedWaitingForData:    ActorAutomatic,
 	UncheckedNoAdvisories:      ActorNone,
 }
 
 // uncheckedOrder is the order of the groups: what needs the user first.
-var uncheckedOrder = []string{UncheckedUnreadableVersion, UncheckedUnreadableFiles, UncheckedUnsupported,
+var uncheckedOrder = []string{UncheckedUnreadableVersion, UncheckedOther, UncheckedUnreadableFiles, UncheckedUnsupported,
 	UncheckedWaitingForData, UncheckedNoAdvisories}
 
 // ValidUncheckedReason reports whether r names a reason components can have
 // (the inventory filter; unreadable_files is about files, not components).
 func ValidUncheckedReason(r string) bool {
 	switch r {
-	case UncheckedUnsupported, UncheckedWaitingForData, UncheckedNoAdvisories, UncheckedUnreadableVersion:
+	case UncheckedUnsupported, UncheckedWaitingForData, UncheckedNoAdvisories, UncheckedUnreadableVersion, UncheckedOther:
 		return true
 	}
 	return false
 }
 
 // uncheckedReasonSQL is why inventory row i was not checked (” when it
-// was), from the reasons the matcher writes (intel.Evaluator). stale is an
-// SQL condition that is true when an evaluated row was matched against
-// vulnerability data that is stale or failing (rowCoverageSQL).
+// was), from the reasons the matcher writes (intel.Evaluator; the producers
+// are in intel/reasons.go, osv.WhyNoTarget, winrelease and winprograms).
+// stale is an SQL condition that is true when an evaluated row was matched
+// against vulnerability data past its staleness window (overdueFeedSQL).
+//
+// Only coverage 'unsupported', or a not-evaluated reason known to be
+// Stackurity's own gap, is "unsupported": anything else not evaluated
+// falls to 'other', which the user is told to look at, never hidden as
+// something Stackurity will do.
 func uncheckedReasonSQL(stale string) string {
 	return `CASE
 	WHEN i.coverage = 'evaluated' THEN CASE WHEN ` + stale + ` THEN 'waiting_for_data' ELSE '' END
-	WHEN i.coverage NOT IN ('unsupported', 'not_evaluated') THEN ''
-	WHEN i.coverage_reason ~ 'vulnerability feed \S+ (has not been set up yet|is disabled|has not completed a sync)'
-	  OR i.coverage_reason LIKE 'the advisories of % have not been read from % yet%' THEN 'waiting_for_data'
 	WHEN i.coverage = 'unsupported' THEN 'unsupported'
-	WHEN i.coverage_reason ~ ' has no (advisories|updates) for ' THEN 'no_advisories'
+	WHEN i.coverage <> 'not_evaluated' THEN ''
+	WHEN i.coverage_reason ~ 'vulnerability feed \S+ (has not been set up yet|is disabled|has not completed a sync)'
+	  OR i.coverage_reason LIKE '%the advisories of % have not been read from % yet%'
+	  OR i.coverage_reason LIKE '%(the endoflife.date feed has not synced)%' THEN 'waiting_for_data'
+	WHEN i.coverage_reason ~ ' has no (advisories|updates) for '
+	  OR i.coverage_reason LIKE '%has no updates in Microsoft''s data since it left support%' THEN 'no_advisories'
 	WHEN ` + uncheckedCauseSQL + ` <> '' THEN 'unreadable_version'
-	ELSE 'unsupported' END`
+	WHEN i.coverage_reason LIKE 'the distro release % is not understood'
+	  OR i.coverage_reason LIKE '%is not a known release%'
+	  OR i.coverage_reason LIKE '%endoflife.date % has no release %'
+	  OR i.coverage_reason LIKE '%is not a Windows Server or Windows client release%'
+	  OR i.coverage_reason LIKE '%the curated catalogue reads no version for %' THEN 'unsupported'
+	ELSE 'other' END`
 }
 
-// uncheckedCauseSQL is why the installed version of row i could not be read.
+// overdueFeedSQL is true when inventory row i was matched against a
+// vulnerability feed that is switched off or has not synced within its
+// staleness window. A failing sync within the window is not overdue: the
+// data is still current, as for feed incidents.
+const overdueFeedSQL = `EXISTS (SELECT 1 FROM feeds fd WHERE fd.name = i.coverage_feed
+	AND (NOT fd.enabled OR fd.last_success IS NULL OR fd.last_success < now() - fd.stale_after))`
+
+// uncheckedCauseSQL is why the installed version of row i could not be
+// read, when the user can do something about it.
 const uncheckedCauseSQL = `CASE
-	WHEN i.coverage_reason = 'no installed version was reported' OR i.coverage_reason LIKE 'no version was recorded for %' THEN 'no_version'
+	WHEN i.coverage_reason = 'no installed version was reported' THEN 'no_version'
+	WHEN i.coverage_reason LIKE 'no version was recorded for %' THEN 'program_no_version'
+	WHEN i.coverage_reason LIKE 'the version % of % is not in the form the curated catalogue reads%' THEN 'program_version_form'
 	WHEN i.coverage_reason LIKE 'installed version % could not be compared using %' THEN 'unparseable_version'
 	WHEN i.coverage_reason LIKE 'the distro release is unknown%' THEN 'unknown_release'
 	WHEN i.coverage_reason = 'the package URL could not be read' THEN 'unreadable_package'
+	WHEN i.coverage_reason LIKE '%has no update revision (UBR)%' THEN 'windows_no_ubr'
+	WHEN i.coverage_reason LIKE '%no Windows build number in version%' THEN 'windows_no_build'
+	WHEN i.coverage_reason LIKE '%no product name, so Windows Server and client%'
+	  OR i.coverage_reason LIKE '%without the product name it cannot tell which%' THEN 'windows_no_product'
+	WHEN i.coverage_reason LIKE '%they disagree%' OR i.coverage_reason LIKE '%the name and build disagree%' THEN 'windows_mismatch'
 	ELSE '' END`
 
 // uncheckedSubjectSQL is what an unchecked row is about, per reason: the
@@ -93,10 +131,12 @@ const uncheckedCauseSQL = `CASE
 const uncheckedSubjectSQL = `CASE r.reason
 	WHEN 'unsupported' THEN c.type || '|' || ` + unsupportedCategorySQL + `
 	WHEN 'waiting_for_data' THEN COALESCE(NULLIF(i.coverage_feed, ''), substring(i.coverage_reason from 'vulnerability feed (\S+) '),
+	  CASE WHEN i.coverage_reason LIKE '%endoflife.date feed has not synced%' THEN 'lifecycle:endoflife' END,
 	  substring(i.coverage_reason from '\(feed ([^)]+)\)'), 'unknown')
 	WHEN 'no_advisories' THEN COALESCE(substring(i.coverage_reason from ' has no advisories for (\S+): '),
 	  substring(i.coverage_reason from ' has no updates for (Windows \S+) '), c.type)
 	WHEN 'unreadable_version' THEN ` + uncheckedCauseSQL + `
+	WHEN 'other' THEN c.type
 	ELSE '' END`
 
 // UncheckedItem is one subject within a reason: an ecosystem Stackurity does
@@ -131,8 +171,12 @@ type UncheckedGroup struct {
 // (or project), grouped by reason. The counts lead with what needs the user.
 type Unchecked struct {
 	// NeedYou counts what only the user can fix: components with no
-	// readable version and applications with files the agent may not read.
-	NeedYou int64 `json:"need_you"`
+	// readable version or another reason to look at, and applications with
+	// files the agent may not read. NeedYouComponents and
+	// NeedYouApplications split it, so it can be said in the right nouns.
+	NeedYou             int64 `json:"need_you"`
+	NeedYouComponents   int64 `json:"need_you_components"`
+	NeedYouApplications int64 `json:"need_you_applications"`
 	// NotSupported counts components Stackurity does not check yet.
 	NotSupported int64 `json:"not_supported"`
 	// Waiting counts components waiting for vulnerability data.
@@ -156,12 +200,12 @@ type UncheckedFilter struct {
 // reason and who acts. It reads the caller's workspace (row-level security
 // and project scope apply).
 func (s *Store) SummarizeUnchecked(ctx context.Context, f UncheckedFilter) (*Unchecked, error) {
-	stale, overdue, err := s.staleVulnFeeds(ctx)
+	feeds, stale, err := s.vulnFeedStates(ctx)
 	if err != nil {
 		return nil, err
 	}
 	rows, err := s.Pool.Query(ctx, `SELECT r.reason, `+uncheckedSubjectSQL+` AS subject,
-		  count(DISTINCT i.component_id), count(DISTINCT i.asset_id), min(c.type)
+		  count(DISTINCT i.component_id), count(DISTINCT i.asset_id), min(c.type), min(i.first_seen)
 		FROM inventory i JOIN components c ON c.id = i.component_id
 		JOIN assets a ON a.id = i.asset_id AND a.merged_into IS NULL AND a.collection_status <> 'removed'
 		CROSS JOIN LATERAL (SELECT `+uncheckedReasonSQL("i.coverage_feed = ANY($2)")+` AS reason) r
@@ -174,11 +218,13 @@ func (s *Store) SummarizeUnchecked(ctx context.Context, f UncheckedFilter) (*Unc
 	type key struct{ reason, subject string }
 	items := map[key]*UncheckedItem{}
 	typeOf := map[key]string{}
+	since := map[key]time.Time{}
 	for rows.Next() {
 		var k key
 		var comps, assets int64
 		var typ string
-		if err := rows.Scan(&k.reason, &k.subject, &comps, &assets, &typ); err != nil {
+		var first time.Time
+		if err := rows.Scan(&k.reason, &k.subject, &comps, &assets, &typ, &first); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -187,6 +233,7 @@ func (s *Store) SummarizeUnchecked(ctx context.Context, f UncheckedFilter) (*Unc
 		}
 		items[k] = &UncheckedItem{Key: k.subject, Components: comps, Assets: assets}
 		typeOf[k] = typ
+		since[k] = first
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
@@ -226,6 +273,7 @@ func (s *Store) SummarizeUnchecked(ctx context.Context, f UncheckedFilter) (*Unc
 		return nil, err
 	}
 
+	now := time.Now()
 	out := &Unchecked{Groups: []UncheckedGroup{}}
 	byReason := map[string]*UncheckedGroup{}
 	for k, it := range items {
@@ -236,11 +284,15 @@ func (s *Store) SummarizeUnchecked(ctx context.Context, f UncheckedFilter) (*Unc
 			byReason[k.reason] = g
 		}
 		it.Label = uncheckedLabel(k.reason, k.subject, typeOf[k])
-		if k.reason == UncheckedUnreadableVersion {
+		switch k.reason {
+		case UncheckedUnreadableVersion:
 			it.Fix, it.Docs = UnreadableVersionFix(k.subject, "")
-		}
-		if k.reason == UncheckedWaitingForData && overdue[k.subject] {
-			it.Overdue, g.Overdue = true, true
+		case UncheckedOther:
+			it.Fix = OtherFix
+		case UncheckedWaitingForData:
+			if feedOverdue(feeds[k.subject], since[k], now) {
+				it.Overdue, g.Overdue = true, true
+			}
 		}
 		g.Items = append(g.Items, *it)
 	}
@@ -261,10 +313,10 @@ func (s *Store) SummarizeUnchecked(ctx context.Context, f UncheckedFilter) (*Unc
 			return g.Items[i].Key < g.Items[j].Key
 		})
 		switch r {
-		case UncheckedUnreadableVersion:
-			out.NeedYou += g.Components
+		case UncheckedUnreadableVersion, UncheckedOther:
+			out.NeedYouComponents += g.Components
 		case UncheckedUnreadableFiles:
-			out.NeedYou += g.Assets
+			out.NeedYouApplications = g.Assets
 		case UncheckedUnsupported:
 			out.NotSupported = g.Components
 		case UncheckedWaitingForData:
@@ -274,34 +326,63 @@ func (s *Store) SummarizeUnchecked(ctx context.Context, f UncheckedFilter) (*Unc
 		}
 		out.Groups = append(out.Groups, *g)
 	}
+	out.NeedYou = out.NeedYouComponents + out.NeedYouApplications
 	return out, nil
 }
 
-// staleVulnFeeds lists the vulnerability sources rows matched against them
-// count as stale (rowCoverageSQL: switched off, failing, never synced or
-// past their window), and which of those are overdue: switched off, or with
-// no successful sync within their staleness window. A source failing within
-// its window is stale but not overdue.
-func (s *Store) staleVulnFeeds(ctx context.Context) ([]string, map[string]bool, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT name, NOT enabled OR COALESCE(last_success, created_at) < now() - stale_after
-		FROM feeds WHERE NOT enabled OR last_error <> '' OR last_success IS NULL OR last_success < now() - stale_after`)
+// FeedGrace is how long a vulnerability feed may be missing or without a
+// first sync before what waits for it is overdue: feeds are created and
+// synced within minutes, unless feeds are switched off or the server
+// cannot reach them (an air-gapped install without a mirror).
+const FeedGrace = 6 * time.Hour
+
+type feedState struct {
+	enabled     bool
+	lastSuccess *time.Time
+	created     time.Time
+	staleAfter  time.Duration
+}
+
+// vulnFeedStates reads every feed, and lists those whose matched rows wait
+// for newer data (overdueFeedSQL).
+func (s *Store) vulnFeedStates(ctx context.Context) (map[string]feedState, []string, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT name, enabled, last_success, created_at, stale_after,
+		  NOT enabled OR last_success IS NULL OR last_success < now() - stale_after FROM feeds`)
 	if err != nil {
 		return nil, nil, err
 	}
+	defer rows.Close()
+	out := map[string]feedState{}
 	stale := []string{}
-	overdue := map[string]bool{}
 	for rows.Next() {
 		var name string
-		var od bool
-		if err := rows.Scan(&name, &od); err != nil {
-			rows.Close()
+		var f feedState
+		var old bool
+		if err := rows.Scan(&name, &f.enabled, &f.lastSuccess, &f.created, &f.staleAfter, &old); err != nil {
 			return nil, nil, err
 		}
-		stale = append(stale, name)
-		overdue[name] = od
+		out[name] = f
+		if old {
+			stale = append(stale, name)
+		}
 	}
-	rows.Close()
-	return stale, overdue, rows.Err()
+	return out, stale, rows.Err()
+}
+
+// feedOverdue: what waits for this feed will not resolve on its own. A
+// feed that is switched off, has not synced within its window, or has been
+// missing or never synced for longer than FeedGrace since the first row
+// that waits for it.
+func feedOverdue(f feedState, waitingSince, now time.Time) bool {
+	switch {
+	case f.created.IsZero():
+		return now.Sub(waitingSince) > FeedGrace
+	case !f.enabled:
+		return true
+	case f.lastSuccess == nil:
+		return now.Sub(f.created) > max(FeedGrace, f.staleAfter)
+	}
+	return now.Sub(*f.lastSuccess) > f.staleAfter
 }
 
 // typeLabels name package types the way their users do.
@@ -368,6 +449,8 @@ func uncheckedLabel(reason, subject, typ string) string {
 		return strings.ReplaceAll(subject, ":", " ")
 	case UncheckedUnreadableVersion:
 		return unreadableCauses[subject].label
+	case UncheckedOther:
+		return TypeLabel(subject) + " components"
 	}
 	return subject
 }
@@ -384,7 +467,32 @@ var unreadableCauses = map[string]struct{ label, fix, docs string }{
 		"Let the agent read /etc/os-release (it reports the release), then check again.", installDocs + "#linux-hosts"},
 	"unreadable_package": {"package identifier could not be read",
 		"The package's identifier (purl) is malformed. Fix it in the SBOM or report it to the tool that wrote it.", installDocs + "#sboms"},
+	// Windows programs (the registry's uninstall entries).
+	"program_no_version": {"Windows program registered without a version",
+		"The program's entry under Apps & features has no version (the registry's DisplayVersion is empty). Repair or reinstall it with the vendor's installer so it records one, then check again.",
+		installDocs + "#windows-hosts"},
+	"program_version_form": {"Windows program version in an unexpected form",
+		"The program's registry version (DisplayVersion) is not in the form its vendor uses, often a repackaged or customised install. Install the vendor's own release, then check again.",
+		installDocs + "#windows-hosts"},
+	// Windows itself (the registry's CurrentVersion key).
+	"windows_no_ubr": {"Windows update revision (UBR) not reported",
+		"The agent reported the Windows build but not its update revision (the registry's UBR value), so the installed cumulative update is unknown. Update the Stackurity agent on the host, then check again.",
+		installDocs + "#windows-hosts"},
+	"windows_no_build": {"Windows build number not reported",
+		"The agent did not report the Windows build number (the registry's CurrentBuild). Update the Stackurity agent on the host, then check again.",
+		installDocs + "#windows-hosts"},
+	"windows_no_product": {"Windows edition not reported",
+		"The agent did not report the Windows product name, so Windows Server and client cannot be told apart. Update the Stackurity agent on the host, then check again.",
+		installDocs + "#windows-hosts"},
+	"windows_mismatch": {"Windows version and build disagree",
+		"The registry's version name and build number disagree, usually after an interrupted upgrade. Finish or repair the Windows update and restart, then check again.",
+		installDocs + "#windows-hosts"},
 }
+
+// OtherFix is what to do about a component not checked for a reason the
+// breakdown has no rule for: the row says why; it is never assumed to be
+// Stackurity's to fix.
+const OtherFix = "Each component's row says why it could not be checked. Fix what it names and check again; if the reason looks wrong, tell us."
 
 // manifests are files that declare dependencies without pinning them; a
 // component found there with no version needs the matching lockfile.
@@ -405,7 +513,7 @@ func UnreadableVersionFix(cause, location string) (fix, docs string) {
 	if cause == "no_version" && location != "" {
 		base := location[strings.LastIndex(location, "/")+1:]
 		if lock, ok := manifests[base]; ok {
-			return fmt.Sprintf("Commit %s next to %s so exact versions can be read, then check again.", lock, base), c.docs
+			return fmt.Sprintf("Commit %s next to %s so exact versions can be read, then check again.", lock, location), c.docs
 		}
 	}
 	return c.fix, c.docs
@@ -425,7 +533,7 @@ func uncheckedRowFilter(w *where, reason string) {
 	if reason != UncheckedWaitingForData {
 		w.conds = append(w.conds, "i.coverage IN ('unsupported', 'not_evaluated')")
 	}
-	w.add("("+uncheckedReasonSQL("("+rowCoverageSQL+") = 'stale_intelligence'")+") = ?", reason)
+	w.add("("+uncheckedReasonSQL(overdueFeedSQL)+") = ?", reason)
 }
 
 // UncheckedGaps counts, for the coverage-gap report, the components a
@@ -434,7 +542,7 @@ func uncheckedRowFilter(w *where, reason string) {
 // subject (kind "reason|type|subject"). Those with no source at all are in
 // VulnerabilitySourceGaps. It runs in system scope across active workspaces.
 func (s *Store) UncheckedGaps(ctx context.Context) ([]GapRow, error) {
-	stale, _, err := s.staleVulnFeeds(ctx)
+	_, stale, err := s.vulnFeedStates(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -462,4 +570,16 @@ func UncheckedLabel(kind string) (reason, label string) {
 		return "", kind
 	}
 	return parts[0], uncheckedLabel(parts[0], parts[2], parts[1])
+}
+
+// ClassifyUnchecked classifies one coverage state and reason the way the
+// breakdown does (reason, cause and actor), for tests that produce reasons
+// from their producers.
+func (s *Store) ClassifyUnchecked(ctx context.Context, coverage, reason string) (class, cause, actor string, err error) {
+	err = s.Pool.QueryRow(ctx, `SELECT `+uncheckedReasonSQL("false")+`, `+uncheckedCauseSQL+`
+		FROM (SELECT $1::text AS coverage, $2::text AS coverage_reason) i`, coverage, reason).Scan(&class, &cause)
+	if class != UncheckedUnreadableVersion {
+		cause = ""
+	}
+	return class, cause, UncheckedActors[class], err
 }

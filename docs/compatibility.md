@@ -430,8 +430,10 @@ then the components that were not checked split by who acts:
 
 - **Needs you**: the installed version could not be read (no lockfile, a
   version in a form its package manager does not use, an operating system
-  release that was not reported), or the agent may not read an
-  application's files. Each says what to do. The banner is a warning only
+  release that was not reported, a Windows program with no registry
+  version, a Windows build without its update revision), the agent may not
+  read an application's files, or another reason the component's row
+  names. Each says what to do. The banner is a warning only
   when something needs you.
 - **Stackurity doesn't support yet**: no vulnerability source for the
   ecosystem, distribution or kind of software. Nothing for you to do.

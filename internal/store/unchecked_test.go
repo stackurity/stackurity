@@ -97,6 +97,9 @@ func TestSummarizeUnchecked(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if u.NeedYouComponents != 3 || u.NeedYouApplications != 1 {
+		t.Errorf("need you: %d components, %d applications", u.NeedYouComponents, u.NeedYouApplications)
+	}
 	if u.NeedYou != 4 || u.NotSupported != 3 || u.Waiting != 2 || u.NoAdvisories != 1 || !u.Overdue {
 		t.Errorf("counts: need you %d, not supported %d, waiting %d, no advisories %d, overdue %v",
 			u.NeedYou, u.NotSupported, u.Waiting, u.NoAdvisories, u.Overdue)
@@ -179,6 +182,34 @@ func TestSummarizeUnchecked(t *testing.T) {
 		if r.Name == "openssl" && r.UncheckedActor != store.ActorNone {
 			t.Errorf("openssl: %+v", r)
 		}
+	}
+
+	// A feed missing for longer than the grace period will not resolve on
+	// its own (feeds switched off, an air-gapped install).
+	if _, err := s.Pool.Exec(ctx, `UPDATE inventory SET first_seen = now() - interval '7 hours'
+		WHERE component_id = (SELECT id FROM components WHERE name = 'express')`); err != nil {
+		t.Fatal(err)
+	}
+	late, err := s.SummarizeUnchecked(ctx, store.UncheckedFilter{AssetID: res.AssetID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, g := range late.Groups {
+		for _, it := range g.Items {
+			if it.Key == "osv:npm" && !it.Overdue {
+				t.Errorf("npm's source missing for 7 hours: %+v", it)
+			}
+		}
+	}
+
+	// A failed sync within the staleness window leaves the data current:
+	// curl, matched against Debian's data synced just now, still counts as
+	// checked.
+	if _, err := s.Pool.Exec(sys, `UPDATE feeds SET last_error = 'timeout' WHERE name = 'osv:Debian'`); err != nil {
+		t.Fatal(err)
+	}
+	if again, err := s.SummarizeUnchecked(ctx, store.UncheckedFilter{AssetID: res.AssetID}); err != nil || again.Waiting != 2 {
+		t.Errorf("a transient feed error: waiting %+v, %v", again, err)
 	}
 
 	// One asset: the application's own breakdown has only its files.

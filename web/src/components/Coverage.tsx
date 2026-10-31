@@ -45,6 +45,7 @@ const ROW_COVERAGE_TONES: Record<RowCoverage, Tone> = {
 /** A row that was not checked, badged by who acts: only "needs you" is a warning. */
 const UNCHECKED_ROW_BADGES: Record<string, { tone: Tone; label: string }> = {
   unreadable_version: { tone: "warn", label: "Needs you" },
+  other: { tone: "warn", label: "Needs you" },
   unsupported: { tone: "muted", label: "Not supported yet" },
   waiting_for_data: { tone: "info", label: "Waiting for data" },
   no_advisories: { tone: "muted", label: "No advisories" },
@@ -54,6 +55,7 @@ const UNCHECKED_ROW_BADGES: Record<string, { tone: Tone; label: string }> = {
 export const UNCHECKED_FILTERS: [string, string][] = [
   ["", "Any"],
   ["unreadable_version", "Needs you: no readable version"],
+  ["other", "Needs you: another reason"],
   ["unsupported", "Stackurity doesn't support yet"],
   ["waiting_for_data", "Waiting for vulnerability data"],
   ["no_advisories", "No published advisories"],
@@ -83,6 +85,7 @@ export function AssetStateBadge({ state, label }: { state: string; label?: strin
 export function coverageText(r: InventoryRow): string {
   if (r.unchecked_reason === "no_advisories") return NO_ADVISORIES_NOTE;
   if (r.unchecked_reason === "unreadable_version" && r.unchecked_fix) return `no readable version: ${r.unchecked_fix}`;
+  if (r.unchecked_reason === "other") return `not checked: ${r.coverage_reason || "no reason recorded"}`;
   if (r.unchecked_reason === "unsupported") return `Stackurity doesn't check this yet: ${r.coverage_reason || "no vulnerability source"}`;
   if (r.unchecked_reason === "waiting_for_data" && r.coverage !== "stale_intelligence") return "waiting for vulnerability data; this resolves on its own";
   switch (r.coverage) {
@@ -213,7 +216,7 @@ export const ASSET_STATE_MEANINGS: [string, string][] = [
   ["healthy", "Every scope was collected, every component was checked against current intelligence within the last 48 hours."],
   ["stale_intelligence", "Components were checked against vulnerability data that is out of date or failing to update."],
   ["failed_collection", "A collector reported a failed scope, or the asset stopped reporting, so the inventory may be incomplete."],
-  ["partially_evaluated", "Some components were not checked (vulnerability data not synced yet, a release with no published advisories, a version that could not be read), or the last report was incomplete."],
+  ["partially_evaluated", "Some components were not checked (vulnerability data not synced yet, a version that could not be read), or the last report was incomplete."],
   ["unsupported", "Some components or scopes have no vulnerability source (unsupported ecosystem or distribution, runtime outside a package manager)."],
   ["awaiting_verification", "Inventory arrived and has not been evaluated yet, or not within the last 48 hours."],
 ];
