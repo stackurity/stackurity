@@ -42,6 +42,10 @@ type Principal struct {
 	// (assistants.go). Its requests come only from the tools behind /mcp;
 	// Token then describes it, so it is capped like an API token.
 	Assistant *store.AssistantGrant
+	// Ask: the request is a tool of Ask Stackurity (ask.go), made in
+	// process with the person's own session while they wait for an answer.
+	// It may only read (projectGate), and nothing from outside can set it.
+	Ask bool
 	// PasswordSession: a browser session signed in with a local password.
 	PasswordSession bool
 	// NeedsMFAEnrolment: such a session without a second factor in a
@@ -69,6 +73,8 @@ func (p *Principal) Actor(r *http.Request) store.Actor {
 		a.Type = "anonymous"
 	case p.Assistant != nil:
 		a.Type, a.ID, a.Name = "assistant", p.Assistant.ID, p.User.Email+" (assistant "+p.Assistant.ClientName+")"
+	case p.Ask:
+		a.Type, a.ID, a.Name = "user", p.User.ID, p.User.Email+" (Ask Stackurity)"
 	case p.Token != nil:
 		a.Type, a.ID, a.Name = "token", p.Token.ID, p.Token.Name
 		if p.User != nil {
@@ -118,7 +124,7 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 			sess, err := s.Store.SessionInfo(r.Context(), c.Value)
 			switch {
 			case err == nil:
-				p = &Principal{User: sess.User, Role: sess.User.Role, Session: true, Workspace: sess.Workspace,
+				p = &Principal{User: sess.User, Role: sess.User.Role, Session: true, Workspace: sess.Workspace, Ask: viaAsk(r.Context()),
 					PasswordSession: sess.PasswordLogin, NeedsMFAEnrolment: sess.NeedsMFAEnrolment,
 					PasswordChangeRequired: sess.PasswordChangeRequired, SSOWorkspace: sess.SSOWorkspace, SessionExpires: sess.ExpiresAt}
 				if p.Workspace > 0 && editionSessionAccess != nil {

@@ -1,12 +1,22 @@
 # Outbound network access
 
-Stackurity has no telemetry. Every outbound connection is listed below. The only requests that are not for your own data or integrations are the [update check](#update-check), which sends nothing about you, the [breached-password check](#breached-password-check), which sends five characters of a hash, and [feedback](#feedback), which a user sends on purpose. All three can be turned off.
+Stackurity has no telemetry. Every outbound connection is listed below. The only requests that are not for your own data or integrations are the [update check](#update-check), which sends nothing about you, the [breached-password check](#breached-password-check), which sends five characters of a hash, and [feedback](#feedback), which a user sends on purpose. All three can be turned off. [Ask Stackurity](#ask-stackurity), when you turn it on, sends questions and the data they need to the model provider.
 
 | Component | Destination | When | Data sent |
 |---|---|---|---|
 | Server: Git integrations | The repository URL you configure (HTTPS only) | On the integration's schedule, or when someone clicks *Run now* | A Git fetch request, plus the referenced token as an HTTP Basic header |
 | Agent | Your Stackurity server | Every `--interval` | Hostname, machine-id, OS release, installed package list |
 | CLI `scan` / `sbom import` | Your Stackurity server | When run | Lockfile-derived component list, or the SBOM document |
+
+### Ask Stackurity
+
+Only when the server has a model provider ([install.md](install.md#ask-stackurity-in-app-assistant)) and an organisation turned the assistant on.
+
+| Destination | When | What is sent |
+|---|---|---|
+| `api.anthropic.com` (`STACKURITY_ASK_BASE_URL`), or Amazon Bedrock or Vertex AI in the region you set | When someone asks a question: up to 8 requests per question | The question, the page the person has open, and what the read-only tools read to answer it: inventory, issues, advisory text, asset, team and package names. Colleagues' names and email addresses are removed first. Also the fixed instructions and tool descriptions, and the earlier messages of the same conversation. No session, token or password |
+
+Anthropic's API processes it in the United States (global routing). What the provider keeps is set by your agreement with it.
 
 ### Update check
 

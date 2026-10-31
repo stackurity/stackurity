@@ -117,7 +117,7 @@ Secrets are never stored in the database. Integrations hold a *reference*: `env:
 
 ## Ask Stackurity (in-app assistant)
 
-Ask Stackurity answers questions in a panel of the dashboard with a Claude model. It is off unless the server has a model provider, and then each organisation's admin turns it on. It works in every edition, with your own provider account: you pay the provider for what it uses.
+Ask Stackurity answers questions in a panel of the dashboard with a Claude model ([ai-assistants.md](ai-assistants.md#ask-stackurity)). It is off unless the server has a model provider, and then each organisation's admin turns it on. It works in every edition, with your own provider account: you pay the provider for what it uses.
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -132,7 +132,7 @@ Ask Stackurity answers questions in a panel of the dashboard with a Claude model
 | `STACKURITY_ASK_FALLBACKS` | on | `off` stops Anthropic's API from retrying a question its safety checks declined on another model (Anthropic's API only) |
 | `STACKURITY_ASK_BASE_URL` | — | Anthropic's API through a proxy |
 
-Questions and what the assistant reads to answer them go to the provider. Each question can make up to 8 model calls. A typical question costs about $0.05 with `claude-sonnet-5-5` and $0.10 with `claude-opus-5-5`; one that reads a lot, up to about three times that.
+Questions and what the assistant reads to answer them go to the provider ([network.md](network.md#ask-stackurity)). Each question can make up to 8 model calls. A typical question costs about $0.05 with `claude-sonnet-5-5` and $0.10 with `claude-opus-5-5`; one that reads a lot, up to about three times that.
 
 ## Editions and licences
 
