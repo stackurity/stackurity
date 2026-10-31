@@ -974,8 +974,9 @@ export function SetupChecklist({ o, onChange, compact }: { o: Onboarding; onChan
     { done: Boolean(o.steps.assistant), text: "Connect an AI assistant", to: "/settings/ai-assistants" },
     { done: o.steps.notifications, text: "Turn on notifications", to: "/settings/integrations" },
     { done: o.steps.invite, text: "Invite your team", to: "/settings/users" },
-    // Recommended for admins: their account can change everything.
-    { done: Boolean(me?.user?.mfa_enabled), text: "Turn on two-factor sign-in for your account", to: "/account#mfa" },
+    // Recommended for admins: their account can change everything. A
+    // passkey is offered first there; they come back here once it is set up.
+    { done: Boolean(me?.user?.mfa_enabled), text: "Set up two-factor (a passkey takes a minute)", to: "/account?return=%2F#mfa" },
   ];
   const left = items.filter((i) => !i.done).length;
   const hide = async () => {
