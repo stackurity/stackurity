@@ -101,6 +101,13 @@ const GROUPS: { title: string; entries: Entry[] }[] = [
         about: "What Stackurity cannot check across every workspace: unread files, components and products without data.",
         instanceAdmin: true,
       },
+      {
+        to: "/admin/trials",
+        label: "Trials",
+        about: "Organisations that signed up on Stackurity Cloud: whether they connected anything, still use it and paid.",
+        instanceAdmin: true,
+        billing: true,
+      },
       { to: "/admin/packs", label: "Stack packs", about: "Extra file readers for stacks Stackurity does not read on its own.", instanceAdmin: true },
       { to: "/admin/license", label: "Licence", about: "Edition, limits and expiry.", instanceAdmin: true },
       { to: "/updates", label: "What's new", about: "Release notes and updates for this server.", instanceAdmin: true },
