@@ -12,7 +12,7 @@ test("an admin without two-factor must set up their own before requiring it", ()
 });
 
 test("the methods are named", () => {
-  assert.equal(MFA_METHODS, "authenticator app, with recovery codes as backup");
+  assert.equal(MFA_METHODS, "passkey or security key, authenticator app, with recovery codes as backup");
 });
 
 test("return paths stay on this site", () => {

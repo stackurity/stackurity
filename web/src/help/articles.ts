@@ -1233,6 +1233,67 @@ jobs:
 
   // ---------------------------------------------------------------- Settings and administration
   {
+    id: "two-factor",
+    title: "Two-factor sign-in",
+    section: "Settings and administration",
+    summary: "Passkeys, security keys, an authenticator app and recovery codes, and how an organisation can require them.",
+    where: ["Your account", "Two-factor methods"],
+    keywords: "2fa mfa two factor passkey security key yubikey webauthn fido touch id face id windows hello totp authenticator app recovery codes phishing",
+    body: [
+      { p: "A second factor means someone who learns your password still cannot sign in as you. Set yours up under [Your account](/account#mfa)." },
+      { h: "Add a passkey (recommended)" },
+      {
+        steps: [
+          "Open [Your account](/account#mfa) and, under **Passkeys and security keys**, click **Add a passkey or security key**.",
+          "Give it a name you will recognise, such as “MacBook Touch ID” or “YubiKey 5”, and enter your password.",
+          "Your browser asks where to save the passkey: this device (fingerprint, face or PIN), your phone, a password manager, or a security key you plug in or tap.",
+          "The first time, Stackurity shows ten **recovery codes**. Save them in your password manager: each signs you in once if you lose your devices.",
+        ],
+      },
+      { p: "Add a second passkey or key as a spare. A passkey is tied to this Stackurity's web address, so a look-alike site cannot use it." },
+      { h: "Sign in with a passkey" },
+      {
+        list: [
+          "**Sign in with a passkey** on the sign-in page needs no email or password: your device confirms it is you with your fingerprint, face or PIN.",
+          "Or sign in with your password; Stackurity then asks for your passkey, a code from your authenticator app, or a recovery code.",
+        ],
+      },
+      { h: "Authenticator app" },
+      {
+        p: "Under **Authenticator app**, click **Set up an authenticator app**, enter your password, scan the QR code with 1Password, Google Authenticator, Microsoft Authenticator or a similar app, and type the six-digit code it shows.",
+      },
+      { h: "Rename or remove a method" },
+      {
+        list: [
+          "Each passkey shows when it was added and last used. **Rename** changes its name; **Remove** asks for your password.",
+          "Adding or removing a method signs you out on your other devices.",
+          "If your organisation requires two-factor sign-in, you cannot remove the last method that counts there: add another one first.",
+        ],
+      },
+      { h: "Require it for your organisation (admins)" },
+      {
+        p: "Under [Settings → Users](/settings/users), **Two-factor sign-in** sets who must use it (optional, everyone, or admins and security) and which methods count. On the Enterprise plan, **Require phishing-resistant sign-in (passkeys only) for admins** makes admins sign in with a passkey. You must meet a policy yourself before you can save it.",
+      },
+      {
+        list: [
+          "People without a method that counts are sent straight to set one up when they next sign in, with passkeys offered first.",
+          "People who have one but signed in with something else (the app, where admins must use a passkey) are asked to confirm with it.",
+          "People who sign in with single sign-on use their identity provider’s second factor instead.",
+          "API tokens and connected AI assistants are not asked for a second factor: review them under [API tokens](/settings/tokens).",
+        ],
+      },
+      { h: "Lost your device?" },
+      {
+        list: [
+          "Sign in with your password and a recovery code, then add a new passkey or app and remove the lost one.",
+          "No recovery codes left? An admin can click **Reset two-factor** next to your name under [Settings → Users](/settings/users). It removes all your methods and signs you out; you then set them up again.",
+        ],
+      },
+      { note: "Text-message (SMS) codes are not offered on purpose: phone numbers can be hijacked by SIM swapping, and passkeys and authenticator apps are stronger and free." },
+      { warn: "Passkeys work only on the web address they were made for. If your Stackurity moves to a new address, sign in with a recovery code or your authenticator app and add your passkeys again." },
+    ],
+  },
+  {
     id: "risk-policy",
     title: "Risk policy: priorities, deadlines and SOS",
     section: "Settings and administration",
