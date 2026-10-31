@@ -63,6 +63,7 @@ import {
   Tabs,
   YesNo,
 } from "../components/ui";
+import { confirmAction } from "../components/ConfirmDialog";
 import { NoTeamsHint } from "../components/Teams";
 import { REPORTING_OVERRIDES, ReportingNotice, reportingSummary } from "../components/Reporting";
 import { AssetAskAI } from "../components/AskAI";
@@ -124,10 +125,14 @@ export function AssetDetailPage() {
 
   const onDelete = async () => {
     if (
-      !window.confirm(
-        `Delete asset "${a.name}" and all of its inventory, coverage and history? This cannot be undone. ` +
-          `If a collector still reports it, it will be recreated on the next collection.`,
-      )
+      !(await confirmAction({
+        title: `Delete asset "${a.name}" and all of its inventory, coverage and history?`,
+        message: "If a collector still reports it, it will be recreated on the next collection.",
+        consequence: "This cannot be undone.",
+        action: "Delete asset",
+        destructive: true,
+        typeToConfirm: a.name,
+      }))
     )
       return;
     const ok = await del.run(() => api.del(`/assets/${a.id}`).then(() => true));
@@ -933,7 +938,7 @@ function RelationsTab({ asset, editable, onChanged }: { asset: Asset; editable: 
   };
 
   const onRemove = async (r: Relation) => {
-    if (!window.confirm(`Remove relation ${r.from_name} ${humanize(r.kind)} ${r.to_name}?`)) return;
+    if (!(await confirmAction({ title: `Remove relation ${r.from_name} ${humanize(r.kind)} ${r.to_name}?`, action: "Remove relation" }))) return;
     const ok = await remove.run(() => api.del(`/assets/${r.from_asset}/relations`, { to_asset: r.to_asset, kind: r.kind }).then(() => true));
     if (ok) {
       res.reload();

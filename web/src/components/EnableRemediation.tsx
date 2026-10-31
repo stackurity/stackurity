@@ -2,6 +2,7 @@ import { useState } from "react";
 import { api, type Asset, type InventoryRow, type List, type Token } from "../api";
 import { useAction } from "../hooks";
 import { Card, CodeBlock, CopyBox, ErrorBox } from "./ui";
+import { confirmAction } from "./ConfirmDialog";
 
 /**
  * Admin-only: mints a collector token bound to one host and shows the setup
@@ -14,10 +15,13 @@ export function EnableRemediation({ asset }: { asset: Asset }) {
 
   const mint = async () => {
     if (
-      !window.confirm(
-        `Create a remediation token bound to ${asset.name}?\n\nWith it, an agent running as root with --remediate on this host can apply approved package changes ` +
-          `(only for packages in its local allowlist). Existing tokens are not affected.`,
-      )
+      !(await confirmAction({
+        title: `Create a remediation token bound to ${asset.name}?`,
+        message: "Existing tokens are not affected.",
+        consequence:
+          "With it, an agent running as root with --remediate on this host can apply approved package changes (only for packages in its local allowlist).",
+        action: "Create remediation token",
+      }))
     )
       return;
     const r = await act.run(async () => {

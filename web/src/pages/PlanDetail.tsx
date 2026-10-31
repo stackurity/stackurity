@@ -16,6 +16,7 @@ import {
   TargetLabel,
 } from "../components/Remediation";
 import { Card, CodeBlock, ErrorBox, KeyValues, Loading, Notice, PageHeader, RelativeTime } from "../components/ui";
+import { confirmAction } from "../components/ConfirmDialog";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -46,22 +47,33 @@ function DecisionPanel({
   const envs = plan.environments?.length ? plan.environments : [...new Set(actions.map((a) => a.environment || "no environment"))];
 
   const decide = async (decision: "approve" | "reject" | "cancel") => {
-    let msg = "";
-    if (decision === "approve") {
-      msg =
-        `Approve upgrading ${plan.package} to ${plan.target_version}?\n\n` +
-        `Assets (${assets.length}): ${assets.slice(0, 10).join(", ")}${assets.length > 10 ? ", …" : ""}\n` +
-        `Environments: ${envs.join(", ")}\n` +
-        `Window: ${policyWindow(policy)}\n` +
-        `Canary: ${policy?.canary_count ?? "?"} asset(s), soak ${policy?.soak_minutes ?? "?"} min, max ${policy?.max_concurrent ?? "?"} at once\n` +
-        `Rollback: ${ROLLBACK_LABEL[plan.rollback] ?? plan.rollback}\n\n` +
-        `Changes start on enrolled hosts within the window.`;
-    } else if (decision === "reject") {
-      msg = `Reject this plan? Nothing will be changed. A new plan may be proposed if the policy still matches.`;
-    } else {
-      msg = `Cancel this plan? Pending changes are not applied. Changes already applied stay in place.`;
-    }
-    if (!window.confirm(msg)) return;
+    const req =
+      decision === "approve"
+        ? {
+            title: `Approve upgrading ${plan.package} to ${plan.target_version}?`,
+            message:
+              `Assets (${assets.length}): ${assets.slice(0, 10).join(", ")}${assets.length > 10 ? ", …" : ""}\n` +
+              `Environments: ${envs.join(", ")}\n` +
+              `Window: ${policyWindow(policy)}\n` +
+              `Canary: ${policy?.canary_count ?? "?"} asset(s), soak ${policy?.soak_minutes ?? "?"} min, max ${policy?.max_concurrent ?? "?"} at once\n` +
+              `Rollback: ${ROLLBACK_LABEL[plan.rollback] ?? plan.rollback}`,
+            consequence: "Changes start on enrolled hosts within the window.",
+            action: "Approve upgrade",
+          }
+        : decision === "reject"
+          ? {
+              title: "Reject this plan?",
+              message: "A new plan may be proposed if the policy still matches.",
+              consequence: "Nothing will be changed.",
+              action: "Reject plan",
+            }
+          : {
+              title: "Cancel this plan?",
+              message: "Changes already applied stay in place.",
+              consequence: "Pending changes are not applied.",
+              action: "Cancel plan",
+            };
+    if (!(await confirmAction(req))) return;
     const ok = await act.run(() => api.post(`/remediation/plans/${plan.id}/decision`, { decision, note: note.trim() }).then(() => true));
     if (ok) {
       setNote("");

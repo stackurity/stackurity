@@ -5,6 +5,7 @@ import { useAction, useLoad } from "../../hooks";
 import { Badge } from "../../components/Badge";
 import { Table, type Column } from "../../components/Table";
 import { Card, Code, CopyBox, EmptyState, ErrorBox, Loading, PageHeader, RelativeTime } from "../../components/ui";
+import { confirmAction } from "../../components/ConfirmDialog";
 
 function tokenState(t: Token): string {
   if (t.revoked_at) return "revoked";
@@ -21,7 +22,16 @@ export function TokensPage() {
   const [showRevoked, setShowRevoked] = useState(false);
 
   const revoke = async (t: Token) => {
-    if (!window.confirm(`Revoke token "${t.name}" (${t.prefix}…)? Anything using it stops working immediately.`)) return;
+    if (
+      !(await confirmAction({
+        title: `Revoke token "${t.name}" (${t.prefix}…)?`,
+        consequence: "Anything using it stops working immediately.",
+        action: "Revoke token",
+        destructive: true,
+        typeToConfirm: t.name,
+      }))
+    )
+      return;
     const ok = await act.run(() => api.del(`/tokens/${t.id}`).then(() => true));
     if (ok) res.reload();
   };

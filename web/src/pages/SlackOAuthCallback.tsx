@@ -4,6 +4,7 @@ import { api, ApiError, SLACK_PENDING_KEY, type SlackOAuthResult, type SlackPend
 import { useAuth } from "../auth";
 import { ErrorBox, Loading, Notice } from "../components/ui";
 import { SLACK_ADD_PATH } from "../slackInstall";
+import { errorView } from "../errors";
 
 /*
  * /integrations/slack/oauth/callback?code=…&state=…: Slack sends the browser
@@ -173,7 +174,7 @@ export function SlackOAuthCallbackPage() {
             minutes old. Nothing was added.
           </Notice>
         ) : error.status === 502 ? (
-          <Notice kind="warn">Slack refused the connection: {error.message}</Notice>
+          <Notice kind="warn">Slack refused the connection: {errorView(error).text}</Notice>
         ) : (
           <ErrorBox error={error} title="Could not connect Slack" />
         )}

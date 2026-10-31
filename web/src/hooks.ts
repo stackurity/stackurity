@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router";
+import { confirmAction } from "./components/ConfirmDialog";
 import { api, ApiError, DEFAULT_EXCEPTION_MAX_DAYS, waitForJob, type Facets, type Queued, type RiskPolicy } from "./api";
 
 export interface Loaded<T> {
@@ -180,6 +182,7 @@ export function useExceptionMaxDays(): number {
  * tab, and following a link inside the dashboard.
  */
 export function useUnsavedChanges(dirty: boolean, message = "You have unsaved changes. Leave without saving?") {
+  const navigate = useNavigate();
   useEffect(() => {
     if (!dirty) return;
     const beforeUnload = (e: BeforeUnloadEvent) => {
@@ -191,10 +194,13 @@ export function useUnsavedChanges(dirty: boolean, message = "You have unsaved ch
       const a = (e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
       if (!a || a.target === "_blank" || a.origin !== window.location.origin) return;
       if (a.pathname === window.location.pathname && a.search === window.location.search) return;
-      if (!window.confirm(message)) {
-        e.preventDefault();
-        e.stopPropagation();
-      }
+      // Asked in the app's own dialog; the link is followed once confirmed.
+      e.preventDefault();
+      e.stopPropagation();
+      const to = a.pathname + a.search + a.hash;
+      void confirmAction({ title: "Leave this page?", message, action: "Leave without saving" }).then((ok) => {
+        if (ok) navigate(to);
+      });
     };
     window.addEventListener("beforeunload", beforeUnload);
     document.addEventListener("click", click, true);
@@ -202,5 +208,5 @@ export function useUnsavedChanges(dirty: boolean, message = "You have unsaved ch
       window.removeEventListener("beforeunload", beforeUnload);
       document.removeEventListener("click", click, true);
     };
-  }, [dirty, message]);
+  }, [dirty, message, navigate]);
 }

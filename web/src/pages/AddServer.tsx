@@ -5,6 +5,7 @@ import { useAction, useLoad } from "../hooks";
 import { absTime, plural } from "../format";
 import { Table, type Column } from "../components/Table";
 import { Card, Code, CodeBlock, EmptyState, ErrorBox, KeyValues, Loading, Notice, PageHeader, RelativeTime } from "../components/ui";
+import { confirmAction } from "../components/ConfirmDialog";
 
 const LOCAL_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
 
@@ -45,7 +46,17 @@ export function AddServerPage() {
 
   const revoke = async (e: Enrollment) => {
     const name = e.label ? `"${e.label}" (${e.prefix}…)` : `${e.prefix}…`;
-    if (!window.confirm(`Revoke install code ${name}? Servers that already enrolled keep reporting; the code can no longer add new ones.`)) return;
+    if (
+      !(await confirmAction({
+        title: `Revoke install code ${name}?`,
+        message: "Servers that already enrolled keep reporting.",
+        consequence: "The code can no longer add new servers.",
+        action: "Revoke install code",
+        destructive: true,
+        typeToConfirm: e.label || e.prefix,
+      }))
+    )
+      return;
     const ok = await act.run(() => api.del(`/enrollments/${e.id}`).then(() => true));
     if (ok) res.reload();
   };

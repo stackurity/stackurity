@@ -11,6 +11,7 @@ import {
 import { useAction } from "../hooks";
 import { SMTP_PRESETS } from "../smtpPresets";
 import { ErrorBox } from "./ui";
+import { errorView } from "../errors";
 
 /*
  * Pieces shared by onboarding (step 5) and Settings, Notifications: the two
@@ -141,7 +142,7 @@ export function AddToSlackButton({
         {button}
         {act.error && (
           <span className="text-bad small" role="alert">
-            Could not open Slack: {act.error.message}
+            Could not open Slack: {errorView(act.error).text}
           </span>
         )}
       </>

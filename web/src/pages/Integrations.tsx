@@ -17,6 +17,7 @@ import { minutesLabel } from "../format";
 import { Badge } from "../components/Badge";
 import { Table, type Column } from "../components/Table";
 import { Card, Code, EmptyState, ErrorBox, JobStatus, Loading, Notice, PageHeader, RelativeTime } from "../components/ui";
+import { confirmAction } from "../components/ConfirmDialog";
 
 function healthOf(i: Integration): { status: string; tone?: "good" | "bad" | "muted" | "warn" } {
   if (!i.enabled) return { status: "disabled", tone: "muted" };
@@ -78,7 +79,17 @@ export function IntegrationsPage() {
     if (r) res.reload();
   };
   const remove = async (i: Integration) => {
-    if (!window.confirm(`Delete the integration "${i.name}"? The assets and their inventory are kept.`)) return;
+    if (
+      !(await confirmAction({
+        title: `Delete the integration "${i.name}"?`,
+        message: "The assets and their inventory are kept.",
+        consequence: "It stops collecting, and its settings are deleted.",
+        action: "Delete integration",
+        destructive: true,
+        typeToConfirm: i.name,
+      }))
+    )
+      return;
     setMsg(null);
     const ok = await act.run(() => api.del(`/integrations/${i.id}`).then(() => true));
     if (ok) res.reload();

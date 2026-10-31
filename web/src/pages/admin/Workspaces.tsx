@@ -4,6 +4,7 @@ import { useAction, useLoad } from "../../hooks";
 import { Badge } from "../../components/Badge";
 import { Table, type Column } from "../../components/Table";
 import { Card, EmptyState, ErrorBox, Loading, Notice, PageHeader, RelativeTime } from "../../components/ui";
+import { confirmAction, promptText } from "../../components/ConfirmDialog";
 
 const PLAN_LABEL: Record<string, string> = {
   inherit: "As licensed",
@@ -122,8 +123,8 @@ export function WorkspacesPage() {
             type="button"
             className="btn btn-sm"
             disabled={act.pending}
-            onClick={() => {
-              const name = window.prompt("New name", w.name)?.trim();
+            onClick={async () => {
+              const name = (await promptText({ title: `Rename ${w.name}`, label: "New name", initial: w.name, action: "Rename workspace" }))?.trim();
               if (name && name !== w.name) void update(w, { name }, `Renamed to ${name}.`);
             }}
           >
@@ -133,14 +134,18 @@ export function WorkspacesPage() {
             type="button"
             className="btn btn-sm"
             disabled={act.pending}
-            onClick={() => {
+            onClick={async () => {
               if (w.read_only_at) {
                 void update(w, { read_only: false }, `${w.name} collects and notifies again.`);
                 return;
               }
-              const reason = window.prompt(
-                `Make ${w.name} read-only? Its members can still sign in and look, but nothing new is collected and no notifications are sent. Reason shown to them:`,
-              );
+              const reason = await promptText({
+                title: `Make ${w.name} read-only?`,
+                message: "Its members can still sign in and look, but nothing new is collected and no notifications are sent.",
+                label: "Reason shown to them",
+                action: "Make read-only",
+                allowEmpty: true,
+              });
               if (reason !== null) void update(w, { read_only: true, read_only_reason: reason.trim() }, `${w.name} is read-only.`);
             }}
           >
@@ -151,8 +156,18 @@ export function WorkspacesPage() {
               type="button"
               className={`btn btn-sm${w.disabled_at ? "" : " btn-link-danger"}`}
               disabled={act.pending}
-              onClick={() => {
-                if (w.disabled_at || window.confirm(`Disable ${w.name}? Its members, agents and tokens are locked out; data is kept.`))
+              onClick={async () => {
+                if (
+                  w.disabled_at ||
+                  (await confirmAction({
+                    title: `Disable ${w.name}?`,
+                    message: "Data is kept.",
+                    consequence: "Its members, agents and tokens are locked out.",
+                    action: "Disable workspace",
+                    destructive: true,
+                    typeToConfirm: w.name,
+                  }))
+                )
                   void update(w, { disabled: !w.disabled_at }, `${w.name} ${w.disabled_at ? "enabled" : "disabled"}.`);
               }}
             >

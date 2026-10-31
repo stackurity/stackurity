@@ -6,6 +6,8 @@ import { absTime } from "../../format";
 import { Table, type Column } from "../../components/Table";
 import { Card, EmptyState, ErrorBox, KeyValues, Loading, Notice, PageHeader } from "../../components/ui";
 import { UsageMeter } from "./Usage";
+import { confirmAction } from "../../components/ConfirmDialog";
+import { errorView } from "../../errors";
 
 /** Money in a currency's smallest unit (paise, cents), formatted for people. */
 export function money(amount: number, currency: string): string {
@@ -105,10 +107,13 @@ function Current({ b: cur, onChanged }: { b: Billing; onChanged: (b: Billing) =>
   const cancel = useAction();
   const doCancel = async () => {
     const until = day(cur.current_period_end);
-    const ok = window.confirm(
-      `Your plan stays until ${until || "the end of the period"}. Then the organisation becomes read-only: you can still sign in and look, ` +
-        "but nothing new is collected and no notifications are sent, and its data is deleted 30 days later unless you subscribe again.",
-    );
+    const ok = await confirmAction({
+      title: "Cancel the subscription?",
+      message: `Your plan stays until ${until || "the end of the period"}. Then the organisation becomes read-only: you can still sign in and look, but nothing new is collected and no notifications are sent.`,
+      consequence: "Its data is deleted 30 days later unless you subscribe again.",
+      action: "Cancel subscription",
+      destructive: true,
+    });
     if (!ok) return;
     const r = await cancel.run(() => api.post<Billing>("/billing/cancel", {}));
     if (r) onChanged(r);
@@ -215,11 +220,13 @@ function ChoosePlan({ b, onChanged }: { b: Billing; onChanged: (b: Billing) => v
   };
   /** The payment provider cannot change the subscription's plan (UPI, e-mandate, an Indian card): it is replaced by the bigger plan. */
   const replace = async () => {
-    const ok = window.confirm(
-      "Your current subscription is cancelled now and nothing more is charged on it; its plan continues until you pay. On the payment page " +
-        "you authorise the new plan with your card or UPI and pay the difference for the rest of this period; the new plan then starts at " +
-        "once and is billed in full from the end of the period.",
-    );
+    const ok = await confirmAction({
+      title: "Replace the subscription with the bigger plan?",
+      message:
+        "On the payment page you authorise the new plan with your card or UPI and pay the difference for the rest of this period; the new plan then starts at once and is billed in full from the end of the period.",
+      consequence: "Your current subscription is cancelled now and nothing more is charged on it; its plan continues until you pay.",
+      action: "Replace subscription",
+    });
     if (ok) await send(true);
   };
   const replaceRequired = act.error?.code === "replace_required";
@@ -229,7 +236,7 @@ function ChoosePlan({ b, onChanged }: { b: Billing; onChanged: (b: Billing) => v
       <form className="form" onSubmit={submit}>
         {replaceRequired ? (
           <Notice kind="warn">
-            <p>{act.error?.message}</p>
+            <p>{act.error && errorView(act.error).text}</p>
             <button type="button" className="btn btn-primary" onClick={() => void replace()} disabled={act.pending}>
               Cancel and subscribe again
             </button>

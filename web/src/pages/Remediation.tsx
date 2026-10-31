@@ -32,6 +32,7 @@ import {
 } from "../components/Remediation";
 import { Card, EmptyState, ErrorBox, Loading, Notice, PageHeader, Pager, RelativeTime } from "../components/ui";
 import { NoTeamsHint } from "../components/Teams";
+import { confirmAction } from "../components/ConfirmDialog";
 
 export function SafetyNote() {
   return (
@@ -237,7 +238,16 @@ export function PoliciesTab() {
   const teamList = teams.data?.items ?? [];
 
   const remove = async (p: RemediationPolicy) => {
-    if (!window.confirm(`Delete policy "${p.name}"? Its proposed, approved and in-progress plans are cancelled and nothing more is dispatched.`)) return;
+    if (
+      !(await confirmAction({
+        title: `Delete policy "${p.name}"?`,
+        consequence: "Its proposed, approved and in-progress plans are cancelled and nothing more is dispatched.",
+        action: "Delete policy",
+        destructive: true,
+        typeToConfirm: p.name,
+      }))
+    )
+      return;
     const ok = await act.run(() => api.del(`/remediation/policies/${p.id}`).then(() => true));
     if (ok) res.reload();
   };

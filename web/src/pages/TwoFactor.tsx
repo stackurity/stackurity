@@ -1,5 +1,7 @@
 import { useState, type FormEvent } from "react";
-import { Link } from "react-router";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
+import { safeReturn } from "../returnTo";
+import { MFA_METHODS, mustSetUpOwnFirst } from "../mfa";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { useAction, useLoad } from "../hooks";
@@ -109,8 +111,24 @@ export function TwoFactorCard() {
 function TwoFactorBody({ st, reload }: { st: MfaStatus; reload: () => void }) {
   const [mode, setMode] = useState<"idle" | "enrol" | "codes" | "off">("idle");
   const [codes, setCodes] = useState<string[] | null>(null);
+  // Sent here to set it up (?return=/settings/users): go back once done.
+  const [params] = useSearchParams();
+  const back = safeReturn(params.get("return"));
+  const navigate = useNavigate();
+  const { refresh } = useAuth();
 
-  if (codes) return <RecoveryCodes codes={codes} onDone={() => (setCodes(null), setMode("idle"), reload())} />;
+  if (codes)
+    return (
+      <RecoveryCodes
+        codes={codes}
+        onDone={() => {
+          setCodes(null);
+          setMode("idle");
+          reload();
+          if (back) void refresh().then(() => navigate(back));
+        }}
+      />
+    );
   if (mode === "enrol") return <Enrol onCancel={() => setMode("idle")} onDone={(c) => setCodes(c)} />;
 
   if (!st.enabled) {
@@ -118,8 +136,9 @@ function TwoFactorBody({ st, reload }: { st: MfaStatus; reload: () => void }) {
       <>
         <p>
           Two-factor sign-in asks for a code from an authenticator app (such as 1Password, Google Authenticator or Microsoft Authenticator) after your
-          password, so a stolen password alone is not enough.
+          password, so a stolen password alone is not enough. Methods: {MFA_METHODS}.
         </p>
+        {back && <Notice kind="info">Once it is set up, you go back to where you were.</Notice>}
         {st.required && <Notice kind="warn">Your organisation requires two-factor sign-in.</Notice>}
         {!st.available ? (
           <Notice kind="warn">This server cannot store two-factor secrets yet: an administrator must set STACKURITY_SECRET_KEY.</Notice>
@@ -349,6 +368,8 @@ export function MfaEnrolmentPage() {
 
 /** Settings → Users: "Require two-factor sign-in for all members" (admins). */
 export function RequireMfaCard() {
+  const { me } = useAuth();
+  const { pathname } = useLocation();
   const res = useLoad(() => api.get<{ require_mfa: boolean; members_without_mfa: number }>("/settings/security"), []);
   const act = useAction();
   const set = async (on: boolean) => {
@@ -357,13 +378,31 @@ export function RequireMfaCard() {
   };
   if (!res.data) return <ErrorBox error={res.error} title="Could not load security settings" />;
   const d = res.data;
+  // Requiring it without a second factor of your own would lock you out:
+  // the server refuses (409), so the box waits until you have one.
+  const ownMissing = mustSetUpOwnFirst(me?.user, d.require_mfa);
   return (
     <Card title="Two-factor sign-in">
       <ErrorBox error={act.error} title="Could not change the setting" />
+      <p className="small">Methods: {MFA_METHODS}.</p>
       <label className="check">
-        <input type="checkbox" checked={d.require_mfa} disabled={act.pending} onChange={(e) => void set(e.target.checked)} />
+        <input
+          type="checkbox"
+          checked={d.require_mfa}
+          disabled={act.pending || ownMissing}
+          aria-describedby={ownMissing ? "mfa-own-first" : undefined}
+          onChange={(e) => void set(e.target.checked)}
+        />
         Require two-factor sign-in for all members
       </label>
+      {ownMissing && (
+        <div className="mfa-own-first" id="mfa-own-first">
+          <p className="small">Set up two-factor for your own account first. Requiring it now would lock you out.</p>
+          <Link className="btn btn-primary btn-sm" to={`/account?return=${encodeURIComponent(pathname)}#mfa`}>
+            Set up now
+          </Link>
+        </div>
+      )}
       <p className="hint">
         {d.members_without_mfa === 0
           ? "Every member has two-factor sign-in."
