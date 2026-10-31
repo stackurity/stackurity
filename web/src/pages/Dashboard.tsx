@@ -39,6 +39,7 @@ import { Sparkline, WeekBars } from "../components/Sparkline";
 import { glanceTiles, needsYou, quietKinds, reportingCount, slaSplit, trendText, type NeedKind, type NeedRow } from "../dashboard";
 import { uncheckedBanner } from "../unchecked";
 import { OneOffLine } from "../components/Reporting";
+import { notReportingText } from "../reporting";
 import type { UpdatesSummary } from "../updates";
 import { Code, EmptyState, ErrorBox, Loading, Notice, PageHeader, RelativeTime } from "../components/ui";
 
@@ -356,7 +357,7 @@ function CoverageBlock({ o, unchecked, assets }: { o: Overview; unchecked: Retur
           <>
             {" · "}
             <Link to="/assets?status=stale" className="text-bad">
-              {quietKinds(assets, r.stale)}
+              {notReportingText(o.not_reporting) ?? quietKinds(assets, r.stale)}
             </Link>
           </>
         ) : (

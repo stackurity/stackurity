@@ -64,7 +64,7 @@ test("stopped reporting: long lists end with one 'see all' row", () => {
   const stale = Array.from({ length: 7 }, (_, i) => ({ id: i + 1, name: `h${i}`, kind: "repository", collection_status: "stale" }));
   const rows = reportingRows(null, stale);
   assert.equal(rows.length, 5);
-  assert.equal(rows[4].title, "Also 3 repositories stopped reporting");
+  assert.equal(rows[4].title, "Also 3 repositories not reporting");
   assert.equal(rows[0].title, "Repository h0 hasn't reported");
   assert.equal(rows[4].action.to, "/assets?status=stale");
 });
@@ -131,8 +131,8 @@ test("what stopped reporting is named by kind, never 'asset'", () => {
     { id: 3, name: "blog", kind: "repository", collection_status: "stale" },
     { id: 4, name: "api", kind: "host", collection_status: "ok" },
   ];
-  assert.equal(quietKinds(a, 3), "2 repositories and 1 server stopped reporting");
-  assert.equal(quietKinds(a.slice(1, 2), 1), "1 repository stopped reporting");
+  assert.equal(quietKinds(a, 3), "2 repositories and 1 server not reporting");
+  assert.equal(quietKinds(a.slice(1, 2), 1), "1 repository not reporting");
   // The assets at hand don't account for every stale one: no nouns guessed.
   assert.equal(quietKinds(a, 5), "5 not reporting");
 });

@@ -91,7 +91,9 @@ export function quietTitle(a: AssetLike): string {
 }
 
 /**
- * What stopped reporting, by kind: "1 server and 2 repositories". total is
+ * What is not reporting, by kind: "1 server and 2 repositories not
+ * reporting", as reporting.ts's notReportingText says it from the server's
+ * counts (used first; this is for when they are missing). total is
  * the count of stale assets; when the assets at hand do not account for all
  * of them (a long list is paged), it is "N not reporting" without nouns.
  */
@@ -102,7 +104,7 @@ export function quietKinds(assets: AssetLike[] | null | undefined, total: number
   for (const a of stale) byKind.set(a.kind ?? "", (byKind.get(a.kind ?? "") ?? 0) + 1);
   const parts = [...byKind.entries()].sort((x, y) => y[1] - x[1]).map(([k, n]) => `${n.toLocaleString()} ${assetNoun(k || undefined, n)}`);
   const said = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : parts[0];
-  return `${said} stopped reporting`;
+  return `${said} not reporting`;
 }
 
 /** How many assets that stopped reporting get a row of their own. */
