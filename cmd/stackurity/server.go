@@ -282,6 +282,12 @@ func serverCmd() *cobra.Command {
 			if srv.AccountMail != nil && srv.BaseURL == "" {
 				log.Warn("password reset links are off: they need STACKURITY_BASE_URL (never the request's Host header)")
 			}
+			if srv.Ask, err = askEngine(ctx, st, log); err != nil {
+				return err
+			}
+			if srv.Ask != nil {
+				checker.AskGlobalCap = srv.Ask.Config.GlobalCapMicros
+			}
 			// Metrics have their own listener, off by default, so they are
 			// never reachable on the public API port.
 			metricsAddr := os.Getenv("STACKURITY_METRICS_ADDR")

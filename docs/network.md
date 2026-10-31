@@ -1,6 +1,6 @@
 # Outbound network access
 
-Stackurity has no telemetry. Every outbound connection is listed below. The only requests that are not for your own data or integrations are the [update check](#update-check), which sends nothing about you, the [breached-password check](#breached-password-check), which sends five characters of a hash, and [feedback](#feedback), which a user sends on purpose. All three can be turned off.
+Stackurity has no telemetry. Every outbound connection is listed below. The only requests that are not for your own data or integrations are the [update check](#update-check), which sends nothing about you, the [breached-password check](#breached-password-check), which sends five characters of a hash, and [feedback](#feedback), which a user sends on purpose. All three can be turned off. [Ask Stackurity](#ask-stackurity), when you turn it on, sends questions and the data they need to the model provider.
 
 Started with nothing configured but its database, an empty install connects on its own to four hosts: `www.cisa.gov`, `endoflife.date` and `epss.empiricalsecurity.com` (the [feeds](#intelligence-feeds) every install has; the others come with inventory) and `api.github.com` (the [update check](#update-check), within 30 seconds of starting). With `STACKURITY_FEEDS=off` and `STACKURITY_UPDATE_CHECK=off` it connects to nothing but its database, and an agent reporting to it to nothing but the server. Every pull request checks both by starting the real server and refusing and recording every connection it tries ([`cmd/stackurity/egress_test.go`](../cmd/stackurity/egress_test.go)), so a new default destination fails CI until it is listed there and here. The same tests run in the licensed and Stackurity Cloud builds; Cloud is started with the least configuration it accepts (billing off: no Razorpay keys), and connects to the same four hosts and, with both switches off, to nothing.
 
@@ -9,6 +9,16 @@ Started with nothing configured but its database, an empty install connects on i
 | Server: Git integrations | The repository URL you configure (HTTPS only) | On the integration's schedule, or when someone clicks *Run now* | A Git fetch request, plus the referenced token as an HTTP Basic header |
 | Agent | Your Stackurity server | Every `--interval` | Hostname, machine-id, OS release, installed package list |
 | CLI `scan` / `sbom import` | Your Stackurity server | When run | Lockfile-derived component list, or the SBOM document |
+
+### Ask Stackurity
+
+Only when the server has a model provider ([install.md](install.md#ask-stackurity-in-app-assistant)) and an organisation turned the assistant on.
+
+| Destination | When | What is sent |
+|---|---|---|
+| `api.anthropic.com` (`STACKURITY_ASK_BASE_URL`), or Amazon Bedrock or Vertex AI in the region you set | When someone asks a question: up to 8 requests per question | The question, the page the person has open, and what the read-only tools read to answer it: inventory, issues, advisory text, asset, team and package names. Colleagues' names and email addresses are removed first. Also the fixed instructions and tool descriptions, and the earlier messages of the same conversation. No session, token or password |
+
+Anthropic's API processes it in the United States (global routing). What the provider keeps is set by your agreement with it.
 
 ### Update check
 

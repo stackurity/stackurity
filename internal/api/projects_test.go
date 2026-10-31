@@ -87,26 +87,38 @@ var projectScopes = map[string]string{
 	"GET /mcp":                                      "public",
 	"DELETE /mcp":                                   "public",
 
-	"GET /api/v1/auth/me":                   "account",
-	"POST /api/v1/auth/password":            "account",
-	"GET /api/v1/auth/email-preferences":    "account",
-	"PUT /api/v1/auth/email-preferences":    "account",
-	"PUT /api/v1/auth/default-project":      "account",
-	"POST /api/v1/feedback":                 "account",
-	"GET /api/v1/workspaces":                "account",
-	"POST /api/v1/workspaces/{id}/activate": "account",
-	"GET /api/v1/tokens":                    "account",
-	"POST /api/v1/tokens":                   "account",
-	"DELETE /api/v1/tokens/{id}":            "account",
-	"GET /api/v1/slack/links":               "account",
-	"DELETE /api/v1/slack/links/{id}":       "account",
-	"POST /api/v1/slack/links/preview":      "account",
-	"POST /api/v1/slack/links/confirm":      "account",
-	"POST /api/v1/oauth/authorize/preview":  "account",
-	"POST /api/v1/oauth/authorize":          "account",
-	"GET /api/v1/assistants":                "account",
-	"DELETE /api/v1/assistants/{id}":        "account",
-	"PATCH /api/v1/assistants/{id}":         "account",
+	"GET /api/v1/auth/me":                          "account",
+	"POST /api/v1/auth/password":                   "account",
+	"GET /api/v1/auth/email-preferences":           "account",
+	"PUT /api/v1/auth/email-preferences":           "account",
+	"PUT /api/v1/auth/default-project":             "account",
+	"POST /api/v1/feedback":                        "account",
+	"GET /api/v1/workspaces":                       "account",
+	"POST /api/v1/workspaces/{id}/activate":        "account",
+	"GET /api/v1/tokens":                           "account",
+	"POST /api/v1/tokens":                          "account",
+	"DELETE /api/v1/tokens/{id}":                   "account",
+	"GET /api/v1/slack/links":                      "account",
+	"GET /api/v1/ask/status":                       "account",
+	"POST /api/v1/ask/notice":                      "account",
+	"GET /api/v1/ask/conversations":                "account",
+	"POST /api/v1/ask/conversations":               "account",
+	"DELETE /api/v1/ask/conversations":             "account",
+	"GET /api/v1/ask/conversations/{id}":           "account",
+	"DELETE /api/v1/ask/conversations/{id}":        "account",
+	"POST /api/v1/ask/conversations/{id}/messages": "account",
+	"GET /api/v1/ask/settings":                     "org",
+	"PUT /api/v1/ask/settings":                     "org",
+	"DELETE /api/v1/ask/settings/conversations":    "org",
+	"GET /api/v1/admin/ask":                        "org",
+	"DELETE /api/v1/slack/links/{id}":              "account",
+	"POST /api/v1/slack/links/preview":             "account",
+	"POST /api/v1/slack/links/confirm":             "account",
+	"POST /api/v1/oauth/authorize/preview":         "account",
+	"POST /api/v1/oauth/authorize":                 "account",
+	"GET /api/v1/assistants":                       "account",
+	"DELETE /api/v1/assistants/{id}":               "account",
+	"PATCH /api/v1/assistants/{id}":                "account",
 
 	"GET /api/v1/packs":              "global",
 	"GET /api/v1/packs/{id}/archive": "global",
@@ -345,9 +357,12 @@ func (o *org) grant(t *testing.T, email string, project, asset int64, role auth.
 	return out.Grant
 }
 
-func newOrg(t *testing.T) *org {
+func newOrg(t *testing.T) *org { t.Helper(); return newOrgWith(t, nil) }
+
+// newOrgWith is newOrg with the server adjusted before it starts.
+func newOrgWith(t *testing.T, adjust func(*api.Server)) *org {
 	t.Helper()
-	e := newEnv(t)
+	e := newEnvWith(t, adjust)
 	ctx := context.Background()
 	if err := e.st.EnsureFeed(tenant.System(ctx), "osv:npm", "vulnerability", time.Hour, 6*time.Hour); err != nil {
 		t.Fatal(err)

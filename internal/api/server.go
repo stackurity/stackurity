@@ -20,6 +20,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"github.com/stackurity/stackurity/internal/ask"
 	"github.com/stackurity/stackurity/internal/auth"
 	"github.com/stackurity/stackurity/internal/db"
 	"github.com/stackurity/stackurity/internal/health"
@@ -138,6 +139,9 @@ type Server struct {
 	// Breached refuses passwords found in data breaches (Pwned Passwords,
 	// k-anonymity); nil turns the check off.
 	Breached *auth.BreachChecker
+	// Ask is the in-app assistant (ask.go); nil when no model provider is
+	// configured.
+	Ask *ask.Engine
 }
 
 func (s *Server) Handler() http.Handler {
@@ -145,6 +149,9 @@ func (s *Server) Handler() http.Handler {
 		editionPrepare(s)
 	}
 	s.limiter = newRateLimiter(s.Store, s.Log)
+	if s.Ask != nil && s.Ask.Alert == nil {
+		s.Ask.Alert = s.askAlert
+	}
 	r := chi.NewRouter()
 	if s.TrustProxy {
 		r.Use(s.realIP)
@@ -238,6 +245,8 @@ func (s *Server) Handler() http.Handler {
 			r.Get("/assistants", s.listAssistants)
 			r.Patch("/assistants/{id}", s.updateAssistant)
 			r.Delete("/assistants/{id}", s.disconnectAssistant)
+			// Ask Stackurity, the in-app assistant (ask.go).
+			s.askRoutes(r)
 			r.Get("/packs", s.listPacks)
 			r.Get("/packs/{id}/archive", s.packArchive)
 			r.Route("/admin/license", func(r chi.Router) {

@@ -199,6 +199,17 @@ The endpoint speaks both MCP eras: the 2026-07-28 revision (no handshake; `serve
 - **Disconnecting.** **Settings → AI assistants → Connected assistants → Disconnect** stops a connection at once, and removing Stackurity in the assistant revokes its tokens. A connection unused for 30 days ends by itself.
 - **What Stackurity keeps.** It never receives your conversation: an assistant sends only the tool it calls and that call's arguments. Stackurity does not store prompts or answers. It keeps hashes of codes and tokens, when each connection was made and last used, the usual request log (method, path, status), and, for changes, the activity log entry with what was changed. What the assistant's vendor keeps is up to the vendor and your agreement with them.
 
+## Ask Stackurity
+
+**Ask Stackurity** is an assistant inside the dashboard: ask a question in the panel on any page, and Claude answers from your Stackurity data, with links to the issues, assets and fixes it used. It is separate from the assistants above: it runs on the Stackurity server, which sends your question to the model provider.
+
+- **Off until you turn it on.** The server needs a model provider: `STACKURITY_ANTHROPIC_API_KEY` (or `_FILE`) for Anthropic's API, or Amazon Bedrock or Vertex AI settings ([install.md](install.md)). Then an organisation admin turns it on under **Settings → AI assistants → Ask Stackurity**, and each person accepts a notice before their first question.
+- **What it can read.** Exactly what you can, through the same read-only tools as a connected assistant, run as you: your role, your projects and the project you chose in the switcher. It cannot change anything.
+- **What is sent to the model provider.** Your question, the page you have open, and what the tools read to answer it: inventory, issues, advisory text, and asset, team and package names. Colleagues' names and email addresses are removed first. With Anthropic's API, this is processed by Anthropic in the United States.
+- **What Stackurity keeps.** Your conversations, for 30 days from when each was started; database backups keep them for up to about 30 days more. Only you can read them. Delete one or all of yours in the panel; an organisation admin can delete everyone's (**Delete all conversations**) but cannot read them. The audit log records that the notice was accepted, setting changes and deletions, never what was asked.
+- **Limits.** Questions per month (or in total, for a trial) and a monthly spend cap per organisation, a spend cap for the whole server (`STACKURITY_ASK_GLOBAL_SPEND_CAP_USD`), and 10 questions a minute per person. Admins are emailed at 80% and 100% of the organisation's cap; Platform health shows the server's.
+- **Treat answers as a starting point.** Answers can be wrong. Check them on the linked pages. Text in advisories and on your servers can try to steer the model; it can only ever read what you can, but do not run commands from an answer without reading them.
+
 ## Treat the output as sensitive
 
 Findings describe exploitable weaknesses. Keep them out of public issues, commits and logs, and only connect assistants whose data handling you accept for that information. An install command a tool returns carries a short-lived code that adds servers: treat it as a secret.

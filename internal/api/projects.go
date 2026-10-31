@@ -56,10 +56,20 @@ var projectRoutes = map[string]projectScope{
 	"POST /api/v1/tokens":                   accountScope,
 	"DELETE /api/v1/tokens/{id}":            accountScope,
 	// The caller's own linked Slack accounts (rows narrowed to them too).
-	"GET /api/v1/slack/links":          accountScope,
-	"DELETE /api/v1/slack/links/{id}":  accountScope,
-	"POST /api/v1/slack/links/preview": accountScope,
-	"POST /api/v1/slack/links/confirm": accountScope,
+	"GET /api/v1/slack/links": accountScope,
+	// Ask Stackurity: the caller's own conversations and questions; the
+	// tools it runs are narrowed as the caller's own requests are.
+	"GET /api/v1/ask/status":                       accountScope,
+	"POST /api/v1/ask/notice":                      accountScope,
+	"GET /api/v1/ask/conversations":                accountScope,
+	"POST /api/v1/ask/conversations":               accountScope,
+	"DELETE /api/v1/ask/conversations":             accountScope,
+	"GET /api/v1/ask/conversations/{id}":           accountScope,
+	"DELETE /api/v1/ask/conversations/{id}":        accountScope,
+	"POST /api/v1/ask/conversations/{id}/messages": accountScope,
+	"DELETE /api/v1/slack/links/{id}":              accountScope,
+	"POST /api/v1/slack/links/preview":             accountScope,
+	"POST /api/v1/slack/links/confirm":             accountScope,
 	// Connecting AI assistants: the consent page and the caller's own
 	// connections, in every workspace they belong to.
 	"POST /api/v1/oauth/authorize/preview": accountScope,
@@ -177,6 +187,18 @@ func (s *Server) projectGate(next http.Handler) http.Handler {
 		if p.Restricted && sc == orgOnly {
 			writeError(w, 403, "forbidden", "this needs an organisation-wide role; you have access to some projects only")
 			return
+		}
+		if p.Ask {
+			// Ask Stackurity's tools read what the person may read, and
+			// nothing else: no changes, no account settings, no assistant.
+			if r.Method != http.MethodGet {
+				writeError(w, 403, "forbidden", "Ask Stackurity only reads")
+				return
+			}
+			if sc == accountScope && route != "GET /api/v1/auth/me" {
+				writeError(w, 403, "forbidden", "Ask Stackurity cannot read account settings")
+				return
+			}
 		}
 		if a := p.Assistant; a != nil {
 			// An assistant reaches only what its tools use: no account

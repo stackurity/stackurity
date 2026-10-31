@@ -34,6 +34,10 @@
    "name": "Agents and uploads"
   },
   {
+   "name": "Ask Stackurity",
+   "description": "The in-app assistant: conversations, questions (server-sent events) and the organisation's settings. See docs/ai-assistants.md."
+  },
+  {
    "name": "Automatic fixes"
   },
   {
@@ -10038,6 +10042,402 @@
        "application/octet-stream": {
         "schema": {
          "type": "string"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/ask/status": {
+   "get": {
+    "operationId": "get_ask_status",
+    "summary": "Whether the caller can use Ask Stackurity now",
+    "description": "`available`, and when not, `reason` (`not_configured`, `ask_disabled`, `plan_required`, `read_only`, `spend_cap`) and `message`; `notice_version` and `notice_accepted`; `questions_used`, `questions_limit` (null: no limit), `question_period` (`month` or `total`), `resets_at`\n\nRole: a browser session",
+    "tags": [
+     "Ask Stackurity"
+    ],
+    "x-stackurity-role": "a browser session",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/ask/notice": {
+   "post": {
+    "operationId": "post_ask_notice",
+    "summary": "Accept the Ask Stackurity data notice",
+    "description": "`{\"version\"}`: the notice version from `/ask/status`; 409 `notice_changed` for an older one. Audited as `ask.notice_accepted`\n\nRole: a browser session",
+    "tags": [
+     "Ask Stackurity"
+    ],
+    "x-stackurity-role": "a browser session",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/ask/conversations": {
+   "get": {
+    "operationId": "get_ask_conversations",
+    "summary": "The caller's Ask Stackurity conversations",
+    "description": "The caller's own conversations in this organisation, the latest first: `id`, `title`, `model`, `created_at`, `updated_at`, `expires_at` (30 days after creation)\n\nRole: a browser session",
+    "tags": [
+     "Ask Stackurity"
+    ],
+    "x-stackurity-role": "a browser session",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "post": {
+    "operationId": "post_ask_conversations",
+    "summary": "Start an Ask Stackurity conversation",
+    "description": "`{}`. Answers the conversation (201), with the organisation's model and the project chosen in the switcher. 404 `not_configured`, 403 `ask_disabled`, 402 `plan_required` or `read_only` when it cannot be used\n\nRole: a browser session",
+    "tags": [
+     "Ask Stackurity"
+    ],
+    "x-stackurity-role": "a browser session",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "delete_ask_conversations",
+    "summary": "Delete all of the caller's Ask Stackurity conversations",
+    "description": "Deletes the caller's own conversations in this organisation; answers `deleted`\n\nRole: a browser session",
+    "tags": [
+     "Ask Stackurity"
+    ],
+    "x-stackurity-role": "a browser session",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/ask/conversations/{id}": {
+   "get": {
+    "operationId": "get_ask_conversations_id",
+    "summary": "One of the caller's Ask Stackurity conversations",
+    "description": "`conversation` and its `messages` as the caller saw them (`role`, `text`, `page`, `stop_reason`, `created_at`); no tool data. 404 for anyone else's, an organisation admin's included\n\nRole: a browser session",
+    "tags": [
+     "Ask Stackurity"
+    ],
+    "x-stackurity-role": "a browser session",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "delete_ask_conversations_id",
+    "summary": "Delete one of the caller's Ask Stackurity conversations",
+    "description": "404 for anyone else's (an organisation admin deletes everyone's with `DELETE /ask/settings/conversations`)\n\nRole: a browser session",
+    "tags": [
+     "Ask Stackurity"
+    ],
+    "x-stackurity-role": "a browser session",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/ask/conversations/{id}/messages": {
+   "post": {
+    "operationId": "post_ask_conversations_id_messages",
+    "summary": "Ask a question",
+    "description": "`{\"text\", \"page\": {\"kind\": \"finding\" | \"asset\" | \"component\" | \"fix_group\", \"id\"}}`. The answer streams as server-sent events: `tool` (what is being read), `text` (a piece of the answer), `reset` (drop the text so far), `done` (`stop_reason`, `questions_used`, `questions_limit`, `message`) or `error` (`code`, `message`). Before the stream: 409 `notice_required`, 429 `quota_reached`, `busy` or `rate_limited` (10 a minute and 60 an hour per person), and the status errors of `POST /ask/conversations`\n\nRole: a browser session",
+    "tags": [
+     "Ask Stackurity"
+    ],
+    "x-stackurity-role": "a browser session",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Server-sent events: tool, text, reset, done, error",
+      "content": {
+       "text/event-stream": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/ask/settings": {
+   "get": {
+    "operationId": "get_ask_settings",
+    "summary": "Ask Stackurity settings and use",
+    "description": "`enabled`, `configured`, `provider`, `model`, `question_limit`, `question_period`, `spend_cap_micros`, `questions_this_month`, `spend_this_month_micros` (millionths of a US dollar). Never anyone's conversations\n\nRole: admin",
+    "tags": [
+     "Ask Stackurity"
+    ],
+    "x-stackurity-role": "admin",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "put": {
+    "operationId": "put_ask_settings",
+    "summary": "Turn Ask Stackurity on or off for the organisation",
+    "description": "`{\"enabled\": true | false}`. Audited as `ask.settings`\n\nRole: admin",
+    "tags": [
+     "Ask Stackurity"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/ask/settings/conversations": {
+   "delete": {
+    "operationId": "delete_ask_settings_conversations",
+    "summary": "Delete every Ask Stackurity conversation in the organisation",
+    "description": "Whoever had them; answers `deleted` (a count). Admins can delete conversations but never read them. Audited as `ask.conversations_deleted`\n\nRole: admin",
+    "tags": [
+     "Ask Stackurity"
+    ],
+    "x-stackurity-role": "admin",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/admin/ask": {
+   "get": {
+    "operationId": "get_admin_ask",
+    "summary": "Ask Stackurity on this server",
+    "description": "`configured`, `provider`, `default_model`, `effort`, `global_spend_cap_micros` and `spend_this_month_micros` across every organisation\n\nRole: instance admin",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "instance admin",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
         }
        }
       }
