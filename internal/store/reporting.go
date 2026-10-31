@@ -172,6 +172,11 @@ func DueAfter(source, override string, runs int, usual, staleAfter, schedule tim
 	if staleAfter <= 0 {
 		staleAfter = DefaultStaleAfter
 	}
+	// A server the agent reports is never one-off: it would never say if
+	// the agent stopped.
+	if source == SourceAgent && override == ReportOneOff {
+		override = ReportAuto
+	}
 	switch override {
 	case ReportDaily:
 		return 48 * time.Hour, true
@@ -266,7 +271,9 @@ func refreshReporting(ctx context.Context, db q, ids []int64, staleAfter time.Du
 
 // dueSQL is an asset's overdue interval ($1: the agent's stale period in
 // seconds): the agent's follows STACKURITY_STALE_AFTER as it is now.
-const dueSQL = `CASE WHEN a.report_source = 'agent' AND a.report_override = 'auto'
+// A server the agent reports is always expected to report: its own period,
+// or a daily or weekly override; never one-off, whatever the override says.
+const dueSQL = `CASE WHEN a.report_source = 'agent' AND a.report_override NOT IN ('daily', 'weekly')
 	THEN make_interval(secs => $1) ELSE a.report_due_after END`
 
 // MarkStaleAssets flags assets whose next report is overdue (FR-03: stale
@@ -332,8 +339,11 @@ func recordReport(ctx context.Context, tx pgx.Tx, assetID int64, src ReportSourc
 	if src.IntegrationID > 0 {
 		integ = &src.IntegrationID
 	}
+	// An asset set to one-off that the agent now reports goes back to
+	// automatic: a server is never one-off (SetReportOverride).
 	if _, err := tx.Exec(ctx, `UPDATE assets SET report_source = $2,
-		report_integration_id = CASE WHEN $2 = 'integration' THEN COALESCE($3, CASE WHEN report_source = 'integration' THEN report_integration_id END) END
+		report_integration_id = CASE WHEN $2 = 'integration' THEN COALESCE($3, CASE WHEN report_source = 'integration' THEN report_integration_id END) END,
+		report_override = CASE WHEN $2 = 'agent' AND report_override = 'one_off' THEN 'auto' ELSE report_override END
 		WHERE id = $1`, assetID, src.Source, integ); err != nil {
 		return err
 	}
@@ -372,7 +382,7 @@ func reportingFrom(source, override string, runs *int32, usual, due *int64, last
 		r.Runs = int(*runs)
 	}
 	switch {
-	case override == ReportOneOff || due == nil && runs != nil && (source == SourceScan || source == SourceManual):
+	case override == ReportOneOff && source != SourceAgent || due == nil && runs != nil && (source == SourceScan || source == SourceManual):
 		r.Mode = "one_off"
 		t := lastSeen
 		r.AsOf = &t
@@ -390,7 +400,7 @@ func reportingFrom(source, override string, runs *int32, usual, due *int64, last
 
 // oneOffSQL selects assets no further report is expected of: reported once
 // by a scan or upload, or set to one-off.
-const oneOffSQL = `a.merged_into IS NULL AND a.collection_status <> 'removed' AND (a.report_override = 'one_off'
+const oneOffSQL = `a.merged_into IS NULL AND a.collection_status <> 'removed' AND (a.report_override = 'one_off' AND a.report_source <> 'agent'
 	OR a.report_override = 'auto' AND a.report_source IN ('scan', 'manual') AND a.report_runs IS NOT NULL AND a.report_due_after IS NULL)`
 
 // OneOffGroup counts the assets of one kind scanned once.

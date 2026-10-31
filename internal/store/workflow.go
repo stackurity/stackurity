@@ -727,7 +727,7 @@ func (s *Store) SyncSystemIncidents(ctx context.Context, current []SystemInciden
 			    'asset_kind', a.kind)
 			FROM assets a
 			WHERE i.status = 'open' AND i.kind = 'collection' AND i.key ~ '^asset:[0-9]+$' AND a.id = substring(i.key FROM 7)::bigint
-			  AND (a.report_override = 'one_off' OR a.report_source = 'integration'
+			  AND (a.report_override = 'one_off' AND a.report_source <> 'agent' OR a.report_source = 'integration'
 			    OR a.report_source IN ('scan', 'manual') AND a.report_runs IS NOT NULL AND a.report_due_after IS NULL)`); err != nil {
 			return err
 		}

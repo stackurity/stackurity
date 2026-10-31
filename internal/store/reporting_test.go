@@ -82,7 +82,7 @@ func TestDueAfter(t *testing.T) {
 		{store.SourceScan, "daily", 1, 0, 0, 48 * h, true},
 		{store.SourceScan, "weekly", 1, 0, 0, 8 * 24 * h, true},
 		{store.SourceAgent, "weekly", 9, 0, 0, 8 * 24 * h, true},
-		{store.SourceAgent, "one_off", 9, 0, 0, 0, false},
+		{store.SourceAgent, "one_off", 9, 0, 0, 48 * h, true}, // a server is never one-off
 		{"", "auto", 0, 0, 0, 0, false},
 	} {
 		due, ok := store.DueAfter(c.source, c.override, c.runs, c.usual, 48*h, c.schedule)
@@ -622,6 +622,58 @@ func TestAgentCannotBeOneOff(t *testing.T) {
 	weekly := store.ReportWeekly
 	if err := s.UpdateAsset(ctx, host, store.AssetUpdate{ReportOverride: &weekly}); err != nil {
 		t.Errorf("weekly: %v", err)
+	}
+}
+
+// A server that was first scanned, set to one-off, and then reported by the
+// agent is a server: the override goes back to automatic, and when the
+// agent goes quiet for 48 hours an incident opens. Even an agent asset left
+// one-off (as before this rule) is expected to report.
+func TestAgentAfterOneOffScanAlerts(t *testing.T) {
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	s := store.New(testdb.New(t))
+	b := model.NewBatch(model.Collector{ID: "lockfile-scanner", Version: "0.13.9", Method: "lockfile"},
+		model.AssetRef{Kind: model.AssetHost, Name: "web-9", Identifiers: []model.Identifier{{Scheme: "machine-id", Value: "web-9"}}})
+	b.Observations = []model.Observation{{Purl: "pkg:npm/lodash@4.17.15", Location: "/srv/app/package-lock.json"}}
+	b.Complete = true
+	r, err := s.Ingest(store.WithReportSource(ctx, store.ReportSource{Source: store.SourceScan}), b, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetReportOverride(ctx, r.AssetID, store.ReportOneOff); err != nil {
+		t.Fatal(err)
+	}
+	if host := appHost(t, s, ctx, "web-9", nil); host != r.AssetID {
+		t.Fatalf("agent reported asset %d, scan %d", host, r.AssetID)
+	}
+	a, _ := s.GetAsset(ctx, r.AssetID)
+	if a.Reporting.Source != store.SourceAgent || a.Reporting.Override != store.ReportAuto || a.Reporting.Mode != "agent" ||
+		a.Reporting.DueAfterSeconds == nil {
+		t.Errorf("after the agent reported: %+v", a.Reporting)
+	}
+	quiet := func() []store.SystemIncident {
+		t.Helper()
+		if _, err := s.Pool.Exec(ctx, `UPDATE assets SET last_seen = now() - interval '49 hours' WHERE id = $1`, r.AssetID); err != nil {
+			t.Fatal(err)
+		}
+		return reportingIncidents(t, s, ctx)
+	}
+	got := quiet()
+	if len(got) != 1 || !strings.HasPrefix(got[0].Title, "Server web-9: the Stackurity agent hasn't reported since ") {
+		t.Fatalf("incidents = %+v", got)
+	}
+	// One-off left on an agent asset (set before this rule): still expected.
+	if _, err := s.Pool.Exec(ctx, `UPDATE assets SET report_override = 'one_off', collection_status = 'ok' WHERE id = $1`, r.AssetID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RefreshReporting(ctx, []int64{r.AssetID}); err != nil {
+		t.Fatal(err)
+	}
+	if got := quiet(); len(got) != 1 {
+		t.Errorf("agent asset left one-off: incidents %+v", got)
+	}
+	if groups, _ := s.OneOffAssets(ctx); len(groups) != 0 {
+		t.Errorf("agent asset counted as one-off: %+v", groups)
 	}
 }
 
