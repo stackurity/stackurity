@@ -11,6 +11,8 @@ import { UpdateBanner } from "../pages/admin/Updates";
 import { IconActionPlan, IconActivity, IconChevron, IconHelp, IconInventory, IconMessage, IconMore, IconOverview, IconSettings, IconSidebar } from "./Icons";
 import { sectionOf, SectionTabsFor, type Section } from "./nav";
 import { ErrorBox } from "./ui";
+import { AskButton, AskPanel } from "./AskPanel";
+import type { AskStatus } from "../ask";
 
 const STORE_KEY = "stackurity.nav";
 
@@ -84,6 +86,24 @@ function Shell() {
     () => (hasWorkspace ? api.get<List<Incident>>("/incidents", { status: "open", sos: "true", limit: 1 }) : Promise.resolve(null)),
     [pathname, hasWorkspace, projectId],
   );
+
+  // Ask Stackurity: the panel is on every page; the button shows once the
+  // server has a model provider.
+  const [askOpen, setAskOpen] = useState(false);
+  const askStatus = useLoad(
+    () => (hasWorkspace ? api.get<AskStatus>("/ask/status") : Promise.resolve(undefined)),
+    [hasWorkspace, me?.workspace?.id, askOpen],
+  );
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.altKey && (e.key === "k" || e.key === "K") && askStatus.data && askStatus.data.reason !== "not_configured") {
+        e.preventDefault();
+        setAskOpen((o) => !o);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [askStatus.data]);
 
   // Requests to ignore issues waiting for a decision (security and admin).
   const decider = hasWorkspace && canAct("security");
@@ -188,6 +208,7 @@ function Shell() {
           <WorkspaceSwitcher />
           <ProjectSwitcher />
           <div className="topbar-search">{me?.workspace ? <GlobalSearch /> : null}</div>
+          {me?.workspace && <AskButton status={askStatus.data} onOpen={() => setAskOpen(true)} />}
           <AvatarMenu onFeedback={showFeedback ? () => feedback.current?.open() : undefined} onLogout={() => void logout()} version={version} />
         </header>
         <main id="main" className="content" tabIndex={-1}>
@@ -290,6 +311,7 @@ function Shell() {
       )}
       {/* Mounted once, outside the menus, so closing a menu does not close the dialog. */}
       <FeedbackDialog ref={feedback} />
+      {me?.workspace && <AskPanel open={askOpen} onClose={() => setAskOpen(false)} status={askStatus.data} reload={askStatus.reload} />}
     </div>
   );
 }
