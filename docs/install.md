@@ -159,6 +159,7 @@ Each person sets up their second factors under **Your account → Two-factor met
 - **Passkeys and security keys** (WebAuthn): a passkey in the device's platform authenticator (Touch ID, Face ID, Windows Hello, Android), in a password manager, or on a hardware key such as a YubiKey. People can register several, each with a name ("MacBook Touch ID", "YubiKey 5"), see when each was added and last used, rename them and remove them. A passkey is checked by the browser against this server's domain, so a look-alike site cannot use it: it is **phishing-resistant**.
 - **An authenticator app** (TOTP, RFC 6238: 1Password, Google Authenticator, Microsoft Authenticator, Authy and others): a six-digit code after the password. Setting it up asks for the password again, shows a QR code (and the key as text), and is confirmed with a code.
 - **Recovery codes**: ten one-time codes, shown once when the first passkey or app is set up; each signs in once instead of a passkey or code, for a lost device. **New recovery codes** replaces the set. They are removed with the last passkey or app.
+- **Email codes**, a fallback only, for people who cannot use a passkey or an app: see [below](#email-codes).
 
 **Signing in.** After the password, Stackurity asks for the second factor, offering a passkey first. **Sign in with a passkey** on the sign-in page signs in without an email or password: the browser offers the passkeys it holds for this server, and the passkey must verify the person (fingerprint, face or PIN), so it counts as both factors on its own. A passkey used after a password only needs to be present.
 
@@ -183,12 +184,26 @@ Each person sets up their second factors under **Your account → Two-factor met
 - **API tokens and connected AI assistants are not asked for a second factor**, as with GitHub: they are credentials of their own. The page lists how many the person has, with links to review them.
 - People who sign in with single sign-on are not asked for a Stackurity second factor: their identity provider does that. **Sign in with a passkey** does not get round an organisation's **Require single sign-on**: such a session is refused there as a password session is, except for the organisation owner's break-glass access.
 
+#### Email codes
+
+A six-digit code sent by email after the password, for people with no passkey or authenticator app. It uses the same transactional mail as password reset links (Stackurity Cloud's, or `STACKURITY_SMTP_*` on your own server), so it needs that mail.
+
+- **Off by default.** An admin allows them under **Settings → Users → Two-factor sign-in → Email code (fallback)**. People then turn them on themselves under **Your account → Two-factor methods**: the password, then a code sent to their address, which proves it reaches them.
+- **Never counted for admin, security or instance-admin roles**, never for **phishing-resistant sign-in**, and **never offered to someone who has another method**: setting up a passkey or the app turns email codes off (`auth.mfa_disabled`, "replaced").
+- A code is six random digits, valid for **10 minutes**, used **once**, and bound to the sign-in (or session) that asked for it; only a hash of it, with that sign-in's secret, is stored. The email's subject is "Someone is signing in to Stackurity", with the address the request came from.
+- Limited like app codes: five wrong codes end the sign-in and ten per account in 15 minutes; one code every 30 seconds, five per sign-in, six per account in 15 minutes.
+- **Every sign-in with an email code is followed by an email saying so**, with the time and address, and what to do if it was not them.
+- Where password reset links are emailed too, someone who controls the person's mailbox can reset the password and receive the code: email codes stop a leaked password, not a taken-over mailbox. That is why they are a fallback and never count for privileged roles.
+- If the server stops being able to send email, people who rely on email codes cannot finish signing in; an admin's **Reset two-factor** lets them in to set up a passkey or app.
+
+The activity log records `auth.mfa_email_sent`, `auth.mfa_enabled` and `auth.mfa_disabled` with `"method": "email"`, and `auth.login` with `"mfa": "email"`.
+
 **Why there is no SMS.** Codes sent by text message are deliberately not offered. A phone number can be moved to an attacker's SIM (SIM swapping) or its messages intercepted, so SMS does not protect against the attacks a second factor is for; and sending them to Indian numbers needs DLT registration of the sender and every message template, a cost and delay for each installation. Passkeys and authenticator apps are free and stronger.
 
 **An organisation's policy.** Admins set it under **Settings → Users → Two-factor sign-in**:
 
 - **Two-factor sign-in**: **Optional**, **Required for everyone**, or **Required for admins and security** (members with the admin or security role, organisation-wide or through a project).
-- **Methods that count**: passkey or security key, authenticator app (one of these must stay). A recovery code counts where the passkey or app it backs up does.
+- **Methods that count**: passkey or security key, authenticator app (one of these must stay), and email code (fallback; only on a server that can send email). A recovery code counts where the passkey or app it backs up does.
 - **Require phishing-resistant sign-in (passkeys only) for admins** (Enterprise plan, as single sign-on for an organisation is): admins must sign in with a passkey, whatever the rest of the policy says. Once on, it stays enforced if the plan lapses, and can always be turned off.
 
 The admin saving a policy must meet it with the session they are using, so a policy cannot lock its own author out (the page says to set up or sign in with the method first). The page counts the members the policy would ask to set up a second factor, and the admins without a passkey.

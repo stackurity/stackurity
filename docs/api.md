@@ -83,6 +83,12 @@ Signs in with `email` and `password` and starts a session (cookie). Limited per 
 
 `{"code": "123456"}`, or a recovery code: starts the session and answers the user, as `POST /auth/login` does. 401 `mfa_invalid` for a wrong or already-used code; after five, or after five minutes, 401 `mfa_expired` (sign in again). Limited per address and to ten codes per account in 15 minutes. See [Two-factor sign-in](install.md#two-factor-sign-in).
 
+### `POST /auth/mfa/email/send`
+
+**Who:** anyone with the challenge cookie from `POST /auth/login`
+
+For an account that uses email codes (`methods` is `["email"]`): emails a six-digit code, valid for 10 minutes and once, with the subject "Someone is signing in to Stackurity"; `POST /auth/mfa/verify` takes it. 204. One code every 30 seconds and five per sign-in (409), six per account in 15 minutes and limited per address (429); 409 `no_email_codes` for other accounts; 503 `email_failed` when the mail cannot be sent. Every sign-in with an email code is followed by an email saying so. Audited as `auth.mfa_email_sent`.
+
 ### `POST /auth/mfa/passkey/begin`
 
 **Who:** anyone with the challenge cookie from `POST /auth/login`
@@ -123,7 +129,7 @@ Changes your own password (`current_password`, `new_password`). Your other sessi
 
 **Who:** any signed-in user (browser session)
 
-Your two-factor methods: `enabled` (any), `methods`, `passkeys` (each with `id`, `name`, `backed_up` for a synced passkey, `discoverable`, `created_at`, `last_used_at` and `clone_warning_at`), `totp` and `enabled_at` (the app), `email`, `recovery_codes_left`; `required` and `accepted` (what the current organisation asks of you), `need` (`enrol` or `step_up` for this session), `required_by` (organisations whose policy your factors must keep meeting); `available` (the server has `STACKURITY_SECRET_KEY`, which the app needs), `passkeys_available` (with `passkeys_unavailable` saying why not, and `rp_id`, the domain passkeys are registered for), and how many `tokens` and `assistants` you have (they are not asked for a second factor).
+Your two-factor methods: `enabled` (any), `methods`, `passkeys` (each with `id`, `name`, `backed_up` for a synced passkey, `discoverable`, `created_at`, `last_used_at` and `clone_warning_at`), `totp` and `enabled_at` (the app), `email` (email codes are on), `email_offered` (you may turn them on; `email_unavailable` says why not), `recovery_codes_left`; `required` and `accepted` (what the current organisation asks of you), `need` (`enrol` or `step_up` for this session), `required_by` (organisations whose policy your factors must keep meeting); `available` (the server has `STACKURITY_SECRET_KEY`, which the app needs), `passkeys_available` (with `passkeys_unavailable` saying why not, and `rp_id`, the domain passkeys are registered for), and how many `tokens` and `assistants` you have (they are not asked for a second factor).
 
 ### `POST /auth/mfa/totp`
 
@@ -167,11 +173,35 @@ Your two-factor methods: `enabled` (any), `methods`, `passkeys` (each with `id`,
 
 `{"password": "..."}`: removes one of your passkeys. 409 `mfa_required` when your remaining factors would no longer meet the policy of one of your organisations. The recovery codes go with your last passkey or app. Your other sessions end. Audited as `auth.passkey_removed`.
 
+### `POST /auth/mfa/email`
+
+**Who:** any signed-in user (browser session)
+
+`{"password": "..."}`: emails a code that turns email codes on (204), the fallback second factor. 409 `email_codes_unavailable` (with why) unless the server can send email, you have no passkey or authenticator app, you are not an instance administrator, and one of your organisations allows email codes for your role (never for security or admin).
+
+### `POST /auth/mfa/email/confirm`
+
+**Who:** any signed-in user (browser session)
+
+`{"code": "123456"}` from that email (only in the session that asked for it): turns email codes on and answers `status` and `other_sessions_ended`. Your other sessions end, and this one gets a new session cookie. 400 `mfa_invalid` for a wrong or expired code; five wrong codes spend it. Setting up a passkey or the app later turns email codes off. Audited as `auth.mfa_enabled` with `"method": "email"`.
+
+### `DELETE /auth/mfa/email`
+
+**Who:** any signed-in user (browser session)
+
+`{"password": "..."}`: turns email codes off. 409 `mfa_required` when your organisation's policy needs them. Audited as `auth.mfa_disabled`.
+
+### `POST /auth/mfa/step-up/email/send`
+
+**Who:** any signed-in user (browser session)
+
+For an account that uses email codes: emails a code for `POST /auth/mfa/step-up`, which works only in this session. 204.
+
 ### `POST /auth/mfa/step-up`
 
 **Who:** any signed-in user (browser session)
 
-`{"code": "123456"}` or a recovery code: this session counts as signed in with it from now on (a new session cookie), for an organisation whose policy asks for it (`mfa_step_up_required`). Audited as `auth.mfa_step_up`.
+`{"code": "123456"}`, a recovery code, or for an account that uses email codes the code emailed by `POST /auth/mfa/step-up/email/send`: this session counts as signed in with it from now on (a new session cookie), for an organisation whose policy asks for it (`mfa_step_up_required`). Audited as `auth.mfa_step_up`.
 
 ### `POST /auth/mfa/step-up/passkey/begin`
 
@@ -900,7 +930,7 @@ The organisation's two-factor policy: `policy` (`optional`, `everyone`, or `admi
 
 **Who:** admin
 
-Any of `policy`, `methods` and `phishing_resistant_admins`; `{"require_mfa": true}` or `false` alone still works (`everyone` or `optional`). The methods must include `passkey` or `totp` (email codes never count for admins), and `phishing_resistant_admins` needs `passkey` among them (400). Allowing `email` needs a server that can send email (409 `email_unavailable`). Turning on `phishing_resistant_admins` needs the Enterprise plan (402 `plan_required`); once on, it stays enforced if the plan lapses and can always be turned off. Your own account must meet the new policy, with the session you are using: 409 `mfa_required` (set one up first) or `mfa_step_up_required` (sign in again with it). Audited as `settings.mfa_policy` (`before` and `after`), and as `settings.require_mfa` when whether anything is required changes.
+Any of `policy`, `methods` and `phishing_resistant_admins`; `{"require_mfa": true}` or `false` alone still works (`everyone` or `optional`). The methods must include `passkey` or `totp` (`email` codes never count for security, admin or instance-admin roles), and `phishing_resistant_admins` needs `passkey` among them (400). Allowing `email` needs a server that can send email (409 `email_unavailable`). Turning on `phishing_resistant_admins` needs the Enterprise plan (402 `plan_required`); once on, it stays enforced if the plan lapses and can always be turned off. Your own account must meet the new policy, with the session you are using: 409 `mfa_required` (set one up first) or `mfa_step_up_required` (sign in again with it). Audited as `settings.mfa_policy` (`before` and `after`), and as `settings.require_mfa` when whether anything is required changes.
 
 ## Projects and people
 
