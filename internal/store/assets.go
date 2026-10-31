@@ -566,7 +566,7 @@ func (s *Store) ListInventory(ctx context.Context, f InventoryFilter) ([]Invento
 		if r.UncheckedReason != UncheckedUnreadableVersion {
 			r.UncheckedCause = ""
 		}
-		r.UncheckedFix, r.UncheckedDocs = UnreadableVersionFix(r.UncheckedCause, r.Location)
+		r.UncheckedFix, r.UncheckedDocs = UnreadableVersionFix(r.UncheckedCause, r.Location, r.CollectorID)
 		if r.UncheckedReason == UncheckedOther {
 			r.UncheckedFix = OtherFix
 		}

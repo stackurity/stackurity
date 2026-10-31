@@ -1702,7 +1702,7 @@ An evaluated row can carry a `coverage_reason` too, saying how it is reported: k
 
 | `reason` | `actor` | Meaning |
 | --- | --- | --- |
-| `unreadable_version` | `user` | The installed version could not be read. Each item is a cause with `fix` and `docs`: `no_version`, `unparseable_version`, `unknown_release`, `unreadable_package`; for Windows programs `program_no_version` and `program_version_form`; for Windows itself `windows_no_build`, `windows_no_ubr`, `windows_no_product` and `windows_mismatch`. |
+| `unreadable_version` | `user` | The installed version could not be read. Each item is a cause with `fix` and `docs`: `no_version` (on a row, the fix depends on the source: commit the lockfile next to a manifest, include versions in an imported SBOM, or reinstall what a collector reported without one), `unparseable_version`, `unknown_release`, `unreadable_package`; for Windows programs `program_no_version` and `program_version_form`; for Windows itself `windows_no_build`, `windows_no_ubr`, `windows_no_product` and `windows_mismatch`. |
 | `other` | `user` | Any other reason a vulnerability source could not be used. Items are package types; each row's `coverage_reason` says what to fix. Never filed as Stackurity's. |
 | `unreadable_files` | `user` | Applications with files the agent's user may not read (counted in `assets`): grant read access with an ACL. |
 | `unsupported` | `stackurity` | No vulnerability source for the ecosystem, distribution or kind of software yet. Items are `type\|category` (`cocoapods\|ecosystem`, `deb\|vendor_build\|<repository>`). |

@@ -103,6 +103,8 @@ function NeedYou({ u, assetId, id }: { u: Unchecked; assetId?: number; id: strin
 }
 
 const ROWS = 100;
+/** Component names shown per fix before "and N more". */
+const NAMES = 10;
 
 /**
  * The components that need the user, grouped by what to do: "Commit
@@ -140,7 +142,7 @@ export function NeedYouRows({ assetId, limit }: { assetId?: number; limit?: numb
                 </a>
               )}
               <div className="small">
-                {g.components.map((c, i) => (
+                {g.components.slice(0, NAMES).map((c, i) => (
                   <span key={c.name}>
                     {i > 0 && ", "}
                     <Link to={link(c.first)} className="mono">
@@ -149,6 +151,7 @@ export function NeedYouRows({ assetId, limit }: { assetId?: number; limit?: numb
                     {c.assets > 1 ? ` (on ${c.assets} assets)` : !assetId ? ` (${c.first.asset_name})` : ""}
                   </span>
                 ))}
+              {g.components.length > NAMES && <> and {plural(g.components.length - NAMES, "more")}</>}
               </div>
             </li>
           ))}
@@ -206,6 +209,13 @@ function Waiting({ g, id }: { g?: UncheckedGroup; id: string }) {
  * The breakdown as a card body for the Coverage page: every reason with
  * who acts, or what is good when nothing is left out.
  */
+/** "2 components, 1 application": the two units of "needs you" side by side. */
+function needYouSplit(u: Unchecked): string {
+  const comps = u.need_you_components ?? u.need_you;
+  const apps = u.need_you_applications ?? 0;
+  return [comps > 0 && plural(comps, "component"), apps > 0 && plural(apps, "application")].filter(Boolean).join(", ");
+}
+
 export function UncheckedBreakdown({ u }: { u: Unchecked }) {
   const b = uncheckedBanner(u);
   if (!b && u.no_advisories === 0) return <p className="coverage-ok">Every component was checked against current vulnerability data.</p>;
@@ -219,7 +229,7 @@ export function UncheckedBreakdown({ u }: { u: Unchecked }) {
     <dl className="coverage-states unchecked-breakdown">
       <div id="needs-you">
         <dt>
-          Needs you <span className="mono">{u.need_you.toLocaleString()}</span>
+          Needs you <span className="small muted">{u.need_you === 0 ? "nothing" : needYouSplit(u)}</span>
         </dt>
         <dd className="small">
           {u.need_you === 0 ? (

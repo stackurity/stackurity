@@ -54,8 +54,7 @@ func (e *Evaluator) windowsUpdates(ctx context.Context, r store.EvalRow, feed st
 	}
 	eco := "Windows:" + tgt.Line
 	if feed.Ecosystems != nil && !coversRelease(feed.Ecosystems, eco) {
-		return notEvaluated(fmt.Sprintf("%s has no updates for Windows %s in the months it reads: the release left support before them, "+
-			"or is newer than the data", FeedMSRC, tgt.Line))
+		return notEvaluated(noWindowsUpdatesReason(FeedMSRC, tgt.Line))
 	}
 	lu, ok := cache[tgt.Line]
 	if !ok {

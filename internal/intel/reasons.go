@@ -32,6 +32,12 @@ func noAdvisoriesReason(feed, ecosystem string) string {
 		feed, ecosystem)
 }
 
+// noWindowsUpdatesReason: the feed has no updates for a Windows release.
+func noWindowsUpdatesReason(feed, line string) string {
+	return fmt.Sprintf("%s has no updates for Windows %s in the months it reads: the release left support before them, "+
+		"or is newer than the data", feed, line)
+}
+
 // uncomparableReason: the installed version cannot be read by the
 // ecosystem's version rules.
 func uncomparableReason(version, rules string) string {

@@ -66,6 +66,7 @@ func TestUncheckedReasonsFromProducers(t *testing.T) {
 	add("feed disabled", store.CoverageNotEvaluated, feedGapReason("osv:npm", store.Feed{Enabled: false}, true), waiting, "")
 	add("feed never synced", store.CoverageNotEvaluated, feedGapReason("osv:npm", store.Feed{Enabled: true}, true), waiting, "")
 	add("no advisories for the release", store.CoverageNotEvaluated, noAdvisoriesReason("osv:Debian", "Debian:14"), none, "")
+	add("no Windows updates for the release", store.CoverageNotEvaluated, noWindowsUpdatesReason(FeedMSRC, "24H2"), none, "")
 	add("uncomparable version", store.CoverageNotEvaluated, uncomparableReason("banana", "npm"), user, "unparseable_version")
 	add("program advisories not read", store.CoverageNotEvaluated, programNotReadReason("Google Chrome", "NVD", "programs:Windows"), waiting, "")
 
@@ -164,7 +165,7 @@ func TestUncheckedReasonsFromProducers(t *testing.T) {
 		}
 		// Every user case comes with a fix.
 		if actor == store.ActorUser && class == store.UncheckedUnreadableVersion {
-			if fix, _ := store.UnreadableVersionFix(cause, ""); fix == "" {
+			if fix, _ := store.UnreadableVersionFix(cause, "", ""); fix == "" {
 				t.Errorf("%s: no fix for %s", c.name, cause)
 			}
 		}

@@ -286,7 +286,7 @@ func (s *Store) SummarizeUnchecked(ctx context.Context, f UncheckedFilter) (*Unc
 		it.Label = uncheckedLabel(k.reason, k.subject, typeOf[k])
 		switch k.reason {
 		case UncheckedUnreadableVersion:
-			it.Fix, it.Docs = UnreadableVersionFix(k.subject, "")
+			it.Fix, it.Docs = UnreadableVersionFix(k.subject, "", "")
 		case UncheckedOther:
 			it.Fix = OtherFix
 		case UncheckedWaitingForData:
@@ -458,8 +458,10 @@ func uncheckedLabel(reason, subject, typ string) string {
 const installDocs = "https://github.com/stackurity/stackurity/blob/main/docs/install.md"
 
 var unreadableCauses = map[string]struct{ label, fix, docs string }{
+	// The summary's fix; each row's says what to do for where it came
+	// from (UnreadableVersionFix).
 	"no_version": {"no version recorded",
-		"Commit the lockfile (package-lock.json, yarn.lock, composer.lock, poetry.lock and so on) next to the manifest, or install the package with its package manager, then check again.",
+		"Each component's row says what to do: commit the lockfile next to a manifest, include versions in an imported SBOM, or reinstall a package whose install record has no version.",
 		installDocs + "#repositories"},
 	"unparseable_version": {"version in a form its package manager does not use",
 		"Install a released version, or tag your own build with one (1.2.3), then check again.", ""},
@@ -503,20 +505,29 @@ var manifests = map[string]string{
 }
 
 // UnreadableVersionFix says what to do about a component whose version could
-// not be read, and where the docs are. location (optional) is where the
-// component was found: a manifest names the lockfile to commit.
-func UnreadableVersionFix(cause, location string) (fix, docs string) {
+// not be read, and where the docs are. For no version, it depends on where
+// the component came from: collector (optional) is its collector, location
+// (optional) where it was found. An imported SBOM needs versions in it; a
+// manifest needs its lockfile; anything else was reported by a collector
+// without one.
+func UnreadableVersionFix(cause, location, collector string) (fix, docs string) {
 	c, ok := unreadableCauses[cause]
 	if !ok {
 		return "", ""
 	}
-	if cause == "no_version" && location != "" {
-		base := location[strings.LastIndex(location, "/")+1:]
-		if lock, ok := manifests[base]; ok {
-			return fmt.Sprintf("Commit %s next to %s so exact versions can be read, then check again.", lock, location), c.docs
-		}
+	if cause != "no_version" || (location == "" && collector == "") {
+		return c.fix, c.docs
 	}
-	return c.fix, c.docs
+	if strings.HasSuffix(collector, "-import") { // cyclonedx-import, spdx-import (internal/sbom)
+		return "The imported SBOM lists this component without a version. Include versions in the SBOM (most generators do with their default settings), then import it again.",
+			installDocs + "#sboms"
+	}
+	base := location[strings.LastIndex(location, "/")+1:]
+	if lock, ok := manifests[base]; ok {
+		return fmt.Sprintf("Commit %s next to %s so exact versions can be read, then check again.", lock, location), installDocs + "#repositories"
+	}
+	return "The collector reported this component without a version. Check again; if it stays, its install record may be damaged: reinstall it with its package manager, then check again.",
+		installDocs + "#collecting-inventory"
 }
 
 // UnreadableFilesFix says what to do about application files the agent may
