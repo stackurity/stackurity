@@ -372,9 +372,8 @@ func earlierReleaseKernels(rows []store.EvalRow) map[int64]string {
 			if k.row.Type == "rpm" {
 				remove = "sudo dnf remove "
 			}
-			out[k.row.InventoryID] = fmt.Sprintf("kernel %s (%s) is from a release before %s %s and is not running: left behind by a release upgrade, "+
-				"it is not matched because %s %s advisories do not describe it. Remove old kernels: %s, or this one: %s%s",
-				k.release, built, label, host, label, host, fixplan.RemoveOldKernels(osID, host), remove, strings.Join(names, " "))
+			out[k.row.InventoryID] = earlierReleaseKernelReason(k.release, built, label+" "+host,
+				fixplan.RemoveOldKernels(osID, host), remove+strings.Join(names, " "))
 		}
 	}
 	return out
