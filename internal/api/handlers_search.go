@@ -11,7 +11,7 @@ import (
 // search is the global search: vulnerabilities, finding titles, components,
 // assets, teams and members of the current workspace matching q, grouped by
 // type. Members are included for engineers and above, who can already list
-// them in the user directory.
+// them in the user directory, and never for Ask Stackurity.
 func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 	q, err := store.NormalizeSearch(r.URL.Query().Get("q"))
 	if err != nil {
@@ -20,7 +20,8 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	p := principal(r)
-	members := p.Role.AtLeast(auth.RoleEngineer)
+	// Ask Stackurity's model never gets colleagues' names and addresses.
+	members := p.Role.AtLeast(auth.RoleEngineer) && !p.Ask
 	res, err := s.Store.SearchWith(r.Context(), q, store.SearchOptions{Limit: limit, Members: members, ProjectOnly: p.boundToProject()})
 	if err != nil {
 		s.fail(w, r, err)
