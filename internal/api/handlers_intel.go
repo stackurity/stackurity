@@ -30,6 +30,20 @@ func (s *Server) listFindings(w http.ResponseWriter, r *http.Request) {
 	f.State = q.Get("state")
 	f.SOS = q.Get("sos") == "true"
 	f.Overdue = q.Get("overdue") == "true"
+	f.OnTime = q.Get("overdue") == "false"
+	for _, d := range []struct {
+		name string
+		to   **time.Time
+	}{{"due_before", &f.DueBefore}, {"due_after", &f.DueAfter}} {
+		if v := q.Get(d.name); v != "" {
+			t, err := time.Parse(time.RFC3339, v)
+			if err != nil {
+				s.fail(w, r, badRequest(d.name+" must be a time such as 2026-10-31T23:59:59Z"))
+				return
+			}
+			*d.to = &t
+		}
+	}
 	f.AssigneeUser = qInt(r, "assignee_user")
 	f.Unassigned = q.Get("assignee") == "none"
 	f.FixGroup = q.Get("fix_group")
@@ -278,4 +292,27 @@ func (s *Server) componentIntel(w http.ResponseWriter, r *http.Request) {
 		resp["lifecycle"] = map[string]any{"product": product, "cycles": cycles}
 	}
 	writeJSON(w, 200, resp)
+}
+
+// dashboardTrend gives the Dashboard's SLA split and 30-day trend. tz (an
+// IANA zone such as Europe/London, default UTC) decides where "today" ends.
+func (s *Server) dashboardTrend(w http.ResponseWriter, r *http.Request) {
+	loc := time.UTC
+	if tz := r.URL.Query().Get("tz"); tz != "" {
+		l, err := time.LoadLocation(tz)
+		// LoadLocation refuses names that climb out of the zone database.
+		if err != nil || len(tz) > 64 {
+			s.fail(w, r, badRequest("tz must be a time zone such as Europe/London"))
+			return
+		}
+		loc = l
+	}
+	now := time.Now().In(loc)
+	end := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc).AddDate(0, 0, 1)
+	t, err := s.Store.SummarizeTrend(r.Context(), end)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, 200, t)
 }

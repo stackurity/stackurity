@@ -174,7 +174,7 @@ export function FindingActions({
   initialPanel,
 }: {
   target: ActionTarget;
-  /** Opens this form first (e.g. from a "Snooze" link on Home). */
+  /** Opens this form first (e.g. from a "Snooze" link on the Dashboard). */
   initialPanel?: "assign" | "suppress" | "accept_risk" | "ignore";
   /** Current state for a single finding, to hide actions that cannot apply. */
   state?: string;

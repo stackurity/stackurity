@@ -66,7 +66,7 @@ docker compose exec stackurity stackurity admin load-demo        # --remove dele
 - **Cloud:** the AWS plugin reads managed service versions with a read-only role, and the Kubernetes plugin reads a cluster's workloads, images and exposure with a read-only service account.
 - **People and tools:** invite your team (or turn on single sign-on with Pro), route alerts to Slack, Teams or email, and connect AI assistants to `/mcp` with the organisation, project and role you choose.
 
-**4. Act on it:** **Fixes** groups findings into concrete upgrades, and **Home** shows the few that need you now. With Pro, opt-in remediation applies approved upgrades on enrolled hosts and opens Renovate pull requests for repositories.
+**4. Act on it:** **Fixes** groups findings into concrete upgrades, and the **Dashboard** shows what needs you now. With Pro, opt-in remediation applies approved upgrades on enrolled hosts and opens Renovate pull requests for repositories.
 
 ### Production install
 

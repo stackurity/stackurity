@@ -55,7 +55,7 @@ docker compose exec -e STACKURITY_PASSWORD='a long passphrase' stackurity \
 
 ## Your first ten minutes
 
-After the first administrator signs in, a new organisation with no assets opens in **Set up Stackurity**. Every step can be skipped; Home then shows a checklist until the steps are done. Organisations that already have assets never see it.
+After the first administrator signs in, a new organisation with no assets opens in **Set up Stackurity**. Every step can be skipped; the Dashboard then shows a checklist until the steps are done. Organisations that already have assets never see it.
 
 1. **Create your first project**: a name and, if you like, a description.
 2. **Add an asset**, which lands in that project:

@@ -43,6 +43,8 @@ const PARAMS = [
   "state",
   "sos",
   "overdue",
+  "due_after",
+  "due_before",
   "assignee_user",
   "assignee_team",
   "assignee",
@@ -146,6 +148,9 @@ export function IssuesPage() {
     get("assignee_team") && `team #${get("assignee_team")}`,
     get("assignee_user") && !mine && `user #${get("assignee_user")}`,
     get("resolution_kind") && `closed as ${get("resolution_kind").split(",").map(humanize).join(" or ")}`,
+    // From the Dashboard's fix-by numbers.
+    get("overdue") === "false" && "on time (not past the fix-by date)",
+    get("due_before") && (get("due_after") ? "due by the end of today" : `due before ${new Date(get("due_before")).toLocaleString()}`),
   ].filter(Boolean);
   const rows = res.data?.items ?? [];
   const assetName = assetId ? rows[0]?.asset_name : undefined;

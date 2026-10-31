@@ -163,3 +163,28 @@ export const IconFilter = (p: P) => (
     <path d="M4 5h16l-6 8v5l-4 2v-7z" />
   </Svg>
 );
+
+/** Dashboard: what is fine (green check), coverage, the trend, silence. */
+export const IconCheckCircle = (p: P) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M8 12.5l2.7 2.7L16.5 9.5" />
+  </Svg>
+);
+export const IconShield = (p: P) => (
+  <Svg {...p}>
+    <path d="M12 3l7.5 3v5.5c0 4.6-3.2 8.3-7.5 9.5-4.3-1.2-7.5-4.9-7.5-9.5V6z" />
+  </Svg>
+);
+export const IconTrend = (p: P) => (
+  <Svg {...p}>
+    <path d="M3 17l5.5-5.5 4 4L21 7" />
+    <path d="M15 7h6v6" />
+  </Svg>
+);
+export const IconSignalOff = (p: P) => (
+  <Svg {...p}>
+    <path d="M5 12.5a10 10 0 0 1 3-2.2M12 9a10 10 0 0 1 7 3.5M8.5 16a5 5 0 0 1 7 0M12 19.5v.3" />
+    <path d="M4 4l16 16" />
+  </Svg>
+);

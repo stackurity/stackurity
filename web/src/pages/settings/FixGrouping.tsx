@@ -40,7 +40,7 @@ export function FixGroupingPage() {
         title="Fix grouping"
         sub={
           <>
-            How <Link to="/fixes">Fixes</Link> and Home list a fix that is needed in more than one place, for everyone in this workspace.
+            How <Link to="/fixes">Fixes</Link> and the Dashboard list a fix that is needed in more than one place, for everyone in this workspace.
           </>
         }
       />

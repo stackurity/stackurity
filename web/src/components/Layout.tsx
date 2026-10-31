@@ -91,7 +91,7 @@ function Shell() {
   );
 
   const entries: NavEntry[] = [
-    { id: "home", to: "/", label: "Home", icon: <IconOverview /> },
+    { id: "dashboard", to: "/", label: "Dashboard", icon: <IconOverview /> },
     {
       id: "fixes",
       to: "/fixes",
@@ -397,7 +397,7 @@ function WorkspaceSwitcher() {
 
 /**
  * The project switcher, next to the workspace: "All projects" first, then
- * each project. The choice scopes Home, Fixes, Assets and Activity, and is
+ * each project. The choice scopes the Dashboard, Fixes, Assets and Activity, and is
  * remembered. Shown when the workspace has projects.
  */
 function ProjectSwitcher() {

@@ -11,11 +11,11 @@ export const ARTICLES: Article[] = [
     title: "Your first ten minutes",
     section: "Getting started",
     summary: "Create a project, add a server, repository or SBOM, see what it found, turn on alerts and invite people.",
-    where: ["Home"],
+    where: ["Dashboard"],
     keywords: "setup set up onboarding first run welcome checklist invite invitation getting started quiet first scan",
     body: [
       {
-        p: "A new organisation's administrators start in **Set up Stackurity**. Each step can be skipped. Until every step is done, Home shows a checklist that leads back to the step you skipped. Installations that already have assets never see it.",
+        p: "A new organisation's administrators start in **Set up Stackurity**. Each step can be skipped. Until every step is done, the Dashboard shows a checklist that leads back to the step you skipped. Installations that already have assets never see it.",
       },
       {
         steps: [
@@ -41,9 +41,9 @@ export const ARTICLES: Article[] = [
         ],
       },
       { note: "Running the server yourself? See the install guide (docs/install.md) for the first start, the setup token and backups." },
-      { h: "The checklist on Home" },
+      { h: "The checklist on the Dashboard" },
       {
-        p: "Until you hide it, Home lists what is left: add a server, connect an AI assistant, turn on notifications and invite your team. Each item opens the right page, and is ticked once it is done.",
+        p: "Until you hide it, the Dashboard lists what is left: add a server, connect an AI assistant, turn on notifications and invite your team. Each item opens the right page, and is ticked once it is done.",
       },
     ],
   },
@@ -78,7 +78,7 @@ export const ARTICLES: Article[] = [
     title: "What Stackurity does",
     section: "Getting started",
     summary: "An inventory of what runs where, matched against vulnerability and end-of-life data, grouped into actions.",
-    where: ["Home"],
+    where: ["Dashboard"],
     body: [
       {
         p: "Stackurity keeps an inventory of the software on your servers, repositories, container images and cloud services. It checks that inventory against public vulnerability data (OSV, CISA's Known Exploited Vulnerabilities list) and end-of-life dates (endoflife.date), and tells you what to fix first.",
@@ -89,7 +89,7 @@ export const ARTICLES: Article[] = [
           "**Collect.** A small read-only agent on each server, a CI step for each repository, or a server-side integration reports what is installed. Nothing is changed on the server.",
           "**Evaluate.** Every installed package is compared with the advisories for its ecosystem. A match is a **finding**.",
           "**Prioritise.** Each finding gets a priority (P1–P4) from its severity, whether it is being exploited, the environment and exposure. Rules in the [risk policy](help:risk-policy) decide which are **SOS**.",
-          "**Group into fixes.** [Fixes](help:action-plan) turns thousands of findings into a handful of jobs, such as “Install available security updates (917 issues)”. **Home** shows the few that need you now.",
+          "**Group into fixes.** [Fixes](help:action-plan) turns thousands of findings into a handful of jobs, such as “Install available security updates (917 issues)”. The **Dashboard** shows the few that need you now.",
           "**Alert and track.** Findings of the same vulnerability for the same team form an **incident**; incidents are sent to Slack, Teams, email or webhooks.",
           "**Verify.** The next collection shows the new versions and the findings resolve on their own.",
         ],
@@ -98,14 +98,14 @@ export const ARTICLES: Article[] = [
       {
         table: [
           ["Place", "What it holds"],
-          ["Home", "The fixes that need you now (SOS or P1, with a fix available), what is left out and why, and the assets that need attention."],
+          ["Dashboard", "The landing page after you sign in, in four blocks: **Needs you now** (open SOS incidents, issues overdue or due today, approvals waiting, assets that stopped reporting; one button each), **Top fixes**, **Risk at a glance** (open issues by priority, known exploited, end of life, came back after a fix, a 30-day trend and fix-by dates) and **Coverage health**. Every number opens the list it counts."],
           ["Fixes", "Every fix, one card per change, most urgent first. **All issues** lists each finding with filters; **Automatic fixes** shows the upgrades Stackurity applies for you (Pro)."],
           ["Assets", "Servers, repositories, images and cloud services, with their **Components** and **Coverage**."],
           ["Activity", "Incidents, checks (Check again and their results), approvals, remediation outcomes, the evidence report and the audit log."],
           ["Settings", "Integrations, risk policy, automatic fix policies, intelligence feeds, notifications, people, tokens and administration."],
         ],
       },
-      { p: "On a phone the menu is a bar at the bottom: Home, Fixes, Assets and **More** (Activity, Settings, Help and feedback). Your workspace is at the top left, search in the middle, and your account menu (email, role, help, feedback, log out) at the top right." },
+      { p: "On a phone the menu is a bar at the bottom: Dashboard, Fixes, Assets and **More** (Activity, Settings, Help and feedback). Your workspace is at the top left, search in the middle, and your account menu (email, role, help, feedback, log out) at the top right." },
       {
         note: "Stackurity runs on your own server and sends no telemetry. The only outbound calls are to the vulnerability feeds, your Git hosts and registries, the notification channels you configure, and [feedback](help:feedback) when you send it.",
       },
@@ -115,13 +115,13 @@ export const ARTICLES: Article[] = [
     id: "daily-workflow",
     title: "The daily workflow",
     section: "Getting started",
-    summary: "Open Home, do the top fix, let the next check confirm it.",
-    where: ["Home"],
+    summary: "Open the Dashboard, do the top fix, let the next check confirm it.",
+    where: ["Dashboard"],
     body: [
       { p: "You don't need to read individual findings to make progress. Work from actions, not findings." },
       {
         steps: [
-          "Open **Home**. The headline says how many fixes need you; the cards below are the most urgent ones, SOS first, then highest priority, then the number of issues each clears. All of them are under [Fixes](/fixes).",
+          "Open the **Dashboard**. **Needs you now** lists what can't wait, each with one button; **Top fixes** are the most urgent fixes, SOS first, then highest priority, then the number of issues each clears. All of them are under [Fixes](/fixes).",
           "Click **How to fix** on the top card. The fix page says what and why in one sentence, where (the asset and files), and how: the command or upgrade to make, with a **Copy** button and a warning for major upgrades.",
           "Do the work on the server, then reboot if the asset shows **Reboot pending** (patched packages protect nothing until the process or kernel restarts).",
           "Press **I applied this** on the fix page. Its issues go to **In progress** and Stackurity asks for a fresh report. It never closes an issue by itself.",
@@ -132,7 +132,7 @@ export const ARTICLES: Article[] = [
       {
         p: "When a fix can't be applied yet, record why: **Snooze** it until a date or until a fix ships, or **Ignore** it with a reason, a scope and an expiry (see [Snooze and ignore](help:exceptions) and [Ignore issues](help:ignore-issues)). Engineers and viewers use **Ask to ignore**, which goes to the [approval inbox](help:approvals).",
       },
-      { p: "Home also says how many issues it does not show and why (no free fix yet, kernels that are not running, assets that are not production, lower priority, snoozed or accepted). Every number is a link to the list it counts." },
+      { p: "Top fixes also says how many issues it does not show and why (no free fix yet, kernels that are not running, assets that are not production, lower priority, snoozed or accepted). Every number is a link to the list it counts." },
       { p: "For alerts, someone on the team should check [Incidents](/incidents) (under **Activity**) daily and acknowledge new ones, so escalations don't fire." },
     ],
   },
@@ -603,14 +603,14 @@ stackurity.exe agent --interval 6h`,
       {
         table: [
           ["Chip", "Which fixes"],
-          ["Needs you", "A fix exists, and it matches an SOS rule or has a P1 issue, on a production asset or one with no environment. Home shows these."],
+          ["Needs you", "A fix exists, and it matches an SOS rule or has a P1 issue, on a production asset or one with no environment. The Dashboard shows these."],
           ["No fix yet", "No free fixed version is published."],
           ["Old kernels", "Kernels that are installed but not running."],
           ["Not production", "On assets whose environment is not one of the risk policy's production environments."],
           ["Lower priority", "Everything else: P2 to P4 without SOS."],
         ],
       },
-      { p: "Each fix is in exactly one of these, checked in that order. Home counts the issues in the others, plus snoozed and accepted ones, so nothing is left out without saying why." },
+      { p: "Each fix is in exactly one of these, checked in that order. The Dashboard counts the issues in the others, plus snoozed and accepted ones, so nothing is left out without saying why." },
       { h: "A fix page" },
       {
         list: [
@@ -691,7 +691,7 @@ stackurity.exe agent --interval 6h`,
       },
       { h: "Snooze until a fix ships" },
       {
-        p: "Choose **Until a fix ships** when no fixed version exists yet. The issue comes back as new on its own as soon as the intelligence lists a free fixed version (a fix only in a paid subscription, such as Ubuntu Pro, does not count). As a backstop it also comes back after the longest exception in the [risk policy](help:risk-policy), 365 days by default. Home keeps counting snoozed issues in **not shown here**.",
+        p: "Choose **Until a fix ships** when no fixed version exists yet. The issue comes back as new on its own as soon as the intelligence lists a free fixed version (a fix only in a paid subscription, such as Ubuntu Pro, does not count). As a backstop it also comes back after the longest exception in the [risk policy](help:risk-policy), 365 days by default. The Dashboard keeps counting snoozed issues in **not shown here**.",
       },
       {
         steps: [
@@ -803,7 +803,7 @@ stackurity.exe agent --interval 6h`,
       { p: "An issue is **Regressed** when it was fixed on an asset (the component was upgraded or removed) and a later report has it again on the same asset: the same component and advisory, for example after a downgrade, a restored backup or a reinstalled package." },
       {
         list: [
-          "Regressed issues are urgent whatever their priority: they are counted on **Home** and sent in urgent notifications and summaries as “came back after a fix”.",
+          "Regressed issues are urgent whatever their priority: they are counted on the **Dashboard** and sent in urgent notifications and summaries as “came back after a fix”.",
           "The history keeps both the fix and the return.",
           "An upgrade that leaves the component vulnerable is not a regression, and neither is an issue closed only because the vulnerability data changed.",
           "The chip shows until someone starts work on the issue or it is fixed again.",
@@ -1061,7 +1061,7 @@ jobs:
       {
         list: [
           "**Agreed**: it reached the same verdict and fixed version.",
-          "**Disagreed**: it found something different (not affected, another fixed version, a different package or release line). The issue says **Needs validation: the second check disagreed** and lists what differs, and **Home** counts it for review. Its priority, SOS and alerts do not change: the second check is deliberately simple, so a mistake in it must never hide a real issue. It stays flagged until the match or the advisory data changes.",
+          "**Disagreed**: it found something different (not affected, another fixed version, a different package or release line). The issue says **Needs validation: the second check disagreed** and lists what differs, and the **Dashboard** counts it for review. Its priority, SOS and alerts do not change: the second check is deliberately simple, so a mistake in it must never hide a real issue. It stays flagged until the match or the advisory data changes.",
           "**Could not check**: it does not read this case (pre-release versions, SUSE product channels, Ubuntu FIPS builds, some Alpine versions). It says why. Nothing changes on the issue.",
         ],
       },
@@ -1449,7 +1449,7 @@ jobs:
       },
       { h: "The project switcher" },
       {
-        p: "When the workspace has projects, the menu next to its name at the top left chooses **All projects** or one project. The choice scopes Home, Fixes, Assets and Activity, is kept in the address (so a link opens the same view) and is remembered for next time. On a phone it takes the workspace's place in the top bar.",
+        p: "When the workspace has projects, the menu next to its name at the top left chooses **All projects** or one project. The choice scopes the Dashboard, Fixes, Assets and Activity, is kept in the address (so a link opens the same view) and is remembered for next time. On a phone it takes the workspace's place in the top bar.",
       },
       { h: "Setting it up (admins)" },
       {
@@ -1457,7 +1457,7 @@ jobs:
           "**Settings ▸ Projects and access ▸ New project**, then add its assets. **Suggested groupings** proposes related assets (an application runs on a host, is built from a repository); nothing is added until you accept.",
           "Under **Who has access**, give a person (by email) or a team a role. Someone who is not a member yet joins with access to that project only; give a new account an initial password of at least 12 characters.",
           "Or **Invite by email**: they get a link that works once, for 7 days, and choose their own password. See [Your first ten minutes](help:getting-started).",
-          "Home tells organisation-wide roles how many assets are **not in a project**: only they see those, so file them.",
+          "The Dashboard tells organisation-wide roles how many assets are **not in a project**: only they see those, so file them.",
           "To send a client only their project's alerts, tick the project in a notification integration's settings (**Settings ▸ Integrations**). A route to Jira can be limited to one project: its issues then describe only that project's part of each incident.",
           "**Settings ▸ Users** can change someone to **projects only**: they keep their account but lose the organisation-wide role.",
         ],

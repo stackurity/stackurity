@@ -608,7 +608,7 @@ Vulnerability and end-of-life findings, paged; SOS, priority, known-exploited an
 
 Query:
 
-- `status` (`open`, `resolved`, `all`), `state` (`active`, `new`, `acknowledged`, `in_progress`, `suppressed`, `risk_accepted`, `regressed`), `kind`, `severity` and `priority` (comma-separated), `verification`, `known_exploited=true`, `sos=true`, `overdue=true`
+- `status` (`open`, `resolved`, `all`), `state` (`active`, `new`, `acknowledged`, `in_progress`, `suppressed`, `risk_accepted`, `regressed`), `kind`, `severity` and `priority` (comma-separated), `verification`, `known_exploited=true`, `sos=true`, `overdue=true` (or `false`: active and not past the fix-by date), `due_after` and `due_before` (RFC 3339: active findings due at or after, or before, that time)
 - `epss_min` (0 to 1; `0.1` is 10%): vulnerability findings one of whose CVEs has at least that EPSS
 - `asset_id`, `component_id`, `environment`, `key`, `q`, `fix_group` (a fix group id), `incident_id`
 - `assignee_user`, `assignee_team`, `assignee=none` (unassigned)
@@ -620,6 +620,12 @@ Query:
 **Who:** viewer
 
 Counts by severity, kind, verification, priority and state, plus SOS, overdue, unassigned, stale feeds, evaluation gaps, `regressed`, `until_fix`, `second_check_disagreed` and `resolved_7d`.
+
+### `GET /dashboard/trend`
+
+**Who:** viewer
+
+The Dashboard's SLA split and trend for the assets the caller may see. Query: `tz`, an IANA time zone where "today" ends (default UTC). Returns `sla` (active findings: `on_time`, including those with no fix-by date; `due_today`; `overdue`), `open` (open findings at this time of day for each of the last 30 days, oldest first, worked back from today's count through the matcher's resolved and reopened events) and `fixed` (findings fixed, that is remediated or removed, in each of the last 4 weeks), with `checked_at` and `end_of_today`.
 
 ### `GET /findings/verify`
 
@@ -1737,7 +1743,7 @@ In trial report mode every report and export carries a watermark ([asset-limits.
 
 ## Onboarding
 
-A new organisation's admins see the first-run flow while `GET /onboarding` says `show_flow`: the state is `new` and there are no assets. Organisations with assets never see it (migration `0033` marks them `done`). Skipping sets `skipped`: the dashboard then shows a checklist on Home until every step is done or someone hides it (`done`). The steps are read from data, so doing them elsewhere counts: an active project; an asset (in the flow's project, when one is chosen); an enabled route (for that project, or for every asset); an invitation not withdrawn, or a second member.
+A new organisation's admins see the first-run flow while `GET /onboarding` says `show_flow`: the state is `new` and there are no assets. Organisations with assets never see it (migration `0033` marks them `done`). Skipping sets `skipped`: the dashboard then shows a checklist on the Dashboard until every step is done or someone hides it (`done`). The steps are read from data, so doing them elsewhere counts: an active project; an asset (in the flow's project, when one is chosen); an enabled route (for that project, or for every asset); an invitation not withdrawn, or a second member.
 
 Assets added through the flow land in its project: the install command's enrollment code, the CI token and the SBOM upload all carry `project_id`.
 
