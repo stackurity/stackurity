@@ -1,0 +1,5 @@
+# Test fixtures copy real-world web roots and email output on purpose
+# (old CDN scripts, unescaped markup), so scanning them only reports the
+# fixtures. Applies to JavaScript; Go is analysed from the build.
+paths-ignore:
+  - "**/testdata/**"
