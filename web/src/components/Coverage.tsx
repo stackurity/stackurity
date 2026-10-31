@@ -1,5 +1,7 @@
 import { Link } from "react-router";
-import type { CoverageSummary, InventoryRow, LifecycleNote, RowCoverage } from "../api";
+import type { CoverageSummary, InventoryRow, LifecycleNote, RowCoverage, Unchecked } from "../api";
+import { NO_ADVISORIES_NOTE, uncheckedBanner } from "../unchecked";
+import { UncheckedBanner } from "./Unchecked";
 import { Badge, type Tone } from "./Badge";
 
 // One vocabulary for coverage, shared with the API and docs/compatibility.md
@@ -40,6 +42,25 @@ const ROW_COVERAGE_TONES: Record<RowCoverage, Tone> = {
   awaiting: "warn",
 };
 
+/** A row that was not checked, badged by who acts: only "needs you" is a warning. */
+const UNCHECKED_ROW_BADGES: Record<string, { tone: Tone; label: string }> = {
+  unreadable_version: { tone: "warn", label: "Needs you" },
+  other: { tone: "warn", label: "Needs you" },
+  unsupported: { tone: "muted", label: "Not supported yet" },
+  waiting_for_data: { tone: "info", label: "Waiting for data" },
+  no_advisories: { tone: "muted", label: "No advisories" },
+};
+
+/** Options for filtering inventory by why it was not checked (the unchecked parameter). */
+export const UNCHECKED_FILTERS: [string, string][] = [
+  ["", "Any"],
+  ["unreadable_version", "Needs you: no readable version"],
+  ["other", "Needs you: another reason"],
+  ["unsupported", "Stackurity doesn't support yet"],
+  ["waiting_for_data", "Waiting for vulnerability data"],
+  ["no_advisories", "No published advisories"],
+];
+
 /** Options for filtering inventory by coverage; "gaps" is not_evaluated and unsupported together. */
 export const COVERAGE_FILTERS: [string, string][] = [
   ["", "Any coverage"],
@@ -62,14 +83,19 @@ export function AssetStateBadge({ state, label }: { state: string; label?: strin
 
 /** Why a row was not checked, in the words used everywhere else. */
 export function coverageText(r: InventoryRow): string {
+  if (r.unchecked_reason === "no_advisories") return NO_ADVISORIES_NOTE;
+  if (r.unchecked_reason === "unreadable_version" && r.unchecked_fix) return `no readable version: ${r.unchecked_fix}`;
+  if (r.unchecked_reason === "other") return `not checked: ${r.coverage_reason || "no reason recorded"}`;
+  if (r.unchecked_reason === "unsupported") return `Stackurity doesn't check this yet: ${r.coverage_reason || "no vulnerability source"}`;
+  if (r.unchecked_reason === "waiting_for_data" && r.coverage !== "stale_intelligence") return "waiting for vulnerability data; this resolves on its own";
   switch (r.coverage) {
     case "not_evaluated":
     case "unsupported":
       return `not checked: ${r.coverage_reason || "no reason recorded"}`;
     case "stale_intelligence":
-      return `checked against stale intelligence${r.coverage_feed ? ` (${r.coverage_feed})` : ""}: newer advisories are missing`;
+      return `checked against out-of-date vulnerability data${r.coverage_feed ? ` for ${r.coverage_feed.replace(/^[^:]*:/, "")}` : ""}: newer advisories are missing`;
     case "awaiting":
-      return "not evaluated yet";
+      return "not checked yet; this resolves on its own";
   }
   return "";
 }
@@ -94,11 +120,24 @@ export function RowCoverageNote({ row }: { row: InventoryRow }) {
         {life}
       </>
     );
+  const actor = row.unchecked_reason ? UNCHECKED_ROW_BADGES[row.unchecked_reason] : undefined;
   return (
     <>
       <div className="coverage-note">
-        <Badge status={c} tone={ROW_COVERAGE_TONES[c]} label={ROW_COVERAGE_LABELS[c]} />{" "}
+        {actor ? (
+          <Badge status={row.unchecked_reason!} tone={actor.tone} label={actor.label} />
+        ) : (
+          <Badge status={c} tone={ROW_COVERAGE_TONES[c]} label={ROW_COVERAGE_LABELS[c]} />
+        )}{" "}
         <span className="small">{coverageText(row)}</span>
+        {row.unchecked_docs && (
+          <>
+            {" "}
+            <a className="small" href={row.unchecked_docs} target="_blank" rel="noopener noreferrer">
+              How
+            </a>
+          </>
+        )}
       </div>
       {life}
     </>
@@ -129,71 +168,55 @@ function plural(n: number, noun: string) {
   return `${n.toLocaleString()} ${noun}${n === 1 ? "" : "s"}`;
 }
 
-/** Components on the asset that intelligence did not check, as one sentence. */
-export function uncheckedCount(s: CoverageSummary): number {
-  return s.components.not_evaluated + s.components.unsupported;
+/** Problems with how the asset reported, as opposed to components that were not checked. */
+export function collectionProblems(summary: CoverageSummary): string[] {
+  const cl = summary.collection;
+  const out: string[] = [];
+  if (cl.failed_scopes > 0) out.push(`${plural(cl.failed_scopes, "part")} of the scan failed; components there are not in the inventory`);
+  if (cl.status === "stale") out.push(`no report since ${new Date(cl.last_seen).toLocaleString()}; the inventory may be out of date`);
+  if (cl.status === "partial") out.push("the last report was incomplete, so components may be missing");
+  if (cl.partial_scopes > 0) out.push(`${plural(cl.partial_scopes, "part")} of the scan ${cl.partial_scopes === 1 ? "was" : "were"} only partly read`);
+  if (summary.components.total === 0 && !cl.last_collection) out.push("nothing has been reported yet");
+  return out;
 }
 
 /**
- * The asset's coverage where the user looks at findings: its states with
- * reasons, the components that could not be checked and a link to them.
- * Healthy assets get a single quiet line.
+ * The asset's coverage where the user looks at findings: problems with how
+ * it reported, then the components that were not checked split by who acts
+ * (UncheckedBanner). An asset with neither gets a single quiet line.
  */
-export function AssetCoverageNotice({ summary, inventoryLink }: { summary: CoverageSummary; inventoryLink: string }) {
-  if (summary.state === "healthy")
-    return (
-      <p className="coverage-ok">
-        <AssetStateBadge state="healthy" label={summary.label} /> <span className="muted small">{summary.states[0]?.detail}</span>
-      </p>
-    );
-  const unchecked = uncheckedCount(summary);
+export function AssetCoverageNotice({ summary, unchecked, assetId }: { summary: CoverageSummary; unchecked?: Unchecked | null; assetId: number }) {
+  const problems = collectionProblems(summary);
+  const banner = uncheckedBanner(unchecked);
   return (
-    <div className="alert alert-warn" role="alert">
-      <strong>Findings for this asset are incomplete.</strong> No finding does not mean a component is safe:
-      <ul className="banner-list">
-        {summary.states.map((s) => (
-          <li key={s.state}>
-            <AssetStateBadge state={s.state} label={s.label} /> {s.detail}.
-          </li>
-        ))}
-      </ul>
-      {unchecked > 0 && (
-        <p>
-          <Link to={inventoryLink}>{plural(unchecked, "component")} could not be checked</Link>
-          {summary.gap_reasons.length > 0 && <>: {summary.gap_reasons.slice(0, 3).map((g) => `${g.reason} (${g.components})`).join("; ")}</>}
-          .
+    <>
+      {problems.length > 0 && (
+        <div className="alert alert-warn" role="alert">
+          <strong>This asset's last report was incomplete:</strong>
+          <ul className="banner-list">
+            {problems.map((p) => (
+              <li key={p}>{p}.</li>
+            ))}
+          </ul>
+          <Link to={`/assets/${assetId}?tab=coverage`}>See what the scan read</Link>
+        </div>
+      )}
+      <UncheckedBanner u={unchecked} assetId={assetId} />
+      {problems.length === 0 && !banner && (
+        <p className="coverage-ok">
+          <AssetStateBadge state={summary.state} label={summary.label} /> <span className="muted small">{summary.states[0]?.detail}</span>
         </p>
       )}
-    </div>
-  );
-}
-
-/** A short line for the Findings tab: how many components the findings do not cover. */
-export function FindingsCoverageLine({ summary, inventoryLink }: { summary: CoverageSummary; inventoryLink: string }) {
-  const unchecked = uncheckedCount(summary);
-  const stale = summary.components.stale_intelligence;
-  const awaiting = summary.components.awaiting;
-  if (unchecked + stale + awaiting === 0) return null;
-  return (
-    <div className="alert alert-warn" role="alert">
-      {unchecked > 0 && (
-        <>
-          <Link to={inventoryLink}>{plural(unchecked, "component")} could not be checked</Link> and may be vulnerable.{" "}
-        </>
-      )}
-      {stale > 0 && <>{plural(stale, "component")} {stale === 1 ? "was" : "were"} checked against stale intelligence. </>}
-      {awaiting > 0 && <>{plural(awaiting, "component")} {awaiting === 1 ? "is" : "are"} awaiting verification. </>}
-      These findings do not cover them.
-    </div>
+    </>
   );
 }
 
 /** What each asset state means; the same text is in docs/compatibility.md. */
 export const ASSET_STATE_MEANINGS: [string, string][] = [
   ["healthy", "Every scope was collected, every component was checked against current intelligence within the last 48 hours."],
-  ["stale_intelligence", "Components were checked against a feed that is past its staleness window or whose last sync failed."],
+  ["stale_intelligence", "Components were checked against vulnerability data that is out of date or failing to update."],
   ["failed_collection", "A collector reported a failed scope, or the asset stopped reporting, so the inventory may be incomplete."],
-  ["partially_evaluated", "Some components could not be checked (feed not synced, release without advisories, unreadable version), or the collection was incomplete."],
+  ["partially_evaluated", "Some components were not checked (vulnerability data not synced yet, a version that could not be read), or the last report was incomplete."],
   ["unsupported", "Some components or scopes have no vulnerability source (unsupported ecosystem or distribution, runtime outside a package manager)."],
   ["awaiting_verification", "Inventory arrived and has not been evaluated yet, or not within the last 48 hours."],
 ];

@@ -42,28 +42,19 @@ func (e *Evaluator) windowsUpdates(ctx context.Context, r store.EvalRow, feed st
 	tgt, gap := winrelease.UpdateLine(winrelease.Info{Version: r.Version, ProductName: r.Evidence["product_name"],
 		EditionID: r.Evidence["edition_id"], DisplayVersion: r.Evidence["display_version"]})
 	if gap != nil {
-		rc.State, rc.Reason = store.CoverageNotEvaluated, "missing updates not evaluated: "+gap.Reason
-		if gap.Unsupported {
-			rc.State, rc.Reason = store.CoverageUnsupported, gap.Reason
-		}
+		rc.State, rc.Reason = windowsGapCoverage(gap)
 		return nil, rc, nil
 	}
 	notEvaluated := func(reason string) ([]store.FindingInput, store.RowCoverage, error) {
 		rc.State, rc.Reason = store.CoverageNotEvaluated, reason
 		return nil, rc, nil
 	}
-	switch {
-	case !configured:
-		return notEvaluated(fmt.Sprintf("vulnerability feed %s has not been set up yet", FeedMSRC))
-	case !feed.Enabled:
-		return notEvaluated(fmt.Sprintf("vulnerability feed %s is disabled", FeedMSRC))
-	case feed.LastSuccess == nil:
-		return notEvaluated(fmt.Sprintf("vulnerability feed %s has not completed a sync", FeedMSRC))
+	if why := feedGapReason(FeedMSRC, feed, configured); why != "" {
+		return notEvaluated(why)
 	}
 	eco := "Windows:" + tgt.Line
 	if feed.Ecosystems != nil && !coversRelease(feed.Ecosystems, eco) {
-		return notEvaluated(fmt.Sprintf("%s has no updates for Windows %s in the months it reads: the release left support before them, "+
-			"or is newer than the data", FeedMSRC, tgt.Line))
+		return notEvaluated(noWindowsUpdatesReason(FeedMSRC, tgt.Line))
 	}
 	lu, ok := cache[tgt.Line]
 	if !ok {
@@ -208,4 +199,13 @@ func mergeWindowsCoverage(vuln store.RowCoverage, lifecycle string) store.RowCov
 // life at now.
 func windowsReleaseEnded(c *store.LifecycleCycle, now time.Time) bool {
 	return c != nil && (c.IsEOL || (c.EOLUntil != nil && !c.EOLUntil.After(now)))
+}
+
+// windowsGapCoverage is the coverage of a host whose missing updates are not
+// compared.
+func windowsGapCoverage(gap *winrelease.UpdateGap) (state, reason string) {
+	if gap.Unsupported {
+		return store.CoverageUnsupported, gap.Reason
+	}
+	return store.CoverageNotEvaluated, "missing updates not evaluated: " + gap.Reason
 }

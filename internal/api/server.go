@@ -336,6 +336,7 @@ func (s *Server) Handler() http.Handler {
 				r.Get("/inventory", s.listInventory)
 				r.Get("/inventory/updates", s.inventoryUpdates)
 				r.Get("/coverage", s.listCoverage)
+				r.Get("/coverage/unchecked", s.uncheckedSummary)
 				r.Get("/teams", s.listTeams)
 				r.Get("/audit", s.listAudit)
 				r.Get("/tokens", s.listTokens)

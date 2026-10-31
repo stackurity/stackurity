@@ -7,7 +7,7 @@ import { useProject } from "../project";
 import { useLoad } from "../hooks";
 import { assetDistinctions, plural } from "../format";
 import { Badge } from "../components/Badge";
-import { IntelBanners } from "../components/Findings";
+import { UncheckedBanner, useUnchecked } from "../components/Unchecked";
 import { changeText, fixesFrom, FixKindIcon, FixPlaces, urgencyOf } from "../components/FixGroups";
 import { PackSuggestions } from "../components/PackSuggestions";
 import { fixPlaces, FixVerify, useCheckOptions, type CheckOptions } from "../components/FixVerify";
@@ -158,6 +158,7 @@ export function HomePage() {
   const top = useLoad(() => api.get<List<FixGroup>>("/fix-groups", { bucket: "focus", limit: TOP }), []);
   const fs = useLoad(() => api.get<FindingSummary>("/findings/summary"), []);
   const assets = useLoad(() => api.get<List<Asset>>("/assets", { limit: 200 }), []);
+  const unchecked = useUnchecked();
   const checkOptions = useCheckOptions((top.data?.items ?? []).flatMap(fixPlaces).map((p) => p.group_id));
 
   if (ob.data?.show_flow) return <Navigate replace to="/get-started" />;
@@ -271,7 +272,7 @@ export function HomePage() {
         <OneOffLine groups={o.one_off} />
       </header>
       <ErrorBox error={plan.error ?? top.error} title="Could not load the fixes" />
-      {s && <IntelBanners s={s} />}
+      <UncheckedBanner u={unchecked.data} />
 
       {top.data && top.data.items.length > 0 && (
         <section aria-label="Fixes that need you" className="home-fixes">

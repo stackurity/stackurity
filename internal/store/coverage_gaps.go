@@ -48,6 +48,31 @@ func (s *Store) UnreadFileGaps(ctx context.Context, known []string) ([]GapRow, e
 	return pgx.CollectRows(rows, pgx.RowToStructByPos[GapRow])
 }
 
+// unsupportedCategorySQL is why inventory row i (components c) has no
+// vulnerability source, as a category of the reasons the matcher writes
+// (intel.Evaluator), never the reason text itself: vendor builds carry their
+// repository ("vendor_build|MongoDB's repository (repo.mongodb.org)"). The
+// coverage-gap report and the unchecked breakdown (unchecked.go) share it.
+const unsupportedCategorySQL = `CASE
+	WHEN c.purl_key = 'pkg:generic/windows' AND i.coverage_reason ILIKE '%hotpatch%' THEN 'windows_hotpatch'
+	WHEN c.purl_key = 'pkg:generic/windows' AND i.coverage_reason LIKE '%Extended Security Updates%' THEN 'windows_esu'
+	WHEN c.purl_key = 'pkg:generic/windows' THEN 'windows_release'
+	WHEN c.type = 'generic' AND i.evidence->>'registry_view' IS NOT NULL AND i.coverage_reason LIKE 'recognised as %' THEN 'windows_program_unmatched'
+	WHEN c.type = 'generic' AND i.evidence->>'registry_view' IS NOT NULL THEN 'windows_program'
+	WHEN i.coverage_reason LIKE 'built by %, not by the distribution%' THEN 'vendor_build|' || substring(i.coverage_reason from '^built by (.*?), not by the distribution')
+	WHEN i.coverage_reason LIKE 'runtime installed outside a package manager%' THEN 'runtime'
+	WHEN i.coverage_reason LIKE 'content management system core%' THEN 'cms'
+	WHEN i.coverage_reason LIKE 'WordPress plugin or theme%' THEN 'wordpress_extension'
+	WHEN i.coverage_reason LIKE 'Kubernetes component%' THEN 'kubernetes'
+	WHEN i.coverage_reason LIKE 'managed service%' THEN 'managed_service'
+	WHEN i.coverage_reason LIKE 'Swift packages are matched by repository URL%' THEN 'no_repository_url'
+	WHEN i.coverage_reason LIKE 'packages from the private % organisation or repository%' THEN 'private_registry'
+	WHEN i.coverage_reason LIKE '% packages have no vulnerability source: %' OR i.coverage_reason LIKE 'vcpkg ports have no vulnerability source%' THEN 'ecosystem'
+	WHEN i.coverage_reason LIKE '%have no vulnerability source%' OR i.coverage_reason LIKE '%has no vulnerability source%'
+	  OR i.coverage_reason LIKE 'the distro release % is not understood' THEN 'distribution'
+	WHEN i.coverage_reason LIKE 'no vulnerability source for %' THEN 'ecosystem'
+	ELSE 'other' END`
+
 // VulnerabilitySourceGaps counts current components with no vulnerability
 // source (coverage unsupported), by purl type and a reason category derived
 // from the reasons the matcher writes (intel.Evaluator), never the reason
@@ -56,21 +81,7 @@ func (s *Store) UnreadFileGaps(ctx context.Context, known []string) ([]GapRow, e
 // (repo.mongodb.org), not by ...").
 func (s *Store) VulnerabilitySourceGaps(ctx context.Context) ([]GapRow, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT x.kind, count(DISTINCT x.asset_id), count(DISTINCT x.workspace_id), count(DISTINCT x.component_id)
-		FROM (SELECT i.asset_id, a.workspace_id, i.component_id, c.type || '|' || CASE
-		    WHEN c.purl_key = 'pkg:generic/windows' AND i.coverage_reason ILIKE '%hotpatch%' THEN 'windows_hotpatch'
-		    WHEN c.purl_key = 'pkg:generic/windows' AND i.coverage_reason LIKE '%Extended Security Updates%' THEN 'windows_esu'
-		    WHEN c.purl_key = 'pkg:generic/windows' THEN 'windows_release'
-		    WHEN c.type = 'generic' AND i.evidence->>'registry_view' IS NOT NULL AND i.coverage_reason LIKE 'recognised as %' THEN 'windows_program_unmatched'
-		    WHEN c.type = 'generic' AND i.evidence->>'registry_view' IS NOT NULL THEN 'windows_program'
-		    WHEN i.coverage_reason LIKE 'built by %, not by the distribution%' THEN 'vendor_build|' || substring(i.coverage_reason from '^built by (.*?), not by the distribution')
-		    WHEN i.coverage_reason LIKE 'runtime installed outside a package manager%' THEN 'runtime'
-		    WHEN i.coverage_reason LIKE 'content management system core%' THEN 'cms'
-		    WHEN i.coverage_reason LIKE 'WordPress plugin or theme%' THEN 'wordpress_extension'
-		    WHEN i.coverage_reason LIKE 'Kubernetes component%' THEN 'kubernetes'
-		    WHEN i.coverage_reason LIKE 'managed service%' THEN 'managed_service'
-		    WHEN i.coverage_reason LIKE '%have no vulnerability source%' OR i.coverage_reason LIKE '%has no vulnerability source%' THEN 'distribution'
-		    WHEN i.coverage_reason LIKE 'no vulnerability source for %' THEN 'ecosystem'
-		    ELSE 'other' END AS kind
+		FROM (SELECT i.asset_id, a.workspace_id, i.component_id, c.type || '|' || `+unsupportedCategorySQL+` AS kind
 		  FROM inventory i
 		  JOIN components c ON c.id = i.component_id
 		  JOIN assets a ON a.id = i.asset_id AND a.merged_into IS NULL

@@ -5,7 +5,8 @@ import { useAuth } from "../auth";
 import { FindingActions } from "../components/Workflow";
 import { useDebounced, useFacets, useLoad } from "../hooks";
 import { humanize, percent, plural } from "../format";
-import { FindingCards, FindingsTable, FindingTiles, IntelBanners, PriorityTiles } from "../components/Findings";
+import { FindingCards, FindingsTable, FindingTiles, PriorityTiles } from "../components/Findings";
+import { UncheckedBanner, useUnchecked } from "../components/Unchecked";
 import { EmptyState, ErrorBox, FilterPanel, Loading, PageHeader, Pager, PresetChips } from "../components/ui";
 
 const LIMIT = 50;
@@ -96,6 +97,8 @@ export function IssuesPage() {
   for (const k of PARAMS) if (params.get(k)) query[k] = params.get(k)!;
   const queryKey = JSON.stringify(query) + (byAsset ? "|asset" : "");
   const summary = useLoad(() => api.get<FindingSummary>("/findings/summary"), []);
+  // What was not checked, by who acts: of the asset when the list is filtered to one.
+  const unchecked = useUnchecked(Number(assetId) || undefined);
   const res = useLoad(
     () => api.get<List<Finding>>("/findings", { ...query, status, sort: byAsset ? "asset" : undefined, limit: LIMIT, offset }),
     [queryKey, status, offset],
@@ -154,7 +157,7 @@ export function IssuesPage() {
         title="All issues"
         sub="Every known vulnerability and end-of-life release found in your assets, one per package. SOS first, then by priority."
       />
-      {summary.data && <IntelBanners s={summary.data} />}
+      <UncheckedBanner u={unchecked.data} assetId={Number(assetId) || undefined} />
       {summary.data && (
         <details className="sev-tiles">
           <summary>Counts by priority and severity</summary>

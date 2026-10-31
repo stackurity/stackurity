@@ -1,7 +1,7 @@
-import type { MouseEvent, ReactNode } from "react";
+import type { MouseEvent } from "react";
 import { Link, useNavigate } from "react-router";
 import { PRIORITIES, SEVERITIES, type Finding, type FindingSummary } from "../api";
-import { epssTitle, percent, plural } from "../format";
+import { epssTitle, percent } from "../format";
 import { Badge, KevBadge, PriorityBadge, SeverityBadge, SosBadge, FindingStateBadge } from "./Badge";
 import { EvidenceStateBadge } from "./Provenance";
 import { reportDate } from "../reporting";
@@ -302,32 +302,6 @@ export function FindingTiles({ s, link }: { s: FindingSummary; link?: (q: string
       />
       <StatTile label="Fix available" value={s.fix_available.toLocaleString()} sub="have a fixed version" />
       <StatTile label="Affected assets" value={s.affected_assets.toLocaleString()} sub="with open findings" />
-    </div>
-  );
-}
-
-/** Warnings that make clear the absence of findings is not proof of safety. */
-export function IntelBanners({ s }: { s: FindingSummary }) {
-  const problems: ReactNode[] = [];
-  if (s.stale_feeds > 0)
-    problems.push(
-      <li key="feeds">
-        <Link to="/intelligence">{plural(s.stale_feeds, "intelligence feed")}</Link> {s.stale_feeds === 1 ? "is" : "are"} stale or
-        never synced. Vulnerabilities published since the last sync are not reflected.
-      </li>,
-    );
-  if (s.evaluation_gaps > 0)
-    problems.push(
-      <li key="gaps">
-        <Link to="/intelligence#gaps">{plural(s.evaluation_gaps, "component")}</Link> could not be checked (unsupported
-        ecosystem or distribution, feed not synced, release without advisories, or unreadable version). They may be vulnerable.
-      </li>,
-    );
-  if (problems.length === 0) return null;
-  return (
-    <div className="alert alert-warn" role="alert">
-      <strong>Findings are incomplete.</strong> No findings does not mean secure:
-      <ul className="banner-list">{problems}</ul>
     </div>
   );
 }

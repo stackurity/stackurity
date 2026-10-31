@@ -222,6 +222,7 @@ var routeRules = map[string]routeRule{
 	"GET /api/v1/settings/fix-grouping": {class: "list"},
 	"GET /api/v1/inventory":             {class: "list", query: "?asset_id={asset}"},
 	"GET /api/v1/inventory/updates":     {class: "list", query: "?asset_id={asset}"},
+	"GET /api/v1/coverage/unchecked":    {class: "list", query: "?asset_id={asset}"},
 	"GET /api/v1/coverage":              {class: "list", query: "?asset_id={asset}"},
 	"GET /api/v1/teams":                 {class: "list"},
 	"GET /api/v1/audit":                 {class: "list", query: "?object_type=asset&object_id={asset}"},

@@ -34,6 +34,13 @@ type GapReport struct {
 	// release line is not in the data, or a runtime or operating system has
 	// no lifecycle product.
 	NoLifecycle []Gap `json:"no_lifecycle"`
+	// NotChecked are components a vulnerability source exists for that
+	// were still not checked, by reason ("waiting_for_data",
+	// "no_advisories", "unreadable_version", or "unsupported" for a
+	// release or kind the matcher does not read), package type and
+	// subject. With NoVulnerabilitySource it counts every component that
+	// was not checked, so the report doubles as the scanner roadmap.
+	NotChecked []Gap `json:"not_checked"`
 }
 
 // Gap is one kind of gap.
@@ -46,8 +53,15 @@ type Gap struct {
 	Assets int64  `json:"assets"`
 	// Workspaces counts the workspaces those assets are in.
 	Workspaces int64 `json:"workspaces"`
-	// Components counts distinct components (no_vulnerability_source only).
+	// Components counts distinct components (no_vulnerability_source and
+	// not_checked only).
 	Components int64 `json:"components,omitempty"`
+	// Actor is who can close the gap: "stackurity" (support to build),
+	// "user" (a workspace's own setup), "automatic" (data still syncing)
+	// or "none" (nothing to check against).
+	Actor string `json:"actor"`
+	// Reason groups not_checked entries (store.Unchecked* reasons).
+	Reason string `json:"reason,omitempty"`
 }
 
 // unreadKinds names the file kinds of the coverage scopes the scanners write
@@ -114,7 +128,17 @@ var vulnReasons = map[string]string{
 	"windows_release":           "Windows releases whose missing updates are not evaluated (Windows 7 and 8.x, other products)",
 	"windows_program":           "installed Windows programs not in the curated catalogue (or not identified by it): not matched",
 	"windows_program_unmatched": "installed Windows programs the curated catalogue recognises but does not match (no reliable source yet)",
+	"no_repository_url":         "Swift packages known by a registry identity only: Swift advisories are keyed by repository URL",
+	"private_registry":          "packages from a private registry or organisation: no public advisories cover them",
 	"other":                     "other",
+}
+
+var notCheckedReasons = map[string]string{
+	store.UncheckedWaitingForData:    "waiting for the vulnerability source to sync, or checked against out-of-date data",
+	store.UncheckedNoAdvisories:      "the source publishes no advisories for this release",
+	store.UncheckedUnreadableVersion: "the installed version could not be read",
+	store.UncheckedUnsupported:       "a release or kind the matcher does not read yet",
+	store.UncheckedOther:             "another reason the workspace can act on; each component's row says why",
 }
 
 // CoverageGaps builds the report across every active workspace. It reads in
@@ -128,7 +152,8 @@ func CoverageGaps(ctx context.Context, st *store.Store, ov *eoloverlay.Overlay) 
 	if err != nil {
 		return nil, err
 	}
-	r := &GapReport{CheckedAt: now, OverlayVersion: ov.Version(), UnreadFiles: []Gap{}, NoVulnerabilitySource: []Gap{}, NoLifecycle: []Gap{}}
+	r := &GapReport{CheckedAt: now, OverlayVersion: ov.Version(), UnreadFiles: []Gap{}, NoVulnerabilitySource: []Gap{}, NoLifecycle: []Gap{},
+		NotChecked: []Gap{}}
 	if r.Workspaces, r.Assets, err = st.GapTotals(ctx); err != nil {
 		return nil, err
 	}
@@ -139,7 +164,11 @@ func CoverageGaps(ctx context.Context, st *store.Store, ov *eoloverlay.Overlay) 
 	}
 	for _, g := range files {
 		label, detail := unreadLabel(g.Kind)
-		r.UnreadFiles = append(r.UnreadFiles, Gap{Kind: g.Kind, Label: label, Detail: detail, Assets: g.Assets, Workspaces: g.Workspaces})
+		actor := store.ActorStackurity
+		if g.Kind == "app-permissions" {
+			actor = store.ActorUser
+		}
+		r.UnreadFiles = append(r.UnreadFiles, Gap{Kind: g.Kind, Label: label, Detail: detail, Assets: g.Assets, Workspaces: g.Workspaces, Actor: actor})
 	}
 
 	vulns, err := st.VulnerabilitySourceGaps(ctx)
@@ -149,7 +178,8 @@ func CoverageGaps(ctx context.Context, st *store.Store, ov *eoloverlay.Overlay) 
 	for _, g := range vulns {
 		parts := strings.SplitN(g.Kind, "|", 3)
 		typ, cat := parts[0], parts[1]
-		gap := Gap{Kind: g.Kind, Label: typ + " packages", Detail: vulnReasons[cat], Assets: g.Assets, Workspaces: g.Workspaces, Components: g.Components}
+		gap := Gap{Kind: g.Kind, Label: typ + " packages", Detail: vulnReasons[cat], Assets: g.Assets, Workspaces: g.Workspaces, Components: g.Components,
+			Actor: store.ActorStackurity}
 		switch {
 		case strings.HasPrefix(cat, "windows_program"):
 			gap.Label = "Windows programs"
@@ -164,6 +194,16 @@ func CoverageGaps(ctx context.Context, st *store.Store, ov *eoloverlay.Overlay) 
 			gap.Detail = "built by " + parts[2] + "; the distribution's advisories do not cover it"
 		}
 		r.NoVulnerabilitySource = append(r.NoVulnerabilitySource, gap)
+	}
+
+	unchecked, err := st.UncheckedGaps(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, g := range unchecked {
+		reason, label := store.UncheckedLabel(g.Kind)
+		r.NotChecked = append(r.NotChecked, Gap{Kind: g.Kind, Label: label, Detail: notCheckedReasons[reason], Assets: g.Assets,
+			Workspaces: g.Workspaces, Components: g.Components, Actor: store.UncheckedActors[reason], Reason: reason})
 	}
 
 	if r.NoLifecycle, err = lifecycleGaps(ctx, st, ov); err != nil {
@@ -234,7 +274,7 @@ func lifecycleGaps(ctx context.Context, st *store.Store, ov *eoloverlay.Overlay)
 	add := func(kind, label, detail string, c store.LifecycleCandidate) {
 		b := buckets[kind]
 		if b == nil {
-			b = &bucket{gap: Gap{Kind: kind, Label: label, Detail: detail}, assets: map[int64]bool{}, workspace: map[int64]bool{}}
+			b = &bucket{gap: Gap{Kind: kind, Label: label, Detail: detail, Actor: store.ActorStackurity}, assets: map[int64]bool{}, workspace: map[int64]bool{}}
 			buckets[kind] = b
 		}
 		for _, id := range c.Assets {

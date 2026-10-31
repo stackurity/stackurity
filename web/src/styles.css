@@ -1530,6 +1530,51 @@ details.json pre {
   margin: 0;
   padding-left: 18px;
 }
+
+/* Components not checked, by who acts (components/Unchecked.tsx): each
+   part of the headline opens its detail. */
+.unchecked .unchecked-head {
+  margin: 0;
+}
+.unchecked-part {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.unchecked-part[aria-expanded="true"] {
+  font-weight: 600;
+}
+.unchecked-part:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+.unchecked-detail {
+  margin-top: var(--s2);
+  padding-top: var(--s2);
+  border-top: 1px solid currentColor;
+  border-top-color: color-mix(in srgb, currentColor 25%, transparent);
+}
+.unchecked-detail p {
+  margin: var(--s2) 0 0;
+}
+.unchecked-rows {
+  margin-top: var(--s2);
+}
+.unchecked-foot {
+  margin: var(--s2) 0 0;
+  opacity: 0.85;
+}
+.alert-info .unchecked-detail a,
+.alert-info .unchecked-foot a {
+  color: inherit;
+  text-decoration: underline;
+}
 .bar-crit {
   background: var(--crit-bg);
 }

@@ -412,7 +412,7 @@ function ComponentFindings({ componentId }: { componentId: number }) {
       </h2>
       <ErrorBox error={res.error} title="Could not load findings" />
       {!res.data && !res.error && <Loading />}
-      {res.data && res.data.items.length === 0 && <p className="muted">No open findings for this component. Check Intelligence for evaluation gaps.</p>}
+      {res.data && res.data.items.length === 0 && <p className="muted">No open findings for this component. Where it was not checked, its row on each asset's Inventory tab says why and who acts.</p>}
       {res.data && res.data.items.length > 0 && (
         <>
           <FindingsTable rows={res.data.items} hideComponent />

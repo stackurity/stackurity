@@ -226,13 +226,8 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 			base := osv.BaseEcosystem(t.Ecosystem)
 			name := VulnFeed(base)
 			feed, configured := feedState[name]
-			switch {
-			case !configured:
-				notEvaluated(fmt.Sprintf("vulnerability feed %s has not been set up yet", name))
-			case !feed.Enabled:
-				notEvaluated(fmt.Sprintf("vulnerability feed %s is disabled", name))
-			case feed.LastSuccess == nil:
-				notEvaluated(fmt.Sprintf("vulnerability feed %s has not completed a sync", name))
+			if why := feedGapReason(name, feed, configured); why != "" {
+				notEvaluated(why)
 			}
 			if rc.State == store.CoverageEvaluated && feed.Ecosystems != nil {
 				covered, seen := releaseCache[t.Ecosystem]
@@ -241,8 +236,7 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 					releaseCache[t.Ecosystem] = covered
 				}
 				if !covered {
-					notEvaluated(fmt.Sprintf("%s has no advisories for %s: the release is newer than the source's data, no longer covered by it, or not published there",
-						name, t.Ecosystem))
+					notEvaluated(noAdvisoriesReason(name, t.Ecosystem))
 				}
 			}
 			if rc.State != store.CoverageEvaluated {
@@ -566,7 +560,7 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 	// version, an "all versions" range): the other records were not checked.
 	perr := ""
 	if _, verr := cmp(t.Version, t.Version); checked > 0 && (parseFailures == checked || verr != nil) {
-		perr = fmt.Sprintf("installed version %q could not be compared using %s rules", t.Version, t.Compare)
+		perr = uncomparableReason(t.Version, string(t.Compare))
 	}
 	verification := "confirmed"
 	switch {

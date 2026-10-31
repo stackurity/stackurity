@@ -6,6 +6,7 @@ import { Table } from "../components/Table";
 import { Card, EmptyState, ErrorBox, Loading, PageHeader, Pager } from "../components/ui";
 import { coverageColumns } from "./AssetDetail";
 import { ASSET_STATE_MEANINGS, AssetStateBadge } from "../components/Coverage";
+import { UncheckedBreakdown, useUnchecked } from "../components/Unchecked";
 
 const LIMIT = 100;
 
@@ -19,6 +20,7 @@ export function CoveragePage() {
   const overview = useLoad(() => api.get<Overview>("/overview"), []);
   const states = overview.data?.asset_coverage ?? {};
   const checks = useLoad(() => api.get<SecondCheckSummary>("/second-checks"), []);
+  const unchecked = useUnchecked();
 
   return (
     <>
@@ -26,6 +28,13 @@ export function CoveragePage() {
         title="Coverage"
         sub="How far findings can be trusted, and what collectors checked on each asset. Unsupported, failed and skipped areas are not covered: components there are not in the inventory."
       />
+      <h2 className="section-title">Components not checked, by who acts</h2>
+      <Card>
+        <ErrorBox error={unchecked.error} title="Could not load what was not checked" />
+        {!unchecked.data && !unchecked.error && <Loading />}
+        {unchecked.data && <UncheckedBreakdown u={unchecked.data} />}
+        <p className="hint">Each asset's page shows the same split for that asset, and its Inventory tab marks every component that was not checked.</p>
+      </Card>
       <h2 className="section-title">Assets by coverage state</h2>
       <Card>
         <dl className="coverage-states">
@@ -38,10 +47,7 @@ export function CoveragePage() {
             </div>
           ))}
         </dl>
-        <p className="hint">
-          Each asset's page shows its states and reasons, and its Inventory tab marks every component that could not be checked.
-          Components that could not be checked are listed on the <Link to="/intelligence#gaps">Intelligence page</Link>.
-        </p>
+        <p className="hint">Each asset's page shows its states and reasons.</p>
       </Card>
       <h2 className="section-title">Second check of high-impact findings</h2>
       <Card>

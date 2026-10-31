@@ -132,6 +132,13 @@ func TestAdminCoverageGaps(t *testing.T) {
 	if g := find(rep.NoVulnerabilitySource, "deb|vendor_build|MongoDB's repository (repo.mongodb.org)"); g.Assets != 1 || g.Components != 1 {
 		t.Errorf("MongoDB vendor build: %+v", g)
 	}
+	if g := find(rep.NoVulnerabilitySource, "deb|vendor_build|MongoDB's repository (repo.mongodb.org)"); g.Actor != "stackurity" {
+		t.Errorf("vendor build actor: %+v", g)
+	}
+	// npm has a source that has not synced here: counted, as waiting.
+	if g := find(rep.NotChecked, "waiting_for_data|npm|osv:npm"); g.Components != 2 || g.Workspaces != 2 || g.Actor != "automatic" || g.Label != "npm" {
+		t.Errorf("npm waiting: %+v", g)
+	}
 	if g := find(rep.NoLifecycle, "untracked|NestJS"); g.Assets != 2 || g.Workspaces != 2 {
 		t.Errorf("NestJS: %+v", g)
 	}

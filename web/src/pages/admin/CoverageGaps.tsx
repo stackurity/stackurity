@@ -14,6 +14,14 @@ import { plural } from "../../format";
 const DOCS =
   "https://github.com/stackurity/stackurity/blob/main/docs/compatibility.md#what-stackurity-cannot-check";
 
+/** Who can close a gap, in the words the workspace banners use. */
+const ACTOR_LABELS: Record<string, string> = {
+  stackurity: "Stackurity",
+  user: "The workspace",
+  automatic: "Resolves on its own",
+  none: "Nothing to check against",
+};
+
 function columns(what: string, components = false): Column<CoverageGap>[] {
   const cols: Column<CoverageGap>[] = [
     {
@@ -26,6 +34,7 @@ function columns(what: string, components = false): Column<CoverageGap>[] {
         </>
       ),
     },
+    { key: "actor", header: "Who acts", cell: (g) => ACTOR_LABELS[g.actor ?? ""] ?? "" },
     { key: "assets", header: "Assets", numeric: true, cell: (g) => g.assets },
     {
       key: "workspaces",
@@ -124,6 +133,14 @@ export function CoverageGapsPage() {
             empty="Every component has a vulnerability source"
             what="Package type"
             rows={d.no_vulnerability_source}
+            components
+          />
+          <GapCard
+            title="Components not checked for another reason"
+            about="Components a vulnerability source exists for that were still not checked: waiting for the source to sync, a release with no published advisories, a version that could not be read, or a release the matcher does not read yet. With the table above, every component that was not checked is counted here."
+            empty="Every component with a vulnerability source was checked"
+            what="Reason and subject"
+            rows={d.not_checked ?? []}
             components
           />
           <GapCard

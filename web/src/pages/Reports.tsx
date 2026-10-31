@@ -217,7 +217,7 @@ function ReportBody({ r, from }: { r: EvidenceReport; from: string }) {
               ["by kind", <Counts m={r.assets.by_kind} label={assetKindLabel} />],
               ["by collection status", <Counts m={r.assets.by_status} order={ASSET_STATUSES} />],
               ["components", n(r.coverage.components)],
-              ["evaluation gaps", n(r.coverage.evaluation_gaps)],
+              ["components not checked", n(r.coverage.evaluation_gaps)],
               ["coverage problems", n(r.coverage.coverage_problems)],
               ["hosts needing a reboot", n(r.assets.reboot_required)],
             ]}
