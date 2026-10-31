@@ -34,6 +34,9 @@ const (
 	SSO Feature = "sso"
 	// EnterprisePacks: stack packs for enterprise technologies (SAP, Oracle, ...).
 	EnterprisePacks Feature = "enterprise_packs"
+	// PhishingResistantMFA: a workspace may require admins to sign in with
+	// a passkey or security key (docs/install.md, "Two-factor sign-in").
+	PhishingResistantMFA Feature = "phishing_resistant_mfa"
 )
 
 // Edition is a plan: the set of features it includes.
@@ -48,7 +51,7 @@ const (
 var editionFeatures = map[Edition][]Feature{
 	Community:  nil,
 	Pro:        {Remediation, Teams, EvidenceReport, SSO},
-	Enterprise: {Remediation, Teams, EvidenceReport, SSO, EnterprisePacks},
+	Enterprise: {Remediation, Teams, EvidenceReport, SSO, EnterprisePacks, PhishingResistantMFA},
 }
 
 // Features lists what an edition includes.
