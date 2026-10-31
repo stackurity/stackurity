@@ -3379,7 +3379,7 @@
    "post": {
     "operationId": "post_coverage_support_requests",
     "summary": "Ask for an ecosystem to be supported",
-    "description": "Ask for an ecosystem to be supported: `{\"ecosystem\"}`, a `key` from `GET /coverage/overview` with components Stackurity does not check. One request per workspace and ecosystem; asking again changes nothing. 400 for an ecosystem not found unsupported on your assets\n\nRole: viewer",
+    "description": "Ask for an ecosystem to be supported: `{\"ecosystem\"}`, a `key` from `GET /coverage/overview` with components Stackurity does not check. One request per workspace and ecosystem; asking again changes nothing. 400 for an ecosystem not found unsupported on your assets. Dashboard sessions only (API tokens get 403); at most 10 a minute and 50 a day per person (429)\n\nRole: viewer",
     "tags": [
      "Inventory"
     ],
