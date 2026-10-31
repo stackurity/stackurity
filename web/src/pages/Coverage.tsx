@@ -1,111 +1,204 @@
 import { useState } from "react";
-import { Link } from "react-router";
-import { api, type CoverageRow, type List, type Overview, type SecondCheckSummary } from "../api";
+import { Link, useSearchParams } from "react-router";
+import {
+  api,
+  type AssetCoverageGroup,
+  type AssetCoverageList,
+  type CoverageOverview,
+  type CoverageRow,
+  type EcosystemCoverage,
+  type InventoryRow,
+  type List,
+  type Overview,
+  type SecondCheckSummary,
+} from "../api";
+import { useAuth } from "../auth";
 import { useLoad } from "../hooks";
 import { Table } from "../components/Table";
-import { Card, EmptyState, ErrorBox, Loading, PageHeader, Pager } from "../components/ui";
+import { EmptyState, ErrorBox, Loading, PageHeader, Pager } from "../components/ui";
 import { coverageColumns } from "./AssetDetail";
-import { ASSET_STATE_MEANINGS, AssetStateBadge } from "../components/Coverage";
-import { UncheckedBreakdown, useUnchecked } from "../components/Unchecked";
+import { useUnchecked } from "../components/Unchecked";
+import { group } from "../unchecked";
+import { notReportingText } from "../reporting";
+import { actionCards, headline, reportingLine } from "../coverage";
+import {
+  ActionCards,
+  AssetCoverageTable,
+  CoverageHeadline,
+  EcosystemGrid,
+  GroupChips,
+  ProblemScopes,
+  SECTION_ICONS,
+  Section,
+  SecondCheckPanel,
+} from "../components/CoverageParts";
 
-const LIMIT = 100;
+const ASSETS = 50;
+const ROWS = 200;
 
+/**
+ * Coverage: one answer at the top (the share of components checked, as one
+ * segmented bar), then what the user can fix, what Stackurity checks per
+ * ecosystem, each asset worst first, and how findings are verified.
+ */
 export function CoveragePage() {
-  const [problems, setProblems] = useState(true);
-  const [offset, setOffset] = useState(0);
-  const res = useLoad(
-    () => api.get<List<CoverageRow>>("/coverage", { problems: problems ? "true" : undefined, limit: LIMIT, offset }),
-    [problems, offset],
-  );
+  const { can } = useAuth();
+  const [params, setParams] = useSearchParams();
+  const groupParam = (params.get("group") ?? "") as AssetCoverageGroup | "";
+  const offset = Number(params.get("offset") ?? 0) || 0;
+  const showScopes = params.get("scopes") === "all";
+  const setParam = (patch: Record<string, string>) => {
+    const next = new URLSearchParams(params);
+    for (const [k, v] of Object.entries(patch)) {
+      if (v) next.set(k, v);
+      else next.delete(k);
+    }
+    setParams(next, { replace: true });
+  };
+
+  const ov = useLoad(() => api.get<CoverageOverview>("/coverage/overview"), []);
   const overview = useLoad(() => api.get<Overview>("/overview"), []);
-  const states = overview.data?.asset_coverage ?? {};
-  const checks = useLoad(() => api.get<SecondCheckSummary>("/second-checks"), []);
   const unchecked = useUnchecked();
+  const u = unchecked.data;
+  const hasRows = !!(group(u, "unreadable_version") || group(u, "other"));
+  const hasFiles = !!group(u, "unreadable_files");
+  const needRows = useLoad(
+    () =>
+      hasRows
+        ? Promise.all(
+            (["unreadable_version", "other"] as const).map((x) => api.get<List<InventoryRow>>("/inventory", { unchecked: x, limit: ROWS })),
+          ).then((ls) => ls.flatMap((l) => l.items))
+        : Promise.resolve([] as InventoryRow[]),
+    [hasRows],
+  );
+  const fileScopes = useLoad(
+    () => (hasFiles ? api.get<List<CoverageRow>>("/coverage", { problems: "true", limit: 500 }).then((l) => l.items) : Promise.resolve([] as CoverageRow[])),
+    [hasFiles],
+  );
+  const assets = useLoad(
+    () => api.get<AssetCoverageList>("/coverage/assets", { group: groupParam || undefined, limit: ASSETS, offset }),
+    [groupParam, offset],
+  );
+  const checks = useLoad(() => api.get<SecondCheckSummary>("/second-checks"), []);
+
+  const [pending, setPending] = useState<string | null>(null);
+  const [requestError, setRequestError] = useState<unknown>(null);
+  const request = async (e: EcosystemCoverage) => {
+    setPending(e.key);
+    setRequestError(null);
+    try {
+      await api.post("/coverage/support-requests", { ecosystem: e.key });
+      ov.reload();
+    } catch (err) {
+      setRequestError(err);
+    } finally {
+      setPending(null);
+    }
+  };
+
+  const cards = u ? actionCards(u, needRows.data ?? [], fileScopes.data ?? []) : [];
+  const cardsReady = !!u && !needRows.loading && !fileScopes.loading;
 
   return (
-    <>
-      <PageHeader help="coverage-intelligence"
-        title="Coverage"
-        sub="How far findings can be trusted, and what collectors checked on each asset. Unsupported, failed and skipped areas are not covered: components there are not in the inventory."
-      />
-      <h2 className="section-title">Components not checked, by who acts</h2>
-      <Card>
-        <ErrorBox error={unchecked.error} title="Could not load what was not checked" />
-        {!unchecked.data && !unchecked.error && <Loading />}
-        {unchecked.data && <UncheckedBreakdown u={unchecked.data} />}
-        <p className="hint">Each asset's page shows the same split for that asset, and its Inventory tab marks every component that was not checked.</p>
-      </Card>
-      <h2 className="section-title">Assets by coverage state</h2>
-      <Card>
-        <dl className="coverage-states">
-          {ASSET_STATE_MEANINGS.map(([state, meaning]) => (
-            <div key={state}>
-              <dt>
-                <AssetStateBadge state={state} /> <span className="mono">{(states[state] ?? 0).toLocaleString()}</span>
-              </dt>
-              <dd className="small">{meaning}</dd>
-            </div>
-          ))}
-        </dl>
-        <p className="hint">Each asset's page shows its states and reasons.</p>
-      </Card>
-      <h2 className="section-title">Second check of high-impact findings</h2>
-      <Card>
-        <p className="small">
-          P1, SOS, known exploited, regressed, unconfirmed and ambiguous findings are re-derived from the raw advisory record and the
-          raw observed version by a separate, simpler code path. A disagreement marks the finding for review; its priority and alerts stay as they are.{" "}
-          <Link to="/help/how-stackurity-knows">How Stackurity knows</Link>
-        </p>
-        <ErrorBox error={checks.error} title="Could not load second checks" />
-        {checks.data && (
+    <div className="cov-page">
+      <PageHeader help="coverage-intelligence" title="Coverage" />
+      <ErrorBox error={ov.error} title="Could not load coverage" />
+      {!ov.data && !ov.error && <Loading />}
+      {ov.data && (
+        <CoverageHeadline
+          h={headline(ov.data)}
+          reporting={reportingLine(overview.data?.asset_status)}
+          notReporting={notReportingText(overview.data?.not_reporting)}
+        />
+      )}
+
+      <Section id="needs-you" className="cov-actions-section" icon={SECTION_ICONS.actions} title="Fix these to see everything"
+        aside={cards.length > 0 ? <span className="cov-count">{cards.length}</span> : undefined}>
+        <ErrorBox error={unchecked.error ?? needRows.error ?? fileScopes.error} title="Could not load what needs you" />
+        {!cardsReady && !unchecked.error ? <Loading /> : <ActionCards cards={cards} />}
+      </Section>
+
+      <Section id="cov-ecosystems" className="cov-eco-section" icon={SECTION_ICONS.ecosystems} title="What Stackurity checks on your estate">
+        {ov.data && <EcosystemGrid ecosystems={ov.data.ecosystems} onRequest={request} pending={pending} />}
+        {requestError != null && <p className="small text-bad" role="alert">Could not send the request. Try again.</p>}
+      </Section>
+
+      <Section
+        id="cov-assets"
+        className="cov-assets-section"
+        icon={SECTION_ICONS.assets}
+        title="Coverage by asset"
+        aside={
+          can("admin") ? (
+            <Link to={showScopes ? "/coverage" : "/coverage?scopes=all#cov-scopes"} className="small">
+              {showScopes ? "Hide all scopes" : "Show all scopes"}
+            </Link>
+          ) : undefined
+        }
+      >
+        <ErrorBox error={assets.error} title="Could not load assets" />
+        {!assets.data && !assets.error && <Loading />}
+        {assets.data && (
           <>
-            <dl className="coverage-states">
-              <div>
-                <dt>
-                  <Link to="/fixes/issues?second_check=disagreed">Disagreed</Link>{" "}
-                  <span className="mono">{checks.data.disagreed.toLocaleString()}</span>
-                </dt>
-                <dd className="small">Open findings the second check derived differently. A person should look; they keep their priority.</dd>
-              </div>
-              <div>
-                <dt>
-                  <Link to="/fixes/issues?second_check=agreed">Agreed</Link> <span className="mono">{checks.data.agreed.toLocaleString()}</span>
-                </dt>
-                <dd className="small">Open findings the second check reached on its own.</dd>
-              </div>
-              <div>
-                <dt>
-                  <Link to="/fixes/issues?second_check=could_not_check">Could not check</Link>{" "}
-                  <span className="mono">{checks.data.could_not_check.toLocaleString()}</span>
-                </dt>
-                <dd className="small">Versions or channels the simpler check does not read (pre-releases, SUSE, FIPS builds). Each says why.</dd>
-              </div>
-              <div>
-                <dt>
-                  Waiting <span className="mono">{checks.data.pending.toLocaleString()}</span>
-                </dt>
-                <dd className="small">Covered findings not checked yet. The check runs in the background, a batch each minute.</dd>
-              </div>
-            </dl>
-            <p className="hint">{checks.data.logged_30d.toLocaleString()} disagreements logged in the last 30 days, kept for new matching tests.</p>
-            {checks.data.recent.length > 0 && (
-              <details>
-                <summary>Latest disagreements ({checks.data.recent.length})</summary>
-                <ul className="ref-list small">
-                  {checks.data.recent.map((d) => (
-                    <li key={d.id} className="break">
-                      {d.finding_id ? <Link to={`/findings/${d.finding_id}`}>{d.key}</Link> : <span className="mono">{d.key}</span>}{" "}
-                      <span className="mono">{d.purl}</span>:{" "}
-                      {d.differences.map((x) => `${x.field.replace(/_/g, " ")} (matcher ${x.matcher}, second check ${x.independent})`).join("; ")}
-                    </li>
-                  ))}
-                </ul>
-              </details>
+            <GroupChips groups={assets.data.groups} active={groupParam} onChange={(g) => setParam({ group: g, offset: "" })} />
+            {assets.data.total === 0 && !groupParam ? (
+              <EmptyState title="No assets yet">
+                <p>
+                  Assets appear here after their first report. <Link to="/assets/add">Add an asset</Link>
+                </p>
+              </EmptyState>
+            ) : (
+              <>
+                <AssetCoverageTable list={assets.data} renderProblems={(a) => <AssetProblems assetId={a.id} />} />
+                <Pager total={assets.data.total} limit={ASSETS} offset={offset} onChange={(o) => setParam({ offset: o ? String(o) : "" })} />
+              </>
             )}
           </>
         )}
-      </Card>
-      <h2 className="section-title">Collector scopes</h2>
+      </Section>
+
+      <div className="cov-verify-section">
+        <ErrorBox error={checks.error} title="Could not load second checks" />
+        <SecondCheckPanel checks={checks.data} />
+      </div>
+
+      {showScopes && can("admin") && <AllScopes />}
+    </div>
+  );
+}
+
+/** An asset's problem collector scopes, loaded when its row is opened. */
+function AssetProblems({ assetId }: { assetId: number }) {
+  const res = useLoad(() => api.get<List<CoverageRow>>("/coverage", { asset_id: assetId, problems: "true", limit: 100 }), [assetId]);
+  if (res.error) return <ErrorBox error={res.error} title="Could not load what the scan read" />;
+  if (!res.data) return <Loading />;
+  return (
+    <>
+      <ProblemScopes rows={res.data.items} />
+      {res.data.total > res.data.items.length && (
+        <Link className="small" to={`/assets/${assetId}?tab=coverage`}>
+          See all {res.data.total.toLocaleString("en")}
+        </Link>
+      )}
+    </>
+  );
+}
+
+const SCOPES = 100;
+
+/** Every collector scope, for administrators ("Show all scopes"). */
+function AllScopes() {
+  const [problems, setProblems] = useState(true);
+  const [offset, setOffset] = useState(0);
+  const res = useLoad(
+    () => api.get<List<CoverageRow>>("/coverage", { problems: problems ? "true" : undefined, limit: SCOPES, offset }),
+    [problems, offset],
+  );
+  return (
+    <section className="cov-section" id="cov-scopes" aria-labelledby="cov-scopes-title">
+      <h2 id="cov-scopes-title" className="section-title">
+        Everything the collectors read
+      </h2>
       <div className="filters">
         <label className="check">
           <input
@@ -116,20 +209,12 @@ export function CoveragePage() {
               setOffset(0);
             }}
           />{" "}
-          Problems only (hide checked)
+          Problems only
         </label>
       </div>
       <ErrorBox error={res.error} title="Could not load coverage" />
       {!res.data && !res.error && <Loading />}
-      {res.data && res.data.items.length === 0 && (
-        <EmptyState title={problems ? "No coverage problems" : "No coverage recorded yet"}>
-          {problems ? (
-            <p>Every recorded scope was checked successfully. Untick “Problems only” to see them.</p>
-          ) : (
-            <p>Coverage rows appear after the first collection.</p>
-          )}
-        </EmptyState>
-      )}
+      {res.data && res.data.items.length === 0 && <p className="cov-empty">{problems ? "Every part was read." : "Nothing recorded yet."}</p>}
       {res.data && res.data.items.length > 0 && (
         <>
           <Table
@@ -139,9 +224,9 @@ export function CoveragePage() {
             rowKey={(r) => `${r.asset_id}|${r.collector_id}|${r.scope}`}
             rowClassName={(r) => (r.status === "failed" ? "row-stale" : undefined)}
           />
-          <Pager total={res.data.total} limit={LIMIT} offset={offset} onChange={setOffset} />
+          <Pager total={res.data.total} limit={SCOPES} offset={offset} onChange={setOffset} />
         </>
       )}
-    </>
+    </section>
   );
 }

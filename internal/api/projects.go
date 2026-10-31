@@ -116,6 +116,8 @@ var projectRoutes = map[string]projectScope{
 	"GET /api/v1/inventory/updates":            scopedRead,
 	"GET /api/v1/coverage":                     scopedRead,
 	"GET /api/v1/coverage/unchecked":           scopedRead,
+	"GET /api/v1/coverage/overview":            scopedRead,
+	"GET /api/v1/coverage/assets":              scopedRead,
 	"GET /api/v1/dashboard/trend":              scopedRead,
 	"GET /api/v1/audit":                        scopedRead,
 	// Members with project access only see the people of their projects.
@@ -146,6 +148,9 @@ var projectRoutes = map[string]projectScope{
 	"POST /api/v1/fix-groups/{id}/applied": scopedWrite,
 	// Anyone who can see the issues may ask; the request is narrowed too.
 	"POST /api/v1/ignore-requests": scopedWrite,
+	// Anyone may ask for an ecosystem they can see on their assets; the
+	// request names the ecosystem, never an asset.
+	"POST /api/v1/coverage/support-requests": scopedWrite,
 	// Security on every issue's asset; a rule for every asset needs an
 	// organisation-wide security or admin role (Server.everywhere).
 	"POST /api/v1/ignore-requests/{id}/decision": scopedWrite,
