@@ -475,30 +475,37 @@ func (s *Server) confirmTOTP(w http.ResponseWriter, r *http.Request) {
 	if !issued {
 		codes = nil
 	}
-	ended, err := s.factorChanged(w, r, store.MFATOTP)
+	ended, err := s.factorChanged(w, r, sessionFactor{method: store.MFATOTP})
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
 	s.auditAccount(r, u, "auth.mfa_enabled", map[string]any{"method": "totp", "other_sessions_ended": ended, "recovery_codes_issued": issued})
+	s.notifyFactorChange(r, u.Email, "An authenticator app was set up for two-factor sign-in", "")
 	s.answerFactorChange(w, r, u, map[string]any{"recovery_codes": codes, "other_sessions_ended": ended})
 }
 
+// sessionFactor is what a session counts as signed in with after a factor
+// change: a method and, for a passkey, which one.
+type sessionFactor struct {
+	method string
+	cred   int64
+}
+
+// keepFactor keeps the session's own second factor.
+func keepFactor(p *Principal) sessionFactor { return sessionFactor{p.MFAMethod, p.MFACredential} }
+
 // factorChanged follows a second factor added or removed: the account's
-// other sessions end, and this one gets a new ID. checked is the factor
-// the person just proved they hold ("" for a removal), which the new
-// session counts as signed in with; otherwise it keeps its own.
-func (s *Server) factorChanged(w http.ResponseWriter, r *http.Request, checked string) (int64, error) {
+// other sessions end, and this one gets a new ID, signed in with f (the
+// factor just proved for an addition; for a removal its own, or none when
+// the factor removed was the one it used).
+func (s *Server) factorChanged(w http.ResponseWriter, r *http.Request, f sessionFactor) (int64, error) {
 	p := principal(r)
 	ended, err := s.Store.EndSessions(r.Context(), p.User.ID, sessionSecret(r))
 	if err != nil {
 		return 0, err
 	}
-	mfa := p.MFAMethod
-	if checked != "" {
-		mfa = checked
-	}
-	return ended, s.rotateSession(w, r, store.SessionOpts{Login: p.Login, MFA: mfa})
+	return ended, s.rotateSession(w, r, store.SessionOpts{Login: p.Login, MFA: f.method, MFACredential: f.cred})
 }
 
 // answerFactorChange answers with out and the account's new status.
@@ -537,7 +544,8 @@ func (s *Server) newRecoveryCodes(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	_ = s.Store.Audit(r.Context(), principal(r).Actor(r), "auth.mfa_recovery_codes_replaced", "user", itoa(u.ID), nil)
+	s.auditAccount(r, u, "auth.mfa_recovery_codes_replaced", nil)
+	s.notifyFactorChange(r, u.Email, "New recovery codes were made, and the old ones stopped working,", "")
 	writeJSON(w, 200, map[string]any{"recovery_codes": codes})
 }
 
@@ -554,12 +562,13 @@ func (s *Server) disableMFA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(had) > 0 {
-		ended, err := s.factorChanged(w, r, "")
+		ended, err := s.factorChanged(w, r, sessionFactor{})
 		if err != nil {
 			s.fail(w, r, err)
 			return
 		}
 		s.auditAccount(r, u, "auth.mfa_disabled", map[string]any{"methods": had, "other_sessions_ended": ended})
+		s.notifyFactorChange(r, u.Email, "Two-factor sign-in was turned off (every passkey, authenticator app and email code removed)", "")
 	}
 	w.WriteHeader(204)
 }
@@ -576,12 +585,17 @@ func (s *Server) removeTOTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if had {
-		ended, err := s.factorChanged(w, r, "")
+		f := keepFactor(principal(r))
+		if f.method == store.MFATOTP {
+			f = sessionFactor{}
+		}
+		ended, err := s.factorChanged(w, r, f)
 		if err != nil {
 			s.fail(w, r, err)
 			return
 		}
 		s.auditAccount(r, u, "auth.mfa_disabled", map[string]any{"methods": []string{store.MFATOTP}, "other_sessions_ended": ended})
+		s.notifyFactorChange(r, u.Email, "The authenticator app was removed from two-factor sign-in", "")
 	}
 	w.WriteHeader(204)
 }
@@ -670,6 +684,11 @@ func (s *Server) resetMemberMFA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = s.Store.Audit(r.Context(), p.Actor(r), "user.mfa_reset", "user", itoa(id), map[string]any{"email": target, "methods": removed})
+	admin := "an administrator"
+	if p.User != nil {
+		admin = p.User.Email
+	}
+	s.notifyFactorChange(r, target, "Your two-factor sign-in was reset (every passkey, authenticator app, email code and recovery code removed)", admin)
 	w.WriteHeader(204)
 }
 

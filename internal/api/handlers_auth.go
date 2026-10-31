@@ -484,7 +484,7 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 	_ = s.Store.Audit(r.Context(), p.Actor(r), "auth.password_changed", "user", itoa(p.User.ID), out)
 	// What the session may do changed (a temporary password is gone): a
 	// new session ID, signed in as before.
-	if err := s.rotateSession(w, r, store.SessionOpts{Login: p.Login, MFA: p.MFAMethod}); err != nil {
+	if err := s.rotateSession(w, r, store.SessionOpts{Login: p.Login, MFA: p.MFAMethod, MFACredential: p.MFACredential}); err != nil {
 		s.fail(w, r, err)
 		return
 	}
