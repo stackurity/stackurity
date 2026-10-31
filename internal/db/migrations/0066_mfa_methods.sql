@@ -63,14 +63,19 @@ ALTER TABLE mfa_challenges ADD COLUMN email_code_hash bytea,
                            ADD COLUMN email_sends int NOT NULL DEFAULT 0,
                            ADD COLUMN email_sent_at timestamptz;
 
--- How each session was signed in. login_method: password, passkey or
--- invite (null: single sign-on, a sign-up link, or an older release, which
--- the two-factor policy leaves alone unless password_login is set).
+-- How each session was signed in. login_method: password, passkey,
+-- invite, signup, or sso (single sign-on, the only one the two-factor
+-- policy leaves alone; a session pinned by an organisation's single sign-on
+-- is exempt too). A session with none is held to the policy.
 -- mfa_method: the second factor checked (totp, recovery_code, passkey,
--- email). Sessions from before this migration with mfa_at set used TOTP.
+-- email), and mfa_credential_id the passkey it was checked with. Sessions
+-- from before this migration with mfa_at set used TOTP; pinned ones are
+-- single sign-on.
 ALTER TABLE sessions ADD COLUMN login_method text,
-                     ADD COLUMN mfa_method text;
+                     ADD COLUMN mfa_method text,
+                     ADD COLUMN mfa_credential_id bigint;
 UPDATE sessions SET login_method = 'password' WHERE password_login;
+UPDATE sessions SET login_method = 'sso' WHERE sso_workspace_id IS NOT NULL;
 UPDATE sessions SET mfa_method = 'totp' WHERE mfa_at IS NOT NULL;
 
 -- The workspace's two-factor policy (Settings → Users):

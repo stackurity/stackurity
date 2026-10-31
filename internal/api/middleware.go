@@ -43,11 +43,13 @@ type Principal struct {
 	// Token then describes it, so it is capped like an API token.
 	Assistant *store.AssistantGrant
 	// Login is how a browser session was signed in (store.LoginPassword,
-	// LoginPasskey, LoginInvite; "" for single sign-on and sign-up links).
+	// LoginPasskey, LoginInvite, LoginSignup, LoginSSO; "" for a session
+	// from before migration 0066).
 	Login string
 	// MFAMethod is the second factor the session was signed in with ("" for
-	// none).
-	MFAMethod string
+	// none), and MFACredential the passkey it used (0: none).
+	MFAMethod     string
+	MFACredential int64
 	// MFANeed is what the workspace's two-factor policy asks of the session
 	// (mfa_policy.go): nothing, setting up a factor, or confirming with one.
 	MFANeed mfaNeed
@@ -126,7 +128,7 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 			switch {
 			case err == nil:
 				p = &Principal{User: sess.User, Role: sess.User.Role, Session: true, Workspace: sess.Workspace,
-					Login: sess.Login, MFAMethod: sess.MFA,
+					Login: sess.Login, MFAMethod: sess.MFA, MFACredential: sess.MFACredential,
 					PasswordChangeRequired: sess.PasswordChangeRequired, SSOWorkspace: sess.SSOWorkspace, SessionExpires: sess.ExpiresAt}
 				if p.Workspace > 0 && editionSessionAccess != nil {
 					if req := editionSessionAccess(s, r, sess.User, p.Workspace, sess.SSOWorkspace); req != nil {

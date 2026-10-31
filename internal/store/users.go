@@ -332,13 +332,20 @@ func (s *Store) CreateSession(ctx context.Context, userID, workspaceID int64) (s
 }
 
 // How a session was signed in (SessionOpts.Login). The two-factor policy
-// of the session's workspace applies to these; a session with none (single
-// sign-on, where the identity provider does the second factor, or a hosted
-// edition's sign-up link) is left alone.
+// of the session's workspace applies to every session except single
+// sign-on's (LoginSSO, or one pinned to a workspace's own identity
+// provider), where the identity provider does the second factor. A session
+// with no method, or one this release does not know, is held to the policy
+// too: only a sign-in that says it is single sign-on is exempt.
 const (
 	LoginPassword = "password"
 	LoginPasskey  = "passkey"
 	LoginInvite   = "invite"
+	// LoginSignup: a new organisation's first session, from a hosted
+	// edition's sign-up link.
+	LoginSignup = "signup"
+	// LoginSSO: an OpenID Connect or SAML sign-in.
+	LoginSSO = "sso"
 )
 
 // Second factors (SessionOpts.MFA, and the methods a workspace allows).
@@ -351,13 +358,16 @@ const (
 
 // SessionOpts says how a session was signed in.
 type SessionOpts struct {
-	// Login is LoginPassword, LoginPasskey or LoginInvite; "" for single
-	// sign-on and sign-up links.
+	// Login is how the session was signed in: LoginPassword, LoginPasskey,
+	// LoginInvite, LoginSignup or LoginSSO.
 	Login string
 	// MFA is the second factor checked ("" for none). A passkey sign-in
 	// without a password checks one too: the passkey with user
 	// verification.
 	MFA string
+	// MFACredential is the passkey that MFA (MFAPasskey) was checked with
+	// (0: none), so removing it can downgrade the session.
+	MFACredential int64
 	// Pinned is the workspace a sign-in through that workspace's own
 	// identity provider pins the session to (CreateSSOSession); 0: none.
 	// A session that replaces a pinned one keeps its pin.
@@ -391,10 +401,14 @@ func (s *Store) CreateSessionWith(ctx context.Context, userID, workspaceID int64
 	if expires.IsZero() {
 		expires = time.Now().Add(SessionTTL)
 	}
+	var cred *int64
+	if opts.MFA == MFAPasskey && opts.MFACredential > 0 {
+		cred = &opts.MFACredential
+	}
 	_, err = s.Pool.Exec(ctx, `INSERT INTO sessions (token_hash, user_id, expires_at, workspace_id, password_login, mfa_at, sso_workspace_id,
-		login_method, mfa_method)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, NULLIF($8, ''), NULLIF($9, ''))`,
-		auth.HashToken(secret), userID, expires, ws, opts.Login == LoginPassword, mfaAt, pinned, opts.Login, opts.MFA)
+		login_method, mfa_method, mfa_credential_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, NULLIF($8, ''), NULLIF($9, ''), $10)`,
+		auth.HashToken(secret), userID, expires, ws, opts.Login == LoginPassword, mfaAt, pinned, opts.Login, opts.MFA, cred)
 	return secret, err
 }
 
@@ -405,7 +419,7 @@ func (s *Store) CreateSSOSession(ctx context.Context, userID, workspaceID int64)
 	if workspaceID <= 0 {
 		return "", fmt.Errorf("a pinned session needs a workspace: %w", ErrInvalid)
 	}
-	return s.CreateSessionWith(ctx, userID, workspaceID, SessionOpts{Pinned: workspaceID})
+	return s.CreateSessionWith(ctx, userID, workspaceID, SessionOpts{Login: LoginSSO, Pinned: workspaceID})
 }
 
 // Session is a resolved browser session.
@@ -417,10 +431,12 @@ type Session struct {
 	// only there: if the user has left it, Workspace is 0, never another.
 	SSOWorkspace int64
 	// Login is how the session was signed in (LoginPassword, ...; "" for
-	// single sign-on and sign-up links).
+	// a session from before migration 0066 that was not a password one).
 	Login string
-	// MFA is the second factor checked for this session ("" for none).
-	MFA string
+	// MFA is the second factor checked for this session ("" for none), and
+	// MFACredential the passkey it was checked with (0: none).
+	MFA           string
+	MFACredential int64
 	// PasswordChangeRequired: an administrator set a temporary password;
 	// only changing it is allowed until then.
 	PasswordChangeRequired bool
@@ -473,17 +489,18 @@ func (s *Store) SessionInfo(ctx context.Context, secret string) (*Session, error
 	var id int64
 	var ws, pinned *int64
 	var login, mfa string
+	var mfaCred int64
 	var expiresAt time.Time
 	var changePassword, absolute, idle, touch bool
 	var email string
 	err := s.Pool.QueryRow(ctx, `SELECT s.user_id, s.workspace_id, s.sso_workspace_id,
 		COALESCE(s.login_method, CASE WHEN s.password_login THEN 'password' ELSE '' END),
-		COALESCE(s.mfa_method, CASE WHEN s.mfa_at IS NOT NULL THEN 'totp' ELSE '' END), s.expires_at,
+		COALESCE(s.mfa_method, CASE WHEN s.mfa_at IS NOT NULL THEN 'totp' ELSE '' END), COALESCE(s.mfa_credential_id, 0), s.expires_at,
 		u.password_change_required, u.email,
 		s.expires_at <= now(), $2 > 0 AND s.last_seen_at < now() - make_interval(secs => $2), s.last_seen_at < now() - interval '1 minute'
 		FROM sessions s JOIN users u ON u.id = s.user_id
 		WHERE s.token_hash = $1 AND NOT u.disabled`, auth.HashToken(secret), s.SessionIdle.Seconds()).
-		Scan(&id, &ws, &pinned, &login, &mfa, &expiresAt, &changePassword, &email, &absolute, &idle, &touch)
+		Scan(&id, &ws, &pinned, &login, &mfa, &mfaCred, &expiresAt, &changePassword, &email, &absolute, &idle, &touch)
 	if err != nil {
 		return nil, notFound(err)
 	}
@@ -521,7 +538,7 @@ func (s *Store) SessionInfo(ctx context.Context, secret string) (*Session, error
 		// An organisation's identity provider vouches for membership of
 		// that organisation only, never for operating the installation.
 		u.InstanceAdmin = false
-		return &Session{User: u, Workspace: wsID, SSOWorkspace: *pinned, Login: login, MFA: mfa,
+		return &Session{User: u, Workspace: wsID, SSOWorkspace: *pinned, Login: login, MFA: mfa, MFACredential: mfaCred,
 			PasswordChangeRequired: changePassword, ExpiresAt: expiresAt}, nil
 	}
 	var wsID int64
@@ -546,7 +563,7 @@ func (s *Store) SessionInfo(ctx context.Context, secret string) (*Session, error
 	if err != nil {
 		return nil, err
 	}
-	return &Session{User: u, Workspace: wsID, Login: login, MFA: mfa, PasswordChangeRequired: changePassword,
+	return &Session{User: u, Workspace: wsID, Login: login, MFA: mfa, MFACredential: mfaCred, PasswordChangeRequired: changePassword,
 		ExpiresAt: expiresAt}, nil
 }
 

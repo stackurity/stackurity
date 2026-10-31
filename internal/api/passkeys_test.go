@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -841,5 +842,193 @@ func TestConcurrentRemovalsKeepThePolicyFloor(t *testing.T) {
 	}
 	if ok != 1 || n != 1 {
 		t.Errorf("%d removals succeeded, %d passkeys left", ok, n)
+	}
+}
+
+// Only single sign-on sessions are exempt from the policy: a sign-up
+// session, or one with no sign-in method, is held to it.
+func TestOnlySSOSessionsAreExempt(t *testing.T) {
+	e := newPasskeyEnv(t)
+	ctx := context.Background()
+	e.user("dev@x.io", auth.RoleEngineer)
+	e.user("app@x.io", auth.RoleEngineer)
+	enrol(t, e.login("app@x.io"))
+	if _, err := e.st.SetMFAPolicy(ctx, tenant.DefaultWorkspace, store.MFAPolicy{Require: store.PolicyEveryone, Methods: []string{"passkey", "totp"}}); err != nil {
+		t.Fatal(err)
+	}
+	uid := func(email string) int64 {
+		var id int64
+		if err := e.st.Pool.QueryRow(ctx, `SELECT id FROM users WHERE email = $1`, email).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	sessionFor := func(email string, opts store.SessionOpts) *session {
+		t.Helper()
+		sec, err := e.st.CreateSessionWith(ctx, uid(email), tenant.DefaultWorkspace, opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := e.anon()
+		s.hdr = map[string]string{"Cookie": "stackurity_session=" + sec}
+		return s
+	}
+	for _, c := range []struct {
+		name  string
+		email string
+		opts  store.SessionOpts
+		want  string
+	}{
+		{"sign-up, no factor", "dev@x.io", store.SessionOpts{Login: store.LoginSignup}, "mfa_enrolment_required"},
+		{"sign-up, has the app", "app@x.io", store.SessionOpts{Login: store.LoginSignup}, "mfa_step_up_required"},
+		{"no sign-in method", "dev@x.io", store.SessionOpts{}, "mfa_enrolment_required"},
+		{"an unknown method", "dev@x.io", store.SessionOpts{Login: "carrier-pigeon"}, "mfa_enrolment_required"},
+		{"single sign-on", "dev@x.io", store.SessionOpts{Login: store.LoginSSO}, ""},
+		{"pinned by an organisation's single sign-on", "dev@x.io", store.SessionOpts{Pinned: tenant.DefaultWorkspace}, ""},
+	} {
+		var out apiErr
+		code := sessionFor(c.email, c.opts).do("GET", "/api/v1/assets", nil, &out)
+		if (c.want == "" && code != 200) || (c.want != "" && (code != 403 || out.Error.Code != c.want)) {
+			t.Errorf("%s: %d %+v, want %q", c.name, code, out, c.want)
+		}
+	}
+	if s, err := e.st.CreateSSOSession(ctx, uid("dev@x.io"), tenant.DefaultWorkspace); err != nil {
+		t.Fatal(err)
+	} else {
+		x := e.anon()
+		x.hdr = map[string]string{"Cookie": "stackurity_session=" + s}
+		if code := x.do("GET", "/api/v1/assets", nil, nil); code != 200 {
+			t.Errorf("CreateSSOSession: %d", code)
+		}
+	}
+}
+
+// Removing the passkey a session was signed in with downgrades the session:
+// where passkeys are required it must confirm with another one.
+func TestRemovingTheSessionsPasskeyDowngradesIt(t *testing.T) {
+	e := newPasskeyEnv(t)
+	e.user("ann@x.io", auth.RoleEngineer)
+	ann := e.login("ann@x.io")
+	a, b := newAuthenticator(), newAuthenticator()
+	registerPasskey(t, ann, a, "A")
+	registerPasskey(t, ann, b, "B")
+	if _, err := e.st.SetMFAPolicy(context.Background(), tenant.DefaultWorkspace,
+		store.MFAPolicy{Require: store.PolicyEveryone, Methods: []string{"passkey"}}); err != nil {
+		t.Fatal(err)
+	}
+	s, code, _ := passwordless(t, e, a) // signed in with A
+	if code != 200 {
+		t.Fatal("sign in with A")
+	}
+	ids := map[string]int64{}
+	for _, pk := range mfaStatusOf(t, s).Passkeys {
+		ids[pk.Name] = pk.ID
+	}
+	// Removing B keeps the session; removing A, which it used, does not.
+	if code := s.do("DELETE", fmt.Sprintf("/api/v1/auth/mfa/passkeys/%d", ids["B"]), map[string]string{"password": pw}, nil); code != 204 {
+		t.Fatalf("remove B: %d", code)
+	}
+	if code := s.do("GET", "/api/v1/assets", nil, nil); code != 200 {
+		t.Fatalf("after removing another passkey: %d", code)
+	}
+	registerPasskey(t, s, b, "B again") // the session now counts as signed in with B again
+	ids = map[string]int64{}
+	for _, pk := range mfaStatusOf(t, s).Passkeys {
+		ids[pk.Name] = pk.ID
+	}
+	s2, code, _ := passwordless(t, e, a)
+	if code != 200 {
+		t.Fatal("sign in with A again")
+	}
+	if code := s2.do("DELETE", fmt.Sprintf("/api/v1/auth/mfa/passkeys/%d", ids["A"]), map[string]string{"password": pw}, nil); code != 204 {
+		t.Fatalf("remove A: %d", code)
+	}
+	var out apiErr
+	if code := s2.do("GET", "/api/v1/assets", nil, &out); code != 403 || out.Error.Code != "mfa_step_up_required" {
+		t.Errorf("session whose passkey was removed: %d %+v", code, out)
+	}
+}
+
+// Every change to a person's second factors is emailed to them, once, with
+// when, the address and the device; nothing the client sends reaches it
+// as it was sent.
+func TestFactorChangesAreEmailed(t *testing.T) {
+	mail := newFakeMail()
+	e := newPasskeyEnvWith(t, func(s *api.Server) { s.AccountMail = mail })
+	e.user("ann@x.io", auth.RoleEngineer)
+	e.user("admin@x.io", auth.RoleAdmin)
+	ann := e.login("ann@x.io")
+	ann.hdr = map[string]string{"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605 Chrome/131.0 Safari/537.36 <script>x</script>"}
+	n := 0
+	expect := func(what string, wants ...string) {
+		t.Helper()
+		m := mail.wait(t)
+		n++
+		if got := mail.count(); got != n {
+			t.Errorf("%s: %d emails, want %d", what, got, n)
+		}
+		body := strings.Join(m.msg.Summary, "\n")
+		if m.to != "ann@x.io" || m.msg.Title != "Your Stackurity two-factor sign-in changed" {
+			t.Errorf("%s: to %s, %q", what, m.to, m.msg.Title)
+		}
+		for _, w := range append(wants, "127.0.0.1", "UTC", "/forgot-password") {
+			if !strings.Contains(body, w) {
+				t.Errorf("%s: %q not in %s", what, w, body)
+			}
+		}
+		if strings.Contains(body, "<script>") || strings.Contains(body, "AppleWebKit") {
+			t.Errorf("%s: client text in the email: %s", what, body)
+		}
+	}
+	a := newAuthenticator()
+	pk := registerPasskey(t, ann, a, "MacBook").Passkey
+	expect("passkey added", "MacBook", "added", "Chrome on macOS")
+	if code := ann.do("PATCH", fmt.Sprintf("/api/v1/auth/mfa/passkeys/%d", pk.ID), map[string]string{"name": "Laptop"}, nil); code != 204 {
+		t.Fatal("rename")
+	}
+	addApp(t, ann)
+	expect("app added", "authenticator app was set up")
+	if code := ann.do("POST", "/api/v1/auth/mfa/recovery-codes", map[string]string{"password": pw}, nil); code != 200 {
+		t.Fatal("recovery codes")
+	}
+	expect("recovery codes", "New recovery codes")
+	if code := ann.do("DELETE", "/api/v1/auth/mfa/totp", map[string]string{"password": pw}, nil); code != 204 {
+		t.Fatal("remove app")
+	}
+	expect("app removed", "authenticator app was removed")
+	if code := ann.do("DELETE", fmt.Sprintf("/api/v1/auth/mfa/passkeys/%d", pk.ID), map[string]string{"password": pw}, nil); code != 204 {
+		t.Fatal("remove passkey")
+	}
+	expect("passkey removed", "Laptop", "removed")
+	registerPasskey(t, ann, newAuthenticator(), "Key")
+	expect("passkey added again", "Key")
+	if code := ann.do("DELETE", "/api/v1/auth/mfa", map[string]string{"password": pw}, nil); code != 204 {
+		t.Fatal("turn off")
+	}
+	expect("all removed", "turned off")
+	registerPasskey(t, ann, newAuthenticator(), "Key 2")
+	expect("passkey for the reset", "Key 2")
+
+	// An admin's reset is emailed to the member, naming the admin.
+	admin := e.login("admin@x.io")
+	admin.hdr = map[string]string{"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Firefox/133.0"}
+	var users struct{ Items []store.User }
+	admin.do("GET", "/api/v1/users", nil, &users)
+	for _, u := range users.Items {
+		if u.Email == "ann@x.io" {
+			if code := admin.do("DELETE", fmt.Sprintf("/api/v1/users/%d/mfa", u.ID), nil, nil); code != 204 {
+				t.Fatal("reset")
+			}
+		}
+	}
+	expect("admin reset", "reset", "admin@x.io", "Firefox on Windows")
+}
+
+// A passkey's name cannot carry new lines (or anything else) into the
+// change email's plain text.
+func TestPasskeyNameIsOneLine(t *testing.T) {
+	name, err := store.CleanPasskeyName("Key\r\nBcc: evil@example.com\n\tX")
+	if err != nil || strings.ContainsAny(name, "\r\n\t") {
+		t.Errorf("%q %v", name, err)
 	}
 }

@@ -120,11 +120,18 @@ func (c mfaCase) accepted() []string {
 	return out
 }
 
+// ssoSession reports whether a browser session came from single sign-on:
+// marked so at sign-in, or pinned to a workspace by its own identity
+// provider. Only those are exempt from the two-factor policy; a session
+// with no sign-in method, or one this release does not know, is not.
+func (p *Principal) ssoSession() bool {
+	return p.Login == store.LoginSSO || p.SSOWorkspace > 0
+}
+
 // applyMFAPolicy sets p.MFANeed for a browser session working in a
-// workspace. Sessions without a sign-in method (single sign-on, sign-up
-// links) are left alone.
+// workspace. Single sign-on sessions are left alone.
 func (s *Server) applyMFAPolicy(ctx context.Context, p *Principal) error {
-	if !p.Session || p.User == nil || p.Workspace == 0 || p.Login == "" {
+	if !p.Session || p.User == nil || p.Workspace == 0 || p.ssoSession() {
 		return nil
 	}
 	pol, methods, err := s.Store.SessionMFA(ctx, p.Workspace, p.User.ID)
@@ -141,10 +148,10 @@ func (s *Server) applyMFAPolicy(ctx context.Context, p *Principal) error {
 
 // mfaStepUpSomewhere names a workspace of u where the caller's session
 // would have to confirm with a factor the account has ("" when none).
-// Sessions without a sign-in method (single sign-on) are exempt everywhere.
+// Single sign-on sessions are exempt everywhere.
 func (s *Server) mfaStepUpSomewhere(r *http.Request, u *store.User) (string, error) {
 	p := principal(r)
-	if p == nil || !p.Session || p.Login == "" {
+	if p == nil || !p.Session || p.ssoSession() {
 		return "", nil
 	}
 	if p.MFANeed == mfaStepUp {
@@ -405,7 +412,7 @@ func (s *Server) putSecuritySettings(w http.ResponseWriter, r *http.Request) {
 			Session: p.MFAMethod, Methods: methods}
 		switch {
 		case !c.required():
-		case p.Session && p.Login == "":
+		case p.Session && p.ssoSession():
 			// Single sign-on: the identity provider's second factor.
 		case p.Session && !c.counts(c.Session) && c.countsAny(methods):
 			writeError(w, 409, "mfa_step_up_required", "sign in again with "+methodNames(c.accepted())+" first, so this setting does not lock you out")

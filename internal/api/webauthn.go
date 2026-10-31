@@ -404,13 +404,14 @@ func (s *Server) finishPasskeyRegistration(w http.ResponseWriter, r *http.Reques
 	}
 	// The person just used the new passkey, so this session counts as
 	// signed in with one.
-	ended, err := s.factorChanged(w, r, store.MFAPasskey)
+	ended, err := s.factorChanged(w, r, sessionFactor{store.MFAPasskey, pk.ID})
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
 	s.auditAccount(r, u, "auth.passkey_added", map[string]any{"passkey_id": pk.ID, "name": pk.Name, "backed_up": pk.BackedUp,
 		"discoverable": pk.Discoverable, "user_verified": cred.Flags.UserVerified, "recovery_codes_issued": issued, "other_sessions_ended": ended})
+	s.notifyFactorChange(r, u.Email, "A passkey, “"+pk.Name+"”, was added for two-factor sign-in", "")
 	s.answerFactorChange(w, r, u, map[string]any{"passkey": pk, "recovery_codes": codes, "other_sessions_ended": ended})
 }
 
@@ -461,12 +462,18 @@ func (s *Server) removePasskey(w http.ResponseWriter, r *http.Request) {
 		s.failRemoval(w, r, err)
 		return
 	}
-	ended, err := s.factorChanged(w, r, "")
+	// The session keeps its second factor, unless it was this passkey.
+	f := keepFactor(principal(r))
+	if f.method == store.MFAPasskey && f.cred == id {
+		f = sessionFactor{}
+	}
+	ended, err := s.factorChanged(w, r, f)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
 	s.auditAccount(r, u, "auth.passkey_removed", map[string]any{"passkey_id": id, "name": name, "other_sessions_ended": ended})
+	s.notifyFactorChange(r, u.Email, "A passkey, “"+name+"”, was removed from two-factor sign-in", "")
 	w.WriteHeader(204)
 }
 
@@ -600,7 +607,7 @@ func (s *Server) finishPasskeySecondFactor(w http.ResponseWriter, r *http.Reques
 	_ = s.Store.DeleteMFAChallenge(r.Context(), challenge)
 	s.clearMFACookie(w)
 	s.loginSucceeded(r, u)
-	s.startSessionWith(w, r, u, store.SessionOpts{Login: store.LoginPassword, MFA: store.MFAPasskey},
+	s.startSessionWith(w, r, u, store.SessionOpts{Login: store.LoginPassword, MFA: store.MFAPasskey, MFACredential: res.id},
 		map[string]any{"mfa": store.MFAPasskey, "passkey_id": res.id, "passkey": res.name})
 }
 
@@ -678,7 +685,7 @@ func (s *Server) finishPasswordless(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = s.Store.TouchLastLogin(r.Context(), u.ID)
 	s.loginSucceeded(r, u)
-	s.startSessionWith(w, r, u, store.SessionOpts{Login: store.LoginPasskey, MFA: store.MFAPasskey},
+	s.startSessionWith(w, r, u, store.SessionOpts{Login: store.LoginPasskey, MFA: store.MFAPasskey, MFACredential: res.id},
 		map[string]any{"method": store.LoginPasskey, "passkey_id": res.id, "passkey": res.name})
 }
 
@@ -715,7 +722,7 @@ func (s *Server) stepUpCode(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 401, "mfa_invalid", msg)
 		return
 	}
-	s.steppedUp(w, r, u, method, nil)
+	s.steppedUp(w, r, u, sessionFactor{method: method}, nil)
 }
 
 func (s *Server) beginPasskeyStepUp(w http.ResponseWriter, r *http.Request) {
@@ -773,13 +780,14 @@ func (s *Server) finishPasskeyStepUp(w http.ResponseWriter, r *http.Request) {
 		passkeyFailed(w, res.why)
 		return
 	}
-	s.steppedUp(w, r, u, store.MFAPasskey, map[string]any{"passkey_id": res.id, "passkey": res.name})
+	s.steppedUp(w, r, u, sessionFactor{store.MFAPasskey, res.id}, map[string]any{"passkey_id": res.id, "passkey": res.name})
 }
 
-// steppedUp replaces the session with one signed in with method.
-func (s *Server) steppedUp(w http.ResponseWriter, r *http.Request, u *store.User, method string, detail map[string]any) {
+// steppedUp replaces the session with one signed in with f.
+func (s *Server) steppedUp(w http.ResponseWriter, r *http.Request, u *store.User, f sessionFactor, detail map[string]any) {
 	p := principal(r)
-	if err := s.rotateSession(w, r, store.SessionOpts{Login: p.Login, MFA: method}); err != nil {
+	method := f.method
+	if err := s.rotateSession(w, r, store.SessionOpts{Login: p.Login, MFA: method, MFACredential: f.cred}); err != nil {
 		s.fail(w, r, err)
 		return
 	}
