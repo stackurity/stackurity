@@ -137,15 +137,33 @@ const (
 
 const activeFinding = `f.status = 'open' AND f.state IN ('new', 'acknowledged', 'in_progress')`
 
-// sameIssue matches another finding p of finding f's issue (kind and key)
-// on the same asset, on any package or version. Summaries count issues an
-// asset gained or lost, not findings: an upgrade, a distribution release
-// upgrade (most packages change version, many change name) or a second
-// installed kernel moves an issue to new findings without the asset gaining
-// or losing it. Counting findings, two back-to-back release upgrades of one
-// host once reported about three times the issues it really gained and
-// five times those it lost.
-const sameIssue = `p.asset_id = f.asset_id AND p.kind = f.kind AND p.key = f.key AND p.id <> f.id`
+// sameIssue matches another finding p of finding f's issue on the same
+// asset. "Same issue" is per asset and advisory key (kind and key, e.g. one
+// CVE), not per package: p may be on any package or version. Summaries
+// count issues an asset gained or lost, not findings: an upgrade, a
+// distribution release upgrade (most packages change version, many change
+// name) or a second installed kernel moves an issue to new findings without
+// the asset gaining or losing it. Counting findings, two back-to-back
+// release upgrades of one host once reported about three times the issues
+// it really gained and five times those it lost.
+//
+// Only an active p counts (see activeDuplicate): an issue suppressed,
+// accepted or marked a false positive on one package is not one the asset
+// has, so it hides neither a real new finding of it nor its fix elsewhere.
+const sameIssue = `p.asset_id = f.asset_id AND p.kind = f.kind AND p.key = f.key AND p.id <> f.id AND p.verification <> 'rejected'`
+
+// activeDuplicate is true when finding p was active (new, acknowledged or
+// in progress) at time t: the state before its first workflow change at or
+// after t (finding_events records from_state on every state change, by
+// people, ignore rules and expiries), or its current state when there is
+// none. A false positive is rejected and risk accepted together, so the
+// state covers it; sameIssue also skips a p rejected now, so a false
+// positive undone within the period is not counted as active at its start
+// (an approximation that can only count more issues as new, never fewer).
+func activeDuplicate(t string) string {
+	return `COALESCE((SELECT e.from_state FROM finding_events e WHERE e.finding_id = p.id AND e.from_state <> '' AND e.at >= ` + t + `
+	  ORDER BY e.at, e.id LIMIT 1), p.state) IN ('new', 'acknowledged', 'in_progress')`
+}
 
 // BacklogFinding is true for a finding f (on asset a) that is part of its
 // asset's first-scan backlog: what an asset connected since 0.9 reported
@@ -165,14 +183,15 @@ func (s *Store) CountIssues(ctx context.Context, set IssueSet, from, to time.Tim
 		cond = activeFinding + ` AND f.first_seen >= $1 AND f.first_seen < $2 AND a.announced_at IS NOT NULL AND f.first_seen > a.announced_at
 			AND (f.regressed_at IS NULL OR f.regressed_at < $1)
 			AND NOT EXISTS (SELECT 1 FROM findings p WHERE ` + sameIssue + `
-			  AND p.first_seen < $1 AND (p.resolved_at IS NULL OR p.resolved_at >= $1))`
+			  AND p.first_seen < $1 AND (p.resolved_at IS NULL OR p.resolved_at >= $1) AND ` + activeDuplicate("$1") + `)`
 	case IssuesFixed:
 		// Not when the asset still has the issue, and once per issue: an
 		// issue whose findings were closed more than once in the period (an
 		// upgrade passing through an intermediate version or release) is
 		// counted on the oldest of them.
 		cond = `f.status = 'resolved' AND f.resolved_at >= $1 AND f.resolved_at < $2 AND f.resolution_kind IN ('remediated', 'removed')
-			AND NOT EXISTS (SELECT 1 FROM findings p WHERE ` + sameIssue + ` AND p.status = 'open' AND p.first_seen < $2)
+			AND NOT EXISTS (SELECT 1 FROM findings p WHERE ` + sameIssue + ` AND p.status = 'open' AND p.first_seen < $2
+			  AND p.state IN ('new', 'acknowledged', 'in_progress'))
 			AND NOT EXISTS (SELECT 1 FROM findings p WHERE ` + sameIssue + ` AND p.id < f.id AND p.status = 'resolved'
 			  AND p.resolved_at >= $1 AND p.resolved_at < $2 AND p.resolution_kind IN ('remediated', 'removed'))`
 		fix, title = "f.resolved_fix_group", "f.resolved_fix_title"
