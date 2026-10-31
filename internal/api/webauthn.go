@@ -312,7 +312,7 @@ func (s *Server) beginPasskeyRegistration(w http.ResponseWriter, r *http.Request
 		return
 	}
 	wa := s.passkeysOrUnavailable(w)
-	if wa == nil || !s.recheckPassword(w, r, u, req.Password) {
+	if wa == nil || !s.mayChangeFactors(w, r, u) || !s.recheckPassword(w, r, u, req.Password) {
 		return
 	}
 	pu, err := s.loadPasskeyUser(r, u, true)
@@ -357,7 +357,7 @@ func (s *Server) finishPasskeyRegistration(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	wa := s.passkeysOrUnavailable(w)
-	if wa == nil {
+	if wa == nil || !s.mayChangeFactors(w, r, u) {
 		return
 	}
 	uid, sd, ok := s.takeCeremony(w, r, store.CeremonyRegister)
@@ -452,35 +452,13 @@ func (s *Server) removePasskey(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	me := s.sessionUser(w, r)
-	if me == nil {
-		return
-	}
-	pks, err := s.Store.ListPasskeys(r.Context(), me.ID)
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	others := 0
-	found := false
-	for _, pk := range pks {
-		if pk.ID == id {
-			found = true
-		} else {
-			others++
-		}
-	}
-	if !found {
-		writeError(w, 404, "not_found", "not found")
-		return
-	}
-	u := s.removalAllowed(w, r, func(m string) bool { return m != store.MFAPasskey || others > 0 }, "this passkey")
+	u, floor := s.removalChecks(w, r, "this passkey")
 	if u == nil {
 		return
 	}
-	name, err := s.Store.RemovePasskey(r.Context(), u.ID, id)
+	name, err := s.Store.RemovePasskey(r.Context(), u.ID, id, floor)
 	if err != nil {
-		s.fail(w, r, err)
+		s.failRemoval(w, r, err)
 		return
 	}
 	ended, err := s.factorChanged(w, r, "")

@@ -379,7 +379,7 @@ func (s *Server) startTOTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 409, "unavailable", errNoSecretKey.Error())
 		return
 	}
-	if !s.recheckPassword(w, r, u, req.Password) {
+	if !s.mayChangeFactors(w, r, u) || !s.recheckPassword(w, r, u, req.Password) {
 		return
 	}
 	secret, err := auth.NewTOTPSecret()
@@ -434,6 +434,9 @@ func (s *Server) confirmTOTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.limited(w, r, "too many codes tried; wait a few minutes", limitHit{"mfa-user", itoa(u.ID), limitMFAPerUser}) {
+		return
+	}
+	if !s.mayChangeFactors(w, r, u) {
 		return
 	}
 	sealed, enabled, err := s.Store.TOTPSecret(r.Context(), u.ID)
@@ -522,7 +525,7 @@ func (s *Server) newRecoveryCodes(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	if !s.recheckPassword(w, r, u, req.Password) {
+	if !s.mayChangeFactors(w, r, u) || !s.recheckPassword(w, r, u, req.Password) {
 		return
 	}
 	codes, hashes, err := auth.NewRecoveryCodes(auth.RecoveryCodeCount)
@@ -541,13 +544,13 @@ func (s *Server) newRecoveryCodes(w http.ResponseWriter, r *http.Request) {
 // disableMFA removes every second factor of the caller (passkeys, the app,
 // email codes), unless one of their organisations requires one.
 func (s *Server) disableMFA(w http.ResponseWriter, r *http.Request) {
-	u := s.removalAllowed(w, r, nil, "two-factor sign-in")
+	u, floor := s.removalChecks(w, r, "two-factor sign-in")
 	if u == nil {
 		return
 	}
-	had, err := s.Store.DisableMFA(r.Context(), u.ID)
+	had, err := s.Store.DisableMFA(r.Context(), u.ID, floor)
 	if err != nil {
-		s.fail(w, r, err)
+		s.failRemoval(w, r, err)
 		return
 	}
 	if len(had) > 0 {
@@ -563,13 +566,13 @@ func (s *Server) disableMFA(w http.ResponseWriter, r *http.Request) {
 
 // removeTOTP removes the caller's authenticator app.
 func (s *Server) removeTOTP(w http.ResponseWriter, r *http.Request) {
-	u := s.removalAllowed(w, r, func(m string) bool { return m != store.MFATOTP }, "the authenticator app")
+	u, floor := s.removalChecks(w, r, "the authenticator app")
 	if u == nil {
 		return
 	}
-	had, err := s.Store.RemoveTOTP(r.Context(), u.ID)
+	had, err := s.Store.RemoveTOTP(r.Context(), u.ID, floor)
 	if err != nil {
-		s.fail(w, r, err)
+		s.failRemoval(w, r, err)
 		return
 	}
 	if had {
@@ -583,42 +586,72 @@ func (s *Server) removeTOTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(204)
 }
 
-// removalAllowed checks a request to remove second factors: the password
-// again, then that the factors kept (keep; nil keeps none) still meet the
-// policy of every organisation of the caller. It answers and returns nil
-// when not.
-func (s *Server) removalAllowed(w http.ResponseWriter, r *http.Request, keep func(string) bool, what string) *store.User {
+// removalChecks checks a request to remove second factors: a session that
+// may change them, and the password again. The floor it returns, which the
+// store calls inside the removal's transaction, refuses when the factors
+// kept would no longer meet the policy of an organisation of the caller.
+// It answers and returns a nil user when the request may not go on.
+func (s *Server) removalChecks(w http.ResponseWriter, r *http.Request, what string) (*store.User, store.MFAFloor) {
 	u := s.sessionUser(w, r)
 	if u == nil {
-		return nil
+		return nil, nil
 	}
 	var req struct {
 		Password string `json:"password"`
 	}
 	if err := decode(r, &req); err != nil {
 		s.fail(w, r, err)
+		return nil, nil
+	}
+	if !s.mayChangeFactors(w, r, u) || !s.recheckPassword(w, r, u, req.Password) {
+		return nil, nil
+	}
+	return u, func(remaining []string) error {
+		name, err := s.mfaRemovalBlocked(r, u, remaining)
+		if err != nil {
+			return err
+		}
+		if name != "" {
+			return &mfaFloorError{workspace: name, what: what}
+		}
 		return nil
 	}
-	if !s.recheckPassword(w, r, u, req.Password) {
-		return nil
+}
+
+// mfaFloorError: a removal would leave an organisation's policy unmet.
+type mfaFloorError struct{ workspace, what string }
+
+func (e *mfaFloorError) Error() string {
+	return e.workspace + " requires two-factor sign-in that " + e.what + " is needed for; set up another method first"
+}
+
+// failRemoval answers a failed removal: 409 mfa_required when the policy
+// floor refused it.
+func (s *Server) failRemoval(w http.ResponseWriter, r *http.Request, err error) {
+	var floor *mfaFloorError
+	if errors.As(err, &floor) {
+		writeError(w, 409, "mfa_required", floor.Error())
+		return
 	}
-	methods, err := s.Store.MFAMethods(r.Context(), u.ID)
+	s.fail(w, r, err)
+}
+
+// mayChangeFactors refuses (and answers) a change to the caller's second
+// factors from a session that must first confirm with one it has in any of
+// their organisations, not only the one it works in: otherwise a phished
+// password and app code could add the attacker's passkey from a workspace
+// with a weaker policy, then switch back to one where only passkeys count.
+func (s *Server) mayChangeFactors(w http.ResponseWriter, r *http.Request, u *store.User) bool {
+	name, err := s.mfaStepUpSomewhere(r, u)
 	if err != nil {
 		s.fail(w, r, err)
-		return nil
+		return false
 	}
-	var remaining []string
-	if keep != nil {
-		remaining = slices.DeleteFunc(slices.Clone(methods), func(m string) bool { return !keep(m) })
+	if name != "" {
+		writeError(w, 403, "mfa_step_up_required", name+" requires you to confirm this session with a second factor you have before you change your factors")
+		return false
 	}
-	if name, err := s.mfaRemovalBlocked(r, u, remaining); err != nil {
-		s.fail(w, r, err)
-		return nil
-	} else if name != "" {
-		writeError(w, 409, "mfa_required", name+" requires two-factor sign-in that "+what+" is needed for; set up another method first")
-		return nil
-	}
-	return u
+	return true
 }
 
 // resetMemberMFA lets an admin remove another member's second factor (a

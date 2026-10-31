@@ -210,15 +210,35 @@ func (s *Store) UseRecoveryCode(ctx context.Context, userID int64, hash []byte) 
 	return tag.RowsAffected() == 1, left, err
 }
 
+// MFAFloor checks the second factors an account would keep after a
+// removal (passkey, totp, email); an error refuses the removal. It is
+// called inside the removal's transaction, with the account locked, so two
+// removals at once cannot both pass it.
+type MFAFloor func(remaining []string) error
+
+// checkFloor calls floor (nil: none) with userID's factors as tx sees them.
+func checkFloor(ctx context.Context, tx pgx.Tx, userID int64, floor MFAFloor) error {
+	if floor == nil {
+		return nil
+	}
+	var ms []string
+	if err := tx.QueryRow(ctx, `SELECT `+mfaMethodsSQL+` FROM users u WHERE u.id = $1`, userID).Scan(&ms); err != nil {
+		return err
+	}
+	return floor(ms)
+}
+
 // DisableMFA removes every second factor of userID (passkeys, the app,
-// email codes) with the recovery codes and sign-ins in progress. It
-// reports the methods that were on.
-func (s *Store) DisableMFA(ctx context.Context, userID int64) ([]string, error) {
+// email codes) with the recovery codes and sign-ins in progress, unless
+// floor refuses. It reports the methods that were on.
+func (s *Store) DisableMFA(ctx context.Context, userID int64, floor MFAFloor) ([]string, error) {
 	var had []string
 	err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
 		var err error
-		had, err = removeAllFactors(ctx, tx, userID)
-		return err
+		if had, err = removeAllFactors(ctx, tx, userID); err != nil {
+			return err
+		}
+		return checkFloor(ctx, tx, userID, floor)
 	})
 	return had, err
 }
@@ -240,10 +260,10 @@ func removeAllFactors(ctx context.Context, tx pgx.Tx, userID int64) ([]string, e
 	return had, nil
 }
 
-// RemoveTOTP removes userID's authenticator app (confirmed or not). It
-// reports whether one was confirmed; the recovery codes go with the last
-// strong factor.
-func (s *Store) RemoveTOTP(ctx context.Context, userID int64) (bool, error) {
+// RemoveTOTP removes userID's authenticator app (confirmed or not), unless
+// floor refuses. It reports whether one was confirmed; the recovery codes
+// go with the last strong factor.
+func (s *Store) RemoveTOTP(ctx context.Context, userID int64, floor MFAFloor) (bool, error) {
 	var had bool
 	err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `SELECT 1 FROM users WHERE id = $1 FOR UPDATE`, userID); err != nil {
@@ -254,6 +274,9 @@ func (s *Store) RemoveTOTP(ctx context.Context, userID int64) (bool, error) {
 			return nil
 		}
 		if err != nil {
+			return err
+		}
+		if err := checkFloor(ctx, tx, userID, floor); err != nil {
 			return err
 		}
 		return removedStrongFactor(ctx, tx, userID)

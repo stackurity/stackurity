@@ -187,7 +187,7 @@ Each person sets up their second factors under **Your account → Two-factor met
 **An organisation's policy.** Admins set it under **Settings → Users → Two-factor sign-in**:
 
 - **Two-factor sign-in**: **Optional**, **Required for everyone**, or **Required for admins and security** (members with the admin or security role, organisation-wide or through a project).
-- **Methods that count**: passkey or security key, authenticator app (one of these must stay). Recovery codes count wherever a passkey or the app does.
+- **Methods that count**: passkey or security key, authenticator app (one of these must stay). A recovery code counts where the passkey or app it backs up does.
 - **Require phishing-resistant sign-in (passkeys only) for admins** (Enterprise plan, as single sign-on for an organisation is): admins must sign in with a passkey, whatever the rest of the policy says. Once on, it stays enforced if the plan lapses, and can always be turned off.
 
 The admin saving a policy must meet it with the session they are using, so a policy cannot lock its own author out (the page says to set up or sign in with the method first). The page counts the members the policy would ask to set up a second factor, and the admins without a passkey.
@@ -197,7 +197,7 @@ The policy applies to every browser session working in the organisation that was
 - With no method that counts there, the person is sent straight to set one up, passkeys first.
 - With one, but signed in with something else (the app where admins must use a passkey), they confirm with it.
 - A recovery code stands in for a lost passkey: a session signed in with one may set up a new passkey, which also ends the account's other sessions.
-- A session that must confirm with a passkey cannot add or remove factors until it has, so a phished password and app code cannot register an attacker's passkey for an admin who has one.
+- A session that must confirm with a factor in any of the person's organisations cannot add or remove factors, or make new recovery codes, until it has, even while it works in another organisation with a weaker policy: so a phished password and app code cannot register an attacker's passkey for an admin who has one.
 
 **A lost device.** An admin resets a member's two-factor sign-in with **Reset two-factor** on **Settings → Users**: it removes their passkeys, authenticator app and recovery codes, ends their sessions, and is recorded as `user.mfa_reset`. As with passwords, only an instance administrator can reset it for an account that also belongs to other organisations, or for an instance administrator.
 

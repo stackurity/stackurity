@@ -182,9 +182,9 @@ func (s *Store) RenamePasskey(ctx context.Context, userID, id int64, name string
 	return old, notFound(err)
 }
 
-// RemovePasskey removes one of userID's passkeys and returns its name.
-// The recovery codes go with the last strong factor.
-func (s *Store) RemovePasskey(ctx context.Context, userID, id int64) (string, error) {
+// RemovePasskey removes one of userID's passkeys, unless floor refuses, and
+// returns its name. The recovery codes go with the last strong factor.
+func (s *Store) RemovePasskey(ctx context.Context, userID, id int64, floor MFAFloor) (string, error) {
 	var name string
 	err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `SELECT 1 FROM users WHERE id = $1 FOR UPDATE`, userID); err != nil {
@@ -192,6 +192,9 @@ func (s *Store) RemovePasskey(ctx context.Context, userID, id int64) (string, er
 		}
 		if err := tx.QueryRow(ctx, `DELETE FROM webauthn_credentials WHERE id = $2 AND user_id = $1 RETURNING name`, userID, id).Scan(&name); err != nil {
 			return notFound(err)
+		}
+		if err := checkFloor(ctx, tx, userID, floor); err != nil {
+			return err
 		}
 		return removedStrongFactor(ctx, tx, userID)
 	})
