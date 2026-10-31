@@ -2939,6 +2939,15 @@
       }
      },
      {
+      "name": "segment",
+      "in": "query",
+      "required": false,
+      "description": "One segment of the coverage headline: checked, needs_you, waiting, not_supported or no_advisories",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
       "name": "limit",
       "in": "query",
       "required": false,
@@ -3258,6 +3267,133 @@
       }
      }
     ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/coverage/overview": {
+   "get": {
+    "operationId": "get_coverage_overview",
+    "summary": "Coverage headline: components by segment, and ecosystems found",
+    "description": "Coverage headline: `total` components on current assets split into `segments` (`checked`, `needs_you`, `waiting`, `not_supported`, `no_advisories`) that add up to `total`; `GET /components?segment=` lists each. `ecosystems` are the ecosystems and operating systems found, each with `key`, `label`, `components`, `checked`, `not_supported`, `status` (`checked`, `partly` or `not_supported`) and `requested`\n\nRole: viewer",
+    "tags": [
+     "Inventory"
+    ],
+    "x-stackurity-role": "viewer",
+    "parameters": [],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/coverage/assets": {
+   "get": {
+    "operationId": "get_coverage_assets",
+    "summary": "Assets by share checked, worst first",
+    "description": "Assets by share checked, worst first, with `groups` counting every group (`failed_collection`, `not_reporting`, `partly_checked`, `awaiting_first_check`, `healthy`). Each item has `components`, `checked`, `not_checked` by who acts, `problem_scopes`, `reporting` and `last_report`\n\nRole: viewer",
+    "tags": [
+     "Inventory"
+    ],
+    "x-stackurity-role": "viewer",
+    "parameters": [
+     {
+      "name": "group",
+      "in": "query",
+      "required": false,
+      "description": "One group",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "description": "Page size (default 100, at most 500)",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "offset",
+      "in": "query",
+      "required": false,
+      "description": "Items to skip",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/coverage/support-requests": {
+   "post": {
+    "operationId": "post_coverage_support_requests",
+    "summary": "Ask for an ecosystem to be supported",
+    "description": "Ask for an ecosystem to be supported: `{\"ecosystem\"}`, a `key` from `GET /coverage/overview` with components Stackurity does not check. One request per workspace and ecosystem; asking again changes nothing. 400 for an ecosystem not found unsupported on your assets\n\nRole: viewer",
+    "tags": [
+     "Inventory"
+    ],
+    "x-stackurity-role": "viewer",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
     "responses": {
      "2XX": {
       "description": "Success",

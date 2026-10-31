@@ -41,6 +41,10 @@ type GapReport struct {
 	// subject. With NoVulnerabilitySource it counts every component that
 	// was not checked, so the report doubles as the scanner roadmap.
 	NotChecked []Gap `json:"not_checked"`
+	// SupportRequests are the ecosystems workspaces asked Stackurity to
+	// support (the Coverage page's "Request support"), counted in
+	// workspaces: the roadmap signal beside the gaps above.
+	SupportRequests []store.SupportRequestTotal `json:"support_requests"`
 }
 
 // Gap is one kind of gap.
@@ -153,7 +157,7 @@ func CoverageGaps(ctx context.Context, st *store.Store, ov *eoloverlay.Overlay) 
 		return nil, err
 	}
 	r := &GapReport{CheckedAt: now, OverlayVersion: ov.Version(), UnreadFiles: []Gap{}, NoVulnerabilitySource: []Gap{}, NoLifecycle: []Gap{},
-		NotChecked: []Gap{}}
+		NotChecked: []Gap{}, SupportRequests: []store.SupportRequestTotal{}}
 	if r.Workspaces, r.Assets, err = st.GapTotals(ctx); err != nil {
 		return nil, err
 	}
@@ -208,6 +212,12 @@ func CoverageGaps(ctx context.Context, st *store.Store, ov *eoloverlay.Overlay) 
 
 	if r.NoLifecycle, err = lifecycleGaps(ctx, st, ov); err != nil {
 		return nil, err
+	}
+	if r.SupportRequests, err = st.SupportRequestTotals(ctx); err != nil {
+		return nil, err
+	}
+	if r.SupportRequests == nil {
+		r.SupportRequests = []store.SupportRequestTotal{}
 	}
 	return r, nil
 }
