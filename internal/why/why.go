@@ -10,11 +10,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/stackurity/stackurity/internal/risk"
 	"github.com/stackurity/stackurity/internal/store"
+	"github.com/stackurity/stackurity/internal/words"
 )
 
 // Explanation types: a common core with type-specific detail, so other
@@ -241,8 +243,8 @@ func Build(in Input, now time.Time) Explanation {
 		e.Rule.Kind = behindRule
 		e.Rule.Text = fmt.Sprintf("the version is lower than %s, the latest release of release line %s", orUnknown(lc.Latest), orUnknown(lc.Cycle))
 		n := fmt.Sprint(ev["releases_behind"])
-		if n == "1" {
-			n += " release"
+		if v, err := strconv.Atoi(n); err == nil {
+			n = words.Count(v, "release", "releases")
 		} else {
 			n += " releases"
 		}

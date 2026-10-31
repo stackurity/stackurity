@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/stackurity/stackurity/internal/store"
+	"github.com/stackurity/stackurity/internal/words"
 )
 
 // Behind its branch's latest release. For a product whose point releases on
@@ -59,10 +60,7 @@ func behindFinding(r store.EvalRow, c *store.LifecycleCycle) *store.FindingInput
 	if label == "" {
 		label = c.Product
 	}
-	releases := "releases"
-	if n == 1 {
-		releases = "release"
-	}
+	releases := words.Pick(n, "release", "releases")
 	ev := map[string]any{"product": c.Product, "cycle": c.Cycle, "latest_in_cycle": c.Latest, "releases_behind": n,
 		"feed": FeedEndOfLife, "source": FeedEndOfLife, "link": c.Link, "match": map[string]any{"rule": behindRule},
 		// The incident grouping the line's findings across sites, whose

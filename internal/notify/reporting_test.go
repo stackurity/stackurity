@@ -403,3 +403,65 @@ func TestReportingFlapReopensTrackers(t *testing.T) {
 		f.allSent(ctx, ch)
 	}
 }
+
+// Bodies, closing notes and the weekly nudge agree in number.
+func TestReportingWordsAgree(t *testing.T) {
+	d := &Dispatcher{BaseURL: "https://stk.example", Now: func() time.Time { return time.Date(2026, 10, 31, 9, 0, 0, 0, time.UTC) }}
+	seen := time.Date(2026, 10, 29, 14, 5, 0, 0, time.UTC)
+	body := func(apps ...string) string {
+		var m Message
+		d.reportingMessage(&m, reportingDetail{Cause: "agent", AssetKind: "host",
+			Assets: []store.ReportingAsset{{Name: "demo-web-1", LastSeen: seen, Applications: apps}}})
+		return strings.Join(m.Summary, "\n")
+	}
+	for _, c := range []struct {
+		apps []string
+		want string
+	}{
+		{nil, "Server: demo-web-1: last report 29 Oct 14:05 UTC\n"},
+		{[]string{"shop"}, "Server: demo-web-1: last report 29 Oct 14:05 UTC (and its application: shop)\n"},
+		{[]string{"shop", "blog", "api"}, "Server: demo-web-1: last report 29 Oct 14:05 UTC (and its 3 applications: shop, blog, api)\n"},
+	} {
+		if got := body(c.apps...); !strings.Contains(got, c.want) {
+			t.Errorf("%d applications:\n%s\nwant %q", len(c.apps), got, c.want)
+		}
+	}
+	var m Message
+	d.reportingMessage(&m, reportingDetail{Cause: "scan", AssetKind: "repository",
+		Assets: []store.ReportingAsset{{Name: "a", LastSeen: seen}, {Name: "b", LastSeen: seen}}})
+	if got := strings.Join(m.Summary, "\n"); !strings.Contains(got, "Repositories: a: last report") ||
+		!strings.Contains(got, "findings for these repositories are not refreshed") {
+		t.Errorf("two repositories:\n%s", got)
+	}
+
+	for _, c := range []struct {
+		size int
+		want string
+	}{
+		{0, "Replaced by #9, which groups the servers that stopped reporting on the same day."},
+		{1, "Replaced by #9, the new incident for this server."},
+		{3, "Replaced by #9, which groups the 3 servers that stopped reporting on the same day."},
+	} {
+		if got := replacedNote(reportingDetail{AssetKind: "host", ReplacedBy: 9, GroupSize: c.size}); got != c.want {
+			t.Errorf("group of %d: %q", c.size, got)
+		}
+	}
+
+	at := time.Date(2026, 10, 26, 10, 0, 0, 0, time.UTC)
+	for _, c := range []struct {
+		groups []store.OneOffGroup
+		want   string
+	}{
+		{[]store.OneOffGroup{{Kind: "repository", Count: 1, Oldest: at, Newest: at}},
+			"1 repository scanned once, results as of 26 Oct. Set up a scheduled scan to keep it current."},
+		{[]store.OneOffGroup{{Kind: "repository", Count: 5, Oldest: at, Newest: at}},
+			"5 repositories scanned once, results as of 26 Oct. Set up a scheduled scan to keep them current."},
+		{[]store.OneOffGroup{{Kind: "repository", Count: 1, Oldest: at, Newest: at}, {Kind: "sbom", Count: 1, Oldest: at, Newest: at}},
+			"2 assets scanned once, results as of 26 Oct. Set up a scheduled scan to keep them current."},
+	} {
+		it, _ := d.oneOffItem(&summaryData{oneOffRead: true, oneOff: c.groups})
+		if it.Text != c.want {
+			t.Errorf("nudge = %q, want %q", it.Text, c.want)
+		}
+	}
+}
