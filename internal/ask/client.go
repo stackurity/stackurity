@@ -1,7 +1,8 @@
 package ask
 
-// This is the only file that imports the Anthropic SDK
-// (github.com/anthropics/anthropic-sdk-go/v2, pinned in go.mod). The rest
+// This file and client_vertex.go are the only ones that import the
+// Anthropic SDK (github.com/anthropics/anthropic-sdk-go/v2, pinned in
+// go.mod). The rest
 // of the package works with the conversation as JSON: every message is
 // stored exactly as it was sent or received and replayed byte for byte
 // (param.Override), so the model sees its history unchanged (thinking
@@ -20,10 +21,13 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/v2/bedrock"
 	"github.com/anthropics/anthropic-sdk-go/v2/option"
 	"github.com/anthropics/anthropic-sdk-go/v2/packages/param"
-	"github.com/anthropics/anthropic-sdk-go/v2/vertex"
 
 	"github.com/stackurity/stackurity/internal/mcp"
 )
+
+// vertexClient builds the Vertex AI client; set by client_vertex.go in
+// builds with the ask_vertex tag, nil otherwise.
+var vertexClient func(ctx context.Context, cfg Config, opts []option.RequestOption) (anthropic.BetaMessageService, error)
 
 // Client sends one model call at a time for the engine.
 type Client struct {
@@ -67,8 +71,14 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 		}
 		c.svc = mc.Beta.Messages
 	case ProviderVertex:
-		cl := anthropic.NewClient(append([]option.RequestOption{vertex.WithGoogleAuth(ctx, cfg.VertexRegion, cfg.VertexProject)}, common...)...)
-		c.svc = cl.Beta.Messages
+		if vertexClient == nil {
+			return nil, fmt.Errorf("Vertex AI is not in this build: build with -tags ask_vertex (it adds Google's client libraries, about 19 MB)")
+		}
+		svc, err := vertexClient(ctx, cfg, common)
+		if err != nil {
+			return nil, fmt.Errorf("Vertex AI: %w", err)
+		}
+		c.svc = svc
 	default:
 		return nil, fmt.Errorf("unknown provider %q", cfg.Provider)
 	}
