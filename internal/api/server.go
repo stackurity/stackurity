@@ -334,6 +334,7 @@ func (s *Server) Handler() http.Handler {
 				r.Get("/ignore-requests/{id}", s.getIgnoreRequest)
 				s.proViewerRoutes(r)
 				r.Get("/inventory", s.listInventory)
+				r.Get("/inventory/updates", s.inventoryUpdates)
 				r.Get("/coverage", s.listCoverage)
 				r.Get("/teams", s.listTeams)
 				r.Get("/audit", s.listAudit)

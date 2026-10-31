@@ -113,6 +113,7 @@ var projectRoutes = map[string]projectScope{
 	"GET /api/v1/risk-policy":                  scopedRead,
 	"GET /api/v1/settings/fix-grouping":        scopedRead,
 	"GET /api/v1/inventory":                    scopedRead,
+	"GET /api/v1/inventory/updates":            scopedRead,
 	"GET /api/v1/coverage":                     scopedRead,
 	"GET /api/v1/audit":                        scopedRead,
 	// Members with project access only see the people of their projects.

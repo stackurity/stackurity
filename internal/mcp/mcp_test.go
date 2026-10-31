@@ -72,7 +72,7 @@ func TestProtocol(t *testing.T) {
 		t.Errorf("initialize = %v", init)
 	}
 	tl := res[1]["result"].(map[string]any)["tools"].([]any)
-	if len(tl) != len(readTools)+len(writeTools) || len(readTools) != 11 || len(writeTools) != 10 {
+	if len(tl) != len(readTools)+len(writeTools) || len(readTools) != 12 || len(writeTools) != 10 {
 		t.Errorf("tools = %d", len(tl))
 	}
 	for i, x := range tl {
@@ -145,6 +145,8 @@ func TestAssistantTools(t *testing.T) {
 		`{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"verify_since","arguments":{"since":"2026-10-20","asset_id":3,"limit":1000}}}`,
 		`{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"verify_since","arguments":{}}}`,
 		`{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"explain_finding","arguments":{"finding_id":"x"}}}`,
+		`{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"updates_available","arguments":{"asset_id":3,"update_type":"minor","limit":5}}}`,
+		`{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"updates_available","arguments":{}}}`,
 	)
 	text := func(i int) string {
 		return res[i]["result"].(map[string]any)["content"].([]any)[0].(map[string]any)["text"].(string)
@@ -160,6 +162,8 @@ func TestAssistantTools(t *testing.T) {
 		"GET /api/v1/components/9/upgrade",
 		"GET /api/v1/fix-groups?asset_id=3&limit=100",
 		"GET /api/v1/findings/verify?asset_id=3&limit=200&since=2026-10-20",
+		"GET /api/v1/inventory/updates?asset_id=3&limit=5&update_type=minor",
+		"GET /api/v1/inventory/updates?",
 	}
 	if strings.Join(api.paths, "\n") != strings.Join(want, "\n") {
 		t.Errorf("requests = %v", api.paths)

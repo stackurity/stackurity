@@ -24,9 +24,15 @@ func isWordPressExtension(purlType, namespace string) bool {
 
 // updateType classifies the gap between installed and latest stable as
 // "major", "minor" or "patch", using the ecosystem's own comparator, for
-// the ecosystems that have release feeds.
+// the ecosystems that have release feeds. An installed pre-release of the
+// latest release itself (2.0.0-rc.1 with 2.0.0 out) takes that release's
+// type (releaseType), not "patch".
 func updateType(purlType, namespace, installed, latest string) string {
 	if latest == "" || installed == "" {
+		return ""
+	}
+	// A pre-release is never the latest stable release.
+	if version.Prerelease(version.ForPurlType(purlType), latest) || isWordPressExtension(purlType, namespace) && wpPreRelease.MatchString(latest) {
 		return ""
 	}
 	if isWordPressExtension(purlType, namespace) {
@@ -46,7 +52,7 @@ func updateType(purlType, namespace, installed, latest string) string {
 			if c, err := version.CompareGeneric(base, latest); err == nil && c > 0 {
 				return "ahead"
 			} else if trim(base) == trim(latest) {
-				return "patch"
+				return releaseType(latest)
 			}
 			installed = base
 		}
@@ -56,9 +62,44 @@ func updateType(purlType, namespace, installed, latest string) string {
 	case "npm", "composer", "pypi", "golang", "cargo", "gem", "nuget", "maven", "pub", "hex":
 		// Ahead only for a pre-release: a newer stable version is one the
 		// registry withdrew (yanked, retracted), not one to call newer.
-		return changeOrAhead(purlType, installed, latest, version.Prerelease(version.ForPurlType(purlType), installed))
+		pre := version.Prerelease(version.ForPurlType(purlType), installed)
+		if base := releaseBase.FindString(installed); pre && base != "" && base != installed {
+			if c, err := version.For(version.ForPurlType(purlType))(base, latest); err == nil && c == 0 {
+				return releaseType(latest)
+			}
+		}
+		return changeOrAhead(purlType, installed, latest, pre)
 	}
 	return ""
+}
+
+// releaseBase is the release a pre-release leads to: 2.0.0 of 2.0.0-rc.1,
+// 2.0.0rc1 or 2.0.0-RC1.
+var releaseBase = regexp.MustCompile(`^v?\d+(\.\d+)*`)
+
+// releaseType is the kind of release v is: "major" for 2.0.0 (or 2.0),
+// "minor" for 2.1.0, "patch" for 2.1.3. It classifies a move from a
+// pre-release to its own release.
+func releaseType(v string) string {
+	f := strings.Split(releaseBase.FindString(v), ".")
+	if len(f) < 2 {
+		return "major"
+	}
+	zero := func(xs []string) bool {
+		for _, x := range xs {
+			if strings.TrimLeft(x, "0") != "" {
+				return false
+			}
+		}
+		return true
+	}
+	switch {
+	case zero(f[1:]):
+		return "major"
+	case zero(f[2:]):
+		return "minor"
+	}
+	return "patch"
 }
 
 // wpPreRelease marks a WordPress plugin or theme pre-release or build.
@@ -386,6 +427,9 @@ type InventoryFilter struct {
 	// Coverage limits rows to one effective coverage state, or "gaps" for
 	// unsupported and not_evaluated together.
 	Coverage string
+	// UpdateType limits rows to those with a newer stable release of this
+	// update type (patch, minor or major), or of any ("any").
+	UpdateType string
 	Page
 }
 
@@ -417,13 +461,34 @@ func (s *Store) ListInventory(ctx context.Context, f InventoryFilter) ([]Invento
 	default:
 		w.add("("+rowCoverageSQL+") = ?", f.Coverage)
 	}
-	from := ` FROM inventory i JOIN components c ON c.id = i.component_id JOIN assets a ON a.id = i.asset_id
-		LEFT JOIN package_releases pr ON pr.component_id = c.id` + w.sql()
-	var total int64
-	if err := s.Pool.QueryRow(ctx, `SELECT count(*)`+from, w.args...).Scan(&total); err != nil {
-		return nil, 0, err
-	}
+	const join = ` FROM inventory i JOIN components c ON c.id = i.component_id JOIN assets a ON a.id = i.asset_id
+		LEFT JOIN package_releases pr ON pr.component_id = c.id`
 	p := f.Page.norm()
+	page := fmt.Sprintf(` LIMIT %d OFFSET %d`, p.Limit, p.Offset)
+	var total int64
+	if f.UpdateType != "" {
+		// The update type comes from each ecosystem's version rules, so
+		// the rows that may be behind are classified here, then the page
+		// is read by id.
+		if !validUpdateFilter(f.UpdateType) {
+			return nil, 0, fmt.Errorf("update_type must be patch, minor, major or any: %w", ErrInvalid)
+		}
+		w.addBehind()
+		ids, err := s.behindIDs(ctx, join+w.sql(), w.args, f.UpdateType)
+		if err != nil {
+			return nil, 0, err
+		}
+		total = int64(len(ids))
+		ids = ids[min(p.Offset, len(ids)):min(p.Offset+p.Limit, len(ids))]
+		w, page = &where{}, ""
+		w.add("i.id = ANY(?)", ids)
+	}
+	from := join + w.sql()
+	if f.UpdateType == "" {
+		if err := s.Pool.QueryRow(ctx, `SELECT count(*)`+from, w.args...).Scan(&total); err != nil {
+			return nil, 0, err
+		}
+	}
 	rows, err := s.Pool.Query(ctx, `SELECT i.id, i.asset_id, a.name, a.kind, c.id, c.type, c.namespace, c.name, i.purl, i.version,
 		i.location, i.collector_id, i.direct, i.scope, i.confidence, i.evidence, i.first_seen, i.last_seen,
 		i.last_collection_id, i.removed_at,
@@ -436,7 +501,7 @@ func (s *Store) ListInventory(ctx context.Context, f InventoryFilter) ([]Invento
 		    WHEN pr.last_error <> '' AND COALESCE(pr.latest_stable, '') = '' THEN pr.last_error
 		    ELSE '' END
 		  ELSE '' END`+from+
-		fmt.Sprintf(` ORDER BY c.type, c.namespace, c.name, i.version, i.id LIMIT %d OFFSET %d`, p.Limit, p.Offset), w.args...)
+		` ORDER BY c.type, c.namespace, c.name, i.version, i.id`+page, w.args...)
 	if err != nil {
 		return nil, 0, err
 	}

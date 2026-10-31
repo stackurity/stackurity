@@ -675,6 +675,29 @@ func init() {
 					"an option to mention, never the recommendation."}, nil
 		},
 	}
+	tools["updates_available"] = tool{
+		description: "Installed packages older than their latest stable release, whether or not a vulnerability is involved " +
+			"(these are not findings: use list_findings or action_plan for security fixes). counts gives installs behind by " +
+			"update_type (patch, minor, major) and their total; top lists the packages with the most installs behind: " +
+			"component_id, installed_versions, latest_stable, update_type (the largest change among its installs), installs and " +
+			"assets. Only registry packages (npm, PyPI, Maven, WordPress plugins and themes from wordpress.org and the like) are covered; pre-releases are never latest.",
+		schema: obj(map[string]any{
+			"asset_id":    num("Limit to one asset"),
+			"update_type": map[string]any{"type": "string", "enum": []string{"patch", "minor", "major", "any"}, "description": "Only list packages with this update type"},
+			"limit":       num("At most this many packages (default 20, max 100)"),
+		}),
+		run: func(ctx context.Context, api API, a map[string]any) (any, error) {
+			q := url.Values{}
+			set(q, "asset_id", a["asset_id"])
+			set(q, "update_type", a["update_type"])
+			set(q, "limit", a["limit"])
+			var res any
+			if err := api.Do(ctx, "GET", "/api/v1/inventory/updates?"+q.Encode(), nil, nil, &res); err != nil {
+				return nil, err
+			}
+			return res, nil
+		},
+	}
 	tools["verify_since"] = tool{
 		description: "What changed since a time, e.g. when a fix was deployed: findings resolved since then and why (cause: " +
 			"upgraded, remediation, removed; or, with nothing changed on the asset, advisory_withdrawn, advisory_changed, superseded " +
@@ -747,7 +770,7 @@ type findingVEX struct {
 // readTools and writeTools are listed in this order (a stable order lets
 // clients cache the list).
 var readTools = []string{"search", "list_assets", "action_plan", "asset_stack", "list_findings", "get_finding", "find_component",
-	"explain_finding", "upgrade_recommendation", "remediation_plan", "verify_since"}
+	"explain_finding", "upgrade_recommendation", "remediation_plan", "verify_since", "updates_available"}
 
 // readTitles are the read tools' short human titles (directories show them).
 var readTitles = map[string]string{
@@ -762,6 +785,7 @@ var readTitles = map[string]string{
 	"upgrade_recommendation": "Upgrade recommendation",
 	"remediation_plan":       "Remediation plan",
 	"verify_since":           "What changed since",
+	"updates_available":      "Updates available",
 }
 
 // toolList lists the tools with a title and every behaviour hint set

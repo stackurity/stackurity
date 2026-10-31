@@ -27,6 +27,7 @@ import { AssetDetailPage } from "./pages/AssetDetail";
 import { AddServerPage } from "./pages/AddServer";
 import { ComponentsPage } from "./pages/Components";
 import { ComponentDetailPage } from "./pages/ComponentDetail";
+import { UpdatesAvailablePage } from "./pages/UpdatesAvailable";
 import { CoveragePage } from "./pages/Coverage";
 import { IntegrationsPage } from "./pages/Integrations";
 import { AuditPage } from "./pages/Audit";
@@ -238,6 +239,7 @@ export function App() {
         />
         <Route path="assets/:id" element={<AssetDetailPage />} />
         <Route path="components" element={<ComponentsPage />} />
+        <Route path="components/updates" element={<UpdatesAvailablePage />} />
         <Route path="components/:id" element={<ComponentDetailPage />} />
         <Route path="coverage" element={<CoveragePage />} />
         <Route

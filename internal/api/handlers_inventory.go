@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/stackurity/stackurity/internal/auth"
@@ -411,6 +412,13 @@ func (s *Server) inventory(w http.ResponseWriter, r *http.Request, f store.Inven
 	q := r.URL.Query()
 	f.Type, f.Search, f.Direct, f.Page = q.Get("type"), q.Get("q"), qBool(r, "direct"), page(r)
 	f.IncludeRemoved = q.Get("include_removed") == "true"
+	switch u := q.Get("update_type"); u {
+	case "", "any", "patch", "minor", "major":
+		f.UpdateType = u
+	default:
+		s.fail(w, r, badRequest("update_type must be patch, minor, major or any"))
+		return
+	}
 	switch c := q.Get("coverage"); c {
 	case "", "gaps", "evaluated", "stale_intelligence", "unsupported", "not_evaluated", "awaiting":
 		f.Coverage = c
@@ -424,6 +432,28 @@ func (s *Server) inventory(w http.ResponseWriter, r *http.Request, f store.Inven
 		return
 	}
 	writeJSON(w, 200, paged(items, total, f.Page))
+}
+
+// inventoryUpdates summarises the updates available: installs older than
+// their package's latest stable release, counted by update type, and the
+// packages with the most installs behind. Not findings: nothing here is a
+// known vulnerability.
+func (s *Server) inventoryUpdates(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	f := store.UpdatesFilter{AssetID: qInt(r, "asset_id"), UpdateType: q.Get("update_type"), Limit: min(max(limit, 0), 100)}
+	switch f.UpdateType {
+	case "", "any", "patch", "minor", "major":
+	default:
+		s.fail(w, r, badRequest("update_type must be patch, minor, major or any"))
+		return
+	}
+	sum, err := s.Store.SummarizeWorkspaceUpdates(r.Context(), f)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, 200, sum)
 }
 
 func (s *Server) assetCoverage(w http.ResponseWriter, r *http.Request) {

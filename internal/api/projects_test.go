@@ -152,6 +152,7 @@ var projectScopes = map[string]string{
 	"GET /api/v1/risk-policy":                   "scoped",
 	"GET /api/v1/settings/fix-grouping":         "scoped",
 	"GET /api/v1/inventory":                     "scoped",
+	"GET /api/v1/inventory/updates":             "scoped",
 	"GET /api/v1/coverage":                      "scoped",
 	"GET /api/v1/audit":                         "scoped",
 	"GET /api/v1/users/directory":               "scoped",
@@ -1414,7 +1415,7 @@ func TestProjectMCP(t *testing.T) {
 		n++
 	}
 	tools := []string{"search", "list_assets", "action_plan", "asset_stack", "list_findings", "get_finding", "find_component",
-		"explain_finding", "upgrade_recommendation", "remediation_plan", "verify_since"}
+		"explain_finding", "upgrade_recommendation", "remediation_plan", "verify_since", "updates_available"}
 	for _, name := range tools {
 		add(name, args)
 		add(name, plain)
