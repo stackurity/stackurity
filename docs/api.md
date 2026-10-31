@@ -45,7 +45,19 @@ A workspace (shown as the organisation in the dashboard) groups its assets into 
 
 **Who:** anyone
 
-Signs in with `email` and `password` and starts a session (cookie). Limited per address and per account; 401 for a wrong email or password. When the account has two-factor sign-in, the answer is `{"mfa_required": true, "methods": ["totp", "recovery_code"]}` with a short-lived challenge cookie instead, and `POST /auth/mfa/verify` finishes the sign-in.
+Signs in with `email` and `password` and starts a session (cookie). Limited per address and per account; 401 for a wrong email or password. When the account has a second factor, the answer is `{"mfa_required": true, "methods": [...]}` with a short-lived challenge cookie instead: `methods` lists, strongest first, `passkey`, `totp` and `recovery_code` (or `email` alone for an account with nothing else). `POST /auth/mfa/verify` (a code) or `POST /auth/mfa/passkey/begin` and `/finish` (a passkey) finish the sign-in.
+
+### `POST /auth/passkey/begin`
+
+**Who:** anyone (20 a minute per address)
+
+"Sign in with a passkey", without an email or password: answers `options` for the browser's `navigator.credentials.get()` (any passkey the browser has for this server; user verification required) and sets a short-lived cookie. 409 `passkeys_unavailable` when the server cannot use passkeys (it needs `STACKURITY_BASE_URL` with a domain name over https). See [Two-factor sign-in](install.md#two-factor-sign-in).
+
+### `POST /auth/passkey/finish`
+
+**Who:** anyone with the cookie from `POST /auth/passkey/begin`
+
+`{"credential": ...}`, the `PublicKeyCredential` as JSON (`toJSON()`): starts the session and answers the user, as `POST /auth/login` does. The passkey counts as both factors. 401 `passkey_invalid` for a credential that does not check out, or one without user verification; 401 `passkey_clone_warning` when its signature counter went backwards (refused and recorded); 400 `passkey_expired` after five minutes or when used twice. Audited as `auth.login` with `"method": "passkey"`. An organisation that requires its own single sign-on refuses such a session as it refuses a password session.
 
 ### `POST /auth/password-reset`
 
@@ -71,6 +83,18 @@ Signs in with `email` and `password` and starts a session (cookie). Limited per 
 
 `{"code": "123456"}`, or a recovery code: starts the session and answers the user, as `POST /auth/login` does. 401 `mfa_invalid` for a wrong or already-used code; after five, or after five minutes, 401 `mfa_expired` (sign in again). Limited per address and to ten codes per account in 15 minutes. See [Two-factor sign-in](install.md#two-factor-sign-in).
 
+### `POST /auth/mfa/passkey/begin`
+
+**Who:** anyone with the challenge cookie from `POST /auth/login`
+
+The second step with a passkey: answers `options` for `navigator.credentials.get()`, listing the account's passkeys. 409 `no_passkey` when it has none.
+
+### `POST /auth/mfa/passkey/finish`
+
+**Who:** anyone with the challenge cookie and the cookie from `POST /auth/mfa/passkey/begin`
+
+`{"credential": ...}`: starts the session and answers the user. Failures count towards the five that end the sign-in, and towards the ten per account in 15 minutes; errors as for `POST /auth/passkey/finish`.
+
 ### `POST /auth/logout`
 
 **Who:** any signed-in user
@@ -81,7 +105,7 @@ Ends the session; audited as `auth.logout`.
 
 **Who:** any signed-in user or token
 
-The caller: `user`, `role`, `workspace`, `workspaces`, `edition` and `features`, `access` (`organisation` or `projects`), `project_role`, `projects`, `default_project_id`, `read_only`, `report_mode`, `feedback_enabled` `password_change_required` (an administrator set a temporary password: until it is changed with `POST /auth/password`, other routes answer 403 `password_change_required`) and `mfa_enrolment_required` (the organisation requires two-factor sign-in and this session has none: until it is set up, other routes answer 403 `mfa_enrolment_required`). Each user has `mfa_enabled`.
+The caller: `user`, `role`, `workspace`, `workspaces`, `edition` and `features`, `access` (`organisation` or `projects`), `project_role`, `projects`, `default_project_id`, `read_only`, `report_mode`, `feedback_enabled` `password_change_required` (an administrator set a temporary password: until it is changed with `POST /auth/password`, other routes answer 403 `password_change_required`) `mfa_enrolment_required` (the organisation requires a second factor that this account does not have: until one is set up, other routes answer 403 `mfa_enrolment_required`), `mfa_step_up_required` (the account has one, but this session was not signed in with it: until it is confirmed with `POST /auth/mfa/step-up`, other routes answer 403 `mfa_step_up_required`) and `mfa_accepted` (the methods that count there). Each user has `mfa_enabled` and `mfa_methods` (`passkey`, `totp`, `email`).
 
 ### `PUT /auth/default-project`
 
@@ -99,7 +123,7 @@ Changes your own password (`current_password`, `new_password`). Your other sessi
 
 **Who:** any signed-in user (browser session)
 
-Your two-factor sign-in: `enabled`, `enabled_at`, `recovery_codes_left`, `required` (the current organisation requires it), `available` (the server has `STACKURITY_SECRET_KEY`), and how many `tokens` and `assistants` you have (they are not asked for a code).
+Your two-factor methods: `enabled` (any), `methods`, `passkeys` (each with `id`, `name`, `backed_up` for a synced passkey, `discoverable`, `created_at`, `last_used_at` and `clone_warning_at`), `totp` and `enabled_at` (the app), `email`, `recovery_codes_left`; `required` and `accepted` (what the current organisation asks of you), `need` (`enrol` or `step_up` for this session), `required_by` (organisations whose policy your factors must keep meeting); `available` (the server has `STACKURITY_SECRET_KEY`, which the app needs), `passkeys_available` (with `passkeys_unavailable` saying why not, and `rp_id`, the domain passkeys are registered for), and how many `tokens` and `assistants` you have (they are not asked for a second factor).
 
 ### `POST /auth/mfa/totp`
 
@@ -111,7 +135,55 @@ Your two-factor sign-in: `enabled`, `enabled_at`, `recovery_codes_left`, `requir
 
 **Who:** any signed-in user (browser session)
 
-`{"code": "123456"}` from the app: turns two-factor sign-in on and answers `recovery_codes` (ten, shown only now), `status` and `other_sessions_ended`. Your other sessions end, and this one gets a new session cookie.
+`{"code": "123456"}` from the app: turns it on and answers `recovery_codes` (ten, shown only now, when it is your first passkey or app; otherwise `null`), `status` and `other_sessions_ended`. Your other sessions end, and this one gets a new session cookie.
+
+### `DELETE /auth/mfa/totp`
+
+**Who:** any signed-in user (browser session)
+
+`{"password": "..."}`: removes the authenticator app. 409 `mfa_required` when your remaining factors would no longer meet the policy of one of your organisations. Your other sessions end. Audited as `auth.mfa_disabled`.
+
+### `POST /auth/mfa/passkeys/begin`
+
+**Who:** any signed-in user (browser session)
+
+`{"password": "..."}`: starts registering a passkey or security key. Answers `options` for `navigator.credentials.create()` (attestation `none`, a discoverable credential preferred, your existing passkeys excluded). 409 `passkeys_unavailable` as above; 409 at 20 passkeys.
+
+### `POST /auth/mfa/passkeys/finish`
+
+**Who:** any signed-in user (browser session)
+
+`{"name": "MacBook Touch ID", "credential": ...}` (1 to 64 characters): registers it and answers `passkey`, `recovery_codes` (when it is your first passkey or app), `status` and `other_sessions_ended`. Your other sessions end, and this one gets a new session cookie that counts as signed in with a passkey. Audited as `auth.passkey_added` in each of your organisations.
+
+### `PATCH /auth/mfa/passkeys/{id}`
+
+**Who:** any signed-in user (browser session)
+
+`{"name": "..."}`: renames one of your passkeys. Audited as `auth.passkey_renamed`.
+
+### `DELETE /auth/mfa/passkeys/{id}`
+
+**Who:** any signed-in user (browser session)
+
+`{"password": "..."}`: removes one of your passkeys. 409 `mfa_required` when your remaining factors would no longer meet the policy of one of your organisations. The recovery codes go with your last passkey or app. Your other sessions end. Audited as `auth.passkey_removed`.
+
+### `POST /auth/mfa/step-up`
+
+**Who:** any signed-in user (browser session)
+
+`{"code": "123456"}` or a recovery code: this session counts as signed in with it from now on (a new session cookie), for an organisation whose policy asks for it (`mfa_step_up_required`). Audited as `auth.mfa_step_up`.
+
+### `POST /auth/mfa/step-up/passkey/begin`
+
+**Who:** any signed-in user (browser session)
+
+Answers `options` for `navigator.credentials.get()` with your passkeys.
+
+### `POST /auth/mfa/step-up/passkey/finish`
+
+**Who:** any signed-in user (browser session)
+
+`{"credential": ...}`: this session counts as signed in with a passkey from now on (a new session cookie). Audited as `auth.mfa_step_up`.
 
 ### `POST /auth/mfa/recovery-codes`
 
@@ -123,7 +195,7 @@ Your two-factor sign-in: `enabled`, `enabled_at`, `recovery_codes_left`, `requir
 
 **Who:** any signed-in user (browser session)
 
-`{"password": "..."}`: turns two-factor sign-in off. 409 `mfa_required` while one of your organisations requires it.
+`{"password": "..."}`: removes every second factor (passkeys, the app, email codes) and the recovery codes. 409 `mfa_required` while one of your organisations requires a second factor of you.
 
 ### `GET /auth/email-preferences`
 
@@ -822,13 +894,13 @@ Changes `fix_grouping`; audited as `settings.update`.
 
 **Who:** admin
 
-`require_mfa`: whether members who sign in with a password must use two-factor sign-in, and `members_without_mfa`.
+The organisation's two-factor policy: `policy` (`optional`, `everyone`, or `admins`: security and admin roles), `methods` (of `passkey`, `totp`, `email`), `phishing_resistant_admins` (admins must sign in with a passkey); `require_mfa` (the policy requires anything); `members_without_mfa`, `members_needing_setup` (whom the policy would send to set up a factor that counts), `admins_without_passkey`; and `email_available`, `phishing_resistant_available` (the Enterprise plan), `passkeys_available` (with `passkeys_unavailable`).
 
 ### `PUT /settings/security`
 
 **Who:** admin
 
-`{"require_mfa": true}` or `false`. Turning it on needs two-factor sign-in on your own account first (409 `mfa_required`). Audited as `settings.require_mfa`.
+Any of `policy`, `methods` and `phishing_resistant_admins`; `{"require_mfa": true}` or `false` alone still works (`everyone` or `optional`). The methods must include `passkey` or `totp` (email codes never count for admins), and `phishing_resistant_admins` needs `passkey` among them (400). Allowing `email` needs a server that can send email (409 `email_unavailable`). Turning on `phishing_resistant_admins` needs the Enterprise plan (402 `plan_required`); once on, it stays enforced if the plan lapses and can always be turned off. Your own account must meet the new policy, with the session you are using: 409 `mfa_required` (set one up first) or `mfa_step_up_required` (sign in again with it). Audited as `settings.mfa_policy` (`before` and `after`), and as `settings.require_mfa` when whether anything is required changes.
 
 ## Projects and people
 
@@ -980,7 +1052,7 @@ Removes a member from the organisation; their account and other organisations ar
 
 **Who:** admin
 
-Resets a member's two-factor sign-in (a lost phone): removes it and their recovery codes and ends their sessions. Only an instance administrator may for an account in other organisations too, or for an instance administrator (409). 409 when they have none. Audited as `user.mfa_reset`.
+Resets a member's two-factor sign-in (a lost phone or key): removes their passkeys, authenticator app, email codes and recovery codes and ends their sessions. Only an instance administrator may for an account in other organisations too, or for an instance administrator (409). 409 when they have none. Audited as `user.mfa_reset`.
 
 ### `GET /users/directory`
 
