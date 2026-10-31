@@ -975,7 +975,7 @@ export function SetupChecklist({ o, onChange, compact }: { o: Onboarding; onChan
     { done: o.steps.notifications, text: "Turn on notifications", to: "/settings/integrations" },
     { done: o.steps.invite, text: "Invite your team", to: "/settings/users" },
     // Recommended for admins: their account can change everything.
-    { done: Boolean(me?.user?.mfa_enabled), text: "Turn on two-factor sign-in for your account", to: "/account#mfa" },
+    { done: Boolean(me?.user?.mfa_enabled), text: "Turn on two-factor sign-in for your account", to: "/account/two-factor" },
   ];
   const left = items.filter((i) => !i.done).length;
   const hide = async () => {

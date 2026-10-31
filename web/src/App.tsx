@@ -9,7 +9,8 @@ import { MfaEnrolmentPage } from "./pages/TwoFactor";
 import { ChangeTemporaryPasswordPage, ForgotPasswordPage, ResetPasswordPage } from "./pages/Password";
 import { AcceptInvitePage } from "./pages/AcceptInvite";
 import { SlackLinkPage } from "./pages/SlackLink";
-import { AccountPage } from "./pages/Account";
+import { AccountPage, AccountTwoFactorPage } from "./pages/Account";
+import { OLD_SETTINGS_URLS, movedSettingsTarget } from "./settingsNav";
 import { SlackOAuthCallbackPage } from "./pages/SlackOAuthCallback";
 import { SlackInstallPage } from "./pages/SlackInstall";
 import { EmailConfirmPage, EmailStopPage } from "./pages/EmailConfirm";
@@ -95,6 +96,12 @@ function Moved({ to }: { to: (params: Record<string, string | undefined>, search
   const target = to(params, new URLSearchParams(search));
   const keep = target.includes("?") ? "" : search;
   return <Navigate replace to={target + keep + hash} />;
+}
+
+/** An old Settings address: opens where that setting lives now. */
+function SettingsMoved() {
+  const { pathname, search, hash } = useLocation();
+  return <Navigate replace to={movedSettingsTarget(pathname, search, hash) ?? "/settings"} />;
 }
 
 function RequireInstanceAdmin({ children }: { children: ReactNode }) {
@@ -258,7 +265,6 @@ export function App() {
         <Route path="audit" element={<AuditPage />} />
         <Route path="checks" element={<ChecksPage />} />
         <Route path="approvals" element={<ApprovalsPage />} />
-        <Route path="settings/approvals" element={<Moved to={() => "/approvals"} />} />
         <Route path="settings/tokens" element={<TokensPage />} />
         <Route
           path="settings/usage"
@@ -285,10 +291,12 @@ export function App() {
           }
         />
         <Route path="account" element={<AccountPage />} />
-        {/* Linked Slack accounts moved to Your account. */}
-        <Route path="settings/slack" element={<Navigate replace to="/account#slack" />} />
+        <Route path="account/two-factor" element={<AccountTwoFactorPage />} />
+        {/* Older and guessed Settings addresses (settingsNav.ts lists them). */}
+        {OLD_SETTINGS_URLS.map((r) => (
+          <Route key={r.from} path={r.from.slice(1)} element={<SettingsMoved />} />
+        ))}
         <Route path="settings/ai-assistants" element={<AssistantsPage />} />
-        <Route path="settings/assistants" element={<Navigate replace to="/settings/ai-assistants#connected" />} />
         <Route path="settings/risk-policy" element={<RiskPolicyPage />} />
         <Route path="settings/fix-grouping" element={<FixGroupingPage />} />
         <Route path="settings/vex" element={<VexPage />} />
@@ -300,10 +308,6 @@ export function App() {
               <PluginsPage />
             </RequireRole>
           }
-        />
-        <Route
-          path="settings/notifications"
-          element={<Moved to={(_p, q) => (q.get("tab") === "deliveries" ? "/settings/integrations?tab=deliveries" : "/settings/integrations")} />}
         />
         <Route
           path="settings/integrations"

@@ -188,3 +188,36 @@ export const IconSignalOff = (p: P) => (
     <path d="M4 4l16 16" />
   </Svg>
 );
+
+/** Settings groups: people, one person, billing, the server, upkeep. */
+export const IconUsers = (p: P) => (
+  <Svg {...p}>
+    <circle cx="9" cy="8" r="3.5" />
+    <path d="M2.5 20a6.5 6.5 0 0 1 13 0" />
+    <path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.2a6.5 6.5 0 0 1 3.5 5.8" />
+  </Svg>
+);
+export const IconUser = (p: P) => (
+  <Svg {...p}>
+    <circle cx="12" cy="8" r="4" />
+    <path d="M4.5 21a7.5 7.5 0 0 1 15 0" />
+  </Svg>
+);
+export const IconCard = (p: P) => (
+  <Svg {...p}>
+    <rect x="3" y="5" width="18" height="14" rx="2" />
+    <path d="M3 10h18M7 15h4" />
+  </Svg>
+);
+export const IconServer = (p: P) => (
+  <Svg {...p}>
+    <rect x="3.5" y="4" width="17" height="7" rx="1.5" />
+    <rect x="3.5" y="13" width="17" height="7" rx="1.5" />
+    <path d="M7.5 7.5h.01M7.5 16.5h.01" />
+  </Svg>
+);
+export const IconWrench = (p: P) => (
+  <Svg {...p}>
+    <path d="M14.5 5.5a4.5 4.5 0 0 0 5.6 5.6l-8.6 8.6a2.1 2.1 0 0 1-3-3l8.6-8.6a4.5 4.5 0 0 0-2.6-2.6z" />
+  </Svg>
+);

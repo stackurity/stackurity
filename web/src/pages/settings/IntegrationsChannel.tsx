@@ -28,7 +28,7 @@ import {
 import { useAuth } from "../../auth";
 import { useAction, useFacets, useLoad } from "../../hooks";
 import { Badge, Chip } from "../../components/Badge";
-import { Card, ErrorBox, Loading, Notice, PageHeader } from "../../components/ui";
+import { Card, DangerAction, DangerZone, ErrorBox, Loading, Notice, PageHeader } from "../../components/ui";
 import { ProNotice } from "../../components/ProNotice";
 import { AddToSlackButton } from "../../components/NotifyChoices";
 import { IntegrationIcon } from "./Integrations";
@@ -784,9 +784,6 @@ export function IntegrationChannelPage() {
               <button type="button" className="btn" onClick={() => void toggle()} disabled={act.pending}>
                 {channel.enabled ? "Disable" : "Enable"}
               </button>
-              <button type="button" className="btn btn-link-danger" onClick={() => void remove()} disabled={act.pending}>
-                Delete
-              </button>
             </>
           )
         }
@@ -931,6 +928,13 @@ export function IntegrationChannelPage() {
             )}
           </Card>
         </>
+      )}
+      {admin && (
+        <DangerZone>
+          <DangerAction title="Delete this integration" action="Delete integration" onClick={() => void remove()} disabled={act.pending}>
+            Its rules go with it and its delivery history is lost. To pause it instead, use Disable at the top.
+          </DangerAction>
+        </DangerZone>
       )}
     </>
   );

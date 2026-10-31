@@ -4,7 +4,7 @@ import { api, type Billing, type BillingPlan, type BillingStatus, type Invoice, 
 import { useAction, useLoad } from "../../hooks";
 import { absTime } from "../../format";
 import { Table, type Column } from "../../components/Table";
-import { Card, EmptyState, ErrorBox, KeyValues, Loading, Notice, PageHeader } from "../../components/ui";
+import { Card, DangerAction, DangerZone, EmptyState, ErrorBox, KeyValues, Loading, Notice, PageHeader } from "../../components/ui";
 import { UsageMeter } from "./Usage";
 import { confirmAction } from "../../components/ConfirmDialog";
 import { errorView } from "../../errors";
@@ -72,7 +72,7 @@ export function BillingPage() {
     <>
       <PageHeader
         title="Plan and billing"
-        sub="Plans are bundles of projects and monitored assets, paid monthly or yearly. A bigger plan takes effect now; a smaller one at the end of the period."
+        sub="Your plan, payments and invoices. A bigger plan applies at once; a smaller one at the end of the period."
         actions={
           <Link className="btn" to="/settings/usage">
             Usage
@@ -88,7 +88,7 @@ export function BillingPage() {
               <strong>Test mode: no real payments.</strong> Payments made here are test payments and no money changes hands.
             </Notice>
           )}
-          <Current b={b} onChanged={setBilling} />
+          <Current b={b} />
           {b.billing_enabled ? (
             <>
               <ChoosePlan b={b} onChanged={setBilling} />
@@ -97,13 +97,15 @@ export function BillingPage() {
           ) : (
             <PlansSoon b={b} />
           )}
+          {b.status === "active" && <CancelPlan b={b} onChanged={setBilling} />}
         </>
       )}
     </>
   );
 }
 
-function Current({ b: cur, onChanged }: { b: Billing; onChanged: (b: Billing) => void }) {
+/** Cancelling the subscription: the last card of the page, in the danger zone. */
+function CancelPlan({ b: cur, onChanged }: { b: Billing; onChanged: (b: Billing) => void }) {
   const cancel = useAction();
   const doCancel = async () => {
     const until = day(cur.current_period_end);
@@ -118,6 +120,17 @@ function Current({ b: cur, onChanged }: { b: Billing; onChanged: (b: Billing) =>
     const r = await cancel.run(() => api.post<Billing>("/billing/cancel", {}));
     if (r) onChanged(r);
   };
+  return (
+    <DangerZone>
+      <ErrorBox error={cancel.error} title="Could not cancel" />
+      <DangerAction title="Cancel the subscription" action="Cancel plan" onClick={() => void doCancel()} disabled={cancel.pending}>
+        Your plan stays until the end of the period; then the organisation becomes read-only, and its data is deleted 30 days later.
+      </DangerAction>
+    </DangerZone>
+  );
+}
+
+function Current({ b: cur }: { b: Billing }) {
   const entries: [string, ReactNode][] = [["Status", STATUS_WORDS[cur.status] ?? cur.status]];
   if (cur.plan) {
     entries.push(["Plan", `${cur.plan.name}, ${priceWords(planTotal(cur.plan, cur.extra_assets ?? 0), cur.plan)} per ${PERIOD_WORDS[cur.plan.period]}`]);
@@ -137,17 +150,7 @@ function Current({ b: cur, onChanged }: { b: Billing; onChanged: (b: Billing) =>
   if (cur.billing_country) entries.push(["Billing country", `${countryName(cur.billing_country)} (${cur.currency ?? ""})`]);
   entries.push(["Data stored in", cur.region_label]);
   return (
-    <Card
-      title="Your plan"
-      actions={
-        cur.status === "active" ? (
-          <button type="button" className="btn btn-sm btn-link-danger" onClick={() => void doCancel()} disabled={cancel.pending}>
-            Cancel plan
-          </button>
-        ) : undefined
-      }
-    >
-      <ErrorBox error={cancel.error} title="Could not cancel" />
+    <Card title="Your plan">
       {cur.read_only_since && (
         <Notice kind="warn">
           <strong>This organisation is read-only</strong> since {day(cur.read_only_since)}: nothing new is collected and no notifications are sent.

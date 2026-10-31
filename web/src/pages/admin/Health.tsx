@@ -139,7 +139,7 @@ export function HealthPage() {
     <>
       <PageHeader
         title="Platform health"
-        sub="Whether this installation is working: intelligence feeds, background tasks and jobs, integrations, notification delivery, collectors and production coverage, across every workspace and server replica."
+        sub="Whether this installation works: feeds, background jobs, integrations, delivery and collectors, on every replica."
         actions={
           <button type="button" className="btn" onClick={res.reload}>
             Refresh

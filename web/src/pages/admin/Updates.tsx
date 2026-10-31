@@ -30,7 +30,7 @@ export function UpdatesPage() {
     <>
       <PageHeader
         title="What's new"
-        sub="Stackurity releases newer than the one this installation runs. The server reads the public release list every 12 hours; it sends nothing about this installation."
+        sub="Newer Stackurity releases. The server reads the public release list every 12 hours and sends nothing about itself."
         actions={
           <a className="btn" href={CHANGELOG_URL} target="_blank" rel="noopener noreferrer">
             Full changelog

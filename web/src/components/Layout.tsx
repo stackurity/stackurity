@@ -8,6 +8,7 @@ import { GlobalSearch } from "./Search";
 import { FeedbackDialog, feedbackAvailable, type FeedbackHandle } from "./Feedback";
 import { PlatformHealthBanner } from "../pages/admin/Health";
 import { UpdateBanner } from "../pages/admin/Updates";
+import { SettingsShell } from "./SettingsShell";
 import { IconActionPlan, IconActivity, IconChevron, IconHelp, IconInventory, IconMessage, IconMore, IconOverview, IconSettings, IconSidebar } from "./Icons";
 import { sectionOf, SectionTabsFor, type Section } from "./nav";
 import { ErrorBox } from "./ui";
@@ -195,11 +196,6 @@ function Shell() {
           {!pathname.startsWith("/admin/health") && <PlatformHealthBanner />}
           {me?.workspace?.read_only && <ReadOnlyBanner state={me.workspace.read_only} />}
           {me?.workspace && !me.workspace.read_only && !projectOnly && pathname !== "/settings/usage" && <AssetLimitBanner workspaceId={me.workspace.id} />}
-          {current === "settings" && pathname !== "/settings" && (
-            <nav className="crumbs" aria-label="Breadcrumb">
-              <Link to="/settings">Settings</Link>
-            </nav>
-          )}
           {me?.workspace && <SectionTabsFor path={pathname} />}
           {me && !me.workspace && me.sso_required && !pathname.startsWith("/admin") ? (
             <SSORequiredNotice req={me.sso_required} others={(me.workspaces ?? []).filter((w) => w.workspace_id !== me.sso_required?.workspace_id)} />
@@ -207,8 +203,15 @@ function Shell() {
             <NoWorkspace instanceAdmin={Boolean(me.user?.instance_admin)} />
           ) : (
             // A new project choice remounts the page, so nothing of the
-            // previous choice stays on screen.
-            <Outlet key={projectId} />
+            // previous choice stays on screen. Settings pages open in the
+            // two-pane Settings shell.
+            current === "settings" ? (
+              <SettingsShell>
+                <Outlet key={projectId} />
+              </SettingsShell>
+            ) : (
+              <Outlet key={projectId} />
+            )
           )}
         </main>
       </div>
