@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-Please do **not** open a public issue. Report vulnerabilities privately through GitHub's "Report a vulnerability" button (Security → Advisories) on this repository. You can also email info@stackurity.dev.
+Please do **not** open a public issue. Report vulnerabilities privately through GitHub's "Report a vulnerability" button (Security → Advisories) on this repository. You can also email info@stackurity.ai.
 
 We aim to acknowledge reports within 3 working days and to agree a disclosure date with you. Fixes are released as patch versions with a GitHub security advisory.
 

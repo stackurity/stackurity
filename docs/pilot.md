@@ -35,7 +35,7 @@ Both run the same release, and everything in the [Community edition](editions.md
 
 ## Telling us when something is wrong
 
-This is the most valuable part of a pilot. Use the forms on GitHub (or email info@stackurity.dev if you prefer not to post publicly):
+This is the most valuable part of a pilot. Use the forms on GitHub (or email info@stackurity.ai if you prefer not to post publicly):
 
 - [Wrong finding](https://github.com/stackurity/stackurity/issues/new?template=wrong-finding.yml): a vulnerability that does not apply, for example because your distribution backported the fix.
 - [Missed vulnerability](https://github.com/stackurity/stackurity/issues/new?template=missed-vulnerability.yml): a known issue Stackurity did not report.

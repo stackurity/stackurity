@@ -157,7 +157,7 @@ func (s *Server) sendFeedback(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 429, "rate_limited", "the feedback service is busy; try again later")
 			return
 		}
-		writeError(w, 502, "feedback_unavailable", "the feedback could not be delivered; try again later, or email info@stackurity.dev")
+		writeError(w, 502, "feedback_unavailable", "the feedback could not be delivered; try again later, or email info@stackurity.ai")
 		return
 	}
 	_ = s.Store.Audit(r.Context(), p.Actor(r), "feedback.send", "feedback", "", map[string]any{"kind": out.Kind})
