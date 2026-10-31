@@ -1,5 +1,5 @@
--- Routes may add an "Updates available" section to their daily or weekly
--- summaries: installs older than their package's latest stable release
+-- Routes may add an "Updates available" section to their weekly summary
+-- (never the daily one): installs older than their package's latest stable release
 -- (no advisory involved), counted by update type, with the packages most
 -- behind. Off by default, so no existing summary changes.
 --

@@ -1162,10 +1162,10 @@ func (d *Dispatcher) summaryMessage(r store.Route, weekly bool, data *summaryDat
 	}
 	counts["problems"] = len(sys)
 
-	// Updates available, for routes that asked: after everything else,
-	// never a finding or an urgent item.
+	// Updates available, for routes that asked: weekly summaries only,
+	// after everything else, never a finding or an urgent item.
 	nUpdates := 0
-	if r.SummaryUpdates {
+	if r.SummaryUpdates && weekly {
 		all, err := data.updates()
 		if err != nil {
 			return Message{}, false, err
@@ -1228,8 +1228,8 @@ func (d *Dispatcher) summaryMessage(r store.Route, weekly bool, data *summaryDat
 	m.Counts = counts
 	changed := nNew > 0 || nFixed > 0 || nGone > 0 || len(conn) > 0 || newlyOverdue > 0 || newSys > 0 || nBack > 0
 	// Updates are a standing list, not news: they send a weekly summary
-	// on their own, never a daily one.
-	changed = changed || weekly && nUpdates > 0
+	// on their own.
+	changed = changed || nUpdates > 0
 	return m, changed, nil
 }
 

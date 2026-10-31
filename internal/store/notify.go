@@ -157,8 +157,8 @@ type Route struct {
 	// covered (LastSummaryAt is the daily summary's). Kept by the dispatcher.
 	LastWeeklySummaryAt time.Time `json:"last_weekly_summary_at"`
 	// SummaryUpdates adds an "Updates available" section (newer releases
-	// that fix no known vulnerability) to the route's summaries. Off by
-	// default.
+	// that fix no known vulnerability) to the route's weekly summary, never
+	// the daily one. Off by default.
 	SummaryUpdates bool `json:"summary_updates"`
 }
 

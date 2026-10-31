@@ -2,6 +2,8 @@ package api_test
 
 import (
 	"context"
+	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -103,5 +105,74 @@ func TestInventoryUpdatesEndpoints(t *testing.T) {
 	// Nothing here is a finding.
 	if fs, total, err := e.st.ListFindings(ctx, store.FindingFilter{}); err != nil || total != 0 {
 		t.Errorf("updates raised findings: %v %v", fs, err)
+	}
+}
+
+// Updates available respect projects: with release data for every
+// project's packages, a viewer of Project Alpha counts and lists only
+// Alpha's (its host and the shared database), and asking for Beta's asset
+// gives nothing. The organisation's admin sees every project.
+func TestInventoryUpdatesProjectScope(t *testing.T) {
+	o := newOrg(t)
+	ws := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	latest := map[string]string{"alpha-private-lib": "1.0.5", "shared-lib": "3.0.1", "beta-private-lib": "1.2.0", "beta-db-lib": "3.0.0",
+		"unfiled-beta-lib": "2.0.0"}
+	rows, _, err := o.e.st.ListInventory(ws, store.InventoryFilter{Page: store.Page{Limit: 500}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	set := 0
+	for _, r := range rows {
+		if v, ok := latest[r.Name]; ok {
+			if err := o.e.st.UpsertRelease(ws, store.Release{ComponentID: r.ComponentID, Latest: v, LatestStable: v,
+				Source: "releases:npm", CheckedAt: time.Now()}); err != nil {
+				t.Fatal(err)
+			}
+			set++
+		}
+	}
+	if set != len(latest) {
+		t.Fatalf("releases for %d of %d packages", set, len(latest))
+	}
+
+	var all store.UpdatesSummary
+	if code := o.admin.do("GET", "/api/v1/inventory/updates", nil, &all); code != 200 || all.Counts["total"] != 5 || all.Components != 5 {
+		t.Fatalf("admin: %d %+v", code, all)
+	}
+
+	o.grant(t, "updates-alpha@x.io", o.id("alpha-project"), 0, auth.RoleViewer)
+	alpha := o.e.signIn("updates-alpha@x.io")
+	var sum store.UpdatesSummary
+	if code := alpha.do("GET", "/api/v1/inventory/updates", nil, &sum); code != 200 ||
+		sum.Counts["total"] != 2 || sum.Counts["patch"] != 2 || sum.Counts["minor"] != 0 || sum.Counts["major"] != 0 || sum.Components != 2 {
+		t.Fatalf("alpha viewer: %d %+v", code, sum)
+	}
+	for _, c := range sum.Top {
+		if c.Name != "alpha-private-lib" && c.Name != "shared-lib" {
+			t.Errorf("alpha viewer sees %+v", c)
+		}
+	}
+	resp := alpha.req("GET", "/api/v1/inventory/updates?update_type=any&limit=100", nil, nil)
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if strings.Contains(strings.ToLower(string(body)), "beta") {
+		t.Errorf("alpha viewer's summary mentions beta: %s", body)
+	}
+	for _, q := range []string{"", "&update_type=minor", "&update_type=major"} {
+		var other store.UpdatesSummary
+		if code := alpha.do("GET", "/api/v1/inventory/updates?asset_id="+o.s("beta-asset")+q, nil, &other); code != 200 ||
+			other.Counts["total"] != 0 || other.Components != 0 || len(other.Top) != 0 {
+			t.Errorf("alpha viewer asking for beta's asset%s: %d %+v", q, code, other)
+		}
+	}
+	var list struct {
+		Items []store.InventoryRow `json:"items"`
+		Total int64                `json:"total"`
+	}
+	if code := alpha.do("GET", "/api/v1/inventory?update_type=any", nil, &list); code != 200 || list.Total != 2 {
+		t.Errorf("alpha viewer's inventory: %d %+v", code, list)
+	}
+	if code := alpha.do("GET", "/api/v1/inventory?update_type=any&asset_id="+o.s("beta-asset"), nil, &list); code != 200 || list.Total != 0 {
+		t.Errorf("alpha viewer's inventory of beta's asset: %d %+v", code, list)
 	}
 }

@@ -12,9 +12,10 @@ import (
 )
 
 // Updates available in summaries: off by default; when a route turns it
-// on, its summaries list the installs behind their latest stable release,
-// within the route's scope. Updates alone send a weekly summary, never a
-// daily one, and never raise findings or incidents.
+// on, its weekly summary lists the installs behind their latest stable
+// release, within the route's scope. Daily summaries never carry them.
+// Updates alone send the weekly summary, and never raise findings or
+// incidents.
 func TestSummaryUpdates(t *testing.T) {
 	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
 	f := setup(t)
@@ -86,21 +87,47 @@ func TestSummaryUpdates(t *testing.T) {
 		t.Errorf("updates raised %d findings or incidents", n)
 	}
 
-	// A daily summary carries them but is not sent for them alone; a
-	// route limited to production counts web-1 only.
+	// A route limited to production counts web-1 only; a daily summary
+	// has no section and is not sent for them.
 	routes, _ = f.st.ListRoutes(ctx)
 	r = routes[0]
 	r.Environments = []string{"production"}
 	data = &summaryData{d: f.d, ctx: ctx, cache: map[string][]store.IssueCount{}}
+	weekly, _, err := f.d.summaryMessage(r, true, data, f.d.Now().AddDate(0, 0, -7), f.d.Now(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if items := sectionItems(weekly, "Updates available"); weekly.Counts["updates"] != 1 || len(items) != 2 ||
+		items[1].Text != "lodash 4.17.15 → 4.17.21 (patch) on 1 asset" {
+		t.Errorf("production updates = %v %+v", weekly.Counts, items)
+	}
 	daily, changed, err := f.d.summaryMessage(r, false, data, f.d.Now().AddDate(0, 0, -1), f.d.Now(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if changed || daily.Counts["updates"] != 1 {
-		t.Errorf("daily: changed %v, counts %v", changed, daily.Counts)
+	if _, ok := daily.Counts["updates"]; changed || ok || sectionItems(daily, "Updates available") != nil {
+		t.Errorf("daily: changed %v, counts %v, sections %+v", changed, daily.Counts, daily.Sections)
 	}
-	if items := sectionItems(daily, "Updates available"); len(items) != 2 || items[1].Text != "lodash 4.17.15 → 4.17.21 (patch) on 1 asset" {
-		t.Errorf("production updates = %+v", items)
+
+	// A daily summary sent for a new issue still has no section; a
+	// weekly one over the same period has it.
+	f.setFindings("web-1")
+	r = routes[0]
+	from, to := time.Now().Add(-time.Hour), time.Now().Add(time.Minute)
+	data = &summaryData{d: f.d, ctx: ctx, cache: map[string][]store.IssueCount{}}
+	daily, changed, err = f.d.summaryMessage(r, false, data, from, to, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed || daily.Counts["new"] != 1 || sectionItems(daily, "Updates available") != nil {
+		t.Errorf("daily with a new issue: changed %v, counts %v, sections %+v", changed, daily.Counts, daily.Sections)
+	}
+	weekly, changed, err = f.d.summaryMessage(r, true, data, from, to, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed || weekly.Counts["new"] != 1 || weekly.Counts["updates"] != 2 || sectionItems(weekly, "Updates available") == nil {
+		t.Errorf("weekly with a new issue: changed %v, counts %v", changed, weekly.Counts)
 	}
 }
 

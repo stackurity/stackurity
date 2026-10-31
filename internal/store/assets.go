@@ -24,7 +24,9 @@ func isWordPressExtension(purlType, namespace string) bool {
 
 // updateType classifies the gap between installed and latest stable as
 // "major", "minor" or "patch", using the ecosystem's own comparator, for
-// the ecosystems that have release feeds.
+// the ecosystems that have release feeds. An installed pre-release of the
+// latest release itself (2.0.0-rc.1 with 2.0.0 out) takes that release's
+// type (releaseType), not "patch".
 func updateType(purlType, namespace, installed, latest string) string {
 	if latest == "" || installed == "" {
 		return ""
@@ -50,7 +52,7 @@ func updateType(purlType, namespace, installed, latest string) string {
 			if c, err := version.CompareGeneric(base, latest); err == nil && c > 0 {
 				return "ahead"
 			} else if trim(base) == trim(latest) {
-				return "patch"
+				return releaseType(latest)
 			}
 			installed = base
 		}
@@ -60,9 +62,44 @@ func updateType(purlType, namespace, installed, latest string) string {
 	case "npm", "composer", "pypi", "golang", "cargo", "gem", "nuget", "maven", "pub", "hex":
 		// Ahead only for a pre-release: a newer stable version is one the
 		// registry withdrew (yanked, retracted), not one to call newer.
-		return changeOrAhead(purlType, installed, latest, version.Prerelease(version.ForPurlType(purlType), installed))
+		pre := version.Prerelease(version.ForPurlType(purlType), installed)
+		if base := releaseBase.FindString(installed); pre && base != "" && base != installed {
+			if c, err := version.For(version.ForPurlType(purlType))(base, latest); err == nil && c == 0 {
+				return releaseType(latest)
+			}
+		}
+		return changeOrAhead(purlType, installed, latest, pre)
 	}
 	return ""
+}
+
+// releaseBase is the release a pre-release leads to: 2.0.0 of 2.0.0-rc.1,
+// 2.0.0rc1 or 2.0.0-RC1.
+var releaseBase = regexp.MustCompile(`^v?\d+(\.\d+)*`)
+
+// releaseType is the kind of release v is: "major" for 2.0.0 (or 2.0),
+// "minor" for 2.1.0, "patch" for 2.1.3. It classifies a move from a
+// pre-release to its own release.
+func releaseType(v string) string {
+	f := strings.Split(releaseBase.FindString(v), ".")
+	if len(f) < 2 {
+		return "major"
+	}
+	zero := func(xs []string) bool {
+		for _, x := range xs {
+			if strings.TrimLeft(x, "0") != "" {
+				return false
+			}
+		}
+		return true
+	}
+	switch {
+	case zero(f[1:]):
+		return "major"
+	case zero(f[2:]):
+		return "minor"
+	}
+	return "patch"
 }
 
 // wpPreRelease marks a WordPress plugin or theme pre-release or build.

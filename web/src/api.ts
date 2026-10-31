@@ -2252,7 +2252,7 @@ export interface Route {
   new_min_priority?: Priority;
   /** End of the period the last weekly summary covered (read-only). */
   last_weekly_summary_at?: string;
-  /** Summaries end with "Updates available" (non-security newer releases). Off by default. */
+  /** The weekly summary ends with "Updates available" (non-security newer releases); never the daily one. Off by default. */
   summary_updates?: boolean;
 }
 

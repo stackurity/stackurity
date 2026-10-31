@@ -464,9 +464,13 @@ func TestAssistantOAuth(t *testing.T) {
 	if _, out, _ := mcpPost(e, roToken, map[string]any{"id": 1, "method": "tools/list"}); len(out["result"].(map[string]any)["tools"].([]any)) != 22 {
 		t.Errorf("after allowing changes: %v", out)
 	}
-	// Tokens that do not work are limited per address.
+	// Tokens that do not work are limited per address. The window is fixed
+	// and aligned, so at most 2n pass across a boundary: 2n+1 requests are
+	// limited whatever the clock.
+	const badTokenLimit = 20
+	t.Cleanup(api.SetMCPBadTokenLimit(badTokenLimit))
 	limited := false
-	for range 320 {
+	for range 2*badTokenLimit + 1 {
 		if code, _, _ := mcpPost(e, "stka_wrong", map[string]any{"id": 1, "method": "ping"}); code == 429 {
 			limited = true
 			break

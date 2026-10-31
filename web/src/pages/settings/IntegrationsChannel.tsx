@@ -254,15 +254,17 @@ function RuleFields({
             })}
           </ul>
           {(events.includes("daily_summary") || events.includes("weekly_summary")) && (
+            <p className="hint">Summaries are skipped when nothing changed. Daily and weekly summaries share the time.</p>
+          )}
+          {events.includes("weekly_summary") && (
             <>
-              <p className="hint">Summaries are skipped when nothing changed. Daily and weekly summaries share the time.</p>
               <label className="check">
                 <input type="checkbox" checked={Boolean(r.summary_updates)} onChange={(e) => set("summary_updates", e.target.checked)} /> Include updates
-                available in summaries
+                available in the weekly summary
               </label>
               <span className="hint">
-                Packages behind their latest stable release (patch, minor, major) and the 10 most behind. Not security issues: they never raise
-                issues or urgent messages, and send a weekly summary on their own, never a daily one.{" "}
+                Packages behind their latest stable release (patch, minor, major) and the 10 most behind, never in daily summaries. Not security
+                issues: they never raise issues or urgent messages, and send the weekly summary on their own.{" "}
                 <Link to="/components/updates">See them</Link>.
               </span>
             </>
