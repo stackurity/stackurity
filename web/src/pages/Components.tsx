@@ -6,6 +6,7 @@ import { displayPurl } from "../format";
 import { Chip } from "../components/Badge";
 import { Table, type Column } from "../components/Table";
 import { EmptyState, ErrorBox, Loading, PageHeader, Pager } from "../components/ui";
+import { SEGMENTS } from "../coverage";
 
 const LIMIT = 50;
 const MAX_CHIPS = 6;
@@ -29,6 +30,7 @@ export function VersionChips({ versions }: { versions: string[] | null }) {
 export function ComponentsPage() {
   const [params, setParams] = useSearchParams();
   const type = params.get("type") ?? "";
+  const segment = params.get("segment") ?? "";
   const qParam = params.get("q") ?? "";
   const offset = Number(params.get("offset") ?? 0) || 0;
   const [q, setQ] = useState(qParam);
@@ -52,7 +54,10 @@ export function ComponentsPage() {
   const types = [...(facets?.component_types ?? [])];
   if (type && !types.includes(type)) types.push(type);
 
-  const res = useLoad(() => api.get<List<Component>>("/components", { type, q: qParam, limit: LIMIT, offset }), [type, qParam, offset]);
+  const res = useLoad(
+    () => api.get<List<Component>>("/components", { type, q: qParam, segment: segment || undefined, limit: LIMIT, offset }),
+    [type, qParam, segment, offset],
+  );
 
   const columns: Column<Component>[] = [
     { key: "purl", header: "Package (purl)", cell: (c) => <Link to={`/components/${c.id}`} className="mono">{c.type === "generic" ? displayPurl(c.purl_key) : c.purl_key}</Link> },
@@ -80,12 +85,23 @@ export function ComponentsPage() {
             ))}
           </select>
         </div>
+        <div className="field">
+          <label htmlFor="c-segment">Coverage</label>
+          <select id="c-segment" value={segment} onChange={(e) => update({ segment: e.target.value })}>
+            <option value="">Any</option>
+            {SEGMENTS.map((s) => (
+              <option key={s.key} value={s.key}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+        </div>
       </form>
       <ErrorBox error={res.error} title="Could not load components" />
       {!res.data && !res.error && <Loading />}
       {res.data && res.data.items.length === 0 && (
-        <EmptyState title={qParam || type ? "No components match" : "No components yet"}>
-          {!qParam && !type && <p>Components appear once a collector reports an asset. See the Assets page to get started.</p>}
+        <EmptyState title={qParam || type || segment ? "No components match" : "No components yet"}>
+          {!qParam && !type && !segment && <p>Components appear once a collector reports an asset. See the Assets page to get started.</p>}
         </EmptyState>
       )}
       {res.data && res.data.items.length > 0 && (

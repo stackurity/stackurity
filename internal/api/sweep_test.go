@@ -224,6 +224,8 @@ var routeRules = map[string]routeRule{
 	"GET /api/v1/inventory":             {class: "list", query: "?asset_id={asset}"},
 	"GET /api/v1/inventory/updates":     {class: "list", query: "?asset_id={asset}"},
 	"GET /api/v1/coverage/unchecked":    {class: "list", query: "?asset_id={asset}"},
+	"GET /api/v1/coverage/overview":     {class: "list"},
+	"GET /api/v1/coverage/assets":       {class: "list"},
 	"GET /api/v1/coverage":              {class: "list", query: "?asset_id={asset}"},
 	"GET /api/v1/teams":                 {class: "list"},
 	"GET /api/v1/audit":                 {class: "list", query: "?object_type=asset&object_id={asset}"},
@@ -345,6 +347,8 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/ignore-requests": {class: "create", body: func(a *tenantFx) any {
 		return map[string]any{"finding_ids": []int64{a.int("finding")}, "reason": "false_positive", "note": "sweep", "scope": "everywhere", "expiry": "never"}
 	}},
+	// An ecosystem only A has: B is refused, and A's requests stay as they are.
+	"POST /api/v1/coverage/support-requests": {class: "create", body: func(*tenantFx) any { return map[string]string{"ecosystem": "cocoapods"} }},
 	"POST /api/v1/risk-policy/preview": {class: "create", body: func(*tenantFx) any {
 		return map[string]any{"known_exploited": 9, "thresholds": map[string]float64{"p1": 5, "p2": 3, "p3": 1}}
 	}},
