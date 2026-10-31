@@ -7,6 +7,8 @@ import { Table, type Column } from "../../components/Table";
 import { Card, EmptyState, ErrorBox, Loading, Notice, PageHeader, RelativeTime } from "../../components/ui";
 import { RequireMfaCard } from "../TwoFactor";
 import { confirmAction } from "../../components/ConfirmDialog";
+import { RowMenu, type RowMenuItem } from "../../components/RowMenu";
+import { IconCheckCircle, IconBan } from "../../components/Icons";
 
 /** Organisation-wide roles, and "none": access only to the projects someone is given. */
 const ORG_ROLES: (UserRole | "none")[] = [...USER_ROLES, "none"];
@@ -33,6 +35,74 @@ export function UsersPage() {
     return r;
   };
 
+  // Row actions, behind each row's "⋯" menu.
+  const resetMfa = async (u: User) => {
+    if (
+      !(await confirmAction({
+        title: `Reset two-factor sign-in for ${u.email}?`,
+        message: "They sign in with their password and set it up again.",
+        consequence: "Their sessions end.",
+        action: "Reset two-factor",
+        destructive: true,
+        typeToConfirm: u.email,
+      }))
+    )
+      return;
+    setMsg(null);
+    void act
+      .run(async () => {
+        await api.del(`/users/${u.id}/mfa`);
+        return true;
+      })
+      .then((ok) => {
+        if (ok) {
+          setMsg(`Two-factor sign-in for ${u.email} was reset.`);
+          res.reload();
+        }
+      });
+  };
+  const removeUser = async (u: User) => {
+    if (
+      !(await confirmAction({
+        title: `Remove ${u.email} from this workspace?`,
+        message: "Their account and any other workspaces are kept.",
+        consequence: "They lose access to this workspace at once.",
+        action: "Remove user",
+        destructive: true,
+        typeToConfirm: u.email,
+      }))
+    )
+      return;
+    setMsg(null);
+    void act
+      .run(async () => {
+        await api.del(`/users/${u.id}`);
+        return true;
+      })
+      .then((ok) => {
+        if (ok) {
+          setMsg(`${u.email} was removed from this workspace.`);
+          res.reload();
+        }
+      });
+  };
+  const toggleDisabled = async (u: User) => {
+    if (u.disabled || (await confirmAction({ title: `Disable ${u.email}?`, consequence: "Their sessions and tokens stop working.", action: "Disable user" })))
+      void patch(u, { disabled: !u.disabled }, `${u.email} ${u.disabled ? "enabled" : "disabled"}.`);
+  };
+  const rowActions = (u: User): RowMenuItem[] => {
+    const self = u.id === me?.user?.id;
+    const items: RowMenuItem[] = [{ label: resetFor === u.id ? "Cancel password reset" : "Reset password", onSelect: () => setResetFor(resetFor === u.id ? null : u.id) }];
+    if (u.mfa_enabled && !self) items.push({ label: "Reset two-factor", onSelect: () => void resetMfa(u), disabled: act.pending });
+    if (!self) {
+      items.push({ label: u.disabled ? "Enable" : "Disable", onSelect: () => void toggleDisabled(u), danger: !u.disabled, disabled: act.pending });
+      items.push({ label: "Remove from workspace", onSelect: () => void removeUser(u), danger: true, disabled: act.pending });
+    }
+    return items;
+  };
+
+  // Fits 1280 px next to the Settings list: teams and when someone was added
+  // go under their name, two-factor is an icon, actions are in a menu.
   const columns: Column<User>[] = [
     {
       key: "user",
@@ -40,7 +110,19 @@ export function UsersPage() {
       cell: (u) => (
         <>
           <div>{u.name || <span className="muted">(no name)</span>}</div>
-          <div className="small muted">{u.email}</div>
+          {/* Wraps after the @ only, never mid-word. */}
+          <div className="small muted">
+            {u.email.split("@")[0]}
+            {u.email.includes("@") && (
+              <>
+                @<wbr />
+                {u.email.slice(u.email.indexOf("@") + 1)}
+              </>
+            )}
+          </div>
+          <div className="small muted user-meta">
+            {u.teams?.length ? <>Teams: {u.teams.join(", ")}</> : "No team"} · added <RelativeTime iso={u.created_at} />
+          </div>
         </>
       ),
     },
@@ -74,104 +156,13 @@ export function UsersPage() {
       ),
     },
     { key: "status", header: "Status", cell: (u) => (u.disabled ? <Badge status="disabled" /> : <Badge status="active" />) },
-    { key: "mfa", header: "Two-factor", cell: (u) => (u.mfa_enabled ? "On" : <span className="muted">Off</span>) },
-    { key: "teams", header: "Teams", cell: (u) => (u.teams?.length ? u.teams.join(", ") : <span className="muted">—</span>) },
+    { key: "mfa", header: "Two-factor", className: "col-icon", cell: (u) => <MfaIcon on={Boolean(u.mfa_enabled)} /> },
     { key: "login", header: "Last sign-in", cell: (u) => <RelativeTime iso={u.last_login_at} /> },
-    { key: "created", header: "Created", cell: (u) => <RelativeTime iso={u.created_at} /> },
     {
       key: "actions",
       header: <span className="sr-only">Actions</span>,
-      cell: (u) => (
-        <div className="row-actions">
-          <button type="button" className="btn btn-sm" onClick={() => setResetFor(resetFor === u.id ? null : u.id)}>
-            Reset password
-          </button>
-          {u.mfa_enabled && u.id !== me?.user?.id && (
-            <button
-              type="button"
-              className="btn btn-sm"
-              disabled={act.pending}
-              onClick={async () => {
-                if (
-                  !(await confirmAction({
-                    title: `Reset two-factor sign-in for ${u.email}?`,
-                    message: "They sign in with their password and set it up again.",
-                    consequence: "Their sessions end.",
-                    action: "Reset two-factor",
-                    destructive: true,
-                    typeToConfirm: u.email,
-                  }))
-                )
-                  return;
-                setMsg(null);
-                void act
-                  .run(async () => {
-                    await api.del(`/users/${u.id}/mfa`);
-                    return true;
-                  })
-                  .then((ok) => {
-                    if (ok) {
-                      setMsg(`Two-factor sign-in for ${u.email} was reset.`);
-                      res.reload();
-                    }
-                  });
-              }}
-            >
-              Reset two-factor
-            </button>
-          )}
-          {u.id !== me?.user?.id && (
-            <button
-              type="button"
-              className="btn btn-sm btn-link-danger"
-              disabled={act.pending}
-              onClick={async () => {
-                if (
-                  !(await confirmAction({
-                    title: `Remove ${u.email} from this workspace?`,
-                    message: "Their account and any other workspaces are kept.",
-                    consequence: "They lose access to this workspace at once.",
-                    action: "Remove user",
-                    destructive: true,
-                    typeToConfirm: u.email,
-                  }))
-                )
-                  return;
-                setMsg(null);
-                void act
-                  .run(async () => {
-                    await api.del(`/users/${u.id}`);
-                    return true;
-                  })
-                  .then((ok) => {
-                    if (ok) {
-                      setMsg(`${u.email} was removed from this workspace.`);
-                      res.reload();
-                    }
-                  });
-              }}
-            >
-              Remove
-            </button>
-          )}
-          {u.id !== me?.user?.id && (
-            <button
-              type="button"
-              className={`btn btn-sm${u.disabled ? "" : " btn-link-danger"}`}
-              disabled={act.pending}
-              onClick={async () => {
-                if (
-                  u.disabled ||
-                  (await confirmAction({ title: `Disable ${u.email}?`, consequence: "Their sessions and tokens stop working.", action: "Disable user" }))
-                )
-                  void patch(u, { disabled: !u.disabled }, `${u.email} ${u.disabled ? "enabled" : "disabled"}.`);
-              }}
-            >
-              {u.disabled ? "Enable" : "Disable"}
-            </button>
-          )}
-        </div>
-      ),
+      className: "col-actions",
+      cell: (u) => <RowMenu label={`Actions for ${u.email}`} items={rowActions(u)} />,
     },
   ];
 
@@ -225,6 +216,17 @@ export function UsersPage() {
         />
       )}
     </>
+  );
+}
+
+/** Two-factor on or off, as an icon with a tooltip and a label for screen readers. */
+function MfaIcon({ on }: { on: boolean }) {
+  const text = on ? "Two-factor sign-in on" : "Two-factor sign-in off";
+  return (
+    <span className={`mfa-icon ${on ? "mfa-on" : "mfa-off"}`} title={text}>
+      {on ? <IconCheckCircle size={18} /> : <IconBan size={18} />}
+      <span className="sr-only">{text}</span>
+    </span>
   );
 }
 

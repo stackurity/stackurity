@@ -4247,6 +4247,45 @@ h6.md-h {
   }
 }
 
+/* Users: a row's secondary details, two-factor as an icon, the "⋯" menu. */
+.user-meta {
+  margin-top: 2px;
+}
+.table .col-icon {
+  text-align: center;
+  width: 1%;
+  white-space: nowrap;
+}
+.table .col-actions {
+  width: 1%;
+  text-align: right;
+}
+.mfa-icon {
+  display: inline-flex;
+  vertical-align: middle;
+}
+.mfa-on {
+  color: var(--good-dot);
+}
+.mfa-off {
+  color: var(--muted);
+}
+.row-menu-button {
+  min-width: 32px;
+  justify-content: center;
+}
+.row-menu-list {
+  position: fixed;
+  min-width: 200px;
+}
+.menu-item-danger {
+  color: var(--danger);
+}
+.menu-item:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 /* The danger zone of a settings section: last, outlined in red. */
 .danger-zone .danger-row {
   display: flex;

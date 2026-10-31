@@ -11,7 +11,7 @@
 // plus EXTRA_CHECKS in routes.mjs. Fails, listing every offending route.
 import { chromium } from "playwright";
 import { fileURLToPath } from "node:url";
-import { appRoutes, EXTRA_CHECKS, fillParams, WIDTHS } from "./routes.mjs";
+import { appRoutes, EXTRA_CHECKS, EXTRA_ROUTES, fillParams, WIDTHS } from "./routes.mjs";
 
 const [base = "http://127.0.0.1:8080", email = "ui@example.com", password = "ui-test-password-1"] = process.argv.slice(2);
 const app = fileURLToPath(new URL("../../web/src/App.tsx", import.meta.url));
@@ -37,6 +37,7 @@ for (const p of appRoutes(app)) {
   if (r) routes.push(r);
   else skipped.push(p);
 }
+for (const r of EXTRA_ROUTES) if (!routes.includes(r)) routes.push(r);
 
 const failures = [];
 for (const [w, h] of WIDTHS) {
@@ -69,6 +70,12 @@ for (const [w, h] of WIDTHS) {
         last: Math.round(last),
         pad,
         wide: document.documentElement.scrollWidth - innerWidth,
+        // Tables that scroll sideways inside their box, or stick out of it.
+        tables: [...document.querySelectorAll("#main .table-wrap")]
+          .filter((t) => getComputedStyle(t).display !== "none" && t.getBoundingClientRect().width > 0)
+          .map((t) => Math.max(t.scrollWidth - t.clientWidth, t.getBoundingClientRect().right - (t.parentElement?.getBoundingClientRect().right ?? Infinity)))
+          .filter((d) => d > 1)
+          .map(Math.round),
       };
     });
     const problems = [];
@@ -77,8 +84,10 @@ for (const [w, h] of WIDTHS) {
     const gap = m.doc <= m.vh ? 0 : m.doc - m.last - m.pad;
     if (gap > MAX_GAP) problems.push(`${Math.round(gap)} px empty below the last element`);
     for (const [prefix, widths, checks] of EXTRA_CHECKS) {
-      if (!widths.includes(w) || !(prefix === "/" ? true : r === prefix || r.startsWith(prefix + "/"))) continue;
+      if (!widths.includes(w) || !(prefix === "/" ? true : r === prefix || r.startsWith(prefix + "/") || r.startsWith(prefix + "?"))) continue;
       if (checks.includes("no-horizontal-scroll") && m.wide > 0) problems.push(`${m.wide} px wider than the screen (horizontal scroll)`);
+      if (checks.includes("no-table-scroll") && m.tables.length > 0)
+        problems.push(`${m.tables.length} table(s) scroll sideways, by up to ${Math.max(...m.tables)} px`);
     }
     if (problems.length) failures.push(`${w}px ${r}: ${problems.join("; ")}`);
   }

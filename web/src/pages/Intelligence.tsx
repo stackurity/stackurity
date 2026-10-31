@@ -9,6 +9,7 @@ import { ROW_COVERAGE_LABELS } from "../components/Coverage";
 import { Table, type Column } from "../components/Table";
 import { Card, EmptyState, ErrorBox, JobStatus, Loading, PageHeader, Pager, RelativeTime } from "../components/ui";
 import { confirmAction } from "../components/ConfirmDialog";
+import { RowMenu } from "../components/RowMenu";
 
 function feedStatus(f: Feed): { label: string; tone: Tone; title: string } {
   if (!f.enabled) return { label: "Disabled", tone: "muted", title: "Not synced; nothing from this feed is evaluated" };
@@ -63,9 +64,20 @@ export function IntelligencePage() {
     if (ok) feeds.reload();
   };
 
+  // Paired details share a cell (what a feed provides under its name, the
+  // last attempt under the last success, how it is run under its schedule),
+  // so the table fits next to the Settings list.
   const columns: Column<Feed>[] = [
-    { key: "name", header: "Feed", cell: (f) => <span className="mono">{f.name}</span> },
-    { key: "kind", header: "Provides", cell: (f) => KIND_LABEL[f.kind] ?? f.kind },
+    {
+      key: "name",
+      header: "Feed",
+      cell: (f) => (
+        <>
+          <div className="mono">{f.name}</div>
+          <div className="small muted">{KIND_LABEL[f.kind] ?? f.kind}</div>
+        </>
+      ),
+    },
     {
       key: "status",
       header: "Status",
@@ -74,20 +86,44 @@ export function IntelligencePage() {
         return <Badge status={s.label.toLowerCase()} tone={s.tone} label={s.label} title={s.title} />;
       },
     },
-    { key: "success", header: "Last success", cell: (f) => <RelativeTime iso={f.last_success} /> },
-    { key: "attempt", header: "Last attempt", cell: (f) => <RelativeTime iso={f.last_attempt} /> },
-    { key: "records", header: "Records", numeric: true, cell: (f) => f.records.toLocaleString() },
-    { key: "changed", header: "Changed last sync", numeric: true, cell: (f) => f.last_changed.toLocaleString() },
-    { key: "every", header: "Every", cell: (f) => minutesLabel(f.refresh_minutes) },
     {
-      key: "mode",
-      header: "Managed",
-      cell: (f) =>
-        f.auto ? (
-          <span title="Enabled automatically when your inventory contains this ecosystem">auto</span>
-        ) : (
-          <span title="Enabled or disabled by an administrator">manual</span>
-        ),
+      key: "success",
+      header: "Last success",
+      cell: (f) => (
+        <>
+          <RelativeTime iso={f.last_success} />
+          <div className="small muted">
+            tried <RelativeTime iso={f.last_attempt} />
+          </div>
+        </>
+      ),
+    },
+    {
+      key: "records",
+      header: "Records",
+      numeric: true,
+      cell: (f) => (
+        <>
+          {f.records.toLocaleString()}
+          <div className="small muted">{f.last_changed.toLocaleString()} changed last sync</div>
+        </>
+      ),
+    },
+    {
+      key: "every",
+      header: "Every",
+      cell: (f) => (
+        <>
+          {minutesLabel(f.refresh_minutes)}
+          <div className="small muted">
+            {f.auto ? (
+              <span title="Enabled automatically when your inventory contains this ecosystem">managed: auto</span>
+            ) : (
+              <span title="Enabled or disabled by an administrator">managed: manual</span>
+            )}
+          </div>
+        </>
+      ),
     },
     {
       key: "error",
@@ -107,17 +143,15 @@ export function IntelligencePage() {
     columns.push({
       key: "actions",
       header: <span className="sr-only">Actions</span>,
+      className: "col-actions",
       cell: (f) => (
-        <div className="row-actions">
-          <button type="button" className="btn btn-sm" disabled={job.busy || !f.enabled} onClick={() => refresh(f)}>
-            Refresh
-          </button>
-          {admin && (
-            <button type="button" className="btn btn-sm" disabled={toggle.pending} onClick={() => setEnabled(f)}>
-              {f.enabled ? "Disable" : "Enable"}
-            </button>
-          )}
-        </div>
+        <RowMenu
+          label={`Actions for ${f.name}`}
+          items={[
+            { label: "Refresh now", onSelect: () => void refresh(f), disabled: job.busy || !f.enabled },
+            ...(admin ? [{ label: f.enabled ? "Disable" : "Enable", onSelect: () => void setEnabled(f), disabled: toggle.pending, danger: f.enabled }] : []),
+          ]}
+        />
       ),
     });
 
@@ -126,11 +160,18 @@ export function IntelligencePage() {
     {
       key: "coverage",
       header: "Coverage",
-      cell: (g) => <Badge status={g.coverage} tone={g.coverage === "unsupported" ? "muted" : "warn"} label={ROW_COVERAGE_LABELS[g.coverage] ?? g.coverage} />,
+      // When it started sits under the badge, so the table fits next to the Settings list.
+      cell: (g) => (
+        <>
+          <Badge status={g.coverage} tone={g.coverage === "unsupported" ? "muted" : "warn"} label={ROW_COVERAGE_LABELS[g.coverage] ?? g.coverage} />
+          <div className="small muted">
+            since <RelativeTime iso={g.updated_at} />
+          </div>
+        </>
+      ),
     },
     { key: "reason", header: "Why it was not checked", cell: (g) => g.reason },
     { key: "assets", header: "Assets", numeric: true, cell: (g) => g.asset_count.toLocaleString() },
-    { key: "upd", header: "Since", cell: (g) => <RelativeTime iso={g.updated_at} /> },
   ];
 
   const problemFeeds = (feeds.data?.items ?? []).filter((f) => f.enabled && feedStatus(f).label !== "OK").length;
