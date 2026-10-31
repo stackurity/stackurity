@@ -117,7 +117,7 @@ export function TokensPage() {
       </div>
       <ErrorBox error={res.error} title="Could not load tokens" />
       {!res.data && !res.error && <Loading />}
-      {res.data && rows.length === 0 && <EmptyState title="No tokens" />}
+      {res.data && rows.length === 0 && <EmptyState title="No API tokens yet">Nothing can use the API as this workspace until you create one below.</EmptyState>}
       {rows.length > 0 && <Table caption="API tokens" columns={columns} rows={rows} rowKey={(t) => t.id} rowClassName={(t) => (t.revoked_at ? "row-removed" : undefined)} />}
     </>
   );

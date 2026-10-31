@@ -3,7 +3,7 @@ import { api, type LicenseInfo } from "../../api";
 import { useAuth } from "../../auth";
 import { useAction, useLoad } from "../../hooks";
 import { Badge } from "../../components/Badge";
-import { Card, ErrorBox, KeyValues, Loading, Notice, PageHeader } from "../../components/ui";
+import { Card, DangerAction, DangerZone, ErrorBox, KeyValues, Loading, Notice, PageHeader } from "../../components/ui";
 import { confirmAction } from "../../components/ConfirmDialog";
 
 const EDITION_LABEL = { community: "Community", pro: "Pro", enterprise: "Enterprise" } as const;
@@ -99,13 +99,6 @@ export function LicensePage() {
                 ],
               ]}
             />
-            {l && !d.managed_by_env && (
-              <div className="form-actions">
-                <button type="button" className="btn btn-sm btn-link-danger" disabled={act.pending} onClick={() => void remove()}>
-                  Remove licence
-                </button>
-              </div>
-            )}
           </Card>
           {d.managed_by_env ? (
             <Notice kind="info">This server reads its licence from STACKURITY_LICENSE; change it there.</Notice>
@@ -124,6 +117,13 @@ export function LicensePage() {
                 </div>
               </form>
             </Card>
+          )}
+          {l && !d.managed_by_env && (
+            <DangerZone>
+              <DangerAction title="Remove the licence" action="Remove licence" onClick={() => void remove()} disabled={act.pending}>
+                This server runs as Community: paid features stop at once; detection and alerts carry on.
+              </DangerAction>
+            </DangerZone>
           )}
         </>
       )}

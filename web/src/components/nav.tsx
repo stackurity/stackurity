@@ -15,7 +15,7 @@ export function sectionOf(path: string): Section {
   if (under(path, "/fixes", "/action-plan", "/findings", "/remediation")) return "fixes";
   if (under(path, "/assets", "/components", "/coverage")) return "assets";
   if (under(path, "/activity", "/incidents", "/checks", "/approvals", "/outcomes", "/reports", "/audit")) return "activity";
-  if (under(path, "/settings", "/integrations", "/intelligence", "/admin", "/updates")) return "settings";
+  if (under(path, "/settings", "/integrations", "/intelligence", "/admin", "/updates", "/account")) return "settings";
   if (under(path, "/help")) return "help";
   return "other";
 }

@@ -114,7 +114,7 @@ export function CoverageGapsPage() {
     <>
       <PageHeader
         title="Coverage gaps"
-        sub="What Stackurity cannot check across every workspace on this installation, counted by assets and workspaces. Workspaces, assets, paths and packages are never named here."
+        sub="What Stackurity cannot check across every workspace, as counts only: nothing is named here."
         actions={
           <button type="button" className="btn" onClick={res.reload}>
             Refresh

@@ -18,7 +18,7 @@ import { absTime, plural, humanize } from "../../format";
 import { AssetPicker } from "../../components/AssetPicker";
 import { InviteForm } from "../../components/Invite";
 import { NewTeamInline } from "../../components/Teams";
-import { Card, EmptyState, ErrorBox, Loading, Notice, PageHeader } from "../../components/ui";
+import { Card, DangerAction, DangerZone, EmptyState, ErrorBox, Loading, Notice, PageHeader } from "../../components/ui";
 import { confirmAction, promptText } from "../../components/ConfirmDialog";
 
 /*
@@ -512,9 +512,11 @@ export function ProjectDetailPage() {
             <button type="button" className="btn" onClick={() => setEditing(!editing)}>
               Rename
             </button>
-            <button type="button" className="btn" disabled={act.pending} onClick={() => void archive(!p.archived_at)}>
-              {p.archived_at ? "Restore" : "Archive"}
-            </button>
+            {p.archived_at && (
+              <button type="button" className="btn" disabled={act.pending} onClick={() => void archive(false)}>
+                Restore
+              </button>
+            )}
           </div>
         }
       />
@@ -579,6 +581,13 @@ export function ProjectDetailPage() {
         <InviteForm projectId={p.id} projectName={p.name} onInvited={() => setInvites((n) => n + 1)} />
         <Invitations projectId={p.id} reloadKey={invites} />
       </Card>
+      {!p.archived_at && (
+        <DangerZone>
+          <DangerAction title="Archive this project" action="Archive project" onClick={() => void archive(true)} disabled={act.pending}>
+            People with access only through it stop seeing its assets, and alert routes limited to it stop sending. You can restore it later.
+          </DangerAction>
+        </DangerZone>
+      )}
     </>
   );
 }

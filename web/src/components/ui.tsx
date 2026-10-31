@@ -436,3 +436,45 @@ export function SaveBar({
     </div>
   );
 }
+
+/**
+ * The last card of a settings section: actions that delete, cancel or
+ * reset, outlined in red and kept apart from the form. Each action asks in
+ * the app's own dialog (confirmAction) before it does anything.
+ */
+export function DangerZone({ children, hint }: { children: ReactNode; hint?: ReactNode }) {
+  return (
+    <section className="danger-zone" aria-labelledby="danger-zone-h">
+      <h2 id="danger-zone-h">Danger zone</h2>
+      {hint && <p className="hint">{hint}</p>}
+      {children}
+    </section>
+  );
+}
+
+/** One action in the danger zone: what it does on the left, its button on the right. */
+export function DangerAction({
+  title,
+  children,
+  action,
+  onClick,
+  disabled,
+}: {
+  title: string;
+  children?: ReactNode;
+  action: string;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="danger-row">
+      <div>
+        <strong>{title}</strong>
+        {children && <p className="small muted">{children}</p>}
+      </div>
+      <button type="button" className="btn btn-danger" onClick={onClick} disabled={disabled}>
+        {action}
+      </button>
+    </div>
+  );
+}

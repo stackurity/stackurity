@@ -50,7 +50,7 @@ export function JobsPage() {
       </div>
       <ErrorBox error={res.error} title="Could not load jobs" />
       {!res.data && !res.error && <Loading />}
-      {res.data && res.data.items.length === 0 && <EmptyState title="No jobs" />}
+      {res.data && res.data.items.length === 0 && <EmptyState title="Nothing waiting or failed">Background work is up to date.</EmptyState>}
       {res.data && res.data.items.length > 0 && <Table caption="Jobs" columns={columns} rows={res.data.items} rowKey={(j) => j.id} />}
     </>
   );

@@ -444,7 +444,7 @@ export function DashboardPage() {
     ) : admin && me?.user && !me.user.mfa_enabled && !me.token ? (
       // After the checklist: an admin account without a second factor.
       <Notice kind="warn">
-        Your admin account signs in with a password only. <Link to="/account#mfa">Turn on two-factor sign-in</Link>.
+        Your admin account signs in with a password only. <Link to="/account/two-factor">Turn on two-factor sign-in</Link>.
       </Notice>
     ) : null;
   const o = ov.data;
