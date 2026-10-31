@@ -171,8 +171,8 @@ func TestAskPurge(t *testing.T) {
 func TestAskQuestionQuota(t *testing.T) {
 	f := newAskFixture(t)
 	for i := int64(1); i <= 2; i++ {
-		if n, err := f.s.CountAskQuestion(f.ws1, p64(2), "month"); err != nil || n != i {
-			t.Fatalf("question %d = %d %v", i, n, err)
+		if q, err := f.s.CountAskQuestion(f.ws1, p64(2), "month"); err != nil || q.Used != i || q.Month.Day() != 1 {
+			t.Fatalf("question %d = %+v %v", i, q, err)
 		}
 	}
 	if _, err := f.s.CountAskQuestion(f.ws1, p64(2), "month"); !errors.Is(err, store.ErrAskQuota) {
@@ -181,14 +181,15 @@ func TestAskQuestionQuota(t *testing.T) {
 	if _, err := f.s.CountAskQuestion(f.ws2, p64(0), "month"); !errors.Is(err, store.ErrAskQuota) {
 		t.Errorf("limit 0 (not included): %v", err)
 	}
-	if err := f.s.RefundAskQuestion(f.ws1); err != nil {
+	q, err := f.s.CountAskQuestion(f.ws1, nil, "month")
+	if err != nil || q.Used != 3 {
+		t.Fatalf("no limit = %+v %v", q, err)
+	}
+	if err := f.s.RefundAskQuestion(f.ws1, q); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := f.s.CountAskQuestion(f.ws1, p64(2), "month"); err != nil || n != 2 {
-		t.Errorf("after a refund = %d %v", n, err)
-	}
-	if n, err := f.s.CountAskQuestion(f.ws1, nil, "month"); err != nil || n != 3 {
-		t.Errorf("no limit = %d %v", n, err)
+	if q, err := f.s.CountAskQuestion(f.ws1, p64(3), "month"); err != nil || q.Used != 3 {
+		t.Errorf("after a refund = %+v %v", q, err)
 	}
 	if u, err := f.s.AskUsageNow(f.ws1); err != nil || u.Questions != 3 {
 		t.Errorf("usage = %+v %v", u, err)
@@ -197,20 +198,50 @@ func TestAskQuestionQuota(t *testing.T) {
 		t.Errorf("ws2 usage = %+v", u)
 	}
 
-	// A total allowance (a trial) counts every month, and never renews.
+	// A refund goes back to the question's own month, even after a new
+	// month began: last month loses one, this month keeps its count.
 	sys := tenant.System(context.Background())
+	ws1, _ := tenant.Workspace(f.ws1)
+	last := q
+	if err := f.s.Pool.QueryRow(sys, `INSERT INTO ask_usage (workspace_id, month, questions)
+		VALUES ($1, (date_trunc('month', now() AT TIME ZONE 'UTC') - interval '1 month')::date, 5) RETURNING month`, ws1).Scan(&last.Month); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.RefundAskQuestion(f.ws1, last); err != nil {
+		t.Fatal(err)
+	}
+	var before int64
+	_ = f.s.Pool.QueryRow(sys, `SELECT questions FROM ask_usage WHERE workspace_id = $1 AND month = $2`, ws1, last.Month).Scan(&before)
+	if u, _ := f.s.AskUsageNow(f.ws1); before != 4 || u.Questions != 3 {
+		t.Errorf("refund to last month: last %d, this %d", before, u.Questions)
+	}
+
+	// A total allowance (a trial) counts every month, and never renews.
 	ws2, _ := tenant.Workspace(f.ws2)
 	if _, err := f.s.Pool.Exec(sys, `INSERT INTO ask_usage (workspace_id, month, questions) VALUES ($1, date_trunc('month', now() - interval '40 days')::date, 9)`, ws2); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := f.s.CountAskQuestion(f.ws2, p64(10), "total"); err != nil || n != 10 {
-		t.Errorf("10th of a total of 10 = %d %v", n, err)
+	if q, err := f.s.CountAskQuestion(f.ws2, p64(10), "total"); err != nil || q.Used != 10 {
+		t.Errorf("10th of a total of 10 = %+v %v", q, err)
 	}
 	if _, err := f.s.CountAskQuestion(f.ws2, p64(10), "total"); !errors.Is(err, store.ErrAskQuota) {
 		t.Errorf("11th of a total of 10: %v", err)
 	}
-	if n, err := f.s.CountAskQuestion(f.ws2, p64(10), "month"); err != nil || n != 2 {
-		t.Errorf("the same usage as a monthly limit = %d %v", n, err)
+	if q, err := f.s.CountAskQuestion(f.ws2, p64(10), "month"); err != nil || q.Used != 2 {
+		t.Errorf("the same usage as a monthly limit = %+v %v", q, err)
+	}
+}
+
+// Workspace ids beyond 32 bits lock without being cut short.
+func TestAskLockKeyIsWide(t *testing.T) {
+	f := newAskFixture(t)
+	var a, b int64
+	if err := f.s.Pool.QueryRow(tenant.System(context.Background()), `SELECT hashtextextended('stackurity-ask-questions' || ':' || 4294967297::bigint::text, 0),
+		hashtextextended('stackurity-ask-questions' || ':' || 1::bigint::text, 0)`).Scan(&a, &b); err != nil {
+		t.Fatal(err)
+	}
+	if a == b {
+		t.Error("workspace 2^32+1 and 1 share a lock")
 	}
 }
 
