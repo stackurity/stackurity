@@ -85,7 +85,18 @@ func openStore(ctx context.Context) (*store.Store, error) {
 		pool.Close()
 		return nil, err
 	}
-	return store.New(pool), nil
+	st := store.New(pool)
+	st.StaleAfter = staleAfterSetting()
+	return st, nil
+}
+
+// staleAfterSetting is how long an agent may stay silent before its server
+// is stale (STACKURITY_STALE_AFTER, 48 hours by default).
+func staleAfterSetting() time.Duration {
+	if d, err := time.ParseDuration(os.Getenv("STACKURITY_STALE_AFTER")); err == nil && d > 0 {
+		return d
+	}
+	return store.DefaultStaleAfter
 }
 
 func serverCmd() *cobra.Command {
@@ -524,6 +535,8 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 		if err != nil {
 			return err
 		}
+		// What it collects reports through this integration, on its schedule.
+		ctx = store.WithReportSource(ctx, store.ReportSource{Source: store.SourceIntegration, IntegrationID: in.ID})
 		runErr := func() error {
 			token, err := res.Resolve(ctx, in.SecretRef)
 			if err != nil {
@@ -587,7 +600,7 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 					// Images the plugin found running are read by the image
 					// scanner, in the order the plugin gave (most important first).
 					if ic, ok := image.ReferenceOnly(pb); ok {
-						scans = append(scans, store.ImageScan{AssetID: r.AssetID, Image: ic.Image, Platform: ic.Platform})
+						scans = append(scans, store.ImageScan{AssetID: r.AssetID, Image: ic.Image, Platform: ic.Platform, IntegrationID: in.ID})
 					}
 				}
 				if limit := cfg.ImageScanLimit(); len(scans) > 0 && limit > 0 {
@@ -634,6 +647,8 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 		if err := json.Unmarshal(payload, &p); err != nil {
 			return err
 		}
+		// The image reports through the integration that found it running.
+		ctx = store.WithReportSource(ctx, store.ReportSource{Source: store.SourceIntegration, IntegrationID: p.IntegrationID})
 		cfg := image.Config{Image: p.Image, Platform: p.Platform}
 		b, err := imageScanner.Scan(ctx, cfg, "")
 		if err == nil {
@@ -679,10 +694,7 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 		}
 		return nil
 	})
-	staleAfter := 48 * time.Hour
-	if d, err := time.ParseDuration(os.Getenv("STACKURITY_STALE_AFTER")); err == nil && d > 0 {
-		staleAfter = d
-	}
+	staleAfter := staleAfterSetting()
 	// Check again: complete the checks whose fresh report has been
 	// evaluated (all workspaces at once; the query reads open checks only).
 	w.Every("complete-checks", 30*time.Second, func(ctx context.Context) error {

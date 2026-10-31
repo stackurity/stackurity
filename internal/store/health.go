@@ -210,14 +210,35 @@ func (s *Store) healthGroup(ctx context.Context, prod bool, agg, items string, v
 }
 
 // SilentCollectors are assets that stopped reporting (collection status
-// stale): their collector, agent or integration sends nothing any more.
-func (s *Store) SilentCollectors(ctx context.Context, viewerWS int64, limit int) (*HealthGroup, error) {
-	return s.healthGroup(ctx, true, `SELECT count(*), count(*) FILTER (WHERE `+productionAsset+`), count(DISTINCT a.workspace_id), max(a.last_seen)
-		FROM assets a WHERE a.merged_into IS NULL AND a.collection_status = 'stale'`,
-		`SELECT a.id, a.name, a.kind || COALESCE(' via ' || (SELECT c.collector_id FROM collections c WHERE c.asset_id = a.id
-		   ORDER BY c.received_at DESC LIMIT 1), ''), a.last_seen, '', `+productionAsset+`
-		FROM assets a WHERE a.merged_into IS NULL AND a.collection_status = 'stale' AND a.workspace_id = $2
-		ORDER BY 6 DESC, a.last_seen DESC, a.id LIMIT $3`, viewerWS, limit)
+// stale) from source: the agent's servers and applications (source
+// "agent"), or scans and uploads past their usual cadence ("scan"). Assets
+// scanned once, and those an integration reports, are not counted: nothing
+// more is expected of the first, and a failing integration is its own
+// problem.
+func (s *Store) SilentCollectors(ctx context.Context, source string, viewerWS int64, limit int) (*HealthGroup, error) {
+	sources := []string{SourceAgent}
+	if source != SourceAgent {
+		sources = []string{SourceScan, SourceManual}
+	}
+	const silent = `a.merged_into IS NULL AND a.collection_status = 'stale' AND a.report_source = ANY($2) AND a.report_due_after IS NOT NULL`
+	g := &HealthGroup{}
+	if err := s.Pool.QueryRow(ctx, `SELECT count(*), count(*) FILTER (WHERE `+productionAsset+`), count(DISTINCT a.workspace_id), max(a.last_seen)
+		FROM assets a WHERE `+silent, defaultProductionEnvs(), sources).Scan(&g.Count, &g.Severe, &g.Workspaces, &g.LastSuccess); err != nil {
+		return nil, err
+	}
+	if g.Count == 0 || viewerWS == 0 || limit <= 0 {
+		return g, nil
+	}
+	rows, err := s.Pool.Query(ctx, `SELECT a.id, a.name, a.kind || COALESCE(', usually every ' || CASE
+		    WHEN a.report_usual < interval '36 hours' THEN round(extract(epoch FROM a.report_usual) / 3600) || ' h'
+		    ELSE round(extract(epoch FROM a.report_usual) / 86400) || ' d' END, ''), a.last_seen, '', `+productionAsset+`
+		FROM assets a WHERE `+silent+` AND a.workspace_id = $3
+		ORDER BY 6 DESC, a.last_seen DESC, a.id LIMIT $4`, defaultProductionEnvs(), sources, viewerWS, limit)
+	if err != nil {
+		return nil, err
+	}
+	g.Items, err = pgx.CollectRows(rows, pgx.RowToStructByPos[HealthItem])
+	return g, err
 }
 
 // ProductionCoverageGaps are production assets with a collection scope that

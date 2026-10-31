@@ -87,6 +87,7 @@ const (
 	docsTasks        = "docs/reliability.md#periodic-tasks-alert-dispatcher-digests-feed-and-integration-scheduling-housekeeping"
 	docsNotify       = "docs/install.md#notifications"
 	docsCollect      = "docs/install.md#collecting-inventory"
+	docsReporting    = "docs/operations.md#assets-that-stop-reporting"
 	docsRepos        = "docs/install.md#repositories"
 	docsWorkspaces   = "docs/install.md#workspaces"
 	docsVerification = "docs/verification.md"

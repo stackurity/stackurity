@@ -12,6 +12,8 @@ import { changeText, fixesFrom, FixKindIcon, FixPlaces, urgencyOf } from "../com
 import { PackSuggestions } from "../components/PackSuggestions";
 import { fixPlaces, FixVerify, useCheckOptions, type CheckOptions } from "../components/FixVerify";
 import { IconHelp } from "../components/Icons";
+import { OneOffLine } from "../components/Reporting";
+import { notReportingText } from "../reporting";
 import { Code, EmptyState, ErrorBox, Loading, Notice, PageHeader, RelativeTime } from "../components/ui";
 
 const TOP = 5;
@@ -261,11 +263,12 @@ export function HomePage() {
             <>
               {" · "}
               <Link to="/assets?status=stale" className="text-bad">
-                {plural(stale, "asset")} stopped reporting
+                {notReportingText(o.not_reporting) ?? `${plural(stale, "asset")} not reporting`}
               </Link>
             </>
           )}
         </p>
+        <OneOffLine groups={o.one_off} />
       </header>
       <ErrorBox error={plan.error ?? top.error} title="Could not load the fixes" />
       {s && <IntelBanners s={s} />}

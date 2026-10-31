@@ -180,6 +180,16 @@ func (d *Dispatcher) syncPagerDuty(ctx context.Context, cfg ChannelConfig, secre
 		}
 		return d.Store.IssueSynced(bg, link.ID, link.SyncedPriority, link.SyncedFindings, link.SyncedAssets, true)
 	}
+	// Open again after its alert was resolved (a server that went quiet
+	// again within a day of recovering): page under the next dedup key, as
+	// for a rise in priority. The resolved alert is left as it is.
+	if link.ResolvedSynced {
+		next := nextPagerDutyKey(base, link.IssueKey)
+		if err := send("trigger", next); err != nil {
+			return err
+		}
+		return d.Store.ReopenIssue(bg, link.ID, next, "", "", in.Priority, in.FindingCount, in.AssetCount)
+	}
 	// Page again when it is worth it: the priority rose, it escalated, or
 	// new findings arrived after it was acknowledged. A trigger with the
 	// open alert's dedup key would only be added to that alert's log (an
@@ -257,10 +267,63 @@ func (d *Dispatcher) syncServiceNow(ctx context.Context, sn *snClient, ch *store
 			}
 		}
 	}
+	if in.Status == "open" && link.ResolvedSynced {
+		return d.reopenServiceNow(ctx, sn, ws, link, in)
+	}
 	if err := d.updateServiceNow(ctx, sn, link, in, del, attempts, msg); err != nil {
 		return err
 	}
 	return created
+}
+
+// reopenServiceNow creates a new record for an incident that opened again
+// after its record was resolved, naming the previous one. Not reopening the
+// old record: a resolved or closed incident is usually read-only to
+// integrations (its state is set by people or by the auto-close rule), and
+// a new record goes through assignment as a new incident should. Its
+// correlation_id names the open period, so a retry finds it.
+func (d *Dispatcher) reopenServiceNow(ctx context.Context, sn *snClient, ws int64, link *store.IssueLink, in *store.Incident) error {
+	label := reopenLabel(ws, in)
+	rec, err := sn.find(ctx, label)
+	if err != nil {
+		return err
+	}
+	if rec == nil {
+		brief, err := d.Store.IncidentBrief(ctx, in.ID, jiraAffectedLimit)
+		if err != nil {
+			return err
+		}
+		fields := d.serviceNowFields(sn, in, brief, label)
+		fields["description"] = reopenNote(link.IssueKey) + "\n\n" + fields["description"].(string)
+		if rec, err = sn.create(ctx, fields); err != nil {
+			return err
+		}
+	}
+	sysID, number := rec.str("sys_id"), rec.str("number")
+	if number == "" {
+		number = sysID
+	}
+	return d.Store.ReopenIssue(context.WithoutCancel(ctx), link.ID, number, sn.recordURL(sysID), sysID, in.Priority, in.FindingCount, in.AssetCount)
+}
+
+// serviceNowFields are a new record's fields for an incident.
+func (d *Dispatcher) serviceNowFields(sn *snClient, in *store.Incident, brief *store.IncidentBrief, label string) map[string]any {
+	fields := map[string]any{}
+	for k, v := range sn.cfg.Fields {
+		fields[k] = v
+	}
+	fields["short_description"] = clip(issueSummary(*in), snMaxShort)
+	fields["description"] = renderText(d.issueDescription(*in, brief))
+	fields["urgency"] = sn.cfg.snUrgency(in.Priority)
+	fields["impact"] = sn.cfg.snImpact(in.Priority)
+	fields["correlation_id"] = label
+	fields["correlation_display"] = "Stackurity"
+	for k, v := range map[string]string{"assignment_group": sn.cfg.AssignmentGroup, "category": sn.cfg.Category, "subcategory": sn.cfg.Subcategory} {
+		if v != "" {
+			fields[k] = v
+		}
+	}
+	return fields
 }
 
 // createServiceNow creates the incident's record, or finds the one an
@@ -285,21 +348,7 @@ func (d *Dispatcher) createServiceNow(ctx context.Context, sn *snClient, ch *sto
 			release()
 			return nil, err
 		}
-		fields := map[string]any{}
-		for k, v := range sn.cfg.Fields {
-			fields[k] = v
-		}
-		fields["short_description"] = clip(issueSummary(*in), snMaxShort)
-		fields["description"] = renderText(d.issueDescription(*in, brief))
-		fields["urgency"] = sn.cfg.snUrgency(in.Priority)
-		fields["impact"] = sn.cfg.snImpact(in.Priority)
-		fields["correlation_id"] = label
-		fields["correlation_display"] = "Stackurity"
-		for k, v := range map[string]string{"assignment_group": sn.cfg.AssignmentGroup, "category": sn.cfg.Category, "subcategory": sn.cfg.Subcategory} {
-			if v != "" {
-				fields[k] = v
-			}
-		}
+		fields := d.serviceNowFields(sn, in, brief, label)
 		if rec, err = sn.create(ctx, fields); err != nil {
 			release()
 			return nil, err
@@ -341,7 +390,7 @@ func (d *Dispatcher) updateServiceNow(ctx context.Context, sn *snClient, link *s
 		fields := map[string]any{
 			"state":       sn.cfg.snResolveState(),
 			"close_code":  sn.cfg.snCloseCode(),
-			"close_notes": "Resolved in Stackurity: no open findings remain for this incident.\n\n" + footer,
+			"close_notes": resolvedNote(in, msg) + "\n\n" + footer,
 		}
 		if _, err := sn.update(ctx, link.RemoteID, fields); err != nil {
 			return err

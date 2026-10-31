@@ -146,6 +146,14 @@ func incidentInProjects(r store.Route, in store.Incident) bool {
 	if in.Kind != "collection" && in.Kind != "coverage" {
 		return false
 	}
+	if rd, ok := readReporting(in); ok {
+		for _, id := range rd.AssetIDs {
+			if r.ProjectAssets[id] {
+				return true
+			}
+		}
+		return false
+	}
 	rest, ok := strings.CutPrefix(in.Key, "asset:")
 	if !ok {
 		return false
@@ -578,9 +586,7 @@ func (d *Dispatcher) urgentMessage(r store.Route, incs []store.Incident, rows ma
 	if len(back) > 0 {
 		sections = append(sections, Section{Title: "Came back after a fix", Items: d.regressedItems(back, infos)})
 	}
-	if len(system) > 0 {
-		sections = append(sections, Section{Title: "Stackurity needs attention", Items: d.systemItems(system)})
-	}
+	sections = append(sections, d.systemSections(system)...)
 	var title string
 	switch {
 	case len(assets) == 1:
@@ -592,7 +598,7 @@ func (d *Dispatcher) urgentMessage(r store.Route, incs []store.Incident, rows ma
 	case len(back) > 1:
 		title = fmt.Sprintf("%s on %s", cameBack(nBack), plural(len(back), "asset"))
 	default:
-		title = fmt.Sprintf("Stackurity needs attention: %s", plural(len(system), "problem"))
+		title = systemTitle(system)
 	}
 	if len(assets) > 0 && nBack > 0 {
 		title += fmt.Sprintf(", %s came back", thousands(nBack))
@@ -820,6 +826,9 @@ type summaryData struct {
 	// routes whose summaries list them.
 	behind      []store.BehindInstall
 	behindReady bool
+	// oneOff: assets scanned once, for the weekly nudge (loaded on demand).
+	oneOff     []store.OneOffGroup
+	oneOffRead bool
 }
 
 func (s *summaryData) updates() ([]store.BehindInstall, error) {
@@ -1157,10 +1166,15 @@ func (d *Dispatcher) summaryMessage(r store.Route, weekly bool, data *summaryDat
 			}
 		}
 	}
-	if len(sys) > 0 {
-		sections = append(sections, Section{Title: "Stackurity needs attention", Items: d.systemItems(sys)})
-	}
+	sections = append(sections, d.systemSections(sys)...)
 	counts["problems"] = len(sys)
+	// Assets scanned once: a nudge, weekly, for routes not limited to a
+	// project or team.
+	if weekly && len(r.ProjectIDs) == 0 && len(r.TeamIDs) == 0 {
+		if it, ok := d.oneOffItem(data); ok {
+			sections = append(sections, Section{Title: "Scanned once", Items: []Item{it}})
+		}
+	}
 
 	// Updates available, for routes that asked: weekly summaries only,
 	// after everything else, never a finding or an urgent item.

@@ -662,6 +662,13 @@ type SystemIncident struct {
 	Title       string
 	Priority    string
 	Detail      map[string]any
+	// Reopen is a resolved incident to open again instead of a new one
+	// (an asset that went quiet again within a day of recovering).
+	Reopen int64
+	// Members are the assets a reporting incident lists, servers and their
+	// applications; their per-asset incidents from before 0.13.10 are
+	// replaced by it.
+	Members []int64
 }
 
 // SyncSystemIncidents opens incidents for current system problems and
@@ -674,15 +681,55 @@ func (s *Store) SyncSystemIncidents(ctx context.Context, current []SystemInciden
 		keys := make([]string, 0, len(current))
 		for _, c := range current {
 			d, _ := json.Marshal(c.Detail)
-			if _, err := tx.Exec(ctx, `INSERT INTO incidents AS i (kind, key, owner_team_id, title, priority, detail, finding_count, asset_count)
+			keys = append(keys, c.Kind+"|"+c.Key)
+			// An incident reopened keeps what was announced: people are not
+			// told again unless its priority rises.
+			if c.Reopen > 0 {
+				// detail.reopened counts the open periods after the first:
+				// trackers get a new record for each (store.ReopenIssue).
+				tag, err := tx.Exec(ctx, `UPDATE incidents i SET status = 'open', resolved_at = NULL, resolved_notified = false,
+					title = $2, priority = $3, updated_at = now(),
+					detail = $4::jsonb || jsonb_build_object('reopened', COALESCE((i.detail->>'reopened')::int, 0) + 1)
+					WHERE i.id = $1 AND i.status = 'resolved' AND NOT EXISTS (SELECT 1 FROM incidents o
+					  WHERE o.status = 'open' AND o.kind = i.kind AND o.key = i.key AND COALESCE(o.owner_team_id, 0) = COALESCE(i.owner_team_id, 0))`,
+					c.Reopen, c.Title, c.Priority, d)
+				if err != nil {
+					return err
+				}
+				if tag.RowsAffected() == 1 {
+					if err := settleLegacyReporting(ctx, tx, c, c.Reopen, false); err != nil {
+						return err
+					}
+					continue
+				}
+			}
+			var id int64
+			var inserted bool
+			if err := tx.QueryRow(ctx, `INSERT INTO incidents AS i (kind, key, owner_team_id, title, priority, detail, finding_count, asset_count)
 				VALUES ($1,$2,$3,$4,$5,$6,0,0)
 				ON CONFLICT (workspace_id, kind, key, COALESCE(owner_team_id, 0)) WHERE status = 'open' DO UPDATE SET
-				  title = EXCLUDED.title, detail = EXCLUDED.detail,
-				  priority = EXCLUDED.priority, updated_at = CASE WHEN i.priority <> EXCLUDED.priority THEN now() ELSE i.updated_at END`,
-				c.Kind, c.Key, c.OwnerTeamID, c.Title, c.Priority, d); err != nil {
+				  title = EXCLUDED.title,
+				  detail = EXCLUDED.detail || jsonb_strip_nulls(jsonb_build_object('people_announced', i.detail->'people_announced',
+				    'reopened', i.detail->'reopened')),
+				  priority = EXCLUDED.priority, updated_at = CASE WHEN i.priority <> EXCLUDED.priority THEN now() ELSE i.updated_at END
+				RETURNING i.id, xmax = 0`,
+				c.Kind, c.Key, c.OwnerTeamID, c.Title, c.Priority, d).Scan(&id, &inserted); err != nil {
 				return err
 			}
-			keys = append(keys, c.Kind+"|"+c.Key)
+			if err := settleLegacyReporting(ctx, tx, c, id, inserted); err != nil {
+				return err
+			}
+		}
+		// Per-asset incidents from before 0.13.10 of assets no longer
+		// expected to report close saying why, with no recovery message.
+		if _, err := tx.Exec(ctx, `UPDATE incidents i SET resolved_notified = true,
+			  detail = i.detail || jsonb_build_object('resolution', CASE WHEN a.report_source = 'integration' THEN 'integration' ELSE 'one_off' END,
+			    'asset_kind', a.kind)
+			FROM assets a
+			WHERE i.status = 'open' AND i.kind = 'collection' AND i.key ~ '^asset:[0-9]+$' AND a.id = substring(i.key FROM 7)::bigint
+			  AND (a.report_override = 'one_off' AND a.report_source <> 'agent' OR a.report_source = 'integration'
+			    OR a.report_source IN ('scan', 'manual') AND a.report_runs IS NOT NULL AND a.report_due_after IS NULL)`); err != nil {
+			return err
 		}
 		_, err := tx.Exec(ctx, `UPDATE incidents SET status = 'resolved', resolved_at = now(), updated_at = now()
 			WHERE status = 'open' AND kind IN ('feed', 'collection', 'coverage', 'platform') AND NOT (kind || '|' || key = ANY($1))`, keys)
@@ -721,24 +768,17 @@ func (s *Store) DetectSystemProblems(ctx context.Context) ([]SystemIncident, err
 	}
 	rows.Close()
 
-	rows, err = s.Pool.Query(ctx, `SELECT id, name, owner_team_id, last_seen FROM assets
-		WHERE merged_into IS NULL AND collection_status = 'stale'`)
+	// Servers, repositories, images and uploads that are overdue, grouped
+	// by cause (reporting_incidents.go). Assets an integration reports are
+	// left to its own "Integration is failing" incident.
+	if err := s.RefreshReporting(ctx, nil); err != nil {
+		return nil, err
+	}
+	rep, err := s.reportingProblems(ctx)
 	if err != nil {
 		return nil, err
 	}
-	for rows.Next() {
-		var id int64
-		var name string
-		var team *int64
-		var seen time.Time
-		if err := rows.Scan(&id, &name, &team, &seen); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		out = append(out, SystemIncident{Kind: "collection", Key: fmt.Sprintf("asset:%d", id), OwnerTeamID: team,
-			Title: "Asset " + name + " has stopped reporting", Priority: "P3", Detail: map[string]any{"asset_id": id, "last_seen": seen}})
-	}
-	rows.Close()
+	out = append(out, rep...)
 
 	rows, err = s.Pool.Query(ctx, `SELECT i.id, i.name, a.owner_team_id, i.last_error, i.last_success FROM integrations i
 		LEFT JOIN assets a ON a.id = i.asset_id

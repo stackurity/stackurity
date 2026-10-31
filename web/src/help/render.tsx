@@ -29,7 +29,7 @@ export function Inline({ text }: { text: string }) {
 
 export function RenderBlock({ b }: { b: Block }): ReactNode {
   if ("p" in b) return <p><Inline text={b.p} /></p>;
-  if ("h" in b) return <h3 className="help-h">{b.h}</h3>;
+  if ("h" in b) return <h3 className="help-h" id={b.id}>{b.h}</h3>;
   if ("steps" in b)
     return (
       <ol className="help-steps">

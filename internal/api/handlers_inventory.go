@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -42,6 +43,15 @@ func (s *Server) body(w http.ResponseWriter, r *http.Request) (io.Reader, error)
 	return rd, nil
 }
 
+// reportSource: an upload with an API token is a scan (the CLI, a CI job,
+// the agent); one made in the dashboard is a manual upload.
+func reportSource(r *http.Request, tokenID int64) context.Context {
+	if tokenID > 0 {
+		return r.Context()
+	}
+	return store.WithReportSource(r.Context(), store.ReportSource{Source: store.SourceManual})
+}
+
 func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 	rd, err := s.body(w, r)
 	if err != nil {
@@ -76,7 +86,7 @@ func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 	if p := principal(r); p.Token != nil {
 		tokenID = p.Token.ID
 	}
-	res, err := s.Store.Ingest(r.Context(), &b, tokenID)
+	res, err := s.Store.Ingest(reportSource(r, tokenID), &b, tokenID)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -221,7 +231,7 @@ func (s *Server) importSBOM(w http.ResponseWriter, r *http.Request) {
 	if p.Token != nil {
 		tokenID = p.Token.ID
 	}
-	res, err := s.Store.Ingest(r.Context(), b, tokenID)
+	res, err := s.Store.Ingest(reportSource(r, tokenID), b, tokenID)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -359,6 +369,10 @@ func (s *Server) updateAsset(w http.ResponseWriter, r *http.Request) {
 	}
 	if u.Name != nil && strings.TrimSpace(*u.Name) == "" {
 		s.fail(w, r, badRequest("name cannot be empty"))
+		return
+	}
+	if u.ReportOverride != nil && !store.ValidReportOverride(*u.ReportOverride) {
+		s.fail(w, r, badRequest("report_override must be auto, daily, weekly or one_off"))
 		return
 	}
 	if _, err := s.Store.GetAsset(r.Context(), id); err != nil {

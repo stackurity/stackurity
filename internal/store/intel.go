@@ -956,6 +956,10 @@ type Finding struct {
 	// upstream ids), as chosen at the last prioritisation (chooseEPSS). It
 	// differs from Key when the advisory covers several CVEs.
 	EPSSCVE *string `json:"epss_cve"`
+	// AsOf is the date of the only scan of an asset no further report is
+	// expected of (scanned once): the finding is true as of then. Null for
+	// assets that report regularly.
+	AsOf *time.Time `json:"as_of"`
 
 	// VEX is the latest imported VEX statement about this component version
 	// and vulnerability (null when none): informational for affected, fixed
@@ -1023,7 +1027,8 @@ const findingCols = `f.id, f.kind, f.key, f.inventory_id, f.asset_id, a.name, a.
 	COALESCE(f.status = 'open' AND f.state IN ('new', 'acknowledged', 'in_progress') AND f.fix_due < now(), false), f.fix_group,
 	f.priority_policy, f.regressed_at, f.until_fix, f.ignore_reason, f.exception_id, ` + displayState + `,
 	COALESCE(sc.result, ''), COALESCE(sc.reason, ''), f.resolution_kind, f.resolution_detail,
-	ep.score, ep.percentile, ep.score_date, ep.model_version, ep.cve`
+	ep.score, ep.percentile, ep.score_date, ep.model_version, ep.cve,
+	CASE WHEN ` + oneOffSQL + ` THEN a.last_seen END`
 
 var findingFrom = ` FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
 	JOIN components c ON c.id = f.component_id JOIN inventory i ON i.id = f.inventory_id

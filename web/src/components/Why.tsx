@@ -40,6 +40,7 @@ export function WhyMatched({ why }: { why: FindingWhy }) {
         )}
       </p>
       <p className="small">{why.evidence_state_text}</p>
+      {why.as_of_text && <p className="small">{why.as_of_text}</p>}
       {why.missing_information.length > 0 && (
         <div className="alert alert-warn" role="note">
           <strong>Missing information</strong>

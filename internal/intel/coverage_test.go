@@ -291,6 +291,11 @@ func TestCoverageInvariants(t *testing.T) {
 				if _, err := st.Pool.Exec(ctx, `UPDATE assets SET last_seen = now() - interval '30 days' WHERE id = $1`, asset); err != nil {
 					t.Fatal(err)
 				}
+				// Expected to report (an upload reported once is one-off and
+				// never stale): daily, so 30 days quiet is overdue.
+				if err := st.SetReportOverride(ctx, asset, store.ReportDaily); err != nil {
+					t.Fatal(err)
+				}
 				if _, err := st.MarkStaleAssets(ctx, 24*time.Hour); err != nil {
 					t.Fatal(err)
 				}

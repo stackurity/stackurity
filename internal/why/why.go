@@ -51,6 +51,10 @@ type Explanation struct {
 	// means for this finding.
 	EvidenceState string `json:"evidence_state"`
 	StateText     string `json:"evidence_state_text"`
+	// AsOf is the date of the only scan of an asset scanned once: the
+	// finding is true as of then, and AsOfText says so.
+	AsOf     *time.Time `json:"as_of,omitempty"`
+	AsOfText string     `json:"as_of_text,omitempty"`
 	// Missing says what exactly would resolve a finding that is not
 	// confirmed. Empty when confirmed.
 	Missing []string `json:"missing_information"`
@@ -371,6 +375,15 @@ func Build(in Input, now time.Time) Explanation {
 			e.StateText
 		e.Missing = append(e.Missing, "Agreement between the matcher and the independent second check, which disagreed: "+sc.Reason+
 			". Compare the installed version with the advisory record. The disagreement stands until the match or the record changes.")
+	}
+	if f.AsOf != nil && f.Verification != "rejected" {
+		e.AsOf = f.AsOf
+		e.AsOfText = fmt.Sprintf("As of %s: the asset was scanned once, and its results stay as of that scan. "+
+			"Nothing more is expected from it, so it is not scored as stale; set up a scheduled scan to keep it current.",
+			f.AsOf.UTC().Format("2 Jan 2006"))
+		if days := int(now.Sub(*f.AsOf).Hours() / 24); now.Sub(*f.AsOf) >= store.OneOffAging {
+			e.AsOfText += fmt.Sprintf(" These results are %d days old.", days)
+		}
 	}
 	if e.Source.Stale && f.Verification != "rejected" {
 		e.Missing = append(e.Missing, fmt.Sprintf("A current copy of the source. %s was %s and is stale; a successful refresh would confirm or change this result.",

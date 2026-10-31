@@ -84,7 +84,7 @@ func TestObjectProblems(t *testing.T) {
 	for k, w := range map[[2]string]want{
 		{"integration", "failing"}:            {count: 2, hidden: 1, items: 1, item: "repo-mine", err: "authentication failed"},
 		{"notification", "delivery"}:          {count: 2, hidden: 1, items: 1, item: "hook-mine", err: "HTTP 500 from hook-mine"},
-		{"collector", "silent"}:               {count: 3, hidden: 1, items: 2, item: "prod-web-mine"},
+		{"collector", "silent-agent"}:         {count: 3, hidden: 1, items: 2, item: "prod-web-mine"},
 		{"coverage", "production-collection"}: {count: 2, hidden: 1, items: 1, item: "prod-web-mine", err: "dpkg not readable"},
 		{"coverage", "production-evaluation"}: {count: 2, hidden: 1, items: 1, item: "prod-web-mine", err: "no vulnerability source for generic"},
 		{"jobs", "evaluate"}:                  {count: 1},
@@ -110,7 +110,7 @@ func TestObjectProblems(t *testing.T) {
 	if p := find(r, "integration", "failing"); p != nil && (p.LastSuccess == nil || !strings.Contains(p.Title, "1 of them")) {
 		t.Errorf("integration: %+v", p)
 	}
-	if p := find(r, "collector", "silent"); p != nil && !strings.Contains(p.Title, "2 of them production") {
+	if p := find(r, "collector", "silent-agent"); p != nil && !strings.Contains(p.Title, "2 of them production") {
 		t.Errorf("silent collectors: production count wrong: %s", p.Title)
 	}
 

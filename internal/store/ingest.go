@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -156,6 +155,9 @@ func (s *Store) Ingest(ctx context.Context, b *model.ObservationBatch, tokenID i
 		}
 		if _, err = tx.Exec(ctx, `UPDATE assets SET collection_status = $2 WHERE id = $1`, assetID, status); err != nil {
 			return err
+		}
+		if err := recordReport(ctx, tx, assetID, reportSourceOf(ctx, b, tokenID), s.staleAfter()); err != nil {
+			return fmt.Errorf("reporting: %w", err)
 		}
 		// Queue re-evaluation of this asset against current intelligence. A
 		// short delay lets several batches for one asset share one run; a run
@@ -354,13 +356,4 @@ func nonNil(m map[string]string) map[string]string {
 		return map[string]string{}
 	}
 	return m
-}
-
-// MarkStaleAssets flags assets not seen within maxAge (FR-03: stale data is
-// visible, never healthy). Returns the number newly marked.
-func (s *Store) MarkStaleAssets(ctx context.Context, maxAge time.Duration) (int64, error) {
-	tag, err := s.Pool.Exec(ctx, `UPDATE assets SET collection_status = 'stale'
-		WHERE merged_into IS NULL AND collection_status NOT IN ('stale', 'removed') AND last_seen < now() - make_interval(secs => $1)`,
-		maxAge.Seconds())
-	return tag.RowsAffected(), err
 }

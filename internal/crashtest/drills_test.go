@@ -55,6 +55,15 @@ func (e *env) incident(kind, key string) string {
 	return e.str(`SELECT status FROM incidents WHERE kind = $1 AND key = $2 ORDER BY id DESC LIMIT 1`, kind, key)
 }
 
+// reportingIncident is the status of the latest reporting incident that
+// lists an asset (store/reporting_incidents.go), and its title.
+func (e *env) reportingIncident(asset int64) (status, title string) {
+	return e.str(`SELECT status FROM incidents WHERE kind = 'collection' AND key LIKE 'reporting:%' AND detail->'asset_ids' @> to_jsonb($1::bigint)
+		ORDER BY id DESC LIMIT 1`, asset),
+		e.str(`SELECT title FROM incidents WHERE kind = 'collection' AND key LIKE 'reporting:%' AND detail->'asset_ids' @> to_jsonb($1::bigint)
+		ORDER BY id DESC LIMIT 1`, asset)
+}
+
 // OSV stops answering for longer than the Debian feed's freshness limit
 // (6 hours; the last success is moved back instead of waiting). The feed is
 // reported failing and stale in metrics, Platform health and a feed
@@ -214,7 +223,8 @@ func TestNotificationProviderOutage(t *testing.T) {
 // An agent stops reporting for longer than STACKURITY_STALE_AFTER (48
 // hours; its last report is moved back instead of waiting). The asset is
 // marked stale, counted in metrics, its coverage says the inventory may be
-// out of date, and a collection incident opens; its findings stay. When the
+// out of date, and a reporting incident opens ("Server web-1: the
+// Stackurity agent hasn't reported since ..."); its findings stay. When the
 // agent reports again, all of that clears.
 func TestAgentStopsReporting(t *testing.T) {
 	e := newEnv(t)
@@ -226,8 +236,12 @@ func TestAgentStopsReporting(t *testing.T) {
 	s := e.start()
 	waitFor(t, 60*time.Second, "the finding, the stale asset and its incident", func() bool {
 		v, _ := metric(s.scrape(), "stackurity_assets_stale")
-		return v == 1 && len(e.findings(host)) == 1 && e.incident("collection", "asset:"+strconv.FormatInt(host, 10)) == "open"
+		status, _ := e.reportingIncident(host)
+		return v == 1 && len(e.findings(host)) == 1 && status == "open"
 	})
+	if _, title := e.reportingIncident(host); !strings.HasPrefix(title, "Server web-1: the Stackurity agent hasn't reported since ") {
+		t.Errorf("incident title %q", title)
+	}
 	cov, err := e.st.AssetCoverage(ws, host)
 	if err != nil {
 		t.Fatal(err)
@@ -243,7 +257,8 @@ func TestAgentStopsReporting(t *testing.T) {
 	}
 	waitFor(t, 30*time.Second, "the asset to be current and its incident to resolve", func() bool {
 		v, _ := metric(s.scrape(), "stackurity_assets_stale")
-		return v == 0 && e.incident("collection", "asset:"+strconv.FormatInt(host, 10)) == "resolved"
+		status, _ := e.reportingIncident(host)
+		return v == 0 && status == "resolved"
 	})
 	if after := e.findings(host); !maps.Equal(after, before) {
 		t.Errorf("findings after the agent came back: %v, before %v", after, before)
