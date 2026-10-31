@@ -154,22 +154,54 @@ People sign in with an email and password, or with [single sign-on](#single-sign
 
 ### Two-factor sign-in
 
-Anyone can turn on two-factor sign-in under **Your account → Two-factor sign-in**: after their password, Stackurity asks for a six-digit code from an authenticator app (TOTP, RFC 6238: 1Password, Google Authenticator, Microsoft Authenticator, Authy and others). Setting it up asks for the password again, shows a QR code (and the key as text), and is confirmed with a code. It then shows ten one-time **recovery codes** once; each signs in once instead of a code, for a lost phone. **New recovery codes** replaces the set.
+Each person sets up their second factors under **Your account → Two-factor methods**. Passkeys come first:
 
-- The secret is encrypted with `STACKURITY_SECRET_KEY` (AES-256-GCM, as stored secrets are), so two-factor sign-in needs that key; without it the page says so. Recovery codes are stored as hashes.
+- **Passkeys and security keys** (WebAuthn): a passkey in the device's platform authenticator (Touch ID, Face ID, Windows Hello, Android), in a password manager, or on a hardware key such as a YubiKey. People can register several, each with a name ("MacBook Touch ID", "YubiKey 5"), see when each was added and last used, rename them and remove them. A passkey is checked by the browser against this server's domain, so a look-alike site cannot use it: it is **phishing-resistant**.
+- **An authenticator app** (TOTP, RFC 6238: 1Password, Google Authenticator, Microsoft Authenticator, Authy and others): a six-digit code after the password. Setting it up asks for the password again, shows a QR code (and the key as text), and is confirmed with a code.
+- **Recovery codes**: ten one-time codes, shown once when the first passkey or app is set up; each signs in once instead of a passkey or code, for a lost device. **New recovery codes** replaces the set. They are removed with the last passkey or app.
+
+**Signing in.** After the password, Stackurity asks for the second factor, offering a passkey first. **Sign in with a passkey** on the sign-in page signs in without an email or password: the browser offers the passkeys it holds for this server, and the passkey must verify the person (fingerprint, face or PIN), so it counts as both factors on its own. A passkey used after a password only needs to be present.
+
+**What passkeys need.** The relying party ID of every passkey is the host of `STACKURITY_BASE_URL`; it is never hard-coded. Passkeys therefore need `STACKURITY_BASE_URL` set to a domain name over `https` (`http://localhost` works for trying it out; browsers refuse passkeys for an IP address). Without that, the page says why and the authenticator app still works. **Changing the domain in `STACKURITY_BASE_URL` makes every registered passkey stop working**: browsers only offer a passkey on the domain it was made for. Before a move, make sure people have recovery codes or an authenticator app; after it, they sign in with those and register their passkeys again. A server that answers on several domains still accepts passkeys only from the base URL's origin.
+
+**How passkeys are checked.**
+
+- Attestation is `none`: Stackurity does not ask which make or model of device holds the key.
+- User verification is `preferred` when registering and after a password, and `required` for passkey sign-in without a password.
+- Each passkey's signature counter is checked. A counter that does not go up (when the device keeps one; synced passkeys send 0) can mean the key was copied: the sign-in is refused, logged, recorded as `auth.passkey_clone_warning`, and the passkey is marked on the page.
+- Each challenge is kept on the server, bound to the browser by a short-lived cookie, and used once, within five minutes.
+- An account can have up to 20 passkeys; only their public keys are stored, never the private keys.
+- The `Permissions-Policy` header allows passkeys (`publickey-credentials-get` and `-create`) for the dashboard's own origin only.
+
+**Other rules.**
+
+- The app's secret is encrypted with `STACKURITY_SECRET_KEY` (AES-256-GCM, as stored secrets are), so the app needs that key; without it the page says so. Recovery codes are stored as hashes.
 - A code is accepted once: the same code (or an earlier one) cannot sign in again, even within its 90-second window (the current 30-second step and one either side, for clock drift).
-- Wrong codes are limited: five end the sign-in (the password must be entered again), and ten tries per account in 15 minutes from any address.
-- Turning it on signs out the account's other sessions. Turning it off asks for the password, and is refused while an organisation of theirs requires it.
-- **API tokens and connected AI assistants are not asked for a code**, as with GitHub: they are credentials of their own. The page lists how many the person has, with links to review them.
-- People who sign in with single sign-on are not asked for a Stackurity code: their identity provider does the second factor.
+- Wrong codes and failed passkeys are limited: five end the sign-in (the password must be entered again), and ten tries per account in 15 minutes from any address. Passkey sign-in is limited per address.
+- Adding or removing a second factor signs out the account's other sessions and gives this one a new ID. Removing one asks for the password, and is refused when the factors left would no longer meet the policy of one of the person's organisations.
+- **API tokens and connected AI assistants are not asked for a second factor**, as with GitHub: they are credentials of their own. The page lists how many the person has, with links to review them.
+- People who sign in with single sign-on are not asked for a Stackurity second factor: their identity provider does that. **Sign in with a passkey** does not get round an organisation's **Require single sign-on**: such a session is refused there as a password session is, except for the organisation owner's break-glass access.
 
-**Require it for an organisation.** An admin can turn on **Settings → Users → Require two-factor sign-in for all members** (their own account needs it first). Members who sign in with a password and have none are then sent to set it up before they can do anything else; members using single sign-on are not affected. The page counts the members without it.
+**Why there is no SMS.** Codes sent by text message are deliberately not offered. A phone number can be moved to an attacker's SIM (SIM swapping) or its messages intercepted, so SMS does not protect against the attacks a second factor is for; and sending them to Indian numbers needs DLT registration of the sender and every message template, a cost and delay for each installation. Passkeys and authenticator apps are free and stronger.
 
-**A lost phone.** An admin resets a member's two-factor sign-in with **Reset two-factor** on **Settings → Users**; it is recorded in the activity log (`user.mfa_reset`) and ends the member's sessions. As with passwords, only an instance administrator can reset it for an account that also belongs to other organisations, or for an instance administrator.
+**An organisation's policy.** Admins set it under **Settings → Users → Two-factor sign-in**:
 
-Every step is in the activity log: `auth.mfa_enabled`, `auth.mfa_disabled`, `auth.mfa_failed`, `auth.mfa_recovery_code_used`, `auth.mfa_recovery_codes_replaced`, and `auth.login` with `"mfa": "totp"` or `"recovery_code"`.
+- **Two-factor sign-in**: **Optional**, **Required for everyone**, or **Required for admins and security** (members with the admin or security role, organisation-wide or through a project).
+- **Methods that count**: passkey or security key, authenticator app (one of these must stay). Recovery codes count wherever a passkey or the app does.
+- **Require phishing-resistant sign-in (passkeys only) for admins** (Enterprise plan, as single sign-on for an organisation is): admins must sign in with a passkey, whatever the rest of the policy says. Once on, it stays enforced if the plan lapses, and can always be turned off.
 
-Passkeys and security keys (WebAuthn) are not supported yet.
+The admin saving a policy must meet it with the session they are using, so a policy cannot lock its own author out (the page says to set up or sign in with the method first). The page counts the members the policy would ask to set up a second factor, and the admins without a passkey.
+
+The policy applies to every browser session working in the organisation that was signed in with a password, a passkey or an invitation; each organisation applies its own to a person who belongs to several, as they switch between them. A session that does not meet it can do nothing else until it does:
+
+- With no method that counts there, the person is sent straight to set one up, passkeys first.
+- With one, but signed in with something else (the app where admins must use a passkey), they confirm with it.
+- A recovery code stands in for a lost passkey: a session signed in with one may set up a new passkey, which also ends the account's other sessions.
+- A session that must confirm with a passkey cannot add or remove factors until it has, so a phished password and app code cannot register an attacker's passkey for an admin who has one.
+
+**A lost device.** An admin resets a member's two-factor sign-in with **Reset two-factor** on **Settings → Users**: it removes their passkeys, authenticator app and recovery codes, ends their sessions, and is recorded as `user.mfa_reset`. As with passwords, only an instance administrator can reset it for an account that also belongs to other organisations, or for an instance administrator.
+
+**The activity log.** Adding, renaming and removing factors are recorded in every organisation the person belongs to: `auth.passkey_added`, `auth.passkey_renamed`, `auth.passkey_removed`, `auth.mfa_enabled` and `auth.mfa_disabled` (with `method` or `methods`). Sign-ins are `auth.login` with `"mfa": "passkey"`, `"totp"` or `"recovery_code"`, or `"method": "passkey"` for passkey sign-in; failures are `auth.mfa_failed` and `auth.login_failed`; confirming a session is `auth.mfa_step_up`; a counter that went backwards is `auth.passkey_clone_warning`; `auth.mfa_recovery_code_used` and `auth.mfa_recovery_codes_replaced`; and the policy's changes are `settings.mfa_policy` (before and after).
 
 ### Passwords
 
@@ -179,7 +211,7 @@ Passwords are 12 to 256 characters, stored with argon2id. A new password is also
 
 A browser session ends 30 minutes after it was last used (`STACKURITY_SESSION_IDLE_TIMEOUT`), and in any case 12 hours after sign-in. The session cookie is `HttpOnly`, `SameSite=Strict`, and `Secure` unless `STACKURITY_COOKIE_SECURE=false`; only a hash of it is stored.
 
-- Every sign-in gets a new session ID, and a session the browser already had ends. Turning on two-factor sign-in and changing your password replace the current session's ID too. Roles are read on every request, so a role change takes effect at once without one.
+- Every sign-in gets a new session ID, and a session the browser already had ends. Adding or removing a second factor, confirming with one, and changing your password replace the current session's ID too. Roles are read on every request, so a role change takes effect at once without one.
 - Changing your password (**Your account → Password**) signs out your other sessions and, unless you untick it, disconnects your AI assistants. API tokens keep working unless you tick **Also revoke my API tokens**; the page then says how many still work, with a link to review them.
 - The activity log records `auth.login`, `auth.logout`, and `auth.session_expired` with `reason` `idle` or `absolute` (when the session is next used, or by the hourly housekeeping if it never is).
 
