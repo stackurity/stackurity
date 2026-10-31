@@ -386,3 +386,55 @@ func TestAskReadOnly(t *testing.T) {
 }
 
 func ptrNow() *time.Time { t := time.Now(); return &t }
+
+// Row-level security keeps conversations in their workspace; inside it,
+// every conversation and message endpoint matches the asking person's
+// user id. A second person of the same organisation, whatever their role,
+// gets 404 on each, never sees it listed, and their delete-mine leaves it.
+func TestAskOtherPersonGets404(t *testing.T) {
+	fake := asktest.New(t, asktest.Reply{Text: "Owner's answer."})
+	e := newEnvWith(t, withAsk(t, fake, nil))
+	e.user("owner@x.io", auth.RoleViewer)
+	e.user("peer@x.io", auth.RoleViewer)
+	e.user("boss@x.io", auth.RoleAdmin)
+	owner := e.login("owner@x.io")
+	conv := askReady(t, e, owner)
+	if code, evs, raw := askQ(t, owner, conv, "secret question", nil, nil); code != 200 || lastEvent(evs).Name != "done" {
+		t.Fatalf("owner's question: %d %s", code, raw)
+	}
+	for _, who := range []string{"peer@x.io", "boss@x.io"} {
+		s := e.login(who)
+		if code := s.do("POST", "/api/v1/ask/notice", map[string]string{"version": api.AskNoticeVersion}, nil); code != 204 {
+			t.Fatalf("%s notice: %d", who, code)
+		}
+		path := fmt.Sprintf("/api/v1/ask/conversations/%d", conv)
+		var body map[string]any
+		if code := s.do("GET", path, nil, &body); code != 404 {
+			t.Errorf("%s GET %s: %d %v", who, path, code, body)
+		}
+		if code, _, raw := askQ(t, s, conv, "append to it", nil, nil); code != 404 {
+			t.Errorf("%s POST %s/messages: %d %s", who, path, code, raw)
+		}
+		if code := s.do("DELETE", path, nil, nil); code != 404 {
+			t.Errorf("%s DELETE %s: %d", who, path, code)
+		}
+		var list struct{ Items []store.AskConversation }
+		if code := s.do("GET", "/api/v1/ask/conversations", nil, &list); code != 200 || len(list.Items) != 0 {
+			t.Errorf("%s list: %d %+v", who, code, list.Items)
+		}
+		var del map[string]any
+		if code := s.do("DELETE", "/api/v1/ask/conversations", nil, &del); code != 200 || del["deleted"] != float64(0) {
+			t.Errorf("%s delete mine: %d %v", who, code, del)
+		}
+	}
+	if n := len(fake.Requests()); n != 1 {
+		t.Errorf("model requests = %d: another person's question reached the model", n)
+	}
+	var mine struct {
+		Messages []store.AskMessage
+	}
+	if code := owner.do("GET", fmt.Sprintf("/api/v1/ask/conversations/%d", conv), nil, &mine); code != 200 || len(mine.Messages) != 2 ||
+		mine.Messages[0].VisibleText != "secret question" {
+		t.Errorf("the owner's conversation changed: %d %+v", code, mine.Messages)
+	}
+}
