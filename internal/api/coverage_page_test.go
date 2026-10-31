@@ -113,6 +113,33 @@ func TestCoveragePage(t *testing.T) {
 			t.Errorf("%q: %d", bad, code)
 		}
 	}
+	// A vote is a person's: API tokens are refused, a viewer's included.
+	var tok struct{ Secret string }
+	if code := viewer.do("POST", "/api/v1/tokens", map[string]any{"name": "t", "role": auth.RoleViewer}, &tok); code != 201 {
+		t.Fatalf("token: %d", code)
+	}
+	if code := bearer(e, tok.Secret, "POST", "/api/v1/coverage/support-requests", []byte(`{"ecosystem":"cocoapods"}`),
+		map[string]string{"Content-Type": "application/json"}); code != 403 {
+		t.Errorf("viewer token: %d, want 403", code)
+	}
+	if code := bearer(e, tok.Secret, "GET", "/api/v1/coverage/overview", nil, nil); code != 200 {
+		t.Errorf("a token still reads the overview: %d", code)
+	}
+	// At most 10 a minute per person (50 a day), whatever they ask for.
+	e.user("eager@x.io", auth.RoleViewer)
+	eager := e.login("eager@x.io")
+	for i := 0; i < 10; i++ {
+		if code := eager.do("POST", "/api/v1/coverage/support-requests", map[string]string{"ecosystem": "cocoapods"}, nil); code != 200 {
+			t.Fatalf("request %d: %d", i+1, code)
+		}
+	}
+	if code := eager.do("POST", "/api/v1/coverage/support-requests", map[string]string{"ecosystem": "cocoapods"}, nil); code != 429 {
+		t.Errorf("11th request in a minute: %d, want 429", code)
+	}
+	if code := owner.do("POST", "/api/v1/coverage/support-requests", map[string]string{"ecosystem": "cocoapods"}, nil); code != 200 {
+		t.Errorf("another person is not limited by it: %d", code)
+	}
+
 	var audits int
 	if err := e.st.Pool.QueryRow(sys, `SELECT count(*) FROM audit_events WHERE action = 'coverage.support_request'`).Scan(&audits); err != nil || audits != 1 {
 		t.Errorf("audited %d times (%v)", audits, err)

@@ -431,21 +431,31 @@ func assetGroup(state, collectionStatus string) string {
 var ErrNotUnsupported = fmt.Errorf("stackurity already checks this ecosystem, or it was not found on your assets: %w", ErrInvalid)
 
 // RequestSupport records that the workspace wants ecosystem supported. It
-// must be one the workspace has components of that are not supported.
-// Asking again changes nothing (created reports whether this was new).
+// must be one the workspace has components of that Stackurity does not
+// support, checked for that ecosystem alone. Asking again changes nothing
+// (created reports whether this was new).
 func (s *Store) RequestSupport(ctx context.Context, ecosystem string, userID *int64) (label string, created bool, err error) {
-	ov, err := s.SummarizeCoverage(ctx)
-	if err != nil {
-		return "", false, err
-	}
-	for _, e := range ov.Ecosystems {
-		if e.Key == ecosystem && e.NotSupported > 0 {
-			label = e.Label
-		}
-	}
-	if label == "" {
+	if ecosystem == "" || len(ecosystem) > 100 {
 		return "", false, ErrNotUnsupported
 	}
+	// The package type narrows the scan: "deb:ubuntu-24.04" is deb, and
+	// Windows and WordPress are generic.
+	typ, _, _ := strings.Cut(ecosystem, ":")
+	if ecosystem == "windows" || ecosystem == "wordpress" {
+		typ = "generic"
+	}
+	var found bool
+	if err := s.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM inventory i JOIN components c ON c.id = i.component_id
+		  JOIN assets a ON a.id = i.asset_id AND a.merged_into IS NULL AND a.collection_status <> 'removed'
+		  WHERE i.removed_at IS NULL AND i.coverage IN ('unsupported', 'not_evaluated') AND c.type = $2
+		    AND (`+ecosystemKeySQL+`) = $1 AND (`+uncheckedReasonSQL(overdueFeedSQL)+`) = 'unsupported')`,
+		ecosystem, typ).Scan(&found); err != nil {
+		return "", false, err
+	}
+	if !found {
+		return "", false, ErrNotUnsupported
+	}
+	label = EcosystemLabel(ecosystem)
 	tag, err := s.Pool.Exec(ctx, `INSERT INTO support_requests (ecosystem, label, requested_by) VALUES ($1, $2, $3)
 		ON CONFLICT (workspace_id, ecosystem) DO NOTHING`, ecosystem, label, userID)
 	if err != nil {
