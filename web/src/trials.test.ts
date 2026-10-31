@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { filterOrgs, flagLabel, share, timeToFirst, weekLabel, type TrialOrg } from "./trials.ts";
+import { STATE_LABEL, ending, filterOrgs, flagLabel, share, timeToFirst, weekLabel, type TrialOrg } from "./trials.ts";
 
 const org = (o: Partial<TrialOrg>): TrialOrg =>
   ({
@@ -72,4 +72,10 @@ test("filters keep the organisations they name, within a cohort when one is pick
   assert.deepEqual(ids(filterOrgs(orgs, "converted")), [2]);
   assert.deepEqual(ids(filterOrgs(orgs, "ended")), [3, 4]);
   assert.deepEqual(ids(filterOrgs(orgs, "all", "2026-10-19")), [3]);
+});
+
+test("a plan cancelled to end with its paid period counts as cancelled, and says so", () => {
+  assert.equal(STATE_LABEL.cancelled, "Cancelled (incl. ending)");
+  assert.equal(ending({ billing_status: "cancelling" }), true);
+  assert.equal(ending({ billing_status: "cancelled" }), false);
 });

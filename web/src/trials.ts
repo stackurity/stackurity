@@ -63,7 +63,9 @@ export const STATE_LABEL: Record<TrialState, string> = {
   trialing: "In trial",
   converted: "Paying",
   expired: "Trial ended, not paid",
-  cancelled: "Cancelled",
+  // Includes a plan cancelled to end with the period already paid for
+  // (billing status "cancelling").
+  cancelled: "Cancelled (incl. ending)",
 };
 
 export const STATE_TONE: Record<TrialState, "good" | "warn" | "bad" | "muted"> = {
@@ -72,6 +74,11 @@ export const STATE_TONE: Record<TrialState, "good" | "warn" | "bad" | "muted"> =
   expired: "bad",
   cancelled: "muted",
 };
+
+/** A plan cancelled that still runs to the end of its paid period. */
+export function ending(o: Pick<TrialOrg, "billing_status">): boolean {
+  return o.billing_status === "cancelling";
+}
 
 export function flagLabel(f: TrialFlag, quietDays: number): string {
   switch (f) {
