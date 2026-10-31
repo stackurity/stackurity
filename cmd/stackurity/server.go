@@ -1015,7 +1015,7 @@ func adminCmd() *cobra.Command {
 
 	setLicence := &cobra.Command{
 		Use:   "set-license",
-		Short: "Install a licence key (read from STACKURITY_LICENSE_KEY or stdin); restart the server to apply",
+		Short: "Install a licence key or the free Community key (read from STACKURITY_LICENSE_KEY or stdin); restart the server to apply",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			key, err := readSecretInput("STACKURITY_LICENSE_KEY", "Licence key: ")
 			if err != nil {
@@ -1035,6 +1035,10 @@ func adminCmd() *cobra.Command {
 			}
 			_ = st.Audit(tenant.System(cmd.Context()), store.Actor{Type: "system", Name: "cli"}, "license.install", "license", l.ID,
 				map[string]any{"customer": l.Customer, "edition": l.Edition, "expires_at": l.ExpiresAt})
+			if l.Edition == license.Community {
+				fmt.Printf("installed the free Community key for %s; restart the server to apply\n", l.Customer)
+				return nil
+			}
 			fmt.Printf("installed %s licence for %s until %s; restart the server to apply\n", l.Edition, l.Customer, l.ExpiresAt.Format("2006-01-02"))
 			return nil
 		},
