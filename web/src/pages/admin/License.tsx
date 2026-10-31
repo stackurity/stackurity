@@ -13,6 +13,7 @@ const FEATURE_LABEL: Record<string, string> = {
   evidence_report: "Evidence report",
   sso: "Single sign-on",
   enterprise_packs: "Enterprise stack packs",
+  phishing_resistant_mfa: "Passkeys required for admins",
 };
 
 /** Instance administration: the installation's licence. */

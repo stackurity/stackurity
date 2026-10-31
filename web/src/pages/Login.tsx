@@ -3,7 +3,8 @@ import { api } from "../api";
 import { useAuth } from "../auth";
 import { useAction } from "../hooks";
 import { Code, ErrorBox } from "../components/ui";
-import { MfaLoginStep } from "./TwoFactor";
+import type { MfaSignInMethod } from "../api";
+import { MfaLoginStep, PasskeySignInButton } from "./TwoFactor";
 import { ForgotPasswordLink } from "./Password";
 
 export function LoginPage() {
@@ -15,8 +16,10 @@ export function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const act = useAction();
-  // The password was right and the account has two-factor sign-in.
-  const [mfa, setMfa] = useState(false);
+  // The password was right and the account has two-factor sign-in: the
+  // methods its second step offers.
+  const [mfa, setMfa] = useState<MfaSignInMethod[] | null>(null);
+  const passkeys = state.phase === "login" && Boolean(state.meta.passkeys);
   const discovery = state.phase === "login" && Boolean(state.meta.sso_discovery);
   const [ssoMode, setSSOMode] = useState(false);
   const find = useAction();
@@ -59,10 +62,10 @@ export function LoginPage() {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     const ok = await act.run(() => api.login(email.trim(), password));
-    if (ok?.mfa_required) setMfa(true);
+    if (ok?.mfa_required) setMfa(ok.methods ?? ["totp", "recovery_code"]);
     else if (ok) await refresh();
   };
-  if (mfa) return <MfaLoginStep onDone={refresh} onRestart={() => (setMfa(false), setPassword(""))} />;
+  if (mfa) return <MfaLoginStep methods={mfa} onDone={refresh} onRestart={() => (setMfa(null), setPassword(""))} />;
 
   return (
     <div className="center-screen">
@@ -106,6 +109,14 @@ export function LoginPage() {
           {act.pending ? "Signing in…" : "Sign in"}
         </button>
         <ForgotPasswordLink />
+        {passkeys && (
+          <>
+            <p className="muted small" style={{ textAlign: "center" }}>
+              or
+            </p>
+            <PasskeySignInButton onDone={refresh} />
+          </>
+        )}
         {discovery && (
           <p className="small" style={{ textAlign: "center" }}>
             <button type="button" className="btn btn-link" onClick={() => setSSOMode(true)}>

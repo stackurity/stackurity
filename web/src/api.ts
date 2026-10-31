@@ -63,6 +63,8 @@ export interface Meta {
   sso_discovery?: boolean;
   /** True when this server sends product updates or vulnerability news, so people have email preferences (a hosted edition). */
   email_preferences?: boolean;
+  /** True when passkeys work on this server (STACKURITY_BASE_URL with a domain name over https). */
+  passkeys?: boolean;
 }
 
 export interface SignupMeta {
@@ -122,9 +124,16 @@ export interface User {
   instance_admin: boolean;
   /** "organisation": a role on everything; "projects": access through projects only (role is then empty). */
   access?: Access;
-  /** Two-factor sign-in is on for this account. */
+  /** The account has a second factor. */
   mfa_enabled?: boolean;
+  /** The account's second factors. */
+  mfa_methods?: MfaMethod[];
 }
+
+/** A second factor: a passkey or security key, an authenticator app, or email codes (the fallback). */
+export type MfaMethod = "passkey" | "totp" | "email";
+/** What the second step of a sign-in can take. */
+export type MfaSignInMethod = MfaMethod | "recovery_code";
 
 /** How a member reaches a workspace's data. */
 export type Access = "organisation" | "projects";
@@ -448,8 +457,12 @@ export interface Me {
   features: Feature[];
   /** Whether Send feedback is on (STACKURITY_FEEDBACK_URL) for this signed-in user. */
   feedback_enabled?: boolean;
-  /** The organisation requires two-factor sign-in and this session has none: only enrolment is possible. */
+  /** The organisation requires a second factor this account does not have: only setting one up is possible. */
   mfa_enrolment_required?: boolean;
+  /** The organisation requires a second factor this session was not signed in with: only confirming with it is possible. */
+  mfa_step_up_required?: boolean;
+  /** The methods that count in this organisation, when one of the two above is set. */
+  mfa_accepted?: MfaMethod[] | null;
   /** An administrator set a temporary password: only changing it is possible. */
   password_change_required?: boolean;
   /** Set when the session's workspace requires its own single sign-on, which this session did not use; workspace is then null. */
@@ -528,7 +541,7 @@ export interface OrgSSOChange {
 }
 
 export type Edition = "community" | "pro" | "enterprise";
-export type Feature = "remediation" | "teams" | "evidence_report" | "sso" | "enterprise_packs";
+export type Feature = "remediation" | "teams" | "evidence_report" | "sso" | "enterprise_packs" | "phishing_resistant_mfa";
 
 export interface LicenseInfo {
   status: {
@@ -3055,7 +3068,7 @@ export const api = {
   discoverSSO: (email: string) => request<{ login_url: string; label: string }>("POST", "/auth/sso/discover", { email }, { quiet401: true }),
   me: () => request<Me>("GET", "/auth/me", undefined, { quiet401: true }),
   login: (email: string, password: string) =>
-    request<User & { mfa_required?: boolean }>("POST", "/auth/login", { email, password }, { quiet401: true }),
+    request<User & { mfa_required?: boolean; methods?: MfaSignInMethod[] }>("POST", "/auth/login", { email, password }, { quiet401: true }),
   setup: (b: { setup_token: string; email: string; name: string; password: string }) =>
     request<User>("POST", "/setup", b, { quiet401: true }),
   logout: () => request<void>("POST", "/auth/logout", undefined, { quiet401: true }),

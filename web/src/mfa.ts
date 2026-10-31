@@ -3,7 +3,7 @@
  */
 
 /** The second factors Stackurity offers, named the same everywhere. */
-export const MFA_METHODS = "authenticator app, with recovery codes as backup";
+export const MFA_METHODS = "passkey or security key, authenticator app, with recovery codes as backup";
 
 /**
  * Whether an admin must set up their own second factor before requiring it

@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { api, USER_ROLES, type List, type User, type UserRole } from "../../api";
+import { api, USER_ROLES, type List, type MfaMethod, type User, type UserRole } from "../../api";
 import { useAuth } from "../../auth";
 import { useAction, useLoad } from "../../hooks";
 import { Badge } from "../../components/Badge";
@@ -10,6 +10,7 @@ import { confirmAction } from "../../components/ConfirmDialog";
 
 /** Organisation-wide roles, and "none": access only to the projects someone is given. */
 const ORG_ROLES: (UserRole | "none")[] = [...USER_ROLES, "none"];
+const MFA_LABELS: Record<MfaMethod, string> = { passkey: "Passkey", totp: "App", email: "Email code" };
 
 function roleLabel(r: UserRole | "none" | ""): string {
   return r === "none" || r === "" ? "projects only" : r;
@@ -74,7 +75,16 @@ export function UsersPage() {
       ),
     },
     { key: "status", header: "Status", cell: (u) => (u.disabled ? <Badge status="disabled" /> : <Badge status="active" />) },
-    { key: "mfa", header: "Two-factor", cell: (u) => (u.mfa_enabled ? "On" : <span className="muted">Off</span>) },
+    {
+      key: "mfa",
+      header: "Two-factor",
+      cell: (u) =>
+        u.mfa_enabled ? (
+          (u.mfa_methods ?? []).map((m) => MFA_LABELS[m]).join(", ") || "On"
+        ) : (
+          <span className="muted">Off</span>
+        ),
+    },
     { key: "teams", header: "Teams", cell: (u) => (u.teams?.length ? u.teams.join(", ") : <span className="muted">—</span>) },
     { key: "login", header: "Last sign-in", cell: (u) => <RelativeTime iso={u.last_login_at} /> },
     { key: "created", header: "Created", cell: (u) => <RelativeTime iso={u.created_at} /> },
@@ -95,7 +105,7 @@ export function UsersPage() {
                 if (
                   !(await confirmAction({
                     title: `Reset two-factor sign-in for ${u.email}?`,
-                    message: "They sign in with their password and set it up again.",
+                    message: "Their passkeys, authenticator app and recovery codes are removed. They sign in with their password and set it up again.",
                     consequence: "Their sessions end.",
                     action: "Reset two-factor",
                     destructive: true,
