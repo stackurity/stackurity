@@ -47,6 +47,9 @@ var (
 	// limitSSOFlow covers both steps of single sign-on (start and the
 	// callback that exchanges the code), so about ten sign-ins a minute.
 	limitSSOFlow = rateLimit{20, time.Minute}
+	// limitPublicCVEs covers the public log of new CVEs, which the website
+	// reads every few minutes; people and crawlers get the same allowance.
+	limitPublicCVEs = rateLimit{60, time.Minute}
 )
 
 // limitHit is one counter a request hits: subject (an address, an email, a

@@ -141,6 +141,12 @@ func (s *Store) ReplaceEPSS(ctx context.Context, model string, date time.Time, n
 			return fmt.Errorf("store EPSS scores: %w", err)
 		}
 		n = tag.RowsAffected()
+		// CVEs new to Stackurity are recorded with the time they arrived
+		// (cve_first_seen, the public log of new vulnerabilities).
+		if _, err := tx.Exec(ctx, `INSERT INTO cve_first_seen (cve, first_seen, source)
+			SELECT DISTINCT cve, now(), 'epss' FROM epss_load ON CONFLICT (cve) DO NOTHING`); err != nil {
+			return fmt.Errorf("record new CVEs: %w", err)
+		}
 		return nil
 	})
 	return n, err
