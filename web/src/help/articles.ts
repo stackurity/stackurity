@@ -1238,7 +1238,7 @@ jobs:
     section: "Settings and administration",
     summary: "Passkeys, security keys, an authenticator app and recovery codes, and how an organisation can require them.",
     where: ["Your account", "Two-factor methods"],
-    keywords: "2fa mfa two factor passkey security key yubikey webauthn fido touch id face id windows hello totp authenticator app recovery codes phishing",
+    keywords: "2fa mfa two factor passkey security key yubikey webauthn fido touch id face id windows hello totp authenticator app recovery codes phishing email code otp",
     body: [
       { p: "A second factor means someone who learns your password still cannot sign in as you. Set yours up under [Your account](/account#mfa)." },
       { h: "Add a passkey (recommended)" },
@@ -1261,6 +1261,10 @@ jobs:
       { h: "Authenticator app" },
       {
         p: "Under **Authenticator app**, click **Set up an authenticator app**, enter your password, scan the QR code with 1Password, Google Authenticator, Microsoft Authenticator or a similar app, and type the six-digit code it shows.",
+      },
+      { h: "Email codes (fallback)" },
+      {
+        p: "If your organisation allows them and you cannot use a passkey or an authenticator app, **Use email codes** sends a six-digit code to your email address after your password. It is weaker: anyone who can read your email could use it. Setting up a passkey or an app turns email codes off, and admins and security members cannot use them. You get an email each time you sign in with one.",
       },
       { h: "Rename or remove a method" },
       {
