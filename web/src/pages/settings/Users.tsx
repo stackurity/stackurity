@@ -6,6 +6,7 @@ import { Badge } from "../../components/Badge";
 import { Table, type Column } from "../../components/Table";
 import { Card, EmptyState, ErrorBox, Loading, Notice, PageHeader, RelativeTime } from "../../components/ui";
 import { RequireMfaCard } from "../TwoFactor";
+import { confirmAction } from "../../components/ConfirmDialog";
 
 /** Organisation-wide roles, and "none": access only to the projects someone is given. */
 const ORG_ROLES: (UserRole | "none")[] = [...USER_ROLES, "none"];
@@ -56,10 +57,10 @@ export function UsersPage() {
             value={u.role || "none"}
             disabled={act.pending || u.id === me?.user?.id}
             title={u.id === me?.user?.id ? "You cannot change your own role" : undefined}
-            onChange={(e) => {
+            onChange={async (e) => {
               const role = e.target.value as UserRole | "none";
               const from = roleLabel(u.role || "none");
-              if (window.confirm(`Change ${u.email} from ${from} to ${roleLabel(role)}?`))
+              if (await confirmAction({ title: `Change ${u.email} from ${from} to ${roleLabel(role)}?`, action: "Change role" }))
                 void patch(u, { role }, `${u.email} is now ${roleLabel(role)}.`);
             }}
           >
@@ -90,8 +91,18 @@ export function UsersPage() {
               type="button"
               className="btn btn-sm"
               disabled={act.pending}
-              onClick={() => {
-                if (!window.confirm(`Reset two-factor sign-in for ${u.email}? Their sessions end; they sign in with their password and set it up again.`)) return;
+              onClick={async () => {
+                if (
+                  !(await confirmAction({
+                    title: `Reset two-factor sign-in for ${u.email}?`,
+                    message: "They sign in with their password and set it up again.",
+                    consequence: "Their sessions end.",
+                    action: "Reset two-factor",
+                    destructive: true,
+                    typeToConfirm: u.email,
+                  }))
+                )
+                  return;
                 setMsg(null);
                 void act
                   .run(async () => {
@@ -114,8 +125,18 @@ export function UsersPage() {
               type="button"
               className="btn btn-sm btn-link-danger"
               disabled={act.pending}
-              onClick={() => {
-                if (!window.confirm(`Remove ${u.email} from this workspace? Their account and any other workspaces are kept.`)) return;
+              onClick={async () => {
+                if (
+                  !(await confirmAction({
+                    title: `Remove ${u.email} from this workspace?`,
+                    message: "Their account and any other workspaces are kept.",
+                    consequence: "They lose access to this workspace at once.",
+                    action: "Remove user",
+                    destructive: true,
+                    typeToConfirm: u.email,
+                  }))
+                )
+                  return;
                 setMsg(null);
                 void act
                   .run(async () => {
@@ -138,8 +159,11 @@ export function UsersPage() {
               type="button"
               className={`btn btn-sm${u.disabled ? "" : " btn-link-danger"}`}
               disabled={act.pending}
-              onClick={() => {
-                if (u.disabled || window.confirm(`Disable ${u.email}? Their sessions and tokens stop working.`))
+              onClick={async () => {
+                if (
+                  u.disabled ||
+                  (await confirmAction({ title: `Disable ${u.email}?`, consequence: "Their sessions and tokens stop working.", action: "Disable user" }))
+                )
                   void patch(u, { disabled: !u.disabled }, `${u.email} ${u.disabled ? "enabled" : "disabled"}.`);
               }}
             >

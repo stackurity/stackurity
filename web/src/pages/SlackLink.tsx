@@ -5,6 +5,7 @@ import { useAuth } from "../auth";
 import { useAction, useLoad } from "../hooks";
 import { absTime } from "../format";
 import { ErrorBox, Loading, Notice, RelativeTime } from "../components/ui";
+import { confirmAction } from "../components/ConfirmDialog";
 
 function slackWho(l: { slack_user_name: string; slack_user_id: string; team_name: string; team_id: string }) {
   return (
@@ -40,7 +41,7 @@ export function SlackLinkPage() {
       .catch((e) => setError(e as ApiError));
   }, [token]);
 
-  const confirm = async () => {
+  const linkAccount = async () => {
     const r = await act.run(() => api.post<SlackLink>("/slack/links/confirm", { token }));
     if (r) {
       // Drop the token from the address and the browser's history.
@@ -106,7 +107,7 @@ export function SlackLinkPage() {
         </p>
         <ErrorBox error={act.error} title="Could not link" />
         <div className="slack-link-actions">
-          <button type="button" className="btn btn-primary btn-block" onClick={() => void confirm()} disabled={act.pending} autoFocus>
+          <button type="button" className="btn btn-primary btn-block" onClick={() => void linkAccount()} disabled={act.pending} autoFocus>
             {act.pending ? "Linking…" : "Link my Slack account"}
           </button>
           <Link to="/" className="btn btn-block">
@@ -146,7 +147,14 @@ export function LinkedSlackAccounts() {
   const res = useLoad(() => api.get<List<SlackLink>>("/slack/links"), []);
   const act = useAction();
   const unlink = async (l: SlackLink) => {
-    if (!window.confirm(`Unlink ${l.slack_user_name || l.slack_user_id}? Its clicks in Slack will ask to link again.`)) return;
+    if (
+      !(await confirmAction({
+        title: `Unlink ${l.slack_user_name || l.slack_user_id}?`,
+        consequence: "Its clicks in Slack will ask to link again.",
+        action: "Unlink Slack account",
+      }))
+    )
+      return;
     const ok = await act.run(() => api.del(`/slack/links/${l.id}`).then(() => true));
     if (ok) res.reload();
   };

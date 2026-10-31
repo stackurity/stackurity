@@ -7,6 +7,7 @@ import { plural } from "../format";
 import { Card, CodeBlock, CopyBox, ErrorBox, Loading, Notice, PageHeader, RelativeTime } from "../components/ui";
 import { CLIENTS, claudeCodeCommand, configSnippets, geminiCommand, installLinks, oneClick, stdioConfig, type Client } from "../assistantConnect";
 import { useAskAIHidden } from "../components/AskAI";
+import { confirmAction } from "../components/ConfirmDialog";
 
 const ROLE_ABOUT: Record<UserRole, string> = {
   viewer: "read only: inventory, issues, fixes and reports",
@@ -540,7 +541,14 @@ export function AssistantsPage() {
   const [client, setClient] = useState<Client>("claude");
   const { hash } = useLocation();
   const disconnect = async (c: AssistantConnection) => {
-    if (!window.confirm(`Disconnect ${c.client_name || "this assistant"}? It stops working at once; connect it again from the assistant to use it.`)) return;
+    if (
+      !(await confirmAction({
+        title: `Disconnect ${c.client_name || "this assistant"}?`,
+        consequence: "It stops working at once; connect it again from the assistant to use it.",
+        action: "Disconnect assistant",
+      }))
+    )
+      return;
     const ok = await act.run(() => api.del(`/assistants/${c.id}`).then(() => true));
     if (ok) res.reload();
   };

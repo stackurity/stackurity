@@ -5,6 +5,7 @@ import { Badge, Chip } from "../../components/Badge";
 import { Table, type Column } from "../../components/Table";
 import { Card, Code, EmptyState, ErrorBox, Loading, Notice, PageHeader } from "../../components/ui";
 import { plural } from "../../format";
+import { confirmAction } from "../../components/ConfirmDialog";
 
 const TRUST_TONE = { official: "good", verified: "info", unsigned: "warn" } as const;
 
@@ -108,8 +109,16 @@ export function PacksPage() {
             type="button"
             className="btn btn-sm btn-link-danger"
             disabled={act.pending}
-            onClick={() => {
-              if (window.confirm(`Remove ${p.name}? Its files are reported as unsupported again from the next scan.`))
+            onClick={async () => {
+              if (
+                await confirmAction({
+                  title: `Remove ${p.name}?`,
+                  consequence: "Its files are reported as unsupported again from the next scan.",
+                  action: "Remove stack pack",
+                  destructive: true,
+                  typeToConfirm: p.name,
+                })
+              )
                 void simple(() => api.del(`/admin/packs/${p.id}`), `Removed ${p.name}.`);
             }}
           >

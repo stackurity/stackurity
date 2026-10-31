@@ -27,17 +27,20 @@ export function Sparkline({ values, days, label }: { values: number[]; days: str
         ))}
         <circle className="spark-now" cx={last[0]} cy={last[1]} r={3.5} vectorEffect="non-scaling-stroke" />
       </svg>
-      <table className="sr-only">
-        <caption>{label}</caption>
-        <tbody>
-          {values.map((v, i) => (
-            <tr key={i}>
-              <th scope="row">{shortDay(days[i])}</th>
-              <td>{v}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {/* A table keeps its rows' height whatever its own: the box that hides it is a div. */}
+      <div className="sr-only">
+        <table>
+          <caption>{label}</caption>
+          <tbody>
+            {values.map((v, i) => (
+              <tr key={i}>
+                <th scope="row">{shortDay(days[i])}</th>
+                <td>{v}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </figure>
   );
 }

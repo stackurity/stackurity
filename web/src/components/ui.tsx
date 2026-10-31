@@ -5,6 +5,7 @@ import { ApiError } from "../api";
 import type { JobState } from "../hooks";
 import type { Tone } from "./Badge";
 import { absTime, relTime } from "../format";
+import { errorView } from "../errors";
 
 export function RelativeTime({ iso, empty = "never" }: { iso: string | null | undefined; empty?: string }) {
   // Re-render every minute so "x min ago" stays honest on an open page.
@@ -21,13 +22,21 @@ export function RelativeTime({ iso, empty = "never" }: { iso: string | null | un
   );
 }
 
+/**
+ * An error in plain words (errors.ts): the status and code are kept for
+ * support behind a toggle, never in the sentence.
+ */
 export function ErrorBox({ error, title }: { error: ApiError | null | undefined; title?: string }) {
   if (!error) return null;
+  const v = errorView(error);
   return (
     <div className="alert alert-error" role="alert">
-      <strong>{title ?? "Error"}:</strong> {error.message}
-      {error.code && error.status > 0 && (
-        <span className="muted small"> ({error.status} {error.code})</span>
+      <strong>{title ?? "Something went wrong"}:</strong> {v.text}
+      {v.support && (
+        <details className="error-support">
+          <summary>Details for support</summary>
+          <code>{v.support}</code>
+        </details>
       )}
       {error.details.length > 0 && (
         <ul>

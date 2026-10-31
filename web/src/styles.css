@@ -208,6 +208,9 @@ code,
 .text-bad {
   color: var(--bad-fg);
 }
+/* Visually hidden, read by screen readers. Use it on a block box (a div,
+   a span): a table or list keeps its content's height whatever its own,
+   and would stretch the page (a sparkline's table once did). */
 .sr-only {
   position: absolute;
   width: 1px;
@@ -216,6 +219,7 @@ code,
   margin: -1px;
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
 }
@@ -240,9 +244,12 @@ code,
 
 /* --- shell and sidebar */
 
+/* The sidebar fills the screen and stays put while the page scrolls; the
+   page is as tall as its content, or the screen when that is shorter. */
 .shell {
   display: flex;
-  min-height: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
 }
 .sidebar {
   width: 244px;
@@ -254,7 +261,9 @@ code,
   padding: var(--s3) var(--s2);
   position: sticky;
   top: 0;
+  align-self: flex-start;
   height: 100vh;
+  height: 100dvh;
   overflow-y: auto;
   transition: width 0.15s ease;
 }
@@ -2752,6 +2761,91 @@ h6.md-h {
 .topbar-feedback {
   gap: 4px;
 }
+.error-support {
+  margin-top: 4px;
+  font-size: 12px;
+}
+.error-support summary {
+  cursor: pointer;
+  opacity: 0.85;
+}
+.mfa-own-first {
+  margin: var(--s2) 0 var(--s3);
+  padding: var(--s3);
+  border-left: 3px solid var(--warn-dot);
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+  border-radius: var(--radius-sm);
+}
+.mfa-own-first p {
+  margin: 0 0 var(--s2);
+}
+
+/* --- the in-app confirmation (components/ConfirmDialog.tsx) */
+
+.confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: var(--s4);
+  background: rgba(7, 15, 31, 0.55);
+}
+.confirm-dialog {
+  width: 100%;
+  max-width: 480px;
+  max-height: calc(100dvh - 2 * var(--s4));
+  overflow-y: auto;
+  padding: var(--s5);
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+}
+.confirm-dialog:focus {
+  outline: none;
+}
+.confirm-destructive {
+  border-top: 4px solid var(--danger);
+}
+.confirm-title {
+  margin: 0 0 var(--s2);
+  font-size: 17px;
+  overflow-wrap: anywhere;
+}
+.confirm-body p {
+  margin: 0 0 var(--s2);
+  white-space: pre-line;
+  color: var(--text-2);
+}
+.confirm-body .confirm-consequence {
+  color: var(--text);
+  font-weight: 600;
+}
+.confirm-body .field {
+  margin-top: var(--s3);
+}
+.confirm-body input {
+  width: 100%;
+}
+.confirm-word {
+  user-select: all;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin-top: var(--s4);
+}
+
 .dialog {
   width: min(560px, calc(100vw - 24px));
   max-height: calc(100vh - 24px);

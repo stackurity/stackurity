@@ -5,6 +5,7 @@ import { useDebounced, useLoad } from "../hooks";
 import { componentName, plural } from "../format";
 import { AssetKindBadge, KevBadge, SeverityBadge } from "./Badge";
 import { IconSearch } from "./Icons";
+import { errorView } from "../errors";
 
 export type SearchGroup = "vulnerabilities" | "findings" | "assets" | "components" | "teams" | "members";
 
@@ -345,7 +346,7 @@ export function GlobalSearch() {
           {q.trim().length < SEARCH_MIN_LENGTH ? (
             <p className="search-pop-note">Type at least {SEARCH_MIN_LENGTH} characters.</p>
           ) : res.error ? (
-            <p className="search-pop-note">{res.error.message}</p>
+            <p className="search-pop-note">{errorView(res.error).text}</p>
           ) : sections.length === 0 ? (
             <p className="search-pop-note">{res.loading || term !== q.trim() ? "Searching…" : `Nothing matches “${q.trim()}”.`}</p>
           ) : (

@@ -3,6 +3,7 @@ import { api, type SecretInfo } from "../../api";
 import { useAction, useLoad } from "../../hooks";
 import { Table, type Column } from "../../components/Table";
 import { Card, Code, EmptyState, ErrorBox, Loading, Notice, PageHeader, RelativeTime } from "../../components/ui";
+import { confirmAction } from "../../components/ConfirmDialog";
 
 interface SecretList {
   items: SecretInfo[];
@@ -17,7 +18,16 @@ export function SecretsPage() {
   const [editing, setEditing] = useState<string | null>(null);
 
   const remove = async (s: SecretInfo) => {
-    if (!window.confirm(`Delete ${s.name}? Integrations and channels that use it stop working.`)) return;
+    if (
+      !(await confirmAction({
+        title: `Delete ${s.name}?`,
+        consequence: "Integrations and channels that use it stop working.",
+        action: "Delete secret",
+        destructive: true,
+        typeToConfirm: s.name,
+      }))
+    )
+      return;
     setMsg(null);
     const ok = await act.run(async () => {
       await api.del(`/secrets/${encodeURIComponent(s.name)}`);

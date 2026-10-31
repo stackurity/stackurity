@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { api, type Asset, type List } from "../api";
 import { useDebounced, useLoad } from "../hooks";
 import { assetDistinctions, assetKindLabel, assetLabel, groupAssetsByKind } from "../format";
+import { errorView } from "../errors";
 
 /**
  * A select of assets grouped by kind (Servers, Applications, Repositories…),
@@ -99,7 +100,7 @@ export function AssetPicker({
         autoComplete="off"
       />
       <ul className="picker-list" role="listbox" aria-label="Matching assets">
-        {res.error && <li className="muted">{res.error.message}</li>}
+        {res.error && <li className="muted">{errorView(res.error).text}</li>}
         {!res.error && options.length === 0 && !res.loading && <li className="muted">No matching assets.</li>}
         {options.map((a) => {
           const already = inProject !== undefined && (a.projects ?? []).some((p) => p.id === inProject);

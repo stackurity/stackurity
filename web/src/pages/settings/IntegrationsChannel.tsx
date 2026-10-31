@@ -44,6 +44,7 @@ import {
   slackAppTarget,
   TZ_SUGGESTIONS,
 } from "./Notifications";
+import { confirmAction } from "../../components/ConfirmDialog";
 
 /*
  * One notification integration (a channel): its connection, then what it
@@ -469,7 +470,17 @@ function RuleEditor({
     }
   };
   const remove = async () => {
-    if (!route || !window.confirm(`Delete the rule "${route.name}"?`)) return;
+    if (!route) return;
+    if (
+      !(await confirmAction({
+        title: `Delete the rule "${route.name}"?`,
+        consequence: "Notifications it sends stop.",
+        action: "Delete rule",
+        destructive: true,
+        typeToConfirm: route.name,
+      }))
+    )
+      return;
     const ok = await act.run(() => api.del(`/routes/${route.id}`).then(() => true));
     if (ok) onSaved();
   };
@@ -550,7 +561,14 @@ function SlackAccountPanel({ teamId, teamName }: { teamId: string; teamName: str
   const act = useAction();
   const mine = (links.data?.items ?? []).filter((l) => l.team_id === teamId);
   const unlink = async (l: SlackLink) => {
-    if (!window.confirm(`Unlink ${l.slack_user_name || l.slack_user_id}? Its clicks in Slack will ask to link again.`)) return;
+    if (
+      !(await confirmAction({
+        title: `Unlink ${l.slack_user_name || l.slack_user_id}?`,
+        consequence: "Its clicks in Slack will ask to link again.",
+        action: "Unlink Slack account",
+      }))
+    )
+      return;
     const ok = await act.run(() => api.del(`/slack/links/${l.id}`).then(() => true));
     if (ok) links.reload();
   };
@@ -719,12 +737,22 @@ export function IntegrationChannelPage() {
     }
   };
   const toggle = async () => {
-    if (channel.enabled && !window.confirm(`Disable ${channel.name}? It stops sending.`)) return;
+    if (channel.enabled && !(await confirmAction({ title: `Disable ${channel.name}?`, consequence: "It stops sending.", action: "Disable channel" })))
+      return;
     const ok = await act.run(() => api.patch<Channel>(`/channels/${channel.id}`, { enabled: !channel.enabled }));
     if (ok) channels.reload();
   };
   const remove = async () => {
-    if (!window.confirm(`Delete "${channel.name}"? Its rules are deleted too, and its delivery history is lost.`)) return;
+    if (
+      !(await confirmAction({
+        title: `Delete "${channel.name}"?`,
+        consequence: "Its rules are deleted too, and its delivery history is lost.",
+        action: "Delete channel",
+        destructive: true,
+        typeToConfirm: channel.name,
+      }))
+    )
+      return;
     const ok = await act.run(() => api.del(`/channels/${channel.id}`).then(() => true));
     if (ok) navigate("/settings/integrations");
   };

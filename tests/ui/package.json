@@ -1,0 +1,12 @@
+{
+  "name": "stackurity-ui-tests",
+  "private": true,
+  "type": "module",
+  "description": "Browser checks of the dashboard over every route (layout.mjs); run by the ui job in .github/workflows/ci.yml.",
+  "scripts": {
+    "layout": "node layout.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.58.2"
+  }
+}

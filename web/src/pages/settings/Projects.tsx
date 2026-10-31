@@ -19,6 +19,7 @@ import { AssetPicker } from "../../components/AssetPicker";
 import { InviteForm } from "../../components/Invite";
 import { NewTeamInline } from "../../components/Teams";
 import { Card, EmptyState, ErrorBox, Loading, Notice, PageHeader } from "../../components/ui";
+import { confirmAction, promptText } from "../../components/ConfirmDialog";
 
 /*
  * Settings, Projects and access (admins). Projects group assets; people and
@@ -69,7 +70,12 @@ export function ProjectsPage() {
       if (ok) reloadAll();
       return;
     }
-    const name = window.prompt("Name of the new project", sg.suggested_name ?? "");
+    const name = await promptText({
+      title: "Create a project for these assets",
+      label: "Name of the new project",
+      initial: sg.suggested_name ?? "",
+      action: "Create project",
+    });
     if (!name) return;
     const p = await act.run(() => api.post<Project>("/projects", { name, asset_ids: ids }));
     if (p) {
@@ -356,7 +362,7 @@ function GrantList({ grants, onChanged, showTarget }: { grants: Grant[]; onChang
     if (ok) onChanged();
   };
   const remove = async (g: Grant) => {
-    if (!window.confirm(`Remove ${who(g)}'s access? They stop seeing it at once.`)) return;
+    if (!(await confirmAction({ title: `Remove ${who(g)}'s access?`, consequence: "They stop seeing it at once.", action: "Remove access" }))) return;
     const ok = await act.run(() => api.del(`/access-grants/${g.id}`).then(() => true));
     if (ok) onChanged();
   };
@@ -456,10 +462,14 @@ export function ProjectDetailPage() {
     void refresh();
   };
   const archive = async (on: boolean) => {
-    const msg = on
-      ? `Archive ${p.name}? People with access only through it stop seeing its assets, and routes limited to it stop sending.`
-      : `Restore ${p.name}?`;
-    if (!window.confirm(msg)) return;
+    const req = on
+      ? {
+          title: `Archive ${p.name}?`,
+          consequence: "People with access only through it stop seeing its assets, and routes limited to it stop sending.",
+          action: "Archive project",
+        }
+      : { title: `Restore ${p.name}?`, action: "Restore project" };
+    if (!(await confirmAction(req))) return;
     const ok = await act.run(() => api.patch(`/projects/${p.id}`, { archived: on }).then(() => true));
     if (ok) reload();
   };
@@ -471,7 +481,14 @@ export function ProjectDetailPage() {
     }
   };
   const remove = async (a: Asset) => {
-    if (!window.confirm(`Take ${a.name} out of ${p.name}? People with access only through this project stop seeing it.`)) return;
+    if (
+      !(await confirmAction({
+        title: `Take ${a.name} out of ${p.name}?`,
+        consequence: "People with access only through this project stop seeing it.",
+        action: "Remove from project",
+      }))
+    )
+      return;
     const ok = await act.run(() => api.del(`/projects/${p.id}/assets`, { asset_ids: [a.id] }).then(() => true));
     if (ok) reload();
   };
@@ -572,7 +589,7 @@ function Invitations({ projectId, reloadKey }: { projectId: number; reloadKey: n
   const act = useAction();
   const list = res.data?.items ?? [];
   const revoke = async (i: Invitation) => {
-    if (!window.confirm(`Withdraw the invitation for ${i.email}? Its link stops working.`)) return;
+    if (!(await confirmAction({ title: `Withdraw the invitation for ${i.email}?`, consequence: "Its link stops working.", action: "Withdraw invitation" }))) return;
     const ok = await act.run(() => api.del(`/invitations/${i.id}`).then(() => true));
     if (ok) res.reload();
   };

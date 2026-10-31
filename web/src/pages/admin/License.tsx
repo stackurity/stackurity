@@ -4,6 +4,7 @@ import { useAuth } from "../../auth";
 import { useAction, useLoad } from "../../hooks";
 import { Badge } from "../../components/Badge";
 import { Card, ErrorBox, KeyValues, Loading, Notice, PageHeader } from "../../components/ui";
+import { confirmAction } from "../../components/ConfirmDialog";
 
 const EDITION_LABEL = { community: "Community", pro: "Pro", enterprise: "Enterprise" } as const;
 const FEATURE_LABEL: Record<string, string> = {
@@ -33,7 +34,16 @@ export function LicensePage() {
     }
   };
   const remove = async () => {
-    if (!window.confirm("Remove the licence? Paid features stop at once; detection and alerts carry on.")) return;
+    if (
+      !(await confirmAction({
+        title: "Remove the licence?",
+        message: "Detection and alerts carry on.",
+        consequence: "Paid features stop at once.",
+        action: "Remove licence",
+        destructive: true,
+      }))
+    )
+      return;
     const ok = await act.run(async () => {
       await api.del("/admin/license");
       return true;

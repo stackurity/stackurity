@@ -4,6 +4,7 @@ import { api, type OrgSSO, type OrgSSOChange, type UserRole } from "../../api";
 import { useAuth } from "../../auth";
 import { useAction, useLoad } from "../../hooks";
 import { Card, CopyBox, ErrorBox, Loading, Notice, PageHeader } from "../../components/ui";
+import { confirmAction } from "../../components/ConfirmDialog";
 
 const ROLES: UserRole[] = ["viewer", "engineer", "security", "admin"];
 
@@ -119,11 +120,28 @@ export function SingleSignOnPage() {
     if (await act.run(() => api.verifyOrgSSODomain(id))) res.reload();
   };
   const removeDomain = async (id: number, name: string) => {
-    if (!window.confirm(`Remove ${name}? People with ${name} addresses can no longer sign in with single sign-on.`)) return;
+    if (
+      !(await confirmAction({
+        title: `Remove ${name}?`,
+        consequence: `People with ${name} addresses can no longer sign in with single sign-on.`,
+        action: "Remove domain",
+        destructive: true,
+        typeToConfirm: name,
+      }))
+    )
+      return;
     if (await act.run(() => api.deleteOrgSSODomain(id))) res.reload();
   };
   const remove = async () => {
-    if (!window.confirm("Remove single sign-on? Accounts it made can sign in again only after setting a password.")) return;
+    if (
+      !(await confirmAction({
+        title: "Remove single sign-on?",
+        consequence: "Accounts it made can sign in again only after setting a password.",
+        action: "Remove single sign-on",
+        destructive: true,
+      }))
+    )
+      return;
     if (await act.run(() => api.deleteOrgSSO())) res.reload();
   };
 

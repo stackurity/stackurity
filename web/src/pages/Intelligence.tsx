@@ -8,6 +8,7 @@ import { Badge, type Tone } from "../components/Badge";
 import { ROW_COVERAGE_LABELS } from "../components/Coverage";
 import { Table, type Column } from "../components/Table";
 import { Card, EmptyState, ErrorBox, JobStatus, Loading, PageHeader, Pager, RelativeTime } from "../components/ui";
+import { confirmAction } from "../components/ConfirmDialog";
 
 function feedStatus(f: Feed): { label: string; tone: Tone; title: string } {
   if (!f.enabled) return { label: "Disabled", tone: "muted", title: "Not synced; nothing from this feed is evaluated" };
@@ -50,10 +51,14 @@ export function IntelligencePage() {
     job.start(`Refresh ${f.name}`, () => api.post<Queued>(`/feeds/${feedPath(f.name)}/refresh`));
   const setEnabled = async (f: Feed) => {
     const pin = f.auto ? " Stackurity will stop enabling or disabling it automatically based on your inventory." : "";
-    const q = f.enabled
-      ? `Disable ${f.name}? Findings from it will no longer be updated.${pin}`
-      : `Enable ${f.name}?${pin}`;
-    if (!window.confirm(q)) return;
+    if (
+      !(await confirmAction(
+        f.enabled
+          ? { title: `Disable ${f.name}?`, consequence: `Findings from it will no longer be updated.${pin}`, action: "Disable feed" }
+          : { title: `Enable ${f.name}?`, consequence: pin.trim() || undefined, action: "Enable feed" },
+      ))
+    )
+      return;
     const ok = await toggle.run(() => api.patch<Feed>(`/feeds/${feedPath(f.name)}`, { enabled: !f.enabled }));
     if (ok) feeds.reload();
   };

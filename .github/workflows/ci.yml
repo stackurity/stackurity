@@ -124,6 +124,54 @@ jobs:
       - run: npm test
       - run: npm run build
 
+  # Browser checks over every route of the dashboard (tests/ui/layout.mjs):
+  # the sidebar covers the screen, no empty band at the bottom, no
+  # horizontal scroll where routes.mjs asks. The server runs with the demo
+  # estate and feeds off (no internet), signed in as a test admin.
+  ui:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.11-alpine3.24
+        env:
+          POSTGRES_USER: stackurity
+          POSTGRES_PASSWORD: stackurity
+          POSTGRES_DB: stackurity
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U stackurity" --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      STACKURITY_DATABASE_URL: postgres://stackurity:stackurity@localhost:5432/stackurity?sslmode=disable
+      STACKURITY_LISTEN: 127.0.0.1:8080
+      STACKURITY_BASE_URL: http://127.0.0.1:8080
+      STACKURITY_COOKIE_SECURE: "false"
+      STACKURITY_FEEDS: "off"
+      STACKURITY_DATA_DIR: /tmp/stackurity
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            tests/ui/package-lock.json
+      - run: cd web && npm ci --ignore-scripts && npm run build
+      - run: go build -o /tmp/stackurity ./cmd/stackurity
+      - name: Start the server with the demo estate
+        run: |
+          STACKURITY_PASSWORD=ui-test-password-1 /tmp/stackurity admin create-user --email ui@example.com --name UI --role admin
+          /tmp/stackurity admin load-demo
+          /tmp/stackurity server > /tmp/server.log 2>&1 &
+          for _ in $(seq 1 60); do curl -fsS http://127.0.0.1:8080/healthz && break; sleep 1; done
+      - run: cd tests/ui && npm ci --ignore-scripts && npx playwright install --with-deps chromium
+      - run: cd tests/ui && node layout.mjs http://127.0.0.1:8080
+      - if: failure()
+        run: tail -100 /tmp/server.log
+
   image:
     runs-on: ubuntu-latest
     needs: [go, web]

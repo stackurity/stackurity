@@ -6,6 +6,7 @@ import { api, type List, type Team, type User } from "../../api";
 import { useAction, useLoad } from "../../hooks";
 import { Table, type Column } from "../../components/Table";
 import { Card, EmptyState, ErrorBox, Loading, PageHeader } from "../../components/ui";
+import { confirmAction } from "../../components/ConfirmDialog";
 
 export function TeamsPage() {
   const { has } = useAuth();
@@ -17,7 +18,16 @@ export function TeamsPage() {
   const userById = new Map((users.data?.items ?? []).map((u) => [u.id, u]));
 
   const remove = async (t: Team) => {
-    if (!window.confirm(`Delete team "${t.name}"? Its ${t.asset_count} asset(s) become unassigned.`)) return;
+    if (
+      !(await confirmAction({
+        title: `Delete team "${t.name}"?`,
+        consequence: `Its ${t.asset_count} asset(s) become unassigned.`,
+        action: "Delete team",
+        destructive: true,
+        typeToConfirm: t.name,
+      }))
+    )
+      return;
     const ok = await act.run(() => api.del(`/teams/${t.id}`).then(() => true));
     if (ok) teams.reload();
   };
