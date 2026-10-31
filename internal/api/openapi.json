@@ -8613,6 +8613,36 @@
     }
    }
   },
+  "/admin/trials": {
+   "get": {
+    "operationId": "get_admin_trials",
+    "summary": "Trial report: cloud organisations by sign-up week (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. Every organisation that signed up, by the week it signed up (`cohorts`, `totals`), and `orgs` with trial dates, `state` (trialing, converted, expired, cancelled), `billing_status`, first asset, last sign-in, collection, agent check-in and API use, `active_7d`, `active_30d` and `flags` (never_activated, went_quiet, trial_ended_not_converted). `excluded` lists the workspaces left out. Read only\n\nRole: instance admin",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "instance admin",
+    "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/admin/trials/{id}": {
    "put": {
     "operationId": "put_admin_trials_id",
