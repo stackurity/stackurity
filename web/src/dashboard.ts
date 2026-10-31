@@ -90,6 +90,21 @@ export function quietTitle(a: AssetLike): string {
   return `${who} hasn't reported${since}`;
 }
 
+/**
+ * What stopped reporting, by kind: "1 server and 2 repositories". total is
+ * the count of stale assets; when the assets at hand do not account for all
+ * of them (a long list is paged), it is "N not reporting" without nouns.
+ */
+export function quietKinds(assets: AssetLike[] | null | undefined, total: number): string {
+  const stale = (assets ?? []).filter((a) => a.collection_status === "stale");
+  if (stale.length !== total || total === 0) return `${total.toLocaleString()} not reporting`;
+  const byKind = new Map<string, number>();
+  for (const a of stale) byKind.set(a.kind ?? "", (byKind.get(a.kind ?? "") ?? 0) + 1);
+  const parts = [...byKind.entries()].sort((x, y) => y[1] - x[1]).map(([k, n]) => `${n.toLocaleString()} ${assetNoun(k || undefined, n)}`);
+  const said = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : parts[0];
+  return `${said} stopped reporting`;
+}
+
 /** How many assets that stopped reporting get a row of their own. */
 export const REPORTING_ROWS = 4;
 
@@ -130,7 +145,7 @@ export function reportingRows(incidents: IncidentLike[] | null | undefined, asse
         key: "reporting-more",
         kind: "reporting",
         tone: "warn",
-        title: `${plural(inc.length - REPORTING_ROWS, "more incident")} about assets that stopped reporting`,
+        title: `${plural(inc.length - REPORTING_ROWS, "more incident")} about what stopped reporting`,
         action: { label: "See all", to: "/incidents?status=open&kind=collection" },
       });
     return rows;
@@ -149,7 +164,7 @@ export function reportingRows(incidents: IncidentLike[] | null | undefined, asse
       key: "stale-more",
       kind: "reporting",
       tone: "warn",
-      title: `${plural(stale.length - REPORTING_ROWS, "more asset")} haven't reported`,
+      title: `Also ${quietKinds(stale.slice(REPORTING_ROWS), stale.length - REPORTING_ROWS)}`,
       action: { label: "See all", to: "/assets?status=stale" },
     });
   return rows;

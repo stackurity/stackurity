@@ -36,7 +36,7 @@ import {
   IconTrend,
 } from "../components/Icons";
 import { Sparkline, WeekBars } from "../components/Sparkline";
-import { glanceTiles, needsYou, reportingCount, slaSplit, trendText, type NeedKind, type NeedRow } from "../dashboard";
+import { glanceTiles, needsYou, quietKinds, reportingCount, slaSplit, trendText, type NeedKind, type NeedRow } from "../dashboard";
 import { uncheckedBanner } from "../unchecked";
 import { OneOffLine } from "../components/Reporting";
 import type { UpdatesSummary } from "../updates";
@@ -339,7 +339,7 @@ function RiskBlock({ s, trend }: { s: FindingSummary; trend?: DashboardTrend | n
 }
 
 /** 4. Coverage health: who is reporting, and what was not checked, by who acts. */
-function CoverageBlock({ o, unchecked }: { o: Overview; unchecked: ReturnType<typeof useUnchecked> }) {
+function CoverageBlock({ o, unchecked, assets }: { o: Overview; unchecked: ReturnType<typeof useUnchecked>; assets?: Asset[] }) {
   const r = reportingCount(o.asset_status);
   const b = uncheckedBanner(unchecked.data);
   // Updates available (not findings): a quiet pointer to that page.
@@ -356,7 +356,7 @@ function CoverageBlock({ o, unchecked }: { o: Overview; unchecked: ReturnType<ty
           <>
             {" · "}
             <Link to="/assets?status=stale" className="text-bad">
-              {plural(r.stale, "asset")} stopped
+              {quietKinds(assets, r.stale)}
             </Link>
           </>
         ) : (
@@ -565,7 +565,7 @@ export function DashboardPage() {
 
         {s ? <RiskBlock s={s} trend={trend.data} /> : <ErrorBox error={fs.error} title="Could not load the counts" />}
 
-        <CoverageBlock o={o} unchecked={unchecked} />
+        <CoverageBlock o={o} unchecked={unchecked} assets={assets.data?.items} />
       </div>
     </>
   );
