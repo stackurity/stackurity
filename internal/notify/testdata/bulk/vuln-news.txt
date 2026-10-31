@@ -1,0 +1,52 @@
+Vulnerability news, 19–25 Oct 2026: 3 CVEs added to CISA KEV
+
+CISA added 3 vulnerabilities to its Known Exploited Vulnerabilities (KEV) catalogue from 19 Oct 2026 to 25 Oct 2026.
+
+Check your dashboard for affected assets.
+
+Added to CISA's Known Exploited Vulnerabilities catalogue
+- CVE-2026-106931: EG Secure Solutions SiteGuard Server Edition
+  https://nvd.nist.gov/vuln/detail/CVE-2026-106931
+  - EG Secure Solutions SiteGuard Server Edition contains an OS command injection vulnerability which may allow an attacker to execute arbitrary OS commands with root or SYSTEM privileges on the system running the affected product.
+  - Added 20 Oct 2026; CISA due date for US federal agencies: 23 Oct 2026
+    https://www.cisa.gov/known-exploited-vulnerabilities-catalog?search_api_fulltext=CVE-2026-106931
+  - EPSS 2.5% (84th percentile) on 29 Oct 2026
+    https://api.first.org/data/v1/epss?cve=CVE-2026-106931
+- CVE-2026-96652: Plex Media Server
+  https://nvd.nist.gov/vuln/detail/CVE-2026-96652
+  - Plex Media Server contains a server-side request forgery (SSRF) vulnerability which could allow an attacker using any X-Plex-Token value to include a full URL in the 'protocol' parameter and force the Plex server to POST to the attacker's chosen destination.
+  - Added 20 Oct 2026; CISA due date for US federal agencies: 3 Nov 2026
+    https://www.cisa.gov/known-exploited-vulnerabilities-catalog?search_api_fulltext=CVE-2026-96652
+  - EPSS 1.8% (78th percentile) on 29 Oct 2026
+    https://api.first.org/data/v1/epss?cve=CVE-2026-96652
+- CVE-2026-110447: Collabora Online – Built-in CODE Server
+  https://nvd.nist.gov/vuln/detail/CVE-2026-110447
+  - Collabora Online – Built-in CODE Server when used within the NextCloud platform contains an OS command injection vulnerability that allows for remote code execution when the CODE server isn't running.
+  - Added 23 Oct 2026; CISA due date for US federal agencies: 26 Oct 2026
+    https://www.cisa.gov/known-exploited-vulnerabilities-catalog?search_api_fulltext=CVE-2026-110447
+  - CISA: known to be used in ransomware campaigns
+  - EPSS 73.3% (99th percentile) on 29 Oct 2026
+    https://api.first.org/data/v1/epss?cve=CVE-2026-110447
+
+Security support ending in about eight weeks
+- Drupal 10.6: security support ends 16 Dec 2026
+  https://endoflife.date/drupal
+- GitLab Runner 19.4: security support ends 17 Dec 2026
+  https://endoflife.date/gitlab-runner
+
+Sources
+- CISA Known Exploited Vulnerabilities catalogue
+  https://www.cisa.gov/known-exploited-vulnerabilities-catalog
+- FIRST EPSS (model v2026.06.15, scores of 29 Oct 2026): the probability of exploitation in the next 30 days
+  https://www.first.org/epss/
+- endoflife.date
+  https://endoflife.date
+
+Open your dashboard: https://app.stackurity.dev/
+
+--
+You are receiving this because you are subscribed to Vulnerability news emails from Stackurity.
+Unsubscribe from Vulnerability news: https://app.stackurity.dev/email/preferences#PREVIEW-unsubscribe
+Manage email preferences: https://app.stackurity.dev/email/preferences#PREVIEW-preferences
+Sent by Stackurity (news@stackurity.test)
+Example Ltd, 1 Main Road, Pune 411001, India

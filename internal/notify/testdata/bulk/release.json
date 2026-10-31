@@ -1,0 +1,27 @@
+{
+  "Key": "release-0.14.0",
+  "Category": "marketing",
+  "Message": {
+    "title": "Stackurity 0.14.0: what changed",
+    "summary": ["Here is what changed in Stackurity 0.14.0."],
+    "sections": [
+      {"title": "Security", "items": [
+        {"text": "The preference page no longer accepts a token signed for another installation."}
+      ]},
+      {"title": "Added", "items": [
+        {"text": "WordPress plugins and themes, with their latest release."},
+        {"text": "Sites without a manifest are discovered."},
+        {"text": "Vulnerabilities in installed Windows programs."},
+        {"text": "and 3 more in the release notes", "link": "https://github.com/stackurity/stackurity/releases/tag/v0.14.0"}
+      ]},
+      {"title": "Changed", "items": [
+        {"text": "The action plan groups fixes that share a package across hosts."}
+      ]},
+      {"title": "Fixed", "items": [
+        {"text": "A scan that timed out no longer marks the host's inventory complete."}
+      ]}
+    ],
+    "link": "https://github.com/stackurity/stackurity/releases/tag/v0.14.0",
+    "link_label": "Read the full release notes"
+  }
+}
