@@ -79,3 +79,40 @@ func TestKernelPackage(t *testing.T) {
 		}
 	}
 }
+
+func TestKernelFromEarlierRelease(t *testing.T) {
+	cases := []struct {
+		typ, ns, name, ver, distro string
+		built, host                string
+		earlier                    bool
+	}{
+		// A 22.04 kernel left on a host upgraded to 24.04.
+		{"deb", "ubuntu", "linux-image-5.15.0-202-generic", "5.15.0-202.212", "ubuntu-24.04", "5.15", "24.04", true},
+		{"deb", "ubuntu", "linux-modules-5.15.0-202-generic", "5.15.0-202.212", "ubuntu-24.04", "5.15", "24.04", true},
+		// The same kernel on 22.04 (its own release) and on 20.04 (a newer
+		// hardware enablement kernel there) is not.
+		{"deb", "ubuntu", "linux-image-5.15.0-202-generic", "5.15.0-202.212", "ubuntu-22.04", "", "", false},
+		{"deb", "ubuntu", "linux-image-5.15.0-202-generic", "5.15.0-202.212", "ubuntu-20.04", "", "", false},
+		{"deb", "ubuntu", "linux-image-6.8.0-147-generic", "6.8.0-147.147", "ubuntu-24.04", "", "", false},
+		{"deb", "ubuntu", "linux-image-6.11.0-29-generic", "6.11.0-29.29~24.04.1", "ubuntu-24.04", "", "", false}, // HWE
+		// Headers hold no code (no findings anyway), metapackages name no kernel.
+		{"deb", "ubuntu", "linux-headers-5.15.0-202", "5.15.0-202.212", "ubuntu-24.04", "", "", false},
+		{"deb", "ubuntu", "linux-image-generic", "5.15.0.202.200", "ubuntu-24.04", "", "", false},
+		// A release the table does not know: evaluated as before.
+		{"deb", "ubuntu", "linux-image-5.15.0-202-generic", "5.15.0-202.212", "ubuntu-30.04", "", "", false},
+		{"deb", "debian", "linux-image-5.10.0-30-amd64", "5.10.218-1", "debian-12", "5.10", "12", true},
+		{"deb", "debian", "linux-image-6.1.0-18-amd64", "6.1.76-1", "debian-12", "", "", false},
+		{"rpm", "rocky", "kernel-core", "4.18.0-553.el8_10", "rocky-9.4", "el8", "9.4", true},
+		{"rpm", "ol", "kernel-uek", "5.15.0-208.159.3.el8uek", "ol-9.4", "el8", "9.4", true},
+		{"rpm", "rhel", "kernel-core", "5.14.0-427.13.1.el9_4", "rhel-9.4", "", "", false},
+		{"rpm", "amzn", "kernel", "5.10.205-195.807.amzn2", "amzn-2023", "", "", false},
+		{"rpm", "rhel", "kernel-headers", "4.18.0-553.el8_10", "rhel-9.4", "", "", false},
+		{"deb", "ubuntu", "openssl", "3.0.2-0ubuntu1.18", "ubuntu-24.04", "", "", false},
+	}
+	for _, c := range cases {
+		built, host, earlier := KernelFromEarlierRelease(c.typ, c.ns, c.name, c.ver, c.distro)
+		if built != c.built || host != c.host || earlier != c.earlier {
+			t.Errorf("%s %s %s on %s = %q %q %v, want %q %q %v", c.typ, c.name, c.ver, c.distro, built, host, earlier, c.built, c.host, c.earlier)
+		}
+	}
+}

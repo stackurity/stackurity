@@ -119,6 +119,7 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 		}
 	}
 	kernels := planKernels(rows)
+	earlierKernels := earlierReleaseKernels(rows)
 	programs := planPrograms(e.catalogue(), rows)
 	programAdvs := map[string][]store.AdvisoryMatch{}
 	kernelFound := map[string]map[int64][]store.FindingInput{}
@@ -237,6 +238,11 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 				}
 				if !covered {
 					notEvaluated(noAdvisoriesReason(name, t.Ecosystem))
+				}
+			}
+			if rc.State == store.CoverageEvaluated {
+				if reason := earlierKernels[r.InventoryID]; reason != "" {
+					notEvaluated(reason)
 				}
 			}
 			if rc.State != store.CoverageEvaluated {
