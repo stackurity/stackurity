@@ -2349,8 +2349,8 @@
   "/auth/mfa": {
    "get": {
     "operationId": "get_auth_mfa",
-    "summary": "Your two-factor sign-in status",
-    "description": "Your two-factor sign-in status\n\nRole: any signed-in user (session)",
+    "summary": "Your two-factor methods: passkeys, authenticator app, email codes, recovery codes, and what your organisation requires",
+    "description": "Your two-factor methods: passkeys, authenticator app, email codes, recovery codes, and what your organisation requires\n\nRole: any signed-in user (session)",
     "tags": [
      "Account"
     ],
@@ -2376,8 +2376,8 @@
    },
    "delete": {
     "operationId": "delete_auth_mfa",
-    "summary": "Turn off your two-factor sign-in (password)",
-    "description": "Turn off your two-factor sign-in (password)\n\nRole: any signed-in user (session)",
+    "summary": "Remove all your second factors (password)",
+    "description": "Remove all your second factors (password)\n\nRole: any signed-in user (session)",
     "tags": [
      "Account"
     ],
@@ -2434,6 +2434,36 @@
         }
        }
       }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "delete_auth_mfa_totp",
+    "summary": "Remove your authenticator app (password)",
+    "description": "Remove your authenticator app (password)\n\nRole: any signed-in user (session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (session)",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
      },
      "4XX": {
       "$ref": "#/components/responses/Error"
@@ -8284,8 +8314,8 @@
   "/users/{id}/mfa": {
    "delete": {
     "operationId": "delete_users_id_mfa",
-    "summary": "Reset a member's two-factor sign-in",
-    "description": "Reset a member's two-factor sign-in\n\nRole: admin",
+    "summary": "Reset a member's two-factor sign-in (passkeys, app, email codes, recovery codes)",
+    "description": "Reset a member's two-factor sign-in (passkeys, app, email codes, recovery codes)\n\nRole: admin",
     "tags": [
      "Projects and people"
     ],
@@ -8732,8 +8762,8 @@
   "/settings/security": {
    "get": {
     "operationId": "get_settings_security",
-    "summary": "Require two-factor sign-in for all members, and how many have none",
-    "description": "Require two-factor sign-in for all members, and how many have none\n\nRole: admin",
+    "summary": "The organisation's two-factor policy, and who would need to set up a factor",
+    "description": "The organisation's two-factor policy, and who would need to set up a factor\n\nRole: admin",
     "tags": [
      "Findings and fixes"
     ],
@@ -8759,8 +8789,8 @@
    },
    "put": {
     "operationId": "put_settings_security",
-    "summary": "Require (or stop requiring) two-factor sign-in for all members",
-    "description": "Require (or stop requiring) two-factor sign-in for all members\n\nRole: admin",
+    "summary": "Change the organisation's two-factor policy",
+    "description": "Change the organisation's two-factor policy\n\nRole: admin",
     "tags": [
      "Findings and fixes"
     ],
@@ -10038,6 +10068,413 @@
        "application/octet-stream": {
         "schema": {
          "type": "string"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/passkey/begin": {
+   "post": {
+    "operationId": "post_auth_passkey_begin",
+    "summary": "Start a passkey sign-in (no email or password): request options",
+    "description": "Answers `options` for `navigator.credentials.get()` (discoverable credentials, user verification required) and sets a short-lived cookie\n\nRole: none",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "none",
+    "security": [],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/passkey/finish": {
+   "post": {
+    "operationId": "post_auth_passkey_finish",
+    "summary": "Finish a passkey sign-in: starts the session",
+    "description": "`{\"credential\": <PublicKeyCredential JSON>}` with the cookie from `/auth/passkey/begin`: starts the session and answers the user\n\nRole: none",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "none",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/mfa/passkey/begin": {
+   "post": {
+    "operationId": "post_auth_mfa_passkey_begin",
+    "summary": "Second step of a password sign-in with a passkey: request options",
+    "description": "After `POST /auth/login` answered `mfa_required` with `passkey` among the methods: answers `options` for `navigator.credentials.get()` (the account's passkeys)\n\nRole: none",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "none",
+    "security": [],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/mfa/passkey/finish": {
+   "post": {
+    "operationId": "post_auth_mfa_passkey_finish",
+    "summary": "Second step of a password sign-in with a passkey: starts the session",
+    "description": "`{\"credential\": <PublicKeyCredential JSON>}` with the challenge and ceremony cookies: starts the session and answers the user\n\nRole: none",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "none",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/mfa/passkeys/begin": {
+   "post": {
+    "operationId": "post_auth_mfa_passkeys_begin",
+    "summary": "Start registering a passkey or security key (password): creation options",
+    "description": "Start registering a passkey or security key (password): creation options\n\nRole: any signed-in user (session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (session)",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/mfa/passkeys/finish": {
+   "post": {
+    "operationId": "post_auth_mfa_passkeys_finish",
+    "summary": "Finish registering a passkey: name it; returns recovery codes for the first factor",
+    "description": "Finish registering a passkey: name it; returns recovery codes for the first factor\n\nRole: any signed-in user (session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (session)",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/mfa/passkeys/{id}": {
+   "patch": {
+    "operationId": "patch_auth_mfa_passkeys_id",
+    "summary": "Rename one of your passkeys",
+    "description": "Rename one of your passkeys\n\nRole: any signed-in user (session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (session)",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "delete_auth_mfa_passkeys_id",
+    "summary": "Remove one of your passkeys (password)",
+    "description": "Remove one of your passkeys (password)\n\nRole: any signed-in user (session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (session)",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/mfa/step-up": {
+   "post": {
+    "operationId": "post_auth_mfa_step_up",
+    "summary": "Confirm this session with a code from the app or a recovery code",
+    "description": "Confirm this session with a code from the app or a recovery code\n\nRole: any signed-in user (session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (session)",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/mfa/step-up/passkey/begin": {
+   "post": {
+    "operationId": "post_auth_mfa_step_up_passkey_begin",
+    "summary": "Confirm this session with a passkey: request options",
+    "description": "Confirm this session with a passkey: request options\n\nRole: any signed-in user (session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (session)",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/mfa/step-up/passkey/finish": {
+   "post": {
+    "operationId": "post_auth_mfa_step_up_passkey_finish",
+    "summary": "Confirm this session with a passkey",
+    "description": "Confirm this session with a passkey\n\nRole: any signed-in user (session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (session)",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
         }
        }
       }

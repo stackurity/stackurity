@@ -42,11 +42,18 @@ type Principal struct {
 	// (assistants.go). Its requests come only from the tools behind /mcp;
 	// Token then describes it, so it is capped like an API token.
 	Assistant *store.AssistantGrant
-	// PasswordSession: a browser session signed in with a local password.
-	PasswordSession bool
-	// NeedsMFAEnrolment: such a session without a second factor in a
-	// workspace that requires one (mfa.go); it may only set one up.
-	NeedsMFAEnrolment bool
+	// Login is how a browser session was signed in (store.LoginPassword,
+	// LoginPasskey, LoginInvite; "" for single sign-on and sign-up links).
+	Login string
+	// MFAMethod is the second factor the session was signed in with ("" for
+	// none).
+	MFAMethod string
+	// MFANeed is what the workspace's two-factor policy asks of the session
+	// (mfa_policy.go): nothing, setting up a factor, or confirming with one.
+	MFANeed mfaNeed
+	// MFAAccepted lists the factors that count for the session's user in
+	// its workspace, when MFANeed asks for one.
+	MFAAccepted []string
 	// PasswordChangeRequired: an administrator set a temporary password
 	// (password_reset.go); the session may only change it.
 	PasswordChangeRequired bool
@@ -119,16 +126,13 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 			switch {
 			case err == nil:
 				p = &Principal{User: sess.User, Role: sess.User.Role, Session: true, Workspace: sess.Workspace,
-					PasswordSession: sess.PasswordLogin, NeedsMFAEnrolment: sess.NeedsMFAEnrolment,
+					Login: sess.Login, MFAMethod: sess.MFA,
 					PasswordChangeRequired: sess.PasswordChangeRequired, SSOWorkspace: sess.SSOWorkspace, SessionExpires: sess.ExpiresAt}
 				if p.Workspace > 0 && editionSessionAccess != nil {
 					if req := editionSessionAccess(s, r, sess.User, p.Workspace, sess.SSOWorkspace); req != nil {
 						// Fail closed: no workspace, so no workspace data.
-						p.Workspace, p.Role, p.SSORequired, p.NeedsMFAEnrolment = 0, "", req, false
+						p.Workspace, p.Role, p.SSORequired = 0, "", req
 					}
-				}
-				if sessionGate(w, r, p) {
-					return
 				}
 			case !errors.Is(err, store.ErrNotFound):
 				s.credentialsUnavailable(w, r, err)
@@ -161,6 +165,14 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 					}
 				}
 				p.Project = requestedProject(r)
+			}
+			// The workspace's two-factor policy needs the roles just read.
+			if err := s.applyMFAPolicy(ctx, p); err != nil {
+				s.credentialsUnavailable(w, r, err)
+				return
+			}
+			if p.Session && sessionGate(w, r, p) {
+				return
 			}
 			r = r.WithContext(ctx)
 		}

@@ -138,6 +138,9 @@ type Server struct {
 	// Breached refuses passwords found in data breaches (Pwned Passwords,
 	// k-anonymity); nil turns the check off.
 	Breached *auth.BreachChecker
+	// relyingParty is the WebAuthn relying party for passkeys, made from
+	// BaseURL on first use (webauthn.go).
+	relyingParty relyingPartyOnce
 }
 
 func (s *Server) Handler() http.Handler {

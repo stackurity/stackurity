@@ -5,7 +5,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/stackurity/stackurity/internal/license"
 	"github.com/stackurity/stackurity/internal/store"
+	"github.com/stackurity/stackurity/internal/tenant"
 )
 
 // SSORequired explains why a session cannot work in a workspace: the
@@ -37,8 +39,22 @@ var (
 	// refuses: the request continues with no workspace, and /auth/me
 	// reports why (a workspace that requires its own single sign-on).
 	editionSessionAccess func(s *Server, r *http.Request, user *store.User, ws, ssoWorkspace int64) *SSORequired
+	// editionHasFeature decides whether a paid feature is on for workspace
+	// ws where the edition sets each organisation's plan itself (a hosted
+	// edition's billing); nil uses the licence and the workspace's plan
+	// (Gate). The key a hosted plan lists is the feature's value, such as
+	// "phishing_resistant_mfa".
+	editionHasFeature func(s *Server, r *http.Request, ws int64, f license.Feature) (bool, error)
 	// reportWatermark is the line every report and export carries while the
 	// organisation's report mode is trial (reportmode.go). An edition that
 	// sets trial mode may name itself here.
 	reportWatermark = "Trial — not for distribution"
 )
+
+// hasFeatureIn reports whether paid feature f is on for workspace ws.
+func (s *Server) hasFeatureIn(r *http.Request, ws int64, f license.Feature) (bool, error) {
+	if editionHasFeature != nil {
+		return editionHasFeature(s, r, ws, f)
+	}
+	return s.Gate.Has(tenant.WithWorkspace(r.Context(), ws), f), nil
+}
