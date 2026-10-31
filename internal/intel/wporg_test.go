@@ -311,3 +311,58 @@ func ageReleases(t *testing.T, st *store.Store) {
 		t.Fatalf("aged %d releases: %v", tag.RowsAffected(), err)
 	}
 }
+
+// The list URLs follow the operator: set explicitly, or, with the API on a
+// mirror and a list URL unset, unavailable (never wordpress.org's) with a
+// warning.
+func TestResolveWordPressOrg(t *testing.T) {
+	def := DefaultConfig()
+	for _, c := range []struct {
+		name, api, plugins, themes string
+		wantAPI, wantP, wantT      string
+		warn                       string // a substring; "" for no warning
+	}{
+		{"defaults", "", "", "", def.WordPressOrgURL, def.WordPressPluginsListURL, def.WordPressThemesListURL, ""},
+		{"api set to wordpress.org itself", "https://api.wordpress.org/", "", "", "https://api.wordpress.org/", def.WordPressPluginsListURL, def.WordPressThemesListURL, ""},
+		{"all on a mirror", "https://m.example/api", "https://m.example/p/", "https://m.example/t/", "https://m.example/api", "https://m.example/p/", "https://m.example/t/", ""},
+		{"mirror, no lists", "https://m.example/api", "", "", "https://m.example/api", "", "",
+			"STACKURITY_WORDPRESS_PLUGINS_LIST_URL and STACKURITY_WORDPRESS_THEMES_LIST_URL are not set"},
+		{"mirror, plugins list only", "https://m.example/api", "https://m.example/p/", "", "https://m.example/api", "https://m.example/p/", "",
+			"STACKURITY_WORDPRESS_THEMES_LIST_URL is not set"},
+		{"lists only", "", "https://m.example/p/", "https://m.example/t/", def.WordPressOrgURL, "https://m.example/p/", "https://m.example/t/", ""},
+	} {
+		cfg := DefaultConfig()
+		w := ResolveWordPressOrg(&cfg, c.api, c.plugins, c.themes)
+		if cfg.WordPressOrgURL != c.wantAPI || cfg.WordPressPluginsListURL != c.wantP || cfg.WordPressThemesListURL != c.wantT ||
+			(c.warn == "") != (w == "") || !strings.Contains(w, c.warn) {
+			t.Errorf("%s: api %q plugins %q themes %q, warning %q", c.name, cfg.WordPressOrgURL, cfg.WordPressPluginsListURL, cfg.WordPressThemesListURL, w)
+		}
+	}
+}
+
+// With the API on a mirror and no list URL, the feed fails closed: nothing
+// is requested, from the mirror or from wordpress.org, and the error names
+// the setting.
+func TestWordPressOrgMirrorWithoutLists(t *testing.T) {
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	st := store.New(testdb.New(t))
+	wp := &fakeWPOrg{answers: map[string]wpAnswer{}, lists: map[string]string{}}
+	srv := httptest.NewServer(wp)
+	t.Cleanup(srv.Close)
+	cfg := DefaultConfig()
+	if w := ResolveWordPressOrg(&cfg, srv.URL, "", ""); w == "" {
+		t.Fatal("no warning")
+	}
+	sy := NewSyncer(st, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
+	ingest(t, st, model.AssetApplication, "/var/www/shop", true, wpPlugin("akismet", "Akismet", "5.3"))
+	if err := EnsureFeeds(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	_, err := sy.Sync(ctx, FeedWordPressOrg)
+	if err == nil || !strings.Contains(err.Error(), "STACKURITY_WORDPRESS_PLUGINS_LIST_URL is not set") {
+		t.Errorf("sync: %v", err)
+	}
+	if len(wp.requested) != 0 {
+		t.Errorf("requested %v", wp.requested)
+	}
+}
