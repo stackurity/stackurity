@@ -83,6 +83,12 @@ func (c mfaCase) counts(m string) bool {
 	if c.Policy.PhishingResistantAdmins && c.admin() && m != store.MFAPasskey {
 		return false
 	}
+	if m == store.MFARecovery {
+		// A recovery code stands in for the passkey or app it backs up: it
+		// counts only where one the account has does.
+		return (slices.Contains(c.Methods, store.MFAPasskey) && c.counts(store.MFAPasskey)) ||
+			(slices.Contains(c.Methods, store.MFATOTP) && c.counts(store.MFATOTP))
+	}
 	return true
 }
 
@@ -131,6 +137,49 @@ func (s *Server) applyMFAPolicy(ctx context.Context, p *Principal) error {
 		p.MFAAccepted = c.accepted()
 	}
 	return nil
+}
+
+// mfaStepUpSomewhere names a workspace of u where the caller's session
+// would have to confirm with a factor the account has ("" when none).
+// Sessions without a sign-in method (single sign-on) are exempt everywhere.
+func (s *Server) mfaStepUpSomewhere(r *http.Request, u *store.User) (string, error) {
+	p := principal(r)
+	if p == nil || !p.Session || p.Login == "" {
+		return "", nil
+	}
+	if p.MFANeed == mfaStepUp {
+		ws, err := s.Store.GetWorkspace(r.Context(), p.Workspace)
+		if err != nil {
+			return "", err
+		}
+		return ws.Name, nil
+	}
+	methods, err := s.Store.MFAMethods(r.Context(), u.ID)
+	if err != nil {
+		return "", err
+	}
+	ms, err := s.Store.MFAMemberships(r.Context(), u.ID)
+	if err != nil {
+		return "", err
+	}
+	for _, m := range ms {
+		pol, err := s.Store.MFAPolicyOf(r.Context(), m.ID)
+		if err != nil {
+			return "", err
+		}
+		if !pol.RequiresAny() {
+			continue
+		}
+		access, err := s.Store.UserAccess(r.Context(), m.ID, u.ID)
+		if err != nil {
+			return "", err
+		}
+		c := mfaCase{Policy: pol, Role: access.OrgRole, ProjectRole: access.ProjectRole, InstanceAdmin: u.InstanceAdmin, Session: p.MFAMethod, Methods: methods}
+		if c.need() == mfaStepUp {
+			return m.Name, nil
+		}
+	}
+	return "", nil
 }
 
 // mfaEnrolmentAllows lists what a session sent to enrolment may still do:

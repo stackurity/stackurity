@@ -53,6 +53,12 @@ func TestMFADecision(t *testing.T) {
 		{"phishing-resistant applies even when 2FA is optional", mfaCase{Policy: optionalPhish, Role: auth.RoleAdmin, Session: store.MFATOTP,
 			Methods: []string{store.MFATOTP}}, mfaEnrol},
 		{"phishing-resistant optional leaves members alone", mfaCase{Policy: optionalPhish, Role: auth.RoleViewer}, mfaOK},
+		{"recovery code backing an app that does not count", mfaCase{Policy: passkeyOnly, Role: auth.RoleViewer, Session: store.MFARecovery,
+			Methods: []string{store.MFATOTP}}, mfaEnrol},
+		{"recovery code backing a passkey that counts", mfaCase{Policy: passkeyOnly, Role: auth.RoleViewer, Session: store.MFARecovery,
+			Methods: []string{store.MFAPasskey, store.MFATOTP}}, mfaOK},
+		{"recovery code with only email codes", mfaCase{Policy: everyone, Role: auth.RoleViewer, Session: store.MFARecovery,
+			Methods: []string{store.MFAEmail}}, mfaEnrol},
 	} {
 		if got := c.c.need(); got != c.want {
 			t.Errorf("%s: %q, want %q", c.name, got, c.want)

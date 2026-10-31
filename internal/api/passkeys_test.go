@@ -733,3 +733,113 @@ func TestInvitationSessionFollowsPolicy(t *testing.T) {
 		t.Errorf("invited member's first session: %d %+v", code, out)
 	}
 }
+
+// A session that must confirm with a passkey in one workspace cannot add
+// or remove factors from another workspace with a weaker policy, then
+// switch back: a phished password and app code would otherwise register
+// the attacker's passkey for an admin who has one.
+func TestStepUpCannotChangeFactorsFromAnotherWorkspace(t *testing.T) {
+	e := newPasskeyEnv(t)
+	bg := context.Background()
+	e.user("both@x.io", auth.RoleViewer) // workspace 1: optional
+	ws2, _, err := e.st.CreateWorkspace(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "Acme", "acme", "owner@acme.io", "Owner", pw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.st.Pool.Exec(tenant.System(bg), `INSERT INTO workspace_members (workspace_id, user_id, role)
+		SELECT $1, id, 'admin' FROM users WHERE email = 'both@x.io'`, ws2.ID); err != nil {
+		t.Fatal(err)
+	}
+	both := e.login("both@x.io")
+	secret, _ := enrol(t, both)
+	registerPasskey(t, both, newAuthenticator(), "Real key")
+	if _, err := e.st.SetMFAPolicy(bg, ws2.ID, store.MFAPolicy{Require: store.PolicyEveryone, Methods: []string{"passkey", "totp"},
+		PhishingResistantAdmins: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	// The attacker has the password and a code from the app.
+	if _, err := e.st.Pool.Exec(bg, `UPDATE user_mfa SET last_step = 0`); err != nil {
+		t.Fatal(err)
+	}
+	s, _ := passwordStep(t, e, "both@x.io")
+	if code := s.do("POST", "/api/v1/auth/mfa/verify", map[string]string{"code": totpAt(t, secret, 30*time.Second)}, nil); code != 200 {
+		t.Fatalf("app code: %d", code)
+	}
+	if code := s.do("POST", "/api/v1/workspaces/1/activate", nil, nil); code != 200 {
+		t.Fatalf("workspace 1: %d", code)
+	}
+	if code := s.do("GET", "/api/v1/assets", nil, nil); code != 200 {
+		t.Fatalf("workspace 1 works with the app: %d", code)
+	}
+	var out apiErr
+	if _, code := tryRegisterPasskey(t, s, newAuthenticator(), "attacker"); code != 403 {
+		t.Errorf("register a passkey from workspace 1: %d", code)
+	}
+	if code := s.do("POST", "/api/v1/auth/mfa/totp", map[string]string{"password": pw}, &out); code != 403 || out.Error.Code != "mfa_step_up_required" {
+		t.Errorf("set up the app again from workspace 1: %d %+v", code, out)
+	}
+	if code := s.do("POST", "/api/v1/auth/mfa/recovery-codes", map[string]string{"password": pw}, nil); code != 403 {
+		t.Errorf("new recovery codes from workspace 1: %d", code)
+	}
+	st := mfaStatusOf(t, s)
+	if code := s.do("DELETE", fmt.Sprintf("/api/v1/auth/mfa/passkeys/%d", st.Passkeys[0].ID), map[string]string{"password": pw}, nil); code != 403 {
+		t.Errorf("remove the real passkey from workspace 1: %d", code)
+	}
+	if n := len(mfaStatusOf(t, s).Passkeys); n != 1 {
+		t.Errorf("%d passkeys after the attempts", n)
+	}
+}
+
+// A recovery code counts only where the factor it backs up does: with the
+// app alone where only passkeys count, it sends the session to set up a
+// passkey.
+func TestRecoveryCodeBacksUpOnlyItsFactor(t *testing.T) {
+	e := newPasskeyEnv(t)
+	e.user("dev@x.io", auth.RoleEngineer)
+	_, recovery := enrol(t, e.login("dev@x.io"))
+	if _, err := e.st.SetMFAPolicy(context.Background(), tenant.DefaultWorkspace,
+		store.MFAPolicy{Require: store.PolicyEveryone, Methods: []string{"passkey"}}); err != nil {
+		t.Fatal(err)
+	}
+	s, _ := passwordStep(t, e, "dev@x.io")
+	if code := s.do("POST", "/api/v1/auth/mfa/verify", map[string]string{"code": recovery[0]}, nil); code != 200 {
+		t.Fatalf("recovery code: %d", code)
+	}
+	var out apiErr
+	if code := s.do("GET", "/api/v1/assets", nil, &out); code != 403 || out.Error.Code != "mfa_enrolment_required" {
+		t.Errorf("recovery code backing an app that does not count: %d %+v", code, out)
+	}
+}
+
+// Two removals at once cannot both pass the policy floor.
+func TestConcurrentRemovalsKeepThePolicyFloor(t *testing.T) {
+	e := newPasskeyEnv(t)
+	e.user("ann@x.io", auth.RoleAdmin)
+	ann := e.login("ann@x.io")
+	registerPasskey(t, ann, newAuthenticator(), "One")
+	registerPasskey(t, ann, newAuthenticator(), "Two")
+	if code := ann.do("PUT", "/api/v1/settings/security", map[string]any{"policy": "everyone", "methods": []string{"passkey"}}, nil); code != 200 {
+		t.Fatalf("policy: %d", code)
+	}
+	st := mfaStatusOf(t, ann)
+	codes := make(chan int, 2)
+	for _, pk := range st.Passkeys {
+		go func(id int64) {
+			codes <- ann.do("DELETE", fmt.Sprintf("/api/v1/auth/mfa/passkeys/%d", id), map[string]string{"password": pw}, nil)
+		}(pk.ID)
+	}
+	ok := 0
+	for range 2 {
+		if <-codes == 204 {
+			ok++
+		}
+	}
+	var n int
+	if err := e.st.Pool.QueryRow(context.Background(), `SELECT count(*) FROM webauthn_credentials`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if ok != 1 || n != 1 {
+		t.Errorf("%d removals succeeded, %d passkeys left", ok, n)
+	}
+}
