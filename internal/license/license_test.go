@@ -41,8 +41,11 @@ func TestIssueParseAndStates(t *testing.T) {
 	if s := StatusAt(nil, now); s.State != StateNone || s.Edition != Community {
 		t.Errorf("none: %+v", s)
 	}
+	if _, err := Issue(License{Edition: "free"}, priv); err == nil {
+		t.Error("issued an unknown edition")
+	}
 	if _, err := Issue(License{Edition: Community}, priv); err == nil {
-		t.Error("issued a community licence")
+		t.Error("issued a licence without an expiry")
 	}
 }
 

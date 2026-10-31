@@ -1,6 +1,6 @@
 # Outbound network access
 
-Stackurity has no telemetry. Every outbound connection is listed below. The only requests that are not for your own data or integrations are the [update check](#update-check), which sends nothing about you, the [breached-password check](#breached-password-check), which sends five characters of a hash, and [feedback](#feedback), which a user sends on purpose. All three can be turned off.
+Stackurity has no telemetry. Every outbound connection is listed below. The only requests that are not for your own data or integrations are the [update check](#update-check), which sends nothing about you, the [breached-password check](#breached-password-check), which sends five characters of a hash, and [feedback](#feedback), which a user sends on purpose. All three can be turned off. Checking the server's [free key](install.md#the-free-key) or licence makes no request at all.
 
 | Component | Destination | When | Data sent |
 |---|---|---|---|
@@ -105,6 +105,8 @@ Syft fetches image manifests and layers from the registry in the image reference
 When an AI assistant identifies itself with a client ID metadata document (its client id is an HTTPS URL; see [ai-assistants.md](ai-assistants.md#how-sign-in-works)), the server fetches that URL once an hour at most while someone connects it: a GET over HTTPS, without redirects, at most 64 KiB in 5 seconds, never to private, loopback or cloud metadata addresses. Nothing is sent but the request. Assistants that register themselves instead cause no outbound request.
 
 ### Air-gapped installs
+
+The [free key](install.md#the-free-key) (or a licence) is checked on the server and makes no request: get it on any computer and paste it in, or set `STACKURITY_LICENSE_FILE`.
 
 Mirror the OSV bucket layout (`<ecosystem>/all.zip`, `<ecosystem>/modified_id.csv`, `<ecosystem>/<id>.json`) and point `STACKURITY_OSV_URL` at it. Do the same for the other `STACKURITY_*_URL` variables; for EPSS, copy the day's file and point `STACKURITY_EPSS_URL` at it (gzipped or plain CSV, with its `#model_version:...,score_date:...` first line). For Windows updates, save `https://api.msrc.microsoft.com/cvrf/v3.0/updates` as `updates` and each monthly document `https://api.msrc.microsoft.com/cvrf/v3.0/cvrf/<month>` (requested with `Accept: application/json`) as `cvrf/<month>`, and point `STACKURITY_MSRC_URL` at the folder; only the document ids are read from the index, never its URLs. For Oracle Linux, copy `com.oracle.elsa-ol<N>.xml.bz2` for your releases from `https://linux.oracle.com/security/oval/` into one folder and point `STACKURITY_ORACLE_LINUX_URL` at it. For Windows programs, `STACKURITY_MOZILLA_ADVISORIES_URL` takes any copy of the foundation-security-advisories archive (`.tar.gz`), and `STACKURITY_NVD_URL` a service that answers NVD's CVE API 2.0 queries (`virtualMatchString`, `startIndex`, `resultsPerPage`, `lastModStartDate`, `lastModEndDate`), such as a proxy with a cache; NVD's API cannot be mirrored as files. Any feed you cannot mirror shows as stale, and the components it covers are listed as evaluation gaps. They are never treated as clean.
 

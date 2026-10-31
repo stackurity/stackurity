@@ -192,6 +192,7 @@ function Shell() {
         </header>
         <main id="main" className="content" tabIndex={-1}>
           <UpdateBanner />
+          {me?.user?.instance_admin && me.license_key?.state === "grace" && <KeyGraceBanner graceEnds={me.license_key.grace_ends} />}
           {!pathname.startsWith("/admin/health") && <PlatformHealthBanner />}
           {me?.workspace?.read_only && <ReadOnlyBanner state={me.workspace.read_only} />}
           {me?.workspace && !me.workspace.read_only && !projectOnly && pathname !== "/settings/usage" && <AssetLimitBanner workspaceId={me.workspace.id} />}
@@ -536,6 +537,43 @@ function AvatarMenu({ onFeedback, onLogout, version }: { onFeedback?: () => void
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+const KEY_BANNER_DISMISSED = "stackurity.keyBannerDismissed";
+
+/**
+ * Tells instance administrators of an upgraded self-hosted server how long
+ * it works without its free key. Dismissed, it comes back after 7 days.
+ */
+function KeyGraceBanner({ graceEnds }: { graceEnds?: string }) {
+  const [dismissed, setDismissed] = useState(() => {
+    try {
+      const at = Number(localStorage.getItem(KEY_BANNER_DISMISSED) ?? 0);
+      return Date.now() - at < 7 * 24 * 3600 * 1000;
+    } catch {
+      return false;
+    }
+  });
+  if (dismissed) return null;
+  const dismiss = () => {
+    try {
+      localStorage.setItem(KEY_BANNER_DISMISSED, String(Date.now()));
+    } catch {
+      // Not stored: it comes back on the next page load.
+    }
+    setDismissed(true);
+  };
+  const ends = graceEnds ? new Date(graceEnds) : null;
+  return (
+    <div className="alert alert-warn limit-banner" role="status">
+      <strong>This server needs its free key{ends && ends.getTime() > Date.now() ? ` by ${ends.toLocaleDateString()}` : " soon"}.</strong>{" "}
+      Self-hosted Stackurity Community stays free; each server now needs a key from a short sign-up, checked offline. After that date the dashboard
+      waits for it (agents and scans keep working). <Link to="/admin/license">Enter the key</Link>{" "}
+      <button type="button" className="btn btn-sm btn-link" onClick={dismiss}>
+        Dismiss
+      </button>
     </div>
   );
 }

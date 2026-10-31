@@ -63,6 +63,37 @@ export interface Meta {
   sso_discovery?: boolean;
   /** True when this server sends product updates or vulnerability news, so people have email preferences (a hosted edition). */
   email_preferences?: boolean;
+  /** Present where people can get a free key for a self-hosted server (Stackurity Cloud). */
+  community_keys?: CommunityKeyMeta;
+}
+
+export interface CommunityKeyMeta {
+  /** Site key of the challenge that keeps bots out. */
+  turnstile_site_key: string;
+  terms_url: string;
+  privacy_url: string;
+  contact_url?: string;
+}
+
+/** Whether a self-hosted server has the key it needs (absent on Stackurity Cloud). */
+export interface LicenseKeyStatus {
+  /** "installed": a free key or a paid licence; "grace": none yet, works until grace_ends; "required": the server waits for one. */
+  state: "installed" | "grace" | "required";
+  grace_ends?: string;
+  /** The server already had users or data when it first ran a version that needs a key. */
+  upgraded: boolean;
+  /** Where to get a free key. */
+  signup_url: string;
+}
+
+/** A free key handed out by the sign-up, as an instance administrator of Stackurity Cloud lists them. */
+export interface CommunityKeyRegistration {
+  id: number;
+  key_id: string;
+  email: string;
+  name: string;
+  company: string;
+  issued_at: string;
 }
 
 export interface SignupMeta {
@@ -454,6 +485,8 @@ export interface Me {
   password_change_required?: boolean;
   /** Set when the session's workspace requires its own single sign-on, which this session did not use; workspace is then null. */
   sso_required?: SSORequired;
+  /** Whether this self-hosted server has its key (absent on Stackurity Cloud). */
+  license_key?: LicenseKeyStatus;
 }
 
 export interface SSORequired {
@@ -536,7 +569,7 @@ export interface LicenseInfo {
     edition: Edition;
     grace_ends?: string;
     features: Feature[];
-    license?: { id: string; customer: string; email?: string; edition: Edition; max_assets: number; issued_at: string; expires_at: string };
+    license?: { id: string; customer: string; name?: string; email?: string; edition: Edition; max_assets: number; issued_at: string; expires_at: string };
   };
   active_assets: number;
   managed_by_env: boolean;
@@ -3077,6 +3110,10 @@ export const api = {
   }) =>
     request<{ status: string }>("POST", "/signup", b, { quiet401: true }),
   verifySignup: (token: string) => request<{ workspace_id: number }>("POST", "/signup/verify", { token }, { quiet401: true }),
+  requestCommunityKey: (b: { email: string; name: string; company: string; turnstile_token: string; accept_terms: true }) =>
+    request<{ status: string }>("POST", "/community-keys", b, { quiet401: true }),
+  verifyCommunityKey: (token: string) =>
+    request<{ key: string; key_id: string; email: string }>("POST", "/community-keys/verify", { token }, { quiet401: true }),
 };
 
 /**

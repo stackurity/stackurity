@@ -29,8 +29,8 @@ Where a workspace's plan does not include a feature, its API answers `402 plan_r
 | | Community | Pro and Enterprise |
 |---|---|---|
 | Build | The public image, `ghcr.io/stackurity/stackurity`, built from this repository | The licensed build (`stackurity-ee`): this repository plus the private `stackurity-pro` repository, compiled with the `ee` build tag |
-| Licence | None | A signed key installed under **Settings → Licence**, with `stackurity admin set-license`, or with `STACKURITY_LICENSE` / `STACKURITY_LICENSE_FILE` (which then wins) |
-| Licence checks | | Offline (Ed25519 signature), never phone home; air-gapped installs work |
+| Licence | A free key from a sign-up ([install.md](install.md#the-free-key)), installed the same way | A signed key installed under **Settings → Licence**, with `stackurity admin set-license`, or with `STACKURITY_LICENSE` / `STACKURITY_LICENSE_FILE` (which then wins) |
+| Licence checks | Offline, as for paid licences; the key does not expire | Offline (Ed25519 signature), never phone home; air-gapped installs work |
 | Expiry | | Paid features keep working for 30 days after expiry, then the installation behaves as Community. Detection and alerts are never affected |
 | Asset limit | None | A licence may state a number of assets. Above it, the licence page shows a warning; nothing stops working |
 | Per-workspace plan | | **Settings → Workspaces**: As licensed, Community, Pro or Enterprise. A workspace gets the lower of its plan and the licence; plan changes reach every replica within 30 seconds |

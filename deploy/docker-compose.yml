@@ -42,6 +42,10 @@ services:
       STACKURITY_TRUSTED_PROXY_HEADER: ${STACKURITY_TRUSTED_PROXY_HEADER:-}
       STACKURITY_TRUSTED_PROXIES: ${STACKURITY_TRUSTED_PROXIES:-}
       STACKURITY_SECRETS_DIR: /run/secrets
+      # The server's free key (https://app.stackurity.dev/self-hosted-key,
+      # checked offline) or a paid licence key. Empty: enter it in the
+      # dashboard, which asks for it (docs/install.md, The free key).
+      STACKURITY_LICENSE: ${STACKURITY_LICENSE:-}
       # Repository tokens are referenced as env:STACKURITY_SECRET_<NAME>.
       STACKURITY_SECRET_GITHUB: ${STACKURITY_SECRET_GITHUB:-}
     secrets: [database_url]

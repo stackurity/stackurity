@@ -164,6 +164,10 @@ func serverCmd() *cobra.Command {
 				return err
 			}
 			gate := &license.Gate{Licence: holder, Plan: license.CachedPlan(st.WorkspacePlan, 30*time.Second)}
+			keyReq, err := keyRequirement(ctx, st, holder, log)
+			if err != nil {
+				return err
+			}
 			keys, err := packs.DefaultKeyring()
 			if err != nil {
 				return err
@@ -268,7 +272,7 @@ func serverCmd() *cobra.Command {
 				UI:                 web.Dist(),
 				SecretBox:          box,
 				Packs:              packMgr,
-				Licence:            holder, Gate: gate, LicenceFromEnv: licFromEnv,
+				Licence:            holder, Gate: gate, LicenceFromEnv: licFromEnv, KeyRequirement: keyReq,
 				Health: checker, UpdateCheck: updateCfg.Enabled,
 				CoverageGaps: func(ctx context.Context) (any, error) { return coverageGaps(ctx) },
 				FeedbackURL:  feedbackURL,
@@ -331,6 +335,9 @@ func serverCmd() *cobra.Command {
 			done := make(chan struct{})
 			go func() { w.Run(workCtx); close(done) }()
 			go followReplicas(ctx, st, holder, licFromEnv, packMgr, log)
+			if keyReq.Upgraded {
+				go trackKeyGrace(ctx, st, keyReq, log)
+			}
 			go watchSchema(ctx, st, schema, tm.SchemaCheck, stopWork, log)
 
 			errc := make(chan error, 2)
@@ -423,6 +430,57 @@ func loadLicence(ctx context.Context, st *store.Store, log *slog.Logger) (*licen
 	s := h.Status()
 	log.Info("licence", "customer", l.Customer, "edition", l.Edition, "state", s.State, "expires", l.ExpiresAt.Format("2006-01-02"))
 	return h, fromEnv, nil
+}
+
+// keyRequirement reads from when this server needs a key (a free Community
+// key or a paid licence; migration 0072) and says so in the log. A hosted
+// edition drops the requirement (its platform holds the licence).
+func keyRequirement(ctx context.Context, st *store.Store, holder *license.Holder, log *slog.Logger) (*license.Requirement, error) {
+	from, upgraded, observed, err := st.LicenseRequirement(ctx)
+	if err != nil {
+		return nil, err
+	}
+	q := &license.Requirement{From: from, Upgraded: upgraded, Licence: holder}
+	q.SetObserved(observed)
+	switch s := q.Status(); s.State {
+	case license.KeyGraceTime:
+		log.Warn("this server needs a free key: the dashboard and API keep working until the grace period ends",
+			"grace_ends", s.GraceEnds.Format("2006-01-02"), "get_one", s.SignupURL,
+			"fix", "enter it under Instance > Licence, or set STACKURITY_LICENSE or STACKURITY_LICENSE_FILE")
+	case license.KeyRequired:
+		log.Warn("this server needs a free key: the dashboard and API wait for it (agents and scans keep working)",
+			"get_one", s.SignupURL, "fix", "enter it in the dashboard, or set STACKURITY_LICENSE or STACKURITY_LICENSE_FILE")
+	}
+	return q, nil
+}
+
+// keyGraceTick is how often a server adds its running time to the grace
+// period's count (migration 0072); a longer gap counts as keyGraceMaxStep.
+const (
+	keyGraceTick    = 10 * time.Minute
+	keyGraceMaxStep = 20 * time.Minute
+)
+
+// trackKeyGrace counts the time this server runs, which ends an upgrade's
+// grace period together with its date (license.Requirement).
+func trackKeyGrace(ctx context.Context, st *store.Store, q *license.Requirement, log *slog.Logger) {
+	t := time.NewTicker(keyGraceTick)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		d, err := st.TickLicenseRequirement(ctx, keyGraceMaxStep)
+		if err != nil {
+			if ctx.Err() == nil {
+				log.Warn("count running time for the key's grace period", "err", err)
+			}
+			continue
+		}
+		q.SetObserved(d)
+	}
 }
 
 // followReplicas keeps state that another replica can change in step with
@@ -957,7 +1015,7 @@ func adminCmd() *cobra.Command {
 
 	setLicence := &cobra.Command{
 		Use:   "set-license",
-		Short: "Install a licence key (read from STACKURITY_LICENSE_KEY or stdin); restart the server to apply",
+		Short: "Install a licence key or the free Community key (read from STACKURITY_LICENSE_KEY or stdin); restart the server to apply",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			key, err := readSecretInput("STACKURITY_LICENSE_KEY", "Licence key: ")
 			if err != nil {
@@ -977,6 +1035,10 @@ func adminCmd() *cobra.Command {
 			}
 			_ = st.Audit(tenant.System(cmd.Context()), store.Actor{Type: "system", Name: "cli"}, "license.install", "license", l.ID,
 				map[string]any{"customer": l.Customer, "edition": l.Edition, "expires_at": l.ExpiresAt})
+			if l.Edition == license.Community {
+				fmt.Printf("installed the free Community key for %s; restart the server to apply\n", l.Customer)
+				return nil
+			}
 			fmt.Printf("installed %s licence for %s until %s; restart the server to apply\n", l.Edition, l.Customer, l.ExpiresAt.Format("2006-01-02"))
 			return nil
 		},

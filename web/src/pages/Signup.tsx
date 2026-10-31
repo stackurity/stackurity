@@ -41,7 +41,7 @@ function loadChallenge(): Promise<ChallengeWidget> {
 }
 
 /** The challenge that shows a person, not a script, is signing up. */
-function Challenge({ siteKey, onToken, resetKey }: { siteKey: string; onToken: (t: string) => void; resetKey: number }) {
+export function Challenge({ siteKey, onToken, resetKey }: { siteKey: string; onToken: (t: string) => void; resetKey: number }) {
   const box = useRef<HTMLDivElement>(null);
   const widget = useRef<{ api: ChallengeWidget; id: string } | null>(null);
   const [failed, setFailed] = useState(false);
@@ -314,6 +314,6 @@ export function VerifySignupPage() {
 }
 
 /** A link from the server, kept only when it is https: or mailto:. */
-function safeLink(u: string | undefined): string | undefined {
+export function safeLink(u: string | undefined): string | undefined {
   return u && /^(https:|mailto:)/i.test(u) ? u : undefined;
 }
