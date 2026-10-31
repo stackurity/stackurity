@@ -10050,6 +10050,94 @@
      }
     }
    }
+  },
+  "/public/cves/recent": {
+   "get": {
+    "operationId": "get_public_cves_recent",
+    "summary": "The CVEs that most recently reached Stackurity",
+    "description": "The public log of new CVEs, newest first: each CVE with the time it first reached Stackurity (`added`) and the feed that brought it (`source`: `epss`, FIRST's daily file of every scored CVE, or `kev`, CISA's catalogue). Only these feeds count, as they cover every CVE whatever the workspaces run; no workspace data is involved. `tracking_since` is when exact times began: CVEs stored earlier are not listed here. `limit` is 1 to 200 (default 50); `before` (RFC 3339) pages back. No sign-in; 60 requests a minute per address\n\nRole: none",
+    "tags": [
+     "Intelligence"
+    ],
+    "x-stackurity-role": "none",
+    "security": [],
+    "parameters": [
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "before",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/public/cves": {
+   "get": {
+    "operationId": "get_public_cves",
+    "summary": "When given CVEs reached Stackurity",
+    "description": "What the public log of new CVEs records for each `id` (repeat it, or separate IDs with commas; 1 to 200): `added`, `source`, and `exact`, false for CVEs stored before `tracking_since`, which arrived on or before `added`. Unknown CVEs are left out. No sign-in; 60 requests a minute per address\n\nRole: none",
+    "tags": [
+     "Intelligence"
+    ],
+    "x-stackurity-role": "none",
+    "security": [],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
   }
  },
  "components": {

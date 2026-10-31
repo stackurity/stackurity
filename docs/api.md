@@ -1312,6 +1312,18 @@ Decisions about open issues as a VEX document ([what is exported](vex.md#exporti
 
 ## Intelligence
 
+### `GET /public/cves/recent`
+
+**Who:** anyone (no sign-in; 60 requests a minute per address)
+
+The public log of new CVEs, newest first: `{"tracking_since": "...", "cves": [{"cve", "added", "source", "exact"}]}`. `added` is when the CVE first reached this server, and `source` the feed that brought it: `epss` (FIRST's daily file of every scored CVE) or `kev` (CISA's catalogue). Only these two feeds count. Which advisory feeds a server syncs follows what its workspaces run, so their times would tell the public about the workspaces' software. The time is written once and never changed. CVEs stored before this was recorded are not listed; `tracking_since` is when exact times began. `limit` is 1 to 200 (default 50), and `before` (RFC 3339, URL-encoded) pages back to older entries. stackurity.ai shows this log for Stackurity Cloud.
+
+### `GET /public/cves`
+
+**Who:** anyone (no sign-in; 60 requests a minute per address)
+
+What the log records for the CVEs in `id` (repeat it, or separate IDs with commas; 1 to 200). Same shape as above; `exact: false` marks a CVE stored before `tracking_since`, which arrived on or before `added`. Unknown CVEs are left out.
+
 ### `GET /advisories/{key}`
 
 **Who:** viewer

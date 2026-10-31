@@ -261,6 +261,10 @@ func (s *Store) ReplaceKnownExploited(ctx context.Context, rows [][]any) error {
 			[]string{"cve", "vendor", "product", "name", "added", "due_date", "ransomware", "short_description"}, pgx.CopyFromRows(rows)); err != nil {
 			return err
 		}
+		if _, err := tx.Exec(ctx, `INSERT INTO cve_first_seen (cve, first_seen, source)
+			SELECT cve, now(), 'kev' FROM known_exploited ON CONFLICT (cve) DO NOTHING`); err != nil {
+			return err
+		}
 		// Only the advisories whose flag changes are written (and locked):
 		// rewriting every row each time left as many dead rows behind.
 		_, err := tx.Exec(ctx, `UPDATE advisories a SET known_exploited = NOT a.known_exploited

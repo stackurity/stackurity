@@ -43,6 +43,8 @@ var projectScopes = map[string]string{
 	"GET /download/agent/{platform}":   "public",
 	"GET /api/v1/meta":                 "public",
 	"GET /api/v1/openapi.json":         "public",
+	"GET /api/v1/public/cves/":         "public",
+	"GET /api/v1/public/cves/recent":   "public",
 	"POST /api/v1/setup":               "public",
 	"POST /api/v1/auth/login":          "public",
 	"POST /api/v1/auth/logout":         "public",
