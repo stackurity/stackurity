@@ -452,12 +452,11 @@ func (s *Server) removePasskey(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	p := principal(r)
-	if p == nil || p.User == nil {
-		writeError(w, 403, "forbidden", "sign in with a session to change two-factor sign-in")
+	me := s.sessionUser(w, r)
+	if me == nil {
 		return
 	}
-	pks, err := s.Store.ListPasskeys(r.Context(), p.User.ID)
+	pks, err := s.Store.ListPasskeys(r.Context(), me.ID)
 	if err != nil {
 		s.fail(w, r, err)
 		return
