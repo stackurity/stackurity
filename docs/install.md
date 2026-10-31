@@ -115,6 +115,25 @@ Connecting an asset is quiet: one "connected" message, and no alerts, Jira issue
 
 Secrets are never stored in the database. Integrations hold a *reference*: `env:STACKURITY_SECRET_GITHUB` or `file:/run/secrets/github_token`.
 
+## Ask Stackurity (in-app assistant)
+
+Ask Stackurity answers questions in a panel of the dashboard with a Claude model. It is off unless the server has a model provider, and then each organisation's admin turns it on. It works in every edition, with your own provider account: you pay the provider for what it uses.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `STACKURITY_ANTHROPIC_API_KEY` (or `_FILE`) | — | An Anthropic API key: turns the assistant on with Anthropic's API. `ANTHROPIC_API_KEY` and other `ANTHROPIC_*` variables are ignored |
+| `STACKURITY_ASK_PROVIDER` | `anthropic` with a key, else off | `bedrock` for Amazon Bedrock (`STACKURITY_ASK_BEDROCK_REGION`, AWS credentials from the usual chain) or `vertex` for Vertex AI (`STACKURITY_ASK_VERTEX_PROJECT`, `STACKURITY_ASK_VERTEX_REGION`, Google application default credentials; only in a server built with `-tags ask_vertex`, which adds Google's client libraries) |
+| `STACKURITY_ASK_MODEL` | `claude-sonnet-5-5` | The model for organisations that have none of their own. On Bedrock the `anthropic.` prefix is added |
+| `STACKURITY_ASK_EFFORT` | `low` | `low`, `medium`, `high`, `xhigh` or `max`: more effort is slower and dearer |
+| `STACKURITY_ASK_QUESTIONS_PER_MONTH` | no limit | Questions a month for each organisation without its own limit |
+| `STACKURITY_ASK_SPEND_CAP_USD` | no cap | Model spend a month for each organisation without its own cap |
+| `STACKURITY_ASK_GLOBAL_SPEND_CAP_USD` | no cap | Model spend a month for the whole server. Questions stop at the cap; Platform health warns from 80% |
+| `STACKURITY_ASK_PRICES` | Anthropic's list prices | `model=input,cache_write,cache_read,output;...` in US dollars per million tokens, for Bedrock and Vertex, which bill their own prices. Spend and caps are counted with these |
+| `STACKURITY_ASK_FALLBACKS` | on | `off` stops Anthropic's API from retrying a question its safety checks declined on another model (Anthropic's API only) |
+| `STACKURITY_ASK_BASE_URL` | — | Anthropic's API through a proxy |
+
+Questions and what the assistant reads to answer them go to the provider. Each question can make up to 8 model calls. A typical question costs about $0.05 with `claude-sonnet-5-5` and $0.10 with `claude-opus-5-5`; one that reads a lot, up to about three times that.
+
 ## Editions and licences
 
 Without a licence Stackurity runs as **Community**: all detection, intelligence, alerts, one team, the Action plan, CI gates, SBOMs, workspaces and the official stack packs. A licence adds:
