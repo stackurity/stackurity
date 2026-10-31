@@ -62,6 +62,8 @@ var routeRules = map[string]routeRule{
 	"GET /download/agent/{platform}": {class: "public"},
 	"GET /api/v1/meta":               {class: "public"},
 	"GET /api/v1/openapi.json":       {class: "public"},
+	"GET /api/v1/public/cves/":       {class: "public"},
+	"GET /api/v1/public/cves/recent": {class: "public"},
 	"POST /api/v1/setup":             {class: "skip"},
 	"POST /api/v1/auth/login":        {class: "skip"},
 	"POST /api/v1/auth/logout":       {class: "skip"},
