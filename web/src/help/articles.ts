@@ -53,7 +53,7 @@ export const ARTICLES: Article[] = [
     section: "Getting started",
     summary: "Ask Claude, ChatGPT, Cursor, VS Code, Windsurf, Gemini CLI or Replit what is installed, what is vulnerable and what to upgrade.",
     where: ["Settings", "AI assistants"],
-    keywords: "ai assistant claude chatgpt cursor vs code copilot claude code windsurf gemini cli replit mcp connector model context protocol oauth connected assistants allow changes",
+    keywords: "ask stackurity in-app assistant chat panel ai assistant claude chatgpt cursor vs code copilot claude code windsurf gemini cli replit mcp connector model context protocol oauth connected assistants allow changes",
     body: [
       {
         p: "Stackurity is an MCP server: an AI assistant can read your inventory, issues and fixes as you, and, if you allow it, make changes for you, such as assigning or snoozing issues.",
@@ -70,6 +70,16 @@ export const ARTICLES: Article[] = [
       },
       {
         note: "On a server you run yourself, assistants can sign in only once `STACKURITY_BASE_URL` is set to the server's public https:// address. Until then, the page shows how to run `stackurity mcp` on your own computer instead.",
+      },
+      { h: "Ask Stackurity, inside the dashboard" },
+      {
+        p: "Where your organisation has turned it on, the **Ask** button at the top of every page (Alt+K) opens an assistant that answers from your Stackurity data, with links to the issues, assets and fixes it used. It reads only what you can see, and changes nothing. The page you have open is its context; click **(remove)** to ask without it.",
+      },
+      {
+        p: "Before your first question it shows where your questions go (with Anthropic's API, to Anthropic in the United States) and what is sent: your question, the page you have open and the data the assistant reads, without colleagues' names or email addresses. Your conversations are kept 30 days (backups up to about 60), only you can read them, and **History** lets you delete them. Answers can be wrong: check the linked pages.",
+      },
+      {
+        note: "Admins turn it on or off, see this month's use and delete everyone's conversations (without reading them) under [Settings ▸ AI assistants](/settings/ai-assistants).",
       },
     ],
   },
