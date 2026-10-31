@@ -321,6 +321,15 @@ func (s *Store) UpdateAsset(ctx context.Context, id int64, u AssetUpdate) error 
 	if u.ReportOverride != nil && !ValidReportOverride(*u.ReportOverride) {
 		return fmt.Errorf("report_override must be auto, daily, weekly or one_off: %w", ErrInvalid)
 	}
+	if u.ReportOverride != nil && *u.ReportOverride == ReportOneOff {
+		var source string
+		if err := s.Pool.QueryRow(ctx, `SELECT report_source FROM assets WHERE id = $1`, id).Scan(&source); err != nil {
+			return notFound(err)
+		}
+		if source == SourceAgent {
+			return fmt.Errorf("report_override one_off is not allowed for an asset the agent reports: it would never say if the agent stopped; delete the server if it is gone: %w", ErrInvalid)
+		}
+	}
 	var team *int64
 	clearTeam := false
 	if u.OwnerTeamID.Set {

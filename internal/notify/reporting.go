@@ -130,9 +130,17 @@ func reportingResolved(m *Message, det reportingDetail) {
 	m.Action = ""
 	switch det.Resolution {
 	case "replaced":
-		m.Summary = []string{fmt.Sprintf("Replaced by #%d, which groups the assets that stopped reporting for the same reason.", det.ReplacedBy)}
+		what := "everything that stopped reporting on the same day for the same reason"
+		if det.AssetKind != "" {
+			what = "the " + store.AssetNoun(det.AssetKind, 2) + " that stopped reporting on the same day"
+		}
+		m.Summary = []string{fmt.Sprintf("Replaced by #%d, which groups %s.", det.ReplacedBy, what)}
 	case "one_off":
-		m.Summary = []string{"Scanned once: Stackurity no longer expects this asset to report. Its results stay as of that scan."}
+		what := "another report"
+		if det.AssetKind != "" {
+			what = "this " + store.AssetNoun(det.AssetKind, 1) + " to report again"
+		}
+		m.Summary = []string{"Scanned once: Stackurity no longer expects " + what + ". Its results stay as of that scan."}
 	case "integration":
 		m.Summary = []string{"Reported by an integration: a failing integration has its own incident."}
 	default:
@@ -270,4 +278,25 @@ func resolvedNote(in *store.Incident, msg Message) string {
 		}
 	}
 	return "Resolved in Stackurity: no open findings remain for this incident."
+}
+
+// reopenCount is how many times the incident opened again after resolving
+// (detail.reopened, store.SyncSystemIncidents).
+func reopenCount(in store.Incident) int {
+	var d struct {
+		Reopened int `json:"reopened"`
+	}
+	_ = json.Unmarshal(in.Detail, &d)
+	return d.Reopened
+}
+
+// reopenLabel names an incident's open period in a tracker: its label, then
+// "-2", "-3" for the periods after it reopened.
+func reopenLabel(ws int64, in *store.Incident) string {
+	return fmt.Sprintf("%s-%d", IncidentLabel(ws, in.ID), reopenCount(*in)+1)
+}
+
+// reopenNote leads a reopened incident's new tracker record.
+func reopenNote(previous string) string {
+	return "Stopped reporting again after recovering. This incident reopened; the previous record was " + previous + "."
 }

@@ -492,13 +492,18 @@ function OwnershipCard({ asset, editable, onSaved }: { asset: Asset; editable: b
             value={f.report_override}
             onChange={(e) => setF({ ...f, report_override: e.target.value as typeof f.report_override })}
           >
-            {REPORTING_OVERRIDES.map((o) => (
+            {/* One-off would hide a server whose agent stopped, for good. */}
+            {REPORTING_OVERRIDES.filter((o) => o.value !== "one_off" || asset.reporting?.source !== "agent").map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
               </option>
             ))}
           </select>
-          <p className="hint">When Stackurity tells you this asset has stopped reporting. One-off assets are never overdue.</p>
+          <p className="hint">
+            {asset.reporting?.source === "agent"
+              ? "When Stackurity tells you the agent on this server has stopped reporting. A server that no longer exists is deleted instead."
+              : "When Stackurity tells you this has stopped reporting. One-off scans are never overdue."}
+          </p>
         </div>
         <div className="field">
           <label htmlFor="ed-tags">Tags</label>

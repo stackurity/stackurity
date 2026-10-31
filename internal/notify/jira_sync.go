@@ -94,7 +94,37 @@ func (d *Dispatcher) syncJira(ctx context.Context, ch *store.Channel, del store.
 			}
 		}
 	}
+	if in.Status == "open" && link.ResolvedSynced {
+		return d.reopenJiraIssue(ctx, j, cfg, ws, link, in)
+	}
 	return d.updateJiraIssue(ctx, j, cfg, link, in, del, attempts, msg)
+}
+
+// reopenJiraIssue opens a new issue for an incident that opened again after
+// its issue was resolved (a server that went quiet again within a day of
+// recovering), naming the previous one. A new issue rather than reopening
+// the old one: a channel configures only the transition that resolves, a
+// Done issue often cannot be reopened in a project's workflow, and a new
+// issue is what triage boards and on-call automation notice. Its label
+// names the open period, so a retry finds it instead of creating another.
+func (d *Dispatcher) reopenJiraIssue(ctx context.Context, j *jiraClient, cfg ChannelConfig, ws int64, link *store.IssueLink, in *store.Incident) error {
+	label := reopenLabel(ws, in)
+	key, err := j.findIssue(ctx, label)
+	if err != nil {
+		return err
+	}
+	if key == "" {
+		brief, err := d.Store.IncidentBrief(ctx, in.ID, jiraAffectedLimit)
+		if err != nil {
+			return err
+		}
+		doc := append(jiraDoc{{Para: plain(reopenNote(link.IssueKey))}}, d.issueDescription(*in, brief)...)
+		labels := append(append([]string{}, cfg.Labels...), "stackurity", IncidentLabel(ws, in.ID), label)
+		if key, err = j.createIssue(ctx, issueSummary(*in), doc, labels, cfg.Priorities[in.Priority]); err != nil {
+			return err
+		}
+	}
+	return d.Store.ReopenIssue(context.WithoutCancel(ctx), link.ID, key, j.base+"/browse/"+key, "", in.Priority, in.FindingCount, in.AssetCount)
 }
 
 // createJiraIssue creates the incident's issue, or finds the one an earlier

@@ -85,6 +85,9 @@ type Overview struct {
 	// OneOff counts the assets scanned once, per kind, with the dates their
 	// results are from (Home: "5 repositories scanned once (as of 26 Oct)").
 	OneOff []OneOffGroup `json:"one_off"`
+	// NotReporting counts stale assets per kind (Home: "2 servers not
+	// reporting").
+	NotReporting map[string]int64 `json:"not_reporting"`
 }
 
 func (s *Store) Overview(ctx context.Context) (*Overview, error) {
@@ -114,6 +117,7 @@ func (s *Store) Overview(ctx context.Context) (*Overview, error) {
 	}
 	o.Assets = group(`SELECT kind, count(*) FROM assets WHERE merged_into IS NULL GROUP BY kind`)
 	o.AssetStatus = group(`SELECT collection_status, count(*) FROM assets WHERE merged_into IS NULL GROUP BY collection_status`)
+	o.NotReporting = group(`SELECT kind, count(*) FROM assets WHERE merged_into IS NULL AND collection_status = 'stale' GROUP BY kind`)
 	o.Ecosystems = group(`SELECT c.type, count(DISTINCT c.id) FROM components c JOIN inventory i ON i.component_id = c.id
 		WHERE i.removed_at IS NULL GROUP BY c.type`)
 	o.CoverageStatus = group(`SELECT status, count(*) FROM coverage GROUP BY status`)

@@ -190,6 +190,16 @@ func (s *Store) RecordTrackerIssue(ctx context.Context, r TrackerRecord) error {
 	return err
 }
 
+// ReopenIssue points a resolved record at the one made for its incident's
+// next open period (ReopenedRecord), as unresolved and in sync with it.
+func (s *Store) ReopenIssue(ctx context.Context, linkID int64, key, url, remoteID, priority string, findings, assets int) error {
+	_, err := s.Pool.Exec(ctx, `UPDATE incident_issues SET issue_key = $2, issue_url = $3, remote_id = $4, synced_priority = $5,
+		  synced_findings = $6, synced_assets = $7, resolved_synced = false, synced_acked = false, remote_state = '',
+		  remote_checked_at = NULL, paged_delivery = NULL, updated_at = now()
+		WHERE id = $1`, linkID, key, url, remoteID, priority, findings, assets)
+	return err
+}
+
 // IssueAckSynced records whether the record was told the incident is
 // acknowledged.
 func (s *Store) IssueAckSynced(ctx context.Context, linkID int64, acked bool) error {
@@ -243,13 +253,19 @@ type IssueChange struct {
 	Incident   Incident
 	IssueKey   string
 	Resolution bool // the incident resolved; otherwise priority or counts changed
+	// Reopened: the incident opened again after its record was resolved (a
+	// server that went quiet again within a day of recovering). The tracker
+	// is told as for a new incident: a new PagerDuty alert, a new Jira
+	// issue or ServiceNow record.
+	Reopened bool
 }
 
 // IssueChanges returns tracker issues to update: open incidents whose
 // priority, finding count or asset count differ from what the issue was last
 // told, and resolved incidents whose issue has not been told yet.
 func (s *Store) IssueChanges(ctx context.Context) ([]IssueChange, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT l.id, l.updated_at, l.channel_id, l.issue_key, i.status = 'resolved', `+incidentCols+`
+	rows, err := s.Pool.Query(ctx, `SELECT l.id, l.updated_at, l.channel_id, l.issue_key, i.status = 'resolved',
+		  i.status = 'open' AND l.resolved_synced, `+incidentCols+`
 		FROM incident_issues l JOIN channels c ON c.id = l.channel_id AND c.enabled
 		JOIN incidents i ON i.id = l.incident_id LEFT JOIN teams t ON t.id = i.owner_team_id
 		WHERE l.issue_key <> '' AND (
@@ -257,7 +273,8 @@ func (s *Store) IssueChanges(ctx context.Context) ([]IssueChange, error) {
 		     (l.synced_priority, l.synced_findings, l.synced_assets)
 		     -- PagerDuty and ServiceNow are told when the incident is acknowledged.
 		     OR (c.kind IN ('pagerduty', 'servicenow') AND (i.state <> 'new') <> l.synced_acked)))
-		  OR (i.status = 'resolved' AND NOT l.resolved_synced))
+		  OR (i.status = 'resolved' AND NOT l.resolved_synced)
+		  OR (i.status = 'open' AND l.resolved_synced))
 		ORDER BY l.id LIMIT 1000`)
 	if err != nil {
 		return nil, err
@@ -267,7 +284,7 @@ func (s *Store) IssueChanges(ctx context.Context) ([]IssueChange, error) {
 	for rows.Next() {
 		var c IssueChange
 		in := &c.Incident
-		if err := rows.Scan(&c.LinkID, &c.SyncedAt, &c.ChannelID, &c.IssueKey, &c.Resolution, &in.ID, &in.Kind, &in.Key, &in.OwnerTeamID, &in.OwnerTeam,
+		if err := rows.Scan(&c.LinkID, &c.SyncedAt, &c.ChannelID, &c.IssueKey, &c.Resolution, &c.Reopened, &in.ID, &in.Kind, &in.Key, &in.OwnerTeamID, &in.OwnerTeam,
 			&in.Title, &in.Priority, &in.SOS, &in.Status, &in.State, &in.FindingCount, &in.AssetCount, &in.Detail, &in.CreatedAt,
 			&in.UpdatedAt, &in.ResolvedAt, &in.NotifiedPriority, &in.NotifiedAt, &in.EscalationLevel); err != nil {
 			return nil, err

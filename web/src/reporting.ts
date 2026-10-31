@@ -71,3 +71,17 @@ export function oneOffText(groups: OneOffGroup[] | undefined, now = new Date()):
     count: n,
   };
 }
+
+/**
+ * Home's "not reporting" link, named by kind: "2 servers not reporting",
+ * "1 server and 3 repositories not reporting". Null when none.
+ */
+export function notReportingText(byKind: Record<string, number> | undefined): string | null {
+  const parts = Object.entries(byKind ?? {})
+    .filter(([, n]) => n > 0)
+    .sort(([a, x], [b, y]) => y - x || a.localeCompare(b))
+    .map(([kind, n]) => `${n.toLocaleString("en")} ${assetNoun(kind, n)}`);
+  if (parts.length === 0) return null;
+  const list = parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+  return `${list} not reporting`;
+}

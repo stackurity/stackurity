@@ -3,6 +3,7 @@ package store_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -46,6 +47,19 @@ func TestCadence(t *testing.T) {
 	}
 }
 
+func TestLearned(t *testing.T) {
+	h := time.Hour
+	for _, c := range []struct {
+		runs int
+		span time.Duration
+		ok   bool
+	}{{1, 0, false}, {2, 72 * h, false}, {3, 5 * h, false}, {4, 23 * h, false}, {3, 24 * h, true}, {6, 30 * 24 * h, true}} {
+		if got := store.Learned(c.runs, c.span); got != c.ok {
+			t.Errorf("Learned(%d, %s) = %v", c.runs, c.span, got)
+		}
+	}
+}
+
 func TestDueAfter(t *testing.T) {
 	h := time.Hour
 	for _, c := range []struct {
@@ -60,7 +74,9 @@ func TestDueAfter(t *testing.T) {
 		{store.SourceManual, "auto", 1, 0, 0, 0, false},       // uploaded once
 		{store.SourceScan, "auto", 3, 6 * h, 0, 48 * h, true}, // twice 6 hours is under the minimum
 		{store.SourceScan, "auto", 4, 7 * 24 * h, 0, 14 * 24 * h, true},
-		{store.SourceManual, "auto", 2, 5 * 24 * h, 0, 10 * 24 * h, true},
+		{store.SourceManual, "auto", 3, 5 * 24 * h, 0, 10 * 24 * h, true},
+		{store.SourceScan, "auto", 2, 5 * h, 0, 0, false}, // two runs: no cadence to learn
+		{store.SourceScan, "auto", 3, 0, 0, 0, false},     // three runs on one day: Learned says no
 		{store.SourceIntegration, "auto", 9, 0, 6 * h, 48 * h, true},
 		{store.SourceIntegration, "auto", 9, 0, 3 * 24 * h, 6 * 24 * h, true},
 		{store.SourceScan, "daily", 1, 0, 0, 48 * h, true},
@@ -244,12 +260,19 @@ func TestScannedOnceIsNotStoppedReporting(t *testing.T) {
 		t.Errorf("finding as_of = %v", fs[0].AsOf)
 	}
 
-	// A second scan makes it a scheduled repository; a person can set one
-	// back to one-off.
+	// A second scan is not yet a cadence; a third, days after the first,
+	// makes it a scheduled repository. A person can set one back to
+	// one-off.
 	scanRepo(t, s, ctx, "analytics")
 	a, _ := s.GetAsset(ctx, ids[0])
-	if a.Reporting.Mode != "scheduled" || a.Reporting.Runs != 2 || a.Reporting.UsualSeconds == nil || a.Reporting.DueAfterSeconds == nil {
+	if a.Reporting.Mode != "one_off" || a.Reporting.Runs != 2 {
 		t.Errorf("after a second scan: %+v", a.Reporting)
+	}
+	scanRepo(t, s, ctx, "analytics")
+	backdate(t, s, ctx, ids[0], 0, 2*24, 5*24)
+	a, _ = s.GetAsset(ctx, ids[0])
+	if a.Reporting.Mode != "scheduled" || a.Reporting.Runs != 3 || a.Reporting.UsualSeconds == nil || a.Reporting.DueAfterSeconds == nil {
+		t.Errorf("after a third scan: %+v", a.Reporting)
 	}
 	if err := s.SetReportOverride(ctx, ids[0], store.ReportOneOff); err != nil {
 		t.Fatal(err)
@@ -465,6 +488,13 @@ func TestReportingFlapReopens(t *testing.T) {
 	if got := openIDs(); len(got) != 1 || got[0] != first[0] {
 		t.Fatalf("flap: open %v, want the first incident %d reopened", got, first[0])
 	}
+	// It stays the server's incident on the next cycles, though the server
+	// went quiet on another day than the one its key names.
+	sync()
+	sync()
+	if got := openIDs(); len(got) != 1 || got[0] != first[0] {
+		t.Fatalf("after the flap, open %v, want %d alone", got, first[0])
+	}
 	announce, err := s.IncidentsToAnnounce(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -505,6 +535,93 @@ func TestReportingDetailJSON(t *testing.T) {
 	}
 	if got := store.ReportingTitle("upload", "sbom", a[:1], time.Date(2025, 10, 26, 10, 0, 0, 0, time.UTC), 0, now); got != "SBOM web-1 hasn't been uploaded since 26 Oct 2025" {
 		t.Errorf("title = %q", got)
+	}
+}
+
+// The owner's real case, from production: of five repositories scanned by
+// hand on 26 Oct, two were scanned again that day (commmerce_connect four
+// times, lighthouse twice). Re-runs on one day are not a cadence: all five
+// are one-off, with no incident, and Home counts five scanned once.
+func TestSameDayRescansAreOneOff(t *testing.T) {
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	s := store.New(testdb.New(t))
+	day := func(hm ...string) []time.Time {
+		var out []time.Time
+		for _, x := range hm {
+			tm, err := time.Parse("2006-01-02 15:04", "2026-10-26 "+x)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, tm)
+		}
+		return out
+	}
+	timelines := map[string][]time.Time{
+		"commmerce_connect": day("09:42", "09:30", "09:15", "04:34"),
+		"lighthouse":        day("09:01", "04:34"),
+		"analytics":         day("04:34"),
+		"commmerceblog":     day("04:35"),
+		"commmerce_chat":    day("04:36"),
+	}
+	sys := tenant.System(ctx)
+	for name, times := range timelines {
+		var id int64
+		for range times {
+			id = scanRepo(t, s, ctx, name)
+		}
+		rows, _ := s.Pool.Query(sys, `SELECT id FROM collections WHERE asset_id = $1 ORDER BY id DESC`, id)
+		var cids []int64
+		for rows.Next() {
+			var c int64
+			_ = rows.Scan(&c)
+			cids = append(cids, c)
+		}
+		rows.Close()
+		for i, c := range cids {
+			if _, err := s.Pool.Exec(sys, `UPDATE collections SET received_at = $2 WHERE id = $1`, c, times[i]); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if _, err := s.Pool.Exec(sys, `UPDATE assets SET last_seen = $2 WHERE id = $1`, id, times[0]); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.RefreshReporting(ctx, []int64{id}); err != nil {
+			t.Fatal(err)
+		}
+		a, _ := s.GetAsset(ctx, id)
+		if a.Reporting.Mode != "one_off" || a.Reporting.DueAfterSeconds != nil || a.Reporting.UsualSeconds != nil {
+			t.Errorf("%s (%d reports): %+v", name, len(times), a.Reporting)
+		}
+	}
+	if got := reportingIncidents(t, s, ctx); len(got) != 0 {
+		t.Errorf("incidents: %+v", got)
+	}
+	groups, err := s.OneOffAssets(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(groups) != 1 || groups[0].Kind != "repository" || groups[0].Count != 5 ||
+		store.AsOf(groups[0].Oldest, groups[0].Newest, time.Date(2026, 10, 31, 9, 0, 0, 0, time.UTC)) != "26 Oct" {
+		t.Errorf("one-off = %+v", groups)
+	}
+}
+
+// A server the agent reports cannot be set to one-off: it would never say
+// if the agent stopped.
+func TestAgentCannotBeOneOff(t *testing.T) {
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	s := store.New(testdb.New(t))
+	host := appHost(t, s, ctx, "web-1", nil)
+	one := store.ReportOneOff
+	if err := s.UpdateAsset(ctx, host, store.AssetUpdate{ReportOverride: &one}); !errors.Is(err, store.ErrInvalid) {
+		t.Errorf("update: %v", err)
+	}
+	if err := s.SetReportOverride(ctx, host, store.ReportOneOff); !errors.Is(err, store.ErrInvalid) {
+		t.Errorf("set: %v", err)
+	}
+	weekly := store.ReportWeekly
+	if err := s.UpdateAsset(ctx, host, store.AssetUpdate{ReportOverride: &weekly}); err != nil {
+		t.Errorf("weekly: %v", err)
 	}
 }
 

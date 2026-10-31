@@ -112,21 +112,30 @@ func (s *Store) reportingProblems(ctx context.Context) ([]SystemIncident, error)
 		id  int64
 		key string
 	}{}
-	rows, err = s.Pool.Query(ctx, `SELECT DISTINCT ON (m.id) m.id, i.id, i.key
+	// An asset stays in the open incident that lists it (a reopened one
+	// keeps its first day's key); otherwise one it was in that closed less
+	// than a day before its last report reopens.
+	rows, err = s.Pool.Query(ctx, `SELECT DISTINCT ON (m.id) m.id, i.id, i.key, i.status = 'open'
 		FROM unnest($1::bigint[]) AS m(id) JOIN assets a ON a.id = m.id
-		JOIN incidents i ON i.kind = 'collection' AND i.status = 'resolved' AND i.key LIKE 'reporting:%'
-		  AND i.resolved_at > now() - interval '30 days' AND NOT i.detail ? 'resolution'
-		  AND i.detail->'asset_ids' @> to_jsonb(m.id) AND a.last_seen <= i.resolved_at + make_interval(secs => $2)
-		ORDER BY m.id, i.resolved_at DESC`, ids, flapWindow.Seconds())
+		JOIN incidents i ON i.kind = 'collection' AND i.key LIKE 'reporting:%' AND i.detail->'asset_ids' @> to_jsonb(m.id)
+		  AND (i.status = 'open' OR i.status = 'resolved' AND i.resolved_at > now() - interval '30 days'
+		    AND NOT i.detail ? 'resolution' AND a.last_seen <= i.resolved_at + make_interval(secs => $2))
+		ORDER BY m.id, i.status = 'open' DESC, i.resolved_at DESC`, ids, flapWindow.Seconds())
 	if err != nil {
 		return nil, err
 	}
+	stay := map[int64]string{}
 	for rows.Next() {
 		var m, id int64
 		var key string
-		if err := rows.Scan(&m, &id, &key); err != nil {
+		var open bool
+		if err := rows.Scan(&m, &id, &key, &open); err != nil {
 			rows.Close()
 			return nil, err
+		}
+		if open {
+			stay[m] = key
+			continue
 		}
 		reopen[m] = struct {
 			id  int64
@@ -152,7 +161,9 @@ func (s *Store) reportingProblems(ctx context.Context) ([]SystemIncident, error)
 		cause := map[string]string{SourceAgent: "agent", SourceScan: "scan", SourceManual: "upload"}[a.source]
 		key := fmt.Sprintf("reporting:%s:%s:%s", cause, a.Kind, a.LastSeen.UTC().Format("2006-01-02"))
 		var re int64
-		if r, ok := reopen[a.ID]; ok {
+		if k, ok := stay[a.ID]; ok {
+			key = k
+		} else if r, ok := reopen[a.ID]; ok {
 			key, re = r.key, r.id
 		}
 		gk := key + "|" + teamKey(a.team)
@@ -379,8 +390,9 @@ func settleLegacyReporting(ctx context.Context, tx pgx.Tx, c SystemIncident, id 
 			}
 		}
 	}
+	kind, _ := c.Detail["asset_kind"].(string)
 	_, err := tx.Exec(ctx, `UPDATE incidents SET status = 'resolved', resolved_at = now(), updated_at = now(), resolved_notified = true,
-		detail = detail || jsonb_build_object('resolution', 'replaced', 'replaced_by', $2::bigint)
-		WHERE status = 'open' AND kind = 'collection' AND key = ANY($1)`, legacy, id)
+		detail = detail || jsonb_build_object('resolution', 'replaced', 'replaced_by', $2::bigint, 'asset_kind', $3::text)
+		WHERE status = 'open' AND kind = 'collection' AND key = ANY($1)`, legacy, id, kind)
 	return err
 }

@@ -37,6 +37,12 @@ const (
 	runGap = time.Hour
 	// cadenceRuns is how many recent runs a learned cadence looks at.
 	cadenceRuns = 6
+	// A cadence is learned only from at least learnRuns runs over at least
+	// learnSpan from the asset's first report. Fewer, or all within a day
+	// (a scan re-run by hand a few times on the day it was set up), is a
+	// one-off scan.
+	learnRuns = 3
+	learnSpan = 24 * time.Hour
 	// OneOffAging is when a one-off scan's note says how old its results are.
 	OneOffAging = 90 * 24 * time.Hour
 )
@@ -145,14 +151,21 @@ func Cadence(times []time.Time) (runs int, usual time.Duration) {
 	return runs, (gaps[n/2-1] + gaps[n/2]) / 2
 }
 
+// Learned reports whether runs reports, the first span before the latest,
+// show a cadence: at least 3 runs over at least a day.
+func Learned(runs int, span time.Duration) bool {
+	return runs >= learnRuns && span >= learnSpan
+}
+
 // DueAfter is how long after its last report an asset is overdue, and false
 // when no further report is expected.
 //
 //   - A person's override: daily, overdue after 48 hours; weekly, after 8
 //     days (a week and a day's grace); one-off, never.
 //   - The agent: staleAfter (48 hours by default).
-//   - A scan or manual upload reported once: never (one-off). Reported
-//     more often: twice its usual gap, and at least 48 hours.
+//   - A scan or manual upload with a learned cadence (usual > 0: at least
+//     3 runs over at least a day, Learned): twice its usual gap, and at
+//     least 48 hours. Otherwise never (one-off).
 //   - An integration: twice its schedule, and at least staleAfter. Its
 //     assets never open an incident; a failing integration has its own.
 func DueAfter(source, override string, runs int, usual, staleAfter, schedule time.Duration) (time.Duration, bool) {
@@ -173,7 +186,7 @@ func DueAfter(source, override string, runs int, usual, staleAfter, schedule tim
 	case SourceIntegration:
 		return max(staleAfter, 2*schedule), true
 	case SourceScan, SourceManual:
-		if runs < 2 {
+		if runs < learnRuns || usual <= 0 {
 			return 0, false
 		}
 		return max(DefaultStaleAfter, 2*usual), true
@@ -208,7 +221,8 @@ func refreshReporting(ctx context.Context, db q, ids []int64, staleAfter time.Du
 		cond, args = `a.id = ANY($1)`, []any{ids}
 	}
 	rows, err := db.Query(ctx, `SELECT a.id, a.report_source, a.report_override, COALESCE(EXTRACT(epoch FROM i.schedule)::bigint, 0),
-		  ARRAY(SELECT c.received_at FROM collections c WHERE c.asset_id = a.id ORDER BY c.received_at DESC LIMIT 60)
+		  ARRAY(SELECT c.received_at FROM collections c WHERE c.asset_id = a.id ORDER BY c.received_at DESC LIMIT 60),
+		  (SELECT min(c.received_at) FROM collections c WHERE c.asset_id = a.id)
 		FROM assets a LEFT JOIN integrations i ON i.id = a.report_integration_id
 		WHERE a.merged_into IS NULL AND `+cond+fmt.Sprintf(` ORDER BY a.id LIMIT %d`, refreshBatch), args...)
 	if err != nil {
@@ -221,11 +235,15 @@ func refreshReporting(ctx context.Context, db q, ids []int64, staleAfter time.Du
 		id, schedule     int64
 		source, override string
 		times            []time.Time
+		first            *time.Time
 	)
-	_, err = pgx.ForEachRow(rows, []any{&id, &source, &override, &schedule, &times}, func() error {
+	_, err = pgx.ForEachRow(rows, []any{&id, &source, &override, &schedule, &times, &first}, func() error {
 		runs, usual := Cadence(times)
+		if first == nil || len(times) == 0 || !Learned(runs, times[0].Sub(*first)) {
+			usual = 0 // no cadence to learn from yet
+		}
 		var u, d *int64
-		if runs >= 2 {
+		if usual > 0 {
 			v := int64(usual / time.Second)
 			u = &v
 		}
@@ -329,17 +347,21 @@ func (s *Store) SetReportOverride(ctx context.Context, id int64, override string
 	if !ValidReportOverride(override) {
 		return fmt.Errorf("reporting must be auto, daily, weekly or one_off: %w", ErrInvalid)
 	}
-	tag, err := s.Pool.Exec(ctx, `UPDATE assets SET report_override = $2 WHERE id = $1 AND merged_into IS NULL`, id, override)
-	if err != nil {
-		return err
+	var source string
+	if err := s.Pool.QueryRow(ctx, `SELECT report_source FROM assets WHERE id = $1 AND merged_into IS NULL`, id).Scan(&source); err != nil {
+		return notFound(err)
 	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotFound
+	// One-off would hide a server whose agent stopped, for good.
+	if override == ReportOneOff && source == SourceAgent {
+		return fmt.Errorf("a server the agent reports cannot be one-off: it would never say if the agent stopped; delete the server if it is gone: %w", ErrInvalid)
+	}
+	if _, err := s.Pool.Exec(ctx, `UPDATE assets SET report_override = $2 WHERE id = $1`, id, override); err != nil {
+		return err
 	}
 	if err := s.RefreshReporting(ctx, []int64{id}); err != nil {
 		return err
 	}
-	_, err = s.markStale(ctx, id, s.staleAfter())
+	_, err := s.markStale(ctx, id, s.staleAfter())
 	return err
 }
 

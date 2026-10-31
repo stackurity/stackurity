@@ -915,6 +915,8 @@ export interface Component {
 export interface Overview {
   /** Assets scanned once, per kind (0.13.10). */
   one_off?: OneOffGroup[];
+  /** Stale assets per kind: servers whose agent stopped, scans past their schedule. */
+  not_reporting?: Record<string, number>;
   assets: Record<string, number>;
   asset_status: Record<string, number>;
   components: number;

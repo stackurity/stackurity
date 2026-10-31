@@ -20,8 +20,8 @@
 -- The server fills report_runs, report_usual and report_due_after on its
 -- next stale check or dispatcher cycle (store.RefreshReporting), so the
 -- rules live in one place (Go). This migration only backfills the source,
--- and settles what the old rule left behind for assets reported once by a
--- scan or upload: they are no longer stale (their results stay "as of"
+-- and settles what the old rule left behind for assets a scan or upload
+-- reported once, or only on one day: they are no longer stale (their results stay "as of"
 -- their only report), and their open "stopped reporting" incidents are
 -- resolved without a recovery message (resolution "one_off"). Other open
 -- per-asset incidents are regrouped by the dispatcher on its next cycle.
@@ -70,27 +70,39 @@ FROM (SELECT DISTINCT ON (c.asset_id) c.asset_id, c.collector_id
 WHERE l.asset_id = a.id AND a.report_integration_id IS NULL AND a.report_source = 'integration'
   AND p.workspace_id = a.workspace_id AND l.collector_id = 'plugin:' || p.plugin;
 
--- Assets a scan or upload reported once (reports an hour apart or more
--- count as separate runs).
+-- Assets a scan or upload reported once: without a cadence to learn
+-- (store.Learned), fewer than 3 runs (reports an hour apart or more), or
+-- all within a day of the first report, as when a scan is re-run by hand a
+-- few times on the day it is set up.
 CREATE TEMP TABLE once ON COMMIT DROP AS
-SELECT a.id
+SELECT a.id, a.workspace_id, a.collection_status = 'stale' AS was_stale
 FROM assets a
 WHERE a.merged_into IS NULL AND a.report_source IN ('scan', 'manual')
-  AND (SELECT count(*) FROM (
-         SELECT c.received_at - lag(c.received_at) OVER (ORDER BY c.received_at) AS gap
-         FROM collections c WHERE c.asset_id = a.id) g
-       WHERE g.gap IS NULL OR g.gap >= interval '1 hour') = 1;
+  AND NOT EXISTS (
+    SELECT 1 FROM (
+      SELECT count(*) FILTER (WHERE g.gap IS NULL OR g.gap >= interval '1 hour') AS runs,
+             max(g.received_at) - min(g.received_at) AS span
+      FROM (SELECT c.received_at, c.received_at - lag(c.received_at) OVER (ORDER BY c.received_at) AS gap
+            FROM collections c WHERE c.asset_id = a.id) g) r
+    WHERE r.runs >= 3 AND r.span >= interval '24 hours');
 
 UPDATE assets a SET collection_status = CASE WHEN COALESCE((SELECT c.complete FROM collections c WHERE c.asset_id = a.id
         ORDER BY c.received_at DESC, c.id DESC LIMIT 1), true) THEN 'ok' ELSE 'partial' END
 WHERE a.collection_status = 'stale' AND a.id IN (SELECT id FROM once);
 
+-- Their findings were scored as stale (× 0.8): evaluate them again.
+INSERT INTO jobs (workspace_id, kind, payload, dedupe_key, run_at)
+SELECT workspace_id, 'evaluate', jsonb_build_object('asset_id', id), 'evaluate:asset:' || id, now()
+FROM once WHERE was_stale
+ON CONFLICT DO NOTHING;
+
 -- resolved_notified: the dispatcher announces no recovery for it. A Jira,
 -- PagerDuty or ServiceNow record still closes, saying why.
 UPDATE incidents i SET status = 'resolved', resolved_at = now(), updated_at = now(), resolved_notified = true,
-    detail = i.detail || '{"resolution": "one_off"}'
+    detail = i.detail || jsonb_build_object('resolution', 'one_off', 'asset_kind', a.kind)
+FROM assets a
 WHERE i.status = 'open' AND i.kind = 'collection' AND i.key ~ '^asset:[0-9]+$'
-  AND substring(i.key FROM 7)::bigint IN (SELECT id FROM once);
+  AND a.id = substring(i.key FROM 7)::bigint AND a.id IN (SELECT id FROM once);
 
 -- The dispatcher and the stale check look for assets not worked out yet
 -- every cycle, and for a recently closed reporting incident an asset was in.

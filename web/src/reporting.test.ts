@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { asOfRange, assetNoun, everyText, oneOffText, reportDate } from "./reporting.ts";
+import { asOfRange, assetNoun, everyText, notReportingText, oneOffText, reportDate } from "./reporting.ts";
 
 const now = new Date("2026-10-31T09:00:00Z");
 
@@ -37,4 +37,12 @@ test("dates, nouns and cadences", () => {
   assert.equal(everyText(7 * 86400), "week");
   assert.equal(everyText(14 * 86400), "2 weeks");
   assert.equal(everyText(3 * 86400), "3 days");
+});
+
+test("not reporting, by kind", () => {
+  assert.equal(notReportingText({ host: 2 }), "2 servers not reporting");
+  assert.equal(notReportingText({ repository: 3, host: 1 }), "3 repositories and 1 server not reporting");
+  assert.equal(notReportingText({ host: 1, image: 1, sbom: 2 }), "2 SBOMs, 1 server and 1 image not reporting");
+  assert.equal(notReportingText({}), null);
+  assert.equal(notReportingText(undefined), null);
 });

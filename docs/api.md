@@ -414,7 +414,7 @@ The agent reports the progress and result of a remediation action.
 
 **Who:** viewer
 
-Inventory, coverage and status counts, including assets by coverage state (`asset_coverage`), components by row coverage (`component_coverage`) and `one_off`: the assets scanned once, per `kind`, with `count` and the `oldest` and `newest` dates their results are from.
+Inventory, coverage and status counts, including assets by coverage state (`asset_coverage`), components by row coverage (`component_coverage`) `one_off`: the assets scanned once, per `kind`, with `count` and the `oldest` and `newest` dates their results are from, and `not_reporting`: stale assets per kind.
 
 ### `GET /facets`
 
@@ -434,7 +434,7 @@ Searches the current workspace for one query (`q`, `limit`). See [Search](#searc
 
 Lists assets, paged. Query: `kind`, `environment`, `status` (`collection_status`: `ok`, `partial`, `stale`, or `removed` for an application gone from its server), `owner_team_id`, `q`, `reboot_required=true` (hosts running older code than is installed), `exposed=true|false` and `unfiled=true` (assets in no active project). Each asset has `projects`, the active projects it is in that the caller can see.
 
-Each asset also has `reporting` (0.13.10): `source` (`agent`, `scan`, `integration`, `manual`, or empty before its first report), `override` (`auto`, `daily`, `weekly`, `one_off`), `mode` (`agent`, `scheduled`, `one_off`, `integration`, `unknown`), `runs` (reports an hour apart or more, up to 6), `usual_seconds` (the median gap between them), `due_after_seconds` (how long after its last report it is overdue; `null` when nothing is expected) and, for a `one_off` asset, `as_of` (the date its results are from). See [Assets that stop reporting](operations.md#assets-that-stop-reporting).
+Each asset also has `reporting` (0.13.10): `source` (`agent`, `scan`, `integration`, `manual`, or empty before its first report), `override` (`auto`, `daily`, `weekly`, `one_off`), `mode` (`agent`, `scheduled`, `one_off`, `integration`, `unknown`), `runs` (reports an hour apart or more, up to 6), `usual_seconds` (the median gap between them, once there is a cadence: 3 runs or more over at least a day), `due_after_seconds` (how long after its last report it is overdue; `null` when nothing is expected) and, for a `one_off` asset, `as_of` (the date its results are from). See [Assets that stop reporting](operations.md#assets-that-stop-reporting).
 
 `exposed` is the exposure risk scoring uses: `internet_exposed` when set by hand, else what a collector observed (a Kubernetes workload's `exposure`, or for an image the workloads deployed as it).
 
@@ -448,7 +448,7 @@ One asset with its identifiers, and `agent_polled_at` (see [Check again](#check-
 
 **Who:** engineer
 
-Sets the name, environment, owner, criticality, exposure and tags, and `report_override`: how often the asset is expected to report (`auto`, learned from its reports; `daily`, overdue after 48 hours; `weekly`, after 8 days; `one_off`, never). Another value is 400.
+Sets the name, environment, owner, criticality, exposure and tags, and `report_override`: how often the asset is expected to report (`auto`, learned from its reports; `daily`, overdue after 48 hours; `weekly`, after 8 days; `one_off`, never). Another value is 400, and so is `one_off` for an asset the agent reports.
 
 ### `DELETE /assets/{id}`
 

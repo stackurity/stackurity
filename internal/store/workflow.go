@@ -685,8 +685,11 @@ func (s *Store) SyncSystemIncidents(ctx context.Context, current []SystemInciden
 			// An incident reopened keeps what was announced: people are not
 			// told again unless its priority rises.
 			if c.Reopen > 0 {
+				// detail.reopened counts the open periods after the first:
+				// trackers get a new record for each (store.ReopenIssue).
 				tag, err := tx.Exec(ctx, `UPDATE incidents i SET status = 'open', resolved_at = NULL, resolved_notified = false,
-					title = $2, priority = $3, detail = $4, updated_at = now()
+					title = $2, priority = $3, updated_at = now(),
+					detail = $4::jsonb || jsonb_build_object('reopened', COALESCE((i.detail->>'reopened')::int, 0) + 1)
 					WHERE i.id = $1 AND i.status = 'resolved' AND NOT EXISTS (SELECT 1 FROM incidents o
 					  WHERE o.status = 'open' AND o.kind = i.kind AND o.key = i.key AND COALESCE(o.owner_team_id, 0) = COALESCE(i.owner_team_id, 0))`,
 					c.Reopen, c.Title, c.Priority, d)
@@ -706,7 +709,8 @@ func (s *Store) SyncSystemIncidents(ctx context.Context, current []SystemInciden
 				VALUES ($1,$2,$3,$4,$5,$6,0,0)
 				ON CONFLICT (workspace_id, kind, key, COALESCE(owner_team_id, 0)) WHERE status = 'open' DO UPDATE SET
 				  title = EXCLUDED.title,
-				  detail = EXCLUDED.detail || jsonb_strip_nulls(jsonb_build_object('people_announced', i.detail->'people_announced')),
+				  detail = EXCLUDED.detail || jsonb_strip_nulls(jsonb_build_object('people_announced', i.detail->'people_announced',
+				    'reopened', i.detail->'reopened')),
 				  priority = EXCLUDED.priority, updated_at = CASE WHEN i.priority <> EXCLUDED.priority THEN now() ELSE i.updated_at END
 				RETURNING i.id, xmax = 0`,
 				c.Kind, c.Key, c.OwnerTeamID, c.Title, c.Priority, d).Scan(&id, &inserted); err != nil {
@@ -719,7 +723,8 @@ func (s *Store) SyncSystemIncidents(ctx context.Context, current []SystemInciden
 		// Per-asset incidents from before 0.13.10 of assets no longer
 		// expected to report close saying why, with no recovery message.
 		if _, err := tx.Exec(ctx, `UPDATE incidents i SET resolved_notified = true,
-			  detail = i.detail || jsonb_build_object('resolution', CASE WHEN a.report_source = 'integration' THEN 'integration' ELSE 'one_off' END)
+			  detail = i.detail || jsonb_build_object('resolution', CASE WHEN a.report_source = 'integration' THEN 'integration' ELSE 'one_off' END,
+			    'asset_kind', a.kind)
 			FROM assets a
 			WHERE i.status = 'open' AND i.kind = 'collection' AND i.key ~ '^asset:[0-9]+$' AND a.id = substring(i.key FROM 7)::bigint
 			  AND (a.report_override = 'one_off' OR a.report_source = 'integration'

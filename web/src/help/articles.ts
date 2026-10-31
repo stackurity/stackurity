@@ -849,7 +849,7 @@ stackurity.exe agent --interval 6h`,
           ["Asset", "Expected", "When it is overdue"],
           ["Server (agent)", "Every 6 hours", "After 48 hours (STACKURITY_STALE_AFTER)"],
           ["Repository, image or SBOM scanned regularly", "Its usual gap, learned from its last few scans", "After twice that gap, at least 48 hours"],
-          ["Scanned once", "Nothing more", "Never: results stay as of that scan"],
+          ["Scanned once, or only on one day", "Nothing more", "Never: results stay as of that scan"],
           ["Reported by an integration", "The integration's schedule", "No alert: a failing integration has its own"],
         ],
       },
@@ -867,7 +867,7 @@ stackurity.exe agent --interval 6h`,
       },
       { h: "A repository, image or SBOM hasn't been scanned", id: "scans" },
       {
-        p: "Once an asset has been scanned a few times, Stackurity learns how often: “Repository shop hasn't been scanned since 26 Oct (usually every day)”. These go in the daily and weekly summaries only, as P4, unless the asset is production and set to **Daily** or **Weekly**: then it is P3 and told right away.",
+        p: "Once an asset has been scanned at least 3 times over at least a day, Stackurity learns how often: “Repository shop hasn't been scanned since 26 Oct (usually every day)”. These go in the daily and weekly summaries only, as P4, unless the asset is production and set to **Daily** or **Weekly**: then it is P3 and told right away.",
       },
       {
         list: [
@@ -878,7 +878,7 @@ stackurity.exe agent --interval 6h`,
       },
       { h: "Scanned once", id: "one-off" },
       {
-        p: "A repository, image or SBOM scanned a single time (from a laptop, or a trial) is **one-off**: no alert, never stale, not scored as stale. The asset page and **Home** say “Scanned once on 26 Oct. Results stay as of that date”, each of its issues shows **as of 26 Oct**, and after 90 days the note says how old the results are. The weekly summary has one line about such assets. To keep one current, scan it on a schedule:",
+        p: "A repository, image or SBOM scanned a single time, or re-run only on the day it was set up (from a laptop, or a trial), is **one-off**: no alert, never stale, not scored as stale. The asset page and **Home** say “Scanned once on 26 Oct. Results stay as of that date”, each of its issues shows **as of 26 Oct**, and after 90 days the note says how old the results are. The weekly summary has one line about such assets. To keep one current, scan it on a schedule:",
       },
       {
         code: `on:
@@ -917,11 +917,11 @@ jobs:
           "**Automatic**: learned from its reports (the default).",
           "**Daily**: overdue after 48 hours.",
           "**Weekly**: overdue after 8 days.",
-          "**One-off or manual**: never overdue.",
+          "**One-off or manual**: never overdue. Not offered for a server the agent reports: it would never say if the agent stopped. Delete a server that is gone.",
         ],
       },
       {
-        note: "A server that reports again for less than a day and goes quiet again reopens its earlier incident, so a flaky agent does not raise an alert every day.",
+        note: "A server that reports again for less than a day and goes quiet again reopens its earlier incident, so a flaky agent does not send an alert every day. PagerDuty, Jira and ServiceNow still treat it as new: a new page, issue or record, resolved again when it reports.",
       },
     ],
   },

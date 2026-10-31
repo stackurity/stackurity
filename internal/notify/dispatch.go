@@ -662,8 +662,17 @@ func (d *Dispatcher) planIssueUpdates(ctx context.Context) error {
 	for _, c := range changes {
 		in := c.Incident
 		event, key := "updated", fmt.Sprintf("issue:%d:updated:%d", c.LinkID, c.SyncedAt.UnixMicro())
-		if c.Resolution {
+		// Keys of the resolution and reopening name the incident's open
+		// period, so a reopened incident is resolved again in its tracker.
+		n := reopenCount(in)
+		switch {
+		case c.Resolution:
 			event, key = "resolved", fmt.Sprintf("issue:%d:resolved", c.LinkID)
+			if n > 0 {
+				key += fmt.Sprintf(":%d", n)
+			}
+		case c.Reopened:
+			event, key = "reopened", fmt.Sprintf("issue:%d:reopened:%d", c.LinkID, n)
 		}
 		if _, err := d.Store.EnqueueDelivery(ctx, c.ChannelID, nil, &in.ID, event, key, d.message(in, event)); err != nil {
 			return err
@@ -768,6 +777,8 @@ func (d *Dispatcher) message(in store.Incident, event string) Message {
 		} else {
 			m.Summary = append([]string{"Not acknowledged within the agreed time"}, m.Summary...)
 		}
+	case "reopened":
+		m.Summary = append([]string{"Stopped reporting again after recovering"}, m.Summary...)
 	case "resolved":
 		m.Summary = []string{"No open findings remain for this incident"}
 		if in.Kind == "feed" {

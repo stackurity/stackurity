@@ -306,3 +306,100 @@ func TestReportingSummarySections(t *testing.T) {
 		t.Errorf("one-off nudge = %+v", it)
 	}
 }
+
+// A production server goes quiet, recovers, and goes quiet again the same
+// day. Slack and email are told once, but the trackers treat the second
+// time as new: PagerDuty pages under the next dedup key, Jira and
+// ServiceNow get a new record naming the previous one. When it recovers
+// again, each is resolved again.
+func TestReportingFlapReopensTrackers(t *testing.T) {
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	f := setup(t)
+	if _, err := f.st.Pool.Exec(ctx, `UPDATE routes SET min_priority = 'P4'`); err != nil {
+		t.Fatal(err)
+	}
+	fp, pdSrv := newFakePagerDuty(t)
+	f.d.Sender.PagerDutyURL = pdSrv.URL + "/v2/enqueue"
+	pd := f.addTracker(ctx, KindPagerDuty, ChannelConfig{}, fp.key)
+	fj, jSrv := newFakeJira(t, true)
+	jira := f.addJira(ctx, jSrv.URL, true, nil)
+	fs, snSrv := newFakeServiceNow(t)
+	sn := f.addTracker(ctx, KindServiceNow, snConfig(snSrv.URL), fs.password)
+	ticks := func() {
+		t.Helper()
+		if _, err := f.st.MarkStaleAssets(ctx, 48*time.Hour); err != nil {
+			t.Fatal(err)
+		}
+		for i := 0; i < 3; i++ {
+			f.tick()
+		}
+	}
+
+	f.reportHost(ctx, "web-1", "production", 3)
+	ticks()
+	inc := f.onlyIncident(ctx)
+	base := IncidentLabel(tenant.DefaultWorkspace, inc.ID)
+	if inc.Priority != "P3" || fp.state(base) != "triggered" || len(fj.snapshot()) != 1 || len(fs.all()) != 1 {
+		t.Fatalf("down: %+v, pagerduty %q, jira %d, servicenow %d", inc, fp.state(base), len(fj.snapshot()), len(fs.all()))
+	}
+	people := len(f.hook.got)
+	if people == 0 {
+		t.Fatal("people were not told the server went down")
+	}
+
+	// Back: everything resolves.
+	f.reportHost(ctx, "web-1", "production", 0)
+	ticks()
+	if fp.state(base) != "resolved" || fj.snapshot()[0].Status != "Done" || fs.all()[0].fields["state"] == "1" {
+		t.Fatalf("recovered: pagerduty %q, jira %+v, servicenow %+v", fp.state(base), fj.snapshot()[0], fs.all()[0].fields)
+	}
+
+	// Down again an hour after it closed.
+	if _, err := f.st.Pool.Exec(ctx, `UPDATE incidents SET resolved_at = now() - interval '50 hours' WHERE id = $1`, inc.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.st.Pool.Exec(ctx, `UPDATE assets SET last_seen = now() - interval '49 hours' WHERE name = 'web-1'`); err != nil {
+		t.Fatal(err)
+	}
+	ticks()
+	again := f.onlyIncident(ctx)
+	if again.ID != inc.ID || again.Status != "open" {
+		t.Fatalf("flap: %+v, want #%d reopened", again, inc.ID)
+	}
+	for _, m := range f.hook.got[people:] {
+		t.Errorf("people told again on the flap: %s %q", m.Event, m.Title)
+	}
+	if fp.state(base+"-2") != "triggered" || fp.state(base) != "resolved" {
+		t.Errorf("pagerduty after the flap: %q %q, events %+v", fp.state(base), fp.state(base+"-2"), fp.actions(base+"-2"))
+	}
+	issues := fj.snapshot()
+	if len(issues) != 2 || issues[1].Status != "To Do" || !strings.Contains(strings.Join(issues[1].Labels, ","), base+"-2") ||
+		!strings.Contains(string(issues[1].Description), "the previous record was SEC-1") {
+		t.Errorf("jira after the flap: %+v", issues)
+	}
+	recs := fs.all()
+	if len(recs) != 2 || recs[1].fields["correlation_id"] != base+"-2" ||
+		!strings.Contains(recs[1].fields["description"], "the previous record was "+recs[0].fields["number"]) {
+		t.Errorf("servicenow after the flap: %+v", recs)
+	}
+	inc2, _ := f.st.GetIncident(ctx, inc.ID)
+	if len(inc2.Issues) != 3 {
+		t.Errorf("issues = %+v", inc2.Issues)
+	}
+
+	// Back again: the new records resolve too.
+	f.reportHost(ctx, "web-1", "production", 0)
+	ticks()
+	if fp.state(base+"-2") != "resolved" {
+		t.Errorf("pagerduty second resolve: %v", fp.actions(base+"-2"))
+	}
+	if is := fj.snapshot(); is[1].Status != "Done" {
+		t.Errorf("jira second resolve: %+v", is[1])
+	}
+	if r := fs.all()[1].fields; r["state"] == fs.all()[0].fields["state"] && r["state"] == "1" || r["close_notes"] == "" {
+		t.Errorf("servicenow second resolve: %+v", r)
+	}
+	for _, ch := range []int64{pd.ID, jira.ID, sn.ID} {
+		f.allSent(ctx, ch)
+	}
+}
