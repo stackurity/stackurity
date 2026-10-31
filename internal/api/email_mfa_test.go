@@ -4,7 +4,9 @@ import (
 	"context"
 	"regexp"
 	"slices"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stackurity/stackurity/internal/api"
 	"github.com/stackurity/stackurity/internal/auth"
@@ -47,6 +49,48 @@ func newEmailCodeEnv(t *testing.T) (*env, *fakeMail) {
 	return e, mail
 }
 
+// next waits for the next email titled title, skipping others (factor-change
+// and sign-in notices are sent after the response, so they can arrive in
+// any order with the codes).
+func (f *fakeMail) next(t *testing.T, title string) fakeMsg {
+	t.Helper()
+	deadline := time.After(20 * time.Second)
+	for {
+		f.mu.Lock()
+		for i := 0; i < len(f.sent); i++ {
+			if f.sent[i].msg.Title == title {
+				m := f.sent[i]
+				f.sent = append(f.sent[:i:i], f.sent[i+1:]...)
+				f.mu.Unlock()
+				return m
+			}
+		}
+		f.mu.Unlock()
+		select {
+		case <-f.got:
+		case <-deadline:
+			t.Fatalf("no email %q", title)
+		}
+	}
+}
+
+// titles counts the emails with each title still unclaimed by next.
+func (f *fakeMail) titles() map[string]int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := map[string]int{}
+	for _, m := range f.sent {
+		out[m.msg.Title]++
+	}
+	return out
+}
+
+const (
+	codeTitle    = "Someone is signing in to Stackurity"
+	signInTitle  = "You signed in to Stackurity with an email code"
+	changedTitle = "Your Stackurity two-factor sign-in changed"
+)
+
 // codeIn returns the six-digit code in an email-code message.
 func codeIn(t *testing.T, m fakeMsg) string {
 	t.Helper()
@@ -68,7 +112,7 @@ func turnOnEmailCodes(t *testing.T, s *session, mail *fakeMail) {
 	if code := s.do("POST", "/api/v1/auth/mfa/email", map[string]string{"password": pw}, nil); code != 204 {
 		t.Fatalf("begin email codes: %d", code)
 	}
-	c := codeIn(t, mail.wait(t))
+	c := codeIn(t, mail.next(t, codeTitle))
 	if code := s.do("POST", "/api/v1/auth/mfa/email/confirm", map[string]string{"code": c}, nil); code != 200 {
 		t.Fatalf("confirm email codes: %d", code)
 	}
@@ -94,7 +138,7 @@ func TestEmailCodes(t *testing.T) {
 	if code := dev.do("POST", "/api/v1/auth/mfa/email", map[string]string{"password": pw}, nil); code != 204 {
 		t.Fatal("begin")
 	}
-	sent := codeIn(t, mail.wait(t))
+	sent := codeIn(t, mail.next(t, codeTitle))
 	if code := dev.do("POST", "/api/v1/auth/mfa/email/confirm", map[string]string{"code": wrongCode(sent)}, nil); code != 400 {
 		t.Fatalf("wrong code: %d", code)
 	}
@@ -104,6 +148,9 @@ func TestEmailCodes(t *testing.T) {
 	}
 	if code := dev.do("POST", "/api/v1/auth/mfa/email/confirm", map[string]string{"code": sent[:3] + " " + sent[3:]}, nil); code != 200 {
 		t.Fatalf("confirm: %d", code)
+	}
+	if m := mail.next(t, changedTitle); !strings.Contains(m.msg.Summary[0], "Email codes were turned on") {
+		t.Errorf("change email %+v", m.msg.Summary)
 	}
 	if code := dev.do("GET", "/api/v1/assets", nil, nil); code != 200 {
 		t.Fatalf("after turning email codes on: %d", code)
@@ -128,7 +175,7 @@ func TestEmailCodes(t *testing.T) {
 	if code := s.do("POST", "/api/v1/auth/mfa/email/send", nil, nil); code != 204 {
 		t.Fatalf("send: %d", code)
 	}
-	signInCode := codeIn(t, mail.wait(t))
+	signInCode := codeIn(t, mail.next(t, codeTitle))
 	// Another code within 30 seconds is refused.
 	if code := s.do("POST", "/api/v1/auth/mfa/email/send", nil, nil); code != 409 {
 		t.Errorf("second send at once: %d", code)
@@ -138,13 +185,12 @@ func TestEmailCodes(t *testing.T) {
 	if code := s2.do("POST", "/api/v1/auth/mfa/verify", map[string]string{"code": signInCode}, nil); code != 401 {
 		t.Errorf("code from another sign-in: %d", code)
 	}
-	before := mail.count()
 	if code := s.do("POST", "/api/v1/auth/mfa/verify", map[string]string{"code": signInCode}, nil); code != 200 {
 		t.Fatalf("verify: %d", code)
 	}
-	note := mail.wait(t)
-	if note.msg.Title != "You signed in to Stackurity with an email code" || mail.count() != before+1 {
-		t.Errorf("notification %+v", note.msg)
+	note := mail.next(t, signInTitle)
+	if note.to != "dev@x.io" || !strings.Contains(strings.Join(note.msg.Summary, " "), "127.0.0.1") {
+		t.Errorf("notification %+v", note)
 	}
 	if code := s.do("GET", "/api/v1/assets", nil, nil); code != 200 {
 		t.Fatalf("after the email code: %d", code)
@@ -152,7 +198,7 @@ func TestEmailCodes(t *testing.T) {
 	// Used once.
 	s3, _ := passwordStep(t, e, "dev@x.io")
 	s3.do("POST", "/api/v1/auth/mfa/email/send", nil, nil)
-	c3 := codeIn(t, mail.wait(t))
+	c3 := codeIn(t, mail.next(t, codeTitle))
 	if _, err := e.st.Pool.Exec(context.Background(), `UPDATE mfa_challenges SET email_code_expires_at = now() - interval '1 second'`); err != nil {
 		t.Fatal(err)
 	}
@@ -163,6 +209,9 @@ func TestEmailCodes(t *testing.T) {
 	// Adding a passkey turns email codes off: they are never kept beside a
 	// stronger method, and never offered then.
 	registerPasskey(t, s, newAuthenticator(), "Laptop")
+	if m := mail.next(t, changedTitle); !strings.Contains(m.msg.Summary[0], "replaces email codes") {
+		t.Errorf("change email %+v", m.msg.Summary)
+	}
 	ms := mfaStatusOf(t, s)
 	if !slices.Equal(ms.Methods, []string{"passkey"}) {
 		t.Errorf("methods after adding a passkey: %v", ms.Methods)
@@ -218,7 +267,7 @@ func TestEmailCodeRestrictions(t *testing.T) {
 	// Five wrong codes end the sign-in.
 	s, _ := passwordStep(t, e, "dev@x.io")
 	s.do("POST", "/api/v1/auth/mfa/email/send", nil, nil)
-	right := codeIn(t, mail.wait(t))
+	right := codeIn(t, mail.next(t, codeTitle))
 	for i := 0; i < 5; i++ {
 		s.do("POST", "/api/v1/auth/mfa/verify", map[string]string{"code": wrongCode(right)}, nil)
 	}
@@ -287,11 +336,13 @@ func TestEmailCodeStepUp(t *testing.T) {
 	if code := s.do("POST", "/api/v1/auth/mfa/step-up/email/send", nil, nil); code != 204 {
 		t.Fatalf("send: %d", code)
 	}
-	c := codeIn(t, mail.wait(t))
+	c := codeIn(t, mail.next(t, codeTitle))
 	var res struct{ Method string }
 	if code := s.do("POST", "/api/v1/auth/mfa/step-up", map[string]string{"code": c}, &res); code != 200 || res.Method != "email" {
 		t.Fatalf("step-up with the email code: %d %+v", code, res)
 	}
+	// Confirming with an email code is notified like signing in with one.
+	mail.next(t, signInTitle)
 }
 
 // Without email, codes are not offered and cannot be allowed.
@@ -303,5 +354,29 @@ func TestEmailCodesNeedMail(t *testing.T) {
 	var out apiErr
 	if code := admin.do("PUT", "/api/v1/settings/security", map[string]any{"methods": []string{"passkey", "email"}}, &out); code != 409 || out.Error.Code != "email_unavailable" {
 		t.Errorf("allow email codes without mail: %d %+v", code, out)
+	}
+}
+
+// Turning email codes on and off each sends one change email.
+func TestEmailCodeChangesAreEmailed(t *testing.T) {
+	e, mail := newEmailCodeEnv(t)
+	if _, err := e.st.SetMFAPolicy(context.Background(), tenant.DefaultWorkspace,
+		store.MFAPolicy{Require: store.PolicyOptional, Methods: []string{"passkey", "totp", "email"}}); err != nil {
+		t.Fatal(err)
+	}
+	e.user("dev@x.io", auth.RoleEngineer)
+	dev := e.login("dev@x.io")
+	turnOnEmailCodes(t, dev, mail)
+	if m := mail.next(t, changedTitle); !strings.Contains(m.msg.Summary[0], "turned on") {
+		t.Errorf("on: %+v", m.msg.Summary)
+	}
+	if code := dev.do("DELETE", "/api/v1/auth/mfa/email", map[string]string{"password": pw}, nil); code != 204 {
+		t.Fatalf("off: %d", code)
+	}
+	if m := mail.next(t, changedTitle); !strings.Contains(m.msg.Summary[0], "turned off") {
+		t.Errorf("off: %+v", m.msg.Summary)
+	}
+	if n := mail.titles()[changedTitle]; n != 0 {
+		t.Errorf("%d extra change emails", n)
 	}
 }
