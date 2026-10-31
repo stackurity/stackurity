@@ -519,6 +519,73 @@ func (s *Server) uncheckedSummary(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, sum)
 }
 
+// coverageOverview is the Coverage page's headline: components split into
+// segments that add up to the total (each listed by GET
+// /components?segment=), and the ecosystems and operating systems found.
+func (s *Server) coverageOverview(w http.ResponseWriter, r *http.Request) {
+	ov, err := s.Store.SummarizeCoverage(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, 200, ov)
+}
+
+// coverageAssets lists assets worst first with their share checked, and
+// counts every group (group= limits the list to one).
+func (s *Server) coverageAssets(w http.ResponseWriter, r *http.Request) {
+	g := r.URL.Query().Get("group")
+	if g != "" && !store.ValidAssetGroup(g) {
+		s.fail(w, r, badRequest("group must be one of "+strings.Join(store.AssetGroups, ", ")))
+		return
+	}
+	list, err := s.Store.ListAssetCoverage(r.Context(), g, page(r))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, 200, list)
+}
+
+type supportRequest struct {
+	Ecosystem string `json:"ecosystem"`
+}
+
+// requestSupport records that the workspace wants an ecosystem Stackurity
+// does not check yet. Asking again changes nothing; any member may ask,
+// signed in to the dashboard (API tokens are refused: a vote is a person's),
+// at most 10 times a minute and 50 times a day.
+func (s *Server) requestSupport(w http.ResponseWriter, r *http.Request) {
+	p := principal(r)
+	if p == nil || p.User == nil || !p.Session {
+		writeError(w, 403, "forbidden", "sign in to the dashboard to request support; API tokens cannot")
+		return
+	}
+	who := strconv.FormatInt(p.User.ID, 10)
+	if s.limited(w, r, "too many support requests; try again later",
+		limitHit{"support-request-minute", who, limitSupportMinute}, limitHit{"support-request-day", who, limitSupportDay}) {
+		return
+	}
+	var req supportRequest
+	if err := decode(r, &req); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if req.Ecosystem == "" {
+		s.fail(w, r, badRequest("ecosystem is required"))
+		return
+	}
+	label, created, err := s.Store.RequestSupport(r.Context(), req.Ecosystem, &p.User.ID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if created {
+		_ = s.Store.Audit(r.Context(), principal(r).Actor(r), "coverage.support_request", "ecosystem", req.Ecosystem, map[string]string{"label": label})
+	}
+	writeJSON(w, 200, map[string]any{"ecosystem": req.Ecosystem, "label": label, "requested": true})
+}
+
 func (s *Server) listCoverage(w http.ResponseWriter, r *http.Request) {
 	problems := r.URL.Query().Get("problems") == "true"
 	items, total, err := s.Store.ListCoverage(r.Context(), qInt(r, "asset_id"), problems, page(r))
@@ -630,7 +697,7 @@ func (s *Server) deleteRelation(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) listComponents(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	f := store.ComponentFilter{Type: q.Get("type"), Search: q.Get("q"), Page: page(r)}
+	f := store.ComponentFilter{Type: q.Get("type"), Search: q.Get("q"), Segment: q.Get("segment"), Page: page(r)}
 	items, total, err := s.Store.ListComponents(r.Context(), f)
 	if err != nil {
 		s.fail(w, r, err)

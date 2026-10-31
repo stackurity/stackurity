@@ -1,4 +1,4 @@
-import { api, type CoverageGap, type CoverageGapReport } from "../../api";
+import { api, type CoverageGap, type CoverageGapReport, type SupportRequestTotal } from "../../api";
 import { useLoad } from "../../hooks";
 import { Table, type Column } from "../../components/Table";
 import {
@@ -85,6 +85,20 @@ function GapCard({
   );
 }
 
+const REQUEST_COLUMNS: Column<SupportRequestTotal>[] = [
+  {
+    key: "ecosystem",
+    header: "Ecosystem",
+    cell: (r) => (
+      <>
+        {r.label || r.ecosystem} <span className="mono small muted">{r.ecosystem}</span>
+      </>
+    ),
+  },
+  { key: "workspaces", header: "Workspaces", numeric: true, cell: (r) => r.workspaces },
+  { key: "latest", header: "Latest", cell: (r) => <RelativeTime iso={r.latest} /> },
+];
+
 /**
  * Instance administration: what Stackurity cannot check, counted across every
  * workspace. Counts and type names only: no workspace, asset, path or package
@@ -120,6 +134,21 @@ export function CoverageGapsPage() {
               What is and is not covered
             </a>
           </p>
+          <Card title="Support requested">
+            <p className="small muted">
+              Ecosystems workspaces asked Stackurity to support from their Coverage page, counted in workspaces: a roadmap signal.
+            </p>
+            {(d.support_requests ?? []).length === 0 ? (
+              <EmptyState title="No requests yet" />
+            ) : (
+              <Table
+                caption="Support requested"
+                columns={REQUEST_COLUMNS}
+                rows={d.support_requests ?? []}
+                rowKey={(r) => r.ecosystem}
+              />
+            )}
+          </Card>
           <GapCard
             title="Files nothing reads"
             about="Files a scan found that no built-in reader or installed stack pack can read, so their dependencies are not in the inventory."

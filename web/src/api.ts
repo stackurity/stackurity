@@ -568,6 +568,63 @@ export interface CoverageGapReport {
   no_lifecycle: CoverageGap[];
   /** Components a vulnerability source exists for that were still not checked. */
   not_checked?: CoverageGap[];
+  /** Ecosystems workspaces asked to be supported (the Coverage page's "Request support"). */
+  support_requests?: SupportRequestTotal[];
+}
+
+/** One ecosystem workspaces asked to be supported, counted. */
+export interface SupportRequestTotal {
+  ecosystem: string;
+  label: string;
+  workspaces: number;
+  latest: string;
+}
+
+/** A segment of the Coverage page's headline (GET /coverage/overview). */
+export type CoverageSegment = "checked" | "needs_you" | "not_supported" | "waiting" | "no_advisories";
+
+/** GET /coverage/overview: components split into segments that add up to the total. */
+export interface CoverageOverview {
+  total: number;
+  segments: Record<CoverageSegment, number>;
+  ecosystems: EcosystemCoverage[];
+}
+
+/** One ecosystem or operating system found on the workspace's assets. */
+export interface EcosystemCoverage {
+  /** "npm", "deb:ubuntu-24.04", "windows": what a support request names. */
+  key: string;
+  label: string;
+  type: string;
+  components: number;
+  checked: number;
+  not_supported: number;
+  status: "checked" | "partly" | "not_supported";
+  requested: boolean;
+}
+
+/** A group of the Coverage page's asset table, worst first. */
+export type AssetCoverageGroup = "failed_collection" | "not_reporting" | "partly_checked" | "awaiting_first_check" | "healthy";
+
+/** One asset in the Coverage page's table (GET /coverage/assets). */
+export interface AssetCoverageRow {
+  id: number;
+  name: string;
+  kind: string;
+  collection_status: string;
+  reporting: Reporting;
+  group: AssetCoverageGroup;
+  state: string;
+  components: number;
+  checked: number;
+  /** Components not checked, by who acts: user, stackurity, automatic, none. */
+  not_checked: Record<"user" | "stackurity" | "automatic" | "none", number>;
+  problem_scopes: number;
+  last_report: string | null;
+}
+
+export interface AssetCoverageList extends List<AssetCoverageRow> {
+  groups: Record<AssetCoverageGroup, number>;
 }
 
 /** GET /admin/health: whether the installation itself is working. */

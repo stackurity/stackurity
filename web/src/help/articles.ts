@@ -1003,10 +1003,10 @@ jobs:
     section: "Daily work",
     summary: "Make sure “no findings” really means nothing was found.",
     where: ["Settings", "Intelligence and feeds"],
-    keywords: "feeds osv kev endoflife stale evaluation gap coverage state not checked needs you unsupported resolves on its own no published advisories awaiting verification refresh re-evaluate",
+    keywords: "feeds osv kev endoflife stale evaluation gap coverage state checked request support ecosystem not checked needs you unsupported resolves on its own no published advisories awaiting verification refresh re-evaluate",
     body: [
       {
-        p: "**Coverage** (Assets ▸ Coverage) counts assets by coverage state and lists what each collector checked, skipped, failed or doesn't support yet. Keep **Problems only** on to see the gaps.",
+        p: "**Coverage** (Assets ▸ Coverage) leads with one answer: the share of your components that were checked, and a bar splitting them into **Checked**, **Needs you**, **Not supported yet**, **Waiting for data** and **No published advisories**. Each part opens the components behind it. Below it: what you can fix, each ecosystem found (with **Request support** for one Stackurity doesn't check yet), and every asset, worst first. Open an asset's row to see which parts of its report could not be read; administrators can **Show all scopes**.",
       },
       {
         p: "Each asset has a **coverage state**: **Healthy and recently evaluated**, or one or more of **Failed collection**, **Stale intelligence**, **Partially evaluated**, **Unsupported** and **Awaiting verification**, each with its reason. The asset page shows them above the tabs, the Findings tab says how many components the findings do not cover, and the Inventory tab marks each component as **Not checked**, **Unsupported**, **Stale intelligence** or **Awaiting verification** (filter by **Coverage**).",
