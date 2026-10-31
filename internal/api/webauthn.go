@@ -419,7 +419,11 @@ func (s *Server) finishPasskeyRegistration(w http.ResponseWriter, r *http.Reques
 	}
 	s.auditAccount(r, u, "auth.passkey_added", map[string]any{"passkey_id": pk.ID, "name": pk.Name, "backed_up": pk.BackedUp,
 		"discoverable": pk.Discoverable, "user_verified": cred.Flags.UserVerified, "recovery_codes_issued": issued, "other_sessions_ended": ended})
-	s.notifyFactorChange(r, u.Email, "A passkey, “"+pk.Name+"”, was added for two-factor sign-in", "")
+	change := "A passkey, “" + pk.Name + "”, was added for two-factor sign-in"
+	if hadEmail {
+		change += " (it replaces email codes, which were turned off)"
+	}
+	s.notifyFactorChange(r, u.Email, change, "")
 	s.answerFactorChange(w, r, u, map[string]any{"passkey": pk, "recovery_codes": codes, "other_sessions_ended": ended})
 }
 
@@ -737,6 +741,10 @@ func (s *Server) stepUpCode(w http.ResponseWriter, r *http.Request) {
 		}
 		writeError(w, 401, "mfa_invalid", msg)
 		return
+	}
+	if method == store.MFAEmail && s.emailCodesAvailable() {
+		// As after a sign-in with an email code.
+		s.notifyEmailCodeSignIn(r, u)
 	}
 	s.steppedUp(w, r, u, sessionFactor{method: method}, nil)
 }

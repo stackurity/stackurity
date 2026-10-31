@@ -192,7 +192,7 @@ A six-digit code sent by email after the password, for people with no passkey or
 - **Never counted for admin, security or instance-admin roles**, never for **phishing-resistant sign-in**, and **never offered to someone who has another method**: setting up a passkey or the app turns email codes off (`auth.mfa_disabled`, "replaced").
 - A code is six random digits, valid for **10 minutes**, used **once**, and bound to the sign-in (or session) that asked for it; only a hash of it, with that sign-in's secret, is stored. The email's subject is "Someone is signing in to Stackurity", with the address the request came from.
 - Limited like app codes: five wrong codes end the sign-in and ten per account in 15 minutes; one code every 30 seconds, five per sign-in, six per account in 15 minutes.
-- **Every sign-in with an email code is followed by an email saying so**, with the time and address, and what to do if it was not them.
+- **Every sign-in with an email code is followed by an email saying so**, with the time and address, and what to do if it was not them; so is confirming a session with one. Turning email codes on or off sends the two-factor change email, as for any other method.
 - Where password reset links are emailed too, someone who controls the person's mailbox can reset the password and receive the code: email codes stop a leaked password, not a taken-over mailbox. That is why they are a fallback and never count for privileged roles.
 - If the server stops being able to send email, people who rely on email codes cannot finish signing in; an admin's **Reset two-factor** lets them in to set up a passkey or app.
 

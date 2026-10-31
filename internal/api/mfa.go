@@ -512,7 +512,11 @@ func (s *Server) confirmTOTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.auditAccount(r, u, "auth.mfa_enabled", map[string]any{"method": "totp", "other_sessions_ended": ended, "recovery_codes_issued": issued})
-	s.notifyFactorChange(r, u.Email, "An authenticator app was set up for two-factor sign-in", "")
+	change := "An authenticator app was set up for two-factor sign-in"
+	if hadEmail {
+		change += " (it replaces email codes, which were turned off)"
+	}
+	s.notifyFactorChange(r, u.Email, change, "")
 	s.answerFactorChange(w, r, u, map[string]any{"recovery_codes": codes, "other_sessions_ended": ended})
 }
 

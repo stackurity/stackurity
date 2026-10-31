@@ -249,6 +249,7 @@ func (s *Server) confirmEmailMFA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.auditAccount(r, u, "auth.mfa_enabled", map[string]any{"method": store.MFAEmail, "other_sessions_ended": ended})
+	s.notifyFactorChange(r, u.Email, "Email codes were turned on for two-factor sign-in", "")
 	s.answerFactorChange(w, r, u, map[string]any{"other_sessions_ended": ended})
 }
 
@@ -264,12 +265,17 @@ func (s *Server) removeEmailMFA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if had {
-		ended, err := s.factorChanged(w, r, keepFactor(principal(r)))
+		f := keepFactor(principal(r))
+		if f.method == store.MFAEmail {
+			f = sessionFactor{}
+		}
+		ended, err := s.factorChanged(w, r, f)
 		if err != nil {
 			s.fail(w, r, err)
 			return
 		}
 		s.auditAccount(r, u, "auth.mfa_disabled", map[string]any{"methods": []string{store.MFAEmail}, "other_sessions_ended": ended})
+		s.notifyFactorChange(r, u.Email, "Email codes were turned off for two-factor sign-in", "")
 	}
 	w.WriteHeader(204)
 }
