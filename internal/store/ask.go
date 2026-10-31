@@ -390,57 +390,73 @@ func (s *Store) AskGlobalSpend(ctx context.Context) (int64, error) {
 // ErrAskQuota is the monthly question limit reached.
 var ErrAskQuota = errors.New("monthly question limit reached")
 
+// AskQuestion is a question counted: the questions asked in its period,
+// it included, and the month (UTC) it was counted in, which a refund
+// takes it back from.
+type AskQuestion struct {
+	Used  int64
+	Month time.Time
+}
+
+// askLockKey is a transaction-scoped advisory lock key for name and a
+// workspace: a 64-bit hash of both, so no workspace id is truncated.
+const askLockKey = `hashtextextended($1 || ':' || $2::bigint::text, 0)`
+
 // CountAskQuestion counts a question against the workspace in ctx's
-// question limit (nil: none) for period ("month" or "total") and returns
-// the questions asked in that period, this one included, or ErrAskQuota
-// with nothing counted. Counts of one workspace are taken one at a time
-// (a transaction-scoped advisory lock).
-func (s *Store) CountAskQuestion(ctx context.Context, limit *int64, period string) (int64, error) {
+// question limit (nil: none) for period ("month" or "total"), or returns
+// ErrAskQuota with nothing counted. Counts of one workspace are taken one
+// at a time (a transaction-scoped advisory lock).
+func (s *Store) CountAskQuestion(ctx context.Context, limit *int64, period string) (AskQuestion, error) {
+	var q AskQuestion
 	ws, err := askWorkspace(ctx)
 	if err != nil {
-		return 0, err
+		return q, err
 	}
 	if limit != nil && *limit <= 0 {
-		return 0, ErrAskQuota
+		return q, ErrAskQuota
 	}
 	if period != "total" {
 		period = "month"
 	}
 	sys := tenant.System(ctx)
-	var n int64
 	err = pgx.BeginTxFunc(sys, s.Pool, pgx.TxOptions{}, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(sys, `SELECT pg_advisory_xact_lock(hashtext('stackurity-ask-questions'), $1::int)`, ws); err != nil {
+		if _, err := tx.Exec(sys, `SELECT pg_advisory_xact_lock(`+askLockKey+`)`, "stackurity-ask-questions", ws); err != nil {
 			return err
 		}
 		var used int64
-		q := `SELECT COALESCE(sum(questions), 0) FROM ask_usage WHERE workspace_id = $1 AND month = ` + askMonth
+		count := `SELECT COALESCE(sum(questions), 0) FROM ask_usage WHERE workspace_id = $1 AND month = ` + askMonth
 		if period == "total" {
-			q = `SELECT COALESCE(sum(questions), 0) FROM ask_usage WHERE workspace_id = $1`
+			count = `SELECT COALESCE(sum(questions), 0) FROM ask_usage WHERE workspace_id = $1`
 		}
-		if err := tx.QueryRow(sys, q, ws).Scan(&used); err != nil {
+		if err := tx.QueryRow(sys, count, ws).Scan(&used); err != nil {
 			return err
 		}
 		if limit != nil && used >= *limit {
 			return ErrAskQuota
 		}
-		if _, err := tx.Exec(sys, `INSERT INTO ask_usage AS u (workspace_id, month, questions) VALUES ($1, `+askMonth+`, 1)
-			ON CONFLICT (workspace_id, month) DO UPDATE SET questions = u.questions + 1`, ws); err != nil {
+		if err := tx.QueryRow(sys, `INSERT INTO ask_usage AS u (workspace_id, month, questions) VALUES ($1, `+askMonth+`, 1)
+			ON CONFLICT (workspace_id, month) DO UPDATE SET questions = u.questions + 1 RETURNING month`, ws).Scan(&q.Month); err != nil {
 			return err
 		}
-		n = used + 1
+		q.Used = used + 1
 		return nil
 	})
-	return n, err
+	if err != nil {
+		return AskQuestion{}, err
+	}
+	return q, nil
 }
 
-// RefundAskQuestion takes back a question counted this month that used
-// nothing (the model was never reached).
-func (s *Store) RefundAskQuestion(ctx context.Context) error {
+// RefundAskQuestion takes back question q, which used nothing (the model
+// was never reached), from the month it was counted in, even when a new
+// month has begun since.
+func (s *Store) RefundAskQuestion(ctx context.Context, q AskQuestion) error {
 	ws, err := askWorkspace(ctx)
 	if err != nil {
 		return err
 	}
-	_, err = s.Pool.Exec(tenant.System(ctx), `UPDATE ask_usage SET questions = questions - 1 WHERE workspace_id = $1 AND month = `+askMonth+` AND questions > 0`, ws)
+	_, err = s.Pool.Exec(tenant.System(ctx), `UPDATE ask_usage SET questions = questions - 1 WHERE workspace_id = $1 AND month = $2 AND questions > 0`,
+		ws, q.Month)
 	return err
 }
 
@@ -489,7 +505,7 @@ func (s *Store) HoldAskSpend(ctx context.Context, micros int64, wsCap, globalCap
 	sys := tenant.System(ctx)
 	h := &AskHold{Workspace: ws, Micros: micros, workspaceC: wsCap, globalC: globalCap}
 	err = pgx.BeginTxFunc(sys, s.Pool, pgx.TxOptions{}, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(sys, `SELECT pg_advisory_xact_lock(hashtext('stackurity-ask-spend'))`); err != nil {
+		if _, err := tx.Exec(sys, `SELECT pg_advisory_xact_lock(hashtextextended('stackurity-ask-spend', 0))`); err != nil {
 			return err
 		}
 		var wsSpent, wsHeld, allSpent, allHeld int64
