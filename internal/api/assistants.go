@@ -123,7 +123,9 @@ func (s *Server) assistantRoutes(r chi.Router) {
 	if s.BaseURL == "" {
 		s.Log.Warn("AI assistants (/mcp and OAuth sign-in) are off: set STACKURITY_BASE_URL to the server's public https:// address")
 	}
-	r = r.With(s.requireBaseURL)
+	// A self-hosted server without its key answers assistants only once it
+	// has one (keygate.go).
+	r = r.With(s.requireBaseURL, s.keyGate)
 	r.Get("/.well-known/oauth-protected-resource", s.protectedResourceMetadata)
 	r.Get("/.well-known/oauth-protected-resource/mcp", s.protectedResourceMetadata)
 	r.Get("/.well-known/oauth-authorization-server", s.authorizationServerMetadata)

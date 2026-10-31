@@ -32,6 +32,11 @@ spec:
             - name: STACKURITY_DATABASE_URL
               valueFrom:
                 secretKeyRef: {name: {{ .Values.database.existingSecret }}, key: {{ .Values.database.existingSecretKey }}}
+            {{- with .Values.license.existingSecret }}
+            - name: STACKURITY_LICENSE
+              valueFrom:
+                secretKeyRef: {name: {{ . }}, key: {{ $.Values.license.existingSecretKey }}}
+            {{- end }}
             - {name: STACKURITY_LISTEN, value: ":8080"}
             - {name: STACKURITY_DATA_DIR, value: /var/lib/stackurity}
             - {name: STACKURITY_SECRETS_DIR, value: /run/secrets}

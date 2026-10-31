@@ -52,6 +52,14 @@ database:
   existingSecret: ""     # Secret with the connection URL
   existingSecretKey: url # postgres://user:pass@host:5432/stackurity?sslmode=require
 
+# The server's free key (or a paid licence key) from a Secret, as
+# STACKURITY_LICENSE: https://app.stackurity.dev/self-hosted-key, checked
+# offline (docs/install.md, "The free key"). Empty: enter it in the
+# dashboard instead, which keeps it in the database.
+license:
+  existingSecret: ""
+  existingSecretKey: key
+
 config:
   baseURL: ""            # public URL, used in notification links
   cookieSecure: true

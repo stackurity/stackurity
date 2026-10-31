@@ -255,6 +255,12 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	if p.SSORequired != nil {
 		out["sso_required"] = p.SSORequired
 	}
+	// Whether this self-hosted server has its key (absent on Stackurity
+	// Cloud): the dashboard asks for it, or shows administrators the days
+	// left of an upgrade's grace period.
+	if s.KeyRequirement != nil {
+		out["license_key"] = s.KeyRequirement.Status()
+	}
 	if p.Workspace > 0 {
 		ws, err := s.Store.GetWorkspace(r.Context(), p.Workspace)
 		if err != nil {

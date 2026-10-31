@@ -92,6 +92,10 @@ type Server struct {
 	LicenceFromEnv bool
 	// ParseLicence verifies uploaded keys; nil uses license.Parse.
 	ParseLicence func(string) (*license.License, error)
+	// KeyRequirement holds back the dashboard and API of a self-hosted
+	// server until a free Community key or a paid licence is installed
+	// (keygate.go); nil requires none (Stackurity Cloud, tests).
+	KeyRequirement *license.Requirement
 	// Health checks the platform for instance admins; nil disables it.
 	Health *health.Checker
 	// CoverageGaps builds the instance-wide coverage-gap report
@@ -189,7 +193,7 @@ func (s *Server) Handler() http.Handler {
 	r.With(s.limitAddress("email-links", limitEmailConfirm, "too many attempts; wait a minute")).Post("/email/preferences/one-click", s.oneClickEmailPreferences)
 
 	r.Route("/api/v1", func(r chi.Router) {
-		r.Use(s.authenticate, csrfGuard)
+		r.Use(s.authenticate, csrfGuard, s.keyGate)
 		r.Get("/meta", s.meta)
 		r.Get("/openapi.json", s.openAPI)
 		r.Post("/setup", s.setup)

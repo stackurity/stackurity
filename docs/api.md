@@ -38,6 +38,7 @@ A workspace (shown as the organisation in the dashboard) groups its assets into 
 - **Limits and read-only organisations.** A request that would create an asset past the organisation's limit answers `402 asset_limit`, a new project past its limit `402 project_limit`. While an organisation is read-only, uploads, enrollment, integrations, checks and notifications answer `402 read_only`. See [asset-limits.md](asset-limits.md).
 - **Editions.** Routes marked **licensed build** exist only in Stackurity Pro and Enterprise; in the Community build some answer `402` with the plan they need, and the others are not served. Routes marked **Stackurity Cloud** exist only on the hosted service. See [editions.md](editions.md).
 - **Rate limits** answer `429`. Routes that need no sign-in are limited per address.
+- **The free key.** A self-hosted server without its free key or a licence ([install.md](install.md#the-free-key)) answers `403 key_required` on every route except: `GET /meta`, `GET /openapi.json`, `POST /setup`, everything under `/auth/` and the single sign-on routes, `/admin/license`, the email confirmation, unsubscribe and preference routes, and what agents and uploads use (`POST /enroll`, `POST /ingest`, `POST /sbom/import`, `GET /collections/{id}/result`, `GET /agent/check`, `/agent/actions`, `GET /remediation/renovate.json`; with an API token also `GET /projects`, `GET /projects/{id}` and `POST /vex/import`). `/mcp` and the assistants' OAuth endpoints answer `403 key_required` too. An upgraded server gets 30 days first. Stackurity Cloud never answers it.
 
 ## Account
 
@@ -81,7 +82,7 @@ Ends the session; audited as `auth.logout`.
 
 **Who:** any signed-in user or token
 
-The caller: `user`, `role`, `workspace`, `workspaces`, `edition` and `features`, `access` (`organisation` or `projects`), `project_role`, `projects`, `default_project_id`, `read_only`, `report_mode`, `feedback_enabled` `password_change_required` (an administrator set a temporary password: until it is changed with `POST /auth/password`, other routes answer 403 `password_change_required`) and `mfa_enrolment_required` (the organisation requires two-factor sign-in and this session has none: until it is set up, other routes answer 403 `mfa_enrolment_required`). Each user has `mfa_enabled`.
+The caller: `user`, `role`, `workspace`, `workspaces`, `edition` and `features`, `access` (`organisation` or `projects`), `project_role`, `projects`, `default_project_id`, `read_only`, `report_mode`, `feedback_enabled` `password_change_required` (an administrator set a temporary password: until it is changed with `POST /auth/password`, other routes answer 403 `password_change_required`) and `mfa_enrolment_required` (the organisation requires two-factor sign-in and this session has none: until it is set up, other routes answer 403 `mfa_enrolment_required`). Each user has `mfa_enabled`. On a self-hosted server, `license_key` says whether it has its [free key](install.md#the-free-key): `state` (`installed`, `grace` with `grace_ends`, or `required`), `upgraded`, and `signup_url`.
 
 ### `PUT /auth/default-project`
 
@@ -1492,13 +1493,13 @@ The installation's licence `status`, `active_assets`, and `managed_by_env` (set 
 
 **Who:** instance admin
 
-`{"key"}`: installs a licence key. 400 for a key that is not valid; 409 when the licence is set by `STACKURITY_LICENSE`. Audited as `license.install`.
+`{"key"}`: installs a licence key or the free key, checked offline. 400 for a key that is not valid; 409 when the licence is set by `STACKURITY_LICENSE`. Audited as `license.install`.
 
 ### `DELETE /admin/license`
 
 **Who:** instance admin
 
-Removes the licence key (409 when set by `STACKURITY_LICENSE`). Audited as `license.remove`.
+Removes the licence key (409 when set by `STACKURITY_LICENSE`); a self-hosted server then waits for a key again. Audited as `license.remove`.
 
 ### `GET /admin/packs`
 

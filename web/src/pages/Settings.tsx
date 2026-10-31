@@ -14,6 +14,8 @@ interface Entry {
   feature?: Feature;
   /** Shown only where the server offers billing (a hosted edition). */
   billing?: boolean;
+  /** Shown only where the server hands out free self-hosted keys (Stackurity Cloud). */
+  communityKeys?: boolean;
 }
 
 const GROUPS: { title: string; entries: Entry[] }[] = [
@@ -102,7 +104,14 @@ const GROUPS: { title: string; entries: Entry[] }[] = [
         instanceAdmin: true,
       },
       { to: "/admin/packs", label: "Stack packs", about: "Extra file readers for stacks Stackurity does not read on its own.", instanceAdmin: true },
-      { to: "/admin/license", label: "Licence", about: "Edition, limits and expiry.", instanceAdmin: true },
+      { to: "/admin/license", label: "Licence", about: "This server's key: the free Community key or a paid licence.", instanceAdmin: true },
+      {
+        to: "/admin/self-hosted-keys",
+        label: "Self-hosted keys",
+        about: "Free keys issued to people who self-host Stackurity.",
+        instanceAdmin: true,
+        communityKeys: true,
+      },
       { to: "/updates", label: "What's new", about: "Release notes and updates for this server.", instanceAdmin: true },
     ],
   },
@@ -112,7 +121,9 @@ const GROUPS: { title: string; entries: Entry[] }[] = [
 export function SettingsPage() {
   const { can, has, me, meta } = useAuth();
   const visible = (e: Entry) =>
-    (!e.billing || Boolean(meta?.billing)) && (e.instanceAdmin ? Boolean(me?.user?.instance_admin) : !e.min || can(e.min));
+    (!e.billing || Boolean(meta?.billing)) &&
+    (!e.communityKeys || Boolean(meta?.community_keys)) &&
+    (e.instanceAdmin ? Boolean(me?.user?.instance_admin) : !e.min || can(e.min));
   return (
     <>
       <PageHeader title="Settings" sub="How Stackurity checks, decides and alerts in this workspace, and who can use it." />
