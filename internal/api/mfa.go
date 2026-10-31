@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -16,16 +17,19 @@ import (
 	"github.com/stackurity/stackurity/internal/tenant"
 )
 
-// Two-factor sign-in: TOTP (RFC 6238) with ten one-time recovery codes
-// (docs/install.md, "Two-factor sign-in").
+// Two-factor sign-in (docs/install.md, "Two-factor sign-in"): passkeys and
+// security keys (webauthn.go), an authenticator app (TOTP, RFC 6238), ten
+// one-time recovery codes backing those up, and email codes as a fallback.
 //
 // A password sign-in is two requests when the account has a second factor:
 // POST /auth/login checks the password and answers {"mfa_required": true}
-// with a short-lived challenge cookie, and POST /auth/mfa/verify checks a
-// code and starts the session. Single sign-on skips both: the identity
-// provider does its own second factor. API tokens and assistants' OAuth
-// tokens are not affected, as with GitHub: the page that turns two-factor
-// sign-in on lists them.
+// with the methods to choose from and a short-lived challenge cookie; then
+// POST /auth/mfa/verify checks a code, or /auth/mfa/passkey/begin and
+// /finish a passkey, and starts the session. A passkey can also sign in on
+// its own (POST /auth/passkey/begin and /finish). Single sign-on skips all
+// of this: the identity provider does its own second factor. API tokens and
+// assistants' OAuth tokens are not affected, as with GitHub: the page that
+// sets up two-factor sign-in lists them.
 
 const mfaCookie = "stackurity_mfa"
 
@@ -47,14 +51,14 @@ var (
 // account's second factor and its workspace's "Require two-factor sign-in"
 // always apply. Single sign-on calls startSession directly.
 func (s *Server) completePasswordLogin(w http.ResponseWriter, r *http.Request, u *store.User) {
-	has, err := s.Store.HasMFA(r.Context(), u.ID)
+	methods, err := s.Store.MFAMethods(r.Context(), u.ID)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	if !has {
+	if len(methods) == 0 {
 		s.loginSucceeded(r, u)
-		s.startSessionWith(w, r, u, store.SessionOpts{PasswordLogin: true}, nil)
+		s.startSessionWith(w, r, u, store.SessionOpts{Login: store.LoginPassword}, nil)
 		return
 	}
 	secret, err := s.Store.CreateMFAChallenge(r.Context(), u.ID)
@@ -64,7 +68,35 @@ func (s *Server) completePasswordLogin(w http.ResponseWriter, r *http.Request, u
 	}
 	http.SetCookie(w, &http.Cookie{Name: mfaCookie, Value: secret, Path: "/api/v1/auth/mfa", HttpOnly: true, Secure: s.CookieSecure,
 		SameSite: http.SameSiteStrictMode, MaxAge: int(store.MFAChallengeTTL.Seconds())})
-	writeJSON(w, 200, map[string]any{"mfa_required": true, "methods": []string{"totp", "recovery_code"}})
+	writeJSON(w, 200, map[string]any{"mfa_required": true, "methods": s.signInMethods(methods)})
+}
+
+// signInMethods lists what the second step of a sign-in offers, strongest
+// first: a passkey (when this server has a relying party), the app,
+// recovery codes for either, and email codes only for an account with
+// nothing else.
+func (s *Server) signInMethods(methods []string) []string {
+	var out []string
+	strong := false
+	for _, m := range methods {
+		switch m {
+		case store.MFAPasskey:
+			strong = true
+			if wa, _ := s.relyingPartyFor(); wa != nil {
+				out = append(out, m)
+			}
+		case store.MFATOTP:
+			strong = true
+			out = append(out, m)
+		}
+	}
+	if strong {
+		return append(out, store.MFARecovery)
+	}
+	if slices.Contains(methods, store.MFAEmail) {
+		return []string{store.MFAEmail}
+	}
+	return out
 }
 
 func (s *Server) clearMFACookie(w http.ResponseWriter) {
@@ -150,7 +182,7 @@ func (s *Server) verifyMFA(w http.ResponseWriter, r *http.Request) {
 	_ = s.Store.DeleteMFAChallenge(r.Context(), c.Value)
 	s.clearMFACookie(w)
 	s.loginSucceeded(r, u)
-	s.startSessionWith(w, r, u, store.SessionOpts{PasswordLogin: true, MFA: true}, map[string]any{"mfa": method})
+	s.startSessionWith(w, r, u, store.SessionOpts{Login: store.LoginPassword, MFA: method}, map[string]any{"mfa": method})
 }
 
 // checkSecondFactor checks a TOTP or recovery code for uid. why is
@@ -240,10 +272,27 @@ func (s *Server) recheckPassword(w http.ResponseWriter, r *http.Request, u *stor
 
 type mfaStatus struct {
 	store.MFAState
-	// Required: the current organisation requires two-factor sign-in.
-	Required bool `json:"required"`
-	// Available: the server can store secrets (STACKURITY_SECRET_KEY).
+	// Passkeys are the account's passkeys and security keys.
+	Passkeys []store.Passkey `json:"passkeys"`
+	// Required: the current organisation requires a second factor of this
+	// person; Accepted lists the methods that count there.
+	Required bool     `json:"required"`
+	Accepted []string `json:"accepted"`
+	// Need is what the current session must do there: "" (nothing),
+	// "enrol" (set up one of Accepted) or "step_up" (confirm with one).
+	Need mfaNeed `json:"need"`
+	// RequiredBy names the organisations whose policy the person's
+	// factors must keep meeting (removing one below it is refused).
+	RequiredBy []string `json:"required_by"`
+	// Available: the server can store authenticator-app secrets
+	// (STACKURITY_SECRET_KEY).
 	Available bool `json:"available"`
+	// PasskeysAvailable: passkeys work on this server (STACKURITY_BASE_URL
+	// with a domain name over https); PasskeysUnavailable says why not.
+	PasskeysAvailable   bool   `json:"passkeys_available"`
+	PasskeysUnavailable string `json:"passkeys_unavailable,omitempty"`
+	// RPID is the domain passkeys are registered for.
+	RPID string `json:"rp_id,omitempty"`
 	// Tokens and Assistants keep working without a second factor.
 	Tokens     int `json:"tokens"`
 	Assistants int `json:"assistants"`
@@ -254,10 +303,45 @@ func (s *Server) mfaStatusOf(r *http.Request, u *store.User) (*mfaStatus, error)
 	if err != nil {
 		return nil, err
 	}
-	out := &mfaStatus{MFAState: st, Available: s.SecretBox != nil}
-	if ws := principal(r).Workspace; ws > 0 {
-		if out.Required, err = s.Store.WorkspaceRequiresMFA(r.Context(), ws); err != nil {
+	out := &mfaStatus{MFAState: st, Available: s.SecretBox != nil, Accepted: []string{}, RequiredBy: []string{}}
+	if out.Passkeys, err = s.Store.ListPasskeys(r.Context(), u.ID); err != nil {
+		return nil, err
+	}
+	if out.Passkeys == nil {
+		out.Passkeys = []store.Passkey{}
+	}
+	if wa, why := s.relyingPartyFor(); wa != nil {
+		out.PasskeysAvailable, out.RPID = true, wa.Config.RPID
+	} else {
+		out.PasskeysUnavailable = why
+	}
+	p := principal(r)
+	if p.Workspace > 0 {
+		pol, err := s.Store.MFAPolicyOf(r.Context(), p.Workspace)
+		if err != nil {
 			return nil, err
+		}
+		c := mfaCase{Policy: pol, Role: p.Role, ProjectRole: p.ProjectRole, InstanceAdmin: u.InstanceAdmin, Session: p.MFAMethod, Methods: st.Methods}
+		out.Required, out.Accepted, out.Need = c.required(), c.accepted(), p.MFANeed
+	}
+	ms, err := s.Store.MFAMemberships(r.Context(), u.ID)
+	if err != nil {
+		return nil, err
+	}
+	for _, m := range ms {
+		pol, err := s.Store.MFAPolicyOf(r.Context(), m.ID)
+		if err != nil {
+			return nil, err
+		}
+		if !pol.RequiresAny() {
+			continue
+		}
+		access, err := s.Store.UserAccess(r.Context(), m.ID, u.ID)
+		if err != nil {
+			return nil, err
+		}
+		if (mfaCase{Policy: pol, Role: access.OrgRole, ProjectRole: access.ProjectRole}).required() {
+			out.RequiredBy = append(out.RequiredBy, m.Name)
 		}
 	}
 	out.Tokens, out.Assistants, err = s.Store.CountCredentials(r.Context(), u.ID)
@@ -295,7 +379,7 @@ func (s *Server) startTOTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 409, "unavailable", errNoSecretKey.Error())
 		return
 	}
-	if !s.recheckPassword(w, r, u, req.Password) {
+	if !s.mayChangeFactors(w, r, u) || !s.recheckPassword(w, r, u, req.Password) {
 		return
 	}
 	secret, err := auth.NewTOTPSecret()
@@ -352,6 +436,9 @@ func (s *Server) confirmTOTP(w http.ResponseWriter, r *http.Request) {
 	if s.limited(w, r, "too many codes tried; wait a few minutes", limitHit{"mfa-user", itoa(u.ID), limitMFAPerUser}) {
 		return
 	}
+	if !s.mayChangeFactors(w, r, u) {
+		return
+	}
 	sealed, enabled, err := s.Store.TOTPSecret(r.Context(), u.ID)
 	if errors.Is(err, store.ErrNotFound) || (err == nil && enabled) {
 		writeError(w, 409, "conflict", "start setting up two-factor sign-in first")
@@ -380,26 +467,56 @@ func (s *Server) confirmTOTP(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	if err := s.Store.EnableTOTP(r.Context(), u.ID, step, hashes); err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	ended, err := s.Store.EndSessions(r.Context(), u.ID, sessionSecret(r))
+	issued, err := s.Store.EnableTOTP(r.Context(), u.ID, step, hashes)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	_ = s.Store.Audit(r.Context(), principal(r).Actor(r), "auth.mfa_enabled", "user", itoa(u.ID), map[string]any{"method": "totp", "other_sessions_ended": ended})
-	if err := s.rotateSession(w, r, store.SessionOpts{PasswordLogin: true, MFA: true}); err != nil {
+	if !issued {
+		codes = nil
+	}
+	ended, err := s.factorChanged(w, r, sessionFactor{method: store.MFATOTP})
+	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
+	s.auditAccount(r, u, "auth.mfa_enabled", map[string]any{"method": "totp", "other_sessions_ended": ended, "recovery_codes_issued": issued})
+	s.notifyFactorChange(r, u.Email, "An authenticator app was set up for two-factor sign-in", "")
+	s.answerFactorChange(w, r, u, map[string]any{"recovery_codes": codes, "other_sessions_ended": ended})
+}
+
+// sessionFactor is what a session counts as signed in with after a factor
+// change: a method and, for a passkey, which one.
+type sessionFactor struct {
+	method string
+	cred   int64
+}
+
+// keepFactor keeps the session's own second factor.
+func keepFactor(p *Principal) sessionFactor { return sessionFactor{p.MFAMethod, p.MFACredential} }
+
+// factorChanged follows a second factor added or removed: the account's
+// other sessions end, and this one gets a new ID, signed in with f (the
+// factor just proved for an addition; for a removal its own, or none when
+// the factor removed was the one it used).
+func (s *Server) factorChanged(w http.ResponseWriter, r *http.Request, f sessionFactor) (int64, error) {
+	p := principal(r)
+	ended, err := s.Store.EndSessions(r.Context(), p.User.ID, sessionSecret(r))
+	if err != nil {
+		return 0, err
+	}
+	return ended, s.rotateSession(w, r, store.SessionOpts{Login: p.Login, MFA: f.method, MFACredential: f.cred})
+}
+
+// answerFactorChange answers with out and the account's new status.
+func (s *Server) answerFactorChange(w http.ResponseWriter, r *http.Request, u *store.User, out map[string]any) {
 	st, err := s.mfaStatusOf(r, u)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"recovery_codes": codes, "status": st, "other_sessions_ended": ended})
+	out["status"] = st
+	writeJSON(w, 200, out)
 }
 
 // newRecoveryCodes replaces the recovery codes (the old ones stop working).
@@ -415,7 +532,7 @@ func (s *Server) newRecoveryCodes(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	if !s.recheckPassword(w, r, u, req.Password) {
+	if !s.mayChangeFactors(w, r, u) || !s.recheckPassword(w, r, u, req.Password) {
 		return
 	}
 	codes, hashes, err := auth.NewRecoveryCodes(auth.RecoveryCodeCount)
@@ -427,43 +544,128 @@ func (s *Server) newRecoveryCodes(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	_ = s.Store.Audit(r.Context(), principal(r).Actor(r), "auth.mfa_recovery_codes_replaced", "user", itoa(u.ID), nil)
+	s.auditAccount(r, u, "auth.mfa_recovery_codes_replaced", nil)
+	s.notifyFactorChange(r, u.Email, "New recovery codes were made, and the old ones stopped working,", "")
 	writeJSON(w, 200, map[string]any{"recovery_codes": codes})
 }
 
-// disableMFA turns the caller's second factor off, unless one of their
-// organisations requires it.
+// disableMFA removes every second factor of the caller (passkeys, the app,
+// email codes), unless one of their organisations requires one.
 func (s *Server) disableMFA(w http.ResponseWriter, r *http.Request) {
-	u := s.sessionUser(w, r)
+	u, floor := s.removalChecks(w, r, "two-factor sign-in")
 	if u == nil {
 		return
+	}
+	had, err := s.Store.DisableMFA(r.Context(), u.ID, floor)
+	if err != nil {
+		s.failRemoval(w, r, err)
+		return
+	}
+	if len(had) > 0 {
+		ended, err := s.factorChanged(w, r, sessionFactor{})
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		s.auditAccount(r, u, "auth.mfa_disabled", map[string]any{"methods": had, "other_sessions_ended": ended})
+		s.notifyFactorChange(r, u.Email, "Two-factor sign-in was turned off (every passkey, authenticator app and email code removed)", "")
+	}
+	w.WriteHeader(204)
+}
+
+// removeTOTP removes the caller's authenticator app.
+func (s *Server) removeTOTP(w http.ResponseWriter, r *http.Request) {
+	u, floor := s.removalChecks(w, r, "the authenticator app")
+	if u == nil {
+		return
+	}
+	had, err := s.Store.RemoveTOTP(r.Context(), u.ID, floor)
+	if err != nil {
+		s.failRemoval(w, r, err)
+		return
+	}
+	if had {
+		f := keepFactor(principal(r))
+		if f.method == store.MFATOTP {
+			f = sessionFactor{}
+		}
+		ended, err := s.factorChanged(w, r, f)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		s.auditAccount(r, u, "auth.mfa_disabled", map[string]any{"methods": []string{store.MFATOTP}, "other_sessions_ended": ended})
+		s.notifyFactorChange(r, u.Email, "The authenticator app was removed from two-factor sign-in", "")
+	}
+	w.WriteHeader(204)
+}
+
+// removalChecks checks a request to remove second factors: a session that
+// may change them, and the password again. The floor it returns, which the
+// store calls inside the removal's transaction, refuses when the factors
+// kept would no longer meet the policy of an organisation of the caller.
+// It answers and returns a nil user when the request may not go on.
+func (s *Server) removalChecks(w http.ResponseWriter, r *http.Request, what string) (*store.User, store.MFAFloor) {
+	u := s.sessionUser(w, r)
+	if u == nil {
+		return nil, nil
 	}
 	var req struct {
 		Password string `json:"password"`
 	}
 	if err := decode(r, &req); err != nil {
 		s.fail(w, r, err)
+		return nil, nil
+	}
+	if !s.mayChangeFactors(w, r, u) || !s.recheckPassword(w, r, u, req.Password) {
+		return nil, nil
+	}
+	return u, func(remaining []string) error {
+		name, err := s.mfaRemovalBlocked(r, u, remaining)
+		if err != nil {
+			return err
+		}
+		if name != "" {
+			return &mfaFloorError{workspace: name, what: what}
+		}
+		return nil
+	}
+}
+
+// mfaFloorError: a removal would leave an organisation's policy unmet.
+type mfaFloorError struct{ workspace, what string }
+
+func (e *mfaFloorError) Error() string {
+	return e.workspace + " requires two-factor sign-in that " + e.what + " is needed for; set up another method first"
+}
+
+// failRemoval answers a failed removal: 409 mfa_required when the policy
+// floor refused it.
+func (s *Server) failRemoval(w http.ResponseWriter, r *http.Request, err error) {
+	var floor *mfaFloorError
+	if errors.As(err, &floor) {
+		writeError(w, 409, "mfa_required", floor.Error())
 		return
 	}
-	if !s.recheckPassword(w, r, u, req.Password) {
-		return
-	}
-	if names, err := s.Store.WorkspacesRequiringMFA(r.Context(), u.ID); err != nil {
-		s.fail(w, r, err)
-		return
-	} else if len(names) > 0 {
-		writeError(w, 409, "mfa_required", "two-factor sign-in is required by "+strings.Join(names, ", ")+"; it cannot be turned off")
-		return
-	}
-	had, err := s.Store.DisableMFA(r.Context(), u.ID)
+	s.fail(w, r, err)
+}
+
+// mayChangeFactors refuses (and answers) a change to the caller's second
+// factors from a session that must first confirm with one it has in any of
+// their organisations, not only the one it works in: otherwise a phished
+// password and app code could add the attacker's passkey from a workspace
+// with a weaker policy, then switch back to one where only passkeys count.
+func (s *Server) mayChangeFactors(w http.ResponseWriter, r *http.Request, u *store.User) bool {
+	name, err := s.mfaStepUpSomewhere(r, u)
 	if err != nil {
 		s.fail(w, r, err)
-		return
+		return false
 	}
-	if had {
-		_ = s.Store.Audit(r.Context(), principal(r).Actor(r), "auth.mfa_disabled", "user", itoa(u.ID), nil)
+	if name != "" {
+		writeError(w, 403, "mfa_step_up_required", name+" requires you to confirm this session with a second factor you have before you change your factors")
+		return false
 	}
-	w.WriteHeader(204)
+	return true
 }
 
 // resetMemberMFA lets an admin remove another member's second factor (a
@@ -476,80 +678,28 @@ func (s *Server) resetMemberMFA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := principal(r)
-	target, err := s.Store.ResetMemberMFA(r.Context(), id, p.User != nil && p.User.InstanceAdmin)
+	target, removed, err := s.Store.ResetMemberMFA(r.Context(), id, p.User != nil && p.User.InstanceAdmin)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	_ = s.Store.Audit(r.Context(), p.Actor(r), "user.mfa_reset", "user", itoa(id), map[string]any{"email": target})
+	_ = s.Store.Audit(r.Context(), p.Actor(r), "user.mfa_reset", "user", itoa(id), map[string]any{"email": target, "methods": removed})
+	admin := "an administrator"
+	if p.User != nil {
+		admin = p.User.Email
+	}
+	s.notifyFactorChange(r, target, "Your two-factor sign-in was reset (every passkey, authenticator app, email code and recovery code removed)", admin)
 	w.WriteHeader(204)
-}
-
-// Workspace security settings (admin): "Require two-factor sign-in for
-// all members".
-type securitySettings struct {
-	RequireMFA bool `json:"require_mfa"`
-	// MembersWithoutMFA is read-only: members who will be asked to set it
-	// up at their next password sign-in.
-	MembersWithoutMFA int `json:"members_without_mfa"`
-}
-
-func (s *Server) getSecuritySettings(w http.ResponseWriter, r *http.Request) {
-	ws := principal(r).Workspace
-	on, err := s.Store.WorkspaceRequiresMFA(r.Context(), ws)
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	n, err := s.Store.MembersWithoutMFA(r.Context(), ws)
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	writeJSON(w, 200, securitySettings{RequireMFA: on, MembersWithoutMFA: n})
-}
-
-func (s *Server) putSecuritySettings(w http.ResponseWriter, r *http.Request) {
-	p := principal(r)
-	var req struct {
-		RequireMFA bool `json:"require_mfa"`
-	}
-	if err := decode(r, &req); err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	// Turning it on while signed in with a password and no second factor
-	// would send the admin straight to enrolment: set it up first.
-	if req.RequireMFA && p.User != nil && !p.User.MFAEnabled && (p.Token != nil || p.PasswordSession) {
-		writeError(w, 409, "mfa_required", "set up two-factor sign-in for your own account first (Your account → Two-factor sign-in)")
-		return
-	}
-	if err := s.Store.SetWorkspaceRequireMFA(r.Context(), p.Workspace, req.RequireMFA); err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	_ = s.Store.Audit(r.Context(), p.Actor(r), "settings.require_mfa", "workspace", itoa(p.Workspace), map[string]any{"require_mfa": req.RequireMFA})
-	s.getSecuritySettings(w, r)
-}
-
-// mfaEnrolmentAllows lists what a session sent to enrolment may still do:
-// see who it is, set up its second factor, switch organisation, sign out.
-func mfaEnrolmentAllows(r *http.Request) bool {
-	path := strings.TrimPrefix(r.URL.Path, "/api/v1")
-	switch {
-	case path == "/auth/me", path == "/auth/logout", path == "/meta",
-		strings.HasPrefix(path, "/auth/mfa"),
-		path == "/workspaces" && r.Method == http.MethodGet,
-		strings.HasPrefix(path, "/workspaces/") && strings.HasSuffix(path, "/activate"):
-		return true
-	}
-	return false
 }
 
 // Routes (server.go): the code step is public; the rest is the caller's
 // own account; the admin pieces need the admin role.
 func (s *Server) mfaPublicRoutes(r chi.Router) {
 	r.Post("/auth/mfa/verify", s.verifyMFA)
+	r.Post("/auth/mfa/passkey/begin", s.beginPasskeySecondFactor)
+	r.Post("/auth/mfa/passkey/finish", s.finishPasskeySecondFactor)
+	r.Post("/auth/passkey/begin", s.beginPasswordless)
+	r.Post("/auth/passkey/finish", s.finishPasswordless)
 }
 
 func (s *Server) mfaAccountRoutes(r chi.Router) {
@@ -557,7 +707,15 @@ func (s *Server) mfaAccountRoutes(r chi.Router) {
 	r.Delete("/auth/mfa", s.disableMFA)
 	r.Post("/auth/mfa/totp", s.startTOTP)
 	r.Post("/auth/mfa/totp/confirm", s.confirmTOTP)
+	r.Delete("/auth/mfa/totp", s.removeTOTP)
 	r.Post("/auth/mfa/recovery-codes", s.newRecoveryCodes)
+	r.Post("/auth/mfa/passkeys/begin", s.beginPasskeyRegistration)
+	r.Post("/auth/mfa/passkeys/finish", s.finishPasskeyRegistration)
+	r.Patch("/auth/mfa/passkeys/{id}", s.renamePasskey)
+	r.Delete("/auth/mfa/passkeys/{id}", s.removePasskey)
+	r.Post("/auth/mfa/step-up", s.stepUpCode)
+	r.Post("/auth/mfa/step-up/passkey/begin", s.beginPasskeyStepUp)
+	r.Post("/auth/mfa/step-up/passkey/finish", s.finishPasskeyStepUp)
 }
 
 func (s *Server) mfaAdminRoutes(r chi.Router) {
@@ -569,7 +727,10 @@ func (s *Server) mfaAdminRoutes(r chi.Router) {
 func init() {
 	// The caller's own second factor, whatever their access.
 	for _, r := range []string{"GET /api/v1/auth/mfa", "DELETE /api/v1/auth/mfa", "POST /api/v1/auth/mfa/totp",
-		"POST /api/v1/auth/mfa/totp/confirm", "POST /api/v1/auth/mfa/recovery-codes"} {
+		"POST /api/v1/auth/mfa/totp/confirm", "DELETE /api/v1/auth/mfa/totp", "POST /api/v1/auth/mfa/recovery-codes",
+		"POST /api/v1/auth/mfa/passkeys/begin", "POST /api/v1/auth/mfa/passkeys/finish", "PATCH /api/v1/auth/mfa/passkeys/{id}",
+		"DELETE /api/v1/auth/mfa/passkeys/{id}", "POST /api/v1/auth/mfa/step-up", "POST /api/v1/auth/mfa/step-up/passkey/begin",
+		"POST /api/v1/auth/mfa/step-up/passkey/finish"} {
 		projectRoutes[r] = accountScope
 	}
 }

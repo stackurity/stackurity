@@ -31,8 +31,10 @@ type User struct {
 	// role, "projects" for one with project access only (Role is then
 	// empty), and "" for someone who is not a member.
 	Access string `json:"access"`
-	// MFAEnabled: the account has two-factor sign-in turned on.
+	// MFAEnabled: the account has a second factor (any method).
 	MFAEnabled bool `json:"mfa_enabled"`
+	// MFAMethods lists the account's second factors (passkey, totp, email).
+	MFAMethods []string `json:"mfa_methods"`
 }
 
 const userCols = `u.id, u.email, u.name,
@@ -42,7 +44,7 @@ const userCols = `u.id, u.email, u.name,
 	u.instance_admin,
 	COALESCE((SELECT CASE WHEN wm.role IS NULL THEN 'projects' ELSE 'organisation' END FROM workspace_members wm
 	  WHERE wm.user_id = u.id AND wm.workspace_id = stackurity_ws()), ''),
-	EXISTS (SELECT 1 FROM user_mfa m WHERE m.user_id = u.id AND m.enabled_at IS NOT NULL)`
+	` + mfaMethodsSQL + ` <> '{}', ` + mfaMethodsSQL
 
 func (s *Store) CountUsers(ctx context.Context) (int64, error) {
 	var n int64
@@ -316,6 +318,12 @@ func (s *Store) Authenticate(ctx context.Context, email, password string) (*User
 	return s.GetUser(ctx, id)
 }
 
+// TouchLastLogin records a sign-in without a password (a passkey).
+func (s *Store) TouchLastLogin(ctx context.Context, id int64) error {
+	_, err := s.Pool.Exec(ctx, `UPDATE users SET last_login_at = now() WHERE id = $1`, id)
+	return err
+}
+
 const SessionTTL = 12 * time.Hour
 
 // CreateSession starts a browser session working in workspaceID (0: none yet).
@@ -323,15 +331,43 @@ func (s *Store) CreateSession(ctx context.Context, userID, workspaceID int64) (s
 	return s.CreateSessionWith(ctx, userID, workspaceID, SessionOpts{})
 }
 
+// How a session was signed in (SessionOpts.Login). The two-factor policy
+// of the session's workspace applies to every session except single
+// sign-on's (LoginSSO, or one pinned to a workspace's own identity
+// provider), where the identity provider does the second factor. A session
+// with no method, or one this release does not know, is held to the policy
+// too: only a sign-in that says it is single sign-on is exempt.
+const (
+	LoginPassword = "password"
+	LoginPasskey  = "passkey"
+	LoginInvite   = "invite"
+	// LoginSignup: a new organisation's first session, from a hosted
+	// edition's sign-up link.
+	LoginSignup = "signup"
+	// LoginSSO: an OpenID Connect or SAML sign-in.
+	LoginSSO = "sso"
+)
+
+// Second factors (SessionOpts.MFA, and the methods a workspace allows).
+const (
+	MFAPasskey  = "passkey"
+	MFATOTP     = "totp"
+	MFARecovery = "recovery_code"
+	MFAEmail    = "email"
+)
+
 // SessionOpts says how a session was signed in.
 type SessionOpts struct {
-	// PasswordLogin: with a local password. Such a session is sent to
-	// two-factor enrolment when its workspace requires it and the user has
-	// none; sessions from single sign-on, invitations and sign-up links are
-	// not (the identity provider, or a fresh account, covers them).
-	PasswordLogin bool
-	// MFA: a second factor was checked.
-	MFA bool
+	// Login is how the session was signed in: LoginPassword, LoginPasskey,
+	// LoginInvite, LoginSignup or LoginSSO.
+	Login string
+	// MFA is the second factor checked ("" for none). A passkey sign-in
+	// without a password checks one too: the passkey with user
+	// verification.
+	MFA string
+	// MFACredential is the passkey that MFA (MFAPasskey) was checked with
+	// (0: none), so removing it can downgrade the session.
+	MFACredential int64
 	// Pinned is the workspace a sign-in through that workspace's own
 	// identity provider pins the session to (CreateSSOSession); 0: none.
 	// A session that replaces a pinned one keeps its pin.
@@ -357,7 +393,7 @@ func (s *Store) CreateSessionWith(ctx context.Context, userID, workspaceID int64
 		pinned = &opts.Pinned
 	}
 	var mfaAt *time.Time
-	if opts.MFA {
+	if opts.MFA != "" {
 		now := time.Now()
 		mfaAt = &now
 	}
@@ -365,9 +401,14 @@ func (s *Store) CreateSessionWith(ctx context.Context, userID, workspaceID int64
 	if expires.IsZero() {
 		expires = time.Now().Add(SessionTTL)
 	}
-	_, err = s.Pool.Exec(ctx, `INSERT INTO sessions (token_hash, user_id, expires_at, workspace_id, password_login, mfa_at, sso_workspace_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-		auth.HashToken(secret), userID, expires, ws, opts.PasswordLogin, mfaAt, pinned)
+	var cred *int64
+	if opts.MFA == MFAPasskey && opts.MFACredential > 0 {
+		cred = &opts.MFACredential
+	}
+	_, err = s.Pool.Exec(ctx, `INSERT INTO sessions (token_hash, user_id, expires_at, workspace_id, password_login, mfa_at, sso_workspace_id,
+		login_method, mfa_method, mfa_credential_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, NULLIF($8, ''), NULLIF($9, ''), $10)`,
+		auth.HashToken(secret), userID, expires, ws, opts.Login == LoginPassword, mfaAt, pinned, opts.Login, opts.MFA, cred)
 	return secret, err
 }
 
@@ -378,7 +419,7 @@ func (s *Store) CreateSSOSession(ctx context.Context, userID, workspaceID int64)
 	if workspaceID <= 0 {
 		return "", fmt.Errorf("a pinned session needs a workspace: %w", ErrInvalid)
 	}
-	return s.CreateSessionWith(ctx, userID, workspaceID, SessionOpts{Pinned: workspaceID})
+	return s.CreateSessionWith(ctx, userID, workspaceID, SessionOpts{Login: LoginSSO, Pinned: workspaceID})
 }
 
 // Session is a resolved browser session.
@@ -389,14 +430,13 @@ type Session struct {
 	// (CreateSSOSession), 0 for an ordinary session. A pinned session works
 	// only there: if the user has left it, Workspace is 0, never another.
 	SSOWorkspace int64
-	// NeedsMFAEnrolment: signed in with a password, without a second
-	// factor, in a workspace that requires one. Only enrolment, signing
-	// out and switching workspace are allowed until it is set up.
-	NeedsMFAEnrolment bool
-	// PasswordLogin: signed in with a local password.
-	PasswordLogin bool
-	// MFA: a second factor was checked for this session.
-	MFA bool
+	// Login is how the session was signed in (LoginPassword, ...; "" for
+	// a session from before migration 0066 that was not a password one).
+	Login string
+	// MFA is the second factor checked for this session ("" for none), and
+	// MFACredential the passkey it was checked with (0: none).
+	MFA           string
+	MFACredential int64
 	// PasswordChangeRequired: an administrator set a temporary password;
 	// only changing it is allowed until then.
 	PasswordChangeRequired bool
@@ -448,17 +488,19 @@ func (e *SessionExpired) Unwrap() error { return ErrNotFound }
 func (s *Store) SessionInfo(ctx context.Context, secret string) (*Session, error) {
 	var id int64
 	var ws, pinned *int64
-	var passwordLogin bool
-	var mfaAt *time.Time
+	var login, mfa string
+	var mfaCred int64
 	var expiresAt time.Time
 	var changePassword, absolute, idle, touch bool
 	var email string
-	err := s.Pool.QueryRow(ctx, `SELECT s.user_id, s.workspace_id, s.sso_workspace_id, s.password_login, s.mfa_at, s.expires_at,
+	err := s.Pool.QueryRow(ctx, `SELECT s.user_id, s.workspace_id, s.sso_workspace_id,
+		COALESCE(s.login_method, CASE WHEN s.password_login THEN 'password' ELSE '' END),
+		COALESCE(s.mfa_method, CASE WHEN s.mfa_at IS NOT NULL THEN 'totp' ELSE '' END), COALESCE(s.mfa_credential_id, 0), s.expires_at,
 		u.password_change_required, u.email,
 		s.expires_at <= now(), $2 > 0 AND s.last_seen_at < now() - make_interval(secs => $2), s.last_seen_at < now() - interval '1 minute'
 		FROM sessions s JOIN users u ON u.id = s.user_id
 		WHERE s.token_hash = $1 AND NOT u.disabled`, auth.HashToken(secret), s.SessionIdle.Seconds()).
-		Scan(&id, &ws, &pinned, &passwordLogin, &mfaAt, &expiresAt, &changePassword, &email, &absolute, &idle, &touch)
+		Scan(&id, &ws, &pinned, &login, &mfa, &mfaCred, &expiresAt, &changePassword, &email, &absolute, &idle, &touch)
 	if err != nil {
 		return nil, notFound(err)
 	}
@@ -496,7 +538,7 @@ func (s *Store) SessionInfo(ctx context.Context, secret string) (*Session, error
 		// An organisation's identity provider vouches for membership of
 		// that organisation only, never for operating the installation.
 		u.InstanceAdmin = false
-		return &Session{User: u, Workspace: wsID, SSOWorkspace: *pinned, PasswordLogin: passwordLogin, MFA: mfaAt != nil,
+		return &Session{User: u, Workspace: wsID, SSOWorkspace: *pinned, Login: login, MFA: mfa, MFACredential: mfaCred,
 			PasswordChangeRequired: changePassword, ExpiresAt: expiresAt}, nil
 	}
 	var wsID int64
@@ -521,14 +563,8 @@ func (s *Store) SessionInfo(ctx context.Context, secret string) (*Session, error
 	if err != nil {
 		return nil, err
 	}
-	sess := &Session{User: u, Workspace: wsID, PasswordLogin: passwordLogin, MFA: mfaAt != nil, PasswordChangeRequired: changePassword,
-		ExpiresAt: expiresAt}
-	if passwordLogin && mfaAt == nil && !u.MFAEnabled && wsID > 0 {
-		if sess.NeedsMFAEnrolment, err = s.WorkspaceRequiresMFA(ctx, wsID); err != nil {
-			return nil, err
-		}
-	}
-	return sess, nil
+	return &Session{User: u, Workspace: wsID, Login: login, MFA: mfa, MFACredential: mfaCred, PasswordChangeRequired: changePassword,
+		ExpiresAt: expiresAt}, nil
 }
 
 func (s *Store) DeleteSession(ctx context.Context, secret string) error {
@@ -552,8 +588,11 @@ func (s *Store) EndSession(ctx context.Context, secret string) (userID, workspac
 }
 
 func (s *Store) PurgeExpiredSessions(ctx context.Context) error {
-	if _, err := s.Pool.Exec(ctx, `DELETE FROM mfa_challenges WHERE expires_at < now()`); err != nil {
-		return err
+	for _, q := range []string{`DELETE FROM mfa_challenges WHERE expires_at < now()`, `DELETE FROM webauthn_ceremonies WHERE expires_at < now()`,
+		`DELETE FROM user_email_mfa WHERE enabled_at IS NULL AND code_expires_at < now()`} {
+		if _, err := s.Pool.Exec(ctx, q); err != nil {
+			return err
+		}
 	}
 	if err := s.PurgePasswordResets(ctx); err != nil {
 		return err

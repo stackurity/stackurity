@@ -5163,6 +5163,36 @@ div.assistant-card {
   padding: 0;
   margin: 0.75rem 0;
 }
+.mfa-method {
+  padding: var(--s3) 0;
+  border-top: 1px solid var(--border);
+}
+.mfa-method h3 {
+  margin: 0 0 var(--s2);
+  font-size: 1rem;
+}
+.mfa-passkeys {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 var(--s3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+.mfa-passkeys > li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--s2);
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.mfa-passkeys > li > div:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 
 /* "I've fixed it — check now" on fix cards and the fix detail (FixVerify). */
 .fix-verify {

@@ -332,7 +332,9 @@ func (s *Server) acceptInvitation(w http.ResponseWriter, r *http.Request) {
 	// Work in the organisation just joined: a new session for a new
 	// account, the current one switched for a signed-in person.
 	if res.AccountCreated {
-		secret, err := s.Store.CreateSession(r.Context(), res.UserID, res.WorkspaceID)
+		// The new account has a password: the workspace's two-factor policy
+		// applies from this first session on.
+		secret, err := s.Store.CreateSessionWith(r.Context(), res.UserID, res.WorkspaceID, store.SessionOpts{Login: store.LoginInvite})
 		if err != nil {
 			s.fail(w, r, err)
 			return

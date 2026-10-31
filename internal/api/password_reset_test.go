@@ -221,6 +221,10 @@ func TestPasswordResetKeepsMFA(t *testing.T) {
 	})
 	e.user("bob@x.io", auth.RoleViewer)
 	enrol(t, e.login("bob@x.io"))
+	// Setting up the app is emailed first (the two-factor change notice).
+	if m := mail.wait(t); m.msg.Title != "Your Stackurity two-factor sign-in changed" {
+		t.Fatalf("first email %q", m.msg.Title)
+	}
 	e.anon().do("POST", "/api/v1/auth/password-reset", map[string]string{"email": "bob@x.io"}, nil)
 	token := resetToken(t, mail.wait(t))
 	if code := e.anon().do("POST", "/api/v1/auth/password-reset/confirm", map[string]any{"token": token, "new_password": "a brand new passphrase"}, nil); code != 200 {

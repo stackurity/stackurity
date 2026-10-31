@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -12,38 +13,80 @@ import (
 	"github.com/stackurity/stackurity/internal/tenant"
 )
 
-// Two-factor sign-in (migration 0053): a TOTP secret sealed with
-// STACKURITY_SECRET_KEY, one-time recovery codes stored hashed, and the
-// short-lived challenge between the password and the code.
+// Two-factor sign-in (migrations 0053 and 0066): passkeys and security keys
+// (webauthn.go), a TOTP secret sealed with STACKURITY_SECRET_KEY, email
+// codes as a fallback, one-time recovery codes stored hashed, and the
+// short-lived challenge between the password and the second factor.
+//
+// Recovery codes back up the strong factors (passkeys and TOTP): they are
+// issued with the first of them and deleted with the last.
+
+// mfaMethodsSQL lists the second factors of the account u.id, strongest
+// first.
+const mfaMethodsSQL = `ARRAY(SELECT x.m FROM (VALUES
+	  ('passkey', EXISTS (SELECT 1 FROM webauthn_credentials c WHERE c.user_id = u.id)),
+	  ('totp', EXISTS (SELECT 1 FROM user_mfa m WHERE m.user_id = u.id AND m.enabled_at IS NOT NULL)),
+	  ('email', EXISTS (SELECT 1 FROM user_email_mfa e WHERE e.user_id = u.id AND e.enabled_at IS NOT NULL))) x(m, on_)
+	WHERE x.on_)`
+
+// strongFactorSQL is true when the account $1 has a passkey or TOTP.
+const strongFactorSQL = `(EXISTS (SELECT 1 FROM webauthn_credentials c WHERE c.user_id = $1)
+	OR EXISTS (SELECT 1 FROM user_mfa m WHERE m.user_id = $1 AND m.enabled_at IS NOT NULL))`
 
 // MFAState is what an account has set up.
 type MFAState struct {
-	Enabled      bool       `json:"enabled"`
-	EnabledAt    *time.Time `json:"enabled_at"`
-	RecoveryLeft int        `json:"recovery_codes_left"`
+	// Enabled: the account has a second factor (any method).
+	Enabled bool `json:"enabled"`
+	// EnabledAt is when the authenticator app was confirmed (null: no app).
+	EnabledAt *time.Time `json:"enabled_at"`
+	// RecoveryLeft counts unused recovery codes (0 without a passkey or app).
+	RecoveryLeft int `json:"recovery_codes_left"`
+	// Methods lists the second factors: passkey, totp, email.
+	Methods []string `json:"methods"`
+	// TOTP: an authenticator app is set up.
+	TOTP bool `json:"totp"`
+	// Email: email codes are on (the fallback).
+	Email bool `json:"email"`
 }
 
 // MFAStatus reports userID's two-factor set-up.
 func (s *Store) MFAStatus(ctx context.Context, userID int64) (MFAState, error) {
 	var st MFAState
 	err := s.Pool.QueryRow(ctx, `SELECT m.enabled_at,
-		(SELECT count(*) FROM mfa_recovery_codes c WHERE c.user_id = $1 AND c.used_at IS NULL)
-		FROM users u LEFT JOIN user_mfa m ON m.user_id = u.id WHERE u.id = $1`, userID).Scan(&st.EnabledAt, &st.RecoveryLeft)
+		(SELECT count(*) FROM mfa_recovery_codes c WHERE c.user_id = $1 AND c.used_at IS NULL), `+mfaMethodsSQL+`
+		FROM users u LEFT JOIN user_mfa m ON m.user_id = u.id WHERE u.id = $1`, userID).Scan(&st.EnabledAt, &st.RecoveryLeft, &st.Methods)
 	if err != nil {
 		return st, notFound(err)
 	}
-	st.Enabled = st.EnabledAt != nil
-	if !st.Enabled {
+	for _, m := range st.Methods {
+		switch m {
+		case MFATOTP:
+			st.TOTP = true
+		case MFAEmail:
+			st.Email = true
+		}
+	}
+	if !st.TOTP {
+		st.EnabledAt = nil
+	}
+	st.Enabled = len(st.Methods) > 0
+	if !st.TOTP && !slices.Contains(st.Methods, MFAPasskey) {
 		st.RecoveryLeft = 0
 	}
 	return st, nil
 }
 
+// MFAMethods lists userID's second factors (passkey, totp, email).
+func (s *Store) MFAMethods(ctx context.Context, userID int64) ([]string, error) {
+	var ms []string
+	err := s.Pool.QueryRow(ctx, `SELECT `+mfaMethodsSQL+` FROM users u WHERE u.id = $1`, userID).Scan(&ms)
+	return ms, notFound(err)
+}
+
 // HasMFA reports whether userID has a second factor turned on.
 func (s *Store) HasMFA(ctx context.Context, userID int64) (bool, error) {
-	var ok bool
-	err := s.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM user_mfa WHERE user_id = $1 AND enabled_at IS NOT NULL)`, userID).Scan(&ok)
-	return ok, err
+	ms, err := s.MFAMethods(ctx, userID)
+	return len(ms) > 0, err
 }
 
 // ErrMFAEnabled: enrolment was started while a second factor is on.
@@ -71,10 +114,15 @@ func (s *Store) TOTPSecret(ctx context.Context, userID int64) (sealed []byte, en
 	return sealed, at != nil, notFound(err)
 }
 
-// EnableTOTP confirms enrolment with the code's time step and stores the
-// recovery codes' hashes.
-func (s *Store) EnableTOTP(ctx context.Context, userID, step int64, recovery [][]byte) error {
-	return pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
+// EnableTOTP confirms enrolment with the code's time step. The recovery
+// codes' hashes are stored when it is the account's first strong factor
+// (issued reports it); otherwise the existing codes stay.
+func (s *Store) EnableTOTP(ctx context.Context, userID, step int64, recovery [][]byte) (issued bool, err error) {
+	err = pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
+		first, err := firstStrongFactor(ctx, tx, userID)
+		if err != nil {
+			return err
+		}
 		tag, err := tx.Exec(ctx, `UPDATE user_mfa SET enabled_at = now(), last_step = $2 WHERE user_id = $1 AND enabled_at IS NULL`, userID, step)
 		if err != nil {
 			return err
@@ -82,8 +130,41 @@ func (s *Store) EnableTOTP(ctx context.Context, userID, step int64, recovery [][
 		if tag.RowsAffected() == 0 {
 			return fmt.Errorf("no enrolment in progress: %w", ErrConflict)
 		}
-		return replaceRecoveryCodes(ctx, tx, userID, recovery)
+		if !first {
+			return nil
+		}
+		issued = true
+		return addedStrongFactor(ctx, tx, userID, recovery)
 	})
+	return issued, err
+}
+
+// firstStrongFactor locks userID's row and reports whether the account has
+// no passkey or authenticator app yet.
+func firstStrongFactor(ctx context.Context, tx pgx.Tx, userID int64) (bool, error) {
+	if _, err := tx.Exec(ctx, `SELECT 1 FROM users WHERE id = $1 FOR UPDATE`, userID); err != nil {
+		return false, err
+	}
+	var has bool
+	err := tx.QueryRow(ctx, `SELECT `+strongFactorSQL, userID).Scan(&has)
+	return !has, err
+}
+
+// addedStrongFactor follows the account's first passkey or authenticator
+// app: new recovery codes, and email codes (a fallback for accounts with
+// nothing else) end.
+func addedStrongFactor(ctx context.Context, tx pgx.Tx, userID int64, recovery [][]byte) error {
+	if _, err := tx.Exec(ctx, `DELETE FROM user_email_mfa WHERE user_id = $1`, userID); err != nil {
+		return err
+	}
+	return replaceRecoveryCodes(ctx, tx, userID, recovery)
+}
+
+// removedStrongFactor follows the removal of a passkey or the app: when
+// none is left, the recovery codes go too.
+func removedStrongFactor(ctx context.Context, tx pgx.Tx, userID int64) error {
+	_, err := tx.Exec(ctx, `DELETE FROM mfa_recovery_codes WHERE user_id = $1 AND NOT `+strongFactorSQL, userID)
+	return err
 }
 
 func replaceRecoveryCodes(ctx context.Context, tx pgx.Tx, userID int64, hashes [][]byte) error {
@@ -98,11 +179,11 @@ func replaceRecoveryCodes(ctx context.Context, tx pgx.Tx, userID int64, hashes [
 func (s *Store) ReplaceRecoveryCodes(ctx context.Context, userID int64, hashes [][]byte) error {
 	return pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
 		var on bool
-		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM user_mfa WHERE user_id = $1 AND enabled_at IS NOT NULL)`, userID).Scan(&on); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT `+strongFactorSQL, userID).Scan(&on); err != nil {
 			return err
 		}
 		if !on {
-			return fmt.Errorf("two-factor sign-in is off: %w", ErrConflict)
+			return fmt.Errorf("recovery codes back up a passkey or an authenticator app; set one up first: %w", ErrConflict)
 		}
 		return replaceRecoveryCodes(ctx, tx, userID, hashes)
 	})
@@ -121,7 +202,7 @@ func (s *Store) UseTOTPStep(ctx context.Context, userID, step int64) (bool, erro
 func (s *Store) UseRecoveryCode(ctx context.Context, userID int64, hash []byte) (ok bool, left int, err error) {
 	tag, err := s.Pool.Exec(ctx, `UPDATE mfa_recovery_codes SET used_at = now()
 		WHERE user_id = $1 AND code_hash = $2 AND used_at IS NULL
-		  AND EXISTS (SELECT 1 FROM user_mfa m WHERE m.user_id = $1 AND m.enabled_at IS NOT NULL)`, userID, hash)
+		  AND `+strongFactorSQL, userID, hash)
 	if err != nil {
 		return false, 0, err
 	}
@@ -129,21 +210,76 @@ func (s *Store) UseRecoveryCode(ctx context.Context, userID int64, hash []byte) 
 	return tag.RowsAffected() == 1, left, err
 }
 
-// DisableMFA removes userID's second factor and recovery codes. It reports
-// whether there was one (confirmed or not).
-func (s *Store) DisableMFA(ctx context.Context, userID int64) (bool, error) {
+// MFAFloor checks the second factors an account would keep after a
+// removal (passkey, totp, email); an error refuses the removal. It is
+// called inside the removal's transaction, with the account locked, so two
+// removals at once cannot both pass it.
+type MFAFloor func(remaining []string) error
+
+// checkFloor calls floor (nil: none) with userID's factors as tx sees them.
+func checkFloor(ctx context.Context, tx pgx.Tx, userID int64, floor MFAFloor) error {
+	if floor == nil {
+		return nil
+	}
+	var ms []string
+	if err := tx.QueryRow(ctx, `SELECT `+mfaMethodsSQL+` FROM users u WHERE u.id = $1`, userID).Scan(&ms); err != nil {
+		return err
+	}
+	return floor(ms)
+}
+
+// DisableMFA removes every second factor of userID (passkeys, the app,
+// email codes) with the recovery codes and sign-ins in progress, unless
+// floor refuses. It reports the methods that were on.
+func (s *Store) DisableMFA(ctx context.Context, userID int64, floor MFAFloor) ([]string, error) {
+	var had []string
+	err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
+		var err error
+		if had, err = removeAllFactors(ctx, tx, userID); err != nil {
+			return err
+		}
+		return checkFloor(ctx, tx, userID, floor)
+	})
+	return had, err
+}
+
+// removeAllFactors deletes every second factor of userID in tx and returns
+// the methods that were on.
+func removeAllFactors(ctx context.Context, tx pgx.Tx, userID int64) ([]string, error) {
+	var had []string
+	if err := tx.QueryRow(ctx, `SELECT `+mfaMethodsSQL+` FROM users u WHERE u.id = $1 FOR UPDATE`, userID).Scan(&had); err != nil {
+		return nil, notFound(err)
+	}
+	for _, q := range []string{`DELETE FROM user_mfa WHERE user_id = $1`, `DELETE FROM webauthn_credentials WHERE user_id = $1`,
+		`DELETE FROM user_email_mfa WHERE user_id = $1`, `DELETE FROM mfa_recovery_codes WHERE user_id = $1`,
+		`DELETE FROM mfa_challenges WHERE user_id = $1`, `DELETE FROM webauthn_ceremonies WHERE user_id = $1`} {
+		if _, err := tx.Exec(ctx, q, userID); err != nil {
+			return nil, err
+		}
+	}
+	return had, nil
+}
+
+// RemoveTOTP removes userID's authenticator app (confirmed or not), unless
+// floor refuses. It reports whether one was confirmed; the recovery codes
+// go with the last strong factor.
+func (s *Store) RemoveTOTP(ctx context.Context, userID int64, floor MFAFloor) (bool, error) {
 	var had bool
 	err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx, `DELETE FROM user_mfa WHERE user_id = $1`, userID)
+		if _, err := tx.Exec(ctx, `SELECT 1 FROM users WHERE id = $1 FOR UPDATE`, userID); err != nil {
+			return err
+		}
+		err := tx.QueryRow(ctx, `DELETE FROM user_mfa WHERE user_id = $1 RETURNING enabled_at IS NOT NULL`, userID).Scan(&had)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
 		if err != nil {
 			return err
 		}
-		had = tag.RowsAffected() > 0
-		if _, err := tx.Exec(ctx, `DELETE FROM mfa_recovery_codes WHERE user_id = $1`, userID); err != nil {
+		if err := checkFloor(ctx, tx, userID, floor); err != nil {
 			return err
 		}
-		_, err = tx.Exec(ctx, `DELETE FROM mfa_challenges WHERE user_id = $1`, userID)
-		return err
+		return removedStrongFactor(ctx, tx, userID)
 	})
 	return had, err
 }
@@ -195,32 +331,11 @@ func (s *Store) DeleteMFAChallenge(ctx context.Context, secret string) error {
 	return err
 }
 
-// WorkspaceRequiresMFA reports the workspace's "Require two-factor sign-in"
-// setting.
+// WorkspaceRequiresMFA reports whether the workspace's two-factor policy
+// requires a second factor of anyone.
 func (s *Store) WorkspaceRequiresMFA(ctx context.Context, ws int64) (bool, error) {
-	var on bool
-	err := s.Pool.QueryRow(ctx, `SELECT require_mfa FROM workspaces WHERE id = $1`, ws).Scan(&on)
-	return on, notFound(err)
-}
-
-// SetWorkspaceRequireMFA changes it.
-func (s *Store) SetWorkspaceRequireMFA(ctx context.Context, ws int64, on bool) error {
-	tag, err := s.Pool.Exec(ctx, `UPDATE workspaces SET require_mfa = $2 WHERE id = $1`, ws, on)
-	if err == nil && tag.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return err
-}
-
-// MembersWithoutMFA counts the workspace's enabled members who have no
-// second factor (single sign-on users included: the identity provider
-// handles theirs).
-func (s *Store) MembersWithoutMFA(ctx context.Context, ws int64) (int, error) {
-	var n int
-	err := s.Pool.QueryRow(ctx, `SELECT count(*) FROM workspace_members wm JOIN users u ON u.id = wm.user_id
-		WHERE wm.workspace_id = $1 AND NOT u.disabled
-		  AND NOT EXISTS (SELECT 1 FROM user_mfa m WHERE m.user_id = u.id AND m.enabled_at IS NOT NULL)`, ws).Scan(&n)
-	return n, err
+	p, err := s.MFAPolicyOf(ctx, ws)
+	return p.RequiresAny(), err
 }
 
 // EndSessions signs userID out everywhere except the session keep (empty:
@@ -250,28 +365,17 @@ func (s *Store) CountCredentials(ctx context.Context, userID int64) (tokens, ass
 	return tokens, assistants, err
 }
 
-// WorkspacesRequiringMFA names userID's workspaces that require two-factor
-// sign-in.
-func (s *Store) WorkspacesRequiringMFA(ctx context.Context, userID int64) ([]string, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT w.name FROM workspace_members wm JOIN workspaces w ON w.id = wm.workspace_id
-		WHERE wm.user_id = $1 AND w.require_mfa AND w.disabled_at IS NULL ORDER BY w.name`, userID)
-	if err != nil {
-		return nil, err
-	}
-	return pgx.CollectRows(rows, pgx.RowTo[string])
-}
-
-// ResetMemberMFA removes the second factor of a member of the context's
-// workspace and ends their sessions, returning their email. Like a
+// ResetMemberMFA removes every second factor of a member of the context's
+// workspace (passkeys, the app, email codes, recovery codes) and ends their
+// sessions, returning their email and the methods removed. Like a
 // password, it belongs to the account: only an instance admin may reset it
 // for an account in other workspaces too, or for an instance admin.
-func (s *Store) ResetMemberMFA(ctx context.Context, id int64, instanceAdmin bool) (string, error) {
+func (s *Store) ResetMemberMFA(ctx context.Context, id int64, instanceAdmin bool) (email string, removed []string, err error) {
 	ws, ok := tenant.Workspace(ctx)
 	if !ok {
-		return "", errNoWorkspace
+		return "", nil, errNoWorkspace
 	}
-	var email string
-	err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
+	err = pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
 		var others int64
 		err := tx.QueryRow(ctx, `SELECT count(*) FILTER (WHERE workspace_id <> $2) FROM workspace_members
 			WHERE user_id = $1 HAVING bool_or(workspace_id = $2)`, id, ws).Scan(&others)
@@ -291,20 +395,14 @@ func (s *Store) ResetMemberMFA(ctx context.Context, id int64, instanceAdmin bool
 		if !instanceAdmin && targetInstanceAdmin {
 			return fmt.Errorf("this account is an instance admin; only an instance admin can reset its two-factor sign-in: %w", ErrConflict)
 		}
-		tag, err := tx.Exec(ctx, `DELETE FROM user_mfa WHERE user_id = $1`, id)
-		if err != nil {
+		if removed, err = removeAllFactors(ctx, tx, id); err != nil {
 			return err
 		}
-		if tag.RowsAffected() == 0 {
+		if len(removed) == 0 {
 			return fmt.Errorf("this member has no two-factor sign-in: %w", ErrConflict)
 		}
-		for _, q := range []string{`DELETE FROM mfa_recovery_codes WHERE user_id = $1`, `DELETE FROM mfa_challenges WHERE user_id = $1`,
-			`DELETE FROM sessions WHERE user_id = $1`} {
-			if _, err := tx.Exec(ctx, q, id); err != nil {
-				return err
-			}
-		}
-		return nil
+		_, err = tx.Exec(ctx, `DELETE FROM sessions WHERE user_id = $1`, id)
+		return err
 	})
-	return email, err
+	return email, removed, err
 }
