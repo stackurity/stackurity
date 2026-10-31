@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/stackurity/stackurity/internal/store"
+	"github.com/stackurity/stackurity/internal/words"
 )
 
 // Reporting incidents (store/reporting_incidents.go): a server whose agent
@@ -31,6 +32,7 @@ type reportingDetail struct {
 	PeopleAnnounced bool                   `json:"people_announced"`
 	Resolution      string                 `json:"resolution"`
 	ReplacedBy      int64                  `json:"replaced_by"`
+	GroupSize       int                    `json:"group_size"`
 }
 
 func readReporting(in store.Incident) (reportingDetail, bool) {
@@ -106,19 +108,20 @@ func (d *Dispatcher) reportingMessage(m *Message, det reportingDetail) {
 	var lines []string
 	for i, a := range det.Assets {
 		if i == 20 {
-			lines = append(lines, fmt.Sprintf("+%d more", n-20))
+			lines = append(lines, "+"+words.Count(n-20, "more", "more"))
 			break
 		}
 		l := a.Name + ": last report " + store.ReportTime(a.LastSeen, now)
 		if a.UsualSeconds > 0 {
 			l += ", usually every " + store.Every(time.Duration(a.UsualSeconds)*time.Second)
 		}
-		if len(a.Applications) > 0 {
-			l += fmt.Sprintf(" (and its %s: %s)", plural(len(a.Applications), "application"), strings.Join(firstN(a.Applications, 5), ", "))
+		if apps := len(a.Applications); apps > 0 {
+			l += fmt.Sprintf(" (and its %s: %s)", words.Pick(apps, "application", words.Count(apps, "application", "applications")),
+				strings.Join(firstN(a.Applications, 5), ", "))
 		}
 		lines = append(lines, l)
 	}
-	m.Summary = append(m.Summary, capitalizeFirst(store.AssetNoun(det.AssetKind, 2))+": "+strings.Join(lines, "; "))
+	m.Summary = append(m.Summary, capitalizeFirst(store.AssetNoun(det.AssetKind, n))+": "+strings.Join(lines, "; "))
 	if help := d.url(reportingHelp[det.Cause], nil); help != "" {
 		m.Summary = append(m.Summary, "How to fix it: "+help)
 	}
@@ -130,11 +133,7 @@ func reportingResolved(m *Message, det reportingDetail) {
 	m.Action = ""
 	switch det.Resolution {
 	case "replaced":
-		what := "everything that stopped reporting on the same day for the same reason"
-		if det.AssetKind != "" {
-			what = "the " + store.AssetNoun(det.AssetKind, 2) + " that stopped reporting on the same day"
-		}
-		m.Summary = []string{fmt.Sprintf("Replaced by #%d, which groups %s.", det.ReplacedBy, what)}
+		m.Summary = []string{replacedNote(det)}
 	case "one_off":
 		what := "another report"
 		if det.AssetKind != "" {
@@ -148,26 +147,11 @@ func reportingResolved(m *Message, det reportingDetail) {
 	}
 }
 
-func these(n int, noun string) string {
-	if n == 1 {
-		return "this " + noun
-	}
-	return "these " + noun
-}
+func these(n int, noun string) string { return words.Pick(n, "this ", "these ") + noun }
 
-func them(n int) string {
-	if n == 1 {
-		return "it"
-	}
-	return "them"
-}
+func them(n int) string { return words.Pick(n, "it", "them") }
 
-func its(n int) string {
-	if n == 1 {
-		return "its"
-	}
-	return "each one's"
-}
+func its(n int) string { return words.Pick(n, "its", "each one's") }
 
 // offOrRebuilt is the first likely cause of a silent agent: "the server is
 // off or was rebuilt", "the servers are off or were rebuilt".
@@ -252,17 +236,12 @@ func (d *Dispatcher) oneOffItem(data *summaryData) (Item, bool) {
 			newest = g.Newest
 		}
 	}
-	noun := "assets"
+	one, many := "asset", "assets"
 	if len(data.oneOff) == 1 {
-		noun = store.AssetNoun(data.oneOff[0].Kind, n)
-	} else if n == 1 {
-		noun = "asset"
+		one, many = store.AssetNoun(data.oneOff[0].Kind, 1), store.AssetNoun(data.oneOff[0].Kind, 2)
 	}
-	asOf := store.AsOf(oldest, newest, d.now())
-	text := fmt.Sprintf("%d %s scanned once, results as of %s. Set up a scheduled scan to keep them current.", n, noun, asOf)
-	if n == 1 {
-		text = fmt.Sprintf("1 %s scanned once, results as of %s. Set up a scheduled scan to keep it current.", noun, asOf)
-	}
+	text := fmt.Sprintf("%s scanned once, results as of %s. Set up a scheduled scan to keep %s current.",
+		words.Count(n, one, many), store.AsOf(oldest, newest, d.now()), words.Pick(n, "it", "them"))
 	return Item{Text: text, Link: d.url("/help/asset-reporting#one-off", nil)}, true
 }
 
@@ -299,4 +278,20 @@ func reopenLabel(ws int64, in *store.Incident) string {
 // reopenNote leads a reopened incident's new tracker record.
 func reopenNote(previous string) string {
 	return "Stopped reporting again after recovering. This incident reopened; the previous record was " + previous + "."
+}
+
+// replacedNote closes a per-asset incident from before 0.13.10 replaced by a
+// reporting incident: "Replaced by #12, the new incident for this server",
+// or "…, which groups the 3 servers that stopped reporting on the same day".
+func replacedNote(det reportingDetail) string {
+	switch {
+	case det.AssetKind == "":
+		return fmt.Sprintf("Replaced by #%d, which groups what stopped reporting on the same day for the same reason.", det.ReplacedBy)
+	case det.GroupSize == 1:
+		return fmt.Sprintf("Replaced by #%d, the new incident for this %s.", det.ReplacedBy, store.AssetNoun(det.AssetKind, 1))
+	case det.GroupSize > 1:
+		return fmt.Sprintf("Replaced by #%d, which groups the %s that stopped reporting on the same day.", det.ReplacedBy,
+			words.Count(det.GroupSize, store.AssetNoun(det.AssetKind, 1), store.AssetNoun(det.AssetKind, 2)))
+	}
+	return fmt.Sprintf("Replaced by #%d, which groups the %s that stopped reporting on the same day.", det.ReplacedBy, store.AssetNoun(det.AssetKind, 2))
 }

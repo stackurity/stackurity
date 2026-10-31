@@ -336,7 +336,7 @@ func TestReportingIncidentsGrouped(t *testing.T) {
 	if !strings.HasSuffix(servers.Key, day.Format("2006-01-02")) || servers.Priority != "P3" || servers.Detail["digest_only"] != nil {
 		t.Errorf("servers: %+v", servers)
 	}
-	wantTitle := "2 servers and their 1 application: the Stackurity agent hasn't reported since " + store.ReportDate(day, time.Now())
+	wantTitle := "2 servers and their application: the Stackurity agent hasn't reported since " + store.ReportDate(day, time.Now())
 	if servers.Title != wantTitle {
 		t.Errorf("servers title %q, want %q", servers.Title, wantTitle)
 	}
@@ -359,7 +359,7 @@ func TestReportingIncidentsGrouped(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, c := range reportingIncidents(t, s, ctx) {
-		if strings.HasPrefix(c.Key, "reporting:agent:") && !strings.HasPrefix(c.Title, "Server web-1 and its 1 application: the Stackurity agent hasn't reported since ") ||
+		if strings.HasPrefix(c.Key, "reporting:agent:") && !strings.HasPrefix(c.Title, "Server web-1 and its application: the Stackurity agent hasn't reported since ") ||
 			strings.HasPrefix(c.Key, "reporting:agent:") && !strings.HasSuffix(c.Title, " UTC") {
 			t.Errorf("one server: %q", c.Title)
 		}
@@ -680,4 +680,43 @@ func TestAgentAfterOneOffScanAlerts(t *testing.T) {
 func itoa64(n int64) string {
 	b, _ := json.Marshal(n)
 	return string(b)
+}
+
+// Every reporting title agrees in number: 0, 1 and many assets, and a lone
+// application is not counted ("and its application").
+func TestReportingTitleNumber(t *testing.T) {
+	now := time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC)
+	since := time.Date(2026, 10, 29, 14, 5, 0, 0, time.UTC)
+	list := func(n int, name string) []store.ReportingAsset {
+		out := make([]store.ReportingAsset, n)
+		for i := range out {
+			out[i] = store.ReportingAsset{Name: name, LastSeen: since}
+		}
+		return out
+	}
+	for _, c := range []struct {
+		cause, kind string
+		n, apps     int
+		want        string
+	}{
+		{"agent", "host", 0, 0, "0 servers: the Stackurity agent hasn't reported since 29 Oct"},
+		{"agent", "host", 1, 0, "Server demo-web-1: the Stackurity agent hasn't reported since 29 Oct 14:05 UTC"},
+		{"agent", "host", 1, 1, "Server demo-web-1 and its application: the Stackurity agent hasn't reported since 29 Oct 14:05 UTC"},
+		{"agent", "host", 1, 3, "Server demo-web-1 and its 3 applications: the Stackurity agent hasn't reported since 29 Oct 14:05 UTC"},
+		{"agent", "host", 2, 0, "2 servers: the Stackurity agent hasn't reported since 29 Oct"},
+		{"agent", "host", 2, 1, "2 servers and their application: the Stackurity agent hasn't reported since 29 Oct"},
+		{"agent", "host", 3, 4, "3 servers and their 4 applications: the Stackurity agent hasn't reported since 29 Oct"},
+		{"agent", "application", 1, 0, "Application demo-web-1: the Stackurity agent hasn't reported it since 29 Oct 14:05 UTC"},
+		{"agent", "application", 2, 0, "2 applications: the Stackurity agent hasn't reported them since 29 Oct"},
+		{"scan", "repository", 0, 0, "0 repositories haven't been scanned since 29 Oct"},
+		{"scan", "repository", 1, 0, "Repository demo-web-1 hasn't been scanned since 29 Oct"},
+		{"scan", "repository", 5, 0, "5 repositories haven't been scanned since 29 Oct"},
+		{"scan", "image", 2, 0, "2 images haven't been scanned since 29 Oct"},
+		{"upload", "sbom", 1, 0, "SBOM demo-web-1 hasn't been uploaded since 29 Oct"},
+		{"upload", "sbom", 3, 0, "3 SBOMs haven't been uploaded since 29 Oct"},
+	} {
+		if got := store.ReportingTitle(c.cause, c.kind, list(c.n, "demo-web-1"), since, c.apps, now); got != c.want {
+			t.Errorf("%s %s n=%d apps=%d:\n got %q\nwant %q", c.cause, c.kind, c.n, c.apps, got, c.want)
+		}
+	}
 }

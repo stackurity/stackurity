@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/stackurity/stackurity/internal/words"
 )
 
 // Reporting incidents (0.13.10) replace "Asset X has stopped reporting":
@@ -307,18 +309,14 @@ func ReportingTitle(cause, kind string, list []ReportingAsset, since time.Time, 
 	noun := AssetNoun(kind, n)
 	switch cause {
 	case "agent":
-		who := ""
+		who := words.Count(n, AssetNoun(kind, 1), AssetNoun(kind, 2))
 		if n == 1 {
 			who = capitalize(noun) + " " + list[0].Name
-		} else {
-			who = fmt.Sprintf("%d %s", n, noun)
 		}
+		// "and its application", "and its 3 applications", "and their
+		// application": a lone application is not counted.
 		if apps > 0 {
-			their := "its"
-			if n > 1 {
-				their = "their"
-			}
-			who += fmt.Sprintf(" and %s %d %s", their, apps, AssetNoun("application", apps))
+			who += " and " + words.Pick(n, "its", "their") + " " + words.Pick(apps, "application", words.Count(apps, "application", "applications"))
 		}
 		when := ReportDate(since, now)
 		if n == 1 {
@@ -327,18 +325,15 @@ func ReportingTitle(cause, kind string, list []ReportingAsset, since time.Time, 
 		if kind == "host" {
 			return fmt.Sprintf("%s: the Stackurity agent hasn't reported since %s", who, when)
 		}
-		it := "it"
-		if n > 1 {
-			it = "them"
-		}
-		return fmt.Sprintf("%s: the Stackurity agent hasn't reported %s since %s", who, it, when)
+		return fmt.Sprintf("%s: the Stackurity agent hasn't reported %s since %s", who, words.Pick(n, "it", "them"), when)
 	default:
 		verb := "scanned"
 		if cause == "upload" {
 			verb = "uploaded"
 		}
-		if n > 1 {
-			return fmt.Sprintf("%d %s haven't been %s since %s", n, noun, verb, ReportDate(since, now))
+		if n != 1 {
+			return fmt.Sprintf("%s %s been %s since %s", words.Count(n, AssetNoun(kind, 1), AssetNoun(kind, 2)),
+				words.Pick(n, "hasn't", "haven't"), verb, ReportDate(since, now))
 		}
 		a := list[0]
 		t := fmt.Sprintf("%s %s hasn't been %s since %s", capitalize(noun), a.Name, verb, ReportDate(since, now))
@@ -392,7 +387,7 @@ func settleLegacyReporting(ctx context.Context, tx pgx.Tx, c SystemIncident, id 
 	}
 	kind, _ := c.Detail["asset_kind"].(string)
 	_, err := tx.Exec(ctx, `UPDATE incidents SET status = 'resolved', resolved_at = now(), updated_at = now(), resolved_notified = true,
-		detail = detail || jsonb_build_object('resolution', 'replaced', 'replaced_by', $2::bigint, 'asset_kind', $3::text)
-		WHERE status = 'open' AND kind = 'collection' AND key = ANY($1)`, legacy, id, kind)
+		detail = detail || jsonb_build_object('resolution', 'replaced', 'replaced_by', $2::bigint, 'asset_kind', $3::text, 'group_size', $4::int)
+		WHERE status = 'open' AND kind = 'collection' AND key = ANY($1)`, legacy, id, kind, len(servers))
 	return err
 }
