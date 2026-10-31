@@ -61,7 +61,7 @@ export function SlackLinkPage() {
         </Notice>
         <p>Go back to Slack and click the button again.</p>
         <p className="small">
-          <Link to="/account#slack">Your linked Slack accounts</Link> · <Link to="/">Home</Link>
+          <Link to="/account#slack">Your linked Slack accounts</Link> · <Link to="/">Dashboard</Link>
         </p>
       </>
     );

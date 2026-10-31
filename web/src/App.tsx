@@ -20,7 +20,7 @@ import { SignupPage, VerifySignupPage } from "./pages/Signup";
 import { UsagePage } from "./pages/settings/Usage";
 import { BillingPage } from "./pages/settings/Billing";
 import { SingleSignOnPage } from "./pages/settings/SingleSignOn";
-import { HomePage } from "./pages/Home";
+import { DashboardPage } from "./pages/Dashboard";
 import { AutomaticFixPoliciesPage, SettingsPage } from "./pages/Settings";
 import { AssetsPage } from "./pages/Assets";
 import { AssetDetailPage } from "./pages/AssetDetail";
@@ -188,7 +188,10 @@ export function App() {
   return (
     <Routes>
       <Route element={<Layout />}>
-        <Route index element={<HomePage />} />
+        <Route index element={<DashboardPage />} />
+        {/* The Dashboard was called Home; it stays at "/". */}
+        <Route path="home" element={<Moved to={() => "/"} />} />
+        <Route path="dashboard" element={<Moved to={() => "/"} />} />
         <Route path="search" element={<SearchPage />} />
         <Route path="get-started" element={<OnboardingPage />} />
         <Route path="help" element={help} />

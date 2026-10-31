@@ -35,7 +35,7 @@ import { AddToSlackButton, parseAddresses, RouteQuestions, SmtpProviderPicker, S
  * The first-run flow (0.9): a new organisation's first ten minutes.
  * 1 name a project, 2 add an asset, 3 wait for it to report, 4 the first
  * result in plain words, 5 notifications, 6 invite people. Each step can be
- * skipped; Home keeps a checklist (which also asks to connect an AI
+ * skipped; the Dashboard keeps a checklist (which also asks to connect an AI
  * assistant) until every step is done or it is hidden.
  */
 
@@ -587,7 +587,7 @@ function ResultStep({ project, since, onNext }: { project: Project; since: strin
   const q = `project=${project.id}`;
   return (
     <StepCard>
-      {data.length === 0 && <p>Nothing has reported yet. You can come back to this from Home.</p>}
+      {data.length === 0 && <p>Nothing has reported yet. You can come back to this from the Dashboard.</p>}
       {checked.map((a) => (
         <div key={a.id} className="onboard-result">
           <p className="onboard-headline">
@@ -613,7 +613,7 @@ function ResultStep({ project, since, onNext }: { project: Project; since: strin
       ))}
       {data.length > checked.length && (
         <p className="muted">
-          Still checking {plural(data.length - checked.length, "asset")}. The result appears on Home when it is ready.
+          Still checking {plural(data.length - checked.length, "asset")}. The result appears on the Dashboard when it is ready.
         </p>
       )}
       <Notice kind="info">
@@ -960,10 +960,10 @@ function InviteStep({ project, onFinish, pending }: { project: Project; onFinish
 }
 
 /**
- * Home's checklist while setup is not done: what is left, each a link back
+ * The Dashboard's checklist while setup is not done: what is left, each a link back
  * into the flow. Admins only.
  */
-export function SetupChecklist({ o, onChange }: { o: Onboarding; onChange: () => void }) {
+export function SetupChecklist({ o, onChange, compact }: { o: Onboarding; onChange: () => void; compact?: boolean }) {
   const act = useAction();
   const { me } = useAuth();
   // Each item is one click to the screen that does it. A project comes
@@ -982,6 +982,40 @@ export function SetupChecklist({ o, onChange }: { o: Onboarding; onChange: () =>
     const ok = await act.run(() => api.put("/onboarding", { state: "done" }));
     if (ok !== undefined) onChange();
   };
+  const list = (
+    <ul className="setup-list">
+      {items.map((i) => (
+        <li key={i.text} className={i.done ? "done" : undefined}>
+          <span className="onboard-dot" aria-hidden="true">
+            {i.done ? "✓" : ""}
+          </span>
+          {i.done ? (
+            <span>
+              {i.text}
+              <span className="sr-only"> (done)</span>
+            </span>
+          ) : (
+            <Link to={i.to}>{i.text}</Link>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+  // On the Dashboard it is one line under what needs you, opened on demand.
+  if (compact)
+    return (
+      <details className="setup-compact">
+        <summary>
+          <span className="onboard-dot" aria-hidden="true" />
+          {plural(left, "setup step")} left
+        </summary>
+        <ErrorBox error={act.error} title="Could not hide the checklist" />
+        {list}
+        <button type="button" className="btn btn-link btn-sm" onClick={hide} disabled={act.pending}>
+          Hide the checklist
+        </button>
+      </details>
+    );
   return (
     <section className="card setup-checklist" aria-labelledby="setup-h">
       <div className="card-head">
@@ -991,23 +1025,7 @@ export function SetupChecklist({ o, onChange }: { o: Onboarding; onChange: () =>
         </button>
       </div>
       <ErrorBox error={act.error} title="Could not hide the checklist" />
-      <ul className="setup-list">
-        {items.map((i) => (
-          <li key={i.text} className={i.done ? "done" : undefined}>
-            <span className="onboard-dot" aria-hidden="true">
-              {i.done ? "✓" : ""}
-            </span>
-            {i.done ? (
-              <span>
-                {i.text}
-                <span className="sr-only"> (done)</span>
-              </span>
-            ) : (
-              <Link to={i.to}>{i.text}</Link>
-            )}
-          </li>
-        ))}
-      </ul>
+      {list}
     </section>
   );
 }

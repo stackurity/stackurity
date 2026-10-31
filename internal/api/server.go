@@ -299,6 +299,7 @@ func (s *Server) Handler() http.Handler {
 				r.Get("/components/{id}/upgrade", s.componentUpgrade)
 				r.Get("/findings", s.listFindings)
 				r.Get("/findings/summary", s.findingSummary)
+				r.Get("/dashboard/trend", s.dashboardTrend)
 				r.Get("/findings/verify", s.verifySince)
 				r.Get("/fix-groups", s.listFixGroups)
 				r.Get("/fix-groups/summary", s.fixPlanSummary)

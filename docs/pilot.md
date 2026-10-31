@@ -22,7 +22,7 @@ Both run the same release, and everything in the [Community edition](editions.md
 - Optional: container images, a Kubernetes cluster ([kubernetes.md](kubernetes.md)) or AWS managed services.
 
 **Week 1: look.** On your own, 30 to 60 minutes.
-- Open **Home**: the fixes that need you now, most urgent first, each with the version to move to and what it fixes. **Fixes** lists all of them.
+- Open the **Dashboard**: what needs you now and the top fixes, most urgent first, each with the version to move to and what it fixes. **Fixes** lists all of them.
 - Open a few findings and read "How this was decided": the advisory, the version rules and the evidence.
 - Check **Coverage**: what Stackurity could not check, and why. Nothing unchecked is ever shown as clean.
 

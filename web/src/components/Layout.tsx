@@ -72,11 +72,13 @@ function Shell() {
 
   // Badge counts, refreshed on navigation.
   const hasWorkspace = Boolean(me?.workspace);
-  // Automatic fixes are approved for the whole organisation.
+  // Automatic fixes are approved for the whole organisation; Community
+  // has none (the endpoint answers 402), so it is not asked.
+  const paid = Boolean(me?.edition && me.edition !== "community");
   const pending = useLoad(
     () =>
-      hasWorkspace && !projectOnly ? api.get<List<Plan>>("/remediation/plans", { status: "proposed", limit: 1 }) : Promise.resolve(null),
-    [pathname, hasWorkspace, projectOnly],
+      hasWorkspace && paid && !projectOnly ? api.get<List<Plan>>("/remediation/plans", { status: "proposed", limit: 1 }) : Promise.resolve(null),
+    [pathname, hasWorkspace, paid, projectOnly],
   );
   const sos = useLoad(
     () => (hasWorkspace ? api.get<List<Incident>>("/incidents", { status: "open", sos: "true", limit: 1 }) : Promise.resolve(null)),
@@ -91,7 +93,7 @@ function Shell() {
   );
 
   const entries: NavEntry[] = [
-    { id: "home", to: "/", label: "Home", icon: <IconOverview /> },
+    { id: "dashboard", to: "/", label: "Dashboard", icon: <IconOverview /> },
     {
       id: "fixes",
       to: "/fixes",
@@ -397,7 +399,7 @@ function WorkspaceSwitcher() {
 
 /**
  * The project switcher, next to the workspace: "All projects" first, then
- * each project. The choice scopes Home, Fixes, Assets and Activity, and is
+ * each project. The choice scopes the Dashboard, Fixes, Assets and Activity, and is
  * remembered. Shown when the workspace has projects.
  */
 function ProjectSwitcher() {

@@ -767,6 +767,15 @@ export interface InventoryRow {
   unchecked_docs?: string;
 }
 
+/** GET /dashboard/trend: the SLA split and the 30-day trend. */
+export interface DashboardTrend {
+  checked_at: string;
+  end_of_today: string;
+  sla: { on_time: number; due_today: number; overdue: number };
+  open: { day: string; open: number }[];
+  fixed: { start: string; end: string; fixed: number }[];
+}
+
 export type UncheckedReason = "unreadable_version" | "other" | "unreadable_files" | "unsupported" | "waiting_for_data" | "no_advisories";
 export type UncheckedActor = "user" | "stackurity" | "automatic" | "none";
 

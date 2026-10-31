@@ -210,6 +210,7 @@ var routeRules = map[string]routeRule{
 	"GET /api/v1/components":            {class: "list", query: "?q={tag}"},
 	"GET /api/v1/findings":              {class: "list", query: "?status=all&asset_id={asset}"},
 	"GET /api/v1/findings/summary":      {class: "list"},
+	"GET /api/v1/dashboard/trend":       {class: "list"},
 	"GET /api/v1/findings/verify":       {class: "list", query: "?since=2000-01-01&asset_id={asset}"},
 	"GET /api/v1/fix-groups":            {class: "list", query: "?asset_id={asset}"},
 	"GET /api/v1/fix-groups/summary":    {class: "list", query: "?asset_id={asset}"},

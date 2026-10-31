@@ -1002,6 +1002,14 @@ type FindingFilter struct {
 	FixGroup     string
 	IncidentID   int64
 	Overdue      bool
+	// DueBefore keeps active findings whose fix-by date is before it
+	// (the Dashboard's "due today": overdue and due by the end of today).
+	DueBefore *time.Time
+	// DueAfter keeps active findings due at or after it.
+	DueAfter *time.Time
+	// OnTime keeps active findings that are not past their fix-by date
+	// (overdue=false).
+	OnTime bool
 	// ResolvedWithinDays keeps findings resolved in the last N days.
 	ResolvedWithinDays int
 	// NewWithinDays keeps findings first seen in the last N days.
@@ -1105,6 +1113,15 @@ func (s *Store) ListFindings(ctx context.Context, f FindingFilter) ([]Finding, i
 	}
 	if f.Overdue {
 		w.conds = append(w.conds, "f.state IN ('new', 'acknowledged', 'in_progress') AND f.fix_due < now()")
+	}
+	if f.OnTime {
+		w.conds = append(w.conds, "f.state IN ('new', 'acknowledged', 'in_progress') AND (f.fix_due IS NULL OR f.fix_due >= now())")
+	}
+	if f.DueAfter != nil {
+		w.add("f.state IN ('new', 'acknowledged', 'in_progress') AND f.fix_due >= ?", *f.DueAfter)
+	}
+	if f.DueBefore != nil {
+		w.add("f.state IN ('new', 'acknowledged', 'in_progress') AND f.fix_due < ?", *f.DueBefore)
 	}
 	if f.SecondCheck != "" {
 		w.add("EXISTS (SELECT 1 FROM second_checks sc WHERE sc.finding_id = f.id AND sc.result = ?)", f.SecondCheck)

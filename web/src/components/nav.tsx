@@ -6,12 +6,12 @@ import { Link, useLocation } from "react-router";
  * their paths (bookmarks and notification links) and are shown as tabs of
  * their place.
  */
-export type Section = "home" | "fixes" | "assets" | "activity" | "settings" | "help" | "other";
+export type Section = "dashboard" | "fixes" | "assets" | "activity" | "settings" | "help" | "other";
 
 const under = (path: string, ...prefixes: string[]) => prefixes.some((p) => path === p || path.startsWith(p + "/"));
 
 export function sectionOf(path: string): Section {
-  if (path === "/") return "home";
+  if (path === "/") return "dashboard";
   if (under(path, "/fixes", "/action-plan", "/findings", "/remediation")) return "fixes";
   if (under(path, "/assets", "/components", "/coverage")) return "assets";
   if (under(path, "/activity", "/incidents", "/checks", "/approvals", "/outcomes", "/reports", "/audit")) return "activity";

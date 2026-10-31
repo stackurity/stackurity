@@ -3990,6 +3990,24 @@
       }
      },
      {
+      "name": "due_before",
+      "in": "query",
+      "required": false,
+      "description": "Active findings whose fix-by date is before this time (RFC 3339)",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "due_after",
+      "in": "query",
+      "required": false,
+      "description": "Active findings due at or after this time (RFC 3339)",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
       "name": "assignee_user",
       "in": "query",
       "required": false,
@@ -4148,6 +4166,46 @@
       "$ref": "#/components/responses/Error"
      }
     }
+   }
+  },
+  "/dashboard/trend": {
+   "get": {
+    "operationId": "get_dashboard_trend",
+    "summary": "Dashboard SLA split and 30-day trend",
+    "description": "Dashboard SLA split and 30-day trend\n\nRole: viewer",
+    "tags": [
+     "Findings and fixes"
+    ],
+    "x-stackurity-role": "viewer",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "tz",
+      "in": "query",
+      "required": false,
+      "description": "IANA time zone where today ends (default UTC)",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ]
    }
   },
   "/findings/verify": {
