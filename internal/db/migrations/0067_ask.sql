@@ -1,5 +1,5 @@
--- Ask Stackurity, the in-app assistant (internal/ask). Additive: four
--- workspace columns with constant defaults and five new tables; nothing is
+-- Ask Stackurity, the in-app assistant (internal/ask). Additive: five
+-- workspace columns with constant defaults and six new tables; nothing is
 -- rewritten.
 --
 -- Conversations belong to the person who asked. The API reads them only
@@ -13,16 +13,24 @@
 SET LOCAL lock_timeout = '10s';
 
 -- ask_enabled: the organisation admin's switch (Settings → AI assistants).
--- ask_question_limit: questions a month (NULL: no limit; 0: not included
--- in the plan). ask_spend_cap_micros: model spend a month in millionths of
--- a US dollar (NULL: no cap). ask_model: the model for this organisation
--- ('' : the server's default). The limits and the model are set by the
--- edition (Stackurity Cloud: from the plan) or by an instance admin.
+-- The assistant sends data to a model provider, so it is opt-in for the
+-- organisations that exist now: they get false, and an admin turns it on.
+-- Organisations created from now on get true (each person still accepts
+-- the data notice before their first question).
+-- ask_question_limit: questions per ask_question_period (NULL: no limit;
+-- 0: not included in the plan); the period is a calendar month, or 'total'
+-- for an allowance that never renews (a trial). ask_spend_cap_micros:
+-- model spend a month in millionths of a US dollar (NULL: no cap).
+-- ask_model: the model for this organisation ('' : the server's default).
+-- The limits and the model are set by the edition (Stackurity Cloud: from
+-- the plan) or by an instance admin.
 ALTER TABLE workspaces
-    ADD COLUMN ask_enabled          boolean NOT NULL DEFAULT true,
+    ADD COLUMN ask_enabled          boolean NOT NULL DEFAULT false,
     ADD COLUMN ask_question_limit   integer CHECK (ask_question_limit IS NULL OR ask_question_limit >= 0),
+    ADD COLUMN ask_question_period  text NOT NULL DEFAULT 'month' CHECK (ask_question_period IN ('month', 'total')),
     ADD COLUMN ask_spend_cap_micros bigint CHECK (ask_spend_cap_micros IS NULL OR ask_spend_cap_micros >= 0),
     ADD COLUMN ask_model            text NOT NULL DEFAULT '' CHECK (ask_model ~ '^[A-Za-z0-9._:@/-]{0,100}$');
+ALTER TABLE workspaces ALTER COLUMN ask_enabled SET DEFAULT true;
 
 SELECT set_config('stackurity.scope', 'system', true);
 
