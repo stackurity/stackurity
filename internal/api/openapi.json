@@ -1433,6 +1433,15 @@
       }
      },
      {
+      "name": "unchecked",
+      "in": "query",
+      "required": false,
+      "description": "One reason components were not checked: unreadable_version, unsupported, waiting_for_data or no_advisories",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
       "name": "limit",
       "in": "query",
       "required": false,
@@ -3204,6 +3213,46 @@
       "in": "query",
       "required": false,
       "description": "Items to skip",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/coverage/unchecked": {
+   "get": {
+    "operationId": "get_coverage_unchecked",
+    "summary": "Components not checked, by reason and who acts",
+    "description": "Components not checked, by reason and who acts\n\nRole: viewer",
+    "tags": [
+     "Inventory"
+    ],
+    "x-stackurity-role": "viewer",
+    "parameters": [
+     {
+      "name": "asset_id",
+      "in": "query",
+      "required": false,
+      "description": "One asset",
       "schema": {
        "type": "string"
       }
@@ -5440,6 +5489,15 @@
       "name": "coverage",
       "in": "query",
       "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "unchecked",
+      "in": "query",
+      "required": false,
+      "description": "One reason components were not checked: unreadable_version, unsupported, waiting_for_data or no_advisories",
       "schema": {
        "type": "string"
       }

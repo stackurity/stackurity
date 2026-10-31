@@ -434,6 +434,14 @@ type InventoryRow struct {
 	// finding (a distribution package the distribution still supports), or
 	// what the distribution's support adds to a finding that stands.
 	LifecycleNote map[string]any `json:"lifecycle_note,omitempty"`
+	// Unchecked says why the row was not checked, by who acts (unchecked.go):
+	// UncheckedReason and UncheckedActor, and for an unreadable version its
+	// cause, what to do (UncheckedFix) and the docs. Empty when checked.
+	UncheckedReason string `json:"unchecked_reason,omitempty"`
+	UncheckedActor  string `json:"unchecked_actor,omitempty"`
+	UncheckedCause  string `json:"unchecked_cause,omitempty"`
+	UncheckedFix    string `json:"unchecked_fix,omitempty"`
+	UncheckedDocs   string `json:"unchecked_docs,omitempty"`
 }
 
 // rowCoverageSQL is the effective coverage of inventory row i: a row matched
@@ -456,6 +464,8 @@ type InventoryFilter struct {
 	// UpdateType limits rows to those with a newer stable release of this
 	// update type (patch, minor or major), or of any ("any").
 	UpdateType string
+	// Unchecked limits rows to one unchecked reason (unchecked.go).
+	Unchecked string
 	Page
 }
 
@@ -486,6 +496,9 @@ func (s *Store) ListInventory(ctx context.Context, f InventoryFilter) ([]Invento
 		w.conds = append(w.conds, "i.coverage IN ('unsupported', 'not_evaluated')")
 	default:
 		w.add("("+rowCoverageSQL+") = ?", f.Coverage)
+	}
+	if f.Unchecked != "" {
+		uncheckedRowFilter(w, f.Unchecked)
 	}
 	const join = ` FROM inventory i JOIN components c ON c.id = i.component_id JOIN assets a ON a.id = i.asset_id
 		LEFT JOIN package_releases pr ON pr.component_id = c.id`
@@ -521,6 +534,7 @@ func (s *Store) ListInventory(ctx context.Context, f InventoryFilter) ([]Invento
 		CASE WHEN COALESCE(i.evidence->>'wordpress_org', '') = 'no' THEN '' ELSE COALESCE(pr.latest_stable, '') END,
 		(SELECT count(*) FROM findings f WHERE f.inventory_id = i.id AND f.status = 'open'),
 		`+rowCoverageSQL+`, i.coverage_reason, i.coverage_feed, i.evaluated_at, i.lifecycle_note,
+		`+uncheckedReasonSQL("("+rowCoverageSQL+") = 'stale_intelligence'")+`, `+uncheckedCauseSQL+`,
 		CASE WHEN c.type = 'generic' AND c.namespace IN ('wordpress-plugin', 'wordpress-theme') THEN
 		  CASE WHEN i.evidence->>'wordpress_org' = 'no' THEN 'not from wordpress.org: ' || COALESCE(i.evidence->>'wordpress_org_reason', '')
 		    WHEN pr.deprecated <> '' THEN pr.deprecated
@@ -539,7 +553,8 @@ func (s *Store) ListInventory(ctx context.Context, f InventoryFilter) ([]Invento
 		if err := rows.Scan(&r.ID, &r.AssetID, &r.AssetName, &r.AssetKind, &r.ComponentID, &r.Type, &r.Namespace, &r.Name,
 			&r.Purl, &r.Version, &r.Location, &r.CollectorID, &r.Direct, &r.Scope, &r.Confidence, &ev,
 			&r.FirstSeen, &r.LastSeen, &r.CollectionID, &r.RemovedAt, &r.LatestStable, &r.OpenFindings,
-			&r.Coverage, &r.CoverageReason, &r.CoverageFeed, &r.EvaluatedAt, &note, &r.ReleaseNote); err != nil {
+			&r.Coverage, &r.CoverageReason, &r.CoverageFeed, &r.EvaluatedAt, &note, &r.UncheckedReason, &r.UncheckedCause,
+			&r.ReleaseNote); err != nil {
 			return nil, 0, err
 		}
 		_ = json.Unmarshal(ev, &r.Evidence)
@@ -547,6 +562,11 @@ func (s *Store) ListInventory(ctx context.Context, f InventoryFilter) ([]Invento
 			_ = json.Unmarshal(note, &r.LifecycleNote)
 		}
 		r.UpdateType = updateType(r.Type, r.Namespace, r.Version, r.LatestStable)
+		r.UncheckedActor = UncheckedActors[r.UncheckedReason]
+		if r.UncheckedReason != UncheckedUnreadableVersion {
+			r.UncheckedCause = ""
+		}
+		r.UncheckedFix, r.UncheckedDocs = UnreadableVersionFix(r.UncheckedCause, r.Location)
 		out = append(out, r)
 	}
 	return out, total, rows.Err()

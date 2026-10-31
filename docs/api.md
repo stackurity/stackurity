@@ -460,7 +460,7 @@ Deletes an asset and its history.
 
 **Who:** viewer
 
-Components on the asset with evidence and [coverage](#inventory-coverage), paged. Query: `q`, `type`, `direct`, `include_removed`, `coverage`, `update_type` (see [`GET /inventory`](#get-inventory)).
+Components on the asset with evidence and [coverage](#inventory-coverage), paged. Query: `q`, `type`, `direct`, `include_removed`, `coverage`, `unchecked`, `update_type` (see [`GET /inventory`](#get-inventory)).
 
 ### `GET /assets/{id}/coverage-summary`
 
@@ -550,7 +550,7 @@ An [upgrade recommendation](#upgrade-recommendations) for each installed version
 
 **Who:** viewer
 
-Where components are used, paged. Query: `component_id`, `asset_id`, `q`, `type`, `direct`, `include_removed`, `coverage`, `update_type`.
+Where components are used, paged. Query: `component_id`, `asset_id`, `q`, `type`, `direct`, `include_removed`, `coverage`, `unchecked`, `update_type`.
 
 Each row has `latest_stable` (the package registry's newest stable release; a pre-release never is) and `update_type`: `patch`, `minor` or `major` when that release is newer than the installed version, `ahead` when the installed pre-release is newer, empty when it is current or unknown. Only registry packages (npm, Composer, PyPI, Go, crates.io, RubyGems, NuGet, Maven, pub, Hex, and WordPress plugins and themes from wordpress.org) have one: other `pkg:generic` and distribution packages never do, nor a package the collector marked as not from the registry (evidence `wordpress_org` `no`). `ahead` is not an update. An installed pre-release of the latest release itself (`2.0.0-rc.1` with `2.0.0` out) takes the type of that release: `major` for `2.0.0`, `minor` for `2.1.0`, `patch` for `2.1.3`. `update_type=patch|minor|major` keeps the rows with that update type, `any` those with any; 400 for another value.
 
@@ -573,6 +573,12 @@ Updates available: installs older than their package's latest stable release (th
 **Who:** viewer
 
 The coverage ledger across assets, paged. Query: `asset_id`, `problems=true`.
+
+### `GET /coverage/unchecked`
+
+**Who:** viewer
+
+The components that were not checked, grouped by reason and who acts, for one asset (`asset_id`) or every asset the caller may see. See [Unchecked components](#unchecked-components).
 
 ### `GET /evaluation-gaps`
 
@@ -1462,7 +1468,7 @@ Platform health across workspaces: `status` (`ok`, `warning`, `critical`), `prob
 
 **Who:** instance admin
 
-What Stackurity cannot check, across every active workspace: `unread_files` (files a scan found that no built-in reader or installed stack pack reads, by `kind` such as `hex:mix.lock` or `swift:Package.resolved`), `no_vulnerability_source` (components whose coverage is `unsupported`, by package type and reason; vendor builds are counted per repository) and `no_lifecycle` (products no lifecycle source tracks, such as NestJS; installed release lines the lifecycle data does not list; runtimes and operating systems with no lifecycle product). Each entry has `kind`, `label`, `detail`, `assets` and `workspaces` (and `components` for vulnerability sources). Also `workspaces`, `assets`, `checked_at` and the lifecycle `overlay_version`. Counts and type names only: no workspace, asset, path or package is named. See [compatibility.md](compatibility.md#what-stackurity-cannot-check).
+What Stackurity cannot check, across every active workspace: `unread_files` (files a scan found that no built-in reader or installed stack pack reads, by `kind` such as `hex:mix.lock` or `swift:Package.resolved`), `no_vulnerability_source` (components whose coverage is `unsupported`, by package type and reason; vendor builds are counted per repository) `no_lifecycle` (products no lifecycle source tracks, such as NestJS; installed release lines the lifecycle data does not list; runtimes and operating systems with no lifecycle product) and `not_checked` (components a vulnerability source exists for that were still not checked, by `reason`, package type and subject: `kind` is `reason|type|subject`, such as `waiting_for_data|npm|osv:npm` or `no_advisories|deb|Debian:13`). Each entry has `kind`, `label`, `detail`, `assets`, `workspaces` and `actor` (`stackurity`, `user`, `automatic` or `none`; see [Unchecked components](#unchecked-components)), and `components` for vulnerability sources and `not_checked`. Also `workspaces`, `assets`, `checked_at` and the lifecycle `overlay_version`. Counts and type names only: no workspace, asset, path or package is named. See [compatibility.md](compatibility.md#what-stackurity-cannot-check).
 
 ### `GET /updates`
 
@@ -1686,7 +1692,23 @@ The token from `STACKURITY_OPENAI_APPS_CHALLENGE`, as text, for OpenAI's domain 
 
 Inventory rows carry `coverage`, whether vulnerability intelligence covered that row: `evaluated`, `stale_intelligence` (evaluated against a feed that is stale or failing), `not_evaluated` or `unsupported` (with `coverage_reason`), or `awaiting` (not evaluated yet). `coverage_feed` names the feed used and `evaluated_at` when. The `coverage` filter takes one of these or `gaps` (`not_evaluated` and `unsupported`).
 
+Rows that were not checked also carry `unchecked_reason` and `unchecked_actor` ([Unchecked components](#unchecked-components)); a row with an unreadable version adds `unchecked_cause`, `unchecked_fix` and `unchecked_docs`. The `unchecked` filter takes one reason.
+
 An evaluated row can carry a `coverage_reason` too, saying how it is reported: kernel headers ("not running code") and the other packages of a kernel version, whose findings are on the kernel image ([compatibility.md](compatibility.md#kernels)).
+
+### Unchecked components
+
+`GET /coverage/unchecked` splits the components that were not checked by who can do something about them:
+
+| `reason` | `actor` | Meaning |
+| --- | --- | --- |
+| `unreadable_version` | `user` | The installed version could not be read. Each item is a cause (`no_version`, `unparseable_version`, `unknown_release`, `unreadable_package`) with `fix` and `docs`. |
+| `unreadable_files` | `user` | Applications with files the agent's user may not read (counted in `assets`): grant read access with an ACL. |
+| `unsupported` | `stackurity` | No vulnerability source for the ecosystem, distribution or kind of software yet. Items are `type\|category` (`cocoapods\|ecosystem`, `deb\|vendor_build\|<repository>`). |
+| `waiting_for_data` | `automatic` | The vulnerability source has not synced yet, or the row was checked against data that is out of date. Resolves on its own; an item is `overdue` when its source is past its staleness window or switched off. |
+| `no_advisories` | `none` | The source publishes no advisories for the release (`Debian:13`). Informational: not "may be vulnerable". |
+
+The response has `need_you` (unreadable versions plus applications with unreadable files), `not_supported`, `waiting`, `no_advisories`, `overdue` and `groups`, each group with `reason`, `actor`, `components`, `assets`, `overdue` and `items` (`key`, `label`, `components`, `assets`, and `fix`, `docs` or `overdue` where they apply).
 
 `lifecycle_note` is set on a distribution package whose upstream release is end of life: `status` is `distribution_supported` (no finding: the distribution release still provides security updates), `distribution_ended` (the release itself is end of life) `third_party_build` (the finding stands) or `follows_upstream` (the package's maintainer stops fixing it on the upstream date, as Red Hat and Microsoft do for .NET; the finding stands), with `text`, `subject`, `upstream_eol`, `distribution` and `distribution_eol` ([compatibility.md](compatibility.md#lifecycle-of-distribution-packages)).
 

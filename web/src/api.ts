@@ -549,8 +549,12 @@ export interface CoverageGap {
   detail?: string;
   assets: number;
   workspaces: number;
-  /** Distinct components (no_vulnerability_source only). */
+  /** Distinct components (no_vulnerability_source and not_checked only). */
   components?: number;
+  /** Who can close the gap. */
+  actor?: UncheckedActor;
+  /** not_checked only: why the components were not checked. */
+  reason?: UncheckedReason;
 }
 
 /** GET /admin/coverage-gaps: what Stackurity cannot check, across every workspace. */
@@ -562,6 +566,8 @@ export interface CoverageGapReport {
   unread_files: CoverageGap[];
   no_vulnerability_source: CoverageGap[];
   no_lifecycle: CoverageGap[];
+  /** Components a vulnerability source exists for that were still not checked. */
+  not_checked?: CoverageGap[];
 }
 
 /** GET /admin/health: whether the installation itself is working. */
@@ -752,6 +758,46 @@ export interface InventoryRow {
   evaluated_at?: string | null;
   /** Upstream end of life on a distribution package (docs/compatibility.md, "Lifecycle of distribution packages"). */
   lifecycle_note?: LifecycleNote | null;
+  /** Why the row was not checked and who acts (docs/api.md, "Unchecked components"). */
+  unchecked_reason?: UncheckedReason;
+  unchecked_actor?: UncheckedActor;
+  /** Unreadable version only: the cause, what to do and the docs. */
+  unchecked_cause?: string;
+  unchecked_fix?: string;
+  unchecked_docs?: string;
+}
+
+export type UncheckedReason = "unreadable_version" | "unreadable_files" | "unsupported" | "waiting_for_data" | "no_advisories";
+export type UncheckedActor = "user" | "stackurity" | "automatic" | "none";
+
+/** One subject of an unchecked reason: an ecosystem, a vulnerability source, a release or a cause. */
+export interface UncheckedItem {
+  key: string;
+  label: string;
+  fix?: string;
+  docs?: string;
+  components: number;
+  assets: number;
+  overdue?: boolean;
+}
+
+export interface UncheckedGroup {
+  reason: UncheckedReason;
+  actor: UncheckedActor;
+  components: number;
+  assets: number;
+  overdue?: boolean;
+  items: UncheckedItem[];
+}
+
+/** GET /coverage/unchecked: components not checked, grouped by who acts. */
+export interface Unchecked {
+  need_you: number;
+  not_supported: number;
+  waiting: number;
+  no_advisories: number;
+  overdue: boolean;
+  groups: UncheckedGroup[];
 }
 
 export interface LifecycleNote {

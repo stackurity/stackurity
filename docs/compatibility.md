@@ -425,13 +425,27 @@ headline:
 | Awaiting verification (`awaiting_verification`) | Inventory has not been evaluated yet, or not within the last 48 hours |
 | Healthy and recently evaluated (`healthy`) | None of the above: every scope was collected and every component checked against current intelligence within 48 hours |
 
-The asset page shows the states with their reasons above the tabs, the
-Findings tab says how many components the findings do not cover, and the
-Inventory tab marks each component that was not checked ("not checked:
-<reason>") and can be filtered by coverage. The Coverage page counts assets
-by state; the Intelligence page lists every component not checked. The API
-returns the same values (`GET /assets/{id}/coverage-summary`, `coverage` on
-inventory rows).
+The asset page shows problems with how the asset reported above the tabs,
+then the components that were not checked split by who acts:
+
+- **Needs you**: the installed version could not be read (no lockfile, a
+  version in a form its package manager does not use, an operating system
+  release that was not reported), or the agent may not read an
+  application's files. Each says what to do. The banner is a warning only
+  when something needs you.
+- **Stackurity doesn't support yet**: no vulnerability source for the
+  ecosystem, distribution or kind of software. Nothing for you to do.
+- **Resolves on its own**: the vulnerability data has not synced yet. It
+  becomes a warning only when the data is past its staleness window.
+- **No published advisories**: nothing is published for that release, so
+  nothing is known against it. Shown on the component's row, never counted
+  as "may be vulnerable".
+
+The Inventory tab marks each component that was not checked with the same
+split and can be filtered by it. The Coverage page counts assets by state
+and components by who acts. The API returns the same values
+(`GET /assets/{id}/coverage-summary`, `GET /coverage/unchecked`, and
+`coverage` and `unchecked_reason` on inventory rows).
 
 ## How matching is tested
 

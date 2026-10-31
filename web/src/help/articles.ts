@@ -162,7 +162,7 @@ export const ARTICLES: Article[] = [
           ["Idle kernel", "A kernel version that is installed but not running. Its vulnerabilities can't be exploited until it is booted, so they get a low priority and the action is to remove old kernels."],
           ["Reboot pending", "The host runs older code than is installed (the distro's reboot flag, or a newer kernel than the running one)."],
           ["Coverage", "What each collector checked, skipped or could not read. Findings only cover what was checked."],
-          ["Evaluation gap", "A component that was not checked for vulnerabilities: “Unsupported” when no source exists for it (a runtime installed outside the package manager, an unsupported distribution), “Not checked” when a source exists but could not be used (feed not synced, release without advisories, unreadable version). It is never treated as clean, and the asset's Inventory tab marks it."],
+          ["Not checked", "A component that was not checked for vulnerabilities, split by who acts: **needs you** (its version could not be read, or the agent may not read the application's files; each says what to do), **Stackurity doesn't support yet** (no vulnerability data for its ecosystem or distribution; nothing for you to do), **resolves on its own** (vulnerability data not synced yet) or **no published advisories** (nothing is known against that release; not counted). It is never treated as clean, and the asset's Inventory tab marks it."],
           ["Coverage state", "How far an asset's findings can be trusted: Healthy and recently evaluated, Stale intelligence, Failed collection, Unsupported, Partially evaluated or Awaiting verification. Shown on the asset page with the reasons."],
           ["Evidence report", "A printable patch-management summary for a period, for audits."],
           ["Exception", "A finding that was suppressed or risk-accepted by a security user, with a reason, optional mitigation and an expiry date."],
@@ -1003,13 +1003,16 @@ jobs:
     section: "Daily work",
     summary: "Make sure “no findings” really means nothing was found.",
     where: ["Settings", "Intelligence and feeds"],
-    keywords: "feeds osv kev endoflife stale evaluation gap coverage state not checked unsupported awaiting verification refresh re-evaluate",
+    keywords: "feeds osv kev endoflife stale evaluation gap coverage state not checked needs you unsupported resolves on its own no published advisories awaiting verification refresh re-evaluate",
     body: [
       {
         p: "**Coverage** (Assets ▸ Coverage) counts assets by coverage state and lists what each collector checked, skipped, failed or doesn't support yet. Keep **Problems only** on to see the gaps.",
       },
       {
         p: "Each asset has a **coverage state**: **Healthy and recently evaluated**, or one or more of **Failed collection**, **Stale intelligence**, **Partially evaluated**, **Unsupported** and **Awaiting verification**, each with its reason. The asset page shows them above the tabs, the Findings tab says how many components the findings do not cover, and the Inventory tab marks each component as **Not checked**, **Unsupported**, **Stale intelligence** or **Awaiting verification** (filter by **Coverage**).",
+      },
+      {
+        p: "Components that were not checked are split by who acts, on Findings, each asset's page and Coverage: **needs you** first (a version that could not be read, with the fix for each, or application files the agent may not read), then what **Stackurity doesn't support yet**, then what **resolves on its own** once vulnerability data syncs. The banner is a warning only when something needs you, or when vulnerability data is past its staleness window. A release with **no published advisories** is noted on its row and not counted.",
       },
       {
         p: "**Intelligence** (Settings ▸ Intelligence and feeds) lists the data feeds: OSV per ecosystem (hourly), CISA KEV (hourly), endoflife.date (daily), and the npm and Packagist registries. Each shows OK, Stale, Error, Never synced or Disabled.",

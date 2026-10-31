@@ -48,7 +48,8 @@ import { ActionsTable } from "../components/Remediation";
 import { FixGroupList } from "./ActionPlan";
 import { CheckAgain } from "../components/CheckAgain";
 import { EnableRemediation } from "../components/EnableRemediation";
-import { AssetCoverageNotice, AssetStateBadge, COVERAGE_FILTERS, FindingsCoverageLine, RowCoverageNote } from "../components/Coverage";
+import { AssetCoverageNotice, AssetStateBadge, COVERAGE_FILTERS, RowCoverageNote, UNCHECKED_FILTERS } from "../components/Coverage";
+import { useUnchecked } from "../components/Unchecked";
 import {
   Card,
   EmptyState,
@@ -96,6 +97,8 @@ export function AssetDetailPage() {
   const relations = useLoad(() => api.get<List<Relation>>(`/assets/${assetId}/relations`), [assetId]);
   // Coverage says how far the findings can be trusted; shown wherever findings are.
   const coverage = useLoad(() => api.get<CoverageSummary>(`/assets/${assetId}/coverage-summary`), [assetId]);
+  // What was not checked on it, by who acts.
+  const unchecked = useUnchecked(assetId);
   const primaries = (relations.data?.items ?? []).filter((r) => r.kind === "replica_of" && r.from_asset === assetId);
   const kind = det.data?.asset.kind ?? "";
   // What to fix comes first; otherwise the stack for kinds that have one.
@@ -234,7 +237,7 @@ export function AssetDetailPage() {
         </Notice>
       )}
       {a.collection_status === "removed" ? null : coverage.data ? (
-        <AssetCoverageNotice summary={coverage.data} inventoryLink={`/assets/${a.id}?tab=inventory&coverage=gaps`} />
+        <AssetCoverageNotice summary={coverage.data} unchecked={unchecked.data} assetId={a.id} />
       ) : (
         <>
           {a.collection_status === "stale" && !a.reporting && (
@@ -295,7 +298,7 @@ export function AssetDetailPage() {
           <>
             {tab === "action-plan" && <AssetActionPlan assetId={a.id} />}
             {tab === "stack" && <StackTab asset={a} />}
-        {tab === "findings" && <FindingsTab assetId={a.id} coverage={coverage.data} />}
+        {tab === "findings" && <FindingsTab assetId={a.id} />}
         {tab === "inventory" && <InventoryTab assetId={a.id} />}
         {tab === "coverage" && <CoverageTab assetId={a.id} />}
         {tab === "collections" && <CollectionsTab assetId={a.id} />}
@@ -602,7 +605,7 @@ export function LatestCell({ row }: { row: InventoryRow }) {
   );
 }
 
-function FindingsTab({ assetId, coverage }: { assetId: number; coverage?: CoverageSummary }) {
+function FindingsTab({ assetId }: { assetId: number }) {
   const [offset, setOffset] = useState(0);
   const [all, setAll] = useState(false);
   const res = useLoad(
@@ -611,7 +614,6 @@ function FindingsTab({ assetId, coverage }: { assetId: number; coverage?: Covera
   );
   return (
     <>
-      {coverage && <FindingsCoverageLine summary={coverage} inventoryLink={`/assets/${assetId}?tab=inventory&coverage=gaps`} />}
       <div className="filters">
         <label className="check">
           <input
@@ -630,8 +632,8 @@ function FindingsTab({ assetId, coverage }: { assetId: number; coverage?: Covera
       {res.data && res.data.items.length === 0 && (
         <EmptyState title="No findings for this asset">
           <p>
-            Only inventoried components that were checked against current intelligence can have findings. Components that could not
-            be checked are marked on the Inventory tab and listed on the Intelligence page.
+            Only components that were checked can have findings. Any that were not are counted above, and marked on the{" "}
+            <Link to={`/assets/${assetId}?tab=inventory&unchecked=unreadable_version`}>Inventory tab</Link> with what to do.
           </p>
         </EmptyState>
       )}
@@ -657,15 +659,17 @@ function InventoryTab({ assetId }: { assetId: number }) {
   const [direct, setDirect] = useState("");
   const [removed, setRemoved] = useState(false);
   const coverage = params.get("coverage") ?? "";
-  const setCoverage = (v: string) => {
+  const unchecked = params.get("unchecked") ?? "";
+  const setParam = (k: string, v: string) => {
     const n = new URLSearchParams(params);
-    if (v) n.set("coverage", v);
-    else n.delete("coverage");
+    if (v) n.set(k, v);
+    else n.delete(k);
     setParams(n, { replace: true });
   };
+  const setCoverage = (v: string) => setParam("coverage", v);
   const [offset, setOffset] = useState(0);
   const [sel, setSel] = useState<number | null>(null);
-  useEffect(() => setOffset(0), [dq, direct, removed, coverage]);
+  useEffect(() => setOffset(0), [dq, direct, removed, coverage, unchecked]);
 
   const res = useLoad(
     () =>
@@ -674,10 +678,11 @@ function InventoryTab({ assetId }: { assetId: number }) {
         direct,
         include_removed: removed ? "true" : undefined,
         coverage: coverage || undefined,
+        unchecked: unchecked || undefined,
         limit: INV_LIMIT,
         offset,
       }),
-    [assetId, dq, direct, removed, coverage, offset],
+    [assetId, dq, direct, removed, coverage, unchecked, offset],
   );
 
   const columns: Column<InventoryRow>[] = [
@@ -782,6 +787,16 @@ function InventoryTab({ assetId }: { assetId: number }) {
             ))}
           </select>
         </div>
+        <div className="field">
+          <label htmlFor="inv-unchecked">Not checked because</label>
+          <select id="inv-unchecked" value={unchecked} onChange={(e) => setParam("unchecked", e.target.value)}>
+            {UNCHECKED_FILTERS.map(([v, label]) => (
+              <option key={v} value={v}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </div>
         <label className="check">
           <input type="checkbox" checked={removed} onChange={(e) => setRemoved(e.target.checked)} /> Include removed
         </label>
@@ -789,8 +804,16 @@ function InventoryTab({ assetId }: { assetId: number }) {
       <ErrorBox error={res.error} title="Could not load inventory" />
       {!res.data && !res.error && <Loading />}
       {res.data && res.data.items.length === 0 && (
-        <EmptyState title={dq || direct || coverage ? "No components match" : "No components recorded"}>
-          {!dq && !direct && !coverage && <p>Check the Coverage tab to see what the collector looked at and what it could not read.</p>}
+        <EmptyState
+          title={
+            unchecked === "unreadable_version" && !dq && !direct && !coverage
+              ? "Every version on this asset could be read"
+              : dq || direct || coverage || unchecked
+                ? "No components match"
+                : "No components recorded"
+          }
+        >
+          {!dq && !direct && !coverage && !unchecked && <p>Check the Coverage tab to see what the collector looked at and what it could not read.</p>}
         </EmptyState>
       )}
       {res.data && res.data.items.length > 0 && (

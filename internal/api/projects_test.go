@@ -153,6 +153,7 @@ var projectScopes = map[string]string{
 	"GET /api/v1/settings/fix-grouping":         "scoped",
 	"GET /api/v1/inventory":                     "scoped",
 	"GET /api/v1/inventory/updates":             "scoped",
+	"GET /api/v1/coverage/unchecked":            "scoped",
 	"GET /api/v1/coverage":                      "scoped",
 	"GET /api/v1/audit":                         "scoped",
 	"GET /api/v1/users/directory":               "scoped",

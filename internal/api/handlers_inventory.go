@@ -440,6 +440,13 @@ func (s *Server) inventory(w http.ResponseWriter, r *http.Request, f store.Inven
 		s.fail(w, r, badRequest("coverage must be gaps, evaluated, stale_intelligence, unsupported, not_evaluated or awaiting"))
 		return
 	}
+	if u := q.Get("unchecked"); u != "" {
+		if !store.ValidUncheckedReason(u) {
+			s.fail(w, r, badRequest("unchecked must be unreadable_version, unsupported, waiting_for_data or no_advisories"))
+			return
+		}
+		f.Unchecked = u
+	}
 	items, total, err := s.Store.ListInventory(r.Context(), f)
 	if err != nil {
 		s.fail(w, r, err)
@@ -493,6 +500,18 @@ func (s *Server) assetCoverageSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sum, err := s.Store.AssetCoverage(r.Context(), id)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, 200, sum)
+}
+
+// uncheckedSummary breaks down the components that were not checked by
+// reason, each with who acts (user, stackurity, automatic or none), for one
+// asset (asset_id) or every asset the caller may see.
+func (s *Server) uncheckedSummary(w http.ResponseWriter, r *http.Request) {
+	sum, err := s.Store.SummarizeUnchecked(r.Context(), store.UncheckedFilter{AssetID: qInt(r, "asset_id")})
 	if err != nil {
 		s.fail(w, r, err)
 		return
