@@ -60,13 +60,13 @@ func TestAskSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	a, _ = f.s.AskSettings(f.ws1)
-	if a.Enabled || *a.QuestionLimit != 20 || *a.SpendCapMicros != 5_000_000 || a.Model != "claude-sonnet-5-5" {
+	if a.Enabled || *a.QuestionLimit != 20 || a.QuestionPeriod != "month" || *a.SpendCapMicros != 5_000_000 || a.Model != "claude-sonnet-5-5" {
 		t.Errorf("after set = %+v", a)
 	}
 	if b, _ := f.s.AskSettings(f.ws2); !b.Enabled || b.QuestionLimit != nil {
 		t.Errorf("the other workspace changed: %+v", b)
 	}
-	for _, bad := range []store.AskLimits{{QuestionLimit: p64(-1)}, {SpendCapMicros: p64(-1)}, {Model: "a model; drop"}} {
+	for _, bad := range []store.AskLimits{{QuestionLimit: p64(-1)}, {SpendCapMicros: p64(-1)}, {Model: "a model; drop"}, {QuestionPeriod: "week"}} {
 		if err := f.s.SetAskLimits(f.ws1, ws, bad); !errors.Is(err, store.ErrInvalid) {
 			t.Errorf("SetAskLimits(%+v) = %v", bad, err)
 		}
@@ -171,23 +171,23 @@ func TestAskPurge(t *testing.T) {
 func TestAskQuestionQuota(t *testing.T) {
 	f := newAskFixture(t)
 	for i := int64(1); i <= 2; i++ {
-		if n, err := f.s.CountAskQuestion(f.ws1, p64(2)); err != nil || n != i {
+		if n, err := f.s.CountAskQuestion(f.ws1, p64(2), "month"); err != nil || n != i {
 			t.Fatalf("question %d = %d %v", i, n, err)
 		}
 	}
-	if _, err := f.s.CountAskQuestion(f.ws1, p64(2)); !errors.Is(err, store.ErrAskQuota) {
+	if _, err := f.s.CountAskQuestion(f.ws1, p64(2), "month"); !errors.Is(err, store.ErrAskQuota) {
 		t.Fatalf("over the limit: %v", err)
 	}
-	if _, err := f.s.CountAskQuestion(f.ws2, p64(0)); !errors.Is(err, store.ErrAskQuota) {
+	if _, err := f.s.CountAskQuestion(f.ws2, p64(0), "month"); !errors.Is(err, store.ErrAskQuota) {
 		t.Errorf("limit 0 (not included): %v", err)
 	}
 	if err := f.s.RefundAskQuestion(f.ws1); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := f.s.CountAskQuestion(f.ws1, p64(2)); err != nil || n != 2 {
+	if n, err := f.s.CountAskQuestion(f.ws1, p64(2), "month"); err != nil || n != 2 {
 		t.Errorf("after a refund = %d %v", n, err)
 	}
-	if n, err := f.s.CountAskQuestion(f.ws1, nil); err != nil || n != 3 {
+	if n, err := f.s.CountAskQuestion(f.ws1, nil, "month"); err != nil || n != 3 {
 		t.Errorf("no limit = %d %v", n, err)
 	}
 	if u, err := f.s.AskUsageNow(f.ws1); err != nil || u.Questions != 3 {
@@ -195,6 +195,34 @@ func TestAskQuestionQuota(t *testing.T) {
 	}
 	if u, _ := f.s.AskUsageNow(f.ws2); u.Questions != 0 {
 		t.Errorf("ws2 usage = %+v", u)
+	}
+
+	// A total allowance (a trial) counts every month, and never renews.
+	sys := tenant.System(context.Background())
+	ws2, _ := tenant.Workspace(f.ws2)
+	if _, err := f.s.Pool.Exec(sys, `INSERT INTO ask_usage (workspace_id, month, questions) VALUES ($1, date_trunc('month', now() - interval '40 days')::date, 9)`, ws2); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := f.s.CountAskQuestion(f.ws2, p64(10), "total"); err != nil || n != 10 {
+		t.Errorf("10th of a total of 10 = %d %v", n, err)
+	}
+	if _, err := f.s.CountAskQuestion(f.ws2, p64(10), "total"); !errors.Is(err, store.ErrAskQuota) {
+		t.Errorf("11th of a total of 10: %v", err)
+	}
+	if n, err := f.s.CountAskQuestion(f.ws2, p64(10), "month"); err != nil || n != 2 {
+		t.Errorf("the same usage as a monthly limit = %d %v", n, err)
+	}
+}
+
+// Organisations that exist when 0067 runs start with the assistant off;
+// new ones start with it on.
+func TestAskOptInForExistingOrganisations(t *testing.T) {
+	f := newAskFixture(t)
+	if a, err := f.s.AskSettings(tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)); err != nil || a.Enabled {
+		t.Errorf("the workspace that existed before the migration = %+v %v", a, err)
+	}
+	if a, _ := f.s.AskSettings(f.ws1); !a.Enabled {
+		t.Error("a workspace created after the migration is off")
 	}
 }
 

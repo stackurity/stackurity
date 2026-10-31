@@ -31,8 +31,12 @@ const askHoldTTL = 10 * time.Minute
 // AskSettings are the organisation's switch, limits and model.
 type AskSettings struct {
 	Enabled bool `json:"enabled"`
-	// QuestionLimit is questions a month: nil no limit, 0 not included.
+	// QuestionLimit is questions per QuestionPeriod: nil no limit, 0 not
+	// included.
 	QuestionLimit *int64 `json:"question_limit"`
+	// QuestionPeriod is "month" (a calendar month, UTC) or "total" (an
+	// allowance that never renews, for a trial).
+	QuestionPeriod string `json:"question_period"`
 	// SpendCapMicros is model spend a month, in millionths of a US dollar
 	// (nil: no cap).
 	SpendCapMicros *int64 `json:"spend_cap_micros"`
@@ -44,6 +48,7 @@ type AskSettings struct {
 // organisation: everything in AskSettings but the admin's switch.
 type AskLimits struct {
 	QuestionLimit  *int64
+	QuestionPeriod string // month (the default) or total
 	SpendCapMicros *int64
 	Model          string
 }
@@ -55,8 +60,8 @@ func (s *Store) AskSettings(ctx context.Context) (AskSettings, error) {
 		return AskSettings{}, ErrNotFound
 	}
 	var a AskSettings
-	err := s.Pool.QueryRow(tenant.System(ctx), `SELECT ask_enabled, ask_question_limit, ask_spend_cap_micros, ask_model FROM workspaces WHERE id = $1`, ws).
-		Scan(&a.Enabled, &a.QuestionLimit, &a.SpendCapMicros, &a.Model)
+	err := s.Pool.QueryRow(tenant.System(ctx), `SELECT ask_enabled, ask_question_limit, ask_question_period, ask_spend_cap_micros, ask_model FROM workspaces WHERE id = $1`, ws).
+		Scan(&a.Enabled, &a.QuestionLimit, &a.QuestionPeriod, &a.SpendCapMicros, &a.Model)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return a, ErrNotFound
 	}
@@ -87,8 +92,15 @@ func (s *Store) SetAskLimits(ctx context.Context, ws int64, l AskLimits) error {
 	if !validAskModel(l.Model) {
 		return fmt.Errorf("model %q is not a model id: %w", l.Model, ErrInvalid)
 	}
-	tag, err := s.Pool.Exec(tenant.System(ctx), `UPDATE workspaces SET ask_question_limit = $2, ask_spend_cap_micros = $3, ask_model = $4 WHERE id = $1`,
-		ws, l.QuestionLimit, l.SpendCapMicros, l.Model)
+	switch l.QuestionPeriod {
+	case "":
+		l.QuestionPeriod = "month"
+	case "month", "total":
+	default:
+		return fmt.Errorf("question period %q: %w", l.QuestionPeriod, ErrInvalid)
+	}
+	tag, err := s.Pool.Exec(tenant.System(ctx), `UPDATE workspaces SET ask_question_limit = $2, ask_question_period = $3, ask_spend_cap_micros = $4, ask_model = $5 WHERE id = $1`,
+		ws, l.QuestionLimit, l.QuestionPeriod, l.SpendCapMicros, l.Model)
 	if err == nil && tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
@@ -379,9 +391,11 @@ func (s *Store) AskGlobalSpend(ctx context.Context) (int64, error) {
 var ErrAskQuota = errors.New("monthly question limit reached")
 
 // CountAskQuestion counts a question against the workspace in ctx's
-// monthly limit (nil: none) and returns the questions asked this month,
-// this one included, or ErrAskQuota with the count unchanged.
-func (s *Store) CountAskQuestion(ctx context.Context, limit *int64) (int64, error) {
+// question limit (nil: none) for period ("month" or "total") and returns
+// the questions asked in that period, this one included, or ErrAskQuota
+// with nothing counted. Counts of one workspace are taken one at a time
+// (a transaction-scoped advisory lock).
+func (s *Store) CountAskQuestion(ctx context.Context, limit *int64, period string) (int64, error) {
 	ws, err := askWorkspace(ctx)
 	if err != nil {
 		return 0, err
@@ -389,18 +403,33 @@ func (s *Store) CountAskQuestion(ctx context.Context, limit *int64) (int64, erro
 	if limit != nil && *limit <= 0 {
 		return 0, ErrAskQuota
 	}
-	var lim any
-	if limit != nil {
-		lim = *limit
+	if period != "total" {
+		period = "month"
 	}
+	sys := tenant.System(ctx)
 	var n int64
-	err = s.Pool.QueryRow(tenant.System(ctx), `INSERT INTO ask_usage AS u (workspace_id, month, questions) VALUES ($1, `+askMonth+`, 1)
-		ON CONFLICT (workspace_id, month) DO UPDATE SET questions = u.questions + 1
-		WHERE $2::bigint IS NULL OR u.questions < $2::bigint
-		RETURNING questions`, ws, lim).Scan(&n)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return 0, ErrAskQuota
-	}
+	err = pgx.BeginTxFunc(sys, s.Pool, pgx.TxOptions{}, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(sys, `SELECT pg_advisory_xact_lock(hashtext('stackurity-ask-questions'), $1::int)`, ws); err != nil {
+			return err
+		}
+		var used int64
+		q := `SELECT COALESCE(sum(questions), 0) FROM ask_usage WHERE workspace_id = $1 AND month = ` + askMonth
+		if period == "total" {
+			q = `SELECT COALESCE(sum(questions), 0) FROM ask_usage WHERE workspace_id = $1`
+		}
+		if err := tx.QueryRow(sys, q, ws).Scan(&used); err != nil {
+			return err
+		}
+		if limit != nil && used >= *limit {
+			return ErrAskQuota
+		}
+		if _, err := tx.Exec(sys, `INSERT INTO ask_usage AS u (workspace_id, month, questions) VALUES ($1, `+askMonth+`, 1)
+			ON CONFLICT (workspace_id, month) DO UPDATE SET questions = u.questions + 1`, ws); err != nil {
+			return err
+		}
+		n = used + 1
+		return nil
+	})
 	return n, err
 }
 
