@@ -598,7 +598,7 @@ Assets worst first, paged: by `group` (`failed_collection`, `not_reporting`, `pa
 
 **Who:** viewer
 
-`{"ecosystem"}`: asks for an ecosystem Stackurity does not check yet to be supported. The ecosystem is a `key` from `GET /coverage/overview` that has components Stackurity does not support; anything else is a 400. One request per workspace and ecosystem: asking again changes nothing. Answers `ecosystem`, `label` and `requested`. Audited as `coverage.support_request` the first time. Instance administrators see the requests counted per ecosystem on `GET /admin/coverage-gaps` (`support_requests`).
+`{"ecosystem"}`: asks for an ecosystem Stackurity does not check yet to be supported. The ecosystem is a `key` from `GET /coverage/overview` that has components Stackurity does not support; anything else is a 400. One request per workspace and ecosystem: asking again changes nothing. Only people signed in to the dashboard may ask (API tokens get 403), at most 10 times a minute and 50 times a day each (429 beyond). Answers `ecosystem`, `label` and `requested`. Audited as `coverage.support_request` the first time. Instance administrators see the requests counted per ecosystem on `GET /admin/coverage-gaps` (`support_requests`).
 
 ### `GET /evaluation-gaps`
 

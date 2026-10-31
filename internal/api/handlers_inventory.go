@@ -552,8 +552,20 @@ type supportRequest struct {
 }
 
 // requestSupport records that the workspace wants an ecosystem Stackurity
-// does not check yet. Asking again changes nothing; any member may ask.
+// does not check yet. Asking again changes nothing; any member may ask,
+// signed in to the dashboard (API tokens are refused: a vote is a person's),
+// at most 10 times a minute and 50 times a day.
 func (s *Server) requestSupport(w http.ResponseWriter, r *http.Request) {
+	p := principal(r)
+	if p == nil || p.User == nil || !p.Session {
+		writeError(w, 403, "forbidden", "sign in to the dashboard to request support; API tokens cannot")
+		return
+	}
+	who := strconv.FormatInt(p.User.ID, 10)
+	if s.limited(w, r, "too many support requests; try again later",
+		limitHit{"support-request-minute", who, limitSupportMinute}, limitHit{"support-request-day", who, limitSupportDay}) {
+		return
+	}
 	var req supportRequest
 	if err := decode(r, &req); err != nil {
 		s.fail(w, r, err)
@@ -563,11 +575,7 @@ func (s *Server) requestSupport(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, badRequest("ecosystem is required"))
 		return
 	}
-	var uid *int64
-	if p := principal(r); p.User != nil {
-		uid = &p.User.ID
-	}
-	label, created, err := s.Store.RequestSupport(r.Context(), req.Ecosystem, uid)
+	label, created, err := s.Store.RequestSupport(r.Context(), req.Ecosystem, &p.User.ID)
 	if err != nil {
 		s.fail(w, r, err)
 		return
