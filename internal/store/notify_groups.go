@@ -115,10 +115,12 @@ type IssueSet int
 
 const (
 	// IssuesNew: active findings first seen in [from, to) on assets that
-	// were already announced (an asset's first scan is not "new issues").
+	// were already announced (an asset's first scan is not "new issues"),
+	// whose issue the asset did not already have (see sameIssue).
 	IssuesNew IssueSet = iota
 	// IssuesFixed: findings fixed in [from, to): resolved because the
-	// installed version changed or the component was removed.
+	// installed version changed or the component was removed, whose issue
+	// the asset no longer has, once per issue.
 	IssuesFixed
 	// IssuesOverdue: active findings past their fix deadline now.
 	IssuesOverdue
@@ -134,6 +136,16 @@ const (
 )
 
 const activeFinding = `f.status = 'open' AND f.state IN ('new', 'acknowledged', 'in_progress')`
+
+// sameIssue matches another finding p of finding f's issue (kind and key)
+// on the same asset, on any package or version. Summaries count issues an
+// asset gained or lost, not findings: an upgrade, a distribution release
+// upgrade (most packages change version, many change name) or a second
+// installed kernel moves an issue to new findings without the asset gaining
+// or losing it. Counting findings, two back-to-back release upgrades of one
+// host once reported about three times the issues it really gained and
+// five times those it lost.
+const sameIssue = `p.asset_id = f.asset_id AND p.kind = f.kind AND p.key = f.key AND p.id <> f.id`
 
 // BacklogFinding is true for a finding f (on asset a) that is part of its
 // asset's first-scan backlog: what an asset connected since 0.9 reported
@@ -151,9 +163,18 @@ func (s *Store) CountIssues(ctx context.Context, set IssueSet, from, to time.Tim
 	case IssuesNew:
 		// Issues that came back are counted as regressed, not as new.
 		cond = activeFinding + ` AND f.first_seen >= $1 AND f.first_seen < $2 AND a.announced_at IS NOT NULL AND f.first_seen > a.announced_at
-			AND (f.regressed_at IS NULL OR f.regressed_at < $1)`
+			AND (f.regressed_at IS NULL OR f.regressed_at < $1)
+			AND NOT EXISTS (SELECT 1 FROM findings p WHERE ` + sameIssue + `
+			  AND p.first_seen < $1 AND (p.resolved_at IS NULL OR p.resolved_at >= $1))`
 	case IssuesFixed:
-		cond = `f.status = 'resolved' AND f.resolved_at >= $1 AND f.resolved_at < $2 AND f.resolution_kind IN ('remediated', 'removed')`
+		// Not when the asset still has the issue, and once per issue: an
+		// issue whose findings were closed more than once in the period (an
+		// upgrade passing through an intermediate version or release) is
+		// counted on the oldest of them.
+		cond = `f.status = 'resolved' AND f.resolved_at >= $1 AND f.resolved_at < $2 AND f.resolution_kind IN ('remediated', 'removed')
+			AND NOT EXISTS (SELECT 1 FROM findings p WHERE ` + sameIssue + ` AND p.status = 'open' AND p.first_seen < $2)
+			AND NOT EXISTS (SELECT 1 FROM findings p WHERE ` + sameIssue + ` AND p.id < f.id AND p.status = 'resolved'
+			  AND p.resolved_at >= $1 AND p.resolved_at < $2 AND p.resolution_kind IN ('remediated', 'removed'))`
 		fix, title = "f.resolved_fix_group", "f.resolved_fix_title"
 	case IssuesNoLongerAffected:
 		cond = `f.status = 'resolved' AND f.resolved_at >= $1 AND f.resolved_at < $2 AND f.resolution_kind IN ('advisory_withdrawn', 'advisory_changed')`
