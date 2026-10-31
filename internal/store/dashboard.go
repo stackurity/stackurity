@@ -10,6 +10,10 @@ import (
 // finding events (migration 0019). No history table: the open count on a
 // past day is today's count walked back through what opened and closed since.
 
+// Findings of a deleted asset are deleted with it, events and all, so a
+// deleted asset drops out of the past trend too, as if it had never been
+// there.
+
 // TrendDays is how far back the open-issue trend goes.
 const TrendDays = 30
 

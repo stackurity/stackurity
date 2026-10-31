@@ -39,6 +39,7 @@ import { Sparkline, WeekBars } from "../components/Sparkline";
 import { glanceTiles, needsYou, reportingCount, slaSplit, trendText, type NeedKind, type NeedRow } from "../dashboard";
 import { uncheckedBanner } from "../unchecked";
 import { OneOffLine } from "../components/Reporting";
+import type { UpdatesSummary } from "../updates";
 import { Code, EmptyState, ErrorBox, Loading, Notice, PageHeader, RelativeTime } from "../components/ui";
 
 const TOP = 5;
@@ -179,11 +180,12 @@ const NEED_ICONS: Record<NeedKind, ReactNode> = {
 };
 
 /** A block of the Dashboard: an icon, a title, an optional link, its body. */
-function Block({ id, icon, title, count, link, children, className }: {
+function Block({ id, icon, title, badge, link, children, className }: {
   id: string;
   icon: ReactNode;
   title: string;
-  count?: number;
+  /** A short count in words beside the title ("4 things"). */
+  badge?: string;
   link?: { to: string; label: string };
   children: ReactNode;
   className?: string;
@@ -196,7 +198,7 @@ function Block({ id, icon, title, count, link, children, className }: {
         </span>
         <h2 id={id}>
           {title}
-          {count !== undefined && count > 0 && <span className="dash-count">{count.toLocaleString()}</span>}
+          {badge && <span className="dash-count">{badge}</span>}
         </h2>
         {link && (
           <Link to={link.to} className="dash-block-link">
@@ -212,7 +214,7 @@ function Block({ id, icon, title, count, link, children, className }: {
 /** 1. Needs you now: one row per thing, one action each; a green check when there is nothing. */
 function NeedsYouBlock({ rows, lastReport, loading }: { rows: NeedRow[]; lastReport: string | null; loading: boolean }) {
   return (
-    <Block id="dash-needs" icon={<IconInbox />} title="Needs you now" count={rows.length} className="dash-needs">
+    <Block id="dash-needs" icon={<IconInbox />} title="Needs you now" badge={rows.length > 0 ? plural(rows.length, "thing") : undefined} className="dash-needs">
       {loading && rows.length === 0 ? (
         <Loading />
       ) : rows.length === 0 ? (
@@ -309,14 +311,13 @@ function RiskBlock({ s, trend }: { s: FindingSummary; trend?: DashboardTrend | n
           ) : (
             <>
               <p className="dash-sla-line">
-                <Link to="/fixes/issues?overdue=false" className="dash-trend-value text-good">
-                  {sla.onTime.toLocaleString()}
-                </Link>{" "}
-                on time ·{" "}
-                <Link to="/fixes/issues?overdue=true" className={`dash-trend-value${sla.overdue > 0 ? " text-bad" : ""}`}>
-                  {sla.overdue.toLocaleString()}
-                </Link>{" "}
-                overdue
+                <Link to="/fixes/issues?overdue=false" className="dash-sla-link">
+                  <span className="dash-trend-value text-good">{sla.onTime.toLocaleString()}</span> on time
+                </Link>
+                {" · "}
+                <Link to="/fixes/issues?overdue=true" className="dash-sla-link">
+                  <span className={`dash-trend-value${sla.overdue > 0 ? " text-bad" : ""}`}>{sla.overdue.toLocaleString()}</span> overdue
+                </Link>
               </p>
               <div
                 className="dash-meter"
@@ -341,6 +342,9 @@ function RiskBlock({ s, trend }: { s: FindingSummary; trend?: DashboardTrend | n
 function CoverageBlock({ o, unchecked }: { o: Overview; unchecked: ReturnType<typeof useUnchecked> }) {
   const r = reportingCount(o.asset_status);
   const b = uncheckedBanner(unchecked.data);
+  // Updates available (not findings): a quiet pointer to that page.
+  const updates = useLoad(() => api.get<UpdatesSummary>("/inventory/updates", { limit: 1 }), []);
+  const behind = updates.data?.counts.total ?? 0;
   return (
     <Block id="dash-coverage" icon={<IconShield />} title="Coverage health" link={{ to: "/coverage", label: "Coverage" }}>
       <p className="dash-coverage-line">
@@ -365,7 +369,7 @@ function CoverageBlock({ o, unchecked }: { o: Overview; unchecked: ReturnType<ty
           <ul className="dash-coverage-parts">
             {b.parts.map((p) => (
               <li key={p.key}>
-                <Link to="/coverage" className={p.key === "need_you" ? "text-warn-strong" : undefined}>
+                <Link to={p.key === "need_you" ? "/coverage#needs-you" : "/coverage"} className={p.key === "need_you" ? "text-warn-strong" : undefined}>
                   {p.text}
                 </Link>
                 <span className="small muted">
@@ -383,6 +387,11 @@ function CoverageBlock({ o, unchecked }: { o: Overview; unchecked: ReturnType<ty
             {unchecked.data.no_advisories > 0 && <span className="muted"> ({plural(unchecked.data.no_advisories, "release")} with no published advisories)</span>}.
           </p>
         ))}
+      {behind > 0 && (
+        <p className="small muted dash-updates">
+          <Link to="/components/updates">{plural(behind, "update")} available</Link> for installed packages (not vulnerabilities).
+        </p>
+      )}
     </Block>
   );
 }
@@ -409,7 +418,12 @@ export function DashboardPage() {
   // Approvals: requests to ignore (security and admin decide), automatic fixes (organisation-wide).
   const decider = canAct("security");
   const approvals = useLoad(() => (decider ? api.get<List<IgnoreRequest>>("/ignore-requests", { status: "pending", limit: 1 }) : Promise.resolve(null)), [decider]);
-  const plans = useLoad(() => (!projectOnly ? api.get<List<Plan>>("/remediation/plans", { status: "proposed", limit: 1 }) : Promise.resolve(null)), [projectOnly]);
+  // Automatic fixes are paid: Community is never asked (it would answer 402).
+  const paid = Boolean(me?.edition && me.edition !== "community");
+  const plans = useLoad(
+    () => (paid && !projectOnly ? api.get<List<Plan>>("/remediation/plans", { status: "proposed", limit: 1 }) : Promise.resolve(null)),
+    [paid, projectOnly],
+  );
   const checkOptions = useCheckOptions((top.data?.items ?? []).flatMap(fixPlaces).map((p) => p.group_id));
   useEffect(() => {
     const was = document.title;
@@ -422,9 +436,10 @@ export function DashboardPage() {
   if (ob.data?.show_flow) return <Navigate replace to="/get-started" />;
   if (ov.error) return <ErrorBox error={ov.error} title="Could not load the Dashboard" />;
   if (!ov.data) return <Loading />;
+  const setup = ob.data && ob.data.state !== "done" ? ob.data : null;
   const checklist =
-    ob.data && ob.data.state !== "done" ? (
-      <SetupChecklist o={ob.data} onChange={ob.reload} />
+    setup ? (
+      <SetupChecklist o={setup} onChange={ob.reload} />
     ) : admin && me?.user && !me.user.mfa_enabled && !me.token ? (
       // After the checklist: an admin account without a second factor.
       <Notice kind="warn">
@@ -481,9 +496,6 @@ export function DashboardPage() {
 
   return (
     <>
-      {checklist}
-      <PackSuggestions />
-      <UnfiledAssets />
       <header className="home-head dash-head">
         <h1>
           Dashboard
@@ -503,13 +515,15 @@ export function DashboardPage() {
 
       <div className="dash-grid">
         <NeedsYouBlock rows={rows} lastReport={o.last_collection} loading={needsLoading} />
+        {/* Below what is urgent, so it comes first on a phone too. */}
+        {setup ? <SetupChecklist o={setup} onChange={ob.reload} compact /> : checklist}
+        <PackSuggestions />
+        <UnfiledAssets />
 
         <Block
           id="dash-fixes"
           icon={<IconActionPlan />}
           title="Top fixes"
-          count={n}
-          link={{ to: "/fixes", label: "See all fixes" }}
           className="dash-fixes"
         >
           <ErrorBox error={plan.error ?? top.error} title="Could not load the fixes" />
@@ -530,7 +544,7 @@ export function DashboardPage() {
               </p>
             </div>
           )}
-          {plan.data && n > (top.data?.items.length ?? 0) && (
+          {plan.data && n > 0 && (
             <p className="small">
               <Link to="/fixes?bucket=focus">See all {plural(n, "fix", "fixes")} that need you</Link>
             </p>

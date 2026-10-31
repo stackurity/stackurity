@@ -36,6 +36,7 @@ interface IncidentLike {
 interface AssetLike {
   id: number;
   name: string;
+  kind?: string;
   collection_status?: string;
   last_seen?: string;
 }
@@ -54,6 +55,39 @@ export interface NeedsInput {
   collectionIncidents?: IncidentLike[] | null;
   /** Assets, for those that stopped reporting or reported incompletely. */
   assets?: AssetLike[] | null;
+}
+
+/** How a kind of asset is named to people, as in reporting incidents (store.AssetNoun). */
+export function assetNoun(kind: string | undefined, n = 1): string {
+  const names: Record<string, [string, string]> = {
+    host: ["server", "servers"],
+    repository: ["repository", "repositories"],
+    sbom: ["SBOM", "SBOMs"],
+    managed_service: ["managed service", "managed services"],
+  };
+  const k = kind || "asset";
+  const [one, many] = names[k] ?? [k.replace(/_/g, " "), k.replace(/_/g, " ") + "s"];
+  return n === 1 ? one : many;
+}
+
+function capitalize(s: string): string {
+  return s ? s[0].toUpperCase() + s.slice(1) : s;
+}
+
+function shortDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+}
+
+/**
+ * "Server db-1: the Stackurity agent hasn't reported since 28 Oct", the
+ * wording of grouped reporting incidents, for one asset that went quiet.
+ */
+export function quietTitle(a: AssetLike): string {
+  const who = `${capitalize(assetNoun(a.kind))} ${a.name}`;
+  const since = a.last_seen ? ` since ${shortDate(a.last_seen)}` : "";
+  if (a.kind === "host") return `${who}: the Stackurity agent hasn't reported${since}`;
+  if (a.kind === "application") return `${who}: the Stackurity agent hasn't reported it${since}`;
+  return `${who} hasn't reported${since}`;
 }
 
 /** How many assets that stopped reporting get a row of their own. */
@@ -76,14 +110,21 @@ export function isReportingIncident(i: IncidentLike): boolean {
  */
 export function reportingRows(incidents: IncidentLike[] | null | undefined, assets: AssetLike[] | null | undefined): NeedRow[] {
   const inc = (incidents ?? []).filter(isReportingIncident);
+  const byId = new Map((assets ?? []).map((a) => [a.id, a]));
   if (inc.length > 0) {
-    const rows: NeedRow[] = inc.slice(0, REPORTING_ROWS).map((i) => ({
-      key: `reporting-${i.id}`,
-      kind: "reporting",
-      tone: "warn",
-      title: i.title,
-      action: { label: "Open incident", to: `/incidents/${i.id}` },
-    }));
+    const rows: NeedRow[] = inc.slice(0, REPORTING_ROWS).map((i) => {
+      // Grouped incidents ("reporting:") are titled for people already;
+      // a per-asset one ("asset:<id>", "Asset X has stopped reporting")
+      // is said the same way, from its asset.
+      const a = i.key.startsWith("asset:") ? byId.get(Number(i.key.slice(6))) : undefined;
+      return {
+        key: `reporting-${i.id}`,
+        kind: "reporting" as const,
+        tone: "warn" as const,
+        title: a ? quietTitle(a) : i.title.replace(/^Asset /, ""),
+        action: { label: "Open incident", to: `/incidents/${i.id}` },
+      };
+    });
     if (inc.length > REPORTING_ROWS)
       rows.push({
         key: "reporting-more",
@@ -99,7 +140,7 @@ export function reportingRows(incidents: IncidentLike[] | null | undefined, asse
     key: `stale-${a.id}`,
     kind: "reporting",
     tone: "warn",
-    title: `${a.name} stopped reporting`,
+    title: quietTitle(a),
     lastSeen: a.last_seen,
     action: { label: "Check it", to: `/assets/${a.id}` },
   }));
@@ -108,7 +149,7 @@ export function reportingRows(incidents: IncidentLike[] | null | undefined, asse
       key: "stale-more",
       kind: "reporting",
       tone: "warn",
-      title: `${plural(stale.length - REPORTING_ROWS, "more asset")} stopped reporting`,
+      title: `${plural(stale.length - REPORTING_ROWS, "more asset")} haven't reported`,
       action: { label: "See all", to: "/assets?status=stale" },
     });
   return rows;
@@ -180,7 +221,7 @@ export function needsYou(i: NeedsInput): NeedRow[] {
       key: `partial-${a.id}`,
       kind: "incomplete",
       tone: "warn",
-      title: `${a.name}: the last check was incomplete`,
+      title: `${capitalize(assetNoun(a.kind))} ${a.name}: the last check was incomplete`,
       action: { label: "See what was missed", to: `/assets/${a.id}?tab=coverage` },
     });
   return rows;

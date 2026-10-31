@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { glanceTiles, needsYou, reportingCount, reportingRows, slaSplit, sparkPoints, trendText } from "./dashboard.ts";
+import { assetNoun, glanceTiles, needsYou, reportingCount, reportingRows, slaSplit, sparkPoints, trendText } from "./dashboard.ts";
 
 const now = "2026-10-31T10:00:00Z";
 const eod = "2026-11-01T00:00:00Z";
@@ -19,8 +19,8 @@ test("Needs you now: most urgent first, one action each, deep links", () => {
     ignoreRequests: 1,
     fixPlans: 2,
     assets: [
-      { id: 3, name: "db-1", collection_status: "stale", last_seen: "2026-10-28T00:00:00Z" },
-      { id: 4, name: "shop", collection_status: "partial" },
+      { id: 3, name: "db-1", kind: "host", collection_status: "stale", last_seen: "2026-10-28T09:00:00Z" },
+      { id: 4, name: "shop", kind: "application", collection_status: "partial" },
       { id: 5, name: "web-1", collection_status: "ok" },
     ],
   });
@@ -32,7 +32,7 @@ test("Needs you now: most urgent first, one action each, deep links", () => {
   assert.equal(rows[1].title, "5 issues past their fix-by date");
   assert.equal(rows[1].action.to, "/fixes/issues?overdue=true");
   assert.equal(rows[2].action.to, `/fixes/issues?due_after=${encodeURIComponent(now)}&due_before=${encodeURIComponent(eod)}`);
-  assert.equal(rows[3].title, "db-1 stopped reporting");
+  assert.equal(rows[3].title, "Server db-1: the Stackurity agent hasn't reported since 28 Oct");
   assert.equal(rows[3].action.to, "/assets/3");
   assert.equal(rows[4].action.to, "/approvals");
   assert.equal(rows[5].title, "2 automatic fixes waiting for approval");
@@ -47,23 +47,25 @@ test("several SOS incidents open the filtered list", () => {
 });
 
 test("stopped reporting: incidents win over stale assets, so grouped incidents need no change", () => {
-  const stale = [{ id: 3, name: "db-1", collection_status: "stale" }];
-  // Today's per-asset incidents.
+  const stale = [{ id: 3, name: "db-1", kind: "host", collection_status: "stale", last_seen: "2026-10-28T09:00:00Z" }];
+  // Today's per-asset incidents: never "Asset ...", said as the grouped ones are.
   let rows = reportingRows([{ id: 11, kind: "collection", key: "asset:3", title: "Asset db-1 has stopped reporting" }], stale);
   assert.deepEqual(rows.map((r) => r.action.to), ["/incidents/11"]);
+  assert.equal(rows[0].title, "Server db-1: the Stackurity agent hasn't reported since 28 Oct");
   // Grouped reporting incidents (stale-reporting branch).
-  rows = reportingRows([{ id: 12, kind: "collection", key: "reporting:agent:host:2026-10-30", title: "3 servers stopped reporting" }], stale);
-  assert.equal(rows[0].title, "3 servers stopped reporting");
+  rows = reportingRows([{ id: 12, kind: "collection", key: "reporting:agent:host:2026-10-30", title: "3 servers: the Stackurity agent hasn't reported since 30 Oct" }], stale);
+  assert.equal(rows[0].title, "3 servers: the Stackurity agent hasn't reported since 30 Oct");
   // A failing integration is not about reporting; the stale assets are used.
   rows = reportingRows([{ id: 13, kind: "collection", key: "integration:2", title: "Integration failing" }], stale);
   assert.deepEqual(rows.map((r) => r.action.to), ["/assets/3"]);
 });
 
 test("stopped reporting: long lists end with one 'see all' row", () => {
-  const stale = Array.from({ length: 7 }, (_, i) => ({ id: i + 1, name: `h${i}`, collection_status: "stale" }));
+  const stale = Array.from({ length: 7 }, (_, i) => ({ id: i + 1, name: `h${i}`, kind: "repository", collection_status: "stale" }));
   const rows = reportingRows(null, stale);
   assert.equal(rows.length, 5);
-  assert.equal(rows[4].title, "3 more assets stopped reporting");
+  assert.equal(rows[4].title, "3 more assets haven't reported");
+  assert.equal(rows[0].title, "Repository h0 hasn't reported");
   assert.equal(rows[4].action.to, "/assets?status=stale");
 });
 
@@ -113,4 +115,11 @@ test("trend in words", () => {
 test("assets reporting: removed ones don't count, stale ones aren't reporting", () => {
   assert.deepEqual(reportingCount({ ok: 8, partial: 1, stale: 2, removed: 4 }), { reporting: 9, total: 11, stale: 2 });
   assert.deepEqual(reportingCount(undefined), { reporting: 0, total: 0, stale: 0 });
+});
+
+test("asset nouns follow the reporting incidents", () => {
+  assert.equal(assetNoun("host"), "server");
+  assert.equal(assetNoun("repository", 2), "repositories");
+  assert.equal(assetNoun("managed_service"), "managed service");
+  assert.equal(assetNoun(undefined), "asset");
 });

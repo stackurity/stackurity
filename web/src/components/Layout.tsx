@@ -72,11 +72,13 @@ function Shell() {
 
   // Badge counts, refreshed on navigation.
   const hasWorkspace = Boolean(me?.workspace);
-  // Automatic fixes are approved for the whole organisation.
+  // Automatic fixes are approved for the whole organisation; Community
+  // has none (the endpoint answers 402), so it is not asked.
+  const paid = Boolean(me?.edition && me.edition !== "community");
   const pending = useLoad(
     () =>
-      hasWorkspace && !projectOnly ? api.get<List<Plan>>("/remediation/plans", { status: "proposed", limit: 1 }) : Promise.resolve(null),
-    [pathname, hasWorkspace, projectOnly],
+      hasWorkspace && paid && !projectOnly ? api.get<List<Plan>>("/remediation/plans", { status: "proposed", limit: 1 }) : Promise.resolve(null),
+    [pathname, hasWorkspace, paid, projectOnly],
   );
   const sos = useLoad(
     () => (hasWorkspace ? api.get<List<Incident>>("/incidents", { status: "open", sos: "true", limit: 1 }) : Promise.resolve(null)),

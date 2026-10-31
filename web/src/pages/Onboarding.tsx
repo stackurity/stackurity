@@ -963,7 +963,7 @@ function InviteStep({ project, onFinish, pending }: { project: Project; onFinish
  * The Dashboard's checklist while setup is not done: what is left, each a link back
  * into the flow. Admins only.
  */
-export function SetupChecklist({ o, onChange }: { o: Onboarding; onChange: () => void }) {
+export function SetupChecklist({ o, onChange, compact }: { o: Onboarding; onChange: () => void; compact?: boolean }) {
   const act = useAction();
   const { me } = useAuth();
   // Each item is one click to the screen that does it. A project comes
@@ -982,6 +982,40 @@ export function SetupChecklist({ o, onChange }: { o: Onboarding; onChange: () =>
     const ok = await act.run(() => api.put("/onboarding", { state: "done" }));
     if (ok !== undefined) onChange();
   };
+  const list = (
+    <ul className="setup-list">
+      {items.map((i) => (
+        <li key={i.text} className={i.done ? "done" : undefined}>
+          <span className="onboard-dot" aria-hidden="true">
+            {i.done ? "✓" : ""}
+          </span>
+          {i.done ? (
+            <span>
+              {i.text}
+              <span className="sr-only"> (done)</span>
+            </span>
+          ) : (
+            <Link to={i.to}>{i.text}</Link>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+  // On the Dashboard it is one line under what needs you, opened on demand.
+  if (compact)
+    return (
+      <details className="setup-compact">
+        <summary>
+          <span className="onboard-dot" aria-hidden="true" />
+          {plural(left, "setup step")} left
+        </summary>
+        <ErrorBox error={act.error} title="Could not hide the checklist" />
+        {list}
+        <button type="button" className="btn btn-link btn-sm" onClick={hide} disabled={act.pending}>
+          Hide the checklist
+        </button>
+      </details>
+    );
   return (
     <section className="card setup-checklist" aria-labelledby="setup-h">
       <div className="card-head">
@@ -991,23 +1025,7 @@ export function SetupChecklist({ o, onChange }: { o: Onboarding; onChange: () =>
         </button>
       </div>
       <ErrorBox error={act.error} title="Could not hide the checklist" />
-      <ul className="setup-list">
-        {items.map((i) => (
-          <li key={i.text} className={i.done ? "done" : undefined}>
-            <span className="onboard-dot" aria-hidden="true">
-              {i.done ? "✓" : ""}
-            </span>
-            {i.done ? (
-              <span>
-                {i.text}
-                <span className="sr-only"> (done)</span>
-              </span>
-            ) : (
-              <Link to={i.to}>{i.text}</Link>
-            )}
-          </li>
-        ))}
-      </ul>
+      {list}
     </section>
   );
 }
