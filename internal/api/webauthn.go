@@ -393,11 +393,19 @@ func (s *Server) finishPasskeyRegistration(w http.ResponseWriter, r *http.Reques
 		s.fail(w, r, err)
 		return
 	}
+	hadEmail, err := s.Store.HasEmailMFA(r.Context(), u.ID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	pk, issued, err := s.Store.AddPasskey(r.Context(), u.ID, store.NewPasskey{CredentialID: cred.ID, Name: name, Record: record,
 		BackedUp: cred.Flags.BackupState, Discoverable: cred.Extensions.RK}, hashes)
 	if err != nil {
 		s.fail(w, r, err)
 		return
+	}
+	if hadEmail {
+		s.auditAccount(r, u, "auth.mfa_disabled", map[string]any{"methods": []string{store.MFAEmail}, "reason": "replaced by a passkey"})
 	}
 	if !issued {
 		codes = nil
@@ -708,7 +716,15 @@ func (s *Server) stepUpCode(w http.ResponseWriter, r *http.Request) {
 	if s.limited(w, r, "too many codes tried; wait a few minutes", limitHit{"mfa-user", itoa(u.ID), limitMFAPerUser}) {
 		return
 	}
-	method, ok, why, err := s.checkSecondFactor(r, u.ID, req.Code)
+	var method, why string
+	var ok bool
+	on, err := s.Store.HasEmailMFA(r.Context(), u.ID)
+	if err == nil && on {
+		method, why = store.MFAEmail, "invalid"
+		ok, _, err = s.Store.UseAccountEmailCode(r.Context(), u.ID, store.EmailCodeHash(sessionSecret(r), normaliseCode(req.Code)), false, mfaChallengeFailures)
+	} else if err == nil {
+		method, ok, why, err = s.checkSecondFactor(r, u.ID, req.Code)
+	}
 	if err != nil {
 		s.fail(w, r, err)
 		return
