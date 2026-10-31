@@ -8,6 +8,7 @@ import { assetKindLabel, plural } from "../../format";
 import {
   STATE_LABEL,
   STATE_TONE,
+  ending,
   filterOrgs,
   flagLabel,
   share,
@@ -28,7 +29,7 @@ function cohortColumns(): Column<TrialCohort>[] {
     { key: "converted", header: "Paid", numeric: true, cell: (c) => share(c.converted, c.signed_up) },
     { key: "trialing", header: "In trial", numeric: true, cell: (c) => c.trialing },
     { key: "expired", header: "Ended unpaid", numeric: true, cell: (c) => c.expired },
-    { key: "cancelled", header: "Cancelled", numeric: true, cell: (c) => c.cancelled },
+    { key: "cancelled", header: "Cancelled (incl. ending)", numeric: true, cell: (c) => c.cancelled },
   ];
 }
 
@@ -63,6 +64,7 @@ function orgColumns(quietDays: number): Column<TrialOrg>[] {
       cell: (o) => (
         <>
           <Badge status={o.state} tone={STATE_TONE[o.state]} label={STATE_LABEL[o.state]} title={`Billing: ${o.billing_status}`} />
+          {ending(o) && <div className="small muted">ends with the paid period</div>}
           {o.disabled && <div className="small muted">disabled</div>}
         </>
       ),
@@ -152,7 +154,7 @@ export function TrialsPage() {
               sub={`${plural(t.went_quiet, "trial")} quiet for ${d.quiet_days}+ days`}
               tone={t.went_quiet > 0 ? "warn" : undefined}
             />
-            <StatTile label="Paid" value={share(t.converted, t.signed_up)} sub={`${t.expired} ended unpaid, ${t.cancelled} cancelled`} />
+            <StatTile label="Paid" value={share(t.converted, t.signed_up)} sub={`${t.expired} ended unpaid, ${t.cancelled} cancelled (incl. ending)`} />
           </div>
           <p className="small muted">
             As of <RelativeTime iso={d.generated_at} />.{" "}
