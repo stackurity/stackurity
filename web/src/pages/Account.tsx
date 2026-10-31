@@ -1,10 +1,11 @@
 import { useEffect } from "react";
-import { Link, useLocation } from "react-router";
+import { Link, Navigate, useLocation } from "react-router";
 import { useAuth } from "../auth";
 import { Card, KeyValues, PageHeader } from "../components/ui";
 import { MyEmailPreferences } from "./EmailPreferences";
 import { LinkedSlackAccounts } from "./SlackLink";
 import { TwoFactorCard } from "./TwoFactor";
+import { movedSettingsTarget } from "../settingsNav";
 import { PasswordCard } from "./Password";
 
 /**
@@ -13,20 +14,24 @@ import { PasswordCard } from "./Password";
  */
 export function AccountPage() {
   const { me, meta } = useAuth();
-  const { hash } = useLocation();
+  const { pathname, search, hash } = useLocation();
 
-  // Links to #slack, #mfa or #email land on that section once it is on screen.
+  // Links to #slack or #email land on that section once it is on screen.
   useEffect(() => {
     if (!hash) return;
     const t = setTimeout(() => document.getElementById(hash.slice(1))?.scrollIntoView({ block: "start" }), 50);
     return () => clearTimeout(t);
   }, [hash]);
 
+  // Two-factor (#mfa) has its own section now.
+  const moved = movedSettingsTarget(pathname, search, hash);
+  if (moved) return <Navigate replace to={moved} />;
+
   const u = me?.user;
   const orgs = me?.workspaces ?? [];
   return (
     <>
-      <PageHeader title="Your account" sub="Who you are signed in as, and what acts as you from other tools." />
+      <PageHeader title="Profile and password" sub="Who you are signed in as, and what acts as you from other tools." />
       <Card title="Profile">
         <KeyValues
           entries={[
@@ -51,7 +56,11 @@ export function AccountPage() {
         />
       </Card>
       <PasswordCard />
-      <TwoFactorCard />
+      <Card title="Two-factor sign-in">
+        <p>
+          <Link to="/account/two-factor">Passkeys, authenticator app and recovery codes</Link>
+        </p>
+      </Card>
       {meta?.email_preferences && <MyEmailPreferences />}
       <section id="slack" className="card">
         <header className="card-head">
@@ -68,6 +77,16 @@ export function AccountPage() {
           <Link to="/settings/ai-assistants#connected">Assistants you allowed to use Stackurity as you</Link>
         </p>
       </Card>
+    </>
+  );
+}
+
+/** /account/two-factor: the signed-in person's own second factors. */
+export function AccountTwoFactorPage() {
+  return (
+    <>
+      <PageHeader title="Two-factor sign-in" sub="A second step after your password, so a stolen password alone cannot sign in as you." />
+      <TwoFactorCard />
     </>
   );
 }

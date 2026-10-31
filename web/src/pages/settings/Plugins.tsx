@@ -125,7 +125,7 @@ export function PluginsPage() {
     <>
       <PageHeader help="cloud-plugins"
         title="Plugins"
-        sub="Installed collector plugins and what each one needs. Review permissions, credentials and network access before using one in an integration."
+        sub="Collector plugins on this server, with the permissions, credentials and network access each one needs."
       />
       <ErrorBox error={res.error} title="Could not load plugins" />
       {!res.data && !res.error && <Loading />}

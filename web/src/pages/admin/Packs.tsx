@@ -137,7 +137,7 @@ export function PacksPage() {
     <>
       <PageHeader
         title="Stack packs"
-        sub="Packs teach Stackurity to read more technologies. Each runs in a sandbox with no network or disk access, and only signed packs are installed. Installing one applies to every workspace."
+        sub="Signed, sandboxed packs that teach Stackurity to read more technologies, for every workspace."
       />
       {msg && <Notice kind="success">{msg}</Notice>}
       <ErrorBox error={act.error} title="That did not work" />

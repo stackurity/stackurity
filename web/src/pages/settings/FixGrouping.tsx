@@ -48,7 +48,7 @@ export function FixGroupingPage() {
       <ErrorBox error={act.error} title="Could not save the setting" />
       {!res.data && !res.error && <Loading />}
       {current && (
-        <Card>
+        <Card title="Fix lists">
           <fieldset className="field" disabled={!can("admin") || act.pending}>
             <legend>Show the same fix in several places as</legend>
             <ul className="choice-list">

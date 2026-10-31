@@ -19,8 +19,19 @@ export function JobsPage() {
     { key: "id", header: "#", numeric: true, cell: (j) => j.id },
     { key: "kind", header: "Kind", cell: (j) => <span className="mono">{j.kind}</span> },
     { key: "payload", header: "Payload", cell: (j) => <span className="mono small break">{JSON.stringify(j.payload)}</span> },
-    { key: "state", header: "State", cell: (j) => <Badge status={jobState(j)} /> },
-    { key: "attempts", header: "Attempts", numeric: true, cell: (j) => `${j.attempts}/${j.max_attempts}` },
+    // Attempts sit under the state, so the table fits next to the Settings list.
+    {
+      key: "state",
+      header: "State",
+      cell: (j) => (
+        <>
+          <Badge status={jobState(j)} />
+          <div className="small muted">
+            attempt {j.attempts} of {j.max_attempts}
+          </div>
+        </>
+      ),
+    },
     { key: "run", header: "Run at", cell: (j) => <RelativeTime iso={j.run_at} /> },
     { key: "finished", header: "Finished", cell: (j) => <RelativeTime iso={j.done_at ?? j.failed_at} empty="—" /> },
     { key: "error", header: "Last error", cell: (j) => (j.last_error ? <span className="text-bad small break">{j.last_error}</span> : <span className="muted">—</span>) },
@@ -50,7 +61,7 @@ export function JobsPage() {
       </div>
       <ErrorBox error={res.error} title="Could not load jobs" />
       {!res.data && !res.error && <Loading />}
-      {res.data && res.data.items.length === 0 && <EmptyState title="No jobs" />}
+      {res.data && res.data.items.length === 0 && <EmptyState title="Nothing waiting or failed">Background work is up to date.</EmptyState>}
       {res.data && res.data.items.length > 0 && <Table caption="Jobs" columns={columns} rows={res.data.items} rowKey={(j) => j.id} />}
     </>
   );

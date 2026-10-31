@@ -14,7 +14,7 @@ export function ConflictsPage() {
     <>
       <PageHeader help="admin-tools"
         title="Identity conflicts"
-        sub="A collector reported identifiers that match more than one asset. Choose the asset to keep; the others are merged into it (inventory, coverage, history and relations move over)."
+        sub="Assets that might be the same machine reported twice. Choose the one to keep; the others merge into it with their history."
       />
       {msg && <Notice kind="success">{msg}</Notice>}
       <ErrorBox error={res.error} title="Could not load conflicts" />

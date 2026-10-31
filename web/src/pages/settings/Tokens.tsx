@@ -39,8 +39,19 @@ export function TokensPage() {
   const rows = (res.data?.items ?? []).filter((t) => showRevoked || !t.revoked_at);
 
   const columns: Column<Token>[] = [
-    { key: "name", header: "Name", cell: (t) => t.name },
-    { key: "prefix", header: "Prefix", cell: (t) => <span className="mono">{t.prefix}…</span> },
+    // The prefix and when it was made sit under the name, so the table fits next to the Settings list.
+    {
+      key: "name",
+      header: "Name",
+      cell: (t) => (
+        <>
+          <div>{t.name}</div>
+          <div className="small muted">
+            <span className="mono">{t.prefix}…</span> · created <RelativeTime iso={t.created_at} />
+          </div>
+        </>
+      ),
+    },
     { key: "role", header: "Role", cell: (t) => <span className={`role-pill role-${t.role}`}>{t.role}</span> },
   ];
   if (admin)
@@ -52,7 +63,6 @@ export function TokensPage() {
     });
   columns.push(
     { key: "state", header: "Status", cell: (t) => <Badge status={tokenState(t)} /> },
-    { key: "created", header: "Created", cell: (t) => <RelativeTime iso={t.created_at} /> },
     { key: "expires", header: "Expires", cell: (t) => <RelativeTime iso={t.expires_at} empty="never" /> },
     { key: "used", header: "Last used", cell: (t) => <RelativeTime iso={t.last_used_at} /> },
     {
@@ -117,7 +127,7 @@ export function TokensPage() {
       </div>
       <ErrorBox error={res.error} title="Could not load tokens" />
       {!res.data && !res.error && <Loading />}
-      {res.data && rows.length === 0 && <EmptyState title="No tokens" />}
+      {res.data && rows.length === 0 && <EmptyState title="No API tokens yet">Nothing can use the API as this workspace until you create one below.</EmptyState>}
       {rows.length > 0 && <Table caption="API tokens" columns={columns} rows={rows} rowKey={(t) => t.id} rowClassName={(t) => (t.revoked_at ? "row-removed" : undefined)} />}
     </>
   );

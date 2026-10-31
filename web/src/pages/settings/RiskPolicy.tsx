@@ -11,10 +11,11 @@ import {
   type SOSRule,
 } from "../../api";
 import { useAuth } from "../../auth";
-import { forgetRiskPolicy, useAction, useLoad } from "../../hooks";
+import { forgetRiskPolicy, useAction, useLoad, useUnsavedChanges } from "../../hooks";
+import { confirmAction } from "../../components/ConfirmDialog";
 import { PriorityBadge, SosBadge } from "../../components/Badge";
 import { Table, type Column } from "../../components/Table";
-import { Card, ErrorBox, Loading, Notice, PageHeader, RelativeTime } from "../../components/ui";
+import { Card, DangerAction, DangerZone, ErrorBox, Loading, Notice, PageHeader, RelativeTime } from "../../components/ui";
 import { plural } from "../../format";
 
 const SEVERITY_KEYS = ["critical", "high", "medium", "low", "none", "unknown"];
@@ -271,6 +272,8 @@ export function RiskPolicyPage() {
   useEffect(() => {
     if (res.data) setP(structuredClone(res.data.policy));
   }, [res.data]);
+  // Leaving with edits not saved asks first.
+  useUnsavedChanges(Boolean(res.data && p && JSON.stringify(p) !== JSON.stringify(res.data.policy)));
 
   if (res.error) return <ErrorBox error={res.error} title="Could not load risk policy" />;
   if (!res.data || !p) return <Loading />;
@@ -309,7 +312,16 @@ export function RiskPolicyPage() {
     if (!exceptionDaysValid || !previewed) return;
     void save();
   };
-  const reset = () => {
+  const reset = async () => {
+    if (
+      !(await confirmAction({
+        title: "Load the built-in defaults?",
+        message: "Every score, deadline and SOS rule in the form goes back to Stackurity's defaults.",
+        consequence: "Nothing changes until you preview and save them.",
+        action: "Load defaults",
+      }))
+    )
+      return;
     // The defaults go into the form; they are previewed and saved like any change.
     setSaved(false);
     setP(structuredClone(res.data!.default));
@@ -332,13 +344,6 @@ export function RiskPolicyPage() {
               "Never changed: the built-in defaults apply."
             )}
           </>
-        }
-        actions={
-          admin && (
-            <button type="button" className="btn" onClick={reset} disabled={act.pending}>
-              Load defaults
-            </button>
-          )
         }
       />
       {!admin && <Notice kind="info">Read-only: only administrators can change the risk policy.</Notice>}
@@ -575,7 +580,7 @@ export function RiskPolicyPage() {
         <ErrorBox error={act.error} title="Policy not saved" />
         {saved && <Notice kind="success">Risk policy saved. Priorities are recalculated on the next notification cycle (within a few minutes).</Notice>}
         {admin && (
-          <div className="form-actions bulkbar">
+          <div className={`form-actions save-bar${dirty ? " save-bar-dirty" : ""}`}>
             <button type="button" className="btn" disabled={!dirty || !exceptionDaysValid || previewAct.pending || previewed} onClick={() => void runPreview()}>
               {previewAct.pending ? "Previewing…" : preview && !previewed ? "Preview again" : "Preview impact"}
             </button>
@@ -603,6 +608,13 @@ export function RiskPolicyPage() {
           </div>
         )}
       </form>
+      {admin && (
+        <DangerZone>
+          <DangerAction title="Go back to the defaults" action="Load defaults" onClick={() => void reset()} disabled={act.pending}>
+            Puts Stackurity's built-in scores, deadlines and SOS rules into the form, to preview and save like any change.
+          </DangerAction>
+        </DangerZone>
+      )}
     </>
   );
 }

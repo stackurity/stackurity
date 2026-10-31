@@ -25,6 +25,9 @@ export async function fillParams(path, get) {
     "incidents/:id": async () => `incidents/${(await first("/incidents?status=all&limit=1"))?.id ?? ""}`,
     "components/:id": async () => `components/${(await first("/components?limit=1"))?.id ?? ""}`,
     "settings/integrations/new/:kind": async () => "settings/integrations/new/slack",
+    "settings/projects/:id": async () => `settings/projects/${(await first("/projects"))?.id ?? ""}`,
+    "settings/integrations/channels/:id": async () => `settings/integrations/channels/${(await first("/channels"))?.id ?? ""}`,
+    "settings/vex/:id": async () => `settings/vex/${(await first("/vex/documents?limit=1"))?.id ?? ""}`,
   };
   if (!path.includes(":")) return "/" + path;
   const f = fills[path];
@@ -34,12 +37,23 @@ export async function fillParams(path, get) {
 }
 
 /**
+ * Visited whatever App.tsx says: Users has the widest table in Settings, and
+ * the delivery log is a Settings section reached through a query.
+ */
+export const EXTRA_ROUTES = ["/settings/users", "/settings/integrations?tab=deliveries"];
+
+/** Every page that opens in the Settings shell, next to the Settings list. */
+const SETTINGS = ["/settings", "/account", "/admin", "/intelligence", "/updates", "/integrations"];
+
+/**
  * Checks beyond the ones every route gets (the sidebar covers the screen,
  * no empty band at the bottom): [route prefix, widths, check names].
  * "no-horizontal-scroll": the page is not wider than the screen.
+ * "no-table-scroll": no table scrolls sideways inside its box, or is wider
+ * than what holds it (on a phone a table may still scroll sideways).
  */
 export const EXTRA_CHECKS = [
-  ["/settings", [1280], ["no-horizontal-scroll"]],
+  ...SETTINGS.map((p) => [p, [1280], ["no-horizontal-scroll", "no-table-scroll"]]),
   ["/", [390], ["no-horizontal-scroll"]],
 ];
 

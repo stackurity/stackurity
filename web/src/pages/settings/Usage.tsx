@@ -66,7 +66,7 @@ export function UsagePage() {
     <>
       <PageHeader
         title="Usage"
-        sub="How many assets and projects this organisation has, and its limits. At a limit new ones are refused; everything already here is kept and checked."
+        sub="Assets and projects against this organisation's limits. At a limit new ones are refused; nothing here is removed."
         actions={
           meta?.billing ? (
             <Link className="btn" to="/settings/billing">

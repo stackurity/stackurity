@@ -1030,7 +1030,7 @@ export function DeliveriesTab({ channels, admin }: { channels: Channel[]; admin:
       <ErrorBox error={act.error} title="Retry failed" />
       <ErrorBox error={res.error} title="Could not load deliveries" />
       {!res.data && !res.error && <Loading />}
-      {res.data && res.data.items.length === 0 && <EmptyState title="No deliveries" />}
+      {res.data && res.data.items.length === 0 && <EmptyState title="Nothing sent yet">Messages appear here as they are sent; none has failed.</EmptyState>}
       {res.data && res.data.items.length > 0 && (
         <>
           <Table
