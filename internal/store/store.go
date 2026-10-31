@@ -28,6 +28,9 @@ type Store struct {
 	// SessionIdle ends a browser session unused for this long, on top of
 	// SessionTTL; zero means no idle timeout (STACKURITY_SESSION_IDLE_TIMEOUT).
 	SessionIdle time.Duration
+	// StaleAfter is how long an agent may stay silent before its server is
+	// stale (STACKURITY_STALE_AFTER); zero means DefaultStaleAfter.
+	StaleAfter time.Duration
 }
 
 func New(pool *pgxpool.Pool) *Store { return &Store{Pool: pool} }

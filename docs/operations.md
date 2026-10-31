@@ -29,6 +29,30 @@ Notifications to people are grouped (see [the API reference](api.md#incidents-an
 
 Resolved incidents and escalations are not sent one by one, so upgrading a server that closes thousands of findings, or thousands of incidents passing their deadline at once, produces at most one message per route. Jira channels are the exception: they keep one issue per incident, and each escalation adds a comment to its issue. If a channel still receives more than a few messages an hour, look at `SELECT route_id, event, count(*) FROM deliveries WHERE created_at > now() - interval '1 day' GROUP BY 1, 2 ORDER BY 3 DESC;`: usually two routes send to the same channel, and one of them can be deleted or narrowed.
 
+## Assets that stop reporting
+
+Each asset records how its reports reach Stackurity, and Stackurity works out from that, and from the asset's own history, when the next one is due. The asset page shows it under **Ownership & context** (`reporting` in the API).
+
+| Source | Which assets | Overdue after |
+|---|---|---|
+| The agent | Servers (Linux and Windows) and the applications the agent reads on them | `STACKURITY_STALE_AFTER` (48 hours) |
+| A scan upload | Repositories, images and SBOMs sent with an API token: `stackurity scan`, the GitHub Action, a CI job | Twice the median gap between its last few scans, and at least 48 hours. Scanned once: never (one-off) |
+| A manual upload | SBOMs and scans uploaded in the dashboard | As a scan upload |
+| An integration | Git repositories, images and plugins (AWS, Kubernetes) the server reads on a schedule | Twice the integration's schedule, and at least 48 hours, for scoring only: no incident |
+
+Reports less than an hour apart count as one (the agent's OS and software batches, a scan's several lockfiles), and only the latest six count, so a repository moved from weekly to daily scans is judged by its new habit within a week. On the asset page, **Edit** under **Ownership & context** sets **Expected reporting** instead: **Daily** (overdue after 48 hours), **Weekly** (after 8 days, a week and a day's grace) or **One-off or manual** (never overdue).
+
+What happens when an asset is overdue:
+
+- **A server.** Its status becomes `stale`, its findings are scored × 0.8 (verification `stale`, [verification.md](verification.md#evidence-states)) and kept, and its workspace gets an incident titled "Server web-1: the Stackurity agent hasn't reported since 29 Oct 14:05 UTC". Servers that went quiet on the same day share one incident ("3 servers: the Stackurity agent hasn't reported since 29 Oct"), and the applications on them are listed in it rather than raising their own ("… and its 3 applications"). It is P3 when one of them is production (the risk policy's production environments), P4 otherwise. Every message says the services may be fine (this is about Stackurity's view), that their findings are not refreshed, the likely causes (the server is off or was rebuilt, the agent service stopped, or it cannot reach the server) and the fix: `systemctl status stackurity-agent` and `journalctl -u stackurity-agent -n 50`, then `systemctl restart stackurity-agent`; on Windows, the scheduled task or service wrapper that runs `stackurity.exe agent`.
+- **A repository, image or SBOM scanned regularly.** As a server, titled "Repository shop hasn't been scanned since 26 Oct (usually every day)", or "5 repositories haven't been scanned since 26 Oct". The likely cause is the CI job or scheduled scan that uploads it; the scan commands are in **Settings → Integrations → CI pipeline**. It is P4 and appears in the daily and weekly summaries only: no message right away, no Jira, PagerDuty or ServiceNow record. Set the asset to **Daily** or **Weekly** and mark it production to make it P3, told right away and tracked.
+- **A repository, image or SBOM scanned once.** Nothing is expected of it: it is never stale and never opens an incident, and its findings are not scored as stale. The asset page and Home say "Scanned once on 26 Oct. Results stay as of that date", each of its findings carries `as_of`, and the weekly summary has one line about such assets. After 90 days the note says how old the results are.
+- **An asset an integration reports.** No incident: a failing integration has its own ("Integration X is failing"). An asset the integration runs fine without (a deleted Kubernetes workload) is marked stale and its page says it is no longer seen by its integration.
+
+An asset that reports again within a day of its incident closing, then goes quiet again, reopens that incident rather than announcing a new one, so a flaky agent does not raise an alert every day. Summaries list these incidents under **Not reporting to Stackurity (your services may be fine)**, apart from problems with Stackurity itself under **Stackurity needs attention**.
+
+Upgrading to 0.13.10 settles the incidents the old rule opened ("Asset X has stopped reporting", one per asset). Those of assets scanned once are resolved by the migration, without a recovery message; a Jira issue or ServiceNow record linked to one is closed saying so. Those of servers and regularly scanned assets are replaced on the dispatcher's next cycle by the grouped incident, and their records close with "Replaced by #N". People who were told about every server in a group are not told again; Jira, PagerDuty and ServiceNow get the grouped incident's record.
+
 ## Recommended alerts
 
 [`deploy/prometheus/stackurity-alerts.yml`](../deploy/prometheus/stackurity-alerts.yml) holds the rules. Load it with `rule_files` in `prometheus.yml`, or with the Helm chart set `metrics.enabled=true` and `metrics.prometheusRule.enabled=true` to get the same rules as a `PrometheusRule` (created only when the cluster serves `monitoring.coreos.com/v1`; add `metrics.prometheusRule.labels` matching your Prometheus's `ruleSelector`).
@@ -214,7 +238,7 @@ A due notification has not been picked up for over 15 minutes, so people are not
 
 ### StackurityAssetsStoppedReporting
 
-At least five more assets went stale within an hour (an asset is stale when nothing reported it for `STACKURITY_STALE_AFTER`, 48 hours by default). Many at once usually has one cause:
+At least five more assets went stale within an hour (an asset is stale when its next report is overdue: for a server, nothing for `STACKURITY_STALE_AFTER`, 48 hours by default; see [Assets that stop reporting](#assets-that-stop-reporting)). Assets scanned once are never stale. Many at once usually has one cause:
 
 - Agents cannot reach the server: a DNS, firewall, proxy or certificate change. Run `stackurity diagnostics --server URL` on one of the hosts.
 - Their tokens were revoked, or their workspace was disabled (the agent logs `HTTP 401`).
@@ -223,7 +247,7 @@ At least five more assets went stale within an hour (an asset is stale when noth
 
 ### StackurityAssetsStale
 
-Some assets have not reported for over a day after being marked stale. Their inventory and findings are out of date, their coverage says so, and each workspace has a collection incident for them. Decommissioned hosts belong deleted (or merged), so they stop counting; others need their agent or integration fixed.
+Some assets have not reported for over a day after being marked stale. Their inventory and findings are out of date, their coverage says so, and each workspace has a reporting incident for its servers and scans (an integration's assets have the integration's). Decommissioned hosts belong deleted (or merged), so they stop counting; a repository scanned now and then can be set to **One-off or manual**; others need their agent, CI job or integration fixed.
 
 ### Sign-in refused: too many login attempts
 
@@ -393,7 +417,7 @@ A host's agent stops reporting (host down, agent removed, network change).
 1. On staging, stop the agent on one host (`sudo systemctl stop stackurity-agent`) or block its route to the server.
 2. Wait past `STACKURITY_STALE_AFTER` (48 hours; set it lower on staging, for example `STACKURITY_STALE_AFTER=30m`). The `mark-stale-assets` task checks every 10 minutes.
 
-Expected: the asset is marked stale and counted in `stackurity_assets_stale`; its coverage says no collection since its last report and that the inventory may be out of date; its workspace gets a P3 collection incident ("Asset ... has stopped reporting"); its findings stay as they were. Many at once fire [StackurityAssetsStoppedReporting](#stackurityassetsstoppedreporting).
+Expected: the asset is marked stale and counted in `stackurity_assets_stale`; its coverage says no collection since its last report and that the inventory may be out of date; its workspace gets a collection incident ("Server web-1: the Stackurity agent hasn't reported since …", P3 for a production server); its findings stay as they were. Many at once fire [StackurityAssetsStoppedReporting](#stackurityassetsstoppedreporting).
 
 Recover: start the agent. Its next report makes the asset current and resolves the incident.
 

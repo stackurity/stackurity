@@ -4,6 +4,7 @@ import { PRIORITIES, SEVERITIES, type Finding, type FindingSummary } from "../ap
 import { epssTitle, percent, plural } from "../format";
 import { Badge, KevBadge, PriorityBadge, SeverityBadge, SosBadge, FindingStateBadge } from "./Badge";
 import { EvidenceStateBadge } from "./Provenance";
+import { reportDate } from "../reporting";
 import { Assignee, DueDate } from "./Workflow";
 import { Table, type Column } from "./Table";
 import { RelativeTime, StatTile } from "./ui";
@@ -171,6 +172,12 @@ export function FindingsTable({
             </>
           )}
           <EvidencePills f={f} />
+          {f.as_of && (
+            <>
+              {" "}
+              <Badge status="as-of" tone="muted" label={`as of ${reportDate(f.as_of)}`} title="The asset was scanned once; this was true as of then" />
+            </>
+          )}
           {f.vex && (
             <>
               {" "}

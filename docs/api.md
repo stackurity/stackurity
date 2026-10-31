@@ -414,7 +414,7 @@ The agent reports the progress and result of a remediation action.
 
 **Who:** viewer
 
-Inventory, coverage and status counts, including assets by coverage state (`asset_coverage`) and components by row coverage (`component_coverage`).
+Inventory, coverage and status counts, including assets by coverage state (`asset_coverage`), components by row coverage (`component_coverage`) and `one_off`: the assets scanned once, per `kind`, with `count` and the `oldest` and `newest` dates their results are from.
 
 ### `GET /facets`
 
@@ -434,6 +434,8 @@ Searches the current workspace for one query (`q`, `limit`). See [Search](#searc
 
 Lists assets, paged. Query: `kind`, `environment`, `status` (`collection_status`: `ok`, `partial`, `stale`, or `removed` for an application gone from its server), `owner_team_id`, `q`, `reboot_required=true` (hosts running older code than is installed), `exposed=true|false` and `unfiled=true` (assets in no active project). Each asset has `projects`, the active projects it is in that the caller can see.
 
+Each asset also has `reporting` (0.13.10): `source` (`agent`, `scan`, `integration`, `manual`, or empty before its first report), `override` (`auto`, `daily`, `weekly`, `one_off`), `mode` (`agent`, `scheduled`, `one_off`, `integration`, `unknown`), `runs` (reports an hour apart or more, up to 6), `usual_seconds` (the median gap between them), `due_after_seconds` (how long after its last report it is overdue; `null` when nothing is expected) and, for a `one_off` asset, `as_of` (the date its results are from). See [Assets that stop reporting](operations.md#assets-that-stop-reporting).
+
 `exposed` is the exposure risk scoring uses: `internet_exposed` when set by hand, else what a collector observed (a Kubernetes workload's `exposure`, or for an image the workloads deployed as it).
 
 ### `GET /assets/{id}`
@@ -446,7 +448,7 @@ One asset with its identifiers, and `agent_polled_at` (see [Check again](#check-
 
 **Who:** engineer
 
-Sets the name, environment, owner, criticality, exposure and tags.
+Sets the name, environment, owner, criticality, exposure and tags, and `report_override`: how often the asset is expected to report (`auto`, learned from its reports; `daily`, overdue after 48 hours; `weekly`, after 8 days; `one_off`, never). Another value is 400.
 
 ### `DELETE /assets/{id}`
 
@@ -596,7 +598,7 @@ Resolves a conflict by merging assets. The answer lists `projects_joined` and `g
 
 **Who:** viewer
 
-Vulnerability and end-of-life findings, paged; SOS, priority, known-exploited and most severe first (`sort=asset` orders by asset name first). Resolved findings carry `resolution_kind` and `resolution_detail` ([Why a finding closed](#why-a-finding-closed)). Each finding carries FIRST's EPSS for its CVEs: `epss` (the probability, 0 to 1, of exploitation in the next 30 days), `epss_percentile`, `epss_date`, `epss_model_version` and `epss_cve`, the CVE they are for: the highest-scored among the finding's `key` and the CVEs its advisories list as aliases or upstream ids. All null when none of them has a score. `vex` is the latest imported [VEX](#vex) statement about the finding's component version and vulnerability (null when none): `statement_id`, `document_id`, `source`, `vulnerability`, `status`, `justification`, `impact_statement`, `action_statement`, `status_notes`, `effective_at`, and for `not_affected` the approval request (`request_id`, `request_status`) and whether it ignores the finding now (`applied`). Declined statements are not shown.
+Vulnerability and end-of-life findings, paged; SOS, priority, known-exploited and most severe first (`sort=asset` orders by asset name first). Resolved findings carry `resolution_kind` and `resolution_detail` ([Why a finding closed](#why-a-finding-closed)). Each finding carries FIRST's EPSS for its CVEs: `epss` (the probability, 0 to 1, of exploitation in the next 30 days), `epss_percentile`, `epss_date`, `epss_model_version` and `epss_cve`, the CVE they are for: the highest-scored among the finding's `key` and the CVEs its advisories list as aliases or upstream ids. All null when none of them has a score. `vex` is the latest imported [VEX](#vex) statement about the finding's component version and vulnerability (null when none): `statement_id`, `document_id`, `source`, `vulnerability`, `status`, `justification`, `impact_statement`, `action_statement`, `status_notes`, `effective_at`, and for `not_affected` the approval request (`request_id`, `request_status`) and whether it ignores the finding now (`applied`). Declined statements are not shown. `as_of` is the date of the only scan of an asset scanned once (null for assets that report regularly): the finding is true as of then, and is not scored as stale.
 
 Query:
 

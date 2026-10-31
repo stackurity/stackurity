@@ -16,6 +16,9 @@ type ImageScan struct {
 	AssetID  int64  `json:"asset_id"`
 	Image    string `json:"image"`
 	Platform string `json:"platform,omitempty"`
+	// IntegrationID is the integration that found the image running; its
+	// report counts as that integration's (0 for jobs queued before 0.13.10).
+	IntegrationID int64 `json:"integration_id,omitempty"`
 }
 
 // ImageScanStats says what QueueImageScans did.

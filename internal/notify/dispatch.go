@@ -327,6 +327,9 @@ func (d *Dispatcher) Plan(ctx context.Context) error {
 
 	for _, in := range live {
 		in := in
+		if digestOnly(in) {
+			continue // in the daily and weekly summaries only
+		}
 		for _, r := range routes {
 			if !tracker[r.ChannelID] || r.Escalation || !routeMatches(r, in) || issued[in.ID][r.ChannelID] {
 				continue
@@ -365,6 +368,11 @@ func (d *Dispatcher) Plan(ctx context.Context) error {
 		var urgent []store.Incident
 		var urgentIDs []int64
 		for _, in := range live {
+			// Repositories and images that went quiet wait for the summary;
+			// servers people were told about before 0.13.10 are not told again.
+			if digestOnly(in) || peopleAnnounced(in) {
+				continue
+			}
 			if urgentIncident(r, in) {
 				urgent = append(urgent, in)
 				urgentIDs = append(urgentIDs, in.ID)
@@ -739,6 +747,10 @@ func (d *Dispatcher) message(in store.Incident, event string) Message {
 		}
 		m.Action = "Check outbound connectivity to the feed or its mirror"
 	case "collection":
+		if rd, ok := readReporting(in); ok {
+			d.reportingMessage(&m, rd)
+			break
+		}
 		if e, _ := det["last_error"].(string); e != "" {
 			m.Summary = append(m.Summary, "Last error: "+e)
 		}
@@ -763,6 +775,13 @@ func (d *Dispatcher) message(in store.Incident, event string) Message {
 			m.Summary = []string{"The feed has synced again and its data is within its freshness limit"}
 		}
 		m.Action = ""
+		if in.Kind == "collection" {
+			var rd reportingDetail
+			_ = json.Unmarshal(in.Detail, &rd)
+			if rd.Cause != "" || rd.Resolution != "" {
+				reportingResolved(&m, rd)
+			}
+		}
 	}
 	return m
 }

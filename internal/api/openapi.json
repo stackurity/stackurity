@@ -1082,8 +1082,8 @@
    },
    "patch": {
     "operationId": "patch_assets_id",
-    "summary": "Set name, environment, owner, criticality, exposure, tags",
-    "description": "Set name, environment, owner, criticality, exposure, tags\n\nRole: engineer",
+    "summary": "Set name, environment, owner, criticality, exposure, tags, expected reporting",
+    "description": "Set name, environment, owner, criticality, exposure, tags, expected reporting (report_override: auto, daily, weekly or one_off)\n\nRole: engineer",
     "tags": [
      "Inventory"
     ],

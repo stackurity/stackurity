@@ -63,6 +63,7 @@ import {
   YesNo,
 } from "../components/ui";
 import { NoTeamsHint } from "../components/Teams";
+import { REPORTING_OVERRIDES, ReportingNotice, reportingSummary } from "../components/Reporting";
 
 type Tab = "action-plan" | "stack" | "findings" | "inventory" | "coverage" | "collections" | "relations" | "drift" | "remediation";
 const TABS: Tab[] = ["action-plan", "stack", "findings", "inventory", "coverage", "collections", "relations", "drift", "remediation"];
@@ -236,7 +237,7 @@ export function AssetDetailPage() {
         <AssetCoverageNotice summary={coverage.data} inventoryLink={`/assets/${a.id}?tab=inventory&coverage=gaps`} />
       ) : (
         <>
-          {a.collection_status === "stale" && (
+          {a.collection_status === "stale" && !a.reporting && (
             <Notice kind="warn">
               <strong>Stale:</strong> no collector has reported this asset recently. The inventory below may be out of date.
             </Notice>
@@ -248,6 +249,8 @@ export function AssetDetailPage() {
           )}
         </>
       )}
+
+      <ReportingNotice asset={a} />
 
       {at.reboot_required === "true" && (
         <Notice kind="warn">
@@ -361,6 +364,7 @@ function OwnershipCard({ asset, editable, onSaved }: { asset: Asset; editable: b
     criticality: asset.criticality || "unknown",
     internet_exposed: asset.internet_exposed === null ? "" : asset.internet_exposed ? "yes" : "no",
     tags: asset.tags.join(", "),
+    report_override: asset.reporting?.override ?? "auto",
   });
   const [f, setF] = useState(init);
   useEffect(() => setF(init()), [asset]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -379,6 +383,7 @@ function OwnershipCard({ asset, editable, onSaved }: { asset: Asset; editable: b
       .map((t) => t.trim())
       .filter(Boolean);
     if (tags.join(",") !== asset.tags.join(",")) u.tags = tags;
+    if (f.report_override !== (asset.reporting?.override ?? "auto")) u.report_override = f.report_override;
     if (Object.keys(u).length === 0) {
       setEditing(false);
       return;
@@ -408,6 +413,7 @@ function OwnershipCard({ asset, editable, onSaved }: { asset: Asset; editable: b
             ["owner team", asset.owner_team || <span className="muted">unassigned</span>],
             ["criticality", asset.criticality || "unknown"],
             ["internet exposed", <YesNo value={asset.internet_exposed} />],
+            ["reporting", reportingSummary(asset) || <span className="muted">no report yet</span>],
             [
               "tags",
               asset.tags.length ? (
@@ -479,6 +485,21 @@ function OwnershipCard({ asset, editable, onSaved }: { asset: Asset; editable: b
             ))}
           </div>
         </fieldset>
+        <div className="field">
+          <label htmlFor="ed-report">Expected reporting</label>
+          <select
+            id="ed-report"
+            value={f.report_override}
+            onChange={(e) => setF({ ...f, report_override: e.target.value as typeof f.report_override })}
+          >
+            {REPORTING_OVERRIDES.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+          <p className="hint">When Stackurity tells you this asset has stopped reporting. One-off assets are never overdue.</p>
+        </div>
         <div className="field">
           <label htmlFor="ed-tags">Tags</label>
           <input id="ed-tags" value={f.tags} onChange={(e) => setF({ ...f, tags: e.target.value })} placeholder="comma-separated" />

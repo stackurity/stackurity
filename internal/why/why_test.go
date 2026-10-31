@@ -257,3 +257,23 @@ func TestBehindReleaseSentence(t *testing.T) {
 		t.Fatalf("got  %s\nwant %s\n%+v", e.Sentence, want, e)
 	}
 }
+
+// A finding on an asset scanned once is confirmed, not stale, and says the
+// date it is true as of; past 90 days, how old that is.
+func TestAsOfForScannedOnce(t *testing.T) {
+	in := vuln(npmEvidence())
+	in.Finding.AsOf = at(5 * 24 * time.Hour)
+	e := Build(in, now)
+	if e.EvidenceState != "confirmed" || e.AsOf == nil || !strings.HasPrefix(e.AsOfText, "As of 22 Oct 2026: the asset was scanned once") ||
+		strings.Contains(e.AsOfText, "days old") {
+		t.Errorf("as of: %+v %q", e.AsOf, e.AsOfText)
+	}
+	in.Finding.AsOf = at(120 * 24 * time.Hour)
+	if e := Build(in, now); !strings.HasSuffix(e.AsOfText, "These results are 120 days old.") {
+		t.Errorf("old: %q", e.AsOfText)
+	}
+	in.Finding.AsOf = nil
+	if e := Build(in, now); e.AsOf != nil || e.AsOfText != "" {
+		t.Errorf("reporting asset: %+v", e)
+	}
+}

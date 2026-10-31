@@ -153,7 +153,7 @@ export const ARTICLES: Article[] = [
           ["Fix (fix group)", "A set of findings that one piece of work resolves, such as installing security updates or upgrading the OS release. Earlier versions called it an action. See [Fixes](help:action-plan)."],
           ["Issue", "The word the dashboard uses for a finding."],
           ["Snooze", "Hide an issue until a date (stored as the **suppressed** state). See [Exceptions](help:exceptions)."],
-          ["Incident", "Findings with the same vulnerability on assets owned by the same team, plus system problems (a stale feed, a server that stopped reporting). Notifications are sent per incident."],
+          ["Incident", "Findings with the same vulnerability on assets owned by the same team, plus system problems (a stale feed, a server whose agent stopped reporting). Notifications are sent per incident."],
           ["Priority (P1–P4)", "How urgent a finding is, from a score: severity or CVSS, plus known exploitation, internet exposure, production, asset criticality and so on. P1 is the most urgent. Each priority has an acknowledge and fix deadline."],
           ["SOS", "A finding that matches one of the SOS rules in the risk policy, e.g. “known exploited in production”. SOS findings ignore quiet hours."],
           ["KEV", "CISA's Known Exploited Vulnerabilities catalogue: vulnerabilities attackers are actually using."],
@@ -643,7 +643,7 @@ stackurity.exe agent --interval 6h`,
           ["Fix", "Only the issues that one fix clears."],
           ["Priority / Severity", "Tick one or more."],
           ["Kind", "Vulnerability or end of life."],
-          ["Verification", "Confirmed (exact version from the package database or lockfile), needs validation (version uncertain, severity withheld), stale (the asset stopped reporting)."],
+          ["Verification", "Confirmed (exact version from the package database or lockfile), needs validation (version uncertain, severity withheld), stale (the asset's next report is overdue). Issues on an asset scanned once stay confirmed and show “as of” the scan date."],
           ["Environment", "From the asset's environment label."],
           ["SOS only, Overdue, Unassigned, Assigned to me, Known exploited only", "Quick toggles."],
         ],
@@ -821,7 +821,7 @@ stackurity.exe agent --interval 6h`,
     keywords: "incident alert escalation ack overdue",
     body: [
       {
-        p: "One CVE across fifty servers owned by the same team is one incident. System problems also open incidents and close on their own: a stale or failing feed, a stale asset or failing integration, or an asset whose collected inventory dropped by more than half.",
+        p: "One CVE across fifty servers owned by the same team is one incident. System problems also open incidents and close on their own: a stale or failing feed, a server whose agent stopped reporting or a scan past its usual schedule ([Servers and scans that stop reporting](help:asset-reporting)), a failing integration, or an asset whose collected inventory dropped by more than half.",
       },
       {
         list: [
@@ -831,6 +831,98 @@ stackurity.exe agent --interval 6h`,
         ],
       },
       { p: "Incidents get an owner team from their assets. Set owner teams on assets (asset page ▸ Edit) so alerts can be routed to the right team." },
+    ],
+  },
+  {
+    id: "asset-reporting",
+    title: "Servers and scans that stop reporting",
+    section: "Daily work",
+    summary: "What Stackurity expects of each asset, what “hasn't reported” means, and how to fix it. Your services may be fine.",
+    where: ["Assets", "Incidents"],
+    keywords: "stale stopped reporting not reporting agent offline scanned once one-off as of cadence schedule ci pipeline quiet",
+    body: [
+      {
+        p: "Each asset records how its reports reach Stackurity: the **agent** on a server, a **scan** uploaded by the CLI or a CI job, an **integration** the server runs on a schedule, or a **manual upload**. From that, and from its own history, Stackurity works out when the next report is due. These alerts are about Stackurity's view of your systems: **your services may be fine**.",
+      },
+      {
+        table: [
+          ["Asset", "Expected", "When it is overdue"],
+          ["Server (agent)", "Every 6 hours", "After 48 hours (STACKURITY_STALE_AFTER)"],
+          ["Repository, image or SBOM scanned regularly", "Its usual gap, learned from its last few scans", "After twice that gap, at least 48 hours"],
+          ["Scanned once", "Nothing more", "Never: results stay as of that scan"],
+          ["Reported by an integration", "The integration's schedule", "No alert: a failing integration has its own"],
+        ],
+      },
+      { h: "A server: the agent hasn't reported", id: "servers" },
+      {
+        p: "**What is at risk:** its findings are not refreshed, so a new vulnerability on it goes unseen. Its last results are kept, marked stale (scored × 0.8). Servers that went quiet on the same day share one incident, which lists the applications on them. It is P3 for a production server.",
+      },
+      {
+        list: [
+          "Likely causes: the server is off or was rebuilt, the agent service stopped, or it can't reach the Stackurity server.",
+          "Check the agent: `systemctl status stackurity-agent` and `journalctl -u stackurity-agent -n 50`; restart it with `systemctl restart stackurity-agent`.",
+          "On Windows, open the scheduled task (or service wrapper) that runs `stackurity.exe agent`, check its last run result, and run the command by hand in PowerShell to see the error.",
+          "A server that no longer exists: delete it on its asset page.",
+        ],
+      },
+      { h: "A repository, image or SBOM hasn't been scanned", id: "scans" },
+      {
+        p: "Once an asset has been scanned a few times, Stackurity learns how often: “Repository shop hasn't been scanned since 26 Oct (usually every day)”. These go in the daily and weekly summaries only, as P4, unless the asset is production and set to **Daily** or **Weekly**: then it is P3 and told right away.",
+      },
+      {
+        list: [
+          "Likely cause: the CI job or scheduled scan that uploads it stopped or failed. Check its last pipeline run.",
+          "Scan commands are in **Settings ▸ Integrations ▸ CI pipeline**.",
+          "Scanned only now and then? On the asset page, **Edit** ▸ **Expected reporting** ▸ **One-off or manual**.",
+        ],
+      },
+      { h: "Scanned once", id: "one-off" },
+      {
+        p: "A repository, image or SBOM scanned a single time (from a laptop, or a trial) is **one-off**: no alert, never stale, not scored as stale. The asset page and **Home** say “Scanned once on 26 Oct. Results stay as of that date”, each of its issues shows **as of 26 Oct**, and after 90 days the note says how old the results are. The weekly summary has one line about such assets. To keep one current, scan it on a schedule:",
+      },
+      {
+        code: `on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * *"
+jobs:
+  stackurity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: stackurity/scan-action@v1
+        with:
+          server: https://stackurity.example.com
+          token: \${{ secrets.STACKURITY_TOKEN }}`,
+        label: "GitHub Actions",
+      },
+      {
+        code: `stackurity:
+  image:
+    name: ghcr.io/stackurity/stackurity:latest
+    entrypoint: [""]
+  variables:
+    STACKURITY_SERVER: https://stackurity.example.com
+  script:
+    - stackurity scan . --git-url "$CI_REPOSITORY_URL"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH`,
+        label: "GitLab CI (add a pipeline schedule; STACKURITY_TOKEN as a masked variable)",
+      },
+      { h: "Expected reporting" },
+      {
+        list: [
+          "**Automatic**: learned from its reports (the default).",
+          "**Daily**: overdue after 48 hours.",
+          "**Weekly**: overdue after 8 days.",
+          "**One-off or manual**: never overdue.",
+        ],
+      },
+      {
+        note: "A server that reports again for less than a day and goes quiet again reopens its earlier incident, so a flaky agent does not raise an alert every day.",
+      },
     ],
   },
   {
@@ -844,14 +936,14 @@ stackurity.exe agent --interval 6h`,
       { h: "Filters" },
       {
         list: [
-          "Search by name; Kind; Environment; Status (**ok**, **partial** – the last collection was incomplete, **stale** – nothing reported for 48 hours by default); Owner team.",
+          "Search by name; Kind; Environment; Status (**ok**, **partial** – the last collection was incomplete, **stale** – its next report is overdue: 48 hours for a server, twice its usual gap for a scan; an asset scanned once is never stale, see [Servers and scans that stop reporting](help:asset-reporting)); Owner team.",
           "**Reboot pending**: hosts running older code than is installed. Patched packages protect nothing until the process or kernel restarts.",
         ],
       },
       { h: "On an asset" },
       {
         list: [
-          "**Edit** (engineer): environment, owner team, criticality, internet exposure, tags. These feed the priority.",
+          "**Edit** (engineer): environment, owner team, criticality, internet exposure, tags (these feed the priority), and **Expected reporting**: automatic, daily, weekly or one-off.",
           "**Fixes** tab: the fixes for this asset. Above the tabs, the health line says how many need you, and when the asset was last checked with the command to check again.",
           "**Issues**, **Inventory** (every component; click a row for its evidence), **Coverage** (what was checked), **Collections** (each report received).",
           "**Relations**: link assets, e.g. an image `built_from` a repository, or a standby `replica_of` its primary.",
@@ -952,7 +1044,7 @@ stackurity.exe agent --interval 6h`,
           ["State", "What it means", "What resolves it"],
           ["Confirmed", "The installed version was read from an authoritative source (package database, lockfile, or a front-end library's exact CDN address or script banner) and is in the advisory's affected range, or its release line has ended.", "Nothing: act on it."],
           ["Needs validation", "The match cannot be relied on yet because the version was inferred or has low confidence. It scores lower and is never SOS. An issue the second check disagreed with also says **Needs validation: the second check disagreed**, but keeps its priority, SOS and alerts.", "The **Missing information** box says exactly what: a confirmed version, or a person comparing the version with the advisory."],
-          ["Stale", "The asset has stopped reporting. This was true when it was last seen.", "A fresh report: **Check again**, or get the agent reporting."],
+          ["Stale", "The asset's next report is overdue (a server's agent, or a regular scan). This was true when it was last seen.", "A fresh report: **Check again**, or get the agent or CI job reporting."],
           ["Rejected", "A person marked it a false positive with an ignore rule. Stackurity keeps it rejected while the match stays the same.", "Reopen it, or end the ignore rule."],
         ],
       },

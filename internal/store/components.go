@@ -82,6 +82,9 @@ type Overview struct {
 	// stale_intelligence, not_evaluated, unsupported, awaiting); a component
 	// with rows in several states counts in each.
 	ComponentCoverage map[string]int64 `json:"component_coverage"`
+	// OneOff counts the assets scanned once, per kind, with the dates their
+	// results are from (Home: "5 repositories scanned once (as of 26 Oct)").
+	OneOff []OneOffGroup `json:"one_off"`
 }
 
 func (s *Store) Overview(ctx context.Context) (*Overview, error) {
@@ -122,6 +125,12 @@ func (s *Store) Overview(ctx context.Context) (*Overview, error) {
 	}
 	if o.AssetCoverage, err = s.AssetCoverageCounts(ctx); err != nil {
 		return nil, err
+	}
+	if o.OneOff, err = s.OneOffAssets(ctx); err != nil {
+		return nil, err
+	}
+	if o.OneOff == nil {
+		o.OneOff = []OneOffGroup{}
 	}
 	err = s.Pool.QueryRow(ctx, `SELECT
 		(SELECT count(DISTINCT component_id) FROM inventory WHERE removed_at IS NULL),

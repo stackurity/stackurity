@@ -150,7 +150,7 @@ func (d *Dispatcher) updateJiraIssue(ctx context.Context, j *jiraClient, cfg Cha
 		if link.ResolvedSynced {
 			return nil
 		}
-		if err := post(jiraDoc{{Para: plain("Resolved in Stackurity: no open findings remain for this incident.")}}); err != nil {
+		if err := post(jiraDoc{{Para: plain(resolvedNote(in, msg))}}); err != nil {
 			return err
 		}
 		if cfg.ResolveTransition != "" {

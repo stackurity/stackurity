@@ -69,18 +69,35 @@ func (c *Checker) objectProblems(ctx context.Context, viewerWS int64) ([]Problem
 			Docs: docsNotify}
 	})
 
-	silent, err := c.Store.SilentCollectors(ctx, viewerWS, ItemLimit)
+	// Servers whose agent is silent, and scans past their usual cadence.
+	// Assets scanned once are not a problem: their results stay as of that
+	// scan. Those an integration reports are covered by its own problem.
+	servers, err := c.Store.SilentCollectors(ctx, store.SourceAgent, viewerWS, ItemLimit)
 	if err != nil {
 		return nil, err
 	}
-	add(silent, assetLink, func(g *store.HealthGroup) Problem {
-		return Problem{Kind: "collector", Key: "silent",
-			Title: fmt.Sprintf("%d asset(s) stopped reporting, %d of them production", g.Count, g.Severe),
-			Scope: Scope{Summary: fmt.Sprintf("%d asset(s) %s whose collector, agent or integration has sent nothing recently (%d production)",
-				g.Count, where(g), g.Severe)},
-			NextStep: "On each asset, check that the agent service or the CI job and its token still run (systemctl status stackurity-agent on hosts). " +
-				"Delete assets that no longer exist. Their findings are marked stale until they report again.",
-			Docs: docsCollect}
+	add(servers, assetLink, func(g *store.HealthGroup) Problem {
+		return Problem{Kind: "collector", Key: "silent-agent",
+			Title: fmt.Sprintf("The Stackurity agent hasn't reported from %d server(s) or application(s), %d of them production", g.Count, g.Severe),
+			Scope: Scope{Summary: fmt.Sprintf("%d server(s) or application(s) %s. Your services may be fine; this is about Stackurity's view. "+
+				"Their findings are not refreshed and are marked stale (%d production)", g.Count, where(g), g.Severe)},
+			NextStep: "On each server run systemctl status stackurity-agent and journalctl -u stackurity-agent -n 50, and restart it with " +
+				"systemctl restart stackurity-agent (on Windows, check the scheduled task that runs stackurity.exe agent). " +
+				"Likely causes: the server is off or was rebuilt, the agent service stopped, or it can't reach this server. Delete servers that no longer exist.",
+			Docs: docsReporting}
+	})
+	scans, err := c.Store.SilentCollectors(ctx, store.SourceScan, viewerWS, ItemLimit)
+	if err != nil {
+		return nil, err
+	}
+	add(scans, assetLink, func(g *store.HealthGroup) Problem {
+		return Problem{Kind: "collector", Key: "silent-scan",
+			Title: fmt.Sprintf("%d repository, image or SBOM scan(s) are past their usual schedule, %d of them production", g.Count, g.Severe),
+			Scope: Scope{Summary: fmt.Sprintf("%d asset(s) %s that used to be scanned regularly. Your services may be fine; their findings are not refreshed "+
+				"and are marked stale (%d production)", g.Count, where(g), g.Severe)},
+			NextStep: "Likely cause: the CI job or scheduled scan that uploads it stopped or failed. Check its last pipeline run; " +
+				"scan commands are in Settings > Integrations > CI pipeline. If it is only scanned now and then, set its reporting to one-off on the asset page.",
+			Docs: docsReporting}
 	})
 
 	cov, err := c.Store.ProductionCoverageGaps(ctx, viewerWS, ItemLimit)

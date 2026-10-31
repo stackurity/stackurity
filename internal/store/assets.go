@@ -145,6 +145,8 @@ type Asset struct {
 	// Projects are the active projects the asset belongs to that the
 	// caller may see.
 	Projects []ProjectRef `json:"projects"`
+	// Reporting is how the asset reports and what is expected of it.
+	Reporting Reporting `json:"reporting"`
 }
 
 type AssetFilter struct {
@@ -167,16 +169,22 @@ const assetCols = `a.id, a.kind, a.name, a.environment, a.owner_team_id, COALESC
 	a.criticality, a.internet_exposed, ` + effectiveExposure + `, a.tags, a.attributes, a.first_seen, a.last_seen, a.collection_status,
 	(SELECT count(*) FROM inventory i WHERE i.asset_id = a.id AND i.removed_at IS NULL), a.agent_polled_at,
 	COALESCE((SELECT jsonb_agg(jsonb_build_object('id', p.id, 'name', p.name) ORDER BY lower(p.name), p.id)
-	  FROM project_assets pa JOIN projects p ON p.id = pa.project_id WHERE pa.asset_id = a.id AND p.archived_at IS NULL), '[]')`
+	  FROM project_assets pa JOIN projects p ON p.id = pa.project_id WHERE pa.asset_id = a.id AND p.archived_at IS NULL), '[]'),
+	a.report_source, a.report_override, a.report_runs, EXTRACT(epoch FROM a.report_usual)::bigint, EXTRACT(epoch FROM a.report_due_after)::bigint`
 
 func scanAsset(row pgx.Row) (*Asset, error) {
 	var a Asset
 	var attrs, projects []byte
+	var source, override string
+	var runs *int32
+	var usual, due *int64
 	err := row.Scan(&a.ID, &a.Kind, &a.Name, &a.Environment, &a.OwnerTeamID, &a.OwnerTeam, &a.Provider, &a.Region,
-		&a.Criticality, &a.InternetExposed, &a.Exposed, &a.Tags, &attrs, &a.FirstSeen, &a.LastSeen, &a.CollectionStatus, &a.ComponentCount, &a.AgentPolledAt, &projects)
+		&a.Criticality, &a.InternetExposed, &a.Exposed, &a.Tags, &attrs, &a.FirstSeen, &a.LastSeen, &a.CollectionStatus, &a.ComponentCount, &a.AgentPolledAt, &projects,
+		&source, &override, &runs, &usual, &due)
 	if err != nil {
 		return nil, err
 	}
+	a.Reporting = reportingFrom(source, override, runs, usual, due, a.LastSeen)
 	_ = json.Unmarshal(attrs, &a.Attributes)
 	_ = json.Unmarshal(projects, &a.Projects)
 	if a.Projects == nil {
@@ -304,9 +312,15 @@ type AssetUpdate struct {
 	Tags            *[]string       `json:"tags"`
 	Provider        *string         `json:"provider"`
 	Region          *string         `json:"region"`
+	// ReportOverride is how often the asset is expected to report: auto
+	// (learned from its history), daily, weekly or one_off.
+	ReportOverride *string `json:"report_override"`
 }
 
 func (s *Store) UpdateAsset(ctx context.Context, id int64, u AssetUpdate) error {
+	if u.ReportOverride != nil && !ValidReportOverride(*u.ReportOverride) {
+		return fmt.Errorf("report_override must be auto, daily, weekly or one_off: %w", ErrInvalid)
+	}
 	var team *int64
 	clearTeam := false
 	if u.OwnerTeamID.Set {
@@ -336,6 +350,9 @@ func (s *Store) UpdateAsset(ctx context.Context, id int64, u AssetUpdate) error 
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
+	}
+	if u.ReportOverride != nil {
+		return s.SetReportOverride(ctx, id, *u.ReportOverride)
 	}
 	return nil
 }

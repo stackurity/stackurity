@@ -300,7 +300,8 @@ var tools = map[string]tool{
 	"list_assets": {
 		description: "List inventoried assets: hosts, deployed applications, repositories, container images and managed services. " +
 			"Use it to find the asset_id of a project or server. Names can repeat (a host and a repository of the same name); " +
-			"label tells them apart. collection_status removed means an application is gone from its host.",
+			"label tells them apart. collection_status removed means an application is gone from its host. reporting one_off means " +
+			"it was scanned once and its results are as of as_of; stale means a server or scheduled scan stopped reporting.",
 		schema: obj(map[string]any{
 			"kind":        map[string]any{"type": "string", "enum": []string{"host", "application", "repository", "image", "managed_service", "sbom", "cluster", "workload"}},
 			"query":       str("Name contains this text"),
@@ -317,6 +318,10 @@ var tools = map[string]tool{
 					LastSeen    string            `json:"last_seen"`
 					Components  int64             `json:"component_count"`
 					Attributes  map[string]string `json:"attributes"`
+					Reporting   struct {
+						Mode string  `json:"mode"`
+						AsOf *string `json:"as_of"`
+					} `json:"reporting"`
 				} `json:"items"`
 				Total int64 `json:"total"`
 			}
@@ -338,6 +343,10 @@ var tools = map[string]tool{
 				OS          string `json:"os,omitempty"`
 				Reboot      string `json:"reboot_required,omitempty"`
 				Path        string `json:"path,omitempty"` // an application's directory on its host
+				// Reporting: agent, scheduled, one_off (scanned once; results
+				// as of as_of), integration or unknown.
+				Reporting string  `json:"reporting,omitempty"`
+				AsOf      *string `json:"as_of,omitempty"`
 				// Label tells assets with the same name apart: the name, with
 				// the kind (and the path or environment) when another asset in
 				// the list has the same name ("commmerceblog (repository)").
@@ -370,7 +379,7 @@ var tools = map[string]tool{
 					label += " (" + detail + ")"
 				}
 				out = append(out, item{x.ID, x.Kind, x.Name, x.Environment, x.Status, x.LastSeen, x.Components,
-					x.Attributes["os_name"], x.Attributes["reboot_required"], path, label})
+					x.Attributes["os_name"], x.Attributes["reboot_required"], path, x.Reporting.Mode, x.Reporting.AsOf, label})
 			}
 			return map[string]any{"assets": out, "total": res.Total}, nil
 		},
@@ -754,6 +763,9 @@ type finding struct {
 	VEX     *findingVEX `json:"vex,omitempty"`
 	Overdue bool        `json:"overdue"`
 	FixDue  *string     `json:"fix_due"`
+	// AsOf: the asset was scanned once, on this date; the finding is true
+	// as of then.
+	AsOf *string `json:"as_of,omitempty"`
 }
 
 // findingVEX is the part of a finding's VEX statement an assistant needs.

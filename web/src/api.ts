@@ -666,6 +666,32 @@ export interface Asset {
   agent_polled_at?: string | null;
   /** Active projects the asset is in (that you can see). */
   projects?: ProjectRef[];
+  /** How the asset reports and what is expected of it (0.13.10). */
+  reporting?: Reporting;
+}
+
+/** How an asset reports: the agent, a scan (CLI or CI), an integration or a manual upload. */
+export interface Reporting {
+  source: "" | "agent" | "scan" | "integration" | "manual";
+  /** auto (learned from its history), daily, weekly or one_off. */
+  override: "auto" | "daily" | "weekly" | "one_off";
+  /** agent, scheduled, one_off (scanned once), integration or unknown. */
+  mode: "agent" | "scheduled" | "one_off" | "integration" | "unknown";
+  runs: number;
+  /** The usual gap between its reports, in seconds. */
+  usual_seconds: number | null;
+  /** How long after its last report it is overdue; null when nothing is expected. */
+  due_after_seconds: number | null;
+  /** For a one-off asset: the date its results are from. */
+  as_of?: string;
+}
+
+/** Assets scanned once, per kind. */
+export interface OneOffGroup {
+  kind: string;
+  count: number;
+  oldest: string;
+  newest: string;
 }
 
 export interface Identifier {
@@ -688,6 +714,8 @@ export interface AssetUpdate {
   tags?: string[];
   provider?: string;
   region?: string;
+  /** How often the asset is expected to report: auto (learned), daily, weekly or one_off. */
+  report_override?: "auto" | "daily" | "weekly" | "one_off";
 }
 
 export interface InventoryRow {
@@ -885,6 +913,8 @@ export interface Component {
 }
 
 export interface Overview {
+  /** Assets scanned once, per kind (0.13.10). */
+  one_off?: OneOffGroup[];
   assets: Record<string, number>;
   asset_status: Record<string, number>;
   components: number;
@@ -1060,6 +1090,8 @@ export interface Finding {
   id: number;
   kind: "vulnerability" | "end_of_life" | string;
   key: string;
+  /** The asset was scanned once, on this date: the finding is true as of then. */
+  as_of?: string | null;
   inventory_id: number;
   asset_id: number;
   asset_name: string;
@@ -1335,6 +1367,9 @@ export interface FindingWhy {
   fixed_version?: string;
   evidence_state: string;
   evidence_state_text: string;
+  /** Scanned once: the date the finding is true as of, and what that means. */
+  as_of?: string;
+  as_of_text?: string;
   missing_information: string[];
   second_check: SecondCheck | null;
   second_check_text: string;

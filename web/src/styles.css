@@ -3403,6 +3403,18 @@ h6.md-h {
   border-radius: var(--radius);
   color: var(--text-2);
 }
+/* Assets scanned once: a quiet line under the page heading (0.13.10). */
+.home-oneoff {
+  margin: var(--s1) 0 0;
+  color: var(--muted);
+  max-width: 80ch;
+}
+.reporting-snippets {
+  margin-top: var(--s2);
+}
+.reporting-snippets > summary {
+  cursor: pointer;
+}
 .home-tiles {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));

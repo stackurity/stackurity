@@ -4,7 +4,7 @@
  */
 export type Block =
   | { p: string }
-  | { h: string }
+  | { h: string; id?: string } // id: the anchor a link may name (#servers)
   | { steps: string[] }
   | { list: string[] }
   | { code: string; lang?: string; label?: string }

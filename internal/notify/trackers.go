@@ -341,7 +341,7 @@ func (d *Dispatcher) updateServiceNow(ctx context.Context, sn *snClient, link *s
 		fields := map[string]any{
 			"state":       sn.cfg.snResolveState(),
 			"close_code":  sn.cfg.snCloseCode(),
-			"close_notes": "Resolved in Stackurity: no open findings remain for this incident.\n\n" + footer,
+			"close_notes": resolvedNote(in, msg) + "\n\n" + footer,
 		}
 		if _, err := sn.update(ctx, link.RemoteID, fields); err != nil {
 			return err
