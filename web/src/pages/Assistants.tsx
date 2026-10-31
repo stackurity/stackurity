@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useLocation } from "react-router";
 import { api, ApiError, type AssistantConnection, type AssistantConsent, type List, type UserRole } from "../api";
 import { useAuth } from "../auth";
+import { AskSettingsCard } from "../components/AskPanel";
 import { useAction, useLoad } from "../hooks";
 import { plural } from "../format";
 import { Card, CodeBlock, CopyBox, ErrorBox, Loading, Notice, PageHeader, RelativeTime } from "../components/ui";
@@ -535,6 +536,7 @@ function AskAISetting() {
  * Disconnect.
  */
 export function AssistantsPage() {
+  const { can } = useAuth();
   const res = useLoad(() => api.getAll<AssistantList>("/assistants"), []);
   const act = useAction();
   const [client, setClient] = useState<Client>("claude");
@@ -605,6 +607,8 @@ export function AssistantsPage() {
           <AskAISetting />
         </Card>
       )}
+
+      {can("admin") && <AskSettingsCard />}
 
       <h2 className="section-title" id="connected">
         Connected assistants
