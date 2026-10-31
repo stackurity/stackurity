@@ -49,3 +49,13 @@ func programNotReadReason(label, source, feed string) string {
 	return fmt.Sprintf("the advisories of %s have not been read from %s yet (feed %s): they are read by the next sync after a host first reports it",
 		label, source, feed)
 }
+
+// earlierReleaseKernelReason: a kernel left behind by a release upgrade
+// (earlierReleaseKernels) is not matched against the host release's
+// advisories. The user removes it: cleanup is the distribution's command
+// for old kernels, remove the command for this kernel's own packages.
+func earlierReleaseKernelReason(release, built, hostRelease, cleanup, remove string) string {
+	return fmt.Sprintf("kernel %s (%s) is from a release before %s and is not running: left behind by a release upgrade, "+
+		"it is not matched because %s advisories do not describe it. Remove old kernels: %s, or this one: %s",
+		release, built, hostRelease, hostRelease, cleanup, remove)
+}

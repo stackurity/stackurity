@@ -8,6 +8,7 @@ import (
 
 	"github.com/package-url/packageurl-go"
 
+	"github.com/stackurity/stackurity/internal/fixplan"
 	"github.com/stackurity/stackurity/internal/osv"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/version"
@@ -265,3 +266,118 @@ func sortedKeys[V any](m map[string]V) []string {
 	sort.Strings(out)
 	return out
 }
+
+// earlierReleaseKernels returns, by inventory row, the not-evaluated reason
+// for the packages of each kernel built for an earlier release of the host's
+// distribution than the one it runs, left behind by a release upgrade (a
+// 22.04 linux-image on a 24.04 host). The host release's advisories do not
+// describe such a kernel (osv.KernelFromEarlierRelease), so matching it
+// reported every kernel issue of the new release on it.
+//
+// Conservative: a kernel is never marked when it is running, when the
+// running kernel is unknown, or when it is the newest kernel installed on
+// the asset, whatever the release detection says. The reason names the
+// command that removes old kernels and the kernel's own packages.
+func earlierReleaseKernels(rows []store.EvalRow) map[int64]string {
+	type kernelRow struct {
+		row     store.EvalRow
+		name    string
+		role    osv.KernelRole
+		release string
+		distro  string
+		ns      string
+	}
+	byAsset := map[int64][]kernelRow{}
+	for _, r := range rows {
+		if r.Type != "deb" && r.Type != "rpm" {
+			continue
+		}
+		pu, err := packageurl.FromString(r.Purl)
+		if err != nil {
+			continue
+		}
+		role, release := osv.KernelPackage(r.Type, pu.Name, r.Version)
+		if role == osv.NotKernel || release == "" {
+			continue
+		}
+		byAsset[r.AssetID] = append(byAsset[r.AssetID], kernelRow{r, pu.Name, role, release, pu.Qualifiers.Map()["distro"], pu.Namespace})
+	}
+	out := map[int64]string{}
+	for _, ks := range byAsset {
+		// The newest kernel installed, per package type.
+		newest := map[string]string{}
+		for _, k := range ks {
+			if k.role != osv.KernelCode {
+				continue
+			}
+			cmp := version.For(version.ForPurlType(k.row.Type))
+			cur, ok := newest[k.row.Type]
+			if !ok {
+				newest[k.row.Type] = k.row.Version
+				continue
+			}
+			if c, err := cmp(k.row.Version, cur); err != nil || c > 0 {
+				// Unparseable versions make "newest" unknown: keep both out.
+				if err != nil {
+					newest[k.row.Type] = ""
+				} else {
+					newest[k.row.Type] = k.row.Version
+				}
+			}
+		}
+		// Kernel releases (versions) to mark, and the packages of each.
+		marked := map[string]string{} // release -> "built|host|distro"
+		for _, k := range ks {
+			if k.role != osv.KernelCode {
+				continue
+			}
+			n := newest[k.row.Type]
+			if n == "" || k.row.Version == n {
+				continue
+			}
+			built, host, earlier := osv.KernelFromEarlierRelease(k.row.Type, k.ns, k.name, k.row.Version, k.distro)
+			if !earlier || !osv.KernelNotRunning(k.row.Type, k.name, k.row.Version, k.row.RunningKernel) {
+				continue
+			}
+			marked[k.row.Type+"|"+k.release] = built + "|" + host + "|" + k.distro
+		}
+		packages := map[string][]string{}
+		for _, k := range ks {
+			key := k.row.Type + "|" + k.release
+			if _, ok := marked[key]; !ok {
+				continue
+			}
+			name := k.name
+			if k.row.Type == "rpm" {
+				name += "-" + k.release // several versions of one RPM name are installed
+			}
+			packages[key] = appendUnique(packages[key], name)
+		}
+		for _, k := range ks {
+			key := k.row.Type + "|" + k.release
+			m, ok := marked[key]
+			if !ok || k.role != osv.KernelCode {
+				continue
+			}
+			parts := strings.SplitN(m, "|", 3)
+			built, host, distro := parts[0], parts[1], parts[2]
+			names := packages[key]
+			sort.Strings(names)
+			osID := strings.TrimSuffix(distro, "-"+host)
+			label := distroLabels[osID]
+			if label == "" {
+				label = osID
+			}
+			remove := "sudo apt purge "
+			if k.row.Type == "rpm" {
+				remove = "sudo dnf remove "
+			}
+			out[k.row.InventoryID] = earlierReleaseKernelReason(k.release, built, label+" "+host,
+				fixplan.RemoveOldKernels(osID, host), remove+strings.Join(names, " "))
+		}
+	}
+	return out
+}
+
+var distroLabels = map[string]string{"ubuntu": "Ubuntu", "debian": "Debian", "rhel": "Red Hat Enterprise Linux",
+	"rocky": "Rocky Linux", "almalinux": "AlmaLinux", "ol": "Oracle Linux"}

@@ -69,6 +69,28 @@ func TestUncheckedReasonsFromProducers(t *testing.T) {
 	add("no Windows updates for the release", store.CoverageNotEvaluated, noWindowsUpdatesReason(FeedMSRC, "24H2"), none, "")
 	add("uncomparable version", store.CoverageNotEvaluated, uncomparableReason("banana", "npm"), user, "unparseable_version")
 	add("program advisories not read", store.CoverageNotEvaluated, programNotReadReason("Google Chrome", "NVD", "programs:Windows"), waiting, "")
+	// A kernel left behind by a release upgrade: the user removes it.
+	for _, rows := range [][]store.EvalRow{
+		{
+			{InventoryID: 1, AssetID: 1, Type: "deb", Version: "5.15.0-202.212", RunningKernel: "6.8.0-147-generic",
+				Purl: "pkg:deb/ubuntu/linux-image-5.15.0-202-generic@5.15.0-202.212?distro=ubuntu-24.04&upstream=linux"},
+			{InventoryID: 2, AssetID: 1, Type: "deb", Version: "6.8.0-147.147", RunningKernel: "6.8.0-147-generic",
+				Purl: "pkg:deb/ubuntu/linux-image-6.8.0-147-generic@6.8.0-147.147?distro=ubuntu-24.04&upstream=linux"},
+		},
+		{
+			{InventoryID: 1, AssetID: 1, Type: "rpm", Version: "4.18.0-553.el8_10", RunningKernel: "5.14.0-427.13.1.el9_4.x86_64",
+				Purl: "pkg:rpm/rocky/kernel-core@4.18.0-553.el8_10?distro=rocky-9.4"},
+			{InventoryID: 2, AssetID: 1, Type: "rpm", Version: "5.14.0-427.13.1.el9_4", RunningKernel: "5.14.0-427.13.1.el9_4.x86_64",
+				Purl: "pkg:rpm/rocky/kernel-core@5.14.0-427.13.1.el9_4?distro=rocky-9.4"},
+		},
+	} {
+		reason := earlierReleaseKernels(rows)[1]
+		if reason == "" {
+			t.Errorf("earlierReleaseKernels %s: no reason", rows[0].Purl)
+			continue
+		}
+		add("kernel from an earlier release ("+rows[0].Type+")", store.CoverageNotEvaluated, reason, other, "")
+	}
 
 	// Windows updates: winrelease.UpdateLine's gaps as the matcher records them.
 	for _, c := range []struct {

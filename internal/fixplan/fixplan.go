@@ -133,6 +133,13 @@ type Advice struct {
 	Target       string // suggested release, e.g. "24.04 LTS"
 }
 
+// RemoveOldKernels is the command that removes the kernels a host no longer
+// boots, for its os-release ID and VERSION_ID.
+func RemoveOldKernels(osID, osVersion string) string {
+	_, autoremove := manager(osID, osVersion)
+	return autoremove
+}
+
 func manager(osID, osVersion string) (update, autoremove string) {
 	switch osID {
 	case "ubuntu", "debian":

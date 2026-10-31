@@ -173,3 +173,98 @@ func isLetters(s string) bool {
 	}
 	return true
 }
+
+// gaKernel is the kernel series each release shipped with. A release never
+// carries a kernel series older than its own first one (its hardware
+// enablement kernels are newer), so an installed kernel of an older series
+// came from an earlier release.
+var gaKernel = map[string]map[string]string{
+	"ubuntu": {"14.04": "3.13", "16.04": "4.4", "18.04": "4.15", "20.04": "5.4", "22.04": "5.15",
+		"24.04": "6.8", "24.10": "6.11", "25.04": "6.14", "25.10": "6.17"},
+	"debian": {"9": "4.9", "10": "4.19", "11": "5.10", "12": "6.1", "13": "6.12"},
+}
+
+// elKernelRE finds the Enterprise Linux major release an RPM kernel was
+// built for: "5.14.0-427.13.1.el9_4" is 9, Oracle's "5.15.0-208.159.3.el9uek" too.
+var elKernelRE = regexp.MustCompile(`\.el(\d+)`)
+
+var seriesRE = regexp.MustCompile(`^(\d+)\.(\d+)`)
+
+// KernelFromEarlierRelease reports whether a kernel package (one with
+// kernel code) was built for an earlier release of the host's distribution
+// than the one the host now runs, as a kernel left behind by a release
+// upgrade is (a 22.04 linux-image on a 24.04 host). distro is the purl
+// qualifier ("ubuntu-24.04", "debian-12", "rhel-9.4"). It returns what the
+// kernel was built for ("5.15", "el8") and the host's release ("24.04",
+// "9.4"), and false whenever it cannot tell.
+//
+// The host release's advisories do not describe such a kernel: Ubuntu
+// 24.04 lists fixes in 6.8 versions, which every 5.15 version sorts before,
+// so each 24.04 kernel issue would match it.
+func KernelFromEarlierRelease(purlType, namespace, name, version, distro string) (kernel, host string, earlier bool) {
+	role, release := KernelPackage(purlType, name, version)
+	if role != KernelCode || release == "" {
+		return "", "", false
+	}
+	switch purlType {
+	case "deb":
+		ns := strings.ToLower(namespace)
+		rel, ok := strings.CutPrefix(distro, ns+"-")
+		if !ok || gaKernel[ns] == nil {
+			return "", "", false
+		}
+		key := rel
+		if ns == "debian" {
+			key = majorOf(rel)
+		}
+		ga := gaKernel[ns][key]
+		if ga == "" {
+			return "", "", false
+		}
+		m := seriesRE.FindStringSubmatch(release)
+		if m == nil {
+			return "", "", false
+		}
+		series := m[1] + "." + m[2]
+		if compareSeries(series, ga) < 0 {
+			return series, rel, true
+		}
+	case "rpm":
+		id, rel := rpmDistro(distro)
+		switch id {
+		case "rhel", "rocky", "almalinux", "ol":
+		default:
+			return "", "", false // SUSE and Amazon kernels do not name a release this way
+		}
+		m := elKernelRE.FindStringSubmatch(release)
+		hostMajor := majorOf(rel)
+		if m == nil || !isDigits(hostMajor) {
+			return "", "", false
+		}
+		if atoi(m[1]) < atoi(hostMajor) {
+			return "el" + m[1], rel, true
+		}
+	}
+	return "", "", false
+}
+
+func compareSeries(a, b string) int {
+	ma, mb := seriesRE.FindStringSubmatch(a), seriesRE.FindStringSubmatch(b)
+	for i := 1; i <= 2; i++ {
+		if x, y := atoi(ma[i]), atoi(mb[i]); x != y {
+			if x < y {
+				return -1
+			}
+			return 1
+		}
+	}
+	return 0
+}
+
+func atoi(s string) int {
+	n := 0
+	for _, c := range s {
+		n = n*10 + int(c-'0')
+	}
+	return n
+}
