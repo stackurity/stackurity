@@ -5864,5 +5864,6 @@ a.cov-chip:hover {
   }
   .cov-table-wrap {
     overflow: visible;
+    max-height: none;
   }
 }
