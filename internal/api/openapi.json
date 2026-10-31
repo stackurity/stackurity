@@ -3,7 +3,7 @@
  "info": {
   "title": "Stackurity API",
   "version": "v1",
-  "description": "The Stackurity REST API. Requests and responses are JSON. Every operation names the role it needs (x-stackurity-role); roles apply organisation-wide or through project grants (see docs/api.md, \"Projects and access\"). Send X-Stackurity-Project: <id> (or project_id) to limit project-scoped reads to one project. Operations marked x-stackurity-edition: ee exist in the licensed build only. Response bodies are described in docs/api.md; this document lists every operation, its parameters and its authentication. AI assistants use /mcp instead (docs/ai-assistants.md).",
+  "description": "The Stackurity REST API. Requests and responses are JSON. Every operation names the role it needs (x-stackurity-role); roles apply organisation-wide or through project grants (see docs/api.md, \"Projects and access\"). Send X-Stackurity-Project: <id> (or project_id) to limit project-scoped reads to one project. Operations marked x-stackurity-edition: ee exist in the licensed build only. Response bodies are described in docs/api.md; this document lists every operation, its parameters and its authentication. AI assistants use /mcp instead (docs/ai-assistants.md). A self-hosted server without its free key or a licence answers 403 key_required on most operations, except signing in, the licence, and what agents and uploads use (docs/api.md, Conventions; docs/install.md, The free key).",
   "license": {
    "name": "Apache-2.0",
    "identifier": "Apache-2.0"
@@ -309,7 +309,7 @@
    "delete": {
     "operationId": "delete_admin_license",
     "summary": "Remove the licence key",
-    "description": "Remove the licence key\n\nRole: instance admin",
+    "description": "Remove the licence key or free key; a self-hosted server then waits for a key again\n\nRole: instance admin",
     "tags": [
      "Instance administration"
     ],
@@ -356,7 +356,7 @@
    "put": {
     "operationId": "put_admin_license",
     "summary": "Install a licence key",
-    "description": "Install a licence key\n\nRole: instance admin",
+    "description": "Install a licence key or the free key, checked offline\n\nRole: instance admin",
     "tags": [
      "Instance administration"
     ],

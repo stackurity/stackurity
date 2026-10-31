@@ -17,7 +17,7 @@ const FEATURE_LABEL: Record<string, string> = {
 
 /** Instance administration: the installation's licence. */
 export function LicensePage() {
-  const { refresh } = useAuth();
+  const { refresh, me } = useAuth();
   const res = useLoad(() => api.get<LicenseInfo>("/admin/license"), []);
   const act = useAction();
   const [key, setKey] = useState("");
@@ -34,12 +34,15 @@ export function LicensePage() {
     }
   };
   const remove = async () => {
+    const keyed = !!me?.license_key;
     if (
       !(await confirmAction({
-        title: "Remove the licence?",
-        message: "Detection and alerts carry on.",
-        consequence: "Paid features stop at once.",
-        action: "Remove licence",
+        title: keyed ? "Remove the key?" : "Remove the licence?",
+        message: keyed
+          ? "This server then waits for a key before the dashboard and API can be used again."
+          : "Detection and alerts carry on.",
+        consequence: keyed ? "Agents and scans carry on." : "Paid features stop at once.",
+        action: keyed ? "Remove key" : "Remove licence",
         destructive: true,
       }))
     )
@@ -61,7 +64,11 @@ export function LicensePage() {
     <>
       <PageHeader
         title="Licence"
-        sub="The licence sets the most any workspace on this server can use. Detection, alerts and the free features never depend on it."
+        sub={
+          me?.license_key
+            ? "This server's key: the free Community key, or a paid licence that also sets the most any workspace can use. Keys are checked here, offline."
+            : "The licence sets the most any workspace on this server can use. Detection, alerts and the free features never depend on it."
+        }
       />
       {msg && <Notice kind="success">{msg}</Notice>}
       <ErrorBox error={act.error} title="That did not work" />
@@ -86,9 +93,9 @@ export function LicensePage() {
                 ["Status", <Badge key="s" status={d.status.state === "none" ? "community" : d.status.state} />],
                 ...(l
                   ? ([
-                      ["Licensed to", l.customer + (l.email ? ` (${l.email})` : "")],
+                      ["Licensed to", [l.customer, l.name && l.name !== l.customer ? l.name : "", l.email ? `(${l.email})` : ""].filter(Boolean).join(" ")],
                       ["Edition", EDITION_LABEL[l.edition]],
-                      ["Valid until", new Date(l.expires_at).toLocaleDateString()],
+                      ["Valid until", l.edition === "community" ? "Does not expire" : new Date(l.expires_at).toLocaleDateString()],
                       ["Assets", l.max_assets ? `${d.active_assets} of ${l.max_assets}` : `${d.active_assets} (no limit)`],
                       ["Licence id", l.id],
                     ] as [string, React.ReactNode][])
@@ -110,16 +117,25 @@ export function LicensePage() {
           {d.managed_by_env ? (
             <Notice kind="info">This server reads its licence from STACKURITY_LICENSE; change it there.</Notice>
           ) : (
-            <Card title={l ? "Replace the licence" : "Add a licence"}>
+            <Card title={l ? "Replace the key" : "Add a key"}>
+              {me?.license_key && !l && (
+                <p className="small">
+                  Self-hosted Stackurity Community is free; each server needs a free key.{" "}
+                  <a href={me.license_key.signup_url} target="_blank" rel="noopener noreferrer">
+                    Get a free key
+                  </a>
+                  .
+                </p>
+              )}
               <form className="form" onSubmit={install}>
                 <div className="field">
-                  <label htmlFor="lic-key">Licence key</label>
+                  <label htmlFor="lic-key">Free key or licence key</label>
                   <textarea id="lic-key" rows={4} required value={key} onChange={(e) => setKey(e.target.value)} spellCheck={false} />
                   <p className="hint">Checked on this server; nothing is sent anywhere.</p>
                 </div>
                 <div className="form-actions">
                   <button type="submit" className="btn btn-primary" disabled={act.pending || key.trim() === ""}>
-                    Install licence
+                    Install key
                   </button>
                 </div>
               </form>

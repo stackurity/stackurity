@@ -92,11 +92,11 @@ For TLS, backups, upgrades, Kubernetes (Helm), the agents and plugins, see [docs
 
 ## Editions
 
-Community is free and complete for finding and prioritising what to fix. Pro adds automatic fixing, multi-team workflow, the evidence report and single sign-on; Enterprise adds packs for enterprise technologies. [docs/editions.md](docs/editions.md) has the full matrix with limits and prerequisites; licences are covered in [Editions and licences](docs/install.md#editions-and-licences).
+Community is free and complete for finding and prioritising what to fix. Each self-hosted server needs a free key from a short sign-up (email, name, company), checked offline; see [The free key](docs/install.md#the-free-key). Pro adds automatic fixing, multi-team workflow, the evidence report and single sign-on; Enterprise adds packs for enterprise technologies. [docs/editions.md](docs/editions.md) has the full matrix with limits and prerequisites; licences are covered in [Editions and licences](docs/install.md#editions-and-licences).
 
 ## Principles
 
-- Self-hosted, with no vendor account and no telemetry. The only automatic request to the project is a check for new releases: an anonymous read of the public release list that sends nothing about you, compared locally, and turned off with `STACKURITY_UPDATE_CHECK=off`. **Send feedback** in the dashboard sends only what a user writes there, when they press Send; `STACKURITY_FEEDBACK_URL=` turns it off.
+- Self-hosted, with no telemetry. Each server needs a free key from a sign-up, checked offline: the server never contacts us for it ([details](docs/install.md#the-free-key)). The only automatic request to the project is a check for new releases: an anonymous read of the public release list that sends nothing about you, compared locally, and turned off with `STACKURITY_UPDATE_CHECK=off`. **Send feedback** in the dashboard sends only what a user writes there, when they press Send; `STACKURITY_FEEDBACK_URL=` turns it off.
 - Every finding carries its source, timestamp and confidence.
 - Missing or stale data is shown as missing or stale. It is never treated as healthy.
 - Refreshing intelligence never changes your software. Changes need explicit policy.

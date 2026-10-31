@@ -3,6 +3,10 @@
 //
 //	go run ./tools/license --key ~/.config/stackurity/license-signing.key \
 //	  --customer "Acme Ltd" --email ops@acme.example --edition pro --assets 250 --months 12
+//
+// A free Community key (normally issued by the sign-up on Stackurity Cloud)
+// takes --edition community and never expires in practice; sign it with the
+// free-key issuer's key, or with the licence issuer's.
 package main
 
 import (
@@ -23,12 +27,13 @@ func main() {
 	keyFile := flag.String("key", "", "issuer private key (base64 Ed25519 seed)")
 	customer := flag.String("customer", "", "customer name")
 	email := flag.String("email", "", "customer contact")
-	edition := flag.String("edition", "pro", "pro or enterprise")
+	edition := flag.String("edition", "pro", "community, pro or enterprise")
+	name := flag.String("name", "", "the person a community key is for")
 	assets := flag.Int("assets", 0, "asset limit (0 = unlimited)")
 	months := flag.Int("months", 12, "validity in months")
 	flag.Parse()
 	if *keyFile == "" || *customer == "" {
-		fmt.Fprintln(os.Stderr, "usage: license --key FILE --customer NAME [--edition pro|enterprise] [--assets N] [--months N]")
+		fmt.Fprintln(os.Stderr, "usage: license --key FILE --customer NAME [--edition community|pro|enterprise] [--name PERSON] [--assets N] [--months N]")
 		os.Exit(2)
 	}
 	raw, err := os.ReadFile(*keyFile)
@@ -42,8 +47,11 @@ func main() {
 	id := make([]byte, 8)
 	_, _ = rand.Read(id)
 	now := time.Now().UTC().Truncate(time.Second)
-	l := license.License{ID: "lic_" + hex.EncodeToString(id), Customer: *customer, Email: *email,
+	l := license.License{ID: "lic_" + hex.EncodeToString(id), Customer: *customer, Name: *name, Email: *email,
 		Edition: license.Edition(*edition), MaxAssets: *assets, IssuedAt: now, ExpiresAt: now.AddDate(0, *months, 0)}
+	if l.Edition == license.Community {
+		l.ID, l.MaxAssets, l.ExpiresAt = "ck_"+hex.EncodeToString(id), 0, now.Add(license.CommunityValidity)
+	}
 	key, err := license.Issue(l, ed25519.NewKeyFromSeed(seed))
 	if err != nil {
 		fail(err)
