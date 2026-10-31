@@ -13,6 +13,8 @@ import { UpgradeCard } from "../components/Upgrade";
 import { WhyMatched } from "../components/Why";
 import { Card, ErrorBox, KeyValues, Loading, Notice, PageHeader, RelativeTime } from "../components/ui";
 import { closedReason, countsAsRemediation } from "../resolution";
+import { AskAI } from "../components/AskAI";
+import { askFromFinding } from "../askAI";
 
 const CVE_RE = /^CVE-\d{4}-\d{4,}$/i;
 const CVE_IN = /CVE-\d{4}-\d{4,}/i;
@@ -281,6 +283,7 @@ export function FindingDetailPage() {
       <FindingFixGroup f={f} />
       {f.status === "open" && <RecommendedAction f={f} hasUpgrade={!!res.data.upgrade} />}
       {f.status === "open" && res.data.upgrade && <UpgradeCard rec={res.data.upgrade} />}
+      {f.status === "open" && <AskAI question={askFromFinding(f)} />}
       <WorkflowPanel
         f={f}
         epss={res.data.why?.epss}

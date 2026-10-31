@@ -1,0 +1,14 @@
+{
+  "name": "stackurity",
+  "displayName": "Stackurity",
+  "version": "0.1.0",
+  "description": "Ask Claude Code what is installed, what is vulnerable and what to upgrade, from Stackurity. Skills: triage issues, explain a CVE for your stack, write the upgrade PR.",
+  "author": {
+    "name": "Stackurity",
+    "url": "https://stackurity.ai"
+  },
+  "homepage": "https://stackurity.ai",
+  "repository": "https://github.com/stackurity/claude-plugin",
+  "license": "Apache-2.0",
+  "keywords": ["security", "vulnerabilities", "cve", "sbom", "inventory", "upgrades", "mcp"]
+}

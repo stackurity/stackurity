@@ -9,6 +9,8 @@ import { CodeBlock, ErrorBox, Loading, Pager } from "./ui";
 import { FindingActions } from "./Workflow";
 import { useLoad } from "../hooks";
 import { FixVerify, type CheckOptions } from "./FixVerify";
+import { AskAI } from "./AskAI";
+import { askFromFixGroup } from "../askAI";
 
 export const FIX_KIND_LABEL: Record<string, string> = {
   security_updates: "Security updates",
@@ -289,6 +291,7 @@ export function FixGroupCard({
           <Link className="btn btn-sm btn-primary" to={`/fixes/${encodeURIComponent(g.id)}`}>
             How to fix
           </Link>
+          <AskAI question={askFromFixGroup(g)} compact />
         </div>
         {options && <FixVerify g={g} options={options} />}
         {open && <GroupFindings groupId={places ? places.map((p) => p.group_id).join(",") : g.id} hideAsset={hideAsset && !places} />}

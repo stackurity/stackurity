@@ -4505,6 +4505,71 @@ h6.md-h {
   flex-wrap: wrap;
   gap: 8px;
 }
+/* A tile: the client, what it takes, its one-click install and its steps. */
+div.assistant-card {
+  cursor: default;
+}
+.assistant-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: 6px;
+}
+.assistant-card-actions .btn {
+  min-height: 32px;
+}
+
+/* "Ask Claude / ChatGPT about this" (components/AskAI.tsx) */
+.ask-ai {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin: 0 0 var(--s4);
+  padding: 8px 36px 8px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.ask-ai-text {
+  flex: 1 1 260px;
+}
+.ask-ai-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.ask-ai-question {
+  flex-basis: 100%;
+}
+.ask-ai-question p {
+  margin: 4px 0;
+}
+.ask-ai-dismiss {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  min-width: 28px;
+  min-height: 28px;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: var(--muted);
+}
+.ask-ai.ask-ai-compact {
+  display: inline-flex;
+  margin: 0;
+  padding: 0 30px 0 0;
+  background: none;
+  border: 0;
+}
+.ask-ai-compact .ask-ai-dismiss {
+  top: 50%;
+  transform: translateY(-50%);
+  right: 0;
+}
 
 
 /* --- uniform forms: one control height for inputs and selects (time,

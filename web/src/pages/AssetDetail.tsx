@@ -64,6 +64,7 @@ import {
 } from "../components/ui";
 import { NoTeamsHint } from "../components/Teams";
 import { REPORTING_OVERRIDES, ReportingNotice, reportingSummary } from "../components/Reporting";
+import { AssetAskAI } from "../components/AskAI";
 
 type Tab = "action-plan" | "stack" | "findings" | "inventory" | "coverage" | "collections" | "relations" | "drift" | "remediation";
 const TABS: Tab[] = ["action-plan", "stack", "findings", "inventory", "coverage", "collections", "relations", "drift", "remediation"];
@@ -260,6 +261,7 @@ export function AssetDetailPage() {
       )}
 
       <AssetHealth asset={a} findingCount={findingCount} />
+      {a.collection_status !== "removed" && <AssetAskAI asset={a} />}
 
       <KubernetesCard asset={a} relations={relations.data?.items ?? []} />
 

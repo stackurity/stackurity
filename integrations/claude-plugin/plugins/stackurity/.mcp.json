@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "stackurity": {
+      "type": "http",
+      "url": "${STACKURITY_URL:-https://app.stackurity.dev}/mcp"
+    }
+  }
+}
