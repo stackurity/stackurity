@@ -446,7 +446,7 @@ func (s *Server) askQuestion(w http.ResponseWriter, r *http.Request) {
 	}
 	defer askBusy.Delete(busyKey)
 
-	used, err := s.Store.CountAskQuestion(ctx, l.QuestionLimit, l.QuestionPeriod)
+	counted, err := s.Store.CountAskQuestion(ctx, l.QuestionLimit, l.QuestionPeriod)
 	if errors.Is(err, store.ErrAskQuota) {
 		writeError(w, 429, "quota_reached", "this organisation has used all its Ask Stackurity questions for now")
 		return
@@ -519,7 +519,7 @@ func (s *Server) askQuestion(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if out.CostMicros == 0 && len(out.Usage) == 0 {
 			// The model was never reached: the question does not count.
-			_ = s.Store.RefundAskQuestion(context.WithoutCancel(ctx))
+			_ = s.Store.RefundAskQuestion(context.WithoutCancel(ctx), counted)
 		}
 		code, msg := s.askError(r, err)
 		if code != "" {
@@ -527,7 +527,7 @@ func (s *Server) askQuestion(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	done := map[string]any{"stop_reason": out.StopReason, "questions_used": used, "questions_limit": l.QuestionLimit}
+	done := map[string]any{"stop_reason": out.StopReason, "questions_used": counted.Used, "questions_limit": l.QuestionLimit}
 	switch out.StopReason {
 	case "refusal":
 		done["message"] = "Claude declined to answer this question. Try asking it another way."
