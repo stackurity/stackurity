@@ -161,7 +161,7 @@ func TestBulkSend(t *testing.T) {
 		"X-Stackurity-Category: marketing",
 		"Subject: Stackurity 0.14.0: what changed",
 		"Unsubscribe from Marketing: https://app.stk.example/email/preferences#",
-		"Email preferences: https://app.stk.example/email/preferences#",
+		"Manage email preferences: https://app.stk.example/email/preferences#",
 		"Example Ltd, 1 Main Road, Pune 411001, India",
 		"Release notes: https://example.com/notes",
 		"text/html",

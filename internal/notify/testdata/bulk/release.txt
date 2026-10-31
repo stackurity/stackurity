@@ -1,0 +1,28 @@
+Stackurity 0.14.0: what changed
+
+Here is what changed in Stackurity 0.14.0.
+
+Security
+- The preference page no longer accepts a token signed for another installation.
+
+Added
+- WordPress plugins and themes, with their latest release.
+- Sites without a manifest are discovered.
+- Vulnerabilities in installed Windows programs.
+- and 3 more in the release notes
+  https://github.com/stackurity/stackurity/releases/tag/v0.14.0
+
+Changed
+- The action plan groups fixes that share a package across hosts.
+
+Fixed
+- A scan that timed out no longer marks the host's inventory complete.
+
+Read the full release notes: https://github.com/stackurity/stackurity/releases/tag/v0.14.0
+
+--
+You are receiving this because you are subscribed to Marketing emails from Stackurity.
+Unsubscribe from Marketing: https://app.stackurity.dev/email/preferences#PREVIEW-unsubscribe
+Manage email preferences: https://app.stackurity.dev/email/preferences#PREVIEW-preferences
+Sent by Stackurity (news@stackurity.test)
+Example Ltd, 1 Main Road, Pune 411001, India

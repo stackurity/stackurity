@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html"
 	"log/slog"
 	"net/url"
 	"regexp"
@@ -155,7 +154,9 @@ type bulkFooter struct {
 	category      string
 	unsubscribe   string // the visible unsubscribe link (preference page)
 	preferences   string // the preference page, both categories
-	postalAddress string
+	postalAddress string // none: no address line
+	sender        string // the From address
+	home          string // the dashboard, which the wordmark links to
 	test          bool
 }
 
@@ -167,6 +168,7 @@ type Bulk struct {
 	BaseURL string
 	// PostalAddress is the sender's physical address, shown in every
 	// footer (laws such as CAN-SPAM require one in commercial email).
+	// Empty: the footer has no address line.
 	PostalAddress string
 	// Interval is the wait between two emails (default 1s).
 	Interval time.Duration
@@ -391,7 +393,7 @@ func (b *Bulk) Preview(c BulkCampaign) (BulkPreview, error) {
 	m := c.message()
 	u := strings.TrimRight(b.BaseURL, "/")
 	m.bulk = &bulkFooter{category: c.Category, unsubscribe: u + "/email/preferences#PREVIEW-unsubscribe",
-		preferences: u + "/email/preferences#PREVIEW-preferences", postalAddress: b.PostalAddress}
+		preferences: u + "/email/preferences#PREVIEW-preferences", postalAddress: b.PostalAddress, sender: b.Mail.From(), home: u + "/"}
 	m.oneClick = u + "/email/preferences/one-click?t=PREVIEW"
 	raw := string(buildEmail(b.Mail.From(), []string{"recipient@example.com"}, m))
 	head, _, _ := strings.Cut(raw, "\r\n\r\n")
@@ -411,98 +413,10 @@ func (b *Bulk) personalise(m Message, key []byte, userID int64, test bool) Messa
 	unsub := PrefsToken(key, PrefsClaim{Kind: PrefsKindUnsubscribe, UserID: userID, Category: m.Event, Expires: now.Add(UnsubscribeLinkTTL)})
 	prefs := PrefsToken(key, PrefsClaim{Kind: PrefsKindCentre, UserID: userID, Category: "all", Expires: now.Add(PreferencesLinkTTL)})
 	m.bulk = &bulkFooter{category: m.Event, unsubscribe: u + "/email/preferences#" + unsub, preferences: u + "/email/preferences#" + prefs,
-		postalAddress: b.PostalAddress, test: test}
+		postalAddress: b.PostalAddress, sender: b.Mail.From(), home: u + "/", test: test}
 	m.oneClick = u + "/email/preferences/one-click?" + url.Values{"t": {unsub}}.Encode()
 	if m.At.IsZero() {
 		m.At = now.UTC()
 	}
 	return m
-}
-
-// bulkWhy is the footer's first line.
-func bulkWhy(f *bulkFooter) string {
-	return fmt.Sprintf("You are receiving this because you are subscribed to %s emails from Stackurity.", BulkCategoryLabel(f.category))
-}
-
-func bulkText(m Message) string {
-	var b strings.Builder
-	b.WriteString(m.Subject() + "\n\n")
-	for _, l := range m.Summary {
-		b.WriteString(l + "\n\n")
-	}
-	for _, s := range m.Sections {
-		if s.Title != "" {
-			b.WriteString(s.Title + "\n")
-		}
-		writeItems(&b, s.Items, "")
-		b.WriteString("\n")
-	}
-	if m.Link != "" {
-		label := m.LinkLabel
-		if label == "" {
-			label = "Read more"
-		}
-		b.WriteString(label + ": " + m.Link + "\n")
-	}
-	if f := m.bulk; f != nil {
-		b.WriteString("\n--\n" + bulkWhy(f) + "\n")
-		b.WriteString("Unsubscribe from " + BulkCategoryLabel(f.category) + ": " + f.unsubscribe + "\n")
-		b.WriteString("Email preferences: " + f.preferences + "\n")
-		if f.postalAddress != "" {
-			b.WriteString(f.postalAddress + "\n")
-		}
-	}
-	return b.String()
-}
-
-func bulkHTML(m Message) string {
-	var b strings.Builder
-	esc := html.EscapeString
-	link := func(text, href string) string {
-		if href == "" {
-			return esc(text)
-		}
-		return `<a href="` + esc(href) + `">` + esc(text) + `</a>`
-	}
-	b.WriteString(`<!doctype html><html><body style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5;color:#1f2933;max-width:640px">` + "\n")
-	b.WriteString(`<h2 style="font-size:18px;margin:0 0 12px">` + esc(m.Subject()) + "</h2>\n")
-	for _, l := range m.Summary {
-		b.WriteString("<p>" + esc(l) + "</p>\n")
-	}
-	var items func([]Item)
-	items = func(list []Item) {
-		b.WriteString("<ul style=\"margin:4px 0 4px 18px;padding:0\">\n")
-		for _, it := range list {
-			b.WriteString("<li>" + link(it.Text, it.Link))
-			if len(it.Items) > 0 {
-				items(it.Items)
-			}
-			b.WriteString("</li>\n")
-		}
-		b.WriteString("</ul>\n")
-	}
-	for _, s := range m.Sections {
-		if s.Title != "" {
-			b.WriteString(`<h3 style="font-size:15px;margin:16px 0 4px">` + esc(s.Title) + "</h3>\n")
-		}
-		items(s.Items)
-	}
-	if m.Link != "" {
-		label := m.LinkLabel
-		if label == "" {
-			label = "Read more"
-		}
-		b.WriteString(`<p style="margin-top:16px">` + link(label, m.Link) + "</p>\n")
-	}
-	if f := m.bulk; f != nil {
-		b.WriteString(`<hr style="border:0;border-top:1px solid #d9e2ec;margin:24px 0 12px">` + "\n")
-		b.WriteString(`<p style="font-size:12px;color:#52606d">` + esc(bulkWhy(f)) + "<br>")
-		b.WriteString(link("Unsubscribe from "+BulkCategoryLabel(f.category), f.unsubscribe) + " &middot; " + link("Email preferences", f.preferences))
-		if f.postalAddress != "" {
-			b.WriteString("<br>" + esc(f.postalAddress))
-		}
-		b.WriteString("</p>\n")
-	}
-	b.WriteString("</body></html>\n")
-	return b.String()
 }
