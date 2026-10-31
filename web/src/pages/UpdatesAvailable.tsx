@@ -93,7 +93,7 @@ export function UpdatesAvailablePage() {
       </form>
       <ErrorBox error={sum.error} title="Could not load updates" />
       {!sum.data && !sum.error && <Loading />}
-      {sum.data && <p className="small muted">{countsText(sum.data.counts)} Only packages from a registry (npm, PyPI, Maven and the like) are listed.</p>}
+      {sum.data && <p className="small muted">{countsText(sum.data.counts)} Only packages from a registry (npm, PyPI, Maven, wordpress.org and the like) are listed.</p>}
       {nothing && (
         <EmptyState title="No updates available">
           <p>Packages appear here once a registry publishes a newer stable release than the one installed.</p>

@@ -898,7 +898,7 @@ stackurity.exe agent --interval 6h`,
       },
       {
         list: [
-          "Only packages from a registry (npm, Packagist, PyPI, Go, crates.io, RubyGems, NuGet, Maven, pub, Hex) are covered. Operating system packages, generic components and plugins updated from elsewhere (such as a WordPress plugin whose Update URI names another host) are left out.",
+          "Only packages from a registry (npm, Packagist, PyPI, Go, crates.io, RubyGems, NuGet, Maven, pub, Hex) and WordPress plugins and themes from wordpress.org are covered. Operating system packages, other generic components and plugins updated from elsewhere (a WordPress plugin whose Update URI names another host, a must-use plugin) are left out.",
           "A pre-release is never the latest stable release.",
           "To get them in a daily or weekly summary, tick **Include updates available in summaries** on a notification integration (off by default). See [Notifications](help:notifications).",
         ],

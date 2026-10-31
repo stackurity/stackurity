@@ -17,8 +17,10 @@ import (
 // with release data for their packages.
 //
 //	shop/api:1   lodash 4.17.15 (patch), react 17.0.2 (major), foo (generic),
-//	             left-pad (current), next (latest is a pre-release),
-//	             acme-plugin (marked not from the registry)
+//	             left-pad (current), next (latest is a pre-release), vite
+//	             (installed pre-release ahead of the latest), the WordPress
+//	             plugin akismet 5.2 from wordpress.org (minor), and acme-pro,
+//	             a plugin the collector marked not from wordpress.org
 //	shop/web:1   lodash 4.17.20 (patch), express 4.17.0 (minor)
 //	Beta's image lodash 4.17.10, express 4.17.0
 func updatesFixture(t *testing.T) (a, b context.Context, s *store.Store, api, web int64) {
@@ -31,15 +33,17 @@ func updatesFixture(t *testing.T) (a, b context.Context, s *store.Store, api, we
 		t.Fatal(err)
 	}
 	b = tenant.WithWorkspace(bg, ws.ID)
-	// acme-plugin is one the collector says is updated from elsewhere.
+	// acme-pro is marked as the WordPress collector marks a plugin whose
+	// Update URI names another host.
 	batch := model.NewBatch(model.Collector{ID: "image-scanner", Version: "1", Method: "scanner"},
 		model.AssetRef{Kind: model.AssetImage, Name: "registry.example.com/shop/api:1",
 			Identifiers: []model.Identifier{{Scheme: "image-ref", Value: "registry.example.com/shop/api:1"}},
 			Attributes:  map[string]string{"image": "registry.example.com/shop/api:1", "digest": digestA}})
-	for _, p := range []string{"pkg:npm/lodash@4.17.15", "pkg:npm/react@17.0.2", "pkg:generic/foo@1.0", "pkg:npm/left-pad@1.3.0", "pkg:npm/next@14.1.0"} {
+	for _, p := range []string{"pkg:npm/lodash@4.17.15", "pkg:npm/react@17.0.2", "pkg:generic/foo@1.0", "pkg:npm/left-pad@1.3.0", "pkg:npm/next@14.1.0",
+		"pkg:npm/vite@6.0.0-beta.1", "pkg:generic/wordpress-plugin/akismet@5.2"} {
 		batch.Observations = append(batch.Observations, model.Observation{Purl: p, Confidence: model.ConfidenceConfirmed})
 	}
-	batch.Observations = append(batch.Observations, model.Observation{Purl: "pkg:npm/acme-plugin@1.0.0", Confidence: model.ConfidenceConfirmed,
+	batch.Observations = append(batch.Observations, model.Observation{Purl: "pkg:generic/wordpress-plugin/acme-pro@3.2.1", Confidence: model.ConfidenceConfirmed,
 		Evidence: map[string]string{"wordpress_org": "no", "wordpress_org_reason": "its Update URI names updates.acme.example"}})
 	batch.Complete = true
 	if err := batch.Validate(); err != nil {
@@ -54,7 +58,7 @@ func updatesFixture(t *testing.T) (a, b context.Context, s *store.Store, api, we
 	ingestImage(t, s, b, "registry.example.com/beta/app:1", digestA, "pkg:npm/lodash@4.17.10", "pkg:npm/express@4.17.0")
 
 	latest := map[string]string{"lodash": "4.17.21", "react": "18.3.1", "foo": "2.0", "left-pad": "1.3.0", "next": "15.0.0-rc.1",
-		"acme-plugin": "1.2.0", "express": "4.21.0"}
+		"vite": "5.4.0", "akismet": "5.3", "acme-pro": "3.3.0", "express": "4.21.0"}
 	for _, asset := range []int64{api, web} {
 		rows, _, err := s.ListInventory(a, store.InventoryFilter{AssetID: asset})
 		if err != nil {
@@ -71,9 +75,10 @@ func updatesFixture(t *testing.T) (a, b context.Context, s *store.Store, api, we
 }
 
 // The summary counts installs behind by update type and lists the packages
-// with the most installs behind. Generic packages, current versions,
-// pre-releases and packages not from the registry are left out, and
-// another workspace's installs are never counted.
+// with the most installs behind. Generic packages other than WordPress
+// plugins and themes, current versions, pre-releases (as latest, or
+// installed ahead of it) and plugins not from wordpress.org are left out,
+// and another workspace's installs are never counted.
 func TestUpdatesSummary(t *testing.T) {
 	a, b, s, api, web := updatesFixture(t)
 
@@ -81,8 +86,8 @@ func TestUpdatesSummary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]int{"patch": 2, "minor": 1, "major": 1, "total": 4}
-	if !mapsEqual(sum.Counts, want) || sum.Components != 3 || len(sum.Top) != 3 {
+	want := map[string]int{"patch": 2, "minor": 2, "major": 1, "total": 5}
+	if !mapsEqual(sum.Counts, want) || sum.Components != 4 || len(sum.Top) != 4 {
 		t.Fatalf("summary = %+v", sum)
 	}
 	lodash := sum.Top[0]
@@ -90,13 +95,14 @@ func TestUpdatesSummary(t *testing.T) {
 		lodash.UpdateType != "patch" || !slices.Equal(lodash.InstalledVersions, []string{"4.17.15", "4.17.20"}) {
 		t.Errorf("lodash = %+v", lodash)
 	}
-	// Equal installs: the larger change first.
-	if sum.Top[1].Name != "react" || sum.Top[1].UpdateType != "major" || sum.Top[2].Name != "express" || sum.Top[2].UpdateType != "minor" {
+	// Equal installs: the larger change first, then by name.
+	if sum.Top[1].Name != "react" || sum.Top[1].UpdateType != "major" || sum.Top[2].Name != "akismet" || sum.Top[2].Namespace != "wordpress-plugin" ||
+		sum.Top[2].UpdateType != "minor" || sum.Top[3].Name != "express" {
 		t.Errorf("top = %+v", sum.Top)
 	}
 
 	minor, err := s.SummarizeWorkspaceUpdates(a, store.UpdatesFilter{UpdateType: "minor"})
-	if err != nil || !mapsEqual(minor.Counts, want) || minor.Components != 1 || minor.Top[0].Name != "express" {
+	if err != nil || !mapsEqual(minor.Counts, want) || minor.Components != 2 || minor.Top[0].Name != "akismet" || minor.Top[1].Name != "express" {
 		t.Errorf("minor = %+v %v", minor, err)
 	}
 	one, err := s.SummarizeWorkspaceUpdates(a, store.UpdatesFilter{AssetID: web, Limit: 1})
@@ -138,8 +144,8 @@ func TestInventoryUpdateTypeFilter(t *testing.T) {
 		}
 		return out, total
 	}
-	if got, total := names(store.InventoryFilter{UpdateType: "any"}); total != 4 ||
-		!slices.Equal(got, []string{"express@4.17.0:minor", "lodash@4.17.15:patch", "lodash@4.17.20:patch", "react@17.0.2:major"}) {
+	if got, total := names(store.InventoryFilter{UpdateType: "any"}); total != 5 ||
+		!slices.Equal(got, []string{"akismet@5.2:minor", "express@4.17.0:minor", "lodash@4.17.15:patch", "lodash@4.17.20:patch", "react@17.0.2:major"}) {
 		t.Errorf("any = %v (%d)", got, total)
 	}
 	if got, total := names(store.InventoryFilter{UpdateType: "patch", Page: store.Page{Limit: 1, Offset: 1}}); total != 2 ||
@@ -156,14 +162,18 @@ func TestInventoryUpdateTypeFilter(t *testing.T) {
 		t.Errorf("search react on api = %v (%d)", got, total)
 	}
 	// Without the filter every row is listed, the excluded ones with no
-	// update type.
+	// update type (vite: ahead, which is not an update).
 	all, _, err := s.ListInventory(a, store.InventoryFilter{AssetID: api})
-	if err != nil || len(all) != 6 {
+	if err != nil || len(all) != 8 {
 		t.Fatalf("api rows = %v %v", all, err)
 	}
+	wantType := map[string]string{"lodash": "patch", "react": "major", "akismet": "minor", "vite": "ahead"}
 	for _, r := range all {
-		if r.Name != "lodash" && r.Name != "react" && r.UpdateType != "" {
-			t.Errorf("%s@%s has update type %q", r.Name, r.Version, r.UpdateType)
+		if r.UpdateType != wantType[r.Name] {
+			t.Errorf("%s@%s has update type %q, want %q", r.Name, r.Version, r.UpdateType, wantType[r.Name])
+		}
+		if r.Name == "acme-pro" && (r.LatestStable != "" || r.Evidence["wordpress_org"] != "no") {
+			t.Errorf("acme-pro, not from wordpress.org: %+v", r)
 		}
 	}
 	if _, _, err := s.ListInventory(a, store.InventoryFilter{UpdateType: "huge"}); !errors.Is(err, store.ErrInvalid) {

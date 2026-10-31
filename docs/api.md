@@ -550,7 +550,7 @@ An [upgrade recommendation](#upgrade-recommendations) for each installed version
 
 Where components are used, paged. Query: `component_id`, `asset_id`, `q`, `type`, `direct`, `include_removed`, `coverage`, `update_type`.
 
-Each row has `latest_stable` (the package registry's newest stable release; a pre-release never is) and `update_type`: `patch`, `minor` or `major` when that release is newer than the installed version, empty when it is current or unknown. Only registry packages (npm, Composer, PyPI, Go, crates.io, RubyGems, NuGet, Maven, pub, Hex) have one: `pkg:generic` and distribution packages never do, nor a package the collector marked as not from the registry (evidence `wordpress_org` `no`). `update_type=patch|minor|major` keeps the rows with that update type, `any` those with any; 400 for another value.
+Each row has `latest_stable` (the package registry's newest stable release; a pre-release never is) and `update_type`: `patch`, `minor` or `major` when that release is newer than the installed version, `ahead` when the installed pre-release is newer, empty when it is current or unknown. Only registry packages (npm, Composer, PyPI, Go, crates.io, RubyGems, NuGet, Maven, pub, Hex, and WordPress plugins and themes from wordpress.org) have one: other `pkg:generic` and distribution packages never do, nor a package the collector marked as not from the registry (evidence `wordpress_org` `no`). `ahead` is not an update. `update_type=patch|minor|major` keeps the rows with that update type, `any` those with any; 400 for another value.
 
 ### `GET /inventory/updates`
 

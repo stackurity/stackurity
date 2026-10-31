@@ -680,7 +680,7 @@ func init() {
 			"(these are not findings: use list_findings or action_plan for security fixes). counts gives installs behind by " +
 			"update_type (patch, minor, major) and their total; top lists the packages with the most installs behind: " +
 			"component_id, installed_versions, latest_stable, update_type (the largest change among its installs), installs and " +
-			"assets. Only registry packages (npm, PyPI, Maven and the like) are covered; pre-releases are never latest.",
+			"assets. Only registry packages (npm, PyPI, Maven, WordPress plugins and themes from wordpress.org and the like) are covered; pre-releases are never latest.",
 		schema: obj(map[string]any{
 			"asset_id":    num("Limit to one asset"),
 			"update_type": map[string]any{"type": "string", "enum": []string{"patch", "minor", "major", "any"}, "description": "Only list packages with this update type"},
