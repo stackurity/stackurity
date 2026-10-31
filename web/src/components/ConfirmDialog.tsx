@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { canConfirm, confirmWord, keyAction, nextFocus, type ConfirmRequest, type PromptRequest } from "../confirm";
+import { canConfirm, confirmWord, DialogQueue, keyAction, nextFocus, type ConfirmRequest, type PromptRequest } from "../confirm";
 
 /**
  * One in-app dialog for every confirmation and text prompt, instead of the
@@ -18,22 +18,24 @@ type Pending =
   | { kind: "confirm"; req: ConfirmRequest; resolve: (ok: boolean) => void }
   | { kind: "prompt"; req: PromptRequest; resolve: (text: string | null) => void };
 
-let open: ((p: Pending) => void) | null = null;
-const queue: Pending[] = [];
+// Requests are answered one at a time, in order (DialogQueue); the host
+// shows whichever is current.
+const queue = new DialogQueue<Pending>();
+let show: ((p: Pending | null) => void) | null = null;
 
 /** Asks for confirmation; true when the action was confirmed. */
 export function confirmAction(req: ConfirmRequest): Promise<boolean> {
-  return new Promise((resolve) => show({ kind: "confirm", req, resolve }));
+  return new Promise((resolve) => enqueue({ kind: "confirm", req, resolve }));
 }
 
 /** Asks for a line of text; null when cancelled. */
 export function promptText(req: PromptRequest): Promise<string | null> {
-  return new Promise((resolve) => show({ kind: "prompt", req, resolve }));
+  return new Promise((resolve) => enqueue({ kind: "prompt", req, resolve }));
 }
 
-function show(p: Pending) {
-  if (open) open(p);
-  else queue.push(p);
+function enqueue(p: Pending) {
+  const now = queue.push(p);
+  if (now) show?.(now);
 }
 
 const FOCUSABLE = 'button:not([disabled]), input:not([disabled]), [href], select, textarea, [tabindex]:not([tabindex="-1"])';
@@ -45,15 +47,17 @@ export function ConfirmHost() {
   const back = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
-    open = (p) => {
-      back.current = document.activeElement as HTMLElement | null;
-      setTyped(p.kind === "prompt" ? (p.req.initial ?? "") : "");
+    show = (p) => {
+      if (p) {
+        if (!back.current) back.current = document.activeElement as HTMLElement | null;
+        setTyped(p.kind === "prompt" ? (p.req.initial ?? "") : "");
+      }
       setCur(p);
     };
-    const first = queue.shift();
-    if (first) open(first);
+    // One asked before the host was mounted.
+    show(queue.current());
     return () => {
-      open = null;
+      show = null;
     };
   }, []);
 
@@ -70,10 +74,16 @@ export function ConfirmHost() {
   const close = (value: boolean | string | null) => {
     if (cur.kind === "confirm") cur.resolve(value === true);
     else cur.resolve(typeof value === "string" ? value : null);
-    setCur(null);
-    back.current?.focus?.();
-    const next = queue.shift();
-    if (next) setTimeout(() => open?.(next), 0);
+    const next = queue.done();
+    if (next) {
+      // The next request takes over the dialog; focus returns once all are answered.
+      setTimeout(() => show?.(next), 0);
+      setCur(null);
+    } else {
+      setCur(null);
+      back.current?.focus?.();
+      back.current = null;
+    }
   };
 
   const asConfirm: ConfirmRequest =

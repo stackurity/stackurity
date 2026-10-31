@@ -73,3 +73,31 @@ export function nextFocus(cur: number, count: number, back: boolean): number {
   if (cur < 0 || cur >= count) return back ? count - 1 : 0;
   return back ? (cur - 1 + count) % count : (cur + 1) % count;
 }
+
+/**
+ * Requests waiting for the one dialog: shown one at a time, in order, so a
+ * second confirmation while one is open waits its turn instead of replacing
+ * it (and leaving the first promise unanswered).
+ */
+export class DialogQueue<T> {
+  private items: T[] = [];
+  private showing: T | null = null;
+  /** Adds a request; returns it when it is shown at once, else null. */
+  push(item: T): T | null {
+    if (this.showing === null) {
+      this.showing = item;
+      return item;
+    }
+    this.items.push(item);
+    return null;
+  }
+  /** The request on screen. */
+  current(): T | null {
+    return this.showing;
+  }
+  /** The shown request was answered; returns the next to show, or null. */
+  done(): T | null {
+    this.showing = this.items.shift() ?? null;
+    return this.showing;
+  }
+}

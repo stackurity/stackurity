@@ -20,4 +20,10 @@ test("return paths stay on this site", () => {
   assert.equal(safeReturn("/settings/users?tab=x#mfa"), "/settings/users?tab=x#mfa");
   for (const bad of ["https://evil.example/", "//evil.example/x", "/\\evil.example", "javascript:alert(1)", "settings/users", "", null, "/\nx", " //evil"])
     assert.equal(safeReturn(bad as string), null, String(bad));
+  // Dot segments that collapse into "//host" once normalised (review of #143).
+  for (const bad of ["/..//evil.com", "/.//evil.com", "/a/..//evil.com", "/./\\evil.com", "/a/b/../..//evil.com", "/%2e%2e//evil.com"])
+    assert.equal(safeReturn(bad), null, bad);
+  // Encoded slashes stay a path on this site.
+  assert.equal(safeReturn("/%2F%2Fevil.com"), "/%2F%2Fevil.com");
+  assert.equal(safeReturn("/settings/../account#mfa"), "/account#mfa");
 });
