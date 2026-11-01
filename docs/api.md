@@ -792,7 +792,7 @@ Queues a full re-evaluation of the workspace's inventory.
 
 **Who:** viewer
 
-Priority weights (including `epss` and `epss_threshold`), thresholds, deadlines and SOS rules, with the policy `version` and `last_change` (who, when, versions, changed fields; null when never changed).
+Priority weights (including `epss` and `epss_threshold`), thresholds, deadlines and SOS rules, with the policy `version` and `last_change` (who, when, versions, changed fields; null when never changed). `due_dates` is `patch_calendar` when non-urgent findings are due at their asset's next patch window, set by `patch_calendar` (`test_days_after_patch_tuesday`, 0–20, default 1; `prod_days_after_test`, 0–28, default 7; `timezone`, default `UTC`); it is left out for `sla`, the default ([risk.md](risk.md#due-dates-from-a-patch-calendar)).
 
 ### `PUT /risk-policy`
 

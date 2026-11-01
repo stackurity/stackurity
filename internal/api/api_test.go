@@ -560,6 +560,23 @@ func TestWorkflowRoles(t *testing.T) {
 	if code := admin.do("PUT", "/api/v1/risk-policy", map[string]any{"known_exploited": 3, "no_such_field": 1}, nil); code != 400 {
 		t.Errorf("unknown policy field accepted: %d", code)
 	}
+
+	// Due dates from a patch calendar: a partial calendar takes the
+	// defaults for the rest; a bad time zone is refused.
+	pol.Policy["due_dates"] = "patch_calendar"
+	pol.Policy["patch_calendar"] = map[string]any{"timezone": "Asia/Kolkata"}
+	if code := admin.do("PUT", "/api/v1/risk-policy", pol.Policy, &put); code != 200 || strings.Join(put.Changed, ",") != "due_dates,patch_calendar" {
+		t.Errorf("patch calendar: %d %+v", code, put)
+	}
+	view.do("GET", "/api/v1/risk-policy", nil, &back)
+	if back.Policy.DueDates != risk.DueDatesPatchCalendar || back.Policy.PatchCalendar == nil ||
+		*back.Policy.PatchCalendar != (risk.PatchCalendar{TestDaysAfterPatchTuesday: 1, ProdDaysAfterTest: 7, Timezone: "Asia/Kolkata"}) {
+		t.Errorf("patch calendar read back as %q %+v", back.Policy.DueDates, back.Policy.PatchCalendar)
+	}
+	pol.Policy["patch_calendar"] = map[string]any{"timezone": "Asia/Nowhere"}
+	if code := admin.do("PUT", "/api/v1/risk-policy", pol.Policy, nil); code != 400 {
+		t.Errorf("unknown time zone accepted: %d", code)
+	}
 }
 
 func TestFindingFilters(t *testing.T) {

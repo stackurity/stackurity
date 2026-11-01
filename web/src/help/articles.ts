@@ -1238,7 +1238,7 @@ jobs:
     section: "Settings and administration",
     summary: "How the P1–P4 score is built, the deadlines per priority, exception limits and SOS rules.",
     where: ["Settings", "Risk policy"],
-    keywords: "priority score weights thresholds sla deadlines sos rules exception max days epss exploit prediction first",
+    keywords: "priority score weights thresholds sla deadlines sos rules exception max days epss exploit prediction first patch calendar patch tuesday window due dates maintenance",
     body: [
       { p: "Everyone can view the risk policy; only admins can change it. Changes apply on the next notification cycle (within a few minutes). **Reset to default** restores the values below." },
       {
@@ -1263,9 +1263,20 @@ jobs:
           ["Multipliers", "version not confirmed ×0.7, stale asset ×0.8", "Less certain evidence scores lower."],
           ["Thresholds", "P1 ≥ 12, P2 ≥ 8.5, P3 ≥ 6, else P4", "Must be P1 > P2 > P3."],
           ["Deadlines (acknowledge / fix)", "P1 4 h / 3 days, P2 24 h / 14 days, P3 72 h / 45 days, P4 168 h / 90 days", "Missing them escalates the incident."],
+          [
+            "Due dates",
+            "Days after first seen (the deadlines above)",
+            "Or **Next patch window**: P1, SOS and known-exploited findings keep the deadlines above; the rest are due when their asset's next patch window after first seen ends. See below.",
+          ],
           ["Exception max days", "365", "Longest allowed suppression or risk acceptance."],
           ["SOS rules", "“Known exploited in production”; “Critical, exposed production asset”", "A rule needs more than severity alone. Only confirmed findings can be SOS. Unknown exposure counts as exposed and no environment as production."],
         ],
+      },
+      {
+        p: "**Patch calendar.** Most vulnerabilities are routine maintenance, not incidents. With **Due dates: Next patch window**, a non-urgent finding is due at the end of its asset's first patch window after it was first seen, instead of a number of days later. Each month has a test window (by default the Wednesday after Patch Tuesday, the second Tuesday) and a production window (by default a week after the test window), each one day in the policy's time zone. An asset is in the test class when it has the tag `patch-window:test`, else a dev, test, uat, staging or qa environment, else such a word in its name; `patch-window:prod` or anything else is production. A finding still open when its window has passed is overdue, as with any deadline.",
+      },
+      {
+        p: "Deadlines run from when the asset first had the vulnerability. A new version of an affected package (a kernel update, or an upgrade that is still affected) does not restart the clock; an issue that was fixed and comes back later does.",
       },
       { p: "Open any finding to see “Why this priority”: each factor, its points and the evidence behind it, and the policy version that produced it." },
       { p: "Every change is in the **Audit log** (`risk_policy.update`) with the policy before and after, so any earlier version can be rebuilt. Weights that point the wrong way (for example negative points for known exploitation) are rejected." },

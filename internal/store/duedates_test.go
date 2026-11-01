@@ -98,3 +98,91 @@ func syncKeys(t *testing.T, s *store.Store, ctx context.Context, asset int64, wa
 		t.Fatal(err)
 	}
 }
+
+// Under a patch calendar, a non-urgent finding is due at the end of its
+// asset's first patch window after it appeared, and stays due then: when the
+// window passes with the finding open, it is overdue and escalates its
+// incident once, however often priorities are recomputed afterwards. An
+// urgent finding keeps the SLA.
+func TestPatchCalendarDeadlines(t *testing.T) {
+	ctx, s := loopStore(t)
+	p := risk.DefaultPolicy()
+	p.DueDates = risk.DueDatesPatchCalendar
+	if err := s.SetRiskPolicy(ctx, p); err != nil {
+		t.Fatal(err)
+	}
+	prod := ingestHost(t, s, ctx, "web-1", "pkg:npm/lodash@4.17.15", "pkg:npm/express@4.0.0")
+	dev := ingestHost(t, s, ctx, "web-dev-1", "pkg:npm/lodash@4.17.15")
+	syncKeys(t, s, ctx, prod, map[string][]string{"CVE-L": {"lodash"}, "CVE-E": {"express"}})
+	syncKeys(t, s, ctx, dev, map[string][]string{"CVE-L": {"lodash"}})
+	// First seen on 1 September 2026, a week before Patch Tuesday (the 8th):
+	// the test window is the 9th, production's the 16th. CVE-E is known
+	// exploited, so urgent.
+	if _, err := s.Pool.Exec(ctx, `UPDATE assets SET quiet_backlog = false`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Pool.Exec(ctx, `UPDATE findings SET first_seen = '2026-09-01T09:00:00Z',
+		evidence = CASE key WHEN 'CVE-E' THEN '{"known_exploited": true}'::jsonb ELSE evidence END`); err != nil {
+		t.Fatal(err)
+	}
+	day := func(d int) time.Time { return time.Date(2026, 9, d, 0, 0, 0, 0, time.UTC) }
+	check := func(when string) {
+		t.Helper()
+		if f := one(t, s, ctx, prod, "CVE-L"); f.FixDue == nil || !f.FixDue.Equal(day(17)) || f.Priority == "P1" || f.SOS {
+			t.Errorf("%s: production fix due %v (%s); want the end of its window, %v", when, f.FixDue, f.Priority, day(17))
+		}
+		if f := one(t, s, ctx, dev, "CVE-L"); f.FixDue == nil || !f.FixDue.Equal(day(10)) {
+			t.Errorf("%s: dev fix due %v; want the end of the test window, %v", when, f.FixDue, day(10))
+		}
+		f := one(t, s, ctx, prod, "CVE-E")
+		_, want := p.Deadlines(f.Priority, time.Date(2026, 9, 1, 9, 0, 0, 0, time.UTC))
+		if f.FixDue == nil || !f.FixDue.Equal(want) {
+			t.Errorf("%s: known exploited fix due %v; want the SLA's %v", when, f.FixDue, want)
+		}
+	}
+	if _, err := s.Prioritize(ctx, p, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	check("prioritised")
+	if err := s.CorrelateIncidents(ctx); err != nil {
+		t.Fatal(err)
+	}
+	incident := one(t, s, ctx, prod, "CVE-L").IncidentID
+	if incident == nil {
+		t.Fatal("no incident")
+	}
+	esc, err := s.EscalationCandidates(ctx)
+	if err != nil || esc[*incident] != 2 {
+		t.Fatalf("escalation candidates %v (%v); want incident %d overdue (2)", esc, err, *incident)
+	}
+	if err := s.SetIncidentEscalation(ctx, *incident, 2); err != nil {
+		t.Fatal(err)
+	}
+	// Later passes leave the deadlines where they were, so the incident is
+	// not raised again.
+	for _, later := range []time.Time{time.Now().Add(time.Hour), time.Now().AddDate(0, 2, 0)} {
+		if _, err := s.Prioritize(ctx, p, later); err != nil {
+			t.Fatal(err)
+		}
+		check("prioritised again")
+	}
+	if esc, err := s.EscalationCandidates(ctx); err != nil || esc[*incident] != 0 {
+		t.Errorf("escalated again: %v %v", esc, err)
+	}
+	// Summaries count it as newly overdue in the period its window ended in.
+	for _, c := range []struct {
+		from, to time.Time
+		want     int
+	}{{day(16), day(18), 1}, {day(18), time.Now(), 0}} {
+		counts, err := s.CountIssues(ctx, store.IssuesNewlyOverdue, c.from, c.to)
+		n := 0
+		for _, ic := range counts {
+			if ic.AssetID == prod && ic.Kind == "vulnerability" && ic.Priority != "P1" && !ic.KEV {
+				n += ic.Count
+			}
+		}
+		if err != nil || n != c.want {
+			t.Errorf("newly overdue from %v to %v: %d (%v), want %d", c.from, c.to, n, err, c.want)
+		}
+	}
+}

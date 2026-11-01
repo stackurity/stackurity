@@ -62,6 +62,14 @@ type Policy struct {
 
 	// SOS fires when any rule matches. Rules never rely on severity alone.
 	SOS []SOSRule `json:"sos_rules"`
+
+	// DueDates picks how fix deadlines are set: DueDatesSLA (stored as "",
+	// the default) or DueDatesPatchCalendar, which makes non-urgent findings
+	// due at their asset's next patch window. Both are left out of the JSON
+	// while unset, so the default policy's version did not change when they
+	// were added.
+	DueDates      string         `json:"due_dates,omitempty"`
+	PatchCalendar *PatchCalendar `json:"patch_calendar,omitempty"`
 }
 
 type SLA struct {
@@ -139,6 +147,9 @@ func (p Policy) Validate() error {
 		return errors.New("multipliers must be in (0, 1]")
 	}
 	if err := p.validateDirections(); err != nil {
+		return err
+	}
+	if err := p.validateDueDates(); err != nil {
 		return err
 	}
 	for _, r := range p.SOS {
@@ -470,6 +481,19 @@ func DecodePolicy(raw []byte, strict bool) (Policy, error) {
 	if _, ok := keys["sos_rules"]; !ok {
 		p.SOS = defaultRules
 	}
+	// A calendar that leaves a field out gets that field's default, like
+	// the policy itself.
+	if c, ok := keys["patch_calendar"]; ok && string(c) != "null" {
+		cal := DefaultPatchCalendar()
+		dec := json.NewDecoder(bytes.NewReader(c))
+		if strict {
+			dec.DisallowUnknownFields()
+		}
+		if err := dec.Decode(&cal); err != nil {
+			return Policy{}, err
+		}
+		p.PatchCalendar = &cal
+	}
 	// A policy saved before EPSS existed gets the default EPSS points, but
 	// never more than its own known_exploited weight (Validate's rule): an
 	// admin who lowered known exploitation lowered predicted exploitation too.
@@ -488,6 +512,20 @@ func (p Policy) Normalize() Policy {
 	if p.ExceptionMaxDays == 0 {
 		p.ExceptionMaxDays = DefaultExceptionMaxDays
 	}
+	// SLA deadlines are the default, stored as no value; a patch calendar
+	// without its settings uses the default calendar.
+	if p.DueDates == DueDatesSLA {
+		p.DueDates = ""
+	}
+	if p.DueDates == DueDatesPatchCalendar && p.PatchCalendar == nil {
+		c := DefaultPatchCalendar()
+		p.PatchCalendar = &c
+	}
+	if p.PatchCalendar != nil && p.PatchCalendar.Timezone == "" {
+		c := *p.PatchCalendar
+		c.Timezone = "UTC"
+		p.PatchCalendar = &c
+	}
 	return p
 }
 
@@ -500,7 +538,8 @@ func (p Policy) Version() string {
 	return "sha256:" + hex.EncodeToString(sum[:])[:16]
 }
 
-// Deadlines returns acknowledgement and fix deadlines from first detection.
+// Deadlines returns the SLA's acknowledgement and fix deadlines from first
+// detection. FindingDeadlines applies the policy's due-date mode.
 func (p Policy) Deadlines(priority string, firstSeen time.Time) (ack, fix time.Time) {
 	s := p.SLA[priority]
 	return firstSeen.Add(time.Duration(s.AckHours) * time.Hour), firstSeen.AddDate(0, 0, s.FixDays)
