@@ -5685,6 +5685,46 @@
     }
    }
   },
+  "/kubernetes/report": {
+   "post": {
+    "operationId": "post_kubernetes_report",
+    "summary": "Submit one collection of a Kubernetes cluster (the in-cluster reporter)",
+    "description": "Submit one collection of a Kubernetes cluster, as `stackurity kubernetes-reporter` sends it: `{\"batches\": [...], \"image_scans\": 25}`, gzip accepted. The batches are the cluster first, then images and workloads, with the kubernetes plugin's identity schemes (`k8s-cluster`, `k8s-cluster-name`, `k8s-workload`, `image-ref`); other kinds or schemes are refused. Each is stored under the `plugin:kubernetes` collector as an agent's report. The images are queued for the image scanner in the order given, at most `image_scans` (default 25, 0 to 500). Refused for a host-bound token; 30 reports an hour per token\n\nRole: collector, engineer+",
+    "tags": [
+     "Agents and uploads"
+    ],
+    "x-stackurity-role": "collector, engineer+",
+    "requestBody": {
+     "required": true,
+     "description": "batches (ObservationBatch list) and image_scans, optionally gzip-compressed (Content-Encoding: gzip)",
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/integrations": {
    "get": {
     "operationId": "get_integrations",

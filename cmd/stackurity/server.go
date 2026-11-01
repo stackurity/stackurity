@@ -644,25 +644,17 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 					return err
 				}
 				var last int64
-				var scans []store.ImageScan
-				for i, pb := range batches {
-					r := results[i]
-					if r == nil {
-						continue
-					}
-					last = r.AssetID
-					// Images the plugin found running are read by the image
-					// scanner, in the order the plugin gave (most important first).
-					if ic, ok := image.ReferenceOnly(pb); ok {
-						scans = append(scans, store.ImageScan{AssetID: r.AssetID, Image: ic.Image, Platform: ic.Platform, IntegrationID: in.ID})
+				for _, r := range results {
+					if r != nil {
+						last = r.AssetID
 					}
 				}
-				if limit := cfg.ImageScanLimit(); len(scans) > 0 && limit > 0 {
-					stats, err := st.QueueImageScans(ctx, scans, limit, imageScanFresh)
-					if err != nil {
-						return err
-					}
-					log.Info("image scans", "plugin", cfg.Plugin, "images", len(scans), "queued", stats.Queued,
+				// Images the plugin found running are read by the image
+				// scanner, in the order the plugin gave (most important first).
+				if n, stats, err := api.QueueReportedImages(ctx, st, batches, results, in.ID, cfg.ImageScanLimit()); err != nil {
+					return err
+				} else if n > 0 && cfg.ImageScanLimit() > 0 {
+					log.Info("image scans", "plugin", cfg.Plugin, "images", n, "queued", stats.Queued,
 						"fresh", stats.Fresh, "pending", stats.Pending, "deferred", stats.Limited)
 				}
 				if len(refused) > 0 {

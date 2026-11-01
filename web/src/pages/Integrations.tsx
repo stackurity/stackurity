@@ -642,6 +642,12 @@ function PluginForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
           </p>
         </div>
       </div>
+      {name === "kubernetes" && (
+        <Notice kind="info">
+          This pulls from the cluster's API server, which this server must be able to reach. To connect a cluster with one command instead, with a
+          read-only reporter in the cluster that needs no inbound access, use <Link to="/integrations/kubernetes/add">Connect a Kubernetes cluster</Link>.
+        </Notice>
+      )}
       {selected && (
         <>
           {schema.length > 0 && (

@@ -179,6 +179,7 @@ When chained events are removed, `verify-audit` then reports a break there; that
 | Git: HTTPS only, no `ext::`, `file`, `ssh` or `git` transports, no credentials or query in the URL, pinned to the checked address, no hooks, submodules, LFS or symlinks, credential only in the environment and never in errors | `TestValidate`, `TestValidateRefusesNonHTTPSAndHiddenCredentials`, `TestCloneRefusesInternalDestinations`, `TestCloneHardening`, `TestCloneRejectsFileTransport` |
 | Image scans: strict references, internal registries refused, every Syft connection checked through the guarded proxy | `TestValidate` (image), `TestImageScanRefusesInternalRegistries`, `TestImageScanUsesGuardedProxy`, `TestProxyChecksEveryTunnel` |
 | Kubernetes API server and plugin targets follow the workspace's policy | `TestCollectSendsNetworkPolicy`, `TestNetworkPolicyIsEnforced`, `TestInternalAPIServersRefused` |
+| Kubernetes reporter: a report takes only a cluster's asset kinds and identity schemes, is refused for host-bound tokens and limited per token (it can queue registry pulls); the manifest URL never carries the enrollment code; the code is used only when the token can be stored; the RBAC grants exactly what the code reads | `TestKubernetesReportRefusals`, `TestKubernetesReportRateLimit`, `TestInstallKubernetesManifest`, `TestKubernetesReporterKeepsCodeWhenSecretIsReadOnly`, `TestReporterRBACIsExactlyWhatTheCodeReads` |
 | Registry and repository documents: links followed only on the same scheme and host | `TestLinksStayOnTheRegistryHost` |
 
 ### Untrusted content

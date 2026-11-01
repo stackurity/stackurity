@@ -1,6 +1,7 @@
-package main
+package kube
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -38,6 +39,7 @@ type client struct {
 	http    *http.Client
 	token   string
 	cluster string // name from the kubeconfig, when there is one
+	ua      string // User-Agent; default stackurity-kubernetes-plugin
 }
 
 // apiError is a non-2xx answer from the API server.
@@ -217,19 +219,27 @@ func connect(ctx context.Context, s settings, secrets map[string]string) (*clien
 		if !plugin.AllowsPrivate(ctx) {
 			return nil, errors.New("in_cluster uses the server's own service account, which this workspace may not use; store a kubeconfig or token secret")
 		}
-		tok, err := os.ReadFile(inClusterTokenFile)
-		if err != nil {
-			return nil, fmt.Errorf("in_cluster: %w (is a service account token mounted?)", err)
-		}
-		ca, err := os.ReadFile(inClusterCAFile)
-		if err != nil {
+		if conn, err = inClusterConnection(); err != nil {
 			return nil, fmt.Errorf("in_cluster: %w", err)
 		}
-		conn = &connection{server: inClusterServer, token: strings.TrimSpace(string(tok)), caPEM: ca}
 	default:
 		return nil, errors.New("no credentials: store a kubeconfig or token secret, or set in_cluster")
 	}
 	return newClient(ctx, conn)
+}
+
+// inClusterConnection is the pod's own service account. The token is read
+// each time: a projected token is rotated by the kubelet.
+func inClusterConnection() (*connection, error) {
+	tok, err := os.ReadFile(inClusterTokenFile)
+	if err != nil {
+		return nil, fmt.Errorf("%w (is a service account token mounted?)", err)
+	}
+	ca, err := os.ReadFile(inClusterCAFile)
+	if err != nil {
+		return nil, err
+	}
+	return &connection{server: inClusterServer, token: strings.TrimSpace(string(tok)), caPEM: ca}, nil
 }
 
 func newClient(ctx context.Context, conn *connection) (*client, error) {
@@ -272,15 +282,32 @@ func newClient(ctx context.Context, conn *connection) (*client, error) {
 
 // get reads one JSON document from the API server.
 func (c *client) get(ctx context.Context, path string, q url.Values, out any) error {
+	return c.do(ctx, http.MethodGet, path, q, nil, out)
+}
+
+// do sends one request. Collection only ever reads (get); the reporter
+// also writes its own token Secret (secret.go).
+func (c *client) do(ctx context.Context, method, path string, q url.Values, in, out any) error {
 	u := *c.base
 	u.Path += path
 	u.RawQuery = q.Encode()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	var body io.Reader
+	if in != nil {
+		b, err := json.Marshal(in)
+		if err != nil {
+			return err
+		}
+		body = bytes.NewReader(b)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, u.String(), body)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "stackurity-kubernetes-plugin")
+	if in != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	req.Header.Set("User-Agent", c.userAgent())
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
@@ -289,26 +316,36 @@ func (c *client) get(ctx context.Context, path string, q url.Values, out any) er
 		return err
 	}
 	defer resp.Body.Close()
-	body := io.LimitReader(resp.Body, maxPage+1)
-	if resp.StatusCode != http.StatusOK {
+	rd := io.LimitReader(resp.Body, maxPage+1)
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		var st struct {
 			Message string `json:"message"`
 		}
-		_ = json.NewDecoder(io.LimitReader(body, 64<<10)).Decode(&st)
+		_ = json.NewDecoder(io.LimitReader(rd, 64<<10)).Decode(&st)
 		msg := st.Message
 		if len(msg) > 300 {
 			msg = msg[:300]
 		}
 		return &apiError{Code: resp.StatusCode, Message: msg}
 	}
-	data, err := io.ReadAll(body)
+	data, err := io.ReadAll(rd)
 	if err != nil {
 		return err
 	}
 	if len(data) > maxPage {
 		return fmt.Errorf("%s: response larger than %d MiB", path, maxPage>>20)
 	}
+	if out == nil {
+		return nil
+	}
 	return json.Unmarshal(data, out)
+}
+
+func (c *client) userAgent() string {
+	if c.ua != "" {
+		return c.ua
+	}
+	return "stackurity-kubernetes-plugin"
 }
 
 // list reads every page of a collection.

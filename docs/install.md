@@ -574,14 +574,24 @@ The secret file holds `{"aws_access_key_id": "...", "aws_secret_access_key": "..
 
 ### Kubernetes
 
-The image includes the `kubernetes` plugin. Apply the read-only service account from `deploy/kubernetes/stackurity-reader.yaml`, store a kubeconfig for its token as a workspace secret, and add a **Plugin** integration:
+Connect a cluster with one command from **Settings → Integrations → Kubernetes cluster**. It installs the reporter, a small Deployment that reads the cluster with a read-only service account and sends it to Stackurity over HTTPS; nothing connects into the cluster:
+
+```sh
+helm install stackurity-reporter oci://ghcr.io/stackurity/charts/stackurity-reporter \
+  --namespace stackurity --create-namespace \
+  --set server=https://stackurity.example.com --set clusterName=prod-eu --set enrollCode=enr_...
+```
+
+or, without Helm, `kubectl apply -f 'https://stackurity.example.com/install/kubernetes.yaml?cluster=prod-eu'` followed by `kubectl -n stackurity create secret generic stackurity-reporter --from-literal=enroll-code=enr_...`. The reporter is recommended for every cluster, and the only option when Stackurity cannot reach the cluster's API server (Stackurity Cloud, almost always).
+
+Alternatively, the image includes the `kubernetes` plugin, which pulls from the cluster's API server on a schedule. Apply the read-only service account from `deploy/kubernetes/stackurity-reader.yaml`, store a kubeconfig for its token as a workspace secret, and add a **Plugin** integration:
 
 ```json
 {"kind": "plugin", "config": {"plugin": "kubernetes", "config": {"cluster_name": "prod-eu", "environment_label": "environment"}, "image_scans": 25},
  "secret_ref": "secret:prod-eu-kubeconfig", "schedule_minutes": 60}
 ```
 
-Workloads, the images they run and their exposure appear as assets, and running images are scanned with the bundled Syft. [kubernetes.md](kubernetes.md) covers credentials (kubeconfig, token or in-cluster), RBAC for some namespaces only, and what is reported.
+Either way, workloads, the images they run and their exposure appear as assets, and running images are scanned with the bundled Syft. [kubernetes.md](kubernetes.md) covers both: the reporter's chart values, enrollment, RBAC and namespace-scoped install, and the plugin's credentials (kubeconfig, token or in-cluster).
 
 ### Plugins
 

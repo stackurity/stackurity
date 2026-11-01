@@ -26,6 +26,7 @@ import { AutomaticFixPoliciesPage, SettingsPage } from "./pages/Settings";
 import { AssetsPage } from "./pages/Assets";
 import { AssetDetailPage } from "./pages/AssetDetail";
 import { AddServerPage } from "./pages/AddServer";
+import { AddClusterPage } from "./pages/AddCluster";
 import { ComponentsPage } from "./pages/Components";
 import { ComponentDetailPage } from "./pages/ComponentDetail";
 import { UpdatesAvailablePage } from "./pages/UpdatesAvailable";
@@ -243,6 +244,14 @@ export function App() {
           element={
             <RequireRole min="admin">
               <AddServerPage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="integrations/kubernetes/add"
+          element={
+            <RequireRole min="admin">
+              <AddClusterPage />
             </RequireRole>
           }
         />

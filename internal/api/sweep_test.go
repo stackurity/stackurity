@@ -60,6 +60,7 @@ var routeRules = map[string]routeRule{
 	"GET /healthz":                   {class: "public"},
 	"GET /readyz":                    {class: "public"},
 	"GET /install/agent.sh":          {class: "public"},
+	"GET /install/kubernetes.yaml":   {class: "public"},
 	"GET /download/agent/{platform}": {class: "public"},
 	"GET /api/v1/meta":               {class: "public"},
 	"GET /api/v1/openapi.json":       {class: "public"},
@@ -215,6 +216,7 @@ var routeRules = map[string]routeRule{
 
 	// Collectors and agents.
 	"POST /api/v1/ingest":                 {class: "create", body: func(a *tenantFx) any { return a.claimBatch() }},
+	"POST /api/v1/kubernetes/report":      {class: "create", body: func(a *tenantFx) any { return a.claimCluster() }},
 	"GET /api/v1/collections/{id}/result": {class: "object", obj: id("collection")},
 	"POST /api/v1/sbom/import": {class: "create", query: "?asset_name=host-{tag}", body: func(*tenantFx) any {
 		return json.RawMessage(`{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}`)
@@ -452,6 +454,17 @@ func (f *tenantFx) claimBatch() json.RawMessage {
 	b.Observations = []model.Observation{{Purl: "pkg:npm/claimed@6.6.6", Confidence: model.ConfidenceConfirmed}}
 	raw, _ := json.Marshal(b)
 	return raw
+}
+
+// claimCluster is a Kubernetes report claiming a cluster identity every
+// tenant uses, with an image of A's.
+func (f *tenantFx) claimCluster() any {
+	c := model.Collector{ID: "plugin:kubernetes", Method: "agent"}
+	cl := model.NewBatch(c, model.AssetRef{Kind: model.AssetCluster, Name: "cluster-" + f.tag,
+		Identifiers: []model.Identifier{{Scheme: "k8s-cluster", Value: "shared-cluster-uid"}}})
+	im := model.NewBatch(c, model.AssetRef{Kind: model.AssetImage, Name: "docker.io/library/nginx:1",
+		Identifiers: []model.Identifier{{Scheme: "image-ref", Value: "docker.io/library/nginx:1"}}})
+	return map[string]any{"batches": []*model.ObservationBatch{cl, im}, "image_scans": 0}
 }
 
 // eeFixtures adds the licensed edition's objects (remediation policies,
