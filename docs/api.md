@@ -342,11 +342,13 @@ Creates the first admin (`setup_token` from the server log, `email`, `name`, `pa
 
 Exchanges a one-time enrollment code (`{"code", "hostname"}`) for a collector token and the agent settings chosen with it, including the code's `project_id`. Refusals do not say why. An optional `project_id` (`stackurity enroll --project`) is a check, not a choice: when the code adds hosts to another project or none, the answer is 403 and the code keeps its use.
 
+Each use is recorded (hostname, client address, the token issued) in the code's usage list. Rate limits: 10 failed attempts a minute per client address (refused codes; what stops guessing), 120 attempts a minute per address in all (so a fleet behind one NAT address can enroll), and 60 enrollments a minute per code (so a leaked fleet code cannot be used up in a burst). Over a limit the answer is `429` with `Retry-After`, and nothing is used up; `stackurity enroll` waits and tries again (`--wait`).
+
 ### `GET /enrollments`
 
 **Who:** admin
 
-Enrollment codes.
+Enrollment codes that can still be used. With `?fleet=1`, fleet codes made in the last 180 days in every state (usable, used up, expired, revoked), so a rollout's usage stays visible. Each code has `fleet`, `uses_left` and `max_uses` (how many servers it could enroll when made; `null` for codes made before this was recorded).
 
 ### `POST /enrollments`
 
@@ -354,11 +356,43 @@ Enrollment codes.
 
 Creates an enrollment code, returned once: `label`, `environment`, `app_dirs`, `discover_apps`, `uses` (1–500, default 1), `ttl_hours` (1–720, default 24) and `project_id` (hosts enrolled with it, and the assets their agent reports, join that project when first created).
 
+With `"fleet": true` it creates a **fleet code** for many servers: `uses` up to 1,000 and `ttl_hours` up to 2,160 (90 days), both required (no defaults). It is stored and redeemed like any other code (only its SHA-256 hash is kept) and is exchanged for one collector token per host. Creation, each use and revocation are in the audit log (`enrollment.create`, `enrollment.redeem`, `enrollment.revoke`, with `fleet` in the details).
+
+### `GET /enrollments/{id}/uses`
+
+**Who:** admin
+
+The hosts that used a code, newest first: `hostname` (as the host reported it), `remote_addr`, `used_at`, and the `token_prefix` of the collector token it received (under **Settings → API tokens**; empty once that token is deleted) with `token_revoked`.
+
 ### `DELETE /enrollments/{id}`
 
 **Who:** admin
 
-Revokes an enrollment code.
+Revokes an enrollment code. Hosts that already enrolled keep their tokens; revoke those under **Settings → API tokens** (the usage list gives their prefixes).
+
+### `GET /integrations/digitalocean`
+
+**Who:** admin
+
+Whether a DigitalOcean API token is stored (`connected`, `connected_at`) and whether stored secrets are available (`secrets_enabled`, which needs `STACKURITY_SECRET_KEY`). The token is never returned.
+
+### `PUT /integrations/digitalocean/token`
+
+**Who:** admin
+
+Stores a DigitalOcean API token (`{"token"}`) as the encrypted workspace secret `digitalocean-token`, after checking that it can list droplets (a read-only token with the `droplet:read` scope is enough; nothing else is used). A token DigitalOcean refuses answers 400 and is not stored; without `STACKURITY_SECRET_KEY` the answer is 409. Audit: `digitalocean.connect`.
+
+### `DELETE /integrations/digitalocean/token`
+
+**Who:** admin
+
+Deletes the stored token. Audit: `digitalocean.disconnect`.
+
+### `GET /integrations/digitalocean/droplets`
+
+**Who:** admin
+
+Lists the account's droplets (optionally `?tag=`) with, for each, `name`, `region`, `status`, `image`, `tags`, `public_ipv4`, `private_ipv4`, `public_ipv6` and `coverage`: `reporting` (a host asset reports the droplet's name as its hostname, ignoring case and a domain on either side; `asset_id`, `asset_name`, `last_seen`), `enrolled` (an agent enrolled from one of the droplet's addresses, `enrolled_as` the hostname it gave, but no host with the droplet's name reports), or `not_covered`. Droplets not covered come first. Also `total`, `covered` and `truncated` (more than 5,000 droplets: 25 pages of 200). Requests go to DigitalOcean's API only, through the outbound address guard, without following redirects. `409 not_connected` without a token, `409 token_refused` when DigitalOcean no longer accepts it, `502` when DigitalOcean cannot be reached. Stackurity does not install anything on droplets: see [Many servers at once](install.md#many-servers-at-once).
 
 ### `GET /install/agent.sh`
 
@@ -1283,6 +1317,72 @@ The GitHub App's webhook URL: `X-Hub-Signature-256` (HMAC-SHA256 of the body wit
 **Who:** Slack (a channel's signing secret)
 
 Slack's interactivity Request URL: the form-encoded `payload` with `X-Slack-Request-Timestamp` and `X-Slack-Signature`. 200 once verified (the answer goes to Slack's `response_url`); 401 for a request that cannot be verified, is older than 5 minutes or was already received. See [Acting from Slack](#acting-from-slack).
+
+### `GET /aws/connections`
+
+**Who:** admin
+
+AWS accounts connected with the Stackurity CloudFormation stack ([install.md](install.md#aws-managed-services)), and the server's setup: `enabled` (the server has an AWS principal, `STACKURITY_AWS_PRINCIPAL_ARN`), `principal`, `launch_stack` (the template is hosted in S3, `STACKURITY_AWS_TEMPLATE_URL`), `template_download`, and the IAM actions the role grants (`permissions`, and `agent_install_permissions` with the option on). Each connection has `status` (`pending`, `active`, `failed`), `external_id`, `regions`, `role_arn`, `account_id`, `last_error`, `integration_id` and `integration_removed`.
+
+### `POST /aws/connections`
+
+**Who:** admin
+
+Starts a connection: `regions` (1–40, the regions read), `stack_region` (where the stack is created; default the first region) and `agent_install` (the role may also install the agent through SSM). The server generates the external ID. 201 with `connection` and `launch`: `quick_create_url` (the CloudFormation console with every parameter filled in; empty without an S3-hosted template), `template_download`, `cli` (the same stack with the AWS CLI), `stack_name`, `external_id`, `principal` and `callback` (true when the stack reports its role by itself, which needs this server's address to be https). 404 when the server has no AWS principal. Audited as `aws.connection.create`.
+
+### `GET /aws/connections/{id}`
+
+**Who:** admin
+
+One connection; the page polls it while the stack is being created.
+
+### `POST /aws/connections/{id}/launch`
+
+**Who:** admin
+
+A new Launch Stack link for a connection that is not active (`stack_region`, `agent_install`). The earlier link's token stops working. 409 for an active connection.
+
+### `POST /aws/connections/{id}/verify`
+
+**Who:** admin
+
+`{"role_arn"}`: the stack's `RoleArn` output, pasted when the stack could not report it; empty checks the recorded role again. The server assumes the role with the connection's external ID, which must work, and without it, which must be refused. Then the connection is `active`, its `aws-managed` integration (named `AWS <account>`) is created and a first run is queued. Otherwise `status` is `failed` with `last_error`. 409 for another role on an active connection (remove it and connect again). Audited as `aws.connection.verify`.
+
+### `DELETE /aws/connections/{id}`
+
+**Who:** admin
+
+Removes the connection and its integration. The role stays in the AWS account until the stack is deleted there. Audited as `aws.connection.delete`.
+
+### `GET /aws/connections/{id}/instances`
+
+**Who:** admin
+
+The EC2 instances SSM manages in one of the connection's regions (`?region=`, default the first), each with `instance_id`, `computer_name`, `platform_type`, `ping_status`, `eligible` (Linux and online), `asset_id` (a host already reporting with that hostname, short or full) and `last_install`. Needs the stack's agent install option. AWS errors answer 502 `aws_error` with AWS's message; 409 while the connection is not active.
+
+### `POST /aws/connections/{id}/installs`
+
+**Who:** admin
+
+`{"region", "instances": [{"instance_id", "computer_name"}]}` (1–25): installs the agent through SSM Run Command (`AWS-RunShellScript`). Each instance gets its own single-use enrollment code, valid for two hours and never stored, in a command that runs this server's installer (`/install/agent.sh`). 202 with one install per instance; a command SSM refused is `failed` at once and its code revoked. Audited as `aws.agent.install`.
+
+### `GET /aws/connections/{id}/installs`
+
+**Who:** admin
+
+The connection's agent installs, newest first, after reading from SSM how the unfinished ones went: `status` `pending`, `running`, `success`, `failed` or `timed_out` (SSM never reported the end within 25 minutes), and `detail` (the end of the command's output). The code of a failed or timed-out install is revoked. `refresh_error` says why SSM could not be read.
+
+### `POST /aws/callback`
+
+**Who:** the Stackurity stack (a signed, single-use token)
+
+Called once by the stack's custom resource, outside the session and CSRF checks: `Authorization: Bearer <token>` (the `CallbackToken` parameter of the Launch Stack link) and `{"role_arn", "external_id", "stack_id"}`. The token is signed with the installation's key and names the connection, its organisation and external ID; it is used up by the first request that presents it, expires after 24 hours and is replaced by a new link. The stack must be in the role's account. The role is then verified as by `POST /aws/connections/{id}/verify`; the answer is `{"status"}`. Every refused token is the same 403. Rate limited per address. Audited as `aws.connection.callback`.
+
+### `GET /aws/stackurity-aws-role-v1.json`
+
+**Who:** anyone · outside `/api/v1`
+
+The CloudFormation template the stack is made from (the same for every server and organisation), for review, for `aws cloudformation create-stack --template-body`, and for the operator to upload to S3 for Launch Stack. It is also in the repository as `deploy/aws/stackurity-aws-role-v1.json`.
 
 ## VEX
 

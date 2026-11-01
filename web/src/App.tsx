@@ -58,6 +58,7 @@ import { IncidentDetailPage } from "./pages/IncidentDetail";
 import { AutomaticFixesPage } from "./pages/Remediation";
 import { PlanDetailPage } from "./pages/PlanDetail";
 import { PluginsPage } from "./pages/settings/Plugins";
+import { AwsPage } from "./pages/settings/Aws";
 import { FixesPage, FixGroupDetailPage } from "./pages/ActionPlan";
 import { IntegrationsHubPage } from "./pages/settings/Integrations";
 import { IntegrationAddPage, IntegrationChannelPage } from "./pages/settings/IntegrationsChannel";
@@ -315,6 +316,14 @@ export function App() {
           element={
             <RequireRole min="engineer">
               <IntegrationsHubPage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="settings/integrations/aws"
+          element={
+            <RequireRole min="admin">
+              <AwsPage />
             </RequireRole>
           }
         />

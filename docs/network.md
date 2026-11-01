@@ -10,6 +10,7 @@ Started with nothing configured but its database, an empty install connects on i
 | Server: GitHub App (only with `STACKURITY_GITHUB_APP_ID` and the rest set; [github-app.md](github-app.md)) | `api.github.com` and `github.com` (or your GitHub Enterprise Server, `STACKURITY_GITHUB_URL`) | At install (OAuth code exchange, `GET /user/installations`, `GET /app/installations/{id}`, revoking the user token); when listing an installation's repositories (after install or a webhook, and daily); for each scan of a granted repository; when an admin disconnects (uninstall) | The app's JWT, a short-lived installation token minted per scan, and a Git fetch of the granted repository with that token as an HTTP Basic header. Requests are checked against the organisation's private-network policy like a Git integration's |
 | Agent | Your Stackurity server | Every `--interval` | Hostname, machine-id, OS release, installed package list |
 | CLI `scan` / `sbom import` | Your Stackurity server | When run | Lockfile-derived component list, or the SBOM document |
+| Server: DigitalOcean droplet discovery | `api.digitalocean.com` | Only after an admin stores a DigitalOcean token, when the droplet list is opened or the token saved ([details](#digitalocean-droplet-discovery)) | `GET /v2/droplets` with the stored token |
 
 ### Update check
 
@@ -87,6 +88,18 @@ Each plugin's metadata declares the hosts it contacts. For example, `aws-managed
 
 The server hands each plugin run the workspace's private-network policy, and the `kubernetes` plugin refuses to connect to an internal address the workspace may not reach. A workspace other than the default one needs its API server's range in `STACKURITY_PRIVATE_CIDRS`.
 
+### AWS connections
+
+Only with `STACKURITY_AWS_PRINCIPAL_ARN` set ([install.md](install.md#aws-managed-services)); otherwise none of these requests is made. Each goes through the organisation's private-network policy like the server's other requests for an organisation, without following redirects.
+
+| Destination | When | Data sent |
+|---|---|---|
+| `sts.us-east-1.amazonaws.com` (its sessions are valid in every region) | When a stack reports its role or an administrator pastes or verifies it (twice: with the external ID, and without it to check it is required); before each run of the connection's integration; when the AWS page lists instances or installs | `AssumeRole` for the connection's role and external ID, a session name `stackurity-w<organisation>-c<connection>`, signed with the server's AWS credentials |
+| `ssm.<region>.amazonaws.com` | When an administrator lists instances, installs the agent, or reads install results | `DescribeInstanceInformation`; `SendCommand` (`AWS-RunShellScript` with the installer command: this server's URL and a single-use enrollment code); `GetCommandInvocation`. Signed with the connection role's session |
+| `*.amazonaws.com` (the plugin) | On the integration's schedule | The `aws-managed` plugin's read-only calls, with the role's session |
+
+Inbound, a stack's Lambda function calls `POST /api/v1/aws/callback` once, from AWS, with the role's ARN, external ID and stack ID and its signed token. Without it, the role ARN is pasted. The SSM command makes each instance download the installer and the agent from your server (`/install/agent.sh`, `/download/agent/...`) and enroll.
+
 ### Notification channels
 
 Only the channels you configure are contacted: your SMTP server, Slack or Teams webhook URLs, your webhook endpoints and your Jira site. Redirects are never followed. Destinations are checked against the workspace's private-network policy when the connection is made, so a name that later resolves to an internal address is refused too. Messages contain incident titles, asset and component names, and links to the dashboard.
@@ -102,6 +115,10 @@ A ServiceNow channel calls the configured instance only: the Table API (`/api/no
 ### Container image integrations
 
 Syft fetches image manifests and layers from the registry in the image reference. With a secret reference configured, the credential is sent to that registry only. For a workspace that may not reach private networks, Syft connects through a proxy inside the server that checks every connection (including redirects to blob storage) against the same policy.
+
+### DigitalOcean droplet discovery
+
+Only when an administrator has stored a DigitalOcean API token (**Assets → Add server → For many servers → DigitalOcean**), and only while someone opens the droplet list or saves the token: `GET https://api.digitalocean.com/v2/droplets` with that token, 200 droplets a page, at most 25 pages. Nothing is sent but the request (the page, the page size and an optional tag). Redirects are not followed and the next page is requested from the same host by number, so the token goes nowhere else. The connection is checked against the workspace's private-network policy. Without a stored token nothing is contacted; **Disconnect** deletes it. Stackurity never connects to the droplets themselves.
 
 ### AI assistants' client metadata
 

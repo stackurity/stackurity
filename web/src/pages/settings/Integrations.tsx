@@ -342,7 +342,7 @@ export function IntegrationsHubPage() {
       { kind: "ci", title: "CI pipeline", text: "Run stackurity scan or the GitHub Action in CI, and fail the build on findings.", to: "", panel: "ci" },
       { kind: "container", title: "Container image / registry", text: "Pull images and list their OS and application packages.", to: "/integrations", admin: true },
       { kind: "kubernetes", title: "Kubernetes cluster", text: "Workloads and the images they run, through the Kubernetes plugin.", to: "/integrations", admin: true },
-      { kind: "cloud", title: "AWS", text: "Managed services (RDS, EKS, Lambda and more), through the AWS plugin.", to: "/integrations", admin: true },
+      { kind: "cloud", title: "AWS", text: "Launch one CloudFormation stack: RDS, EKS, Lambda and more, and the agent on EC2 through SSM.", to: "/settings/integrations/aws", admin: true },
       { kind: "sbom", title: "SBOM upload", text: "Upload a CycloneDX or SPDX file from your build tool.", to: "", panel: "sbom" },
       { kind: "plugin", title: "Other plugins", text: "Collectors installed on this server.", to: "/settings/plugins", admin: true },
     ],
@@ -416,7 +416,7 @@ export function IntegrationsHubPage() {
                           </div>
                         ) : (
                           <Link className="btn btn-sm" to={c.to}>
-                            {c.to.startsWith("/settings/integrations/new/") || c.to === "/assets/add" ? "Add" : "Open"}
+                            {c.to.startsWith("/settings/integrations/new/") || c.to === "/assets/add" || c.to === "/settings/integrations/aws" ? "Add" : "Open"}
                           </Link>
                         ))
                       )}

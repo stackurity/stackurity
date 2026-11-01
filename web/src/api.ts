@@ -2862,6 +2862,53 @@ export interface Enrollment {
   revoked_at: string | null;
   /** Hosts enrolled with the code land in this project. */
   project_id?: number | null;
+  /** A fleet code (up to 1,000 servers, up to 90 days). */
+  fleet?: boolean;
+  /** How many servers it could enroll when made; null for older codes. */
+  max_uses?: number | null;
+}
+
+/** GET /enrollments/{id}/uses: one host that used a code. */
+export interface EnrollmentUse {
+  id: number;
+  hostname: string;
+  remote_addr: string;
+  used_at: string;
+  token_prefix: string;
+  token_revoked: boolean;
+}
+
+/** GET /integrations/digitalocean. The token itself is never returned. */
+export interface DigitalOceanStatus {
+  connected: boolean;
+  connected_at: string | null;
+  secrets_enabled: boolean;
+}
+
+/** GET /integrations/digitalocean/droplets: a droplet and its coverage. */
+export interface FleetMachine {
+  id: number;
+  name: string;
+  status: string;
+  region: string;
+  image: string;
+  tags: string[];
+  public_ipv4: string;
+  private_ipv4: string;
+  public_ipv6: string;
+  coverage: "reporting" | "enrolled" | "not_covered";
+  match?: "hostname" | "address";
+  asset_id?: number;
+  asset_name?: string;
+  last_seen?: string;
+  enrolled_as?: string;
+}
+
+export interface FleetMachines {
+  items: FleetMachine[];
+  total: number;
+  covered: number;
+  truncated: boolean;
 }
 
 /** POST /enrollments: the code is returned only here, once. */

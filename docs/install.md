@@ -59,7 +59,7 @@ After the first administrator signs in, a new organisation with no assets opens 
 
 1. **Create your first project**: a name and, if you like, a description.
 2. **Add an asset**, which lands in that project:
-   - **A Linux server**: one install command (an enrollment code for up to 5 servers, valid 24 hours). First results in about 2 minutes. The server needs systemd, sudo and outbound HTTPS to the dashboard. **Also check websites and apps on this server** is ticked by default, as under Add server.
+   - **A Linux server**: one install command (an enrollment code for up to 5 servers, valid 24 hours; for more, use a fleet code, see [Many servers at once](#many-servers-at-once)). First results in about 2 minutes. The server needs systemd, sudo and outbound HTTPS to the dashboard. **Also check websites and apps on this server** is ticked by default, as under Add server.
    - **A code repository**: a collector token to save as the CI secret `STACKURITY_TOKEN`, and a GitHub Actions step (`stackurity/scan-action@v1`) or the `stackurity scan .` command for other CI. First results on the next CI run.
    - **Upload an SBOM** (CycloneDX or SPDX JSON). First results in under a minute.
 3. **Wait** while it reports: the page shows the packages found and when the check is done.
@@ -101,6 +101,8 @@ Connecting an asset is quiet: one "connected" message, and no alerts, Jira issue
 | `STACKURITY_GITHUB_APP_ID` / `_FILE`, `STACKURITY_GITHUB_APP_SLUG` / `_FILE`, `STACKURITY_GITHUB_APP_CLIENT_ID` / `_FILE`, `STACKURITY_GITHUB_APP_CLIENT_SECRET` / `_FILE`, `STACKURITY_GITHUB_APP_PRIVATE_KEY` / `_FILE`, `STACKURITY_GITHUB_APP_WEBHOOK_SECRET` / `_FILE`; `STACKURITY_GITHUB_URL` | — | Your GitHub App, for **Install on GitHub** ([github-app.md](github-app.md)). All six or none; needs `STACKURITY_BASE_URL`. `STACKURITY_GITHUB_URL` is a GitHub Enterprise Server's address (unset for github.com) |
 | `STACKURITY_ALLOW_HTTP_WEBHOOKS` | `false` | Allow `http://` webhook URLs, for internal receivers |
 | `STACKURITY_PLUGIN_DIR` | `/usr/local/lib/stackurity/plugins` in the image | Directory of plugin executables |
+| `STACKURITY_AWS_PRINCIPAL_ARN` | — | The IAM user or role this server calls AWS as, which customer roles trust; turns on connecting AWS with a CloudFormation stack ([AWS managed services](#aws-managed-services)). Its credentials come from the AWS SDK's usual sources (`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`, `AWS_PROFILE`, or an instance or task role) |
+| `STACKURITY_AWS_TEMPLATE_URL` | — | The HTTPS address of `deploy/aws/stackurity-aws-role-v1.json` in Amazon S3, for the one-click **Launch Stack in AWS** link (the CloudFormation console only opens templates in S3). Without it, the page offers the template to download and an AWS CLI command |
 | `STACKURITY_SYFT` | `syft` | Path to the Syft binary used for container image scans (bundled in the image) |
 | `STACKURITY_SECRET_KEY` / `_FILE` | — | 32 random bytes, base64 (`openssl rand -base64 32`). Enables secrets that workspaces store themselves (`secret:NAME`). Keep it safe: without it stored secrets cannot be decrypted |
 | `STACKURITY_PRIVATE_TARGETS` | `default` | Which workspaces may make the server connect to private, loopback or link-local addresses: `default` (workspace 1 only), `all`, or `none` (recommended when hosting other organisations) |
@@ -305,7 +307,7 @@ A session started by an organisation's single sign-on works only in that organis
 curl -fsSL https://stackurity.example.com/install/agent.sh | sudo STACKURITY_ENROLL_CODE=enr_... sh
 ```
 
-To put the server in a project, create the code from the project (it then carries the project). Hosts enrolled with it are added to the project when they first report. `stackurity enroll --project <id>` (or `STACKURITY_PROJECT`) checks that the code is for that project and refuses, without using the code, if it is not; it never changes the code's project. `stackurity agent --project` makes the same assertion on every report. `stackurity enroll`, which the script runs, writes the token and `agent.env` to `/etc/stackurity` (`--dir` for another directory) and does not replace an existing token unless given `--force`.
+To put the server in a project, create the code from the project (it then carries the project). Hosts enrolled with it are added to the project when they first report. `stackurity enroll --project <id>` (or `STACKURITY_PROJECT`) checks that the code is for that project and refuses, without using the code, if it is not; it never changes the code's project. `stackurity agent --project` makes the same assertion on every report. `stackurity enroll`, which the script runs, writes the token and `agent.env` to `/etc/stackurity` (`--dir` for another directory) and does not replace an existing token unless given `--force`. When many hosts enroll at once and the server asks some to wait (429), `stackurity enroll` tries again with jitter for up to `--wait` (default `30m`; `0` fails at once); an invalid, used-up or revoked code fails at once.
 
 The script downloads the agent from your Stackurity server and checks its SHA-256. It then creates an unprivileged `stackurity` user and exchanges the one-time code for a collector token. Finally it writes `/etc/stackurity/agent.env` with the settings you chose and starts a hardened systemd service that reports every 6 hours. The code works once (or as many times as you allowed) and expires after 24 hours by default, so a leaked command is short-lived, and no long-lived token is ever typed into a shell. To upgrade the agent later, run the same command without the code. Read the script first if you prefer: it is served at `/install/agent.sh`.
 
@@ -362,6 +364,25 @@ Enable it with `sudo systemctl enable --now stackurity-agent`; the host appears 
 If the server is not reachable over HTTPS from the host (for example it listens only on `127.0.0.1`), forward a local port over SSH with a dedicated account whose key allows nothing but that forward (`restrict,port-forwarding,permitopen="127.0.0.1:8180"` in its `authorized_keys`), run the forward as its own systemd unit, and point `STACKURITY_SERVER` at `http://127.0.0.1:<local port>`. The in-app help (**Help → Connect over an SSH tunnel**) has the full units.
 
 Runtimes and servers installed outside the package manager are invisible to the package database, yet they reach end of life like anything else: Node.js from nvm or a tarball, a downloaded Redis, MySQL, MariaDB, PostgreSQL, MongoDB, Meilisearch, nginx or HAProxy binary, and Python, Go, Ruby or PHP builds under `/usr/local` or `/opt`. The agent looks for these in the usual locations, skips any that a package owns, and reports the rest with their version, so their end-of-life dates appear with everything else. For nvm and pyenv the version comes from the install path. Otherwise the agent runs the binary's `--version` flag with an empty environment and a 5-second limit, and only when the binary and every directory above it are owned by root or the agent's user and not writable by anyone else. Binaries under `--root` are never run. Vulnerabilities are not matched for these runtimes (there is no advisory feed keyed by binary), which the **Intelligence** page lists as an evaluation gap. Turn detection off with `--no-runtimes`. With `ProtectHome=yes` the agent cannot see per-user installs such as `~/.nvm`; use `ProtectHome=read-only` to include them.
+
+#### Many servers at once
+
+A standard install code enrolls up to 500 servers for up to 30 days, and defaults to one server for 24 hours. For a rollout across a fleet, create a **fleet code** under **Assets → Add server → For many servers**: you choose how many servers it may enroll (up to 1,000) and how long it is valid (up to 90 days), with no defaults, and optionally a project, environment and application directories. It works like any other code: only its SHA-256 hash is stored, the code is shown once, and each server exchanges it for its own collector token, so no long-lived token is ever put in user data, a playbook or a shell loop. Each use is listed under the code (hostname, address, time and the prefix of the token it received; `GET /api/v1/enrollments/{id}/uses`), and creation, each use and revocation are in the audit log. **Revoke** stops the code at once; servers that already enrolled keep reporting until you revoke their tokens under **Settings → API tokens**.
+
+The page then gives ready-made snippets with the code filled in, each with a copy button. All of them run the same installer, which skips enrollment on a server that already has `/etc/stackurity/token`, so running them twice is safe:
+
+- **cloud-init** user data (`#cloud-config` with `runcmd`), for new machines on any cloud that takes user data (DigitalOcean, AWS, Hetzner, Azure, GCP).
+- **Ansible**: a play that installs on every host in the inventory, with `creates: /etc/stackurity/token` and `no_log`. Pass the code with `--extra-vars` or keep it in Ansible Vault.
+- **Terraform**: a `user_data` block with the code in a `sensitive` variable.
+- **SSH loop**: `for host in ...; do ssh "$host" ...; done` for a list of hosts you can already reach with SSH and sudo.
+
+Treat a fleet code like a password for its lifetime. Anyone who has it can enroll machines into your organisation until it expires, is used up or is revoked (they get a collector token, which can upload inventory but read nothing). Keep the count and expiry close to what the rollout needs, and revoke the code when it is done. Cloud user data is readable from inside the machine through the metadata service (by any local user on most clouds) and is kept in Terraform state, so codes used there should expire soon after the machines are created.
+
+Enrollment is rate limited: 10 failed attempts a minute per address, 120 attempts a minute per address in all, and 60 enrollments a minute per code. Hosts over a limit are told when to try again (`Retry-After`), and `stackurity enroll` waits and retries (see `--wait` above), so a thousand machines started together, even behind one NAT address, all enroll within about twenty minutes.
+
+**DigitalOcean.** Under **Add server → For many servers → DigitalOcean**, an administrator can add a DigitalOcean API token with read access to droplets (a custom-scoped token with `droplet:read` is enough). It is checked against the API, stored as the encrypted workspace secret `digitalocean-token` (this needs `STACKURITY_SECRET_KEY`), and never shown again; **Disconnect** deletes it. Stackurity then lists the account's droplets (optionally only those with a tag) with their region, tags and addresses, and whether an agent already covers each one: **reporting** when a host reports the droplet's name as its hostname (DigitalOcean sets a new droplet's hostname to its name; a domain on either side is ignored), **enrolled** when an agent enrolled from one of the droplet's addresses but no host of that name reports yet, and **not covered** otherwise. Tick the droplets to cover and the page creates a fleet code sized for them and gives, for each, a command to run over SSH, plus one loop for all of them. For droplets you create from now on, put the cloud-init snippet in their user data (the control panel's **Add initialization scripts**, `doctl compute droplet create --user-data-file`, or Terraform's `user_data`) and give them a tag, so the list shows them; a tag alone installs nothing.
+
+Stackurity does not install the agent on existing droplets itself, and does not connect to your machines. DigitalOcean has no API to run a command on an existing droplet: the Droplet Agent only serves the web console, user data runs only when a droplet is created, and a token cannot change it afterwards. The remaining way, the Stackurity server connecting to each droplet over SSH with a key you add, would give the server root access to the fleet and need inbound SSH from it, where today the agent only reads and only connects out; that would be a separate design decision. So you run the commands, with the access you already have.
 
 #### Applications deployed on the host
 
@@ -504,14 +525,52 @@ Windows Update hotfixes and Microsoft Store apps are reported as unsupported cov
 
 ### AWS managed services
 
-The image includes the `aws-managed` plugin. Add a **Plugin** integration:
+The image includes the `aws-managed` plugin, which reads the engine and runtime versions of RDS, Aurora, ElastiCache, EKS, Lambda and OpenSearch. Engine and runtime versions are matched against endoflife.date lifecycle data.
+
+#### Connect with a CloudFormation stack
+
+Under **Settings → Integrations → AWS**, choose the regions to read and the region for the stack, and click **Launch Stack in AWS**. The AWS console opens with the Stackurity template and every parameter filled in: tick the acknowledgement that the stack creates an IAM role and click **Create stack**. A minute later the page shows the account as connected and the first collection runs. Nothing to copy or paste.
+
+The stack creates one IAM role:
+
+- It trusts Stackurity's AWS principal (shown on the page), on condition of an **external ID** that Stackurity generated for this connection. Nobody else can assume it, and no other Stackurity organisation can use it even if they learn its ARN. Stackurity checks both before it reads anything: it assumes the role with the external ID, and makes sure it cannot without it.
+- It allows exactly the calls the plugin makes, all read-only: `rds:DescribeDBInstances`, `rds:DescribeDBClusters`, `elasticache:DescribeCacheClusters`, `eks:ListClusters`, `eks:DescribeCluster`, `lambda:ListFunctions`, `es:ListDomainNames` and `es:DescribeDomains`. None of them supports resource-level permissions, so the resource is `*`; there are no wildcard actions.
+- With **Allow installing the agent through SSM** (the `EnableAgentInstall` parameter, off by default) it also allows `ssm:DescribeInstanceInformation`, `ssm:GetCommandInvocation`, and `ssm:SendCommand` limited to the `AWS-RunShellScript` document and the account's own instances. See [below](#install-the-agent-on-ec2-through-ssm).
+- Sessions last at most an hour. Each run of the integration assumes the role again; the plugin gets only that session, never Stackurity's own keys.
+
+The stack reports the role's ARN back by itself: a small Lambda function in the stack posts it once to `/api/v1/aws/callback` on your Stackurity server, with a token from the link that is signed by the server, works once, expires after 24 hours, and names this connection, its organisation and its external ID. That needs Stackurity to be reachable over HTTPS from AWS. When it is not (an internal server, or a plain-HTTP evaluation), or the call fails, copy the stack's `RoleArn` output into **Paste the role ARN** on the same page. The function and its log-only role are not created when there is no callback.
+
+To review the template first, download it from the page (`/aws/stackurity-aws-role-v1.json`, also `deploy/aws/` in the repository). The page also shows an `aws cloudformation create-stack` command that makes the same stack from the downloaded file. To disconnect, remove the connection under **Settings → Integrations → AWS** and delete the stack in the AWS console (Stackurity cannot delete it).
+
+#### Install the agent on EC2 through SSM
+
+The plugin reads managed services only. For EC2 instances, the agent reports their operating system and application packages. With the stack's agent install option on, the AWS page lists the instances Systems Manager manages in each region, which of them already report (matched by hostname) and which do not. Select instances and click **Install the agent**: Stackurity runs the installer from your server through SSM Run Command (`AWS-RunShellScript`), with a new single-use enrollment code for each instance, valid for two hours and never stored by Stackurity, and shows each instance's result (installed, failed with the end of the installer's output, or timed out). The code of an install that fails is revoked.
+
+The instances must be managed by SSM (the SSM Agent running with an instance profile that allows it, for example `AmazonSSMManagedInstanceCore`), run Linux with systemd, and reach your Stackurity server over HTTPS. The enrollment code is visible in the SSM command history of your AWS account, as any command parameter is; it cannot be used again once the agent enrolled, and it expires after two hours.
+
+#### Running Stackurity on your own AWS account
+
+On Stackurity Cloud the principal is Stackurity's own. A self-hosted server needs its own, because a role can only trust an AWS identity that the server can sign as:
+
+1. Create an IAM user (or use the role of the instance, ECS task or EKS service account the server runs as) with one permission: `sts:AssumeRole` on `arn:aws:iam::*:role/*` (or on the accounts you will connect, for example `arn:aws:iam::123456789012:role/*`).
+2. Set `STACKURITY_AWS_PRINCIPAL_ARN` to that user's or role's ARN (the commercial `aws` partition; GovCloud and China are not supported), for example `arn:aws:iam::111111111111:user/stackurity`. With an IAM user, give the server its keys as `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (or `AWS_PROFILE`); with a role, the server picks it up from the instance or task. These credentials are used only to call `sts:AssumeRole` into connected accounts' roles.
+3. For the **Launch Stack** button, upload `deploy/aws/stackurity-aws-role-v1.json` to an S3 bucket the connecting accounts can read (a public-read object, or a bucket policy for your organisation) and set `STACKURITY_AWS_TEMPLATE_URL` to its `https://<bucket>.s3.<region>.amazonaws.com/stackurity-aws-role-v1.json` address. Without it, the page offers the template file and the AWS CLI command instead.
+4. Set `STACKURITY_BASE_URL` to the server's public HTTPS address so stacks can report their role; otherwise the role ARN is pasted.
+
+Each role trusts the principal you set when the stack was created. If you change it, connected accounts must update their stacks (the `StackurityPrincipal` parameter).
+
+The server calls `sts.us-east-1.amazonaws.com` and, for agent installs, `ssm.<region>.amazonaws.com` only when someone connects an account, an integration runs, or the AWS page lists instances ([network.md](network.md#aws-connections)).
+
+#### With your own role or keys
+
+The plugin also runs as an ordinary **Plugin** integration, with a role you made yourself or with keys:
 
 ```json
 {"kind": "plugin", "config": {"plugin": "aws-managed", "config": {"regions": ["eu-west-1"], "role_arn": "arn:aws:iam::123456789012:role/stackurity-readonly", "environment_tag": "Environment"}},
  "secret_ref": "file:/run/secrets/aws.json", "schedule_minutes": 720}
 ```
 
-The secret file holds `{"aws_access_key_id": "...", "aws_secret_access_key": "..."}`. Without it, the plugin uses the instance role. The plugin calls only `Describe*` and `List*` APIs; the exact list is in its metadata, which you can see under **Settings → Plugins** or with `GET /api/v1/plugins`. Engine and runtime versions are matched against endoflife.date lifecycle data for RDS, Aurora, EKS, Lambda, ElastiCache and OpenSearch.
+The secret file holds `{"aws_access_key_id": "...", "aws_secret_access_key": "..."}`. Without it, the plugin uses the instance role (only in the default organisation). Give the role the read-only actions listed above. The exact list is also in the plugin's metadata, under **Settings → Plugins** or with `GET /api/v1/plugins`.
 
 ### Kubernetes
 
