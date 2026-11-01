@@ -112,8 +112,10 @@ var codeSigs = []codeSig{
 	{npm: "@angular/core", name: "Angular ng-version attribute", needle: "ng-version", before: 10, after: 60,
 		res:     []*regexp.Regexp{regexp.MustCompile(q + `ng-version` + q + `\s*,\s*` + ident + `\.full\b`)},
 		resolve: `(?:^|[^\w$.])%s\s*=\s*new\s+[\w$.]+\(\s*` + lit + `\s*\)`},
-	sig("angular", "AngularJS errors address", "errors.angularjs.org/", 10, 40,
-		`errors\.angularjs\.org/(?P<v>\d+\.\d+\.\d+(?:-[0-9A-Za-z][0-9A-Za-z.]*)?)/`),
+	// The window starts at the needle, so the pattern skips its host part
+	// rather than naming it (it reads a version, it never checks a URL).
+	sig("angular", "AngularJS errors address", "errors.angularjs.org/", 0, 40,
+		`\A[^/]+/(?P<v>\d+\.\d+\.\d+(?:-[0-9A-Za-z][0-9A-Za-z.]*)?)/`),
 	sig("angular", "AngularJS version object", "codeName", 120, 10,
 		`\{\s*full\s*:\s*`+lit+`\s*,\s*major\s*:\s*\d+\s*,\s*minor\s*:\s*\d+\s*,\s*dot\s*:\s*\d+\s*,\s*codeName\s*:`),
 	// jQuery 1 to 3: the version beside the jQuery function itself (3.7
@@ -335,7 +337,8 @@ var (
 	flutterBuildConfig = regexp.MustCompile(`_flutter\.buildConfig\s*=\s*\{\s*"engineRevision"\s*:\s*"([0-9a-f]{40})"`)
 	flutterRenderer    = regexp.MustCompile(`"renderer"\s*:\s*"([a-z]+)"`)
 	flutterTarget      = regexp.MustCompile(`"compileTarget"\s*:\s*"([a-z0-9]+)"`)
-	flutterCanvasKit   = regexp.MustCompile(`gstatic\.com/flutter-canvaskit/([0-9a-f]{40})\b`)
+	// flutterCanvasKit follows "gstatic.com/flutter-canvaskit/" (see afterPrefix).
+	flutterCanvasKit = regexp.MustCompile(`\A([0-9a-f]{40})\b`)
 )
 
 // flutterBuild is what one Flutter web build directory shows.
@@ -349,8 +352,9 @@ type flutterBuild struct {
 var (
 	pnpmPath = regexp.MustCompile(`node_modules/\.pnpm/((?:@[^/+]+\+)?[^/@+]+)@(\d+\.\d+\.\d+(?:-[0-9A-Za-z][0-9A-Za-z.]*)?)(?:[_(][^/]*)?/node_modules/`)
 	yarnPath = regexp.MustCompile(`-npm-(\d+\.\d+\.\d+(?:-[0-9A-Za-z][0-9A-Za-z.]*)??)-[0-9a-f]+(?:-[0-9a-f]+)?\.zip/node_modules/((?:@[^/]+/)?[^/]+)/`)
-	pubPath  = regexp.MustCompile(`/hosted/pub\.(?:dev|dartlang\.org)/([a-z0-9_]+)-(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.+-]*)?)/`)
-	nmPath   = regexp.MustCompile(`node_modules/((?:@[a-z0-9][a-z0-9._~-]*/)?[a-z0-9][a-z0-9._~-]*)/`)
+	// pubPath follows "/hosted/pub.dev/" or "/hosted/pub.dartlang.org/" (see afterPrefix).
+	pubPath = regexp.MustCompile(`\A([a-z0-9_]+)-(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.+-]*)?)/`)
+	nmPath  = regexp.MustCompile(`node_modules/((?:@[a-z0-9][a-z0-9._~-]*/)?[a-z0-9][a-z0-9._~-]*)/`)
 )
 
 // sourceMapPackages reads a source map's sources: packages with the
@@ -386,10 +390,11 @@ func sourceMapPackages(data []byte) (versioned [][3]string, unversioned []string
 			}
 			continue
 		}
-		if m := pubPath.FindStringSubmatch(src); m != nil {
-			if !have["pub:"+m[1]+"@"+m[2]] {
-				have["pub:"+m[1]+"@"+m[2]] = true
-				versioned = append(versioned, [3]string{"pub", m[1], m[2]})
+		if m := afterPrefix([]byte(src), pubPath, "/hosted/pub.dev/", "/hosted/pub.dartlang.org/"); m != nil {
+			name, version := string(m[1]), string(m[2])
+			if !have["pub:"+name+"@"+version] {
+				have["pub:"+name+"@"+version] = true
+				versioned = append(versioned, [3]string{"pub", name, version})
 			}
 			continue
 		}
@@ -558,7 +563,7 @@ func (w *webAssets) bundleScript(f *os.File, host, rel, name string, head []byte
 			return
 		}
 		w.b.read++
-		if m := flutterCanvasKit.FindSubmatch(data); m != nil {
+		if m := afterPrefix(data, flutterCanvasKit, "gstatic.com/flutter-canvaskit/"); m != nil {
 			fb.revision, fb.revFile, fb.revSignature = string(m[1]), host, "CanvasKit address in main.dart.js"
 		}
 		return
@@ -795,4 +800,25 @@ func sortedKeys(m map[string]bool) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// afterPrefix finds the first occurrence of any prefix that re matches
+// right after (re is anchored with \A), and returns re's submatches. The
+// fixed text is found by a plain search, so patterns that read a version
+// out of an address never name the host themselves.
+func afterPrefix(data []byte, re *regexp.Regexp, prefixes ...string) [][]byte {
+	for _, p := range prefixes {
+		for i := 0; ; {
+			j := bytes.Index(data[i:], []byte(p))
+			if j < 0 {
+				break
+			}
+			at := i + j + len(p)
+			if m := re.FindSubmatch(data[at:]); m != nil {
+				return m
+			}
+			i = at
+		}
+	}
+	return nil
 }
