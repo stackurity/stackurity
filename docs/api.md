@@ -325,6 +325,18 @@ Asks for a free key for a self-hosted server ([The free key](install.md#the-free
 
 `{"token"}` from the emailed link, once: issues a Community key and answers `key`, `key_id` and `email`; the key is emailed too. 410 for a used or expired link. Who got a key (email, name, company, when, key id) is recorded; nothing about anyone's servers is received.
 
+### `POST /community-keys/link/preview`
+
+**Who:** a signed-in browser session · Stackurity Cloud
+
+`{"return", "state", "server_id"}` as a self-hosted server's **Get a free key** sent them: answers the checked address (`return`, normalised), `host` (shown to the person) and `insecure` (plain http on a private address). Nothing is issued. 400 `bad_return` for an address that cannot receive a key: anything but `https`, or `http` to `localhost` and private addresses; user info, a query, fragment, percent-encoding, backslash or non-ASCII characters; a host that is not plain letters, digits and hyphens (`xn--` for internationalised names) or a standard-form IP address; a path with `.` or `..`; Stackurity Cloud itself. 401 without a browser session (API tokens are refused).
+
+### `POST /community-keys/link/confirm`
+
+**Who:** a signed-in browser session · Stackurity Cloud
+
+The same body and checks: issues a Community key to the signed-in person (their email and name; the organisation as customer), emails it, and answers `redirect` (`<return>/setup/community-key#key=…&state=…`), `host`, `return`, `insecure` and `key_id`. The address is not stored; the key is recorded with the person and `server_id`. 5 keys an hour per person, 10 per address. Audited as `community_key.issue`.
+
 The assistants a person has connected (`/assistants`) and the OAuth consent page are under [AI assistants, OAuth and MCP](#ai-assistants-oauth-and-mcp).
 
 ## Setup
@@ -1632,6 +1644,12 @@ The free self-hosted keys issued: `total`, `emails` (distinct), `last_30_days`, 
 **Who:** instance admin · Stackurity Cloud
 
 `trial_ends_at` (RFC 3339, in the future and within a year): extends one organisation's trial at once. Audited as `cloud.trial_extended`.
+
+### `GET /admin/community-keys`
+
+**Who:** instance admin · Stackurity Cloud
+
+The free self-hosted keys issued: `total`, `emails` (distinct), `last_30_days`, and the newest `items` (`limit`, 1 to 500, default 100). The key text is not stored.
 
 ### `GET /billing/pay/{id}`
 

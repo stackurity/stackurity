@@ -10409,6 +10409,88 @@
      }
     }
    }
+  },
+  "/community-keys/link/preview": {
+   "post": {
+    "operationId": "post_community_keys_link_preview",
+    "summary": "Check where a self-hosted server's key would go (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. `{\"return\", \"state\", \"server_id\"}` from a self-hosted server's Get a free key; answers the checked `return`, `host` and `insecure`. Nothing is issued\n\nRole: none (a signed-in browser session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "none (a signed-in browser session)",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/community-keys/link/confirm": {
+   "post": {
+    "operationId": "post_community_keys_link_confirm",
+    "summary": "Issue a free key for a self-hosted server (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. Same body as the preview; issues a Community key to the signed-in person and answers `redirect`, the server's /setup/community-key with the key and state in the fragment\n\nRole: none (a signed-in browser session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "none (a signed-in browser session)",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
   }
  },
  "components": {
