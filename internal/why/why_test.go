@@ -65,6 +65,21 @@ func TestSentenceForWebAssets(t *testing.T) {
 	}
 }
 
+// A library found in compiled front-end output names the signature.
+func TestSentenceForBundles(t *testing.T) {
+	in := vuln(npmEvidence())
+	in.Inventory = store.InventoryProvenance{CollectorID: "linux-agent", Location: "/srv/shop/build/static/js/main.3f2a1b9c.js", Confidence: "confirmed",
+		Evidence: map[string]string{"source": "bundle", "signature": "React version export"}, LastSeen: at(time.Hour)}
+	if e := Build(in, now); e.Installed.From != "the React version export in the compiled bundle /srv/shop/build/static/js/main.3f2a1b9c.js" {
+		t.Errorf("bundle: %s", e.Installed.From)
+	}
+	in.Inventory.Location, in.Inventory.Confidence = "/srv/shop/build/static/js/main.3f2a1b9c.js.map", "inferred"
+	in.Inventory.Evidence = map[string]string{"source": "source-map", "signature": "package path"}
+	if e := Build(in, now); e.Installed.From != "the package path in the source map /srv/shop/build/static/js/main.3f2a1b9c.js.map (inferred)" {
+		t.Errorf("source map: %s", e.Installed.From)
+	}
+}
+
 func TestRulesAndTypes(t *testing.T) {
 	ev := npmEvidence()
 	ev["match"] = map[string]any{"rule": "last_affected", "record": "GHSA-xxxx"}
