@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -22,6 +23,7 @@ import (
 
 	"github.com/stackurity/stackurity/internal/agentfix"
 	"github.com/stackurity/stackurity/internal/client"
+	"github.com/stackurity/stackurity/internal/collect/docker"
 	"github.com/stackurity/stackurity/internal/collect/gitrepo"
 	"github.com/stackurity/stackurity/internal/collect/lockfile"
 	"github.com/stackurity/stackurity/internal/model"
@@ -122,6 +124,21 @@ type hostOptions struct {
 	// packs returns the server's stack packs for one collection and a
 	// function that unloads them; nil when there is no server to ask.
 	packs func(ctx context.Context) ([]lockfile.Extension, func())
+	// docker reads the images of the host's running containers (--docker);
+	// nil when off. It keeps its readings between collections.
+	docker *docker.Scanner
+}
+
+// dockerWorkDir is where images are unpacked while they are read: TMPDIR
+// when set, else /var/tmp, which is on disk where /tmp may be in memory.
+func dockerWorkDir() string {
+	if d := os.Getenv("TMPDIR"); d != "" {
+		return d
+	}
+	if fi, err := os.Stat("/var/tmp"); err == nil && fi.IsDir() {
+		return "/var/tmp"
+	}
+	return os.TempDir()
 }
 
 // remotePacks offers the server's stack packs to local scans: each is
@@ -179,8 +196,9 @@ func writeJSON(path string, v any) error {
 func agentCmd() *cobra.Command {
 	var c conn
 	var interval, actionInterval, checkInterval time.Duration
-	var once, remediate, noRuntimes, discoverApps, noPacks bool
-	var root, envName, output, allowFile string
+	var once, remediate, noRuntimes, discoverApps, noPacks, withDocker bool
+	var root, envName, output, allowFile, dockerSocket string
+	var dockerMaxMB int64
 	var appDirs []string
 	cmd := &cobra.Command{
 		Use:   "agent",
@@ -212,9 +230,33 @@ before anything is sent, since they would ignore the project.
 Between collections the agent asks the server about once a minute whether
 someone pressed Check again in the dashboard, and reports at once if so
 (--check-interval, 0 turns it off). The question is a small GET with the
-agent's own token; it never changes anything on the host.`,
+agent's own token; it never changes anything on the host.
+
+With --docker (or STACKURITY_DOCKER=true) the agent also reads the images
+of the host's running containers: it lists them through the Docker socket,
+exports each distinct image (as docker save does) into a temporary
+directory under TMPDIR or /var/tmp, and reads it with the same collectors
+as the host. Nothing runs inside a container and no registry is contacted.
+Each image is reported as its own asset linked to the host; an image is read
+again only when its image ID changes or after 7 days. Images larger than
+--docker-max-image-mb are skipped and reported as such. The agent's user
+must be able to use the Docker socket, which is equivalent to root on the
+host; see docs/install.md.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts := &hostOptions{root: root, runtimes: !noRuntimes, appDirs: appDirs, discoverApps: discoverApps}
+			if withDocker {
+				if runtime.GOOS == "windows" {
+					return errors.New("--docker is only supported on Linux hosts")
+				}
+				if root != "/" {
+					return errors.New("--docker reads the live host's containers; it cannot be combined with --root")
+				}
+				if dockerMaxMB <= 0 {
+					return errors.New("--docker-max-image-mb must be positive")
+				}
+				opts.docker = &docker.Scanner{Engine: docker.NewEngine(dockerSocket), Version: version,
+					WorkDir: dockerWorkDir(), MaxImageBytes: dockerMaxMB << 20}
+			}
 			hostCollect, err := hostCollector(opts)
 			if err != nil {
 				return err
@@ -277,9 +319,13 @@ agent's own token; it never changes anything on the host.`,
 			var assetIDs []int64
 			// Servers before 0.14 refuse a batch with an app list (unknown
 			// field); ask once what the server takes.
-			appList := false
+			appList, hostImages := false, false
 			if m, err := cl.Meta(ctx); err == nil {
 				appList = m.Has(client.FeatureAppList)
+				hostImages = m.Has(client.FeatureHostImages)
+			}
+			if opts.docker != nil && !hostImages {
+				fmt.Fprintln(os.Stderr, "warning: the server does not take container images from the agent (Stackurity 0.14 or later is needed); --docker is ignored")
 			}
 			report := func() (*model.ObservationBatch, error) {
 				bs, err := collect(ctx)
@@ -290,6 +336,16 @@ agent's own token; it never changes anything on the host.`,
 					for _, b := range bs {
 						b.Apps = nil
 					}
+				}
+				if !hostImages {
+					// An older server would store image identities unscoped.
+					kept := bs[:0]
+					for _, b := range bs {
+						if b.Collector.ID != docker.CollectorID {
+							kept = append(kept, b)
+						}
+					}
+					bs = kept
 				}
 				var ids []int64
 				for i, b := range bs {
@@ -421,6 +477,15 @@ agent's own token; it never changes anything on the host.`,
 		"directory of a deployed application to inventory (repeatable; env STACKURITY_APP_DIRS, comma-separated)")
 	cmd.Flags().BoolVar(&discoverApps, "discover-apps", os.Getenv("STACKURITY_DISCOVER_APPS") == "true",
 		"also look for applications under /srv, /var/www, /opt, /app and home directories")
+	cmd.Flags().BoolVar(&withDocker, "docker", os.Getenv("STACKURITY_DOCKER") == "true",
+		"also read the images of running Docker containers (env STACKURITY_DOCKER=true; needs access to the Docker socket)")
+	dockerSock := os.Getenv("STACKURITY_DOCKER_SOCKET")
+	if dockerSock == "" {
+		dockerSock = docker.DefaultSocket
+	}
+	cmd.Flags().StringVar(&dockerSocket, "docker-socket", dockerSock, "Docker daemon socket for --docker (env STACKURITY_DOCKER_SOCKET)")
+	cmd.Flags().Int64Var(&dockerMaxMB, "docker-max-image-mb", envInt64("STACKURITY_DOCKER_MAX_IMAGE_MB", docker.DefaultMaxImageBytes>>20),
+		"skip images larger than this many MiB unpacked (env STACKURITY_DOCKER_MAX_IMAGE_MB)")
 	cmd.Flags().StringVar(&envName, "environment", os.Getenv("STACKURITY_ENVIRONMENT"), "environment label, e.g. production")
 	cmd.Flags().StringVarP(&output, "output", "o", "", "write the batch to a file (- for stdout) instead of sending it")
 	cmd.Flags().BoolVar(&remediate, "remediate", false, "apply server-approved upgrades for allowlisted packages (needs root and a host-bound token)")
@@ -429,6 +494,14 @@ agent's own token; it never changes anything on the host.`,
 	cmd.Flags().DurationVar(&checkInterval, "check-interval", 45*time.Second,
 		"how often to ask the server whether someone pressed Check again (0 turns it off)")
 	return cmd
+}
+
+// envInt64 reads a positive integer from the environment, or def.
+func envInt64(key string, def int64) int64 {
+	if v, err := strconv.ParseInt(os.Getenv(key), 10, 64); err == nil && v > 0 {
+		return v
+	}
+	return def
 }
 
 // jitter spreads polls from many agents: d plus up to a third of d.

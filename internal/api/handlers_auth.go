@@ -25,7 +25,7 @@ func (s *Server) meta(w http.ResponseWriter, r *http.Request) {
 	// honour project_id (the CLI's --project); "app_list" means a host
 	// batch may list its application directories (apps.dirs).
 	meta := map[string]any{"name": "stackurity", "version": s.Version, "api": "v1", "setup_required": n == 0,
-		"features": []string{FeatureUploadProject, FeatureAppList}, "password_reset": s.passwordResetMode()}
+		"features": []string{FeatureUploadProject, FeatureAppList, FeatureHostImages}, "password_reset": s.passwordResetMode()}
 	if sso := s.ssoMeta(r); sso != nil {
 		meta["sso"] = sso
 	}

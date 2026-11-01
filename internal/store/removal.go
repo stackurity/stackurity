@@ -84,26 +84,68 @@ func removeGoneApps(ctx context.Context, tx pgx.Tx, hostID int64, b *model.Obser
 	for _, d := range b.Apps.Dirs {
 		listed[path.Clean(d)] = true
 	}
+	return removeGone(ctx, tx, hostID, b, tok, goneKind{
+		scheme: model.AppPathScheme, kind: model.AssetApplication, collector: AppsCollectorID, scope: "app:",
+		listed: func(v string) bool { return listed[path.Clean(v)] },
+		reason: "no longer reported by the host's agent: the directory was removed, is not the current release, or is no longer configured",
+	})
+}
+
+// DockerCollectorID is the agent's collector for the images of a host's
+// running containers (internal/collect/docker, "linux-docker").
+const DockerCollectorID = "linux-docker"
+
+// removeGoneImages marks the container images on a host that its agent's
+// image list no longer names, as removeGoneApps does for applications: no
+// container on the host runs them any more. History is kept; an image that
+// runs again is present again.
+func removeGoneImages(ctx context.Context, tx pgx.Tx, hostID int64, b *model.ObservationBatch, tok *int64) ([]int64, error) {
+	listed := map[string]bool{}
+	for _, r := range b.Images.Refs {
+		listed[r] = true
+	}
+	return removeGone(ctx, tx, hostID, b, tok, goneKind{
+		scheme: model.HostImageScheme, kind: model.AssetImage, collector: DockerCollectorID, scope: "image:",
+		listed: func(v string) bool { return listed[v] },
+		reason: "no longer reported by the host's agent: no running container uses this image",
+	})
+}
+
+// goneKind describes host-scoped assets an agent lists on its host's batch.
+type goneKind struct {
+	scheme    string
+	kind      model.AssetKind
+	collector string
+	scope     string // coverage scope prefix
+	listed    func(value string) bool
+	reason    string
+}
+
+// removeGone marks the host's assets of one kind that the agent's list no
+// longer names: each gets a complete, empty collection (so its issues
+// resolve as removed on the next evaluation, and a check waiting on it
+// completes), a coverage note saying why, and collection status "removed".
+func removeGone(ctx context.Context, tx pgx.Tx, hostID int64, b *model.ObservationBatch, tok *int64, k goneKind) ([]int64, error) {
 	prefix := fmt.Sprintf("host:%d:", hostID)
 	rows, err := tx.Query(ctx, `SELECT a.id, substr(ai.value, length($2) + 1) FROM asset_identifiers ai JOIN assets a ON a.id = ai.asset_id
-		WHERE ai.scheme = $1 AND left(ai.value, length($2)) = $2 AND a.kind = 'application' AND a.merged_into IS NULL
+		WHERE ai.scheme = $1 AND left(ai.value, length($2)) = $2 AND a.kind = $4 AND a.merged_into IS NULL
 		  AND a.collection_status <> $3
-		ORDER BY a.id FOR UPDATE OF a`, model.AppPathScheme, prefix, AssetRemoved)
+		ORDER BY a.id FOR UPDATE OF a`, k.scheme, prefix, AssetRemoved, string(k.kind))
 	if err != nil {
 		return nil, err
 	}
 	type gone struct {
-		id  int64
-		dir string
+		id    int64
+		value string
 	}
 	var list []gone
 	for rows.Next() {
 		var g gone
-		if err := rows.Scan(&g.id, &g.dir); err != nil {
+		if err := rows.Scan(&g.id, &g.value); err != nil {
 			rows.Close()
 			return nil, err
 		}
-		if !listed[path.Clean(g.dir)] {
+		if !k.listed(g.value) {
 			list = append(list, g)
 		}
 	}
@@ -117,14 +159,13 @@ func removeGoneApps(ctx context.Context, tx pgx.Tx, hostID int64, b *model.Obser
 		if err := tx.QueryRow(ctx, `INSERT INTO collections
 			(asset_id, collector_id, collector_version, method, observed_at, complete, observation_count, submitted_by, proves_absence)
 			VALUES ($1, $2, $3, $4, $5, true, 0, $6, true) RETURNING id`,
-			g.id, AppsCollectorID, b.Collector.Version, b.Collector.Method, b.ObservedAt, tok).Scan(&coll); err != nil {
+			g.id, k.collector, b.Collector.Version, b.Collector.Method, b.ObservedAt, tok).Scan(&coll); err != nil {
 			return nil, err
 		}
 		if _, err := tx.Exec(ctx, `UPDATE inventory SET removed_at = $2 WHERE asset_id = $1 AND removed_at IS NULL`, g.id, b.ObservedAt); err != nil {
 			return nil, err
 		}
-		reason := "no longer reported by the host's agent: the directory was removed, is not the current release, or is no longer configured"
-		scope := "app:" + g.dir
+		scope := k.scope + g.value
 		if len(scope) > model.MaxFieldLen {
 			scope = scope[:model.MaxFieldLen]
 		}
@@ -132,11 +173,11 @@ func removeGoneApps(ctx context.Context, tx pgx.Tx, hostID int64, b *model.Obser
 			VALUES ($1, $2, $3, 'skipped', $4, $5, $6)
 			ON CONFLICT (asset_id, collector_id, scope) DO UPDATE SET status = EXCLUDED.status, reason = EXCLUDED.reason,
 			  tool_version = EXCLUDED.tool_version, last_attempt = EXCLUDED.last_attempt`,
-			g.id, AppsCollectorID, scope, reason, b.Collector.Version, b.ObservedAt); err != nil {
+			g.id, k.collector, scope, k.reason, b.Collector.Version, b.ObservedAt); err != nil {
 			return nil, err
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO coverage_history (collection_id, scope, status, reason) VALUES ($1, $2, 'skipped', $3)`,
-			coll, scope, reason); err != nil {
+			coll, scope, k.reason); err != nil {
 			return nil, err
 		}
 		if _, err := tx.Exec(ctx, `UPDATE assets SET collection_status = $2 WHERE id = $1`, g.id, AssetRemoved); err != nil {

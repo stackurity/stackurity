@@ -320,7 +320,7 @@ The assistants a person has connected (`/assistants`) and the OAuth consent page
 
 **Who:** anyone
 
-Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project`. `app_list` means `POST /ingest` takes a host batch's `apps` (see [ObservationBatch](#observationbatch)); agents send it only to servers that list it (0.14). `email_preferences: true` means this server sends bulk email (product updates, vulnerability news), so people have email preferences.
+Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project`. `app_list` means `POST /ingest` takes a host batch's `apps` (see [ObservationBatch](#observationbatch)); agents send it only to servers that list it (0.14). `host_images` means `POST /ingest` scopes `host-image` identities to their host and takes a host batch's `images`; the agent's `--docker` sends container images only to servers that list it. `email_preferences: true` means this server sends bulk email (product updates, vulnerability news), so people have email preferences.
 
 ### `GET /openapi.json`
 
@@ -364,7 +364,7 @@ Revokes an enrollment code.
 
 **Who:** anyone · outside `/api/v1`
 
-The agent installer script.
+The agent installer script, with the server's URL filled in: `STACKURITY_BASE_URL`, or without it the URL the request came in on. In that case a `Host` header that is not a hostname or IP address with an optional port gets `400` instead of a script. Served with `Cache-Control: no-store` and `Vary: Host`.
 
 ### `GET /download/agent/{platform}`
 
@@ -1843,10 +1843,12 @@ The single ingest contract for agents, scanners, SBOM imports and plugins. See [
 
 - `relations` (optional) links the asset to others by identifier: `[{"kind": "runs_on", "to": [{"scheme": "machine-id", "value": "..."}]}]`. Kinds are `runs_on`, `built_from` and `deployed_as` (a Kubernetes workload to the image it runs). Targets the server does not know yet are skipped. When present, the list replaces the relations this collector reported before; relations added by hand are kept.
 - An application on a host is identified as `{"scheme": "app-path", "value": "/srv/shop"}`, its only identifier, with a `runs_on` relation to the host. The server scopes the path to that host, which must already exist. A host-bound token may only report applications on its own host, and plugins cannot use this scheme.
+- A container image on a host (the agent's `--docker`) is identified as `{"scheme": "host-image", "value": "postgres:16"}` (the tag its containers run, or the image ID `sha256:...` when it has no tag), its only identifier, with a `runs_on` relation to the host. The server scopes the value to that host as it does an `app-path`, so a rebuilt image under the same tag is the same asset; the same rules apply to host-bound tokens and plugins. The image ID is in the `image_id` attribute.
 - `asset.kind` is `host`, `repository`, `image`, `application`, `managed_service`, `sbom`, `cluster` or `workload`.
 - An asset attribute `exposure` of `external` or `internal` (set on Kubernetes workloads) is used as the asset's internet exposure for risk scoring unless an operator set it by hand. An image takes the exposure of the workloads deployed as it.
 - `complete: true` tells the server that this batch is the collector's whole view of the asset. Components missing from it are marked removed, and history is kept. A batch that is not complete still removes what it left out outside the paths it could not read: when every `coverage` item that is not `checked` names an absolute path (`path:/srv/app/tmp`, `lockfile:/srv/app/yarn.lock`, `npm-installed:/srv/app/node_modules`; Composer's `vendor/composer/installed.json` stands for its `vendor` directory), components located at or below those paths are kept and the others are marked removed. When any such item names no path (`walk`, `depth`, `dpkg`, `invalid-entries`), nothing is removed. (Before 0.14 only complete batches removed anything, so an application with one unreadable cache directory kept an upgraded version's old libraries for good; its next collection removes them.)
 - `apps` (optional, host batches only, servers listing the `app_list` feature): `{"dirs": ["/var/www/html/phpmyadmin", ...]}`, every application directory the host's agent reports in this run, at most 1,000. The host's applications (`app-path` assets) not in the list are marked removed: each gets an empty complete collection (its findings resolve as `removed`), a `skipped` coverage note on `app:<dir>` saying why, and `collection_status` `removed`; the result lists them in `apps_removed`. An application that reports again is present again. Agents leave `apps` out when discovery stopped at its limits, so a missing directory is never guessed.
+- `images` (optional, host batches only, servers listing the `host_images` feature): `{"refs": ["postgres:16", "sha256:...", ...]}`, the `host-image` identity of every image the host's running containers use, at most 1,000. The host's images not in the list are marked removed the same way as applications (coverage note on `image:<ref>`, collection by `linux-docker`), and the result lists them in `images_removed`. The agent leaves `images` out when it could not list every running image (Docker unreadable, an image it could not inspect).
 - `coverage[].status` is one of `checked`, `skipped`, `failed`, `unsupported` or `partial`.
 - Limits: 200,000 observations, 64 MiB on the wire, 256 MiB after decompression.
 
