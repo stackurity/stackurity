@@ -314,6 +314,17 @@ type ChannelConfig struct {
 	SlackChannel     string `json:"slack_channel,omitempty"`
 	SlackChannelID   string `json:"slack_channel_id,omitempty"`
 	ConfigurationURL string `json:"configuration_url,omitempty"`
+	// teams, added with the Stackurity Teams app ("Add to Teams"): the
+	// Microsoft 365 tenant, team and channel the bot posts to, and the Bot
+	// Connector address Teams gave with them. No secret: the app's
+	// credentials are the server's (TeamsApp).
+	TeamsApp       bool   `json:"teams_app,omitempty"`
+	TenantID       string `json:"tenant_id,omitempty"`
+	TeamsTeamID    string `json:"teams_team_id,omitempty"`
+	TeamsTeamName  string `json:"teams_team_name,omitempty"`
+	TeamsChannelID string `json:"teams_channel_id,omitempty"`
+	TeamsChannel   string `json:"teams_channel,omitempty"`
+	ServiceURL     string `json:"service_url,omitempty"`
 
 	// interactive is the channel's id when its messages get interactive
 	// buttons; set by the dispatcher, never stored.
@@ -331,6 +342,9 @@ func ValidateChannel(kind string, c ChannelConfig, hasSecret, allowHTTP bool) er
 	}
 	if c.SlackApp && kind != KindSlack {
 		return errors.New("slack_app is for Slack channels")
+	}
+	if c.TeamsApp && kind != KindTeams {
+		return errors.New("teams_app is for Teams channels")
 	}
 	switch kind {
 	case KindStackurityEmail:
@@ -365,7 +379,22 @@ func ValidateChannel(kind string, c ChannelConfig, hasSecret, allowHTTP bool) er
 		default:
 			return errors.New("tls must be starttls, tls or none")
 		}
-	case KindSlack, KindTeams:
+	case KindTeams:
+		if c.TeamsApp {
+			if hasSecret {
+				return errors.New("Teams channels of the Stackurity app take no secret_ref")
+			}
+			// The binding itself is checked where it is made (from a
+			// verified activity) and the address again on every send.
+			if c.TeamsChannelID == "" || c.ServiceURL == "" {
+				return errors.New("not a Teams channel of the Stackurity app")
+			}
+			return nil
+		}
+		if !hasSecret {
+			return errors.New("set secret_ref to the incoming webhook URL (it is a credential)")
+		}
+	case KindSlack:
 		if !hasSecret {
 			return errors.New("set secret_ref to the incoming webhook URL (it is a credential)")
 		}

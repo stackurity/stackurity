@@ -235,6 +235,15 @@ func serverCmd() *cobra.Command {
 					log.Warn("Add to Slack needs stored secrets to keep the webhooks and tokens it gets", "fix", "set STACKURITY_SECRET_KEY")
 				}
 			}
+			// The Stackurity Teams app ("Add to Teams"), when configured.
+			if dispatcher.TeamsApp, err = notify.TeamsAppFromEnv(); err != nil {
+				return err
+			}
+			if dispatcher.TeamsApp != nil {
+				base := strings.TrimRight(os.Getenv("STACKURITY_BASE_URL"), "/")
+				log.Info("Teams app enabled (Add to Teams)", "messaging_endpoint", base+"/api/v1/integrations/teams/messages",
+					"app_id", dispatcher.TeamsApp.AppID, "certificate", dispatcher.TeamsApp.Key != nil)
+			}
 			// An edition may deliver email sent by Stackurity (hosted).
 			if editionNotify != nil {
 				if err := editionNotify(dispatcher, log); err != nil {

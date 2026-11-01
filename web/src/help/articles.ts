@@ -1288,7 +1288,7 @@ jobs:
     section: "Settings and administration",
     summary: "A few messages that bring people to the dashboard: urgent alerts, daily or weekly summaries, overdue reminders. Slack, Teams, email, webhooks, Jira, PagerDuty or ServiceNow.",
     where: ["Settings", "Integrations"],
-    keywords: "integrations trigger events rule slack teams email webhook jira issue ticket route channel urgent summary daily weekly overdue escalation quiet hours digest rate limit connected first scan slack app add to slack interactivity signing secret link slack account assign snooze smtp ses sendgrid postmark mailgun zeptomail gmail confirm held quota",
+    keywords: "integrations trigger events rule slack teams email webhook jira issue ticket route channel urgent summary daily weekly overdue escalation quiet hours digest rate limit connected first scan slack app add to slack add to teams teams app bot code workflows interactivity signing secret link slack account assign snooze smtp ses sendgrid postmark mailgun zeptomail gmail confirm held quota",
     body: [
       {
         p: "Everything Stackurity connects to is in [Settings, Integrations](/settings/integrations): **Active integrations** with their status and a settings button, and **Add an integration** for notifications (email, Slack, Teams, Jira, PagerDuty, ServiceNow, webhooks), sources (Git repositories, container registries, Kubernetes, AWS, plugins) and AI assistants. The **Delivery log** is a tab there.",
@@ -1297,6 +1297,7 @@ jobs:
       {
         list: [
           "**Slack**: click **Add to Slack**, pick the channel in Slack, and you come back to its settings to choose what to send. The channel shows as \"#security in Acme (Stackurity app)\", and **Assign to me** and **Snooze** work inside Slack. If the app is removed from Slack, the channel is turned off and says why. **Advanced: use a webhook** still takes an incoming webhook URL (see below).",
+          "**Microsoft Teams**: where offered, click **Add to Teams**. Stackurity shows a code (it works once, for 15 minutes, only for you) and **Open Stackurity in Teams**: add the app to the team, then in the channel that should get the notifications send `@Stackurity` and the code. The bot answers **Connected** and Stackurity opens the new integration to choose what to send. It shows as \"alerts in Security (Stackurity app)\". If the app is removed from the team, or the channel or team is deleted, the integration is turned off and says why; **Add to Teams** again to resume. **Advanced: use a Workflows webhook** still takes a Workflows webhook URL.",
           "**Email (sent by Stackurity)**, where offered: tick members and, if you like, type other addresses (up to 20 recipients by default). Members get messages once they have signed in to Stackurity at least once. Each other address gets one email with a link to confirm; nothing is sent to it until then. The **Other email addresses** list shows who is pending or confirmed, with **Resend**.",
           "**Email (your own mail server)**: under **Advanced: use your own mail server**, or the only email option on a self-hosted server. Pick a **Provider** (Amazon SES, SendGrid, Postmark, Mailgun, ZeptoMail, Gmail / Google Workspace) to fill in the host, port and encryption, with a note on where to get the credentials.",
         ],
@@ -1306,7 +1307,7 @@ jobs:
           ["Channel", "Configuration", "Secret reference"],
           ["Email (your mail server)", "SMTP host, port, from, recipients, username, encryption (STARTTLS by default)", "The SMTP password (optional)"],
           ["Slack (webhook)", "Optional: the Slack app's signing secret reference, to act from inside Slack", "The incoming webhook URL (required)"],
-          ["Microsoft Teams", "none", "The Workflows webhook URL (required)"],
+          ["Microsoft Teams (Workflows webhook)", "none", "The Workflows webhook URL (required)"],
           ["Webhook", "URL (HTTPS)", "HMAC signing key (optional)"],
           ["Jira", "Site URL, Cloud or Data Center, project key, issue type, account email (Cloud), optional labels, priority mapping and resolve transition", "API token (Cloud) or personal access token (required)"],
           ["PagerDuty", "Service region (US or EU), optional severity per priority", "Integration key (routing key) of an Events API v2 integration (required)"],

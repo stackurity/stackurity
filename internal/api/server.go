@@ -180,6 +180,10 @@ func (s *Server) Handler() http.Handler {
 	// Slack requires; signed in, the dashboard page that picks the
 	// organisation and starts Add to Slack (notify_setup.go).
 	r.Get("/integrations/slack/install", s.slackDirectInstall)
+	// The Stackurity Teams app's messaging endpoint (the Azure Bot's
+	// Messaging endpoint): every request carries a Bot Framework JWT for
+	// this app, verified before anything else (teams_app.go).
+	r.With(s.limitAddress("teams-messages", limitTeamsMessages, "too many requests")).Post("/api/v1/integrations/teams/messages", s.teamsMessages)
 	// One-click unsubscribe and "never email me again" from mail clients
 	// (RFC 8058), signed or single-use tokens in the address.
 	r.With(s.limitAddress("email-links", limitEmailConfirm, "too many attempts; wait a minute")).Post("/email/unsubscribe/one-click", s.oneClick(s.answerUnsubscribe))
@@ -428,6 +432,8 @@ func (s *Server) Handler() http.Handler {
 				r.Post("/email-recipients/resend", s.resendEmailRecipient)
 				r.With(s.requireWritable).Post("/integrations/slack/install", s.startSlackInstall)
 				r.With(s.requireWritable).Post("/integrations/slack/oauth", s.finishSlackInstall)
+				r.With(s.requireWritable).Post("/integrations/teams/install", s.startTeamsInstall)
+				r.Get("/integrations/teams/install/{id}", s.teamsInstallStatus)
 				r.With(s.requireWritable).Post("/deliveries/{id}/retry", s.retryDelivery)
 				s.proAdminRoutes(r)
 				r.Get("/secrets", s.listSecrets)

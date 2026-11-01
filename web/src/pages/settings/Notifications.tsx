@@ -20,6 +20,7 @@ import { Table, type Column } from "../../components/Table";
 import { Card, Code, EmptyState, ErrorBox, Loading, Notice, Pager, RelativeTime, SaveBar } from "../../components/ui";
 import { ProNotice } from "../../components/ProNotice";
 import { AddToSlackButton, parseAddresses, SmtpProviderPicker, StackurityEmailFields } from "../../components/NotifyChoices";
+import { AddToTeams } from "../../components/AddToTeams";
 import { DeliveryStatus } from "../IncidentDetail";
 
 /*
@@ -43,6 +44,7 @@ export const KIND_LABEL: Record<string, string> = {
 /** The kind, as shown next to an integration's name. */
 export function kindLabel(c: Pick<Channel, "kind" | "config">): string {
   if (c.kind === "slack") return c.config?.slack_app ? "Slack (Stackurity app)" : "Slack (webhook)";
+  if (c.kind === "teams") return c.config?.teams_app ? "Microsoft Teams (Stackurity app)" : "Microsoft Teams (Workflows webhook)";
   return KIND_LABEL[c.kind] ?? c.kind;
 }
 
@@ -51,6 +53,11 @@ export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n ==
 /** "#security in Acme (Stackurity app)" */
 export function slackAppTarget(cfg: ChannelConfig): string {
   return `${cfg.slack_channel || "a channel"} in ${cfg.team_name || cfg.team_id || "Slack"} (Stackurity app)`;
+}
+
+/** "alerts in Security (Stackurity app)" */
+export function teamsAppTarget(cfg: ChannelConfig): string {
+  return `${cfg.teams_channel || "a channel"} in ${cfg.teams_team_name || "Teams"} (Stackurity app)`;
 }
 
 export function channelTarget(c: Channel, recipients: EmailRecipient[] | undefined): string {
@@ -69,6 +76,7 @@ export function channelTarget(c: Channel, recipients: EmailRecipient[] | undefin
   if (c.kind === "servicenow")
     return `${cfg.table || "incident"} on ${cfg.url ?? "?"}${cfg.assignment_group ? `, group ${cfg.assignment_group}` : ""}${cfg.sync_back ? "; state read back" : ""}`;
   if (c.kind === "slack" && cfg.slack_app) return `${slackAppTarget(cfg)}; buttons act in Slack`;
+  if (c.kind === "teams" && cfg.teams_app) return teamsAppTarget(cfg);
   const target = c.secret_ref ? `URL from ${c.secret_ref}` : "";
   return c.kind === "slack" && cfg.signing_secret_ref ? `${target}; buttons act in Slack` : target;
 }
@@ -189,7 +197,8 @@ export function ChannelForm({
   options: NotificationOptions;
   members: DirectoryUser[] | undefined;
   onCancel?: () => void;
-  onSaved: (c: Channel) => void;
+  /** connected: the channel was made outside the form (Add to Teams). */
+  onSaved: (c: Channel, connected?: boolean) => void;
   extra?: ReactNode;
   validate?: () => string | null;
   afterCreate?: (c: Channel) => Promise<unknown>;
@@ -216,6 +225,7 @@ export function ChannelForm({
   // Advanced choices when the simpler one is offered.
   const [ownSmtp, setOwnSmtp] = useState(false);
   const [slackWebhook, setSlackWebhook] = useState(false);
+  const [teamsWebhook, setTeamsWebhook] = useState(false);
   const [name, setName] = useState(channel?.name ?? "");
   const [secretRef, setSecretRef] = useState(channel?.secret_ref ?? "");
   const [url, setUrl] = useState(cfg.url ?? "");
@@ -274,6 +284,8 @@ export function ChannelForm({
         : "email"
       : group;
   const slackApp = channel ? Boolean(cfg.slack_app) : kind === "slack" && options.slack_app && !slackWebhook;
+  // New Teams integrations use the Stackurity Teams app when the server has it.
+  const teamsApp = channel ? Boolean(cfg.teams_app) : kind === "teams" && options.teams_app && !teamsWebhook;
   const maxRecipients = options.platform_email.max_recipients ?? 20;
 
   const save = async (body: Record<string, unknown>) => {
@@ -310,8 +322,8 @@ export function ChannelForm({
       if (total > maxRecipients) return setLocalErr(`At most ${maxRecipients} recipients in total.`);
       return save({ name: name.trim(), config: { user_ids: userIds, to: addresses } });
     }
-    if (slackApp) {
-      // Only the name changes here; the rest comes from Slack.
+    if (slackApp || teamsApp) {
+      // Only the name changes here; the rest comes from Slack or Teams.
       if (!channel) return;
       return save({ name: name.trim() });
     }
@@ -392,7 +404,10 @@ export function ChannelForm({
 
   // A new Slack channel through the Stackurity app: Slack asks for the channel.
   const addToSlack = !channel && slackApp;
-  const showSecret = !addToSlack && !slackApp && kind !== "stackurity_email";
+  // A new Teams channel through the Stackurity app: bound with a code in Teams.
+  const addToTeams = !channel && teamsApp;
+  const appOnly = addToSlack || addToTeams;
+  const showSecret = !appOnly && !slackApp && !teamsApp && kind !== "stackurity_email";
 
   const problems = (
     <>
@@ -426,7 +441,7 @@ export function ChannelForm({
             </select>
           </div>
         )}
-        {!addToSlack && (
+        {!appOnly && (
           <div className="field">
             <label htmlFor={`${idp}-name`}>Name</label>
             <input id={`${idp}-name`} required value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. security-oncall" />
@@ -437,6 +452,16 @@ export function ChannelForm({
             <p>Slack asks you to pick a channel, then brings you back here to choose what to send. Buttons in the messages work inside Slack.</p>
             <AddToSlackButton returnTo={returnTo} />
           </div>
+        )}
+        {addToTeams && (
+          <div className="field field-span">
+            <AddToTeams onConnected={(c) => onSaved(c, true)} />
+          </div>
+        )}
+        {channel && teamsApp && (
+          <p className="field-span">
+            Sends to <strong>{teamsAppTarget(cfg)}</strong>. To stop, delete this integration or remove the app from the team in Teams.
+          </p>
         )}
         {channel && slackApp && (
           <p className="field-span">
@@ -805,6 +830,13 @@ export function ChannelForm({
           </button>
         </p>
       )}
+      {!channel && kind === "teams" && options.teams_app && (
+        <p className="small">
+          <button type="button" className="btn btn-link btn-inline" onClick={() => setTeamsWebhook(!teamsWebhook)} aria-expanded={teamsWebhook}>
+            {teamsWebhook ? "Use Add to Teams instead" : "Advanced: use a Workflows webhook"}
+          </button>
+        </p>
+      )}
       {!channel && !fixedKind && group === "email" && options.platform_email.enabled && (
         <p className="small">
           <button type="button" className="btn btn-link btn-inline" onClick={() => setOwnSmtp(!ownSmtp)} aria-expanded={ownSmtp}>
@@ -813,7 +845,7 @@ export function ChannelForm({
         </p>
       )}
       {connectionExtra}
-      {addToSlack && onCancel && (
+      {appOnly && onCancel && (
         <div className="form-actions">
           <button type="button" className="btn" onClick={onCancel}>
             Cancel
@@ -822,8 +854,8 @@ export function ChannelForm({
       )}
       </div>
       </Card>
-      {!addToSlack && extra}
-      {!addToSlack && problems}
+      {!appOnly && extra}
+      {!appOnly && problems}
       {channel ? (
         <SaveBar
           dirty={dirty}
@@ -836,7 +868,7 @@ export function ChannelForm({
           }}
         />
       ) : (
-        !addToSlack && (
+        !appOnly && (
           <div className="form-actions">
             <button type="submit" className="btn btn-primary" disabled={act.pending}>
               {act.pending ? "Saving…" : submitLabel ?? "Add"}

@@ -98,6 +98,7 @@ Connecting an asset is quiet: one "connected" message, and no alerts, Jira issue
 | `STACKURITY_OPENAI_APPS_CHALLENGE` (or `_FILE`) | — | The token OpenAI gives when you submit Stackurity as a ChatGPT app; served as text at `/.well-known/openai-apps-challenge` (404 when unset) |
 | `STACKURITY_AGENT_DIR` | `/usr/local/lib/stackurity/agents` in the image | Agent builds served to new hosts by **Add server** |
 | `STACKURITY_SLACK_CLIENT_ID` / `_FILE`, `STACKURITY_SLACK_CLIENT_SECRET` / `_FILE`, `STACKURITY_SLACK_SIGNING_SECRET` / `_FILE` | — | Your Slack app, for **Add to Slack** ([slack-app.md](slack-app.md)). All three or none; needs `STACKURITY_BASE_URL` and `STACKURITY_SECRET_KEY` |
+| `STACKURITY_TEAMS_APP_ID` / `_FILE`, `STACKURITY_TEAMS_APP_PASSWORD` / `_FILE` or `STACKURITY_TEAMS_APP_CERTIFICATE_FILE`, `STACKURITY_TEAMS_APP_TENANT`, `STACKURITY_TEAMS_APP_INSTALL_URL` | — | Your Teams app (an Azure Bot), for **Add to Teams** ([teams-app.md](teams-app.md)). The app ID with a client secret or a certificate; the tenant for a single-tenant bot |
 | `STACKURITY_ALLOW_HTTP_WEBHOOKS` | `false` | Allow `http://` webhook URLs, for internal receivers |
 | `STACKURITY_PLUGIN_DIR` | `/usr/local/lib/stackurity/plugins` in the image | Directory of plugin executables |
 | `STACKURITY_SYFT` | `syft` | Path to the Syft binary used for container image scans (bundled in the image) |
@@ -585,7 +586,7 @@ Credentials always go in a secret reference, never in the configuration:
 | Email (your mail server) | `host`, `port`, `from`, `to[]`, `username`, `tls` (`starttls` by default, `tls`, or `none`) | SMTP password |
 | Email (sent by Stackurity), hosted only | `user_ids[]` (members), `to[]` (other addresses, which confirm first) | none |
 | Slack | added with **Add to Slack** ([slack-app.md](slack-app.md)); or, with a webhook, optional `signing_secret_ref`: a reference to the Slack app's signing secret, to act from inside Slack (see below) | none with Add to Slack; otherwise the incoming webhook URL |
-| Microsoft Teams | none | The Workflows webhook URL ("Post to a channel when a webhook request is received") |
+| Microsoft Teams | added with **Add to Teams** ([teams-app.md](teams-app.md)), the default when the server has the Teams app; or none, with a Workflows webhook | none with Add to Teams; otherwise the Workflows webhook URL ("Post to a channel when a webhook request is received") |
 | Webhook | `url` (HTTPS) | The HMAC signing key (optional) |
 | Jira | `url` (the site, HTTPS), `deployment` (`cloud` by default, or `datacenter`), `project` (key), `issue_type` (`Task` by default), `username` (the account email, Cloud only), optional `labels[]`, `priorities` (`{"P1": "Highest", ...}`) and `resolve_transition` (e.g. `Done`) | Cloud: an [Atlassian API token](https://id.atlassian.com/manage-profile/security/api-tokens). Data Center and Server: a personal access token |
 | PagerDuty | optional `region` (`us` by default, or `eu`) and `severities` (`{"P1": "critical", ...}`) | The integration key (routing key) of an Events API v2 integration on the service |

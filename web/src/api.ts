@@ -2152,11 +2152,20 @@ export interface ChannelConfig {
   team_name?: string;
   slack_channel?: string;
   configuration_url?: string;
+  // teams created with "Add to Teams" (the Stackurity Teams app)
+  teams_app?: boolean;
+  tenant_id?: string;
+  teams_team_id?: string;
+  teams_team_name?: string;
+  teams_channel_id?: string;
+  teams_channel?: string;
+  service_url?: string;
 }
 
 /** GET /notification-options: what this server offers. */
 export interface NotificationOptions {
   slack_app: boolean;
+  teams_app: boolean;
   platform_email: {
     enabled: boolean;
     from?: string;
@@ -2167,7 +2176,7 @@ export interface NotificationOptions {
   base_url: boolean;
 }
 
-export const NO_NOTIFICATION_OPTIONS: NotificationOptions = { slack_app: false, platform_email: { enabled: false }, secrets: false, base_url: false };
+export const NO_NOTIFICATION_OPTIONS: NotificationOptions = { slack_app: false, teams_app: false, platform_email: { enabled: false }, secrets: false, base_url: false };
 
 /** Loads the options; a failure counts as nothing offered. */
 export function loadNotificationOptions(): Promise<NotificationOptions> {
@@ -2175,6 +2184,7 @@ export function loadNotificationOptions(): Promise<NotificationOptions> {
     .get<Partial<NotificationOptions>>("/notification-options")
     .then((o) => ({
       slack_app: Boolean(o?.slack_app),
+      teams_app: Boolean(o?.teams_app),
       platform_email: o?.platform_email?.enabled ? o.platform_email : { enabled: false },
       secrets: Boolean(o?.secrets),
       base_url: Boolean(o?.base_url),
@@ -2188,6 +2198,21 @@ export interface EmailRecipient {
   status: "pending" | "confirmed" | string;
   requested_at: string;
   confirmed_at: string | null;
+}
+
+/** POST /integrations/teams/install */
+export interface TeamsInstallStart {
+  id: number;
+  code: string;
+  expires_at: string;
+  install_url: string;
+}
+
+/** GET /integrations/teams/install/{id} */
+export interface TeamsInstallStatus {
+  status: "pending" | "connected" | "expired" | "failed";
+  expires_at: string;
+  channel?: Channel;
 }
 
 /** POST /integrations/slack/oauth */
