@@ -9010,6 +9010,201 @@
     }
    }
   },
+  "/integrations/pagerduty/connect": {
+   "post": {
+    "operationId": "post_integrations_pagerduty_connect",
+    "summary": "Start Connect PagerDuty",
+    "description": "`{\"return_to\"}` (a dashboard path). Answers `url`, PagerDuty's consent page asking for `services.read services.write`, with a PKCE S256 challenge and a state that works once, for 10 minutes, for the caller in this organisation. 404 `not_configured` without the PagerDuty app\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/pagerduty/oauth": {
+   "post": {
+    "operationId": "post_integrations_pagerduty_oauth",
+    "summary": "Exchange the PagerDuty code and list services",
+    "description": "`{\"code\", \"state\"}` from PagerDuty's redirect to `/integrations/pagerduty/oauth/callback`. 200: `session` (10 minutes, the caller only), `region` (`us` or `eu`), `return_to`, `services` and `more`. 400 `pagerduty_state` for a state that is unknown, used, expired or someone else's, before PagerDuty is called; 502 `pagerduty_scope` when a scope was not granted, 502 `pagerduty_refused` otherwise\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/pagerduty/services": {
+   "post": {
+    "operationId": "post_integrations_pagerduty_services",
+    "summary": "List the connected account's PagerDuty services",
+    "description": "`{\"session\", \"query\"}`: `services` and `more` (more than 1,000). 400 `pagerduty_state` for a session that is not the caller's or has expired\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/pagerduty/finish": {
+   "post": {
+    "operationId": "post_integrations_pagerduty_finish",
+    "summary": "Add the Stackurity integration to a PagerDuty service",
+    "description": "`{\"session\", \"service_id\"}`. Deletes the session and its token, adds an Events API v2 integration named Stackurity to the service and stores its routing key as the channel's secret (never returned). 201: `channel`, `return_to`, `service_name`; 200 with `reused` when the service already had a channel. 400 `pagerduty_state`; 502 `pagerduty_refused` with PagerDuty's reason\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/pagerduty/cancel": {
+   "post": {
+    "operationId": "post_integrations_pagerduty_cancel",
+    "summary": "Cancel Connect PagerDuty",
+    "description": "`{\"session\"}`: deletes the session and its PagerDuty token. 204\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/integrations/slack/events": {
    "post": {
     "operationId": "post_integrations_slack_events",

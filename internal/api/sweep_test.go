@@ -123,8 +123,19 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/integrations/slack/oauth": {class: "create", body: func(*tenantFx) any {
 		return map[string]string{"code": "c", "state": "guessed"}
 	}},
-	"GET /api/v1/notification-options": {class: "list"},
-	"GET /api/v1/email-recipients":     {class: "list"},
+	// Connect PagerDuty: a state or session of A's (or a guessed one) is
+	// refused in B; B's connect starts in B (pagerduty_app_test.go).
+	"POST /api/v1/integrations/pagerduty/connect": {class: "create", body: func(*tenantFx) any { return map[string]string{"return_to": "/settings/integrations"} }},
+	"POST /api/v1/integrations/pagerduty/oauth": {class: "create", body: func(*tenantFx) any {
+		return map[string]string{"code": "c", "state": "guessed"}
+	}},
+	"POST /api/v1/integrations/pagerduty/services": {class: "create", body: func(*tenantFx) any { return map[string]string{"session": "guessed"} }},
+	"POST /api/v1/integrations/pagerduty/finish": {class: "create", body: func(*tenantFx) any {
+		return map[string]string{"session": "guessed", "service_id": "PS001"}
+	}},
+	"POST /api/v1/integrations/pagerduty/cancel": {class: "create", body: func(*tenantFx) any { return map[string]string{"session": "guessed"} }},
+	"GET /api/v1/notification-options":           {class: "list"},
+	"GET /api/v1/email-recipients":               {class: "list"},
 	"POST /api/v1/email-recipients/resend": {class: "create", body: func(*tenantFx) any {
 		return map[string]string{"email": "outside@example.com"}
 	}},
