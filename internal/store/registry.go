@@ -11,7 +11,7 @@ import (
 )
 
 // RegistryImage is one image (a digest) a connected registry tracks
-// (migration 0074).
+// (migration 0077).
 type RegistryImage struct {
 	ID            int64      `json:"id"`
 	IntegrationID int64      `json:"integration_id"`
