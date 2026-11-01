@@ -105,7 +105,7 @@ func serverCmd() *cobra.Command {
 		Short: "Run the API, dashboard and background workers",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			log := newLogger()
-			ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+			ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
 			defer stop()
 
 			tm, err := parseTimings(os.Getenv("STACKURITY_TEST_TIMINGS"))

@@ -129,7 +129,8 @@ jobs:
   # horizontal scroll where routes.mjs asks. The server runs with the demo
   # estate and feeds off (no internet), signed in as a test admin.
   ui:
-    runs-on: ubuntu-latest
+    # Pinned: Playwright has no Chromium build for ubuntu-latest (26.04) yet.
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:17.11-alpine3.24

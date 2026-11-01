@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -71,9 +72,38 @@ func (s *Store) EndedPackages(ctx context.Context) (map[int64][]fixplan.EndedPac
 	return out, rows.Err()
 }
 
-// ReplaceFixGroups stores the current plan and each finding's group.
+// ReplaceFixGroups stores the current plan and each finding's group. A group
+// of an asset deleted since its findings were read is left out.
 func (s *Store) ReplaceFixGroups(ctx context.Context, groups []*fixplan.Group, assign map[int64]string) error {
 	return pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
+		// The assets planned for, and those planned for last time, are
+		// locked first, in id order: a deletion waits for this transaction
+		// (FOR KEY SHARE, which edits of an asset do not wait for), and one
+		// already under way is waited for here, before this transaction
+		// holds rows its cascade deletes. An asset it deleted is not
+		// returned, and gets no groups.
+		var ids []int64
+		seen := map[int64]bool{}
+		for _, g := range groups {
+			if !seen[g.AssetID] {
+				seen[g.AssetID] = true
+				ids = append(ids, g.AssetID)
+			}
+		}
+		locked, err := tx.Query(ctx, `SELECT id FROM assets WHERE id = ANY($1) OR id IN (SELECT asset_id FROM fix_groups)
+			ORDER BY id FOR KEY SHARE`, ids)
+		if err != nil {
+			return err
+		}
+		live, err := pgx.CollectRows(locked, pgx.RowTo[int64])
+		if err != nil {
+			return err
+		}
+		alive := make(map[int64]bool, len(live))
+		for _, id := range live {
+			alive[id] = true
+		}
+		groups = slices.DeleteFunc(slices.Clone(groups), func(g *fixplan.Group) bool { return !alive[g.AssetID] })
 		// Findings resolved since the last plan still name the group they
 		// were in: keep which fix closed them, for summaries, before the
 		// group is replaced.
@@ -116,7 +146,7 @@ func (s *Store) ReplaceFixGroups(ctx context.Context, groups []*fixplan.Group, a
 			WHERE a.finding_id = f.id AND f.fix_group IS DISTINCT FROM a.fix_group`); err != nil {
 			return err
 		}
-		_, err := tx.Exec(ctx, `UPDATE findings SET fix_group = '' WHERE fix_group <> ''
+		_, err = tx.Exec(ctx, `UPDATE findings SET fix_group = '' WHERE fix_group <> ''
 			AND NOT EXISTS (SELECT 1 FROM fg_assign a WHERE a.finding_id = findings.id)`)
 		return err
 	})

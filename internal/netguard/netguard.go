@@ -22,6 +22,7 @@ import (
 	"net/netip"
 	"os"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -154,6 +155,11 @@ func (p Policy) DialContext(ctx context.Context, network, addr string) (net.Conn
 	d := &net.Dialer{
 		Timeout: 15 * time.Second,
 		Control: func(_, address string, _ syscall.RawConn) error {
+			if f := observer.Load(); f != nil {
+				if err := (*f)(network, address); err != nil {
+					return err
+				}
+			}
 			ap, err := netip.ParseAddrPort(address)
 			if err != nil {
 				return err
@@ -227,6 +233,20 @@ func CheckHost(host string) error {
 		return fmt.Errorf("%w: %q", ErrAmbiguousHost, host)
 	}
 	return nil
+}
+
+// observer, when set, sees every address DialContext is about to connect
+// to and may refuse it.
+var observer atomic.Pointer[func(network, address string) error]
+
+// ObserveDials makes fn see every connection DialContext (and so every
+// guarded client and the Proxy) is about to open, as the address actually
+// dialled ("1.2.3.4:443"), before the policy check; an error refuses it. It is
+// for tests that prove what the server connects to (cmd/stackurity's egress
+// test), and returns a function that restores the previous observer.
+func ObserveDials(fn func(network, address string) error) (restore func()) {
+	prev := observer.Swap(&fn)
+	return func() { observer.Store(prev) }
 }
 
 // lookup resolves names; tests replace it to simulate DNS answers.
