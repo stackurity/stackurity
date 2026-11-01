@@ -283,6 +283,7 @@ var routeRules = map[string]routeRule{
 	"DELETE /api/v1/assets/{id}":                   {class: "object", obj: id("asset")},
 	"POST /api/v1/assets/{id}/remediation-token":   {class: "object", obj: id("asset")},
 	"POST /api/v1/integrations/{id}/run":           {class: "object", obj: id("integration")},
+	"GET /api/v1/integrations/{id}/images":         {class: "object", obj: id("integration")},
 	"PATCH /api/v1/integrations/{id}":              {class: "object", obj: id("integration"), body: func(*tenantFx) any { return map[string]any{"enabled": false} }},
 	"DELETE /api/v1/integrations/{id}":             {class: "object", obj: id("integration")},
 	"POST /api/v1/findings/{id}/actions":           {class: "object", obj: id("finding"), body: func(*tenantFx) any { return map[string]any{"action": "acknowledge"} }},
@@ -352,6 +353,10 @@ var routeRules = map[string]routeRule{
 		return map[string]any{"email": "sweep-new@x.io", "role": "viewer", "password": pw}
 	}},
 	"POST /api/v1/teams": {class: "create", body: func(a *tenantFx) any { return map[string]any{"name": "sweep-team", "members": []int64{a.int("user")}} }},
+	// Naming A's registry integration to borrow its stored secret: not found.
+	"POST /api/v1/integrations/registry/discover": {class: "create", body: func(a *tenantFx) any {
+		return map[string]any{"config": map[string]any{"provider": "oci", "url": "https://registry.invalid"}, "integration_id": a.int("integration")}
+	}},
 	"POST /api/v1/integrations": {class: "create", body: func(a *tenantFx) any {
 		return map[string]any{"kind": "git_repository", "config": map[string]string{"url": "https://github.com/sweep/repo"}, "secret_ref": "secret:" + a.ids["secret"]}
 	}},

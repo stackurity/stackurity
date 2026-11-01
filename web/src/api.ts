@@ -1074,11 +1074,60 @@ export interface PluginIntegrationConfig {
   config?: Record<string, unknown>;
 }
 
-export const INTEGRATION_KINDS = ["git_repository", "container_image", "plugin"] as const;
+export type RegistryProvider = "ghcr" | "dockerhub" | "ecr" | "oci";
+
+/** A connected container registry (kind container_registry). */
+export interface ContainerRegistryConfig {
+  provider: RegistryProvider;
+  namespace?: string;
+  url?: string;
+  auth_host?: string;
+  username?: string;
+  region?: string;
+  account_id?: string;
+  role_arn?: string;
+  external_id?: string;
+  aws_integration_id?: number;
+  repositories?: string[];
+  include?: string[];
+  exclude?: string[];
+  recent_tags?: number;
+  tag_patterns?: string[];
+  platform?: string;
+  environment?: string;
+  image_scans?: number;
+}
+
+/** POST /integrations/registry/discover */
+export interface RegistryDiscovery {
+  registry: string;
+  complete: boolean;
+  repositories: { name: string; included: boolean }[];
+}
+
+/** GET /integrations/{id}/images */
+export interface RegistryImage {
+  id: number;
+  repository: string;
+  digest: string;
+  image_ref: string;
+  tags: string[];
+  pushed_at: string | null;
+  asset_id: number | null;
+  tracked: boolean;
+  first_seen: string;
+  last_seen: string;
+  removed_at: string | null;
+}
+
+export const INTEGRATION_KINDS = ["git_repository", "container_image", "container_registry", "plugin"] as const;
 export type IntegrationKind = (typeof INTEGRATION_KINDS)[number];
 
 /** Union of the per-kind config objects; check `kind` before reading. */
-export type IntegrationConfig = Partial<GitRepoConfig> & Partial<ContainerImageConfig> & Partial<PluginIntegrationConfig>;
+export type IntegrationConfig = Partial<GitRepoConfig> &
+  Partial<ContainerImageConfig> &
+  Partial<PluginIntegrationConfig> &
+  Partial<Omit<ContainerRegistryConfig, "platform" | "environment" | "username">>;
 
 export interface Integration {
   id: number;

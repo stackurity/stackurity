@@ -5517,6 +5517,84 @@
     }
    }
   },
+  "/integrations/{id}/images": {
+   "get": {
+    "operationId": "get_integrations_id_images",
+    "summary": "Images a container registry integration tracks",
+    "description": "The images (digests) a container registry integration chose, stopped tracking, or found removed\n\nRole: engineer",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "engineer",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ]
+   }
+  },
+  "/integrations/registry/discover": {
+   "post": {
+    "operationId": "post_integrations_registry_discover",
+    "summary": "List a container registry's repositories",
+    "description": "List the repositories of a registry before connecting it, with whether the configuration keeps each; the secret is used, never returned\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/inventory": {
    "get": {
     "operationId": "get_inventory",

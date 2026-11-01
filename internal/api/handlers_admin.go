@@ -15,6 +15,7 @@ import (
 	"github.com/stackurity/stackurity/internal/auth"
 	"github.com/stackurity/stackurity/internal/collect/gitrepo"
 	"github.com/stackurity/stackurity/internal/collect/image"
+	"github.com/stackurity/stackurity/internal/collect/registry"
 	"github.com/stackurity/stackurity/internal/model"
 	"github.com/stackurity/stackurity/internal/plugins"
 	"github.com/stackurity/stackurity/internal/store"
@@ -335,6 +336,8 @@ func checkSecretRef(r *http.Request, ref string) error {
 	return nil
 }
 
+const kindsMessage = "kind must be " + KindGitRepository + ", " + KindContainerImage + ", " + KindContainerRegistry + " or " + KindPlugin
+
 func (s *Server) validateIntegration(ctx context.Context, kind string, cfg json.RawMessage, secretRef *string, minutes *int) error {
 	if len(cfg) > 0 {
 		dec := json.NewDecoder(strings.NewReader(string(cfg)))
@@ -351,6 +354,11 @@ func (s *Server) validateIntegration(ctx context.Context, kind string, cfg json.
 			if err = dec.Decode(&c); err == nil {
 				err = c.Validate()
 			}
+		case KindContainerRegistry:
+			var c registry.Config
+			if err = dec.Decode(&c); err == nil {
+				err = c.Validate()
+			}
 		case KindPlugin:
 			var c PluginConfig
 			if err = dec.Decode(&c); err == nil {
@@ -364,13 +372,13 @@ func (s *Server) validateIntegration(ctx context.Context, kind string, cfg json.
 				}
 			}
 		default:
-			return badRequest("kind must be " + KindGitRepository + ", " + KindContainerImage + " or " + KindPlugin)
+			return badRequest(kindsMessage)
 		}
 		if err != nil {
 			return badRequest("invalid config: " + err.Error())
 		}
-	} else if kind != KindGitRepository && kind != KindContainerImage && kind != KindPlugin {
-		return badRequest("kind must be " + KindGitRepository + ", " + KindContainerImage + " or " + KindPlugin)
+	} else if kind != KindGitRepository && kind != KindContainerImage && kind != KindContainerRegistry && kind != KindPlugin {
+		return badRequest(kindsMessage)
 	}
 	if secretRef != nil {
 		if err := s.Secrets.Validate(*secretRef); err != nil {
@@ -422,6 +430,18 @@ func (s *Server) createIntegration(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if req.Kind == KindContainerRegistry {
+		var c registry.Config
+		_ = json.Unmarshal(req.Config, &c)
+		ref := ""
+		if req.SecretRef != nil {
+			ref = *req.SecretRef
+		}
+		if err := s.checkRegistryConfig(r, c, ref); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+	}
 	name := ""
 	if req.Name != nil {
 		name = strings.TrimSpace(*req.Name)
@@ -436,6 +456,10 @@ func (s *Server) createIntegration(w http.ResponseWriter, r *http.Request) {
 			var c image.Config
 			_ = json.Unmarshal(req.Config, &c)
 			name = c.Image
+		case KindContainerRegistry:
+			var c registry.Config
+			_ = json.Unmarshal(req.Config, &c)
+			name = c.DisplayName()
 		case KindPlugin:
 			var c PluginConfig
 			_ = json.Unmarshal(req.Config, &c)
@@ -488,6 +512,18 @@ func (s *Server) updateIntegration(w http.ResponseWriter, r *http.Request) {
 	if err := checkSecretRef(r, ref); err != nil {
 		s.fail(w, r, err)
 		return
+	}
+	if cur.Kind == KindContainerRegistry {
+		cfg := cur.Config
+		if len(req.Config) > 0 {
+			cfg = req.Config
+		}
+		var c registry.Config
+		_ = json.Unmarshal(cfg, &c)
+		if err := s.checkRegistryConfig(r, c, ref); err != nil {
+			s.fail(w, r, err)
+			return
+		}
 	}
 	u := store.IntegrationUpdate{Name: req.Name, Config: req.Config, SecretRef: req.SecretRef, Enabled: req.Enabled}
 	if req.ScheduleMinutes != nil {

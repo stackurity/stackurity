@@ -70,7 +70,7 @@ export function IntegrationIcon({ kind }: { kind: string }) {
     sbom: <path d="M7 3h7l5 5v13H7zM14 3v5h5M10 12h6M10 15.5h6M10 19h3" />,
     ai: <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z" />,
   };
-  const key = kind === "stackurity_email" ? "email" : kind === "git_repository" ? "git" : kind === "container_image" ? "container" : kind;
+  const key = kind === "stackurity_email" ? "email" : kind === "git_repository" ? "git" : kind === "container_image" || kind === "container_registry" ? "container" : kind;
   return (
     <span className="int-icon" aria-hidden="true">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
@@ -94,7 +94,12 @@ interface Active {
   to: string;
 }
 
-const SOURCE_LABEL: Record<string, string> = { git_repository: "Git repository", container_image: "Container image", plugin: "Plugin" };
+const SOURCE_LABEL: Record<string, string> = {
+  git_repository: "Git repository",
+  container_image: "Container image",
+  container_registry: "Container registry",
+  plugin: "Plugin",
+};
 
 function fromChannel(c: Channel): Active {
   return {
@@ -318,7 +323,7 @@ export function IntegrationsHubPage() {
       { kind: "windows", title: "Windows server", text: "The same agent on Windows, run as a scheduled task. Reads installed programs.", to: "/assets/add", admin: true },
       { kind: "git", title: "Git repository", text: "Clone over HTTPS and read lockfiles on a schedule.", to: "/integrations", admin: true },
       { kind: "ci", title: "CI pipeline", text: "Run stackurity scan or the GitHub Action in CI, and fail the build on findings.", to: "", panel: "ci" },
-      { kind: "container", title: "Container image / registry", text: "Pull images and list their OS and application packages.", to: "/integrations", admin: true },
+      { kind: "container", title: "Container image / registry", text: "Connect a registry and scan its newest tags, or add one image.", to: "/integrations?add=container", admin: true },
       { kind: "kubernetes", title: "Kubernetes cluster", text: "Workloads and the images they run, through the Kubernetes plugin.", to: "/integrations", admin: true },
       { kind: "cloud", title: "AWS", text: "Managed services (RDS, EKS, Lambda and more), through the AWS plugin.", to: "/integrations", admin: true },
       { kind: "sbom", title: "SBOM upload", text: "Upload a CycloneDX or SPDX file from your build tool.", to: "", panel: "sbom" },
