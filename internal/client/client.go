@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -48,6 +49,8 @@ type APIError struct {
 	Code    string   `json:"code"`
 	Message string   `json:"message"`
 	Details []string `json:"details"`
+	// RetryAfter is the server's Retry-After (seconds form), or 0.
+	RetryAfter time.Duration `json:"-"`
 }
 
 func (e *APIError) Error() string {
@@ -84,6 +87,9 @@ func (c *Client) Do(ctx context.Context, method, path string, body io.Reader, he
 		}
 		_ = json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&e)
 		e.Error.Status = resp.StatusCode
+		if n, err := strconv.Atoi(strings.TrimSpace(resp.Header.Get("Retry-After"))); err == nil && n > 0 {
+			e.Error.RetryAfter = time.Duration(n) * time.Second
+		}
 		return &e.Error
 	}
 	if out == nil {
@@ -209,6 +215,11 @@ const FeatureUploadProject = "upload_project"
 // list of application directories (apps.dirs) and marks the applications
 // missing from it removed (0.14). Older servers refuse the field.
 const FeatureAppList = "app_list"
+
+// FeatureHostImages, in Meta.Features, means the server scopes host-image
+// identities to their host and takes a host batch's images.refs (the
+// agent's --docker).
+const FeatureHostImages = "host_images"
 
 // Meta is the server's anonymous description of itself (GET /meta).
 type Meta struct {
@@ -378,6 +389,41 @@ func (c *Client) Enroll(ctx context.Context, code, hostname string, project int6
 	err := c.Do(ctx, "POST", "/api/v1/enroll", bytes.NewReader(body),
 		map[string]string{"Content-Type": "application/json", "X-Stackurity-CSRF": "1"}, &e)
 	return &e, err
+}
+
+// EnrollWait is Enroll that keeps trying, for up to wait, while the server
+// answers 429 (too many hosts enrolling at once, as in a fleet rollout from
+// behind one NAT address) or 503. It waits as long as the server's
+// Retry-After asks, or backs off from 5 seconds to a minute, with jitter so
+// that many hosts started together spread out. Other errors (an invalid or
+// used-up code) return at once. note is told about each wait; it may be nil.
+func (c *Client) EnrollWait(ctx context.Context, code, hostname string, project int64, wait time.Duration, note func(d time.Duration, err error)) (*Enrollment, error) {
+	deadline := time.Now().Add(wait)
+	backoff := 5 * time.Second
+	for {
+		e, err := c.Enroll(ctx, code, hostname, project)
+		var ae *APIError
+		if err == nil || !errors.As(err, &ae) || (ae.Status != http.StatusTooManyRequests && ae.Status != http.StatusServiceUnavailable) {
+			return e, err
+		}
+		d := ae.RetryAfter
+		if d <= 0 {
+			d = backoff
+			backoff = min(backoff*2, time.Minute)
+		}
+		d = min(d, time.Minute) + rand.N(d/2+time.Second)
+		if time.Now().Add(d).After(deadline) {
+			return e, err
+		}
+		if note != nil {
+			note(d, err)
+		}
+		select {
+		case <-ctx.Done():
+			return e, ctx.Err()
+		case <-time.After(d):
+		}
+	}
 }
 
 // ErrNoCheckPolling means the server predates check again (0.7): it has no

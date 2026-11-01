@@ -10457,6 +10457,165 @@
      }
     }
    }
+  },
+  "/enrollments/{id}/uses": {
+   "get": {
+    "operationId": "get_enrollments_id_uses",
+    "summary": "Hosts that used an enrollment code",
+    "description": "The hosts that used a code, newest first: hostname, client address, time, and the prefix of the collector token each received\n\nRole: admin",
+    "tags": [
+     "Agents and uploads"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/digitalocean": {
+   "get": {
+    "operationId": "get_integrations_digitalocean",
+    "summary": "DigitalOcean connection status (the token is never returned)",
+    "description": "Whether a DigitalOcean API token is stored, and whether stored secrets are available\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/digitalocean/token": {
+   "put": {
+    "operationId": "put_integrations_digitalocean_token",
+    "summary": "Store a DigitalOcean API token (encrypted; never returned)",
+    "description": "Checks the token can list droplets, then stores it as the encrypted workspace secret digitalocean-token\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "delete_integrations_digitalocean_token",
+    "summary": "Delete the stored DigitalOcean API token",
+    "description": "Deletes the stored DigitalOcean API token\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/digitalocean/droplets": {
+   "get": {
+    "operationId": "get_integrations_digitalocean_droplets",
+    "summary": "DigitalOcean droplets and whether an agent covers each",
+    "description": "Lists the account's droplets (optionally by tag) with coverage: reporting, enrolled or not_covered. Stackurity installs nothing on droplets\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "tag",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
   }
  },
  "components": {

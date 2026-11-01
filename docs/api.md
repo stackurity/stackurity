@@ -320,7 +320,7 @@ The assistants a person has connected (`/assistants`) and the OAuth consent page
 
 **Who:** anyone
 
-Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project`. `app_list` means `POST /ingest` takes a host batch's `apps` (see [ObservationBatch](#observationbatch)); agents send it only to servers that list it (0.14). `email_preferences: true` means this server sends bulk email (product updates, vulnerability news), so people have email preferences.
+Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project`. `app_list` means `POST /ingest` takes a host batch's `apps` (see [ObservationBatch](#observationbatch)); agents send it only to servers that list it (0.14). `host_images` means `POST /ingest` scopes `host-image` identities to their host and takes a host batch's `images`; the agent's `--docker` sends container images only to servers that list it. `email_preferences: true` means this server sends bulk email (product updates, vulnerability news), so people have email preferences.
 
 ### `GET /openapi.json`
 
@@ -342,11 +342,13 @@ Creates the first admin (`setup_token` from the server log, `email`, `name`, `pa
 
 Exchanges a one-time enrollment code (`{"code", "hostname"}`) for a collector token and the agent settings chosen with it, including the code's `project_id`. Refusals do not say why. An optional `project_id` (`stackurity enroll --project`) is a check, not a choice: when the code adds hosts to another project or none, the answer is 403 and the code keeps its use.
 
+Each use is recorded (hostname, client address, the token issued) in the code's usage list. Rate limits: 10 failed attempts a minute per client address (refused codes; what stops guessing), 120 attempts a minute per address in all (so a fleet behind one NAT address can enroll), and 60 enrollments a minute per code (so a leaked fleet code cannot be used up in a burst). Over a limit the answer is `429` with `Retry-After`, and nothing is used up; `stackurity enroll` waits and tries again (`--wait`).
+
 ### `GET /enrollments`
 
 **Who:** admin
 
-Enrollment codes.
+Enrollment codes that can still be used. With `?fleet=1`, fleet codes made in the last 180 days in every state (usable, used up, expired, revoked), so a rollout's usage stays visible. Each code has `fleet`, `uses_left` and `max_uses` (how many servers it could enroll when made; `null` for codes made before this was recorded).
 
 ### `POST /enrollments`
 
@@ -354,11 +356,43 @@ Enrollment codes.
 
 Creates an enrollment code, returned once: `label`, `environment`, `app_dirs`, `discover_apps`, `uses` (1–500, default 1), `ttl_hours` (1–720, default 24) and `project_id` (hosts enrolled with it, and the assets their agent reports, join that project when first created).
 
+With `"fleet": true` it creates a **fleet code** for many servers: `uses` up to 1,000 and `ttl_hours` up to 2,160 (90 days), both required (no defaults). It is stored and redeemed like any other code (only its SHA-256 hash is kept) and is exchanged for one collector token per host. Creation, each use and revocation are in the audit log (`enrollment.create`, `enrollment.redeem`, `enrollment.revoke`, with `fleet` in the details).
+
+### `GET /enrollments/{id}/uses`
+
+**Who:** admin
+
+The hosts that used a code, newest first: `hostname` (as the host reported it), `remote_addr`, `used_at`, and the `token_prefix` of the collector token it received (under **Settings → API tokens**; empty once that token is deleted) with `token_revoked`.
+
 ### `DELETE /enrollments/{id}`
 
 **Who:** admin
 
-Revokes an enrollment code.
+Revokes an enrollment code. Hosts that already enrolled keep their tokens; revoke those under **Settings → API tokens** (the usage list gives their prefixes).
+
+### `GET /integrations/digitalocean`
+
+**Who:** admin
+
+Whether a DigitalOcean API token is stored (`connected`, `connected_at`) and whether stored secrets are available (`secrets_enabled`, which needs `STACKURITY_SECRET_KEY`). The token is never returned.
+
+### `PUT /integrations/digitalocean/token`
+
+**Who:** admin
+
+Stores a DigitalOcean API token (`{"token"}`) as the encrypted workspace secret `digitalocean-token`, after checking that it can list droplets (a read-only token with the `droplet:read` scope is enough; nothing else is used). A token DigitalOcean refuses answers 400 and is not stored; without `STACKURITY_SECRET_KEY` the answer is 409. Audit: `digitalocean.connect`.
+
+### `DELETE /integrations/digitalocean/token`
+
+**Who:** admin
+
+Deletes the stored token. Audit: `digitalocean.disconnect`.
+
+### `GET /integrations/digitalocean/droplets`
+
+**Who:** admin
+
+Lists the account's droplets (optionally `?tag=`) with, for each, `name`, `region`, `status`, `image`, `tags`, `public_ipv4`, `private_ipv4`, `public_ipv6` and `coverage`: `reporting` (a host asset reports the droplet's name as its hostname, ignoring case and a domain on either side; `asset_id`, `asset_name`, `last_seen`), `enrolled` (an agent enrolled from one of the droplet's addresses, `enrolled_as` the hostname it gave, but no host with the droplet's name reports), or `not_covered`. Droplets not covered come first. Also `total`, `covered` and `truncated` (more than 5,000 droplets: 25 pages of 200). Requests go to DigitalOcean's API only, through the outbound address guard, without following redirects. `409 not_connected` without a token, `409 token_refused` when DigitalOcean no longer accepts it, `502` when DigitalOcean cannot be reached. Stackurity does not install anything on droplets: see [Many servers at once](install.md#many-servers-at-once).
 
 ### `GET /install/agent.sh`
 
@@ -1873,10 +1907,12 @@ The single ingest contract for agents, scanners, SBOM imports and plugins. See [
 
 - `relations` (optional) links the asset to others by identifier: `[{"kind": "runs_on", "to": [{"scheme": "machine-id", "value": "..."}]}]`. Kinds are `runs_on`, `built_from` and `deployed_as` (a Kubernetes workload to the image it runs). Targets the server does not know yet are skipped. When present, the list replaces the relations this collector reported before; relations added by hand are kept.
 - An application on a host is identified as `{"scheme": "app-path", "value": "/srv/shop"}`, its only identifier, with a `runs_on` relation to the host. The server scopes the path to that host, which must already exist. A host-bound token may only report applications on its own host, and plugins cannot use this scheme.
+- A container image on a host (the agent's `--docker`) is identified as `{"scheme": "host-image", "value": "postgres:16"}` (the tag its containers run, or the image ID `sha256:...` when it has no tag), its only identifier, with a `runs_on` relation to the host. The server scopes the value to that host as it does an `app-path`, so a rebuilt image under the same tag is the same asset; the same rules apply to host-bound tokens and plugins. The image ID is in the `image_id` attribute.
 - `asset.kind` is `host`, `repository`, `image`, `application`, `managed_service`, `sbom`, `cluster` or `workload`.
 - An asset attribute `exposure` of `external` or `internal` (set on Kubernetes workloads) is used as the asset's internet exposure for risk scoring unless an operator set it by hand. An image takes the exposure of the workloads deployed as it.
 - `complete: true` tells the server that this batch is the collector's whole view of the asset. Components missing from it are marked removed, and history is kept. A batch that is not complete still removes what it left out outside the paths it could not read: when every `coverage` item that is not `checked` names an absolute path (`path:/srv/app/tmp`, `lockfile:/srv/app/yarn.lock`, `npm-installed:/srv/app/node_modules`; Composer's `vendor/composer/installed.json` stands for its `vendor` directory), components located at or below those paths are kept and the others are marked removed. When any such item names no path (`walk`, `depth`, `dpkg`, `invalid-entries`), nothing is removed. (Before 0.14 only complete batches removed anything, so an application with one unreadable cache directory kept an upgraded version's old libraries for good; its next collection removes them.)
 - `apps` (optional, host batches only, servers listing the `app_list` feature): `{"dirs": ["/var/www/html/phpmyadmin", ...]}`, every application directory the host's agent reports in this run, at most 1,000. The host's applications (`app-path` assets) not in the list are marked removed: each gets an empty complete collection (its findings resolve as `removed`), a `skipped` coverage note on `app:<dir>` saying why, and `collection_status` `removed`; the result lists them in `apps_removed`. An application that reports again is present again. Agents leave `apps` out when discovery stopped at its limits, so a missing directory is never guessed.
+- `images` (optional, host batches only, servers listing the `host_images` feature): `{"refs": ["postgres:16", "sha256:...", ...]}`, the `host-image` identity of every image the host's running containers use, at most 1,000. The host's images not in the list are marked removed the same way as applications (coverage note on `image:<ref>`, collection by `linux-docker`), and the result lists them in `images_removed`. The agent leaves `images` out when it could not list every running image (Docker unreadable, an image it could not inspect).
 - `coverage[].status` is one of `checked`, `skipped`, `failed`, `unsupported` or `partial`.
 - Limits: 200,000 observations, 64 MiB on the wire, 256 MiB after decompression.
 

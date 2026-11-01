@@ -65,6 +65,9 @@ type Server struct {
 	// Pro holds what the licensed edition needs (single sign-on, ...);
 	// it is empty in the Community build.
 	Pro ProConfig
+	// DigitalOceanAPI is the DigitalOcean API base URL for fleet discovery;
+	// empty is https://api.digitalocean.com. Tests point it at a fake.
+	DigitalOceanAPI string
 	// BaseURL is the public dashboard URL, used in the agent installer.
 	BaseURL string
 	// AgentDir holds agent builds served to new hosts (stackurity-linux-amd64
@@ -450,6 +453,11 @@ func (s *Server) Handler() http.Handler {
 				r.Delete("/invitations/{id}", s.revokeInvitation)
 				r.Get("/enrollments", s.listEnrollments)
 				r.With(s.requireWritable).Post("/enrollments", s.createEnrollment)
+				r.Get("/enrollments/{id}/uses", s.enrollmentUses)
+				r.Get("/integrations/digitalocean", s.doStatus)
+				r.With(s.requireWritable).Put("/integrations/digitalocean/token", s.doConnect)
+				r.Delete("/integrations/digitalocean/token", s.doDisconnect)
+				r.Get("/integrations/digitalocean/droplets", s.doListDroplets)
 				r.Delete("/enrollments/{id}", s.revokeEnrollment)
 				r.Get("/aws/connections", s.listAWSConnections)
 				r.With(s.requireWritable).Post("/aws/connections", s.createAWSConnection)

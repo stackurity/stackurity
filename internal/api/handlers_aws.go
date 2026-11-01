@@ -136,7 +136,11 @@ func (s *Server) newAWSLaunch(ctx context.Context, r *http.Request, c *store.AWS
 	}
 	l := &awsLaunch{TemplateURL: s.AWS.TemplateURL, TemplateDownload: "/aws/" + awsconnect.TemplateFile,
 		StackName: fmt.Sprintf("Stackurity-%d", c.ID), StackRegion: stackRegion, ExternalID: c.ExternalID, Principal: s.AWS.Principal}
-	callbackURL := s.publicURL(r) + "/api/v1/aws/callback"
+	base, err := s.publicURL(r)
+	if err != nil {
+		return nil, err
+	}
+	callbackURL := base + "/api/v1/aws/callback"
 	var token string
 	if u, err := url.Parse(callbackURL); err == nil && u.Scheme == "https" {
 		key, err := s.Store.PlatformKey(ctx, "aws-callback")
@@ -611,7 +615,12 @@ func (s *Server) installAWSAgents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// The command carries this server's address; check it before making codes.
-	if _, err := awsconnect.InstallCommand(s.publicURL(r), "enr_check"); err != nil {
+	base, err := s.publicURL(r)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if _, err := awsconnect.InstallCommand(base, "enr_check"); err != nil {
 		s.fail(w, r, badRequest(err.Error()))
 		return
 	}
@@ -638,7 +647,7 @@ func (s *Server) installAWSAgents(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		row.EnrollmentID = &e.ID
-		cmd, err := awsconnect.InstallCommand(s.publicURL(r), code)
+		cmd, err := awsconnect.InstallCommand(base, code)
 		if err == nil {
 			row.CommandID, err = s.AWS.SendInstall(r.Context(), sess, region, in.InstanceID, cmd)
 		}

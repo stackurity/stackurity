@@ -332,6 +332,11 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/aws/connections/{id}/installs": {class: "object", obj: id("awsconnection"), body: func(*tenantFx) any {
 		return map[string]any{"instances": []map[string]string{{"instance_id": "i-0123456789abcdef0"}}}
 	}},
+	"GET /api/v1/integrations/digitalocean":          {class: "list"},
+	"GET /api/v1/integrations/digitalocean/droplets": {class: "list"},
+
+	// A's objects by id.
+	"GET /api/v1/enrollments/{id}/uses":            {class: "object", obj: id("enrollment")},
 	"POST /api/v1/remediation/plans/{id}/decision": {class: "object", obj: id("plan"), body: func(*tenantFx) any { return map[string]any{"decision": "approve"} }},
 	"PUT /api/v1/remediation/policies/{id}":        {class: "object", obj: id("policy"), edition: "ee", body: func(*tenantFx) any { return map[string]any{"name": "hacked"} }},
 	"DELETE /api/v1/remediation/policies/{id}":     {class: "object", obj: id("policy"), edition: "ee"},
@@ -385,6 +390,11 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/aws/connections": {class: "create", body: func(*tenantFx) any {
 		return map[string]any{"regions": []string{"eu-west-1"}, "agent_install": true}
 	}},
+	// An empty token is refused before anything is sent to DigitalOcean, so
+	// the sweep makes no outbound request; the token's own handling is in
+	// fleet_test.go.
+	"PUT /api/v1/integrations/digitalocean/token":    {class: "create", body: func(*tenantFx) any { return map[string]string{"token": ""} }},
+	"DELETE /api/v1/integrations/digitalocean/token": {class: "create"},
 	"POST /api/v1/projects": {class: "create", body: func(a *tenantFx) any {
 		return map[string]any{"name": "sweep-project", "asset_ids": []int64{a.int("asset"), a.int("asset2")}}
 	}},
