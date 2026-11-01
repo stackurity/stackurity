@@ -144,12 +144,19 @@ func (s *Server) createInvitation(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, status, map[string]any{"granted": true, "grant": g})
 		return
 	}
+	// The link is built from the Host header without STACKURITY_BASE_URL:
+	// check it before an invitation exists.
+	base, err := s.publicURL(r)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	inv, token, err := s.Store.CreateInvitation(r.Context(), email, req.Name, project, req.Role, actorUserID(p))
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	link := s.publicURL(r) + "/invite#" + token
+	link := base + "/invite#" + token
 	emailed, why := s.emailInvitation(r, inv, link)
 	if emailed {
 		_ = s.Store.MarkInvitationEmailed(r.Context(), inv.ID)
