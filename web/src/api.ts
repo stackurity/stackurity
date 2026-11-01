@@ -2390,7 +2390,20 @@ export interface RiskPolicy {
   sos_rules: SOSRule[] | null;
   /** Longest suppression / risk acceptance in days (1–730; 0 means the default, 365). */
   exception_max_days?: number;
+  /** How fix deadlines are set: absent or "sla" (the default), or "patch_calendar". */
+  due_dates?: "sla" | "patch_calendar" | "";
+  /** Patch windows for due_dates "patch_calendar"; absent means the defaults. */
+  patch_calendar?: PatchCalendar;
 }
+
+/** Monthly patch windows: test N days after Patch Tuesday, production M days after test. */
+export interface PatchCalendar {
+  test_days_after_patch_tuesday: number;
+  prod_days_after_test: number;
+  timezone: string;
+}
+
+export const DEFAULT_PATCH_CALENDAR: PatchCalendar = { test_days_after_patch_tuesday: 1, prod_days_after_test: 7, timezone: "UTC" };
 
 export const DEFAULT_EXCEPTION_MAX_DAYS = 365;
 

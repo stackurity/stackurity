@@ -56,6 +56,26 @@ func markRegressed(ctx context.Context, tx pgx.Tx) error {
 	return err
 }
 
+// carryDueFrom starts the deadlines of the findings SyncFindings has just
+// inserted from when the asset first had the vulnerability (same kind and
+// key, any package): another version of an affected package, such as a new
+// kernel, is a new finding, but not a new issue, so its clock does not
+// restart. The issue continues while a predecessor was still open, or
+// closed or uninstalled only once the new inventory row appeared, the test
+// markRegressed uses; a predecessor fixed before that is a past occurrence,
+// and the new finding's clock starts afresh. Chains carry over: a
+// predecessor's own due_from counts. False positives (rejected) do not.
+func carryDueFrom(ctx context.Context, tx pgx.Tx) error {
+	_, err := tx.Exec(ctx, `WITH c AS (SELECT f.id, (SELECT min(COALESCE(p.due_from, p.first_seen))
+		    FROM findings p LEFT JOIN inventory pi ON pi.id = p.inventory_id
+		    WHERE p.asset_id = f.asset_id AND p.kind = f.kind AND p.key = f.key AND p.id <> f.id AND p.verification <> 'rejected'
+		      AND (p.status = 'open' OR p.resolved_at >= i.first_seen OR pi.removed_at >= i.first_seen)) AS due_from
+		  FROM findings f JOIN inventory i ON i.id = f.inventory_id
+		  WHERE f.status = 'open' AND f.first_seen = now() AND f.due_from IS NULL)
+		UPDATE findings f SET due_from = c.due_from FROM c WHERE f.id = c.id AND c.due_from < f.first_seen`)
+	return err
+}
+
 // applyExceptions applies active ignore rules (one rule, or all when ruleID
 // is 0) to the open, active findings they cover that no rule has covered
 // before, and records an event on each. cond limits the findings (SQL on f).

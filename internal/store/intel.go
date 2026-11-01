@@ -486,6 +486,9 @@ func (s *Store) SyncFindings(ctx context.Context, kinds []string, inventoryIDs [
 		if err := markRegressed(ctx, tx); err != nil {
 			return err
 		}
+		if err := carryDueFrom(ctx, tx); err != nil {
+			return err
+		}
 		if _, err := applyExceptions(ctx, tx, 0, "f.asset_id IN (SELECT DISTINCT asset_id FROM want_findings)"); err != nil {
 			return err
 		}

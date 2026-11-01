@@ -16,6 +16,7 @@ import { PriorityBadge, SosBadge } from "../../components/Badge";
 import { Table, type Column } from "../../components/Table";
 import { Card, ErrorBox, Loading, Notice, PageHeader, RelativeTime } from "../../components/ui";
 import { plural } from "../../format";
+import { PatchCalendarCard } from "./PatchCalendarCard";
 
 const SEVERITY_KEYS = ["critical", "high", "medium", "low", "none", "unknown"];
 const CRITICALITY_KEYS = ["critical", "high", "medium", "low", "unknown"];
@@ -179,7 +180,7 @@ function PreviewCard({ pv }: { pv: RiskPolicyPreview }) {
         <Notice kind="info">
           No finding changes priority or SOS.{" "}
           {pv.score_changed > 0 ? `${plural(pv.score_changed, "finding")} change score without crossing a threshold.` : ""}
-          {pv.changed_fields.some((f) => f === "sla" || f === "exception_max_days") ? " Deadline and exception limits still change." : ""}
+          {pv.changed_fields.some((f) => ["sla", "exception_max_days", "due_dates", "patch_calendar"].includes(f)) ? " Deadline and exception limits still change." : ""}
         </Notice>
       ) : (
         <Notice kind="warn">
@@ -487,6 +488,7 @@ export function RiskPolicyPage() {
               </table>
             </div>
           </Card>
+          <PatchCalendarCard policy={p} onChange={set} />
           <Card title="Exceptions">
             <p className="hint">
               Suppressions and risk acceptances always expire; this is the longest expiry anyone can set. The finding returns as new
