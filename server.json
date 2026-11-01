@@ -1,0 +1,19 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "dev.stackurity/stackurity",
+  "title": "Stackurity",
+  "description": "Installed software, vulnerabilities and end-of-life components across your servers, apps and repos",
+  "version": "0.13.9",
+  "websiteUrl": "https://stackurity.dev",
+  "repository": {
+    "url": "https://github.com/stackurity/stackurity",
+    "source": "github",
+    "id": "1433092131"
+  },
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://app.stackurity.dev/mcp"
+    }
+  ]
+}
