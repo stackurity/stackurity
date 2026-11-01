@@ -65,7 +65,8 @@ type NewAsset struct {
 }
 
 // UnannouncedAssets returns the assets whose first scan has not been
-// announced.
+// announced. A selftest asset is never announced: its findings stay
+// first-scan backlog (BacklogFinding) until it is deleted.
 func (s *Store) UnannouncedAssets(ctx context.Context) ([]NewAsset, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT a.id, a.name, a.environment, a.owner_team_id,
 		  (SELECT count(*) FROM inventory i WHERE i.asset_id = a.id AND i.removed_at IS NULL)::int,
@@ -74,7 +75,8 @@ func (s *Store) UnannouncedAssets(ctx context.Context) ([]NewAsset, error) {
 		    AND EXISTS (SELECT 1 FROM collections c WHERE c.asset_id = a.id AND c.complete AND c.received_at <= a.evaluated_at)
 		    AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.dedupe_key = 'evaluate:asset:' || a.id AND j.done_at IS NULL AND j.failed_at IS NULL))
 		  OR a.created_at < now() - interval '6 hours'
-		FROM assets a WHERE a.announced_at IS NULL AND a.merged_into IS NULL ORDER BY a.name LIMIT 5000`)
+		FROM assets a WHERE a.announced_at IS NULL AND a.merged_into IS NULL AND NOT `+selftestAsset+`
+		ORDER BY a.name LIMIT 5000`)
 	if err != nil {
 		return nil, err
 	}

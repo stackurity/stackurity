@@ -589,6 +589,7 @@ const incidentCols = `i.id, i.kind, i.key, i.owner_team_id, COALESCE(t.name, '')
 // CorrelateIncidents groups active findings (open and not suppressed) into
 // incidents by (kind, key, owner team) and resolves incidents with nothing
 // active left. It is idempotent: reprocessing never duplicates incidents.
+// Findings on a selftest asset join none.
 func (s *Store) CorrelateIncidents(ctx context.Context) error {
 	return pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
 		// Serialise correlation so two workers cannot race on the unique index.
@@ -614,6 +615,7 @@ func (s *Store) CorrelateIncidents(ctx context.Context) error {
 			   ) || CASE WHEN bool_or(NOT (` + notBehind + `)) THEN '{"behind": true}'::jsonb ELSE '{}'::jsonb END AS detail
 			 FROM findings f JOIN assets a ON a.id = f.asset_id JOIN components c ON c.id = f.component_id
 			 WHERE f.status = 'open' AND f.state IN ('new', 'acknowledged', 'in_progress') AND a.merged_into IS NULL
+			   AND NOT ` + selftestAsset + `
 			 GROUP BY f.kind, f.key, a.owner_team_id`,
 			// Ownership changed: move the open incident to the new owner
 			// rather than resolving it and opening another (which would send
@@ -639,7 +641,7 @@ func (s *Store) CorrelateIncidents(ctx context.Context) error {
 			 FROM assets a, incidents i
 			 WHERE a.id = f.asset_id AND i.status = 'open' AND i.kind = f.kind AND i.key = f.key
 			   AND COALESCE(i.owner_team_id, 0) = COALESCE(a.owner_team_id, 0)
-			   AND f.status = 'open' AND f.incident_id IS DISTINCT FROM i.id`,
+			   AND f.status = 'open' AND f.incident_id IS DISTINCT FROM i.id AND NOT ` + selftestAsset,
 			`UPDATE incidents i SET status = 'resolved', resolved_at = now(), updated_at = now()
 			 WHERE i.status = 'open' AND i.kind IN ('vulnerability', 'end_of_life')
 			   AND NOT EXISTS (SELECT 1 FROM active_groups g WHERE g.kind = i.kind AND g.key = i.key

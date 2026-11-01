@@ -740,7 +740,7 @@ These checks are in the version being replaced, so they protect upgrades *from* 
    ```
 
 5. **Start one replica of the new version.** Compose: `git pull`, then `docker compose pull && docker compose up -d` (or bump `STACKURITY_IMAGE`; with `--build` if you build from source). Helm: set the new image tag (or chart version) and run `helm upgrade` with your usual values; it starts every replica of the new version at once, which is safe. Migrations run at startup inside a lock, so concurrent starts of the *same* version are safe; `stackurity migrate` applies them separately if you prefer.
-6. **Check it**: `/readyz` answers 200, **Settings → Platform health** shows no new problems, and your workspaces, assets and findings are there (`stackurity admin list-workspaces`).
+6. **Check it**: `/readyz` answers 200, **Settings → Platform health** shows no new problems, and your workspaces, assets and findings are there (`stackurity admin list-workspaces`). `stackurity doctor` on the server and `stackurity selftest` against it check the rest ([Checking an installation](operations.md#checking-an-installation)).
 7. **Start the other replicas** of the new version (scale back up).
 
 If a replica of the old version was missed, it refuses to start, or, if it was still running, fails `/readyz` within a minute and logs `database schema is newer than this server`; stop it.
@@ -830,3 +830,4 @@ Any number of servers can run against one PostgreSQL database, behind a load bal
 
 Recommended alerts with thresholds are in [`deploy/prometheus/stackurity-alerts.yml`](../deploy/prometheus/stackurity-alerts.yml), each with a runbook in [operations.md](operations.md), which also has drills for a database outage, a full disk, a long upstream outage, a failing notification provider and agents that stop reporting.
 - `stackurity diagnostics --server URL`: checks connectivity, authentication and version from a client.
+- `stackurity doctor`, `stackurity support-bundle` and `stackurity selftest`: check the installation from the server host, write redacted diagnostics for support, and prove it works end to end ([Checking an installation](operations.md#checking-an-installation)).

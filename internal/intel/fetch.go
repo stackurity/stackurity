@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -84,6 +85,32 @@ func DefaultConfig() Config {
 		NVDBackoff:              35 * time.Second,
 		MozillaURL:              DefaultMozillaURL,
 	}
+}
+
+// Sources returns the URLs a feed reads from with this configuration (the
+// default sources, or the mirrors configured for them), or nil for a feed
+// this version does not know. `stackurity doctor` checks they can be
+// reached.
+func (c Config) Sources(feed string) []string {
+	switch {
+	case strings.HasPrefix(feed, "osv:"):
+		return []string{c.OSVBaseURL}
+	case feed == FeedWordPressOrg:
+		return []string{c.WordPressOrgURL, c.WordPressPluginsListURL, c.WordPressThemesListURL}
+	case feed == FeedWindowsPrograms:
+		return []string{c.NVDURL, c.MozillaURL}
+	}
+	u := map[string]string{
+		FeedAmazonLinux: c.AmazonLinuxURL, FeedOracleLinux: c.OracleLinuxURL, FeedMSRC: c.MSRCURL,
+		FeedKEV: c.KEVURL, FeedEPSS: c.EPSSURL, FeedEndOfLife: c.EndOfLifeURL,
+		FeedNpm: c.NpmRegistry, FeedPackagist: c.PackagistURL, FeedPyPI: c.PyPIURL, FeedGo: c.GoProxyURL,
+		FeedCrates: c.CratesIndexURL, FeedRubyGems: c.RubyGemsURL, FeedNuGet: c.NuGetURL, FeedMaven: c.MavenURL,
+		FeedPub: c.PubURL, FeedHex: c.HexURL,
+	}[feed]
+	if u == "" {
+		return nil
+	}
+	return []string{u}
 }
 
 type fetcher struct {

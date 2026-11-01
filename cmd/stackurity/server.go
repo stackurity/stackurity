@@ -394,18 +394,12 @@ const shutdownTimeout = 30 * time.Second
 // a warning: Stackurity then runs as Community rather than not at all.
 func loadLicence(ctx context.Context, st *store.Store, log *slog.Logger) (*license.Holder, bool, error) {
 	h := &license.Holder{}
-	key, fromEnv := os.Getenv("STACKURITY_LICENSE"), false
-	if f := os.Getenv("STACKURITY_LICENSE_FILE"); f != "" {
-		b, err := os.ReadFile(f)
-		if err != nil {
-			return nil, false, fmt.Errorf("read licence: %w", err)
-		}
-		key = string(b)
+	key, from, err := licenceKeyFromEnv()
+	if err != nil {
+		return nil, false, err
 	}
-	if strings.TrimSpace(key) != "" {
-		fromEnv = true
-	} else {
-		var err error
+	fromEnv := from != ""
+	if !fromEnv {
 		if key, err = st.LicenseKey(ctx); err != nil {
 			return nil, false, err
 		}
@@ -423,6 +417,24 @@ func loadLicence(ctx context.Context, st *store.Store, log *slog.Logger) (*licen
 	s := h.Status()
 	log.Info("licence", "customer", l.Customer, "edition", l.Edition, "state", s.State, "expires", l.ExpiresAt.Format("2006-01-02"))
 	return h, fromEnv, nil
+}
+
+// licenceKeyFromEnv reads the licence from STACKURITY_LICENSE_FILE, which
+// wins, or STACKURITY_LICENSE. from names the variable it came from, or is
+// empty when neither holds a key (the database's is used then).
+func licenceKeyFromEnv() (key, from string, err error) {
+	key, from = os.Getenv("STACKURITY_LICENSE"), "STACKURITY_LICENSE"
+	if f := os.Getenv("STACKURITY_LICENSE_FILE"); f != "" {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			return "", "", fmt.Errorf("read licence: %w", err)
+		}
+		key, from = string(b), "STACKURITY_LICENSE_FILE"
+	}
+	if strings.TrimSpace(key) == "" {
+		return "", "", nil
+	}
+	return key, from, nil
 }
 
 // followReplicas keeps state that another replica can change in step with

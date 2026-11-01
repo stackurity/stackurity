@@ -136,6 +136,14 @@ func appliedMigrations(ctx context.Context, q querier) ([]string, error) {
 	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
+// Applied returns the migrations recorded in schema_migrations, sorted; a
+// database without the table has none.
+func Applied(ctx context.Context, q querier) ([]string, error) {
+	names, err := appliedMigrations(ctx, q)
+	sort.Strings(names)
+	return names, err
+}
+
 // newerSchema returns a *NewerSchemaError when applied names a migration
 // this binary does not have.
 func newerSchema(applied []string) error {
