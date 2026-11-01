@@ -54,7 +54,7 @@ jobs:
             os=${target%/*}; arch=${target#*/}; ext=""; [ "$os" = windows ] && ext=.exe
             CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags "-s -w -X main.version=$VERSION" \
               -o "dist/stackurity_${VERSION}_${os}_${arch}${ext}" ./cmd/stackurity
-            for plugin in aws-managed kubernetes; do
+            for plugin in aws-managed gcp-managed azure-managed kubernetes; do
               CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags "-s -w" \
                 -o "dist/stackurity-plugin-${plugin}_${VERSION}_${os}_${arch}${ext}" ./plugins/$plugin
             done

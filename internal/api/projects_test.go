@@ -192,6 +192,8 @@ var projectScopes = map[string]string{
 
 	"POST /api/v1/feeds/{name}/refresh":            "org",
 	"GET /api/v1/plugins":                          "org",
+	"GET /api/v1/cloud-setup/gcp":                  "org",
+	"GET /api/v1/cloud-setup/azure":                "org",
 	"GET /api/v1/admin/license/":                   "org",
 	"PUT /api/v1/admin/license/":                   "org",
 	"DELETE /api/v1/admin/license/":                "org",

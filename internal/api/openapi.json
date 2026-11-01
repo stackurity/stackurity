@@ -6349,6 +6349,100 @@
     }
    }
   },
+  "/cloud-setup/gcp": {
+   "get": {
+    "operationId": "get_cloud_setup_gcp",
+    "summary": "Commands that connect a Google Cloud project to this workspace (workload identity, or a service account key)",
+    "description": "Commands that connect a Google Cloud project to this workspace (workload identity, or a service account key)\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "project_number",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/cloud-setup/azure": {
+   "get": {
+    "operationId": "get_cloud_setup_azure",
+    "summary": "Commands that connect an Azure subscription to this workspace (the Stackurity app, or a client secret)",
+    "description": "Commands that connect an Azure subscription to this workspace (the Stackurity app, or a client secret)\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "tenant_id",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "subscription_id",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/project-suggestions": {
    "get": {
     "operationId": "get_project_suggestions",

@@ -104,6 +104,7 @@ The documentation is the test specification. Each control stated on this page, i
 | Secrets are never returned; another workspace can neither read nor decrypt them | `TestWorkspaceSecrets`, `TestIsolationSweep` (A's secret value never appears; B writing the same name creates its own) |
 | `env:` and `file:` secret references only for instance admins | `TestWorkspaceSecrets` |
 | Plugins outside the operator's workspace need explicit credentials | `TestPluginsNeedCredentialsOutsideDefault` |
+| Cloud plugins' keyless access is bound to the workspace: Google Cloud tokens name it (a pool trusts one subject), Azure role assignments must carry its proof, a stored secret cannot supply either, only `gcp-managed` and `azure-managed` receive them | `TestFederationIsBoundToTheWorkspace`, `TestAnotherWorkspaceIsRefused`, `TestForPlugin`, `TestPlatformCredentialsForPluginRuns`, `TestPlatformPluginsNeedNoStoredSecret`, `TestCloudSetup` |
 | Instance administration only for instance admins | `TestIsolationSweep` (every instance route answers 403 to every workspace principal), `TestWorkspaceMembership` |
 | Shared data (feeds) changed only by instance admins | `TestIntelEndpoints`, `TestIsolationSweep` |
 | Switching workspace needs membership; the last admin stays | `TestWorkspaceMembership` |
@@ -122,7 +123,7 @@ The documentation is the test specification. Each control stated on this page, i
 | Sign-in, setup and password change are rate limited across replicas and fail closed | `TestSignInLimitPerAddressAcrossReplicas`, `TestSignInLimitPerAccount`, `TestSetupLimitAcrossReplicas`, `TestSignInLimitFailsClosed` |
 | First-admin setup needs the setup token | `TestSetup` |
 | Tokens, sessions and enrollment codes are stored only as hashes; passwords with argon2id | `TestSecretsAtRest` |
-| No credential in logs, API answers (other than the one that hands it out) or audit entries | `TestSecretsNeverLogged`, `TestWebhookURLsNeverInErrors`, `TestCloneHardening`, `TestImageScanUsesGuardedProxy`, `TestHostilePluginOutput` |
+| No credential in logs, API answers (other than the one that hands it out) or audit entries | `TestSecretsNeverLogged`, `TestWebhookURLsNeverInErrors`, `TestCloneHardening`, `TestImageScanUsesGuardedProxy`, `TestHostilePluginOutput`, `TestCloudSetup` |
 | Enrollment codes: single or limited use, expiring, revocable, one refusal for every failure | `TestEnrollmentAndInstaller` |
 | Slack clicks: only a request signed with the signing secret of the channel its button names is acted on; bad signature, another channel's or workspace's secret, a channel without a secret or disabled, a timestamp over 5 minutes old or ahead, a replay, another Slack workspace and a foreign `response_url` are refused | `TestSlackSignatureVerification` |
 | Linking a Slack account: single use, 15 minutes, in the channel's workspace only, a browser session only, never taking over an account linked to someone else; each person lists and removes only their own links | `TestSlackAccountLinking`, `TestIsolationSweep`, `TestProjectIsolationSweep` |

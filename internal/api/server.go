@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/stackurity/stackurity/internal/cloudconnect"
 	"github.com/stackurity/stackurity/internal/license"
 	"io"
 	"io/fs"
@@ -61,6 +62,9 @@ type Server struct {
 	Dispatcher        *notify.Dispatcher
 	AllowHTTPWebhooks bool
 	Plugins           *plugins.Runner // nil when no plugin directory is configured
+	// Cloud is the server's identity towards customers' Google Cloud and
+	// Azure accounts; nil offers only the credential fallbacks.
+	Cloud *cloudconnect.Platform
 	// Pro holds what the licensed edition needs (single sign-on, ...);
 	// it is empty in the Community build.
 	Pro ProConfig
@@ -408,6 +412,8 @@ func (s *Server) Handler() http.Handler {
 				r.Delete("/integrations/{id}", s.deleteIntegration)
 				r.Get("/jobs", s.listJobs)
 				r.Get("/plugins", s.listPlugins)
+				r.Get("/cloud-setup/gcp", s.cloudSetup("gcp"))
+				r.Get("/cloud-setup/azure", s.cloudSetup("azure"))
 				// Feeds are shared by every workspace: switching one off
 				// stops detection for all of them.
 				r.With(requireInstanceAdmin).Patch("/feeds/{name}", s.updateFeed)

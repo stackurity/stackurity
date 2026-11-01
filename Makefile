@@ -7,7 +7,7 @@ EE_TAGS ?= ee
 EE_FLAGS = -tags $(EE_TAGS) -overlay ee-overlay.json
 
 # First-party plugins, built next to the server and shipped in the image.
-PLUGINS = aws-managed kubernetes
+PLUGINS = aws-managed gcp-managed azure-managed kubernetes
 
 .PHONY: build plugins web test lint image clean ee-overlay build-ee test-ee image-ee vulncheck scan-image
 
