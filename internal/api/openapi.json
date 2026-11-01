@@ -391,6 +391,84 @@
     }
    }
   },
+  "/admin/license/link": {
+   "post": {
+    "operationId": "post_admin_license_link",
+    "summary": "Start getting the free key from Stackurity Cloud",
+    "description": "\"Get a free key\": a one-time state bound to this browser session (15 minutes) and the Stackurity Cloud address the browser goes to. The server makes no request. Needs STACKURITY_BASE_URL\n\nRole: instance admin",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "instance admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/admin/license/link/claim": {
+   "post": {
+    "operationId": "post_admin_license_link_claim",
+    "summary": "Install the free key Stackurity Cloud sent back",
+    "description": "{\"key\", \"state\"}: the key from the return page's fragment, with the state from POST /admin/license/link. The state works once, within 15 minutes, in the session that made it; the key must verify offline as a free Community key\n\nRole: instance admin",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "instance admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/admin/packs": {
    "get": {
     "operationId": "get_admin_packs",

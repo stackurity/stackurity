@@ -283,6 +283,8 @@ var projectScopes = map[string]string{
 	"POST /api/v1/enrollments":                       "org",
 	"POST /api/v1/remediation/policies":              "org",
 	"POST /api/v1/remediation/policies/preview":      "org",
+	"POST /api/v1/admin/license/link":                "org",
+	"POST /api/v1/admin/license/link/claim":          "org",
 }
 
 // --- one organisation, two projects

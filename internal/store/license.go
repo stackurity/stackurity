@@ -81,3 +81,46 @@ func (s *Store) TickLicenseRequirement(ctx context.Context, maxStep time.Duratio
 	}
 	return time.Duration(secs) * time.Second, err
 }
+
+// ServerID is this installation's random id (migration 0073), or "" when
+// the requirement's row is missing.
+func (s *Store) ServerID(ctx context.Context) (string, error) {
+	var id string
+	err := s.Pool.QueryRow(tenant.System(ctx), `SELECT server_id::text FROM license_requirement WHERE id = 1`).Scan(&id)
+	if err == pgx.ErrNoRows {
+		return "", nil
+	}
+	return id, err
+}
+
+// CreateKeyLink stores the hash of a one-time state for the free-key
+// button, bound to a user and the hash of their session (migration 0073).
+// Expired states go as new ones come.
+func (s *Store) CreateKeyLink(ctx context.Context, stateHash []byte, userID int64, sessionHash []byte, expires time.Time) error {
+	sys := tenant.System(ctx)
+	if _, err := s.Pool.Exec(sys, `DELETE FROM license_key_links WHERE expires_at < now()`); err != nil {
+		return err
+	}
+	_, err := s.Pool.Exec(sys, `INSERT INTO license_key_links (state_hash, user_id, session_hash, expires_at) VALUES ($1, $2, $3, $4)`,
+		stateHash, userID, sessionHash, expires)
+	return err
+}
+
+// KeyLink is a one-time state of the free-key button, as stored.
+type KeyLink struct {
+	UserID      int64
+	SessionHash []byte
+	ExpiresAt   time.Time
+}
+
+// TakeKeyLink deletes and returns the state with this hash: a state works
+// once, whoever presents it. ErrNotFound when there is none.
+func (s *Store) TakeKeyLink(ctx context.Context, stateHash []byte) (*KeyLink, error) {
+	var k KeyLink
+	err := s.Pool.QueryRow(tenant.System(ctx), `DELETE FROM license_key_links WHERE state_hash = $1
+		RETURNING user_id, session_hash, expires_at`, stateHash).Scan(&k.UserID, &k.SessionHash, &k.ExpiresAt)
+	if err != nil {
+		return nil, notFound(err)
+	}
+	return &k, nil
+}

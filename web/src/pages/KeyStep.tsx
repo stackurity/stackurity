@@ -40,7 +40,15 @@ export function KeyStepPage({ status }: { status: LicenseKeyStatus }) {
 export function KeyForm({ status, onDone }: { status: LicenseKeyStatus; onDone: () => void }) {
   const info = useLoad(() => api.get<LicenseInfo>("/admin/license"), []);
   const act = useAction();
+  const link = useAction();
   const [key, setKey] = useState("");
+  const [paste, setPaste] = useState(false);
+  // "Get a free key": the browser goes to Stackurity Cloud and comes back
+  // with the key (KeyReturnPage). This server makes no request itself.
+  const getKey = async () => {
+    const r = await link.run(() => api.startKeyLink());
+    if (r && /^https:\/\//.test(r.url)) window.location.assign(r.url);
+  };
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (await act.run(() => api.put<LicenseInfo>("/admin/license", { key: key.trim() }))) {
@@ -60,6 +68,29 @@ export function KeyForm({ status, onDone }: { status: LicenseKeyStatus; onDone: 
       </Notice>
     );
   }
+  if (info.data?.key_link && !paste) {
+    return (
+      <div className="form">
+        <ErrorBox error={link.error} title="Could not start" />
+        <div className="form-actions">
+          <button type="button" className="btn btn-primary" onClick={() => void getKey()} disabled={link.pending}>
+            {link.pending ? "Opening Stackurity Cloud…" : "Get a free key"}
+          </button>
+        </div>
+        <p className="hint">
+          Opens Stackurity Cloud in this tab: sign in or sign up there, and the key comes back here and is installed. Your browser carries it; this
+          server does not contact Stackurity, and checks the key offline. Stackurity Cloud sees this server&apos;s address (STACKURITY_BASE_URL) so it
+          can send you back.
+        </p>
+        <p className="small">
+          <button type="button" className="btn btn-link" onClick={() => setPaste(true)}>
+            Paste a key instead
+          </button>{" "}
+          (no connection from this browser to Stackurity Cloud, or a paid licence key)
+        </p>
+      </div>
+    );
+  }
   return (
     <form className="form" onSubmit={submit}>
       <ol className="steps small">
@@ -76,6 +107,9 @@ export function KeyForm({ status, onDone }: { status: LicenseKeyStatus; onDone: 
         <label htmlFor="key-step">Key</label>
         <textarea id="key-step" rows={4} required value={key} onChange={(e) => setKey(e.target.value)} spellCheck={false} />
         <p className="hint">Checked on this server, offline; nothing is sent anywhere. A paid licence key works here too.</p>
+        {info.data && !info.data.key_link && !info.data.managed_by_env && !info.data.status.license && (
+          <p className="hint">To get the key in one click instead, set STACKURITY_BASE_URL to this dashboard&apos;s address and restart the server.</p>
+        )}
       </div>
       <div className="form-actions">
         <button type="submit" className="btn btn-primary" disabled={act.pending || key.trim() === ""}>

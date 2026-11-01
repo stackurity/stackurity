@@ -10,7 +10,9 @@ import (
 //
 //   - signing in (everything under /auth/, single sign-on, setting up the
 //     first administrator), so an administrator can enter the key;
-//   - the key itself (/admin/license; instance administrators only);
+//   - the key itself (/admin/license, and /admin/license/link and
+//     /admin/license/link/claim of "Get a free key"; instance
+//     administrators only);
 //   - /meta and /openapi.json; /healthz, /readyz and the metrics listener
 //     are outside the API and never gated;
 //   - the data path of agents, CLI scans and CI uploads (enrolment,
@@ -43,6 +45,8 @@ func keyGateAllows(r *http.Request, p *Principal) bool {
 		return true // signing in, two-factor, password reset, single sign-on
 	case path == "/admin/license" || path == "/admin/license/":
 		return true // requireInstanceAdmin still applies
+	case r.Method == http.MethodPost && (path == "/admin/license/link" || path == "/admin/license/link/claim"):
+		return true // "Get a free key" (keylink.go); instance admins only too
 	case strings.HasPrefix(path, "/email/"), path == "/email-recipients/confirm", path == "/email-recipients/block":
 		return true
 	case strings.HasPrefix(path, "/agent/"):

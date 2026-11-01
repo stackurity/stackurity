@@ -177,6 +177,8 @@ var routeRules = map[string]routeRule{
 	"GET /api/v1/admin/license/":             {class: "instance"},
 	"PUT /api/v1/admin/license/":             {class: "instance"},
 	"DELETE /api/v1/admin/license/":          {class: "instance"},
+	"POST /api/v1/admin/license/link":        {class: "instance"},
+	"POST /api/v1/admin/license/link/claim":  {class: "instance"},
 	"GET /api/v1/admin/packs/":               {class: "instance"},
 	"POST /api/v1/admin/packs/install":       {class: "instance"},
 	"POST /api/v1/admin/packs/upload":        {class: "instance"},

@@ -252,6 +252,9 @@ func (s *Server) Handler() http.Handler {
 				r.Get("/", s.adminLicense)
 				r.Put("/", s.putLicense)
 				r.Delete("/", s.deleteLicense)
+				// "Get a free key" (keylink.go).
+				r.Post("/link", s.startKeyLink)
+				r.Post("/link/claim", s.claimKeyLink)
 			})
 			r.Route("/admin/packs", func(r chi.Router) {
 				r.Use(requireInstanceAdmin)

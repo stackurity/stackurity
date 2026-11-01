@@ -38,7 +38,7 @@ A workspace (shown as the organisation in the dashboard) groups its assets into 
 - **Limits and read-only organisations.** A request that would create an asset past the organisation's limit answers `402 asset_limit`, a new project past its limit `402 project_limit`. While an organisation is read-only, uploads, enrollment, integrations, checks and notifications answer `402 read_only`. See [asset-limits.md](asset-limits.md).
 - **Editions.** Routes marked **licensed build** exist only in Stackurity Pro and Enterprise; in the Community build some answer `402` with the plan they need, and the others are not served. Routes marked **Stackurity Cloud** exist only on the hosted service. See [editions.md](editions.md).
 - **Rate limits** answer `429`. Routes that need no sign-in are limited per address.
-- **The free key.** A self-hosted server without its free key or a licence ([install.md](install.md#the-free-key)) answers `403 key_required` on every route except: `GET /meta`, `GET /openapi.json`, `POST /setup`, everything under `/auth/` and the single sign-on routes, `/admin/license`, the email confirmation, unsubscribe and preference routes, and what agents and uploads use (`POST /enroll`, `POST /ingest`, `POST /sbom/import`, `GET /collections/{id}/result`, `GET /agent/check`, `/agent/actions`, `GET /remediation/renovate.json`; with an API token also `GET /projects`, `GET /projects/{id}` and `POST /vex/import`). `/mcp` and the assistants' OAuth endpoints answer `403 key_required` too. An upgraded server gets 30 days first. Stackurity Cloud never answers it.
+- **The free key.** A self-hosted server without its free key or a licence ([install.md](install.md#the-free-key)) answers `403 key_required` on every route except: `GET /meta`, `GET /openapi.json`, `POST /setup`, everything under `/auth/` and the single sign-on routes, `/admin/license` (with `POST /admin/license/link` and `/admin/license/link/claim`), the email confirmation, unsubscribe and preference routes, and what agents and uploads use (`POST /enroll`, `POST /ingest`, `POST /sbom/import`, `GET /collections/{id}/result`, `GET /agent/check`, `/agent/actions`, `GET /remediation/renovate.json`; with an API token also `GET /projects`, `GET /projects/{id}` and `POST /vex/import`). `/mcp` and the assistants' OAuth endpoints answer `403 key_required` too. An upgraded server gets 30 days first. Stackurity Cloud never answers it.
 
 ## Account
 
@@ -1535,13 +1535,25 @@ Whether a newer release exists: `enabled`, `current`, `latest`, `update_availabl
 
 **Who:** instance admin
 
-The installation's licence `status`, `active_assets`, and `managed_by_env` (set by `STACKURITY_LICENSE`). See [install.md](install.md#editions-and-licences).
+The installation's licence `status`, `active_assets`, `managed_by_env` (set by `STACKURITY_LICENSE`), and `key_link`: whether **Get a free key** works here (a self-hosted server with `STACKURITY_BASE_URL` set, no `STACKURITY_LICENSE` and no paid licence). See [install.md](install.md#editions-and-licences).
 
 ### `PUT /admin/license`
 
 **Who:** instance admin
 
 `{"key"}`: installs a licence key or the free key, checked offline. 400 for a key that is not valid; 409 when the licence is set by `STACKURITY_LICENSE`. Audited as `license.install`.
+
+### `POST /admin/license/link`
+
+**Who:** instance admin, in a browser session (not an API token)
+
+Starts **Get a free key** ([install.md](install.md#the-free-key)). 201 with `url`, the Stackurity Cloud page the browser goes to (`https://app.stackurity.dev/community-key/new?return=<STACKURITY_BASE_URL>&state=<state>&server_id=<hash>`), and `expires_at`. The state is random, bound to this session, works once and for 15 minutes; only its SHA-256 is stored. `server_id` is a hash of this installation's random id, never the id. The server contacts nothing. 409 `no_base_url` without a usable `STACKURITY_BASE_URL`, 409 `conflict` when the licence is set by `STACKURITY_LICENSE` or a paid licence is installed; 404 where no key is needed (Stackurity Cloud). At most 20 an hour per administrator.
+
+### `POST /admin/license/link/claim`
+
+**Who:** instance admin, in the browser session that started the link
+
+`{"key", "state"}`: what Stackurity Cloud sent back in the fragment of `/setup/community-key`. The state is used up by the first try, whatever the outcome; 410 `key_link_invalid` when it is unknown, used, expired, or from another session or administrator (not told apart). The key is then verified offline as for `PUT /admin/license` and must be a free Community key (400 otherwise). Answers as `GET /admin/license`. Audited as `license.install` with `"via": "key_link"`. The same 409s as above.
 
 ### `DELETE /admin/license`
 

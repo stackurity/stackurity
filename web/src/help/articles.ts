@@ -1578,6 +1578,38 @@ jobs:
     ],
   },
   {
+    id: "free-key",
+    title: "This server's free key",
+    section: "Settings and administration",
+    summary: "Each self-hosted server needs a free key, checked offline. Get it in one click, or paste one.",
+    where: ["Settings", "Licence"],
+    keywords: "free key community key licence license get a free key activate air-gapped offline STACKURITY_BASE_URL",
+    body: [
+      {
+        p: "Stackurity Community is free to self-host, and each server needs a free key. Until an instance administrator enters it, the dashboard asks for it; agents and scans keep sending data meanwhile. The key is checked on the server, offline, and does not expire.",
+      },
+      { h: "Get a free key (one click)" },
+      {
+        steps: [
+          "Sign in as an instance administrator. Where the dashboard asks for the key (or under **Settings → Licence**), click **Get a free key**.",
+          "Stackurity Cloud opens in the same tab. Sign in, or sign up if you have no account.",
+          "Check that the address it shows is your server, then click **Send the key**.",
+          "Your browser comes back to this server with the key, which is checked and installed. Click **Continue to the dashboard**.",
+        ],
+      },
+      {
+        note: "Your server makes no request for this: the browser carries the key, after the `#` in the address, which is never sent to any server. The server accepts it only within 15 minutes of the click, once, in the same browser session. Stackurity Cloud sees the server's address so it can send you back; it does not store it.",
+      },
+      {
+        p: "The button needs `STACKURITY_BASE_URL` set to the dashboard's address. Stackurity Cloud sends keys only to `https` addresses, or plain `http` to `localhost` and private addresses.",
+      },
+      { h: "Paste a key instead" },
+      {
+        p: "For air-gapped servers, or when this browser cannot reach Stackurity Cloud: get a key by email at https://app.stackurity.dev/self-hosted-key on any computer, then click **Paste a key instead** and paste it. You can also set `STACKURITY_LICENSE` (or `STACKURITY_LICENSE_FILE`) or run `stackurity admin set-license`. A paid licence counts as the key.",
+      },
+    ],
+  },
+  {
     id: "backups-upgrades",
     title: "Backups and upgrades",
     section: "Settings and administration",
