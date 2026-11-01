@@ -1,6 +1,6 @@
 {
   "name": "Stackurity",
-  "url": "https://stackurity.dev",
+  "url": "https://stackurity.ai",
   "description": "Reads the lockfiles of the repositories you pick, to find vulnerable and end-of-life dependencies. Read-only.",
   "hook_attributes": {
     "url": "https://app.stackurity.dev/api/v1/integrations/github/webhook",
