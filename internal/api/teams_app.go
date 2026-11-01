@@ -246,7 +246,13 @@ const teamsWelcome = "Hi, I'm Stackurity. To get your organisation's security no
 func (s *Server) teamsReply(ctx context.Context, app *notify.TeamsApp, act *teamsActivity, text string) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	if err := app.Reply(ctx, act.ServiceURL, act.Conversation.ID, act.ID, notify.TeamsText(text)); err != nil {
+	// Messages are answered in their thread; the welcome after an install
+	// is a new post (a conversationUpdate is not a message to reply to).
+	replyTo := ""
+	if act.Type == "message" {
+		replyTo = act.ID
+	}
+	if err := app.Reply(ctx, act.ServiceURL, act.Conversation.ID, replyTo, notify.TeamsText(text)); err != nil {
 		s.Log.Warn("teams app: reply failed", "err", err)
 	}
 }

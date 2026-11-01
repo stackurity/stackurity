@@ -123,6 +123,15 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/integrations/slack/oauth": {class: "create", body: func(*tenantFx) any {
 		return map[string]string{"code": "c", "state": "guessed"}
 	}},
+	// Add to Teams: B's code is B's; A's code's status is not B's to read
+	// (teams_app_test.go covers binding).
+	"POST /api/v1/integrations/teams/install":     {class: "create", body: func(*tenantFx) any { return map[string]any{} }},
+	"GET /api/v1/integrations/teams/install/{id}": {class: "object", obj: id("teamsinstall")},
+	// The Teams app's messaging endpoint: public, every request needs a
+	// Bot Framework JWT for the app (teams_app_test.go); 404 without the app.
+	"POST /api/v1/integrations/teams/messages": {class: "public", body: func(*tenantFx) any {
+		return map[string]any{"type": "message", "channelId": "msteams", "serviceUrl": "https://smba.trafficmanager.net/amer/", "text": "ABCDE-FGHJK"}
+	}},
 	"GET /api/v1/notification-options": {class: "list"},
 	"GET /api/v1/email-recipients":     {class: "list"},
 	"POST /api/v1/email-recipients/resend": {class: "create", body: func(*tenantFx) any {
@@ -700,6 +709,12 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 		t.Fatalf("%s slack link: %d", tag, code)
 	}
 	set("slacklink", link.ID)
+	// A pending Add to Teams code of A's admin.
+	teamsCode, err := e.st.CreateTeamsInstallCode(ctx, me.User.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	set("teamsinstall", teamsCode.ID)
 	if f.ids["slacktoken"], _, err = e.st.CreateSlackLinkRequest(ctx, ch.ID, "TS"+strings.ToUpper(tag), "slack-team-"+tag, "U"+strings.ToUpper(tag)+"2", "slack-user2-"+tag); err != nil {
 		t.Fatal(err)
 	}
