@@ -18,6 +18,7 @@ import {
 } from "../ask";
 import { Card, ErrorBox, RelativeTime } from "./ui";
 import { IconMessage } from "./Icons";
+import { confirmAction } from "./ConfirmDialog";
 
 /** Renders an answer: text, bold, code, lists, and links to Stackurity pages only (ask.ts). */
 export function AskAnswer({ text, onNavigate }: { text: string; onNavigate?: () => void }) {
@@ -155,7 +156,15 @@ export function AskPanel({ open, onClose, status, reload }: { open: boolean; onC
   };
 
   const remove = async (id: number) => {
-    if (!window.confirm("Delete this conversation? It cannot be brought back.")) return;
+    if (
+      !(await confirmAction({
+        title: "Delete this conversation?",
+        consequence: "It cannot be brought back.",
+        action: "Delete conversation",
+        destructive: true,
+      }))
+    )
+      return;
     try {
       await api.del(`/ask/conversations/${id}`);
       setConvs((cs) => cs.filter((c) => c.id !== id));
@@ -166,7 +175,16 @@ export function AskPanel({ open, onClose, status, reload }: { open: boolean; onC
   };
 
   const removeAll = async () => {
-    if (!window.confirm("Delete all your conversations in this organisation? They cannot be brought back.")) return;
+    if (
+      !(await confirmAction({
+        title: "Delete all your conversations?",
+        message: "Every conversation you had in this organisation.",
+        consequence: "They cannot be brought back.",
+        action: "Delete all my conversations",
+        destructive: true,
+      }))
+    )
+      return;
     try {
       await api.del("/ask/conversations");
       setConvs([]);
@@ -410,12 +428,29 @@ export function AskSettingsCard() {
       setBusy(false);
     }
   };
-  const toggle = (enabled: boolean) => {
-    if (enabled && !window.confirm(noticeText(s?.provider ?? "anthropic")[0] + "\n\nTurn Ask Stackurity on for everyone in this organisation?")) return;
+  const toggle = async (enabled: boolean) => {
+    if (
+      enabled &&
+      !(await confirmAction({
+        title: "Turn Ask Stackurity on for everyone in this organisation?",
+        message: noticeText(s?.provider ?? "anthropic")[0],
+        action: "Turn on",
+      }))
+    )
+      return;
     void run(async () => setS(await api.put<AskSettings>("/ask/settings", { enabled })));
   };
-  const deleteAll = () => {
-    if (!window.confirm("Delete every Ask Stackurity conversation in this organisation, whoever had it? They cannot be brought back.")) return;
+  const deleteAll = async () => {
+    if (
+      !(await confirmAction({
+        title: "Delete every Ask Stackurity conversation in this organisation?",
+        message: "Whoever had them.",
+        consequence: "They cannot be brought back.",
+        action: "Delete all conversations",
+        destructive: true,
+      }))
+    )
+      return;
     void run(async () => setDeleted((await api.del<{ deleted: number }>("/ask/settings/conversations")).deleted));
   };
   if (error?.status === 403) return null; // not an organisation admin
@@ -436,7 +471,7 @@ export function AskSettingsCard() {
             see, with links to the pages it used. Questions and the data read to answer them go to {providerWordsShort(s.provider)}.
           </p>
           <label>
-            <input type="checkbox" checked={s.enabled} disabled={busy} onChange={(e) => toggle(e.target.checked)} /> Turn on Ask Stackurity for this
+            <input type="checkbox" checked={s.enabled} disabled={busy} onChange={(e) => void toggle(e.target.checked)} /> Turn on Ask Stackurity for this
             organisation
           </label>
           <p className="small muted">
@@ -447,7 +482,7 @@ export function AskSettingsCard() {
           </p>
           <p className="small muted">
             Conversations are kept 30 days. You can delete everyone&apos;s, but not read them.{" "}
-            <button type="button" className="btn btn-sm btn-link-danger" disabled={busy} onClick={deleteAll}>
+            <button type="button" className="btn btn-sm btn-link-danger" disabled={busy} onClick={() => void deleteAll()}>
               Delete all conversations
             </button>
             {deleted !== null && <> Deleted {deleted}.</>}
