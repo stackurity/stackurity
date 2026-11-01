@@ -4,7 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
+	"sort"
+	"strings"
 	"testing"
+
+	"github.com/stackurity/stackurity/internal/awsconnect"
 )
 
 type fake struct{}
@@ -76,5 +81,21 @@ func TestValidate(t *testing.T) {
 	}
 	if !(awsPlugin{}).Validate(json.RawMessage(`{"regions": ["us-gov-west-1", "ap-southeast-2"], "services": ["eks"]}`)).OK {
 		t.Error("valid config rejected")
+	}
+}
+
+// The Launch Stack template (internal/awsconnect) grants exactly the AWS
+// actions this plugin declares it calls; sts:GetCallerIdentity needs no
+// permission and sts:AssumeRole is Stackurity's side of the trust.
+func TestPermissionsMatchTemplate(t *testing.T) {
+	var declared []string
+	for _, p := range (awsPlugin{}).Metadata().Permissions {
+		if !strings.HasPrefix(p, "sts:") {
+			declared = append(declared, p)
+		}
+	}
+	sort.Strings(declared)
+	if !reflect.DeepEqual(declared, awsconnect.ReadOnlyActions) {
+		t.Fatalf("plugin permissions %v, template grants %v", declared, awsconnect.ReadOnlyActions)
 	}
 }

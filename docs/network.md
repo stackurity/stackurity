@@ -87,6 +87,18 @@ Each plugin's metadata declares the hosts it contacts. For example, `aws-managed
 
 The server hands each plugin run the workspace's private-network policy, and the `kubernetes` plugin refuses to connect to an internal address the workspace may not reach. A workspace other than the default one needs its API server's range in `STACKURITY_PRIVATE_CIDRS`.
 
+### AWS connections
+
+Only with `STACKURITY_AWS_PRINCIPAL_ARN` set ([install.md](install.md#aws-managed-services)); otherwise none of these requests is made. Each goes through the organisation's private-network policy like the server's other requests for an organisation, without following redirects.
+
+| Destination | When | Data sent |
+|---|---|---|
+| `sts.us-east-1.amazonaws.com` (its sessions are valid in every region) | When a stack reports its role or an administrator pastes or verifies it (twice: with the external ID, and without it to check it is required); before each run of the connection's integration; when the AWS page lists instances or installs | `AssumeRole` for the connection's role and external ID, a session name `stackurity-w<organisation>-c<connection>`, signed with the server's AWS credentials |
+| `ssm.<region>.amazonaws.com` | When an administrator lists instances, installs the agent, or reads install results | `DescribeInstanceInformation`; `SendCommand` (`AWS-RunShellScript` with the installer command: this server's URL and a single-use enrollment code); `GetCommandInvocation`. Signed with the connection role's session |
+| `*.amazonaws.com` (the plugin) | On the integration's schedule | The `aws-managed` plugin's read-only calls, with the role's session |
+
+Inbound, a stack's Lambda function calls `POST /api/v1/aws/callback` once, from AWS, with the role's ARN, external ID and stack ID and its signed token. Without it, the role ARN is pasted. The SSM command makes each instance download the installer and the agent from your server (`/install/agent.sh`, `/download/agent/...`) and enroll.
+
 ### Notification channels
 
 Only the channels you configure are contacted: your SMTP server, Slack or Teams webhook URLs, your webhook endpoints and your Jira site. Redirects are never followed. Destinations are checked against the workspace's private-network policy when the connection is made, so a name that later resolves to an internal address is refused too. Messages contain incident titles, asset and component names, and links to the dashboard.

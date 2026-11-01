@@ -21,6 +21,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/stackurity/stackurity/internal/auth"
+	"github.com/stackurity/stackurity/internal/awsconnect"
 	"github.com/stackurity/stackurity/internal/db"
 	"github.com/stackurity/stackurity/internal/health"
 	"github.com/stackurity/stackurity/internal/metrics"
@@ -138,6 +139,9 @@ type Server struct {
 	// platform's mail on a hosted edition, STACKURITY_SMTP_* otherwise; nil
 	// means administrators reset passwords.
 	AccountMail notify.Mailer
+	// AWS connects AWS accounts with a CloudFormation stack
+	// (handlers_aws.go); nil or without a principal turns it off.
+	AWS *awsconnect.Client
 	// Breached refuses passwords found in data breaches (Pwned Passwords,
 	// k-anonymity); nil turns the check off.
 	Breached *auth.BreachChecker
@@ -169,6 +173,8 @@ func (s *Server) Handler() http.Handler {
 	r.Get("/.well-known/openai-apps-challenge", s.openAIAppsChallenge)
 
 	r.Get("/install/agent.sh", s.installScript)
+	// The CloudFormation template for connecting AWS (handlers_aws.go).
+	r.Get("/aws/"+awsconnect.TemplateFile, s.awsTemplate)
 	r.Get("/download/agent/{platform}", s.downloadAgent)
 
 	// Slack's interactivity Request URL. Public, outside the session and
@@ -178,6 +184,10 @@ func (s *Server) Handler() http.Handler {
 	// The Stackurity Slack app's Event Subscriptions Request URL (uninstall
 	// and revoked tokens), verified with the app's signing secret.
 	r.With(s.limitAddress("slack-events", limitSlackEvents, "too many requests")).Post("/api/v1/integrations/slack/events", s.slackEvents)
+	// A Launch Stack stack reporting its role. Public, outside the session
+	// and CSRF checks (the stack has neither): its bearer token is signed,
+	// single use and names the connection (handlers_aws.go).
+	r.Post("/api/v1/aws/callback", s.awsCallback)
 	// The Slack app's Direct install URL, for installs started from Slack
 	// (the Slack Marketplace): signed out, a 302 to Slack's consent page as
 	// Slack requires; signed in, the dashboard page that picks the
@@ -449,6 +459,15 @@ func (s *Server) Handler() http.Handler {
 				r.Delete("/integrations/digitalocean/token", s.doDisconnect)
 				r.Get("/integrations/digitalocean/droplets", s.doListDroplets)
 				r.Delete("/enrollments/{id}", s.revokeEnrollment)
+				r.Get("/aws/connections", s.listAWSConnections)
+				r.With(s.requireWritable).Post("/aws/connections", s.createAWSConnection)
+				r.Get("/aws/connections/{id}", s.getAWSConnection)
+				r.Delete("/aws/connections/{id}", s.deleteAWSConnection)
+				r.Post("/aws/connections/{id}/launch", s.relaunchAWSConnection)
+				r.With(s.requireWritable).Post("/aws/connections/{id}/verify", s.verifyAWSConnection)
+				r.Get("/aws/connections/{id}/instances", s.listAWSInstances)
+				r.Get("/aws/connections/{id}/installs", s.listAWSInstalls)
+				r.With(s.requireWritable).Post("/aws/connections/{id}/installs", s.installAWSAgents)
 			})
 		})
 		r.NotFound(func(w http.ResponseWriter, r *http.Request) { writeError(w, 404, "not_found", "no such endpoint") })

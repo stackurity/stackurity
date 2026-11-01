@@ -1282,6 +1282,72 @@ The Slack app's Event Subscriptions URL: `url_verification`, and `app_uninstalle
 
 Slack's interactivity Request URL: the form-encoded `payload` with `X-Slack-Request-Timestamp` and `X-Slack-Signature`. 200 once verified (the answer goes to Slack's `response_url`); 401 for a request that cannot be verified, is older than 5 minutes or was already received. See [Acting from Slack](#acting-from-slack).
 
+### `GET /aws/connections`
+
+**Who:** admin
+
+AWS accounts connected with the Stackurity CloudFormation stack ([install.md](install.md#aws-managed-services)), and the server's setup: `enabled` (the server has an AWS principal, `STACKURITY_AWS_PRINCIPAL_ARN`), `principal`, `launch_stack` (the template is hosted in S3, `STACKURITY_AWS_TEMPLATE_URL`), `template_download`, and the IAM actions the role grants (`permissions`, and `agent_install_permissions` with the option on). Each connection has `status` (`pending`, `active`, `failed`), `external_id`, `regions`, `role_arn`, `account_id`, `last_error`, `integration_id` and `integration_removed`.
+
+### `POST /aws/connections`
+
+**Who:** admin
+
+Starts a connection: `regions` (1–40, the regions read), `stack_region` (where the stack is created; default the first region) and `agent_install` (the role may also install the agent through SSM). The server generates the external ID. 201 with `connection` and `launch`: `quick_create_url` (the CloudFormation console with every parameter filled in; empty without an S3-hosted template), `template_download`, `cli` (the same stack with the AWS CLI), `stack_name`, `external_id`, `principal` and `callback` (true when the stack reports its role by itself, which needs this server's address to be https). 404 when the server has no AWS principal. Audited as `aws.connection.create`.
+
+### `GET /aws/connections/{id}`
+
+**Who:** admin
+
+One connection; the page polls it while the stack is being created.
+
+### `POST /aws/connections/{id}/launch`
+
+**Who:** admin
+
+A new Launch Stack link for a connection that is not active (`stack_region`, `agent_install`). The earlier link's token stops working. 409 for an active connection.
+
+### `POST /aws/connections/{id}/verify`
+
+**Who:** admin
+
+`{"role_arn"}`: the stack's `RoleArn` output, pasted when the stack could not report it; empty checks the recorded role again. The server assumes the role with the connection's external ID, which must work, and without it, which must be refused. Then the connection is `active`, its `aws-managed` integration (named `AWS <account>`) is created and a first run is queued. Otherwise `status` is `failed` with `last_error`. 409 for another role on an active connection (remove it and connect again). Audited as `aws.connection.verify`.
+
+### `DELETE /aws/connections/{id}`
+
+**Who:** admin
+
+Removes the connection and its integration. The role stays in the AWS account until the stack is deleted there. Audited as `aws.connection.delete`.
+
+### `GET /aws/connections/{id}/instances`
+
+**Who:** admin
+
+The EC2 instances SSM manages in one of the connection's regions (`?region=`, default the first), each with `instance_id`, `computer_name`, `platform_type`, `ping_status`, `eligible` (Linux and online), `asset_id` (a host already reporting with that hostname, short or full) and `last_install`. Needs the stack's agent install option. AWS errors answer 502 `aws_error` with AWS's message; 409 while the connection is not active.
+
+### `POST /aws/connections/{id}/installs`
+
+**Who:** admin
+
+`{"region", "instances": [{"instance_id", "computer_name"}]}` (1–25): installs the agent through SSM Run Command (`AWS-RunShellScript`). Each instance gets its own single-use enrollment code, valid for two hours and never stored, in a command that runs this server's installer (`/install/agent.sh`). 202 with one install per instance; a command SSM refused is `failed` at once and its code revoked. Audited as `aws.agent.install`.
+
+### `GET /aws/connections/{id}/installs`
+
+**Who:** admin
+
+The connection's agent installs, newest first, after reading from SSM how the unfinished ones went: `status` `pending`, `running`, `success`, `failed` or `timed_out` (SSM never reported the end within 25 minutes), and `detail` (the end of the command's output). The code of a failed or timed-out install is revoked. `refresh_error` says why SSM could not be read.
+
+### `POST /aws/callback`
+
+**Who:** the Stackurity stack (a signed, single-use token)
+
+Called once by the stack's custom resource, outside the session and CSRF checks: `Authorization: Bearer <token>` (the `CallbackToken` parameter of the Launch Stack link) and `{"role_arn", "external_id", "stack_id"}`. The token is signed with the installation's key and names the connection, its organisation and external ID; it is used up by the first request that presents it, expires after 24 hours and is replaced by a new link. The stack must be in the role's account. The role is then verified as by `POST /aws/connections/{id}/verify`; the answer is `{"status"}`. Every refused token is the same 403. Rate limited per address. Audited as `aws.connection.callback`.
+
+### `GET /aws/stackurity-aws-role-v1.json`
+
+**Who:** anyone · outside `/api/v1`
+
+The CloudFormation template the stack is made from (the same for every server and organisation), for review, for `aws cloudformation create-stack --template-body`, and for the operator to upload to S3 for Launch Stack. It is also in the repository as `deploy/aws/stackurity-aws-role-v1.json`.
+
 ## VEX
 
 Importing VEX documents and exporting decisions as VEX; see [vex.md](vex.md) for the formats, matching rules and trust model. Sources and documents are organisation-wide: members with access through project grants only get 403, except for `GET /vex/export`.

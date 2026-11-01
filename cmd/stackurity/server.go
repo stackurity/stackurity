@@ -25,6 +25,7 @@ import (
 
 	"github.com/stackurity/stackurity/internal/api"
 	"github.com/stackurity/stackurity/internal/auth"
+	"github.com/stackurity/stackurity/internal/awsconnect"
 	"github.com/stackurity/stackurity/internal/collect/gitrepo"
 	"github.com/stackurity/stackurity/internal/collect/image"
 	"github.com/stackurity/stackurity/internal/db"
@@ -254,6 +255,10 @@ func serverCmd() *cobra.Command {
 				log.Warn("STACKURITY_TRUSTED_PROXIES and STACKURITY_TRUSTED_PROXY_HEADER apply only with STACKURITY_TRUST_PROXY=true")
 			}
 			coverageGaps := intel.CachedCoverageGaps(st, nil, intel.GapReportTTL)
+			awsClient, err := awsConnectFromEnv(ctx, log)
+			if err != nil {
+				return err
+			}
 			srv := &api.Server{
 				OpenAIAppsChallenge: challenge,
 				Pro:                 proCfg,
@@ -272,6 +277,7 @@ func serverCmd() *cobra.Command {
 				Health: checker, UpdateCheck: updateCfg.Enabled,
 				CoverageGaps: func(ctx context.Context) (any, error) { return coverageGaps(ctx) },
 				FeedbackURL:  feedbackURL,
+				AWS:          awsClient,
 			}
 			if srv.AccountMail, err = accountMailer(dispatcher, log); err != nil {
 				return err
@@ -313,7 +319,7 @@ func serverCmd() *cobra.Command {
 			if w.HeapWarn, err = heapWarn(os.Getenv("STACKURITY_HEAP_WARN_MIB")); err != nil {
 				return err
 			}
-			registerJobs(w, st, res, dataDir, log, pluginRunner, packMgr)
+			registerJobs(w, st, res, dataDir, log, pluginRunner, packMgr, awsClient)
 			// Prioritise, correlate, plan and deliver notifications; none
 			// for a read-only workspace.
 			w.EveryCollectingWorkspace("alerts", tm.Alerts, dispatcher.Tick)
@@ -529,7 +535,7 @@ func checkIsolation(ctx context.Context, st *store.Store, log *slog.Logger) erro
 // cannot change; a rescan only picks up scanner improvements.
 const imageScanFresh = 7 * 24 * time.Hour
 
-func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataDir string, log *slog.Logger, pluginRunner *plugins.Runner, packMgr *packs.Manager) {
+func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataDir string, log *slog.Logger, pluginRunner *plugins.Runner, packMgr *packs.Manager, awsClient *awsconnect.Client) {
 	scanner := &gitrepo.Scanner{WorkDir: filepath.Join(dataDir, "work"), Version: version, Packs: packMgr.Active}
 	imageScanner := &image.Scanner{Syft: env("STACKURITY_SYFT", "syft"), Version: version, WorkDir: filepath.Join(dataDir, "work")}
 
@@ -572,20 +578,28 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 				if pluginRunner == nil {
 					return errors.New("plugins are disabled (STACKURITY_PLUGIN_DIR not set)")
 				}
-				// Without credentials the plugin would use the server's own.
-				if token == "" && !netguard.AllowsPrivate(ctx) {
-					return errors.New("plugins in this workspace need credentials (a stored secret)")
-				}
 				var cfg api.PluginConfig
 				if err := json.Unmarshal(in.Config, &cfg); err != nil {
 					return err
 				}
-				// The secret, if any, is a JSON object of the credentials
-				// the plugin declares (e.g. {"bearer_token": "..."}).
-				creds := map[string]string{}
-				if token != "" {
-					if err := json.Unmarshal([]byte(token), &creds); err != nil {
-						return errors.New("plugin secrets must be a JSON object of credential names to values")
+				// An AWS connection's integration gets a session of the
+				// connection's role, assumed with the server's principal.
+				cfg, creds, awsLinked, err := api.AWSPluginRun(ctx, st, awsClient, in.ID, cfg)
+				if err != nil {
+					return err
+				}
+				if !awsLinked {
+					// Without credentials the plugin would use the server's own.
+					if token == "" && !netguard.AllowsPrivate(ctx) {
+						return errors.New("plugins in this workspace need credentials (a stored secret)")
+					}
+					// The secret, if any, is a JSON object of the credentials
+					// the plugin declares (e.g. {"bearer_token": "..."}).
+					creds = map[string]string{}
+					if token != "" {
+						if err := json.Unmarshal([]byte(token), &creds); err != nil {
+							return errors.New("plugin secrets must be a JSON object of credential names to values")
+						}
 					}
 				}
 				batches, logs, err := pluginRunner.Collect(ctx, cfg.Plugin, cfg.Config, creds)
