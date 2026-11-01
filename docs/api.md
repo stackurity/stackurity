@@ -1022,7 +1022,7 @@ How incidents become messages, the route `events` and the webhook format are in 
 
 **Who:** security
 
-What the server offers: `slack_app` (Add to Slack), `platform_email` (`enabled`; when enabled `from`, `max_recipients` and `quota` with `per_minute`, `per_hour`, `per_day`), `secrets` (stored secrets work) and `base_url`.
+What the server offers: `slack_app` (Add to Slack), `jira_app` (Connect Jira: the Atlassian app is configured, with `STACKURITY_BASE_URL` and stored secrets), `platform_email` (`enabled`; when enabled `from`, `max_recipients` and `quota` with `per_minute`, `per_hour`, `per_day`), `secrets` (stored secrets work) and `base_url`.
 
 ### `GET /channels`
 
@@ -1034,7 +1034,7 @@ Notification channels.
 
 **Who:** admin
 
-Creates a channel: email, email sent by Stackurity (`stackurity_email`, hosted only), Slack, Teams, webhook, Jira, PagerDuty (`pagerduty`) or ServiceNow (`servicenow`); configuration fields are listed in [install.md](install.md#notifications). Slack channels made with Add to Slack come from `POST /integrations/slack/oauth` instead.
+Creates a channel: email, email sent by Stackurity (`stackurity_email`, hosted only), Slack, Teams, webhook, Jira, PagerDuty (`pagerduty`) or ServiceNow (`servicenow`); configuration fields are listed in [install.md](install.md#notifications). Slack channels made with Add to Slack come from `POST /integrations/slack/oauth` instead. A Jira channel with Connect Jira has `config.auth` `oauth`, `connection_id` and `cloud_id` (a site of that connection of this organisation, 400 otherwise) and no `secret_ref`; its `url` is set from the site.
 
 ### `PATCH /channels/{id}`
 
@@ -1235,6 +1235,42 @@ The Slack app's Direct install URL ([slack-app.md](slack-app.md#installs-started
 **Who:** admin
 
 Finishes Add to Slack with `{"code", "state"}` from Slack's redirect to `/integrations/slack/oauth/callback`: 201 with `channel`, `return_to`, `team_name` and `slack_channel`. 400 `slack_state` for a state that is missing (an install started from Slack's side), unknown, used, expired (10 minutes) or someone else's, before Slack is called; 502 `slack_refused`.
+
+### `POST /integrations/jira/install`
+
+**Who:** admin
+
+Starts Connect Jira: `{"return_to", "connection_id"}` (a dashboard path; `connection_id` to reconnect a connection of this organisation, 404 otherwise); answers `url`, Atlassian's consent page with a single-use state bound to the caller and organisation (10 minutes). 404 `not_configured` without the Atlassian app ([jira-app.md](jira-app.md)).
+
+### `POST /integrations/jira/oauth`
+
+**Who:** admin
+
+Finishes Connect Jira with `{"code", "state"}` from Atlassian's redirect to `/integrations/jira/oauth/callback`: the code is exchanged, the Jira sites the grant reaches are read, and the tokens are stored sealed. 201 (200 when reconnecting) with `connection`, `return_to` and `reconnected`. 400 `jira_state` for a state that is missing, unknown, used, expired (10 minutes) or someone else's, before Atlassian is called; 400 `jira_no_site` when the grant reaches no Jira site; 502 `jira_refused`. Audited as `jira_connection.create` or `jira_connection.reconnect`.
+
+### `GET /integrations/jira/connections`
+
+**Who:** admin
+
+The organisation's Connect Jira connections: `id`, `sites` (each `id`, the cloud id, `name` and `url`), `scopes`, `status` (`active`, or `reconnect_needed` after Atlassian refused the refresh token), `status_reason`, `connected_by`, `connected_at` and `refreshed_at`. Tokens are never returned.
+
+### `DELETE /integrations/jira/connections/{id}`
+
+**Who:** admin
+
+Disconnects: deletes the connection and its tokens, and switches off the Jira channels that use it with a note. Answers `channels_disabled` and `revoke_url` (Atlassian has no API to revoke a grant; the person removes the app from their Atlassian account there). Audited as `jira_connection.delete`.
+
+### `GET /integrations/jira/connections/{id}/projects`
+
+**Who:** admin
+
+The projects of one of the connection's sites (`?site=` the cloud id, optional `q`), each `key` and `name`, read from Jira with the connection, at most 500. 404 for a site or connection that is not this organisation's; 409 `jira_reconnect` when the connection needs reconnecting; 502 when Jira refuses.
+
+### `GET /integrations/jira/connections/{id}/projects/{key}`
+
+**Who:** admin
+
+A project's `issue_types` (`name`, `subtask`), `statuses` by issue type (`name`, `category`: `new`, `indeterminate` or `done`) and the site's `priorities`, to pick a channel's issue type, `resolve_transition` and `priorities`. `?site=` as above.
 
 ### `POST /integrations/slack/events`
 

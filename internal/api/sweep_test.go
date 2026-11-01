@@ -123,8 +123,21 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/integrations/slack/oauth": {class: "create", body: func(*tenantFx) any {
 		return map[string]string{"code": "c", "state": "guessed"}
 	}},
-	"GET /api/v1/notification-options": {class: "list"},
-	"GET /api/v1/email-recipients":     {class: "list"},
+	// Connect Jira: B's connect starts in B, a state of A's (or a guessed
+	// one) is refused, and A's connection is not B's to reconnect, list,
+	// read from or delete (jira_app_test.go covers them with the app on).
+	"POST /api/v1/integrations/jira/install": {class: "create", body: func(a *tenantFx) any {
+		return map[string]any{"return_to": "/settings/integrations", "connection_id": a.int("jiraconn")}
+	}},
+	"POST /api/v1/integrations/jira/oauth": {class: "create", body: func(*tenantFx) any {
+		return map[string]string{"code": "c", "state": "guessed"}
+	}},
+	"GET /api/v1/integrations/jira/connections":                     {class: "list"},
+	"DELETE /api/v1/integrations/jira/connections/{id}":             {class: "object", obj: id("jiraconn")},
+	"GET /api/v1/integrations/jira/connections/{id}/projects":       {class: "object", obj: id("jiraconn"), query: "?site={jirasite}"},
+	"GET /api/v1/integrations/jira/connections/{id}/projects/{key}": {class: "object", obj: map[string]string{"id": "jiraconn", "key": "jirakey"}, query: "?site={jirasite}"},
+	"GET /api/v1/notification-options":                              {class: "list"},
+	"GET /api/v1/email-recipients":                                  {class: "list"},
 	"POST /api/v1/email-recipients/resend": {class: "create", body: func(*tenantFx) any {
 		return map[string]string{"email": "outside@example.com"}
 	}},
@@ -700,6 +713,16 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 		t.Fatalf("%s slack link: %d", tag, code)
 	}
 	set("slacklink", link.ID)
+	// A Connect Jira connection (its tokens sealed like A's secrets).
+	jiraSite := "cloud-" + tag
+	jc, err := e.st.SaveJiraConnection(ctx, e.api.SecretBox, 0, []store.JiraSite{{ID: jiraSite, Name: tag, URL: "https://" + tag + ".atlassian.net"}},
+		"read:jira-work", store.JiraTokens{Access: "access-" + tag, Refresh: "refresh-" + tag, ExpiresAt: time.Now().Add(time.Hour)}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	set("jiraconn", jc)
+	set("jirasite", jiraSite)
+	set("jirakey", "SEC")
 	if f.ids["slacktoken"], _, err = e.st.CreateSlackLinkRequest(ctx, ch.ID, "TS"+strings.ToUpper(tag), "slack-team-"+tag, "U"+strings.ToUpper(tag)+"2", "slack-user2-"+tag); err != nil {
 		t.Fatal(err)
 	}
@@ -1100,7 +1123,7 @@ func (e *env) snapshot(t *testing.T, a *tenantFx) string {
 		"/api/v1/checks?asset_id={asset}", "/api/v1/checks/{check}", "/api/v1/ignore-rules?status=all", "/api/v1/ignore-requests?status=all",
 		"/api/v1/second-checks", "/api/v1/vex/documents", "/api/v1/vex/sources", "/api/v1/vex/documents/{vexdoc}/statements",
 		"/api/v1/projects/{project}", "/api/v1/access-grants", "/api/v1/assets?project_id={project}",
-		"/api/v1/invitations", "/api/v1/onboarding", "/api/v1/usage", "/api/v1/slack/links",
+		"/api/v1/invitations", "/api/v1/onboarding", "/api/v1/usage", "/api/v1/slack/links", "/api/v1/integrations/jira/connections",
 	}, editionSnapshotPaths...) {
 		resp := a.sess["admin"].req("GET", fill(p, a.ids), nil, nil)
 		body, _ := io.ReadAll(resp.Body)

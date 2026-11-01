@@ -304,7 +304,7 @@ export function IntegrationsHubPage() {
         admin: true,
       },
       { kind: "teams", title: "Microsoft Teams", text: "Post to a Teams channel through a Workflows webhook.", to: "/settings/integrations/new/teams", admin: true },
-      { kind: "jira", title: "Jira", text: "Keep one Jira issue per incident, updated until it is fixed.", to: "/settings/integrations/new/jira", admin: true },
+      { kind: "jira", title: "Jira", text: options.jira_app ? "Connect Jira in one click. One issue per incident, updated until it is fixed." : "Keep one Jira issue per incident, updated until it is fixed.", to: "/settings/integrations/new/jira", admin: true },
       { kind: "pagerduty", title: "PagerDuty", text: "Page on-call: one alert per incident, acknowledged and resolved with it.", to: "/settings/integrations/new/pagerduty", admin: true },
       { kind: "servicenow", title: "ServiceNow", text: "Keep one ServiceNow incident per incident, with your field mapping.", to: "/settings/integrations/new/servicenow", admin: true },
       { kind: "webhook", title: "Webhook", text: "Send each message as JSON to your own HTTPS endpoint.", to: "/settings/integrations/new/webhook", admin: true },

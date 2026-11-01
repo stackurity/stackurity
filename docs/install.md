@@ -98,6 +98,7 @@ Connecting an asset is quiet: one "connected" message, and no alerts, Jira issue
 | `STACKURITY_OPENAI_APPS_CHALLENGE` (or `_FILE`) | — | The token OpenAI gives when you submit Stackurity as a ChatGPT app; served as text at `/.well-known/openai-apps-challenge` (404 when unset) |
 | `STACKURITY_AGENT_DIR` | `/usr/local/lib/stackurity/agents` in the image | Agent builds served to new hosts by **Add server** |
 | `STACKURITY_SLACK_CLIENT_ID` / `_FILE`, `STACKURITY_SLACK_CLIENT_SECRET` / `_FILE`, `STACKURITY_SLACK_SIGNING_SECRET` / `_FILE` | — | Your Slack app, for **Add to Slack** ([slack-app.md](slack-app.md)). All three or none; needs `STACKURITY_BASE_URL` and `STACKURITY_SECRET_KEY` |
+| `STACKURITY_JIRA_CLIENT_ID` / `_FILE`, `STACKURITY_JIRA_CLIENT_SECRET` / `_FILE` | — | Your Atlassian OAuth 2.0 app, for **Connect Jira** ([jira-app.md](jira-app.md)). Both or neither; needs `STACKURITY_BASE_URL` and `STACKURITY_SECRET_KEY` |
 | `STACKURITY_ALLOW_HTTP_WEBHOOKS` | `false` | Allow `http://` webhook URLs, for internal receivers |
 | `STACKURITY_PLUGIN_DIR` | `/usr/local/lib/stackurity/plugins` in the image | Directory of plugin executables |
 | `STACKURITY_SYFT` | `syft` | Path to the Syft binary used for container image scans (bundled in the image) |
@@ -587,7 +588,7 @@ Credentials always go in a secret reference, never in the configuration:
 | Slack | added with **Add to Slack** ([slack-app.md](slack-app.md)); or, with a webhook, optional `signing_secret_ref`: a reference to the Slack app's signing secret, to act from inside Slack (see below) | none with Add to Slack; otherwise the incoming webhook URL |
 | Microsoft Teams | none | The Workflows webhook URL ("Post to a channel when a webhook request is received") |
 | Webhook | `url` (HTTPS) | The HMAC signing key (optional) |
-| Jira | `url` (the site, HTTPS), `deployment` (`cloud` by default, or `datacenter`), `project` (key), `issue_type` (`Task` by default), `username` (the account email, Cloud only), optional `labels[]`, `priorities` (`{"P1": "Highest", ...}`) and `resolve_transition` (e.g. `Done`) | Cloud: an [Atlassian API token](https://id.atlassian.com/manage-profile/security/api-tokens). Data Center and Server: a personal access token |
+| Jira | Connect Jira ([jira-app.md](jira-app.md)): `auth` `oauth`, `connection_id`, `cloud_id` (the site), `project`, optional `issue_type`, `labels[]`, `priorities` and `resolve_transition`, picked in the dashboard. With a token: `url` (the site, HTTPS), `deployment` (`cloud` by default, or `datacenter`), `project` (key), `issue_type` (`Task` by default), `username` (the account email, Cloud only), optional `labels[]`, `priorities` (`{"P1": "Highest", ...}`) and `resolve_transition` (e.g. `Done`) | none with Connect Jira. Otherwise Cloud: an [Atlassian API token](https://id.atlassian.com/manage-profile/security/api-tokens); Data Center and Server: a personal access token |
 | PagerDuty | optional `region` (`us` by default, or `eu`) and `severities` (`{"P1": "critical", ...}`) | The integration key (routing key) of an Events API v2 integration on the service |
 | ServiceNow | `url` (the instance, HTTPS), `auth` (`basic` by default, or `oauth`), `username` (basic) or `client_id` (oauth), optional `table` (`incident`), `assignment_group`, `category`, `subcategory`, `urgency` and `impact` (`{"P1": "1", ...}`), `fields` (`{"u_business_service": "Payments"}`), `resolve_state` (`6`), `close_code` (`Solution provided`), `sync_back` and `closed_states` (`["6", "7", "8"]`) | The integration user's password (basic) or the OAuth client secret (oauth) |
 
@@ -650,7 +651,9 @@ The incident, in the list and on its page, links to its issue. Jira channels ign
 
 There is never more than one issue per incident and channel, across retries and replicas: an attempt claims the creation in the database first, and each issue carries the label `stackurity-incident-<workspace>-<incident>`, which is searched for before creating, so an attempt that died after creating the issue is picked up instead of repeated. Do not remove that label.
 
-The Jira account needs to browse the project, create issues, add comments and transition issues. **Send test** checks the credentials, the project, the issue type and the mapped priorities without creating anything. Store the token as a workspace secret (`secret:NAME`, Settings > Secrets).
+**Connect Jira** (Jira Cloud, when the server has the Stackurity Atlassian app: [jira-app.md](jira-app.md)) needs no token: an administrator approves on Atlassian's page and picks the site, project, issue type and done status from lists read from Jira. Its tokens are sealed and refreshed by the server; when Atlassian stops accepting them (the app was removed from the person's Atlassian account, or 90 days without use), the integration shows **Reconnect needed** and deliveries fail with that reason until someone reconnects. Where the app is configured, new Jira integrations use it unless **Use an API token instead** is chosen.
+
+With a token, the Jira account needs to browse the project, create issues, add comments and transition issues. **Send test** checks the credentials (or the connection), the project, the issue type and the mapped priorities without creating anything. Store the token as a workspace secret (`secret:NAME`, Settings > Secrets). Jira Data Center and Server always use a personal access token: they have no OAuth 2.0 (3LO).
 
 ### PagerDuty
 
