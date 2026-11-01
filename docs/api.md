@@ -364,7 +364,7 @@ Revokes an enrollment code.
 
 **Who:** anyone · outside `/api/v1`
 
-The agent installer script.
+The agent installer script, with the server's URL filled in: `STACKURITY_BASE_URL`, or without it the URL the request came in on. In that case a `Host` header that is not a hostname or IP address with an optional port gets `400` instead of a script. Served with `Cache-Control: no-store` and `Vary: Host`.
 
 ### `GET /download/agent/{platform}`
 
