@@ -180,7 +180,10 @@ func (s *Store) RecordSecondChecks(ctx context.Context, results []SecondCheckRes
 	seen := map[int64]bool{}
 	err = pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
 		// Every result in one round trip; a result whose finding's match
-		// changed since it was read inserts nothing.
+		// changed since it was read inserts nothing, nor one whose finding
+		// is being deleted (with its asset): FOR KEY SHARE waits for the
+		// deletion and then skips the row, where the foreign key check would
+		// fail the whole batch.
 		batch := &pgx.Batch{}
 		diffsOf := make([][]byte, len(results))
 		for i, r := range results {
@@ -192,7 +195,7 @@ func (s *Store) RecordSecondChecks(ctx context.Context, results []SecondCheckRes
 			independent["checker"] = SecondCheckRules
 			ind, _ := json.Marshal(independent)
 			batch.Queue(`INSERT INTO second_checks (finding_id, basis, result, reason, differences, independent, checked_at)
-				SELECT f.id, $2, $3, $4, $5, $6, now() FROM findings f WHERE f.id = $1 AND `+matchBasis("f")+` = $2
+				SELECT f.id, $2, $3, $4, $5, $6, now() FROM findings f WHERE f.id = $1 AND `+matchBasis("f")+` = $2 FOR KEY SHARE OF f
 				ON CONFLICT (finding_id) DO UPDATE SET basis = EXCLUDED.basis, result = EXCLUDED.result, reason = EXCLUDED.reason,
 				  differences = EXCLUDED.differences, independent = EXCLUDED.independent, checked_at = EXCLUDED.checked_at`,
 				r.FindingID, r.Basis, r.Result, truncateText(r.Reason, 1000), diffsOf[i], ind)
