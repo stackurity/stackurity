@@ -14,7 +14,7 @@ import (
 )
 
 // AWSConnection is one AWS account connected with the Stackurity
-// CloudFormation stack (migration 0073).
+// CloudFormation stack (migration 0074).
 type AWSConnection struct {
 	ID                int64      `json:"id"`
 	WorkspaceID       int64      `json:"workspace_id"`
