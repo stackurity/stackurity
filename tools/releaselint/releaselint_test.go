@@ -45,6 +45,11 @@ func TestVersionReferences(t *testing.T) {
 			t.Errorf("deploy/helm/stackurity/Chart.yaml: want %q", want)
 		}
 	}
+	// The MCP Registry entry (server.json) is published per release, and the
+	// registry refuses a version it already has.
+	if m := regexp.MustCompile(`"version":\s*"([^"]*)"`).FindStringSubmatch(read(t, "server.json")); m == nil || m[1] != v {
+		t.Errorf("server.json: want \"version\": %q", v)
+	}
 	// Image, chart and helm --version references in the install docs and README.
 	ref := regexp.MustCompile(`(?:stackurity/stackurity:|charts/stackurity:|charts/stackurity --version )v?(\d+\.\d+\.\d+)`)
 	for _, f := range []string{"README.md", "docs/install.md", "docs/kubernetes.md"} {
