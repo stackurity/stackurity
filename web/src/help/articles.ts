@@ -206,12 +206,12 @@ export const ARTICLES: Article[] = [
     id: "add-server",
     title: "Add a server",
     section: "Adding servers and sources",
-    summary: "Create a one-time install command in the dashboard and run it on the new Linux server. Admins only.",
+    summary: "Create a one-time install command in the dashboard and run it on the new Linux or Windows server. Admins only.",
     where: ["Assets", "Add server"],
-    keywords: "add server new server install command enroll enrollment code curl sudo agent linux systemd onboarding",
+    keywords: "add server new server install command enroll enrollment code curl sudo agent linux systemd windows powershell service onboarding",
     body: [
       {
-        p: "The quickest way to add a Linux server is a one-time install command. It installs the same read-only `stackurity` agent as a manual install, without creating a token or writing a systemd unit by hand.",
+        p: "The quickest way to add a Linux or Windows server is a one-time install command. It installs the same read-only `stackurity` agent as a manual install, without creating a token or setting up a service by hand.",
       },
       {
         steps: [
@@ -219,12 +219,16 @@ export const ARTICLES: Article[] = [
           "Optionally enter a **Label** (e.g. `web servers`) and an **Environment** (e.g. `production`; production counts towards priority).",
           "**Also check websites and apps on this server** is ticked by default: the agent looks in /srv, /var/www, /opt, /app and home directories for sites and apps (including WordPress sites, whose WordPress core version is read from `wp-includes/version.php` and checked for end of life and for missing security releases on its branch; its plugins and themes are listed with their latest release on wordpress.org, but their vulnerabilities are not matched yet), and lists the libraries they use: what npm, pip and Composer installed, and front-end libraries such as jQuery or Bootstrap that a site loads from a CDN or keeps a copy of (copies WordPress itself maintains are reported with inferred confidence, so their issues show as needs validation). It only reads. Under **Application directories**, add apps that live somewhere else, one per line, e.g. `/data/shop`.",
           "Under **Options**, set how many servers the code can enroll (default 1) and how long it is valid (default 24 hours).",
-          "Click **Create install command** and copy it. The code in it is shown only once.",
-          "Run it on the new server as a user with sudo.",
+          "Click **Create install command**, choose the **Linux** or **Windows** tab, and copy the command. The code in it is shown only once.",
+          "On Linux, run it as a user with sudo. On Windows, run it in PowerShell opened with **Run as administrator**.",
         ],
       },
-      { code: "curl -fsSL https://stackurity.example.com/install/agent.sh | sudo STACKURITY_ENROLL_CODE=… sh", label: "Install command" },
-      { h: "What it does" },
+      { code: "curl -fsSL https://stackurity.example.com/install/agent.sh | sudo STACKURITY_ENROLL_CODE=… sh", label: "Install command for Linux" },
+      {
+        code: "[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072; $env:STACKURITY_ENROLL_CODE = '…'; irm https://stackurity.example.com/install/agent.ps1 | iex",
+        label: "Install command for Windows (PowerShell as administrator)",
+      },
+      { h: "What it does on Linux" },
       {
         list: [
           "Downloads the agent from your Stackurity server (Linux amd64 or arm64) and verifies its checksum.",
@@ -233,8 +237,15 @@ export const ARTICLES: Article[] = [
           "The agent only reads what is installed. It never installs or changes software.",
         ],
       },
+      { h: "What it does on Windows" },
+      { p: "See [Add a Windows server](help:windows-hosts)." },
       { h: "Requirements" },
-      { list: ["Linux with systemd.", "Root or sudo on the server.", "Outbound HTTPS from the server to the Stackurity dashboard."] },
+      {
+        list: [
+          "Linux with systemd, and root or sudo; or 64-bit Windows Server 2016 or later (or Windows 10 or 11), and PowerShell run as administrator.",
+          "Outbound HTTPS from the server to the Stackurity dashboard.",
+        ],
+      },
       {
         warn: "If the dashboard is reached over plain HTTP (not localhost), the installer refuses unless `STACKURITY_ALLOW_HTTP=1` is added, and the command shown includes it. Prefer HTTPS, or [an SSH tunnel](help:ssh-tunnel) to a local port.",
       },
@@ -243,7 +254,7 @@ export const ARTICLES: Article[] = [
         list: [
           "The server appears under **Assets** within a minute; applications appear as their own assets linked to it.",
           "Unused codes are listed under **Pending install codes** on the same page until they expire or are used up. **Revoke** one you no longer need; servers that already enrolled keep reporting.",
-          "For Windows, or to install by hand, see [Add a Linux server manually](help:add-linux-server), [Add a Windows server](help:windows-hosts) and docs/install.md.",
+          "To install by hand, see [Add a Linux server manually](help:add-linux-server), [Add a Windows server](help:windows-hosts) and docs/install.md.",
         ],
       },
     ],
@@ -381,19 +392,51 @@ WantedBy=multi-user.target`,
     id: "windows-hosts",
     title: "Add a Windows server",
     section: "Adding servers and sources",
-    summary: "The same binary reads the OS build and installed programs from the registry.",
-    keywords: "windows powershell scheduled task registry",
+    summary: "One PowerShell command installs the read-only agent as a Windows service. It reads the OS build and installed programs from the registry.",
+    where: ["Assets", "Add server"],
+    keywords: "windows powershell service install command enroll registry irm iex administrator uninstall scheduled task",
     body: [
       {
-        p: "On Windows the agent reads the OS build and the installed programs as “Apps & features” shows them. It only reads. Windows Update hotfixes and Microsoft Store apps are reported as unsupported coverage for now, and remediation is Linux-only.",
+        p: "On Windows the agent reads the OS build and the installed programs as “Apps & features” shows them. It only reads. Windows Update hotfixes and Microsoft Store apps are reported as unsupported coverage for now; remediation and application directories are Linux-only.",
       },
+      {
+        steps: [
+          "Open [Assets](/assets), click **Add server** and create an install command (admins only), as in [Add a server](help:add-server).",
+          "Choose the **Windows** tab and copy the command. The code in it is shown only once.",
+          "On the server, open PowerShell with **Run as administrator** and paste the command.",
+          "Check the server appears under **Assets** with its Windows release and build.",
+        ],
+      },
+      {
+        code: "[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072; $env:STACKURITY_ENROLL_CODE = '…'; irm https://stackurity.example.com/install/agent.ps1 | iex",
+        label: "Install command (PowerShell as administrator)",
+      },
+      { note: "The first statement turns on TLS 1.2, which Windows PowerShell on Windows Server 2016 does not offer by default. `irm … | iex` runs the script as text, so the execution policy does not block it. Read the script first if you prefer: it is at /install/agent.ps1 on your Stackurity server." },
+      { h: "What it does" },
+      {
+        list: [
+          "Refuses to run unless PowerShell is elevated.",
+          "Downloads the agent from your Stackurity server (Windows x64), checks its SHA-256 and installs it to `C:\\Program Files\\Stackurity`.",
+          "Exchanges the code for a collector token, saved in `C:\\ProgramData\\Stackurity`. Only the agent's account and Administrators can read it.",
+          "Registers the **StackurityAgent** service. It runs as its own virtual account (`NT SERVICE\\StackurityAgent`): no password, no interactive sign-in, no privileges beyond reading, and it cannot write to disk. It starts at boot and reports every 6 hours.",
+          "Its output goes to the Application event log, source `StackurityAgent`.",
+        ],
+      },
+      { h: "Upgrade and removal" },
+      {
+        list: [
+          "To upgrade, run the same command without the code part, in PowerShell as administrator.",
+          "To remove the agent, its service and its token, run the command below. Then delete the host under **Assets** and revoke its token under **Settings ▸ API tokens** if you no longer need them.",
+        ],
+      },
+      { code: "$env:STACKURITY_UNINSTALL = '1'; irm https://stackurity.example.com/install/agent.ps1 | iex", label: "Remove the agent" },
+      { h: "Installing by hand" },
       {
         steps: [
           "Create a collector token as in [Add a Linux server manually](help:add-linux-server), step 1.",
           "Copy `stackurity_<version>_windows_amd64.exe` to the server, e.g. `C:\\Program Files\\Stackurity\\stackurity.exe`.",
           "Save the token to `C:\\ProgramData\\Stackurity\\token` and restrict the file to the account that runs the agent.",
-          "Run it as a scheduled task (at startup, running continuously) or with a service wrapper, as a standard user.",
-          "Check the server appears under **Assets** with its Windows release and build.",
+          "Run it as a scheduled task (at startup, running continuously), as a standard user.",
         ],
       },
       {

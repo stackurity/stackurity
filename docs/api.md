@@ -364,13 +364,19 @@ Revokes an enrollment code.
 
 **Who:** anyone · outside `/api/v1`
 
-The agent installer script.
+The agent installer script for Linux.
+
+### `GET /install/agent.ps1`
+
+**Who:** anyone · outside `/api/v1`
+
+The agent installer script for Windows (`text/plain`), run with `irm .../install/agent.ps1 | iex`; see [Windows hosts](install.md#windows-hosts). The server's public URL is filled in; the enrollment code never is.
 
 ### `GET /download/agent/{platform}`
 
 **Who:** anyone · outside `/api/v1`
 
-The agent builds the installer downloads: `linux-amd64` and `linux-arm64`, each with a `.sha256`. They are bundled in the server image (`STACKURITY_AGENT_DIR`).
+The agent builds the installers download: `linux-amd64`, `linux-arm64` and `windows-amd64`, each with a `.sha256`. They are bundled in the server image (`STACKURITY_AGENT_DIR`).
 
 ### `POST /ingest`
 

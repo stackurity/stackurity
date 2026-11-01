@@ -20,6 +20,9 @@ import (
 //go:embed install/agent.sh
 var agentInstallScript string
 
+//go:embed install/agent.ps1
+var agentInstallPowerShell string
+
 type enrollmentRequest struct {
 	Label        string   `json:"label"`
 	Environment  string   `json:"environment"`
@@ -168,6 +171,31 @@ func (s *Server) installScript(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(strings.ReplaceAll(agentInstallScript, "__SERVER__", s.publicURL(r))))
 }
 
+// installPowerShell serves the Windows agent installer with this server's URL
+// filled in. The URL goes into a single-quoted PowerShell string, so quotes
+// in it (from a Host header, when no base URL is configured) cannot end the
+// string and run as code. The script never contains an enrollment code: the
+// person running it sets STACKURITY_ENROLL_CODE.
+func (s *Server) installPowerShell(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = w.Write([]byte(strings.ReplaceAll(agentInstallPowerShell, "__SERVER__", psSingleQuoted(s.publicURL(r)))))
+}
+
+// psSingleQuoted escapes text for the inside of a PowerShell single-quoted
+// string: PowerShell ends one at an ASCII apostrophe or any of the
+// typographic single quotes, and reads each doubled as one literal quote.
+func psSingleQuoted(v string) string {
+	var b strings.Builder
+	for _, c := range v {
+		switch c {
+		case '\'', '\u2018', '\u2019', '\u201a', '\u201b':
+			b.WriteRune(c)
+		}
+		b.WriteRune(c)
+	}
+	return b.String()
+}
+
 // publicURL is the configured base URL, or the URL this request came in on.
 func (s *Server) publicURL(r *http.Request) string {
 	if s.BaseURL != "" {
@@ -180,7 +208,7 @@ func (s *Server) publicURL(r *http.Request) string {
 	return scheme + "://" + r.Host
 }
 
-var agentPlatform = regexp.MustCompile(`^linux-(amd64|arm64)(\.sha256)?$`)
+var agentPlatform = regexp.MustCompile(`^(linux-(amd64|arm64)|windows-amd64)(\.sha256)?$`)
 
 // downloadAgent serves the agent binaries bundled with the server.
 func (s *Server) downloadAgent(w http.ResponseWriter, r *http.Request) {
@@ -205,7 +233,11 @@ func (s *Server) downloadAgent(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	} else {
 		w.Header().Set("Content-Type", "application/octet-stream")
-		w.Header().Set("Content-Disposition", `attachment; filename="stackurity"`)
+		file := "stackurity"
+		if strings.HasPrefix(name, "windows-") {
+			file = "stackurity.exe"
+		}
+		w.Header().Set("Content-Disposition", `attachment; filename="`+file+`"`)
 	}
 	http.ServeContent(w, r, "", st.ModTime(), f)
 }

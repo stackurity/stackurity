@@ -309,6 +309,11 @@ func TestWriteToolsNeedConfirmation(t *testing.T) {
 	if cmd != "curl -fsSL http://stk.internal:8080/install/agent.sh | sudo STACKURITY_ENROLL_CODE=enr_abc STACKURITY_ALLOW_HTTP=1 sh" {
 		t.Errorf("install command = %q", cmd)
 	}
+	win, _ := done["result"].(map[string]any)["windows_install_command"].(string)
+	if win != "[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072; "+
+		"$env:STACKURITY_ENROLL_CODE = 'enr_abc'; $env:STACKURITY_ALLOW_HTTP = '1'; irm http://stk.internal:8080/install/agent.ps1 | iex" {
+		t.Errorf("windows install command = %q", win)
+	}
 	// Servers enrolled from a chat look for websites and apps too, unless told not to.
 	if w := api.writes(); len(w) != 1 || !strings.Contains(w[0], `"discover_apps":true`) {
 		t.Errorf("create_enrollment sent %v", w)

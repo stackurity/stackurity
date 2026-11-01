@@ -162,7 +162,7 @@ Every tool calls the HTTP API as you, so the assistant sees exactly what you may
 | `create_project` | Create a project, optionally with assets | admin |
 | `rename_project` | Rename a project | admin |
 | `add_assets_to_project`, `remove_assets_from_project` | Put assets in a project or take them out (up to 100) | admin |
-| `create_enrollment` | Create an install code for N servers (at most 50, valid at most 24 hours) and return the one-line install command ("set up 3 servers"). The servers also look for websites and apps unless `check_apps` is false | admin |
+| `create_enrollment` | Create an install code for N servers (at most 50, valid at most 24 hours) and return the one-line install commands for Linux and Windows ("set up 3 servers"). The servers also look for websites and apps unless `check_apps` is false | admin |
 | `assign` | Assign issues, or every open issue of a fix, to you, a user id or an email | engineer on the issues' assets |
 | `snooze` | Snooze issues until a date or until a free fix exists | security |
 | `ignore` | Ignore issues with a reason and an expiry; without the security role it files a request for approval instead, and the preview says which | security, or anyone to ask |

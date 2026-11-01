@@ -66,8 +66,9 @@ type Server struct {
 	Pro ProConfig
 	// BaseURL is the public dashboard URL, used in the agent installer.
 	BaseURL string
-	// AgentDir holds agent builds served to new hosts (stackurity-linux-amd64
-	// and its .sha256); empty disables downloads.
+	// AgentDir holds agent builds served to new hosts (stackurity-linux-amd64,
+	// stackurity-linux-arm64, stackurity-windows-amd64, each with its
+	// .sha256); empty disables downloads.
 	AgentDir string
 	// InviteOnly refuses creating accounts directly (POST /users): people
 	// join by invitation, which proves they own their address. Stackurity
@@ -166,6 +167,7 @@ func (s *Server) Handler() http.Handler {
 	r.Get("/.well-known/openai-apps-challenge", s.openAIAppsChallenge)
 
 	r.Get("/install/agent.sh", s.installScript)
+	r.Get("/install/agent.ps1", s.installPowerShell)
 	r.Get("/download/agent/{platform}", s.downloadAgent)
 
 	// Slack's interactivity Request URL. Public, outside the session and

@@ -40,6 +40,7 @@ var projectScopes = map[string]string{
 	"GET /healthz":                     "public",
 	"GET /readyz":                      "public",
 	"GET /install/agent.sh":            "public",
+	"GET /install/agent.ps1":           "public",
 	"GET /download/agent/{platform}":   "public",
 	"GET /api/v1/meta":                 "public",
 	"GET /api/v1/openapi.json":         "public",

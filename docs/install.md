@@ -59,7 +59,7 @@ After the first administrator signs in, a new organisation with no assets opens 
 
 1. **Create your first project**: a name and, if you like, a description.
 2. **Add an asset**, which lands in that project:
-   - **A Linux server**: one install command (an enrollment code for up to 5 servers, valid 24 hours). First results in about 2 minutes. The server needs systemd, sudo and outbound HTTPS to the dashboard. **Also check websites and apps on this server** is ticked by default, as under Add server.
+   - **A Linux server**: one install command (an enrollment code for up to 5 servers, valid 24 hours). First results in about 2 minutes. The server needs systemd, sudo and outbound HTTPS to the dashboard. A **Windows** tab gives the PowerShell command for Windows servers (see [Windows hosts](#windows-hosts)). **Also check websites and apps on this server** is ticked by default, as under Add server.
    - **A code repository**: a collector token to save as the CI secret `STACKURITY_TOKEN`, and a GitHub Actions step (`stackurity/scan-action@v1`) or the `stackurity scan .` command for other CI. First results on the next CI run.
    - **Upload an SBOM** (CycloneDX or SPDX JSON). First results in under a minute.
 3. **Wait** while it reports: the page shows the packages found and when the check is done.
@@ -96,7 +96,7 @@ Connecting an asset is quiet: one "connected" message, and no alerts, Jira issue
 | `STACKURITY_OSV_URL`, `STACKURITY_KEV_URL`, `STACKURITY_EPSS_URL`, `STACKURITY_ENDOFLIFE_URL`, `STACKURITY_NPM_REGISTRY`, `STACKURITY_PACKAGIST_URL`, `STACKURITY_PYPI_URL`, `STACKURITY_GOPROXY_URL`, `STACKURITY_CRATES_INDEX_URL`, `STACKURITY_RUBYGEMS_URL`, `STACKURITY_NUGET_URL`, `STACKURITY_MAVEN_URL`, `STACKURITY_PUB_URL`, `STACKURITY_HEX_URL`, `STACKURITY_WORDPRESS_ORG_URL`, `STACKURITY_WORDPRESS_PLUGINS_LIST_URL`, `STACKURITY_WORDPRESS_THEMES_LIST_URL` | public sources | Mirrors for offline or air-gapped installs ([network.md](network.md)) |
 | `STACKURITY_BASE_URL` | — | Public dashboard URL, used for links in notifications and by the agent installer |
 | `STACKURITY_OPENAI_APPS_CHALLENGE` (or `_FILE`) | — | The token OpenAI gives when you submit Stackurity as a ChatGPT app; served as text at `/.well-known/openai-apps-challenge` (404 when unset) |
-| `STACKURITY_AGENT_DIR` | `/usr/local/lib/stackurity/agents` in the image | Agent builds served to new hosts by **Add server** |
+| `STACKURITY_AGENT_DIR` | `/usr/local/lib/stackurity/agents` in the image | Agent builds served to new hosts by **Add server**: `stackurity-linux-amd64`, `stackurity-linux-arm64` and `stackurity-windows-amd64`, each with a `.sha256` file as `sha256sum` writes it |
 | `STACKURITY_SLACK_CLIENT_ID` / `_FILE`, `STACKURITY_SLACK_CLIENT_SECRET` / `_FILE`, `STACKURITY_SLACK_SIGNING_SECRET` / `_FILE` | — | Your Slack app, for **Add to Slack** ([slack-app.md](slack-app.md)). All three or none; needs `STACKURITY_BASE_URL` and `STACKURITY_SECRET_KEY` |
 | `STACKURITY_ALLOW_HTTP_WEBHOOKS` | `false` | Allow `http://` webhook URLs, for internal receivers |
 | `STACKURITY_PLUGIN_DIR` | `/usr/local/lib/stackurity/plugins` in the image | Directory of plugin executables |
@@ -470,7 +470,44 @@ Java (Maven, Gradle) and Rust (Cargo) are read by [stack packs](packs.md) once i
 
 ### Windows hosts
 
-The same `stackurity` binary runs on Windows. It reads the OS build and installed programs from the registry, as "Apps & features" shows them, and only reads. Run it as a scheduled task, or with a service wrapper, as a standard user:
+The same `stackurity` binary runs on Windows. It reads the OS build and installed programs from the registry, as "Apps & features" shows them, and only reads. Windows Update hotfixes and Microsoft Store apps are reported as unsupported coverage for now. Remediation and application directories are Linux-only.
+
+**The quick way.** Under **Assets → Add server**, create an install command as for Linux and choose the **Windows** tab. Open PowerShell with **Run as administrator** and paste it:
+
+```powershell
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072; $env:STACKURITY_ENROLL_CODE = 'enr_...'; irm https://stackurity.example.com/install/agent.ps1 | iex
+```
+
+The first statement turns on TLS 1.2, which Windows PowerShell 5.1 on Windows Server 2016 and older does not offer by default; it changes nothing on newer systems. `irm ... | iex` runs the script as text, so it works under the default execution policy (which applies to script files, not to text). It works in Windows PowerShell 5.1 and PowerShell 7, on 64-bit (x64) Windows Server 2016 or later and Windows 10 or 11. Read the script first if you prefer: it is served at `/install/agent.ps1`.
+
+The script:
+
+1. Refuses to run unless PowerShell is elevated (and 64-bit), and refuses a plain-HTTP server URL as the Linux installer does (`$env:STACKURITY_ALLOW_HTTP = '1'` overrides).
+2. Downloads the agent from your Stackurity server (`/download/agent/windows-amd64`) and checks its SHA-256 against `/download/agent/windows-amd64.sha256` before installing it to `C:\Program Files\Stackurity\stackurity.exe`.
+3. Creates `C:\ProgramData\Stackurity`, owned by Administrators, with inherited permissions removed (ProgramData lets every user read what it holds), and runs `stackurity enroll --dir C:\ProgramData\Stackurity` to exchange the code for a collector token. It then removes the code from the PowerShell session.
+4. Registers the **StackurityAgent** service: `stackurity.exe agent --interval 6h`, started automatically (delayed) at boot, restarted a minute after a failure. Its settings from `agent.env` (server, token file, environment) are in the service's environment.
+5. Gives the service account read access to the folder; `token` and `agent.env` are readable by that account and Administrators only.
+6. Starts the service, which reports at once and then every 6 hours.
+
+**The service account.** The service runs as its virtual account, `NT SERVICE\StackurityAgent`, the Windows counterpart of the Linux `stackurity` user. Windows creates it with the service. It has no password to manage or leak, cannot log on interactively, and has its own security identifier, so the token's permissions can name it alone; built-in accounts such as Local Service are shared with other services, and a local user account would need a password. As the Linux unit drops capabilities and makes the file system read-only, the service keeps only the privilege of passing through folders (`sc.exe privs`) and runs with a write-restricted token (`sc.exe sidtype ... restricted`): Windows then lets it write only where its own account, or write-restricted services in general, may write: nowhere on disk, and the Application event log. It runs below normal priority. Reading the registry keys the agent needs (the OS version and the Uninstall keys) needs no administrator rights.
+
+**Logs** go to the Application event log, source `StackurityAgent`:
+
+```powershell
+Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='StackurityAgent'} -MaxEvents 20
+```
+
+**Upgrade** by running the same command without the code (`irm https://stackurity.example.com/install/agent.ps1 | iex` in an elevated PowerShell): the script stops the service, replaces the binary, reapplies the service settings and permissions, and starts it again. An agent installed by hand (a token in `C:\ProgramData\Stackurity` without the `agent.env` the installer writes) gets the new binary only.
+
+**Uninstall** in an elevated PowerShell:
+
+```powershell
+$env:STACKURITY_UNINSTALL = '1'; irm https://stackurity.example.com/install/agent.ps1 | iex
+```
+
+This stops and deletes the service and removes `C:\Program Files\Stackurity` and `C:\ProgramData\Stackurity` (with the token). The host stays in Stackurity until you delete it under **Assets**, and its collector token stays valid until you revoke it under **Settings → API tokens**.
+
+**The manual way.** Create a collector token as for Linux, copy `stackurity_<version>_windows_amd64.exe` from the [latest release](https://github.com/stackurity/stackurity/releases/latest) to `C:\Program Files\Stackurity\stackurity.exe`, save the token to `C:\ProgramData\Stackurity\token` and restrict the file to the account that runs the agent. Then run the agent as a scheduled task (at startup, running continuously), as a standard user:
 
 ```powershell
 $env:STACKURITY_SERVER = "https://stackurity.example.com"
@@ -478,7 +515,7 @@ $env:STACKURITY_TOKEN_FILE = "C:\ProgramData\Stackurity\token"
 stackurity.exe agent --interval 6h
 ```
 
-Windows Update hotfixes and Microsoft Store apps are reported as unsupported coverage for now. Remediation runs only on Linux.
+To move a manual install to the service, remove the scheduled task and the token file, then run the install command with a new code.
 
 ### AWS managed services
 

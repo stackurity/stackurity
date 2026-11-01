@@ -4,20 +4,43 @@ import { api, type Enrollment, type EnrollmentCreated } from "../api";
 import { useAction, useLoad } from "../hooks";
 import { absTime, plural } from "../format";
 import { Table, type Column } from "../components/Table";
-import { Card, Code, CodeBlock, EmptyState, ErrorBox, KeyValues, Loading, Notice, PageHeader, RelativeTime } from "../components/ui";
+import { Card, Code, CodeBlock, EmptyState, ErrorBox, KeyValues, Loading, Notice, PageHeader, RelativeTime, Tabs } from "../components/ui";
 import { confirmAction } from "../components/ConfirmDialog";
+import { linuxCommand, windowsCommand } from "../installCommand";
 
-const LOCAL_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
-
-/**
- * The one-line installer for a new Linux host. The installer refuses plain
- * HTTP to anything but localhost unless STACKURITY_ALLOW_HTTP=1 is set.
- */
+/** The one-line installer for a new Linux host (installCommand.ts). */
 export function installCommand(code: string): { command: string; insecure: boolean } {
-  const { origin, protocol, hostname } = window.location;
-  const insecure = protocol === "http:" && !LOCAL_HOSTS.includes(hostname);
-  const env = `STACKURITY_ENROLL_CODE=${code}${insecure ? " STACKURITY_ALLOW_HTTP=1" : ""}`;
-  return { command: `curl -fsSL ${origin}/install/agent.sh | sudo ${env} sh`, insecure };
+  return linuxCommand(code, window.location);
+}
+
+/** The one-line installer for a new Windows host (installCommand.ts). */
+export function windowsInstallCommand(code: string): { command: string; insecure: boolean } {
+  return windowsCommand(code, window.location);
+}
+
+export type ServerOS = "linux" | "windows";
+
+/** The install command for one code, with a tab for each operating system. */
+export function InstallCommandTabs({ code, os, onOS, idPrefix }: { code: string; os: ServerOS; onOS: (os: ServerOS) => void; idPrefix: string }) {
+  const { command } = os === "windows" ? windowsInstallCommand(code) : installCommand(code);
+  return (
+    <div className="install-command">
+      <Tabs<ServerOS>
+        label="Operating system of the server"
+        value={os}
+        onChange={onOS}
+        idPrefix={idPrefix}
+        tabs={[
+          { id: "linux", label: "Linux" },
+          { id: "windows", label: "Windows" },
+        ]}
+      />
+      <div role="tabpanel" id={`${idPrefix}panel-${os}`} aria-labelledby={`${idPrefix}tab-${os}`} className="tabpanel">
+        {os === "windows" && <p className="small">In PowerShell opened with <strong>Run as administrator</strong>:</p>}
+        <CodeBlock text={command} label={os === "windows" ? "Install command for Windows (PowerShell)" : "Install command for Linux"} />
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -106,7 +129,7 @@ export function AddServerPage() {
       <PageHeader
         help="add-server"
         title="Add server"
-        sub="Create a one-time install command, then run it on the new Linux server. It installs the read-only agent and enrolls the server."
+        sub="Create a one-time install command, then run it on the new Linux or Windows server. It installs the read-only agent and enrolls the server."
       />
       {created ? (
         <InstallCommand created={created} onDone={() => setCreated(null)} />
@@ -134,8 +157,10 @@ export function AddServerPage() {
 }
 
 function InstallCommand({ created, onDone }: { created: EnrollmentCreated; onDone: () => void }) {
-  const { command, insecure } = installCommand(created.code);
+  const [os, setOS] = useState<ServerOS>("linux");
+  const { insecure } = installCommand(created.code);
   const e = created.enrollment;
+  const appsAsked = e.discover_apps || (e.app_dirs?.length ?? 0) > 0;
   return (
     <Card title="Install command">
       <div className="form">
@@ -145,15 +170,19 @@ function InstallCommand({ created, onDone }: { created: EnrollmentCreated; onDon
         </Notice>
         {insecure && (
           <Notice kind="warn">
-            This dashboard is open over plain HTTP, so the command includes <Code>STACKURITY_ALLOW_HTTP=1</Code> and the
+            This dashboard is open over plain HTTP, so the command includes <Code>STACKURITY_ALLOW_HTTP</Code> and the
             code would cross the network unencrypted. Reach the server over HTTPS, or through an SSH tunnel to a local
             port (see <Link to="/help/ssh-tunnel">Connect a server over an SSH tunnel</Link>), and create the command
             from there instead.
           </Notice>
         )}
-        <div className="install-command">
-          <CodeBlock text={command} label="Install command" />
-        </div>
+        <InstallCommandTabs code={created.code} os={os} onOS={setOS} idPrefix="add-" />
+        {os === "windows" && appsAsked && (
+          <Notice kind="info">
+            Windows servers report the operating system and installed programs only. Looking for websites and apps, and
+            application directories, apply to Linux servers.
+          </Notice>
+        )}
         <KeyValues
           entries={[
             ["Expires", <>{absTime(e.expires_at)} (<RelativeTime iso={e.expires_at} />)</>],
@@ -162,31 +191,57 @@ function InstallCommand({ created, onDone }: { created: EnrollmentCreated; onDon
             ...(e.environment ? ([["Environment", e.environment]] as [string, string][]) : []),
           ]}
         />
-        <div className="grid-2 tight">
-          <div>
-            <h3>What the command does</h3>
-            <ul className="banner-list small">
-              <li>Downloads the agent from this server (Linux amd64 or arm64) and checks its checksum.</li>
-              <li>Creates an unprivileged <Code>stackurity</Code> user and enrolls the server with this code.</li>
-              <li>Installs a hardened systemd service that reports every 6 hours. Running it again upgrades the agent.</li>
-              <li>The agent only reads what is installed. It never installs or changes software.</li>
-            </ul>
+        {os === "linux" ? (
+          <div className="grid-2 tight">
+            <div>
+              <h3>What the command does</h3>
+              <ul className="banner-list small">
+                <li>Downloads the agent from this server (Linux amd64 or arm64) and checks its checksum.</li>
+                <li>Creates an unprivileged <Code>stackurity</Code> user and enrolls the server with this code.</li>
+                <li>Installs a hardened systemd service that reports every 6 hours. Running it again upgrades the agent.</li>
+                <li>The agent only reads what is installed. It never installs or changes software.</li>
+              </ul>
+            </div>
+            <div>
+              <h3>Requirements</h3>
+              <ul className="banner-list small">
+                <li>Linux with systemd</li>
+                <li>Root or sudo on the server</li>
+                <li>Outbound HTTPS from the server to this dashboard</li>
+              </ul>
+            </div>
           </div>
-          <div>
-            <h3>Requirements</h3>
-            <ul className="banner-list small">
-              <li>Linux with systemd</li>
-              <li>Root or sudo on the server</li>
-              <li>Outbound HTTPS from the server to this dashboard</li>
-            </ul>
+        ) : (
+          <div className="grid-2 tight">
+            <div>
+              <h3>What the command does</h3>
+              <ul className="banner-list small">
+                <li>Downloads the agent from this server (Windows x64) and checks its checksum.</li>
+                <li>Installs it to Program Files and enrolls the server with this code.</li>
+                <li>
+                  Registers the <Code>StackurityAgent</Code> service, which runs as its own low-privilege account and reports at
+                  boot and every 6 hours. Only that account and Administrators can read its token. Running the command again
+                  (without the code) upgrades the agent.
+                </li>
+                <li>The agent only reads the registry: the Windows build and installed programs. It never changes software.</li>
+              </ul>
+            </div>
+            <div>
+              <h3>Requirements</h3>
+              <ul className="banner-list small">
+                <li>Windows Server 2016 or later, or Windows 10 or 11 (x64)</li>
+                <li>PowerShell run as administrator</li>
+                <li>Outbound HTTPS from the server to this dashboard</li>
+              </ul>
+            </div>
           </div>
-        </div>
+        )}
         <p className="small">
           <strong>Next:</strong> the server appears under <Link to="/assets">Assets</Link> within a minute; applications
           appear as their own assets linked to it.
         </p>
         <p className="small muted">
-          Other ways: Windows and manual installs are described in the documentation (docs/install.md).
+          Other ways: manual installs, and removing the agent, are described in the documentation (docs/install.md).
         </p>
         <div className="form-actions">
           <button type="button" className="btn" onClick={onDone}>

@@ -14,7 +14,7 @@ import { useAuth } from "../auth";
 import { useProject } from "../project";
 import { useAction, useLoad } from "../hooks";
 import { plural } from "../format";
-import { CheckApps, installCommand } from "./AddServer";
+import { CheckApps, InstallCommandTabs, installCommand, type ServerOS } from "./AddServer";
 import { InviteForm } from "../components/Invite";
 import { CodeBlock, ErrorBox, Loading, Notice } from "../components/ui";
 import {
@@ -288,6 +288,7 @@ function AssetStep({
 
 function ServerSource({ project, onWaiting }: { project: Project; onWaiting: (name: string) => void }) {
   const [created, setCreated] = useState<EnrollmentCreated | null>(null);
+  const [os, setOS] = useState<ServerOS>("linux");
   const [apps, setApps] = useState(true);
   const act = useAction();
   const make = async () => {
@@ -299,7 +300,10 @@ function ServerSource({ project, onWaiting }: { project: Project; onWaiting: (na
   if (!created) {
     return (
       <div className="form">
-        <p>Linux with systemd, root or sudo, and outbound HTTPS from the server to this dashboard.</p>
+        <p>
+          Linux with systemd (root or sudo), or Windows Server 2016 or later (PowerShell as administrator), and outbound HTTPS from
+          the server to this dashboard.
+        </p>
         <div className="field">
           <CheckApps id="ob-apps" checked={apps} onChange={setApps} />
         </div>
@@ -312,7 +316,7 @@ function ServerSource({ project, onWaiting }: { project: Project; onWaiting: (na
       </div>
     );
   }
-  const { command, insecure } = installCommand(created.code);
+  const { insecure } = installCommand(created.code);
   return (
     <div className="form">
       <p>
@@ -323,7 +327,7 @@ function ServerSource({ project, onWaiting }: { project: Project; onWaiting: (na
           This dashboard is open over plain HTTP, so the code would cross the network unencrypted. Use HTTPS if you can.
         </Notice>
       )}
-      <CodeBlock text={command} label="Install command" />
+      <InstallCommandTabs code={created.code} os={os} onOS={setOS} idPrefix="ob-" />
       <p className="hint">The code is shown only now. The agent only reads what is installed; it never changes anything.</p>
       <div className="form-actions">
         <button type="button" className="btn btn-primary" onClick={() => onWaiting("")}>
