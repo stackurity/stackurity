@@ -663,6 +663,7 @@ func TestInvariantReproducible(t *testing.T) {
 		"env list":       func(p *Policy) { p.ProductionEnvironments = append(p.ProductionEnvironments, "live") },
 		"multiplier":     func(p *Policy) { p.StaleMul = 0.75 },
 		"EPSS threshold": func(p *Policy) { p.EPSSThreshold = 0.2 },
+		"due dates":      func(p *Policy) { p.DueDates = DueDatesPatchCalendar },
 	} {
 		p := DefaultPolicy()
 		mut(&p)

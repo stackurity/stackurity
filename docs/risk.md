@@ -47,7 +47,27 @@ The score is rounded to one decimal and mapped to a priority: P1 at 12 or more, 
 
 **SOS** fires when the finding is `confirmed`, is not on an idle kernel, and matches an SOS rule. The defaults are "Known exploited in production" and "Critical, exposed production asset" (severity critical). A rule that requires an exposed asset also matches unknown exposure, and one that requires production also matches an asset with no environment. A rule may not rely on severity alone.
 
-**Deadlines** run from first detection: P1 acknowledge in 4 hours and fix in 3 days, P2 24 hours and 14 days, P3 72 hours and 45 days, P4 168 hours and 90 days. They move only when the priority changes.
+**Deadlines** run from first detection: P1 acknowledge in 4 hours and fix in 3 days, P2 24 hours and 14 days, P3 72 hours and 45 days, P4 168 hours and 90 days. They move only when the priority changes. A policy can instead make non-urgent findings due at their asset's next patch window ([below](#due-dates-from-a-patch-calendar)).
+
+First detection is when the asset first had the vulnerability, not when the package version that has it now appeared. Another version of an affected package is a new finding (findings are per installed package version), but not a new issue: a kernel update that installs a new kernel still affected by the same CVE, next to the old one or in its place, or an upgrade that leaves a library affected, keeps the deadline of the finding before it (`due_from`, migration `0069_finding_due_from`; findings opened before the upgrade keep their deadlines). The issue continues while an earlier finding of the same vulnerability (same key, any package) on the asset was still open, or closed or uninstalled only once the new version appeared; this is the same test that decides that such a finding is not regressed. An issue fixed on the asset that comes back later is a new occurrence, and its clock starts again. A false positive (ignored as such) never carries its date over.
+
+## Due dates from a patch calendar
+
+Most vulnerabilities are scheduled maintenance, not incidents. With `due_dates` set to `patch_calendar` (**Settings → Risk policy → Due dates: Next patch window**), a finding that is not urgent is due at the end of its asset's first patch window after first detection, instead of a fixed number of days after it. The default is `sla`, the deadlines above, and nothing changes until an admin switches.
+
+- **Urgent findings keep the SLA**: P1, SOS, or known exploited (CISA KEV). These are what notifications send right away by default (a route's urgent priority is P1, and SOS and KEV always count). A finding that becomes urgent later (it joins KEV, its EPSS crosses the threshold and lifts it to P1) moves to the SLA deadline counted from first detection, which may already have passed.
+- **Windows.** Each month has a test window, `test_days_after_patch_tuesday` days after Patch Tuesday (the second Tuesday of the month; default 1, the Wednesday after it), and a production window `prod_days_after_test` days after the test window (default 7). Each window is one calendar day in `timezone` (an IANA name, default `UTC`). A finding is due when the first window that starts after its first detection ends, at midnight. One first seen during a window day is due at the next month's.
+- **Asset class.** An asset is `test` when it has the tag `patch-window:test`; otherwise when its environment is one of the policy's production environments it is `prod`; otherwise when its environment, or else its name, has the word `dev`, `development`, `test`, `testing`, `uat`, `staging`, `stage` or `qa` (as a whole word, optionally followed by digits: `web-dev-1`, `uat02`, but not `devops`) it is `test`; everything else, including the tag `patch-window:prod`, is `prod`.
+- **Acknowledgement** keeps the SLA's deadline for the priority, but never later than the fix deadline.
+- **Overdue** works as for any deadline. The deadline is the first window after first detection, never the next one after today, so it does not move as time passes: a finding still open when its window has passed is overdue (the **Fix overdue** badge, the `overdue` filter, the overdue factor) and, in Pro, is counted once among the newly overdue in summaries and escalates its incident once. The immediate overdue alert is about urgent issues (P1 or SOS), so a calendar finding is never in it.
+- Deadlines move only when the finding becomes urgent or stops being urgent, when its asset's class changes, or when the policy changes.
+
+```json
+"due_dates": "patch_calendar",
+"patch_calendar": {"test_days_after_patch_tuesday": 1, "prod_days_after_test": 7, "timezone": "Europe/Berlin"}
+```
+
+`due_dates` is left out of the policy while it is `sla`, so adding the setting did not change any policy's version. A calendar that leaves a field out takes that field's default; `test_days_after_patch_tuesday` must be 0 to 20 and `prod_days_after_test` 0 to 28. **Preview** shows no priority changes for a switch (priorities do not depend on due dates); the deadlines are rewritten by the next prioritisation, within minutes, in chunks like any other.
 
 ## Predicted exploitation (EPSS)
 

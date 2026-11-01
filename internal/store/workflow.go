@@ -154,6 +154,7 @@ type riskRow struct {
 	key       string
 	assetID   int64
 	assetName string
+	assetTags []string
 	priority  string // stored
 	// xmin is the row version read; Prioritize writes only that version.
 	xmin string
@@ -218,9 +219,9 @@ func riskRows(ctx context.Context, db q, now time.Time, assetID int64) ([]riskRo
 		`+effectiveExposure+`, `+exposureSource+`, a.environment, a.criticality,
 		f.fixed_version <> '' AND NOT COALESCE((f.evidence->>'requires_ubuntu_pro')::boolean, false)
 		  AND COALESCE(f.evidence->>'requires_subscription', '') = '',
-		i.scope, f.verification, f.first_seen, COALESCE((f.evidence->>'not_running_kernel')::boolean, false),
+		i.scope, f.verification, COALESCE(f.due_from, f.first_seen), COALESCE((f.evidence->>'not_running_kernel')::boolean, false),
 		f.priority, f.state, f.fix_due, f.title, f.key, a.id, a.name,
-		f.sources, f.epss_cve, COALESCE(f.priority_factors @> $2::jsonb, false), f.xmin::text
+		f.sources, f.epss_cve, COALESCE(f.priority_factors @> $2::jsonb, false), f.xmin::text, a.tags
 		FROM findings f JOIN assets a ON a.id = f.asset_id JOIN inventory i ON i.id = f.inventory_id
 		WHERE f.status = 'open' AND ($1::bigint = 0 OR f.asset_id = $1)
 		ORDER BY f.id`, assetID, epssFactor)
@@ -238,7 +239,7 @@ func riskRows(ctx context.Context, db q, now time.Time, assetID int64) ([]riskRo
 		)
 		if err := rows.Scan(&r.id, &r.in.Kind, &r.in.Severity, &r.in.Score, &r.in.KnownExploited, &r.in.InternetExposed, &r.in.ExposureSource,
 			&r.in.Environment, &r.in.Criticality, &r.in.FixAvailable, &r.in.Scope, &r.in.Verification, &r.firstSeen, &r.in.KernelNotRunning,
-			&r.priority, &state, &fixDue, &r.title, &r.key, &r.assetID, &r.assetName, &sources, &r.epssStored, &r.in.EPSSCounted, &r.xmin); err != nil {
+			&r.priority, &state, &fixDue, &r.title, &r.key, &r.assetID, &r.assetName, &sources, &r.epssStored, &r.in.EPSSCounted, &r.xmin, &r.assetTags); err != nil {
 			return nil, err
 		}
 		if r.in.Kind == "vulnerability" {
@@ -263,7 +264,12 @@ var PrioritizeChunk = 1000
 var afterPriorityChunk func(written int) error
 
 // Prioritize recomputes priority, SOS and deadlines for every open finding.
-// Deadlines run from first detection; they move only when priority changes.
+// Deadlines run from when the asset first had the issue (due_from, else
+// first_seen); they move only when priority changes, or, under a patch
+// calendar, when the finding becomes urgent or not or its asset's patch
+// window class changes. They never move because time passed: a calendar
+// deadline is the first window after the issue appeared, not after now, so
+// a finding whose window passed stays overdue.
 func (s *Store) Prioritize(ctx context.Context, p risk.Policy, now time.Time) (int, error) {
 	return s.PrioritizeAsset(ctx, p, now, 0)
 }
@@ -319,7 +325,7 @@ func (s *Store) writePriorities(ctx context.Context, p risk.Policy, version stri
 	for _, r := range rows {
 		cve := chooseEPSS(p, &r)
 		res := p.Evaluate(r.in)
-		ackDue, fixDue := p.Deadlines(res.Priority, r.firstSeen)
+		ackDue, fixDue, _ := p.FindingDeadlines(res, r.in, p.PatchClass(r.assetTags, r.in.Environment, r.assetName), r.firstSeen)
 		factors, _ := json.Marshal(res.Factors)
 		// Rows whose result has not changed are left alone. This runs every
 		// minute over every open finding; rewriting them all bloated the
