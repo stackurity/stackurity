@@ -39,10 +39,14 @@ func TestVersionReferences(t *testing.T) {
 			t.Errorf("tag %s does not match the newest CHANGELOG.md release %s", tag, v)
 		}
 	}
-	chart := read(t, "deploy/helm/stackurity/Chart.yaml")
-	for _, want := range []string{"version: " + v, `appVersion: "` + v + `"`} {
-		if !strings.Contains(chart, want) {
-			t.Errorf("deploy/helm/stackurity/Chart.yaml: want %q", want)
+	// The server's chart and the Kubernetes reporter's are released together
+	// (release.yml publishes both), and the reporter runs the server's image.
+	for _, f := range []string{"deploy/helm/stackurity/Chart.yaml", "deploy/helm/stackurity-reporter/Chart.yaml"} {
+		chart := read(t, f)
+		for _, want := range []string{"version: " + v, `appVersion: "` + v + `"`} {
+			if !strings.Contains(chart, want) {
+				t.Errorf("%s: want %q", f, want)
+			}
 		}
 	}
 	// The MCP Registry entry (server.json) is published per release, and the
@@ -51,7 +55,7 @@ func TestVersionReferences(t *testing.T) {
 		t.Errorf("server.json: want \"version\": %q", v)
 	}
 	// Image, chart and helm --version references in the install docs and README.
-	ref := regexp.MustCompile(`(?:stackurity/stackurity:|charts/stackurity:|charts/stackurity --version )v?(\d+\.\d+\.\d+)`)
+	ref := regexp.MustCompile(`(?:stackurity/stackurity:|charts/stackurity(?:-reporter)?:|charts/stackurity(?:-reporter)? --version )v?(\d+\.\d+\.\d+)`)
 	for _, f := range []string{"README.md", "docs/install.md", "docs/kubernetes.md"} {
 		for _, m := range ref.FindAllStringSubmatch(read(t, f), -1) {
 			if m[1] != v {

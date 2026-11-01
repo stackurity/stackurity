@@ -1,4 +1,4 @@
-package main
+package kube
 
 // The small subset of Kubernetes API objects the plugin reads. Unknown
 // fields are ignored, so these work across API versions.

@@ -70,8 +70,8 @@ func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	if ciRepository(r) == "" && len(b.Asset.Identifiers) == 1 && b.Asset.Identifiers[0].Scheme == model.AppPathScheme {
-		if code, err := s.bindAppIdentity(r, &b); err != nil {
+	if ciRepository(r) == "" && len(b.Asset.Identifiers) == 1 && hostScoped(b.Asset.Identifiers[0].Scheme) {
+		if code, err := s.bindHostIdentity(r, &b); err != nil {
 			writeError(w, code, map[int]string{403: "forbidden", 409: "conflict"}[code], err.Error())
 			return
 		}
@@ -122,6 +122,13 @@ const FeatureUploadProject = "upload_project"
 // host batch's apps.dirs and marks the host's applications missing from it
 // removed. Agents send the list only to servers that say so.
 const FeatureAppList = "app_list"
+
+// FeatureHostImages, in GET /meta's features, says that POST /ingest scopes
+// host-image identities to their host and takes a host batch's
+// images.refs, marking the host's images missing from it removed. Agents
+// send Docker images only to servers that say so: an older server would
+// store the identity unscoped.
+const FeatureHostImages = "host_images"
 
 // uploadProject decides which project an upload (POST /ingest, POST
 // /sbom/import) files its asset in, from project_id or the switcher's
@@ -734,11 +741,18 @@ func checkRepoIngest(b *model.ObservationBatch, repo string) error {
 	return refuse
 }
 
-// bindAppIdentity scopes an application's path to the host it runs on, so
-// identical paths on different hosts stay separate and a host-bound token
-// can only report applications on its own host. The host must have
-// reported before its applications.
-func (s *Server) bindAppIdentity(r *http.Request, b *model.ObservationBatch) (int, error) {
+// hostScoped reports whether an identifier scheme names something on one
+// host (an application's path, a container image's tag), which the API
+// scopes to that host.
+func hostScoped(scheme string) bool {
+	return scheme == model.AppPathScheme || scheme == model.HostImageScheme
+}
+
+// bindHostIdentity scopes an application's path, or a container image's
+// tag, to the host it runs on, so identical values on different hosts stay
+// separate and a host-bound token can only report for its own host. The
+// host must have reported first.
+func (s *Server) bindHostIdentity(r *http.Request, b *model.ObservationBatch) (int, error) {
 	var host int64
 	for _, rel := range b.Relations {
 		if rel.Kind != "runs_on" {
@@ -757,7 +771,7 @@ func (s *Server) bindAppIdentity(r *http.Request, b *model.ObservationBatch) (in
 		}
 	}
 	if host == 0 {
-		return 409, errors.New("the host this application runs on has not reported yet")
+		return 409, errors.New("the host this asset runs on has not reported yet")
 	}
 	bound, err := s.boundAsset(r)
 	if err != nil {

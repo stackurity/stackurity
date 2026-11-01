@@ -22,7 +22,9 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/stackurity/stackurity/internal/auth"
+	"github.com/stackurity/stackurity/internal/awsconnect"
 	"github.com/stackurity/stackurity/internal/db"
+	"github.com/stackurity/stackurity/internal/githubapp"
 	"github.com/stackurity/stackurity/internal/health"
 	"github.com/stackurity/stackurity/internal/metrics"
 	"github.com/stackurity/stackurity/internal/model"
@@ -65,6 +67,9 @@ type Server struct {
 	// Pro holds what the licensed edition needs (single sign-on, ...);
 	// it is empty in the Community build.
 	Pro ProConfig
+	// DigitalOceanAPI is the DigitalOcean API base URL for fleet discovery;
+	// empty is https://api.digitalocean.com. Tests point it at a fake.
+	DigitalOceanAPI string
 	// BaseURL is the public dashboard URL, used in the agent installer.
 	BaseURL string
 	// AgentDir holds agent builds served to new hosts (stackurity-linux-amd64
@@ -120,6 +125,9 @@ type Server struct {
 	// SlackRespond posts an answer to a Slack response_url (already checked
 	// to be Slack's); nil posts it over HTTPS. Tests capture answers here.
 	SlackRespond func(ctx context.Context, responseURL string, body []byte) error
+	// GitHubApp is the Stackurity GitHub App ("Install on GitHub"); nil
+	// turns it off (github_app.go).
+	GitHubApp *githubapp.App
 	// OpenAIAppsChallenge is served as text/plain at
 	// /.well-known/openai-apps-challenge, for OpenAI's domain check when an
 	// app is submitted (STACKURITY_OPENAI_APPS_CHALLENGE); empty answers 404.
@@ -146,6 +154,9 @@ type Server struct {
 	// platform's mail on a hosted edition, STACKURITY_SMTP_* otherwise; nil
 	// means administrators reset passwords.
 	AccountMail notify.Mailer
+	// AWS connects AWS accounts with a CloudFormation stack
+	// (handlers_aws.go); nil or without a principal turns it off.
+	AWS *awsconnect.Client
 	// Breached refuses passwords found in data breaches (Pwned Passwords,
 	// k-anonymity); nil turns the check off.
 	Breached *auth.BreachChecker
@@ -178,6 +189,9 @@ func (s *Server) Handler() http.Handler {
 	r.Get("/.well-known/openai-apps-challenge", s.openAIAppsChallenge)
 
 	r.Get("/install/agent.sh", s.installScript)
+	r.Get("/install/kubernetes.yaml", s.installKubernetes)
+	// The CloudFormation template for connecting AWS (handlers_aws.go).
+	r.Get("/aws/"+awsconnect.TemplateFile, s.awsTemplate)
 	r.Get("/download/agent/{platform}", s.downloadAgent)
 
 	// Slack's interactivity Request URL. Public, outside the session and
@@ -187,11 +201,19 @@ func (s *Server) Handler() http.Handler {
 	// The Stackurity Slack app's Event Subscriptions Request URL (uninstall
 	// and revoked tokens), verified with the app's signing secret.
 	r.With(s.limitAddress("slack-events", limitSlackEvents, "too many requests")).Post("/api/v1/integrations/slack/events", s.slackEvents)
+	// A Launch Stack stack reporting its role. Public, outside the session
+	// and CSRF checks (the stack has neither): its bearer token is signed,
+	// single use and names the connection (handlers_aws.go).
+	r.Post("/api/v1/aws/callback", s.awsCallback)
 	// The Slack app's Direct install URL, for installs started from Slack
 	// (the Slack Marketplace): signed out, a 302 to Slack's consent page as
 	// Slack requires; signed in, the dashboard page that picks the
 	// organisation and starts Add to Slack (notify_setup.go).
 	r.Get("/integrations/slack/install", s.slackDirectInstall)
+	// The Stackurity GitHub App's webhook URL (installation, repositories
+	// granted or removed, pushes), verified with the app's webhook secret
+	// (github_app.go).
+	r.With(s.limitAddress("github-webhook", limitGitHubWebhook, "too many requests")).Post("/api/v1/integrations/github/webhook", s.githubWebhook)
 	// One-click unsubscribe and "never email me again" from mail clients
 	// (RFC 8058), signed or single-use tokens in the address.
 	r.With(s.limitAddress("email-links", limitEmailConfirm, "too many attempts; wait a minute")).Post("/email/unsubscribe/one-click", s.oneClick(s.answerUnsubscribe))
@@ -282,6 +304,7 @@ func (s *Server) Handler() http.Handler {
 			})
 
 			r.With(requireIngest).Post("/ingest", s.ingest)
+			r.With(requireIngest).Post("/kubernetes/report", s.kubernetesReport)
 			r.With(requireIngest).Get("/collections/{id}/result", s.collectionResult)
 			r.With(requireIngest).Post("/sbom/import", s.importSBOM)
 			r.With(requireIngest).Get("/agent/check", s.agentCheck)
@@ -364,6 +387,7 @@ func (s *Server) Handler() http.Handler {
 				r.Post("/assets/{id}/relations", s.addRelation)
 				r.Delete("/assets/{id}/relations", s.deleteRelation)
 				r.Get("/integrations", s.listIntegrations)
+				r.Get("/integrations/github", s.listGitHubInstallations)
 				r.With(s.requireWritable).Post("/integrations/{id}/run", s.runIntegration)
 				r.Post("/feeds/{name}/refresh", s.refreshFeed)
 				r.With(s.requireWritable).Post("/evaluate", s.reevaluate)
@@ -442,6 +466,10 @@ func (s *Server) Handler() http.Handler {
 				r.Post("/email-recipients/resend", s.resendEmailRecipient)
 				r.With(s.requireWritable).Post("/integrations/slack/install", s.startSlackInstall)
 				r.With(s.requireWritable).Post("/integrations/slack/oauth", s.finishSlackInstall)
+				r.With(s.requireWritable).Post("/integrations/github/install", s.startGitHubInstall)
+				r.With(s.requireWritable).Post("/integrations/github/setup", s.finishGitHubInstall)
+				r.With(s.requireWritable).Post("/integrations/github/installations/{installation_id}/sync", s.syncGitHubInstallation)
+				r.Delete("/integrations/github/installations/{installation_id}", s.disconnectGitHubInstallation)
 				r.With(s.requireWritable).Post("/deliveries/{id}/retry", s.retryDelivery)
 				s.proAdminRoutes(r)
 				r.Get("/secrets", s.listSecrets)
@@ -454,10 +482,24 @@ func (s *Server) Handler() http.Handler {
 				r.Delete("/invitations/{id}", s.revokeInvitation)
 				r.Get("/enrollments", s.listEnrollments)
 				r.With(s.requireWritable).Post("/enrollments", s.createEnrollment)
+				r.Get("/enrollments/{id}/uses", s.enrollmentUses)
+				r.Get("/integrations/digitalocean", s.doStatus)
+				r.With(s.requireWritable).Put("/integrations/digitalocean/token", s.doConnect)
+				r.Delete("/integrations/digitalocean/token", s.doDisconnect)
+				r.Get("/integrations/digitalocean/droplets", s.doListDroplets)
 				r.Delete("/enrollments/{id}", s.revokeEnrollment)
 				r.Get("/ci-trusts", s.listCITrusts)
 				r.With(s.requireWritable).Post("/ci-trusts", s.createCITrust)
 				r.Delete("/ci-trusts/{id}", s.deleteCITrust)
+				r.Get("/aws/connections", s.listAWSConnections)
+				r.With(s.requireWritable).Post("/aws/connections", s.createAWSConnection)
+				r.Get("/aws/connections/{id}", s.getAWSConnection)
+				r.Delete("/aws/connections/{id}", s.deleteAWSConnection)
+				r.Post("/aws/connections/{id}/launch", s.relaunchAWSConnection)
+				r.With(s.requireWritable).Post("/aws/connections/{id}/verify", s.verifyAWSConnection)
+				r.Get("/aws/connections/{id}/instances", s.listAWSInstances)
+				r.Get("/aws/connections/{id}/installs", s.listAWSInstalls)
+				r.With(s.requireWritable).Post("/aws/connections/{id}/installs", s.installAWSAgents)
 			})
 		})
 		r.NotFound(func(w http.ResponseWriter, r *http.Request) { writeError(w, 404, "not_found", "no such endpoint") })

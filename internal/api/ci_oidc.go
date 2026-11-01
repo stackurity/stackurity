@@ -665,7 +665,12 @@ func (s *Server) listCITrusts(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"items": items, "audience": s.ciAudience(), "server": s.publicURL(r)})
+	base, err := s.publicURL(r)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"items": items, "audience": s.ciAudience(), "server": base})
 }
 
 func (s *Server) createCITrust(w http.ResponseWriter, r *http.Request) {
