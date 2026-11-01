@@ -5201,3 +5201,9 @@ div.assistant-card {
 .verify-left {
   margin: 4px 0 0;
 }
+
+/* "Continue with Google / Microsoft / GitHub" on the sign-in and sign-up pages. */
+.social-buttons {
+  display: grid;
+  gap: 8px;
+}

@@ -63,6 +63,45 @@ export interface Meta {
   sso_discovery?: boolean;
   /** True when this server sends product updates or vulnerability news, so people have email preferences (a hosted edition). */
   email_preferences?: boolean;
+  /** Present when people can sign up and sign in with Google, Microsoft or GitHub (a hosted edition): only configured providers. */
+  social?: SocialMeta;
+}
+
+export interface SocialProviderMeta {
+  id: "google" | "microsoft" | "github";
+  label: string;
+  /** A full-page navigation to the provider. */
+  start_url: string;
+}
+
+export interface SocialMeta {
+  providers: SocialProviderMeta[];
+  /** Where a GitHub sign-up continues to choose repositories (the GitHub App's installation page); absent without the app. */
+  github_install_url?: string;
+}
+
+/** Who the provider vouched for, on the page that finishes a sign-up through it. */
+export interface SocialSignupPreview {
+  provider: string;
+  provider_label: string;
+  email: string;
+  name: string;
+  login?: string;
+  /** People at this domain already use the service (not a free mail provider). */
+  colleagues_domain?: string;
+}
+
+/** One way to sign in to your account through a provider. */
+export interface SocialConnection {
+  id: string;
+  label: string;
+  connected: boolean;
+  email?: string;
+  login?: string;
+  created_at?: string;
+  last_used_at?: string | null;
+  /** Connected at a provider this server no longer offers. */
+  unavailable?: boolean;
 }
 
 export interface SignupMeta {
@@ -3090,6 +3129,15 @@ export const api = {
   }) =>
     request<{ status: string }>("POST", "/signup", b, { quiet401: true }),
   verifySignup: (token: string) => request<{ workspace_id: number }>("POST", "/signup/verify", { token }, { quiet401: true }),
+  socialSignupPreview: (token: string) => request<SocialSignupPreview>("POST", "/signup/social/preview", { token }, { quiet401: true }),
+  socialSignup: (b: { token: string; name: string; organisation: string; accept_terms: true; email_notice_version?: string }) =>
+    request<{ workspace_id: number; next: string }>("POST", "/signup/social", b, { quiet401: true }),
+  confirmSocialLink: (token: string) =>
+    request<User & { mfa_required?: boolean }>("POST", "/auth/social/confirm", { token }, { quiet401: true }),
+  socialConnections: () => request<{ providers: SocialConnection[]; has_password: boolean }>("GET", "/auth/social"),
+  connectSocial: (provider: string, password: string) =>
+    request<{ redirect_url: string }>("POST", `/auth/social/${encodeURIComponent(provider)}/link`, { password }),
+  disconnectSocial: (provider: string) => request<void>("DELETE", `/auth/social/${encodeURIComponent(provider)}`),
 };
 
 /**

@@ -1400,6 +1400,57 @@ jobs:
     ],
   },
   {
+    id: "social-sign-in",
+    title: "Sign in with Google, Microsoft or GitHub",
+    section: "Settings and administration",
+    summary: "On Stackurity Cloud: sign up and sign in with a provider instead of a password, and how it keeps your account safe.",
+    where: ["Your account", "Sign in with Google, Microsoft or GitHub"],
+    keywords: "google microsoft github social login sign in sign up continue with oauth connect disconnect link account",
+    body: [
+      {
+        p: "On Stackurity Cloud the sign-up and sign-in pages offer **Continue with Google**, **Continue with Microsoft** and **Continue with GitHub**. The provider confirms your email address, so there is no password to choose and no confirmation email to wait for.",
+      },
+      { h: "Signing up", id: "sign-up" },
+      {
+        steps: [
+          "On the sign-up page, choose a provider and sign in there.",
+          "Back on Stackurity, enter your organisation's name and agree to the Terms of Service and the Privacy Policy.",
+          "**Create account** starts your organisation's free trial, with you as its admin, as signing up with your email does.",
+          "If you signed up with GitHub, Stackurity goes on to **Pick repositories** when the GitHub App is available, so the first results arrive in a couple of minutes.",
+        ],
+      },
+      {
+        list: [
+          "Only an address the provider has verified is used. Microsoft: work or school accounts only (personal Outlook.com or Hotmail accounts can sign up with their email). GitHub: your primary email address, which must be verified on GitHub.",
+          "Temporary email addresses are refused, as on the email form.",
+          "An account made this way has no password. To add one, sign out and use **Forgot password** on the sign-in page. Two-factor sign-in needs a password.",
+        ],
+      },
+      { h: "You already have an account", id: "existing" },
+      {
+        p: "Signing in with a provider never connects it to an existing account just because the email address matches. Either:",
+      },
+      {
+        list: [
+          "sign in with your password, then under [Your account](/account#sign-in) choose **Connect** next to the provider (you enter your password again), or",
+          "use the link Stackurity emails to your account's address when you try a provider with it. Open it **in the same browser** within 30 minutes. If you did not try to sign in, ignore the email: nothing changes.",
+        ],
+      },
+      { h: "What still applies", id: "policies" },
+      {
+        list: [
+          "Your two-factor sign-in: after the provider, Stackurity asks for your code.",
+          "An organisation that requires two-factor sign-in asks you to set it up.",
+          "An organisation that requires its own [single sign-on](help:users-teams-roles) still requires it: a provider sign-in does not open it (its owner keeps access, as with a password).",
+          "Instance administrators always sign in with their password.",
+        ],
+      },
+      {
+        note: "Under [Your account](/account#sign-in) you can see each connected provider, when it was last used, and **Disconnect** it. The last way into an account without a password cannot be disconnected.",
+      },
+    ],
+  },
+  {
     id: "users-teams-roles",
     title: "Users, teams and roles",
     section: "Settings and administration",
