@@ -96,6 +96,8 @@ A Jira channel calls the REST API of the configured site only (`/rest/api/3` on 
 
 A PagerDuty channel posts events to `https://events.pagerduty.com/v2/enqueue`, or `https://events.eu.pagerduty.com/v2/enqueue` for the EU service region (outbound HTTPS 443). Events carry the incident's title, priority, counts, environments, first component, owner team, recommended fix and a link to the dashboard.
 
+**Connect PagerDuty** (only with `STACKURITY_PAGERDUTY_CLIENT_ID` set, and only while an admin connects a service) calls `https://identity.pagerduty.com/oauth/token` once to exchange the authorisation code (with the PKCE verifier and the app's client secret), then `https://api.pagerduty.com` or `https://api.eu.pagerduty.com` to list the account's services (`GET /services`) and add one Events API v2 integration (`POST /services/{id}/integrations`). Nothing else is sent: no incident data. These requests go through the same outbound guard, each on a new connection (no keep-alive), and redirects are not followed. The token is deleted once the integration is added; nothing calls PagerDuty's REST API after that.
+
 A ServiceNow channel calls the configured instance only: the Table API (`/api/now/table/<table>`, and `/api/now/table/sys_user_group` for Send test when an assignment group is set) and, with OAuth, `/oauth_token.do`. Records contain what a Jira issue does; with `sync_back`, only the state of the records Stackurity created is read. An instance on a private address is subject to the same `STACKURITY_PRIVATE_TARGETS` policy as webhooks.
 
 ### Container image integrations

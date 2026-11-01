@@ -11,6 +11,7 @@ import { AcceptInvitePage } from "./pages/AcceptInvite";
 import { SlackLinkPage } from "./pages/SlackLink";
 import { AccountPage } from "./pages/Account";
 import { SlackOAuthCallbackPage } from "./pages/SlackOAuthCallback";
+import { PagerDutyOAuthCallbackPage } from "./pages/PagerDutyOAuthCallback";
 import { SlackInstallPage } from "./pages/SlackInstall";
 import { EmailConfirmPage, EmailStopPage } from "./pages/EmailConfirm";
 import { EmailPreferencesPage } from "./pages/EmailPreferences";
@@ -139,6 +140,9 @@ export function App() {
   // in or not.
   if (pathname === "/integrations/slack/oauth/callback" && state.phase === "login") return slackCallbackNeedsSession() ? <LoginPage /> : <SlackOAuthCallbackPage />;
   if (pathname === "/integrations/slack/oauth/callback" && state.phase === "ready") return <SlackOAuthCallbackPage />;
+  // Back from "Connect PagerDuty": sign in first; the address and query stay.
+  if (pathname === "/integrations/pagerduty/oauth/callback" && state.phase === "login") return <LoginPage />;
+  if (pathname === "/integrations/pagerduty/oauth/callback" && state.phase === "ready") return <PagerDutyOAuthCallbackPage />;
   // Adding Stackurity to Slack from outside the dashboard (the Slack app's
   // Direct install URL): sign in, pick the organisation, go to Slack.
   if ((pathname === "/integrations/slack/install" || pathname === "/integrations/slack/add") && state.phase === "login") return <LoginPage />;

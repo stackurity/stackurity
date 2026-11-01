@@ -414,6 +414,10 @@ func (s *Server) createChannel(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, badRequest("Slack channels of the Stackurity app are added with Add to Slack (POST /integrations/slack/install)"))
 		return
 	}
+	if pagerDutyAppConfig(req.Config) {
+		s.fail(w, r, badRequest("PagerDuty channels of the Stackurity app are added with Connect PagerDuty (POST /integrations/pagerduty/connect)"))
+		return
+	}
 	if req.Kind == notify.KindStackurityEmail {
 		if err := s.checkPlatformEmail(r, req.Config); err != nil {
 			s.fail(w, r, err)
@@ -462,6 +466,14 @@ func (s *Server) updateChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	if slackAppConfig(req.Config) {
 		s.fail(w, r, badRequest("Slack channels of the Stackurity app are added with Add to Slack"))
+		return
+	}
+	if pagerDutyAppConfig(cur.Config) && (req.SecretRef != nil || len(req.Config) > 0 && !pagerDutyAppUnchanged(cur.Config, req.Config)) {
+		s.fail(w, r, badRequest("this channel was added with Connect PagerDuty: its service and integration key cannot change; connect another service instead"))
+		return
+	}
+	if !pagerDutyAppConfig(cur.Config) && pagerDutyAppConfig(req.Config) {
+		s.fail(w, r, badRequest("PagerDuty channels of the Stackurity app are added with Connect PagerDuty"))
 		return
 	}
 	cfg, ref := cur.Config, cur.SecretRef
@@ -518,6 +530,7 @@ func (s *Server) deleteChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.forgetSlackApp(r.Context(), cur)
+	s.forgetPagerDutyApp(r.Context(), cur)
 	var detail map[string]any
 	if len(changed) > 0 {
 		// Events these routes sent to the channel go to their own channel.

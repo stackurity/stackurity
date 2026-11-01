@@ -314,6 +314,15 @@ type ChannelConfig struct {
 	SlackChannel     string `json:"slack_channel,omitempty"`
 	SlackChannelID   string `json:"slack_channel_id,omitempty"`
 	ConfigurationURL string `json:"configuration_url,omitempty"`
+	// pagerduty, added with "Connect PagerDuty" (the Stackurity PagerDuty
+	// app): the service and the Events API v2 integration Stackurity added
+	// to it, whose routing key is the channel's secret. The OAuth token
+	// used to add it is not kept.
+	PagerDutyApp           bool   `json:"pagerduty_app,omitempty"`
+	PagerDutyServiceID     string `json:"pagerduty_service_id,omitempty"`
+	PagerDutyServiceName   string `json:"pagerduty_service_name,omitempty"`
+	PagerDutyIntegrationID string `json:"pagerduty_integration_id,omitempty"`
+	PagerDutyManageURL     string `json:"pagerduty_manage_url,omitempty"`
 
 	// interactive is the channel's id when its messages get interactive
 	// buttons; set by the dispatcher, never stored.
@@ -331,6 +340,9 @@ func ValidateChannel(kind string, c ChannelConfig, hasSecret, allowHTTP bool) er
 	}
 	if c.SlackApp && kind != KindSlack {
 		return errors.New("slack_app is for Slack channels")
+	}
+	if (c.PagerDutyApp || c.PagerDutyServiceID != "" || c.PagerDutyServiceName != "" || c.PagerDutyIntegrationID != "" || c.PagerDutyManageURL != "") && kind != KindPagerDuty {
+		return errors.New("pagerduty_app and its fields are for PagerDuty channels")
 	}
 	switch kind {
 	case KindStackurityEmail:

@@ -1297,6 +1297,7 @@ jobs:
       {
         list: [
           "**Slack**: click **Add to Slack**, pick the channel in Slack, and you come back to its settings to choose what to send. The channel shows as \"#security in Acme (Stackurity app)\", and **Assign to me** and **Snooze** work inside Slack. If the app is removed from Slack, the channel is turned off and says why. **Advanced: use a webhook** still takes an incoming webhook URL (see below).",
+          "**PagerDuty**: click **Connect PagerDuty**, allow Stackurity in PagerDuty, and pick the service. Stackurity adds an Events API V2 integration named Stackurity to that service and keeps its key; you never copy a key. **Advanced: paste an integration key** still works (see below).",
           "**Email (sent by Stackurity)**, where offered: tick members and, if you like, type other addresses (up to 20 recipients by default). Members get messages once they have signed in to Stackurity at least once. Each other address gets one email with a link to confirm; nothing is sent to it until then. The **Other email addresses** list shows who is pending or confirmed, with **Resend**.",
           "**Email (your own mail server)**: under **Advanced: use your own mail server**, or the only email option on a self-hosted server. Pick a **Provider** (Amazon SES, SendGrid, Postmark, Mailgun, ZeptoMail, Gmail / Google Workspace) to fill in the host, port and encryption, with a note on where to get the credentials.",
         ],
@@ -1309,7 +1310,7 @@ jobs:
           ["Microsoft Teams", "none", "The Workflows webhook URL (required)"],
           ["Webhook", "URL (HTTPS)", "HMAC signing key (optional)"],
           ["Jira", "Site URL, Cloud or Data Center, project key, issue type, account email (Cloud), optional labels, priority mapping and resolve transition", "API token (Cloud) or personal access token (required)"],
-          ["PagerDuty", "Service region (US or EU), optional severity per priority", "Integration key (routing key) of an Events API v2 integration (required)"],
+          ["PagerDuty", "Connect PagerDuty, or: service region (US or EU), optional severity per priority", "None with Connect PagerDuty; otherwise the integration key (routing key) of an Events API v2 integration (required)"],
           ["ServiceNow", "Instance URL, user name (Basic) or OAuth client ID, optional table, assignment group, category, subcategory, urgency and impact per priority, other fields, resolve state and close code, read state back", "Password (Basic) or OAuth client secret (required)"],
         ],
       },
@@ -1387,7 +1388,16 @@ jobs:
       },
       { h: "PagerDuty" },
       {
-        p: "A PagerDuty integration keeps one alert per incident: triggered when the incident opens (with a link back to it), acknowledged when it is acknowledged in Stackurity (none of its findings is new), and resolved when it resolves. When its priority rises, it escalates or new findings arrive after acknowledgement, someone is paged again: a new alert is opened (its key ends in -2, -3) and the old one resolved, because PagerDuty does not page again for an alert that is already open. The severity follows the priority (P1 critical, P2 error, P3 warning, P4 info; SOS is always critical). Every event uses the alert's dedup key (`stackurity-incident-<organisation>-<incident>`, then -2, -3), so retries never open a second alert. An alert keeps the severity it was opened with. Store the service's **Events API V2** integration key under Settings, Secrets. Pick the EU service region if your PagerDuty account is in the EU. **Send test** triggers a test alert (severity info) and resolves it at once.",
+        p: "A PagerDuty integration keeps one alert per incident: triggered when the incident opens (with a link back to it), acknowledged when it is acknowledged in Stackurity (none of its findings is new), and resolved when it resolves. When its priority rises, it escalates or new findings arrive after acknowledgement, someone is paged again: a new alert is opened (its key ends in -2, -3) and the old one resolved, because PagerDuty does not page again for an alert that is already open. The severity follows the priority (P1 critical, P2 error, P3 warning, P4 info; SOS is always critical). Every event uses the alert's dedup key (`stackurity-incident-<organisation>-<incident>`, then -2, -3), so retries never open a second alert. An alert keeps the severity it was opened with. **Send test** triggers a test alert (severity info) and resolves it at once.",
+      },
+      {
+        p: "**Connect PagerDuty** (when your server offers it) sets this up for you. PagerDuty asks you to let Stackurity read and change services; you pick the service in Stackurity; Stackurity adds an **Events API V2** integration named **Stackurity** to it and stores its key, encrypted, like any secret. The key is never shown again. Your PagerDuty user must be allowed to add integrations to the service (an admin, or the service's manager); if not, PagerDuty refuses and Stackurity says so. Stackurity does not keep access to your PagerDuty account: the PagerDuty sign-in is thrown away as soon as the integration exists (or after 10 minutes if you stop half-way). EU accounts are recognised on their own. Stackurity does not create services: pick an existing one.",
+      },
+      {
+        p: "**Disconnecting.** Deleting the integration in Stackurity deletes its key. Because Stackurity no longer has access to PagerDuty, the **Stackurity** integration stays on the PagerDuty service until you delete it there: the service, **Integrations**, **Stackurity**, **Delete Integration** (the integration's settings in Stackurity link to it). Until then it receives nothing from Stackurity. Connecting the same service again gives its integration a new key; delete the older **Stackurity** integration in PagerDuty.",
+      },
+      {
+        p: "**Without Connect PagerDuty**, add the integration yourself: in PagerDuty, the service, **Integrations**, **Add an integration**, **Events API V2**, and copy the **Integration Key**. Store it under Settings, Secrets. Pick the EU service region if your PagerDuty account is in the EU.",
       },
       { h: "ServiceNow" },
       {

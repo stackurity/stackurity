@@ -56,6 +56,9 @@ type Dispatcher struct {
 	// SlackApp is the Stackurity Slack app ("Add to Slack"); nil turns it
 	// off. Its signing secret verifies clicks on channels it added.
 	SlackApp *SlackApp
+	// PagerDutyApp is the Stackurity PagerDuty app ("Connect PagerDuty");
+	// nil turns it off. It is used only while a channel is being added.
+	PagerDutyApp *PagerDutyApp
 	// TrackerPoll is how often ServiceNow records of channels with
 	// sync_back are read back; zero means every 5 minutes.
 	TrackerPoll time.Duration
