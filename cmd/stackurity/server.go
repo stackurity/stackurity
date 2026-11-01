@@ -29,6 +29,7 @@ import (
 	"github.com/stackurity/stackurity/internal/collect/image"
 	"github.com/stackurity/stackurity/internal/db"
 	"github.com/stackurity/stackurity/internal/demo"
+	"github.com/stackurity/stackurity/internal/githubapp"
 	"github.com/stackurity/stackurity/internal/health"
 	"github.com/stackurity/stackurity/internal/intel"
 	"github.com/stackurity/stackurity/internal/metrics"
@@ -235,6 +236,19 @@ func serverCmd() *cobra.Command {
 					log.Warn("Add to Slack needs stored secrets to keep the webhooks and tokens it gets", "fix", "set STACKURITY_SECRET_KEY")
 				}
 			}
+			// The Stackurity GitHub App ("Install on GitHub"), when configured.
+			ghApp, err := githubapp.FromEnv()
+			if err != nil {
+				return err
+			}
+			if ghApp != nil {
+				base := strings.TrimRight(os.Getenv("STACKURITY_BASE_URL"), "/")
+				log.Info("GitHub App enabled (Install on GitHub)", "app", ghApp.Slug, "github", ghApp.Web,
+					"callback_url", base+"/integrations/github/callback", "webhook_url", base+"/api/v1/integrations/github/webhook")
+				if base == "" {
+					log.Warn("the GitHub App's callback and webhook URLs are on this server's address", "fix", "set STACKURITY_BASE_URL")
+				}
+			}
 			// An edition may deliver email sent by Stackurity (hosted).
 			if editionNotify != nil {
 				if err := editionNotify(dispatcher, log); err != nil {
@@ -272,6 +286,7 @@ func serverCmd() *cobra.Command {
 				Health: checker, UpdateCheck: updateCfg.Enabled,
 				CoverageGaps: func(ctx context.Context) (any, error) { return coverageGaps(ctx) },
 				FeedbackURL:  feedbackURL,
+				GitHubApp:    ghApp,
 			}
 			if srv.AccountMail, err = accountMailer(dispatcher, log); err != nil {
 				return err
@@ -313,7 +328,7 @@ func serverCmd() *cobra.Command {
 			if w.HeapWarn, err = heapWarn(os.Getenv("STACKURITY_HEAP_WARN_MIB")); err != nil {
 				return err
 			}
-			registerJobs(w, st, res, dataDir, log, pluginRunner, packMgr)
+			registerJobs(w, st, res, dataDir, log, pluginRunner, packMgr, ghApp)
 			// Prioritise, correlate, plan and deliver notifications; none
 			// for a read-only workspace.
 			w.EveryCollectingWorkspace("alerts", tm.Alerts, dispatcher.Tick)
@@ -529,8 +544,12 @@ func checkIsolation(ctx context.Context, st *store.Store, log *slog.Logger) erro
 // cannot change; a rescan only picks up scanner improvements.
 const imageScanFresh = 7 * 24 * time.Hour
 
-func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataDir string, log *slog.Logger, pluginRunner *plugins.Runner, packMgr *packs.Manager) {
+func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataDir string, log *slog.Logger, pluginRunner *plugins.Runner, packMgr *packs.Manager, ghApp *githubapp.App) {
 	scanner := &gitrepo.Scanner{WorkDir: filepath.Join(dataDir, "work"), Version: version, Packs: packMgr.Active}
+	var ghRunner *githubapp.Runner
+	if ghApp != nil {
+		ghRunner = &githubapp.Runner{Store: st, App: ghApp, Scanner: scanner, Log: log, Packs: packMgr.Active}
+	}
 	imageScanner := &image.Scanner{Syft: env("STACKURITY_SYFT", "syft"), Version: version, WorkDir: filepath.Join(dataDir, "work")}
 
 	w.Handle("integration.run", func(ctx context.Context, payload json.RawMessage) error {
@@ -549,6 +568,15 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 		}
 		// What it collects reports through this integration, on its schedule.
 		ctx = store.WithReportSource(ctx, store.ReportSource{Source: store.SourceIntegration, IntegrationID: in.ID})
+		if in.Kind == store.KindGitHubApp {
+			// A repository granted to the GitHub App: cloned with a
+			// short-lived installation token, never a stored secret.
+			if ghRunner == nil {
+				_ = st.IntegrationResult(ctx, in.ID, 0, errors.New("the GitHub App is not set up on this server (STACKURITY_GITHUB_APP_ID, ...)"))
+				return nil
+			}
+			return ghRunner.Run(ctx, in)
+		}
 		runErr := func() error {
 			token, err := res.Resolve(ctx, in.SecretRef)
 			if err != nil {
@@ -690,6 +718,35 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 		}
 		return err
 	})
+
+	// The GitHub App: list an installation's repositories (after an
+	// install, a webhook, or once a day), and keep listing them.
+	w.Handle("github_app.sync", func(ctx context.Context, payload json.RawMessage) error {
+		var p struct {
+			InstallationID int64 `json:"installation_id"`
+		}
+		if err := json.Unmarshal(payload, &p); err != nil {
+			return err
+		}
+		if ghRunner == nil {
+			return nil
+		}
+		return ghRunner.Sync(ctx, p.InstallationID)
+	})
+	if ghRunner != nil {
+		w.EveryCollectingWorkspace("github-app-sync", time.Hour, func(ctx context.Context) error {
+			ids, err := st.ActiveGitHubInstallations(ctx, githubapp.SyncEvery)
+			if err != nil {
+				return err
+			}
+			for _, id := range ids {
+				if _, err := st.Enqueue(ctx, "github_app.sync", map[string]int64{"installation_id": id}, fmt.Sprintf("github-app-sync:%d", id), time.Time{}); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+	}
 
 	registerIntel(w, st, dataDir, log)
 

@@ -98,6 +98,7 @@ Connecting an asset is quiet: one "connected" message, and no alerts, Jira issue
 | `STACKURITY_OPENAI_APPS_CHALLENGE` (or `_FILE`) | — | The token OpenAI gives when you submit Stackurity as a ChatGPT app; served as text at `/.well-known/openai-apps-challenge` (404 when unset) |
 | `STACKURITY_AGENT_DIR` | `/usr/local/lib/stackurity/agents` in the image | Agent builds served to new hosts by **Add server** |
 | `STACKURITY_SLACK_CLIENT_ID` / `_FILE`, `STACKURITY_SLACK_CLIENT_SECRET` / `_FILE`, `STACKURITY_SLACK_SIGNING_SECRET` / `_FILE` | — | Your Slack app, for **Add to Slack** ([slack-app.md](slack-app.md)). All three or none; needs `STACKURITY_BASE_URL` and `STACKURITY_SECRET_KEY` |
+| `STACKURITY_GITHUB_APP_ID` / `_FILE`, `STACKURITY_GITHUB_APP_SLUG` / `_FILE`, `STACKURITY_GITHUB_APP_CLIENT_ID` / `_FILE`, `STACKURITY_GITHUB_APP_CLIENT_SECRET` / `_FILE`, `STACKURITY_GITHUB_APP_PRIVATE_KEY` / `_FILE`, `STACKURITY_GITHUB_APP_WEBHOOK_SECRET` / `_FILE`; `STACKURITY_GITHUB_URL` | — | Your GitHub App, for **Install on GitHub** ([github-app.md](github-app.md)). All six or none; needs `STACKURITY_BASE_URL`. `STACKURITY_GITHUB_URL` is a GitHub Enterprise Server's address (unset for github.com) |
 | `STACKURITY_ALLOW_HTTP_WEBHOOKS` | `false` | Allow `http://` webhook URLs, for internal receivers |
 | `STACKURITY_PLUGIN_DIR` | `/usr/local/lib/stackurity/plugins` in the image | Directory of plugin executables |
 | `STACKURITY_SYFT` | `syft` | Path to the Syft binary used for container image scans (bundled in the image) |
@@ -399,8 +400,9 @@ With `ProtectHome=yes`, applications under `/home` are invisible; use `ProtectHo
 
 ### Repositories
 
-There are two ways to collect repository inventory:
+There are three ways to collect repository inventory:
 
+- **GitHub App.** Where the server has the [Stackurity GitHub App](github-app.md) (Stackurity Cloud does), **Settings → Integrations → Git repository → Install on GitHub** and pick the repositories on GitHub's install screen. No token to create or renew; the server mints a short-lived read-only token for each scan, rescans when a lockfile changes on the default branch, and follows repositories added or removed on GitHub.
 - **Server-side.** Under **Settings → Integrations**, add a Git repository (HTTPS only). Private repositories need a read-only token referenced as `env:STACKURITY_SECRET_<NAME>`. The server makes a shallow clone, reads the lockfiles and deletes the clone. Hooks, submodules, LFS and scripts are never run.
 - **CI.** Run this in your pipeline:
 
@@ -408,7 +410,7 @@ There are two ways to collect repository inventory:
   stackurity scan . --git-url "$CI_REPOSITORY_URL" --environment production
   ```
 
-  Use the same `--git-url` (or `STACKURITY_GIT_URL`) as the integration so both land on one asset.
+  Use the same `--git-url` (or `STACKURITY_GIT_URL`) as the integration so both land on one asset (a GitHub App scan uses `https://github.com/<owner>/<repository>`).
 
   To fail the pipeline on findings, add a threshold. The command uploads the
   scan, waits for the server to evaluate it and prioritise its findings,

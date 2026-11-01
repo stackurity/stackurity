@@ -1242,6 +1242,42 @@ Finishes Add to Slack with `{"code", "state"}` from Slack's redirect to `/integr
 
 The Slack app's Event Subscriptions URL: `url_verification`, and `app_uninstalled` or `tokens_revoked`, which switch that Slack workspace's app channels off in every organisation and delete their webhooks and tokens.
 
+### `GET /integrations/github`
+
+**Who:** engineer
+
+The Stackurity GitHub App ([github-app.md](github-app.md)): `configured` (whether this server has the app; when it does, `app_url`, its page on GitHub) and `installations`, this organisation's GitHub accounts (`installation_id`, `account_login`, `account_type`, `repository_selection`, `status`: `active`, `suspended` or `deleted`, `note`, `installed_by`, `installed_at`, `updated_at`, `last_sync`, `repositories`). Each granted repository is an integration of kind `github_app` in `GET /integrations`.
+
+### `POST /integrations/github/install`
+
+**Who:** admin
+
+Starts Install on GitHub: `{"return_to"}` (a dashboard path); answers `url`, the app's install page on GitHub with a single-use state bound to the caller and organisation (10 minutes). 404 `not_configured` without the app.
+
+### `POST /integrations/github/setup`
+
+**Who:** admin
+
+Finishes Install on GitHub with `{"state", "code", "installation_id", "setup_action"}` from GitHub's redirect to `/integrations/github/callback`: 201 with `installation` and `return_to`, and the repositories are listed and scanned in the background. 400 `github_state` for a state that is missing, unknown, used, expired or someone else's, before GitHub is called; 202 `{"requested": true}` for `setup_action=request` (an owner of the GitHub organisation must approve). The `installation_id` is not trusted: 403 `github_installation` unless the person's GitHub account (from `code`) can see that installation of this app and the app's JWT confirms it; 409 `github_installation_taken` when another organisation holds it; 409 `github_suspended`; 502 `github_refused`. Audited as `github_app.install` (or `github_app.refused`).
+
+### `POST /integrations/github/installations/{installation_id}/sync`
+
+**Who:** admin
+
+Lists the installation's repositories on GitHub again now: 202. Audited as `github_app.sync`.
+
+### `DELETE /integrations/github/installations/{installation_id}`
+
+**Who:** admin
+
+Disconnects the GitHub account: its repositories' integrations are switched off with a note (assets and history kept), the binding is removed, and the app is uninstalled from that account on GitHub (`uninstalled_on_github`). Audited as `github_app.disconnect`.
+
+### `POST /integrations/github/webhook`
+
+**Who:** GitHub (the app's webhook secret)
+
+The GitHub App's webhook URL: `X-Hub-Signature-256` (HMAC-SHA256 of the body with the webhook secret) is required, else 401; `X-GitHub-Event` and `X-GitHub-Delivery` are required. A delivery already handled (the same delivery id or the same body) answers 200 `{"result": "duplicate"}`. Handles `installation` (`deleted`, `suspend`, `unsuspend`, `created`, `new_permissions_accepted`), `installation_repositories` and `push` (a scan of a granted repository when a lockfile or manifest changed on its default branch); answers 200 with `result`.
+
 ### `POST /integrations/slack/actions`
 
 **Who:** Slack (a channel's signing secret)

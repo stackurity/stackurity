@@ -363,12 +363,16 @@ func (s *Server) validateIntegration(ctx context.Context, kind string, cfg json.
 					err = verr
 				}
 			}
+		case store.KindGitHubApp:
+			return badRequest("repositories are added to the GitHub App on GitHub: use Install on GitHub")
 		default:
 			return badRequest("kind must be " + KindGitRepository + ", " + KindContainerImage + " or " + KindPlugin)
 		}
 		if err != nil {
 			return badRequest("invalid config: " + err.Error())
 		}
+	} else if kind == store.KindGitHubApp {
+		return badRequest("repositories are added to the GitHub App on GitHub: use Install on GitHub")
 	} else if kind != KindGitRepository && kind != KindContainerImage && kind != KindPlugin {
 		return badRequest("kind must be " + KindGitRepository + ", " + KindContainerImage + " or " + KindPlugin)
 	}
@@ -479,15 +483,28 @@ func (s *Server) updateIntegration(w http.ResponseWriter, r *http.Request) {
 	if req.SecretRef != nil {
 		ref = *req.SecretRef
 	}
-	if err := s.validateIntegration(r.Context(), cur.Kind, req.Config, &ref, req.ScheduleMinutes); err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	// Changing anything about an integration that reads a server secret
-	// could redirect that secret, so it needs an instance administrator.
-	if err := checkSecretRef(r, ref); err != nil {
-		s.fail(w, r, err)
-		return
+	if cur.Kind == store.KindGitHubApp {
+		// Made and named by the GitHub App, from what is granted on GitHub;
+		// it reads no secret. Only its switch and schedule are people's.
+		if req.Name != nil || len(req.Config) > 0 || req.SecretRef != nil {
+			s.fail(w, r, badRequest("a repository scanned through the GitHub App can only be switched on or off and rescheduled; which repositories are scanned is chosen on GitHub"))
+			return
+		}
+		if m := req.ScheduleMinutes; m != nil && (*m < 15 || *m > 7*24*60) {
+			s.fail(w, r, badRequest("schedule_minutes must be between 15 and 10080"))
+			return
+		}
+	} else {
+		if err := s.validateIntegration(r.Context(), cur.Kind, req.Config, &ref, req.ScheduleMinutes); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		// Changing anything about an integration that reads a server secret
+		// could redirect that secret, so it needs an instance administrator.
+		if err := checkSecretRef(r, ref); err != nil {
+			s.fail(w, r, err)
+			return
+		}
 	}
 	u := store.IntegrationUpdate{Name: req.Name, Config: req.Config, SecretRef: req.SecretRef, Enabled: req.Enabled}
 	if req.ScheduleMinutes != nil {
