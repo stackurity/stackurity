@@ -320,7 +320,7 @@ The assistants a person has connected (`/assistants`) and the OAuth consent page
 
 **Who:** anyone
 
-Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project`. `app_list` means `POST /ingest` takes a host batch's `apps` (see [ObservationBatch](#observationbatch)); agents send it only to servers that list it (0.14). `email_preferences: true` means this server sends bulk email (product updates, vulnerability news), so people have email preferences.
+Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project`. `app_list` means `POST /ingest` takes a host batch's `apps` (see [ObservationBatch](#observationbatch)); agents send it only to servers that list it (0.14). `kubernetes_report` means [`POST /kubernetes/report`](#post-kubernetesreport) exists; the Kubernetes reporter falls back to `POST /ingest` without it. `email_preferences: true` means this server sends bulk email (product updates, vulnerability news), so people have email preferences.
 
 ### `GET /openapi.json`
 
@@ -366,11 +366,23 @@ Revokes an enrollment code.
 
 The agent installer script.
 
+### `GET /install/kubernetes.yaml`
+
+**Who:** anyone · outside `/api/v1`
+
+The Kubernetes reporter's manifest for this server ([kubernetes.md](kubernetes.md#connect-with-the-reporter)): namespace, service account, read-only RBAC and Deployment, with this server's URL and release image. `cluster` names the cluster asset; `namespaces` (comma separated) gives Roles in those namespaces instead of the ClusterRole. It holds no secret, and any other parameter is refused (400), so an enrollment code is never put in its address.
+
 ### `GET /download/agent/{platform}`
 
 **Who:** anyone · outside `/api/v1`
 
 The agent builds the installer downloads: `linux-amd64` and `linux-arm64`, each with a `.sha256`. They are bundled in the server image (`STACKURITY_AGENT_DIR`).
+
+### `POST /kubernetes/report`
+
+**Who:** collector token, engineer and above
+
+One collection of a Kubernetes cluster from the in-cluster reporter (`stackurity kubernetes-reporter`): `{"batches": [...], "image_scans": 25}`, gzip accepted. The batches are [ObservationBatch](#observationbatch)es, the cluster first, then images and workloads, with the identity schemes of the kubernetes collection (`k8s-cluster`, `k8s-cluster-name`, `k8s-workload`, `image-ref`); any other kind or scheme is refused (400) and nothing is stored. Each is stored under the `plugin:kubernetes` collector, as an agent's report. The images are queued for the image scanner in the order given, at most `image_scans` (default 25, 0 to 500), as for a plugin run. The answer: `cluster_asset_id`, `assets`, `new_assets`, `refused` (left out at the monitored-asset limit), `images` and `image_scans` (`queued`, `fresh`, `pending`, `deferred`). A host-bound token gets 403; each token may send 30 reports an hour (429). `GET /meta` lists `kubernetes_report` in `features`.
 
 ### `POST /ingest`
 

@@ -554,17 +554,24 @@ stackurity.exe agent --interval 6h`,
     id: "kubernetes",
     title: "Kubernetes clusters",
     section: "Adding servers and sources",
-    summary: "Which workloads run which images, which are exposed outside the cluster, and the cluster and node versions, with the read-only kubernetes plugin.",
-    where: ["Settings", "Integrations"],
-    keywords: "kubernetes k8s cluster workload deployment pod eks gke aks kind exposure nodeport loadbalancer ingress",
+    summary: "Connect a cluster with one command: a read-only reporter in the cluster sends its workloads, the images they run, their exposure and the cluster and node versions.",
+    where: ["Settings", "Integrations", "Kubernetes cluster"],
+    keywords: "kubernetes k8s cluster workload deployment pod eks gke aks kind exposure nodeport loadbalancer ingress helm kubectl reporter enroll",
     body: [
       {
         steps: [
-          "Apply the read-only role from `deploy/kubernetes/stackurity-reader.yaml` (`kubectl apply -f`). It can only get and list pods, workloads, Services, Ingresses, namespaces and nodes; never Secrets.",
-          "Make a kubeconfig for its service account token and store it as a workspace secret (**Settings ▸ Secrets**) holding `{\"kubeconfig\": \"…\"}`. When Stackurity runs in the cluster with that service account, set `in_cluster` instead.",
-          "Go to **Settings ▸ Integrations ▸ Add integration ▸ Plugin**, choose **Kubernetes** and set at least `cluster_name`. `environment_label` takes each workload's environment from a namespace label.",
-          "Set the secret reference and click **Validate and create**, then **Run now**.",
+          "Go to [Settings ▸ Integrations](/settings/integrations) and click **Add** on **Kubernetes cluster** (admins only).",
+          "Enter the **Cluster name** (e.g. `prod-eu`), optionally an **Environment**, and whether to read the whole cluster or only some namespaces.",
+          "Click **Create install command**. Copy the **Helm** or the **kubectl** command: the one-time code in it is shown only once.",
+          "Run it anywhere with `kubectl` access to the cluster. The cluster appears under **Assets** a minute or two later.",
         ],
+      },
+      { code: "helm install stackurity-reporter oci://ghcr.io/stackurity/charts/stackurity-reporter --namespace stackurity --create-namespace --set server=… --set clusterName=prod-eu --set enrollCode=…", label: "Helm" },
+      {
+        p: "The command installs the **reporter**: one small pod in the `stackurity` namespace that reads the cluster with a read-only service account (it lists workloads, pods, Services, Ingresses, namespaces and nodes; never Secrets or ConfigMaps) and sends what it finds to Stackurity over HTTPS every hour. Nothing connects into the cluster and no kubeconfig leaves it, so it works when Stackurity cannot reach the cluster's API server.",
+      },
+      {
+        p: "The code goes into the Secret `stackurity-reporter`, never into a URL. On first start the reporter exchanges it for its own token, keeps the token in that Secret (the only Secret it may read or change) and removes the code. If you revoke the token under **Settings ▸ API tokens**, put a new code in the Secret as `enroll-code` and it enrolls again.",
       },
       {
         p: "The cluster appears as a *cluster* asset with its control plane, kubelet, container runtime and node OS versions (end-of-life dates from endoflife.date). Each Deployment, StatefulSet, DaemonSet, CronJob, Job or bare Pod is a *workload* asset, linked to the images it runs (`deployed_as`), pinned to the digest the node pulled.",
@@ -573,8 +580,18 @@ stackurity.exe agent --interval 6h`,
         p: "A workload is **exposed** when a LoadBalancer or NodePort Service, external IPs, an Ingress, host networking or a host port reaches it. An image is exposed when any workload running it is. Risk scoring uses this unless you set **Internet exposed** on the asset by hand.",
       },
       {
-        p: "Running images are read by the built-in image scanner, most exposed first and at most the number per run set on the integration. Namespaces the role cannot read, and images the scanner cannot pull (private registries), appear on the Coverage page as not assessed, never as clean.",
+        p: "Running images are read by the built-in image scanner, most exposed first and at most 25 per report by default. Namespaces the reporter may not read (with **Only some namespaces**, every other namespace and the nodes), and images the scanner cannot pull (private registries), appear on the Coverage page as not assessed, never as clean.",
       },
+      { h: "Pulling from the server instead" },
+      {
+        steps: [
+          "If Stackurity can reach the cluster's API server and you would rather not run anything in the cluster, apply the read-only role from `deploy/kubernetes/stackurity-reader.yaml` (`kubectl apply -f`).",
+          "Make a kubeconfig for its service account token and store it as a workspace secret (**Settings ▸ Secrets**) holding `{\"kubeconfig\": \"…\"}`. When Stackurity runs in the cluster with that service account, set `in_cluster` instead.",
+          "Go to **Settings ▸ Integrations ▸ Add integration ▸ Plugin**, choose **Kubernetes** and set at least `cluster_name`. `environment_label` takes each workload's environment from a namespace label.",
+          "Set the secret reference and click **Validate and create**, then **Run now**.",
+        ],
+      },
+      { p: "Both report the same assets, so a cluster can move from one to the other and keep its history." },
     ],
   },
 

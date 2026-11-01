@@ -166,6 +166,7 @@ func (s *Server) Handler() http.Handler {
 	r.Get("/.well-known/openai-apps-challenge", s.openAIAppsChallenge)
 
 	r.Get("/install/agent.sh", s.installScript)
+	r.Get("/install/kubernetes.yaml", s.installKubernetes)
 	r.Get("/download/agent/{platform}", s.downloadAgent)
 
 	// Slack's interactivity Request URL. Public, outside the session and
@@ -268,6 +269,7 @@ func (s *Server) Handler() http.Handler {
 			})
 
 			r.With(requireIngest).Post("/ingest", s.ingest)
+			r.With(requireIngest).Post("/kubernetes/report", s.kubernetesReport)
 			r.With(requireIngest).Get("/collections/{id}/result", s.collectionResult)
 			r.With(requireIngest).Post("/sbom/import", s.importSBOM)
 			r.With(requireIngest).Get("/agent/check", s.agentCheck)
