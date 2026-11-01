@@ -480,6 +480,53 @@ stackurity.exe agent --interval 6h
 
 Windows Update hotfixes and Microsoft Store apps are reported as unsupported coverage for now. Remediation runs only on Linux.
 
+### Macs
+
+Developer laptops and macOS build servers run the same agent. Under **Assets → Add server**, choose **macOS** and create an install command, then run it on the Mac:
+
+```sh
+curl -fsSL https://stackurity.example.com/install/agent-macos.sh | sudo STACKURITY_ENROLL_CODE=enr_... sh
+```
+
+The script downloads the agent for the Mac's architecture (Apple silicon or Intel) from your Stackurity server and checks its SHA-256. It creates a hidden account, `_stackurity` (the first free ID from 401 to 499, no shell, no home, no password), exchanges the code for a collector token and runs the agent as a LaunchDaemon (`/Library/LaunchDaemons/com.stackurity.agent.plist`) under that account, reporting every 6 hours with background priority. Files: the binary in `/Library/Application Support/Stackurity/bin`, the token and `agent.env` in `/Library/Application Support/Stackurity/conf` (readable by root and `_stackurity` only), the log in `/Library/Logs/Stackurity/agent.log` (rotated by `newsyslog`, `/etc/newsyslog.d/stackurity.conf`). The settings from `agent.env` are copied into the LaunchDaemon's environment as data; nothing in the file is run. Run the same command without the code to upgrade.
+
+**Why its own account, not root or `nobody`.** Reading `/Applications`, Homebrew and the system's version needs no privileges, so the agent does not get them. `nobody` is shared by other daemons, and any of them could read the token; a dedicated account, as Apple's own daemons (`_www`, `_postgres`) have, keeps it private. The price is that users' home directories are private to their owners: `~/Applications` and version managers under home directories are reported as coverage gaps, not inventoried. The agent needs no Full Disk Access.
+
+**What it reads** is described in [compatibility: macOS](compatibility.md#macos): the OS version (end of life is evaluated; Apple's security updates are not), applications (inventory only), Homebrew formulae and casks, runtimes and JDKs (end of life), and global npm and pip packages (vulnerabilities). `--app-dir` and `--discover-apps` work as on Linux, for projects on a build server.
+
+**Uninstall:**
+
+```sh
+curl -fsSL https://stackurity.example.com/install/agent-macos.sh | sudo STACKURITY_UNINSTALL=1 sh
+```
+
+or by hand:
+
+```sh
+sudo launchctl bootout system/com.stackurity.agent
+sudo rm -f /Library/LaunchDaemons/com.stackurity.agent.plist /etc/newsyslog.d/stackurity.conf
+sudo rm -rf "/Library/Application Support/Stackurity" /Library/Logs/Stackurity
+sudo dscl . -delete /Users/_stackurity; sudo dscl . -delete /Groups/_stackurity
+```
+
+The host stays on the server until you delete it, and its collector token until you revoke it under **Settings → API tokens**.
+
+**MDM (Jamf, Kandji, Intune, Mosyle).** Create a code that allows as many uses as Macs in scope (up to 500) and a longer expiry, and run this as a policy script; MDM scripts run as root:
+
+```sh
+#!/bin/sh
+set -eu
+export STACKURITY_ENROLL_CODE=enr_...
+script="$(mktemp)"
+trap 'rm -f "$script"' EXIT
+curl -fsSL https://stackurity.example.com/install/agent-macos.sh -o "$script"
+/bin/sh "$script"
+```
+
+A Mac already enrolled ignores the code and only upgrades, so the same script can run on a schedule. A signed, notarized installer package (`.pkg`) and a configuration profile are not provided yet. The binaries are ad hoc signed (the Go linker signs them for Apple silicon) and not notarized; downloaded with `curl` they carry no quarantine flag, so Gatekeeper does not stop them, but a copy downloaded with a browser will be.
+
+**By hand**, for example to try the collector without installing anything: `stackurity agent --once --output -` prints what would be sent. Run as your own user it can read your home directory, so it reports more than the daemon will.
+
 ### AWS managed services
 
 The image includes the `aws-managed` plugin. Add a **Plugin** integration:

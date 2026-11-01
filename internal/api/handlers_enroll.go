@@ -180,7 +180,7 @@ func (s *Server) publicURL(r *http.Request) string {
 	return scheme + "://" + r.Host
 }
 
-var agentPlatform = regexp.MustCompile(`^linux-(amd64|arm64)(\.sha256)?$`)
+var agentPlatform = regexp.MustCompile(`^(linux|darwin)-(amd64|arm64)(\.sha256)?$`)
 
 // downloadAgent serves the agent binaries bundled with the server.
 func (s *Server) downloadAgent(w http.ResponseWriter, r *http.Request) {

@@ -18,3 +18,5 @@ ee-overlay.json
 # Agent binaries built at the repository root (go build ./cmd/stackurity)
 /stackurity
 /stackurity.exe
+# A Homebrew global npm directory in the macOS collector fixture.
+!internal/collect/darwin/testdata/mac/opt/homebrew/lib/node_modules/

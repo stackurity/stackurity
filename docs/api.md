@@ -364,13 +364,19 @@ Revokes an enrollment code.
 
 **Who:** anyone · outside `/api/v1`
 
-The agent installer script.
+The agent installer script for Linux hosts.
+
+### `GET /install/agent-macos.sh`
+
+**Who:** anyone · outside `/api/v1`
+
+The agent installer script for Macs (a LaunchDaemon; see [Macs](install.md#macs)). Without `STACKURITY_BASE_URL` the URL in it comes from the request's Host header, which must be a hostname or IP address with an optional port (400 otherwise); it is served with `Cache-Control: no-store`.
 
 ### `GET /download/agent/{platform}`
 
 **Who:** anyone · outside `/api/v1`
 
-The agent builds the installer downloads: `linux-amd64` and `linux-arm64`, each with a `.sha256`. They are bundled in the server image (`STACKURITY_AGENT_DIR`).
+The agent builds the installers download: `linux-amd64`, `linux-arm64`, `darwin-amd64` and `darwin-arm64`, each with a `.sha256`. They are bundled in the server image (`STACKURITY_AGENT_DIR`).
 
 ### `POST /ingest`
 

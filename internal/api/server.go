@@ -166,6 +166,7 @@ func (s *Server) Handler() http.Handler {
 	r.Get("/.well-known/openai-apps-challenge", s.openAIAppsChallenge)
 
 	r.Get("/install/agent.sh", s.installScript)
+	r.Get("/install/agent-macos.sh", s.installScriptMacOS)
 	r.Get("/download/agent/{platform}", s.downloadAgent)
 
 	// Slack's interactivity Request URL. Public, outside the session and

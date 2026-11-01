@@ -20,7 +20,7 @@ say() { printf 'stackurity: %s\n' "$*"; }
 die() { printf 'stackurity: error: %s\n' "$*" >&2; exit 1; }
 
 [ "$(id -u)" = 0 ] || die "run as root (pipe to 'sudo sh')"
-[ "$(uname -s)" = Linux ] || die "this installer is for Linux; see the documentation for other systems"
+[ "$(uname -s)" = Linux ] || die "this installer is for Linux; on macOS use $SERVER/install/agent-macos.sh"
 command -v systemctl >/dev/null 2>&1 || die "systemd is required"
 case "$(uname -m)" in
   x86_64 | amd64) ARCH=amd64 ;;

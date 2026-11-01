@@ -4,7 +4,7 @@ import { api, type Enrollment, type EnrollmentCreated } from "../api";
 import { useAction, useLoad } from "../hooks";
 import { absTime, plural } from "../format";
 import { Table, type Column } from "../components/Table";
-import { Card, Code, CodeBlock, EmptyState, ErrorBox, KeyValues, Loading, Notice, PageHeader, RelativeTime } from "../components/ui";
+import { Card, Code, CodeBlock, EmptyState, ErrorBox, KeyValues, Loading, Notice, PageHeader, RelativeTime, Tabs } from "../components/ui";
 import { confirmAction } from "../components/ConfirmDialog";
 
 const LOCAL_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
@@ -19,6 +19,14 @@ export function installCommand(code: string): { command: string; insecure: boole
   const env = `STACKURITY_ENROLL_CODE=${code}${insecure ? " STACKURITY_ALLOW_HTTP=1" : ""}`;
   return { command: `curl -fsSL ${origin}/install/agent.sh | sudo ${env} sh`, insecure };
 }
+
+/** The one-line installer for a Mac (agent-macos.sh, a LaunchDaemon). */
+export function macInstallCommand(code: string): { command: string; insecure: boolean } {
+  const { command, insecure } = installCommand(code);
+  return { command: command.replace("/install/agent.sh", "/install/agent-macos.sh"), insecure };
+}
+
+export type ServerOS = "linux" | "macos";
 
 /**
  * "Also check websites and apps on this server": the install code then
@@ -106,7 +114,7 @@ export function AddServerPage() {
       <PageHeader
         help="add-server"
         title="Add server"
-        sub="Create a one-time install command, then run it on the new Linux server. It installs the read-only agent and enrolls the server."
+        sub="Create a one-time install command, then run it on the new Linux server or Mac. It installs the read-only agent and enrolls the server."
       />
       {created ? (
         <InstallCommand created={created} onDone={() => setCreated(null)} />
@@ -134,7 +142,8 @@ export function AddServerPage() {
 }
 
 function InstallCommand({ created, onDone }: { created: EnrollmentCreated; onDone: () => void }) {
-  const { command, insecure } = installCommand(created.code);
+  const [os, setOS] = useState<ServerOS>("linux");
+  const { command, insecure } = os === "macos" ? macInstallCommand(created.code) : installCommand(created.code);
   const e = created.enrollment;
   return (
     <Card title="Install command">
@@ -152,7 +161,18 @@ function InstallCommand({ created, onDone }: { created: EnrollmentCreated; onDon
           </Notice>
         )}
         <div className="install-command">
-          <CodeBlock text={command} label="Install command" />
+          <Tabs<ServerOS>
+            label="Operating system of the server"
+            value={os}
+            onChange={setOS}
+            tabs={[
+              { id: "linux", label: "Linux" },
+              { id: "macos", label: "macOS" },
+            ]}
+          />
+          <div role="tabpanel" id={`panel-${os}`} aria-labelledby={`tab-${os}`} className="tabpanel">
+            <CodeBlock text={command} label={os === "macos" ? "Install command for macOS" : "Install command for Linux"} />
+          </div>
         </div>
         <KeyValues
           entries={[
@@ -162,31 +182,56 @@ function InstallCommand({ created, onDone }: { created: EnrollmentCreated; onDon
             ...(e.environment ? ([["Environment", e.environment]] as [string, string][]) : []),
           ]}
         />
-        <div className="grid-2 tight">
-          <div>
-            <h3>What the command does</h3>
-            <ul className="banner-list small">
-              <li>Downloads the agent from this server (Linux amd64 or arm64) and checks its checksum.</li>
-              <li>Creates an unprivileged <Code>stackurity</Code> user and enrolls the server with this code.</li>
-              <li>Installs a hardened systemd service that reports every 6 hours. Running it again upgrades the agent.</li>
-              <li>The agent only reads what is installed. It never installs or changes software.</li>
-            </ul>
+        {os === "linux" ? (
+          <div className="grid-2 tight">
+            <div>
+              <h3>What the command does</h3>
+              <ul className="banner-list small">
+                <li>Downloads the agent from this server (Linux amd64 or arm64) and checks its checksum.</li>
+                <li>Creates an unprivileged <Code>stackurity</Code> user and enrolls the server with this code.</li>
+                <li>Installs a hardened systemd service that reports every 6 hours. Running it again upgrades the agent.</li>
+                <li>The agent only reads what is installed. It never installs or changes software.</li>
+              </ul>
+            </div>
+            <div>
+              <h3>Requirements</h3>
+              <ul className="banner-list small">
+                <li>Linux with systemd</li>
+                <li>Root or sudo on the server</li>
+                <li>Outbound HTTPS from the server to this dashboard</li>
+              </ul>
+            </div>
           </div>
-          <div>
-            <h3>Requirements</h3>
-            <ul className="banner-list small">
-              <li>Linux with systemd</li>
-              <li>Root or sudo on the server</li>
-              <li>Outbound HTTPS from the server to this dashboard</li>
-            </ul>
+        ) : (
+          <div className="grid-2 tight">
+            <div>
+              <h3>What the command does</h3>
+              <ul className="banner-list small">
+                <li>Downloads the agent from this server (Apple silicon or Intel) and checks its checksum.</li>
+                <li>Creates a hidden, unprivileged <Code>_stackurity</Code> account and enrolls the Mac with this code.</li>
+                <li>Installs a LaunchDaemon that runs as that account and reports every 6 hours. Running it again upgrades the agent.</li>
+                <li>
+                  The agent only reads: the macOS version, applications, Homebrew packages and runtimes. Users&apos; home folders are
+                  private, so their own applications are reported as not checked.
+                </li>
+              </ul>
+            </div>
+            <div>
+              <h3>Requirements</h3>
+              <ul className="banner-list small">
+                <li>macOS 10.15 or later</li>
+                <li>An administrator account (sudo)</li>
+                <li>Outbound HTTPS from the Mac to this dashboard</li>
+              </ul>
+            </div>
           </div>
-        </div>
+        )}
         <p className="small">
           <strong>Next:</strong> the server appears under <Link to="/assets">Assets</Link> within a minute; applications
           appear as their own assets linked to it.
         </p>
         <p className="small muted">
-          Other ways: Windows and manual installs are described in the documentation (docs/install.md).
+          Other ways: Windows, MDM for Macs and manual installs are described in the documentation (docs/install.md).
         </p>
         <div className="form-actions">
           <button type="button" className="btn" onClick={onDone}>
