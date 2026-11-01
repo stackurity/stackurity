@@ -148,6 +148,10 @@ jobs:
       STACKURITY_COOKIE_SECURE: "false"
       STACKURITY_FEEDS: "off"
       STACKURITY_DATA_DIR: /tmp/stackurity
+      # A free Community key ("Stackurity CI", from the free-key issuer): a
+      # self-hosted server waits for one before the dashboard opens. Anyone
+      # can get one; it unlocks nothing paid.
+      STACKURITY_LICENSE: eyJ2IjoxLCJpZCI6ImNrX2NiY2Q1ZDk3YTkzMmRlNmIiLCJjdXN0b21lciI6IlN0YWNrdXJpdHkgQ0kiLCJuYW1lIjoiU3RhY2t1cml0eSBDSSIsImVkaXRpb24iOiJjb21tdW5pdHkiLCJtYXhfYXNzZXRzIjowLCJpc3N1ZWRfYXQiOiIyMDI2LTExLTAxVDE3OjQ4OjIwWiIsImV4cGlyZXNfYXQiOiIyMTI2LTEwLTA4VDE3OjQ4OjIwWiJ9.ZwnzCfVB4Yt_o-o4ziglboCXWIrZhkIp_kgnNyysRZXmfnRcsw9SFkZmoy2GokuMc62J8z_5NeM9jKIiV6FiCQ
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
