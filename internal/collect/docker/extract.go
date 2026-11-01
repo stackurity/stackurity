@@ -176,7 +176,7 @@ func (x *extractor) extractLayer(ctx context.Context, r io.Reader, l *layer) err
 			}
 		}
 		rel, ok := cleanRel(h.Name)
-		if !ok {
+		if !ok || !filepath.IsLocal(rel) {
 			continue
 		}
 		dir, base := path.Split(rel)
@@ -211,7 +211,7 @@ func (x *extractor) extractLayer(ctx context.Context, r io.Reader, l *layer) err
 		case tar.TypeLink:
 			// A hard link names another file of the same layer.
 			src, ok := cleanRel(h.Linkname)
-			if !ok || !ensureDir(l.dir, path.Dir(src)) {
+			if !ok || !filepath.IsLocal(src) || !ensureDir(l.dir, path.Dir(src)) {
 				continue
 			}
 			from := filepath.Join(l.dir, filepath.FromSlash(src))
