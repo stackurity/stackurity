@@ -19,7 +19,7 @@ func (f *fixture) addSchemeAsset(name, scheme string) {
 		model.AssetRef{Kind: model.AssetHost, Name: name, Environment: "production", Identifiers: []model.Identifier{{Scheme: scheme, Value: name}}})
 	b.Observations = []model.Observation{{Purl: "pkg:npm/lodash@4.17.15", Confidence: model.ConfidenceConfirmed, Scope: "runtime"}}
 	b.Complete = true
-	r, err := f.st.Ingest(ctx, b, 0)
+	r, err := f.st.Ingest(store.AllowSelftest(ctx), b, 0) // as an admin's selftest
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -138,7 +138,7 @@ func TestSelftestAssetSendsNothing(t *testing.T) {
 			Identifiers: []model.Identifier{{Scheme: "test", Value: "web-2"}, {Scheme: store.SelftestScheme, Value: "x"}}})
 	b.Observations = []model.Observation{{Purl: "pkg:npm/lodash@4.17.15", Confidence: model.ConfidenceConfirmed, Scope: "runtime"}}
 	b.Complete = true
-	r, err := g.st.Ingest(ctx, b, 0)
+	r, err := g.st.Ingest(store.AllowSelftest(ctx), b, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

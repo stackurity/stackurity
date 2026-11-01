@@ -187,7 +187,7 @@ func TestSelftest(t *testing.T) {
 	ingest := func(name string, ids ...model.Identifier) int64 {
 		b := model.NewBatch(model.Collector{ID: "t", Method: "selftest"}, model.AssetRef{Kind: model.AssetRepository, Name: name, Identifiers: ids})
 		b.Observations = []model.Observation{{Purl: "pkg:generic/x@1", Confidence: model.ConfidenceConfirmed}}
-		r, err := e.st.Ingest(ctx, b, 0)
+		r, err := e.st.Ingest(store.AllowSelftest(ctx), b, 0)
 		if err != nil {
 			t.Fatal(err)
 		}

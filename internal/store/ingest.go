@@ -51,6 +51,9 @@ func (s *Store) Ingest(ctx context.Context, b *model.ObservationBatch, tokenID i
 	if err := s.CheckWritable(ctx); err != nil {
 		return nil, err
 	}
+	if err := checkSelftestScheme(ctx, b); err != nil {
+		return nil, err
+	}
 	res := &IngestResult{Observations: len(b.Observations)}
 	err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
 		assetID, isNew, conflict, err := resolveAsset(ctx, tx, b)
