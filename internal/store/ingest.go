@@ -29,6 +29,9 @@ type IngestResult struct {
 	// AppsRemoved lists the applications on this host that the batch's
 	// app list (apps.dirs) no longer names, marked removed.
 	AppsRemoved []int64 `json:"apps_removed,omitempty"`
+	// ImagesRemoved lists the container images on this host that the
+	// batch's image list (images.refs) no longer names, marked removed.
+	ImagesRemoved []int64 `json:"images_removed,omitempty"`
 	// VEX is what importing the VEX embedded in an uploaded CycloneDX SBOM
 	// did (POST /sbom/import), and VEXNote why it was not imported.
 	VEX     *VEXImportResult `json:"vex,omitempty"`
@@ -150,6 +153,11 @@ func (s *Store) Ingest(ctx context.Context, b *model.ObservationBatch, tokenID i
 		if b.Apps != nil && b.Asset.Kind == model.AssetHost {
 			if res.AppsRemoved, err = removeGoneApps(ctx, tx, assetID, b, tok); err != nil {
 				return fmt.Errorf("removed applications: %w", err)
+			}
+		}
+		if b.Images != nil && b.Asset.Kind == model.AssetHost {
+			if res.ImagesRemoved, err = removeGoneImages(ctx, tx, assetID, b, tok); err != nil {
+				return fmt.Errorf("removed images: %w", err)
 			}
 		}
 		status := "ok"

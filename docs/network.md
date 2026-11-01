@@ -2,13 +2,15 @@
 
 Stackurity has no telemetry. Every outbound connection is listed below. The only requests that are not for your own data or integrations are the [update check](#update-check), which sends nothing about you, the [breached-password check](#breached-password-check), which sends five characters of a hash, and [feedback](#feedback), which a user sends on purpose. All three can be turned off.
 
-Started with nothing configured but its database, an empty install connects on its own to four hosts: `www.cisa.gov`, `endoflife.date` and `epss.empiricalsecurity.com` (the [feeds](#intelligence-feeds) every install has; the others come with inventory) and `api.github.com` (the [update check](#update-check), within 30 seconds of starting). With `STACKURITY_FEEDS=off` and `STACKURITY_UPDATE_CHECK=off` it connects to nothing but its database, and an agent reporting to it to nothing but the server. Every pull request checks both by starting the real server and refusing and recording every connection it tries ([`cmd/stackurity/egress_test.go`](../cmd/stackurity/egress_test.go)), so a new default destination fails CI until it is listed there and here.
+Started with nothing configured but its database, an empty install connects on its own to four hosts: `www.cisa.gov`, `endoflife.date` and `epss.empiricalsecurity.com` (the [feeds](#intelligence-feeds) every install has; the others come with inventory) and `api.github.com` (the [update check](#update-check), within 30 seconds of starting). With `STACKURITY_FEEDS=off` and `STACKURITY_UPDATE_CHECK=off` it connects to nothing but its database, and an agent reporting to it to nothing but the server. Every pull request checks both by starting the real server and refusing and recording every connection it tries ([`cmd/stackurity/egress_test.go`](../cmd/stackurity/egress_test.go)), so a new default destination fails CI until it is listed there and here. The same tests run in the licensed and Stackurity Cloud builds; Cloud is started with the least configuration it accepts (billing off: no Razorpay keys), and connects to the same four hosts and, with both switches off, to nothing.
 
 | Component | Destination | When | Data sent |
 |---|---|---|---|
 | Server: Git integrations | The repository URL you configure (HTTPS only) | On the integration's schedule, or when someone clicks *Run now* | A Git fetch request, plus the referenced token as an HTTP Basic header |
+| Server: GitHub App (only with `STACKURITY_GITHUB_APP_ID` and the rest set; [github-app.md](github-app.md)) | `api.github.com` and `github.com` (or your GitHub Enterprise Server, `STACKURITY_GITHUB_URL`) | At install (OAuth code exchange, `GET /user/installations`, `GET /app/installations/{id}`, revoking the user token); when listing an installation's repositories (after install or a webhook, and daily); for each scan of a granted repository; when an admin disconnects (uninstall) | The app's JWT, a short-lived installation token minted per scan, and a Git fetch of the granted repository with that token as an HTTP Basic header. Requests are checked against the organisation's private-network policy like a Git integration's |
 | Agent | Your Stackurity server | Every `--interval` | Hostname, machine-id, OS release, installed package list |
 | CLI `scan` / `sbom import` | Your Stackurity server | When run | Lockfile-derived component list, or the SBOM document |
+| Server: DigitalOcean droplet discovery | `api.digitalocean.com` | Only after an admin stores a DigitalOcean token, when the droplet list is opened or the token saved ([details](#digitalocean-droplet-discovery)) | `GET /v2/droplets` with the stored token |
 
 ### Update check
 
@@ -88,6 +90,18 @@ Clusters connected with the Kubernetes reporter add no connection from the serve
 
 The server hands each plugin run the workspace's private-network policy, and the `kubernetes` plugin refuses to connect to an internal address the workspace may not reach. A workspace other than the default one needs its API server's range in `STACKURITY_PRIVATE_CIDRS`.
 
+### AWS connections
+
+Only with `STACKURITY_AWS_PRINCIPAL_ARN` set ([install.md](install.md#aws-managed-services)); otherwise none of these requests is made. Each goes through the organisation's private-network policy like the server's other requests for an organisation, without following redirects.
+
+| Destination | When | Data sent |
+|---|---|---|
+| `sts.us-east-1.amazonaws.com` (its sessions are valid in every region) | When a stack reports its role or an administrator pastes or verifies it (twice: with the external ID, and without it to check it is required); before each run of the connection's integration; when the AWS page lists instances or installs | `AssumeRole` for the connection's role and external ID, a session name `stackurity-w<organisation>-c<connection>`, signed with the server's AWS credentials |
+| `ssm.<region>.amazonaws.com` | When an administrator lists instances, installs the agent, or reads install results | `DescribeInstanceInformation`; `SendCommand` (`AWS-RunShellScript` with the installer command: this server's URL and a single-use enrollment code); `GetCommandInvocation`. Signed with the connection role's session |
+| `*.amazonaws.com` (the plugin) | On the integration's schedule | The `aws-managed` plugin's read-only calls, with the role's session |
+
+Inbound, a stack's Lambda function calls `POST /api/v1/aws/callback` once, from AWS, with the role's ARN, external ID and stack ID and its signed token. Without it, the role ARN is pasted. The SSM command makes each instance download the installer and the agent from your server (`/install/agent.sh`, `/download/agent/...`) and enroll.
+
 ### Notification channels
 
 Only the channels you configure are contacted: your SMTP server, Slack or Teams webhook URLs, your webhook endpoints and your Jira site. Redirects are never followed. Destinations are checked against the workspace's private-network policy when the connection is made, so a name that later resolves to an internal address is refused too. Messages contain incident titles, asset and component names, and links to the dashboard.
@@ -104,6 +118,10 @@ A ServiceNow channel calls the configured instance only: the Table API (`/api/no
 
 Syft fetches image manifests and layers from the registry in the image reference. With a secret reference configured, the credential is sent to that registry only. For a workspace that may not reach private networks, Syft connects through a proxy inside the server that checks every connection (including redirects to blob storage) against the same policy.
 
+### DigitalOcean droplet discovery
+
+Only when an administrator has stored a DigitalOcean API token (**Assets → Add server → For many servers → DigitalOcean**), and only while someone opens the droplet list or saves the token: `GET https://api.digitalocean.com/v2/droplets` with that token, 200 droplets a page, at most 25 pages. Nothing is sent but the request (the page, the page size and an optional tag). Redirects are not followed and the next page is requested from the same host by number, so the token goes nowhere else. The connection is checked against the workspace's private-network policy. Without a stored token nothing is contacted; **Disconnect** deletes it. Stackurity never connects to the droplets themselves.
+
 ### AI assistants' client metadata
 
 When an AI assistant identifies itself with a client ID metadata document (its client id is an HTTPS URL; see [ai-assistants.md](ai-assistants.md#how-sign-in-works)), the server fetches that URL once an hour at most while someone connects it: a GET over HTTPS, without redirects, at most 64 KiB in 5 seconds, never to private, loopback or cloud metadata addresses. Nothing is sent but the request. Assistants that register themselves instead cause no outbound request.
@@ -115,6 +133,10 @@ Mirror the OSV bucket layout (`<ecosystem>/all.zip`, `<ecosystem>/modified_id.cs
 ### Inbound: Slack's interactivity requests
 
 The only inbound request from a third party is optional. A Slack app set up to act from inside Slack sends each button click to `POST /api/v1/integrations/slack/actions` on your server, from Slack's addresses, over HTTPS. It carries Slack's payload (the Slack workspace and user ids and names, the message, the button's value with the channel id and fix id, and a `response_url`) and is verified with the channel's signing secret before anything is read from the database beyond that channel. Without a Slack app nothing calls it, and every request to it is refused (401). To allow it through a firewall or reverse proxy, allow that one path from the internet; it needs no session and no other path. It is limited to 600 requests a minute per address.
+
+### Inbound: GitHub App webhooks
+
+With the [GitHub App](github-app.md) configured, GitHub posts the app's events (installed, suspended, uninstalled, repositories added or removed, pushes) to `POST /api/v1/integrations/github/webhook`, from GitHub's addresses. Each is verified with the app's webhook secret (HMAC-SHA256 of the exact body) before anything else is read, and handled once. Without the app the path answers 404. To allow it through a firewall or reverse proxy, allow that one path from the internet (and `/integrations/github/callback`, a dashboard page opened in the browser). It is limited to 1,200 requests a minute per address.
 
 ### Inbound: AI assistants
 

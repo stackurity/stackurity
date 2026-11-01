@@ -264,7 +264,12 @@ func (s *Server) installKubernetes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	p := KubernetesManifestParams{Server: s.publicURL(r), Image: s.reporterImage(), ClusterName: q.Get("cluster")}
+	base, err := s.publicURL(r)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	p := KubernetesManifestParams{Server: base, Image: s.reporterImage(), ClusterName: q.Get("cluster")}
 	if p.ClusterName != "" && !clusterNameRE.MatchString(p.ClusterName) {
 		writeError(w, 400, "bad_request", "cluster may contain letters, digits, '.', '_' and '-' (up to 100)")
 		return
