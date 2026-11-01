@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/netip"
 	"os"
 	"path"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -234,21 +236,112 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 }
 
 // installScript serves the agent installer with this server's URL filled in.
+// Without STACKURITY_BASE_URL the URL comes from the request's Host header,
+// which the client chooses: publicURL accepts only a hostname or IP address
+// with an optional port, and the script receives it single-quoted as well,
+// so nothing in it can run as shell code. The response depends on Host, so
+// caches must neither share nor keep it.
 func (s *Server) installScript(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Add("Vary", "Host")
+	base, err := s.publicURL(r)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if !scriptSafeURL.MatchString(base) {
+		// Only STACKURITY_BASE_URL can get here: a Host-derived URL is
+		// already narrower than this.
+		writeError(w, 500, "misconfigured", "STACKURITY_BASE_URL must be an http(s) URL without spaces, quotes or shell characters")
+		return
+	}
+	script := strings.ReplaceAll(agentInstallScript, "'__SERVER__'", shSingleQuoted(base))
 	w.Header().Set("Content-Type", "text/x-shellscript; charset=utf-8")
-	_, _ = w.Write([]byte(strings.ReplaceAll(agentInstallScript, "__SERVER__", s.publicURL(r))))
+	_, _ = w.Write([]byte(strings.ReplaceAll(script, "__SERVER__", base)))
+}
+
+// scriptSafeURL is what the installer will put in a script: an http(s) URL
+// of unreserved characters plus the delimiters a host, port and path need.
+// No quotes, whitespace, $, `, \, ;, &, |, parentheses or redirections.
+var scriptSafeURL = regexp.MustCompile(`^https?://[A-Za-z0-9._~:/\[\]%@+,=-]+$`)
+
+// shSingleQuoted quotes v for a POSIX shell: inside single quotes nothing is
+// special, and a quote is written as quote, backslash, quote, quote.
+func shSingleQuoted(v string) string {
+	return "'" + strings.ReplaceAll(v, "'", `'\''`) + "'"
 }
 
 // publicURL is the configured base URL, or the URL this request came in on.
-func (s *Server) publicURL(r *http.Request) string {
+// The second is built from the Host header, so it is refused (400) unless
+// the header is a hostname or IP address with an optional port.
+func (s *Server) publicURL(r *http.Request) (string, error) {
 	if s.BaseURL != "" {
-		return strings.TrimRight(s.BaseURL, "/")
+		return strings.TrimRight(s.BaseURL, "/"), nil
+	}
+	if !validHostHeader(r.Host) {
+		return "", badRequest("the Host header is not a hostname or IP address; set STACKURITY_BASE_URL on the server")
 	}
 	scheme := "http"
 	if r.TLS != nil || (s.TrustProxy && viaTrustedProxy(r) && r.Header.Get("X-Forwarded-Proto") == "https") {
 		scheme = "https"
 	}
-	return scheme + "://" + r.Host
+	return scheme + "://" + r.Host, nil
+}
+
+// hostLabel is one DNS label. Underscores are allowed (container and
+// compose service names have them); they mean nothing to a shell.
+var hostLabel = regexp.MustCompile(`^[A-Za-z0-9_]([A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?$`)
+
+// validHostHeader reports whether h is host[:port]: a DNS name, an IPv4
+// address, or a bracketed IPv6 address (no zone), with a numeric port.
+func validHostHeader(h string) bool {
+	if h == "" || len(h) > 262 {
+		return false
+	}
+	host, port := h, ""
+	if strings.HasPrefix(h, "[") {
+		end := strings.IndexByte(h, ']')
+		if end < 0 {
+			return false
+		}
+		host, port = h[1:end], h[end+1:]
+		a, err := netip.ParseAddr(host)
+		if err != nil || !a.Is6() || a.Zone() != "" {
+			return false
+		}
+		if port == "" {
+			return true
+		}
+		if port[0] != ':' {
+			return false
+		}
+		port = port[1:]
+		return validPort(port)
+	}
+	if i := strings.LastIndexByte(h, ':'); i >= 0 {
+		host, port = h[:i], h[i+1:]
+		if !validPort(port) {
+			return false
+		}
+	}
+	if _, err := netip.ParseAddr(host); err == nil {
+		return !strings.Contains(host, ":") // IPv6 must be bracketed
+	}
+	host = strings.TrimSuffix(host, ".")
+	if host == "" || len(host) > 253 {
+		return false
+	}
+	for _, l := range strings.Split(host, ".") {
+		if !hostLabel.MatchString(l) {
+			return false
+		}
+	}
+	return true
+}
+
+func validPort(p string) bool {
+	n, err := strconv.Atoi(p)
+	return err == nil && len(p) <= 5 && strings.Trim(p, "0123456789") == "" && n >= 1 && n <= 65535
 }
 
 var agentPlatform = regexp.MustCompile(`^linux-(amd64|arm64)(\.sha256)?$`)
