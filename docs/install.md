@@ -414,7 +414,27 @@ setfacl -R -m u:stackurity:rX /var/www/example.com/public       # what is there 
 setfacl -R -d -m u:stackurity:rX /var/www/example.com/public    # files created later
 ```
 
-With `ProtectHome=yes`, applications under `/home` are invisible; use `ProtectHome=read-only`. Applications running inside containers are not read this way; scan their images with a container image integration.
+With `ProtectHome=yes`, applications under `/home` are invisible; use `ProtectHome=read-only`. Applications running inside Docker containers are not read this way: turn on [Docker containers](#docker-containers) below, or scan their images from a registry with a [container image integration](#container-images).
+
+#### Docker containers
+
+With `--docker` (or `STACKURITY_DOCKER=true`), off by default, the agent also checks the software inside the host's running Docker containers, including images built on the host and never pushed to a registry:
+
+```sh
+stackurity agent --docker            # or STACKURITY_DOCKER=true
+```
+
+On each report it asks the Docker daemon, over its Unix socket (`--docker-socket`, `STACKURITY_DOCKER_SOCKET`, default `/var/run/docker.sock`), for the running containers, and reads each distinct image once however many containers use it. An image is exported the way `docker save` does (`GET /images/{id}/get`), streamed into a temporary directory under `TMPDIR`, or `/var/tmp` when that is not set (on disk, where `/tmp` may be memory), and read there with the collectors that read the host: the dpkg or apk database (rpm only when the host has the `rpm` binary), runtimes by their path, global libraries, and the applications [discovery](#applications-deployed-on-the-host) finds plus the image's working directory. Nothing runs inside a container or from an image, no registry is contacted, and the directory is deleted as soon as the image is read. An image ID's contents never change, so an image is read again only when its ID is new to the agent or after 7 days; other reports reuse the last reading. Images whose unpacked size Docker reports above `--docker-max-image-mb` (`STACKURITY_DOCKER_MAX_IMAGE_MB`, default 2048) are skipped, as is one that turns out larger while it is unpacked, or that would leave less than 256 MiB free on the temporary directory's disk. One image is unpacked at a time, so the disk needed is about the size of the largest image; memory use does not grow with image size. Reading one image stops after 20 minutes, and all of them after 2 hours per report.
+
+Each image is its own asset of kind `image`, linked to the host (`runs_on`) and named by the tag its containers run ("postgres:16 on web-1"), or by its short image ID when it has no tag (a local build whose tag moved on). It is identified by that tag on that host, so a rebuilt image under the same tag updates its asset (its `image_id` attribute changes, and what the new build no longer has is marked removed) and the same tag on two hosts is two assets. Its attributes include `image_id`, `digest` (the registry digest, when it was pulled), `tags`, `containers` and `platform`. An image that no running container uses any more is marked removed the way a vanished application is: its findings resolve as removed and its history is kept. What could not be checked is coverage, never an empty, clean image: no Docker on the host (`skipped`), a socket the agent may not use (`failed`), an image over the size limit (`skipped`), an image that could not be exported or read (`failed`; nothing it reported before is taken as gone), an image with no OS package database (a scratch or distroless image: `unsupported`). Go and Rust binaries inside an image are not read for their modules; an image built on Oracle Linux or another RPM distribution needs the host's `rpm` binary.
+
+**Access to the Docker socket is equivalent to root on the host**: anyone who can use it can start a privileged container that mounts the host's filesystem. The agent only lists containers, inspects images and exports them, but giving its user the socket gives that user root in effect. The installer does this only when asked: add `STACKURITY_DOCKER=1` to the install command (**Add server** has an **Also check Docker containers** option that adds it):
+
+```sh
+curl -fsSL https://stackurity.example.com/install/agent.sh | sudo STACKURITY_ENROLL_CODE=enr_... STACKURITY_DOCKER=1 sh
+```
+
+It sets `STACKURITY_DOCKER=true` in `/etc/stackurity/agent.env` and adds `SupplementaryGroups=` with the socket's group (usually `docker`) to the service unit, rather than changing `/etc/group`. It refuses a socket owned by group `root`, and rootless Docker is not supported. The rest of the unit's hardening stays as it is. Running the installer again keeps the setting; `STACKURITY_DOCKER=0` turns it off again (the images reported until then stay, with their last reading). For a unit written by hand, add `SupplementaryGroups=docker` and `Environment=STACKURITY_DOCKER=true`. A read-only Docker API proxy in front of the socket would narrow what the agent's user could do, but the agent needs image export, which such proxies have to allow and which hands out every image's contents anyway; it is left to operators who already run one (point `--docker-socket` at it).
 
 ### Repositories
 
