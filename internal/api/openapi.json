@@ -10209,6 +10209,128 @@
      }
     }
    }
+  },
+  "/community-keys": {
+   "post": {
+    "operationId": "post_community_keys",
+    "summary": "Ask for a free self-hosted key (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. `email`, `name`, `company` (optional), challenge token and `accept_terms`; emails a one-time link. Limited per address, per email and for the service\n\nRole: none",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "none",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/community-keys/verify": {
+   "post": {
+    "operationId": "post_community_keys_verify",
+    "summary": "Issue a free self-hosted key from the emailed link (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. Uses the emailed token once: answers the Community key (`key`, `key_id`, `email`) and emails it\n\nRole: none",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "none",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/admin/community-keys": {
+   "get": {
+    "operationId": "get_admin_community_keys",
+    "summary": "The free self-hosted keys issued (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. `total`, `emails`, `last_30_days` and the newest `items`\n\nRole: instance admin",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "instance admin",
+    "parameters": [
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
   }
  },
  "components": {

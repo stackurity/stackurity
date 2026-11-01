@@ -313,6 +313,18 @@ Starts a sign-up: email, name, organisation, password, challenge token (action `
 
 Uses the emailed token once: creates the account and the organisation on its trial, and starts a session.
 
+### `POST /community-keys`
+
+**Who:** anyone · Stackurity Cloud
+
+Asks for a free key for a self-hosted server ([The free key](install.md#the-free-key)): `email`, `name`, `company` (optional), challenge token (action `signup`) and `accept_terms`. Limited per address (5 an hour), per email (3 an hour) and for the service. Disposable and mail-less domains answer `400 email_not_accepted`; otherwise `202 check_email`, and the link `/self-hosted-key/verify#ckr_...` is emailed (valid 24 hours). 404 where the server issues no free keys.
+
+### `POST /community-keys/verify`
+
+**Who:** anyone · Stackurity Cloud
+
+`{"token"}` from the emailed link, once: issues a Community key and answers `key`, `key_id` and `email`; the key is emailed too. 410 for a used or expired link. Who got a key (email, name, company, when, key id) is recorded; nothing about anyone's servers is received.
+
 The assistants a person has connected (`/assistants`) and the OAuth consent page are under [AI assistants, OAuth and MCP](#ai-assistants-oauth-and-mcp).
 
 ## Setup
@@ -1596,6 +1608,12 @@ Cancels the plan at the end of the period; the organisation then becomes read-on
 **Who:** admin · Stackurity Cloud
 
 Invoices of the organisation's subscriptions.
+
+### `GET /admin/community-keys`
+
+**Who:** instance admin · Stackurity Cloud
+
+The free self-hosted keys issued: `total`, `emails` (distinct), `last_30_days`, and `items` (`id`, `key_id`, `email`, `name`, `company`, `issued_at`), newest first; `?limit=` 1 to 500, default 100.
 
 ### `PUT /admin/trials/{id}`
 
