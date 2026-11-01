@@ -1078,7 +1078,14 @@ export const INTEGRATION_KINDS = ["git_repository", "container_image", "plugin"]
 export type IntegrationKind = (typeof INTEGRATION_KINDS)[number];
 
 /** Union of the per-kind config objects; check `kind` before reading. */
-export type IntegrationConfig = Partial<GitRepoConfig> & Partial<ContainerImageConfig> & Partial<PluginIntegrationConfig>;
+/** A repository granted to the GitHub App (kind github_app); set by the app, never edited. */
+export interface GitHubAppIntegrationConfig {
+  installation_id: number;
+  repository_id: number;
+  full_name: string;
+}
+
+export type IntegrationConfig = Partial<GitRepoConfig> & Partial<ContainerImageConfig> & Partial<PluginIntegrationConfig> & Partial<GitHubAppIntegrationConfig>;
 
 export interface Integration {
   id: number;
@@ -2196,6 +2203,36 @@ export interface SlackOAuthResult {
   return_to: string;
   team_name: string;
   slack_channel: string;
+}
+
+/** GET /integrations/github: the Stackurity GitHub App ("Install on GitHub"). */
+export interface GitHubInstallation {
+  installation_id: number;
+  account_login: string;
+  account_type: string;
+  repository_selection: string;
+  status: "active" | "suspended" | "deleted" | string;
+  note: string;
+  installed_by: number | null;
+  installed_at: string;
+  updated_at: string;
+  last_sync: string | null;
+  repositories: number;
+}
+
+export interface GitHubAppStatus {
+  configured: boolean;
+  app_url?: string;
+  installations: GitHubInstallation[];
+}
+
+export const NO_GITHUB_APP: GitHubAppStatus = { configured: false, installations: [] };
+
+/** POST /integrations/github/setup */
+export interface GitHubSetupResult {
+  installation?: GitHubInstallation;
+  requested?: boolean;
+  return_to: string;
 }
 
 /** Route choices saved before "Add to Slack" during onboarding (sessionStorage). */

@@ -23,6 +23,7 @@ import (
 	"github.com/stackurity/stackurity/internal/auth"
 	"github.com/stackurity/stackurity/internal/awsconnect"
 	"github.com/stackurity/stackurity/internal/db"
+	"github.com/stackurity/stackurity/internal/githubapp"
 	"github.com/stackurity/stackurity/internal/health"
 	"github.com/stackurity/stackurity/internal/metrics"
 	"github.com/stackurity/stackurity/internal/model"
@@ -123,6 +124,9 @@ type Server struct {
 	// SlackRespond posts an answer to a Slack response_url (already checked
 	// to be Slack's); nil posts it over HTTPS. Tests capture answers here.
 	SlackRespond func(ctx context.Context, responseURL string, body []byte) error
+	// GitHubApp is the Stackurity GitHub App ("Install on GitHub"); nil
+	// turns it off (github_app.go).
+	GitHubApp *githubapp.App
 	// OpenAIAppsChallenge is served as text/plain at
 	// /.well-known/openai-apps-challenge, for OpenAI's domain check when an
 	// app is submitted (STACKURITY_OPENAI_APPS_CHALLENGE); empty answers 404.
@@ -193,6 +197,10 @@ func (s *Server) Handler() http.Handler {
 	// Slack requires; signed in, the dashboard page that picks the
 	// organisation and starts Add to Slack (notify_setup.go).
 	r.Get("/integrations/slack/install", s.slackDirectInstall)
+	// The Stackurity GitHub App's webhook URL (installation, repositories
+	// granted or removed, pushes), verified with the app's webhook secret
+	// (github_app.go).
+	r.With(s.limitAddress("github-webhook", limitGitHubWebhook, "too many requests")).Post("/api/v1/integrations/github/webhook", s.githubWebhook)
 	// One-click unsubscribe and "never email me again" from mail clients
 	// (RFC 8058), signed or single-use tokens in the address.
 	r.With(s.limitAddress("email-links", limitEmailConfirm, "too many attempts; wait a minute")).Post("/email/unsubscribe/one-click", s.oneClick(s.answerUnsubscribe))
@@ -363,6 +371,7 @@ func (s *Server) Handler() http.Handler {
 				r.Post("/assets/{id}/relations", s.addRelation)
 				r.Delete("/assets/{id}/relations", s.deleteRelation)
 				r.Get("/integrations", s.listIntegrations)
+				r.Get("/integrations/github", s.listGitHubInstallations)
 				r.With(s.requireWritable).Post("/integrations/{id}/run", s.runIntegration)
 				r.Post("/feeds/{name}/refresh", s.refreshFeed)
 				r.With(s.requireWritable).Post("/evaluate", s.reevaluate)
@@ -441,6 +450,10 @@ func (s *Server) Handler() http.Handler {
 				r.Post("/email-recipients/resend", s.resendEmailRecipient)
 				r.With(s.requireWritable).Post("/integrations/slack/install", s.startSlackInstall)
 				r.With(s.requireWritable).Post("/integrations/slack/oauth", s.finishSlackInstall)
+				r.With(s.requireWritable).Post("/integrations/github/install", s.startGitHubInstall)
+				r.With(s.requireWritable).Post("/integrations/github/setup", s.finishGitHubInstall)
+				r.With(s.requireWritable).Post("/integrations/github/installations/{installation_id}/sync", s.syncGitHubInstallation)
+				r.Delete("/integrations/github/installations/{installation_id}", s.disconnectGitHubInstallation)
 				r.With(s.requireWritable).Post("/deliveries/{id}/retry", s.retryDelivery)
 				s.proAdminRoutes(r)
 				r.Get("/secrets", s.listSecrets)

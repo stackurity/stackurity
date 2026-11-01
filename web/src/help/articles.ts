@@ -458,6 +458,7 @@ stackurity.exe agent --interval 6h`,
     where: ["Settings", "Integrations"],
     keywords: "git github gitlab lockfile npm composer repository ci",
     body: [
+      { note: "On GitHub, with the Stackurity GitHub App on your server, [Install on GitHub](help:github-app) is simpler: no token or CI step." },
       { h: "Option A: the server clones it on a schedule" },
       {
         steps: [
@@ -484,6 +485,53 @@ stackurity.exe agent --interval 6h`,
       {
         p: "Supported lockfiles: npm, yarn (v1 and Berry), pnpm, Composer, Poetry, Pipenv, pinned `requirements.txt`, Go modules, Cargo, Bundler, NuGet `packages.lock.json`, and `pubspec.lock`. Others (Maven, Gradle, …) are shown as unsupported coverage, never silently ignored.",
       },
+    ],
+  },
+  {
+    id: "github-app",
+    title: "Install on GitHub (the Stackurity GitHub App)",
+    section: "Adding servers and sources",
+    summary: "Cover your GitHub repositories in one click: pick them on GitHub, no token to create or renew.",
+    where: ["Settings", "Integrations", "Git repository"],
+    keywords: "github app install repositories token organisation private repository webhook push",
+    body: [
+      { p: "Where your Stackurity server has the GitHub App (Stackurity Cloud does), you don't need a token or a CI step to scan your GitHub repositories." },
+      {
+        steps: [
+          "Go to **Settings ▸ Integrations** and, on the **Git repository** card, click **Install on GitHub** (admins).",
+          "On GitHub, pick the account or organisation, then **All repositories** or **Only select repositories**, and click **Install**. Installing on an organisation needs an owner of it; a member can only request it.",
+          "GitHub brings you back to Stackurity. Each repository appears under **Active integrations**, and the first results arrive within minutes.",
+        ],
+      },
+      { h: "What the app can do" },
+      {
+        list: [
+          "It reads the repositories you picked, and nothing else: **Contents** and **Metadata**, read-only. It cannot push, open pull requests or see other repositories.",
+          "Each scan uses a token GitHub issues for that one repository, for an hour at most. Stackurity never stores it.",
+          "The scan is a shallow clone that reads lockfiles and is deleted afterwards. Hooks, submodules, LFS and scripts never run.",
+        ],
+      },
+      { h: "When repositories are scanned" },
+      {
+        list: [
+          "Right after you install, then every 6 hours (change it per repository under **Settings ▸ Integrations**).",
+          "When a push to the default branch changes a lockfile or manifest (`package-lock.json`, `go.mod`, `composer.json` and the like). Pushes to other branches, or that change only other files, don't trigger a scan.",
+          "Repositories you add or remove on GitHub are followed. A removed repository's issues are closed as removed; the asset and its history stay.",
+        ],
+      },
+      { h: "Change or remove it" },
+      {
+        list: [
+          "**Add or remove repositories**: on GitHub (the link on the Git repository card), under the installation's repository access.",
+          "**Switch one repository off**: open it under **Settings ▸ Integrations** and switch it off.",
+          "**Disconnect**: stops scanning, keeps the history, and uninstalls the app from that GitHub account.",
+          "Suspending or uninstalling the app on GitHub switches its repositories off here, with a note.",
+        ],
+      },
+      {
+        note: "A GitHub account or organisation can be connected to one Stackurity organisation only. When the app is at your organisation's asset limit, new repositories wait until there is room; the card says how many.",
+      },
+      { p: "No GitHub App on your server? Use a [Git integration or a CI scan](help:repositories). Operators: see `docs/github-app.md` to set one up." },
     ],
   },
   {

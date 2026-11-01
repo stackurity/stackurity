@@ -131,8 +131,22 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/integrations/slack/oauth": {class: "create", body: func(*tenantFx) any {
 		return map[string]string{"code": "c", "state": "guessed"}
 	}},
-	"GET /api/v1/notification-options": {class: "list"},
-	"GET /api/v1/email-recipients":     {class: "list"},
+	// The Stackurity GitHub App (github_app_test.go): the webhook is public
+	// and verified by the app's webhook secret (404 without the app); B's
+	// install starts in B and a guessed state is refused; A's installation
+	// cannot be listed, synced or disconnected by B.
+	"POST /api/v1/integrations/github/webhook": {class: "public", body: func(a *tenantFx) any {
+		return map[string]any{"action": "deleted", "installation": map[string]any{"id": a.int("githubinstall")}}
+	}},
+	"GET /api/v1/integrations/github":          {class: "list"},
+	"POST /api/v1/integrations/github/install": {class: "create", body: func(*tenantFx) any { return map[string]string{"return_to": "/settings/integrations"} }},
+	"POST /api/v1/integrations/github/setup": {class: "create", body: func(a *tenantFx) any {
+		return map[string]any{"code": "c", "state": "guessed", "installation_id": a.int("githubinstall")}
+	}},
+	"POST /api/v1/integrations/github/installations/{installation_id}/sync": {class: "object", obj: map[string]string{"installation_id": "githubinstall"}},
+	"DELETE /api/v1/integrations/github/installations/{installation_id}":    {class: "object", obj: map[string]string{"installation_id": "githubinstall"}},
+	"GET /api/v1/notification-options":                                      {class: "list"},
+	"GET /api/v1/email-recipients":                                          {class: "list"},
 	"POST /api/v1/email-recipients/resend": {class: "create", body: func(*tenantFx) any {
 		return map[string]string{"email": "outside@example.com"}
 	}},
@@ -762,6 +776,11 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 		t.Fatalf("%s assistants: %d %+v", tag, code, conns)
 	}
 	set("assistant", conns.Items[0].ID)
+	gi, err := e.st.BindGitHubInstallation(ctx, store.GitHubInstallation{InstallationID: 900000 + ws, AccountLogin: "gh-" + tag, AccountType: "Organization"}, me.User.ID)
+	if err != nil {
+		t.Fatalf("%s github installation: %v", tag, err)
+	}
+	set("githubinstall", gi.InstallationID)
 	if eeFixtures != nil {
 		eeFixtures(t, e, f)
 	}

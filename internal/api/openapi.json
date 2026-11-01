@@ -9457,6 +9457,231 @@
     }
    }
   },
+  "/integrations/github": {
+   "get": {
+    "operationId": "get_integrations_github",
+    "summary": "GitHub App status and installations",
+    "description": "`configured` (whether this server has the Stackurity GitHub App; with `app_url`) and `installations`, this organisation's GitHub accounts with `status` (`active`, `suspended`, `deleted`), `note` and the number of `repositories`\n\nRole: engineer",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "engineer",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/github/install": {
+   "post": {
+    "operationId": "post_integrations_github_install",
+    "summary": "Start Install on GitHub",
+    "description": "`{\"return_to\": \"/settings/integrations\"}` (a dashboard path). Answers `url`, the app's install page on GitHub with a single-use state bound to the caller and organisation (10 minutes). 404 `not_configured` without the Stackurity GitHub App (STACKURITY_GITHUB_APP_ID, ...)\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/github/setup": {
+   "post": {
+    "operationId": "post_integrations_github_setup",
+    "summary": "Finish Install on GitHub",
+    "description": "`{\"state\", \"code\", \"installation_id\", \"setup_action\"}` from GitHub's redirect to `/integrations/github/callback`. The state must be the caller's, in this organisation, unused and fresh (400 `github_state` otherwise, before GitHub is called). The installation must be visible to the person's GitHub account (from `code`) and confirmed with the app's JWT (403 `github_installation`), and not held by another organisation (409 `github_installation_taken`). 201: `installation`, `return_to`\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/github/installations/{installation_id}/sync": {
+   "post": {
+    "operationId": "post_integrations_github_installation_sync",
+    "summary": "List an installation's repositories again",
+    "description": "Queues a listing of the repositories the installation grants on GitHub (202)\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "installation_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/github/installations/{installation_id}": {
+   "delete": {
+    "operationId": "delete_integrations_github_installation",
+    "summary": "Disconnect a GitHub account",
+    "description": "Switches its repositories' integrations off (history kept), removes the binding and uninstalls the app from that GitHub account (`uninstalled_on_github`)\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "installation_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/github/webhook": {
+   "post": {
+    "operationId": "post_integrations_github_webhook",
+    "summary": "GitHub App webhook (verified by GitHub's signature)",
+    "description": "The Stackurity GitHub App's webhook URL. 401 unless `X-Hub-Signature-256` is the HMAC-SHA256 of the body with the app's webhook secret; 400 without `X-GitHub-Event` or `X-GitHub-Delivery`; a delivery already handled answers `{\"result\": \"duplicate\"}`. Handles `installation`, `installation_repositories` and `push`; 404 without the app\n\nRole: none: GitHub's signature (the app's webhook secret)",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "none: GitHub's signature (the app's webhook secret)",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/email-recipients/block": {
    "post": {
     "operationId": "post_email_recipients_block",
