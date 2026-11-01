@@ -12,12 +12,33 @@ const LOCAL_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
 /**
  * The one-line installer for a new Linux host. The installer refuses plain
  * HTTP to anything but localhost unless STACKURITY_ALLOW_HTTP=1 is set.
+ * With docker, it also gives the agent access to the Docker socket
+ * (STACKURITY_DOCKER=1) so it checks the images of running containers.
  */
-export function installCommand(code: string): { command: string; insecure: boolean } {
+export function installCommand(code: string, docker = false): { command: string; insecure: boolean } {
   const { origin, protocol, hostname } = window.location;
   const insecure = protocol === "http:" && !LOCAL_HOSTS.includes(hostname);
-  const env = `STACKURITY_ENROLL_CODE=${code}${insecure ? " STACKURITY_ALLOW_HTTP=1" : ""}`;
+  const env = `STACKURITY_ENROLL_CODE=${code}${insecure ? " STACKURITY_ALLOW_HTTP=1" : ""}${docker ? " STACKURITY_DOCKER=1" : ""}`;
   return { command: `curl -fsSL ${origin}/install/agent.sh | sudo ${env} sh`, insecure };
+}
+
+/**
+ * "Also check Docker containers": adds STACKURITY_DOCKER=1 to the install
+ * command. Off by default: it gives the agent's user access to the Docker
+ * socket, which is equivalent to root on the server.
+ */
+export function CheckDocker({ id, checked, onChange }: { id: string; checked: boolean; onChange: (on: boolean) => void }) {
+  return (
+    <>
+      <label className="check" htmlFor={id}>
+        <input id={id} type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} /> Also check Docker containers
+      </label>
+      <p className="hint">
+        Reads the images of running containers (OS packages and app libraries), including images built on the server. The agent's user
+        joins the group of the Docker socket, which is equivalent to root on the server. It only lists containers and exports images.
+      </p>
+    </>
+  );
 }
 
 /**
@@ -134,7 +155,8 @@ export function AddServerPage() {
 }
 
 function InstallCommand({ created, onDone }: { created: EnrollmentCreated; onDone: () => void }) {
-  const { command, insecure } = installCommand(created.code);
+  const [docker, setDocker] = useState(false);
+  const { command, insecure } = installCommand(created.code, docker);
   const e = created.enrollment;
   return (
     <Card title="Install command">
@@ -151,6 +173,9 @@ function InstallCommand({ created, onDone }: { created: EnrollmentCreated; onDon
             from there instead.
           </Notice>
         )}
+        <div className="field">
+          <CheckDocker id="ic-docker" checked={docker} onChange={setDocker} />
+        </div>
         <div className="install-command">
           <CodeBlock text={command} label="Install command" />
         </div>

@@ -210,6 +210,11 @@ const FeatureUploadProject = "upload_project"
 // missing from it removed (0.14). Older servers refuse the field.
 const FeatureAppList = "app_list"
 
+// FeatureHostImages, in Meta.Features, means the server scopes host-image
+// identities to their host and takes a host batch's images.refs (the
+// agent's --docker).
+const FeatureHostImages = "host_images"
+
 // Meta is the server's anonymous description of itself (GET /meta).
 type Meta struct {
 	Version       string   `json:"version"`

@@ -3,6 +3,12 @@
 #
 #   curl -fsSL __SERVER__/install/agent.sh | sudo STACKURITY_ENROLL_CODE=enr_... sh
 #
+# Add STACKURITY_DOCKER=1 to also check the images of running Docker
+# containers. That gives the agent's user access to the Docker socket,
+# which is equivalent to root on this host (see docs/install.md).
+# STACKURITY_DOCKER=0 turns it off again; without either, an upgrade keeps
+# the setting it had.
+#
 # It downloads the agent from your Stackurity server and checks its SHA-256,
 # creates an unprivileged "stackurity" user, exchanges the one-time
 # enrollment code for a collector token, and runs the agent as a hardened
@@ -75,6 +81,29 @@ fi
 chown root:stackurity "$CONF/token" "$CONF/agent.env"
 chmod 0640 "$CONF/token" "$CONF/agent.env"
 
+# Docker containers: opt-in, kept across upgrades.
+DOCKER="${STACKURITY_DOCKER:-}"
+if [ -z "$DOCKER" ] && grep -q '^STACKURITY_DOCKER=true$' "$CONF/agent.env"; then DOCKER=1; fi
+SUPPLEMENTARY=""
+case "$DOCKER" in
+  1 | true)
+    SOCK=/var/run/docker.sock
+    [ -S "$SOCK" ] || die "STACKURITY_DOCKER=1: no Docker socket at $SOCK (is Docker running? rootless Docker is not supported)"
+    GROUP="$(stat -c %G "$SOCK")"
+    case "$GROUP" in
+      "" | root | UNKNOWN) die "STACKURITY_DOCKER=1: $SOCK belongs to group '$GROUP'; the agent is only given a group made for Docker (usually 'docker')" ;;
+    esac
+    SUPPLEMENTARY="SupplementaryGroups=$GROUP"
+    sed -i '/^STACKURITY_DOCKER=/d' "$CONF/agent.env"
+    echo "STACKURITY_DOCKER=true" >>"$CONF/agent.env"
+    say "Docker containers: the agent's user joins group '$GROUP' for $SOCK."
+    say "warning: access to the Docker socket is equivalent to root on this host. The agent only lists containers and exports images; run with STACKURITY_DOCKER=0 to turn it off."
+    ;;
+  *)
+    sed -i '/^STACKURITY_DOCKER=/d' "$CONF/agent.env"
+    ;;
+esac
+
 cat >"$UNIT" <<UNIT
 [Unit]
 Description=Stackurity inventory agent (read-only)
@@ -85,6 +114,7 @@ Wants=network-online.target
 User=stackurity
 EnvironmentFile=$CONF/agent.env
 ExecStart=$BIN agent --interval 6h
+$SUPPLEMENTARY
 Restart=on-failure
 RestartSec=60
 NoNewPrivileges=yes
