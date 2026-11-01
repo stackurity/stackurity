@@ -78,6 +78,17 @@ func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 403, "forbidden", err.Error())
 		return
 	}
+	// The throwaway asset of stackurity selftest sends no notification
+	// (store.SelftestScheme): only an admin may create one, never an
+	// agent, a CI scan or another member.
+	selftest := false
+	for _, id := range b.Asset.Identifiers {
+		selftest = selftest || id.Scheme == store.SelftestScheme
+	}
+	if selftest && !principal(r).Role.AtLeast(auth.RoleAdmin) {
+		writeError(w, 403, "forbidden", store.ErrSelftestScheme.Error())
+		return
+	}
 	project, anyAsset, ok := s.uploadProject(w, r)
 	if !ok {
 		return
@@ -86,7 +97,11 @@ func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 	if p := principal(r); p.Token != nil {
 		tokenID = p.Token.ID
 	}
-	res, err := s.Store.Ingest(reportSource(r, tokenID), &b, tokenID)
+	ctx := reportSource(r, tokenID)
+	if selftest {
+		ctx = store.AllowSelftest(ctx)
+	}
+	res, err := s.Store.Ingest(ctx, &b, tokenID)
 	if err != nil {
 		s.fail(w, r, err)
 		return

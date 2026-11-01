@@ -378,6 +378,8 @@ The agent builds the installer downloads: `linux-amd64` and `linux-arm64`, each 
 
 Submits an [ObservationBatch](#observationbatch) (gzip accepted). `?project_id=` files the asset in a project; see [Uploads into a project](#uploads-into-a-project).
 
+An asset identifier with the scheme `selftest` is reserved for `stackurity selftest`, whose throwaway asset sends no notification ([Checking an installation](operations.md#stackurity-selftest)): only an admin may submit one; anyone else gets 403.
+
 ### `POST /sbom/import`
 
 **Who:** collector token, engineer and above

@@ -280,7 +280,72 @@ curl -s 'http://127.0.0.1:9090/debug/pprof/goroutine?debug=2' > goroutines.txt  
 
 Take a heap profile while the warning above is current: it shows which function holds the memory.
 
-**GOMEMLIMIT.** Set it to about 70% of the container's memory limit (`GOMEMLIMIT=1100MiB` for a 1.5 GiB limit). The rest covers what the Go heap does not count: goroutine stacks, the runtime, the WebAssembly runtime for stack packs, and buffers. It is a soft limit: the garbage collector works harder as the heap nears it, which smooths peaks of garbage, but it cannot free memory that is still in use. Work that needs more than the container has is still killed, so treat a kill with `GOMEMLIMIT` set as a bug and report it with the warning line and a heap profile.
+**GOMEMLIMIT.** Set it to about 70% of the container's memory limit (`GOMEMLIMIT=1100MiB` for a 1.5 GiB limit). The rest covers what the Go heap does not count: goroutine stacks, the runtime, the WebAssembly runtime for stack packs, and buffers. It is a soft limit: the garbage collector works harder as the heap nears it, which smooths peaks of garbage, but it cannot free memory that is still in use. Work that needs more than the container has is still killed, so treat a kill with `GOMEMLIMIT` set as a bug and report it with the warning line and a heap profile. `stackurity doctor` compares `GOMEMLIMIT` with the container's limit and suggests a value.
+
+## Checking an installation
+
+Three commands check a running installation by reading its real state, not whether a process is up. `doctor` and `support-bundle` run on the server host with the server's configuration; `selftest` runs from anywhere that reaches the API.
+
+### stackurity doctor
+
+Run it where the server runs, with the same environment as `stackurity server`, so it reads the same database and settings:
+
+```sh
+docker compose exec stackurity stackurity doctor                # Compose
+kubectl exec deploy/<release>-stackurity -- stackurity doctor   # Helm (the chart's Deployment)
+```
+
+Each line is `PASS`, `WARN`, `FAIL` or `SKIP` (does not apply here, with the reason), the check, what it found and, for a warning or failure, `next:` the step to take and `docs:` the section that explains it. The exit code is 1 when any check fails, so it can gate a script; `--json` prints the same results as JSON.
+
+| Check | What it reads | Fails when |
+|---|---|---|
+| `database` | A query to PostgreSQL as the server's role | It cannot connect or query (the other database checks are then skipped) |
+| `isolation` | Whether row-level security applies to the server's connections, and is enabled and forced on `assets` | The role bypasses it while there are several workspaces (one workspace: a warning, as the server logs), or it was switched off by hand |
+| `migrations` | `schema_migrations` against the migrations this binary has | The database was migrated by a newer version (this binary refuses it); migrations this binary would still apply are a warning |
+| `licence` | The key from `STACKURITY_LICENSE`, `STACKURITY_LICENSE_FILE` or the database, verified offline | A version that needs a key has none past its date (before the date: a warning). A key that does not verify, or an expired licence, is a warning: detection keeps working |
+| `feed:<name>` | Each feed's last success against its refresh interval and freshness limit, and its last error | A vulnerability feed is past its freshness limit. A feed that has not synced for three refresh intervals (a sync killed part-way records no error until the next attempt), never synced, failing within its limit, turned off, or another kind past its limit is a warning |
+| `reach:<host>` | One `HEAD` request to each host the enabled feeds read from (default sources or your mirrors), through `HTTPS_PROXY` as feeds use it | A vulnerability feed's source cannot be reached, or the proxy wants credentials. Pass `--offline` on an air-gapped server to skip these |
+| `assets` | How many assets report by agent, scan, integration or upload, and when each last reported | Never: no assets yet is a warning; assets that stopped reporting are the `health:collector` problems below |
+| `health:<kind>:<key>` | Every other problem [Platform health](install.md#health) finds: background tasks, failed and retried jobs, backlogs, failing integrations and channels, silent agents, coverage gaps | The problem is critical there |
+| `disk` | Free space where `STACKURITY_DATA_DIR` points, and `--backup-dir` if given | Under 1 GiB free (under 5 GiB: a warning). Feed downloads and scans need room there |
+| `memory` | The container's memory limit (cgroup v2 or v1; the host's memory without one) and `GOMEMLIMIT` | `GOMEMLIMIT` is at or above the limit. Unset, or above 85% of it, is a warning with a suggested value |
+
+Run it after an upgrade, when Platform health or an alert says something is wrong, and before contacting support. Run it in the server's container (or, outside containers, as the server's user with its environment): elsewhere, the disk and memory lines describe where you ran it.
+
+### stackurity support-bundle
+
+```sh
+docker compose exec stackurity stackurity support-bundle --out /tmp/stackurity-support.json
+docker compose cp stackurity:/tmp/stackurity-support.json .
+```
+
+Writes one JSON file (mode `0600`) to send to support: the version, build and edition; the doctor's results; the migrations applied and pending; each feed's state (and whether it uses its default source or a mirror, not the mirror's address); the background tasks' and jobs' states and recent failures; notification delivery counts; counts of workspaces, users, components, advisories, assets by kind and by how they report, and findings by status; the licence's state, edition and dates (not the holder); and which `STACKURITY_*` variables are set. `--offline` and `--backup-dir` work as for `doctor`.
+
+It never contains inventory, package lists, asset or host names, findings, email addresses, tokens or URLs. Redaction works by allow-list: a variable's or stored setting's value is kept only when it is on a short list of switches, numbers and durations known to hold nothing sensitive (`STACKURITY_FEEDS`, `STACKURITY_LOG_LEVEL`, `STACKURITY_STALE_AFTER`, `GOMEMLIMIT` and the like) and looks like one; every other value, including variables this version does not know, reads `<redacted>`, and the names of `STACKURITY_SECRET_*` variables are only counted. Errors and titles have URLs, IP addresses, host names, email addresses, paths and token-like strings replaced, and every configured secret value is searched for and replaced in the finished file. Stackurity keeps no log it could read back, so none is included: if support asks for one, attach `docker compose logs stackurity` after reading it. Read the file before you send it.
+
+### stackurity selftest
+
+Proves a running installation works end to end through its public API, as an agent and a person use it:
+
+```sh
+STACKURITY_TOKEN=... stackurity selftest --server https://stackurity.example.com
+```
+
+| Stage | What it does |
+|---|---|
+| `server` | `GET /api/v1/meta` and `/auth/me`: the server answers and the token is an admin's (the selftest deletes what it creates) |
+| `leftovers` | Deletes assets an interrupted selftest left: named `stackurity-selftest-…` and identified only by a `selftest` identifier |
+| `advisory` | Picks a package with a well-known advisory whose feed exists here and has synced (`lodash` 4.17.20 for `osv:npm`, then PyPI, Maven, Go, RubyGems, Packagist), checking the advisory is stored. With none, the finding stage is skipped and a package no feed covers is uploaded instead, so the rest still runs. The selftest never uploads an ecosystem the inventory does not already have: that would make the server create its feeds for good |
+| `ingest` | `POST /api/v1/ingest`: a repository asset `stackurity-selftest-<random>`, environment `selftest`, with that one package |
+| `evaluate` | Waits (up to `--wait`, 5 minutes by default) until the server has evaluated and prioritised it, as `stackurity scan --wait` does |
+| `finding` | Reads the advisory's finding back through `GET /api/v1/findings/{id}` |
+| `cleanup` | Deletes the asset and its findings, and checks it is gone. It runs whatever happened before, also after Ctrl-C |
+
+Each stage prints `PASS`, `FAIL` or `SKIP`; the exit code is 1 when any fails. Use an admin API token (**Settings → API tokens**) in `STACKURITY_TOKEN` or `--token-file`.
+
+The selftest sends no notification on any channel (Slack, Teams, email, webhooks, Jira, PagerDuty, ServiceNow). Notifications are planned from incidents and from an asset's first "connected" message; an asset whose only identifier is a `selftest` one is never announced and its findings join no incident, so nothing is planned for it (`TestSelftestAssetSendsNothing` in `internal/notify`, and `TestSelftest` in `cmd/stackurity`, which runs it against a server with a route for every event). Nothing else can create such an asset: `POST /api/v1/ingest` refuses a batch with a `selftest` identifier (403) unless the token or session is an admin's, so an agent's or CI scan's collector token or a member below admin cannot keep an asset off every alert channel, and integrations, plugins and image scans refuse it too. Nor can a batch silence a real asset: an asset with any other identifier is not a selftest asset. The asset does appear in the audit log (its deletion), and for the minute it exists, in asset lists.
+
+**In a release rehearsal or after an upgrade.** `stackurity selftest` can replace a rehearsal script's smoke step (uploading a scan and checking for findings by hand): after the new version is up, run `stackurity doctor` on the server and `stackurity selftest` against it, and treat a non-zero exit code from either as a failed rehearsal. Unlike a hand-made upload, it cleans up after itself and notifies no one.
 
 ## Maintenance
 
