@@ -243,8 +243,53 @@ export const ARTICLES: Article[] = [
         list: [
           "The server appears under **Assets** within a minute; applications appear as their own assets linked to it.",
           "Unused codes are listed under **Pending install codes** on the same page until they expire or are used up. **Revoke** one you no longer need; servers that already enrolled keep reporting.",
+          "For many servers at once (cloud-init, Ansible, Terraform, an SSH loop or DigitalOcean), see [Add many servers](help:add-many-servers).",
           "For Windows, or to install by hand, see [Add a Linux server manually](help:add-linux-server), [Add a Windows server](help:windows-hosts) and docs/install.md.",
         ],
+      },
+    ],
+  },
+  {
+    id: "add-many-servers",
+    title: "Add many servers",
+    section: "Adding servers and sources",
+    summary: "Create a fleet code for up to 1,000 servers and install with cloud-init, Ansible, Terraform or an SSH loop. List DigitalOcean droplets and see which are not covered. Admins only.",
+    where: ["Assets", "Add server", "For many servers"],
+    keywords: "fleet many servers bulk rollout cloud-init user data ansible playbook terraform user_data ssh loop digitalocean droplets tag enrollment code",
+    body: [
+      {
+        p: "A **fleet code** is an install code made for a rollout: you choose how many servers it may enroll (up to 1,000) and how long it is valid (up to 90 days). Each server exchanges it for its own collector token, so no long-lived token goes into user data, a playbook or a script.",
+      },
+      {
+        steps: [
+          "Open [Assets](/assets), click **Add server**, then **For many servers**.",
+          "Enter **How many servers** and **Valid for (days)**, and optionally a label, project, environment and application directories.",
+          "Click **Create fleet code**. The code is shown once, with snippets for cloud-init, Ansible, Terraform and an SSH loop. Copy the one you need.",
+          "Run it. Servers that already have the agent skip enrollment, so running a snippet twice is safe.",
+        ],
+      },
+      { h: "Watching the rollout" },
+      {
+        list: [
+          "**Fleet codes** on the same page lists each code with how many servers it has enrolled. **Show servers** lists which hosts used it, from which address and when.",
+          "**Revoke** stops a code at once. Servers that already enrolled keep reporting; revoke their tokens under **Settings → API tokens** if needed (the list shows each token's prefix).",
+          "Up to 60 servers enroll per minute with one code. Servers over the limit wait and try again on their own.",
+        ],
+      },
+      {
+        warn: "Treat a fleet code like a password until it expires: anyone who has it can enroll machines into your organisation. Keep the count and expiry close to what you need, and revoke it when the rollout is done. Cloud user data can be read from inside the machine and is kept in Terraform state.",
+      },
+      { h: "DigitalOcean" },
+      {
+        list: [
+          "Under **DigitalOcean**, add an API token with read access to droplets (a custom token with `droplet:read` is enough). It is stored encrypted and never shown again.",
+          "The list shows each droplet with its region and tags, and whether an agent reports from it (matched by hostname, or by the address it enrolled from).",
+          "Tick the droplets to cover and click **Create commands**: you get a fleet code sized for them, an SSH command for each droplet, and one loop for all of them.",
+          "For new droplets, add the cloud-init snippet as user data when you create them and give them a tag so the list shows them. A tag alone installs nothing.",
+        ],
+      },
+      {
+        note: "Stackurity does not install on droplets itself. DigitalOcean has no API to run a command on an existing droplet, and connecting to your servers over SSH would give Stackurity root access to them. You run the commands with the access you already have.",
       },
     ],
   },

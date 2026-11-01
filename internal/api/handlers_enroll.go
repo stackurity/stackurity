@@ -2,7 +2,9 @@ package api
 
 import (
 	_ "embed"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path"
@@ -10,9 +12,11 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/stackurity/stackurity/internal/auth"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
 )
@@ -25,10 +29,13 @@ type enrollmentRequest struct {
 	Environment  string   `json:"environment"`
 	AppDirs      []string `json:"app_dirs"`
 	DiscoverApps bool     `json:"discover_apps"`
-	Uses         int      `json:"uses"`      // default 1
-	TTLHours     int      `json:"ttl_hours"` // default 24
+	Uses         int      `json:"uses"`      // default 1; required for a fleet code
+	TTLHours     int      `json:"ttl_hours"` // default 24; required for a fleet code
 	// ProjectID: hosts enrolled with the code land in this project.
 	ProjectID int64 `json:"project_id"`
+	// Fleet makes a fleet code: up to store.MaxFleetUses servers and
+	// store.MaxFleetTTL, with uses and ttl_hours given explicitly.
+	Fleet bool `json:"fleet"`
 }
 
 var envLabel = regexp.MustCompile(`^[A-Za-z0-9._-]{0,64}$`)
@@ -39,6 +46,16 @@ func (s *Server) createEnrollment(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	maxUses, maxHours := store.MaxCodeUses, int(store.MaxCodeTTL/time.Hour)
+	if req.Fleet {
+		// A code that can add a thousand servers for three months is made
+		// on purpose: no defaults.
+		maxUses, maxHours = store.MaxFleetUses, int(store.MaxFleetTTL/time.Hour)
+		if req.Uses == 0 || req.TTLHours == 0 {
+			s.fail(w, r, badRequest("a fleet code needs uses (how many servers) and ttl_hours (how long it is valid)"))
+			return
+		}
+	}
 	if req.Uses == 0 {
 		req.Uses = 1
 	}
@@ -46,11 +63,15 @@ func (s *Server) createEnrollment(w http.ResponseWriter, r *http.Request) {
 		req.TTLHours = 24
 	}
 	switch {
-	case req.Uses < 1 || req.Uses > 500:
-		s.fail(w, r, badRequest("uses must be between 1 and 500"))
+	case req.Uses < 1 || req.Uses > maxUses:
+		msg := fmt.Sprintf("uses must be between 1 and %d", maxUses)
+		if !req.Fleet && req.Uses > maxUses {
+			msg += fmt.Sprintf("; for up to %d servers create a fleet code (fleet: true)", store.MaxFleetUses)
+		}
+		s.fail(w, r, badRequest(msg))
 		return
-	case req.TTLHours < 1 || req.TTLHours > 24*30:
-		s.fail(w, r, badRequest("ttl_hours must be between 1 and 720"))
+	case req.TTLHours < 1 || req.TTLHours > maxHours:
+		s.fail(w, r, badRequest(fmt.Sprintf("ttl_hours must be between 1 and %d", maxHours)))
 		return
 	case len(req.Label) > 200 || !envLabel.MatchString(req.Environment):
 		s.fail(w, r, badRequest("label is limited to 200 characters; environment to letters, digits, dot, dash and underscore"))
@@ -87,23 +108,44 @@ func (s *Server) createEnrollment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	e, code, err := s.Store.CreateEnrollment(r.Context(), store.Enrollment{Label: strings.TrimSpace(req.Label), Environment: req.Environment,
-		AppDirs: req.AppDirs, DiscoverApps: req.DiscoverApps, UsesLeft: req.Uses, ProjectID: project}, time.Duration(req.TTLHours)*time.Hour, by)
+		AppDirs: req.AppDirs, DiscoverApps: req.DiscoverApps, UsesLeft: req.Uses, ProjectID: project, Fleet: req.Fleet}, time.Duration(req.TTLHours)*time.Hour, by)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
 	_ = s.Store.Audit(r.Context(), p.Actor(r), "enrollment.create", "enrollment", itoa(e.ID), map[string]any{
-		"label": e.Label, "environment": e.Environment, "uses": e.UsesLeft, "expires_at": e.ExpiresAt, "project_id": e.ProjectID})
+		"label": e.Label, "environment": e.Environment, "uses": e.UsesLeft, "expires_at": e.ExpiresAt, "project_id": e.ProjectID, "fleet": e.Fleet})
 	writeJSON(w, 201, map[string]any{"enrollment": e, "code": code})
 }
 
+// listEnrollments lists the codes that can still be used; with ?fleet=1,
+// fleet codes in every state (so a finished rollout's usage stays visible).
 func (s *Server) listEnrollments(w http.ResponseWriter, r *http.Request) {
-	items, err := s.Store.ListEnrollments(r.Context())
+	list := s.Store.ListEnrollments
+	if r.URL.Query().Get("fleet") == "1" {
+		list = s.Store.ListFleetEnrollments
+	}
+	items, err := list(r.Context())
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"items": items})
+	writeJSON(w, 200, map[string]any{"items": nonNil(items)})
+}
+
+// enrollmentUses lists which hosts used a code, when and from where.
+func (s *Server) enrollmentUses(w http.ResponseWriter, r *http.Request) {
+	id, err := idParam(r, "id")
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	items, err := s.Store.EnrollmentUses(r.Context(), id, store.MaxFleetUses)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"items": nonNil(items)})
 }
 
 func (s *Server) revokeEnrollment(w http.ResponseWriter, r *http.Request) {
@@ -120,11 +162,28 @@ func (s *Server) revokeEnrollment(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(204)
 }
 
-// enroll exchanges a one-time code for a collector token. It needs no
-// session or token, so it is rate limited and says nothing about why a code
-// was refused.
+// enroll exchanges a code for a collector token. It needs no session or
+// token, so it is rate limited and says nothing about why a code was
+// refused. Three limits apply (ratelimit.go): failed attempts per address
+// (what stops guessing), all attempts per address (looser, so a fleet behind
+// one NAT address can enroll), and redemptions per code (so a leaked fleet
+// code cannot mint its thousand tokens in a burst before someone revokes
+// it). A refused host is told when to retry (Retry-After), and `stackurity
+// enroll` does.
 func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
-	if s.limited(w, r, "too many attempts; wait a minute", limitHit{"enroll", clientIP(r), limitPerAddress}) {
+	ip := clientIP(r)
+	if s.limited(w, r, "too many attempts; wait a minute", limitHit{"enroll", ip, limitEnrollPerAddress}) {
+		return
+	}
+	failures, err := s.Store.RateLimitCount(r.Context(), "enroll-fail", ip, limitEnrollFailures.window)
+	if err != nil {
+		s.Log.Error("rate limit unavailable; refusing the request", "bucket", "enroll-fail", "err", err)
+		writeError(w, http.StatusServiceUnavailable, "unavailable", "the server cannot check rate limits right now; try again shortly")
+		return
+	}
+	if failures >= limitEnrollFailures.n {
+		setRetryAfter(w, limitEnrollFailures)
+		writeError(w, http.StatusTooManyRequests, "rate_limited", "too many attempts; wait a minute")
 		return
 	}
 	var req struct {
@@ -143,12 +202,24 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, badRequest("project_id must be a project id"))
 		return
 	}
-	host := strings.TrimSpace(req.Hostname)
+	host := strings.Map(func(c rune) rune {
+		if unicode.IsControl(c) {
+			return -1
+		}
+		return c
+	}, strings.TrimSpace(req.Hostname))
 	if len(host) > 253 {
-		host = host[:253]
+		host = strings.ToValidUTF8(host[:253], "")
 	}
-	e, token, err := s.Store.RedeemEnrollmentFor(r.Context(), strings.TrimSpace(req.Code), host, req.ProjectID)
+	code := strings.TrimSpace(req.Code)
+	if s.limited(w, r, "many hosts are enrolling with this code at once; wait a minute", limitHit{"enroll-code", hex.EncodeToString(auth.HashToken(code)), limitEnrollPerCode}) {
+		return
+	}
+	e, token, err := s.Store.Redeem(r.Context(), store.Redemption{Code: code, Hostname: host, Project: req.ProjectID, RemoteAddr: ip})
 	if errors.Is(err, store.ErrEnrollmentInvalid) || errors.Is(err, store.ErrEnrollmentProject) {
+		if _, herr := s.Store.RateLimitHit(r.Context(), "enroll-fail", ip, limitEnrollFailures.window); herr != nil {
+			s.Log.Error("counting a failed enrollment", "err", herr)
+		}
 		writeError(w, 403, "forbidden", err.Error())
 		return
 	}
@@ -157,7 +228,7 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = s.Store.Audit(tenant.WithWorkspace(r.Context(), e.WorkspaceID), store.Actor{Type: "enrollment", Name: e.Prefix, RemoteAddr: clientIP(r)},
-		"enrollment.redeem", "enrollment", itoa(e.ID), map[string]any{"hostname": host})
+		"enrollment.redeem", "enrollment", itoa(e.ID), map[string]any{"hostname": host, "fleet": e.Fleet, "uses_left": e.UsesLeft})
 	writeJSON(w, 200, map[string]any{"token": token, "environment": e.Environment, "app_dirs": e.AppDirs,
 		"discover_apps": e.DiscoverApps, "project_id": e.ProjectID})
 }

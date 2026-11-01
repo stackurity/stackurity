@@ -9,6 +9,7 @@ Started with nothing configured but its database, an empty install connects on i
 | Server: Git integrations | The repository URL you configure (HTTPS only) | On the integration's schedule, or when someone clicks *Run now* | A Git fetch request, plus the referenced token as an HTTP Basic header |
 | Agent | Your Stackurity server | Every `--interval` | Hostname, machine-id, OS release, installed package list |
 | CLI `scan` / `sbom import` | Your Stackurity server | When run | Lockfile-derived component list, or the SBOM document |
+| Server: DigitalOcean droplet discovery | `api.digitalocean.com` | Only after an admin stores a DigitalOcean token, when the droplet list is opened or the token saved ([details](#digitalocean-droplet-discovery)) | `GET /v2/droplets` with the stored token |
 
 ### Update check
 
@@ -101,6 +102,10 @@ A ServiceNow channel calls the configured instance only: the Table API (`/api/no
 ### Container image integrations
 
 Syft fetches image manifests and layers from the registry in the image reference. With a secret reference configured, the credential is sent to that registry only. For a workspace that may not reach private networks, Syft connects through a proxy inside the server that checks every connection (including redirects to blob storage) against the same policy.
+
+### DigitalOcean droplet discovery
+
+Only when an administrator has stored a DigitalOcean API token (**Assets → Add server → For many servers → DigitalOcean**), and only while someone opens the droplet list or saves the token: `GET https://api.digitalocean.com/v2/droplets` with that token, 200 droplets a page, at most 25 pages. Nothing is sent but the request (the page, the page size and an optional tag). Redirects are not followed and the next page is requested from the same host by number, so the token goes nowhere else. The connection is checked against the workspace's private-network policy. Without a stored token nothing is contacted; **Disconnect** deletes it. Stackurity never connects to the droplets themselves.
 
 ### AI assistants' client metadata
 

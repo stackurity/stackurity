@@ -342,11 +342,13 @@ Creates the first admin (`setup_token` from the server log, `email`, `name`, `pa
 
 Exchanges a one-time enrollment code (`{"code", "hostname"}`) for a collector token and the agent settings chosen with it, including the code's `project_id`. Refusals do not say why. An optional `project_id` (`stackurity enroll --project`) is a check, not a choice: when the code adds hosts to another project or none, the answer is 403 and the code keeps its use.
 
+Each use is recorded (hostname, client address, the token issued) in the code's usage list. Rate limits: 10 failed attempts a minute per client address (refused codes; what stops guessing), 120 attempts a minute per address in all (so a fleet behind one NAT address can enroll), and 60 enrollments a minute per code (so a leaked fleet code cannot be used up in a burst). Over a limit the answer is `429` with `Retry-After`, and nothing is used up; `stackurity enroll` waits and tries again (`--wait`).
+
 ### `GET /enrollments`
 
 **Who:** admin
 
-Enrollment codes.
+Enrollment codes that can still be used. With `?fleet=1`, fleet codes made in the last 180 days in every state (usable, used up, expired, revoked), so a rollout's usage stays visible. Each code has `fleet`, `uses_left` and `max_uses` (how many servers it could enroll when made; `null` for codes made before this was recorded).
 
 ### `POST /enrollments`
 
@@ -354,11 +356,43 @@ Enrollment codes.
 
 Creates an enrollment code, returned once: `label`, `environment`, `app_dirs`, `discover_apps`, `uses` (1–500, default 1), `ttl_hours` (1–720, default 24) and `project_id` (hosts enrolled with it, and the assets their agent reports, join that project when first created).
 
+With `"fleet": true` it creates a **fleet code** for many servers: `uses` up to 1,000 and `ttl_hours` up to 2,160 (90 days), both required (no defaults). It is stored and redeemed like any other code (only its SHA-256 hash is kept) and is exchanged for one collector token per host. Creation, each use and revocation are in the audit log (`enrollment.create`, `enrollment.redeem`, `enrollment.revoke`, with `fleet` in the details).
+
+### `GET /enrollments/{id}/uses`
+
+**Who:** admin
+
+The hosts that used a code, newest first: `hostname` (as the host reported it), `remote_addr`, `used_at`, and the `token_prefix` of the collector token it received (under **Settings → API tokens**; empty once that token is deleted) with `token_revoked`.
+
 ### `DELETE /enrollments/{id}`
 
 **Who:** admin
 
-Revokes an enrollment code.
+Revokes an enrollment code. Hosts that already enrolled keep their tokens; revoke those under **Settings → API tokens** (the usage list gives their prefixes).
+
+### `GET /integrations/digitalocean`
+
+**Who:** admin
+
+Whether a DigitalOcean API token is stored (`connected`, `connected_at`) and whether stored secrets are available (`secrets_enabled`, which needs `STACKURITY_SECRET_KEY`). The token is never returned.
+
+### `PUT /integrations/digitalocean/token`
+
+**Who:** admin
+
+Stores a DigitalOcean API token (`{"token"}`) as the encrypted workspace secret `digitalocean-token`, after checking that it can list droplets (a read-only token with the `droplet:read` scope is enough; nothing else is used). A token DigitalOcean refuses answers 400 and is not stored; without `STACKURITY_SECRET_KEY` the answer is 409. Audit: `digitalocean.connect`.
+
+### `DELETE /integrations/digitalocean/token`
+
+**Who:** admin
+
+Deletes the stored token. Audit: `digitalocean.disconnect`.
+
+### `GET /integrations/digitalocean/droplets`
+
+**Who:** admin
+
+Lists the account's droplets (optionally `?tag=`) with, for each, `name`, `region`, `status`, `image`, `tags`, `public_ipv4`, `private_ipv4`, `public_ipv6` and `coverage`: `reporting` (a host asset reports the droplet's name as its hostname, ignoring case and a domain on either side; `asset_id`, `asset_name`, `last_seen`), `enrolled` (an agent enrolled from one of the droplet's addresses, `enrolled_as` the hostname it gave, but no host with the droplet's name reports), or `not_covered`. Droplets not covered come first. Also `total`, `covered` and `truncated` (more than 5,000 droplets: 25 pages of 200). Requests go to DigitalOcean's API only, through the outbound address guard, without following redirects. `409 not_connected` without a token, `409 token_refused` when DigitalOcean no longer accepts it, `502` when DigitalOcean cannot be reached. Stackurity does not install anything on droplets: see [Many servers at once](install.md#many-servers-at-once).
 
 ### `GET /install/agent.sh`
 
