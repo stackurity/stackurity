@@ -210,10 +210,11 @@ const glConnCols = `c.id, c.group_id, c.group_path, c.group_name, c.credential_k
 	c.connected_by, c.connected_at, c.updated_at, c.last_sync,
 	(SELECT count(*) FROM gitlab_projects p WHERE p.connection_id = c.id AND p.removed_at IS NULL), c.token_id, c.hook_id`
 
-// BindGitLabGroup records a group as connected to the context's workspace.
-// A group connected anywhere (here too), or one above or below a group
-// connected to another organisation, is refused: a project is scanned for
-// one organisation.
+// BindGitLabGroup records a group as connected to the context's workspace;
+// a group already connected here is returned as it is (connecting again
+// renews its credential). A group connected to another organisation, or
+// one above or below a group connected anywhere, is refused: a project is
+// scanned for one organisation.
 func (s *Store) BindGitLabGroup(ctx context.Context, groupID int64, path, name string, by int64) (*GitLabConnection, error) {
 	ws, ok := tenant.Workspace(ctx)
 	if !ok {
@@ -230,8 +231,16 @@ func (s *Store) BindGitLabGroup(ctx context.Context, groupID int64, path, name s
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(726354140)`); err != nil {
 			return err
 		}
+		// Connecting a group connected here again (its credential expired,
+		// or to renew the group access token) carries on with the same
+		// connection.
+		err := tx.QueryRow(ctx, `UPDATE gitlab_connections SET group_path = $2, group_name = $3, updated_at = now() WHERE group_id = $1 RETURNING id`,
+			groupID, clip(path, 255), clip(name, 255)).Scan(&id)
+		if err == nil || !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
 		var owner int64
-		err := asSystem(ctx, tx, func() error {
+		err = asSystem(ctx, tx, func() error {
 			return tx.QueryRow(ctx, `SELECT workspace_id FROM gitlab_connections
 				WHERE group_id = $1 OR lower(group_path) = lower($2)
 					OR starts_with(lower($2), lower(group_path) || '/') OR starts_with(lower(group_path), lower($2) || '/')

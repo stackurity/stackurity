@@ -347,6 +347,8 @@ func (s *Server) connectGitLabGroup(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	// Connecting again: what Stackurity created before.
+	prev, _ := s.Store.GitLabConnectionSecrets(ctx, s.SecretBox, conn.ID)
 	notes := []string{}
 	// The group access token: Owner only, and GitLab.com's Premium or
 	// Ultimate (or a self-managed GitLab).
@@ -364,6 +366,9 @@ func (s *Server) connectGitLabGroup(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			tokenKind = "group_token"
+			if prev != nil && prev.TokenID != nil && *prev.TokenID != gt.ID {
+				_ = s.GitLab.RevokeGroupToken(context.WithoutCancel(ctx), userTok, g.ID, *prev.TokenID)
+			}
 		case gt != nil:
 			// More access than asked: never kept.
 			_ = s.GitLab.RevokeGroupToken(context.WithoutCancel(ctx), userTok, g.ID, gt.ID)
@@ -372,13 +377,19 @@ func (s *Server) connectGitLabGroup(w http.ResponseWriter, r *http.Request) {
 			s.Log.Info("gitlab: group access token not allowed; falling back to a read-only OAuth credential", "group", g.ID, "err", err)
 		}
 	}
-	if tokenKind == "none" {
+	if tokenKind == "none" && prev != nil && prev.Credential != nil && conn.Status == "active" {
+		// Connected again by someone who cannot create a token: the
+		// working credential stays.
+		tokenKind = prev.Kind
+	} else if tokenKind == "none" {
 		notes = append(notes, "GitLab did not allow a group access token (it needs the group's Owner role, and GitLab.com or your instance may restrict it by tier or setting): authorise read-only access to finish.")
 		_ = s.Store.SetGitLabStatus(ctx, conn.ID, "needs_credential", notes[0])
 	}
 	// The webhook: Owner, and a tier with group webhooks.
 	webhook := "not_permitted"
 	switch base := s.baseURL(); {
+	case conn.Webhook == "active":
+		webhook = "active" // created when it was first connected
 	case !strings.HasPrefix(base, "https://"):
 		webhook = "none"
 		notes = append(notes, "No webhook: the server's address (STACKURITY_BASE_URL) is not https, so projects are scanned on the schedule only.")

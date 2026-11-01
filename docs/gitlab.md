@@ -16,7 +16,7 @@ After that:
 
 - A push to a project's **default branch** that changes a lockfile or manifest (or a file an installed stack pack reads) queues a scan. Other pushes are ignored. Without a webhook, projects are scanned on their schedule (every 6 hours).
 - The group's projects are listed again daily, on any non-push event from the webhook, and on **Sync now**. A new project is added and scanned; a project that left the group (deleted, moved, or no longer visible) has its integration switched off and its asset's issues resolved as removed. The asset and its history are kept.
-- The group access token's expiry is shown on the connection; 30 days before it, the connection says to connect again.
+- The group access token's expiry is shown on the connection; 30 days before it, the connection says to connect again. Connecting the same group again keeps the connection and its projects, creates a new token and revokes the old one; an expired token stops the connection with a note until then.
 
 ## When GitLab does not allow a group access token or a webhook
 

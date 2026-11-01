@@ -79,6 +79,7 @@ type glToken struct {
 	access  int // gat
 	expires time.Time
 	refresh string // oauth: its refresh token
+	id      int64  // gat
 	revoked bool
 }
 
@@ -422,16 +423,16 @@ func (f *fakeGitLab) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				lvl := int(body["access_level"].(float64))
 				f.nextID++
 				tok := f.newSecret("glpat-")
-				f.tokens[tok] = &glToken{kind: "gat", group: g.id, scopes: scopes, access: lvl, expires: exp}
+				f.tokens[tok] = &glToken{kind: "gat", group: g.id, scopes: scopes, access: lvl, expires: exp, id: f.nextID}
 				writeJSON(201, map[string]any{"id": f.nextID, "token": tok, "scopes": scopes, "access_level": lvl, "expires_at": body["expires_at"]})
 			case r.Method == "DELETE" && len(parts) == 4 && parts[2] == "access_tokens":
 				if level < 50 {
 					writeJSON(403, map[string]string{"message": "403 Forbidden"})
 					return
 				}
-				// The fake revokes the group's gat tokens (ids are not kept).
+				tid, _ := strconv.ParseInt(parts[3], 10, 64)
 				for _, x := range f.tokens {
-					if x.kind == "gat" && x.group == g.id {
+					if x.kind == "gat" && x.group == g.id && x.id == tid {
 						x.revoked = true
 					}
 				}
@@ -1599,5 +1600,67 @@ func TestGitLabLimits(t *testing.T) {
 	}
 	if _, err := f.runner.Scanner.Scan(tenant.WithWorkspace(context.Background(), 2), gitrepo.Config{URL: f.srv.URL + "/acme/shop.git", Username: "oauth2"}, "tok"); err == nil || !strings.Contains(err.Error(), "internal address") {
 		t.Fatalf("clone of a private GitLab from a workspace without private access: %v", err)
+	}
+}
+
+// TestGitLabTokenExpiryAndReconnect: a group access token near its expiry
+// is announced, an expired one stops the connection, and connecting the
+// group again renews it on the same connection (the old token revoked, no
+// second webhook).
+func TestGitLabTokenExpiryAndReconnect(t *testing.T) {
+	f := gitlabSetup(t)
+	e := f.e
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	_, conn := f.connect(t)
+	f.drain(t)
+	sec, err := e.st.GitLabConnectionSecrets(ctx, f.box, conn.ID)
+	if err != nil || sec.Credential == nil || sec.TokenID == nil {
+		t.Fatalf("secrets: %+v %v", sec, err)
+	}
+	oldTok := sec.Credential.Token
+
+	// Ten days left: the sync says so.
+	soon := time.Now().Add(10 * 24 * time.Hour)
+	if err := e.st.SetGitLabCredential(ctx, f.box, conn.ID, "group_token", store.GitLabCredential{Token: oldTok, ExpiresAt: soon}, sec.TokenID, &soon); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.runner.Sync(ctx, conn.ID); err != nil {
+		t.Fatal(err)
+	}
+	if c, _ := e.st.GetGitLabConnection(ctx, conn.ID); !strings.Contains(c.Note, "expires on") || c.Status != "active" {
+		t.Fatalf("near expiry: %+v", c)
+	}
+	// Expired: the connection says connect again, and scans stop.
+	past := time.Now().Add(-time.Hour)
+	if err := e.st.SetGitLabCredential(ctx, f.box, conn.ID, "group_token", store.GitLabCredential{Token: oldTok, ExpiresAt: past}, sec.TokenID, &past); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.runner.Sync(ctx, conn.ID); err != nil {
+		t.Fatal(err)
+	}
+	if c, _ := e.st.GetGitLabConnection(ctx, conn.ID); c.Status != "expired" || !strings.Contains(c.Note, "Connect GitLab again") {
+		t.Fatalf("expired: %+v", c)
+	}
+
+	// Connect again: same connection, new token, old one revoked, one hook.
+	_, again := f.connect(t)
+	if again.ID != conn.ID || again.Status != "active" || again.Webhook != "active" {
+		t.Fatalf("connected again: %+v (was %d)", again, conn.ID)
+	}
+	sec2, _ := e.st.GitLabConnectionSecrets(ctx, f.box, conn.ID)
+	f.gl.mu.Lock()
+	hooks := len(f.gl.hooks)
+	oldRevoked := f.gl.tokens[oldTok].revoked
+	newLive := !f.gl.tokens[sec2.Credential.Token].revoked
+	f.gl.mu.Unlock()
+	if hooks != 1 || sec2.Credential.Token == oldTok || !newLive {
+		t.Fatalf("after reconnect: %d hooks, new token live %v", hooks, newLive)
+	}
+	if !oldRevoked {
+		t.Fatal("the old group access token was not revoked")
+	}
+	f.drain(t)
+	if n := len(glIntegrations(t, e, 1)); n != 3 {
+		t.Fatalf("integrations after reconnect: %d", n)
 	}
 }

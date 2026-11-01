@@ -207,8 +207,13 @@ func (r *Runner) Sync(ctx context.Context, connID int64) error {
 		return nil
 	}
 	token, err := r.token(ctx, connID)
-	if errors.Is(err, store.ErrGitLabCredentialRevoked) || errors.Is(err, store.ErrGitLabNoCredential) {
-		return nil // recorded on the connection
+	if errors.Is(err, store.ErrGitLabCredentialRevoked) {
+		// An OAuth credential GitLab refused is recorded already; a group
+		// access token past its expiry is recorded here.
+		return r.Store.SetGitLabStatus(ctx, connID, "expired", "Stackurity's GitLab credential stopped working ("+clip(err.Error(), 300)+"). Connect GitLab again.")
+	}
+	if errors.Is(err, store.ErrGitLabNoCredential) {
+		return nil
 	}
 	if err != nil {
 		return deferRateLimit(err)
