@@ -10,7 +10,9 @@
 # The agent only reads: it never installs or changes software.
 set -eu
 
-SERVER="${STACKURITY_SERVER:-__SERVER__}"
+# The server fills this in, single-quoted, from its own URL.
+SERVER='__SERVER__'
+SERVER="${STACKURITY_SERVER:-$SERVER}"
 CODE="${STACKURITY_ENROLL_CODE:-}"
 CONF=/etc/stackurity
 BIN=/usr/local/bin/stackurity
@@ -18,6 +20,40 @@ UNIT=/etc/systemd/system/stackurity-agent.service
 
 say() { printf 'stackurity: %s\n' "$*"; }
 die() { printf 'stackurity: error: %s\n' "$*" >&2; exit 1; }
+
+# is_local URL: true when URL is http:// to this machine (localhost,
+# 127.0.0.0/8 or [::1], any port), e.g. an SSH tunnel. The host is parsed
+# out whole, so http://127.0.0.1.evil.example is not local.
+is_local() (
+  rest=${1#http://}
+  [ "$rest" != "$1" ] || exit 1
+  hostport=${rest%%/*}
+  hostport=${hostport%%\?*}
+  hostport=${hostport%%#*}
+  case $hostport in
+    *@*) exit 1 ;;
+    \[*\]) host=${hostport#\[}; host=${host%\]}; port= ;;
+    \[*\]:*) host=${hostport%%\]:*}; host=${host#\[}; port=${hostport##*\]:} ;;
+    \[*) exit 1 ;;
+    *:*) host=${hostport%%:*}; port=${hostport#*:} ;;
+    *) host=$hostport; port= ;;
+  esac
+  case $port in *[!0-9]*) exit 1 ;; esac
+  case $host in
+    localhost | ::1) exit 0 ;;
+    127.*.*.*) ;;
+    *) exit 1 ;;
+  esac
+  case $host in *[!0-9.]* | *..* | *.) exit 1 ;; esac
+  set -f
+  IFS=.
+  # shellcheck disable=SC2086 # split on dots on purpose
+  set -- $host
+  [ $# = 4 ] || exit 1
+  for o; do
+    [ ${#o} -le 3 ] && [ "$o" -le 255 ] || exit 1
+  done
+)
 
 [ "$(id -u)" = 0 ] || die "run as root (pipe to 'sudo sh')"
 [ "$(uname -s)" = Linux ] || die "this installer is for Linux; see the documentation for other systems"
@@ -29,8 +65,8 @@ case "$(uname -m)" in
 esac
 case "$SERVER" in
   https://*) ;;
-  http://127.0.0.1* | http://localhost* | http://\[::1\]*) ;; # a local port, e.g. an SSH tunnel
-  *) [ "${STACKURITY_ALLOW_HTTP:-}" = 1 ] || die "the server URL must use https (set STACKURITY_ALLOW_HTTP=1 to override)" ;;
+  *) is_local "$SERVER" || [ "${STACKURITY_ALLOW_HTTP:-}" = 1 ] ||
+    die "the server URL must use https (set STACKURITY_ALLOW_HTTP=1 to override)" ;;
 esac
 SERVER="${SERVER%/}"
 
