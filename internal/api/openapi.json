@@ -2522,6 +2522,413 @@
     }
    }
   },
+  "/aws/callback": {
+   "post": {
+    "operationId": "post_aws_callback",
+    "summary": "Report a Launch Stack role (called by the stack)",
+    "description": "Called once by the stack's custom resource with `{\"role_arn\", \"external_id\", \"stack_id\"}` and `Authorization: Bearer <token>`, the signed single-use token from the Launch Stack link. The token names the connection, its workspace and external ID; it is used up by the first request, expires after 24 hours and is replaced by a new link. The server then assumes the role with the external ID (and checks it cannot without) and activates the connection. Every refusal of a token is the same 403. Outside the session and CSRF checks\n\nRole: none (signed single-use token; rate limited)",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "none (signed single-use token; rate limited)",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/aws/connections": {
+   "get": {
+    "operationId": "get_aws_connections",
+    "summary": "AWS connections",
+    "description": "Connect an AWS account with a CloudFormation stack (docs/install.md, \"AWS managed services\"): the connections, and `enabled` (the server has an AWS principal, STACKURITY_AWS_PRINCIPAL_ARN), `principal`, `launch_stack` (the template is hosted in S3, STACKURITY_AWS_TEMPLATE_URL), `template_download` and the IAM actions the role grants (`permissions`, `agent_install_permissions`)\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "post": {
+    "operationId": "post_aws_connections",
+    "summary": "Start an AWS connection (Launch Stack link)",
+    "description": "Connect an AWS account with a CloudFormation stack (docs/install.md, \"AWS managed services\"): `regions` (1–40, scanned), `stack_region` (where the stack is created; default the first region), `agent_install` (adds the SSM permissions). Returns the connection with its generated external ID and `launch`: `quick_create_url` (empty without an S3-hosted template), `template_download`, `cli` (the same stack with the AWS CLI), `external_id`, `principal`, and `callback` (the stack reports its role by itself; false when this server's address is not https, then the role ARN is pasted). 404 when the server has no AWS principal\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/aws/connections/{id}": {
+   "get": {
+    "operationId": "get_aws_connections_id",
+    "summary": "An AWS connection",
+    "description": "Connect an AWS account with a CloudFormation stack (docs/install.md, \"AWS managed services\"): `status` (pending, active, failed), `role_arn`, `account_id`, `last_error`, `integration_id` and `integration_removed`\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "delete_aws_connections_id",
+    "summary": "Remove an AWS connection",
+    "description": "Connect an AWS account with a CloudFormation stack (docs/install.md, \"AWS managed services\"): removes the connection and its integration. The role stays in the AWS account until its stack is deleted\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/aws/connections/{id}/installs": {
+   "get": {
+    "operationId": "get_aws_connections_id_installs",
+    "summary": "Agent installs through SSM",
+    "description": "Connect an AWS account with a CloudFormation stack (docs/install.md, \"AWS managed services\"): the agent installs sent through SSM, newest first, after reading from SSM how the unfinished ones went: `status` pending, running, success, failed or timed_out, and `detail` (the end of the command's output). The code of a failed or timed-out install is revoked. `refresh_error` says why SSM could not be read\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "post": {
+    "operationId": "post_aws_connections_id_installs",
+    "summary": "Install the agent on EC2 instances through SSM",
+    "description": "Connect an AWS account with a CloudFormation stack (docs/install.md, \"AWS managed services\"): `region` and `instances` (1–25 of `{\"instance_id\", \"computer_name\"}`). Each instance gets its own single-use enrollment code (two hours), sent in an AWS-RunShellScript command that runs this server's installer; the code is not stored. Answers 202 with one install per instance\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/aws/connections/{id}/instances": {
+   "get": {
+    "operationId": "get_aws_connections_id_instances",
+    "summary": "EC2 instances SSM manages",
+    "description": "Connect an AWS account with a CloudFormation stack (docs/install.md, \"AWS managed services\"): the instances SSM manages in one of the connection's regions (`?region=`, default the first), each with `eligible` (Linux and online), `asset_id` (a host already reporting with that hostname) and `last_install`. Needs the stack's agent install option; AWS errors answer 502\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "region",
+      "in": "query",
+      "required": false,
+      "description": "one of the connection's regions",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/aws/connections/{id}/launch": {
+   "post": {
+    "operationId": "post_aws_connections_id_launch",
+    "summary": "New Launch Stack link",
+    "description": "Connect an AWS account with a CloudFormation stack (docs/install.md, \"AWS managed services\"): a new link for a connection that is not active (`stack_region`, `agent_install`); the earlier link's token stops working\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/aws/connections/{id}/verify": {
+   "post": {
+    "operationId": "post_aws_connections_id_verify",
+    "summary": "Verify an AWS connection's role (paste the role ARN)",
+    "description": "Connect an AWS account with a CloudFormation stack (docs/install.md, \"AWS managed services\"): `role_arn` (the stack's RoleArn output; empty verifies the one recorded again). The role must be assumable with the connection's external ID and refused without it; then the connection is active, its aws-managed integration is created and a first run is queued. A failure is recorded as `status: failed` with `last_error`\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/channels": {
    "get": {
     "operationId": "get_channels",

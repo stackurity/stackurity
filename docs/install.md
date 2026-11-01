@@ -100,6 +100,8 @@ Connecting an asset is quiet: one "connected" message, and no alerts, Jira issue
 | `STACKURITY_SLACK_CLIENT_ID` / `_FILE`, `STACKURITY_SLACK_CLIENT_SECRET` / `_FILE`, `STACKURITY_SLACK_SIGNING_SECRET` / `_FILE` | — | Your Slack app, for **Add to Slack** ([slack-app.md](slack-app.md)). All three or none; needs `STACKURITY_BASE_URL` and `STACKURITY_SECRET_KEY` |
 | `STACKURITY_ALLOW_HTTP_WEBHOOKS` | `false` | Allow `http://` webhook URLs, for internal receivers |
 | `STACKURITY_PLUGIN_DIR` | `/usr/local/lib/stackurity/plugins` in the image | Directory of plugin executables |
+| `STACKURITY_AWS_PRINCIPAL_ARN` | — | The IAM user or role this server calls AWS as, which customer roles trust; turns on connecting AWS with a CloudFormation stack ([AWS managed services](#aws-managed-services)). Its credentials come from the AWS SDK's usual sources (`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`, `AWS_PROFILE`, or an instance or task role) |
+| `STACKURITY_AWS_TEMPLATE_URL` | — | The HTTPS address of `deploy/aws/stackurity-aws-role-v1.json` in Amazon S3, for the one-click **Launch Stack in AWS** link (the CloudFormation console only opens templates in S3). Without it, the page offers the template to download and an AWS CLI command |
 | `STACKURITY_SYFT` | `syft` | Path to the Syft binary used for container image scans (bundled in the image) |
 | `STACKURITY_SECRET_KEY` / `_FILE` | — | 32 random bytes, base64 (`openssl rand -base64 32`). Enables secrets that workspaces store themselves (`secret:NAME`). Keep it safe: without it stored secrets cannot be decrypted |
 | `STACKURITY_PRIVATE_TARGETS` | `default` | Which workspaces may make the server connect to private, loopback or link-local addresses: `default` (workspace 1 only), `all`, or `none` (recommended when hosting other organisations) |
@@ -482,14 +484,52 @@ Windows Update hotfixes and Microsoft Store apps are reported as unsupported cov
 
 ### AWS managed services
 
-The image includes the `aws-managed` plugin. Add a **Plugin** integration:
+The image includes the `aws-managed` plugin, which reads the engine and runtime versions of RDS, Aurora, ElastiCache, EKS, Lambda and OpenSearch. Engine and runtime versions are matched against endoflife.date lifecycle data.
+
+#### Connect with a CloudFormation stack
+
+Under **Settings → Integrations → AWS**, choose the regions to read and the region for the stack, and click **Launch Stack in AWS**. The AWS console opens with the Stackurity template and every parameter filled in: tick the acknowledgement that the stack creates an IAM role and click **Create stack**. A minute later the page shows the account as connected and the first collection runs. Nothing to copy or paste.
+
+The stack creates one IAM role:
+
+- It trusts Stackurity's AWS principal (shown on the page), on condition of an **external ID** that Stackurity generated for this connection. Nobody else can assume it, and no other Stackurity organisation can use it even if they learn its ARN. Stackurity checks both before it reads anything: it assumes the role with the external ID, and makes sure it cannot without it.
+- It allows exactly the calls the plugin makes, all read-only: `rds:DescribeDBInstances`, `rds:DescribeDBClusters`, `elasticache:DescribeCacheClusters`, `eks:ListClusters`, `eks:DescribeCluster`, `lambda:ListFunctions`, `es:ListDomainNames` and `es:DescribeDomains`. None of them supports resource-level permissions, so the resource is `*`; there are no wildcard actions.
+- With **Allow installing the agent through SSM** (the `EnableAgentInstall` parameter, off by default) it also allows `ssm:DescribeInstanceInformation`, `ssm:GetCommandInvocation`, and `ssm:SendCommand` limited to the `AWS-RunShellScript` document and the account's own instances. See [below](#install-the-agent-on-ec2-through-ssm).
+- Sessions last at most an hour. Each run of the integration assumes the role again; the plugin gets only that session, never Stackurity's own keys.
+
+The stack reports the role's ARN back by itself: a small Lambda function in the stack posts it once to `/api/v1/aws/callback` on your Stackurity server, with a token from the link that is signed by the server, works once, expires after 24 hours, and names this connection, its organisation and its external ID. That needs Stackurity to be reachable over HTTPS from AWS. When it is not (an internal server, or a plain-HTTP evaluation), or the call fails, copy the stack's `RoleArn` output into **Paste the role ARN** on the same page. The function and its log-only role are not created when there is no callback.
+
+To review the template first, download it from the page (`/aws/stackurity-aws-role-v1.json`, also `deploy/aws/` in the repository). The page also shows an `aws cloudformation create-stack` command that makes the same stack from the downloaded file. To disconnect, remove the connection under **Settings → Integrations → AWS** and delete the stack in the AWS console (Stackurity cannot delete it).
+
+#### Install the agent on EC2 through SSM
+
+The plugin reads managed services only. For EC2 instances, the agent reports their operating system and application packages. With the stack's agent install option on, the AWS page lists the instances Systems Manager manages in each region, which of them already report (matched by hostname) and which do not. Select instances and click **Install the agent**: Stackurity runs the installer from your server through SSM Run Command (`AWS-RunShellScript`), with a new single-use enrollment code for each instance, valid for two hours and never stored by Stackurity, and shows each instance's result (installed, failed with the end of the installer's output, or timed out). The code of an install that fails is revoked.
+
+The instances must be managed by SSM (the SSM Agent running with an instance profile that allows it, for example `AmazonSSMManagedInstanceCore`), run Linux with systemd, and reach your Stackurity server over HTTPS. The enrollment code is visible in the SSM command history of your AWS account, as any command parameter is; it cannot be used again once the agent enrolled, and it expires after two hours.
+
+#### Running Stackurity on your own AWS account
+
+On Stackurity Cloud the principal is Stackurity's own. A self-hosted server needs its own, because a role can only trust an AWS identity that the server can sign as:
+
+1. Create an IAM user (or use the role of the instance, ECS task or EKS service account the server runs as) with one permission: `sts:AssumeRole` on `arn:aws:iam::*:role/*` (or on the accounts you will connect, for example `arn:aws:iam::123456789012:role/*`).
+2. Set `STACKURITY_AWS_PRINCIPAL_ARN` to that user's or role's ARN (the commercial `aws` partition; GovCloud and China are not supported), for example `arn:aws:iam::111111111111:user/stackurity`. With an IAM user, give the server its keys as `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (or `AWS_PROFILE`); with a role, the server picks it up from the instance or task. These credentials are used only to call `sts:AssumeRole` into connected accounts' roles.
+3. For the **Launch Stack** button, upload `deploy/aws/stackurity-aws-role-v1.json` to an S3 bucket the connecting accounts can read (a public-read object, or a bucket policy for your organisation) and set `STACKURITY_AWS_TEMPLATE_URL` to its `https://<bucket>.s3.<region>.amazonaws.com/stackurity-aws-role-v1.json` address. Without it, the page offers the template file and the AWS CLI command instead.
+4. Set `STACKURITY_BASE_URL` to the server's public HTTPS address so stacks can report their role; otherwise the role ARN is pasted.
+
+Each role trusts the principal you set when the stack was created. If you change it, connected accounts must update their stacks (the `StackurityPrincipal` parameter).
+
+The server calls `sts.us-east-1.amazonaws.com` and, for agent installs, `ssm.<region>.amazonaws.com` only when someone connects an account, an integration runs, or the AWS page lists instances ([network.md](network.md#aws-connections)).
+
+#### With your own role or keys
+
+The plugin also runs as an ordinary **Plugin** integration, with a role you made yourself or with keys:
 
 ```json
 {"kind": "plugin", "config": {"plugin": "aws-managed", "config": {"regions": ["eu-west-1"], "role_arn": "arn:aws:iam::123456789012:role/stackurity-readonly", "environment_tag": "Environment"}},
  "secret_ref": "file:/run/secrets/aws.json", "schedule_minutes": 720}
 ```
 
-The secret file holds `{"aws_access_key_id": "...", "aws_secret_access_key": "..."}`. Without it, the plugin uses the instance role. The plugin calls only `Describe*` and `List*` APIs; the exact list is in its metadata, which you can see under **Settings → Plugins** or with `GET /api/v1/plugins`. Engine and runtime versions are matched against endoflife.date lifecycle data for RDS, Aurora, EKS, Lambda, ElastiCache and OpenSearch.
+The secret file holds `{"aws_access_key_id": "...", "aws_secret_access_key": "..."}`. Without it, the plugin uses the instance role (only in the default organisation). Give the role the read-only actions listed above. The exact list is also in the plugin's metadata, under **Settings → Plugins** or with `GET /api/v1/plugins`.
 
 ### Kubernetes
 
