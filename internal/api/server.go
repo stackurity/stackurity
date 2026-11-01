@@ -22,6 +22,7 @@ import (
 
 	"github.com/stackurity/stackurity/internal/auth"
 	"github.com/stackurity/stackurity/internal/db"
+	"github.com/stackurity/stackurity/internal/gitlab"
 	"github.com/stackurity/stackurity/internal/health"
 	"github.com/stackurity/stackurity/internal/metrics"
 	"github.com/stackurity/stackurity/internal/model"
@@ -119,6 +120,9 @@ type Server struct {
 	// SlackRespond posts an answer to a Slack response_url (already checked
 	// to be Slack's); nil posts it over HTTPS. Tests capture answers here.
 	SlackRespond func(ctx context.Context, responseURL string, body []byte) error
+	// GitLab is Connect GitLab's OAuth application and GitLab; nil turns
+	// it off (gitlab.go).
+	GitLab *gitlab.Client
 	// OpenAIAppsChallenge is served as text/plain at
 	// /.well-known/openai-apps-challenge, for OpenAI's domain check when an
 	// app is submitted (STACKURITY_OPENAI_APPS_CHALLENGE); empty answers 404.
@@ -180,6 +184,9 @@ func (s *Server) Handler() http.Handler {
 	// Slack requires; signed in, the dashboard page that picks the
 	// organisation and starts Add to Slack (notify_setup.go).
 	r.Get("/integrations/slack/install", s.slackDirectInstall)
+	// Connect GitLab: a connected group's webhook, verified with that
+	// connection's secret token (gitlab.go).
+	r.With(s.limitAddress("gitlab-webhook", limitGitLabWebhook, "too many requests")).Post("/api/v1/integrations/gitlab/webhook/{id}", s.gitlabWebhook)
 	// One-click unsubscribe and "never email me again" from mail clients
 	// (RFC 8058), signed or single-use tokens in the address.
 	r.With(s.limitAddress("email-links", limitEmailConfirm, "too many attempts; wait a minute")).Post("/email/unsubscribe/one-click", s.oneClick(s.answerUnsubscribe))
@@ -350,6 +357,7 @@ func (s *Server) Handler() http.Handler {
 				r.Post("/assets/{id}/relations", s.addRelation)
 				r.Delete("/assets/{id}/relations", s.deleteRelation)
 				r.Get("/integrations", s.listIntegrations)
+				r.Get("/integrations/gitlab", s.listGitLab)
 				r.With(s.requireWritable).Post("/integrations/{id}/run", s.runIntegration)
 				r.Post("/feeds/{name}/refresh", s.refreshFeed)
 				r.With(s.requireWritable).Post("/evaluate", s.reevaluate)
@@ -428,6 +436,12 @@ func (s *Server) Handler() http.Handler {
 				r.Post("/email-recipients/resend", s.resendEmailRecipient)
 				r.With(s.requireWritable).Post("/integrations/slack/install", s.startSlackInstall)
 				r.With(s.requireWritable).Post("/integrations/slack/oauth", s.finishSlackInstall)
+				r.With(s.requireWritable).Post("/integrations/gitlab/connect", s.startGitLab)
+				r.With(s.requireWritable, s.limitAddress("gitlab-oauth", limitGitLabOAuth, "too many attempts; wait a minute")).Post("/integrations/gitlab/oauth", s.finishGitLabOAuth)
+				r.With(s.requireWritable, s.limitAddress("gitlab-oauth", limitGitLabOAuth, "too many attempts; wait a minute")).Post("/integrations/gitlab/connections", s.connectGitLabGroup)
+				r.With(s.requireWritable).Post("/integrations/gitlab/connections/{id}/authorize", s.authorizeGitLabConnection)
+				r.With(s.requireWritable).Post("/integrations/gitlab/connections/{id}/sync", s.syncGitLabConnection)
+				r.Delete("/integrations/gitlab/connections/{id}", s.disconnectGitLab)
 				r.With(s.requireWritable).Post("/deliveries/{id}/retry", s.retryDelivery)
 				s.proAdminRoutes(r)
 				r.Get("/secrets", s.listSecrets)

@@ -7,6 +7,7 @@ Started with nothing configured but its database, an empty install connects on i
 | Component | Destination | When | Data sent |
 |---|---|---|---|
 | Server: Git integrations | The repository URL you configure (HTTPS only) | On the integration's schedule, or when someone clicks *Run now* | A Git fetch request, plus the referenced token as an HTTP Basic header |
+| Server: Connect GitLab (only with `STACKURITY_GITLAB_CLIENT_ID` and `_CLIENT_SECRET` set; [gitlab.md](gitlab.md)) | `gitlab.com`, or your GitLab (`STACKURITY_GITLAB_URL`) | When an admin connects, authorises or disconnects a group (OAuth code exchange, listing their groups, reading their membership, creating a group access token and a group webhook, revoking tokens); when listing a group's projects (after connecting, on a webhook, and daily); when refreshing a read-only OAuth credential; for each scan of a project | OAuth client credentials and codes, the connection's read-only token, and a Git fetch of the project with that token as an HTTP Basic header. Requests are checked against the organisation's private-network policy like a Git integration's, and no connection is kept open for reuse |
 | Agent | Your Stackurity server | Every `--interval` | Hostname, machine-id, OS release, installed package list |
 | CLI `scan` / `sbom import` | Your Stackurity server | When run | Lockfile-derived component list, or the SBOM document |
 
@@ -113,6 +114,10 @@ Mirror the OSV bucket layout (`<ecosystem>/all.zip`, `<ecosystem>/modified_id.cs
 ### Inbound: Slack's interactivity requests
 
 The only inbound request from a third party is optional. A Slack app set up to act from inside Slack sends each button click to `POST /api/v1/integrations/slack/actions` on your server, from Slack's addresses, over HTTPS. It carries Slack's payload (the Slack workspace and user ids and names, the message, the button's value with the channel id and fix id, and a `response_url`) and is verified with the channel's signing secret before anything is read from the database beyond that channel. Without a Slack app nothing calls it, and every request to it is refused (401). To allow it through a firewall or reverse proxy, allow that one path from the internet; it needs no session and no other path. It is limited to 600 requests a minute per address.
+
+### Inbound: Connect GitLab webhooks
+
+With [Connect GitLab](gitlab.md), a connected group's webhook (created by Stackurity where GitLab allows) posts push and project events to `POST /api/v1/integrations/gitlab/webhook/{id}`, from your GitLab's addresses. Each is checked against that connection's secret token (`X-Gitlab-Token`) before anything else is read, and handled once. Without Connect GitLab the path answers 404. To allow it through a firewall or reverse proxy, allow that path from GitLab (and `/integrations/gitlab/callback`, a dashboard page opened in the browser). It is limited to 1,200 requests a minute per address.
 
 ### Inbound: AI assistants
 

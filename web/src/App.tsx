@@ -11,6 +11,7 @@ import { AcceptInvitePage } from "./pages/AcceptInvite";
 import { SlackLinkPage } from "./pages/SlackLink";
 import { AccountPage } from "./pages/Account";
 import { SlackOAuthCallbackPage } from "./pages/SlackOAuthCallback";
+import { GitLabCallbackPage } from "./pages/GitLabCallback";
 import { SlackInstallPage } from "./pages/SlackInstall";
 import { EmailConfirmPage, EmailStopPage } from "./pages/EmailConfirm";
 import { EmailPreferencesPage } from "./pages/EmailPreferences";
@@ -139,6 +140,11 @@ export function App() {
   // in or not.
   if (pathname === "/integrations/slack/oauth/callback" && state.phase === "login") return slackCallbackNeedsSession() ? <LoginPage /> : <SlackOAuthCallbackPage />;
   if (pathname === "/integrations/slack/oauth/callback" && state.phase === "ready") return <SlackOAuthCallbackPage />;
+  // Back from GitLab (Connect GitLab, read-only access, cleanup): sign in
+  // first; the address and query stay, and the page finishes in the
+  // signed-in session.
+  if (pathname === "/integrations/gitlab/callback" && state.phase === "login") return <LoginPage />;
+  if (pathname === "/integrations/gitlab/callback" && state.phase === "ready") return <GitLabCallbackPage />;
   // Adding Stackurity to Slack from outside the dashboard (the Slack app's
   // Direct install URL): sign in, pick the organisation, go to Slack.
   if ((pathname === "/integrations/slack/install" || pathname === "/integrations/slack/add") && state.phase === "login") return <LoginPage />;

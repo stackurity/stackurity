@@ -123,8 +123,28 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/integrations/slack/oauth": {class: "create", body: func(*tenantFx) any {
 		return map[string]string{"code": "c", "state": "guessed"}
 	}},
-	"GET /api/v1/notification-options": {class: "list"},
-	"GET /api/v1/email-recipients":     {class: "list"},
+	// Connect GitLab (gitlab_test.go): the webhook is public and verified
+	// with the connection's secret token (404 without Connect GitLab); B's
+	// connect starts in B, and a guessed state or pick is refused; A's
+	// connection cannot be authorised, synced or disconnected by B.
+	"POST /api/v1/integrations/gitlab/webhook/{id}": {class: "public", obj: id("gitlabconn"), body: func(*tenantFx) any {
+		return map[string]any{"object_kind": "push", "project_id": 1}
+	}},
+	"GET /api/v1/integrations/gitlab":          {class: "list"},
+	"POST /api/v1/integrations/gitlab/connect": {class: "create", body: func(*tenantFx) any { return map[string]string{"return_to": "/settings/integrations"} }},
+	"POST /api/v1/integrations/gitlab/oauth": {class: "create", body: func(*tenantFx) any {
+		return map[string]string{"code": "c", "state": "guessed"}
+	}},
+	"POST /api/v1/integrations/gitlab/connections": {class: "create", body: func(a *tenantFx) any {
+		return map[string]any{"pick": "guessed", "group_id": a.int("gitlabgroup")}
+	}},
+	"POST /api/v1/integrations/gitlab/connections/{id}/authorize": {class: "object", obj: id("gitlabconn"), body: func(*tenantFx) any {
+		return map[string]string{"purpose": "cleanup"}
+	}},
+	"POST /api/v1/integrations/gitlab/connections/{id}/sync": {class: "object", obj: id("gitlabconn")},
+	"DELETE /api/v1/integrations/gitlab/connections/{id}":    {class: "object", obj: id("gitlabconn")},
+	"GET /api/v1/notification-options":                       {class: "list"},
+	"GET /api/v1/email-recipients":                           {class: "list"},
 	"POST /api/v1/email-recipients/resend": {class: "create", body: func(*tenantFx) any {
 		return map[string]string{"email": "outside@example.com"}
 	}},
@@ -712,6 +732,12 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 		t.Fatalf("%s assistants: %d %+v", tag, code, conns)
 	}
 	set("assistant", conns.Items[0].ID)
+	glc, err := e.st.BindGitLabGroup(ctx, 800000+ws, "gl-"+tag, "GitLab "+tag, me.User.ID)
+	if err != nil {
+		t.Fatalf("%s gitlab connection: %v", tag, err)
+	}
+	set("gitlabconn", glc.ID)
+	set("gitlabgroup", glc.GroupID)
 	if eeFixtures != nil {
 		eeFixtures(t, e, f)
 	}

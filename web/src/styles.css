@@ -5201,3 +5201,13 @@ div.assistant-card {
 .verify-left {
   margin: 4px 0 0;
 }
+
+/* Settings ▸ Integrations: GitLab groups connected with Connect GitLab. */
+.int-gl-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 8px 0;
+}

@@ -28,6 +28,7 @@ function healthOf(i: Integration): { status: string; tone?: "good" | "bad" | "mu
 
 const KIND_LABEL: Record<string, string> = {
   git_repository: "Git repository",
+  gitlab: "GitLab project",
   container_image: "Container image",
   plugin: "Plugin",
 };
@@ -39,6 +40,7 @@ function KindBadge({ kind }: { kind: string }) {
 function targetOf(i: Integration): ReactNode {
   const c = i.config ?? {};
   if (i.kind === "git_repository") return `${c.url ?? ""}${c.ref ? ` @ ${c.ref}` : ""}`;
+  if (i.kind === "gitlab") return `gitlab: ${c.path_with_namespace ?? ""}`;
   if (i.kind === "container_image") return `${c.image ?? ""}${c.platform ? ` (${c.platform})` : ""}`;
   if (i.kind === "plugin") {
     const pc = c.config ?? {};

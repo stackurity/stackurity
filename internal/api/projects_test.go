@@ -70,9 +70,19 @@ var projectScopes = map[string]string{
 	"GET /integrations/slack/install":         "public",
 	"POST /api/v1/integrations/slack/install": "org",
 	"POST /api/v1/integrations/slack/oauth":   "org",
-	"GET /api/v1/notification-options":        "org",
-	"GET /api/v1/email-recipients":            "org",
-	"POST /api/v1/email-recipients/resend":    "org",
+	// Connect GitLab: the webhook takes no session (verified by the
+	// connection's secret token); the rest is organisation-wide setup.
+	"POST /api/v1/integrations/gitlab/webhook/{id}":               "public",
+	"GET /api/v1/integrations/gitlab":                             "org",
+	"POST /api/v1/integrations/gitlab/connect":                    "org",
+	"POST /api/v1/integrations/gitlab/oauth":                      "org",
+	"POST /api/v1/integrations/gitlab/connections":                "org",
+	"POST /api/v1/integrations/gitlab/connections/{id}/authorize": "org",
+	"POST /api/v1/integrations/gitlab/connections/{id}/sync":      "org",
+	"DELETE /api/v1/integrations/gitlab/connections/{id}":         "org",
+	"GET /api/v1/notification-options":                            "org",
+	"GET /api/v1/email-recipients":                                "org",
+	"POST /api/v1/email-recipients/resend":                        "org",
 	// AI assistants: discovery, OAuth and the MCP endpoint take no session;
 	// the tools behind /mcp call the API in process with the caller's
 	// credentials, so its project rules apply (assistants_test.go).
