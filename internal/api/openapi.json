@@ -10050,6 +10050,144 @@
      }
     }
    }
+  },
+  "/ci/token": {
+   "post": {
+    "operationId": "post_ci_token",
+    "summary": "Exchange a CI job's OpenID Connect ID token for a 15-minute collector token",
+    "description": "Exchange a CI job's ID token (`{\"token\", \"trust_id\"}`) for a collector token that expires after 15 minutes, belongs to the matching CI trust's organisation and project, and may report only the job's repository (`repository_url`). The token must verify with the issuer's published keys (asymmetric algorithms only), with `iss` exactly a trust's issuer, `aud` exactly the server's CI audience (`ci_audience` in GET /meta), and `exp`, `nbf`, `iat` within one minute. 401 invalid_token, 400 trust_required without trust_id on a server with several organisations, 403 when no trust accepts the job, 409 when several organisations or projects do (send trust_id), 503 without STACKURITY_BASE_URL\n\nRole: none (rate limited)",
+    "tags": [
+     "Agents and uploads"
+    ],
+    "x-stackurity-role": "none (rate limited)",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/ci-trusts": {
+   "get": {
+    "operationId": "get_ci_trusts",
+    "summary": "CI trusts",
+    "description": "Create, list and delete CI trusts: `provider` (github, gitlab), `issuer` (https, matched exactly), `repository` (owner/repo, or owner/* with `owner_wildcard`), optional `ref`, `environment`, `workflow_ref`, `name`, `project_id`. The list includes the CI `audience`\n\nRole: admin",
+    "tags": [
+     "Agents and uploads"
+    ],
+    "x-stackurity-role": "admin",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "post": {
+    "operationId": "post_ci_trusts",
+    "summary": "Create a CI trust",
+    "description": "Create, list and delete CI trusts: `provider` (github, gitlab), `issuer` (https, matched exactly), `repository` (owner/repo, or owner/* with `owner_wildcard`), optional `ref`, `environment`, `workflow_ref`, `name`, `project_id`. The list includes the CI `audience`\n\nRole: admin",
+    "tags": [
+     "Agents and uploads"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/ci-trusts/{id}": {
+   "delete": {
+    "operationId": "delete_ci_trusts_id",
+    "summary": "Delete a CI trust and revoke its tokens",
+    "description": "Create, list and delete CI trusts: `provider` (github, gitlab), `issuer` (https, matched exactly), `repository` (owner/repo, or owner/* with `owner_wildcard`), optional `ref`, `environment`, `workflow_ref`, `name`, `project_id`. The list includes the CI `audience`\n\nRole: admin",
+    "tags": [
+     "Agents and uploads"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
   }
  },
  "components": {

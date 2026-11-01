@@ -260,6 +260,7 @@ func serverCmd() *cobra.Command {
 				Dispatcher:          dispatcher, AllowHTTPWebhooks: allowHTTPHooks, Plugins: pluginRunner,
 				Store: st, Log: log, Secrets: res, Version: version, SetupToken: setupToken,
 				BaseURL: os.Getenv("STACKURITY_BASE_URL"), AgentDir: os.Getenv("STACKURITY_AGENT_DIR"),
+				CIAudience:         strings.TrimSpace(os.Getenv("STACKURITY_CI_AUDIENCE")),
 				CookieSecure:       cookieSecure,
 				TrustProxy:         trustProxy,
 				TrustedProxyHeader: strings.TrimSpace(os.Getenv("STACKURITY_TRUSTED_PROXY_HEADER")),
@@ -765,6 +766,10 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 		}
 		// Unused assistant registrations, old codes and tokens.
 		if err := st.PruneOAuth(ctx); err != nil {
+			return err
+		}
+		// Expired tokens of CI jobs (one per job).
+		if _, err := st.PurgeCITokens(ctx); err != nil {
 			return err
 		}
 		return st.PurgeJobs(ctx, 14*24*time.Hour)

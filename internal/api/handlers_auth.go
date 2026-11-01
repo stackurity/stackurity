@@ -32,6 +32,10 @@ func (s *Server) meta(w http.ResponseWriter, r *http.Request) {
 	if s.EmailPreferences {
 		meta["email_preferences"] = true
 	}
+	// The aud a CI job requests its ID token with (POST /ci/token).
+	if aud := s.ciAudience(); aud != "" {
+		meta["ci_audience"] = aud
+	}
 	if editionMeta != nil {
 		editionMeta(s, r, meta)
 	}

@@ -94,7 +94,8 @@ Connecting an asset is quiet: one "connected" message, and no alerts, Jira issue
 | `STACKURITY_FEEDBACK_URL` | `https://stackurity.dev/feedback` | Where **Send feedback** delivers what users write. Set it empty (`STACKURITY_FEEDBACK_URL=`) or `off` to hide the button and turn feedback off ([network.md](network.md#feedback)) |
 | `STACKURITY_UPDATE_URL` | GitHub's release list | Mirror of `https://api.github.com/repos/stackurity/stackurity/releases?per_page=20`, for installs that cannot reach GitHub |
 | `STACKURITY_OSV_URL`, `STACKURITY_KEV_URL`, `STACKURITY_EPSS_URL`, `STACKURITY_ENDOFLIFE_URL`, `STACKURITY_NPM_REGISTRY`, `STACKURITY_PACKAGIST_URL`, `STACKURITY_PYPI_URL`, `STACKURITY_GOPROXY_URL`, `STACKURITY_CRATES_INDEX_URL`, `STACKURITY_RUBYGEMS_URL`, `STACKURITY_NUGET_URL`, `STACKURITY_MAVEN_URL`, `STACKURITY_PUB_URL`, `STACKURITY_HEX_URL`, `STACKURITY_WORDPRESS_ORG_URL`, `STACKURITY_WORDPRESS_PLUGINS_LIST_URL`, `STACKURITY_WORDPRESS_THEMES_LIST_URL` | public sources | Mirrors for offline or air-gapped installs ([network.md](network.md)) |
-| `STACKURITY_BASE_URL` | — | Public dashboard URL, used for links in notifications and by the agent installer |
+| `STACKURITY_BASE_URL` | — | Public dashboard URL, used for links in notifications, by the agent installer, and as the audience of CI ID tokens ([keyless CI scans](#scans-in-ci-without-a-stored-secret)) |
+| `STACKURITY_CI_AUDIENCE` | `STACKURITY_BASE_URL` | The `aud` a CI job's ID token must carry to be exchanged for a collector token; set it only to use another value than the public URL |
 | `STACKURITY_OPENAI_APPS_CHALLENGE` (or `_FILE`) | — | The token OpenAI gives when you submit Stackurity as a ChatGPT app; served as text at `/.well-known/openai-apps-challenge` (404 when unset) |
 | `STACKURITY_AGENT_DIR` | `/usr/local/lib/stackurity/agents` in the image | Agent builds served to new hosts by **Add server** |
 | `STACKURITY_SLACK_CLIENT_ID` / `_FILE`, `STACKURITY_SLACK_CLIENT_SECRET` / `_FILE`, `STACKURITY_SLACK_SIGNING_SECRET` / `_FILE` | — | Your Slack app, for **Add to Slack** ([slack-app.md](slack-app.md)). All three or none; needs `STACKURITY_BASE_URL` and `STACKURITY_SECRET_KEY` |
@@ -455,6 +456,109 @@ There are two ways to collect repository inventory:
   A scan replaces the asset's inventory. For merge-request pipelines, give the
   scan its own `--name` (without `--git-url`) so the default branch's
   inventory is not overwritten by a branch that may never merge.
+
+#### Scans in CI without a stored secret
+
+On GitHub Actions and GitLab CI a pipeline can scan without a stored
+collector token. The CI provider signs an OpenID Connect ID token for each
+job, naming the repository, ref and workflow; `stackurity scan` (and
+`stackurity/scan-action` without a `token` input) exchanges it at
+`POST /api/v1/ci/token` for a collector token that:
+
+- lasts 15 minutes and is revoked when its CI trust is deleted;
+- belongs to the trust's organisation, and files a repository it creates in
+  the trust's project;
+- can report only the repository the job ran for, under its URL as
+  `--git-url` (`https://github.com/<owner>/<repo>`, or the GitLab instance's
+  URL followed by the project path). The scan sets it by itself; a batch
+  naming another repository, a host, an application or a bare `--name` is
+  refused (403), and other identifiers in the batch are dropped.
+
+The server must have its public URL in `STACKURITY_BASE_URL`: an ID token's
+audience (`aud`) must be exactly that URL (or `STACKURITY_CI_AUDIENCE` when
+set; a single audience, so a token minted for another service is never
+accepted). Without either, the exchange answers 503 and the dashboard says
+so. `GET /api/v1/meta` returns the audience as `ci_audience`.
+
+1. An admin adds a **CI trust** under **Settings → Integrations → CI
+   pipeline → Trust a repository**: the provider (GitHub Actions, or GitLab
+   with `https://gitlab.com` or a self-managed instance's https URL), the
+   repository (`owner/repo`, a GitLab project path), and optionally a ref
+   (`main` means `refs/heads/main`), a deployment environment, the workflow
+   (GitHub `job_workflow_ref`, GitLab `ci_config_ref_uri`) and a project.
+   One trust matches one repository; every repository of an owner or group
+   (`owner/*`) only when **Every repository of this owner** is ticked. The
+   first token accepted records the owner's numeric id (GitHub
+   `repository_owner_id`, GitLab `namespace_id`); a later token from an owner
+   of the same name with another id (the organisation was deleted and its
+   name taken) is refused. Under a GitLab group wildcard, projects in
+   subgroups carry their subgroup's id and are not pinned.
+2. GitHub Actions: give the job `permissions: id-token: write` (and
+   `contents: read` for the checkout):
+
+   ```yaml
+   permissions:
+     contents: read
+     id-token: write
+   steps:
+     - uses: actions/checkout@v4
+     - uses: stackurity/scan-action@v1
+       with:
+         server: https://stackurity.example.com
+   ```
+
+   The CLI requests the token from `ACTIONS_ID_TOKEN_REQUEST_URL` with the
+   audience from `GET /meta` (or `STACKURITY_CI_AUDIENCE` when set in the job).
+3. GitLab CI: request the token in `id_tokens` as `STACKURITY_ID_TOKEN`
+   (any CI that can put a provider's ID token in that variable works the
+   same way):
+
+   ```yaml
+   stackurity:
+     image:
+       name: ghcr.io/stackurity/stackurity:latest
+       entrypoint: [""]
+     id_tokens:
+       STACKURITY_ID_TOKEN:
+         aud: https://stackurity.example.com
+     variables:
+       STACKURITY_SERVER: https://stackurity.example.com
+     script:
+       - stackurity scan .
+   ```
+
+`STACKURITY_TOKEN` (or `--token-file`) still wins when set. With neither a
+token nor an ID token, `stackurity scan` says what to add: `permissions:
+id-token: write` in GitHub Actions, the `id_tokens` entry in GitLab CI.
+`STACKURITY_CI_TRUST` (the action's `ci-trust` input) names the trust to
+use, by the id the card shows (its snippets include it). On a server that
+hosts several organisations it is required (400 `trust_required` without
+it): any organisation can trust a repository by name, so a job never sends
+its scan to whichever organisation happens to trust it. Otherwise, when
+trusts in different projects accept the same job, the exchange answers 409
+and asks for it; within one organisation and project the most specific
+trust (one repository before an owner's, then the most constraints) is
+used.
+
+The server verifies the token's signature with the issuer's published keys
+(asymmetric algorithms only: `none` and HMAC are refused), that `iss` is the
+trust's issuer exactly and that the issuer's discovery document says so,
+`aud`, and `exp`, `nbf` and `iat` with one minute's allowance for clock
+differences. It fetches keys only for issuers a trust names, over HTTPS,
+through the outbound address guard ([network.md](network.md#ci-token-issuers-keyless-ci-scans)).
+Exchanges are limited to 30 a minute per client address. Each is audited as
+`ci.token` with the provider, repository, ref, run or pipeline and job ids,
+commit, actor, `jti` and the token's id; a job whose repository a trust
+names but whose ref, environment, workflow or owner id does not match is
+audited as `ci.token_refused` with the reason, in that trust's
+organisation. Tokens are short-lived, so a replayed ID token yields at most
+another 15-minute token for the same repository; its `jti` is in the audit
+log. Expired CI tokens are deleted a day after they expire; they are not
+listed under **Settings → API tokens**.
+
+For merge-request pipelines, limit the trust to the default branch (the
+trust's ref): a scan of a branch that may never merge would otherwise
+replace the repository's inventory.
 
 Supported lockfiles:
 

@@ -342,6 +342,30 @@ Creates the first admin (`setup_token` from the server log, `email`, `name`, `pa
 
 Exchanges a one-time enrollment code (`{"code", "hostname"}`) for a collector token and the agent settings chosen with it, including the code's `project_id`. Refusals do not say why. An optional `project_id` (`stackurity enroll --project`) is a check, not a choice: when the code adds hosts to another project or none, the answer is 403 and the code keeps its use.
 
+### `POST /ci/token`
+
+**Who:** anyone (rate limited: 30 a minute per address)
+
+Exchanges a CI job's OpenID Connect ID token (`{"token", "trust_id"}`; `trust_id` optional) for a collector token that expires after 15 minutes, belongs to the matching CI trust's organisation and project, and may report only the job's repository (`repository_url`, its `git-url` identity). Send it with `X-Stackurity-CSRF: 1`, as every POST without `Authorization`. Answers `{"token", "expires_at", "repository_url", "project_id", "trust_id"}`. The token must be signed with an asymmetric key the issuer publishes (discovery and JWKS of an issuer a trust names exactly), carry `aud` equal to the server's CI audience (`ci_audience` in `GET /meta`), and be within `exp`, `nbf` and `iat` (one minute's allowance). 401 `invalid_token` when it does not verify, 403 when no trust accepts the job (the message names the ref, environment or workflow that differed), 400 `trust_required` without `trust_id` on a server with several organisations, 409 when trusts of different organisations or projects accept it (send `trust_id`), 503 `not_configured` without `STACKURITY_BASE_URL` or `STACKURITY_CI_AUDIENCE`. Audited as `ci.token` or `ci.token_refused`. See [install.md](install.md#scans-in-ci-without-a-stored-secret).
+
+### `GET /ci-trusts`
+
+**Who:** admin
+
+CI trusts, with `audience` (what CI ID tokens must carry; empty when keyless CI scans are off) and `server`.
+
+### `POST /ci-trusts`
+
+**Who:** admin
+
+Creates a CI trust: `provider` (`github` or `gitlab`), `issuer` (default `https://token.actions.githubusercontent.com` or `https://gitlab.com`; https only, matched exactly), `repository` (`owner/repo` or a GitLab project path), `owner_wildcard` (with `repository` `owner/*`: every repository of the owner or group; a `*` anywhere else is refused), and optional `ref` (a branch name means `refs/heads/<name>`), `environment`, `workflow_ref` (GitHub `job_workflow_ref`, GitLab `ci_config_ref_uri`), `name` and `project_id`.
+
+### `DELETE /ci-trusts/{id}`
+
+**Who:** admin
+
+Deletes a CI trust and revokes the tokens issued under it.
+
 ### `GET /enrollments`
 
 **Who:** admin

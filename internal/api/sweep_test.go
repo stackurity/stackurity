@@ -66,6 +66,7 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/auth/login":        {class: "skip"},
 	"POST /api/v1/auth/logout":       {class: "skip"},
 	"POST /api/v1/enroll":            {class: "public"},
+	"POST /api/v1/ci/token":          {class: "public"},
 	// Following an invitation link: a token B does not have is refused
 	// without saying why; accepting is tested in onboarding_test.go.
 	"POST /api/v1/invitations/preview": {class: "public", body: func(*tenantFx) any { return map[string]string{"token": "inv_guessed"} }},
@@ -240,6 +241,7 @@ var routeRules = map[string]routeRule{
 	"GET /api/v1/jobs":                  {class: "list"},
 	"GET /api/v1/secrets":               {class: "list"},
 	"GET /api/v1/enrollments":           {class: "list"},
+	"GET /api/v1/ci-trusts":             {class: "list"},
 	"GET /api/v1/checks":                {class: "list", query: "?asset_id={asset}"},
 	"GET /api/v1/checks/options":        {class: "list", query: "?asset_id={asset}"},
 	"GET /api/v1/ignore-rules":          {class: "list", query: "?status=all"},
@@ -312,6 +314,7 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/deliveries/{id}/retry":           {class: "object", obj: id("delivery")},
 	"DELETE /api/v1/tokens/{id}":                   {class: "object", obj: id("token")},
 	"DELETE /api/v1/enrollments/{id}":              {class: "object", obj: id("enrollment")},
+	"DELETE /api/v1/ci-trusts/{id}":                {class: "object", obj: id("citrust")},
 	"POST /api/v1/remediation/plans/{id}/decision": {class: "object", obj: id("plan"), body: func(*tenantFx) any { return map[string]any{"decision": "approve"} }},
 	"PUT /api/v1/remediation/policies/{id}":        {class: "object", obj: id("policy"), edition: "ee", body: func(*tenantFx) any { return map[string]any{"name": "hacked"} }},
 	"DELETE /api/v1/remediation/policies/{id}":     {class: "object", obj: id("policy"), edition: "ee"},
@@ -362,6 +365,9 @@ var routeRules = map[string]routeRule{
 		return map[string]any{"name": "sweep", "channel_id": a.int("channel"), "enabled": true}
 	}},
 	"POST /api/v1/enrollments": {class: "create", body: func(*tenantFx) any { return map[string]any{"label": "sweep"} }},
+	"POST /api/v1/ci-trusts": {class: "create", body: func(*tenantFx) any {
+		return map[string]any{"provider": "github", "repository": "sweep/repo"}
+	}},
 	"POST /api/v1/projects": {class: "create", body: func(a *tenantFx) any {
 		return map[string]any{"name": "sweep-project", "asset_ids": []int64{a.int("asset"), a.int("asset2")}}
 	}},
@@ -663,6 +669,11 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 		t.Fatalf("%s enrollment: %d", tag, code)
 	}
 	set("enrollment", enr.Enrollment.ID)
+	var trust store.CITrust
+	if code := admin.do("POST", "/api/v1/ci-trusts", map[string]any{"provider": "github", "repository": "acme/" + tag}, &trust); code != 201 {
+		t.Fatalf("%s CI trust: %d", tag, code)
+	}
+	set("citrust", trust.ID)
 	var at struct {
 		Token  store.Token
 		Secret string
@@ -1094,7 +1105,7 @@ func (e *env) snapshot(t *testing.T, a *tenantFx) string {
 	for _, p := range append([]string{
 		"/api/v1/assets/{asset}", "/api/v1/assets/{asset2}", "/api/v1/assets/{asset}/relations", "/api/v1/assets/{asset}/inventory",
 		"/api/v1/findings/{finding}", "/api/v1/findings/{finding}/events", "/api/v1/incidents/{incident}", "/api/v1/fix-groups/{fixgroup}",
-		"/api/v1/teams", "/api/v1/channels", "/api/v1/routes", "/api/v1/deliveries", "/api/v1/integrations", "/api/v1/enrollments",
+		"/api/v1/teams", "/api/v1/channels", "/api/v1/routes", "/api/v1/deliveries", "/api/v1/integrations", "/api/v1/enrollments", "/api/v1/ci-trusts",
 		"/api/v1/users", "/api/v1/secrets", "/api/v1/tokens", "/api/v1/conflicts", "/api/v1/risk-policy", "/api/v1/collections/{collection}/result",
 		"/api/v1/remediation/policies", "/api/v1/remediation/plans", "/api/v1/workspaces",
 		"/api/v1/checks?asset_id={asset}", "/api/v1/checks/{check}", "/api/v1/ignore-rules?status=all", "/api/v1/ignore-requests?status=all",
