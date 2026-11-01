@@ -2,6 +2,8 @@
 
 Stackurity has no telemetry. Every outbound connection is listed below. The only requests that are not for your own data or integrations are the [update check](#update-check), which sends nothing about you, the [breached-password check](#breached-password-check), which sends five characters of a hash, and [feedback](#feedback), which a user sends on purpose. All three can be turned off.
 
+Started with nothing configured but its database, an empty install connects on its own to four hosts: `www.cisa.gov`, `endoflife.date` and `epss.empiricalsecurity.com` (the [feeds](#intelligence-feeds) every install has; the others come with inventory) and `api.github.com` (the [update check](#update-check), within 30 seconds of starting). With `STACKURITY_FEEDS=off` and `STACKURITY_UPDATE_CHECK=off` it connects to nothing but its database, and an agent reporting to it to nothing but the server. Every pull request checks both by starting the real server and refusing and recording every connection it tries ([`cmd/stackurity/egress_test.go`](../cmd/stackurity/egress_test.go)), so a new default destination fails CI until it is listed there and here.
+
 | Component | Destination | When | Data sent |
 |---|---|---|---|
 | Server: Git integrations | The repository URL you configure (HTTPS only) | On the integration's schedule, or when someone clicks *Run now* | A Git fetch request, plus the referenced token as an HTTP Basic header |
