@@ -22,6 +22,18 @@ var ErrNoKey = errors.New("stored secrets need STACKURITY_SECRET_KEY (32 random 
 // BoxFromEnv reads STACKURITY_SECRET_KEY or STACKURITY_SECRET_KEY_FILE. It
 // returns ErrNoKey when neither is set.
 func BoxFromEnv() (*Box, error) {
+	key, err := KeyFromEnv()
+	if err != nil {
+		return nil, err
+	}
+	return NewBox(key)
+}
+
+// KeyFromEnv returns the 32-byte key in STACKURITY_SECRET_KEY or
+// STACKURITY_SECRET_KEY_FILE, or ErrNoKey when neither is set. Other keys the
+// server needs (such as its workload identity signing key) are derived from
+// it, never the key itself.
+func KeyFromEnv() ([]byte, error) {
 	raw := os.Getenv("STACKURITY_SECRET_KEY")
 	if f := os.Getenv("STACKURITY_SECRET_KEY_FILE"); f != "" {
 		b, err := os.ReadFile(f)
@@ -37,7 +49,7 @@ func BoxFromEnv() (*Box, error) {
 	if err != nil || len(key) != 32 {
 		return nil, errors.New("STACKURITY_SECRET_KEY must be 32 bytes, base64-encoded (openssl rand -base64 32)")
 	}
-	return NewBox(key)
+	return key, nil
 }
 
 func NewBox(key []byte) (*Box, error) {
