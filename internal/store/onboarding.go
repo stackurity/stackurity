@@ -190,8 +190,12 @@ func (s *Store) ActiveProject(ctx context.Context, id int64) (bool, error) {
 
 // --- invitations
 
-// Invitation is a single-use link to join the organisation, with a role on
-// a project (or organisation-wide when ProjectID is nil).
+// Invitation is a single-use link to join the organisation with what the
+// person may see: an organisation-wide role (Scope "organisation"), or
+// grants on chosen projects and assets (Scope "specific", Role empty).
+// Invitations made before 0.14 may instead name one project and a role on
+// it (Scope "project"); they are still accepted. Role is the
+// organisation-wide role or the role on ProjectID, and empty with Grants.
 type Invitation struct {
 	ID          int64      `json:"id"`
 	WorkspaceID int64      `json:"workspace_id"`
@@ -210,15 +214,25 @@ type Invitation struct {
 	RevokedAt   *time.Time `json:"revoked_at"`
 	// Status: pending, accepted, revoked or expired.
 	Status string `json:"status"`
+	// Scope: "organisation", "specific" (Grants) or "project" (the
+	// single project of an invitation made before grants existed).
+	Scope string `json:"scope"`
+	// Grants: what a "specific" invitation gives, with whether each can
+	// still be given; one entry for a "project" one; empty otherwise.
+	Grants []InvitationGrant `json:"grants" db:"-"`
+	// Teams the person is added to on accepting; membership gives the
+	// team's access.
+	Teams []InvitationTeam `json:"teams" db:"-"`
 }
 
 // InvitationTTL is how long an invitation link works.
 const InvitationTTL = 7 * 24 * time.Hour
 
-const invitationCols = `i.id, i.workspace_id, i.email, i.name, i.project_id, COALESCE(p.name, ''), i.role, i.prefix, i.created_by,
+const invitationCols = `i.id, i.workspace_id, i.email, i.name, i.project_id, COALESCE(p.name, ''), COALESCE(i.role, ''), i.prefix, i.created_by,
 	i.created_at, i.expires_at, i.emailed_at, i.accepted_at, i.accepted_by, i.revoked_at,
 	CASE WHEN i.accepted_at IS NOT NULL THEN 'accepted' WHEN i.revoked_at IS NOT NULL THEN 'revoked'
-	     WHEN i.expires_at <= now() THEN 'expired' ELSE 'pending' END`
+	     WHEN i.expires_at <= now() THEN 'expired' ELSE 'pending' END,
+	CASE WHEN i.project_id IS NOT NULL THEN 'project' WHEN i.role IS NULL THEN 'specific' ELSE 'organisation' END`
 
 const invitationFrom = ` FROM invitations i LEFT JOIN projects p ON p.id = i.project_id`
 
@@ -234,57 +248,19 @@ var ErrSignInRequired = errors.New("an account with this email exists; sign in t
 // one the invitation is for.
 var ErrWrongAccount = errors.New("this invitation is for another email address; sign out, then open the link again")
 
-// CreateInvitation stores an invitation and returns its link token, shown
-// once. An open invitation for the same person and project is replaced.
+// CreateInvitation invites someone with a role on one project (projectID)
+// or organisation-wide (nil). It is Invite with one project grant, kept for
+// callers that name a single project.
 func (s *Store) CreateInvitation(ctx context.Context, email, name string, projectID *int64, role auth.Role, by int64) (*Invitation, string, error) {
-	email = strings.ToLower(strings.TrimSpace(email))
-	name = strings.TrimSpace(name)
-	if !validEmail(email) {
-		return nil, "", fmt.Errorf("a valid email is required: %w", ErrInvalid)
-	}
-	if len(name) > 200 {
-		return nil, "", fmt.Errorf("name is limited to 200 characters: %w", ErrInvalid)
-	}
-	if !role.ValidUser() {
-		return nil, "", fmt.Errorf("role must be viewer, engineer, security or admin: %w", ErrInvalid)
-	}
-	secret, prefix, err := auth.NewToken("inv")
-	if err != nil {
-		return nil, "", err
-	}
-	var byID *int64
-	if by > 0 {
-		byID = &by
-	}
-	ctx = tenant.WithoutProject(ctx)
-	var id int64
-	err = pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
-		if projectID != nil {
-			var ok bool
-			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM projects WHERE id = $1 AND archived_at IS NULL)`, *projectID).Scan(&ok); err != nil {
-				return err
-			}
-			if !ok {
-				return fmt.Errorf("no such project: %w", ErrInvalid)
-			}
+	in := InvitationInput{Email: email, Name: name, Role: role}
+	if projectID != nil {
+		in = InvitationInput{Email: email, Name: name, Grants: []ScopeGrant{{ProjectID: projectID, Role: role}}}
+		if !role.ValidUser() {
+			return nil, "", fmt.Errorf("role must be viewer, engineer, security or admin: %w", ErrInvalid)
 		}
-		if _, err := tx.Exec(ctx, `UPDATE invitations SET revoked_at = now()
-			WHERE email = $1 AND project_id IS NOT DISTINCT FROM $2 AND accepted_at IS NULL AND revoked_at IS NULL`, email, projectID); err != nil {
-			return err
-		}
-		err := tx.QueryRow(ctx, `INSERT INTO invitations (email, name, project_id, role, prefix, token_hash, created_by, expires_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, now() + make_interval(secs => $8)) RETURNING id`,
-			email, name, projectID, role, prefix, auth.HashToken(secret), byID, InvitationTTL.Seconds()).Scan(&id)
-		if isForeignKey(err) {
-			return fmt.Errorf("no such project: %w", ErrInvalid)
-		}
-		return err
-	})
-	if err != nil {
-		return nil, "", err
 	}
-	inv, err := s.GetInvitation(ctx, id)
-	return inv, secret, err
+	inv, token, _, err := s.Invite(ctx, in, by)
+	return inv, token, err
 }
 
 func validEmail(e string) bool {
@@ -298,20 +274,32 @@ func (s *Store) GetInvitation(ctx context.Context, id int64) (*Invitation, error
 		return nil, err
 	}
 	inv, err := pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByPos[Invitation])
-	return inv, notFound(err)
+	if err != nil {
+		return nil, notFound(err)
+	}
+	list := []Invitation{*inv}
+	if err := loadGrants(tenant.WithoutProject(ctx), s.Pool, list); err != nil {
+		return nil, err
+	}
+	return &list[0], nil
 }
 
 // ListInvitations returns the workspace's invitations, newest first:
 // pending ones, and the others of the last 30 days.
 func (s *Store) ListInvitations(ctx context.Context, projectID int64) ([]Invitation, error) {
 	rows, err := s.Pool.Query(tenant.WithoutProject(ctx), `SELECT `+invitationCols+invitationFrom+`
-		WHERE ($1::bigint = 0 OR i.project_id = $1)
+		WHERE ($1::bigint = 0 OR i.project_id = $1
+		       OR EXISTS (SELECT 1 FROM invitation_grants g WHERE g.invitation_id = i.id AND g.project_id = $1))
 		  AND ((i.accepted_at IS NULL AND i.revoked_at IS NULL) OR i.created_at > now() - interval '30 days')
 		ORDER BY i.created_at DESC, i.id DESC LIMIT 200`, projectID)
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, pgx.RowToStructByPos[Invitation])
+	list, err := pgx.CollectRows(rows, pgx.RowToStructByPos[Invitation])
+	if err != nil {
+		return nil, err
+	}
+	return list, loadGrants(tenant.WithoutProject(ctx), s.Pool, list)
 }
 
 // MarkInvitationEmailed records that the link was sent by email.
@@ -341,17 +329,24 @@ type InvitationPreview struct {
 	InvitedBy     string    `json:"invited_by"`
 	ExpiresAt     time.Time `json:"expires_at"`
 	AccountExists bool      `json:"account_exists"`
+	// Scope and Grants as on Invitation: what accepting gives.
+	Scope  string            `json:"scope"`
+	Grants []InvitationGrant `json:"grants"`
+	Teams  []InvitationTeam  `json:"teams"`
+	// Usable: accepting would give something. False when every project
+	// and asset of a "specific" invitation was archived, merged or
+	// deleted since; accepting is then refused.
+	Usable bool `json:"usable"`
 }
 
 // pendingByToken finds a usable invitation by its link token, in system
 // scope (the caller is not a member of its workspace yet).
-func pendingByToken(ctx context.Context, q interface {
-	QueryRow(context.Context, string, ...any) pgx.Row
-}, token string, lock bool) (*Invitation, error) {
+func pendingByToken(ctx context.Context, db q, token string, lock bool) (*Invitation, error) {
 	if !strings.HasPrefix(token, "inv_") || len(token) > 200 {
 		return nil, ErrInvitationInvalid
 	}
-	sql := `SELECT i.id, i.workspace_id, i.email, i.name, i.project_id, i.role FROM invitations i
+	sql := `SELECT i.id, i.workspace_id, i.email, i.name, i.project_id, COALESCE(i.role, ''),
+		CASE WHEN i.project_id IS NOT NULL THEN 'project' WHEN i.role IS NULL THEN 'specific' ELSE 'organisation' END FROM invitations i
 		JOIN workspaces w ON w.id = i.workspace_id AND w.disabled_at IS NULL
 		LEFT JOIN projects p ON p.id = i.project_id
 		WHERE i.token_hash = $1 AND i.accepted_at IS NULL AND i.revoked_at IS NULL AND i.expires_at > now()
@@ -360,11 +355,18 @@ func pendingByToken(ctx context.Context, q interface {
 		sql += ` FOR UPDATE OF i`
 	}
 	var inv Invitation
-	err := q.QueryRow(ctx, sql, auth.HashToken(token)).Scan(&inv.ID, &inv.WorkspaceID, &inv.Email, &inv.Name, &inv.ProjectID, &inv.Role)
+	err := db.QueryRow(ctx, sql, auth.HashToken(token)).Scan(&inv.ID, &inv.WorkspaceID, &inv.Email, &inv.Name, &inv.ProjectID, &inv.Role, &inv.Scope)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrInvitationInvalid
 	}
-	return &inv, err
+	if err != nil {
+		return nil, err
+	}
+	list := []Invitation{inv}
+	if err := loadGrants(ctx, db, list); err != nil {
+		return nil, err
+	}
+	return &list[0], nil
 }
 
 // PreviewInvitation describes a usable invitation by its link token.
@@ -374,12 +376,25 @@ func (s *Store) PreviewInvitation(ctx context.Context, token string) (*Invitatio
 	if err != nil {
 		return nil, err
 	}
-	out := &InvitationPreview{Email: inv.Email, Name: inv.Name, Role: inv.Role}
+	out := &InvitationPreview{Email: inv.Email, Name: inv.Name, Role: inv.Role, Scope: inv.Scope, Grants: inv.Grants, Teams: inv.Teams,
+		Usable: inv.Scope != "specific" || len(availableGrants(inv.Grants)) > 0 || teamsSee(inv.Teams)}
+	if out.Grants == nil {
+		out.Grants = []InvitationGrant{}
+	}
+	// One project: Project and Role name it, as for invitations made
+	// before grants existed.
+	singleProject := len(out.Grants) == 1 && out.Grants[0].Kind == "project"
+	if singleProject && out.Role == "" {
+		out.Role = out.Grants[0].Role
+	}
 	err = s.Pool.QueryRow(sys, `SELECT w.name, COALESCE(p.name, ''), COALESCE(NULLIF(u.name, ''), u.email, ''), i.expires_at,
 		  EXISTS (SELECT 1 FROM users x WHERE x.email = i.email)
 		FROM invitations i JOIN workspaces w ON w.id = i.workspace_id
 		LEFT JOIN projects p ON p.id = i.project_id LEFT JOIN users u ON u.id = i.created_by
 		WHERE i.id = $1`, inv.ID).Scan(&out.Workspace, &out.Project, &out.InvitedBy, &out.ExpiresAt, &out.AccountExists)
+	if singleProject && out.Project == "" {
+		out.Project = out.Grants[0].Name
+	}
 	return out, err
 }
 
@@ -393,9 +408,18 @@ type Accepted struct {
 	// Joined: the person became a member of the organisation; false when
 	// they already were one.
 	Joined bool
-	// Grant is the project grant made or kept (nil for an
-	// organisation-wide invitation).
+	// Grant is the project grant made or kept by an invitation that
+	// names one project (nil otherwise).
 	Grant *Grant
+	// GrantIDs: every grant made or kept (a "specific" invitation, or
+	// the one of a project invitation).
+	GrantIDs []int64
+	// Dropped: grants of the invitation that were not given because the
+	// project was archived or deleted, or the asset merged or deleted,
+	// after the invitation was sent.
+	Dropped []InvitationGrant
+	// Teams the person was added to.
+	Teams []int64
 }
 
 // AcceptInvitation uses up an invitation. Everything it grants comes from
@@ -415,6 +439,21 @@ func (s *Store) AcceptInvitation(ctx context.Context, token string, signedIn int
 			return err
 		}
 		invID, out.WorkspaceID = inv.ID, inv.WorkspaceID
+		// What a "specific" invitation can still give is checked now, not
+		// when it was sent: a project archived or deleted, or an asset
+		// merged or deleted, since then is dropped (and reported). If
+		// nothing is left, accepting is refused and nothing is written.
+		give := availableGrants(inv.Grants)
+		if inv.Scope == "specific" {
+			if len(give) == 0 && !teamsSee(inv.Teams) {
+				return ErrInvitationStale
+			}
+			for _, g := range inv.Grants {
+				if !g.Available {
+					out.Dropped = append(out.Dropped, g)
+				}
+			}
+		}
 		var uid int64
 		var disabled bool
 		err = tx.QueryRow(sys, `SELECT id, disabled FROM users WHERE email = $1`, inv.Email).Scan(&uid, &disabled)
@@ -460,7 +499,7 @@ func (s *Store) AcceptInvitation(ctx context.Context, token string, signedIn int
 		// not a member yet; a project invitation adds them with project
 		// access only. An existing membership is left as it is.
 		var orgRole *auth.Role
-		if inv.ProjectID == nil {
+		if inv.Scope == "organisation" {
 			orgRole = &inv.Role
 		}
 		tag, err := tx.Exec(sys, `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1, $2, $3)
@@ -481,6 +520,33 @@ func (s *Store) AcceptInvitation(ctx context.Context, token string, signedIn int
 				return err
 			}
 			out.Grant = &Grant{ID: gid}
+			out.GrantIDs = []int64{gid}
+		}
+		if inv.Scope == "specific" {
+			ids, skipped, err := acceptGrants(sys, tx, inv, uid, give)
+			if err != nil {
+				return err
+			}
+			out.GrantIDs, out.Dropped = ids, append(out.Dropped, skipped...)
+		}
+		// Teams: membership of the ones that still exist; a deleted one
+		// is reported with the other dropped items.
+		var teams []int64
+		for _, t := range inv.Teams {
+			if t.Available && t.TeamID != nil {
+				teams = append(teams, *t.TeamID)
+			} else {
+				out.Dropped = append(out.Dropped, InvitationGrant{Kind: "team", Name: t.Name, Unavailable: "deleted"})
+			}
+		}
+		if err := joinTeams(sys, tx, inv.WorkspaceID, uid, teams); err != nil {
+			return err
+		}
+		out.Teams = teams
+		// Fail closed: a "specific" invitation that, after all of this,
+		// gives nothing writes nothing.
+		if inv.Scope == "specific" && len(out.GrantIDs) == 0 && !teamsSee(inv.Teams) {
+			return ErrInvitationStale
 		}
 		_, err = tx.Exec(sys, `UPDATE invitations SET accepted_at = now(), accepted_by = $2 WHERE id = $1`, inv.ID, uid)
 		return err
@@ -495,7 +561,7 @@ func (s *Store) AcceptInvitation(ctx context.Context, token string, signedIn int
 	}
 	if out.Grant != nil {
 		if out.Grant, err2 = s.GetGrant(wctx, out.Grant.ID); err2 != nil {
-			return nil, err
+			return nil, err2
 		}
 	}
 	return out, nil

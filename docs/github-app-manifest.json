@@ -1,0 +1,23 @@
+{
+  "name": "Stackurity",
+  "url": "https://stackurity.ai",
+  "description": "Reads the lockfiles of the repositories you pick, to find vulnerable and end-of-life dependencies. Read-only.",
+  "hook_attributes": {
+    "url": "https://app.stackurity.dev/api/v1/integrations/github/webhook",
+    "active": true
+  },
+  "redirect_url": "https://app.stackurity.dev/settings/integrations",
+  "callback_urls": [
+    "https://app.stackurity.dev/integrations/github/callback"
+  ],
+  "request_oauth_on_install": true,
+  "setup_on_update": true,
+  "public": true,
+  "default_permissions": {
+    "contents": "read",
+    "metadata": "read"
+  },
+  "default_events": [
+    "push"
+  ]
+}

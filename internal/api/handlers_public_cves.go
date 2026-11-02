@@ -12,7 +12,7 @@ import (
 
 // The public log of new CVEs: when each CVE first reached Stackurity, from
 // the feeds that cover every CVE whatever the workspaces run (FIRST's EPSS
-// file and CISA's KEV catalogue; migration 0068). It holds public CVE IDs and
+// file and CISA's KEV catalogue; migration 0087). It holds public CVE IDs and
 // times only, needs no sign-in, and the website shows it on stackurity.ai.
 
 var publicCVEID = regexp.MustCompile(`^CVE-\d{4}-\d{4,7}$`)

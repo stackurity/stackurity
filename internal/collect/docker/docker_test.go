@@ -541,6 +541,38 @@ func TestLayerWhiteouts(t *testing.T) {
 	}
 }
 
+// Within a layer the last entry at a path wins, and nothing is created
+// through a link of the same layer, whatever the order of the entries.
+func TestLayerLinkOrder(t *testing.T) {
+	layers := [][]byte{layerTar(
+		link("x", "/etc"), file("x", "now a file"), // a file after a link replaces it
+		file("y", "a file"), link("y", "/etc/os-release"), // a link after a file replaces it
+		link("d", "/"), link("d/through", "/etc"), file("d/inside", "1"), // nothing through the link d
+	)}
+	root, err := extractImage(context.Background(), bytes.NewReader(saveArchive(idShop, layers...)), t.TempDir(), 1<<20, "amd64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	isLink := func(p string) bool {
+		fi, err := os.Lstat(filepath.Join(root, p))
+		return err == nil && fi.Mode()&os.ModeSymlink != 0
+	}
+	if b, err := os.ReadFile(filepath.Join(root, "x")); err != nil || isLink("x") || string(b) != "now a file" {
+		t.Errorf("x: %q %v link=%v", b, err, isLink("x"))
+	}
+	if !isLink("y") {
+		t.Error("y is not a link")
+	}
+	if !isLink("d") {
+		t.Error("d is not a link")
+	}
+	for _, p := range []string{"through", "inside"} {
+		if _, err := os.Lstat(filepath.Join(root, p)); err == nil {
+			t.Errorf("%s was created through the link d", p)
+		}
+	}
+}
+
 // Docker 25 and the containerd image store write an OCI layout: blobs by
 // digest (layers possibly gzip-compressed) and index.json, with no
 // manifest.json; a multi-platform index picks the image's architecture.

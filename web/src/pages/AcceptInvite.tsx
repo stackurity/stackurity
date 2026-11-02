@@ -1,10 +1,11 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { api, ApiError, type InvitationPreview } from "../api";
+import { api, ApiError, type InvitationAccepted, type InvitationGrant, type InvitationPreview } from "../api";
 import { useAuth } from "../auth";
 import { useAction } from "../hooks";
 import { absTime } from "../format";
 import { ErrorBox, Loading, Notice } from "../components/ui";
 import { ROLE_HELP } from "../components/Invite";
+import { accessLines, permissionLabel } from "../roles";
 import { LoginPage } from "./Login";
 
 /**
@@ -22,6 +23,8 @@ export function AcceptInvitePage() {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [localErr, setLocalErr] = useState<string | null>(null);
+  // Set when accepting skipped some of what the invitation named.
+  const [joined, setJoined] = useState<InvitationAccepted | null>(null);
   const act = useAction();
   const signedIn = state.phase === "ready";
 
@@ -47,17 +50,45 @@ export function AcceptInvitePage() {
       if (password !== confirm) return setLocalErr("The passwords do not match.");
     }
     const r = await act.run(() =>
-      api.post<{ project_id: number }>("/invitations/accept", pv?.invitation.account_exists ? { token } : { token, name: name.trim(), password }),
+      api.post<InvitationAccepted>("/invitations/accept", pv?.invitation.account_exists ? { token } : { token, name: name.trim(), password }),
     );
     if (r) {
-      // Open the project with the new session; replace() also drops the
-      // link from the browser's history.
-      window.location.replace(r.project_id ? `/?project=${r.project_id}` : "/");
+      if (r.dropped?.length) {
+        // Say what was skipped before going on.
+        window.history.replaceState(null, "", "/invite");
+        setJoined(r);
+        return;
+      }
+      go(r);
     }
   };
+  // Open the project with the new session; replace() also drops the link
+  // from the browser's history.
+  const go = (r: InvitationAccepted) => window.location.replace(r.project_id ? `/?project=${r.project_id}` : "/");
 
   let body;
-  if (!token) {
+  if (joined) {
+    body = (
+      <>
+        <Notice kind="success">
+          You joined, with access to {joined.grants === 1 ? "1 project or asset" : `${joined.grants} projects and assets`}
+          {joined.teams ? ` and ${joined.teams === 1 ? "1 team" : `${joined.teams} teams`}` : ""}.
+        </Notice>
+        <Notice kind="warn">
+          Some of what the invitation named was not given, because it changed after you were invited:
+          <ul>
+            {joined.dropped.map((g) => (
+              <li key={`${g.kind}-${g.project_id ?? g.asset_id}-${g.name}`}>{droppedLine(g)}</li>
+            ))}
+          </ul>
+          Ask the person who invited you if you need it.
+        </Notice>
+        <button type="button" className="btn btn-primary btn-block" onClick={() => go(joined)}>
+          Continue
+        </button>
+      </>
+    );
+  } else if (!token) {
     body = <Notice kind="warn">This page needs the whole invitation link. Open it again from the email or message you got.</Notice>;
   } else if (error) {
     body =
@@ -82,19 +113,51 @@ export function AcceptInvitePage() {
     const wrong = pv.signed_in_as !== "" && pv.signed_in_as.toLowerCase() !== inv.email.toLowerCase();
     body = (
       <>
-        <p>
-          {inv.invited_by} invited <strong>{inv.email}</strong> to {where}, as <strong>{inv.role}</strong>.
-        </p>
-        <p className="hint">
-          {ROLE_HELP[inv.role]} The link works until {absTime(inv.expires_at)}.
-        </p>
+        {inv.scope === "specific" && !(inv.grants.length === 1 && inv.grants[0].kind === "project" && !inv.teams?.length) ? (
+          <>
+            <p>
+              {inv.invited_by} invited <strong>{inv.email}</strong> to <strong>{inv.workspace}</strong>, to see:
+            </p>
+            <ul className="invite-grants">
+              {inv.grants.map((g) => (
+                <li key={`${g.kind}-${g.project_id ?? g.asset_id}-${g.name}`} className={g.available ? undefined : "muted"}>
+                  {g.kind === "project" ? "Project" : "Asset"} <strong>{g.name}</strong> — {permissionLabel(g.role)}
+                  {!g.available && <> (not any more: {UNAVAILABLE[g.unavailable ?? "deleted"]})</>}
+                </li>
+              ))}
+              {(inv.teams ?? []).map((t) => (
+                <li key={`team-${t.team_id ?? t.name}`} className={t.available ? undefined : "muted"}>
+                  Team <strong>{t.name}</strong>
+                  {t.available ? <>: {accessLines(t.access).join("; ") || "nothing yet"}</> : <> (not any more: it was deleted)</>}
+                </li>
+              ))}
+            </ul>
+            <p className="hint">The link works until {absTime(inv.expires_at)}.</p>
+          </>
+        ) : (
+          <>
+            <p>
+              {inv.invited_by} invited <strong>{inv.email}</strong> to {where}
+              {inv.scope === "organisation" && <> (all projects and assets)</>}, as <strong>{permissionLabel(inv.role)}</strong>.
+            </p>
+            <p className="hint">
+              {inv.role ? ROLE_HELP[inv.role] : ""} The link works until {absTime(inv.expires_at)}.
+            </p>
+            {!!inv.teams?.length && <p className="hint">You also join the team{inv.teams.length === 1 ? "" : "s"} {inv.teams.map((t) => t.name).join(", ")}.</p>}
+          </>
+        )}
+        {!inv.usable && (
+          <Notice kind="warn">
+            Everything this invitation gave access to has been archived or deleted since it was sent, so it cannot be accepted. Ask {inv.invited_by} for a new one.
+          </Notice>
+        )}
         <ErrorBox error={act.error} title="Could not accept" />
         {localErr && (
           <div className="alert alert-error" role="alert">
             {localErr}
           </div>
         )}
-        {wrong ? (
+        {!inv.usable ? null : wrong ? (
           <>
             <Notice kind="warn">
               You are signed in as {pv.signed_in_as}. This invitation is for {inv.email}. Sign out, then open the link again.
@@ -154,4 +217,16 @@ export function AcceptInvitePage() {
       </div>
     </div>
   );
+}
+
+const UNAVAILABLE: Record<NonNullable<InvitationGrant["unavailable"]>, string> = {
+  archived: "the project was archived",
+  merged: "the asset was merged into another",
+  deleted: "it was deleted",
+  changed: "it changed while you were joining",
+};
+
+function droppedLine(g: InvitationGrant): string {
+  const what = g.kind === "project" ? "Project" : g.kind === "team" ? "Team" : "Asset";
+  return `${what} ${g.name}: ${UNAVAILABLE[g.unavailable ?? "deleted"]}.`;
 }

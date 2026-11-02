@@ -8,7 +8,7 @@ import (
 )
 
 // CVEFirstSeen is when a CVE first reached Stackurity, from the EPSS file or
-// the KEV catalogue (migration 0068). Exact is false for CVEs stored before
+// the KEV catalogue (migration 0087). Exact is false for CVEs stored before
 // that was recorded: they arrived on or before At.
 type CVEFirstSeen struct {
 	CVE    string    `json:"cve"`
