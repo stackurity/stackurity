@@ -301,7 +301,7 @@ function PasskeysSection({
                     {pk.clone_warning_at && (
                       <Notice kind="warn">
                         A sign-in with this passkey was refused <RelativeTime iso={pk.clone_warning_at} />: its counter went backwards, which can mean the key
-                        was copied. Remove it if you did not expect this.
+                        was copied. It signs in no more: remove it, and add the key again if it is yours.
                       </Notice>
                     )}
                   </div>
