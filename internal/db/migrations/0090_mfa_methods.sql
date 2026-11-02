@@ -64,7 +64,7 @@ ALTER TABLE mfa_challenges ADD COLUMN email_code_hash bytea,
                            ADD COLUMN email_sent_at timestamptz;
 
 -- How each session was signed in. login_method: password, passkey,
--- invite, signup, or sso (single sign-on, the only one the two-factor
+-- invite, signup, social (a hosted edition's provider sign-in), or sso (single sign-on, the only one the two-factor
 -- policy leaves alone; a session pinned by an organisation's single sign-on
 -- is exempt too). A session with none is held to the policy.
 -- mfa_method: the second factor checked (totp, recovery_code, passkey,
