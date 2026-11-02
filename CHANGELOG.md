@@ -10,6 +10,10 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 - **Connect PagerDuty in one click.** With the Stackurity PagerDuty app configured (`STACKURITY_PAGERDUTY_CLIENT_ID` and `STACKURITY_PAGERDUTY_CLIENT_SECRET`, a PagerDuty app with Scoped OAuth; see [install.md](docs/install.md#setting-up-the-stackurity-pagerduty-app-operators)), **Connect PagerDuty** sends the admin to PagerDuty to allow `services.read` and `services.write` (OAuth 2.0 with PKCE and a single-use state bound to the person and the organisation), lists the account's services, and on the one picked adds an Events API v2 integration named Stackurity whose routing key becomes the channel's secret, sealed exactly like a pasted key. PagerDuty's token is then deleted: it is kept, sealed, only while the service is chosen (at most 10 minutes) and its refresh token is never stored, since sending events needs only the routing key. The account's region (US or EU) is read from PagerDuty's ID token. A token missing a scope is refused with a clear message, as is a service the person may not add integrations to. Deleting such a channel deletes its key; the integration stays on the PagerDuty service (there is no token left to remove it), and the dashboard says where to delete it. Pasting an integration key still works, and events are sent exactly as before. Requests to PagerDuty go through the outbound guard on a new connection each, without redirects ([network.md](docs/network.md)). Migration `0083_pagerduty_connect`.
 
+### Changed
+
+- **The Project filter is hidden until the organisation has a project**, like the project switcher. It used to show a disabled "No projects yet" on every list page, though projects are made under **Settings → Projects**.
+
 ## 0.14.0
 
 ### Security
