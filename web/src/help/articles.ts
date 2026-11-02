@@ -476,7 +476,7 @@ stackurity.exe agent --interval 6h`,
       },
       {
         list: [
-          "Set `STACKURITY_SERVER` and `STACKURITY_TOKEN` (a collector token) as CI secrets.",
+          "On GitHub Actions and GitLab CI, scan without a stored secret: see [Scan in CI without a stored secret](help:ci-keyless). Elsewhere, set `STACKURITY_SERVER` and `STACKURITY_TOKEN` (a collector token) as CI secrets.",
           "Use the same `--git-url` as the integration so both land on one asset.",
           "For merge-request pipelines use `--name <branch>` without `--git-url`, so a branch that may never merge doesn't replace the default branch's inventory.",
           "To fail the pipeline on findings, see [Gate CI on findings](help:ci-gate).",
@@ -484,6 +484,60 @@ stackurity.exe agent --interval 6h`,
       },
       {
         p: "Supported lockfiles: npm, yarn (v1 and Berry), pnpm, Composer, Poetry, Pipenv, pinned `requirements.txt`, Go modules, Cargo, Bundler, NuGet `packages.lock.json`, and `pubspec.lock`. Others (Maven, Gradle, …) are shown as unsupported coverage, never silently ignored.",
+      },
+    ],
+  },
+  {
+    id: "ci-keyless",
+    title: "Scan in CI without a stored secret (GitHub Actions, GitLab)",
+    section: "Adding servers and sources",
+    summary: "Trust a repository once; its pipelines prove who they are with the CI provider's ID token instead of a stored collector token.",
+    where: ["Settings", "Integrations", "CI pipeline"],
+    keywords: "oidc openid connect id token keyless secretless github actions gitlab id_tokens id-token write trust ci token STACKURITY_ID_TOKEN",
+    body: [
+      {
+        p: "GitHub Actions and GitLab CI sign an ID token for each job that says which repository, branch and workflow it runs for. Stackurity checks that token against the provider's published keys and a CI trust you made, and gives the job a collector token that lasts 15 minutes and can only report that repository. There is no secret to store, leak or rotate.",
+      },
+      { h: "1. Trust the repository (admin)" },
+      {
+        steps: [
+          "Go to **Settings ▸ Integrations**, open **CI pipeline** and click **Trust a repository**.",
+          "Choose GitHub Actions or GitLab CI (for a self-managed GitLab, enter its https URL).",
+          "Enter the repository (`acme/shop`, or a GitLab project path such as `acme/backend/shop`). To trust every repository of an owner or group, tick **Every repository of this owner**; nothing else matches more than one repository.",
+          "Optionally limit it to a branch (only scans of `main`, so a branch that may never merge cannot replace the inventory), a deployment environment or one workflow file, and choose the project new repositories go to.",
+        ],
+      },
+      { h: "2. GitHub Actions" },
+      {
+        code: "permissions:\n  contents: read\n  id-token: write\nsteps:\n  - uses: actions/checkout@v4\n  - uses: stackurity/scan-action@v1\n    with:\n      server: https://stackurity.example.com",
+        label: "Workflow job",
+      },
+      { p: "Without a `token` input the action requests an ID token for this server and exchanges it. `id-token: write` only lets the job request ID tokens; it grants no access to the repository." },
+      { h: "3. GitLab CI" },
+      {
+        code: "stackurity:\n  image:\n    name: ghcr.io/stackurity/stackurity:latest\n    entrypoint: [\"\"]\n  id_tokens:\n    STACKURITY_ID_TOKEN:\n      aud: https://stackurity.example.com\n  variables:\n    STACKURITY_SERVER: https://stackurity.example.com\n  script:\n    - stackurity scan .",
+        label: ".gitlab-ci.yml job",
+      },
+      { p: "`aud` must be the server's URL exactly as the CI pipeline card shows it." },
+      { h: "What the job's token can do" },
+      {
+        list: [
+          "Report the repository it ran for, identified by its URL (`https://github.com/acme/shop`, or the GitLab project's URL). `stackurity scan` uses that identity by itself; any other repository, host or name is refused.",
+          "Read the result of its own scans (for `--fail-on`). Nothing else.",
+          "It expires after 15 minutes. Deleting the trust revokes tokens already issued.",
+          "Each exchange is in the **Audit log** (`ci.token`, with the repository, ref, run or pipeline id and token id); refused ones that named a trusted repository are logged as `ci.token_refused` with the reason.",
+        ],
+      },
+      { h: "When it does not work" },
+      {
+        list: [
+          "“cannot request an ID token”: the GitHub job lacks `permissions: id-token: write` (a workflow that sets `permissions` must list it).",
+          "“audience (aud) must be exactly …”: in GitLab, set `aud:` to the URL the card shows.",
+          "“no CI trust accepts repository … on ref …”: the trust names another branch, environment or workflow; the message says which.",
+          "“several CI trusts accept this repository” or “this server hosts several organisations”: set `STACKURITY_CI_TRUST` (the action's `ci-trust` input) to the trust's number, shown as #id on the card; the card's snippets include it.",
+          "“the repository owner's id differs”: the organisation or group was deleted and its name taken again. Delete and re-create the trust if this is expected.",
+          "The server must have a public URL (`STACKURITY_BASE_URL`) for keyless scans.",
+        ],
       },
     ],
   },

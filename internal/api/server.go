@@ -4,6 +4,7 @@ package api
 
 import (
 	"context"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"github.com/stackurity/stackurity/internal/license"
@@ -134,6 +135,16 @@ type Server struct {
 	// ClientMetadataHTTP fetches OAuth client ID metadata documents; nil
 	// uses a client through the outbound address guard. Tests set it.
 	ClientMetadataHTTP *http.Client
+	// CIAudience is the aud a CI job's ID token must carry to be exchanged
+	// for a collector token (POST /ci/token; STACKURITY_CI_AUDIENCE); empty
+	// uses BaseURL, and keyless CI scans are off without either.
+	CIAudience string
+	// CIOIDCHTTP fetches CI token issuers' discovery documents and keys;
+	// nil uses a client through the outbound address guard.
+	CIOIDCHTTP *http.Client
+	// CIOIDCRootCAs replaces the system roots for those fetches (tests).
+	CIOIDCRootCAs *x509.CertPool
+	ciKeyCache    *ciKeyCache
 	// limiter counts sign-in, setup and enrollment attempts in the database,
 	// shared by every replica (ratelimit.go).
 	limiter *rateLimiter
@@ -156,6 +167,7 @@ func (s *Server) Handler() http.Handler {
 		editionPrepare(s)
 	}
 	s.limiter = newRateLimiter(s.Store, s.Log)
+	s.ciKeyCache = &ciKeyCache{sets: map[string]*ciIssuerKeys{}}
 	r := chi.NewRouter()
 	if s.TrustProxy {
 		r.Use(s.realIP)
@@ -220,6 +232,8 @@ func (s *Server) Handler() http.Handler {
 		s.mfaPublicRoutes(r)
 		s.passwordResetRoutes(r)
 		r.Post("/enroll", s.enroll)
+		// A CI job's OpenID Connect token for a collector token (ci_oidc.go).
+		r.Post("/ci/token", s.ciToken)
 		// Following an invitation link: the person may have no account yet.
 		r.Post("/invitations/preview", s.previewInvitation)
 		r.Post("/invitations/accept", s.acceptInvitation)
@@ -474,6 +488,9 @@ func (s *Server) Handler() http.Handler {
 				r.Delete("/integrations/digitalocean/token", s.doDisconnect)
 				r.Get("/integrations/digitalocean/droplets", s.doListDroplets)
 				r.Delete("/enrollments/{id}", s.revokeEnrollment)
+				r.Get("/ci-trusts", s.listCITrusts)
+				r.With(s.requireWritable).Post("/ci-trusts", s.createCITrust)
+				r.Delete("/ci-trusts/{id}", s.deleteCITrust)
 				r.Get("/aws/connections", s.listAWSConnections)
 				r.With(s.requireWritable).Post("/aws/connections", s.createAWSConnection)
 				r.Get("/aws/connections/{id}", s.getAWSConnection)

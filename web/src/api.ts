@@ -50,6 +50,8 @@ export interface Meta {
   version: string;
   api: string;
   setup_required: boolean;
+  /** The aud a CI job's ID token needs (keyless CI scans); absent when the server has no public URL. */
+  ci_audience?: string;
   /** Present when single sign-on is configured: the first provider, and
    *  every provider (OpenID Connect, SAML) in providers. */
   sso?: { label: string; login_url: string; providers?: SSOProvider[] };
@@ -140,6 +142,32 @@ export interface Membership {
 }
 
 /** A named group of assets. One asset can be in several projects. */
+/** A CI trust: a CI provider's ID tokens for a repository are exchanged for a 15-minute collector token. */
+export interface CITrust {
+  id: number;
+  name: string;
+  provider: "github" | "gitlab";
+  issuer: string;
+  /** owner/name, or owner/* when owner_wildcard. */
+  repository: string;
+  owner_wildcard: boolean;
+  ref: string;
+  environment: string;
+  workflow_ref: string;
+  project_id: number | null;
+  owner_id: string;
+  created_by_name: string;
+  created_at: string;
+  last_used_at: string | null;
+}
+
+export interface CITrustList {
+  items: CITrust[];
+  /** The aud tokens must carry; empty when the server has no public URL. */
+  audience: string;
+  server: string;
+}
+
 export interface Project {
   id: number;
   name: string;

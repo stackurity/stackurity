@@ -7,6 +7,7 @@ import { Badge } from "../../components/Badge";
 import { Table, type Column } from "../../components/Table";
 import { CodeBlock, ErrorBox, Loading, PageHeader, RelativeTime, Tabs } from "../../components/ui";
 import { channelTarget, DeliveriesTab, kindLabel } from "./Notifications";
+import { CiTrusts } from "./CiTrusts";
 import { GitHubInstallations, InstallOnGitHubButton } from "./GitHubApp";
 
 /*
@@ -171,7 +172,7 @@ function serverRows(res: List<Asset> | null | undefined): Active[] {
   return rows;
 }
 
-function CiPanel() {
+function CiPanel({ admin }: { admin: boolean }) {
   const origin = window.location.origin;
   const action = `- uses: stackurity/scan-action@v1
   with:
@@ -181,28 +182,26 @@ function CiPanel() {
   stackurity scan . --git-url "$CI_REPOSITORY_URL" --environment production`;
   const gate = `stackurity scan . --git-url "$CI_REPOSITORY_URL" --fail-on critical --only-fixable`;
   return (
-    <div className="int-panel">
-      <p>
-        <strong>1.</strong> Create a collector token under <Link to="/settings/tokens">Settings → API tokens</Link> and save it as the CI secret{" "}
-        <span className="mono">STACKURITY_TOKEN</span>. It can only send scans.
-      </p>
-      <p>
-        <strong>2. GitHub Actions:</strong> add this step after the checkout.
-      </p>
-      <CodeBlock text={action} label="GitHub Actions step" />
-      <p>
-        <strong>Other CI:</strong> run the scan in the repository.
-      </p>
-      <CodeBlock text={cli} label="Scan command" />
-      <p>
-        <strong>Fail the pipeline</strong> on findings: it waits for the result and exits with status 3 when findings meet the threshold (4 when the result
-        was not ready in time). <span className="mono">--fail-on-priority P1</span> and <span className="mono">--fail-on-kev</span> also work.
-      </p>
-      <CodeBlock text={gate} label="Scan with a gate" />
-      <p className="small">
-        <Link to="/help/repositories">More about repositories and CI</Link>
-      </p>
-    </div>
+    <>
+      <CiTrusts admin={admin} />
+      <div className="int-panel">
+        <p>
+          <strong>With a stored token.</strong> For other CI systems, or where ID tokens cannot be used: create a collector token under{" "}
+          <Link to="/settings/tokens">Settings → API tokens</Link> and save it as the CI secret <span className="mono">STACKURITY_TOKEN</span>. It can only send
+          scans.
+        </p>
+        <CodeBlock text={action} label="GitHub Actions step with a token" />
+        <CodeBlock text={cli} label="Scan command" />
+        <p>
+          <strong>Fail the pipeline</strong> on findings: it waits for the result and exits with status 3 when findings meet the threshold (4 when the result
+          was not ready in time). <span className="mono">--fail-on-priority P1</span> and <span className="mono">--fail-on-kev</span> also work.
+        </p>
+        <CodeBlock text={gate} label="Scan with a gate" />
+        <p className="small">
+          <Link to="/help/ci-keyless">Scans in CI without a stored secret</Link> · <Link to="/help/repositories">More about repositories and CI</Link>
+        </p>
+      </div>
+    </>
   );
 }
 
@@ -339,7 +338,7 @@ export function IntegrationsHubPage() {
             extra: <InstallOnGitHubButton />,
           }
         : { kind: "git", title: "Git repository", text: "Clone over HTTPS and read lockfiles on a schedule.", to: "/integrations", admin: true },
-      { kind: "ci", title: "CI pipeline", text: "Run stackurity scan or the GitHub Action in CI, and fail the build on findings.", to: "", panel: "ci" },
+      { kind: "ci", title: "CI pipeline", text: "Run stackurity scan or the GitHub Action in CI, without a stored secret, and fail the build on findings.", to: "", panel: "ci" },
       { kind: "container", title: "Container image / registry", text: "Pull images and list their OS and application packages.", to: "/integrations", admin: true },
       { kind: "kubernetes", title: "Kubernetes cluster", text: "Workloads, the images they run and their exposure. One command installs a read-only reporter in the cluster.", to: "/integrations/kubernetes/add", admin: true },
       { kind: "cloud", title: "AWS", text: "Launch one CloudFormation stack: RDS, EKS, Lambda and more, and the agent on EC2 through SSM.", to: "/settings/integrations/aws", admin: true },
@@ -431,7 +430,7 @@ export function IntegrationsHubPage() {
                         Close
                       </button>
                     </div>
-                    {panel === "ci" ? <CiPanel /> : <SbomPanel admin={admin} />}
+                    {panel === "ci" ? <CiPanel admin={admin} /> : <SbomPanel admin={admin} />}
                   </section>
                 )}
               </section>

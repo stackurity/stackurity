@@ -10,6 +10,8 @@ Started with nothing configured but its database, an empty install connects on i
 | Server: GitHub App (only with `STACKURITY_GITHUB_APP_ID` and the rest set; [github-app.md](github-app.md)) | `api.github.com` and `github.com` (or your GitHub Enterprise Server, `STACKURITY_GITHUB_URL`) | At install (OAuth code exchange, `GET /user/installations`, `GET /app/installations/{id}`, revoking the user token); when listing an installation's repositories (after install or a webhook, and daily); for each scan of a granted repository; when an admin disconnects (uninstall) | The app's JWT, a short-lived installation token minted per scan, and a Git fetch of the granted repository with that token as an HTTP Basic header. Requests are checked against the organisation's private-network policy like a Git integration's |
 | Agent | Your Stackurity server | Every `--interval` | Hostname, machine-id, OS release, installed package list |
 | CLI `scan` / `sbom import` | Your Stackurity server | When run | Lockfile-derived component list, or the SBOM document |
+| CLI `scan` in CI without a token | The CI provider's ID token endpoint (GitHub Actions' `ACTIONS_ID_TOKEN_REQUEST_URL`), then your Stackurity server | When run with no `STACKURITY_TOKEN` | The request for the job's ID token with the server's audience; then the ID token to `POST /api/v1/ci/token` |
+| Server: CI trusts | The issuer a CI trust names (HTTPS only) | When a CI job exchanges an ID token; keys cached for an hour | A GET of the discovery document and key set ([details](#ci-token-issuers-keyless-ci-scans)) |
 | Server: DigitalOcean droplet discovery | `api.digitalocean.com` | Only after an admin stores a DigitalOcean token, when the droplet list is opened or the token saved ([details](#digitalocean-droplet-discovery)) | `GET /v2/droplets` with the stored token |
 
 ### Update check
@@ -125,6 +127,10 @@ Only when an administrator has stored a DigitalOcean API token (**Assets → Add
 ### AI assistants' client metadata
 
 When an AI assistant identifies itself with a client ID metadata document (its client id is an HTTPS URL; see [ai-assistants.md](ai-assistants.md#how-sign-in-works)), the server fetches that URL once an hour at most while someone connects it: a GET over HTTPS, without redirects, at most 64 KiB in 5 seconds, never to private, loopback or cloud metadata addresses. Nothing is sent but the request. Assistants that register themselves instead cause no outbound request.
+
+### CI token issuers (keyless CI scans)
+
+When a CI job exchanges its ID token (`POST /api/v1/ci/token`, see [install.md](install.md#scans-in-ci-without-a-stored-secret)), the server fetches the issuer's OpenID Connect discovery document (`<issuer>/.well-known/openid-configuration`) and the key set it names: `token.actions.githubusercontent.com` for GitHub Actions, `gitlab.com` or your self-managed GitLab for GitLab CI. It does so only for an issuer that a CI trust names exactly, never for an issuer a token merely claims. Each fetch is a GET over HTTPS, without redirects, at most 256 KiB in 5 seconds, through the outbound address guard of the trust's organisation (a self-managed GitLab on a private network needs that organisation to be allowed private targets, or its range in `STACKURITY_PRIVATE_CIDRS`). Keys are kept for an hour; a token signed with a key not in them fetches them again, at most every 30 seconds per issuer. Nothing is sent but the request. Without CI trusts nothing is fetched; deleting the trusts turns it off.
 
 ### Air-gapped installs
 
