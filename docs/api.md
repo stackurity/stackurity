@@ -1077,19 +1077,19 @@ Withdraws a pending invitation: its link stops working.
 
 **Who:** admin
 
-Members of the organisation. Each has `role` (`none`: a member with no organisation-wide role, access through projects only) and `access` (`organisation` or `projects`).
+Members of the organisation. Each has `role` (`none`: a member with no organisation-wide role, access through projects only), `access` (`organisation` or `projects`), `phone` (contact information, may be empty), and `project_grants` and `asset_grants` (how many projects and assets they were given themselves, not through teams).
 
 ### `POST /users`
 
 **Who:** admin
 
-Adds a user to the organisation with a role (`none` allowed). Off on Stackurity Cloud, where people join by invitation.
+`{"email", "name", "phone", "password", "role", "grants"}`: adds a user to the organisation and says what they can see, in one transaction. Either `role` (`viewer`, `engineer`, `security` or `admin`: every project and asset), or `grants` with `role` `none` (or no `role`): a list of `{"project_id", "role"}` (the project's assets, including ones added later) and `{"asset_id", "role"}` (one asset). There is no default: neither is 400, and so are both, an empty `grants`, a project or asset named twice, and a project or asset that is not this organisation's (or an archived project or merged asset); nothing is created then. `phone` is optional contact information: digits with an optional leading `+`, spaces, dots, dashes and brackets, 6 to 15 digits, at most 32 characters. `password` (at least 12 characters) is for a new account; an existing account joins with its own. 409 when they are already a member. Audited as `user.create` and one `access.grant` per grant. Off on Stackurity Cloud, where people join by invitation.
 
 ### `PATCH /users/{id}`
 
 **Who:** admin
 
-Changes a member's role, name, status or password. A `password` set for someone else is temporary: their sessions end, and they must choose their own at their next sign-in.
+Changes a member's role, name, phone, status or password. `phone` belongs to the membership in this organisation (`""` clears it); name, status and password belong to the account. A `password` set for someone else is temporary: their sessions end, and they must choose their own at their next sign-in.
 
 ### `DELETE /users/{id}`
 

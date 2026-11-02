@@ -33,10 +33,17 @@ func (s *Server) listUsers(w http.ResponseWriter, r *http.Request) {
 type userRequest struct {
 	Email    string    `json:"email"`
 	Name     string    `json:"name"`
+	Phone    string    `json:"phone"`
 	Role     auth.Role `json:"role"`
 	Password string    `json:"password"`
+	// Grants: what someone without an organisation-wide role (role
+	// "none", or no role) may see. One of the two is required.
+	Grants []store.ScopeGrant `json:"grants"`
 }
 
+// createUser adds someone with what they may see: an organisation-wide
+// role, or grants on chosen projects and assets, written in one
+// transaction. Neither is refused: there is no default access.
 func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
 	if s.InviteOnly {
 		writeError(w, 403, "invite_only", "people join this service by invitation: invite them (Settings → Users, or a project's Invite) and they set up their own account")
@@ -51,22 +58,30 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, badRequest("a valid email is required"))
 		return
 	}
-	if !req.Role.ValidUser() && req.Role != store.RoleNone {
-		s.fail(w, r, badRequest("role must be viewer, engineer, security, admin, or none (access through projects only)"))
-		return
-	}
 	if req.Password != "" {
 		if err := s.checkNewPassword(r.Context(), req.Password); err != nil {
 			s.fail(w, r, err)
 			return
 		}
 	}
-	u, err := s.Store.CreateUser(r.Context(), req.Email, req.Name, req.Role, req.Password)
+	p := principal(r)
+	u, grantIDs, err := s.Store.CreateMember(r.Context(), store.NewMember{Email: req.Email, Name: req.Name, Phone: req.Phone,
+		Password: req.Password, Role: req.Role, Grants: req.Grants}, actorUserID(p))
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	_ = s.Store.Audit(r.Context(), principal(r).Actor(r), "user.create", "user", itoa(u.ID), map[string]any{"email": u.Email, "role": u.Role})
+	role := any(u.Role)
+	if u.Role == "" {
+		role = "none"
+	}
+	_ = s.Store.Audit(r.Context(), p.Actor(r), "user.create", "user", itoa(u.ID),
+		map[string]any{"email": u.Email, "role": role, "phone_set": u.Phone != "", "grants": len(grantIDs)})
+	for _, id := range grantIDs {
+		if g, err := s.Store.GetGrant(r.Context(), id); err == nil {
+			_ = s.Store.Audit(r.Context(), p.Actor(r), "access.grant", "access_grant", itoa(g.ID), g)
+		}
+	}
 	writeJSON(w, 201, u)
 }
 
@@ -94,7 +109,7 @@ func (s *Server) updateUser(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	detail := map[string]any{"role": u.Role, "disabled": u.Disabled, "password_changed": u.Password != nil, "temporary_password": u.Temporary, "name": u.Name}
+	detail := map[string]any{"role": u.Role, "disabled": u.Disabled, "password_changed": u.Password != nil, "temporary_password": u.Temporary, "name": u.Name, "phone_changed": u.Phone != nil}
 	_ = s.Store.Audit(r.Context(), principal(r).Actor(r), "user.update", "user", itoa(id), detail)
 	us, err := s.Store.GetUser(r.Context(), id)
 	if err != nil {
