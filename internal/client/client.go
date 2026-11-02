@@ -226,6 +226,36 @@ type Meta struct {
 	Version       string   `json:"version"`
 	SetupRequired bool     `json:"setup_required"`
 	Features      []string `json:"features"`
+	// CIAudience is the aud a CI job's ID token needs for POST /ci/token;
+	// empty when the server does not exchange them.
+	CIAudience string `json:"ci_audience"`
+}
+
+// CIToken is a collector token a CI job exchanged its ID token for.
+type CIToken struct {
+	Token         string    `json:"token"`
+	ExpiresAt     time.Time `json:"expires_at"`
+	RepositoryURL string    `json:"repository_url"`
+	ProjectID     *int64    `json:"project_id"`
+	TrustID       int64     `json:"trust_id"`
+}
+
+// ExchangeCIToken trades a CI provider's OpenID Connect ID token for a
+// short-lived collector token (POST /ci/token). trustID chooses among
+// several trusts that accept the job; 0 lets the server choose.
+func (c *Client) ExchangeCIToken(ctx context.Context, idToken string, trustID int64) (*CIToken, error) {
+	body, err := json.Marshal(map[string]any{"token": idToken, "trust_id": trustID})
+	if err != nil {
+		return nil, err
+	}
+	var out CIToken
+	if err := c.Do(ctx, "POST", "/api/v1/ci/token", bytes.NewReader(body), map[string]string{"Content-Type": "application/json", "X-Stackurity-CSRF": "1"}, &out); err != nil {
+		return nil, err
+	}
+	if out.Token == "" {
+		return nil, errors.New("the server answered without a token")
+	}
+	return &out, nil
 }
 
 func (c *Client) Meta(ctx context.Context) (*Meta, error) {
@@ -452,4 +482,58 @@ func (c *Client) CheckDue(ctx context.Context, assetIDs []int64) (due bool, poll
 		return false, 0, err
 	}
 	return out.Check, time.Duration(out.PollSeconds) * time.Second, nil
+}
+
+// FeatureKubernetesReport, in Meta.Features, means the server takes a whole
+// cluster's collection at POST /kubernetes/report and queues scans of the
+// images it runs.
+const FeatureKubernetesReport = "kubernetes_report"
+
+// ImageScanStats is what the server queued for a report's images.
+type ImageScanStats struct {
+	Queued   int `json:"queued"`
+	Fresh    int `json:"fresh"`
+	Pending  int `json:"pending"`
+	Deferred int `json:"deferred"`
+}
+
+// KubernetesReportResult is the server's answer to a cluster's report.
+type KubernetesReportResult struct {
+	ClusterAssetID int64          `json:"cluster_asset_id"`
+	Assets         int            `json:"assets"`
+	NewAssets      int            `json:"new_assets"`
+	Refused        []string       `json:"refused"`
+	Images         int            `json:"images"`
+	ImageScans     ImageScanStats `json:"image_scans"`
+}
+
+// KubernetesReport sends one collection of a cluster (the cluster's batch
+// first, then images, then workloads). imageScans is the most image scans
+// the server may queue for it (0: none). Server errors are retried.
+func (c *Client) KubernetesReport(ctx context.Context, batches []*model.ObservationBatch, imageScans int) (*KubernetesReportResult, error) {
+	var res KubernetesReportResult
+	var err error
+	for attempt := 0; attempt < 4; attempt++ {
+		var buf *bytes.Buffer
+		buf, err = gz(map[string]any{"batches": batches, "image_scans": imageScans})
+		if err != nil {
+			return nil, err
+		}
+		err = c.Do(ctx, "POST", "/api/v1/kubernetes/report", buf, map[string]string{
+			"Content-Type": "application/json", "Content-Encoding": "gzip",
+		}, &res)
+		if err == nil {
+			return &res, nil
+		}
+		// 429 is not retried: the limit is per hour.
+		if ae, ok := err.(*APIError); ok && ae.Status < 500 {
+			return nil, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(time.Duration(1<<attempt) * 2 * time.Second):
+		}
+	}
+	return nil, err
 }

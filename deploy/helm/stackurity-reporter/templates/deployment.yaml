@@ -1,0 +1,84 @@
+{{- $server := required "server is required: the Stackurity server's URL" .Values.server -}}
+{{- if and (not (hasPrefix "https://" $server)) (not .Values.allowHTTP) -}}
+{{- fail "server must be an https:// URL (allowHTTP=true overrides this for a local evaluation)" -}}
+{{- end -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "reporter.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels: {{- include "reporter.labels" . | nindent 4 }}
+spec:
+  # One reporter per cluster; never two during an upgrade.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: {{- include "reporter.selector" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "reporter.selector" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "reporter.fullname" . }}
+      automountServiceAccountToken: true
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: reporter
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["kubernetes-reporter"]
+          env:
+            - {name: STACKURITY_SERVER, value: {{ $server | quote }}}
+            - {name: STACKURITY_REPORTER_SECRET, value: {{ include "reporter.secretName" . | quote }}}
+            {{- if .Values.allowHTTP }}
+            - {name: STACKURITY_ALLOW_HTTP, value: "1"}
+            {{- end }}
+            {{- with .Values.clusterName }}
+            - {name: STACKURITY_CLUSTER_NAME, value: {{ . | quote }}}
+            {{- end }}
+            {{- with .Values.environment }}
+            - {name: STACKURITY_ENVIRONMENT, value: {{ . | quote }}}
+            {{- end }}
+            {{- with .Values.environmentLabel }}
+            - {name: STACKURITY_ENVIRONMENT_LABEL, value: {{ . | quote }}}
+            {{- end }}
+            {{- with .Values.namespaces }}
+            - {name: STACKURITY_NAMESPACES, value: {{ join "," . | quote }}}
+            {{- end }}
+            {{- with .Values.excludeNamespaces }}
+            - {name: STACKURITY_EXCLUDE_NAMESPACES, value: {{ join "," . | quote }}}
+            {{- end }}
+            - {name: STACKURITY_MAX_IMAGES, value: {{ .Values.maxImages | quote }}}
+            - {name: STACKURITY_IMAGE_SCANS, value: {{ .Values.imageScans | quote }}}
+            - {name: STACKURITY_INTERVAL, value: {{ .Values.interval | quote }}}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}

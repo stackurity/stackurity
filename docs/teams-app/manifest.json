@@ -1,0 +1,46 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/teams/v1.17/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.17",
+  "version": "1.0.0",
+  "id": "00000000-0000-0000-0000-000000000000",
+  "developer": {
+    "name": "Stackurity",
+    "websiteUrl": "https://github.com/stackurity/stackurity",
+    "privacyUrl": "https://github.com/stackurity/stackurity/blob/main/docs/network.md",
+    "termsOfUseUrl": "https://github.com/stackurity/stackurity/blob/main/LICENSE"
+  },
+  "name": {
+    "short": "Stackurity",
+    "full": "Stackurity security notifications"
+  },
+  "description": {
+    "short": "Urgent security issues, overdue fixes and summaries in a Teams channel.",
+    "full": "Stackurity tells your team about new urgent issues, issues that came back after a fix, overdue fixes and daily or weekly summaries, grouped per check and per fix, never one message per issue. Add the app to a team, then send it the code shown in Stackurity (Settings, Integrations, Microsoft Teams, Add to Teams) in the channel that should get the notifications. Stackurity posts only to channels connected that way."
+  },
+  "icons": {
+    "color": "color.png",
+    "outline": "outline.png"
+  },
+  "accentColor": "#1F2937",
+  "bots": [
+    {
+      "botId": "00000000-0000-0000-0000-000000000000",
+      "scopes": ["team"],
+      "supportsFiles": false,
+      "isNotificationOnly": false,
+      "commandLists": [
+        {
+          "scopes": ["team"],
+          "commands": [
+            {
+              "title": "connect",
+              "description": "Connect this channel: send the code from Add to Teams in Stackurity"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "permissions": ["identity", "messageTeamMembers"],
+  "validDomains": ["app.stackurity.dev"]
+}

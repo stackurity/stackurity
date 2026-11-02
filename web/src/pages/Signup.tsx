@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router";
-import { api, ApiError, type SignupMeta } from "../api";
+import { api, ApiError, type SignupMeta, type SocialMeta } from "../api";
 import { useAuth } from "../auth";
 import { useAction } from "../hooks";
 import { ErrorBox, Loading, Notice } from "../components/ui";
+import { SocialButtons } from "./Social";
 
 // The sign-up challenge widget, loaded only on the sign-up page.
 interface ChallengeWidget {
@@ -92,7 +93,7 @@ export function Challenge({ siteKey, onToken, resetKey }: { siteKey: string; onT
 }
 
 /** /signup: someone creating an account and a new organisation. */
-export function SignupPage({ signup }: { signup: SignupMeta }) {
+export function SignupPage({ signup, social }: { signup: SignupMeta; social?: SocialMeta }) {
   const [f, setF] = useState({ email: "", name: "", organisation: "", password: "", confirm: "" });
   const [accept, setAccept] = useState(false);
   const [token, setToken] = useState("");
@@ -163,6 +164,15 @@ export function SignupPage({ signup }: { signup: SignupMeta }) {
             : "Create your organisation."}{" "}
           You can invite your team and add servers, repositories and images right after.
         </p>
+        {social && (
+          <>
+            {/* The provider confirms the address: no password and no email to wait for. */}
+            <SocialButtons social={social} />
+            <p className="muted small" style={{ textAlign: "center" }}>
+              or sign up with your email
+            </p>
+          </>
+        )}
         {!emailRefused && <ErrorBox error={act.error} title="Sign-up failed" />}
         {localErr && (
           <div className="alert alert-error" role="alert">

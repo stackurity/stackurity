@@ -2060,7 +2060,7 @@
    "get": {
     "operationId": "get_auth_me",
     "summary": "The caller: user, role, organisation, projects and edition",
-    "description": "Session handling\n\nRole: any signed-in user or token",
+    "description": "The caller: `user`, `role`, `access`, `project_role`, `projects`, `workspace`, `workspaces`, `edition`, `features`, and `invite_only` (people join by invitation: `POST /users` is refused)\n\nRole: any signed-in user or token",
     "tags": [
      "Account"
     ],
@@ -5718,7 +5718,7 @@
    "get": {
     "operationId": "get_invitations",
     "summary": "Invitations, open and recent",
-    "description": "Invitations: open ones, and the others of the last 30 days, with `status` (`pending`, `accepted`, `revoked`, `expired`). Never the link\n\nRole: admin",
+    "description": "Invitations: open ones, and the others of the last 30 days, with `status` (`pending`, `accepted`, `revoked`, `expired`), `scope` (`organisation`, `specific`, or `project` for one made before grants) and `grants` (`kind`, `project_id` or `asset_id`, `role`, `name`, `available`, `unavailable`: `archived`, `merged` or `deleted`). `project_id` lists the ones that name that project. Never the link\n\nRole: admin",
     "tags": [
      "Projects and people"
     ],
@@ -5755,7 +5755,7 @@
    "post": {
     "operationId": "post_invitations",
     "summary": "Invite someone to the organisation or a project",
-    "description": "`{\"email\", \"name\", \"role\", \"project_id\"}` (`project_id` 0: an organisation-wide role). 201 with `invitation` and `emailed`; when the email was not sent, `link` (shown once) and `email_problem`. Inviting the same person to the same project again replaces the open invitation. Someone already a member gets the project role at once (`granted`, `grant`); an organisation-wide invitation for a member is 409\n\nRole: admin (30 an hour per organisation)",
+    "description": "Invite someone and say what they will see, as for `POST /users`: an organisation-wide `role` (every project and asset), or `grants` (`[{\"project_id\", \"role\"} | {\"asset_id\", \"role\"}]`, with `role` `none` or no role). The older form `{\"role\", \"project_id\"}` is still accepted and becomes one project grant. `teams`: teams they join on accepting (each invitation lists them with what they can see, in `teams`). There is no default: neither is 400, and so is a grant on a project or asset that is not this organisation's (or an archived project or merged asset); nothing is created then. 201 with `invitation` (with `scope` and `grants`), `emailed` and `replaced` (the person's earlier open invitations, now withdrawn: one open invitation per person); when the email was not sent, `link` (shown once) and `email_problem`. Someone already a member gets the grants at once, all or none (`granted`, `grants`, and `grant`: the first); an organisation-wide invitation for a member is 409\n\nRole: admin (30 an hour per organisation)",
     "tags": [
      "Projects and people"
     ],
@@ -5765,7 +5765,71 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "required": [
+         "email"
+        ],
+        "properties": {
+         "email": {
+          "type": "string",
+          "format": "email"
+         },
+         "name": {
+          "type": "string",
+          "maxLength": 200
+         },
+         "role": {
+          "type": "string",
+          "enum": [
+           "viewer",
+           "engineer",
+           "security",
+           "admin",
+           "none"
+          ],
+          "description": "Organisation-wide role, or none with grants (or the role on project_id, in the older form)."
+         },
+         "grants": {
+          "type": "array",
+          "maxItems": 500,
+          "items": {
+           "type": "object",
+           "description": "A role on one project (its assets, including ones added later) or on one asset.",
+           "properties": {
+            "project_id": {
+             "type": "integer"
+            },
+            "asset_id": {
+             "type": "integer"
+            },
+            "role": {
+             "type": "string",
+             "enum": [
+              "viewer",
+              "engineer",
+              "security",
+              "admin"
+             ]
+            }
+           },
+           "required": [
+            "role"
+           ]
+          }
+         },
+         "project_id": {
+          "type": "integer",
+          "description": "Older form: role on this one project. Not with grants."
+         },
+         "teams": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+           "type": "integer"
+          },
+          "description": "Teams to add them to; membership gives the team's access. With role none, may stand in for grants when one of the teams can see something."
+         }
+        }
        }
       }
      }
@@ -5794,7 +5858,7 @@
    "post": {
     "operationId": "post_invitations_accept",
     "summary": "Accept an invitation",
-    "description": "`{\"token\", \"name\", \"password\"}`. Joins the invitation's organisation with its role (see Invitations); answers `workspace_id`, `project_id`, `role`, `account_created` and `joined`, and the browser session then works in that organisation. 410: the link does not work; 409 `sign_in_required` or `wrong_account`\n\nRole: none, or the invitee's session (rate limited)",
+    "description": "`{\"token\", \"name\", \"password\"}`. Joins the invitation's organisation with what it gives, in one transaction; answers `workspace_id`, `project_id` (its only project, or 0), `role`, `scope`, `grants` (how many were given), `dropped` (grants skipped because the project was archived or deleted, or the asset merged or deleted, since the invitation was sent), `account_created` and `joined`, and the browser session then works in that organisation. 410 `invitation_stale` when nothing is left to give (nothing is written; the invitation stays open); 410 `invitation_invalid` when the link does not work; 409 `sign_in_required` or `wrong_account`\n\nRole: none, or the invitee's session (rate limited)",
     "tags": [
      "Projects and people"
     ],
@@ -5834,7 +5898,7 @@
    "post": {
     "operationId": "post_invitations_preview",
     "summary": "What an invitation link is for",
-    "description": "`{\"token\"}`: what the link is for (`workspace`, `project`, `role`, `email`, `invited_by`, `expires_at`, `account_exists`) and `signed_in_as`. 410 for any link that does not work, without saying why\n\nRole: none (rate limited)",
+    "description": "`{\"token\"}`: what the link is for (`workspace`, `project` and `role` when it names one project or all of them, `scope`, `grants` with whether each can still be given, `usable`, `email`, `invited_by`, `expires_at`, `account_exists`) and `signed_in_as`. 410 for any link that does not work, without saying why\n\nRole: none (rate limited)",
     "tags": [
      "Projects and people"
     ],
@@ -7810,7 +7874,7 @@
    "get": {
     "operationId": "get_teams",
     "summary": "Teams",
-    "description": "Teams\n\nRole: viewer",
+    "description": "Teams, each with `members`, `asset_count` (assets it owns: alerts go to it; no access) and `access` (what its members see through it)\n\nRole: viewer",
     "tags": [
      "Projects and people"
     ],
@@ -7906,7 +7970,7 @@
    "patch": {
     "operationId": "patch_teams_id",
     "summary": "Change a team and its members",
-    "description": "Manage teams and members (members must belong to the workspace)\n\nRole: admin",
+    "description": "Change a team in one transaction: `name`, `email`, `members`, `access` (replaces its grants on projects and assets; members see them while in the team) and `owns` (replaces the assets whose owner team it is; ownership routes alerts and gives no access)\n\nRole: admin",
     "tags": [
      "Projects and people"
     ],
@@ -7926,7 +7990,56 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "name": {
+          "type": "string"
+         },
+         "email": {
+          "type": "string"
+         },
+         "members": {
+          "type": "array",
+          "items": {
+           "type": "integer"
+          }
+         },
+         "access": {
+          "type": "array",
+          "maxItems": 500,
+          "items": {
+           "type": "object",
+           "properties": {
+            "project_id": {
+             "type": "integer"
+            },
+            "asset_id": {
+             "type": "integer"
+            },
+            "role": {
+             "type": "string",
+             "enum": [
+              "viewer",
+              "engineer",
+              "security",
+              "admin"
+             ]
+            }
+           },
+           "required": [
+            "role"
+           ]
+          },
+          "description": "The team's grants, replaced as a whole; [] removes them."
+         },
+         "owns": {
+          "type": "array",
+          "items": {
+           "type": "integer"
+          },
+          "description": "Asset ids whose owner team this is, replaced as a whole."
+         }
+        }
        }
       }
      }
@@ -8111,7 +8224,7 @@
    "get": {
     "operationId": "get_users",
     "summary": "Users of the organisation",
-    "description": "Manage users. `role` `none` keeps someone a member with no organisation-wide role (access through projects only); each user has `access`: `organisation` or `projects`\n\nRole: admin",
+    "description": "Members of the organisation. Each has `role` (`none`: access through projects only), `access` (`organisation` or `projects`), `phone`, and `project_grants` and `asset_grants` (their own grants, not their teams'), `teams` and `access_teams` (their teams that can see something).\n\nRole: admin",
     "tags": [
      "Projects and people"
     ],
@@ -8138,7 +8251,7 @@
    "post": {
     "operationId": "post_users",
     "summary": "Add a user to the organisation",
-    "description": "Manage users. `role` `none` keeps someone a member with no organisation-wide role (access through projects only); each user has `access`: `organisation` or `projects`\n\nRole: admin",
+    "description": "Add a user and say what they can see, in one transaction: an organisation-wide `role` (every project and asset), or `grants` on chosen projects and assets with `role` `none`. There is no default: a request with neither is 400 and creates nothing; so is a grant on a project or asset of another organisation. `teams` adds them to teams in the same transaction (a team that can see nothing does not count as access). Off on Stackurity Cloud (invite_only).\n\nRole: admin",
     "tags": [
      "Projects and people"
     ],
@@ -8148,7 +8261,77 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "required": [
+         "email"
+        ],
+        "properties": {
+         "email": {
+          "type": "string",
+          "format": "email"
+         },
+         "name": {
+          "type": "string",
+          "maxLength": 200
+         },
+         "phone": {
+          "type": "string",
+          "maxLength": 32,
+          "description": "Contact information only: digits, optional leading +, spaces, dots, dashes, brackets; 6 to 15 digits."
+         },
+         "password": {
+          "type": "string",
+          "minLength": 12,
+          "description": "For a new account; ignored for an existing one."
+         },
+         "role": {
+          "type": "string",
+          "enum": [
+           "viewer",
+           "engineer",
+           "security",
+           "admin",
+           "none"
+          ],
+          "description": "Organisation-wide role, or none with grants."
+         },
+         "grants": {
+          "type": "array",
+          "maxItems": 500,
+          "items": {
+           "type": "object",
+           "description": "A role on one project (its assets, including ones added later) or on one asset.",
+           "properties": {
+            "project_id": {
+             "type": "integer"
+            },
+            "asset_id": {
+             "type": "integer"
+            },
+            "role": {
+             "type": "string",
+             "enum": [
+              "viewer",
+              "engineer",
+              "security",
+              "admin"
+             ]
+            }
+           },
+           "required": [
+            "role"
+           ]
+          }
+         },
+         "teams": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+           "type": "integer"
+          },
+          "description": "Teams to add them to; membership gives the team's access. With role none, may stand in for grants when one of the teams can see something."
+         }
+        }
        }
       }
      }
@@ -8235,7 +8418,7 @@
    },
    "patch": {
     "operationId": "patch_users_id",
-    "summary": "Change a user's role, name or status",
+    "summary": "Change a user's role, name, phone or status",
     "description": "Manage users. `role` `none` keeps someone a member with no organisation-wide role (access through projects only); each user has `access`: `organisation` or `projects`\n\nRole: admin",
     "tags": [
      "Projects and people"
@@ -8256,7 +8439,34 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "name": {
+          "type": "string"
+         },
+         "role": {
+          "type": "string",
+          "enum": [
+           "viewer",
+           "engineer",
+           "security",
+           "admin",
+           "none"
+          ]
+         },
+         "disabled": {
+          "type": "boolean"
+         },
+         "password": {
+          "type": "string",
+          "minLength": 12
+         },
+         "phone": {
+          "type": "string",
+          "maxLength": 32,
+          "description": "Contact information on the membership in this organisation; empty clears it."
+         }
+        }
        }
       }
      }
@@ -10312,6 +10522,2369 @@
      }
     ],
     "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/cloud-setup/gcp": {
+   "get": {
+    "operationId": "get_cloud_setup_gcp",
+    "summary": "Commands that connect a Google Cloud project to this workspace (workload identity, or a service account key)",
+    "description": "Commands that connect a Google Cloud project to this workspace (workload identity, or a service account key)\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "project_number",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/cloud-setup/azure": {
+   "get": {
+    "operationId": "get_cloud_setup_azure",
+    "summary": "Commands that connect an Azure subscription to this workspace (the Stackurity app, or a client secret)",
+    "description": "Commands that connect an Azure subscription to this workspace (the Stackurity app, or a client secret)\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "tenant_id",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "subscription_id",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/credentials/health": {
+   "get": {
+    "operationId": "get_credentials_health",
+    "summary": "Failing connections, expiring or unused API tokens and old stored secrets",
+    "description": "Failing connections, expiring or unused API tokens and old stored secrets\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/gitlab": {
+   "get": {
+    "operationId": "get_integrations_gitlab",
+    "summary": "Connect GitLab status and connected groups",
+    "description": "`configured` (whether this server offers Connect GitLab; with `gitlab_url`) and `connections`, this organisation's connected GitLab groups with `group_path`, `credential_kind` (`group_token`, `oauth`, `none`), `credential_expires`, `webhook` (`active`, `not_permitted`, `none`), `status` (`active`, `needs_credential`, `expired`), `note` and the number of `projects`\n\nRole: engineer",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "engineer",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/gitlab/connect": {
+   "post": {
+    "operationId": "post_integrations_gitlab_connect",
+    "summary": "Start Connect GitLab",
+    "description": "`{\"return_to\": \"/settings/integrations\"}`. Answers `url`, GitLab's consent page for the `api` scope with a single-use state bound to the caller and organisation (10 minutes). 404 `not_configured` without Connect GitLab; 409 `secrets_disabled` without STACKURITY_SECRET_KEY\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/gitlab/oauth": {
+   "post": {
+    "operationId": "post_integrations_gitlab_oauth",
+    "summary": "Finish an authorisation at GitLab",
+    "description": "`{\"state\", \"code\"}` from GitLab's redirect to `/integrations/gitlab/callback`. The state must be the caller's, in this organisation, unused and fresh (400 `gitlab_state`, before GitLab is called); the token must have exactly the scopes asked (400 `gitlab_scopes`). For Connect GitLab answers `pick` (single use, 10 minutes) and `groups` (`id`, `full_path`, `name`, `owner`); for a read-only authorisation 201 `connection`; for a cleanup `webhook_deleted`, `token_revoked`, `disconnected`\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/gitlab/connections": {
+   "post": {
+    "operationId": "post_integrations_gitlab_connections",
+    "summary": "Connect a GitLab group",
+    "description": "`{\"pick\", \"group_id\"}`. The caller's GitLab account must be a member (Reporter or above) of the group (403 `gitlab_group`); a group connected elsewhere, or above or below one, is refused (409 `gitlab_group_taken`). 201: `connection`, `needs_readonly`, `notes`, `return_to`\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/gitlab/connections/{id}/authorize": {
+   "post": {
+    "operationId": "post_integrations_gitlab_connection_authorize",
+    "summary": "Authorise read-only access, or clean up on GitLab",
+    "description": "`{\"purpose\": \"readonly\" | \"cleanup\", \"return_to\"}`. Answers `url`, GitLab's consent page: `read_api read_repository` for readonly (the credential kept when a group access token is not allowed), `api` for cleanup (deletes the webhook and the group access token on GitLab, then disconnects)\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/gitlab/connections/{id}/sync": {
+   "post": {
+    "operationId": "post_integrations_gitlab_connection_sync",
+    "summary": "List a connected group's projects again",
+    "description": "Queues a listing of the group's projects on GitLab (202)\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/gitlab/connections/{id}": {
+   "delete": {
+    "operationId": "delete_integrations_gitlab_connection",
+    "summary": "Disconnect a GitLab group",
+    "description": "Removes the connection (its sealed credential and webhook secret with it); its projects' integrations are switched off with a note, assets and history kept. Revokes the stored credential at GitLab where it can (`credential_revoked`); `webhook_left_on_gitlab` when the group webhook remains (use the cleanup authorisation to delete it)\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/gitlab/webhook/{id}": {
+   "post": {
+    "operationId": "post_integrations_gitlab_webhook",
+    "summary": "Connect GitLab webhook (verified by the connection's secret token)",
+    "description": "A connected group's webhook URL. 401 unless `X-Gitlab-Token` is the connection's secret token; 400 without `X-Gitlab-Event` or `X-Gitlab-Event-UUID`; a delivery already handled answers `{\"result\": \"duplicate\"}`. A `Push Hook` to a project's default branch that changes a lockfile or manifest queues its scan; other events list the group again; 404 without Connect GitLab\n\nRole: none: GitLab's secret token (the connection's)",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "none: GitLab's secret token (the connection's)",
+    "security": [],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/jira/install": {
+   "post": {
+    "operationId": "post_integrations_jira_install",
+    "summary": "Start Connect Jira",
+    "description": "`{\"return_to\": \"/settings/integrations\", \"connection_id\": 0}` (a dashboard path; `connection_id` to reconnect a connection of this organisation). Answers `url`, Atlassian's consent page with a single-use state bound to the caller and organisation (10 minutes). 404 `not_configured` without the Stackurity Atlassian app (STACKURITY_JIRA_CLIENT_ID, STACKURITY_JIRA_CLIENT_SECRET)\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/jira/oauth": {
+   "post": {
+    "operationId": "post_integrations_jira_oauth",
+    "summary": "Finish Connect Jira",
+    "description": "`{\"code\", \"state\"}` from Atlassian's redirect to `/integrations/jira/oauth/callback`. The state must be the caller's, in this organisation, unused and fresh (400 `jira_state` otherwise, before Atlassian is called). Stores the grant sealed and answers `connection` (its Jira sites, never the tokens), `return_to` and `reconnected` (201 new, 200 reconnected); 400 `jira_no_site`; 502 `jira_refused`\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/jira/connections": {
+   "get": {
+    "operationId": "get_integrations_jira_connections",
+    "summary": "List Jira connections",
+    "description": "Connect Jira connections of this organisation: `id`, `sites` (`id` the cloud id, `name`, `url`), `scopes`, `status` (`active` or `reconnect_needed`), `status_reason`, `connected_by`, `connected_at`, `refreshed_at`. Tokens are never returned\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/jira/connections/{id}": {
+   "delete": {
+    "operationId": "delete_integrations_jira_connections_id",
+    "summary": "Disconnect Jira",
+    "description": "Deletes the connection and its tokens; the Jira channels using it are switched off with a note (`channels_disabled`). Atlassian has no API to revoke a grant: `revoke_url` is where the person removes the app from their Atlassian account\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/jira/connections/{id}/projects": {
+   "get": {
+    "operationId": "get_integrations_jira_connections_id_projects",
+    "summary": "List a Jira site's projects",
+    "description": "The projects of a site of the connection (`key`, `name`), read with its token, for setting up a channel. 409 `jira_reconnect` when the connection needs reconnecting; 502 when Jira refuses\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "site",
+      "in": "query",
+      "required": true,
+      "description": "The site's cloud id",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "q",
+      "in": "query",
+      "required": false,
+      "description": "Text the key or name contains",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/jira/connections/{id}/projects/{key}": {
+   "get": {
+    "operationId": "get_integrations_jira_connections_id_projects_key",
+    "summary": "Read a Jira project's issue types and statuses",
+    "description": "`issue_types` (`name`, `subtask`), `statuses` by issue type (`name`, `category`: new, indeterminate or done) and the site's `priorities`, for setting up a channel\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "key",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "site",
+      "in": "query",
+      "required": true,
+      "description": "The site's cloud id",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/teams/install": {
+   "post": {
+    "operationId": "post_integrations_teams_install",
+    "summary": "Start Add to Teams",
+    "description": "Answers `id`, `code` (single use, 15 minutes, for the caller in this organisation; their earlier unused code stops working), `expires_at` and `install_url` (opens the app in Teams). Sending the code to the bot in a Teams channel connects that channel. 404 `not_configured` without the Stackurity Teams app (STACKURITY_TEAMS_APP_ID, ...)\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/teams/install/{id}": {
+   "get": {
+    "operationId": "get_integrations_teams_install_id",
+    "summary": "What became of an Add to Teams code",
+    "description": "`status` `pending`, `expired`, `connected` (with `channel`) or `failed`, and `expires_at`. 404 for another person's code\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/teams/messages": {
+   "post": {
+    "operationId": "post_integrations_teams_messages",
+    "summary": "The Teams app's messaging endpoint (verified by a Bot Framework JWT)",
+    "description": "Bot Framework activities from Microsoft Teams. Every request needs `Authorization: Bearer` with a JWT the Bot Framework signed (RS256, a key endorsed for `msteams`), issued by `https://api.botframework.com` for the app's ID, current, whose `serviceurl` claim is the activity's `serviceUrl`; otherwise 401. 403 for a `serviceUrl` that is not a Teams Bot Connector host. A message with an Add to Teams code connects its channel; the app removed from a team or a channel deleted switches the matching integrations off. 404 without the app\n\nRole: none: a Bot Framework token for the app",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "none: a Bot Framework token for the app",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/signup/social/preview": {
+   "post": {
+    "operationId": "post_signup_social_preview",
+    "summary": "Who a provider vouched for, before finishing a sign-up (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. `{\"token\"}` from `/signup/social#<token>`, in the browser that signed in with Google, Microsoft or GitHub: the verified `email`, `name`, `provider` and `colleagues_domain`; 410 when expired, used or another browser's\n\nRole: none",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "none",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/signup/social": {
+   "post": {
+    "operationId": "post_signup_social",
+    "summary": "Finish a sign-up through Google, Microsoft or GitHub (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. `token`, `name`, `organisation`, `accept_terms`, `email_notice_version`: creates the account (no password), the organisation on its trial, connects the identity and starts a session; answers `workspace_id` and `next`\n\nRole: none",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "none",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/social/confirm": {
+   "post": {
+    "operationId": "post_auth_social_confirm",
+    "summary": "Connect a provider to an existing account from the emailed link (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. `{\"token\"}` from the link emailed to the account's address, in the browser that signed in with the provider: connects it and signs in (`mfa_required` when the account has a second factor)\n\nRole: none",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "none",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/social": {
+   "get": {
+    "operationId": "get_auth_social",
+    "summary": "Your sign-ins through Google, Microsoft or GitHub (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. Each configured provider with `connected`, `email`, `login`, `created_at`, `last_used_at`; and `has_password`\n\nRole: any signed-in user (browser session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (browser session)",
+    "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/social/{provider}/link": {
+   "post": {
+    "operationId": "post_auth_social_link",
+    "summary": "Start connecting a provider to your account (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. `{\"password\"}` when the account has one; answers `redirect_url` (the provider). Never for an instance administrator\n\nRole: any signed-in user (browser session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (browser session)",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "provider",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "enum": [
+        "google",
+        "microsoft",
+        "github"
+       ]
+      }
+     }
+    ]
+   }
+  },
+  "/auth/social/{provider}": {
+   "delete": {
+    "operationId": "delete_auth_social",
+    "summary": "Disconnect a provider from your account (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. 409 when it is the only way into an account without a password\n\nRole: any signed-in user (browser session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (browser session)",
+    "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "provider",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "enum": [
+        "google",
+        "microsoft",
+        "github"
+       ]
+      }
+     }
+    ]
+   }
+  },
+  "/integrations/{id}/images": {
+   "get": {
+    "operationId": "get_integrations_id_images",
+    "summary": "Images a container registry integration tracks",
+    "description": "The images (digests) a container registry integration chose, stopped tracking, or found removed\n\nRole: engineer",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "engineer",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ]
+   }
+  },
+  "/integrations/registry/discover": {
+   "post": {
+    "operationId": "post_integrations_registry_discover",
+    "summary": "List a container registry's repositories",
+    "description": "List the repositories of a registry before connecting it, with whether the configuration keeps each; the secret is used, never returned\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/ci/token": {
+   "post": {
+    "operationId": "post_ci_token",
+    "summary": "Exchange a CI job's OpenID Connect ID token for a 15-minute collector token",
+    "description": "Exchange a CI job's ID token (`{\"token\", \"trust_id\"}`) for a collector token that expires after 15 minutes, belongs to the matching CI trust's organisation and project, and may report only the job's repository (`repository_url`). The token must verify with the issuer's published keys (asymmetric algorithms only), with `iss` exactly a trust's issuer, `aud` exactly the server's CI audience (`ci_audience` in GET /meta), and `exp`, `nbf`, `iat` within one minute. 401 invalid_token, 400 trust_required without trust_id on a server with several organisations, 403 when no trust accepts the job, 409 when several organisations or projects do (send trust_id), 503 without STACKURITY_BASE_URL\n\nRole: none (rate limited)",
+    "tags": [
+     "Agents and uploads"
+    ],
+    "x-stackurity-role": "none (rate limited)",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/ci-trusts": {
+   "get": {
+    "operationId": "get_ci_trusts",
+    "summary": "CI trusts",
+    "description": "Create, list and delete CI trusts: `provider` (github, gitlab), `issuer` (https, matched exactly), `repository` (owner/repo, or owner/* with `owner_wildcard`), optional `ref`, `environment`, `workflow_ref`, `name`, `project_id`. The list includes the CI `audience`\n\nRole: admin",
+    "tags": [
+     "Agents and uploads"
+    ],
+    "x-stackurity-role": "admin",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "post": {
+    "operationId": "post_ci_trusts",
+    "summary": "Create a CI trust",
+    "description": "Create, list and delete CI trusts: `provider` (github, gitlab), `issuer` (https, matched exactly), `repository` (owner/repo, or owner/* with `owner_wildcard`), optional `ref`, `environment`, `workflow_ref`, `name`, `project_id`. The list includes the CI `audience`\n\nRole: admin",
+    "tags": [
+     "Agents and uploads"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/ci-trusts/{id}": {
+   "delete": {
+    "operationId": "delete_ci_trusts_id",
+    "summary": "Delete a CI trust and revoke its tokens",
+    "description": "Create, list and delete CI trusts: `provider` (github, gitlab), `issuer` (https, matched exactly), `repository` (owner/repo, or owner/* with `owner_wildcard`), optional `ref`, `environment`, `workflow_ref`, `name`, `project_id`. The list includes the CI `audience`\n\nRole: admin",
+    "tags": [
+     "Agents and uploads"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/aws/callback": {
+   "post": {
+    "operationId": "post_aws_callback",
+    "summary": "Report a Launch Stack role (called by the stack)",
+    "description": "Called once by the stack's custom resource with `{\"role_arn\", \"external_id\", \"stack_id\"}` and `Authorization: Bearer <token>`, the signed single-use token from the Launch Stack link. The token names the connection, its workspace and external ID; it is used up by the first request, expires after 24 hours and is replaced by a new link. The server then assumes the role with the external ID (and checks it cannot without) and activates the connection. Every refusal of a token is the same 403. Outside the session and CSRF checks\n\nRole: none (signed single-use token; rate limited)",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "none (signed single-use token; rate limited)",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/aws/connections": {
+   "get": {
+    "operationId": "get_aws_connections",
+    "summary": "AWS connections",
+    "description": "Connect an AWS account with a CloudFormation stack (docs/install.md, \"AWS managed services\"): the connections, and `enabled` (the server has an AWS principal, STACKURITY_AWS_PRINCIPAL_ARN), `principal`, `launch_stack` (the template is hosted in S3, STACKURITY_AWS_TEMPLATE_URL), `template_download` and the IAM actions the role grants (`permissions`, `agent_install_permissions`)\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "post": {
+    "operationId": "post_aws_connections",
+    "summary": "Start an AWS connection (Launch Stack link)",
+    "description": "Connect an AWS account with a CloudFormation stack (docs/install.md, \"AWS managed services\"): `regions` (1–40, scanned), `stack_region` (where the stack is created; default the first region), `agent_install` (adds the SSM permissions). Returns the connection with its generated external ID and `launch`: `quick_create_url` (empty without an S3-hosted template), `template_download`, `cli` (the same stack with the AWS CLI), `external_id`, `principal`, and `callback` (the stack reports its role by itself; false when this server's address is not https, then the role ARN is pasted). 404 when the server has no AWS principal\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/aws/connections/{id}": {
+   "get": {
+    "operationId": "get_aws_connections_id",
+    "summary": "An AWS connection",
+    "description": "Connect an AWS account with a CloudFormation stack (docs/install.md, \"AWS managed services\"): `status` (pending, active, failed), `role_arn`, `account_id`, `last_error`, `integration_id` and `integration_removed`\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "delete_aws_connections_id",
+    "summary": "Remove an AWS connection",
+    "description": "Connect an AWS account with a CloudFormation stack (docs/install.md, \"AWS managed services\"): removes the connection and its integration. The role stays in the AWS account until its stack is deleted\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/aws/connections/{id}/installs": {
+   "get": {
+    "operationId": "get_aws_connections_id_installs",
+    "summary": "Agent installs through SSM",
+    "description": "Connect an AWS account with a CloudFormation stack (docs/install.md, \"AWS managed services\"): the agent installs sent through SSM, newest first, after reading from SSM how the unfinished ones went: `status` pending, running, success, failed or timed_out, and `detail` (the end of the command's output). The code of a failed or timed-out install is revoked. `refresh_error` says why SSM could not be read\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "post": {
+    "operationId": "post_aws_connections_id_installs",
+    "summary": "Install the agent on EC2 instances through SSM",
+    "description": "Connect an AWS account with a CloudFormation stack (docs/install.md, \"AWS managed services\"): `region` and `instances` (1–25 of `{\"instance_id\", \"computer_name\"}`). Each instance gets its own single-use enrollment code (two hours), sent in an AWS-RunShellScript command that runs this server's installer; the code is not stored. Answers 202 with one install per instance\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/aws/connections/{id}/instances": {
+   "get": {
+    "operationId": "get_aws_connections_id_instances",
+    "summary": "EC2 instances SSM manages",
+    "description": "Connect an AWS account with a CloudFormation stack (docs/install.md, \"AWS managed services\"): the instances SSM manages in one of the connection's regions (`?region=`, default the first), each with `eligible` (Linux and online), `asset_id` (a host already reporting with that hostname) and `last_install`. Needs the stack's agent install option; AWS errors answer 502\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "region",
+      "in": "query",
+      "required": false,
+      "description": "one of the connection's regions",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/aws/connections/{id}/launch": {
+   "post": {
+    "operationId": "post_aws_connections_id_launch",
+    "summary": "New Launch Stack link",
+    "description": "Connect an AWS account with a CloudFormation stack (docs/install.md, \"AWS managed services\"): a new link for a connection that is not active (`stack_region`, `agent_install`); the earlier link's token stops working\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/aws/connections/{id}/verify": {
+   "post": {
+    "operationId": "post_aws_connections_id_verify",
+    "summary": "Verify an AWS connection's role (paste the role ARN)",
+    "description": "Connect an AWS account with a CloudFormation stack (docs/install.md, \"AWS managed services\"): `role_arn` (the stack's RoleArn output; empty verifies the one recorded again). The role must be assumable with the connection's external ID and refused without it; then the connection is active, its aws-managed integration is created and a first run is queued. A failure is recorded as `status: failed` with `last_error`\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/kubernetes/report": {
+   "post": {
+    "operationId": "post_kubernetes_report",
+    "summary": "Submit one collection of a Kubernetes cluster (the in-cluster reporter)",
+    "description": "Submit one collection of a Kubernetes cluster, as `stackurity kubernetes-reporter` sends it: `{\"batches\": [...], \"image_scans\": 25}`, gzip accepted. The batches are the cluster first, then images and workloads, with the kubernetes plugin's identity schemes (`k8s-cluster`, `k8s-cluster-name`, `k8s-workload`, `image-ref`); other kinds or schemes are refused. Each is stored under the `plugin:kubernetes` collector as an agent's report. The images are queued for the image scanner in the order given, at most `image_scans` (default 25, 0 to 500). Refused for a host-bound token; 30 reports an hour per token\n\nRole: collector, engineer+",
+    "tags": [
+     "Agents and uploads"
+    ],
+    "x-stackurity-role": "collector, engineer+",
+    "requestBody": {
+     "required": true,
+     "description": "batches (ObservationBatch list) and image_scans, optionally gzip-compressed (Content-Encoding: gzip)",
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/github": {
+   "get": {
+    "operationId": "get_integrations_github",
+    "summary": "GitHub App status and installations",
+    "description": "`configured` (whether this server has the Stackurity GitHub App; with `app_url`) and `installations`, this organisation's GitHub accounts with `status` (`active`, `suspended`, `deleted`), `note` and the number of `repositories`\n\nRole: engineer",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "engineer",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/github/install": {
+   "post": {
+    "operationId": "post_integrations_github_install",
+    "summary": "Start Install on GitHub",
+    "description": "`{\"return_to\": \"/settings/integrations\"}` (a dashboard path). Answers `url`, the app's install page on GitHub with a single-use state bound to the caller and organisation (10 minutes). 404 `not_configured` without the Stackurity GitHub App (STACKURITY_GITHUB_APP_ID, ...)\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/github/setup": {
+   "post": {
+    "operationId": "post_integrations_github_setup",
+    "summary": "Finish Install on GitHub",
+    "description": "`{\"state\", \"code\", \"installation_id\", \"setup_action\"}` from GitHub's redirect to `/integrations/github/callback`. The state must be the caller's, in this organisation, unused and fresh (400 `github_state` otherwise, before GitHub is called). The installation must be visible to the person's GitHub account (from `code`) and confirmed with the app's JWT (403 `github_installation`), and not held by another organisation (409 `github_installation_taken`). 201: `installation`, `return_to`\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/github/installations/{installation_id}/sync": {
+   "post": {
+    "operationId": "post_integrations_github_installation_sync",
+    "summary": "List an installation's repositories again",
+    "description": "Queues a listing of the repositories the installation grants on GitHub (202)\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "installation_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/github/installations/{installation_id}": {
+   "delete": {
+    "operationId": "delete_integrations_github_installation",
+    "summary": "Disconnect a GitHub account",
+    "description": "Switches its repositories' integrations off (history kept), removes the binding and uninstalls the app from that GitHub account (`uninstalled_on_github`)\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "installation_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/github/webhook": {
+   "post": {
+    "operationId": "post_integrations_github_webhook",
+    "summary": "GitHub App webhook (verified by GitHub's signature)",
+    "description": "The Stackurity GitHub App's webhook URL. 401 unless `X-Hub-Signature-256` is the HMAC-SHA256 of the body with the app's webhook secret; 400 without `X-GitHub-Event` or `X-GitHub-Delivery`; a delivery already handled answers `{\"result\": \"duplicate\"}`. Handles `installation`, `installation_repositories` and `push`; 404 without the app\n\nRole: none: GitHub's signature (the app's webhook secret)",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "none: GitHub's signature (the app's webhook secret)",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/owner-rules": {
+   "get": {
+    "operationId": "get_owner-rules",
+    "summary": "Owner rules, most specific first",
+    "description": "Owner rules, most specific first\n\nRole: viewer",
+    "tags": [
+     "Projects and people"
+    ],
+    "x-stackurity-role": "viewer",
+    "parameters": [
+     {
+      "name": "asset_id",
+      "in": "query",
+      "required": false,
+      "description": "Rules that can apply to this asset",
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "query",
+      "required": false,
+      "description": "Rules that can apply to this project",
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "post": {
+    "operationId": "post_owner-rules",
+    "summary": "Create an owner rule",
+    "description": "Create an owner rule\n\nRole: admin",
+    "tags": [
+     "Projects and people"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/owner-rules/apply": {
+   "post": {
+    "operationId": "post_owner-rules_apply",
+    "summary": "Preview or apply the owner rules to open issues",
+    "description": "Preview or apply the owner rules to open issues\n\nRole: admin",
+    "tags": [
+     "Projects and people"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/owner-rules/{id}": {
+   "put": {
+    "operationId": "put_owner-rules_id",
+    "summary": "Replace an owner rule",
+    "description": "Replace an owner rule\n\nRole: admin",
+    "tags": [
+     "Projects and people"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "delete_owner-rules_id",
+    "summary": "Delete an owner rule",
+    "description": "Delete an owner rule\n\nRole: admin",
+    "tags": [
+     "Projects and people"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/pagerduty/connect": {
+   "post": {
+    "operationId": "post_integrations_pagerduty_connect",
+    "summary": "Start Connect PagerDuty",
+    "description": "`{\"return_to\"}` (a dashboard path). Answers `url`, PagerDuty's consent page asking for `services.read services.write`, with a PKCE S256 challenge and a state that works once, for 10 minutes, for the caller in this organisation. 404 `not_configured` without the PagerDuty app\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/pagerduty/oauth": {
+   "post": {
+    "operationId": "post_integrations_pagerduty_oauth",
+    "summary": "Exchange the PagerDuty code and list services",
+    "description": "`{\"code\", \"state\"}` from PagerDuty's redirect to `/integrations/pagerduty/oauth/callback`. 200: `session` (10 minutes, the caller only), `region` (`us` or `eu`), `return_to`, `services` and `more`. 400 `pagerduty_state` for a state that is unknown, used, expired or someone else's, before PagerDuty is called; 502 `pagerduty_scope` when a scope was not granted, 502 `pagerduty_refused` otherwise\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/pagerduty/services": {
+   "post": {
+    "operationId": "post_integrations_pagerduty_services",
+    "summary": "List the connected account's PagerDuty services",
+    "description": "`{\"session\", \"query\"}`: `services` and `more` (more than 1,000). 400 `pagerduty_state` for a session that is not the caller's or has expired\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/pagerduty/finish": {
+   "post": {
+    "operationId": "post_integrations_pagerduty_finish",
+    "summary": "Add the Stackurity integration to a PagerDuty service",
+    "description": "`{\"session\", \"service_id\"}`. Deletes the session and its token, adds an Events API v2 integration named Stackurity to the service and stores its routing key as the channel's secret (never returned). 201: `channel`, `return_to`, `service_name`; 200 with `reused` when the service already had a channel. 400 `pagerduty_state`; 502 `pagerduty_refused` with PagerDuty's reason\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/pagerduty/cancel": {
+   "post": {
+    "operationId": "post_integrations_pagerduty_cancel",
+    "summary": "Cancel Connect PagerDuty",
+    "description": "`{\"session\"}`: deletes the session and its PagerDuty token. 204\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
     "responses": {
      "2XX": {
       "description": "Success",

@@ -84,7 +84,8 @@ secretFiles: []
 #    key: github_token
 
 plugins:
-  # Extra plugins from a volume (the image ships aws-managed).
+  # Extra plugins from a volume (the image ships aws-managed, gcp-managed,
+  # azure-managed and kubernetes).
   extraVolume: {}
 
 service:

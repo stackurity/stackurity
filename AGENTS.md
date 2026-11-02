@@ -15,7 +15,7 @@ For people and AI coding agents. Most pull requests here come from AI builder se
 
 **Migrations.** `internal/db/migrations/NNNN_name.sql`, applied in filename order and recorded by name in `schema_migrations` (`internal/db/schema.go`). Parallel PRs often pick the same next number; when rebasing onto a main that already has yours, renumber your unmerged migration to the next free number. Never rename one that has been merged: a new name is a new migration and runs again.
 
-**CHANGELOG.md has exactly one `## Unreleased` heading**, at the top. New entries go under it (subsections in the order the file's header gives, `### Security` first). `tools/changelog` checks version headings but skips `Unreleased`, so a second one from a bad merge is not caught: check by hand after resolving conflicts.
+**CHANGELOG.md has exactly one `## Unreleased` heading**, at the top. New entries go under it (subsections in the order the file's header gives, `### Security` first). `tools/changelog` (`-check`, and its test in CI) fails on a second one left by a bad merge; `go run ./tools/release prepare` puts a fresh, empty one above each release.
 
 **`web/src/styles.css` conflicts.** Resolutions have left a rule without its closing brace several times. After resolving, check that the counts match and that the build is clean:
 
@@ -32,7 +32,7 @@ cd web && npm run build 2>&1 | grep -c 'Expected }'   # must print 0
 
 **Documentation is tested.** Every route the API registers must be in [docs/api.md](docs/api.md): `tools/docslint/api-known-gaps.txt` lists the exceptions and may only shrink (the test fails when a listed route becomes documented or disappears). Every `STACKURITY_*` variable the code reads must be named in README.md or `docs/*.md` (`env-undocumented.txt` is for test hooks only). Every CLI command and flag is checked by `TestCLIDocumented` in `cmd/stackurity`.
 
-**Releases.** The version is the newest `## X.Y.Z` heading in CHANGELOG.md. A release PR also bumps `deploy/helm/stackurity/Chart.yaml`, the image tags in the docs and `server.json` (the MCP Registry entry); `tools/releaselint` fails until they match.
+**Releases.** The version is the newest `## X.Y.Z` heading in CHANGELOG.md. A release PR also bumps `deploy/helm/stackurity/Chart.yaml` and `deploy/helm/stackurity-reporter/Chart.yaml`, the image tags in the docs and `server.json` (the MCP Registry entry); `tools/releaselint` fails until they match. `go run ./tools/release prepare vX.Y.Z` makes all of these changes and opens the pull request; see [RELEASING.md](RELEASING.md).
 
 **Outbound connections.** A self-hosted server must not connect anywhere the operator cannot see and turn off. `cmd/stackurity/egress_test.go` starts the real server and fails on any connection not in its `defaultEgress` list. A new default destination is a product decision: add it there with its reason and off switch, and to [docs/network.md](docs/network.md). Requests made for a workspace go through `internal/netguard`.
 
