@@ -1,6 +1,6 @@
 # Owner rules
 
-Status: implemented (migration `0080_owner_rules.sql`).
+Status: implemented (migration `0081_owner_rules.sql`).
 
 Issues (findings) are assigned to a person, a team or both. Before owner rules, every assignment was made by hand, one issue or one fix at a time, and an estate with hundreds of new issues a week had most of them unassigned. Owner rules let an admin say once who owns which part of the estate, and new issues are assigned as they appear.
 

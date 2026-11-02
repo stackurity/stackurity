@@ -8315,7 +8315,7 @@
    "get": {
     "operationId": "get_users",
     "summary": "Users of the organisation",
-    "description": "Manage users. `role` `none` keeps someone a member with no organisation-wide role (access through projects only); each user has `access`: `organisation` or `projects`\n\nRole: admin",
+    "description": "Members of the organisation. Each has `role` (`none`: access through projects only), `access` (`organisation` or `projects`), `phone`, and `project_grants` and `asset_grants` (their own grants, not their teams').\n\nRole: admin",
     "tags": [
      "Projects and people"
     ],
@@ -8342,7 +8342,7 @@
    "post": {
     "operationId": "post_users",
     "summary": "Add a user to the organisation",
-    "description": "Manage users. `role` `none` keeps someone a member with no organisation-wide role (access through projects only); each user has `access`: `organisation` or `projects`\n\nRole: admin",
+    "description": "Add a user and say what they can see, in one transaction: an organisation-wide `role` (every project and asset), or `grants` on chosen projects and assets with `role` `none`. There is no default: a request with neither is 400 and creates nothing; so is a grant on a project or asset of another organisation. Off on Stackurity Cloud (invite_only).\n\nRole: admin",
     "tags": [
      "Projects and people"
     ],
@@ -8352,7 +8352,69 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "required": [
+         "email"
+        ],
+        "properties": {
+         "email": {
+          "type": "string",
+          "format": "email"
+         },
+         "name": {
+          "type": "string",
+          "maxLength": 200
+         },
+         "phone": {
+          "type": "string",
+          "maxLength": 32,
+          "description": "Contact information only: digits, optional leading +, spaces, dots, dashes, brackets; 6 to 15 digits."
+         },
+         "password": {
+          "type": "string",
+          "minLength": 12,
+          "description": "For a new account; ignored for an existing one."
+         },
+         "role": {
+          "type": "string",
+          "enum": [
+           "viewer",
+           "engineer",
+           "security",
+           "admin",
+           "none"
+          ],
+          "description": "Organisation-wide role, or none with grants."
+         },
+         "grants": {
+          "type": "array",
+          "maxItems": 500,
+          "items": {
+           "type": "object",
+           "description": "A role on one project (its assets, including ones added later) or on one asset.",
+           "properties": {
+            "project_id": {
+             "type": "integer"
+            },
+            "asset_id": {
+             "type": "integer"
+            },
+            "role": {
+             "type": "string",
+             "enum": [
+              "viewer",
+              "engineer",
+              "security",
+              "admin"
+             ]
+            }
+           },
+           "required": [
+            "role"
+           ]
+          }
+         }
+        }
        }
       }
      }
@@ -8439,7 +8501,7 @@
    },
    "patch": {
     "operationId": "patch_users_id",
-    "summary": "Change a user's role, name or status",
+    "summary": "Change a user's role, name, phone or status",
     "description": "Manage users. `role` `none` keeps someone a member with no organisation-wide role (access through projects only); each user has `access`: `organisation` or `projects`\n\nRole: admin",
     "tags": [
      "Projects and people"
@@ -8460,7 +8522,34 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "name": {
+          "type": "string"
+         },
+         "role": {
+          "type": "string",
+          "enum": [
+           "viewer",
+           "engineer",
+           "security",
+           "admin",
+           "none"
+          ]
+         },
+         "disabled": {
+          "type": "boolean"
+         },
+         "password": {
+          "type": "string",
+          "minLength": 12
+         },
+         "phone": {
+          "type": "string",
+          "maxLength": 32,
+          "description": "Contact information on the membership in this organisation; empty clears it."
+         }
+        }
        }
       }
      }
