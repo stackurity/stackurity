@@ -53,13 +53,20 @@ const (
 
 var severityRank = map[string]int{low: 1, medium: 2, high: 3, critical: 4}
 
+// ValidSeverity reports whether s is low, medium, high or critical.
+func ValidSeverity(s string) bool { return severityRank[s] > 0 }
+
+// AtLeast reports whether severity is min or higher.
+func AtLeast(severity, min string) bool { return severityRank[severity] >= severityRank[min] }
+
 // Grade sets a leak's exposure and the severity that follows from it.
 //
 // A file the web server sends as it is can be downloaded by anyone, so
-// anything in it is critical. A file every account on the host can read
-// is at least high. On a host, a password in the application's own
-// configuration file is where it belongs: it is recorded as low, so it is
-// listed but raises no alert. A key with its own format (an AWS or Stripe
+// anything in it is critical. On a host, a password in the application's
+// own configuration file is where it belongs: it is recorded as low, so it
+// is listed but raises no alert; medium when every account on the host
+// can read the file (most web files are, mode 644, so this alone cannot
+// raise an alert either). A key with its own format (an AWS or Stripe
 // key) keeps its severity there: it is written into the application,
 // so it is in its repository too. In a repository every leak keeps its
 // severity: anyone who can read the repository has the value.
@@ -68,12 +75,11 @@ func Grade(l *Leak, exposure string, onHost bool) {
 	switch {
 	case exposure == model.ExposureServed:
 		l.Severity = critical
-	case exposure == model.ExposureWorldReadable:
-		if severityRank[l.Severity] < severityRank[high] {
-			l.Severity = high
-		}
 	case onHost && (l.Rule == "password-assignment" || l.Rule == "database-url"):
 		l.Severity = low
+		if exposure == model.ExposureWorldReadable {
+			l.Severity = medium
+		}
 	}
 }
 
@@ -114,7 +120,7 @@ var rules = []rule{
 	{id: "database-url", title: "Database address with password", severity: high, hint: "://",
 		re: regexp.MustCompile(`\b(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|rediss?|amqps?)://[^:@\s/'"]+:([^@\s/'"]+)@`)},
 	{id: "password-assignment", title: "Password or key in configuration", severity: high, config: true, named: true,
-		re: regexp.MustCompile(`(?m)^[ \t]*(?:export[ \t]+)?["']?(` + credName + `)["']?[ \t]*[:=][ \t]*(?:"([^"\n]{8,})"|'([^'\n]{8,})'|([^\s"'#;,]{8,}))`)},
+		re: regexp.MustCompile(`(?m)^[ \t]*(?:export[ \t]+)?["']?(` + credName + `)["']?[ \t]*[:=][ \t]*(?:"([^"\n]{8,})"|'([^'\n]{8,})'|([^\s"';,]{8,}))`)},
 	{id: "password-assignment", title: "Password or key in configuration", severity: high, config: true, named: true, hint: "define",
 		re: regexp.MustCompile(`define\(\s*['"]([A-Z0-9_]*(?:PASSWORD|SECRET|TOKEN|API_KEY)[A-Z0-9_]*)['"]\s*,\s*['"]([^'"]{8,})['"]`)},
 	{id: "password-assignment", title: "Password or key in configuration", severity: high, config: true, named: true,

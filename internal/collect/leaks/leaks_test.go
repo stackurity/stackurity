@@ -94,6 +94,8 @@ func TestConfigAssignments(t *testing.T) {
 	}{
 		{".env", "APP_NAME=shop\nDB_PASSWORD=Kq7v9Lm2xZ!\nMAIL_PASSWORD=\nAPI_TOKEN=${TOKEN}\n", []string{"DB_PASSWORD"}},
 		{".env.production", "export JWT_SECRET='d8f7a6b5c4e3d2f1a0b9'\n", []string{"JWT_SECRET"}},
+		// A # inside an unquoted value is part of it; " #" starts a comment.
+		{"secrets.yml", "api_token: Rt5#wq9Zp2Lm # the shop's token\n", []string{"api_token"}},
 		{"config/database.yml", "production:\n  password: \"Rt5#wq9Zp2\"\n  username: app\n", []string{"password"}},
 		{"wp-config.php", "define( 'DB_PASSWORD', 'Rt5#wq9Zp2' );\ndefine('AUTH_KEY', 'a8F#k2.. long random salt value here');\ndefine('NONCE_SALT', 'x9Q!z2LmVb7Kc8Vn3Pw');\n", []string{"DB_PASSWORD"}},
 		{"application/config/database.php", "$db['default'] = array(\n\t'password' => 'Rt5#wq9Zp2',\n);\n", []string{"password"}},
@@ -184,15 +186,15 @@ func TestGrade(t *testing.T) {
 		onHost                   bool
 		want                     string
 	}{
-		{"password-assignment", "high", "", false, "high"},              // committed to a repository
-		{"password-assignment", "high", "", true, "low"},                // in its own config file on the server
-		{"password-assignment", "high", "served", true, "critical"},     // .env the web server sends
-		{"password-assignment", "high", "world_readable", true, "high"}, // any account can read it
-		{"google-api-key", "medium", "world_readable", true, "high"},    // raised to high
-		{"stripe-live-key", "critical", "", true, "critical"},           // hardcoded in the application
-		{"aws-access-key-id", "high", "", true, "high"},                 //
-		{"google-api-key", "medium", "served", true, "critical"},        //
-		{"database-url", "high", "", true, "low"},                       //
+		{"password-assignment", "high", "", false, "high"},                // committed to a repository
+		{"password-assignment", "high", "", true, "low"},                  // in its own config file on the server
+		{"password-assignment", "high", "served", true, "critical"},       // .env the web server sends
+		{"password-assignment", "high", "world_readable", true, "medium"}, // any account can read it
+		{"google-api-key", "medium", "world_readable", true, "medium"},    // a key keeps its own severity
+		{"stripe-live-key", "critical", "", true, "critical"},             // hardcoded in the application
+		{"aws-access-key-id", "high", "", true, "high"},                   //
+		{"google-api-key", "medium", "served", true, "critical"},          //
+		{"database-url", "high", "", true, "low"},                         //
 	} {
 		l := Leak{Rule: tc.rule, Severity: tc.severity}
 		Grade(&l, tc.exposure, tc.onHost)

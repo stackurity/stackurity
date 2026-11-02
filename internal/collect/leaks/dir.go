@@ -61,9 +61,23 @@ type Result struct {
 	Files    int // files read
 }
 
+// Options adjust a directory's scan.
+type Options struct {
+	// Skip, when set, leaves out a directory (rel, relative to the
+	// scanned root with forward slashes) and everything below it: another
+	// application reported on its own.
+	Skip func(rel string) bool
+	// Files, when set, are the only files read (relative paths): a Git
+	// checkout's tracked files.
+	Files []string
+}
+
 // Dir scans the files under root. Paths in the result are relative to
 // root. Symbolic links are not followed, so a scan stays inside root.
-func Dir(ctx context.Context, root string) Result {
+func Dir(ctx context.Context, root string, opt Options) Result {
+	if opt.Files != nil {
+		return files(ctx, root, opt.Files)
+	}
 	res := Result{Complete: true}
 	var bytesRead int64
 	stop := errors.New("limit")
@@ -85,12 +99,20 @@ func Dir(ctx context.Context, root string) Result {
 		}
 		name := d.Name()
 		if d.IsDir() {
-			if p != root && skipDirs[name] {
+			if p == root {
+				return nil
+			}
+			if skipDirs[name] {
 				return filepath.SkipDir
+			}
+			if opt.Skip != nil {
+				if rel, err := filepath.Rel(root, p); err == nil && opt.Skip(filepath.ToSlash(rel)) {
+					return filepath.SkipDir
+				}
 			}
 			return nil
 		}
-		if !d.Type().IsRegular() || skipFiles[name] || testFile(name) || skipExt[strings.ToLower(path.Ext(name))] || strings.HasSuffix(name, ".min.css") {
+		if !d.Type().IsRegular() || skipped(name) {
 			return nil
 		}
 		info, err := d.Info()
@@ -142,4 +164,62 @@ func readFile(p string) ([]byte, error) {
 // the start.
 func binary(data []byte) bool {
 	return bytes.IndexByte(data[:min(len(data), 8<<10)], 0) >= 0
+}
+
+// files scans the listed files under root. A file in a directory Dir would
+// skip is skipped here too.
+func files(ctx context.Context, root string, rels []string) Result {
+	res := Result{Complete: true}
+	var bytesRead int64
+	for _, rel := range rels {
+		if ctx.Err() != nil {
+			res.Complete, res.Reason = false, ctx.Err().Error()
+			break
+		}
+		rel = filepath.ToSlash(filepath.Clean(rel))
+		if rel == "." || strings.HasPrefix(rel, "../") || path.IsAbs(rel) || skipped(rel) {
+			continue
+		}
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		info, err := os.Lstat(p)
+		if err != nil || !info.Mode().IsRegular() || info.Size() == 0 || info.Size() > MaxFileSize {
+			continue
+		}
+		if res.Files >= MaxFiles || bytesRead+info.Size() > MaxBytes {
+			res.Complete, res.Reason = false, "the directory is larger than the scan's limits"
+			break
+		}
+		data, err := readFile(p)
+		if err != nil {
+			if errors.Is(err, fs.ErrPermission) && res.Complete {
+				res.Complete, res.Reason = false, "some files could not be read: "+err.Error()
+			}
+			continue
+		}
+		res.Files++
+		bytesRead += int64(len(data))
+		if binary(data) {
+			continue
+		}
+		for _, l := range Scan(rel, data) {
+			if len(res.Leaks) >= MaxLeaks {
+				res.Complete, res.Reason = false, "more leaks were found than one scan reports"
+				return res
+			}
+			res.Leaks = append(res.Leaks, l)
+		}
+	}
+	return res
+}
+
+// skipped reports whether Dir would leave out the file at rel.
+func skipped(rel string) bool {
+	parts := strings.Split(rel, "/")
+	for _, d := range parts[:len(parts)-1] {
+		if skipDirs[d] {
+			return true
+		}
+	}
+	name := parts[len(parts)-1]
+	return skipFiles[name] || testFile(name) || skipExt[strings.ToLower(path.Ext(name))] || strings.HasSuffix(name, ".min.css")
 }

@@ -47,6 +47,8 @@ const (
 type LeakScan struct {
 	Found    []Leak `json:"found"`
 	Complete bool   `json:"complete"`
+	// Reason says what was not checked when the scan is not complete.
+	Reason string `json:"reason,omitempty"`
 }
 
 // MaxLeaks bounds LeakScan.Found.
@@ -64,6 +66,9 @@ func validSeverity(s string) bool {
 
 // validate adds the problems with a batch's leaks.
 func (s *LeakScan) validate(add func(string, ...any)) {
+	if len(s.Reason) > MaxFieldLen || hasControl(s.Reason) {
+		add("leaks.reason is over-long or has control characters")
+	}
 	if len(s.Found) > MaxLeaks {
 		add("leaks.found has more than %d entries", MaxLeaks)
 		return
