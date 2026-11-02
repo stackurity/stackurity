@@ -2292,6 +2292,12 @@ export interface ChannelConfig {
   team_name?: string;
   slack_channel?: string;
   configuration_url?: string;
+  // pagerduty added with "Connect PagerDuty" (the Stackurity PagerDuty app)
+  pagerduty_app?: boolean;
+  pagerduty_service_id?: string;
+  pagerduty_service_name?: string;
+  pagerduty_integration_id?: string;
+  pagerduty_manage_url?: string;
   // teams created with "Add to Teams" (the Stackurity Teams app)
   teams_app?: boolean;
   tenant_id?: string;
@@ -2305,6 +2311,7 @@ export interface ChannelConfig {
 /** GET /notification-options: what this server offers. */
 export interface NotificationOptions {
   slack_app: boolean;
+  pagerduty_app: boolean;
   teams_app: boolean;
   /** Connect Jira (the Stackurity Atlassian app) is available. */
   jira_app: boolean;
@@ -2318,7 +2325,7 @@ export interface NotificationOptions {
   base_url: boolean;
 }
 
-export const NO_NOTIFICATION_OPTIONS: NotificationOptions = { slack_app: false, jira_app: false, teams_app: false, platform_email: { enabled: false }, secrets: false, base_url: false };
+export const NO_NOTIFICATION_OPTIONS: NotificationOptions = { slack_app: false, jira_app: false, teams_app: false, pagerduty_app: false, platform_email: { enabled: false }, secrets: false, base_url: false };
 
 /** Loads the options; a failure counts as nothing offered. */
 export function loadNotificationOptions(): Promise<NotificationOptions> {
@@ -2326,6 +2333,7 @@ export function loadNotificationOptions(): Promise<NotificationOptions> {
     .get<Partial<NotificationOptions>>("/notification-options")
     .then((o) => ({
       slack_app: Boolean(o?.slack_app),
+      pagerduty_app: Boolean(o?.pagerduty_app),
       teams_app: Boolean(o?.teams_app),
       jira_app: Boolean(o?.jira_app),
       platform_email: o?.platform_email?.enabled ? o.platform_email : { enabled: false },
@@ -2341,6 +2349,32 @@ export interface EmailRecipient {
   status: "pending" | "confirmed" | string;
   requested_at: string;
   confirmed_at: string | null;
+}
+
+/** A service of the connected PagerDuty account. */
+export interface PagerDutyService {
+  id: string;
+  name: string;
+  description?: string;
+  status?: string;
+  html_url?: string;
+}
+
+/** POST /integrations/pagerduty/oauth */
+export interface PagerDutyOAuthResult {
+  session: string;
+  region: "us" | "eu";
+  return_to: string;
+  services: PagerDutyService[];
+  more: boolean;
+}
+
+/** POST /integrations/pagerduty/finish */
+export interface PagerDutyFinishResult {
+  channel: Channel;
+  return_to: string;
+  service_name: string;
+  reused: boolean;
 }
 
 /** POST /integrations/teams/install */

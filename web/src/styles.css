@@ -5202,6 +5202,15 @@ div.assistant-card {
   margin: 4px 0 0;
 }
 
+/* Connect PagerDuty: the service list on the way back from PagerDuty. */
+.pd-services {
+  max-height: 320px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 /* "Continue with Google / Microsoft / GitHub" on the sign-in and sign-up pages. */
 .social-buttons {
   display: grid;

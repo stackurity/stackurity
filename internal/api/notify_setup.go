@@ -33,6 +33,7 @@ var limitSlackEvents = rateLimit{600, time.Minute}
 func (s *Server) notificationOptions(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{
 		"slack_app":      s.slackApp() != nil,
+		"pagerduty_app":  s.pagerDutyApp() != nil,
 		"teams_app":      s.teamsApp() != nil,
 		"jira_app":       s.jiraApp() != nil && s.SecretBox != nil && s.baseURL() != "",
 		"platform_email": map[string]any{"enabled": false},

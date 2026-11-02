@@ -133,6 +133,19 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/integrations/slack/oauth": {class: "create", body: func(*tenantFx) any {
 		return map[string]string{"code": "c", "state": "guessed"}
 	}},
+	// Connect PagerDuty: a state or session of A's (or a guessed one) is
+	// refused in B; B's connect starts in B (pagerduty_app_test.go).
+	"POST /api/v1/integrations/pagerduty/connect": {class: "create", body: func(*tenantFx) any { return map[string]string{"return_to": "/settings/integrations"} }},
+	"POST /api/v1/integrations/pagerduty/oauth": {class: "create", body: func(*tenantFx) any {
+		return map[string]string{"code": "c", "state": "guessed"}
+	}},
+	"POST /api/v1/integrations/pagerduty/services": {class: "create", body: func(*tenantFx) any { return map[string]string{"session": "guessed"} }},
+	"POST /api/v1/integrations/pagerduty/finish": {class: "create", body: func(*tenantFx) any {
+		return map[string]string{"session": "guessed", "service_id": "PS001"}
+	}},
+	"POST /api/v1/integrations/pagerduty/cancel": {class: "create", body: func(*tenantFx) any { return map[string]string{"session": "guessed"} }},
+	"GET /api/v1/notification-options":           {class: "list"},
+	"GET /api/v1/email-recipients":               {class: "list"},
 	// Add to Teams: B's code is B's; A's code's status is not B's to read
 	// (teams_app_test.go covers binding).
 	"POST /api/v1/integrations/teams/install":     {class: "create", body: func(*tenantFx) any { return map[string]any{} }},
@@ -142,8 +155,6 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/integrations/teams/messages": {class: "public", body: func(*tenantFx) any {
 		return map[string]any{"type": "message", "channelId": "msteams", "serviceUrl": "https://smba.trafficmanager.net/amer/", "text": "ABCDE-FGHJK"}
 	}},
-	"GET /api/v1/notification-options": {class: "list"},
-	"GET /api/v1/email-recipients":     {class: "list"},
 	// Connect Jira: B's connect starts in B, a state of A's (or a guessed
 	// one) is refused, and A's connection is not B's to reconnect, list,
 	// read from or delete (jira_app_test.go covers them with the app on).

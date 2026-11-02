@@ -56,6 +56,9 @@ type Dispatcher struct {
 	// SlackApp is the Stackurity Slack app ("Add to Slack"); nil turns it
 	// off. Its signing secret verifies clicks on channels it added.
 	SlackApp *SlackApp
+	// PagerDutyApp is the Stackurity PagerDuty app ("Connect PagerDuty");
+	// nil turns it off. It is used only while a channel is being added.
+	PagerDutyApp *PagerDutyApp
 	// TeamsApp is the Stackurity Teams app ("Add to Teams"); nil turns it
 	// off, and its channels fail with a note saying so.
 	TeamsApp *TeamsApp

@@ -239,6 +239,17 @@ func serverCmd() *cobra.Command {
 					log.Warn("Add to Slack needs stored secrets to keep the webhooks and tokens it gets", "fix", "set STACKURITY_SECRET_KEY")
 				}
 			}
+			// The Stackurity PagerDuty app ("Connect PagerDuty"), when configured.
+			if dispatcher.PagerDutyApp, err = notify.PagerDutyAppFromEnv(); err != nil {
+				return err
+			}
+			if dispatcher.PagerDutyApp != nil {
+				base := strings.TrimRight(os.Getenv("STACKURITY_BASE_URL"), "/")
+				log.Info("PagerDuty app enabled (Connect PagerDuty)", "redirect_url", base+"/integrations/pagerduty/oauth/callback")
+				if box == nil {
+					log.Warn("Connect PagerDuty needs stored secrets to keep the routing keys it gets", "fix", "set STACKURITY_SECRET_KEY")
+				}
+			}
 			// The Stackurity Teams app ("Add to Teams"), when configured.
 			if dispatcher.TeamsApp, err = notify.TeamsAppFromEnv(); err != nil {
 				return err
@@ -882,6 +893,10 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 		}
 		// Unused assistant registrations, old codes and tokens.
 		if err := st.PruneOAuth(ctx); err != nil {
+			return err
+		}
+		// Connect PagerDuty steps nobody finished, with their tokens.
+		if err := st.PurgePagerDutyConnects(ctx); err != nil {
 			return err
 		}
 		// Expired tokens of CI jobs (one per job).

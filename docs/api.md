@@ -1173,7 +1173,7 @@ How incidents become messages, the route `events` and the webhook format are in 
 
 **Who:** security
 
-What the server offers: `slack_app` (Add to Slack), `jira_app` (Connect Jira: the Atlassian app is configured, with `STACKURITY_BASE_URL` and stored secrets), `teams_app` (Add to Teams), `platform_email` (`enabled`; when enabled `from`, `max_recipients` and `quota` with `per_minute`, `per_hour`, `per_day`), `secrets` (stored secrets work) and `base_url`.
+What the server offers: `slack_app` (Add to Slack), `jira_app` (Connect Jira: the Atlassian app is configured, with `STACKURITY_BASE_URL` and stored secrets), `teams_app` (Add to Teams), `pagerduty_app` (Connect PagerDuty), `platform_email` (`enabled`; when enabled `from`, `max_recipients` and `quota` with `per_minute`, `per_hour`, `per_day`), `secrets` (stored secrets work) and `base_url`.
 
 ### `GET /channels`
 
@@ -1185,7 +1185,7 @@ Notification channels.
 
 **Who:** admin
 
-Creates a channel: email, email sent by Stackurity (`stackurity_email`, hosted only), Slack, Teams, webhook, Jira, PagerDuty (`pagerduty`) or ServiceNow (`servicenow`); configuration fields are listed in [install.md](install.md#notifications). Slack channels made with Add to Slack come from `POST /integrations/slack/oauth` instead, and Teams channels made with Add to Teams (`config.teams_app`) from the Teams app's messaging endpoint; neither can be created here. A Jira channel with Connect Jira has `config.auth` `oauth`, `connection_id` and `cloud_id` (a site of that connection of this organisation, 400 otherwise) and no `secret_ref`; its `url` is set from the site.
+Creates a channel: email, email sent by Stackurity (`stackurity_email`, hosted only), Slack, Teams, webhook, Jira, PagerDuty (`pagerduty`) or ServiceNow (`servicenow`); configuration fields are listed in [install.md](install.md#notifications). Slack channels made with Add to Slack come from `POST /integrations/slack/oauth` instead, and PagerDuty channels made with Connect PagerDuty (`config.pagerduty_app`) from `POST /integrations/pagerduty/finish`; such a channel's service, integration and `secret_ref` cannot be changed (its name, `enabled` and `severities` can), and Teams channels made with Add to Teams (`config.teams_app`) from the Teams app's messaging endpoint; neither can be created here. A Jira channel with Connect Jira has `config.auth` `oauth`, `connection_id` and `cloud_id` (a site of that connection of this organisation, 400 otherwise) and no `secret_ref`; its `url` is set from the site.
 
 ### `PATCH /channels/{id}`
 
@@ -1398,6 +1398,36 @@ The Slack app's Direct install URL ([slack-app.md](slack-app.md#installs-started
 **Who:** admin
 
 Finishes Add to Slack with `{"code", "state"}` from Slack's redirect to `/integrations/slack/oauth/callback`: 201 with `channel`, `return_to`, `team_name` and `slack_channel`. 400 `slack_state` for a state that is missing (an install started from Slack's side), unknown, used, expired (10 minutes) or someone else's, before Slack is called; 502 `slack_refused`.
+
+### `POST /integrations/pagerduty/connect`
+
+**Who:** admin
+
+Starts Connect PagerDuty ([install.md](install.md#pagerduty)): `{"return_to"}` (a dashboard path); answers `url`, PagerDuty's consent page, asking for `services.read services.write` with a PKCE S256 challenge and a state that works once, for 10 minutes, for the same person in the same organisation. 404 `not_configured` without the PagerDuty app.
+
+### `POST /integrations/pagerduty/oauth`
+
+**Who:** admin
+
+Exchanges `{"code", "state"}` from PagerDuty's redirect to `/integrations/pagerduty/oauth/callback`, and lists the account's services: 200 with `session` (a handle for the next steps, valid 10 minutes, for the same person), `region` (`us` or `eu`), `return_to`, `services` (`id`, `name`, `description`, `status`, `html_url`) and `more` (true when there were more than 1,000; narrow with a query). 400 `pagerduty_state` for a state that is unknown, used, expired or someone else's, before PagerDuty is called; 502 `pagerduty_scope` when PagerDuty did not grant both scopes, 502 `pagerduty_refused` otherwise.
+
+### `POST /integrations/pagerduty/services`
+
+**Who:** admin
+
+Lists the services again: `{"session", "query"}` (`query` filters by name). Same answer as above (`services`, `more`); 400 `pagerduty_state` for a session that is not this person's or has expired.
+
+### `POST /integrations/pagerduty/finish`
+
+**Who:** admin
+
+Adds an Events API v2 integration named Stackurity to the service `{"session", "service_id"}` and stores its routing key as the channel's secret. The session and the PagerDuty token are deleted first, whatever happens next: a failure means starting again. 201 with `channel`, `return_to`, `service_name`; 200 with `reused: true` when the service already had a channel, which gets the new key. The key is never returned. Audited as `channel.create` (or `channel.update`) with `source: pagerduty_app`. 502 `pagerduty_refused` with PagerDuty's reason (for example 403: the person may not add integrations to that service).
+
+### `POST /integrations/pagerduty/cancel`
+
+**Who:** admin
+
+Deletes the session `{"session"}` and its token. 204.
 
 ### `POST /integrations/teams/install`
 
