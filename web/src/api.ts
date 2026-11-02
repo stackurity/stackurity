@@ -2708,6 +2708,60 @@ export interface DirectoryUser {
   name: string;
 }
 
+/** Who issues are assigned to, by scope and stack (GET /owner-rules). */
+export interface OwnerRule {
+  id: number;
+  project_id: number | null;
+  project_name?: string;
+  asset_id: number | null;
+  asset_name?: string;
+  /** One of STACK_LAYERS, or "" for any layer. */
+  layer: string;
+  /** Package name pattern, * for any characters; "" for any package. */
+  component: string;
+  user_id: number | null;
+  user_email?: string;
+  user_name?: string;
+  team_id: number | null;
+  team_name?: string;
+  note: string;
+  created_at: string;
+  updated_at: string;
+  /** 6 (part of one asset's stack) down to 1 (organisation default); the highest matching wins. */
+  level: number;
+  describe: string;
+  /** Open issues this rule assigned. */
+  assigned: number;
+}
+
+export interface OwnerRuleInput {
+  project_id?: number | null;
+  asset_id?: number | null;
+  layer: string;
+  component: string;
+  user_id?: number | null;
+  team_id?: number | null;
+  note: string;
+}
+
+export interface OwnerMove {
+  from_user: string;
+  from_team: string;
+  to_user: string;
+  to_team: string;
+  rule_id: number;
+  rule: string;
+  count: number;
+  finding_ids: number[];
+}
+
+export interface OwnerPlan {
+  moves: OwnerMove[];
+  total: number;
+  truncated: boolean;
+  applied: boolean;
+}
+
 // --- Stage 4: controlled remediation
 
 export const REMEDIATION_TARGETS = ["host_package", "repository"] as const;
@@ -2955,6 +3009,8 @@ export interface FixGroupDetail {
   group: FixGroup;
   /** Paged with ?limit=&offset= on GET /fix-groups/{id}. */
   findings: List<Finding> | null;
+  /** Its open issues by who they are assigned to, most first. */
+  owners?: { user_email: string; team_name: string; count: number }[] | null;
 }
 
 export interface FixGroupSummary {

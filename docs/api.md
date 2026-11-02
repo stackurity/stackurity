@@ -1133,6 +1133,38 @@ Changes a team, in one transaction: `name`, `email`, `members` (replaced), `acce
 
 Deletes a team.
 
+### `GET /owner-rules`
+
+**Who:** viewer (organisation-wide roles; members with project access only get 403)
+
+Owner rules, most specific first: who new issues are assigned to ([design](design/owner-rules.md)). Each has `project_id` or `asset_id` (or neither: every asset), `layer` and `component` (the part of the stack, either may be empty), `user_id` and/or `team_id` with their names, `note`, `level` (6, part of one asset's stack, down to 1, the organisation default), `describe` (the rule in words, as issue history shows it) and `assigned` (open issues it assigned). `asset_id=` lists the rules that can apply to that asset (its own, its active projects' and the organisation's); `project_id=` those for the project.
+
+### `POST /owner-rules`
+
+**Who:** admin
+
+Creates a rule (`201`): `{"project_id"|"asset_id", "layer", "component", "user_id", "team_id", "note"}`. At most one of `project_id` and `asset_id`; at least one of `user_id` (a member of the organisation) and `team_id`; `layer` one of `web_server`, `cms`, `os`, `runtime`, `data_store`, `libraries`, `declared`, `managed_service`, `platform`, `other` or empty; `component` a package name pattern (whole name, case-insensitive, `*` for any characters, matched against the name and `namespace/name`). Open issues nobody assigned get their owner on the next upkeep pass (within a minute); issues a rule already assigned move only through `POST /owner-rules/apply`.
+
+### `PUT /owner-rules/{id}`
+
+**Who:** admin
+
+Replaces a rule, with the same body as `POST /owner-rules`. Unassigned issues are checked against it on the next pass; issues a rule already assigned move only through `POST /owner-rules/apply`.
+
+### `DELETE /owner-rules/{id}`
+
+**Who:** admin
+
+Deletes a rule (`204`). The issues it assigned keep their assignee until the rules are applied again.
+
+### `POST /owner-rules/apply`
+
+**Who:** admin
+
+Brings every open issue that no person assigned in line with the current rules. `{"dry_run": true}` (the default) changes nothing and returns what would move; `{"dry_run": false}` moves them, each with an `assign` event from `owner rules`. Answer: `moves` (grouped by `from_user`, `from_team`, `to_user`, `to_team`, `rule_id`, `rule`, with `count` and up to 20 `finding_ids`), `total`, `truncated` (more than 20,000 issues: apply again) and `applied`. An issue whose rule no longer matches, with no other rule matching, is unassigned.
+
+Issues a person assigned or unassigned (any `assign` action) are never changed by owner rules. `GET /fix-groups/{id}` includes `owners`: the fix's open issues counted by assignee (`user_email`, `team_name`, `count`; both empty for unassigned).
+
 ## Notifications
 
 How incidents become messages, the route `events` and the webhook format are in [Incidents and notifications](#incidents-and-notifications).
