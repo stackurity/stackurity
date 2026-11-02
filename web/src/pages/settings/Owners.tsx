@@ -224,10 +224,10 @@ function RuleForm({ rule, onSaved, onCancel }: { rule?: OwnerRule; onSaved: () =
 
   return (
     <Card>
-      <form onSubmit={(e) => void submit(e)}>
+      <form className="form" onSubmit={(e) => void submit(e)}>
         <h2 className="card-title">{rule ? "Edit owner rule" : "New owner rule"}</h2>
         <ErrorBox error={act.error} title="Could not save the rule" />
-        <div className="filters">
+        <div className="form-grid">
           <div className="field">
             <label htmlFor={`${p}-scope`}>Where</label>
             <select id={`${p}-scope`} value={scope} onChange={(e) => setScope(e.target.value as Scope)}>
@@ -282,7 +282,7 @@ function RuleForm({ rule, onSaved, onCancel }: { rule?: OwnerRule; onSaved: () =
             />
           </div>
         </div>
-        <div className="filters">
+        <div className="form-grid">
           <div className="field">
             <label htmlFor={`${p}-user`}>Person</label>
             <select id={`${p}-user`} value={userId} onChange={(e) => setUserId(e.target.value)}>
