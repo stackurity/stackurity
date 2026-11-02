@@ -1,6 +1,7 @@
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { useAuth } from "../auth";
-import { api, INCIDENT_KINDS, PRIORITIES, type Incident, type List, type Team } from "../api";
+import { api, INCIDENT_KINDS, PRIORITIES, type Asset, type Incident, type List, type Team } from "../api";
+import { AssetSelect } from "../components/AssetPicker";
 import { useLoad } from "../hooks";
 import { humanize, plural } from "../format";
 import { Badge, EscalationBadge, PriorityBadge, SosBadge, StateBadge } from "../components/Badge";
@@ -28,6 +29,7 @@ export function IncidentsPage() {
   const sos = params.get("sos") === "true";
   const escalated = params.get("escalated") === "true";
   const team = params.get("team_id") ?? "";
+  const asset = params.get("asset_id") ?? "";
   const offset = Number(params.get("offset") ?? 0) || 0;
 
   const update = (patch: Record<string, string>) => {
@@ -42,10 +44,22 @@ export function IncidentsPage() {
 
   const { projectOnly } = useAuth();
   const teams = useLoad(() => (projectOnly ? Promise.resolve(null) : api.get<List<Team>>("/teams")), [projectOnly]);
+  const assets = useLoad(() => api.get<List<Asset>>("/assets", { limit: 200 }), []);
   const sosOpen = useLoad(() => api.get<List<Incident>>("/incidents", { status: "open", sos: "true", limit: 5 }), []);
   const res = useLoad(
-    () => api.get<List<Incident>>("/incidents", { status, kind, priority, sos: sos ? "true" : undefined, escalated: escalated ? "true" : undefined, team_id: team, limit: LIMIT, offset }),
-    [status, kind, priority, sos, escalated, team, offset],
+    () =>
+      api.get<List<Incident>>("/incidents", {
+        status,
+        kind,
+        priority,
+        sos: sos ? "true" : undefined,
+        escalated: escalated ? "true" : undefined,
+        team_id: team,
+        asset_id: asset,
+        limit: LIMIT,
+        offset,
+      }),
+    [status, kind, priority, sos, escalated, team, asset, offset],
   );
 
   const columns: Column<Incident>[] = [
@@ -106,7 +120,7 @@ export function IncidentsPage() {
   ];
 
   const sosCount = sosOpen.data?.total ?? 0;
-  const filtered = Boolean(kind || priority || sos || escalated || team || status !== "open");
+  const filtered = Boolean(kind || priority || sos || escalated || team || asset || status !== "open");
 
   return (
     <>
@@ -168,6 +182,10 @@ export function IncidentsPage() {
             </select>
           </div>
         )}
+        <div className="field">
+          <label htmlFor="in-asset">Asset</label>
+          <AssetSelect id="in-asset" value={asset} onChange={(v) => update({ asset_id: v })} assets={assets.data?.items} />
+        </div>
         <label className="check">
           <input type="checkbox" checked={sos} onChange={(e) => update({ sos: e.target.checked ? "true" : "" })} /> SOS only
         </label>
