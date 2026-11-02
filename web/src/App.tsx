@@ -11,6 +11,7 @@ import { AcceptInvitePage } from "./pages/AcceptInvite";
 import { SlackLinkPage } from "./pages/SlackLink";
 import { AccountPage } from "./pages/Account";
 import { SlackOAuthCallbackPage } from "./pages/SlackOAuthCallback";
+import { JiraOAuthCallbackPage } from "./pages/JiraOAuthCallback";
 import { GitHubCallbackPage } from "./pages/GitHubCallback";
 import { SlackInstallPage } from "./pages/SlackInstall";
 import { EmailConfirmPage, EmailStopPage } from "./pages/EmailConfirm";
@@ -18,6 +19,7 @@ import { EmailPreferencesPage } from "./pages/EmailPreferences";
 import { AssistantsPage, ConnectAssistantPage } from "./pages/Assistants";
 import { OnboardingPage } from "./pages/Onboarding";
 import { SignupPage, VerifySignupPage } from "./pages/Signup";
+import { PickRepositoriesPage, SocialConfirmPage, SocialSignupPage } from "./pages/Social";
 import { UsagePage } from "./pages/settings/Usage";
 import { BillingPage } from "./pages/settings/Billing";
 import { SingleSignOnPage } from "./pages/settings/SingleSignOn";
@@ -127,7 +129,12 @@ export function App() {
   // Sign-up, where the server offers it (a hosted edition).
   const signup = "meta" in state ? state.meta.signup : undefined;
   if (signup && pathname === "/signup/verify" && (state.phase === "login" || state.phase === "ready")) return <VerifySignupPage />;
-  if (signup && pathname === "/signup" && state.phase === "login") return <SignupPage signup={signup} />;
+  if (signup && pathname === "/signup" && state.phase === "login") return <SignupPage signup={signup} social={"meta" in state ? state.meta.social : undefined} />;
+  // Signing up and connecting through Google, Microsoft or GitHub (a hosted edition).
+  const social = "meta" in state ? state.meta.social : undefined;
+  if (signup && social && pathname === "/signup/social" && (state.phase === "login" || state.phase === "ready")) return <SocialSignupPage signup={signup} />;
+  if (social && pathname === "/social/confirm" && (state.phase === "login" || state.phase === "ready")) return <SocialConfirmPage />;
+  if (social && pathname === "/welcome/repositories" && state.phase === "ready") return <PickRepositoriesPage />;
   // A link from Slack to connect a Slack account: sign in first, then
   // confirm. The address (and its #token) stays the same while signing in.
   if (pathname === "/slack/link" && state.phase === "login") return <LoginPage />;
@@ -142,6 +149,10 @@ export function App() {
   // in or not.
   if (pathname === "/integrations/slack/oauth/callback" && state.phase === "login") return slackCallbackNeedsSession() ? <LoginPage /> : <SlackOAuthCallbackPage />;
   if (pathname === "/integrations/slack/oauth/callback" && state.phase === "ready") return <SlackOAuthCallbackPage />;
+  // Back from Connect Jira (Atlassian): sign in first if the session ended;
+  // the address and query stay. A cancel (?error=) is explained signed out.
+  if (pathname === "/integrations/jira/oauth/callback" && state.phase === "login") return slackCallbackNeedsSession() ? <LoginPage /> : <JiraOAuthCallbackPage />;
+  if (pathname === "/integrations/jira/oauth/callback" && state.phase === "ready") return <JiraOAuthCallbackPage />;
   // Back from "Install on GitHub": sign in first; the address and query
   // stay, and the page connects the installation in the signed-in session.
   if (pathname === "/integrations/github/callback" && state.phase === "login") return <LoginPage />;

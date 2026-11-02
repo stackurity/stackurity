@@ -4,8 +4,18 @@
 export type Role = "viewer" | "engineer" | "security" | "admin" | "collector";
 export type UserRole = Exclude<Role, "collector">;
 
-export const USER_ROLES: UserRole[] = ["viewer", "engineer", "security", "admin"];
-const RANK: Record<string, number> = { viewer: 1, engineer: 2, security: 3, admin: 4 };
+export const USER_ROLES: UserRole[] = [
+  "viewer",
+  "engineer",
+  "security",
+  "admin",
+];
+const RANK: Record<string, number> = {
+  viewer: 1,
+  engineer: 2,
+  security: 3,
+  admin: 4,
+};
 
 /** Mirrors auth.Role.AtLeast: collector tokens rank below every user role. */
 export function atLeast(role: Role | undefined, min: UserRole): boolean {
@@ -13,7 +23,16 @@ export function atLeast(role: Role | undefined, min: UserRole): boolean {
   return (RANK[role] ?? 0) >= RANK[min];
 }
 
-export const ASSET_KINDS = ["host", "repository", "image", "application", "managed_service", "sbom", "cluster", "workload"] as const;
+export const ASSET_KINDS = [
+  "host",
+  "repository",
+  "image",
+  "application",
+  "managed_service",
+  "sbom",
+  "cluster",
+  "workload",
+] as const;
 export const ASSET_STATUSES = ["ok", "partial", "stale", "removed"] as const;
 /** Plain words for collection_status. */
 export const ASSET_STATUS_LABEL: Record<string, string> = {
@@ -24,13 +43,34 @@ export const ASSET_STATUS_LABEL: Record<string, string> = {
 };
 export const ASSET_STATUS_HELP: Record<string, string> = {
   ok: "The last collection read everything.",
-  partial: "The last collection could not read everything (see Coverage); issues it could not see stay open.",
+  partial:
+    "The last collection could not read everything (see Coverage); issues it could not see stay open.",
   stale: "Nothing has reported this asset recently.",
-  removed: "The application's directory is no longer reported by its server's agent: it was deleted, is an old release, or is no longer configured. Its issues were resolved as removed.",
+  removed:
+    "The application's directory is no longer reported by its server's agent: it was deleted, is an old release, or is no longer configured. Its issues were resolved as removed.",
 };
-export const CRITICALITIES = ["unknown", "low", "medium", "high", "critical"] as const;
-export const RELATION_KINDS = ["runs_on", "built_from", "deployed_as", "contains", "depends_on", "replica_of"] as const;
-export const COVERAGE_STATUSES = ["checked", "partial", "skipped", "failed", "unsupported"] as const;
+export const CRITICALITIES = [
+  "unknown",
+  "low",
+  "medium",
+  "high",
+  "critical",
+] as const;
+export const RELATION_KINDS = [
+  "runs_on",
+  "built_from",
+  "deployed_as",
+  "contains",
+  "depends_on",
+  "replica_of",
+] as const;
+export const COVERAGE_STATUSES = [
+  "checked",
+  "partial",
+  "skipped",
+  "failed",
+  "unsupported",
+] as const;
 
 export interface List<T> {
   items: T[];
@@ -65,6 +105,45 @@ export interface Meta {
   sso_discovery?: boolean;
   /** True when this server sends product updates or vulnerability news, so people have email preferences (a hosted edition). */
   email_preferences?: boolean;
+  /** Present when people can sign up and sign in with Google, Microsoft or GitHub (a hosted edition): only configured providers. */
+  social?: SocialMeta;
+}
+
+export interface SocialProviderMeta {
+  id: "google" | "microsoft" | "github";
+  label: string;
+  /** A full-page navigation to the provider. */
+  start_url: string;
+}
+
+export interface SocialMeta {
+  providers: SocialProviderMeta[];
+  /** Where a GitHub sign-up continues to choose repositories (the GitHub App's installation page); absent without the app. */
+  github_install_url?: string;
+}
+
+/** Who the provider vouched for, on the page that finishes a sign-up through it. */
+export interface SocialSignupPreview {
+  provider: string;
+  provider_label: string;
+  email: string;
+  name: string;
+  login?: string;
+  /** People at this domain already use the service (not a free mail provider). */
+  colleagues_domain?: string;
+}
+
+/** One way to sign in to your account through a provider. */
+export interface SocialConnection {
+  id: string;
+  label: string;
+  connected: boolean;
+  email?: string;
+  login?: string;
+  created_at?: string;
+  last_used_at?: string | null;
+  /** Connected at a provider this server no longer offers. */
+  unavailable?: boolean;
 }
 
 export interface SignupMeta {
@@ -357,9 +436,17 @@ export interface Billing {
   next_charge: { at: string; amount: number; currency: string } | null;
   grace_until: string | null;
   payment_url: string | null;
-  scheduled_change: { plan: BillingPlan | null; extra_assets: number; at: string | null } | null;
+  scheduled_change: {
+    plan: BillingPlan | null;
+    extra_assets: number;
+    at: string | null;
+  } | null;
   /** An upgrade that applies now and is billed from the next invoice (the provider changes the plan at the period's end). */
-  upgrade: { from_plan: BillingPlan | null; charge: { at: string; amount: number; currency: string }; message: string } | null;
+  upgrade: {
+    from_plan: BillingPlan | null;
+    charge: { at: string; amount: number; currency: string };
+    message: string;
+  } | null;
   notice: string;
   /** Asked once, at the first subscription; it decides the currency. */
   billing_country: string | null;
@@ -426,7 +513,11 @@ export interface PackList {
 }
 
 export interface AdminPacks extends PackList {
-  catalog: { manifest: PackManifest; sha256: string; installed_version: string }[];
+  catalog: {
+    manifest: PackManifest;
+    sha256: string;
+    installed_version: string;
+  }[];
 }
 
 /** A stored secret; its value is never returned. */
@@ -543,7 +634,12 @@ export interface OrgSSO {
   available: boolean;
   plan_message?: string;
   config: OrgSSOConfig | null;
-  service_provider?: { entity_id: string; acs_url: string; metadata_url: string; login_url: string };
+  service_provider?: {
+    entity_id: string;
+    acs_url: string;
+    metadata_url: string;
+    login_url: string;
+  };
   domains: OrgSSODomain[];
   owner_id: number;
 }
@@ -561,7 +657,8 @@ export interface OrgSSOChange {
 }
 
 export type Edition = "community" | "pro" | "enterprise";
-export type Feature = "remediation" | "teams" | "evidence_report" | "sso" | "enterprise_packs";
+export type Feature =
+  "remediation" | "teams" | "evidence_report" | "sso" | "enterprise_packs";
 
 export interface LicenseInfo {
   status: {
@@ -569,7 +666,15 @@ export interface LicenseInfo {
     edition: Edition;
     grace_ends?: string;
     features: Feature[];
-    license?: { id: string; customer: string; email?: string; edition: Edition; max_assets: number; issued_at: string; expires_at: string };
+    license?: {
+      id: string;
+      customer: string;
+      email?: string;
+      edition: Edition;
+      max_assets: number;
+      issued_at: string;
+      expires_at: string;
+    };
   };
   active_assets: number;
   managed_by_env: boolean;
@@ -609,14 +714,32 @@ export interface HealthScope {
   summary: string;
   count?: number;
   workspaces?: number;
-  items?: { name: string; detail?: string; last_success?: string | null; last_error?: string; link?: string }[];
+  items?: {
+    name: string;
+    detail?: string;
+    last_success?: string | null;
+    last_error?: string;
+    link?: string;
+  }[];
   /** Affected objects not listed: in other workspaces, or beyond the first ten. */
   hidden?: number;
 }
 
 export interface HealthProblem {
   severity: "critical" | "warning";
-  kind: "feed" | "task" | "jobs" | "intelligence" | "platform" | "integration" | "notification" | "notifications" | "collector" | "coverage" | "schema" | "config";
+  kind:
+    | "feed"
+    | "task"
+    | "jobs"
+    | "intelligence"
+    | "platform"
+    | "integration"
+    | "notification"
+    | "notifications"
+    | "collector"
+    | "coverage"
+    | "schema"
+    | "config";
   key: string;
   title: string;
   detail?: string;
@@ -642,11 +765,26 @@ export interface PlatformHealth {
     consecutive_failures: number;
     running: boolean;
   }[];
-  jobs: { kind: string; state: "queued" | "scheduled" | "running" | "failed"; count: number }[];
+  jobs: {
+    kind: string;
+    state: "queued" | "scheduled" | "running" | "failed";
+    count: number;
+  }[];
   oldest_queued_seconds: number;
-  recent_failures: { id: number; kind: string; workspace_id: number | null; attempts: number; last_error: string; failed_at: string }[];
+  recent_failures: {
+    id: number;
+    kind: string;
+    workspace_id: number | null;
+    attempts: number;
+    last_error: string;
+    failed_at: string;
+  }[];
   /** Notification deliveries by channel kind and state; failed means in the last 24 hours. */
-  deliveries: { kind: string; state: "pending" | "retrying" | "held" | "failed"; count: number }[];
+  deliveries: {
+    kind: string;
+    state: "pending" | "retrying" | "held" | "failed";
+    count: number;
+  }[];
   oldest_due_delivery_seconds: number;
   failing_channels: { kind: string; count: number }[];
 }
@@ -809,7 +947,13 @@ export interface DashboardTrend {
   fixed: { start: string; end: string; fixed: number }[];
 }
 
-export type UncheckedReason = "unreadable_version" | "other" | "unreadable_files" | "unsupported" | "waiting_for_data" | "no_advisories";
+export type UncheckedReason =
+  | "unreadable_version"
+  | "other"
+  | "unreadable_files"
+  | "unsupported"
+  | "waiting_for_data"
+  | "no_advisories";
 export type UncheckedActor = "user" | "stackurity" | "automatic" | "none";
 
 /** One subject of an unchecked reason: an ecosystem, a vulnerability source, a release or a cause. */
@@ -847,7 +991,11 @@ export interface Unchecked {
 
 export interface LifecycleNote {
   /** distribution_supported (no finding), distribution_ended, third_party_build or follows_upstream. */
-  status?: "distribution_supported" | "distribution_ended" | "third_party_build" | "follows_upstream";
+  status?:
+    | "distribution_supported"
+    | "distribution_ended"
+    | "third_party_build"
+    | "follows_upstream";
   text?: string;
   product?: string;
   cycle?: string;
@@ -857,7 +1005,12 @@ export interface LifecycleNote {
   distribution_eol?: string;
 }
 
-export type RowCoverage = "evaluated" | "stale_intelligence" | "not_evaluated" | "unsupported" | "awaiting";
+export type RowCoverage =
+  | "evaluated"
+  | "stale_intelligence"
+  | "not_evaluated"
+  | "unsupported"
+  | "awaiting";
 
 /** How far an asset's findings can be trusted (GET /assets/{id}/coverage-summary). */
 export interface CoverageSummary {
@@ -920,7 +1073,13 @@ export interface Relation {
   created_at: string;
 }
 
-export const DRIFT_STATUSES = ["behind", "only_there", "differs", "ahead", "only_here"] as const;
+export const DRIFT_STATUSES = [
+  "behind",
+  "only_there",
+  "differs",
+  "ahead",
+  "only_here",
+] as const;
 export type DriftStatus = (typeof DRIFT_STATUSES)[number];
 
 export interface DriftItem {
@@ -949,11 +1108,31 @@ export interface DriftResponse {
 
 // --- Stage 7: an asset's stack (GET /assets/{id}/stack)
 
-export const STACK_ROLES = ["self", "host", "cluster", "source", "image", "dependency", "workload", "deployment"] as const;
+export const STACK_ROLES = [
+  "self",
+  "host",
+  "cluster",
+  "source",
+  "image",
+  "dependency",
+  "workload",
+  "deployment",
+] as const;
 export type StackRole = (typeof STACK_ROLES)[number];
 
 /** Layers in the order the API returns them: most exposed first. */
-export const STACK_LAYERS = ["web_server", "cms", "os", "runtime", "data_store", "libraries", "declared", "managed_service", "platform", "other"] as const;
+export const STACK_LAYERS = [
+  "web_server",
+  "cms",
+  "os",
+  "runtime",
+  "data_store",
+  "libraries",
+  "declared",
+  "managed_service",
+  "platform",
+  "other",
+] as const;
 export type StackLayerName = (typeof STACK_LAYERS)[number];
 
 export interface StackMember {
@@ -1153,7 +1332,12 @@ export interface RegistryImage {
   removed_at: string | null;
 }
 
-export const INTEGRATION_KINDS = ["git_repository", "container_image", "container_registry", "plugin"] as const;
+export const INTEGRATION_KINDS = [
+  "git_repository",
+  "container_image",
+  "container_registry",
+  "plugin",
+] as const;
 export type IntegrationKind = (typeof INTEGRATION_KINDS)[number];
 
 /** Union of the per-kind config objects; check `kind` before reading. */
@@ -1168,7 +1352,9 @@ export type IntegrationConfig = Partial<GitRepoConfig> &
   Partial<ContainerImageConfig> &
   Partial<PluginIntegrationConfig> &
   Partial<GitHubAppIntegrationConfig> &
-  Partial<Omit<ContainerRegistryConfig, "platform" | "environment" | "username">>;
+  Partial<
+    Omit<ContainerRegistryConfig, "platform" | "environment" | "username">
+  >;
 
 export interface Integration {
   id: number;
@@ -1187,8 +1373,19 @@ export interface Integration {
 
 // --- Stage 2: vulnerability, version and lifecycle intelligence
 
-export const SEVERITIES = ["critical", "high", "medium", "low", "none", "unknown"] as const;
-export const VERIFICATIONS = ["confirmed", "needs_validation", "stale"] as const;
+export const SEVERITIES = [
+  "critical",
+  "high",
+  "medium",
+  "low",
+  "none",
+  "unknown",
+] as const;
+export const VERIFICATIONS = [
+  "confirmed",
+  "needs_validation",
+  "stale",
+] as const;
 
 /** Labels for the evidence states reports count (store.evidenceState). */
 export const EVIDENCE_STATE_LABEL: Record<string, string> = {
@@ -1474,7 +1671,17 @@ export interface SearchResults {
   components: SearchComponent[];
   teams: SearchTeam[];
   members: SearchMember[];
-  more: Partial<Record<"vulnerabilities" | "findings" | "assets" | "components" | "teams" | "members", boolean>>;
+  more: Partial<
+    Record<
+      | "vulnerabilities"
+      | "findings"
+      | "assets"
+      | "components"
+      | "teams"
+      | "members",
+      boolean
+    >
+  >;
 }
 
 export const SEARCH_MIN_LENGTH = 2;
@@ -1510,10 +1717,34 @@ export interface SecondCheck {
 /** Why a finding matched: the stored rule, its evidence and what is missing (internal/why). */
 export interface FindingWhy {
   sentence: string;
-  type: "package_advisory" | "os_package" | "container_image" | "end_of_life" | string;
-  installed: { version: string; compared?: string; from: string; collector: string; confidence: string; observed_at: string | null };
-  source: { record?: string; ecosystem?: string; feed: string; refreshed_at: string | null; stale: boolean };
-  rule: { kind: string; range?: string; comparator?: string; text: string; ambiguous?: string[] };
+  type:
+    | "package_advisory"
+    | "os_package"
+    | "container_image"
+    | "end_of_life"
+    | string;
+  installed: {
+    version: string;
+    compared?: string;
+    from: string;
+    collector: string;
+    confidence: string;
+    observed_at: string | null;
+  };
+  source: {
+    record?: string;
+    ecosystem?: string;
+    feed: string;
+    refreshed_at: string | null;
+    stale: boolean;
+  };
+  rule: {
+    kind: string;
+    range?: string;
+    comparator?: string;
+    text: string;
+    ambiguous?: string[];
+  };
   fixed_version?: string;
   evidence_state: string;
   evidence_state_text: string;
@@ -1684,7 +1915,15 @@ export interface OutcomesReport {
   removed?: number;
   closed_not_remediation?: ClosedNotRemediation;
   time_to_remedy: OutcomeTiming[] | null;
-  causes: { cause: string; resolution_kind?: string; evidence: string; count: number; counts_as_remediation?: boolean }[] | null;
+  causes:
+    | {
+        cause: string;
+        resolution_kind?: string;
+        evidence: string;
+        count: number;
+        counts_as_remediation?: boolean;
+      }[]
+    | null;
   sla: OutcomeSLA[] | null;
   reopened: {
     events: number;
@@ -1790,7 +2029,9 @@ export function safeHttpUrl(u: string | null | undefined): string | null {
   if (!u) return null;
   try {
     const url = new URL(u);
-    return url.protocol === "https:" || url.protocol === "http:" ? url.href : null;
+    return url.protocol === "https:" || url.protocol === "http:"
+      ? url.href
+      : null;
   } catch {
     return null;
   }
@@ -1800,12 +2041,31 @@ export function safeHttpUrl(u: string | null | undefined): string | null {
 
 export const PRIORITIES = ["P1", "P2", "P3", "P4"] as const;
 export type Priority = (typeof PRIORITIES)[number];
-export const FINDING_STATES = ["new", "acknowledged", "in_progress", "suppressed", "risk_accepted"] as const;
+export const FINDING_STATES = [
+  "new",
+  "acknowledged",
+  "in_progress",
+  "suppressed",
+  "risk_accepted",
+] as const;
 export type FindingState = (typeof FINDING_STATES)[number];
 /** The seven states shown to people, mapped from stored state and status. */
-export const DISPLAY_STATES = ["new", "to_do", "in_progress", "fixed", "regressed", "snoozed", "accepted"] as const;
+export const DISPLAY_STATES = [
+  "new",
+  "to_do",
+  "in_progress",
+  "fixed",
+  "regressed",
+  "snoozed",
+  "accepted",
+] as const;
 export type DisplayState = (typeof DISPLAY_STATES)[number];
-export const IGNORE_REASONS = ["accepted_risk", "false_positive", "mitigated", "no_fix"] as const;
+export const IGNORE_REASONS = [
+  "accepted_risk",
+  "false_positive",
+  "mitigated",
+  "no_fix",
+] as const;
 export type IgnoreReason = (typeof IGNORE_REASONS)[number];
 export type IgnoreScope = "asset" | "everywhere";
 export type IgnoreExpiry = "date" | "until_fix" | "never";
@@ -1826,7 +2086,8 @@ export interface Check {
   picked_up_at: string | null;
   collection_id: number | null;
   completed_at: string | null;
-  outcome: "" | "passed" | "partly_fixed" | "still_open" | "incomplete" | "expired";
+  outcome:
+    "" | "passed" | "partly_fixed" | "still_open" | "incomplete" | "expired";
   open_before: number;
   fixed: number;
   remaining: number;
@@ -1913,7 +2174,8 @@ export interface IgnoreRequest {
   vex?: RequestVEX | null;
 }
 
-export type VEXStatus = "not_affected" | "affected" | "fixed" | "under_investigation";
+export type VEXStatus =
+  "not_affected" | "affected" | "fixed" | "under_investigation";
 
 export interface FindingVEX {
   statement_id: number;
@@ -2031,14 +2293,26 @@ export interface VEXSource {
 }
 
 /** Uploads a VEX document as it is (the server reads JSON, envelopes and bundles). */
-export async function importVEX(file: Blob, q: { filename: string; source_id?: number; asset_id?: number; project_id?: number }): Promise<VEXImportResult> {
+export async function importVEX(
+  file: Blob,
+  q: {
+    filename: string;
+    source_id?: number;
+    asset_id?: number;
+    project_id?: number;
+  },
+): Promise<VEXImportResult> {
   const params = new URLSearchParams({ filename: q.filename });
   if (q.source_id) params.set("source_id", String(q.source_id));
   if (q.asset_id) params.set("asset_id", String(q.asset_id));
   if (q.project_id) params.set("project_id", String(q.project_id));
   const res = await fetch(`/api/v1/vex/import?${params}`, {
     method: "POST",
-    headers: { Accept: "application/json", "Content-Type": "application/json", "X-Stackurity-CSRF": "1" },
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "X-Stackurity-CSRF": "1",
+    },
     credentials: "same-origin",
     body: file,
   });
@@ -2050,14 +2324,27 @@ export async function importVEX(file: Blob, q: { filename: string; source_id?: n
     data = null;
   }
   if (!res.ok) {
-    const err = (data as { error?: { code?: string; message?: string; details?: string[] } } | null)?.error;
-    throw new ApiError(res.status, err?.code ?? "http_" + res.status, err?.message ?? `Upload failed (${res.status})`, err?.details ?? []);
+    const err = (
+      data as {
+        error?: { code?: string; message?: string; details?: string[] };
+      } | null
+    )?.error;
+    throw new ApiError(
+      res.status,
+      err?.code ?? "http_" + res.status,
+      err?.message ?? `Upload failed (${res.status})`,
+      err?.details ?? [],
+    );
   }
   return data as VEXImportResult;
 }
 
 /** The download link for a VEX export; project scoping follows the switcher. */
-export function vexExportURL(format: "openvex" | "cyclonedx", assetID?: number, notes?: boolean): string {
+export function vexExportURL(
+  format: "openvex" | "cyclonedx",
+  assetID?: number,
+  notes?: boolean,
+): string {
   const params = new URLSearchParams({ format });
   if (notes) params.set("notes", "true");
   if (assetID) params.set("asset_id", String(assetID));
@@ -2068,8 +2355,20 @@ export function vexExportURL(format: "openvex" | "cyclonedx", assetID?: number, 
 export interface IgnoreRequestList extends List<IgnoreRequest> {
   can_decide: boolean;
 }
-export const INCIDENT_KINDS = ["vulnerability", "end_of_life", "feed", "collection", "coverage", "platform"] as const;
-export const SYSTEM_INCIDENT_KINDS = ["feed", "collection", "coverage", "platform"];
+export const INCIDENT_KINDS = [
+  "vulnerability",
+  "end_of_life",
+  "feed",
+  "collection",
+  "coverage",
+  "platform",
+] as const;
+export const SYSTEM_INCIDENT_KINDS = [
+  "feed",
+  "collection",
+  "coverage",
+  "platform",
+];
 
 export interface PriorityFactor {
   name: string;
@@ -2194,7 +2493,16 @@ export interface IncidentResponse {
   deliveries?: Delivery[] | null;
 }
 
-export const CHANNEL_KINDS = ["email", "slack", "teams", "webhook", "jira", "pagerduty", "servicenow", "stackurity_email"] as const;
+export const CHANNEL_KINDS = [
+  "email",
+  "slack",
+  "teams",
+  "webhook",
+  "jira",
+  "pagerduty",
+  "servicenow",
+  "stackurity_email",
+] as const;
 export type ChannelKind = (typeof CHANNEL_KINDS)[number];
 
 export interface ChannelConfig {
@@ -2212,9 +2520,15 @@ export interface ChannelConfig {
   labels?: string[];
   priorities?: Partial<Record<Priority, string>>;
   resolve_transition?: string;
+  // jira with Connect Jira (auth "oauth"): the connection and the site
+  // (cloud id); url is then the site's address.
+  connection_id?: number;
+  cloud_id?: string;
   // pagerduty: service region and severity per priority; the routing key is the secret.
   region?: "us" | "eu" | "";
-  severities?: Partial<Record<Priority, "critical" | "error" | "warning" | "info">>;
+  severities?: Partial<
+    Record<Priority, "critical" | "error" | "warning" | "info">
+  >;
   // servicenow: url is the instance; basic (username + password secret) or
   // oauth (client_id + client secret).
   auth?: "basic" | "oauth" | "";
@@ -2242,11 +2556,22 @@ export interface ChannelConfig {
   team_name?: string;
   slack_channel?: string;
   configuration_url?: string;
+  // teams created with "Add to Teams" (the Stackurity Teams app)
+  teams_app?: boolean;
+  tenant_id?: string;
+  teams_team_id?: string;
+  teams_team_name?: string;
+  teams_channel_id?: string;
+  teams_channel?: string;
+  service_url?: string;
 }
 
 /** GET /notification-options: what this server offers. */
 export interface NotificationOptions {
   slack_app: boolean;
+  teams_app: boolean;
+  /** Connect Jira (the Stackurity Atlassian app) is available. */
+  jira_app: boolean;
   platform_email: {
     enabled: boolean;
     from?: string;
@@ -2257,7 +2582,14 @@ export interface NotificationOptions {
   base_url: boolean;
 }
 
-export const NO_NOTIFICATION_OPTIONS: NotificationOptions = { slack_app: false, platform_email: { enabled: false }, secrets: false, base_url: false };
+export const NO_NOTIFICATION_OPTIONS: NotificationOptions = {
+  slack_app: false,
+  jira_app: false,
+  teams_app: false,
+  platform_email: { enabled: false },
+  secrets: false,
+  base_url: false,
+};
 
 /** Loads the options; a failure counts as nothing offered. */
 export function loadNotificationOptions(): Promise<NotificationOptions> {
@@ -2265,7 +2597,11 @@ export function loadNotificationOptions(): Promise<NotificationOptions> {
     .get<Partial<NotificationOptions>>("/notification-options")
     .then((o) => ({
       slack_app: Boolean(o?.slack_app),
-      platform_email: o?.platform_email?.enabled ? o.platform_email : { enabled: false },
+      teams_app: Boolean(o?.teams_app),
+      jira_app: Boolean(o?.jira_app),
+      platform_email: o?.platform_email?.enabled
+        ? o.platform_email
+        : { enabled: false },
       secrets: Boolean(o?.secrets),
       base_url: Boolean(o?.base_url),
     }))
@@ -2278,6 +2614,69 @@ export interface EmailRecipient {
   status: "pending" | "confirmed" | string;
   requested_at: string;
   confirmed_at: string | null;
+}
+
+/** POST /integrations/teams/install */
+export interface TeamsInstallStart {
+  id: number;
+  code: string;
+  expires_at: string;
+  install_url: string;
+}
+
+/** GET /integrations/teams/install/{id} */
+export interface TeamsInstallStatus {
+  status: "pending" | "connected" | "expired" | "failed";
+  expires_at: string;
+  channel?: Channel;
+}
+
+/** A Jira Cloud site a Connect Jira connection reaches. */
+export interface JiraSite {
+  /** The Atlassian cloud id. */
+  id: string;
+  name: string;
+  url: string;
+}
+
+/** GET /integrations/jira/connections: a Connect Jira grant (never its tokens). */
+export interface JiraConnection {
+  id: number;
+  sites: JiraSite[];
+  scopes: string;
+  status: "active" | "reconnect_needed";
+  status_reason: string;
+  connected_by: number | null;
+  connected_at: string;
+  refreshed_at: string | null;
+}
+
+/** POST /integrations/jira/oauth */
+export interface JiraOAuthResult {
+  connection: JiraConnection;
+  return_to: string;
+  reconnected: boolean;
+}
+
+/** GET /integrations/jira/connections/{id}/projects/{key} */
+export interface JiraProjectMeta {
+  key: string;
+  name: string;
+  issue_types: { name: string; subtask: boolean }[];
+  statuses: Record<string, { name: string; category: string }[]>;
+  priorities: string[];
+}
+
+/** Starts Connect Jira (or reconnects `connectionId`) and goes to Atlassian's consent page. */
+export async function startJiraConnect(
+  returnTo: string,
+  connectionId = 0,
+): Promise<void> {
+  const r = await api.post<{ url: string }>("/integrations/jira/install", {
+    return_to: returnTo,
+    connection_id: connectionId,
+  });
+  window.location.assign(r.url);
 }
 
 /** POST /integrations/slack/oauth */
@@ -2309,7 +2708,10 @@ export interface GitHubAppStatus {
   installations: GitHubInstallation[];
 }
 
-export const NO_GITHUB_APP: GitHubAppStatus = { configured: false, installations: [] };
+export const NO_GITHUB_APP: GitHubAppStatus = {
+  configured: false,
+  installations: [],
+};
 
 /** POST /integrations/github/setup */
 export interface GitHubSetupResult {
@@ -2338,7 +2740,16 @@ export type SendNow = "urgent" | "all" | "none";
 export type SummaryChoice = "daily" | "weekly" | "none";
 
 /** What a route sends (its "Trigger" checkboxes). */
-export const ROUTE_EVENTS = ["urgent", "new_issues", "regressed", "overdue", "connected", "problems", "daily_summary", "weekly_summary"] as const;
+export const ROUTE_EVENTS = [
+  "urgent",
+  "new_issues",
+  "regressed",
+  "overdue",
+  "connected",
+  "problems",
+  "daily_summary",
+  "weekly_summary",
+] as const;
 export type RouteEvent = (typeof ROUTE_EVENTS)[number];
 
 export const ROUTE_EVENT_LABEL: Record<RouteEvent, string> = {
@@ -2354,8 +2765,22 @@ export const ROUTE_EVENT_LABEL: Record<RouteEvent, string> = {
 
 /** What the old modes mean as events (routes without `events`). */
 const MODE_EVENTS: Record<string, RouteEvent[]> = {
-  urgent_summary: ["urgent", "regressed", "overdue", "connected", "problems", "daily_summary"],
-  urgent_weekly: ["urgent", "regressed", "overdue", "connected", "problems", "weekly_summary"],
+  urgent_summary: [
+    "urgent",
+    "regressed",
+    "overdue",
+    "connected",
+    "problems",
+    "daily_summary",
+  ],
+  urgent_weekly: [
+    "urgent",
+    "regressed",
+    "overdue",
+    "connected",
+    "problems",
+    "weekly_summary",
+  ],
   urgent_only: ["urgent", "regressed", "overdue", "connected", "problems"],
   daily: ["daily_summary"],
   weekly: ["weekly_summary"],
@@ -2363,7 +2788,10 @@ const MODE_EVENTS: Record<string, RouteEvent[]> = {
 
 /** A route's events, from `events` or, for an older answer, its mode. */
 export function eventsOf(r: Pick<Route, "events" | "mode">): RouteEvent[] {
-  if (r.events) return r.events.filter((e): e is RouteEvent => (ROUTE_EVENTS as readonly string[]).includes(e));
+  if (r.events)
+    return r.events.filter((e): e is RouteEvent =>
+      (ROUTE_EVENTS as readonly string[]).includes(e),
+    );
   return MODE_EVENTS[r.mode || "urgent_summary"] ?? MODE_EVENTS.urgent_summary;
 }
 
@@ -2371,43 +2799,96 @@ export function eventsOf(r: Pick<Route, "events" | "mode">): RouteEvent[] {
  * The events for the two quick questions (onboarding). Null when neither is
  * chosen: nothing would ever be sent.
  */
-export function eventsFor(now: SendNow, summary: SummaryChoice): { events: RouteEvent[]; new_min_priority: Priority } | null {
+export function eventsFor(
+  now: SendNow,
+  summary: SummaryChoice,
+): { events: RouteEvent[]; new_min_priority: Priority } | null {
   if (now === "none" && summary === "none") return null;
-  const events: RouteEvent[] = now === "all" ? ["new_issues", "urgent", "regressed", "connected", "problems"] : now === "urgent" ? ["urgent", "regressed", "connected", "problems"] : [];
+  const events: RouteEvent[] =
+    now === "all"
+      ? ["new_issues", "urgent", "regressed", "connected", "problems"]
+      : now === "urgent"
+        ? ["urgent", "regressed", "connected", "problems"]
+        : [];
   if (summary === "daily") events.push("daily_summary");
   if (summary === "weekly") events.push("weekly_summary");
   return { events, new_min_priority: "P4" };
 }
 
 /** The two quick answers that best describe a route. */
-export function choicesOf(r: Pick<Route, "events" | "mode">): { now: SendNow; summary: SummaryChoice } {
+export function choicesOf(r: Pick<Route, "events" | "mode">): {
+  now: SendNow;
+  summary: SummaryChoice;
+} {
   const ev = eventsOf(r);
-  const now: SendNow = ev.includes("new_issues") ? "all" : ev.includes("urgent") ? "urgent" : "none";
-  const summary: SummaryChoice = ev.includes("daily_summary") ? "daily" : ev.includes("weekly_summary") ? "weekly" : "none";
+  const now: SendNow = ev.includes("new_issues")
+    ? "all"
+    : ev.includes("urgent")
+      ? "urgent"
+      : "none";
+  const summary: SummaryChoice = ev.includes("daily_summary")
+    ? "daily"
+    : ev.includes("weekly_summary")
+      ? "weekly"
+      : "none";
   return { now, summary };
 }
 
 const capital = (d: string) => d.charAt(0).toUpperCase() + d.slice(1);
 
 /** "Daily at 09:00 (Europe/Berlin)", "Weekly, Mondays at 09:00 (UTC)" or "No summary". */
-export function summaryText(summary: SummaryChoice, time: string, day: string, tz: string): string {
+export function summaryText(
+  summary: SummaryChoice,
+  time: string,
+  day: string,
+  tz: string,
+): string {
   if (summary === "none") return "No summary";
   const at = `${time || "09:00"}${tz ? ` (${tz})` : ""}`;
-  return summary === "daily" ? `Daily at ${at}` : `Weekly, ${capital(day || "monday")}s at ${at}`;
+  return summary === "daily"
+    ? `Daily at ${at}`
+    : `Weekly, ${capital(day || "monday")}s at ${at}`;
 }
 
 /** One line for a route: "Urgent issues, all new issues (P3+) · Daily summary at 09:00 Europe/Berlin". */
-export function describeRoute(r: Pick<Route, "events" | "mode" | "min_priority" | "new_min_priority" | "summary_time" | "summary_day" | "timezone">): string {
+export function describeRoute(
+  r: Pick<
+    Route,
+    | "events"
+    | "mode"
+    | "min_priority"
+    | "new_min_priority"
+    | "summary_time"
+    | "summary_day"
+    | "timezone"
+  >,
+): string {
   const ev = eventsOf(r);
   const parts: string[] = [];
-  if (ev.includes("new_issues")) parts.push(r.new_min_priority && r.new_min_priority !== "P4" ? `New issues (${r.new_min_priority}+)` : "All new issues");
-  if (ev.includes("urgent")) parts.push(r.min_priority && r.min_priority !== "P1" ? `Urgent issues (${r.min_priority}+)` : "Urgent issues");
+  if (ev.includes("new_issues"))
+    parts.push(
+      r.new_min_priority && r.new_min_priority !== "P4"
+        ? `New issues (${r.new_min_priority}+)`
+        : "All new issues",
+    );
+  if (ev.includes("urgent"))
+    parts.push(
+      r.min_priority && r.min_priority !== "P1"
+        ? `Urgent issues (${r.min_priority}+)`
+        : "Urgent issues",
+    );
   const now = parts.length ? [`${parts.join(", ")} right away`] : [];
   const at = `at ${r.summary_time || "09:00"} ${r.timezone || "UTC"}`;
   if (ev.includes("daily_summary")) now.push(`Daily summary ${at}`);
-  if (ev.includes("weekly_summary")) now.push(`Weekly summary, ${capital(r.summary_day || "monday")}s ${at}`);
-  const extra = (["regressed", "overdue", "connected", "problems"] as RouteEvent[]).filter((e) => ev.includes(e)).length;
-  if (now.length === 0) return extra ? `${extra} kind${extra === 1 ? "" : "s"} of message` : "Nothing";
+  if (ev.includes("weekly_summary"))
+    now.push(`Weekly summary, ${capital(r.summary_day || "monday")}s ${at}`);
+  const extra = (
+    ["regressed", "overdue", "connected", "problems"] as RouteEvent[]
+  ).filter((e) => ev.includes(e)).length;
+  if (now.length === 0)
+    return extra
+      ? `${extra} kind${extra === 1 ? "" : "s"} of message`
+      : "Nothing";
   return now.join(" · ");
 }
 
@@ -2471,9 +2952,29 @@ export interface Route {
   summary_updates?: boolean;
 }
 
-export type RouteMode = "urgent_summary" | "urgent_weekly" | "urgent_only" | "daily" | "weekly" | "custom";
-export const ROUTE_MODES: RouteMode[] = ["urgent_summary", "urgent_weekly", "urgent_only", "daily", "weekly"];
-export const WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const;
+export type RouteMode =
+  | "urgent_summary"
+  | "urgent_weekly"
+  | "urgent_only"
+  | "daily"
+  | "weekly"
+  | "custom";
+export const ROUTE_MODES: RouteMode[] = [
+  "urgent_summary",
+  "urgent_weekly",
+  "urgent_only",
+  "daily",
+  "weekly",
+];
+export const WEEKDAYS = [
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
+] as const;
 
 export interface SOSRule {
   name: string;
@@ -2523,7 +3024,11 @@ export interface PatchCalendar {
   timezone: string;
 }
 
-export const DEFAULT_PATCH_CALENDAR: PatchCalendar = { test_days_after_patch_tuesday: 1, prod_days_after_test: 7, timezone: "UTC" };
+export const DEFAULT_PATCH_CALENDAR: PatchCalendar = {
+  test_days_after_patch_tuesday: 1,
+  prod_days_after_test: 7,
+  timezone: "UTC",
+};
 
 export const DEFAULT_EXCEPTION_MAX_DAYS = 365;
 
@@ -2771,7 +3276,16 @@ export interface PluginList extends List<InstalledPlugin> {
 
 // --- Action plan (fix groups)
 
-export const FIX_GROUP_KINDS = ["security_updates", "windows_update", "old_kernels", "release_upgrade", "end_of_life", "package_upgrade", "program_update", "no_fix"] as const;
+export const FIX_GROUP_KINDS = [
+  "security_updates",
+  "windows_update",
+  "old_kernels",
+  "release_upgrade",
+  "end_of_life",
+  "package_upgrade",
+  "program_update",
+  "no_fix",
+] as const;
 export type FixGroupKind = (typeof FIX_GROUP_KINDS)[number];
 
 export interface FixGroup {
@@ -2851,14 +3365,29 @@ export interface FixGroupSummary {
 }
 
 /** Buckets of GET /fix-groups?bucket=, mirrors store.FixBuckets. */
-export const FIX_BUCKETS = ["focus", "no_fix", "old_kernels", "non_production", "lower_priority"] as const;
+export const FIX_BUCKETS = [
+  "focus",
+  "no_fix",
+  "old_kernels",
+  "non_production",
+  "lower_priority",
+] as const;
 export type FixBucket = (typeof FIX_BUCKETS)[number];
 
 export interface FixFocus {
   groups: number;
   findings: number;
-  hidden: Partial<Record<FixBucket, { groups: number; findings: number }>> | null;
-  assets: { asset_id: number; asset_name: string; groups: number; findings: number }[] | null;
+  hidden: Partial<
+    Record<FixBucket, { groups: number; findings: number }>
+  > | null;
+  assets:
+    | {
+        asset_id: number;
+        asset_name: string;
+        groups: number;
+        findings: number;
+      }[]
+    | null;
 }
 
 // --- Stage 6: evidence report
@@ -2899,7 +3428,11 @@ export interface EvidenceReport {
     by_status: Record<string, number> | null;
     reboot_required: number;
   };
-  coverage: { components: number; evaluation_gaps: number; coverage_problems: number };
+  coverage: {
+    components: number;
+    evaluation_gaps: number;
+    coverage_problems: number;
+  };
   open: {
     total: number;
     by_severity: Record<string, number> | null;
@@ -3013,7 +3546,13 @@ export interface Onboarding {
   project_id: number;
   project: Project | null;
   /** assistant: someone connected an AI assistant to the organisation. */
-  steps: { project: boolean; asset: boolean; notifications: boolean; invite: boolean; assistant: boolean };
+  steps: {
+    project: boolean;
+    asset: boolean;
+    notifications: boolean;
+    invite: boolean;
+    assistant: boolean;
+  };
 }
 
 /** GET /onboarding/results: an asset the waiting screen reports on. */
@@ -3085,7 +3624,13 @@ export interface SlackLink {
 
 /** POST /oauth/authorize/preview: an assistant asking to connect, and what the person may allow. */
 export interface AssistantConsent {
-  client: { id: string; name: string; client_uri: string; metadata_document: boolean; redirect_host: string };
+  client: {
+    id: string;
+    name: string;
+    client_uri: string;
+    metadata_document: boolean;
+    redirect_host: string;
+  };
   signed_in_as: string;
   workspace: { id: number; name: string };
   projects: Project[];
@@ -3134,7 +3679,13 @@ export class ApiError extends Error {
   details: string[];
   /** The whole error object, for answers that carry more than a message. */
   data?: Record<string, unknown>;
-  constructor(status: number, code: string, message: string, details: string[] = [], data?: Record<string, unknown>) {
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    details: string[] = [],
+    data?: Record<string, unknown>,
+  ) {
     super(message);
     this.status = status;
     this.code = code;
@@ -3175,10 +3726,16 @@ export function qs(q?: Query): string {
   return s ? `?${s}` : "";
 }
 
-async function request<T>(method: string, path: string, body?: unknown, opts?: { quiet401?: boolean; allProjects?: boolean }): Promise<T> {
+async function request<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+  opts?: { quiet401?: boolean; allProjects?: boolean },
+): Promise<T> {
   const headers: Record<string, string> = { Accept: "application/json" };
   if (method !== "GET") headers["X-Stackurity-CSRF"] = "1";
-  if (activeProject > 0 && !opts?.allProjects) headers["X-Stackurity-Project"] = String(activeProject);
+  if (activeProject > 0 && !opts?.allProjects)
+    headers["X-Stackurity-Project"] = String(activeProject);
   if (body !== undefined) headers["Content-Type"] = "application/json";
   let res: Response;
   try {
@@ -3189,7 +3746,11 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: {
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch (e) {
-    throw new ApiError(0, "network", "Could not reach the Stackurity server. Check that it is running.");
+    throw new ApiError(
+      0,
+      "network",
+      "Could not reach the Stackurity server. Check that it is running.",
+    );
   }
   if (res.status === 204) return undefined as T;
   let data: unknown = null;
@@ -3202,8 +3763,13 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: {
     }
   }
   if (!res.ok) {
-    const err = (data as { error?: { code?: string; message?: string; details?: string[] } } | null)?.error;
-    if (res.status === 401 && !opts?.quiet401 && onUnauthorized) onUnauthorized();
+    const err = (
+      data as {
+        error?: { code?: string; message?: string; details?: string[] };
+      } | null
+    )?.error;
+    if (res.status === 401 && !opts?.quiet401 && onUnauthorized)
+      onUnauthorized();
     throw new ApiError(
       res.status,
       err?.code ?? "http_" + res.status,
@@ -3218,34 +3784,72 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: {
 export const api = {
   get: <T>(path: string, q?: Query) => request<T>("GET", path + qs(q)),
   /** GET across every project, whatever the switcher says (settings, pickers). */
-  getAll: <T>(path: string, q?: Query) => request<T>("GET", path + qs(q), undefined, { allProjects: true }),
-  post: <T>(path: string, body?: unknown) => request<T>("POST", path, body ?? {}),
+  getAll: <T>(path: string, q?: Query) =>
+    request<T>("GET", path + qs(q), undefined, { allProjects: true }),
+  post: <T>(path: string, body?: unknown) =>
+    request<T>("POST", path, body ?? {}),
   patch: <T>(path: string, body: unknown) => request<T>("PATCH", path, body),
   put: <T>(path: string, body: unknown) => request<T>("PUT", path, body),
-  del: <T = void>(path: string, body?: unknown) => request<T>("DELETE", path, body),
+  del: <T = void>(path: string, body?: unknown) =>
+    request<T>("DELETE", path, body),
 
   meta: () => request<Meta>("GET", "/meta"),
   orgSSO: () => request<OrgSSO>("GET", "/sso"),
   saveOrgSSO: (b: OrgSSOChange) => request<OrgSSO>("PUT", "/sso", b),
-  setOrgSSOState: (b: { enabled: boolean; require_sso: boolean }) => request<OrgSSO>("PUT", "/sso/state", b),
+  setOrgSSOState: (b: { enabled: boolean; require_sso: boolean }) =>
+    request<OrgSSO>("PUT", "/sso/state", b),
   deleteOrgSSO: () => request<void>("DELETE", "/sso"),
-  addOrgSSODomain: (domain: string) => request<OrgSSODomain>("POST", "/sso/domains", { domain }),
-  verifyOrgSSODomain: (id: number) => request<OrgSSODomain>("POST", `/sso/domains/${id}/verify`),
-  deleteOrgSSODomain: (id: number) => request<void>("DELETE", `/sso/domains/${id}`),
-  discoverSSO: (email: string) => request<{ login_url: string; label: string }>("POST", "/auth/sso/discover", { email }, { quiet401: true }),
+  addOrgSSODomain: (domain: string) =>
+    request<OrgSSODomain>("POST", "/sso/domains", { domain }),
+  verifyOrgSSODomain: (id: number) =>
+    request<OrgSSODomain>("POST", `/sso/domains/${id}/verify`),
+  deleteOrgSSODomain: (id: number) =>
+    request<void>("DELETE", `/sso/domains/${id}`),
+  discoverSSO: (email: string) =>
+    request<{ login_url: string; label: string }>(
+      "POST",
+      "/auth/sso/discover",
+      { email },
+      { quiet401: true },
+    ),
   me: () => request<Me>("GET", "/auth/me", undefined, { quiet401: true }),
   login: (email: string, password: string) =>
-    request<User & { mfa_required?: boolean }>("POST", "/auth/login", { email, password }, { quiet401: true }),
-  setup: (b: { setup_token: string; email: string; name: string; password: string }) =>
-    request<User>("POST", "/setup", b, { quiet401: true }),
-  logout: () => request<void>("POST", "/auth/logout", undefined, { quiet401: true }),
-  usage: () => request<AssetUsage>("GET", "/usage", undefined, { allProjects: true }),
-  updateWorkspace: (id: number, b: WorkspaceUpdate) => request<Workspace>("PATCH", `/admin/workspaces/${id}`, b),
-  myEmailPreferences: () => request<EmailPreferences>("GET", "/auth/email-preferences"),
-  setMyEmailPreferences: (b: EmailPreferencesChange) => request<EmailPreferences>("PUT", "/auth/email-preferences", b),
-  linkEmailPreferences: (token: string) => request<EmailPreferences>("POST", "/email/preferences", { token }, { quiet401: true }),
+    request<User & { mfa_required?: boolean }>(
+      "POST",
+      "/auth/login",
+      { email, password },
+      { quiet401: true },
+    ),
+  setup: (b: {
+    setup_token: string;
+    email: string;
+    name: string;
+    password: string;
+  }) => request<User>("POST", "/setup", b, { quiet401: true }),
+  logout: () =>
+    request<void>("POST", "/auth/logout", undefined, { quiet401: true }),
+  usage: () =>
+    request<AssetUsage>("GET", "/usage", undefined, { allProjects: true }),
+  updateWorkspace: (id: number, b: WorkspaceUpdate) =>
+    request<Workspace>("PATCH", `/admin/workspaces/${id}`, b),
+  myEmailPreferences: () =>
+    request<EmailPreferences>("GET", "/auth/email-preferences"),
+  setMyEmailPreferences: (b: EmailPreferencesChange) =>
+    request<EmailPreferences>("PUT", "/auth/email-preferences", b),
+  linkEmailPreferences: (token: string) =>
+    request<EmailPreferences>(
+      "POST",
+      "/email/preferences",
+      { token },
+      { quiet401: true },
+    ),
   updateLinkEmailPreferences: (token: string, b: EmailPreferencesChange) =>
-    request<EmailPreferences>("POST", "/email/preferences/update", { token, ...b }, { quiet401: true }),
+    request<EmailPreferences>(
+      "POST",
+      "/email/preferences/update",
+      { token, ...b },
+      { quiet401: true },
+    ),
   signup: (b: {
     email: string;
     name: string;
@@ -3254,16 +3858,64 @@ export const api = {
     turnstile_token: string;
     accept_terms: true;
     email_notice_version?: string;
+  }) => request<{ status: string }>("POST", "/signup", b, { quiet401: true }),
+  verifySignup: (token: string) =>
+    request<{ workspace_id: number }>(
+      "POST",
+      "/signup/verify",
+      { token },
+      { quiet401: true },
+    ),
+  socialSignupPreview: (token: string) =>
+    request<SocialSignupPreview>(
+      "POST",
+      "/signup/social/preview",
+      { token },
+      { quiet401: true },
+    ),
+  socialSignup: (b: {
+    token: string;
+    name: string;
+    organisation: string;
+    accept_terms: true;
+    email_notice_version?: string;
   }) =>
-    request<{ status: string }>("POST", "/signup", b, { quiet401: true }),
-  verifySignup: (token: string) => request<{ workspace_id: number }>("POST", "/signup/verify", { token }, { quiet401: true }),
+    request<{ workspace_id: number; next: string }>(
+      "POST",
+      "/signup/social",
+      b,
+      { quiet401: true },
+    ),
+  confirmSocialLink: (token: string) =>
+    request<User & { mfa_required?: boolean }>(
+      "POST",
+      "/auth/social/confirm",
+      { token },
+      { quiet401: true },
+    ),
+  socialConnections: () =>
+    request<{ providers: SocialConnection[]; has_password: boolean }>(
+      "GET",
+      "/auth/social",
+    ),
+  connectSocial: (provider: string, password: string) =>
+    request<{ redirect_url: string }>(
+      "POST",
+      `/auth/social/${encodeURIComponent(provider)}/link`,
+      { password },
+    ),
+  disconnectSocial: (provider: string) =>
+    request<void>("DELETE", `/auth/social/${encodeURIComponent(provider)}`),
 };
 
 /**
  * Polls GET /jobs/{id} until the job is done or failed (or the timeout
  * passes). Resolves with the final job, or null on timeout.
  */
-export async function waitForJob(id: number, opts: { intervalMs?: number; timeoutMs?: number; signal?: AbortSignal } = {}): Promise<Job | null> {
+export async function waitForJob(
+  id: number,
+  opts: { intervalMs?: number; timeoutMs?: number; signal?: AbortSignal } = {},
+): Promise<Job | null> {
   const interval = opts.intervalMs ?? 2000;
   const deadline = Date.now() + (opts.timeoutMs ?? 10 * 60_000);
   while (Date.now() < deadline) {

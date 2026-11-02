@@ -410,8 +410,18 @@ func (s *Server) createChannel(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	if cfg, err := s.jiraChannelConfig(r, req.Kind, req.Config); err != nil {
+		s.fail(w, r, err)
+		return
+	} else {
+		req.Config = cfg
+	}
 	if slackAppConfig(req.Config) {
 		s.fail(w, r, badRequest("Slack channels of the Stackurity app are added with Add to Slack (POST /integrations/slack/install)"))
+		return
+	}
+	if teamsAppConfig(req.Config) {
+		s.fail(w, r, badRequest("Teams channels of the Stackurity app are added with Add to Teams (POST /integrations/teams/install)"))
 		return
 	}
 	if req.Kind == notify.KindStackurityEmail {
@@ -464,6 +474,14 @@ func (s *Server) updateChannel(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, badRequest("Slack channels of the Stackurity app are added with Add to Slack"))
 		return
 	}
+	if teamsAppConfig(cur.Config) && (len(req.Config) > 0 || req.SecretRef != nil) {
+		s.fail(w, r, badRequest("this channel was added with Add to Teams: only its name and on/off can change; add the app to another channel instead"))
+		return
+	}
+	if teamsAppConfig(req.Config) {
+		s.fail(w, r, badRequest("Teams channels of the Stackurity app are added with Add to Teams"))
+		return
+	}
 	cfg, ref := cur.Config, cur.SecretRef
 	if len(req.Config) > 0 {
 		cfg = req.Config
@@ -474,6 +492,12 @@ func (s *Server) updateChannel(w http.ResponseWriter, r *http.Request) {
 	if err := s.validateChannel(cur.Kind, cfg, ref); err != nil {
 		s.fail(w, r, err)
 		return
+	}
+	if len(req.Config) > 0 {
+		if req.Config, err = s.jiraChannelConfig(r, cur.Kind, req.Config); err != nil {
+			s.fail(w, r, err)
+			return
+		}
 	}
 	if cur.Kind == notify.KindStackurityEmail && len(req.Config) > 0 {
 		if err := s.checkPlatformEmail(r, cfg); err != nil {
