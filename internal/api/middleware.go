@@ -133,6 +133,12 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 						p.Workspace, p.Role, p.SSORequired, p.NeedsMFAEnrolment = 0, "", req, false
 					}
 				}
+				if p.Ask && p.Workspace != askWorkspace(r.Context()) {
+					// The person switched organisation while Ask was
+					// answering: its tools read only the one asked in.
+					writeError(w, 409, "workspace_changed", "the organisation changed while Ask Stackurity was answering")
+					return
+				}
 				if sessionGate(w, r, p) {
 					return
 				}

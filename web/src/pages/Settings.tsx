@@ -65,6 +65,12 @@ const GROUPS: { title: string; entries: Entry[] }[] = [
         min: "admin",
       },
       { to: "/settings/teams", label: "Teams", about: "Owner teams for assets, alert routing and escalation.", min: "admin" },
+      {
+        to: "/settings/owners",
+        label: "Owner rules",
+        about: "Who new issues are assigned to, by project, asset and part of the tech stack.",
+        min: "admin",
+      },
       { to: "/settings/tokens", label: "API tokens", about: "Tokens for the API, CI scans and collectors." },
       {
         to: "/settings/ai-assistants",

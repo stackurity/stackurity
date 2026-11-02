@@ -9,6 +9,7 @@ import (
 	"github.com/stackurity/stackurity/internal/packs"
 	"io"
 	"math/rand/v2"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -37,6 +38,14 @@ type conn struct {
 	tokenFile string
 	// project is --project: an id or name, resolved by connect.
 	project string
+	// ci lets the command exchange a CI job's ID token for a collector
+	// token when no token is set (stackurity scan; cioidc.go).
+	ci bool
+	// ciRepo is the repository the exchanged token may report.
+	ciRepo string
+	// getenv and httpc are os.Getenv and an HTTP client, replaced in tests.
+	getenv func(string) string
+	httpc  *http.Client
 }
 
 func (c *conn) flags(cmd *cobra.Command) {
@@ -57,10 +66,20 @@ func noProjectOffline(cmd *cobra.Command) error {
 // client builds an API client. Tokens come from a file or STACKURITY_TOKEN,
 // never from a flag, so they do not leak into shell history or ps output.
 func (c *conn) client() (*client.Client, error) {
+	return c.clientCtx(context.Background())
+}
+
+// clientCtx is client; a command that allows it (c.ci) exchanges a CI
+// job's ID token when no token is set.
+func (c *conn) clientCtx(ctx context.Context) (*client.Client, error) {
 	if c.server == "" {
 		return nil, errors.New("--server or STACKURITY_SERVER is required")
 	}
-	tok := os.Getenv("STACKURITY_TOKEN")
+	getenv := c.getenv
+	if getenv == nil {
+		getenv = os.Getenv
+	}
+	tok := getenv("STACKURITY_TOKEN")
 	if c.tokenFile != "" {
 		b, err := os.ReadFile(c.tokenFile)
 		if err != nil {
@@ -68,10 +87,31 @@ func (c *conn) client() (*client.Client, error) {
 		}
 		tok = strings.TrimSpace(string(b))
 	}
+	if tok == "" && c.ci {
+		hc := c.httpc
+		if hc == nil {
+			hc = &http.Client{Timeout: time.Minute}
+		}
+		id, err := detectCI(getenv, hc)
+		if err != nil {
+			return nil, err
+		}
+		got, err := ciExchange(ctx, c.server, id, getenv)
+		if err != nil {
+			return nil, err
+		}
+		fmt.Fprintf(os.Stderr, "using a CI token for %s from the %s ID token (expires %s)\n", got.RepositoryURL, id.provider, got.ExpiresAt.Format(time.RFC3339))
+		c.ciRepo = got.RepositoryURL
+		tok = got.Token
+	}
 	if tok == "" {
 		return nil, errors.New("no token: set STACKURITY_TOKEN or --token-file")
 	}
-	return client.New(c.server, tok, version)
+	cl, err := client.New(c.server, tok, version)
+	if err == nil && c.httpc != nil {
+		cl.HTTP = c.httpc
+	}
+	return cl, err
 }
 
 func readSecretInput(envKey, prompt string) (string, error) {
@@ -513,7 +553,7 @@ func jitter(d time.Duration) time.Duration {
 }
 
 func scanCmd() *cobra.Command {
-	var c conn
+	c := conn{ci: true}
 	var g gate
 	var name, envName, output, gitURL string
 	var noPacks bool
@@ -559,12 +599,6 @@ server supports this (0.10 or later) before it uploads anything.`,
 			if name == "" {
 				name = filepath.Base(dir)
 			}
-			asset := model.AssetRef{Kind: model.AssetRepository, Name: name, Environment: envName}
-			if gitURL != "" {
-				asset.Identifiers = []model.Identifier{{Scheme: "git-url", Value: gitrepo.NormalizeURL(gitURL)}}
-			} else {
-				asset.Identifiers = []model.Identifier{{Scheme: "name:repository", Value: name}}
-			}
 			// The client is made (and --project resolved) before scanning,
 			// so a wrong token or project fails fast.
 			var cl *client.Client
@@ -572,6 +606,16 @@ server supports this (0.10 or later) before it uploads anything.`,
 				if cl, err = c.connect(cmd.Context(), true); err != nil {
 					return err
 				}
+			}
+			// A token a CI job exchanged reports only its repository.
+			if gitURL == "" && c.ciRepo != "" {
+				gitURL = c.ciRepo
+			}
+			asset := model.AssetRef{Kind: model.AssetRepository, Name: name, Environment: envName}
+			if gitURL != "" {
+				asset.Identifiers = []model.Identifier{{Scheme: "git-url", Value: gitrepo.NormalizeURL(gitURL)}}
+			} else {
+				asset.Identifiers = []model.Identifier{{Scheme: "name:repository", Value: name}}
 			}
 			// Packs installed on the server read more file types; they run
 			// here, so repository contents never leave this machine.

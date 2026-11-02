@@ -434,3 +434,51 @@ func TestTooLong(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 }
+
+// Stopping an answer part-way is paid for: the prompt as the provider
+// reported it and the answer as max_tokens, so stopping just before the
+// end never costs less than letting the answer finish (before, a stopped
+// call cost nothing and the question was refunded).
+func TestStoppedAnswerIsCharged(t *testing.T) {
+	r := newRig(t, asktest.Reply{Text: "The fix is to upgrade openssl to", Hang: true, Usage: asktest.Usage{Input: 1000}})
+	ctx, cancel := context.WithCancel(r.ctx)
+	defer cancel()
+	c, _ := r.st.AskConversation(r.ctx, r.user, r.conv.ID)
+	out, err := r.eng.Ask(ctx, ask.Question{Conversation: c, UserID: r.user, Text: "hi", Model: ask.DefaultModel, API: r.api},
+		func(e ask.Event) {
+			if e.Kind == "text" {
+				cancel()
+			}
+		})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v", err)
+	}
+	// 1000 in + 8000 (max_tokens) out at Sonnet 5.5.
+	want := int64(1000*2 + ask.DefaultMaxTokens*10)
+	if out.CostMicros != want || len(out.Usage) != 1 {
+		t.Errorf("outcome = %+v, want cost %d", out, want)
+	}
+	if u, _ := r.st.AskUsageNow(r.ctx); u.CostMicros != want {
+		t.Errorf("spend = %d, want %d", u.CostMicros, want)
+	}
+}
+
+// One model call runs at most MaxToolsPerRound tools; the rest are
+// answered "not run", so every tool call still has a result.
+func TestToolsPerRoundCapped(t *testing.T) {
+	var tools []asktest.Tool
+	for i := range ask.MaxToolsPerRound + 5 {
+		tools = append(tools, asktest.Tool{ID: "t" + string(rune('a'+i)), Name: "list_assets"})
+	}
+	r := newRig(t, asktest.Reply{Tools: tools}, asktest.Reply{Text: "done"})
+	if _, err := r.ask("Fan out", nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.api.calls) != ask.MaxToolsPerRound {
+		t.Errorf("tools run = %d, want %d", len(r.api.calls), ask.MaxToolsPerRound)
+	}
+	msgs, _ := rawMessages(t, r.fake.Requests()[1].Body)
+	if last := msgs[len(msgs)-1]; bytes.Count(last, []byte(`"tool_use_id"`)) != len(tools) || !bytes.Contains(last, []byte("at most")) {
+		t.Errorf("tool results = %s", last)
+	}
+}

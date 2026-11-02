@@ -63,22 +63,30 @@ func (p Prices) Cost(u ModelUsage) int64 {
 
 // HoldFor is what to hold before a call to model whose prompt is about
 // promptTokens and whose answer is at most maxTokens: the whole prompt as a
-// cache write and the whole answer, at the dearer of the model and any
-// fallback model, so a call can never cost more than its hold.
+// cache write and the whole answer. With server-side fallback a call can
+// bill two runs (the refused model's and the fallback's), so it holds one
+// run of the model plus one at the dearest fallback.
 func (p Prices) HoldFor(model string, promptTokens, maxTokens int64, fallbacks bool) int64 {
 	pr, _ := p.Of(model)
 	if pr.LongPrompt != nil {
 		pr = *pr.LongPrompt
 	}
-	worst := pr
-	if fallbacks {
-		for _, f := range []string{"claude-opus-4-8", "claude-opus-5", "claude-sonnet-5"} {
-			if x, _ := p.Of(f); x.CacheWrite+x.Output > worst.CacheWrite+worst.Output {
-				worst = x
-			}
-		}
+	run := func(x Price) float64 {
+		return float64(promptTokens)*math.Max(x.CacheWrite, x.Input) + float64(maxTokens)*x.Output
 	}
-	return int64(math.Ceil(float64(promptTokens)*math.Max(worst.CacheWrite, worst.Input) + float64(maxTokens)*worst.Output))
+	total := run(pr)
+	if fallbacks {
+		var worst float64
+		for _, f := range []string{"claude-opus-4-8", "claude-opus-5", "claude-sonnet-5"} {
+			x, _ := p.Of(f)
+			if x.LongPrompt != nil {
+				x = *x.LongPrompt
+			}
+			worst = math.Max(worst, run(x))
+		}
+		total += worst
+	}
+	return int64(math.Ceil(total))
 }
 
 // ParsePrices reads STACKURITY_ASK_PRICES:

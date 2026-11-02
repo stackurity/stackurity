@@ -144,6 +144,10 @@ type Result struct {
 	Usage     []ModelUsage
 	ServedBy  string
 	RequestID string
+	// Partial: the call ended with an error after the provider started
+	// the message; only Usage (an upper bound), ServedBy and RequestID
+	// are set.
+	Partial bool
 }
 
 // ToolUse is one tool call the model asked for.
@@ -208,12 +212,15 @@ func (c *Client) Stream(ctx context.Context, call Call, on func(StreamEvent)) (*
 	stream := c.svc.NewStreaming(ctx, p, option.WithResponseInto(&resp))
 	defer stream.Close()
 	var msg anthropic.BetaMessage
+	started := false
 	for stream.Next() {
 		ev := stream.Current()
 		if err := msg.Accumulate(ev); err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrRejected, err)
+			return partial(started, msg, call), fmt.Errorf("%w: %v", ErrRejected, err)
 		}
 		switch e := ev.AsAny().(type) {
+		case anthropic.BetaRawMessageStartEvent:
+			started = true
 		case anthropic.BetaRawContentBlockStartEvent:
 			if e.ContentBlock.Type == "fallback" {
 				on(StreamEvent{Reset: true})
@@ -225,7 +232,12 @@ func (c *Client) Stream(ctx context.Context, call Call, on func(StreamEvent)) (*
 		}
 	}
 	if err := stream.Err(); err != nil {
-		return nil, classify(err)
+		return partial(started, msg, call), classify(err)
+	}
+	if msg.StopReason == "" {
+		// The stream ended without the message's end: what it cost is
+		// unknown, so it is charged as a call that ended early.
+		return partial(started, msg, call), fmt.Errorf("%w: the stream ended before the message did", ErrUnavailable)
 	}
 	res := &Result{StopReason: string(msg.StopReason), ServedBy: string(msg.Model)}
 	if resp != nil {
@@ -277,6 +289,26 @@ func (c *Client) Stream(ctx context.Context, call Call, on func(StreamEvent)) (*
 			CacheRead: u.CacheReadInputTokens, Output: u.OutputTokens}}
 	}
 	return res, nil
+}
+
+// partial is what a call that ended early (the person pressed Stop, the
+// connection dropped, the deadline passed) is charged for. Once the
+// provider has started the message it bills the whole prompt and every
+// token it generated, but the final output count only arrives at the end:
+// the prompt is counted as reported and the answer as max_tokens, so
+// stopping an answer just before its end never costs less than letting it
+// finish. nil when the provider never started the message.
+func partial(started bool, msg anthropic.BetaMessage, call Call) *Result {
+	if !started {
+		return nil
+	}
+	model := string(msg.Model)
+	if model == "" {
+		model = call.Model
+	}
+	u := msg.Usage
+	return &Result{Partial: true, ServedBy: model, RequestID: msg.ID, Usage: []ModelUsage{{Model: model, Input: u.InputTokens,
+		CacheWrite: u.CacheCreationInputTokens, CacheRead: u.CacheReadInputTokens, Output: max(u.OutputTokens, int64(call.MaxTokens))}}}
 }
 
 // classify sorts an SDK error into ErrUnavailable or ErrRejected, keeping
