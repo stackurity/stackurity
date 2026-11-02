@@ -591,10 +591,13 @@ type Token struct {
 	// ProjectID: assets this collector token creates are added to this
 	// project.
 	ProjectID *int64 `json:"project_id"`
+	// RepositoryURL: a token exchanged by a CI job (POST /ci/token) may
+	// report only the repository with this git-url identity.
+	RepositoryURL string `json:"repository_url,omitempty"`
 }
 
 const tokenCols = `id, workspace_id, name, prefix, user_id, role, created_at, expires_at, last_used_at, revoked_at,
-	COALESCE((SELECT email FROM users u WHERE u.id = api_tokens.user_id), ''), project_id`
+	COALESCE((SELECT email FROM users u WHERE u.id = api_tokens.user_id), ''), project_id, repository_url`
 
 // CreateToken returns the stored token and its secret, shown once.
 func (s *Store) CreateToken(ctx context.Context, name string, role auth.Role, userID *int64, createdBy int64, ttl time.Duration) (*Token, string, error) {
@@ -673,10 +676,12 @@ func (s *Store) TokenPrincipal(ctx context.Context, secret string) (*Token, *Use
 }
 
 func (s *Store) ListTokens(ctx context.Context, userID int64) ([]Token, error) {
-	sql := `SELECT ` + tokenCols + ` FROM api_tokens`
+	// Short-lived tokens of CI jobs (one per job) are not listed: they are
+	// managed through their CI trust.
+	sql := `SELECT ` + tokenCols + ` FROM api_tokens WHERE ci_trust_id IS NULL`
 	args := []any{}
 	if userID > 0 {
-		sql += ` WHERE user_id = $1`
+		sql += ` AND user_id = $1`
 		args = append(args, userID)
 	}
 	rows, err := s.Pool.Query(ctx, sql+` ORDER BY created_at DESC`, args...)

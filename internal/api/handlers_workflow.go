@@ -192,7 +192,7 @@ func (s *Server) findingEvents(w http.ResponseWriter, r *http.Request) {
 func (s *Server) listIncidents(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	f := store.IncidentFilter{Status: q.Get("status"), Kind: q.Get("kind"), Priority: q.Get("priority"),
-		SOS: q.Get("sos") == "true", Escalated: q.Get("escalated") == "true", TeamID: qInt(r, "team_id"), Page: page(r)}
+		SOS: q.Get("sos") == "true", Escalated: q.Get("escalated") == "true", TeamID: qInt(r, "team_id"), AssetID: qInt(r, "asset_id"), Page: page(r)}
 	items, total, err := s.Store.ListIncidents(r.Context(), f)
 	if err != nil {
 		s.fail(w, r, err)
