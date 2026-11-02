@@ -22,6 +22,17 @@ func (s *Server) listSecrets(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"items": nonNil(out), "enabled": s.SecretBox != nil})
 }
 
+// credentialHealth: connections failing, API tokens expiring or unused, and
+// stored secrets not changed for a year, for the Dashboard.
+func (s *Server) credentialHealth(w http.ResponseWriter, r *http.Request) {
+	out, err := s.Store.CredentialHealth(r.Context(), 5)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, 200, out)
+}
+
 func (s *Server) putSecret(w http.ResponseWriter, r *http.Request) {
 	if s.SecretBox == nil {
 		writeError(w, 409, "conflict", secrets.ErrNoKey.Error())

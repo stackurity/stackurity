@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/stackurity/stackurity/internal/cloudconnect"
 	"github.com/stackurity/stackurity/internal/license"
 	"github.com/stackurity/stackurity/internal/netguard"
 	"github.com/stackurity/stackurity/internal/secrets"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -15,6 +17,7 @@ import (
 	"github.com/stackurity/stackurity/internal/auth"
 	"github.com/stackurity/stackurity/internal/collect/gitrepo"
 	"github.com/stackurity/stackurity/internal/collect/image"
+	"github.com/stackurity/stackurity/internal/collect/registry"
 	"github.com/stackurity/stackurity/internal/model"
 	"github.com/stackurity/stackurity/internal/plugins"
 	"github.com/stackurity/stackurity/internal/store"
@@ -32,10 +35,20 @@ func (s *Server) listUsers(w http.ResponseWriter, r *http.Request) {
 type userRequest struct {
 	Email    string    `json:"email"`
 	Name     string    `json:"name"`
+	Phone    string    `json:"phone"`
 	Role     auth.Role `json:"role"`
 	Password string    `json:"password"`
+	// Teams to add them to, in the same transaction (membership gives
+	// the team's access; with role none it may stand in for grants).
+	Teams []int64 `json:"teams"`
+	// Grants: what someone without an organisation-wide role (role
+	// "none", or no role) may see. One of the two is required.
+	Grants []store.ScopeGrant `json:"grants"`
 }
 
+// createUser adds someone with what they may see: an organisation-wide
+// role, or grants on chosen projects and assets, written in one
+// transaction. Neither is refused: there is no default access.
 func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
 	if s.InviteOnly {
 		writeError(w, 403, "invite_only", "people join this service by invitation: invite them (Settings → Users, or a project's Invite) and they set up their own account")
@@ -50,22 +63,30 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, badRequest("a valid email is required"))
 		return
 	}
-	if !req.Role.ValidUser() && req.Role != store.RoleNone {
-		s.fail(w, r, badRequest("role must be viewer, engineer, security, admin, or none (access through projects only)"))
-		return
-	}
 	if req.Password != "" {
 		if err := s.checkNewPassword(r.Context(), req.Password); err != nil {
 			s.fail(w, r, err)
 			return
 		}
 	}
-	u, err := s.Store.CreateUser(r.Context(), req.Email, req.Name, req.Role, req.Password)
+	p := principal(r)
+	u, grantIDs, err := s.Store.CreateMember(r.Context(), store.NewMember{Email: req.Email, Name: req.Name, Phone: req.Phone,
+		Password: req.Password, Role: req.Role, Grants: req.Grants, Teams: req.Teams}, actorUserID(p))
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	_ = s.Store.Audit(r.Context(), principal(r).Actor(r), "user.create", "user", itoa(u.ID), map[string]any{"email": u.Email, "role": u.Role})
+	role := any(u.Role)
+	if u.Role == "" {
+		role = "none"
+	}
+	_ = s.Store.Audit(r.Context(), p.Actor(r), "user.create", "user", itoa(u.ID),
+		map[string]any{"email": u.Email, "role": role, "phone_set": u.Phone != "", "grants": len(grantIDs), "teams": req.Teams})
+	for _, id := range grantIDs {
+		if g, err := s.Store.GetGrant(r.Context(), id); err == nil {
+			_ = s.Store.Audit(r.Context(), p.Actor(r), "access.grant", "access_grant", itoa(g.ID), g)
+		}
+	}
 	writeJSON(w, 201, u)
 }
 
@@ -93,7 +114,7 @@ func (s *Server) updateUser(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	detail := map[string]any{"role": u.Role, "disabled": u.Disabled, "password_changed": u.Password != nil, "temporary_password": u.Temporary, "name": u.Name}
+	detail := map[string]any{"role": u.Role, "disabled": u.Disabled, "password_changed": u.Password != nil, "temporary_password": u.Temporary, "name": u.Name, "phone_changed": u.Phone != nil}
 	_ = s.Store.Audit(r.Context(), principal(r).Actor(r), "user.update", "user", itoa(id), detail)
 	us, err := s.Store.GetUser(r.Context(), id)
 	if err != nil {
@@ -116,6 +137,13 @@ type teamRequest struct {
 	Name    *string  `json:"name"`
 	Email   *string  `json:"email"`
 	Members *[]int64 `json:"members"`
+	// Access: the team's grants, replaced as a whole ("Can see"); its
+	// members get them. Projects and assets only: a team has no
+	// organisation-wide role.
+	Access *[]store.ScopeGrant `json:"access"`
+	// Owns: the assets whose owner team this is, replaced as a whole.
+	// Ownership routes alerts and gives no access.
+	Owns *[]int64 `json:"owns"`
 }
 
 func (s *Server) createTeam(w http.ResponseWriter, r *http.Request) {
@@ -174,11 +202,27 @@ func (s *Server) updateTeam(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	if err := s.Store.UpdateTeam(r.Context(), id, req.Name, req.Email, req.Members); err != nil {
+	p := principal(r)
+	ch, err := s.Store.UpdateTeamAccess(r.Context(), id, store.TeamUpdate{Name: req.Name, Email: req.Email, Members: req.Members,
+		Access: req.Access, Owns: req.Owns}, actorUserID(p))
+	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	_ = s.Store.Audit(r.Context(), principal(r).Actor(r), "team.update", "team", itoa(id), req)
+	_ = s.Store.Audit(r.Context(), p.Actor(r), "team.update", "team", itoa(id), map[string]any{"name": req.Name, "email": req.Email,
+		"members": req.Members, "owns_added": ch.OwnsAdded, "owns_removed": ch.OwnsRemoved})
+	for _, gid := range append(append([]int64{}, ch.Granted...), ch.Changed...) {
+		if g, err := s.Store.GetGrant(r.Context(), gid); err == nil {
+			action := "access.grant"
+			if slices.Contains(ch.Changed, gid) {
+				action = "access.change"
+			}
+			_ = s.Store.Audit(r.Context(), p.Actor(r), action, "access_grant", itoa(g.ID), g)
+		}
+	}
+	for _, g := range ch.Revoked {
+		_ = s.Store.Audit(r.Context(), p.Actor(r), "access.revoke", "access_grant", itoa(g.ID), g)
+	}
 	w.WriteHeader(204)
 }
 
@@ -335,7 +379,12 @@ func checkSecretRef(r *http.Request, ref string) error {
 	return nil
 }
 
-func (s *Server) validateIntegration(ctx context.Context, kind string, cfg json.RawMessage, secretRef *string, minutes *int) error {
+const kindsMessage = "kind must be " + KindGitRepository + ", " + KindContainerImage + ", " + KindContainerRegistry + " or " + KindPlugin
+
+// awsLinked is true for the integration of an AWS connection
+// (handlers_aws.go): the server assumes the connection's role and gives the
+// plugin the session, so it needs no secret of its own.
+func (s *Server) validateIntegration(ctx context.Context, kind string, cfg, current json.RawMessage, secretRef *string, minutes *int, awsLinked bool) error {
 	if len(cfg) > 0 {
 		dec := json.NewDecoder(strings.NewReader(string(cfg)))
 		dec.DisallowUnknownFields()
@@ -351,6 +400,11 @@ func (s *Server) validateIntegration(ctx context.Context, kind string, cfg json.
 			if err = dec.Decode(&c); err == nil {
 				err = c.Validate()
 			}
+		case KindContainerRegistry:
+			var c registry.Config
+			if err = dec.Decode(&c); err == nil {
+				err = c.Validate()
+			}
 		case KindPlugin:
 			var c PluginConfig
 			if err = dec.Decode(&c); err == nil {
@@ -363,14 +417,22 @@ func (s *Server) validateIntegration(ctx context.Context, kind string, cfg json.
 					err = verr
 				}
 			}
+		case store.KindGitLab:
+			return badRequest("GitLab projects are added by connecting their group: use Connect GitLab")
+		case store.KindGitHubApp:
+			return badRequest("repositories are added to the GitHub App on GitHub: use Install on GitHub")
 		default:
-			return badRequest("kind must be " + KindGitRepository + ", " + KindContainerImage + " or " + KindPlugin)
+			return badRequest(kindsMessage)
 		}
 		if err != nil {
 			return badRequest("invalid config: " + err.Error())
 		}
-	} else if kind != KindGitRepository && kind != KindContainerImage && kind != KindPlugin {
-		return badRequest("kind must be " + KindGitRepository + ", " + KindContainerImage + " or " + KindPlugin)
+	} else if kind == store.KindGitHubApp {
+		return badRequest("repositories are added to the GitHub App on GitHub: use Install on GitHub")
+	} else if kind == store.KindGitLab {
+		return badRequest("GitLab projects are added by connecting their group: use Connect GitLab")
+	} else if kind != KindGitRepository && kind != KindContainerImage && kind != KindContainerRegistry && kind != KindPlugin {
+		return badRequest(kindsMessage)
 	}
 	if secretRef != nil {
 		if err := s.Secrets.Validate(*secretRef); err != nil {
@@ -379,13 +441,29 @@ func (s *Server) validateIntegration(ctx context.Context, kind string, cfg json.
 	}
 	// Without credentials a plugin falls back to the server's own (for AWS,
 	// the instance role), which only the operator's workspace may use.
-	if kind == KindPlugin && (secretRef == nil || *secretRef == "") && !netguard.AllowsPrivate(ctx) {
+	// Plugins that use the server's workload identity (which names the
+	// workspace) never fall back to the server's own credentials.
+	if kind == KindPlugin && (secretRef == nil || *secretRef == "") && !awsLinked && !netguard.AllowsPrivate(ctx) && !s.usesPlatform(ctx, cfg, current) {
 		return badRequest("plugins in this workspace need credentials: set secret_ref to a stored secret")
 	}
 	if minutes != nil && (*minutes < 15 || *minutes > 7*24*60) {
 		return badRequest("schedule_minutes must be between 15 and 10080")
 	}
 	return nil
+}
+
+// usesPlatform reports whether the plugin integration's plugin is given the
+// server's platform credentials (cloudconnect.UsesPlatform).
+func (s *Server) usesPlatform(ctx context.Context, cfg, current json.RawMessage) bool {
+	if len(cfg) == 0 {
+		cfg = current
+	}
+	var c PluginConfig
+	if s.Plugins == nil || json.Unmarshal(cfg, &c) != nil || !cloudconnect.PlatformPlugins[c.Plugin] {
+		return false
+	}
+	m, err := s.Plugins.Metadata(ctx, c.Plugin)
+	return err == nil && cloudconnect.UsesPlatform(c.Plugin, m.Credentials)
 }
 
 func (s *Server) listIntegrations(w http.ResponseWriter, r *http.Request) {
@@ -407,7 +485,7 @@ func (s *Server) createIntegration(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, badRequest("config is required"))
 		return
 	}
-	if err := s.validateIntegration(r.Context(), req.Kind, req.Config, req.SecretRef, req.ScheduleMinutes); err != nil {
+	if err := s.validateIntegration(r.Context(), req.Kind, req.Config, nil, req.SecretRef, req.ScheduleMinutes, false); err != nil {
 		s.fail(w, r, err)
 		return
 	}
@@ -418,6 +496,18 @@ func (s *Server) createIntegration(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.SecretRef != nil {
 		if err := checkSecretRef(r, *req.SecretRef); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+	}
+	if req.Kind == KindContainerRegistry {
+		var c registry.Config
+		_ = json.Unmarshal(req.Config, &c)
+		ref := ""
+		if req.SecretRef != nil {
+			ref = *req.SecretRef
+		}
+		if err := s.checkRegistryConfig(r, c, ref); err != nil {
 			s.fail(w, r, err)
 			return
 		}
@@ -436,6 +526,10 @@ func (s *Server) createIntegration(w http.ResponseWriter, r *http.Request) {
 			var c image.Config
 			_ = json.Unmarshal(req.Config, &c)
 			name = c.Image
+		case KindContainerRegistry:
+			var c registry.Config
+			_ = json.Unmarshal(req.Config, &c)
+			name = c.DisplayName()
 		case KindPlugin:
 			var c PluginConfig
 			_ = json.Unmarshal(req.Config, &c)
@@ -479,15 +573,58 @@ func (s *Server) updateIntegration(w http.ResponseWriter, r *http.Request) {
 	if req.SecretRef != nil {
 		ref = *req.SecretRef
 	}
-	if err := s.validateIntegration(r.Context(), cur.Kind, req.Config, &ref, req.ScheduleMinutes); err != nil {
-		s.fail(w, r, err)
-		return
+	if cur.Kind == store.KindGitHubApp {
+		// Made and named by the GitHub App, from what is granted on GitHub;
+		// it reads no secret. Only its switch and schedule are people's.
+		if req.Name != nil || len(req.Config) > 0 || req.SecretRef != nil {
+			s.fail(w, r, badRequest("a repository scanned through the GitHub App can only be switched on or off and rescheduled; which repositories are scanned is chosen on GitHub"))
+			return
+		}
+		if m := req.ScheduleMinutes; m != nil && (*m < 15 || *m > 7*24*60) {
+			s.fail(w, r, badRequest("schedule_minutes must be between 15 and 10080"))
+			return
+		}
+	} else {
+		awsLinked, err := s.checkAWSLinkedUpdate(r.Context(), id, req.Config, ref)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		if cur.Kind == store.KindGitLab {
+			// Made and named by Connect GitLab, from the group's projects; it
+			// reads no secret. Only its switch and schedule are people's.
+			if req.Name != nil || len(req.Config) > 0 || req.SecretRef != nil {
+				s.fail(w, r, badRequest("a project scanned through Connect GitLab can only be switched on or off and rescheduled; which projects are scanned is the connected group's"))
+				return
+			}
+			if m := req.ScheduleMinutes; m != nil && (*m < 15 || *m > 7*24*60) {
+				s.fail(w, r, badRequest("schedule_minutes must be between 15 and 10080"))
+				return
+			}
+		} else {
+			if err := s.validateIntegration(r.Context(), cur.Kind, req.Config, cur.Config, &ref, req.ScheduleMinutes, awsLinked); err != nil {
+				s.fail(w, r, err)
+				return
+			}
+			// Changing anything about an integration that reads a server secret
+			// could redirect that secret, so it needs an instance administrator.
+			if err := checkSecretRef(r, ref); err != nil {
+				s.fail(w, r, err)
+				return
+			}
+		}
 	}
-	// Changing anything about an integration that reads a server secret
-	// could redirect that secret, so it needs an instance administrator.
-	if err := checkSecretRef(r, ref); err != nil {
-		s.fail(w, r, err)
-		return
+	if cur.Kind == KindContainerRegistry {
+		cfg := cur.Config
+		if len(req.Config) > 0 {
+			cfg = req.Config
+		}
+		var c registry.Config
+		_ = json.Unmarshal(cfg, &c)
+		if err := s.checkRegistryConfig(r, c, ref); err != nil {
+			s.fail(w, r, err)
+			return
+		}
 	}
 	u := store.IntegrationUpdate{Name: req.Name, Config: req.Config, SecretRef: req.SecretRef, Enabled: req.Enabled}
 	if req.ScheduleMinutes != nil {

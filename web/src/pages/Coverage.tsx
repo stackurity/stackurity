@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import {
   api,
+  type Asset,
   type AssetCoverageGroup,
   type AssetCoverageList,
   type CoverageOverview,
@@ -14,6 +15,7 @@ import {
 } from "../api";
 import { useAuth } from "../auth";
 import { useLoad } from "../hooks";
+import { AssetSelect, ProjectFilter } from "../components/AssetPicker";
 import { Table } from "../components/Table";
 import { EmptyState, ErrorBox, Loading, PageHeader, Pager } from "../components/ui";
 import { coverageColumns } from "./AssetDetail";
@@ -102,6 +104,9 @@ export function CoveragePage() {
   return (
     <div className="cov-page">
       <PageHeader help="coverage-intelligence" title="Coverage" />
+      <div className="filters">
+        <ProjectFilter id="cov-project" />
+      </div>
       <ErrorBox error={ov.error} title="Could not load coverage" />
       {!ov.data && !ov.error && <Loading />}
       {ov.data && (
@@ -190,9 +195,11 @@ const SCOPES = 100;
 function AllScopes() {
   const [problems, setProblems] = useState(true);
   const [offset, setOffset] = useState(0);
+  const [asset, setAsset] = useState("");
+  const assets = useLoad(() => api.get<List<Asset>>("/assets", { limit: 200 }), []);
   const res = useLoad(
-    () => api.get<List<CoverageRow>>("/coverage", { problems: problems ? "true" : undefined, limit: SCOPES, offset }),
-    [problems, offset],
+    () => api.get<List<CoverageRow>>("/coverage", { asset_id: asset, problems: problems ? "true" : undefined, limit: SCOPES, offset }),
+    [asset, problems, offset],
   );
   return (
     <section className="cov-section" id="cov-scopes" aria-labelledby="cov-scopes-title">
@@ -200,6 +207,18 @@ function AllScopes() {
         Everything the collectors read
       </h2>
       <div className="filters">
+        <div className="field">
+          <label htmlFor="cov-asset">Asset</label>
+          <AssetSelect
+            id="cov-asset"
+            value={asset}
+            onChange={(v) => {
+              setAsset(v);
+              setOffset(0);
+            }}
+            assets={assets.data?.items}
+          />
+        </div>
         <label className="check">
           <input
             type="checkbox"

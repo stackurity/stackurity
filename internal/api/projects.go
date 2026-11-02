@@ -512,14 +512,31 @@ func (s *Server) createGrant(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, r, badRequest("a valid email is required"))
 			return
 		}
-		uid, newAccount, err := s.Store.EnsureMember(r.Context(), email, req.Name, req.Password)
-		if err != nil {
-			s.fail(w, r, err)
-			return
+		if s.InviteOnly {
+			// People join an invite-only server by invitation, which proves
+			// they own the address; this path would add them (and make an
+			// account with a password the admin chose) without it, as
+			// POST /users would. Members may still be given access here.
+			uid, member, err := s.Store.MemberByEmail(r.Context(), email)
+			if err != nil {
+				s.fail(w, r, err)
+				return
+			}
+			if !member {
+				writeError(w, 403, "invite_only", "people join this service by invitation: invite them by email (Settings → Users, or the project's Invite)")
+				return
+			}
+			in.UserID = &uid
+		} else {
+			uid, newAccount, err := s.Store.EnsureMember(r.Context(), email, req.Name, req.Password)
+			if err != nil {
+				s.fail(w, r, err)
+				return
+			}
+			in.UserID, created = &uid, newAccount
 		}
-		in.UserID, created = &uid, newAccount
-		if newAccount {
-			_ = s.Store.Audit(r.Context(), p.Actor(r), "user.create", "user", itoa(uid), map[string]any{"email": strings.ToLower(email), "role": "none"})
+		if created {
+			_ = s.Store.Audit(r.Context(), p.Actor(r), "user.create", "user", itoa(*in.UserID), map[string]any{"email": strings.ToLower(email), "role": "none"})
 		}
 	}
 	g, isNew, err := s.Store.SaveGrant(r.Context(), in, actorUserID(p))

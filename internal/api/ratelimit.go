@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -48,6 +49,17 @@ var (
 	// case STACKURITY_SETUP_TOKEN was set to something guessable. It only
 	// matters before the first admin exists.
 	limitSetupTotal = rateLimit{100, time.Hour}
+	// Enrollment (POST /enroll). Failed attempts per address are what stop
+	// someone guessing codes (a code is 32 random bytes, so this is belt
+	// and braces); successful ones do not count towards it, so a fleet
+	// rollout from behind one NAT address is not held to ten hosts a
+	// minute. All attempts per address are capped more loosely, and each
+	// code may enroll at most limitEnrollPerCode hosts a minute, so a leaked
+	// fleet code cannot be used up in a burst. Hosts that are told to wait
+	// retry (stackurity enroll --wait).
+	limitEnrollFailures   = rateLimit{10, time.Minute}
+	limitEnrollPerAddress = rateLimit{120, time.Minute}
+	limitEnrollPerCode    = rateLimit{60, time.Minute}
 	// limitSSOFlow covers both steps of single sign-on (start and the
 	// callback that exchanges the code), so about ten sign-ins a minute.
 	limitSSOFlow = rateLimit{20, time.Minute}
@@ -105,6 +117,7 @@ func (l *rateLimiter) allow(key string) bool {
 // counter sees every attempt.
 func (s *Server) limited(w http.ResponseWriter, r *http.Request, msg string, hits ...limitHit) bool {
 	over := false
+	var wait rateLimit
 	for _, h := range hits {
 		ok, err := s.limiter.check(r.Context(), h)
 		if err != nil {
@@ -112,12 +125,30 @@ func (s *Server) limited(w http.ResponseWriter, r *http.Request, msg string, hit
 			writeError(w, http.StatusServiceUnavailable, "unavailable", "the server cannot check rate limits right now; try again shortly")
 			return true
 		}
-		over = over || !ok
+		if !ok {
+			over = true
+			if h.lim.window > wait.window {
+				wait = h.lim
+			}
+		}
 	}
 	if over {
+		setRetryAfter(w, wait)
 		writeError(w, http.StatusTooManyRequests, "rate_limited", msg)
 	}
 	return over
+}
+
+// setRetryAfter tells a refused client when lim's current window ends (its
+// windows are aligned to the Unix epoch, like the shared ones).
+func setRetryAfter(w http.ResponseWriter, lim rateLimit) {
+	win := lim.window.Milliseconds()
+	if win <= 0 {
+		return
+	}
+	now := time.Now().UnixMilli()
+	left := win - now%win
+	w.Header().Set("Retry-After", strconv.FormatInt((left+999)/1000, 10))
 }
 
 // limitAddress is middleware applying lim per client address.

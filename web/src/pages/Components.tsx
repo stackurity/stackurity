@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { api, type Component, type List } from "../api";
+import { ProjectFilter } from "../components/AssetPicker";
 import { useDebounced, useFacets, useLoad } from "../hooks";
 import { displayPurl } from "../format";
 import { Chip } from "../components/Badge";
@@ -70,6 +71,7 @@ export function ComponentsPage() {
     <>
       <PageHeader help="components" title="Components" sub="Packages currently present on at least one asset." />
       <form className="filters" role="search" onSubmit={(e) => e.preventDefault()}>
+        <ProjectFilter id="c-project" />
         <div className="field">
           <label htmlFor="c-q">Search</label>
           <input id="c-q" type="search" placeholder="Name or namespace" value={q} onChange={(e) => setQ(e.target.value)} />

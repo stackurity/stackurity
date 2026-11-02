@@ -14,7 +14,7 @@ import { useAuth } from "../auth";
 import { useProject } from "../project";
 import { useAction, useLoad } from "../hooks";
 import { plural } from "../format";
-import { CheckApps, installCommand } from "./AddServer";
+import { CheckApps, CheckDocker, installCommand } from "./AddServer";
 import { InviteForm } from "../components/Invite";
 import { CodeBlock, ErrorBox, Loading, Notice } from "../components/ui";
 import {
@@ -289,6 +289,7 @@ function AssetStep({
 function ServerSource({ project, onWaiting }: { project: Project; onWaiting: (name: string) => void }) {
   const [created, setCreated] = useState<EnrollmentCreated | null>(null);
   const [apps, setApps] = useState(true);
+  const [docker, setDocker] = useState(false);
   const act = useAction();
   const make = async () => {
     const c = await act.run(() =>
@@ -312,7 +313,7 @@ function ServerSource({ project, onWaiting }: { project: Project; onWaiting: (na
       </div>
     );
   }
-  const { command, insecure } = installCommand(created.code);
+  const { command, insecure } = installCommand(created.code, docker);
   return (
     <div className="form">
       <p>
@@ -323,6 +324,9 @@ function ServerSource({ project, onWaiting }: { project: Project; onWaiting: (na
           This dashboard is open over plain HTTP, so the code would cross the network unencrypted. Use HTTPS if you can.
         </Notice>
       )}
+      <div className="field">
+        <CheckDocker id="ob-docker" checked={docker} onChange={setDocker} />
+      </div>
       <CodeBlock text={command} label="Install command" />
       <p className="hint">The code is shown only now. The agent only reads what is installed; it never changes anything.</p>
       <div className="form-actions">
@@ -948,7 +952,7 @@ function NotifyStep({ project, onNext }: { project: Project; onNext: () => void 
 function InviteStep({ project, onFinish, pending }: { project: Project; onFinish: () => void; pending: boolean }) {
   return (
     <StepCard>
-      <p>People you invite see {project.name} only, with the role you choose. You can invite more people later from the project's page.</p>
+      <p>People you invite see {project.name} with the permission you choose, unless you give them more. You can invite more people later from the project's page or Settings, Users.</p>
       <InviteForm projectId={project.id} projectName={project.name} />
       <div className="form-actions onboard-finish">
         <button type="button" className="btn btn-primary" onClick={onFinish} disabled={pending}>
