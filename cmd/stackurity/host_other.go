@@ -148,6 +148,7 @@ func appBatch(app apps.App, host model.AssetRef) *model.ObservationBatch {
 		b.Observations = []model.Observation{}
 	}
 	b.Coverage = app.Coverage
+	b.Secrets = app.Secrets
 	b.Relations = []model.RelationRef{{Kind: "runs_on", To: host.Identifiers}}
 	if app.GitURL != "" {
 		b.Asset.Attributes["git_url"] = app.GitURL

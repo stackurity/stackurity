@@ -281,61 +281,63 @@ var routeRules = map[string]routeRule{
 	"GET /api/v1/remediation/renovate.json":  {class: "list"},
 
 	// Workspace listings and aggregates.
-	"GET /api/v1/overview":              {class: "list"},
-	"GET /api/v1/facets":                {class: "list"},
-	"GET /api/v1/search":                {class: "list", query: "?q={tag}"},
-	"GET /api/v1/assets":                {class: "list"},
-	"GET /api/v1/components":            {class: "list", query: "?q={tag}"},
-	"GET /api/v1/findings":              {class: "list", query: "?status=all&asset_id={asset}"},
-	"GET /api/v1/findings/summary":      {class: "list"},
-	"GET /api/v1/dashboard/trend":       {class: "list"},
-	"GET /api/v1/findings/verify":       {class: "list", query: "?since=2000-01-01&asset_id={asset}"},
-	"GET /api/v1/fix-groups":            {class: "list", query: "?asset_id={asset}"},
-	"GET /api/v1/fix-groups/summary":    {class: "list", query: "?asset_id={asset}"},
-	"GET /api/v1/evaluation-gaps":       {class: "list"},
-	"GET /api/v1/second-checks":         {class: "list"},
-	"GET /api/v1/reports/outcomes":      {class: "list"},
-	"GET /api/v1/reports/evidence":      {class: "list"},
-	"GET /api/v1/incidents":             {class: "list", query: "?status=all&team_id={team}&asset_id={asset}"},
-	"GET /api/v1/risk-policy":           {class: "list"},
-	"GET /api/v1/settings/fix-grouping": {class: "list"},
-	"GET /api/v1/inventory":             {class: "list", query: "?asset_id={asset}"},
-	"GET /api/v1/inventory/updates":     {class: "list", query: "?asset_id={asset}"},
-	"GET /api/v1/coverage/unchecked":    {class: "list", query: "?asset_id={asset}"},
-	"GET /api/v1/coverage":              {class: "list", query: "?asset_id={asset}"},
-	"GET /api/v1/teams":                 {class: "list"},
-	"GET /api/v1/owner-rules":           {class: "list", query: "?asset_id={asset}"},
-	"GET /api/v1/audit":                 {class: "list", query: "?object_type=asset&object_id={asset}"},
-	"GET /api/v1/tokens":                {class: "list"},
-	"GET /api/v1/remediation/plans":     {class: "list"},
-	"GET /api/v1/integrations":          {class: "list"},
-	"GET /api/v1/users/directory":       {class: "list"},
-	"GET /api/v1/deliveries":            {class: "list", query: "?channel_id={channel}&incident_id={incident}"},
-	"GET /api/v1/channels":              {class: "list"},
-	"GET /api/v1/routes":                {class: "list"},
-	"GET /api/v1/remediation/policies":  {class: "list"},
-	"GET /api/v1/conflicts":             {class: "list"},
-	"GET /api/v1/users":                 {class: "list"},
-	"GET /api/v1/jobs":                  {class: "list"},
-	"GET /api/v1/secrets":               {class: "list"},
-	"GET /api/v1/credentials/health":    {class: "list"},
-	"GET /api/v1/enrollments":           {class: "list"},
-	"GET /api/v1/ci-trusts":             {class: "list"},
-	"GET /api/v1/aws/connections":       {class: "list"},
-	"GET /api/v1/checks":                {class: "list", query: "?asset_id={asset}"},
-	"GET /api/v1/checks/options":        {class: "list", query: "?asset_id={asset}"},
-	"GET /api/v1/ignore-rules":          {class: "list", query: "?status=all"},
-	"GET /api/v1/ignore-requests":       {class: "list", query: "?status=all"},
-	"GET /api/v1/vex/documents":         {class: "list"},
-	"GET /api/v1/vex/sources":           {class: "list"},
-	"GET /api/v1/vex/export":            {class: "list", query: "?format=cyclonedx"},
-	"GET /api/v1/projects":              {class: "list"},
-	"GET /api/v1/project-suggestions":   {class: "list"},
-	"GET /api/v1/access-grants":         {class: "list", query: "?project_id={project}"},
-	"GET /api/v1/onboarding":            {class: "list"},
-	"GET /api/v1/onboarding/results":    {class: "list", query: "?since=2000-01-01T00:00:00Z"},
-	"GET /api/v1/invitations":           {class: "list", query: "?project_id={project}"},
-	"GET /api/v1/usage":                 {class: "list"},
+	"GET /api/v1/overview":                {class: "list"},
+	"GET /api/v1/facets":                  {class: "list"},
+	"GET /api/v1/search":                  {class: "list", query: "?q={tag}"},
+	"GET /api/v1/assets":                  {class: "list"},
+	"GET /api/v1/components":              {class: "list", query: "?q={tag}"},
+	"GET /api/v1/findings":                {class: "list", query: "?status=all&asset_id={asset}"},
+	"GET /api/v1/findings/summary":        {class: "list"},
+	"GET /api/v1/dashboard/trend":         {class: "list"},
+	"GET /api/v1/findings/verify":         {class: "list", query: "?since=2000-01-01&asset_id={asset}"},
+	"GET /api/v1/fix-groups":              {class: "list", query: "?asset_id={asset}"},
+	"GET /api/v1/fix-groups/summary":      {class: "list", query: "?asset_id={asset}"},
+	"GET /api/v1/evaluation-gaps":         {class: "list"},
+	"GET /api/v1/second-checks":           {class: "list"},
+	"GET /api/v1/reports/outcomes":        {class: "list"},
+	"GET /api/v1/reports/evidence":        {class: "list"},
+	"GET /api/v1/incidents":               {class: "list", query: "?status=all&team_id={team}&asset_id={asset}"},
+	"GET /api/v1/risk-policy":             {class: "list"},
+	"GET /api/v1/settings/fix-grouping":   {class: "list"},
+	"GET /api/v1/inventory":               {class: "list", query: "?asset_id={asset}"},
+	"GET /api/v1/inventory/updates":       {class: "list", query: "?asset_id={asset}"},
+	"GET /api/v1/coverage/unchecked":      {class: "list", query: "?asset_id={asset}"},
+	"GET /api/v1/coverage":                {class: "list", query: "?asset_id={asset}"},
+	"GET /api/v1/teams":                   {class: "list"},
+	"GET /api/v1/owner-rules":             {class: "list", query: "?asset_id={asset}"},
+	"GET /api/v1/exposed-secrets":         {class: "list", query: "?status=all"},
+	"GET /api/v1/exposed-secrets/summary": {class: "list"},
+	"GET /api/v1/audit":                   {class: "list", query: "?object_type=asset&object_id={asset}"},
+	"GET /api/v1/tokens":                  {class: "list"},
+	"GET /api/v1/remediation/plans":       {class: "list"},
+	"GET /api/v1/integrations":            {class: "list"},
+	"GET /api/v1/users/directory":         {class: "list"},
+	"GET /api/v1/deliveries":              {class: "list", query: "?channel_id={channel}&incident_id={incident}"},
+	"GET /api/v1/channels":                {class: "list"},
+	"GET /api/v1/routes":                  {class: "list"},
+	"GET /api/v1/remediation/policies":    {class: "list"},
+	"GET /api/v1/conflicts":               {class: "list"},
+	"GET /api/v1/users":                   {class: "list"},
+	"GET /api/v1/jobs":                    {class: "list"},
+	"GET /api/v1/secrets":                 {class: "list"},
+	"GET /api/v1/credentials/health":      {class: "list"},
+	"GET /api/v1/enrollments":             {class: "list"},
+	"GET /api/v1/ci-trusts":               {class: "list"},
+	"GET /api/v1/aws/connections":         {class: "list"},
+	"GET /api/v1/checks":                  {class: "list", query: "?asset_id={asset}"},
+	"GET /api/v1/checks/options":          {class: "list", query: "?asset_id={asset}"},
+	"GET /api/v1/ignore-rules":            {class: "list", query: "?status=all"},
+	"GET /api/v1/ignore-requests":         {class: "list", query: "?status=all"},
+	"GET /api/v1/vex/documents":           {class: "list"},
+	"GET /api/v1/vex/sources":             {class: "list"},
+	"GET /api/v1/vex/export":              {class: "list", query: "?format=cyclonedx"},
+	"GET /api/v1/projects":                {class: "list"},
+	"GET /api/v1/project-suggestions":     {class: "list"},
+	"GET /api/v1/access-grants":           {class: "list", query: "?project_id={project}"},
+	"GET /api/v1/onboarding":              {class: "list"},
+	"GET /api/v1/onboarding/results":      {class: "list", query: "?since=2000-01-01T00:00:00Z"},
+	"GET /api/v1/invitations":             {class: "list", query: "?project_id={project}"},
+	"GET /api/v1/usage":                   {class: "list"},
 
 	// A's objects by id.
 	"GET /api/v1/assets/{id}":                    {class: "object", obj: id("asset")},
@@ -390,7 +392,11 @@ var routeRules = map[string]routeRule{
 	"PUT /api/v1/owner-rules/{id}": {class: "object", obj: id("ownerrule"), body: func(a *tenantFx) any {
 		return map[string]any{"layer": "web_server", "team_id": a.int("team")}
 	}},
-	"DELETE /api/v1/owner-rules/{id}":            {class: "object", obj: id("ownerrule")},
+	"DELETE /api/v1/owner-rules/{id}": {class: "object", obj: id("ownerrule")},
+	"POST /api/v1/exposed-secrets/{id}/ignore": {class: "object", obj: id("exposedsecret"), body: func(*tenantFx) any {
+		return map[string]any{"reason": "sweep"}
+	}},
+	"POST /api/v1/exposed-secrets/{id}/reopen":   {class: "object", obj: id("exposedsecret")},
 	"PATCH /api/v1/channels/{id}":                {class: "object", obj: id("channel"), body: func(*tenantFx) any { return map[string]any{"enabled": false} }},
 	"DELETE /api/v1/channels/{id}":               {class: "object", obj: id("channel")},
 	"POST /api/v1/channels/{id}/test":            {class: "object", obj: id("channel")},
@@ -733,6 +739,22 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 		t.Fatalf("%s owner rule: %d", tag, code)
 	}
 	set("ownerrule", orule.ID)
+	// An exposed secret in a repository of each tenant, with the same
+	// fingerprint in both: ignoring it by fingerprint must stay in one.
+	sb := model.NewBatch(model.Collector{ID: "lockfile-scanner", Method: "repository"}, model.AssetRef{Kind: model.AssetRepository,
+		Name: "repo-" + tag, Identifiers: []model.Identifier{{Scheme: "git-url", Value: "https://git.example.com/" + tag}}})
+	sb.Observations, sb.Complete = []model.Observation{}, true
+	sb.Secrets = &model.SecretList{Complete: true, Findings: []model.SecretFinding{{Rule: "github-token", Title: "GitHub token",
+		Location: "deploy-" + tag + ".sh", Line: 1, Fingerprint: strings.Repeat("e", 64), Preview: "ghp_…" + tag[:2],
+		Severity: "high", Exposure: "repository"}}}
+	if _, err := e.st.Ingest(ctx, sb, 0); err != nil {
+		t.Fatal(err)
+	}
+	var secrets struct{ Items []store.ExposedSecret }
+	if code := admin.do("GET", "/api/v1/exposed-secrets", nil, &secrets); code != 200 || len(secrets.Items) != 1 {
+		t.Fatalf("%s exposed secrets: %d %+v", tag, code, secrets)
+	}
+	set("exposedsecret", secrets.Items[0].ID)
 	var inv struct {
 		Invitation store.Invitation
 		Link       string
@@ -1293,7 +1315,7 @@ func (e *env) snapshot(t *testing.T, a *tenantFx) string {
 		"/api/v1/remediation/policies", "/api/v1/remediation/plans", "/api/v1/workspaces",
 		"/api/v1/checks?asset_id={asset}", "/api/v1/checks/{check}", "/api/v1/ignore-rules?status=all", "/api/v1/ignore-requests?status=all",
 		"/api/v1/second-checks", "/api/v1/vex/documents", "/api/v1/vex/sources", "/api/v1/vex/documents/{vexdoc}/statements",
-		"/api/v1/projects/{project}", "/api/v1/access-grants", "/api/v1/assets?project_id={project}",
+		"/api/v1/projects/{project}", "/api/v1/access-grants", "/api/v1/assets?project_id={project}", "/api/v1/exposed-secrets?status=all",
 		"/api/v1/invitations", "/api/v1/onboarding", "/api/v1/usage", "/api/v1/slack/links", "/api/v1/integrations/jira/connections",
 	}, editionSnapshotPaths...) {
 		resp := a.sess["admin"].req("GET", fill(p, a.ids), nil, nil)

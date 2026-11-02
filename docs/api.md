@@ -792,6 +792,30 @@ Applies a [workflow action](#workflow) to the finding.
 
 The same action on up to 500 findings (`ids`).
 
+### `GET /exposed-secrets`
+
+**Who:** viewer (narrowed to the caller's projects)
+
+Secrets that scans found in repositories and in files web servers send ([exposed-secrets.md](design/exposed-secrets.md)), most severe first: `items` and `total`. Each has `asset_id`, `asset_name`, `rule`, `title`, `location`, `line`, `preview` (masked: `ghp_…4f2a`, or `14 characters` for a password), `fingerprint`, `severity` (`critical`, `high`, `medium`, `low`), `exposure` (`public` or `repository`), `note`, `status` (`open`, `resolved`, `ignored`), `first_seen`, `last_seen`, `resolved_at`, the ignore's `ignored_by`, `ignored_at` and `ignore_reason`, and `places`: how many rows with the same status share its fingerprint (the same key in several places). Values are never stored. Query: `status` (default `open`; `all`), `asset_id`, `severity`, `limit` (up to 500), `offset`.
+
+### `GET /exposed-secrets/summary`
+
+**Who:** viewer
+
+Open exposed secrets: `open` (places), `secrets` (distinct fingerprints), `assets` and `by_severity`.
+
+### `POST /exposed-secrets/{id}/ignore`
+
+**Who:** security on every asset that holds the secret
+
+`{"reason"}` (required, up to 500 characters): marks the secret ignored in every open place the caller can see (all rows with its fingerprint), for a test key or one already revoked. Later scans that still find it keep it ignored. Returns `changed`. Audited as `exposed_secret.ignore`. 409 when it is not open.
+
+### `POST /exposed-secrets/{id}/reopen`
+
+**Who:** security on every asset that holds the secret
+
+Reopens every ignored place of the secret. Audited as `exposed_secret.reopen`.
+
 ### `GET /fix-groups`
 
 **Who:** viewer
@@ -2217,6 +2241,7 @@ The single ingest contract for agents, scanners, SBOM imports and plugins. See [
 - `complete: true` tells the server that this batch is the collector's whole view of the asset. Components missing from it are marked removed, and history is kept. A batch that is not complete still removes what it left out outside the paths it could not read: when every `coverage` item that is not `checked` names an absolute path (`path:/srv/app/tmp`, `lockfile:/srv/app/yarn.lock`, `npm-installed:/srv/app/node_modules`; Composer's `vendor/composer/installed.json` stands for its `vendor` directory), components located at or below those paths are kept and the others are marked removed. When any such item names no path (`walk`, `depth`, `dpkg`, `invalid-entries`), nothing is removed. (Before 0.14 only complete batches removed anything, so an application with one unreadable cache directory kept an upgraded version's old libraries for good; its next collection removes them.)
 - `apps` (optional, host batches only, servers listing the `app_list` feature): `{"dirs": ["/var/www/html/phpmyadmin", ...]}`, every application directory the host's agent reports in this run, at most 1,000. The host's applications (`app-path` assets) not in the list are marked removed: each gets an empty complete collection (its findings resolve as `removed`), a `skipped` coverage note on `app:<dir>` saying why, and `collection_status` `removed`; the result lists them in `apps_removed`. An application that reports again is present again. Agents leave `apps` out when discovery stopped at its limits, so a missing directory is never guessed.
 - `images` (optional, host batches only, servers listing the `host_images` feature): `{"refs": ["postgres:16", "sha256:...", ...]}`, the `host-image` identity of every image the host's running containers use, at most 1,000. The host's images not in the list are marked removed the same way as applications (coverage note on `image:<ref>`, collection by `linux-docker`), and the result lists them in `images_removed`. The agent leaves `images` out when it could not list every running image (Docker unreadable, an image it could not inspect).
+- `secrets` (optional, servers listing the `exposed_secrets` feature): what a secret scan found, `{"findings": [{"rule", "title", "location", "line", "fingerprint", "preview", "severity", "exposure", "note"}], "complete": true}`, at most 1,000 findings, never a value. `fingerprint` is 64 lowercase hex characters; `severity` is `critical`, `high`, `medium` or `low`; `exposure` is `public` or `repository`. When `complete`, the asset's open exposed secrets from the same collector that are not listed are resolved. Repository scans (`stackurity scan`, Git, GitHub and GitLab integrations) and the agent's application batches send it.
 - `coverage[].status` is one of `checked`, `skipped`, `failed`, `unsupported` or `partial`.
 - Limits: 200,000 observations, 64 MiB on the wire, 256 MiB after decompression.
 

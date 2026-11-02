@@ -6,6 +6,7 @@ import {
   type CredentialGroup,
   type CredentialHealth,
   type DashboardTrend,
+  type ExposedSecretSummary,
   type FindingSummary,
   type FixGroup,
   type FixGroupSummary,
@@ -405,6 +406,37 @@ function CoverageBlock({ o, unchecked, assets }: { o: Overview; unchecked: Retur
  * expiring or unused, stored secrets not changed for a year. Only what
  * Stackurity was given; secrets left in code or on servers are not looked for.
  */
+/** Exposed secrets: keys and passwords scans found where others can read them. */
+function ExposedLine() {
+  const res = useLoad(() => api.get<ExposedSecretSummary>("/exposed-secrets/summary"), []);
+  const s = res.data;
+  if (!s) return null;
+  if (s.open === 0) {
+    return (
+      <p className="small">
+        <span className="text-good">
+          <IconCheckCircle size={14} /> No exposed secrets
+        </span>{" "}
+        <span className="muted">in repositories or in files your web servers send.</span>
+      </p>
+    );
+  }
+  const crit = s.by_severity.critical ?? 0;
+  const high = s.by_severity.high ?? 0;
+  return (
+    <p className="dash-coverage-line">
+      <Link to={crit > 0 ? "/fixes/secrets?severity=critical" : "/fixes/secrets"} className={crit + high > 0 ? "text-bad" : undefined}>
+        {plural(s.secrets, "exposed secret")}
+      </Link>{" "}
+      <span className="small muted">
+        in {plural(s.assets, "asset")}
+        {crit > 0 && <>, {crit.toLocaleString()} that anyone can download</>}
+        {crit === 0 && high > 0 && <>, {high.toLocaleString()} in repositories</>} (revoke and replace them)
+      </span>
+    </p>
+  );
+}
+
 function CredentialsBlock() {
   const res = useLoad(() => api.get<CredentialHealth>("/credentials/health"), []);
   const h = res.data;
@@ -473,7 +505,7 @@ function CredentialsBlock() {
           ))}
         </ul>
       )}
-      <p className="small muted">Secrets left in code, container images or on servers are not looked for yet.</p>
+      <ExposedLine />
     </Block>
   );
 }

@@ -4276,6 +4276,15 @@ h6.md-h {
   flex-direction: column;
   gap: var(--s3);
 }
+/* A card list that stands in for a table on phones (Checks, Exposed secrets). */
+.approval-list.only-narrow {
+  display: none;
+}
+@media (max-width: 720px) {
+  .approval-list.only-narrow {
+    display: flex;
+  }
+}
 .approval {
   padding: var(--s3) var(--s4);
   background: var(--surface);

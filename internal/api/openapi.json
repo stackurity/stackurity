@@ -3627,6 +3627,193 @@
     ]
    }
   },
+  "/exposed-secrets": {
+   "get": {
+    "operationId": "get_exposed_secrets",
+    "summary": "Exposed secrets found in repositories and served files (never their values)",
+    "description": "Exposed secrets found in repositories and served files (never their values)\n\nRole: viewer",
+    "tags": [
+     "Findings and fixes"
+    ],
+    "x-stackurity-role": "viewer",
+    "parameters": [
+     {
+      "name": "status",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "asset_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "severity",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "offset",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/exposed-secrets/summary": {
+   "get": {
+    "operationId": "get_exposed_secrets_summary",
+    "summary": "Counts of open exposed secrets",
+    "description": "Counts of open exposed secrets\n\nRole: viewer",
+    "tags": [
+     "Findings and fixes"
+    ],
+    "x-stackurity-role": "viewer",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/exposed-secrets/{id}/ignore": {
+   "post": {
+    "operationId": "post_exposed_secrets_id_ignore",
+    "summary": "Ignore an exposed secret everywhere it was found, with a reason",
+    "description": "Ignore an exposed secret everywhere it was found, with a reason\n\nRole: security",
+    "tags": [
+     "Findings and fixes"
+    ],
+    "x-stackurity-role": "security",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/exposed-secrets/{id}/reopen": {
+   "post": {
+    "operationId": "post_exposed_secrets_id_reopen",
+    "summary": "Reopen an ignored exposed secret",
+    "description": "Reopen an ignored exposed secret\n\nRole: security",
+    "tags": [
+     "Findings and fixes"
+    ],
+    "x-stackurity-role": "security",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/facets": {
    "get": {
     "operationId": "get_facets",

@@ -140,7 +140,38 @@ type ObservationBatch struct {
 	// agent could not list them all. Sent only to servers that list the
 	// "host_images" feature in GET /meta.
 	Images *ImageList `json:"images,omitempty"`
+	// Secrets: what a secret scan of the asset's files found (API keys,
+	// tokens, passwords; never their values). Nil when no scan ran. When
+	// Complete, a secret the asset had from the same collector that is not
+	// listed is gone. Sent only to servers that list the "exposed_secrets"
+	// feature in GET /meta.
+	Secrets *SecretList `json:"secrets,omitempty"`
 }
+
+// SecretList is the result of one secret scan.
+type SecretList struct {
+	Findings []SecretFinding `json:"findings"`
+	// Complete: every file the scan should read was read.
+	Complete bool `json:"complete"`
+}
+
+// SecretFinding is one secret in one file. It never holds the value.
+type SecretFinding struct {
+	Rule     string `json:"rule"`  // github-token, private-key, generic-secret...
+	Title    string `json:"title"` // "GitHub token"
+	Location string `json:"location"`
+	Line     int    `json:"line,omitempty"`
+	// Fingerprint: 64 hex characters, the same for the same secret
+	// wherever it is (for a weak value, the same only in the same place).
+	Fingerprint string `json:"fingerprint"`
+	Preview     string `json:"preview"`  // masked: "ghp_…4f2a", "14 characters"
+	Severity    string `json:"severity"` // critical, high, medium, low
+	Exposure    string `json:"exposure"` // public, repository
+	Note        string `json:"note,omitempty"`
+}
+
+// MaxSecrets bounds SecretList.Findings.
+const MaxSecrets = 1000
 
 // ImageList is the set of container images a host's agent reports.
 type ImageList struct {

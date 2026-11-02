@@ -38,6 +38,7 @@ import { CoveragePage } from "./pages/Coverage";
 import { IntegrationsPage } from "./pages/Integrations";
 import { AuditPage } from "./pages/Audit";
 import { ApprovalsPage } from "./pages/Approvals";
+import { ExposedSecretsPage } from "./pages/ExposedSecrets";
 import { ChecksPage } from "./pages/Checks";
 import { ReportsPage } from "./pages/Reports";
 import { OutcomesPage } from "./pages/Outcomes";
@@ -228,6 +229,7 @@ export function App() {
         <Route path="fixes" element={<FixesPage />} />
         <Route path="fixes/issues" element={<IssuesPage />} />
         <Route path="fixes/automatic" element={<AutomaticFixesPage />} />
+        <Route path="fixes/secrets" element={<ExposedSecretsPage />} />
         <Route path="fixes/:id" element={<FixGroupDetailPage />} />
         <Route path="action-plan" element={<Moved to={() => "/fixes"} />} />
         <Route path="action-plan/:id" element={<Moved to={(p) => `/fixes/${encodeURIComponent(p.id ?? "")}`} />} />

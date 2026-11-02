@@ -356,6 +356,8 @@ func (s *Server) Handler() http.Handler {
 				r.Get("/fix-groups/summary", s.fixPlanSummary)
 				r.Get("/fix-groups/{id}", s.getFixGroup)
 				r.Get("/findings/{id}", s.getFinding)
+				r.Get("/exposed-secrets", s.listExposedSecrets)
+				r.Get("/exposed-secrets/summary", s.exposedSecretSummary)
 				r.Get("/advisories/{key}", s.getAdvisory)
 				r.Get("/feeds", s.listFeeds)
 				r.Get("/evaluation-gaps", s.listEvaluationGaps)
@@ -410,6 +412,8 @@ func (s *Server) Handler() http.Handler {
 				r.With(s.requireWritable).Post("/evaluate", s.reevaluate)
 				// security-only actions are checked per action inside
 				r.Post("/findings/{id}/actions", s.findingAction)
+				r.Post("/exposed-secrets/{id}/ignore", s.ignoreExposedSecret)
+				r.Post("/exposed-secrets/{id}/reopen", s.reopenExposedSecret)
 				r.Post("/findings/actions", s.bulkFindingAction)
 				r.Post("/incidents/{id}/actions", s.incidentAction)
 				r.With(s.requireWritable).Post("/assets/{id}/check", s.checkAsset)

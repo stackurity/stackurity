@@ -26,7 +26,7 @@ func (s *Server) meta(w http.ResponseWriter, r *http.Request) {
 	// batch may list its application directories (apps.dirs);
 	// "kubernetes_report" means POST /kubernetes/report exists.
 	meta := map[string]any{"name": "stackurity", "version": s.Version, "api": "v1", "setup_required": n == 0,
-		"features": []string{FeatureUploadProject, FeatureAppList, FeatureHostImages, FeatureKubernetesReport}, "password_reset": s.passwordResetMode()}
+		"features": []string{FeatureUploadProject, FeatureAppList, FeatureHostImages, FeatureKubernetesReport, FeatureExposedSecrets}, "password_reset": s.passwordResetMode()}
 	if sso := s.ssoMeta(r); sso != nil {
 		meta["sso"] = sso
 	}

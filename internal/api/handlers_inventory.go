@@ -130,6 +130,10 @@ const FeatureAppList = "app_list"
 // store the identity unscoped.
 const FeatureHostImages = "host_images"
 
+// FeatureExposedSecrets, in GET /meta's features, says that POST /ingest
+// takes a batch's secrets (exposed-secret detection).
+const FeatureExposedSecrets = "exposed_secrets"
+
 // uploadProject decides which project an upload (POST /ingest, POST
 // /sbom/import) files its asset in, from project_id or the switcher's
 // header. It returns 0 when none applies, and whether the project takes any

@@ -88,6 +88,8 @@ type App struct {
 	// Unreadable: the agent's user may not read the directory itself, so
 	// nothing in it was inventoried (see PermissionScope).
 	Unreadable bool
+	// Secrets found in the files the application serves (secrets.go).
+	Secrets *model.SecretList
 }
 
 func (s *Scanner) path(hostPath string) string { return filepath.Join(s.Root, hostPath) }
@@ -597,6 +599,9 @@ func (s *Scanner) ScanApp(ctx context.Context, dir string) App {
 		app.Coverage = append(app.Coverage, c)
 	}
 	app.Unreadable = den.root
+	if !app.Unreadable {
+		app.Secrets = s.scanSecrets(ctx, dir)
+	}
 	if len(app.Coverage) == 0 {
 		app.Coverage = append(app.Coverage, model.CoverageItem{Scope: "app:" + dir, Status: "skipped", Reason: "no installed libraries or supported lockfiles found"})
 	}

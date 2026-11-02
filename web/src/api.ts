@@ -852,6 +852,39 @@ export interface DashboardTrend {
   fixed: { start: string; end: string; fixed: number }[];
 }
 
+/** A secret a scan found (GET /exposed-secrets); never its value. */
+export interface ExposedSecret {
+  id: number;
+  asset_id: number;
+  asset_name: string;
+  asset_kind: string;
+  rule: string;
+  title: string;
+  location: string;
+  line: number;
+  fingerprint: string;
+  preview: string;
+  severity: "critical" | "high" | "medium" | "low";
+  exposure: "public" | "repository";
+  note: string;
+  status: "open" | "resolved" | "ignored";
+  first_seen: string;
+  last_seen: string;
+  resolved_at?: string;
+  ignored_by?: string;
+  ignored_at?: string;
+  ignore_reason?: string;
+  places: number;
+}
+
+/** GET /exposed-secrets/summary. */
+export interface ExposedSecretSummary {
+  open: number;
+  secrets: number;
+  assets: number;
+  by_severity: Record<string, number>;
+}
+
 /** One connection, API token or stored secret on the Dashboard's credentials block. */
 export interface CredentialItem {
   kind: "integration" | "channel" | "aws" | "token" | "secret";

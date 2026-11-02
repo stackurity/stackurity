@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/stackurity/stackurity/internal/collect/secretscan"
 	"github.com/stackurity/stackurity/internal/model"
 	"github.com/stackurity/stackurity/pkg/pack"
 )
@@ -372,13 +373,17 @@ func ScanDirWith(ctx context.Context, dir string, asset model.AssetRef, version 
 	if !info.IsDir() {
 		return nil, errors.New("not a directory: " + dir)
 	}
-	obs, cov, err := scanWith(ctx, os.DirFS(dir), exts, gitIgnored(ctx, dir))
+	ignored := gitIgnored(ctx, dir)
+	obs, cov, err := scanWith(ctx, os.DirFS(dir), exts, ignored)
 	if err != nil {
 		return nil, err
 	}
 	b := model.NewBatch(model.Collector{ID: CollectorID, Version: version, Method: "lockfile"}, asset)
 	b.Observations = obs
 	b.Coverage = cov
+	// Secrets in the files the repository holds (git-ignored ones are not
+	// committed, so not exposed through it).
+	b.Secrets = secretscan.Scan(ctx, os.DirFS(dir), secretscan.Options{Exposure: secretscan.ExposureRepository, Ignored: ignored})
 	if len(cov) == 0 {
 		b.Cover("lockfiles", "skipped", "no supported lockfiles found")
 	}

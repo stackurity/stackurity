@@ -155,6 +155,11 @@ func (s *Store) Ingest(ctx context.Context, b *model.ObservationBatch, tokenID i
 				return fmt.Errorf("removed applications: %w", err)
 			}
 		}
+		if b.Secrets != nil {
+			if err := syncSecrets(ctx, tx, assetID, res.CollectionID, b); err != nil {
+				return fmt.Errorf("exposed secrets: %w", err)
+			}
+		}
 		if b.Images != nil && b.Asset.Kind == model.AssetHost {
 			if res.ImagesRemoved, err = removeGoneImages(ctx, tx, assetID, b, tok); err != nil {
 				return fmt.Errorf("removed images: %w", err)

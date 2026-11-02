@@ -162,6 +162,27 @@ func (b *ObservationBatch) Validate() error {
 			}
 		}
 	}
+	if b.Secrets != nil {
+		if len(b.Secrets.Findings) > MaxSecrets {
+			add("secrets.findings has more than %d entries", MaxSecrets)
+		}
+		for i, f := range b.Secrets.Findings {
+			switch {
+			case !validFingerprint(f.Fingerprint):
+				add("secrets.findings[%d].fingerprint must be 64 lowercase hex characters", i)
+			case f.Rule == "" || len(f.Rule) > 64 || len(f.Title) > 100 || len(f.Preview) > 64 || len(f.Note) > 300:
+				add("secrets.findings[%d] has a missing or too long field", i)
+			case f.Location == "" || long(f.Location) || hasControl(f.Location) || hasControl(f.Title+f.Preview+f.Note):
+				add("secrets.findings[%d].location is missing or invalid", i)
+			case f.Line < 0:
+				add("secrets.findings[%d].line must not be negative", i)
+			case f.Severity != "critical" && f.Severity != "high" && f.Severity != "medium" && f.Severity != "low":
+				add("secrets.findings[%d].severity must be critical, high, medium or low", i)
+			case f.Exposure != "public" && f.Exposure != "repository":
+				add("secrets.findings[%d].exposure must be public or repository", i)
+			}
+		}
+	}
 	if b.Apps != nil {
 		if b.Asset.Kind != AssetHost {
 			add("apps is only allowed on a host's batch")
@@ -242,6 +263,18 @@ func ComponentKey(purl string) (key, typ, namespace, name string, err error) {
 func validImageRef(v string) bool {
 	if v == "" || len(v) > 512 || hasControl(v) || strings.ContainsAny(v, " \t") {
 		return false
+	}
+	return true
+}
+
+func validFingerprint(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for _, r := range s {
+		if !(r >= '0' && r <= '9' || r >= 'a' && r <= 'f') {
+			return false
+		}
 	}
 	return true
 }

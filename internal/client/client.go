@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/stackurity/stackurity/internal/model"
@@ -29,6 +30,10 @@ type Client struct {
 	// (X-Stackurity-Project), and uploads (Ingest, ImportSBOM) ask the
 	// server to file their asset in it (project_id).
 	Project int64
+
+	// secrets caches whether the server takes a batch's secrets (one GET
+	// /meta per client): 0 not asked, 1 yes, 2 no.
+	secrets *atomic.Int32
 }
 
 func New(base, token, version string) (*Client, error) {
@@ -41,6 +46,7 @@ func New(base, token, version string) (*Client, error) {
 		Token:   token,
 		HTTP:    &http.Client{Timeout: 5 * time.Minute},
 		UA:      "stackurity/" + version,
+		secrets: new(atomic.Int32),
 	}, nil
 }
 
@@ -158,6 +164,12 @@ func (c *Client) checkProject(res *IngestResult) error {
 
 // Ingest submits a batch, gzip-compressed, retrying transient failures.
 func (c *Client) Ingest(ctx context.Context, b *model.ObservationBatch) (*IngestResult, error) {
+	if b.Secrets != nil && !c.takesSecrets(ctx) {
+		// Servers before exposed-secret detection refuse the field.
+		cp := *b
+		cp.Secrets = nil
+		b = &cp
+	}
 	var res IngestResult
 	var err error
 	for attempt := 0; attempt < 4; attempt++ {
@@ -215,6 +227,33 @@ const FeatureUploadProject = "upload_project"
 // list of application directories (apps.dirs) and marks the applications
 // missing from it removed (0.14). Older servers refuse the field.
 const FeatureAppList = "app_list"
+
+// FeatureExposedSecrets, in Meta.Features, means the server takes a
+// batch's secrets (what a secret scan found). Older servers refuse the
+// field, so the client leaves it out for them.
+const FeatureExposedSecrets = "exposed_secrets"
+
+// takesSecrets asks the server once whether it lists FeatureExposedSecrets.
+// A failed request answers no and asks again next time.
+func (c *Client) takesSecrets(ctx context.Context) bool {
+	if c.secrets != nil {
+		switch c.secrets.Load() {
+		case 1:
+			return true
+		case 2:
+			return false
+		}
+	}
+	m, err := c.Meta(ctx)
+	if err != nil {
+		return false
+	}
+	ok := m.Has(FeatureExposedSecrets)
+	if c.secrets != nil {
+		c.secrets.Store(map[bool]int32{true: 1, false: 2}[ok])
+	}
+	return ok
+}
 
 // FeatureHostImages, in Meta.Features, means the server scopes host-image
 // identities to their host and takes a host batch's images.refs (the

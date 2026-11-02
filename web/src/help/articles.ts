@@ -1919,6 +1919,39 @@ jobs:
     ],
   },
   {
+    id: "exposed-secrets",
+    title: "Exposed secrets: keys and passwords others can read",
+    section: "Daily work",
+    summary: "API keys, tokens, private keys and passwords found in repositories and in files your web servers send, and what to do about them.",
+    where: ["Fixes", "Exposed secrets"],
+    keywords: "secret secrets leak leaked exposed api key token password private key credential env dotenv rotate revoke github aws stripe",
+    body: [
+      {
+        p: "Every repository scan and every agent run also looks for secrets: API keys and tokens (AWS, GitHub, GitLab, Slack, Stripe, OpenAI and others), private keys, passwords in database URLs and `.env` files, and keys assigned to names like `password` or `api_key` in code.",
+      },
+      {
+        list: [
+          "**Repositories** (CI scans, Git, GitHub and GitLab integrations): every tracked file. Anyone with access to the repository, and its history, has these. Severity high.",
+          "**Servers** (the agent): only files the web server sends to anyone, such as front-end bundles, source maps, or a `.env` or backup in a site's document root. Severity critical. Configuration the application reads on the server, such as `wp-config.php`, is where credentials belong and is not reported.",
+          "Keys in tests, examples and documentation, and keys meant for browsers (Google API keys), are rated low.",
+        ],
+      },
+      {
+        p: "The value is never stored or shown: only the kind of key, a masked preview such as `ghp_…4f2a`, and where it is. The same key found in several places is recognised as one secret.",
+      },
+      {
+        steps: [
+          "Revoke the key at its provider and issue a new one. Removing it from the code is not enough: it stays in the repository's history and in every copy already downloaded.",
+          "Put the new key in your secret store or the server's environment, not in the code or in served files.",
+          "Remove the old one from the files. The next scan marks it gone.",
+        ],
+      },
+      {
+        p: "**Ignore** (security role) is for a test key or one already revoked: give a reason, and it is ignored in every place it was found. To skip one line in code, add the comment `stackurity:allow` on it.",
+      },
+    ],
+  },
+  {
     id: "backups-upgrades",
     title: "Backups and upgrades",
     section: "Settings and administration",
