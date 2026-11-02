@@ -18,3 +18,4 @@ ee-overlay.json
 # Agent binaries built at the repository root (go build ./cmd/stackurity)
 /stackurity
 /stackurity.exe
+stackurity-teams-app.zip

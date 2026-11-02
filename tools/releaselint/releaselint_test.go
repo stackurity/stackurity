@@ -39,10 +39,14 @@ func TestVersionReferences(t *testing.T) {
 			t.Errorf("tag %s does not match the newest CHANGELOG.md release %s", tag, v)
 		}
 	}
-	chart := read(t, "deploy/helm/stackurity/Chart.yaml")
-	for _, want := range []string{"version: " + v, `appVersion: "` + v + `"`} {
-		if !strings.Contains(chart, want) {
-			t.Errorf("deploy/helm/stackurity/Chart.yaml: want %q", want)
+	// The server's chart and the Kubernetes reporter's are released together
+	// (release.yml publishes both), and the reporter runs the server's image.
+	for _, f := range []string{"deploy/helm/stackurity/Chart.yaml", "deploy/helm/stackurity-reporter/Chart.yaml"} {
+		chart := read(t, f)
+		for _, want := range []string{"version: " + v, `appVersion: "` + v + `"`} {
+			if !strings.Contains(chart, want) {
+				t.Errorf("%s: want %q", f, want)
+			}
 		}
 	}
 	// The MCP Registry entry (server.json) is published per release, and the
@@ -51,7 +55,7 @@ func TestVersionReferences(t *testing.T) {
 		t.Errorf("server.json: want \"version\": %q", v)
 	}
 	// Image, chart and helm --version references in the install docs and README.
-	ref := regexp.MustCompile(`(?:stackurity/stackurity:|charts/stackurity:|charts/stackurity --version )v?(\d+\.\d+\.\d+)`)
+	ref := regexp.MustCompile(`(?:stackurity/stackurity:|charts/stackurity(?:-reporter)?:|charts/stackurity(?:-reporter)? --version )v?(\d+\.\d+\.\d+)`)
 	for _, f := range []string{"README.md", "docs/install.md", "docs/kubernetes.md"} {
 		for _, m := range ref.FindAllStringSubmatch(read(t, f), -1) {
 			if m[1] != v {
@@ -62,6 +66,33 @@ func TestVersionReferences(t *testing.T) {
 	// The README's status line carries no version, so it cannot go stale.
 	if regexp.MustCompile(`(?m)^> \*\*Status:\*\*.*\bv?\d+\.\d+\b`).MatchString(read(t, "README.md")) {
 		t.Error("README.md: the status line names a version; link to the latest release instead")
+	}
+}
+
+// hasUnreleasedEntries says whether CHANGELOG.md has an "## Unreleased"
+// section with anything in it before the next "## " heading.
+func hasUnreleasedEntries(changelog string) bool {
+	loc := regexp.MustCompile(`(?m)^## Unreleased[ \t]*\r?$`).FindStringIndex(changelog)
+	if loc == nil {
+		return false
+	}
+	body := changelog[loc[1]:]
+	if next := regexp.MustCompile(`(?m)^## `).FindStringIndex(body); next != nil {
+		body = body[:next[0]]
+	}
+	return strings.TrimSpace(body) != ""
+}
+
+func TestHasUnreleasedEntries(t *testing.T) {
+	for doc, want := range map[string]bool{
+		"# C\n\n## 0.2.0\n\n- a\n":                               false,
+		"# C\n\n## Unreleased\n\n## 0.2.0\n\n- a\n":              false,
+		"# C\n\n## Unreleased\n\n### Added\n\n- b\n\n## 0.2.0\n": true,
+		"# C\n\n## Unreleased\n\n- b\n":                          true,
+	} {
+		if got := hasUnreleasedEntries(doc); got != want {
+			t.Errorf("%q: got %v, want %v", doc, got, want)
+		}
 	}
 }
 
@@ -79,15 +110,16 @@ func TestUpgradeMatrixHasOneSource(t *testing.T) {
 
 // TestUpgradeMatrixHasNewestRelease fails when the newest published release
 // is not a source in the release-checks upgrade matrix, so every later
-// release is tested as an upgrade from it. With an "Unreleased" heading in
-// CHANGELOG.md, that is the first version below it. Without one, the change
-// is a release that renamed Unreleased to its version and cannot be in the
-// matrix before it is published, so the version before it must be.
+// release is tested as an upgrade from it. With entries under "Unreleased"
+// in CHANGELOG.md, that is the first version below it. Without any (no
+// Unreleased heading, or the empty one tools/release puts above a release),
+// the change is a release that renamed Unreleased to its version and cannot
+// be in the matrix before it is published, so the version before it must be.
 func TestUpgradeMatrixHasNewestRelease(t *testing.T) {
 	changelog := read(t, "CHANGELOG.md")
 	versions := regexp.MustCompile(`(?m)^## (\d+\.\d+\.\d+)\s*$`).FindAllStringSubmatch(changelog, -1)
 	published := 0
-	if !regexp.MustCompile(`(?m)^## Unreleased\s*$`).MatchString(changelog) {
+	if !hasUnreleasedEntries(changelog) {
 		published = 1
 	}
 	if len(versions) <= published {

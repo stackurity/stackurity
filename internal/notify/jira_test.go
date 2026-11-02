@@ -36,6 +36,9 @@ type fakeJira struct {
 	// dropCreateReply creates the issue but answers 502, as if the reply
 	// was lost or the sender died before recording it.
 	dropCreateReply bool
+	// bearer, when set, checks a Connect Jira access token instead of the
+	// API token (the fake is behind fakeAtlassian's gateway).
+	bearer func(token string) bool
 }
 
 type fakeIssue struct {
@@ -83,7 +86,13 @@ func (f *fakeJira) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		want = "Basic " + base64.StdEncoding.EncodeToString([]byte(f.email+":"+f.token))
 		prefix = "/rest/api/3"
 	}
-	if r.Header.Get("Authorization") != want {
+	if f.bearer != nil {
+		tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if !ok || !f.bearer(tok) {
+			f.reply(w, 401, map[string]any{"errorMessages": []string{"You are not authenticated."}})
+			return
+		}
+	} else if r.Header.Get("Authorization") != want {
 		f.reply(w, 401, map[string]any{"errorMessages": []string{"You are not authenticated."}})
 		return
 	}
@@ -96,6 +105,14 @@ func (f *fakeJira) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method == "GET" && p == "/myself":
 		f.reply(w, 200, map[string]string{"displayName": "Stackurity bot"})
+	case r.Method == "GET" && p == "/project/search":
+		f.reply(w, 200, map[string]any{"values": []map[string]string{{"key": "OPS", "name": "Operations"}, {"key": "SEC", "name": "Security"}},
+			"isLast": true})
+	case r.Method == "GET" && p == "/project/SEC/statuses":
+		st := []map[string]any{{"name": "To Do", "statusCategory": map[string]string{"key": "new"}},
+			{"name": "In Progress", "statusCategory": map[string]string{"key": "indeterminate"}},
+			{"name": "Done", "statusCategory": map[string]string{"key": "done"}}}
+		f.reply(w, 200, []map[string]any{{"name": "Task", "statuses": st}, {"name": "Bug", "statuses": st}})
 	case r.Method == "GET" && p == "/project/SEC":
 		f.reply(w, 200, map[string]any{"key": "SEC", "issueTypes": []map[string]string{{"name": "Task"}, {"name": "Bug"}}})
 	case r.Method == "GET" && strings.HasPrefix(p, "/project/"):
@@ -412,10 +429,15 @@ func TestJiraIssueLifecycle(t *testing.T) {
 // A create whose reply is lost, then a retry: the retry finds the issue by
 // its label instead of creating another.
 func TestJiraNoDuplicateAfterLostCreate(t *testing.T) {
+	for _, mode := range []string{"cloud", "oauth"} {
+		t.Run(mode, func(t *testing.T) { testJiraNoDuplicateAfterLostCreate(t, mode) })
+	}
+}
+
+func testJiraNoDuplicateAfterLostCreate(t *testing.T, mode string) {
 	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
 	f := setup(t)
-	fj, srv := newFakeJira(t, true)
-	ch := f.addJira(ctx, srv.URL, true, nil)
+	fj, _, ch, _ := f.jiraMode(ctx, mode)
 	fj.dropCreateReply = true
 	f.addAsset("web-1", "production", true)
 	f.setFindings("web-1")
@@ -460,10 +482,22 @@ func TestJiraNoDuplicateAfterLostCreate(t *testing.T) {
 // Replicas delivering several events for one new incident at once create
 // one issue; the others comment on it.
 func TestJiraOneIssueAcrossReplicas(t *testing.T) {
+	for _, mode := range []string{"datacenter", "oauth"} {
+		t.Run(mode, func(t *testing.T) { testJiraOneIssueAcrossReplicas(t, mode) })
+	}
+}
+
+func testJiraOneIssueAcrossReplicas(t *testing.T, mode string) {
 	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
 	f := setup(t)
-	fj, srv := newFakeJira(t, false)
-	ch := f.addJira(ctx, srv.URL, false, nil)
+	fj, fa, ch, _ := f.jiraMode(ctx, mode)
+	if fa != nil {
+		// Every replica finds the token expired and refreshes at once.
+		if _, err := f.st.Pool.Exec(ctx, `UPDATE jira_connections SET expires_at = now()`); err != nil {
+			t.Fatal(err)
+		}
+		fa.refreshDelay = 100 * time.Millisecond
+	}
 	f.addAsset("web-1", "production", true)
 	f.setFindings("web-1")
 	if err := f.d.Store.CorrelateIncidents(ctx); err != nil {
@@ -514,6 +548,9 @@ func TestJiraOneIssueAcrossReplicas(t *testing.T) {
 	}
 	if escalations != 1 {
 		t.Errorf("escalation comments: %s", is.Comments)
+	}
+	if fa != nil && (fa.refreshes != 1 || fa.reused != 0) {
+		t.Errorf("replicas refreshed %d times, reused a rotated refresh token %d times", fa.refreshes, fa.reused)
 	}
 }
 
