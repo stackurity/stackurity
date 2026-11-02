@@ -801,6 +801,50 @@ stackurity.exe agent --interval 6h`,
   },
 
   {
+    id: "google-cloud",
+    title: "Google Cloud managed services",
+    section: "Adding servers and sources",
+    summary: "Track Cloud SQL, Memorystore, GKE, Cloud Run functions, Cloud Run and App Engine versions with the gcp-managed plugin, without a service account key.",
+    where: ["Settings", "Integrations"],
+    keywords: "gcp google cloud sql memorystore gke cloud run functions app engine workload identity federation plugin managed service",
+    body: [
+      {
+        steps: [
+          "Go to **Settings ▸ Integrations** and choose **Google Cloud** under Sources (admin).",
+          "Enter the project id and the project number (both on the project's welcome page in the Google Cloud console).",
+          "Copy the commands shown and run them in Cloud Shell as a project owner. They create a read-only custom role, a service account without a key, and a workload identity pool that trusts this Stackurity workspace only.",
+          "Click **Create integration**, then **Run now**.",
+        ],
+      },
+      { p: "The role has exactly the list permissions the plugin uses; the page shows them. Nothing secret leaves Google Cloud: on each run Stackurity signs a short token naming your workspace and exchanges it for a one-hour token of the service account." },
+      { p: "If your organisation cannot use workload identity federation, the page also shows the fallback: a service account key, stored as a workspace secret (**Settings ▸ Secrets**)." },
+      { p: "Services the role cannot read, or whose API is not enabled, appear in the project's coverage as failed or skipped with the reason, never as zero. GKE end-of-life dates come from endoflife.date; Memorystore for Redis has no lifecycle data there and is shown as not assessed." },
+    ],
+  },
+  {
+    id: "azure",
+    title: "Azure managed services",
+    section: "Adding servers and sources",
+    summary: "Track Azure Database for MySQL and PostgreSQL, Azure Cache for Redis, AKS, App Service and Functions versions with the azure-managed plugin, without a secret in your tenant.",
+    where: ["Settings", "Integrations"],
+    keywords: "azure entra aks app service functions mysql postgresql redis subscription consent plugin managed service",
+    body: [
+      {
+        steps: [
+          "Go to **Settings ▸ Integrations** and choose **Azure** under Sources (admin).",
+          "Enter the directory (tenant) id and the subscription id.",
+          "Open the admin consent link to add Stackurity's app to your tenant, or let the commands do it.",
+          "Run the commands shown in Cloud Shell as an Owner or User Access Administrator of the subscription. They create a read-only custom role and assign it to Stackurity's app, with a description that ties the grant to your workspace.",
+          "Click **Create integration**, then **Run now**.",
+        ],
+      },
+      { p: "No client secret is created in your tenant. Stackurity's app is shared by every workspace, so each run first checks that the role assignment names your workspace and refuses the subscription otherwise." },
+      { p: "Without Stackurity's app (on a server whose operator has not registered one), the page shows the fallback: a service principal with a client secret, stored as a workspace secret." },
+      { p: "Windows apps that keep their runtime only in app settings are shown as partial: Stackurity never reads app settings, which can hold secrets." },
+    ],
+  },
+
+  {
     id: "kubernetes",
     title: "Kubernetes clusters",
     section: "Adding servers and sources",
