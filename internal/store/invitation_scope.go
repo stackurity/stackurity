@@ -14,7 +14,7 @@ import (
 
 // Invitations say what the person will see, like Add user: an
 // organisation-wide role, or grants on chosen projects and assets
-// (invitation_grants, migration 0079). The grants are checked when the
+// (invitation_grants, migration 0081). The grants are checked when the
 // invitation is made and again when it is accepted.
 
 // InvitationGrant is one project or asset an invitation gives access to.

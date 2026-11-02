@@ -14,6 +14,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -159,10 +160,11 @@ func isTar(head []byte) bool {
 
 func (x *extractor) extractLayer(ctx context.Context, r io.Reader, l *layer) error {
 	tr := tar.NewReader(r)
+	links := map[string]string{} // rel -> target as stored, made by makeLinks
 	for {
 		h, err := tr.Next()
 		if err == io.EOF {
-			return nil
+			return makeLinks(l.dir, links)
 		}
 		if err != nil {
 			return err
@@ -196,6 +198,7 @@ func (x *extractor) extractLayer(ctx context.Context, r io.Reader, l *layer) err
 		case tar.TypeDir:
 			ensureDir(l.dir, rel)
 		case tar.TypeReg:
+			delete(links, rel)
 			if x.written += h.Size; x.written > x.maxBytes {
 				return fmt.Errorf("%w: the image's files are larger than %s", limits.ErrTooLarge, limits.Bytes(x.maxBytes))
 			}
@@ -206,8 +209,7 @@ func (x *extractor) extractLayer(ctx context.Context, r io.Reader, l *layer) err
 			if len(h.Linkname) > 4096 {
 				continue
 			}
-			_ = os.RemoveAll(target)
-			_ = os.Symlink(h.Linkname, target) // confined after all layers are applied
+			links[rel] = h.Linkname
 		case tar.TypeLink:
 			// A hard link names another file of the same layer.
 			src, ok := cleanRel(h.Linkname)
@@ -218,10 +220,34 @@ func (x *extractor) extractLayer(ctx context.Context, r io.Reader, l *layer) err
 			if fi, err := os.Lstat(from); err != nil || !fi.Mode().IsRegular() {
 				continue
 			}
+			delete(links, rel)
 			_ = os.RemoveAll(target)
 			_ = os.Link(from, target)
 		}
 	}
+}
+
+// makeLinks creates a layer's symbolic links once its other entries are on
+// disk, shortest path first, each only where its parent is a real directory
+// of the layer (not a link made just before), replacing what the layer put
+// at that path. Their targets are confined after all layers are applied.
+func makeLinks(dir string, links map[string]string) error {
+	paths := make([]string, 0, len(links))
+	for p := range links {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+	for _, rel := range paths {
+		if !realDir(dir, path.Dir(rel)) {
+			continue
+		}
+		target := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.RemoveAll(target); err != nil {
+			return err
+		}
+		_ = os.Symlink(links[rel], target)
+	}
+	return nil
 }
 
 // cleanRel turns an archive name into a clean relative path, refusing any

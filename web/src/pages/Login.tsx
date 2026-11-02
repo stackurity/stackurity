@@ -5,6 +5,7 @@ import { useAction } from "../hooks";
 import { Code, ErrorBox } from "../components/ui";
 import { MfaLoginStep } from "./TwoFactor";
 import { ForgotPasswordLink } from "./Password";
+import { SocialButtons } from "./Social";
 
 export function LoginPage() {
   const { refresh, state } = useAuth();
@@ -12,11 +13,14 @@ export function LoginPage() {
   // Servers before SAML send one provider without the list.
   const providers = sso ? (sso.providers ?? [sso]) : [];
   const signup = state.phase === "login" ? state.meta.signup : undefined;
+  // "Continue with Google / Microsoft / GitHub" (a hosted edition).
+  const social = state.phase === "login" ? state.meta.social : undefined;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const act = useAction();
-  // The password was right and the account has two-factor sign-in.
-  const [mfa, setMfa] = useState(false);
+  // The password was right and the account has two-factor sign-in, or a
+  // sign-in with a provider came back asking for the code (?mfa=1).
+  const [mfa, setMfa] = useState(() => new URLSearchParams(window.location.search).get("mfa") === "1");
   const discovery = state.phase === "login" && Boolean(state.meta.sso_discovery);
   const [ssoMode, setSSOMode] = useState(false);
   const find = useAction();
@@ -62,7 +66,19 @@ export function LoginPage() {
     if (ok?.mfa_required) setMfa(true);
     else if (ok) await refresh();
   };
-  if (mfa) return <MfaLoginStep onDone={refresh} onRestart={() => (setMfa(false), setPassword(""))} />;
+  const clearMfaQuery = () => {
+    if (window.location.search.includes("mfa=")) window.history.replaceState(null, "", window.location.pathname);
+  };
+  if (mfa)
+    return (
+      <MfaLoginStep
+        onDone={async () => {
+          clearMfaQuery();
+          await refresh();
+        }}
+        onRestart={() => (clearMfaQuery(), setMfa(false), setPassword(""))}
+      />
+    );
 
   return (
     <div className="center-screen">
@@ -74,6 +90,14 @@ export function LoginPage() {
           Sign in
         </h1>
         <ErrorBox error={act.error} title="Sign-in failed" />
+        {social && (
+          <>
+            <SocialButtons social={social} returnTo={window.location.pathname + window.location.search} />
+            <p className="muted small" style={{ textAlign: "center" }}>
+              or use an email and password
+            </p>
+          </>
+        )}
         {sso && (
           <>
             {/* A full-page navigation: the identity provider takes over from here. */}

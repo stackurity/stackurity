@@ -34,7 +34,7 @@ type User struct {
 	// MFAEnabled: the account has two-factor sign-in turned on.
 	MFAEnabled bool `json:"mfa_enabled"`
 	// Phone is contact information kept on the membership in this
-	// workspace (migration 0078); empty when not given.
+	// workspace (migration 0080); empty when not given.
 	Phone string `json:"phone"`
 	// ProjectGrants and AssetGrants count the person's own grants in this
 	// workspace (not their teams'): what a member with project access only
