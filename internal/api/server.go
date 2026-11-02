@@ -462,6 +462,7 @@ func (s *Server) Handler() http.Handler {
 				r.Post("/teams", s.createTeam)
 				r.Patch("/teams/{id}", s.updateTeam)
 				r.Delete("/teams/{id}", s.deleteTeam)
+				r.Get("/credentials/health", s.credentialHealth)
 				r.Post("/owner-rules", s.createOwnerRule)
 				r.Post("/owner-rules/apply", s.applyOwnerRules)
 				r.Put("/owner-rules/{id}", s.updateOwnerRule)

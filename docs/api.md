@@ -1381,6 +1381,12 @@ The commands that connect an Azure subscription to this workspace for the `azure
 
 Names of the organisation's stored secrets (never values), and `enabled`: whether the server can store secrets. Channels and integrations refer to them as `secret:NAME`.
 
+### `GET /credentials/health`
+
+**Who:** admin
+
+What the Dashboard's **Secrets and credentials** block shows; values are never read. `failing`: enabled integrations whose latest run failed, channels whose latest delivery failed and AWS connections that failed (`kind` `integration`, `channel` or `aws`, `detail` with the error, `at` the last success). `expiring`: API tokens, not revoked, that expire within `expiring_days` (14) or expired within the last 14 days (`at` the expiry). `unused`: API tokens older than `unused_days` (90) not used for 90 days (`at` the last use, absent when never used). `old`: stored secrets last set more than `old_days` (365) ago (`at` when). Each group has `total` and its first 5 `items`. Tokens of CI jobs are left out.
+
 ### `PUT /secrets/{name}`
 
 **Who:** admin
