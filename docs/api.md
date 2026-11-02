@@ -1465,6 +1465,18 @@ Status of one job, for example after *Run now*.
 
 Installed plugins with their declared permissions, credentials and network access ([plugins.md](plugins.md)).
 
+### `GET /cloud-setup/gcp`
+
+**Who:** admin
+
+The commands that connect a Google Cloud project to this workspace for the `gcp-managed` plugin. Query: `project_id`, `project_number` (both required; 400 when malformed). Answers `commands` (a `gcloud` block: a custom role with exactly `permissions`, a service account, and a workload identity pool and provider that trust this server's tokens for this workspace only), `config` (the plugin configuration to save), and the service-account-key fallback (`fallback_commands`, `fallback_config`, `fallback_secret`). Without keyless access on this server (`STACKURITY_SECRET_KEY` and an `https://` `STACKURITY_BASE_URL` are needed), `keyless` is false and `keyless_unavailable` says why. Nothing in the answer is secret. See [install.md](install.md#google-cloud-managed-services).
+
+### `GET /cloud-setup/azure`
+
+**Who:** admin
+
+The commands that connect an Azure subscription to this workspace for the `azure-managed` plugin. Query: `tenant_id`, `subscription_id` (GUIDs, required). Answers `consent_url` (admin consent for the Stackurity Entra app), `commands` (an `az` block: a custom role with exactly `permissions`, and its assignment to the app with this workspace's proof as the description), `config`, and the client-secret fallback. Without the app configured on this server, `keyless` is false and `keyless_unavailable` says why. The app's secret is never in the answer. See [install.md](install.md#azure-managed-services).
+
 ### `GET /secrets`
 
 **Who:** admin

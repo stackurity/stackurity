@@ -249,6 +249,9 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/feeds/{name}/refresh": {class: "global"},
 	"GET /api/v1/advisories/{key}":      {class: "global"},
 	"GET /api/v1/plugins":               {class: "global"},
+	// Setup commands for the caller's own workspace; nothing of A's.
+	"GET /api/v1/cloud-setup/gcp":   {class: "list", query: "?project_id=acme-prod&project_number=123"},
+	"GET /api/v1/cloud-setup/azure": {class: "list", query: "?tenant_id=aaaaaaaa-0000-0000-0000-000000000001&subscription_id=bbbbbbbb-0000-0000-0000-000000000002"},
 
 	// Instance administration.
 	"GET /api/v1/admin/license/":             {class: "instance"},
