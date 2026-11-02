@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router";
-import { api, ApiError, type SignupMeta, type SocialConnection, type SocialMeta, type SocialSignupPreview } from "../api";
+import { api, ApiError, type MfaSignInMethod, type SignupMeta, type SocialConnection, type SocialMeta, type SocialSignupPreview } from "../api";
 import { useAuth } from "../auth";
 import { useAction, useLoad } from "../hooks";
 import { confirmAction } from "../components/ConfirmDialog";
@@ -172,7 +172,7 @@ export function SocialConfirmPage() {
   const navigate = useNavigate();
   const [token] = useState(fragmentToken);
   const [error, setError] = useState<ApiError | null>(null);
-  const [mfa, setMfa] = useState(false);
+  const [mfa, setMfa] = useState<MfaSignInMethod[] | null>(null);
   const started = useRef(false);
 
   const done = async () => {
@@ -185,12 +185,12 @@ export function SocialConfirmPage() {
     started.current = true;
     api
       .confirmSocialLink(token)
-      .then((r) => (r.mfa_required ? setMfa(true) : done()))
+      .then((r) => (r.mfa_required ? setMfa(r.methods ?? ["totp", "recovery_code"]) : done()))
       .catch((e) => setError(e instanceof ApiError ? e : new ApiError(0, "client", String(e))));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  if (mfa) return <MfaLoginStep onDone={done} onRestart={() => window.location.assign("/")} />;
+  if (mfa) return <MfaLoginStep methods={mfa} onDone={done} onRestart={() => window.location.assign("/")} />;
   let body;
   if (!token) body = <Notice kind="warn">This page needs the whole link from the email. Open it again from the email.</Notice>;
   else if (error)

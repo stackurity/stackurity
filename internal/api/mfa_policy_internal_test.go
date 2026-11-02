@@ -47,8 +47,15 @@ func TestMFADecision(t *testing.T) {
 			Methods: []string{store.MFAPasskey, store.MFATOTP}}, mfaStepUp},
 		{"phishing-resistant: admin with a passkey session", mfaCase{Policy: phish, Role: auth.RoleAdmin, Session: store.MFAPasskey,
 			Methods: []string{store.MFAPasskey}}, mfaOK},
-		{"phishing-resistant: recovery code sends to set up a passkey", mfaCase{Policy: phish, Role: auth.RoleAdmin, Session: store.MFARecovery,
-			Methods: []string{store.MFAPasskey}}, mfaEnrol},
+		// A recovery code is as easy to phish as an app code: it must not
+		// add a new passkey for an admin who has one (another admin resets).
+		{"phishing-resistant: recovery code does not replace the admin's passkey", mfaCase{Policy: phish, Role: auth.RoleAdmin, Session: store.MFARecovery,
+			Methods: []string{store.MFAPasskey}}, mfaStepUp},
+		{"phishing-resistant: recovery code of an admin without a passkey sets one up", mfaCase{Policy: phish, Role: auth.RoleAdmin, Session: store.MFARecovery,
+			Methods: []string{store.MFATOTP}}, mfaEnrol},
+		{"admins policy covers an instance admin with a viewer role", mfaCase{Policy: admins, Role: auth.RoleViewer, InstanceAdmin: true}, mfaEnrol},
+		{"admins policy, instance admin with the app", mfaCase{Policy: admins, Role: auth.RoleViewer, InstanceAdmin: true, Session: store.MFATOTP,
+			Methods: []string{store.MFATOTP}}, mfaOK},
 		{"phishing-resistant: members keep the app", mfaCase{Policy: phish, Role: auth.RoleEngineer, Session: store.MFATOTP, Methods: []string{store.MFATOTP}}, mfaOK},
 		{"phishing-resistant applies even when 2FA is optional", mfaCase{Policy: optionalPhish, Role: auth.RoleAdmin, Session: store.MFATOTP,
 			Methods: []string{store.MFATOTP}}, mfaEnrol},
@@ -74,6 +81,41 @@ func TestMFADecision(t *testing.T) {
 	}
 	if got := (mfaCase{Policy: everyone, Role: auth.RoleViewer}).accepted(); !slices.Equal(got, all) {
 		t.Errorf("accepted for a viewer: %v", got)
+	}
+}
+
+func TestMFARecoveryHelps(t *testing.T) {
+	all := []string{store.MFAPasskey, store.MFATOTP, store.MFAEmail}
+	phish := store.MFAPolicy{Require: store.PolicyEveryone, Methods: all, PhishingResistantAdmins: true}
+	if (mfaCase{Policy: phish, Role: auth.RoleAdmin, Session: store.MFATOTP, Methods: []string{store.MFAPasskey, store.MFATOTP}}).recoveryHelps() {
+		t.Error("a recovery code helps an admin who has a passkey where only passkeys count")
+	}
+	if !(mfaCase{Policy: phish, Role: auth.RoleViewer, Methods: []string{store.MFATOTP}}).recoveryHelps() {
+		t.Error("a recovery code does not help a member with the app")
+	}
+}
+
+func TestPolicyWeaker(t *testing.T) {
+	pk := []string{store.MFAPasskey}
+	both := []string{store.MFAPasskey, store.MFATOTP}
+	pol := func(req string, ms []string, pr bool) store.MFAPolicy {
+		return store.MFAPolicy{Require: req, Methods: ms, PhishingResistantAdmins: pr}
+	}
+	for _, c := range []struct {
+		name      string
+		cur, next store.MFAPolicy
+		want      bool
+	}{
+		{"same", pol(store.PolicyEveryone, both, false), pol(store.PolicyEveryone, both, false), false},
+		{"stricter", pol(store.PolicyAdmins, both, false), pol(store.PolicyEveryone, pk, true), false},
+		{"everyone to admins", pol(store.PolicyEveryone, both, false), pol(store.PolicyAdmins, both, false), true},
+		{"admins to optional", pol(store.PolicyAdmins, both, false), pol(store.PolicyOptional, both, false), true},
+		{"a method added", pol(store.PolicyEveryone, pk, false), pol(store.PolicyEveryone, both, false), true},
+		{"passkeys-only off", pol(store.PolicyOptional, both, true), pol(store.PolicyOptional, both, false), true},
+	} {
+		if got := policyWeaker(c.cur, c.next); got != c.want {
+			t.Errorf("%s: %v", c.name, got)
+		}
 	}
 }
 

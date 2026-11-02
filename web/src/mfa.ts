@@ -14,3 +14,20 @@ export const MFA_METHODS = "passkey or security key, authenticator app, with rec
 export function mustSetUpOwnFirst(user: { mfa_enabled?: boolean } | null | undefined, requireMfa: boolean): boolean {
   return Boolean(user && !user.mfa_enabled && !requireMfa);
 }
+
+type SignInMethod = "passkey" | "totp" | "email" | "recovery_code";
+const SIGN_IN_METHODS: SignInMethod[] = ["passkey", "totp", "email", "recovery_code"];
+
+/**
+ * The second step a sign-in with a provider continues to:
+ * ?mfa=passkey,totp,recovery_code, or ?mfa=1 from servers before passkeys
+ * (the app or a recovery code). Unknown names are dropped; null when there
+ * is no second step.
+ */
+export function mfaFromQuery(search: string): SignInMethod[] | null {
+  const v = new URLSearchParams(search).get("mfa");
+  if (!v) return null;
+  if (v === "1") return ["totp", "recovery_code"];
+  const ms = v.split(",").filter((m): m is SignInMethod => (SIGN_IN_METHODS as string[]).includes(m));
+  return ms.length ? ms : null;
+}

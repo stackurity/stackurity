@@ -379,6 +379,10 @@ const (
 	// LoginSignup: a new organisation's first session, from a hosted
 	// edition's sign-up link.
 	LoginSignup = "signup"
+	// LoginSocial: a hosted edition's "Continue with Google, Microsoft or
+	// GitHub". It is not single sign-on (the provider is the person's, not
+	// the organisation's), so the policy applies.
+	LoginSocial = "social"
 	// LoginSSO: an OpenID Connect or SAML sign-in.
 	LoginSSO = "sso"
 )

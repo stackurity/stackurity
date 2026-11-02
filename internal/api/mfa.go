@@ -196,8 +196,7 @@ func (s *Server) checkSecondFactor(r *http.Request, uid int64, code string) (met
 		}
 		u, _ := s.Store.GetUser(ctx, uid)
 		if u != nil {
-			_ = s.Store.Audit(s.firstWorkspace(r, uid).Context(), userActor(r, u), "auth.mfa_recovery_code_used", "user", itoa(uid),
-				map[string]any{"remaining": left})
+			s.auditAccount(r, u, "auth.mfa_recovery_code_used", map[string]any{"remaining": left})
 		}
 		return "recovery_code", true, "", nil
 	}
@@ -293,6 +292,10 @@ type mfaStatus struct {
 	PasskeysUnavailable string `json:"passkeys_unavailable,omitempty"`
 	// RPID is the domain passkeys are registered for.
 	RPID string `json:"rp_id,omitempty"`
+	// ConfirmFirst says why this session must confirm with a factor the
+	// account has (POST /auth/mfa/step-up...) before it may add or remove
+	// one ("" when it may).
+	ConfirmFirst string `json:"confirm_first,omitempty"`
 	// Tokens and Assistants keep working without a second factor.
 	Tokens     int `json:"tokens"`
 	Assistants int `json:"assistants"`
@@ -340,9 +343,12 @@ func (s *Server) mfaStatusOf(r *http.Request, u *store.User) (*mfaStatus, error)
 		if err != nil {
 			return nil, err
 		}
-		if (mfaCase{Policy: pol, Role: access.OrgRole, ProjectRole: access.ProjectRole}).required() {
+		if (mfaCase{Policy: pol, Role: access.OrgRole, ProjectRole: access.ProjectRole, InstanceAdmin: u.InstanceAdmin}).required() {
 			out.RequiredBy = append(out.RequiredBy, m.Name)
 		}
+	}
+	if out.ConfirmFirst, err = s.factorChangeBlocked(r, u); err != nil {
+		return nil, err
 	}
 	out.Tokens, out.Assistants, err = s.Store.CountCredentials(r.Context(), u.ID)
 	return out, err
@@ -656,13 +662,13 @@ func (s *Server) failRemoval(w http.ResponseWriter, r *http.Request, err error) 
 // password and app code could add the attacker's passkey from a workspace
 // with a weaker policy, then switch back to one where only passkeys count.
 func (s *Server) mayChangeFactors(w http.ResponseWriter, r *http.Request, u *store.User) bool {
-	name, err := s.mfaStepUpSomewhere(r, u)
+	why, err := s.factorChangeBlocked(r, u)
 	if err != nil {
 		s.fail(w, r, err)
 		return false
 	}
-	if name != "" {
-		writeError(w, 403, "mfa_step_up_required", name+" requires you to confirm this session with a second factor you have before you change your factors")
+	if why != "" {
+		writeError(w, 403, "mfa_step_up_required", why)
 		return false
 	}
 	return true
@@ -678,16 +684,25 @@ func (s *Server) resetMemberMFA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := principal(r)
-	target, removed, err := s.Store.ResetMemberMFA(r.Context(), id, p.User != nil && p.User.InstanceAdmin)
+	// API tokens skip two-factor sign-in, so one cannot strip another
+	// member's (with a temporary password, that would be their account).
+	if !p.Session || p.User == nil {
+		writeError(w, 403, "session_required", "resetting a member's two-factor sign-in needs an administrator signed in to the dashboard, not an API token")
+		return
+	}
+	// Your own factors are removed under Your account, with your password
+	// and within your organisations' policies.
+	if id == p.User.ID {
+		writeError(w, 409, "conflict", "to remove your own second factors, use Your account → Two-factor methods")
+		return
+	}
+	target, removed, err := s.Store.ResetMemberMFA(r.Context(), id, p.User.InstanceAdmin)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
 	_ = s.Store.Audit(r.Context(), p.Actor(r), "user.mfa_reset", "user", itoa(id), map[string]any{"email": target, "methods": removed})
-	admin := "an administrator"
-	if p.User != nil {
-		admin = p.User.Email
-	}
+	admin := p.User.Email
 	s.notifyFactorChange(r, target, "Your two-factor sign-in was reset (every passkey, authenticator app, email code and recovery code removed)", admin)
 	w.WriteHeader(204)
 }

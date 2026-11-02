@@ -51,8 +51,9 @@ type mfaCase struct {
 func (c mfaCase) role() auth.Role { return auth.Higher(c.Role, c.ProjectRole) }
 
 // privileged: security and admin roles, held organisation-wide or through
-// a project.
-func (c mfaCase) privileged() bool { return c.role().AtLeast(auth.RoleSecurity) }
+// a project, and instance admins (who administer the whole server whatever
+// their role here).
+func (c mfaCase) privileged() bool { return c.InstanceAdmin || c.role().AtLeast(auth.RoleSecurity) }
 
 // admin: the admin role, organisation-wide or through a project.
 func (c mfaCase) admin() bool { return c.role().AtLeast(auth.RoleAdmin) }
@@ -77,7 +78,7 @@ func (c mfaCase) counts(m string) bool {
 	if m == "" || !c.Policy.Allows(m) {
 		return false
 	}
-	if m == store.MFAEmail && (c.privileged() || c.InstanceAdmin) {
+	if m == store.MFAEmail && c.privileged() {
 		return false
 	}
 	if c.Policy.PhishingResistantAdmins && c.admin() && m != store.MFAPasskey {
@@ -102,10 +103,24 @@ func (c mfaCase) need() mfaNeed {
 	}
 	// A recovery code stands in for a lost passkey or phone: such a session
 	// may set up a factor that counts, which confirming again could not.
-	if c.Session != store.MFARecovery && c.countsAny(c.Methods) {
+	// Not where only passkeys count for an admin who has one: a recovery
+	// code is as easy to phish as an app code, so it must not add a new
+	// passkey there (another admin resets a lost one).
+	if c.countsAny(c.Methods) && (c.Session != store.MFARecovery || c.passkeysOnly()) {
 		return mfaStepUp
 	}
 	return mfaEnrol
+}
+
+// passkeysOnly: only a passkey counts for this member (an admin where the
+// workspace requires phishing-resistant sign-in of admins).
+func (c mfaCase) passkeysOnly() bool { return c.Policy.PhishingResistantAdmins && c.admin() }
+
+// recoveryHelps reports whether confirming with a recovery code would let
+// a session that must confirm go on (by setting up a factor that counts).
+func (c mfaCase) recoveryHelps() bool {
+	c.Session = store.MFARecovery
+	return c.need() != mfaStepUp
 }
 
 // accepted lists the factors that count for this member, strongest first
@@ -142,28 +157,45 @@ func (s *Server) applyMFAPolicy(ctx context.Context, p *Principal) error {
 	p.MFANeed = c.need()
 	if p.MFANeed != mfaOK {
 		p.MFAAccepted = c.accepted()
+		p.MFARecoveryHelps = c.recoveryHelps()
 	}
 	return nil
 }
 
-// mfaStepUpSomewhere names a workspace of u where the caller's session
-// would have to confirm with a factor the account has ("" when none).
-// Single sign-on sessions are exempt everywhere.
-func (s *Server) mfaStepUpSomewhere(r *http.Request, u *store.User) (string, error) {
+// factorChangeBlocked says why the caller's session must first confirm
+// with a second factor the account has before it adds or removes one
+// ("" when it may go on): factors are the account's, so a change counts in
+// every workspace.
+//
+//   - A session whose sign-in never checked the account's factors (single
+//     sign-on, which the policy otherwise leaves alone; an invitation; a
+//     session from before migration 0066) confirms one first: otherwise
+//     control of one organisation's identity provider and the password
+//     would add a passkey or new recovery codes that work everywhere. A
+//     password, passkey or provider sign-in checked them (one that has
+//     since removed the factor it used has proved it holds the account).
+//   - A session that must confirm in any of the person's organisations,
+//     not only the one it works in: otherwise a phished password and app
+//     code could add the attacker's passkey from a workspace with a weaker
+//     policy, then switch back to one where only passkeys count.
+func (s *Server) factorChangeBlocked(r *http.Request, u *store.User) (string, error) {
 	p := principal(r)
-	if p == nil || !p.Session || p.ssoSession() {
+	if p == nil || !p.Session {
 		return "", nil
+	}
+	methods, err := s.Store.MFAMethods(r.Context(), u.ID)
+	if err != nil {
+		return "", err
+	}
+	if len(methods) > 0 && p.MFAMethod == "" && !factorCheckedAtSignIn(p.Login) {
+		return "confirm this session with " + methodNames(methods) + " (or a recovery code) before you change your two-factor methods", nil
 	}
 	if p.MFANeed == mfaStepUp {
 		ws, err := s.Store.GetWorkspace(r.Context(), p.Workspace)
 		if err != nil {
 			return "", err
 		}
-		return ws.Name, nil
-	}
-	methods, err := s.Store.MFAMethods(r.Context(), u.ID)
-	if err != nil {
-		return "", err
+		return ws.Name + " requires you to confirm this session with a second factor you have before you change your factors", nil
 	}
 	ms, err := s.Store.MFAMemberships(r.Context(), u.ID)
 	if err != nil {
@@ -183,7 +215,7 @@ func (s *Server) mfaStepUpSomewhere(r *http.Request, u *store.User) (string, err
 		}
 		c := mfaCase{Policy: pol, Role: access.OrgRole, ProjectRole: access.ProjectRole, InstanceAdmin: u.InstanceAdmin, Session: p.MFAMethod, Methods: methods}
 		if c.need() == mfaStepUp {
-			return m.Name, nil
+			return m.Name + " requires you to confirm this session with " + methodNames(c.accepted()) + " before you change your factors", nil
 		}
 	}
 	return "", nil
@@ -391,6 +423,31 @@ func (s *Server) putSecuritySettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// A policy that requires a factor needs one this server can do:
+	// otherwise everyone it covers is stuck setting up what cannot work.
+	if next.Require != store.PolicyOptional && policyChanged(cur, next) {
+		wa, why := s.relyingPartyFor()
+		usable := (slices.Contains(next.Methods, store.MFAPasskey) && wa != nil) ||
+			(slices.Contains(next.Methods, store.MFATOTP) && s.SecretBox != nil)
+		if !usable {
+			var reasons []string
+			if slices.Contains(next.Methods, store.MFAPasskey) && wa == nil {
+				reasons = append(reasons, why)
+			}
+			if slices.Contains(next.Methods, store.MFATOTP) && s.SecretBox == nil {
+				reasons = append(reasons, "authenticator apps need STACKURITY_SECRET_KEY")
+			}
+			why = strings.Join(reasons, "; ")
+			writeError(w, 409, "mfa_methods_unavailable", "none of the methods this policy allows works on this server ("+why+"), so nobody could meet it")
+			return
+		}
+	}
+	// API tokens skip two-factor sign-in, so one cannot make the policy
+	// weaker: that takes a signed-in admin.
+	if !p.Session && policyWeaker(cur, next) {
+		writeError(w, 403, "session_required", "making the two-factor policy weaker needs an administrator signed in to the dashboard, not an API token")
+		return
+	}
 	if slices.Contains(next.Methods, store.MFAEmail) && !slices.Contains(cur.Methods, store.MFAEmail) && s.AccountMail == nil {
 		writeError(w, 409, "email_unavailable", "this server cannot send email, so email codes cannot be allowed; set up STACKURITY_SMTP_* first")
 		return
@@ -447,4 +504,34 @@ func methodNames(ms []string) string {
 		return "a second factor"
 	}
 	return strings.Join(out, " or ")
+}
+
+// policyChanged: who must use a factor, or which count, changes.
+func policyChanged(cur, next store.MFAPolicy) bool {
+	return cur.Require != next.Require || cur.PhishingResistantAdmins != next.PhishingResistantAdmins || !slices.Equal(cur.Methods, next.Methods)
+}
+
+// policyWeaker: next asks less of someone than cur (fewer people, more
+// methods that count, or no longer passkeys only for admins).
+func policyWeaker(cur, next store.MFAPolicy) bool {
+	rank := map[string]int{store.PolicyOptional: 0, store.PolicyAdmins: 1, store.PolicyEveryone: 2}
+	if rank[next.Require] < rank[cur.Require] || (cur.PhishingResistantAdmins && !next.PhishingResistantAdmins) {
+		return true
+	}
+	for _, m := range next.Methods {
+		if !slices.Contains(cur.Methods, m) {
+			return true
+		}
+	}
+	return false
+}
+
+// factorCheckedAtSignIn: a sign-in of this kind asks for the account's
+// second factor when it has one.
+func factorCheckedAtSignIn(login string) bool {
+	switch login {
+	case store.LoginPassword, store.LoginPasskey, store.LoginSocial:
+		return true
+	}
+	return false
 }

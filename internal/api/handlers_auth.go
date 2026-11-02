@@ -257,7 +257,7 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{"user": p.User, "role": p.Role, "token": p.Token, "workspace": nil, "workspaces": []store.Membership{},
 		"edition": ed, "features": features, "feedback_enabled": s.FeedbackURL != "" && p.User != nil,
 		"access": "organisation", "project_role": p.ProjectRole, "projects": []store.Project{}, "default_project_id": 0,
-		"mfa_enrolment_required": p.MFANeed == mfaEnrol, "mfa_step_up_required": p.MFANeed == mfaStepUp, "mfa_accepted": p.MFAAccepted,
+		"mfa_enrolment_required": p.MFANeed == mfaEnrol, "mfa_step_up_required": p.MFANeed == mfaStepUp, "mfa_accepted": p.MFAAccepted, "mfa_recovery_accepted": p.MFARecoveryHelps,
 		"password_change_required": p.PasswordChangeRequired,
 		// invite_only: people join by invitation (POST /users is refused),
 		// so the dashboard offers Invite instead of Add user.

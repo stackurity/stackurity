@@ -44,6 +44,8 @@ export interface MfaStatus {
   passkeys_available: boolean;
   passkeys_unavailable?: string;
   rp_id?: string;
+  /** Why this session must confirm with a factor you have before it adds or removes one. */
+  confirm_first?: string;
   /** API tokens and connected assistants keep working without a second factor. */
   tokens: number;
   assistants: number;
@@ -236,6 +238,13 @@ function TwoFactorBody({ st, reload }: { st: MfaStatus; reload: () => void }) {
         </Notice>
       )}
       {st.required && !st.enabled && <Notice kind="warn">Your organisation requires {methodList(st.accepted)}. Set one up below.</Notice>}
+      {st.confirm_first && (
+        <section className="mfa-method" aria-labelledby="mfa-confirm">
+          <h3 id="mfa-confirm">Confirm it is you</h3>
+          <Notice kind="warn">Before you add or remove a method: {st.confirm_first}.</Notice>
+          <ConfirmFactor methods={st.methods} recovery onDone={reload} />
+        </section>
+      )}
       <PasskeysSection st={st} reload={reload} onAdded={added} onCodes={setCodes} />
       <AppSection st={st} reload={reload} onAdded={added} onCodes={setCodes} />
       {(st.totp || st.passkeys.length > 0) && <RecoveryCodesSection st={st} onCodes={setCodes} />}
@@ -703,8 +712,31 @@ export function MfaEnrolmentPage() {
 export function MfaStepUpPage() {
   const { me, logout, refresh } = useAuth();
   const accepted = me?.mfa_accepted ?? [];
-  const passkey = accepted.includes("passkey") && passkeysSupported();
-  const app = accepted.includes("totp");
+  return (
+    <div className="center-screen">
+      <div className="auth-card form">
+        <h1 className="auth-title">Confirm it is you</h1>
+        <p>
+          {me?.workspace?.name ?? "Your organisation"} requires {methodList(accepted)} to sign in, and this session used something else.
+        </p>
+        <ConfirmFactor methods={accepted} recovery={me?.mfa_recovery_accepted ?? true} onDone={refresh} />
+        <p className="small" style={{ textAlign: "center" }}>
+          <button type="button" className="btn btn-link" onClick={() => void logout()}>
+            Sign out
+          </button>
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Confirms the session with a second factor the account has: a passkey, a
+ * code from the app, or (where recovery is set) a recovery code.
+ */
+function ConfirmFactor({ methods, recovery, onDone }: { methods: MfaMethod[]; recovery: boolean; onDone: () => Promise<void> | void }) {
+  const passkey = methods.includes("passkey") && passkeysSupported();
+  const app = methods.includes("totp");
   const [code, setCode] = useState("");
   const act = useAction();
   const withPasskey = async () => {
@@ -713,30 +745,35 @@ export function MfaStepUpPage() {
       const credential = await getPasskey(begin.options);
       return api.post("/auth/mfa/step-up/passkey/finish", { credential });
     });
-    if (ok !== undefined) await refresh();
+    if (ok !== undefined) await onDone();
   };
   const withCode = async (e: FormEvent) => {
     e.preventDefault();
     const ok = await act.run(() => api.post("/auth/mfa/step-up", { code: code.trim() }));
-    if (ok !== undefined) await refresh();
+    if (ok !== undefined) await onDone();
     else setCode("");
   };
+  const codeForm = app || recovery;
   return (
-    <div className="center-screen">
-      <div className="auth-card form">
-        <h1 className="auth-title">Confirm it is you</h1>
-        <p>
-          {me?.workspace?.name ?? "Your organisation"} requires {methodList(accepted)} to sign in, and this session used something else.
-        </p>
-        <ErrorBox error={act.error} title="That did not work" />
-        {passkey && (
-          <button type="button" className="btn btn-primary btn-block" disabled={act.pending} onClick={() => void withPasskey()}>
-            {act.pending ? "Waiting for your passkey…" : "Use a passkey"}
-          </button>
-        )}
+    <>
+      <ErrorBox error={act.error} title="That did not work" />
+      {passkey && (
+        <button type="button" className="btn btn-primary btn-block" disabled={act.pending} onClick={() => void withPasskey()}>
+          {act.pending ? "Waiting for your passkey…" : "Use a passkey"}
+        </button>
+      )}
+      {codeForm ? (
         <form onSubmit={withCode} className="form">
           <div className="field">
-            <label htmlFor="stepup-code">{app ? "Or a code from your authenticator app, or a recovery code" : "Lost your passkey? A recovery code"}</label>
+            <label htmlFor="stepup-code">
+              {app && recovery
+                ? passkey
+                  ? "Or a code from your authenticator app, or a recovery code"
+                  : "A code from your authenticator app, or a recovery code"
+                : app
+                  ? "Or a code from your authenticator app"
+                  : "Lost your passkey? A recovery code"}
+            </label>
             <input
               id="stepup-code"
               autoComplete="one-time-code"
@@ -752,13 +789,10 @@ export function MfaStepUpPage() {
             Verify
           </button>
         </form>
-        <p className="small" style={{ textAlign: "center" }}>
-          <button type="button" className="btn btn-link" onClick={() => void logout()}>
-            Sign out
-          </button>
-        </p>
-      </div>
-    </div>
+      ) : (
+        <p className="hint">Lost your passkey? Ask another admin of your organisation to reset your two-factor sign-in; a recovery code does not replace a passkey here.</p>
+      )}
+    </>
   );
 }
 
