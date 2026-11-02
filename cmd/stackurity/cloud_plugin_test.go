@@ -68,7 +68,7 @@ func TestPlatformCredentialsForPluginRuns(t *testing.T) {
 	w := worker.New(st, log)
 	w.Poll = 50 * time.Millisecond
 	res := secrets.Resolver{Stored: func(ctx context.Context, name string) (string, error) { return st.SecretValue(ctx, box, name) }}
-	registerJobs(w, st, res, t.TempDir(), log, &plugins.Runner{Dir: dir, WorkDir: work, Timeout: time.Minute}, nil, cloud)
+	registerJobs(w, st, res, t.TempDir(), log, &plugins.Runner{Dir: dir, WorkDir: work, Timeout: time.Minute}, nil, cloud, nil, nil)
 	if _, err := st.Enqueue(ctx, "integration.run", map[string]int64{"integration_id": in.ID}, "", time.Time{}); err != nil {
 		t.Fatal(err)
 	}

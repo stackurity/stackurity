@@ -102,10 +102,21 @@ func (r Resolver) resolve(ctx context.Context, ref string, read bool) (string, e
 		if !filepath.IsAbs(clean) || (clean != base && !strings.HasPrefix(clean, base+string(filepath.Separator))) {
 			return "", fmt.Errorf("file secrets must be under %s", r.AllowedDir)
 		}
+		rel, err := filepath.Rel(base, clean)
+		if err != nil || !filepath.IsLocal(rel) {
+			return "", fmt.Errorf("file secrets must be under %s", r.AllowedDir)
+		}
 		if !read {
 			return "", nil
 		}
-		b, err := os.ReadFile(clean)
+		// Read through an os.Root: a symbolic link under the directory
+		// cannot lead outside it either.
+		root, err := os.OpenRoot(base)
+		if err != nil {
+			return "", fmt.Errorf("read secret file: %w", err)
+		}
+		defer root.Close()
+		b, err := root.ReadFile(rel)
 		if err != nil {
 			return "", fmt.Errorf("read secret file: %w", err)
 		}

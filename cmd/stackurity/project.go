@@ -25,7 +25,7 @@ func projectFlag(cmd *cobra.Command, v *string, help string) {
 // project_id. upload says the command uploads; the server must then say it
 // files uploads in projects (0.10), or nothing is sent.
 func (c *conn) connect(ctx context.Context, upload bool) (*client.Client, error) {
-	cl, err := c.client()
+	cl, err := c.clientCtx(ctx)
 	if err != nil || strings.TrimSpace(c.project) == "" {
 		return cl, err
 	}
