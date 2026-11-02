@@ -852,6 +852,31 @@ export interface DashboardTrend {
   fixed: { start: string; end: string; fixed: number }[];
 }
 
+/** One connection, API token or stored secret on the Dashboard's credentials block. */
+export interface CredentialItem {
+  kind: "integration" | "channel" | "aws" | "token" | "secret";
+  id?: number;
+  name: string;
+  detail: string;
+  at?: string;
+}
+
+export interface CredentialGroup {
+  total: number;
+  items: CredentialItem[];
+}
+
+/** GET /credentials/health (admin). */
+export interface CredentialHealth {
+  failing: CredentialGroup;
+  expiring: CredentialGroup;
+  unused: CredentialGroup;
+  old: CredentialGroup;
+  expiring_days: number;
+  unused_days: number;
+  old_days: number;
+}
+
 export type UncheckedReason = "unreadable_version" | "other" | "unreadable_files" | "unsupported" | "waiting_for_data" | "no_advisories";
 export type UncheckedActor = "user" | "stackurity" | "automatic" | "none";
 
@@ -1203,6 +1228,14 @@ export const INTEGRATION_KINDS = ["git_repository", "container_image", "containe
 export type IntegrationKind = (typeof INTEGRATION_KINDS)[number];
 
 /** Union of the per-kind config objects; check `kind` before reading. */
+/** A project of a connected GitLab group (kind gitlab); set by Connect GitLab, never edited. */
+export interface GitLabIntegrationConfig {
+  connection_id: number;
+  group_id: number;
+  project_id: number;
+  path_with_namespace: string;
+}
+
 /** A repository granted to the GitHub App (kind github_app); set by the app, never edited. */
 export interface GitHubAppIntegrationConfig {
   installation_id: number;
@@ -1214,7 +1247,7 @@ export type IntegrationConfig = Partial<GitRepoConfig> &
   Partial<ContainerImageConfig> &
   Partial<PluginIntegrationConfig> &
   Partial<GitHubAppIntegrationConfig> &
-  Partial<Omit<ContainerRegistryConfig, "platform" | "environment" | "username">>;
+  Partial<Omit<ContainerRegistryConfig, "platform" | "environment" | "username">> & Partial<GitLabIntegrationConfig>;
 
 export interface Integration {
   id: number;
@@ -2332,6 +2365,12 @@ export interface ChannelConfig {
   team_name?: string;
   slack_channel?: string;
   configuration_url?: string;
+  // pagerduty added with "Connect PagerDuty" (the Stackurity PagerDuty app)
+  pagerduty_app?: boolean;
+  pagerduty_service_id?: string;
+  pagerduty_service_name?: string;
+  pagerduty_integration_id?: string;
+  pagerduty_manage_url?: string;
   // teams created with "Add to Teams" (the Stackurity Teams app)
   teams_app?: boolean;
   tenant_id?: string;
@@ -2345,6 +2384,7 @@ export interface ChannelConfig {
 /** GET /notification-options: what this server offers. */
 export interface NotificationOptions {
   slack_app: boolean;
+  pagerduty_app: boolean;
   teams_app: boolean;
   /** Connect Jira (the Stackurity Atlassian app) is available. */
   jira_app: boolean;
@@ -2358,7 +2398,7 @@ export interface NotificationOptions {
   base_url: boolean;
 }
 
-export const NO_NOTIFICATION_OPTIONS: NotificationOptions = { slack_app: false, jira_app: false, teams_app: false, platform_email: { enabled: false }, secrets: false, base_url: false };
+export const NO_NOTIFICATION_OPTIONS: NotificationOptions = { slack_app: false, jira_app: false, teams_app: false, pagerduty_app: false, platform_email: { enabled: false }, secrets: false, base_url: false };
 
 /** Loads the options; a failure counts as nothing offered. */
 export function loadNotificationOptions(): Promise<NotificationOptions> {
@@ -2366,6 +2406,7 @@ export function loadNotificationOptions(): Promise<NotificationOptions> {
     .get<Partial<NotificationOptions>>("/notification-options")
     .then((o) => ({
       slack_app: Boolean(o?.slack_app),
+      pagerduty_app: Boolean(o?.pagerduty_app),
       teams_app: Boolean(o?.teams_app),
       jira_app: Boolean(o?.jira_app),
       platform_email: o?.platform_email?.enabled ? o.platform_email : { enabled: false },
@@ -2381,6 +2422,32 @@ export interface EmailRecipient {
   status: "pending" | "confirmed" | string;
   requested_at: string;
   confirmed_at: string | null;
+}
+
+/** A service of the connected PagerDuty account. */
+export interface PagerDutyService {
+  id: string;
+  name: string;
+  description?: string;
+  status?: string;
+  html_url?: string;
+}
+
+/** POST /integrations/pagerduty/oauth */
+export interface PagerDutyOAuthResult {
+  session: string;
+  region: "us" | "eu";
+  return_to: string;
+  services: PagerDutyService[];
+  more: boolean;
+}
+
+/** POST /integrations/pagerduty/finish */
+export interface PagerDutyFinishResult {
+  channel: Channel;
+  return_to: string;
+  service_name: string;
+  reused: boolean;
 }
 
 /** POST /integrations/teams/install */
@@ -2441,6 +2508,54 @@ export async function startJiraConnect(returnTo: string, connectionId = 0): Prom
 }
 
 /** POST /integrations/slack/oauth */
+/** GET /integrations/gitlab: Connect GitLab's connected groups. */
+export interface GitLabConnection {
+  id: number;
+  group_id: number;
+  group_path: string;
+  group_name: string;
+  credential_kind: "group_token" | "oauth" | "none" | string;
+  credential_expires: string | null;
+  webhook: "active" | "not_permitted" | "none" | string;
+  status: "active" | "needs_credential" | "expired" | string;
+  note: string;
+  connected_by: number | null;
+  connected_at: string;
+  updated_at: string;
+  last_sync: string | null;
+  projects: number;
+}
+
+export interface GitLabStatus {
+  configured: boolean;
+  gitlab_url?: string;
+  connections: GitLabConnection[];
+}
+
+export const NO_GITLAB: GitLabStatus = { configured: false, connections: [] };
+
+/** POST /integrations/gitlab/oauth: what an authorisation at GitLab came back with. */
+export interface GitLabOAuthResult {
+  /** Connect GitLab: the groups to pick from, with a single-use handle. */
+  pick?: string;
+  groups?: { id: number; full_path: string; name: string; owner: boolean }[];
+  /** Read-only authorisation. */
+  connection?: GitLabConnection;
+  /** Cleanup. */
+  disconnected?: boolean;
+  webhook_deleted?: boolean;
+  token_revoked?: boolean;
+  return_to?: string;
+}
+
+/** POST /integrations/gitlab/connections */
+export interface GitLabConnectResult {
+  connection: GitLabConnection;
+  needs_readonly: boolean;
+  notes: string[];
+  return_to: string;
+}
+
 export interface SlackOAuthResult {
   channel: Channel;
   return_to: string;
