@@ -298,6 +298,7 @@ var routeRules = map[string]routeRule{
 	"GET /api/v1/users":                 {class: "list"},
 	"GET /api/v1/jobs":                  {class: "list"},
 	"GET /api/v1/secrets":               {class: "list"},
+	"GET /api/v1/credentials/health":    {class: "list"},
 	"GET /api/v1/enrollments":           {class: "list"},
 	"GET /api/v1/ci-trusts":             {class: "list"},
 	"GET /api/v1/aws/connections":       {class: "list"},

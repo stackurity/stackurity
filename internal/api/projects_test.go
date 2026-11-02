@@ -297,6 +297,7 @@ var projectScopes = map[string]string{
 	"POST /api/v1/users":                             "org",
 	"POST /api/v1/teams":                             "org",
 	"GET /api/v1/owner-rules":                        "org",
+	"GET /api/v1/credentials/health":                 "org",
 	"POST /api/v1/owner-rules":                       "org",
 	"POST /api/v1/owner-rules/apply":                 "org",
 	"PUT /api/v1/owner-rules/{id}":                   "org",
