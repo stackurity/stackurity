@@ -172,6 +172,11 @@ func (d *Dispatcher) upkeep(ctx context.Context) error {
 	if _, err := d.Store.ApplyExceptions(ctx); err != nil {
 		return fmt.Errorf("ignore rules: %w", err)
 	}
+	// Owner rules assign issues nobody has assigned yet, before incidents
+	// and messages are planned.
+	if _, err := d.Store.AssignByOwnerRules(ctx); err != nil {
+		return fmt.Errorf("owner rules: %w", err)
+	}
 	// Ignore rules made from VEX statements end once the component version
 	// or image they were made for is gone.
 	if _, err := d.Store.EndStaleVEXRules(ctx); err != nil {

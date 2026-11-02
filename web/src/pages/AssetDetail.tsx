@@ -24,6 +24,7 @@ import {
   type RemediationAction,
   type Team,
 } from "../api";
+import { OwnerRulesCard } from "../components/Owners";
 import { useAuth } from "../auth";
 import { useAction, useDebounced, useLoad } from "../hooks";
 import { absTime, componentName, humanize, plural } from "../format";
@@ -341,6 +342,7 @@ export function AssetDetailPage() {
           )}
         </Card>
         <OwnershipCard asset={a} editable={canAct("engineer")} onSaved={det.reload} />
+        <OwnerRulesCard assetId={a.id} />
       </div>
 
       </details>

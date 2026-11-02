@@ -1836,6 +1836,41 @@ jobs:
     ],
   },
   {
+    id: "owner-rules",
+    title: "Owner rules: who issues are assigned to",
+    section: "Settings and administration",
+    summary: "Assign new issues automatically by project, asset and part of the tech stack, without changing what people assigned.",
+    where: ["Settings", "Owner rules"],
+    keywords: "owner owners assign assignee auto-assign rule team person project asset stack layer package ownership",
+    body: [
+      {
+        p: "An owner rule says who issues on part of your estate belong to: a person, a team or both. Admins add rules under **Settings → Owner rules**. A rule has three parts: **where** (every asset, one project or one asset), optionally **which part of the stack** (a layer such as operating system or web server, a package name such as `openssl` or `linux*`, or both) and **who**.",
+      },
+      {
+        p: "When an issue could match several rules, the most specific one assigns it:",
+      },
+      {
+        steps: [
+          "Part of one asset's stack (“openssl on web-1”).",
+          "One asset (“everything on web-1”).",
+          "Part of one project's stack (“WordPress core in the Blog project”).",
+          "One project (“everything in Shop”).",
+          "Part of every stack (“operating system packages anywhere”).",
+          "The organisation default (“everything else”).",
+        ],
+      },
+      {
+        list: [
+          "Between rules at the same level, a package name and a layer beat a package name, which beats a layer; then the older rule wins.",
+          "New issues get their owner within a minute, and the issue's history says which rule assigned it.",
+          "An issue a person assigned, or unassigned, is never changed by a rule.",
+          "Changing or deleting a rule does not move issues a rule already assigned. **Apply to open issues** previews what would move, then moves it when you confirm.",
+          "An asset's page and a project's page show the rules that apply there.",
+        ],
+      },
+    ],
+  },
+  {
     id: "backups-upgrades",
     title: "Backups and upgrades",
     section: "Settings and administration",

@@ -6,6 +6,7 @@ import { useAction, useLoad } from "../hooks";
 import { humanize } from "../format";
 import { Badge, Chip, EscalationBadge, KevBadge, PriorityBadge, SosBadge, StateBadge } from "../components/Badge";
 import { FindingsTable } from "../components/Findings";
+import { countOwners, OwnerSplit } from "../components/Owners";
 import { IssueLinks } from "../components/IssueLinks";
 import { Table, type Column } from "../components/Table";
 import { FindingActions } from "../components/Workflow";
@@ -250,6 +251,7 @@ export function IncidentDetailPage() {
           <h2 className="section-title" id="if-title">
             Findings ({findings.length})
           </h2>
+          {findings.length > 0 && <OwnerSplit owners={countOwners(findings)} />}
           {findings.length === 0 ? <p className="muted">No findings are linked to this incident.</p> : <FindingsTable rows={findings} />}
         </section>
       )}
