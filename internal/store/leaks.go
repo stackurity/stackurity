@@ -72,10 +72,13 @@ func LeakWhy(assetKind, exposure, severity string) string {
 		return whyRepository
 	case assetKind == string(model.AssetImage) || assetKind == string(model.AssetWorkload):
 		return whyImage
-	case exposure == model.ExposureWorldReadable:
-		return whyWorldReadable
+	// The agent grades a key in a configuration file low, or medium when
+	// every account can read it; a key written into code keeps its own
+	// severity, whatever the file's mode.
 	case severity == "low":
 		return whyConfig
+	case severity == "medium" && exposure == model.ExposureWorldReadable:
+		return whyWorldReadable
 	}
 	return whyCode
 }

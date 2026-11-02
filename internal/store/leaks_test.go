@@ -265,6 +265,9 @@ func TestLeakWhy(t *testing.T) {
 		{"repository", "", "low", "Committed to the repository"},
 		{"image", "", "high", "Built into the container image"},
 		{"application", "world_readable", "medium", "every account on this server can read"},
+		// A live key written into a PHP file is 644 like every web file:
+		// the advice is to move it out of the code, not to chmod a config.
+		{"application", "world_readable", "critical", "Written into the application's code"},
 		{"application", "", "low", "Kept in the application's configuration file"},
 		{"host", "", "critical", "Written into the application's code"},
 		{"application", "", "high", "Written into the application's code"},
