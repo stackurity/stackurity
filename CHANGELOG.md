@@ -6,6 +6,15 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+### Added
+
+- **Leaked keys.** Stackurity finds keys, tokens and passwords written in files and alerts on the ones that matter. The value never leaves the machine: a leak holds the file, line, setting name, a fingerprint and a masked preview. Each leak says in one line why it matters and what to do, from where the file is: served by the web server, committed to a repository, written into code, or kept in configuration where keys belong. Open critical and high leaks raise one incident per asset (`P1` when critical), sent where new issues go right away; low and medium ones are listed, never alerted on. Security can dismiss a leak with a note. The agent scans the applications it reports (`--no-leaks` or `STACKURITY_NO_LEAKS=true` turns it off); `stackurity scan` scans the files Git tracks, prints leaks masked and takes `--fail-on-leak SEVERITY` to stop a pipeline without a server; repositories the server clones are scanned too. Agents and the CLI send leaks only to servers that take them. New: an asset's **Leaked keys** tab and a **Leaked keys** page, `GET /leaks`, `GET /assets/{id}/leaks`, `POST /leaks/{id}/dismiss` and `/undismiss`, and the MCP tool `list_leaks`. See [Leaked keys](docs/leaked-keys.md).
+
+### Upgrading
+
+- Migration `0085_leaks` adds two tables and changes the incidents row-level security policy; it takes a short lock on `incidents`.
+- Upgrade the server before the agents. An agent or `stackurity scan` from this release keeps working with an older server: it leaves leaks out and says so.
+
 ## 0.14.1
 
 ### Added
