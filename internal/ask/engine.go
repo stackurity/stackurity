@@ -124,6 +124,12 @@ func (e *Engine) Ask(ctx context.Context, q Question, emit func(Event)) (Outcome
 	for round := 1; ; round++ {
 		res, cost, err := e.call(ctx, q, model, msgs, emit)
 		if err != nil {
+			// A call that ended early is still paid for: the caller
+			// must not treat the question as never reaching the model.
+			out.CostMicros += cost
+			if res != nil {
+				out.Usage = append(out.Usage, res.Usage...)
+			}
 			return out, err
 		}
 		out.CostMicros += cost
@@ -185,7 +191,8 @@ func (e *Engine) call(ctx context.Context, q Question, model string, msgs []json
 	}
 	// About three bytes a token, plus the tools and system prompt.
 	prompt := int64(size/3 + 6000)
-	hold, err := e.Store.HoldAskSpend(ctx, e.Prices.HoldFor(model, prompt, DefaultMaxTokens, e.Model.Fallbacks()), q.SpendCapMicros, e.Config.GlobalCapMicros)
+	holdMicros := e.Prices.HoldFor(model, prompt, DefaultMaxTokens, e.Model.Fallbacks())
+	hold, err := e.Store.HoldAskSpend(ctx, holdMicros, q.SpendCapMicros, e.Config.GlobalCapMicros)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -199,7 +206,13 @@ func (e *Engine) call(ctx context.Context, q Question, model string, msgs []json
 	})
 	sctx := context.WithoutCancel(ctx)
 	var cost int64
-	if res != nil {
+	switch {
+	case err != nil && res == nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)):
+		// Stopped before the provider's first event: the request may
+		// already have been sent and billed, and nothing says how much,
+		// so the hold is the charge.
+		cost = holdMicros
+	case res != nil:
 		for _, u := range res.Usage {
 			cost += e.Prices.Cost(u)
 			if _, known := e.Prices.Of(u.Model); !known {
@@ -214,7 +227,7 @@ func (e *Engine) call(ctx context.Context, q Question, model string, msgs []json
 		e.alerts(sctx, lvl)
 	}
 	if err != nil {
-		return nil, cost, err
+		return res, cost, err
 	}
 	return res, cost, nil
 }
@@ -250,6 +263,11 @@ func (e *Engine) alerts(ctx context.Context, lvl store.AskSpendLevel) {
 // maxParallelTools runs at most this many tools of one call at once.
 const maxParallelTools = 4
 
+// MaxToolsPerRound is the most tools one model call may run; the rest get
+// a "not run" result, so text planted in a tool's output cannot make one
+// call fan out into dozens of large reads (and their cost next round).
+const MaxToolsPerRound = 8
+
 // runTools runs the tools the model asked for, as the person, and returns
 // their results in order, all for one user message. last: the question's
 // budget is used up, so each result says so instead of running.
@@ -258,10 +276,13 @@ func (e *Engine) runTools(ctx context.Context, api mcp.API, uses []ToolUse, last
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, maxParallelTools)
 	for i, u := range uses {
-		if last || ctx.Err() != nil {
+		if last || ctx.Err() != nil || i >= MaxToolsPerRound {
 			msg := "Not run: this question's tool budget is used up. Answer from what you have, and say what is missing."
-			if ctx.Err() != nil {
+			switch {
+			case ctx.Err() != nil:
 				msg = "Not run: the person stopped the question."
+			case !last:
+				msg = fmt.Sprintf("Not run: at most %d tools run at a time. Ask for this one again if you still need it.", MaxToolsPerRound)
 			}
 			out[i] = toolResult(u.ID, msg, true)
 			continue

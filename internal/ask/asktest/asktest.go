@@ -43,6 +43,9 @@ type Reply struct {
 	Usage      Usage
 	// Status answers with this HTTP error instead.
 	Status int
+	// Hang: after Text, keep the stream open without ending the message
+	// until the client goes away (a person pressing Stop mid-answer).
+	Hang bool
 }
 
 // Request is one request the server received.
@@ -99,7 +102,7 @@ func New(t testing.TB, replies ...Reply) *Server {
 			fmt.Fprintf(w, `{"type":"error","error":{"type":"overloaded_error","message":"scripted %d"}}`, rep.Status)
 			return
 		}
-		write(w, model, len(s.reqs), *rep)
+		write(w, r, model, len(s.reqs), *rep)
 	}))
 	t.Cleanup(hs.Close)
 	s.URL = hs.URL
@@ -131,7 +134,7 @@ func (s *Server) Bodies() []map[string]any {
 	return out
 }
 
-func write(w http.ResponseWriter, model string, n int, r Reply) {
+func write(w http.ResponseWriter, req *http.Request, model string, n int, r Reply) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("request-id", fmt.Sprintf("req_test_%d", n))
 	ev := func(typ string, v any) {
@@ -182,6 +185,13 @@ func write(w http.ResponseWriter, model string, n int, r Reply) {
 		}
 		if r.Text != "" {
 			text(r.Text)
+		}
+		if r.Hang {
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+			<-req.Context().Done()
+			return
 		}
 		for _, t := range r.Tools {
 			in := t.Input
