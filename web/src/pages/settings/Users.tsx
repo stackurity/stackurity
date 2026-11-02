@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from "react";
-import { api, USER_ROLES, type List, type User, type UserRole } from "../../api";
+import { useMemo, useReducer, useState, type FormEvent } from "react";
+import { api, USER_ROLES, type Asset, type List, type Project, type User, type UserRole } from "../../api";
 import { useAuth } from "../../auth";
 import { useAction, useLoad } from "../../hooks";
 import { Badge } from "../../components/Badge";
@@ -7,13 +7,18 @@ import { Table, type Column } from "../../components/Table";
 import { Card, EmptyState, ErrorBox, Loading, Notice, PageHeader, RelativeTime } from "../../components/ui";
 import { RequireMfaCard } from "../TwoFactor";
 import { confirmAction } from "../../components/ConfirmDialog";
+import { PermissionsDisclosure } from "../../components/Permissions";
+import { PERMISSIONS, SPECIFIC_ROLES, permissionLabel, scopeSummary } from "../../roles";
+import { EMPTY, phoneProblem, preview, problems, reduce, toRequest, type ProjectPick } from "../../userAccess";
 
 /** Organisation-wide roles, and "none": access only to the projects someone is given. */
 const ORG_ROLES: (UserRole | "none")[] = [...USER_ROLES, "none"];
 
 function roleLabel(r: UserRole | "none" | ""): string {
-  return r === "none" || r === "" ? "projects only" : r;
+  return permissionLabel(r);
 }
+
+const LABELS: Record<string, string> = Object.fromEntries(PERMISSIONS.map((p) => [p.role, p.label]));
 
 export function UsersPage() {
   const { me } = useAuth();
@@ -21,7 +26,7 @@ export function UsersPage() {
   const act = useAction();
   const [msg, setMsg] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
-  const [resetFor, setResetFor] = useState<number | null>(null);
+  const [open, setOpen] = useState<{ id: number; kind: "reset" | "edit" } | null>(null);
 
   const patch = async (u: User, body: Record<string, unknown>, done: string) => {
     setMsg(null);
@@ -41,6 +46,7 @@ export function UsersPage() {
         <>
           <div>{u.name || <span className="muted">(no name)</span>}</div>
           <div className="small muted">{u.email}</div>
+          {u.phone && <div className="small muted">{u.phone}</div>}
         </>
       ),
     },
@@ -73,6 +79,7 @@ export function UsersPage() {
         </>
       ),
     },
+    { key: "scope", header: "Can see", cell: (u) => <span className={u.role ? undefined : "muted"}>{scopeSummary(u)}</span> },
     { key: "status", header: "Status", cell: (u) => (u.disabled ? <Badge status="disabled" /> : <Badge status="active" />) },
     { key: "mfa", header: "Two-factor", cell: (u) => (u.mfa_enabled ? "On" : <span className="muted">Off</span>) },
     { key: "teams", header: "Teams", cell: (u) => (u.teams?.length ? u.teams.join(", ") : <span className="muted">—</span>) },
@@ -83,7 +90,10 @@ export function UsersPage() {
       header: <span className="sr-only">Actions</span>,
       cell: (u) => (
         <div className="row-actions">
-          <button type="button" className="btn btn-sm" onClick={() => setResetFor(resetFor === u.id ? null : u.id)}>
+          <button type="button" className="btn btn-sm" onClick={() => setOpen(open?.id === u.id && open.kind === "edit" ? null : { id: u.id, kind: "edit" })}>
+            Edit
+          </button>
+          <button type="button" className="btn btn-sm" onClick={() => setOpen(open?.id === u.id && open.kind === "reset" ? null : { id: u.id, kind: "reset" })}>
             Reset password
           </button>
           {u.mfa_enabled && u.id !== me?.user?.id && (
@@ -179,7 +189,7 @@ export function UsersPage() {
     <>
       <PageHeader help="users-teams-roles"
         title="Users"
-        sub={`Members of ${me?.workspace?.name ?? "this workspace"}. Roles apply here only: viewer < engineer < security < admin.`}
+        sub={`Members of ${me?.workspace?.name ?? "this workspace"}. Each sees all projects and assets, or only the ones they are given.`}
         actions={
           !showCreate && (
             <button type="button" className="btn btn-primary" onClick={() => setShowCreate(true)}>
@@ -191,6 +201,7 @@ export function UsersPage() {
       {msg && <Notice kind="success">{msg}</Notice>}
       <ErrorBox error={act.error} title="Update failed" />
       <RequireMfaCard />
+      {!showCreate && <PermissionsDisclosure />}
       {showCreate && (
         <CreateUser
           onCancel={() => setShowCreate(false)}
@@ -210,17 +221,29 @@ export function UsersPage() {
           columns={columns}
           rows={res.data.items}
           rowKey={(u) => u.id}
-          selectedKey={resetFor}
-          renderExpanded={(u) => (
-            <ResetPassword
-              user={u}
-              onDone={() => {
-                setResetFor(null);
-                setMsg(`Password for ${u.email} was reset.`);
-              }}
-              onCancel={() => setResetFor(null)}
-            />
-          )}
+          selectedKey={open?.id ?? null}
+          renderExpanded={(u) =>
+            open?.kind === "edit" ? (
+              <EditUser
+                user={u}
+                onDone={() => {
+                  setOpen(null);
+                  setMsg(`${u.email} was updated.`);
+                  res.reload();
+                }}
+                onCancel={() => setOpen(null)}
+              />
+            ) : (
+              <ResetPassword
+                user={u}
+                onDone={() => {
+                  setOpen(null);
+                  setMsg(`Password for ${u.email} was reset.`);
+                }}
+                onCancel={() => setOpen(null)}
+              />
+            )
+          }
           rowClassName={(u) => (u.disabled ? "row-removed" : undefined)}
         />
       )}
@@ -256,45 +279,172 @@ function ResetPassword({ user, onDone, onCancel }: { user: User; onDone: () => v
   );
 }
 
-function CreateUser({ onCancel, onCreated }: { onCancel: () => void; onCreated: (u: User) => void }) {
-  const [f, setF] = useState<{ email: string; name: string; role: UserRole | "none"; password: string }>({ email: "", name: "", role: "viewer", password: "" });
+function EditUser({ user, onDone, onCancel }: { user: User; onDone: () => void; onCancel: () => void }) {
+  const [name, setName] = useState(user.name);
+  const [phone, setPhone] = useState(user.phone ?? "");
   const act = useAction();
+  const phoneErr = phoneProblem(phone);
+  const body: Record<string, string> = {};
+  if (name.trim() !== user.name) body.name = name.trim();
+  if (phone.trim() !== (user.phone ?? "")) body.phone = phone.trim();
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    const u = await act.run(() => api.post<User>("/users", { ...f, email: f.email.trim(), name: f.name.trim() }));
-    if (u) onCreated(u);
+    const ok = await act.run(() => api.patch<User>(`/users/${user.id}`, body));
+    if (ok) onDone();
   };
   return (
+    <form className="form inline-form" onSubmit={submit} aria-label={`Edit ${user.email}`}>
+      <ErrorBox error={act.error} title="Could not save" />
+      <div className="form-grid">
+        <div className="field">
+          <label htmlFor={`eu-name-${user.id}`}>Name</label>
+          <input id={`eu-name-${user.id}`} autoComplete="off" maxLength={200} value={name} onChange={(e) => setName(e.target.value)} />
+          <p className="hint">Belongs to their account; an account in other workspaces too can be renamed only by an instance admin.</p>
+        </div>
+        <div className="field">
+          <label htmlFor={`eu-phone-${user.id}`}>Phone (optional)</label>
+          <input id={`eu-phone-${user.id}`} type="tel" autoComplete="off" maxLength={32} value={phone} aria-invalid={phoneErr ? true : undefined}
+            onChange={(e) => setPhone(e.target.value)} />
+          <p className="hint">{phoneErr || "Contact information for this workspace only. Nothing is sent to it."}</p>
+        </div>
+      </div>
+      <div className="form-actions">
+        <button type="submit" className="btn btn-primary btn-sm" disabled={act.pending || !!phoneErr || Object.keys(body).length === 0}>
+          Save
+        </button>
+        <button type="button" className="btn btn-sm" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function CreateUser({ onCancel, onCreated }: { onCancel: () => void; onCreated: (u: User) => void }) {
+  const [f, dispatch] = useReducer(reduce, EMPTY);
+  const [tried, setTried] = useState(false);
+  const projects = useLoad(() => api.getAll<List<Project>>("/projects"), []);
+  const names = useMemo(() => Object.fromEntries((projects.data?.items ?? []).map((p) => [p.id, p.name])), [projects.data]);
+  const act = useAction();
+  const missing = problems(f, names);
+  const summary = preview(f, LABELS);
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setTried(true);
+    if (missing.length) return;
+    const u = await act.run(() => api.post<User>("/users", toRequest(f)));
+    if (u) onCreated(u);
+  };
+  const unpicked = (projects.data?.items ?? []).filter((p) => !f.projects.some((x) => x.projectId === p.id));
+  return (
     <Card title="Add user">
-      <form className="form" onSubmit={submit}>
+      <form className="form" onSubmit={submit} aria-label="Add user" noValidate>
         <ErrorBox error={act.error} title="Could not create user" />
         <div className="form-grid">
           <div className="field">
-            <label htmlFor="nu-email">Email</label>
-            <input id="nu-email" type="email" required autoComplete="off" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
-          </div>
-          <div className="field">
             <label htmlFor="nu-name">Name</label>
-            <input id="nu-name" autoComplete="off" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
+            <input id="nu-name" autoComplete="off" maxLength={200} value={f.name} onChange={(e) => dispatch({ type: "field", field: "name", value: e.target.value })} />
           </div>
           <div className="field">
-            <label htmlFor="nu-role">Role</label>
-            <select id="nu-role" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value as UserRole | "none" })}>
-              {ORG_ROLES.map((r) => (
-                <option key={r} value={r}>
-                  {roleLabel(r)}
-                </option>
-              ))}
-            </select>
+            <label htmlFor="nu-email">Email</label>
+            <input id="nu-email" type="email" required autoComplete="off" value={f.email} onChange={(e) => dispatch({ type: "field", field: "email", value: e.target.value })} />
+          </div>
+          <div className="field">
+            <label htmlFor="nu-phone">Phone (optional)</label>
+            <input id="nu-phone" type="tel" autoComplete="off" maxLength={32} placeholder="+91 98450 12345" value={f.phone}
+              aria-invalid={phoneProblem(f.phone) ? true : undefined} onChange={(e) => dispatch({ type: "field", field: "phone", value: e.target.value })} />
+            <p className="hint">{phoneProblem(f.phone) || "Contact information only. Nothing is sent to it."}</p>
           </div>
           <div className="field">
             <label htmlFor="nu-pw">Initial password</label>
-            <input id="nu-pw" type="password" minLength={12} autoComplete="new-password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} />
+            <input id="nu-pw" type="password" minLength={12} autoComplete="new-password" value={f.password} onChange={(e) => dispatch({ type: "field", field: "password", value: e.target.value })} />
             <p className="hint">At least 12 characters. Leave empty if they already have an account; they join this workspace with it.</p>
           </div>
         </div>
+
+        <fieldset className="field access-scope">
+          <legend>What can they see? (required)</legend>
+          <ul className="choice-list">
+            <li>
+              <label className="choice">
+                <input type="radio" name="nu-scope" value="all" checked={f.scope === "all"} onChange={() => dispatch({ type: "scope", scope: "all" })} />
+                <span>
+                  <strong>All projects and assets</strong>
+                  <span className="hint"> Everything in this workspace, including what is added later, with one permission.</span>
+                </span>
+              </label>
+            </li>
+            <li>
+              <label className="choice">
+                <input type="radio" name="nu-scope" value="specific" checked={f.scope === "specific"} onChange={() => dispatch({ type: "scope", scope: "specific" })} />
+                <span>
+                  <strong>Specific projects or assets</strong>
+                  <span className="hint"> Only what you choose below. Workspace pages (users, integrations, notifications) are not shown to them.</span>
+                </span>
+              </label>
+            </li>
+          </ul>
+        </fieldset>
+
+        {f.scope === "all" && (
+          <fieldset className="field">
+            <legend>Permission on all projects and assets</legend>
+            <ul className="choice-list">
+              {PERMISSIONS.map((p) => (
+                <li key={p.role}>
+                  <label className="choice">
+                    <input type="radio" name="nu-all-role" value={p.role} checked={f.allRole === p.role} onChange={() => dispatch({ type: "allRole", role: p.role })} />
+                    <span>
+                      <strong>{p.label}</strong>
+                      <span className="hint"> {p.short}</span>
+                    </span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </fieldset>
+        )}
+
+        {f.scope === "specific" && (
+          <div className="field access-projects">
+            <ErrorBox error={projects.error} title="Could not load projects" />
+            {projects.data && projects.data.items.length === 0 && (
+              <Notice kind="warn">There are no projects yet. Create one under Settings, Projects and access, or give them all projects and assets.</Notice>
+            )}
+            {f.projects.map((p) => (
+              <ProjectAccess key={p.projectId} pick={p} name={names[p.projectId] ?? `Project ${p.projectId}`} dispatch={dispatch} />
+            ))}
+            {unpicked.length > 0 && (
+              <div className="field">
+                <label htmlFor="nu-add-project">{f.projects.length ? "Add another project" : "Add a project"}</label>
+                <select id="nu-add-project" value="" onChange={(e) => e.target.value && dispatch({ type: "addProject", projectId: Number(e.target.value) })}>
+                  <option value="">Choose a project…</option>
+                  {unpicked.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.asset_count} asset{p.asset_count === 1 ? "" : "s"})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+        )}
+
+        <PermissionsDisclosure />
+
+        {tried && missing.length > 0 && (
+          <div className="alert alert-warn" role="alert" id="nu-problems">
+            <strong>Before adding them:</strong>
+            <ul>
+              {missing.map((m) => (
+                <li key={m}>{m}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {summary && <p className="hint" aria-live="polite">They will see: {summary}</p>}
         <div className="form-actions">
-          <button type="submit" className="btn btn-primary" disabled={act.pending}>
+          <button type="submit" className="btn btn-primary" disabled={act.pending || (tried && missing.length > 0)} aria-describedby={tried && missing.length ? "nu-problems" : undefined}>
             Add user
           </button>
           <button type="button" className="btn" onClick={onCancel}>
@@ -303,5 +453,92 @@ function CreateUser({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
         </div>
       </form>
     </Card>
+  );
+}
+
+type Dispatch = (a: Parameters<typeof reduce>[1]) => void;
+
+function RoleSelect({ id, label, value, onChange }: { id: string; label: string; value: UserRole | ""; onChange: (r: UserRole) => void }) {
+  return (
+    <>
+      <label className="sr-only" htmlFor={id}>
+        {label}
+      </label>
+      <select id={id} value={value} required onChange={(e) => e.target.value && onChange(e.target.value as UserRole)}>
+        <option value="">Choose a permission…</option>
+        {SPECIFIC_ROLES.map((r) => (
+          <option key={r} value={r}>
+            {LABELS[r]}
+          </option>
+        ))}
+      </select>
+    </>
+  );
+}
+
+function ProjectAccess({ pick, name, dispatch }: { pick: ProjectPick; name: string; dispatch: Dispatch }) {
+  const id = pick.projectId;
+  return (
+    <fieldset className="access-project">
+      <legend>{name}</legend>
+      <ul className="choice-list">
+        <li>
+          <label className="choice">
+            <input type="radio" name={`nu-mode-${id}`} value="project" checked={pick.mode === "project"} onChange={() => dispatch({ type: "projectMode", projectId: id, mode: "project" })} />
+            <span>
+              <strong>All assets in this project</strong>
+              <span className="hint"> One permission, which also covers assets added to the project later.</span>
+            </span>
+          </label>
+        </li>
+        <li>
+          <label className="choice">
+            <input type="radio" name={`nu-mode-${id}`} value="assets" checked={pick.mode === "assets"} onChange={() => dispatch({ type: "projectMode", projectId: id, mode: "assets" })} />
+            <span>
+              <strong>Chosen assets</strong>
+              <span className="hint"> Tick each asset and give it its own permission. Assets added later are not included.</span>
+            </span>
+          </label>
+        </li>
+      </ul>
+      {pick.mode === "project" && (
+        <div className="field">
+          <RoleSelect id={`nu-prole-${id}`} label={`Permission on ${name}`} value={pick.role} onChange={(role) => dispatch({ type: "projectRole", projectId: id, role })} />
+        </div>
+      )}
+      {pick.mode === "assets" && <AssetPicker pick={pick} name={name} dispatch={dispatch} />}
+      <div className="form-actions">
+        <button type="button" className="btn btn-sm btn-link-danger" onClick={() => dispatch({ type: "removeProject", projectId: id })}>
+          Remove {name}
+        </button>
+      </div>
+    </fieldset>
+  );
+}
+
+function AssetPicker({ pick, name, dispatch }: { pick: ProjectPick; name: string; dispatch: Dispatch }) {
+  const id = pick.projectId;
+  const assets = useLoad(() => api.getAll<List<Asset>>("/assets", { project_id: id, limit: 500 }), [id]);
+  if (assets.error) return <ErrorBox error={assets.error} title={`Could not load the assets of ${name}`} />;
+  if (!assets.data) return <Loading />;
+  if (assets.data.items.length === 0) return <p className="muted">{name} has no assets yet. Choose all assets in this project to include the ones added later.</p>;
+  return (
+    <ul className="asset-picks">
+      {assets.data.items.map((a) => {
+        const sel = pick.assets.find((x) => x.assetId === a.id);
+        return (
+          <li key={a.id}>
+            <label>
+              <input type="checkbox" checked={!!sel} onChange={(e) => dispatch({ type: "toggleAsset", projectId: id, assetId: a.id, checked: e.target.checked })} />{" "}
+              {a.name} <span className="small muted">{a.kind}</span>
+            </label>
+            {sel && (
+              <RoleSelect id={`nu-arole-${id}-${a.id}`} label={`Permission on ${a.name}`} value={sel.role}
+                onChange={(role) => dispatch({ type: "assetRole", projectId: id, assetId: a.id, role })} />
+            )}
+          </li>
+        );
+      })}
+    </ul>
   );
 }

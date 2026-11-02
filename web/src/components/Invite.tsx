@@ -2,14 +2,10 @@ import { useState, type FormEvent } from "react";
 import { api, type InvitationCreated, type UserRole } from "../api";
 import { useAction } from "../hooks";
 import { CopyBox, ErrorBox, Notice } from "./ui";
+import { PERMISSIONS, ROLE_HELP, SPECIFIC_ROLES } from "../roles";
+import { PermissionsDisclosure } from "./Permissions";
 
-/** What each role may do, in a line, for people choosing one. */
-export const ROLE_HELP: Record<UserRole, string> = {
-  viewer: "Sees everything in the project. Changes nothing.",
-  engineer: "Also assigns, acknowledges and works on fixes.",
-  security: "Also snoozes and ignores issues, and decides requests to ignore.",
-  admin: "Also manages the project's people and settings.",
-};
+export { ROLE_HELP };
 
 /**
  * Invite someone by email with a role on a project (or on the whole
@@ -44,12 +40,12 @@ export function InviteForm({ projectId, projectName, onInvited }: { projectId: n
         <fieldset className="field">
           <legend>Role{projectName ? ` on ${projectName}` : ""}</legend>
           <ul className="choice-list">
-            {(Object.keys(ROLE_HELP) as UserRole[]).map((r) => (
+            {PERMISSIONS.filter((p) => projectId === 0 || SPECIFIC_ROLES.includes(p.role)).map(({ role: r, label }) => (
               <li key={r}>
                 <label className="choice">
                   <input type="radio" name="inv-role" value={r} checked={role === r} onChange={() => setRole(r)} />
                   <span>
-                    <strong>{r[0].toUpperCase() + r.slice(1)}</strong>
+                    <strong>{label}</strong>
                     <span className="hint"> {ROLE_HELP[r]}</span>
                   </span>
                 </label>
@@ -57,6 +53,7 @@ export function InviteForm({ projectId, projectName, onInvited }: { projectId: n
             ))}
           </ul>
         </fieldset>
+        <PermissionsDisclosure />
         <div className="form-actions">
           <button type="submit" className="btn btn-primary" disabled={act.pending || !email.trim()}>
             {act.pending ? "Inviting…" : "Invite"}

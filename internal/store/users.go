@@ -33,6 +33,14 @@ type User struct {
 	Access string `json:"access"`
 	// MFAEnabled: the account has two-factor sign-in turned on.
 	MFAEnabled bool `json:"mfa_enabled"`
+	// Phone is contact information kept on the membership in this
+	// workspace (migration 0078); empty when not given.
+	Phone string `json:"phone"`
+	// ProjectGrants and AssetGrants count the person's own grants in this
+	// workspace (not their teams'): what a member with project access only
+	// sees, at a glance.
+	ProjectGrants int64 `json:"project_grants"`
+	AssetGrants   int64 `json:"asset_grants"`
 }
 
 const userCols = `u.id, u.email, u.name,
@@ -42,7 +50,10 @@ const userCols = `u.id, u.email, u.name,
 	u.instance_admin,
 	COALESCE((SELECT CASE WHEN wm.role IS NULL THEN 'projects' ELSE 'organisation' END FROM workspace_members wm
 	  WHERE wm.user_id = u.id AND wm.workspace_id = stackurity_ws()), ''),
-	EXISTS (SELECT 1 FROM user_mfa m WHERE m.user_id = u.id AND m.enabled_at IS NOT NULL)`
+	EXISTS (SELECT 1 FROM user_mfa m WHERE m.user_id = u.id AND m.enabled_at IS NOT NULL),
+	COALESCE((SELECT wm.phone FROM workspace_members wm WHERE wm.user_id = u.id AND wm.workspace_id = stackurity_ws()), ''),
+	(SELECT count(*) FROM access_grants g WHERE g.user_id = u.id AND g.workspace_id = stackurity_ws() AND g.project_id IS NOT NULL),
+	(SELECT count(*) FROM access_grants g WHERE g.user_id = u.id AND g.workspace_id = stackurity_ws() AND g.asset_id IS NOT NULL)`
 
 func (s *Store) CountUsers(ctx context.Context) (int64, error) {
 	var n int64
@@ -214,6 +225,9 @@ type UserUpdate struct {
 	Role     *auth.Role `json:"role"`
 	Disabled *bool      `json:"disabled"`
 	Password *string    `json:"password"`
+	// Phone is contact information on the membership in this workspace,
+	// so any admin of it may change it ("" clears it).
+	Phone *string `json:"phone"`
 	// Temporary: the password is set by an administrator for someone
 	// else; they must choose their own at their next sign-in.
 	Temporary bool `json:"-"`
@@ -230,6 +244,13 @@ func (s *Store) UpdateUser(ctx context.Context, id int64, u UserUpdate, instance
 	ws, ok := tenant.Workspace(ctx)
 	if !ok {
 		return errNoWorkspace
+	}
+	if u.Phone != nil {
+		p, err := NormalizePhone(*u.Phone)
+		if err != nil {
+			return err
+		}
+		u.Phone = &p
 	}
 	var hash *string
 	if u.Password != nil {
@@ -280,6 +301,12 @@ func (s *Store) UpdateUser(ctx context.Context, id int64, u UserUpdate, instance
 			}
 			if _, err := tx.Exec(ctx, `UPDATE workspace_members SET role = $3 WHERE workspace_id = $1 AND user_id = $2`,
 				ws, id, role); err != nil {
+				return err
+			}
+		}
+		if u.Phone != nil {
+			if _, err := tx.Exec(ctx, `UPDATE workspace_members SET phone = $3 WHERE workspace_id = $1 AND user_id = $2`,
+				ws, id, *u.Phone); err != nil {
 				return err
 			}
 		}
