@@ -1,11 +1,28 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { api, loadNotificationOptions, NO_GITHUB_APP, NO_NOTIFICATION_OPTIONS, type Asset, type Channel, type GitHubAppStatus, type Integration, type List } from "../../api";
+import {
+  api,
+  loadNotificationOptions,
+  NO_GITHUB_APP,
+  NO_NOTIFICATION_OPTIONS,
+  type Asset,
+  type Channel,
+  type GitHubAppStatus,
+  type Integration,
+  type List,
+} from "../../api";
 import { useAuth } from "../../auth";
 import { useLoad } from "../../hooks";
 import { Badge } from "../../components/Badge";
 import { Table, type Column } from "../../components/Table";
-import { CodeBlock, ErrorBox, Loading, PageHeader, RelativeTime, Tabs } from "../../components/ui";
+import {
+  CodeBlock,
+  ErrorBox,
+  Loading,
+  PageHeader,
+  RelativeTime,
+  Tabs,
+} from "../../components/ui";
 import { channelTarget, DeliveriesTab, kindLabel } from "./Notifications";
 import { CiTrusts } from "./CiTrusts";
 import { GitHubInstallations, InstallOnGitHubButton } from "./GitHubApp";
@@ -33,7 +50,9 @@ export function IntegrationIcon({ kind }: { kind: string }) {
         <path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M15 14.5c.6-.3 1.3-.5 2-.5 2.2 0 4 1.8 4 4" />
       </>
     ),
-    webhook: <path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" />,
+    webhook: (
+      <path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" />
+    ),
     jira: <path d="M12 3 21 12l-9 9-9-9zM12 8l4 4-4 4-4-4z" />,
     pagerduty: <path d="M6 21V3h7a5 5 0 0 1 0 10H6" />,
     servicenow: (
@@ -50,8 +69,12 @@ export function IntegrationIcon({ kind }: { kind: string }) {
         <path d="M6 7v10M18 10c0 4-6 3-11.5 7.5" />
       </>
     ),
-    container: <path d="M12 3 20 7.5v9L12 21l-8-4.5v-9zM4 7.5l8 4.5 8-4.5M12 12v9" />,
-    cloud: <path d="M7 18h10a4 4 0 0 0 .5-8A6 6 0 0 0 6 9a4.5 4.5 0 0 0 1 9z" />,
+    container: (
+      <path d="M12 3 20 7.5v9L12 21l-8-4.5v-9zM4 7.5l8 4.5 8-4.5M12 12v9" />
+    ),
+    cloud: (
+      <path d="M7 18h10a4 4 0 0 0 .5-8A6 6 0 0 0 6 9a4.5 4.5 0 0 0 1 9z" />
+    ),
     kubernetes: (
       <>
         <path d="M12 2.5 20.5 7v10L12 21.5 3.5 17V7z" />
@@ -67,15 +90,37 @@ export function IntegrationIcon({ kind }: { kind: string }) {
         <path d="M7 7.5h.01M7 16.5h.01" />
       </>
     ),
-    windows: <path d="M3 5.5 10.5 4.5v7H3zM12.5 4.2 21 3v8.5h-8.5zM3 12.5h7.5v7L3 18.5zM12.5 12.5H21V21l-8.5-1.2z" />,
-    ci: <path d="M4 12a8 8 0 0 1 13.7-5.6L20 9M20 4v5h-5M20 12a8 8 0 0 1-13.7 5.6L4 15M4 20v-5h5" />,
+    windows: (
+      <path d="M3 5.5 10.5 4.5v7H3zM12.5 4.2 21 3v8.5h-8.5zM3 12.5h7.5v7L3 18.5zM12.5 12.5H21V21l-8.5-1.2z" />
+    ),
+    ci: (
+      <path d="M4 12a8 8 0 0 1 13.7-5.6L20 9M20 4v5h-5M20 12a8 8 0 0 1-13.7 5.6L4 15M4 20v-5h5" />
+    ),
     sbom: <path d="M7 3h7l5 5v13H7zM14 3v5h5M10 12h6M10 15.5h6M10 19h3" />,
-    ai: <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z" />,
+    ai: (
+      <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z" />
+    ),
   };
-  const key = kind === "stackurity_email" ? "email" : kind === "git_repository" || kind === "github_app" ? "git" : kind === "container_image" || kind === "container_registry" ? "container" : kind;
+  const key =
+    kind === "stackurity_email"
+      ? "email"
+      : kind === "git_repository" || kind === "github_app"
+        ? "git"
+        : kind === "container_image" || kind === "container_registry"
+          ? "container"
+          : kind;
   return (
     <span className="int-icon" aria-hidden="true">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <svg
+        width="20"
+        height="20"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
         {paths[key] ?? paths.plugin}
       </svg>
     </span>
@@ -111,7 +156,10 @@ function fromChannel(c: Channel): Active {
     name: c.name,
     kindLabel: kindLabel(c),
     target: channelTarget(c, undefined),
-    targetMono: !(c.kind === "slack" && c.config?.slack_app) && !(c.kind === "teams" && c.config?.teams_app) && c.kind !== "stackurity_email",
+    targetMono:
+      !(c.kind === "slack" && c.config?.slack_app) &&
+      !(c.kind === "teams" && c.config?.teams_app) &&
+      c.kind !== "stackurity_email",
     enabled: c.enabled,
     ok: c.last_ok_at,
     error: c.last_error,
@@ -123,9 +171,13 @@ function fromSource(i: Integration): Active {
   const plugin = i.kind === "plugin" ? String(i.config?.plugin ?? "") : "";
   return {
     key: `in${i.id}`,
-    kind: plugin.startsWith("aws") ? "cloud" : plugin.includes("kube") ? "kubernetes" : i.kind,
+    kind: plugin.startsWith("aws")
+      ? "cloud"
+      : plugin.includes("kube")
+        ? "kubernetes"
+        : i.kind,
     name: i.name,
-    kindLabel: plugin ? `Plugin: ${plugin}` : SOURCE_LABEL[i.kind] ?? i.kind,
+    kindLabel: plugin ? `Plugin: ${plugin}` : (SOURCE_LABEL[i.kind] ?? i.kind),
     target: "",
     enabled: i.enabled,
     ok: i.last_success,
@@ -151,8 +203,18 @@ const HOST_PAGE = 500;
 /** "Servers with the agent" rows from GET /assets?kind=host; Windows apart when every host was read. */
 function serverRows(res: List<Asset> | null | undefined): Active[] {
   if (!res || res.total === 0) return [];
-  const newest = (xs: Asset[]) => xs.reduce<string | null>((m, a) => (a.last_seen && (!m || a.last_seen > m) ? a.last_seen : m), null);
-  const row = (key: string, kind: string, name: string, n: number, xs: Asset[]): Active => ({
+  const newest = (xs: Asset[]) =>
+    xs.reduce<string | null>(
+      (m, a) => (a.last_seen && (!m || a.last_seen > m) ? a.last_seen : m),
+      null,
+    );
+  const row = (
+    key: string,
+    kind: string,
+    name: string,
+    n: number,
+    xs: Asset[],
+  ): Active => ({
     key,
     kind,
     name,
@@ -164,12 +226,31 @@ function serverRows(res: List<Asset> | null | undefined): Active[] {
     to: "/assets?kind=host",
   });
   const all = res.items;
-  if (res.total > all.length) return [row("hosts", "server", "Servers with the agent", res.total, all)];
+  if (res.total > all.length)
+    return [row("hosts", "server", "Servers with the agent", res.total, all)];
   const win = all.filter((a) => a.attributes?.os === "windows");
   const other = all.filter((a) => a.attributes?.os !== "windows");
   const rows: Active[] = [];
-  if (other.length) rows.push(row("hosts", "server", win.length ? "Linux servers with the agent" : "Servers with the agent", other.length, other));
-  if (win.length) rows.push(row("hosts-win", "windows", "Windows servers with the agent", win.length, win));
+  if (other.length)
+    rows.push(
+      row(
+        "hosts",
+        "server",
+        win.length ? "Linux servers with the agent" : "Servers with the agent",
+        other.length,
+        other,
+      ),
+    );
+  if (win.length)
+    rows.push(
+      row(
+        "hosts-win",
+        "windows",
+        "Windows servers with the agent",
+        win.length,
+        win,
+      ),
+    );
   return rows;
 }
 
@@ -187,19 +268,25 @@ function CiPanel({ admin }: { admin: boolean }) {
       <CiTrusts admin={admin} />
       <div className="int-panel">
         <p>
-          <strong>With a stored token.</strong> For other CI systems, or where ID tokens cannot be used: create a collector token under{" "}
-          <Link to="/settings/tokens">Settings → API tokens</Link> and save it as the CI secret <span className="mono">STACKURITY_TOKEN</span>. It can only send
-          scans.
+          <strong>With a stored token.</strong> For other CI systems, or where
+          ID tokens cannot be used: create a collector token under{" "}
+          <Link to="/settings/tokens">Settings → API tokens</Link> and save it
+          as the CI secret <span className="mono">STACKURITY_TOKEN</span>. It
+          can only send scans.
         </p>
         <CodeBlock text={action} label="GitHub Actions step with a token" />
         <CodeBlock text={cli} label="Scan command" />
         <p>
-          <strong>Fail the pipeline</strong> on findings: it waits for the result and exits with status 3 when findings meet the threshold (4 when the result
-          was not ready in time). <span className="mono">--fail-on-priority P1</span> and <span className="mono">--fail-on-kev</span> also work.
+          <strong>Fail the pipeline</strong> on findings: it waits for the
+          result and exits with status 3 when findings meet the threshold (4
+          when the result was not ready in time).{" "}
+          <span className="mono">--fail-on-priority P1</span> and{" "}
+          <span className="mono">--fail-on-kev</span> also work.
         </p>
         <CodeBlock text={gate} label="Scan with a gate" />
         <p className="small">
-          <Link to="/help/ci-keyless">Scans in CI without a stored secret</Link> · <Link to="/help/repositories">More about repositories and CI</Link>
+          <Link to="/help/ci-keyless">Scans in CI without a stored secret</Link>{" "}
+          · <Link to="/help/repositories">More about repositories and CI</Link>
         </p>
       </div>
     </>
@@ -215,7 +302,10 @@ function SbomPanel({ admin }: { admin: boolean }) {
   "${origin}/api/v1/sbom/import?asset_name=shop-api&asset_kind=application"`;
   return (
     <div className="int-panel">
-      <p>A CycloneDX or SPDX JSON file from your build tool. Each upload replaces that asset's inventory.</p>
+      <p>
+        A CycloneDX or SPDX JSON file from your build tool. Each upload replaces
+        that asset's inventory.
+      </p>
       {admin && (
         <p>
           <Link className="btn btn-sm" to="/get-started?step=asset">
@@ -224,13 +314,16 @@ function SbomPanel({ admin }: { admin: boolean }) {
         </p>
       )}
       <p>
-        From a script or CI, with a collector token from <Link to="/settings/tokens">Settings → API tokens</Link>:
+        From a script or CI, with a collector token from{" "}
+        <Link to="/settings/tokens">Settings → API tokens</Link>:
       </p>
       <CodeBlock text={cli} label="SBOM import command" />
       <p>Or with the API:</p>
       <CodeBlock text={curl} label="SBOM upload with curl" />
       <p className="small">
-        Add <span className="mono">--project &lt;id&gt;</span> (or <span className="mono">project_id=</span>) to file it in a project. <Link to="/help/sbom">More about SBOMs</Link>
+        Add <span className="mono">--project &lt;id&gt;</span> (or{" "}
+        <span className="mono">project_id=</span>) to file it in a project.{" "}
+        <Link to="/help/sbom">More about SBOMs</Link>
       </p>
     </div>
   );
@@ -243,15 +336,34 @@ export function IntegrationsHubPage() {
   const engineer = can("engineer");
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const tab = params.get("tab") === "deliveries" && security ? "deliveries" : "all";
+  const tab =
+    params.get("tab") === "deliveries" && security ? "deliveries" : "all";
   const back = Number(params.get("channel")) || 0;
-  const channels = useLoad(() => (security ? api.get<List<Channel>>("/channels") : Promise.resolve(null)), [security]);
-  const sources = useLoad(() => (engineer ? api.get<List<Integration>>("/integrations") : Promise.resolve(null)), [engineer]);
-  const hosts = useLoad(() => api.get<List<Asset>>("/assets", { kind: "host", limit: HOST_PAGE }), []);
+  const channels = useLoad(
+    () =>
+      security ? api.get<List<Channel>>("/channels") : Promise.resolve(null),
+    [security],
+  );
+  const sources = useLoad(
+    () =>
+      engineer
+        ? api.get<List<Integration>>("/integrations")
+        : Promise.resolve(null),
+    [engineer],
+  );
+  const hosts = useLoad(
+    () => api.get<List<Asset>>("/assets", { kind: "host", limit: HOST_PAGE }),
+    [],
+  );
   const [panel, setPanel] = useState<"ci" | "sbom" | null>(null);
   const optionsRes = useLoad(loadNotificationOptions, []);
   const github = useLoad(
-    () => (engineer ? api.get<GitHubAppStatus>("/integrations/github").catch(() => NO_GITHUB_APP) : Promise.resolve(NO_GITHUB_APP)),
+    () =>
+      engineer
+        ? api
+            .get<GitHubAppStatus>("/integrations/github")
+            .catch(() => NO_GITHUB_APP)
+        : Promise.resolve(NO_GITHUB_APP),
     [engineer],
   );
   const gh = github.data ?? NO_GITHUB_APP;
@@ -259,7 +371,10 @@ export function IntegrationsHubPage() {
 
   // Back from "Add to Slack": open the new integration.
   useEffect(() => {
-    if (back) navigate(`/settings/integrations/channels/${back}?added=1`, { replace: true });
+    if (back)
+      navigate(`/settings/integrations/channels/${back}?added=1`, {
+        replace: true,
+      });
   }, [back, navigate]);
 
   const rows: Active[] = [
@@ -279,7 +394,13 @@ export function IntegrationsHubPage() {
               <strong>{a.name}</strong>
             </Link>
             <div className="muted small">{a.kindLabel}</div>
-            {a.target && <div className={`${a.targetMono ? "mono " : ""}small muted break`}>{a.target}</div>}
+            {a.target && (
+              <div
+                className={`${a.targetMono ? "mono " : ""}small muted break`}
+              >
+                {a.target}
+              </div>
+            )}
           </div>
         </div>
       ),
@@ -298,43 +419,110 @@ export function IntegrationsHubPage() {
           <Badge status="untested" tone="warn" label="not used yet" />
         ),
     },
-    { key: "ok", header: "Last success / report", cell: (a) => <RelativeTime iso={a.ok} /> },
-    { key: "err", header: "Last error", cell: (a) => (a.error ? <span className="text-bad small break">{a.error}</span> : <span className="muted">—</span>) },
+    {
+      key: "ok",
+      header: "Last success / report",
+      cell: (a) => <RelativeTime iso={a.ok} />,
+    },
+    {
+      key: "err",
+      header: "Last error",
+      cell: (a) =>
+        a.error ? (
+          <span className="text-bad small break">{a.error}</span>
+        ) : (
+          <span className="muted">—</span>
+        ),
+    },
   ];
 
   const groups: { title: string; cards: AddCard[] }[] = [];
   if (security) {
     const n: AddCard[] = [];
     if (options.platform_email.enabled)
-      n.push({ kind: "stackurity_email", title: "Email (sent by Stackurity)", text: "Email to members and other addresses. Nothing to set up.", to: "/settings/integrations/new/stackurity_email", admin: true });
+      n.push({
+        kind: "stackurity_email",
+        title: "Email (sent by Stackurity)",
+        text: "Email to members and other addresses. Nothing to set up.",
+        to: "/settings/integrations/new/stackurity_email",
+        admin: true,
+      });
     n.push(
-      { kind: "email", title: "Email (your mail server)", text: "Send through your own SMTP server: SES, SendGrid, Postmark, Gmail and more.", to: "/settings/integrations/new/email", admin: true },
+      {
+        kind: "email",
+        title: "Email (your mail server)",
+        text: "Send through your own SMTP server: SES, SendGrid, Postmark, Gmail and more.",
+        to: "/settings/integrations/new/email",
+        admin: true,
+      },
       {
         kind: "slack",
         title: "Slack",
-        text: options.slack_app ? "Add to Slack in two clicks. Assign and snooze from inside Slack." : "Post to a Slack channel through an incoming webhook.",
+        text: options.slack_app
+          ? "Add to Slack in two clicks. Assign and snooze from inside Slack."
+          : "Post to a Slack channel through an incoming webhook.",
         to: "/settings/integrations/new/slack",
         admin: true,
       },
       {
         kind: "teams",
         title: "Microsoft Teams",
-        text: options.teams_app ? "Add to Teams: add the app to a team and send it a code. No webhook." : "Post to a Teams channel through a Workflows webhook.",
+        text: options.teams_app
+          ? "Add to Teams: add the app to a team and send it a code. No webhook."
+          : "Post to a Teams channel through a Workflows webhook.",
         to: "/settings/integrations/new/teams",
         admin: true,
       },
-      { kind: "jira", title: "Jira", text: "Keep one Jira issue per incident, updated until it is fixed.", to: "/settings/integrations/new/jira", admin: true },
-      { kind: "pagerduty", title: "PagerDuty", text: "Page on-call: one alert per incident, acknowledged and resolved with it.", to: "/settings/integrations/new/pagerduty", admin: true },
-      { kind: "servicenow", title: "ServiceNow", text: "Keep one ServiceNow incident per incident, with your field mapping.", to: "/settings/integrations/new/servicenow", admin: true },
-      { kind: "webhook", title: "Webhook", text: "Send each message as JSON to your own HTTPS endpoint.", to: "/settings/integrations/new/webhook", admin: true },
+      {
+        kind: "jira",
+        title: "Jira",
+        text: options.jira_app
+          ? "Connect Jira in one click. One issue per incident, updated until it is fixed."
+          : "Keep one Jira issue per incident, updated until it is fixed.",
+        to: "/settings/integrations/new/jira",
+        admin: true,
+      },
+      {
+        kind: "pagerduty",
+        title: "PagerDuty",
+        text: "Page on-call: one alert per incident, acknowledged and resolved with it.",
+        to: "/settings/integrations/new/pagerduty",
+        admin: true,
+      },
+      {
+        kind: "servicenow",
+        title: "ServiceNow",
+        text: "Keep one ServiceNow incident per incident, with your field mapping.",
+        to: "/settings/integrations/new/servicenow",
+        admin: true,
+      },
+      {
+        kind: "webhook",
+        title: "Webhook",
+        text: "Send each message as JSON to your own HTTPS endpoint.",
+        to: "/settings/integrations/new/webhook",
+        admin: true,
+      },
     );
     groups.push({ title: "Notifications", cards: n });
   }
   groups.push({
     title: "Sources",
     cards: [
-      { kind: "server", title: "Linux server", text: "A small read-only agent, installed with one command. First results in about 2 minutes.", to: "/assets/add", admin: true },
-      { kind: "windows", title: "Windows server", text: "The same agent on Windows, run as a scheduled task. Reads installed programs.", to: "/assets/add", admin: true },
+      {
+        kind: "server",
+        title: "Linux server",
+        text: "A small read-only agent, installed with one command. First results in about 2 minutes.",
+        to: "/assets/add",
+        admin: true,
+      },
+      {
+        kind: "windows",
+        title: "Windows server",
+        text: "The same agent on Windows, run as a scheduled task. Reads installed programs.",
+        to: "/assets/add",
+        admin: true,
+      },
       gh.configured
         ? {
             kind: "git",
@@ -344,51 +532,128 @@ export function IntegrationsHubPage() {
             admin: true,
             extra: <InstallOnGitHubButton />,
           }
-        : { kind: "git", title: "Git repository", text: "Clone over HTTPS and read lockfiles on a schedule.", to: "/integrations", admin: true },
-      { kind: "ci", title: "CI pipeline", text: "Run stackurity scan or the GitHub Action in CI, without a stored secret, and fail the build on findings.", to: "", panel: "ci" },
-      { kind: "container", title: "Container image / registry", text: "Connect a registry and scan its newest tags, or add one image.", to: "/integrations?add=container", admin: true },
-      { kind: "kubernetes", title: "Kubernetes cluster", text: "Workloads, the images they run and their exposure. One command installs a read-only reporter in the cluster.", to: "/integrations/kubernetes/add", admin: true },
-      { kind: "cloud", title: "AWS", text: "Launch one CloudFormation stack: RDS, EKS, Lambda and more, and the agent on EC2 through SSM.", to: "/settings/integrations/aws", admin: true },
-      { kind: "sbom", title: "SBOM upload", text: "Upload a CycloneDX or SPDX file from your build tool.", to: "", panel: "sbom" },
-      { kind: "plugin", title: "Other plugins", text: "Collectors installed on this server.", to: "/settings/plugins", admin: true },
+        : {
+            kind: "git",
+            title: "Git repository",
+            text: "Clone over HTTPS and read lockfiles on a schedule.",
+            to: "/integrations",
+            admin: true,
+          },
+      {
+        kind: "ci",
+        title: "CI pipeline",
+        text: "Run stackurity scan or the GitHub Action in CI, without a stored secret, and fail the build on findings.",
+        to: "",
+        panel: "ci",
+      },
+      {
+        kind: "container",
+        title: "Container image / registry",
+        text: "Connect a registry and scan its newest tags, or add one image.",
+        to: "/integrations?add=container",
+        admin: true,
+      },
+      {
+        kind: "kubernetes",
+        title: "Kubernetes cluster",
+        text: "Workloads, the images they run and their exposure. One command installs a read-only reporter in the cluster.",
+        to: "/integrations/kubernetes/add",
+        admin: true,
+      },
+      {
+        kind: "cloud",
+        title: "AWS",
+        text: "Launch one CloudFormation stack: RDS, EKS, Lambda and more, and the agent on EC2 through SSM.",
+        to: "/settings/integrations/aws",
+        admin: true,
+      },
+      {
+        kind: "sbom",
+        title: "SBOM upload",
+        text: "Upload a CycloneDX or SPDX file from your build tool.",
+        to: "",
+        panel: "sbom",
+      },
+      {
+        kind: "plugin",
+        title: "Other plugins",
+        text: "Collectors installed on this server.",
+        to: "/settings/plugins",
+        admin: true,
+      },
     ],
   });
   groups.push({
     title: "AI assistants",
-    cards: [{ kind: "ai", title: "AI assistants", text: "Ask about your issues and fixes from Claude, ChatGPT or your IDE.", to: "/settings/ai-assistants" }],
+    cards: [
+      {
+        kind: "ai",
+        title: "AI assistants",
+        text: "Ask about your issues and fixes from Claude, ChatGPT or your IDE.",
+        to: "/settings/ai-assistants",
+      },
+    ],
   });
 
   return (
     <>
-      <PageHeader help="notifications" title="Integrations" sub="Everything Stackurity connects to: where messages go, what it collects from, and AI assistants." />
+      <PageHeader
+        help="notifications"
+        title="Integrations"
+        sub="Everything Stackurity connects to: where messages go, what it collects from, and AI assistants."
+      />
       {security && (
         <Tabs<"all" | "deliveries">
           label="Integrations"
           value={tab}
-          onChange={(x) => setParams(x === "all" ? {} : { tab: x }, { replace: true })}
+          onChange={(x) =>
+            setParams(x === "all" ? {} : { tab: x }, { replace: true })
+          }
           tabs={[
             { id: "all", label: "Integrations" },
             { id: "deliveries", label: "Delivery log" },
           ]}
         />
       )}
-      <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={security ? `tab-${tab}` : undefined} className="tabpanel">
+      <div
+        role="tabpanel"
+        id={`panel-${tab}`}
+        aria-labelledby={security ? `tab-${tab}` : undefined}
+        className="tabpanel"
+      >
         {tab === "deliveries" ? (
           <DeliveriesTab channels={channels.data?.items ?? []} admin={admin} />
         ) : (
           <>
             <h2 className="h-sm">Active integrations</h2>
-            <ErrorBox error={channels.error} title="Could not load notification integrations" />
+            <ErrorBox
+              error={channels.error}
+              title="Could not load notification integrations"
+            />
             <ErrorBox error={sources.error} title="Could not load sources" />
             <ErrorBox error={hosts.error} title="Could not load servers" />
             {(channels.loading || sources.loading) && rows.length === 0 ? (
               <Loading />
             ) : rows.length === 0 ? (
-              <p className="muted">Nothing connected yet. Add an integration below.</p>
+              <p className="muted">
+                Nothing connected yet. Add an integration below.
+              </p>
             ) : (
-              <Table caption="Active integrations" columns={cols} rows={rows} rowKey={(a) => a.key} rowClassName={(a) => (!a.enabled ? "row-removed" : a.error ? "row-stale" : undefined)} />
+              <Table
+                caption="Active integrations"
+                columns={cols}
+                rows={rows}
+                rowKey={(a) => a.key}
+                rowClassName={(a) =>
+                  !a.enabled ? "row-removed" : a.error ? "row-stale" : undefined
+                }
+              />
             )}
-            <GitHubInstallations status={gh} admin={admin} onChange={github.reload} />
+            <GitHubInstallations
+              status={gh}
+              admin={admin}
+              onChange={github.reload}
+            />
             <h2 className="h-sm">Add an integration</h2>
             {groups.map((g) => (
               <section key={g.title} aria-label={g.title}>
@@ -407,7 +672,9 @@ export function IntegrationsHubPage() {
                           className="btn btn-sm"
                           aria-expanded={panel === c.panel}
                           aria-controls={`int-panel-${c.panel}`}
-                          onClick={() => setPanel(panel === c.panel ? null : c.panel!)}
+                          onClick={() =>
+                            setPanel(panel === c.panel ? null : c.panel!)
+                          }
                         >
                           {panel === c.panel ? "Hide steps" : "Show steps"}
                         </button>
@@ -422,7 +689,12 @@ export function IntegrationsHubPage() {
                           </div>
                         ) : (
                           <Link className="btn btn-sm" to={c.to}>
-                            {c.to.startsWith("/settings/integrations/new/") || c.to === "/assets/add" || c.to === "/integrations/kubernetes/add" || c.to === "/settings/integrations/aws" ? "Add" : "Open"}
+                            {c.to.startsWith("/settings/integrations/new/") ||
+                            c.to === "/assets/add" ||
+                            c.to === "/integrations/kubernetes/add" ||
+                            c.to === "/settings/integrations/aws"
+                              ? "Add"
+                              : "Open"}
                           </Link>
                         ))
                       )}
@@ -430,14 +702,30 @@ export function IntegrationsHubPage() {
                   ))}
                 </ul>
                 {g.title === "Sources" && panel && (
-                  <section className="card" id={`int-panel-${panel}`} aria-label={panel === "ci" ? "CI pipeline" : "SBOM upload"}>
+                  <section
+                    className="card"
+                    id={`int-panel-${panel}`}
+                    aria-label={panel === "ci" ? "CI pipeline" : "SBOM upload"}
+                  >
                     <div className="card-head">
-                      <h2>{panel === "ci" ? "Scan in a CI pipeline" : "Upload an SBOM"}</h2>
-                      <button type="button" className="btn btn-link" onClick={() => setPanel(null)}>
+                      <h2>
+                        {panel === "ci"
+                          ? "Scan in a CI pipeline"
+                          : "Upload an SBOM"}
+                      </h2>
+                      <button
+                        type="button"
+                        className="btn btn-link"
+                        onClick={() => setPanel(null)}
+                      >
                         Close
                       </button>
                     </div>
-                    {panel === "ci" ? <CiPanel admin={admin} /> : <SbomPanel admin={admin} />}
+                    {panel === "ci" ? (
+                      <CiPanel admin={admin} />
+                    ) : (
+                      <SbomPanel admin={admin} />
+                    )}
                   </section>
                 )}
               </section>

@@ -410,6 +410,12 @@ func (s *Server) createChannel(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	if cfg, err := s.jiraChannelConfig(r, req.Kind, req.Config); err != nil {
+		s.fail(w, r, err)
+		return
+	} else {
+		req.Config = cfg
+	}
 	if slackAppConfig(req.Config) {
 		s.fail(w, r, badRequest("Slack channels of the Stackurity app are added with Add to Slack (POST /integrations/slack/install)"))
 		return
@@ -486,6 +492,12 @@ func (s *Server) updateChannel(w http.ResponseWriter, r *http.Request) {
 	if err := s.validateChannel(cur.Kind, cfg, ref); err != nil {
 		s.fail(w, r, err)
 		return
+	}
+	if len(req.Config) > 0 {
+		if req.Config, err = s.jiraChannelConfig(r, cur.Kind, req.Config); err != nil {
+			s.fail(w, r, err)
+			return
+		}
 	}
 	if cur.Kind == notify.KindStackurityEmail && len(req.Config) > 0 {
 		if err := s.checkPlatformEmail(r, cfg); err != nil {

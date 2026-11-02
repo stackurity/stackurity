@@ -263,6 +263,11 @@ type ChannelConfig struct {
 	Labels            []string          `json:"labels,omitempty"`
 	Priorities        map[string]string `json:"priorities,omitempty"`         // P1..P4 -> Jira priority name
 	ResolveTransition string            `json:"resolve_transition,omitempty"` // e.g. Done; empty only comments
+	// Connect Jira (auth oauth): the connection whose tokens are used and
+	// the site (Atlassian cloud id); URL is then the site's address, for
+	// links. Auth is token (or empty) with an API token in secret_ref.
+	ConnectionID int64  `json:"connection_id,omitempty"`
+	CloudID      string `json:"cloud_id,omitempty"`
 
 	// pagerduty: the service region (us, the default, or eu) and the
 	// PagerDuty severity per priority (default P1 critical, P2 error, P3

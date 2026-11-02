@@ -59,6 +59,10 @@ type Dispatcher struct {
 	// TeamsApp is the Stackurity Teams app ("Add to Teams"); nil turns it
 	// off, and its channels fail with a note saying so.
 	TeamsApp *TeamsApp
+	// JiraApp is the Stackurity Atlassian app (Connect Jira); nil turns it
+	// off. Box seals the tokens of its connections (STACKURITY_SECRET_KEY).
+	JiraApp *JiraApp
+	Box     store.Sealer
 	// TrackerPoll is how often ServiceNow records of channels with
 	// sync_back are read back; zero means every 5 minutes.
 	TrackerPoll time.Duration

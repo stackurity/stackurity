@@ -1141,7 +1141,7 @@ How incidents become messages, the route `events` and the webhook format are in 
 
 **Who:** security
 
-What the server offers: `slack_app` (Add to Slack), `teams_app` (Add to Teams), `platform_email` (`enabled`; when enabled `from`, `max_recipients` and `quota` with `per_minute`, `per_hour`, `per_day`), `secrets` (stored secrets work) and `base_url`.
+What the server offers: `slack_app` (Add to Slack), `jira_app` (Connect Jira: the Atlassian app is configured, with `STACKURITY_BASE_URL` and stored secrets), `teams_app` (Add to Teams), `platform_email` (`enabled`; when enabled `from`, `max_recipients` and `quota` with `per_minute`, `per_hour`, `per_day`), `secrets` (stored secrets work) and `base_url`.
 
 ### `GET /channels`
 
@@ -1153,7 +1153,7 @@ Notification channels.
 
 **Who:** admin
 
-Creates a channel: email, email sent by Stackurity (`stackurity_email`, hosted only), Slack, Teams, webhook, Jira, PagerDuty (`pagerduty`) or ServiceNow (`servicenow`); configuration fields are listed in [install.md](install.md#notifications). Slack channels made with Add to Slack come from `POST /integrations/slack/oauth` instead, and Teams channels made with Add to Teams (`config.teams_app`) from the Teams app's messaging endpoint; neither can be created here.
+Creates a channel: email, email sent by Stackurity (`stackurity_email`, hosted only), Slack, Teams, webhook, Jira, PagerDuty (`pagerduty`) or ServiceNow (`servicenow`); configuration fields are listed in [install.md](install.md#notifications). Slack channels made with Add to Slack come from `POST /integrations/slack/oauth` instead, and Teams channels made with Add to Teams (`config.teams_app`) from the Teams app's messaging endpoint; neither can be created here. A Jira channel with Connect Jira has `config.auth` `oauth`, `connection_id` and `cloud_id` (a site of that connection of this organisation, 400 otherwise) and no `secret_ref`; its `url` is set from the site.
 
 ### `PATCH /channels/{id}`
 
@@ -1384,6 +1384,42 @@ What became of the caller's code: `status` `pending`, `expired`, `connected` (wi
 **Who:** Microsoft (a Bot Framework token for the app)
 
 The Teams app's messaging endpoint (the Azure Bot's **Messaging endpoint**). Every request needs `Authorization: Bearer` with a JWT the Bot Framework signed (RS256, a key endorsed for `msteams`), issued by `https://api.botframework.com` for the app's ID, current, whose `serviceurl` claim is the activity's `serviceUrl`: otherwise 401 before anything is read. A `serviceUrl` that is not a Teams Bot Connector host is refused with 403. A message with a code connects its channel (the bot answers in the thread); the app removed from a team (`conversationUpdate` with the bot in `membersRemoved`, `teamDeleted`, `installationUpdate` `remove`) or a channel deleted (`channelDeleted`) switches the matching Teams integrations off in every organisation with a note. 404 without the Teams app.
+
+### `POST /integrations/jira/install`
+
+**Who:** admin
+
+Starts Connect Jira: `{"return_to", "connection_id"}` (a dashboard path; `connection_id` to reconnect a connection of this organisation, 404 otherwise); answers `url`, Atlassian's consent page with a single-use state bound to the caller and organisation (10 minutes). 404 `not_configured` without the Atlassian app ([jira-app.md](jira-app.md)).
+
+### `POST /integrations/jira/oauth`
+
+**Who:** admin
+
+Finishes Connect Jira with `{"code", "state"}` from Atlassian's redirect to `/integrations/jira/oauth/callback`: the code is exchanged, the Jira sites the grant reaches are read, and the tokens are stored sealed. 201 (200 when reconnecting) with `connection`, `return_to` and `reconnected`. 400 `jira_state` for a state that is missing, unknown, used, expired (10 minutes) or someone else's, before Atlassian is called; 400 `jira_no_site` when the grant reaches no Jira site; 502 `jira_refused`. Audited as `jira_connection.create` or `jira_connection.reconnect`.
+
+### `GET /integrations/jira/connections`
+
+**Who:** admin
+
+The organisation's Connect Jira connections: `id`, `sites` (each `id`, the cloud id, `name` and `url`), `scopes`, `status` (`active`, or `reconnect_needed` after Atlassian refused the refresh token), `status_reason`, `connected_by`, `connected_at` and `refreshed_at`. Tokens are never returned.
+
+### `DELETE /integrations/jira/connections/{id}`
+
+**Who:** admin
+
+Disconnects: deletes the connection and its tokens, and switches off the Jira channels that use it with a note. Answers `channels_disabled` and `revoke_url` (Atlassian has no API to revoke a grant; the person removes the app from their Atlassian account there). Audited as `jira_connection.delete`.
+
+### `GET /integrations/jira/connections/{id}/projects`
+
+**Who:** admin
+
+The projects of one of the connection's sites (`?site=` the cloud id, optional `q`), each `key` and `name`, read from Jira with the connection, at most 500. 404 for a site or connection that is not this organisation's; 409 `jira_reconnect` when the connection needs reconnecting; 502 when Jira refuses.
+
+### `GET /integrations/jira/connections/{id}/projects/{key}`
+
+**Who:** admin
+
+A project's `issue_types` (`name`, `subtask`), `statuses` by issue type (`name`, `category`: `new`, `indeterminate` or `done`) and the site's `priorities`, to pick a channel's issue type, `resolve_transition` and `priorities`. `?site=` as above.
 
 ### `POST /integrations/slack/events`
 
