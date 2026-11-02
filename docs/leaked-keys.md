@@ -33,15 +33,15 @@ At most 20 leaks are reported from one file and 1,000 from one scan; files over 
 
 ## Severity and exposure
 
-On a server, a password in the application's own configuration file is where it belongs, so what matters is who else can read the file. The agent marks each leak with its exposure, and the severity follows from it:
+Keeping keys in a `.env` or other configuration file on the server, out of the code and the repository, is the right practice, so on a server what matters is who else can read the file. The agent marks each leak with its exposure, and the severity follows from it:
 
 | Where the key is | Exposure | Severity |
 |---|---|---|
 | A file under a directory the web server serves (a document root or alias in the Apache or nginx configuration) that it sends as it is, not as PHP: `.env`, `config.php.bak`, `.sql`, `.js` | `served` | critical |
-| A key with its own format (Stripe, AWS, GitHub, …) written into the application's files | none or `world_readable` | its own (above) |
-| A password in a configuration file every account on the host can read | `world_readable` | medium |
-| A password in a configuration file only its owner can read | none | low |
-| Anything committed to a repository | none | its own (above) |
+| A key with its own format (Stripe, AWS, GitHub, …) written into the application's code | none or `world_readable` | its own (above) |
+| Any key or password in a configuration file (`.env`, `wp-config.php`, `config/*.yml`) every account on the host can read | `world_readable` | medium |
+| Any key or password in a configuration file only its owner can read | none | low |
+| Anything committed to a repository, `.env` included | none | its own (above) |
 
 Only critical and high leaks raise an alert; medium and low ones are listed on the asset. The agent does not read the web server's deny rules: a `.env` under a document root is reported as served even if a rule blocks it, since one configuration change would expose it. Apache's default denial of `.ht*` files (`.htpasswd`) is assumed.
 

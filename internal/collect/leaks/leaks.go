@@ -62,20 +62,21 @@ func AtLeast(severity, min string) bool { return severityRank[severity] >= sever
 // Grade sets a leak's exposure and the severity that follows from it.
 //
 // A file the web server sends as it is can be downloaded by anyone, so
-// anything in it is critical. On a host, a password in the application's
-// own configuration file is where it belongs: it is recorded as low, so it
-// is listed but raises no alert; medium when every account on the host
-// can read the file (most web files are, mode 644, so this alone cannot
-// raise an alert either). A key with its own format (an AWS or Stripe
-// key) keeps its severity there: it is written into the application,
-// so it is in its repository too. In a repository every leak keeps its
-// severity: anyone who can read the repository has the value.
+// anything in it is critical. On a host, a configuration file (.env,
+// wp-config.php, config/*.yml) is where keys and passwords belong, kept
+// out of the code and the repository: whatever is in one is recorded as
+// low, so it is listed but raises no alert; medium when every account on
+// the host can read the file (most web files are, mode 644, so this alone
+// cannot raise an alert either). A key with its own format (an AWS or
+// Stripe key) written into code keeps its severity: it is in the
+// application's repository too. In a repository every leak keeps its
+// severity: anyone who can read the repository has the value, .env or not.
 func Grade(l *Leak, exposure string, onHost bool) {
 	l.Exposure = exposure
 	switch {
 	case exposure == model.ExposureServed:
 		l.Severity = critical
-	case onHost && (l.Rule == "password-assignment" || l.Rule == "database-url"):
+	case onHost && (configFile(l.Path) || l.Rule == "password-assignment" || l.Rule == "database-url"):
 		l.Severity = low
 		if exposure == model.ExposureWorldReadable {
 			l.Severity = medium

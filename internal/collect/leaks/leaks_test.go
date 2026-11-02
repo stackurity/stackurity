@@ -180,6 +180,29 @@ func TestOneLeakPerValue(t *testing.T) {
 	}
 }
 
+// A key in a server's .env is where it belongs; the same key committed to
+// a repository, written into code, or served by the web server is not.
+func TestGradeConfigFiles(t *testing.T) {
+	for _, tc := range []struct {
+		path, exposure string
+		onHost         bool
+		want           string
+	}{
+		{"/srv/blog/.env", "", true, "low"},
+		{"/srv/blog/.env", "world_readable", true, "medium"},
+		{"/srv/blog/config/services.yml", "", true, "low"},
+		{"/var/www/html/.env", "served", true, "critical"},
+		{"/srv/blog/src/ai.js", "", true, "critical"},
+		{".env", "", false, "critical"}, // committed
+	} {
+		l := Leak{Rule: "openai-key", Severity: "critical", Path: tc.path}
+		Grade(&l, tc.exposure, tc.onHost)
+		if l.Severity != tc.want {
+			t.Errorf("%+v: got %s", tc, l.Severity)
+		}
+	}
+}
+
 func TestGrade(t *testing.T) {
 	for _, tc := range []struct {
 		rule, severity, exposure string
@@ -196,7 +219,7 @@ func TestGrade(t *testing.T) {
 		{"google-api-key", "medium", "served", true, "critical"},          //
 		{"database-url", "high", "", true, "low"},                         //
 	} {
-		l := Leak{Rule: tc.rule, Severity: tc.severity}
+		l := Leak{Rule: tc.rule, Severity: tc.severity, Path: "/srv/app/src/billing.js"}
 		Grade(&l, tc.exposure, tc.onHost)
 		if l.Severity != tc.want || l.Exposure != tc.exposure {
 			t.Errorf("%+v: got %s, want %s", tc, l.Severity, tc.want)
