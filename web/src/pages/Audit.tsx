@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router";
 import { api, type AuditEvent, type List } from "../api";
+import { ProjectFilter } from "../components/AssetPicker";
 import { useLoad } from "../hooks";
 import { Table, type Column } from "../components/Table";
 import { EmptyState, ErrorBox, Loading, PageHeader, Pager, RelativeTime } from "../components/ui";
@@ -50,6 +51,7 @@ export function AuditPage() {
     <>
       <PageHeader help="admin-tools" title="Audit log" sub="Sign-ins and every change made through the API, newest first." />
       <div className="filters">
+        <ProjectFilter id="au-project" />
         <div className="field">
           <label htmlFor="au-type">Object type</label>
           <select

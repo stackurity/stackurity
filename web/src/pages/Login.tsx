@@ -6,6 +6,7 @@ import { Code, ErrorBox } from "../components/ui";
 import type { MfaSignInMethod } from "../api";
 import { MfaLoginStep, PasskeySignInButton } from "./TwoFactor";
 import { ForgotPasswordLink } from "./Password";
+import { SocialButtons } from "./Social";
 
 export function LoginPage() {
   const { refresh, state } = useAuth();
@@ -13,12 +14,16 @@ export function LoginPage() {
   // Servers before SAML send one provider without the list.
   const providers = sso ? (sso.providers ?? [sso]) : [];
   const signup = state.phase === "login" ? state.meta.signup : undefined;
+  // "Continue with Google / Microsoft / GitHub" (a hosted edition).
+  const social = state.phase === "login" ? state.meta.social : undefined;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const act = useAction();
-  // The password was right and the account has two-factor sign-in: the
-  // methods its second step offers.
-  const [mfa, setMfa] = useState<MfaSignInMethod[] | null>(null);
+  // The password was right and the account has two-factor sign-in, or a
+  // sign-in with a provider came back asking for the second step
+  // (?mfa=passkey,totp,recovery_code; "1" from servers before passkeys):
+  // the methods its second step offers.
+  const [mfa, setMfa] = useState<MfaSignInMethod[] | null>(() => mfaFromQuery(window.location.search));
   const passkeys = state.phase === "login" && Boolean(state.meta.passkeys);
   const discovery = state.phase === "login" && Boolean(state.meta.sso_discovery);
   const [ssoMode, setSSOMode] = useState(false);
@@ -65,7 +70,20 @@ export function LoginPage() {
     if (ok?.mfa_required) setMfa(ok.methods ?? ["totp", "recovery_code"]);
     else if (ok) await refresh();
   };
-  if (mfa) return <MfaLoginStep methods={mfa} onDone={refresh} onRestart={() => (setMfa(null), setPassword(""))} />;
+  const clearMfaQuery = () => {
+    if (window.location.search.includes("mfa=")) window.history.replaceState(null, "", window.location.pathname);
+  };
+  if (mfa)
+    return (
+      <MfaLoginStep
+        methods={mfa}
+        onDone={async () => {
+          clearMfaQuery();
+          await refresh();
+        }}
+        onRestart={() => (clearMfaQuery(), setMfa(null), setPassword(""))}
+      />
+    );
 
   return (
     <div className="center-screen">
@@ -77,6 +95,14 @@ export function LoginPage() {
           Sign in
         </h1>
         <ErrorBox error={act.error} title="Sign-in failed" />
+        {social && (
+          <>
+            <SocialButtons social={social} returnTo={window.location.pathname + window.location.search} />
+            <p className="muted small" style={{ textAlign: "center" }}>
+              or use an email and password
+            </p>
+          </>
+        )}
         {sso && (
           <>
             {/* A full-page navigation: the identity provider takes over from here. */}
@@ -209,4 +235,15 @@ export function SetupPage() {
       </form>
     </div>
   );
+}
+
+const MFA_SIGN_IN_METHODS: MfaSignInMethod[] = ["passkey", "totp", "email", "recovery_code"];
+
+/** The second step a sign-in with a provider continues to: ?mfa=passkey,totp,recovery_code, or ?mfa=1 (the app or a recovery code). */
+export function mfaFromQuery(search: string): MfaSignInMethod[] | null {
+  const v = new URLSearchParams(search).get("mfa");
+  if (!v) return null;
+  if (v === "1") return ["totp", "recovery_code"];
+  const ms = v.split(",").filter((m): m is MfaSignInMethod => (MFA_SIGN_IN_METHODS as string[]).includes(m));
+  return ms.length ? ms : null;
 }

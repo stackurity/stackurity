@@ -676,7 +676,7 @@ func TestInvitationEmail(t *testing.T) {
 	}
 	m := smtpd.data[0]
 	if !strings.Contains(m, "To: dev@x.io") || !strings.Contains(m, "Subject: You are invited to Default on Stackurity") ||
-		!strings.Contains(m, "https://stk.example/invite#inv_") || !strings.Contains(m, "the project Shop in Default, as engineer") ||
+		!strings.Contains(m, "https://stk.example/invite#inv_") || !strings.Contains(m, "invited you to Default with access to the project Shop (View and edit).") ||
 		strings.Contains(m, "ops@x.io") || strings.Contains(m, "—") {
 		t.Errorf("email:\n%s", m)
 	}

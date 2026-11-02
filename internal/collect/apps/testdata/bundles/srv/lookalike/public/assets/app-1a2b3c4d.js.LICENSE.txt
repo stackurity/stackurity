@@ -1,0 +1,6 @@
+/*! MyWidget v1.2.3 | (c) Example Ltd */
+
+/**
+ * @license
+ * Internal toolkit 2.0.0
+ */

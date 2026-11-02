@@ -497,6 +497,16 @@ func versionSource(inv store.InventoryProvenance) string {
 		} else if inv.Location != "" {
 			return "the version banner of " + inv.Location
 		}
+	case "bundle", "source-map", "flutter-build":
+		// Compiled front-end output: the signature that named the release.
+		if sig := inv.Evidence["signature"]; sig != "" && inv.Location != "" {
+			what := map[string]string{"bundle": "the compiled bundle", "source-map": "the source map", "flutter-build": "the Flutter web build file"}
+			from := fmt.Sprintf("the %s in %s %s", sig, what[inv.Evidence["source"]], inv.Location)
+			if inv.Confidence != "" && inv.Confidence != "confirmed" {
+				from += " (" + inv.Confidence + ")"
+			}
+			return from
+		}
 	}
 	if inv.Location != "" {
 		return inv.Location
