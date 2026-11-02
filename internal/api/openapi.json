@@ -8158,210 +8158,6 @@
     }
    }
   },
-  "/owner-rules": {
-   "get": {
-    "operationId": "get_owner-rules",
-    "summary": "Owner rules, most specific first",
-    "description": "Owner rules, most specific first\n\nRole: viewer",
-    "tags": [
-     "Projects and people"
-    ],
-    "x-stackurity-role": "viewer",
-    "parameters": [
-     {
-      "name": "asset_id",
-      "in": "query",
-      "required": false,
-      "description": "Rules that can apply to this asset",
-      "schema": {
-       "type": "integer"
-      }
-     },
-     {
-      "name": "project_id",
-      "in": "query",
-      "required": false,
-      "description": "Rules that can apply to this project",
-      "schema": {
-       "type": "integer"
-      }
-     }
-    ],
-    "responses": {
-     "2XX": {
-      "description": "Success",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
-     },
-     "4XX": {
-      "$ref": "#/components/responses/Error"
-     },
-     "5XX": {
-      "$ref": "#/components/responses/Error"
-     }
-    }
-   },
-   "post": {
-    "operationId": "post_owner-rules",
-    "summary": "Create an owner rule",
-    "description": "Create an owner rule\n\nRole: admin",
-    "tags": [
-     "Projects and people"
-    ],
-    "x-stackurity-role": "admin",
-    "requestBody": {
-     "required": true,
-     "content": {
-      "application/json": {
-       "schema": {
-        "type": "object"
-       }
-      }
-     }
-    },
-    "responses": {
-     "2XX": {
-      "description": "Success",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
-     },
-     "4XX": {
-      "$ref": "#/components/responses/Error"
-     },
-     "5XX": {
-      "$ref": "#/components/responses/Error"
-     }
-    }
-   }
-  },
-  "/owner-rules/apply": {
-   "post": {
-    "operationId": "post_owner-rules_apply",
-    "summary": "Preview or apply the owner rules to open issues",
-    "description": "Preview or apply the owner rules to open issues\n\nRole: admin",
-    "tags": [
-     "Projects and people"
-    ],
-    "x-stackurity-role": "admin",
-    "requestBody": {
-     "required": true,
-     "content": {
-      "application/json": {
-       "schema": {
-        "type": "object"
-       }
-      }
-     }
-    },
-    "responses": {
-     "2XX": {
-      "description": "Success",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
-     },
-     "4XX": {
-      "$ref": "#/components/responses/Error"
-     },
-     "5XX": {
-      "$ref": "#/components/responses/Error"
-     }
-    }
-   }
-  },
-  "/owner-rules/{id}": {
-   "put": {
-    "operationId": "put_owner-rules_id",
-    "summary": "Replace an owner rule",
-    "description": "Replace an owner rule\n\nRole: admin",
-    "tags": [
-     "Projects and people"
-    ],
-    "x-stackurity-role": "admin",
-    "parameters": [
-     {
-      "name": "id",
-      "in": "path",
-      "required": true,
-      "schema": {
-       "type": "string"
-      }
-     }
-    ],
-    "requestBody": {
-     "required": true,
-     "content": {
-      "application/json": {
-       "schema": {
-        "type": "object"
-       }
-      }
-     }
-    },
-    "responses": {
-     "2XX": {
-      "description": "Success",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
-     },
-     "4XX": {
-      "$ref": "#/components/responses/Error"
-     },
-     "5XX": {
-      "$ref": "#/components/responses/Error"
-     }
-    }
-   },
-   "delete": {
-    "operationId": "delete_owner-rules_id",
-    "summary": "Delete an owner rule",
-    "description": "Delete an owner rule\n\nRole: admin",
-    "tags": [
-     "Projects and people"
-    ],
-    "x-stackurity-role": "admin",
-    "parameters": [
-     {
-      "name": "id",
-      "in": "path",
-      "required": true,
-      "schema": {
-       "type": "string"
-      }
-     }
-    ],
-    "responses": {
-     "2XX": {
-      "description": "Success (usually 204 No Content)"
-     },
-     "4XX": {
-      "$ref": "#/components/responses/Error"
-     },
-     "5XX": {
-      "$ref": "#/components/responses/Error"
-     }
-    }
-   }
-  },
   "/tokens": {
    "get": {
     "operationId": "get_tokens",
@@ -9518,11 +9314,40 @@
     }
    }
   },
-  "/integrations/pagerduty/connect": {
+  "/integrations/gitlab": {
+   "get": {
+    "operationId": "get_integrations_gitlab",
+    "summary": "Connect GitLab status and connected groups",
+    "description": "`configured` (whether this server offers Connect GitLab; with `gitlab_url`) and `connections`, this organisation's connected GitLab groups with `group_path`, `credential_kind` (`group_token`, `oauth`, `none`), `credential_expires`, `webhook` (`active`, `not_permitted`, `none`), `status` (`active`, `needs_credential`, `expired`), `note` and the number of `projects`\n\nRole: engineer",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "engineer",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/gitlab/connect": {
    "post": {
-    "operationId": "post_integrations_pagerduty_connect",
-    "summary": "Start Connect PagerDuty",
-    "description": "`{\"return_to\"}` (a dashboard path). Answers `url`, PagerDuty's consent page asking for `services.read services.write`, with a PKCE S256 challenge and a state that works once, for 10 minutes, for the caller in this organisation. 404 `not_configured` without the PagerDuty app\n\nRole: admin",
+    "operationId": "post_integrations_gitlab_connect",
+    "summary": "Start Connect GitLab",
+    "description": "`{\"return_to\": \"/settings/integrations\"}`. Answers `url`, GitLab's consent page for the `api` scope with a single-use state bound to the caller and organisation (10 minutes). 404 `not_configured` without Connect GitLab; 409 `secrets_disabled` without STACKURITY_SECRET_KEY\n\nRole: admin",
     "tags": [
      "Integrations"
     ],
@@ -9557,11 +9382,11 @@
     }
    }
   },
-  "/integrations/pagerduty/oauth": {
+  "/integrations/gitlab/oauth": {
    "post": {
-    "operationId": "post_integrations_pagerduty_oauth",
-    "summary": "Exchange the PagerDuty code and list services",
-    "description": "`{\"code\", \"state\"}` from PagerDuty's redirect to `/integrations/pagerduty/oauth/callback`. 200: `session` (10 minutes, the caller only), `region` (`us` or `eu`), `return_to`, `services` and `more`. 400 `pagerduty_state` for a state that is unknown, used, expired or someone else's, before PagerDuty is called; 502 `pagerduty_scope` when a scope was not granted, 502 `pagerduty_refused` otherwise\n\nRole: admin",
+    "operationId": "post_integrations_gitlab_oauth",
+    "summary": "Finish an authorisation at GitLab",
+    "description": "`{\"state\", \"code\"}` from GitLab's redirect to `/integrations/gitlab/callback`. The state must be the caller's, in this organisation, unused and fresh (400 `gitlab_state`, before GitLab is called); the token must have exactly the scopes asked (400 `gitlab_scopes`). For Connect GitLab answers `pick` (single use, 10 minutes) and `groups` (`id`, `full_path`, `name`, `owner`); for a read-only authorisation 201 `connection`; for a cleanup `webhook_deleted`, `token_revoked`, `disconnected`\n\nRole: admin",
     "tags": [
      "Integrations"
     ],
@@ -9596,11 +9421,11 @@
     }
    }
   },
-  "/integrations/pagerduty/services": {
+  "/integrations/gitlab/connections": {
    "post": {
-    "operationId": "post_integrations_pagerduty_services",
-    "summary": "List the connected account's PagerDuty services",
-    "description": "`{\"session\", \"query\"}`: `services` and `more` (more than 1,000). 400 `pagerduty_state` for a session that is not the caller's or has expired\n\nRole: admin",
+    "operationId": "post_integrations_gitlab_connections",
+    "summary": "Connect a GitLab group",
+    "description": "`{\"pick\", \"group_id\"}`. The caller's GitLab account must be a member (Reporter or above) of the group (403 `gitlab_group`); a group connected elsewhere, or above or below one, is refused (409 `gitlab_group_taken`). 201: `connection`, `needs_readonly`, `notes`, `return_to`\n\nRole: admin",
     "tags": [
      "Integrations"
     ],
@@ -9635,15 +9460,25 @@
     }
    }
   },
-  "/integrations/pagerduty/finish": {
+  "/integrations/gitlab/connections/{id}/authorize": {
    "post": {
-    "operationId": "post_integrations_pagerduty_finish",
-    "summary": "Add the Stackurity integration to a PagerDuty service",
-    "description": "`{\"session\", \"service_id\"}`. Deletes the session and its token, adds an Events API v2 integration named Stackurity to the service and stores its routing key as the channel's secret (never returned). 201: `channel`, `return_to`, `service_name`; 200 with `reused` when the service already had a channel. 400 `pagerduty_state`; 502 `pagerduty_refused` with PagerDuty's reason\n\nRole: admin",
+    "operationId": "post_integrations_gitlab_connection_authorize",
+    "summary": "Authorise read-only access, or clean up on GitLab",
+    "description": "`{\"purpose\": \"readonly\" | \"cleanup\", \"return_to\"}`. Answers `url`, GitLab's consent page: `read_api read_repository` for readonly (the credential kept when a group access token is not allowed), `api` for cleanup (deletes the webhook and the group access token on GitLab, then disconnects)\n\nRole: admin",
     "tags": [
      "Integrations"
     ],
     "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
     "requestBody": {
      "required": true,
      "content": {
@@ -9674,15 +9509,104 @@
     }
    }
   },
-  "/integrations/pagerduty/cancel": {
+  "/integrations/gitlab/connections/{id}/sync": {
    "post": {
-    "operationId": "post_integrations_pagerduty_cancel",
-    "summary": "Cancel Connect PagerDuty",
-    "description": "`{\"session\"}`: deletes the session and its PagerDuty token. 204\n\nRole: admin",
+    "operationId": "post_integrations_gitlab_connection_sync",
+    "summary": "List a connected group's projects again",
+    "description": "Queues a listing of the group's projects on GitLab (202)\n\nRole: admin",
     "tags": [
      "Integrations"
     ],
     "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/gitlab/connections/{id}": {
+   "delete": {
+    "operationId": "delete_integrations_gitlab_connection",
+    "summary": "Disconnect a GitLab group",
+    "description": "Removes the connection (its sealed credential and webhook secret with it); its projects' integrations are switched off with a note, assets and history kept. Revokes the stored credential at GitLab where it can (`credential_revoked`); `webhook_left_on_gitlab` when the group webhook remains (use the cleanup authorisation to delete it)\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/gitlab/webhook/{id}": {
+   "post": {
+    "operationId": "post_integrations_gitlab_webhook",
+    "summary": "Connect GitLab webhook (verified by the connection's secret token)",
+    "description": "A connected group's webhook URL. 401 unless `X-Gitlab-Token` is the connection's secret token; 400 without `X-Gitlab-Event` or `X-Gitlab-Event-UUID`; a delivery already handled answers `{\"result\": \"duplicate\"}`. A `Push Hook` to a project's default branch that changes a lockfile or manifest queues its scan; other events list the group again; 404 without Connect GitLab\n\nRole: none: GitLab's secret token (the connection's)",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "none: GitLab's secret token (the connection's)",
+    "security": [],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
     "requestBody": {
      "required": true,
      "content": {
@@ -10741,6 +10665,383 @@
        "application/octet-stream": {
         "schema": {
          "type": "string"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/jira/install": {
+   "post": {
+    "operationId": "post_integrations_jira_install",
+    "summary": "Start Connect Jira",
+    "description": "`{\"return_to\": \"/settings/integrations\", \"connection_id\": 0}` (a dashboard path; `connection_id` to reconnect a connection of this organisation). Answers `url`, Atlassian's consent page with a single-use state bound to the caller and organisation (10 minutes). 404 `not_configured` without the Stackurity Atlassian app (STACKURITY_JIRA_CLIENT_ID, STACKURITY_JIRA_CLIENT_SECRET)\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/jira/oauth": {
+   "post": {
+    "operationId": "post_integrations_jira_oauth",
+    "summary": "Finish Connect Jira",
+    "description": "`{\"code\", \"state\"}` from Atlassian's redirect to `/integrations/jira/oauth/callback`. The state must be the caller's, in this organisation, unused and fresh (400 `jira_state` otherwise, before Atlassian is called). Stores the grant sealed and answers `connection` (its Jira sites, never the tokens), `return_to` and `reconnected` (201 new, 200 reconnected); 400 `jira_no_site`; 502 `jira_refused`\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/jira/connections": {
+   "get": {
+    "operationId": "get_integrations_jira_connections",
+    "summary": "List Jira connections",
+    "description": "Connect Jira connections of this organisation: `id`, `sites` (`id` the cloud id, `name`, `url`), `scopes`, `status` (`active` or `reconnect_needed`), `status_reason`, `connected_by`, `connected_at`, `refreshed_at`. Tokens are never returned\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/jira/connections/{id}": {
+   "delete": {
+    "operationId": "delete_integrations_jira_connections_id",
+    "summary": "Disconnect Jira",
+    "description": "Deletes the connection and its tokens; the Jira channels using it are switched off with a note (`channels_disabled`). Atlassian has no API to revoke a grant: `revoke_url` is where the person removes the app from their Atlassian account\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/jira/connections/{id}/projects": {
+   "get": {
+    "operationId": "get_integrations_jira_connections_id_projects",
+    "summary": "List a Jira site's projects",
+    "description": "The projects of a site of the connection (`key`, `name`), read with its token, for setting up a channel. 409 `jira_reconnect` when the connection needs reconnecting; 502 when Jira refuses\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "site",
+      "in": "query",
+      "required": true,
+      "description": "The site's cloud id",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "q",
+      "in": "query",
+      "required": false,
+      "description": "Text the key or name contains",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/jira/connections/{id}/projects/{key}": {
+   "get": {
+    "operationId": "get_integrations_jira_connections_id_projects_key",
+    "summary": "Read a Jira project's issue types and statuses",
+    "description": "`issue_types` (`name`, `subtask`), `statuses` by issue type (`name`, `category`: new, indeterminate or done) and the site's `priorities`, for setting up a channel\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "key",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "site",
+      "in": "query",
+      "required": true,
+      "description": "The site's cloud id",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/teams/install": {
+   "post": {
+    "operationId": "post_integrations_teams_install",
+    "summary": "Start Add to Teams",
+    "description": "Answers `id`, `code` (single use, 15 minutes, for the caller in this organisation; their earlier unused code stops working), `expires_at` and `install_url` (opens the app in Teams). Sending the code to the bot in a Teams channel connects that channel. 404 `not_configured` without the Stackurity Teams app (STACKURITY_TEAMS_APP_ID, ...)\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/teams/install/{id}": {
+   "get": {
+    "operationId": "get_integrations_teams_install_id",
+    "summary": "What became of an Add to Teams code",
+    "description": "`status` `pending`, `expired`, `connected` (with `channel`) or `failed`, and `expires_at`. 404 for another person's code\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/teams/messages": {
+   "post": {
+    "operationId": "post_integrations_teams_messages",
+    "summary": "The Teams app's messaging endpoint (verified by a Bot Framework JWT)",
+    "description": "Bot Framework activities from Microsoft Teams. Every request needs `Authorization: Bearer` with a JWT the Bot Framework signed (RS256, a key endorsed for `msteams`), issued by `https://api.botframework.com` for the app's ID, current, whose `serviceurl` claim is the activity's `serviceUrl`; otherwise 401. 403 for a `serviceUrl` that is not a Teams Bot Connector host. A message with an Add to Teams code connects its channel; the app removed from a team or a channel deleted switches the matching integrations off. 404 without the app\n\nRole: none: a Bot Framework token for the app",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "none: a Bot Framework token for the app",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
         }
        }
       }
@@ -12054,186 +12355,32 @@
     }
    }
   },
-  "/integrations/jira/install": {
-   "post": {
-    "operationId": "post_integrations_jira_install",
-    "summary": "Start Connect Jira",
-    "description": "`{\"return_to\": \"/settings/integrations\", \"connection_id\": 0}` (a dashboard path; `connection_id` to reconnect a connection of this organisation). Answers `url`, Atlassian's consent page with a single-use state bound to the caller and organisation (10 minutes). 404 `not_configured` without the Stackurity Atlassian app (STACKURITY_JIRA_CLIENT_ID, STACKURITY_JIRA_CLIENT_SECRET)\n\nRole: admin",
-    "tags": [
-     "Integrations"
-    ],
-    "x-stackurity-role": "admin",
-    "requestBody": {
-     "required": true,
-     "content": {
-      "application/json": {
-       "schema": {
-        "type": "object"
-       }
-      }
-     }
-    },
-    "responses": {
-     "2XX": {
-      "description": "Success",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
-     },
-     "4XX": {
-      "$ref": "#/components/responses/Error"
-     },
-     "5XX": {
-      "$ref": "#/components/responses/Error"
-     }
-    }
-   }
-  },
-  "/integrations/jira/oauth": {
-   "post": {
-    "operationId": "post_integrations_jira_oauth",
-    "summary": "Finish Connect Jira",
-    "description": "`{\"code\", \"state\"}` from Atlassian's redirect to `/integrations/jira/oauth/callback`. The state must be the caller's, in this organisation, unused and fresh (400 `jira_state` otherwise, before Atlassian is called). Stores the grant sealed and answers `connection` (its Jira sites, never the tokens), `return_to` and `reconnected` (201 new, 200 reconnected); 400 `jira_no_site`; 502 `jira_refused`\n\nRole: admin",
-    "tags": [
-     "Integrations"
-    ],
-    "x-stackurity-role": "admin",
-    "requestBody": {
-     "required": true,
-     "content": {
-      "application/json": {
-       "schema": {
-        "type": "object"
-       }
-      }
-     }
-    },
-    "responses": {
-     "2XX": {
-      "description": "Success",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
-     },
-     "4XX": {
-      "$ref": "#/components/responses/Error"
-     },
-     "5XX": {
-      "$ref": "#/components/responses/Error"
-     }
-    }
-   }
-  },
-  "/integrations/jira/connections": {
+  "/owner-rules": {
    "get": {
-    "operationId": "get_integrations_jira_connections",
-    "summary": "List Jira connections",
-    "description": "Connect Jira connections of this organisation: `id`, `sites` (`id` the cloud id, `name`, `url`), `scopes`, `status` (`active` or `reconnect_needed`), `status_reason`, `connected_by`, `connected_at`, `refreshed_at`. Tokens are never returned\n\nRole: admin",
+    "operationId": "get_owner-rules",
+    "summary": "Owner rules, most specific first",
+    "description": "Owner rules, most specific first\n\nRole: viewer",
     "tags": [
-     "Integrations"
+     "Projects and people"
     ],
-    "x-stackurity-role": "admin",
-    "responses": {
-     "2XX": {
-      "description": "Success",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
-     },
-     "4XX": {
-      "$ref": "#/components/responses/Error"
-     },
-     "5XX": {
-      "$ref": "#/components/responses/Error"
-     }
-    }
-   }
-  },
-  "/integrations/jira/connections/{id}": {
-   "delete": {
-    "operationId": "delete_integrations_jira_connections_id",
-    "summary": "Disconnect Jira",
-    "description": "Deletes the connection and its tokens; the Jira channels using it are switched off with a note (`channels_disabled`). Atlassian has no API to revoke a grant: `revoke_url` is where the person removes the app from their Atlassian account\n\nRole: admin",
-    "tags": [
-     "Integrations"
-    ],
-    "x-stackurity-role": "admin",
+    "x-stackurity-role": "viewer",
     "parameters": [
      {
-      "name": "id",
-      "in": "path",
-      "required": true,
-      "schema": {
-       "type": "string"
-      }
-     }
-    ],
-    "responses": {
-     "2XX": {
-      "description": "Success",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
-     },
-     "4XX": {
-      "$ref": "#/components/responses/Error"
-     },
-     "5XX": {
-      "$ref": "#/components/responses/Error"
-     }
-    }
-   }
-  },
-  "/integrations/jira/connections/{id}/projects": {
-   "get": {
-    "operationId": "get_integrations_jira_connections_id_projects",
-    "summary": "List a Jira site's projects",
-    "description": "The projects of a site of the connection (`key`, `name`), read with its token, for setting up a channel. 409 `jira_reconnect` when the connection needs reconnecting; 502 when Jira refuses\n\nRole: admin",
-    "tags": [
-     "Integrations"
-    ],
-    "x-stackurity-role": "admin",
-    "parameters": [
-     {
-      "name": "id",
-      "in": "path",
-      "required": true,
-      "schema": {
-       "type": "string"
-      }
-     },
-     {
-      "name": "site",
-      "in": "query",
-      "required": true,
-      "description": "The site's cloud id",
-      "schema": {
-       "type": "string"
-      }
-     },
-     {
-      "name": "q",
+      "name": "asset_id",
       "in": "query",
       "required": false,
-      "description": "Text the key or name contains",
+      "description": "Rules that can apply to this asset",
       "schema": {
-       "type": "string"
+       "type": "integer"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "query",
+      "required": false,
+      "description": "Rules that can apply to this project",
+      "schema": {
+       "type": "integer"
       }
      }
     ],
@@ -12255,15 +12402,91 @@
       "$ref": "#/components/responses/Error"
      }
     }
+   },
+   "post": {
+    "operationId": "post_owner-rules",
+    "summary": "Create an owner rule",
+    "description": "Create an owner rule\n\nRole: admin",
+    "tags": [
+     "Projects and people"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
    }
   },
-  "/integrations/jira/connections/{id}/projects/{key}": {
-   "get": {
-    "operationId": "get_integrations_jira_connections_id_projects_key",
-    "summary": "Read a Jira project's issue types and statuses",
-    "description": "`issue_types` (`name`, `subtask`), `statuses` by issue type (`name`, `category`: new, indeterminate or done) and the site's `priorities`, for setting up a channel\n\nRole: admin",
+  "/owner-rules/apply": {
+   "post": {
+    "operationId": "post_owner-rules_apply",
+    "summary": "Preview or apply the owner rules to open issues",
+    "description": "Preview or apply the owner rules to open issues\n\nRole: admin",
     "tags": [
-     "Integrations"
+     "Projects and people"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/owner-rules/{id}": {
+   "put": {
+    "operationId": "put_owner-rules_id",
+    "summary": "Replace an owner rule",
+    "description": "Replace an owner rule\n\nRole: admin",
+    "tags": [
+     "Projects and people"
     ],
     "x-stackurity-role": "admin",
     "parameters": [
@@ -12274,25 +12497,18 @@
       "schema": {
        "type": "string"
       }
-     },
-     {
-      "name": "key",
-      "in": "path",
-      "required": true,
-      "schema": {
-       "type": "string"
-      }
-     },
-     {
-      "name": "site",
-      "in": "query",
-      "required": true,
-      "description": "The site's cloud id",
-      "schema": {
-       "type": "string"
-      }
      }
     ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
     "responses": {
      "2XX": {
       "description": "Success",
@@ -12311,13 +12527,43 @@
       "$ref": "#/components/responses/Error"
      }
     }
+   },
+   "delete": {
+    "operationId": "delete_owner-rules_id",
+    "summary": "Delete an owner rule",
+    "description": "Delete an owner rule\n\nRole: admin",
+    "tags": [
+     "Projects and people"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
    }
   },
-  "/integrations/teams/install": {
+  "/integrations/pagerduty/connect": {
    "post": {
-    "operationId": "post_integrations_teams_install",
-    "summary": "Start Add to Teams",
-    "description": "Answers `id`, `code` (single use, 15 minutes, for the caller in this organisation; their earlier unused code stops working), `expires_at` and `install_url` (opens the app in Teams). Sending the code to the bot in a Teams channel connects that channel. 404 `not_configured` without the Stackurity Teams app (STACKURITY_TEAMS_APP_ID, ...)\n\nRole: admin",
+    "operationId": "post_integrations_pagerduty_connect",
+    "summary": "Start Connect PagerDuty",
+    "description": "`{\"return_to\"}` (a dashboard path). Answers `url`, PagerDuty's consent page asking for `services.read services.write`, with a PKCE S256 challenge and a state that works once, for 10 minutes, for the caller in this organisation. 404 `not_configured` without the PagerDuty app\n\nRole: admin",
     "tags": [
      "Integrations"
     ],
@@ -12352,25 +12598,25 @@
     }
    }
   },
-  "/integrations/teams/install/{id}": {
-   "get": {
-    "operationId": "get_integrations_teams_install_id",
-    "summary": "What became of an Add to Teams code",
-    "description": "`status` `pending`, `expired`, `connected` (with `channel`) or `failed`, and `expires_at`. 404 for another person's code\n\nRole: admin",
+  "/integrations/pagerduty/oauth": {
+   "post": {
+    "operationId": "post_integrations_pagerduty_oauth",
+    "summary": "Exchange the PagerDuty code and list services",
+    "description": "`{\"code\", \"state\"}` from PagerDuty's redirect to `/integrations/pagerduty/oauth/callback`. 200: `session` (10 minutes, the caller only), `region` (`us` or `eu`), `return_to`, `services` and `more`. 400 `pagerduty_state` for a state that is unknown, used, expired or someone else's, before PagerDuty is called; 502 `pagerduty_scope` when a scope was not granted, 502 `pagerduty_refused` otherwise\n\nRole: admin",
     "tags": [
      "Integrations"
     ],
     "x-stackurity-role": "admin",
-    "parameters": [
-     {
-      "name": "id",
-      "in": "path",
-      "required": true,
-      "schema": {
-       "type": "string"
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
       }
      }
-    ],
+    },
     "responses": {
      "2XX": {
       "description": "Success",
@@ -12391,16 +12637,93 @@
     }
    }
   },
-  "/integrations/teams/messages": {
+  "/integrations/pagerduty/services": {
    "post": {
-    "operationId": "post_integrations_teams_messages",
-    "summary": "The Teams app's messaging endpoint (verified by a Bot Framework JWT)",
-    "description": "Bot Framework activities from Microsoft Teams. Every request needs `Authorization: Bearer` with a JWT the Bot Framework signed (RS256, a key endorsed for `msteams`), issued by `https://api.botframework.com` for the app's ID, current, whose `serviceurl` claim is the activity's `serviceUrl`; otherwise 401. 403 for a `serviceUrl` that is not a Teams Bot Connector host. A message with an Add to Teams code connects its channel; the app removed from a team or a channel deleted switches the matching integrations off. 404 without the app\n\nRole: none: a Bot Framework token for the app",
+    "operationId": "post_integrations_pagerduty_services",
+    "summary": "List the connected account's PagerDuty services",
+    "description": "`{\"session\", \"query\"}`: `services` and `more` (more than 1,000). 400 `pagerduty_state` for a session that is not the caller's or has expired\n\nRole: admin",
     "tags": [
      "Integrations"
     ],
-    "x-stackurity-role": "none: a Bot Framework token for the app",
-    "security": [],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/pagerduty/finish": {
+   "post": {
+    "operationId": "post_integrations_pagerduty_finish",
+    "summary": "Add the Stackurity integration to a PagerDuty service",
+    "description": "`{\"session\", \"service_id\"}`. Deletes the session and its token, adds an Events API v2 integration named Stackurity to the service and stores its routing key as the channel's secret (never returned). 201: `channel`, `return_to`, `service_name`; 200 with `reused` when the service already had a channel. 400 `pagerduty_state`; 502 `pagerduty_refused` with PagerDuty's reason\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/pagerduty/cancel": {
+   "post": {
+    "operationId": "post_integrations_pagerduty_cancel",
+    "summary": "Cancel Connect PagerDuty",
+    "description": "`{\"session\"}`: deletes the session and its PagerDuty token. 204\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
     "requestBody": {
      "required": true,
      "content": {

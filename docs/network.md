@@ -7,6 +7,7 @@ Started with nothing configured but its database, an empty install connects on i
 | Component | Destination | When | Data sent |
 |---|---|---|---|
 | Server: Git integrations | The repository URL you configure (HTTPS only) | On the integration's schedule, or when someone clicks *Run now* | A Git fetch request, plus the referenced token as an HTTP Basic header |
+| Server: Connect GitLab (only with `STACKURITY_GITLAB_CLIENT_ID` and `_CLIENT_SECRET` set; [gitlab.md](gitlab.md)) | `gitlab.com`, or your GitLab (`STACKURITY_GITLAB_URL`) | When an admin connects, authorises or disconnects a group (OAuth code exchange, listing their groups, reading their membership, creating a group access token and a group webhook, revoking tokens); when listing a group's projects (after connecting, on a webhook, and daily); when refreshing a read-only OAuth credential; for each scan of a project | OAuth client credentials and codes, the connection's read-only token, and a Git fetch of the project with that token as an HTTP Basic header. Requests are checked against the organisation's private-network policy like a Git integration's, and no connection is kept open for reuse |
 | Server: GitHub App (only with `STACKURITY_GITHUB_APP_ID` and the rest set; [github-app.md](github-app.md)) | `api.github.com` and `github.com` (or your GitHub Enterprise Server, `STACKURITY_GITHUB_URL`) | At install (OAuth code exchange, `GET /user/installations`, `GET /app/installations/{id}`, revoking the user token); when listing an installation's repositories (after install or a webhook, and daily); for each scan of a granted repository; when an admin disconnects (uninstall) | The app's JWT, a short-lived installation token minted per scan, and a Git fetch of the granted repository with that token as an HTTP Basic header. Requests are checked against the organisation's private-network policy like a Git integration's |
 | Agent | Your Stackurity server | Every `--interval` | Hostname, machine-id, OS release, installed package list |
 | CLI `scan` / `sbom import` | Your Stackurity server | When run | Lockfile-derived component list, or the SBOM document |
@@ -168,6 +169,10 @@ With the Teams app configured, Microsoft's Bot Framework sends the bot's activit
 ### Inbound: GitHub App webhooks
 
 With the [GitHub App](github-app.md) configured, GitHub posts the app's events (installed, suspended, uninstalled, repositories added or removed, pushes) to `POST /api/v1/integrations/github/webhook`, from GitHub's addresses. Each is verified with the app's webhook secret (HMAC-SHA256 of the exact body) before anything else is read, and handled once. Without the app the path answers 404. To allow it through a firewall or reverse proxy, allow that one path from the internet (and `/integrations/github/callback`, a dashboard page opened in the browser). It is limited to 1,200 requests a minute per address.
+
+### Inbound: Connect GitLab webhooks
+
+With [Connect GitLab](gitlab.md), a connected group's webhook (created by Stackurity where GitLab allows) posts push and project events to `POST /api/v1/integrations/gitlab/webhook/{id}`, from your GitLab's addresses. Each is checked against that connection's secret token (`X-Gitlab-Token`) before anything else is read, and handled once. Without Connect GitLab the path answers 404. To allow it through a firewall or reverse proxy, allow that path from GitLab (and `/integrations/gitlab/callback`, a dashboard page opened in the browser). It is limited to 1,200 requests a minute per address.
 
 ### Inbound: AI assistants
 

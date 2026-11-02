@@ -1501,6 +1501,54 @@ A project's `issue_types` (`name`, `subtask`), `statuses` by issue type (`name`,
 
 The Slack app's Event Subscriptions URL: `url_verification`, and `app_uninstalled` or `tokens_revoked`, which switch that Slack workspace's app channels off in every organisation and delete their webhooks and tokens.
 
+### `GET /integrations/gitlab`
+
+**Who:** engineer
+
+Connect GitLab ([gitlab.md](gitlab.md)): `configured` (whether this server offers it; when it does, `gitlab_url`) and `connections`, this organisation's connected GitLab groups (`id`, `group_id`, `group_path`, `group_name`, `credential_kind`: `group_token`, `oauth` or `none`, `credential_expires`, `webhook`: `active`, `not_permitted` or `none`, `status`: `active`, `needs_credential` or `expired`, `note`, `connected_by`, `connected_at`, `updated_at`, `last_sync`, `projects`). Each project is an integration of kind `gitlab` in `GET /integrations`.
+
+### `POST /integrations/gitlab/connect`
+
+**Who:** admin
+
+Starts Connect GitLab: `{"return_to"}` (a dashboard path); answers `url`, GitLab's consent page for the `api` scope with a single-use state bound to the caller and organisation (10 minutes). 404 `not_configured` without Connect GitLab; 409 `secrets_disabled` without `STACKURITY_SECRET_KEY`.
+
+### `POST /integrations/gitlab/oauth`
+
+**Who:** admin
+
+Finishes an authorisation at GitLab with `{"state", "code"}` from GitLab's redirect to `/integrations/gitlab/callback`. 400 `gitlab_state` for a state that is missing, unknown, used, expired or someone else's, before GitLab is called; 400 `gitlab_scopes` when GitLab granted other scopes than asked (the token is revoked); 502 `gitlab_refused`. What follows depends on how the authorisation was started: for Connect GitLab, 200 with `pick` (single use, the caller's, 10 minutes) and `groups` the caller is a Reporter or above of (`id`, `full_path`, `name`, `owner`), or 404 `gitlab_no_groups`; for `readonly`, 201 with `connection` once the caller is shown to be a member of the group (403 `gitlab_group` otherwise); for `cleanup`, 200 with `webhook_deleted`, `token_revoked` and `disconnected`. Audited as `gitlab.authorize` or `gitlab.disconnect`.
+
+### `POST /integrations/gitlab/connections`
+
+**Who:** admin
+
+Connects a GitLab group: `{"pick", "group_id"}`. 400 `gitlab_state` for a pick that is unknown, used, expired or someone else's. The `group_id` is not trusted: 403 `gitlab_group` unless the caller's GitLab account is a Reporter or above in it; 409 `gitlab_group_taken` when it, or a group above or below it, is connected to another organisation. As the group's Owner, a group access token (`read_api`, `read_repository`, Reporter, under a year) and a push webhook are created where GitLab allows. 201 with `connection`, `needs_readonly` (no group access token: start `POST /integrations/gitlab/connections/{id}/authorize` with `readonly`), `notes` and `return_to`. The caller's GitLab token is revoked. Audited as `gitlab.connect` (or `gitlab.refused`).
+
+### `POST /integrations/gitlab/connections/{id}/authorize`
+
+**Who:** admin
+
+`{"purpose", "return_to"}`: `readonly` (GitLab's consent for `read_api read_repository`, kept sealed and refreshed when a group access token is not allowed) or `cleanup` (consent for `api`, used once to delete the group webhook and group access token on GitLab, then disconnect). Answers `url`.
+
+### `POST /integrations/gitlab/connections/{id}/sync`
+
+**Who:** admin
+
+Lists the group's projects on GitLab again now: 202. Audited as `gitlab.sync`.
+
+### `DELETE /integrations/gitlab/connections/{id}`
+
+**Who:** admin
+
+Disconnects the group here: the connection, its sealed credential and its webhook secret are deleted, and its projects' integrations are switched off with a note (assets and history kept). The stored credential is revoked at GitLab where it can be (`credential_revoked`); `webhook_left_on_gitlab` is true when the group webhook remains on GitLab (deleting it needs the group's Owner: use `cleanup`). Audited as `gitlab.disconnect`.
+
+### `POST /integrations/gitlab/webhook/{id}`
+
+**Who:** GitLab (the connection's secret token)
+
+A connected group's webhook URL: `X-Gitlab-Token` must be the connection's secret token (compared in constant time with its stored SHA-256), else 401; `X-Gitlab-Event` and `X-Gitlab-Event-UUID` are required. A delivery already handled (the same UUID or the same body) answers 200 `{"result": "duplicate"}`. A `Push Hook` to a project's default branch that changes a lockfile or manifest queues its scan; a push for a project not yet known, and other events (project created or deleted), list the group again. 404 without Connect GitLab.
+
 ### `GET /integrations/github`
 
 **Who:** engineer
