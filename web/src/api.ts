@@ -50,6 +50,8 @@ export interface Meta {
   version: string;
   api: string;
   setup_required: boolean;
+  /** The aud a CI job's ID token needs (keyless CI scans); absent when the server has no public URL. */
+  ci_audience?: string;
   /** Present when single sign-on is configured: the first provider, and
    *  every provider (OpenID Connect, SAML) in providers. */
   sso?: { label: string; login_url: string; providers?: SSOProvider[] };
@@ -63,6 +65,45 @@ export interface Meta {
   sso_discovery?: boolean;
   /** True when this server sends product updates or vulnerability news, so people have email preferences (a hosted edition). */
   email_preferences?: boolean;
+  /** Present when people can sign up and sign in with Google, Microsoft or GitHub (a hosted edition): only configured providers. */
+  social?: SocialMeta;
+}
+
+export interface SocialProviderMeta {
+  id: "google" | "microsoft" | "github";
+  label: string;
+  /** A full-page navigation to the provider. */
+  start_url: string;
+}
+
+export interface SocialMeta {
+  providers: SocialProviderMeta[];
+  /** Where a GitHub sign-up continues to choose repositories (the GitHub App's installation page); absent without the app. */
+  github_install_url?: string;
+}
+
+/** Who the provider vouched for, on the page that finishes a sign-up through it. */
+export interface SocialSignupPreview {
+  provider: string;
+  provider_label: string;
+  email: string;
+  name: string;
+  login?: string;
+  /** People at this domain already use the service (not a free mail provider). */
+  colleagues_domain?: string;
+}
+
+/** One way to sign in to your account through a provider. */
+export interface SocialConnection {
+  id: string;
+  label: string;
+  connected: boolean;
+  email?: string;
+  login?: string;
+  created_at?: string;
+  last_used_at?: string | null;
+  /** Connected at a provider this server no longer offers. */
+  unavailable?: boolean;
 }
 
 export interface SignupMeta {
@@ -124,6 +165,13 @@ export interface User {
   access?: Access;
   /** Two-factor sign-in is on for this account. */
   mfa_enabled?: boolean;
+  /** Contact information on the membership in this workspace; may be empty. */
+  phone?: string;
+  /** Their own grants in this workspace (not their teams'). */
+  project_grants?: number;
+  asset_grants?: number;
+  /** Their teams that can see something: access through team membership. */
+  access_teams?: string[] | null;
 }
 
 /** How a member reaches a workspace's data. */
@@ -140,6 +188,32 @@ export interface Membership {
 }
 
 /** A named group of assets. One asset can be in several projects. */
+/** A CI trust: a CI provider's ID tokens for a repository are exchanged for a 15-minute collector token. */
+export interface CITrust {
+  id: number;
+  name: string;
+  provider: "github" | "gitlab";
+  issuer: string;
+  /** owner/name, or owner/* when owner_wildcard. */
+  repository: string;
+  owner_wildcard: boolean;
+  ref: string;
+  environment: string;
+  workflow_ref: string;
+  project_id: number | null;
+  owner_id: string;
+  created_by_name: string;
+  created_at: string;
+  last_used_at: string | null;
+}
+
+export interface CITrustList {
+  items: CITrust[];
+  /** The aud tokens must carry; empty when the server has no public URL. */
+  audience: string;
+  server: string;
+}
+
 export interface Project {
   id: number;
   name: string;
@@ -454,6 +528,8 @@ export interface Me {
   password_change_required?: boolean;
   /** Set when the session's workspace requires its own single sign-on, which this session did not use; workspace is then null. */
   sso_required?: SSORequired;
+  /** People join by invitation only (Stackurity Cloud): Add user is refused, Invite is offered. */
+  invite_only?: boolean;
 }
 
 export interface SSORequired {
@@ -776,6 +852,31 @@ export interface DashboardTrend {
   fixed: { start: string; end: string; fixed: number }[];
 }
 
+/** One connection, API token or stored secret on the Dashboard's credentials block. */
+export interface CredentialItem {
+  kind: "integration" | "channel" | "aws" | "token" | "secret";
+  id?: number;
+  name: string;
+  detail: string;
+  at?: string;
+}
+
+export interface CredentialGroup {
+  total: number;
+  items: CredentialItem[];
+}
+
+/** GET /credentials/health (admin). */
+export interface CredentialHealth {
+  failing: CredentialGroup;
+  expiring: CredentialGroup;
+  unused: CredentialGroup;
+  old: CredentialGroup;
+  expiring_days: number;
+  unused_days: number;
+  old_days: number;
+}
+
 export type UncheckedReason = "unreadable_version" | "other" | "unreadable_files" | "unsupported" | "waiting_for_data" | "no_advisories";
 export type UncheckedActor = "user" | "stackurity" | "automatic" | "none";
 
@@ -998,7 +1099,10 @@ export interface Team {
   email: string;
   created_at: string;
   members: number[] | null;
+  /** Assets whose owner team this is: alerts route to it; it gives no access. */
   asset_count: number;
+  /** What its members see through it ("Can see"). */
+  access?: InvitationGrant[];
 }
 
 export interface ConflictAsset {
@@ -1074,11 +1178,76 @@ export interface PluginIntegrationConfig {
   config?: Record<string, unknown>;
 }
 
-export const INTEGRATION_KINDS = ["git_repository", "container_image", "plugin"] as const;
+export type RegistryProvider = "ghcr" | "dockerhub" | "ecr" | "oci";
+
+/** A connected container registry (kind container_registry). */
+export interface ContainerRegistryConfig {
+  provider: RegistryProvider;
+  namespace?: string;
+  url?: string;
+  auth_host?: string;
+  username?: string;
+  region?: string;
+  account_id?: string;
+  role_arn?: string;
+  external_id?: string;
+  aws_integration_id?: number;
+  repositories?: string[];
+  include?: string[];
+  exclude?: string[];
+  recent_tags?: number;
+  tag_patterns?: string[];
+  platform?: string;
+  environment?: string;
+  image_scans?: number;
+}
+
+/** POST /integrations/registry/discover */
+export interface RegistryDiscovery {
+  registry: string;
+  complete: boolean;
+  repositories: { name: string; included: boolean }[];
+}
+
+/** GET /integrations/{id}/images */
+export interface RegistryImage {
+  id: number;
+  repository: string;
+  digest: string;
+  image_ref: string;
+  tags: string[];
+  pushed_at: string | null;
+  asset_id: number | null;
+  tracked: boolean;
+  first_seen: string;
+  last_seen: string;
+  removed_at: string | null;
+}
+
+export const INTEGRATION_KINDS = ["git_repository", "container_image", "container_registry", "plugin"] as const;
 export type IntegrationKind = (typeof INTEGRATION_KINDS)[number];
 
 /** Union of the per-kind config objects; check `kind` before reading. */
-export type IntegrationConfig = Partial<GitRepoConfig> & Partial<ContainerImageConfig> & Partial<PluginIntegrationConfig>;
+/** A project of a connected GitLab group (kind gitlab); set by Connect GitLab, never edited. */
+export interface GitLabIntegrationConfig {
+  connection_id: number;
+  group_id: number;
+  project_id: number;
+  path_with_namespace: string;
+}
+
+/** A repository granted to the GitHub App (kind github_app); set by the app, never edited. */
+export interface GitHubAppIntegrationConfig {
+  installation_id: number;
+  repository_id: number;
+  full_name: string;
+}
+
+export type IntegrationConfig = Partial<GitRepoConfig> &
+  Partial<ContainerImageConfig> &
+  Partial<PluginIntegrationConfig> &
+  Partial<GitHubAppIntegrationConfig> &
+  Partial<Omit<ContainerRegistryConfig, "platform" | "environment" | "username">> & Partial<GitLabIntegrationConfig>;
 
 export interface Integration {
   id: number;
@@ -2122,6 +2291,10 @@ export interface ChannelConfig {
   labels?: string[];
   priorities?: Partial<Record<Priority, string>>;
   resolve_transition?: string;
+  // jira with Connect Jira (auth "oauth"): the connection and the site
+  // (cloud id); url is then the site's address.
+  connection_id?: number;
+  cloud_id?: string;
   // pagerduty: service region and severity per priority; the routing key is the secret.
   region?: "us" | "eu" | "";
   severities?: Partial<Record<Priority, "critical" | "error" | "warning" | "info">>;
@@ -2152,11 +2325,29 @@ export interface ChannelConfig {
   team_name?: string;
   slack_channel?: string;
   configuration_url?: string;
+  // pagerduty added with "Connect PagerDuty" (the Stackurity PagerDuty app)
+  pagerduty_app?: boolean;
+  pagerduty_service_id?: string;
+  pagerduty_service_name?: string;
+  pagerduty_integration_id?: string;
+  pagerduty_manage_url?: string;
+  // teams created with "Add to Teams" (the Stackurity Teams app)
+  teams_app?: boolean;
+  tenant_id?: string;
+  teams_team_id?: string;
+  teams_team_name?: string;
+  teams_channel_id?: string;
+  teams_channel?: string;
+  service_url?: string;
 }
 
 /** GET /notification-options: what this server offers. */
 export interface NotificationOptions {
   slack_app: boolean;
+  pagerduty_app: boolean;
+  teams_app: boolean;
+  /** Connect Jira (the Stackurity Atlassian app) is available. */
+  jira_app: boolean;
   platform_email: {
     enabled: boolean;
     from?: string;
@@ -2167,7 +2358,7 @@ export interface NotificationOptions {
   base_url: boolean;
 }
 
-export const NO_NOTIFICATION_OPTIONS: NotificationOptions = { slack_app: false, platform_email: { enabled: false }, secrets: false, base_url: false };
+export const NO_NOTIFICATION_OPTIONS: NotificationOptions = { slack_app: false, jira_app: false, teams_app: false, pagerduty_app: false, platform_email: { enabled: false }, secrets: false, base_url: false };
 
 /** Loads the options; a failure counts as nothing offered. */
 export function loadNotificationOptions(): Promise<NotificationOptions> {
@@ -2175,6 +2366,9 @@ export function loadNotificationOptions(): Promise<NotificationOptions> {
     .get<Partial<NotificationOptions>>("/notification-options")
     .then((o) => ({
       slack_app: Boolean(o?.slack_app),
+      pagerduty_app: Boolean(o?.pagerduty_app),
+      teams_app: Boolean(o?.teams_app),
+      jira_app: Boolean(o?.jira_app),
       platform_email: o?.platform_email?.enabled ? o.platform_email : { enabled: false },
       secrets: Boolean(o?.secrets),
       base_url: Boolean(o?.base_url),
@@ -2190,12 +2384,173 @@ export interface EmailRecipient {
   confirmed_at: string | null;
 }
 
+/** A service of the connected PagerDuty account. */
+export interface PagerDutyService {
+  id: string;
+  name: string;
+  description?: string;
+  status?: string;
+  html_url?: string;
+}
+
+/** POST /integrations/pagerduty/oauth */
+export interface PagerDutyOAuthResult {
+  session: string;
+  region: "us" | "eu";
+  return_to: string;
+  services: PagerDutyService[];
+  more: boolean;
+}
+
+/** POST /integrations/pagerduty/finish */
+export interface PagerDutyFinishResult {
+  channel: Channel;
+  return_to: string;
+  service_name: string;
+  reused: boolean;
+}
+
+/** POST /integrations/teams/install */
+export interface TeamsInstallStart {
+  id: number;
+  code: string;
+  expires_at: string;
+  install_url: string;
+}
+
+/** GET /integrations/teams/install/{id} */
+export interface TeamsInstallStatus {
+  status: "pending" | "connected" | "expired" | "failed";
+  expires_at: string;
+  channel?: Channel;
+}
+
+/** A Jira Cloud site a Connect Jira connection reaches. */
+export interface JiraSite {
+  /** The Atlassian cloud id. */
+  id: string;
+  name: string;
+  url: string;
+}
+
+/** GET /integrations/jira/connections: a Connect Jira grant (never its tokens). */
+export interface JiraConnection {
+  id: number;
+  sites: JiraSite[];
+  scopes: string;
+  status: "active" | "reconnect_needed";
+  status_reason: string;
+  connected_by: number | null;
+  connected_at: string;
+  refreshed_at: string | null;
+}
+
+/** POST /integrations/jira/oauth */
+export interface JiraOAuthResult {
+  connection: JiraConnection;
+  return_to: string;
+  reconnected: boolean;
+}
+
+/** GET /integrations/jira/connections/{id}/projects/{key} */
+export interface JiraProjectMeta {
+  key: string;
+  name: string;
+  issue_types: { name: string; subtask: boolean }[];
+  statuses: Record<string, { name: string; category: string }[]>;
+  priorities: string[];
+}
+
+/** Starts Connect Jira (or reconnects `connectionId`) and goes to Atlassian's consent page. */
+export async function startJiraConnect(returnTo: string, connectionId = 0): Promise<void> {
+  const r = await api.post<{ url: string }>("/integrations/jira/install", { return_to: returnTo, connection_id: connectionId });
+  window.location.assign(r.url);
+}
+
 /** POST /integrations/slack/oauth */
+/** GET /integrations/gitlab: Connect GitLab's connected groups. */
+export interface GitLabConnection {
+  id: number;
+  group_id: number;
+  group_path: string;
+  group_name: string;
+  credential_kind: "group_token" | "oauth" | "none" | string;
+  credential_expires: string | null;
+  webhook: "active" | "not_permitted" | "none" | string;
+  status: "active" | "needs_credential" | "expired" | string;
+  note: string;
+  connected_by: number | null;
+  connected_at: string;
+  updated_at: string;
+  last_sync: string | null;
+  projects: number;
+}
+
+export interface GitLabStatus {
+  configured: boolean;
+  gitlab_url?: string;
+  connections: GitLabConnection[];
+}
+
+export const NO_GITLAB: GitLabStatus = { configured: false, connections: [] };
+
+/** POST /integrations/gitlab/oauth: what an authorisation at GitLab came back with. */
+export interface GitLabOAuthResult {
+  /** Connect GitLab: the groups to pick from, with a single-use handle. */
+  pick?: string;
+  groups?: { id: number; full_path: string; name: string; owner: boolean }[];
+  /** Read-only authorisation. */
+  connection?: GitLabConnection;
+  /** Cleanup. */
+  disconnected?: boolean;
+  webhook_deleted?: boolean;
+  token_revoked?: boolean;
+  return_to?: string;
+}
+
+/** POST /integrations/gitlab/connections */
+export interface GitLabConnectResult {
+  connection: GitLabConnection;
+  needs_readonly: boolean;
+  notes: string[];
+  return_to: string;
+}
+
 export interface SlackOAuthResult {
   channel: Channel;
   return_to: string;
   team_name: string;
   slack_channel: string;
+}
+
+/** GET /integrations/github: the Stackurity GitHub App ("Install on GitHub"). */
+export interface GitHubInstallation {
+  installation_id: number;
+  account_login: string;
+  account_type: string;
+  repository_selection: string;
+  status: "active" | "suspended" | "deleted" | string;
+  note: string;
+  installed_by: number | null;
+  installed_at: string;
+  updated_at: string;
+  last_sync: string | null;
+  repositories: number;
+}
+
+export interface GitHubAppStatus {
+  configured: boolean;
+  app_url?: string;
+  installations: GitHubInstallation[];
+}
+
+export const NO_GITHUB_APP: GitHubAppStatus = { configured: false, installations: [] };
+
+/** POST /integrations/github/setup */
+export interface GitHubSetupResult {
+  installation?: GitHubInstallation;
+  requested?: boolean;
+  return_to: string;
 }
 
 /** Route choices saved before "Add to Slack" during onboarding (sessionStorage). */
@@ -2468,6 +2823,60 @@ export interface DirectoryUser {
   name: string;
 }
 
+/** Who issues are assigned to, by scope and stack (GET /owner-rules). */
+export interface OwnerRule {
+  id: number;
+  project_id: number | null;
+  project_name?: string;
+  asset_id: number | null;
+  asset_name?: string;
+  /** One of STACK_LAYERS, or "" for any layer. */
+  layer: string;
+  /** Package name pattern, * for any characters; "" for any package. */
+  component: string;
+  user_id: number | null;
+  user_email?: string;
+  user_name?: string;
+  team_id: number | null;
+  team_name?: string;
+  note: string;
+  created_at: string;
+  updated_at: string;
+  /** 6 (part of one asset's stack) down to 1 (organisation default); the highest matching wins. */
+  level: number;
+  describe: string;
+  /** Open issues this rule assigned. */
+  assigned: number;
+}
+
+export interface OwnerRuleInput {
+  project_id?: number | null;
+  asset_id?: number | null;
+  layer: string;
+  component: string;
+  user_id?: number | null;
+  team_id?: number | null;
+  note: string;
+}
+
+export interface OwnerMove {
+  from_user: string;
+  from_team: string;
+  to_user: string;
+  to_team: string;
+  rule_id: number;
+  rule: string;
+  count: number;
+  finding_ids: number[];
+}
+
+export interface OwnerPlan {
+  moves: OwnerMove[];
+  total: number;
+  truncated: boolean;
+  applied: boolean;
+}
+
 // --- Stage 4: controlled remediation
 
 export const REMEDIATION_TARGETS = ["host_package", "repository"] as const;
@@ -2715,6 +3124,8 @@ export interface FixGroupDetail {
   group: FixGroup;
   /** Paged with ?limit=&offset= on GET /fix-groups/{id}. */
   findings: List<Finding> | null;
+  /** Its open issues by who they are assigned to, most first. */
+  owners?: { user_email: string; team_name: string; count: number }[] | null;
 }
 
 export interface FixGroupSummary {
@@ -2825,6 +3236,53 @@ export interface Enrollment {
   revoked_at: string | null;
   /** Hosts enrolled with the code land in this project. */
   project_id?: number | null;
+  /** A fleet code (up to 1,000 servers, up to 90 days). */
+  fleet?: boolean;
+  /** How many servers it could enroll when made; null for older codes. */
+  max_uses?: number | null;
+}
+
+/** GET /enrollments/{id}/uses: one host that used a code. */
+export interface EnrollmentUse {
+  id: number;
+  hostname: string;
+  remote_addr: string;
+  used_at: string;
+  token_prefix: string;
+  token_revoked: boolean;
+}
+
+/** GET /integrations/digitalocean. The token itself is never returned. */
+export interface DigitalOceanStatus {
+  connected: boolean;
+  connected_at: string | null;
+  secrets_enabled: boolean;
+}
+
+/** GET /integrations/digitalocean/droplets: a droplet and its coverage. */
+export interface FleetMachine {
+  id: number;
+  name: string;
+  status: string;
+  region: string;
+  image: string;
+  tags: string[];
+  public_ipv4: string;
+  private_ipv4: string;
+  public_ipv6: string;
+  coverage: "reporting" | "enrolled" | "not_covered";
+  match?: "hostname" | "address";
+  asset_id?: number;
+  asset_name?: string;
+  last_seen?: string;
+  enrolled_as?: string;
+}
+
+export interface FleetMachines {
+  items: FleetMachine[];
+  total: number;
+  covered: number;
+  truncated: boolean;
 }
 
 /** POST /enrollments: the code is returned only here, once. */
@@ -2865,13 +3323,48 @@ export interface FirstResult {
   fixes_now: number;
 }
 
+/** One project (and its assets, including later ones) or asset an invitation gives access to. */
+export interface InvitationGrant {
+  /** "team": only in dropped, a team deleted before the link was used. */
+  kind: "project" | "asset" | "team";
+  project_id: number | null;
+  asset_id: number | null;
+  role: UserRole;
+  /** The current name; as it was when invited if it has been deleted since. */
+  name: string;
+  /** Accepting now would give it. */
+  available: boolean;
+  /** Why not: archived, merged, deleted, or changed (while accepting). */
+  unavailable?: "archived" | "merged" | "deleted" | "changed";
+}
+
+/**
+ * "organisation": role on all projects and assets. "specific": grants.
+ * "project": one project and role, from before invitations had grants.
+ */
+/** A team an invitation adds the person to, with what it can see now. */
+export interface InvitationTeam {
+  team_id: number | null;
+  name: string;
+  /** False when the team was deleted since. */
+  available: boolean;
+  access: InvitationGrant[];
+}
+
+export type InvitationScope = "organisation" | "specific" | "project";
+
 export interface Invitation {
   id: number;
   email: string;
   name: string;
+  /** Only on invitations made before grants existed (scope "project"). */
   project_id: number | null;
   project_name: string;
-  role: UserRole;
+  /** Organisation-wide role (or the old single project's); empty with grants. */
+  role: UserRole | "";
+  scope: InvitationScope;
+  grants: InvitationGrant[];
+  teams?: InvitationTeam[];
   prefix: string;
   created_at: string;
   expires_at: string;
@@ -2887,9 +3380,12 @@ export interface InvitationCreated {
   emailed?: boolean;
   link?: string;
   email_problem?: string;
-  /** The person was already a member: the project role was given at once. */
+  /** The person was already a member: the grants were given at once. */
   granted?: boolean;
   grant?: Grant;
+  grants?: Grant[];
+  /** Their earlier open invitations, now replaced (withdrawn). */
+  replaced?: number[];
 }
 
 /** POST /invitations/preview, for the person following the link. */
@@ -2897,11 +3393,33 @@ export interface InvitationPreview {
   email: string;
   name: string;
   workspace: string;
+  /** The project, when the invitation names exactly one. */
   project: string;
-  role: UserRole;
+  /** Organisation-wide role, or the role on that one project; empty otherwise. */
+  role: UserRole | "";
   invited_by: string;
   expires_at: string;
   account_exists: boolean;
+  scope: InvitationScope;
+  grants: InvitationGrant[];
+  teams?: InvitationTeam[];
+  /** False when every project and asset it named was archived, merged or deleted since. */
+  usable: boolean;
+}
+
+/** POST /invitations/accept. */
+export interface InvitationAccepted {
+  workspace_id: number;
+  /** The project to open (the invitation's only one), or 0. */
+  project_id: number;
+  scope: InvitationScope;
+  grants: number;
+  /** How many teams they joined. */
+  teams?: number;
+  /** What the invitation named but could not give any more. */
+  dropped: InvitationGrant[];
+  account_created: boolean;
+  joined: boolean;
 }
 
 /** A Slack account linked to the signed-in person (GET /slack/links). */
@@ -3090,6 +3608,15 @@ export const api = {
   }) =>
     request<{ status: string }>("POST", "/signup", b, { quiet401: true }),
   verifySignup: (token: string) => request<{ workspace_id: number }>("POST", "/signup/verify", { token }, { quiet401: true }),
+  socialSignupPreview: (token: string) => request<SocialSignupPreview>("POST", "/signup/social/preview", { token }, { quiet401: true }),
+  socialSignup: (b: { token: string; name: string; organisation: string; accept_terms: true; email_notice_version?: string }) =>
+    request<{ workspace_id: number; next: string }>("POST", "/signup/social", b, { quiet401: true }),
+  confirmSocialLink: (token: string) =>
+    request<User & { mfa_required?: boolean }>("POST", "/auth/social/confirm", { token }, { quiet401: true }),
+  socialConnections: () => request<{ providers: SocialConnection[]; has_password: boolean }>("GET", "/auth/social"),
+  connectSocial: (provider: string, password: string) =>
+    request<{ redirect_url: string }>("POST", `/auth/social/${encodeURIComponent(provider)}/link`, { password }),
+  disconnectSocial: (provider: string) => request<void>("DELETE", `/auth/social/${encodeURIComponent(provider)}`),
 };
 
 /**

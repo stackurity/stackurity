@@ -37,6 +37,7 @@ export const ERROR_SENTENCES: Record<string, string> = {
   wrong_account: "That belongs to another account.",
   gone: "That is no longer available.",
   invitation_invalid: "This invitation is no longer valid. Ask for a new one.",
+  invitation_stale: "Everything this invitation gave access to has been archived or deleted since it was sent. Ask for a new one.",
   link_expired: "This link has expired. Ask for a new one.",
   link_invalid: "This link is not valid.",
   reset_invalid: "This reset link is not valid or has expired. Ask for a new one.",

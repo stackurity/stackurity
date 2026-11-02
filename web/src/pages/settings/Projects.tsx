@@ -5,18 +5,18 @@ import {
   USER_ROLES,
   type Asset,
   type Grant,
-  type Invitation,
   type List,
   type Project,
   type ProjectSuggestion,
   type Team,
   type UserRole,
 } from "../../api";
+import { OwnerRulesCard } from "../../components/Owners";
 import { useAuth } from "../../auth";
 import { useAction, useLoad } from "../../hooks";
-import { absTime, plural, humanize } from "../../format";
+import { plural, humanize } from "../../format";
 import { AssetPicker } from "../../components/AssetPicker";
-import { InviteForm } from "../../components/Invite";
+import { InvitationList, InviteForm } from "../../components/Invite";
 import { NewTeamInline } from "../../components/Teams";
 import { Card, EmptyState, ErrorBox, Loading, Notice, PageHeader } from "../../components/ui";
 import { confirmAction, promptText } from "../../components/ConfirmDialog";
@@ -241,6 +241,9 @@ function NewProject({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
 /** Adds a grant: a person by email (added to the organisation with access to this only, if new) or a team. */
 function AddAccess({ target, onAdded }: { target: { project_id: number } | { asset_id: number }; onAdded: () => void }) {
   const teams = useLoad(() => api.getAll<List<Team>>("/teams"), []);
+  // Invite-only servers (Stackurity Cloud) add people by invitation only:
+  // here, only someone who is already a member.
+  const inviteOnly = !!useAuth().me?.invite_only;
   const [kind, setKind] = useState<"person" | "team">("person");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -289,13 +292,19 @@ function AddAccess({ target, onAdded }: { target: { project_id: number } | { ass
             <div className="field">
               <label htmlFor={`${idp}-email`}>Email</label>
               <input id={`${idp}-email`} type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
-              <p className="hint">Someone who is not a member yet joins with access to this only.</p>
+              <p className="hint">
+                {inviteOnly
+                  ? "Someone already in your organisation. Invite anyone else by email below."
+                  : "Someone who is not a member yet joins with access to this only."}
+              </p>
             </div>
-            <div className="field">
-              <label htmlFor={`${idp}-pw`}>Initial password (new accounts only)</label>
-              <input id={`${idp}-pw`} type="password" minLength={12} autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
-              <p className="hint">At least 12 characters. Leave empty if they already have an account.</p>
-            </div>
+            {!inviteOnly && (
+              <div className="field">
+                <label htmlFor={`${idp}-pw`}>Initial password (new accounts only)</label>
+                <input id={`${idp}-pw`} type="password" minLength={12} autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+                <p className="hint">At least 12 characters. Leave empty if they already have an account.</p>
+              </div>
+            )}
           </>
         ) : (
           <div className="field">
@@ -572,60 +581,18 @@ export function ProjectDetailPage() {
         <AddAccess target={{ project_id: p.id }} onAdded={res.reload} />
       </Card>
 
+      <OwnerRulesCard projectId={p.id} />
+
       <Card title="Invite by email">
         <p className="small muted">
-          Sends a link that works once, for 7 days. Someone new creates their account with it and sees this project only.
+          Sends a link that works once, for 7 days. It starts with this project; choose their permission, or give them more.
         </p>
         <InviteForm projectId={p.id} projectName={p.name} onInvited={() => setInvites((n) => n + 1)} />
-        <Invitations projectId={p.id} reloadKey={invites} />
+        <InvitationList projectId={p.id} reloadKey={invites} />
       </Card>
     </>
   );
 }
-
-/** The project's invitations: who was invited, as what, and whether they joined. */
-function Invitations({ projectId, reloadKey }: { projectId: number; reloadKey: number }) {
-  const res = useLoad(() => api.getAll<List<Invitation>>("/invitations", { project_id: projectId }), [projectId, reloadKey]);
-  const act = useAction();
-  const list = res.data?.items ?? [];
-  const revoke = async (i: Invitation) => {
-    if (!(await confirmAction({ title: `Withdraw the invitation for ${i.email}?`, consequence: "Its link stops working.", action: "Withdraw invitation" }))) return;
-    const ok = await act.run(() => api.del(`/invitations/${i.id}`).then(() => true));
-    if (ok) res.reload();
-  };
-  if (list.length === 0) return <ErrorBox error={res.error} title="Could not load the invitations" />;
-  return (
-    <>
-      <h3>Invitations</h3>
-      <ErrorBox error={act.error ?? res.error} title="That did not work" />
-      <ul className="project-list">
-        {list.map((i) => (
-          <li key={i.id}>
-            <span className="grow">
-              {i.email}{" "}
-              <span className="small muted">
-                {i.role} · {INVITE_STATUS[i.status]}
-                {i.status === "pending" && <> · until {absTime(i.expires_at)}</>}
-              </span>
-            </span>
-            {i.status === "pending" && (
-              <button type="button" className="btn btn-sm btn-link-danger" disabled={act.pending} onClick={() => void revoke(i)}>
-                Withdraw
-              </button>
-            )}
-          </li>
-        ))}
-      </ul>
-    </>
-  );
-}
-
-const INVITE_STATUS: Record<Invitation["status"], string> = {
-  pending: "invited",
-  accepted: "joined",
-  revoked: "withdrawn",
-  expired: "expired",
-};
 
 function EditProject({ project, onDone }: { project: Project; onDone: () => void }) {
   const [name, setName] = useState(project.name);

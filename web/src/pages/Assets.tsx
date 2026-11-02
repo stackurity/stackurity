@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { api, ASSET_KINDS, ASSET_STATUS_HELP, ASSET_STATUS_LABEL, ASSET_STATUSES, type Asset, type List, type Team } from "../api";
+import { ProjectFilter } from "../components/AssetPicker";
 import { useAuth } from "../auth";
 import { useProject } from "../project";
 import { useDebounced, useFacets, useLoad } from "../hooks";
@@ -163,6 +164,7 @@ export function AssetsPage() {
         <InventorySummary />
       </details>
       <form className="filters" role="search" onSubmit={(e) => e.preventDefault()}>
+        <ProjectFilter id="f-project" />
         <div className="field">
           <label htmlFor="f-q">Search</label>
           <input id="f-q" type="search" placeholder="Name contains…" value={q} onChange={(e) => setQ(e.target.value)} />

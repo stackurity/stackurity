@@ -14,7 +14,7 @@ import (
 
 // Ask Stackurity, the in-app assistant (internal/ask), stores its
 // conversations, its monthly usage and the spend held for model calls in
-// flight here (migration 0067).
+// flight here (migration 0085).
 //
 // Conversations are private to the person who asked. Every query that
 // returns a conversation or its messages takes the person's user id and
