@@ -99,6 +99,8 @@ Connecting an asset is quiet: one "connected" message, and no alerts, Jira issue
 | `STACKURITY_OPENAI_APPS_CHALLENGE` (or `_FILE`) | — | The token OpenAI gives when you submit Stackurity as a ChatGPT app; served as text at `/.well-known/openai-apps-challenge` (404 when unset) |
 | `STACKURITY_AGENT_DIR` | `/usr/local/lib/stackurity/agents` in the image | Agent builds served to new hosts by **Add server**: `stackurity-linux-amd64`, `stackurity-linux-arm64` and `stackurity-windows-amd64`, each with a `.sha256` file as `sha256sum` writes it |
 | `STACKURITY_SLACK_CLIENT_ID` / `_FILE`, `STACKURITY_SLACK_CLIENT_SECRET` / `_FILE`, `STACKURITY_SLACK_SIGNING_SECRET` / `_FILE` | — | Your Slack app, for **Add to Slack** ([slack-app.md](slack-app.md)). All three or none; needs `STACKURITY_BASE_URL` and `STACKURITY_SECRET_KEY` |
+| `STACKURITY_GITLAB_CLIENT_ID` / `_FILE`, `STACKURITY_GITLAB_CLIENT_SECRET` / `_FILE`; `STACKURITY_GITLAB_URL` | — / `https://gitlab.com` | Your GitLab OAuth application, for **Connect GitLab** ([gitlab.md](gitlab.md)). Both or neither; needs `STACKURITY_BASE_URL` (https) and `STACKURITY_SECRET_KEY`. `STACKURITY_GITLAB_URL` is a self-managed GitLab's address |
+| `STACKURITY_PAGERDUTY_CLIENT_ID` / `_FILE`, `STACKURITY_PAGERDUTY_CLIENT_SECRET` / `_FILE` | — | Your PagerDuty app with Scoped OAuth, for **Connect PagerDuty** ([setup](#setting-up-the-stackurity-pagerduty-app-operators)). Both or neither; needs `STACKURITY_BASE_URL` and `STACKURITY_SECRET_KEY` |
 | `STACKURITY_TEAMS_APP_ID` / `_FILE`, `STACKURITY_TEAMS_APP_PASSWORD` / `_FILE` or `STACKURITY_TEAMS_APP_CERTIFICATE_FILE`, `STACKURITY_TEAMS_APP_TENANT`, `STACKURITY_TEAMS_APP_INSTALL_URL` | — | Your Teams app (an Azure Bot), for **Add to Teams** ([teams-app.md](teams-app.md)). The app ID with a client secret or a certificate; the tenant for a single-tenant bot |
 | `STACKURITY_JIRA_CLIENT_ID` / `_FILE`, `STACKURITY_JIRA_CLIENT_SECRET` / `_FILE` | — | Your Atlassian OAuth 2.0 app, for **Connect Jira** ([jira-app.md](jira-app.md)). Both or neither; needs `STACKURITY_BASE_URL` and `STACKURITY_SECRET_KEY` |
 | `STACKURITY_GITHUB_APP_ID` / `_FILE`, `STACKURITY_GITHUB_APP_SLUG` / `_FILE`, `STACKURITY_GITHUB_APP_CLIENT_ID` / `_FILE`, `STACKURITY_GITHUB_APP_CLIENT_SECRET` / `_FILE`, `STACKURITY_GITHUB_APP_PRIVATE_KEY` / `_FILE`, `STACKURITY_GITHUB_APP_WEBHOOK_SECRET` / `_FILE`; `STACKURITY_GITHUB_URL` | — | Your GitHub App, for **Install on GitHub** ([github-app.md](github-app.md)). All six or none; needs `STACKURITY_BASE_URL`. `STACKURITY_GITHUB_URL` is a GitHub Enterprise Server's address (unset for github.com) |
@@ -466,6 +468,7 @@ It sets `STACKURITY_DOCKER=true` in `/etc/stackurity/agent.env` and adds `Supple
 
 There are three ways to collect repository inventory:
 
+- **Connect GitLab.** Where the server has a GitLab OAuth application ([gitlab.md](gitlab.md); Stackurity Cloud does), **Settings → Integrations → Git repository → Connect GitLab**, authorise on GitLab and pick a group: every project in it, subgroups included, is scanned, with a read-only group access token Stackurity creates (no token to paste), rescanned when a lockfile changes on the default branch, and followed as projects are added or removed.
 - **GitHub App.** Where the server has the [Stackurity GitHub App](github-app.md) (Stackurity Cloud does), **Settings → Integrations → Git repository → Install on GitHub** and pick the repositories on GitHub's install screen. No token to create or renew; the server mints a short-lived read-only token for each scan, rescans when a lockfile changes on the default branch, and follows repositories added or removed on GitHub.
 - **Server-side.** Under **Settings → Integrations**, add a Git repository (HTTPS only). Private repositories need a read-only token referenced as `env:STACKURITY_SECRET_<NAME>`. The server makes a shallow clone, reads the lockfiles and deletes the clone. Hooks, submodules, LFS and scripts are never run.
 - **CI.** Run this in your pipeline:
@@ -735,6 +738,50 @@ The plugin also runs as an ordinary **Plugin** integration, with a role you made
 
 The secret file holds `{"aws_access_key_id": "...", "aws_secret_access_key": "..."}`. Without it, the plugin uses the instance role (only in the default organisation). Give the role the read-only actions listed above. The exact list is also in the plugin's metadata, under **Settings → Plugins** or with `GET /api/v1/plugins`.
 
+### Google Cloud managed services
+
+The image includes the `gcp-managed` plugin. It reports Cloud SQL (PostgreSQL, MySQL and SQL Server versions), Memorystore for Redis and Memcached, GKE control planes and node pools, and the language runtimes of Cloud Run functions, Cloud Run source deployments and App Engine (serving versions). GKE versions are matched against endoflife.date's `google-kubernetes-engine` lifecycle, Cloud SQL against the upstream engine (`postgresql`, `mysql`, `mssqlserver`; Google's extended support can run longer) and runtimes against the language (`python`, `nodejs`, `go`, `ruby`, `php`, `dotnet`). Memorystore for Redis has no product on endoflife.date: its version is shown and its lifecycle appears as not assessed.
+
+Under **Settings → Integrations**, choose **Google Cloud**, enter the project id and number, and run the commands shown in Cloud Shell as a project owner. They create:
+
+- a custom role, `stackurityInventoryReader`, with exactly the permissions the plugin uses: `appengine.services.list`, `appengine.versions.list`, `cloudfunctions.functions.list`, `cloudsql.instances.list`, `container.clusters.list`, `memcache.instances.list`, `redis.instances.list`, `resourcemanager.projects.get`, `run.services.list`;
+- a service account, `stackurity-reader@<project>.iam.gserviceaccount.com`, with that role and **no key**;
+- a workload identity pool and OIDC provider, `stackurity`, that trusts tokens this server signs, for your workspace only (`assertion.sub=='workspace:<id>'`), and lets that one subject act as the service account (`roles/iam.workloadIdentityUser`).
+
+On each run the server signs a 10-minute token naming the workspace; the plugin exchanges it at `sts.googleapis.com` and `iamcredentials.googleapis.com` for a one-hour token of the service account. No key leaves Google Cloud and Google never connects to Stackurity: the provider holds the server's public key (uploaded with `--jwk-json-path`), so this works for servers behind a firewall too. Keyless access needs `STACKURITY_SECRET_KEY` (the signing key is derived from it, so changing that key means running the provider command again) and `STACKURITY_BASE_URL` set to the server's `https://` address (the token issuer). Another workspace's tokens, or another server's, are refused by the provider.
+
+The integration this creates:
+
+```json
+{"kind": "plugin", "config": {"plugin": "gcp-managed", "config": {"project_id": "acme-prod", "project_number": "123456789012", "environment_label": "env"}}, "schedule_minutes": 720}
+```
+
+If your organisation cannot use workload identity federation, the same page shows the fallback: the same role and service account, plus a key (`gcloud iam service-accounts keys create`). Store the key file's contents, unchanged, as a workspace secret under **Settings → Secrets** and set `"auth": "service_account_key"` and `"secret_ref": "secret:<name>"`. The key file's `token_uri` is ignored: the plugin signs in at `oauth2.googleapis.com` only. An organisation policy (`iam.disableServiceAccountKeyCreation`) may forbid keys.
+
+A service the role cannot read, or whose API is not enabled in the project, is shown under the project's coverage as failed or skipped with Google's reason, never as zero resources. Cloud Run services deployed from a container image are left to image scanning (add the image as a **Container image** integration).
+
+### Azure managed services
+
+The image includes the `azure-managed` plugin. It reports Azure Database for MySQL and PostgreSQL flexible servers, Azure Cache for Redis, AKS clusters and node pools, and the runtime stack of App Service and Functions apps. Versions are matched against endoflife.date's `azure-database-for-mysql`, `azure-database-for-postgresql` and `azure-kubernetes-service` lifecycles, and app runtimes against the language. Azure Cache for Redis has no product on endoflife.date: its version is shown and its lifecycle appears as not assessed. Windows apps that name their runtime only in app settings are shown as partial: the plugin never reads app settings, which hold secrets.
+
+Under **Settings → Integrations**, choose **Azure**, enter the tenant and subscription ids, and either open the admin consent link or run the commands shown (in Cloud Shell, as an Owner or User Access Administrator of the subscription, allowed to add enterprise applications). They:
+
+- add Stackurity's multi-tenant Entra app to your tenant (`az ad sp create`, the same as the consent link; the app asks for no Microsoft Graph or other API permissions);
+- create a custom role, `Stackurity Inventory Reader (<subscription>)`, scoped to the subscription, with exactly the actions the plugin uses: `Microsoft.Authorization/roleAssignments/read`, `Microsoft.Cache/redis/read`, `Microsoft.ContainerService/managedClusters/read`, `Microsoft.DBforMySQL/flexibleServers/read`, `Microsoft.DBforPostgreSQL/flexibleServers/read`, `Microsoft.Resources/subscriptions/read`, `Microsoft.Web/sites/config/read`, `Microsoft.Web/sites/read` (the built-in Reader role also works, but reads far more);
+- assign it to the app with the description `stackurity-workspace-proof:<value>`. The value is derived from this server's key and your workspace. The app is shared by every workspace on the server, so before reading anything the plugin lists its own role assignments on the subscription and refuses one that does not carry your workspace's value: another workspace cannot read a subscription you granted.
+
+No secret is created in your tenant. The app's credential stays with the server operator (`STACKURITY_AZURE_APP_ID`, and `STACKURITY_AZURE_APP_SECRET` or `STACKURITY_AZURE_APP_SECRET_FILE`); the server hands it only to the `azure-managed` plugin, and only for a run. To offer this on your own server, register a multi-tenant app ("Accounts in any organizational directory"), with `https://<your server>/settings/integrations` as a Web redirect URI and no API permissions, create a client secret, and set those variables along with `STACKURITY_SECRET_KEY` and `STACKURITY_BASE_URL`.
+
+The integration this creates:
+
+```json
+{"kind": "plugin", "config": {"plugin": "azure-managed", "config": {"tenant_id": "…", "subscription_id": "…", "environment_tag": "Environment"}}, "schedule_minutes": 720}
+```
+
+Without the app, the page shows the fallback: the same custom role and `az ad sp create-for-rbac`, which creates a service principal with a client secret in your tenant. Store `{"azure_client_id": "<appId>", "azure_client_secret": "<password>"}` as a workspace secret and set `"auth": "client_secret"`. Secrets are stored encrypted and never returned by the API.
+
+A service the role cannot read, or whose resource provider is not registered, is shown under the subscription's coverage as failed or skipped with Azure's reason, never as zero resources.
+
 ### Kubernetes
 
 Connect a cluster with one command from **Settings → Integrations → Kubernetes cluster**. It installs the reporter, a small Deployment that reads the cluster with a read-only service account and sends it to Stackurity over HTTPS; nothing connects into the cluster:
@@ -869,7 +916,7 @@ Credentials always go in a secret reference, never in the configuration:
 | Microsoft Teams | added with **Add to Teams** ([teams-app.md](teams-app.md)), the default when the server has the Teams app; or none, with a Workflows webhook | none with Add to Teams; otherwise the Workflows webhook URL ("Post to a channel when a webhook request is received") |
 | Webhook | `url` (HTTPS) | The HMAC signing key (optional) |
 | Jira | Connect Jira ([jira-app.md](jira-app.md)): `auth` `oauth`, `connection_id`, `cloud_id` (the site), `project`, optional `issue_type`, `labels[]`, `priorities` and `resolve_transition`, picked in the dashboard. With a token: `url` (the site, HTTPS), `deployment` (`cloud` by default, or `datacenter`), `project` (key), `issue_type` (`Task` by default), `username` (the account email, Cloud only), optional `labels[]`, `priorities` (`{"P1": "Highest", ...}`) and `resolve_transition` (e.g. `Done`) | none with Connect Jira. Otherwise Cloud: an [Atlassian API token](https://id.atlassian.com/manage-profile/security/api-tokens); Data Center and Server: a personal access token |
-| PagerDuty | optional `region` (`us` by default, or `eu`) and `severities` (`{"P1": "critical", ...}`) | The integration key (routing key) of an Events API v2 integration on the service |
+| PagerDuty | added with **Connect PagerDuty** (see [PagerDuty](#pagerduty)); or optional `region` (`us` by default, or `eu`) and `severities` (`{"P1": "critical", ...}`) | none with Connect PagerDuty (Stackurity stores the key it gets); otherwise the integration key (routing key) of an Events API v2 integration on the service |
 | ServiceNow | `url` (the instance, HTTPS), `auth` (`basic` by default, or `oauth`), `username` (basic) or `client_id` (oauth), optional `table` (`incident`), `assignment_group`, `category`, `subcategory`, `urgency` and `impact` (`{"P1": "1", ...}`), `fields` (`{"u_business_service": "Payments"}`), `resolve_state` (`6`), `close_code` (`Solution provided`), `sync_back` and `closed_states` (`["6", "7", "8"]`) | The integration user's password (basic) or the OAuth client secret (oauth) |
 
 **Email with your own mail server.** The form has provider presets that fill the host, port and encryption; you add the username, password and From address. Every provider below works over SMTP; no API key integration is needed.
@@ -946,7 +993,21 @@ A route to a PagerDuty channel keeps one alert per incident it matches, through 
 
 The dedup key is `stackurity-incident-<workspace>-<incident>` (then `-2`, `-3` for each new page): the incident id, with the workspace so that two organisations sending to one service never share an alert. The incident links to its current alert's key. Every event about the alert uses its key, so retries (a timeout, a lost reply, another replica) land on the same alert, and a retried page triggers the same new key and resolves the same alert; a delivery that already paged under a new key never pages again when it is retried. The severity is set when an alert is triggered and never changes on it (PagerDuty does not update an open alert's severity); a page after a priority rise carries the new severity. It follows the priority, P1 `critical`, P2 `error`, P3 `warning`, P4 `info` (change it with `severities`); SOS incidents are always `critical`. Who is paged is decided by the service's urgency rules in PagerDuty.
 
-Create the key in PagerDuty: the service, **Integrations**, **Add an integration**, **Events API V2**, and copy the **Integration Key**. Store it as a workspace secret. For an account in PagerDuty's EU service region, set **Service region** to EU (`region: eu`), which sends to `events.eu.pagerduty.com`. PagerDuty cannot check a key without an event, so **Send test** triggers a test alert with severity `info` and resolves it at once; depending on the service's rules it can notify someone. A wrong key fails at once with PagerDuty's reason ("Invalid routing key"); a 429 is retried after a minute.
+**Connect PagerDuty** (when the server has the Stackurity PagerDuty app, below) does the setup in one click: PagerDuty asks you to allow Stackurity to read and change services, you pick the service in Stackurity, and Stackurity adds an **Events API V2** integration named **Stackurity** to it and keeps its integration key as the channel's secret, sealed like any other. The PagerDuty token used for that is thrown away straight after (it is kept, sealed, for at most 10 minutes while you choose the service, and never refreshed): sending events needs only the integration key, so Stackurity has no standing access to your PagerDuty account. Your PagerDuty user must be allowed to add integrations to the service (an admin, or a manager of the service). The account's region (US or EU) is read from PagerDuty's answer. Connecting the same service again replaces the key on its channel; the previous **Stackurity** integration stays on the service until you delete it. **Deleting the channel** deletes the key in Stackurity but not the integration in PagerDuty, since Stackurity no longer has access: delete it in PagerDuty (the service, **Integrations**, **Stackurity**, **Delete Integration**; the channel page links there). Stackurity does not create services: pick an existing one (PagerDuty needs an escalation policy for a new service, which would mean asking for more access).
+
+Otherwise, create the key in PagerDuty yourself: the service, **Integrations**, **Add an integration**, **Events API V2**, and copy the **Integration Key**. Store it as a workspace secret. For an account in PagerDuty's EU service region, set **Service region** to EU (`region: eu`), which sends to `events.eu.pagerduty.com`. PagerDuty cannot check a key without an event, so **Send test** triggers a test alert with severity `info` and resolves it at once; depending on the service's rules it can notify someone. A wrong key fails at once with PagerDuty's reason ("Invalid routing key"); a 429 is retried after a minute.
+
+#### Setting up the Stackurity PagerDuty app (operators)
+
+Connect PagerDuty needs one PagerDuty app, registered once by whoever runs the server, with Scoped OAuth. Without it the dashboard offers only the pasted key.
+
+1. In PagerDuty, **Integrations**, **App Registration**, **New App**: name it (for example Stackurity), and tick **OAuth 2.0**. Choose **Scoped OAuth**.
+2. **Redirect URL**: `https://<your Stackurity address>/integrations/pagerduty/oauth/callback` (exactly, with your `STACKURITY_BASE_URL`; the server logs it at startup).
+3. **Permission scopes**: **Services: Read** and **Services: Write** (`services.read`, `services.write`) and nothing else. Stackurity asks for exactly these, and refuses a token without both ("PagerDuty did not grant services.write").
+4. Save, and copy the **Client ID** and **Client Secret**. To let other PagerDuty accounts connect (Stackurity Cloud, or a server several companies use), publish the app as described in PagerDuty's [Publish an App](https://docs.pagerduty.com/developer/publish-an-app); an admin of each account may have to install it first.
+5. Set `STACKURITY_PAGERDUTY_CLIENT_ID` and `STACKURITY_PAGERDUTY_CLIENT_SECRET` (or `STACKURITY_PAGERDUTY_CLIENT_ID_FILE` and `STACKURITY_PAGERDUTY_CLIENT_SECRET_FILE` with a path to a file holding the value), with `STACKURITY_BASE_URL` and `STACKURITY_SECRET_KEY`, and restart. Both or neither: one alone stops the server.
+
+The server then calls `identity.pagerduty.com` (to exchange the code, with PKCE) and `api.pagerduty.com` or `api.eu.pagerduty.com` (to list services and add the integration), only while someone connects ([network.md](network.md)). To revoke every token the app ever issued, use **Revoke All Tokens** on the app in PagerDuty; channels keep working, as they use only their integration keys.
 
 ### ServiceNow
 

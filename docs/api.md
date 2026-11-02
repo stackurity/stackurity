@@ -1179,7 +1179,7 @@ How incidents become messages, the route `events` and the webhook format are in 
 
 **Who:** security
 
-What the server offers: `slack_app` (Add to Slack), `jira_app` (Connect Jira: the Atlassian app is configured, with `STACKURITY_BASE_URL` and stored secrets), `teams_app` (Add to Teams), `platform_email` (`enabled`; when enabled `from`, `max_recipients` and `quota` with `per_minute`, `per_hour`, `per_day`), `secrets` (stored secrets work) and `base_url`.
+What the server offers: `slack_app` (Add to Slack), `jira_app` (Connect Jira: the Atlassian app is configured, with `STACKURITY_BASE_URL` and stored secrets), `teams_app` (Add to Teams), `pagerduty_app` (Connect PagerDuty), `platform_email` (`enabled`; when enabled `from`, `max_recipients` and `quota` with `per_minute`, `per_hour`, `per_day`), `secrets` (stored secrets work) and `base_url`.
 
 ### `GET /channels`
 
@@ -1191,7 +1191,7 @@ Notification channels.
 
 **Who:** admin
 
-Creates a channel: email, email sent by Stackurity (`stackurity_email`, hosted only), Slack, Teams, webhook, Jira, PagerDuty (`pagerduty`) or ServiceNow (`servicenow`); configuration fields are listed in [install.md](install.md#notifications). Slack channels made with Add to Slack come from `POST /integrations/slack/oauth` instead, and Teams channels made with Add to Teams (`config.teams_app`) from the Teams app's messaging endpoint; neither can be created here. A Jira channel with Connect Jira has `config.auth` `oauth`, `connection_id` and `cloud_id` (a site of that connection of this organisation, 400 otherwise) and no `secret_ref`; its `url` is set from the site.
+Creates a channel: email, email sent by Stackurity (`stackurity_email`, hosted only), Slack, Teams, webhook, Jira, PagerDuty (`pagerduty`) or ServiceNow (`servicenow`); configuration fields are listed in [install.md](install.md#notifications). Slack channels made with Add to Slack come from `POST /integrations/slack/oauth` instead, and PagerDuty channels made with Connect PagerDuty (`config.pagerduty_app`) from `POST /integrations/pagerduty/finish`; such a channel's service, integration and `secret_ref` cannot be changed (its name, `enabled` and `severities` can), and Teams channels made with Add to Teams (`config.teams_app`) from the Teams app's messaging endpoint; neither can be created here. A Jira channel with Connect Jira has `config.auth` `oauth`, `connection_id` and `cloud_id` (a site of that connection of this organisation, 400 otherwise) and no `secret_ref`; its `url` is set from the site.
 
 ### `PATCH /channels/{id}`
 
@@ -1369,11 +1369,29 @@ Status of one job, for example after *Run now*.
 
 Installed plugins with their declared permissions, credentials and network access ([plugins.md](plugins.md)).
 
+### `GET /cloud-setup/gcp`
+
+**Who:** admin
+
+The commands that connect a Google Cloud project to this workspace for the `gcp-managed` plugin. Query: `project_id`, `project_number` (both required; 400 when malformed). Answers `commands` (a `gcloud` block: a custom role with exactly `permissions`, a service account, and a workload identity pool and provider that trust this server's tokens for this workspace only), `config` (the plugin configuration to save), and the service-account-key fallback (`fallback_commands`, `fallback_config`, `fallback_secret`). Without keyless access on this server (`STACKURITY_SECRET_KEY` and an `https://` `STACKURITY_BASE_URL` are needed), `keyless` is false and `keyless_unavailable` says why. Nothing in the answer is secret. See [install.md](install.md#google-cloud-managed-services).
+
+### `GET /cloud-setup/azure`
+
+**Who:** admin
+
+The commands that connect an Azure subscription to this workspace for the `azure-managed` plugin. Query: `tenant_id`, `subscription_id` (GUIDs, required). Answers `consent_url` (admin consent for the Stackurity Entra app), `commands` (an `az` block: a custom role with exactly `permissions`, and its assignment to the app with this workspace's proof as the description), `config`, and the client-secret fallback. Without the app configured on this server, `keyless` is false and `keyless_unavailable` says why. The app's secret is never in the answer. See [install.md](install.md#azure-managed-services).
+
 ### `GET /secrets`
 
 **Who:** admin
 
 Names of the organisation's stored secrets (never values), and `enabled`: whether the server can store secrets. Channels and integrations refer to them as `secret:NAME`.
+
+### `GET /credentials/health`
+
+**Who:** admin
+
+What the Dashboard's **Secrets and credentials** block shows; values are never read. `failing`: enabled integrations whose latest run failed, channels whose latest delivery failed and AWS connections that failed (`kind` `integration`, `channel` or `aws`, `detail` with the error, `at` the last success). `expiring`: API tokens, not revoked, that expire within `expiring_days` (14) or expired within the last 14 days (`at` the expiry). `unused`: API tokens older than `unused_days` (90) not used for 90 days (`at` the last use, absent when never used). `old`: stored secrets last set more than `old_days` (365) ago (`at` when). Each group has `total` and its first 5 `items`. Tokens of CI jobs are left out.
 
 ### `PUT /secrets/{name}`
 
@@ -1404,6 +1422,36 @@ The Slack app's Direct install URL ([slack-app.md](slack-app.md#installs-started
 **Who:** admin
 
 Finishes Add to Slack with `{"code", "state"}` from Slack's redirect to `/integrations/slack/oauth/callback`: 201 with `channel`, `return_to`, `team_name` and `slack_channel`. 400 `slack_state` for a state that is missing (an install started from Slack's side), unknown, used, expired (10 minutes) or someone else's, before Slack is called; 502 `slack_refused`.
+
+### `POST /integrations/pagerduty/connect`
+
+**Who:** admin
+
+Starts Connect PagerDuty ([install.md](install.md#pagerduty)): `{"return_to"}` (a dashboard path); answers `url`, PagerDuty's consent page, asking for `services.read services.write` with a PKCE S256 challenge and a state that works once, for 10 minutes, for the same person in the same organisation. 404 `not_configured` without the PagerDuty app.
+
+### `POST /integrations/pagerduty/oauth`
+
+**Who:** admin
+
+Exchanges `{"code", "state"}` from PagerDuty's redirect to `/integrations/pagerduty/oauth/callback`, and lists the account's services: 200 with `session` (a handle for the next steps, valid 10 minutes, for the same person), `region` (`us` or `eu`), `return_to`, `services` (`id`, `name`, `description`, `status`, `html_url`) and `more` (true when there were more than 1,000; narrow with a query). 400 `pagerduty_state` for a state that is unknown, used, expired or someone else's, before PagerDuty is called; 502 `pagerduty_scope` when PagerDuty did not grant both scopes, 502 `pagerduty_refused` otherwise.
+
+### `POST /integrations/pagerduty/services`
+
+**Who:** admin
+
+Lists the services again: `{"session", "query"}` (`query` filters by name). Same answer as above (`services`, `more`); 400 `pagerduty_state` for a session that is not this person's or has expired.
+
+### `POST /integrations/pagerduty/finish`
+
+**Who:** admin
+
+Adds an Events API v2 integration named Stackurity to the service `{"session", "service_id"}` and stores its routing key as the channel's secret. The session and the PagerDuty token are deleted first, whatever happens next: a failure means starting again. 201 with `channel`, `return_to`, `service_name`; 200 with `reused: true` when the service already had a channel, which gets the new key. The key is never returned. Audited as `channel.create` (or `channel.update`) with `source: pagerduty_app`. 502 `pagerduty_refused` with PagerDuty's reason (for example 403: the person may not add integrations to that service).
+
+### `POST /integrations/pagerduty/cancel`
+
+**Who:** admin
+
+Deletes the session `{"session"}` and its token. 204.
 
 ### `POST /integrations/teams/install`
 
@@ -1464,6 +1512,54 @@ A project's `issue_types` (`name`, `subtask`), `statuses` by issue type (`name`,
 **Who:** Slack (the app's signing secret)
 
 The Slack app's Event Subscriptions URL: `url_verification`, and `app_uninstalled` or `tokens_revoked`, which switch that Slack workspace's app channels off in every organisation and delete their webhooks and tokens.
+
+### `GET /integrations/gitlab`
+
+**Who:** engineer
+
+Connect GitLab ([gitlab.md](gitlab.md)): `configured` (whether this server offers it; when it does, `gitlab_url`) and `connections`, this organisation's connected GitLab groups (`id`, `group_id`, `group_path`, `group_name`, `credential_kind`: `group_token`, `oauth` or `none`, `credential_expires`, `webhook`: `active`, `not_permitted` or `none`, `status`: `active`, `needs_credential` or `expired`, `note`, `connected_by`, `connected_at`, `updated_at`, `last_sync`, `projects`). Each project is an integration of kind `gitlab` in `GET /integrations`.
+
+### `POST /integrations/gitlab/connect`
+
+**Who:** admin
+
+Starts Connect GitLab: `{"return_to"}` (a dashboard path); answers `url`, GitLab's consent page for the `api` scope with a single-use state bound to the caller and organisation (10 minutes). 404 `not_configured` without Connect GitLab; 409 `secrets_disabled` without `STACKURITY_SECRET_KEY`.
+
+### `POST /integrations/gitlab/oauth`
+
+**Who:** admin
+
+Finishes an authorisation at GitLab with `{"state", "code"}` from GitLab's redirect to `/integrations/gitlab/callback`. 400 `gitlab_state` for a state that is missing, unknown, used, expired or someone else's, before GitLab is called; 400 `gitlab_scopes` when GitLab granted other scopes than asked (the token is revoked); 502 `gitlab_refused`. What follows depends on how the authorisation was started: for Connect GitLab, 200 with `pick` (single use, the caller's, 10 minutes) and `groups` the caller is a Reporter or above of (`id`, `full_path`, `name`, `owner`), or 404 `gitlab_no_groups`; for `readonly`, 201 with `connection` once the caller is shown to be a member of the group (403 `gitlab_group` otherwise); for `cleanup`, 200 with `webhook_deleted`, `token_revoked` and `disconnected`. Audited as `gitlab.authorize` or `gitlab.disconnect`.
+
+### `POST /integrations/gitlab/connections`
+
+**Who:** admin
+
+Connects a GitLab group: `{"pick", "group_id"}`. 400 `gitlab_state` for a pick that is unknown, used, expired or someone else's. The `group_id` is not trusted: 403 `gitlab_group` unless the caller's GitLab account is a Reporter or above in it; 409 `gitlab_group_taken` when it, or a group above or below it, is connected to another organisation. As the group's Owner, a group access token (`read_api`, `read_repository`, Reporter, under a year) and a push webhook are created where GitLab allows. 201 with `connection`, `needs_readonly` (no group access token: start `POST /integrations/gitlab/connections/{id}/authorize` with `readonly`), `notes` and `return_to`. The caller's GitLab token is revoked. Audited as `gitlab.connect` (or `gitlab.refused`).
+
+### `POST /integrations/gitlab/connections/{id}/authorize`
+
+**Who:** admin
+
+`{"purpose", "return_to"}`: `readonly` (GitLab's consent for `read_api read_repository`, kept sealed and refreshed when a group access token is not allowed) or `cleanup` (consent for `api`, used once to delete the group webhook and group access token on GitLab, then disconnect). Answers `url`.
+
+### `POST /integrations/gitlab/connections/{id}/sync`
+
+**Who:** admin
+
+Lists the group's projects on GitLab again now: 202. Audited as `gitlab.sync`.
+
+### `DELETE /integrations/gitlab/connections/{id}`
+
+**Who:** admin
+
+Disconnects the group here: the connection, its sealed credential and its webhook secret are deleted, and its projects' integrations are switched off with a note (assets and history kept). The stored credential is revoked at GitLab where it can be (`credential_revoked`); `webhook_left_on_gitlab` is true when the group webhook remains on GitLab (deleting it needs the group's Owner: use `cleanup`). Audited as `gitlab.disconnect`.
+
+### `POST /integrations/gitlab/webhook/{id}`
+
+**Who:** GitLab (the connection's secret token)
+
+A connected group's webhook URL: `X-Gitlab-Token` must be the connection's secret token (compared in constant time with its stored SHA-256), else 401; `X-Gitlab-Event` and `X-Gitlab-Event-UUID` are required. A delivery already handled (the same UUID or the same body) answers 200 `{"result": "duplicate"}`. A `Push Hook` to a project's default branch that changes a lockfile or manifest queues its scan; a push for a project not yet known, and other events (project created or deleted), list the group again. 404 without Connect GitLab.
 
 ### `GET /integrations/github`
 

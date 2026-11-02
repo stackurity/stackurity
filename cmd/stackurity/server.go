@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/stackurity/stackurity/internal/cloudconnect"
 	"github.com/stackurity/stackurity/internal/license"
 	"github.com/stackurity/stackurity/internal/netguard"
 	"github.com/stackurity/stackurity/internal/packs"
@@ -32,6 +33,7 @@ import (
 	"github.com/stackurity/stackurity/internal/db"
 	"github.com/stackurity/stackurity/internal/demo"
 	"github.com/stackurity/stackurity/internal/githubapp"
+	"github.com/stackurity/stackurity/internal/gitlab"
 	"github.com/stackurity/stackurity/internal/health"
 	"github.com/stackurity/stackurity/internal/intel"
 	"github.com/stackurity/stackurity/internal/metrics"
@@ -223,6 +225,12 @@ func serverCmd() *cobra.Command {
 			if dir := os.Getenv("STACKURITY_PLUGIN_DIR"); dir != "" {
 				pluginRunner = &plugins.Runner{Dir: dir, WorkDir: filepath.Join(dataDir, "work"), Timeout: 15 * time.Minute}
 			}
+			// The server's identity towards customers' clouds (keyless
+			// Google Cloud and Azure connections).
+			cloud, err := cloudconnect.FromEnv()
+			if err != nil {
+				return err
+			}
 			proCfg, err := proConfig(log)
 			if err != nil {
 				return err
@@ -237,6 +245,32 @@ func serverCmd() *cobra.Command {
 					"interactivity_url", base+"/api/v1/integrations/slack/actions", "events_url", base+"/api/v1/integrations/slack/events")
 				if box == nil {
 					log.Warn("Add to Slack needs stored secrets to keep the webhooks and tokens it gets", "fix", "set STACKURITY_SECRET_KEY")
+				}
+			}
+			// Connect GitLab, when configured.
+			glClient, err := gitlab.FromEnv()
+			if err != nil {
+				return err
+			}
+			if glClient != nil {
+				base := strings.TrimRight(os.Getenv("STACKURITY_BASE_URL"), "/")
+				log.Info("Connect GitLab enabled", "gitlab", glClient.Base, "callback_url", base+"/integrations/gitlab/callback")
+				if box == nil {
+					log.Warn("Connect GitLab needs stored secrets to keep its credential encrypted; it is off until then", "fix", "set STACKURITY_SECRET_KEY")
+				}
+				if !strings.HasPrefix(base, "https://") {
+					log.Warn("Connect GitLab's callback and webhook URLs are on this server's https address", "fix", "set STACKURITY_BASE_URL")
+				}
+			}
+			// The Stackurity PagerDuty app ("Connect PagerDuty"), when configured.
+			if dispatcher.PagerDutyApp, err = notify.PagerDutyAppFromEnv(); err != nil {
+				return err
+			}
+			if dispatcher.PagerDutyApp != nil {
+				base := strings.TrimRight(os.Getenv("STACKURITY_BASE_URL"), "/")
+				log.Info("PagerDuty app enabled (Connect PagerDuty)", "redirect_url", base+"/integrations/pagerduty/oauth/callback")
+				if box == nil {
+					log.Warn("Connect PagerDuty needs stored secrets to keep the routing keys it gets", "fix", "set STACKURITY_SECRET_KEY")
 				}
 			}
 			// The Stackurity Teams app ("Add to Teams"), when configured.
@@ -304,7 +338,7 @@ func serverCmd() *cobra.Command {
 			srv := &api.Server{
 				OpenAIAppsChallenge: challenge,
 				Pro:                 proCfg,
-				Dispatcher:          dispatcher, AllowHTTPWebhooks: allowHTTPHooks, Plugins: pluginRunner,
+				Dispatcher:          dispatcher, AllowHTTPWebhooks: allowHTTPHooks, Plugins: pluginRunner, Cloud: cloud,
 				Store: st, Log: log, Secrets: res, Version: version, SetupToken: setupToken,
 				BaseURL: os.Getenv("STACKURITY_BASE_URL"), AgentDir: os.Getenv("STACKURITY_AGENT_DIR"),
 				CIAudience:         strings.TrimSpace(os.Getenv("STACKURITY_CI_AUDIENCE")),
@@ -320,6 +354,7 @@ func serverCmd() *cobra.Command {
 				Health: checker, UpdateCheck: updateCfg.Enabled,
 				CoverageGaps: func(ctx context.Context) (any, error) { return coverageGaps(ctx) },
 				FeedbackURL:  feedbackURL,
+				GitLab:       glClient,
 				GitHubApp:    ghApp,
 				AWS:          awsClient,
 			}
@@ -363,7 +398,12 @@ func serverCmd() *cobra.Command {
 			if w.HeapWarn, err = heapWarn(os.Getenv("STACKURITY_HEAP_WARN_MIB")); err != nil {
 				return err
 			}
-			registerJobs(w, st, res, dataDir, log, pluginRunner, packMgr, ghApp, awsClient)
+			var glRunner *gitlab.Runner
+			if glClient != nil && box != nil {
+				glRunner = &gitlab.Runner{Store: st, Client: glClient, Box: box, Log: log, Packs: packMgr.Active,
+					RedirectURL: strings.TrimRight(os.Getenv("STACKURITY_BASE_URL"), "/") + "/integrations/gitlab/callback"}
+			}
+			registerJobs(w, st, res, dataDir, log, pluginRunner, packMgr, cloud, ghApp, awsClient, glRunner)
 			// Prioritise, correlate, plan and deliver notifications; none
 			// for a read-only workspace.
 			w.EveryCollectingWorkspace("alerts", tm.Alerts, dispatcher.Tick)
@@ -579,8 +619,11 @@ func checkIsolation(ctx context.Context, st *store.Store, log *slog.Logger) erro
 // cannot change; a rescan only picks up scanner improvements.
 const imageScanFresh = 7 * 24 * time.Hour
 
-func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataDir string, log *slog.Logger, pluginRunner *plugins.Runner, packMgr *packs.Manager, ghApp *githubapp.App, awsClient *awsconnect.Client) {
+func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataDir string, log *slog.Logger, pluginRunner *plugins.Runner, packMgr *packs.Manager, cloud *cloudconnect.Platform, ghApp *githubapp.App, awsClient *awsconnect.Client, glRunner *gitlab.Runner) {
 	scanner := &gitrepo.Scanner{WorkDir: filepath.Join(dataDir, "work"), Version: version, Packs: packMgr.Active}
+	if glRunner != nil {
+		glRunner.Scanner = scanner
+	}
 	var ghRunner *githubapp.Runner
 	if ghApp != nil {
 		ghRunner = &githubapp.Runner{Store: st, App: ghApp, Scanner: scanner, Log: log, Packs: packMgr.Active}
@@ -603,6 +646,15 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 		}
 		// What it collects reports through this integration, on its schedule.
 		ctx = store.WithReportSource(ctx, store.ReportSource{Source: store.SourceIntegration, IntegrationID: in.ID})
+		if in.Kind == store.KindGitLab {
+			// A project of a connected GitLab group: cloned with the
+			// connection's sealed read-only credential, never a secret_ref.
+			if glRunner == nil {
+				_ = st.IntegrationResult(ctx, in.ID, 0, errors.New("Connect GitLab is not set up on this server (STACKURITY_GITLAB_CLIENT_ID, STACKURITY_GITLAB_CLIENT_SECRET, STACKURITY_SECRET_KEY)"))
+				return nil
+			}
+			return glRunner.Run(ctx, in)
+		}
 		if in.Kind == store.KindGitHubApp {
 			// A repository granted to the GitHub App: cloned with a
 			// short-lived installation token, never a stored secret.
@@ -664,8 +716,15 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 					return err
 				}
 				if !awsLinked {
-					// Without credentials the plugin would use the server's own.
-					if token == "" && !netguard.AllowsPrivate(ctx) {
+					meta, err := pluginRunner.Metadata(ctx, cfg.Plugin)
+					if err != nil {
+						return err
+					}
+					// Without credentials the plugin would use the server's own,
+					// unless it uses the server's workload identity, which names
+					// the workspace (gcp-managed, azure-managed).
+					platform := cloudconnect.UsesPlatform(cfg.Plugin, meta.Credentials)
+					if token == "" && !platform && !netguard.AllowsPrivate(ctx) {
 						return errors.New("plugins in this workspace need credentials (a stored secret)")
 					}
 					// The secret, if any, is a JSON object of the credentials
@@ -676,6 +735,8 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 							return errors.New("plugin secrets must be a JSON object of credential names to values")
 						}
 					}
+					ws, _ := tenant.Workspace(ctx)
+					creds = cloud.ForPlugin(cfg.Plugin, meta.Credentials, creds, ws, time.Now())
 				}
 				batches, logs, err := pluginRunner.Collect(ctx, cfg.Plugin, cfg.Config, creds)
 				if logs != "" {
@@ -778,6 +839,8 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 		}
 		return err
 	})
+
+	registerGitLab(w, st, glRunner)
 
 	// The GitHub App: list an installation's repositories (after an
 	// install, a webhook, or once a day), and keep listing them.
@@ -882,6 +945,10 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 		}
 		// Unused assistant registrations, old codes and tokens.
 		if err := st.PruneOAuth(ctx); err != nil {
+			return err
+		}
+		// Connect PagerDuty steps nobody finished, with their tokens.
+		if err := st.PurgePagerDutyConnects(ctx); err != nil {
 			return err
 		}
 		// Expired tokens of CI jobs (one per job).
@@ -1429,4 +1496,47 @@ func lockForEvaluation(ctx context.Context, st *store.Store, wait time.Duration)
 		return nil, worker.Defer(5*time.Second+mrand.N(10*time.Second), "another evaluation of this workspace is running")
 	}
 	return release, err
+}
+
+// registerGitLab lists connected GitLab groups' projects (after a connect, a
+// webhook, or once a day), and revokes the setup tokens of connects that
+// were never finished.
+func registerGitLab(w *worker.Worker, st *store.Store, glRunner *gitlab.Runner) {
+	w.Handle("gitlab.sync", func(ctx context.Context, payload json.RawMessage) error {
+		var p struct {
+			ConnectionID int64 `json:"connection_id"`
+		}
+		if err := json.Unmarshal(payload, &p); err != nil {
+			return err
+		}
+		if glRunner == nil {
+			return nil
+		}
+		return glRunner.Sync(ctx, p.ConnectionID)
+	})
+	if glRunner == nil {
+		return
+	}
+	w.EveryCollectingWorkspace("gitlab-sync", time.Hour, func(ctx context.Context) error {
+		ids, err := st.ActiveGitLabConnections(ctx, gitlab.SyncEvery)
+		if err != nil {
+			return err
+		}
+		for _, id := range ids {
+			if _, err := st.Enqueue(ctx, "gitlab.sync", map[string]int64{"connection_id": id}, fmt.Sprintf("gitlab-sync:%d", id), time.Time{}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	w.Every("gitlab-abandoned-setup", 5*time.Minute, func(ctx context.Context) error {
+		tokens, err := st.TakeExpiredGitLabPicks(ctx, glRunner.Box)
+		if err != nil {
+			return err
+		}
+		for _, t := range tokens {
+			_ = glRunner.Client.Revoke(ctx, t)
+		}
+		return nil
+	})
 }

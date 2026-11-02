@@ -504,6 +504,7 @@ stackurity.exe agent --interval 6h`,
     where: ["Settings", "Integrations"],
     keywords: "git github gitlab lockfile npm composer repository ci",
     body: [
+      { note: "On GitLab, where your server offers it, [Connect GitLab](help:gitlab) covers a whole group in one step: no token or CI step." },
       { note: "On GitHub, with the Stackurity GitHub App on your server, [Install on GitHub](help:github-app) is simpler: no token or CI step." },
       { h: "Option A: the server clones it on a schedule" },
       {
@@ -531,6 +532,53 @@ stackurity.exe agent --interval 6h`,
       {
         p: "Supported lockfiles: npm, yarn (v1 and Berry), pnpm, Composer, Poetry, Pipenv, pinned `requirements.txt`, Go modules, Cargo, Bundler, NuGet `packages.lock.json`, and `pubspec.lock`. Others (Maven, Gradle, …) are shown as unsupported coverage, never silently ignored.",
       },
+    ],
+  },
+  {
+    id: "gitlab",
+    title: "Connect GitLab (a group's projects in one step)",
+    section: "Adding servers and sources",
+    summary: "Scan every project of a GitLab group, subgroups included: authorise on GitLab, pick the group, no token to paste.",
+    where: ["Settings", "Integrations", "Git repository"],
+    keywords: "gitlab group project subgroup oauth access token webhook push self-managed private repository",
+    body: [
+      { p: "Where your Stackurity server offers Connect GitLab (Stackurity Cloud does), you don't need to create a token or add a CI step to scan your GitLab projects." },
+      {
+        steps: [
+          "Go to **Settings ▸ Integrations** and, on the **Git repository** card, click **Connect GitLab** (admins).",
+          "GitLab asks you to authorise Stackurity. It asks for the **api** scope once, to set things up; Stackurity revokes that token before the page answers.",
+          "Back in Stackurity, pick a group you are a member of and click **Connect this group**. Each project appears under **Active integrations**, and the first results arrive within minutes.",
+        ],
+      },
+      { h: "What Stackurity keeps" },
+      {
+        list: [
+          "As the group's **Owner**, Stackurity creates a group access token named *Stackurity*: **read_api** and **read_repository**, the **Reporter** role, valid for just under a year. It is stored encrypted and can't push or change anything.",
+          "If GitLab doesn't allow a group access token (you're not the Owner, or your GitLab restricts it), click **Authorise read-only access**: GitLab asks for read_api and read_repository only, and Stackurity keeps and renews that authorisation.",
+          "Each scan is a shallow clone that reads lockfiles and is deleted afterwards. Hooks, submodules, LFS and scripts never run.",
+        ],
+      },
+      { h: "When projects are scanned" },
+      {
+        list: [
+          "Right after you connect, then every 6 hours (change it per project under **Settings ▸ Integrations**).",
+          "With a group webhook (Owner role, GitLab Premium or Ultimate): when a push to the default branch changes a lockfile or manifest. Without one, the connection says *scanned on the schedule only*.",
+          "New projects in the group are added, and removed ones have their issues closed as removed (the asset and its history stay), daily and when the webhook reports a change.",
+        ],
+      },
+      { h: "Change or remove it" },
+      {
+        list: [
+          "**Switch one project off**: open it under **Settings ▸ Integrations** and switch it off.",
+          "**Disconnect**: GitLab asks you to authorise once more, then Stackurity deletes its webhook and access token there and stops scanning. The history is kept.",
+          "**Remove here only**: stops scanning and revokes Stackurity's credential without visiting GitLab; a group Owner deletes the webhook later.",
+          "The group access token expires after a year: the connection warns 30 days before. Connect again to renew it.",
+        ],
+      },
+      {
+        note: "A GitLab group (and the groups above and below it) can be connected to one Stackurity organisation only. At your organisation's asset limit, new projects wait until there is room; the connection says how many.",
+      },
+      { p: "Projects in a personal namespace can't be connected: use a [Git integration or a CI scan](help:repositories). Operators: see `docs/gitlab.md` to set Connect GitLab up." },
     ],
   },
   {
@@ -792,6 +840,50 @@ stackurity.exe agent --interval 6h`,
       },
       { p: "Each service appears as a *managed service* asset; end-of-life dates come from endoflife.date. Vulnerabilities inside AWS-managed engines are patched by AWS and are listed as evaluation gaps, not as clean." },
       { note: "Running Stackurity yourself? Connecting with a stack needs `STACKURITY_AWS_PRINCIPAL_ARN` and AWS credentials on the server; see the install guide (docs/install.md, \"AWS managed services\")." },
+    ],
+  },
+
+  {
+    id: "google-cloud",
+    title: "Google Cloud managed services",
+    section: "Adding servers and sources",
+    summary: "Track Cloud SQL, Memorystore, GKE, Cloud Run functions, Cloud Run and App Engine versions with the gcp-managed plugin, without a service account key.",
+    where: ["Settings", "Integrations"],
+    keywords: "gcp google cloud sql memorystore gke cloud run functions app engine workload identity federation plugin managed service",
+    body: [
+      {
+        steps: [
+          "Go to **Settings ▸ Integrations** and choose **Google Cloud** under Sources (admin).",
+          "Enter the project id and the project number (both on the project's welcome page in the Google Cloud console).",
+          "Copy the commands shown and run them in Cloud Shell as a project owner. They create a read-only custom role, a service account without a key, and a workload identity pool that trusts this Stackurity workspace only.",
+          "Click **Create integration**, then **Run now**.",
+        ],
+      },
+      { p: "The role has exactly the list permissions the plugin uses; the page shows them. Nothing secret leaves Google Cloud: on each run Stackurity signs a short token naming your workspace and exchanges it for a one-hour token of the service account." },
+      { p: "If your organisation cannot use workload identity federation, the page also shows the fallback: a service account key, stored as a workspace secret (**Settings ▸ Secrets**)." },
+      { p: "Services the role cannot read, or whose API is not enabled, appear in the project's coverage as failed or skipped with the reason, never as zero. GKE end-of-life dates come from endoflife.date; Memorystore for Redis has no lifecycle data there and is shown as not assessed." },
+    ],
+  },
+  {
+    id: "azure",
+    title: "Azure managed services",
+    section: "Adding servers and sources",
+    summary: "Track Azure Database for MySQL and PostgreSQL, Azure Cache for Redis, AKS, App Service and Functions versions with the azure-managed plugin, without a secret in your tenant.",
+    where: ["Settings", "Integrations"],
+    keywords: "azure entra aks app service functions mysql postgresql redis subscription consent plugin managed service",
+    body: [
+      {
+        steps: [
+          "Go to **Settings ▸ Integrations** and choose **Azure** under Sources (admin).",
+          "Enter the directory (tenant) id and the subscription id.",
+          "Open the admin consent link to add Stackurity's app to your tenant, or let the commands do it.",
+          "Run the commands shown in Cloud Shell as an Owner or User Access Administrator of the subscription. They create a read-only custom role and assign it to Stackurity's app, with a description that ties the grant to your workspace.",
+          "Click **Create integration**, then **Run now**.",
+        ],
+      },
+      { p: "No client secret is created in your tenant. Stackurity's app is shared by every workspace, so each run first checks that the role assignment names your workspace and refuses the subscription otherwise." },
+      { p: "Without Stackurity's app (on a server whose operator has not registered one), the page shows the fallback: a service principal with a client secret, stored as a workspace secret." },
+      { p: "Windows apps that keep their runtime only in app settings are shown as partial: Stackurity never reads app settings, which can hold secrets." },
     ],
   },
 
@@ -1559,6 +1651,7 @@ jobs:
       {
         list: [
           "**Slack**: click **Add to Slack**, pick the channel in Slack, and you come back to its settings to choose what to send. The channel shows as \"#security in Acme (Stackurity app)\", and **Assign to me** and **Snooze** work inside Slack. If the app is removed from Slack, the channel is turned off and says why. **Advanced: use a webhook** still takes an incoming webhook URL (see below).",
+          "**PagerDuty**: click **Connect PagerDuty**, allow Stackurity in PagerDuty, and pick the service. Stackurity adds an Events API V2 integration named Stackurity to that service and keeps its key; you never copy a key. **Advanced: paste an integration key** still works (see below).",
           "**Microsoft Teams**: where offered, click **Add to Teams**. Stackurity shows a code (it works once, for 15 minutes, only for you) and **Open Stackurity in Teams**: add the app to the team, then in the channel that should get the notifications send `@Stackurity` and the code. The bot answers **Connected** and Stackurity opens the new integration to choose what to send. It shows as \"alerts in Security (Stackurity app)\". If the app is removed from the team, or the channel or team is deleted, the integration is turned off and says why; **Add to Teams** again to resume. **Advanced: use a Workflows webhook** still takes a Workflows webhook URL.",
           "**Email (sent by Stackurity)**, where offered: tick members and, if you like, type other addresses (up to 20 recipients by default). Members get messages once they have signed in to Stackurity at least once. Each other address gets one email with a link to confirm; nothing is sent to it until then. The **Other email addresses** list shows who is pending or confirmed, with **Resend**.",
           "**Email (your own mail server)**: under **Advanced: use your own mail server**, or the only email option on a self-hosted server. Pick a **Provider** (Amazon SES, SendGrid, Postmark, Mailgun, ZeptoMail, Gmail / Google Workspace) to fill in the host, port and encryption, with a note on where to get the credentials.",
@@ -1572,7 +1665,7 @@ jobs:
           ["Microsoft Teams (Workflows webhook)", "none", "The Workflows webhook URL (required)"],
           ["Webhook", "URL (HTTPS)", "HMAC signing key (optional)"],
           ["Jira", "With **Connect Jira** (Jira Cloud, where the server offers it): the site, project, issue type, done status and priorities, picked from lists. With a token: site URL, Cloud or Data Center, project key, issue type, account email (Cloud), optional labels, priority mapping and resolve transition", "None with Connect Jira; otherwise an API token (Cloud) or personal access token (required)"],
-          ["PagerDuty", "Service region (US or EU), optional severity per priority", "Integration key (routing key) of an Events API v2 integration (required)"],
+          ["PagerDuty", "Connect PagerDuty, or: service region (US or EU), optional severity per priority", "None with Connect PagerDuty; otherwise the integration key (routing key) of an Events API v2 integration (required)"],
           ["ServiceNow", "Instance URL, user name (Basic) or OAuth client ID, optional table, assignment group, category, subcategory, urgency and impact per priority, other fields, resolve state and close code, read state back", "Password (Basic) or OAuth client secret (required)"],
         ],
       },
@@ -1653,7 +1746,16 @@ jobs:
       },
       { h: "PagerDuty" },
       {
-        p: "A PagerDuty integration keeps one alert per incident: triggered when the incident opens (with a link back to it), acknowledged when it is acknowledged in Stackurity (none of its findings is new), and resolved when it resolves. When its priority rises, it escalates or new findings arrive after acknowledgement, someone is paged again: a new alert is opened (its key ends in -2, -3) and the old one resolved, because PagerDuty does not page again for an alert that is already open. The severity follows the priority (P1 critical, P2 error, P3 warning, P4 info; SOS is always critical). Every event uses the alert's dedup key (`stackurity-incident-<organisation>-<incident>`, then -2, -3), so retries never open a second alert. An alert keeps the severity it was opened with. Store the service's **Events API V2** integration key under Settings, Secrets. Pick the EU service region if your PagerDuty account is in the EU. **Send test** triggers a test alert (severity info) and resolves it at once.",
+        p: "A PagerDuty integration keeps one alert per incident: triggered when the incident opens (with a link back to it), acknowledged when it is acknowledged in Stackurity (none of its findings is new), and resolved when it resolves. When its priority rises, it escalates or new findings arrive after acknowledgement, someone is paged again: a new alert is opened (its key ends in -2, -3) and the old one resolved, because PagerDuty does not page again for an alert that is already open. The severity follows the priority (P1 critical, P2 error, P3 warning, P4 info; SOS is always critical). Every event uses the alert's dedup key (`stackurity-incident-<organisation>-<incident>`, then -2, -3), so retries never open a second alert. An alert keeps the severity it was opened with. **Send test** triggers a test alert (severity info) and resolves it at once.",
+      },
+      {
+        p: "**Connect PagerDuty** (when your server offers it) sets this up for you. PagerDuty asks you to let Stackurity read and change services; you pick the service in Stackurity; Stackurity adds an **Events API V2** integration named **Stackurity** to it and stores its key, encrypted, like any secret. The key is never shown again. Your PagerDuty user must be allowed to add integrations to the service (an admin, or the service's manager); if not, PagerDuty refuses and Stackurity says so. Stackurity does not keep access to your PagerDuty account: the PagerDuty sign-in is thrown away as soon as the integration exists (or after 10 minutes if you stop half-way). EU accounts are recognised on their own. Stackurity does not create services: pick an existing one.",
+      },
+      {
+        p: "**Disconnecting.** Deleting the integration in Stackurity deletes its key. Because Stackurity no longer has access to PagerDuty, the **Stackurity** integration stays on the PagerDuty service until you delete it there: the service, **Integrations**, **Stackurity**, **Delete Integration** (the integration's settings in Stackurity link to it). Until then it receives nothing from Stackurity. Connecting the same service again gives its integration a new key; delete the older **Stackurity** integration in PagerDuty.",
+      },
+      {
+        p: "**Without Connect PagerDuty**, add the integration yourself: in PagerDuty, the service, **Integrations**, **Add an integration**, **Events API V2**, and copy the **Integration Key**. Store it under Settings, Secrets. Pick the EU service region if your PagerDuty account is in the EU.",
       },
       { h: "ServiceNow" },
       {

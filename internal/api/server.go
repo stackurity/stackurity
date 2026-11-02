@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"errors"
+	"github.com/stackurity/stackurity/internal/cloudconnect"
 	"github.com/stackurity/stackurity/internal/license"
 	"io"
 	"io/fs"
@@ -25,6 +26,7 @@ import (
 	"github.com/stackurity/stackurity/internal/awsconnect"
 	"github.com/stackurity/stackurity/internal/db"
 	"github.com/stackurity/stackurity/internal/githubapp"
+	"github.com/stackurity/stackurity/internal/gitlab"
 	"github.com/stackurity/stackurity/internal/health"
 	"github.com/stackurity/stackurity/internal/metrics"
 	"github.com/stackurity/stackurity/internal/model"
@@ -64,6 +66,9 @@ type Server struct {
 	Dispatcher        *notify.Dispatcher
 	AllowHTTPWebhooks bool
 	Plugins           *plugins.Runner // nil when no plugin directory is configured
+	// Cloud is the server's identity towards customers' Google Cloud and
+	// Azure accounts; nil offers only the credential fallbacks.
+	Cloud *cloudconnect.Platform
 	// Pro holds what the licensed edition needs (single sign-on, ...);
 	// it is empty in the Community build.
 	Pro ProConfig
@@ -126,6 +131,9 @@ type Server struct {
 	// SlackRespond posts an answer to a Slack response_url (already checked
 	// to be Slack's); nil posts it over HTTPS. Tests capture answers here.
 	SlackRespond func(ctx context.Context, responseURL string, body []byte) error
+	// GitLab is Connect GitLab's OAuth application and GitLab; nil turns
+	// it off (gitlab.go).
+	GitLab *gitlab.Client
 	// GitHubApp is the Stackurity GitHub App ("Install on GitHub"); nil
 	// turns it off (github_app.go).
 	GitHubApp *githubapp.App
@@ -212,6 +220,9 @@ func (s *Server) Handler() http.Handler {
 	// Slack requires; signed in, the dashboard page that picks the
 	// organisation and starts Add to Slack (notify_setup.go).
 	r.Get("/integrations/slack/install", s.slackDirectInstall)
+	// Connect GitLab: a connected group's webhook, verified with that
+	// connection's secret token (gitlab.go).
+	r.With(s.limitAddress("gitlab-webhook", limitGitLabWebhook, "too many requests")).Post("/api/v1/integrations/gitlab/webhook/{id}", s.gitlabWebhook)
 	// The Stackurity Teams app's messaging endpoint (the Azure Bot's
 	// Messaging endpoint): every request carries a Bot Framework JWT for
 	// this app, verified before anything else (teams_app.go).
@@ -397,6 +408,7 @@ func (s *Server) Handler() http.Handler {
 				r.Post("/assets/{id}/relations", s.addRelation)
 				r.Delete("/assets/{id}/relations", s.deleteRelation)
 				r.Get("/integrations", s.listIntegrations)
+				r.Get("/integrations/gitlab", s.listGitLab)
 				r.Get("/integrations/{id}/images", s.registryImages)
 				r.Get("/integrations/github", s.listGitHubInstallations)
 				r.With(s.requireWritable).Post("/integrations/{id}/run", s.runIntegration)
@@ -452,6 +464,7 @@ func (s *Server) Handler() http.Handler {
 				r.Post("/teams", s.createTeam)
 				r.Patch("/teams/{id}", s.updateTeam)
 				r.Delete("/teams/{id}", s.deleteTeam)
+				r.Get("/credentials/health", s.credentialHealth)
 				r.Post("/owner-rules", s.createOwnerRule)
 				r.Post("/owner-rules/apply", s.applyOwnerRules)
 				r.Put("/owner-rules/{id}", s.updateOwnerRule)
@@ -462,6 +475,8 @@ func (s *Server) Handler() http.Handler {
 				r.Delete("/integrations/{id}", s.deleteIntegration)
 				r.Get("/jobs", s.listJobs)
 				r.Get("/plugins", s.listPlugins)
+				r.Get("/cloud-setup/gcp", s.cloudSetup("gcp"))
+				r.Get("/cloud-setup/azure", s.cloudSetup("azure"))
 				// Feeds are shared by every workspace: switching one off
 				// stops detection for all of them.
 				r.With(requireInstanceAdmin).Patch("/feeds/{name}", s.updateFeed)
@@ -482,6 +497,17 @@ func (s *Server) Handler() http.Handler {
 				r.Post("/email-recipients/resend", s.resendEmailRecipient)
 				r.With(s.requireWritable).Post("/integrations/slack/install", s.startSlackInstall)
 				r.With(s.requireWritable).Post("/integrations/slack/oauth", s.finishSlackInstall)
+				r.With(s.requireWritable).Post("/integrations/gitlab/connect", s.startGitLab)
+				r.With(s.requireWritable, s.limitAddress("gitlab-oauth", limitGitLabOAuth, "too many attempts; wait a minute")).Post("/integrations/gitlab/oauth", s.finishGitLabOAuth)
+				r.With(s.requireWritable, s.limitAddress("gitlab-oauth", limitGitLabOAuth, "too many attempts; wait a minute")).Post("/integrations/gitlab/connections", s.connectGitLabGroup)
+				r.With(s.requireWritable).Post("/integrations/gitlab/connections/{id}/authorize", s.authorizeGitLabConnection)
+				r.With(s.requireWritable).Post("/integrations/gitlab/connections/{id}/sync", s.syncGitLabConnection)
+				r.Delete("/integrations/gitlab/connections/{id}", s.disconnectGitLab)
+				r.With(s.requireWritable).Post("/integrations/pagerduty/connect", s.startPagerDutyConnect)
+				r.With(s.requireWritable).Post("/integrations/pagerduty/oauth", s.finishPagerDutyOAuth)
+				r.With(s.requireWritable).Post("/integrations/pagerduty/services", s.listPagerDutyServices)
+				r.With(s.requireWritable).Post("/integrations/pagerduty/finish", s.finishPagerDutyConnect)
+				r.Post("/integrations/pagerduty/cancel", s.cancelPagerDutyConnect)
 				r.With(s.requireWritable).Post("/integrations/teams/install", s.startTeamsInstall)
 				r.Get("/integrations/teams/install/{id}", s.teamsInstallStatus)
 				r.With(s.requireWritable).Post("/integrations/jira/install", s.startJiraConnect)

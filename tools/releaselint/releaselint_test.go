@@ -69,6 +69,33 @@ func TestVersionReferences(t *testing.T) {
 	}
 }
 
+// hasUnreleasedEntries says whether CHANGELOG.md has an "## Unreleased"
+// section with anything in it before the next "## " heading.
+func hasUnreleasedEntries(changelog string) bool {
+	loc := regexp.MustCompile(`(?m)^## Unreleased[ \t]*\r?$`).FindStringIndex(changelog)
+	if loc == nil {
+		return false
+	}
+	body := changelog[loc[1]:]
+	if next := regexp.MustCompile(`(?m)^## `).FindStringIndex(body); next != nil {
+		body = body[:next[0]]
+	}
+	return strings.TrimSpace(body) != ""
+}
+
+func TestHasUnreleasedEntries(t *testing.T) {
+	for doc, want := range map[string]bool{
+		"# C\n\n## 0.2.0\n\n- a\n":                               false,
+		"# C\n\n## Unreleased\n\n## 0.2.0\n\n- a\n":              false,
+		"# C\n\n## Unreleased\n\n### Added\n\n- b\n\n## 0.2.0\n": true,
+		"# C\n\n## Unreleased\n\n- b\n":                          true,
+	} {
+		if got := hasUnreleasedEntries(doc); got != want {
+			t.Errorf("%q: got %v, want %v", doc, got, want)
+		}
+	}
+}
+
 // TestUpgradeMatrixHasOneSource: the supported upgrade sources are listed
 // only in the release-checks workflow; prose elsewhere points at it.
 func TestUpgradeMatrixHasOneSource(t *testing.T) {
@@ -83,15 +110,16 @@ func TestUpgradeMatrixHasOneSource(t *testing.T) {
 
 // TestUpgradeMatrixHasNewestRelease fails when the newest published release
 // is not a source in the release-checks upgrade matrix, so every later
-// release is tested as an upgrade from it. With an "Unreleased" heading in
-// CHANGELOG.md, that is the first version below it. Without one, the change
-// is a release that renamed Unreleased to its version and cannot be in the
-// matrix before it is published, so the version before it must be.
+// release is tested as an upgrade from it. With entries under "Unreleased"
+// in CHANGELOG.md, that is the first version below it. Without any (no
+// Unreleased heading, or the empty one tools/release puts above a release),
+// the change is a release that renamed Unreleased to its version and cannot
+// be in the matrix before it is published, so the version before it must be.
 func TestUpgradeMatrixHasNewestRelease(t *testing.T) {
 	changelog := read(t, "CHANGELOG.md")
 	versions := regexp.MustCompile(`(?m)^## (\d+\.\d+\.\d+)\s*$`).FindAllStringSubmatch(changelog, -1)
 	published := 0
-	if !regexp.MustCompile(`(?m)^## Unreleased\s*$`).MatchString(changelog) {
+	if !hasUnreleasedEntries(changelog) {
 		published = 1
 	}
 	if len(versions) <= published {

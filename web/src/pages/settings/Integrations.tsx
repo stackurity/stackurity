@@ -1,12 +1,14 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { api, loadNotificationOptions, NO_GITHUB_APP, NO_NOTIFICATION_OPTIONS, type Asset, type Channel, type GitHubAppStatus, type Integration, type List } from "../../api";
+import { api, loadNotificationOptions, NO_GITHUB_APP, NO_GITLAB, NO_NOTIFICATION_OPTIONS, type Asset, type Channel, type GitHubAppStatus, type GitLabStatus, type Integration, type List } from "../../api";
 import { useAuth } from "../../auth";
 import { useLoad } from "../../hooks";
 import { Badge } from "../../components/Badge";
 import { Table, type Column } from "../../components/Table";
 import { CodeBlock, ErrorBox, Loading, PageHeader, RelativeTime, Tabs } from "../../components/ui";
 import { channelTarget, DeliveriesTab, kindLabel } from "./Notifications";
+import { CloudConnectPanel } from "./CloudConnect";
+import { ConnectGitLabButton, GitLabConnections } from "./GitLab";
 import { CiTrusts } from "./CiTrusts";
 import { GitHubInstallations, InstallOnGitHubButton } from "./GitHubApp";
 
@@ -72,7 +74,7 @@ export function IntegrationIcon({ kind }: { kind: string }) {
     sbom: <path d="M7 3h7l5 5v13H7zM14 3v5h5M10 12h6M10 15.5h6M10 19h3" />,
     ai: <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z" />,
   };
-  const key = kind === "stackurity_email" ? "email" : kind === "git_repository" || kind === "github_app" ? "git" : kind === "container_image" || kind === "container_registry" ? "container" : kind;
+  const key = kind === "stackurity_email" ? "email" : kind === "git_repository" || kind === "github_app" || kind === "gitlab" ? "git" : kind === "container_image" || kind === "container_registry" ? "container" : kind;
   return (
     <span className="int-icon" aria-hidden="true">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
@@ -99,6 +101,7 @@ interface Active {
 const SOURCE_LABEL: Record<string, string> = {
   git_repository: "Git repository",
   github_app: "GitHub repository (GitHub App)",
+  gitlab: "GitLab project (Connect GitLab)",
   container_image: "Container image",
   container_registry: "Container registry",
   plugin: "Plugin",
@@ -123,7 +126,7 @@ function fromSource(i: Integration): Active {
   const plugin = i.kind === "plugin" ? String(i.config?.plugin ?? "") : "";
   return {
     key: `in${i.id}`,
-    kind: plugin.startsWith("aws") ? "cloud" : plugin.includes("kube") ? "kubernetes" : i.kind,
+    kind: plugin.startsWith("aws") || plugin.startsWith("gcp") || plugin.startsWith("azure") ? "cloud" : plugin.includes("kube") ? "kubernetes" : i.kind,
     name: i.name,
     kindLabel: plugin ? `Plugin: ${plugin}` : SOURCE_LABEL[i.kind] ?? i.kind,
     target: "",
@@ -141,10 +144,19 @@ interface AddCard {
   to: string;
   admin?: boolean;
   /** Short instructions shown on this page instead of a link. */
-  panel?: "ci" | "sbom";
+  panel?: Panel;
   /** Shown after the card's link (admins). */
   extra?: ReactNode;
 }
+
+type Panel = "ci" | "sbom" | "gcp" | "azure";
+
+const PANEL_TITLE: Record<Panel, string> = {
+  ci: "Scan in a CI pipeline",
+  sbom: "Upload an SBOM",
+  gcp: "Connect Google Cloud",
+  azure: "Connect Azure",
+};
 
 const HOST_PAGE = 500;
 
@@ -248,8 +260,10 @@ export function IntegrationsHubPage() {
   const channels = useLoad(() => (security ? api.get<List<Channel>>("/channels") : Promise.resolve(null)), [security]);
   const sources = useLoad(() => (engineer ? api.get<List<Integration>>("/integrations") : Promise.resolve(null)), [engineer]);
   const hosts = useLoad(() => api.get<List<Asset>>("/assets", { kind: "host", limit: HOST_PAGE }), []);
-  const [panel, setPanel] = useState<"ci" | "sbom" | null>(null);
+  const [panel, setPanel] = useState<Panel | null>(null);
   const optionsRes = useLoad(loadNotificationOptions, []);
+  const gitlab = useLoad(() => (engineer ? api.get<GitLabStatus>("/integrations/gitlab").catch(() => NO_GITLAB) : Promise.resolve(NO_GITLAB)), [engineer]);
+  const gl = gitlab.data ?? NO_GITLAB;
   const github = useLoad(
     () => (engineer ? api.get<GitHubAppStatus>("/integrations/github").catch(() => NO_GITHUB_APP) : Promise.resolve(NO_GITHUB_APP)),
     [engineer],
@@ -324,7 +338,7 @@ export function IntegrationsHubPage() {
         admin: true,
       },
       { kind: "jira", title: "Jira", text: options.jira_app ? "Connect Jira in one click. One issue per incident, updated until it is fixed." : "Keep one Jira issue per incident, updated until it is fixed.", to: "/settings/integrations/new/jira", admin: true },
-      { kind: "pagerduty", title: "PagerDuty", text: "Page on-call: one alert per incident, acknowledged and resolved with it.", to: "/settings/integrations/new/pagerduty", admin: true },
+      { kind: "pagerduty", title: "PagerDuty", text: options.pagerduty_app ? "Connect PagerDuty in one click and pick the service. One alert per incident, acknowledged and resolved with it." : "Page on-call: one alert per incident, acknowledged and resolved with it.", to: "/settings/integrations/new/pagerduty", admin: true },
       { kind: "servicenow", title: "ServiceNow", text: "Keep one ServiceNow incident per incident, with your field mapping.", to: "/settings/integrations/new/servicenow", admin: true },
       { kind: "webhook", title: "Webhook", text: "Send each message as JSON to your own HTTPS endpoint.", to: "/settings/integrations/new/webhook", admin: true },
     );
@@ -344,11 +358,22 @@ export function IntegrationsHubPage() {
             admin: true,
             extra: <InstallOnGitHubButton />,
           }
+        : gl.configured
+        ? {
+            kind: "git",
+            title: "Git repository",
+            text: "Connect GitLab and pick a group: every project in it, no token to paste, rescanned when a lockfile changes. Or clone any Git host over HTTPS with a token.",
+            to: "/integrations",
+            admin: true,
+            extra: <ConnectGitLabButton />,
+          }
         : { kind: "git", title: "Git repository", text: "Clone over HTTPS and read lockfiles on a schedule.", to: "/integrations", admin: true },
       { kind: "ci", title: "CI pipeline", text: "Run stackurity scan or the GitHub Action in CI, without a stored secret, and fail the build on findings.", to: "", panel: "ci" },
       { kind: "container", title: "Container image / registry", text: "Connect a registry and scan its newest tags, or add one image.", to: "/integrations?add=container", admin: true },
       { kind: "kubernetes", title: "Kubernetes cluster", text: "Workloads, the images they run and their exposure. One command installs a read-only reporter in the cluster.", to: "/integrations/kubernetes/add", admin: true },
       { kind: "cloud", title: "AWS", text: "Launch one CloudFormation stack: RDS, EKS, Lambda and more, and the agent on EC2 through SSM.", to: "/settings/integrations/aws", admin: true },
+      { kind: "cloud", title: "Google Cloud", text: "Cloud SQL, Memorystore, GKE, Cloud Run and App Engine versions. Keyless: one gcloud block, no service account key.", to: "", panel: "gcp" },
+      { kind: "cloud", title: "Azure", text: "Azure Database, Cache for Redis, AKS, App Service and Functions versions. One consent and one az block, no secret in your tenant.", to: "", panel: "azure" },
       { kind: "sbom", title: "SBOM upload", text: "Upload a CycloneDX or SPDX file from your build tool.", to: "", panel: "sbom" },
       { kind: "plugin", title: "Other plugins", text: "Collectors installed on this server.", to: "/settings/plugins", admin: true },
     ],
@@ -388,6 +413,7 @@ export function IntegrationsHubPage() {
             ) : (
               <Table caption="Active integrations" columns={cols} rows={rows} rowKey={(a) => a.key} rowClassName={(a) => (!a.enabled ? "row-removed" : a.error ? "row-stale" : undefined)} />
             )}
+            <GitLabConnections status={gl} admin={admin} onChange={gitlab.reload} />
             <GitHubInstallations status={gh} admin={admin} onChange={github.reload} />
             <h2 className="h-sm">Add an integration</h2>
             {groups.map((g) => (
@@ -430,14 +456,20 @@ export function IntegrationsHubPage() {
                   ))}
                 </ul>
                 {g.title === "Sources" && panel && (
-                  <section className="card" id={`int-panel-${panel}`} aria-label={panel === "ci" ? "CI pipeline" : "SBOM upload"}>
+                  <section className="card" id={`int-panel-${panel}`} aria-label={PANEL_TITLE[panel]}>
                     <div className="card-head">
-                      <h2>{panel === "ci" ? "Scan in a CI pipeline" : "Upload an SBOM"}</h2>
+                      <h2>{PANEL_TITLE[panel]}</h2>
                       <button type="button" className="btn btn-link" onClick={() => setPanel(null)}>
                         Close
                       </button>
                     </div>
-                    {panel === "ci" ? <CiPanel admin={admin} /> : <SbomPanel admin={admin} />}
+                    {panel === "ci" ? (
+                      <CiPanel admin={admin} />
+                    ) : panel === "sbom" ? (
+                      <SbomPanel admin={admin} />
+                    ) : (
+                      <CloudConnectPanel key={panel} provider={panel} admin={admin} />
+                    )}
                   </section>
                 )}
               </section>

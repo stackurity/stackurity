@@ -77,8 +77,25 @@ export function EmptyState({ title, children, help, helpLabel }: { title: string
 export function Loading({ label = "Loading…" }: { label?: string }) {
   return (
     <p className="loading" role="status">
+      <StackLoader />
       {label}
     </p>
+  );
+}
+
+/** The logo's three layers, stacked and breathing (styles.css .stack-loader). */
+export function StackLoader() {
+  return (
+    <span className="stack-loader" aria-hidden="true">
+      {["l1", "l2", "l3"].map((l) => (
+        <span key={l} className={`stack-loader-layer ${l}`}>
+          <i />
+          <i />
+          <i />
+          <i />
+        </span>
+      ))}
+    </span>
   );
 }
 

@@ -47,36 +47,31 @@ export function AssetSelect({
  * The Project field of a filter bar. It is the switcher's choice (the
  * server narrows the page's data to that project), so the two always
  * agree. onChange runs first, for a page to drop filters, such as an
- * asset, that may not be in the new project. Without projects it says
- * so, and tells admins where they are made.
+ * asset, that may not be in the new project. Without projects it is
+ * hidden, like the switcher.
  */
 export function ProjectFilter({ id, onChange }: { id: string; onChange?: () => void }) {
-  const { can, projectOnly } = useAuth();
+  const { projectOnly } = useAuth();
   const { projectId, projects, choose } = useProject();
+  if (projects.length === 0) return null;
   return (
     <div className="field">
       <label htmlFor={id}>Project</label>
-      {projects.length === 0 ? (
-        <select id={id} disabled value="" title={can("admin") ? "Create projects under Settings → Projects" : undefined}>
-          <option value="">No projects yet</option>
-        </select>
-      ) : (
-        <select
-          id={id}
-          value={String(projectId)}
-          onChange={(e) => {
-            onChange?.();
-            choose(Number(e.target.value));
-          }}
-        >
-          <option value="0">{projectOnly ? "All my projects" : "All projects"}</option>
-          {projects.map((p) => (
-            <option key={p.id} value={String(p.id)}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-      )}
+      <select
+        id={id}
+        value={String(projectId)}
+        onChange={(e) => {
+          onChange?.();
+          choose(Number(e.target.value));
+        }}
+      >
+        <option value="0">{projectOnly ? "All my projects" : "All projects"}</option>
+        {projects.map((p) => (
+          <option key={p.id} value={String(p.id)}>
+            {p.name}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }
