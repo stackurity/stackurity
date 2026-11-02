@@ -338,7 +338,10 @@ func checkSecretRef(r *http.Request, ref string) error {
 
 const kindsMessage = "kind must be " + KindGitRepository + ", " + KindContainerImage + ", " + KindContainerRegistry + " or " + KindPlugin
 
-func (s *Server) validateIntegration(ctx context.Context, kind string, cfg json.RawMessage, secretRef *string, minutes *int) error {
+// awsLinked is true for the integration of an AWS connection
+// (handlers_aws.go): the server assumes the connection's role and gives the
+// plugin the session, so it needs no secret of its own.
+func (s *Server) validateIntegration(ctx context.Context, kind string, cfg json.RawMessage, secretRef *string, minutes *int, awsLinked bool) error {
 	if len(cfg) > 0 {
 		dec := json.NewDecoder(strings.NewReader(string(cfg)))
 		dec.DisallowUnknownFields()
@@ -371,12 +374,16 @@ func (s *Server) validateIntegration(ctx context.Context, kind string, cfg json.
 					err = verr
 				}
 			}
+		case store.KindGitHubApp:
+			return badRequest("repositories are added to the GitHub App on GitHub: use Install on GitHub")
 		default:
 			return badRequest(kindsMessage)
 		}
 		if err != nil {
 			return badRequest("invalid config: " + err.Error())
 		}
+	} else if kind == store.KindGitHubApp {
+		return badRequest("repositories are added to the GitHub App on GitHub: use Install on GitHub")
 	} else if kind != KindGitRepository && kind != KindContainerImage && kind != KindContainerRegistry && kind != KindPlugin {
 		return badRequest(kindsMessage)
 	}
@@ -387,7 +394,7 @@ func (s *Server) validateIntegration(ctx context.Context, kind string, cfg json.
 	}
 	// Without credentials a plugin falls back to the server's own (for AWS,
 	// the instance role), which only the operator's workspace may use.
-	if kind == KindPlugin && (secretRef == nil || *secretRef == "") && !netguard.AllowsPrivate(ctx) {
+	if kind == KindPlugin && (secretRef == nil || *secretRef == "") && !awsLinked && !netguard.AllowsPrivate(ctx) {
 		return badRequest("plugins in this workspace need credentials: set secret_ref to a stored secret")
 	}
 	if minutes != nil && (*minutes < 15 || *minutes > 7*24*60) {
@@ -415,7 +422,7 @@ func (s *Server) createIntegration(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, badRequest("config is required"))
 		return
 	}
-	if err := s.validateIntegration(r.Context(), req.Kind, req.Config, req.SecretRef, req.ScheduleMinutes); err != nil {
+	if err := s.validateIntegration(r.Context(), req.Kind, req.Config, req.SecretRef, req.ScheduleMinutes, false); err != nil {
 		s.fail(w, r, err)
 		return
 	}
@@ -503,15 +510,33 @@ func (s *Server) updateIntegration(w http.ResponseWriter, r *http.Request) {
 	if req.SecretRef != nil {
 		ref = *req.SecretRef
 	}
-	if err := s.validateIntegration(r.Context(), cur.Kind, req.Config, &ref, req.ScheduleMinutes); err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	// Changing anything about an integration that reads a server secret
-	// could redirect that secret, so it needs an instance administrator.
-	if err := checkSecretRef(r, ref); err != nil {
-		s.fail(w, r, err)
-		return
+	if cur.Kind == store.KindGitHubApp {
+		// Made and named by the GitHub App, from what is granted on GitHub;
+		// it reads no secret. Only its switch and schedule are people's.
+		if req.Name != nil || len(req.Config) > 0 || req.SecretRef != nil {
+			s.fail(w, r, badRequest("a repository scanned through the GitHub App can only be switched on or off and rescheduled; which repositories are scanned is chosen on GitHub"))
+			return
+		}
+		if m := req.ScheduleMinutes; m != nil && (*m < 15 || *m > 7*24*60) {
+			s.fail(w, r, badRequest("schedule_minutes must be between 15 and 10080"))
+			return
+		}
+	} else {
+		awsLinked, err := s.checkAWSLinkedUpdate(r.Context(), id, req.Config, ref)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		if err := s.validateIntegration(r.Context(), cur.Kind, req.Config, &ref, req.ScheduleMinutes, awsLinked); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		// Changing anything about an integration that reads a server secret
+		// could redirect that secret, so it needs an instance administrator.
+		if err := checkSecretRef(r, ref); err != nil {
+			s.fail(w, r, err)
+			return
+		}
 	}
 	if cur.Kind == KindContainerRegistry {
 		cfg := cur.Config

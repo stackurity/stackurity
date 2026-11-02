@@ -16,6 +16,7 @@ import (
 
 	"github.com/stackurity/stackurity/internal/api"
 	"github.com/stackurity/stackurity/internal/auth"
+	"github.com/stackurity/stackurity/internal/awsconnect/awsfake"
 	"github.com/stackurity/stackurity/internal/fixplan/planner"
 	"github.com/stackurity/stackurity/internal/model"
 	"github.com/stackurity/stackurity/internal/osv"
@@ -59,6 +60,7 @@ var routeRules = map[string]routeRule{
 	"GET /healthz":                   {class: "public"},
 	"GET /readyz":                    {class: "public"},
 	"GET /install/agent.sh":          {class: "public"},
+	"GET /install/kubernetes.yaml":   {class: "public"},
 	"GET /download/agent/{platform}": {class: "public"},
 	"GET /api/v1/meta":               {class: "public"},
 	"GET /api/v1/openapi.json":       {class: "public"},
@@ -66,6 +68,13 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/auth/login":        {class: "skip"},
 	"POST /api/v1/auth/logout":       {class: "skip"},
 	"POST /api/v1/enroll":            {class: "public"},
+	// The CloudFormation template for connecting AWS: the same file for
+	// everyone. The stack's callback names A's external ID without a token
+	// and is refused (aws_test.go covers tokens).
+	"GET /aws/stackurity-aws-role-v1.json": {class: "public"},
+	"POST /api/v1/aws/callback": {class: "public", body: func(a *tenantFx) any {
+		return map[string]string{"role_arn": "arn:aws:iam::222222222222:role/sweep", "external_id": a.ids["awsexternal"]}
+	}},
 	// Following an invitation link: a token B does not have is refused
 	// without saying why; accepting is tested in onboarding_test.go.
 	"POST /api/v1/invitations/preview": {class: "public", body: func(*tenantFx) any { return map[string]string{"token": "inv_guessed"} }},
@@ -123,8 +132,22 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/integrations/slack/oauth": {class: "create", body: func(*tenantFx) any {
 		return map[string]string{"code": "c", "state": "guessed"}
 	}},
-	"GET /api/v1/notification-options": {class: "list"},
-	"GET /api/v1/email-recipients":     {class: "list"},
+	// The Stackurity GitHub App (github_app_test.go): the webhook is public
+	// and verified by the app's webhook secret (404 without the app); B's
+	// install starts in B and a guessed state is refused; A's installation
+	// cannot be listed, synced or disconnected by B.
+	"POST /api/v1/integrations/github/webhook": {class: "public", body: func(a *tenantFx) any {
+		return map[string]any{"action": "deleted", "installation": map[string]any{"id": a.int("githubinstall")}}
+	}},
+	"GET /api/v1/integrations/github":          {class: "list"},
+	"POST /api/v1/integrations/github/install": {class: "create", body: func(*tenantFx) any { return map[string]string{"return_to": "/settings/integrations"} }},
+	"POST /api/v1/integrations/github/setup": {class: "create", body: func(a *tenantFx) any {
+		return map[string]any{"code": "c", "state": "guessed", "installation_id": a.int("githubinstall")}
+	}},
+	"POST /api/v1/integrations/github/installations/{installation_id}/sync": {class: "object", obj: map[string]string{"installation_id": "githubinstall"}},
+	"DELETE /api/v1/integrations/github/installations/{installation_id}":    {class: "object", obj: map[string]string{"installation_id": "githubinstall"}},
+	"GET /api/v1/notification-options":                                      {class: "list"},
+	"GET /api/v1/email-recipients":                                          {class: "list"},
 	"POST /api/v1/email-recipients/resend": {class: "create", body: func(*tenantFx) any {
 		return map[string]string{"email": "outside@example.com"}
 	}},
@@ -193,6 +216,7 @@ var routeRules = map[string]routeRule{
 
 	// Collectors and agents.
 	"POST /api/v1/ingest":                 {class: "create", body: func(a *tenantFx) any { return a.claimBatch() }},
+	"POST /api/v1/kubernetes/report":      {class: "create", body: func(a *tenantFx) any { return a.claimCluster() }},
 	"GET /api/v1/collections/{id}/result": {class: "object", obj: id("collection")},
 	"POST /api/v1/sbom/import": {class: "create", query: "?asset_name=host-{tag}", body: func(*tenantFx) any {
 		return json.RawMessage(`{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}`)
@@ -240,6 +264,7 @@ var routeRules = map[string]routeRule{
 	"GET /api/v1/jobs":                  {class: "list"},
 	"GET /api/v1/secrets":               {class: "list"},
 	"GET /api/v1/enrollments":           {class: "list"},
+	"GET /api/v1/aws/connections":       {class: "list"},
 	"GET /api/v1/checks":                {class: "list", query: "?asset_id={asset}"},
 	"GET /api/v1/checks/options":        {class: "list", query: "?asset_id={asset}"},
 	"GET /api/v1/ignore-rules":          {class: "list", query: "?status=all"},
@@ -256,63 +281,79 @@ var routeRules = map[string]routeRule{
 	"GET /api/v1/usage":                 {class: "list"},
 
 	// A's objects by id.
-	"GET /api/v1/assets/{id}":                      {class: "object", obj: id("asset")},
-	"GET /api/v1/assets/{id}/inventory":            {class: "object", obj: id("asset"), emptyOK: true},
-	"GET /api/v1/assets/{id}/coverage":             {class: "object", obj: id("asset"), emptyOK: true},
-	"GET /api/v1/assets/{id}/coverage-summary":     {class: "object", obj: id("asset")},
-	"GET /api/v1/assets/{id}/collections":          {class: "object", obj: id("asset"), emptyOK: true},
-	"GET /api/v1/assets/{id}/relations":            {class: "object", obj: id("asset"), emptyOK: true},
-	"GET /api/v1/assets/{id}/drift":                {class: "object", obj: id("asset")},
-	"GET /api/v1/assets/{id}/stack":                {class: "object", obj: id("asset")},
-	"GET /api/v1/assets/{id}/sbom":                 {class: "object", obj: id("asset")},
-	"GET /api/v1/assets/{id}/remediation":          {class: "object", obj: id("asset"), emptyOK: true},
-	"GET /api/v1/components/{id}":                  {class: "object", obj: id("component")},
-	"GET /api/v1/components/{id}/intel":            {class: "object", obj: id("component")},
-	"GET /api/v1/components/{id}/upgrade":          {class: "object", obj: id("component")},
-	"GET /api/v1/fix-groups/{id}":                  {class: "object", obj: id("fixgroup")},
-	"GET /api/v1/findings/{id}":                    {class: "object", obj: id("finding")},
-	"GET /api/v1/findings/{id}/events":             {class: "object", obj: id("finding"), emptyOK: true},
-	"GET /api/v1/findings/{id}/upgrade":            {class: "object", obj: id("finding")},
-	"GET /api/v1/findings/{id}/explain":            {class: "object", obj: id("finding")},
-	"GET /api/v1/incidents/{id}":                   {class: "object", obj: id("incident")},
-	"GET /api/v1/jobs/{id}":                        {class: "object", obj: id("job")},
-	"GET /api/v1/remediation/plans/{id}":           {class: "object", obj: id("plan"), edition: "ee"},
-	"PATCH /api/v1/assets/{id}":                    {class: "object", obj: id("asset"), body: func(*tenantFx) any { return map[string]any{"environment": "hacked"} }},
-	"POST /api/v1/assets/{id}/relations":           {class: "object", obj: id("asset"), body: func(a *tenantFx) any { return map[string]any{"to_asset": a.int("asset2"), "kind": "depends_on"} }},
-	"DELETE /api/v1/assets/{id}/relations":         {class: "object", obj: id("asset"), emptyOK: true, body: func(a *tenantFx) any { return map[string]any{"to_asset": a.int("asset2"), "kind": "depends_on"} }},
-	"DELETE /api/v1/assets/{id}":                   {class: "object", obj: id("asset")},
-	"POST /api/v1/assets/{id}/remediation-token":   {class: "object", obj: id("asset")},
-	"POST /api/v1/integrations/{id}/run":           {class: "object", obj: id("integration")},
-	"GET /api/v1/integrations/{id}/images":         {class: "object", obj: id("integration")},
-	"PATCH /api/v1/integrations/{id}":              {class: "object", obj: id("integration"), body: func(*tenantFx) any { return map[string]any{"enabled": false} }},
-	"DELETE /api/v1/integrations/{id}":             {class: "object", obj: id("integration")},
-	"POST /api/v1/findings/{id}/actions":           {class: "object", obj: id("finding"), body: func(*tenantFx) any { return map[string]any{"action": "acknowledge"} }},
-	"POST /api/v1/incidents/{id}/actions":          {class: "object", obj: id("incident"), body: func(*tenantFx) any { return map[string]any{"action": "acknowledge"} }},
-	"POST /api/v1/conflicts/{id}/resolve":          {class: "object", obj: id("conflict"), body: func(a *tenantFx) any { return map[string]any{"target_asset_id": a.int("asset2")} }},
-	"GET /api/v1/checks/{id}":                      {class: "object", obj: id("check")},
-	"POST /api/v1/assets/{id}/check":               {class: "object", obj: id("asset")},
-	"POST /api/v1/fix-groups/{id}/check":           {class: "object", obj: id("fixgroup")},
-	"POST /api/v1/fix-groups/{id}/applied":         {class: "object", obj: id("fixgroup")},
-	"DELETE /api/v1/ignore-rules/{id}":             {class: "object", obj: id("ignorerule")},
-	"GET /api/v1/ignore-requests/{id}":             {class: "object", obj: id("ignorerequest")},
-	"POST /api/v1/ignore-requests/{id}/decision":   {class: "object", obj: id("ignorerequest"), body: func(*tenantFx) any { return map[string]any{"decision": "approve"} }},
-	"GET /api/v1/vex/documents/{id}":               {class: "object", obj: id("vexdoc")},
-	"GET /api/v1/vex/documents/{id}/statements":    {class: "object", obj: id("vexdoc")},
-	"POST /api/v1/vex/documents/{id}/decision":     {class: "object", obj: id("vexdoc"), body: func(*tenantFx) any { return map[string]any{"decision": "approve"} }},
-	"PATCH /api/v1/vex/sources/{id}":               {class: "object", obj: id("vexsource"), body: func(*tenantFx) any { return map[string]any{"name": "hacked"} }},
-	"DELETE /api/v1/vex/sources/{id}":              {class: "object", obj: id("vexsource")},
-	"PATCH /api/v1/users/{id}":                     {class: "object", obj: id("user"), body: func(*tenantFx) any { return map[string]any{"role": "viewer"} }},
-	"DELETE /api/v1/users/{id}":                    {class: "object", obj: id("user")},
-	"PATCH /api/v1/teams/{id}":                     {class: "object", obj: id("team"), body: func(*tenantFx) any { return map[string]any{"name": "hacked"} }},
-	"DELETE /api/v1/teams/{id}":                    {class: "object", obj: id("team")},
-	"PATCH /api/v1/channels/{id}":                  {class: "object", obj: id("channel"), body: func(*tenantFx) any { return map[string]any{"enabled": false} }},
-	"DELETE /api/v1/channels/{id}":                 {class: "object", obj: id("channel")},
-	"POST /api/v1/channels/{id}/test":              {class: "object", obj: id("channel")},
-	"PUT /api/v1/routes/{id}":                      {class: "object", obj: id("route"), body: func(a *tenantFx) any { return map[string]any{"name": "hacked", "channel_id": a.int("channel")} }},
-	"DELETE /api/v1/routes/{id}":                   {class: "object", obj: id("route")},
-	"POST /api/v1/deliveries/{id}/retry":           {class: "object", obj: id("delivery")},
-	"DELETE /api/v1/tokens/{id}":                   {class: "object", obj: id("token")},
-	"DELETE /api/v1/enrollments/{id}":              {class: "object", obj: id("enrollment")},
+	"GET /api/v1/assets/{id}":                    {class: "object", obj: id("asset")},
+	"GET /api/v1/assets/{id}/inventory":          {class: "object", obj: id("asset"), emptyOK: true},
+	"GET /api/v1/assets/{id}/coverage":           {class: "object", obj: id("asset"), emptyOK: true},
+	"GET /api/v1/assets/{id}/coverage-summary":   {class: "object", obj: id("asset")},
+	"GET /api/v1/assets/{id}/collections":        {class: "object", obj: id("asset"), emptyOK: true},
+	"GET /api/v1/assets/{id}/relations":          {class: "object", obj: id("asset"), emptyOK: true},
+	"GET /api/v1/assets/{id}/drift":              {class: "object", obj: id("asset")},
+	"GET /api/v1/assets/{id}/stack":              {class: "object", obj: id("asset")},
+	"GET /api/v1/assets/{id}/sbom":               {class: "object", obj: id("asset")},
+	"GET /api/v1/assets/{id}/remediation":        {class: "object", obj: id("asset"), emptyOK: true},
+	"GET /api/v1/components/{id}":                {class: "object", obj: id("component")},
+	"GET /api/v1/components/{id}/intel":          {class: "object", obj: id("component")},
+	"GET /api/v1/components/{id}/upgrade":        {class: "object", obj: id("component")},
+	"GET /api/v1/fix-groups/{id}":                {class: "object", obj: id("fixgroup")},
+	"GET /api/v1/findings/{id}":                  {class: "object", obj: id("finding")},
+	"GET /api/v1/findings/{id}/events":           {class: "object", obj: id("finding"), emptyOK: true},
+	"GET /api/v1/findings/{id}/upgrade":          {class: "object", obj: id("finding")},
+	"GET /api/v1/findings/{id}/explain":          {class: "object", obj: id("finding")},
+	"GET /api/v1/incidents/{id}":                 {class: "object", obj: id("incident")},
+	"GET /api/v1/jobs/{id}":                      {class: "object", obj: id("job")},
+	"GET /api/v1/remediation/plans/{id}":         {class: "object", obj: id("plan"), edition: "ee"},
+	"PATCH /api/v1/assets/{id}":                  {class: "object", obj: id("asset"), body: func(*tenantFx) any { return map[string]any{"environment": "hacked"} }},
+	"POST /api/v1/assets/{id}/relations":         {class: "object", obj: id("asset"), body: func(a *tenantFx) any { return map[string]any{"to_asset": a.int("asset2"), "kind": "depends_on"} }},
+	"DELETE /api/v1/assets/{id}/relations":       {class: "object", obj: id("asset"), emptyOK: true, body: func(a *tenantFx) any { return map[string]any{"to_asset": a.int("asset2"), "kind": "depends_on"} }},
+	"DELETE /api/v1/assets/{id}":                 {class: "object", obj: id("asset")},
+	"POST /api/v1/assets/{id}/remediation-token": {class: "object", obj: id("asset")},
+	"POST /api/v1/integrations/{id}/run":         {class: "object", obj: id("integration")},
+	"GET /api/v1/integrations/{id}/images":       {class: "object", obj: id("integration")},
+	"PATCH /api/v1/integrations/{id}":            {class: "object", obj: id("integration"), body: func(*tenantFx) any { return map[string]any{"enabled": false} }},
+	"DELETE /api/v1/integrations/{id}":           {class: "object", obj: id("integration")},
+	"POST /api/v1/findings/{id}/actions":         {class: "object", obj: id("finding"), body: func(*tenantFx) any { return map[string]any{"action": "acknowledge"} }},
+	"POST /api/v1/incidents/{id}/actions":        {class: "object", obj: id("incident"), body: func(*tenantFx) any { return map[string]any{"action": "acknowledge"} }},
+	"POST /api/v1/conflicts/{id}/resolve":        {class: "object", obj: id("conflict"), body: func(a *tenantFx) any { return map[string]any{"target_asset_id": a.int("asset2")} }},
+	"GET /api/v1/checks/{id}":                    {class: "object", obj: id("check")},
+	"POST /api/v1/assets/{id}/check":             {class: "object", obj: id("asset")},
+	"POST /api/v1/fix-groups/{id}/check":         {class: "object", obj: id("fixgroup")},
+	"POST /api/v1/fix-groups/{id}/applied":       {class: "object", obj: id("fixgroup")},
+	"DELETE /api/v1/ignore-rules/{id}":           {class: "object", obj: id("ignorerule")},
+	"GET /api/v1/ignore-requests/{id}":           {class: "object", obj: id("ignorerequest")},
+	"POST /api/v1/ignore-requests/{id}/decision": {class: "object", obj: id("ignorerequest"), body: func(*tenantFx) any { return map[string]any{"decision": "approve"} }},
+	"GET /api/v1/vex/documents/{id}":             {class: "object", obj: id("vexdoc")},
+	"GET /api/v1/vex/documents/{id}/statements":  {class: "object", obj: id("vexdoc")},
+	"POST /api/v1/vex/documents/{id}/decision":   {class: "object", obj: id("vexdoc"), body: func(*tenantFx) any { return map[string]any{"decision": "approve"} }},
+	"PATCH /api/v1/vex/sources/{id}":             {class: "object", obj: id("vexsource"), body: func(*tenantFx) any { return map[string]any{"name": "hacked"} }},
+	"DELETE /api/v1/vex/sources/{id}":            {class: "object", obj: id("vexsource")},
+	"PATCH /api/v1/users/{id}":                   {class: "object", obj: id("user"), body: func(*tenantFx) any { return map[string]any{"role": "viewer"} }},
+	"DELETE /api/v1/users/{id}":                  {class: "object", obj: id("user")},
+	"PATCH /api/v1/teams/{id}":                   {class: "object", obj: id("team"), body: func(*tenantFx) any { return map[string]any{"name": "hacked"} }},
+	"DELETE /api/v1/teams/{id}":                  {class: "object", obj: id("team")},
+	"PATCH /api/v1/channels/{id}":                {class: "object", obj: id("channel"), body: func(*tenantFx) any { return map[string]any{"enabled": false} }},
+	"DELETE /api/v1/channels/{id}":               {class: "object", obj: id("channel")},
+	"POST /api/v1/channels/{id}/test":            {class: "object", obj: id("channel")},
+	"PUT /api/v1/routes/{id}":                    {class: "object", obj: id("route"), body: func(a *tenantFx) any { return map[string]any{"name": "hacked", "channel_id": a.int("channel")} }},
+	"DELETE /api/v1/routes/{id}":                 {class: "object", obj: id("route")},
+	"POST /api/v1/deliveries/{id}/retry":         {class: "object", obj: id("delivery")},
+	"DELETE /api/v1/tokens/{id}":                 {class: "object", obj: id("token")},
+	"DELETE /api/v1/enrollments/{id}":            {class: "object", obj: id("enrollment")},
+	"GET /api/v1/aws/connections/{id}":           {class: "object", obj: id("awsconnection")},
+	"DELETE /api/v1/aws/connections/{id}":        {class: "object", obj: id("awsconnection")},
+	"POST /api/v1/aws/connections/{id}/launch":   {class: "object", obj: id("awsconnection"), body: func(*tenantFx) any { return map[string]any{} }},
+	"GET /api/v1/aws/connections/{id}/instances": {class: "object", obj: id("awsconnection")},
+	"GET /api/v1/aws/connections/{id}/installs":  {class: "object", obj: id("awsconnection")},
+	"POST /api/v1/aws/connections/{id}/verify": {class: "object", obj: id("awsconnection"), body: func(*tenantFx) any {
+		return map[string]string{"role_arn": "arn:aws:iam::222222222222:role/sweep"}
+	}},
+	"POST /api/v1/aws/connections/{id}/installs": {class: "object", obj: id("awsconnection"), body: func(*tenantFx) any {
+		return map[string]any{"instances": []map[string]string{{"instance_id": "i-0123456789abcdef0"}}}
+	}},
+	"GET /api/v1/integrations/digitalocean":          {class: "list"},
+	"GET /api/v1/integrations/digitalocean/droplets": {class: "list"},
+
+	// A's objects by id.
+	"GET /api/v1/enrollments/{id}/uses":            {class: "object", obj: id("enrollment")},
 	"POST /api/v1/remediation/plans/{id}/decision": {class: "object", obj: id("plan"), body: func(*tenantFx) any { return map[string]any{"decision": "approve"} }},
 	"PUT /api/v1/remediation/policies/{id}":        {class: "object", obj: id("policy"), edition: "ee", body: func(*tenantFx) any { return map[string]any{"name": "hacked"} }},
 	"DELETE /api/v1/remediation/policies/{id}":     {class: "object", obj: id("policy"), edition: "ee"},
@@ -367,6 +408,14 @@ var routeRules = map[string]routeRule{
 		return map[string]any{"name": "sweep", "channel_id": a.int("channel"), "enabled": true}
 	}},
 	"POST /api/v1/enrollments": {class: "create", body: func(*tenantFx) any { return map[string]any{"label": "sweep"} }},
+	"POST /api/v1/aws/connections": {class: "create", body: func(*tenantFx) any {
+		return map[string]any{"regions": []string{"eu-west-1"}, "agent_install": true}
+	}},
+	// An empty token is refused before anything is sent to DigitalOcean, so
+	// the sweep makes no outbound request; the token's own handling is in
+	// fleet_test.go.
+	"PUT /api/v1/integrations/digitalocean/token":    {class: "create", body: func(*tenantFx) any { return map[string]string{"token": ""} }},
+	"DELETE /api/v1/integrations/digitalocean/token": {class: "create"},
 	"POST /api/v1/projects": {class: "create", body: func(a *tenantFx) any {
 		return map[string]any{"name": "sweep-project", "asset_ids": []int64{a.int("asset"), a.int("asset2")}}
 	}},
@@ -410,6 +459,17 @@ func (f *tenantFx) claimBatch() json.RawMessage {
 	b.Observations = []model.Observation{{Purl: "pkg:npm/claimed@6.6.6", Confidence: model.ConfidenceConfirmed}}
 	raw, _ := json.Marshal(b)
 	return raw
+}
+
+// claimCluster is a Kubernetes report claiming a cluster identity every
+// tenant uses, with an image of A's.
+func (f *tenantFx) claimCluster() any {
+	c := model.Collector{ID: "plugin:kubernetes", Method: "agent"}
+	cl := model.NewBatch(c, model.AssetRef{Kind: model.AssetCluster, Name: "cluster-" + f.tag,
+		Identifiers: []model.Identifier{{Scheme: "k8s-cluster", Value: "shared-cluster-uid"}}})
+	im := model.NewBatch(c, model.AssetRef{Kind: model.AssetImage, Name: "docker.io/library/nginx:1",
+		Identifiers: []model.Identifier{{Scheme: "image-ref", Value: "docker.io/library/nginx:1"}}})
+	return map[string]any{"batches": []*model.ObservationBatch{cl, im}, "image_scans": 0}
 }
 
 // eeFixtures adds the licensed edition's objects (remediation policies,
@@ -668,6 +728,23 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 		t.Fatalf("%s enrollment: %d", tag, code)
 	}
 	set("enrollment", enr.Enrollment.ID)
+	// An AWS connection, active, with an agent install named after the tag.
+	awsc, err := e.st.CreateAWSConnection(ctx, []string{"eu-west-1"}, true, me.User.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	set("awsconnection", awsc.ID)
+	f.ids["awsexternal"] = awsc.ExternalID
+	if err := e.st.SetAWSRole(ctx, awsc.ID, "arn:aws:iam::222222222222:role/"+tag); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.st.ActivateAWSConnection(ctx, awsc.ID, "arn:aws:iam::222222222222:role/"+tag, 12*time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.st.CreateAWSInstall(ctx, store.AWSAgentInstall{ConnectionID: awsc.ID, Region: "eu-west-1", InstanceID: "i-0123456789abcdef0",
+		ComputerName: "ec2-" + tag, Status: "success", Detail: "installed on ec2-" + tag}); err != nil {
+		t.Fatal(err)
+	}
 	var at struct {
 		Token  store.Token
 		Secret string
@@ -717,6 +794,11 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 		t.Fatalf("%s assistants: %d %+v", tag, code, conns)
 	}
 	set("assistant", conns.Items[0].ID)
+	gi, err := e.st.BindGitHubInstallation(ctx, store.GitHubInstallation{InstallationID: 900000 + ws, AccountLogin: "gh-" + tag, AccountType: "Organization"}, me.User.ID)
+	if err != nil {
+		t.Fatalf("%s github installation: %v", tag, err)
+	}
+	set("githubinstall", gi.InstallationID)
 	if eeFixtures != nil {
 		eeFixtures(t, e, f)
 	}
@@ -932,6 +1014,9 @@ func TestIsolationSweep(t *testing.T) {
 		t.Fatal(err)
 	}
 	e.api.SecretBox = box
+	// AWS connections are set up, so their routes do their work; the fake
+	// AWS has no roles, so nothing B sends can verify a role.
+	e.api.AWS = awsClient(awsfake.New(t))
 	ctx := context.Background()
 	if err := e.st.EnsureFeed(tenant.System(ctx), "osv:npm", "vulnerability", time.Hour, 6*time.Hour); err != nil {
 		t.Fatal(err)
@@ -1100,6 +1185,7 @@ func (e *env) snapshot(t *testing.T, a *tenantFx) string {
 		"/api/v1/assets/{asset}", "/api/v1/assets/{asset2}", "/api/v1/assets/{asset}/relations", "/api/v1/assets/{asset}/inventory",
 		"/api/v1/findings/{finding}", "/api/v1/findings/{finding}/events", "/api/v1/incidents/{incident}", "/api/v1/fix-groups/{fixgroup}",
 		"/api/v1/teams", "/api/v1/channels", "/api/v1/routes", "/api/v1/deliveries", "/api/v1/integrations", "/api/v1/enrollments",
+		"/api/v1/aws/connections", "/api/v1/aws/connections/{awsconnection}", "/api/v1/aws/connections/{awsconnection}/installs",
 		"/api/v1/users", "/api/v1/secrets", "/api/v1/tokens", "/api/v1/conflicts", "/api/v1/risk-policy", "/api/v1/collections/{collection}/result",
 		"/api/v1/remediation/policies", "/api/v1/remediation/plans", "/api/v1/workspaces",
 		"/api/v1/checks?asset_id={asset}", "/api/v1/checks/{check}", "/api/v1/ignore-rules?status=all", "/api/v1/ignore-requests?status=all",

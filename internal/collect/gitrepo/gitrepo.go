@@ -76,6 +76,9 @@ type Scanner struct {
 	// Packs returns the installed stack packs to read files the core
 	// cannot; nil for none.
 	Packs func(ctx context.Context) []lockfile.Extension
+	// CAFile, when set, is the only certificate bundle git trusts (tests
+	// serve repositories over HTTPS with their own certificate).
+	CAFile string
 }
 
 // Scan clones the repository at depth 1, scans lockfiles and removes the
@@ -184,8 +187,11 @@ func (s *Scanner) clone(ctx context.Context, cfg Config, token, dest string) err
 		"-c", "protocol.allow=never", "-c", "protocol.https.allow=always",
 		"-c", "core.symlinks=false",
 		"-c", "filter.lfs.smudge=", "-c", "filter.lfs.process=", "-c", "filter.lfs.required=false",
-		"clone", "--depth", "1", "--single-branch", "--no-tags", "--no-recurse-submodules",
 	}
+	if s.CAFile != "" {
+		args = append(args, "-c", "http.sslCAInfo="+s.CAFile)
+	}
+	args = append(args, "clone", "--depth", "1", "--single-branch", "--no-tags", "--no-recurse-submodules")
 	if cfg.Ref != "" {
 		args = append(args, "--branch", cfg.Ref)
 	}

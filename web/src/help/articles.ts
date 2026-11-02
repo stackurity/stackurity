@@ -243,8 +243,53 @@ export const ARTICLES: Article[] = [
         list: [
           "The server appears under **Assets** within a minute; applications appear as their own assets linked to it.",
           "Unused codes are listed under **Pending install codes** on the same page until they expire or are used up. **Revoke** one you no longer need; servers that already enrolled keep reporting.",
+          "For many servers at once (cloud-init, Ansible, Terraform, an SSH loop or DigitalOcean), see [Add many servers](help:add-many-servers).",
           "For Windows, or to install by hand, see [Add a Linux server manually](help:add-linux-server), [Add a Windows server](help:windows-hosts) and docs/install.md.",
         ],
+      },
+    ],
+  },
+  {
+    id: "add-many-servers",
+    title: "Add many servers",
+    section: "Adding servers and sources",
+    summary: "Create a fleet code for up to 1,000 servers and install with cloud-init, Ansible, Terraform or an SSH loop. List DigitalOcean droplets and see which are not covered. Admins only.",
+    where: ["Assets", "Add server", "For many servers"],
+    keywords: "fleet many servers bulk rollout cloud-init user data ansible playbook terraform user_data ssh loop digitalocean droplets tag enrollment code",
+    body: [
+      {
+        p: "A **fleet code** is an install code made for a rollout: you choose how many servers it may enroll (up to 1,000) and how long it is valid (up to 90 days). Each server exchanges it for its own collector token, so no long-lived token goes into user data, a playbook or a script.",
+      },
+      {
+        steps: [
+          "Open [Assets](/assets), click **Add server**, then **For many servers**.",
+          "Enter **How many servers** and **Valid for (days)**, and optionally a label, project, environment and application directories.",
+          "Click **Create fleet code**. The code is shown once, with snippets for cloud-init, Ansible, Terraform and an SSH loop. Copy the one you need.",
+          "Run it. Servers that already have the agent skip enrollment, so running a snippet twice is safe.",
+        ],
+      },
+      { h: "Watching the rollout" },
+      {
+        list: [
+          "**Fleet codes** on the same page lists each code with how many servers it has enrolled. **Show servers** lists which hosts used it, from which address and when.",
+          "**Revoke** stops a code at once. Servers that already enrolled keep reporting; revoke their tokens under **Settings → API tokens** if needed (the list shows each token's prefix).",
+          "Up to 60 servers enroll per minute with one code. Servers over the limit wait and try again on their own.",
+        ],
+      },
+      {
+        warn: "Treat a fleet code like a password until it expires: anyone who has it can enroll machines into your organisation. Keep the count and expiry close to what you need, and revoke it when the rollout is done. Cloud user data can be read from inside the machine and is kept in Terraform state.",
+      },
+      { h: "DigitalOcean" },
+      {
+        list: [
+          "Under **DigitalOcean**, add an API token with read access to droplets (a custom token with `droplet:read` is enough). It is stored encrypted and never shown again.",
+          "The list shows each droplet with its region and tags, and whether an agent reports from it (matched by hostname, or by the address it enrolled from).",
+          "Tick the droplets to cover and click **Create commands**: you get a fleet code sized for them, an SSH command for each droplet, and one loop for all of them.",
+          "For new droplets, add the cloud-init snippet as user data when you create them and give them a tag so the list shows them. A tag alone installs nothing.",
+        ],
+      },
+      {
+        note: "Stackurity does not install on droplets itself. DigitalOcean has no API to run a command on an existing droplet, and connecting to your servers over SSH would give Stackurity root access to them. You run the commands with the access you already have.",
       },
     ],
   },
@@ -413,6 +458,7 @@ stackurity.exe agent --interval 6h`,
     where: ["Settings", "Integrations"],
     keywords: "git github gitlab lockfile npm composer repository ci",
     body: [
+      { note: "On GitHub, with the Stackurity GitHub App on your server, [Install on GitHub](help:github-app) is simpler: no token or CI step." },
       { h: "Option A: the server clones it on a schedule" },
       {
         steps: [
@@ -439,6 +485,53 @@ stackurity.exe agent --interval 6h`,
       {
         p: "Supported lockfiles: npm, yarn (v1 and Berry), pnpm, Composer, Poetry, Pipenv, pinned `requirements.txt`, Go modules, Cargo, Bundler, NuGet `packages.lock.json`, and `pubspec.lock`. Others (Maven, Gradle, …) are shown as unsupported coverage, never silently ignored.",
       },
+    ],
+  },
+  {
+    id: "github-app",
+    title: "Install on GitHub (the Stackurity GitHub App)",
+    section: "Adding servers and sources",
+    summary: "Cover your GitHub repositories in one click: pick them on GitHub, no token to create or renew.",
+    where: ["Settings", "Integrations", "Git repository"],
+    keywords: "github app install repositories token organisation private repository webhook push",
+    body: [
+      { p: "Where your Stackurity server has the GitHub App (Stackurity Cloud does), you don't need a token or a CI step to scan your GitHub repositories." },
+      {
+        steps: [
+          "Go to **Settings ▸ Integrations** and, on the **Git repository** card, click **Install on GitHub** (admins).",
+          "On GitHub, pick the account or organisation, then **All repositories** or **Only select repositories**, and click **Install**. Installing on an organisation needs an owner of it; a member can only request it.",
+          "GitHub brings you back to Stackurity. Each repository appears under **Active integrations**, and the first results arrive within minutes.",
+        ],
+      },
+      { h: "What the app can do" },
+      {
+        list: [
+          "It reads the repositories you picked, and nothing else: **Contents** and **Metadata**, read-only. It cannot push, open pull requests or see other repositories.",
+          "Each scan uses a token GitHub issues for that one repository, for an hour at most. Stackurity never stores it.",
+          "The scan is a shallow clone that reads lockfiles and is deleted afterwards. Hooks, submodules, LFS and scripts never run.",
+        ],
+      },
+      { h: "When repositories are scanned" },
+      {
+        list: [
+          "Right after you install, then every 6 hours (change it per repository under **Settings ▸ Integrations**).",
+          "When a push to the default branch changes a lockfile or manifest (`package-lock.json`, `go.mod`, `composer.json` and the like). Pushes to other branches, or that change only other files, don't trigger a scan.",
+          "Repositories you add or remove on GitHub are followed. A removed repository's issues are closed as removed; the asset and its history stay.",
+        ],
+      },
+      { h: "Change or remove it" },
+      {
+        list: [
+          "**Add or remove repositories**: on GitHub (the link on the Git repository card), under the installation's repository access.",
+          "**Switch one repository off**: open it under **Settings ▸ Integrations** and switch it off.",
+          "**Disconnect**: stops scanning, keeps the history, and uninstalls the app from that GitHub account.",
+          "Suspending or uninstalling the app on GitHub switches its repositories off here, with a note.",
+        ],
+      },
+      {
+        note: "A GitHub account or organisation can be connected to one Stackurity organisation only. When the app is at your organisation's asset limit, new repositories wait until there is room; the card says how many.",
+      },
+      { p: "No GitHub App on your server? Use a [Git integration or a CI scan](help:repositories). Operators: see `docs/github-app.md` to set one up." },
     ],
   },
   {
@@ -560,23 +653,45 @@ stackurity.exe agent --interval 6h`,
   },
   {
     id: "cloud-plugins",
-    title: "Cloud services and plugins (AWS)",
+    title: "Connect AWS",
     section: "Adding servers and sources",
-    summary: "Track engine and runtime versions of RDS, Aurora, ElastiCache, EKS, Lambda and OpenSearch with the aws-managed plugin.",
-    where: ["Settings", "Plugins"],
-    keywords: "aws rds lambda eks plugin managed service",
+    summary: "Connect an AWS account with one CloudFormation stack: RDS, Aurora, ElastiCache, EKS, Lambda and OpenSearch versions, and optionally the agent on EC2 through SSM.",
+    where: ["Settings", "Integrations", "AWS"],
+    keywords: "aws amazon cloudformation launch stack quick create iam role external id rds aurora lambda eks elasticache opensearch plugin managed service ssm ec2 run command agent install",
     body: [
       {
         steps: [
-          "Review what the plugin needs under **Settings ▸ Plugins**: permissions (only `Describe*`/`List*` calls), credentials and network access.",
-          "Create a read-only IAM user or role with those permissions.",
-          "Put the keys in a file on the server, e.g. `/run/secrets/aws.json` containing `{\"aws_access_key_id\": \"…\", \"aws_secret_access_key\": \"…\"}`. Without keys the plugin uses the instance role.",
-          "Go to **Settings ▸ Integrations ▸ Add integration ▸ Plugin**, choose **AWS managed services**, enter the regions, optionally services, role ARN, external ID and the tag whose value becomes the environment.",
-          "Set the secret reference to `file:/run/secrets/aws.json` and click **Validate and create**. The plugin checks the configuration and lists any problems.",
+          "Go to **Settings ▸ Integrations** and open **AWS**.",
+          "Choose the regions to read and the region for the stack. Tick **Allow installing the agent through SSM** if you want to add EC2 instances from Stackurity too.",
+          "Click **Launch Stack in AWS**. The AWS console opens with everything filled in. Tick the box that acknowledges the stack creates an IAM role, and click **Create stack**.",
+          "Wait about a minute. The page shows the account as connected when the stack reports its role, and the first collection runs.",
         ],
       },
+      { h: "What the stack creates" },
+      {
+        list: [
+          "One IAM role that only Stackurity can assume, and only with this connection's **external ID**, which Stackurity generated. Another organisation on Stackurity could not use it even with its ARN. Stackurity checks this before reading anything.",
+          "Read-only permissions, exactly the calls the plugin makes: `rds:DescribeDBInstances`, `rds:DescribeDBClusters`, `elasticache:DescribeCacheClusters`, `eks:ListClusters`, `eks:DescribeCluster`, `lambda:ListFunctions`, `es:ListDomainNames` and `es:DescribeDomains`. No wildcard actions.",
+          "With agent installs on: `ssm:DescribeInstanceInformation`, `ssm:GetCommandInvocation`, and `ssm:SendCommand` limited to the `AWS-RunShellScript` document and your own instances.",
+          "A small Lambda function that tells Stackurity the role's ARN once, with a single-use token from the link. Download the template from the page to review it first.",
+        ],
+      },
+      { h: "If the account does not show as connected" },
+      {
+        p: "Open the stack's **Outputs** tab in the AWS console, copy **RoleArn**, and paste it into **Paste the role ARN** on the AWS page. That is also the way when your Stackurity server cannot be reached from AWS. If verifying fails, the page shows AWS's answer: usually the stack has not finished, or the role was changed.",
+      },
+      { h: "Install the agent on EC2 instances", id: "ssm" },
+      {
+        p: "With agent installs allowed, the AWS page lists, for each region, the instances Systems Manager manages and which of them already report to Stackurity (matched by hostname). Select Linux instances that are online and click **Install the agent**. Each instance gets its own install code, used once and valid for two hours, and the page shows each result: installed, failed (with the end of the installer's output) or timed out. The instances need the SSM Agent with an instance profile such as `AmazonSSMManagedInstanceCore`, systemd, and HTTPS access to Stackurity.",
+      },
+      { h: "Disconnect" },
+      { p: "Remove the connection on the AWS page, then delete the stack in the AWS console. Stackurity cannot delete it for you." },
+      { h: "Your own role or keys" },
+      {
+        p: "The plugin also runs as a **Plugin** integration with a role you made (role ARN and external ID) or keys stored as a secret: **Settings ▸ Integrations ▸ Add integration ▸ Plugin**, then **AWS managed services**. Its permissions are under **Settings ▸ Plugins**.",
+      },
       { p: "Each service appears as a *managed service* asset; end-of-life dates come from endoflife.date. Vulnerabilities inside AWS-managed engines are patched by AWS and are listed as evaluation gaps, not as clean." },
-      { p: "Custom plugins are executables placed in `STACKURITY_PLUGIN_DIR`; see docs/plugins.md." },
+      { note: "Running Stackurity yourself? Connecting with a stack needs `STACKURITY_AWS_PRINCIPAL_ARN` and AWS credentials on the server; see the install guide (docs/install.md, \"AWS managed services\")." },
     ],
   },
 
@@ -584,17 +699,24 @@ stackurity.exe agent --interval 6h`,
     id: "kubernetes",
     title: "Kubernetes clusters",
     section: "Adding servers and sources",
-    summary: "Which workloads run which images, which are exposed outside the cluster, and the cluster and node versions, with the read-only kubernetes plugin.",
-    where: ["Settings", "Integrations"],
-    keywords: "kubernetes k8s cluster workload deployment pod eks gke aks kind exposure nodeport loadbalancer ingress",
+    summary: "Connect a cluster with one command: a read-only reporter in the cluster sends its workloads, the images they run, their exposure and the cluster and node versions.",
+    where: ["Settings", "Integrations", "Kubernetes cluster"],
+    keywords: "kubernetes k8s cluster workload deployment pod eks gke aks kind exposure nodeport loadbalancer ingress helm kubectl reporter enroll",
     body: [
       {
         steps: [
-          "Apply the read-only role from `deploy/kubernetes/stackurity-reader.yaml` (`kubectl apply -f`). It can only get and list pods, workloads, Services, Ingresses, namespaces and nodes; never Secrets.",
-          "Make a kubeconfig for its service account token and store it as a workspace secret (**Settings ▸ Secrets**) holding `{\"kubeconfig\": \"…\"}`. When Stackurity runs in the cluster with that service account, set `in_cluster` instead.",
-          "Go to **Settings ▸ Integrations ▸ Add integration ▸ Plugin**, choose **Kubernetes** and set at least `cluster_name`. `environment_label` takes each workload's environment from a namespace label.",
-          "Set the secret reference and click **Validate and create**, then **Run now**.",
+          "Go to [Settings ▸ Integrations](/settings/integrations) and click **Add** on **Kubernetes cluster** (admins only).",
+          "Enter the **Cluster name** (e.g. `prod-eu`), optionally an **Environment**, and whether to read the whole cluster or only some namespaces.",
+          "Click **Create install command**. Copy the **Helm** or the **kubectl** command: the one-time code in it is shown only once.",
+          "Run it anywhere with `kubectl` access to the cluster. The cluster appears under **Assets** a minute or two later.",
         ],
+      },
+      { code: "helm install stackurity-reporter oci://ghcr.io/stackurity/charts/stackurity-reporter --namespace stackurity --create-namespace --set server=… --set clusterName=prod-eu --set enrollCode=…", label: "Helm" },
+      {
+        p: "The command installs the **reporter**: one small pod in the `stackurity` namespace that reads the cluster with a read-only service account (it lists workloads, pods, Services, Ingresses, namespaces and nodes; never Secrets or ConfigMaps) and sends what it finds to Stackurity over HTTPS every hour. Nothing connects into the cluster and no kubeconfig leaves it, so it works when Stackurity cannot reach the cluster's API server.",
+      },
+      {
+        p: "The code goes into the Secret `stackurity-reporter`, never into a URL. On first start the reporter exchanges it for its own token, keeps the token in that Secret (the only Secret it may read or change) and removes the code. If you revoke the token under **Settings ▸ API tokens**, put a new code in the Secret as `enroll-code` and it enrolls again.",
       },
       {
         p: "The cluster appears as a *cluster* asset with its control plane, kubelet, container runtime and node OS versions (end-of-life dates from endoflife.date). Each Deployment, StatefulSet, DaemonSet, CronJob, Job or bare Pod is a *workload* asset, linked to the images it runs (`deployed_as`), pinned to the digest the node pulled.",
@@ -603,8 +725,18 @@ stackurity.exe agent --interval 6h`,
         p: "A workload is **exposed** when a LoadBalancer or NodePort Service, external IPs, an Ingress, host networking or a host port reaches it. An image is exposed when any workload running it is. Risk scoring uses this unless you set **Internet exposed** on the asset by hand.",
       },
       {
-        p: "Running images are read by the built-in image scanner, most exposed first and at most the number per run set on the integration. Namespaces the role cannot read, and images the scanner cannot pull (private registries), appear on the Coverage page as not assessed, never as clean.",
+        p: "Running images are read by the built-in image scanner, most exposed first and at most 25 per report by default. Namespaces the reporter may not read (with **Only some namespaces**, every other namespace and the nodes), and images the scanner cannot pull (private registries), appear on the Coverage page as not assessed, never as clean.",
       },
+      { h: "Pulling from the server instead" },
+      {
+        steps: [
+          "If Stackurity can reach the cluster's API server and you would rather not run anything in the cluster, apply the read-only role from `deploy/kubernetes/stackurity-reader.yaml` (`kubectl apply -f`).",
+          "Make a kubeconfig for its service account token and store it as a workspace secret (**Settings ▸ Secrets**) holding `{\"kubeconfig\": \"…\"}`. When Stackurity runs in the cluster with that service account, set `in_cluster` instead.",
+          "Go to **Settings ▸ Integrations ▸ Add integration ▸ Plugin**, choose **Kubernetes** and set at least `cluster_name`. `environment_label` takes each workload's environment from a namespace label.",
+          "Set the secret reference and click **Validate and create**, then **Run now**.",
+        ],
+      },
+      { p: "Both report the same assets, so a cluster can move from one to the other and keep its history." },
     ],
   },
 
