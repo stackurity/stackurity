@@ -122,7 +122,7 @@ func TestLeakStoresNoValue(t *testing.T) {
 		t.Fatal(err)
 	}
 	rows, err := pool.Query(tenant.System(context.Background()), `SELECT column_name FROM information_schema.columns
-		WHERE table_name = 'leaks' ORDER BY ordinal_position`)
+		WHERE table_name = 'leaks' AND table_schema = current_schema() ORDER BY ordinal_position`)
 	if err != nil {
 		t.Fatal(err)
 	}
