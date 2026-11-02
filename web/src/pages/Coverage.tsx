@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import { api, type CoverageRow, type List, type Overview, type SecondCheckSummary } from "../api";
+import { api, type Asset, type CoverageRow, type List, type Overview, type SecondCheckSummary } from "../api";
 import { useLoad } from "../hooks";
+import { AssetSelect, ProjectFilter } from "../components/AssetPicker";
 import { Table } from "../components/Table";
 import { Card, EmptyState, ErrorBox, Loading, PageHeader, Pager } from "../components/ui";
 import { coverageColumns } from "./AssetDetail";
@@ -13,9 +14,11 @@ const LIMIT = 100;
 export function CoveragePage() {
   const [problems, setProblems] = useState(true);
   const [offset, setOffset] = useState(0);
+  const [asset, setAsset] = useState("");
+  const assets = useLoad(() => api.get<List<Asset>>("/assets", { limit: 200 }), []);
   const res = useLoad(
-    () => api.get<List<CoverageRow>>("/coverage", { problems: problems ? "true" : undefined, limit: LIMIT, offset }),
-    [problems, offset],
+    () => api.get<List<CoverageRow>>("/coverage", { asset_id: asset, problems: problems ? "true" : undefined, limit: LIMIT, offset }),
+    [asset, problems, offset],
   );
   const overview = useLoad(() => api.get<Overview>("/overview"), []);
   const states = overview.data?.asset_coverage ?? {};
@@ -28,6 +31,9 @@ export function CoveragePage() {
         title="Coverage"
         sub="How far findings can be trusted, and what collectors checked on each asset. Unsupported, failed and skipped areas are not covered: components there are not in the inventory."
       />
+      <div className="filters">
+        <ProjectFilter id="cov-project" />
+      </div>
       <h2 className="section-title">Components not checked, by who acts</h2>
       <Card>
         <ErrorBox error={unchecked.error} title="Could not load what was not checked" />
@@ -107,6 +113,18 @@ export function CoveragePage() {
       </Card>
       <h2 className="section-title">Collector scopes</h2>
       <div className="filters">
+        <div className="field">
+          <label htmlFor="cov-asset">Asset</label>
+          <AssetSelect
+            id="cov-asset"
+            value={asset}
+            onChange={(v) => {
+              setAsset(v);
+              setOffset(0);
+            }}
+            assets={assets.data?.items}
+          />
+        </div>
         <label className="check">
           <input
             type="checkbox"
