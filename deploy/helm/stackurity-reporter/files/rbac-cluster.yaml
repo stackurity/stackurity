@@ -1,0 +1,21 @@
+# What the collection reads, cluster-wide (rbac.clusterWide). Kept equal to
+# the API calls the code makes by plugins/kubernetes/kube/rbac_test.go: no
+# Secrets, ConfigMaps, exec, logs, watch or write verbs.
+- apiGroups: [""]
+  resources: ["namespaces", "nodes", "pods", "services"]
+  verbs: ["list"]
+- apiGroups: ["apps"]
+  resources: ["daemonsets", "deployments", "statefulsets"]
+  verbs: ["list"]
+- apiGroups: ["batch"]
+  resources: ["cronjobs", "jobs"]
+  verbs: ["list"]
+- apiGroups: ["networking.k8s.io"]
+  resources: ["ingresses"]
+  verbs: ["list"]
+- apiGroups: [""]
+  resources: ["namespaces"]
+  resourceNames: ["kube-system"]
+  verbs: ["get"]
+- nonResourceURLs: ["/version"]
+  verbs: ["get"]

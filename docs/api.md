@@ -368,7 +368,7 @@ The assistants a person has connected (`/assistants`) and the OAuth consent page
 
 **Who:** anyone
 
-Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project`. `app_list` means `POST /ingest` takes a host batch's `apps` (see [ObservationBatch](#observationbatch)); agents send it only to servers that list it (0.14). `email_preferences: true` means this server sends bulk email (product updates, vulnerability news), so people have email preferences. On Stackurity Cloud, `social` lists the configured sign-in providers (`providers`: `id`, `label`, `start_url`) and, when the GitHub App is set up, `github_install_url`.
+Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project`. `app_list` means `POST /ingest` takes a host batch's `apps` (see [ObservationBatch](#observationbatch)); agents send it only to servers that list it (0.14). `host_images` means `POST /ingest` scopes `host-image` identities to their host and takes a host batch's `images`; the agent's `--docker` sends container images only to servers that list it. `kubernetes_report` means [`POST /kubernetes/report`](#post-kubernetesreport) exists; the Kubernetes reporter falls back to `POST /ingest` without it. `email_preferences: true` means this server sends bulk email (product updates, vulnerability news), so people have email preferences. On Stackurity Cloud, `social` lists the configured sign-in providers (`providers`: `id`, `label`, `start_url`) and, when the GitHub App is set up, `github_install_url`.
 
 ### `GET /openapi.json`
 
@@ -390,11 +390,38 @@ Creates the first admin (`setup_token` from the server log, `email`, `name`, `pa
 
 Exchanges a one-time enrollment code (`{"code", "hostname"}`) for a collector token and the agent settings chosen with it, including the code's `project_id`. Refusals do not say why. An optional `project_id` (`stackurity enroll --project`) is a check, not a choice: when the code adds hosts to another project or none, the answer is 403 and the code keeps its use.
 
+Each use is recorded (hostname, client address, the token issued) in the code's usage list. Rate limits: 10 failed attempts a minute per client address (refused codes; what stops guessing), 120 attempts a minute per address in all (so a fleet behind one NAT address can enroll), and 60 enrollments a minute per code (so a leaked fleet code cannot be used up in a burst). Over a limit the answer is `429` with `Retry-After`, and nothing is used up; `stackurity enroll` waits and tries again (`--wait`).
+
+
+### `POST /ci/token`
+
+**Who:** anyone (rate limited: 30 a minute per address)
+
+Exchanges a CI job's OpenID Connect ID token (`{"token", "trust_id"}`; `trust_id` optional) for a collector token that expires after 15 minutes, belongs to the matching CI trust's organisation and project, and may report only the job's repository (`repository_url`, its `git-url` identity). Send it with `X-Stackurity-CSRF: 1`, as every POST without `Authorization`. Answers `{"token", "expires_at", "repository_url", "project_id", "trust_id"}`. The token must be signed with an asymmetric key the issuer publishes (discovery and JWKS of an issuer a trust names exactly), carry `aud` equal to the server's CI audience (`ci_audience` in `GET /meta`), and be within `exp`, `nbf` and `iat` (one minute's allowance). 401 `invalid_token` when it does not verify, 403 when no trust accepts the job (the message names the ref, environment or workflow that differed), 400 `trust_required` without `trust_id` on a server with several organisations, 409 when trusts of different organisations or projects accept it (send `trust_id`), 503 `not_configured` without `STACKURITY_BASE_URL` or `STACKURITY_CI_AUDIENCE`. Audited as `ci.token` or `ci.token_refused`. See [install.md](install.md#scans-in-ci-without-a-stored-secret).
+
+### `GET /ci-trusts`
+
+**Who:** admin
+
+CI trusts, with `audience` (what CI ID tokens must carry; empty when keyless CI scans are off) and `server`.
+
+### `POST /ci-trusts`
+
+**Who:** admin
+
+Creates a CI trust: `provider` (`github` or `gitlab`), `issuer` (default `https://token.actions.githubusercontent.com` or `https://gitlab.com`; https only, matched exactly), `repository` (`owner/repo` or a GitLab project path), `owner_wildcard` (with `repository` `owner/*`: every repository of the owner or group; a `*` anywhere else is refused), and optional `ref` (a branch name means `refs/heads/<name>`), `environment`, `workflow_ref` (GitHub `job_workflow_ref`, GitLab `ci_config_ref_uri`), `name` and `project_id`.
+
+### `DELETE /ci-trusts/{id}`
+
+**Who:** admin
+
+Deletes a CI trust and revokes the tokens issued under it.
+
 ### `GET /enrollments`
 
 **Who:** admin
 
-Enrollment codes.
+Enrollment codes that can still be used. With `?fleet=1`, fleet codes made in the last 180 days in every state (usable, used up, expired, revoked), so a rollout's usage stays visible. Each code has `fleet`, `uses_left` and `max_uses` (how many servers it could enroll when made; `null` for codes made before this was recorded).
 
 ### `POST /enrollments`
 
@@ -402,23 +429,67 @@ Enrollment codes.
 
 Creates an enrollment code, returned once: `label`, `environment`, `app_dirs`, `discover_apps`, `uses` (1–500, default 1), `ttl_hours` (1–720, default 24) and `project_id` (hosts enrolled with it, and the assets their agent reports, join that project when first created).
 
+With `"fleet": true` it creates a **fleet code** for many servers: `uses` up to 1,000 and `ttl_hours` up to 2,160 (90 days), both required (no defaults). It is stored and redeemed like any other code (only its SHA-256 hash is kept) and is exchanged for one collector token per host. Creation, each use and revocation are in the audit log (`enrollment.create`, `enrollment.redeem`, `enrollment.revoke`, with `fleet` in the details).
+
+### `GET /enrollments/{id}/uses`
+
+**Who:** admin
+
+The hosts that used a code, newest first: `hostname` (as the host reported it), `remote_addr`, `used_at`, and the `token_prefix` of the collector token it received (under **Settings → API tokens**; empty once that token is deleted) with `token_revoked`.
+
 ### `DELETE /enrollments/{id}`
 
 **Who:** admin
 
-Revokes an enrollment code.
+Revokes an enrollment code. Hosts that already enrolled keep their tokens; revoke those under **Settings → API tokens** (the usage list gives their prefixes).
+
+### `GET /integrations/digitalocean`
+
+**Who:** admin
+
+Whether a DigitalOcean API token is stored (`connected`, `connected_at`) and whether stored secrets are available (`secrets_enabled`, which needs `STACKURITY_SECRET_KEY`). The token is never returned.
+
+### `PUT /integrations/digitalocean/token`
+
+**Who:** admin
+
+Stores a DigitalOcean API token (`{"token"}`) as the encrypted workspace secret `digitalocean-token`, after checking that it can list droplets (a read-only token with the `droplet:read` scope is enough; nothing else is used). A token DigitalOcean refuses answers 400 and is not stored; without `STACKURITY_SECRET_KEY` the answer is 409. Audit: `digitalocean.connect`.
+
+### `DELETE /integrations/digitalocean/token`
+
+**Who:** admin
+
+Deletes the stored token. Audit: `digitalocean.disconnect`.
+
+### `GET /integrations/digitalocean/droplets`
+
+**Who:** admin
+
+Lists the account's droplets (optionally `?tag=`) with, for each, `name`, `region`, `status`, `image`, `tags`, `public_ipv4`, `private_ipv4`, `public_ipv6` and `coverage`: `reporting` (a host asset reports the droplet's name as its hostname, ignoring case and a domain on either side; `asset_id`, `asset_name`, `last_seen`), `enrolled` (an agent enrolled from one of the droplet's addresses, `enrolled_as` the hostname it gave, but no host with the droplet's name reports), or `not_covered`. Droplets not covered come first. Also `total`, `covered` and `truncated` (more than 5,000 droplets: 25 pages of 200). Requests go to DigitalOcean's API only, through the outbound address guard, without following redirects. `409 not_connected` without a token, `409 token_refused` when DigitalOcean no longer accepts it, `502` when DigitalOcean cannot be reached. Stackurity does not install anything on droplets: see [Many servers at once](install.md#many-servers-at-once).
 
 ### `GET /install/agent.sh`
 
 **Who:** anyone · outside `/api/v1`
 
-The agent installer script.
+The agent installer script, with the server's URL filled in: `STACKURITY_BASE_URL`, or without it the URL the request came in on. In that case a `Host` header that is not a hostname or IP address with an optional port gets `400` instead of a script. Served with `Cache-Control: no-store` and `Vary: Host`.
+
+### `GET /install/kubernetes.yaml`
+
+**Who:** anyone · outside `/api/v1`
+
+The Kubernetes reporter's manifest for this server ([kubernetes.md](kubernetes.md#connect-with-the-reporter)): namespace, service account, read-only RBAC and Deployment, with this server's URL and release image. `cluster` names the cluster asset; `namespaces` (comma separated) gives Roles in those namespaces instead of the ClusterRole. It holds no secret, and any other parameter is refused (400), so an enrollment code is never put in its address.
 
 ### `GET /download/agent/{platform}`
 
 **Who:** anyone · outside `/api/v1`
 
 The agent builds the installer downloads: `linux-amd64` and `linux-arm64`, each with a `.sha256`. They are bundled in the server image (`STACKURITY_AGENT_DIR`).
+
+### `POST /kubernetes/report`
+
+**Who:** collector token, engineer and above
+
+One collection of a Kubernetes cluster from the in-cluster reporter (`stackurity kubernetes-reporter`): `{"batches": [...], "image_scans": 25}`, gzip accepted. The batches are [ObservationBatch](#observationbatch)es, the cluster first, then images and workloads, with the identity schemes of the kubernetes collection (`k8s-cluster`, `k8s-cluster-name`, `k8s-workload`, `image-ref`); any other kind or scheme is refused (400) and nothing is stored. Each is stored under the `plugin:kubernetes` collector, as an agent's report. The images are queued for the image scanner in the order given, at most `image_scans` (default 25, 0 to 500), as for a plugin run. The answer: `cluster_asset_id`, `assets`, `new_assets`, `refused` (left out at the monitored-asset limit), `images` and `image_scans` (`queued`, `fresh`, `pending`, `deferred`). A host-bound token gets 403; each token may send 30 reports an hour (429). `GET /meta` lists `kubernetes_report` in `features`.
 
 ### `POST /ingest`
 
@@ -1204,7 +1275,7 @@ One-click unsubscribe (RFC 8058) from a bulk email's `List-Unsubscribe` header, 
 
 **Who:** engineer
 
-Integrations (repository and image scans, plugins).
+Integrations (repository and image scans, connected container registries, plugins).
 
 ### `POST /integrations`
 
@@ -1223,6 +1294,18 @@ Changes an integration.
 **Who:** admin
 
 Deletes an integration.
+
+### `POST /integrations/registry/discover`
+
+**Who:** admin
+
+Lists the repositories of a container registry before it is connected (or to change which ones a connected one tracks), so you can pick them. Body: `config` (a `container_registry` configuration, see [Container registries](install.md#container-registries)) and `secret_ref`, or `integration_id` to use that registry integration's stored secret. The answer is `registry` (its name), `repositories` (`name`, and `included`: whether `include` and `exclude` keep it) and `complete` (false when the registry has more than 10,000). The secret is used, never returned. `502` with code `registry_error` when the registry refused or could not be reached; the message never contains the secret.
+
+### `GET /integrations/{id}/images`
+
+**Who:** engineer
+
+The images a container registry integration chose, most recently pushed first per repository: `repository`, `digest`, `image_ref` (scanned, by digest), `tags`, `pushed_at`, `asset_id`, `tracked` (false once newer tags took its place or its repository was left out) and `removed_at` (when the registry stopped having any tag on it). `404` for other kinds.
 
 ### `POST /integrations/{id}/run`
 
@@ -1290,11 +1373,113 @@ Finishes Add to Slack with `{"code", "state"}` from Slack's redirect to `/integr
 
 The Slack app's Event Subscriptions URL: `url_verification`, and `app_uninstalled` or `tokens_revoked`, which switch that Slack workspace's app channels off in every organisation and delete their webhooks and tokens.
 
+### `GET /integrations/github`
+
+**Who:** engineer
+
+The Stackurity GitHub App ([github-app.md](github-app.md)): `configured` (whether this server has the app; when it does, `app_url`, its page on GitHub) and `installations`, this organisation's GitHub accounts (`installation_id`, `account_login`, `account_type`, `repository_selection`, `status`: `active`, `suspended` or `deleted`, `note`, `installed_by`, `installed_at`, `updated_at`, `last_sync`, `repositories`). Each granted repository is an integration of kind `github_app` in `GET /integrations`.
+
+### `POST /integrations/github/install`
+
+**Who:** admin
+
+Starts Install on GitHub: `{"return_to"}` (a dashboard path); answers `url`, the app's install page on GitHub with a single-use state bound to the caller and organisation (10 minutes). 404 `not_configured` without the app.
+
+### `POST /integrations/github/setup`
+
+**Who:** admin
+
+Finishes Install on GitHub with `{"state", "code", "installation_id", "setup_action"}` from GitHub's redirect to `/integrations/github/callback`: 201 with `installation` and `return_to`, and the repositories are listed and scanned in the background. 400 `github_state` for a state that is missing, unknown, used, expired or someone else's, before GitHub is called; 202 `{"requested": true}` for `setup_action=request` (an owner of the GitHub organisation must approve). The `installation_id` is not trusted: 403 `github_installation` unless the person's GitHub account (from `code`) can see that installation of this app and the app's JWT confirms it; 409 `github_installation_taken` when another organisation holds it; 409 `github_suspended`; 502 `github_refused`. Audited as `github_app.install` (or `github_app.refused`).
+
+### `POST /integrations/github/installations/{installation_id}/sync`
+
+**Who:** admin
+
+Lists the installation's repositories on GitHub again now: 202. Audited as `github_app.sync`.
+
+### `DELETE /integrations/github/installations/{installation_id}`
+
+**Who:** admin
+
+Disconnects the GitHub account: its repositories' integrations are switched off with a note (assets and history kept), the binding is removed, and the app is uninstalled from that account on GitHub (`uninstalled_on_github`). Audited as `github_app.disconnect`.
+
+### `POST /integrations/github/webhook`
+
+**Who:** GitHub (the app's webhook secret)
+
+The GitHub App's webhook URL: `X-Hub-Signature-256` (HMAC-SHA256 of the body with the webhook secret) is required, else 401; `X-GitHub-Event` and `X-GitHub-Delivery` are required. A delivery already handled (the same delivery id or the same body) answers 200 `{"result": "duplicate"}`. Handles `installation` (`deleted`, `suspend`, `unsuspend`, `created`, `new_permissions_accepted`), `installation_repositories` and `push` (a scan of a granted repository when a lockfile or manifest changed on its default branch); answers 200 with `result`.
+
 ### `POST /integrations/slack/actions`
 
 **Who:** Slack (a channel's signing secret)
 
 Slack's interactivity Request URL: the form-encoded `payload` with `X-Slack-Request-Timestamp` and `X-Slack-Signature`. 200 once verified (the answer goes to Slack's `response_url`); 401 for a request that cannot be verified, is older than 5 minutes or was already received. See [Acting from Slack](#acting-from-slack).
+
+### `GET /aws/connections`
+
+**Who:** admin
+
+AWS accounts connected with the Stackurity CloudFormation stack ([install.md](install.md#aws-managed-services)), and the server's setup: `enabled` (the server has an AWS principal, `STACKURITY_AWS_PRINCIPAL_ARN`), `principal`, `launch_stack` (the template is hosted in S3, `STACKURITY_AWS_TEMPLATE_URL`), `template_download`, and the IAM actions the role grants (`permissions`, and `agent_install_permissions` with the option on). Each connection has `status` (`pending`, `active`, `failed`), `external_id`, `regions`, `role_arn`, `account_id`, `last_error`, `integration_id` and `integration_removed`.
+
+### `POST /aws/connections`
+
+**Who:** admin
+
+Starts a connection: `regions` (1–40, the regions read), `stack_region` (where the stack is created; default the first region) and `agent_install` (the role may also install the agent through SSM). The server generates the external ID. 201 with `connection` and `launch`: `quick_create_url` (the CloudFormation console with every parameter filled in; empty without an S3-hosted template), `template_download`, `cli` (the same stack with the AWS CLI), `stack_name`, `external_id`, `principal` and `callback` (true when the stack reports its role by itself, which needs this server's address to be https). 404 when the server has no AWS principal. Audited as `aws.connection.create`.
+
+### `GET /aws/connections/{id}`
+
+**Who:** admin
+
+One connection; the page polls it while the stack is being created.
+
+### `POST /aws/connections/{id}/launch`
+
+**Who:** admin
+
+A new Launch Stack link for a connection that is not active (`stack_region`, `agent_install`). The earlier link's token stops working. 409 for an active connection.
+
+### `POST /aws/connections/{id}/verify`
+
+**Who:** admin
+
+`{"role_arn"}`: the stack's `RoleArn` output, pasted when the stack could not report it; empty checks the recorded role again. The server assumes the role with the connection's external ID, which must work, and without it, which must be refused. Then the connection is `active`, its `aws-managed` integration (named `AWS <account>`) is created and a first run is queued. Otherwise `status` is `failed` with `last_error`. 409 for another role on an active connection (remove it and connect again). Audited as `aws.connection.verify`.
+
+### `DELETE /aws/connections/{id}`
+
+**Who:** admin
+
+Removes the connection and its integration. The role stays in the AWS account until the stack is deleted there. Audited as `aws.connection.delete`.
+
+### `GET /aws/connections/{id}/instances`
+
+**Who:** admin
+
+The EC2 instances SSM manages in one of the connection's regions (`?region=`, default the first), each with `instance_id`, `computer_name`, `platform_type`, `ping_status`, `eligible` (Linux and online), `asset_id` (a host already reporting with that hostname, short or full) and `last_install`. Needs the stack's agent install option. AWS errors answer 502 `aws_error` with AWS's message; 409 while the connection is not active.
+
+### `POST /aws/connections/{id}/installs`
+
+**Who:** admin
+
+`{"region", "instances": [{"instance_id", "computer_name"}]}` (1–25): installs the agent through SSM Run Command (`AWS-RunShellScript`). Each instance gets its own single-use enrollment code, valid for two hours and never stored, in a command that runs this server's installer (`/install/agent.sh`). 202 with one install per instance; a command SSM refused is `failed` at once and its code revoked. Audited as `aws.agent.install`.
+
+### `GET /aws/connections/{id}/installs`
+
+**Who:** admin
+
+The connection's agent installs, newest first, after reading from SSM how the unfinished ones went: `status` `pending`, `running`, `success`, `failed` or `timed_out` (SSM never reported the end within 25 minutes), and `detail` (the end of the command's output). The code of a failed or timed-out install is revoked. `refresh_error` says why SSM could not be read.
+
+### `POST /aws/callback`
+
+**Who:** the Stackurity stack (a signed, single-use token)
+
+Called once by the stack's custom resource, outside the session and CSRF checks: `Authorization: Bearer <token>` (the `CallbackToken` parameter of the Launch Stack link) and `{"role_arn", "external_id", "stack_id"}`. The token is signed with the installation's key and names the connection, its organisation and external ID; it is used up by the first request that presents it, expires after 24 hours and is replaced by a new link. The stack must be in the role's account. The role is then verified as by `POST /aws/connections/{id}/verify`; the answer is `{"status"}`. Every refused token is the same 403. Rate limited per address. Audited as `aws.connection.callback`.
+
+### `GET /aws/stackurity-aws-role-v1.json`
+
+**Who:** anyone · outside `/api/v1`
+
+The CloudFormation template the stack is made from (the same for every server and organisation), for review, for `aws cloudformation create-stack --template-body`, and for the operator to upload to S3 for Launch Stack. It is also in the repository as `deploy/aws/stackurity-aws-role-v1.json`.
 
 ## VEX
 
@@ -1855,10 +2040,12 @@ The single ingest contract for agents, scanners, SBOM imports and plugins. See [
 
 - `relations` (optional) links the asset to others by identifier: `[{"kind": "runs_on", "to": [{"scheme": "machine-id", "value": "..."}]}]`. Kinds are `runs_on`, `built_from` and `deployed_as` (a Kubernetes workload to the image it runs). Targets the server does not know yet are skipped. When present, the list replaces the relations this collector reported before; relations added by hand are kept.
 - An application on a host is identified as `{"scheme": "app-path", "value": "/srv/shop"}`, its only identifier, with a `runs_on` relation to the host. The server scopes the path to that host, which must already exist. A host-bound token may only report applications on its own host, and plugins cannot use this scheme.
+- A container image on a host (the agent's `--docker`) is identified as `{"scheme": "host-image", "value": "postgres:16"}` (the tag its containers run, or the image ID `sha256:...` when it has no tag), its only identifier, with a `runs_on` relation to the host. The server scopes the value to that host as it does an `app-path`, so a rebuilt image under the same tag is the same asset; the same rules apply to host-bound tokens and plugins. The image ID is in the `image_id` attribute.
 - `asset.kind` is `host`, `repository`, `image`, `application`, `managed_service`, `sbom`, `cluster` or `workload`.
 - An asset attribute `exposure` of `external` or `internal` (set on Kubernetes workloads) is used as the asset's internet exposure for risk scoring unless an operator set it by hand. An image takes the exposure of the workloads deployed as it.
 - `complete: true` tells the server that this batch is the collector's whole view of the asset. Components missing from it are marked removed, and history is kept. A batch that is not complete still removes what it left out outside the paths it could not read: when every `coverage` item that is not `checked` names an absolute path (`path:/srv/app/tmp`, `lockfile:/srv/app/yarn.lock`, `npm-installed:/srv/app/node_modules`; Composer's `vendor/composer/installed.json` stands for its `vendor` directory), components located at or below those paths are kept and the others are marked removed. When any such item names no path (`walk`, `depth`, `dpkg`, `invalid-entries`), nothing is removed. (Before 0.14 only complete batches removed anything, so an application with one unreadable cache directory kept an upgraded version's old libraries for good; its next collection removes them.)
 - `apps` (optional, host batches only, servers listing the `app_list` feature): `{"dirs": ["/var/www/html/phpmyadmin", ...]}`, every application directory the host's agent reports in this run, at most 1,000. The host's applications (`app-path` assets) not in the list are marked removed: each gets an empty complete collection (its findings resolve as `removed`), a `skipped` coverage note on `app:<dir>` saying why, and `collection_status` `removed`; the result lists them in `apps_removed`. An application that reports again is present again. Agents leave `apps` out when discovery stopped at its limits, so a missing directory is never guessed.
+- `images` (optional, host batches only, servers listing the `host_images` feature): `{"refs": ["postgres:16", "sha256:...", ...]}`, the `host-image` identity of every image the host's running containers use, at most 1,000. The host's images not in the list are marked removed the same way as applications (coverage note on `image:<ref>`, collection by `linux-docker`), and the result lists them in `images_removed`. The agent leaves `images` out when it could not list every running image (Docker unreadable, an image it could not inspect).
 - `coverage[].status` is one of `checked`, `skipped`, `failed`, `unsupported` or `partial`.
 - Limits: 200,000 observations, 64 MiB on the wire, 256 MiB after decompression.
 
