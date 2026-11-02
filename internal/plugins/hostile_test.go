@@ -46,6 +46,8 @@ func TestHostilePluginOutput(t *testing.T) {
 	hostileScript(t, dir, "toomany", `echo '{"protocol_version":"1","batches":[`+many+`]}'`)
 	hostileScript(t, dir, "relspam", `echo '{"protocol_version":"1","batches":[`+batchJSON(`,"relations":[`+strings.Join(spam, ",")+`]`)+`]}'`)
 	hostileScript(t, dir, "apppath", `echo '{"protocol_version":"1","batches":[{"schema_version":"1","collector":{"id":"x"},"asset":{"kind":"application","name":"a","identifiers":[{"scheme":"app-path","value":"/srv/a"}]},"observed_at":"2026-01-01T00:00:00Z","observations":[],"coverage":[],"relations":[{"kind":"runs_on","to":[{"scheme":"machine-id","value":"m"}]}]}]}'`)
+	hostileScript(t, dir, "hostimage", `echo '{"protocol_version":"1","batches":[{"schema_version":"1","collector":{"id":"x"},"asset":{"kind":"image","name":"a","identifiers":[{"scheme":"host-image","value":"postgres:16"}]},"observed_at":"2026-01-01T00:00:00Z","observations":[],"coverage":[],"relations":[{"kind":"runs_on","to":[{"scheme":"machine-id","value":"m"}]}]}]}'`)
+	hostileScript(t, dir, "imagelist", `echo '{"protocol_version":"1","batches":[{"schema_version":"1","collector":{"id":"x"},"asset":{"kind":"host","name":"m","identifiers":[{"scheme":"machine-id","value":"m"}]},"observed_at":"2026-01-01T00:00:00Z","observations":[],"coverage":[],"images":{"refs":[]}}]}'`)
 	hostileScript(t, dir, "otherws", `echo '{"protocol_version":"1","workspace_id":2,"batches":[`+batchJSON(`,"workspace_id":2,"collector_token":"x"`)+`]}'`)
 	hostileScript(t, dir, "leaks", `echo "debug: token=$(cat /dev/null)k8s-SECRET-token-value apiVersion" >&2
 echo '{"protocol_version":"1","error":"auth failed with k8s-SECRET-token-value and line-two-secret"}'`)
@@ -53,12 +55,14 @@ echo '{"protocol_version":"1","error":"auth failed with k8s-SECRET-token-value a
 	r := &Runner{Dir: dir, WorkDir: t.TempDir(), Timeout: 30 * time.Second}
 	ctx := context.Background()
 	for name, want := range map[string]string{
-		"huge":    "exceeded",
-		"invalid": "invalid JSON",
-		"nested":  "invalid JSON",
-		"toomany": "more than 1000 batches",
-		"relspam": "too many relations",
-		"apppath": "app-path",
+		"huge":      "exceeded",
+		"invalid":   "invalid JSON",
+		"nested":    "invalid JSON",
+		"toomany":   "more than 1000 batches",
+		"relspam":   "too many relations",
+		"apppath":   "app-path",
+		"hostimage": "host-image",
+		"imagelist": "image list",
 	} {
 		start := time.Now()
 		_, _, err := r.Collect(ctx, name, json.RawMessage(`{}`), nil)

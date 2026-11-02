@@ -35,6 +35,18 @@ type User struct {
 	MFAEnabled bool `json:"mfa_enabled"`
 	// MFAMethods lists the account's second factors (passkey, totp, email).
 	MFAMethods []string `json:"mfa_methods"`
+	// Phone is contact information kept on the membership in this
+	// workspace (migration 0080); empty when not given.
+	Phone string `json:"phone"`
+	// ProjectGrants and AssetGrants count the person's own grants in this
+	// workspace (not their teams'): what a member with project access only
+	// sees, at a glance.
+	ProjectGrants int64 `json:"project_grants"`
+	AssetGrants   int64 `json:"asset_grants"`
+	// AccessTeams names their teams in this workspace that can see
+	// something (a grant on an active project or an unmerged asset):
+	// access they have through team membership.
+	AccessTeams []string `json:"access_teams"`
 }
 
 const userCols = `u.id, u.email, u.name,
@@ -44,7 +56,14 @@ const userCols = `u.id, u.email, u.name,
 	u.instance_admin,
 	COALESCE((SELECT CASE WHEN wm.role IS NULL THEN 'projects' ELSE 'organisation' END FROM workspace_members wm
 	  WHERE wm.user_id = u.id AND wm.workspace_id = stackurity_ws()), ''),
-	` + mfaMethodsSQL + ` <> '{}', ` + mfaMethodsSQL
+	` + mfaMethodsSQL + ` <> '{}', ` + mfaMethodsSQL + `,
+	COALESCE((SELECT wm.phone FROM workspace_members wm WHERE wm.user_id = u.id AND wm.workspace_id = stackurity_ws()), ''),
+	(SELECT count(*) FROM access_grants g WHERE g.user_id = u.id AND g.workspace_id = stackurity_ws() AND g.project_id IS NOT NULL),
+	(SELECT count(*) FROM access_grants g WHERE g.user_id = u.id AND g.workspace_id = stackurity_ws() AND g.asset_id IS NOT NULL),
+	COALESCE((SELECT array_agg(t.name ORDER BY t.name) FROM team_members m JOIN teams t ON t.id = m.team_id
+	  WHERE m.user_id = u.id AND t.workspace_id = stackurity_ws() AND EXISTS (SELECT 1 FROM access_grants g
+	    LEFT JOIN projects p ON p.id = g.project_id LEFT JOIN assets a ON a.id = g.asset_id
+	    WHERE g.team_id = t.id AND (g.project_id IS NOT NULL AND p.archived_at IS NULL OR g.asset_id IS NOT NULL AND a.merged_into IS NULL))), '{}')`
 
 func (s *Store) CountUsers(ctx context.Context) (int64, error) {
 	var n int64
@@ -216,6 +235,9 @@ type UserUpdate struct {
 	Role     *auth.Role `json:"role"`
 	Disabled *bool      `json:"disabled"`
 	Password *string    `json:"password"`
+	// Phone is contact information on the membership in this workspace,
+	// so any admin of it may change it ("" clears it).
+	Phone *string `json:"phone"`
 	// Temporary: the password is set by an administrator for someone
 	// else; they must choose their own at their next sign-in.
 	Temporary bool `json:"-"`
@@ -232,6 +254,13 @@ func (s *Store) UpdateUser(ctx context.Context, id int64, u UserUpdate, instance
 	ws, ok := tenant.Workspace(ctx)
 	if !ok {
 		return errNoWorkspace
+	}
+	if u.Phone != nil {
+		p, err := NormalizePhone(*u.Phone)
+		if err != nil {
+			return err
+		}
+		u.Phone = &p
 	}
 	var hash *string
 	if u.Password != nil {
@@ -282,6 +311,12 @@ func (s *Store) UpdateUser(ctx context.Context, id int64, u UserUpdate, instance
 			}
 			if _, err := tx.Exec(ctx, `UPDATE workspace_members SET role = $3 WHERE workspace_id = $1 AND user_id = $2`,
 				ws, id, role); err != nil {
+				return err
+			}
+		}
+		if u.Phone != nil {
+			if _, err := tx.Exec(ctx, `UPDATE workspace_members SET phone = $3 WHERE workspace_id = $1 AND user_id = $2`,
+				ws, id, *u.Phone); err != nil {
 				return err
 			}
 		}
@@ -630,10 +665,13 @@ type Token struct {
 	// ProjectID: assets this collector token creates are added to this
 	// project.
 	ProjectID *int64 `json:"project_id"`
+	// RepositoryURL: a token exchanged by a CI job (POST /ci/token) may
+	// report only the repository with this git-url identity.
+	RepositoryURL string `json:"repository_url,omitempty"`
 }
 
 const tokenCols = `id, workspace_id, name, prefix, user_id, role, created_at, expires_at, last_used_at, revoked_at,
-	COALESCE((SELECT email FROM users u WHERE u.id = api_tokens.user_id), ''), project_id`
+	COALESCE((SELECT email FROM users u WHERE u.id = api_tokens.user_id), ''), project_id, repository_url`
 
 // CreateToken returns the stored token and its secret, shown once.
 func (s *Store) CreateToken(ctx context.Context, name string, role auth.Role, userID *int64, createdBy int64, ttl time.Duration) (*Token, string, error) {
@@ -712,10 +750,12 @@ func (s *Store) TokenPrincipal(ctx context.Context, secret string) (*Token, *Use
 }
 
 func (s *Store) ListTokens(ctx context.Context, userID int64) ([]Token, error) {
-	sql := `SELECT ` + tokenCols + ` FROM api_tokens`
+	// Short-lived tokens of CI jobs (one per job) are not listed: they are
+	// managed through their CI trust.
+	sql := `SELECT ` + tokenCols + ` FROM api_tokens WHERE ci_trust_id IS NULL`
 	args := []any{}
 	if userID > 0 {
-		sql += ` WHERE user_id = $1`
+		sql += ` AND user_id = $1`
 		args = append(args, userID)
 	}
 	rows, err := s.Pool.Query(ctx, sql+` ORDER BY created_at DESC`, args...)
@@ -749,11 +789,23 @@ type Team struct {
 	CreatedAt  time.Time `json:"created_at"`
 	Members    []int64   `json:"members"`
 	AssetCount int64     `json:"asset_count"`
+	// Access is what the team's members see through it ("Can see"): its
+	// grants, each marked available unless the project is archived or
+	// the asset merged. Owning assets (AssetCount) gives no access.
+	Access []InvitationGrant `json:"access"`
 }
 
 const teamCols = `t.id, t.name, t.email, t.created_at,
 	COALESCE((SELECT array_agg(user_id ORDER BY user_id) FROM team_members m WHERE m.team_id = t.id), '{}'),
-	(SELECT count(*) FROM assets a WHERE a.owner_team_id = t.id AND a.merged_into IS NULL)`
+	(SELECT count(*) FROM assets a WHERE a.owner_team_id = t.id AND a.merged_into IS NULL),
+	COALESCE((SELECT json_agg(json_build_object('kind', CASE WHEN g.project_id IS NOT NULL THEN 'project' ELSE 'asset' END,
+	    'project_id', g.project_id, 'asset_id', g.asset_id, 'role', g.role, 'name', COALESCE(p.name, a.name, ''),
+	    'available', CASE WHEN g.project_id IS NOT NULL THEN p.archived_at IS NULL ELSE a.merged_into IS NULL END,
+	    'unavailable', CASE WHEN g.project_id IS NOT NULL AND p.archived_at IS NOT NULL THEN 'archived'
+	                        WHEN g.asset_id IS NOT NULL AND a.merged_into IS NOT NULL THEN 'merged' ELSE '' END)
+	    ORDER BY g.project_id IS NULL, COALESCE(p.name, a.name))
+	  FROM access_grants g LEFT JOIN projects p ON p.id = g.project_id LEFT JOIN assets a ON a.id = g.asset_id
+	  WHERE g.team_id = t.id), '[]')`
 
 func (s *Store) ListTeams(ctx context.Context) ([]Team, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT `+teamCols+` FROM teams t ORDER BY t.name`)
@@ -790,29 +842,33 @@ func (s *Store) GetTeam(ctx context.Context, id int64) (*Team, error) {
 
 func (s *Store) UpdateTeam(ctx context.Context, id int64, name, email *string, members *[]int64) error {
 	return pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx, `UPDATE teams SET name = COALESCE($2, name), email = COALESCE($3, email) WHERE id = $1`, id, name, email)
-		if err != nil {
-			if isUniqueViolation(err) {
-				return fmt.Errorf("team exists: %w", ErrConflict)
+		return updateTeam(ctx, tx, id, name, email, members)
+	})
+}
+
+func updateTeam(ctx context.Context, tx pgx.Tx, id int64, name, email *string, members *[]int64) error {
+	tag, err := tx.Exec(ctx, `UPDATE teams SET name = COALESCE($2, name), email = COALESCE($3, email) WHERE id = $1`, id, name, email)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return fmt.Errorf("team exists: %w", ErrConflict)
+		}
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	if members != nil {
+		if _, err := tx.Exec(ctx, `DELETE FROM team_members WHERE team_id = $1`, id); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO team_members (team_id, user_id) SELECT $1, u.id FROM users u WHERE u.id = ANY($2)`, id, *members); err != nil {
+			if isForeignKey(err) {
+				return fmt.Errorf("team members must be members of this workspace: %w", ErrInvalid)
 			}
 			return err
 		}
-		if tag.RowsAffected() == 0 {
-			return ErrNotFound
-		}
-		if members != nil {
-			if _, err := tx.Exec(ctx, `DELETE FROM team_members WHERE team_id = $1`, id); err != nil {
-				return err
-			}
-			if _, err := tx.Exec(ctx, `INSERT INTO team_members (team_id, user_id) SELECT $1, u.id FROM users u WHERE u.id = ANY($2)`, id, *members); err != nil {
-				if isForeignKey(err) {
-					return fmt.Errorf("team members must be members of this workspace: %w", ErrInvalid)
-				}
-				return err
-			}
-		}
-		return nil
-	})
+	}
+	return nil
 }
 
 func (s *Store) DeleteTeam(ctx context.Context, id int64) error {

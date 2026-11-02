@@ -299,11 +299,16 @@ func checkBatches(batches []*model.ObservationBatch, id, version string) ([]*mod
 		if err := b.Validate(); err != nil {
 			return nil, fmt.Errorf("batch %d: %w", i, err)
 		}
-		// Application paths are scoped to a host by the ingest API; a plugin
+		// Application paths and host images are scoped to a host by the ingest API; a plugin
 		// bypasses it, so it may not use them.
+		// A host's image list marks that host's images removed; only the
+		// host's own agent knows it.
+		if b.Images != nil {
+			return nil, fmt.Errorf("batch %d: plugins cannot report a host's image list", i)
+		}
 		for _, id := range b.Asset.Identifiers {
-			if id.Scheme == model.AppPathScheme {
-				return nil, fmt.Errorf("batch %d: plugins cannot report %s identities", i, model.AppPathScheme)
+			if id.Scheme == model.AppPathScheme || id.Scheme == model.HostImageScheme {
+				return nil, fmt.Errorf("batch %d: plugins cannot report %s identities", i, id.Scheme)
 			}
 		}
 	}

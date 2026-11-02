@@ -38,7 +38,8 @@ func (s *Store) AssetByIdentifier(ctx context.Context, scheme, value string) (in
 // AssetsReportingThrough keeps the ids a token bound to asset bound may
 // report for, by the rule ingest applies: the bound asset itself (or an
 // asset merged into it), and applications whose path identity is scoped to
-// it ("host:<bound>:<path>", see bindAppIdentity in the API).
+// it ("host:<bound>:<path>", see bindHostIdentity in the API), and
+// container images scoped to it the same way.
 func (s *Store) AssetsReportingThrough(ctx context.Context, bound int64, ids []int64) ([]int64, error) {
 	if len(ids) == 0 {
 		return nil, nil
@@ -47,8 +48,8 @@ func (s *Store) AssetsReportingThrough(ctx context.Context, bound int64, ids []i
 		  COALESCE(a.merged_into, a.id) = $2
 		  OR EXISTS (SELECT 1 FROM asset_identifiers i JOIN assets t ON t.id = i.asset_id
 		    WHERE COALESCE(t.merged_into, t.id) = COALESCE(a.merged_into, a.id)
-		      AND i.scheme = $3 AND starts_with(i.value, 'host:' || $2::bigint || ':')))`,
-		ids, bound, model.AppPathScheme)
+		      AND i.scheme = ANY($3) AND starts_with(i.value, 'host:' || $2::bigint || ':')))`,
+		ids, bound, []string{model.AppPathScheme, model.HostImageScheme})
 	if err != nil {
 		return nil, err
 	}

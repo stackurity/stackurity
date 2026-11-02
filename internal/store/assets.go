@@ -776,6 +776,10 @@ func mergeAsset(ctx context.Context, tx pgx.Tx, from, into int64) error {
 		`UPDATE access_grants g SET asset_id = $2 WHERE g.asset_id = $1 AND NOT EXISTS (SELECT 1 FROM access_grants o
 		   WHERE o.asset_id = $2 AND o.user_id IS NOT DISTINCT FROM g.user_id AND o.team_id IS NOT DISTINCT FROM g.team_id)`,
 		`DELETE FROM access_grants WHERE asset_id = $1 AND $2::bigint IS NOT NULL`,
+		// Open invitations follow too, as if they had been accepted.
+		`UPDATE invitation_grants g SET asset_id = $2 WHERE g.asset_id = $1 AND $2::bigint IS NOT NULL AND NOT EXISTS (
+		   SELECT 1 FROM invitation_grants o WHERE o.invitation_id = g.invitation_id AND o.asset_id = $2)`,
+		`DELETE FROM invitation_grants WHERE asset_id = $1 AND $2::bigint IS NOT NULL`,
 		`INSERT INTO asset_relations (from_asset, to_asset, kind, source, created_at)
 		   SELECT CASE WHEN from_asset = $1 THEN $2 ELSE from_asset END, CASE WHEN to_asset = $1 THEN $2 ELSE to_asset END, kind, source, created_at
 		   FROM asset_relations WHERE (from_asset = $1 OR to_asset = $1) AND from_asset <> to_asset

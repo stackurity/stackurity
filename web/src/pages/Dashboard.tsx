@@ -3,6 +3,8 @@ import { Link, Navigate } from "react-router";
 import {
   api,
   type Asset,
+  type CredentialGroup,
+  type CredentialHealth,
   type DashboardTrend,
   type FindingSummary,
   type FixGroup,
@@ -31,6 +33,7 @@ import {
   IconHelp,
   IconInbox,
   IconIssues,
+  IconKey,
   IconShield,
   IconSignalOff,
   IconTrend,
@@ -397,6 +400,84 @@ function CoverageBlock({ o, unchecked, assets }: { o: Overview; unchecked: Retur
   );
 }
 
+/**
+ * 5. Secrets and credentials (admins): connections failing, API tokens
+ * expiring or unused, stored secrets not changed for a year. Only what
+ * Stackurity was given; secrets left in code or on servers are not looked for.
+ */
+function CredentialsBlock() {
+  const res = useLoad(() => api.get<CredentialHealth>("/credentials/health"), []);
+  const h = res.data;
+  if (res.error) return <ErrorBox error={res.error} title="Could not load secrets and credentials" />;
+  if (!h) return null;
+  const groups: { key: string; g: CredentialGroup; text: string; hint: string; to: string; tone?: string }[] = [
+    {
+      key: "failing",
+      g: h.failing,
+      text: `${plural(h.failing.total, "connection")} failing`,
+      hint: "often an expired, revoked or replaced key",
+      to: "/settings/integrations",
+      tone: "text-bad",
+    },
+    {
+      key: "expiring",
+      g: h.expiring,
+      text: `${plural(h.expiring.total, "API token")} expiring or recently expired`,
+      hint: "replace before anything stops reporting",
+      to: "/settings/tokens",
+      tone: "text-warn-strong",
+    },
+    {
+      key: "unused",
+      g: h.unused,
+      text: `${plural(h.unused.total, "API token")} not used for ${h.unused_days} days`,
+      hint: h.unused.total === 1 ? "revoke it if nothing needs it" : "revoke what nothing needs",
+      to: "/settings/tokens",
+    },
+    {
+      key: "old",
+      g: h.old,
+      text: `${plural(h.old.total, "stored secret")} not changed for over a year`,
+      hint: h.old.total === 1 ? "rotate it" : "rotate them",
+      to: "/settings/secrets",
+    },
+  ].filter((x) => x.g.total > 0);
+  return (
+    <Block
+      id="dash-credentials"
+      icon={<IconKey />}
+      title="Secrets and credentials"
+      badge={groups.length > 0 ? plural(groups.reduce((n, x) => n + x.g.total, 0), "thing") : undefined}
+      link={{ to: "/settings/secrets", label: "Secrets" }}
+    >
+      {groups.length === 0 ? (
+        <p className="small">
+          <span className="text-good">
+            <IconCheckCircle size={14} /> Every connection works
+          </span>
+          , no API token expires within {h.expiring_days} days or sits unused, and every stored secret was set within the last year.
+        </p>
+      ) : (
+        <ul className="dash-coverage-parts">
+          {groups.map((x) => (
+            <li key={x.key}>
+              <Link to={x.to} className={x.tone}>
+                {x.text}
+              </Link>
+              <span className="small muted"> ({x.hint})</span>
+              <span className="small muted dash-cred-names">
+                {x.g.items.map((it) => it.name).join(", ")}
+                {x.g.total > x.g.items.length && ` and ${(x.g.total - x.g.items.length).toLocaleString()} more`}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="small muted">Secrets left in code, container images or on servers are not looked for yet.</p>
+    </Block>
+  );
+}
+
 /** The Dashboard: the landing page after sign-in, four fixed blocks. */
 export function DashboardPage() {
   const { me, can, canAct, projectOnly } = useAuth();
@@ -567,6 +648,8 @@ export function DashboardPage() {
         {s ? <RiskBlock s={s} trend={trend.data} /> : <ErrorBox error={fs.error} title="Could not load the counts" />}
 
         <CoverageBlock o={o} unchecked={unchecked} assets={assets.data?.items} />
+
+        {admin && !projectOnly && <CredentialsBlock />}
       </div>
     </>
   );

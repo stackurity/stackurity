@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from "react";
-import { api, USER_ROLES, type List, type MfaMethod, type User, type UserRole } from "../../api";
+import { useMemo, useReducer, useState, type FormEvent } from "react";
+import { api, USER_ROLES, type List, type MfaMethod, type Project, type Team, type User, type UserRole } from "../../api";
 import { useAuth } from "../../auth";
 import { useAction, useLoad } from "../../hooks";
 import { Badge } from "../../components/Badge";
@@ -7,14 +7,21 @@ import { Table, type Column } from "../../components/Table";
 import { Card, EmptyState, ErrorBox, Loading, Notice, PageHeader, RelativeTime } from "../../components/ui";
 import { RequireMfaCard } from "../TwoFactor";
 import { confirmAction } from "../../components/ConfirmDialog";
+import { PermissionsDisclosure } from "../../components/Permissions";
+import { PERMISSIONS, permissionLabel, scopeSummary } from "../../roles";
+import { EMPTY, phoneProblem, preview, problems, reduce, toRequest } from "../../userAccess";
+import { AccessPicker, teamInfo } from "../../components/AccessPicker";
+import { InvitationList, InviteForm } from "../../components/Invite";
 
 /** Organisation-wide roles, and "none": access only to the projects someone is given. */
 const ORG_ROLES: (UserRole | "none")[] = [...USER_ROLES, "none"];
 const MFA_LABELS: Record<MfaMethod, string> = { passkey: "Passkey", totp: "App", email: "Email code" };
 
 function roleLabel(r: UserRole | "none" | ""): string {
-  return r === "none" || r === "" ? "projects only" : r;
+  return permissionLabel(r);
 }
+
+const LABELS: Record<string, string> = Object.fromEntries(PERMISSIONS.map((p) => [p.role, p.label]));
 
 export function UsersPage() {
   const { me } = useAuth();
@@ -22,7 +29,11 @@ export function UsersPage() {
   const act = useAction();
   const [msg, setMsg] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
-  const [resetFor, setResetFor] = useState<number | null>(null);
+  const [showInvite, setShowInvite] = useState(false);
+  const [invites, setInvites] = useState(0);
+  // Stackurity Cloud: people join by invitation only, so Add user is not offered.
+  const inviteOnly = !!me?.invite_only;
+  const [open, setOpen] = useState<{ id: number; kind: "reset" | "edit" } | null>(null);
 
   const patch = async (u: User, body: Record<string, unknown>, done: string) => {
     setMsg(null);
@@ -42,6 +53,7 @@ export function UsersPage() {
         <>
           <div>{u.name || <span className="muted">(no name)</span>}</div>
           <div className="small muted">{u.email}</div>
+          {u.phone && <div className="small muted">{u.phone}</div>}
         </>
       ),
     },
@@ -74,6 +86,7 @@ export function UsersPage() {
         </>
       ),
     },
+    { key: "scope", header: "Can see", cell: (u) => <span className={u.role ? undefined : "muted"}>{scopeSummary(u)}</span> },
     { key: "status", header: "Status", cell: (u) => (u.disabled ? <Badge status="disabled" /> : <Badge status="active" />) },
     {
       key: "mfa",
@@ -93,7 +106,10 @@ export function UsersPage() {
       header: <span className="sr-only">Actions</span>,
       cell: (u) => (
         <div className="row-actions">
-          <button type="button" className="btn btn-sm" onClick={() => setResetFor(resetFor === u.id ? null : u.id)}>
+          <button type="button" className="btn btn-sm" onClick={() => setOpen(open?.id === u.id && open.kind === "edit" ? null : { id: u.id, kind: "edit" })}>
+            Edit
+          </button>
+          <button type="button" className="btn btn-sm" onClick={() => setOpen(open?.id === u.id && open.kind === "reset" ? null : { id: u.id, kind: "reset" })}>
             Reset password
           </button>
           {u.mfa_enabled && u.id !== me?.user?.id && (
@@ -189,18 +205,42 @@ export function UsersPage() {
     <>
       <PageHeader help="users-teams-roles"
         title="Users"
-        sub={`Members of ${me?.workspace?.name ?? "this workspace"}. Roles apply here only: viewer < engineer < security < admin.`}
+        sub={`Members of ${me?.workspace?.name ?? "this workspace"}. Each sees all projects and assets, or only the ones they are given.`}
         actions={
-          !showCreate && (
-            <button type="button" className="btn btn-primary" onClick={() => setShowCreate(true)}>
-              Add user
-            </button>
+          !showCreate &&
+          !showInvite && (
+            <>
+              <button type="button" className={`btn${inviteOnly ? " btn-primary" : ""}`} onClick={() => setShowInvite(true)}>
+                Invite by email
+              </button>
+              {!inviteOnly && (
+                <button type="button" className="btn btn-primary" onClick={() => setShowCreate(true)}>
+                  Add user
+                </button>
+              )}
+            </>
           )
         }
       />
       {msg && <Notice kind="success">{msg}</Notice>}
       <ErrorBox error={act.error} title="Update failed" />
       <RequireMfaCard />
+      {inviteOnly && !showInvite && (
+        <p className="small muted">People join this organisation by invitation: they get a link by email and set up their own account.</p>
+      )}
+      {!showCreate && !showInvite && <PermissionsDisclosure />}
+      {showInvite && (
+        <Card title="Invite by email">
+          <p className="small muted">Sends a link that works once, for 7 days. They create their account with it, or join with the one they have.</p>
+          <InviteForm
+            onInvited={() => {
+              setInvites((n) => n + 1);
+              res.reload();
+            }}
+            onCancel={() => setShowInvite(false)}
+          />
+        </Card>
+      )}
       {showCreate && (
         <CreateUser
           onCancel={() => setShowCreate(false)}
@@ -220,20 +260,33 @@ export function UsersPage() {
           columns={columns}
           rows={res.data.items}
           rowKey={(u) => u.id}
-          selectedKey={resetFor}
-          renderExpanded={(u) => (
-            <ResetPassword
-              user={u}
-              onDone={() => {
-                setResetFor(null);
-                setMsg(`Password for ${u.email} was reset.`);
-              }}
-              onCancel={() => setResetFor(null)}
-            />
-          )}
+          selectedKey={open?.id ?? null}
+          renderExpanded={(u) =>
+            open?.kind === "edit" ? (
+              <EditUser
+                user={u}
+                onDone={() => {
+                  setOpen(null);
+                  setMsg(`${u.email} was updated.`);
+                  res.reload();
+                }}
+                onCancel={() => setOpen(null)}
+              />
+            ) : (
+              <ResetPassword
+                user={u}
+                onDone={() => {
+                  setOpen(null);
+                  setMsg(`Password for ${u.email} was reset.`);
+                }}
+                onCancel={() => setOpen(null)}
+              />
+            )
+          }
           rowClassName={(u) => (u.disabled ? "row-removed" : undefined)}
         />
       )}
+      <InvitationList reloadKey={invites} />
     </>
   );
 }
@@ -266,45 +319,107 @@ function ResetPassword({ user, onDone, onCancel }: { user: User; onDone: () => v
   );
 }
 
-function CreateUser({ onCancel, onCreated }: { onCancel: () => void; onCreated: (u: User) => void }) {
-  const [f, setF] = useState<{ email: string; name: string; role: UserRole | "none"; password: string }>({ email: "", name: "", role: "viewer", password: "" });
+function EditUser({ user, onDone, onCancel }: { user: User; onDone: () => void; onCancel: () => void }) {
+  const [name, setName] = useState(user.name);
+  const [phone, setPhone] = useState(user.phone ?? "");
   const act = useAction();
+  const phoneErr = phoneProblem(phone);
+  const body: Record<string, string> = {};
+  if (name.trim() !== user.name) body.name = name.trim();
+  if (phone.trim() !== (user.phone ?? "")) body.phone = phone.trim();
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    const u = await act.run(() => api.post<User>("/users", { ...f, email: f.email.trim(), name: f.name.trim() }));
+    const ok = await act.run(() => api.patch<User>(`/users/${user.id}`, body));
+    if (ok) onDone();
+  };
+  return (
+    <form className="form inline-form" onSubmit={submit} aria-label={`Edit ${user.email}`}>
+      <ErrorBox error={act.error} title="Could not save" />
+      <div className="form-grid">
+        <div className="field">
+          <label htmlFor={`eu-name-${user.id}`}>Name</label>
+          <input id={`eu-name-${user.id}`} autoComplete="off" maxLength={200} value={name} onChange={(e) => setName(e.target.value)} />
+          <p className="hint">Belongs to their account; an account in other workspaces too can be renamed only by an instance admin.</p>
+        </div>
+        <div className="field">
+          <label htmlFor={`eu-phone-${user.id}`}>Phone (optional)</label>
+          <input id={`eu-phone-${user.id}`} type="tel" autoComplete="off" maxLength={32} value={phone} aria-invalid={phoneErr ? true : undefined}
+            onChange={(e) => setPhone(e.target.value)} />
+          <p className="hint">{phoneErr || "Contact information for this workspace only. Nothing is sent to it."}</p>
+        </div>
+      </div>
+      <div className="form-actions">
+        <button type="submit" className="btn btn-primary btn-sm" disabled={act.pending || !!phoneErr || Object.keys(body).length === 0}>
+          Save
+        </button>
+        <button type="button" className="btn btn-sm" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function CreateUser({ onCancel, onCreated }: { onCancel: () => void; onCreated: (u: User) => void }) {
+  const [f, dispatch] = useReducer(reduce, EMPTY);
+  const [tried, setTried] = useState(false);
+  const projects = useLoad(() => api.getAll<List<Project>>("/projects"), []);
+  const names = useMemo(() => Object.fromEntries((projects.data?.items ?? []).map((p) => [p.id, p.name])), [projects.data]);
+  const teams = useLoad(() => api.getAll<List<Team>>("/teams"), []);
+  const tinfo = useMemo(() => teamInfo(teams.data?.items), [teams.data]);
+  const act = useAction();
+  const missing = problems(f, names, tinfo);
+  const summary = preview(f, LABELS, tinfo);
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setTried(true);
+    if (missing.length) return;
+    const u = await act.run(() => api.post<User>("/users", toRequest(f)));
     if (u) onCreated(u);
   };
   return (
     <Card title="Add user">
-      <form className="form" onSubmit={submit}>
+      <form className="form" onSubmit={submit} aria-label="Add user" noValidate>
         <ErrorBox error={act.error} title="Could not create user" />
         <div className="form-grid">
           <div className="field">
-            <label htmlFor="nu-email">Email</label>
-            <input id="nu-email" type="email" required autoComplete="off" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
-          </div>
-          <div className="field">
             <label htmlFor="nu-name">Name</label>
-            <input id="nu-name" autoComplete="off" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
+            <input id="nu-name" autoComplete="off" maxLength={200} value={f.name} onChange={(e) => dispatch({ type: "field", field: "name", value: e.target.value })} />
           </div>
           <div className="field">
-            <label htmlFor="nu-role">Role</label>
-            <select id="nu-role" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value as UserRole | "none" })}>
-              {ORG_ROLES.map((r) => (
-                <option key={r} value={r}>
-                  {roleLabel(r)}
-                </option>
-              ))}
-            </select>
+            <label htmlFor="nu-email">Email</label>
+            <input id="nu-email" type="email" required autoComplete="off" value={f.email} onChange={(e) => dispatch({ type: "field", field: "email", value: e.target.value })} />
+          </div>
+          <div className="field">
+            <label htmlFor="nu-phone">Phone (optional)</label>
+            <input id="nu-phone" type="tel" autoComplete="off" maxLength={32} placeholder="+91 98450 12345" value={f.phone}
+              aria-invalid={phoneProblem(f.phone) ? true : undefined} onChange={(e) => dispatch({ type: "field", field: "phone", value: e.target.value })} />
+            <p className="hint">{phoneProblem(f.phone) || "Contact information only. Nothing is sent to it."}</p>
           </div>
           <div className="field">
             <label htmlFor="nu-pw">Initial password</label>
-            <input id="nu-pw" type="password" minLength={12} autoComplete="new-password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} />
+            <input id="nu-pw" type="password" minLength={12} autoComplete="new-password" value={f.password} onChange={(e) => dispatch({ type: "field", field: "password", value: e.target.value })} />
             <p className="hint">At least 12 characters. Leave empty if they already have an account; they join this workspace with it.</p>
           </div>
         </div>
+
+        <AccessPicker idp="nu" f={f} dispatch={dispatch} projects={projects} teams={teams} />
+
+        <PermissionsDisclosure />
+
+        {tried && missing.length > 0 && (
+          <div className="alert alert-warn" role="alert" id="nu-problems">
+            <strong>Before adding them:</strong>
+            <ul>
+              {missing.map((m) => (
+                <li key={m}>{m}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {summary && <p className="hint" aria-live="polite">They will see: {summary}</p>}
         <div className="form-actions">
-          <button type="submit" className="btn btn-primary" disabled={act.pending}>
+          <button type="submit" className="btn btn-primary" disabled={act.pending || (tried && missing.length > 0)} aria-describedby={tried && missing.length ? "nu-problems" : undefined}>
             Add user
           </button>
           <button type="button" className="btn" onClick={onCancel}>

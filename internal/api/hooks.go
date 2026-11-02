@@ -30,6 +30,11 @@ var (
 	// and CSRF checks: callbacks from outside services that prove who they
 	// are some other way (a signature).
 	editionRootRoutes func(s *Server, r chi.Router)
+	// editionAccountRoutes adds routes under /api/v1 for the caller's own
+	// account: any signed-in person, whatever their role (Stackurity
+	// Cloud's connected sign-ins). An edition lists each in projectRoutes
+	// as accountScope, so assistants cannot change them.
+	editionAccountRoutes func(s *Server, r chi.Router)
 	// editionMeta adds what the dashboard needs to know before sign-in to
 	// GET /api/v1/meta.
 	editionMeta func(s *Server, r *http.Request, meta map[string]any)
