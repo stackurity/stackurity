@@ -4,7 +4,7 @@
 -- to (assets.owner_team_id) routes alerts and gives no access.
 --
 -- A team deleted before the link is used is dropped (ON DELETE SET NULL),
--- and the name kept in label says which, as for invitation_grants (0079).
+-- and the name kept in label says which, as for invitation_grants (0081).
 -- Additive: one new table.
 
 SET LOCAL lock_timeout = '10s';
