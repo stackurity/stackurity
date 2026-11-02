@@ -1,4 +1,5 @@
 import type { Article } from "./types";
+import { PERMISSION_NOTES, permissionTable } from "../roles";
 
 /*
  * Help centre content. Facts here mirror the code (cmd/stackurity, internal/*)
@@ -1684,27 +1685,35 @@ jobs:
     id: "users-teams-roles",
     title: "Users, teams and roles",
     section: "Settings and administration",
-    summary: "Who can see and change what.",
+    summary: "Who can see and change what, and adding someone with exactly the access they need.",
     where: ["Settings", "Users"],
-    keywords: "role viewer engineer security admin team password",
+    keywords: "role viewer engineer security admin team password permission view edit decide phone add user scope specific all projects assets",
     body: [
       {
-        table: [
-          ["Role", "Can"],
-          ["viewer", "See inventory, fixes, issues, incidents, reports and the audit log. Notification settings and remediation policies need security."],
-          ["engineer", "Edit assets and relations, acknowledge/assign/comment on findings, run integrations, refresh feeds."],
-          ["security", "Everything an engineer can, plus suppress, accept risk and reopen findings, view notifications and remediation policies, approve plans (not major)."],
-          ["admin", "Everything: users, teams, tokens, integrations, plugins, channels, routes, risk policy, remediation policies, deleting assets, identity conflicts, jobs."],
-        ],
+        p: "Everyone in a workspace sees either **all projects and assets**, or only the **specific projects and assets** they are given. On top of that, a permission says what they may do there.",
       },
+      // The same table as "What can each permission do?" under Settings ▸ Users (web/src/roles.ts).
+      { table: permissionTable() },
+      { list: PERMISSION_NOTES },
       {
-        p: "These roles apply to the whole organisation, or to chosen [projects](help:projects) only. Someone with access through projects only sees those projects' assets.",
+        p: "In the API and in older screens the permissions are named viewer (View only), engineer (View and edit), security (View, edit and decide) and admin. See [Projects and access](help:projects) for how projects narrow what someone sees.",
       },
+      { h: "Adding a user" },
       {
         steps: [
-          "**Settings ▸ Users ▸ Add user** (admin): email, name, role and an initial password of at least 12 characters. Share it securely.",
-          "Change a role from the list; **Disable** stops sign-in and the user's tokens; **Reset password** sets a new one.",
-          "**Settings ▸ Teams ▸ Add team**: name, contact email and members. Then set teams as asset owners so incidents and routes follow them.",
+          "**Settings ▸ Users ▸ Add user** (admin): their name, email and, if you like, a phone number (contact information only; nothing is sent to it). For a new account, an initial password of at least 12 characters; share it securely. Someone who already has an account joins with it.",
+          "**What can they see?** must be answered; nothing is chosen for you. **All projects and assets**: pick one permission, which covers everything, including what is added later. **Specific projects or assets**: add one or more projects.",
+          "For each project, choose **All assets in this project** with one permission (this also covers assets added to the project later), or **Chosen assets**: tick each asset and give it its own permission, for example one asset View only and another View and edit. Projects can mix the two.",
+          "**Add user** creates the person and all of their access together; if any part is refused, nothing is created. The list's **Can see** column shows it at a glance, such as \"All projects — View and edit\" or \"2 projects, 3 assets\".",
+        ],
+      },
+      { h: "Changing it later" },
+      {
+        list: [
+          "Change the permission on all projects from the list, or choose **Specific projects only** to take it away; their project and asset access then comes from **Settings ▸ Projects and access**.",
+          "**Edit** changes the name and phone; **Disable** stops sign-in and the user's tokens; **Reset password** sets a new, temporary one.",
+          "**Settings ▸ Teams ▸ Add team**: name, contact email and members. Give a team a permission on a project, or set it as an asset's owner so incidents and routes follow it.",
+          "On Stackurity Cloud people join by invitation instead of **Add user**: invite them from a project (**Settings ▸ Projects and access**), with a permission on that project.",
         ],
       },
     ],
@@ -1732,7 +1741,7 @@ jobs:
       },
       {
         list: [
-          "A role on a project means the same as the organisation role, for that project's assets only. Someone who is a viewer for the organisation and an engineer on one project can acknowledge and assign that project's issues, and only view the rest.",
+          "A role on a project means the same as the organisation role, for that project's assets only, except for the workspace pages it never shows (see [the permissions table](help:users-teams-roles)). Someone who is a viewer for the organisation and an engineer on one project can acknowledge and assign that project's issues, and only view the rest.",
           "An incident that spans two projects shows each person only their part: the counts, names and priority come from the assets they can see.",
           "Archiving a project removes the access it gave. Its assets stay, and people with an organisation-wide role still see them.",
           "Removing someone's access, or lowering their role, applies to their next request, and to their API tokens too.",

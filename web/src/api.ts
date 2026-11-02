@@ -165,6 +165,11 @@ export interface User {
   access?: Access;
   /** Two-factor sign-in is on for this account. */
   mfa_enabled?: boolean;
+  /** Contact information on the membership in this workspace; may be empty. */
+  phone?: string;
+  /** Their own grants in this workspace (not their teams'). */
+  project_grants?: number;
+  asset_grants?: number;
 }
 
 /** How a member reaches a workspace's data. */
