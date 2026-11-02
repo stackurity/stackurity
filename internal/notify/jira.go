@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/stackurity/stackurity/internal/store"
 )
 
 // Jira channels keep one issue per incident: created when the incident is
@@ -52,17 +54,39 @@ func validateJira(c ChannelConfig, hasSecret, allowHTTP bool) error {
 	if u, _ := url.Parse(c.URL); u.RawQuery != "" || u.Fragment != "" {
 		return errors.New("jira url must be the site's base URL, without a query")
 	}
-	switch c.Deployment {
-	case "", JiraCloud:
-		if _, err := mail.ParseAddress(c.Username); err != nil {
-			return errors.New("jira cloud needs the account's email address as username (the API token goes in secret_ref)")
+	switch c.Auth {
+	case JiraAuthOAuth:
+		// Connect Jira: the connection holds the tokens.
+		if c.Deployment != "" && c.Deployment != JiraCloud {
+			return errors.New("Connect Jira (auth oauth) is for Jira Cloud; Data Center and Server use a personal access token")
 		}
-	case JiraDataCenter:
+		if c.ConnectionID <= 0 || !jiraCloudIDRe.MatchString(c.CloudID) {
+			return errors.New("auth oauth needs connection_id and cloud_id (the site) from Connect Jira")
+		}
+		if hasSecret {
+			return errors.New("a Jira channel with auth oauth has no secret_ref: Connect Jira keeps the tokens")
+		}
+		if c.Username != "" {
+			return errors.New("username is for API-token auth")
+		}
+	case "", "token":
+		if c.ConnectionID != 0 || c.CloudID != "" {
+			return errors.New("connection_id and cloud_id are for auth oauth")
+		}
+		switch c.Deployment {
+		case "", JiraCloud:
+			if _, err := mail.ParseAddress(c.Username); err != nil {
+				return errors.New("jira cloud needs the account's email address as username (the API token goes in secret_ref)")
+			}
+		case JiraDataCenter:
+		default:
+			return errors.New("deployment must be cloud or datacenter")
+		}
+		if !hasSecret {
+			return errors.New("set secret_ref to the Jira API token (cloud) or personal access token (datacenter)")
+		}
 	default:
-		return errors.New("deployment must be cloud or datacenter")
-	}
-	if !hasSecret {
-		return errors.New("set secret_ref to the Jira API token (cloud) or personal access token (datacenter)")
+		return errors.New("auth must be token (an API token or personal access token) or oauth (Connect Jira)")
 	}
 	if !jiraProjectRe.MatchString(c.Project) {
 		return errors.New("project must be a Jira project key such as SEC")
@@ -125,11 +149,18 @@ func retryAfter(h string, now time.Time, def time.Duration) time.Duration {
 }
 
 type jiraClient struct {
-	http  *http.Client
+	http *http.Client
+	// base is where the REST API is: the site, or for Connect Jira the
+	// site through Atlassian's API gateway. site is the site itself, for
+	// links to issues.
 	base  string
+	site  string
 	cloud bool
 	auth  string
 	cfg   ChannelConfig
+	// token returns a Connect Jira access token (nil with an API token);
+	// force asks for a new one after Jira refused the last.
+	token func(ctx context.Context, force bool) (string, error)
 }
 
 func (s *Sender) jira(c ChannelConfig, secret string) (*jiraClient, error) {
@@ -139,7 +170,7 @@ func (s *Sender) jira(c ChannelConfig, secret string) (*jiraClient, error) {
 	if secret == "" {
 		return nil, &PermanentError{errors.New("jira channel has no token: set secret_ref")}
 	}
-	j := &jiraClient{http: s.HTTP, base: strings.TrimRight(c.URL, "/"), cloud: c.Deployment != JiraDataCenter, cfg: c}
+	j := &jiraClient{http: s.HTTP, base: strings.TrimRight(c.URL, "/"), site: strings.TrimRight(c.URL, "/"), cloud: c.Deployment != JiraDataCenter, cfg: c}
 	if j.cloud {
 		j.auth = "Basic " + base64.StdEncoding.EncodeToString([]byte(c.Username+":"+secret))
 	} else {
@@ -147,6 +178,15 @@ func (s *Sender) jira(c ChannelConfig, secret string) (*jiraClient, error) {
 	}
 	return j, nil
 }
+
+// jiraOAuth is a client for a Connect Jira channel: requests go to the
+// site through Atlassian's API gateway with a bearer token from token.
+func (s *Sender) jiraOAuth(c ChannelConfig, base, site string, token func(ctx context.Context, force bool) (string, error)) *jiraClient {
+	return &jiraClient{http: s.HTTP, base: strings.TrimRight(base, "/"), site: strings.TrimRight(site, "/"), cloud: true, cfg: c, token: token}
+}
+
+// browse is the address of an issue on the site.
+func (j *jiraClient) browse(key string) string { return j.site + "/browse/" + key }
 
 func (j *jiraClient) path(p string) string {
 	v := "2"
@@ -158,26 +198,27 @@ func (j *jiraClient) path(p string) string {
 
 // do sends one request to the Jira REST API and decodes a JSON reply into out.
 func (j *jiraClient) do(ctx context.Context, method, p string, body, out any) error {
-	var rd io.Reader
+	var raw []byte
 	if body != nil {
 		b, err := json.Marshal(body)
 		if err != nil {
 			return err
 		}
-		rd = bytes.NewReader(b)
+		raw = b
 	}
-	req, err := http.NewRequestWithContext(ctx, method, j.path(p), rd)
+	resp, err := j.send(ctx, method, p, raw, false)
+	if err == nil && resp.StatusCode == http.StatusUnauthorized && j.token != nil {
+		// The access token was refused before it expired (revoked, or the
+		// clock is off): once with a new one.
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
+		resp.Body.Close()
+		resp, err = j.send(ctx, method, p, raw, true)
+	}
 	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", j.auth)
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "stackurity-notify")
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	resp, err := j.http.Do(req)
-	if err != nil {
+		var re *store.JiraReconnectError
+		if errors.As(err, &re) {
+			return &PermanentError{err}
+		}
 		return fmt.Errorf("jira %s %s: %w", method, p, err)
 	}
 	defer resp.Body.Close()
@@ -191,8 +232,8 @@ func (j *jiraClient) do(ctx context.Context, method, p string, body, out any) er
 		}
 		return nil
 	}
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	err = fmt.Errorf("jira %s %s: HTTP %d%s", method, p, resp.StatusCode, jiraErrorText(raw))
+	reply, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	err = fmt.Errorf("jira %s %s: HTTP %d%s", method, p, resp.StatusCode, jiraErrorText(reply))
 	switch resp.StatusCode {
 	case http.StatusTooManyRequests:
 		return &RetryAfterError{Wait: retryAfter(resp.Header.Get("Retry-After"), time.Now(), time.Minute), Err: fmt.Errorf("rate limited by Jira: %w", err)}
@@ -201,6 +242,9 @@ func (j *jiraClient) do(ctx context.Context, method, p string, body, out any) er
 			return &RetryAfterError{Wait: retryAfter(h, time.Now(), time.Minute), Err: err}
 		}
 	case http.StatusUnauthorized:
+		if j.token != nil {
+			return &PermanentError{fmt.Errorf("Jira rejected the Connect Jira token; if this persists, reconnect Jira in Settings → Integrations: %w", err)}
+		}
 		return &PermanentError{fmt.Errorf("Jira rejected the credentials (check the username and token): %w", err)}
 	case http.StatusForbidden:
 		return &PermanentError{fmt.Errorf("Jira refused access (check the account's permissions on the project): %w", err)}
@@ -208,6 +252,33 @@ func (j *jiraClient) do(ctx context.Context, method, p string, body, out any) er
 		return &PermanentError{err}
 	}
 	return err
+}
+
+// send makes one request; force asks for a new Connect Jira token.
+func (j *jiraClient) send(ctx context.Context, method, p string, body []byte, force bool) (*http.Response, error) {
+	var rd io.Reader
+	if body != nil {
+		rd = bytes.NewReader(body)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, j.path(p), rd)
+	if err != nil {
+		return nil, err
+	}
+	auth := j.auth
+	if j.token != nil {
+		tok, err := j.token(ctx, force)
+		if err != nil {
+			return nil, err
+		}
+		auth = "Bearer " + tok
+	}
+	req.Header.Set("Authorization", auth)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "stackurity-notify")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	return j.http.Do(req)
 }
 
 // jiraErrorText extracts Jira's error messages from a reply body.
@@ -233,11 +304,15 @@ func jiraErrorText(raw []byte) string {
 // Check verifies the credentials and access to the project and issue type
 // without creating anything.
 func (j *jiraClient) Check(ctx context.Context) error {
-	var me struct {
-		DisplayName string `json:"displayName"`
-	}
-	if err := j.do(ctx, "GET", "/myself", nil, &me); err != nil {
-		return err
+	// Connect Jira does not ask for read:jira-user, which /myself needs:
+	// reading the project checks the token.
+	if j.token == nil {
+		var me struct {
+			DisplayName string `json:"displayName"`
+		}
+		if err := j.do(ctx, "GET", "/myself", nil, &me); err != nil {
+			return err
+		}
 	}
 	var proj struct {
 		Key        string `json:"key"`

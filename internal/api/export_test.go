@@ -20,3 +20,19 @@ func SetMCPBadTokenLimit(n int) (restore func()) {
 	limitMCPBadToken.n = n
 	return func() { limitMCPBadToken = old }
 }
+
+// SetCIKeysRefresh changes how soon an unknown key id fetches an issuer's
+// keys again, and returns a function that restores it.
+func SetCIKeysRefresh(d time.Duration) (restore func()) {
+	old := ciKeysRefresh
+	ciKeysRefresh = d
+	return func() { ciKeysRefresh = old }
+}
+
+// SetCITokenLimit lowers the per-address limit on POST /ci/token and
+// returns a function that restores it.
+func SetCITokenLimit(n int) (restore func()) {
+	old := limitCIToken
+	limitCIToken.n = n
+	return func() { limitCIToken = old }
+}

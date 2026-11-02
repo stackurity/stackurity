@@ -314,7 +314,7 @@ func (d *Dispatcher) createProjectIssue(ctx, nctx context.Context, j *jiraClient
 			return nil, err
 		}
 	}
-	if err := d.Store.RecordRouteIssue(context.WithoutCancel(ctx), k, key, j.base+"/browse/"+key, in.Priority, in.FindingCount, in.AssetCount); err != nil {
+	if err := d.Store.RecordRouteIssue(context.WithoutCancel(ctx), k, key, j.browse(key), in.Priority, in.FindingCount, in.AssetCount); err != nil {
 		return nil, err
 	}
 	return nil, nil

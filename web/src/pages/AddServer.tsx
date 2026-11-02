@@ -4,8 +4,11 @@ import { api, type Enrollment, type EnrollmentCreated } from "../api";
 import { useAction, useLoad } from "../hooks";
 import { absTime, plural } from "../format";
 import { Table, type Column } from "../components/Table";
-import { Card, Code, CodeBlock, EmptyState, ErrorBox, KeyValues, Loading, Notice, PageHeader, RelativeTime } from "../components/ui";
+import { Card, Code, CodeBlock, EmptyState, ErrorBox, KeyValues, Loading, Notice, PageHeader, RelativeTime, Tabs } from "../components/ui";
 import { confirmAction } from "../components/ConfirmDialog";
+import { DigitalOceanPanel, FleetPanel } from "./AddServerFleet";
+
+type Mode = "one" | "fleet" | "digitalocean";
 
 const LOCAL_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
 
@@ -61,6 +64,37 @@ export function CheckApps({ id, checked, onChange }: { id: string; checked: bool
 }
 
 export function AddServerPage() {
+  const [mode, setMode] = useState<Mode>("one");
+  return (
+    <>
+      <nav className="crumbs" aria-label="Breadcrumb">
+        <Link to="/assets">Assets</Link> <span aria-hidden="true">/</span> <span>Add server</span>
+      </nav>
+      <PageHeader
+        help="add-server"
+        title="Add server"
+        sub="Create an install command, then run it on the new Linux server. It installs the read-only agent and enrolls the server."
+      />
+      <Tabs
+        label="How many servers"
+        value={mode}
+        onChange={setMode}
+        tabs={[
+          { id: "one", label: "One server" },
+          { id: "fleet", label: "For many servers" },
+          { id: "digitalocean", label: "DigitalOcean" },
+        ]}
+      />
+      <div role="tabpanel" id={`panel-${mode}`} aria-labelledby={`tab-${mode}`}>
+        {mode === "one" && <OneServer />}
+        {mode === "fleet" && <FleetPanel />}
+        {mode === "digitalocean" && <DigitalOceanPanel />}
+      </div>
+    </>
+  );
+}
+
+function OneServer() {
   const res = useLoad(() => api.get<{ items: Enrollment[] | null }>("/enrollments"), []);
   const act = useAction();
   const [created, setCreated] = useState<EnrollmentCreated | null>(null);
@@ -121,14 +155,6 @@ export function AddServerPage() {
 
   return (
     <>
-      <nav className="crumbs" aria-label="Breadcrumb">
-        <Link to="/assets">Assets</Link> <span aria-hidden="true">/</span> <span>Add server</span>
-      </nav>
-      <PageHeader
-        help="add-server"
-        title="Add server"
-        sub="Create a one-time install command, then run it on the new Linux server. It installs the read-only agent and enrolls the server."
-      />
       {created ? (
         <InstallCommand created={created} onDone={() => setCreated(null)} />
       ) : (
@@ -296,7 +322,7 @@ function CreateEnrollment({ onCreated }: { onCreated: (c: EnrollmentCreated) => 
             <div className="field">
               <label htmlFor="en-uses">Number of servers this code can enroll</label>
               <input id="en-uses" type="number" min={1} max={500} required value={uses} onChange={(e) => setUses(e.target.value)} />
-              <p className="hint">1 to 500. Use more than 1 to add several servers with the same command.</p>
+              <p className="hint">1 to 500. For a rollout to many servers, use a fleet code under For many servers.</p>
             </div>
             <div className="field">
               <label htmlFor="en-ttl">Valid for (hours)</label>

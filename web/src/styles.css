@@ -31,6 +31,9 @@
   --accent-hover: #0858cc;
   --accent-soft: #e6f0ff;
   --accent-text: #ffffff;
+  --loader-1: var(--brand-navy);
+  --loader-2: var(--brand-blue);
+  --loader-3: var(--brand-cyan);
   --focus: #0a6cf5;
   --sidebar: #0b1f4d;
   --sidebar-2: #0e2860;
@@ -83,6 +86,8 @@
     --accent-soft: #132a52;
     --accent-text: #ffffff;
     --focus: #5fd4ff;
+    --loader-1: #2550b0;
+    --loader-2: #2f7cf6;
     --sidebar: #050d1e;
     --sidebar-2: #0a1a3a;
     --sidebar-text: #bccae3;
@@ -1327,6 +1332,9 @@ select:disabled {
   margin: 0;
 }
 .loading {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   color: var(--muted);
   padding: 20px 0;
 }
@@ -1532,6 +1540,120 @@ details.json pre {
 }
 @media (prefers-reduced-motion: reduce) {
   .spinner {
+    animation: none;
+  }
+}
+/* Stack loader: the logo's three layers, stacked and breathing. After
+   "Day #22 : Stack loader" by saawsan on CodePen (MIT), scaled down and
+   recoloured with the brand tokens. */
+.stack-loader {
+  --f: 30px; /* frame side */
+  --t: 5px; /* bar width and depth */
+  --gap: 8px; /* distance between layers */
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: var(--f);
+  height: var(--f);
+  /* The layers rise above the box: keep the drawing centred on the label. */
+  margin: 30px 12px 2px;
+  transform: rotateX(70deg) rotateZ(40deg);
+  transform-style: preserve-3d;
+  animation: stack-loader-bob 1s ease-in-out infinite;
+}
+.stack-loader-layer {
+  position: absolute;
+  inset: 0;
+  transform: translateZ(calc(var(--i) * var(--gap)));
+  transform-style: preserve-3d;
+}
+.stack-loader-layer.l1 {
+  --i: 0;
+  --c: var(--loader-1);
+}
+.stack-loader-layer.l2 {
+  --i: 1;
+  --c: var(--loader-2);
+  animation: stack-loader-spread2 1s ease-in-out infinite;
+}
+.stack-loader-layer.l3 {
+  --i: 2;
+  --c: var(--loader-3);
+  animation: stack-loader-spread3 1s ease-in-out infinite;
+}
+/* One bar of a frame; its two side faces give it depth. */
+.stack-loader-layer i {
+  position: absolute;
+  width: var(--w);
+  height: var(--h);
+  background: var(--c);
+  transform: translateZ(var(--t));
+  transform-style: preserve-3d;
+}
+.stack-loader-layer i:nth-child(1) {
+  --w: var(--f);
+  --h: var(--t);
+  top: 0;
+  left: 0;
+}
+.stack-loader-layer i:nth-child(2) {
+  --w: var(--t);
+  --h: var(--f);
+  top: 0;
+  left: 0;
+}
+.stack-loader-layer i:nth-child(3) {
+  --w: var(--t);
+  --h: var(--f);
+  top: 0;
+  right: 0;
+}
+.stack-loader-layer i:nth-child(4) {
+  --w: var(--f);
+  --h: var(--t);
+  bottom: 0;
+  left: 0;
+}
+.stack-loader-layer i::before,
+.stack-loader-layer i::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  background: inherit;
+}
+.stack-loader-layer i::after {
+  width: var(--w);
+  height: var(--t);
+  transform: rotateX(-90deg) translateY(var(--t)) translateZ(calc(var(--h) - var(--t)));
+  transform-origin: 100% 100%;
+  filter: brightness(0.82);
+}
+.stack-loader-layer i::before {
+  width: var(--t);
+  height: var(--h);
+  transform: rotateY(90deg) translateX(var(--t)) translateZ(calc(var(--w) - var(--t)));
+  transform-origin: 100% 0;
+  filter: brightness(1.15);
+}
+@keyframes stack-loader-bob {
+  50% {
+    transform: rotateX(70deg) rotateZ(40deg) translateZ(3px);
+  }
+}
+@keyframes stack-loader-spread2 {
+  50% {
+    transform: translateZ(calc(var(--i) * var(--gap) * 1.5));
+  }
+}
+@keyframes stack-loader-spread3 {
+  50% {
+    transform: translateZ(calc(var(--i) * var(--gap) * 1.67));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .stack-loader,
+  .stack-loader-layer {
     animation: none;
   }
 }
@@ -3800,6 +3922,10 @@ h6.md-h {
 .dash-coverage-parts li {
   margin: 2px 0;
 }
+.dash-cred-names {
+  display: block;
+  overflow-wrap: anywhere;
+}
 
 .dash-sla-link {
   color: var(--text-2);
@@ -5200,4 +5326,115 @@ div.assistant-card {
 }
 .verify-left {
   margin: 4px 0 0;
+}
+
+/* Settings ▸ Integrations: GitLab groups connected with Connect GitLab. */
+.int-gl-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 8px 0;
+}
+
+/* Connect PagerDuty: the service list on the way back from PagerDuty. */
+.pd-services {
+  max-height: 320px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* "Continue with Google / Microsoft / GitHub" on the sign-in and sign-up pages. */
+.social-buttons {
+  display: grid;
+  gap: 8px;
+}
+
+/* Settings ▸ Integrations: GitHub accounts connected through the GitHub App. */
+.int-gh-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 8px 0;
+}
+
+/* Settings, Integrations, AWS (pages/settings/Aws.tsx) */
+.aws-inline {
+  display: flex;
+  gap: var(--s2);
+  align-items: center;
+  flex-wrap: wrap;
+  margin: var(--s2) 0;
+}
+.aws-inline input {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+.install-output {
+  white-space: pre-wrap;
+  margin: 0;
+  max-height: 8em;
+  overflow: auto;
+}
+
+/* Settings → Users: what a new user can see, and the permissions table. */
+.access-scope,
+.access-projects {
+  margin-top: var(--s3);
+}
+.access-project {
+  margin: 0 0 var(--s3);
+  padding: var(--s3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.access-project > legend {
+  font-weight: 600;
+  padding: 0 4px;
+}
+.asset-picks {
+  list-style: none;
+  margin: var(--s2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.asset-picks li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+.asset-picks label {
+  overflow-wrap: anywhere;
+}
+.permissions-help {
+  margin: var(--s3) 0;
+}
+.permissions-help summary {
+  cursor: pointer;
+  color: var(--text-2);
+}
+.permissions-table td.perm-what {
+  min-width: 200px;
+}
+.permissions-table th.num,
+.permissions-table td.num {
+  white-space: nowrap;
+  text-align: center;
+}
+.permissions-table td.perm-no {
+  color: var(--text-2);
+}
+.permissions-table td.perm-all {
+  font-style: italic;
 }

@@ -10,6 +10,11 @@ import (
 func TestResolve(t *testing.T) {
 	dir := t.TempDir()
 	_ = os.WriteFile(filepath.Join(dir, "gh"), []byte("tok123\n"), 0o600)
+	outside := filepath.Join(t.TempDir(), "outside")
+	_ = os.WriteFile(outside, []byte("not yours\n"), 0o600)
+	if err := os.Symlink(outside, filepath.Join(dir, "escape")); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("STACKURITY_SECRET_GH", "envtok")
 	t.Setenv("STACKURITY_DATABASE_URL", "postgres://secret")
 	r := Resolver{AllowedDir: dir, EnvPrefix: "STACKURITY_SECRET_"}
@@ -25,6 +30,7 @@ func TestResolve(t *testing.T) {
 		"file:/etc/passwd",
 		"file:" + dir + "/../x",
 		"file:relative",
+		"file:" + filepath.Join(dir, "escape"), // a link out of the directory
 		"vault:x",
 		"plain",
 	} {

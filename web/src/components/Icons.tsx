@@ -176,6 +176,14 @@ export const IconShield = (p: P) => (
     <path d="M12 3l7.5 3v5.5c0 4.6-3.2 8.3-7.5 9.5-4.3-1.2-7.5-4.9-7.5-9.5V6z" />
   </Svg>
 );
+export const IconKey = (p: P) => (
+  <Svg {...p}>
+    <circle cx="8" cy="15" r="4" />
+    <path d="M10.8 12.2L20 3" />
+    <path d="M16 7l3 3" />
+    <path d="M18 5l2 2" />
+  </Svg>
+);
 export const IconTrend = (p: P) => (
   <Svg {...p}>
     <path d="M3 17l5.5-5.5 4 4L21 7" />

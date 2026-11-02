@@ -8,8 +8,8 @@
 // otherwise the section of the release it leads to (0.4.0).
 //
 // With -check it only validates CHANGELOG.md: every "## " heading is
-// "Unreleased" or a version, no version appears twice, and no released
-// section is empty.
+// "Unreleased" or a version, no version (and not Unreleased) appears twice,
+// and no released section is empty.
 package main
 
 import (
@@ -122,6 +122,10 @@ func Check(doc string) error {
 	for _, s := range sections(doc) {
 		switch {
 		case strings.EqualFold(s.name, "Unreleased"):
+			if seen["Unreleased"] {
+				errs = append(errs, errors.New(`"## Unreleased" appears twice (a merge left one behind); merge them into the first`))
+			}
+			seen["Unreleased"] = true
 			continue
 		case !versionRE.MatchString(s.name):
 			errs = append(errs, fmt.Errorf("heading %q is neither Unreleased nor a version", s.name))

@@ -34,7 +34,8 @@ import {
   versionsText,
 } from "../components/FixGroups";
 import { Badge } from "../components/Badge";
-import { AssetSelect } from "../components/AssetPicker";
+import { AssetSelect, ProjectFilter } from "../components/AssetPicker";
+import { OwnerSplit } from "../components/Owners";
 import { assignGroup, FindingActions, GROUP_ACTION_MAX } from "../components/Workflow";
 import { CheckBadge, CheckResultText } from "../components/CheckAgain";
 import { fixPlaces, FixVerify, useCheckOptions } from "../components/FixVerify";
@@ -200,6 +201,7 @@ export function FixesPage() {
           <label htmlFor="ap-q">Search</label>
           <input id="ap-q" type="search" placeholder="Package, OS or title" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
+        <ProjectFilter id="ap-project" onChange={() => update({ asset_id: "" })} />
         <div className="field">
           <label htmlFor="ap-asset">Asset</label>
           <AssetSelect id="ap-asset" value={assetId} onChange={(v) => update({ asset_id: v })} assets={assets.data?.items} />
@@ -336,6 +338,7 @@ export function FixGroupDetailPage() {
           {why}
         </p>
         {FIX_KIND_HELP[g.kind] && <p className="hint">{FIX_KIND_HELP[g.kind]}</p>}
+        <OwnerSplit owners={res.data.owners} />
       </section>
 
       <div className="grid-2">

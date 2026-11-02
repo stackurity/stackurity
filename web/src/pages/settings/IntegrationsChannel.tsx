@@ -746,7 +746,9 @@ export function IntegrationChannelPage() {
     if (
       !(await confirmAction({
         title: `Delete "${channel.name}"?`,
-        consequence: "Its rules are deleted too, and its delivery history is lost.",
+        consequence: channel.config?.pagerduty_app
+          ? `Its rules are deleted too, and its delivery history is lost. Its PagerDuty key is deleted, but the integration named Stackurity stays on the PagerDuty service ${channel.config.pagerduty_service_name || channel.config.pagerduty_service_id || ""} (Stackurity keeps no access to PagerDuty): delete it there, under the service's Integrations.`
+          : "Its rules are deleted too, and its delivery history is lost.",
         action: "Delete channel",
         destructive: true,
         typeToConfirm: channel.name,
@@ -975,7 +977,7 @@ export function IntegrationAddPage() {
           options={options.data}
           members={members.data?.items}
           onCancel={() => navigate("/settings/integrations")}
-          onSaved={(c) => navigate(`/settings/integrations/channels/${c.id}`)}
+          onSaved={(c, connected) => navigate(`/settings/integrations/channels/${c.id}${connected ? "?added=1" : ""}`)}
           validate={() => ruleProblem(r, isTracker(kind))}
           afterCreate={(c) => api.post<Route>("/routes", ruleBody(r, c))}
           returnTo="/settings/integrations"
