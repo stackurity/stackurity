@@ -165,6 +165,13 @@ export interface User {
   access?: Access;
   /** Two-factor sign-in is on for this account. */
   mfa_enabled?: boolean;
+  /** Contact information on the membership in this workspace; may be empty. */
+  phone?: string;
+  /** Their own grants in this workspace (not their teams'). */
+  project_grants?: number;
+  asset_grants?: number;
+  /** Their teams that can see something: access through team membership. */
+  access_teams?: string[] | null;
 }
 
 /** How a member reaches a workspace's data. */
@@ -521,6 +528,8 @@ export interface Me {
   password_change_required?: boolean;
   /** Set when the session's workspace requires its own single sign-on, which this session did not use; workspace is then null. */
   sso_required?: SSORequired;
+  /** People join by invitation only (Stackurity Cloud): Add user is refused, Invite is offered. */
+  invite_only?: boolean;
 }
 
 export interface SSORequired {
@@ -1065,7 +1074,10 @@ export interface Team {
   email: string;
   created_at: string;
   members: number[] | null;
+  /** Assets whose owner team this is: alerts route to it; it gives no access. */
   asset_count: number;
+  /** What its members see through it ("Can see"). */
+  access?: InvitationGrant[];
 }
 
 export interface ConflictAsset {
@@ -2288,6 +2300,12 @@ export interface ChannelConfig {
   team_name?: string;
   slack_channel?: string;
   configuration_url?: string;
+  // pagerduty added with "Connect PagerDuty" (the Stackurity PagerDuty app)
+  pagerduty_app?: boolean;
+  pagerduty_service_id?: string;
+  pagerduty_service_name?: string;
+  pagerduty_integration_id?: string;
+  pagerduty_manage_url?: string;
   // teams created with "Add to Teams" (the Stackurity Teams app)
   teams_app?: boolean;
   tenant_id?: string;
@@ -2301,6 +2319,7 @@ export interface ChannelConfig {
 /** GET /notification-options: what this server offers. */
 export interface NotificationOptions {
   slack_app: boolean;
+  pagerduty_app: boolean;
   teams_app: boolean;
   /** Connect Jira (the Stackurity Atlassian app) is available. */
   jira_app: boolean;
@@ -2314,7 +2333,7 @@ export interface NotificationOptions {
   base_url: boolean;
 }
 
-export const NO_NOTIFICATION_OPTIONS: NotificationOptions = { slack_app: false, jira_app: false, teams_app: false, platform_email: { enabled: false }, secrets: false, base_url: false };
+export const NO_NOTIFICATION_OPTIONS: NotificationOptions = { slack_app: false, jira_app: false, teams_app: false, pagerduty_app: false, platform_email: { enabled: false }, secrets: false, base_url: false };
 
 /** Loads the options; a failure counts as nothing offered. */
 export function loadNotificationOptions(): Promise<NotificationOptions> {
@@ -2322,6 +2341,7 @@ export function loadNotificationOptions(): Promise<NotificationOptions> {
     .get<Partial<NotificationOptions>>("/notification-options")
     .then((o) => ({
       slack_app: Boolean(o?.slack_app),
+      pagerduty_app: Boolean(o?.pagerduty_app),
       teams_app: Boolean(o?.teams_app),
       jira_app: Boolean(o?.jira_app),
       platform_email: o?.platform_email?.enabled ? o.platform_email : { enabled: false },
@@ -2337,6 +2357,32 @@ export interface EmailRecipient {
   status: "pending" | "confirmed" | string;
   requested_at: string;
   confirmed_at: string | null;
+}
+
+/** A service of the connected PagerDuty account. */
+export interface PagerDutyService {
+  id: string;
+  name: string;
+  description?: string;
+  status?: string;
+  html_url?: string;
+}
+
+/** POST /integrations/pagerduty/oauth */
+export interface PagerDutyOAuthResult {
+  session: string;
+  region: "us" | "eu";
+  return_to: string;
+  services: PagerDutyService[];
+  more: boolean;
+}
+
+/** POST /integrations/pagerduty/finish */
+export interface PagerDutyFinishResult {
+  channel: Channel;
+  return_to: string;
+  service_name: string;
+  reused: boolean;
 }
 
 /** POST /integrations/teams/install */
@@ -2752,6 +2798,60 @@ export interface DirectoryUser {
   name: string;
 }
 
+/** Who issues are assigned to, by scope and stack (GET /owner-rules). */
+export interface OwnerRule {
+  id: number;
+  project_id: number | null;
+  project_name?: string;
+  asset_id: number | null;
+  asset_name?: string;
+  /** One of STACK_LAYERS, or "" for any layer. */
+  layer: string;
+  /** Package name pattern, * for any characters; "" for any package. */
+  component: string;
+  user_id: number | null;
+  user_email?: string;
+  user_name?: string;
+  team_id: number | null;
+  team_name?: string;
+  note: string;
+  created_at: string;
+  updated_at: string;
+  /** 6 (part of one asset's stack) down to 1 (organisation default); the highest matching wins. */
+  level: number;
+  describe: string;
+  /** Open issues this rule assigned. */
+  assigned: number;
+}
+
+export interface OwnerRuleInput {
+  project_id?: number | null;
+  asset_id?: number | null;
+  layer: string;
+  component: string;
+  user_id?: number | null;
+  team_id?: number | null;
+  note: string;
+}
+
+export interface OwnerMove {
+  from_user: string;
+  from_team: string;
+  to_user: string;
+  to_team: string;
+  rule_id: number;
+  rule: string;
+  count: number;
+  finding_ids: number[];
+}
+
+export interface OwnerPlan {
+  moves: OwnerMove[];
+  total: number;
+  truncated: boolean;
+  applied: boolean;
+}
+
 // --- Stage 4: controlled remediation
 
 export const REMEDIATION_TARGETS = ["host_package", "repository"] as const;
@@ -2999,6 +3099,8 @@ export interface FixGroupDetail {
   group: FixGroup;
   /** Paged with ?limit=&offset= on GET /fix-groups/{id}. */
   findings: List<Finding> | null;
+  /** Its open issues by who they are assigned to, most first. */
+  owners?: { user_email: string; team_name: string; count: number }[] | null;
 }
 
 export interface FixGroupSummary {
@@ -3196,13 +3298,48 @@ export interface FirstResult {
   fixes_now: number;
 }
 
+/** One project (and its assets, including later ones) or asset an invitation gives access to. */
+export interface InvitationGrant {
+  /** "team": only in dropped, a team deleted before the link was used. */
+  kind: "project" | "asset" | "team";
+  project_id: number | null;
+  asset_id: number | null;
+  role: UserRole;
+  /** The current name; as it was when invited if it has been deleted since. */
+  name: string;
+  /** Accepting now would give it. */
+  available: boolean;
+  /** Why not: archived, merged, deleted, or changed (while accepting). */
+  unavailable?: "archived" | "merged" | "deleted" | "changed";
+}
+
+/**
+ * "organisation": role on all projects and assets. "specific": grants.
+ * "project": one project and role, from before invitations had grants.
+ */
+/** A team an invitation adds the person to, with what it can see now. */
+export interface InvitationTeam {
+  team_id: number | null;
+  name: string;
+  /** False when the team was deleted since. */
+  available: boolean;
+  access: InvitationGrant[];
+}
+
+export type InvitationScope = "organisation" | "specific" | "project";
+
 export interface Invitation {
   id: number;
   email: string;
   name: string;
+  /** Only on invitations made before grants existed (scope "project"). */
   project_id: number | null;
   project_name: string;
-  role: UserRole;
+  /** Organisation-wide role (or the old single project's); empty with grants. */
+  role: UserRole | "";
+  scope: InvitationScope;
+  grants: InvitationGrant[];
+  teams?: InvitationTeam[];
   prefix: string;
   created_at: string;
   expires_at: string;
@@ -3218,9 +3355,12 @@ export interface InvitationCreated {
   emailed?: boolean;
   link?: string;
   email_problem?: string;
-  /** The person was already a member: the project role was given at once. */
+  /** The person was already a member: the grants were given at once. */
   granted?: boolean;
   grant?: Grant;
+  grants?: Grant[];
+  /** Their earlier open invitations, now replaced (withdrawn). */
+  replaced?: number[];
 }
 
 /** POST /invitations/preview, for the person following the link. */
@@ -3228,11 +3368,33 @@ export interface InvitationPreview {
   email: string;
   name: string;
   workspace: string;
+  /** The project, when the invitation names exactly one. */
   project: string;
-  role: UserRole;
+  /** Organisation-wide role, or the role on that one project; empty otherwise. */
+  role: UserRole | "";
   invited_by: string;
   expires_at: string;
   account_exists: boolean;
+  scope: InvitationScope;
+  grants: InvitationGrant[];
+  teams?: InvitationTeam[];
+  /** False when every project and asset it named was archived, merged or deleted since. */
+  usable: boolean;
+}
+
+/** POST /invitations/accept. */
+export interface InvitationAccepted {
+  workspace_id: number;
+  /** The project to open (the invitation's only one), or 0. */
+  project_id: number;
+  scope: InvitationScope;
+  grants: number;
+  /** How many teams they joined. */
+  teams?: number;
+  /** What the invitation named but could not give any more. */
+  dropped: InvitationGrant[];
+  account_created: boolean;
+  joined: boolean;
 }
 
 /** A Slack account linked to the signed-in person (GET /slack/links). */

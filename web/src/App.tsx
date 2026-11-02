@@ -12,6 +12,7 @@ import { SlackLinkPage } from "./pages/SlackLink";
 import { AccountPage } from "./pages/Account";
 import { SlackOAuthCallbackPage } from "./pages/SlackOAuthCallback";
 import { GitLabCallbackPage } from "./pages/GitLabCallback";
+import { PagerDutyOAuthCallbackPage } from "./pages/PagerDutyOAuthCallback";
 import { JiraOAuthCallbackPage } from "./pages/JiraOAuthCallback";
 import { GitHubCallbackPage } from "./pages/GitHubCallback";
 import { SlackInstallPage } from "./pages/SlackInstall";
@@ -49,6 +50,7 @@ import { HealthPage } from "./pages/admin/Health";
 import { CoverageGapsPage } from "./pages/admin/CoverageGaps";
 import { UpdatesPage } from "./pages/admin/Updates";
 import { TeamsPage } from "./pages/settings/Teams";
+import { OwnersPage } from "./pages/settings/Owners";
 import { TokensPage } from "./pages/settings/Tokens";
 import { ConflictsPage } from "./pages/settings/Conflicts";
 import { JobsPage } from "./pages/settings/Jobs";
@@ -155,6 +157,9 @@ export function App() {
   // signed-in session.
   if (pathname === "/integrations/gitlab/callback" && state.phase === "login") return <LoginPage />;
   if (pathname === "/integrations/gitlab/callback" && state.phase === "ready") return <GitLabCallbackPage />;
+  // Back from "Connect PagerDuty": sign in first; the address and query stay.
+  if (pathname === "/integrations/pagerduty/oauth/callback" && state.phase === "login") return <LoginPage />;
+  if (pathname === "/integrations/pagerduty/oauth/callback" && state.phase === "ready") return <PagerDutyOAuthCallbackPage />;
   // Back from Connect Jira (Atlassian): sign in first if the session ended;
   // the address and query stay. A cancel (?error=) is explained signed out.
   if (pathname === "/integrations/jira/oauth/callback" && state.phase === "login") return slackCallbackNeedsSession() ? <LoginPage /> : <JiraOAuthCallbackPage />;
@@ -398,6 +403,14 @@ export function App() {
           element={
             <RequireRole min="admin">
               <TeamsPage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="settings/owners"
+          element={
+            <RequireRole min="admin">
+              <OwnersPage />
             </RequireRole>
           }
         />

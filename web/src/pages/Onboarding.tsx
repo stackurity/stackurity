@@ -952,7 +952,7 @@ function NotifyStep({ project, onNext }: { project: Project; onNext: () => void 
 function InviteStep({ project, onFinish, pending }: { project: Project; onFinish: () => void; pending: boolean }) {
   return (
     <StepCard>
-      <p>People you invite see {project.name} only, with the role you choose. You can invite more people later from the project's page.</p>
+      <p>People you invite see {project.name} with the permission you choose, unless you give them more. You can invite more people later from the project's page or Settings, Users.</p>
       <InviteForm projectId={project.id} projectName={project.name} />
       <div className="form-actions onboard-finish">
         <button type="button" className="btn btn-primary" onClick={onFinish} disabled={pending}>

@@ -19,7 +19,7 @@ import { Badge } from "../../components/Badge";
 import { Table, type Column } from "../../components/Table";
 import { Card, Code, EmptyState, ErrorBox, Loading, Notice, Pager, RelativeTime, SaveBar } from "../../components/ui";
 import { ProNotice } from "../../components/ProNotice";
-import { AddToSlackButton, parseAddresses, SmtpProviderPicker, StackurityEmailFields } from "../../components/NotifyChoices";
+import { AddToSlackButton, ConnectPagerDutyButton, parseAddresses, SmtpProviderPicker, StackurityEmailFields } from "../../components/NotifyChoices";
 import { AddToTeams } from "../../components/AddToTeams";
 import { JiraConnectFields, type JiraPick } from "../../components/JiraConnect";
 import { DeliveryStatus } from "../IncidentDetail";
@@ -45,6 +45,7 @@ export const KIND_LABEL: Record<string, string> = {
 /** The kind, as shown next to an integration's name. */
 export function kindLabel(c: Pick<Channel, "kind" | "config">): string {
   if (c.kind === "slack") return c.config?.slack_app ? "Slack (Stackurity app)" : "Slack (webhook)";
+  if (c.kind === "pagerduty" && c.config?.pagerduty_app) return "PagerDuty (connected)";
   if (c.kind === "teams") return c.config?.teams_app ? "Microsoft Teams (Stackurity app)" : "Microsoft Teams (Workflows webhook)";
   return KIND_LABEL[c.kind] ?? c.kind;
 }
@@ -73,6 +74,8 @@ export function channelTarget(c: Channel, recipients: EmailRecipient[] | undefin
   if (c.kind === "email") return `${(cfg.to ?? []).join(", ")} via ${cfg.host ?? "?"}:${cfg.port ?? "?"}`;
   if (c.kind === "webhook") return cfg.url ?? "";
   if (c.kind === "jira") return `project ${cfg.project ?? "?"} on ${cfg.url ?? "?"}`;
+  if (c.kind === "pagerduty" && cfg.pagerduty_app)
+    return `service ${cfg.pagerduty_service_name || cfg.pagerduty_service_id || "?"}${cfg.region === "eu" ? " (EU service region)" : ""}`;
   if (c.kind === "pagerduty") return `routing key from ${c.secret_ref || "?"}${cfg.region === "eu" ? " (EU service region)" : ""}`;
   if (c.kind === "servicenow")
     return `${cfg.table || "incident"} on ${cfg.url ?? "?"}${cfg.assignment_group ? `, group ${cfg.assignment_group}` : ""}${cfg.sync_back ? "; state read back" : ""}`;
@@ -226,6 +229,7 @@ export function ChannelForm({
   // Advanced choices when the simpler one is offered.
   const [ownSmtp, setOwnSmtp] = useState(false);
   const [slackWebhook, setSlackWebhook] = useState(false);
+  const [pdPaste, setPdPaste] = useState(false);
   const [teamsWebhook, setTeamsWebhook] = useState(false);
   const [name, setName] = useState(channel?.name ?? "");
   const [secretRef, setSecretRef] = useState(channel?.secret_ref ?? "");
@@ -298,6 +302,7 @@ export function ChannelForm({
         : "email"
       : group;
   const slackApp = channel ? Boolean(cfg.slack_app) : kind === "slack" && options.slack_app && !slackWebhook;
+  const pdApp = channel ? kind === "pagerduty" && Boolean(cfg.pagerduty_app) : kind === "pagerduty" && options.pagerduty_app && !pdPaste;
   // New Teams integrations use the Stackurity Teams app when the server has it.
   const teamsApp = channel ? Boolean(cfg.teams_app) : kind === "teams" && options.teams_app && !teamsWebhook;
   const maxRecipients = options.platform_email.max_recipients ?? 20;
@@ -340,6 +345,14 @@ export function ChannelForm({
       // Only the name changes here; the rest comes from Slack or Teams.
       if (!channel) return;
       return save({ name: name.trim() });
+    }
+    if (pdApp) {
+      // The service and its key come from Connect PagerDuty; the name and
+      // severities change here.
+      if (!channel) return;
+      const sev: ChannelConfig["severities"] = {};
+      for (const p of PRIORITIES) if (severities[p]) sev[p] = severities[p] as "critical" | "error" | "warning" | "info";
+      return save({ name: name.trim(), config: { ...cfg, severities: sev } });
     }
     if (kind === "jira" && jiraAuth === "oauth") {
       const j = jiraPick;
@@ -442,8 +455,11 @@ export function ChannelForm({
   const jiraOAuth = kind === "jira" && jiraAuth === "oauth";
   // A new Teams channel through the Stackurity app: bound with a code in Teams.
   const addToTeams = !channel && teamsApp;
-  const appOnly = addToSlack || addToTeams;
-  const showSecret = !appOnly && !slackApp && !teamsApp && kind !== "stackurity_email" && !jiraOAuth;
+  // A new PagerDuty channel through the Stackurity app: PagerDuty asks, then
+  // the service is picked on the way back.
+  const connectPD = !channel && pdApp;
+  const appOnly = addToSlack || addToTeams || connectPD;
+  const showSecret = !appOnly && !slackApp && !teamsApp && !pdApp && kind !== "stackurity_email" && !jiraOAuth;
 
   const problems = (
     <>
@@ -488,6 +504,26 @@ export function ChannelForm({
             <p>Slack asks you to pick a channel, then brings you back here to choose what to send. Buttons in the messages work inside Slack.</p>
             <AddToSlackButton returnTo={returnTo} />
           </div>
+        )}
+        {connectPD && (
+          <div className="field field-span">
+            <p>
+              PagerDuty asks you to allow Stackurity, then you pick the service here. Stackurity adds an Events API V2 integration named Stackurity to it and keeps its
+              key; you never copy one. Stackurity does not keep access to your PagerDuty account.
+            </p>
+            <ConnectPagerDutyButton returnTo={returnTo} />
+          </div>
+        )}
+        {channel && pdApp && (
+          <p className="field-span">
+            Sends to the PagerDuty service <strong>{cfg.pagerduty_service_name || cfg.pagerduty_service_id}</strong>
+            {cfg.region === "eu" ? " (EU service region)" : ""} through the integration named Stackurity, added with Connect PagerDuty.{" "}
+            {cfg.pagerduty_manage_url && (
+              <a href={cfg.pagerduty_manage_url} target="_blank" rel="noreferrer">
+                Open it in PagerDuty
+              </a>
+            )}
+          </p>
         )}
         {addToTeams && (
           <div className="field field-span">
@@ -629,8 +665,9 @@ export function ChannelForm({
             </fieldset>
           </>
         )}
-        {kind === "pagerduty" && (
+        {kind === "pagerduty" && !connectPD && (
           <>
+            {!pdApp && (
             <div className="field">
               <label htmlFor={`${idp}-region`}>Service region</label>
               <select id={`${idp}-region`} value={region} onChange={(e) => setRegion(e.target.value)}>
@@ -639,6 +676,7 @@ export function ChannelForm({
               </select>
               <p className="hint">The region of your PagerDuty account.</p>
             </div>
+            )}
             <fieldset className="field field-span">
               <legend>PagerDuty severity per Stackurity priority</legend>
               <div className="form-grid">
@@ -899,6 +937,13 @@ export function ChannelForm({
         <p className="small">
           <button type="button" className="btn btn-link btn-inline" onClick={() => setSlackWebhook(!slackWebhook)} aria-expanded={slackWebhook}>
             {slackWebhook ? "Use Add to Slack instead" : "Advanced: use a webhook"}
+          </button>
+        </p>
+      )}
+      {!channel && group === "pagerduty" && options.pagerduty_app && (
+        <p className="small">
+          <button type="button" className="btn btn-link btn-inline" onClick={() => setPdPaste(!pdPaste)} aria-expanded={pdPaste}>
+            {pdPaste ? "Use Connect PagerDuty instead" : "Advanced: paste an integration key"}
           </button>
         </p>
       )}

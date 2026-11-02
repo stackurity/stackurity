@@ -56,6 +56,9 @@ type Dispatcher struct {
 	// SlackApp is the Stackurity Slack app ("Add to Slack"); nil turns it
 	// off. Its signing secret verifies clicks on channels it added.
 	SlackApp *SlackApp
+	// PagerDutyApp is the Stackurity PagerDuty app ("Connect PagerDuty");
+	// nil turns it off. It is used only while a channel is being added.
+	PagerDutyApp *PagerDutyApp
 	// TeamsApp is the Stackurity Teams app ("Add to Teams"); nil turns it
 	// off, and its channels fail with a note saying so.
 	TeamsApp *TeamsApp
@@ -168,6 +171,11 @@ func (d *Dispatcher) upkeep(ctx context.Context) error {
 	// Ignore rules for every asset also cover issues found since.
 	if _, err := d.Store.ApplyExceptions(ctx); err != nil {
 		return fmt.Errorf("ignore rules: %w", err)
+	}
+	// Owner rules assign issues nobody has assigned yet, before incidents
+	// and messages are planned.
+	if _, err := d.Store.AssignByOwnerRules(ctx); err != nil {
+		return fmt.Errorf("owner rules: %w", err)
 	}
 	// Ignore rules made from VEX statements end once the component version
 	// or image they were made for is gone.

@@ -155,6 +155,17 @@ var routeRules = map[string]routeRule{
 	"DELETE /api/v1/integrations/gitlab/connections/{id}":    {class: "object", obj: id("gitlabconn")},
 	"GET /api/v1/notification-options":                       {class: "list"},
 	"GET /api/v1/email-recipients":                           {class: "list"},
+	// Connect PagerDuty: a state or session of A's (or a guessed one) is
+	// refused in B; B's connect starts in B (pagerduty_app_test.go).
+	"POST /api/v1/integrations/pagerduty/connect": {class: "create", body: func(*tenantFx) any { return map[string]string{"return_to": "/settings/integrations"} }},
+	"POST /api/v1/integrations/pagerduty/oauth": {class: "create", body: func(*tenantFx) any {
+		return map[string]string{"code": "c", "state": "guessed"}
+	}},
+	"POST /api/v1/integrations/pagerduty/services": {class: "create", body: func(*tenantFx) any { return map[string]string{"session": "guessed"} }},
+	"POST /api/v1/integrations/pagerduty/finish": {class: "create", body: func(*tenantFx) any {
+		return map[string]string{"session": "guessed", "service_id": "PS001"}
+	}},
+	"POST /api/v1/integrations/pagerduty/cancel": {class: "create", body: func(*tenantFx) any { return map[string]string{"session": "guessed"} }},
 	// Add to Teams: B's code is B's; A's code's status is not B's to read
 	// (teams_app_test.go covers binding).
 	"POST /api/v1/integrations/teams/install":     {class: "create", body: func(*tenantFx) any { return map[string]any{} }},
@@ -293,6 +304,7 @@ var routeRules = map[string]routeRule{
 	"GET /api/v1/coverage/unchecked":    {class: "list", query: "?asset_id={asset}"},
 	"GET /api/v1/coverage":              {class: "list", query: "?asset_id={asset}"},
 	"GET /api/v1/teams":                 {class: "list"},
+	"GET /api/v1/owner-rules":           {class: "list", query: "?asset_id={asset}"},
 	"GET /api/v1/audit":                 {class: "list", query: "?object_type=asset&object_id={asset}"},
 	"GET /api/v1/tokens":                {class: "list"},
 	"GET /api/v1/remediation/plans":     {class: "list"},
@@ -374,6 +386,10 @@ var routeRules = map[string]routeRule{
 	"DELETE /api/v1/users/{id}":                  {class: "object", obj: id("user")},
 	"PATCH /api/v1/teams/{id}":                   {class: "object", obj: id("team"), body: func(*tenantFx) any { return map[string]any{"name": "hacked"} }},
 	"DELETE /api/v1/teams/{id}":                  {class: "object", obj: id("team")},
+	"PUT /api/v1/owner-rules/{id}": {class: "object", obj: id("ownerrule"), body: func(a *tenantFx) any {
+		return map[string]any{"layer": "web_server", "team_id": a.int("team")}
+	}},
+	"DELETE /api/v1/owner-rules/{id}":            {class: "object", obj: id("ownerrule")},
 	"PATCH /api/v1/channels/{id}":                {class: "object", obj: id("channel"), body: func(*tenantFx) any { return map[string]any{"enabled": false} }},
 	"DELETE /api/v1/channels/{id}":               {class: "object", obj: id("channel")},
 	"POST /api/v1/channels/{id}/test":            {class: "object", obj: id("channel")},
@@ -438,7 +454,12 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/users": {class: "create", body: func(*tenantFx) any {
 		return map[string]any{"email": "sweep-new@x.io", "role": "viewer", "password": pw}
 	}},
-	"POST /api/v1/teams": {class: "create", body: func(a *tenantFx) any { return map[string]any{"name": "sweep-team", "members": []int64{a.int("user")}} }},
+	// A rule naming A's asset, team or person is refused; one with B's own is B's.
+	"POST /api/v1/owner-rules": {class: "create", body: func(a *tenantFx) any {
+		return map[string]any{"asset_id": a.int("asset"), "team_id": a.int("team")}
+	}},
+	"POST /api/v1/owner-rules/apply": {class: "create", body: func(*tenantFx) any { return map[string]any{"dry_run": false} }},
+	"POST /api/v1/teams":             {class: "create", body: func(a *tenantFx) any { return map[string]any{"name": "sweep-team", "members": []int64{a.int("user")}} }},
 	// Naming A's registry integration to borrow its stored secret: not found.
 	"POST /api/v1/integrations/registry/discover": {class: "create", body: func(a *tenantFx) any {
 		return map[string]any{"config": map[string]any{"provider": "oci", "url": "https://registry.invalid"}, "integration_id": a.int("integration")}
@@ -706,6 +727,11 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 		t.Fatalf("%s grant: %d", tag, code)
 	}
 	set("grant", grant.Grant.ID)
+	var orule store.OwnerRule
+	if code := admin.do("POST", "/api/v1/owner-rules", map[string]any{"asset_id": main.AssetID, "layer": "os", "team_id": team.ID}, &orule); code != 201 {
+		t.Fatalf("%s owner rule: %d", tag, code)
+	}
+	set("ownerrule", orule.ID)
 	var inv struct {
 		Invitation store.Invitation
 		Link       string

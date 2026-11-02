@@ -1,4 +1,5 @@
 import type { Article } from "./types";
+import { PERMISSION_NOTES, permissionTable } from "../roles";
 
 /*
  * Help centre content. Facts here mirror the code (cmd/stackurity, internal/*)
@@ -24,7 +25,7 @@ export const ARTICLES: Article[] = [
           "**Wait for it to report.** The page shows what has arrived, how many packages, and when the check is done.",
           "**Read the first result.** For example \"We found 1,676 packages on commmerceblog. 3 fixes matter now.\", with links to them.",
           "**Turn on notifications.** Slack (**Add to Slack**, or a webhook) or email. Choose what to send right away (urgent issues, all new issues, or nothing) and a daily or weekly summary (or none). They cover this project only; fine-tune them later in [Settings, Integrations](/settings/integrations).",
-          "**Invite people.** By email, with a role on this project. They get a link that works once, for 7 days.",
+          "**Invite people.** By email: they see this project with the permission you choose (or more, if you add it). They get a link that works once, for 7 days.",
         ],
       },
       { h: "A quiet first scan" },
@@ -35,9 +36,11 @@ export const ARTICLES: Article[] = [
       {
         list: [
           "With an email channel under **Settings ▸ Notifications**, the link is emailed through that mail server. Without one, the link is shown once for you to copy and send.",
-          "Someone new creates their account from the link and sees only the project, with the role you chose. Someone with an account signs in first, as the invited email address.",
-          "Accepting never changes a role someone already has in your organisation, and keeps a higher role they already had on the project.",
-          "The project's page under **Settings ▸ Projects and access** lists its invitations, and can withdraw one that was not used yet.",
+          "An invitation says what they will see, like **Add user**: all projects and assets with one permission, or specific projects and assets, each with its own. A project's **Invite** starts with that project; **Settings ▸ Users ▸ Invite by email** starts with nothing chosen.",
+          "Someone new creates their account from the link and sees what the invitation gives. Someone with an account signs in first, as the invited email address. Someone already in your organisation gets the access at once, without a link.",
+          "Accepting never changes a role someone already has in your organisation, and keeps a higher role they already had on a project or asset.",
+          "What it gives is checked again when they accept: a project archived, or an asset deleted or merged, since you sent it is skipped, and the page tells them. If nothing is left, the link does not work until you send a new invitation.",
+          "Inviting someone again replaces their open invitation. **Settings ▸ Users** lists every invitation, and a project's page the ones that include it; either can withdraw one that was not used yet.",
         ],
       },
       { note: "Running the server yourself? See the install guide (docs/install.md) for the first start, the setup token and backups." },
@@ -1561,6 +1564,7 @@ jobs:
       {
         list: [
           "**Slack**: click **Add to Slack**, pick the channel in Slack, and you come back to its settings to choose what to send. The channel shows as \"#security in Acme (Stackurity app)\", and **Assign to me** and **Snooze** work inside Slack. If the app is removed from Slack, the channel is turned off and says why. **Advanced: use a webhook** still takes an incoming webhook URL (see below).",
+          "**PagerDuty**: click **Connect PagerDuty**, allow Stackurity in PagerDuty, and pick the service. Stackurity adds an Events API V2 integration named Stackurity to that service and keeps its key; you never copy a key. **Advanced: paste an integration key** still works (see below).",
           "**Microsoft Teams**: where offered, click **Add to Teams**. Stackurity shows a code (it works once, for 15 minutes, only for you) and **Open Stackurity in Teams**: add the app to the team, then in the channel that should get the notifications send `@Stackurity` and the code. The bot answers **Connected** and Stackurity opens the new integration to choose what to send. It shows as \"alerts in Security (Stackurity app)\". If the app is removed from the team, or the channel or team is deleted, the integration is turned off and says why; **Add to Teams** again to resume. **Advanced: use a Workflows webhook** still takes a Workflows webhook URL.",
           "**Email (sent by Stackurity)**, where offered: tick members and, if you like, type other addresses (up to 20 recipients by default). Members get messages once they have signed in to Stackurity at least once. Each other address gets one email with a link to confirm; nothing is sent to it until then. The **Other email addresses** list shows who is pending or confirmed, with **Resend**.",
           "**Email (your own mail server)**: under **Advanced: use your own mail server**, or the only email option on a self-hosted server. Pick a **Provider** (Amazon SES, SendGrid, Postmark, Mailgun, ZeptoMail, Gmail / Google Workspace) to fill in the host, port and encryption, with a note on where to get the credentials.",
@@ -1574,7 +1578,7 @@ jobs:
           ["Microsoft Teams (Workflows webhook)", "none", "The Workflows webhook URL (required)"],
           ["Webhook", "URL (HTTPS)", "HMAC signing key (optional)"],
           ["Jira", "With **Connect Jira** (Jira Cloud, where the server offers it): the site, project, issue type, done status and priorities, picked from lists. With a token: site URL, Cloud or Data Center, project key, issue type, account email (Cloud), optional labels, priority mapping and resolve transition", "None with Connect Jira; otherwise an API token (Cloud) or personal access token (required)"],
-          ["PagerDuty", "Service region (US or EU), optional severity per priority", "Integration key (routing key) of an Events API v2 integration (required)"],
+          ["PagerDuty", "Connect PagerDuty, or: service region (US or EU), optional severity per priority", "None with Connect PagerDuty; otherwise the integration key (routing key) of an Events API v2 integration (required)"],
           ["ServiceNow", "Instance URL, user name (Basic) or OAuth client ID, optional table, assignment group, category, subcategory, urgency and impact per priority, other fields, resolve state and close code, read state back", "Password (Basic) or OAuth client secret (required)"],
         ],
       },
@@ -1655,7 +1659,16 @@ jobs:
       },
       { h: "PagerDuty" },
       {
-        p: "A PagerDuty integration keeps one alert per incident: triggered when the incident opens (with a link back to it), acknowledged when it is acknowledged in Stackurity (none of its findings is new), and resolved when it resolves. When its priority rises, it escalates or new findings arrive after acknowledgement, someone is paged again: a new alert is opened (its key ends in -2, -3) and the old one resolved, because PagerDuty does not page again for an alert that is already open. The severity follows the priority (P1 critical, P2 error, P3 warning, P4 info; SOS is always critical). Every event uses the alert's dedup key (`stackurity-incident-<organisation>-<incident>`, then -2, -3), so retries never open a second alert. An alert keeps the severity it was opened with. Store the service's **Events API V2** integration key under Settings, Secrets. Pick the EU service region if your PagerDuty account is in the EU. **Send test** triggers a test alert (severity info) and resolves it at once.",
+        p: "A PagerDuty integration keeps one alert per incident: triggered when the incident opens (with a link back to it), acknowledged when it is acknowledged in Stackurity (none of its findings is new), and resolved when it resolves. When its priority rises, it escalates or new findings arrive after acknowledgement, someone is paged again: a new alert is opened (its key ends in -2, -3) and the old one resolved, because PagerDuty does not page again for an alert that is already open. The severity follows the priority (P1 critical, P2 error, P3 warning, P4 info; SOS is always critical). Every event uses the alert's dedup key (`stackurity-incident-<organisation>-<incident>`, then -2, -3), so retries never open a second alert. An alert keeps the severity it was opened with. **Send test** triggers a test alert (severity info) and resolves it at once.",
+      },
+      {
+        p: "**Connect PagerDuty** (when your server offers it) sets this up for you. PagerDuty asks you to let Stackurity read and change services; you pick the service in Stackurity; Stackurity adds an **Events API V2** integration named **Stackurity** to it and stores its key, encrypted, like any secret. The key is never shown again. Your PagerDuty user must be allowed to add integrations to the service (an admin, or the service's manager); if not, PagerDuty refuses and Stackurity says so. Stackurity does not keep access to your PagerDuty account: the PagerDuty sign-in is thrown away as soon as the integration exists (or after 10 minutes if you stop half-way). EU accounts are recognised on their own. Stackurity does not create services: pick an existing one.",
+      },
+      {
+        p: "**Disconnecting.** Deleting the integration in Stackurity deletes its key. Because Stackurity no longer has access to PagerDuty, the **Stackurity** integration stays on the PagerDuty service until you delete it there: the service, **Integrations**, **Stackurity**, **Delete Integration** (the integration's settings in Stackurity link to it). Until then it receives nothing from Stackurity. Connecting the same service again gives its integration a new key; delete the older **Stackurity** integration in PagerDuty.",
+      },
+      {
+        p: "**Without Connect PagerDuty**, add the integration yourself: in PagerDuty, the service, **Integrations**, **Add an integration**, **Events API V2**, and copy the **Integration Key**. Store it under Settings, Secrets. Pick the EU service region if your PagerDuty account is in the EU.",
       },
       { h: "ServiceNow" },
       {
@@ -1722,27 +1735,45 @@ jobs:
     id: "users-teams-roles",
     title: "Users, teams and roles",
     section: "Settings and administration",
-    summary: "Who can see and change what.",
+    summary: "Who can see and change what, and adding someone with exactly the access they need.",
     where: ["Settings", "Users"],
-    keywords: "role viewer engineer security admin team password",
+    keywords: "role viewer engineer security admin team password permission view edit decide phone add user scope specific all projects assets",
     body: [
       {
-        table: [
-          ["Role", "Can"],
-          ["viewer", "See inventory, fixes, issues, incidents, reports and the audit log. Notification settings and remediation policies need security."],
-          ["engineer", "Edit assets and relations, acknowledge/assign/comment on findings, run integrations, refresh feeds."],
-          ["security", "Everything an engineer can, plus suppress, accept risk and reopen findings, view notifications and remediation policies, approve plans (not major)."],
-          ["admin", "Everything: users, teams, tokens, integrations, plugins, channels, routes, risk policy, remediation policies, deleting assets, identity conflicts, jobs."],
-        ],
+        p: "Everyone in a workspace sees either **all projects and assets**, or only the **specific projects and assets** they are given. On top of that, a permission says what they may do there.",
       },
+      // The same table as "What can each permission do?" under Settings ▸ Users (web/src/roles.ts).
+      { table: permissionTable() },
+      { list: PERMISSION_NOTES },
       {
-        p: "These roles apply to the whole organisation, or to chosen [projects](help:projects) only. Someone with access through projects only sees those projects' assets.",
+        p: "In the API and in older screens the permissions are named viewer (View only), engineer (View and edit), security (View, edit and decide) and admin. See [Projects and access](help:projects) for how projects narrow what someone sees.",
       },
+      { h: "Adding a user" },
       {
         steps: [
-          "**Settings ▸ Users ▸ Add user** (admin): email, name, role and an initial password of at least 12 characters. Share it securely.",
-          "Change a role from the list; **Disable** stops sign-in and the user's tokens; **Reset password** sets a new one.",
-          "**Settings ▸ Teams ▸ Add team**: name, contact email and members. Then set teams as asset owners so incidents and routes follow them.",
+          "**Settings ▸ Users ▸ Add user** (admin): their name, email and, if you like, a phone number (contact information only; nothing is sent to it). For a new account, an initial password of at least 12 characters; share it securely. Someone who already has an account joins with it.",
+          "**What can they see?** must be answered; nothing is chosen for you. **All projects and assets**: pick one permission, which covers everything, including what is added later. **Specific projects or assets**: add one or more projects.",
+          "For each project, choose **All assets in this project** with one permission (this also covers assets added to the project later), or **Chosen assets**: tick each asset and give it its own permission, for example one asset View only and another View and edit. Projects can mix the two.",
+          "**Add user** creates the person and all of their access together; if any part is refused, nothing is created. The list's **Can see** column shows it at a glance, such as \"All projects — View and edit\" or \"2 projects, 3 assets\".",
+        ],
+      },
+      { h: "Teams" },
+      {
+        list: [
+          "**Members see what their team can see.** A team's **Can see** is a list of projects (all their assets, including later ones) and chosen assets, each with a permission; never all projects. Someone added to the team gets it from their next page; someone removed loses it the same way.",
+          "**Owning is not seeing.** The team that **owns** an asset gets that asset's alerts and incidents, and routes can follow it. It gives the team's members no access to it: give the team access under **Can see** as well if they should see it.",
+          "**Add user** and **Invite by email** have an optional **Add to teams**, which shows what each team can see. With **Specific projects or assets**, a team that can see something is enough on its own; a team that can see nothing is not. The preview says what comes from a team (\"Via team Web: Shop — View and edit\"), and the Users list shows it (\"via Web\").",
+          "Edit a team's **Owns** in bulk: tick the assets it should own; an asset owned by another team moves to this one.",
+          "Community includes one team; more teams need a paid plan.",
+        ],
+      },
+      { h: "Changing it later" },
+      {
+        list: [
+          "Change the permission on all projects from the list, or choose **Specific projects only** to take it away; their project and asset access then comes from **Settings ▸ Projects and access**.",
+          "**Edit** changes the name and phone; **Disable** stops sign-in and the user's tokens; **Reset password** sets a new, temporary one.",
+          "**Settings ▸ Teams ▸ Add team**: name, contact email and members. Then **Edit** it to choose what it **can see** and which assets it **owns** (see Teams below).",
+          "**Invite by email** (on **Settings ▸ Users**, or a project's page) asks the same **What can they see?** and sends a link instead of setting a password. On Stackurity Cloud people join by invitation only, so **Add user** is not shown there.",
         ],
       },
     ],
@@ -1765,12 +1796,13 @@ jobs:
           ["Organisation-wide role (viewer, engineer, security, admin)", "Every asset, in every project and in none."],
           ["A role on a project", "Only that project's assets, with their issues, fixes, incidents, components, search results, reports and activity. Organisation pages (users, teams, integrations, notifications, jobs) are not shown."],
           ["A role on one asset", "Only that asset. For the rare server one contractor looks after; prefer projects."],
-          ["A team's role on a project", "Everyone in the team, including people who join it later."],
+          ["A team's role on a project or asset (Settings ▸ Teams ▸ Can see)", "Everyone in the team, including people who join it later, while they are in it."],
+          ["The team that owns an asset", "Nothing: ownership routes alerts and incidents to the team, and gives no access."],
         ],
       },
       {
         list: [
-          "A role on a project means the same as the organisation role, for that project's assets only. Someone who is a viewer for the organisation and an engineer on one project can acknowledge and assign that project's issues, and only view the rest.",
+          "A role on a project means the same as the organisation role, for that project's assets only, except for the workspace pages it never shows (see [the permissions table](help:users-teams-roles)). Someone who is a viewer for the organisation and an engineer on one project can acknowledge and assign that project's issues, and only view the rest.",
           "An incident that spans two projects shows each person only their part: the counts, names and priority come from the assets they can see.",
           "Archiving a project removes the access it gave. Its assets stay, and people with an organisation-wide role still see them.",
           "Removing someone's access, or lowering their role, applies to their next request, and to their API tokens too.",
@@ -1786,7 +1818,7 @@ jobs:
         steps: [
           "**Settings ▸ Projects and access ▸ New project**, then add its assets. **Suggested groupings** proposes related assets (an application runs on a host, is built from a repository); nothing is added until you accept.",
           "Under **Who has access**, give a person (by email) or a team a role. Someone who is not a member yet joins with access to that project only; give a new account an initial password of at least 12 characters.",
-          "Or **Invite by email**: they get a link that works once, for 7 days, and choose their own password. See [Your first ten minutes](help:getting-started).",
+          "Or **Invite by email**: it starts with this project, asks for the permission, and can add other projects or chosen assets. They get a link that works once, for 7 days, and choose their own password. See [Your first ten minutes](help:getting-started).",
           "The Dashboard tells organisation-wide roles how many assets are **not in a project**: only they see those, so file them.",
           "To send a client only their project's alerts, tick the project in a notification integration's settings (**Settings ▸ Integrations**). A route to Jira can be limited to one project: its issues then describe only that project's part of each incident.",
           "**Settings ▸ Users** can change someone to **projects only**: they keep their account but lose the organisation-wide role.",
@@ -1847,6 +1879,41 @@ jobs:
           "**Identity conflicts** (admin): when a report's identifiers match more than one asset (e.g. a cloned VM image reused a machine-id), pick the asset to keep; the others are merged into it.",
           "**Jobs** (admin): the background queue (integration runs, feed syncs, evaluations), with attempts and errors. Read-only.",
           "**Audit log** (everyone, under **Activity**): sign-ins and every change, with the actor and details. Filter by object type.",
+        ],
+      },
+    ],
+  },
+  {
+    id: "owner-rules",
+    title: "Owner rules: who issues are assigned to",
+    section: "Settings and administration",
+    summary: "Assign new issues automatically by project, asset and part of the tech stack, without changing what people assigned.",
+    where: ["Settings", "Owner rules"],
+    keywords: "owner owners assign assignee auto-assign rule team person project asset stack layer package ownership",
+    body: [
+      {
+        p: "An owner rule says who issues on part of your estate belong to: a person, a team or both. Admins add rules under **Settings → Owner rules**. A rule has three parts: **where** (every asset, one project or one asset), optionally **which part of the stack** (a layer such as operating system or web server, a package name such as `openssl` or `linux*`, or both) and **who**.",
+      },
+      {
+        p: "When an issue could match several rules, the most specific one assigns it:",
+      },
+      {
+        steps: [
+          "Part of one asset's stack (“openssl on web-1”).",
+          "One asset (“everything on web-1”).",
+          "Part of one project's stack (“WordPress core in the Blog project”).",
+          "One project (“everything in Shop”).",
+          "Part of every stack (“operating system packages anywhere”).",
+          "The organisation default (“everything else”).",
+        ],
+      },
+      {
+        list: [
+          "Between rules at the same level, a package name and a layer beat a package name, which beats a layer; then the older rule wins.",
+          "New issues get their owner within a minute, and the issue's history says which rule assigned it.",
+          "An issue a person assigned, or unassigned, is never changed by a rule.",
+          "Changing or deleting a rule does not move issues a rule already assigned. **Apply to open issues** previews what would move, then moves it when you confirm.",
+          "An asset's page and a project's page show the rules that apply there.",
         ],
       },
     ],

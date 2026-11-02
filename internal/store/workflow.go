@@ -481,7 +481,9 @@ func (s *Store) ApplyFindingAction(ctx context.Context, id int64, a FindingActio
 			}
 			if _, err := tx.Exec(ctx, `UPDATE findings SET
 				assignee_user_id = CASE WHEN $2::bigint IS NULL THEN assignee_user_id WHEN $2 = 0 THEN NULL ELSE $2 END,
-				assignee_team_id = CASE WHEN $3::bigint IS NULL THEN assignee_team_id WHEN $3 = 0 THEN NULL ELSE $3 END
+				assignee_team_id = CASE WHEN $3::bigint IS NULL THEN assignee_team_id WHEN $3 = 0 THEN NULL ELSE $3 END,
+				-- A person's choice, unassigning included: owner rules leave it.
+				assignment_manual = true, owner_rule_id = NULL
 				WHERE id = $1`, id, a.AssignUser, a.AssignTeam); err != nil {
 				if isForeignKey(err) {
 					return fmt.Errorf("%w: no such user or team", ErrInvalidAction)

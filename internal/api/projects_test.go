@@ -84,6 +84,11 @@ var projectScopes = map[string]string{
 	"POST /api/v1/integrations/gitlab/connections/{id}/authorize":   "org",
 	"POST /api/v1/integrations/gitlab/connections/{id}/sync":        "org",
 	"DELETE /api/v1/integrations/gitlab/connections/{id}":           "org",
+	"POST /api/v1/integrations/pagerduty/connect":                   "org",
+	"POST /api/v1/integrations/pagerduty/oauth":                     "org",
+	"POST /api/v1/integrations/pagerduty/services":                  "org",
+	"POST /api/v1/integrations/pagerduty/finish":                    "org",
+	"POST /api/v1/integrations/pagerduty/cancel":                    "org",
 	"GET /api/v1/notification-options":                              "org",
 	"GET /api/v1/email-recipients":                                  "org",
 	"POST /api/v1/email-recipients/resend":                          "org",
@@ -301,6 +306,11 @@ var projectScopes = map[string]string{
 	"POST /api/v1/risk-policy/preview":               "org",
 	"POST /api/v1/users":                             "org",
 	"POST /api/v1/teams":                             "org",
+	"GET /api/v1/owner-rules":                        "org",
+	"POST /api/v1/owner-rules":                       "org",
+	"POST /api/v1/owner-rules/apply":                 "org",
+	"PUT /api/v1/owner-rules/{id}":                   "org",
+	"DELETE /api/v1/owner-rules/{id}":                "org",
 	"GET /api/v1/onboarding":                         "org",
 	"GET /api/v1/usage":                              "org",
 	"PUT /api/v1/onboarding":                         "org",
@@ -1387,7 +1397,7 @@ func TestProjectScopeInDatabase(t *testing.T) {
 	}
 	for _, tbl := range tables {
 		switch tbl {
-		case "api_tokens", "integrations", "access_grants", "project_assets":
+		case "api_tokens", "integrations", "access_grants", "project_assets", "owner_rules":
 			continue // organisation administration; their routes refuse members
 		}
 		var n int
