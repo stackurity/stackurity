@@ -71,6 +71,10 @@ type ecrSource struct {
 }
 
 func newECR(ctx context.Context, cfg Config, keys AWSKeys) (*ecrSource, error) {
+	// Validate checked it already; the endpoint hosts are built from it.
+	if !regionRE.MatchString(cfg.Region) {
+		return nil, fmt.Errorf("invalid AWS region %q", cfg.Region)
+	}
 	hc := newHTTPClient()
 	var prov aws.CredentialsProvider = credentials.NewStaticCredentialsProvider(keys.AccessKeyID, keys.SecretAccessKey, keys.SessionToken)
 	if cfg.RoleARN != "" {

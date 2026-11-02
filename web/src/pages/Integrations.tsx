@@ -794,7 +794,8 @@ const listOf = (v: string) =>
 /** A secret name for a pasted credential: registry-<what>-<random>. */
 function secretNameFor(what: string): string {
   const base = `registry-${what}`.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/-+/g, "-").slice(0, 52);
-  return `${base}-${Math.random().toString(36).slice(2, 8)}`;
+  const rnd = crypto.getRandomValues(new Uint32Array(1))[0].toString(36).padStart(6, "0").slice(-6);
+  return `${base}-${rnd}`;
 }
 
 type Cred = "paste" | "ref" | "aws" | "none";
