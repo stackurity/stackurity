@@ -40,6 +40,8 @@ type PasskeyRecord struct {
 	ID     int64
 	Name   string
 	Record []byte
+	// Flagged: a clone warning was recorded; it signs in no more.
+	Flagged bool
 }
 
 // WebAuthnHandle returns userID's WebAuthn user handle, making it at the
@@ -72,7 +74,7 @@ func (s *Store) UserByWebAuthnHandle(ctx context.Context, handle []byte) (int64,
 
 // PasskeyRecords returns userID's credentials with their records.
 func (s *Store) PasskeyRecords(ctx context.Context, userID int64) ([]PasskeyRecord, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT id, name, record FROM webauthn_credentials WHERE user_id = $1 ORDER BY id`, userID)
+	rows, err := s.Pool.Query(ctx, `SELECT id, name, record, clone_warning_at IS NOT NULL FROM webauthn_credentials WHERE user_id = $1 ORDER BY id`, userID)
 	if err != nil {
 		return nil, err
 	}

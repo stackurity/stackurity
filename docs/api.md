@@ -111,7 +111,7 @@ Ends the session; audited as `auth.logout`.
 
 **Who:** any signed-in user or token
 
-The caller: `user`, `role`, `workspace`, `workspaces`, `edition` and `features`, `access` (`organisation` or `projects`), `project_role`, `projects`, `default_project_id`, `read_only`, `report_mode`, `feedback_enabled` `password_change_required` (an administrator set a temporary password: until it is changed with `POST /auth/password`, other routes answer 403 `password_change_required`) `mfa_enrolment_required` (the organisation requires a second factor that this account does not have: until one is set up, other routes answer 403 `mfa_enrolment_required`), `mfa_step_up_required` (the account has one, but this session was not signed in with it: until it is confirmed with `POST /auth/mfa/step-up`, other routes answer 403 `mfa_step_up_required`), `mfa_accepted` (the methods that count there), and `invite_only` (people join by invitation, as on Stackurity Cloud: `POST /users` answers 403 `invite_only`, and the dashboard offers Invite instead of Add user). Each user has `mfa_enabled` and `mfa_methods` (`passkey`, `totp`, `email`).
+The caller: `user`, `role`, `workspace`, `workspaces`, `edition` and `features`, `access` (`organisation` or `projects`), `project_role`, `projects`, `default_project_id`, `read_only`, `report_mode`, `feedback_enabled` `password_change_required` (an administrator set a temporary password: until it is changed with `POST /auth/password`, other routes answer 403 `password_change_required`) `mfa_enrolment_required` (the organisation requires a second factor that this account does not have: until one is set up, other routes answer 403 `mfa_enrolment_required`), `mfa_step_up_required` (the account has one, but this session was not signed in with it: until it is confirmed with `POST /auth/mfa/step-up`, other routes answer 403 `mfa_step_up_required`), `mfa_accepted` (the methods that count there), `mfa_recovery_accepted` (whether a recovery code lets this session go on), and `invite_only` (people join by invitation, as on Stackurity Cloud: `POST /users` answers 403 `invite_only`, and the dashboard offers Invite instead of Add user). Each user has `mfa_enabled` and `mfa_methods` (`passkey`, `totp`, `email`).
 
 ### `PUT /auth/default-project`
 
@@ -129,7 +129,7 @@ Changes your own password (`current_password`, `new_password`). Your other sessi
 
 **Who:** any signed-in user (browser session)
 
-Your two-factor methods: `enabled` (any), `methods`, `passkeys` (each with `id`, `name`, `backed_up` for a synced passkey, `discoverable`, `created_at`, `last_used_at` and `clone_warning_at`), `totp` and `enabled_at` (the app), `email` (email codes are on), `email_offered` (you may turn them on; `email_unavailable` says why not), `recovery_codes_left`; `required` and `accepted` (what the current organisation asks of you), `need` (`enrol` or `step_up` for this session), `required_by` (organisations whose policy your factors must keep meeting); `available` (the server has `STACKURITY_SECRET_KEY`, which the app needs), `passkeys_available` (with `passkeys_unavailable` saying why not, and `rp_id`, the domain passkeys are registered for), and how many `tokens` and `assistants` you have (they are not asked for a second factor).
+Your two-factor methods: `enabled` (any), `methods`, `passkeys` (each with `id`, `name`, `backed_up` for a synced passkey, `discoverable`, `created_at`, `last_used_at` and `clone_warning_at`), `totp` and `enabled_at` (the app), `email` (email codes are on), `email_offered` (you may turn them on; `email_unavailable` says why not), `recovery_codes_left`; `required` and `accepted` (what the current organisation asks of you), `need` (`enrol` or `step_up` for this session), `required_by` (organisations whose policy your factors must keep meeting); `available` (the server has `STACKURITY_SECRET_KEY`, which the app needs), `passkeys_available` (with `passkeys_unavailable` saying why not, and `rp_id`, the domain passkeys are registered for), `confirm_first` (present when this session must confirm with a factor you have, `POST /auth/mfa/step-up…`, before it adds or removes one: a session whose sign-in never asked for your factors, such as single sign-on, or one an organisation of yours asks to confirm; such changes answer 403 `mfa_step_up_required`), and how many `tokens` and `assistants` you have (they are not asked for a second factor).
 
 ### `POST /auth/mfa/totp`
 
@@ -201,7 +201,7 @@ For an account that uses email codes: emails a code for `POST /auth/mfa/step-up`
 
 **Who:** any signed-in user (browser session)
 
-`{"code": "123456"}`, a recovery code, or for an account that uses email codes the code emailed by `POST /auth/mfa/step-up/email/send`: this session counts as signed in with it from now on (a new session cookie), for an organisation whose policy asks for it (`mfa_step_up_required`). Audited as `auth.mfa_step_up`.
+`{"code": "123456"}`, a recovery code, or for an account that uses email codes the code emailed by `POST /auth/mfa/step-up/email/send`: this session counts as signed in with it from now on (a new session cookie), for an organisation whose policy asks for it (`mfa_step_up_required`), or before changing factors (`confirm_first`). A recovery code is refused (409 `recovery_code_not_accepted`, not used up) where only a passkey counts for an admin who has one (`mfa_recovery_accepted` false on `GET /auth/me`): another admin resets a lost passkey. Audited as `auth.mfa_step_up`.
 
 ### `POST /auth/mfa/step-up/passkey/begin`
 
@@ -1051,7 +1051,7 @@ The organisation's two-factor policy: `policy` (`optional`, `everyone`, or `admi
 
 **Who:** admin
 
-Any of `policy`, `methods` and `phishing_resistant_admins`; `{"require_mfa": true}` or `false` alone still works (`everyone` or `optional`). The methods must include `passkey` or `totp` (`email` codes never count for security, admin or instance-admin roles), and `phishing_resistant_admins` needs `passkey` among them (400). Allowing `email` needs a server that can send email (409 `email_unavailable`). Turning on `phishing_resistant_admins` needs the Enterprise plan (402 `plan_required`); once on, it stays enforced if the plan lapses and can always be turned off. Your own account must meet the new policy, with the session you are using: 409 `mfa_required` (set one up first) or `mfa_step_up_required` (sign in again with it). Audited as `settings.mfa_policy` (`before` and `after`), and as `settings.require_mfa` when whether anything is required changes.
+Any of `policy`, `methods` and `phishing_resistant_admins`; `{"require_mfa": true}` or `false` alone still works (`everyone` or `optional`). The methods must include `passkey` or `totp` (`email` codes never count for security, admin or instance-admin roles), and `phishing_resistant_admins` needs `passkey` among them (400). Allowing `email` needs a server that can send email (409 `email_unavailable`). Turning on `phishing_resistant_admins` needs the Enterprise plan (402 `plan_required`); once on, it stays enforced if the plan lapses and can always be turned off. A policy that requires a factor needs a method that works on this server (409 `mfa_methods_unavailable`). An API token may make the policy stricter, not weaker (403 `session_required`). Your own account must meet the new policy, with the session you are using: 409 `mfa_required` (set one up first) or `mfa_step_up_required` (sign in again with it). Audited as `settings.mfa_policy` (`before` and `after`), and as `settings.require_mfa` when whether anything is required changes.
 
 ## Projects and people
 
@@ -1203,7 +1203,7 @@ Removes a member from the organisation; their account and other organisations ar
 
 **Who:** admin
 
-Resets a member's two-factor sign-in (a lost phone or key): removes their passkeys, authenticator app, email codes and recovery codes and ends their sessions. Only an instance administrator may for an account in other organisations too, or for an instance administrator (409). 409 when they have none. Audited as `user.mfa_reset`.
+Resets a member's two-factor sign-in (a lost phone or key): removes their passkeys, authenticator app, email codes and recovery codes and ends their sessions. A browser session only (403 `session_required` for an API token), and not your own account (409; use `DELETE /auth/mfa`). Only an instance administrator may for an account in other organisations too, or for an instance administrator (409). 409 when they have none. Audited as `user.mfa_reset`.
 
 ### `GET /users/directory`
 

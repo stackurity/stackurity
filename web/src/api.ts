@@ -537,6 +537,8 @@ export interface Me {
   mfa_step_up_required?: boolean;
   /** The methods that count in this organisation, when one of the two above is set. */
   mfa_accepted?: MfaMethod[] | null;
+  /** A recovery code lets this session go on (false where only a passkey counts for an admin who has one). */
+  mfa_recovery_accepted?: boolean;
   /** An administrator set a temporary password: only changing it is possible. */
   password_change_required?: boolean;
   /** Set when the session's workspace requires its own single sign-on, which this session did not use; workspace is then null. */
@@ -3625,7 +3627,7 @@ export const api = {
   socialSignup: (b: { token: string; name: string; organisation: string; accept_terms: true; email_notice_version?: string }) =>
     request<{ workspace_id: number; next: string }>("POST", "/signup/social", b, { quiet401: true }),
   confirmSocialLink: (token: string) =>
-    request<User & { mfa_required?: boolean }>("POST", "/auth/social/confirm", { token }, { quiet401: true }),
+    request<User & { mfa_required?: boolean; methods?: MfaSignInMethod[] }>("POST", "/auth/social/confirm", { token }, { quiet401: true }),
   socialConnections: () => request<{ providers: SocialConnection[]; has_password: boolean }>("GET", "/auth/social"),
   connectSocial: (provider: string, password: string) =>
     request<{ redirect_url: string }>("POST", `/auth/social/${encodeURIComponent(provider)}/link`, { password }),

@@ -368,10 +368,11 @@ func TestPasskeyCounterRegression(t *testing.T) {
 	if !auditActions(t, e, ann)["auth.passkey_clone_warning"] {
 		t.Error("no auth.passkey_clone_warning event")
 	}
-	// The real key, ahead of the stored counter, still works.
+	// Once flagged, the passkey signs in no more, even with a counter
+	// ahead: either copy may be the attacker's.
 	c.Counter = 100
-	if _, code, _ := passwordless(t, e, a); code != 200 {
-		t.Errorf("counter ahead: %d", code)
+	if _, code, out := passwordless(t, e, a); code != 401 || out.Error.Code != "passkey_clone_warning" {
+		t.Errorf("flagged passkey, counter ahead: %d %+v", code, out)
 	}
 }
 
@@ -544,55 +545,69 @@ func TestPhishingResistantAdmins(t *testing.T) {
 		t.Fatalf("after confirming with the passkey: %d", code)
 	}
 
-	// A lost key: a recovery code lets the admin set up a new passkey, and
-	// nothing else.
+	// A lost key: a recovery code does not replace a passkey where only
+	// passkeys count for admins (it is as easy to phish as an app code), so
+	// the session must confirm with the passkey; another admin resets a
+	// lost one.
 	lost, _ := passwordStep(t, e, "admin@x.io")
 	if code := lost.do("POST", "/api/v1/auth/mfa/verify", map[string]string{"code": recovery[0]}, nil); code != 200 {
 		t.Fatalf("recovery code: %d", code)
 	}
 	var meLost struct {
-		Enrol bool `json:"mfa_enrolment_required"`
+		StepUp   bool `json:"mfa_step_up_required"`
+		Recovery bool `json:"mfa_recovery_accepted"`
 	}
 	lost.do("GET", "/api/v1/auth/me", nil, &meLost)
-	if !meLost.Enrol {
-		t.Fatalf("recovery-code session not sent to set up a passkey: %+v", meLost)
+	if !meLost.StepUp || meLost.Recovery {
+		t.Fatalf("recovery-code session of an admin with a passkey: %+v", meLost)
 	}
 	if code := lost.do("GET", "/api/v1/assets", nil, nil); code != 403 {
 		t.Fatalf("recovery-code session read data: %d", code)
 	}
-	registerPasskey(t, lost, newAuthenticator(), "New key")
-	if code := lost.do("GET", "/api/v1/assets", nil, nil); code != 200 {
+	if _, code := tryRegisterPasskey(t, lost, newAuthenticator(), "attacker"); code != 403 {
+		t.Fatalf("recovery-code session added a passkey: %d", code)
+	}
+	if code := lost.do("POST", "/api/v1/auth/mfa/step-up", map[string]string{"code": recovery[1]}, &out); code != 409 || out.Error.Code != "recovery_code_not_accepted" {
+		t.Fatalf("step-up with a recovery code: %d %+v", code, out)
+	}
+	admin2 := e.login("admin2@x.io")
+	if st := mfaStatusOf(t, admin2); st.Need != "enrol" || !slices.Equal(st.Accepted, []string{"passkey"}) {
+		t.Fatalf("other admin: %+v", st)
+	}
+	registerPasskey(t, admin2, newAuthenticator(), "Admin 2 key")
+	var adminID int64
+	if err := e.st.Pool.QueryRow(context.Background(), `SELECT id FROM users WHERE email = 'admin@x.io'`).Scan(&adminID); err != nil {
+		t.Fatal(err)
+	}
+	if code := admin2.do("DELETE", "/api/v1/users/"+itoa(adminID)+"/mfa", nil, nil); code != 204 {
+		t.Fatalf("another admin resets the lost key: %d", code)
+	}
+	if code := lost.do("GET", "/api/v1/auth/me", nil, nil); code != 401 {
+		t.Errorf("session after the reset: %d", code)
+	}
+	fresh := e.login("admin@x.io")
+	registerPasskey(t, fresh, newAuthenticator(), "New key")
+	if code := fresh.do("GET", "/api/v1/assets", nil, nil); code != 200 {
 		t.Fatalf("after the new passkey: %d", code)
 	}
 
-	// A member keeps signing in with the app; another admin has to set up
-	// a passkey (and email codes never count for admins).
+	// A member keeps signing in with the app (and email codes never count
+	// for admins).
 	dev := e.login("dev@x.io")
 	enrol(t, dev)
 	if code := dev.do("GET", "/api/v1/assets", nil, nil); code != 200 {
 		t.Errorf("member with the app: %d", code)
 	}
-	admin2 := e.login("admin2@x.io")
-	var me2 struct {
-		Enrol    bool     `json:"mfa_enrolment_required"`
-		Accepted []string `json:"mfa_accepted"`
-	}
-	admin2.do("GET", "/api/v1/auth/me", nil, &me2)
-	if !me2.Enrol || !slices.Equal(me2.Accepted, []string{"passkey"}) {
-		t.Errorf("other admin: %+v", me2)
-	}
-
-	// Adding the new passkey ended the admin's other sessions.
 	if code := admin.do("GET", "/api/v1/auth/me", nil, nil); code != 401 {
 		t.Errorf("other session after a factor change: %d", code)
 	}
 	var set struct {
 		Admins int `json:"admins_without_passkey"`
 	}
-	if code := lost.do("GET", "/api/v1/settings/security", nil, &set); code != 200 || set.Admins != 1 {
+	if code := fresh.do("GET", "/api/v1/settings/security", nil, &set); code != 200 || set.Admins != 0 {
 		t.Errorf("admins without a passkey: %d %+v", code, set)
 	}
-	if code := lost.do("PUT", "/api/v1/settings/security", map[string]any{"phishing_resistant_admins": false}, nil); code != 200 {
+	if code := fresh.do("PUT", "/api/v1/settings/security", map[string]any{"phishing_resistant_admins": false}, nil); code != 200 {
 		t.Errorf("turn off: %d", code)
 	}
 }
@@ -1030,5 +1045,150 @@ func TestPasskeyNameIsOneLine(t *testing.T) {
 	name, err := store.CleanPasskeyName("Key\r\nBcc: evil@example.com\n\tX")
 	if err != nil || strings.ContainsAny(name, "\r\n\t") {
 		t.Errorf("%q %v", name, err)
+	}
+}
+
+// A session whose sign-in never checked the account's factors (single
+// sign-on is exempt from the policy) must confirm one before it adds or
+// removes factors: they work in every workspace, so control of one
+// organisation's identity provider and the password must not be enough.
+func TestSSOSessionConfirmsBeforeChangingFactors(t *testing.T) {
+	e := newPasskeyEnv(t)
+	ctx := context.Background()
+	e.user("ann@x.io", auth.RoleEngineer)
+	_, recovery := enrol(t, e.login("ann@x.io"))
+	var uid int64
+	if err := e.st.Pool.QueryRow(ctx, `SELECT id FROM users WHERE email = 'ann@x.io'`).Scan(&uid); err != nil {
+		t.Fatal(err)
+	}
+	for _, opts := range []store.SessionOpts{{Login: store.LoginSSO}, {Pinned: tenant.DefaultWorkspace}, {Login: store.LoginInvite}} {
+		sec, err := e.st.CreateSessionWith(ctx, uid, tenant.DefaultWorkspace, opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := e.anon()
+		s.hdr = map[string]string{"Cookie": "stackurity_session=" + sec}
+		var st struct {
+			ConfirmFirst string `json:"confirm_first"`
+		}
+		if code := s.do("GET", "/api/v1/auth/mfa", nil, &st); code != 200 || st.ConfirmFirst == "" {
+			t.Fatalf("%+v: status %d %+v", opts, code, st)
+		}
+		var out apiErr
+		if _, code := tryRegisterPasskey(t, s, newAuthenticator(), "attacker"); code != 403 {
+			t.Errorf("%+v: passkey added without confirming: %d", opts, code)
+		}
+		if code := s.do("POST", "/api/v1/auth/mfa/recovery-codes", map[string]string{"password": pw}, &out); code != 403 || out.Error.Code != "mfa_step_up_required" {
+			t.Errorf("%+v: new recovery codes without confirming: %d %+v", opts, code, out)
+		}
+		if code := s.do("DELETE", "/api/v1/auth/mfa", map[string]string{"password": pw}, &out); code != 403 {
+			t.Errorf("%+v: factors removed without confirming: %d", opts, code)
+		}
+	}
+	// Confirming with the app (here: a recovery code, the app's step is
+	// spent) lets it go on, still exempt as single sign-on.
+	sec, err := e.st.CreateSessionWith(ctx, uid, tenant.DefaultWorkspace, store.SessionOpts{Login: store.LoginSSO})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := e.anon()
+	s.hdr = map[string]string{"Cookie": "stackurity_session=" + sec}
+	var stepped struct{ Method string }
+	if code := s.do("POST", "/api/v1/auth/mfa/step-up", map[string]string{"code": recovery[0]}, &stepped); code != 200 || stepped.Method != store.MFARecovery {
+		t.Fatalf("step-up: %d %+v", code, stepped)
+	}
+	// The cookie jar holds the rotated session from here.
+	s.hdr = nil
+	if code := s.do("POST", "/api/v1/auth/mfa/recovery-codes", map[string]string{"password": pw}, nil); code != 200 {
+		t.Errorf("after confirming: %d", code)
+	}
+	var n int
+	if err := e.st.Pool.QueryRow(ctx, `SELECT count(*) FROM sessions WHERE user_id = $1 AND login_method = 'sso' AND mfa_method = 'recovery_code'`, uid).Scan(&n); err != nil || n != 1 {
+		t.Errorf("confirmed single sign-on sessions: %d %v", n, err)
+	}
+}
+
+// API tokens skip two-factor sign-in, so they cannot weaken it: no
+// weaker policy and no reset of a member's factors; and an admin removes
+// their own factors under Your account, not with the reset.
+func TestTokensCannotWeakenTwoFactor(t *testing.T) {
+	e := newPasskeyEnv(t)
+	ctx := context.Background()
+	e.user("admin@x.io", auth.RoleAdmin)
+	e.user("dev@x.io", auth.RoleEngineer)
+	admin := e.login("admin@x.io")
+	enrol(t, admin)
+	enrol(t, e.login("dev@x.io"))
+	var tok struct{ Secret string }
+	if code := admin.do("POST", "/api/v1/tokens", map[string]any{"name": "t", "role": "admin"}, &tok); code != 201 {
+		t.Fatalf("token: %d", code)
+	}
+	put := func(body string) int {
+		return bearer(e, tok.Secret, "PUT", "/api/v1/settings/security", []byte(body), map[string]string{"Content-Type": "application/json"})
+	}
+	if code := put(`{"policy": "everyone", "methods": ["passkey", "totp"]}`); code != 200 {
+		t.Fatalf("token makes the policy stricter: %d", code)
+	}
+	for _, body := range []string{`{"policy": "admins"}`, `{"policy": "optional"}`, `{"require_mfa": false}`, `{"methods": ["passkey", "totp", "email"]}`} {
+		if code := put(body); code != 403 {
+			t.Errorf("token weakens the policy with %s: %d", body, code)
+		}
+	}
+	if pol, err := e.st.MFAPolicyOf(ctx, tenant.DefaultWorkspace); err != nil || pol.Require != store.PolicyEveryone {
+		t.Errorf("policy after the token: %+v %v", pol, err)
+	}
+	id := func(email string) string {
+		var id int64
+		if err := e.st.Pool.QueryRow(ctx, `SELECT id FROM users WHERE email = $1`, email).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		return itoa(id)
+	}
+	if code := bearer(e, tok.Secret, "DELETE", "/api/v1/users/"+id("dev@x.io")+"/mfa", nil, nil); code != 403 {
+		t.Errorf("token resets a member's two-factor sign-in: %d", code)
+	}
+	var out apiErr
+	if code := admin.do("DELETE", "/api/v1/users/"+id("admin@x.io")+"/mfa", nil, &out); code != 409 {
+		t.Errorf("admin resets their own: %d %+v", code, out)
+	}
+	if code := admin.do("DELETE", "/api/v1/users/"+id("dev@x.io")+"/mfa", nil, nil); code != 204 {
+		t.Errorf("admin session resets a member: %d", code)
+	}
+	if code := admin.do("PUT", "/api/v1/settings/security", map[string]any{"policy": "optional"}, nil); code != 200 {
+		t.Errorf("admin session makes the policy optional: %d", code)
+	}
+}
+
+// A policy nobody could meet on this server is refused: passkeys need
+// STACKURITY_BASE_URL, the app STACKURITY_SECRET_KEY.
+func TestPolicyNeedsAMethodThatWorksHere(t *testing.T) {
+	e := newMFAEnv(t) // no base URL: no passkeys
+	e.user("admin@x.io", auth.RoleAdmin)
+	admin := e.login("admin@x.io")
+	enrol(t, admin)
+	var out apiErr
+	if code := admin.do("PUT", "/api/v1/settings/security", map[string]any{"policy": "everyone", "methods": []string{"passkey"}}, &out); code != 409 || out.Error.Code != "mfa_methods_unavailable" {
+		t.Errorf("passkeys only without passkeys: %d %+v", code, out)
+	}
+	if code := admin.do("PUT", "/api/v1/settings/security", map[string]any{"policy": "everyone", "methods": []string{"passkey", "totp"}}, nil); code != 200 {
+		t.Errorf("with the app as well: %d", code)
+	}
+}
+
+// "Required for admins" covers instance admins, whatever their role in the
+// organisation.
+func TestAdminsPolicyCoversInstanceAdmins(t *testing.T) {
+	e := newPasskeyEnv(t)
+	e.user("root@x.io", auth.RoleViewer)
+	e.instanceAdmin("root@x.io")
+	if _, err := e.st.SetMFAPolicy(context.Background(), tenant.DefaultWorkspace, store.MFAPolicy{Require: store.PolicyAdmins, Methods: []string{"passkey", "totp"}}); err != nil {
+		t.Fatal(err)
+	}
+	var me struct {
+		Enrol bool `json:"mfa_enrolment_required"`
+	}
+	e.login("root@x.io").do("GET", "/api/v1/auth/me", nil, &me)
+	if !me.Enrol {
+		t.Error("instance admin with a viewer role not asked to set up a second factor")
 	}
 }

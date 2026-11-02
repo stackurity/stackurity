@@ -105,6 +105,8 @@ type passkeyUser struct {
 	creds  []webauthn.Credential
 	ids    []int64
 	names  []string
+	// flagged: a clone warning was recorded for the credential.
+	flagged []bool
 }
 
 func (u *passkeyUser) WebAuthnID() []byte                         { return u.handle }
@@ -117,14 +119,15 @@ func (u *passkeyUser) WebAuthnDisplayName() string {
 	return u.email
 }
 
-// credential returns the stored id and name of the credential credID.
-func (u *passkeyUser) credential(credID []byte) (int64, string, bool) {
+// credential returns the stored id and name of the credential credID, and
+// whether it was flagged by a clone warning.
+func (u *passkeyUser) credential(credID []byte) (id int64, name string, flagged, ok bool) {
 	for i, c := range u.creds {
 		if bytes.Equal(c.ID, credID) {
-			return u.ids[i], u.names[i], true
+			return u.ids[i], u.names[i], u.flagged[i], true
 		}
 	}
-	return 0, "", false
+	return 0, "", false, false
 }
 
 // loadPasskeyUser reads u's passkeys; handle is made when create is set
@@ -153,6 +156,7 @@ func (s *Server) loadPasskeyUser(r *http.Request, u *store.User, create bool) (*
 		pu.creds = append(pu.creds, c)
 		pu.ids = append(pu.ids, rec.ID)
 		pu.names = append(pu.names, rec.Name)
+		pu.flagged = append(pu.flagged, rec.Flagged)
 	}
 	return pu, nil
 }
@@ -261,11 +265,17 @@ func (s *Server) checkAssertion(r *http.Request, wa *webauthn.WebAuthn, pu *pass
 		s.Log.Info("passkey assertion refused", "err", err)
 		return pu, passkeyResult{why: "invalid"}, nil
 	}
-	id, name, ok := pu.credential(cred.ID)
+	id, name, flagged, ok := pu.credential(cred.ID)
 	if !ok {
 		return pu, passkeyResult{why: "invalid"}, nil
 	}
 	res := passkeyResult{id: id, name: name}
+	if flagged {
+		// Its counter went backwards once, so a copy of its key may exist:
+		// whichever copy comes next is refused too.
+		res.why = "clone"
+		return pu, res, nil
+	}
 	if cred.Authenticator.CloneWarning {
 		// The counter did not go up: two copies of the key may exist.
 		res.why = "clone"
@@ -275,8 +285,7 @@ func (s *Server) checkAssertion(r *http.Request, wa *webauthn.WebAuthn, pu *pass
 		}
 		u, err := s.Store.GetUser(r.Context(), pu.id)
 		if err == nil {
-			_ = s.Store.Audit(s.firstWorkspace(r, pu.id).Context(), userActor(r, u), "auth.passkey_clone_warning", "user", itoa(pu.id),
-				map[string]any{"passkey_id": id, "name": name})
+			s.auditAccount(r, u, "auth.passkey_clone_warning", map[string]any{"passkey_id": id, "name": name})
 		}
 		return pu, res, nil
 	}
@@ -291,7 +300,7 @@ func (s *Server) checkAssertion(r *http.Request, wa *webauthn.WebAuthn, pu *pass
 func passkeyFailed(w http.ResponseWriter, why string) {
 	if why == "clone" {
 		writeError(w, 401, "passkey_clone_warning", "this passkey's signature counter went backwards, which can mean it was copied; "+
-			"the sign-in was refused. Use another method, and remove the passkey if you did not expect this")
+			"it signs in no more. Use another method, remove this passkey and add it again")
 		return
 	}
 	writeError(w, 401, "passkey_invalid", "that passkey did not work; try again or use another method")
@@ -715,6 +724,12 @@ func (s *Server) stepUpCode(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := decode(r, &req); err != nil {
 		s.fail(w, r, err)
+		return
+	}
+	if p := principal(r); p.MFANeed == mfaStepUp && !p.MFARecoveryHelps && auth.LooksLikeRecoveryCode(req.Code) {
+		// Only a passkey counts for this admin here, and a recovery code
+		// must not add a new one: the code is not used up.
+		writeError(w, 409, "recovery_code_not_accepted", "a recovery code cannot replace your passkey here; use your passkey, or ask another admin to reset your two-factor sign-in")
 		return
 	}
 	if s.limited(w, r, "too many codes tried; wait a few minutes", limitHit{"mfa-user", itoa(u.ID), limitMFAPerUser}) {

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { MFA_METHODS, mustSetUpOwnFirst } from "./mfa.ts";
+import { MFA_METHODS, mfaFromQuery, mustSetUpOwnFirst } from "./mfa.ts";
 import { safeReturn } from "./returnTo.ts";
 
 test("an admin without two-factor must set up their own before requiring it", () => {
@@ -26,4 +26,15 @@ test("return paths stay on this site", () => {
   // Encoded slashes stay a path on this site.
   assert.equal(safeReturn("/%2F%2Fevil.com"), "/%2F%2Fevil.com");
   assert.equal(safeReturn("/settings/../account#mfa"), "/account#mfa");
+});
+
+test("a provider sign-in continues to the second step it names", () => {
+  assert.equal(mfaFromQuery(""), null);
+  assert.equal(mfaFromQuery("?next=/x"), null);
+  assert.deepEqual(mfaFromQuery("?mfa=1"), ["totp", "recovery_code"]);
+  assert.deepEqual(mfaFromQuery("?mfa=passkey,totp,recovery_code"), ["passkey", "totp", "recovery_code"]);
+  assert.deepEqual(mfaFromQuery("?mfa=email"), ["email"]);
+  // Names the page does not know are dropped; nothing left is no step.
+  assert.deepEqual(mfaFromQuery("?mfa=passkey,<script>"), ["passkey"]);
+  assert.equal(mfaFromQuery("?mfa=sms"), null);
 });

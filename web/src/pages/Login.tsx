@@ -5,6 +5,7 @@ import { useAction } from "../hooks";
 import { Code, ErrorBox } from "../components/ui";
 import type { MfaSignInMethod } from "../api";
 import { MfaLoginStep, PasskeySignInButton } from "./TwoFactor";
+import { mfaFromQuery } from "../mfa";
 import { ForgotPasswordLink } from "./Password";
 import { SocialButtons } from "./Social";
 
@@ -235,15 +236,4 @@ export function SetupPage() {
       </form>
     </div>
   );
-}
-
-const MFA_SIGN_IN_METHODS: MfaSignInMethod[] = ["passkey", "totp", "email", "recovery_code"];
-
-/** The second step a sign-in with a provider continues to: ?mfa=passkey,totp,recovery_code, or ?mfa=1 (the app or a recovery code). */
-export function mfaFromQuery(search: string): MfaSignInMethod[] | null {
-  const v = new URLSearchParams(search).get("mfa");
-  if (!v) return null;
-  if (v === "1") return ["totp", "recovery_code"];
-  const ms = v.split(",").filter((m): m is MfaSignInMethod => (MFA_SIGN_IN_METHODS as string[]).includes(m));
-  return ms.length ? ms : null;
 }

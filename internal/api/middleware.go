@@ -56,6 +56,9 @@ type Principal struct {
 	// MFAAccepted lists the factors that count for the session's user in
 	// its workspace, when MFANeed asks for one.
 	MFAAccepted []string
+	// MFARecoveryHelps: a recovery code lets this session go on (to set up
+	// a factor that counts), when MFANeed asks it to confirm.
+	MFARecoveryHelps bool
 	// PasswordChangeRequired: an administrator set a temporary password
 	// (password_reset.go); the session may only change it.
 	PasswordChangeRequired bool
