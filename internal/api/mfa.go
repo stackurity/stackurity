@@ -677,7 +677,7 @@ func (s *Server) removalChecks(w http.ResponseWriter, r *http.Request, what stri
 type mfaFloorError struct{ workspace, what string }
 
 func (e *mfaFloorError) Error() string {
-	return e.workspace + " requires two-factor sign-in that " + e.what + " is needed for; set up another method first"
+	return e.workspace + " requires two-factor sign-in, and without " + e.what + " you would have no method that counts there; set up another method first"
 }
 
 // failRemoval answers a failed removal: 409 mfa_required when the policy
