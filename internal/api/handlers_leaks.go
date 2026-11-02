@@ -21,10 +21,14 @@ const FeatureLeaks = "leaks"
 func leakFilter(r *http.Request) (store.LeakFilter, error) {
 	q := r.URL.Query()
 	f := store.LeakFilter{Status: q.Get("status"), Severity: q.Get("severity"), Page: page(r)}
-	switch f.Severity {
-	case "", "critical", "high", "medium", "low":
-	default:
-		return f, badRequest("severity must be critical, high, medium or low")
+	if f.Severity != "" {
+		for _, sev := range strings.Split(f.Severity, ",") {
+			switch sev {
+			case "critical", "high", "medium", "low":
+			default:
+				return f, badRequest("severity must be critical, high, medium or low, or several comma-separated")
+			}
+		}
 	}
 	if v := q.Get("asset_id"); v != "" {
 		id, err := strconv.ParseInt(v, 10, 64)

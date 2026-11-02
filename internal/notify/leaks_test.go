@@ -11,7 +11,8 @@ import (
 func leakIncident(priority string) store.Incident {
 	det, _ := json.Marshal(map[string]any{"asset_id": 7, "asset_name": "web-1", "count": 2, "critical": 1, "served": 1,
 		"titles": []string{"Password or key in configuration", "Stripe live secret key"}, "files": []string{"/var/www/html/.env:4", "/srv/shop/billing.py:9"},
-		"environments": []string{"production"}})
+		"environments": []string{"production"},
+		"why": "The web server may send this file to anyone who asks for it (e.g. /.env). Rotate the key and move the file out of the document root."})
 	return store.Incident{ID: 3, Kind: "leak", Key: "asset:7", Title: "2 leaked keys on web-1", Priority: priority, Status: "open", Detail: det}
 }
 
@@ -20,7 +21,7 @@ func TestLeakMessage(t *testing.T) {
 	m := d.message(leakIncident("P1"), "opened")
 	all := strings.Join(m.Summary, "\n")
 	for _, want := range []string{"2 keys, tokens or passwords found written in files on web-1", "1 in files the web server may send",
-		"Stripe live secret key", "/var/www/html/.env:4"} {
+		"Stripe live secret key", "/var/www/html/.env:4", "The web server may send this file"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("summary lacks %q:\n%s", want, all)
 		}

@@ -19,6 +19,9 @@ func (d *Dispatcher) leakMessage(m *Message, det map[string]any, list func(strin
 	if served > 0 {
 		m.Summary = append(m.Summary, fmt.Sprintf("%d in files the web server may send to anyone who asks for them", int(served)))
 	}
+	if why, _ := det["why"].(string); why != "" {
+		m.Summary = append(m.Summary, why)
+	}
 	if t := list("titles"); len(t) > 0 {
 		m.Summary = append(m.Summary, "Kinds: "+strings.Join(t, ", "))
 	}

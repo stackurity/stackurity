@@ -256,3 +256,46 @@ func TestLeakIncidents(t *testing.T) {
 	}
 }
 
+
+// Every surface takes a leak's reason from LeakWhy.
+func TestLeakWhy(t *testing.T) {
+	for _, tc := range []struct{ kind, exposure, severity, want string }{
+		{"application", "served", "critical", "The web server may send this file"},
+		{"host", "served", "critical", "The web server may send this file"},
+		{"repository", "", "high", "Committed to the repository"},
+		{"repository", "", "low", "Committed to the repository"},
+		{"image", "", "high", "Built into the container image"},
+		{"application", "world_readable", "medium", "every account on this server can read"},
+		{"application", "", "low", "Kept in the application's configuration file"},
+		{"host", "", "critical", "Written into the application's code"},
+		{"application", "", "high", "Written into the application's code"},
+	} {
+		if got := store.LeakWhy(tc.kind, tc.exposure, tc.severity); !strings.HasPrefix(got, tc.want) && !strings.Contains(got, tc.want) {
+			t.Errorf("%+v: %q", tc, got)
+		}
+	}
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	s := store.New(testdb.New(t))
+	served := leak("a", "/var/www/html/.env", "critical")
+	served.Exposure = model.ExposureServed
+	r, err := s.Ingest(ctx, leakBatch("web-1", mid, true, served, leak("b", "/srv/app/.env", "low")), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ls, _, err := s.ListLeaks(ctx, store.LeakFilter{AssetID: r.AssetID, Severity: "critical,high"})
+	if err != nil || len(ls) != 1 || !strings.HasPrefix(ls[0].Why, "The web server may send") {
+		t.Fatalf("critical,high: %+v %v", ls, err)
+	}
+	if one, err := s.GetLeak(ctx, ls[0].ID); err != nil || one.Why != ls[0].Why {
+		t.Errorf("get: %+v %v", one, err)
+	}
+	sys, err := s.DetectSystemProblems(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range sys {
+		if p.Kind == "leak" && p.Detail["why"] != ls[0].Why {
+			t.Errorf("incident why: %v", p.Detail["why"])
+		}
+	}
+}

@@ -73,7 +73,8 @@ func TestLeaksAPI(t *testing.T) {
 	}
 	var mine leaks
 	if code := admin.do("GET", fmt.Sprintf("/api/v1/assets/%d/leaks", one.AssetID), nil, &mine); code != 200 || len(mine.Items) != 1 ||
-		mine.Items[0].Exposure != "served" || len(mine.Scans) != 1 || !mine.Scans[0].Complete {
+		mine.Items[0].Exposure != "served" || !strings.HasPrefix(mine.Items[0].Why, "The web server may send") || len(mine.Scans) != 1 ||
+		!mine.Scans[0].Complete {
 		t.Fatalf("asset leaks: %d %+v", code, mine)
 	}
 	if code := admin.do("GET", "/api/v1/leaks?severity=urgent", nil, nil); code != 400 {

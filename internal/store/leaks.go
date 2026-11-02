@@ -40,6 +40,50 @@ type Leak struct {
 	FirstSeen      time.Time  `json:"first_seen"`
 	LastSeen       time.Time  `json:"last_seen"`
 	ResolvedAt     *time.Time `json:"resolved_at"`
+	// Why says in one line why the leak has its severity and what to do,
+	// from where the file is (LeakWhy).
+	Why string `json:"why" db:"-"`
+}
+
+// Reasons a leak is graded as it is. Every place a leak is shown (the
+// dashboard, alerts, the API and MCP) takes its line from LeakWhy, so they
+// say the same thing.
+const (
+	whyServed = "The web server may send this file to anyone who asks for it (e.g. /.env). " +
+		"Rotate the key and move the file out of the document root."
+	whyRepository = "Committed to the repository: everyone with access to it, and every clone, has the key. " +
+		"Rotate it; deleting the file does not remove it from history."
+	whyImage = "Built into the container image: anyone who can pull the image has the key. " +
+		"Rotate it and pass it to the container when it starts instead."
+	whyWorldReadable = "In a configuration file every account on this server can read. " +
+		"Restrict it to the application's user (chmod 640)."
+	whyConfig = "Kept in the application's configuration file, where keys belong. " +
+		"Listed so you know where this key lives when you rotate it."
+	whyCode = "Written into the application's code, so it is in its repository too. Move it to configuration and rotate it."
+)
+
+// LeakWhy is the one-line reason for a leak's severity: what its exposure,
+// the kind of asset and the file mean, and what to do.
+func LeakWhy(assetKind, exposure, severity string) string {
+	switch {
+	case exposure == model.ExposureServed:
+		return whyServed
+	case assetKind == string(model.AssetRepository):
+		return whyRepository
+	case assetKind == string(model.AssetImage) || assetKind == string(model.AssetWorkload):
+		return whyImage
+	case exposure == model.ExposureWorldReadable:
+		return whyWorldReadable
+	case severity == "low":
+		return whyConfig
+	}
+	return whyCode
+}
+
+func withWhy(ls []Leak) {
+	for i := range ls {
+		ls[i].Why = LeakWhy(ls[i].AssetKind, ls[i].Exposure, ls[i].Severity)
+	}
 }
 
 const leakCols = `l.id, l.asset_id, a.name, a.kind, l.collector_id, l.fingerprint, l.path, l.line, l.rule, l.title, l.name,
@@ -101,7 +145,8 @@ func writeLeaks(ctx context.Context, tx pgx.Tx, assetID, collectionID int64, b *
 	return len(b.Leaks.Found), gone, nil
 }
 
-// LeakFilter selects leaks. Status is open (the default), resolved or all.
+// LeakFilter selects leaks. Status is open (the default), resolved or all;
+// Severity is one severity or several, comma-separated.
 type LeakFilter struct {
 	AssetID  int64
 	Status   string
@@ -122,7 +167,7 @@ func (s *Store) ListLeaks(ctx context.Context, f LeakFilter) ([]Leak, int64, err
 		return nil, 0, fmt.Errorf("status must be open, resolved or all: %w", ErrInvalid)
 	}
 	if f.Severity != "" {
-		w.add("l.severity = ?", f.Severity)
+		w.add("l.severity = ANY(?)", strings.Split(f.Severity, ","))
 	}
 	if f.AssetID > 0 {
 		w.add("l.asset_id = ?", f.AssetID)
@@ -147,6 +192,7 @@ func (s *Store) ListLeaks(ctx context.Context, f LeakFilter) ([]Leak, int64, err
 	for i, c := range page {
 		out[i], total = c.Leak, c.Total
 	}
+	withWhy(out)
 	return out, total, nil
 }
 
@@ -160,6 +206,7 @@ func (s *Store) GetLeak(ctx context.Context, id int64) (*Leak, error) {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
+	l.Why = LeakWhy(l.AssetKind, l.Exposure, l.Severity)
 	return &l, err
 }
 
@@ -213,7 +260,9 @@ func (s *Store) leakProblems(ctx context.Context) ([]SystemIncident, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT a.id, a.name, a.kind, a.owner_team_id, a.environment,
 		  count(*), count(*) FILTER (WHERE l.severity = 'critical'), count(*) FILTER (WHERE l.exposure = 'served'),
 		  array_agg(DISTINCT l.title), (array_agg(l.path || ':' || l.line ORDER BY
-		    array_position(ARRAY['critical','high'], l.severity), l.path, l.line))[1:$1]
+		    array_position(ARRAY['critical','high'], l.severity), l.path, l.line))[1:$1],
+		  (array_agg(l.exposure ORDER BY l.exposure = 'served' DESC, array_position(ARRAY['critical','high'], l.severity)))[1],
+		  (array_agg(l.severity ORDER BY l.exposure = 'served' DESC, array_position(ARRAY['critical','high'], l.severity)))[1]
 		FROM leaks l JOIN assets a ON a.id = l.asset_id
 		WHERE l.status = 'open' AND l.severity IN ('critical', 'high') AND a.merged_into IS NULL
 		GROUP BY a.id ORDER BY a.id`, maxLeakDetail)
@@ -228,7 +277,8 @@ func (s *Store) leakProblems(ctx context.Context) ([]SystemIncident, error) {
 		var team *int64
 		var n, critical, served int
 		var titles, files []string
-		if err := rows.Scan(&id, &name, &kind, &team, &env, &n, &critical, &served, &titles, &files); err != nil {
+		var exposure, severity string
+		if err := rows.Scan(&id, &name, &kind, &team, &env, &n, &critical, &served, &titles, &files, &exposure, &severity); err != nil {
 			return nil, err
 		}
 		sort.Strings(titles)
@@ -244,7 +294,7 @@ func (s *Store) leakProblems(ctx context.Context) ([]SystemIncident, error) {
 			pri = "P1"
 		}
 		det := map[string]any{"asset_id": id, "asset_name": name, "asset_kind": kind, "count": n, "critical": critical,
-			"served": served, "titles": titles, "files": files}
+			"served": served, "titles": titles, "files": files, "why": LeakWhy(kind, exposure, severity)}
 		if env != "" {
 			det["environments"] = []string{env}
 		}

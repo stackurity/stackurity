@@ -453,13 +453,15 @@ var tools = map[string]tool{
 	},
 	"list_leaks": {
 		description: "Keys, tokens and passwords found written in an asset's files (leaked keys), most severe first: the kind " +
-			"of key, the file and line, the setting it was assigned to, a masked preview and exposure (served: in a file the " +
-			"web server may send to anyone; world_readable: every account on the host can read it). The value itself is never " +
+			"of key, the file and line, the setting it was assigned to, a masked preview, exposure (served: in a file the " +
+			"web server may send to anyone; world_readable: every account on the host can read it) and why: one line saying why " +
+			"it has its severity and what to do; quote it to the user. Low and medium are mostly keys kept in configuration " +
+			"files, where they belong: ask for severity critical,high for what needs action. The value itself is never " +
 			"stored or shown. The fix is to rotate the key (revoke it and issue a new one), then remove it from the file. " +
 			"With asset_id, scans says whether that asset's last key scan was complete: no scan means its files were never checked.",
 		schema: obj(map[string]any{
 			"asset_id": num("Limit to one asset"),
-			"severity": str("One of critical, high, medium, low"),
+			"severity": str("Comma-separated: critical, high, medium, low"),
 			"status":   str("open (the default), resolved (gone or dismissed) or all"),
 			"limit":    num("At most this many (default 50, max 200)"),
 		}),
