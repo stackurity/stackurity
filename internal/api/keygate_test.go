@@ -133,6 +133,23 @@ func TestKeyGate(t *testing.T) {
 	if resp := bearerResp(e, ci, "GET", "/api/v1/auth/me", nil); resp.StatusCode != 200 {
 		t.Errorf("stackurity doctor (auth/me) without a key: %d", resp.StatusCode)
 	}
+	// Keyless CI exchanges its job's ID token (rejected here: not a token),
+	// and the apps' signed webhooks and callbacks answer for themselves
+	// (unsigned: refused by them, never key_required).
+	for _, path := range []string{
+		"/api/v1/ci/token",
+		"/api/v1/integrations/github/webhook",
+		"/api/v1/integrations/gitlab/webhook/1",
+		"/api/v1/integrations/teams/messages",
+		"/api/v1/integrations/slack/actions",
+		"/api/v1/integrations/slack/events",
+		"/api/v1/aws/callback",
+	} {
+		resp := anon.req("POST", path, bytes.NewReader([]byte(`{}`)), map[string]string{"Content-Type": "application/json", "X-Stackurity-CSRF": "1"})
+		if resp.StatusCode == 403 && errorCode(t, resp) == "key_required" {
+			t.Errorf("POST %s held back without a key", path)
+		}
+	}
 
 	// The free key, pasted in: everything opens, and the data is there.
 	now := time.Now().UTC().Truncate(time.Second)

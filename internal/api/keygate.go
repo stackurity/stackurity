@@ -18,6 +18,10 @@ import (
 //     is lost while the key is missing;
 //   - links from email (confirming, unsubscribing, preferences).
 //
+// The signed webhooks and callbacks of the Slack, Teams, GitHub and GitLab
+// apps and of AWS Launch Stack are routed outside /api/v1's group (each
+// verifies its own signature or token), so this gate never sees them.
+//
 // Everything else answers 403 key_required. AI assistants (/mcp and its
 // OAuth endpoints) wait too.
 func (s *Server) keyGate(next http.Handler) http.Handler {
@@ -52,8 +56,8 @@ func keyGateAllows(r *http.Request, p *Principal) bool {
 	switch path {
 	case "/meta", "/openapi.json":
 		return get
-	case "/setup", "/enroll", "/ingest", "/sbom/import":
-		return post
+	case "/setup", "/enroll", "/ingest", "/sbom/import", "/ci/token":
+		return post // /ci/token: keyless CI exchanges its ID token, then ingests
 	case "/remediation/renovate.json":
 		return get
 	}
