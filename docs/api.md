@@ -240,6 +240,54 @@ Starts a test sign-in; the result is shown under Settings → Single sign-on and
 
 The organisation's Assertion Consumer Service. A session it starts is pinned to the organisation.
 
+### `GET /auth/social/{provider}/start`
+
+**Who:** anyone · Stackurity Cloud · outside `/api/v1`
+
+"Continue with Google / Microsoft / GitHub" (`provider` is `google`, `microsoft` or `github`; only those in `GET /meta`'s `social` are configured). Sends the browser to the provider with a `state`, a PKCE challenge (S256) and, for Google and Microsoft, a `nonce`, stored for 10 minutes and bound to the browser by a cookie. Optional `return_to` as for `/saml/login`. Limited per address with the other sign-in steps.
+
+### `GET /auth/social/{provider}/callback`
+
+**Who:** the provider, through the browser that started · Stackurity Cloud · outside `/api/v1`
+
+The redirect address registered with the provider. Uses the `state` once, in the browser that started it, redeems the `code` with the PKCE verifier and checks the ID token (signature, issuer, audience, expiry, nonce) or, for GitHub, reads `/user` and `/user/emails`. Only a verified address is used (Google `email_verified`, Microsoft `xms_edov` from a work or school account, GitHub's verified primary address). Then: an identity already connected signs in to its account (its second factor first, when it has one: the page continues to `/?mfa=1`); an address that has an account is **not** connected by itself: a link is emailed to that address (`auth.social_link_emailed`); a new address continues to `/signup/social#<token>`. Disposable addresses are refused as at sign-up.
+
+### `POST /signup/social/preview`
+
+**Who:** anyone, in the browser that signed in with the provider · Stackurity Cloud
+
+`{"token"}` from `/signup/social#<token>`: `provider`, `provider_label`, `email`, `name`, `login` (GitHub) and `colleagues_domain` when people at the address's domain already use the service. 410 when it expired (30 minutes), was used, or is another browser's.
+
+### `POST /signup/social`
+
+**Who:** anyone, in the browser that signed in with the provider · Stackurity Cloud
+
+Finishes a sign-up through a provider: `token`, `name`, `organisation`, `accept_terms` and `email_notice_version`, checked as on the email form (no password, no challenge). Creates the account (without a password), the organisation on its trial and its cloud record exactly as `POST /signup/verify` does, connects the identity, and starts a session. Answers `workspace_id` and `next` (`/welcome/repositories` after a GitHub sign-up when the GitHub App is set up, otherwise `/`). The same per-address and service-wide limits as `POST /signup`.
+
+### `POST /auth/social/confirm`
+
+**Who:** anyone with the emailed link, in the browser that signed in with the provider · Stackurity Cloud
+
+`{"token"}` from the link emailed to an existing account's address: connects the provider's identity to that account and signs in, answering like `POST /auth/login` (`mfa_required` when the account has a second factor). 410 when expired (30 minutes), used, or opened in another browser. Audited as `auth.social_linked`.
+
+### `GET /auth/social`
+
+**Who:** a browser session · Stackurity Cloud
+
+The caller's sign-ins through providers: `providers` (each configured one with `connected`, and when connected its `email`, `login`, `created_at`, `last_used_at`) and `has_password`.
+
+### `POST /auth/social/{provider}/link`
+
+**Who:** a browser session · Stackurity Cloud
+
+Starts connecting a provider to the caller's account: `{"password"}` when the account has one. Answers `redirect_url` (the provider); its callback connects the identity it vouches for to this account (409 when that identity is connected to another account). Never for an instance administrator.
+
+### `DELETE /auth/social/{provider}`
+
+**Who:** a browser session · Stackurity Cloud
+
+Disconnects that provider. 409 when it is the only way into an account without a password. Audited as `auth.social_unlinked`.
+
 ### `POST /feedback`
 
 **Who:** any signed-in user (10 an hour)
@@ -320,7 +368,7 @@ The assistants a person has connected (`/assistants`) and the OAuth consent page
 
 **Who:** anyone
 
-Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project`. `app_list` means `POST /ingest` takes a host batch's `apps` (see [ObservationBatch](#observationbatch)); agents send it only to servers that list it (0.14). `host_images` means `POST /ingest` scopes `host-image` identities to their host and takes a host batch's `images`; the agent's `--docker` sends container images only to servers that list it. `kubernetes_report` means [`POST /kubernetes/report`](#post-kubernetesreport) exists; the Kubernetes reporter falls back to `POST /ingest` without it. `email_preferences: true` means this server sends bulk email (product updates, vulnerability news), so people have email preferences.
+Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project`. `app_list` means `POST /ingest` takes a host batch's `apps` (see [ObservationBatch](#observationbatch)); agents send it only to servers that list it (0.14). `host_images` means `POST /ingest` scopes `host-image` identities to their host and takes a host batch's `images`; the agent's `--docker` sends container images only to servers that list it. `kubernetes_report` means [`POST /kubernetes/report`](#post-kubernetesreport) exists; the Kubernetes reporter falls back to `POST /ingest` without it. `email_preferences: true` means this server sends bulk email (product updates, vulnerability news), so people have email preferences. On Stackurity Cloud, `social` lists the configured sign-in providers (`providers`: `id`, `label`, `start_url`) and, when the GitHub App is set up, `github_install_url`.
 
 ### `GET /openapi.json`
 
@@ -1093,7 +1141,7 @@ How incidents become messages, the route `events` and the webhook format are in 
 
 **Who:** security
 
-What the server offers: `slack_app` (Add to Slack), `platform_email` (`enabled`; when enabled `from`, `max_recipients` and `quota` with `per_minute`, `per_hour`, `per_day`), `secrets` (stored secrets work) and `base_url`.
+What the server offers: `slack_app` (Add to Slack), `jira_app` (Connect Jira: the Atlassian app is configured, with `STACKURITY_BASE_URL` and stored secrets), `teams_app` (Add to Teams), `platform_email` (`enabled`; when enabled `from`, `max_recipients` and `quota` with `per_minute`, `per_hour`, `per_day`), `secrets` (stored secrets work) and `base_url`.
 
 ### `GET /channels`
 
@@ -1105,13 +1153,13 @@ Notification channels.
 
 **Who:** admin
 
-Creates a channel: email, email sent by Stackurity (`stackurity_email`, hosted only), Slack, Teams, webhook, Jira, PagerDuty (`pagerduty`) or ServiceNow (`servicenow`); configuration fields are listed in [install.md](install.md#notifications). Slack channels made with Add to Slack come from `POST /integrations/slack/oauth` instead.
+Creates a channel: email, email sent by Stackurity (`stackurity_email`, hosted only), Slack, Teams, webhook, Jira, PagerDuty (`pagerduty`) or ServiceNow (`servicenow`); configuration fields are listed in [install.md](install.md#notifications). Slack channels made with Add to Slack come from `POST /integrations/slack/oauth` instead, and Teams channels made with Add to Teams (`config.teams_app`) from the Teams app's messaging endpoint; neither can be created here. A Jira channel with Connect Jira has `config.auth` `oauth`, `connection_id` and `cloud_id` (a site of that connection of this organisation, 400 otherwise) and no `secret_ref`; its `url` is set from the site.
 
 ### `PATCH /channels/{id}`
 
 **Who:** admin
 
-Changes a channel. Add to Slack channels (`config.slack_app`) can only be renamed and switched on or off.
+Changes a channel. Add to Slack channels (`config.slack_app`) and Add to Teams channels (`config.teams_app`) can only be renamed and switched on or off.
 
 ### `DELETE /channels/{id}`
 
@@ -1318,6 +1366,60 @@ The Slack app's Direct install URL ([slack-app.md](slack-app.md#installs-started
 **Who:** admin
 
 Finishes Add to Slack with `{"code", "state"}` from Slack's redirect to `/integrations/slack/oauth/callback`: 201 with `channel`, `return_to`, `team_name` and `slack_channel`. 400 `slack_state` for a state that is missing (an install started from Slack's side), unknown, used, expired (10 minutes) or someone else's, before Slack is called; 502 `slack_refused`.
+
+### `POST /integrations/teams/install`
+
+**Who:** admin
+
+Starts Add to Teams ([teams-app.md](teams-app.md)): answers `id`, `code` (such as `K7QWN-3HTRD`: single use, for 15 minutes, for the caller in this organisation; their earlier unused code stops working), `expires_at` and `install_url` (opens the app in Teams). Sending the code to the bot in a Teams channel connects that channel. 404 `not_configured` without the Teams app. Audited as `teams_install.start`.
+
+### `GET /integrations/teams/install/{id}`
+
+**Who:** admin
+
+What became of the caller's code: `status` `pending`, `expired`, `connected` (with `channel`, the new or revived Teams integration) or `failed`, and `expires_at`. 404 for another person's code.
+
+### `POST /integrations/teams/messages`
+
+**Who:** Microsoft (a Bot Framework token for the app)
+
+The Teams app's messaging endpoint (the Azure Bot's **Messaging endpoint**). Every request needs `Authorization: Bearer` with a JWT the Bot Framework signed (RS256, a key endorsed for `msteams`), issued by `https://api.botframework.com` for the app's ID, current, whose `serviceurl` claim is the activity's `serviceUrl`: otherwise 401 before anything is read. A `serviceUrl` that is not a Teams Bot Connector host is refused with 403. A message with a code connects its channel (the bot answers in the thread); the app removed from a team (`conversationUpdate` with the bot in `membersRemoved`, `teamDeleted`, `installationUpdate` `remove`) or a channel deleted (`channelDeleted`) switches the matching Teams integrations off in every organisation with a note. 404 without the Teams app.
+
+### `POST /integrations/jira/install`
+
+**Who:** admin
+
+Starts Connect Jira: `{"return_to", "connection_id"}` (a dashboard path; `connection_id` to reconnect a connection of this organisation, 404 otherwise); answers `url`, Atlassian's consent page with a single-use state bound to the caller and organisation (10 minutes). 404 `not_configured` without the Atlassian app ([jira-app.md](jira-app.md)).
+
+### `POST /integrations/jira/oauth`
+
+**Who:** admin
+
+Finishes Connect Jira with `{"code", "state"}` from Atlassian's redirect to `/integrations/jira/oauth/callback`: the code is exchanged, the Jira sites the grant reaches are read, and the tokens are stored sealed. 201 (200 when reconnecting) with `connection`, `return_to` and `reconnected`. 400 `jira_state` for a state that is missing, unknown, used, expired (10 minutes) or someone else's, before Atlassian is called; 400 `jira_no_site` when the grant reaches no Jira site; 502 `jira_refused`. Audited as `jira_connection.create` or `jira_connection.reconnect`.
+
+### `GET /integrations/jira/connections`
+
+**Who:** admin
+
+The organisation's Connect Jira connections: `id`, `sites` (each `id`, the cloud id, `name` and `url`), `scopes`, `status` (`active`, or `reconnect_needed` after Atlassian refused the refresh token), `status_reason`, `connected_by`, `connected_at` and `refreshed_at`. Tokens are never returned.
+
+### `DELETE /integrations/jira/connections/{id}`
+
+**Who:** admin
+
+Disconnects: deletes the connection and its tokens, and switches off the Jira channels that use it with a note. Answers `channels_disabled` and `revoke_url` (Atlassian has no API to revoke a grant; the person removes the app from their Atlassian account there). Audited as `jira_connection.delete`.
+
+### `GET /integrations/jira/connections/{id}/projects`
+
+**Who:** admin
+
+The projects of one of the connection's sites (`?site=` the cloud id, optional `q`), each `key` and `name`, read from Jira with the connection, at most 500. 404 for a site or connection that is not this organisation's; 409 `jira_reconnect` when the connection needs reconnecting; 502 when Jira refuses.
+
+### `GET /integrations/jira/connections/{id}/projects/{key}`
+
+**Who:** admin
+
+A project's `issue_types` (`name`, `subtask`), `statuses` by issue type (`name`, `category`: `new`, `indeterminate` or `done`) and the site's `priorities`, to pick a channel's issue type, `resolve_transition` and `priorities`. `?site=` as above.
 
 ### `POST /integrations/slack/events`
 
@@ -1936,7 +2038,7 @@ Assets added through the flow land in its project: the install command's enrollm
 
 ## Invitations
 
-An invitation lets someone join the organisation with what they may see: an organisation-wide role (every project and asset), or roles on chosen projects and assets (migration `0079`, table `invitation_grants`). Invitations sent before that name one project and a role, and are still accepted as they are. The link is `https://<server>/invite#<token>`: the token is in the fragment, which browsers do not send to servers or in `Referer`, and travels to the API only in request bodies.
+An invitation lets someone join the organisation with what they may see: an organisation-wide role (every project and asset), or roles on chosen projects and assets (migration `0081`, table `invitation_grants`). Invitations sent before that name one project and a role, and are still accepted as they are. The link is `https://<server>/invite#<token>`: the token is in the fragment, which browsers do not send to servers or in `Referer`, and travels to the API only in request bodies.
 
 - **Tokens** are 32 random bytes, stored only as their SHA-256, single use, valid for 7 days, and can be withdrawn. A person has one open invitation in an organisation: inviting them again withdraws the open one (`replaced`).
 - **Rate limits**: following links (preview and accept together) 10 a minute per address; sending invitations 30 an hour per organisation.

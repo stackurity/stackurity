@@ -5202,6 +5202,12 @@ div.assistant-card {
   margin: 4px 0 0;
 }
 
+/* "Continue with Google / Microsoft / GitHub" on the sign-in and sign-up pages. */
+.social-buttons {
+  display: grid;
+  gap: 8px;
+}
+
 /* Settings ▸ Integrations: GitHub accounts connected through the GitHub App. */
 .int-gh-row {
   display: flex;

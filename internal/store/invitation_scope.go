@@ -14,7 +14,7 @@ import (
 
 // Invitations say what the person will see, like Add user: an
 // organisation-wide role, or grants on chosen projects and assets
-// (invitation_grants, migration 0079). The grants are checked when the
+// (invitation_grants, migration 0081). The grants are checked when the
 // invitation is made and again when it is accepted.
 
 // InvitationGrant is one project or asset an invitation gives access to.
@@ -35,7 +35,7 @@ type InvitationGrant struct {
 }
 
 // InvitationTeam is a team the invitation adds the person to (migration
-// 0080). Membership gives the team's access, listed in Access as it is
+// 0082). Membership gives the team's access, listed in Access as it is
 // now (the team's grants that can be given), so the person can see what
 // they will get through it.
 type InvitationTeam struct {
