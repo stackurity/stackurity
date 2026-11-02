@@ -55,6 +55,7 @@ import { JobsPage } from "./pages/settings/Jobs";
 import { NotFound } from "./pages/NotFound";
 import { SearchPage } from "./pages/Search";
 import { IssuesPage } from "./pages/Findings";
+import { LeaksPage } from "./pages/Leaks";
 import { FindingDetailPage } from "./pages/FindingDetail";
 import { IntelligencePage } from "./pages/Intelligence";
 import { IncidentsPage } from "./pages/Incidents";
@@ -217,6 +218,7 @@ export function App() {
         <Route path="help/:topic" element={help} />
         <Route path="fixes" element={<FixesPage />} />
         <Route path="fixes/issues" element={<IssuesPage />} />
+        <Route path="fixes/leaks" element={<LeaksPage />} />
         <Route path="fixes/automatic" element={<AutomaticFixesPage />} />
         <Route path="fixes/:id" element={<FixGroupDetailPage />} />
         <Route path="action-plan" element={<Moved to={() => "/fixes"} />} />
