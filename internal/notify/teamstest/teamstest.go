@@ -101,7 +101,7 @@ func (f *Fake) ServiceURL() string { return f.Srv.URL + "/amer/" }
 func (f *Fake) App() *notify.TeamsApp {
 	return &notify.TeamsApp{AppID: AppID, Password: Password, OpenIDURL: f.Srv.URL + "/v1/.well-known/openidconfiguration",
 		LoginURL: f.Srv.URL, HTTP: f.Srv.Client(),
-		ServiceURLAllowed: func(u string) bool { return strings.HasPrefix(u, f.Srv.URL+"/") }}
+		ServiceHosts: map[string]string{f.Srv.Listener.Addr().String(): f.Srv.URL + "/"}}
 }
 
 // Claims of a token the fake mints.

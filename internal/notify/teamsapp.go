@@ -65,25 +65,40 @@ const (
 // as /amer/ or /emea/), GCC, GCC High and DoD. Messages and replies go to
 // these hosts only, over HTTPS on port 443: a serviceUrl is part of the
 // activity, and a forged one must not receive the app's access token.
-var teamsServiceHosts = map[string]bool{
-	"smba.trafficmanager.net":            true,
-	"smba.infra.gcc.teams.microsoft.com": true,
-	"smba.infra.gov.teams.microsoft.us":  true,
-	"smba.infra.dod.teams.microsoft.us":  true,
+var teamsServiceHosts = map[string]string{
+	"smba.trafficmanager.net":            "https://smba.trafficmanager.net/",
+	"smba.infra.gcc.teams.microsoft.com": "https://smba.infra.gcc.teams.microsoft.com/",
+	"smba.infra.gov.teams.microsoft.us":  "https://smba.infra.gov.teams.microsoft.us/",
+	"smba.infra.dod.teams.microsoft.us":  "https://smba.infra.dod.teams.microsoft.us/",
 }
 
 // TeamsServiceURLAllowed reports whether u is a Bot Connector address
 // Microsoft documents for Teams: https, one of teamsServiceHosts, the
 // default port, no credentials, query or fragment.
 func TeamsServiceURLAllowed(raw string) bool {
+	_, _, ok := serviceOrigin(raw, nil)
+	return ok
+}
+
+// serviceOrigin splits an allowed serviceUrl into the origin it is sent to,
+// taken from the allow-list (hosts: host -> "scheme://host/"; nil:
+// teamsServiceHosts, https on port 443 only), and its path without the
+// leading and trailing "/". Requests are built from that origin, never from
+// the activity's text.
+func serviceOrigin(raw string, hosts map[string]string) (origin, path string, ok bool) {
 	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "https" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" {
-		return false
+	if err != nil || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" {
+		return "", "", false
 	}
-	if p := u.Port(); p != "" && p != "443" {
-		return false
+	if hosts != nil {
+		origin, ok = hosts[strings.ToLower(u.Host)]
+	} else if p := u.Port(); u.Scheme == "https" && (p == "" || p == "443") {
+		origin, ok = teamsServiceHosts[strings.ToLower(u.Hostname())]
 	}
-	return teamsServiceHosts[strings.ToLower(u.Hostname())]
+	if !ok || !strings.HasPrefix(origin, u.Scheme+"://") {
+		return "", "", false
+	}
+	return origin, strings.Trim(u.EscapedPath(), "/"), true
 }
 
 // TeamsApp is the bot's configuration.
@@ -103,13 +118,14 @@ type TeamsApp struct {
 	// organisation's catalogue gets its own id); empty uses AppID.
 	InstallURL string
 
-	// Tests: Microsoft's endpoints, the HTTP client, the clock and which
-	// serviceUrls are allowed (nil: TeamsServiceURLAllowed).
-	OpenIDURL         string
-	LoginURL          string
-	HTTP              *http.Client
-	Now               func() time.Time
-	ServiceURLAllowed func(string) bool
+	// Tests: Microsoft's endpoints, the HTTP client, the clock and the
+	// serviceUrl hosts allowed, as host[:port] -> "scheme://host[:port]/"
+	// (nil: teamsServiceHosts).
+	OpenIDURL    string
+	LoginURL     string
+	HTTP         *http.Client
+	Now          func() time.Time
+	ServiceHosts map[string]string
 
 	mu       sync.Mutex
 	keys     map[string]teamsKey
@@ -259,10 +275,8 @@ var teamsHTTP = &http.Client{
 
 // AllowsServiceURL reports whether replies and messages may go to u.
 func (a *TeamsApp) AllowsServiceURL(u string) bool {
-	if a.ServiceURLAllowed != nil {
-		return a.ServiceURLAllowed(u)
-	}
-	return TeamsServiceURLAllowed(u)
+	_, _, ok := serviceOrigin(u, a.ServiceHosts)
+	return ok
 }
 
 // InstallLink opens the app in Teams, where the person adds it to a team.
@@ -585,14 +599,18 @@ func (a *TeamsApp) Reply(ctx context.Context, serviceURL, conversationID, replyT
 }
 
 func (a *TeamsApp) connector(ctx context.Context, serviceURL, path string, body any) error {
-	if !a.AllowsServiceURL(serviceURL) {
+	origin, base, ok := serviceOrigin(serviceURL, a.ServiceHosts)
+	if !ok {
 		return &PermanentError{Err: ErrTeamsServiceURL}
 	}
 	b, err := json.Marshal(body)
 	if err != nil {
 		return err
 	}
-	u := strings.TrimRight(serviceURL, "/") + path
+	u := origin + base + path
+	if base == "" {
+		u = origin + strings.TrimPrefix(path, "/")
+	}
 	for try := 0; ; try++ {
 		token, err := a.accessToken(ctx, try > 0)
 		if err != nil {

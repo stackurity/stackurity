@@ -273,13 +273,17 @@ func TestTeamsProactiveSend(t *testing.T) {
 	before := len(f.PostsTo(""))
 	_, tokensBefore := f.Counts()
 	strict := f.App()
-	strict.ServiceURLAllowed = nil
+	strict.ServiceHosts = nil
 	err = strict.PostToChannel(ctx, notify.TeamsTarget{ServiceURL: f.ServiceURL(), ChannelID: "19:abc@thread.tacv2"}, notify.TeamsActivity(msg))
 	if !errors.Is(err, notify.ErrTeamsServiceURL) || !errors.As(err, &pe) {
 		t.Fatalf("serviceUrl off the allow-list: %v", err)
 	}
 	if err := strict.Reply(ctx, "https://evil.example/", "19:abc", "", notify.TeamsText("hi")); !errors.Is(err, notify.ErrTeamsServiceURL) {
 		t.Fatalf("reply to a forged serviceUrl: %v", err)
+	}
+	// The same with the fake's host allowed: another host is still refused.
+	if err := f.App().Reply(ctx, "https://127.0.0.2:1/amer/", "19:abc", "", notify.TeamsText("hi")); !errors.Is(err, notify.ErrTeamsServiceURL) {
+		t.Fatalf("reply to a host off the test allow-list: %v", err)
 	}
 	if _, tokens := f.Counts(); len(f.PostsTo("")) != before || tokens != tokensBefore {
 		t.Fatal("something was sent for a serviceUrl off the allow-list")
