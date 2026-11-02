@@ -261,6 +261,9 @@ func (s *Server) Handler() http.Handler {
 			r.Get("/auth/email-preferences", s.myEmailPreferences)
 			r.Put("/auth/email-preferences", s.setMyEmailPreferences)
 			s.mfaAccountRoutes(r)
+			if editionAccountRoutes != nil {
+				editionAccountRoutes(s, r)
+			}
 			r.Post("/feedback", s.sendFeedback)
 			// Linking the caller's Slack account (slack.go).
 			r.Get("/slack/links", s.listSlackLinks)

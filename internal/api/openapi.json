@@ -5517,84 +5517,6 @@
     }
    }
   },
-  "/integrations/{id}/images": {
-   "get": {
-    "operationId": "get_integrations_id_images",
-    "summary": "Images a container registry integration tracks",
-    "description": "The images (digests) a container registry integration chose, stopped tracking, or found removed\n\nRole: engineer",
-    "tags": [
-     "Integrations"
-    ],
-    "x-stackurity-role": "engineer",
-    "responses": {
-     "2XX": {
-      "description": "Success",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
-     },
-     "4XX": {
-      "$ref": "#/components/responses/Error"
-     },
-     "5XX": {
-      "$ref": "#/components/responses/Error"
-     }
-    },
-    "parameters": [
-     {
-      "name": "id",
-      "in": "path",
-      "required": true,
-      "schema": {
-       "type": "string"
-      }
-     }
-    ]
-   }
-  },
-  "/integrations/registry/discover": {
-   "post": {
-    "operationId": "post_integrations_registry_discover",
-    "summary": "List a container registry's repositories",
-    "description": "List the repositories of a registry before connecting it, with whether the configuration keeps each; the secret is used, never returned\n\nRole: admin",
-    "tags": [
-     "Integrations"
-    ],
-    "x-stackurity-role": "admin",
-    "requestBody": {
-     "required": true,
-     "content": {
-      "application/json": {
-       "schema": {
-        "type": "object"
-       }
-      }
-     }
-    },
-    "responses": {
-     "2XX": {
-      "description": "Success",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
-     },
-     "4XX": {
-      "$ref": "#/components/responses/Error"
-     },
-     "5XX": {
-      "$ref": "#/components/responses/Error"
-     }
-    }
-   }
-  },
   "/inventory": {
    "get": {
     "operationId": "get_inventory",
@@ -10375,6 +10297,337 @@
        "application/octet-stream": {
         "schema": {
          "type": "string"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/signup/social/preview": {
+   "post": {
+    "operationId": "post_signup_social_preview",
+    "summary": "Who a provider vouched for, before finishing a sign-up (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. `{\"token\"}` from `/signup/social#<token>`, in the browser that signed in with Google, Microsoft or GitHub: the verified `email`, `name`, `provider` and `colleagues_domain`; 410 when expired, used or another browser's\n\nRole: none",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "none",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/signup/social": {
+   "post": {
+    "operationId": "post_signup_social",
+    "summary": "Finish a sign-up through Google, Microsoft or GitHub (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. `token`, `name`, `organisation`, `accept_terms`, `email_notice_version`: creates the account (no password), the organisation on its trial, connects the identity and starts a session; answers `workspace_id` and `next`\n\nRole: none",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "none",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/social/confirm": {
+   "post": {
+    "operationId": "post_auth_social_confirm",
+    "summary": "Connect a provider to an existing account from the emailed link (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. `{\"token\"}` from the link emailed to the account's address, in the browser that signed in with the provider: connects it and signs in (`mfa_required` when the account has a second factor)\n\nRole: none",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "none",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/social": {
+   "get": {
+    "operationId": "get_auth_social",
+    "summary": "Your sign-ins through Google, Microsoft or GitHub (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. Each configured provider with `connected`, `email`, `login`, `created_at`, `last_used_at`; and `has_password`\n\nRole: any signed-in user (browser session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (browser session)",
+    "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/social/{provider}/link": {
+   "post": {
+    "operationId": "post_auth_social_link",
+    "summary": "Start connecting a provider to your account (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. `{\"password\"}` when the account has one; answers `redirect_url` (the provider). Never for an instance administrator\n\nRole: any signed-in user (browser session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (browser session)",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "provider",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "enum": [
+        "google",
+        "microsoft",
+        "github"
+       ]
+      }
+     }
+    ]
+   }
+  },
+  "/auth/social/{provider}": {
+   "delete": {
+    "operationId": "delete_auth_social",
+    "summary": "Disconnect a provider from your account (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. 409 when it is the only way into an account without a password\n\nRole: any signed-in user (browser session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (browser session)",
+    "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "provider",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "enum": [
+        "google",
+        "microsoft",
+        "github"
+       ]
+      }
+     }
+    ]
+   }
+  },
+  "/integrations/{id}/images": {
+   "get": {
+    "operationId": "get_integrations_id_images",
+    "summary": "Images a container registry integration tracks",
+    "description": "The images (digests) a container registry integration chose, stopped tracking, or found removed\n\nRole: engineer",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "engineer",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ]
+   }
+  },
+  "/integrations/registry/discover": {
+   "post": {
+    "operationId": "post_integrations_registry_discover",
+    "summary": "List a container registry's repositories",
+    "description": "List the repositories of a registry before connecting it, with whether the configuration keeps each; the secret is used, never returned\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
         }
        }
       }
