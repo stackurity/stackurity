@@ -438,3 +438,38 @@ func TestAskOtherPersonGets404(t *testing.T) {
 		t.Errorf("the owner's conversation changed: %d %+v", code, mine.Messages)
 	}
 }
+
+// A person who switches organisation while Ask is answering: the tools
+// still running for the question are refused, so the other organisation's
+// data never lands in this organisation's conversation.
+func TestAskWorkspaceSwitchMidAnswer(t *testing.T) {
+	fake := asktest.New(t, asktest.Reply{Tools: []asktest.Tool{{ID: "t1", Name: "list_assets"}}}, asktest.Reply{Text: "done"})
+	e := newEnvWith(t, withAsk(t, fake, nil))
+	ctx := context.Background()
+	e.user("admin@x.io", auth.RoleAdmin)
+	s := e.login("admin@x.io")
+	betaWS, betaAdmin, err := e.st.CreateWorkspace(ctx, "Beta Corp", "", "beta-admin@x.io", "", pw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.st.AddMember(tenant.WithWorkspace(ctx, betaWS.ID), "admin@x.io", "", auth.RoleViewer, ""); err != nil {
+		t.Fatal(err)
+	}
+	e.populate(t, betaWS.ID, "betasecret", e.login("beta-admin@x.io"), betaAdmin.ID)
+	conv := askReady(t, e, s)
+	fake.OnRequest = func(n int) {
+		if n == 1 { // the other tab switches organisation
+			if _, err := e.st.Pool.Exec(tenant.System(ctx), `UPDATE sessions SET workspace_id = $1
+				WHERE user_id = (SELECT id FROM users WHERE email = 'admin@x.io')`, betaWS.ID); err != nil {
+				t.Error(err)
+			}
+		}
+	}
+	if _, evs, raw := askQ(t, s, conv, "List my assets", nil, nil); lastEvent(evs).Name != "done" {
+		t.Fatalf("ask: %s", raw)
+	}
+	results := string(fake.Requests()[1].Body)
+	if !strings.Contains(results, `"is_error":true`) || strings.Contains(results, "betasecret") {
+		t.Errorf("the tool read another organisation: %s", results)
+	}
+}

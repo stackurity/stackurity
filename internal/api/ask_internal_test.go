@@ -10,7 +10,7 @@ import (
 // askAPI only reads, and only the paths the read-only tools use: anything
 // else is refused before it reaches the router.
 func TestAskAPIRefusesBeforeTheRouter(t *testing.T) {
-	a := &askAPI{session: "secret-session-value"} // no server: any call that got through would panic
+	a := &askAPI{session: "secret-session-value", workspace: 1} // no server: any call that got through would panic
 	for _, c := range []struct{ method, path string }{
 		{"POST", "/api/v1/findings/1/snooze"},
 		{"PUT", "/api/v1/findings?x=1"},

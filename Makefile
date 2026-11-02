@@ -9,7 +9,7 @@ EE_FLAGS = -tags $(EE_TAGS) -overlay ee-overlay.json
 # First-party plugins, built next to the server and shipped in the image.
 PLUGINS = aws-managed kubernetes
 
-.PHONY: build plugins web test lint image clean ee-overlay build-ee test-ee image-ee vulncheck scan-image
+.PHONY: build plugins web test lint image clean ee-overlay build-ee test-ee image-ee vulncheck scan-image teams-app-package
 
 build: web plugins
 	CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$(VERSION)" -o bin/stackurity ./cmd/stackurity
@@ -22,6 +22,11 @@ web:
 
 test:
 	go test ./...
+
+# The Teams app package (docs/teams-app.md):
+#   make teams-app-package TEAMS_APP_ID=<Microsoft App ID> BASE_URL=https://stackurity.example.com
+teams-app-package:
+	TEAMS_APP_ID="$(TEAMS_APP_ID)" BASE_URL="$(BASE_URL)" scripts/teams-app-package.sh stackurity-teams-app.zip
 
 lint:
 	test -z "$$(gofmt -l .)"

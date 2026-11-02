@@ -43,6 +43,9 @@ type Reply struct {
 	Usage      Usage
 	// Status answers with this HTTP error instead.
 	Status int
+	// Hang: after Text, keep the stream open without ending the message
+	// until the client goes away (a person pressing Stop mid-answer).
+	Hang bool
 }
 
 // Request is one request the server received.
@@ -58,6 +61,8 @@ type Server struct {
 	mu      sync.Mutex
 	replies []Reply
 	reqs    []Request
+	// OnRequest, when set, runs before request n (from 1) is answered.
+	OnRequest func(n int)
 }
 
 // New starts a fake API that answers with replies in order; it fails the
@@ -74,7 +79,11 @@ func New(t testing.TB, replies ...Reply) *Server {
 			rep = &s.replies[0]
 			s.replies = s.replies[1:]
 		}
+		n, hook := len(s.reqs), s.OnRequest
 		s.mu.Unlock()
+		if hook != nil {
+			hook(n)
+		}
 		if r.URL.Path != "/v1/messages" || r.Method != http.MethodPost {
 			http.Error(w, `{"type":"error","error":{"type":"not_found_error","message":"no such path"}}`, 404)
 			return
@@ -99,7 +108,7 @@ func New(t testing.TB, replies ...Reply) *Server {
 			fmt.Fprintf(w, `{"type":"error","error":{"type":"overloaded_error","message":"scripted %d"}}`, rep.Status)
 			return
 		}
-		write(w, model, len(s.reqs), *rep)
+		write(w, r, model, len(s.reqs), *rep)
 	}))
 	t.Cleanup(hs.Close)
 	s.URL = hs.URL
@@ -131,7 +140,7 @@ func (s *Server) Bodies() []map[string]any {
 	return out
 }
 
-func write(w http.ResponseWriter, model string, n int, r Reply) {
+func write(w http.ResponseWriter, req *http.Request, model string, n int, r Reply) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("request-id", fmt.Sprintf("req_test_%d", n))
 	ev := func(typ string, v any) {
@@ -182,6 +191,13 @@ func write(w http.ResponseWriter, model string, n int, r Reply) {
 		}
 		if r.Text != "" {
 			text(r.Text)
+		}
+		if r.Hang {
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+			<-req.Context().Done()
+			return
 		}
 		for _, t := range r.Tools {
 			in := t.Input

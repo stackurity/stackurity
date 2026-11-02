@@ -457,7 +457,7 @@ func (s *Server) askQuestion(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cookie, _ := r.Cookie(sessionCookie)
-	api := &askAPI{s: s, session: cookie.Value, remote: r.RemoteAddr, project: r.Header.Get("X-Stackurity-Project")}
+	api := &askAPI{s: s, session: cookie.Value, remote: r.RemoteAddr, project: r.Header.Get("X-Stackurity-Project"), workspace: p.Workspace}
 	page := s.askPage(ctx, api, in.Page)
 	project := ""
 	if p.Project > 0 {
@@ -602,8 +602,12 @@ type viaAskKey struct{}
 
 // viaAsk reports whether the request is a tool of Ask Stackurity calling
 // the API in process. Only askAPI sets it; nothing from outside can.
-func viaAsk(ctx context.Context) bool {
-	v, _ := ctx.Value(viaAskKey{}).(bool)
+func viaAsk(ctx context.Context) bool { return askWorkspace(ctx) > 0 }
+
+// askWorkspace is the organisation the question was asked in, for a tool
+// call of Ask Stackurity (0: not one).
+func askWorkspace(ctx context.Context) int64 {
+	v, _ := ctx.Value(viaAskKey{}).(int64)
 	return v
 }
 
@@ -621,6 +625,10 @@ type askAPI struct {
 	session string
 	remote  string
 	project string
+	// workspace is the organisation the question was asked in: a tool
+	// call is refused if the session has since switched to another one,
+	// so one organisation's data never lands in another's conversation.
+	workspace int64
 }
 
 var errAskPath = errors.New("Ask Stackurity cannot read that")
@@ -629,7 +637,10 @@ func (a *askAPI) Do(ctx context.Context, method, path string, body io.Reader, _ 
 	if method != http.MethodGet || body != nil || strings.Contains(path, "..") || !askPathAllowed(path) {
 		return errAskPath
 	}
-	ctx = context.WithValue(context.WithValue(ctx, chi.RouteCtxKey, nil), viaAskKey{}, true)
+	if a.workspace <= 0 {
+		return errAskPath
+	}
+	ctx = context.WithValue(context.WithValue(ctx, chi.RouteCtxKey, nil), viaAskKey{}, a.workspace)
 	req, err := http.NewRequestWithContext(ctx, method, path, nil)
 	if err != nil {
 		return errAskPath
