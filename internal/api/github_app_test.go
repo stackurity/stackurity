@@ -1198,6 +1198,15 @@ func TestGitHubAppLimits(t *testing.T) {
 	if _, err := e.st.Pool.Exec(tenant.System(context.Background()), `DELETE FROM rate_limits`); err != nil {
 		t.Fatal(err)
 	}
+	// The limit counts in fixed one-minute windows of the database's clock:
+	// start both scans early in one, or the second may land in the next.
+	var sec float64
+	if err := e.st.Pool.QueryRow(tenant.System(context.Background()), `SELECT (extract(epoch FROM now()) % 60)::float8`).Scan(&sec); err != nil {
+		t.Fatal(err)
+	}
+	if sec > 45 {
+		time.Sleep(time.Duration((61 - sec) * float64(time.Second)))
+	}
 	if err := f.runner.Run(ctx, shop); err != nil {
 		t.Fatal(err)
 	}
