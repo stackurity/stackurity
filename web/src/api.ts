@@ -170,6 +170,8 @@ export interface User {
   /** Their own grants in this workspace (not their teams'). */
   project_grants?: number;
   asset_grants?: number;
+  /** Their teams that can see something: access through team membership. */
+  access_teams?: string[] | null;
 }
 
 /** How a member reaches a workspace's data. */
@@ -526,6 +528,8 @@ export interface Me {
   password_change_required?: boolean;
   /** Set when the session's workspace requires its own single sign-on, which this session did not use; workspace is then null. */
   sso_required?: SSORequired;
+  /** People join by invitation only (Stackurity Cloud): Add user is refused, Invite is offered. */
+  invite_only?: boolean;
 }
 
 export interface SSORequired {
@@ -1070,7 +1074,10 @@ export interface Team {
   email: string;
   created_at: string;
   members: number[] | null;
+  /** Assets whose owner team this is: alerts route to it; it gives no access. */
   asset_count: number;
+  /** What its members see through it ("Can see"). */
+  access?: InvitationGrant[];
 }
 
 export interface ConflictAsset {
@@ -3179,13 +3186,48 @@ export interface FirstResult {
   fixes_now: number;
 }
 
+/** One project (and its assets, including later ones) or asset an invitation gives access to. */
+export interface InvitationGrant {
+  /** "team": only in dropped, a team deleted before the link was used. */
+  kind: "project" | "asset" | "team";
+  project_id: number | null;
+  asset_id: number | null;
+  role: UserRole;
+  /** The current name; as it was when invited if it has been deleted since. */
+  name: string;
+  /** Accepting now would give it. */
+  available: boolean;
+  /** Why not: archived, merged, deleted, or changed (while accepting). */
+  unavailable?: "archived" | "merged" | "deleted" | "changed";
+}
+
+/**
+ * "organisation": role on all projects and assets. "specific": grants.
+ * "project": one project and role, from before invitations had grants.
+ */
+/** A team an invitation adds the person to, with what it can see now. */
+export interface InvitationTeam {
+  team_id: number | null;
+  name: string;
+  /** False when the team was deleted since. */
+  available: boolean;
+  access: InvitationGrant[];
+}
+
+export type InvitationScope = "organisation" | "specific" | "project";
+
 export interface Invitation {
   id: number;
   email: string;
   name: string;
+  /** Only on invitations made before grants existed (scope "project"). */
   project_id: number | null;
   project_name: string;
-  role: UserRole;
+  /** Organisation-wide role (or the old single project's); empty with grants. */
+  role: UserRole | "";
+  scope: InvitationScope;
+  grants: InvitationGrant[];
+  teams?: InvitationTeam[];
   prefix: string;
   created_at: string;
   expires_at: string;
@@ -3201,9 +3243,12 @@ export interface InvitationCreated {
   emailed?: boolean;
   link?: string;
   email_problem?: string;
-  /** The person was already a member: the project role was given at once. */
+  /** The person was already a member: the grants were given at once. */
   granted?: boolean;
   grant?: Grant;
+  grants?: Grant[];
+  /** Their earlier open invitations, now replaced (withdrawn). */
+  replaced?: number[];
 }
 
 /** POST /invitations/preview, for the person following the link. */
@@ -3211,11 +3256,33 @@ export interface InvitationPreview {
   email: string;
   name: string;
   workspace: string;
+  /** The project, when the invitation names exactly one. */
   project: string;
-  role: UserRole;
+  /** Organisation-wide role, or the role on that one project; empty otherwise. */
+  role: UserRole | "";
   invited_by: string;
   expires_at: string;
   account_exists: boolean;
+  scope: InvitationScope;
+  grants: InvitationGrant[];
+  teams?: InvitationTeam[];
+  /** False when every project and asset it named was archived, merged or deleted since. */
+  usable: boolean;
+}
+
+/** POST /invitations/accept. */
+export interface InvitationAccepted {
+  workspace_id: number;
+  /** The project to open (the invitation's only one), or 0. */
+  project_id: number;
+  scope: InvitationScope;
+  grants: number;
+  /** How many teams they joined. */
+  teams?: number;
+  /** What the invitation named but could not give any more. */
+  dropped: InvitationGrant[];
+  account_created: boolean;
+  joined: boolean;
 }
 
 /** A Slack account linked to the signed-in person (GET /slack/links). */

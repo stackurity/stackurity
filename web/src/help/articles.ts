@@ -25,7 +25,7 @@ export const ARTICLES: Article[] = [
           "**Wait for it to report.** The page shows what has arrived, how many packages, and when the check is done.",
           "**Read the first result.** For example \"We found 1,676 packages on commmerceblog. 3 fixes matter now.\", with links to them.",
           "**Turn on notifications.** Slack (**Add to Slack**, or a webhook) or email. Choose what to send right away (urgent issues, all new issues, or nothing) and a daily or weekly summary (or none). They cover this project only; fine-tune them later in [Settings, Integrations](/settings/integrations).",
-          "**Invite people.** By email, with a role on this project. They get a link that works once, for 7 days.",
+          "**Invite people.** By email: they see this project with the permission you choose (or more, if you add it). They get a link that works once, for 7 days.",
         ],
       },
       { h: "A quiet first scan" },
@@ -36,9 +36,11 @@ export const ARTICLES: Article[] = [
       {
         list: [
           "With an email channel under **Settings ▸ Notifications**, the link is emailed through that mail server. Without one, the link is shown once for you to copy and send.",
-          "Someone new creates their account from the link and sees only the project, with the role you chose. Someone with an account signs in first, as the invited email address.",
-          "Accepting never changes a role someone already has in your organisation, and keeps a higher role they already had on the project.",
-          "The project's page under **Settings ▸ Projects and access** lists its invitations, and can withdraw one that was not used yet.",
+          "An invitation says what they will see, like **Add user**: all projects and assets with one permission, or specific projects and assets, each with its own. A project's **Invite** starts with that project; **Settings ▸ Users ▸ Invite by email** starts with nothing chosen.",
+          "Someone new creates their account from the link and sees what the invitation gives. Someone with an account signs in first, as the invited email address. Someone already in your organisation gets the access at once, without a link.",
+          "Accepting never changes a role someone already has in your organisation, and keeps a higher role they already had on a project or asset.",
+          "What it gives is checked again when they accept: a project archived, or an asset deleted or merged, since you sent it is skipped, and the page tells them. If nothing is left, the link does not work until you send a new invitation.",
+          "Inviting someone again replaces their open invitation. **Settings ▸ Users** lists every invitation, and a project's page the ones that include it; either can withdraw one that was not used yet.",
         ],
       },
       { note: "Running the server yourself? See the install guide (docs/install.md) for the first start, the setup token and backups." },
@@ -1707,13 +1709,23 @@ jobs:
           "**Add user** creates the person and all of their access together; if any part is refused, nothing is created. The list's **Can see** column shows it at a glance, such as \"All projects — View and edit\" or \"2 projects, 3 assets\".",
         ],
       },
+      { h: "Teams" },
+      {
+        list: [
+          "**Members see what their team can see.** A team's **Can see** is a list of projects (all their assets, including later ones) and chosen assets, each with a permission; never all projects. Someone added to the team gets it from their next page; someone removed loses it the same way.",
+          "**Owning is not seeing.** The team that **owns** an asset gets that asset's alerts and incidents, and routes can follow it. It gives the team's members no access to it: give the team access under **Can see** as well if they should see it.",
+          "**Add user** and **Invite by email** have an optional **Add to teams**, which shows what each team can see. With **Specific projects or assets**, a team that can see something is enough on its own; a team that can see nothing is not. The preview says what comes from a team (\"Via team Web: Shop — View and edit\"), and the Users list shows it (\"via Web\").",
+          "Edit a team's **Owns** in bulk: tick the assets it should own; an asset owned by another team moves to this one.",
+          "Community includes one team; more teams need a paid plan.",
+        ],
+      },
       { h: "Changing it later" },
       {
         list: [
           "Change the permission on all projects from the list, or choose **Specific projects only** to take it away; their project and asset access then comes from **Settings ▸ Projects and access**.",
           "**Edit** changes the name and phone; **Disable** stops sign-in and the user's tokens; **Reset password** sets a new, temporary one.",
-          "**Settings ▸ Teams ▸ Add team**: name, contact email and members. Give a team a permission on a project, or set it as an asset's owner so incidents and routes follow it.",
-          "On Stackurity Cloud people join by invitation instead of **Add user**: invite them from a project (**Settings ▸ Projects and access**), with a permission on that project.",
+          "**Settings ▸ Teams ▸ Add team**: name, contact email and members. Then **Edit** it to choose what it **can see** and which assets it **owns** (see Teams below).",
+          "**Invite by email** (on **Settings ▸ Users**, or a project's page) asks the same **What can they see?** and sends a link instead of setting a password. On Stackurity Cloud people join by invitation only, so **Add user** is not shown there.",
         ],
       },
     ],
@@ -1736,7 +1748,8 @@ jobs:
           ["Organisation-wide role (viewer, engineer, security, admin)", "Every asset, in every project and in none."],
           ["A role on a project", "Only that project's assets, with their issues, fixes, incidents, components, search results, reports and activity. Organisation pages (users, teams, integrations, notifications, jobs) are not shown."],
           ["A role on one asset", "Only that asset. For the rare server one contractor looks after; prefer projects."],
-          ["A team's role on a project", "Everyone in the team, including people who join it later."],
+          ["A team's role on a project or asset (Settings ▸ Teams ▸ Can see)", "Everyone in the team, including people who join it later, while they are in it."],
+          ["The team that owns an asset", "Nothing: ownership routes alerts and incidents to the team, and gives no access."],
         ],
       },
       {
@@ -1757,7 +1770,7 @@ jobs:
         steps: [
           "**Settings ▸ Projects and access ▸ New project**, then add its assets. **Suggested groupings** proposes related assets (an application runs on a host, is built from a repository); nothing is added until you accept.",
           "Under **Who has access**, give a person (by email) or a team a role. Someone who is not a member yet joins with access to that project only; give a new account an initial password of at least 12 characters.",
-          "Or **Invite by email**: they get a link that works once, for 7 days, and choose their own password. See [Your first ten minutes](help:getting-started).",
+          "Or **Invite by email**: it starts with this project, asks for the permission, and can add other projects or chosen assets. They get a link that works once, for 7 days, and choose their own password. See [Your first ten minutes](help:getting-started).",
           "The Dashboard tells organisation-wide roles how many assets are **not in a project**: only they see those, so file them.",
           "To send a client only their project's alerts, tick the project in a notification integration's settings (**Settings ▸ Integrations**). A route to Jira can be limited to one project: its issues then describe only that project's part of each incident.",
           "**Settings ▸ Users** can change someone to **projects only**: they keep their account but lose the organisation-wide role.",

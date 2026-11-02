@@ -79,13 +79,48 @@ export const PERMISSION_NOTES = [
 ];
 
 /** A member's access at a glance, for the Users list. */
-export function scopeSummary(u: { role: UserRole | ""; access?: string; project_grants?: number; asset_grants?: number; teams?: string[] | null }): string {
+export function scopeSummary(u: {
+  role: UserRole | "";
+  access?: string;
+  project_grants?: number;
+  asset_grants?: number;
+  teams?: string[] | null;
+  access_teams?: string[] | null;
+}): string {
   if (u.role) return `All projects — ${permissionLabel(u.role)}`;
   const parts: string[] = [];
   const p = u.project_grants ?? 0;
   const a = u.asset_grants ?? 0;
   if (p) parts.push(`${p} project${p === 1 ? "" : "s"}`);
   if (a) parts.push(`${a} asset${a === 1 ? "" : "s"}`);
-  if (parts.length) return parts.join(", ");
-  return u.teams?.length ? "Through their teams only" : "Nothing yet";
+  const via = u.access_teams?.length ? `via ${u.access_teams.join(", ")}` : "";
+  if (parts.length) return via ? `${parts.join(", ")}; ${via}` : parts.join(", ");
+  if (via) return via[0].toUpperCase() + via.slice(1);
+  return "Nothing yet";
+}
+
+/** A team's (or invitation's) grants as lines: "Shop — View only". Unavailable ones are left out. */
+export function accessLines(gs: { name: string; role: UserRole; available?: boolean }[] | null | undefined): string[] {
+  return (gs ?? []).filter((g) => g.available !== false).map((g) => `${g.name} — ${permissionLabel(g.role)}`);
+}
+
+/** What an invitation gives, at a glance (invitation lists and the accept page). */
+export function invitationSummary(i: {
+  scope: "organisation" | "specific" | "project";
+  role: UserRole | "";
+  grants?: { kind: string; name: string; role: UserRole; available?: boolean }[] | null;
+  teams?: { name: string }[] | null;
+}): string {
+  const teams = (i.teams ?? []).map((t) => t.name);
+  const plus = teams.length ? ` + team${teams.length === 1 ? "" : "s"} ${teams.join(", ")}` : "";
+  if (i.scope === "organisation") return `All projects — ${permissionLabel(i.role)}${plus}`;
+  const gs = i.grants ?? [];
+  if (gs.length === 0 && teams.length) return `Team${teams.length === 1 ? "" : "s"} ${teams.join(", ")}`;
+  if (gs.length <= 2) return (gs.map((g) => `${g.name} — ${permissionLabel(g.role)}`).join("; ") || "Nothing") + plus;
+  const p = gs.filter((g) => g.kind === "project").length;
+  const a = gs.length - p;
+  const parts: string[] = [];
+  if (p) parts.push(`${p} project${p === 1 ? "" : "s"}`);
+  if (a) parts.push(`${a} asset${a === 1 ? "" : "s"}`);
+  return parts.join(", ") + plus;
 }

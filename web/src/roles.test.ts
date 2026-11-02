@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { ALL_ONLY, CAPABILITIES, NO, PERMISSIONS, ROLE_HELP, SPECIFIC_ROLES, YES, permissionLabel, permissionTable, scopeSummary } from "./roles.ts";
+import { ALL_ONLY, CAPABILITIES, NO, PERMISSIONS, ROLE_HELP, SPECIFIC_ROLES, YES, invitationSummary, permissionLabel, permissionTable, scopeSummary } from "./roles.ts";
 
 // The permissions table (Settings → Users, the help article) must say what
 // the server enforces. Each row names routes that prove it; this reads the
@@ -89,7 +89,9 @@ test("labels, help and the at-a-glance summary", () => {
   assert.equal(scopeSummary({ role: "", project_grants: 2, asset_grants: 3 }), "2 projects, 3 assets");
   assert.equal(scopeSummary({ role: "", project_grants: 1, asset_grants: 0 }), "1 project");
   assert.equal(scopeSummary({ role: "", project_grants: 0, asset_grants: 1 }), "1 asset");
-  assert.equal(scopeSummary({ role: "", teams: ["ops"] }), "Through their teams only");
+  // Only teams that can see something give access ("via"); being in a team does not.
+  assert.equal(scopeSummary({ role: "", teams: ["ops"] }), "Nothing yet");
+  assert.equal(scopeSummary({ role: "", teams: ["ops"], access_teams: ["ops"] }), "Via ops");
   assert.equal(scopeSummary({ role: "" }), "Nothing yet");
 });
 
@@ -99,4 +101,28 @@ test("the help article shows the same table", () => {
   assert.match(art, /\{ table: permissionTable\(\) \}/);
   assert.match(art, /\{ list: PERMISSION_NOTES \}/);
   assert.doesNotMatch(art, /\["Role", "Can"\]/, "no hand-written role table");
+});
+
+test("invitation summaries: all projects, a short list, or counts", () => {
+  assert.equal(invitationSummary({ scope: "organisation", role: "security", grants: [] }), "All projects — View, edit and decide");
+  assert.equal(invitationSummary({ scope: "project", role: "viewer", grants: [{ kind: "project", name: "Shop", role: "viewer" }] }), "Shop — View only");
+  assert.equal(
+    invitationSummary({ scope: "specific", role: "", grants: [{ kind: "project", name: "Shop", role: "viewer" }, { kind: "asset", name: "web-1", role: "engineer" }] }),
+    "Shop — View only; web-1 — View and edit",
+  );
+  assert.equal(
+    invitationSummary({ scope: "specific", role: "", grants: [{ kind: "project", name: "A", role: "viewer" }, { kind: "asset", name: "b", role: "viewer" }, { kind: "asset", name: "c", role: "viewer" }] }),
+    "1 project, 2 assets",
+  );
+});
+
+test("scope summaries name the teams that give access", () => {
+  assert.equal(scopeSummary({ role: "", project_grants: 0, asset_grants: 0, teams: ["Web", "Ops"], access_teams: ["Web"] }), "Via Web");
+  assert.equal(scopeSummary({ role: "", project_grants: 1, asset_grants: 0, access_teams: ["Web"] }), "1 project; via Web");
+  assert.equal(scopeSummary({ role: "", project_grants: 0, asset_grants: 0, teams: ["Ops"], access_teams: [] }), "Nothing yet", "an owner team gives nothing");
+  assert.equal(
+    invitationSummary({ scope: "specific", role: "", grants: [], teams: [{ name: "Web" }] }),
+    "Team Web",
+  );
+  assert.equal(invitationSummary({ scope: "organisation", role: "viewer", grants: [], teams: [{ name: "Web" }] }), "All projects — View only + team Web");
 });
