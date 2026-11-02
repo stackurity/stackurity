@@ -331,7 +331,7 @@ func (r *k8sReporter) credentials(ctx context.Context, kc *kube.Client) (token, 
 		} else if r.rejected {
 			why = "the server refused its token"
 		}
-		return "", "", fmt.Errorf("%w: Secret %s/%s: %s; put a new code from Settings > Integrations > Kubernetes in it as %s",
+		return "", "", fmt.Errorf("%w: Secret %s/%s: %s; put a new code from Integrations > Kubernetes in it as %s",
 			errNotEnrolled, r.namespace, r.secret, why, secretEnrollCode)
 	}
 	// The code can be used once: make sure the token can be stored before

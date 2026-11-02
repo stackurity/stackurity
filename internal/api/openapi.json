@@ -12695,7 +12695,7 @@
    "bearerToken": {
     "type": "http",
     "scheme": "bearer",
-    "description": "An API token (stk_...) from Settings, API tokens, or a collector token. A user's token never acts above its owner's current role."
+    "description": "An API token (stk_...) from Integrations, API tokens, or a collector token. A user's token never acts above its owner's current role."
    },
    "session": {
     "type": "apiKey",

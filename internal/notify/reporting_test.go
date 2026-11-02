@@ -274,7 +274,7 @@ func TestReportingScansAreDigestOnly(t *testing.T) {
 	m := f.d.message(open[0], "opened")
 	body := strings.Join(m.Summary, "\n") + "\n" + m.Action
 	for _, want := range []string{"Your services may be fine", "At risk: findings for this repository are not refreshed",
-		"Likely cause: the CI job or scheduled scan", "Settings → Integrations → CI pipeline", "shop: last report", "usually every day",
+		"Likely cause: the CI job or scheduled scan", "Integrations → CI pipeline", "shop: last report", "usually every day",
 		"/help/asset-reporting#scans"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("message lacks %q:\n%s", want, body)

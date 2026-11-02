@@ -246,7 +246,7 @@ func (d *Dispatcher) url(path string, q url.Values) string {
 
 func (d *Dispatcher) homeURL() string { return d.url("/", nil) }
 func (d *Dispatcher) settingsURL() string {
-	return d.url("/settings/notifications", url.Values{"tab": {"routes"}})
+	return d.url("/integrations", nil)
 }
 func (d *Dispatcher) fixURL(id string) string { return d.url("/fixes/"+url.PathEscape(id), nil) }
 func (d *Dispatcher) assetURL(id int64) string {
@@ -943,7 +943,7 @@ func (d *Dispatcher) planSummary(ctx context.Context, r store.Route, weekly bool
 		}
 		msg.Sections = append(msg.Sections, Section{Items: []Item{{
 			Text: fmt.Sprintf("Includes %s held back by %s", plural(len(held), "urgent message"), limit),
-			Link: d.url("/settings/notifications", url.Values{"tab": {"deliveries"}}),
+			Link: d.url("/integrations/deliveries", nil),
 		}}})
 		msg.Summary = itemTexts(msg.Sections)
 	}

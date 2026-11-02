@@ -7,7 +7,7 @@ import { ErrorBox, RelativeTime } from "../../components/ui";
 /*
  * The Stackurity GitHub App ("Install on GitHub", docs/github-app.md):
  * the button on the Git repository card, and the connected GitHub accounts
- * under Settings ▸ Integrations.
+ * under Integrations.
  */
 
 /** Starts Install on GitHub: GitHub's install page, with a state bound to this person. */

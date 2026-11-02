@@ -8,8 +8,23 @@ import { GlobalSearch } from "./Search";
 import { FeedbackDialog, feedbackAvailable, type FeedbackHandle } from "./Feedback";
 import { PlatformHealthBanner } from "../pages/admin/Health";
 import { UpdateBanner } from "../pages/admin/Updates";
-import { IconActionPlan, IconActivity, IconChevron, IconHelp, IconInventory, IconMessage, IconMore, IconOverview, IconSettings, IconSidebar } from "./Icons";
-import { sectionOf, SectionTabsFor, type Section } from "./nav";
+import {
+  IconActionPlan,
+  IconActivity,
+  IconAdmin,
+  IconChevron,
+  IconHelp,
+  IconInventory,
+  IconMessage,
+  IconMore,
+  IconOverview,
+  IconPeople,
+  IconPlug,
+  IconReports,
+  IconSettings,
+  IconSidebar,
+} from "./Icons";
+import { sectionOf, SectionTabsFor, useSectionHome, type Section } from "./nav";
 import { ErrorBox } from "./ui";
 
 const STORE_KEY = "stackurity.nav";
@@ -92,7 +107,12 @@ function Shell() {
     [pathname, decider],
   );
 
-  const entries: NavEntry[] = [
+  // Each item opens its first tab this person may open; an item with none
+  // is hidden (People for non-admins, Admin outside instance admins).
+  // Settings configures the organisation, so members with project access
+  // only do not get it.
+  const home = useSectionHome();
+  const all: NavEntry[] = [
     { id: "dashboard", to: "/", label: "Dashboard", icon: <IconOverview /> },
     {
       id: "fixes",
@@ -113,17 +133,22 @@ function Shell() {
           ? { count: sos.data?.total ?? 0, label: "open SOS incidents", tone: "crit" }
           : { count: approvals.data?.total ?? 0, label: "requests to ignore issues waiting for approval", tone: "warn" },
     },
-    {
-      id: "settings",
-      to: "/settings",
-      label: "Settings",
-      icon: <IconSettings />,
-    },
+    { id: "reports", to: "/outcomes", label: "Reports", icon: <IconReports /> },
+    { id: "integrations", to: "/integrations", label: "Integrations", icon: <IconPlug /> },
+    { id: "people", to: "/people", label: "People", icon: <IconPeople /> },
+    { id: "settings", to: projectOnly ? "" : "/settings", label: "Settings", icon: <IconSettings /> },
+    { id: "admin", to: "/admin/workspaces", label: "Admin", icon: <IconAdmin /> },
   ];
+  const entries = all.flatMap((n) => {
+    const to = n.to && home(n.id, n.to);
+    return to ? [{ ...n, to }] : [];
+  });
   const current = sectionOf(pathname);
   const showFeedback = feedbackAvailable(me);
   const version = meta ? `v${meta.version.replace(/^v/, "")}` : "";
-  const moreActive = current === "activity" || current === "settings" || current === "help";
+  // Phones show the first three items in the bar; the rest are under More.
+  const moreActive = entries.slice(3).some((n) => n.id === current) || current === "help";
+  const moreBadge = entries.slice(3).find((n) => n.badge && n.badge.count > 0)?.badge;
 
   return (
     <div className={`shell${collapsed ? " shell-collapsed" : ""}`}>
@@ -234,7 +259,7 @@ function Shell() {
         >
           <IconMore />
           <span className="tabbar-label">More</span>
-          {entries[3].badge && <CountBadge b={entries[3].badge} />}
+          {moreBadge && <CountBadge b={moreBadge} />}
         </button>
       </nav>
       {more && (
@@ -450,7 +475,7 @@ function ProjectSwitcher() {
             </button>
           ))}
           {can("admin") && (
-            <Link to="/settings/projects" role="menuitem" className="menu-item menu-item-sep" onClick={() => pop.setOpen(false)}>
+            <Link to="/projects" role="menuitem" className="menu-item menu-item-sep" onClick={() => pop.setOpen(false)}>
               <span className="menu-item-main">Manage projects and access</span>
             </Link>
           )}
@@ -505,10 +530,10 @@ function AvatarMenu({ onFeedback, onLogout, version }: { onFeedback?: () => void
               <span className="menu-item-main">Your account</span>
             </Link>
           )}
-          <Link to="/settings/ai-assistants" role="menuitem" className="menu-item" onClick={() => pop.setOpen(false)}>
+          <Link to="/integrations/ai-assistants" role="menuitem" className="menu-item" onClick={() => pop.setOpen(false)}>
             <span className="menu-item-main">Connect an AI assistant</span>
           </Link>
-          <Link to="/settings/ai-assistants#connected" role="menuitem" className="menu-item" onClick={() => pop.setOpen(false)}>
+          <Link to="/integrations/ai-assistants#connected" role="menuitem" className="menu-item" onClick={() => pop.setOpen(false)}>
             <span className="menu-item-main">Connected assistants</span>
           </Link>
           {onFeedback && (

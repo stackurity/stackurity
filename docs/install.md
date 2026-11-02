@@ -64,7 +64,7 @@ After the first administrator signs in, a new organisation with no assets opens 
    - **Upload an SBOM** (CycloneDX or SPDX JSON). First results in under a minute.
 3. **Wait** while it reports: the page shows the packages found and when the check is done.
 4. **The first result**, in plain words: "We found 1,676 packages on commmerceblog. 3 fixes matter now.", with links to them.
-5. **Notifications** for the project: Slack (**Add to Slack** when the server has a [Slack app](slack-app.md), otherwise an incoming webhook URL) or email (your SMTP server, with presets for common providers, or on Stackurity Cloud email sent by Stackurity), then two questions: what to send right away (urgent issues, all new issues, or nothing) and which summary (daily, weekly or none), see [Notifications](#notifications). The webhook URL or SMTP password is stored as an encrypted secret, which needs `STACKURITY_SECRET_KEY` (see [Configuration](#configuration)); without it, set integrations up under **Settings → Integrations** with `env:` references.
+5. **Notifications** for the project: Slack (**Add to Slack** when the server has a [Slack app](slack-app.md), otherwise an incoming webhook URL) or email (your SMTP server, with presets for common providers, or on Stackurity Cloud email sent by Stackurity), then two questions: what to send right away (urgent issues, all new issues, or nothing) and which summary (daily, weekly or none), see [Notifications](#notifications). The webhook URL or SMTP password is stored as an encrypted secret, which needs `STACKURITY_SECRET_KEY` (see [Configuration](#configuration)); without it, set integrations up under **Integrations** with `env:` references.
 6. **Invite people** by email with a role on the project. The link works once, for 7 days. It is emailed through the organisation's first email channel; without one, the dashboard shows it to copy and send yourself.
 
 Connecting an asset is quiet: one "connected" message, and no alerts, Jira issues, escalations or overdue reminders for what it already had. See [A quiet first scan](api.md#a-quiet-first-scan).
@@ -182,9 +182,9 @@ Anyone can turn on two-factor sign-in under **Your account → Two-factor sign-i
 - **API tokens and connected AI assistants are not asked for a code**, as with GitHub: they are credentials of their own. The page lists how many the person has, with links to review them.
 - People who sign in with single sign-on are not asked for a Stackurity code: their identity provider does the second factor.
 
-**Require it for an organisation.** An admin can turn on **Settings → Users → Require two-factor sign-in for all members** (their own account needs it first). Members who sign in with a password and have none are then sent to set it up before they can do anything else; members using single sign-on are not affected. The page counts the members without it.
+**Require it for an organisation.** An admin can turn on **People → Users → Require two-factor sign-in for all members** (their own account needs it first). Members who sign in with a password and have none are then sent to set it up before they can do anything else; members using single sign-on are not affected. The page counts the members without it.
 
-**A lost phone.** An admin resets a member's two-factor sign-in with **Reset two-factor** on **Settings → Users**; it is recorded in the activity log (`user.mfa_reset`) and ends the member's sessions. As with passwords, only an instance administrator can reset it for an account that also belongs to other organisations, or for an instance administrator.
+**A lost phone.** An admin resets a member's two-factor sign-in with **Reset two-factor** on **People → Users**; it is recorded in the activity log (`user.mfa_reset`) and ends the member's sessions. As with passwords, only an instance administrator can reset it for an account that also belongs to other organisations, or for an instance administrator.
 
 Every step is in the activity log: `auth.mfa_enabled`, `auth.mfa_disabled`, `auth.mfa_failed`, `auth.mfa_recovery_code_used`, `auth.mfa_recovery_codes_replaced`, and `auth.login` with `"mfa": "totp"` or `"recovery_code"`.
 
@@ -212,7 +212,7 @@ A browser session ends 30 minutes after it was last used (`STACKURITY_SESSION_ID
 - Choosing a new password signs out every session, disconnects the account's AI assistants, and revokes its API tokens if the person ticks **Also revoke my API tokens** (ticked by default). It does not sign in, and two-factor sign-in still applies.
 - The activity log records `auth.password_reset_requested` and `auth.password_reset` (with what was ended).
 
-Without email, the page says to ask an administrator. An admin sets a temporary password with **Reset password** on **Settings → Users**: the member's sessions end, and at their next sign-in they must choose their own password before doing anything else. (An admin setting their own password this way is not asked to change it.)
+Without email, the page says to ask an administrator. An admin sets a temporary password with **Reset password** on **People → Users**: the member's sessions end, and at their next sign-in they must choose their own password before doing anything else. (An admin setting their own password this way is not asked to change it.)
 
 ## Single sign-on
 
@@ -329,7 +329,7 @@ The script downloads the agent from your Stackurity server and checks its SHA-25
 
 The host needs systemd, root for the install, and HTTPS access to the Stackurity server. The installer refuses plain HTTP except to a local port such as an SSH tunnel (see below): `localhost`, `127.0.0.0/8` or `[::1]`, with any port, read from the URL's host as a whole, so `http://127.0.0.1.example.com` is not local. `STACKURITY_ALLOW_HTTP=1` overrides this. Set `STACKURITY_BASE_URL` on the server so the script and its downloads use the public address. Without it the script is built from the request's `Host` header: the server accepts only a hostname or IP address with an optional port there (anything else gets `400`), writes the URL into the script single-quoted, and marks the response `Cache-Control: no-store` and `Vary: Host`, but a URL you configure is the one to rely on.
 
-**The manual way.** Create a collector token under **Settings → API tokens** (role `collector`), or from the CLI:
+**The manual way.** Create a collector token under **Integrations → API tokens** (role `collector`), or from the CLI:
 
 ```sh
 docker compose exec stackurity stackurity admin create-token --name hosts
@@ -383,7 +383,7 @@ Runtimes and servers installed outside the package manager are invisible to the 
 
 #### Many servers at once
 
-A standard install code enrolls up to 500 servers for up to 30 days, and defaults to one server for 24 hours. For a rollout across a fleet, create a **fleet code** under **Assets → Add server → For many servers**: you choose how many servers it may enroll (up to 1,000) and how long it is valid (up to 90 days), with no defaults, and optionally a project, environment and application directories. It works like any other code: only its SHA-256 hash is stored, the code is shown once, and each server exchanges it for its own collector token, so no long-lived token is ever put in user data, a playbook or a shell loop. Each use is listed under the code (hostname, address, time and the prefix of the token it received; `GET /api/v1/enrollments/{id}/uses`), and creation, each use and revocation are in the audit log. **Revoke** stops the code at once; servers that already enrolled keep reporting until you revoke their tokens under **Settings → API tokens**.
+A standard install code enrolls up to 500 servers for up to 30 days, and defaults to one server for 24 hours. For a rollout across a fleet, create a **fleet code** under **Assets → Add server → For many servers**: you choose how many servers it may enroll (up to 1,000) and how long it is valid (up to 90 days), with no defaults, and optionally a project, environment and application directories. It works like any other code: only its SHA-256 hash is stored, the code is shown once, and each server exchanges it for its own collector token, so no long-lived token is ever put in user data, a playbook or a shell loop. Each use is listed under the code (hostname, address, time and the prefix of the token it received; `GET /api/v1/enrollments/{id}/uses`), and creation, each use and revocation are in the audit log. **Revoke** stops the code at once; servers that already enrolled keep reporting until you revoke their tokens under **Integrations → API tokens**.
 
 The page then gives ready-made snippets with the code filled in, each with a copy button. All of them run the same installer, which skips enrollment on a server that already has `/etc/stackurity/token`, so running them twice is safe:
 
@@ -468,9 +468,9 @@ It sets `STACKURITY_DOCKER=true` in `/etc/stackurity/agent.env` and adds `Supple
 
 There are three ways to collect repository inventory:
 
-- **Connect GitLab.** Where the server has a GitLab OAuth application ([gitlab.md](gitlab.md); Stackurity Cloud does), **Settings → Integrations → Git repository → Connect GitLab**, authorise on GitLab and pick a group: every project in it, subgroups included, is scanned, with a read-only group access token Stackurity creates (no token to paste), rescanned when a lockfile changes on the default branch, and followed as projects are added or removed.
-- **GitHub App.** Where the server has the [Stackurity GitHub App](github-app.md) (Stackurity Cloud does), **Settings → Integrations → Git repository → Install on GitHub** and pick the repositories on GitHub's install screen. No token to create or renew; the server mints a short-lived read-only token for each scan, rescans when a lockfile changes on the default branch, and follows repositories added or removed on GitHub.
-- **Server-side.** Under **Settings → Integrations**, add a Git repository (HTTPS only). Private repositories need a read-only token referenced as `env:STACKURITY_SECRET_<NAME>`. The server makes a shallow clone, reads the lockfiles and deletes the clone. Hooks, submodules, LFS and scripts are never run.
+- **Connect GitLab.** Where the server has a GitLab OAuth application ([gitlab.md](gitlab.md); Stackurity Cloud does), **Integrations → Git repository → Connect GitLab**, authorise on GitLab and pick a group: every project in it, subgroups included, is scanned, with a read-only group access token Stackurity creates (no token to paste), rescanned when a lockfile changes on the default branch, and followed as projects are added or removed.
+- **GitHub App.** Where the server has the [Stackurity GitHub App](github-app.md) (Stackurity Cloud does), **Integrations → Git repository → Install on GitHub** and pick the repositories on GitHub's install screen. No token to create or renew; the server mints a short-lived read-only token for each scan, rescans when a lockfile changes on the default branch, and follows repositories added or removed on GitHub.
+- **Server-side.** Under **Integrations**, add a Git repository (HTTPS only). Private repositories need a read-only token referenced as `env:STACKURITY_SECRET_<NAME>`. The server makes a shallow clone, reads the lockfiles and deletes the clone. Hooks, submodules, LFS and scripts are never run.
 - **CI.** Run this in your pipeline:
 
   ```sh
@@ -510,7 +510,7 @@ There are three ways to collect repository inventory:
 
   To put the repository in a project, add `--project` with the project's id
   or name (or set `STACKURITY_PROJECT`). Use a collector token made for that
-  project (**Settings → API tokens**, or the first-run flow): it files the
+  project (**Integrations → API tokens**, or the first-run flow): it files the
   assets it creates in the project and may name only that project. A
   collector token cannot read project names, so give it the id. An admin's
   token may name any project and also files an asset that already exists.
@@ -548,7 +548,7 @@ set; a single audience, so a token minted for another service is never
 accepted). Without either, the exchange answers 503 and the dashboard says
 so. `GET /api/v1/meta` returns the audience as `ci_audience`.
 
-1. An admin adds a **CI trust** under **Settings → Integrations → CI
+1. An admin adds a **CI trust** under **Integrations → CI
    pipeline → Trust a repository**: the provider (GitHub Actions, or GitLab
    with `https://gitlab.com` or a self-managed instance's https URL), the
    repository (`owner/repo`, a GitLab project path), and optionally a ref
@@ -622,7 +622,7 @@ audited as `ci.token_refused` with the reason, in that trust's
 organisation. Tokens are short-lived, so a replayed ID token yields at most
 another 15-minute token for the same repository; its `jti` is in the audit
 log. Expired CI tokens are deleted a day after they expire; they are not
-listed under **Settings → API tokens**.
+listed under **Integrations → API tokens**.
 
 For merge-request pipelines, limit the trust to the default branch (the
 trust's ref): a scan of a branch that may never merge would otherwise
@@ -658,7 +658,7 @@ The image includes the `aws-managed` plugin, which reads the engine and runtime 
 
 #### Connect with a CloudFormation stack
 
-Under **Settings → Integrations → AWS**, choose the regions to read and the region for the stack, and click **Launch Stack in AWS**. The AWS console opens with the Stackurity template and every parameter filled in: tick the acknowledgement that the stack creates an IAM role and click **Create stack**. A minute later the page shows the account as connected and the first collection runs. Nothing to copy or paste.
+Under **Integrations → AWS**, choose the regions to read and the region for the stack, and click **Launch Stack in AWS**. The AWS console opens with the Stackurity template and every parameter filled in: tick the acknowledgement that the stack creates an IAM role and click **Create stack**. A minute later the page shows the account as connected and the first collection runs. Nothing to copy or paste.
 
 The stack creates one IAM role:
 
@@ -669,7 +669,7 @@ The stack creates one IAM role:
 
 The stack reports the role's ARN back by itself: a small Lambda function in the stack posts it once to `/api/v1/aws/callback` on your Stackurity server, with a token from the link that is signed by the server, works once, expires after 24 hours, and names this connection, its organisation and its external ID. That needs Stackurity to be reachable over HTTPS from AWS. When it is not (an internal server, or a plain-HTTP evaluation), or the call fails, copy the stack's `RoleArn` output into **Paste the role ARN** on the same page. The function and its log-only role are not created when there is no callback.
 
-To review the template first, download it from the page (`/aws/stackurity-aws-role-v1.json`, also `deploy/aws/` in the repository). The page also shows an `aws cloudformation create-stack` command that makes the same stack from the downloaded file. To disconnect, remove the connection under **Settings → Integrations → AWS** and delete the stack in the AWS console (Stackurity cannot delete it).
+To review the template first, download it from the page (`/aws/stackurity-aws-role-v1.json`, also `deploy/aws/` in the repository). The page also shows an `aws cloudformation create-stack` command that makes the same stack from the downloaded file. To disconnect, remove the connection under **Integrations → AWS** and delete the stack in the AWS console (Stackurity cannot delete it).
 
 #### Install the agent on EC2 through SSM
 
@@ -699,11 +699,11 @@ The plugin also runs as an ordinary **Plugin** integration, with a role you made
  "secret_ref": "file:/run/secrets/aws.json", "schedule_minutes": 720}
 ```
 
-The secret file holds `{"aws_access_key_id": "...", "aws_secret_access_key": "..."}`. Without it, the plugin uses the instance role (only in the default organisation). Give the role the read-only actions listed above. The exact list is also in the plugin's metadata, under **Settings → Plugins** or with `GET /api/v1/plugins`.
+The secret file holds `{"aws_access_key_id": "...", "aws_secret_access_key": "..."}`. Without it, the plugin uses the instance role (only in the default organisation). Give the role the read-only actions listed above. The exact list is also in the plugin's metadata, under **Integrations → Plugins** or with `GET /api/v1/plugins`.
 
 ### Kubernetes
 
-Connect a cluster with one command from **Settings → Integrations → Kubernetes cluster**. It installs the reporter, a small Deployment that reads the cluster with a read-only service account and sends it to Stackurity over HTTPS; nothing connects into the cluster:
+Connect a cluster with one command from **Integrations → Kubernetes cluster**. It installs the reporter, a small Deployment that reads the cluster with a read-only service account and sends it to Stackurity over HTTPS; nothing connects into the cluster:
 
 ```sh
 helm install stackurity-reporter oci://ghcr.io/stackurity/charts/stackurity-reporter \
@@ -728,11 +728,11 @@ Plugins are executables in `STACKURITY_PLUGIN_DIR`. To add your own, read [plugi
 
 ### Container images
 
-Under **Settings → Integrations**, add a container image such as `ghcr.io/acme/shop:1.4`. The bundled Syft reads the image straight from the registry: no Docker daemon is needed and nothing in the image runs. For a private registry, set a secret reference (a token, or a password together with `username`).
+Under **Integrations**, add a container image such as `ghcr.io/acme/shop:1.4`. The bundled Syft reads the image straight from the registry: no Docker daemon is needed and nothing in the image runs. For a private registry, set a secret reference (a token, or a password together with `username`).
 
 ### Container registries
 
-Rather than adding images one by one and changing them on every release, connect the registry: under **Settings → Integrations → Container image / registry**, choose **Connect a registry**. Stackurity lists its repositories, you pick all of them or some, and on every run it scans the images you chose, finds new repositories and tags, and marks images deleted from the registry as removed.
+Rather than adding images one by one and changing them on every release, connect the registry: under **Integrations → Container image / registry**, choose **Connect a registry**. Stackurity lists its repositories, you pick all of them or some, and on every run it scans the images you chose, finds new repositories and tags, and marks images deleted from the registry as removed.
 
 | Registry | Configuration (`kind: container_registry`) | Secret |
 |---|---|---|
@@ -790,7 +790,7 @@ The first OSV download for an ecosystem can be large (see [network.md](network.m
 
 ## Notifications
 
-Everything Stackurity connects to is under **Settings → Integrations**: the **Active integrations** with their status (last delivery, last error) and a gear for their settings, and **Add an integration** with cards in three groups: **Notifications** (email, Slack, Microsoft Teams, Jira, PagerDuty, ServiceNow, webhook), **Sources** (every way to connect something: Linux and Windows servers through the agent, which open **Add server**; Git repositories; CI pipelines with `stackurity scan` or the GitHub Action; container images and registries; Kubernetes clusters; AWS managed services; SBOM upload; other plugins) and **AI assistants**. Active integrations also show servers with the agent, with their count and last report. The old **Settings → Notifications** links lead there.
+Everything Stackurity connects to is under **Integrations**: the **Active integrations** with their status (last delivery, last error) and a gear for their settings, and **Add an integration** with cards in three groups: **Notifications** (email, Slack, Microsoft Teams, Jira, PagerDuty, ServiceNow, webhook), **Sources** (every way to connect something: Linux and Windows servers through the agent, which open **Add server**; Git repositories; CI pipelines with `stackurity scan` or the GitHub Action; container images and registries; Kubernetes clusters; AWS managed services; SBOM upload; other plugins) and **AI assistants**. Active integrations also show servers with the agent, with their count and last report. The old **Integrations** links lead there.
 
 The first-run flow asks two questions and sets up one notification integration for the new project:
 
@@ -800,7 +800,7 @@ The first-run flow asks two questions and sets up one notification integration f
 | **All new issues** | same | as above plus `new_issues` (every priority) |
 | **Nothing right away** | **Daily** or **Weekly** (not "No summary") | `daily_summary` or `weekly_summary` |
 
-The times are in the browser's time zone, shown next to the choice. "Nothing right away" with "No summary" cannot be saved. You can fine-tune it later under **Settings → Integrations**.
+The times are in the browser's time zone, shown next to the choice. "Nothing right away" with "No summary" cannot be saved. You can fine-tune it later under **Integrations**.
 
 ### What an integration sends
 
@@ -853,7 +853,7 @@ Credentials always go in a secret reference, never in the configuration:
 
 ### Email preferences (product updates and vulnerability news)
 
-A hosted installation (Stackurity Cloud) may also send **bulk email** in two categories people can unsubscribe from: **Marketing** (product updates, such as what changed in a release) and **Vulnerability news**. Everything else is not bulk email and cannot be turned off here: account and security email (sign-up, password reset, two-factor authentication, invitations), billing email, and the organisation's own notifications, which are set under **Settings → Integrations**. A self-hosted installation sends no bulk email and shows none of this.
+A hosted installation (Stackurity Cloud) may also send **bulk email** in two categories people can unsubscribe from: **Marketing** (product updates, such as what changed in a release) and **Vulnerability news**. Everything else is not bulk email and cannot be turned off here: account and security email (sign-up, password reset, two-factor authentication, invitations), billing email, and the organisation's own notifications, which are set under **Integrations**. A self-hosted installation sends no bulk email and shows none of this.
 
 - **Your account → Email preferences** has a switch per category and lists the email that is always sent, with why.
 - Every bulk email has an **Unsubscribe from Marketing** (or Vulnerability news) link, an **Email preferences** link, the sender's postal address, and one-click unsubscribe headers (`List-Unsubscribe` and `List-Unsubscribe-Post`, RFC 8058). The links open `/email/preferences` without signing in. Each is signed for one person: an unsubscribe link can only turn its own category off (it works for 2 years), and an Email preferences link can change both categories for 90 days. Nothing changes until the person presses a button, so mail scanners that open links change nothing.
@@ -878,8 +878,8 @@ With a plain incoming webhook, Slack buttons open the dashboard. With a Slack ap
 2. **Incoming Webhooks**: turn on **Activate Incoming Webhooks**, then **Add New Webhook to Workspace**, pick the channel and **Allow**. Copy the webhook URL (`https://hooks.slack.com/services/T.../B.../...`). This adds the `incoming-webhook` scope; add no other scope.
 3. **Interactivity & Shortcuts**: turn on **Interactivity** and set the **Request URL** to `https://<your Stackurity address>/api/v1/integrations/slack/actions`. **Save Changes**.
 4. **Basic Information**, **App Credentials**: **Show** and copy the **Signing Secret** (not the client secret or verification token).
-5. In Stackurity, **Settings → Secrets**: store the webhook URL (for example as `SLACK_WEBHOOK`) and the signing secret (`SLACK_SIGNING`). Instance administrators can use `env:STACKURITY_SECRET_...` or `file:` references instead.
-6. **Settings → Integrations**, add Slack with **Advanced: use a webhook** (or edit the existing one, if it uses this app's webhook): webhook URL reference `secret:SLACK_WEBHOOK`, **Slack app signing secret reference** `secret:SLACK_SIGNING`. **Send test**. Messages from then on carry the interactive buttons.
+5. In Stackurity, **Integrations → Secrets**: store the webhook URL (for example as `SLACK_WEBHOOK`) and the signing secret (`SLACK_SIGNING`). Instance administrators can use `env:STACKURITY_SECRET_...` or `file:` references instead.
+6. **Integrations**, add Slack with **Advanced: use a webhook** (or edit the existing one, if it uses this app's webhook): webhook URL reference `secret:SLACK_WEBHOOK`, **Slack app signing secret reference** `secret:SLACK_SIGNING`. **Send test**. Messages from then on carry the interactive buttons.
 
 Each person links their Slack account once. The first time they click, Slack shows them (only them) a link that works once, for 15 minutes; they sign in to Stackurity and confirm "link Slack user X in Slack workspace T to my account". From then on their clicks act as them, with their role and projects, as in the dashboard: engineers and above can assign, security and admin can snooze, people with access to some projects only can act on those projects' fixes. Refusals are explained to them in Slack. Every action is audited as theirs with source `slack`. People see and remove their links under the account menu, **Your account** (and their link for one Slack workspace on that Slack integration's page, **Your Slack account**).
 
@@ -899,7 +899,7 @@ There is never more than one issue per incident and channel, across retries and 
 
 **Connect Jira** (Jira Cloud, when the server has the Stackurity Atlassian app: [jira-app.md](jira-app.md)) needs no token: an administrator approves on Atlassian's page and picks the site, project, issue type and done status from lists read from Jira. Its tokens are sealed and refreshed by the server; when Atlassian stops accepting them (the app was removed from the person's Atlassian account, or 90 days without use), the integration shows **Reconnect needed** and deliveries fail with that reason until someone reconnects. Where the app is configured, new Jira integrations use it unless **Use an API token instead** is chosen.
 
-With a token, the Jira account needs to browse the project, create issues, add comments and transition issues. **Send test** checks the credentials (or the connection), the project, the issue type and the mapped priorities without creating anything. Store the token as a workspace secret (`secret:NAME`, Settings > Secrets). Jira Data Center and Server always use a personal access token: they have no OAuth 2.0 (3LO).
+With a token, the Jira account needs to browse the project, create issues, add comments and transition issues. **Send test** checks the credentials (or the connection), the project, the issue type and the mapped priorities without creating anything. Store the token as a workspace secret (`secret:NAME`, Integrations > Secrets). Jira Data Center and Server always use a personal access token: they have no OAuth 2.0 (3LO).
 
 ### PagerDuty
 
