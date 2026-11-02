@@ -12,7 +12,7 @@ func leakIncident(priority string) store.Incident {
 	det, _ := json.Marshal(map[string]any{"asset_id": 7, "asset_name": "web-1", "count": 2, "critical": 1, "served": 1,
 		"titles": []string{"Password or key in configuration", "Stripe live secret key"}, "files": []string{"/var/www/html/.env:4", "/srv/shop/billing.py:9"},
 		"environments": []string{"production"},
-		"why": "The web server may send this file to anyone who asks for it (e.g. /.env). Rotate the key and move the file out of the document root."})
+		"why":          "The web server may send this file to anyone who asks for it (e.g. /.env). Rotate the key and move the file out of the document root."})
 	return store.Incident{ID: 3, Kind: "leak", Key: "asset:7", Title: "2 leaked keys on web-1", Priority: priority, Status: "open", Detail: det}
 }
 

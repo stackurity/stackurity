@@ -256,7 +256,6 @@ func TestLeakIncidents(t *testing.T) {
 	}
 }
 
-
 // Every surface takes a leak's reason from LeakWhy.
 func TestLeakWhy(t *testing.T) {
 	for _, tc := range []struct{ kind, exposure, severity, want string }{
