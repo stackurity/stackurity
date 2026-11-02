@@ -1,12 +1,12 @@
 import { useMemo, useReducer, useState, type FormEvent } from "react";
-import { api, type Invitation, type InvitationCreated, type List, type Project } from "../api";
+import { api, type Invitation, type InvitationCreated, type List, type Project, type Team } from "../api";
 import { useAction, useLoad } from "../hooks";
 import { absTime } from "../format";
 import { confirmAction } from "./ConfirmDialog";
 import { CopyBox, ErrorBox, Notice } from "./ui";
 import { PERMISSIONS, ROLE_HELP, invitationSummary } from "../roles";
 import { EMPTY, forProject, preview, problems, reduce, toInvitation } from "../userAccess";
-import { AccessPicker } from "./AccessPicker";
+import { AccessPicker, teamInfo } from "./AccessPicker";
 import { PermissionsDisclosure } from "./Permissions";
 
 export { ROLE_HELP };
@@ -29,9 +29,11 @@ export function InviteForm({ projectId = 0, onInvited, onCancel }: { projectId?:
   const projects = useLoad(() => api.getAll<List<Project>>("/projects"), []);
   const open = useLoad(() => api.getAll<List<Invitation>>("/invitations"), [sent]);
   const names = useMemo(() => Object.fromEntries((projects.data?.items ?? []).map((p) => [p.id, p.name])), [projects.data]);
+  const teams = useLoad(() => api.getAll<List<Team>>("/teams"), []);
+  const tinfo = useMemo(() => teamInfo(teams.data?.items), [teams.data]);
   const act = useAction();
-  const missing = problems(f, names);
-  const summary = preview(f, LABELS);
+  const missing = problems(f, names, tinfo);
+  const summary = preview(f, LABELS, tinfo);
   const email = f.email.trim().toLowerCase();
   const earlier = (open.data?.items ?? []).find((i) => i.status === "pending" && i.email === email);
 
@@ -73,7 +75,7 @@ export function InviteForm({ projectId = 0, onInvited, onCancel }: { projectId?:
           </Notice>
         )}
 
-        <AccessPicker idp="inv" f={f} dispatch={dispatch} projects={projects} />
+        <AccessPicker idp="inv" f={f} dispatch={dispatch} projects={projects} teams={teams} />
 
         <PermissionsDisclosure />
 
@@ -110,10 +112,9 @@ export function InviteForm({ projectId = 0, onInvited, onCancel }: { projectId?:
 
 function InviteResult({ r }: { r: InvitationCreated & { to: string } }) {
   if (r.granted) {
-    const n = r.grants?.length ?? 1;
     return (
       <Notice kind="success">
-        {r.to} is already in your organisation. They now have the access you chose ({n} project{n === 1 ? "" : "s"} or asset{n === 1 ? "" : "s"}).
+        {r.to} is already in your organisation. They now have the access you chose, without a link.
       </Notice>
     );
   }

@@ -1699,12 +1699,22 @@ jobs:
           "**Add user** creates the person and all of their access together; if any part is refused, nothing is created. The list's **Can see** column shows it at a glance, such as \"All projects — View and edit\" or \"2 projects, 3 assets\".",
         ],
       },
+      { h: "Teams" },
+      {
+        list: [
+          "**Members see what their team can see.** A team's **Can see** is a list of projects (all their assets, including later ones) and chosen assets, each with a permission; never all projects. Someone added to the team gets it from their next page; someone removed loses it the same way.",
+          "**Owning is not seeing.** The team that **owns** an asset gets that asset's alerts and incidents, and routes can follow it. It gives the team's members no access to it: give the team access under **Can see** as well if they should see it.",
+          "**Add user** and **Invite by email** have an optional **Add to teams**, which shows what each team can see. With **Specific projects or assets**, a team that can see something is enough on its own; a team that can see nothing is not. The preview says what comes from a team (\"Via team Web: Shop — View and edit\"), and the Users list shows it (\"via Web\").",
+          "Edit a team's **Owns** in bulk: tick the assets it should own; an asset owned by another team moves to this one.",
+          "Community includes one team; more teams need a paid plan.",
+        ],
+      },
       { h: "Changing it later" },
       {
         list: [
           "Change the permission on all projects from the list, or choose **Specific projects only** to take it away; their project and asset access then comes from **Settings ▸ Projects and access**.",
           "**Edit** changes the name and phone; **Disable** stops sign-in and the user's tokens; **Reset password** sets a new, temporary one.",
-          "**Settings ▸ Teams ▸ Add team**: name, contact email and members. Give a team a permission on a project, or set it as an asset's owner so incidents and routes follow it.",
+          "**Settings ▸ Teams ▸ Add team**: name, contact email and members. Then **Edit** it to choose what it **can see** and which assets it **owns** (see Teams below).",
           "**Invite by email** (on **Settings ▸ Users**, or a project's page) asks the same **What can they see?** and sends a link instead of setting a password. On Stackurity Cloud people join by invitation only, so **Add user** is not shown there.",
         ],
       },
@@ -1728,7 +1738,8 @@ jobs:
           ["Organisation-wide role (viewer, engineer, security, admin)", "Every asset, in every project and in none."],
           ["A role on a project", "Only that project's assets, with their issues, fixes, incidents, components, search results, reports and activity. Organisation pages (users, teams, integrations, notifications, jobs) are not shown."],
           ["A role on one asset", "Only that asset. For the rare server one contractor looks after; prefer projects."],
-          ["A team's role on a project", "Everyone in the team, including people who join it later."],
+          ["A team's role on a project or asset (Settings ▸ Teams ▸ Can see)", "Everyone in the team, including people who join it later, while they are in it."],
+          ["The team that owns an asset", "Nothing: ownership routes alerts and incidents to the team, and gives no access."],
         ],
       },
       {

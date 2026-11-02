@@ -96,6 +96,9 @@ type invitationRequest struct {
 	// Grants: what they may see with no organisation-wide role (role
 	// "none" or empty), as for POST /users.
 	Grants []store.ScopeGrant `json:"grants"`
+	// Teams to add them to; membership gives the team's access, so with
+	// no role and no grants, one of them must be able to see something.
+	Teams []int64 `json:"teams"`
 }
 
 // scope returns what the request gives: an organisation-wide role, or
@@ -111,10 +114,13 @@ func (req *invitationRequest) scope() (auth.Role, []store.ScopeGrant, error) {
 		if !req.Role.ValidUser() {
 			return "", nil, badRequest("role must be viewer, engineer, security or admin")
 		}
+		if len(req.Teams) > 0 {
+			return "", nil, badRequest("send project_id with a role, or grants and teams, not both")
+		}
 		pid := req.ProjectID
 		return store.RoleNone, []store.ScopeGrant{{ProjectID: &pid, Role: req.Role}}, nil
 	}
-	role, err := store.CheckScope(req.Role, req.Grants)
+	role, err := store.CheckAccess(req.Role, req.Grants, req.Teams)
 	return role, req.Grants, err
 }
 
@@ -151,7 +157,7 @@ func (s *Server) createInvitation(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 409, "conflict", "this person is already a member; change their role under Settings, Users")
 			return
 		}
-		ids, err := s.Store.GrantMember(r.Context(), uid, grants, actorUserID(p))
+		ids, err := s.Store.GrantMember(r.Context(), uid, grants, req.Teams, actorUserID(p))
 		if err != nil {
 			s.fail(w, r, err)
 			return
@@ -166,8 +172,15 @@ func (s *Server) createInvitation(w http.ResponseWriter, r *http.Request) {
 			_ = s.Store.Audit(r.Context(), p.Actor(r), "access.grant", "access_grant", itoa(g.ID), g)
 			out = append(out, g)
 		}
+		if len(req.Teams) > 0 {
+			_ = s.Store.Audit(r.Context(), p.Actor(r), "team.join", "user", itoa(uid), map[string]any{"teams": req.Teams})
+		}
 		// grant: the first, for clients of the single-project form.
-		writeJSON(w, 201, map[string]any{"granted": true, "grant": out[0], "grants": out})
+		var first *store.Grant
+		if len(out) > 0 {
+			first = out[0]
+		}
+		writeJSON(w, 201, map[string]any{"granted": true, "grant": first, "grants": out, "teams": req.Teams})
 		return
 	}
 	// The link is built from the Host header without STACKURITY_BASE_URL:
@@ -177,7 +190,7 @@ func (s *Server) createInvitation(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	in := store.InvitationInput{Email: email, Name: req.Name, Grants: grants}
+	in := store.InvitationInput{Email: email, Name: req.Name, Grants: grants, Teams: req.Teams}
 	if role != store.RoleNone {
 		in.Role = role
 	}
@@ -197,7 +210,7 @@ func (s *Server) createInvitation(w http.ResponseWriter, r *http.Request) {
 		_ = s.Store.Audit(r.Context(), p.Actor(r), "invitation.revoke", "invitation", itoa(id), map[string]any{"replaced_by": inv.ID})
 	}
 	_ = s.Store.Audit(r.Context(), p.Actor(r), "invitation.create", "invitation", itoa(inv.ID),
-		map[string]any{"email": inv.Email, "scope": inv.Scope, "role": inv.Role, "grants": inv.Grants, "emailed": emailed,
+		map[string]any{"email": inv.Email, "scope": inv.Scope, "role": inv.Role, "grants": inv.Grants, "teams": req.Teams, "emailed": emailed,
 			"expires_at": inv.ExpiresAt, "replaced": replaced})
 	if replaced == nil {
 		replaced = []int64{}
@@ -369,7 +382,7 @@ func (s *Server) acceptInvitation(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = s.Store.Audit(ctx, actor, "invitation.accept", "invitation", itoa(res.Invitation.ID),
 		map[string]any{"scope": res.Invitation.Scope, "project_id": res.Invitation.ProjectID, "role": res.Invitation.Role,
-			"grants": len(res.GrantIDs), "dropped": res.Dropped, "joined": res.Joined, "account_created": res.AccountCreated})
+			"grants": len(res.GrantIDs), "teams": res.Teams, "dropped": res.Dropped, "joined": res.Joined, "account_created": res.AccountCreated})
 	for _, id := range res.GrantIDs {
 		if g, err := s.Store.GetGrant(ctx, id); err == nil {
 			_ = s.Store.Audit(ctx, actor, "access.grant", "access_grant", itoa(g.ID), g)
@@ -408,7 +421,7 @@ func (s *Server) acceptInvitation(w http.ResponseWriter, r *http.Request) {
 		dropped = []store.InvitationGrant{}
 	}
 	writeJSON(w, 200, map[string]any{"workspace_id": res.WorkspaceID, "project_id": project, "role": res.Invitation.Role,
-		"scope": res.Invitation.Scope, "grants": len(res.GrantIDs), "dropped": dropped,
+		"scope": res.Invitation.Scope, "grants": len(res.GrantIDs), "teams": len(res.Teams), "dropped": dropped,
 		"account_created": res.AccountCreated, "joined": res.Joined})
 }
 
@@ -424,6 +437,25 @@ var permissionLabels = map[auth.Role]string{
 // "with View only on all projects and assets", or "with access to
 // Shop (View and edit) and 2 more".
 func invitationScopeText(inv *store.Invitation) string {
+	text := scopeText(inv)
+	var teams []string
+	for _, t := range inv.Teams {
+		teams = append(teams, t.Name)
+	}
+	if len(teams) == 0 {
+		return text
+	}
+	member := "as a member of the team " + teams[0]
+	if len(teams) > 1 {
+		member = "as a member of the teams " + strings.Join(teams, ", ")
+	}
+	if text == "" {
+		return member
+	}
+	return text + ", and " + member
+}
+
+func scopeText(inv *store.Invitation) string {
 	if inv.Scope == "organisation" {
 		return "with " + permissionLabels[inv.Role] + " on all projects and assets"
 	}

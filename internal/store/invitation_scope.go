@@ -34,6 +34,28 @@ type InvitationGrant struct {
 	Unavailable string `json:"unavailable,omitempty"`
 }
 
+// InvitationTeam is a team the invitation adds the person to (migration
+// 0082). Membership gives the team's access, listed in Access as it is
+// now (the team's grants that can be given), so the person can see what
+// they will get through it.
+type InvitationTeam struct {
+	TeamID *int64 `json:"team_id"`
+	// Name is the team's name; as it was when invited if it was deleted.
+	Name      string            `json:"name"`
+	Available bool              `json:"available"`
+	Access    []InvitationGrant `json:"access"`
+}
+
+// seesSomething: one of the available teams has access to something.
+func teamsSee(ts []InvitationTeam) bool {
+	for _, t := range ts {
+		if t.Available && len(t.Access) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // ErrInvitationStale: every project and asset the invitation named was
 // archived, merged or deleted after it was sent, so accepting would give
 // nothing. Nothing is written; the invitation stays open for an admin to
@@ -47,6 +69,9 @@ type InvitationInput struct {
 	Name   string
 	Role   auth.Role
 	Grants []ScopeGrant
+	// Teams to add them to when they accept; with no role and no
+	// grants, at least one must have access to something.
+	Teams []int64
 }
 
 // Invite stores an invitation and returns it with its link token, shown
@@ -62,7 +87,7 @@ func (s *Store) Invite(ctx context.Context, in InvitationInput, by int64) (*Invi
 	if len(name) > 200 {
 		return nil, "", nil, fmt.Errorf("name is limited to 200 characters: %w", ErrInvalid)
 	}
-	role, err := CheckScope(in.Role, in.Grants)
+	role, err := CheckAccess(in.Role, in.Grants, in.Teams)
 	if err != nil {
 		return nil, "", nil, err
 	}
@@ -85,6 +110,13 @@ func (s *Store) Invite(ctx context.Context, in InvitationInput, by int64) (*Invi
 		names, err := grantTargets(ctx, tx, in.Grants)
 		if err != nil {
 			return err
+		}
+		teamNames, sees, err := teamTargets(ctx, tx, in.Teams)
+		if err != nil {
+			return err
+		}
+		if role == RoleNone && len(in.Grants) == 0 && !sees {
+			return errTeamsSeeNothing
 		}
 		rows, err := tx.Query(ctx, `UPDATE invitations SET revoked_at = now()
 			WHERE email = $1 AND accepted_at IS NULL AND revoked_at IS NULL RETURNING id`, email)
@@ -117,6 +149,12 @@ func (s *Store) Invite(ctx context.Context, in InvitationInput, by int64) (*Invi
 				return err
 			}
 		}
+		for i, t := range in.Teams {
+			if _, err := tx.Exec(ctx, `INSERT INTO invitation_teams (invitation_id, team_id, label) VALUES ($1, $2, $3)`,
+				id, t, teamNames[i]); err != nil {
+				return err
+			}
+		}
 		return nil
 	})
 	if err != nil {
@@ -134,14 +172,13 @@ func loadGrants(ctx context.Context, db q, list []Invitation) error {
 	var ids []int64
 	for i := range list {
 		list[i].Grants = []InvitationGrant{}
+		list[i].Teams = []InvitationTeam{}
 		if list[i].Scope == "project" && list[i].ProjectID != nil {
 			list[i].Grants = append(list[i].Grants, InvitationGrant{Kind: "project", ProjectID: list[i].ProjectID, Role: list[i].Role,
 				Name: list[i].ProjectName, Available: true})
 		}
-		if list[i].Scope == "specific" {
-			at[list[i].ID] = i
-			ids = append(ids, list[i].ID)
-		}
+		at[list[i].ID] = i
+		ids = append(ids, list[i].ID)
 	}
 	if len(ids) == 0 {
 		return nil
@@ -165,6 +202,37 @@ func loadGrants(ctx context.Context, db q, list []Invitation) error {
 		g.Available = g.Unavailable == ""
 		i := at[invID]
 		list[i].Grants = append(list[i].Grants, g)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	rows.Close()
+	return loadTeams(ctx, db, list, at, ids)
+}
+
+// loadTeams fills in Teams for each invitation, with each team's access
+// as it is now.
+func loadTeams(ctx context.Context, db q, list []Invitation, at map[int64]int, ids []int64) error {
+	rows, err := db.Query(ctx, `SELECT it.invitation_id, it.team_id, COALESCE(t.name, it.label), t.id IS NOT NULL,
+		  COALESCE((SELECT json_agg(json_build_object('kind', CASE WHEN g.project_id IS NOT NULL THEN 'project' ELSE 'asset' END,
+		      'project_id', g.project_id, 'asset_id', g.asset_id, 'role', g.role, 'name', COALESCE(p.name, a.name), 'available', true)
+		      ORDER BY COALESCE(p.name, a.name))
+		    FROM access_grants g LEFT JOIN projects p ON p.id = g.project_id LEFT JOIN assets a ON a.id = g.asset_id
+		    WHERE g.team_id = it.team_id AND (g.project_id IS NOT NULL AND p.archived_at IS NULL OR g.asset_id IS NOT NULL AND a.merged_into IS NULL)), '[]')
+		FROM invitation_teams it LEFT JOIN teams t ON t.id = it.team_id
+		WHERE it.invitation_id = ANY($1) ORDER BY it.invitation_id, COALESCE(t.name, it.label)`, ids)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var invID int64
+		var t InvitationTeam
+		if err := rows.Scan(&invID, &t.TeamID, &t.Name, &t.Available, &t.Access); err != nil {
+			return err
+		}
+		i := at[invID]
+		list[i].Teams = append(list[i].Teams, t)
 	}
 	return rows.Err()
 }
@@ -213,18 +281,19 @@ func acceptGrants(ctx context.Context, tx pgx.Tx, inv *Invitation, uid int64, gi
 		}
 		ids = append(ids, id)
 	}
-	if len(ids) == 0 {
-		return nil, nil, ErrInvitationStale
-	}
 	return ids, skipped, nil
 }
 
 // GrantMember gives an existing member of the context's workspace the
 // grants, in one transaction: all of them or none. An existing grant on
 // the same project or asset takes the new role (as SaveGrant does).
-func (s *Store) GrantMember(ctx context.Context, uid int64, grants []ScopeGrant, by int64) ([]int64, error) {
-	if _, err := CheckScope(RoleNone, grants); err != nil {
+func (s *Store) GrantMember(ctx context.Context, uid int64, grants []ScopeGrant, teams []int64, by int64) ([]int64, error) {
+	if _, err := CheckAccess(RoleNone, grants, teams); err != nil {
 		return nil, err
+	}
+	ws, ok := tenant.Workspace(ctx)
+	if !ok {
+		return nil, errNoWorkspace
 	}
 	var byID *int64
 	if by > 0 {
@@ -234,6 +303,16 @@ func (s *Store) GrantMember(ctx context.Context, uid int64, grants []ScopeGrant,
 	var ids []int64
 	err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
 		if _, err := grantTargets(ctx, tx, grants); err != nil {
+			return err
+		}
+		_, sees, err := teamTargets(ctx, tx, teams)
+		if err != nil {
+			return err
+		}
+		if len(grants) == 0 && !sees {
+			return errTeamsSeeNothing
+		}
+		if err := joinTeams(ctx, tx, ws, uid, teams); err != nil {
 			return err
 		}
 		for i, g := range grants {

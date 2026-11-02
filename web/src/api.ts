@@ -170,6 +170,8 @@ export interface User {
   /** Their own grants in this workspace (not their teams'). */
   project_grants?: number;
   asset_grants?: number;
+  /** Their teams that can see something: access through team membership. */
+  access_teams?: string[] | null;
 }
 
 /** How a member reaches a workspace's data. */
@@ -1072,7 +1074,10 @@ export interface Team {
   email: string;
   created_at: string;
   members: number[] | null;
+  /** Assets whose owner team this is: alerts route to it; it gives no access. */
   asset_count: number;
+  /** What its members see through it ("Can see"). */
+  access?: InvitationGrant[];
 }
 
 export interface ConflictAsset {
@@ -3149,7 +3154,8 @@ export interface FirstResult {
 
 /** One project (and its assets, including later ones) or asset an invitation gives access to. */
 export interface InvitationGrant {
-  kind: "project" | "asset";
+  /** "team": only in dropped, a team deleted before the link was used. */
+  kind: "project" | "asset" | "team";
   project_id: number | null;
   asset_id: number | null;
   role: UserRole;
@@ -3165,6 +3171,15 @@ export interface InvitationGrant {
  * "organisation": role on all projects and assets. "specific": grants.
  * "project": one project and role, from before invitations had grants.
  */
+/** A team an invitation adds the person to, with what it can see now. */
+export interface InvitationTeam {
+  team_id: number | null;
+  name: string;
+  /** False when the team was deleted since. */
+  available: boolean;
+  access: InvitationGrant[];
+}
+
 export type InvitationScope = "organisation" | "specific" | "project";
 
 export interface Invitation {
@@ -3178,6 +3193,7 @@ export interface Invitation {
   role: UserRole | "";
   scope: InvitationScope;
   grants: InvitationGrant[];
+  teams?: InvitationTeam[];
   prefix: string;
   created_at: string;
   expires_at: string;
@@ -3215,6 +3231,7 @@ export interface InvitationPreview {
   account_exists: boolean;
   scope: InvitationScope;
   grants: InvitationGrant[];
+  teams?: InvitationTeam[];
   /** False when every project and asset it named was archived, merged or deleted since. */
   usable: boolean;
 }
@@ -3226,6 +3243,8 @@ export interface InvitationAccepted {
   project_id: number;
   scope: InvitationScope;
   grants: number;
+  /** How many teams they joined. */
+  teams?: number;
   /** What the invitation named but could not give any more. */
   dropped: InvitationGrant[];
   account_created: boolean;

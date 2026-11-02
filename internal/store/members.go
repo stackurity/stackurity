@@ -37,6 +37,10 @@ type NewMember struct {
 	// Role is the organisation-wide role, or RoleNone with Grants.
 	Role   auth.Role
 	Grants []ScopeGrant
+	// Teams to add them to, in the same transaction. Membership gives
+	// the team's access, so with RoleNone teams may stand in for Grants
+	// when at least one of them can see something.
+	Teams []int64
 }
 
 // NormalizePhone trims a phone number and checks it loosely: digits with an
@@ -69,7 +73,7 @@ func NormalizePhone(p string) (string, error) {
 
 // checkScope validates what a new member may see, before anything is written.
 func (m *NewMember) checkScope() error {
-	role, err := CheckScope(m.Role, m.Grants)
+	role, err := CheckAccess(m.Role, m.Grants, m.Teams)
 	m.Role = role
 	return err
 }
@@ -199,6 +203,16 @@ func (s *Store) CreateMember(ctx context.Context, m NewMember, by int64) (*User,
 			return fmt.Errorf("a user with that email is already a member: %w", ErrConflict)
 		}
 		if _, err := grantTargets(ctx, tx, m.Grants); err != nil {
+			return err
+		}
+		_, teamsSee, err := teamTargets(ctx, tx, m.Teams)
+		if err != nil {
+			return err
+		}
+		if m.Role == RoleNone && len(m.Grants) == 0 && !teamsSee {
+			return errTeamsSeeNothing
+		}
+		if err := joinTeams(ctx, tx, ws, uid, m.Teams); err != nil {
 			return err
 		}
 		for i, g := range m.Grants {

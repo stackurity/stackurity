@@ -29,9 +29,18 @@ export interface AddUserState {
   /** The permission on everything (scope "all"). */
   allRole: UserRole | "";
   projects: ProjectPick[];
+  /** Teams to add them to (optional); membership gives the team's access. */
+  teams: number[];
 }
 
-export const EMPTY: AddUserState = { name: "", email: "", phone: "", password: "", scope: "", allRole: "", projects: [] };
+export const EMPTY: AddUserState = { name: "", email: "", phone: "", password: "", scope: "", allRole: "", projects: [], teams: [] };
+
+/** What a team can see, for the form: its name and its access, as "Shop — View only" lines. */
+export interface TeamInfo {
+  name: string;
+  /** Lines of what members see through it; empty when it can see nothing. */
+  sees: string[];
+}
 
 export type Action =
   | { type: "field"; field: "name" | "email" | "phone" | "password"; value: string }
@@ -42,11 +51,12 @@ export type Action =
   | { type: "projectMode"; projectId: number; mode: "project" | "assets" }
   | { type: "projectRole"; projectId: number; role: UserRole }
   | { type: "toggleAsset"; projectId: number; assetId: number; checked: boolean }
-  | { type: "assetRole"; projectId: number; assetId: number; role: UserRole };
+  | { type: "assetRole"; projectId: number; assetId: number; role: UserRole }
+  | { type: "toggleTeam"; teamId: number; checked: boolean };
 
 /** Every action the form's controls dispatch; the tests cover each one. */
 export const ACTION_TYPES: Action["type"][] = [
-  "field", "scope", "allRole", "addProject", "removeProject", "projectMode", "projectRole", "toggleAsset", "assetRole",
+  "field", "scope", "allRole", "addProject", "removeProject", "projectMode", "projectRole", "toggleAsset", "assetRole", "toggleTeam",
 ];
 
 const SPECIFIC: readonly string[] = ["viewer", "engineer", "security"];
@@ -84,6 +94,10 @@ export function reduce(s: AddUserState, a: Action): AddUserState {
     case "assetRole":
       if (!SPECIFIC.includes(a.role)) return s;
       return mapProject(s, a.projectId, (p) => ({ ...p, assets: p.assets.map((x) => (x.assetId === a.assetId ? { ...x, role: a.role } : x)) }));
+    case "toggleTeam": {
+      if (a.teamId <= 0 || a.checked === s.teams.includes(a.teamId)) return s;
+      return { ...s, teams: a.checked ? [...s.teams, a.teamId] : s.teams.filter((t) => t !== a.teamId) };
+    }
   }
 }
 
@@ -102,7 +116,7 @@ export function phoneProblem(phone: string): string {
  * Everything still missing or wrong, in the order of the form. The form
  * can be sent when this is empty. names: project id → name, for messages.
  */
-export function problems(s: AddUserState, names: Record<number, string> = {}): string[] {
+export function problems(s: AddUserState, names: Record<number, string> = {}, teams: Record<number, TeamInfo> = {}): string[] {
   const out: string[] = [];
   const email = s.email.trim();
   if (!email) out.push("Enter their email.");
@@ -119,7 +133,10 @@ export function problems(s: AddUserState, names: Record<number, string> = {}): s
     if (!s.allRole) out.push("Choose their permission on all projects and assets.");
     return out;
   }
-  if (s.projects.length === 0) out.push("Add at least one project.");
+  // Specific may be met by teams alone, when one of them can see something.
+  const teamsSee = s.teams.some((t) => (teams[t]?.sees.length ?? 0) > 0);
+  if (s.projects.length === 0 && !teamsSee)
+    out.push(s.teams.length ? "The teams chosen cannot see anything yet: add a project, or give a team access under Settings, Teams." : "Add at least one project.");
   for (const p of s.projects) {
     const n = names[p.projectId] ?? `project ${p.projectId}`;
     if (p.mode === "") out.push(`${n}: choose all its assets, or chosen assets.`);
@@ -146,13 +163,20 @@ export interface CreateUserBody {
   password: string;
   role: UserRole | "none";
   grants?: GrantBody[];
+  teams?: number[];
 }
 
 const RANK: Record<string, number> = { viewer: 1, engineer: 2, security: 3, admin: 4 };
 
 /** The POST /users body; call only when problems() is empty. */
 export function toRequest(s: AddUserState): CreateUserBody {
-  const base = { email: s.email.trim(), name: s.name.trim(), phone: s.phone.trim().split(/\s+/).join(" "), password: s.password };
+  const base = {
+    email: s.email.trim(),
+    name: s.name.trim(),
+    phone: s.phone.trim().split(/\s+/).join(" "),
+    password: s.password,
+    ...(s.teams.length ? { teams: [...s.teams] } : {}),
+  };
   if (s.scope === "all") return { ...base, role: s.allRole as UserRole };
   const grants: GrantBody[] = [];
   const assetAt = new Map<number, number>();
@@ -172,9 +196,15 @@ export function toRequest(s: AddUserState): CreateUserBody {
 }
 
 /** What the admin is about to give, in one line above the button. */
-export function preview(s: AddUserState, labels: Record<string, string>): string {
+export function preview(s: AddUserState, labels: Record<string, string>, teams: Record<number, TeamInfo> = {}): string {
+  const via = s.teams
+    .map((t) => teams[t])
+    .filter((t): t is TeamInfo => !!t && t.sees.length > 0)
+    .map((t) => ` Via team ${t.name}: ${t.sees.join("; ")}.`)
+    .join("");
   if (s.scope === "all") return s.allRole ? `All projects and assets — ${labels[s.allRole] ?? s.allRole}.` : "";
   if (s.scope !== "specific") return "";
+  if (s.projects.length === 0) return via.trim();
   const req = toRequest(s);
   const g = req.grants ?? [];
   const p = g.filter((x) => x.project_id).length;
@@ -182,7 +212,7 @@ export function preview(s: AddUserState, labels: Record<string, string>): string
   const parts: string[] = [];
   if (p) parts.push(`${p} whole project${p === 1 ? "" : "s"} (and assets added to ${p === 1 ? "it" : "them"} later)`);
   if (a) parts.push(`${a} chosen asset${a === 1 ? "" : "s"}`);
-  return parts.length ? `Only ${parts.join(" and ")}.` : "";
+  return (parts.length ? `Only ${parts.join(" and ")}.` : "") + via;
 }
 
 // --- invitations: the same "what can they see?", without phone or password
@@ -198,10 +228,12 @@ export interface InvitationBody {
   /** An organisation-wide role; absent with grants. */
   role?: UserRole;
   grants?: GrantBody[];
+  teams?: number[];
 }
 
 /** The POST /invitations body; call only when problems() is empty. */
 export function toInvitation(s: AddUserState): InvitationBody {
-  const { email, name, role, grants } = toRequest(s);
-  return role === "none" ? { email, name, grants } : { email, name, role };
+  const { email, name, role, grants, teams } = toRequest(s);
+  const t = teams ? { teams } : {};
+  return role === "none" ? { email, name, grants, ...t } : { email, name, role, ...t };
 }
