@@ -1,5 +1,5 @@
 import { useMemo, useReducer, useState, type FormEvent } from "react";
-import { api, USER_ROLES, type List, type Project, type User, type UserRole } from "../../api";
+import { api, USER_ROLES, type List, type Project, type Team, type User, type UserRole } from "../../api";
 import { useAuth } from "../../auth";
 import { useAction, useLoad } from "../../hooks";
 import { Badge } from "../../components/Badge";
@@ -10,7 +10,7 @@ import { confirmAction } from "../../components/ConfirmDialog";
 import { PermissionsDisclosure } from "../../components/Permissions";
 import { PERMISSIONS, permissionLabel, scopeSummary } from "../../roles";
 import { EMPTY, phoneProblem, preview, problems, reduce, toRequest } from "../../userAccess";
-import { AccessPicker } from "../../components/AccessPicker";
+import { AccessPicker, teamInfo } from "../../components/AccessPicker";
 import { InvitationList, InviteForm } from "../../components/Invite";
 
 /** Organisation-wide roles, and "none": access only to the projects someone is given. */
@@ -355,9 +355,11 @@ function CreateUser({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
   const [tried, setTried] = useState(false);
   const projects = useLoad(() => api.getAll<List<Project>>("/projects"), []);
   const names = useMemo(() => Object.fromEntries((projects.data?.items ?? []).map((p) => [p.id, p.name])), [projects.data]);
+  const teams = useLoad(() => api.getAll<List<Team>>("/teams"), []);
+  const tinfo = useMemo(() => teamInfo(teams.data?.items), [teams.data]);
   const act = useAction();
-  const missing = problems(f, names);
-  const summary = preview(f, LABELS);
+  const missing = problems(f, names, tinfo);
+  const summary = preview(f, LABELS, tinfo);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setTried(true);
@@ -391,7 +393,7 @@ function CreateUser({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
           </div>
         </div>
 
-        <AccessPicker idp="nu" f={f} dispatch={dispatch} projects={projects} />
+        <AccessPicker idp="nu" f={f} dispatch={dispatch} projects={projects} teams={teams} />
 
         <PermissionsDisclosure />
 

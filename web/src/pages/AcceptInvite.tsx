@@ -5,7 +5,7 @@ import { useAction } from "../hooks";
 import { absTime } from "../format";
 import { ErrorBox, Loading, Notice } from "../components/ui";
 import { ROLE_HELP } from "../components/Invite";
-import { permissionLabel } from "../roles";
+import { accessLines, permissionLabel } from "../roles";
 import { LoginPage } from "./Login";
 
 /**
@@ -70,7 +70,10 @@ export function AcceptInvitePage() {
   if (joined) {
     body = (
       <>
-        <Notice kind="success">You joined. You have access to {joined.grants === 1 ? "1 project or asset" : `${joined.grants} projects and assets`}.</Notice>
+        <Notice kind="success">
+          You joined, with access to {joined.grants === 1 ? "1 project or asset" : `${joined.grants} projects and assets`}
+          {joined.teams ? ` and ${joined.teams === 1 ? "1 team" : `${joined.teams} teams`}` : ""}.
+        </Notice>
         <Notice kind="warn">
           Some of what the invitation named was not given, because it changed after you were invited:
           <ul>
@@ -110,7 +113,7 @@ export function AcceptInvitePage() {
     const wrong = pv.signed_in_as !== "" && pv.signed_in_as.toLowerCase() !== inv.email.toLowerCase();
     body = (
       <>
-        {inv.scope === "specific" && !(inv.grants.length === 1 && inv.grants[0].kind === "project") ? (
+        {inv.scope === "specific" && !(inv.grants.length === 1 && inv.grants[0].kind === "project" && !inv.teams?.length) ? (
           <>
             <p>
               {inv.invited_by} invited <strong>{inv.email}</strong> to <strong>{inv.workspace}</strong>, to see:
@@ -120,6 +123,12 @@ export function AcceptInvitePage() {
                 <li key={`${g.kind}-${g.project_id ?? g.asset_id}-${g.name}`} className={g.available ? undefined : "muted"}>
                   {g.kind === "project" ? "Project" : "Asset"} <strong>{g.name}</strong> — {permissionLabel(g.role)}
                   {!g.available && <> (not any more: {UNAVAILABLE[g.unavailable ?? "deleted"]})</>}
+                </li>
+              ))}
+              {(inv.teams ?? []).map((t) => (
+                <li key={`team-${t.team_id ?? t.name}`} className={t.available ? undefined : "muted"}>
+                  Team <strong>{t.name}</strong>
+                  {t.available ? <>: {accessLines(t.access).join("; ") || "nothing yet"}</> : <> (not any more: it was deleted)</>}
                 </li>
               ))}
             </ul>
@@ -134,6 +143,7 @@ export function AcceptInvitePage() {
             <p className="hint">
               {inv.role ? ROLE_HELP[inv.role] : ""} The link works until {absTime(inv.expires_at)}.
             </p>
+            {!!inv.teams?.length && <p className="hint">You also join the team{inv.teams.length === 1 ? "" : "s"} {inv.teams.map((t) => t.name).join(", ")}.</p>}
           </>
         )}
         {!inv.usable && (
@@ -217,5 +227,6 @@ const UNAVAILABLE: Record<NonNullable<InvitationGrant["unavailable"]>, string> =
 };
 
 function droppedLine(g: InvitationGrant): string {
-  return `${g.kind === "project" ? "Project" : "Asset"} ${g.name}: ${UNAVAILABLE[g.unavailable ?? "deleted"]}.`;
+  const what = g.kind === "project" ? "Project" : g.kind === "team" ? "Team" : "Asset";
+  return `${what} ${g.name}: ${UNAVAILABLE[g.unavailable ?? "deleted"]}.`;
 }

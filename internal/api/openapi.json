@@ -5833,7 +5833,7 @@
    "post": {
     "operationId": "post_invitations",
     "summary": "Invite someone to the organisation or a project",
-    "description": "Invite someone and say what they will see, as for `POST /users`: an organisation-wide `role` (every project and asset), or `grants` (`[{\"project_id\", \"role\"} | {\"asset_id\", \"role\"}]`, with `role` `none` or no role). The older form `{\"role\", \"project_id\"}` is still accepted and becomes one project grant. There is no default: neither is 400, and so is a grant on a project or asset that is not this organisation's (or an archived project or merged asset); nothing is created then. 201 with `invitation` (with `scope` and `grants`), `emailed` and `replaced` (the person's earlier open invitations, now withdrawn: one open invitation per person); when the email was not sent, `link` (shown once) and `email_problem`. Someone already a member gets the grants at once, all or none (`granted`, `grants`, and `grant`: the first); an organisation-wide invitation for a member is 409\n\nRole: admin (30 an hour per organisation)",
+    "description": "Invite someone and say what they will see, as for `POST /users`: an organisation-wide `role` (every project and asset), or `grants` (`[{\"project_id\", \"role\"} | {\"asset_id\", \"role\"}]`, with `role` `none` or no role). The older form `{\"role\", \"project_id\"}` is still accepted and becomes one project grant. `teams`: teams they join on accepting (each invitation lists them with what they can see, in `teams`). There is no default: neither is 400, and so is a grant on a project or asset that is not this organisation's (or an archived project or merged asset); nothing is created then. 201 with `invitation` (with `scope` and `grants`), `emailed` and `replaced` (the person's earlier open invitations, now withdrawn: one open invitation per person); when the email was not sent, `link` (shown once) and `email_problem`. Someone already a member gets the grants at once, all or none (`granted`, `grants`, and `grant`: the first); an organisation-wide invitation for a member is 409\n\nRole: admin (30 an hour per organisation)",
     "tags": [
      "Projects and people"
     ],
@@ -5898,6 +5898,14 @@
          "project_id": {
           "type": "integer",
           "description": "Older form: role on this one project. Not with grants."
+         },
+         "teams": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+           "type": "integer"
+          },
+          "description": "Teams to add them to; membership gives the team's access. With role none, may stand in for grants when one of the teams can see something."
          }
         }
        }
@@ -7944,7 +7952,7 @@
    "get": {
     "operationId": "get_teams",
     "summary": "Teams",
-    "description": "Teams\n\nRole: viewer",
+    "description": "Teams, each with `members`, `asset_count` (assets it owns: alerts go to it; no access) and `access` (what its members see through it)\n\nRole: viewer",
     "tags": [
      "Projects and people"
     ],
@@ -8040,7 +8048,7 @@
    "patch": {
     "operationId": "patch_teams_id",
     "summary": "Change a team and its members",
-    "description": "Manage teams and members (members must belong to the workspace)\n\nRole: admin",
+    "description": "Change a team in one transaction: `name`, `email`, `members`, `access` (replaces its grants on projects and assets; members see them while in the team) and `owns` (replaces the assets whose owner team it is; ownership routes alerts and gives no access)\n\nRole: admin",
     "tags": [
      "Projects and people"
     ],
@@ -8060,7 +8068,56 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+         "name": {
+          "type": "string"
+         },
+         "email": {
+          "type": "string"
+         },
+         "members": {
+          "type": "array",
+          "items": {
+           "type": "integer"
+          }
+         },
+         "access": {
+          "type": "array",
+          "maxItems": 500,
+          "items": {
+           "type": "object",
+           "properties": {
+            "project_id": {
+             "type": "integer"
+            },
+            "asset_id": {
+             "type": "integer"
+            },
+            "role": {
+             "type": "string",
+             "enum": [
+              "viewer",
+              "engineer",
+              "security",
+              "admin"
+             ]
+            }
+           },
+           "required": [
+            "role"
+           ]
+          },
+          "description": "The team's grants, replaced as a whole; [] removes them."
+         },
+         "owns": {
+          "type": "array",
+          "items": {
+           "type": "integer"
+          },
+          "description": "Asset ids whose owner team this is, replaced as a whole."
+         }
+        }
        }
       }
      }
@@ -8245,7 +8302,7 @@
    "get": {
     "operationId": "get_users",
     "summary": "Users of the organisation",
-    "description": "Members of the organisation. Each has `role` (`none`: access through projects only), `access` (`organisation` or `projects`), `phone`, and `project_grants` and `asset_grants` (their own grants, not their teams').\n\nRole: admin",
+    "description": "Members of the organisation. Each has `role` (`none`: access through projects only), `access` (`organisation` or `projects`), `phone`, and `project_grants` and `asset_grants` (their own grants, not their teams'), `teams` and `access_teams` (their teams that can see something).\n\nRole: admin",
     "tags": [
      "Projects and people"
     ],
@@ -8272,7 +8329,7 @@
    "post": {
     "operationId": "post_users",
     "summary": "Add a user to the organisation",
-    "description": "Add a user and say what they can see, in one transaction: an organisation-wide `role` (every project and asset), or `grants` on chosen projects and assets with `role` `none`. There is no default: a request with neither is 400 and creates nothing; so is a grant on a project or asset of another organisation. Off on Stackurity Cloud (invite_only).\n\nRole: admin",
+    "description": "Add a user and say what they can see, in one transaction: an organisation-wide `role` (every project and asset), or `grants` on chosen projects and assets with `role` `none`. There is no default: a request with neither is 400 and creates nothing; so is a grant on a project or asset of another organisation. `teams` adds them to teams in the same transaction (a team that can see nothing does not count as access). Off on Stackurity Cloud (invite_only).\n\nRole: admin",
     "tags": [
      "Projects and people"
     ],
@@ -8343,6 +8400,14 @@
             "role"
            ]
           }
+         },
+         "teams": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+           "type": "integer"
+          },
+          "description": "Teams to add them to; membership gives the team's access. With role none, may stand in for grants when one of the teams can see something."
          }
         }
        }

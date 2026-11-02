@@ -1,8 +1,13 @@
-import { api, type Asset, type List, type Project, type UserRole } from "../api";
+import { api, type Asset, type List, type Project, type Team, type UserRole } from "../api";
 import { useLoad, type Loaded } from "../hooks";
 import { ErrorBox, Loading, Notice } from "./ui";
-import { PERMISSIONS, SPECIFIC_ROLES } from "../roles";
-import type { Action, AddUserState, ProjectPick } from "../userAccess";
+import { PERMISSIONS, SPECIFIC_ROLES, accessLines } from "../roles";
+import type { Action, AddUserState, ProjectPick, TeamInfo } from "../userAccess";
+
+/** Each team's name and what it can see, for problems() and preview(). */
+export function teamInfo(teams: Team[] | undefined): Record<number, TeamInfo> {
+  return Object.fromEntries((teams ?? []).map((t) => [t.id, { name: t.name, sees: accessLines(t.access) }]));
+}
 
 const LABELS: Record<string, string> = Object.fromEntries(PERMISSIONS.map((p) => [p.role, p.label]));
 
@@ -13,36 +18,54 @@ const LABELS: Record<string, string> = Object.fromEntries(PERMISSIONS.map((p) =>
  * permission). The state is userAccess.ts; idp prefixes every id and name
  * so two forms can share a page.
  */
-export function AccessPicker({ idp, f, dispatch, projects }: { idp: string; f: AddUserState; dispatch: Dispatch; projects: Loaded<List<Project>> }) {
+export function AccessPicker({
+  idp,
+  f,
+  dispatch,
+  projects,
+  teams,
+  specificOnly,
+}: {
+  idp: string;
+  f: AddUserState;
+  dispatch: Dispatch;
+  projects: Loaded<List<Project>>;
+  /** With teams, an optional "Add to teams" follows the scope. */
+  teams?: Loaded<List<Team>>;
+  /** Specific projects and assets only, without the scope question (a team's access). */
+  specificOnly?: boolean;
+}) {
   const names = Object.fromEntries((projects.data?.items ?? []).map((p) => [p.id, p.name]));
   const unpicked = (projects.data?.items ?? []).filter((p) => !f.projects.some((x) => x.projectId === p.id));
   return (
     <>
-      <fieldset className="field access-scope">
-        <legend>What can they see? (required)</legend>
-        <ul className="choice-list">
-          <li>
-            <label className="choice">
-              <input type="radio" name={`${idp}-scope`} value="all" checked={f.scope === "all"} onChange={() => dispatch({ type: "scope", scope: "all" })} />
-              <span>
-                <strong>All projects and assets</strong>
-                <span className="hint"> Everything in this workspace, including what is added later, with one permission.</span>
-              </span>
-            </label>
-          </li>
-          <li>
-            <label className="choice">
-              <input type="radio" name={`${idp}-scope`} value="specific" checked={f.scope === "specific"} onChange={() => dispatch({ type: "scope", scope: "specific" })} />
-              <span>
-                <strong>Specific projects or assets</strong>
-                <span className="hint"> Only what you choose below. Workspace pages (users, integrations, notifications) are not shown to them.</span>
-              </span>
-            </label>
-          </li>
-        </ul>
-      </fieldset>
+      {!specificOnly && (
+        <fieldset className="field access-scope">
+          <legend>What can they see? (required)</legend>
+          <ul className="choice-list">
+            <li>
+              <label className="choice">
+                <input type="radio" name={`${idp}-scope`} value="all" checked={f.scope === "all"} onChange={() => dispatch({ type: "scope", scope: "all" })} />
+                <span>
+                  <strong>All projects and assets</strong>
+                  <span className="hint"> Everything in this workspace, including what is added later, with one permission.</span>
+                </span>
+              </label>
+            </li>
+            <li>
+              <label className="choice">
+                <input type="radio" name={`${idp}-scope`} value="specific" checked={f.scope === "specific"} onChange={() => dispatch({ type: "scope", scope: "specific" })} />
+                <span>
+                  <strong>Specific projects or assets</strong>
+                  <span className="hint"> Only what you choose below. Workspace pages (users, integrations, notifications) are not shown to them.</span>
+                </span>
+              </label>
+            </li>
+          </ul>
+        </fieldset>
+      )}
 
-      {f.scope === "all" && (
+      {f.scope === "all" && !specificOnly && (
         <fieldset className="field">
           <legend>Permission on all projects and assets</legend>
           <ul className="choice-list">
@@ -85,7 +108,41 @@ export function AccessPicker({ idp, f, dispatch, projects }: { idp: string; f: A
           )}
         </div>
       )}
+      {teams && <TeamPicker idp={idp} f={f} dispatch={dispatch} teams={teams} />}
     </>
+  );
+}
+
+/**
+ * "Add to teams": optional. Membership gives the team's access (shown under
+ * each team), so with Specific a team that can see something is enough.
+ */
+function TeamPicker({ idp, f, dispatch, teams }: { idp: string; f: AddUserState; dispatch: Dispatch; teams: Loaded<List<Team>> }) {
+  const list = teams.data?.items ?? [];
+  if (teams.error) return <ErrorBox error={teams.error} title="Could not load teams" />;
+  if (list.length === 0) return null;
+  return (
+    <fieldset className="field access-teams">
+      <legend>Add to teams (optional)</legend>
+      <p className="hint">Members see what the team can see, for as long as they are in it. The team that owns an asset gets its alerts; owning gives no access.</p>
+      <ul className="choice-list">
+        {list.map((t) => {
+          const sees = accessLines(t.access);
+          return (
+            <li key={t.id}>
+              <label className="choice" htmlFor={`${idp}-team-${t.id}`}>
+                <input id={`${idp}-team-${t.id}`} type="checkbox" checked={f.teams.includes(t.id)}
+                  onChange={(e) => dispatch({ type: "toggleTeam", teamId: t.id, checked: e.target.checked })} />
+                <span>
+                  <strong>{t.name}</strong>
+                  <span className="hint"> {sees.length ? `Can see: ${sees.join("; ")}` : "Can see nothing yet (give it access under Settings, Teams)."}</span>
+                </span>
+              </label>
+            </li>
+          );
+        })}
+      </ul>
+    </fieldset>
   );
 }
 

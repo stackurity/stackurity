@@ -8,6 +8,7 @@ import (
 	"github.com/stackurity/stackurity/internal/netguard"
 	"github.com/stackurity/stackurity/internal/secrets"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -36,6 +37,9 @@ type userRequest struct {
 	Phone    string    `json:"phone"`
 	Role     auth.Role `json:"role"`
 	Password string    `json:"password"`
+	// Teams to add them to, in the same transaction (membership gives
+	// the team's access; with role none it may stand in for grants).
+	Teams []int64 `json:"teams"`
 	// Grants: what someone without an organisation-wide role (role
 	// "none", or no role) may see. One of the two is required.
 	Grants []store.ScopeGrant `json:"grants"`
@@ -66,7 +70,7 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
 	}
 	p := principal(r)
 	u, grantIDs, err := s.Store.CreateMember(r.Context(), store.NewMember{Email: req.Email, Name: req.Name, Phone: req.Phone,
-		Password: req.Password, Role: req.Role, Grants: req.Grants}, actorUserID(p))
+		Password: req.Password, Role: req.Role, Grants: req.Grants, Teams: req.Teams}, actorUserID(p))
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -76,7 +80,7 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
 		role = "none"
 	}
 	_ = s.Store.Audit(r.Context(), p.Actor(r), "user.create", "user", itoa(u.ID),
-		map[string]any{"email": u.Email, "role": role, "phone_set": u.Phone != "", "grants": len(grantIDs)})
+		map[string]any{"email": u.Email, "role": role, "phone_set": u.Phone != "", "grants": len(grantIDs), "teams": req.Teams})
 	for _, id := range grantIDs {
 		if g, err := s.Store.GetGrant(r.Context(), id); err == nil {
 			_ = s.Store.Audit(r.Context(), p.Actor(r), "access.grant", "access_grant", itoa(g.ID), g)
@@ -132,6 +136,13 @@ type teamRequest struct {
 	Name    *string  `json:"name"`
 	Email   *string  `json:"email"`
 	Members *[]int64 `json:"members"`
+	// Access: the team's grants, replaced as a whole ("Can see"); its
+	// members get them. Projects and assets only: a team has no
+	// organisation-wide role.
+	Access *[]store.ScopeGrant `json:"access"`
+	// Owns: the assets whose owner team this is, replaced as a whole.
+	// Ownership routes alerts and gives no access.
+	Owns *[]int64 `json:"owns"`
 }
 
 func (s *Server) createTeam(w http.ResponseWriter, r *http.Request) {
@@ -190,11 +201,27 @@ func (s *Server) updateTeam(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	if err := s.Store.UpdateTeam(r.Context(), id, req.Name, req.Email, req.Members); err != nil {
+	p := principal(r)
+	ch, err := s.Store.UpdateTeamAccess(r.Context(), id, store.TeamUpdate{Name: req.Name, Email: req.Email, Members: req.Members,
+		Access: req.Access, Owns: req.Owns}, actorUserID(p))
+	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	_ = s.Store.Audit(r.Context(), principal(r).Actor(r), "team.update", "team", itoa(id), req)
+	_ = s.Store.Audit(r.Context(), p.Actor(r), "team.update", "team", itoa(id), map[string]any{"name": req.Name, "email": req.Email,
+		"members": req.Members, "owns_added": ch.OwnsAdded, "owns_removed": ch.OwnsRemoved})
+	for _, gid := range append(append([]int64{}, ch.Granted...), ch.Changed...) {
+		if g, err := s.Store.GetGrant(r.Context(), gid); err == nil {
+			action := "access.grant"
+			if slices.Contains(ch.Changed, gid) {
+				action = "access.change"
+			}
+			_ = s.Store.Audit(r.Context(), p.Actor(r), action, "access_grant", itoa(g.ID), g)
+		}
+	}
+	for _, g := range ch.Revoked {
+		_ = s.Store.Audit(r.Context(), p.Actor(r), "access.revoke", "access_grant", itoa(g.ID), g)
+	}
 	w.WriteHeader(204)
 }
 

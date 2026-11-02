@@ -38,7 +38,7 @@ test("name, email, phone and password fields", () => {
   assert.deepEqual(problems(s), ["The name is limited to 200 characters."]);
   s = run(s, { type: "field", field: "name", value: " Asha " });
   assert.deepEqual(problems(s), []);
-  assert.deepEqual(toRequest(s), { email: "a@b.io", name: "Asha", phone: "+91 98450 12345", password: "", role: "viewer" });
+  assert.deepEqual(toRequest(s), { email: "a@b.io", name: "Asha", phone: "+91 98450 12345", password: "", role: "viewer" }, "no teams key without teams");
 });
 
 test("phone rules match the server (store.NormalizePhone)", () => {
@@ -145,6 +145,31 @@ test("switching mode or scope keeps choices, but only the chosen ones are sent; 
   assert.deepEqual(problems(s), ["Add at least one project."]);
 });
 
+test("Add to teams: optional; with Specific, a team that can see something is enough", () => {
+  const TEAMS = { 4: { name: "Web", sees: ["Shop — View and edit"] }, 5: { name: "Ops", sees: [] } };
+  let s = run(base, { type: "scope", scope: "specific" });
+  assert.deepEqual(problems(s, {}, TEAMS), ["Add at least one project."]);
+  // A team that can see nothing (an owner team, say) is not enough.
+  s = run(s, { type: "toggleTeam", teamId: 5, checked: true }, { type: "toggleTeam", teamId: 5, checked: true }, { type: "toggleTeam", teamId: 0, checked: true });
+  assert.deepEqual(s.teams, [5], "a team is added once; 0 is not a team");
+  assert.deepEqual(problems(s, {}, TEAMS), ["The teams chosen cannot see anything yet: add a project, or give a team access under Settings, Teams."]);
+  s = run(s, { type: "toggleTeam", teamId: 4, checked: true });
+  assert.deepEqual(problems(s, {}, TEAMS), []);
+  assert.deepEqual(toRequest(s), { email: "new@x.io", name: "New", phone: "", password: "", teams: [5, 4], role: "none", grants: [] });
+  assert.deepEqual(toInvitation(s), { email: "new@x.io", name: "New", grants: [], teams: [5, 4] });
+  assert.equal(preview(s, LABELS, TEAMS), "Via team Web: Shop — View and edit.");
+  // With a project too, the preview says both.
+  s = run(s, { type: "addProject", projectId: 1 }, { type: "projectMode", projectId: 1, mode: "project" }, { type: "projectRole", projectId: 1, role: "viewer" });
+  assert.equal(preview(s, LABELS, TEAMS), "Only 1 whole project (and assets added to it later). Via team Web: Shop — View and edit.");
+  // Unticking.
+  s = run(s, { type: "toggleTeam", teamId: 4, checked: false }, { type: "toggleTeam", teamId: 4, checked: false });
+  assert.deepEqual(s.teams, [5]);
+  // All projects: teams are sent too (alerts and their access), never required.
+  const all = run(base, { type: "scope", scope: "all" }, { type: "allRole", role: "viewer" }, { type: "toggleTeam", teamId: 5, checked: true });
+  assert.deepEqual(problems(all, {}, TEAMS), []);
+  assert.deepEqual(toInvitation(all), { email: "new@x.io", name: "New", role: "viewer", teams: [5] });
+});
+
 test("every action type is covered by these tests", () => {
   assert.deepEqual([...used].sort(), [...ACTION_TYPES].sort());
 });
@@ -211,6 +236,15 @@ test("an invitation from a project's page starts with Specific and that project,
   // Removing the project leaves nothing chosen.
   s = run(forProject(7), { type: "field", field: "email", value: "a@b.io" }, { type: "removeProject", projectId: 7 });
   assert.deepEqual(problems(s), ["Add at least one project."]);
+});
+
+test("Add user and Invite offer Add to teams", () => {
+  assert.match(createUser, /<AccessPicker idp="nu"[^>]*teams=\{teams\}/);
+  assert.match(inviteForm, /<AccessPicker idp="inv"[^>]*teams=\{teams\}/);
+  assert.match(createUser, /problems\(f, names, tinfo\)/);
+  assert.match(inviteForm, /problems\(f, names, tinfo\)/);
+  assert.match(picker, /Add to teams \(optional\)/);
+  assert.match(picker, /owning gives no access/);
 });
 
 test("the Invite form uses the shared picker and wires every control", () => {

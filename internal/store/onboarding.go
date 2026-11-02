@@ -220,6 +220,9 @@ type Invitation struct {
 	// Grants: what a "specific" invitation gives, with whether each can
 	// still be given; one entry for a "project" one; empty otherwise.
 	Grants []InvitationGrant `json:"grants" db:"-"`
+	// Teams the person is added to on accepting; membership gives the
+	// team's access.
+	Teams []InvitationTeam `json:"teams" db:"-"`
 }
 
 // InvitationTTL is how long an invitation link works.
@@ -329,6 +332,7 @@ type InvitationPreview struct {
 	// Scope and Grants as on Invitation: what accepting gives.
 	Scope  string            `json:"scope"`
 	Grants []InvitationGrant `json:"grants"`
+	Teams  []InvitationTeam  `json:"teams"`
 	// Usable: accepting would give something. False when every project
 	// and asset of a "specific" invitation was archived, merged or
 	// deleted since; accepting is then refused.
@@ -372,8 +376,8 @@ func (s *Store) PreviewInvitation(ctx context.Context, token string) (*Invitatio
 	if err != nil {
 		return nil, err
 	}
-	out := &InvitationPreview{Email: inv.Email, Name: inv.Name, Role: inv.Role, Scope: inv.Scope, Grants: inv.Grants,
-		Usable: inv.Scope != "specific" || len(availableGrants(inv.Grants)) > 0}
+	out := &InvitationPreview{Email: inv.Email, Name: inv.Name, Role: inv.Role, Scope: inv.Scope, Grants: inv.Grants, Teams: inv.Teams,
+		Usable: inv.Scope != "specific" || len(availableGrants(inv.Grants)) > 0 || teamsSee(inv.Teams)}
 	if out.Grants == nil {
 		out.Grants = []InvitationGrant{}
 	}
@@ -414,6 +418,8 @@ type Accepted struct {
 	// project was archived or deleted, or the asset merged or deleted,
 	// after the invitation was sent.
 	Dropped []InvitationGrant
+	// Teams the person was added to.
+	Teams []int64
 }
 
 // AcceptInvitation uses up an invitation. Everything it grants comes from
@@ -439,7 +445,7 @@ func (s *Store) AcceptInvitation(ctx context.Context, token string, signedIn int
 		// nothing is left, accepting is refused and nothing is written.
 		give := availableGrants(inv.Grants)
 		if inv.Scope == "specific" {
-			if len(give) == 0 {
+			if len(give) == 0 && !teamsSee(inv.Teams) {
 				return ErrInvitationStale
 			}
 			for _, g := range inv.Grants {
@@ -522,6 +528,25 @@ func (s *Store) AcceptInvitation(ctx context.Context, token string, signedIn int
 				return err
 			}
 			out.GrantIDs, out.Dropped = ids, append(out.Dropped, skipped...)
+		}
+		// Teams: membership of the ones that still exist; a deleted one
+		// is reported with the other dropped items.
+		var teams []int64
+		for _, t := range inv.Teams {
+			if t.Available && t.TeamID != nil {
+				teams = append(teams, *t.TeamID)
+			} else {
+				out.Dropped = append(out.Dropped, InvitationGrant{Kind: "team", Name: t.Name, Unavailable: "deleted"})
+			}
+		}
+		if err := joinTeams(sys, tx, inv.WorkspaceID, uid, teams); err != nil {
+			return err
+		}
+		out.Teams = teams
+		// Fail closed: a "specific" invitation that, after all of this,
+		// gives nothing writes nothing.
+		if inv.Scope == "specific" && len(out.GrantIDs) == 0 && !teamsSee(inv.Teams) {
+			return ErrInvitationStale
 		}
 		_, err = tx.Exec(sys, `UPDATE invitations SET accepted_at = now(), accepted_by = $2 WHERE id = $1`, inv.ID, uid)
 		return err

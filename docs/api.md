@@ -1005,7 +1005,7 @@ The waiting screen's poll: assets created since `since` (RFC 3339; default the l
 
 **Who:** admin (30 an hour per organisation)
 
-`{"email", "name", "role", "grants"}`: says what they will see, as for [`POST /users`](#post-users). Either `role` (`viewer`, `engineer`, `security` or `admin`: every project and asset), or `grants` with `role` `none` (or no `role`): `{"project_id", "role"}` and `{"asset_id", "role"}`, at most 500. There is no default: neither is 400, and so are both, an empty `grants`, a project or asset named twice, and one that is not this organisation's (or an archived project or merged asset); nothing is created then. The older form `{"email", "name", "role", "project_id"}` still works and becomes one project grant. 201 with `invitation`, `emailed` and `replaced` (ids of the person's earlier open invitations, now withdrawn: a person has one open invitation); when the email was not sent, `link` (shown once) and `email_problem`. Someone already a member gets the grants at once, all or none (`granted`, `grants`, and `grant`: the first); an organisation-wide invitation for a member is 409.
+`{"email", "name", "role", "grants", "teams"}`: says what they will see, as for [`POST /users`](#post-users) (with `teams`, they join those teams when they accept). Either `role` (`viewer`, `engineer`, `security` or `admin`: every project and asset), or `grants` with `role` `none` (or no `role`): `{"project_id", "role"}` and `{"asset_id", "role"}`, at most 500. There is no default: neither is 400, and so are both, an empty `grants`, a project or asset named twice, and one that is not this organisation's (or an archived project or merged asset); nothing is created then. The older form `{"email", "name", "role", "project_id"}` still works and becomes one project grant. 201 with `invitation`, `emailed` and `replaced` (ids of the person's earlier open invitations, now withdrawn: a person has one open invitation); when the email was not sent, `link` (shown once) and `email_problem`. Someone already a member gets the grants at once, all or none (`granted`, `grants`, and `grant`: the first); an organisation-wide invitation for a member is 409.
 
 ### `DELETE /invitations/{id}`
 
@@ -1029,13 +1029,13 @@ Withdraws a pending invitation: its link stops working.
 
 **Who:** admin
 
-Members of the organisation. Each has `role` (`none`: a member with no organisation-wide role, access through projects only), `access` (`organisation` or `projects`), `phone` (contact information, may be empty), and `project_grants` and `asset_grants` (how many projects and assets they were given themselves, not through teams).
+Members of the organisation. Each has `role` (`none`: a member with no organisation-wide role, access through projects only), `access` (`organisation` or `projects`), `phone` (contact information, may be empty), and `project_grants` and `asset_grants` (how many projects and assets they were given themselves, not through teams), `teams` (every team they are in) and `access_teams` (their teams that can see something: access through team membership).
 
 ### `POST /users`
 
 **Who:** admin
 
-`{"email", "name", "phone", "password", "role", "grants"}`: adds a user to the organisation and says what they can see, in one transaction. Either `role` (`viewer`, `engineer`, `security` or `admin`: every project and asset), or `grants` with `role` `none` (or no `role`): a list of `{"project_id", "role"}` (the project's assets, including ones added later) and `{"asset_id", "role"}` (one asset). There is no default: neither is 400, and so are both, an empty `grants`, a project or asset named twice, and a project or asset that is not this organisation's (or an archived project or merged asset); nothing is created then. `phone` is optional contact information: digits with an optional leading `+`, spaces, dots, dashes and brackets, 6 to 15 digits, at most 32 characters. `password` (at least 12 characters) is for a new account; an existing account joins with its own. 409 when they are already a member. Audited as `user.create` and one `access.grant` per grant. Off on Stackurity Cloud, where people join by invitation.
+`{"email", "name", "phone", "password", "role", "grants", "teams"}`: adds a user to the organisation and says what they can see, in one transaction. Either `role` (`viewer`, `engineer`, `security` or `admin`: every project and asset), or `grants` with `role` `none` (or no `role`): a list of `{"project_id", "role"}` (the project's assets, including ones added later) and `{"asset_id", "role"}` (one asset). There is no default: neither is 400, and so are both, an empty `grants`, a project or asset named twice, and a project or asset that is not this organisation's (or an archived project or merged asset); nothing is created then. `phone` is optional contact information: digits with an optional leading `+`, spaces, dots, dashes and brackets, 6 to 15 digits, at most 32 characters. `password` (at least 12 characters) is for a new account; an existing account joins with its own. 409 when they are already a member. `teams` (team ids, at most 50) adds them to those teams in the same transaction; membership gives the team's access (see [`PATCH /teams/{id}`](#patch-teamsid)), so with `role` `none` the teams may stand in for `grants` when at least one of them can see something (a team that can see nothing, such as one that only owns assets, is 400). Audited as `user.create` (with `teams`) and one `access.grant` per grant. Off on Stackurity Cloud, where people join by invitation.
 
 ### `PATCH /users/{id}`
 
@@ -1065,7 +1065,7 @@ Active users (id, email, name) for assignment. Members with project access only 
 
 **Who:** viewer
 
-Teams.
+Teams, each with `members`, `asset_count` (assets whose owner team it is) and `access` (what its members see through it: `kind`, `project_id` or `asset_id`, `role`, `name`, `available`, `unavailable`).
 
 ### `POST /teams`
 
@@ -1077,7 +1077,7 @@ Creates a team with its members (who must belong to the organisation).
 
 **Who:** admin
 
-Changes a team and its members.
+Changes a team, in one transaction: `name`, `email`, `members` (replaced), `access` and `owns`, each optional. `access` replaces the team's grants (`[{"project_id", "role"} | {"asset_id", "role"}]`; `[]` removes them all): **members of a team see what it can see**, from their next request, and lose it when they leave. A team gets specific projects and assets only, never an organisation-wide role. `owns` replaces the assets whose owner team it is (alerts, incidents and routes follow the owner team); **owning gives no access**. A project or asset that is not this organisation's (or an archived project or merged asset) is 400 and nothing changes. Audited as `team.update` (with `owns_added` and `owns_removed`) and one `access.grant`, `access.change` or `access.revoke` per grant changed.
 
 ### `DELETE /teams/{id}`
 
