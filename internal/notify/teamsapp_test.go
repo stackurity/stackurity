@@ -184,6 +184,8 @@ func TestTeamsServiceURLAllowList(t *testing.T) {
 		"http://smba.trafficmanager.net/amer/":                  false,
 		"https://smba.trafficmanager.net:8443/amer/":            false,
 		"https://evil.example/amer/":                            false,
+		"https://smba.trafficmanager.net/amer/%2e%2e/x/":        false,
+		"https://smba.trafficmanager.net/a.b/":                  false,
 		"https://smba.trafficmanager.net.evil.example/amer/":    false,
 		"https://evilsmba.trafficmanager.net/amer/":             false,
 		"https://x.smba.trafficmanager.net/amer/":               false,

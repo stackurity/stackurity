@@ -98,8 +98,16 @@ func serviceOrigin(raw string, hosts map[string]string) (origin, path string, ok
 	if !ok || !strings.HasPrefix(origin, u.Scheme+"://") {
 		return "", "", false
 	}
-	return origin, strings.Trim(u.EscapedPath(), "/"), true
+	path = strings.Trim(u.EscapedPath(), "/")
+	if !teamsServicePath.MatchString(path) {
+		return "", "", false
+	}
+	return origin, path, true
 }
+
+// teamsServicePath is the path of a Bot Connector serviceUrl: empty, or
+// segments such as "amer" or "teams" (no dots of their own, no escapes).
+var teamsServicePath = regexp.MustCompile(`^([A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*)?$`)
 
 // TeamsApp is the bot's configuration.
 type TeamsApp struct {
