@@ -239,6 +239,23 @@ func serverCmd() *cobra.Command {
 					log.Warn("Add to Slack needs stored secrets to keep the webhooks and tokens it gets", "fix", "set STACKURITY_SECRET_KEY")
 				}
 			}
+			// Connect Jira (the Stackurity Atlassian app), when configured.
+			// Its requests go through the notification sender's client, so
+			// the network policy applies and redirects are not followed.
+			if dispatcher.JiraApp, err = notify.JiraAppFromEnv(); err != nil {
+				return err
+			}
+			if box != nil {
+				dispatcher.Box = box
+			}
+			if dispatcher.JiraApp != nil {
+				dispatcher.JiraApp.HTTP = dispatcher.Sender.HTTP
+				base := strings.TrimRight(os.Getenv("STACKURITY_BASE_URL"), "/")
+				log.Info("Connect Jira enabled (Atlassian OAuth 2.0)", "callback_url", base+"/integrations/jira/oauth/callback", "scopes", notify.JiraAppScopes)
+				if box == nil || base == "" {
+					log.Warn("Connect Jira needs STACKURITY_SECRET_KEY (to keep the tokens) and STACKURITY_BASE_URL (for the callback)")
+				}
+			}
 			// The Stackurity GitHub App ("Install on GitHub"), when configured.
 			ghApp, err := githubapp.FromEnv()
 			if err != nil {

@@ -1504,7 +1504,7 @@ jobs:
     section: "Settings and administration",
     summary: "A few messages that bring people to the dashboard: urgent alerts, daily or weekly summaries, overdue reminders. Slack, Teams, email, webhooks, Jira, PagerDuty or ServiceNow.",
     where: ["Settings", "Integrations"],
-    keywords: "integrations trigger events rule slack teams email webhook jira issue ticket route channel urgent summary daily weekly overdue escalation quiet hours digest rate limit connected first scan slack app add to slack interactivity signing secret link slack account assign snooze smtp ses sendgrid postmark mailgun zeptomail gmail confirm held quota",
+    keywords: "integrations trigger events rule slack teams email webhook jira issue ticket route channel urgent summary daily weekly overdue escalation quiet hours digest rate limit connected first scan slack app add to slack connect jira atlassian oauth reconnect interactivity signing secret link slack account assign snooze smtp ses sendgrid postmark mailgun zeptomail gmail confirm held quota",
     body: [
       {
         p: "Everything Stackurity connects to is in [Settings, Integrations](/settings/integrations): **Active integrations** with their status and a settings button, and **Add an integration** for notifications (email, Slack, Teams, Jira, PagerDuty, ServiceNow, webhooks), sources (Git repositories, container registries, Kubernetes, AWS, plugins) and AI assistants. The **Delivery log** is a tab there.",
@@ -1524,7 +1524,7 @@ jobs:
           ["Slack (webhook)", "Optional: the Slack app's signing secret reference, to act from inside Slack", "The incoming webhook URL (required)"],
           ["Microsoft Teams", "none", "The Workflows webhook URL (required)"],
           ["Webhook", "URL (HTTPS)", "HMAC signing key (optional)"],
-          ["Jira", "Site URL, Cloud or Data Center, project key, issue type, account email (Cloud), optional labels, priority mapping and resolve transition", "API token (Cloud) or personal access token (required)"],
+          ["Jira", "With **Connect Jira** (Jira Cloud, where the server offers it): the site, project, issue type, done status and priorities, picked from lists. With a token: site URL, Cloud or Data Center, project key, issue type, account email (Cloud), optional labels, priority mapping and resolve transition", "None with Connect Jira; otherwise an API token (Cloud) or personal access token (required)"],
           ["PagerDuty", "Service region (US or EU), optional severity per priority", "Integration key (routing key) of an Events API v2 integration (required)"],
           ["ServiceNow", "Instance URL, user name (Basic) or OAuth client ID, optional table, assignment group, category, subcategory, urgency and impact per priority, other fields, resolve state and close code, read state back", "Password (Basic) or OAuth client secret (required)"],
         ],
@@ -1597,6 +1597,9 @@ jobs:
       { h: "Jira issues" },
       {
         p: "A Jira channel keeps one issue per incident. The first time a route matches, the issue is created with the priority, risk factors, affected assets and fix. Later, findings that join or leave, priority changes and escalations are added as comments, and when the incident resolves the issue is commented on and moved through the resolve transition (for example Done). Incidents link to their issue. **Send test** checks the credentials and project without creating an issue. Each issue carries a `stackurity-incident-…` label that prevents duplicates: keep it.",
+      },
+      {
+        p: "**Connect Jira** (Jira Cloud, when your server has the Stackurity Atlassian app) needs no token: an administrator clicks **Connect Jira**, allows Stackurity on Atlassian's page and picks a site, then chooses the project, issue type, the status issues move to when an incident resolves, and Jira priorities from lists read from Jira. Stackurity asks only to read and write Jira issues, keeps the connection's tokens encrypted and refreshes them itself. If Atlassian stops accepting the connection (the app was removed from the account that connected it, or it went 90 days unused), the integration shows **Reconnect needed** with the reason and issues are not updated until someone clicks **Reconnect Jira**. **Disconnect** forgets the connection and switches its integrations off; to revoke it at Atlassian too, remove Stackurity under Connected apps in your Atlassian account. Jira Data Center and Server use a personal access token (**Use an API token instead**).",
       },
       {
         p: "A route to Jira can be limited to **one project**, for example a client's own Jira. Its issues then describe only that project's part of each incident: the project's assets, findings, counts and priority, escalations as comments, and links that open in the project. Stackurity reads them the way a member of that project would, so the database itself keeps other projects' assets out. An incident becomes an issue there when the project's part matches the route; the issue is resolved when none of the project's findings remain open, even if the incident stays open elsewhere, and says so if they open again. A route on the same Jira channel for every asset keeps its own whole-incident issue, as before. For several projects, add a route for each.",

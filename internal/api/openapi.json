@@ -9010,6 +9010,265 @@
     }
    }
   },
+  "/integrations/jira/install": {
+   "post": {
+    "operationId": "post_integrations_jira_install",
+    "summary": "Start Connect Jira",
+    "description": "`{\"return_to\": \"/settings/integrations\", \"connection_id\": 0}` (a dashboard path; `connection_id` to reconnect a connection of this organisation). Answers `url`, Atlassian's consent page with a single-use state bound to the caller and organisation (10 minutes). 404 `not_configured` without the Stackurity Atlassian app (STACKURITY_JIRA_CLIENT_ID, STACKURITY_JIRA_CLIENT_SECRET)\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/jira/oauth": {
+   "post": {
+    "operationId": "post_integrations_jira_oauth",
+    "summary": "Finish Connect Jira",
+    "description": "`{\"code\", \"state\"}` from Atlassian's redirect to `/integrations/jira/oauth/callback`. The state must be the caller's, in this organisation, unused and fresh (400 `jira_state` otherwise, before Atlassian is called). Stores the grant sealed and answers `connection` (its Jira sites, never the tokens), `return_to` and `reconnected` (201 new, 200 reconnected); 400 `jira_no_site`; 502 `jira_refused`\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/jira/connections": {
+   "get": {
+    "operationId": "get_integrations_jira_connections",
+    "summary": "List Jira connections",
+    "description": "Connect Jira connections of this organisation: `id`, `sites` (`id` the cloud id, `name`, `url`), `scopes`, `status` (`active` or `reconnect_needed`), `status_reason`, `connected_by`, `connected_at`, `refreshed_at`. Tokens are never returned\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/jira/connections/{id}": {
+   "delete": {
+    "operationId": "delete_integrations_jira_connections_id",
+    "summary": "Disconnect Jira",
+    "description": "Deletes the connection and its tokens; the Jira channels using it are switched off with a note (`channels_disabled`). Atlassian has no API to revoke a grant: `revoke_url` is where the person removes the app from their Atlassian account\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/jira/connections/{id}/projects": {
+   "get": {
+    "operationId": "get_integrations_jira_connections_id_projects",
+    "summary": "List a Jira site's projects",
+    "description": "The projects of a site of the connection (`key`, `name`), read with its token, for setting up a channel. 409 `jira_reconnect` when the connection needs reconnecting; 502 when Jira refuses\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "site",
+      "in": "query",
+      "required": true,
+      "description": "The site's cloud id",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "q",
+      "in": "query",
+      "required": false,
+      "description": "Text the key or name contains",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/jira/connections/{id}/projects/{key}": {
+   "get": {
+    "operationId": "get_integrations_jira_connections_id_projects_key",
+    "summary": "Read a Jira project's issue types and statuses",
+    "description": "`issue_types` (`name`, `subtask`), `statuses` by issue type (`name`, `category`: new, indeterminate or done) and the site's `priorities`, for setting up a channel\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "key",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "site",
+      "in": "query",
+      "required": true,
+      "description": "The site's cloud id",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/integrations/slack/events": {
    "post": {
     "operationId": "post_integrations_slack_events",

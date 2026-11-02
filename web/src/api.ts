@@ -2246,6 +2246,10 @@ export interface ChannelConfig {
   labels?: string[];
   priorities?: Partial<Record<Priority, string>>;
   resolve_transition?: string;
+  // jira with Connect Jira (auth "oauth"): the connection and the site
+  // (cloud id); url is then the site's address.
+  connection_id?: number;
+  cloud_id?: string;
   // pagerduty: service region and severity per priority; the routing key is the secret.
   region?: "us" | "eu" | "";
   severities?: Partial<Record<Priority, "critical" | "error" | "warning" | "info">>;
@@ -2281,6 +2285,8 @@ export interface ChannelConfig {
 /** GET /notification-options: what this server offers. */
 export interface NotificationOptions {
   slack_app: boolean;
+  /** Connect Jira (the Stackurity Atlassian app) is available. */
+  jira_app: boolean;
   platform_email: {
     enabled: boolean;
     from?: string;
@@ -2291,7 +2297,7 @@ export interface NotificationOptions {
   base_url: boolean;
 }
 
-export const NO_NOTIFICATION_OPTIONS: NotificationOptions = { slack_app: false, platform_email: { enabled: false }, secrets: false, base_url: false };
+export const NO_NOTIFICATION_OPTIONS: NotificationOptions = { slack_app: false, jira_app: false, platform_email: { enabled: false }, secrets: false, base_url: false };
 
 /** Loads the options; a failure counts as nothing offered. */
 export function loadNotificationOptions(): Promise<NotificationOptions> {
@@ -2299,6 +2305,7 @@ export function loadNotificationOptions(): Promise<NotificationOptions> {
     .get<Partial<NotificationOptions>>("/notification-options")
     .then((o) => ({
       slack_app: Boolean(o?.slack_app),
+      jira_app: Boolean(o?.jira_app),
       platform_email: o?.platform_email?.enabled ? o.platform_email : { enabled: false },
       secrets: Boolean(o?.secrets),
       base_url: Boolean(o?.base_url),
@@ -2312,6 +2319,48 @@ export interface EmailRecipient {
   status: "pending" | "confirmed" | string;
   requested_at: string;
   confirmed_at: string | null;
+}
+
+/** A Jira Cloud site a Connect Jira connection reaches. */
+export interface JiraSite {
+  /** The Atlassian cloud id. */
+  id: string;
+  name: string;
+  url: string;
+}
+
+/** GET /integrations/jira/connections: a Connect Jira grant (never its tokens). */
+export interface JiraConnection {
+  id: number;
+  sites: JiraSite[];
+  scopes: string;
+  status: "active" | "reconnect_needed";
+  status_reason: string;
+  connected_by: number | null;
+  connected_at: string;
+  refreshed_at: string | null;
+}
+
+/** POST /integrations/jira/oauth */
+export interface JiraOAuthResult {
+  connection: JiraConnection;
+  return_to: string;
+  reconnected: boolean;
+}
+
+/** GET /integrations/jira/connections/{id}/projects/{key} */
+export interface JiraProjectMeta {
+  key: string;
+  name: string;
+  issue_types: { name: string; subtask: boolean }[];
+  statuses: Record<string, { name: string; category: string }[]>;
+  priorities: string[];
+}
+
+/** Starts Connect Jira (or reconnects `connectionId`) and goes to Atlassian's consent page. */
+export async function startJiraConnect(returnTo: string, connectionId = 0): Promise<void> {
+  const r = await api.post<{ url: string }>("/integrations/jira/install", { return_to: returnTo, connection_id: connectionId });
+  window.location.assign(r.url);
 }
 
 /** POST /integrations/slack/oauth */

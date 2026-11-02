@@ -56,6 +56,10 @@ type Dispatcher struct {
 	// SlackApp is the Stackurity Slack app ("Add to Slack"); nil turns it
 	// off. Its signing secret verifies clicks on channels it added.
 	SlackApp *SlackApp
+	// JiraApp is the Stackurity Atlassian app (Connect Jira); nil turns it
+	// off. Box seals the tokens of its connections (STACKURITY_SECRET_KEY).
+	JiraApp *JiraApp
+	Box     store.Sealer
 	// TrackerPoll is how often ServiceNow records of channels with
 	// sync_back are read back; zero means every 5 minutes.
 	TrackerPoll time.Duration
