@@ -1,0 +1,8 @@
+# Without rbac.clusterWide: only the cluster's identity (the kube-system
+# namespace's UID) and version, cluster-wide.
+- apiGroups: [""]
+  resources: ["namespaces"]
+  resourceNames: ["kube-system"]
+  verbs: ["get"]
+- nonResourceURLs: ["/version"]
+  verbs: ["get"]

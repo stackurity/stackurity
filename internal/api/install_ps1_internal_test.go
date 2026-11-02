@@ -49,17 +49,20 @@ func TestInstallPowerShellServed(t *testing.T) {
 	}
 }
 
-// A Host header is the client's to choose. Quotes in it stay inside the
-// single-quoted string: PowerShell would otherwise end the string at an
-// apostrophe or a typographic quote and run the rest.
+// A Host header is the client's to choose. One that is not a hostname or
+// address is refused (publicURL), and the URL is quoted anyway: in a
+// single-quoted string PowerShell would otherwise end it at an apostrophe or
+// a typographic quote and run the rest.
 func TestInstallPowerShellQuotesHost(t *testing.T) {
 	for _, host := range []string{"x'+(calc)+'", "x’;calc;‘"} {
-		_, body := servePS1(t, &Server{}, host, "/install/agent.ps1")
-		line := regexp.MustCompile(`(?m)^if \(-not \$Server\) \{ \$Server = '(.*)' \}$`).FindStringSubmatch(body)
-		if line == nil {
-			t.Fatalf("%q: no server line", host)
+		r := httptest.NewRequest("GET", "/install/agent.ps1", nil)
+		r.Host = host
+		w := httptest.NewRecorder()
+		(&Server{}).installPowerShell(w, r)
+		if w.Code != 400 || strings.Contains(w.Body.String(), "calc") {
+			t.Errorf("%q: status %d, body %q", host, w.Code, w.Body.String())
 		}
-		if got := unquotePS(t, line[1]); got != "http://"+host {
+		if got := unquotePS(t, psSingleQuoted("http://"+host)); got != "http://"+host {
 			t.Errorf("%q: the string holds %q", host, got)
 		}
 	}

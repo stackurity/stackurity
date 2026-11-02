@@ -15,10 +15,13 @@ function isInsecure(loc: Origin): boolean {
   return loc.protocol === "http:" && !LOCAL_HOSTS.includes(loc.hostname);
 }
 
-/** The one-line installer for a new Linux host. */
-export function linuxCommand(code: string, loc: Origin): { command: string; insecure: boolean } {
+/**
+ * The one-line installer for a new Linux host. With docker, it also gives
+ * the agent access to the Docker socket (STACKURITY_DOCKER=1).
+ */
+export function linuxCommand(code: string, loc: Origin, docker = false): { command: string; insecure: boolean } {
   const insecure = isInsecure(loc);
-  const env = `STACKURITY_ENROLL_CODE=${code}${insecure ? " STACKURITY_ALLOW_HTTP=1" : ""}`;
+  const env = `STACKURITY_ENROLL_CODE=${code}${insecure ? " STACKURITY_ALLOW_HTTP=1" : ""}${docker ? " STACKURITY_DOCKER=1" : ""}`;
   return { command: `curl -fsSL ${loc.origin}/install/agent.sh | sudo ${env} sh`, insecure };
 }
 

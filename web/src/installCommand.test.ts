@@ -12,6 +12,7 @@ test("Linux command", () => {
     insecure: false,
   });
   assert.equal(linuxCommand("enr_abc", plain).command, "curl -fsSL http://stk.internal:8080/install/agent.sh | sudo STACKURITY_ENROLL_CODE=enr_abc STACKURITY_ALLOW_HTTP=1 sh");
+  assert.equal(linuxCommand("enr_abc", https, true).command, "curl -fsSL https://stk.example.com/install/agent.sh | sudo STACKURITY_ENROLL_CODE=enr_abc STACKURITY_DOCKER=1 sh");
 });
 
 test("Windows command: TLS 1.2, the code in a single-quoted string, irm piped to iex", () => {

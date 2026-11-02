@@ -1,0 +1,71 @@
+# Stackurity Kubernetes reporter (docs/kubernetes.md). Install it with the
+# command from Settings → Integrations → Kubernetes cluster, which fills in
+# server, enrollCode and clusterName.
+
+# The Stackurity server's public URL, e.g. https://stackurity.example.com.
+server: ""
+
+# One-time enrollment code (enr_...). On first start the reporter exchanges
+# it for its own collector token, stores the token in the Secret below and
+# removes the code. Helm keeps the values of a release, so the used code
+# stays in the release record; it cannot be used again.
+enrollCode: ""
+
+# Allow a plain-HTTP server URL. The code and the token then cross the
+# network unencrypted; use only for a local evaluation.
+allowHTTP: false
+
+# The Secret holding the enrollment code and, once enrolled, the token. The
+# reporter may read and update this one Secret and no other.
+secret:
+  # false: create it yourself (e.g. with your secrets tooling), with the
+  # code under the key enroll-code.
+  create: true
+  name: ""             # default: the release's full name
+
+# Name of the cluster asset and prefix of workload names. The cluster is
+# identified by its kube-system namespace's UID, so renaming keeps history.
+clusterName: ""
+# Environment of the cluster and its workloads (default: the enrollment
+# code's), and a namespace label whose value overrides it per namespace.
+environment: ""
+environmentLabel: ""
+# Only these namespaces (default: all), and namespaces to leave out.
+namespaces: []
+excludeNamespaces: []
+# Most images reported per run (up to 2000), and most image scans one
+# report asks the server for (0: none; at most 500).
+maxImages: 300
+imageScans: 25
+# Time between reports.
+interval: 1h
+
+rbac:
+  # true: one read-only ClusterRole. false: Roles in each of namespaces
+  # only, plus cluster-wide get on the kube-system namespace (the cluster's
+  # identity) and /version; nodes and other namespaces are not assessed.
+  clusterWide: true
+
+image:
+  repository: ghcr.io/stackurity/stackurity
+  tag: ""              # defaults to the chart appVersion
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+resources:
+  requests:
+    cpu: 20m
+    memory: 64Mi
+  limits:
+    memory: 256Mi
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+priorityClassName: ""
+
+# Extra environment variables, e.g. HTTPS_PROXY for an outbound proxy:
+#  - name: HTTPS_PROXY
+#    value: http://proxy.internal:3128
+extraEnv: []

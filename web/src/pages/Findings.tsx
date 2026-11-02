@@ -1,7 +1,8 @@
 import { Fragment, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
-import { api, FINDING_STATES, PRIORITIES, SEVERITIES, VERIFICATIONS, type Finding, type FindingSummary, type List, type FixGroup } from "../api";
+import { api, FINDING_STATES, PRIORITIES, SEVERITIES, VERIFICATIONS, type Asset, type Finding, type FindingSummary, type List, type FixGroup } from "../api";
 import { useAuth } from "../auth";
+import { AssetSelect, ProjectFilter } from "../components/AssetPicker";
 import { FindingActions } from "../components/Workflow";
 import { useDebounced, useFacets, useLoad } from "../hooks";
 import { humanize, percent, plural } from "../format";
@@ -69,6 +70,7 @@ export function IssuesPage() {
   const fixGroup = get("fix_group");
   const assetId = get("asset_id");
   const groups = useLoad(() => api.get<List<FixGroup>>("/fix-groups", { asset_id: assetId, limit: 100 }), [assetId]);
+  const assets = useLoad(() => api.get<List<Asset>>("/assets", { limit: 200 }), []);
   const { me, canAct } = useAuth();
   const myId = me?.user?.id ? String(me.user.id) : "";
   const mine = Boolean(myId) && get("assignee_user") === myId;
@@ -183,6 +185,11 @@ export function IssuesPage() {
           <div className="field">
             <label htmlFor="fd-q">Search</label>
             <input id="fd-q" type="search" placeholder="CVE, package, title or asset" value={q} onChange={(e) => setQ(e.target.value)} />
+          </div>
+          <ProjectFilter id="fd-project" onChange={() => update({ asset_id: "", fix_group: "" })} />
+          <div className="field">
+            <label htmlFor="fd-asset">Asset</label>
+            <AssetSelect id="fd-asset" value={assetId} onChange={(v) => update({ asset_id: v, fix_group: "" })} assets={assets.data?.items} />
           </div>
           <div className="field">
             <label htmlFor="fd-status">Status</label>

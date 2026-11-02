@@ -6,11 +6,18 @@ import { absTime, plural } from "../format";
 import { Table, type Column } from "../components/Table";
 import { Card, Code, CodeBlock, EmptyState, ErrorBox, KeyValues, Loading, Notice, PageHeader, RelativeTime, Tabs } from "../components/ui";
 import { confirmAction } from "../components/ConfirmDialog";
+import { DigitalOceanPanel, FleetPanel } from "./AddServerFleet";
 import { linuxCommand, windowsCommand } from "../installCommand";
 
-/** The one-line installer for a new Linux host (installCommand.ts). */
-export function installCommand(code: string): { command: string; insecure: boolean } {
-  return linuxCommand(code, window.location);
+type Mode = "one" | "fleet" | "digitalocean";
+
+/**
+ * The one-line installer for a new Linux host (installCommand.ts). With
+ * docker, it also gives the agent access to the Docker socket
+ * (STACKURITY_DOCKER=1) so it checks the images of running containers.
+ */
+export function installCommand(code: string, docker = false): { command: string; insecure: boolean } {
+  return linuxCommand(code, window.location, docker);
 }
 
 /** The one-line installer for a new Windows host (installCommand.ts). */
@@ -21,8 +28,20 @@ export function windowsInstallCommand(code: string): { command: string; insecure
 export type ServerOS = "linux" | "windows";
 
 /** The install command for one code, with a tab for each operating system. */
-export function InstallCommandTabs({ code, os, onOS, idPrefix }: { code: string; os: ServerOS; onOS: (os: ServerOS) => void; idPrefix: string }) {
-  const { command } = os === "windows" ? windowsInstallCommand(code) : installCommand(code);
+export function InstallCommandTabs({
+  code,
+  os,
+  onOS,
+  idPrefix,
+  docker = false,
+}: {
+  code: string;
+  os: ServerOS;
+  onOS: (os: ServerOS) => void;
+  idPrefix: string;
+  docker?: boolean;
+}) {
+  const { command } = os === "windows" ? windowsInstallCommand(code) : installCommand(code, docker);
   return (
     <div className="install-command">
       <Tabs<ServerOS>
@@ -40,6 +59,25 @@ export function InstallCommandTabs({ code, os, onOS, idPrefix }: { code: string;
         <CodeBlock text={command} label={os === "windows" ? "Install command for Windows (PowerShell)" : "Install command for Linux"} />
       </div>
     </div>
+  );
+}
+
+/**
+ * "Also check Docker containers": adds STACKURITY_DOCKER=1 to the install
+ * command. Off by default: it gives the agent's user access to the Docker
+ * socket, which is equivalent to root on the server.
+ */
+export function CheckDocker({ id, checked, onChange }: { id: string; checked: boolean; onChange: (on: boolean) => void }) {
+  return (
+    <>
+      <label className="check" htmlFor={id}>
+        <input id={id} type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} /> Also check Docker containers
+      </label>
+      <p className="hint">
+        Reads the images of running containers (OS packages and app libraries), including images built on the server. The agent's user
+        joins the group of the Docker socket, which is equivalent to root on the server. It only lists containers and exports images.
+      </p>
+    </>
   );
 }
 
@@ -63,6 +101,37 @@ export function CheckApps({ id, checked, onChange }: { id: string; checked: bool
 }
 
 export function AddServerPage() {
+  const [mode, setMode] = useState<Mode>("one");
+  return (
+    <>
+      <nav className="crumbs" aria-label="Breadcrumb">
+        <Link to="/assets">Assets</Link> <span aria-hidden="true">/</span> <span>Add server</span>
+      </nav>
+      <PageHeader
+        help="add-server"
+        title="Add server"
+        sub="Create an install command, then run it on the new Linux or Windows server. It installs the read-only agent and enrolls the server."
+      />
+      <Tabs
+        label="How many servers"
+        value={mode}
+        onChange={setMode}
+        tabs={[
+          { id: "one", label: "One server" },
+          { id: "fleet", label: "For many servers" },
+          { id: "digitalocean", label: "DigitalOcean" },
+        ]}
+      />
+      <div role="tabpanel" id={`panel-${mode}`} aria-labelledby={`tab-${mode}`}>
+        {mode === "one" && <OneServer />}
+        {mode === "fleet" && <FleetPanel />}
+        {mode === "digitalocean" && <DigitalOceanPanel />}
+      </div>
+    </>
+  );
+}
+
+function OneServer() {
   const res = useLoad(() => api.get<{ items: Enrollment[] | null }>("/enrollments"), []);
   const act = useAction();
   const [created, setCreated] = useState<EnrollmentCreated | null>(null);
@@ -123,14 +192,6 @@ export function AddServerPage() {
 
   return (
     <>
-      <nav className="crumbs" aria-label="Breadcrumb">
-        <Link to="/assets">Assets</Link> <span aria-hidden="true">/</span> <span>Add server</span>
-      </nav>
-      <PageHeader
-        help="add-server"
-        title="Add server"
-        sub="Create a one-time install command, then run it on the new Linux or Windows server. It installs the read-only agent and enrolls the server."
-      />
       {created ? (
         <InstallCommand created={created} onDone={() => setCreated(null)} />
       ) : (
@@ -158,7 +219,8 @@ export function AddServerPage() {
 
 function InstallCommand({ created, onDone }: { created: EnrollmentCreated; onDone: () => void }) {
   const [os, setOS] = useState<ServerOS>("linux");
-  const { insecure } = installCommand(created.code);
+  const [docker, setDocker] = useState(false);
+  const { insecure } = installCommand(created.code, docker);
   const e = created.enrollment;
   const appsAsked = e.discover_apps || (e.app_dirs?.length ?? 0) > 0;
   return (
@@ -176,7 +238,12 @@ function InstallCommand({ created, onDone }: { created: EnrollmentCreated; onDon
             from there instead.
           </Notice>
         )}
-        <InstallCommandTabs code={created.code} os={os} onOS={setOS} idPrefix="add-" />
+        <InstallCommandTabs code={created.code} os={os} onOS={setOS} idPrefix="add-" docker={docker} />
+        {os === "linux" && (
+          <div className="field">
+            <CheckDocker id="ic-docker" checked={docker} onChange={setDocker} />
+          </div>
+        )}
         {os === "windows" && appsAsked && (
           <Notice kind="info">
             Windows servers report the operating system and installed programs only. Looking for websites and apps, and
@@ -326,7 +393,7 @@ function CreateEnrollment({ onCreated }: { onCreated: (c: EnrollmentCreated) => 
             <div className="field">
               <label htmlFor="en-uses">Number of servers this code can enroll</label>
               <input id="en-uses" type="number" min={1} max={500} required value={uses} onChange={(e) => setUses(e.target.value)} />
-              <p className="hint">1 to 500. Use more than 1 to add several servers with the same command.</p>
+              <p className="hint">1 to 500. For a rollout to many servers, use a fleet code under For many servers.</p>
             </div>
             <div className="field">
               <label htmlFor="en-ttl">Valid for (hours)</label>

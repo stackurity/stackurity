@@ -188,6 +188,21 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
       - run: helm lint deploy/helm/stackurity --set database.existingSecret=db
+      - name: The Kubernetes reporter chart lints and renders
+        run: |
+          set -euo pipefail
+          helm lint deploy/helm/stackurity-reporter --set server=https://stackurity.example.com --set enrollCode=enr_x
+          helm template r deploy/helm/stackurity-reporter --set server=https://stackurity.example.com > reporter.yaml
+          helm template r deploy/helm/stackurity-reporter --set server=https://stackurity.example.com \
+            --set rbac.clusterWide=false --set 'namespaces={shop,blog}' > reporter-ns.yaml
+          grep -q 'kind: ClusterRoleBinding' reporter.yaml
+          test "$(grep -c '^kind: Role$' reporter-ns.yaml)" = 3
+      # deploy/kubernetes/reporter_test.go renders the chart with Go's
+      # text/template everywhere; with helm installed it checks the same
+      # renders with helm template too, so it runs here as well.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with: {go-version-file: go.mod}
+      - run: go test -count=1 ./deploy/kubernetes
       - name: Default update strategy is Recreate (versions are never mixed during an upgrade)
         run: |
           set -euo pipefail

@@ -1,0 +1,13 @@
+# Without rbac.clusterWide: what the collection reads in each namespace.
+- apiGroups: [""]
+  resources: ["pods", "services"]
+  verbs: ["list"]
+- apiGroups: ["apps"]
+  resources: ["daemonsets", "deployments", "statefulsets"]
+  verbs: ["list"]
+- apiGroups: ["batch"]
+  resources: ["cronjobs", "jobs"]
+  verbs: ["list"]
+- apiGroups: ["networking.k8s.io"]
+  resources: ["ingresses"]
+  verbs: ["list"]
