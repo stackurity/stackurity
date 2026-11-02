@@ -510,3 +510,31 @@ func (w *capWriter) Write(p []byte) (int, error) {
 	}
 	return w.buf.Write(p)
 }
+
+// siblings are files a parser reads next to its lockfile (the manifest it
+// takes the direct dependencies or the project's name from), and
+// .gitignore, which decides what a scan skips.
+var siblings = map[string]bool{"package.json": true, "composer.json": true, "pyproject.toml": true, ".gitignore": true}
+
+// Reads reports whether a scan reads a file with this base name: a
+// lockfile or manifest the core parses, one it recognises as unsupported,
+// one a parser reads next to its lockfile, or one an installed stack pack
+// matches. A change to any other file cannot change a scan's result, so a
+// push that touches none of these need not be scanned again.
+func Reads(name string, exts []Extension) bool {
+	if _, ok := parsers[name]; ok {
+		return true
+	}
+	if _, ok := unsupported[name]; ok {
+		return true
+	}
+	if siblings[name] {
+		return true
+	}
+	for _, e := range exts {
+		if e.Matches(name) {
+			return true
+		}
+	}
+	return false
+}

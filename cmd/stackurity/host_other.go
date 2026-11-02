@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/stackurity/stackurity/internal/collect/apps"
 	"github.com/stackurity/stackurity/internal/collect/gitrepo"
@@ -32,8 +33,8 @@ func hostCollector(o *hostOptions) (func(context.Context) ([]*model.ObservationB
 		// report its runtimes from paths, never by running them.
 		col.RunVersion = nil
 	}
-	return func(ctx context.Context) ([]*model.ObservationBatch, error) {
-		ctx, cancel := context.WithTimeout(ctx, hostCollectTimeout)
+	return func(parent context.Context) ([]*model.ObservationBatch, error) {
+		ctx, cancel := context.WithTimeout(parent, hostCollectTimeout)
 		defer cancel()
 		host, _ := os.Hostname()
 		osBatch, err := col.Collect(ctx, host, col.MachineID())
@@ -93,9 +94,19 @@ func hostCollector(o *hostOptions) (func(context.Context) ([]*model.ObservationB
 		if full && len(reported) <= model.MaxAppDirs {
 			osBatch.Apps = &model.AppList{Dirs: reported}
 		}
+		if o.docker != nil {
+			// Its own time limit: reading a new image can take minutes, and
+			// each image has a limit of its own.
+			dctx, dcancel := context.WithTimeout(parent, dockerCollectTimeout)
+			defer dcancel()
+			batches = append(batches, o.docker.Collect(dctx, osBatch.Asset)...)
+		}
 		return batches, nil
 	}, nil
 }
+
+// dockerCollectTimeout bounds one collection's reading of container images.
+const dockerCollectTimeout = 2 * time.Hour
 
 // reportable reports whether an application is sent. A discovered
 // directory with nothing installed and no lockfile is a tool or an empty

@@ -5210,3 +5210,38 @@ div.assistant-card {
   flex-direction: column;
   gap: 4px;
 }
+
+/* "Continue with Google / Microsoft / GitHub" on the sign-in and sign-up pages. */
+.social-buttons {
+  display: grid;
+  gap: 8px;
+}
+
+/* Settings ▸ Integrations: GitHub accounts connected through the GitHub App. */
+.int-gh-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 8px 0;
+}
+
+/* Settings, Integrations, AWS (pages/settings/Aws.tsx) */
+.aws-inline {
+  display: flex;
+  gap: var(--s2);
+  align-items: center;
+  flex-wrap: wrap;
+  margin: var(--s2) 0;
+}
+.aws-inline input {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+.install-output {
+  white-space: pre-wrap;
+  margin: 0;
+  max-height: 8em;
+  overflow: auto;
+}

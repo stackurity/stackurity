@@ -23,14 +23,19 @@ func (s *Server) meta(w http.ResponseWriter, r *http.Request) {
 	// features lets clients check what an older server would silently
 	// ignore: "upload_project" means POST /ingest and POST /sbom/import
 	// honour project_id (the CLI's --project); "app_list" means a host
-	// batch may list its application directories (apps.dirs).
+	// batch may list its application directories (apps.dirs);
+	// "kubernetes_report" means POST /kubernetes/report exists.
 	meta := map[string]any{"name": "stackurity", "version": s.Version, "api": "v1", "setup_required": n == 0,
-		"features": []string{FeatureUploadProject, FeatureAppList}, "password_reset": s.passwordResetMode()}
+		"features": []string{FeatureUploadProject, FeatureAppList, FeatureHostImages, FeatureKubernetesReport}, "password_reset": s.passwordResetMode()}
 	if sso := s.ssoMeta(r); sso != nil {
 		meta["sso"] = sso
 	}
 	if s.EmailPreferences {
 		meta["email_preferences"] = true
+	}
+	// The aud a CI job requests its ID token with (POST /ci/token).
+	if aud := s.ciAudience(); aud != "" {
+		meta["ci_audience"] = aud
 	}
 	if editionMeta != nil {
 		editionMeta(s, r, meta)
