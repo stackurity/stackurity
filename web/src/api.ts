@@ -1228,6 +1228,14 @@ export const INTEGRATION_KINDS = ["git_repository", "container_image", "containe
 export type IntegrationKind = (typeof INTEGRATION_KINDS)[number];
 
 /** Union of the per-kind config objects; check `kind` before reading. */
+/** A project of a connected GitLab group (kind gitlab); set by Connect GitLab, never edited. */
+export interface GitLabIntegrationConfig {
+  connection_id: number;
+  group_id: number;
+  project_id: number;
+  path_with_namespace: string;
+}
+
 /** A repository granted to the GitHub App (kind github_app); set by the app, never edited. */
 export interface GitHubAppIntegrationConfig {
   installation_id: number;
@@ -1239,7 +1247,7 @@ export type IntegrationConfig = Partial<GitRepoConfig> &
   Partial<ContainerImageConfig> &
   Partial<PluginIntegrationConfig> &
   Partial<GitHubAppIntegrationConfig> &
-  Partial<Omit<ContainerRegistryConfig, "platform" | "environment" | "username">>;
+  Partial<Omit<ContainerRegistryConfig, "platform" | "environment" | "username">> & Partial<GitLabIntegrationConfig>;
 
 export interface Integration {
   id: number;
@@ -2460,6 +2468,54 @@ export async function startJiraConnect(returnTo: string, connectionId = 0): Prom
 }
 
 /** POST /integrations/slack/oauth */
+/** GET /integrations/gitlab: Connect GitLab's connected groups. */
+export interface GitLabConnection {
+  id: number;
+  group_id: number;
+  group_path: string;
+  group_name: string;
+  credential_kind: "group_token" | "oauth" | "none" | string;
+  credential_expires: string | null;
+  webhook: "active" | "not_permitted" | "none" | string;
+  status: "active" | "needs_credential" | "expired" | string;
+  note: string;
+  connected_by: number | null;
+  connected_at: string;
+  updated_at: string;
+  last_sync: string | null;
+  projects: number;
+}
+
+export interface GitLabStatus {
+  configured: boolean;
+  gitlab_url?: string;
+  connections: GitLabConnection[];
+}
+
+export const NO_GITLAB: GitLabStatus = { configured: false, connections: [] };
+
+/** POST /integrations/gitlab/oauth: what an authorisation at GitLab came back with. */
+export interface GitLabOAuthResult {
+  /** Connect GitLab: the groups to pick from, with a single-use handle. */
+  pick?: string;
+  groups?: { id: number; full_path: string; name: string; owner: boolean }[];
+  /** Read-only authorisation. */
+  connection?: GitLabConnection;
+  /** Cleanup. */
+  disconnected?: boolean;
+  webhook_deleted?: boolean;
+  token_revoked?: boolean;
+  return_to?: string;
+}
+
+/** POST /integrations/gitlab/connections */
+export interface GitLabConnectResult {
+  connection: GitLabConnection;
+  needs_readonly: boolean;
+  notes: string[];
+  return_to: string;
+}
+
 export interface SlackOAuthResult {
   channel: Channel;
   return_to: string;
