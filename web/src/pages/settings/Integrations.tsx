@@ -7,6 +7,7 @@ import { Badge } from "../../components/Badge";
 import { Table, type Column } from "../../components/Table";
 import { CodeBlock, ErrorBox, Loading, PageHeader, RelativeTime, Tabs } from "../../components/ui";
 import { channelTarget, DeliveriesTab, kindLabel } from "./Notifications";
+import { CloudConnectPanel } from "./CloudConnect";
 import { ConnectGitLabButton, GitLabConnections } from "./GitLab";
 import { CiTrusts } from "./CiTrusts";
 import { GitHubInstallations, InstallOnGitHubButton } from "./GitHubApp";
@@ -125,7 +126,7 @@ function fromSource(i: Integration): Active {
   const plugin = i.kind === "plugin" ? String(i.config?.plugin ?? "") : "";
   return {
     key: `in${i.id}`,
-    kind: plugin.startsWith("aws") ? "cloud" : plugin.includes("kube") ? "kubernetes" : i.kind,
+    kind: plugin.startsWith("aws") || plugin.startsWith("gcp") || plugin.startsWith("azure") ? "cloud" : plugin.includes("kube") ? "kubernetes" : i.kind,
     name: i.name,
     kindLabel: plugin ? `Plugin: ${plugin}` : SOURCE_LABEL[i.kind] ?? i.kind,
     target: "",
@@ -143,10 +144,19 @@ interface AddCard {
   to: string;
   admin?: boolean;
   /** Short instructions shown on this page instead of a link. */
-  panel?: "ci" | "sbom";
+  panel?: Panel;
   /** Shown after the card's link (admins). */
   extra?: ReactNode;
 }
+
+type Panel = "ci" | "sbom" | "gcp" | "azure";
+
+const PANEL_TITLE: Record<Panel, string> = {
+  ci: "Scan in a CI pipeline",
+  sbom: "Upload an SBOM",
+  gcp: "Connect Google Cloud",
+  azure: "Connect Azure",
+};
 
 const HOST_PAGE = 500;
 
@@ -250,7 +260,7 @@ export function IntegrationsHubPage() {
   const channels = useLoad(() => (security ? api.get<List<Channel>>("/channels") : Promise.resolve(null)), [security]);
   const sources = useLoad(() => (engineer ? api.get<List<Integration>>("/integrations") : Promise.resolve(null)), [engineer]);
   const hosts = useLoad(() => api.get<List<Asset>>("/assets", { kind: "host", limit: HOST_PAGE }), []);
-  const [panel, setPanel] = useState<"ci" | "sbom" | null>(null);
+  const [panel, setPanel] = useState<Panel | null>(null);
   const optionsRes = useLoad(loadNotificationOptions, []);
   const gitlab = useLoad(() => (engineer ? api.get<GitLabStatus>("/integrations/gitlab").catch(() => NO_GITLAB) : Promise.resolve(NO_GITLAB)), [engineer]);
   const gl = gitlab.data ?? NO_GITLAB;
@@ -362,6 +372,8 @@ export function IntegrationsHubPage() {
       { kind: "container", title: "Container image / registry", text: "Connect a registry and scan its newest tags, or add one image.", to: "/integrations?add=container", admin: true },
       { kind: "kubernetes", title: "Kubernetes cluster", text: "Workloads, the images they run and their exposure. One command installs a read-only reporter in the cluster.", to: "/integrations/kubernetes/add", admin: true },
       { kind: "cloud", title: "AWS", text: "Launch one CloudFormation stack: RDS, EKS, Lambda and more, and the agent on EC2 through SSM.", to: "/settings/integrations/aws", admin: true },
+      { kind: "cloud", title: "Google Cloud", text: "Cloud SQL, Memorystore, GKE, Cloud Run and App Engine versions. Keyless: one gcloud block, no service account key.", to: "", panel: "gcp" },
+      { kind: "cloud", title: "Azure", text: "Azure Database, Cache for Redis, AKS, App Service and Functions versions. One consent and one az block, no secret in your tenant.", to: "", panel: "azure" },
       { kind: "sbom", title: "SBOM upload", text: "Upload a CycloneDX or SPDX file from your build tool.", to: "", panel: "sbom" },
       { kind: "plugin", title: "Other plugins", text: "Collectors installed on this server.", to: "/settings/plugins", admin: true },
     ],
@@ -444,14 +456,20 @@ export function IntegrationsHubPage() {
                   ))}
                 </ul>
                 {g.title === "Sources" && panel && (
-                  <section className="card" id={`int-panel-${panel}`} aria-label={panel === "ci" ? "CI pipeline" : "SBOM upload"}>
+                  <section className="card" id={`int-panel-${panel}`} aria-label={PANEL_TITLE[panel]}>
                     <div className="card-head">
-                      <h2>{panel === "ci" ? "Scan in a CI pipeline" : "Upload an SBOM"}</h2>
+                      <h2>{PANEL_TITLE[panel]}</h2>
                       <button type="button" className="btn btn-link" onClick={() => setPanel(null)}>
                         Close
                       </button>
                     </div>
-                    {panel === "ci" ? <CiPanel admin={admin} /> : <SbomPanel admin={admin} />}
+                    {panel === "ci" ? (
+                      <CiPanel admin={admin} />
+                    ) : panel === "sbom" ? (
+                      <SbomPanel admin={admin} />
+                    ) : (
+                      <CloudConnectPanel key={panel} provider={panel} admin={admin} />
+                    )}
                   </section>
                 )}
               </section>
