@@ -1,7 +1,7 @@
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { useAuth } from "../auth";
 import { api, INCIDENT_KINDS, PRIORITIES, type Asset, type Incident, type List, type Team } from "../api";
-import { AssetSelect } from "../components/AssetPicker";
+import { AssetSelect, ProjectFilter } from "../components/AssetPicker";
 import { useLoad } from "../hooks";
 import { humanize, plural } from "../format";
 import { Badge, EscalationBadge, PriorityBadge, SosBadge, StateBadge } from "../components/Badge";
@@ -182,6 +182,7 @@ export function IncidentsPage() {
             </select>
           </div>
         )}
+        <ProjectFilter id="in-project" onChange={() => update({ asset_id: "" })} />
         <div className="field">
           <label htmlFor="in-asset">Asset</label>
           <AssetSelect id="in-asset" value={asset} onChange={(v) => update({ asset_id: v })} assets={assets.data?.items} />
