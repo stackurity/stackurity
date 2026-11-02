@@ -12,7 +12,7 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ### Upgrading
 
-- Migration `0083_leaks` adds two tables and changes the incidents row-level security policy; it takes a short lock on `incidents`.
+- Migration `0085_leaks` adds two tables and changes the incidents row-level security policy; it takes a short lock on `incidents`.
 - Upgrade the server before the agents. An agent or `stackurity scan` from this release keeps working with an older server: it leaves leaks out and says so.
 
 ## 0.14.0

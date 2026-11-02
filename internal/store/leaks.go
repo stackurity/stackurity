@@ -1,7 +1,7 @@
 package store
 
 // Leaked keys: keys, tokens and passwords collectors found written in an
-// asset's files (migration 0083). The value never reaches the server; a
+// asset's files (migration 0085). The value never reaches the server; a
 // leak holds where it is, a fingerprint and a masked preview.
 
 import (
