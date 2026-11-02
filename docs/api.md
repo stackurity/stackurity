@@ -81,7 +81,7 @@ Ends the session; audited as `auth.logout`.
 
 **Who:** any signed-in user or token
 
-The caller: `user`, `role`, `workspace`, `workspaces`, `edition` and `features`, `access` (`organisation` or `projects`), `project_role`, `projects`, `default_project_id`, `read_only`, `report_mode`, `feedback_enabled` `password_change_required` (an administrator set a temporary password: until it is changed with `POST /auth/password`, other routes answer 403 `password_change_required`) and `mfa_enrolment_required` (the organisation requires two-factor sign-in and this session has none: until it is set up, other routes answer 403 `mfa_enrolment_required`). Each user has `mfa_enabled`.
+The caller: `user`, `role`, `workspace`, `workspaces`, `edition` and `features`, `access` (`organisation` or `projects`), `project_role`, `projects`, `default_project_id`, `read_only`, `report_mode`, `feedback_enabled` `password_change_required` (an administrator set a temporary password: until it is changed with `POST /auth/password`, other routes answer 403 `password_change_required`) and `mfa_enrolment_required` (the organisation requires two-factor sign-in and this session has none: until it is set up, other routes answer 403 `mfa_enrolment_required`), and `invite_only` (people join by invitation, as on Stackurity Cloud: `POST /users` answers 403 `invite_only`, and the dashboard offers Invite instead of Add user). Each user has `mfa_enabled`.
 
 ### `PUT /auth/default-project`
 
@@ -1047,13 +1047,13 @@ The waiting screen's poll: assets created since `since` (RFC 3339; default the l
 
 **Who:** admin
 
-[Invitations](#invitations): open ones, and the others of the last 30 days, with `status` (`pending`, `accepted`, `revoked`, `expired`). Never the link. Query: `project_id`.
+[Invitations](#invitations): open ones, and the others of the last 30 days, with `status` (`pending`, `accepted`, `revoked`, `expired`), `scope` (`organisation`, `specific`, or `project` for one made before invitations had grants) and `grants` (each with `kind`, `project_id` or `asset_id`, `role`, `name`, `available` and, when not, `unavailable`: `archived`, `merged` or `deleted`). Never the link. Query: `project_id` (the invitations that name that project).
 
 ### `POST /invitations`
 
 **Who:** admin (30 an hour per organisation)
 
-`{"email", "name", "role", "project_id"}` (`project_id` 0: an organisation-wide role). 201 with `invitation` and `emailed`; when the email was not sent, `link` (shown once) and `email_problem`. A member gets the project role at once (`granted`, `grant`); an organisation-wide invitation for a member is 409.
+`{"email", "name", "role", "grants"}`: says what they will see, as for [`POST /users`](#post-users). Either `role` (`viewer`, `engineer`, `security` or `admin`: every project and asset), or `grants` with `role` `none` (or no `role`): `{"project_id", "role"}` and `{"asset_id", "role"}`, at most 500. There is no default: neither is 400, and so are both, an empty `grants`, a project or asset named twice, and one that is not this organisation's (or an archived project or merged asset); nothing is created then. The older form `{"email", "name", "role", "project_id"}` still works and becomes one project grant. 201 with `invitation`, `emailed` and `replaced` (ids of the person's earlier open invitations, now withdrawn: a person has one open invitation); when the email was not sent, `link` (shown once) and `email_problem`. Someone already a member gets the grants at once, all or none (`granted`, `grants`, and `grant`: the first); an organisation-wide invitation for a member is 409.
 
 ### `DELETE /invitations/{id}`
 
@@ -1065,13 +1065,13 @@ Withdraws a pending invitation: its link stops working.
 
 **Who:** anyone (rate limited)
 
-`{"token"}`: what the link is for (`workspace`, `project`, `role`, `email`, `invited_by`, `expires_at`, `account_exists`) and `signed_in_as`. 410 for any link that does not work, without saying why.
+`{"token"}`: what the link is for (`workspace`; `project` and `role` when it names one project, or `role` for all projects; `scope`; `grants`, with whether each can still be given; `usable`: false when nothing can; `email`, `invited_by`, `expires_at`, `account_exists`) and `signed_in_as`. 410 for any link that does not work, without saying why.
 
 ### `POST /invitations/accept`
 
 **Who:** anyone, or the invitee's session (rate limited)
 
-`{"token", "name", "password"}`: joins the invitation's organisation with its role and answers `workspace_id`, `project_id`, `role`, `account_created` and `joined`. 410 when the link does not work; 409 `sign_in_required` or `wrong_account`.
+`{"token", "name", "password"}`: joins the invitation's organisation with what it gives, in one transaction, and answers `workspace_id`, `project_id` (its only project, or 0), `role`, `scope`, `grants` (how many were given), `dropped` (see [Invitations](#invitations)), `account_created` and `joined`. 410 `invitation_stale` when nothing is left to give; 410 `invitation_invalid` when the link does not work; 409 `sign_in_required` or `wrong_account`.
 
 ### `GET /users`
 
@@ -2038,11 +2038,12 @@ Assets added through the flow land in its project: the install command's enrollm
 
 ## Invitations
 
-An invitation lets someone join the organisation with a role on one project (or, with no project, an organisation-wide role). The link is `https://<server>/invite#<token>`: the token is in the fragment, which browsers do not send to servers or in `Referer`, and travels to the API only in request bodies.
+An invitation lets someone join the organisation with what they may see: an organisation-wide role (every project and asset), or roles on chosen projects and assets (migration `0081`, table `invitation_grants`). Invitations sent before that name one project and a role, and are still accepted as they are. The link is `https://<server>/invite#<token>`: the token is in the fragment, which browsers do not send to servers or in `Referer`, and travels to the API only in request bodies.
 
-- **Tokens** are 32 random bytes, stored only as their SHA-256, single use, valid for 7 days, and can be withdrawn. Inviting the same person to the same project again withdraws the open one.
+- **Tokens** are 32 random bytes, stored only as their SHA-256, single use, valid for 7 days, and can be withdrawn. A person has one open invitation in an organisation: inviting them again withdraws the open one (`replaced`).
 - **Rate limits**: following links (preview and accept together) 10 a minute per address; sending invitations 30 an hour per organisation.
-- **Accepting** takes the organisation, project and role from the stored invitation only; the request has no field that could change them (unknown fields are refused). An account with the invitation's email must be signed in, as itself (409 otherwise); a new account is created with the name and password given (at least 12 characters). A person who is not yet a member joins with project access only (or with the invitation's organisation-wide role); a member's organisation-wide role is never changed, and a higher grant they already hold on the project is kept. A disabled account, an archived project or a disabled organisation make the link invalid. API tokens cannot accept.
+- **Checked again when accepted.** Each project must still be active and each asset must exist and not be merged into another (an open invitation's grant on an asset that is merged moves to the asset kept, as access grants do). Those that are not are skipped and listed in `dropped` (`unavailable`: `archived`, `merged`, `deleted`, or `changed` while accepting); the rest are given. If none is left, accepting is refused with 410 `invitation_stale` and nothing is written (no account, membership or grant); the invitation stays open, and admins see why in `GET /invitations`.
+- **Accepting** takes the organisation, projects, assets and roles from the stored invitation only; the request has no field that could change them (unknown fields are refused). An account with the invitation's email must be signed in, as itself (409 otherwise); a new account is created with the name and password given (at least 12 characters). A person who is not yet a member joins with project access only (or with the invitation's organisation-wide role); a member's organisation-wide role is never changed, and a higher grant they already hold on a project or asset is kept. A disabled account, an archived project or a disabled organisation make the link invalid. API tokens cannot accept.
 - **Email**: the link goes through the organisation's first enabled email channel. Without one, or when sending fails, `POST /invitations` returns the link once, for the admin to send.
 - **Audit**: `invitation.create`, `invitation.revoke`, `invitation.accept` (with `user.create`, `access.grant` and `auth.login` for a new account) in the organisation's audit log.
 

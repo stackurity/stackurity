@@ -89,3 +89,20 @@ export function scopeSummary(u: { role: UserRole | ""; access?: string; project_
   if (parts.length) return parts.join(", ");
   return u.teams?.length ? "Through their teams only" : "Nothing yet";
 }
+
+/** What an invitation gives, at a glance (invitation lists and the accept page). */
+export function invitationSummary(i: {
+  scope: "organisation" | "specific" | "project";
+  role: UserRole | "";
+  grants?: { kind: "project" | "asset"; name: string; role: UserRole; available?: boolean }[] | null;
+}): string {
+  if (i.scope === "organisation") return `All projects — ${permissionLabel(i.role)}`;
+  const gs = i.grants ?? [];
+  if (gs.length <= 2) return gs.map((g) => `${g.name} — ${permissionLabel(g.role)}`).join("; ") || "Nothing";
+  const p = gs.filter((g) => g.kind === "project").length;
+  const a = gs.length - p;
+  const parts: string[] = [];
+  if (p) parts.push(`${p} project${p === 1 ? "" : "s"}`);
+  if (a) parts.push(`${a} asset${a === 1 ? "" : "s"}`);
+  return parts.join(", ");
+}

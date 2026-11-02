@@ -2060,7 +2060,7 @@
    "get": {
     "operationId": "get_auth_me",
     "summary": "The caller: user, role, organisation, projects and edition",
-    "description": "Session handling\n\nRole: any signed-in user or token",
+    "description": "The caller: `user`, `role`, `access`, `project_role`, `projects`, `workspace`, `workspaces`, `edition`, `features`, and `invite_only` (people join by invitation: `POST /users` is refused)\n\nRole: any signed-in user or token",
     "tags": [
      "Account"
     ],
@@ -5718,7 +5718,7 @@
    "get": {
     "operationId": "get_invitations",
     "summary": "Invitations, open and recent",
-    "description": "Invitations: open ones, and the others of the last 30 days, with `status` (`pending`, `accepted`, `revoked`, `expired`). Never the link\n\nRole: admin",
+    "description": "Invitations: open ones, and the others of the last 30 days, with `status` (`pending`, `accepted`, `revoked`, `expired`), `scope` (`organisation`, `specific`, or `project` for one made before grants) and `grants` (`kind`, `project_id` or `asset_id`, `role`, `name`, `available`, `unavailable`: `archived`, `merged` or `deleted`). `project_id` lists the ones that name that project. Never the link\n\nRole: admin",
     "tags": [
      "Projects and people"
     ],
@@ -5755,7 +5755,7 @@
    "post": {
     "operationId": "post_invitations",
     "summary": "Invite someone to the organisation or a project",
-    "description": "`{\"email\", \"name\", \"role\", \"project_id\"}` (`project_id` 0: an organisation-wide role). 201 with `invitation` and `emailed`; when the email was not sent, `link` (shown once) and `email_problem`. Inviting the same person to the same project again replaces the open invitation. Someone already a member gets the project role at once (`granted`, `grant`); an organisation-wide invitation for a member is 409\n\nRole: admin (30 an hour per organisation)",
+    "description": "Invite someone and say what they will see, as for `POST /users`: an organisation-wide `role` (every project and asset), or `grants` (`[{\"project_id\", \"role\"} | {\"asset_id\", \"role\"}]`, with `role` `none` or no role). The older form `{\"role\", \"project_id\"}` is still accepted and becomes one project grant. There is no default: neither is 400, and so is a grant on a project or asset that is not this organisation's (or an archived project or merged asset); nothing is created then. 201 with `invitation` (with `scope` and `grants`), `emailed` and `replaced` (the person's earlier open invitations, now withdrawn: one open invitation per person); when the email was not sent, `link` (shown once) and `email_problem`. Someone already a member gets the grants at once, all or none (`granted`, `grants`, and `grant`: the first); an organisation-wide invitation for a member is 409\n\nRole: admin (30 an hour per organisation)",
     "tags": [
      "Projects and people"
     ],
@@ -5765,7 +5765,63 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "type": "object",
+        "required": [
+         "email"
+        ],
+        "properties": {
+         "email": {
+          "type": "string",
+          "format": "email"
+         },
+         "name": {
+          "type": "string",
+          "maxLength": 200
+         },
+         "role": {
+          "type": "string",
+          "enum": [
+           "viewer",
+           "engineer",
+           "security",
+           "admin",
+           "none"
+          ],
+          "description": "Organisation-wide role, or none with grants (or the role on project_id, in the older form)."
+         },
+         "grants": {
+          "type": "array",
+          "maxItems": 500,
+          "items": {
+           "type": "object",
+           "description": "A role on one project (its assets, including ones added later) or on one asset.",
+           "properties": {
+            "project_id": {
+             "type": "integer"
+            },
+            "asset_id": {
+             "type": "integer"
+            },
+            "role": {
+             "type": "string",
+             "enum": [
+              "viewer",
+              "engineer",
+              "security",
+              "admin"
+             ]
+            }
+           },
+           "required": [
+            "role"
+           ]
+          }
+         },
+         "project_id": {
+          "type": "integer",
+          "description": "Older form: role on this one project. Not with grants."
+         }
+        }
        }
       }
      }
@@ -5794,7 +5850,7 @@
    "post": {
     "operationId": "post_invitations_accept",
     "summary": "Accept an invitation",
-    "description": "`{\"token\", \"name\", \"password\"}`. Joins the invitation's organisation with its role (see Invitations); answers `workspace_id`, `project_id`, `role`, `account_created` and `joined`, and the browser session then works in that organisation. 410: the link does not work; 409 `sign_in_required` or `wrong_account`\n\nRole: none, or the invitee's session (rate limited)",
+    "description": "`{\"token\", \"name\", \"password\"}`. Joins the invitation's organisation with what it gives, in one transaction; answers `workspace_id`, `project_id` (its only project, or 0), `role`, `scope`, `grants` (how many were given), `dropped` (grants skipped because the project was archived or deleted, or the asset merged or deleted, since the invitation was sent), `account_created` and `joined`, and the browser session then works in that organisation. 410 `invitation_stale` when nothing is left to give (nothing is written; the invitation stays open); 410 `invitation_invalid` when the link does not work; 409 `sign_in_required` or `wrong_account`\n\nRole: none, or the invitee's session (rate limited)",
     "tags": [
      "Projects and people"
     ],
@@ -5834,7 +5890,7 @@
    "post": {
     "operationId": "post_invitations_preview",
     "summary": "What an invitation link is for",
-    "description": "`{\"token\"}`: what the link is for (`workspace`, `project`, `role`, `email`, `invited_by`, `expires_at`, `account_exists`) and `signed_in_as`. 410 for any link that does not work, without saying why\n\nRole: none (rate limited)",
+    "description": "`{\"token\"}`: what the link is for (`workspace`, `project` and `role` when it names one project or all of them, `scope`, `grants` with whether each can still be given, `usable`, `email`, `invited_by`, `expires_at`, `account_exists`) and `signed_in_as`. 410 for any link that does not work, without saying why\n\nRole: none (rate limited)",
     "tags": [
      "Projects and people"
     ],

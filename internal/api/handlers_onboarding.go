@@ -90,14 +90,40 @@ type invitationRequest struct {
 	Email string    `json:"email"`
 	Name  string    `json:"name"`
 	Role  auth.Role `json:"role"`
-	// ProjectID: a role on this project (0: an organisation-wide role).
+	// ProjectID: Role on this one project (the form before grants; 0:
+	// Role is organisation-wide, or there are Grants).
 	ProjectID int64 `json:"project_id"`
+	// Grants: what they may see with no organisation-wide role (role
+	// "none" or empty), as for POST /users.
+	Grants []store.ScopeGrant `json:"grants"`
 }
 
-// createInvitation invites someone by email. Someone who is already a
-// member is given the project role at once. The link is emailed through
-// the organisation's first email channel; without one (or when sending
-// fails) it is returned to copy.
+// scope returns what the request gives: an organisation-wide role, or
+// grants (role RoleNone). Neither is refused.
+func (req *invitationRequest) scope() (auth.Role, []store.ScopeGrant, error) {
+	if req.ProjectID < 0 {
+		return "", nil, badRequest("project_id must be a project, or 0")
+	}
+	if req.ProjectID > 0 {
+		if len(req.Grants) > 0 {
+			return "", nil, badRequest("send project_id with a role, or grants, not both")
+		}
+		if !req.Role.ValidUser() {
+			return "", nil, badRequest("role must be viewer, engineer, security or admin")
+		}
+		pid := req.ProjectID
+		return store.RoleNone, []store.ScopeGrant{{ProjectID: &pid, Role: req.Role}}, nil
+	}
+	role, err := store.CheckScope(req.Role, req.Grants)
+	return role, req.Grants, err
+}
+
+// createInvitation invites someone by email with what they may see: an
+// organisation-wide role, or grants on chosen projects and assets (there
+// is no default). Someone who is already a member is given the grants at
+// once. The link is emailed through the organisation's first email
+// channel; without one (or when sending fails) it is returned to copy.
+// Their earlier open invitation, if any, is replaced.
 func (s *Server) createInvitation(w http.ResponseWriter, r *http.Request) {
 	p := principal(r)
 	if s.limited(w, r, "too many invitations from this organisation; try again in an hour",
@@ -110,15 +136,9 @@ func (s *Server) createInvitation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	email := strings.ToLower(strings.TrimSpace(req.Email))
-	var project *int64
-	if req.ProjectID > 0 {
-		project = &req.ProjectID
-	} else if req.ProjectID < 0 {
-		s.fail(w, r, badRequest("project_id must be a project, or 0 for an organisation-wide role"))
-		return
-	}
-	if !req.Role.ValidUser() {
-		s.fail(w, r, badRequest("role must be viewer, engineer, security or admin"))
+	role, grants, err := req.scope()
+	if err != nil {
+		s.fail(w, r, err)
 		return
 	}
 	uid, member, err := s.Store.MemberByEmail(r.Context(), email)
@@ -127,21 +147,27 @@ func (s *Server) createInvitation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if member {
-		if project == nil {
+		if role != store.RoleNone {
 			writeError(w, 409, "conflict", "this person is already a member; change their role under Settings, Users")
 			return
 		}
-		g, isNew, err := s.Store.SaveGrant(r.Context(), store.GrantInput{ProjectID: project, UserID: &uid, Role: req.Role}, actorUserID(p))
+		ids, err := s.Store.GrantMember(r.Context(), uid, grants, actorUserID(p))
 		if err != nil {
 			s.fail(w, r, err)
 			return
 		}
-		_ = s.Store.Audit(r.Context(), p.Actor(r), "access.grant", "access_grant", itoa(g.ID), g)
-		status := 200
-		if isNew {
-			status = 201
+		out := []*store.Grant{}
+		for _, id := range ids {
+			g, err := s.Store.GetGrant(r.Context(), id)
+			if err != nil {
+				s.fail(w, r, err)
+				return
+			}
+			_ = s.Store.Audit(r.Context(), p.Actor(r), "access.grant", "access_grant", itoa(g.ID), g)
+			out = append(out, g)
 		}
-		writeJSON(w, status, map[string]any{"granted": true, "grant": g})
+		// grant: the first, for clients of the single-project form.
+		writeJSON(w, 201, map[string]any{"granted": true, "grant": out[0], "grants": out})
 		return
 	}
 	// The link is built from the Host header without STACKURITY_BASE_URL:
@@ -151,7 +177,11 @@ func (s *Server) createInvitation(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	inv, token, err := s.Store.CreateInvitation(r.Context(), email, req.Name, project, req.Role, actorUserID(p))
+	in := store.InvitationInput{Email: email, Name: req.Name, Grants: grants}
+	if role != store.RoleNone {
+		in.Role = role
+	}
+	inv, token, replaced, err := s.Store.Invite(r.Context(), in, actorUserID(p))
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -163,9 +193,16 @@ func (s *Server) createInvitation(w http.ResponseWriter, r *http.Request) {
 		inv.EmailedAt = new(time.Time)
 		*inv.EmailedAt = time.Now()
 	}
+	for _, id := range replaced {
+		_ = s.Store.Audit(r.Context(), p.Actor(r), "invitation.revoke", "invitation", itoa(id), map[string]any{"replaced_by": inv.ID})
+	}
 	_ = s.Store.Audit(r.Context(), p.Actor(r), "invitation.create", "invitation", itoa(inv.ID),
-		map[string]any{"email": inv.Email, "project_id": inv.ProjectID, "role": inv.Role, "emailed": emailed, "expires_at": inv.ExpiresAt})
-	out := map[string]any{"invitation": inv, "emailed": emailed}
+		map[string]any{"email": inv.Email, "scope": inv.Scope, "role": inv.Role, "grants": inv.Grants, "emailed": emailed,
+			"expires_at": inv.ExpiresAt, "replaced": replaced})
+	if replaced == nil {
+		replaced = []int64{}
+	}
+	out := map[string]any{"invitation": inv, "emailed": emailed, "replaced": replaced}
 	if !emailed {
 		// Shown once, to copy; it is not stored.
 		out["link"] = link
@@ -199,13 +236,9 @@ func (s *Server) emailInvitation(r *http.Request, inv *store.Invitation, link st
 			inviter = p.User.Name + " (" + p.User.Email + ")"
 		}
 	}
-	what := "the organisation " + ws.Name
-	if inv.ProjectName != "" {
-		what = "the project " + inv.ProjectName + " in " + ws.Name
-	}
 	m := notify.Message{Event: "invitation", Title: "You are invited to " + ws.Name + " on Stackurity", At: time.Now().UTC(),
 		Summary: []string{
-			fmt.Sprintf("%s invited you to %s, as %s.", inviter, what, inv.Role),
+			fmt.Sprintf("%s invited you to %s %s.", inviter, ws.Name, invitationScopeText(inv)),
 			"Stackurity lists the software on your servers and code, and tells you which fixes matter.",
 			fmt.Sprintf("Open the link to accept. It works once, and until %s.", inv.ExpiresAt.UTC().Format("2 January 2006 15:04 MST")),
 			"If you did not expect this, ignore this email.",
@@ -322,6 +355,9 @@ func (s *Server) acceptInvitation(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, store.ErrWrongAccount):
 		writeError(w, 409, "wrong_account", err.Error())
 		return
+	case errors.Is(err, store.ErrInvitationStale):
+		writeError(w, 410, "invitation_stale", err.Error())
+		return
 	case err != nil:
 		s.fail(w, r, err)
 		return
@@ -332,9 +368,12 @@ func (s *Server) acceptInvitation(w http.ResponseWriter, r *http.Request) {
 		_ = s.Store.Audit(ctx, actor, "user.create", "user", itoa(res.UserID), map[string]any{"email": res.Invitation.Email, "via": "invitation"})
 	}
 	_ = s.Store.Audit(ctx, actor, "invitation.accept", "invitation", itoa(res.Invitation.ID),
-		map[string]any{"project_id": res.Invitation.ProjectID, "role": res.Invitation.Role, "joined": res.Joined, "account_created": res.AccountCreated})
-	if res.Grant != nil {
-		_ = s.Store.Audit(ctx, actor, "access.grant", "access_grant", itoa(res.Grant.ID), res.Grant)
+		map[string]any{"scope": res.Invitation.Scope, "project_id": res.Invitation.ProjectID, "role": res.Invitation.Role,
+			"grants": len(res.GrantIDs), "dropped": res.Dropped, "joined": res.Joined, "account_created": res.AccountCreated})
+	for _, id := range res.GrantIDs {
+		if g, err := s.Store.GetGrant(ctx, id); err == nil {
+			_ = s.Store.Audit(ctx, actor, "access.grant", "access_grant", itoa(g.ID), g)
+		}
 	}
 	// Work in the organisation just joined: a new session for a new
 	// account, the current one switched for a signed-in person.
@@ -353,10 +392,58 @@ func (s *Server) acceptInvitation(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// The project to open: the invitation's only project, if it has one.
 	var project int64
-	if res.Invitation.ProjectID != nil {
-		project = *res.Invitation.ProjectID
+	for _, g := range res.Invitation.Grants {
+		if g.ProjectID != nil && g.Available {
+			if project != 0 {
+				project = 0
+				break
+			}
+			project = *g.ProjectID
+		}
+	}
+	dropped := res.Dropped
+	if dropped == nil {
+		dropped = []store.InvitationGrant{}
 	}
 	writeJSON(w, 200, map[string]any{"workspace_id": res.WorkspaceID, "project_id": project, "role": res.Invitation.Role,
+		"scope": res.Invitation.Scope, "grants": len(res.GrantIDs), "dropped": dropped,
 		"account_created": res.AccountCreated, "joined": res.Joined})
+}
+
+// permissionLabels are the dashboard's names for the roles (web/src/roles.ts).
+var permissionLabels = map[auth.Role]string{
+	auth.RoleViewer:   "View only",
+	auth.RoleEngineer: "View and edit",
+	auth.RoleSecurity: "View, edit and decide",
+	auth.RoleAdmin:    "Admin",
+}
+
+// invitationScopeText says what an invitation gives, for its email:
+// "with View only on all projects and assets", or "with access to
+// Shop (View and edit) and 2 more".
+func invitationScopeText(inv *store.Invitation) string {
+	if inv.Scope == "organisation" {
+		return "with " + permissionLabels[inv.Role] + " on all projects and assets"
+	}
+	var parts []string
+	for _, g := range inv.Grants {
+		if len(parts) == 3 {
+			parts = append(parts, fmt.Sprintf("%d more", len(inv.Grants)-3))
+			break
+		}
+		what := "the project "
+		if g.Kind == "asset" {
+			what = "the asset "
+		}
+		parts = append(parts, fmt.Sprintf("%s%s (%s)", what, g.Name, permissionLabels[g.Role]))
+	}
+	switch len(parts) {
+	case 0:
+		return ""
+	case 1:
+		return "with access to " + parts[0]
+	}
+	return "with access to " + strings.Join(parts[:len(parts)-1], ", ") + " and " + parts[len(parts)-1]
 }

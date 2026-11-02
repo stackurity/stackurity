@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -68,48 +69,86 @@ func NormalizePhone(p string) (string, error) {
 
 // checkScope validates what a new member may see, before anything is written.
 func (m *NewMember) checkScope() error {
-	if m.Role != RoleNone && !m.Role.ValidUser() {
-		if m.Role == "" && len(m.Grants) == 0 {
-			return fmt.Errorf("choose what they can see: an organisation-wide role (all projects and assets), or grants on specific projects or assets: %w", ErrInvalid)
+	role, err := CheckScope(m.Role, m.Grants)
+	m.Role = role
+	return err
+}
+
+// CheckScope validates "what can they see?" for a new member or an
+// invitation: an organisation-wide role, or (role empty or RoleNone)
+// grants on chosen projects and assets. Neither is refused, so a
+// forgotten choice never turns into access to everything. It returns the
+// role to store: the organisation-wide one, or RoleNone.
+func CheckScope(role auth.Role, grants []ScopeGrant) (auth.Role, error) {
+	if role != RoleNone && !role.ValidUser() {
+		if role == "" && len(grants) == 0 {
+			return role, fmt.Errorf("choose what they can see: an organisation-wide role (all projects and assets), or grants on specific projects or assets: %w", ErrInvalid)
 		}
-		if m.Role != "" {
-			return fmt.Errorf("role must be viewer, engineer, security, admin, or none with grants: %w", ErrInvalid)
+		if role != "" {
+			return role, fmt.Errorf("role must be viewer, engineer, security, admin, or none with grants: %w", ErrInvalid)
 		}
-		m.Role = RoleNone
+		role = RoleNone
 	}
-	if m.Role != RoleNone {
-		if len(m.Grants) > 0 {
-			return fmt.Errorf("an organisation-wide role already covers every project and asset; send grants with role none: %w", ErrInvalid)
+	if role != RoleNone {
+		if len(grants) > 0 {
+			return role, fmt.Errorf("an organisation-wide role already covers every project and asset; send grants with role none: %w", ErrInvalid)
 		}
-		return nil
+		return role, nil
 	}
-	if len(m.Grants) == 0 {
-		return fmt.Errorf("with no organisation-wide role, choose at least one project or asset they can see: %w", ErrInvalid)
+	if len(grants) == 0 {
+		return role, fmt.Errorf("with no organisation-wide role, choose at least one project or asset they can see: %w", ErrInvalid)
 	}
-	if len(m.Grants) > MaxMemberGrants {
-		return fmt.Errorf("at most %d grants at a time: %w", MaxMemberGrants, ErrInvalid)
+	if len(grants) > MaxMemberGrants {
+		return role, fmt.Errorf("at most %d grants at a time: %w", MaxMemberGrants, ErrInvalid)
 	}
 	seenProject, seenAsset := map[int64]bool{}, map[int64]bool{}
-	for i, g := range m.Grants {
+	for i, g := range grants {
 		if !g.Role.ValidUser() {
-			return fmt.Errorf("grant %d: role must be viewer, engineer, security or admin: %w", i+1, ErrInvalid)
+			return role, fmt.Errorf("grant %d: role must be viewer, engineer, security or admin: %w", i+1, ErrInvalid)
 		}
 		switch {
 		case (g.ProjectID == nil) == (g.AssetID == nil):
-			return fmt.Errorf("grant %d: name either a project or an asset: %w", i+1, ErrInvalid)
+			return role, fmt.Errorf("grant %d: name either a project or an asset: %w", i+1, ErrInvalid)
 		case g.ProjectID != nil:
 			if *g.ProjectID <= 0 || seenProject[*g.ProjectID] {
-				return fmt.Errorf("grant %d: a project may be named once: %w", i+1, ErrInvalid)
+				return role, fmt.Errorf("grant %d: a project may be named once: %w", i+1, ErrInvalid)
 			}
 			seenProject[*g.ProjectID] = true
 		default:
 			if *g.AssetID <= 0 || seenAsset[*g.AssetID] {
-				return fmt.Errorf("grant %d: an asset may be named once: %w", i+1, ErrInvalid)
+				return role, fmt.Errorf("grant %d: an asset may be named once: %w", i+1, ErrInvalid)
 			}
 			seenAsset[*g.AssetID] = true
 		}
 	}
-	return nil
+	return role, nil
+}
+
+// grantTargets checks, inside tx and under the workspace's row-level
+// security, that every grant names an active project or an unmerged asset
+// of this workspace, and returns their names in order. A project or asset
+// of another workspace is "no such" here, as it is invisible.
+func grantTargets(ctx context.Context, tx pgx.Tx, grants []ScopeGrant) ([]string, error) {
+	names := make([]string, len(grants))
+	for i, g := range grants {
+		var err error
+		if g.ProjectID != nil {
+			err = tx.QueryRow(ctx, `SELECT name FROM projects WHERE id = $1 AND archived_at IS NULL`, *g.ProjectID).Scan(&names[i])
+		} else {
+			err = tx.QueryRow(ctx, `SELECT name FROM assets WHERE id = $1 AND merged_into IS NULL`, *g.AssetID).Scan(&names[i])
+		}
+		if errors.Is(err, pgx.ErrNoRows) {
+			what := "project"
+			if g.AssetID != nil {
+				what = "asset"
+			}
+			return nil, fmt.Errorf("grant %d: no such %s in this organisation: %w", i+1, what, ErrInvalid)
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	return names, nil
 }
 
 // CreateMember adds m to the context's workspace with what they may see,
@@ -159,26 +198,10 @@ func (s *Store) CreateMember(ctx context.Context, m NewMember, by int64) (*User,
 		if tag.RowsAffected() == 0 {
 			return fmt.Errorf("a user with that email is already a member: %w", ErrConflict)
 		}
+		if _, err := grantTargets(ctx, tx, m.Grants); err != nil {
+			return err
+		}
 		for i, g := range m.Grants {
-			// Row-level security shows only this workspace's rows, so a
-			// project or asset of another workspace is "no such" here; the
-			// same-workspace triggers on access_grants check it again.
-			var exists bool
-			if g.ProjectID != nil {
-				err = tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM projects WHERE id = $1 AND archived_at IS NULL)`, *g.ProjectID).Scan(&exists)
-			} else {
-				err = tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM assets WHERE id = $1 AND merged_into IS NULL)`, *g.AssetID).Scan(&exists)
-			}
-			if err != nil {
-				return err
-			}
-			if !exists {
-				what := "project"
-				if g.AssetID != nil {
-					what = "asset"
-				}
-				return fmt.Errorf("grant %d: no such %s in this organisation: %w", i+1, what, ErrInvalid)
-			}
 			var id int64
 			err = tx.QueryRow(ctx, `INSERT INTO access_grants (project_id, asset_id, user_id, role, created_by)
 				VALUES ($1, $2, $3, $4, $5) RETURNING id`, g.ProjectID, g.AssetID, uid, g.Role, byID).Scan(&id)

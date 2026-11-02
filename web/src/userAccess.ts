@@ -184,3 +184,24 @@ export function preview(s: AddUserState, labels: Record<string, string>): string
   if (a) parts.push(`${a} chosen asset${a === 1 ? "" : "s"}`);
   return parts.length ? `Only ${parts.join(" and ")}.` : "";
 }
+
+// --- invitations: the same "what can they see?", without phone or password
+
+/** The Invite form on a project's page: Specific, with that project and no permission chosen yet. */
+export function forProject(projectId: number): AddUserState {
+  return { ...EMPTY, scope: "specific", projects: [{ projectId, mode: "project", role: "", assets: [] }] };
+}
+
+export interface InvitationBody {
+  email: string;
+  name: string;
+  /** An organisation-wide role; absent with grants. */
+  role?: UserRole;
+  grants?: GrantBody[];
+}
+
+/** The POST /invitations body; call only when problems() is empty. */
+export function toInvitation(s: AddUserState): InvitationBody {
+  const { email, name, role, grants } = toRequest(s);
+  return role === "none" ? { email, name, grants } : { email, name, role };
+}
