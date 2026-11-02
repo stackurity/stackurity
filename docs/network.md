@@ -120,6 +120,19 @@ A ServiceNow channel calls the configured instance only: the Table API (`/api/no
 
 Syft fetches image manifests and layers from the registry in the image reference. With a secret reference configured, the credential is sent to that registry only. For a workspace that may not reach private networks, Syft connects through a proxy inside the server that checks every connection (including redirects to blob storage) against the same policy.
 
+### Connected container registries
+
+A container registry integration (`container_registry`, see [Container registries](install.md#container-registries)) contacts only the registry it names, on its schedule and when an admin lists the repositories to pick from:
+
+| Registry | Destination | Data sent |
+|---|---|---|
+| GitHub Container Registry | `api.github.com` (packages of the organisation or user, and each package's versions); `ghcr.io` for the scans | The stored token, as `Authorization: Bearer`, to `api.github.com` only |
+| Docker Hub | `hub.docker.com` (sign-in, repositories of the namespace, tags); `registry-1.docker.io` and `auth.docker.io` for the scans | The user name and password or access token to `hub.docker.com/v2/users/login` only; the session token it returns to `hub.docker.com` only |
+| Amazon ECR | `api.ecr.<region>.amazonaws.com` (`GetAuthorizationToken`, `DescribeRepositories`, `DescribeImages`); `sts.<region>.amazonaws.com` (`AssumeRole`, only with a role); `<account>.dkr.ecr.<region>.amazonaws.com` for the scans | Requests signed with the access keys (the secret key itself is never sent) |
+| Other (OCI Distribution) | The registry's address (`/v2/_catalog`, `/v2/<name>/tags/list`, manifests, and the image configuration of at most 50 tags per repository); its token service, which must be on the same host and port or the one host `auth_host` names | The user name and password or token, to the registry and its token service only |
+
+Every request goes through the workspace's private-network policy (`STACKURITY_PRIVATE_TARGETS`, `STACKURITY_PRIVATE_CIDRS`), over HTTPS. A token service (the `realm` of a `WWW-Authenticate` challenge) on any other host, or over plain HTTP, is refused without being contacted, so a registry cannot send its clients' credentials elsewhere. Redirects keep credentials only on the host the request was made to: one to blob storage on another host (a subdomain too) is followed without them, and a next-page link on another host is refused. The images it picks are scanned like single images (below), each with the registry's credentials only when the image is on that registry.
+
 ### DigitalOcean droplet discovery
 
 Only when an administrator has stored a DigitalOcean API token (**Assets → Add server → For many servers → DigitalOcean**), and only while someone opens the droplet list or saves the token: `GET https://api.digitalocean.com/v2/droplets` with that token, 200 droplets a page, at most 25 pages. Nothing is sent but the request (the page, the page size and an optional tag). Redirects are not followed and the next page is requested from the same host by number, so the token goes nowhere else. The connection is checked against the workspace's private-network policy. Without a stored token nothing is contacted; **Disconnect** deletes it. Stackurity never connects to the droplets themselves.

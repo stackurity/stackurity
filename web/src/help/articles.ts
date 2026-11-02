@@ -673,6 +673,36 @@ stackurity.exe agent --interval 6h`,
           "Click **Create integration** and then **Run now**.",
         ],
       },
+      { p: "To cover every image in a registry without typing each one, connect the registry instead: see *Connect a container registry*." },
+    ],
+  },
+  {
+    id: "container-registries",
+    title: "Connect a container registry",
+    section: "Adding servers and sources",
+    summary: "Scan the recent tags of every repository in GitHub Container Registry, Docker Hub, Amazon ECR or your own registry, and pick up new ones on a schedule.",
+    where: ["Settings", "Integrations"],
+    keywords: "registry ghcr docker hub ecr harbor gitlab quay oci repositories tags latest semver",
+    body: [
+      {
+        steps: [
+          "Go to **Settings ▸ Integrations ▸ Container image / registry ▸ Connect a registry** (admin).",
+          "Choose the registry: **GitHub Container Registry** (the organisation or user), **Docker Hub** (the namespace and user name), **Amazon ECR** (the region; the keys, or an existing AWS integration) or **Other registry** (its https address).",
+          "Paste a read-only token or password; it is stored as a workspace secret and never shown again. Or name an existing secret (`secret:NAME`).",
+          "Click **List repositories**, then tick the ones to scan, or keep **All repositories** with patterns to leave some out (`*-sandbox`).",
+          "Choose how many of the most recently pushed images per repository to scan (1 to 3), and tag patterns to scan as well (`latest`, `semver`).",
+          "Click **Connect registry** and then **Run now**. **Images** on the integration lists what it tracks.",
+        ],
+      },
+      {
+        p: "Each image is scanned once per digest, so `latest` and `1.4` on the same image are one image, and a re-tag is not scanned again. At most the number of image scans per run you set are queued each run, newest first; the rest follow on later runs, shown as not assessed until then, never as clean.",
+      },
+      {
+        p: "When a newer tag takes an image's place, it stops being scanned but stays as it was. When the registry no longer has any tag on an image, it is marked **removed**: its issues close as removed and its history stays. A repository that could not be read changes nothing.",
+      },
+      {
+        p: "Credentials go only to the registry and its own sign-in service. If a registry asks for them to be sent to another host, the run fails with that host's name; for GitLab, set the token service host (`gitlab.com`) on the integration.",
+      },
     ],
   },
   {

@@ -15,6 +15,7 @@ import (
 	"github.com/stackurity/stackurity/internal/auth"
 	"github.com/stackurity/stackurity/internal/collect/gitrepo"
 	"github.com/stackurity/stackurity/internal/collect/image"
+	"github.com/stackurity/stackurity/internal/collect/registry"
 	"github.com/stackurity/stackurity/internal/model"
 	"github.com/stackurity/stackurity/internal/plugins"
 	"github.com/stackurity/stackurity/internal/store"
@@ -335,6 +336,8 @@ func checkSecretRef(r *http.Request, ref string) error {
 	return nil
 }
 
+const kindsMessage = "kind must be " + KindGitRepository + ", " + KindContainerImage + ", " + KindContainerRegistry + " or " + KindPlugin
+
 // awsLinked is true for the integration of an AWS connection
 // (handlers_aws.go): the server assumes the connection's role and gives the
 // plugin the session, so it needs no secret of its own.
@@ -354,6 +357,11 @@ func (s *Server) validateIntegration(ctx context.Context, kind string, cfg json.
 			if err = dec.Decode(&c); err == nil {
 				err = c.Validate()
 			}
+		case KindContainerRegistry:
+			var c registry.Config
+			if err = dec.Decode(&c); err == nil {
+				err = c.Validate()
+			}
 		case KindPlugin:
 			var c PluginConfig
 			if err = dec.Decode(&c); err == nil {
@@ -369,15 +377,15 @@ func (s *Server) validateIntegration(ctx context.Context, kind string, cfg json.
 		case store.KindGitHubApp:
 			return badRequest("repositories are added to the GitHub App on GitHub: use Install on GitHub")
 		default:
-			return badRequest("kind must be " + KindGitRepository + ", " + KindContainerImage + " or " + KindPlugin)
+			return badRequest(kindsMessage)
 		}
 		if err != nil {
 			return badRequest("invalid config: " + err.Error())
 		}
 	} else if kind == store.KindGitHubApp {
 		return badRequest("repositories are added to the GitHub App on GitHub: use Install on GitHub")
-	} else if kind != KindGitRepository && kind != KindContainerImage && kind != KindPlugin {
-		return badRequest("kind must be " + KindGitRepository + ", " + KindContainerImage + " or " + KindPlugin)
+	} else if kind != KindGitRepository && kind != KindContainerImage && kind != KindContainerRegistry && kind != KindPlugin {
+		return badRequest(kindsMessage)
 	}
 	if secretRef != nil {
 		if err := s.Secrets.Validate(*secretRef); err != nil {
@@ -429,6 +437,18 @@ func (s *Server) createIntegration(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if req.Kind == KindContainerRegistry {
+		var c registry.Config
+		_ = json.Unmarshal(req.Config, &c)
+		ref := ""
+		if req.SecretRef != nil {
+			ref = *req.SecretRef
+		}
+		if err := s.checkRegistryConfig(r, c, ref); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+	}
 	name := ""
 	if req.Name != nil {
 		name = strings.TrimSpace(*req.Name)
@@ -443,6 +463,10 @@ func (s *Server) createIntegration(w http.ResponseWriter, r *http.Request) {
 			var c image.Config
 			_ = json.Unmarshal(req.Config, &c)
 			name = c.Image
+		case KindContainerRegistry:
+			var c registry.Config
+			_ = json.Unmarshal(req.Config, &c)
+			name = c.DisplayName()
 		case KindPlugin:
 			var c PluginConfig
 			_ = json.Unmarshal(req.Config, &c)
@@ -510,6 +534,18 @@ func (s *Server) updateIntegration(w http.ResponseWriter, r *http.Request) {
 		// Changing anything about an integration that reads a server secret
 		// could redirect that secret, so it needs an instance administrator.
 		if err := checkSecretRef(r, ref); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+	}
+	if cur.Kind == KindContainerRegistry {
+		cfg := cur.Config
+		if len(req.Config) > 0 {
+			cfg = req.Config
+		}
+		var c registry.Config
+		_ = json.Unmarshal(cfg, &c)
+		if err := s.checkRegistryConfig(r, c, ref); err != nil {
 			s.fail(w, r, err)
 			return
 		}
