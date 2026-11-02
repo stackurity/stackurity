@@ -15,26 +15,14 @@ import (
 	"path"
 	"regexp"
 	"strings"
+
+	"github.com/stackurity/stackurity/internal/model"
 )
 
-// Leak is one key, token or password found in a file.
-type Leak struct {
-	Rule     string `json:"rule"`
-	Title    string `json:"title"`
-	Severity string `json:"severity"`
-	Path     string `json:"path"` // relative to the scanned directory, with forward slashes
-	Line     int    `json:"line"`
-	// Name is the setting the value was assigned to (DB_PASSWORD), for a
-	// rule that matches assignments; empty for a key with its own format.
-	Name string `json:"name,omitempty"`
-	// Fingerprint identifies the value without revealing it: the same key
-	// in two files has one fingerprint. It is a slow salted hash, so a
-	// short password cannot be guessed back from it cheaply.
-	Fingerprint string `json:"fingerprint"`
-	// Preview is the key's public prefix and last four characters
-	// (sk_live_…4f2a), or empty for a password, which has no safe part.
-	Preview string `json:"preview,omitempty"`
-}
+// Leak is one key, token or password found in a file. Path is relative
+// to the scanned directory, with forward slashes, until a collector makes
+// it the path it reports.
+type Leak = model.Leak
 
 // rule is one kind of key. The value is the regular expression's last
 // group that matched.
@@ -55,13 +43,39 @@ type rule struct {
 	named bool
 }
 
-// Severity of a key on its own. A collector raises it when the file is
-// exposed, for example served by the web server.
+// Severity of a key on its own; Grade adjusts it for where the file is.
 const (
 	critical = "critical"
 	high     = "high"
 	medium   = "medium"
+	low      = "low"
 )
+
+var severityRank = map[string]int{low: 1, medium: 2, high: 3, critical: 4}
+
+// Grade sets a leak's exposure and the severity that follows from it.
+//
+// A file the web server sends as it is can be downloaded by anyone, so
+// anything in it is critical. A file every account on the host can read
+// is at least high. On a host, a password in the application's own
+// configuration file is where it belongs: it is recorded as low, so it is
+// listed but raises no alert. A key with its own format (an AWS or Stripe
+// key) keeps its severity there: it is written into the application,
+// so it is in its repository too. In a repository every leak keeps its
+// severity: anyone who can read the repository has the value.
+func Grade(l *Leak, exposure string, onHost bool) {
+	l.Exposure = exposure
+	switch {
+	case exposure == model.ExposureServed:
+		l.Severity = critical
+	case exposure == model.ExposureWorldReadable:
+		if severityRank[l.Severity] < severityRank[high] {
+			l.Severity = high
+		}
+	case onHost && (l.Rule == "password-assignment" || l.Rule == "database-url"):
+		l.Severity = low
+	}
+}
 
 // assigned is a setting name that holds a credential, and the value after
 // it. Names ending in SALT, and WordPress's four keys, are left out: every

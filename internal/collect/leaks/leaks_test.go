@@ -177,3 +177,27 @@ func TestOneLeakPerValue(t *testing.T) {
 		t.Errorf("got %+v", got)
 	}
 }
+
+func TestGrade(t *testing.T) {
+	for _, tc := range []struct {
+		rule, severity, exposure string
+		onHost                   bool
+		want                     string
+	}{
+		{"password-assignment", "high", "", false, "high"},              // committed to a repository
+		{"password-assignment", "high", "", true, "low"},                // in its own config file on the server
+		{"password-assignment", "high", "served", true, "critical"},     // .env the web server sends
+		{"password-assignment", "high", "world_readable", true, "high"}, // any account can read it
+		{"google-api-key", "medium", "world_readable", true, "high"},    // raised to high
+		{"stripe-live-key", "critical", "", true, "critical"},           // hardcoded in the application
+		{"aws-access-key-id", "high", "", true, "high"},                 //
+		{"google-api-key", "medium", "served", true, "critical"},        //
+		{"database-url", "high", "", true, "low"},                       //
+	} {
+		l := Leak{Rule: tc.rule, Severity: tc.severity}
+		Grade(&l, tc.exposure, tc.onHost)
+		if l.Severity != tc.want || l.Exposure != tc.exposure {
+			t.Errorf("%+v: got %s, want %s", tc, l.Severity, tc.want)
+		}
+	}
+}
