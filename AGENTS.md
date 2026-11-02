@@ -32,7 +32,7 @@ cd web && npm run build 2>&1 | grep -c 'Expected }'   # must print 0
 
 **Documentation is tested.** Every route the API registers must be in [docs/api.md](docs/api.md): `tools/docslint/api-known-gaps.txt` lists the exceptions and may only shrink (the test fails when a listed route becomes documented or disappears). Every `STACKURITY_*` variable the code reads must be named in README.md or `docs/*.md` (`env-undocumented.txt` is for test hooks only). Every CLI command and flag is checked by `TestCLIDocumented` in `cmd/stackurity`.
 
-**Releases.** The version is the newest `## X.Y.Z` heading in CHANGELOG.md. A release PR also bumps `deploy/helm/stackurity/Chart.yaml`, the image tags in the docs and `server.json` (the MCP Registry entry); `tools/releaselint` fails until they match.
+**Releases.** The version is the newest `## X.Y.Z` heading in CHANGELOG.md. A release PR also bumps `deploy/helm/stackurity/Chart.yaml` and `deploy/helm/stackurity-reporter/Chart.yaml`, the image tags in the docs and `server.json` (the MCP Registry entry); `tools/releaselint` fails until they match.
 
 **Outbound connections.** A self-hosted server must not connect anywhere the operator cannot see and turn off. `cmd/stackurity/egress_test.go` starts the real server and fails on any connection not in its `defaultEgress` list. A new default destination is a product decision: add it there with its reason and off switch, and to [docs/network.md](docs/network.md). Requests made for a workspace go through `internal/netguard`.
 

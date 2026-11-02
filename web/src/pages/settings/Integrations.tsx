@@ -1,12 +1,14 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { api, loadNotificationOptions, NO_NOTIFICATION_OPTIONS, type Asset, type Channel, type Integration, type List } from "../../api";
+import { api, loadNotificationOptions, NO_GITHUB_APP, NO_NOTIFICATION_OPTIONS, type Asset, type Channel, type GitHubAppStatus, type Integration, type List } from "../../api";
 import { useAuth } from "../../auth";
 import { useLoad } from "../../hooks";
 import { Badge } from "../../components/Badge";
 import { Table, type Column } from "../../components/Table";
 import { CodeBlock, ErrorBox, Loading, PageHeader, RelativeTime, Tabs } from "../../components/ui";
 import { channelTarget, DeliveriesTab, kindLabel } from "./Notifications";
+import { CiTrusts } from "./CiTrusts";
+import { GitHubInstallations, InstallOnGitHubButton } from "./GitHubApp";
 
 /*
  * Settings, Integrations: everything Stackurity connects to. Notification
@@ -70,7 +72,7 @@ export function IntegrationIcon({ kind }: { kind: string }) {
     sbom: <path d="M7 3h7l5 5v13H7zM14 3v5h5M10 12h6M10 15.5h6M10 19h3" />,
     ai: <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z" />,
   };
-  const key = kind === "stackurity_email" ? "email" : kind === "git_repository" ? "git" : kind === "container_image" ? "container" : kind;
+  const key = kind === "stackurity_email" ? "email" : kind === "git_repository" || kind === "github_app" ? "git" : kind === "container_image" ? "container" : kind;
   return (
     <span className="int-icon" aria-hidden="true">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
@@ -94,7 +96,12 @@ interface Active {
   to: string;
 }
 
-const SOURCE_LABEL: Record<string, string> = { git_repository: "Git repository", container_image: "Container image", plugin: "Plugin" };
+const SOURCE_LABEL: Record<string, string> = {
+  git_repository: "Git repository",
+  github_app: "GitHub repository (GitHub App)",
+  container_image: "Container image",
+  plugin: "Plugin",
+};
 
 function fromChannel(c: Channel): Active {
   return {
@@ -134,6 +141,8 @@ interface AddCard {
   admin?: boolean;
   /** Short instructions shown on this page instead of a link. */
   panel?: "ci" | "sbom";
+  /** Shown after the card's link (admins). */
+  extra?: ReactNode;
 }
 
 const HOST_PAGE = 500;
@@ -163,7 +172,7 @@ function serverRows(res: List<Asset> | null | undefined): Active[] {
   return rows;
 }
 
-function CiPanel() {
+function CiPanel({ admin }: { admin: boolean }) {
   const origin = window.location.origin;
   const action = `- uses: stackurity/scan-action@v1
   with:
@@ -173,28 +182,26 @@ function CiPanel() {
   stackurity scan . --git-url "$CI_REPOSITORY_URL" --environment production`;
   const gate = `stackurity scan . --git-url "$CI_REPOSITORY_URL" --fail-on critical --only-fixable`;
   return (
-    <div className="int-panel">
-      <p>
-        <strong>1.</strong> Create a collector token under <Link to="/settings/tokens">Settings → API tokens</Link> and save it as the CI secret{" "}
-        <span className="mono">STACKURITY_TOKEN</span>. It can only send scans.
-      </p>
-      <p>
-        <strong>2. GitHub Actions:</strong> add this step after the checkout.
-      </p>
-      <CodeBlock text={action} label="GitHub Actions step" />
-      <p>
-        <strong>Other CI:</strong> run the scan in the repository.
-      </p>
-      <CodeBlock text={cli} label="Scan command" />
-      <p>
-        <strong>Fail the pipeline</strong> on findings: it waits for the result and exits with status 3 when findings meet the threshold (4 when the result
-        was not ready in time). <span className="mono">--fail-on-priority P1</span> and <span className="mono">--fail-on-kev</span> also work.
-      </p>
-      <CodeBlock text={gate} label="Scan with a gate" />
-      <p className="small">
-        <Link to="/help/repositories">More about repositories and CI</Link>
-      </p>
-    </div>
+    <>
+      <CiTrusts admin={admin} />
+      <div className="int-panel">
+        <p>
+          <strong>With a stored token.</strong> For other CI systems, or where ID tokens cannot be used: create a collector token under{" "}
+          <Link to="/settings/tokens">Settings → API tokens</Link> and save it as the CI secret <span className="mono">STACKURITY_TOKEN</span>. It can only send
+          scans.
+        </p>
+        <CodeBlock text={action} label="GitHub Actions step with a token" />
+        <CodeBlock text={cli} label="Scan command" />
+        <p>
+          <strong>Fail the pipeline</strong> on findings: it waits for the result and exits with status 3 when findings meet the threshold (4 when the result
+          was not ready in time). <span className="mono">--fail-on-priority P1</span> and <span className="mono">--fail-on-kev</span> also work.
+        </p>
+        <CodeBlock text={gate} label="Scan with a gate" />
+        <p className="small">
+          <Link to="/help/ci-keyless">Scans in CI without a stored secret</Link> · <Link to="/help/repositories">More about repositories and CI</Link>
+        </p>
+      </div>
+    </>
   );
 }
 
@@ -242,6 +249,11 @@ export function IntegrationsHubPage() {
   const hosts = useLoad(() => api.get<List<Asset>>("/assets", { kind: "host", limit: HOST_PAGE }), []);
   const [panel, setPanel] = useState<"ci" | "sbom" | null>(null);
   const optionsRes = useLoad(loadNotificationOptions, []);
+  const github = useLoad(
+    () => (engineer ? api.get<GitHubAppStatus>("/integrations/github").catch(() => NO_GITHUB_APP) : Promise.resolve(NO_GITHUB_APP)),
+    [engineer],
+  );
+  const gh = github.data ?? NO_GITHUB_APP;
   const options = optionsRes.data ?? NO_NOTIFICATION_OPTIONS;
 
   // Back from "Add to Slack": open the new integration.
@@ -316,11 +328,20 @@ export function IntegrationsHubPage() {
     cards: [
       { kind: "server", title: "Linux server", text: "A small read-only agent, installed with one command. First results in about 2 minutes.", to: "/assets/add", admin: true },
       { kind: "windows", title: "Windows server", text: "The same agent on Windows, run as a scheduled task. Reads installed programs.", to: "/assets/add", admin: true },
-      { kind: "git", title: "Git repository", text: "Clone over HTTPS and read lockfiles on a schedule.", to: "/integrations", admin: true },
-      { kind: "ci", title: "CI pipeline", text: "Run stackurity scan or the GitHub Action in CI, and fail the build on findings.", to: "", panel: "ci" },
+      gh.configured
+        ? {
+            kind: "git",
+            title: "Git repository",
+            text: "Install on GitHub and pick repositories there: no token, rescanned when a lockfile changes. Or clone any Git host over HTTPS with a token.",
+            to: "/integrations",
+            admin: true,
+            extra: <InstallOnGitHubButton />,
+          }
+        : { kind: "git", title: "Git repository", text: "Clone over HTTPS and read lockfiles on a schedule.", to: "/integrations", admin: true },
+      { kind: "ci", title: "CI pipeline", text: "Run stackurity scan or the GitHub Action in CI, without a stored secret, and fail the build on findings.", to: "", panel: "ci" },
       { kind: "container", title: "Container image / registry", text: "Pull images and list their OS and application packages.", to: "/integrations", admin: true },
-      { kind: "kubernetes", title: "Kubernetes cluster", text: "Workloads and the images they run, through the Kubernetes plugin.", to: "/integrations", admin: true },
-      { kind: "cloud", title: "AWS", text: "Managed services (RDS, EKS, Lambda and more), through the AWS plugin.", to: "/integrations", admin: true },
+      { kind: "kubernetes", title: "Kubernetes cluster", text: "Workloads, the images they run and their exposure. One command installs a read-only reporter in the cluster.", to: "/integrations/kubernetes/add", admin: true },
+      { kind: "cloud", title: "AWS", text: "Launch one CloudFormation stack: RDS, EKS, Lambda and more, and the agent on EC2 through SSM.", to: "/settings/integrations/aws", admin: true },
       { kind: "sbom", title: "SBOM upload", text: "Upload a CycloneDX or SPDX file from your build tool.", to: "", panel: "sbom" },
       { kind: "plugin", title: "Other plugins", text: "Collectors installed on this server.", to: "/settings/plugins", admin: true },
     ],
@@ -360,6 +381,7 @@ export function IntegrationsHubPage() {
             ) : (
               <Table caption="Active integrations" columns={cols} rows={rows} rowKey={(a) => a.key} rowClassName={(a) => (!a.enabled ? "row-removed" : a.error ? "row-stale" : undefined)} />
             )}
+            <GitHubInstallations status={gh} admin={admin} onChange={github.reload} />
             <h2 className="h-sm">Add an integration</h2>
             {groups.map((g) => (
               <section key={g.title} aria-label={g.title}>
@@ -383,11 +405,19 @@ export function IntegrationsHubPage() {
                           {panel === c.panel ? "Hide steps" : "Show steps"}
                         </button>
                       ) : (
-                        (!c.admin || admin) && (
+                        (!c.admin || admin) &&
+                        (c.extra ? (
+                          <div className="form-actions">
+                            {c.extra}
+                            <Link className="btn btn-sm" to={c.to}>
+                              Other Git hosts
+                            </Link>
+                          </div>
+                        ) : (
                           <Link className="btn btn-sm" to={c.to}>
-                            {c.to.startsWith("/settings/integrations/new/") || c.to === "/assets/add" ? "Add" : "Open"}
+                            {c.to.startsWith("/settings/integrations/new/") || c.to === "/assets/add" || c.to === "/integrations/kubernetes/add" || c.to === "/settings/integrations/aws" ? "Add" : "Open"}
                           </Link>
-                        )
+                        ))
                       )}
                     </li>
                   ))}
@@ -400,7 +430,7 @@ export function IntegrationsHubPage() {
                         Close
                       </button>
                     </div>
-                    {panel === "ci" ? <CiPanel /> : <SbomPanel admin={admin} />}
+                    {panel === "ci" ? <CiPanel admin={admin} /> : <SbomPanel admin={admin} />}
                   </section>
                 )}
               </section>

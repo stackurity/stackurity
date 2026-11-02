@@ -28,6 +28,7 @@ function healthOf(i: Integration): { status: string; tone?: "good" | "bad" | "mu
 
 const KIND_LABEL: Record<string, string> = {
   git_repository: "Git repository",
+  github_app: "GitHub App",
   container_image: "Container image",
   plugin: "Plugin",
 };
@@ -39,6 +40,7 @@ function KindBadge({ kind }: { kind: string }) {
 function targetOf(i: Integration): ReactNode {
   const c = i.config ?? {};
   if (i.kind === "git_repository") return `${c.url ?? ""}${c.ref ? ` @ ${c.ref}` : ""}`;
+  if (i.kind === "github_app") return `github: ${c.full_name ?? ""}`;
   if (i.kind === "container_image") return `${c.image ?? ""}${c.platform ? ` (${c.platform})` : ""}`;
   if (i.kind === "plugin") {
     const pc = c.config ?? {};
@@ -640,6 +642,12 @@ function PluginForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
           </p>
         </div>
       </div>
+      {name === "kubernetes" && (
+        <Notice kind="info">
+          This pulls from the cluster's API server, which this server must be able to reach. To connect a cluster with one command instead, with a
+          read-only reporter in the cluster that needs no inbound access, use <Link to="/integrations/kubernetes/add">Connect a Kubernetes cluster</Link>.
+        </Notice>
+      )}
       {selected && (
         <>
           {schema.length > 0 && (

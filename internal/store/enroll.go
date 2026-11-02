@@ -29,10 +29,28 @@ type Enrollment struct {
 	// ProjectID: hosts enrolled with this code (and the assets their agent
 	// reports) are added to this project.
 	ProjectID *int64 `json:"project_id"`
+	// Fleet: made to add many servers in one rollout (up to
+	// MaxFleetUses servers, up to MaxFleetTTL), with the count and expiry
+	// chosen explicitly.
+	Fleet bool `json:"fleet"`
+	// MaxUses is how many servers the code could enroll when it was made;
+	// nil for codes made before it was recorded.
+	MaxUses *int `json:"max_uses"`
 }
 
 const enrollmentCols = `id, prefix, label, environment, app_dirs, discover_apps, uses_left, created_by, created_at,
-	expires_at, last_used_at, revoked_at, workspace_id, project_id`
+	expires_at, last_used_at, revoked_at, workspace_id, project_id, fleet, max_uses`
+
+// Limits of the two kinds of code. A standard code is the default (one
+// server, 24 hours) and can be raised to MaxCodeUses servers and
+// MaxCodeTTL; a fleet code goes further, and its count and expiry must be
+// given explicitly.
+const (
+	MaxCodeUses  = 500
+	MaxCodeTTL   = 30 * 24 * time.Hour
+	MaxFleetUses = 1000
+	MaxFleetTTL  = 90 * 24 * time.Hour
+)
 
 // ErrEnrollmentInvalid hides whether a code is unknown, used up, expired or
 // revoked, so the public endpoint reveals nothing about codes.
@@ -51,11 +69,18 @@ func (s *Store) CreateEnrollment(ctx context.Context, e Enrollment, ttl time.Dur
 	if createdBy > 0 {
 		by = &createdBy
 	}
-	rows, err := s.Pool.Query(tenant.WithoutProject(ctx), `INSERT INTO enrollments (prefix, code_hash, label, environment, app_dirs, discover_apps, uses_left, created_by, expires_at, project_id)
-		SELECT $1,$2,$3,$4,$5,$6,$7,$8, now() + make_interval(secs => $9), $10
+	maxUses, maxTTL := MaxCodeUses, MaxCodeTTL
+	if e.Fleet {
+		maxUses, maxTTL = MaxFleetUses, MaxFleetTTL
+	}
+	if e.UsesLeft < 1 || e.UsesLeft > maxUses || ttl < time.Minute || ttl > maxTTL {
+		return nil, "", fmt.Errorf("a code enrolls 1 to %d servers for at most %s: %w", maxUses, maxTTL, ErrInvalid)
+	}
+	rows, err := s.Pool.Query(tenant.WithoutProject(ctx), `INSERT INTO enrollments (prefix, code_hash, label, environment, app_dirs, discover_apps, uses_left, created_by, expires_at, project_id, fleet, max_uses)
+		SELECT $1,$2,$3,$4,$5,$6,$7,$8, now() + make_interval(secs => $9), $10, $11, $7
 		WHERE $10::bigint IS NULL OR EXISTS (SELECT 1 FROM projects WHERE id = $10 AND archived_at IS NULL)
 		RETURNING `+enrollmentCols,
-		prefix, auth.HashToken(secret), e.Label, e.Environment, e.AppDirs, e.DiscoverApps, e.UsesLeft, by, ttl.Seconds(), e.ProjectID)
+		prefix, auth.HashToken(secret), e.Label, e.Environment, e.AppDirs, e.DiscoverApps, e.UsesLeft, by, ttl.Seconds(), e.ProjectID, e.Fleet)
 	if err != nil {
 		return nil, "", err
 	}
@@ -74,6 +99,50 @@ func (s *Store) ListEnrollments(ctx context.Context) ([]Enrollment, error) {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, pgx.RowToStructByPos[Enrollment])
+}
+
+// ListFleetEnrollments returns fleet codes in every state (usable, used up,
+// expired, revoked) made in the last 180 days, newest first, so their usage
+// stays visible after a rollout.
+func (s *Store) ListFleetEnrollments(ctx context.Context) ([]Enrollment, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT `+enrollmentCols+` FROM enrollments
+		WHERE fleet AND created_at > now() - interval '180 days' ORDER BY created_at DESC LIMIT 100`)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByPos[Enrollment])
+}
+
+// EnrollmentUse is one host that used a code.
+type EnrollmentUse struct {
+	ID         int64     `json:"id"`
+	Hostname   string    `json:"hostname"`
+	RemoteAddr string    `json:"remote_addr"`
+	UsedAt     time.Time `json:"used_at"`
+	// TokenPrefix identifies the collector token the host received (under
+	// Settings > API tokens); empty once that token is deleted.
+	TokenPrefix string `json:"token_prefix"`
+	// TokenRevoked: that token has been revoked since.
+	TokenRevoked bool `json:"token_revoked"`
+}
+
+// EnrollmentUses lists the hosts that used code id, newest first (at most
+// limit). It returns ErrNotFound when the workspace has no such code.
+func (s *Store) EnrollmentUses(ctx context.Context, id int64, limit int) ([]EnrollmentUse, error) {
+	var ok bool
+	if err := s.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM enrollments WHERE id = $1)`, id).Scan(&ok); err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, ErrNotFound
+	}
+	rows, err := s.Pool.Query(ctx, `SELECT u.id, u.hostname, u.remote_addr, u.used_at, COALESCE(t.prefix, ''), COALESCE(t.revoked_at IS NOT NULL, false)
+		FROM enrollment_uses u LEFT JOIN api_tokens t ON t.id = u.token_id
+		WHERE u.enrollment_id = $1 ORDER BY u.used_at DESC, u.id DESC LIMIT $2`, id, limit)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByPos[EnrollmentUse])
 }
 
 func (s *Store) RevokeEnrollment(ctx context.Context, id int64) error {
@@ -102,6 +171,23 @@ var ErrEnrollmentProject = errors.New("this enrollment code does not add hosts t
 // never choose or change the code's project: the administrator who made the
 // code decides it.
 func (s *Store) RedeemEnrollmentFor(ctx context.Context, code, hostname string, project int64) (*Enrollment, string, error) {
+	return s.Redeem(ctx, Redemption{Code: code, Hostname: hostname, Project: project})
+}
+
+// Redemption is one request to exchange a code for a collector token.
+type Redemption struct {
+	Code, Hostname string
+	// Project, when not 0, must be the code's project (RedeemEnrollmentFor).
+	Project int64
+	// RemoteAddr is the address the request came from, kept in the code's
+	// usage list.
+	RemoteAddr string
+}
+
+// Redeem is RedeemEnrollmentFor that also records the use (host, address,
+// token) in the code's usage list, in the same transaction.
+func (s *Store) Redeem(ctx context.Context, rd Redemption) (*Enrollment, string, error) {
+	code, hostname, project := rd.Code, rd.Hostname, rd.Project
 	ctx = tenant.System(ctx)
 	var e *Enrollment
 	var secret string
@@ -136,10 +222,17 @@ func (s *Store) RedeemEnrollmentFor(ctx context.Context, code, hostname string, 
 			return err
 		}
 		name := fmt.Sprintf("agent on %s (enrollment %s)", hostname, e.Prefix)
-		_, err = tx.Exec(ctx, `INSERT INTO api_tokens (name, prefix, token_hash, role, created_by, workspace_id, project_id) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-			name, prefix, auth.HashToken(token), auth.RoleCollector, e.CreatedBy, e.WorkspaceID, e.ProjectID)
+		var tokenID int64
+		if err := tx.QueryRow(ctx, `INSERT INTO api_tokens (name, prefix, token_hash, role, created_by, workspace_id, project_id) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+			name, prefix, auth.HashToken(token), auth.RoleCollector, e.CreatedBy, e.WorkspaceID, e.ProjectID).Scan(&tokenID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO enrollment_uses (workspace_id, enrollment_id, hostname, remote_addr, token_id) VALUES ($1,$2,$3,$4,$5)`,
+			e.WorkspaceID, e.ID, hostname, rd.RemoteAddr, tokenID); err != nil {
+			return err
+		}
 		secret = token
-		return err
+		return nil
 	})
 	if err != nil {
 		return nil, "", err
