@@ -97,3 +97,25 @@ func TestToolResultText(t *testing.T) {
 		t.Errorf("people = %s", s)
 	}
 }
+
+// Credentials in inventory text never reach the model.
+func TestSecretsRedacted(t *testing.T) {
+	in := map[string]any{
+		"source":  "git+https://deploy:s3cr3t-Pa55@git.example.com/org/repo.git",
+		"note":    "token ghp_abcdefghijklmnopqrstuvwxyz0123456789 and AKIAABCDEFGHIJKLMNOP",
+		"key":     "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAA\n-----END OPENSSH PRIVATE KEY-----",
+		"slack":   "xoxb-123456789012-abcdefghijkl",
+		"package": "openssl 3.0.2 https://www.openssl.org/",
+	}
+	out := ToolResultText("asset_stack", in)
+	for _, leaked := range []string{"s3cr3t", "Pa55", "ghp_abc", "AKIAABCD", "b3BlbnNz", "xoxb-1234"} {
+		if strings.Contains(out, leaked) {
+			t.Errorf("%q reached the model: %s", leaked, out)
+		}
+	}
+	for _, kept := range []string{"git.example.com/org/repo.git", "openssl 3.0.2 https://www.openssl.org/"} {
+		if !strings.Contains(out, kept) {
+			t.Errorf("%q was removed: %s", kept, out)
+		}
+	}
+}
