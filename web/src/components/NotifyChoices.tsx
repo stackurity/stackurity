@@ -155,6 +155,28 @@ export function AddToSlackButton({
   );
 }
 
+/**
+ * "Connect PagerDuty": asks the server for PagerDuty's consent page and goes
+ * there; PagerDuty sends the person back to /integrations/pagerduty/oauth/callback.
+ */
+export function ConnectPagerDutyButton({ returnTo, label = "Connect PagerDuty" }: { returnTo: string; label?: string }) {
+  const act = useAction();
+  const go = async () => {
+    const r = await act.run(() => api.post<{ url: string }>("/integrations/pagerduty/connect", { return_to: returnTo }));
+    if (r?.url) window.location.assign(r.url);
+  };
+  return (
+    <>
+      <ErrorBox error={act.error} title="Could not open PagerDuty" />
+      <div>
+        <button type="button" className="btn btn-primary" onClick={() => void go()} disabled={act.pending}>
+          {act.pending ? "Opening PagerDuty…" : label}
+        </button>
+      </div>
+    </>
+  );
+}
+
 /** Splits typed addresses on commas, spaces and new lines. */
 export function parseAddresses(s: string): string[] {
   return [...new Set(s.split(/[\s,;]+/).map((x) => x.trim().toLowerCase()).filter(Boolean))];

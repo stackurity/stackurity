@@ -245,7 +245,7 @@ func TestAskLockKeyIsWide(t *testing.T) {
 	}
 }
 
-// Organisations that exist when 0067 runs start with the assistant off;
+// Organisations that exist when 0085 runs start with the assistant off;
 // new ones start with it on.
 func TestAskOptInForExistingOrganisations(t *testing.T) {
 	f := newAskFixture(t)

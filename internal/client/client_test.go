@@ -75,3 +75,51 @@ func TestCheckDue(t *testing.T) {
 		t.Errorf("old server: %v", err)
 	}
 }
+
+// EnrollWait retries while the server asks hosts to wait (429 with
+// Retry-After, 503), and gives up at once on a refused code or when the wait
+// is spent.
+func TestEnrollWait(t *testing.T) {
+	var calls atomic.Int32
+	answers := []int{429, 503, 200}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := int(calls.Add(1)) - 1
+		switch code := answers[min(n, len(answers)-1)]; code {
+		case 200:
+			_, _ = w.Write([]byte(`{"token":"stk_x","environment":"production"}`))
+		default:
+			w.Header().Set("Retry-After", "1")
+			w.WriteHeader(code)
+			_, _ = w.Write([]byte(`{"error":{"code":"rate_limited","message":"wait"}}`))
+		}
+	}))
+	defer srv.Close()
+	c, err := New(srv.URL, "", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var waits []time.Duration
+	e, err := c.EnrollWait(context.Background(), "enr_x", "web-1", 0, time.Minute, func(d time.Duration, err error) { waits = append(waits, d) })
+	if err != nil || e.Token != "stk_x" || calls.Load() != 3 || len(waits) != 2 {
+		t.Fatalf("after 429, 503, 200: %v %+v, %d calls, waits %v", err, e, calls.Load(), waits)
+	}
+	for _, d := range waits {
+		if d < time.Second || d > 3*time.Second {
+			t.Errorf("wait %s does not follow Retry-After: 1 (plus jitter)", d)
+		}
+	}
+
+	// A refused code is final.
+	calls.Store(0)
+	answers = []int{403}
+	if _, err := c.EnrollWait(context.Background(), "enr_x", "web-1", 0, time.Minute, nil); err == nil || calls.Load() != 1 {
+		t.Errorf("403: %v after %d calls", err, calls.Load())
+	}
+	// No wait allowed: the 429 is returned at once.
+	calls.Store(0)
+	answers = []int{429}
+	var ae *APIError
+	if _, err := c.EnrollWait(context.Background(), "enr_x", "web-1", 0, 0, nil); !errors.As(err, &ae) || ae.Status != 429 || ae.RetryAfter != time.Second || calls.Load() != 1 {
+		t.Errorf("429 with no wait: %v after %d calls", err, calls.Load())
+	}
+}

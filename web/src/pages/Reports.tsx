@@ -4,6 +4,7 @@ import { useProject } from "../project";
 import { ProNotice } from "../components/ProNotice";
 import { Link, useSearchParams } from "react-router";
 import { api, ASSET_STATUSES, EVIDENCE_STATE_LABEL, PRIORITIES, SEVERITIES, type EvidenceReport, type ReportDrift, type ReportException } from "../api";
+import { ProjectFilter } from "../components/AssetPicker";
 import { useLoad } from "../hooks";
 import { absTime, assetKindLabel, durationDays, humanize, plural } from "../format";
 import { NOT_REMEDIATION_KINDS, RESOLUTION_KIND_LABEL } from "../resolution";
@@ -118,6 +119,7 @@ function EvidenceReportPage() {
         }
       />
       <form className="filters no-print" onSubmit={(e) => e.preventDefault()}>
+        <ProjectFilter id="rep-project" />
         <div className="field">
           <label htmlFor="rep-from">From</label>
           <input id="rep-from" type="date" required value={from} max={to} onChange={(e) => setDate("from", e.target.value)} />
