@@ -5452,7 +5452,9 @@ div.assistant-card {
   right: 0;
   bottom: 0;
   width: min(440px, 100vw);
-  z-index: 60;
+  /* Above menus (40), below the confirm dialog (50): a dialog opened
+     from the panel (delete a conversation) must stay on top. */
+  z-index: 45;
   display: flex;
   flex-direction: column;
   background: var(--surface);
