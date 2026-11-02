@@ -210,6 +210,10 @@ func (s *Server) Handler() http.Handler {
 	// Slack requires; signed in, the dashboard page that picks the
 	// organisation and starts Add to Slack (notify_setup.go).
 	r.Get("/integrations/slack/install", s.slackDirectInstall)
+	// The Stackurity Teams app's messaging endpoint (the Azure Bot's
+	// Messaging endpoint): every request carries a Bot Framework JWT for
+	// this app, verified before anything else (teams_app.go).
+	r.With(s.limitAddress("teams-messages", limitTeamsMessages, "too many requests")).Post("/api/v1/integrations/teams/messages", s.teamsMessages)
 	// The Stackurity GitHub App's webhook URL (installation, repositories
 	// granted or removed, pushes), verified with the app's webhook secret
 	// (github_app.go).
@@ -471,6 +475,8 @@ func (s *Server) Handler() http.Handler {
 				r.Post("/email-recipients/resend", s.resendEmailRecipient)
 				r.With(s.requireWritable).Post("/integrations/slack/install", s.startSlackInstall)
 				r.With(s.requireWritable).Post("/integrations/slack/oauth", s.finishSlackInstall)
+				r.With(s.requireWritable).Post("/integrations/teams/install", s.startTeamsInstall)
+				r.Get("/integrations/teams/install/{id}", s.teamsInstallStatus)
 				r.With(s.requireWritable).Post("/integrations/jira/install", s.startJiraConnect)
 				r.With(s.requireWritable).Post("/integrations/jira/oauth", s.finishJiraConnect)
 				r.Get("/integrations/jira/connections", s.listJiraConnections)

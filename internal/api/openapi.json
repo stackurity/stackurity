@@ -10310,6 +10310,124 @@
     }
    }
   },
+  "/integrations/teams/install": {
+   "post": {
+    "operationId": "post_integrations_teams_install",
+    "summary": "Start Add to Teams",
+    "description": "Answers `id`, `code` (single use, 15 minutes, for the caller in this organisation; their earlier unused code stops working), `expires_at` and `install_url` (opens the app in Teams). Sending the code to the bot in a Teams channel connects that channel. 404 `not_configured` without the Stackurity Teams app (STACKURITY_TEAMS_APP_ID, ...)\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/teams/install/{id}": {
+   "get": {
+    "operationId": "get_integrations_teams_install_id",
+    "summary": "What became of an Add to Teams code",
+    "description": "`status` `pending`, `expired`, `connected` (with `channel`) or `failed`, and `expires_at`. 404 for another person's code\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/teams/messages": {
+   "post": {
+    "operationId": "post_integrations_teams_messages",
+    "summary": "The Teams app's messaging endpoint (verified by a Bot Framework JWT)",
+    "description": "Bot Framework activities from Microsoft Teams. Every request needs `Authorization: Bearer` with a JWT the Bot Framework signed (RS256, a key endorsed for `msteams`), issued by `https://api.botframework.com` for the app's ID, current, whose `serviceurl` claim is the activity's `serviceUrl`; otherwise 401. 403 for a `serviceUrl` that is not a Teams Bot Connector host. A message with an Add to Teams code connects its channel; the app removed from a team or a channel deleted switches the matching integrations off. 404 without the app\n\nRole: none: a Bot Framework token for the app",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "none: a Bot Framework token for the app",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/signup/social/preview": {
    "post": {
     "operationId": "post_signup_social_preview",

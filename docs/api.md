@@ -1141,7 +1141,7 @@ How incidents become messages, the route `events` and the webhook format are in 
 
 **Who:** security
 
-What the server offers: `slack_app` (Add to Slack), `jira_app` (Connect Jira: the Atlassian app is configured, with `STACKURITY_BASE_URL` and stored secrets), `platform_email` (`enabled`; when enabled `from`, `max_recipients` and `quota` with `per_minute`, `per_hour`, `per_day`), `secrets` (stored secrets work) and `base_url`.
+What the server offers: `slack_app` (Add to Slack), `jira_app` (Connect Jira: the Atlassian app is configured, with `STACKURITY_BASE_URL` and stored secrets), `teams_app` (Add to Teams), `platform_email` (`enabled`; when enabled `from`, `max_recipients` and `quota` with `per_minute`, `per_hour`, `per_day`), `secrets` (stored secrets work) and `base_url`.
 
 ### `GET /channels`
 
@@ -1153,13 +1153,13 @@ Notification channels.
 
 **Who:** admin
 
-Creates a channel: email, email sent by Stackurity (`stackurity_email`, hosted only), Slack, Teams, webhook, Jira, PagerDuty (`pagerduty`) or ServiceNow (`servicenow`); configuration fields are listed in [install.md](install.md#notifications). Slack channels made with Add to Slack come from `POST /integrations/slack/oauth` instead. A Jira channel with Connect Jira has `config.auth` `oauth`, `connection_id` and `cloud_id` (a site of that connection of this organisation, 400 otherwise) and no `secret_ref`; its `url` is set from the site.
+Creates a channel: email, email sent by Stackurity (`stackurity_email`, hosted only), Slack, Teams, webhook, Jira, PagerDuty (`pagerduty`) or ServiceNow (`servicenow`); configuration fields are listed in [install.md](install.md#notifications). Slack channels made with Add to Slack come from `POST /integrations/slack/oauth` instead, and Teams channels made with Add to Teams (`config.teams_app`) from the Teams app's messaging endpoint; neither can be created here. A Jira channel with Connect Jira has `config.auth` `oauth`, `connection_id` and `cloud_id` (a site of that connection of this organisation, 400 otherwise) and no `secret_ref`; its `url` is set from the site.
 
 ### `PATCH /channels/{id}`
 
 **Who:** admin
 
-Changes a channel. Add to Slack channels (`config.slack_app`) can only be renamed and switched on or off.
+Changes a channel. Add to Slack channels (`config.slack_app`) and Add to Teams channels (`config.teams_app`) can only be renamed and switched on or off.
 
 ### `DELETE /channels/{id}`
 
@@ -1366,6 +1366,24 @@ The Slack app's Direct install URL ([slack-app.md](slack-app.md#installs-started
 **Who:** admin
 
 Finishes Add to Slack with `{"code", "state"}` from Slack's redirect to `/integrations/slack/oauth/callback`: 201 with `channel`, `return_to`, `team_name` and `slack_channel`. 400 `slack_state` for a state that is missing (an install started from Slack's side), unknown, used, expired (10 minutes) or someone else's, before Slack is called; 502 `slack_refused`.
+
+### `POST /integrations/teams/install`
+
+**Who:** admin
+
+Starts Add to Teams ([teams-app.md](teams-app.md)): answers `id`, `code` (such as `K7QWN-3HTRD`: single use, for 15 minutes, for the caller in this organisation; their earlier unused code stops working), `expires_at` and `install_url` (opens the app in Teams). Sending the code to the bot in a Teams channel connects that channel. 404 `not_configured` without the Teams app. Audited as `teams_install.start`.
+
+### `GET /integrations/teams/install/{id}`
+
+**Who:** admin
+
+What became of the caller's code: `status` `pending`, `expired`, `connected` (with `channel`, the new or revived Teams integration) or `failed`, and `expires_at`. 404 for another person's code.
+
+### `POST /integrations/teams/messages`
+
+**Who:** Microsoft (a Bot Framework token for the app)
+
+The Teams app's messaging endpoint (the Azure Bot's **Messaging endpoint**). Every request needs `Authorization: Bearer` with a JWT the Bot Framework signed (RS256, a key endorsed for `msteams`), issued by `https://api.botframework.com` for the app's ID, current, whose `serviceurl` claim is the activity's `serviceUrl`: otherwise 401 before anything is read. A `serviceUrl` that is not a Teams Bot Connector host is refused with 403. A message with a code connects its channel (the bot answers in the thread); the app removed from a team (`conversationUpdate` with the bot in `membersRemoved`, `teamDeleted`, `installationUpdate` `remove`) or a channel deleted (`channelDeleted`) switches the matching Teams integrations off in every organisation with a note. 404 without the Teams app.
 
 ### `POST /integrations/jira/install`
 

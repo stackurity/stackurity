@@ -133,6 +133,17 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/integrations/slack/oauth": {class: "create", body: func(*tenantFx) any {
 		return map[string]string{"code": "c", "state": "guessed"}
 	}},
+	// Add to Teams: B's code is B's; A's code's status is not B's to read
+	// (teams_app_test.go covers binding).
+	"POST /api/v1/integrations/teams/install":     {class: "create", body: func(*tenantFx) any { return map[string]any{} }},
+	"GET /api/v1/integrations/teams/install/{id}": {class: "object", obj: id("teamsinstall")},
+	// The Teams app's messaging endpoint: public, every request needs a
+	// Bot Framework JWT for the app (teams_app_test.go); 404 without the app.
+	"POST /api/v1/integrations/teams/messages": {class: "public", body: func(*tenantFx) any {
+		return map[string]any{"type": "message", "channelId": "msteams", "serviceUrl": "https://smba.trafficmanager.net/amer/", "text": "ABCDE-FGHJK"}
+	}},
+	"GET /api/v1/notification-options": {class: "list"},
+	"GET /api/v1/email-recipients":     {class: "list"},
 	// Connect Jira: B's connect starts in B, a state of A's (or a guessed
 	// one) is refused, and A's connection is not B's to reconnect, list,
 	// read from or delete (jira_app_test.go covers them with the app on).
@@ -146,8 +157,6 @@ var routeRules = map[string]routeRule{
 	"DELETE /api/v1/integrations/jira/connections/{id}":             {class: "object", obj: id("jiraconn")},
 	"GET /api/v1/integrations/jira/connections/{id}/projects":       {class: "object", obj: id("jiraconn"), query: "?site={jirasite}"},
 	"GET /api/v1/integrations/jira/connections/{id}/projects/{key}": {class: "object", obj: map[string]string{"id": "jiraconn", "key": "jirakey"}, query: "?site={jirasite}"},
-	"GET /api/v1/notification-options":                              {class: "list"},
-	"GET /api/v1/email-recipients":                                  {class: "list"},
 	// The Stackurity GitHub App (github_app_test.go): the webhook is public
 	// and verified by the app's webhook secret (404 without the app); B's
 	// install starts in B and a guessed state is refused; A's installation
@@ -806,6 +815,12 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 		t.Fatalf("%s slack link: %d", tag, code)
 	}
 	set("slacklink", link.ID)
+	// A pending Add to Teams code of A's admin.
+	teamsCode, err := e.st.CreateTeamsInstallCode(ctx, me.User.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	set("teamsinstall", teamsCode.ID)
 	// A Connect Jira connection (its tokens sealed like A's secrets).
 	jiraSite := "cloud-" + tag
 	jc, err := e.st.SaveJiraConnection(ctx, e.api.SecretBox, 0, []store.JiraSite{{ID: jiraSite, Name: tag, URL: "https://" + tag + ".atlassian.net"}},
