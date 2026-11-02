@@ -461,6 +461,7 @@ stackurity.exe agent --interval 6h`,
     where: ["Settings", "Integrations"],
     keywords: "git github gitlab lockfile npm composer repository ci",
     body: [
+      { note: "On GitLab, where your server offers it, [Connect GitLab](help:gitlab) covers a whole group in one step: no token or CI step." },
       { note: "On GitHub, with the Stackurity GitHub App on your server, [Install on GitHub](help:github-app) is simpler: no token or CI step." },
       { h: "Option A: the server clones it on a schedule" },
       {
@@ -488,6 +489,53 @@ stackurity.exe agent --interval 6h`,
       {
         p: "Supported lockfiles: npm, yarn (v1 and Berry), pnpm, Composer, Poetry, Pipenv, pinned `requirements.txt`, Go modules, Cargo, Bundler, NuGet `packages.lock.json`, and `pubspec.lock`. Others (Maven, Gradle, …) are shown as unsupported coverage, never silently ignored.",
       },
+    ],
+  },
+  {
+    id: "gitlab",
+    title: "Connect GitLab (a group's projects in one step)",
+    section: "Adding servers and sources",
+    summary: "Scan every project of a GitLab group, subgroups included: authorise on GitLab, pick the group, no token to paste.",
+    where: ["Settings", "Integrations", "Git repository"],
+    keywords: "gitlab group project subgroup oauth access token webhook push self-managed private repository",
+    body: [
+      { p: "Where your Stackurity server offers Connect GitLab (Stackurity Cloud does), you don't need to create a token or add a CI step to scan your GitLab projects." },
+      {
+        steps: [
+          "Go to **Settings ▸ Integrations** and, on the **Git repository** card, click **Connect GitLab** (admins).",
+          "GitLab asks you to authorise Stackurity. It asks for the **api** scope once, to set things up; Stackurity revokes that token before the page answers.",
+          "Back in Stackurity, pick a group you are a member of and click **Connect this group**. Each project appears under **Active integrations**, and the first results arrive within minutes.",
+        ],
+      },
+      { h: "What Stackurity keeps" },
+      {
+        list: [
+          "As the group's **Owner**, Stackurity creates a group access token named *Stackurity*: **read_api** and **read_repository**, the **Reporter** role, valid for just under a year. It is stored encrypted and can't push or change anything.",
+          "If GitLab doesn't allow a group access token (you're not the Owner, or your GitLab restricts it), click **Authorise read-only access**: GitLab asks for read_api and read_repository only, and Stackurity keeps and renews that authorisation.",
+          "Each scan is a shallow clone that reads lockfiles and is deleted afterwards. Hooks, submodules, LFS and scripts never run.",
+        ],
+      },
+      { h: "When projects are scanned" },
+      {
+        list: [
+          "Right after you connect, then every 6 hours (change it per project under **Settings ▸ Integrations**).",
+          "With a group webhook (Owner role, GitLab Premium or Ultimate): when a push to the default branch changes a lockfile or manifest. Without one, the connection says *scanned on the schedule only*.",
+          "New projects in the group are added, and removed ones have their issues closed as removed (the asset and its history stay), daily and when the webhook reports a change.",
+        ],
+      },
+      { h: "Change or remove it" },
+      {
+        list: [
+          "**Switch one project off**: open it under **Settings ▸ Integrations** and switch it off.",
+          "**Disconnect**: GitLab asks you to authorise once more, then Stackurity deletes its webhook and access token there and stops scanning. The history is kept.",
+          "**Remove here only**: stops scanning and revokes Stackurity's credential without visiting GitLab; a group Owner deletes the webhook later.",
+          "The group access token expires after a year: the connection warns 30 days before. Connect again to renew it.",
+        ],
+      },
+      {
+        note: "A GitLab group (and the groups above and below it) can be connected to one Stackurity organisation only. At your organisation's asset limit, new projects wait until there is room; the connection says how many.",
+      },
+      { p: "Projects in a personal namespace can't be connected: use a [Git integration or a CI scan](help:repositories). Operators: see `docs/gitlab.md` to set Connect GitLab up." },
     ],
   },
   {

@@ -416,6 +416,8 @@ func (s *Server) validateIntegration(ctx context.Context, kind string, cfg json.
 					err = verr
 				}
 			}
+		case store.KindGitLab:
+			return badRequest("GitLab projects are added by connecting their group: use Connect GitLab")
 		case store.KindGitHubApp:
 			return badRequest("repositories are added to the GitHub App on GitHub: use Install on GitHub")
 		default:
@@ -426,6 +428,8 @@ func (s *Server) validateIntegration(ctx context.Context, kind string, cfg json.
 		}
 	} else if kind == store.KindGitHubApp {
 		return badRequest("repositories are added to the GitHub App on GitHub: use Install on GitHub")
+	} else if kind == store.KindGitLab {
+		return badRequest("GitLab projects are added by connecting their group: use Connect GitLab")
 	} else if kind != KindGitRepository && kind != KindContainerImage && kind != KindContainerRegistry && kind != KindPlugin {
 		return badRequest(kindsMessage)
 	}
@@ -569,15 +573,28 @@ func (s *Server) updateIntegration(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, r, err)
 			return
 		}
-		if err := s.validateIntegration(r.Context(), cur.Kind, req.Config, &ref, req.ScheduleMinutes, awsLinked); err != nil {
-			s.fail(w, r, err)
-			return
-		}
-		// Changing anything about an integration that reads a server secret
-		// could redirect that secret, so it needs an instance administrator.
-		if err := checkSecretRef(r, ref); err != nil {
-			s.fail(w, r, err)
-			return
+		if cur.Kind == store.KindGitLab {
+			// Made and named by Connect GitLab, from the group's projects; it
+			// reads no secret. Only its switch and schedule are people's.
+			if req.Name != nil || len(req.Config) > 0 || req.SecretRef != nil {
+				s.fail(w, r, badRequest("a project scanned through Connect GitLab can only be switched on or off and rescheduled; which projects are scanned is the connected group's"))
+				return
+			}
+			if m := req.ScheduleMinutes; m != nil && (*m < 15 || *m > 7*24*60) {
+				s.fail(w, r, badRequest("schedule_minutes must be between 15 and 10080"))
+				return
+			}
+		} else {
+			if err := s.validateIntegration(r.Context(), cur.Kind, req.Config, &ref, req.ScheduleMinutes, awsLinked); err != nil {
+				s.fail(w, r, err)
+				return
+			}
+			// Changing anything about an integration that reads a server secret
+			// could redirect that secret, so it needs an instance administrator.
+			if err := checkSecretRef(r, ref); err != nil {
+				s.fail(w, r, err)
+				return
+			}
 		}
 	}
 	if cur.Kind == KindContainerRegistry {

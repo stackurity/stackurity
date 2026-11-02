@@ -11,6 +11,7 @@ import { AcceptInvitePage } from "./pages/AcceptInvite";
 import { SlackLinkPage } from "./pages/SlackLink";
 import { AccountPage } from "./pages/Account";
 import { SlackOAuthCallbackPage } from "./pages/SlackOAuthCallback";
+import { GitLabCallbackPage } from "./pages/GitLabCallback";
 import { PagerDutyOAuthCallbackPage } from "./pages/PagerDutyOAuthCallback";
 import { JiraOAuthCallbackPage } from "./pages/JiraOAuthCallback";
 import { GitHubCallbackPage } from "./pages/GitHubCallback";
@@ -151,6 +152,11 @@ export function App() {
   // in or not.
   if (pathname === "/integrations/slack/oauth/callback" && state.phase === "login") return slackCallbackNeedsSession() ? <LoginPage /> : <SlackOAuthCallbackPage />;
   if (pathname === "/integrations/slack/oauth/callback" && state.phase === "ready") return <SlackOAuthCallbackPage />;
+  // Back from GitLab (Connect GitLab, read-only access, cleanup): sign in
+  // first; the address and query stay, and the page finishes in the
+  // signed-in session.
+  if (pathname === "/integrations/gitlab/callback" && state.phase === "login") return <LoginPage />;
+  if (pathname === "/integrations/gitlab/callback" && state.phase === "ready") return <GitLabCallbackPage />;
   // Back from "Connect PagerDuty": sign in first; the address and query stay.
   if (pathname === "/integrations/pagerduty/oauth/callback" && state.phase === "login") return <LoginPage />;
   if (pathname === "/integrations/pagerduty/oauth/callback" && state.phase === "ready") return <PagerDutyOAuthCallbackPage />;

@@ -133,6 +133,28 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/integrations/slack/oauth": {class: "create", body: func(*tenantFx) any {
 		return map[string]string{"code": "c", "state": "guessed"}
 	}},
+	// Connect GitLab (gitlab_test.go): the webhook is public and verified
+	// with the connection's secret token (404 without Connect GitLab); B's
+	// connect starts in B, and a guessed state or pick is refused; A's
+	// connection cannot be authorised, synced or disconnected by B.
+	"POST /api/v1/integrations/gitlab/webhook/{id}": {class: "public", obj: id("gitlabconn"), body: func(*tenantFx) any {
+		return map[string]any{"object_kind": "push", "project_id": 1}
+	}},
+	"GET /api/v1/integrations/gitlab":          {class: "list"},
+	"POST /api/v1/integrations/gitlab/connect": {class: "create", body: func(*tenantFx) any { return map[string]string{"return_to": "/settings/integrations"} }},
+	"POST /api/v1/integrations/gitlab/oauth": {class: "create", body: func(*tenantFx) any {
+		return map[string]string{"code": "c", "state": "guessed"}
+	}},
+	"POST /api/v1/integrations/gitlab/connections": {class: "create", body: func(a *tenantFx) any {
+		return map[string]any{"pick": "guessed", "group_id": a.int("gitlabgroup")}
+	}},
+	"POST /api/v1/integrations/gitlab/connections/{id}/authorize": {class: "object", obj: id("gitlabconn"), body: func(*tenantFx) any {
+		return map[string]string{"purpose": "cleanup"}
+	}},
+	"POST /api/v1/integrations/gitlab/connections/{id}/sync": {class: "object", obj: id("gitlabconn")},
+	"DELETE /api/v1/integrations/gitlab/connections/{id}":    {class: "object", obj: id("gitlabconn")},
+	"GET /api/v1/notification-options":                       {class: "list"},
+	"GET /api/v1/email-recipients":                           {class: "list"},
 	// Connect PagerDuty: a state or session of A's (or a guessed one) is
 	// refused in B; B's connect starts in B (pagerduty_app_test.go).
 	"POST /api/v1/integrations/pagerduty/connect": {class: "create", body: func(*tenantFx) any { return map[string]string{"return_to": "/settings/integrations"} }},
@@ -144,8 +166,6 @@ var routeRules = map[string]routeRule{
 		return map[string]string{"session": "guessed", "service_id": "PS001"}
 	}},
 	"POST /api/v1/integrations/pagerduty/cancel": {class: "create", body: func(*tenantFx) any { return map[string]string{"session": "guessed"} }},
-	"GET /api/v1/notification-options":           {class: "list"},
-	"GET /api/v1/email-recipients":               {class: "list"},
 	// Add to Teams: B's code is B's; A's code's status is not B's to read
 	// (teams_app_test.go covers binding).
 	"POST /api/v1/integrations/teams/install":     {class: "create", body: func(*tenantFx) any { return map[string]any{} }},
@@ -869,6 +889,12 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 		t.Fatalf("%s assistants: %d %+v", tag, code, conns)
 	}
 	set("assistant", conns.Items[0].ID)
+	glc, err := e.st.BindGitLabGroup(ctx, 800000+ws, "gl-"+tag, "GitLab "+tag, me.User.ID)
+	if err != nil {
+		t.Fatalf("%s gitlab connection: %v", tag, err)
+	}
+	set("gitlabconn", glc.ID)
+	set("gitlabgroup", glc.GroupID)
 	gi, err := e.st.BindGitHubInstallation(ctx, store.GitHubInstallation{InstallationID: 900000 + ws, AccountLogin: "gh-" + tag, AccountType: "Organization"}, me.User.ID)
 	if err != nil {
 		t.Fatalf("%s github installation: %v", tag, err)

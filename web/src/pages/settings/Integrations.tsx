@@ -1,12 +1,13 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { api, loadNotificationOptions, NO_GITHUB_APP, NO_NOTIFICATION_OPTIONS, type Asset, type Channel, type GitHubAppStatus, type Integration, type List } from "../../api";
+import { api, loadNotificationOptions, NO_GITHUB_APP, NO_GITLAB, NO_NOTIFICATION_OPTIONS, type Asset, type Channel, type GitHubAppStatus, type GitLabStatus, type Integration, type List } from "../../api";
 import { useAuth } from "../../auth";
 import { useLoad } from "../../hooks";
 import { Badge } from "../../components/Badge";
 import { Table, type Column } from "../../components/Table";
 import { CodeBlock, ErrorBox, Loading, PageHeader, RelativeTime, Tabs } from "../../components/ui";
 import { channelTarget, DeliveriesTab, kindLabel } from "./Notifications";
+import { ConnectGitLabButton, GitLabConnections } from "./GitLab";
 import { CiTrusts } from "./CiTrusts";
 import { GitHubInstallations, InstallOnGitHubButton } from "./GitHubApp";
 
@@ -72,7 +73,7 @@ export function IntegrationIcon({ kind }: { kind: string }) {
     sbom: <path d="M7 3h7l5 5v13H7zM14 3v5h5M10 12h6M10 15.5h6M10 19h3" />,
     ai: <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z" />,
   };
-  const key = kind === "stackurity_email" ? "email" : kind === "git_repository" || kind === "github_app" ? "git" : kind === "container_image" || kind === "container_registry" ? "container" : kind;
+  const key = kind === "stackurity_email" ? "email" : kind === "git_repository" || kind === "github_app" || kind === "gitlab" ? "git" : kind === "container_image" || kind === "container_registry" ? "container" : kind;
   return (
     <span className="int-icon" aria-hidden="true">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
@@ -99,6 +100,7 @@ interface Active {
 const SOURCE_LABEL: Record<string, string> = {
   git_repository: "Git repository",
   github_app: "GitHub repository (GitHub App)",
+  gitlab: "GitLab project (Connect GitLab)",
   container_image: "Container image",
   container_registry: "Container registry",
   plugin: "Plugin",
@@ -250,6 +252,8 @@ export function IntegrationsHubPage() {
   const hosts = useLoad(() => api.get<List<Asset>>("/assets", { kind: "host", limit: HOST_PAGE }), []);
   const [panel, setPanel] = useState<"ci" | "sbom" | null>(null);
   const optionsRes = useLoad(loadNotificationOptions, []);
+  const gitlab = useLoad(() => (engineer ? api.get<GitLabStatus>("/integrations/gitlab").catch(() => NO_GITLAB) : Promise.resolve(NO_GITLAB)), [engineer]);
+  const gl = gitlab.data ?? NO_GITLAB;
   const github = useLoad(
     () => (engineer ? api.get<GitHubAppStatus>("/integrations/github").catch(() => NO_GITHUB_APP) : Promise.resolve(NO_GITHUB_APP)),
     [engineer],
@@ -344,6 +348,15 @@ export function IntegrationsHubPage() {
             admin: true,
             extra: <InstallOnGitHubButton />,
           }
+        : gl.configured
+        ? {
+            kind: "git",
+            title: "Git repository",
+            text: "Connect GitLab and pick a group: every project in it, no token to paste, rescanned when a lockfile changes. Or clone any Git host over HTTPS with a token.",
+            to: "/integrations",
+            admin: true,
+            extra: <ConnectGitLabButton />,
+          }
         : { kind: "git", title: "Git repository", text: "Clone over HTTPS and read lockfiles on a schedule.", to: "/integrations", admin: true },
       { kind: "ci", title: "CI pipeline", text: "Run stackurity scan or the GitHub Action in CI, without a stored secret, and fail the build on findings.", to: "", panel: "ci" },
       { kind: "container", title: "Container image / registry", text: "Connect a registry and scan its newest tags, or add one image.", to: "/integrations?add=container", admin: true },
@@ -388,6 +401,7 @@ export function IntegrationsHubPage() {
             ) : (
               <Table caption="Active integrations" columns={cols} rows={rows} rowKey={(a) => a.key} rowClassName={(a) => (!a.enabled ? "row-removed" : a.error ? "row-stale" : undefined)} />
             )}
+            <GitLabConnections status={gl} admin={admin} onChange={gitlab.reload} />
             <GitHubInstallations status={gh} admin={admin} onChange={github.reload} />
             <h2 className="h-sm">Add an integration</h2>
             {groups.map((g) => (
