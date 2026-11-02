@@ -239,9 +239,9 @@ function TwoFactorBody({ st, reload }: { st: MfaStatus; reload: () => void }) {
       )}
       {st.required && !st.enabled && <Notice kind="warn">Your organisation requires {methodList(st.accepted)}. Set one up below.</Notice>}
       {st.confirm_first && (
-        <section className="mfa-method" aria-labelledby="mfa-confirm">
-          <h3 id="mfa-confirm">Confirm it is you</h3>
-          <Notice kind="warn">Before you add or remove a method: {st.confirm_first}.</Notice>
+        <section className="mfa-method" aria-labelledby="mfa-confirm-first">
+          <h3 id="mfa-confirm-first">Confirm it is you</h3>
+          <Notice kind="warn">{st.confirm_first.charAt(0).toUpperCase() + st.confirm_first.slice(1)}.</Notice>
           <ConfirmFactor methods={st.methods} recovery onDone={reload} />
         </section>
       )}
