@@ -38,7 +38,7 @@ A workspace (shown as the organisation in the dashboard) groups its assets into 
 - **Limits and read-only organisations.** A request that would create an asset past the organisation's limit answers `402 asset_limit`, a new project past its limit `402 project_limit`. While an organisation is read-only, uploads, enrollment, integrations, checks and notifications answer `402 read_only`. See [asset-limits.md](asset-limits.md).
 - **Editions.** Routes marked **licensed build** exist only in Stackurity Pro and Enterprise; in the Community build some answer `402` with the plan they need, and the others are not served. Routes marked **Stackurity Cloud** exist only on the hosted service. See [editions.md](editions.md).
 - **Rate limits** answer `429`. Routes that need no sign-in are limited per address.
-- **The free key.** A self-hosted server without its free key or a licence ([install.md](install.md#the-free-key)) answers `403 key_required` on every route except: `GET /meta`, `GET /openapi.json`, `POST /setup`, everything under `/auth/` and the single sign-on routes, `/admin/license` (with `POST /admin/license/link` and `/admin/license/link/claim`), the email confirmation, unsubscribe and preference routes, and what agents and uploads use (`POST /enroll`, `POST /ingest`, `POST /sbom/import`, `GET /collections/{id}/result`, `GET /agent/check`, `/agent/actions`, `GET /remediation/renovate.json`; with an API token also `GET /projects`, `GET /projects/{id}` and `POST /vex/import`). `/mcp` and the assistants' OAuth endpoints answer `403 key_required` too. An upgraded server gets 30 days first. Stackurity Cloud never answers it.
+- **The free key.** A self-hosted server without its free key or a licence ([install.md](install.md#the-free-key)) answers `403 key_required` on every route except: `GET /meta`, `GET /openapi.json`, `POST /setup`, everything under `/auth/` and the single sign-on routes, `/admin/license` (with `POST /admin/license/link` and `/admin/license/link/claim`), the email confirmation, unsubscribe and preference routes, and what agents and uploads use (`POST /enroll`, `POST /ci/token`, `POST /ingest`, `POST /sbom/import`, `GET /collections/{id}/result`, `GET /agent/check`, `/agent/actions`, `GET /remediation/renovate.json`; with an API token also `GET /projects`, `GET /projects/{id}` and `POST /vex/import`). The signed webhooks and callbacks of the Slack, Teams, GitHub and GitLab apps and of AWS Launch Stack are never held back. `/mcp` and the assistants' OAuth endpoints answer `403 key_required` too. An upgraded server gets 30 days first. Stackurity Cloud never answers it.
 
 ## Account
 
@@ -82,7 +82,7 @@ Ends the session; audited as `auth.logout`.
 
 **Who:** any signed-in user or token
 
-The caller: `user`, `role`, `workspace`, `workspaces`, `edition` and `features`, `access` (`organisation` or `projects`), `project_role`, `projects`, `default_project_id`, `read_only`, `report_mode`, `feedback_enabled` `password_change_required` (an administrator set a temporary password: until it is changed with `POST /auth/password`, other routes answer 403 `password_change_required`) and `mfa_enrolment_required` (the organisation requires two-factor sign-in and this session has none: until it is set up, other routes answer 403 `mfa_enrolment_required`). Each user has `mfa_enabled`. On a self-hosted server, `license_key` says whether it has its [free key](install.md#the-free-key): `state` (`installed`, `grace` with `grace_ends`, or `required`), `upgraded`, and `signup_url`.
+The caller: `user`, `role`, `workspace`, `workspaces`, `edition` and `features`, `access` (`organisation` or `projects`), `project_role`, `projects`, `default_project_id`, `read_only`, `report_mode`, `feedback_enabled` `password_change_required` (an administrator set a temporary password: until it is changed with `POST /auth/password`, other routes answer 403 `password_change_required`) and `mfa_enrolment_required` (the organisation requires two-factor sign-in and this session has none: until it is set up, other routes answer 403 `mfa_enrolment_required`), and `invite_only` (people join by invitation, as on Stackurity Cloud: `POST /users` answers 403 `invite_only`, and the dashboard offers Invite instead of Add user). Each user has `mfa_enabled`. On a self-hosted server, `license_key` says whether it has its [free key](install.md#the-free-key): `state` (`installed`, `grace` with `grace_ends`, or `required`), `upgraded`, and `signup_url`.
 
 ### `PUT /auth/default-project`
 
@@ -241,6 +241,54 @@ Starts a test sign-in; the result is shown under Settings → Single sign-on and
 
 The organisation's Assertion Consumer Service. A session it starts is pinned to the organisation.
 
+### `GET /auth/social/{provider}/start`
+
+**Who:** anyone · Stackurity Cloud · outside `/api/v1`
+
+"Continue with Google / Microsoft / GitHub" (`provider` is `google`, `microsoft` or `github`; only those in `GET /meta`'s `social` are configured). Sends the browser to the provider with a `state`, a PKCE challenge (S256) and, for Google and Microsoft, a `nonce`, stored for 10 minutes and bound to the browser by a cookie. Optional `return_to` as for `/saml/login`. Limited per address with the other sign-in steps.
+
+### `GET /auth/social/{provider}/callback`
+
+**Who:** the provider, through the browser that started · Stackurity Cloud · outside `/api/v1`
+
+The redirect address registered with the provider. Uses the `state` once, in the browser that started it, redeems the `code` with the PKCE verifier and checks the ID token (signature, issuer, audience, expiry, nonce) or, for GitHub, reads `/user` and `/user/emails`. Only a verified address is used (Google `email_verified`, Microsoft `xms_edov` from a work or school account, GitHub's verified primary address). Then: an identity already connected signs in to its account (its second factor first, when it has one: the page continues to `/?mfa=1`); an address that has an account is **not** connected by itself: a link is emailed to that address (`auth.social_link_emailed`); a new address continues to `/signup/social#<token>`. Disposable addresses are refused as at sign-up.
+
+### `POST /signup/social/preview`
+
+**Who:** anyone, in the browser that signed in with the provider · Stackurity Cloud
+
+`{"token"}` from `/signup/social#<token>`: `provider`, `provider_label`, `email`, `name`, `login` (GitHub) and `colleagues_domain` when people at the address's domain already use the service. 410 when it expired (30 minutes), was used, or is another browser's.
+
+### `POST /signup/social`
+
+**Who:** anyone, in the browser that signed in with the provider · Stackurity Cloud
+
+Finishes a sign-up through a provider: `token`, `name`, `organisation`, `accept_terms` and `email_notice_version`, checked as on the email form (no password, no challenge). Creates the account (without a password), the organisation on its trial and its cloud record exactly as `POST /signup/verify` does, connects the identity, and starts a session. Answers `workspace_id` and `next` (`/welcome/repositories` after a GitHub sign-up when the GitHub App is set up, otherwise `/`). The same per-address and service-wide limits as `POST /signup`.
+
+### `POST /auth/social/confirm`
+
+**Who:** anyone with the emailed link, in the browser that signed in with the provider · Stackurity Cloud
+
+`{"token"}` from the link emailed to an existing account's address: connects the provider's identity to that account and signs in, answering like `POST /auth/login` (`mfa_required` when the account has a second factor). 410 when expired (30 minutes), used, or opened in another browser. Audited as `auth.social_linked`.
+
+### `GET /auth/social`
+
+**Who:** a browser session · Stackurity Cloud
+
+The caller's sign-ins through providers: `providers` (each configured one with `connected`, and when connected its `email`, `login`, `created_at`, `last_used_at`) and `has_password`.
+
+### `POST /auth/social/{provider}/link`
+
+**Who:** a browser session · Stackurity Cloud
+
+Starts connecting a provider to the caller's account: `{"password"}` when the account has one. Answers `redirect_url` (the provider); its callback connects the identity it vouches for to this account (409 when that identity is connected to another account). Never for an instance administrator.
+
+### `DELETE /auth/social/{provider}`
+
+**Who:** a browser session · Stackurity Cloud
+
+Disconnects that provider. 409 when it is the only way into an account without a password. Audited as `auth.social_unlinked`.
+
 ### `POST /feedback`
 
 **Who:** any signed-in user (10 an hour)
@@ -345,7 +393,7 @@ The assistants a person has connected (`/assistants`) and the OAuth consent page
 
 **Who:** anyone
 
-Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project`. `app_list` means `POST /ingest` takes a host batch's `apps` (see [ObservationBatch](#observationbatch)); agents send it only to servers that list it (0.14). `host_images` means `POST /ingest` scopes `host-image` identities to their host and takes a host batch's `images`; the agent's `--docker` sends container images only to servers that list it. `email_preferences: true` means this server sends bulk email (product updates, vulnerability news), so people have email preferences.
+Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project`. `app_list` means `POST /ingest` takes a host batch's `apps` (see [ObservationBatch](#observationbatch)); agents send it only to servers that list it (0.14). `host_images` means `POST /ingest` scopes `host-image` identities to their host and takes a host batch's `images`; the agent's `--docker` sends container images only to servers that list it. `kubernetes_report` means [`POST /kubernetes/report`](#post-kubernetesreport) exists; the Kubernetes reporter falls back to `POST /ingest` without it. `email_preferences: true` means this server sends bulk email (product updates, vulnerability news), so people have email preferences. On Stackurity Cloud, `social` lists the configured sign-in providers (`providers`: `id`, `label`, `start_url`) and, when the GitHub App is set up, `github_install_url`.
 
 ### `GET /openapi.json`
 
@@ -368,6 +416,31 @@ Creates the first admin (`setup_token` from the server log, `email`, `name`, `pa
 Exchanges a one-time enrollment code (`{"code", "hostname"}`) for a collector token and the agent settings chosen with it, including the code's `project_id`. Refusals do not say why. An optional `project_id` (`stackurity enroll --project`) is a check, not a choice: when the code adds hosts to another project or none, the answer is 403 and the code keeps its use.
 
 Each use is recorded (hostname, client address, the token issued) in the code's usage list. Rate limits: 10 failed attempts a minute per client address (refused codes; what stops guessing), 120 attempts a minute per address in all (so a fleet behind one NAT address can enroll), and 60 enrollments a minute per code (so a leaked fleet code cannot be used up in a burst). Over a limit the answer is `429` with `Retry-After`, and nothing is used up; `stackurity enroll` waits and tries again (`--wait`).
+
+
+### `POST /ci/token`
+
+**Who:** anyone (rate limited: 30 a minute per address)
+
+Exchanges a CI job's OpenID Connect ID token (`{"token", "trust_id"}`; `trust_id` optional) for a collector token that expires after 15 minutes, belongs to the matching CI trust's organisation and project, and may report only the job's repository (`repository_url`, its `git-url` identity). Send it with `X-Stackurity-CSRF: 1`, as every POST without `Authorization`. Answers `{"token", "expires_at", "repository_url", "project_id", "trust_id"}`. The token must be signed with an asymmetric key the issuer publishes (discovery and JWKS of an issuer a trust names exactly), carry `aud` equal to the server's CI audience (`ci_audience` in `GET /meta`), and be within `exp`, `nbf` and `iat` (one minute's allowance). 401 `invalid_token` when it does not verify, 403 when no trust accepts the job (the message names the ref, environment or workflow that differed), 400 `trust_required` without `trust_id` on a server with several organisations, 409 when trusts of different organisations or projects accept it (send `trust_id`), 503 `not_configured` without `STACKURITY_BASE_URL` or `STACKURITY_CI_AUDIENCE`. Audited as `ci.token` or `ci.token_refused`. See [install.md](install.md#scans-in-ci-without-a-stored-secret).
+
+### `GET /ci-trusts`
+
+**Who:** admin
+
+CI trusts, with `audience` (what CI ID tokens must carry; empty when keyless CI scans are off) and `server`.
+
+### `POST /ci-trusts`
+
+**Who:** admin
+
+Creates a CI trust: `provider` (`github` or `gitlab`), `issuer` (default `https://token.actions.githubusercontent.com` or `https://gitlab.com`; https only, matched exactly), `repository` (`owner/repo` or a GitLab project path), `owner_wildcard` (with `repository` `owner/*`: every repository of the owner or group; a `*` anywhere else is refused), and optional `ref` (a branch name means `refs/heads/<name>`), `environment`, `workflow_ref` (GitHub `job_workflow_ref`, GitLab `ci_config_ref_uri`), `name` and `project_id`.
+
+### `DELETE /ci-trusts/{id}`
+
+**Who:** admin
+
+Deletes a CI trust and revokes the tokens issued under it.
 
 ### `GET /enrollments`
 
@@ -425,11 +498,23 @@ Lists the account's droplets (optionally `?tag=`) with, for each, `name`, `regio
 
 The agent installer script, with the server's URL filled in: `STACKURITY_BASE_URL`, or without it the URL the request came in on. In that case a `Host` header that is not a hostname or IP address with an optional port gets `400` instead of a script. Served with `Cache-Control: no-store` and `Vary: Host`.
 
+### `GET /install/kubernetes.yaml`
+
+**Who:** anyone · outside `/api/v1`
+
+The Kubernetes reporter's manifest for this server ([kubernetes.md](kubernetes.md#connect-with-the-reporter)): namespace, service account, read-only RBAC and Deployment, with this server's URL and release image. `cluster` names the cluster asset; `namespaces` (comma separated) gives Roles in those namespaces instead of the ClusterRole. It holds no secret, and any other parameter is refused (400), so an enrollment code is never put in its address.
+
 ### `GET /download/agent/{platform}`
 
 **Who:** anyone · outside `/api/v1`
 
 The agent builds the installer downloads: `linux-amd64` and `linux-arm64`, each with a `.sha256`. They are bundled in the server image (`STACKURITY_AGENT_DIR`).
+
+### `POST /kubernetes/report`
+
+**Who:** collector token, engineer and above
+
+One collection of a Kubernetes cluster from the in-cluster reporter (`stackurity kubernetes-reporter`): `{"batches": [...], "image_scans": 25}`, gzip accepted. The batches are [ObservationBatch](#observationbatch)es, the cluster first, then images and workloads, with the identity schemes of the kubernetes collection (`k8s-cluster`, `k8s-cluster-name`, `k8s-workload`, `image-ref`); any other kind or scheme is refused (400) and nothing is stored. Each is stored under the `plugin:kubernetes` collector, as an agent's report. The images are queued for the image scanner in the order given, at most `image_scans` (default 25, 0 to 500), as for a plugin run. The answer: `cluster_asset_id`, `assets`, `new_assets`, `refused` (left out at the monitored-asset limit), `images` and `image_scans` (`queued`, `fresh`, `pending`, `deferred`). A host-bound token gets 403; each token may send 30 reports an hour (429). `GET /meta` lists `kubernetes_report` in `features`.
 
 ### `POST /ingest`
 
@@ -787,7 +872,7 @@ One check.
 
 **Who:** viewer
 
-Incidents: findings grouped by issue and owner team, paged. Query: `status`, `kind`, `priority`, `sos=true`, `escalated=true`, `team_id`.
+Incidents: findings grouped by issue and owner team, paged. Query: `status`, `kind`, `priority`, `sos=true`, `escalated=true`, `team_id`, `asset_id` (incidents with a finding on that asset; an active one when listing open incidents).
 
 ### `GET /incidents/{id}`
 
@@ -987,13 +1072,13 @@ The waiting screen's poll: assets created since `since` (RFC 3339; default the l
 
 **Who:** admin
 
-[Invitations](#invitations): open ones, and the others of the last 30 days, with `status` (`pending`, `accepted`, `revoked`, `expired`). Never the link. Query: `project_id`.
+[Invitations](#invitations): open ones, and the others of the last 30 days, with `status` (`pending`, `accepted`, `revoked`, `expired`), `scope` (`organisation`, `specific`, or `project` for one made before invitations had grants) and `grants` (each with `kind`, `project_id` or `asset_id`, `role`, `name`, `available` and, when not, `unavailable`: `archived`, `merged` or `deleted`). Never the link. Query: `project_id` (the invitations that name that project).
 
 ### `POST /invitations`
 
 **Who:** admin (30 an hour per organisation)
 
-`{"email", "name", "role", "project_id"}` (`project_id` 0: an organisation-wide role). 201 with `invitation` and `emailed`; when the email was not sent, `link` (shown once) and `email_problem`. A member gets the project role at once (`granted`, `grant`); an organisation-wide invitation for a member is 409.
+`{"email", "name", "role", "grants", "teams"}`: says what they will see, as for [`POST /users`](#post-users) (with `teams`, they join those teams when they accept). Either `role` (`viewer`, `engineer`, `security` or `admin`: every project and asset), or `grants` with `role` `none` (or no `role`): `{"project_id", "role"}` and `{"asset_id", "role"}`, at most 500. There is no default: neither is 400, and so are both, an empty `grants`, a project or asset named twice, and one that is not this organisation's (or an archived project or merged asset); nothing is created then. The older form `{"email", "name", "role", "project_id"}` still works and becomes one project grant. 201 with `invitation`, `emailed` and `replaced` (ids of the person's earlier open invitations, now withdrawn: a person has one open invitation); when the email was not sent, `link` (shown once) and `email_problem`. Someone already a member gets the grants at once, all or none (`granted`, `grants`, and `grant`: the first); an organisation-wide invitation for a member is 409.
 
 ### `DELETE /invitations/{id}`
 
@@ -1005,31 +1090,31 @@ Withdraws a pending invitation: its link stops working.
 
 **Who:** anyone (rate limited)
 
-`{"token"}`: what the link is for (`workspace`, `project`, `role`, `email`, `invited_by`, `expires_at`, `account_exists`) and `signed_in_as`. 410 for any link that does not work, without saying why.
+`{"token"}`: what the link is for (`workspace`; `project` and `role` when it names one project, or `role` for all projects; `scope`; `grants`, with whether each can still be given; `usable`: false when nothing can; `email`, `invited_by`, `expires_at`, `account_exists`) and `signed_in_as`. 410 for any link that does not work, without saying why.
 
 ### `POST /invitations/accept`
 
 **Who:** anyone, or the invitee's session (rate limited)
 
-`{"token", "name", "password"}`: joins the invitation's organisation with its role and answers `workspace_id`, `project_id`, `role`, `account_created` and `joined`. 410 when the link does not work; 409 `sign_in_required` or `wrong_account`.
+`{"token", "name", "password"}`: joins the invitation's organisation with what it gives, in one transaction, and answers `workspace_id`, `project_id` (its only project, or 0), `role`, `scope`, `grants` (how many were given), `dropped` (see [Invitations](#invitations)), `account_created` and `joined`. 410 `invitation_stale` when nothing is left to give; 410 `invitation_invalid` when the link does not work; 409 `sign_in_required` or `wrong_account`.
 
 ### `GET /users`
 
 **Who:** admin
 
-Members of the organisation. Each has `role` (`none`: a member with no organisation-wide role, access through projects only) and `access` (`organisation` or `projects`).
+Members of the organisation. Each has `role` (`none`: a member with no organisation-wide role, access through projects only), `access` (`organisation` or `projects`), `phone` (contact information, may be empty), and `project_grants` and `asset_grants` (how many projects and assets they were given themselves, not through teams), `teams` (every team they are in) and `access_teams` (their teams that can see something: access through team membership).
 
 ### `POST /users`
 
 **Who:** admin
 
-Adds a user to the organisation with a role (`none` allowed). Off on Stackurity Cloud, where people join by invitation.
+`{"email", "name", "phone", "password", "role", "grants", "teams"}`: adds a user to the organisation and says what they can see, in one transaction. Either `role` (`viewer`, `engineer`, `security` or `admin`: every project and asset), or `grants` with `role` `none` (or no `role`): a list of `{"project_id", "role"}` (the project's assets, including ones added later) and `{"asset_id", "role"}` (one asset). There is no default: neither is 400, and so are both, an empty `grants`, a project or asset named twice, and a project or asset that is not this organisation's (or an archived project or merged asset); nothing is created then. `phone` is optional contact information: digits with an optional leading `+`, spaces, dots, dashes and brackets, 6 to 15 digits, at most 32 characters. `password` (at least 12 characters) is for a new account; an existing account joins with its own. 409 when they are already a member. `teams` (team ids, at most 50) adds them to those teams in the same transaction; membership gives the team's access (see [`PATCH /teams/{id}`](#patch-teamsid)), so with `role` `none` the teams may stand in for `grants` when at least one of them can see something (a team that can see nothing, such as one that only owns assets, is 400). Audited as `user.create` (with `teams`) and one `access.grant` per grant. Off on Stackurity Cloud, where people join by invitation.
 
 ### `PATCH /users/{id}`
 
 **Who:** admin
 
-Changes a member's role, name, status or password. A `password` set for someone else is temporary: their sessions end, and they must choose their own at their next sign-in.
+Changes a member's role, name, phone, status or password. `phone` belongs to the membership in this organisation (`""` clears it); name, status and password belong to the account. A `password` set for someone else is temporary: their sessions end, and they must choose their own at their next sign-in.
 
 ### `DELETE /users/{id}`
 
@@ -1053,7 +1138,7 @@ Active users (id, email, name) for assignment. Members with project access only 
 
 **Who:** viewer
 
-Teams.
+Teams, each with `members`, `asset_count` (assets whose owner team it is) and `access` (what its members see through it: `kind`, `project_id` or `asset_id`, `role`, `name`, `available`, `unavailable`).
 
 ### `POST /teams`
 
@@ -1065,13 +1150,45 @@ Creates a team with its members (who must belong to the organisation).
 
 **Who:** admin
 
-Changes a team and its members.
+Changes a team, in one transaction: `name`, `email`, `members` (replaced), `access` and `owns`, each optional. `access` replaces the team's grants (`[{"project_id", "role"} | {"asset_id", "role"}]`; `[]` removes them all): **members of a team see what it can see**, from their next request, and lose it when they leave. A team gets specific projects and assets only, never an organisation-wide role. `owns` replaces the assets whose owner team it is (alerts, incidents and routes follow the owner team); **owning gives no access**. A project or asset that is not this organisation's (or an archived project or merged asset) is 400 and nothing changes. Audited as `team.update` (with `owns_added` and `owns_removed`) and one `access.grant`, `access.change` or `access.revoke` per grant changed.
 
 ### `DELETE /teams/{id}`
 
 **Who:** admin
 
 Deletes a team.
+
+### `GET /owner-rules`
+
+**Who:** viewer (organisation-wide roles; members with project access only get 403)
+
+Owner rules, most specific first: who new issues are assigned to ([design](design/owner-rules.md)). Each has `project_id` or `asset_id` (or neither: every asset), `layer` and `component` (the part of the stack, either may be empty), `user_id` and/or `team_id` with their names, `note`, `level` (6, part of one asset's stack, down to 1, the organisation default), `describe` (the rule in words, as issue history shows it) and `assigned` (open issues it assigned). `asset_id=` lists the rules that can apply to that asset (its own, its active projects' and the organisation's); `project_id=` those for the project.
+
+### `POST /owner-rules`
+
+**Who:** admin
+
+Creates a rule (`201`): `{"project_id"|"asset_id", "layer", "component", "user_id", "team_id", "note"}`. At most one of `project_id` and `asset_id`; at least one of `user_id` (a member of the organisation) and `team_id`; `layer` one of `web_server`, `cms`, `os`, `runtime`, `data_store`, `libraries`, `declared`, `managed_service`, `platform`, `other` or empty; `component` a package name pattern (whole name, case-insensitive, `*` for any characters, matched against the name and `namespace/name`). Open issues nobody assigned get their owner on the next upkeep pass (within a minute); issues a rule already assigned move only through `POST /owner-rules/apply`.
+
+### `PUT /owner-rules/{id}`
+
+**Who:** admin
+
+Replaces a rule, with the same body as `POST /owner-rules`. Unassigned issues are checked against it on the next pass; issues a rule already assigned move only through `POST /owner-rules/apply`.
+
+### `DELETE /owner-rules/{id}`
+
+**Who:** admin
+
+Deletes a rule (`204`). The issues it assigned keep their assignee until the rules are applied again.
+
+### `POST /owner-rules/apply`
+
+**Who:** admin
+
+Brings every open issue that no person assigned in line with the current rules. `{"dry_run": true}` (the default) changes nothing and returns what would move; `{"dry_run": false}` moves them, each with an `assign` event from `owner rules`. Answer: `moves` (grouped by `from_user`, `from_team`, `to_user`, `to_team`, `rule_id`, `rule`, with `count` and up to 20 `finding_ids`), `total`, `truncated` (more than 20,000 issues: apply again) and `applied`. An issue whose rule no longer matches, with no other rule matching, is unassigned.
+
+Issues a person assigned or unassigned (any `assign` action) are never changed by owner rules. `GET /fix-groups/{id}` includes `owners`: the fix's open issues counted by assignee (`user_email`, `team_name`, `count`; both empty for unassigned).
 
 ## Notifications
 
@@ -1081,7 +1198,7 @@ How incidents become messages, the route `events` and the webhook format are in 
 
 **Who:** security
 
-What the server offers: `slack_app` (Add to Slack), `platform_email` (`enabled`; when enabled `from`, `max_recipients` and `quota` with `per_minute`, `per_hour`, `per_day`), `secrets` (stored secrets work) and `base_url`.
+What the server offers: `slack_app` (Add to Slack), `jira_app` (Connect Jira: the Atlassian app is configured, with `STACKURITY_BASE_URL` and stored secrets), `teams_app` (Add to Teams), `pagerduty_app` (Connect PagerDuty), `platform_email` (`enabled`; when enabled `from`, `max_recipients` and `quota` with `per_minute`, `per_hour`, `per_day`), `secrets` (stored secrets work) and `base_url`.
 
 ### `GET /channels`
 
@@ -1093,13 +1210,13 @@ Notification channels.
 
 **Who:** admin
 
-Creates a channel: email, email sent by Stackurity (`stackurity_email`, hosted only), Slack, Teams, webhook, Jira, PagerDuty (`pagerduty`) or ServiceNow (`servicenow`); configuration fields are listed in [install.md](install.md#notifications). Slack channels made with Add to Slack come from `POST /integrations/slack/oauth` instead.
+Creates a channel: email, email sent by Stackurity (`stackurity_email`, hosted only), Slack, Teams, webhook, Jira, PagerDuty (`pagerduty`) or ServiceNow (`servicenow`); configuration fields are listed in [install.md](install.md#notifications). Slack channels made with Add to Slack come from `POST /integrations/slack/oauth` instead, and PagerDuty channels made with Connect PagerDuty (`config.pagerduty_app`) from `POST /integrations/pagerduty/finish`; such a channel's service, integration and `secret_ref` cannot be changed (its name, `enabled` and `severities` can), and Teams channels made with Add to Teams (`config.teams_app`) from the Teams app's messaging endpoint; neither can be created here. A Jira channel with Connect Jira has `config.auth` `oauth`, `connection_id` and `cloud_id` (a site of that connection of this organisation, 400 otherwise) and no `secret_ref`; its `url` is set from the site.
 
 ### `PATCH /channels/{id}`
 
 **Who:** admin
 
-Changes a channel. Add to Slack channels (`config.slack_app`) can only be renamed and switched on or off.
+Changes a channel. Add to Slack channels (`config.slack_app`) and Add to Teams channels (`config.teams_app`) can only be renamed and switched on or off.
 
 ### `DELETE /channels/{id}`
 
@@ -1215,7 +1332,7 @@ One-click unsubscribe (RFC 8058) from a bulk email's `List-Unsubscribe` header, 
 
 **Who:** engineer
 
-Integrations (repository and image scans, plugins).
+Integrations (repository and image scans, connected container registries, plugins).
 
 ### `POST /integrations`
 
@@ -1234,6 +1351,18 @@ Changes an integration.
 **Who:** admin
 
 Deletes an integration.
+
+### `POST /integrations/registry/discover`
+
+**Who:** admin
+
+Lists the repositories of a container registry before it is connected (or to change which ones a connected one tracks), so you can pick them. Body: `config` (a `container_registry` configuration, see [Container registries](install.md#container-registries)) and `secret_ref`, or `integration_id` to use that registry integration's stored secret. The answer is `registry` (its name), `repositories` (`name`, and `included`: whether `include` and `exclude` keep it) and `complete` (false when the registry has more than 10,000). The secret is used, never returned. `502` with code `registry_error` when the registry refused or could not be reached; the message never contains the secret.
+
+### `GET /integrations/{id}/images`
+
+**Who:** engineer
+
+The images a container registry integration chose, most recently pushed first per repository: `repository`, `digest`, `image_ref` (scanned, by digest), `tags`, `pushed_at`, `asset_id`, `tracked` (false once newer tags took its place or its repository was left out) and `removed_at` (when the registry stopped having any tag on it). `404` for other kinds.
 
 ### `POST /integrations/{id}/run`
 
@@ -1259,11 +1388,29 @@ Status of one job, for example after *Run now*.
 
 Installed plugins with their declared permissions, credentials and network access ([plugins.md](plugins.md)).
 
+### `GET /cloud-setup/gcp`
+
+**Who:** admin
+
+The commands that connect a Google Cloud project to this workspace for the `gcp-managed` plugin. Query: `project_id`, `project_number` (both required; 400 when malformed). Answers `commands` (a `gcloud` block: a custom role with exactly `permissions`, a service account, and a workload identity pool and provider that trust this server's tokens for this workspace only), `config` (the plugin configuration to save), and the service-account-key fallback (`fallback_commands`, `fallback_config`, `fallback_secret`). Without keyless access on this server (`STACKURITY_SECRET_KEY` and an `https://` `STACKURITY_BASE_URL` are needed), `keyless` is false and `keyless_unavailable` says why. Nothing in the answer is secret. See [install.md](install.md#google-cloud-managed-services).
+
+### `GET /cloud-setup/azure`
+
+**Who:** admin
+
+The commands that connect an Azure subscription to this workspace for the `azure-managed` plugin. Query: `tenant_id`, `subscription_id` (GUIDs, required). Answers `consent_url` (admin consent for the Stackurity Entra app), `commands` (an `az` block: a custom role with exactly `permissions`, and its assignment to the app with this workspace's proof as the description), `config`, and the client-secret fallback. Without the app configured on this server, `keyless` is false and `keyless_unavailable` says why. The app's secret is never in the answer. See [install.md](install.md#azure-managed-services).
+
 ### `GET /secrets`
 
 **Who:** admin
 
 Names of the organisation's stored secrets (never values), and `enabled`: whether the server can store secrets. Channels and integrations refer to them as `secret:NAME`.
+
+### `GET /credentials/health`
+
+**Who:** admin
+
+What the Dashboard's **Secrets and credentials** block shows; values are never read. `failing`: enabled integrations whose latest run failed, channels whose latest delivery failed and AWS connections that failed (`kind` `integration`, `channel` or `aws`, `detail` with the error, `at` the last success). `expiring`: API tokens, not revoked, that expire within `expiring_days` (14) or expired within the last 14 days (`at` the expiry). `unused`: API tokens older than `unused_days` (90) not used for 90 days (`at` the last use, absent when never used). `old`: stored secrets last set more than `old_days` (365) ago (`at` when). Each group has `total` and its first 5 `items`. Tokens of CI jobs are left out.
 
 ### `PUT /secrets/{name}`
 
@@ -1295,17 +1442,251 @@ The Slack app's Direct install URL ([slack-app.md](slack-app.md#installs-started
 
 Finishes Add to Slack with `{"code", "state"}` from Slack's redirect to `/integrations/slack/oauth/callback`: 201 with `channel`, `return_to`, `team_name` and `slack_channel`. 400 `slack_state` for a state that is missing (an install started from Slack's side), unknown, used, expired (10 minutes) or someone else's, before Slack is called; 502 `slack_refused`.
 
+### `POST /integrations/pagerduty/connect`
+
+**Who:** admin
+
+Starts Connect PagerDuty ([install.md](install.md#pagerduty)): `{"return_to"}` (a dashboard path); answers `url`, PagerDuty's consent page, asking for `services.read services.write` with a PKCE S256 challenge and a state that works once, for 10 minutes, for the same person in the same organisation. 404 `not_configured` without the PagerDuty app.
+
+### `POST /integrations/pagerduty/oauth`
+
+**Who:** admin
+
+Exchanges `{"code", "state"}` from PagerDuty's redirect to `/integrations/pagerduty/oauth/callback`, and lists the account's services: 200 with `session` (a handle for the next steps, valid 10 minutes, for the same person), `region` (`us` or `eu`), `return_to`, `services` (`id`, `name`, `description`, `status`, `html_url`) and `more` (true when there were more than 1,000; narrow with a query). 400 `pagerduty_state` for a state that is unknown, used, expired or someone else's, before PagerDuty is called; 502 `pagerduty_scope` when PagerDuty did not grant both scopes, 502 `pagerduty_refused` otherwise.
+
+### `POST /integrations/pagerduty/services`
+
+**Who:** admin
+
+Lists the services again: `{"session", "query"}` (`query` filters by name). Same answer as above (`services`, `more`); 400 `pagerduty_state` for a session that is not this person's or has expired.
+
+### `POST /integrations/pagerduty/finish`
+
+**Who:** admin
+
+Adds an Events API v2 integration named Stackurity to the service `{"session", "service_id"}` and stores its routing key as the channel's secret. The session and the PagerDuty token are deleted first, whatever happens next: a failure means starting again. 201 with `channel`, `return_to`, `service_name`; 200 with `reused: true` when the service already had a channel, which gets the new key. The key is never returned. Audited as `channel.create` (or `channel.update`) with `source: pagerduty_app`. 502 `pagerduty_refused` with PagerDuty's reason (for example 403: the person may not add integrations to that service).
+
+### `POST /integrations/pagerduty/cancel`
+
+**Who:** admin
+
+Deletes the session `{"session"}` and its token. 204.
+
+### `POST /integrations/teams/install`
+
+**Who:** admin
+
+Starts Add to Teams ([teams-app.md](teams-app.md)): answers `id`, `code` (such as `K7QWN-3HTRD`: single use, for 15 minutes, for the caller in this organisation; their earlier unused code stops working), `expires_at` and `install_url` (opens the app in Teams). Sending the code to the bot in a Teams channel connects that channel. 404 `not_configured` without the Teams app. Audited as `teams_install.start`.
+
+### `GET /integrations/teams/install/{id}`
+
+**Who:** admin
+
+What became of the caller's code: `status` `pending`, `expired`, `connected` (with `channel`, the new or revived Teams integration) or `failed`, and `expires_at`. 404 for another person's code.
+
+### `POST /integrations/teams/messages`
+
+**Who:** Microsoft (a Bot Framework token for the app)
+
+The Teams app's messaging endpoint (the Azure Bot's **Messaging endpoint**). Every request needs `Authorization: Bearer` with a JWT the Bot Framework signed (RS256, a key endorsed for `msteams`), issued by `https://api.botframework.com` for the app's ID, current, whose `serviceurl` claim is the activity's `serviceUrl`: otherwise 401 before anything is read. A `serviceUrl` that is not a Teams Bot Connector host is refused with 403. A message with a code connects its channel (the bot answers in the thread); the app removed from a team (`conversationUpdate` with the bot in `membersRemoved`, `teamDeleted`, `installationUpdate` `remove`) or a channel deleted (`channelDeleted`) switches the matching Teams integrations off in every organisation with a note. 404 without the Teams app.
+
+### `POST /integrations/jira/install`
+
+**Who:** admin
+
+Starts Connect Jira: `{"return_to", "connection_id"}` (a dashboard path; `connection_id` to reconnect a connection of this organisation, 404 otherwise); answers `url`, Atlassian's consent page with a single-use state bound to the caller and organisation (10 minutes). 404 `not_configured` without the Atlassian app ([jira-app.md](jira-app.md)).
+
+### `POST /integrations/jira/oauth`
+
+**Who:** admin
+
+Finishes Connect Jira with `{"code", "state"}` from Atlassian's redirect to `/integrations/jira/oauth/callback`: the code is exchanged, the Jira sites the grant reaches are read, and the tokens are stored sealed. 201 (200 when reconnecting) with `connection`, `return_to` and `reconnected`. 400 `jira_state` for a state that is missing, unknown, used, expired (10 minutes) or someone else's, before Atlassian is called; 400 `jira_no_site` when the grant reaches no Jira site; 502 `jira_refused`. Audited as `jira_connection.create` or `jira_connection.reconnect`.
+
+### `GET /integrations/jira/connections`
+
+**Who:** admin
+
+The organisation's Connect Jira connections: `id`, `sites` (each `id`, the cloud id, `name` and `url`), `scopes`, `status` (`active`, or `reconnect_needed` after Atlassian refused the refresh token), `status_reason`, `connected_by`, `connected_at` and `refreshed_at`. Tokens are never returned.
+
+### `DELETE /integrations/jira/connections/{id}`
+
+**Who:** admin
+
+Disconnects: deletes the connection and its tokens, and switches off the Jira channels that use it with a note. Answers `channels_disabled` and `revoke_url` (Atlassian has no API to revoke a grant; the person removes the app from their Atlassian account there). Audited as `jira_connection.delete`.
+
+### `GET /integrations/jira/connections/{id}/projects`
+
+**Who:** admin
+
+The projects of one of the connection's sites (`?site=` the cloud id, optional `q`), each `key` and `name`, read from Jira with the connection, at most 500. 404 for a site or connection that is not this organisation's; 409 `jira_reconnect` when the connection needs reconnecting; 502 when Jira refuses.
+
+### `GET /integrations/jira/connections/{id}/projects/{key}`
+
+**Who:** admin
+
+A project's `issue_types` (`name`, `subtask`), `statuses` by issue type (`name`, `category`: `new`, `indeterminate` or `done`) and the site's `priorities`, to pick a channel's issue type, `resolve_transition` and `priorities`. `?site=` as above.
+
 ### `POST /integrations/slack/events`
 
 **Who:** Slack (the app's signing secret)
 
 The Slack app's Event Subscriptions URL: `url_verification`, and `app_uninstalled` or `tokens_revoked`, which switch that Slack workspace's app channels off in every organisation and delete their webhooks and tokens.
 
+### `GET /integrations/gitlab`
+
+**Who:** engineer
+
+Connect GitLab ([gitlab.md](gitlab.md)): `configured` (whether this server offers it; when it does, `gitlab_url`) and `connections`, this organisation's connected GitLab groups (`id`, `group_id`, `group_path`, `group_name`, `credential_kind`: `group_token`, `oauth` or `none`, `credential_expires`, `webhook`: `active`, `not_permitted` or `none`, `status`: `active`, `needs_credential` or `expired`, `note`, `connected_by`, `connected_at`, `updated_at`, `last_sync`, `projects`). Each project is an integration of kind `gitlab` in `GET /integrations`.
+
+### `POST /integrations/gitlab/connect`
+
+**Who:** admin
+
+Starts Connect GitLab: `{"return_to"}` (a dashboard path); answers `url`, GitLab's consent page for the `api` scope with a single-use state bound to the caller and organisation (10 minutes). 404 `not_configured` without Connect GitLab; 409 `secrets_disabled` without `STACKURITY_SECRET_KEY`.
+
+### `POST /integrations/gitlab/oauth`
+
+**Who:** admin
+
+Finishes an authorisation at GitLab with `{"state", "code"}` from GitLab's redirect to `/integrations/gitlab/callback`. 400 `gitlab_state` for a state that is missing, unknown, used, expired or someone else's, before GitLab is called; 400 `gitlab_scopes` when GitLab granted other scopes than asked (the token is revoked); 502 `gitlab_refused`. What follows depends on how the authorisation was started: for Connect GitLab, 200 with `pick` (single use, the caller's, 10 minutes) and `groups` the caller is a Reporter or above of (`id`, `full_path`, `name`, `owner`), or 404 `gitlab_no_groups`; for `readonly`, 201 with `connection` once the caller is shown to be a member of the group (403 `gitlab_group` otherwise); for `cleanup`, 200 with `webhook_deleted`, `token_revoked` and `disconnected`. Audited as `gitlab.authorize` or `gitlab.disconnect`.
+
+### `POST /integrations/gitlab/connections`
+
+**Who:** admin
+
+Connects a GitLab group: `{"pick", "group_id"}`. 400 `gitlab_state` for a pick that is unknown, used, expired or someone else's. The `group_id` is not trusted: 403 `gitlab_group` unless the caller's GitLab account is a Reporter or above in it; 409 `gitlab_group_taken` when it, or a group above or below it, is connected to another organisation. As the group's Owner, a group access token (`read_api`, `read_repository`, Reporter, under a year) and a push webhook are created where GitLab allows. 201 with `connection`, `needs_readonly` (no group access token: start `POST /integrations/gitlab/connections/{id}/authorize` with `readonly`), `notes` and `return_to`. The caller's GitLab token is revoked. Audited as `gitlab.connect` (or `gitlab.refused`).
+
+### `POST /integrations/gitlab/connections/{id}/authorize`
+
+**Who:** admin
+
+`{"purpose", "return_to"}`: `readonly` (GitLab's consent for `read_api read_repository`, kept sealed and refreshed when a group access token is not allowed) or `cleanup` (consent for `api`, used once to delete the group webhook and group access token on GitLab, then disconnect). Answers `url`.
+
+### `POST /integrations/gitlab/connections/{id}/sync`
+
+**Who:** admin
+
+Lists the group's projects on GitLab again now: 202. Audited as `gitlab.sync`.
+
+### `DELETE /integrations/gitlab/connections/{id}`
+
+**Who:** admin
+
+Disconnects the group here: the connection, its sealed credential and its webhook secret are deleted, and its projects' integrations are switched off with a note (assets and history kept). The stored credential is revoked at GitLab where it can be (`credential_revoked`); `webhook_left_on_gitlab` is true when the group webhook remains on GitLab (deleting it needs the group's Owner: use `cleanup`). Audited as `gitlab.disconnect`.
+
+### `POST /integrations/gitlab/webhook/{id}`
+
+**Who:** GitLab (the connection's secret token)
+
+A connected group's webhook URL: `X-Gitlab-Token` must be the connection's secret token (compared in constant time with its stored SHA-256), else 401; `X-Gitlab-Event` and `X-Gitlab-Event-UUID` are required. A delivery already handled (the same UUID or the same body) answers 200 `{"result": "duplicate"}`. A `Push Hook` to a project's default branch that changes a lockfile or manifest queues its scan; a push for a project not yet known, and other events (project created or deleted), list the group again. 404 without Connect GitLab.
+
+### `GET /integrations/github`
+
+**Who:** engineer
+
+The Stackurity GitHub App ([github-app.md](github-app.md)): `configured` (whether this server has the app; when it does, `app_url`, its page on GitHub) and `installations`, this organisation's GitHub accounts (`installation_id`, `account_login`, `account_type`, `repository_selection`, `status`: `active`, `suspended` or `deleted`, `note`, `installed_by`, `installed_at`, `updated_at`, `last_sync`, `repositories`). Each granted repository is an integration of kind `github_app` in `GET /integrations`.
+
+### `POST /integrations/github/install`
+
+**Who:** admin
+
+Starts Install on GitHub: `{"return_to"}` (a dashboard path); answers `url`, the app's install page on GitHub with a single-use state bound to the caller and organisation (10 minutes). 404 `not_configured` without the app.
+
+### `POST /integrations/github/setup`
+
+**Who:** admin
+
+Finishes Install on GitHub with `{"state", "code", "installation_id", "setup_action"}` from GitHub's redirect to `/integrations/github/callback`: 201 with `installation` and `return_to`, and the repositories are listed and scanned in the background. 400 `github_state` for a state that is missing, unknown, used, expired or someone else's, before GitHub is called; 202 `{"requested": true}` for `setup_action=request` (an owner of the GitHub organisation must approve). The `installation_id` is not trusted: 403 `github_installation` unless the person's GitHub account (from `code`) can see that installation of this app and the app's JWT confirms it; 409 `github_installation_taken` when another organisation holds it; 409 `github_suspended`; 502 `github_refused`. Audited as `github_app.install` (or `github_app.refused`).
+
+### `POST /integrations/github/installations/{installation_id}/sync`
+
+**Who:** admin
+
+Lists the installation's repositories on GitHub again now: 202. Audited as `github_app.sync`.
+
+### `DELETE /integrations/github/installations/{installation_id}`
+
+**Who:** admin
+
+Disconnects the GitHub account: its repositories' integrations are switched off with a note (assets and history kept), the binding is removed, and the app is uninstalled from that account on GitHub (`uninstalled_on_github`). Audited as `github_app.disconnect`.
+
+### `POST /integrations/github/webhook`
+
+**Who:** GitHub (the app's webhook secret)
+
+The GitHub App's webhook URL: `X-Hub-Signature-256` (HMAC-SHA256 of the body with the webhook secret) is required, else 401; `X-GitHub-Event` and `X-GitHub-Delivery` are required. A delivery already handled (the same delivery id or the same body) answers 200 `{"result": "duplicate"}`. Handles `installation` (`deleted`, `suspend`, `unsuspend`, `created`, `new_permissions_accepted`), `installation_repositories` and `push` (a scan of a granted repository when a lockfile or manifest changed on its default branch); answers 200 with `result`.
+
 ### `POST /integrations/slack/actions`
 
 **Who:** Slack (a channel's signing secret)
 
 Slack's interactivity Request URL: the form-encoded `payload` with `X-Slack-Request-Timestamp` and `X-Slack-Signature`. 200 once verified (the answer goes to Slack's `response_url`); 401 for a request that cannot be verified, is older than 5 minutes or was already received. See [Acting from Slack](#acting-from-slack).
+
+### `GET /aws/connections`
+
+**Who:** admin
+
+AWS accounts connected with the Stackurity CloudFormation stack ([install.md](install.md#aws-managed-services)), and the server's setup: `enabled` (the server has an AWS principal, `STACKURITY_AWS_PRINCIPAL_ARN`), `principal`, `launch_stack` (the template is hosted in S3, `STACKURITY_AWS_TEMPLATE_URL`), `template_download`, and the IAM actions the role grants (`permissions`, and `agent_install_permissions` with the option on). Each connection has `status` (`pending`, `active`, `failed`), `external_id`, `regions`, `role_arn`, `account_id`, `last_error`, `integration_id` and `integration_removed`.
+
+### `POST /aws/connections`
+
+**Who:** admin
+
+Starts a connection: `regions` (1–40, the regions read), `stack_region` (where the stack is created; default the first region) and `agent_install` (the role may also install the agent through SSM). The server generates the external ID. 201 with `connection` and `launch`: `quick_create_url` (the CloudFormation console with every parameter filled in; empty without an S3-hosted template), `template_download`, `cli` (the same stack with the AWS CLI), `stack_name`, `external_id`, `principal` and `callback` (true when the stack reports its role by itself, which needs this server's address to be https). 404 when the server has no AWS principal. Audited as `aws.connection.create`.
+
+### `GET /aws/connections/{id}`
+
+**Who:** admin
+
+One connection; the page polls it while the stack is being created.
+
+### `POST /aws/connections/{id}/launch`
+
+**Who:** admin
+
+A new Launch Stack link for a connection that is not active (`stack_region`, `agent_install`). The earlier link's token stops working. 409 for an active connection.
+
+### `POST /aws/connections/{id}/verify`
+
+**Who:** admin
+
+`{"role_arn"}`: the stack's `RoleArn` output, pasted when the stack could not report it; empty checks the recorded role again. The server assumes the role with the connection's external ID, which must work, and without it, which must be refused. Then the connection is `active`, its `aws-managed` integration (named `AWS <account>`) is created and a first run is queued. Otherwise `status` is `failed` with `last_error`. 409 for another role on an active connection (remove it and connect again). Audited as `aws.connection.verify`.
+
+### `DELETE /aws/connections/{id}`
+
+**Who:** admin
+
+Removes the connection and its integration. The role stays in the AWS account until the stack is deleted there. Audited as `aws.connection.delete`.
+
+### `GET /aws/connections/{id}/instances`
+
+**Who:** admin
+
+The EC2 instances SSM manages in one of the connection's regions (`?region=`, default the first), each with `instance_id`, `computer_name`, `platform_type`, `ping_status`, `eligible` (Linux and online), `asset_id` (a host already reporting with that hostname, short or full) and `last_install`. Needs the stack's agent install option. AWS errors answer 502 `aws_error` with AWS's message; 409 while the connection is not active.
+
+### `POST /aws/connections/{id}/installs`
+
+**Who:** admin
+
+`{"region", "instances": [{"instance_id", "computer_name"}]}` (1–25): installs the agent through SSM Run Command (`AWS-RunShellScript`). Each instance gets its own single-use enrollment code, valid for two hours and never stored, in a command that runs this server's installer (`/install/agent.sh`). 202 with one install per instance; a command SSM refused is `failed` at once and its code revoked. Audited as `aws.agent.install`.
+
+### `GET /aws/connections/{id}/installs`
+
+**Who:** admin
+
+The connection's agent installs, newest first, after reading from SSM how the unfinished ones went: `status` `pending`, `running`, `success`, `failed` or `timed_out` (SSM never reported the end within 25 minutes), and `detail` (the end of the command's output). The code of a failed or timed-out install is revoked. `refresh_error` says why SSM could not be read.
+
+### `POST /aws/callback`
+
+**Who:** the Stackurity stack (a signed, single-use token)
+
+Called once by the stack's custom resource, outside the session and CSRF checks: `Authorization: Bearer <token>` (the `CallbackToken` parameter of the Launch Stack link) and `{"role_arn", "external_id", "stack_id"}`. The token is signed with the installation's key and names the connection, its organisation and external ID; it is used up by the first request that presents it, expires after 24 hours and is replaced by a new link. The stack must be in the role's account. The role is then verified as by `POST /aws/connections/{id}/verify`; the answer is `{"status"}`. Every refused token is the same 403. Rate limited per address. Audited as `aws.connection.callback`.
+
+### `GET /aws/stackurity-aws-role-v1.json`
+
+**Who:** anyone · outside `/api/v1`
+
+The CloudFormation template the stack is made from (the same for every server and organisation), for review, for `aws cloudformation create-stack --template-body`, and for the operator to upload to S3 for Launch Stack. It is also in the repository as `deploy/aws/stackurity-aws-role-v1.json`.
 
 ## VEX
 
@@ -1834,11 +2215,12 @@ Assets added through the flow land in its project: the install command's enrollm
 
 ## Invitations
 
-An invitation lets someone join the organisation with a role on one project (or, with no project, an organisation-wide role). The link is `https://<server>/invite#<token>`: the token is in the fragment, which browsers do not send to servers or in `Referer`, and travels to the API only in request bodies.
+An invitation lets someone join the organisation with what they may see: an organisation-wide role (every project and asset), or roles on chosen projects and assets (migration `0081`, table `invitation_grants`). Invitations sent before that name one project and a role, and are still accepted as they are. The link is `https://<server>/invite#<token>`: the token is in the fragment, which browsers do not send to servers or in `Referer`, and travels to the API only in request bodies.
 
-- **Tokens** are 32 random bytes, stored only as their SHA-256, single use, valid for 7 days, and can be withdrawn. Inviting the same person to the same project again withdraws the open one.
+- **Tokens** are 32 random bytes, stored only as their SHA-256, single use, valid for 7 days, and can be withdrawn. A person has one open invitation in an organisation: inviting them again withdraws the open one (`replaced`).
 - **Rate limits**: following links (preview and accept together) 10 a minute per address; sending invitations 30 an hour per organisation.
-- **Accepting** takes the organisation, project and role from the stored invitation only; the request has no field that could change them (unknown fields are refused). An account with the invitation's email must be signed in, as itself (409 otherwise); a new account is created with the name and password given (at least 12 characters). A person who is not yet a member joins with project access only (or with the invitation's organisation-wide role); a member's organisation-wide role is never changed, and a higher grant they already hold on the project is kept. A disabled account, an archived project or a disabled organisation make the link invalid. API tokens cannot accept.
+- **Checked again when accepted.** Each project must still be active and each asset must exist and not be merged into another (an open invitation's grant on an asset that is merged moves to the asset kept, as access grants do). Those that are not are skipped and listed in `dropped` (`unavailable`: `archived`, `merged`, `deleted`, or `changed` while accepting); the rest are given. If none is left, accepting is refused with 410 `invitation_stale` and nothing is written (no account, membership or grant); the invitation stays open, and admins see why in `GET /invitations`.
+- **Accepting** takes the organisation, projects, assets and roles from the stored invitation only; the request has no field that could change them (unknown fields are refused). An account with the invitation's email must be signed in, as itself (409 otherwise); a new account is created with the name and password given (at least 12 characters). A person who is not yet a member joins with project access only (or with the invitation's organisation-wide role); a member's organisation-wide role is never changed, and a higher grant they already hold on a project or asset is kept. A disabled account, an archived project or a disabled organisation make the link invalid. API tokens cannot accept.
 - **Email**: the link goes through the organisation's first enabled email channel. Without one, or when sending fails, `POST /invitations` returns the link once, for the admin to send.
 - **Audit**: `invitation.create`, `invitation.revoke`, `invitation.accept` (with `user.create`, `access.grant` and `auth.login` for a new account) in the organisation's audit log.
 

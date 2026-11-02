@@ -1,0 +1,217 @@
+# Stackurity Kubernetes reporter for {{.Server}}
+#
+# Runs `stackurity kubernetes-reporter` in this cluster. It reads workloads,
+# the images they run, Services, Ingresses and node versions with the
+# read-only RBAC below, and sends them to Stackurity over HTTPS. Nothing
+# connects into the cluster, and no kubeconfig leaves it.
+#
+# The enrollment code is not in this file. Create the Secret with it after
+# applying (the reporter waits for it):
+#
+#   kubectl -n stackurity create secret generic stackurity-reporter --from-literal=enroll-code=enr_...
+#
+# On first start the reporter exchanges the code for its own collector token
+# and keeps the token in that Secret, the only Secret it can read or write.
+# See docs/kubernetes.md.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: stackurity
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: stackurity-reporter
+  namespace: stackurity
+---
+# The reporter's own Secret, by name: get and update only (no list, no
+# create, no other Secret).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: stackurity-reporter-token
+  namespace: stackurity
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["stackurity-reporter"]
+    verbs: ["get", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: stackurity-reporter-token
+  namespace: stackurity
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: stackurity-reporter-token
+subjects:
+  - kind: ServiceAccount
+    name: stackurity-reporter
+    namespace: stackurity
+{{- if not .Namespaces}}
+---
+# Exactly what the collection reads: no Secrets, ConfigMaps, exec, logs,
+# watch or write verbs.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: stackurity-reporter
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces", "nodes", "pods", "services"]
+    verbs: ["list"]
+  - apiGroups: ["apps"]
+    resources: ["daemonsets", "deployments", "statefulsets"]
+    verbs: ["list"]
+  - apiGroups: ["batch"]
+    resources: ["cronjobs", "jobs"]
+    verbs: ["list"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["list"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    resourceNames: ["kube-system"]
+    verbs: ["get"]
+  - nonResourceURLs: ["/version"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: stackurity-reporter
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: stackurity-reporter
+subjects:
+  - kind: ServiceAccount
+    name: stackurity-reporter
+    namespace: stackurity
+{{- else}}
+---
+# Only the cluster's identity (the kube-system namespace's UID) and version.
+# Nodes and other namespaces are reported as not assessed.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: stackurity-reporter-identity
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    resourceNames: ["kube-system"]
+    verbs: ["get"]
+  - nonResourceURLs: ["/version"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: stackurity-reporter-identity
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: stackurity-reporter-identity
+subjects:
+  - kind: ServiceAccount
+    name: stackurity-reporter
+    namespace: stackurity
+{{- range .Namespaces}}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: stackurity-reporter
+  namespace: {{.}}
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services"]
+    verbs: ["list"]
+  - apiGroups: ["apps"]
+    resources: ["daemonsets", "deployments", "statefulsets"]
+    verbs: ["list"]
+  - apiGroups: ["batch"]
+    resources: ["cronjobs", "jobs"]
+    verbs: ["list"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: stackurity-reporter
+  namespace: {{.}}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: stackurity-reporter
+subjects:
+  - kind: ServiceAccount
+    name: stackurity-reporter
+    namespace: stackurity
+{{- end}}
+{{- end}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stackurity-reporter
+  namespace: stackurity
+  labels:
+    app.kubernetes.io/name: stackurity-reporter
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: stackurity-reporter
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: stackurity-reporter
+    spec:
+      serviceAccountName: stackurity-reporter
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: reporter
+          image: {{.Image}}
+          args: ["kubernetes-reporter"]
+          env:
+            - name: STACKURITY_SERVER
+              value: "{{.Server}}"
+            - name: STACKURITY_REPORTER_SECRET
+              value: stackurity-reporter
+{{- if .HTTP}}
+            # This server was reached over plain HTTP: the enrollment code
+            # and the token cross the network unencrypted. Use HTTPS.
+            - name: STACKURITY_ALLOW_HTTP
+              value: "1"
+{{- end}}
+{{- if .ClusterName}}
+            - name: STACKURITY_CLUSTER_NAME
+              value: "{{.ClusterName}}"
+{{- end}}
+{{- if .Namespaces}}
+            - name: STACKURITY_NAMESPACES
+              value: "{{range $i, $n := .Namespaces}}{{if $i}},{{end}}{{$n}}{{end}}"
+{{- end}}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              memory: 256Mi

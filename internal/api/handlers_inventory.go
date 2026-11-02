@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/stackurity/stackurity/internal/auth"
+	"github.com/stackurity/stackurity/internal/collect/gitrepo"
 	"github.com/stackurity/stackurity/internal/model"
 	"github.com/stackurity/stackurity/internal/sbom"
 	"github.com/stackurity/stackurity/internal/store"
@@ -69,7 +70,7 @@ func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	if len(b.Asset.Identifiers) == 1 && hostScoped(b.Asset.Identifiers[0].Scheme) {
+	if ciRepository(r) == "" && len(b.Asset.Identifiers) == 1 && hostScoped(b.Asset.Identifiers[0].Scheme) {
 		if code, err := s.bindHostIdentity(r, &b); err != nil {
 			writeError(w, code, map[int]string{403: "forbidden", 409: "conflict"}[code], err.Error())
 			return
@@ -679,6 +680,9 @@ func (s *Server) getComponent(w http.ResponseWriter, r *http.Request) {
 // asset, so a host cannot pull another host's remediation actions by
 // claiming its identity.
 func (s *Server) checkBoundIngest(r *http.Request, b *model.ObservationBatch) error {
+	if repo := ciRepository(r); repo != "" {
+		return checkRepoIngest(b, repo)
+	}
 	bound, err := s.boundAsset(r)
 	if err != nil || bound == nil {
 		return err
@@ -707,6 +711,34 @@ func (s *Server) checkBoundIngest(r *http.Request, b *model.ObservationBatch) er
 		return errors.New("this token is bound to an asset; the batch does not identify it")
 	}
 	return nil
+}
+
+// ciRepository is the git-url a CI job's token (POST /ci/token) may
+// report, or "" for any other caller.
+func ciRepository(r *http.Request) string {
+	if p := principal(r); p != nil && p.Token != nil {
+		return p.Token.RepositoryURL
+	}
+	return ""
+}
+
+// checkRepoIngest lets a CI job's token report only the repository it ran
+// for: a repository asset that names that git-url. The batch's other
+// identifiers are dropped (they could claim another asset, such as the
+// name:repository of another repository) and it may not relate the
+// repository to other assets.
+func checkRepoIngest(b *model.ObservationBatch, repo string) error {
+	refuse := fmt.Errorf("this token was issued to a CI job of %s and can report only that repository: scan with --git-url %s (stackurity scan does so by itself when it exchanged the token)", repo, repo)
+	if b.Asset.Kind != model.AssetRepository || len(b.Relations) > 0 || b.Apps != nil {
+		return refuse
+	}
+	for _, id := range b.Asset.Identifiers {
+		if id.Scheme == "git-url" && strings.EqualFold(gitrepo.NormalizeURL(id.Value), repo) {
+			b.Asset.Identifiers = []model.Identifier{{Scheme: "git-url", Value: repo}}
+			return nil
+		}
+	}
+	return refuse
 }
 
 // hostScoped reports whether an identifier scheme names something on one

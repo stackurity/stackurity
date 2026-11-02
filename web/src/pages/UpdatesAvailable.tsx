@@ -2,7 +2,7 @@ import { Link, useSearchParams } from "react-router";
 import { api, type Asset, type InventoryRow, type List } from "../api";
 import { useLoad } from "../hooks";
 import { UpdateBadge } from "../components/Badge";
-import { AssetSelect } from "../components/AssetPicker";
+import { AssetSelect, ProjectFilter } from "../components/AssetPicker";
 import { Table, type Column } from "../components/Table";
 import { Card, EmptyState, ErrorBox, Loading, PageHeader, Pager } from "../components/ui";
 import { LatestCell } from "./AssetDetail";
@@ -86,6 +86,7 @@ export function UpdatesAvailablePage() {
             <option value="patch">Patch</option>
           </select>
         </div>
+        <ProjectFilter id="up-project" onChange={() => update({ asset_id: "" })} />
         <div className="field">
           <label htmlFor="up-asset">Asset</label>
           <AssetSelect id="up-asset" value={assetId} onChange={(v) => update({ asset_id: v })} assets={assets.data?.items} />

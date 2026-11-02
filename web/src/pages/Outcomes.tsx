@@ -11,6 +11,7 @@ import {
   type OutcomeTiming,
   type ReportTrial,
 } from "../api";
+import { ProjectFilter } from "../components/AssetPicker";
 import { useLoad } from "../hooks";
 import { absTime, dayCount, durationDays, humanize, plural } from "../format";
 import { NOT_REMEDIATION_KINDS } from "../resolution";
@@ -95,6 +96,7 @@ export function OutcomesPage() {
         }
       />
       <form className="filters" onSubmit={(e) => e.preventDefault()}>
+        <ProjectFilter id="out-project" />
         <div className="field">
           <label htmlFor="out-days">Window</label>
           <select id="out-days" value={w} onChange={(e) => setWindow(Number(e.target.value))}>

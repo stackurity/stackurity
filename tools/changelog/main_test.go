@@ -62,7 +62,8 @@ func TestCheck(t *testing.T) {
 	if err := Check(doc); err != nil {
 		t.Error(err)
 	}
-	for _, bad := range []string{"## 0.4\n- x\n", "## 0.4.0\n- x\n## 0.4.0\n- y\n", "## 0.4.0\n\n## 0.3.0\n- y\n"} {
+	for _, bad := range []string{"## 0.4\n- x\n", "## 0.4.0\n- x\n## 0.4.0\n- y\n", "## 0.4.0\n\n## 0.3.0\n- y\n",
+		"## Unreleased\n- a\n## Unreleased\n- b\n## 0.3.0\n- y\n"} {
 		if Check(bad) == nil {
 			t.Errorf("accepted:\n%s", bad)
 		}
