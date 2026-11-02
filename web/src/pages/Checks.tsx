@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import { api, type Check, type List } from "../api";
+import { api, type Asset, type Check, type List } from "../api";
 import { useLoad } from "../hooks";
+import { AssetSelect, ProjectFilter } from "../components/AssetPicker";
 import { CheckBadge } from "../components/CheckAgain";
 import { Table, type Column } from "../components/Table";
 import { EmptyState, ErrorBox, Loading, PageHeader, Pager, RelativeTime } from "../components/ui";
@@ -30,7 +31,12 @@ function Counts({ c }: { c: Check }) {
 export function ChecksPage() {
   const [offset, setOffset] = useState(0);
   const [open, setOpen] = useState(false);
-  const res = useLoad(() => api.get<List<Check>>("/checks", { limit: LIMIT, offset, open: open ? "true" : undefined }), [offset, open]);
+  const [asset, setAsset] = useState("");
+  const assets = useLoad(() => api.get<List<Asset>>("/assets", { limit: 200 }), []);
+  const res = useLoad(
+    () => api.get<List<Check>>("/checks", { asset_id: asset, limit: LIMIT, offset, open: open ? "true" : undefined }),
+    [asset, offset, open],
+  );
 
   const columns: Column<Check>[] = [
     { key: "asset", header: "Asset", cell: (c) => <Link to={`/assets/${c.asset_id}`}>{c.asset_name}</Link> },
@@ -56,17 +62,32 @@ export function ChecksPage() {
   return (
     <>
       <PageHeader help="check-again" title="Checks" sub="Every Check again and I applied this, with what the fresh report showed." />
-      <label className="check">
-        <input
-          type="checkbox"
-          checked={open}
-          onChange={(e) => {
-            setOpen(e.target.checked);
-            setOffset(0);
-          }}
-        />{" "}
-        Only checks still waiting
-      </label>
+      <form className="filters" onSubmit={(e) => e.preventDefault()}>
+        <ProjectFilter id="ck-project" />
+        <div className="field">
+          <label htmlFor="ck-asset">Asset</label>
+          <AssetSelect
+            id="ck-asset"
+            value={asset}
+            onChange={(v) => {
+              setAsset(v);
+              setOffset(0);
+            }}
+            assets={assets.data?.items}
+          />
+        </div>
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={open}
+            onChange={(e) => {
+              setOpen(e.target.checked);
+              setOffset(0);
+            }}
+          />{" "}
+          Only checks still waiting
+        </label>
+      </form>
       <ErrorBox error={res.error} title="Could not load checks" />
       {!res.data && !res.error && <Loading />}
       {res.data && res.data.items.length === 0 && (

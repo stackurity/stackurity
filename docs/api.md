@@ -847,7 +847,7 @@ One check.
 
 **Who:** viewer
 
-Incidents: findings grouped by issue and owner team, paged. Query: `status`, `kind`, `priority`, `sos=true`, `escalated=true`, `team_id`.
+Incidents: findings grouped by issue and owner team, paged. Query: `status`, `kind`, `priority`, `sos=true`, `escalated=true`, `team_id`, `asset_id` (incidents with a finding on that asset; an active one when listing open incidents).
 
 ### `GET /incidents/{id}`
 
