@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/stackurity/stackurity/internal/cloudconnect"
 	"github.com/stackurity/stackurity/internal/license"
 	"github.com/stackurity/stackurity/internal/netguard"
 	"github.com/stackurity/stackurity/internal/packs"
@@ -224,6 +225,12 @@ func serverCmd() *cobra.Command {
 			if dir := os.Getenv("STACKURITY_PLUGIN_DIR"); dir != "" {
 				pluginRunner = &plugins.Runner{Dir: dir, WorkDir: filepath.Join(dataDir, "work"), Timeout: 15 * time.Minute}
 			}
+			// The server's identity towards customers' clouds (keyless
+			// Google Cloud and Azure connections).
+			cloud, err := cloudconnect.FromEnv()
+			if err != nil {
+				return err
+			}
 			proCfg, err := proConfig(log)
 			if err != nil {
 				return err
@@ -331,7 +338,7 @@ func serverCmd() *cobra.Command {
 			srv := &api.Server{
 				OpenAIAppsChallenge: challenge,
 				Pro:                 proCfg,
-				Dispatcher:          dispatcher, AllowHTTPWebhooks: allowHTTPHooks, Plugins: pluginRunner,
+				Dispatcher:          dispatcher, AllowHTTPWebhooks: allowHTTPHooks, Plugins: pluginRunner, Cloud: cloud,
 				Store: st, Log: log, Secrets: res, Version: version, SetupToken: setupToken,
 				BaseURL: os.Getenv("STACKURITY_BASE_URL"), AgentDir: os.Getenv("STACKURITY_AGENT_DIR"),
 				CIAudience:         strings.TrimSpace(os.Getenv("STACKURITY_CI_AUDIENCE")),
@@ -402,7 +409,7 @@ func serverCmd() *cobra.Command {
 				glRunner = &gitlab.Runner{Store: st, Client: glClient, Box: box, Log: log, Packs: packMgr.Active,
 					RedirectURL: strings.TrimRight(os.Getenv("STACKURITY_BASE_URL"), "/") + "/integrations/gitlab/callback"}
 			}
-			registerJobs(w, st, res, dataDir, log, pluginRunner, packMgr, ghApp, awsClient, glRunner)
+			registerJobs(w, st, res, dataDir, log, pluginRunner, packMgr, cloud, ghApp, awsClient, glRunner)
 			// Prioritise, correlate, plan and deliver notifications; none
 			// for a read-only workspace.
 			w.EveryCollectingWorkspace("alerts", tm.Alerts, dispatcher.Tick)
@@ -618,7 +625,7 @@ func checkIsolation(ctx context.Context, st *store.Store, log *slog.Logger) erro
 // cannot change; a rescan only picks up scanner improvements.
 const imageScanFresh = 7 * 24 * time.Hour
 
-func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataDir string, log *slog.Logger, pluginRunner *plugins.Runner, packMgr *packs.Manager, ghApp *githubapp.App, awsClient *awsconnect.Client, glRunner *gitlab.Runner) {
+func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataDir string, log *slog.Logger, pluginRunner *plugins.Runner, packMgr *packs.Manager, cloud *cloudconnect.Platform, ghApp *githubapp.App, awsClient *awsconnect.Client, glRunner *gitlab.Runner) {
 	scanner := &gitrepo.Scanner{WorkDir: filepath.Join(dataDir, "work"), Version: version, Packs: packMgr.Active}
 	if glRunner != nil {
 		glRunner.Scanner = scanner
@@ -715,8 +722,15 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 					return err
 				}
 				if !awsLinked {
-					// Without credentials the plugin would use the server's own.
-					if token == "" && !netguard.AllowsPrivate(ctx) {
+					meta, err := pluginRunner.Metadata(ctx, cfg.Plugin)
+					if err != nil {
+						return err
+					}
+					// Without credentials the plugin would use the server's own,
+					// unless it uses the server's workload identity, which names
+					// the workspace (gcp-managed, azure-managed).
+					platform := cloudconnect.UsesPlatform(cfg.Plugin, meta.Credentials)
+					if token == "" && !platform && !netguard.AllowsPrivate(ctx) {
 						return errors.New("plugins in this workspace need credentials (a stored secret)")
 					}
 					// The secret, if any, is a JSON object of the credentials
@@ -727,6 +741,8 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 							return errors.New("plugin secrets must be a JSON object of credential names to values")
 						}
 					}
+					ws, _ := tenant.Workspace(ctx)
+					creds = cloud.ForPlugin(cfg.Plugin, meta.Credentials, creds, ws, time.Now())
 				}
 				batches, logs, err := pluginRunner.Collect(ctx, cfg.Plugin, cfg.Config, creds)
 				if logs != "" {
