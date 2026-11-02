@@ -852,6 +852,31 @@ export interface DashboardTrend {
   fixed: { start: string; end: string; fixed: number }[];
 }
 
+/** One connection, API token or stored secret on the Dashboard's credentials block. */
+export interface CredentialItem {
+  kind: "integration" | "channel" | "aws" | "token" | "secret";
+  id?: number;
+  name: string;
+  detail: string;
+  at?: string;
+}
+
+export interface CredentialGroup {
+  total: number;
+  items: CredentialItem[];
+}
+
+/** GET /credentials/health (admin). */
+export interface CredentialHealth {
+  failing: CredentialGroup;
+  expiring: CredentialGroup;
+  unused: CredentialGroup;
+  old: CredentialGroup;
+  expiring_days: number;
+  unused_days: number;
+  old_days: number;
+}
+
 export type UncheckedReason = "unreadable_version" | "other" | "unreadable_files" | "unsupported" | "waiting_for_data" | "no_advisories";
 export type UncheckedActor = "user" | "stackurity" | "automatic" | "none";
 

@@ -3922,6 +3922,10 @@ h6.md-h {
 .dash-coverage-parts li {
   margin: 2px 0;
 }
+.dash-cred-names {
+  display: block;
+  overflow-wrap: anywhere;
+}
 
 .dash-sla-link {
   color: var(--text-2);
