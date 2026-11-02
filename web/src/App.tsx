@@ -12,6 +12,7 @@ import { SlackLinkPage } from "./pages/SlackLink";
 import { AccountPage } from "./pages/Account";
 import { SlackOAuthCallbackPage } from "./pages/SlackOAuthCallback";
 import { PagerDutyOAuthCallbackPage } from "./pages/PagerDutyOAuthCallback";
+import { JiraOAuthCallbackPage } from "./pages/JiraOAuthCallback";
 import { GitHubCallbackPage } from "./pages/GitHubCallback";
 import { SlackInstallPage } from "./pages/SlackInstall";
 import { EmailConfirmPage, EmailStopPage } from "./pages/EmailConfirm";
@@ -152,6 +153,10 @@ export function App() {
   // Back from "Connect PagerDuty": sign in first; the address and query stay.
   if (pathname === "/integrations/pagerduty/oauth/callback" && state.phase === "login") return <LoginPage />;
   if (pathname === "/integrations/pagerduty/oauth/callback" && state.phase === "ready") return <PagerDutyOAuthCallbackPage />;
+  // Back from Connect Jira (Atlassian): sign in first if the session ended;
+  // the address and query stay. A cancel (?error=) is explained signed out.
+  if (pathname === "/integrations/jira/oauth/callback" && state.phase === "login") return slackCallbackNeedsSession() ? <LoginPage /> : <JiraOAuthCallbackPage />;
+  if (pathname === "/integrations/jira/oauth/callback" && state.phase === "ready") return <JiraOAuthCallbackPage />;
   // Back from "Install on GitHub": sign in first; the address and query
   // stay, and the page connects the installation in the signed-in session.
   if (pathname === "/integrations/github/callback" && state.phase === "login") return <LoginPage />;

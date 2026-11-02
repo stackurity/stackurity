@@ -977,7 +977,7 @@ export function IntegrationAddPage() {
           options={options.data}
           members={members.data?.items}
           onCancel={() => navigate("/settings/integrations")}
-          onSaved={(c) => navigate(`/settings/integrations/channels/${c.id}`)}
+          onSaved={(c, connected) => navigate(`/settings/integrations/channels/${c.id}${connected ? "?added=1" : ""}`)}
           validate={() => ruleProblem(r, isTracker(kind))}
           afterCreate={(c) => api.post<Route>("/routes", ruleBody(r, c))}
           returnTo="/settings/integrations"

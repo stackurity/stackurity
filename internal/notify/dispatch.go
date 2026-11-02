@@ -59,6 +59,13 @@ type Dispatcher struct {
 	// PagerDutyApp is the Stackurity PagerDuty app ("Connect PagerDuty");
 	// nil turns it off. It is used only while a channel is being added.
 	PagerDutyApp *PagerDutyApp
+	// TeamsApp is the Stackurity Teams app ("Add to Teams"); nil turns it
+	// off, and its channels fail with a note saying so.
+	TeamsApp *TeamsApp
+	// JiraApp is the Stackurity Atlassian app (Connect Jira); nil turns it
+	// off. Box seals the tokens of its connections (STACKURITY_SECRET_KEY).
+	JiraApp *JiraApp
+	Box     store.Sealer
 	// TrackerPoll is how often ServiceNow records of channels with
 	// sync_back are read back; zero means every 5 minutes.
 	TrackerPoll time.Duration
@@ -971,6 +978,9 @@ func (d *Dispatcher) send(ctx context.Context, ch *store.Channel, del store.Deli
 	if err := json.Unmarshal(ch.Config, &cfg); err != nil {
 		return err
 	}
+	if ch.Kind == KindTeams && cfg.TeamsApp {
+		return d.sendTeamsApp(ctx, ch, cfg, msg)
+	}
 	secret, err := d.Secrets.Resolve(ctx, ch.SecretRef)
 	if err != nil {
 		return err
@@ -993,6 +1003,28 @@ func (d *Dispatcher) send(ctx context.Context, ch *store.Channel, del store.Deli
 	defer cancel()
 	return d.Sender.Send(sctx, ch.Kind, cfg, secret, del.ID, msg)
 }
+
+// sendTeamsApp posts to a channel added with the Stackurity Teams app.
+// When Teams says the app is no longer there, the integration is switched
+// off with a note, so it shows as disconnected rather than failing quietly.
+func (d *Dispatcher) sendTeamsApp(ctx context.Context, ch *store.Channel, cfg ChannelConfig, msg Message) error {
+	if d.TeamsApp == nil {
+		return &PermanentError{Err: errors.New("the Stackurity Teams app is not set up on this server any more (STACKURITY_TEAMS_APP_ID)")}
+	}
+	sctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	err := d.TeamsApp.PostToChannel(sctx, TeamsTarget{ServiceURL: cfg.ServiceURL, TenantID: cfg.TenantID, ChannelID: cfg.TeamsChannelID}, TeamsActivity(msg))
+	if errors.Is(err, ErrTeamsRemoved) {
+		if derr := d.Store.DisconnectChannel(context.WithoutCancel(ctx), ch.ID, TeamsRemovedNote); derr != nil {
+			d.Log.Warn("teams app: switching off a removed channel failed", "channel", ch.ID, "err", derr)
+		}
+	}
+	return err
+}
+
+// TeamsRemovedNote is the error shown on an integration whose Teams
+// channel the app was removed from.
+const TeamsRemovedNote = "The Stackurity app was removed from this Teams channel (or the channel or team was deleted). Use Add to Teams again to resume."
 
 // SendTest sends a test message through a channel immediately. For Jira it
 // checks the credentials and project access instead, creating nothing.

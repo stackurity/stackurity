@@ -2246,6 +2246,10 @@ export interface ChannelConfig {
   labels?: string[];
   priorities?: Partial<Record<Priority, string>>;
   resolve_transition?: string;
+  // jira with Connect Jira (auth "oauth"): the connection and the site
+  // (cloud id); url is then the site's address.
+  connection_id?: number;
+  cloud_id?: string;
   // pagerduty: service region and severity per priority; the routing key is the secret.
   region?: "us" | "eu" | "";
   severities?: Partial<Record<Priority, "critical" | "error" | "warning" | "info">>;
@@ -2282,12 +2286,23 @@ export interface ChannelConfig {
   pagerduty_service_name?: string;
   pagerduty_integration_id?: string;
   pagerduty_manage_url?: string;
+  // teams created with "Add to Teams" (the Stackurity Teams app)
+  teams_app?: boolean;
+  tenant_id?: string;
+  teams_team_id?: string;
+  teams_team_name?: string;
+  teams_channel_id?: string;
+  teams_channel?: string;
+  service_url?: string;
 }
 
 /** GET /notification-options: what this server offers. */
 export interface NotificationOptions {
   slack_app: boolean;
   pagerduty_app: boolean;
+  teams_app: boolean;
+  /** Connect Jira (the Stackurity Atlassian app) is available. */
+  jira_app: boolean;
   platform_email: {
     enabled: boolean;
     from?: string;
@@ -2298,7 +2313,7 @@ export interface NotificationOptions {
   base_url: boolean;
 }
 
-export const NO_NOTIFICATION_OPTIONS: NotificationOptions = { slack_app: false, pagerduty_app: false, platform_email: { enabled: false }, secrets: false, base_url: false };
+export const NO_NOTIFICATION_OPTIONS: NotificationOptions = { slack_app: false, jira_app: false, teams_app: false, pagerduty_app: false, platform_email: { enabled: false }, secrets: false, base_url: false };
 
 /** Loads the options; a failure counts as nothing offered. */
 export function loadNotificationOptions(): Promise<NotificationOptions> {
@@ -2307,6 +2322,8 @@ export function loadNotificationOptions(): Promise<NotificationOptions> {
     .then((o) => ({
       slack_app: Boolean(o?.slack_app),
       pagerduty_app: Boolean(o?.pagerduty_app),
+      teams_app: Boolean(o?.teams_app),
+      jira_app: Boolean(o?.jira_app),
       platform_email: o?.platform_email?.enabled ? o.platform_email : { enabled: false },
       secrets: Boolean(o?.secrets),
       base_url: Boolean(o?.base_url),
@@ -2346,6 +2363,63 @@ export interface PagerDutyFinishResult {
   return_to: string;
   service_name: string;
   reused: boolean;
+}
+
+/** POST /integrations/teams/install */
+export interface TeamsInstallStart {
+  id: number;
+  code: string;
+  expires_at: string;
+  install_url: string;
+}
+
+/** GET /integrations/teams/install/{id} */
+export interface TeamsInstallStatus {
+  status: "pending" | "connected" | "expired" | "failed";
+  expires_at: string;
+  channel?: Channel;
+}
+
+/** A Jira Cloud site a Connect Jira connection reaches. */
+export interface JiraSite {
+  /** The Atlassian cloud id. */
+  id: string;
+  name: string;
+  url: string;
+}
+
+/** GET /integrations/jira/connections: a Connect Jira grant (never its tokens). */
+export interface JiraConnection {
+  id: number;
+  sites: JiraSite[];
+  scopes: string;
+  status: "active" | "reconnect_needed";
+  status_reason: string;
+  connected_by: number | null;
+  connected_at: string;
+  refreshed_at: string | null;
+}
+
+/** POST /integrations/jira/oauth */
+export interface JiraOAuthResult {
+  connection: JiraConnection;
+  return_to: string;
+  reconnected: boolean;
+}
+
+/** GET /integrations/jira/connections/{id}/projects/{key} */
+export interface JiraProjectMeta {
+  key: string;
+  name: string;
+  issue_types: { name: string; subtask: boolean }[];
+  statuses: Record<string, { name: string; category: string }[]>;
+  priorities: string[];
+}
+
+/** Starts Connect Jira (or reconnects `connectionId`) and goes to Atlassian's consent page. */
+export async function startJiraConnect(returnTo: string, connectionId = 0): Promise<void> {
+  const r = await api.post<{ url: string }>("/integrations/jira/install", { return_to: returnTo, connection_id: connectionId });
+  window.location.assign(r.url);
 }
 
 /** POST /integrations/slack/oauth */

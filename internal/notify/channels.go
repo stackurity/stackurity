@@ -263,6 +263,11 @@ type ChannelConfig struct {
 	Labels            []string          `json:"labels,omitempty"`
 	Priorities        map[string]string `json:"priorities,omitempty"`         // P1..P4 -> Jira priority name
 	ResolveTransition string            `json:"resolve_transition,omitempty"` // e.g. Done; empty only comments
+	// Connect Jira (auth oauth): the connection whose tokens are used and
+	// the site (Atlassian cloud id); URL is then the site's address, for
+	// links. Auth is token (or empty) with an API token in secret_ref.
+	ConnectionID int64  `json:"connection_id,omitempty"`
+	CloudID      string `json:"cloud_id,omitempty"`
 
 	// pagerduty: the service region (us, the default, or eu) and the
 	// PagerDuty severity per priority (default P1 critical, P2 error, P3
@@ -323,6 +328,17 @@ type ChannelConfig struct {
 	PagerDutyServiceName   string `json:"pagerduty_service_name,omitempty"`
 	PagerDutyIntegrationID string `json:"pagerduty_integration_id,omitempty"`
 	PagerDutyManageURL     string `json:"pagerduty_manage_url,omitempty"`
+	// teams, added with the Stackurity Teams app ("Add to Teams"): the
+	// Microsoft 365 tenant, team and channel the bot posts to, and the Bot
+	// Connector address Teams gave with them. No secret: the app's
+	// credentials are the server's (TeamsApp).
+	TeamsApp       bool   `json:"teams_app,omitempty"`
+	TenantID       string `json:"tenant_id,omitempty"`
+	TeamsTeamID    string `json:"teams_team_id,omitempty"`
+	TeamsTeamName  string `json:"teams_team_name,omitempty"`
+	TeamsChannelID string `json:"teams_channel_id,omitempty"`
+	TeamsChannel   string `json:"teams_channel,omitempty"`
+	ServiceURL     string `json:"service_url,omitempty"`
 
 	// interactive is the channel's id when its messages get interactive
 	// buttons; set by the dispatcher, never stored.
@@ -343,6 +359,9 @@ func ValidateChannel(kind string, c ChannelConfig, hasSecret, allowHTTP bool) er
 	}
 	if (c.PagerDutyApp || c.PagerDutyServiceID != "" || c.PagerDutyServiceName != "" || c.PagerDutyIntegrationID != "" || c.PagerDutyManageURL != "") && kind != KindPagerDuty {
 		return errors.New("pagerduty_app and its fields are for PagerDuty channels")
+	}
+	if c.TeamsApp && kind != KindTeams {
+		return errors.New("teams_app is for Teams channels")
 	}
 	switch kind {
 	case KindStackurityEmail:
@@ -377,7 +396,22 @@ func ValidateChannel(kind string, c ChannelConfig, hasSecret, allowHTTP bool) er
 		default:
 			return errors.New("tls must be starttls, tls or none")
 		}
-	case KindSlack, KindTeams:
+	case KindTeams:
+		if c.TeamsApp {
+			if hasSecret {
+				return errors.New("Teams channels of the Stackurity app take no secret_ref")
+			}
+			// The binding itself is checked where it is made (from a
+			// verified activity) and the address again on every send.
+			if c.TeamsChannelID == "" || c.ServiceURL == "" {
+				return errors.New("not a Teams channel of the Stackurity app")
+			}
+			return nil
+		}
+		if !hasSecret {
+			return errors.New("set secret_ref to the incoming webhook URL (it is a credential)")
+		}
+	case KindSlack:
 		if !hasSecret {
 			return errors.New("set secret_ref to the incoming webhook URL (it is a credential)")
 		}
