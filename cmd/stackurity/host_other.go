@@ -85,6 +85,9 @@ func hostCollector(o *hostOptions) (func(context.Context) ([]*model.ObservationB
 				continue
 			}
 			b := appBatch(app, osBatch.Asset)
+			if o.leaks && !app.Unreadable {
+				b.Leaks = scanner.Leaks(ctx, app.Dir)
+			}
 			if by := foundBy[dir]; by != "" && !explicit {
 				b.Asset.Attributes["discovered_by"] = clipAttr(by) // a manifest, an index file, a web server's configuration
 			}
