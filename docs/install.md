@@ -154,7 +154,18 @@ When you host other organisations, also set `STACKURITY_PRIVATE_TARGETS=none` an
 
 ## Signing in
 
-People sign in with an email and password, or with [single sign-on](#single-sign-on) where it is set up.
+People sign in with an email and password, or with [single sign-on](#single-sign-on) where it is set up. On Stackurity Cloud they can also [sign up and sign in with Google, Microsoft or GitHub](#google-microsoft-or-github-stackurity-cloud).
+
+### Google, Microsoft or GitHub (Stackurity Cloud)
+
+Stackurity Cloud's sign-up and sign-in pages offer **Continue with Google**, **Continue with Microsoft** and **Continue with GitHub** (only the providers the service has configured). It is not part of the self-hosted editions: on your own server, sign-in through Google Workspace, Microsoft Entra ID or GitHub's OpenID Connect is [single sign-on](#single-sign-on) (licensed), and accounts are made by invitation, not by signing up.
+
+- **Signing up.** The provider confirms the address, so there is no password and no confirmation email; the person enters the organisation's name and accepts the Terms of Service and the Privacy Policy, and gets the same trial organisation as signing up with an email. Only addresses the provider verified are used: Google's `email_verified`; Microsoft work or school accounts whose address is in a domain their tenant verified (`xms_edov`), never personal Microsoft accounts; GitHub's primary address when GitHub marks it verified. Temporary email addresses are refused, as on the email form. An account made this way has no password until the person sets one with **Forgot your password?**.
+- **An existing account is never taken over by its address.** A provider sign-in whose address already has an account connects nothing: Stackurity emails that address a link, which works once, for 30 minutes, and only in the browser that tried to sign in. Or the person signs in with their password and chooses **Connect** under **Your account → Sign in with Google, Microsoft or GitHub**, entering the password again. Identities are kept by provider and the provider's own subject (GitHub's numeric user id; Microsoft's tenant and object id), separately from single sign-on.
+- **Policies still apply.** The account's two-factor sign-in is asked for after the provider; an organisation that requires two-factor sign-in sends the person to set it up; an organisation that requires its own single sign-on stays closed to such a session (its owner keeps access, as with a password). Instance administrators are never connected to a provider.
+- **After signing up with GitHub**, Stackurity goes on to **Pick repositories** (installing the Stackurity GitHub App) once the GitHub App is available; until then, to the usual first steps.
+
+The activity log records `auth.login` with `"method": "social"` and the provider, `auth.social_linked`, `auth.social_unlinked`, `auth.social_link_emailed` and `auth.social_refused` (with the reason, such as an unverified address).
 
 ### Two-factor sign-in
 

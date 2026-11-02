@@ -240,6 +240,54 @@ Starts a test sign-in; the result is shown under Settings → Single sign-on and
 
 The organisation's Assertion Consumer Service. A session it starts is pinned to the organisation.
 
+### `GET /auth/social/{provider}/start`
+
+**Who:** anyone · Stackurity Cloud · outside `/api/v1`
+
+"Continue with Google / Microsoft / GitHub" (`provider` is `google`, `microsoft` or `github`; only those in `GET /meta`'s `social` are configured). Sends the browser to the provider with a `state`, a PKCE challenge (S256) and, for Google and Microsoft, a `nonce`, stored for 10 minutes and bound to the browser by a cookie. Optional `return_to` as for `/saml/login`. Limited per address with the other sign-in steps.
+
+### `GET /auth/social/{provider}/callback`
+
+**Who:** the provider, through the browser that started · Stackurity Cloud · outside `/api/v1`
+
+The redirect address registered with the provider. Uses the `state` once, in the browser that started it, redeems the `code` with the PKCE verifier and checks the ID token (signature, issuer, audience, expiry, nonce) or, for GitHub, reads `/user` and `/user/emails`. Only a verified address is used (Google `email_verified`, Microsoft `xms_edov` from a work or school account, GitHub's verified primary address). Then: an identity already connected signs in to its account (its second factor first, when it has one: the page continues to `/?mfa=1`); an address that has an account is **not** connected by itself: a link is emailed to that address (`auth.social_link_emailed`); a new address continues to `/signup/social#<token>`. Disposable addresses are refused as at sign-up.
+
+### `POST /signup/social/preview`
+
+**Who:** anyone, in the browser that signed in with the provider · Stackurity Cloud
+
+`{"token"}` from `/signup/social#<token>`: `provider`, `provider_label`, `email`, `name`, `login` (GitHub) and `colleagues_domain` when people at the address's domain already use the service. 410 when it expired (30 minutes), was used, or is another browser's.
+
+### `POST /signup/social`
+
+**Who:** anyone, in the browser that signed in with the provider · Stackurity Cloud
+
+Finishes a sign-up through a provider: `token`, `name`, `organisation`, `accept_terms` and `email_notice_version`, checked as on the email form (no password, no challenge). Creates the account (without a password), the organisation on its trial and its cloud record exactly as `POST /signup/verify` does, connects the identity, and starts a session. Answers `workspace_id` and `next` (`/welcome/repositories` after a GitHub sign-up when the GitHub App is set up, otherwise `/`). The same per-address and service-wide limits as `POST /signup`.
+
+### `POST /auth/social/confirm`
+
+**Who:** anyone with the emailed link, in the browser that signed in with the provider · Stackurity Cloud
+
+`{"token"}` from the link emailed to an existing account's address: connects the provider's identity to that account and signs in, answering like `POST /auth/login` (`mfa_required` when the account has a second factor). 410 when expired (30 minutes), used, or opened in another browser. Audited as `auth.social_linked`.
+
+### `GET /auth/social`
+
+**Who:** a browser session · Stackurity Cloud
+
+The caller's sign-ins through providers: `providers` (each configured one with `connected`, and when connected its `email`, `login`, `created_at`, `last_used_at`) and `has_password`.
+
+### `POST /auth/social/{provider}/link`
+
+**Who:** a browser session · Stackurity Cloud
+
+Starts connecting a provider to the caller's account: `{"password"}` when the account has one. Answers `redirect_url` (the provider); its callback connects the identity it vouches for to this account (409 when that identity is connected to another account). Never for an instance administrator.
+
+### `DELETE /auth/social/{provider}`
+
+**Who:** a browser session · Stackurity Cloud
+
+Disconnects that provider. 409 when it is the only way into an account without a password. Audited as `auth.social_unlinked`.
+
 ### `POST /feedback`
 
 **Who:** any signed-in user (10 an hour)
@@ -320,7 +368,7 @@ The assistants a person has connected (`/assistants`) and the OAuth consent page
 
 **Who:** anyone
 
-Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project`. `app_list` means `POST /ingest` takes a host batch's `apps` (see [ObservationBatch](#observationbatch)); agents send it only to servers that list it (0.14). `host_images` means `POST /ingest` scopes `host-image` identities to their host and takes a host batch's `images`; the agent's `--docker` sends container images only to servers that list it. `kubernetes_report` means [`POST /kubernetes/report`](#post-kubernetesreport) exists; the Kubernetes reporter falls back to `POST /ingest` without it. `email_preferences: true` means this server sends bulk email (product updates, vulnerability news), so people have email preferences.
+Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project`. `app_list` means `POST /ingest` takes a host batch's `apps` (see [ObservationBatch](#observationbatch)); agents send it only to servers that list it (0.14). `host_images` means `POST /ingest` scopes `host-image` identities to their host and takes a host batch's `images`; the agent's `--docker` sends container images only to servers that list it. `kubernetes_report` means [`POST /kubernetes/report`](#post-kubernetesreport) exists; the Kubernetes reporter falls back to `POST /ingest` without it. `email_preferences: true` means this server sends bulk email (product updates, vulnerability news), so people have email preferences. On Stackurity Cloud, `social` lists the configured sign-in providers (`providers`: `id`, `label`, `start_url`) and, when the GitHub App is set up, `github_install_url`.
 
 ### `GET /openapi.json`
 
