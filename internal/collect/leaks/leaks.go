@@ -103,7 +103,9 @@ var rules = []rule{
 	{id: "slack-token", title: "Slack token", severity: critical, hint: "xox", shown: 5,
 		re: regexp.MustCompile(`\b(xox[abposr]-[0-9A-Za-z-]{10,})\b`)},
 	{id: "slack-webhook", title: "Slack incoming webhook", severity: medium, hint: "hooks.slack.com", shown: 33,
-		re: regexp.MustCompile(`(https://hooks\.slack\.com/services/T[A-Z0-9]+/B[A-Z0-9]+/[A-Za-z0-9]{20,})`)},
+		// The address starts the text or follows a character that cannot be
+		// part of one (a quote, =, a space), as in .env or JSON.
+		re: regexp.MustCompile(`(?:^|[^A-Za-z0-9+.-])(https://hooks\.slack\.com/services/T[A-Z0-9]+/B[A-Z0-9]+/[A-Za-z0-9]{20,})`)},
 	{id: "stripe-live-key", title: "Stripe live secret key", severity: critical, hint: "_live_", shown: 8,
 		re: regexp.MustCompile(`\b((?:sk|rk)_live_[A-Za-z0-9]{24,})\b`)},
 	{id: "razorpay-secret", title: "Razorpay key secret", severity: critical, hint: "",

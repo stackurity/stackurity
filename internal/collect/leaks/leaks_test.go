@@ -37,6 +37,9 @@ func TestKnownFormats(t *testing.T) {
 		{"aws secret", "ci/env.sh", "aws_secret_access_key = " + awsSecret + "\n", "aws-secret-key", 1},
 		{"google", "public/maps.html", `<script src="https://maps.googleapis.com/maps/api/js?key=` + googleKey + `"></script>`, "google-api-key", 1},
 		{"private key", "deploy/id_rsa", privateKey, "private-key", 1},
+		{"slack webhook", ".env", "SLACK_URL=" + key("https://hooks.slack.com/services/", "T0ABCDEF1/B0ABCDEF2/", "Zq7Lm2Xr9Tb4Kc8Vn3Pw6Hy1") + "\n", "slack-webhook", 1},
+		{"slack webhook in json", "config/notify.json", `{"url": "` + key("https://hooks.slack.com/services/", "T0ABCDEF1/B0ABCDEF2/", "Zq7Lm2Xr9Tb4Kc8Vn3Pw6Hy1") + `"}`, "slack-webhook", 1},
+		{"slack webhook first", "hook.txt", key("https://hooks.slack.com/services/", "T0ABCDEF1/B0ABCDEF2/", "Zq7Lm2Xr9Tb4Kc8Vn3Pw6Hy1"), "slack-webhook", 1},
 		{"database url", "docker/run.sh", "DATABASE_URL=postgres://app:Kq7v9Lm2xZ@db:5432/app\n", "database-url", 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
