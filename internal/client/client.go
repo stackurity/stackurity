@@ -226,6 +226,36 @@ type Meta struct {
 	Version       string   `json:"version"`
 	SetupRequired bool     `json:"setup_required"`
 	Features      []string `json:"features"`
+	// CIAudience is the aud a CI job's ID token needs for POST /ci/token;
+	// empty when the server does not exchange them.
+	CIAudience string `json:"ci_audience"`
+}
+
+// CIToken is a collector token a CI job exchanged its ID token for.
+type CIToken struct {
+	Token         string    `json:"token"`
+	ExpiresAt     time.Time `json:"expires_at"`
+	RepositoryURL string    `json:"repository_url"`
+	ProjectID     *int64    `json:"project_id"`
+	TrustID       int64     `json:"trust_id"`
+}
+
+// ExchangeCIToken trades a CI provider's OpenID Connect ID token for a
+// short-lived collector token (POST /ci/token). trustID chooses among
+// several trusts that accept the job; 0 lets the server choose.
+func (c *Client) ExchangeCIToken(ctx context.Context, idToken string, trustID int64) (*CIToken, error) {
+	body, err := json.Marshal(map[string]any{"token": idToken, "trust_id": trustID})
+	if err != nil {
+		return nil, err
+	}
+	var out CIToken
+	if err := c.Do(ctx, "POST", "/api/v1/ci/token", bytes.NewReader(body), map[string]string{"Content-Type": "application/json", "X-Stackurity-CSRF": "1"}, &out); err != nil {
+		return nil, err
+	}
+	if out.Token == "" {
+		return nil, errors.New("the server answered without a token")
+	}
+	return &out, nil
 }
 
 func (c *Client) Meta(ctx context.Context) (*Meta, error) {

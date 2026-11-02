@@ -2522,413 +2522,6 @@
     }
    }
   },
-  "/aws/callback": {
-   "post": {
-    "operationId": "post_aws_callback",
-    "summary": "Report a Launch Stack role (called by the stack)",
-    "description": "Called once by the stack's custom resource with `{\"role_arn\", \"external_id\", \"stack_id\"}` and `Authorization: Bearer <token>`, the signed single-use token from the Launch Stack link. The token names the connection, its workspace and external ID; it is used up by the first request, expires after 24 hours and is replaced by a new link. The server then assumes the role with the external ID (and checks it cannot without) and activates the connection. Every refusal of a token is the same 403. Outside the session and CSRF checks\n\nRole: none (signed single-use token; rate limited)",
-    "tags": [
-     "Integrations"
-    ],
-    "x-stackurity-role": "none (signed single-use token; rate limited)",
-    "security": [],
-    "requestBody": {
-     "required": true,
-     "content": {
-      "application/json": {
-       "schema": {
-        "type": "object"
-       }
-      }
-     }
-    },
-    "responses": {
-     "2XX": {
-      "description": "Success",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
-     },
-     "4XX": {
-      "$ref": "#/components/responses/Error"
-     },
-     "5XX": {
-      "$ref": "#/components/responses/Error"
-     }
-    }
-   }
-  },
-  "/aws/connections": {
-   "get": {
-    "operationId": "get_aws_connections",
-    "summary": "AWS connections",
-    "description": "Connect an AWS account with a CloudFormation stack (docs/install.md, \"AWS managed services\"): the connections, and `enabled` (the server has an AWS principal, STACKURITY_AWS_PRINCIPAL_ARN), `principal`, `launch_stack` (the template is hosted in S3, STACKURITY_AWS_TEMPLATE_URL), `template_download` and the IAM actions the role grants (`permissions`, `agent_install_permissions`)\n\nRole: admin",
-    "tags": [
-     "Integrations"
-    ],
-    "x-stackurity-role": "admin",
-    "responses": {
-     "2XX": {
-      "description": "Success",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
-     },
-     "4XX": {
-      "$ref": "#/components/responses/Error"
-     },
-     "5XX": {
-      "$ref": "#/components/responses/Error"
-     }
-    }
-   },
-   "post": {
-    "operationId": "post_aws_connections",
-    "summary": "Start an AWS connection (Launch Stack link)",
-    "description": "Connect an AWS account with a CloudFormation stack (docs/install.md, \"AWS managed services\"): `regions` (1–40, scanned), `stack_region` (where the stack is created; default the first region), `agent_install` (adds the SSM permissions). Returns the connection with its generated external ID and `launch`: `quick_create_url` (empty without an S3-hosted template), `template_download`, `cli` (the same stack with the AWS CLI), `external_id`, `principal`, and `callback` (the stack reports its role by itself; false when this server's address is not https, then the role ARN is pasted). 404 when the server has no AWS principal\n\nRole: admin",
-    "tags": [
-     "Integrations"
-    ],
-    "x-stackurity-role": "admin",
-    "requestBody": {
-     "required": true,
-     "content": {
-      "application/json": {
-       "schema": {
-        "type": "object"
-       }
-      }
-     }
-    },
-    "responses": {
-     "2XX": {
-      "description": "Success",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
-     },
-     "4XX": {
-      "$ref": "#/components/responses/Error"
-     },
-     "5XX": {
-      "$ref": "#/components/responses/Error"
-     }
-    }
-   }
-  },
-  "/aws/connections/{id}": {
-   "get": {
-    "operationId": "get_aws_connections_id",
-    "summary": "An AWS connection",
-    "description": "Connect an AWS account with a CloudFormation stack (docs/install.md, \"AWS managed services\"): `status` (pending, active, failed), `role_arn`, `account_id`, `last_error`, `integration_id` and `integration_removed`\n\nRole: admin",
-    "tags": [
-     "Integrations"
-    ],
-    "x-stackurity-role": "admin",
-    "parameters": [
-     {
-      "name": "id",
-      "in": "path",
-      "required": true,
-      "schema": {
-       "type": "string"
-      }
-     }
-    ],
-    "responses": {
-     "2XX": {
-      "description": "Success",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
-     },
-     "4XX": {
-      "$ref": "#/components/responses/Error"
-     },
-     "5XX": {
-      "$ref": "#/components/responses/Error"
-     }
-    }
-   },
-   "delete": {
-    "operationId": "delete_aws_connections_id",
-    "summary": "Remove an AWS connection",
-    "description": "Connect an AWS account with a CloudFormation stack (docs/install.md, \"AWS managed services\"): removes the connection and its integration. The role stays in the AWS account until its stack is deleted\n\nRole: admin",
-    "tags": [
-     "Integrations"
-    ],
-    "x-stackurity-role": "admin",
-    "parameters": [
-     {
-      "name": "id",
-      "in": "path",
-      "required": true,
-      "schema": {
-       "type": "string"
-      }
-     }
-    ],
-    "responses": {
-     "2XX": {
-      "description": "Success (usually 204 No Content)"
-     },
-     "4XX": {
-      "$ref": "#/components/responses/Error"
-     },
-     "5XX": {
-      "$ref": "#/components/responses/Error"
-     }
-    }
-   }
-  },
-  "/aws/connections/{id}/installs": {
-   "get": {
-    "operationId": "get_aws_connections_id_installs",
-    "summary": "Agent installs through SSM",
-    "description": "Connect an AWS account with a CloudFormation stack (docs/install.md, \"AWS managed services\"): the agent installs sent through SSM, newest first, after reading from SSM how the unfinished ones went: `status` pending, running, success, failed or timed_out, and `detail` (the end of the command's output). The code of a failed or timed-out install is revoked. `refresh_error` says why SSM could not be read\n\nRole: admin",
-    "tags": [
-     "Integrations"
-    ],
-    "x-stackurity-role": "admin",
-    "parameters": [
-     {
-      "name": "id",
-      "in": "path",
-      "required": true,
-      "schema": {
-       "type": "string"
-      }
-     }
-    ],
-    "responses": {
-     "2XX": {
-      "description": "Success",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
-     },
-     "4XX": {
-      "$ref": "#/components/responses/Error"
-     },
-     "5XX": {
-      "$ref": "#/components/responses/Error"
-     }
-    }
-   },
-   "post": {
-    "operationId": "post_aws_connections_id_installs",
-    "summary": "Install the agent on EC2 instances through SSM",
-    "description": "Connect an AWS account with a CloudFormation stack (docs/install.md, \"AWS managed services\"): `region` and `instances` (1–25 of `{\"instance_id\", \"computer_name\"}`). Each instance gets its own single-use enrollment code (two hours), sent in an AWS-RunShellScript command that runs this server's installer; the code is not stored. Answers 202 with one install per instance\n\nRole: admin",
-    "tags": [
-     "Integrations"
-    ],
-    "x-stackurity-role": "admin",
-    "parameters": [
-     {
-      "name": "id",
-      "in": "path",
-      "required": true,
-      "schema": {
-       "type": "string"
-      }
-     }
-    ],
-    "requestBody": {
-     "required": true,
-     "content": {
-      "application/json": {
-       "schema": {
-        "type": "object"
-       }
-      }
-     }
-    },
-    "responses": {
-     "2XX": {
-      "description": "Success",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
-     },
-     "4XX": {
-      "$ref": "#/components/responses/Error"
-     },
-     "5XX": {
-      "$ref": "#/components/responses/Error"
-     }
-    }
-   }
-  },
-  "/aws/connections/{id}/instances": {
-   "get": {
-    "operationId": "get_aws_connections_id_instances",
-    "summary": "EC2 instances SSM manages",
-    "description": "Connect an AWS account with a CloudFormation stack (docs/install.md, \"AWS managed services\"): the instances SSM manages in one of the connection's regions (`?region=`, default the first), each with `eligible` (Linux and online), `asset_id` (a host already reporting with that hostname) and `last_install`. Needs the stack's agent install option; AWS errors answer 502\n\nRole: admin",
-    "tags": [
-     "Integrations"
-    ],
-    "x-stackurity-role": "admin",
-    "parameters": [
-     {
-      "name": "id",
-      "in": "path",
-      "required": true,
-      "schema": {
-       "type": "string"
-      }
-     },
-     {
-      "name": "region",
-      "in": "query",
-      "required": false,
-      "description": "one of the connection's regions",
-      "schema": {
-       "type": "string"
-      }
-     }
-    ],
-    "responses": {
-     "2XX": {
-      "description": "Success",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
-     },
-     "4XX": {
-      "$ref": "#/components/responses/Error"
-     },
-     "5XX": {
-      "$ref": "#/components/responses/Error"
-     }
-    }
-   }
-  },
-  "/aws/connections/{id}/launch": {
-   "post": {
-    "operationId": "post_aws_connections_id_launch",
-    "summary": "New Launch Stack link",
-    "description": "Connect an AWS account with a CloudFormation stack (docs/install.md, \"AWS managed services\"): a new link for a connection that is not active (`stack_region`, `agent_install`); the earlier link's token stops working\n\nRole: admin",
-    "tags": [
-     "Integrations"
-    ],
-    "x-stackurity-role": "admin",
-    "parameters": [
-     {
-      "name": "id",
-      "in": "path",
-      "required": true,
-      "schema": {
-       "type": "string"
-      }
-     }
-    ],
-    "requestBody": {
-     "required": true,
-     "content": {
-      "application/json": {
-       "schema": {
-        "type": "object"
-       }
-      }
-     }
-    },
-    "responses": {
-     "2XX": {
-      "description": "Success",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
-     },
-     "4XX": {
-      "$ref": "#/components/responses/Error"
-     },
-     "5XX": {
-      "$ref": "#/components/responses/Error"
-     }
-    }
-   }
-  },
-  "/aws/connections/{id}/verify": {
-   "post": {
-    "operationId": "post_aws_connections_id_verify",
-    "summary": "Verify an AWS connection's role (paste the role ARN)",
-    "description": "Connect an AWS account with a CloudFormation stack (docs/install.md, \"AWS managed services\"): `role_arn` (the stack's RoleArn output; empty verifies the one recorded again). The role must be assumable with the connection's external ID and refused without it; then the connection is active, its aws-managed integration is created and a first run is queued. A failure is recorded as `status: failed` with `last_error`\n\nRole: admin",
-    "tags": [
-     "Integrations"
-    ],
-    "x-stackurity-role": "admin",
-    "parameters": [
-     {
-      "name": "id",
-      "in": "path",
-      "required": true,
-      "schema": {
-       "type": "string"
-      }
-     }
-    ],
-    "requestBody": {
-     "required": true,
-     "content": {
-      "application/json": {
-       "schema": {
-        "type": "object"
-       }
-      }
-     }
-    },
-    "responses": {
-     "2XX": {
-      "description": "Success",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
-     },
-     "4XX": {
-      "$ref": "#/components/responses/Error"
-     },
-     "5XX": {
-      "$ref": "#/components/responses/Error"
-     }
-    }
-   }
-  },
   "/channels": {
    "get": {
     "operationId": "get_channels",
@@ -5661,46 +5254,6 @@
       "application/json": {
        "schema": {
         "$ref": "#/components/schemas/ObservationBatch"
-       }
-      }
-     }
-    },
-    "responses": {
-     "2XX": {
-      "description": "Success",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
-     },
-     "4XX": {
-      "$ref": "#/components/responses/Error"
-     },
-     "5XX": {
-      "$ref": "#/components/responses/Error"
-     }
-    }
-   }
-  },
-  "/kubernetes/report": {
-   "post": {
-    "operationId": "post_kubernetes_report",
-    "summary": "Submit one collection of a Kubernetes cluster (the in-cluster reporter)",
-    "description": "Submit one collection of a Kubernetes cluster, as `stackurity kubernetes-reporter` sends it: `{\"batches\": [...], \"image_scans\": 25}`, gzip accepted. The batches are the cluster first, then images and workloads, with the kubernetes plugin's identity schemes (`k8s-cluster`, `k8s-cluster-name`, `k8s-workload`, `image-ref`); other kinds or schemes are refused. Each is stored under the `plugin:kubernetes` collector as an agent's report. The images are queued for the image scanner in the order given, at most `image_scans` (default 25, 0 to 500). Refused for a host-bound token; 30 reports an hour per token\n\nRole: collector, engineer+",
-    "tags": [
-     "Agents and uploads"
-    ],
-    "x-stackurity-role": "collector, engineer+",
-    "requestBody": {
-     "required": true,
-     "description": "batches (ObservationBatch list) and image_scans, optionally gzip-compressed (Content-Encoding: gzip)",
-     "content": {
-      "application/json": {
-       "schema": {
-        "type": "object"
        }
       }
      }
@@ -9575,231 +9128,6 @@
     }
    }
   },
-  "/integrations/github": {
-   "get": {
-    "operationId": "get_integrations_github",
-    "summary": "GitHub App status and installations",
-    "description": "`configured` (whether this server has the Stackurity GitHub App; with `app_url`) and `installations`, this organisation's GitHub accounts with `status` (`active`, `suspended`, `deleted`), `note` and the number of `repositories`\n\nRole: engineer",
-    "tags": [
-     "Integrations"
-    ],
-    "x-stackurity-role": "engineer",
-    "responses": {
-     "2XX": {
-      "description": "Success",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
-     },
-     "4XX": {
-      "$ref": "#/components/responses/Error"
-     },
-     "5XX": {
-      "$ref": "#/components/responses/Error"
-     }
-    }
-   }
-  },
-  "/integrations/github/install": {
-   "post": {
-    "operationId": "post_integrations_github_install",
-    "summary": "Start Install on GitHub",
-    "description": "`{\"return_to\": \"/settings/integrations\"}` (a dashboard path). Answers `url`, the app's install page on GitHub with a single-use state bound to the caller and organisation (10 minutes). 404 `not_configured` without the Stackurity GitHub App (STACKURITY_GITHUB_APP_ID, ...)\n\nRole: admin",
-    "tags": [
-     "Integrations"
-    ],
-    "x-stackurity-role": "admin",
-    "requestBody": {
-     "required": true,
-     "content": {
-      "application/json": {
-       "schema": {
-        "type": "object"
-       }
-      }
-     }
-    },
-    "responses": {
-     "2XX": {
-      "description": "Success",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
-     },
-     "4XX": {
-      "$ref": "#/components/responses/Error"
-     },
-     "5XX": {
-      "$ref": "#/components/responses/Error"
-     }
-    }
-   }
-  },
-  "/integrations/github/setup": {
-   "post": {
-    "operationId": "post_integrations_github_setup",
-    "summary": "Finish Install on GitHub",
-    "description": "`{\"state\", \"code\", \"installation_id\", \"setup_action\"}` from GitHub's redirect to `/integrations/github/callback`. The state must be the caller's, in this organisation, unused and fresh (400 `github_state` otherwise, before GitHub is called). The installation must be visible to the person's GitHub account (from `code`) and confirmed with the app's JWT (403 `github_installation`), and not held by another organisation (409 `github_installation_taken`). 201: `installation`, `return_to`\n\nRole: admin",
-    "tags": [
-     "Integrations"
-    ],
-    "x-stackurity-role": "admin",
-    "requestBody": {
-     "required": true,
-     "content": {
-      "application/json": {
-       "schema": {
-        "type": "object"
-       }
-      }
-     }
-    },
-    "responses": {
-     "2XX": {
-      "description": "Success",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
-     },
-     "4XX": {
-      "$ref": "#/components/responses/Error"
-     },
-     "5XX": {
-      "$ref": "#/components/responses/Error"
-     }
-    }
-   }
-  },
-  "/integrations/github/installations/{installation_id}/sync": {
-   "post": {
-    "operationId": "post_integrations_github_installation_sync",
-    "summary": "List an installation's repositories again",
-    "description": "Queues a listing of the repositories the installation grants on GitHub (202)\n\nRole: admin",
-    "tags": [
-     "Integrations"
-    ],
-    "x-stackurity-role": "admin",
-    "parameters": [
-     {
-      "name": "installation_id",
-      "in": "path",
-      "required": true,
-      "schema": {
-       "type": "integer"
-      }
-     }
-    ],
-    "responses": {
-     "2XX": {
-      "description": "Success",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
-     },
-     "4XX": {
-      "$ref": "#/components/responses/Error"
-     },
-     "5XX": {
-      "$ref": "#/components/responses/Error"
-     }
-    }
-   }
-  },
-  "/integrations/github/installations/{installation_id}": {
-   "delete": {
-    "operationId": "delete_integrations_github_installation",
-    "summary": "Disconnect a GitHub account",
-    "description": "Switches its repositories' integrations off (history kept), removes the binding and uninstalls the app from that GitHub account (`uninstalled_on_github`)\n\nRole: admin",
-    "tags": [
-     "Integrations"
-    ],
-    "x-stackurity-role": "admin",
-    "parameters": [
-     {
-      "name": "installation_id",
-      "in": "path",
-      "required": true,
-      "schema": {
-       "type": "integer"
-      }
-     }
-    ],
-    "responses": {
-     "2XX": {
-      "description": "Success",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
-     },
-     "4XX": {
-      "$ref": "#/components/responses/Error"
-     },
-     "5XX": {
-      "$ref": "#/components/responses/Error"
-     }
-    }
-   }
-  },
-  "/integrations/github/webhook": {
-   "post": {
-    "operationId": "post_integrations_github_webhook",
-    "summary": "GitHub App webhook (verified by GitHub's signature)",
-    "description": "The Stackurity GitHub App's webhook URL. 401 unless `X-Hub-Signature-256` is the HMAC-SHA256 of the body with the app's webhook secret; 400 without `X-GitHub-Event` or `X-GitHub-Delivery`; a delivery already handled answers `{\"result\": \"duplicate\"}`. Handles `installation`, `installation_repositories` and `push`; 404 without the app\n\nRole: none: GitHub's signature (the app's webhook secret)",
-    "tags": [
-     "Integrations"
-    ],
-    "x-stackurity-role": "none: GitHub's signature (the app's webhook secret)",
-    "security": [],
-    "requestBody": {
-     "required": true,
-     "content": {
-      "application/json": {
-       "schema": {
-        "type": "object"
-       }
-      }
-     }
-    },
-    "responses": {
-     "2XX": {
-      "description": "Success",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
-     },
-     "4XX": {
-      "$ref": "#/components/responses/Error"
-     },
-     "5XX": {
-      "$ref": "#/components/responses/Error"
-     }
-    }
-   }
-  },
   "/email-recipients/block": {
    "post": {
     "operationId": "post_email_recipients_block",
@@ -10788,6 +10116,816 @@
        "application/octet-stream": {
         "schema": {
          "type": "string"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/ci/token": {
+   "post": {
+    "operationId": "post_ci_token",
+    "summary": "Exchange a CI job's OpenID Connect ID token for a 15-minute collector token",
+    "description": "Exchange a CI job's ID token (`{\"token\", \"trust_id\"}`) for a collector token that expires after 15 minutes, belongs to the matching CI trust's organisation and project, and may report only the job's repository (`repository_url`). The token must verify with the issuer's published keys (asymmetric algorithms only), with `iss` exactly a trust's issuer, `aud` exactly the server's CI audience (`ci_audience` in GET /meta), and `exp`, `nbf`, `iat` within one minute. 401 invalid_token, 400 trust_required without trust_id on a server with several organisations, 403 when no trust accepts the job, 409 when several organisations or projects do (send trust_id), 503 without STACKURITY_BASE_URL\n\nRole: none (rate limited)",
+    "tags": [
+     "Agents and uploads"
+    ],
+    "x-stackurity-role": "none (rate limited)",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/ci-trusts": {
+   "get": {
+    "operationId": "get_ci_trusts",
+    "summary": "CI trusts",
+    "description": "Create, list and delete CI trusts: `provider` (github, gitlab), `issuer` (https, matched exactly), `repository` (owner/repo, or owner/* with `owner_wildcard`), optional `ref`, `environment`, `workflow_ref`, `name`, `project_id`. The list includes the CI `audience`\n\nRole: admin",
+    "tags": [
+     "Agents and uploads"
+    ],
+    "x-stackurity-role": "admin",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "post": {
+    "operationId": "post_ci_trusts",
+    "summary": "Create a CI trust",
+    "description": "Create, list and delete CI trusts: `provider` (github, gitlab), `issuer` (https, matched exactly), `repository` (owner/repo, or owner/* with `owner_wildcard`), optional `ref`, `environment`, `workflow_ref`, `name`, `project_id`. The list includes the CI `audience`\n\nRole: admin",
+    "tags": [
+     "Agents and uploads"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/ci-trusts/{id}": {
+   "delete": {
+    "operationId": "delete_ci_trusts_id",
+    "summary": "Delete a CI trust and revoke its tokens",
+    "description": "Create, list and delete CI trusts: `provider` (github, gitlab), `issuer` (https, matched exactly), `repository` (owner/repo, or owner/* with `owner_wildcard`), optional `ref`, `environment`, `workflow_ref`, `name`, `project_id`. The list includes the CI `audience`\n\nRole: admin",
+    "tags": [
+     "Agents and uploads"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/aws/callback": {
+   "post": {
+    "operationId": "post_aws_callback",
+    "summary": "Report a Launch Stack role (called by the stack)",
+    "description": "Called once by the stack's custom resource with `{\"role_arn\", \"external_id\", \"stack_id\"}` and `Authorization: Bearer <token>`, the signed single-use token from the Launch Stack link. The token names the connection, its workspace and external ID; it is used up by the first request, expires after 24 hours and is replaced by a new link. The server then assumes the role with the external ID (and checks it cannot without) and activates the connection. Every refusal of a token is the same 403. Outside the session and CSRF checks\n\nRole: none (signed single-use token; rate limited)",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "none (signed single-use token; rate limited)",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/aws/connections": {
+   "get": {
+    "operationId": "get_aws_connections",
+    "summary": "AWS connections",
+    "description": "Connect an AWS account with a CloudFormation stack (docs/install.md, \"AWS managed services\"): the connections, and `enabled` (the server has an AWS principal, STACKURITY_AWS_PRINCIPAL_ARN), `principal`, `launch_stack` (the template is hosted in S3, STACKURITY_AWS_TEMPLATE_URL), `template_download` and the IAM actions the role grants (`permissions`, `agent_install_permissions`)\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "post": {
+    "operationId": "post_aws_connections",
+    "summary": "Start an AWS connection (Launch Stack link)",
+    "description": "Connect an AWS account with a CloudFormation stack (docs/install.md, \"AWS managed services\"): `regions` (1–40, scanned), `stack_region` (where the stack is created; default the first region), `agent_install` (adds the SSM permissions). Returns the connection with its generated external ID and `launch`: `quick_create_url` (empty without an S3-hosted template), `template_download`, `cli` (the same stack with the AWS CLI), `external_id`, `principal`, and `callback` (the stack reports its role by itself; false when this server's address is not https, then the role ARN is pasted). 404 when the server has no AWS principal\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/aws/connections/{id}": {
+   "get": {
+    "operationId": "get_aws_connections_id",
+    "summary": "An AWS connection",
+    "description": "Connect an AWS account with a CloudFormation stack (docs/install.md, \"AWS managed services\"): `status` (pending, active, failed), `role_arn`, `account_id`, `last_error`, `integration_id` and `integration_removed`\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "delete_aws_connections_id",
+    "summary": "Remove an AWS connection",
+    "description": "Connect an AWS account with a CloudFormation stack (docs/install.md, \"AWS managed services\"): removes the connection and its integration. The role stays in the AWS account until its stack is deleted\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/aws/connections/{id}/installs": {
+   "get": {
+    "operationId": "get_aws_connections_id_installs",
+    "summary": "Agent installs through SSM",
+    "description": "Connect an AWS account with a CloudFormation stack (docs/install.md, \"AWS managed services\"): the agent installs sent through SSM, newest first, after reading from SSM how the unfinished ones went: `status` pending, running, success, failed or timed_out, and `detail` (the end of the command's output). The code of a failed or timed-out install is revoked. `refresh_error` says why SSM could not be read\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "post": {
+    "operationId": "post_aws_connections_id_installs",
+    "summary": "Install the agent on EC2 instances through SSM",
+    "description": "Connect an AWS account with a CloudFormation stack (docs/install.md, \"AWS managed services\"): `region` and `instances` (1–25 of `{\"instance_id\", \"computer_name\"}`). Each instance gets its own single-use enrollment code (two hours), sent in an AWS-RunShellScript command that runs this server's installer; the code is not stored. Answers 202 with one install per instance\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/aws/connections/{id}/instances": {
+   "get": {
+    "operationId": "get_aws_connections_id_instances",
+    "summary": "EC2 instances SSM manages",
+    "description": "Connect an AWS account with a CloudFormation stack (docs/install.md, \"AWS managed services\"): the instances SSM manages in one of the connection's regions (`?region=`, default the first), each with `eligible` (Linux and online), `asset_id` (a host already reporting with that hostname) and `last_install`. Needs the stack's agent install option; AWS errors answer 502\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "region",
+      "in": "query",
+      "required": false,
+      "description": "one of the connection's regions",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/aws/connections/{id}/launch": {
+   "post": {
+    "operationId": "post_aws_connections_id_launch",
+    "summary": "New Launch Stack link",
+    "description": "Connect an AWS account with a CloudFormation stack (docs/install.md, \"AWS managed services\"): a new link for a connection that is not active (`stack_region`, `agent_install`); the earlier link's token stops working\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/aws/connections/{id}/verify": {
+   "post": {
+    "operationId": "post_aws_connections_id_verify",
+    "summary": "Verify an AWS connection's role (paste the role ARN)",
+    "description": "Connect an AWS account with a CloudFormation stack (docs/install.md, \"AWS managed services\"): `role_arn` (the stack's RoleArn output; empty verifies the one recorded again). The role must be assumable with the connection's external ID and refused without it; then the connection is active, its aws-managed integration is created and a first run is queued. A failure is recorded as `status: failed` with `last_error`\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/kubernetes/report": {
+   "post": {
+    "operationId": "post_kubernetes_report",
+    "summary": "Submit one collection of a Kubernetes cluster (the in-cluster reporter)",
+    "description": "Submit one collection of a Kubernetes cluster, as `stackurity kubernetes-reporter` sends it: `{\"batches\": [...], \"image_scans\": 25}`, gzip accepted. The batches are the cluster first, then images and workloads, with the kubernetes plugin's identity schemes (`k8s-cluster`, `k8s-cluster-name`, `k8s-workload`, `image-ref`); other kinds or schemes are refused. Each is stored under the `plugin:kubernetes` collector as an agent's report. The images are queued for the image scanner in the order given, at most `image_scans` (default 25, 0 to 500). Refused for a host-bound token; 30 reports an hour per token\n\nRole: collector, engineer+",
+    "tags": [
+     "Agents and uploads"
+    ],
+    "x-stackurity-role": "collector, engineer+",
+    "requestBody": {
+     "required": true,
+     "description": "batches (ObservationBatch list) and image_scans, optionally gzip-compressed (Content-Encoding: gzip)",
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/github": {
+   "get": {
+    "operationId": "get_integrations_github",
+    "summary": "GitHub App status and installations",
+    "description": "`configured` (whether this server has the Stackurity GitHub App; with `app_url`) and `installations`, this organisation's GitHub accounts with `status` (`active`, `suspended`, `deleted`), `note` and the number of `repositories`\n\nRole: engineer",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "engineer",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/github/install": {
+   "post": {
+    "operationId": "post_integrations_github_install",
+    "summary": "Start Install on GitHub",
+    "description": "`{\"return_to\": \"/settings/integrations\"}` (a dashboard path). Answers `url`, the app's install page on GitHub with a single-use state bound to the caller and organisation (10 minutes). 404 `not_configured` without the Stackurity GitHub App (STACKURITY_GITHUB_APP_ID, ...)\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/github/setup": {
+   "post": {
+    "operationId": "post_integrations_github_setup",
+    "summary": "Finish Install on GitHub",
+    "description": "`{\"state\", \"code\", \"installation_id\", \"setup_action\"}` from GitHub's redirect to `/integrations/github/callback`. The state must be the caller's, in this organisation, unused and fresh (400 `github_state` otherwise, before GitHub is called). The installation must be visible to the person's GitHub account (from `code`) and confirmed with the app's JWT (403 `github_installation`), and not held by another organisation (409 `github_installation_taken`). 201: `installation`, `return_to`\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/github/installations/{installation_id}/sync": {
+   "post": {
+    "operationId": "post_integrations_github_installation_sync",
+    "summary": "List an installation's repositories again",
+    "description": "Queues a listing of the repositories the installation grants on GitHub (202)\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "installation_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/github/installations/{installation_id}": {
+   "delete": {
+    "operationId": "delete_integrations_github_installation",
+    "summary": "Disconnect a GitHub account",
+    "description": "Switches its repositories' integrations off (history kept), removes the binding and uninstalls the app from that GitHub account (`uninstalled_on_github`)\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "installation_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/github/webhook": {
+   "post": {
+    "operationId": "post_integrations_github_webhook",
+    "summary": "GitHub App webhook (verified by GitHub's signature)",
+    "description": "The Stackurity GitHub App's webhook URL. 401 unless `X-Hub-Signature-256` is the HMAC-SHA256 of the body with the app's webhook secret; 400 without `X-GitHub-Event` or `X-GitHub-Delivery`; a delivery already handled answers `{\"result\": \"duplicate\"}`. Handles `installation`, `installation_repositories` and `push`; 404 without the app\n\nRole: none: GitHub's signature (the app's webhook secret)",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "none: GitHub's signature (the app's webhook secret)",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
         }
        }
       }
