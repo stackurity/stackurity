@@ -658,9 +658,9 @@ func (s *Server) saveRoute(w http.ResponseWriter, r *http.Request, id int64) {
 	}
 	for _, k := range rt.Kinds {
 		switch k {
-		case "vulnerability", "end_of_life", "feed", "collection", "coverage":
+		case "vulnerability", "end_of_life", "feed", "collection", "coverage", "leak":
 		default:
-			s.fail(w, r, badRequest("kinds may contain vulnerability, end_of_life, feed, collection, coverage"))
+			s.fail(w, r, badRequest("kinds may contain vulnerability, end_of_life, feed, collection, coverage, leak"))
 			return
 		}
 	}
