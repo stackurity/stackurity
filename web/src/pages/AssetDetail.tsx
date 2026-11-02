@@ -725,10 +725,10 @@ function InventoryTab({ assetId }: { assetId: number }) {
               )}
             </>
           )}
-          {r.evidence?.source && ["installed", "lockfile", "cdn", "vendored"].includes(r.evidence.source) && (
+          {r.evidence?.source && ["installed", "lockfile", "cdn", "vendored", "bundle", "source-map", "flutter-build"].includes(r.evidence.source) && (
             <>
               {" "}
-              <AppSourceBadge source={r.evidence.source} url={r.evidence.url} />
+              <AppSourceBadge source={r.evidence.source} url={r.evidence.url} signature={r.evidence.signature} />
             </>
           )}
           {r.evidence?.global === "true" && (
