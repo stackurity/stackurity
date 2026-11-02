@@ -13,7 +13,7 @@ import (
 	"github.com/stackurity/stackurity/internal/auth"
 )
 
-// Passkeys and security keys (WebAuthn, migration 0066). The ceremonies
+// Passkeys and security keys (WebAuthn, migration 0090). The ceremonies
 // themselves are checked in the api package with go-webauthn; this file
 // keeps the credential records, each account's user handle, and the
 // challenges between the two steps of a ceremony.
