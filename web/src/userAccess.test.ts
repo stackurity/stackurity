@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { ACTION_TYPES, EMPTY, phoneProblem, preview, problems, reduce, toRequest, type Action, type AddUserState } from "./userAccess.ts";
+import { ACTION_TYPES, EMPTY, forProject, phoneProblem, preview, problems, reduce, toInvitation, toRequest, type Action, type AddUserState } from "./userAccess.ts";
 
 // The Add user form (pages/settings/Users.tsx) as data. Every control
 // dispatches one of these actions; each is driven here, and the last tests
@@ -149,10 +149,17 @@ test("every action type is covered by these tests", () => {
   assert.deepEqual([...used].sort(), [...ACTION_TYPES].sort());
 });
 
-// The form itself: every control dispatches a known action, every action
-// has a control, and no input, select or button is left unwired.
-const src = readFileSync(new URL("./pages/settings/Users.tsx", import.meta.url), "utf8");
-const form = src.slice(src.indexOf("function CreateUser("));
+// The forms themselves: every control dispatches a known action, every
+// action has a control, and no input, select or button is left unwired.
+// "What can they see?" is components/AccessPicker.tsx, shared by Add user
+// (pages/settings/Users.tsx) and Invite (components/Invite.tsx).
+const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
+const picker = read("./components/AccessPicker.tsx");
+const users = read("./pages/settings/Users.tsx");
+const createUser = users.slice(users.indexOf("function CreateUser("), users.indexOf("\n}\n", users.indexOf("function CreateUser(")));
+const form = createUser + picker;
+const inviteSrc = read("./components/Invite.tsx");
+const inviteForm = inviteSrc.slice(inviteSrc.indexOf("export function InviteForm("), inviteSrc.indexOf("function InviteResult("));
 
 test("the Add user form wires every action to a control", () => {
   const dispatched = new Set([...form.matchAll(/dispatch\(\{ type: "(\w+)"/g)].map((m) => m[1]));
@@ -173,5 +180,56 @@ test("the scope question has no default and is required", () => {
   assert.match(form, /checked=\{f\.scope === "all"\}/);
   assert.match(form, /checked=\{f\.scope === "specific"\}/);
   // The submit runs problems() and sends nothing while any remain.
-  assert.match(form, /if \(missing\.length\) return;/);
+  assert.match(createUser, /if \(missing\.length\) return;/);
+  assert.match(createUser, /<AccessPicker /);
+});
+
+// --- Invite: the same choice, without phone or password
+
+test("an invitation from the Users page starts with nothing chosen", () => {
+  const s = run(EMPTY, { type: "field", field: "email", value: "inv@x.io" });
+  assert.deepEqual(problems(s), ["Choose what they can see: all projects and assets, or specific ones."]);
+  const all = run(s, { type: "scope", scope: "all" }, { type: "allRole", role: "admin" });
+  assert.deepEqual(toInvitation(all), { email: "inv@x.io", name: "", role: "admin" });
+});
+
+test("an invitation from a project's page starts with Specific and that project, but no permission", () => {
+  let s = run(forProject(7), { type: "field", field: "email", value: " inv@x.io " }, { type: "field", field: "name", value: " Ivy " });
+  assert.equal(s.scope, "specific");
+  assert.deepEqual(s.projects, [{ projectId: 7, mode: "project", role: "", assets: [] }]);
+  assert.deepEqual(problems(s, { 7: "Shop" }), ["Shop: choose a permission."]);
+  s = run(s, { type: "projectRole", projectId: 7, role: "viewer" });
+  assert.deepEqual(problems(s), []);
+  assert.deepEqual(toInvitation(s), { email: "inv@x.io", name: "Ivy", grants: [{ project_id: 7, role: "viewer" }] });
+  // More than the one project, with chosen assets.
+  s = run(s, { type: "addProject", projectId: 8 }, { type: "projectMode", projectId: 8, mode: "assets" },
+    { type: "toggleAsset", projectId: 8, assetId: 80, checked: true }, { type: "assetRole", projectId: 8, assetId: 80, role: "security" });
+  assert.deepEqual(toInvitation(s).grants, [{ project_id: 7, role: "viewer" }, { asset_id: 80, role: "security" }]);
+  // Or all projects instead: no grants are sent.
+  s = run(s, { type: "scope", scope: "all" }, { type: "allRole", role: "engineer" });
+  assert.deepEqual(toInvitation(s), { email: "inv@x.io", name: "Ivy", role: "engineer" });
+  // Removing the project leaves nothing chosen.
+  s = run(forProject(7), { type: "field", field: "email", value: "a@b.io" }, { type: "removeProject", projectId: 7 });
+  assert.deepEqual(problems(s), ["Add at least one project."]);
+});
+
+test("the Invite form uses the shared picker and wires every control", () => {
+  assert.match(inviteForm, /<AccessPicker idp="inv"/);
+  assert.match(inviteForm, /useReducer\(reduce, projectId, \(id: number\) => \(id > 0 \? forProject\(id\) : EMPTY\)\)/);
+  assert.match(inviteForm, /if \(missing\.length\) return;/);
+  assert.match(inviteForm, /toInvitation\(f\)/);
+  const dispatched = new Set([...(inviteForm + picker).matchAll(/dispatch\(\{ type: "(\w+)"/g)].map((m) => m[1]));
+  assert.deepEqual([...dispatched].sort(), [...ACTION_TYPES].sort());
+  const controls = [...inviteForm.matchAll(/<(input|select|button)\b([^>]*)>/gs)];
+  assert.ok(controls.length >= 4, `found ${controls.length} controls`);
+  for (const [tag, , attrs] of controls) assert.ok(/onChange=|onClick=|type="submit"/.test(attrs), `unwired control: ${tag.slice(0, 120)}`);
+  // No permission is pre-selected anywhere (the old form defaulted to engineer).
+  assert.doesNotMatch(inviteForm, /useState<UserRole>\("engineer"\)/);
+});
+
+test("every id and radio group in the picker is prefixed, so two forms can share a page", () => {
+  for (const m of picker.matchAll(/\b(id|name|htmlFor)=\{?[`"]([^`"]*)/g)) {
+    if (m[1] === "id" && m[2] === "") continue;
+    assert.ok(m[2].startsWith("${idp}") || m[0].startsWith("id={id") || m[0].startsWith("htmlFor={id"), `unprefixed: ${m[0]}`);
+  }
 });

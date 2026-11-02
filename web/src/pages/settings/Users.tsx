@@ -1,5 +1,5 @@
 import { useMemo, useReducer, useState, type FormEvent } from "react";
-import { api, USER_ROLES, type Asset, type List, type Project, type User, type UserRole } from "../../api";
+import { api, USER_ROLES, type List, type Project, type User, type UserRole } from "../../api";
 import { useAuth } from "../../auth";
 import { useAction, useLoad } from "../../hooks";
 import { Badge } from "../../components/Badge";
@@ -8,8 +8,10 @@ import { Card, EmptyState, ErrorBox, Loading, Notice, PageHeader, RelativeTime }
 import { RequireMfaCard } from "../TwoFactor";
 import { confirmAction } from "../../components/ConfirmDialog";
 import { PermissionsDisclosure } from "../../components/Permissions";
-import { PERMISSIONS, SPECIFIC_ROLES, permissionLabel, scopeSummary } from "../../roles";
-import { EMPTY, phoneProblem, preview, problems, reduce, toRequest, type ProjectPick } from "../../userAccess";
+import { PERMISSIONS, permissionLabel, scopeSummary } from "../../roles";
+import { EMPTY, phoneProblem, preview, problems, reduce, toRequest } from "../../userAccess";
+import { AccessPicker } from "../../components/AccessPicker";
+import { InvitationList, InviteForm } from "../../components/Invite";
 
 /** Organisation-wide roles, and "none": access only to the projects someone is given. */
 const ORG_ROLES: (UserRole | "none")[] = [...USER_ROLES, "none"];
@@ -26,6 +28,10 @@ export function UsersPage() {
   const act = useAction();
   const [msg, setMsg] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [showInvite, setShowInvite] = useState(false);
+  const [invites, setInvites] = useState(0);
+  // Stackurity Cloud: people join by invitation only, so Add user is not offered.
+  const inviteOnly = !!me?.invite_only;
   const [open, setOpen] = useState<{ id: number; kind: "reset" | "edit" } | null>(null);
 
   const patch = async (u: User, body: Record<string, unknown>, done: string) => {
@@ -191,17 +197,40 @@ export function UsersPage() {
         title="Users"
         sub={`Members of ${me?.workspace?.name ?? "this workspace"}. Each sees all projects and assets, or only the ones they are given.`}
         actions={
-          !showCreate && (
-            <button type="button" className="btn btn-primary" onClick={() => setShowCreate(true)}>
-              Add user
-            </button>
+          !showCreate &&
+          !showInvite && (
+            <>
+              <button type="button" className={`btn${inviteOnly ? " btn-primary" : ""}`} onClick={() => setShowInvite(true)}>
+                Invite by email
+              </button>
+              {!inviteOnly && (
+                <button type="button" className="btn btn-primary" onClick={() => setShowCreate(true)}>
+                  Add user
+                </button>
+              )}
+            </>
           )
         }
       />
       {msg && <Notice kind="success">{msg}</Notice>}
       <ErrorBox error={act.error} title="Update failed" />
       <RequireMfaCard />
-      {!showCreate && <PermissionsDisclosure />}
+      {inviteOnly && !showInvite && (
+        <p className="small muted">People join this organisation by invitation: they get a link by email and set up their own account.</p>
+      )}
+      {!showCreate && !showInvite && <PermissionsDisclosure />}
+      {showInvite && (
+        <Card title="Invite by email">
+          <p className="small muted">Sends a link that works once, for 7 days. They create their account with it, or join with the one they have.</p>
+          <InviteForm
+            onInvited={() => {
+              setInvites((n) => n + 1);
+              res.reload();
+            }}
+            onCancel={() => setShowInvite(false)}
+          />
+        </Card>
+      )}
       {showCreate && (
         <CreateUser
           onCancel={() => setShowCreate(false)}
@@ -247,6 +276,7 @@ export function UsersPage() {
           rowClassName={(u) => (u.disabled ? "row-removed" : undefined)}
         />
       )}
+      <InvitationList reloadKey={invites} />
     </>
   );
 }
@@ -335,7 +365,6 @@ function CreateUser({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
     const u = await act.run(() => api.post<User>("/users", toRequest(f)));
     if (u) onCreated(u);
   };
-  const unpicked = (projects.data?.items ?? []).filter((p) => !f.projects.some((x) => x.projectId === p.id));
   return (
     <Card title="Add user">
       <form className="form" onSubmit={submit} aria-label="Add user" noValidate>
@@ -362,73 +391,7 @@ function CreateUser({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
           </div>
         </div>
 
-        <fieldset className="field access-scope">
-          <legend>What can they see? (required)</legend>
-          <ul className="choice-list">
-            <li>
-              <label className="choice">
-                <input type="radio" name="nu-scope" value="all" checked={f.scope === "all"} onChange={() => dispatch({ type: "scope", scope: "all" })} />
-                <span>
-                  <strong>All projects and assets</strong>
-                  <span className="hint"> Everything in this workspace, including what is added later, with one permission.</span>
-                </span>
-              </label>
-            </li>
-            <li>
-              <label className="choice">
-                <input type="radio" name="nu-scope" value="specific" checked={f.scope === "specific"} onChange={() => dispatch({ type: "scope", scope: "specific" })} />
-                <span>
-                  <strong>Specific projects or assets</strong>
-                  <span className="hint"> Only what you choose below. Workspace pages (users, integrations, notifications) are not shown to them.</span>
-                </span>
-              </label>
-            </li>
-          </ul>
-        </fieldset>
-
-        {f.scope === "all" && (
-          <fieldset className="field">
-            <legend>Permission on all projects and assets</legend>
-            <ul className="choice-list">
-              {PERMISSIONS.map((p) => (
-                <li key={p.role}>
-                  <label className="choice">
-                    <input type="radio" name="nu-all-role" value={p.role} checked={f.allRole === p.role} onChange={() => dispatch({ type: "allRole", role: p.role })} />
-                    <span>
-                      <strong>{p.label}</strong>
-                      <span className="hint"> {p.short}</span>
-                    </span>
-                  </label>
-                </li>
-              ))}
-            </ul>
-          </fieldset>
-        )}
-
-        {f.scope === "specific" && (
-          <div className="field access-projects">
-            <ErrorBox error={projects.error} title="Could not load projects" />
-            {projects.data && projects.data.items.length === 0 && (
-              <Notice kind="warn">There are no projects yet. Create one under Settings, Projects and access, or give them all projects and assets.</Notice>
-            )}
-            {f.projects.map((p) => (
-              <ProjectAccess key={p.projectId} pick={p} name={names[p.projectId] ?? `Project ${p.projectId}`} dispatch={dispatch} />
-            ))}
-            {unpicked.length > 0 && (
-              <div className="field">
-                <label htmlFor="nu-add-project">{f.projects.length ? "Add another project" : "Add a project"}</label>
-                <select id="nu-add-project" value="" onChange={(e) => e.target.value && dispatch({ type: "addProject", projectId: Number(e.target.value) })}>
-                  <option value="">Choose a project…</option>
-                  {unpicked.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} ({p.asset_count} asset{p.asset_count === 1 ? "" : "s"})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-          </div>
-        )}
+        <AccessPicker idp="nu" f={f} dispatch={dispatch} projects={projects} />
 
         <PermissionsDisclosure />
 
@@ -453,92 +416,5 @@ function CreateUser({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
         </div>
       </form>
     </Card>
-  );
-}
-
-type Dispatch = (a: Parameters<typeof reduce>[1]) => void;
-
-function RoleSelect({ id, label, value, onChange }: { id: string; label: string; value: UserRole | ""; onChange: (r: UserRole) => void }) {
-  return (
-    <>
-      <label className="sr-only" htmlFor={id}>
-        {label}
-      </label>
-      <select id={id} value={value} required onChange={(e) => e.target.value && onChange(e.target.value as UserRole)}>
-        <option value="">Choose a permission…</option>
-        {SPECIFIC_ROLES.map((r) => (
-          <option key={r} value={r}>
-            {LABELS[r]}
-          </option>
-        ))}
-      </select>
-    </>
-  );
-}
-
-function ProjectAccess({ pick, name, dispatch }: { pick: ProjectPick; name: string; dispatch: Dispatch }) {
-  const id = pick.projectId;
-  return (
-    <fieldset className="access-project">
-      <legend>{name}</legend>
-      <ul className="choice-list">
-        <li>
-          <label className="choice">
-            <input type="radio" name={`nu-mode-${id}`} value="project" checked={pick.mode === "project"} onChange={() => dispatch({ type: "projectMode", projectId: id, mode: "project" })} />
-            <span>
-              <strong>All assets in this project</strong>
-              <span className="hint"> One permission, which also covers assets added to the project later.</span>
-            </span>
-          </label>
-        </li>
-        <li>
-          <label className="choice">
-            <input type="radio" name={`nu-mode-${id}`} value="assets" checked={pick.mode === "assets"} onChange={() => dispatch({ type: "projectMode", projectId: id, mode: "assets" })} />
-            <span>
-              <strong>Chosen assets</strong>
-              <span className="hint"> Tick each asset and give it its own permission. Assets added later are not included.</span>
-            </span>
-          </label>
-        </li>
-      </ul>
-      {pick.mode === "project" && (
-        <div className="field">
-          <RoleSelect id={`nu-prole-${id}`} label={`Permission on ${name}`} value={pick.role} onChange={(role) => dispatch({ type: "projectRole", projectId: id, role })} />
-        </div>
-      )}
-      {pick.mode === "assets" && <AssetPicker pick={pick} name={name} dispatch={dispatch} />}
-      <div className="form-actions">
-        <button type="button" className="btn btn-sm btn-link-danger" onClick={() => dispatch({ type: "removeProject", projectId: id })}>
-          Remove {name}
-        </button>
-      </div>
-    </fieldset>
-  );
-}
-
-function AssetPicker({ pick, name, dispatch }: { pick: ProjectPick; name: string; dispatch: Dispatch }) {
-  const id = pick.projectId;
-  const assets = useLoad(() => api.getAll<List<Asset>>("/assets", { project_id: id, limit: 500 }), [id]);
-  if (assets.error) return <ErrorBox error={assets.error} title={`Could not load the assets of ${name}`} />;
-  if (!assets.data) return <Loading />;
-  if (assets.data.items.length === 0) return <p className="muted">{name} has no assets yet. Choose all assets in this project to include the ones added later.</p>;
-  return (
-    <ul className="asset-picks">
-      {assets.data.items.map((a) => {
-        const sel = pick.assets.find((x) => x.assetId === a.id);
-        return (
-          <li key={a.id}>
-            <label>
-              <input type="checkbox" checked={!!sel} onChange={(e) => dispatch({ type: "toggleAsset", projectId: id, assetId: a.id, checked: e.target.checked })} />{" "}
-              {a.name} <span className="small muted">{a.kind}</span>
-            </label>
-            {sel && (
-              <RoleSelect id={`nu-arole-${id}-${a.id}`} label={`Permission on ${a.name}`} value={sel.role}
-                onChange={(role) => dispatch({ type: "assetRole", projectId: id, assetId: a.id, role })} />
-            )}
-          </li>
-        );
-      })}
-    </ul>
   );
 }

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { ALL_ONLY, CAPABILITIES, NO, PERMISSIONS, ROLE_HELP, SPECIFIC_ROLES, YES, permissionLabel, permissionTable, scopeSummary } from "./roles.ts";
+import { ALL_ONLY, CAPABILITIES, NO, PERMISSIONS, ROLE_HELP, SPECIFIC_ROLES, YES, invitationSummary, permissionLabel, permissionTable, scopeSummary } from "./roles.ts";
 
 // The permissions table (Settings → Users, the help article) must say what
 // the server enforces. Each row names routes that prove it; this reads the
@@ -99,4 +99,17 @@ test("the help article shows the same table", () => {
   assert.match(art, /\{ table: permissionTable\(\) \}/);
   assert.match(art, /\{ list: PERMISSION_NOTES \}/);
   assert.doesNotMatch(art, /\["Role", "Can"\]/, "no hand-written role table");
+});
+
+test("invitation summaries: all projects, a short list, or counts", () => {
+  assert.equal(invitationSummary({ scope: "organisation", role: "security", grants: [] }), "All projects — View, edit and decide");
+  assert.equal(invitationSummary({ scope: "project", role: "viewer", grants: [{ kind: "project", name: "Shop", role: "viewer" }] }), "Shop — View only");
+  assert.equal(
+    invitationSummary({ scope: "specific", role: "", grants: [{ kind: "project", name: "Shop", role: "viewer" }, { kind: "asset", name: "web-1", role: "engineer" }] }),
+    "Shop — View only; web-1 — View and edit",
+  );
+  assert.equal(
+    invitationSummary({ scope: "specific", role: "", grants: [{ kind: "project", name: "A", role: "viewer" }, { kind: "asset", name: "b", role: "viewer" }, { kind: "asset", name: "c", role: "viewer" }] }),
+    "1 project, 2 assets",
+  );
 });
