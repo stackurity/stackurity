@@ -74,6 +74,16 @@ var defaultEgress = []attempt{
 	{"http", "api.github.com:443"},
 }
 
+// Edition hooks, set by egress_*_test.go files built with that edition's
+// tags. editionEnv is the least configuration the edition's server needs to
+// start (the Community and licensed self-hosted editions need none), and
+// editionEgress is what that edition adds to defaultEgress, with the same
+// rules: each entry documented in docs/network.md with its off switch.
+var (
+	editionEnv    func(t *testing.T) map[string]string
+	editionEgress []attempt
+)
+
 type attempt struct{ via, dest string }
 
 var errEgress = errors.New("outbound connection refused by the egress test")
@@ -317,6 +327,11 @@ func startServer(t *testing.T, env map[string]string) *egressServer {
 	// Periodic tasks every 200 ms and jobs polled as often, so the first
 	// ticks fit in seconds.
 	t.Setenv("STACKURITY_TEST_TIMINGS", "tick=200ms,poll=200ms")
+	if editionEnv != nil {
+		for k, v := range editionEnv(t) {
+			t.Setenv(k, v)
+		}
+	}
 	for k, v := range env {
 		t.Setenv(k, v)
 	}
@@ -358,6 +373,7 @@ func (s *egressServer) waitFor(t *testing.T, timeout time.Duration, what string,
 	for !cond() {
 		select {
 		case err := <-s.errc:
+			s.errc <- err // for the cleanup, which waits for the server to stop
 			t.Fatalf("server stopped while waiting for %s: %v (recorded attempts: %v)", what, err, guard.attempts())
 		default:
 		}
@@ -430,8 +446,9 @@ func TestNoEgressWithFeedsAndUpdateCheckOff(t *testing.T) {
 	}
 }
 
-// With nothing configured but the database, the server connects only to
-// the destinations in defaultEgress.
+// With nothing configured but the database (and, on Stackurity Cloud, the
+// configuration it refuses to start without), the server connects only to
+// the destinations in defaultEgress and editionEgress.
 func TestDefaultEgressIsAllowListed(t *testing.T) {
 	g := installGuard(t)
 	s := startServer(t, nil)
@@ -441,9 +458,10 @@ func TestDefaultEgressIsAllowListed(t *testing.T) {
 	// new destination tried late in it is caught too.
 	time.Sleep(time.Until(s.started.Add(35 * time.Second)))
 	got := g.attempts()
+	allowed := slices.Concat(defaultEgress, editionEgress)
 	var extra []attempt
 	for _, a := range got {
-		if !slices.Contains(defaultEgress, a) {
+		if !slices.Contains(allowed, a) {
 			extra = append(extra, a)
 		}
 	}

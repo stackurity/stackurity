@@ -217,7 +217,7 @@ export const ARTICLES: Article[] = [
         steps: [
           "Open [Assets](/assets) and click **Add server** (admins only).",
           "Optionally enter a **Label** (e.g. `web servers`) and an **Environment** (e.g. `production`; production counts towards priority).",
-          "**Also check websites and apps on this server** is ticked by default: the agent looks in /srv, /var/www, /opt, /app and home directories for sites and apps (including WordPress sites, whose WordPress core version is read from `wp-includes/version.php` and checked for end of life and for missing security releases on its branch; its plugins and themes are listed with their latest release on wordpress.org, but their vulnerabilities are not matched yet), and lists the libraries they use: what npm, pip and Composer installed, and front-end libraries such as jQuery or Bootstrap that a site loads from a CDN or keeps a copy of (copies WordPress itself maintains are reported with inferred confidence, so their issues show as needs validation). It only reads. Under **Application directories**, add apps that live somewhere else, one per line, e.g. `/data/shop`.",
+          "**Also check websites and apps on this server** is ticked by default: the agent looks in /srv, /var/www, /opt, /app and home directories for sites and apps (including WordPress sites, whose WordPress core version is read from `wp-includes/version.php` and checked for end of life and for missing security releases on its branch; its plugins and themes are listed with their latest release on wordpress.org, but their vulnerabilities are not matched yet), and lists the libraries they use: what npm, pip and Composer installed, and front-end libraries such as jQuery or Bootstrap that a site loads from a CDN or keeps a copy of (copies WordPress itself maintains are reported with inferred confidence, so their issues show as needs validation). In a compiled app (a webpack, Vite or Next.js build, or a Flutter web build) it reports the libraries whose licence banner, version constant or source map names their release, and the Flutter engine revision; the rest of a bundle cannot be identified, and the app says so under coverage instead of showing no components. It only reads. Under **Application directories**, add apps that live somewhere else, one per line, e.g. `/data/shop`.",
           "Under **Options**, set how many servers the code can enroll (default 1) and how long it is valid (default 24 hours).",
           "Click **Create install command** and copy it. The code in it is shown only once.",
           "Run it on the new server as a user with sudo.",
@@ -243,8 +243,53 @@ export const ARTICLES: Article[] = [
         list: [
           "The server appears under **Assets** within a minute; applications appear as their own assets linked to it.",
           "Unused codes are listed under **Pending install codes** on the same page until they expire or are used up. **Revoke** one you no longer need; servers that already enrolled keep reporting.",
+          "For many servers at once (cloud-init, Ansible, Terraform, an SSH loop or DigitalOcean), see [Add many servers](help:add-many-servers).",
           "For Windows, or to install by hand, see [Add a Linux server manually](help:add-linux-server), [Add a Windows server](help:windows-hosts) and docs/install.md.",
         ],
+      },
+    ],
+  },
+  {
+    id: "add-many-servers",
+    title: "Add many servers",
+    section: "Adding servers and sources",
+    summary: "Create a fleet code for up to 1,000 servers and install with cloud-init, Ansible, Terraform or an SSH loop. List DigitalOcean droplets and see which are not covered. Admins only.",
+    where: ["Assets", "Add server", "For many servers"],
+    keywords: "fleet many servers bulk rollout cloud-init user data ansible playbook terraform user_data ssh loop digitalocean droplets tag enrollment code",
+    body: [
+      {
+        p: "A **fleet code** is an install code made for a rollout: you choose how many servers it may enroll (up to 1,000) and how long it is valid (up to 90 days). Each server exchanges it for its own collector token, so no long-lived token goes into user data, a playbook or a script.",
+      },
+      {
+        steps: [
+          "Open [Assets](/assets), click **Add server**, then **For many servers**.",
+          "Enter **How many servers** and **Valid for (days)**, and optionally a label, project, environment and application directories.",
+          "Click **Create fleet code**. The code is shown once, with snippets for cloud-init, Ansible, Terraform and an SSH loop. Copy the one you need.",
+          "Run it. Servers that already have the agent skip enrollment, so running a snippet twice is safe.",
+        ],
+      },
+      { h: "Watching the rollout" },
+      {
+        list: [
+          "**Fleet codes** on the same page lists each code with how many servers it has enrolled. **Show servers** lists which hosts used it, from which address and when.",
+          "**Revoke** stops a code at once. Servers that already enrolled keep reporting; revoke their tokens under **Settings → API tokens** if needed (the list shows each token's prefix).",
+          "Up to 60 servers enroll per minute with one code. Servers over the limit wait and try again on their own.",
+        ],
+      },
+      {
+        warn: "Treat a fleet code like a password until it expires: anyone who has it can enroll machines into your organisation. Keep the count and expiry close to what you need, and revoke it when the rollout is done. Cloud user data can be read from inside the machine and is kept in Terraform state.",
+      },
+      { h: "DigitalOcean" },
+      {
+        list: [
+          "Under **DigitalOcean**, add an API token with read access to droplets (a custom token with `droplet:read` is enough). It is stored encrypted and never shown again.",
+          "The list shows each droplet with its region and tags, and whether an agent reports from it (matched by hostname, or by the address it enrolled from).",
+          "Tick the droplets to cover and click **Create commands**: you get a fleet code sized for them, an SSH command for each droplet, and one loop for all of them.",
+          "For new droplets, add the cloud-init snippet as user data when you create them and give them a tag so the list shows them. A tag alone installs nothing.",
+        ],
+      },
+      {
+        note: "Stackurity does not install on droplets itself. DigitalOcean has no API to run a command on an existing droplet, and connecting to your servers over SSH would give Stackurity root access to them. You run the commands with the access you already have.",
       },
     ],
   },
@@ -414,6 +459,7 @@ stackurity.exe agent --interval 6h`,
     keywords: "git github gitlab lockfile npm composer repository ci",
     body: [
       { note: "On GitLab, where your server offers it, [Connect GitLab](help:gitlab) covers a whole group in one step: no token or CI step." },
+      { note: "On GitHub, with the Stackurity GitHub App on your server, [Install on GitHub](help:github-app) is simpler: no token or CI step." },
       { h: "Option A: the server clones it on a schedule" },
       {
         steps: [
@@ -431,7 +477,7 @@ stackurity.exe agent --interval 6h`,
       },
       {
         list: [
-          "Set `STACKURITY_SERVER` and `STACKURITY_TOKEN` (a collector token) as CI secrets.",
+          "On GitHub Actions and GitLab CI, scan without a stored secret: see [Scan in CI without a stored secret](help:ci-keyless). Elsewhere, set `STACKURITY_SERVER` and `STACKURITY_TOKEN` (a collector token) as CI secrets.",
           "Use the same `--git-url` as the integration so both land on one asset.",
           "For merge-request pipelines use `--name <branch>` without `--git-url`, so a branch that may never merge doesn't replace the default branch's inventory.",
           "To fail the pipeline on findings, see [Gate CI on findings](help:ci-gate).",
@@ -487,6 +533,107 @@ stackurity.exe agent --interval 6h`,
         note: "A GitLab group (and the groups above and below it) can be connected to one Stackurity organisation only. At your organisation's asset limit, new projects wait until there is room; the connection says how many.",
       },
       { p: "Projects in a personal namespace can't be connected: use a [Git integration or a CI scan](help:repositories). Operators: see `docs/gitlab.md` to set Connect GitLab up." },
+    ],
+  },
+  {
+    id: "ci-keyless",
+    title: "Scan in CI without a stored secret (GitHub Actions, GitLab)",
+    section: "Adding servers and sources",
+    summary: "Trust a repository once; its pipelines prove who they are with the CI provider's ID token instead of a stored collector token.",
+    where: ["Settings", "Integrations", "CI pipeline"],
+    keywords: "oidc openid connect id token keyless secretless github actions gitlab id_tokens id-token write trust ci token STACKURITY_ID_TOKEN",
+    body: [
+      {
+        p: "GitHub Actions and GitLab CI sign an ID token for each job that says which repository, branch and workflow it runs for. Stackurity checks that token against the provider's published keys and a CI trust you made, and gives the job a collector token that lasts 15 minutes and can only report that repository. There is no secret to store, leak or rotate.",
+      },
+      { h: "1. Trust the repository (admin)" },
+      {
+        steps: [
+          "Go to **Settings ▸ Integrations**, open **CI pipeline** and click **Trust a repository**.",
+          "Choose GitHub Actions or GitLab CI (for a self-managed GitLab, enter its https URL).",
+          "Enter the repository (`acme/shop`, or a GitLab project path such as `acme/backend/shop`). To trust every repository of an owner or group, tick **Every repository of this owner**; nothing else matches more than one repository.",
+          "Optionally limit it to a branch (only scans of `main`, so a branch that may never merge cannot replace the inventory), a deployment environment or one workflow file, and choose the project new repositories go to.",
+        ],
+      },
+      { h: "2. GitHub Actions" },
+      {
+        code: "permissions:\n  contents: read\n  id-token: write\nsteps:\n  - uses: actions/checkout@v4\n  - uses: stackurity/scan-action@v1\n    with:\n      server: https://stackurity.example.com",
+        label: "Workflow job",
+      },
+      { p: "Without a `token` input the action requests an ID token for this server and exchanges it. `id-token: write` only lets the job request ID tokens; it grants no access to the repository." },
+      { h: "3. GitLab CI" },
+      {
+        code: "stackurity:\n  image:\n    name: ghcr.io/stackurity/stackurity:latest\n    entrypoint: [\"\"]\n  id_tokens:\n    STACKURITY_ID_TOKEN:\n      aud: https://stackurity.example.com\n  variables:\n    STACKURITY_SERVER: https://stackurity.example.com\n  script:\n    - stackurity scan .",
+        label: ".gitlab-ci.yml job",
+      },
+      { p: "`aud` must be the server's URL exactly as the CI pipeline card shows it." },
+      { h: "What the job's token can do" },
+      {
+        list: [
+          "Report the repository it ran for, identified by its URL (`https://github.com/acme/shop`, or the GitLab project's URL). `stackurity scan` uses that identity by itself; any other repository, host or name is refused.",
+          "Read the result of its own scans (for `--fail-on`). Nothing else.",
+          "It expires after 15 minutes. Deleting the trust revokes tokens already issued.",
+          "Each exchange is in the **Audit log** (`ci.token`, with the repository, ref, run or pipeline id and token id); refused ones that named a trusted repository are logged as `ci.token_refused` with the reason.",
+        ],
+      },
+      { h: "When it does not work" },
+      {
+        list: [
+          "“cannot request an ID token”: the GitHub job lacks `permissions: id-token: write` (a workflow that sets `permissions` must list it).",
+          "“audience (aud) must be exactly …”: in GitLab, set `aud:` to the URL the card shows.",
+          "“no CI trust accepts repository … on ref …”: the trust names another branch, environment or workflow; the message says which.",
+          "“several CI trusts accept this repository” or “this server hosts several organisations”: set `STACKURITY_CI_TRUST` (the action's `ci-trust` input) to the trust's number, shown as #id on the card; the card's snippets include it.",
+          "“the repository owner's id differs”: the organisation or group was deleted and its name taken again. Delete and re-create the trust if this is expected.",
+          "The server must have a public URL (`STACKURITY_BASE_URL`) for keyless scans.",
+        ],
+      },
+    ],
+  },
+  {
+    id: "github-app",
+    title: "Install on GitHub (the Stackurity GitHub App)",
+    section: "Adding servers and sources",
+    summary: "Cover your GitHub repositories in one click: pick them on GitHub, no token to create or renew.",
+    where: ["Settings", "Integrations", "Git repository"],
+    keywords: "github app install repositories token organisation private repository webhook push",
+    body: [
+      { p: "Where your Stackurity server has the GitHub App (Stackurity Cloud does), you don't need a token or a CI step to scan your GitHub repositories." },
+      {
+        steps: [
+          "Go to **Settings ▸ Integrations** and, on the **Git repository** card, click **Install on GitHub** (admins).",
+          "On GitHub, pick the account or organisation, then **All repositories** or **Only select repositories**, and click **Install**. Installing on an organisation needs an owner of it; a member can only request it.",
+          "GitHub brings you back to Stackurity. Each repository appears under **Active integrations**, and the first results arrive within minutes.",
+        ],
+      },
+      { h: "What the app can do" },
+      {
+        list: [
+          "It reads the repositories you picked, and nothing else: **Contents** and **Metadata**, read-only. It cannot push, open pull requests or see other repositories.",
+          "Each scan uses a token GitHub issues for that one repository, for an hour at most. Stackurity never stores it.",
+          "The scan is a shallow clone that reads lockfiles and is deleted afterwards. Hooks, submodules, LFS and scripts never run.",
+        ],
+      },
+      { h: "When repositories are scanned" },
+      {
+        list: [
+          "Right after you install, then every 6 hours (change it per repository under **Settings ▸ Integrations**).",
+          "When a push to the default branch changes a lockfile or manifest (`package-lock.json`, `go.mod`, `composer.json` and the like). Pushes to other branches, or that change only other files, don't trigger a scan.",
+          "Repositories you add or remove on GitHub are followed. A removed repository's issues are closed as removed; the asset and its history stay.",
+        ],
+      },
+      { h: "Change or remove it" },
+      {
+        list: [
+          "**Add or remove repositories**: on GitHub (the link on the Git repository card), under the installation's repository access.",
+          "**Switch one repository off**: open it under **Settings ▸ Integrations** and switch it off.",
+          "**Disconnect**: stops scanning, keeps the history, and uninstalls the app from that GitHub account.",
+          "Suspending or uninstalling the app on GitHub switches its repositories off here, with a note.",
+        ],
+      },
+      {
+        note: "A GitHub account or organisation can be connected to one Stackurity organisation only. When the app is at your organisation's asset limit, new repositories wait until there is room; the card says how many.",
+      },
+      { p: "No GitHub App on your server? Use a [Git integration or a CI scan](help:repositories). Operators: see `docs/github-app.md` to set one up." },
     ],
   },
   {
@@ -574,27 +721,79 @@ stackurity.exe agent --interval 6h`,
           "Click **Create integration** and then **Run now**.",
         ],
       },
+      { p: "To cover every image in a registry without typing each one, connect the registry instead: see *Connect a container registry*." },
+    ],
+  },
+  {
+    id: "container-registries",
+    title: "Connect a container registry",
+    section: "Adding servers and sources",
+    summary: "Scan the recent tags of every repository in GitHub Container Registry, Docker Hub, Amazon ECR or your own registry, and pick up new ones on a schedule.",
+    where: ["Settings", "Integrations"],
+    keywords: "registry ghcr docker hub ecr harbor gitlab quay oci repositories tags latest semver",
+    body: [
+      {
+        steps: [
+          "Go to **Settings ▸ Integrations ▸ Container image / registry ▸ Connect a registry** (admin).",
+          "Choose the registry: **GitHub Container Registry** (the organisation or user), **Docker Hub** (the namespace and user name), **Amazon ECR** (the region; the keys, or an existing AWS integration) or **Other registry** (its https address).",
+          "Paste a read-only token or password; it is stored as a workspace secret and never shown again. Or name an existing secret (`secret:NAME`).",
+          "Click **List repositories**, then tick the ones to scan, or keep **All repositories** with patterns to leave some out (`*-sandbox`).",
+          "Choose how many of the most recently pushed images per repository to scan (1 to 3), and tag patterns to scan as well (`latest`, `semver`).",
+          "Click **Connect registry** and then **Run now**. **Images** on the integration lists what it tracks.",
+        ],
+      },
+      {
+        p: "Each image is scanned once per digest, so `latest` and `1.4` on the same image are one image, and a re-tag is not scanned again. At most the number of image scans per run you set are queued each run, newest first; the rest follow on later runs, shown as not assessed until then, never as clean.",
+      },
+      {
+        p: "When a newer tag takes an image's place, it stops being scanned but stays as it was. When the registry no longer has any tag on an image, it is marked **removed**: its issues close as removed and its history stays. A repository that could not be read changes nothing.",
+      },
+      {
+        p: "Credentials go only to the registry and its own sign-in service. If a registry asks for them to be sent to another host, the run fails with that host's name; for GitLab, set the token service host (`gitlab.com`) on the integration.",
+      },
     ],
   },
   {
     id: "cloud-plugins",
-    title: "Cloud services and plugins (AWS)",
+    title: "Connect AWS",
     section: "Adding servers and sources",
-    summary: "Track engine and runtime versions of RDS, Aurora, ElastiCache, EKS, Lambda and OpenSearch with the aws-managed plugin.",
-    where: ["Settings", "Plugins"],
-    keywords: "aws rds lambda eks plugin managed service",
+    summary: "Connect an AWS account with one CloudFormation stack: RDS, Aurora, ElastiCache, EKS, Lambda and OpenSearch versions, and optionally the agent on EC2 through SSM.",
+    where: ["Settings", "Integrations", "AWS"],
+    keywords: "aws amazon cloudformation launch stack quick create iam role external id rds aurora lambda eks elasticache opensearch plugin managed service ssm ec2 run command agent install",
     body: [
       {
         steps: [
-          "Review what the plugin needs under **Settings ▸ Plugins**: permissions (only `Describe*`/`List*` calls), credentials and network access.",
-          "Create a read-only IAM user or role with those permissions.",
-          "Put the keys in a file on the server, e.g. `/run/secrets/aws.json` containing `{\"aws_access_key_id\": \"…\", \"aws_secret_access_key\": \"…\"}`. Without keys the plugin uses the instance role.",
-          "Go to **Settings ▸ Integrations ▸ Add integration ▸ Plugin**, choose **AWS managed services**, enter the regions, optionally services, role ARN, external ID and the tag whose value becomes the environment.",
-          "Set the secret reference to `file:/run/secrets/aws.json` and click **Validate and create**. The plugin checks the configuration and lists any problems.",
+          "Go to **Settings ▸ Integrations** and open **AWS**.",
+          "Choose the regions to read and the region for the stack. Tick **Allow installing the agent through SSM** if you want to add EC2 instances from Stackurity too.",
+          "Click **Launch Stack in AWS**. The AWS console opens with everything filled in. Tick the box that acknowledges the stack creates an IAM role, and click **Create stack**.",
+          "Wait about a minute. The page shows the account as connected when the stack reports its role, and the first collection runs.",
         ],
       },
+      { h: "What the stack creates" },
+      {
+        list: [
+          "One IAM role that only Stackurity can assume, and only with this connection's **external ID**, which Stackurity generated. Another organisation on Stackurity could not use it even with its ARN. Stackurity checks this before reading anything.",
+          "Read-only permissions, exactly the calls the plugin makes: `rds:DescribeDBInstances`, `rds:DescribeDBClusters`, `elasticache:DescribeCacheClusters`, `eks:ListClusters`, `eks:DescribeCluster`, `lambda:ListFunctions`, `es:ListDomainNames` and `es:DescribeDomains`. No wildcard actions.",
+          "With agent installs on: `ssm:DescribeInstanceInformation`, `ssm:GetCommandInvocation`, and `ssm:SendCommand` limited to the `AWS-RunShellScript` document and your own instances.",
+          "A small Lambda function that tells Stackurity the role's ARN once, with a single-use token from the link. Download the template from the page to review it first.",
+        ],
+      },
+      { h: "If the account does not show as connected" },
+      {
+        p: "Open the stack's **Outputs** tab in the AWS console, copy **RoleArn**, and paste it into **Paste the role ARN** on the AWS page. That is also the way when your Stackurity server cannot be reached from AWS. If verifying fails, the page shows AWS's answer: usually the stack has not finished, or the role was changed.",
+      },
+      { h: "Install the agent on EC2 instances", id: "ssm" },
+      {
+        p: "With agent installs allowed, the AWS page lists, for each region, the instances Systems Manager manages and which of them already report to Stackurity (matched by hostname). Select Linux instances that are online and click **Install the agent**. Each instance gets its own install code, used once and valid for two hours, and the page shows each result: installed, failed (with the end of the installer's output) or timed out. The instances need the SSM Agent with an instance profile such as `AmazonSSMManagedInstanceCore`, systemd, and HTTPS access to Stackurity.",
+      },
+      { h: "Disconnect" },
+      { p: "Remove the connection on the AWS page, then delete the stack in the AWS console. Stackurity cannot delete it for you." },
+      { h: "Your own role or keys" },
+      {
+        p: "The plugin also runs as a **Plugin** integration with a role you made (role ARN and external ID) or keys stored as a secret: **Settings ▸ Integrations ▸ Add integration ▸ Plugin**, then **AWS managed services**. Its permissions are under **Settings ▸ Plugins**.",
+      },
       { p: "Each service appears as a *managed service* asset; end-of-life dates come from endoflife.date. Vulnerabilities inside AWS-managed engines are patched by AWS and are listed as evaluation gaps, not as clean." },
-      { p: "Custom plugins are executables placed in `STACKURITY_PLUGIN_DIR`; see docs/plugins.md." },
+      { note: "Running Stackurity yourself? Connecting with a stack needs `STACKURITY_AWS_PRINCIPAL_ARN` and AWS credentials on the server; see the install guide (docs/install.md, \"AWS managed services\")." },
     ],
   },
 
@@ -602,17 +801,24 @@ stackurity.exe agent --interval 6h`,
     id: "kubernetes",
     title: "Kubernetes clusters",
     section: "Adding servers and sources",
-    summary: "Which workloads run which images, which are exposed outside the cluster, and the cluster and node versions, with the read-only kubernetes plugin.",
-    where: ["Settings", "Integrations"],
-    keywords: "kubernetes k8s cluster workload deployment pod eks gke aks kind exposure nodeport loadbalancer ingress",
+    summary: "Connect a cluster with one command: a read-only reporter in the cluster sends its workloads, the images they run, their exposure and the cluster and node versions.",
+    where: ["Settings", "Integrations", "Kubernetes cluster"],
+    keywords: "kubernetes k8s cluster workload deployment pod eks gke aks kind exposure nodeport loadbalancer ingress helm kubectl reporter enroll",
     body: [
       {
         steps: [
-          "Apply the read-only role from `deploy/kubernetes/stackurity-reader.yaml` (`kubectl apply -f`). It can only get and list pods, workloads, Services, Ingresses, namespaces and nodes; never Secrets.",
-          "Make a kubeconfig for its service account token and store it as a workspace secret (**Settings ▸ Secrets**) holding `{\"kubeconfig\": \"…\"}`. When Stackurity runs in the cluster with that service account, set `in_cluster` instead.",
-          "Go to **Settings ▸ Integrations ▸ Add integration ▸ Plugin**, choose **Kubernetes** and set at least `cluster_name`. `environment_label` takes each workload's environment from a namespace label.",
-          "Set the secret reference and click **Validate and create**, then **Run now**.",
+          "Go to [Settings ▸ Integrations](/settings/integrations) and click **Add** on **Kubernetes cluster** (admins only).",
+          "Enter the **Cluster name** (e.g. `prod-eu`), optionally an **Environment**, and whether to read the whole cluster or only some namespaces.",
+          "Click **Create install command**. Copy the **Helm** or the **kubectl** command: the one-time code in it is shown only once.",
+          "Run it anywhere with `kubectl` access to the cluster. The cluster appears under **Assets** a minute or two later.",
         ],
+      },
+      { code: "helm install stackurity-reporter oci://ghcr.io/stackurity/charts/stackurity-reporter --namespace stackurity --create-namespace --set server=… --set clusterName=prod-eu --set enrollCode=…", label: "Helm" },
+      {
+        p: "The command installs the **reporter**: one small pod in the `stackurity` namespace that reads the cluster with a read-only service account (it lists workloads, pods, Services, Ingresses, namespaces and nodes; never Secrets or ConfigMaps) and sends what it finds to Stackurity over HTTPS every hour. Nothing connects into the cluster and no kubeconfig leaves it, so it works when Stackurity cannot reach the cluster's API server.",
+      },
+      {
+        p: "The code goes into the Secret `stackurity-reporter`, never into a URL. On first start the reporter exchanges it for its own token, keeps the token in that Secret (the only Secret it may read or change) and removes the code. If you revoke the token under **Settings ▸ API tokens**, put a new code in the Secret as `enroll-code` and it enrolls again.",
       },
       {
         p: "The cluster appears as a *cluster* asset with its control plane, kubelet, container runtime and node OS versions (end-of-life dates from endoflife.date). Each Deployment, StatefulSet, DaemonSet, CronJob, Job or bare Pod is a *workload* asset, linked to the images it runs (`deployed_as`), pinned to the digest the node pulled.",
@@ -621,8 +827,18 @@ stackurity.exe agent --interval 6h`,
         p: "A workload is **exposed** when a LoadBalancer or NodePort Service, external IPs, an Ingress, host networking or a host port reaches it. An image is exposed when any workload running it is. Risk scoring uses this unless you set **Internet exposed** on the asset by hand.",
       },
       {
-        p: "Running images are read by the built-in image scanner, most exposed first and at most the number per run set on the integration. Namespaces the role cannot read, and images the scanner cannot pull (private registries), appear on the Coverage page as not assessed, never as clean.",
+        p: "Running images are read by the built-in image scanner, most exposed first and at most 25 per report by default. Namespaces the reporter may not read (with **Only some namespaces**, every other namespace and the nodes), and images the scanner cannot pull (private registries), appear on the Coverage page as not assessed, never as clean.",
       },
+      { h: "Pulling from the server instead" },
+      {
+        steps: [
+          "If Stackurity can reach the cluster's API server and you would rather not run anything in the cluster, apply the read-only role from `deploy/kubernetes/stackurity-reader.yaml` (`kubectl apply -f`).",
+          "Make a kubeconfig for its service account token and store it as a workspace secret (**Settings ▸ Secrets**) holding `{\"kubeconfig\": \"…\"}`. When Stackurity runs in the cluster with that service account, set `in_cluster` instead.",
+          "Go to **Settings ▸ Integrations ▸ Add integration ▸ Plugin**, choose **Kubernetes** and set at least `cluster_name`. `environment_label` takes each workload's environment from a namespace label.",
+          "Set the secret reference and click **Validate and create**, then **Run now**.",
+        ],
+      },
+      { p: "Both report the same assets, so a cluster can move from one to the other and keep its history." },
     ],
   },
 
@@ -1093,7 +1309,7 @@ jobs:
       {
         table: [
           ["State", "What it means", "What resolves it"],
-          ["Confirmed", "The installed version was read from an authoritative source (package database, lockfile, or a front-end library's exact CDN address or script banner) and is in the advisory's affected range, or its release line has ended.", "Nothing: act on it."],
+          ["Confirmed", "The installed version was read from an authoritative source (package database, lockfile, or a front-end library's exact CDN address, script banner, or licence banner or version constant in a compiled bundle) and is in the advisory's affected range, or its release line has ended.", "Nothing: act on it."],
           ["Needs validation", "The match cannot be relied on yet because the version was inferred or has low confidence. It scores lower and is never SOS. An issue the second check disagreed with also says **Needs validation: the second check disagreed**, but keeps its priority, SOS and alerts.", "The **Missing information** box says exactly what: a confirmed version, or a person comparing the version with the advisory."],
           ["Stale", "The asset's next report is overdue (a server's agent, or a regular scan). This was true when it was last seen.", "A fresh report: **Check again**, or get the agent or CI job reporting."],
           ["Rejected", "A person marked it a false positive with an ignore rule. Stackurity keeps it rejected while the match stays the same.", "Reopen it, or end the ignore rule."],
@@ -1336,7 +1552,7 @@ jobs:
     section: "Settings and administration",
     summary: "A few messages that bring people to the dashboard: urgent alerts, daily or weekly summaries, overdue reminders. Slack, Teams, email, webhooks, Jira, PagerDuty or ServiceNow.",
     where: ["Settings", "Integrations"],
-    keywords: "integrations trigger events rule slack teams email webhook jira issue ticket route channel urgent summary daily weekly overdue escalation quiet hours digest rate limit connected first scan slack app add to slack interactivity signing secret link slack account assign snooze smtp ses sendgrid postmark mailgun zeptomail gmail confirm held quota",
+    keywords: "integrations trigger events rule slack teams email webhook jira issue ticket route channel urgent summary daily weekly overdue escalation quiet hours digest rate limit connected first scan slack app add to slack add to teams teams app bot code workflows connect jira atlassian oauth reconnect interactivity signing secret link slack account assign snooze smtp ses sendgrid postmark mailgun zeptomail gmail confirm held quota",
     body: [
       {
         p: "Everything Stackurity connects to is in [Settings, Integrations](/settings/integrations): **Active integrations** with their status and a settings button, and **Add an integration** for notifications (email, Slack, Teams, Jira, PagerDuty, ServiceNow, webhooks), sources (Git repositories, container registries, Kubernetes, AWS, plugins) and AI assistants. The **Delivery log** is a tab there.",
@@ -1345,6 +1561,7 @@ jobs:
       {
         list: [
           "**Slack**: click **Add to Slack**, pick the channel in Slack, and you come back to its settings to choose what to send. The channel shows as \"#security in Acme (Stackurity app)\", and **Assign to me** and **Snooze** work inside Slack. If the app is removed from Slack, the channel is turned off and says why. **Advanced: use a webhook** still takes an incoming webhook URL (see below).",
+          "**Microsoft Teams**: where offered, click **Add to Teams**. Stackurity shows a code (it works once, for 15 minutes, only for you) and **Open Stackurity in Teams**: add the app to the team, then in the channel that should get the notifications send `@Stackurity` and the code. The bot answers **Connected** and Stackurity opens the new integration to choose what to send. It shows as \"alerts in Security (Stackurity app)\". If the app is removed from the team, or the channel or team is deleted, the integration is turned off and says why; **Add to Teams** again to resume. **Advanced: use a Workflows webhook** still takes a Workflows webhook URL.",
           "**Email (sent by Stackurity)**, where offered: tick members and, if you like, type other addresses (up to 20 recipients by default). Members get messages once they have signed in to Stackurity at least once. Each other address gets one email with a link to confirm; nothing is sent to it until then. The **Other email addresses** list shows who is pending or confirmed, with **Resend**.",
           "**Email (your own mail server)**: under **Advanced: use your own mail server**, or the only email option on a self-hosted server. Pick a **Provider** (Amazon SES, SendGrid, Postmark, Mailgun, ZeptoMail, Gmail / Google Workspace) to fill in the host, port and encryption, with a note on where to get the credentials.",
         ],
@@ -1354,9 +1571,9 @@ jobs:
           ["Channel", "Configuration", "Secret reference"],
           ["Email (your mail server)", "SMTP host, port, from, recipients, username, encryption (STARTTLS by default)", "The SMTP password (optional)"],
           ["Slack (webhook)", "Optional: the Slack app's signing secret reference, to act from inside Slack", "The incoming webhook URL (required)"],
-          ["Microsoft Teams", "none", "The Workflows webhook URL (required)"],
+          ["Microsoft Teams (Workflows webhook)", "none", "The Workflows webhook URL (required)"],
           ["Webhook", "URL (HTTPS)", "HMAC signing key (optional)"],
-          ["Jira", "Site URL, Cloud or Data Center, project key, issue type, account email (Cloud), optional labels, priority mapping and resolve transition", "API token (Cloud) or personal access token (required)"],
+          ["Jira", "With **Connect Jira** (Jira Cloud, where the server offers it): the site, project, issue type, done status and priorities, picked from lists. With a token: site URL, Cloud or Data Center, project key, issue type, account email (Cloud), optional labels, priority mapping and resolve transition", "None with Connect Jira; otherwise an API token (Cloud) or personal access token (required)"],
           ["PagerDuty", "Service region (US or EU), optional severity per priority", "Integration key (routing key) of an Events API v2 integration (required)"],
           ["ServiceNow", "Instance URL, user name (Basic) or OAuth client ID, optional table, assignment group, category, subcategory, urgency and impact per priority, other fields, resolve state and close code, read state back", "Password (Basic) or OAuth client secret (required)"],
         ],
@@ -1431,6 +1648,9 @@ jobs:
         p: "A Jira channel keeps one issue per incident. The first time a route matches, the issue is created with the priority, risk factors, affected assets and fix. Later, findings that join or leave, priority changes and escalations are added as comments, and when the incident resolves the issue is commented on and moved through the resolve transition (for example Done). Incidents link to their issue. **Send test** checks the credentials and project without creating an issue. Each issue carries a `stackurity-incident-…` label that prevents duplicates: keep it.",
       },
       {
+        p: "**Connect Jira** (Jira Cloud, when your server has the Stackurity Atlassian app) needs no token: an administrator clicks **Connect Jira**, allows Stackurity on Atlassian's page and picks a site, then chooses the project, issue type, the status issues move to when an incident resolves, and Jira priorities from lists read from Jira. Stackurity asks only to read and write Jira issues, keeps the connection's tokens encrypted and refreshes them itself. If Atlassian stops accepting the connection (the app was removed from the account that connected it, or it went 90 days unused), the integration shows **Reconnect needed** with the reason and issues are not updated until someone clicks **Reconnect Jira**. **Disconnect** forgets the connection and switches its integrations off; to revoke it at Atlassian too, remove Stackurity under Connected apps in your Atlassian account. Jira Data Center and Server use a personal access token (**Use an API token instead**).",
+      },
+      {
         p: "A route to Jira can be limited to **one project**, for example a client's own Jira. Its issues then describe only that project's part of each incident: the project's assets, findings, counts and priority, escalations as comments, and links that open in the project. Stackurity reads them the way a member of that project would, so the database itself keeps other projects' assets out. An incident becomes an issue there when the project's part matches the route; the issue is resolved when none of the project's findings remain open, even if the incident stays open elsewhere, and says so if they open again. A route on the same Jira channel for every asset keeps its own whole-incident issue, as before. For several projects, add a route for each.",
       },
       { h: "PagerDuty" },
@@ -1445,6 +1665,57 @@ jobs:
         p: "When ServiceNow refuses (an access control rule), the delivery fails with ServiceNow's reason. ServiceNow silently drops fields the account may not write: Stackurity compares the record with what it sent and says which fields were not set. With **Read the state back from ServiceNow**, a record resolved, closed or canceled there shows so on the incident, is in the activity log, and is no longer updated. The findings stay open until a scan shows them fixed. PagerDuty and ServiceNow routes cannot be limited to projects.",
       },
       { p: "**Delivery log** shows every message, its status (pending, held, sent, failed) and errors; admins can retry failed or held ones. A held message says why: the email limit (it goes into the next summary) or the route's hourly limit (it goes into the next summary, or the hourly digest for a route with no summary)." },
+    ],
+  },
+  {
+    id: "social-sign-in",
+    title: "Sign in with Google, Microsoft or GitHub",
+    section: "Settings and administration",
+    summary: "On Stackurity Cloud: sign up and sign in with a provider instead of a password, and how it keeps your account safe.",
+    where: ["Your account", "Sign in with Google, Microsoft or GitHub"],
+    keywords: "google microsoft github social login sign in sign up continue with oauth connect disconnect link account",
+    body: [
+      {
+        p: "On Stackurity Cloud the sign-up and sign-in pages offer **Continue with Google**, **Continue with Microsoft** and **Continue with GitHub**. The provider confirms your email address, so there is no password to choose and no confirmation email to wait for.",
+      },
+      { h: "Signing up", id: "sign-up" },
+      {
+        steps: [
+          "On the sign-up page, choose a provider and sign in there.",
+          "Back on Stackurity, enter your organisation's name and agree to the Terms of Service and the Privacy Policy.",
+          "**Create account** starts your organisation's free trial, with you as its admin, as signing up with your email does.",
+          "If you signed up with GitHub, Stackurity goes on to **Pick repositories** when the GitHub App is available, so the first results arrive in a couple of minutes.",
+        ],
+      },
+      {
+        list: [
+          "Only an address the provider has verified is used. Microsoft: work or school accounts only (personal Outlook.com or Hotmail accounts can sign up with their email). GitHub: your primary email address, which must be verified on GitHub.",
+          "Temporary email addresses are refused, as on the email form.",
+          "An account made this way has no password. To add one, sign out and use **Forgot password** on the sign-in page. Two-factor sign-in needs a password.",
+        ],
+      },
+      { h: "You already have an account", id: "existing" },
+      {
+        p: "Signing in with a provider never connects it to an existing account just because the email address matches. Either:",
+      },
+      {
+        list: [
+          "sign in with your password, then under [Your account](/account#sign-in) choose **Connect** next to the provider (you enter your password again), or",
+          "use the link Stackurity emails to your account's address when you try a provider with it. Open it **in the same browser** within 30 minutes. If you did not try to sign in, ignore the email: nothing changes.",
+        ],
+      },
+      { h: "What still applies", id: "policies" },
+      {
+        list: [
+          "Your two-factor sign-in: after the provider, Stackurity asks for your code.",
+          "An organisation that requires two-factor sign-in asks you to set it up.",
+          "An organisation that requires its own [single sign-on](help:users-teams-roles) still requires it: a provider sign-in does not open it (its owner keeps access, as with a password).",
+          "Instance administrators always sign in with their password.",
+        ],
+      },
+      {
+        note: "Under [Your account](/account#sign-in) you can see each connected provider, when it was last used, and **Disconnect** it. The last way into an account without a password cannot be disconnected.",
+      },
     ],
   },
   {

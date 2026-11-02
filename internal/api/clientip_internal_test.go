@@ -124,7 +124,7 @@ func TestPublicURLForwardedProto(t *testing.T) {
 	s := &Server{TrustProxy: true, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	for peer, want := range map[string]string{"127.0.0.1:1": "https://h.example", "203.0.113.9:1": "http://h.example"} {
 		var got string
-		h := s.realIP(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { got = s.publicURL(r) }))
+		h := s.realIP(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { got, _ = s.publicURL(r) }))
 		req := httptest.NewRequest("GET", "http://h.example/", nil)
 		req.RemoteAddr = peer
 		req.Header.Set("X-Forwarded-Proto", "https")

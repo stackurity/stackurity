@@ -59,7 +59,7 @@ After the first administrator signs in, a new organisation with no assets opens 
 
 1. **Create your first project**: a name and, if you like, a description.
 2. **Add an asset**, which lands in that project:
-   - **A Linux server**: one install command (an enrollment code for up to 5 servers, valid 24 hours). First results in about 2 minutes. The server needs systemd, sudo and outbound HTTPS to the dashboard. **Also check websites and apps on this server** is ticked by default, as under Add server.
+   - **A Linux server**: one install command (an enrollment code for up to 5 servers, valid 24 hours; for more, use a fleet code, see [Many servers at once](#many-servers-at-once)). First results in about 2 minutes. The server needs systemd, sudo and outbound HTTPS to the dashboard. **Also check websites and apps on this server** is ticked by default, as under Add server.
    - **A code repository**: a collector token to save as the CI secret `STACKURITY_TOKEN`, and a GitHub Actions step (`stackurity/scan-action@v1`) or the `stackurity scan .` command for other CI. First results on the next CI run.
    - **Upload an SBOM** (CycloneDX or SPDX JSON). First results in under a minute.
 3. **Wait** while it reports: the page shows the packages found and when the check is done.
@@ -94,13 +94,19 @@ Connecting an asset is quiet: one "connected" message, and no alerts, Jira issue
 | `STACKURITY_FEEDBACK_URL` | `https://stackurity.dev/feedback` | Where **Send feedback** delivers what users write. Set it empty (`STACKURITY_FEEDBACK_URL=`) or `off` to hide the button and turn feedback off ([network.md](network.md#feedback)) |
 | `STACKURITY_UPDATE_URL` | GitHub's release list | Mirror of `https://api.github.com/repos/stackurity/stackurity/releases?per_page=20`, for installs that cannot reach GitHub |
 | `STACKURITY_OSV_URL`, `STACKURITY_KEV_URL`, `STACKURITY_EPSS_URL`, `STACKURITY_ENDOFLIFE_URL`, `STACKURITY_NPM_REGISTRY`, `STACKURITY_PACKAGIST_URL`, `STACKURITY_PYPI_URL`, `STACKURITY_GOPROXY_URL`, `STACKURITY_CRATES_INDEX_URL`, `STACKURITY_RUBYGEMS_URL`, `STACKURITY_NUGET_URL`, `STACKURITY_MAVEN_URL`, `STACKURITY_PUB_URL`, `STACKURITY_HEX_URL`, `STACKURITY_WORDPRESS_ORG_URL`, `STACKURITY_WORDPRESS_PLUGINS_LIST_URL`, `STACKURITY_WORDPRESS_THEMES_LIST_URL` | public sources | Mirrors for offline or air-gapped installs ([network.md](network.md)) |
-| `STACKURITY_BASE_URL` | — | Public dashboard URL, used for links in notifications and by the agent installer |
+| `STACKURITY_BASE_URL` | — | Public dashboard URL, used for links in notifications, by the agent installer, and as the audience of CI ID tokens ([keyless CI scans](#scans-in-ci-without-a-stored-secret)) |
+| `STACKURITY_CI_AUDIENCE` | `STACKURITY_BASE_URL` | The `aud` a CI job's ID token must carry to be exchanged for a collector token; set it only to use another value than the public URL |
 | `STACKURITY_OPENAI_APPS_CHALLENGE` (or `_FILE`) | — | The token OpenAI gives when you submit Stackurity as a ChatGPT app; served as text at `/.well-known/openai-apps-challenge` (404 when unset) |
 | `STACKURITY_AGENT_DIR` | `/usr/local/lib/stackurity/agents` in the image | Agent builds served to new hosts by **Add server** |
 | `STACKURITY_SLACK_CLIENT_ID` / `_FILE`, `STACKURITY_SLACK_CLIENT_SECRET` / `_FILE`, `STACKURITY_SLACK_SIGNING_SECRET` / `_FILE` | — | Your Slack app, for **Add to Slack** ([slack-app.md](slack-app.md)). All three or none; needs `STACKURITY_BASE_URL` and `STACKURITY_SECRET_KEY` |
 | `STACKURITY_GITLAB_CLIENT_ID` / `_FILE`, `STACKURITY_GITLAB_CLIENT_SECRET` / `_FILE`; `STACKURITY_GITLAB_URL` | — / `https://gitlab.com` | Your GitLab OAuth application, for **Connect GitLab** ([gitlab.md](gitlab.md)). Both or neither; needs `STACKURITY_BASE_URL` (https) and `STACKURITY_SECRET_KEY`. `STACKURITY_GITLAB_URL` is a self-managed GitLab's address |
+| `STACKURITY_TEAMS_APP_ID` / `_FILE`, `STACKURITY_TEAMS_APP_PASSWORD` / `_FILE` or `STACKURITY_TEAMS_APP_CERTIFICATE_FILE`, `STACKURITY_TEAMS_APP_TENANT`, `STACKURITY_TEAMS_APP_INSTALL_URL` | — | Your Teams app (an Azure Bot), for **Add to Teams** ([teams-app.md](teams-app.md)). The app ID with a client secret or a certificate; the tenant for a single-tenant bot |
+| `STACKURITY_JIRA_CLIENT_ID` / `_FILE`, `STACKURITY_JIRA_CLIENT_SECRET` / `_FILE` | — | Your Atlassian OAuth 2.0 app, for **Connect Jira** ([jira-app.md](jira-app.md)). Both or neither; needs `STACKURITY_BASE_URL` and `STACKURITY_SECRET_KEY` |
+| `STACKURITY_GITHUB_APP_ID` / `_FILE`, `STACKURITY_GITHUB_APP_SLUG` / `_FILE`, `STACKURITY_GITHUB_APP_CLIENT_ID` / `_FILE`, `STACKURITY_GITHUB_APP_CLIENT_SECRET` / `_FILE`, `STACKURITY_GITHUB_APP_PRIVATE_KEY` / `_FILE`, `STACKURITY_GITHUB_APP_WEBHOOK_SECRET` / `_FILE`; `STACKURITY_GITHUB_URL` | — | Your GitHub App, for **Install on GitHub** ([github-app.md](github-app.md)). All six or none; needs `STACKURITY_BASE_URL`. `STACKURITY_GITHUB_URL` is a GitHub Enterprise Server's address (unset for github.com) |
 | `STACKURITY_ALLOW_HTTP_WEBHOOKS` | `false` | Allow `http://` webhook URLs, for internal receivers |
 | `STACKURITY_PLUGIN_DIR` | `/usr/local/lib/stackurity/plugins` in the image | Directory of plugin executables |
+| `STACKURITY_AWS_PRINCIPAL_ARN` | — | The IAM user or role this server calls AWS as, which customer roles trust; turns on connecting AWS with a CloudFormation stack ([AWS managed services](#aws-managed-services)). Its credentials come from the AWS SDK's usual sources (`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`, `AWS_PROFILE`, or an instance or task role) |
+| `STACKURITY_AWS_TEMPLATE_URL` | — | The HTTPS address of `deploy/aws/stackurity-aws-role-v1.json` in Amazon S3, for the one-click **Launch Stack in AWS** link (the CloudFormation console only opens templates in S3). Without it, the page offers the template to download and an AWS CLI command |
 | `STACKURITY_SYFT` | `syft` | Path to the Syft binary used for container image scans (bundled in the image) |
 | `STACKURITY_SECRET_KEY` / `_FILE` | — | 32 random bytes, base64 (`openssl rand -base64 32`). Enables secrets that workspaces store themselves (`secret:NAME`). Keep it safe: without it stored secrets cannot be decrypted |
 | `STACKURITY_PRIVATE_TARGETS` | `default` | Which workspaces may make the server connect to private, loopback or link-local addresses: `default` (workspace 1 only), `all`, or `none` (recommended when hosting other organisations) |
@@ -151,7 +157,18 @@ When you host other organisations, also set `STACKURITY_PRIVATE_TARGETS=none` an
 
 ## Signing in
 
-People sign in with an email and password, or with [single sign-on](#single-sign-on) where it is set up.
+People sign in with an email and password, or with [single sign-on](#single-sign-on) where it is set up. On Stackurity Cloud they can also [sign up and sign in with Google, Microsoft or GitHub](#google-microsoft-or-github-stackurity-cloud).
+
+### Google, Microsoft or GitHub (Stackurity Cloud)
+
+Stackurity Cloud's sign-up and sign-in pages offer **Continue with Google**, **Continue with Microsoft** and **Continue with GitHub** (only the providers the service has configured). It is not part of the self-hosted editions: on your own server, sign-in through Google Workspace, Microsoft Entra ID or GitHub's OpenID Connect is [single sign-on](#single-sign-on) (licensed), and accounts are made by invitation, not by signing up.
+
+- **Signing up.** The provider confirms the address, so there is no password and no confirmation email; the person enters the organisation's name and accepts the Terms of Service and the Privacy Policy, and gets the same trial organisation as signing up with an email. Only addresses the provider verified are used: Google's `email_verified`; Microsoft work or school accounts whose address is in a domain their tenant verified (`xms_edov`), never personal Microsoft accounts; GitHub's primary address when GitHub marks it verified. Temporary email addresses are refused, as on the email form. An account made this way has no password until the person sets one with **Forgot your password?**.
+- **An existing account is never taken over by its address.** A provider sign-in whose address already has an account connects nothing: Stackurity emails that address a link, which works once, for 30 minutes, and only in the browser that tried to sign in. Or the person signs in with their password and chooses **Connect** under **Your account → Sign in with Google, Microsoft or GitHub**, entering the password again. Identities are kept by provider and the provider's own subject (GitHub's numeric user id; Microsoft's tenant and object id), separately from single sign-on.
+- **Policies still apply.** The account's two-factor sign-in is asked for after the provider; an organisation that requires two-factor sign-in sends the person to set it up; an organisation that requires its own single sign-on stays closed to such a session (its owner keeps access, as with a password). Instance administrators are never connected to a provider.
+- **After signing up with GitHub**, Stackurity goes on to **Pick repositories** (installing the Stackurity GitHub App) once the GitHub App is available; until then, to the usual first steps.
+
+The activity log records `auth.login` with `"method": "social"` and the provider, `auth.social_linked`, `auth.social_unlinked`, `auth.social_link_emailed` and `auth.social_refused` (with the reason, such as an unverified address).
 
 ### Two-factor sign-in
 
@@ -305,11 +322,11 @@ A session started by an organisation's single sign-on works only in that organis
 curl -fsSL https://stackurity.example.com/install/agent.sh | sudo STACKURITY_ENROLL_CODE=enr_... sh
 ```
 
-To put the server in a project, create the code from the project (it then carries the project). Hosts enrolled with it are added to the project when they first report. `stackurity enroll --project <id>` (or `STACKURITY_PROJECT`) checks that the code is for that project and refuses, without using the code, if it is not; it never changes the code's project. `stackurity agent --project` makes the same assertion on every report. `stackurity enroll`, which the script runs, writes the token and `agent.env` to `/etc/stackurity` (`--dir` for another directory) and does not replace an existing token unless given `--force`.
+To put the server in a project, create the code from the project (it then carries the project). Hosts enrolled with it are added to the project when they first report. `stackurity enroll --project <id>` (or `STACKURITY_PROJECT`) checks that the code is for that project and refuses, without using the code, if it is not; it never changes the code's project. `stackurity agent --project` makes the same assertion on every report. `stackurity enroll`, which the script runs, writes the token and `agent.env` to `/etc/stackurity` (`--dir` for another directory) and does not replace an existing token unless given `--force`. When many hosts enroll at once and the server asks some to wait (429), `stackurity enroll` tries again with jitter for up to `--wait` (default `30m`; `0` fails at once); an invalid, used-up or revoked code fails at once.
 
 The script downloads the agent from your Stackurity server and checks its SHA-256. It then creates an unprivileged `stackurity` user and exchanges the one-time code for a collector token. Finally it writes `/etc/stackurity/agent.env` with the settings you chose and starts a hardened systemd service that reports every 6 hours. The code works once (or as many times as you allowed) and expires after 24 hours by default, so a leaked command is short-lived, and no long-lived token is ever typed into a shell. To upgrade the agent later, run the same command without the code. Read the script first if you prefer: it is served at `/install/agent.sh`.
 
-The host needs systemd, root for the install, and HTTPS access to the Stackurity server. The installer refuses plain HTTP except to a local port such as an SSH tunnel (see below); `STACKURITY_ALLOW_HTTP=1` overrides this. Set `STACKURITY_BASE_URL` on the server so the script and its downloads use the public address.
+The host needs systemd, root for the install, and HTTPS access to the Stackurity server. The installer refuses plain HTTP except to a local port such as an SSH tunnel (see below): `localhost`, `127.0.0.0/8` or `[::1]`, with any port, read from the URL's host as a whole, so `http://127.0.0.1.example.com` is not local. `STACKURITY_ALLOW_HTTP=1` overrides this. Set `STACKURITY_BASE_URL` on the server so the script and its downloads use the public address. Without it the script is built from the request's `Host` header: the server accepts only a hostname or IP address with an optional port there (anything else gets `400`), writes the URL into the script single-quoted, and marks the response `Cache-Control: no-store` and `Vary: Host`, but a URL you configure is the one to rely on.
 
 **The manual way.** Create a collector token under **Settings → API tokens** (role `collector`), or from the CLI:
 
@@ -363,6 +380,25 @@ If the server is not reachable over HTTPS from the host (for example it listens 
 
 Runtimes and servers installed outside the package manager are invisible to the package database, yet they reach end of life like anything else: Node.js from nvm or a tarball, a downloaded Redis, MySQL, MariaDB, PostgreSQL, MongoDB, Meilisearch, nginx or HAProxy binary, and Python, Go, Ruby or PHP builds under `/usr/local` or `/opt`. The agent looks for these in the usual locations, skips any that a package owns, and reports the rest with their version, so their end-of-life dates appear with everything else. For nvm and pyenv the version comes from the install path. Otherwise the agent runs the binary's `--version` flag with an empty environment and a 5-second limit, and only when the binary and every directory above it are owned by root or the agent's user and not writable by anyone else. Binaries under `--root` are never run. Vulnerabilities are not matched for these runtimes (there is no advisory feed keyed by binary), which the **Intelligence** page lists as an evaluation gap. Turn detection off with `--no-runtimes`. With `ProtectHome=yes` the agent cannot see per-user installs such as `~/.nvm`; use `ProtectHome=read-only` to include them.
 
+#### Many servers at once
+
+A standard install code enrolls up to 500 servers for up to 30 days, and defaults to one server for 24 hours. For a rollout across a fleet, create a **fleet code** under **Assets → Add server → For many servers**: you choose how many servers it may enroll (up to 1,000) and how long it is valid (up to 90 days), with no defaults, and optionally a project, environment and application directories. It works like any other code: only its SHA-256 hash is stored, the code is shown once, and each server exchanges it for its own collector token, so no long-lived token is ever put in user data, a playbook or a shell loop. Each use is listed under the code (hostname, address, time and the prefix of the token it received; `GET /api/v1/enrollments/{id}/uses`), and creation, each use and revocation are in the audit log. **Revoke** stops the code at once; servers that already enrolled keep reporting until you revoke their tokens under **Settings → API tokens**.
+
+The page then gives ready-made snippets with the code filled in, each with a copy button. All of them run the same installer, which skips enrollment on a server that already has `/etc/stackurity/token`, so running them twice is safe:
+
+- **cloud-init** user data (`#cloud-config` with `runcmd`), for new machines on any cloud that takes user data (DigitalOcean, AWS, Hetzner, Azure, GCP).
+- **Ansible**: a play that installs on every host in the inventory, with `creates: /etc/stackurity/token` and `no_log`. Pass the code with `--extra-vars` or keep it in Ansible Vault.
+- **Terraform**: a `user_data` block with the code in a `sensitive` variable.
+- **SSH loop**: `for host in ...; do ssh "$host" ...; done` for a list of hosts you can already reach with SSH and sudo.
+
+Treat a fleet code like a password for its lifetime. Anyone who has it can enroll machines into your organisation until it expires, is used up or is revoked (they get a collector token, which can upload inventory but read nothing). Keep the count and expiry close to what the rollout needs, and revoke the code when it is done. Cloud user data is readable from inside the machine through the metadata service (by any local user on most clouds) and is kept in Terraform state, so codes used there should expire soon after the machines are created.
+
+Enrollment is rate limited: 10 failed attempts a minute per address, 120 attempts a minute per address in all, and 60 enrollments a minute per code. Hosts over a limit are told when to try again (`Retry-After`), and `stackurity enroll` waits and retries (see `--wait` above), so a thousand machines started together, even behind one NAT address, all enroll within about twenty minutes.
+
+**DigitalOcean.** Under **Add server → For many servers → DigitalOcean**, an administrator can add a DigitalOcean API token with read access to droplets (a custom-scoped token with `droplet:read` is enough). It is checked against the API, stored as the encrypted workspace secret `digitalocean-token` (this needs `STACKURITY_SECRET_KEY`), and never shown again; **Disconnect** deletes it. Stackurity then lists the account's droplets (optionally only those with a tag) with their region, tags and addresses, and whether an agent already covers each one: **reporting** when a host reports the droplet's name as its hostname (DigitalOcean sets a new droplet's hostname to its name; a domain on either side is ignored), **enrolled** when an agent enrolled from one of the droplet's addresses but no host of that name reports yet, and **not covered** otherwise. Tick the droplets to cover and the page creates a fleet code sized for them and gives, for each, a command to run over SSH, plus one loop for all of them. For droplets you create from now on, put the cloud-init snippet in their user data (the control panel's **Add initialization scripts**, `doctl compute droplet create --user-data-file`, or Terraform's `user_data`) and give them a tag, so the list shows them; a tag alone installs nothing.
+
+Stackurity does not install the agent on existing droplets itself, and does not connect to your machines. DigitalOcean has no API to run a command on an existing droplet: the Droplet Agent only serves the web console, user data runs only when a droplet is created, and a token cannot change it afterwards. The remaining way, the Stackurity server connecting to each droplet over SSH with a key you add, would give the server root access to the fleet and need inbound SSH from it, where today the agent only reads and only connects out; that would be a separate design decision. So you run the commands, with the access you already have.
+
 #### Applications deployed on the host
 
 A repository says what an application declares; the server shows what actually runs. The agent can inventory deployed applications so that a vulnerable library is found where it is exposed, together with the OS, web server and runtime under it:
@@ -375,6 +411,15 @@ stackurity agent --discover-apps                               # or STACKURITY_D
 For each application directory the agent reads what is installed: every package in `node_modules` (npm, yarn and pnpm layouts), Python packages in virtual environments (`*.dist-info`), and Composer's `vendor/composer/installed.json`. Where nothing is installed for an ecosystem (a Go or Rust service, or PHP deployed without `vendor/`), it reads the lockfiles instead. If what is installed differs from the lockfile, what is installed wins. Nothing is executed. `--discover-apps` also looks for projects up to three levels below `/srv`, `/var/www`, `/opt`, `/app` and home directories, and adds the sites Apache and nginx serve (see below). In a release layout (`releases/` plus a `current` link), only the current release is read. Install commands from the dashboard turn it on unless you untick **Also check websites and apps on this server**; `stackurity agent` without the flag or `STACKURITY_DISCOVER_APPS=true` does not look.
 
 Front-end libraries that no package manager installed are read too, as PHP, WordPress and older sites use them. A template (`.html`, `.htm`, `.php`, `.phtml`, `.twig`, `.erb`, `.ejs`, `.hbs`, `.vue`, `.jsx`, `.tsx`) that loads a library from jsDelivr, unpkg, cdnjs, Google Hosted Libraries, code.jquery.com, BootstrapCDN, cdn.ckeditor.com or cdn.datatables.net names its exact version in the address (`https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js`); a copy kept with the site (`assets/js/bootstrap.min.js`) names it in the banner at its top (`/*! Bootstrap v4.3.1`). A stylesheet counts only for a library that is one (Font Awesome): a jQuery UI theme or Bootstrap's CSS alone says nothing about the library's scripts. Each is reported as the npm package it was published as, so npm advisories and latest-release checks apply, and is marked **from CDN** or **copied file** with the address or file it came from. Banners are recognised for 28 widely used libraries (jQuery and its UI, Migrate and Validation plugins, Bootstrap, AngularJS, Vue, React, Lodash, Underscore, Moment, Handlebars, Knockout, TinyMCE, CKEditor 4, DataTables, Select2, Chart.js, D3, Axios, DOMPurify, highlight.js, Prism, Summernote, Font Awesome); other banners are ignored. Addresses without an exact version (`@latest`, `@4`) are skipped rather than guessed, and so are addresses inside HTML comments and, inside `//`, `/* */` and PHP `#` comments in PHP blocks (heredoc and nowdoc text is a string), inline JavaScript `<script>` elements of any template, and script files (the HTML and CSS around them is left as it is, so `url(//fonts...)` or `src/*.js` in text hides nothing). Copies WordPress core maintains (under `wp-includes/`, or a version ending in `-wp`) are reported with `inferred` confidence, so their findings show as **needs validation**: WordPress updates them, and sometimes patches them without changing the version, so update WordPress rather than the library. A plugin or theme vendor may also patch the copy it bundles without changing its version; such a copy is reported as confirmed, so if a finding on one looks wrong, check with the plugin's vendor. A package and version the application's manifests or `node_modules` already report is not reported again. Only the first 4 KB of each `.js` and `.css` file and 256 KiB of each template are read, at most 50,000 files and 256 MiB per application; Composer's `vendor`, hidden directories, links, and directories named `node_modules`, `venv`, `__pycache__`, `site-packages`, `dist-packages`, `cache`, `tmp`, `logs`, `uploads`, `examples`, `example`, `demo`, `demos`, `docs`, `doc`, `test`, `tests`, `spec` and `samples` are skipped: other package managers' trees, page caches and uploads, and a library's own examples, documentation and tests, which load other versions and are never served as part of the site. The names are matched anywhere below the application, so a theme folder named `docs` or a library copy under `lib/test/` is missed by design.
+
+Compiled front-end output is read too: a single-page application deployed as the files its build wrote (webpack, Vite, Rollup, esbuild, Angular CLI, Next.js static export), with no manifest or `node_modules` next to it, and Flutter web builds. Only what names a library and its exact release with little room for doubt is reported, as the npm package it was published as (so npm advisories and latest-release checks apply), marked **in bundle** or **from source map** with the file and the signature that matched (evidence `signature` and `match`):
+
+- **Licence banners** that minifiers keep (`/*! jQuery v3.6.0 | ... */`, a `/** @license ... */` comment, `//! moment.js`) or that webpack extracts to `main.js.LICENSE.txt`, recognised for the same libraries as a copied file's banner. Only these licence comments are read: an ordinary comment (`// needs jQuery v3.6.0`) or a string is the application's own. Confidence `confirmed`.
+- **Version constants in the library's own code**, for React (the `version` export after its hooks, React 16 to 19), ReactDOM (`rendererPackageName:"react-dom"`), Vue 2 and 3, Angular (`@angular/core`, through the `ng-version` attribute's constant), AngularJS (`errors.angularjs.org/<version>/`), jQuery (including slim builds), jQuery UI, Bootstrap 4 and 5, lodash, Moment, Handlebars, DOMPurify, axios, Next.js (`window.next`, and the pages router's client module) and Chart.js 3 and 4. Each signature needs the code around the version that only that library has; a version-looking constant without it (`version:"18.2.0"` in application code, a variable called `VERSION`) is never reported. A literal version is `confirmed`; one reached through a minified variable (Vue 3's `version:fs` with `fs="3.3.4"`), whose every assignment must agree, is `inferred`.
+- **Source maps** deployed next to a bundle (`main.js.map`): packages whose path carries a version (pnpm's `node_modules/.pnpm/<name>@<version>/`, Yarn's `<name>-npm-<version>-….zip`, pub's `hosted/pub.dev/<name>-<version>/`) or whose `package.json` is embedded in `sourcesContent` are reported with `inferred` confidence. Packages a map names only by `node_modules/<name>/` have no version there and are not reported: a `source-maps:<dir>` coverage item lists them.
+- **Flutter web builds**: the engine revision from `_flutter.buildConfig` in `flutter_bootstrap.js` or, in builds before it, the CanvasKit address in `main.dart.js`, with the renderer (`canvaskit/` and `skwasm` files) and compile target, reported as `pkg:generic/flutter-engine@<revision>` (confirmed). A build does not record the Flutter release, the Dart SDK or the Dart packages compiled into `main.dart.js`, so they are not reported, and a `flutter:<dir>` coverage item says so. No vulnerability source matches the engine (Flutter's advisories are GitHub repository advisories without a package ecosystem, and the Flutter SDK is not a pub.dev package), so its row shows no vulnerability source.
+
+Other code compiled into a bundle is not identifiable, and that is said: a `bundles:<dir>` coverage item is `partial` with the number of components identified, or `unsupported` ("compiled front-end bundle, components not identifiable") when none was, never an application with no components. A script is read whole only when it looks like build output: a content-hashed name (`main.3f2a1b9c.js`, `index-Dk53Pw_R.js`), a common bundle name (`bundle.js`, `main.js`, `app.js`, `vendor.js`, `*.bundle.js`, `*.chunk.js`), a path under `_next/static/` or `static/js/`, or a bundler's runtime in its first 4 KB (`__webpack_require__`, `webpackChunk`). Files over 16 MiB are not read, at most 1,000 bundles and source maps are read per application and 256 MiB in all per host scan, and a `bundle-limits:<dir>` coverage item names what a limit left out. A Next.js server's `.next/` directory is hidden and not read; its `node_modules` is. Copies under `wp-includes/` are reported with `inferred` confidence, as for copied files.
 
 The WordPress core release of a WordPress site is read from the last `$wp_version` assignment in its `wp-includes/version.php`, with comments removed (the first 8 KB, as a regular file in a real `wp-includes` directory; a link is not followed). When `wp-config.php` sits one level above the install, the install in the directory directly below is read. It is reported as `pkg:generic/wordpress` (pre-releases and development builds as written, `6.9-RC1`, `6.7-alpha-58576-src`) with confirmed confidence, shown as **WordPress core** in the inventory and as the **WordPress core** layer of the application's stack, and gets endoflife.date's `wordpress` release lines: a branch WordPress no longer ships security releases for (4.6 and older today) is an end-of-life finding naming the branch's latest release. Vulnerabilities in WordPress core are not matched, since no vulnerability source Stackurity reads lists them with version ranges: its rows are marked lifecycle only. Instead, a site on a supported branch below that branch's latest release gets a finding fixed by that release ("WordPress 6.5.3 is 11 releases behind 6.5.14"), because WordPress point releases are its security and maintenance releases: medium, or high from three releases behind. A pre-release or development build gets none. A copy installed by an OS package (Debian's `wordpress`) is reported by the package database instead, and a Composer-managed install (Bedrock's `roots/wordpress`) is reported as the Composer package only.
 
@@ -396,13 +441,34 @@ setfacl -R -m u:stackurity:rX /var/www/example.com/public       # what is there 
 setfacl -R -d -m u:stackurity:rX /var/www/example.com/public    # files created later
 ```
 
-With `ProtectHome=yes`, applications under `/home` are invisible; use `ProtectHome=read-only`. Applications running inside containers are not read this way; scan their images with a container image integration.
+With `ProtectHome=yes`, applications under `/home` are invisible; use `ProtectHome=read-only`. Applications running inside Docker containers are not read this way: turn on [Docker containers](#docker-containers) below, or scan their images from a registry with a [container image integration](#container-images).
+
+#### Docker containers
+
+With `--docker` (or `STACKURITY_DOCKER=true`), off by default, the agent also checks the software inside the host's running Docker containers, including images built on the host and never pushed to a registry:
+
+```sh
+stackurity agent --docker            # or STACKURITY_DOCKER=true
+```
+
+On each report it asks the Docker daemon, over its Unix socket (`--docker-socket`, `STACKURITY_DOCKER_SOCKET`, default `/var/run/docker.sock`), for the running containers, and reads each distinct image once however many containers use it. An image is exported the way `docker save` does (`GET /images/{id}/get`), streamed into a temporary directory under `TMPDIR`, or `/var/tmp` when that is not set (on disk, where `/tmp` may be memory), and read there with the collectors that read the host: the dpkg or apk database (rpm only when the host has the `rpm` binary), runtimes by their path, global libraries, and the applications [discovery](#applications-deployed-on-the-host) finds plus the image's working directory. Nothing runs inside a container or from an image, no registry is contacted, and the directory is deleted as soon as the image is read. An image ID's contents never change, so an image is read again only when its ID is new to the agent or after 7 days; other reports reuse the last reading. Images whose unpacked size Docker reports above `--docker-max-image-mb` (`STACKURITY_DOCKER_MAX_IMAGE_MB`, default 2048) are skipped, as is one that turns out larger while it is unpacked, or that would leave less than 256 MiB free on the temporary directory's disk. One image is unpacked at a time, so the disk needed is about the size of the largest image; memory use does not grow with image size. Reading one image stops after 20 minutes, and all of them after 2 hours per report.
+
+Each image is its own asset of kind `image`, linked to the host (`runs_on`) and named by the tag its containers run ("postgres:16 on web-1"), or by its short image ID when it has no tag (a local build whose tag moved on). It is identified by that tag on that host, so a rebuilt image under the same tag updates its asset (its `image_id` attribute changes, and what the new build no longer has is marked removed) and the same tag on two hosts is two assets. Its attributes include `image_id`, `digest` (the registry digest, when it was pulled), `tags`, `containers` and `platform`. An image that no running container uses any more is marked removed the way a vanished application is: its findings resolve as removed and its history is kept. What could not be checked is coverage, never an empty, clean image: no Docker on the host (`skipped`), a socket the agent may not use (`failed`), an image over the size limit (`skipped`), an image that could not be exported or read (`failed`; nothing it reported before is taken as gone), an image with no OS package database (a scratch or distroless image: `unsupported`). Go and Rust binaries inside an image are not read for their modules; an image built on Oracle Linux or another RPM distribution needs the host's `rpm` binary.
+
+**Access to the Docker socket is equivalent to root on the host**: anyone who can use it can start a privileged container that mounts the host's filesystem. The agent only lists containers, inspects images and exports them, but giving its user the socket gives that user root in effect. The installer does this only when asked: add `STACKURITY_DOCKER=1` to the install command (**Add server** has an **Also check Docker containers** option that adds it):
+
+```sh
+curl -fsSL https://stackurity.example.com/install/agent.sh | sudo STACKURITY_ENROLL_CODE=enr_... STACKURITY_DOCKER=1 sh
+```
+
+It sets `STACKURITY_DOCKER=true` in `/etc/stackurity/agent.env` and adds `SupplementaryGroups=` with the socket's group (usually `docker`) to the service unit, rather than changing `/etc/group`. It refuses a socket owned by group `root`, and rootless Docker is not supported. The rest of the unit's hardening stays as it is. Running the installer again keeps the setting; `STACKURITY_DOCKER=0` turns it off again (the images reported until then stay, with their last reading). For a unit written by hand, add `SupplementaryGroups=docker` and `Environment=STACKURITY_DOCKER=true`. A read-only Docker API proxy in front of the socket would narrow what the agent's user could do, but the agent needs image export, which such proxies have to allow and which hands out every image's contents anyway; it is left to operators who already run one (point `--docker-socket` at it).
 
 ### Repositories
 
-There are two ways to collect repository inventory:
+There are three ways to collect repository inventory:
 
 - **Connect GitLab.** Where the server has a GitLab OAuth application ([gitlab.md](gitlab.md); Stackurity Cloud does), **Settings → Integrations → Git repository → Connect GitLab**, authorise on GitLab and pick a group: every project in it, subgroups included, is scanned, with a read-only group access token Stackurity creates (no token to paste), rescanned when a lockfile changes on the default branch, and followed as projects are added or removed.
+- **GitHub App.** Where the server has the [Stackurity GitHub App](github-app.md) (Stackurity Cloud does), **Settings → Integrations → Git repository → Install on GitHub** and pick the repositories on GitHub's install screen. No token to create or renew; the server mints a short-lived read-only token for each scan, rescans when a lockfile changes on the default branch, and follows repositories added or removed on GitHub.
 - **Server-side.** Under **Settings → Integrations**, add a Git repository (HTTPS only). Private repositories need a read-only token referenced as `env:STACKURITY_SECRET_<NAME>`. The server makes a shallow clone, reads the lockfiles and deletes the clone. Hooks, submodules, LFS and scripts are never run.
 - **CI.** Run this in your pipeline:
 
@@ -410,7 +476,7 @@ There are two ways to collect repository inventory:
   stackurity scan . --git-url "$CI_REPOSITORY_URL" --environment production
   ```
 
-  Use the same `--git-url` (or `STACKURITY_GIT_URL`) as the integration so both land on one asset.
+  Use the same `--git-url` (or `STACKURITY_GIT_URL`) as the integration so both land on one asset (a GitHub App scan uses `https://github.com/<owner>/<repository>`).
 
   To fail the pipeline on findings, add a threshold. The command uploads the
   scan, waits for the server to evaluate it and prioritise its findings,
@@ -458,6 +524,109 @@ There are two ways to collect repository inventory:
   scan its own `--name` (without `--git-url`) so the default branch's
   inventory is not overwritten by a branch that may never merge.
 
+#### Scans in CI without a stored secret
+
+On GitHub Actions and GitLab CI a pipeline can scan without a stored
+collector token. The CI provider signs an OpenID Connect ID token for each
+job, naming the repository, ref and workflow; `stackurity scan` (and
+`stackurity/scan-action` without a `token` input) exchanges it at
+`POST /api/v1/ci/token` for a collector token that:
+
+- lasts 15 minutes and is revoked when its CI trust is deleted;
+- belongs to the trust's organisation, and files a repository it creates in
+  the trust's project;
+- can report only the repository the job ran for, under its URL as
+  `--git-url` (`https://github.com/<owner>/<repo>`, or the GitLab instance's
+  URL followed by the project path). The scan sets it by itself; a batch
+  naming another repository, a host, an application or a bare `--name` is
+  refused (403), and other identifiers in the batch are dropped.
+
+The server must have its public URL in `STACKURITY_BASE_URL`: an ID token's
+audience (`aud`) must be exactly that URL (or `STACKURITY_CI_AUDIENCE` when
+set; a single audience, so a token minted for another service is never
+accepted). Without either, the exchange answers 503 and the dashboard says
+so. `GET /api/v1/meta` returns the audience as `ci_audience`.
+
+1. An admin adds a **CI trust** under **Settings → Integrations → CI
+   pipeline → Trust a repository**: the provider (GitHub Actions, or GitLab
+   with `https://gitlab.com` or a self-managed instance's https URL), the
+   repository (`owner/repo`, a GitLab project path), and optionally a ref
+   (`main` means `refs/heads/main`), a deployment environment, the workflow
+   (GitHub `job_workflow_ref`, GitLab `ci_config_ref_uri`) and a project.
+   One trust matches one repository; every repository of an owner or group
+   (`owner/*`) only when **Every repository of this owner** is ticked. The
+   first token accepted records the owner's numeric id (GitHub
+   `repository_owner_id`, GitLab `namespace_id`); a later token from an owner
+   of the same name with another id (the organisation was deleted and its
+   name taken) is refused. Under a GitLab group wildcard, projects in
+   subgroups carry their subgroup's id and are not pinned.
+2. GitHub Actions: give the job `permissions: id-token: write` (and
+   `contents: read` for the checkout):
+
+   ```yaml
+   permissions:
+     contents: read
+     id-token: write
+   steps:
+     - uses: actions/checkout@v4
+     - uses: stackurity/scan-action@v1
+       with:
+         server: https://stackurity.example.com
+   ```
+
+   The CLI requests the token from `ACTIONS_ID_TOKEN_REQUEST_URL` with the
+   audience from `GET /meta` (or `STACKURITY_CI_AUDIENCE` when set in the job).
+3. GitLab CI: request the token in `id_tokens` as `STACKURITY_ID_TOKEN`
+   (any CI that can put a provider's ID token in that variable works the
+   same way):
+
+   ```yaml
+   stackurity:
+     image:
+       name: ghcr.io/stackurity/stackurity:latest
+       entrypoint: [""]
+     id_tokens:
+       STACKURITY_ID_TOKEN:
+         aud: https://stackurity.example.com
+     variables:
+       STACKURITY_SERVER: https://stackurity.example.com
+     script:
+       - stackurity scan .
+   ```
+
+`STACKURITY_TOKEN` (or `--token-file`) still wins when set. With neither a
+token nor an ID token, `stackurity scan` says what to add: `permissions:
+id-token: write` in GitHub Actions, the `id_tokens` entry in GitLab CI.
+`STACKURITY_CI_TRUST` (the action's `ci-trust` input) names the trust to
+use, by the id the card shows (its snippets include it). On a server that
+hosts several organisations it is required (400 `trust_required` without
+it): any organisation can trust a repository by name, so a job never sends
+its scan to whichever organisation happens to trust it. Otherwise, when
+trusts in different projects accept the same job, the exchange answers 409
+and asks for it; within one organisation and project the most specific
+trust (one repository before an owner's, then the most constraints) is
+used.
+
+The server verifies the token's signature with the issuer's published keys
+(asymmetric algorithms only: `none` and HMAC are refused), that `iss` is the
+trust's issuer exactly and that the issuer's discovery document says so,
+`aud`, and `exp`, `nbf` and `iat` with one minute's allowance for clock
+differences. It fetches keys only for issuers a trust names, over HTTPS,
+through the outbound address guard ([network.md](network.md#ci-token-issuers-keyless-ci-scans)).
+Exchanges are limited to 30 a minute per client address. Each is audited as
+`ci.token` with the provider, repository, ref, run or pipeline and job ids,
+commit, actor, `jti` and the token's id; a job whose repository a trust
+names but whose ref, environment, workflow or owner id does not match is
+audited as `ci.token_refused` with the reason, in that trust's
+organisation. Tokens are short-lived, so a replayed ID token yields at most
+another 15-minute token for the same repository; its `jti` is in the audit
+log. Expired CI tokens are deleted a day after they expire; they are not
+listed under **Settings → API tokens**.
+
+For merge-request pipelines, limit the trust to the default branch (the
+trust's ref): a scan of a branch that may never merge would otherwise
+replace the repository's inventory.
+
 Supported lockfiles:
 
 - npm, yarn (v1 and Berry) and pnpm
@@ -484,25 +653,73 @@ Windows Update hotfixes and Microsoft Store apps are reported as unsupported cov
 
 ### AWS managed services
 
-The image includes the `aws-managed` plugin. Add a **Plugin** integration:
+The image includes the `aws-managed` plugin, which reads the engine and runtime versions of RDS, Aurora, ElastiCache, EKS, Lambda and OpenSearch. Engine and runtime versions are matched against endoflife.date lifecycle data.
+
+#### Connect with a CloudFormation stack
+
+Under **Settings → Integrations → AWS**, choose the regions to read and the region for the stack, and click **Launch Stack in AWS**. The AWS console opens with the Stackurity template and every parameter filled in: tick the acknowledgement that the stack creates an IAM role and click **Create stack**. A minute later the page shows the account as connected and the first collection runs. Nothing to copy or paste.
+
+The stack creates one IAM role:
+
+- It trusts Stackurity's AWS principal (shown on the page), on condition of an **external ID** that Stackurity generated for this connection. Nobody else can assume it, and no other Stackurity organisation can use it even if they learn its ARN. Stackurity checks both before it reads anything: it assumes the role with the external ID, and makes sure it cannot without it.
+- It allows exactly the calls the plugin makes, all read-only: `rds:DescribeDBInstances`, `rds:DescribeDBClusters`, `elasticache:DescribeCacheClusters`, `eks:ListClusters`, `eks:DescribeCluster`, `lambda:ListFunctions`, `es:ListDomainNames` and `es:DescribeDomains`. None of them supports resource-level permissions, so the resource is `*`; there are no wildcard actions.
+- With **Allow installing the agent through SSM** (the `EnableAgentInstall` parameter, off by default) it also allows `ssm:DescribeInstanceInformation`, `ssm:GetCommandInvocation`, and `ssm:SendCommand` limited to the `AWS-RunShellScript` document and the account's own instances. See [below](#install-the-agent-on-ec2-through-ssm).
+- Sessions last at most an hour. Each run of the integration assumes the role again; the plugin gets only that session, never Stackurity's own keys.
+
+The stack reports the role's ARN back by itself: a small Lambda function in the stack posts it once to `/api/v1/aws/callback` on your Stackurity server, with a token from the link that is signed by the server, works once, expires after 24 hours, and names this connection, its organisation and its external ID. That needs Stackurity to be reachable over HTTPS from AWS. When it is not (an internal server, or a plain-HTTP evaluation), or the call fails, copy the stack's `RoleArn` output into **Paste the role ARN** on the same page. The function and its log-only role are not created when there is no callback.
+
+To review the template first, download it from the page (`/aws/stackurity-aws-role-v1.json`, also `deploy/aws/` in the repository). The page also shows an `aws cloudformation create-stack` command that makes the same stack from the downloaded file. To disconnect, remove the connection under **Settings → Integrations → AWS** and delete the stack in the AWS console (Stackurity cannot delete it).
+
+#### Install the agent on EC2 through SSM
+
+The plugin reads managed services only. For EC2 instances, the agent reports their operating system and application packages. With the stack's agent install option on, the AWS page lists the instances Systems Manager manages in each region, which of them already report (matched by hostname) and which do not. Select instances and click **Install the agent**: Stackurity runs the installer from your server through SSM Run Command (`AWS-RunShellScript`), with a new single-use enrollment code for each instance, valid for two hours and never stored by Stackurity, and shows each instance's result (installed, failed with the end of the installer's output, or timed out). The code of an install that fails is revoked.
+
+The instances must be managed by SSM (the SSM Agent running with an instance profile that allows it, for example `AmazonSSMManagedInstanceCore`), run Linux with systemd, and reach your Stackurity server over HTTPS. The enrollment code is visible in the SSM command history of your AWS account, as any command parameter is; it cannot be used again once the agent enrolled, and it expires after two hours.
+
+#### Running Stackurity on your own AWS account
+
+On Stackurity Cloud the principal is Stackurity's own. A self-hosted server needs its own, because a role can only trust an AWS identity that the server can sign as:
+
+1. Create an IAM user (or use the role of the instance, ECS task or EKS service account the server runs as) with one permission: `sts:AssumeRole` on `arn:aws:iam::*:role/*` (or on the accounts you will connect, for example `arn:aws:iam::123456789012:role/*`).
+2. Set `STACKURITY_AWS_PRINCIPAL_ARN` to that user's or role's ARN (the commercial `aws` partition; GovCloud and China are not supported), for example `arn:aws:iam::111111111111:user/stackurity`. With an IAM user, give the server its keys as `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (or `AWS_PROFILE`); with a role, the server picks it up from the instance or task. These credentials are used only to call `sts:AssumeRole` into connected accounts' roles.
+3. For the **Launch Stack** button, upload `deploy/aws/stackurity-aws-role-v1.json` to an S3 bucket the connecting accounts can read (a public-read object, or a bucket policy for your organisation) and set `STACKURITY_AWS_TEMPLATE_URL` to its `https://<bucket>.s3.<region>.amazonaws.com/stackurity-aws-role-v1.json` address. Without it, the page offers the template file and the AWS CLI command instead.
+4. Set `STACKURITY_BASE_URL` to the server's public HTTPS address so stacks can report their role; otherwise the role ARN is pasted.
+
+Each role trusts the principal you set when the stack was created. If you change it, connected accounts must update their stacks (the `StackurityPrincipal` parameter).
+
+The server calls `sts.us-east-1.amazonaws.com` and, for agent installs, `ssm.<region>.amazonaws.com` only when someone connects an account, an integration runs, or the AWS page lists instances ([network.md](network.md#aws-connections)).
+
+#### With your own role or keys
+
+The plugin also runs as an ordinary **Plugin** integration, with a role you made yourself or with keys:
 
 ```json
 {"kind": "plugin", "config": {"plugin": "aws-managed", "config": {"regions": ["eu-west-1"], "role_arn": "arn:aws:iam::123456789012:role/stackurity-readonly", "environment_tag": "Environment"}},
  "secret_ref": "file:/run/secrets/aws.json", "schedule_minutes": 720}
 ```
 
-The secret file holds `{"aws_access_key_id": "...", "aws_secret_access_key": "..."}`. Without it, the plugin uses the instance role. The plugin calls only `Describe*` and `List*` APIs; the exact list is in its metadata, which you can see under **Settings → Plugins** or with `GET /api/v1/plugins`. Engine and runtime versions are matched against endoflife.date lifecycle data for RDS, Aurora, EKS, Lambda, ElastiCache and OpenSearch.
+The secret file holds `{"aws_access_key_id": "...", "aws_secret_access_key": "..."}`. Without it, the plugin uses the instance role (only in the default organisation). Give the role the read-only actions listed above. The exact list is also in the plugin's metadata, under **Settings → Plugins** or with `GET /api/v1/plugins`.
 
 ### Kubernetes
 
-The image includes the `kubernetes` plugin. Apply the read-only service account from `deploy/kubernetes/stackurity-reader.yaml`, store a kubeconfig for its token as a workspace secret, and add a **Plugin** integration:
+Connect a cluster with one command from **Settings → Integrations → Kubernetes cluster**. It installs the reporter, a small Deployment that reads the cluster with a read-only service account and sends it to Stackurity over HTTPS; nothing connects into the cluster:
+
+```sh
+helm install stackurity-reporter oci://ghcr.io/stackurity/charts/stackurity-reporter \
+  --namespace stackurity --create-namespace \
+  --set server=https://stackurity.example.com --set clusterName=prod-eu --set enrollCode=enr_...
+```
+
+or, without Helm, `kubectl apply -f 'https://stackurity.example.com/install/kubernetes.yaml?cluster=prod-eu'` followed by `kubectl -n stackurity create secret generic stackurity-reporter --from-literal=enroll-code=enr_...`. The reporter is recommended for every cluster, and the only option when Stackurity cannot reach the cluster's API server (Stackurity Cloud, almost always).
+
+Alternatively, the image includes the `kubernetes` plugin, which pulls from the cluster's API server on a schedule. Apply the read-only service account from `deploy/kubernetes/stackurity-reader.yaml`, store a kubeconfig for its token as a workspace secret, and add a **Plugin** integration:
 
 ```json
 {"kind": "plugin", "config": {"plugin": "kubernetes", "config": {"cluster_name": "prod-eu", "environment_label": "environment"}, "image_scans": 25},
  "secret_ref": "secret:prod-eu-kubeconfig", "schedule_minutes": 60}
 ```
 
-Workloads, the images they run and their exposure appear as assets, and running images are scanned with the bundled Syft. [kubernetes.md](kubernetes.md) covers credentials (kubeconfig, token or in-cluster), RBAC for some namespaces only, and what is reported.
+Either way, workloads, the images they run and their exposure appear as assets, and running images are scanned with the bundled Syft. [kubernetes.md](kubernetes.md) covers both: the reporter's chart values, enrollment, RBAC and namespace-scoped install, and the plugin's credentials (kubeconfig, token or in-cluster).
 
 ### Plugins
 
@@ -511,6 +728,33 @@ Plugins are executables in `STACKURITY_PLUGIN_DIR`. To add your own, read [plugi
 ### Container images
 
 Under **Settings → Integrations**, add a container image such as `ghcr.io/acme/shop:1.4`. The bundled Syft reads the image straight from the registry: no Docker daemon is needed and nothing in the image runs. For a private registry, set a secret reference (a token, or a password together with `username`).
+
+### Container registries
+
+Rather than adding images one by one and changing them on every release, connect the registry: under **Settings → Integrations → Container image / registry**, choose **Connect a registry**. Stackurity lists its repositories, you pick all of them or some, and on every run it scans the images you chose, finds new repositories and tags, and marks images deleted from the registry as removed.
+
+| Registry | Configuration (`kind: container_registry`) | Secret |
+|---|---|---|
+| GitHub Container Registry | `"provider": "ghcr"`, `namespace`: the organisation or user | A token with `read:packages` (classic personal access token). Repositories are listed through `api.github.com` |
+| Docker Hub | `"provider": "dockerhub"`, `namespace`, `username` | A personal access token (read-only) or the password. Public repositories need none |
+| Amazon ECR | `"provider": "ecr"`, `region`, optional `account_id`, `role_arn`, `external_id` | `{"aws_access_key_id": "...", "aws_secret_access_key": "..."}`. Or `aws_integration_id`: the id of an `aws-managed` plugin integration, whose keys (and role, when you set none) are used. The instance role is not used for registries |
+| Any other registry (Harbor, GitLab, Quay, Artifactory, Azure, Google Artifact Registry, `registry:2`) | `"provider": "oci"`, `url` (`https://registry.example.com`, optionally with a port), optional `namespace` (a repository prefix), `username`, `auth_host` | A password or token. `auth_host` names the one other host whose token service may receive it (GitLab: `gitlab.com`) |
+
+Choosing what to scan:
+
+- **Repositories**: `repositories` (names; none means every repository), less those an `exclude` pattern matches; with `include` patterns, one of them must match too. Patterns are globs (`*` any characters, `?` one), matched with and without the namespace. A registry without a catalog (Docker Hub, some others) needs `repositories` or a namespace that lists them. At most 500 repositories per integration.
+- **Tags**: the `recent_tags` most recently pushed images of each repository (1 to 3; default 1), plus tags matching `tag_patterns` (globs such as `latest` or `release-*`, or `semver` for `1.4.2` and `v2.0.0-rc.1`; at most 10 images per repository from patterns, the newest). Tags are grouped by digest: `latest` and `1.4` on one image is one image, and a re-tag is not scanned again.
+- **Push time** is the registry's own (Docker Hub's tag push time, the GitHub package version's creation, ECR's `imagePushedAt`). A generic registry has none, so the image's build time from its configuration stands in, read for at most 50 tags per repository (pattern matches first, then the highest versions and `latest`), and only once per digest.
+
+```json
+{"kind": "container_registry", "name": "acme on GHCR",
+ "config": {"provider": "ghcr", "namespace": "acme", "exclude": ["*-sandbox"], "recent_tags": 2, "tag_patterns": ["latest", "semver"], "image_scans": 25},
+ "secret_ref": "secret:ghcr-acme", "schedule_minutes": 360}
+```
+
+Each chosen image is an image asset named by repository and tag (`ghcr.io/acme/shop:1.4`) and found again by its digest (`ghcr.io/acme/shop@sha256:…`), with `tags`, `repository` and `pushed_at` attributes. It is scanned by the image scanner described above, through the same job: at most `image_scans` per run (default 25, at most 500), most recently pushed first, and a digest at most once a week; with the registry's credentials only when the image is on that registry. Until its scan succeeds an image shows as not assessed, never clean. At the [monitored-asset limit](asset-limits.md) new images are left out (the integration says how many) and added once there is room.
+
+When a newer tag takes an image's place, it is no longer tracked or scanned, but its asset stays as it was: the image is still in the registry and may still run. When the registry no longer has any tag on an image (its tags were deleted or all moved to other images, or its repository was deleted), the image is **removed**: its asset's collection status becomes `removed`, its issues resolve as removed on the next evaluation, and its history stays. An image pushed again is scanned again. Nothing is removed on the strength of a partial answer: a repository whose tags could not be read, or that has more than 10,000 tags, keeps its images, and the integration's last error names it. The images and their state are in `GET /api/v1/integrations/{id}/images`.
 
 ### SBOMs
 
@@ -587,9 +831,9 @@ Credentials always go in a secret reference, never in the configuration:
 | Email (your mail server) | `host`, `port`, `from`, `to[]`, `username`, `tls` (`starttls` by default, `tls`, or `none`) | SMTP password |
 | Email (sent by Stackurity), hosted only | `user_ids[]` (members), `to[]` (other addresses, which confirm first) | none |
 | Slack | added with **Add to Slack** ([slack-app.md](slack-app.md)); or, with a webhook, optional `signing_secret_ref`: a reference to the Slack app's signing secret, to act from inside Slack (see below) | none with Add to Slack; otherwise the incoming webhook URL |
-| Microsoft Teams | none | The Workflows webhook URL ("Post to a channel when a webhook request is received") |
+| Microsoft Teams | added with **Add to Teams** ([teams-app.md](teams-app.md)), the default when the server has the Teams app; or none, with a Workflows webhook | none with Add to Teams; otherwise the Workflows webhook URL ("Post to a channel when a webhook request is received") |
 | Webhook | `url` (HTTPS) | The HMAC signing key (optional) |
-| Jira | `url` (the site, HTTPS), `deployment` (`cloud` by default, or `datacenter`), `project` (key), `issue_type` (`Task` by default), `username` (the account email, Cloud only), optional `labels[]`, `priorities` (`{"P1": "Highest", ...}`) and `resolve_transition` (e.g. `Done`) | Cloud: an [Atlassian API token](https://id.atlassian.com/manage-profile/security/api-tokens). Data Center and Server: a personal access token |
+| Jira | Connect Jira ([jira-app.md](jira-app.md)): `auth` `oauth`, `connection_id`, `cloud_id` (the site), `project`, optional `issue_type`, `labels[]`, `priorities` and `resolve_transition`, picked in the dashboard. With a token: `url` (the site, HTTPS), `deployment` (`cloud` by default, or `datacenter`), `project` (key), `issue_type` (`Task` by default), `username` (the account email, Cloud only), optional `labels[]`, `priorities` (`{"P1": "Highest", ...}`) and `resolve_transition` (e.g. `Done`) | none with Connect Jira. Otherwise Cloud: an [Atlassian API token](https://id.atlassian.com/manage-profile/security/api-tokens); Data Center and Server: a personal access token |
 | PagerDuty | optional `region` (`us` by default, or `eu`) and `severities` (`{"P1": "critical", ...}`) | The integration key (routing key) of an Events API v2 integration on the service |
 | ServiceNow | `url` (the instance, HTTPS), `auth` (`basic` by default, or `oauth`), `username` (basic) or `client_id` (oauth), optional `table` (`incident`), `assignment_group`, `category`, `subcategory`, `urgency` and `impact` (`{"P1": "1", ...}`), `fields` (`{"u_business_service": "Payments"}`), `resolve_state` (`6`), `close_code` (`Solution provided`), `sync_back` and `closed_states` (`["6", "7", "8"]`) | The integration user's password (basic) or the OAuth client secret (oauth) |
 
@@ -652,7 +896,9 @@ The incident, in the list and on its page, links to its issue. Jira channels ign
 
 There is never more than one issue per incident and channel, across retries and replicas: an attempt claims the creation in the database first, and each issue carries the label `stackurity-incident-<workspace>-<incident>`, which is searched for before creating, so an attempt that died after creating the issue is picked up instead of repeated. Do not remove that label.
 
-The Jira account needs to browse the project, create issues, add comments and transition issues. **Send test** checks the credentials, the project, the issue type and the mapped priorities without creating anything. Store the token as a workspace secret (`secret:NAME`, Settings > Secrets).
+**Connect Jira** (Jira Cloud, when the server has the Stackurity Atlassian app: [jira-app.md](jira-app.md)) needs no token: an administrator approves on Atlassian's page and picks the site, project, issue type and done status from lists read from Jira. Its tokens are sealed and refreshed by the server; when Atlassian stops accepting them (the app was removed from the person's Atlassian account, or 90 days without use), the integration shows **Reconnect needed** and deliveries fail with that reason until someone reconnects. Where the app is configured, new Jira integrations use it unless **Use an API token instead** is chosen.
+
+With a token, the Jira account needs to browse the project, create issues, add comments and transition issues. **Send test** checks the credentials (or the connection), the project, the issue type and the mapped priorities without creating anything. Store the token as a workspace secret (`secret:NAME`, Settings > Secrets). Jira Data Center and Server always use a personal access token: they have no OAuth 2.0 (3LO).
 
 ### PagerDuty
 

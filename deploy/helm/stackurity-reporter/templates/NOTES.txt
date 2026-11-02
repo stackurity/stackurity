@@ -1,0 +1,13 @@
+The Stackurity reporter is starting in namespace {{ .Release.Namespace }}.
+
+Its first report reaches {{ .Values.server }} within a minute:
+  kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "reporter.fullname" . }}
+{{- if and .Values.secret.create (not .Values.enrollCode) }}
+
+No enrollCode was given. Put the enrollment code in the Secret; the reporter
+waits for it:
+  kubectl -n {{ .Release.Namespace }} patch secret {{ include "reporter.secretName" . }} --type merge -p '{"stringData":{"enroll-code":"enr_..."}}'
+{{- end }}
+
+The cluster then appears under Assets, with its workloads and the images
+they run. See docs/kubernetes.md.

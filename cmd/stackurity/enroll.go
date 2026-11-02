@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -15,6 +16,7 @@ import (
 func enrollCmd() *cobra.Command {
 	var server, dir, projectArg string
 	var force bool
+	var wait time.Duration
 	cmd := &cobra.Command{
 		Use:   "enroll",
 		Short: "Exchange a one-time enrollment code for this host's agent token and settings",
@@ -31,6 +33,11 @@ the code adds hosts to that project, and refuses without using the code up
 if it adds them to another project or to none. The code's project is chosen
 by the administrator who made it; enrolling cannot change it. A name is not
 accepted here, since enrolling has no token to look names up with.
+
+When many hosts enroll at once (a fleet code used from cloud-init, Ansible
+or an SSH loop), the server may ask some of them to wait (429). enroll then
+tries again, with jitter, for up to --wait (default 30m; 0 fails at once).
+An invalid, used-up or revoked code fails at once.
 
 The agent install script runs this for you.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -54,7 +61,9 @@ The agent install script runs this for you.`,
 				return err
 			}
 			host, _ := os.Hostname()
-			e, err := cl.Enroll(cmd.Context(), code, host, project)
+			e, err := cl.EnrollWait(cmd.Context(), code, host, project, wait, func(d time.Duration, err error) {
+				fmt.Fprintf(os.Stderr, "the server is busy enrolling other hosts (%v); trying again in %s\n", err, d.Round(time.Second))
+			})
 			var ae *client.APIError
 			if project > 0 && errors.As(err, &ae) && ae.Status == 400 && strings.Contains(ae.Message, "project_id") {
 				return errors.New("the server does not support --project for enrollment (Stackurity 0.10 or later is needed); the code was not used")
@@ -94,6 +103,7 @@ The agent install script runs this for you.`,
 	cmd.Flags().StringVar(&server, "server", os.Getenv("STACKURITY_SERVER"), "server URL")
 	cmd.Flags().StringVar(&dir, "dir", "/etc/stackurity", "directory for the token and agent.env")
 	cmd.Flags().BoolVar(&force, "force", false, "replace an existing token")
+	cmd.Flags().DurationVar(&wait, "wait", 30*time.Minute, "how long to keep trying while the server is rate limiting enrollment (0 fails at once)")
 	projectFlag(cmd, &projectArg, "project id the enrollment code must add hosts to; refused otherwise (env STACKURITY_PROJECT)")
 	return cmd
 }

@@ -3,6 +3,8 @@ import { api, type Asset, type List } from "../api";
 import { useDebounced, useLoad } from "../hooks";
 import { assetDistinctions, assetKindLabel, assetLabel, groupAssetsByKind } from "../format";
 import { errorView } from "../errors";
+import { useAuth } from "../auth";
+import { useProject } from "../project";
 
 /**
  * A select of assets grouped by kind (Servers, Applications, Repositories…),
@@ -38,6 +40,44 @@ export function AssetSelect({
         </optgroup>
       ))}
     </select>
+  );
+}
+
+/**
+ * The Project field of a filter bar. It is the switcher's choice (the
+ * server narrows the page's data to that project), so the two always
+ * agree. onChange runs first, for a page to drop filters, such as an
+ * asset, that may not be in the new project. Without projects it says
+ * so, and tells admins where they are made.
+ */
+export function ProjectFilter({ id, onChange }: { id: string; onChange?: () => void }) {
+  const { can, projectOnly } = useAuth();
+  const { projectId, projects, choose } = useProject();
+  return (
+    <div className="field">
+      <label htmlFor={id}>Project</label>
+      {projects.length === 0 ? (
+        <select id={id} disabled value="" title={can("admin") ? "Create projects under Settings → Projects" : undefined}>
+          <option value="">No projects yet</option>
+        </select>
+      ) : (
+        <select
+          id={id}
+          value={String(projectId)}
+          onChange={(e) => {
+            onChange?.();
+            choose(Number(e.target.value));
+          }}
+        >
+          <option value="0">{projectOnly ? "All my projects" : "All projects"}</option>
+          {projects.map((p) => (
+            <option key={p.id} value={String(p.id)}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+      )}
+    </div>
   );
 }
 

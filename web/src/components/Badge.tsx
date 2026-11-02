@@ -291,7 +291,7 @@ export function UnmanagedBadge({ title }: { title?: string }) {
 // --- Stage 7: applications discovered on hosts
 
 /** Where an application's library was read from: its installed files or only a lockfile. */
-export function AppSourceBadge({ source, url }: { source: string | undefined; url?: string }) {
+export function AppSourceBadge({ source, url, signature }: { source: string | undefined; url?: string; signature?: string }) {
   if (source === "installed")
     return <Badge status="installed" tone="muted" label="installed" title="Read from the application's installed files" />;
   if (source === "lockfile")
@@ -314,6 +314,33 @@ export function AppSourceBadge({ source, url }: { source: string | undefined; ur
     );
   if (source === "vendored")
     return <Badge status="vendored" tone="muted" label="copied file" title="Read from the version banner of a library file kept in the application" />;
+  if (source === "bundle")
+    return (
+      <Badge
+        status="bundle"
+        tone="muted"
+        label="in bundle"
+        title={`Found in compiled front-end output${signature ? ` by its ${signature}` : ""}; other code compiled into the bundle is not identifiable`}
+      />
+    );
+  if (source === "source-map")
+    return (
+      <Badge
+        status="source-map"
+        tone="muted"
+        label="from source map"
+        title="Named with its version by a package path in a source map deployed next to a bundle"
+      />
+    );
+  if (source === "flutter-build")
+    return (
+      <Badge
+        status="flutter-build"
+        tone="muted"
+        label="Flutter build"
+        title={`Read from the Flutter web build${signature ? ` (${signature})` : ""}; no vulnerability source covers the Flutter engine`}
+      />
+    );
   return null;
 }
 
