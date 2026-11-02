@@ -28,6 +28,7 @@ import (
 	"github.com/stackurity/stackurity/internal/awsconnect"
 	"github.com/stackurity/stackurity/internal/collect/gitrepo"
 	"github.com/stackurity/stackurity/internal/collect/image"
+	"github.com/stackurity/stackurity/internal/collect/registry"
 	"github.com/stackurity/stackurity/internal/db"
 	"github.com/stackurity/stackurity/internal/demo"
 	"github.com/stackurity/stackurity/internal/githubapp"
@@ -37,6 +38,7 @@ import (
 	"github.com/stackurity/stackurity/internal/model"
 	"github.com/stackurity/stackurity/internal/notify"
 	"github.com/stackurity/stackurity/internal/plugins"
+	"github.com/stackurity/stackurity/internal/registrysync"
 	"github.com/stackurity/stackurity/internal/secondcheck"
 	"github.com/stackurity/stackurity/internal/secrets"
 	"github.com/stackurity/stackurity/internal/store"
@@ -603,6 +605,24 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 					return err
 				}
 				b, err = imageScanner.Scan(ctx, cfg, token)
+			case api.KindContainerRegistry:
+				var cfg registry.Config
+				if err := json.Unmarshal(in.Config, &cfg); err != nil {
+					return err
+				}
+				cfg, cr, err := registrysync.Credentials(ctx, st, res, cfg, in.SecretRef)
+				if err != nil {
+					return err
+				}
+				sum, err := registrysync.Run(ctx, st, in, cfg, cr, registrysync.Options{Version: version, Fresh: imageScanFresh})
+				if err != nil {
+					return err
+				}
+				log.Info("registry", "integration", in.ID, "repositories", sum.Repositories, "tracked", sum.Tracked, "new", sum.NewImages,
+					"untracked", sum.Untracked, "removed", sum.Removed, "refused", sum.Refused, "queued", sum.Scans.Queued,
+					"fresh", sum.Scans.Fresh, "deferred", sum.Scans.Limited, "problems", len(sum.Problems))
+				// A registry has many assets: none is "the" integration's.
+				return st.IntegrationResult(ctx, in.ID, 0, sum.Note())
 			case api.KindPlugin:
 				if pluginRunner == nil {
 					return errors.New("plugins are disabled (STACKURITY_PLUGIN_DIR not set)")
@@ -687,8 +707,9 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 	})
 
 	// Images reported running by a plugin (Kubernetes) are read without
-	// credentials. A failure is recorded as coverage on the image, so a
-	// registry that needs a pull secret shows as not assessed, never clean.
+	// credentials, images of a connected registry with its own. A failure
+	// is recorded as coverage on the image, so a registry that needs a
+	// pull secret shows as not assessed, never clean.
 	w.Handle("image.scan", func(ctx context.Context, payload json.RawMessage) error {
 		var p store.ImageScan
 		if err := json.Unmarshal(payload, &p); err != nil {
@@ -697,7 +718,13 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 		// The image reports through the integration that found it running.
 		ctx = store.WithReportSource(ctx, store.ReportSource{Source: store.SourceIntegration, IntegrationID: p.IntegrationID})
 		cfg := image.Config{Image: p.Image, Platform: p.Platform}
-		b, err := imageScanner.Scan(ctx, cfg, "")
+		// Images of a connected registry are read with its credentials;
+		// others (running images a plugin found) without.
+		secret, err := registrysync.ScanSecret(ctx, st, res, p, &cfg)
+		var b *model.ObservationBatch
+		if err == nil {
+			b, err = imageScanner.Scan(ctx, cfg, secret)
+		}
 		if err == nil {
 			err = b.Validate()
 		}

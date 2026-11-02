@@ -254,6 +254,8 @@ var projectScopes = map[string]string{
 	"DELETE /api/v1/assets/{id}":                     "org",
 	"POST /api/v1/assets/{id}/remediation-token":     "org",
 	"POST /api/v1/integrations/{id}/run":             "org",
+	"GET /api/v1/integrations/{id}/images":           "org",
+	"POST /api/v1/integrations/registry/discover":    "org",
 	"PATCH /api/v1/integrations/{id}":                "org",
 	"DELETE /api/v1/integrations/{id}":               "org",
 	"POST /api/v1/conflicts/{id}/resolve":            "org",

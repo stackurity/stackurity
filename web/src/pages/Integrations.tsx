@@ -1,5 +1,5 @@
 import { useMemo, useState, type FormEvent, type ReactNode } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import {
   api,
   ApiError,
@@ -10,6 +10,10 @@ import {
   type PluginConfigField,
   type PluginList,
   type Queued,
+  type ContainerRegistryConfig,
+  type RegistryDiscovery,
+  type RegistryImage,
+  type RegistryProvider,
 } from "../api";
 import { useAuth } from "../auth";
 import { useAction, useJobRunner, useLoad } from "../hooks";
@@ -30,7 +34,15 @@ const KIND_LABEL: Record<string, string> = {
   git_repository: "Git repository",
   github_app: "GitHub App",
   container_image: "Container image",
+  container_registry: "Container registry",
   plugin: "Plugin",
+};
+
+const PROVIDER_LABEL: Record<RegistryProvider, string> = {
+  ghcr: "GitHub Container Registry",
+  dockerhub: "Docker Hub",
+  ecr: "Amazon ECR",
+  oci: "Other registry",
 };
 
 function KindBadge({ kind }: { kind: string }) {
@@ -42,6 +54,13 @@ function targetOf(i: Integration): ReactNode {
   if (i.kind === "git_repository") return `${c.url ?? ""}${c.ref ? ` @ ${c.ref}` : ""}`;
   if (i.kind === "github_app") return `github: ${c.full_name ?? ""}`;
   if (i.kind === "container_image") return `${c.image ?? ""}${c.platform ? ` (${c.platform})` : ""}`;
+  if (i.kind === "container_registry") {
+    const p = (c.provider ?? "oci") as RegistryProvider;
+    const where = p === "oci" ? c.url : p === "ecr" ? `${c.account_id ? `${c.account_id} ` : ""}${c.region ?? ""}` : c.namespace;
+    const repos = c.repositories?.length ? ` · ${c.repositories.length} repositories` : "";
+    const tags = `${c.recent_tags ?? 1} newest${c.tag_patterns?.length ? ` + ${c.tag_patterns.join(", ")}` : ""}`;
+    return `${PROVIDER_LABEL[p] ?? p}: ${where ?? ""}${repos} · ${tags}`;
+  }
   if (i.kind === "plugin") {
     const pc = c.config ?? {};
     const regions = Array.isArray(pc.regions) ? ` · ${(pc.regions as unknown[]).join(", ")}` : "";
@@ -68,7 +87,12 @@ export function IntegrationsPage() {
   const res = useLoad(() => api.get<List<Integration>>("/integrations"), []);
   const act = useAction();
   const [msg, setMsg] = useState<string | null>(null);
-  const [creating, setCreating] = useState<IntegrationKind | "choose" | null>(null);
+  const [params] = useSearchParams();
+  // Settings → Integrations → Container image / registry opens the choice.
+  const [creating, setCreating] = useState<IntegrationKind | "choose" | "container" | null>(() =>
+    params.get("add") === "container" && admin ? "container" : null,
+  );
+  const [imagesOf, setImagesOf] = useState<Integration | null>(null);
 
   const job = useJobRunner(res.reload);
   const runNow = (i: Integration) => {
@@ -143,6 +167,11 @@ export function IntegrationsPage() {
           >
             Run now
           </button>
+          {i.kind === "container_registry" && (
+            <button type="button" className="btn btn-sm" onClick={() => setImagesOf(imagesOf?.id === i.id ? null : i)} aria-expanded={imagesOf?.id === i.id}>
+              Images
+            </button>
+          )}
           {admin && (
             <>
               <button type="button" className="btn btn-sm" onClick={() => toggle(i)} disabled={act.pending}>
@@ -187,7 +216,9 @@ export function IntegrationsPage() {
       <JobStatus state={job.state} onDismiss={job.reset} />
       {admin && creating === "choose" && <KindChooser onPick={setCreating} onCancel={() => setCreating(null)} />}
       {admin && creating === "git_repository" && <GitForm onCancel={() => setCreating(null)} onCreated={done} />}
+      {admin && creating === "container" && <ContainerChooser onPick={setCreating} onCancel={() => setCreating(null)} />}
       {admin && creating === "container_image" && <ImageForm onCancel={() => setCreating(null)} onCreated={done} />}
+      {admin && creating === "container_registry" && <RegistryForm integrations={res.data?.items ?? []} onCancel={() => setCreating(null)} onCreated={done} />}
       {admin && creating === "plugin" && <PluginForm onCancel={() => setCreating(null)} onCreated={done} />}
       <ErrorBox error={res.error} title="Could not load integrations" />
       {!res.data && !res.error && <Loading />}
@@ -209,6 +240,7 @@ export function IntegrationsPage() {
           rowClassName={(i) => (i.last_error && i.enabled ? "row-stale" : undefined)}
         />
       )}
+      {imagesOf && <RegistryImages integration={imagesOf} onClose={() => setImagesOf(null)} />}
     </>
   );
 }
@@ -217,6 +249,7 @@ function KindChooser({ onPick, onCancel }: { onPick: (k: IntegrationKind) => voi
   const kinds: { kind: IntegrationKind; title: string; text: string }[] = [
     { kind: "git_repository", title: "Git repository", text: "Clone over HTTPS and read lockfiles (npm, Composer, …)." },
     { kind: "container_image", title: "Container image", text: "Pull an image from a registry and inventory its OS and application packages." },
+    { kind: "container_registry", title: "Connect a registry", text: "Scan the newest tags of every repository in GHCR, Docker Hub, ECR or your own registry." },
     { kind: "plugin", title: "Plugin", text: "Run an installed plugin, e.g. AWS managed services (RDS, EKS, Lambda, …)." },
   ];
   return (
@@ -228,6 +261,28 @@ function KindChooser({ onPick, onCancel }: { onPick: (k: IntegrationKind) => voi
             <span className="muted small">{k.text}</span>
           </button>
         ))}
+      </div>
+      <div className="form-actions">
+        <button type="button" className="btn" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </Card>
+  );
+}
+
+function ContainerChooser({ onPick, onCancel }: { onPick: (k: IntegrationKind) => void; onCancel: () => void }) {
+  return (
+    <Card title="Container images">
+      <div className="kind-choices" role="group" aria-label="How to add container images">
+        <button type="button" className="kind-choice" onClick={() => onPick("container_registry")}>
+          <strong>Connect a registry</strong>
+          <span className="muted small">List its repositories, pick some or all, and scan their newest tags. New tags are picked up on every run.</span>
+        </button>
+        <button type="button" className="kind-choice" onClick={() => onPick("container_image")}>
+          <strong>One image</strong>
+          <span className="muted small">A single reference such as ghcr.io/acme/shop:1.4, read on every run.</span>
+        </button>
       </div>
       <div className="form-actions">
         <button type="button" className="btn" onClick={onCancel}>
@@ -283,7 +338,7 @@ function checkCommon(v: CommonState): string | null {
   const mins = Number(v.schedule);
   if (!Number.isInteger(mins) || mins < 15 || mins > 10080) return "Schedule must be a whole number of minutes between 15 and 10080.";
   const s = v.secret_ref.trim();
-  if (s && !/^(env|file):.+/.test(s)) return "Secret reference must look like env:NAME or file:/path.";
+  if (s && !/^(env|file|secret):.+/.test(s)) return "Secret reference must look like secret:NAME, env:NAME or file:/path.";
   return null;
 }
 
@@ -725,5 +780,449 @@ function PluginForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
         </>
       )}
     </FormShell>
+  );
+}
+
+// --- container registry
+
+const listOf = (v: string) =>
+  v
+    .split(/[,\s]+/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+
+/** A secret name for a pasted credential: registry-<what>-<random>. */
+function secretNameFor(what: string): string {
+  const base = `registry-${what}`.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/-+/g, "-").slice(0, 52);
+  const rnd = crypto.getRandomValues(new Uint32Array(1))[0].toString(36).padStart(6, "0").slice(-6);
+  return `${base}-${rnd}`;
+}
+
+type Cred = "paste" | "ref" | "aws" | "none";
+
+function RegistryForm({ integrations, onCancel, onCreated }: { integrations: Integration[]; onCancel: () => void; onCreated: () => void }) {
+  const [c, setC] = useState<CommonState>({ name: "", schedule: "360", secret_ref: "" });
+  const [provider, setProvider] = useState<RegistryProvider>("ghcr");
+  const [f, setF] = useState({ namespace: "", url: "", username: "", auth_host: "", region: "", account_id: "", role_arn: "", external_id: "", environment: "", platform: "" });
+  const [cred, setCred] = useState<Cred>("paste");
+  const [token, setToken] = useState("");
+  const [keys, setKeys] = useState({ id: "", secret: "" });
+  const [awsId, setAwsId] = useState("");
+  const [storedRef, setStoredRef] = useState<string | null>(null);
+  const [all, setAll] = useState(true);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [include, setInclude] = useState("");
+  const [exclude, setExclude] = useState("");
+  const [recent, setRecent] = useState("1");
+  const [patterns, setPatterns] = useState("latest");
+  const [scans, setScans] = useState("25");
+  const [found, setFound] = useState<RegistryDiscovery | null>(null);
+  const [localErr, setLocalErr] = useState<string | null>(null);
+  const act = useAction();
+  const discover = useAction();
+  const awsIntegrations = integrations.filter((i) => i.kind === "plugin" && i.config?.plugin === "aws-managed");
+  const set = (k: keyof typeof f, v: string) => {
+    setF({ ...f, [k]: v });
+    setFound(null);
+  };
+
+  const config = (): ContainerRegistryConfig => {
+    const cfg: ContainerRegistryConfig = { provider };
+    if (provider === "oci") {
+      cfg.url = f.url.trim();
+      if (f.auth_host.trim()) cfg.auth_host = f.auth_host.trim();
+    }
+    if (provider === "ecr") {
+      cfg.region = f.region.trim();
+      for (const k of ["account_id", "role_arn", "external_id"] as const) if (f[k].trim()) cfg[k] = f[k].trim();
+      if (cred === "aws" && awsId) cfg.aws_integration_id = Number(awsId);
+    } else {
+      if (f.namespace.trim()) cfg.namespace = f.namespace.trim();
+      if (f.username.trim() && provider !== "ghcr") cfg.username = f.username.trim();
+    }
+    if (!all && picked.size) cfg.repositories = [...picked].sort();
+    if (listOf(include).length) cfg.include = listOf(include);
+    if (listOf(exclude).length) cfg.exclude = listOf(exclude);
+    cfg.recent_tags = Number(recent);
+    if (listOf(patterns).length) cfg.tag_patterns = listOf(patterns);
+    cfg.image_scans = Number(scans);
+    if (f.environment.trim()) cfg.environment = f.environment.trim();
+    if (f.platform.trim()) cfg.platform = f.platform.trim();
+    return cfg;
+  };
+
+  const check = (): string | null => {
+    if (provider === "oci" && !/^https:\/\/[^/\s]+\/?$/.test(f.url.trim())) return "Enter the registry's https address, such as https://registry.example.com.";
+    if ((provider === "ghcr" || provider === "dockerhub") && !f.namespace.trim()) return "Enter the organisation, user or namespace.";
+    if (provider === "ecr" && !/^[a-z]{2}(-[a-z]+)+-\d$/.test(f.region.trim())) return "Enter the AWS region, such as eu-west-1.";
+    if (cred === "paste" && provider === "ecr" && !storedRef && (!keys.id.trim() || !keys.secret.trim())) return "Enter the access key id and secret access key.";
+    if (cred === "paste" && provider !== "ecr" && !storedRef && !token) return "Paste the token or password, or choose another kind of credentials.";
+    if (cred === "paste" && provider === "dockerhub" && !f.username.trim()) return "Docker Hub needs the user name that goes with the token.";
+    if (cred === "ref" && !/^secret:.+/.test(c.secret_ref.trim()) && !/^(env|file):.+/.test(c.secret_ref.trim())) return "The secret reference looks like secret:NAME.";
+    if (cred === "aws" && !awsId) return "Choose the AWS integration whose keys to use.";
+    const n = Number(scans);
+    if (!Number.isInteger(n) || n < 0 || n > 500) return "Image scans per run must be a whole number from 0 to 500.";
+    return checkCommon({ ...c, secret_ref: "" });
+  };
+
+  /** Stores a pasted credential once as a workspace secret and returns the reference to use. */
+  const secretRef = async (): Promise<string> => {
+    if (cred === "ref") return c.secret_ref.trim();
+    if (cred !== "paste") return "";
+    if (storedRef) return storedRef;
+    const value = provider === "ecr" ? JSON.stringify({ aws_access_key_id: keys.id.trim(), aws_secret_access_key: keys.secret.trim() }) : token;
+    const what = provider === "oci" ? f.url.replace(/^https:\/\//, "") : provider === "ecr" ? f.region : f.namespace;
+    const name = secretNameFor(`${provider}-${what}`);
+    await api.put(`/secrets/${encodeURIComponent(name)}`, { value });
+    const ref = `secret:${name}`;
+    setStoredRef(ref);
+    setToken("");
+    setKeys({ id: "", secret: "" });
+    return ref;
+  };
+
+  const listRepos = async () => {
+    setLocalErr(null);
+    const err = check();
+    if (err) return setLocalErr(err);
+    const r = await discover.run(async () => {
+      const ref = await secretRef();
+      return api.post<RegistryDiscovery>("/integrations/registry/discover", { config: { ...config(), repositories: undefined }, secret_ref: ref });
+    });
+    if (r) {
+      setFound(r);
+      setPicked(new Set(r.repositories.filter((x) => x.included).map((x) => x.name)));
+    }
+  };
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setLocalErr(null);
+    const err = check();
+    if (err) return setLocalErr(err);
+    if (!all && picked.size === 0) return setLocalErr("List the repositories and tick at least one, or choose All repositories.");
+    const ok = await act.run(async () => {
+      const ref = await secretRef();
+      return api.post<Integration>("/integrations", bodyOf("container_registry", { ...c, secret_ref: ref }, config()));
+    });
+    if (ok) onCreated();
+  };
+
+  const togglePick = (n: string) => {
+    const next = new Set(picked);
+    if (next.has(n)) next.delete(n);
+    else next.add(n);
+    setPicked(next);
+  };
+
+  const credChoice = (value: Cred, label: string) => (
+    <label className="check">
+      <input
+        type="radio"
+        name="rg-cred"
+        checked={cred === value}
+        onChange={() => {
+          setCred(value);
+          setFound(null);
+        }}
+      />{" "}
+      {label}
+    </label>
+  );
+
+  return (
+    <FormShell title="Connect a container registry" onSubmit={submit} onCancel={onCancel} pending={act.pending} localErr={localErr} error={act.error} submit="Connect registry">
+      <div className="form-grid">
+        <div className="field">
+          <label htmlFor="rg-provider">Registry</label>
+          <select
+            id="rg-provider"
+            value={provider}
+            onChange={(e) => {
+              const p = e.target.value as RegistryProvider;
+              setProvider(p);
+              setFound(null);
+              setStoredRef(null);
+              setCred(p === "dockerhub" || p === "oci" ? "none" : "paste");
+            }}
+          >
+            {(Object.keys(PROVIDER_LABEL) as RegistryProvider[]).map((p) => (
+              <option key={p} value={p}>
+                {PROVIDER_LABEL[p]}
+              </option>
+            ))}
+          </select>
+        </div>
+        {provider === "oci" && (
+          <div className="field">
+            <label htmlFor="rg-url">Registry address</label>
+            <input id="rg-url" className="mono" required placeholder="https://registry.example.com" value={f.url} onChange={(e) => set("url", e.target.value)} />
+            <p className="hint">Harbor, GitLab, Quay, Artifactory, Azure, Google Artifact Registry and others. https only.</p>
+          </div>
+        )}
+        {provider !== "ecr" && (
+          <div className="field">
+            <label htmlFor="rg-ns">{provider === "ghcr" ? "Organisation or user" : provider === "dockerhub" ? "Namespace" : "Repository prefix (optional)"}</label>
+            <input id="rg-ns" className="mono" required={provider !== "oci"} placeholder={provider === "oci" ? "team/apps" : "acme"} value={f.namespace} onChange={(e) => set("namespace", e.target.value)} />
+          </div>
+        )}
+        {provider === "ecr" && (
+          <>
+            <div className="field">
+              <label htmlFor="rg-region">Region</label>
+              <input id="rg-region" className="mono" required placeholder="eu-west-1" value={f.region} onChange={(e) => set("region", e.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="rg-account">Account id (optional)</label>
+              <input id="rg-account" className="mono" placeholder="the account of the keys" value={f.account_id} onChange={(e) => set("account_id", e.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="rg-role">Role ARN (optional)</label>
+              <input id="rg-role" className="mono" placeholder="arn:aws:iam::123456789012:role/stackurity-ecr" value={f.role_arn} onChange={(e) => set("role_arn", e.target.value)} />
+              <p className="hint">
+                Read-only: <span className="mono">ecr:GetAuthorizationToken</span>, <span className="mono">ecr:DescribeRepositories</span>,{" "}
+                <span className="mono">ecr:DescribeImages</span>, and for the scans <span className="mono">ecr:BatchGetImage</span> and{" "}
+                <span className="mono">ecr:GetDownloadUrlForLayer</span>.
+              </p>
+            </div>
+            <div className="field">
+              <label htmlFor="rg-ext">External ID (optional)</label>
+              <input id="rg-ext" value={f.external_id} onChange={(e) => set("external_id", e.target.value)} />
+            </div>
+          </>
+        )}
+        <fieldset className="field field-span">
+          <legend>Credentials</legend>
+          <div className="multi">
+            {provider === "ecr" ? credChoice("paste", "Access keys") : credChoice("paste", "Paste a token or password")}
+            {provider === "ecr" && awsIntegrations.length > 0 && credChoice("aws", "Those of an AWS integration")}
+            {credChoice("ref", "A stored secret")}
+            {(provider === "dockerhub" || provider === "oci") && credChoice("none", "None (public)")}
+          </div>
+          {cred === "paste" && provider !== "ecr" && (
+            <div className="form-grid">
+              <div className="field">
+                <label htmlFor="rg-token">{provider === "ghcr" ? "Token (read:packages)" : "Token or password"}</label>
+                <input
+                  id="rg-token"
+                  type="password"
+                  autoComplete="off"
+                  value={token}
+                  placeholder={storedRef ? `stored as ${storedRef}` : ""}
+                  onChange={(e) => {
+                    setToken(e.target.value);
+                    setStoredRef(null);
+                  }}
+                />
+                <p className="hint">Stored as a workspace secret, sent only to this registry, never shown again. Use a read-only token.</p>
+              </div>
+              {provider !== "ghcr" && (
+                <div className="field">
+                  <label htmlFor="rg-user">User name</label>
+                  <input id="rg-user" value={f.username} onChange={(e) => set("username", e.target.value)} />
+                </div>
+              )}
+            </div>
+          )}
+          {cred === "paste" && provider === "ecr" && (
+            <div className="form-grid">
+              <div className="field">
+                <label htmlFor="rg-akid">Access key id</label>
+                <input
+                  id="rg-akid"
+                  className="mono"
+                  autoComplete="off"
+                  value={keys.id}
+                  placeholder={storedRef ? `stored as ${storedRef}` : ""}
+                  onChange={(e) => {
+                    setKeys({ ...keys, id: e.target.value });
+                    setStoredRef(null);
+                  }}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="rg-sak">Secret access key</label>
+                <input
+                  id="rg-sak"
+                  type="password"
+                  autoComplete="off"
+                  value={keys.secret}
+                  onChange={(e) => {
+                    setKeys({ ...keys, secret: e.target.value });
+                    setStoredRef(null);
+                  }}
+                />
+              </div>
+            </div>
+          )}
+          {cred === "aws" && (
+            <div className="field">
+              <label htmlFor="rg-aws">AWS integration</label>
+              <select id="rg-aws" value={awsId} onChange={(e) => setAwsId(e.target.value)}>
+                <option value="">Choose…</option>
+                {awsIntegrations.map((i) => (
+                  <option key={i.id} value={i.id}>
+                    {i.name}
+                  </option>
+                ))}
+              </select>
+              <p className="hint">Its stored keys, and its role unless you set one here.</p>
+            </div>
+          )}
+          {cred === "ref" && (
+            <div className="form-grid">
+              <div className="field">
+                <label htmlFor="rg-ref">Secret reference</label>
+                <input id="rg-ref" className="mono" placeholder="secret:NAME" value={c.secret_ref} onChange={(e) => setC({ ...c, secret_ref: e.target.value })} />
+                <p className="hint">
+                  From <Link to="/settings/secrets">Settings → Secrets</Link>.
+                  {provider === "ecr" ? <> It holds <Code>{'{"aws_access_key_id": "…", "aws_secret_access_key": "…"}'}</Code>.</> : null}
+                </p>
+              </div>
+              {(provider === "dockerhub" || provider === "oci") && (
+                <div className="field">
+                  <label htmlFor="rg-user2">User name</label>
+                  <input id="rg-user2" value={f.username} onChange={(e) => set("username", e.target.value)} />
+                </div>
+              )}
+            </div>
+          )}
+        </fieldset>
+        {provider === "oci" && (
+          <div className="field">
+            <label htmlFor="rg-auth">Token service host (optional)</label>
+            <input id="rg-auth" className="mono" placeholder="gitlab.com" value={f.auth_host} onChange={(e) => set("auth_host", e.target.value)} />
+            <p className="hint">Only when the registry signs in on another host (GitLab). Credentials go to no other host.</p>
+          </div>
+        )}
+      </div>
+
+      <fieldset className="field field-span">
+        <legend>Repositories</legend>
+        <div className="multi">
+          <label className="check">
+            <input type="radio" name="rg-all" checked={all} onChange={() => setAll(true)} /> All repositories, including new ones
+          </label>
+          <label className="check">
+            <input type="radio" name="rg-all" checked={!all} onChange={() => setAll(false)} /> Only the ones I tick
+          </label>
+        </div>
+        <div className="form-grid">
+          <div className="field">
+            <label htmlFor="rg-inc">Include (optional)</label>
+            <input id="rg-inc" className="mono" placeholder="shop*, api-*" value={include} onChange={(e) => setInclude(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="rg-exc">Exclude (optional)</label>
+            <input id="rg-exc" className="mono" placeholder="*-sandbox" value={exclude} onChange={(e) => setExclude(e.target.value)} />
+          </div>
+        </div>
+        <p className="hint">Comma-separated patterns: * matches anything, ? one character.</p>
+        <div className="form-actions">
+          <button type="button" className="btn" onClick={listRepos} disabled={discover.pending}>
+            {discover.pending ? "Listing…" : "List repositories"}
+          </button>
+        </div>
+        <ErrorBox error={discover.error} title="Could not list the registry" />
+        {found && (
+          <div>
+            <p className="small muted">
+              {found.registry}: {found.repositories.length} repositories{found.complete ? "" : " (the first 10,000)"}.{" "}
+              {all ? "Those the patterns leave out are greyed." : "Tick the ones to scan."}
+            </p>
+            <ul className="banner-list small">
+              {found.repositories.map((r) => (
+                <li key={r.name} className={all && !r.included ? "muted" : undefined}>
+                  {all ? (
+                    <span className="mono">{r.name}</span>
+                  ) : (
+                    <label className="check">
+                      <input type="checkbox" checked={picked.has(r.name)} onChange={() => togglePick(r.name)} /> <span className="mono">{r.name}</span>
+                    </label>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </fieldset>
+
+      <div className="form-grid">
+        <div className="field">
+          <label htmlFor="rg-recent">Newest images per repository</label>
+          <select id="rg-recent" value={recent} onChange={(e) => setRecent(e.target.value)}>
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+          </select>
+          <p className="hint">By push time. Tags on the same image count once.</p>
+        </div>
+        <div className="field">
+          <label htmlFor="rg-patterns">Also scan tags (optional)</label>
+          <input id="rg-patterns" className="mono" placeholder="latest, semver, release-*" value={patterns} onChange={(e) => setPatterns(e.target.value)} />
+          <p className="hint">semver matches 1.4.2 and v2.0.0-rc.1. At most 10 images per repository from patterns.</p>
+        </div>
+        <div className="field">
+          <label htmlFor="rg-scans">Image scans per run</label>
+          <input id="rg-scans" type="number" min={0} max={500} value={scans} onChange={(e) => setScans(e.target.value)} />
+          <p className="hint">Newest first; the rest on later runs. Each digest is scanned once a week at most.</p>
+        </div>
+        <div className="field">
+          <label htmlFor="rg-env">Environment (optional)</label>
+          <input id="rg-env" placeholder="e.g. production" value={f.environment} onChange={(e) => set("environment", e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="rg-platform">Platform (optional)</label>
+          <input id="rg-platform" className="mono" placeholder="linux/amd64" value={f.platform} onChange={(e) => set("platform", e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="rg-name">Name (optional)</label>
+          <input id="rg-name" value={c.name} onChange={(e) => setC({ ...c, name: e.target.value })} placeholder="derived from the registry" />
+        </div>
+        <div className="field">
+          <label htmlFor="rg-sched">Run every (minutes)</label>
+          <input id="rg-sched" type="number" min={15} max={10080} required value={c.schedule} onChange={(e) => setC({ ...c, schedule: e.target.value })} />
+          <p className="hint">New repositories and tags are found on each run.</p>
+        </div>
+      </div>
+    </FormShell>
+  );
+}
+
+function RegistryImages({ integration, onClose }: { integration: Integration; onClose: () => void }) {
+  const res = useLoad(() => api.get<List<RegistryImage>>(`/integrations/${integration.id}/images`), [integration.id]);
+  const columns: Column<RegistryImage>[] = [
+    { key: "repo", header: "Repository", cell: (r) => <span className="mono small">{r.repository}</span> },
+    { key: "tags", header: "Tags", cell: (r) => <span className="mono small">{r.tags.join(", ")}</span> },
+    {
+      key: "digest",
+      header: "Digest",
+      cell: (r) => (
+        <span className="mono small" title={r.digest}>
+          {r.digest.slice(7, 19)}
+        </span>
+      ),
+    },
+    { key: "pushed", header: "Pushed", cell: (r) => <RelativeTime iso={r.pushed_at} /> },
+    {
+      key: "state",
+      header: "State",
+      cell: (r) =>
+        r.removed_at ? <Badge status="removed" tone="muted" label="Removed from the registry" /> : r.tracked ? <Badge status="tracked" tone="good" label="Scanned" /> : <Badge status="untracked" tone="muted" label="No longer tracked" />,
+    },
+    { key: "asset", header: "Asset", cell: (r) => (r.asset_id ? <Link to={`/assets/${r.asset_id}`}>Open</Link> : <span className="muted">not added yet</span>) },
+  ];
+  return (
+    <Card title={`Images of ${integration.name}`}>
+      <ErrorBox error={res.error} title="Could not load the images" />
+      {!res.data && !res.error && <Loading />}
+      {res.data && res.data.items.length === 0 && <p className="muted">No images yet. Run the integration to read the registry.</p>}
+      {res.data && res.data.items.length > 0 && <Table caption="Registry images" columns={columns} rows={res.data.items} rowKey={(r) => r.id} />}
+      <div className="form-actions">
+        <button type="button" className="btn" onClick={onClose}>
+          Close
+        </button>
+      </div>
+    </Card>
   );
 }

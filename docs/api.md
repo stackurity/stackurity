@@ -1227,7 +1227,7 @@ One-click unsubscribe (RFC 8058) from a bulk email's `List-Unsubscribe` header, 
 
 **Who:** engineer
 
-Integrations (repository and image scans, plugins).
+Integrations (repository and image scans, connected container registries, plugins).
 
 ### `POST /integrations`
 
@@ -1246,6 +1246,18 @@ Changes an integration.
 **Who:** admin
 
 Deletes an integration.
+
+### `POST /integrations/registry/discover`
+
+**Who:** admin
+
+Lists the repositories of a container registry before it is connected (or to change which ones a connected one tracks), so you can pick them. Body: `config` (a `container_registry` configuration, see [Container registries](install.md#container-registries)) and `secret_ref`, or `integration_id` to use that registry integration's stored secret. The answer is `registry` (its name), `repositories` (`name`, and `included`: whether `include` and `exclude` keep it) and `complete` (false when the registry has more than 10,000). The secret is used, never returned. `502` with code `registry_error` when the registry refused or could not be reached; the message never contains the secret.
+
+### `GET /integrations/{id}/images`
+
+**Who:** engineer
+
+The images a container registry integration chose, most recently pushed first per repository: `repository`, `digest`, `image_ref` (scanned, by digest), `tags`, `pushed_at`, `asset_id`, `tracked` (false once newer tags took its place or its repository was left out) and `removed_at` (when the registry stopped having any tag on it). `404` for other kinds.
 
 ### `POST /integrations/{id}/run`
 

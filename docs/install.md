@@ -714,6 +714,33 @@ Plugins are executables in `STACKURITY_PLUGIN_DIR`. To add your own, read [plugi
 
 Under **Settings → Integrations**, add a container image such as `ghcr.io/acme/shop:1.4`. The bundled Syft reads the image straight from the registry: no Docker daemon is needed and nothing in the image runs. For a private registry, set a secret reference (a token, or a password together with `username`).
 
+### Container registries
+
+Rather than adding images one by one and changing them on every release, connect the registry: under **Settings → Integrations → Container image / registry**, choose **Connect a registry**. Stackurity lists its repositories, you pick all of them or some, and on every run it scans the images you chose, finds new repositories and tags, and marks images deleted from the registry as removed.
+
+| Registry | Configuration (`kind: container_registry`) | Secret |
+|---|---|---|
+| GitHub Container Registry | `"provider": "ghcr"`, `namespace`: the organisation or user | A token with `read:packages` (classic personal access token). Repositories are listed through `api.github.com` |
+| Docker Hub | `"provider": "dockerhub"`, `namespace`, `username` | A personal access token (read-only) or the password. Public repositories need none |
+| Amazon ECR | `"provider": "ecr"`, `region`, optional `account_id`, `role_arn`, `external_id` | `{"aws_access_key_id": "...", "aws_secret_access_key": "..."}`. Or `aws_integration_id`: the id of an `aws-managed` plugin integration, whose keys (and role, when you set none) are used. The instance role is not used for registries |
+| Any other registry (Harbor, GitLab, Quay, Artifactory, Azure, Google Artifact Registry, `registry:2`) | `"provider": "oci"`, `url` (`https://registry.example.com`, optionally with a port), optional `namespace` (a repository prefix), `username`, `auth_host` | A password or token. `auth_host` names the one other host whose token service may receive it (GitLab: `gitlab.com`) |
+
+Choosing what to scan:
+
+- **Repositories**: `repositories` (names; none means every repository), less those an `exclude` pattern matches; with `include` patterns, one of them must match too. Patterns are globs (`*` any characters, `?` one), matched with and without the namespace. A registry without a catalog (Docker Hub, some others) needs `repositories` or a namespace that lists them. At most 500 repositories per integration.
+- **Tags**: the `recent_tags` most recently pushed images of each repository (1 to 3; default 1), plus tags matching `tag_patterns` (globs such as `latest` or `release-*`, or `semver` for `1.4.2` and `v2.0.0-rc.1`; at most 10 images per repository from patterns, the newest). Tags are grouped by digest: `latest` and `1.4` on one image is one image, and a re-tag is not scanned again.
+- **Push time** is the registry's own (Docker Hub's tag push time, the GitHub package version's creation, ECR's `imagePushedAt`). A generic registry has none, so the image's build time from its configuration stands in, read for at most 50 tags per repository (pattern matches first, then the highest versions and `latest`), and only once per digest.
+
+```json
+{"kind": "container_registry", "name": "acme on GHCR",
+ "config": {"provider": "ghcr", "namespace": "acme", "exclude": ["*-sandbox"], "recent_tags": 2, "tag_patterns": ["latest", "semver"], "image_scans": 25},
+ "secret_ref": "secret:ghcr-acme", "schedule_minutes": 360}
+```
+
+Each chosen image is an image asset named by repository and tag (`ghcr.io/acme/shop:1.4`) and found again by its digest (`ghcr.io/acme/shop@sha256:…`), with `tags`, `repository` and `pushed_at` attributes. It is scanned by the image scanner described above, through the same job: at most `image_scans` per run (default 25, at most 500), most recently pushed first, and a digest at most once a week; with the registry's credentials only when the image is on that registry. Until its scan succeeds an image shows as not assessed, never clean. At the [monitored-asset limit](asset-limits.md) new images are left out (the integration says how many) and added once there is room.
+
+When a newer tag takes an image's place, it is no longer tracked or scanned, but its asset stays as it was: the image is still in the registry and may still run. When the registry no longer has any tag on an image (its tags were deleted or all moved to other images, or its repository was deleted), the image is **removed**: its asset's collection status becomes `removed`, its issues resolve as removed on the next evaluation, and its history stays. An image pushed again is scanned again. Nothing is removed on the strength of a partial answer: a repository whose tags could not be read, or that has more than 10,000 tags, keeps its images, and the integration's last error names it. The images and their state are in `GET /api/v1/integrations/{id}/images`.
+
 ### SBOMs
 
 ```sh
