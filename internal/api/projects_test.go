@@ -291,6 +291,11 @@ var projectScopes = map[string]string{
 	"POST /api/v1/risk-policy/preview":               "org",
 	"POST /api/v1/users":                             "org",
 	"POST /api/v1/teams":                             "org",
+	"GET /api/v1/owner-rules":                        "org",
+	"POST /api/v1/owner-rules":                       "org",
+	"POST /api/v1/owner-rules/apply":                 "org",
+	"PUT /api/v1/owner-rules/{id}":                   "org",
+	"DELETE /api/v1/owner-rules/{id}":                "org",
 	"GET /api/v1/onboarding":                         "org",
 	"GET /api/v1/usage":                              "org",
 	"PUT /api/v1/onboarding":                         "org",
@@ -1377,7 +1382,7 @@ func TestProjectScopeInDatabase(t *testing.T) {
 	}
 	for _, tbl := range tables {
 		switch tbl {
-		case "api_tokens", "integrations", "access_grants", "project_assets":
+		case "api_tokens", "integrations", "access_grants", "project_assets", "owner_rules":
 			continue // organisation administration; their routes refuse members
 		}
 		var n int

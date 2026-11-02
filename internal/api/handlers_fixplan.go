@@ -108,7 +108,12 @@ func (s *Server) getFixGroup(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"group": json.RawMessage(g), "findings": paged(findings, total, p)})
+	owners, err := s.Store.FixGroupOwners(r.Context(), id)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"group": json.RawMessage(g), "findings": paged(findings, total, p), "owners": owners})
 }
 
 type fixGroupingBody struct {

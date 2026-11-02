@@ -12,6 +12,7 @@ import {
   type Team,
   type UserRole,
 } from "../../api";
+import { OwnerRulesCard } from "../../components/Owners";
 import { useAuth } from "../../auth";
 import { useAction, useLoad } from "../../hooks";
 import { absTime, plural, humanize } from "../../format";
@@ -571,6 +572,8 @@ export function ProjectDetailPage() {
         <h3>Give access</h3>
         <AddAccess target={{ project_id: p.id }} onAdded={res.reload} />
       </Card>
+
+      <OwnerRulesCard projectId={p.id} />
 
       <Card title="Invite by email">
         <p className="small muted">

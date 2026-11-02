@@ -7951,6 +7951,210 @@
     }
    }
   },
+  "/owner-rules": {
+   "get": {
+    "operationId": "get_owner-rules",
+    "summary": "Owner rules, most specific first",
+    "description": "Owner rules, most specific first\n\nRole: viewer",
+    "tags": [
+     "Projects and people"
+    ],
+    "x-stackurity-role": "viewer",
+    "parameters": [
+     {
+      "name": "asset_id",
+      "in": "query",
+      "required": false,
+      "description": "Rules that can apply to this asset",
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "query",
+      "required": false,
+      "description": "Rules that can apply to this project",
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "post": {
+    "operationId": "post_owner-rules",
+    "summary": "Create an owner rule",
+    "description": "Create an owner rule\n\nRole: admin",
+    "tags": [
+     "Projects and people"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/owner-rules/apply": {
+   "post": {
+    "operationId": "post_owner-rules_apply",
+    "summary": "Preview or apply the owner rules to open issues",
+    "description": "Preview or apply the owner rules to open issues\n\nRole: admin",
+    "tags": [
+     "Projects and people"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/owner-rules/{id}": {
+   "put": {
+    "operationId": "put_owner-rules_id",
+    "summary": "Replace an owner rule",
+    "description": "Replace an owner rule\n\nRole: admin",
+    "tags": [
+     "Projects and people"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "delete_owner-rules_id",
+    "summary": "Delete an owner rule",
+    "description": "Delete an owner rule\n\nRole: admin",
+    "tags": [
+     "Projects and people"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/tokens": {
    "get": {
     "operationId": "get_tokens",

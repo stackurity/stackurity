@@ -48,6 +48,7 @@ import { HealthPage } from "./pages/admin/Health";
 import { CoverageGapsPage } from "./pages/admin/CoverageGaps";
 import { UpdatesPage } from "./pages/admin/Updates";
 import { TeamsPage } from "./pages/settings/Teams";
+import { OwnersPage } from "./pages/settings/Owners";
 import { TokensPage } from "./pages/settings/Tokens";
 import { ConflictsPage } from "./pages/settings/Conflicts";
 import { JobsPage } from "./pages/settings/Jobs";
@@ -392,6 +393,14 @@ export function App() {
           element={
             <RequireRole min="admin">
               <TeamsPage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="settings/owners"
+          element={
+            <RequireRole min="admin">
+              <OwnersPage />
             </RequireRole>
           }
         />
