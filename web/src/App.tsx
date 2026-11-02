@@ -12,6 +12,7 @@ import { SlackLinkPage } from "./pages/SlackLink";
 import { AccountPage } from "./pages/Account";
 import { SlackOAuthCallbackPage } from "./pages/SlackOAuthCallback";
 import { JiraOAuthCallbackPage } from "./pages/JiraOAuthCallback";
+import { GitHubCallbackPage } from "./pages/GitHubCallback";
 import { SlackInstallPage } from "./pages/SlackInstall";
 import { EmailConfirmPage, EmailStopPage } from "./pages/EmailConfirm";
 import { EmailPreferencesPage } from "./pages/EmailPreferences";
@@ -26,6 +27,7 @@ import { AutomaticFixPoliciesPage, SettingsPage } from "./pages/Settings";
 import { AssetsPage } from "./pages/Assets";
 import { AssetDetailPage } from "./pages/AssetDetail";
 import { AddServerPage } from "./pages/AddServer";
+import { AddClusterPage } from "./pages/AddCluster";
 import { ComponentsPage } from "./pages/Components";
 import { ComponentDetailPage } from "./pages/ComponentDetail";
 import { UpdatesAvailablePage } from "./pages/UpdatesAvailable";
@@ -58,6 +60,7 @@ import { IncidentDetailPage } from "./pages/IncidentDetail";
 import { AutomaticFixesPage } from "./pages/Remediation";
 import { PlanDetailPage } from "./pages/PlanDetail";
 import { PluginsPage } from "./pages/settings/Plugins";
+import { AwsPage } from "./pages/settings/Aws";
 import { FixesPage, FixGroupDetailPage } from "./pages/ActionPlan";
 import { IntegrationsHubPage } from "./pages/settings/Integrations";
 import { IntegrationAddPage, IntegrationChannelPage } from "./pages/settings/IntegrationsChannel";
@@ -144,6 +147,10 @@ export function App() {
   // the address and query stay. A cancel (?error=) is explained signed out.
   if (pathname === "/integrations/jira/oauth/callback" && state.phase === "login") return slackCallbackNeedsSession() ? <LoginPage /> : <JiraOAuthCallbackPage />;
   if (pathname === "/integrations/jira/oauth/callback" && state.phase === "ready") return <JiraOAuthCallbackPage />;
+  // Back from "Install on GitHub": sign in first; the address and query
+  // stay, and the page connects the installation in the signed-in session.
+  if (pathname === "/integrations/github/callback" && state.phase === "login") return <LoginPage />;
+  if (pathname === "/integrations/github/callback" && state.phase === "ready") return <GitHubCallbackPage />;
   // Adding Stackurity to Slack from outside the dashboard (the Slack app's
   // Direct install URL): sign in, pick the organisation, go to Slack.
   if ((pathname === "/integrations/slack/install" || pathname === "/integrations/slack/add") && state.phase === "login") return <LoginPage />;
@@ -245,6 +252,14 @@ export function App() {
             </RequireRole>
           }
         />
+        <Route
+          path="integrations/kubernetes/add"
+          element={
+            <RequireRole min="admin">
+              <AddClusterPage />
+            </RequireRole>
+          }
+        />
         <Route path="assets/:id" element={<AssetDetailPage />} />
         <Route path="components" element={<ComponentsPage />} />
         <Route path="components/updates" element={<UpdatesAvailablePage />} />
@@ -315,6 +330,14 @@ export function App() {
           element={
             <RequireRole min="engineer">
               <IntegrationsHubPage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="settings/integrations/aws"
+          element={
+            <RequireRole min="admin">
+              <AwsPage />
             </RequireRole>
           }
         />

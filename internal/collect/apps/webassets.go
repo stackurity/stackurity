@@ -580,6 +580,7 @@ type webAssets struct {
 	bytes int
 	limit string // the limit that stopped reading, "" when none did
 	seen  map[string]bool
+	b     bundles
 	// denied counts files and directories the agent's user may not read.
 	denied *denied
 	obs    []model.Observation
@@ -610,7 +611,7 @@ func (w *webAssets) consider(full string, d fs.DirEntry) {
 	for _, e := range templateExts {
 		isTemplate = isTemplate || strings.HasSuffix(name, e)
 	}
-	if !isAsset && !isTemplate {
+	if !isAsset && !isTemplate && !compiledOutput(name) {
 		return
 	}
 	host := w.s.hostPath(full)
@@ -624,6 +625,17 @@ func (w *webAssets) consider(full string, d fs.DirEntry) {
 		}
 	}
 	if w.s.Owned != nil && w.s.Owned(host) {
+		return
+	}
+	// WordPress core keeps its own copies of jQuery, TinyMCE and others in
+	// wp-includes, some patched in place ("1.12.4-wp"), and updates them
+	// with WordPress: the version alone does not say what the copy fixes.
+	wpCore := false
+	for _, part := range strings.Split(rel, "/") {
+		wpCore = wpCore || part == "wp-includes"
+	}
+	if !isAsset && !isTemplate {
+		w.bundleOther(full, host, name, wpCore) // a source map, licence file or Flutter renderer
 		return
 	}
 	switch {
@@ -643,17 +655,10 @@ func (w *webAssets) consider(full string, d fs.DirEntry) {
 		w.denied.note(host, err)
 		return
 	}
+	defer f.Close()
 	data, _ := io.ReadAll(io.LimitReader(f, limit))
-	f.Close()
 	w.files++
 	w.bytes += len(data)
-	// WordPress core keeps its own copies of jQuery, TinyMCE and others in
-	// wp-includes, some patched in place ("1.12.4-wp"), and updates them
-	// with WordPress: the version alone does not say what the copy fixes.
-	wpCore := false
-	for _, part := range strings.Split(rel, "/") {
-		wpCore = wpCore || part == "wp-includes"
-	}
 	if isTemplate {
 		for _, m := range parseTemplate(name, data) {
 			w.add(m[0], m[1], host, false, map[string]string{"source": "cdn", "url": clip(m[2])})
@@ -667,6 +672,9 @@ func (w *webAssets) consider(full string, d fs.DirEntry) {
 			ev["bundled_with"] = "WordPress"
 		}
 		w.add(m[0], m[1], host, bundled, ev)
+	}
+	if strings.HasSuffix(name, ".js") || strings.HasSuffix(name, ".mjs") {
+		w.bundleScript(f, host, rel, name, data, wpCore) // compiled output is read whole (bundles.go)
 	}
 }
 
