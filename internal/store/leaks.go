@@ -304,32 +304,6 @@ func (s *Store) leakProblems(ctx context.Context) ([]SystemIncident, error) {
 	return out, rows.Err()
 }
 
-// LeakSummary counts open leaks by severity, for the asset list and the
-// dashboard.
-func (s *Store) LeakSummary(ctx context.Context, assetID int64) (map[string]int, error) {
-	q := `SELECT severity, count(*) FROM leaks WHERE status = 'open'`
-	args := []any{}
-	if assetID > 0 {
-		q += ` AND asset_id = $1`
-		args = append(args, assetID)
-	}
-	rows, err := s.Pool.Query(ctx, q+` GROUP BY severity`, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[string]int{}
-	for rows.Next() {
-		var sev string
-		var n int
-		if err := rows.Scan(&sev, &n); err != nil {
-			return nil, err
-		}
-		out[strings.ToLower(sev)] = n
-	}
-	return out, rows.Err()
-}
-
 // LeakScan is the last key scan one collector made of an asset.
 type LeakScan struct {
 	CollectorID string    `json:"collector_id"`
