@@ -701,6 +701,50 @@ The plugin also runs as an ordinary **Plugin** integration, with a role you made
 
 The secret file holds `{"aws_access_key_id": "...", "aws_secret_access_key": "..."}`. Without it, the plugin uses the instance role (only in the default organisation). Give the role the read-only actions listed above. The exact list is also in the plugin's metadata, under **Settings → Plugins** or with `GET /api/v1/plugins`.
 
+### Google Cloud managed services
+
+The image includes the `gcp-managed` plugin. It reports Cloud SQL (PostgreSQL, MySQL and SQL Server versions), Memorystore for Redis and Memcached, GKE control planes and node pools, and the language runtimes of Cloud Run functions, Cloud Run source deployments and App Engine (serving versions). GKE versions are matched against endoflife.date's `google-kubernetes-engine` lifecycle, Cloud SQL against the upstream engine (`postgresql`, `mysql`, `mssqlserver`; Google's extended support can run longer) and runtimes against the language (`python`, `nodejs`, `go`, `ruby`, `php`, `dotnet`). Memorystore for Redis has no product on endoflife.date: its version is shown and its lifecycle appears as not assessed.
+
+Under **Settings → Integrations**, choose **Google Cloud**, enter the project id and number, and run the commands shown in Cloud Shell as a project owner. They create:
+
+- a custom role, `stackurityInventoryReader`, with exactly the permissions the plugin uses: `appengine.services.list`, `appengine.versions.list`, `cloudfunctions.functions.list`, `cloudsql.instances.list`, `container.clusters.list`, `memcache.instances.list`, `redis.instances.list`, `resourcemanager.projects.get`, `run.services.list`;
+- a service account, `stackurity-reader@<project>.iam.gserviceaccount.com`, with that role and **no key**;
+- a workload identity pool and OIDC provider, `stackurity`, that trusts tokens this server signs, for your workspace only (`assertion.sub=='workspace:<id>'`), and lets that one subject act as the service account (`roles/iam.workloadIdentityUser`).
+
+On each run the server signs a 10-minute token naming the workspace; the plugin exchanges it at `sts.googleapis.com` and `iamcredentials.googleapis.com` for a one-hour token of the service account. No key leaves Google Cloud and Google never connects to Stackurity: the provider holds the server's public key (uploaded with `--jwk-json-path`), so this works for servers behind a firewall too. Keyless access needs `STACKURITY_SECRET_KEY` (the signing key is derived from it, so changing that key means running the provider command again) and `STACKURITY_BASE_URL` set to the server's `https://` address (the token issuer). Another workspace's tokens, or another server's, are refused by the provider.
+
+The integration this creates:
+
+```json
+{"kind": "plugin", "config": {"plugin": "gcp-managed", "config": {"project_id": "acme-prod", "project_number": "123456789012", "environment_label": "env"}}, "schedule_minutes": 720}
+```
+
+If your organisation cannot use workload identity federation, the same page shows the fallback: the same role and service account, plus a key (`gcloud iam service-accounts keys create`). Store the key file's contents, unchanged, as a workspace secret under **Settings → Secrets** and set `"auth": "service_account_key"` and `"secret_ref": "secret:<name>"`. The key file's `token_uri` is ignored: the plugin signs in at `oauth2.googleapis.com` only. An organisation policy (`iam.disableServiceAccountKeyCreation`) may forbid keys.
+
+A service the role cannot read, or whose API is not enabled in the project, is shown under the project's coverage as failed or skipped with Google's reason, never as zero resources. Cloud Run services deployed from a container image are left to image scanning (add the image as a **Container image** integration).
+
+### Azure managed services
+
+The image includes the `azure-managed` plugin. It reports Azure Database for MySQL and PostgreSQL flexible servers, Azure Cache for Redis, AKS clusters and node pools, and the runtime stack of App Service and Functions apps. Versions are matched against endoflife.date's `azure-database-for-mysql`, `azure-database-for-postgresql` and `azure-kubernetes-service` lifecycles, and app runtimes against the language. Azure Cache for Redis has no product on endoflife.date: its version is shown and its lifecycle appears as not assessed. Windows apps that name their runtime only in app settings are shown as partial: the plugin never reads app settings, which hold secrets.
+
+Under **Settings → Integrations**, choose **Azure**, enter the tenant and subscription ids, and either open the admin consent link or run the commands shown (in Cloud Shell, as an Owner or User Access Administrator of the subscription, allowed to add enterprise applications). They:
+
+- add Stackurity's multi-tenant Entra app to your tenant (`az ad sp create`, the same as the consent link; the app asks for no Microsoft Graph or other API permissions);
+- create a custom role, `Stackurity Inventory Reader (<subscription>)`, scoped to the subscription, with exactly the actions the plugin uses: `Microsoft.Authorization/roleAssignments/read`, `Microsoft.Cache/redis/read`, `Microsoft.ContainerService/managedClusters/read`, `Microsoft.DBforMySQL/flexibleServers/read`, `Microsoft.DBforPostgreSQL/flexibleServers/read`, `Microsoft.Resources/subscriptions/read`, `Microsoft.Web/sites/config/read`, `Microsoft.Web/sites/read` (the built-in Reader role also works, but reads far more);
+- assign it to the app with the description `stackurity-workspace-proof:<value>`. The value is derived from this server's key and your workspace. The app is shared by every workspace on the server, so before reading anything the plugin lists its own role assignments on the subscription and refuses one that does not carry your workspace's value: another workspace cannot read a subscription you granted.
+
+No secret is created in your tenant. The app's credential stays with the server operator (`STACKURITY_AZURE_APP_ID`, and `STACKURITY_AZURE_APP_SECRET` or `STACKURITY_AZURE_APP_SECRET_FILE`); the server hands it only to the `azure-managed` plugin, and only for a run. To offer this on your own server, register a multi-tenant app ("Accounts in any organizational directory"), with `https://<your server>/settings/integrations` as a Web redirect URI and no API permissions, create a client secret, and set those variables along with `STACKURITY_SECRET_KEY` and `STACKURITY_BASE_URL`.
+
+The integration this creates:
+
+```json
+{"kind": "plugin", "config": {"plugin": "azure-managed", "config": {"tenant_id": "…", "subscription_id": "…", "environment_tag": "Environment"}}, "schedule_minutes": 720}
+```
+
+Without the app, the page shows the fallback: the same custom role and `az ad sp create-for-rbac`, which creates a service principal with a client secret in your tenant. Store `{"azure_client_id": "<appId>", "azure_client_secret": "<password>"}` as a workspace secret and set `"auth": "client_secret"`. Secrets are stored encrypted and never returned by the API.
+
+A service the role cannot read, or whose resource provider is not registered, is shown under the subscription's coverage as failed or skipped with Azure's reason, never as zero resources.
+
 ### Kubernetes
 
 Connect a cluster with one command from **Settings → Integrations → Kubernetes cluster**. It installs the reporter, a small Deployment that reads the cluster with a read-only service account and sends it to Stackurity over HTTPS; nothing connects into the cluster:
