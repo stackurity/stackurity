@@ -546,6 +546,16 @@ host; see docs/install.md.`,
 	cmd.Flags().DurationVar(&actionInterval, "action-interval", 5*time.Minute, "how often to check for approved changes when --remediate is set")
 	cmd.Flags().DurationVar(&checkInterval, "check-interval", 45*time.Second,
 		"how often to ask the server whether someone pressed Check again (0 turns it off)")
+	// Started by the Windows service control manager (the agent.ps1
+	// installer registers the service), the agent reports to it and stops
+	// when asked; anywhere else this runs the agent as it is.
+	run := cmd.RunE
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		return runAgent(cmd.Context(), func(ctx context.Context) error {
+			cmd.SetContext(ctx)
+			return run(cmd, args)
+		})
+	}
 	return cmd
 }
 

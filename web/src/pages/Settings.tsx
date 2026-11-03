@@ -1,14 +1,16 @@
-import { Link } from "react-router";
+import { useEffect, useRef, type ReactNode } from "react";
+import { Link, Navigate, NavLink, Outlet, useLocation } from "react-router";
 import type { Feature, UserRole } from "../api";
 import { useAuth } from "../auth";
 import { PageHeader } from "../components/ui";
 import { ProBadge, ProNotice } from "../components/ProNotice";
+import { IconCard, IconClock, IconDocument, IconGauge, IconLayers, IconRemediation, IconShield, IconSignIn } from "../components/Icons";
 import { PoliciesTab } from "./Remediation";
 
 interface Entry {
   to: string;
   label: string;
-  about: string;
+  icon: ReactNode;
   min?: UserRole;
   feature?: Feature;
   /** Shown only where the server offers billing (a hosted edition). */
@@ -19,80 +21,89 @@ const GROUPS: { title: string; entries: Entry[] }[] = [
   {
     title: "How Stackurity decides",
     entries: [
-      { to: "/settings/risk-policy", label: "Risk policy", about: "How issues get their priority, SOS rules, deadlines and the longest snooze." },
-      {
-        to: "/settings/fix-grouping",
-        label: "Fix grouping",
-        about: "Show a fix needed in several places as one card listing them, or one card per asset.",
-      },
-      {
-        to: "/settings/vex",
-        label: "VEX",
-        about: "Import vendors' VEX statements (approved before they hide anything), trusted sources, and export your decisions as OpenVEX or CycloneDX.",
-      },
-      {
-        to: "/settings/automatic-fixes",
-        label: "Automatic fixes",
-        about: "Policies that let Stackurity apply upgrades for you, with approval and canary hosts. The plans themselves are under Fixes.",
-        min: "security",
-        feature: "remediation",
-      },
+      { to: "/settings/risk-policy", label: "Risk policy", icon: <IconShield /> },
+      { to: "/settings/fix-grouping", label: "Fix grouping", icon: <IconLayers /> },
+      { to: "/settings/vex", label: "VEX", icon: <IconDocument /> },
+      { to: "/settings/automatic-fixes", label: "Automatic fixes", icon: <IconRemediation />, min: "security", feature: "remediation" },
     ],
   },
   {
     title: "Plan and usage",
     entries: [
-      { to: "/settings/usage", label: "Usage", about: "Monitored assets against this organisation's limit, and new assets refused at the limit.", min: "admin" },
-      { to: "/settings/billing", label: "Plan and billing", about: "Your plan, the assets you pay for, payments and invoices.", min: "admin", billing: true },
-      { to: "/settings/sso", label: "Single sign-on", about: "Sign in with your organisation's SAML identity provider, for the email domains you own.", min: "admin", billing: true },
+      { to: "/settings/usage", label: "Usage", icon: <IconGauge />, min: "admin" },
+      { to: "/settings/billing", label: "Plan and billing", icon: <IconCard />, min: "admin", billing: true },
+      { to: "/settings/sso", label: "Single sign-on", icon: <IconSignIn />, min: "admin", billing: true },
     ],
   },
   {
     title: "Maintenance",
-    entries: [{ to: "/settings/jobs", label: "Jobs", about: "Background work that failed or is waiting.", min: "admin" }],
+    entries: [{ to: "/settings/jobs", label: "Jobs", icon: <IconClock />, min: "admin" }],
   },
 ];
 
+function useVisible() {
+  const { can, meta } = useAuth();
+  return (e: Entry) => (!e.billing || Boolean(meta?.billing)) && (!e.min || can(e.min));
+}
+
 /**
- * Settings: the switches for how this workspace checks and decides. Pages
- * people use day to day have their own place in the sidebar (Integrations,
- * People, Assets ▸ Projects, Reports, Admin).
+ * Settings: the switches for how this workspace checks and decides, as two
+ * panes: every section on the left, the open one on the right. Pages people
+ * use day to day have their own place in the sidebar (Integrations, People,
+ * Assets ▸ Projects, Reports, Admin).
  */
-export function SettingsPage() {
-  const { can, has, meta } = useAuth();
-  const visible = (e: Entry) => (!e.billing || Boolean(meta?.billing)) && (!e.min || can(e.min));
+export function SettingsLayout() {
+  const { me, has } = useAuth();
+  const visible = useVisible();
+  const { pathname } = useLocation();
+  const nav = useRef<HTMLElement>(null);
+  // On phones the sections are one row that scrolls sideways: keep the open one in view.
+  useEffect(() => {
+    nav.current?.querySelector(".active")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [pathname]);
   return (
-    <>
-      <PageHeader title="Settings" sub="How Stackurity checks and decides in this workspace, and its plan." />
-      <div className="settings-groups">
+    <div className="settings-layout">
+      <nav ref={nav} className="settings-nav" aria-label="Settings">
+        <div className="settings-nav-head">
+          <strong>{me?.workspace?.name ?? "Settings"}</strong>
+          <span className="small muted">Workspace settings</span>
+        </div>
         {GROUPS.map((g) => {
           const entries = g.entries.filter(visible);
           if (entries.length === 0) return null;
           return (
-            <section key={g.title} className="card settings-group">
-              <h2>{g.title}</h2>
-              <ul className="settings-list">
+            <div key={g.title} className="settings-nav-group">
+              <h2 className="settings-nav-title">{g.title}</h2>
+              <ul>
                 {entries.map((e) => (
                   <li key={e.to}>
-                    <Link to={e.to} className="settings-link">
-                      <span className="settings-label">
-                        {e.label} {e.feature && !has(e.feature) && <ProBadge />}
-                      </span>
-                      <span className="small muted">{e.about}</span>
-                    </Link>
+                    <NavLink to={e.to} className="settings-nav-item">
+                      {e.icon}
+                      <span>{e.label}</span>
+                      {e.feature && !has(e.feature) && <ProBadge />}
+                    </NavLink>
                   </li>
                 ))}
               </ul>
-            </section>
+            </div>
           );
         })}
+        <p className="small muted settings-nav-note">
+          Integrations, People and Projects (under Assets) are in the main sidebar; the audit log is under Reports.
+        </p>
+      </nav>
+      <div className="settings-main">
+        <Outlet />
       </div>
-      <p className="small muted">
-        Integrations (with notifications, tokens and AI assistants), People (users, teams and owner rules) and Projects (under Assets) moved to the sidebar;
-        the audit log is under Reports.
-      </p>
-    </>
+    </div>
   );
+}
+
+/** /settings opens its first section, as the list on the left shows them. */
+export function SettingsIndex() {
+  const visible = useVisible();
+  const first = GROUPS.flatMap((g) => g.entries).find(visible);
+  return <Navigate replace to={first?.to ?? "/settings/risk-policy"} />;
 }
 
 /** Settings, Automatic fixes: the remediation policies (security role). */
