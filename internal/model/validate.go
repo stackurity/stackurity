@@ -124,7 +124,7 @@ func (b *ObservationBatch) Validate() error {
 			add("relations[%d].to must have 1-%d identifiers", i, MaxIdentifiers)
 		}
 		for _, id := range r.To {
-			if id.Scheme == "" || id.Value == "" || long(id.Scheme) || long(id.Value) || id.Scheme == AppPathScheme {
+			if id.Scheme == "" || id.Value == "" || long(id.Scheme) || long(id.Value) || id.Scheme == AppPathScheme || id.Scheme == HostImageScheme {
 				add("relations[%d] has an invalid identifier", i)
 			}
 		}
@@ -137,6 +137,29 @@ func (b *ObservationBatch) Validate() error {
 		// be mixed with identities that could match another asset.
 		if b.Asset.Kind != AssetApplication || !runsOn || len(b.Asset.Identifiers) != 1 || !strings.HasPrefix(id.Value, "/") {
 			add("an %s identifier needs an application asset, an absolute path, no other identifiers and a runs_on relation", AppPathScheme)
+		}
+	}
+	for _, id := range b.Asset.Identifiers {
+		if id.Scheme != HostImageScheme {
+			continue
+		}
+		// Scoped to the host by the server, like an application path.
+		if b.Asset.Kind != AssetImage || !runsOn || len(b.Asset.Identifiers) != 1 || !validImageRef(id.Value) {
+			add("a %s identifier needs an image asset, a tag or image ID, no other identifiers and a runs_on relation", HostImageScheme)
+		}
+	}
+	if b.Images != nil {
+		if b.Asset.Kind != AssetHost {
+			add("images is only allowed on a host's batch")
+		}
+		if len(b.Images.Refs) > MaxHostImages {
+			add("images.refs has more than %d entries", MaxHostImages)
+		}
+		for i, r := range b.Images.Refs {
+			if !validImageRef(r) {
+				add("images.refs[%d] is not a valid image tag or ID", i)
+				break
+			}
 		}
 	}
 	if b.Apps != nil {
@@ -152,6 +175,9 @@ func (b *ObservationBatch) Validate() error {
 				break
 			}
 		}
+	}
+	if b.Leaks != nil {
+		b.Leaks.validate(add)
 	}
 	for i, c := range b.Coverage {
 		switch c.Status {
@@ -212,4 +238,13 @@ func ComponentKey(purl string) (key, typ, namespace, name string, err error) {
 	// each inventory row; the component itself is distro-independent.
 	pu.Qualifiers = nil
 	return pu.ToString(), pu.Type, pu.Namespace, pu.Name, nil
+}
+
+// validImageRef accepts a host image identity: a tag or an image ID, with
+// no spaces or control characters.
+func validImageRef(v string) bool {
+	if v == "" || len(v) > 512 || hasControl(v) || strings.ContainsAny(v, " \t") {
+		return false
+	}
+	return true
 }

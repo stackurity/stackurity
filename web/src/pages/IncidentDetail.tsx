@@ -6,6 +6,7 @@ import { useAction, useLoad } from "../hooks";
 import { humanize } from "../format";
 import { Badge, Chip, EscalationBadge, KevBadge, PriorityBadge, SosBadge, StateBadge } from "../components/Badge";
 import { FindingsTable } from "../components/Findings";
+import { countOwners, OwnerSplit } from "../components/Owners";
 import { IssueLinks } from "../components/IssueLinks";
 import { Table, type Column } from "../components/Table";
 import { FindingActions } from "../components/Workflow";
@@ -77,7 +78,14 @@ function SystemDetail({ inc }: { inc: Incident }) {
             again.
           </>
         )}
-        {inc.kind !== "feed" && assetId && (
+        {inc.kind === "leak" && assetId && (
+          <>
+            {typeof d.why === "string" && <>{d.why} </>}
+            See the asset's <Link to={`/assets/${assetId}?tab=leaks`}>leaked keys</Link>. Rotate each key: revoke it and issue a new one.
+            This incident resolves itself once a complete scan no longer finds critical or high leaks on the asset, or they are dismissed.
+          </>
+        )}
+        {inc.kind !== "feed" && inc.kind !== "leak" && assetId && (
           <>
             See the <Link to={`/assets/${assetId}?tab=${inc.kind === "coverage" ? "coverage" : "collections"}`}>asset</Link>. This
             incident resolves itself once collection is healthy again.
@@ -250,6 +258,7 @@ export function IncidentDetailPage() {
           <h2 className="section-title" id="if-title">
             Findings ({findings.length})
           </h2>
+          {findings.length > 0 && <OwnerSplit owners={countOwners(findings)} />}
           {findings.length === 0 ? <p className="muted">No findings are linked to this incident.</p> : <FindingsTable rows={findings} />}
         </section>
       )}

@@ -90,6 +90,8 @@ var projectRoutes = map[string]projectScope{
 	"GET /api/v1/assets/{id}/drift":            scopedRead,
 	"GET /api/v1/assets/{id}/stack":            scopedRead,
 	"GET /api/v1/assets/{id}/sbom":             scopedRead,
+	"GET /api/v1/assets/{id}/leaks":            scopedRead,
+	"GET /api/v1/leaks":                        scopedRead,
 	"GET /api/v1/assets/{id}/remediation":      scopedRead,
 	"GET /api/v1/components":                   scopedRead,
 	"GET /api/v1/components/{id}":              scopedRead,
@@ -140,6 +142,8 @@ var projectRoutes = map[string]projectScope{
 	"DELETE /api/v1/assets/{id}/relations": scopedWrite,
 	"POST /api/v1/findings/{id}/actions":   scopedWrite,
 	"POST /api/v1/findings/actions":        scopedWrite,
+	"POST /api/v1/leaks/{id}/dismiss":      scopedWrite,
+	"POST /api/v1/leaks/{id}/undismiss":    scopedWrite,
 	"POST /api/v1/incidents/{id}/actions":  scopedWrite,
 	"POST /api/v1/assets/{id}/check":       scopedWrite,
 	"POST /api/v1/fix-groups/{id}/check":   scopedWrite,
@@ -507,14 +511,31 @@ func (s *Server) createGrant(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, r, badRequest("a valid email is required"))
 			return
 		}
-		uid, newAccount, err := s.Store.EnsureMember(r.Context(), email, req.Name, req.Password)
-		if err != nil {
-			s.fail(w, r, err)
-			return
+		if s.InviteOnly {
+			// People join an invite-only server by invitation, which proves
+			// they own the address; this path would add them (and make an
+			// account with a password the admin chose) without it, as
+			// POST /users would. Members may still be given access here.
+			uid, member, err := s.Store.MemberByEmail(r.Context(), email)
+			if err != nil {
+				s.fail(w, r, err)
+				return
+			}
+			if !member {
+				writeError(w, 403, "invite_only", "people join this service by invitation: invite them by email (Settings → Users, or the project's Invite)")
+				return
+			}
+			in.UserID = &uid
+		} else {
+			uid, newAccount, err := s.Store.EnsureMember(r.Context(), email, req.Name, req.Password)
+			if err != nil {
+				s.fail(w, r, err)
+				return
+			}
+			in.UserID, created = &uid, newAccount
 		}
-		in.UserID, created = &uid, newAccount
-		if newAccount {
-			_ = s.Store.Audit(r.Context(), p.Actor(r), "user.create", "user", itoa(uid), map[string]any{"email": strings.ToLower(email), "role": "none"})
+		if created {
+			_ = s.Store.Audit(r.Context(), p.Actor(r), "user.create", "user", itoa(*in.UserID), map[string]any{"email": strings.ToLower(email), "role": "none"})
 		}
 	}
 	g, isNew, err := s.Store.SaveGrant(r.Context(), in, actorUserID(p))

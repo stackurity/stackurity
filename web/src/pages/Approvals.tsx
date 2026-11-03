@@ -6,6 +6,7 @@ import { useAction, useLoad } from "../hooks";
 import { absTime, plural } from "../format";
 import { Badge, IGNORE_REASON_LABEL, type Tone } from "../components/Badge";
 import { EmptyState, ErrorBox, Loading, Notice, PageHeader, Pager, RelativeTime } from "../components/ui";
+import { ProjectFilter } from "../components/AssetPicker";
 
 const LIMIT = 50;
 
@@ -292,6 +293,9 @@ export function ApprovalsPage() {
         title="Approvals"
         sub="Requests to ignore issues, from people whose role cannot ignore them, and the ignore rules in force."
       />
+      <div className="filters">
+        <ProjectFilter id="apr-project" />
+      </div>
       <nav className="link-tabs" aria-label="Approvals">
         <ul>
           {tabs.map((t) => (

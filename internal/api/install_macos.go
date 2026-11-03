@@ -23,7 +23,11 @@ var agentMacInstallScript string
 func (s *Server) installScriptMacOS(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Add("Vary", "Host")
-	base := s.publicURL(r)
+	base, err := s.publicURL(r)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	// From the Host header, the URL is a scheme and an authority only.
 	hostWithPath := s.BaseURL == "" && strings.ContainsAny(r.Host, "/?#@\\")
 	if hostWithPath || !scriptURLSafe(base) {

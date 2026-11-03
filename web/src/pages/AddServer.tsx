@@ -6,27 +6,43 @@ import { absTime, plural } from "../format";
 import { Table, type Column } from "../components/Table";
 import { Card, Code, CodeBlock, EmptyState, ErrorBox, KeyValues, Loading, Notice, PageHeader, RelativeTime, Tabs } from "../components/ui";
 import { confirmAction } from "../components/ConfirmDialog";
+import { DigitalOceanPanel, FleetPanel } from "./AddServerFleet";
+
+type Mode = "one" | "fleet" | "digitalocean";
 
 const LOCAL_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
 
 /**
  * The one-line installer for a new Linux host. The installer refuses plain
  * HTTP to anything but localhost unless STACKURITY_ALLOW_HTTP=1 is set.
+ * With docker, it also gives the agent access to the Docker socket
+ * (STACKURITY_DOCKER=1) so it checks the images of running containers.
  */
-export function installCommand(code: string): { command: string; insecure: boolean } {
+export function installCommand(code: string, docker = false): { command: string; insecure: boolean } {
   const { origin, protocol, hostname } = window.location;
   const insecure = protocol === "http:" && !LOCAL_HOSTS.includes(hostname);
-  const env = `STACKURITY_ENROLL_CODE=${code}${insecure ? " STACKURITY_ALLOW_HTTP=1" : ""}`;
+  const env = `STACKURITY_ENROLL_CODE=${code}${insecure ? " STACKURITY_ALLOW_HTTP=1" : ""}${docker ? " STACKURITY_DOCKER=1" : ""}`;
   return { command: `curl -fsSL ${origin}/install/agent.sh | sudo ${env} sh`, insecure };
 }
 
-/** The one-line installer for a Mac (agent-macos.sh, a LaunchDaemon). */
-export function macInstallCommand(code: string): { command: string; insecure: boolean } {
-  const { command, insecure } = installCommand(code);
-  return { command: command.replace("/install/agent.sh", "/install/agent-macos.sh"), insecure };
+/**
+ * "Also check Docker containers": adds STACKURITY_DOCKER=1 to the install
+ * command. Off by default: it gives the agent's user access to the Docker
+ * socket, which is equivalent to root on the server.
+ */
+export function CheckDocker({ id, checked, onChange }: { id: string; checked: boolean; onChange: (on: boolean) => void }) {
+  return (
+    <>
+      <label className="check" htmlFor={id}>
+        <input id={id} type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} /> Also check Docker containers
+      </label>
+      <p className="hint">
+        Reads the images of running containers (OS packages and app libraries), including images built on the server. The agent's user
+        joins the group of the Docker socket, which is equivalent to root on the server. It only lists containers and exports images.
+      </p>
+    </>
+  );
 }
-
-export type ServerOS = "linux" | "macos";
 
 /**
  * "Also check websites and apps on this server": the install code then
@@ -48,6 +64,37 @@ export function CheckApps({ id, checked, onChange }: { id: string; checked: bool
 }
 
 export function AddServerPage() {
+  const [mode, setMode] = useState<Mode>("one");
+  return (
+    <>
+      <nav className="crumbs" aria-label="Breadcrumb">
+        <Link to="/assets">Assets</Link> <span aria-hidden="true">/</span> <span>Add server</span>
+      </nav>
+      <PageHeader
+        help="add-server"
+        title="Add server"
+        sub="Create an install command, then run it on the new Linux server. It installs the read-only agent and enrolls the server."
+      />
+      <Tabs
+        label="How many servers"
+        value={mode}
+        onChange={setMode}
+        tabs={[
+          { id: "one", label: "One server" },
+          { id: "fleet", label: "For many servers" },
+          { id: "digitalocean", label: "DigitalOcean" },
+        ]}
+      />
+      <div role="tabpanel" id={`panel-${mode}`} aria-labelledby={`tab-${mode}`}>
+        {mode === "one" && <OneServer />}
+        {mode === "fleet" && <FleetPanel />}
+        {mode === "digitalocean" && <DigitalOceanPanel />}
+      </div>
+    </>
+  );
+}
+
+function OneServer() {
   const res = useLoad(() => api.get<{ items: Enrollment[] | null }>("/enrollments"), []);
   const act = useAction();
   const [created, setCreated] = useState<EnrollmentCreated | null>(null);
@@ -108,14 +155,6 @@ export function AddServerPage() {
 
   return (
     <>
-      <nav className="crumbs" aria-label="Breadcrumb">
-        <Link to="/assets">Assets</Link> <span aria-hidden="true">/</span> <span>Add server</span>
-      </nav>
-      <PageHeader
-        help="add-server"
-        title="Add server"
-        sub="Create a one-time install command, then run it on the new Linux server or Mac. It installs the read-only agent and enrolls the server."
-      />
       {created ? (
         <InstallCommand created={created} onDone={() => setCreated(null)} />
       ) : (
@@ -142,8 +181,8 @@ export function AddServerPage() {
 }
 
 function InstallCommand({ created, onDone }: { created: EnrollmentCreated; onDone: () => void }) {
-  const [os, setOS] = useState<ServerOS>("linux");
-  const { command, insecure } = os === "macos" ? macInstallCommand(created.code) : installCommand(created.code);
+  const [docker, setDocker] = useState(false);
+  const { command, insecure } = installCommand(created.code, docker);
   const e = created.enrollment;
   return (
     <Card title="Install command">
@@ -160,19 +199,11 @@ function InstallCommand({ created, onDone }: { created: EnrollmentCreated; onDon
             from there instead.
           </Notice>
         )}
+        <div className="field">
+          <CheckDocker id="ic-docker" checked={docker} onChange={setDocker} />
+        </div>
         <div className="install-command">
-          <Tabs<ServerOS>
-            label="Operating system of the server"
-            value={os}
-            onChange={setOS}
-            tabs={[
-              { id: "linux", label: "Linux" },
-              { id: "macos", label: "macOS" },
-            ]}
-          />
-          <div role="tabpanel" id={`panel-${os}`} aria-labelledby={`tab-${os}`} className="tabpanel">
-            <CodeBlock text={command} label={os === "macos" ? "Install command for macOS" : "Install command for Linux"} />
-          </div>
+          <CodeBlock text={command} label="Install command" />
         </div>
         <KeyValues
           entries={[
@@ -182,56 +213,31 @@ function InstallCommand({ created, onDone }: { created: EnrollmentCreated; onDon
             ...(e.environment ? ([["Environment", e.environment]] as [string, string][]) : []),
           ]}
         />
-        {os === "linux" ? (
-          <div className="grid-2 tight">
-            <div>
-              <h3>What the command does</h3>
-              <ul className="banner-list small">
-                <li>Downloads the agent from this server (Linux amd64 or arm64) and checks its checksum.</li>
-                <li>Creates an unprivileged <Code>stackurity</Code> user and enrolls the server with this code.</li>
-                <li>Installs a hardened systemd service that reports every 6 hours. Running it again upgrades the agent.</li>
-                <li>The agent only reads what is installed. It never installs or changes software.</li>
-              </ul>
-            </div>
-            <div>
-              <h3>Requirements</h3>
-              <ul className="banner-list small">
-                <li>Linux with systemd</li>
-                <li>Root or sudo on the server</li>
-                <li>Outbound HTTPS from the server to this dashboard</li>
-              </ul>
-            </div>
+        <div className="grid-2 tight">
+          <div>
+            <h3>What the command does</h3>
+            <ul className="banner-list small">
+              <li>Downloads the agent from this server (Linux amd64 or arm64) and checks its checksum.</li>
+              <li>Creates an unprivileged <Code>stackurity</Code> user and enrolls the server with this code.</li>
+              <li>Installs a hardened systemd service that reports every 6 hours. Running it again upgrades the agent.</li>
+              <li>The agent only reads what is installed. It never installs or changes software.</li>
+            </ul>
           </div>
-        ) : (
-          <div className="grid-2 tight">
-            <div>
-              <h3>What the command does</h3>
-              <ul className="banner-list small">
-                <li>Downloads the agent from this server (Apple silicon or Intel) and checks its checksum.</li>
-                <li>Creates a hidden, unprivileged <Code>_stackurity</Code> account and enrolls the Mac with this code.</li>
-                <li>Installs a LaunchDaemon that runs as that account and reports every 6 hours. Running it again upgrades the agent.</li>
-                <li>
-                  The agent only reads: the macOS version, applications, Homebrew packages and runtimes. Users&apos; home folders are
-                  private, so their own applications are reported as not checked.
-                </li>
-              </ul>
-            </div>
-            <div>
-              <h3>Requirements</h3>
-              <ul className="banner-list small">
-                <li>macOS 10.15 or later</li>
-                <li>An administrator account (sudo)</li>
-                <li>Outbound HTTPS from the Mac to this dashboard</li>
-              </ul>
-            </div>
+          <div>
+            <h3>Requirements</h3>
+            <ul className="banner-list small">
+              <li>Linux with systemd</li>
+              <li>Root or sudo on the server</li>
+              <li>Outbound HTTPS from the server to this dashboard</li>
+            </ul>
           </div>
-        )}
+        </div>
         <p className="small">
           <strong>Next:</strong> the server appears under <Link to="/assets">Assets</Link> within a minute; applications
           appear as their own assets linked to it.
         </p>
         <p className="small muted">
-          Other ways: Windows, MDM for Macs and manual installs are described in the documentation (docs/install.md).
+          Other ways: Windows and manual installs are described in the documentation (docs/install.md).
         </p>
         <div className="form-actions">
           <button type="button" className="btn" onClick={onDone}>
@@ -316,7 +322,7 @@ function CreateEnrollment({ onCreated }: { onCreated: (c: EnrollmentCreated) => 
             <div className="field">
               <label htmlFor="en-uses">Number of servers this code can enroll</label>
               <input id="en-uses" type="number" min={1} max={500} required value={uses} onChange={(e) => setUses(e.target.value)} />
-              <p className="hint">1 to 500. Use more than 1 to add several servers with the same command.</p>
+              <p className="hint">1 to 500. For a rollout to many servers, use a fleet code under For many servers.</p>
             </div>
             <div className="field">
               <label htmlFor="en-ttl">Valid for (hours)</label>

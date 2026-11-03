@@ -96,6 +96,13 @@ type CoverageItem struct {
 // relation, so the same path on two hosts is two applications.
 const AppPathScheme = "app-path"
 
+// HostImageScheme identifies a container image on a host by the tag its
+// containers run (postgres:16), or by its image ID when it has no tag.
+// Like AppPathScheme, the server scopes the value to the host named by the
+// batch's runs_on relation: the same tag on two hosts can be two different
+// builds. A rebuilt image under the same tag is the same asset.
+const HostImageScheme = "host-image"
+
 // RelationRef links the batch's asset to another asset, named by any of its
 // identifiers (e.g. a host by machine-id, a repository by git-url). The
 // server ignores a relation whose target it does not know yet.
@@ -126,6 +133,22 @@ type ObservationBatch struct {
 	// stopped at its limits). Sent only to servers that list the
 	// "app_list" feature in GET /meta.
 	Apps *AppList `json:"apps,omitempty"`
+	// Images, on a host's batch from the agent's Docker check, lists the
+	// identities (HostImageScheme values) of every image its running
+	// containers use. An image on the host reported before that is not in
+	// the list is no longer running and is marked removed. Nil when the
+	// agent could not list them all. Sent only to servers that list the
+	// "host_images" feature in GET /meta.
+	Images *ImageList `json:"images,omitempty"`
+	// Leaks are the keys, tokens and passwords the collector found written
+	// in the asset's files. Sent only to servers that list the "leaks"
+	// feature in GET /meta.
+	Leaks *LeakScan `json:"leaks,omitempty"`
+}
+
+// ImageList is the set of container images a host's agent reports.
+type ImageList struct {
+	Refs []string `json:"refs"`
 }
 
 // AppList is the set of application directories a host's agent reports.
@@ -135,6 +158,9 @@ type AppList struct {
 
 // MaxAppDirs bounds AppList.Dirs.
 const MaxAppDirs = 1000
+
+// MaxHostImages bounds ImageList.Refs.
+const MaxHostImages = 1000
 
 func NewBatch(c Collector, a AssetRef) *ObservationBatch {
 	return &ObservationBatch{

@@ -27,6 +27,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/package-url/packageurl-go"
 
@@ -61,6 +62,13 @@ type Scanner struct {
 	// belongs only to itself: the outer scan skips it, so one library is
 	// never reported twice.
 	Apps []string
+	// bundleRead counts the bytes read from compiled bundles in this
+	// host's scan, across applications (bundles.go).
+	bundleRead int
+	// served are the directories the web server serves, read once
+	// (leaks.go).
+	servedOnce sync.Once
+	served     []string
 }
 
 // nestedApp reports whether host path p is another application below dir.
@@ -560,7 +568,9 @@ func (s *Scanner) ScanApp(ctx context.Context, dir string) App {
 	app.Coverage = append(app.Coverage, wpCov...)
 	// Libraries loaded from a CDN or copied into the application, unless a
 	// manifest already reported the same package and version.
+	bundleObs, bundleCov := web.bundleResults()
 	add(unlisted(web.obs, app.Observations))
+	add(bundleObs)
 	if web.files > 0 || web.limit != "" {
 		c := model.CoverageItem{Scope: clipScope(webAssetsScopeID + dir), Status: "checked"}
 		if web.limit != "" {
@@ -568,6 +578,7 @@ func (s *Scanner) ScanApp(ctx context.Context, dir string) App {
 		}
 		app.Coverage = append(app.Coverage, c)
 	}
+	app.Coverage = append(app.Coverage, bundleCov...)
 	for _, c := range lcov {
 		if i := strings.Index(c.Scope, ":"); i > 0 {
 			c.Scope = c.Scope[:i+1] + path.Join(dir, c.Scope[i+1:])

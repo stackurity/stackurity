@@ -111,19 +111,19 @@ func TestMacInstallerServerLines(t *testing.T) {
 
 func TestScriptURLSafe(t *testing.T) {
 	for u, want := range map[string]bool{
-		"https://stk.example.com":           true,
-		"https://stk.example.com:8443/sub":  true,
-		"http://127.0.0.1:8080":             true,
-		"http://[::1]:8080":                 true,
-		"https://stk.example.com.":          true,
-		"https://stk.example.com/a'b":       false,
-		"https://stk.example.com:65536":     false,
-		"https://[::1%25lo]":                false,
-		"https://a..b":                      false,
-		"https://stk.example.com/a/../$x":   false,
-		"javascript://stk.example.com":      false,
-		"https://stk.example.com/[x]":       false,
-		"https://stk.example.com/a:b":       false,
+		"https://stk.example.com":            true,
+		"https://stk.example.com:8443/sub":   true,
+		"http://127.0.0.1:8080":              true,
+		"http://[::1]:8080":                  true,
+		"https://stk.example.com.":           true,
+		"https://stk.example.com/a'b":        false,
+		"https://stk.example.com:65536":      false,
+		"https://[::1%25lo]":                 false,
+		"https://a..b":                       false,
+		"https://stk.example.com/a/../$x":    false,
+		"javascript://stk.example.com":       false,
+		"https://stk.example.com/[x]":        false,
+		"https://stk.example.com/a:b":        false,
 		"https://" + strings.Repeat("a", 64): false,
 	} {
 		if got := scriptURLSafe(u); got != want {

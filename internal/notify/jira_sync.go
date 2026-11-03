@@ -27,12 +27,60 @@ func (d *Dispatcher) jiraClient(ctx context.Context, ch *store.Channel) (*jiraCl
 	if err := json.Unmarshal(ch.Config, &cfg); err != nil {
 		return nil, cfg, err
 	}
+	if cfg.Auth == JiraAuthOAuth {
+		j, err := d.jiraConnectionClient(ctx, cfg)
+		return j, cfg, err
+	}
 	secret, err := d.Secrets.Resolve(ctx, ch.SecretRef)
 	if err != nil {
 		return nil, cfg, err
 	}
 	j, err := d.Sender.jira(cfg, secret)
 	return j, cfg, err
+}
+
+// jiraConnectionClient is the client of a Connect Jira channel: its
+// connection's site, through Atlassian's API gateway, with the
+// connection's access token, refreshed when it is about to expire or Jira
+// refuses it.
+func (d *Dispatcher) jiraConnectionClient(ctx context.Context, cfg ChannelConfig) (*jiraClient, error) {
+	if d.JiraApp == nil || d.Box == nil {
+		return nil, &PermanentError{errors.New("Connect Jira is not set up on this server (STACKURITY_JIRA_CLIENT_ID, STACKURITY_JIRA_CLIENT_SECRET and STACKURITY_SECRET_KEY)")}
+	}
+	conn, err := d.Store.GetJiraConnection(ctx, cfg.ConnectionID)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, &PermanentError{errors.New("the Jira connection of this channel was removed; Connect Jira again and pick it in the channel")}
+	}
+	if err != nil {
+		return nil, err
+	}
+	if conn.Status != store.JiraStatusActive {
+		return nil, &PermanentError{&store.JiraReconnectError{Reason: conn.StatusReason}}
+	}
+	site, ok := conn.Site(cfg.CloudID)
+	if !ok {
+		return nil, &PermanentError{fmt.Errorf("the Jira connection does not reach the site of this channel (%s) any more; reconnect Jira and allow that site", clip(cfg.URL, 200))}
+	}
+	return d.Sender.jiraOAuth(cfg, d.JiraApp.SiteBase(site.ID), site.URL, d.jiraToken(cfg.ConnectionID)), nil
+}
+
+// jiraToken returns the token source of a connection for one client: it
+// remembers the version of the token it handed out, so a refusal of that
+// token refreshes it only if no other worker has since.
+func (d *Dispatcher) jiraToken(connection int64) func(ctx context.Context, force bool) (string, error) {
+	var seen int64
+	app, box := d.JiraApp, d.Box
+	return func(ctx context.Context, force bool) (string, error) {
+		tok, v, err := d.Store.JiraAccessToken(ctx, box, connection, force, seen, app.Refresh)
+		if errors.Is(err, store.ErrNotFound) {
+			return "", &PermanentError{errors.New("the Jira connection of this channel was removed; Connect Jira again")}
+		}
+		if err != nil {
+			return "", err
+		}
+		seen = v
+		return tok, nil
+	}
 }
 
 // checkJira verifies a Jira channel's credentials and project access.
@@ -124,7 +172,7 @@ func (d *Dispatcher) reopenJiraIssue(ctx context.Context, j *jiraClient, cfg Cha
 			return err
 		}
 	}
-	return d.Store.ReopenIssue(context.WithoutCancel(ctx), link.ID, key, j.base+"/browse/"+key, "", in.Priority, in.FindingCount, in.AssetCount)
+	return d.Store.ReopenIssue(context.WithoutCancel(ctx), link.ID, key, j.browse(key), "", in.Priority, in.FindingCount, in.AssetCount)
 }
 
 // createJiraIssue creates the incident's issue, or finds the one an earlier
@@ -157,7 +205,7 @@ func (d *Dispatcher) createJiraIssue(ctx context.Context, j *jiraClient, cfg Cha
 		}
 	}
 	// Record even if shutdown began, so the issue is not searched for again.
-	if err := d.Store.RecordIssue(context.WithoutCancel(ctx), ch.ID, in.ID, key, j.base+"/browse/"+key, in.Priority, in.FindingCount, in.AssetCount); err != nil {
+	if err := d.Store.RecordIssue(context.WithoutCancel(ctx), ch.ID, in.ID, key, j.browse(key), in.Priority, in.FindingCount, in.AssetCount); err != nil {
 		return nil, err
 	}
 	return nil, nil

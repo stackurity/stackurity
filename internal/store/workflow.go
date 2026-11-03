@@ -481,7 +481,9 @@ func (s *Store) ApplyFindingAction(ctx context.Context, id int64, a FindingActio
 			}
 			if _, err := tx.Exec(ctx, `UPDATE findings SET
 				assignee_user_id = CASE WHEN $2::bigint IS NULL THEN assignee_user_id WHEN $2 = 0 THEN NULL ELSE $2 END,
-				assignee_team_id = CASE WHEN $3::bigint IS NULL THEN assignee_team_id WHEN $3 = 0 THEN NULL ELSE $3 END
+				assignee_team_id = CASE WHEN $3::bigint IS NULL THEN assignee_team_id WHEN $3 = 0 THEN NULL ELSE $3 END,
+				-- A person's choice, unassigning included: owner rules leave it.
+				assignment_manual = true, owner_rule_id = NULL
 				WHERE id = $1`, id, a.AssignUser, a.AssignTeam); err != nil {
 				if isForeignKey(err) {
 					return fmt.Errorf("%w: no such user or team", ErrInvalidAction)
@@ -740,13 +742,14 @@ func (s *Store) SyncSystemIncidents(ctx context.Context, current []SystemInciden
 			return err
 		}
 		_, err := tx.Exec(ctx, `UPDATE incidents SET status = 'resolved', resolved_at = now(), updated_at = now()
-			WHERE status = 'open' AND kind IN ('feed', 'collection', 'coverage', 'platform') AND NOT (kind || '|' || key = ANY($1))`, keys)
+			WHERE status = 'open' AND kind IN ('feed', 'collection', 'coverage', 'platform', 'leak') AND NOT (kind || '|' || key = ANY($1))`, keys)
 		return err
 	})
 }
 
 // DetectSystemProblems finds stale or failing feeds, stale assets, failing
-// integrations and sharp drops in collected inventory (FR-08, FR-16).
+// integrations, sharp drops in collected inventory (FR-08, FR-16) and
+// assets with leaked keys.
 func (s *Store) DetectSystemProblems(ctx context.Context) ([]SystemIncident, error) {
 	var out []SystemIncident
 	rows, err := s.Pool.Query(ctx, `SELECT name, kind, last_error, last_success,
@@ -836,7 +839,16 @@ func (s *Store) DetectSystemProblems(ctx context.Context) ([]SystemIncident, err
 			Detail: map[string]any{"asset_id": id, "collector": collector, "before": before, "after": after}})
 	}
 	rows.Close()
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Leaked keys: one incident per asset with critical or high ones open.
+	leaks, err := s.leakProblems(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return append(out, leaks...), nil
 }
 
 type IncidentFilter struct {
@@ -846,6 +858,9 @@ type IncidentFilter struct {
 	SOS       bool
 	Escalated bool
 	TeamID    int64
+	// AssetID keeps incidents with a finding on that asset (an active one
+	// when listing open incidents).
+	AssetID int64
 	Page
 }
 
@@ -901,6 +916,16 @@ func (s *Store) ListIncidents(ctx context.Context, f IncidentFilter) ([]Incident
 	}
 	if f.TeamID > 0 {
 		w.add("i.owner_team_id = ?", f.TeamID)
+	}
+	if f.AssetID > 0 {
+		only := ""
+		if status == "open" {
+			only += ` AND ` + activeFinding
+		}
+		if tenant.Narrowed(ctx) {
+			only += ` AND f.asset_id = ANY ((SELECT stackurity_visible_assets())::bigint[])`
+		}
+		w.add(`EXISTS (SELECT 1 FROM findings f WHERE f.incident_id = i.id AND f.asset_id = ?`+only+`)`, f.AssetID)
 	}
 	from := ` FROM incidents i LEFT JOIN teams t ON t.id = i.owner_team_id` + join + w.sql()
 	// The page carries the total (count(*) OVER ()), so the incidents and

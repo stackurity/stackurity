@@ -1160,7 +1160,7 @@ func TestEnrollmentAndInstaller(t *testing.T) {
 	resp := e.anon().req("GET", "/install/agent.sh", nil, nil)
 	body, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	if resp.StatusCode != 200 || !strings.Contains(string(body), `SERVER="${STACKURITY_SERVER:-`+e.srv.URL+`}"`) {
+	if resp.StatusCode != 200 || !strings.Contains(string(body), "SERVER='"+e.srv.URL+"'\n") {
 		t.Errorf("installer: %d\n%s", resp.StatusCode, body[:200])
 	}
 	resp = e.anon().req("GET", "/download/agent/linux-amd64", nil, nil)

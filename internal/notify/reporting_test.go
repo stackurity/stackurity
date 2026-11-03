@@ -198,9 +198,13 @@ func TestReportingRegroupOnUpgrade(t *testing.T) {
 		}
 	}
 
-	// A server that goes quiet later is told, in its own incident.
+	// A server that goes quiet later is told, in its own incident. Its
+	// last report must fall on another UTC day than web-1's and db-1's (3
+	// days ago), whatever the time of day: 50 hours did not between 00:00
+	// and 02:00 UTC, and joined their group. 98 hours ago is never on that
+	// day.
 	f.reportHost(ctx, "api-1", "production", 0)
-	if _, err := f.st.Pool.Exec(ctx, `UPDATE assets SET last_seen = now() - interval '50 hours' WHERE name = 'api-1'`); err != nil {
+	if _, err := f.st.Pool.Exec(ctx, `UPDATE assets SET last_seen = now() - interval '98 hours' WHERE name = 'api-1'`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.st.MarkStaleAssets(ctx, 48*time.Hour); err != nil {
