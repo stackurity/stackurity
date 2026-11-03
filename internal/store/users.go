@@ -413,6 +413,10 @@ type SessionOpts struct {
 	Pinned int64
 	// Expires keeps a replaced session's end; zero: SessionTTL from now.
 	Expires time.Time
+	// Replaces is the secret of the session this one replaces (a new ID for
+	// the same sign-in): the new one keeps its sign-in time, browser and
+	// address (Your account → Active sessions). It must be the same user's.
+	Replaces string
 }
 
 // CreateSessionWith starts a browser session signed in as opts says.
@@ -463,10 +467,21 @@ func (s *Store) CreateSessionWith(ctx context.Context, userID, workspaceID int64
 		}
 		// password_login is what releases before migration 0087 read: a social
 		// sign-in was one there too (held to "Require two-factor sign-in").
+		// The browser is the request's (WithSessionClient), or for a
+		// replacement the replaced session's.
+		var replaces []byte
+		if opts.Replaces != "" {
+			replaces = auth.HashToken(opts.Replaces)
+		}
+		client := sessionClientOf(ctx)
 		_, err := tx.Exec(ctx, `INSERT INTO sessions (token_hash, user_id, expires_at, workspace_id, password_login, mfa_at, sso_workspace_id,
-			login_method, mfa_method, mfa_credential_id)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, NULLIF($8, ''), NULLIF($9, ''), $10)`,
-			auth.HashToken(secret), userID, expires, ws, opts.Login == LoginPassword || opts.Login == LoginSocial, mfaAt, pinned, opts.Login, opts.MFA, cred)
+			login_method, mfa_method, mfa_credential_id, user_agent, ip, signed_in_at)
+			SELECT $1, $2, $3, $4, $5, $6, $7, NULLIF($8, ''), NULLIF($9, ''), $10,
+				CASE WHEN o.token_hash IS NULL THEN NULLIF($11, '') ELSE o.user_agent END,
+				CASE WHEN o.token_hash IS NULL THEN NULLIF($12, '') ELSE o.ip END, COALESCE(o.signed_in_at, now())
+			FROM (SELECT 1) one LEFT JOIN sessions o ON o.token_hash = $13 AND o.user_id = $2`,
+			auth.HashToken(secret), userID, expires, ws, opts.Login == LoginPassword || opts.Login == LoginSocial, mfaAt, pinned, opts.Login, opts.MFA, cred,
+			client.UserAgent, client.IP, replaces)
 		return err
 	})
 	if err != nil {

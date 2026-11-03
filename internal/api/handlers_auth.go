@@ -219,6 +219,8 @@ func (s *Server) rotateSession(w http.ResponseWriter, r *http.Request, opts stor
 	// The new session replaces this one: it keeps its single sign-on pin and
 	// its end, so rotating never frees a pinned session or extends one.
 	opts.Pinned, opts.Expires = p.SSOWorkspace, p.SessionExpires
+	// The same sign-in: Your account keeps showing when and where.
+	opts.Replaces = sessionSecret(r)
 	secret, err := s.Store.CreateSessionWith(r.Context(), p.User.ID, p.Workspace, opts)
 	if err != nil {
 		return err

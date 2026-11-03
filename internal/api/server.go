@@ -195,7 +195,7 @@ func (s *Server) Handler() http.Handler {
 	if s.TrustProxy {
 		r.Use(s.realIP)
 	}
-	r.Use(s.instrument, middleware.RequestID, s.recoverer, s.securityHeaders, s.logRequests, assistantCORS)
+	r.Use(sessionClient, s.instrument, middleware.RequestID, s.recoverer, s.securityHeaders, s.logRequests, assistantCORS)
 	s.router = r
 
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]string{"status": "ok"}) })
@@ -305,6 +305,7 @@ func (s *Server) Handler() http.Handler {
 			r.Get("/auth/email-preferences", s.myEmailPreferences)
 			r.Put("/auth/email-preferences", s.setMyEmailPreferences)
 			s.mfaAccountRoutes(r)
+			s.accountSessionRoutes(r)
 			if editionAccountRoutes != nil {
 				editionAccountRoutes(s, r)
 			}

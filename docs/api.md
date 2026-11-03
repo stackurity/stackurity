@@ -125,6 +125,24 @@ The caller: `user`, `role`, `workspace`, `workspaces`, `edition` and `features`,
 
 Changes your own password (`current_password`, `new_password`). Your other sessions are signed out and this one gets a new session cookie. `revoke_assistants` (default `true`) disconnects your AI assistants; `revoke_tokens` (default `false`) revokes your API tokens. Answers 200 with `revoked` (`sessions`, `tokens`, `assistants`) and `tokens_kept`.
 
+### `GET /auth/sessions`
+
+**Who:** any signed-in user (browser session; an API token gets 403)
+
+Your browser sessions that are still signed in, newest sign-in first: `items`, each with `id` (names the session here; it is not its cookie and signs nothing in), `current` (the session making this request), `login_method` (`password`, `passkey`, `invite`, `signup`, `social` or `sso`; empty for a session from an older release), `mfa_method` (the second factor it was confirmed with, if any), `user_agent` and `ip` (the browser and client address at sign-in; behind a trusted proxy the address it forwarded, see [install.md](install.md#client-addresses-behind-a-proxy)), `organisation` (for a session pinned by an organisation's single sign-on), `signed_in_at`, `last_seen_at` (updated at most once a minute) and `expires_at`. A session pinned by an organisation's single sign-on lists only the sessions pinned to that organisation (`pinned` is `true`). API tokens are not sessions: see `GET /tokens`.
+
+### `DELETE /auth/sessions/{id}`
+
+**Who:** any signed-in user (browser session)
+
+Signs out one of your other sessions at once: its next request is signed out. 404 for an ID that is not one of your sessions (or not one a pinned session may see), or that has ended; 409 `current_session` for the session making the request (use `POST /auth/logout`). Audited as `auth.session_revoked` with the session's `id`.
+
+### `POST /auth/sessions/revoke-others`
+
+**Who:** any signed-in user (browser session)
+
+Signs out all your sessions except this one (from a pinned session: the others pinned to the same organisation). Answers `sessions_ended`. API tokens and AI assistants keep working. Audited as `auth.other_sessions_revoked` in each of your organisations.
+
 ### `GET /auth/mfa`
 
 **Who:** any signed-in user (browser session)
