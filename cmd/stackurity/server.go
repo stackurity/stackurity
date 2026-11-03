@@ -535,7 +535,7 @@ func licenceKeyFromEnv() (key, from string, err error) {
 }
 
 // keyRequirement reads from when this server needs a key (a free Community
-// key or a paid licence; migration 0086) and says so in the log. A hosted
+// key or a paid licence; migration 0087) and says so in the log. A hosted
 // edition drops the requirement (its platform holds the licence).
 func keyRequirement(ctx context.Context, st *store.Store, holder *license.Holder, log *slog.Logger) (*license.Requirement, error) {
 	from, upgraded, observed, err := st.LicenseRequirement(ctx)
@@ -557,7 +557,7 @@ func keyRequirement(ctx context.Context, st *store.Store, holder *license.Holder
 }
 
 // keyGraceTick is how often a server adds its running time to the grace
-// period's count (migration 0086); a longer gap counts as keyGraceMaxStep.
+// period's count (migration 0087); a longer gap counts as keyGraceMaxStep.
 const (
 	keyGraceTick    = 10 * time.Minute
 	keyGraceMaxStep = 20 * time.Minute
