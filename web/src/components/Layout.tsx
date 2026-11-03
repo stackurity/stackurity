@@ -108,16 +108,18 @@ function Shell() {
   // Its state lives here, in the shell, so it survives moving between
   // pages; it is kept for the tab per organisation (askState.ts).
   const wsId = me?.workspace?.id;
+  const userId = me?.user?.id;
   const [ask, setAsk] = useState<AskPanelState>(EMPTY_ASK_STATE);
-  const askFor = useRef<number | undefined>(undefined);
+  const askFor = useRef<string>("");
+  const askKey = `${wsId ?? ""}:${userId ?? ""}`;
   useEffect(() => {
-    if (askFor.current === wsId) return;
-    askFor.current = wsId;
-    setAsk(loadAskState(wsId));
-  }, [wsId]);
+    if (askFor.current === askKey) return;
+    askFor.current = askKey;
+    setAsk(loadAskState(wsId, userId));
+  }, [askKey]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (wsId && askFor.current === wsId) saveAskState(wsId, ask);
-  }, [ask, wsId]);
+    if (wsId && userId && askFor.current === askKey) saveAskState(wsId, userId, ask);
+  }, [ask, askKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const updateAsk = (patch: Partial<AskPanelState>) => setAsk((a) => ({ ...a, ...patch }));
   const askOpen = ask.open && !ask.minimised;
   const askStatus = useLoad(
@@ -349,7 +351,7 @@ function Shell() {
       )}
       {/* Mounted once, outside the menus, so closing a menu does not close the dialog. */}
       <FeedbackDialog ref={feedback} />
-      {me?.workspace && <AskPanel key={wsId} state={ask} update={updateAsk} status={askStatus.data} reload={askStatus.reload} />}
+      {me?.workspace && <AskPanel key={askKey} state={ask} update={updateAsk} status={askStatus.data} reload={askStatus.reload} />}
     </div>
   );
 }
