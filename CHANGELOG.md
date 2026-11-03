@@ -42,7 +42,7 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ### Upgrading
 
-- Migration 0089 adds two indexes, `collections (workspace_id, received_at)` and `audit_events (action, workspace_id, at)`, so the latest collection and sign-in of every workspace are read in one pass (the Stackurity Cloud trial report). Writes to those tables wait while each is built: seconds at today's sizes.
+- Migration 0090 adds two indexes, `collections (workspace_id, received_at)` and `audit_events (action, workspace_id, at)`, so the latest collection and sign-in of every workspace are read in one pass (the Stackurity Cloud trial report). Writes to those tables wait while each is built: seconds at today's sizes.
 
 ## 0.14.0
 
