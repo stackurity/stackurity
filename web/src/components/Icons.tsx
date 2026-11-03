@@ -225,3 +225,35 @@ export const IconSignalOff = (p: P) => (
     <path d="M4 4l16 16" />
   </Svg>
 );
+export const IconLayers = (p: P) => (
+  <Svg {...p}>
+    <path d="M12 3l9 5-9 5-9-5z" />
+    <path d="M3 13l9 5 9-5" />
+  </Svg>
+);
+export const IconDocument = (p: P) => (
+  <Svg {...p}>
+    <path d="M14 3H6.5A1.5 1.5 0 0 0 5 4.5v15A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V8z" />
+    <path d="M14 3v5h5" />
+    <path d="M9 14l2 2 4-4" />
+  </Svg>
+);
+export const IconGauge = (p: P) => (
+  <Svg {...p}>
+    <path d="M4.5 18a9 9 0 1 1 15 0" />
+    <path d="M12 14l4-5" />
+    <circle cx="12" cy="14" r="1.2" />
+  </Svg>
+);
+export const IconCard = (p: P) => (
+  <Svg {...p}>
+    <rect x="3" y="5.5" width="18" height="13" rx="2" />
+    <path d="M3 10h18M7 15h3" />
+  </Svg>
+);
+export const IconSignIn = (p: P) => (
+  <Svg {...p}>
+    <path d="M14 4h4.5A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5H14" />
+    <path d="M10 8l4 4-4 4M14 12H4" />
+  </Svg>
+);
