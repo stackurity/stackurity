@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"errors"
+	"github.com/stackurity/stackurity/internal/cloudconnect"
 	"github.com/stackurity/stackurity/internal/license"
 	"io"
 	"io/fs"
@@ -65,6 +66,9 @@ type Server struct {
 	Dispatcher        *notify.Dispatcher
 	AllowHTTPWebhooks bool
 	Plugins           *plugins.Runner // nil when no plugin directory is configured
+	// Cloud is the server's identity towards customers' Google Cloud and
+	// Azure accounts; nil offers only the credential fallbacks.
+	Cloud *cloudconnect.Platform
 	// Pro holds what the licensed edition needs (single sign-on, ...);
 	// it is empty in the Community build.
 	Pro ProConfig
@@ -343,6 +347,8 @@ func (s *Server) Handler() http.Handler {
 				r.Get("/assets/{id}/relations", s.assetRelations)
 				r.Get("/assets/{id}/drift", s.assetDrift)
 				r.Get("/assets/{id}/stack", s.assetStack)
+				r.Get("/assets/{id}/leaks", s.assetLeaks)
+				r.Get("/leaks", s.listLeaks)
 				r.Get("/assets/{id}/sbom", s.exportSBOM)
 				r.Get("/components", s.listComponents)
 				r.Get("/components/{id}", s.getComponent)
@@ -411,6 +417,9 @@ func (s *Server) Handler() http.Handler {
 				// security-only actions are checked per action inside
 				r.Post("/findings/{id}/actions", s.findingAction)
 				r.Post("/findings/actions", s.bulkFindingAction)
+				// security-only, checked inside like finding actions
+				r.Post("/leaks/{id}/dismiss", s.dismissLeak)
+				r.Post("/leaks/{id}/undismiss", s.undismissLeak)
 				r.Post("/incidents/{id}/actions", s.incidentAction)
 				r.With(s.requireWritable).Post("/assets/{id}/check", s.checkAsset)
 				r.With(s.requireWritable).Post("/fix-groups/{id}/check", s.checkFixGroup)
@@ -469,6 +478,8 @@ func (s *Server) Handler() http.Handler {
 				r.Delete("/integrations/{id}", s.deleteIntegration)
 				r.Get("/jobs", s.listJobs)
 				r.Get("/plugins", s.listPlugins)
+				r.Get("/cloud-setup/gcp", s.cloudSetup("gcp"))
+				r.Get("/cloud-setup/azure", s.cloudSetup("azure"))
 				// Feeds are shared by every workspace: switching one off
 				// stops detection for all of them.
 				r.With(requireInstanceAdmin).Patch("/feeds/{name}", s.updateFeed)

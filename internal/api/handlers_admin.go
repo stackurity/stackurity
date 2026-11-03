@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/stackurity/stackurity/internal/cloudconnect"
 	"github.com/stackurity/stackurity/internal/license"
 	"github.com/stackurity/stackurity/internal/netguard"
 	"github.com/stackurity/stackurity/internal/secrets"
@@ -383,7 +384,7 @@ const kindsMessage = "kind must be " + KindGitRepository + ", " + KindContainerI
 // awsLinked is true for the integration of an AWS connection
 // (handlers_aws.go): the server assumes the connection's role and gives the
 // plugin the session, so it needs no secret of its own.
-func (s *Server) validateIntegration(ctx context.Context, kind string, cfg json.RawMessage, secretRef *string, minutes *int, awsLinked bool) error {
+func (s *Server) validateIntegration(ctx context.Context, kind string, cfg, current json.RawMessage, secretRef *string, minutes *int, awsLinked bool) error {
 	if len(cfg) > 0 {
 		dec := json.NewDecoder(strings.NewReader(string(cfg)))
 		dec.DisallowUnknownFields()
@@ -440,13 +441,29 @@ func (s *Server) validateIntegration(ctx context.Context, kind string, cfg json.
 	}
 	// Without credentials a plugin falls back to the server's own (for AWS,
 	// the instance role), which only the operator's workspace may use.
-	if kind == KindPlugin && (secretRef == nil || *secretRef == "") && !awsLinked && !netguard.AllowsPrivate(ctx) {
+	// Plugins that use the server's workload identity (which names the
+	// workspace) never fall back to the server's own credentials.
+	if kind == KindPlugin && (secretRef == nil || *secretRef == "") && !awsLinked && !netguard.AllowsPrivate(ctx) && !s.usesPlatform(ctx, cfg, current) {
 		return badRequest("plugins in this workspace need credentials: set secret_ref to a stored secret")
 	}
 	if minutes != nil && (*minutes < 15 || *minutes > 7*24*60) {
 		return badRequest("schedule_minutes must be between 15 and 10080")
 	}
 	return nil
+}
+
+// usesPlatform reports whether the plugin integration's plugin is given the
+// server's platform credentials (cloudconnect.UsesPlatform).
+func (s *Server) usesPlatform(ctx context.Context, cfg, current json.RawMessage) bool {
+	if len(cfg) == 0 {
+		cfg = current
+	}
+	var c PluginConfig
+	if s.Plugins == nil || json.Unmarshal(cfg, &c) != nil || !cloudconnect.PlatformPlugins[c.Plugin] {
+		return false
+	}
+	m, err := s.Plugins.Metadata(ctx, c.Plugin)
+	return err == nil && cloudconnect.UsesPlatform(c.Plugin, m.Credentials)
 }
 
 func (s *Server) listIntegrations(w http.ResponseWriter, r *http.Request) {
@@ -468,7 +485,7 @@ func (s *Server) createIntegration(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, badRequest("config is required"))
 		return
 	}
-	if err := s.validateIntegration(r.Context(), req.Kind, req.Config, req.SecretRef, req.ScheduleMinutes, false); err != nil {
+	if err := s.validateIntegration(r.Context(), req.Kind, req.Config, nil, req.SecretRef, req.ScheduleMinutes, false); err != nil {
 		s.fail(w, r, err)
 		return
 	}
@@ -585,7 +602,7 @@ func (s *Server) updateIntegration(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		} else {
-			if err := s.validateIntegration(r.Context(), cur.Kind, req.Config, &ref, req.ScheduleMinutes, awsLinked); err != nil {
+			if err := s.validateIntegration(r.Context(), cur.Kind, req.Config, cur.Config, &ref, req.ScheduleMinutes, awsLinked); err != nil {
 				s.fail(w, r, err)
 				return
 			}

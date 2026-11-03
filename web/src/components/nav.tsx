@@ -83,12 +83,13 @@ type Tabbed = "fixes" | "assets" | "activity" | "reports" | "integrations" | "pe
 const INTEGRATION_PAGES = ["/integrations/sources", "/integrations/channels", "/integrations/new", "/integrations/aws", "/integrations/kubernetes"];
 
 const TABS: Record<Tabbed, { label: string; tabs: TabLink[] }> = {
-  // What to do (default), every issue, and automatic fixes (Pro).
+  // What to do (default), every issue, leaked keys, and automatic fixes (Pro).
   fixes: {
     label: "Fixes",
     tabs: [
-      { to: "/fixes", label: "Fixes", match: (p) => p === "/fixes" || (under(p, "/fixes") && !under(p, "/fixes/issues", "/fixes/automatic")) || under(p, "/action-plan") },
+      { to: "/fixes", label: "Fixes", match: (p) => p === "/fixes" || (under(p, "/fixes") && !under(p, "/fixes/issues", "/fixes/automatic", "/fixes/leaks")) || under(p, "/action-plan") },
       { to: "/fixes/issues", label: "All issues", match: (p) => under(p, "/fixes/issues", "/findings") },
+      { to: "/fixes/leaks", label: "Leaked keys" },
       { to: "/fixes/automatic", label: "Automatic fixes", match: (p) => under(p, "/fixes/automatic", "/remediation") },
     ],
   },

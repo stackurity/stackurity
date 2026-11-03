@@ -137,13 +137,13 @@ func teamIn(ids []int64, team *int64) bool {
 
 // incidentInProjects: a route limited to projects hears about an issue
 // (its findings are then counted per asset, for the project's assets only)
-// and about collection and coverage problems of the project's assets, not
-// about other problems.
+// and about collection and coverage problems and leaked keys of the
+// project's assets, not about other problems.
 func incidentInProjects(r store.Route, in store.Incident) bool {
 	if isFindingKind(in.Kind) {
 		return true
 	}
-	if in.Kind != "collection" && in.Kind != "coverage" {
+	if in.Kind != "collection" && in.Kind != "coverage" && in.Kind != "leak" {
 		return false
 	}
 	if rd, ok := readReporting(in); ok {
@@ -208,6 +208,12 @@ func knownExploited(in store.Incident) bool {
 func urgentIncident(r store.Route, in store.Incident) bool {
 	if !inScope(r, in) {
 		return false
+	}
+	// A leaked key is a security issue, not a problem with Stackurity:
+	// it goes where new issues go right away.
+	if in.Kind == "leak" {
+		t := newIssueThreshold(r)
+		return t != "" && risk.PriorityAtLeast(in.Priority, t)
 	}
 	if !isFindingKind(in.Kind) {
 		return r.HasEvent(store.EventProblems) && (risk.PriorityAtLeast(in.Priority, r.MinPriority) || in.SOS)

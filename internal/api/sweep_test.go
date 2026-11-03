@@ -249,6 +249,9 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/feeds/{name}/refresh": {class: "global"},
 	"GET /api/v1/advisories/{key}":      {class: "global"},
 	"GET /api/v1/plugins":               {class: "global"},
+	// Setup commands for the caller's own workspace; nothing of A's.
+	"GET /api/v1/cloud-setup/gcp":   {class: "list", query: "?project_id=acme-prod&project_number=123"},
+	"GET /api/v1/cloud-setup/azure": {class: "list", query: "?tenant_id=aaaaaaaa-0000-0000-0000-000000000001&subscription_id=bbbbbbbb-0000-0000-0000-000000000002"},
 
 	// Instance administration.
 	"GET /api/v1/admin/license/":             {class: "instance"},
@@ -287,6 +290,7 @@ var routeRules = map[string]routeRule{
 	"GET /api/v1/assets":                {class: "list"},
 	"GET /api/v1/components":            {class: "list", query: "?q={tag}"},
 	"GET /api/v1/findings":              {class: "list", query: "?status=all&asset_id={asset}"},
+	"GET /api/v1/leaks":                 {class: "list", query: "?status=all&asset_id={asset}"},
 	"GET /api/v1/findings/summary":      {class: "list"},
 	"GET /api/v1/dashboard/trend":       {class: "list"},
 	"GET /api/v1/findings/verify":       {class: "list", query: "?since=2000-01-01&asset_id={asset}"},
@@ -353,6 +357,9 @@ var routeRules = map[string]routeRule{
 	"GET /api/v1/components/{id}/upgrade":        {class: "object", obj: id("component")},
 	"GET /api/v1/fix-groups/{id}":                {class: "object", obj: id("fixgroup")},
 	"GET /api/v1/findings/{id}":                  {class: "object", obj: id("finding")},
+	"GET /api/v1/assets/{id}/leaks":              {class: "object", obj: id("asset")},
+	"POST /api/v1/leaks/{id}/dismiss":            {class: "object", obj: id("leak"), body: func(*tenantFx) any { return map[string]any{"note": "sweep"} }},
+	"POST /api/v1/leaks/{id}/undismiss":          {class: "object", obj: id("leak")},
 	"GET /api/v1/findings/{id}/events":           {class: "object", obj: id("finding"), emptyOK: true},
 	"GET /api/v1/findings/{id}/upgrade":          {class: "object", obj: id("finding")},
 	"GET /api/v1/findings/{id}/explain":          {class: "object", obj: id("finding")},
@@ -583,6 +590,12 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 			Identifiers: ids, Environment: "prod-" + tag})
 		b.Observations = obs
 		b.Complete = true
+		if name == "host-"+tag {
+			// A leaked key on A's main host.
+			b.Leaks = &model.LeakScan{Complete: true, Found: []model.Leak{{Rule: "aws-access-key-id", Title: "AWS access key ID",
+				Severity: "high", Path: "/srv/" + tag + "/.env", Line: 3, Name: "AWS_ACCESS_KEY_ID", Fingerprint: strings.Repeat("ab", 16),
+				Preview: "AKIA…" + tag[:min(4, len(tag))]}}}
+		}
 		raw, _ := json.Marshal(b)
 		req, _ := http.NewRequest("POST", e.srv.URL+"/api/v1/ingest", strings.NewReader(string(raw)))
 		req.Header.Set("Authorization", "Bearer "+collector)
@@ -602,6 +615,11 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 		model.Observation{Purl: "pkg:deb/debian/bash@5.2", Confidence: model.ConfidenceConfirmed})
 	set("asset", main.AssetID)
 	set("collection", main.CollectionID)
+	leaks, _, err := e.st.ListLeaks(ctx, store.LeakFilter{AssetID: main.AssetID})
+	if err != nil || len(leaks) != 1 {
+		t.Fatalf("%s leaks: %v %v", tag, leaks, err)
+	}
+	set("leak", leaks[0].ID)
 	second := ingest("db-"+tag, []model.Identifier{{Scheme: "machine-id", Value: tag + "-m2"}},
 		model.Observation{Purl: "pkg:npm/" + tag + "-db-lib@2.0.0", Confidence: model.ConfidenceConfirmed})
 	set("asset2", second.AssetID)
@@ -1285,7 +1303,7 @@ func (e *env) snapshot(t *testing.T, a *tenantFx) string {
 	var b strings.Builder
 	for _, p := range append([]string{
 		"/api/v1/assets/{asset}", "/api/v1/assets/{asset2}", "/api/v1/assets/{asset}/relations", "/api/v1/assets/{asset}/inventory",
-		"/api/v1/findings/{finding}", "/api/v1/findings/{finding}/events", "/api/v1/incidents/{incident}", "/api/v1/fix-groups/{fixgroup}",
+		"/api/v1/findings/{finding}", "/api/v1/findings/{finding}/events", "/api/v1/assets/{asset}/leaks?status=all", "/api/v1/incidents/{incident}", "/api/v1/fix-groups/{fixgroup}",
 		"/api/v1/teams", "/api/v1/channels", "/api/v1/routes", "/api/v1/deliveries", "/api/v1/integrations", "/api/v1/enrollments", "/api/v1/ci-trusts",
 		"/api/v1/teams", "/api/v1/channels", "/api/v1/routes", "/api/v1/deliveries", "/api/v1/integrations", "/api/v1/enrollments",
 		"/api/v1/aws/connections", "/api/v1/aws/connections/{awsconnection}", "/api/v1/aws/connections/{awsconnection}/installs",

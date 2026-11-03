@@ -14,7 +14,7 @@ import { ErrorBox, RelativeTime } from "../../components/ui";
 export function InstallOnGitHubButton({ className = "btn btn-sm btn-primary" }: { className?: string }) {
   const act = useAction();
   const start = async () => {
-    const r = await act.run(() => api.post<{ url: string }>("/integrations/github/install", { return_to: "/settings/integrations" }));
+    const r = await act.run(() => api.post<{ url: string }>("/integrations/github/install", { return_to: "/integrations" }));
     if (r?.url) window.location.assign(r.url);
   };
   return (
