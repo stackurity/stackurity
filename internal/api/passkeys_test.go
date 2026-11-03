@@ -1192,3 +1192,93 @@ func TestAdminsPolicyCoversInstanceAdmins(t *testing.T) {
 		t.Error("instance admin with a viewer role not asked to set up a second factor")
 	}
 }
+
+// An instance admin's server-wide routes need the policy of every
+// workspace the account belongs to: switching to a workspace with a weaker
+// policy, or working in none, does not escape "Required for admins".
+func TestInstanceAdminMeetsEveryWorkspacesPolicy(t *testing.T) {
+	e := newPasskeyEnv(t)
+	bg := context.Background()
+	e.user("root@x.io", auth.RoleViewer) // workspace 1: optional
+	e.instanceAdmin("root@x.io")
+	acme, _, err := e.st.CreateWorkspace(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "Acme", "acme", "owner@acme.io", "Owner", pw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.st.Pool.Exec(tenant.System(bg), `INSERT INTO workspace_members (workspace_id, user_id, role)
+		SELECT $1, id, 'viewer' FROM users WHERE email = 'root@x.io'`, acme.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.st.SetMFAPolicy(bg, acme.ID, store.MFAPolicy{Require: store.PolicyAdmins, Methods: []string{"passkey", "totp"}}); err != nil {
+		t.Fatal(err)
+	}
+	adminCode := func(s *session) (int, string) {
+		t.Helper()
+		var out apiErr
+		code := s.do("GET", "/api/v1/admin/workspaces", nil, &out)
+		return code, out.Error.Code
+	}
+
+	root := e.login("root@x.io")
+	if code := root.do("POST", fmt.Sprintf("/api/v1/workspaces/%d/activate", acme.ID), nil, nil); code != 200 {
+		t.Fatalf("switch to Acme: %d", code)
+	}
+	if code, why := adminCode(root); code != 403 || why != "mfa_enrolment_required" {
+		t.Fatalf("admin routes from Acme without a factor: %d %s", code, why)
+	}
+	// The exploit: switch to the optional workspace.
+	if code := root.do("POST", "/api/v1/workspaces/1/activate", nil, nil); code != 200 {
+		t.Fatalf("switch to workspace 1: %d", code)
+	}
+	if code := root.do("GET", "/api/v1/assets", nil, nil); code != 200 {
+		t.Fatalf("workspace 1 itself is optional: %d", code)
+	}
+	if code, why := adminCode(root); code != 403 || why != "mfa_enrolment_required" {
+		t.Fatalf("admin routes from the optional workspace without a factor: %d %s", code, why)
+	}
+	secret, _ := enrol(t, root)
+	if code, why := adminCode(root); code != 200 {
+		t.Fatalf("admin routes with the app: %d %s", code, why)
+	}
+
+	// A session that has not confirmed with the factor it has steps up.
+	var uid int64
+	if err := e.st.Pool.QueryRow(bg, `SELECT id FROM users WHERE email = 'root@x.io'`).Scan(&uid); err != nil {
+		t.Fatal(err)
+	}
+	sec, err := e.st.CreateSessionWith(bg, uid, tenant.DefaultWorkspace, store.SessionOpts{Login: store.LoginPassword})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := e.anon()
+	s.hdr = map[string]string{"Cookie": "stackurity_session=" + sec}
+	if code, why := adminCode(s); code != 403 || why != "mfa_step_up_required" {
+		t.Fatalf("admin routes from an unconfirmed session: %d %s", code, why)
+	}
+	if _, err := e.st.Pool.Exec(bg, `UPDATE user_mfa SET last_step = 0`); err != nil {
+		t.Fatal(err)
+	}
+	if code := s.do("POST", "/api/v1/auth/mfa/step-up", map[string]string{"code": totpAt(t, secret, 30*time.Second)}, nil); code != 200 {
+		t.Fatalf("step-up: %d", code)
+	}
+	s.hdr = nil // the cookie jar holds the rotated session
+	if code, why := adminCode(s); code != 200 {
+		t.Fatalf("admin routes after the step-up: %d %s", code, why)
+	}
+
+	// A session that works in no workspace (the only one it belongs to
+	// refused it) is held to that workspace's policy too.
+	if _, err := e.st.CreateUser(tenant.WithWorkspace(bg, acme.ID), "ops@acme.io", "", auth.RoleViewer, pw); err != nil {
+		t.Fatal(err)
+	}
+	e.instanceAdmin("ops@acme.io")
+	defer api.RefuseSessionsIn(acme.ID)()
+	ops := e.login("ops@acme.io")
+	if code, why := adminCode(ops); code != 403 || why != "mfa_enrolment_required" {
+		t.Fatalf("admin routes from no workspace without a factor: %d %s", code, why)
+	}
+	enrol(t, ops)
+	if code, why := adminCode(ops); code != 200 {
+		t.Fatalf("admin routes from no workspace with the app: %d %s", code, why)
+	}
+}

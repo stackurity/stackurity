@@ -197,28 +197,85 @@ func (s *Server) factorChangeBlocked(r *http.Request, u *store.User) (string, er
 		}
 		return ws.Name + " requires you to confirm this session with a second factor you have before you change your factors", nil
 	}
-	ms, err := s.Store.MFAMemberships(r.Context(), u.ID)
+	cases, err := s.mfaCasesEverywhere(r.Context(), u, p.MFAMethod, methods)
 	if err != nil {
 		return "", err
 	}
+	for _, wc := range cases {
+		if wc.c.need() == mfaStepUp {
+			return wc.name + " requires you to confirm this session with " + methodNames(wc.c.accepted()) + " before you change your factors", nil
+		}
+	}
+	return "", nil
+}
+
+// workspaceMFACase is the two-factor decision for a session in one
+// workspace of its account.
+type workspaceMFACase struct {
+	name string
+	c    mfaCase
+}
+
+// mfaCasesEverywhere makes the decision for a session of u signed in with
+// session (its second factor, "" for none) in every workspace u belongs to
+// whose policy requires anything, whichever one the session works in.
+func (s *Server) mfaCasesEverywhere(ctx context.Context, u *store.User, session string, methods []string) ([]workspaceMFACase, error) {
+	ms, err := s.Store.MFAMemberships(ctx, u.ID)
+	if err != nil {
+		return nil, err
+	}
+	var out []workspaceMFACase
 	for _, m := range ms {
-		pol, err := s.Store.MFAPolicyOf(r.Context(), m.ID)
+		pol, err := s.Store.MFAPolicyOf(ctx, m.ID)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 		if !pol.RequiresAny() {
 			continue
 		}
-		access, err := s.Store.UserAccess(r.Context(), m.ID, u.ID)
+		access, err := s.Store.UserAccess(ctx, m.ID, u.ID)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
-		c := mfaCase{Policy: pol, Role: access.OrgRole, ProjectRole: access.ProjectRole, InstanceAdmin: u.InstanceAdmin, Session: p.MFAMethod, Methods: methods}
-		if c.need() == mfaStepUp {
-			return m.Name + " requires you to confirm this session with " + methodNames(c.accepted()) + " before you change your factors", nil
+		out = append(out, workspaceMFACase{m.Name, mfaCase{Policy: pol, Role: access.OrgRole, ProjectRole: access.ProjectRole,
+			InstanceAdmin: u.InstanceAdmin, Session: session, Methods: methods}})
+	}
+	return out, nil
+}
+
+// instanceAdminMFA decides what an instance administrator's browser
+// session must do before it may use the instance-wide routes
+// (requireInstanceAdmin). Those act on every workspace, so the session must
+// meet the policy of every workspace the account belongs to, not only the
+// one it works in: otherwise switching to a workspace with a weaker policy,
+// or working in none, would escape "Required for admins". Single sign-on
+// sessions are exempt here as everywhere else. It answers the need (a
+// step-up before an enrolment: a session that must confirm may not set up
+// factors), what counts, and the workspace that asks.
+func (s *Server) instanceAdminMFA(ctx context.Context, p *Principal) (mfaNeed, []string, string, error) {
+	if !p.Session || p.User == nil || !p.User.InstanceAdmin || p.ssoSession() {
+		return mfaOK, nil, "", nil
+	}
+	methods, err := s.Store.MFAMethods(ctx, p.User.ID)
+	if err != nil {
+		return mfaOK, nil, "", err
+	}
+	cases, err := s.mfaCasesEverywhere(ctx, p.User, p.MFAMethod, methods)
+	if err != nil {
+		return mfaOK, nil, "", err
+	}
+	need, accepted, where := mfaOK, []string(nil), ""
+	for _, wc := range cases {
+		switch wc.c.need() {
+		case mfaStepUp:
+			return mfaStepUp, wc.c.accepted(), wc.name, nil
+		case mfaEnrol:
+			if need == mfaOK {
+				need, accepted, where = mfaEnrol, wc.c.accepted(), wc.name
+			}
 		}
 	}
-	return "", nil
+	return need, accepted, where, nil
 }
 
 // mfaEnrolmentAllows lists what a session sent to enrolment may still do:
@@ -253,25 +310,13 @@ func mfaAlwaysAllows(r *http.Request, path string) bool {
 // factor never goes below what an organisation requires. An admin's reset
 // is the way out for a lost device.
 func (s *Server) mfaRemovalBlocked(r *http.Request, u *store.User, remaining []string) (string, error) {
-	ms, err := s.Store.MFAMemberships(r.Context(), u.ID)
+	cases, err := s.mfaCasesEverywhere(r.Context(), u, "", remaining)
 	if err != nil {
 		return "", err
 	}
-	for _, m := range ms {
-		pol, err := s.Store.MFAPolicyOf(r.Context(), m.ID)
-		if err != nil {
-			return "", err
-		}
-		if !pol.RequiresAny() {
-			continue
-		}
-		access, err := s.Store.UserAccess(r.Context(), m.ID, u.ID)
-		if err != nil {
-			return "", err
-		}
-		c := mfaCase{Policy: pol, Role: access.OrgRole, ProjectRole: access.ProjectRole, InstanceAdmin: u.InstanceAdmin, Methods: remaining}
-		if c.required() && !c.countsAny(remaining) {
-			return m.Name, nil
+	for _, wc := range cases {
+		if wc.c.required() && !wc.c.countsAny(remaining) {
+			return wc.name, nil
 		}
 	}
 	return "", nil
