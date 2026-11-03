@@ -444,12 +444,34 @@ func (s *Store) CreateSessionWith(ctx context.Context, userID, workspaceID int64
 	if opts.MFA == MFAPasskey && opts.MFACredential > 0 {
 		cred = &opts.MFACredential
 	}
-	// password_login is what releases before migration 0087 read: a social
-	// sign-in was one there too (held to "Require two-factor sign-in").
-	_, err = s.Pool.Exec(ctx, `INSERT INTO sessions (token_hash, user_id, expires_at, workspace_id, password_login, mfa_at, sso_workspace_id,
-		login_method, mfa_method, mfa_credential_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, NULLIF($8, ''), NULLIF($9, ''), $10)`,
-		auth.HashToken(secret), userID, expires, ws, opts.Login == LoginPassword || opts.Login == LoginSocial, mfaAt, pinned, opts.Login, opts.MFA, cred)
+	// A session signed in or confirmed with a passkey is created only while
+	// that passkey is not marked as possibly copied. The row lock makes a
+	// concurrent PasskeyCloneWarning (which marks it and ends its sessions
+	// in one transaction) either wait for this session, and so end it, or
+	// finish first, and then nothing is created: ErrPasskeyCounter.
+	err = pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
+		if cred != nil {
+			var ok bool
+			err := tx.QueryRow(ctx, `SELECT true FROM webauthn_credentials WHERE id = $1 AND user_id = $2 AND clone_warning_at IS NULL FOR SHARE`,
+				*cred, userID).Scan(&ok)
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrPasskeyCounter
+			}
+			if err != nil {
+				return err
+			}
+		}
+		// password_login is what releases before migration 0087 read: a social
+		// sign-in was one there too (held to "Require two-factor sign-in").
+		_, err := tx.Exec(ctx, `INSERT INTO sessions (token_hash, user_id, expires_at, workspace_id, password_login, mfa_at, sso_workspace_id,
+			login_method, mfa_method, mfa_credential_id)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, NULLIF($8, ''), NULLIF($9, ''), $10)`,
+			auth.HashToken(secret), userID, expires, ws, opts.Login == LoginPassword || opts.Login == LoginSocial, mfaAt, pinned, opts.Login, opts.MFA, cred)
+		return err
+	})
+	if err != nil {
+		return "", err
+	}
 	return secret, err
 }
 

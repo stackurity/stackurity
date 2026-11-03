@@ -243,30 +243,49 @@ func (s *Server) mfaCasesEverywhere(ctx context.Context, u *store.User, session 
 	return out, nil
 }
 
-// instanceAdminMFA decides what an instance administrator's browser
-// session must do before it may use the instance-wide routes
-// (requireInstanceAdmin). Those act on every workspace, so the session must
-// meet the policy of every workspace the account belongs to, not only the
-// one it works in: otherwise switching to a workspace with a weaker policy,
-// or working in none, would escape "Required for admins". Single sign-on
-// sessions are exempt here as everywhere else. It answers the need (a
-// step-up before an enrolment: a session that must confirm may not set up
-// factors), what counts, and the workspace that asks.
+// instanceAdminMFA decides what an instance administrator's request must
+// do before it may use the powers that come with the role (the
+// instance-wide routes, and on workspace routes: changing accounts that
+// belong to other workspaces, resetting their second factors, the server's
+// own env: and file: secrets; instanceAdminPowers). Those act beyond the
+// workspace the request works in, so the request must meet the policy of
+// every workspace the account belongs to, not only that one: otherwise
+// switching to a workspace with a weaker policy, working in none, or using
+// an API token would escape "Required for admins".
+//
+//   - A browser session must meet each policy with the factor it was signed
+//     in with (single sign-on sessions are exempt, as everywhere else).
+//   - An API token (or any other credential without a sign-in) proves no
+//     factor of its own, as for every API token; the account must have a
+//     factor that counts in each workspace, and a session that met every
+//     policy must have created it (createToken). So a token made before the
+//     account set up a factor that counts stops carrying these powers.
+//
+// It answers the need (a step-up before an enrolment: a session that must
+// confirm may not set up factors), what counts, and the workspace that asks.
 func (s *Server) instanceAdminMFA(ctx context.Context, p *Principal) (mfaNeed, []string, string, error) {
-	if !p.Session || p.User == nil || !p.User.InstanceAdmin || p.ssoSession() {
+	if p.User == nil || !p.User.InstanceAdmin || (p.Session && p.ssoSession()) {
 		return mfaOK, nil, "", nil
 	}
 	methods, err := s.Store.MFAMethods(ctx, p.User.ID)
 	if err != nil {
 		return mfaOK, nil, "", err
 	}
-	cases, err := s.mfaCasesEverywhere(ctx, p.User, p.MFAMethod, methods)
+	session := ""
+	if p.Session {
+		session = p.MFAMethod
+	}
+	cases, err := s.mfaCasesEverywhere(ctx, p.User, session, methods)
 	if err != nil {
 		return mfaOK, nil, "", err
 	}
 	need, accepted, where := mfaOK, []string(nil), ""
 	for _, wc := range cases {
-		switch wc.c.need() {
+		n := wc.c.need()
+		if !p.Session && n == mfaStepUp {
+			n = mfaOK // the account has a factor that counts there
+		}
+		switch n {
 		case mfaStepUp:
 			return mfaStepUp, wc.c.accepted(), wc.name, nil
 		case mfaEnrol:
@@ -276,6 +295,53 @@ func (s *Server) instanceAdminMFA(ctx context.Context, p *Principal) (mfaNeed, [
 		}
 	}
 	return need, accepted, where, nil
+}
+
+// instanceAdminRefusal is why a request of an instance administrator may
+// not use the powers that come with the role: an API error to answer.
+type instanceAdminRefusal struct {
+	status        int
+	code, message string
+}
+
+func (e *instanceAdminRefusal) write(w http.ResponseWriter) {
+	writeError(w, e.status, e.code, e.message)
+}
+
+// Error lets a refusal travel as an error; Server.fail answers it.
+func (e *instanceAdminRefusal) Error() string { return e.message }
+
+// instanceAdminPowers reports whether the request may use an instance
+// administrator's powers: the account is one, and the request meets the
+// two-factor policy of every workspace the account belongs to
+// (instanceAdminMFA). When the account is one but the request may not, the
+// refusal says why. Every place that grants power for the instance-admin
+// flag goes through here, never through User.InstanceAdmin alone.
+func instanceAdminPowers(p *Principal) (bool, *instanceAdminRefusal, error) {
+	if p == nil || p.User == nil || !p.User.InstanceAdmin {
+		return false, nil, nil
+	}
+	if p.instanceAdminMFA == nil {
+		// Fail closed: authenticate sets it for every principal of an
+		// instance administrator; one made elsewhere carries no powers.
+		return false, &instanceAdminRefusal{403, "forbidden", "requires an instance administrator signed in to the dashboard or with an API token"}, nil
+	}
+	need, accepted, where, err := p.instanceAdminMFA()
+	if err != nil {
+		return false, nil, err
+	}
+	switch need {
+	case mfaStepUp:
+		return false, &instanceAdminRefusal{403, "mfa_step_up_required",
+			where + " requires you to confirm with " + methodNames(accepted) + " before you use an instance administrator's powers"}, nil
+	case mfaEnrol:
+		msg := where + " requires two-factor sign-in with " + methodNames(accepted) + "; set it up before you use an instance administrator's powers"
+		if !p.Session {
+			msg += " (an API token of yours carries them only once your account has it)"
+		}
+		return false, &instanceAdminRefusal{403, "mfa_enrolment_required", msg}, nil
+	}
+	return true, nil, nil
 }
 
 // mfaEnrolmentAllows lists what a session sent to enrolment may still do:

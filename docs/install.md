@@ -247,7 +247,7 @@ The activity log records `auth.mfa_email_sent`, `auth.mfa_enabled` and `auth.mfa
 
 **An organisation's policy.** Admins set it under **People → Users → Two-factor sign-in**:
 
-- **Two-factor sign-in**: **Optional**, **Required for everyone**, or **Required for admins and security** (members with the admin or security role, organisation-wide or through a project, and instance administrators). The server-wide pages of an instance administrator (licence, packs, organisations, platform health) need the policy of every organisation the account belongs to, whichever one the session works in. A policy that requires a factor needs a method that works on this server (passkeys need `STACKURITY_BASE_URL`, the app `STACKURITY_SECRET_KEY`); one nobody could meet is refused.
+- **Two-factor sign-in**: **Optional**, **Required for everyone**, or **Required for admins and security** (members with the admin or security role, organisation-wide or through a project, and instance administrators). The server-wide pages of an instance administrator (licence, packs, organisations, platform health) need the policy of every organisation the account belongs to, whichever one the session works in. So do the other powers of the role: changing the account or resetting the two-factor sign-in of someone who also belongs to other organisations, and using the server's `env:` and `file:` secrets; until then an instance administrator acts as an admin of the organisation they work in. An instance administrator's API tokens follow the same rule: a session that does not meet every policy cannot create one (except collector tokens), and a token opens those routes only while the account has a factor that counts in every organisation. Tokens are not asked for a factor themselves, as for everyone else. A policy that requires a factor needs a method that works on this server (passkeys need `STACKURITY_BASE_URL`, the app `STACKURITY_SECRET_KEY`); one nobody could meet is refused.
 - **Methods that count**: passkey or security key, authenticator app (one of these must stay), and email code (fallback; only on a server that can send email). A recovery code counts where the passkey or app it backs up does.
 - **Require phishing-resistant sign-in (passkeys only) for admins** (Enterprise plan, as single sign-on for an organisation is): admins must sign in with a passkey, whatever the rest of the policy says. Once on, it stays enforced if the plan lapses, and can always be turned off. An admin who has no passkey yet sets one up from a session signed in with the app or a recovery code, so until every admin has one, a phished password and code could still register an attacker's passkey for them: have admins add passkeys (two each, so one can be lost) before turning it on, and watch the count of admins without one. An admin who has a passkey can no longer replace it with a recovery code (it is as easy to phish as an app code): another admin resets a lost one.
 
@@ -1157,24 +1157,25 @@ Everything is in PostgreSQL. The data volume only holds temporary clones. Keep t
 - `STACKURITY_SECRET_KEY`, if you set it. Stored workspace secrets are encrypted with it and cannot be read without it. Keep it apart from the database dumps.
 - Your licence key, if you use Pro or Enterprise (it is also stored in the database).
 
+A backup is two files: the database, and the roles it grants privileges to. Roles belong to the PostgreSQL server, not to the database, so `pg_dump` leaves them out.
+
 ```sh
 # backup
 docker compose exec -T postgres pg_dump -U stackurity -Fc stackurity > stackurity-$(date +%F).dump
+docker compose exec -T postgres pg_dumpall -U stackurity --roles-only --no-role-passwords > stackurity-roles-$(date +%F).sql
 
 # restore into a fresh install
 docker compose up -d postgres
+# the roles first (errors for roles that already exist, such as stackurity, are harmless)
+docker compose exec -T postgres psql -U stackurity -d postgres < stackurity-roles-2026-10-23.sql
 docker compose exec -T postgres pg_restore -U stackurity -d stackurity --clean --if-exists < stackurity-2026-10-23.dump
 docker compose up -d
 ```
 
-Restoring into a new PostgreSQL server prints `role "stackurity_app" does not exist` errors and exits with status 1. They are expected: roles belong to the server, not the dump, and Stackurity creates the role and its grants again when it starts (before release 0.2, a server with several workspaces refused to start after such a restore; start 0.2 or later against it). To restore without these errors, save the roles next to each dump and load them first:
+Load the roles before `pg_restore`. The migrations grant privileges to the `stackurity_app` role, and on a PostgreSQL server that does not have it, `pg_restore` fails on each of those grants (`role "stackurity_app" does not exist`) and exits with status 1. If you have no roles file for the dump, create the role instead, then run `pg_restore`:
 
 ```sh
-# with each backup
-docker compose exec -T postgres pg_dumpall -U stackurity --roles-only --no-role-passwords > stackurity-roles-$(date +%F).sql
-
-# before pg_restore (errors for roles that already exist, such as stackurity, are harmless)
-docker compose exec -T postgres psql -U stackurity -d postgres < stackurity-roles-2026-10-23.sql
+docker compose exec -T postgres psql -U stackurity -d postgres -c 'CREATE ROLE stackurity_app NOLOGIN;'
 ```
 
 Test a restore regularly. A backup you have never restored is not a backup. To check one: restore it into a separate PostgreSQL, start Stackurity against it with `STACKURITY_FEEDS=off`, and confirm that `/readyz` answers 200 and `stackurity admin list-workspaces` shows your workspaces and asset counts.

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stackurity/stackurity/internal/auth"
 	"github.com/stackurity/stackurity/internal/store"
@@ -134,5 +135,66 @@ func TestPasskeyCloneWarningEndsItsSessions(t *testing.T) {
 	// Another account's passkey id: nothing happens.
 	if ended, err := s.PasskeyCloneWarning(bg, u.ID+1000, other); err != nil || ended != 0 {
 		t.Errorf("another account's passkey: %d %v", ended, err)
+	}
+}
+
+// A session with a passkey is not created once the passkey is marked, even
+// when its insert races the marking: the insert waits for the marking's
+// transaction and then creates nothing, so no session of a possibly copied
+// key survives.
+func TestSessionWithAMarkedPasskeyIsNotCreated(t *testing.T) {
+	s := store.New(testdb.New(t))
+	bg := context.Background()
+	u, err := s.CreateUser(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "ann@x.io", "", auth.RoleViewer, "correct horse battery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pk, _, err := s.AddPasskey(bg, u.ID, store.NewPasskey{CredentialID: []byte("key"), Name: "Key", Record: []byte(`{}`)}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withKey := store.SessionOpts{Login: store.LoginPasskey, MFA: store.MFAPasskey, MFACredential: pk.ID}
+	sessions := func() int {
+		t.Helper()
+		var n int
+		if err := s.Pool.QueryRow(bg, `SELECT count(*) FROM sessions WHERE user_id = $1 AND mfa_credential_id = $2`, u.ID, pk.ID).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+
+	// The race: the marking's transaction is open when the sign-in's
+	// session is inserted.
+	tx, err := s.Pool.Begin(bg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(bg, `UPDATE webauthn_credentials SET clone_warning_at = now() WHERE id = $1`, pk.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(bg, `DELETE FROM sessions WHERE user_id = $1 AND mfa_credential_id = $2`, u.ID, pk.ID); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := s.CreateSessionWith(bg, u.ID, tenant.DefaultWorkspace, withKey)
+		done <- err
+	}()
+	time.Sleep(300 * time.Millisecond) // let the insert reach the lock
+	if err := tx.Commit(bg); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; !errors.Is(err, store.ErrPasskeyCounter) {
+		t.Errorf("session insert racing the marking: %v", err)
+	}
+	if n := sessions(); n != 0 {
+		t.Errorf("%d sessions of the marked passkey survived", n)
+	}
+	// Once marked, plainly refused; other sessions are unaffected.
+	if _, err := s.CreateSessionWith(bg, u.ID, tenant.DefaultWorkspace, withKey); !errors.Is(err, store.ErrPasskeyCounter) {
+		t.Errorf("session with a marked passkey: %v", err)
+	}
+	if _, err := s.CreateSessionWith(bg, u.ID, tenant.DefaultWorkspace, store.SessionOpts{Login: store.LoginPassword, MFA: store.MFATOTP}); err != nil {
+		t.Errorf("session with the app: %v", err)
 	}
 }

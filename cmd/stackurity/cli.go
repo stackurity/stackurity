@@ -128,7 +128,7 @@ func readSecretInput(envKey, prompt string) (string, error) {
 }
 
 func printResult(r *client.IngestResult) {
-	fmt.Printf("asset %d: %d observations stored (collection %d, %d removed)", r.AssetID, r.Observations, r.CollectionID, r.Removed)
+	fmt.Printf("asset %d: %s stored (collection %d, %d removed)", r.AssetID, count(r.Observations, "observation", "observations"), r.CollectionID, r.Removed)
 	if r.NewAsset {
 		fmt.Print(", new asset")
 	}
@@ -144,8 +144,9 @@ func printResult(r *client.IngestResult) {
 		fmt.Printf("warning: identifiers match several assets %v; an admin should resolve the conflict\n", r.Conflict)
 	}
 	if r.VEX != nil {
-		fmt.Printf("VEX in the SBOM: %d statements matched, %d not; %d not_affected statements wait for approval under Approvals\n",
-			r.VEX.Matched, r.VEX.Unmatched, r.VEX.Pending)
+		fmt.Printf("VEX in the SBOM: %s matched, %d not; %s %s for approval under Approvals\n",
+			count(r.VEX.Matched, "statement", "statements"), r.VEX.Unmatched,
+			count(r.VEX.Pending, "not_affected statement", "not_affected statements"), agree(r.VEX.Pending, "waits", "wait"))
 	} else if r.VEXNote != "" {
 		fmt.Println("note: " + r.VEXNote)
 	}

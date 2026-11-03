@@ -60,6 +60,9 @@ func TestScanFailOnLeak(t *testing.T) {
 	if !errors.As(err, &ee) || ee.code != gateExitCode {
 		t.Fatalf("err = %v, want exit %d", err, gateExitCode)
 	}
+	if !strings.HasPrefix(ee.msg, "1 leaked key or password meets --fail-on-leak high: rotate it ") {
+		t.Errorf("message for one leak: %q", ee.msg)
+	}
 	if !strings.Contains(stderr, "leak: critical GitHub token ghp_…2Qex at deploy.py:1") || strings.Contains(stderr, testToken) {
 		t.Errorf("stderr %q", stderr)
 	}
