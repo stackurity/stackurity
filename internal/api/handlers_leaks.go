@@ -51,7 +51,17 @@ func (s *Server) listLeaks(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	writeJSON(w, 200, paged(items, total, f.Page))
+	// How many assets were scanned at all, so an empty list can say
+	// whether that means none found or nothing checked yet.
+	scanned, err := s.Store.LeakScannedAssets(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, 200, struct {
+		list[store.Leak]
+		ScannedAssets int64 `json:"scanned_assets"`
+	}{paged(items, total, f.Page), scanned})
 }
 
 // assetLeaks lists one asset's leaks, with its last key scans: no scan

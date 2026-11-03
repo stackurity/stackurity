@@ -2260,6 +2260,8 @@ export interface LeakScan {
 
 export interface LeakList extends List<Leak> {
   scans?: LeakScan[];
+  /** GET /leaks only: assets whose files were scanned for keys at all. */
+  scanned_assets?: number;
 }
 
 export interface PriorityFactor {

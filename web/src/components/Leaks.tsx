@@ -6,6 +6,7 @@ import { useAction, useLoad } from "../hooks";
 import { Badge, SeverityBadge } from "./Badge";
 import { promptText } from "./ConfirmDialog";
 import { Table, type Column } from "./Table";
+import { leaksEmpty } from "../emptyCopy";
 import { EmptyState, ErrorBox, Loading, Notice, Pager, RelativeTime, Tabs } from "./ui";
 
 /**
@@ -124,12 +125,6 @@ export function LeaksTable({ leaks, showAsset, onChanged }: { leaks: Leak[]; sho
   return <Table caption="Leaked keys" columns={cols} rows={leaks} rowKey={(l) => l.id} />;
 }
 
-const VIEW_EMPTY: Record<LeakView, string> = {
-  action: "No leaked keys need action",
-  kept: "No keys found in configuration files",
-  resolved: "No resolved leaked keys",
-};
-
 export const VIEW_LABEL: Record<LeakView, string> = {
   action: "Needs action",
   kept: "Where keys are kept",
@@ -145,6 +140,7 @@ const VIEW_HINT: Record<LeakView, string> = {
 
 /** Leaked keys, for the whole organisation or one asset, in three views. */
 export function LeaksView({ assetId }: { assetId?: number }) {
+  const { can } = useAuth();
   const [view, setView] = useState<LeakView>("action");
   const [offset, setOffset] = useState(0);
   const path = assetId ? `/assets/${assetId}/leaks` : "/leaks";
@@ -181,7 +177,7 @@ export function LeaksView({ assetId }: { assetId?: number }) {
       <p className="hint">{VIEW_HINT[view]}</p>
       <ErrorBox error={res.error} title="Could not load leaked keys" />
       {!res.data && !res.error && <Loading />}
-      {res.data && res.data.items.length === 0 && <EmptyState title={VIEW_EMPTY[view]} />}
+      {res.data && res.data.items.length === 0 && <EmptyState {...leaksEmpty(view, assetId ? undefined : res.data.scanned_assets, can("admin"))} />}
       {res.data && res.data.items.length > 0 && (
         <>
           <LeaksTable leaks={res.data.items} showAsset={!assetId} onChanged={res.reload} />

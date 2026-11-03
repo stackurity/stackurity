@@ -7,6 +7,7 @@ import { absTime, plural } from "../format";
 import { Badge, IGNORE_REASON_LABEL, type Tone } from "../components/Badge";
 import { EmptyState, ErrorBox, Loading, Notice, PageHeader, Pager, RelativeTime } from "../components/ui";
 import { ProjectFilter } from "../components/AssetPicker";
+import { ignoreRulesEmpty, requestsEmpty } from "../emptyCopy";
 
 const LIMIT = 50;
 
@@ -158,9 +159,7 @@ function Requests({ status }: { status: "pending" | "all" }) {
       )}
       {done && <Notice kind="success">{done}</Notice>}
       {items.length === 0 ? (
-        <EmptyState title={status === "pending" ? "No requests waiting" : "No requests yet"} help="approvals">
-          <p>{status === "pending" ? "Requests to ignore issues show up here until someone decides." : "Every request, waiting, approved or declined, shows up here."}</p>
-        </EmptyState>
+        <EmptyState {...requestsEmpty(status, canDecide)} help="approvals" />
       ) : (
         <ul className="approval-list">
           {items.map((r) => (
@@ -223,7 +222,7 @@ function Rules() {
       {done && <Notice kind="success">{done}</Notice>}
       <ErrorBox error={act.error ?? res.error} title="Ignore rules" />
       {!res.data && !res.error && <Loading />}
-      {res.data && res.data.items.length === 0 && <EmptyState title="No ignore rules" help="ignore-issues" />}
+      {res.data && res.data.items.length === 0 && <EmptyState {...ignoreRulesEmpty(all)} help="ignore-issues" />}
       {res.data && res.data.items.length > 0 && (
         <ul className="approval-list">
           {res.data.items.map((r) => (
