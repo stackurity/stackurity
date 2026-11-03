@@ -16,6 +16,9 @@ import (
 //   - invisible characters that can hide instructions from the person
 //     reading the same text (Unicode tag characters, bidirectional
 //     controls, zero-width characters) are removed;
+//   - credentials that may sit in inventory text (a URL's user:password,
+//     well-known token shapes, private key blocks) are replaced by
+//     "(secret removed)";
 //   - the result is cut to maxToolResult bytes, saying so.
 //
 // The text then goes to the model as a tool result, after a fixed line
@@ -34,6 +37,27 @@ var personKeys = map[string]bool{
 	"assignee": true, "assignee_name": true, "created_by": true, "requested_by": true, "decided_by": true,
 	"invited_by": true, "installed_by": true, "imported_by": true, "ended_by": true, "locked_by": true, "held_by": true,
 	"actor": true, "user": true,
+}
+
+// secretREs match credentials by shape. A URL's user:password is
+// matched first, before the email pattern can take its "password@host".
+var secretREs = []*regexp.Regexp{
+	regexp.MustCompile(`-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?(-----END [A-Z0-9 ]*PRIVATE KEY-----|$)`),
+	regexp.MustCompile(`\b(gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|glpat-[A-Za-z0-9_-]{20,}|xox[abeprs]-[A-Za-z0-9-]{10,}|sk-ant-[A-Za-z0-9_-]{16,}|sk-[A-Za-z0-9_-]{32,}|(AKIA|ASIA)[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35})`),
+}
+
+// urlUserinfoRE is a URL's user:password@ part.
+var urlUserinfoRE = regexp.MustCompile(`([A-Za-z][A-Za-z0-9+.-]*://)[^/\s:@]*:[^/\s@]*@`)
+
+const secretRemoved = "(secret removed)"
+
+// redactSecrets replaces credentials in s.
+func redactSecrets(s string) string {
+	s = urlUserinfoRE.ReplaceAllString(s, "${1}"+secretRemoved+"@")
+	for _, re := range secretREs {
+		s = re.ReplaceAllString(s, secretRemoved)
+	}
+	return s
 }
 
 var emailRE = regexp.MustCompile(`[A-Za-z0-9._%+'-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}`)
@@ -90,7 +114,7 @@ func scrub(v any) any {
 		}
 		return x
 	case string:
-		return emailRE.ReplaceAllString(CleanText(x), colleague)
+		return emailRE.ReplaceAllString(redactSecrets(CleanText(x)), colleague)
 	}
 	return v
 }
@@ -130,5 +154,5 @@ func ToolResultText(name string, out any) string {
 
 // ErrorText is the tool result for a tool that failed.
 func ErrorText(err error) string {
-	return emailRE.ReplaceAllString(CleanText(err.Error()), colleague)
+	return emailRE.ReplaceAllString(redactSecrets(CleanText(err.Error())), colleague)
 }

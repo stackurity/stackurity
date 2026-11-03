@@ -61,6 +61,8 @@ type Server struct {
 	mu      sync.Mutex
 	replies []Reply
 	reqs    []Request
+	// OnRequest, when set, runs before request n (from 1) is answered.
+	OnRequest func(n int)
 }
 
 // New starts a fake API that answers with replies in order; it fails the
@@ -77,7 +79,11 @@ func New(t testing.TB, replies ...Reply) *Server {
 			rep = &s.replies[0]
 			s.replies = s.replies[1:]
 		}
+		n, hook := len(s.reqs), s.OnRequest
 		s.mu.Unlock()
+		if hook != nil {
+			hook(n)
+		}
 		if r.URL.Path != "/v1/messages" || r.Method != http.MethodPost {
 			http.Error(w, `{"type":"error","error":{"type":"not_found_error","message":"no such path"}}`, 404)
 			return
