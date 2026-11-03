@@ -3955,6 +3955,21 @@ h6.md-h {
   font-size: 13px;
   font-weight: 600;
 }
+/* A one-line explanation under a block title; a Dashboard word with its meaning on hover. */
+.dash-hint {
+  margin: 0 0 var(--s2);
+}
+.dash-term {
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+  cursor: help;
+}
+.dash-feeds-warn {
+  color: var(--warn-fg);
+}
+.dash-feeds-warn svg {
+  vertical-align: -2px;
+}
 .dash-tiles {
   margin-bottom: var(--s3);
 }
@@ -4645,9 +4660,16 @@ h6.md-h {
 }
 .onboard-step-label {
   max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.onboard-step-text {
+  max-width: 100%;
+  text-align: center;
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--muted);
+  line-height: 1.3;
 }
 .onboard-dot {
   display: inline-flex;
@@ -4775,6 +4797,59 @@ h6.md-h {
   color: var(--good-fg);
   font-weight: 700;
 }
+.first-check-rows {
+  list-style: none;
+  margin: 0 0 var(--s4);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+.first-check-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  min-height: 32px;
+}
+.first-check-row .onboard-spinner,
+.first-check-row .onboard-check {
+  margin-top: 0;
+}
+.first-check-todo {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px dashed var(--border-strong);
+}
+.first-check-label {
+  flex: 1;
+  min-width: 0;
+}
+.first-check-pending .first-check-label {
+  color: var(--muted);
+}
+.first-check-value {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.first-check-tiles {
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  margin-bottom: var(--s3);
+}
+.first-check-top {
+  margin: var(--s3) 0;
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+}
+.first-check-top p {
+  margin: 0 0 var(--s1);
+}
+.first-check-top p:last-child {
+  margin-bottom: 0;
+}
 .onboard-result + .onboard-result {
   border-top: 1px solid var(--border);
   padding-top: var(--s3);
@@ -4859,11 +4934,16 @@ h6.md-h {
   .onboard-sources {
     grid-template-columns: 1fr;
   }
-  .onboard-step-label {
+  .onboard-step-label,
+  .onboard-step-text {
     display: none;
   }
-  .onboard-steps li.current .onboard-step-label {
+  .onboard-steps li.current .onboard-step-label,
+  .onboard-steps li.current .onboard-step-text {
     display: block;
+  }
+  .onboard-steps li.current {
+    flex: 4;
   }
   .setup-list {
     grid-template-columns: 1fr;
@@ -5479,7 +5559,8 @@ div.assistant-card {
   margin: 0 0 var(--s2);
   font-size: 1rem;
 }
-.mfa-passkeys {
+.mfa-passkeys,
+.session-list {
   list-style: none;
   padding: 0;
   margin: 0 0 var(--s3);
@@ -5487,7 +5568,8 @@ div.assistant-card {
   flex-direction: column;
   gap: var(--s2);
 }
-.mfa-passkeys > li {
+.mfa-passkeys > li,
+.session-list > li {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
@@ -5497,7 +5579,8 @@ div.assistant-card {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 }
-.mfa-passkeys > li > div:first-child {
+.mfa-passkeys > li > div:first-child,
+.session-list > li > div:first-child {
   min-width: 0;
   overflow-wrap: anywhere;
 }

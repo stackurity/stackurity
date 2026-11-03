@@ -36,7 +36,13 @@ export function parseNamespaces(text: string): string[] | null {
   return out;
 }
 
-export function clusterCommands(c: ClusterInstall): { helm: string; kubectl: string; insecure: boolean } {
+export function clusterCommands(c: ClusterInstall): {
+  helm: string;
+  kubectl: string;
+  insecure: boolean;
+  /** Removing the reporter installed by each command: everything it created, the namespace too. */
+  uninstall: { helm: string; kubectl: string };
+} {
   const url = new URL(c.origin);
   const insecure = url.protocol === "http:";
   const pin = RELEASE.exec(c.version ?? "");
@@ -51,5 +57,11 @@ export function clusterCommands(c: ClusterInstall): { helm: string; kubectl: str
   if (c.namespaces.length) q.set("namespaces", c.namespaces.join(","));
   const manifest = `${c.origin}/install/kubernetes.yaml?${q.toString().replace(/%2C/g, ",")}`;
   const kubectl = `kubectl apply -f '${manifest}' && \\\n  kubectl -n stackurity create secret generic stackurity-reporter --from-literal=enroll-code=${c.code}`;
-  return { helm, kubectl, insecure: insecure && !LOCAL_HOSTS.includes(url.hostname) };
+  // helm install --create-namespace leaves the namespace to delete; the
+  // manifest has it, and deleting it removes the Secret made beside it.
+  const uninstall = {
+    helm: "helm uninstall stackurity-reporter --namespace stackurity && kubectl delete namespace stackurity",
+    kubectl: `kubectl delete -f '${manifest}'`,
+  };
+  return { helm, kubectl, insecure: insecure && !LOCAL_HOSTS.includes(url.hostname), uninstall };
 }

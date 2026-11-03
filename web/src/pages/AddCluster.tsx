@@ -48,7 +48,7 @@ function ClusterCommands({
 }) {
   const meta = useLoad(() => api.meta(), []);
   const [tab, setTab] = useState<"helm" | "kubectl">("helm");
-  const { helm, kubectl, insecure } = clusterCommands({
+  const { helm, kubectl, insecure, uninstall } = clusterCommands({
     origin: window.location.origin,
     code: enrollment.code,
     cluster,
@@ -105,6 +105,10 @@ function ClusterCommands({
               </li>
               <li>Puts the code in the Secret <Code>stackurity-reporter</Code>. On first start the reporter exchanges it for its own token, keeps the token there and removes the code.</li>
               <li>Reports every hour. Running images are then scanned by Stackurity from their registries.</li>
+              <li>
+                To remove it: <Code>{tab === "helm" ? uninstall.helm : uninstall.kubectl}</Code>. The cluster stays under Assets until you delete
+                it there.
+              </li>
             </ul>
           </div>
           <div>

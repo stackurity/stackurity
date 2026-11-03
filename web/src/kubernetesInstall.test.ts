@@ -47,3 +47,13 @@ test("names are checked before they reach a shell command", () => {
   assert.equal(parseNamespaces("a;b"), null);
   assert.deepEqual(parseNamespaces(""), []);
 });
+
+test("uninstall removes what each command installed, with the same manifest", () => {
+  const c = clusterCommands({ origin: "https://stk.example.com", code: "enr_abc", cluster: "prod-eu", namespaces: ["shop", "blog"] });
+  const applied = /kubectl apply -f '([^']+)'/.exec(c.kubectl)![1];
+  assert.equal(c.uninstall.kubectl, `kubectl delete -f '${applied}'`);
+  assert.ok(!c.uninstall.kubectl.includes("enr_"));
+  // The release and namespace the Helm command installs into.
+  assert.ok(c.helm.startsWith("helm install stackurity-reporter ") && c.helm.includes("--namespace stackurity --create-namespace"));
+  assert.equal(c.uninstall.helm, "helm uninstall stackurity-reporter --namespace stackurity && kubectl delete namespace stackurity");
+});

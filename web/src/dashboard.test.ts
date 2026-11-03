@@ -1,6 +1,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assetNoun, glanceTiles, quietKinds, needsYou, reportingCount, reportingRows, slaSplit, sparkPoints, trendText } from "./dashboard.ts";
+import {
+  assetNoun,
+  feedFreshness,
+  glanceTiles,
+  hiddenReasons,
+  quietKinds,
+  needsYou,
+  reportingCount,
+  reportingRows,
+  slaSplit,
+  sparkPoints,
+  termParts,
+  trendText,
+  type FeedLike,
+  type Term,
+} from "./dashboard.ts";
 
 const now = "2026-10-31T10:00:00Z";
 const eod = "2026-11-01T00:00:00Z";
@@ -135,4 +150,115 @@ test("what stopped reporting is named by kind, never 'asset'", () => {
   assert.equal(quietKinds(a.slice(1, 2), 1), "1 repository not reporting");
   // The assets at hand don't account for every stale one: no nouns guessed.
   assert.equal(quietKinds(a, 5), "5 not reporting");
+});
+
+test("Needs you now: each action says what it opens", () => {
+  const rows = needsYou({
+    sos: { total: 31, items: [{ id: 1, kind: "finding", key: "x", title: "a" }] },
+    sla: { on_time: 0, due_today: 1, overdue: 2 },
+    checkedAt: now,
+    endOfToday: eod,
+    ignoreRequests: 1,
+    fixPlans: 1,
+    assets: [{ id: 3, name: "db-1", kind: "host", collection_status: "stale" }],
+  });
+  assert.deepEqual(
+    rows.map((r) => [r.title, r.action.label]),
+    [
+      ["31 open SOS incidents", "Open the SOS incident list"],
+      ["2 issues past their fix-by date", "Open the overdue issues"],
+      ["1 issue due by the end of today", "Open the issues due today"],
+      ["Server db-1: the Stackurity agent hasn't reported", "Open the asset"],
+      ["1 request to ignore issues is waiting for a decision", "Open approvals"],
+      ["1 automatic fix waiting for approval", "Open automatic fixes"],
+    ],
+  );
+  const one = needsYou({ sos: { total: 1, items: [{ id: 9, kind: "finding", key: "x", title: "OpenSSL RCE" }] } });
+  assert.deepEqual([one[0].detail, one[0].action.label], ["Open SOS incident", "Open the incident"]);
+});
+
+test("terms: the first use of each word in a block gets its meaning, once", () => {
+  const seen = new Set<Term>();
+  assert.deepEqual(termParts("31 open SOS incidents", seen), ["31 open ", { text: "SOS", term: "sos" }, " ", { text: "incidents", term: "incident" }]);
+  assert.deepEqual(termParts("2 issues past their fix-by date", seen), ["2 ", { text: "issues", term: "issue" }, " past their ", { text: "fix", term: "fix" }, "-by date"]);
+  // Already explained in this block: plain text.
+  assert.deepEqual(termParts("More SOS incidents and issues", seen), ["More SOS incidents and issues"]);
+  assert.deepEqual(termParts("", new Set()), []);
+  // "prefix" is not the word fix.
+  assert.deepEqual(termParts("a prefix", new Set()), ["a prefix"]);
+});
+
+test("not shown in Top fixes: no fix published is never said as a price", () => {
+  const r = hiddenReasons({ no_fix: { findings: 7 }, lower_priority: { findings: 49 }, old_kernels: { findings: 0 } }, 2, 0);
+  assert.deepEqual(
+    r.map((x) => [x.key, x.n, x.to]),
+    [
+      ["no_fix", 7, "/fixes?bucket=no_fix"],
+      ["lower_priority", 49, "/fixes?bucket=lower_priority"],
+      ["suppressed", 2, "/fixes/issues?state=suppressed"],
+    ],
+  );
+  for (const x of r) assert.doesNotMatch(x.text, /free|paid|pay/i, x.key);
+  assert.equal(r[0].text, "have no fix in the standard updates yet");
+  assert.match(r[0].title ?? "", /Ubuntu Pro/);
+  assert.equal(r[1].text, "are lower priority (P2 to P4, no SOS rule)");
+  assert.deepEqual(hiddenReasons(null), []);
+});
+
+const feed = (name: string, over: Partial<FeedLike> = {}): FeedLike => ({
+  name,
+  kind: "vulnerability",
+  enabled: true,
+  last_attempt: "2026-11-03T09:00:00Z",
+  last_success: "2026-11-03T09:00:00Z",
+  last_error: "",
+  stale: false,
+  ...over,
+});
+
+test("feed freshness: fresh, the newest success across enabled feeds", () => {
+  const f = feedFreshness([
+    feed("osv", { last_success: "2026-11-03T08:00:00Z" }),
+    feed("kev:cisa", { last_success: "2026-11-03T09:30:00Z" }),
+    feed("old", { enabled: false, last_success: "2026-11-03T10:00:00Z" }),
+  ]);
+  assert.equal(f.state, "fresh");
+  assert.equal(f.lastSuccess, "2026-11-03T09:30:00Z");
+  assert.equal(f.warning, "");
+});
+
+test("feed freshness: stale when the server says a synced feed is past its limit", () => {
+  const f = feedFreshness([feed("osv"), feed("kev:cisa", { stale: true, last_success: "2026-11-02T09:00:00Z", last_error: "timeout" })]);
+  assert.equal(f.state, "stale");
+  assert.deepEqual(f.stale, ["kev:cisa"]);
+  assert.deepEqual(f.failing, []);
+  assert.equal(f.lastSuccess, "2026-11-03T09:00:00Z");
+  assert.match(f.warning, /^Data source kev:cisa is out of date: no successful sync within its freshness limit/);
+  const two = feedFreshness([feed("a", { stale: true }), feed("b", { stale: true }), feed("c", { stale: true })]);
+  assert.match(two.warning, /^Data sources a, b and c are out of date: .* their freshness limit/);
+  // A disabled feed is never stale.
+  assert.equal(feedFreshness([feed("osv"), feed("x", { enabled: false, stale: true })]).state, "fresh");
+});
+
+test("feed freshness: failing while the data is still within its limit", () => {
+  const f = feedFreshness([feed("osv", { last_error: "HTTP 503" }), feed("kev:cisa")]);
+  assert.equal(f.state, "failing");
+  assert.deepEqual(f.failing, ["osv"]);
+  assert.equal(f.warning, "Data source osv is failing to sync. The data is still within its freshness limit.");
+  // Stale wins over failing when both happen.
+  assert.equal(feedFreshness([feed("osv", { last_error: "x" }), feed("kev", { stale: true })]).state, "stale");
+});
+
+test("feed freshness: never synced, waiting for the first sync, or turned off", () => {
+  const never = feedFreshness([feed("osv", { last_success: null, stale: true, last_error: "dial tcp: timeout" })]);
+  assert.equal(never.state, "never");
+  assert.equal(never.lastSuccess, null);
+  assert.match(never.warning, /never been downloaded/);
+  const pending = feedFreshness([feed("osv", { last_success: null, last_attempt: null, stale: true })]);
+  assert.equal(pending.state, "pending");
+  assert.match(pending.warning, /first sync/);
+  // A new feed waiting for its first sync next to a synced one is not a warning.
+  assert.equal(feedFreshness([feed("osv"), feed("new", { last_success: null, last_attempt: null, stale: true })]).state, "fresh");
+  assert.equal(feedFreshness([feed("osv", { enabled: false })]).state, "never");
+  assert.match(feedFreshness([]).warning, /turned off/);
 });

@@ -178,6 +178,22 @@ To see what it would send, run it once in the cluster with `--output`:
 kubectl -n stackurity exec deploy/stackurity-reporter -- stackurity kubernetes-reporter --output - | head
 ```
 
+### Removing the reporter
+
+With Helm, uninstall the release, then delete the namespace `--create-namespace` made:
+
+```sh
+helm uninstall stackurity-reporter --namespace stackurity && kubectl delete namespace stackurity
+```
+
+With `kubectl`, delete what the same manifest address created (with the same `cluster` and `namespaces`); deleting its namespace also removes the Secret with the token:
+
+```sh
+kubectl delete -f 'https://stackurity.example.com/install/kubernetes.yaml?cluster=prod-eu'
+```
+
+**Connect a Kubernetes cluster** shows the right command after the install command. The cluster stays in Stackurity until you delete it under **Assets**, and its collector token stays valid until you revoke it under **Integrations → API tokens**.
+
 ## Connect with the plugin (pull)
 
 ### 1. A read-only service account

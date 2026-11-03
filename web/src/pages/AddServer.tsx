@@ -8,6 +8,7 @@ import { Card, Code, CodeBlock, EmptyState, ErrorBox, KeyValues, Loading, Notice
 import { confirmAction } from "../components/ConfirmDialog";
 import { DigitalOceanPanel, FleetPanel } from "./AddServerFleet";
 import { linuxCommand, macCommand, windowsCommand } from "../installCommand";
+import { AgentFacts } from "../components/AgentFacts";
 
 type Mode = "one" | "fleet" | "digitalocean";
 
@@ -118,6 +119,7 @@ export function AddServerPage() {
         title="Add server"
         sub="Create an install command, then run it on the new Linux or Windows server, or a Mac. It installs the read-only agent and enrolls the server."
       />
+      <AgentFacts />
       <Tabs
         label="How many servers"
         value={mode}

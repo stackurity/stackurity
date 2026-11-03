@@ -45,3 +45,25 @@ export function windowsCommand(code: string, loc: Origin): { command: string; in
   const env = `$env:STACKURITY_ENROLL_CODE = '${code}'; ${insecure ? "$env:STACKURITY_ALLOW_HTTP = '1'; " : ""}`;
   return { command: `${tls}${env}irm ${loc.origin}/install/agent.ps1 | iex`, insecure };
 }
+
+/**
+ * Removing the agent. macOS and Windows: the installers with
+ * STACKURITY_UNINSTALL=1, which remove everything they installed before
+ * looking at the server's URL. Linux: what agent.sh installs, by hand (the
+ * service, the binary, /etc/stackurity with the token, the user).
+ */
+export function uninstallCommands(loc: Origin): { linux: string; macos: string; windows: string } {
+  return {
+    linux: [
+      "sudo systemctl disable --now stackurity-agent",
+      "sudo rm -f /etc/systemd/system/stackurity-agent.service /usr/local/bin/stackurity",
+      "sudo systemctl daemon-reload",
+      "sudo rm -rf /etc/stackurity",
+      "sudo userdel stackurity",
+    ].join("\n"),
+    macos: `curl -fsSL ${loc.origin}/install/agent-macos.sh | sudo STACKURITY_UNINSTALL=1 sh`,
+    windows:
+      "[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072; " +
+      `$env:STACKURITY_UNINSTALL = '1'; irm ${loc.origin}/install/agent.ps1 | iex`,
+  };
+}
