@@ -14,7 +14,7 @@ import { useAuth } from "../auth";
 import { useProject } from "../project";
 import { useAction, useLoad } from "../hooks";
 import { plural } from "../format";
-import { CheckApps, CheckDocker, installCommand } from "./AddServer";
+import { CheckApps, CheckDocker, InstallCommandTabs, installCommand, type ServerOS } from "./AddServer";
 import { InviteForm } from "../components/Invite";
 import { CodeBlock, ErrorBox, Loading, Notice } from "../components/ui";
 import {
@@ -290,6 +290,7 @@ function ServerSource({ project, onWaiting }: { project: Project; onWaiting: (na
   const [created, setCreated] = useState<EnrollmentCreated | null>(null);
   const [apps, setApps] = useState(true);
   const [docker, setDocker] = useState(false);
+  const [os, setOS] = useState<ServerOS>("linux");
   const act = useAction();
   const make = async () => {
     const c = await act.run(() =>
@@ -300,7 +301,10 @@ function ServerSource({ project, onWaiting }: { project: Project; onWaiting: (na
   if (!created) {
     return (
       <div className="form">
-        <p>Linux with systemd, root or sudo, and outbound HTTPS from the server to this dashboard.</p>
+        <p>
+          Linux with systemd (root or sudo), or Windows Server 2016 or later (PowerShell as administrator), and outbound HTTPS from
+          the server to this dashboard.
+        </p>
         <div className="field">
           <CheckApps id="ob-apps" checked={apps} onChange={setApps} />
         </div>
@@ -313,7 +317,7 @@ function ServerSource({ project, onWaiting }: { project: Project; onWaiting: (na
       </div>
     );
   }
-  const { command, insecure } = installCommand(created.code, docker);
+  const { insecure } = installCommand(created.code, docker);
   return (
     <div className="form">
       <p>
@@ -324,10 +328,12 @@ function ServerSource({ project, onWaiting }: { project: Project; onWaiting: (na
           This dashboard is open over plain HTTP, so the code would cross the network unencrypted. Use HTTPS if you can.
         </Notice>
       )}
-      <div className="field">
-        <CheckDocker id="ob-docker" checked={docker} onChange={setDocker} />
-      </div>
-      <CodeBlock text={command} label="Install command" />
+      <InstallCommandTabs code={created.code} os={os} onOS={setOS} idPrefix="ob-" docker={docker} />
+      {os === "linux" && (
+        <div className="field">
+          <CheckDocker id="ob-docker" checked={docker} onChange={setDocker} />
+        </div>
+      )}
       <p className="hint">The code is shown only now. The agent only reads what is installed; it never changes anything.</p>
       <div className="form-actions">
         <button type="button" className="btn btn-primary" onClick={() => onWaiting("")}>

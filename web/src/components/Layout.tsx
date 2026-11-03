@@ -220,11 +220,6 @@ function Shell() {
           {!pathname.startsWith("/admin/health") && <PlatformHealthBanner />}
           {me?.workspace?.read_only && <ReadOnlyBanner state={me.workspace.read_only} />}
           {me?.workspace && !me.workspace.read_only && !projectOnly && pathname !== "/settings/usage" && <AssetLimitBanner workspaceId={me.workspace.id} />}
-          {current === "settings" && pathname !== "/settings" && (
-            <nav className="crumbs" aria-label="Breadcrumb">
-              <Link to="/settings">Settings</Link>
-            </nav>
-          )}
           {me?.workspace && <SectionTabsFor path={pathname} />}
           {me && !me.workspace && me.sso_required && !pathname.startsWith("/admin") ? (
             <SSORequiredNotice req={me.sso_required} others={(me.workspaces ?? []).filter((w) => w.workspace_id !== me.sso_required?.workspace_id)} />
