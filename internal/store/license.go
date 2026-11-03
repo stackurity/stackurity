@@ -82,7 +82,7 @@ func (s *Store) TickLicenseRequirement(ctx context.Context, maxStep time.Duratio
 	return time.Duration(secs) * time.Second, err
 }
 
-// ServerID is this installation's random id (migration 0086), or "" when
+// ServerID is this installation's random id (migration 0087), or "" when
 // the requirement's row is missing.
 func (s *Store) ServerID(ctx context.Context) (string, error) {
 	var id string
@@ -94,7 +94,7 @@ func (s *Store) ServerID(ctx context.Context) (string, error) {
 }
 
 // CreateKeyLink stores the hash of a one-time state for the free-key
-// button, bound to a user and the hash of their session (migration 0086).
+// button, bound to a user and the hash of their session (migration 0087).
 // Expired states go as new ones come.
 func (s *Store) CreateKeyLink(ctx context.Context, stateHash []byte, userID int64, sessionHash []byte, expires time.Time) error {
 	sys := tenant.System(ctx)
