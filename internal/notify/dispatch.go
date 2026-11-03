@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -1114,7 +1113,7 @@ func (d *Dispatcher) Digest(ctx context.Context) error {
 		}
 		key := "digest:" + stamp
 		msg := Message{Event: EventDigest, Title: fmt.Sprintf("Stackurity: %s held by an hourly limit", plural(len(ids), "notification")),
-			Summary: lines, At: d.now().UTC(), Link: d.url("/settings/notifications", url.Values{"tab": {"deliveries"}})}
+			Summary: lines, At: d.now().UTC(), Link: d.url("/integrations/deliveries", nil)}
 		if _, err := d.Store.EnqueueDelivery(ctx, chID, nil, nil, EventDigest, key, msg); err != nil {
 			return err
 		}
@@ -1174,7 +1173,7 @@ func (d *Dispatcher) digestRoutes(ctx context.Context, routes []store.Route, hel
 		key := fmt.Sprintf("digest:%d:%s", r.ID, stamp)
 		msg := Message{Event: EventDigest, Title: fmt.Sprintf("Stackurity: %s held by %s", plural(len(ids), "urgent message"), limit),
 			Route: r.Name, Summary: lines, At: d.now().UTC(),
-			Link: inProject(d.url("/settings/notifications", url.Values{"tab": {"deliveries"}}), routeProject(r, 0))}
+			Link: inProject(d.url("/integrations/deliveries", nil), routeProject(r, 0))}
 		if err := d.enqueueRouted(ctx, r, EventDigest, key, msg); err != nil {
 			return err
 		}

@@ -120,7 +120,7 @@ type EnrollmentUse struct {
 	RemoteAddr string    `json:"remote_addr"`
 	UsedAt     time.Time `json:"used_at"`
 	// TokenPrefix identifies the collector token the host received (under
-	// Settings > API tokens); empty once that token is deleted.
+	// Integrations > API tokens); empty once that token is deleted.
 	TokenPrefix string `json:"token_prefix"`
 	// TokenRevoked: that token has been revoked since.
 	TokenRevoked bool `json:"token_revoked"`

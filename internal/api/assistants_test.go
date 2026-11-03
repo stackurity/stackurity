@@ -832,7 +832,7 @@ func TestAssistantProjectIsolation(t *testing.T) {
 	}
 }
 
-// Settings, AI assistants shows the address to add, or that assistants are
+// Integrations, AI assistants shows the address to add, or that assistants are
 // off until STACKURITY_BASE_URL is set.
 func TestAssistantsListMCPURL(t *testing.T) {
 	e := newEnv(t)

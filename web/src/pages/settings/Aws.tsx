@@ -8,7 +8,7 @@ import { Card, Code, CodeBlock, EmptyState, ErrorBox, KeyValues, Loading, Notice
 import { confirmAction } from "../../components/ConfirmDialog";
 
 /*
- * Settings, Integrations, AWS: connect an AWS account with the Stackurity
+ * Integrations, AWS: connect an AWS account with the Stackurity
  * CloudFormation stack (internal/api/handlers_aws.go). Launch Stack opens
  * the console with everything filled in; the stack reports its role, or
  * the administrator pastes it. With agent installs allowed, EC2 instances
@@ -134,7 +134,7 @@ export function AwsPage() {
   return (
     <>
       <nav className="crumbs" aria-label="Breadcrumb">
-        <Link to="/settings/integrations">Integrations</Link> <span aria-hidden="true">/</span> <span>AWS</span>
+        <Link to="/integrations">Integrations</Link> <span aria-hidden="true">/</span> <span>AWS</span>
       </nav>
       <PageHeader
         help="cloud-plugins"
@@ -147,7 +147,7 @@ export function AwsPage() {
         <Notice kind="warn">
           Connecting AWS with a stack is not set up on this server: its operator sets <Code>STACKURITY_AWS_PRINCIPAL_ARN</Code> and AWS
           credentials (docs/install.md, "AWS managed services"). You can still add the AWS plugin with your own role or keys under{" "}
-          <Link to="/integrations">Integrations</Link>.
+          <Link to="/integrations/sources">Integrations, Sources</Link>.
         </Notice>
       )}
       {setup?.enabled && (
@@ -408,7 +408,7 @@ function ConnectionCard({ c, enabled, onChange, onLaunched }: { c: AwsConnection
             ["Agent installs", c.agent_install ? "allowed in the stack" : "not asked for"],
             [c.verified_at ? "Verified" : "Started", <RelativeTime key="t" iso={c.verified_at ?? c.created_at} />],
             ...(c.integration_id
-              ? ([["Integration", <Link key="i" to="/integrations">Runs every 12 hours</Link>]] as [string, ReactNode][])
+              ? ([["Integration", <Link key="i" to="/integrations/sources">Runs every 12 hours</Link>]] as [string, ReactNode][])
               : []),
           ]}
         />

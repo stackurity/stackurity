@@ -39,7 +39,7 @@ var lockedCategories = []lockedCategory{
 		"They are needed to use and protect your account, so they cannot be turned off."},
 	{"Billing", "Receipts, failed payments, trial and plan changes, and notices before data is deleted. They are part of your contract."},
 	{"Your organisation's notifications", "Alerts, summaries and incidents about your own servers and software. Change who gets them, " +
-		"and which, under Settings → Integrations."},
+		"and which, under Integrations."},
 }
 
 func (s *Server) emailPrefsOff(w http.ResponseWriter) bool {
