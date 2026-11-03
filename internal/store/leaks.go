@@ -327,3 +327,13 @@ func (s *Store) LeakScans(ctx context.Context, assetID int64) ([]LeakScan, error
 	}
 	return pgx.CollectRows(rows, pgx.RowToStructByPos[LeakScan])
 }
+
+// LeakScannedAssets counts the assets whose files a collector has scanned
+// for keys. None means no list of leaks is empty because the files are
+// clean: nothing has looked yet.
+func (s *Store) LeakScannedAssets(ctx context.Context) (int64, error) {
+	var n int64
+	err := s.Pool.QueryRow(ctx, `SELECT count(DISTINCT ls.asset_id) FROM leak_scans ls JOIN assets a ON a.id = ls.asset_id
+		WHERE a.merged_into IS NULL`).Scan(&n)
+	return n, err
+}
