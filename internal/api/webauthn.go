@@ -279,21 +279,40 @@ func (s *Server) checkAssertion(r *http.Request, wa *webauthn.WebAuthn, pu *pass
 	if cred.Authenticator.CloneWarning {
 		// The counter did not go up: two copies of the key may exist.
 		res.why = "clone"
-		s.Log.Warn("passkey signature counter went backwards; sign-in refused", "user", pu.id, "passkey", id)
-		if err := s.Store.PasskeyCloneWarning(r.Context(), pu.id, id); err != nil {
-			return pu, res, err
-		}
-		u, err := s.Store.GetUser(r.Context(), pu.id)
-		if err == nil {
-			s.auditAccount(r, u, "auth.passkey_clone_warning", map[string]any{"passkey_id": id, "name": name})
-		}
-		return pu, res, nil
+		return pu, res, s.passkeyCloned(r, pu.id, id, name)
 	}
 	record, err := json.Marshal(cred)
 	if err != nil {
 		return pu, res, err
 	}
-	return pu, res, s.Store.PasskeyUsed(r.Context(), pu.id, id, record, cred.Flags.BackupState)
+	err = s.Store.PasskeyUsed(r.Context(), pu.id, id, record, cred.Authenticator.SignCount, cred.Flags.BackupState)
+	if errors.Is(err, store.ErrPasskeyCounter) {
+		// Another assertion at the same counter was recorded first (or the
+		// passkey was marked meanwhile): the same as a counter behind.
+		res.why = "clone"
+		return pu, res, s.passkeyCloned(r, pu.id, id, name)
+	}
+	return pu, res, err
+}
+
+// passkeyCloned follows an assertion refused because the passkey's
+// signature counter did not go up, so a copy of its key may exist: the
+// passkey is marked (it signs in no more), the sessions signed in or
+// confirmed with it end, and the change is audited and emailed.
+func (s *Server) passkeyCloned(r *http.Request, userID, id int64, name string) error {
+	s.Log.Warn("passkey signature counter did not go up; sign-in refused", "user", userID, "passkey", id)
+	ended, err := s.Store.PasskeyCloneWarning(r.Context(), userID, id)
+	if err != nil {
+		return err
+	}
+	u, err := s.Store.GetUser(r.Context(), userID)
+	if err != nil {
+		return nil // the refusal stands; the account went meanwhile
+	}
+	s.auditAccount(r, u, "auth.passkey_clone_warning", map[string]any{"passkey_id": id, "name": name, "sessions_ended": ended})
+	s.notifyFactorChange(r, u.Email, "A passkey, “"+name+"”, was blocked because its signature counter went backwards, which can mean it was copied: "+
+		"it signs in no more, and the sessions signed in with it were ended,", "")
+	return nil
 }
 
 // passkeyFailed answers a refused assertion.

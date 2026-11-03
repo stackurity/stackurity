@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -345,6 +346,9 @@ func TestPasskeyCounterRegression(t *testing.T) {
 	ann := e.login("ann@x.io")
 	a := newAuthenticator()
 	registerPasskey(t, ann, a, "YubiKey")
+	// ann's session is then signed in with the passkey, so the clone
+	// warning would end it: move it to the app.
+	addApp(t, ann)
 	c := a.Creds[0]
 	c.Counter = 10
 	if _, code, _ := passwordless(t, e, a); code != 200 { // counter 11
@@ -1280,5 +1284,103 @@ func TestInstanceAdminMeetsEveryWorkspacesPolicy(t *testing.T) {
 	enrol(t, ops)
 	if code, why := adminCode(ops); code != 200 {
 		t.Fatalf("admin routes from no workspace with the app: %d %s", code, why)
+	}
+}
+
+// A clone warning ends the sessions signed in with that passkey (a copy of
+// its key may be the attacker's) and is emailed; other sessions carry on.
+func TestPasskeyCloneWarningEndsItsSessions(t *testing.T) {
+	mail := newFakeMail()
+	e := newPasskeyEnvWith(t, func(s *api.Server) { s.AccountMail = mail })
+	e.user("ann@x.io", auth.RoleEngineer)
+	ann := e.login("ann@x.io")
+	a := newAuthenticator()
+	registerPasskey(t, ann, a, "YubiKey")
+	mail.wait(t)
+	addApp(t, ann) // ann's own session is now signed in with the app
+	mail.wait(t)
+	c := a.Creds[0]
+	c.Counter = 10
+	withIt, code, out := passwordless(t, e, a) // counter 11
+	if code != 200 {
+		t.Fatalf("passwordless: %d %+v", code, out)
+	}
+	afterPassword, _ := passwordStep(t, e, "ann@x.io")
+	if code, out := passkeyStep(t, afterPassword, a, c); code != 200 { // counter 12
+		t.Fatalf("passkey as second factor: %d %+v", code, out)
+	}
+	for name, s := range map[string]*session{"passwordless": withIt, "second factor": afterPassword} {
+		if code := s.do("GET", "/api/v1/auth/me", nil, nil); code != 200 {
+			t.Fatalf("%s session: %d", name, code)
+		}
+	}
+
+	c.Counter = 4 // a copy of the key, behind
+	if _, code, out := passwordless(t, e, a); code != 401 || out.Error.Code != "passkey_clone_warning" {
+		t.Fatalf("counter went backwards: %d %+v", code, out)
+	}
+	for name, s := range map[string]*session{"passwordless": withIt, "second factor": afterPassword} {
+		if code := s.do("GET", "/api/v1/auth/me", nil, nil); code != 401 {
+			t.Errorf("%s session after the clone warning: %d", name, code)
+		}
+	}
+	if code := ann.do("GET", "/api/v1/auth/me", nil, nil); code != 200 {
+		t.Errorf("the session signed in with the app: %d", code)
+	}
+	m := mail.wait(t)
+	if body := strings.Join(m.msg.Summary, "\n"); m.to != "ann@x.io" || !strings.Contains(body, "YubiKey") || !strings.Contains(body, "copied") {
+		t.Errorf("clone warning email to %s: %s", m.to, body)
+	}
+}
+
+// Two assertions at the same signature counter, finished at once: only one
+// signs in; the other is refused as a clone, as a key used from two places
+// would be.
+func TestPasskeyConcurrentUsesAtOneCounter(t *testing.T) {
+	e := newPasskeyEnv(t)
+	e.user("ann@x.io", auth.RoleEngineer)
+	a := newAuthenticator()
+	registerPasskey(t, e.login("ann@x.io"), a, "YubiKey")
+	c := a.Creds[0]
+	type started struct {
+		s    *session
+		cred json.RawMessage
+	}
+	var both []started
+	for range 2 {
+		s := e.anon()
+		var begin struct{ Options json.RawMessage }
+		if code := s.do("POST", "/api/v1/auth/passkey/begin", nil, &begin); code != 200 {
+			t.Fatalf("begin: %d", code)
+		}
+		c.Counter = 10 // both assertions carry counter 11
+		cred, err := a.Get(begin.Options, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		both = append(both, started{s, cred})
+	}
+	codes := make([]int, 2)
+	outs := make([]apiErr, 2)
+	var wg sync.WaitGroup
+	for i, st := range both {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			codes[i] = st.s.do("POST", "/api/v1/auth/passkey/finish", map[string]any{"credential": st.cred}, &outs[i])
+		}()
+	}
+	wg.Wait()
+	ok, clone := 0, 0
+	for i, code := range codes {
+		switch {
+		case code == 200:
+			ok++
+		case code == 401 && outs[i].Error.Code == "passkey_clone_warning":
+			clone++
+		}
+	}
+	if ok != 1 || clone != 1 {
+		t.Fatalf("two sign-ins at one counter: %v %+v", codes, outs)
 	}
 }
