@@ -153,9 +153,9 @@ func (s *Store) clientErrorGroups(ctx context.Context, where string, args ...any
 }
 
 // NewClientErrors lists fingerprints that became new since since, with
-// their counts from then on. It runs in system scope.
+// their counts from that day on. It runs in system scope.
 func (s *Store) NewClientErrors(ctx context.Context, since time.Time) ([]ClientErrorGroup, error) {
-	return s.clientErrorGroups(ctx, `AND f.new_since >= $2 AND e.last_seen >= f.new_since
+	return s.clientErrorGroups(ctx, `AND f.new_since >= $2
 		GROUP BY e.fingerprint, f.new_since ORDER BY f.new_since DESC LIMIT 50`, since.UTC().Format(time.DateOnly), since)
 }
 
