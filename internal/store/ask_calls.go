@@ -12,7 +12,7 @@ import (
 )
 
 // Ask Stackurity keeps one row per model call (ask_api_calls, migration
-// 0098): tokens, cost, latency, tools and how the call ended. Never the
+// 0088): tokens, cost, latency, tools and how the call ended. Never the
 // question, the answer, tool results or a summary. Rows are kept
 // AskCallRetention, then folded into daily totals (ask_api_calls_daily),
 // kept AskCallDailyRetention.
