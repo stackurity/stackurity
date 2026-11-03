@@ -324,9 +324,38 @@ func (s *Store) SetSessionWorkspace(ctx context.Context, secret string, userID, 
 	return err
 }
 
+// ErrSSOLinkedInstanceAdmin refuses to make an account that is linked to
+// single sign-on an instance administrator. It wraps ErrConflict (409).
+var ErrSSOLinkedInstanceAdmin = fmt.Errorf("this account is linked to single sign-on, and instance administrators never sign in through it (single sign-on is exempt from the two-factor policy); remove its single sign-on link and give it a password first: %w", ErrConflict)
+
 // UpdateUserInstanceAdmin grants or removes the right to operate the
-// installation (manage workspaces).
+// installation (manage workspaces). Granting it to an account linked to
+// single sign-on (users.oidc_subject, set by the licensed build's OpenID
+// Connect and SAML sign-in) is refused with ErrSSOLinkedInstanceAdmin:
+// single sign-on sessions skip the two-factor policy, so an instance
+// administrator signs in only with a password and a second factor. The link
+// is not removed instead: an account made by single sign-on has no
+// password, and unlinking it would silently change how its owner signs in.
 func (s *Store) UpdateUserInstanceAdmin(ctx context.Context, email string, on bool) (bool, error) {
-	tag, err := s.Pool.Exec(ctx, `UPDATE users SET instance_admin = $2 WHERE email = lower($1)`, strings.TrimSpace(email), on)
-	return tag.RowsAffected() > 0, err
+	email = strings.TrimSpace(email)
+	found := false
+	err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
+		// The row lock orders this with a first single sign-on, which locks
+		// the same row before it links it and refuses an instance admin.
+		var linked bool
+		err := tx.QueryRow(ctx, `SELECT oidc_subject IS NOT NULL FROM users WHERE email = lower($1) FOR UPDATE`, email).Scan(&linked)
+		if err == pgx.ErrNoRows {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if on && linked {
+			return ErrSSOLinkedInstanceAdmin
+		}
+		found = true
+		_, err = tx.Exec(ctx, `UPDATE users SET instance_admin = $2 WHERE email = lower($1)`, email, on)
+		return err
+	})
+	return found && err == nil, err
 }
