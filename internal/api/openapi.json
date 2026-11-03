@@ -280,6 +280,273 @@
     }
    }
   },
+  "/admin/feedback": {
+   "get": {
+    "operationId": "get_admin_feedback",
+    "summary": "List the feedback queue",
+    "description": "Items newest first; `status` (comma-separated), `before` (a reference) and `limit` (up to 200) narrow it. Also `counts` per status and `storage` (`used_bytes`, `max_bytes`). See feedback-queue.md\n\nRole: instance admin or feedback triage token",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "instance admin or feedback triage token",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/admin/feedback/{id}": {
+   "get": {
+    "operationId": "get_admin_feedback_id",
+    "summary": "Read a feedback item",
+    "description": "`id` is FB-123 or 123. The item with `triage_notes`, its `attachments` (without their files) and `events`. See feedback-queue.md\n\nRole: instance admin or feedback triage token",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "instance admin or feedback triage token",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "patch": {
+    "operationId": "patch_admin_feedback_id",
+    "summary": "Change a feedback item's status and notes",
+    "description": "Any of `status`, `resolution` (shown to the sender; required for `wont_fix`), `triage_notes` (replace) or `note` (append a dated paragraph), `link` (a pull request or issue under github.com/stackurity), `duplicate_of` (a reference; required for `duplicate`), `fixed_in`. See feedback-queue.md\n\nRole: instance admin or feedback triage token",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "instance admin or feedback triage token",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/admin/feedback/{id}/attachments/{aid}/link": {
+   "post": {
+    "operationId": "post_admin_feedback_id_attachments_aid_link",
+    "summary": "Get a download link for an attachment",
+    "description": "A signed link to `/feedback-attachments/{id}` valid for ten minutes, with `expires_at`, `name`, `content_type` and `size`. 410 when retention deleted the file. See feedback-queue.md\n\nRole: instance admin or feedback triage token",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "instance admin or feedback triage token",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "aid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/admin/feedback-tokens": {
+   "get": {
+    "operationId": "get_admin_feedback_tokens",
+    "summary": "List feedback triage tokens",
+    "description": "Tokens for the triage agent, with `prefix`, `expires_at`, `last_used_at` and `revoked_at`. See feedback-queue.md\n\nRole: instance admin",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "instance admin",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "post": {
+    "operationId": "post_admin_feedback_tokens",
+    "summary": "Create a feedback triage token",
+    "description": "`name` and `days` (1 to 90, default 30). The secret (`stkfb_…`) is in the answer once. It reads items and attachments and writes status and notes under /admin/feedback, and nothing else. See feedback-queue.md\n\nRole: instance admin",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "instance admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/admin/feedback-tokens/{id}": {
+   "delete": {
+    "operationId": "delete_admin_feedback_tokens_id",
+    "summary": "Revoke a feedback triage token",
+    "description": "Revokes the token at once. See feedback-queue.md\n\nRole: instance admin",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "instance admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/admin/health": {
    "get": {
     "operationId": "get_admin_health",
@@ -3800,11 +4067,118 @@
    "post": {
     "operationId": "post_feedback",
     "summary": "Send feedback to the Stackurity team",
-    "description": "Send feedback to the Stackurity team: `kind` (`bug`, `idea`, `question`), `message` (up to 5000 characters), optional `email` and `page` (a path). The server adds its version and edition and forwards it to `STACKURITY_FEEDBACK_URL`; answers 202 when delivered, 502 when the feedback service cannot be reached, and 404 when feedback is turned off (`GET /auth/me` then has `feedback_enabled: false`). See network.md\n\nRole: any signed-in user (rate limited, 10 an hour)",
+    "description": "Send feedback to the Stackurity team: `kind` (`issue`, `feature`, `question`; `bug` and `idea` still work), `message` (up to 5000 characters), optional `email`, `page` (a path) and `viewport`, as JSON, or as multipart/form-data with the same fields first and up to three `attachment` files (PNG, JPEG, WebP or GIF images and PDFs up to 10 MB, MP4 or WebM videos up to 50 MB, 90 MB together; checked by content, images stripped of metadata). The answer has the reference `ref` (FB-123) when the feedback service gives one. The server adds its version and edition and forwards it to `STACKURITY_FEEDBACK_URL`; answers 202 when delivered, 502 when the feedback service cannot be reached, and 404 when feedback is turned off (`GET /auth/me` then has `feedback_enabled: false`). See network.md\n\nRole: any signed-in user (rate limited, 10 an hour)",
     "tags": [
      "Account"
     ],
     "x-stackurity-role": "any signed-in user (rate limited, 10 an hour)",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/feedback/mine": {
+   "get": {
+    "operationId": "get_feedback_mine",
+    "summary": "List the feedback you sent and its status",
+    "description": "Items the caller sent from this installation, newest first: `ref` (FB-123), `kind`, `summary`, `attachments`, `status` (`received`, `reviewing`, `in_progress`, `fixed`, `released`, `wont_fix`, `duplicate`, `unknown`), `status_note`, `fixed_in`, `status_at`, `created_at`. Statuses of open items older than five minutes are asked again from the feedback service with each item's status token; `check_failed` says when that did not work. See network.md\n\nRole: any signed-in user",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/feedback-queue/intake": {
+   "post": {
+    "operationId": "post_feedback_queue_intake",
+    "summary": "Receive one feedback item (the website relay)",
+    "description": "Only on the server that runs the feedback queue (`STACKURITY_FEEDBACK_QUEUE_DIR`). multipart/form-data: an `item` part (JSON: `kind`, `description`, `email`, `page`, `browser`, `viewport`, `version`, `edition`, `hosting`, `source`), then up to three `attachment` parts. Needs `X-Stackurity-Feedback-Key`. 201 with `ref` and the sender's status `token`; 413 too large, 415 not an accepted type, 507 attachment storage full. See feedback-queue.md\n\nRole: the website relay (intake key)",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "the website relay (intake key)",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "multipart/form-data": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/feedback-queue/status": {
+   "post": {
+    "operationId": "post_feedback_queue_status",
+    "summary": "Look up feedback status by token (the website relay)",
+    "description": "`{\"items\": [{\"ref\", \"token\"}]}` (up to 50); answers each item's public `status`, `resolution` (once decided), `fixed_in` and `updated_at`, or `unknown` when the token does not match. Needs `X-Stackurity-Feedback-Key`. See feedback-queue.md\n\nRole: the website relay (intake key)",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "the website relay (intake key)",
     "requestBody": {
      "required": true,
      "content": {

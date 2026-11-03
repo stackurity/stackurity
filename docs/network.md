@@ -57,12 +57,15 @@ This is k-anonymity: the five characters match about a thousand different hashes
 
 | Destination | When | What is sent |
 |---|---|---|
-| `stackurity.dev/feedback` (`STACKURITY_FEEDBACK_URL`) | Each time a user sends feedback (at most 10 an hour per user) | A `POST` with JSON: `kind` (`bug`, `idea` or `question`), the `message`, the `email` the user left in the form (prefilled with theirs, can be cleared), the `page` path they were on (no query string; segments other than route words and numbers become `_`), the server `version`, the `edition` and `source: "app"`. No cookie, token, workspace, asset or host names, findings, or the installation's URL |
+| `stackurity.dev/feedback` (`STACKURITY_FEEDBACK_URL`) | Each time a user sends feedback (at most 10 an hour per user) | A `POST`. Without attachments, JSON: `kind` (`bug`, `idea` or `question`), the `message`, the `email` the user left in the form (prefilled with theirs, can be cleared), the `page` path they were on (no query string; segments other than route words and numbers become `_`), the `browser` (name, major version and system only, such as `Chrome 131 on macOS`) and `viewport` (window size, such as `1280x800`), the server `version`, the `edition`, `hosting` (`self_hosted`, or `cloud` on Stackurity Cloud) and `source: "app"`. With attachments, `multipart/form-data`: the same fields as an `item` part (`message` named `description`, `kind` as `issue`, `feature` or `question`) and up to three files the user chose, images without their metadata (EXIF, location, comments; removed here before sending). No cookie, token, workspace, asset or host names, findings, or the installation's URL |
+| `stackurity.dev/feedback/status` | When a user opens **My feedback** and an item they sent is still open and was last checked more than five minutes ago | A `POST` with JSON: each such item's reference (`FB-123`) and the status token the feedback service returned for it. Nothing else |
 
-The request goes from the server, not the browser, with a 10 second timeout, and redirects are not followed. Each send is recorded in the workspace audit log as `feedback.send` (kind only).
+The requests go from the server, not the browser, with a 10 second timeout (five minutes with attachments), and redirects are not followed. Each send is recorded in the workspace audit log as `feedback.send` (kind, reference and number of attachments). The reference and status token are kept in this installation's database for **My feedback**.
 
-- `STACKURITY_FEEDBACK_URL=` (set to an empty value) or `off` turns it off: the menu item is hidden and `POST /api/v1/feedback` answers 404.
-- Point it at another URL that accepts the same JSON to keep feedback inside your organisation.
+The dashboard warns above the attachments that screenshots may contain your data and will be sent to the Stackurity team.
+
+- `STACKURITY_FEEDBACK_URL=` (set to an empty value) or `off` turns it off: the menu items are hidden, `POST /api/v1/feedback` answers 404 and no status is asked.
+- Point it at another URL that accepts the same JSON to keep feedback inside your organisation (attachments then need it to accept the multipart form too).
 
 ### Intelligence feeds
 

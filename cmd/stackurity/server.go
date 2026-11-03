@@ -165,6 +165,10 @@ func serverCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			feedbackQueue, err := feedbackQueueFromEnv(log)
+			if err != nil {
+				return err
+			}
 			holder, licFromEnv, err := loadLicence(ctx, st, log)
 			if err != nil {
 				return err
@@ -352,11 +356,12 @@ func serverCmd() *cobra.Command {
 				Packs:              packMgr,
 				Licence:            holder, Gate: gate, LicenceFromEnv: licFromEnv,
 				Health: checker, UpdateCheck: updateCfg.Enabled,
-				CoverageGaps: func(ctx context.Context) (any, error) { return coverageGaps(ctx) },
-				FeedbackURL:  feedbackURL,
-				GitLab:       glClient,
-				GitHubApp:    ghApp,
-				AWS:          awsClient,
+				CoverageGaps:  func(ctx context.Context) (any, error) { return coverageGaps(ctx) },
+				FeedbackURL:   feedbackURL,
+				FeedbackQueue: feedbackQueue,
+				GitLab:        glClient,
+				GitHubApp:     ghApp,
+				AWS:           awsClient,
 			}
 			if srv.AccountMail, err = accountMailer(dispatcher, log); err != nil {
 				return err
@@ -410,6 +415,7 @@ func serverCmd() *cobra.Command {
 					RedirectURL: strings.TrimRight(os.Getenv("STACKURITY_BASE_URL"), "/") + "/integrations/gitlab/callback"}
 			}
 			registerJobs(w, st, res, dataDir, log, pluginRunner, packMgr, cloud, ghApp, awsClient, glRunner)
+			registerFeedbackRetention(w, st, feedbackQueue, log)
 			// Prioritise, correlate, plan and deliver notifications; none
 			// for a read-only workspace.
 			w.EveryCollectingWorkspace("alerts", tm.Alerts, dispatcher.Tick)

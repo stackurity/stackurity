@@ -126,6 +126,10 @@ type Server struct {
 	// FeedbackHTTP forwards feedback; nil uses a client with a 10 second
 	// timeout that follows no redirects.
 	FeedbackHTTP *http.Client
+	// FeedbackQueue runs the Stackurity team's feedback queue on this
+	// server (feedback_queue.go); nil turns it off, as on every other
+	// installation.
+	FeedbackQueue *FeedbackQueue
 	// WidgetOrigins are origins the dashboard may load scripts and frames
 	// from (a hosted edition's sign-up challenge); empty allows none.
 	WidgetOrigins []string
@@ -247,6 +251,10 @@ func (s *Server) Handler() http.Handler {
 	// signed for one person and category (email_preferences.go).
 	r.With(s.limitAddress("email-links", limitEmailConfirm, "too many attempts; wait a minute")).Post("/email/preferences/one-click", s.oneClickEmailPreferences)
 
+	// The feedback queue's relay intake, status lookups and signed
+	// attachment downloads (feedback_queue.go).
+	s.feedbackQueueRoutes(r)
+
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(s.authenticate, csrfGuard)
 		r.Get("/meta", s.meta)
@@ -290,6 +298,8 @@ func (s *Server) Handler() http.Handler {
 				editionAccountRoutes(s, r)
 			}
 			r.Post("/feedback", s.sendFeedback)
+			r.Get("/feedback/mine", s.myFeedback)
+			s.feedbackOperatorRoutes(r)
 			// Linking the caller's Slack account (slack.go).
 			r.Get("/slack/links", s.listSlackLinks)
 			r.Delete("/slack/links/{id}", s.deleteSlackLink)

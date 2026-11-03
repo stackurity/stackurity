@@ -50,6 +50,7 @@ var projectRoutes = map[string]projectScope{
 	"PUT /api/v1/auth/email-preferences":    accountScope,
 	"PUT /api/v1/auth/default-project":      accountScope,
 	"POST /api/v1/feedback":                 accountScope,
+	"GET /api/v1/feedback/mine":             accountScope,
 	"GET /api/v1/workspaces":                accountScope,
 	"POST /api/v1/workspaces/{id}/activate": accountScope,
 	"GET /api/v1/tokens":                    accountScope,
