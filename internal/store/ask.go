@@ -134,6 +134,10 @@ type AskConversation struct {
 	UpdatedAt     time.Time `json:"updated_at"`
 	// ExpiresAt is when housekeeping deletes it.
 	ExpiresAt time.Time `json:"expires_at"`
+	// Summary sums up the messages up to seq SummaryThrough (0: none), so
+	// they are not resent with each question (ask/history.go).
+	Summary        string `json:"-"`
+	SummaryThrough int    `json:"-"`
 }
 
 // AskMessage is one message of a conversation.
@@ -163,11 +167,11 @@ type AskTokens struct {
 	Output     int64 `json:"output"`
 }
 
-const askConversationCols = `id, user_id, project_id, model, title, context_tokens, created_at, updated_at`
+const askConversationCols = `id, user_id, project_id, model, title, context_tokens, created_at, updated_at, summary, summary_through`
 
 func scanAskConversation(row pgx.Row) (*AskConversation, error) {
 	var c AskConversation
-	err := row.Scan(&c.ID, &c.UserID, &c.ProjectID, &c.Model, &c.Title, &c.ContextTokens, &c.CreatedAt, &c.UpdatedAt)
+	err := row.Scan(&c.ID, &c.UserID, &c.ProjectID, &c.Model, &c.Title, &c.ContextTokens, &c.CreatedAt, &c.UpdatedAt, &c.Summary, &c.SummaryThrough)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}

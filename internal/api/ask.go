@@ -67,8 +67,10 @@ func (s *Server) askRoutes(r chi.Router) {
 		r.Get("/ask/settings", s.askSettings)
 		r.Put("/ask/settings", s.askPutSettings)
 		r.Delete("/ask/settings/conversations", s.askDeleteAllConversations)
+		r.Get("/ask/usage/calls", s.askUsageCalls)
 	})
 	r.With(requireInstanceAdmin).Get("/admin/ask", s.adminAsk)
+	r.With(requireInstanceAdmin).Get("/admin/ask/calls", s.adminAskCalls)
 }
 
 // askPerson is the person asking: a browser session in an organisation.
@@ -384,7 +386,7 @@ var askBusy sync.Map
 //	event: tool   {"tool": "Reading issue #12"}
 //	event: text   {"text": "..."}          a piece of the answer
 //	event: reset  {}                      drop the text so far (a refusal or a fallback model)
-//	event: done   {"stop_reason", "questions_used", "questions_limit"}
+//	event: done   {"stop_reason", "questions_used", "questions_limit", "long_chat"}
 //	event: error  {"code", "message"}
 func (s *Server) askQuestion(w http.ResponseWriter, r *http.Request) {
 	p, ok := askPerson(w, r)
@@ -527,7 +529,7 @@ func (s *Server) askQuestion(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	done := map[string]any{"stop_reason": out.StopReason, "questions_used": counted.Used, "questions_limit": l.QuestionLimit}
+	done := map[string]any{"stop_reason": out.StopReason, "questions_used": counted.Used, "questions_limit": l.QuestionLimit, "long_chat": out.LongChat}
 	switch out.StopReason {
 	case "refusal":
 		done["message"] = "Claude declined to answer this question. Try asking it another way."

@@ -2075,7 +2075,7 @@ Deletes one of the caller's conversations (404 for anyone else's).
 
 **Who:** a browser session
 
-Asks a question: `{"text", "page": {"kind": "finding" | "asset" | "component" | "fix_group", "id"}}` (`page` optional; one the caller cannot read is ignored). The answer streams as server-sent events: `tool` (`{"tool": "Reading issue #12"}`), `text` (a piece of the answer), `reset` (drop the text so far: a refusal, or a fallback model took over), then `done` (`stop_reason`, `questions_used`, `questions_limit`, `message`) or `error` (`code`: `spend_cap`, `too_long`, `timeout`, `unavailable`, `internal`). Before the stream starts: 409 `notice_required`; 429 `quota_reached`, `busy` (one question at a time) or `rate_limited` (10 a minute and 60 an hour per person, 300 an hour per organisation); and the errors of `POST /ask/conversations`.
+Asks a question: `{"text", "page": {"kind": "finding" | "asset" | "component" | "fix_group", "id"}}` (`page` optional; one the caller cannot read is ignored). The answer streams as server-sent events: `tool` (`{"tool": "Reading issue #12"}`), `text` (a piece of the answer), `reset` (drop the text so far: a refusal, or a fallback model took over), then `done` (`stop_reason`, `questions_used`, `questions_limit`, `message`, `long_chat`: the conversation is long or has cost a lot, so the dashboard suggests a new one) or `error` (`code`: `spend_cap`, `too_long`, `timeout`, `unavailable`, `internal`). Before the stream starts: 409 `notice_required`; 429 `quota_reached`, `busy` (one question at a time) or `rate_limited` (10 a minute and 60 an hour per person, 300 an hour per organisation); and the errors of `POST /ask/conversations`.
 
 ### `GET /api/v1/ask/settings`
 
@@ -2095,11 +2095,23 @@ Asks a question: `{"text", "page": {"kind": "finding" | "asset" | "component" | 
 
 Deletes every conversation in the organisation, whoever had it, and answers how many (`deleted`). An admin can delete conversations but never read them. Audited as `ask.conversations_deleted`.
 
+### `GET /api/v1/ask/usage/calls`
+
+**Who:** admin
+
+This organisation's Ask Stackurity model calls, newest first: one row per call (an answer's model round or a summary of a long conversation). Fields: `id`, `created_at`, `workspace_id`, `user_id`, `conversation_id` (null once the conversation is deleted), `kind` (`answer` or `summary`), `model`, `prompt_version`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `cost_micros`, `latency_ms`, `tool_calls`, `tool_names`, `history_turns_sent`, `summary_used`, `stop_reason`, `error_code` (`canceled`, `timeout`, `unavailable`, `rejected`, `error` or empty), `request_id`. Metadata only: never a question, an answer, tool results or a summary. Query: `since`, `until` (RFC 3339), `limit` (default 1000, at most 10000), `before_id` (next page), `format=csv` (a CSV file of the same columns). Detailed rows are kept 90 days; daily totals per organisation, model and kind are kept two years.
+
 ### `GET /api/v1/admin/ask`
 
 **Who:** instance admin
 
 `configured`, `provider`, `default_model`, `effort`, `global_spend_cap_micros` and `spend_this_month_micros` across every organisation.
+
+### `GET /api/v1/admin/ask/calls`
+
+**Who:** instance admin
+
+Every organisation's Ask Stackurity model calls on this server, with the same fields and query as `GET /api/v1/ask/usage/calls`.
 
 ## AI assistants, OAuth and MCP
 
