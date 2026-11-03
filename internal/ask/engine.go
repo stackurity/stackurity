@@ -45,6 +45,10 @@ type Question struct {
 	// Model is the organisation's model; Limits its caps.
 	Model          string
 	SpendCapMicros *int64
+	// Ceiling is the strongest model this organisation's plan allows
+	// (its plan model): the conversation starts lower and steps up to it
+	// at most (tier.go). "": no tiers, the conversation's model is used.
+	Ceiling string
 	// API runs the tools as the person.
 	API mcp.API
 }
@@ -72,6 +76,9 @@ type Outcome struct {
 	// LongChat: the conversation has had many questions or cost a lot;
 	// the panel suggests a new chat.
 	LongChat bool
+	// Retried: the turn was answered again on a stronger model, and why
+	// (tier.go; "": it was not).
+	Retried string
 }
 
 // ErrTooLong is a conversation that grew too long to continue.
@@ -136,17 +143,81 @@ func (e *Engine) Ask(ctx context.Context, q Question, emit func(Event)) (Outcome
 	if len(plan.Tail) == 0 {
 		spec.historyTurns = 0
 	}
+	// A step up made between questions (a thumbs-down, a stopped answer)
+	// is carried by this answer's call record; then one decided now, for a
+	// complex request or a person who is struggling (tier.go).
+	if c.PendingStepUp != "" {
+		spec.stepUpReason, spec.steppedFrom = c.PendingStepUp, c.PendingSteppedFrom
+		_ = e.Store.ClearAskPendingStepUp(context.WithoutCancel(ctx), q.UserID, c.ID)
+	}
+	if q.Ceiling != "" {
+		if reason, model, ok := e.stepBefore(ctx, q, history, c.Model); ok {
+			if err := e.Store.SetAskConversationModel(ctx, q.UserID, c.ID, model, "", "", false); err != nil {
+				return out, err
+			}
+			spec.stepUpReason, spec.steppedFrom, spec.model = reason, c.Model, model
+			c.Model = model
+		} else if err := ctx.Err(); err != nil {
+			return out, err
+		}
+	}
 	msgs := historyMessages(summary, plan.Tail)
 	var page json.RawMessage
 	if q.Page != nil {
 		page, _ = json.Marshal(q.Page)
 	}
 	um := userMessage(textBlock(contextBlock(e.now(), q.Page, q.Project)), textBlock(q.Text))
-	if _, err := e.Store.AppendAskMessage(ctx, q.UserID, c.ID, store.AskMessage{Role: "user", Content: um, VisibleText: q.Text, Page: page}, 0); err != nil {
+	qSeq, err := e.Store.AppendAskMessage(ctx, q.UserID, c.ID, store.AskMessage{Role: "user", Content: um, VisibleText: q.Text, Page: page}, 0)
+	if err != nil {
 		return out, err
 	}
 	msgs = append(msgs, um)
 
+	errs, err := e.answer(ctx, q, spec, msgs, emit, &out)
+	if err != nil || q.Ceiling == "" {
+		return out, err
+	}
+	// The answer says it could not understand or find something, was
+	// refused, or a tool failed: the same turn is tried once more on the
+	// next model up, so the person need not ask again; the conversation
+	// stays there.
+	reason := ""
+	switch {
+	case out.StopReason == "refusal" || SaysNotFound(out.Text):
+		reason = StepNotFound
+	case errs > 0:
+		reason = StepToolError
+	}
+	if reason == "" {
+		return out, nil
+	}
+	next, ok := StepUp(c.Model, q.Ceiling)
+	if !ok {
+		return out, nil
+	}
+	sctx := context.WithoutCancel(ctx)
+	if err := e.Store.DropAskMessagesAfter(sctx, q.UserID, c.ID, qSeq); err != nil {
+		return out, err
+	}
+	if err := e.Store.SetAskConversationModel(sctx, q.UserID, c.ID, next, "", "", false); err != nil {
+		return out, err
+	}
+	emit(Event{Kind: "reset"})
+	emit(Event{Kind: "tool", Tool: "Trying again with a stronger model"})
+	spec.stepUpReason, spec.steppedFrom, spec.model = reason, c.Model, next
+	c.Model = next
+	out.Text, out.StopReason, out.Retried = "", "", reason
+	_, err = e.answer(ctx, q, spec, msgs, emit, &out)
+	return out, err
+}
+
+// answer runs one turn: model calls and tools until the model answers, the
+// tool budget is used up or the conversation is too long. msgs end with
+// the question; it is not changed. It returns how many tools failed.
+func (e *Engine) answer(ctx context.Context, q Question, spec callSpec, base []json.RawMessage, emit func(Event), out *Outcome) (int, error) {
+	c := q.Conversation
+	msgs := append([]json.RawMessage(nil), base...)
+	failedTools := 0
 	for round := 1; ; round++ {
 		res, cost, err := e.call(ctx, q, spec, msgs, emit)
 		if err != nil {
@@ -156,7 +227,7 @@ func (e *Engine) Ask(ctx context.Context, q Question, emit func(Event)) (Outcome
 			if res != nil {
 				out.Usage = append(out.Usage, res.Usage...)
 			}
-			return out, err
+			return failedTools, err
 		}
 		out.CostMicros += cost
 		out.Usage = append(out.Usage, res.Usage...)
@@ -176,7 +247,7 @@ func (e *Engine) Ask(ctx context.Context, q Question, emit func(Event)) (Outcome
 		// call that was paid for is always recorded.
 		sctx := context.WithoutCancel(ctx)
 		if _, err := e.Store.AppendAskMessage(sctx, q.UserID, c.ID, am, prompt); err != nil {
-			return out, err
+			return failedTools, err
 		}
 		msgs = append(msgs, res.Message)
 		if res.Text != "" {
@@ -187,27 +258,28 @@ func (e *Engine) Ask(ctx context.Context, q Question, emit func(Event)) (Outcome
 			if res.StopReason == "refusal" {
 				out.Text = ""
 			}
-			e.markLongChat(sctx, q, &out)
-			return out, nil
+			e.markLongChat(sctx, q, out)
+			return failedTools, nil
 		}
 		last := round >= MaxRounds || prompt > MaxContextTokens
 		results, failed := e.runTools(ctx, q.API, res.ToolUses, last, emit)
 		out.ToolErrors += failed
+		failedTools += failed
 		tm := userMessage(results...)
 		if _, err := e.Store.AppendAskMessage(sctx, q.UserID, c.ID, store.AskMessage{Role: "user", Content: tm}, 0); err != nil {
-			return out, err
+			return failedTools, err
 		}
 		msgs = append(msgs, tm)
 		if err := ctx.Err(); err != nil {
-			return out, err
+			return failedTools, err
 		}
 		if last {
 			out.StopReason = "rounds"
 			if prompt > MaxContextTokens {
 				out.StopReason = "too_long"
 			}
-			e.markLongChat(sctx, q, &out)
-			return out, nil
+			e.markLongChat(sctx, q, out)
+			return failedTools, nil
 		}
 	}
 }
@@ -225,12 +297,21 @@ func (e *Engine) markLongChat(ctx context.Context, q Question, out *Outcome) {
 
 // callSpec is one model call's kind and shape.
 type callSpec struct {
-	kind      string // answer or summary
+	kind      string // answer, summary or triage
 	model     string
 	maxTokens int
 	// system and noTools: the summary call's own prompt, without tools.
 	system  string
 	noTools bool
+	// noThinking: the triage call, a one-word answer. effort, when set,
+	// replaces the configured effort (thinking can be turned off on Claude
+	// Haiku 5.5 only at effort high or below).
+	noThinking bool
+	effort     string
+	// stepUpReason and steppedFrom: this answer moved to a stronger
+	// model, why and from which (tier.go), for the call record.
+	stepUpReason string
+	steppedFrom  string
 	// historyTurns and summaryUsed describe the history sent, for the
 	// call record.
 	historyTurns int
@@ -246,15 +327,19 @@ func (e *Engine) call(ctx context.Context, q Question, spec callSpec, msgs []jso
 	}
 	// About three bytes a token, plus the tools and system prompt.
 	prompt := int64(size/3 + 6000)
-	fallbacks := e.Model.Fallbacks() && spec.kind == "answer"
+	fallbacks := e.Model.Fallbacks() && spec.kind == "answer" && serverFallback(spec.model)
 	holdMicros := e.Prices.HoldFor(spec.model, prompt, int64(spec.maxTokens), fallbacks)
 	hold, err := e.Store.HoldAskSpend(ctx, holdMicros, q.SpendCapMicros, e.Config.GlobalCapMicros)
 	if err != nil {
 		return nil, 0, err
 	}
 	started := e.now()
-	res, err := e.Model.Stream(ctx, Call{Model: spec.model, Effort: e.Config.Effort, MaxTokens: spec.maxTokens, Messages: msgs,
-		System: spec.system, NoTools: spec.noTools, NoFallbacks: !fallbacks}, func(ev StreamEvent) {
+	effort := e.Config.Effort
+	if spec.effort != "" {
+		effort = spec.effort
+	}
+	res, err := e.Model.Stream(ctx, Call{Model: spec.model, Effort: effort, MaxTokens: spec.maxTokens, Messages: msgs,
+		System: spec.system, NoTools: spec.noTools, NoFallbacks: !fallbacks, NoThinking: spec.noThinking}, func(ev StreamEvent) {
 		switch {
 		case ev.Reset:
 			emit(Event{Kind: "reset"})
@@ -298,7 +383,7 @@ func (e *Engine) recordCall(ctx context.Context, q Question, spec callSpec, res 
 	uid, cid := q.UserID, q.Conversation.ID
 	c := store.AskAPICall{UserID: &uid, ConversationID: &cid, Kind: spec.kind, Model: spec.model, PromptVersion: PromptVersion,
 		CostMicros: cost, LatencyMS: latency.Milliseconds(), HistoryTurnsSent: spec.historyTurns, SummaryUsed: spec.summaryUsed,
-		ErrorCode: errorCode(callErr)}
+		ErrorCode: errorCode(callErr), StepUpReason: spec.stepUpReason, SteppedFrom: spec.steppedFrom}
 	if res != nil {
 		if res.ServedBy != "" {
 			c.Model = res.ServedBy
@@ -325,7 +410,7 @@ func (e *Engine) recordCall(ctx context.Context, q Question, spec callSpec, res 
 		"input_tokens", c.InputTokens, "output_tokens", c.OutputTokens, "cache_read_tokens", c.CacheReadTokens,
 		"cache_write_tokens", c.CacheWriteTokens, "cost_micros", c.CostMicros, "latency_ms", c.LatencyMS,
 		"tool_calls", c.ToolCalls, "tools", strings.Join(c.ToolNames, ","), "history_turns", c.HistoryTurnsSent,
-		"summary_used", c.SummaryUsed, "stop_reason", c.StopReason, "error", c.ErrorCode)
+		"summary_used", c.SummaryUsed, "stop_reason", c.StopReason, "error", c.ErrorCode, "step_up", c.StepUpReason, "stepped_from", c.SteppedFrom)
 }
 
 // errorCode names how a call failed ("" when it did not).

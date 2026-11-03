@@ -2657,8 +2657,8 @@
   "/auth/mfa": {
    "get": {
     "operationId": "get_auth_mfa",
-    "summary": "Your two-factor sign-in status",
-    "description": "Your two-factor sign-in status\n\nRole: any signed-in user (session)",
+    "summary": "Your two-factor methods: passkeys, authenticator app, email codes, recovery codes, and what your organisation requires",
+    "description": "Your two-factor methods: passkeys, authenticator app, email codes, recovery codes, and what your organisation requires\n\nRole: any signed-in user (session)",
     "tags": [
      "Account"
     ],
@@ -2684,8 +2684,8 @@
    },
    "delete": {
     "operationId": "delete_auth_mfa",
-    "summary": "Turn off your two-factor sign-in (password)",
-    "description": "Turn off your two-factor sign-in (password)\n\nRole: any signed-in user (session)",
+    "summary": "Remove all your second factors (password)",
+    "description": "Remove all your second factors (password)\n\nRole: any signed-in user (session)",
     "tags": [
      "Account"
     ],
@@ -2742,6 +2742,36 @@
         }
        }
       }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "delete_auth_mfa_totp",
+    "summary": "Remove your authenticator app (password)",
+    "description": "Remove your authenticator app (password)\n\nRole: any signed-in user (session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (session)",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
      },
      "4XX": {
       "$ref": "#/components/responses/Error"
@@ -6964,6 +6994,100 @@
     }
    }
   },
+  "/cloud-setup/gcp": {
+   "get": {
+    "operationId": "get_cloud_setup_gcp",
+    "summary": "Commands that connect a Google Cloud project to this workspace (workload identity, or a service account key)",
+    "description": "Commands that connect a Google Cloud project to this workspace (workload identity, or a service account key)\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "project_number",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/cloud-setup/azure": {
+   "get": {
+    "operationId": "get_cloud_setup_azure",
+    "summary": "Commands that connect an Azure subscription to this workspace (the Stackurity app, or a client secret)",
+    "description": "Commands that connect an Azure subscription to this workspace (the Stackurity app, or a client secret)\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "tenant_id",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "subscription_id",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/project-suggestions": {
    "get": {
     "operationId": "get_project_suggestions",
@@ -9045,8 +9169,8 @@
   "/users/{id}/mfa": {
    "delete": {
     "operationId": "delete_users_id_mfa",
-    "summary": "Reset a member's two-factor sign-in",
-    "description": "Reset a member's two-factor sign-in\n\nRole: admin",
+    "summary": "Reset a member's two-factor sign-in (passkeys, app, email codes, recovery codes)",
+    "description": "Reset a member's two-factor sign-in (passkeys, app, email codes, recovery codes)\n\nRole: admin",
     "tags": [
      "Projects and people"
     ],
@@ -9523,8 +9647,8 @@
   "/settings/security": {
    "get": {
     "operationId": "get_settings_security",
-    "summary": "Require two-factor sign-in for all members, and how many have none",
-    "description": "Require two-factor sign-in for all members, and how many have none\n\nRole: admin",
+    "summary": "The organisation's two-factor policy, and who would need to set up a factor",
+    "description": "The organisation's two-factor policy, and who would need to set up a factor\n\nRole: admin",
     "tags": [
      "Findings and fixes"
     ],
@@ -9550,8 +9674,8 @@
    },
    "put": {
     "operationId": "put_settings_security",
-    "summary": "Require (or stop requiring) two-factor sign-in for all members",
-    "description": "Require (or stop requiring) two-factor sign-in for all members\n\nRole: admin",
+    "summary": "Change the organisation's two-factor policy",
+    "description": "Change the organisation's two-factor policy\n\nRole: admin",
     "tags": [
      "Findings and fixes"
     ],
@@ -10842,15 +10966,233 @@
     }
    }
   },
-  "/enrollments/{id}/uses": {
-   "get": {
-    "operationId": "get_enrollments_id_uses",
-    "summary": "Hosts that used an enrollment code",
-    "description": "The hosts that used a code, newest first: hostname, client address, time, and the prefix of the collector token each received\n\nRole: admin",
+  "/auth/passkey/begin": {
+   "post": {
+    "operationId": "post_auth_passkey_begin",
+    "summary": "Start a passkey sign-in (no email or password): request options",
+    "description": "Answers `options` for `navigator.credentials.get()` (discoverable credentials, user verification required) and sets a short-lived cookie\n\nRole: none",
     "tags": [
-     "Agents and uploads"
+     "Account"
     ],
-    "x-stackurity-role": "admin",
+    "x-stackurity-role": "none",
+    "security": [],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/passkey/finish": {
+   "post": {
+    "operationId": "post_auth_passkey_finish",
+    "summary": "Finish a passkey sign-in: starts the session",
+    "description": "`{\"credential\": <PublicKeyCredential JSON>}` with the cookie from `/auth/passkey/begin`: starts the session and answers the user\n\nRole: none",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "none",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/mfa/passkey/begin": {
+   "post": {
+    "operationId": "post_auth_mfa_passkey_begin",
+    "summary": "Second step of a password sign-in with a passkey: request options",
+    "description": "After `POST /auth/login` answered `mfa_required` with `passkey` among the methods: answers `options` for `navigator.credentials.get()` (the account's passkeys)\n\nRole: none",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "none",
+    "security": [],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/mfa/passkey/finish": {
+   "post": {
+    "operationId": "post_auth_mfa_passkey_finish",
+    "summary": "Second step of a password sign-in with a passkey: starts the session",
+    "description": "`{\"credential\": <PublicKeyCredential JSON>}` with the challenge and ceremony cookies: starts the session and answers the user\n\nRole: none",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "none",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/mfa/passkeys/begin": {
+   "post": {
+    "operationId": "post_auth_mfa_passkeys_begin",
+    "summary": "Start registering a passkey or security key (password): creation options",
+    "description": "Start registering a passkey or security key (password): creation options\n\nRole: any signed-in user (session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (session)",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/mfa/passkeys/finish": {
+   "post": {
+    "operationId": "post_auth_mfa_passkeys_finish",
+    "summary": "Finish registering a passkey: name it; returns recovery codes for the first factor",
+    "description": "Finish registering a passkey: name it; returns recovery codes for the first factor\n\nRole: any signed-in user (session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (session)",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/mfa/passkeys/{id}": {
+   "patch": {
+    "operationId": "patch_auth_mfa_passkeys_id",
+    "summary": "Rename one of your passkeys",
+    "description": "Rename one of your passkeys\n\nRole: any signed-in user (session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (session)",
     "parameters": [
      {
       "name": "id",
@@ -10861,64 +11203,6 @@
       }
      }
     ],
-    "responses": {
-     "2XX": {
-      "description": "Success",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
-     },
-     "4XX": {
-      "$ref": "#/components/responses/Error"
-     },
-     "5XX": {
-      "$ref": "#/components/responses/Error"
-     }
-    }
-   }
-  },
-  "/integrations/digitalocean": {
-   "get": {
-    "operationId": "get_integrations_digitalocean",
-    "summary": "DigitalOcean connection status (the token is never returned)",
-    "description": "Whether a DigitalOcean API token is stored, and whether stored secrets are available\n\nRole: admin",
-    "tags": [
-     "Integrations"
-    ],
-    "x-stackurity-role": "admin",
-    "responses": {
-     "2XX": {
-      "description": "Success",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
-     },
-     "4XX": {
-      "$ref": "#/components/responses/Error"
-     },
-     "5XX": {
-      "$ref": "#/components/responses/Error"
-     }
-    }
-   }
-  },
-  "/integrations/digitalocean/token": {
-   "put": {
-    "operationId": "put_integrations_digitalocean_token",
-    "summary": "Store a DigitalOcean API token (encrypted; never returned)",
-    "description": "Checks the token can list droplets, then stores it as the encrypted workspace secret digitalocean-token\n\nRole: admin",
-    "tags": [
-     "Integrations"
-    ],
-    "x-stackurity-role": "admin",
     "requestBody": {
      "required": true,
      "content": {
@@ -10942,13 +11226,33 @@
     }
    },
    "delete": {
-    "operationId": "delete_integrations_digitalocean_token",
-    "summary": "Delete the stored DigitalOcean API token",
-    "description": "Deletes the stored DigitalOcean API token\n\nRole: admin",
+    "operationId": "delete_auth_mfa_passkeys_id",
+    "summary": "Remove one of your passkeys (password)",
+    "description": "Remove one of your passkeys (password)\n\nRole: any signed-in user (session)",
     "tags": [
-     "Integrations"
+     "Account"
     ],
-    "x-stackurity-role": "admin",
+    "x-stackurity-role": "any signed-in user (session)",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
     "responses": {
      "2XX": {
       "description": "Success (usually 204 No Content)"
@@ -10962,25 +11266,25 @@
     }
    }
   },
-  "/integrations/digitalocean/droplets": {
-   "get": {
-    "operationId": "get_integrations_digitalocean_droplets",
-    "summary": "DigitalOcean droplets and whether an agent covers each",
-    "description": "Lists the account's droplets (optionally by tag) with coverage: reporting, enrolled or not_covered. Stackurity installs nothing on droplets\n\nRole: admin",
+  "/auth/mfa/step-up": {
+   "post": {
+    "operationId": "post_auth_mfa_step_up",
+    "summary": "Confirm this session with a code from the app or a recovery code",
+    "description": "Confirm this session with a code from the app or a recovery code\n\nRole: any signed-in user (session)",
     "tags": [
-     "Integrations"
+     "Account"
     ],
-    "x-stackurity-role": "admin",
-    "parameters": [
-     {
-      "name": "tag",
-      "in": "query",
-      "required": false,
-      "schema": {
-       "type": "string"
+    "x-stackurity-role": "any signed-in user (session)",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
       }
      }
-    ],
+    },
     "responses": {
      "2XX": {
       "description": "Success",
@@ -11001,34 +11305,178 @@
     }
    }
   },
-  "/public/cves/recent": {
-   "get": {
-    "operationId": "get_public_cves_recent",
-    "summary": "The CVEs that most recently reached Stackurity",
-    "description": "The public log of new CVEs, newest first: each CVE with the time it first reached Stackurity (`added`) and the feed that brought it (`source`: `epss`, FIRST's daily file of every scored CVE, or `kev`, CISA's catalogue). Only these feeds count, as they cover every CVE whatever the workspaces run; no workspace data is involved. `tracking_since` is when exact times began: CVEs stored earlier are not listed here. `limit` is 1 to 200 (default 50); `before` (RFC 3339) pages back. No sign-in; 60 requests a minute per address\n\nRole: none",
+  "/auth/mfa/step-up/passkey/begin": {
+   "post": {
+    "operationId": "post_auth_mfa_step_up_passkey_begin",
+    "summary": "Confirm this session with a passkey: request options",
+    "description": "Confirm this session with a passkey: request options\n\nRole: any signed-in user (session)",
     "tags": [
-     "Intelligence"
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (session)",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/mfa/step-up/passkey/finish": {
+   "post": {
+    "operationId": "post_auth_mfa_step_up_passkey_finish",
+    "summary": "Confirm this session with a passkey",
+    "description": "Confirm this session with a passkey\n\nRole: any signed-in user (session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (session)",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/mfa/email/send": {
+   "post": {
+    "operationId": "post_auth_mfa_email_send",
+    "summary": "Second step of a password sign-in: email a six-digit code",
+    "description": "With the challenge cookie from `POST /auth/login`, for an account that uses email codes: emails a code valid for 10 minutes; then `POST /auth/mfa/verify` with it\n\nRole: none",
+    "tags": [
+     "Account"
     ],
     "x-stackurity-role": "none",
     "security": [],
-    "parameters": [
-     {
-      "name": "limit",
-      "in": "query",
-      "required": false,
-      "schema": {
-       "type": "string"
-      }
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
      },
-     {
-      "name": "before",
-      "in": "query",
-      "required": false,
-      "schema": {
-       "type": "string"
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/mfa/email": {
+   "post": {
+    "operationId": "post_auth_mfa_email",
+    "summary": "Turn on email codes (password): emails a code to confirm",
+    "description": "Turn on email codes (password): emails a code to confirm\n\nRole: any signed-in user (session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (session)",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
       }
      }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "delete_auth_mfa_email",
+    "summary": "Turn off email codes (password)",
+    "description": "Turn off email codes (password)\n\nRole: any signed-in user (session)",
+    "tags": [
+     "Account"
     ],
+    "x-stackurity-role": "any signed-in user (session)",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/mfa/email/confirm": {
+   "post": {
+    "operationId": "post_auth_mfa_email_confirm",
+    "summary": "Turn on email codes with the code emailed",
+    "description": "Turn on email codes with the code emailed\n\nRole: any signed-in user (session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (session)",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
     "responses": {
      "2XX": {
       "description": "Success",
@@ -11049,130 +11497,18 @@
     }
    }
   },
-  "/public/cves": {
-   "get": {
-    "operationId": "get_public_cves",
-    "summary": "When given CVEs reached Stackurity",
-    "description": "What the public log of new CVEs records for each `id` (repeat it, or separate IDs with commas; 1 to 200): `added`, `source`, and `exact`, false for CVEs stored before `tracking_since`, which arrived on or before `added`. Unknown CVEs are left out. No sign-in; 60 requests a minute per address\n\nRole: none",
+  "/auth/mfa/step-up/email/send": {
+   "post": {
+    "operationId": "post_auth_mfa_step_up_email_send",
+    "summary": "Email a code that confirms this session",
+    "description": "Email a code that confirms this session\n\nRole: any signed-in user (session)",
     "tags": [
-     "Intelligence"
+     "Account"
     ],
-    "x-stackurity-role": "none",
-    "security": [],
-    "parameters": [
-     {
-      "name": "id",
-      "in": "query",
-      "required": true,
-      "schema": {
-       "type": "string"
-      }
-     }
-    ],
+    "x-stackurity-role": "any signed-in user (session)",
     "responses": {
      "2XX": {
-      "description": "Success",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
-     },
-     "4XX": {
-      "$ref": "#/components/responses/Error"
-     },
-     "5XX": {
-      "$ref": "#/components/responses/Error"
-     }
-    }
-   }
-  },
-  "/cloud-setup/gcp": {
-   "get": {
-    "operationId": "get_cloud_setup_gcp",
-    "summary": "Commands that connect a Google Cloud project to this workspace (workload identity, or a service account key)",
-    "description": "Commands that connect a Google Cloud project to this workspace (workload identity, or a service account key)\n\nRole: admin",
-    "tags": [
-     "Integrations"
-    ],
-    "x-stackurity-role": "admin",
-    "parameters": [
-     {
-      "name": "project_id",
-      "in": "query",
-      "required": true,
-      "schema": {
-       "type": "string"
-      }
-     },
-     {
-      "name": "project_number",
-      "in": "query",
-      "required": true,
-      "schema": {
-       "type": "string"
-      }
-     }
-    ],
-    "responses": {
-     "2XX": {
-      "description": "Success",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
-     },
-     "4XX": {
-      "$ref": "#/components/responses/Error"
-     },
-     "5XX": {
-      "$ref": "#/components/responses/Error"
-     }
-    }
-   }
-  },
-  "/cloud-setup/azure": {
-   "get": {
-    "operationId": "get_cloud_setup_azure",
-    "summary": "Commands that connect an Azure subscription to this workspace (the Stackurity app, or a client secret)",
-    "description": "Commands that connect an Azure subscription to this workspace (the Stackurity app, or a client secret)\n\nRole: admin",
-    "tags": [
-     "Integrations"
-    ],
-    "x-stackurity-role": "admin",
-    "parameters": [
-     {
-      "name": "tenant_id",
-      "in": "query",
-      "required": true,
-      "schema": {
-       "type": "string"
-      }
-     },
-     {
-      "name": "subscription_id",
-      "in": "query",
-      "required": true,
-      "schema": {
-       "type": "string"
-      }
-     }
-    ],
-    "responses": {
-     "2XX": {
-      "description": "Success",
-      "content": {
-       "application/json": {
-        "schema": {
-         "type": "object"
-        }
-       }
-      }
+      "description": "Success (usually 204 No Content)"
      },
      "4XX": {
       "$ref": "#/components/responses/Error"
@@ -13053,6 +13389,253 @@
     }
    }
   },
+  "/enrollments/{id}/uses": {
+   "get": {
+    "operationId": "get_enrollments_id_uses",
+    "summary": "Hosts that used an enrollment code",
+    "description": "The hosts that used a code, newest first: hostname, client address, time, and the prefix of the collector token each received\n\nRole: admin",
+    "tags": [
+     "Agents and uploads"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/digitalocean": {
+   "get": {
+    "operationId": "get_integrations_digitalocean",
+    "summary": "DigitalOcean connection status (the token is never returned)",
+    "description": "Whether a DigitalOcean API token is stored, and whether stored secrets are available\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/digitalocean/token": {
+   "put": {
+    "operationId": "put_integrations_digitalocean_token",
+    "summary": "Store a DigitalOcean API token (encrypted; never returned)",
+    "description": "Checks the token can list droplets, then stores it as the encrypted workspace secret digitalocean-token\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "delete_integrations_digitalocean_token",
+    "summary": "Delete the stored DigitalOcean API token",
+    "description": "Deletes the stored DigitalOcean API token\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/digitalocean/droplets": {
+   "get": {
+    "operationId": "get_integrations_digitalocean_droplets",
+    "summary": "DigitalOcean droplets and whether an agent covers each",
+    "description": "Lists the account's droplets (optionally by tag) with coverage: reporting, enrolled or not_covered. Stackurity installs nothing on droplets\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "tag",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/public/cves/recent": {
+   "get": {
+    "operationId": "get_public_cves_recent",
+    "summary": "The CVEs that most recently reached Stackurity",
+    "description": "The public log of new CVEs, newest first: each CVE with the time it first reached Stackurity (`added`) and the feed that brought it (`source`: `epss`, FIRST's daily file of every scored CVE, or `kev`, CISA's catalogue). Only these feeds count, as they cover every CVE whatever the workspaces run; no workspace data is involved. `tracking_since` is when exact times began: CVEs stored earlier are not listed here. `limit` is 1 to 200 (default 50); `before` (RFC 3339) pages back. No sign-in; 60 requests a minute per address\n\nRole: none",
+    "tags": [
+     "Intelligence"
+    ],
+    "x-stackurity-role": "none",
+    "security": [],
+    "parameters": [
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "before",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/public/cves": {
+   "get": {
+    "operationId": "get_public_cves",
+    "summary": "When given CVEs reached Stackurity",
+    "description": "What the public log of new CVEs records for each `id` (repeat it, or separate IDs with commas; 1 to 200): `added`, `source`, and `exact`, false for CVEs stored before `tracking_since`, which arrived on or before `added`. Unknown CVEs are left out. No sign-in; 60 requests a minute per address\n\nRole: none",
+    "tags": [
+     "Intelligence"
+    ],
+    "x-stackurity-role": "none",
+    "security": [],
+    "parameters": [
+     {
+      "name": "id",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/owner-rules": {
    "get": {
     "operationId": "get_owner-rules",
@@ -14072,7 +14655,7 @@
    "get": {
     "operationId": "get_ask_usage_calls",
     "summary": "Ask Stackurity model calls of this organisation",
-    "description": "This organisation's Ask Stackurity model calls. `items`: one per model call, newest first, with `id`, `created_at`, `workspace_id`, `user_id`, `conversation_id` (null once deleted), `kind` (`answer` or `summary`), `model`, `prompt_version`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `cost_micros` (millionths of a US dollar), `latency_ms`, `tool_calls`, `tool_names`, `history_turns_sent`, `summary_used`, `stop_reason`, `error_code`, `request_id`. Metadata only: never a question, an answer or tool results. Kept 90 days (then daily totals, kept two years). `format=csv` returns the same as a CSV file\n\nRole: admin",
+    "description": "This organisation's Ask Stackurity model calls. `items`: one per model call, newest first, with `id`, `created_at`, `workspace_id`, `user_id`, `conversation_id` (null once deleted), `kind` (`answer`, `summary` or `triage`, the small call that asks whether a short follow-up says the last answer was wrong), `model`, `prompt_version`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `cost_micros` (millionths of a US dollar), `latency_ms`, `tool_calls`, `tool_names`, `history_turns_sent`, `summary_used`, `stop_reason`, `error_code`, `request_id`, `step_up_reason` (why this answer moved to a stronger model: `complex`, `rephrased`, `dissatisfied`, `not_found`, `tool_error`, `thumbs_down`, `stopped`; empty when it did not) and `stepped_from` (the model it moved from). Metadata only: never a question, an answer or tool results. Kept 90 days (then daily totals, kept two years). `format=csv` returns the same as a CSV file\n\nRole: admin",
     "tags": [
      "Ask Stackurity"
     ],
@@ -14185,7 +14768,7 @@
    "get": {
     "operationId": "get_admin_ask_calls",
     "summary": "Ask Stackurity model calls on this server",
-    "description": "Every organisation's Ask Stackurity model calls on this server. `items`: one per model call, newest first, with `id`, `created_at`, `workspace_id`, `user_id`, `conversation_id` (null once deleted), `kind` (`answer` or `summary`), `model`, `prompt_version`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `cost_micros` (millionths of a US dollar), `latency_ms`, `tool_calls`, `tool_names`, `history_turns_sent`, `summary_used`, `stop_reason`, `error_code`, `request_id`. Metadata only: never a question, an answer or tool results. Kept 90 days (then daily totals, kept two years). `format=csv` returns the same as a CSV file\n\nRole: instance admin",
+    "description": "Every organisation's Ask Stackurity model calls on this server. `items`: one per model call, newest first, with `id`, `created_at`, `workspace_id`, `user_id`, `conversation_id` (null once deleted), `kind` (`answer`, `summary` or `triage`, the small call that asks whether a short follow-up says the last answer was wrong), `model`, `prompt_version`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `cost_micros` (millionths of a US dollar), `latency_ms`, `tool_calls`, `tool_names`, `history_turns_sent`, `summary_used`, `stop_reason`, `error_code`, `request_id`, `step_up_reason` (why this answer moved to a stronger model: `complex`, `rephrased`, `dissatisfied`, `not_found`, `tool_error`, `thumbs_down`, `stopped`; empty when it did not) and `stepped_from` (the model it moved from). Metadata only: never a question, an answer or tool results. Kept 90 days (then daily totals, kept two years). `format=csv` returns the same as a CSV file\n\nRole: instance admin",
     "tags": [
      "Instance administration"
     ],

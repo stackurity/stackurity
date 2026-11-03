@@ -35,7 +35,10 @@ func (s *syncBuf) String() string              { s.mu.Lock(); defer s.mu.Unlock(
 // server's log to logs.
 func withAsk(t *testing.T, fake *asktest.Server, logs io.Writer) func(*api.Server) {
 	return func(s *api.Server) {
-		cfg := ask.Config{Provider: ask.ProviderAnthropic, APIKey: "sk-ant-test-not-real", BaseURL: fake.URL, Model: ask.DefaultModel, Effort: "low"}
+		// Conversations start on the plan's model here, so a scripted reply
+		// is never consumed by a step up; TestAskModelTiers tests tiers.
+		cfg := ask.Config{Provider: ask.ProviderAnthropic, APIKey: "sk-ant-test-not-real", BaseURL: fake.URL, Model: ask.DefaultModel, Effort: "low",
+			StartModel: "plan"}
 		cl, err := ask.NewClient(context.Background(), cfg)
 		if err != nil {
 			t.Fatal(err)
@@ -553,5 +556,46 @@ func TestAskUsageCalls(t *testing.T) {
 	var all struct{ Items []store.AskAPICall }
 	if code := e.login("root@x.io").do("GET", "/api/v1/admin/ask/calls?limit=10", nil, &all); code != 200 || len(all.Items) != 1 {
 		t.Errorf("instance admin: %d %+v", code, all)
+	}
+}
+
+// Model tiers through the API: a conversation starts on Claude Haiku 5.5
+// under a Sonnet plan; a thumbs-down moves it to Sonnet; the plan's model
+// is the ceiling (a stopped answer then changes nothing).
+func TestAskModelTiers(t *testing.T) {
+	fake := asktest.New(t, asktest.Reply{Text: "web-1 runs openssl."})
+	e := newEnvWith(t, func(s *api.Server) {
+		withAsk(t, fake, nil)(s)
+		s.Ask.Config.StartModel = "" // tiers: start on Claude Haiku 5.5
+	})
+	e.user("admin@x.io", auth.RoleAdmin)
+	admin := e.login("admin@x.io")
+	conv := askReady(t, e, admin)
+	var c store.AskConversation
+	admin.do("GET", fmt.Sprintf("/api/v1/ask/conversations/%d", conv), nil, &c)
+	model := func() string {
+		var m string
+		_ = e.st.Pool.QueryRow(tenant.System(context.Background()), `SELECT model FROM ask_conversations WHERE id = $1`, conv).Scan(&m)
+		return m
+	}
+	if model() != "claude-haiku-5-5" {
+		t.Fatalf("a new conversation starts on %s", model())
+	}
+	if _, evs, raw := askQ(t, admin, conv, "What runs on web-1?", nil, nil); lastEvent(evs).Name != "done" {
+		t.Fatalf("ask: %s", raw)
+	}
+	if b := fake.Bodies()[0]; b["model"] != "claude-haiku-5-5" {
+		t.Errorf("answered by %v", b["model"])
+	}
+	if code := admin.do("POST", fmt.Sprintf("/api/v1/ask/conversations/%d/feedback", conv), map[string]any{"seq": 2, "rating": "down"}, nil); code != 201 {
+		t.Fatalf("thumbs down: %d", code)
+	}
+	if model() != "claude-sonnet-5-5" {
+		t.Errorf("after a thumbs-down the conversation is on %s", model())
+	}
+	// Already at the plan's model: another thumbs-down changes nothing.
+	admin.do("POST", fmt.Sprintf("/api/v1/ask/conversations/%d/feedback", conv), map[string]any{"seq": 2, "rating": "down"}, nil)
+	if model() != "claude-sonnet-5-5" {
+		t.Errorf("above the ceiling: %s", model())
 	}
 }

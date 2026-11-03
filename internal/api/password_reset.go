@@ -218,8 +218,11 @@ func sessionGate(w http.ResponseWriter, r *http.Request, p *Principal) bool {
 	case p.PasswordChangeRequired && !passwordChangeAllows(r):
 		writeError(w, 403, "password_change_required", "an administrator set a temporary password; choose your own to continue")
 		return true
-	case p.NeedsMFAEnrolment && !mfaEnrolmentAllows(r):
-		writeError(w, 403, "mfa_enrolment_required", "your organisation requires two-factor sign-in; set it up to continue")
+	case p.MFANeed == mfaEnrol && !mfaEnrolmentAllows(r):
+		writeError(w, 403, "mfa_enrolment_required", "your organisation requires two-factor sign-in with "+methodNames(p.MFAAccepted)+"; set it up to continue")
+		return true
+	case p.MFANeed == mfaStepUp && !mfaStepUpAllows(r):
+		writeError(w, 403, "mfa_step_up_required", "your organisation requires you to confirm with "+methodNames(p.MFAAccepted)+" to continue")
 		return true
 	}
 	return false
