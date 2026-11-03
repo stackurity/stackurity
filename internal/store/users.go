@@ -965,6 +965,25 @@ func (s *Store) Audit(ctx context.Context, a Actor, action, objectType, objectID
 	return err
 }
 
+// auditTx records an event in tx, in workspace ws (nil: the platform's
+// events), so it commits or rolls back with the change it records. tx must
+// run in system scope (tenant.System), whose insert policy admits a row of
+// any workspace; the insert trigger links it into that workspace's hash
+// chain like any other event (migration 0052).
+func auditTx(ctx context.Context, tx pgx.Tx, ws *int64, a Actor, action, objectType, objectID string, detail any) error {
+	d, _ := json.Marshal(detail)
+	if detail == nil {
+		d = []byte("{}")
+	}
+	var id *int64
+	if a.ID > 0 {
+		id = &a.ID
+	}
+	_, err := tx.Exec(ctx, `INSERT INTO audit_events (workspace_id, actor_type, actor_id, actor_name, action, object_type, object_id, detail, remote_addr)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, ws, a.Type, id, a.Name, action, objectType, objectID, d, a.RemoteAddr)
+	return err
+}
+
 type AuditEvent struct {
 	ID         int64           `json:"id"`
 	At         time.Time       `json:"at"`
