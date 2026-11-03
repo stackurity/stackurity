@@ -34,13 +34,13 @@ var emailTemplates = map[string]struct{ subject, body string }{
 
 Thank you for your feedback {{.Ref}}.
 
-{{if .Version}}The change is in Stackurity {{.Version}}, released today.{{else}}The change has been released.{{end}}{{if .Resolution}}
+{{if .Version}}The change is in Stackurity {{.Version}}.{{else}}The change has been released.{{end}}{{if .Resolution}}
 
 {{.Resolution}}{{end}}
 
 On Stackurity Cloud you have it already. If you run Stackurity yourself, it arrives when you upgrade; the changelog is at https://stackurity.ai/changelog.html.
 
-You can see this and anything else you sent under Feedback -> My feedback in Stackurity.
+You can see this and anything else you sent under My feedback, in your account menu in Stackurity.
 
 The Stackurity team
 `,
@@ -55,7 +55,7 @@ We looked at it carefully and decided not to make this change for now:
 
 {{.Resolution}}
 
-If something about it is different from what we understood, reply to this email or send new feedback from Stackurity, and we will look again.
+If something about it is different from what we understood, send new feedback from Stackurity or write to info@stackurity.ai, and we will look again.
 
 The Stackurity team
 `,
