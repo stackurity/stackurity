@@ -20,7 +20,7 @@ import (
 
 const cloudAppSecret = "platform-app-secret-value"
 
-func cloudEnv(t *testing.T) *env {
+func cloudSetupEnv(t *testing.T) *env {
 	plat, err := cloudconnect.New("https://stackurity.example", bytes.Repeat([]byte{4}, 32), "11111111-2222-3333-4444-555555555555", cloudAppSecret)
 	if err != nil {
 		t.Fatal(err)
@@ -31,7 +31,7 @@ func cloudEnv(t *testing.T) *env {
 // The setup commands name the caller's workspace, never another's, and
 // never carry the server's secrets.
 func TestCloudSetup(t *testing.T) {
-	e := cloudEnv(t)
+	e := cloudSetupEnv(t)
 	e.user("a@x.io", auth.RoleAdmin)
 	e.user("eng@x.io", auth.RoleEngineer)
 	ws, _, err := e.st.CreateWorkspace(context.Background(), "Beta", "", "b@x.io", "", pw)
@@ -95,7 +95,7 @@ func TestPlatformPluginsNeedNoStoredSecret(t *testing.T) {
 	write("gcp-managed", `"stackurity_identity_token (server)"`)
 	write("other", `"stackurity_identity_token"`) // declares it, but is not first-party
 	write("azure-managed", `"azure_client_id"`)   // first-party name, but declares no platform credential
-	e := cloudEnv(t)
+	e := cloudSetupEnv(t)
 	e.api.Plugins = &plugins.Runner{Dir: dir, WorkDir: t.TempDir(), Timeout: time.Minute}
 	if _, _, err := e.st.CreateWorkspace(context.Background(), "Beta", "", "b@x.io", "", pw); err != nil {
 		t.Fatal(err)

@@ -781,6 +781,8 @@ func (d *Dispatcher) message(in store.Incident, event string) Message {
 		m.Action = "Check the agent, integration credentials or network path"
 	case "coverage":
 		m.Action = "Confirm whether software was removed or the collector lost access"
+	case "leak":
+		d.leakMessage(&m, det, list)
 	case "platform":
 		m.Summary = append(m.Summary, "A problem with the Stackurity installation itself: findings and notifications may be out of date")
 		m.Action = "An instance administrator should check Platform health in the dashboard and the server logs"
@@ -796,6 +798,9 @@ func (d *Dispatcher) message(in store.Incident, event string) Message {
 		m.Summary = append([]string{"Stopped reporting again after recovering"}, m.Summary...)
 	case "resolved":
 		m.Summary = []string{"No open findings remain for this incident"}
+		if in.Kind == "leak" {
+			m.Summary = []string{"No critical or high leaked keys remain open on this asset"}
+		}
 		if in.Kind == "feed" {
 			m.Title = "Intelligence feed " + in.Key + " has recovered"
 			m.Summary = []string{"The feed has synced again and its data is within its freshness limit"}
