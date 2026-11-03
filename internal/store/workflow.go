@@ -742,13 +742,14 @@ func (s *Store) SyncSystemIncidents(ctx context.Context, current []SystemInciden
 			return err
 		}
 		_, err := tx.Exec(ctx, `UPDATE incidents SET status = 'resolved', resolved_at = now(), updated_at = now()
-			WHERE status = 'open' AND kind IN ('feed', 'collection', 'coverage', 'platform') AND NOT (kind || '|' || key = ANY($1))`, keys)
+			WHERE status = 'open' AND kind IN ('feed', 'collection', 'coverage', 'platform', 'leak') AND NOT (kind || '|' || key = ANY($1))`, keys)
 		return err
 	})
 }
 
 // DetectSystemProblems finds stale or failing feeds, stale assets, failing
-// integrations and sharp drops in collected inventory (FR-08, FR-16).
+// integrations, sharp drops in collected inventory (FR-08, FR-16) and
+// assets with leaked keys.
 func (s *Store) DetectSystemProblems(ctx context.Context) ([]SystemIncident, error) {
 	var out []SystemIncident
 	rows, err := s.Pool.Query(ctx, `SELECT name, kind, last_error, last_success,
@@ -838,7 +839,16 @@ func (s *Store) DetectSystemProblems(ctx context.Context) ([]SystemIncident, err
 			Detail: map[string]any{"asset_id": id, "collector": collector, "before": before, "after": after}})
 	}
 	rows.Close()
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Leaked keys: one incident per asset with critical or high ones open.
+	leaks, err := s.leakProblems(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return append(out, leaks...), nil
 }
 
 type IncidentFilter struct {
