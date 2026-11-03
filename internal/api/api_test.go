@@ -1191,7 +1191,14 @@ func TestAgentDownload(t *testing.T) {
 	if code, body := get("/download/agent/linux-arm64"); code != 200 || body != "binary" {
 		t.Errorf("download: %d %q", code, body)
 	}
+	if err := os.WriteFile(filepath.Join(dir, "stackurity-darwin-arm64.sha256"), []byte("abc  stackurity-darwin-arm64\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, body := get("/download/agent/darwin-arm64.sha256"); code != 200 || !strings.HasPrefix(body, "abc ") {
+		t.Errorf("macOS checksum: %d %q", code, body)
+	}
 	for _, p := range []string{"/download/agent/linux-amd64", "/download/agent/..%2f..%2fetc%2fpasswd", "/download/agent/windows-amd64",
+		"/download/agent/darwin-arm64", "/download/agent/darwin-386",
 		"/download/agent/windows-arm64", "/download/agent/stackurity-windows-amd64.exe"} {
 		if code, _ := get(p); code != 404 {
 			t.Errorf("%s: %d", p, code)
@@ -1199,6 +1206,9 @@ func TestAgentDownload(t *testing.T) {
 	}
 	if _, body := get("/install/agent.sh"); !strings.Contains(body, "https://stk.example.com/install/agent.sh") {
 		t.Error("installer should use the configured base URL")
+	}
+	if _, body := get("/install/agent-macos.sh"); !strings.Contains(body, "SERVER='https://stk.example.com'") {
+		t.Error("the macOS installer should use the configured base URL")
 	}
 
 	// The Windows build, for agent.ps1, is saved as stackurity.exe.

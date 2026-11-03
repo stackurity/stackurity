@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -22,6 +23,9 @@ type Component struct {
 type ComponentFilter struct {
 	Type   string
 	Search string
+	// Segment limits components to one segment of the Coverage page's
+	// headline (coverage_page.go): its total is that segment's count.
+	Segment string
 	Page
 }
 
@@ -33,7 +37,14 @@ const componentCols = `c.id, c.purl_key, c.type, c.namespace, c.name,
 // ListComponents lists components currently present on at least one asset.
 func (s *Store) ListComponents(ctx context.Context, f ComponentFilter) ([]Component, int64, error) {
 	w := &where{}
-	w.conds = append(w.conds, `EXISTS (SELECT 1 FROM inventory i WHERE i.component_id = c.id AND i.removed_at IS NULL)`)
+	if f.Segment != "" {
+		if !ValidSegment(f.Segment) {
+			return nil, 0, fmt.Errorf("segment must be one of %s: %w", strings.Join(Segments, ", "), ErrInvalid)
+		}
+		segmentFilter(w, f.Segment)
+	} else {
+		w.conds = append(w.conds, `EXISTS (SELECT 1 FROM inventory i WHERE i.component_id = c.id AND i.removed_at IS NULL)`)
+	}
 	if f.Type != "" {
 		w.add("c.type = ?", f.Type)
 	}

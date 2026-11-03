@@ -10,6 +10,11 @@ on:
   schedule:
     - cron: "17 4 * * *"   # daily, to catch newly published advisories the same day
 
+# A new push to a pull request cancels its older run.
+concurrency:
+  group: security-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
