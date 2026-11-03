@@ -126,6 +126,10 @@ type Server struct {
 	// FeedbackHTTP forwards feedback; nil uses a client with a 10 second
 	// timeout that follows no redirects.
 	FeedbackHTTP *http.Client
+	// FeedbackQueue runs the Stackurity team's feedback queue on this
+	// server (feedback_queue.go); nil turns it off, as on every other
+	// installation.
+	FeedbackQueue *FeedbackQueue
 	// WidgetOrigins are origins the dashboard may load scripts and frames
 	// from (a hosted edition's sign-up challenge); empty allows none.
 	WidgetOrigins []string
@@ -170,6 +174,9 @@ type Server struct {
 	// Breached refuses passwords found in data breaches (Pwned Passwords,
 	// k-anonymity); nil turns the check off.
 	Breached *auth.BreachChecker
+	// relyingParty is the WebAuthn relying party for passkeys, made from
+	// BaseURL on first use (webauthn.go).
+	relyingParty relyingPartyOnce
 	// Ask is the in-app assistant (ask.go); nil when no model provider is
 	// configured.
 	Ask *ask.Engine
@@ -247,10 +254,19 @@ func (s *Server) Handler() http.Handler {
 	// signed for one person and category (email_preferences.go).
 	r.With(s.limitAddress("email-links", limitEmailConfirm, "too many attempts; wait a minute")).Post("/email/preferences/one-click", s.oneClickEmailPreferences)
 
+	// The feedback queue's relay intake, status lookups and signed
+	// attachment downloads (feedback_queue.go).
+	s.feedbackQueueRoutes(r)
+
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(s.authenticate, csrfGuard)
 		r.Get("/meta", s.meta)
 		r.Get("/openapi.json", s.openAPI)
+		r.Route("/public/cves", func(r chi.Router) {
+			r.Use(s.limitAddress("public-cves", limitPublicCVEs, "too many requests; wait a minute"))
+			r.Get("/", s.publicCVEs)
+			r.Get("/recent", s.recentCVEs)
+		})
 		r.Post("/setup", s.setup)
 		r.Post("/auth/login", s.login)
 		r.Post("/auth/logout", s.logout)
@@ -293,6 +309,8 @@ func (s *Server) Handler() http.Handler {
 				editionAccountRoutes(s, r)
 			}
 			r.Post("/feedback", s.sendFeedback)
+			r.Get("/feedback/mine", s.myFeedback)
+			s.feedbackOperatorRoutes(r)
 			// Linking the caller's Slack account (slack.go).
 			r.Get("/slack/links", s.listSlackLinks)
 			r.Delete("/slack/links/{id}", s.deleteSlackLink)
@@ -615,7 +633,14 @@ func writeError(w http.ResponseWriter, status int, code, msg string, details ...
 // unexpected is logged and returned as a generic 500.
 func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	var ve *model.ValidationError
+	var refusal *instanceAdminRefusal
 	switch {
+	case errors.As(err, &refusal):
+		refusal.write(w)
+	case errors.Is(err, store.ErrPasskeyCounter):
+		// A session with a passkey marked meanwhile as possibly copied
+		// (store.CreateSessionWith): refused like the sign-in itself.
+		passkeyFailed(w, "clone")
 	case errors.Is(err, store.ErrNotFound):
 		writeError(w, 404, "not_found", "not found")
 	case errors.Is(err, store.ErrConflict):

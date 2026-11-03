@@ -5,11 +5,12 @@ import { useAuth } from "./auth";
 import { Layout } from "./components/Layout";
 import { ErrorBox, Loading } from "./components/ui";
 import { LoginPage, SetupPage } from "./pages/Login";
-import { MfaEnrolmentPage } from "./pages/TwoFactor";
+import { MfaEnrolmentPage, MfaStepUpPage } from "./pages/TwoFactor";
 import { ChangeTemporaryPasswordPage, ForgotPasswordPage, ResetPasswordPage } from "./pages/Password";
 import { AcceptInvitePage } from "./pages/AcceptInvite";
 import { SlackLinkPage } from "./pages/SlackLink";
 import { AccountPage } from "./pages/Account";
+import { MyFeedbackPage } from "./pages/MyFeedback";
 import { SlackOAuthCallbackPage } from "./pages/SlackOAuthCallback";
 import { GitLabCallbackPage } from "./pages/GitLabCallback";
 import { PagerDutyOAuthCallbackPage } from "./pages/PagerDutyOAuthCallback";
@@ -194,8 +195,10 @@ export function App() {
   if (pathname === "/reset-password" && (state.phase === "login" || state.phase === "ready")) return <ResetPasswordPage />;
   // A temporary password set by an administrator: choose your own first.
   if (state.phase === "ready" && state.me.password_change_required) return <ChangeTemporaryPasswordPage />;
-  // An organisation that requires two-factor sign-in: set it up first.
+  // An organisation that requires two-factor sign-in: set it up first, or
+  // confirm with the method it requires.
   if (state.phase === "ready" && state.me.mfa_enrolment_required) return <MfaEnrolmentPage />;
+  if (state.phase === "ready" && state.me.mfa_step_up_required) return <MfaStepUpPage />;
 
   switch (state.phase) {
     case "loading":
@@ -337,6 +340,7 @@ export function App() {
         <Route path="approvals" element={<ApprovalsPage />} />
         <Route path="settings/approvals" element={<Moved to={() => "/approvals"} />} />
         <Route path="account" element={<AccountPage />} />
+        <Route path="feedback" element={<MyFeedbackPage />} />
         {/* Linked Slack accounts moved to Your account. */}
         <Route path="settings/slack" element={<Navigate replace to="/account#slack" />} />
         {/*

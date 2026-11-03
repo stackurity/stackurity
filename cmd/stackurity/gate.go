@@ -158,9 +158,10 @@ func (g *gate) report(w io.Writer, res *client.CollectionResult) error {
 		}
 	}
 	if res.Gaps > 0 {
-		fmt.Fprintf(w, "warning: %d components could not be evaluated (no vulnerability source or feed not synced yet); they cannot fail the gate\n", res.Gaps)
+		fmt.Fprintf(w, "warning: %s could not be evaluated (no vulnerability source or feed not synced yet); %s cannot fail the gate\n",
+			count(res.Gaps, "component", "components"), agree(res.Gaps, "it", "they"))
 	}
-	fmt.Fprintf(w, "%d open findings, %d meet the gate\n", len(res.Findings), len(blocking))
+	fmt.Fprintf(w, "%s, %d %s the gate\n", count(len(res.Findings), "open finding", "open findings"), len(blocking), agree(len(blocking), "meets", "meet"))
 	if len(blocking) == 0 {
 		return nil
 	}
@@ -178,7 +179,7 @@ func (g *gate) report(w io.Writer, res *client.CollectionResult) error {
 		fmt.Fprintf(tw, "%s\t%s\t%s@%s\t%s\t%s\t%s\n", f.Severity, f.Priority, f.ComponentName, f.Version, key, fixed, truncate(f.Title, 60))
 	}
 	tw.Flush()
-	return &exitError{code: gateExitCode, msg: fmt.Sprintf("%d findings meet the gate", len(blocking))}
+	return &exitError{code: gateExitCode, msg: count(len(blocking), "finding meets", "findings meet") + " the gate"}
 }
 
 func truncate(s string, n int) string {

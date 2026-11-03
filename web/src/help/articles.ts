@@ -191,28 +191,45 @@ export const ARTICLES: Article[] = [
     id: "feedback",
     title: "Send feedback to the Stackurity team",
     section: "Getting started",
-    summary: "Report a problem, suggest an improvement or ask a question from inside the app.",
+    summary: "Report an issue, request a feature or ask a question from inside the app, with screenshots if they help, and follow it in My feedback.",
     where: ["Account menu", "Send feedback"],
-    keywords: "feedback bug report idea suggestion question contact support",
+    keywords: "feedback bug issue report feature request idea suggestion question contact support screenshot attachment video reference my feedback status",
     body: [
       {
         steps: [
           "Open your account menu (the round button with your initial, top right) and click **Send feedback**. On a phone it is also under **More** in the bottom bar.",
-          "Choose **Report a problem**, **Suggest an improvement** or **Ask a question**.",
-          "Write your message. Your email is filled in so the team can reply; clear it to send without one.",
-          "Click **Send feedback**. You see “Thanks, it went to the Stackurity team” when it arrives.",
+          "Choose **Issue**, **Feature request** or **Question**.",
+          "Write a description (up to 5,000 characters).",
+          "Optionally click **Add files** to attach screenshots, a screen recording or a PDF.",
+          "Your email is filled in so the team can reply; clear it to send without one.",
+          "Click **Send feedback**. You see “Thanks — your reference is FB-123.” with your item's reference number.",
         ],
       },
+      { h: "Attachments" },
+      {
+        list: [
+          "Up to 3 files: PNG, JPEG, WebP or GIF images, MP4 or WebM videos, and PDFs.",
+          "Images and PDFs may be 10 MB each, videos 50 MB each, and 90 MB together.",
+          "The server checks each file's content, not just its name, and refuses anything else.",
+          "Images have their metadata (such as the location a photo was taken, and the camera) removed before they are sent. Videos and PDFs are sent as they are: a video recorded on a phone can carry where it was recorded.",
+        ],
+      },
+      { note: "Screenshots may contain your data and will be sent to the Stackurity team. Crop or blur anything you don't want to share (host names, findings, emails) before attaching." },
       { h: "What is sent" },
       {
         list: [
-          "The kind of feedback and your message.",
+          "The type of feedback, your description and any attachments.",
           "Your email address, only if it is in the form when you send.",
           "The path of the page you were on, such as `/findings/17`, without search terms or filters.",
+          "Your browser and window size, such as “Chrome 131 on macOS, 1440x900”.",
           "The Stackurity version and edition.",
         ],
       },
-      { p: "Nothing else: no findings, asset, host or workspace names, and not this installation's address. Your Stackurity server sends it, not your browser, and each send is recorded in the [audit log](/audit) as `feedback.send`." },
+      { p: "Nothing else: no findings, asset, host or workspace names (unless they are in your description or a screenshot), and not this installation's address. Your Stackurity server sends it, not your browser, and each send is recorded in the [audit log](/audit) as `feedback.send`." },
+      { h: "Follow up in My feedback" },
+      {
+        p: "Each item gets a reference number such as `FB-123`; quote it if you write to the team about it. **My feedback** in your account menu (on a phone, under **More**) lists what you sent with its status: Received, Under review, In progress, Fixed (waiting for release), Released (with the version), Won't fix or Duplicate, and any note from the team. Statuses are checked with the Stackurity team's server when you open the page; if it can't be reached, the page says so and shows the last status it knew.",
+      },
       { note: "Operators can send feedback somewhere else, or turn it off, with `STACKURITY_FEEDBACK_URL`. When it is off, the menu item is not shown." },
       { p: "For a security vulnerability in Stackurity itself, follow the security policy (SECURITY.md in the repository) instead of using feedback." },
     ],
@@ -1646,6 +1663,67 @@ jobs:
   },
 
   // ---------------------------------------------------------------- Settings and administration
+  {
+    id: "two-factor",
+    title: "Two-factor sign-in",
+    section: "Settings and administration",
+    summary: "Passkeys, security keys, an authenticator app and recovery codes, and how an organisation can require them.",
+    where: ["Your account", "Two-factor methods"],
+    keywords: "2fa mfa two factor passkey security key yubikey webauthn fido touch id face id windows hello totp authenticator app recovery codes phishing",
+    body: [
+      { p: "A second factor means someone who learns your password still cannot sign in as you. Set yours up under [Your account](/account#mfa)." },
+      { h: "Add a passkey (recommended)" },
+      {
+        steps: [
+          "Open [Your account](/account#mfa) and, under **Passkeys and security keys**, click **Add a passkey or security key**.",
+          "Give it a name you will recognise, such as “MacBook Touch ID” or “YubiKey 5”, and enter your password.",
+          "Your browser asks where to save the passkey: this device (fingerprint, face or PIN), your phone, a password manager, or a security key you plug in or tap.",
+          "The first time, Stackurity shows ten **recovery codes**. Save them in your password manager: each signs you in once if you lose your devices.",
+        ],
+      },
+      { p: "Add a second passkey or key as a spare. A passkey is tied to this Stackurity's web address, so a look-alike site cannot use it." },
+      { h: "Sign in with a passkey" },
+      {
+        list: [
+          "**Sign in with a passkey** on the sign-in page needs no email or password: your device confirms it is you with your fingerprint, face or PIN.",
+          "Or sign in with your password; Stackurity then asks for your passkey, a code from your authenticator app, or a recovery code.",
+        ],
+      },
+      { h: "Authenticator app" },
+      {
+        p: "Under **Authenticator app**, click **Set up an authenticator app**, enter your password, scan the QR code with 1Password, Google Authenticator, Microsoft Authenticator or a similar app, and type the six-digit code it shows.",
+      },
+      { h: "Rename or remove a method" },
+      {
+        list: [
+          "Each passkey shows when it was added and last used. **Rename** changes its name; **Remove** asks for your password.",
+          "Adding or removing a method signs you out on your other devices.",
+          "If your organisation requires two-factor sign-in, you cannot remove the last method that counts there: add another one first.",
+        ],
+      },
+      { h: "Require it for your organisation (admins)" },
+      {
+        p: "Under [People → Users](/people), **Two-factor sign-in** sets who must use it (optional, everyone, or admins and security) and which methods count. On the Enterprise plan, **Require phishing-resistant sign-in (passkeys only) for admins** makes admins sign in with a passkey. You must meet a policy yourself before you can save it.",
+      },
+      {
+        list: [
+          "People without a method that counts are sent straight to set one up when they next sign in, with passkeys offered first.",
+          "People who have one but signed in with something else (the app, where admins must use a passkey) are asked to confirm with it.",
+          "People who sign in with single sign-on use their identity provider’s second factor instead.",
+          "API tokens and connected AI assistants are not asked for a second factor: review them under [API tokens](/integrations/tokens).",
+        ],
+      },
+      { h: "Lost your device?" },
+      {
+        list: [
+          "Sign in with your password and a recovery code, then add a new passkey or app and remove the lost one.",
+          "No recovery codes left? An admin can click **Reset two-factor** next to your name under [People → Users](/people). It removes all your methods and signs you out; you then set them up again.",
+        ],
+      },
+      { note: "Text-message (SMS) codes are not offered on purpose: phone numbers can be hijacked by SIM swapping, and passkeys and authenticator apps are stronger and free." },
+      { warn: "Passkeys work only on the web address they were made for. If your Stackurity moves to a new address, sign in with a recovery code or your authenticator app and add your passkeys again." },
+    ],
+  },
   {
     id: "risk-policy",
     title: "Risk policy: priorities, deadlines and SOS",
