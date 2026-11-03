@@ -622,6 +622,17 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 	var me struct{ User store.User }
 	admin.do("GET", "/api/v1/auth/me", nil, &me)
 	set("user", me.User.ID)
+	// The admin's browser session, by the ID Your account names it with.
+	var sessions struct{ Items []store.ActiveSession }
+	admin.do("GET", "/api/v1/auth/sessions", nil, &sessions)
+	for _, s := range sessions.Items {
+		if s.Current {
+			set("session", s.ID)
+		}
+	}
+	if f.ids["session"] == "" {
+		t.Fatalf("%s: no current session in %+v", tag, sessions)
+	}
 	for _, role := range []auth.Role{auth.RoleSecurity, auth.RoleEngineer, auth.RoleViewer} {
 		email := string(role) + "-" + tag + "@x.io"
 		if _, err := e.st.CreateUser(ctx, email, "", role, pw); err != nil {

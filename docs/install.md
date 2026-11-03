@@ -55,17 +55,17 @@ docker compose exec -e STACKURITY_PASSWORD='a long passphrase' stackurity \
 
 ## Your first ten minutes
 
-After the first administrator signs in, a new organisation with no assets opens in **Set up Stackurity**. Every step can be skipped; the Dashboard then shows a checklist until the steps are done. Organisations that already have assets never see it.
+After the first administrator signs in, a new organisation with no assets opens in **Set up Stackurity**. Every step can be skipped (**Skip setup, go to the Dashboard**); the Dashboard then shows a checklist until the steps are done. Organisations that already have assets never see it.
 
-1. **Create your first project**: a name and, if you like, a description.
-2. **Add an asset**, which lands in that project:
+1. **Create a project**: a name and, if you like, a description. Use a project for a product, a client, an environment or a team. A button for each existing project (with its asset count) adds to it instead.
+2. **Add a server or repo**, which lands in that project:
    - **A Linux server**: one install command (an enrollment code for up to 5 servers, valid 24 hours; for more, use a fleet code, see [Many servers at once](#many-servers-at-once)). First results in about 2 minutes. The server needs systemd, sudo and outbound HTTPS to the dashboard. A **Windows** tab gives the PowerShell command for Windows servers (see [Windows hosts](#windows-hosts)). **Also check websites and apps on this server** is ticked by default, as under Add server.
    - **A code repository**: a collector token to save as the CI secret `STACKURITY_TOKEN`, and a GitHub Actions step (`stackurity/scan-action@v1`) or the `stackurity scan .` command for other CI. First results on the next CI run.
    - **Upload an SBOM** (CycloneDX or SPDX JSON). First results in under a minute.
-3. **Wait** while it reports: the page shows the packages found and when the check is done.
-4. **The first result**, in plain words: "We found 1,676 packages on commmerceblog. 3 fixes matter now.", with links to them.
-5. **Notifications** for the project: Slack (**Add to Slack** when the server has a [Slack app](slack-app.md), otherwise an incoming webhook URL) or email (your SMTP server, with presets for common providers, or on Stackurity Cloud email sent by Stackurity), then two questions: what to send right away (urgent issues, all new issues, or nothing) and which summary (daily, weekly or none), see [Notifications](#notifications). The webhook URL or SMTP password is stored as an encrypted secret, which needs `STACKURITY_SECRET_KEY` (see [Configuration](#configuration)); without it, set integrations up under **Integrations** with `env:` references.
-6. **Invite people** by email with a role on the project. The link works once, for 7 days. It is emailed through the organisation's first email channel; without one, the dashboard shows it to copy and send yourself.
+3. **First check**: progress with real numbers as they arrive (agent connected, components found, issues found, fixes recommended) and what is happening now. Vulnerability feeds are set up for the software found and then synced; until they have, the page says how many components wait for that data, and checks them again by itself once it has synced.
+4. **Review fixes**: "Your first check is done", with the assets, components, issues and coverage (share of components checked against current data) and a link to the top recommended fix.
+5. **Choose alerts** for the project: Slack (**Add to Slack** when the server has a [Slack app](slack-app.md), otherwise an incoming webhook URL) or email (your SMTP server, with presets for common providers, or on Stackurity Cloud email sent by Stackurity), then two questions: what to send right away (urgent issues, all new issues, or nothing) and which summary (daily, weekly or none), see [Notifications](#notifications). The webhook URL or SMTP password is stored as an encrypted secret, which needs `STACKURITY_SECRET_KEY` (see [Configuration](#configuration)); without it, set integrations up under **Integrations** with `env:` references.
+6. **Invite your team** by email with a role on the project. The link works once, for 7 days. It is emailed through the organisation's first email channel; without one, the dashboard shows it to copy and send yourself.
 
 Connecting an asset is quiet: one "connected" message, and no alerts, Jira issues, escalations or overdue reminders for what it already had. See [A quiet first scan](api.md#a-quiet-first-scan).
 
@@ -275,7 +275,8 @@ A browser session ends 30 minutes after it was last used (`STACKURITY_SESSION_ID
 
 - Every sign-in gets a new session ID, and a session the browser already had ends. Adding or removing a second factor, confirming with one, and changing your password replace the current session's ID too. Roles are read on every request, so a role change takes effect at once without one.
 - Changing your password (**Your account → Password**) signs out your other sessions and, unless you untick it, disconnects your AI assistants. API tokens keep working unless you tick **Also revoke my API tokens**; the page then says how many still work, with a link to review them.
-- The activity log records `auth.login`, `auth.logout`, and `auth.session_expired` with `reason` `idle` or `absolute` (when the session is next used, or by the hourly housekeeping if it never is).
+- **Your account → Active sessions** lists your own browser sessions: the browser and address each was signed in from, how, when, and when it was last used. **Sign out** ends one at once, and **Sign out of all other sessions** ends every one but yours; API tokens are separate (**Integrations → API tokens**). The browser (`User-Agent`) and address are stored with a session only while it lasts. A session signed in through an organisation's own single sign-on sees and ends only the sessions pinned to that organisation.
+- The activity log records `auth.login`, `auth.logout`, `auth.session_revoked`, `auth.other_sessions_revoked`, and `auth.session_expired` with `reason` `idle` or `absolute` (when the session is next used, or by the hourly housekeeping if it never is).
 
 ### Forgotten passwords
 

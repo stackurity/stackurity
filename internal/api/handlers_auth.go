@@ -219,14 +219,14 @@ func (s *Server) rotateSession(w http.ResponseWriter, r *http.Request, opts stor
 	// The new session replaces this one: it keeps its single sign-on pin and
 	// its end, so rotating never frees a pinned session or extends one.
 	opts.Pinned, opts.Expires = p.SSOWorkspace, p.SessionExpires
+	// The same row takes the new ID, in one transaction (the old ID stops
+	// working), keeping its public ID and when and where it was signed in. A
+	// session signed out while this request was in flight stays signed out:
+	// store.ErrSessionEnded, which fail answers 401, and no cookie is set.
+	opts.Replaces = sessionSecret(r)
 	secret, err := s.Store.CreateSessionWith(r.Context(), p.User.ID, p.Workspace, opts)
 	if err != nil {
 		return err
-	}
-	if old := sessionSecret(r); old != "" {
-		if err := s.Store.DeleteSession(r.Context(), old); err != nil {
-			return err
-		}
 	}
 	s.setSessionCookie(w, secret)
 	return nil
