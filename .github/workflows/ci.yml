@@ -180,7 +180,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - run: docker build -t stackurity:ci .
       - name: Agent builds are readable by the server user
-        run: docker run --rm --entrypoint sh stackurity:ci -c 'cd "$STACKURITY_AGENT_DIR" && sha256sum -c stackurity-linux-amd64.sha256 stackurity-linux-arm64.sha256'
+        run: docker run --rm --entrypoint sh stackurity:ci -c 'cd "$STACKURITY_AGENT_DIR" && sha256sum -c stackurity-linux-amd64.sha256 stackurity-linux-arm64.sha256 stackurity-windows-amd64.sha256'
 
   helm:
     runs-on: ubuntu-latest
