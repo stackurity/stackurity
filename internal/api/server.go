@@ -637,6 +637,10 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.As(err, &refusal):
 		refusal.write(w)
+	case errors.Is(err, store.ErrPasskeyCounter):
+		// A session with a passkey marked meanwhile as possibly copied
+		// (store.CreateSessionWith): refused like the sign-in itself.
+		passkeyFailed(w, "clone")
 	case errors.Is(err, store.ErrNotFound):
 		writeError(w, 404, "not_found", "not found")
 	case errors.Is(err, store.ErrConflict):
