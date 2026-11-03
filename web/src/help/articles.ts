@@ -1587,21 +1587,21 @@ jobs:
       },
       { h: "Require it for your organisation (admins)" },
       {
-        p: "Under [Settings → Users](/settings/users), **Two-factor sign-in** sets who must use it (optional, everyone, or admins and security) and which methods count. On the Enterprise plan, **Require phishing-resistant sign-in (passkeys only) for admins** makes admins sign in with a passkey. You must meet a policy yourself before you can save it.",
+        p: "Under [People → Users](/people), **Two-factor sign-in** sets who must use it (optional, everyone, or admins and security) and which methods count. On the Enterprise plan, **Require phishing-resistant sign-in (passkeys only) for admins** makes admins sign in with a passkey. You must meet a policy yourself before you can save it.",
       },
       {
         list: [
           "People without a method that counts are sent straight to set one up when they next sign in, with passkeys offered first.",
           "People who have one but signed in with something else (the app, where admins must use a passkey) are asked to confirm with it.",
           "People who sign in with single sign-on use their identity provider’s second factor instead.",
-          "API tokens and connected AI assistants are not asked for a second factor: review them under [API tokens](/settings/tokens).",
+          "API tokens and connected AI assistants are not asked for a second factor: review them under [API tokens](/integrations/tokens).",
         ],
       },
       { h: "Lost your device?" },
       {
         list: [
           "Sign in with your password and a recovery code, then add a new passkey or app and remove the lost one.",
-          "No recovery codes left? An admin can click **Reset two-factor** next to your name under [Settings → Users](/settings/users). It removes all your methods and signs you out; you then set them up again.",
+          "No recovery codes left? An admin can click **Reset two-factor** next to your name under [People → Users](/people). It removes all your methods and signs you out; you then set them up again.",
         ],
       },
       { note: "Text-message (SMS) codes are not offered on purpose: phone numbers can be hijacked by SIM swapping, and passkeys and authenticator apps are stronger and free." },

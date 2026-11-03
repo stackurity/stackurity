@@ -12,7 +12,7 @@ import (
 	"github.com/stackurity/stackurity/internal/tenant"
 )
 
-// The two-factor policy of a workspace (Settings → Users; docs/install.md,
+// The two-factor policy of a workspace (People → Users; docs/install.md,
 // "Two-factor sign-in") and the decision it makes for each browser session.
 //
 // A session signed in with a password, a passkey or an invitation is held to
@@ -298,7 +298,7 @@ func (s *Server) auditAccount(r *http.Request, u *store.User, action string, det
 	}
 }
 
-// --- Settings → Users: the policy (admins)
+// --- People → Users: the policy (admins)
 
 type securitySettings struct {
 	store.MFAPolicy
