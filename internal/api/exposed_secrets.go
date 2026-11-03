@@ -29,8 +29,9 @@ func (s *Server) listExposedSecrets(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, badRequest("severity must be critical, high, medium or low"))
 		return
 	}
+	pg := page(r)
 	items, total, err := s.Store.ListExposedSecrets(r.Context(), store.ExposedSecretFilter{
-		Status: status, AssetID: qInt(r, "asset_id"), Severity: sev, Limit: int(qInt(r, "limit")), Offset: int(qInt(r, "offset")),
+		Status: status, AssetID: qInt(r, "asset_id"), Severity: sev, Limit: pg.Limit, Offset: pg.Offset,
 	})
 	if err != nil {
 		s.fail(w, r, err)

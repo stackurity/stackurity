@@ -33,7 +33,7 @@ var rules = []rule{
 	{id: "gitlab-token", title: "GitLab token", re: regexp.MustCompile(`\b(glpat-[A-Za-z0-9_\-]{20,})\b`), prefix: 6},
 	{id: "slack-token", title: "Slack token", re: regexp.MustCompile(`\b(xox[baprs]-[0-9]{6,}-[A-Za-z0-9-]{10,})\b`), prefix: 5},
 	{id: "slack-webhook", title: "Slack webhook URL",
-		re: regexp.MustCompile(`(https://hooks\.slack\.com/services/T[A-Z0-9]{6,}/B[A-Z0-9]{6,}/[A-Za-z0-9]{20,})`), prefix: 33},
+		re: regexp.MustCompile(`\b(https://hooks\.slack\.com/services/T[A-Z0-9]{6,}/B[A-Z0-9]{6,}/[A-Za-z0-9]{20,})`), prefix: 33},
 	{id: "stripe-secret-key", title: "Stripe secret key", re: regexp.MustCompile(`\b((?:sk|rk)_live_[A-Za-z0-9]{20,})\b`), prefix: 8},
 	{id: "google-api-key", title: "Google API key", re: regexp.MustCompile(`\b(AIza[0-9A-Za-z_\-]{35})\b`), prefix: 4, public: true},
 	{id: "private-key", title: "Private key",
