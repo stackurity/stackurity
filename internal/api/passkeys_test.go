@@ -1338,9 +1338,12 @@ func TestPasskeyCloneWarningEndsItsSessions(t *testing.T) {
 	}
 }
 
-// Two assertions at the same signature counter, finished at once: only one
-// signs in; the other is refused as a clone, as a key used from two places
-// would be.
+// Two assertions at the same signature counter, finished at once: neither
+// keeps a session. One is refused as a clone, as a key used from two places
+// would be, which marks the passkey and ends its sessions. The other either
+// got its session first (200, then ended by the marking) or reached session
+// creation after the marking and is refused too (store.CreateSessionWith).
+// Which one happens is timing, so both are accepted; the outcome is not.
 func TestPasskeyConcurrentUsesAtOneCounter(t *testing.T) {
 	e := newPasskeyEnv(t)
 	e.user("ann@x.io", auth.RoleEngineer)
@@ -1381,12 +1384,24 @@ func TestPasskeyConcurrentUsesAtOneCounter(t *testing.T) {
 		switch {
 		case code == 200:
 			ok++
+			if code := both[i].s.do("GET", "/api/v1/auth/me", nil, nil); code != 401 {
+				t.Errorf("the sign-in that got a session still has it: %d", code)
+			}
 		case code == 401 && outs[i].Error.Code == "passkey_clone_warning":
 			clone++
 		}
 	}
-	if ok != 1 || clone != 1 {
+	if ok > 1 || clone < 1 || ok+clone != 2 {
 		t.Fatalf("two sign-ins at one counter: %v %+v", codes, outs)
+	}
+	var marked bool
+	var sessions int
+	if err := e.st.Pool.QueryRow(context.Background(), `SELECT clone_warning_at IS NOT NULL,
+		(SELECT count(*) FROM sessions s WHERE s.mfa_credential_id = c.id) FROM webauthn_credentials c`).Scan(&marked, &sessions); err != nil {
+		t.Fatal(err)
+	}
+	if !marked || sessions != 0 {
+		t.Errorf("after two sign-ins at one counter: marked %v, %d sessions with the passkey", marked, sessions)
 	}
 }
 

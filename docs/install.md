@@ -215,7 +215,7 @@ Each person sets up their second factors under **Your account → Two-factor met
 
 - Attestation is `none`: Stackurity does not ask which make or model of device holds the key.
 - User verification is `preferred` when registering and after a password, and `required` for passkey sign-in without a password.
-- Each passkey's signature counter is checked. A counter that does not go up (when the device keeps one; synced passkeys send 0) can mean the key was copied: the sign-in is refused, logged, recorded as `auth.passkey_clone_warning`, the passkey is marked on the page, the sessions signed in or confirmed with it end, and the person is emailed. Two sign-ins with the same counter at once count as that too: only one is accepted.
+- Each passkey's signature counter is checked. A counter that does not go up (when the device keeps one; synced passkeys send 0) can mean the key was copied: the sign-in is refused, logged, recorded as `auth.passkey_clone_warning`, the passkey is marked on the page, the sessions signed in or confirmed with it end, and the person is emailed. Two sign-ins with the same counter at once count as that too: one is refused, and the other keeps no session.
 - Each challenge is kept on the server, bound to the browser by a short-lived cookie, and used once, within five minutes.
 - An account can have up to 20 passkeys; only their public keys are stored, never the private keys.
 - The `Permissions-Policy` header allows passkeys (`publickey-credentials-get` and `-create`) for the dashboard's own origin only.
