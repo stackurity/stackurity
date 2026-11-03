@@ -960,6 +960,16 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 		} else if n > 0 {
 			log.Info("assistant conversations deleted after 30 days", "count", n)
 		}
+		// Ask Stackurity feedback: conversations left after a failed answer,
+		// snapshots after 90 days, feedback after a year.
+		if _, err := st.DetectAskAbandoned(ctx); err != nil {
+			return err
+		}
+		if snaps, rows, err := st.PurgeAskFeedback(ctx); err != nil {
+			return err
+		} else if snaps+rows > 0 {
+			log.Info("assistant feedback purged", "snapshots", snaps, "rows", rows)
+		}
 		// Connect PagerDuty steps nobody finished, with their tokens.
 		if err := st.PurgePagerDutyConnects(ctx); err != nil {
 			return err
@@ -1422,6 +1432,15 @@ func registerIntel(w *worker.Worker, st *store.Store, dataDir string, log *slog.
 	w.Every("enqueue-due-feeds", time.Minute, enqueueDueFeeds)
 	// Affected entries no advisory refers to any more (advisories changed or
 	// withdrawn). It reads every package row once, so daily.
+	// Ask Stackurity's model-call log: daily totals for each finished day,
+	// detailed rows after 90 days, daily totals after two years.
+	w.Every("ask-calls-rollup", 24*time.Hour, func(ctx context.Context) error {
+		n, daily, err := st.RollUpAskAPICalls(ctx, time.Now())
+		if err == nil && n+daily > 0 {
+			log.Info("assistant call log pruned", "detailed_rows", n, "daily_rows", daily)
+		}
+		return err
+	})
 	w.Every("prune-affected-values", 24*time.Hour, func(ctx context.Context) error {
 		n, err := st.PruneAffectedValues(ctx)
 		if n > 0 {

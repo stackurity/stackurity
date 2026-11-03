@@ -2215,7 +2215,38 @@ Deletes one of the caller's conversations (404 for anyone else's).
 
 **Who:** a browser session
 
-Asks a question: `{"text", "page": {"kind": "finding" | "asset" | "component" | "fix_group", "id"}}` (`page` optional; one the caller cannot read is ignored). The answer streams as server-sent events: `tool` (`{"tool": "Reading issue #12"}`), `text` (a piece of the answer), `reset` (drop the text so far: a refusal, or a fallback model took over), then `done` (`stop_reason`, `questions_used`, `questions_limit`, `message`) or `error` (`code`: `spend_cap`, `too_long`, `timeout`, `unavailable`, `internal`). Before the stream starts: 409 `notice_required`; 429 `quota_reached`, `busy` (one question at a time) or `rate_limited` (10 a minute and 60 an hour per person, 300 an hour per organisation); and the errors of `POST /ask/conversations`.
+Asks a question: `{"text", "page": {"kind": "finding" | "asset" | "component" | "fix_group", "id"}}` (`page` optional; one the caller cannot read is ignored). The answer streams as server-sent events: `tool` (`{"tool": "Reading issue #12"}`), `text` (a piece of the answer), `reset` (drop the text so far: a refusal, or a fallback model took over), then `done` (`stop_reason`, `questions_used`, `questions_limit`, `answer_seq`: the answer's `seq` for feedback, `message`, `long_chat`: the conversation is long or has cost a lot, so the dashboard suggests a new one) or `error` (`code`: `spend_cap`, `too_long`, `timeout`, `unavailable`, `internal`). Before the stream starts: 409 `notice_required`; 429 `quota_reached`, `busy` (one question at a time) or `rate_limited` (10 a minute and 60 an hour per person, 300 an hour per organisation); and the errors of `POST /ask/conversations`.
+
+### `POST /api/v1/ask/conversations/{id}/feedback`
+
+**Who:** a browser session (the conversation's own person; 404 for anyone else)
+
+Feedback on an answer or a conversation: `{"seq", "rating", "category", "scope", "text", "consent", "page_path", "viewport"}`.
+- `rating`: `up` or `down`. A thumbs up sends only this.
+- `category` (what was wrong): `wrong`, `misunderstood`, `incomplete`, `slow`, `wrong_data` (didn't use my data, or looked at the wrong asset), `formatting` or `other`.
+- `scope`: `answer` (the default; `seq` names the answer, from `done.answer_seq` or the conversation's messages), `chat` (the whole conversation) or `ui` (the panel's look and controls).
+- `text`: what they expected, up to 2,000 characters.
+- `consent`: share this conversation with the Stackurity team. With it, a snapshot of the messages' visible text is kept 90 days: for `answer`, the answer and the question before it; otherwise the last 40 messages. Credentials and email addresses are removed first, and the snapshot survives the person deleting the conversation. Without consent, only the category, text and metadata are kept.
+- `page_path` (any query is dropped) and `viewport` (`WIDTHxHEIGHT`) are filled in by the panel.
+
+201 with `id`. 30 an hour per person. Feedback rows are deleted after a year. Organisations cannot list feedback; the Stackurity team reviews it (below).
+
+### `POST /api/v1/ask/feedback`
+
+**Who:** a browser session
+
+Feedback on the panel itself from a panel with no conversation yet: as above with `scope` `ui` (anything else is 400), no `seq` and no snapshot.
+
+#### Signals recorded without asking
+
+Each question also records, as metadata only (no text, never a snapshot), the signals that something went wrong:
+- `rephrased`: the question repeats one of the person's two previous questions in other words (at least 3 significant words each, word overlap of 60% or more).
+- `not_found`: the answer was a refusal, or says in its first 600 characters that it could not find or understand something.
+- `tool_error`: a tool the model called failed.
+- `stopped`: the person pressed Stop.
+- `abandoned`: the conversation's last answer failed (stopped, an error, a refusal, cut short, or a `stopped` or `not_found` signal) and nobody asked again for 30 minutes. This is found by the hourly housekeeping, looking back 6 hours.
+
+Each signal is recorded once per conversation, message and kind.
 
 ### `GET /api/v1/ask/settings`
 
@@ -2235,11 +2266,59 @@ Asks a question: `{"text", "page": {"kind": "finding" | "asset" | "component" | 
 
 Deletes every conversation in the organisation, whoever had it, and answers how many (`deleted`). An admin can delete conversations but never read them. Audited as `ask.conversations_deleted`.
 
+### `GET /api/v1/ask/usage/calls`
+
+**Who:** admin
+
+This organisation's Ask Stackurity model calls, newest first: one row per call (an answer's model round or a summary of a long conversation). Fields: `id`, `created_at`, `workspace_id`, `user_id`, `conversation_id` (null once the conversation is deleted), `kind` (`answer` or `summary`), `model`, `prompt_version`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `cost_micros`, `latency_ms`, `tool_calls`, `tool_names`, `history_turns_sent`, `summary_used`, `stop_reason`, `error_code` (`canceled`, `timeout`, `unavailable`, `rejected`, `error` or empty), `request_id`. Metadata only: never a question, an answer, tool results or a summary. Query: `since`, `until` (RFC 3339), `limit` (default 1000, at most 10000), `before_id` (next page), `format=csv` (a CSV file of the same columns). Detailed rows are kept 90 days; daily totals per organisation, model and kind are kept two years.
+
 ### `GET /api/v1/admin/ask`
 
 **Who:** instance admin
 
 `configured`, `provider`, `default_model`, `effort`, `global_spend_cap_micros` and `spend_this_month_micros` across every organisation.
+
+### `GET /api/v1/admin/ask/feedback`
+
+**Who:** instance admin, or a feedback review token
+
+Feedback from every organisation, newest first: `items` and `next_before` (pass it as `before` for the next page). Filters: `status` (`new`, `triaged`, `fixed`, `wontfix`), `kind` (`explicit`, `implicit`), `rating`, `category` (a category or a signal), `workspace_id`, `since` (a date or an RFC 3339 time), `prompt_version` (to compare ratings before and after a prompt change), `limit` (1 to 200, default 50). Each row: `id`, `workspace_id`, `user_id`, `conversation_id`, `message_id`, `kind`, `rating`, `category`, `scope`, `text`, `consent`, `snapshot`, `prompt_version`, `model`, `usage_call_id` (the model call that produced the answer, while its call record is kept), `page_path`, `viewport`, `status`, `resolution_notes`, `created_at`, `updated_at`. An organisation's admins never see this.
+
+### `GET /api/v1/admin/ask/feedback/{id}`
+
+**Who:** instance admin, or a feedback review token
+
+One row, as in the list.
+
+### `PATCH /api/v1/admin/ask/feedback/{id}`
+
+**Who:** instance admin, or a feedback review token
+
+`{"status", "resolution_notes"}` (either or both; notes up to 4,000 characters). Audited as `ask.feedback_reviewed`.
+
+### `POST /api/v1/admin/ask/review-tokens`
+
+**Who:** instance admin
+
+Makes a feedback review token, for an automated reviewer that reads and triages feedback without an operator's full rights. `{"name", "expires_in_days"}` (0: never; up to 366) answers 201 with `token` and `secret`. The secret starts `stkfr_` and is shown once; only its SHA-256 hash is kept. A review token is not tied to an organisation or a user. It works only on `GET /admin/ask/feedback`, `GET /admin/ask/feedback/{id}` and `PATCH /admin/ask/feedback/{id}`; any other request with it is 403, and `/mcp` refuses it. Audited as `ask.review_token_created`.
+
+### `GET /api/v1/admin/ask/review-tokens`
+
+**Who:** instance admin
+
+The feedback review tokens: `items` (`id`, `name`, `prefix`, `created_by`, `created_at`, `expires_at`, `last_used_at`, `revoked_at`); never the secrets.
+
+### `DELETE /api/v1/admin/ask/review-tokens/{id}`
+
+**Who:** instance admin
+
+Revokes a feedback review token at once. Audited as `ask.review_token_revoked`.
+
+### `GET /api/v1/admin/ask/calls`
+
+**Who:** instance admin
+
+Every organisation's Ask Stackurity model calls on this server, with the same fields and query as `GET /api/v1/ask/usage/calls`.
 
 ## AI assistants, OAuth and MCP
 

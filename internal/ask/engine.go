@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -65,6 +66,12 @@ type Outcome struct {
 	StopReason string
 	CostMicros int64
 	Usage      []ModelUsage
+	// ToolErrors counts tools that ran and failed (not those skipped for
+	// the budget or a stop), for the implicit feedback signal.
+	ToolErrors int
+	// LongChat: the conversation has had many questions or cost a lot;
+	// the panel suggests a new chat.
+	LongChat bool
 }
 
 // ErrTooLong is a conversation that grew too long to continue.
@@ -106,10 +113,30 @@ func (e *Engine) Ask(ctx context.Context, q Question, emit func(Event)) (Outcome
 	if err != nil {
 		return out, err
 	}
-	msgs := make([]json.RawMessage, 0, len(history)+2)
-	for _, m := range history {
-		msgs = append(msgs, m.Content)
+	// The history budget (history.go): a summary of the earlier turns
+	// once the history is too long, and the recent turns as they are.
+	plan := planHistory(c, history)
+	summary := c.Summary
+	if len(plan.Summarise) > 0 {
+		emit(Event{Kind: "tool", Tool: "Summarising the earlier conversation"})
+		s, err := e.summarise(ctx, q, plan)
+		switch {
+		case err == nil:
+			summary = s
+		case errors.Is(err, store.ErrAskSpendCap) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded):
+			return out, err
+		default:
+			// Not fatal: this question sends its whole history instead,
+			// and the next one tries the summary again.
+			e.log().Warn("assistant: summarising a conversation failed; sending its history", "err", err)
+			plan = historyPlan{Tail: append(plan.Summarise, plan.Tail...)}
+		}
 	}
+	spec := callSpec{kind: "answer", model: c.Model, maxTokens: DefaultMaxTokens, historyTurns: len(exchanges(plan.Tail)), summaryUsed: summary != ""}
+	if len(plan.Tail) == 0 {
+		spec.historyTurns = 0
+	}
+	msgs := historyMessages(summary, plan.Tail)
 	var page json.RawMessage
 	if q.Page != nil {
 		page, _ = json.Marshal(q.Page)
@@ -120,9 +147,8 @@ func (e *Engine) Ask(ctx context.Context, q Question, emit func(Event)) (Outcome
 	}
 	msgs = append(msgs, um)
 
-	model := c.Model
 	for round := 1; ; round++ {
-		res, cost, err := e.call(ctx, q, model, msgs, emit)
+		res, cost, err := e.call(ctx, q, spec, msgs, emit)
 		if err != nil {
 			// A call that ended early is still paid for: the caller
 			// must not treat the question as never reaching the model.
@@ -139,7 +165,7 @@ func (e *Engine) Ask(ctx context.Context, q Question, emit func(Event)) (Outcome
 			prompt = max(prompt, u.PromptTokens())
 		}
 		am := store.AskMessage{Role: "assistant", Content: res.Message, VisibleText: res.Text, Model: res.ServedBy, StopReason: res.StopReason,
-			CostMicros: cost, RequestID: res.RequestID}
+			CostMicros: cost, RequestID: res.RequestID, PromptVersion: PromptVersion}
 		for _, u := range res.Usage {
 			am.Usage.Input += u.Input
 			am.Usage.CacheWrite += u.CacheWrite
@@ -161,10 +187,12 @@ func (e *Engine) Ask(ctx context.Context, q Question, emit func(Event)) (Outcome
 			if res.StopReason == "refusal" {
 				out.Text = ""
 			}
+			e.markLongChat(sctx, q, &out)
 			return out, nil
 		}
 		last := round >= MaxRounds || prompt > MaxContextTokens
-		results := e.runTools(ctx, q.API, res.ToolUses, last, emit)
+		results, failed := e.runTools(ctx, q.API, res.ToolUses, last, emit)
+		out.ToolErrors += failed
 		tm := userMessage(results...)
 		if _, err := e.Store.AppendAskMessage(sctx, q.UserID, c.ID, store.AskMessage{Role: "user", Content: tm}, 0); err != nil {
 			return out, err
@@ -178,25 +206,55 @@ func (e *Engine) Ask(ctx context.Context, q Question, emit func(Event)) (Outcome
 			if prompt > MaxContextTokens {
 				out.StopReason = "too_long"
 			}
+			e.markLongChat(sctx, q, &out)
 			return out, nil
 		}
 	}
 }
 
-// call holds spend for one model call, makes it and settles the hold.
-func (e *Engine) call(ctx context.Context, q Question, model string, msgs []json.RawMessage, emit func(Event)) (*Result, int64, error) {
+// markLongChat sets out.LongChat when the conversation has had many
+// questions or cost a lot: the panel then suggests a new chat.
+func (e *Engine) markLongChat(ctx context.Context, q Question, out *Outcome) {
+	n, cost, err := e.Store.AskConversationTotals(ctx, q.UserID, q.Conversation.ID)
+	if err != nil {
+		e.log().Warn("assistant: conversation totals", "err", err)
+		return
+	}
+	out.LongChat = e.Config.longChat(n, cost)
+}
+
+// callSpec is one model call's kind and shape.
+type callSpec struct {
+	kind      string // answer or summary
+	model     string
+	maxTokens int
+	// system and noTools: the summary call's own prompt, without tools.
+	system  string
+	noTools bool
+	// historyTurns and summaryUsed describe the history sent, for the
+	// call record.
+	historyTurns int
+	summaryUsed  bool
+}
+
+// call holds spend for one model call, makes it, settles the hold and
+// records the call (ask_api_calls and one log line, metadata only).
+func (e *Engine) call(ctx context.Context, q Question, spec callSpec, msgs []json.RawMessage, emit func(Event)) (*Result, int64, error) {
 	var size int
 	for _, m := range msgs {
 		size += len(m)
 	}
 	// About three bytes a token, plus the tools and system prompt.
 	prompt := int64(size/3 + 6000)
-	holdMicros := e.Prices.HoldFor(model, prompt, DefaultMaxTokens, e.Model.Fallbacks())
+	fallbacks := e.Model.Fallbacks() && spec.kind == "answer"
+	holdMicros := e.Prices.HoldFor(spec.model, prompt, int64(spec.maxTokens), fallbacks)
 	hold, err := e.Store.HoldAskSpend(ctx, holdMicros, q.SpendCapMicros, e.Config.GlobalCapMicros)
 	if err != nil {
 		return nil, 0, err
 	}
-	res, err := e.Model.Stream(ctx, Call{Model: model, Effort: e.Config.Effort, MaxTokens: DefaultMaxTokens, Messages: msgs}, func(ev StreamEvent) {
+	started := e.now()
+	res, err := e.Model.Stream(ctx, Call{Model: spec.model, Effort: e.Config.Effort, MaxTokens: spec.maxTokens, Messages: msgs,
+		System: spec.system, NoTools: spec.noTools, NoFallbacks: !fallbacks}, func(ev StreamEvent) {
 		switch {
 		case ev.Reset:
 			emit(Event{Kind: "reset"})
@@ -226,10 +284,65 @@ func (e *Engine) call(ctx context.Context, q Question, model string, msgs []json
 	} else {
 		e.alerts(sctx, lvl)
 	}
+	e.recordCall(sctx, q, spec, res, cost, e.now().Sub(started), err)
 	if err != nil {
 		return res, cost, err
 	}
 	return res, cost, nil
+}
+
+// recordCall stores one call's metadata (never text) and logs it on one
+// line. It is written with the request, not buffered: a failure to record
+// is logged and does not fail the question.
+func (e *Engine) recordCall(ctx context.Context, q Question, spec callSpec, res *Result, cost int64, latency time.Duration, callErr error) {
+	uid, cid := q.UserID, q.Conversation.ID
+	c := store.AskAPICall{UserID: &uid, ConversationID: &cid, Kind: spec.kind, Model: spec.model, PromptVersion: PromptVersion,
+		CostMicros: cost, LatencyMS: latency.Milliseconds(), HistoryTurnsSent: spec.historyTurns, SummaryUsed: spec.summaryUsed,
+		ErrorCode: errorCode(callErr)}
+	if res != nil {
+		if res.ServedBy != "" {
+			c.Model = res.ServedBy
+		}
+		c.StopReason, c.RequestID = res.StopReason, res.RequestID
+		if res.Partial {
+			c.StopReason = "partial"
+		}
+		for _, u := range res.Usage {
+			c.InputTokens += u.Input
+			c.OutputTokens += u.Output
+			c.CacheReadTokens += u.CacheRead
+			c.CacheWriteTokens += u.CacheWrite
+		}
+		for _, t := range res.ToolUses {
+			c.ToolNames = append(c.ToolNames, t.Name)
+		}
+		c.ToolCalls = len(res.ToolUses)
+	}
+	if _, err := e.Store.RecordAskAPICall(ctx, c); err != nil {
+		e.log().Error("assistant: recording a model call", "err", err)
+	}
+	e.log().Info("ask call", "kind", c.Kind, "model", c.Model, "prompt_version", c.PromptVersion, "conversation", cid,
+		"input_tokens", c.InputTokens, "output_tokens", c.OutputTokens, "cache_read_tokens", c.CacheReadTokens,
+		"cache_write_tokens", c.CacheWriteTokens, "cost_micros", c.CostMicros, "latency_ms", c.LatencyMS,
+		"tool_calls", c.ToolCalls, "tools", strings.Join(c.ToolNames, ","), "history_turns", c.HistoryTurnsSent,
+		"summary_used", c.SummaryUsed, "stop_reason", c.StopReason, "error", c.ErrorCode)
+}
+
+// errorCode names how a call failed ("" when it did not).
+func errorCode(err error) string {
+	switch {
+	case err == nil:
+		return ""
+	case errors.Is(err, context.Canceled):
+		return "canceled"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "timeout"
+	case errors.Is(err, ErrUnavailable):
+		return "unavailable"
+	case errors.Is(err, ErrRejected):
+		return "rejected"
+	}
+	return "error"
 }
 
 // alerts tells Alert about a cap reached for the first time this month.
@@ -271,8 +384,9 @@ const MaxToolsPerRound = 8
 // runTools runs the tools the model asked for, as the person, and returns
 // their results in order, all for one user message. last: the question's
 // budget is used up, so each result says so instead of running.
-func (e *Engine) runTools(ctx context.Context, api mcp.API, uses []ToolUse, last bool, emit func(Event)) []map[string]any {
+func (e *Engine) runTools(ctx context.Context, api mcp.API, uses []ToolUse, last bool, emit func(Event)) ([]map[string]any, int) {
 	out := make([]map[string]any, len(uses))
+	ran := make([]bool, len(uses))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, maxParallelTools)
 	for i, u := range uses {
@@ -288,6 +402,7 @@ func (e *Engine) runTools(ctx context.Context, api mcp.API, uses []ToolUse, last
 			continue
 		}
 		emit(Event{Kind: "tool", Tool: toolLabel(u)})
+		ran[i] = true
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -297,7 +412,13 @@ func (e *Engine) runTools(ctx context.Context, api mcp.API, uses []ToolUse, last
 		}()
 	}
 	wg.Wait()
-	return out
+	failed := 0
+	for i, r := range out {
+		if ran[i] && r["is_error"] == true {
+			failed++
+		}
+	}
+	return out, failed
 }
 
 func toolResult(id, text string, isErr bool) map[string]any {
