@@ -169,7 +169,7 @@ func (s *Server) applyMFAPolicy(ctx context.Context, p *Principal) error {
 //
 //   - A session whose sign-in never checked the account's factors (single
 //     sign-on, which the policy otherwise leaves alone; an invitation; a
-//     session from before migration 0086) confirms one first: otherwise
+//     session from before migration 0087) confirms one first: otherwise
 //     control of one organisation's identity provider and the password
 //     would add a passkey or new recovery codes that work everywhere. A
 //     password, passkey or provider sign-in checked them (one that has
