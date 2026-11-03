@@ -7,7 +7,6 @@ import {
   type EnrollmentCreated,
   type FirstResult,
   type FixGroup,
-  type FixGroupSummary,
   type List,
   type Onboarding,
   type Project,
@@ -21,7 +20,7 @@ import { CheckApps, CheckDocker, InstallCommandTabs, installCommand, type Server
 import { InviteForm } from "../components/Invite";
 import { CodeBlock, ErrorBox, Loading, Notice } from "../components/ui";
 import { FirstCheckDone, FirstCheckProgress } from "../components/FirstCheck";
-import { firstCheckNumbers, firstCheckPhase, SETUP_STEPS, type FirstCheckNumbers, type FirstCheckPhase, type SetupStep, type Source } from "../firstCheck";
+import { countFixes, firstCheckNumbers, firstCheckPhase, SETUP_STEPS, type FirstCheckNumbers, type FirstCheckPhase, type SetupStep, type Source } from "../firstCheck";
 import {
   browserTimeZone,
   choicesOf,
@@ -462,8 +461,9 @@ async function uploadSbom(file: File, assetName: string, projectId: number): Pro
 const POLL_MS = 3000;
 /** While vulnerability data syncs: it takes minutes, not seconds. */
 const POLL_FEEDS_MS = 10_000;
-/** Fixes are counted per asset; more than this many new assets is unusual here. */
-const MAX_FIX_ASSETS = 5;
+/** Fixes are read a page at a time, at most this many pages (the project's fixes, not only the new assets'). */
+const FIX_PAGE = 500;
+const MAX_FIX_PAGES = 4;
 
 interface FirstCheck {
   results: FirstResult[];
@@ -500,9 +500,15 @@ function useFirstCheck(project: Project, since: string) {
         let x = firstCheckNumbers(results, coverage?.items, null);
         phase = firstCheckPhase(x);
         if (phase === "feeds" || phase === "done") {
-          const ids = results.slice(0, MAX_FIX_ASSETS).map((a) => a.id);
-          const sums = await Promise.all(ids.map((id) => api.getAll<FixGroupSummary>("/fix-groups/summary", { ...scope, asset_id: id })));
-          fixes = sums.reduce((a, s) => a + s.groups, 0);
+          // One entry per fix, its places on every asset: the same fix on
+          // two new assets counts once.
+          const groups: FixGroup[] = [];
+          for (let page = 0; page < MAX_FIX_PAGES; page++) {
+            const l = await api.getAll<List<FixGroup>>("/fix-groups", { ...scope, group_by: "fix", limit: FIX_PAGE, offset: page * FIX_PAGE });
+            groups.push(...(l.items ?? []));
+            if (groups.length >= l.total || (l.items ?? []).length === 0) break;
+          }
+          fixes = countFixes(groups, results.map((a) => a.id));
           x = firstCheckNumbers(results, coverage?.items, fixes);
           // The top fix: the most urgent on the asset with most issues.
           const worst = [...results].sort((a, b) => b.issues - a.issues)[0];

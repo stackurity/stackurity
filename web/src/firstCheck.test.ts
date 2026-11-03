@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { SETUP_STEPS, firstCheckNumbers, firstCheckPhase, milestoneText, milestoneTiles, phaseText, progressRows } from "./firstCheck.ts";
-import type { AssetCoverageRow, FirstResult } from "./api.ts";
+import { SETUP_STEPS, countFixes, firstCheckNumbers, firstCheckPhase, milestoneText, milestoneTiles, phaseText, progressRows } from "./firstCheck.ts";
+import type { AssetCoverageRow, FirstResult, FixGroup, FixPlace } from "./api.ts";
 
 const result = (p: Partial<FirstResult> = {}): FirstResult => ({
   id: 7,
@@ -148,4 +148,28 @@ test("coverage counts only the assets that reported, and only once every one has
   assert.equal(partial.coverage, null);
   assert.equal(firstCheckPhase(partial), "done");
   assert.equal(milestoneTiles(partial)[3].value, "–");
+});
+
+const place = (asset_id: number): FixPlace => ({ group_id: `${asset_id}:x`, asset_id, asset_name: `a${asset_id}`, asset_kind: "host", environment: "", finding_count: 1 });
+
+test("fixes recommended: the same fix on two new assets counts once", () => {
+  // Grouped by fix: one entry with a place on each asset.
+  const merged = [{ id: "1:pkg:lodash", asset_id: 1, fix_key: "pkg:npm/lodash@4.17.21", places: [place(1), place(2)] }] as FixGroup[];
+  assert.equal(countFixes(merged, [1, 2]), 1);
+  // Grouped by asset: two entries with the same fix_key.
+  const split = [
+    { id: "1:pkg:lodash", asset_id: 1, fix_key: "pkg:npm/lodash@4.17.21", places: null },
+    { id: "2:pkg:lodash", asset_id: 2, fix_key: "pkg:npm/lodash@4.17.21", places: null },
+  ] as FixGroup[];
+  assert.equal(countFixes(split, [1, 2]), 1);
+  // Fixes only on older assets of the project are not counted; distinct fixes are.
+  const mixed = [
+    ...merged,
+    { id: "2:security_updates", asset_id: 2, fix_key: "", places: null },
+    { id: "99:security_updates", asset_id: 99, fix_key: "", places: null },
+    { id: "3:pkg:axios", asset_id: 3, fix_key: "pkg:npm/axios@1.0.0", places: [place(3), place(99)] },
+  ] as FixGroup[];
+  assert.equal(countFixes(mixed, [1, 2]), 2);
+  assert.equal(countFixes(mixed, [1, 2, 3]), 3);
+  assert.equal(countFixes([], [1]), 0);
 });

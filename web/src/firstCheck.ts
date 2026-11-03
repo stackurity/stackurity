@@ -198,6 +198,21 @@ export function milestoneText(x: FirstCheckNumbers): string {
   return `${cov}${fixes}`.trim();
 }
 
+/**
+ * Fixes recommended for these assets: the fixes (GET /fix-groups?group_by=fix)
+ * with a place on one of them, each counted once. The same fix on two assets
+ * is one fix, also when the list is grouped by asset (same fix_key).
+ */
+export function countFixes(groups: Pick<FixGroup, "id" | "asset_id" | "fix_key" | "places">[], assetIds: number[]): number {
+  const ids = new Set(assetIds);
+  const keys = new Set<string>();
+  for (const g of groups) {
+    const on = g.places && g.places.length > 0 ? g.places.map((p) => p.asset_id) : [g.asset_id];
+    if (on.some((id) => ids.has(id))) keys.add(g.fix_key || g.id);
+  }
+  return keys.size;
+}
+
 /** The link to a fix's page. */
 export function fixLink(g: Pick<FixGroup, "id">): string {
   return `/fixes/${encodeURIComponent(g.id)}`;
