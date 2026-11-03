@@ -7,6 +7,7 @@ import { humanize, plural } from "../format";
 import { Badge, EscalationBadge, PriorityBadge, SosBadge, StateBadge } from "../components/Badge";
 import { Table, type Column } from "../components/Table";
 import { EmptyState, ErrorBox, Loading, PageHeader, Pager, RelativeTime } from "../components/ui";
+import { incidentsEmpty } from "../emptyCopy";
 import { IssueLinks } from "../components/IssueLinks";
 
 const LIMIT = 50;
@@ -45,7 +46,7 @@ export function IncidentsPage() {
     setParams(next, { replace: true });
   };
 
-  const { projectOnly } = useAuth();
+  const { projectOnly, can } = useAuth();
   const teams = useLoad(() => (projectOnly ? Promise.resolve(null) : api.get<List<Team>>("/teams")), [projectOnly]);
   const assets = useLoad(() => api.get<List<Asset>>("/assets", { limit: 200 }), []);
   const sosOpen = useLoad(() => api.get<List<Incident>>("/incidents", { status: "open", sos: "true", limit: 5 }), []);
@@ -206,12 +207,7 @@ export function IncidentsPage() {
       <ErrorBox error={res.error} title="Could not load incidents" />
       {!res.data && !res.error && <Loading />}
       {res.data && res.data.items.length === 0 && (
-        <EmptyState title={filtered ? "No incidents match these filters" : "No open incidents"} help="incidents">
-          <p>
-            Incidents open automatically for prioritised findings and for system problems. Configure who is told under{" "}
-            <Link to="/integrations">Integrations</Link>.
-          </p>
-        </EmptyState>
+        <EmptyState {...incidentsEmpty(filtered, assets.data?.items.length === 0, can("admin"))} help="incidents" />
       )}
       {res.data && res.data.items.length > 0 && (
         <>

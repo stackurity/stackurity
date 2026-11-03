@@ -3,6 +3,7 @@ import { api, type SecretInfo } from "../../api";
 import { useAction, useLoad } from "../../hooks";
 import { Table, type Column } from "../../components/Table";
 import { Card, Code, EmptyState, ErrorBox, Loading, Notice, PageHeader, RelativeTime } from "../../components/ui";
+import { secretsEmpty } from "../../emptyCopy";
 import { confirmAction } from "../../components/ConfirmDialog";
 
 interface SecretList {
@@ -95,7 +96,10 @@ export function SecretsPage() {
       )}
       {!res.data && !res.error && <Loading />}
       {res.data && res.data.items.length === 0 && editing !== "" && (
-        <EmptyState title="No secrets yet">Add one, then reference it from an integration or a notification channel.</EmptyState>
+        <EmptyState
+          {...secretsEmpty(res.data.enabled)}
+          action={res.data.enabled ? { label: "Add secret", permitted: true, onClick: () => setEditing("") } : undefined}
+        />
       )}
       {res.data && res.data.items.length > 0 && (
         <Table
