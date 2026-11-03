@@ -154,7 +154,7 @@ func (r *Runner) Scan(ctx context.Context, in *store.Integration) (*model.Observ
 	case p.Removed:
 		return nil, fmt.Errorf("%w: the project is no longer in the connected GitLab group", ErrInactive)
 	case p.ConnectionStatus != "active":
-		return nil, fmt.Errorf("%w: the GitLab connection needs attention (Settings → Integrations → GitLab)", ErrInactive)
+		return nil, fmt.Errorf("%w: the GitLab connection needs attention (Integrations → GitLab)", ErrInactive)
 	case !InGroup(p.Path, p.GroupPath):
 		return nil, fmt.Errorf("%w: the project's path %q is not inside the group %q", ErrInactive, clip(p.Path, 100), clip(p.GroupPath, 100))
 	}

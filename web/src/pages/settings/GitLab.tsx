@@ -6,12 +6,12 @@ import { ErrorBox, RelativeTime } from "../../components/ui";
 
 /*
  * Connect GitLab (docs/gitlab.md): the button on the Git repository card,
- * and the connected GitLab groups under Settings ▸ Integrations.
+ * and the connected GitLab groups under Integrations.
  */
 
 /** Sends the browser to GitLab's consent page for an authorisation Stackurity started. */
 async function goToGitLab(path: string, body: object): Promise<void> {
-  const r = await api.post<{ url: string }>(path, { return_to: "/settings/integrations", ...body });
+  const r = await api.post<{ url: string }>(path, { return_to: "/integrations", ...body });
   if (r?.url) window.location.assign(r.url);
 }
 

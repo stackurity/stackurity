@@ -299,7 +299,7 @@ func (s *Server) signedIn(r *http.Request) bool {
 // safeReturn keeps a dashboard path only, never another site.
 func safeReturn(p string) string {
 	if !strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") || strings.ContainsAny(p, "\\\r\n") || len(p) > 300 {
-		return "/settings/integrations"
+		return "/integrations"
 	}
 	return p
 }

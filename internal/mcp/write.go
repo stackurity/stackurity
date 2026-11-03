@@ -553,8 +553,10 @@ func init() {
 						return nil, err
 					}
 					return map[string]any{"enrollment_id": res.Enrollment["id"], "expires_at": res.Enrollment["expires_at"], "servers": uses,
-						"install_command": installCommand(s.BaseURL, res.Code),
-						"note": "Run the command as root on each Linux server. The code is shown only now; each server appears in list_assets " +
+						"install_command":         installCommand(s.BaseURL, res.Code),
+						"windows_install_command": windowsInstallCommand(s.BaseURL, res.Code),
+						"note": "Run install_command as root on each Linux server, or windows_install_command in PowerShell run as administrator " +
+							"on each Windows server. The code is shown only now; each server appears in list_assets " +
 							"after its first report, usually within a minute."}, nil
 				}}, nil
 		}},
@@ -799,7 +801,7 @@ func init() {
 						return map[string]any{"result": "Invitation emailed to " + email + "."}, nil
 					}
 					return map[string]any{"result": "Invitation created for " + email + ", but this server does not send email. To get a link to " +
-						"pass on privately, invite them again in Stackurity (Settings, Projects and access, the project, Invite by email): that replaces this invitation and shows the link once."}, nil
+						"pass on privately, invite them again in Stackurity (Assets, Projects, the project, Invite by email): that replaces this invitation and shows the link once."}, nil
 				}}, nil
 		}},
 	}
@@ -855,12 +857,36 @@ func assignee(ctx context.Context, api API, v string) (int64, string, error) {
 func installCommand(base, code string) string {
 	base = strings.TrimRight(base, "/")
 	env := "STACKURITY_ENROLL_CODE=" + code
-	if u, err := url.Parse(base); err == nil && u.Scheme == "http" {
-		switch u.Hostname() {
-		case "localhost", "127.0.0.1", "::1":
-		default:
-			env += " STACKURITY_ALLOW_HTTP=1"
-		}
+	if insecureBase(base) {
+		env += " STACKURITY_ALLOW_HTTP=1"
 	}
 	return "curl -fsSL " + base + "/install/agent.sh | sudo " + env + " sh"
+}
+
+// windowsInstallCommand is the dashboard's one-line installer for Windows
+// (PowerShell as administrator). The first statement turns on TLS 1.2,
+// which Windows PowerShell 5.1 on Windows Server 2016 does not offer by
+// default.
+func windowsInstallCommand(base, code string) string {
+	base = strings.TrimRight(base, "/")
+	env := "$env:STACKURITY_ENROLL_CODE = '" + code + "'; "
+	if insecureBase(base) {
+		env += "$env:STACKURITY_ALLOW_HTTP = '1'; "
+	}
+	return "[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072; " + env +
+		"irm " + base + "/install/agent.ps1 | iex"
+}
+
+// insecureBase reports whether the installers must be told to accept
+// plain HTTP: anything but a local port.
+func insecureBase(base string) bool {
+	u, err := url.Parse(base)
+	if err != nil || u.Scheme != "http" {
+		return false
+	}
+	switch u.Hostname() {
+	case "localhost", "127.0.0.1", "::1":
+		return false
+	}
+	return true
 }

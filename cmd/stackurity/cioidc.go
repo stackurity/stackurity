@@ -33,7 +33,7 @@ import (
 // available.
 var errNoCredentials = errors.New(`no token: set STACKURITY_TOKEN or --token-file, or run in CI without a stored secret: ` +
 	`in GitHub Actions give the job "permissions: id-token: write"; in GitLab CI add "id_tokens: STACKURITY_ID_TOKEN: aud: <server URL>" ` +
-	`(an administrator first adds a CI trust for the repository under Settings > Integrations > CI pipeline)`)
+	`(an administrator first adds a CI trust for the repository under Integrations > CI pipeline)`)
 
 // ciIdentity is how this process can prove which CI job it is.
 type ciIdentity struct {

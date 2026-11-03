@@ -179,11 +179,14 @@ export function Tabs<T extends string>({
   value,
   onChange,
   label,
+  idPrefix = "",
 }: {
   tabs: { id: T; label: ReactNode }[];
   value: T;
   onChange: (id: T) => void;
   label: string;
+  /** Prefixes the tab and panel ids, for a page with more than one set of tabs. */
+  idPrefix?: string;
 }) {
   return (
     <div className="tabs" role="tablist" aria-label={label}>
@@ -192,9 +195,9 @@ export function Tabs<T extends string>({
           key={t.id}
           type="button"
           role="tab"
-          id={`tab-${t.id}`}
+          id={`${idPrefix}tab-${t.id}`}
           aria-selected={t.id === value}
-          aria-controls={`panel-${t.id}`}
+          aria-controls={`${idPrefix}panel-${t.id}`}
           className={`tab${t.id === value ? " tab-active" : ""}`}
           onClick={() => onChange(t.id)}
         >

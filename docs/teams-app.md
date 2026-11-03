@@ -1,6 +1,6 @@
 # The Stackurity Teams app ("Add to Teams")
 
-With a Teams app configured on the server, people connect Microsoft Teams without a webhook: **Settings → Integrations → Microsoft Teams → Add to Teams**, add the app to a team in Teams, and send it the code Stackurity shows in the channel that should get the notifications. Stackurity then opens the new integration to choose what to send. Messages are the same Adaptive Cards as before (title, sections, **Open in Stackurity** and **Change these notifications**), posted by the Stackurity bot.
+With a Teams app configured on the server, people connect Microsoft Teams without a webhook: **Integrations → Microsoft Teams → Add to Teams**, add the app to a team in Teams, and send it the code Stackurity shows in the channel that should get the notifications. Stackurity then opens the new integration to choose what to send. Messages are the same Adaptive Cards as before (title, sections, **Open in Stackurity** and **Change these notifications**), posted by the Stackurity bot.
 
 On your own server the app is optional. Without it, Teams integrations use a Workflows webhook as before, and **Add to Teams** is not shown. With it, new Teams integrations use the app; **Advanced: use a Workflows webhook** is still there, and existing webhook integrations keep working unchanged.
 
@@ -59,7 +59,7 @@ You need an Azure subscription for the Azure Bot resource (the Teams channel of 
 
    This writes `stackurity-teams-app.zip` (`scripts/teams-app-package.sh`; `PRIVACY_URL`, `TERMS_URL`, `WEBSITE_URL` and `APP_VERSION` override the manifest's links and version; raise the version for each new upload).
 7. Make the app available in your organisation: in the [Teams admin center](https://admin.teams.microsoft.com), **Teams apps → Manage apps → Upload new app**, and allow it in your app permission policies. Or, where custom app upload is allowed, in Teams **Apps → Manage your apps → Upload an app**. An app uploaded to your organisation's catalogue gets its own app ID there; if **Open Stackurity in Teams** does not find the app, set `STACKURITY_TEAMS_APP_INSTALL_URL` to `https://teams.microsoft.com/l/app/<that ID>`. A service used by many organisations (like Stackurity Cloud) publishes the app to the Teams Store through Partner Center instead.
-8. In Stackurity, **Settings → Integrations → Microsoft Teams → Add to Teams**, follow the two steps, then **Send test**.
+8. In Stackurity, **Integrations → Microsoft Teams → Add to Teams**, follow the two steps, then **Send test**.
 
 To rotate the client secret, add a new one in the Entra app registration, update `STACKURITY_TEAMS_APP_PASSWORD` and restart, then delete the old one. Changing the messaging endpoint needs nothing in Stackurity.
 

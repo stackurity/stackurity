@@ -1,5 +1,5 @@
 /*
- * Settings, AI assistants: the install links, commands and config snippets
+ * Integrations, AI assistants: the install links, commands and config snippets
  * for each assistant, built from the MCP address the server reports
  * (GET /assistants mcp_url, which comes from STACKURITY_BASE_URL). Nothing
  * here names a host: every output is a function of `url`.

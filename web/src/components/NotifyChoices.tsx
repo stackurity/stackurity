@@ -14,7 +14,7 @@ import { ErrorBox } from "./ui";
 import { errorView } from "../errors";
 
 /*
- * Pieces shared by onboarding (step 5) and Settings, Notifications: the two
+ * Pieces shared by onboarding (step 5) and Integrations: the two
  * questions of a route, "Add to Slack", Stackurity's own email recipients and
  * the SMTP provider presets.
  */
