@@ -14,7 +14,7 @@ import (
 
 // Ask Stackurity, the in-app assistant (internal/ask), stores its
 // conversations, its monthly usage and the spend held for model calls in
-// flight here (migration 0086).
+// flight here (migrations 0086 and 0098).
 //
 // Conversations are private to the person who asked. Every query that
 // returns a conversation or its messages takes the person's user id and
@@ -149,7 +149,10 @@ type AskMessage struct {
 	Usage       AskTokens       `json:"-"`
 	CostMicros  int64           `json:"-"`
 	RequestID   string          `json:"-"`
-	CreatedAt   time.Time       `json:"created_at"`
+	// PromptVersion is the system prompt's version (ask.PromptVersion) an
+	// answer was written with ("" for the person's messages).
+	PromptVersion string    `json:"-"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 // AskTokens are the tokens one model call used.
@@ -228,7 +231,7 @@ func (s *Store) AskMessages(ctx context.Context, userID, id int64) ([]AskMessage
 		return nil, err
 	}
 	rows, err := s.Pool.Query(ctx, `SELECT m.seq, m.role, m.content, m.visible_text, m.page, m.model, m.stop_reason,
-		m.input_tokens, m.cache_write_tokens, m.cache_read_tokens, m.output_tokens, m.cost_micros, m.request_id, m.created_at
+		m.input_tokens, m.cache_write_tokens, m.cache_read_tokens, m.output_tokens, m.cost_micros, m.request_id, m.prompt_version, m.created_at
 		FROM ask_messages m JOIN ask_conversations c ON c.id = m.conversation_id
 		WHERE m.conversation_id = $1 AND c.user_id = $2 ORDER BY m.seq`, id, userID)
 	if err != nil {
@@ -240,7 +243,7 @@ func (s *Store) AskMessages(ctx context.Context, userID, id int64) ([]AskMessage
 		var m AskMessage
 		var page []byte
 		if err := rows.Scan(&m.Seq, &m.Role, &m.Content, &m.VisibleText, &page, &m.Model, &m.StopReason,
-			&m.Usage.Input, &m.Usage.CacheWrite, &m.Usage.CacheRead, &m.Usage.Output, &m.CostMicros, &m.RequestID, &m.CreatedAt); err != nil {
+			&m.Usage.Input, &m.Usage.CacheWrite, &m.Usage.CacheRead, &m.Usage.Output, &m.CostMicros, &m.RequestID, &m.PromptVersion, &m.CreatedAt); err != nil {
 			return nil, err
 		}
 		if len(page) > 0 {
@@ -279,10 +282,10 @@ func (s *Store) AppendAskMessage(ctx context.Context, userID, id int64, m AskMes
 			page = m.Page
 		}
 		return tx.QueryRow(ctx, `INSERT INTO ask_messages (conversation_id, workspace_id, seq, role, content, visible_text, page, model, stop_reason,
-			input_tokens, cache_write_tokens, cache_read_tokens, output_tokens, cost_micros, request_id)
-			VALUES ($1, $2, (SELECT COALESCE(max(seq), 0) + 1 FROM ask_messages WHERE conversation_id = $1), $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, left($14, 200))
+			input_tokens, cache_write_tokens, cache_read_tokens, output_tokens, cost_micros, request_id, prompt_version)
+			VALUES ($1, $2, (SELECT COALESCE(max(seq), 0) + 1 FROM ask_messages WHERE conversation_id = $1), $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, left($14, 200), left($15, 40))
 			RETURNING seq`, id, ws, m.Role, m.Content, m.VisibleText, page, m.Model, m.StopReason,
-			m.Usage.Input, m.Usage.CacheWrite, m.Usage.CacheRead, m.Usage.Output, m.CostMicros, m.RequestID).Scan(&seq)
+			m.Usage.Input, m.Usage.CacheWrite, m.Usage.CacheRead, m.Usage.Output, m.CostMicros, m.RequestID, m.PromptVersion).Scan(&seq)
 	})
 	return seq, err
 }

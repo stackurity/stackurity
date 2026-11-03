@@ -139,7 +139,7 @@ func (e *Engine) Ask(ctx context.Context, q Question, emit func(Event)) (Outcome
 			prompt = max(prompt, u.PromptTokens())
 		}
 		am := store.AskMessage{Role: "assistant", Content: res.Message, VisibleText: res.Text, Model: res.ServedBy, StopReason: res.StopReason,
-			CostMicros: cost, RequestID: res.RequestID}
+			CostMicros: cost, RequestID: res.RequestID, PromptVersion: PromptVersion}
 		for _, u := range res.Usage {
 			am.Usage.Input += u.Input
 			am.Usage.CacheWrite += u.CacheWrite
