@@ -807,8 +807,12 @@ func TestStepUpCannotChangeFactorsFromAnotherWorkspace(t *testing.T) {
 	if code := s.do("DELETE", fmt.Sprintf("/api/v1/auth/mfa/passkeys/%d", st.Passkeys[0].ID), map[string]string{"password": pw}, nil); code != 403 {
 		t.Errorf("remove the real passkey from workspace 1: %d", code)
 	}
-	if n := len(mfaStatusOf(t, s).Passkeys); n != 1 {
-		t.Errorf("%d passkeys after the attempts", n)
+	if code := s.do("PATCH", fmt.Sprintf("/api/v1/auth/mfa/passkeys/%d", st.Passkeys[0].ID), map[string]string{"name": "Old key, remove me"}, &out); code != 403 ||
+		out.Error.Code != "mfa_step_up_required" {
+		t.Errorf("rename the real passkey from workspace 1: %d %+v", code, out)
+	}
+	if pks := mfaStatusOf(t, s).Passkeys; len(pks) != 1 || pks[0].Name != "Real key" {
+		t.Errorf("passkeys after the attempts: %+v", pks)
 	}
 }
 
@@ -1430,5 +1434,76 @@ func TestNewRecoveryCodesEndOtherSessions(t *testing.T) {
 	old.hdr = map[string]string{"Cookie": "stackurity_session=" + before}
 	if code := old.do("GET", "/api/v1/auth/me", nil, nil); code != 401 {
 		t.Errorf("the replaced session ID: %d", code)
+	}
+}
+
+// A session started after a second factor records how its sign-in began:
+// a hosted edition's social sign-in is not recorded as a password one,
+// whether the second factor was a code or a passkey. A challenge is used
+// once.
+func TestSecondFactorKeepsTheSignInMethod(t *testing.T) {
+	e := newPasskeyEnv(t)
+	bg := context.Background()
+	e.user("ann@x.io", auth.RoleEngineer)
+	ann := e.login("ann@x.io")
+	a := newAuthenticator()
+	registerPasskey(t, ann, a, "Key")
+	secret := addApp(t, ann)
+	var uid int64
+	if err := e.st.Pool.QueryRow(bg, `SELECT id FROM users WHERE email = 'ann@x.io'`).Scan(&uid); err != nil {
+		t.Fatal(err)
+	}
+	// started begins a sign-in as the edition's social sign-in does.
+	started := func(login string) *session {
+		t.Helper()
+		ch, err := e.st.CreateMFAChallengeFor(bg, uid, login)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := e.anon()
+		s.hdr = map[string]string{"Cookie": "stackurity_mfa=" + ch}
+		return s
+	}
+	latest := func() (login string, passwordLogin bool) {
+		t.Helper()
+		if err := e.st.Pool.QueryRow(bg, `SELECT login_method, password_login FROM sessions WHERE user_id = $1 ORDER BY created_at DESC, token_hash LIMIT 1`, uid).
+			Scan(&login, &passwordLogin); err != nil {
+			t.Fatal(err)
+		}
+		return login, passwordLogin
+	}
+	if _, err := e.st.Pool.Exec(bg, `UPDATE user_mfa SET last_step = 0`); err != nil {
+		t.Fatal(err)
+	}
+	social := started(store.LoginSocial)
+	code := totpAt(t, secret, 30*time.Second)
+	if c := social.do("POST", "/api/v1/auth/mfa/verify", map[string]string{"code": code}, nil); c != 200 {
+		t.Fatalf("social sign-in, app code: %d", c)
+	}
+	if login, pl := latest(); login != store.LoginSocial || !pl {
+		t.Errorf("social sign-in with the app recorded as %q (password_login %v)", login, pl)
+	}
+	// The challenge is gone: a second code with it does nothing.
+	var out apiErr
+	if c := social.do("POST", "/api/v1/auth/mfa/verify", map[string]string{"code": totpAt(t, secret, 60*time.Second)}, &out); c != 401 || out.Error.Code != "mfa_expired" {
+		t.Errorf("the used challenge again: %d %+v", c, out)
+	}
+
+	if c, out := passkeyStep(t, started(store.LoginSocial), a, nil); c != 200 {
+		t.Fatalf("social sign-in, passkey: %d %+v", c, out)
+	}
+	if login, _ := latest(); login != store.LoginSocial {
+		t.Errorf("social sign-in with a passkey recorded as %q", login)
+	}
+	s, _ := passwordStep(t, e, "ann@x.io")
+	if c, out := passkeyStep(t, s, a, nil); c != 200 {
+		t.Fatalf("password sign-in, passkey: %d %+v", c, out)
+	}
+	if login, pl := latest(); login != store.LoginPassword || !pl {
+		t.Errorf("password sign-in recorded as %q (password_login %v)", login, pl)
+	}
+	// Only a password or social sign-in has a second step.
+	if _, err := e.st.CreateMFAChallengeFor(bg, uid, store.LoginSSO); err == nil {
+		t.Error("a challenge for a single sign-on")
 	}
 }

@@ -460,6 +460,11 @@ func (s *Server) renamePasskey(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	// Like the other changes to factors: a session that must first confirm
+	// with one may not rename the account's passkeys either.
+	if !s.mayChangeFactors(w, r, u) {
+		return
+	}
 	old, err := s.Store.RenamePasskey(r.Context(), u.ID, id, req.Name)
 	if err != nil {
 		s.fail(w, r, err)
@@ -632,11 +637,13 @@ func (s *Server) finishPasskeySecondFactor(w http.ResponseWriter, r *http.Reques
 		passkeyFailed(w, res.why)
 		return
 	}
-	_ = s.Store.DeleteMFAChallenge(r.Context(), challenge)
-	s.clearMFACookie(w)
+	login, ok := s.takeMFAChallenge(w, r, challenge)
+	if !ok {
+		return
+	}
 	s.loginSucceeded(r, u)
-	s.startSessionWith(w, r, u, store.SessionOpts{Login: store.LoginPassword, MFA: store.MFAPasskey, MFACredential: res.id},
-		map[string]any{"mfa": store.MFAPasskey, "passkey_id": res.id, "passkey": res.name})
+	s.startSessionWith(w, r, u, store.SessionOpts{Login: login, MFA: store.MFAPasskey, MFACredential: res.id},
+		signInDetail(login, map[string]any{"mfa": store.MFAPasskey, "passkey_id": res.id, "passkey": res.name}))
 }
 
 // --- passwordless sign-in ("Sign in with a passkey")

@@ -35,8 +35,13 @@ const mfaCookie = "stackurity_mfa"
 
 var (
 	// limitMFAPerUser caps code attempts on one account, from any number of
-	// challenges and addresses: guessing a six-digit code needs ~500,000
-	// tries on average, so this allows about one success per 50,000 days.
+	// challenges and addresses: 10 per 15 minutes, 960 a day. A random
+	// six-digit guess is right one time in a million (three for an app
+	// code, accepted one step either side), so guessing takes about 1,000
+	// days on average for an email code and about 350 for an app code. It
+	// also needs the password again after every five wrong codes, and every
+	// email code guessed at is first sent to the account's address, which
+	// tells its owner.
 	limitMFAPerUser = rateLimit{10, 15 * time.Minute}
 	// mfaChallengeFailures wrong codes end a challenge; the password must
 	// then be entered again (and is limited per account too).
@@ -179,10 +184,40 @@ func (s *Server) verifyMFA(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 401, "mfa_invalid", msg)
 		return
 	}
-	_ = s.Store.DeleteMFAChallenge(r.Context(), c.Value)
-	s.clearMFACookie(w)
+	login, ok := s.takeMFAChallenge(w, r, c.Value)
+	if !ok {
+		return
+	}
 	s.loginSucceeded(r, u)
-	s.startSessionWith(w, r, u, store.SessionOpts{Login: store.LoginPassword, MFA: method}, map[string]any{"mfa": method})
+	s.startSessionWith(w, r, u, store.SessionOpts{Login: login, MFA: method}, signInDetail(login, map[string]any{"mfa": method}))
+}
+
+// takeMFAChallenge ends the sign-in's challenge once its second factor
+// passed and returns how the sign-in began (a password, or a hosted
+// edition's social sign-in), which the session records. It answers and
+// returns false when the challenge has gone meanwhile.
+func (s *Server) takeMFAChallenge(w http.ResponseWriter, r *http.Request, secret string) (string, bool) {
+	login, err := s.Store.TakeMFAChallenge(r.Context(), secret)
+	s.clearMFACookie(w)
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, 401, "mfa_expired", "the sign-in has expired; enter your email and password again")
+		return "", false
+	}
+	if err != nil {
+		s.fail(w, r, err)
+		return "", false
+	}
+	return login, true
+}
+
+// signInDetail adds how a sign-in other than a password's began to its
+// auth.login event, as a social sign-in without a second factor records
+// it.
+func signInDetail(login string, detail map[string]any) map[string]any {
+	if login != store.LoginPassword {
+		detail["method"] = login
+	}
+	return detail
 }
 
 // checkSecondFactor checks a TOTP or recovery code for uid. why is

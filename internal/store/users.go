@@ -398,7 +398,7 @@ const (
 // SessionOpts says how a session was signed in.
 type SessionOpts struct {
 	// Login is how the session was signed in: LoginPassword, LoginPasskey,
-	// LoginInvite, LoginSignup or LoginSSO.
+	// LoginInvite, LoginSignup, LoginSocial or LoginSSO.
 	Login string
 	// MFA is the second factor checked ("" for none). A passkey sign-in
 	// without a password checks one too: the passkey with user
@@ -444,10 +444,12 @@ func (s *Store) CreateSessionWith(ctx context.Context, userID, workspaceID int64
 	if opts.MFA == MFAPasskey && opts.MFACredential > 0 {
 		cred = &opts.MFACredential
 	}
+	// password_login is what releases before migration 0087 read: a social
+	// sign-in was one there too (held to "Require two-factor sign-in").
 	_, err = s.Pool.Exec(ctx, `INSERT INTO sessions (token_hash, user_id, expires_at, workspace_id, password_login, mfa_at, sso_workspace_id,
 		login_method, mfa_method, mfa_credential_id)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, NULLIF($8, ''), NULLIF($9, ''), $10)`,
-		auth.HashToken(secret), userID, expires, ws, opts.Login == LoginPassword, mfaAt, pinned, opts.Login, opts.MFA, cred)
+		auth.HashToken(secret), userID, expires, ws, opts.Login == LoginPassword || opts.Login == LoginSocial, mfaAt, pinned, opts.Login, opts.MFA, cred)
 	return secret, err
 }
 
