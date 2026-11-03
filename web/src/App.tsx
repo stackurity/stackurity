@@ -10,6 +10,7 @@ import { ChangeTemporaryPasswordPage, ForgotPasswordPage, ResetPasswordPage } fr
 import { AcceptInvitePage } from "./pages/AcceptInvite";
 import { SlackLinkPage } from "./pages/SlackLink";
 import { AccountPage } from "./pages/Account";
+import { MyFeedbackPage } from "./pages/MyFeedback";
 import { SlackOAuthCallbackPage } from "./pages/SlackOAuthCallback";
 import { GitLabCallbackPage } from "./pages/GitLabCallback";
 import { PagerDutyOAuthCallbackPage } from "./pages/PagerDutyOAuthCallback";
@@ -337,6 +338,7 @@ export function App() {
         <Route path="approvals" element={<ApprovalsPage />} />
         <Route path="settings/approvals" element={<Moved to={() => "/approvals"} />} />
         <Route path="account" element={<AccountPage />} />
+        <Route path="feedback" element={<MyFeedbackPage />} />
         {/* Linked Slack accounts moved to Your account. */}
         <Route path="settings/slack" element={<Navigate replace to="/account#slack" />} />
         {/*

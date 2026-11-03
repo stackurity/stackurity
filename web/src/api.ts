@@ -3627,14 +3627,16 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: {
   const headers: Record<string, string> = { Accept: "application/json" };
   if (method !== "GET") headers["X-Stackurity-CSRF"] = "1";
   if (activeProject > 0 && !opts?.allProjects) headers["X-Stackurity-Project"] = String(activeProject);
-  if (body !== undefined) headers["Content-Type"] = "application/json";
+  // FormData: the browser sets multipart/form-data with its boundary.
+  const form = typeof FormData !== "undefined" && body instanceof FormData;
+  if (body !== undefined && !form) headers["Content-Type"] = "application/json";
   let res: Response;
   try {
     res = await fetch(`/api/v1${path}`, {
       method,
       headers,
       credentials: "same-origin",
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : form ? (body as FormData) : JSON.stringify(body),
     });
   } catch (e) {
     throw new ApiError(0, "network", "Could not reach the Stackurity server. Check that it is running.");
@@ -3668,6 +3670,8 @@ export const api = {
   /** GET across every project, whatever the switcher says (settings, pickers). */
   getAll: <T>(path: string, q?: Query) => request<T>("GET", path + qs(q), undefined, { allProjects: true }),
   post: <T>(path: string, body?: unknown) => request<T>("POST", path, body ?? {}),
+  /** POST multipart/form-data (file uploads); the browser adds the Content-Type and boundary. */
+  postForm: <T>(path: string, form: FormData) => request<T>("POST", path, form),
   patch: <T>(path: string, body: unknown) => request<T>("PATCH", path, body),
   put: <T>(path: string, body: unknown) => request<T>("PUT", path, body),
   del: <T = void>(path: string, body?: unknown) => request<T>("DELETE", path, body),
