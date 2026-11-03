@@ -22,6 +22,8 @@ var (
 	// shellVar is a variable a shell script or Docker Compose expands
 	// (${STACKURITY_ALLOW_HTTP:-}, ${STACKURITY_PORT:-8080}).
 	shellVar = regexp.MustCompile(`\$\{(STACKURITY_[A-Z0-9_]*[A-Z0-9])`)
+	// psVar is a variable a PowerShell script reads ($env:STACKURITY_SERVER).
+	psVar = regexp.MustCompile(`(?i)\$env:(STACKURITY_[A-Z0-9_]*[A-Z0-9])`)
 	// docVar is a variable named in Markdown. "`STACKURITY_X` / `_FILE`" and
 	// "`STACKURITY_X` (or `_FILE`)" name STACKURITY_X_FILE too. A name
 	// followed by an underscore is a prefix (STACKURITY_OIDC_*) and skipped.
@@ -35,7 +37,8 @@ var (
 const userSecretPrefix = "STACKURITY_SECRET_"
 
 // envReads returns the variables read under the given directories by Go
-// code and shell scripts (such as the agent installer the server serves),
+// code, shell and PowerShell scripts (such as the agent installers the
+// server serves),
 // and separately those read only by Go tests.
 func envReads(t *testing.T, dirs ...string) (code, tests map[string]bool) {
 	t.Helper()
@@ -49,6 +52,12 @@ func envReads(t *testing.T, dirs ...string) (code, tests map[string]bool) {
 			if strings.HasSuffix(p, ".sh") {
 				for _, m := range shellVar.FindAllStringSubmatch(read(t, rel), -1) {
 					code[m[1]] = true
+				}
+				return nil
+			}
+			if strings.HasSuffix(p, ".ps1") {
+				for _, m := range psVar.FindAllStringSubmatch(read(t, rel), -1) {
+					code[strings.ToUpper(m[1])] = true
 				}
 				return nil
 			}
