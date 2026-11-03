@@ -62,7 +62,7 @@ The cluster asset's coverage lists every API and namespace: `checked`, or `faile
 
 ## Connect with the reporter
 
-**Settings → Integrations → Kubernetes cluster** (or **Add**) asks for the cluster's name, an optional environment and, optionally, the namespaces to read, and shows two equivalent commands with a one-time enrollment code. Run either one with `kubectl` access to the cluster.
+**Integrations → Kubernetes cluster** (or **Add**) asks for the cluster's name, an optional environment and, optionally, the namespaces to read, and shows two equivalent commands with a one-time enrollment code. Run either one with `kubectl` access to the cluster.
 
 Helm:
 
@@ -94,7 +94,7 @@ The code is single-use and expires (24 hours by default), like the Linux install
 - With Helm, by the chart from `enrollCode`. Helm keeps a release's values, so the used code stays in the release record; it cannot be used again.
 - With `kubectl`, by `kubectl create secret` after the manifest is applied. The reporter waits for the Secret and looks at it again every 15 seconds.
 
-On its first start the reporter exchanges the code for a collector token (`POST /api/v1/enroll`, the same exchange as `stackurity enroll`), writes the token into the same Secret (key `token`, with the code's environment under `environment`) and removes the code. Before using the code it checks that it may update the Secret, so a code is never used up by a pod that could not keep the token. Its Role allows `get` and `update` on that one Secret by name, and nothing else: it cannot list, create or read any other Secret. Upgrading the chart keeps the token (it is not part of the chart); uninstalling the release deletes it. The token is listed under **Settings → API tokens** as `agent on Kubernetes cluster <name>`, where it can be revoked.
+On its first start the reporter exchanges the code for a collector token (`POST /api/v1/enroll`, the same exchange as `stackurity enroll`), writes the token into the same Secret (key `token`, with the code's environment under `environment`) and removes the code. Before using the code it checks that it may update the Secret, so a code is never used up by a pod that could not keep the token. Its Role allows `get` and `update` on that one Secret by name, and nothing else: it cannot list, create or read any other Secret. Upgrading the chart keeps the token (it is not part of the chart); uninstalling the release deletes it. The token is listed under **Integrations → API tokens** as `agent on Kubernetes cluster <name>`, where it can be revoked.
 
 If the server refuses the token (revoked), the reporter logs it and waits for a new code, looking at the Secret every 15 seconds: put one in it and it enrolls again. A code the server refuses is not sent again.
 
@@ -215,7 +215,7 @@ contexts: [{name: stackurity, context: {cluster: prod-eu, user: stackurity-reade
 EOF
 ```
 
-Store it as a workspace secret (**Settings → Secrets**) whose value is the JSON object `{"kubeconfig": "<the file's contents>"}`, for example:
+Store it as a workspace secret (**Integrations → Secrets**) whose value is the JSON object `{"kubeconfig": "<the file's contents>"}`, for example:
 
 ```sh
 jq -n --rawfile k stackurity.kubeconfig '{value: ({kubeconfig: $k} | tojson)}' |

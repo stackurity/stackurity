@@ -14,7 +14,7 @@ import { useAuth } from "../auth";
 import { useProject } from "../project";
 import { useAction, useLoad } from "../hooks";
 import { plural } from "../format";
-import { CheckApps, CheckDocker, installCommand } from "./AddServer";
+import { CheckApps, CheckDocker, InstallCommandTabs, installCommand, type ServerOS } from "./AddServer";
 import { InviteForm } from "../components/Invite";
 import { CodeBlock, ErrorBox, Loading, Notice } from "../components/ui";
 import {
@@ -290,6 +290,7 @@ function ServerSource({ project, onWaiting }: { project: Project; onWaiting: (na
   const [created, setCreated] = useState<EnrollmentCreated | null>(null);
   const [apps, setApps] = useState(true);
   const [docker, setDocker] = useState(false);
+  const [os, setOS] = useState<ServerOS>("linux");
   const act = useAction();
   const make = async () => {
     const c = await act.run(() =>
@@ -300,7 +301,10 @@ function ServerSource({ project, onWaiting }: { project: Project; onWaiting: (na
   if (!created) {
     return (
       <div className="form">
-        <p>Linux with systemd, root or sudo, and outbound HTTPS from the server to this dashboard.</p>
+        <p>
+          Linux with systemd (root or sudo), or Windows Server 2016 or later (PowerShell as administrator), and outbound HTTPS from
+          the server to this dashboard.
+        </p>
         <div className="field">
           <CheckApps id="ob-apps" checked={apps} onChange={setApps} />
         </div>
@@ -313,7 +317,7 @@ function ServerSource({ project, onWaiting }: { project: Project; onWaiting: (na
       </div>
     );
   }
-  const { command, insecure } = installCommand(created.code, docker);
+  const { insecure } = installCommand(created.code, docker);
   return (
     <div className="form">
       <p>
@@ -324,10 +328,12 @@ function ServerSource({ project, onWaiting }: { project: Project; onWaiting: (na
           This dashboard is open over plain HTTP, so the code would cross the network unencrypted. Use HTTPS if you can.
         </Notice>
       )}
-      <div className="field">
-        <CheckDocker id="ob-docker" checked={docker} onChange={setDocker} />
-      </div>
-      <CodeBlock text={command} label="Install command" />
+      <InstallCommandTabs code={created.code} os={os} onOS={setOS} idPrefix="ob-" docker={docker} />
+      {os === "linux" && (
+        <div className="field">
+          <CheckDocker id="ob-docker" checked={docker} onChange={setDocker} />
+        </div>
+      )}
       <p className="hint">The code is shown only now. The agent only reads what is installed; it never changes anything.</p>
       <div className="form-actions">
         <button type="button" className="btn btn-primary" onClick={() => onWaiting("")}>
@@ -780,7 +786,7 @@ function NotifyStep({ project, onNext }: { project: Project; onNext: () => void 
         <ErrorBox error={act.error} title="Could not send a test" />
         <p className="small">Each fix in a message has Assign to me, Snooze and Open buttons that open it here.</p>
         <p className="small">
-          You can fine-tune this in <Link to={`/settings/integrations/channels/${saved.channel}`}>Settings → Integrations</Link>.
+          You can fine-tune this in <Link to={`/integrations/channels/${saved.channel}`}>Integrations</Link>.
         </p>
         <div className="form-actions">
           <button type="button" className="btn" onClick={test} disabled={act.pending}>
@@ -847,7 +853,7 @@ function NotifyStep({ project, onNext }: { project: Project; onNext: () => void 
       <form className="form" onSubmit={save}>
         {backChannel > 0 && back.data && (
           <Notice kind="info">
-            Slack is connected. Choose what to send below, or later under <Link to={`/settings/integrations/channels/${backChannel}`}>Settings → Integrations</Link>.
+            Slack is connected. Choose what to send below, or later under <Link to={`/integrations/channels/${backChannel}`}>Integrations</Link>.
           </Notice>
         )}
         <fieldset className="field">
@@ -915,7 +921,7 @@ function NotifyStep({ project, onNext }: { project: Project; onNext: () => void 
           timezone={tz}
         />
         <p className="small muted">
-          You can fine-tune this in <Link to="/settings/integrations">Settings → Integrations</Link>.
+          You can fine-tune this in <Link to="/integrations">Integrations</Link>.
         </p>
         {needsSecret && !opts.secrets && !noKey && (
           <Notice kind="warn">
@@ -925,7 +931,7 @@ function NotifyStep({ project, onNext }: { project: Project; onNext: () => void 
         {noKey ? (
           <Notice kind="warn">
             This server cannot store secrets yet. Ask whoever runs it to set STACKURITY_SECRET_KEY, or set notifications up later under{" "}
-            <Link to="/settings/integrations">Settings → Integrations</Link>.
+            <Link to="/integrations">Integrations</Link>.
           </Notice>
         ) : (
           <ErrorBox error={act.error} title="Could not turn on notifications" />
@@ -952,7 +958,7 @@ function NotifyStep({ project, onNext }: { project: Project; onNext: () => void 
 function InviteStep({ project, onFinish, pending }: { project: Project; onFinish: () => void; pending: boolean }) {
   return (
     <StepCard>
-      <p>People you invite see {project.name} with the permission you choose, unless you give them more. You can invite more people later from the project's page or Settings, Users.</p>
+      <p>People you invite see {project.name} with the permission you choose, unless you give them more. You can invite more people later from the project's page or People, Users.</p>
       <InviteForm projectId={project.id} projectName={project.name} />
       <div className="form-actions onboard-finish">
         <button type="button" className="btn btn-primary" onClick={onFinish} disabled={pending}>
@@ -975,9 +981,9 @@ export function SetupChecklist({ o, onChange, compact }: { o: Onboarding; onChan
   const items: { done: boolean; text: string; to: string }[] = [
     ...(o.steps.project ? [] : [{ done: false, text: "Create a project", to: "/get-started?step=project" }]),
     { done: o.steps.asset, text: "Add a server, repository or SBOM", to: o.steps.project ? "/get-started?step=asset" : "/assets/add" },
-    { done: Boolean(o.steps.assistant), text: "Connect an AI assistant", to: "/settings/ai-assistants" },
-    { done: o.steps.notifications, text: "Turn on notifications", to: "/settings/integrations" },
-    { done: o.steps.invite, text: "Invite your team", to: "/settings/users" },
+    { done: Boolean(o.steps.assistant), text: "Connect an AI assistant", to: "/integrations/ai-assistants" },
+    { done: o.steps.notifications, text: "Turn on notifications", to: "/integrations" },
+    { done: o.steps.invite, text: "Invite your team", to: "/people" },
     // Recommended for admins: their account can change everything.
     { done: Boolean(me?.user?.mfa_enabled), text: "Turn on two-factor sign-in for your account", to: "/account#mfa" },
   ];

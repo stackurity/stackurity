@@ -435,13 +435,13 @@ With `"fleet": true` it creates a **fleet code** for many servers: `uses` up to 
 
 **Who:** admin
 
-The hosts that used a code, newest first: `hostname` (as the host reported it), `remote_addr`, `used_at`, and the `token_prefix` of the collector token it received (under **Settings → API tokens**; empty once that token is deleted) with `token_revoked`.
+The hosts that used a code, newest first: `hostname` (as the host reported it), `remote_addr`, `used_at`, and the `token_prefix` of the collector token it received (under **Integrations → API tokens**; empty once that token is deleted) with `token_revoked`.
 
 ### `DELETE /enrollments/{id}`
 
 **Who:** admin
 
-Revokes an enrollment code. Hosts that already enrolled keep their tokens; revoke those under **Settings → API tokens** (the usage list gives their prefixes).
+Revokes an enrollment code. Hosts that already enrolled keep their tokens; revoke those under **Integrations → API tokens** (the usage list gives their prefixes).
 
 ### `GET /integrations/digitalocean`
 
@@ -471,7 +471,13 @@ Lists the account's droplets (optionally `?tag=`) with, for each, `name`, `regio
 
 **Who:** anyone · outside `/api/v1`
 
-The agent installer script, with the server's URL filled in: `STACKURITY_BASE_URL`, or without it the URL the request came in on. In that case a `Host` header that is not a hostname or IP address with an optional port gets `400` instead of a script. Served with `Cache-Control: no-store` and `Vary: Host`.
+The agent installer script for Linux, with the server's URL filled in: `STACKURITY_BASE_URL`, or without it the URL the request came in on. In that case a `Host` header that is not a hostname or IP address with an optional port gets `400` instead of a script. Served with `Cache-Control: no-store` and `Vary: Host`.
+
+### `GET /install/agent.ps1`
+
+**Who:** anyone · outside `/api/v1`
+
+The agent installer script for Windows (`text/plain`), run with `irm .../install/agent.ps1 | iex`; see [Windows hosts](install.md#windows-hosts). The server's public URL is filled in; the enrollment code never is.
 
 ### `GET /install/kubernetes.yaml`
 
@@ -483,7 +489,7 @@ The Kubernetes reporter's manifest for this server ([kubernetes.md](kubernetes.m
 
 **Who:** anyone · outside `/api/v1`
 
-The agent builds the installer downloads: `linux-amd64` and `linux-arm64`, each with a `.sha256`. They are bundled in the server image (`STACKURITY_AGENT_DIR`).
+The agent builds the installers download: `linux-amd64`, `linux-arm64` and `windows-amd64`, each with a `.sha256`. They are bundled in the server image (`STACKURITY_AGENT_DIR`).
 
 ### `POST /kubernetes/report`
 
@@ -2594,7 +2600,7 @@ Webhook channels receive each message as JSON. Fields are only ever added, never
   ],
   "counts": {"urgent": 6, "assets": 1, "problems": 0},
   "link": "https://stackurity.example.com/",
-  "settings_link": "https://stackurity.example.com/settings/notifications?tab=routes",
+  "settings_link": "https://stackurity.example.com/integrations",
   "at": "2026-10-26T09:12:00Z"
 }
 ```

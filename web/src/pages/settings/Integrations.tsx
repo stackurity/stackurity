@@ -1,11 +1,11 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router";
+import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
 import { api, loadNotificationOptions, NO_GITHUB_APP, NO_GITLAB, NO_NOTIFICATION_OPTIONS, type Asset, type Channel, type GitHubAppStatus, type GitLabStatus, type Integration, type List } from "../../api";
 import { useAuth } from "../../auth";
 import { useLoad } from "../../hooks";
 import { Badge } from "../../components/Badge";
 import { Table, type Column } from "../../components/Table";
-import { CodeBlock, ErrorBox, Loading, PageHeader, RelativeTime, Tabs } from "../../components/ui";
+import { CodeBlock, ErrorBox, Loading, PageHeader, RelativeTime } from "../../components/ui";
 import { channelTarget, DeliveriesTab, kindLabel } from "./Notifications";
 import { CloudConnectPanel } from "./CloudConnect";
 import { ConnectGitLabButton, GitLabConnections } from "./GitLab";
@@ -13,9 +13,10 @@ import { CiTrusts } from "./CiTrusts";
 import { GitHubInstallations, InstallOnGitHubButton } from "./GitHubApp";
 
 /*
- * Settings, Integrations: everything Stackurity connects to. Notification
+ * Integrations: everything Stackurity connects to. Notification
  * integrations (channels, with their trigger settings) open their own page;
- * sources and AI assistants link to their existing screens.
+ * sources and AI assistants link to their existing screens. The delivery
+ * log is its own tab of the Integrations section.
  */
 
 /** Small line icons for integration kinds. */
@@ -118,7 +119,7 @@ function fromChannel(c: Channel): Active {
     enabled: c.enabled,
     ok: c.last_ok_at,
     error: c.last_error,
-    to: `/settings/integrations/channels/${c.id}`,
+    to: `/integrations/channels/${c.id}`,
   };
 }
 
@@ -133,7 +134,7 @@ function fromSource(i: Integration): Active {
     enabled: i.enabled,
     ok: i.last_success,
     error: i.last_error,
-    to: "/integrations",
+    to: "/integrations/sources",
   };
 }
 
@@ -200,7 +201,7 @@ function CiPanel({ admin }: { admin: boolean }) {
       <div className="int-panel">
         <p>
           <strong>With a stored token.</strong> For other CI systems, or where ID tokens cannot be used: create a collector token under{" "}
-          <Link to="/settings/tokens">Settings → API tokens</Link> and save it as the CI secret <span className="mono">STACKURITY_TOKEN</span>. It can only send
+          <Link to="/integrations/tokens">Integrations → API tokens</Link> and save it as the CI secret <span className="mono">STACKURITY_TOKEN</span>. It can only send
           scans.
         </p>
         <CodeBlock text={action} label="GitHub Actions step with a token" />
@@ -236,7 +237,7 @@ function SbomPanel({ admin }: { admin: boolean }) {
         </p>
       )}
       <p>
-        From a script or CI, with a collector token from <Link to="/settings/tokens">Settings → API tokens</Link>:
+        From a script or CI, with a collector token from <Link to="/integrations/tokens">Integrations → API tokens</Link>:
       </p>
       <CodeBlock text={cli} label="SBOM import command" />
       <p>Or with the API:</p>
@@ -254,8 +255,7 @@ export function IntegrationsHubPage() {
   const security = can("security");
   const engineer = can("engineer");
   const navigate = useNavigate();
-  const [params, setParams] = useSearchParams();
-  const tab = params.get("tab") === "deliveries" && security ? "deliveries" : "all";
+  const [params] = useSearchParams();
   const back = Number(params.get("channel")) || 0;
   const channels = useLoad(() => (security ? api.get<List<Channel>>("/channels") : Promise.resolve(null)), [security]);
   const sources = useLoad(() => (engineer ? api.get<List<Integration>>("/integrations") : Promise.resolve(null)), [engineer]);
@@ -273,7 +273,7 @@ export function IntegrationsHubPage() {
 
   // Back from "Add to Slack": open the new integration.
   useEffect(() => {
-    if (back) navigate(`/settings/integrations/channels/${back}?added=1`, { replace: true });
+    if (back) navigate(`/integrations/channels/${back}?added=1`, { replace: true });
   }, [back, navigate]);
 
   const rows: Active[] = [
@@ -320,27 +320,27 @@ export function IntegrationsHubPage() {
   if (security) {
     const n: AddCard[] = [];
     if (options.platform_email.enabled)
-      n.push({ kind: "stackurity_email", title: "Email (sent by Stackurity)", text: "Email to members and other addresses. Nothing to set up.", to: "/settings/integrations/new/stackurity_email", admin: true });
+      n.push({ kind: "stackurity_email", title: "Email (sent by Stackurity)", text: "Email to members and other addresses. Nothing to set up.", to: "/integrations/new/stackurity_email", admin: true });
     n.push(
-      { kind: "email", title: "Email (your mail server)", text: "Send through your own SMTP server: SES, SendGrid, Postmark, Gmail and more.", to: "/settings/integrations/new/email", admin: true },
+      { kind: "email", title: "Email (your mail server)", text: "Send through your own SMTP server: SES, SendGrid, Postmark, Gmail and more.", to: "/integrations/new/email", admin: true },
       {
         kind: "slack",
         title: "Slack",
         text: options.slack_app ? "Add to Slack in two clicks. Assign and snooze from inside Slack." : "Post to a Slack channel through an incoming webhook.",
-        to: "/settings/integrations/new/slack",
+        to: "/integrations/new/slack",
         admin: true,
       },
       {
         kind: "teams",
         title: "Microsoft Teams",
         text: options.teams_app ? "Add to Teams: add the app to a team and send it a code. No webhook." : "Post to a Teams channel through a Workflows webhook.",
-        to: "/settings/integrations/new/teams",
+        to: "/integrations/new/teams",
         admin: true,
       },
-      { kind: "jira", title: "Jira", text: options.jira_app ? "Connect Jira in one click. One issue per incident, updated until it is fixed." : "Keep one Jira issue per incident, updated until it is fixed.", to: "/settings/integrations/new/jira", admin: true },
-      { kind: "pagerduty", title: "PagerDuty", text: options.pagerduty_app ? "Connect PagerDuty in one click and pick the service. One alert per incident, acknowledged and resolved with it." : "Page on-call: one alert per incident, acknowledged and resolved with it.", to: "/settings/integrations/new/pagerduty", admin: true },
-      { kind: "servicenow", title: "ServiceNow", text: "Keep one ServiceNow incident per incident, with your field mapping.", to: "/settings/integrations/new/servicenow", admin: true },
-      { kind: "webhook", title: "Webhook", text: "Send each message as JSON to your own HTTPS endpoint.", to: "/settings/integrations/new/webhook", admin: true },
+      { kind: "jira", title: "Jira", text: options.jira_app ? "Connect Jira in one click. One issue per incident, updated until it is fixed." : "Keep one Jira issue per incident, updated until it is fixed.", to: "/integrations/new/jira", admin: true },
+      { kind: "pagerduty", title: "PagerDuty", text: options.pagerduty_app ? "Connect PagerDuty in one click and pick the service. One alert per incident, acknowledged and resolved with it." : "Page on-call: one alert per incident, acknowledged and resolved with it.", to: "/integrations/new/pagerduty", admin: true },
+      { kind: "servicenow", title: "ServiceNow", text: "Keep one ServiceNow incident per incident, with your field mapping.", to: "/integrations/new/servicenow", admin: true },
+      { kind: "webhook", title: "Webhook", text: "Send each message as JSON to your own HTTPS endpoint.", to: "/integrations/new/webhook", admin: true },
     );
     groups.push({ title: "Notifications", cards: n });
   }
@@ -354,7 +354,7 @@ export function IntegrationsHubPage() {
             kind: "git",
             title: "Git repository",
             text: "Install on GitHub and pick repositories there: no token, rescanned when a lockfile changes. Or clone any Git host over HTTPS with a token.",
-            to: "/integrations",
+            to: "/integrations/sources",
             admin: true,
             extra: <InstallOnGitHubButton />,
           }
@@ -363,120 +363,119 @@ export function IntegrationsHubPage() {
             kind: "git",
             title: "Git repository",
             text: "Connect GitLab and pick a group: every project in it, no token to paste, rescanned when a lockfile changes. Or clone any Git host over HTTPS with a token.",
-            to: "/integrations",
+            to: "/integrations/sources",
             admin: true,
             extra: <ConnectGitLabButton />,
           }
-        : { kind: "git", title: "Git repository", text: "Clone over HTTPS and read lockfiles on a schedule.", to: "/integrations", admin: true },
+        : { kind: "git", title: "Git repository", text: "Clone over HTTPS and read lockfiles on a schedule.", to: "/integrations/sources", admin: true },
       { kind: "ci", title: "CI pipeline", text: "Run stackurity scan or the GitHub Action in CI, without a stored secret, and fail the build on findings.", to: "", panel: "ci" },
-      { kind: "container", title: "Container image / registry", text: "Connect a registry and scan its newest tags, or add one image.", to: "/integrations?add=container", admin: true },
+      { kind: "container", title: "Container image / registry", text: "Connect a registry and scan its newest tags, or add one image.", to: "/integrations/sources?add=container", admin: true },
       { kind: "kubernetes", title: "Kubernetes cluster", text: "Workloads, the images they run and their exposure. One command installs a read-only reporter in the cluster.", to: "/integrations/kubernetes/add", admin: true },
-      { kind: "cloud", title: "AWS", text: "Launch one CloudFormation stack: RDS, EKS, Lambda and more, and the agent on EC2 through SSM.", to: "/settings/integrations/aws", admin: true },
+      { kind: "cloud", title: "AWS", text: "Launch one CloudFormation stack: RDS, EKS, Lambda and more, and the agent on EC2 through SSM.", to: "/integrations/aws", admin: true },
       { kind: "cloud", title: "Google Cloud", text: "Cloud SQL, Memorystore, GKE, Cloud Run and App Engine versions. Keyless: one gcloud block, no service account key.", to: "", panel: "gcp" },
       { kind: "cloud", title: "Azure", text: "Azure Database, Cache for Redis, AKS, App Service and Functions versions. One consent and one az block, no secret in your tenant.", to: "", panel: "azure" },
       { kind: "sbom", title: "SBOM upload", text: "Upload a CycloneDX or SPDX file from your build tool.", to: "", panel: "sbom" },
-      { kind: "plugin", title: "Other plugins", text: "Collectors installed on this server.", to: "/settings/plugins", admin: true },
+      { kind: "plugin", title: "Other plugins", text: "Collectors installed on this server.", to: "/integrations/plugins", admin: true },
     ],
   });
   groups.push({
     title: "AI assistants",
-    cards: [{ kind: "ai", title: "AI assistants", text: "Ask about your issues and fixes from Claude, ChatGPT or your IDE.", to: "/settings/ai-assistants" }],
+    cards: [{ kind: "ai", title: "AI assistants", text: "Ask about your issues and fixes from Claude, ChatGPT or your IDE.", to: "/integrations/ai-assistants" }],
   });
+
+  // Older addresses: the delivery log was a tab of this page, and the
+  // sources page (now Integrations, Sources) lived here.
+  if (params.get("tab") === "deliveries") return <Navigate replace to="/integrations/deliveries" />;
+  if (params.get("add")) return <Navigate replace to={`/integrations/sources?${params}`} />;
 
   return (
     <>
       <PageHeader help="notifications" title="Integrations" sub="Everything Stackurity connects to: where messages go, what it collects from, and AI assistants." />
-      {security && (
-        <Tabs<"all" | "deliveries">
-          label="Integrations"
-          value={tab}
-          onChange={(x) => setParams(x === "all" ? {} : { tab: x }, { replace: true })}
-          tabs={[
-            { id: "all", label: "Integrations" },
-            { id: "deliveries", label: "Delivery log" },
-          ]}
-        />
+      <h2 className="h-sm">Active integrations</h2>
+      <ErrorBox error={channels.error} title="Could not load notification integrations" />
+      <ErrorBox error={sources.error} title="Could not load sources" />
+      <ErrorBox error={hosts.error} title="Could not load servers" />
+      {(channels.loading || sources.loading) && rows.length === 0 ? (
+        <Loading />
+      ) : rows.length === 0 ? (
+        <p className="muted">Nothing connected yet. Add an integration below.</p>
+      ) : (
+        <Table caption="Active integrations" columns={cols} rows={rows} rowKey={(a) => a.key} rowClassName={(a) => (!a.enabled ? "row-removed" : a.error ? "row-stale" : undefined)} />
       )}
-      <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={security ? `tab-${tab}` : undefined} className="tabpanel">
-        {tab === "deliveries" ? (
-          <DeliveriesTab channels={channels.data?.items ?? []} admin={admin} />
-        ) : (
-          <>
-            <h2 className="h-sm">Active integrations</h2>
-            <ErrorBox error={channels.error} title="Could not load notification integrations" />
-            <ErrorBox error={sources.error} title="Could not load sources" />
-            <ErrorBox error={hosts.error} title="Could not load servers" />
-            {(channels.loading || sources.loading) && rows.length === 0 ? (
-              <Loading />
-            ) : rows.length === 0 ? (
-              <p className="muted">Nothing connected yet. Add an integration below.</p>
-            ) : (
-              <Table caption="Active integrations" columns={cols} rows={rows} rowKey={(a) => a.key} rowClassName={(a) => (!a.enabled ? "row-removed" : a.error ? "row-stale" : undefined)} />
-            )}
-            <GitLabConnections status={gl} admin={admin} onChange={gitlab.reload} />
-            <GitHubInstallations status={gh} admin={admin} onChange={github.reload} />
-            <h2 className="h-sm">Add an integration</h2>
-            {groups.map((g) => (
-              <section key={g.title} aria-label={g.title}>
-                <h3 className="int-group">{g.title}</h3>
-                <ul className="int-cards">
-                  {g.cards.map((c) => (
-                    <li key={c.title} className="int-card">
-                      <div className="int-card-head">
-                        <IntegrationIcon kind={c.kind} />
-                        <strong>{c.title}</strong>
-                      </div>
-                      <p className="small muted">{c.text}</p>
-                      {c.panel ? (
-                        <button
-                          type="button"
-                          className="btn btn-sm"
-                          aria-expanded={panel === c.panel}
-                          aria-controls={`int-panel-${c.panel}`}
-                          onClick={() => setPanel(panel === c.panel ? null : c.panel!)}
-                        >
-                          {panel === c.panel ? "Hide steps" : "Show steps"}
-                        </button>
-                      ) : (
-                        (!c.admin || admin) &&
-                        (c.extra ? (
-                          <div className="form-actions">
-                            {c.extra}
-                            <Link className="btn btn-sm" to={c.to}>
-                              Other Git hosts
-                            </Link>
-                          </div>
-                        ) : (
-                          <Link className="btn btn-sm" to={c.to}>
-                            {c.to.startsWith("/settings/integrations/new/") || c.to === "/assets/add" || c.to === "/integrations/kubernetes/add" || c.to === "/settings/integrations/aws" ? "Add" : "Open"}
-                          </Link>
-                        ))
-                      )}
-                    </li>
-                  ))}
-                </ul>
-                {g.title === "Sources" && panel && (
-                  <section className="card" id={`int-panel-${panel}`} aria-label={PANEL_TITLE[panel]}>
-                    <div className="card-head">
-                      <h2>{PANEL_TITLE[panel]}</h2>
-                      <button type="button" className="btn btn-link" onClick={() => setPanel(null)}>
-                        Close
-                      </button>
+      <GitLabConnections status={gl} admin={admin} onChange={gitlab.reload} />
+      <GitHubInstallations status={gh} admin={admin} onChange={github.reload} />
+      <h2 className="h-sm">Add an integration</h2>
+      {groups.map((g) => (
+        <section key={g.title} aria-label={g.title}>
+          <h3 className="int-group">{g.title}</h3>
+          <ul className="int-cards">
+            {g.cards.map((c) => (
+              <li key={c.title} className="int-card">
+                <div className="int-card-head">
+                  <IntegrationIcon kind={c.kind} />
+                  <strong>{c.title}</strong>
+                </div>
+                <p className="small muted">{c.text}</p>
+                {c.panel ? (
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    aria-expanded={panel === c.panel}
+                    aria-controls={`int-panel-${c.panel}`}
+                    onClick={() => setPanel(panel === c.panel ? null : c.panel!)}
+                  >
+                    {panel === c.panel ? "Hide steps" : "Show steps"}
+                  </button>
+                ) : (
+                  (!c.admin || admin) &&
+                  (c.extra ? (
+                    <div className="form-actions">
+                      {c.extra}
+                      <Link className="btn btn-sm" to={c.to}>
+                        Other Git hosts
+                      </Link>
                     </div>
-                    {panel === "ci" ? (
-                      <CiPanel admin={admin} />
-                    ) : panel === "sbom" ? (
-                      <SbomPanel admin={admin} />
-                    ) : (
-                      <CloudConnectPanel key={panel} provider={panel} admin={admin} />
-                    )}
-                  </section>
+                  ) : (
+                    <Link className="btn btn-sm" to={c.to}>
+                      {c.to.startsWith("/integrations/new/") || c.to === "/assets/add" || c.to === "/integrations/kubernetes/add" || c.to === "/integrations/aws" ? "Add" : "Open"}
+                    </Link>
+                  ))
                 )}
-              </section>
+              </li>
             ))}
-          </>
-        )}
-      </div>
+          </ul>
+          {g.title === "Sources" && panel && (
+            <section className="card" id={`int-panel-${panel}`} aria-label={PANEL_TITLE[panel]}>
+              <div className="card-head">
+                <h2>{PANEL_TITLE[panel]}</h2>
+                <button type="button" className="btn btn-link" onClick={() => setPanel(null)}>
+                  Close
+                </button>
+              </div>
+              {panel === "ci" ? (
+                <CiPanel admin={admin} />
+              ) : panel === "sbom" ? (
+                <SbomPanel admin={admin} />
+              ) : (
+                <CloudConnectPanel key={panel} provider={panel} admin={admin} />
+              )}
+            </section>
+          )}
+        </section>
+      ))}
+    </>
+  );
+}
+
+/** Integrations, Delivery log: every message sent, held or failed (security role). */
+export function DeliveryLogPage() {
+  const { can } = useAuth();
+  const channels = useLoad(() => api.get<List<Channel>>("/channels"), []);
+  return (
+    <>
+      <PageHeader help="notifications" title="Delivery log" sub="Every message Stackurity sent, held or could not deliver, newest first." />
+      <ErrorBox error={channels.error} title="Could not load notification integrations" />
+      <DeliveriesTab channels={channels.data?.items ?? []} admin={can("admin")} />
     </>
   );
 }

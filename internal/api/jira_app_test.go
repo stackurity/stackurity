@@ -243,7 +243,7 @@ func TestJiraAppOAuthState(t *testing.T) {
 	off := f.start(t, admin, map[string]any{"return_to": "//evil.example/x"})
 	var back jiraAnswer
 	if code := admin.do("POST", "/api/v1/integrations/jira/oauth", map[string]string{"code": "again-code", "state": off}, &back); code != 201 ||
-		back.ReturnTo != "/settings/integrations" {
+		back.ReturnTo != "/integrations" {
 		t.Errorf("return_to = %q (%d)", back.ReturnTo, code)
 	}
 

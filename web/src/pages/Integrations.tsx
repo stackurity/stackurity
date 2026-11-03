@@ -90,7 +90,7 @@ export function IntegrationsPage() {
   const act = useAction();
   const [msg, setMsg] = useState<string | null>(null);
   const [params] = useSearchParams();
-  // Settings → Integrations → Container image / registry opens the choice.
+  // Integrations → Container image / registry opens the choice.
   const [creating, setCreating] = useState<IntegrationKind | "choose" | "container" | null>(() =>
     params.get("add") === "container" && admin ? "container" : null,
   );
@@ -197,8 +197,8 @@ export function IntegrationsPage() {
   return (
     <>
       <PageHeader help="integrations-settings"
-        title="Integrations"
-        sub="Sources Stackurity collects from on a schedule: Git repositories, container images and installed plugins."
+        title="Sources"
+        sub="What Stackurity collects from on a schedule: Git repositories, container images and installed plugins."
         actions={
           <>
             <button type="button" className="btn" onClick={res.reload}>
@@ -228,7 +228,7 @@ export function IntegrationsPage() {
         <EmptyState title="No integrations" help="repositories" helpLabel="Add a repository, image or cloud account">
           <p>
             {admin
-              ? "Add a Git repository, a container image or a plugin (such as AWS managed services) to collect inventory on a schedule. Servers (with the agent), CI pipelines and SBOM uploads are added from Settings → Integrations."
+              ? "Add a Git repository, a container image or a plugin (such as AWS managed services) to collect inventory on a schedule. Servers (with the agent), CI pipelines and SBOM uploads are added from Integrations."
               : "An administrator can add Git repositories, container images and plugins here."}
           </p>
         </EmptyState>
@@ -672,7 +672,7 @@ function PluginForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
     return (
       <Card title="Add plugin integration">
         <Notice kind="warn">
-          Plugins are not enabled on this server. Set <Code>STACKURITY_PLUGIN_DIR</Code> and install plugins there; see Settings → Plugins.
+          Plugins are not enabled on this server. Set <Code>STACKURITY_PLUGIN_DIR</Code> and install plugins there; see Integrations → Plugins.
         </Notice>
         <button type="button" className="btn" onClick={onCancel}>
           Cancel
@@ -695,7 +695,7 @@ function PluginForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
             ))}
           </select>
           <p className="hint">
-            Review what a plugin may access under <Link to="/settings/plugins">Settings → Plugins</Link> first.
+            Review what a plugin may access under <Link to="/integrations/plugins">Integrations → Plugins</Link> first.
           </p>
         </div>
       </div>
@@ -1077,7 +1077,7 @@ function RegistryForm({ integrations, onCancel, onCreated }: { integrations: Int
                 <label htmlFor="rg-ref">Secret reference</label>
                 <input id="rg-ref" className="mono" placeholder="secret:NAME" value={c.secret_ref} onChange={(e) => setC({ ...c, secret_ref: e.target.value })} />
                 <p className="hint">
-                  From <Link to="/settings/secrets">Settings → Secrets</Link>.
+                  From <Link to="/integrations/secrets">Integrations → Secrets</Link>.
                   {provider === "ecr" ? <> It holds <Code>{'{"aws_access_key_id": "…", "aws_secret_access_key": "…"}'}</Code>.</> : null}
                 </p>
               </div>

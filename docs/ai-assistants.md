@@ -6,7 +6,7 @@ There is nothing to install. Your server's MCP endpoint is **`https://<your serv
 
 ## Connect an assistant
 
-**Settings → AI assistants** (also **Connect an AI assistant** in the account menu, and **Help → Connect an AI assistant**) shows your server's MCP address with a Copy button, a card for each assistant that opens its steps (with one-click install links for Cursor, VS Code and Replit), and questions to try. Paste `https://<your server>/mcp` into your assistant as a custom connector (it may be called a remote MCP server, an app or a plugin), then sign in when it asks:
+**Integrations → AI assistants** (also **Connect an AI assistant** in the account menu, and **Help → Connect an AI assistant**) shows your server's MCP address with a Copy button, a card for each assistant that opens its steps (with one-click install links for Cursor, VS Code and Replit), and questions to try. Paste `https://<your server>/mcp` into your assistant as a custom connector (it may be called a remote MCP server, an app or a plugin), then sign in when it asks:
 
 1. The assistant opens a Stackurity page in your browser. Sign in if you are not already.
 2. The page says which assistant is asking and where it will return. Choose what it can see (the whole organisation, or one project) and its role (viewer, engineer, security or admin; never more than your own). If you belong to several organisations, choose the organisation there too. Tick **Allow changes** only if it should make changes for you; without it the connection only reads, whatever the role.
@@ -16,7 +16,7 @@ Stackurity registers each assistant itself (OAuth dynamic client registration), 
 
 ### Step by step, per assistant
 
-The steps were checked against each vendor's documentation in October 2026; the sources are linked under each one. Menus move, so where a step could not be confirmed it says what to look for. Replace `https://<your server>/mcp` with your server's address (Settings → AI assistants shows it with a Copy button). Every assistant below registers itself with Stackurity, so leave any client ID and client secret fields empty.
+The steps were checked against each vendor's documentation in October 2026; the sources are linked under each one. Menus move, so where a step could not be confirmed it says what to look for. Replace `https://<your server>/mcp` with your server's address (Integrations → AI assistants shows it with a Copy button). Every assistant below registers itself with Stackurity, so leave any client ID and client secret fields empty.
 
 #### Claude (claude.ai and Claude Desktop)
 
@@ -49,7 +49,7 @@ There is no transport choice; if a client asks, choose Streamable HTTP. Your pla
 
 #### Cursor
 
-Settings → AI assistants has an **Add to Cursor** button: a [Cursor install link](https://cursor.com/docs/context/mcp/install-links), `cursor://anysphere.cursor-deeplink/mcp/install?name=stackurity&config=<base64 of {"url": "https://<your server>/mcp"}>`. By hand, add this to `~/.cursor/mcp.json` (all projects) or `.cursor/mcp.json` (one project):
+Integrations → AI assistants has an **Add to Cursor** button: a [Cursor install link](https://cursor.com/docs/context/mcp/install-links), `cursor://anysphere.cursor-deeplink/mcp/install?name=stackurity&config=<base64 of {"url": "https://<your server>/mcp"}>`. By hand, add this to `~/.cursor/mcp.json` (all projects) or `.cursor/mcp.json` (one project):
 
 ```json
 { "mcpServers": { "stackurity": { "url": "https://<your server>/mcp" } } }
@@ -59,7 +59,7 @@ If Cursor asks you to sign in to Stackurity, do it and click **Allow**. Source: 
 
 #### Visual Studio Code (GitHub Copilot)
 
-Settings → AI assistants has **Add to VS Code** and **Add to VS Code Insiders** buttons: `vscode:mcp/install?<URL-encoded {"name":"stackurity","type":"http","url":"https://<your server>/mcp"}>` (`vscode-insiders:` for Insiders). By hand, run **MCP: Add Server** from the Command Palette, choose **HTTP** and paste the address, or add this to `.vscode/mcp.json`:
+Integrations → AI assistants has **Add to VS Code** and **Add to VS Code Insiders** buttons: `vscode:mcp/install?<URL-encoded {"name":"stackurity","type":"http","url":"https://<your server>/mcp"}>` (`vscode-insiders:` for Insiders). By hand, run **MCP: Add Server** from the Command Palette, choose **HTTP** and paste the address, or add this to `.vscode/mcp.json`:
 
 ```json
 { "servers": { "stackurity": { "type": "http", "url": "https://<your server>/mcp" } } }
@@ -88,7 +88,7 @@ Or add `{ "mcpServers": { "stackurity": { "httpUrl": "https://<your server>/mcp"
 
 #### Replit
 
-Settings → AI assistants has an **Add to Replit** button (`https://replit.com/integrations?mcp=<base64 of {"displayName":"Stackurity","baseUrl":"https://<your server>/mcp"}>`). By hand: **Integrations → MCP Servers → Add MCP server**, display name Stackurity, the address as the MCP server URL, then **Test & save**, which signs in. Sources: [Replit: connect via MCP](https://docs.replit.com/build/connect-via-mcp), [Replit MCP overview](https://docs.replit.com/replitai/mcp/overview.md).
+Integrations → AI assistants has an **Add to Replit** button (`https://replit.com/integrations?mcp=<base64 of {"displayName":"Stackurity","baseUrl":"https://<your server>/mcp"}>`). By hand: **Integrations → MCP Servers → Add MCP server**, display name Stackurity, the address as the MCP server URL, then **Test & save**, which signs in. Sources: [Replit: connect via MCP](https://docs.replit.com/build/connect-via-mcp), [Replit MCP overview](https://docs.replit.com/replitai/mcp/overview.md).
 
 #### Sign-in redirect addresses
 
@@ -107,11 +107,11 @@ Any client that supports remote MCP servers with OAuth works the same way: add t
 
 **Connected assistants**, on the same page (and in the account menu), lists the assistants you connected, in every organisation, with what they can see and do and when they were last used. **Allow changes** can be turned on or off there, and **Disconnect** stops one at once.
 
-`/mcp` and the sign-in endpoints are on only when `STACKURITY_BASE_URL` is set to the server's public `https://` address (see [install.md](install.md)): the sign-in metadata and tokens name that address, and the server never takes it from a request's `Host` header. Without it they answer 404, the server logs why at startup, and **Settings → AI assistants** explains how to turn them on and shows the `stackurity mcp` set-up instead.
+`/mcp` and the sign-in endpoints are on only when `STACKURITY_BASE_URL` is set to the server's public `https://` address (see [install.md](install.md)): the sign-in metadata and tokens name that address, and the server never takes it from a request's `Host` header. Without it they answer 404, the server logs why at startup, and **Integrations → AI assistants** explains how to turn them on and shows the `stackurity mcp` set-up instead.
 
 ### Clients that use a token instead
 
-A client that cannot sign in with OAuth can send a personal API token: `Authorization: Bearer stk_...` on every request to `/mcp`. Create one under **Settings → API tokens** with the role the assistant should have: the token's role decides, so use a viewer token for read only (the tools that change something are offered to other roles). The endpoint also honours `X-Stackurity-Project: <id>` to limit answers to one project.
+A client that cannot sign in with OAuth can send a personal API token: `Authorization: Bearer stk_...` on every request to `/mcp`. Create one under **Integrations → API tokens** with the role the assistant should have: the token's role decides, so use a viewer token for read only (the tools that change something are offered to other roles). The endpoint also honours `X-Stackurity-Project: <id>` to limit answers to one project.
 
 ### On your own machine (stdio)
 
@@ -163,7 +163,7 @@ Every tool calls the HTTP API as you, so the assistant sees exactly what you may
 | `create_project` | Create a project, optionally with assets | admin |
 | `rename_project` | Rename a project | admin |
 | `add_assets_to_project`, `remove_assets_from_project` | Put assets in a project or take them out (up to 100) | admin |
-| `create_enrollment` | Create an install code for N servers (at most 50, valid at most 24 hours) and return the one-line install command ("set up 3 servers"). The servers also look for websites and apps unless `check_apps` is false | admin |
+| `create_enrollment` | Create an install code for N servers (at most 50, valid at most 24 hours) and return the one-line install commands for Linux and Windows ("set up 3 servers"). The servers also look for websites and apps unless `check_apps` is false | admin |
 | `assign` | Assign issues, or every open issue of a fix, to you, a user id or an email | engineer on the issues' assets |
 | `snooze` | Snooze issues until a date or until a free fix exists | security |
 | `ignore` | Ignore issues with a reason and an expiry; without the security role it files a request for approval instead, and the preview says which | security, or anyone to ask |
@@ -197,7 +197,7 @@ The endpoint speaks both MCP eras: the 2026-07-28 revision (no handshake; `serve
 - **What an assistant can read.** What you can see, within what you allowed when you connected it: the whole organisation or one project. That is the inventory (servers, applications, repositories, images and their packages), issues and their history, fixes, and the people and teams issues are assigned to. It cannot read sign-in details, API tokens, secrets or notification settings.
 - **What it can change.** Nothing, unless you ticked **Allow changes**. Then only what the change tools offer (create or rename a project, add or remove assets in a project, create an install code, assign, snooze or ignore issues, check a fix again, invite someone to a project), each previewed before it is done.
 - **Your role caps it.** Every request acts with the lower of the role you gave the connection and your own role at that moment, on what you can see at that moment. Lose access, and the assistant loses it too, at once. Every change is in the activity log under your name, marked as the assistant.
-- **Disconnecting.** **Settings → AI assistants → Connected assistants → Disconnect** stops a connection at once, and removing Stackurity in the assistant revokes its tokens. A connection unused for 30 days ends by itself.
+- **Disconnecting.** **Integrations → AI assistants → Connected assistants → Disconnect** stops a connection at once, and removing Stackurity in the assistant revokes its tokens. A connection unused for 30 days ends by itself.
 - **What Stackurity keeps.** It never receives your conversation: an assistant sends only the tool it calls and that call's arguments. Stackurity does not store prompts or answers. It keeps hashes of codes and tokens, when each connection was made and last used, the usual request log (method, path, status), and, for changes, the activity log entry with what was changed. What the assistant's vendor keeps is up to the vendor and your agreement with them.
 
 ## Ask Stackurity
