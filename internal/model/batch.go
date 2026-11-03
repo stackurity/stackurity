@@ -140,6 +140,10 @@ type ObservationBatch struct {
 	// agent could not list them all. Sent only to servers that list the
 	// "host_images" feature in GET /meta.
 	Images *ImageList `json:"images,omitempty"`
+	// Leaks are the keys, tokens and passwords the collector found written
+	// in the asset's files. Sent only to servers that list the "leaks"
+	// feature in GET /meta.
+	Leaks *LeakScan `json:"leaks,omitempty"`
 }
 
 // ImageList is the set of container images a host's agent reports.
