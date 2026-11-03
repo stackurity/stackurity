@@ -32,14 +32,12 @@ function render(name: string, props: any): string {
   return renderToStaticMarkup(h(MemoryRouter, null, h(P[name], props)));
 }
 
-const text = (html: string) => html.replace(/<[^>]+>/g, "");
-
 test("Needs you now: no count of rows beside the title; the row says how many and what the button opens", () => {
   const rows = needsYou({ sos: { total: 31, items: [{ id: 1, kind: "finding", key: "x", title: "a" }] } });
   const html = render("NeedsYouBlock", { rows, lastReport: null, loading: false });
   assert.doesNotMatch(html, /dash-count/);
-  assert.doesNotMatch(text(html), /1 thing/);
-  assert.match(text(html), /31 open SOS incidents/);
+  assert.doesNotMatch(html, /\bthings?\b/);
+  assert.match(html, /31 open <abbr[^>]*>SOS<\/abbr> <abbr[^>]*>incidents<\/abbr>/);
   assert.match(html, /href="\/incidents\?status=open&amp;sos=true"[^>]*>Open the SOS incident list</);
   // SOS and incident are explained where they first appear.
   assert.match(html, /<abbr class="dash-term" title="SOS: [^"]+">SOS<\/abbr>/);
@@ -60,7 +58,7 @@ test("Needs you now: each term is explained once per block", () => {
 
 test("Needs you now: all good explains SOS too", () => {
   const html = render("NeedsYouBlock", { rows: [], lastReport: "2026-11-03T09:00:00Z", loading: false });
-  assert.match(text(html), /Nothing needs you right now/);
+  assert.match(html, /Nothing needs you right now/);
   assert.match(html, /title="SOS: /);
 });
 
@@ -75,7 +73,7 @@ test("feed warning: nothing when fresh; a line linking to Data sources when stal
     [[{ ...ok, last_success: null, stale: true, last_error: "timeout" }], /never been downloaded/],
   ] as const) {
     const html = render("FeedWarning", { fresh: feedFreshness([...feeds]) });
-    assert.match(text(html), re);
+    assert.match(html, re);
     assert.match(html, /role="status"/);
     assert.match(html, /href="\/intelligence"[^>]*>See Data sources</);
   }
