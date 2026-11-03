@@ -149,13 +149,19 @@ func adviseNoFix(ctx context.Context, st *store.Store, rows []fixplan.Row, group
 	if err != nil {
 		return err
 	}
+	// The workspace's risk policy says how long without a release makes a
+	// package unmaintained.
+	pol, err := st.RiskPolicy(ctx)
+	if err != nil {
+		return err
+	}
 	byGroup := map[string][]fixplan.NoFixFinding{}
 	for _, f := range found {
 		byGroup[assign[f.FindingID]] = append(byGroup[assign[f.FindingID]], f)
 	}
 	for _, g := range groups {
 		if fs := byGroup[g.ID]; g.Kind == fixplan.NoFix && len(fs) > 0 {
-			fixplan.AdviseNoFix(g, fs, now)
+			fixplan.AdviseNoFix(g, fs, now, pol.Unmaintained())
 		}
 	}
 	return nil

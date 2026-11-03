@@ -732,7 +732,7 @@ func init() {
 					"paid_channel names a paid subscription (Ubuntu Pro, SUSE LTSS) that also publishes fixes for some findings, " +
 					"an option to mention, never the recommendation. A no_fix group's no_fix_advice says per package what can be done " +
 					"without a fixed version: sections renamed (move to move_to, fixed in fixed_version), unmaintained (deprecated or " +
-					"no release for two years) and no_fix_yet, with the advisory's own workaround when it gives one, quoted; bundled " +
+					"no release for the risk policy's unmaintained_months, 24 by default) and no_fix_yet, with the advisory's own workaround when it gives one, quoted; bundled " +
 					"says the packages come with the application (only its upgrade changes them) and gives commands that show what pulls each in."}, nil
 		},
 	}

@@ -242,7 +242,7 @@ const DETAIL_LIMIT = 50;
 export function FixGroupDetailPage() {
   const { id = "" } = useParams();
   const { hash } = useLocation();
-  const { canAct } = useAuth();
+  const { can, canAct } = useAuth();
   // Links in notifications (Assign to me, Snooze) open the fix with the
   // action ready: ?action=assign asks for one tap to confirm, ?action=snooze
   // opens the snooze form. Opening a link never changes anything.
@@ -406,6 +406,7 @@ export function FixGroupDetailPage() {
                 advice={g.no_fix_advice}
                 accept={{ search: params.toString(), hash: "#accept" }}
                 snooze={{ search: params.toString(), hash: "#snooze" }}
+                canEditPolicy={can("admin")}
               />
             ) : (
               <ActionInstruction action={g.action} />

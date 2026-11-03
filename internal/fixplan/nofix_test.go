@@ -93,7 +93,7 @@ func item(t *testing.T, s NoFixSection, component string) NoFixItem {
 func TestNoFixGhostExample(t *testing.T) {
 	fs := ghostNoFix()
 	g := noFixGroup(len(fs))
-	AdviseNoFix(g, fs, nofixNow)
+	AdviseNoFix(g, fs, nofixNow, 0)
 	a := g.NoFixAdvice
 	if a == nil {
 		t.Fatal("no advice")
@@ -177,14 +177,14 @@ func TestNoFixRenamedNeedsEveryIssue(t *testing.T) {
 	a.MoveTo, a.FixedIn = "@babel/traverse", "7.23.2"
 	b := ghostFinding(2, "CVE-2", "babel-traverse", "6.26.0")
 	g := noFixGroup(2)
-	AdviseNoFix(g, []NoFixFinding{a, b}, nofixNow)
+	AdviseNoFix(g, []NoFixFinding{a, b}, nofixNow, 0)
 	if s := g.NoFixAdvice.Sections; len(s) != 1 || s[0].Kind != NoFixYet {
 		t.Errorf("sections %+v", s)
 	}
 	// Both fixed there: the highest fixed version is named.
 	b.MoveTo, b.FixedIn = "@babel/traverse", "7.24.0"
 	g = noFixGroup(2)
-	AdviseNoFix(g, []NoFixFinding{a, b}, nofixNow)
+	AdviseNoFix(g, []NoFixFinding{a, b}, nofixNow, 0)
 	if it := g.NoFixAdvice.Sections[0].Items[0]; it.FixedVersion != "7.24.0" || len(it.Issues) != 2 {
 		t.Errorf("item %+v", it)
 	}
@@ -200,7 +200,7 @@ func TestNoFixDeprecatedAndStale(t *testing.T) {
 		LatestStable: "3.1.0", LatestPublished: recent}
 	unknown := NoFixFinding{FindingID: 4, Key: "CVE-4", Component: "unread", PurlType: "npm", Version: "1.0.0"}
 	g := noFixGroup(4)
-	AdviseNoFix(g, []NoFixFinding{dep, stale, fresh, unknown}, nofixNow)
+	AdviseNoFix(g, []NoFixFinding{dep, stale, fresh, unknown}, nofixNow, 0)
 	un := section(t, g.NoFixAdvice, NoFixUnmaintained)
 	if it := item(t, un, "left-pad"); !strings.Contains(it.Text, "“use String.prototype.padStart()”") {
 		t.Errorf("deprecated: %q", it.Text)
@@ -225,7 +225,7 @@ func TestNoFixWorkaroundQuoted(t *testing.T) {
 	f := NoFixFinding{FindingID: 1, Key: "CVE-2026-33894", Component: "node-forge", PurlType: "npm", Version: "1.4.0",
 		Workaround: "Do not verify signatures from untrusted sources.", Advisory: "GHSA-aaaa-bbbb-cccc"}
 	g := noFixGroup(1)
-	AdviseNoFix(g, []NoFixFinding{f}, nofixNow)
+	AdviseNoFix(g, []NoFixFinding{f}, nofixNow, 0)
 	it := g.NoFixAdvice.Sections[0].Items[0]
 	if it.Workaround != f.Workaround || it.WorkaroundSource != "GHSA-aaaa-bbbb-cccc" ||
 		it.Text != "No fixed release yet. GHSA-aaaa-bbbb-cccc gives a workaround." {
@@ -241,7 +241,7 @@ func TestNoFixBundled(t *testing.T) {
 	direct.FindingID, direct.Key, direct.Component, direct.Direct = 2, "CVE-2", "mine", &yes
 	direct.Location = ghostDir + "/node_modules/mine"
 	g := noFixGroup(2)
-	AdviseNoFix(g, []NoFixFinding{in, direct}, nofixNow)
+	AdviseNoFix(g, []NoFixFinding{in, direct}, nofixNow, 0)
 	b := g.NoFixAdvice.Bundled
 	if b == nil || b.LatestVersion != "6.60.1" ||
 		b.Text != "This package comes with ghost 6.52.0 (/var/www/ghost/versions/6.52.0), as part of its dependencies: "+
@@ -259,7 +259,7 @@ func TestNoFixBundled(t *testing.T) {
 	// Not newer: the latest release is not suggested.
 	in.AppLatest = "6.52.0"
 	g = noFixGroup(1)
-	AdviseNoFix(g, []NoFixFinding{in}, nofixNow)
+	AdviseNoFix(g, []NoFixFinding{in}, nofixNow, 0)
 	if g.NoFixAdvice.Bundled.LatestVersion != "" {
 		t.Errorf("latest %q", g.NoFixAdvice.Bundled.LatestVersion)
 	}
@@ -267,7 +267,7 @@ func TestNoFixBundled(t *testing.T) {
 	host := NoFixFinding{FindingID: 3, Key: "CVE-3", Component: "x", PurlType: "npm", Version: "1.0.0",
 		Location: "/usr/lib/node_modules/x", Direct: &no}
 	g = noFixGroup(1)
-	AdviseNoFix(g, []NoFixFinding{host}, nofixNow)
+	AdviseNoFix(g, []NoFixFinding{host}, nofixNow, 0)
 	if g.NoFixAdvice.Bundled != nil {
 		t.Errorf("host package bundled: %+v", g.NoFixAdvice.Bundled)
 	}
@@ -296,7 +296,7 @@ func TestNoFixWhyCommands(t *testing.T) {
 			f.AppDir = "/srv"
 		}
 		g := noFixGroup(1)
-		AdviseNoFix(g, []NoFixFinding{f}, nofixNow)
+		AdviseNoFix(g, []NoFixFinding{f}, nofixNow, 0)
 		if b := g.NoFixAdvice.Bundled; b == nil || len(b.Commands) != 1 || b.Commands[0] != c.want {
 			t.Errorf("%s: %+v, want %q", c.loc, b, c.want)
 		}
@@ -305,7 +305,7 @@ func TestNoFixWhyCommands(t *testing.T) {
 	f := NoFixFinding{FindingID: 1, Key: "CVE-1", Component: "x", PurlType: "pypi", Version: "1.0", App: "app", AppDir: "/srv",
 		Location: "/srv/venv/lib/python3.12/site-packages/x-1.0.dist-info"}
 	g := noFixGroup(1)
-	AdviseNoFix(g, []NoFixFinding{f}, nofixNow)
+	AdviseNoFix(g, []NoFixFinding{f}, nofixNow, 0)
 	if b := g.NoFixAdvice.Bundled; b == nil || len(b.Commands) != 0 {
 		t.Errorf("python: %+v", b)
 	}
@@ -315,7 +315,7 @@ func TestNoFixWhyCommands(t *testing.T) {
 func TestNoFixMixedWithOSPackages(t *testing.T) {
 	f := NoFixFinding{FindingID: 1, Key: "CVE-1", Component: "x", PurlType: "npm", Version: "1.0.0"}
 	g := noFixGroup(3)
-	AdviseNoFix(g, []NoFixFinding{f}, nofixNow)
+	AdviseNoFix(g, []NoFixFinding{f}, nofixNow, 0)
 	if !strings.HasPrefix(g.Action, "Watch for fixes; consider mitigations or replacing the affected components. Application packages: 1 issue with no fix yet (x).") {
 		t.Errorf("action %q", g.Action)
 	}
@@ -324,8 +324,60 @@ func TestNoFixMixedWithOSPackages(t *testing.T) {
 	}
 	// Other kinds of group are left alone.
 	pg := &Group{Kind: PackageUpgrade, Action: "a", FindingCount: 1}
-	AdviseNoFix(pg, []NoFixFinding{f}, nofixNow)
+	AdviseNoFix(pg, []NoFixFinding{f}, nofixNow, 0)
 	if pg.NoFixAdvice != nil || pg.Action != "a" {
 		t.Errorf("package upgrade changed: %+v", pg)
+	}
+}
+
+// The unmaintained cutoff is the risk policy's, and the section's heading
+// says which rule put the packages there.
+func TestNoFixUnmaintainedCutoff(t *testing.T) {
+	kinds := func(months int) (map[string]string, *NoFixAdvice) {
+		fs := ghostNoFix()
+		g := noFixGroup(len(fs))
+		AdviseNoFix(g, fs, nofixNow, months)
+		out := map[string]string{}
+		for _, s := range g.NoFixAdvice.Sections {
+			for _, it := range s.Items {
+				out[it.Component] = s.Kind
+			}
+		}
+		return out, g.NoFixAdvice
+	}
+	def, a := kinds(0)
+	if def["deepmerge"] != NoFixUnmaintained || def["extract-zip"] != NoFixUnmaintained {
+		t.Errorf("24 months: %v", def)
+	}
+	un := section(t, a, NoFixUnmaintained)
+	if un.Title != "Deprecated, or no release for 24 months or more (your risk policy)" || un.UnmaintainedMonths != 24 {
+		t.Errorf("title %q, months %d", un.Title, un.UnmaintainedMonths)
+	}
+	// 48 months: deepmerge (last release March 2023) has a fix to wait for.
+	k48, a48 := kinds(48)
+	if k48["deepmerge"] != NoFixYet || k48["extract-zip"] != NoFixUnmaintained {
+		t.Errorf("48 months: %v", k48)
+	}
+	if un := section(t, a48, NoFixUnmaintained); un.Title != "Deprecated, or no release for 48 months or more (your risk policy)" {
+		t.Errorf("48 months title %q", un.Title)
+	}
+	// 120 months: express-brute (August 2016) is still past it; extract-zip is not.
+	if k120, _ := kinds(120); k120["extract-zip"] != NoFixYet || k120["express-brute"] != NoFixUnmaintained || k120["request"] != NoFixUnmaintained {
+		t.Errorf("120 months: %v", k120)
+	}
+	// Deprecated only: the heading names that rule, not the policy.
+	dep := NoFixFinding{FindingID: 1, Key: "CVE-1", Component: "request", PurlType: "npm", Version: "2.88.2", Deprecated: "use fetch",
+		LatestPublished: day("2026-01-01")}
+	g0 := noFixGroup(1)
+	AdviseNoFix(g0, []NoFixFinding{dep}, nofixNow, 0)
+	if un := g0.NoFixAdvice.Sections[0]; un.Title != "Deprecated by the maintainers" || un.UnmaintainedMonths != 0 {
+		t.Errorf("deprecated only: %q, %d", un.Title, un.UnmaintainedMonths)
+	}
+	// Inactive only.
+	f := NoFixFinding{FindingID: 1, Key: "CVE-1", Component: "old", PurlType: "npm", Version: "1.0.0", LatestPublished: day("2025-01-01")}
+	g := noFixGroup(1)
+	AdviseNoFix(g, []NoFixFinding{f}, nofixNow, 6)
+	if s := g.NoFixAdvice.Sections[0]; s.Title != "No release for 6 months or more (your risk policy)" {
+		t.Errorf("stale only: %q", s.Title)
 	}
 }

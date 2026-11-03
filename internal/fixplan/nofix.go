@@ -20,7 +20,8 @@ import (
 //     7.23.2, lodash.pick in lodash 4.17.19): move to that package.
 //   - unmaintained: the registry marks the package deprecated (its notice
 //     is quoted, successor and all, never invented), or it has had no
-//     release for StaleAfter: a fix is unlikely.
+//     release for the risk policy's unmaintained cutoff (24 months by
+//     default): a fix is unlikely.
 //   - no_fix_yet: none of these; no fixed release yet.
 //
 // Any of them may carry the advisory's own workaround, quoted. Packages
@@ -36,8 +37,9 @@ const (
 	NoFixYet          = "no_fix_yet"
 )
 
-// StaleAfter is how long without a release makes a package unmaintained.
-const StaleAfter = 2 * 365 * 24 * time.Hour
+// DefaultUnmaintainedMonths is the cutoff when none is given
+// (risk.DefaultUnmaintainedMonths).
+const DefaultUnmaintainedMonths = 24
 
 // maxCommands bounds the commands listed for one group.
 const maxCommands = 6
@@ -97,10 +99,13 @@ type BundledIn struct {
 
 // NoFixSection is one kind of advice, with the packages it applies to.
 type NoFixSection struct {
-	Kind   string      `json:"kind"`
-	Title  string      `json:"title"`
-	Issues int         `json:"issues"` // distinct issues across its packages
-	Items  []NoFixItem `json:"items"`
+	Kind  string `json:"kind"`
+	Title string `json:"title"`
+	// UnmaintainedMonths is the risk policy's cutoff, on an unmaintained
+	// section that has a package with no release for that long.
+	UnmaintainedMonths int         `json:"unmaintained_months,omitempty"`
+	Issues             int         `json:"issues"` // distinct issues across its packages
+	Items              []NoFixItem `json:"items"`
 }
 
 // NoFixItem is one package at one version.
@@ -136,7 +141,13 @@ func NeedsNoFixAdvice(r Row) bool {
 // AdviseNoFix sets g.NoFixAdvice from its application-package findings and
 // rewrites the action to say what they hold. Operating system findings in
 // the same group keep the group's action, with this added.
-func AdviseNoFix(g *Group, fs []NoFixFinding, now time.Time) {
+//
+// unmaintainedMonths is the workspace risk policy's cutoff: a package with
+// no release for that many months is unmaintained (0: the default).
+func AdviseNoFix(g *Group, fs []NoFixFinding, now time.Time, unmaintainedMonths int) {
+	if unmaintainedMonths <= 0 {
+		unmaintainedMonths = DefaultUnmaintainedMonths
+	}
 	if g.Kind != NoFix || len(fs) == 0 {
 		return
 	}
@@ -156,7 +167,7 @@ func AdviseNoFix(g *Group, fs []NoFixFinding, now time.Time) {
 	var projects []project
 	projectPkgs := map[project][]string{}
 	for _, k := range order {
-		it, kind, bundled := adviseItem(byItem[k], now)
+		it, kind, bundled := adviseItem(byItem[k], now, unmaintainedMonths)
 		s := sections[kind]
 		if s == nil {
 			s = &NoFixSection{Kind: kind, Title: noFixTitles[kind]}
@@ -164,6 +175,9 @@ func AdviseNoFix(g *Group, fs []NoFixFinding, now time.Time) {
 		}
 		s.Items = append(s.Items, it)
 		s.Issues += len(it.Issues)
+		if it.LastRelease != "" {
+			s.UnmaintainedMonths = unmaintainedMonths
+		}
 		if !bundled {
 			continue
 		}
@@ -200,6 +214,9 @@ func AdviseNoFix(g *Group, fs []NoFixFinding, now time.Time) {
 			}
 			return s.Items[i].Component < s.Items[j].Component
 		})
+		if kind == NoFixUnmaintained {
+			s.Title = unmaintainedTitle(s)
+		}
 		adv.Sections = append(adv.Sections, *s)
 	}
 	if b := adv.Bundled; b != nil {
@@ -229,7 +246,7 @@ func AdviseNoFix(g *Group, fs []NoFixFinding, now time.Time) {
 }
 
 // adviseItem classifies one package at one version from its findings.
-func adviseItem(fs []NoFixFinding, now time.Time) (NoFixItem, string, bool) {
+func adviseItem(fs []NoFixFinding, now time.Time, unmaintainedMonths int) (NoFixItem, string, bool) {
 	f := fs[0]
 	it := NoFixItem{Component: f.Component, Version: f.Version}
 	keys := map[string]bool{}
@@ -259,7 +276,7 @@ func adviseItem(fs []NoFixFinding, now time.Time) (NoFixItem, string, bool) {
 	it.Bundled = bundled
 	it.Deprecated = f.Deprecated
 	kind := NoFixYet
-	stale := f.LatestPublished != nil && now.Sub(*f.LatestPublished) > StaleAfter
+	stale := f.LatestPublished != nil && f.LatestPublished.Before(now.AddDate(0, -unmaintainedMonths, 0))
 	switch {
 	case moveTo != "" && allMove:
 		// Every issue of the package is fixed in the other one.
@@ -286,6 +303,23 @@ func adviseItem(fs []NoFixFinding, now time.Time) (NoFixItem, string, bool) {
 		it.Text += " " + it.WorkaroundSource + " gives a workaround."
 	}
 	return it, kind, bundled
+}
+
+// unmaintainedTitle names the rule that put the packages in the section:
+// the maintainers' deprecation, the risk policy's cutoff, or both.
+func unmaintainedTitle(s *NoFixSection) string {
+	deprecated := false
+	for _, it := range s.Items {
+		deprecated = deprecated || it.Deprecated != ""
+	}
+	stale := fmt.Sprintf("no release for %d months or more (your risk policy)", s.UnmaintainedMonths)
+	switch {
+	case s.UnmaintainedMonths == 0:
+		return "Deprecated by the maintainers"
+	case deprecated:
+		return "Deprecated, or " + stale
+	}
+	return capitalise(stale)
 }
 
 // inApp reports whether a finding is in an application's dependency tree

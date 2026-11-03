@@ -14,6 +14,8 @@ import type { NoFixAdvice } from "./api.ts";
 let vite: ViteDevServer;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let View: ComponentType<any>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let Settings: Record<string, any>;
 
 before(async () => {
   vite = await createServer({
@@ -24,6 +26,7 @@ before(async () => {
     optimizeDeps: { noDiscovery: true, include: [] },
   });
   View = ((await vite.ssrLoadModule("/src/components/NoFixAdvice.tsx")) as { NoFixAdviceView: ComponentType<unknown> }).NoFixAdviceView;
+  Settings = await vite.ssrLoadModule("/src/pages/settings/UnmaintainedCard.tsx");
 });
 after(async () => {
   await vite?.close();
@@ -63,6 +66,22 @@ const advice: NoFixAdvice = {
       ],
     },
     {
+      kind: "unmaintained",
+      title: "No release for 24 months or more (your risk policy)",
+      issues: 1,
+      unmaintained_months: 24,
+      items: [
+        {
+          component: "html-minifier",
+          version: "4.0.0",
+          issues: ["CVE-2022-37620"],
+          text: "No release since April 2019 (4.0.0); a fix may not come.",
+          last_release: "2019-04-01",
+          bundled: true,
+        },
+      ],
+    },
+    {
       kind: "no_fix_yet",
       title: "No fix yet",
       issues: 1,
@@ -81,9 +100,13 @@ const advice: NoFixAdvice = {
   ],
 };
 
-function render(a: NoFixAdvice): string {
+function render(a: NoFixAdvice, canEditPolicy = false): string {
   return renderToStaticMarkup(
-    h(MemoryRouter, { initialEntries: ["/fixes/5%3Ano_fix"] }, h(View, { advice: a, accept: { hash: "#accept" }, snooze: { hash: "#snooze" } })),
+    h(
+      MemoryRouter,
+      { initialEntries: ["/fixes/5%3Ano_fix"] },
+      h(View, { advice: a, accept: { hash: "#accept" }, snooze: { hash: "#snooze" }, canEditPolicy }),
+    ),
   );
 }
 
@@ -138,4 +161,30 @@ test("without an application, no bundled note or command", () => {
   assert.ok(!t.includes("upgrade changes"));
   assert.ok(!t.includes("pnpm why"));
   assert.ok(t.startsWith("Fixed under another name"));
+});
+
+test("the unmaintained heading names the risk policy's rule, linked to the setting for admins only", () => {
+  assert.ok(text(render(advice)).includes("No release for 24 months or more (your risk policy) (1 issue)"));
+  assert.ok(!render(advice).includes("/settings/risk-policy"), "no link for people who cannot change the policy");
+  const html = render(advice, true);
+  assert.match(html, /<a [^>]*href="\/settings\/risk-policy#unmaintained-months"[^>]*>your risk policy<\/a>/);
+  assert.match(text(html), /No release for 24 months or more \( ?your risk policy ?\) \(1 issue\)/);
+  // A heading that names no policy rule gets no link.
+  const deprecated = { sections: [{ ...advice.sections[1], title: "Deprecated by the maintainers", unmaintained_months: undefined }] };
+  assert.ok(!render(deprecated, true).includes("/settings/risk-policy"));
+});
+
+test("settings: the unmaintained field shows the policy's months, the default when unset, and flags values out of range", () => {
+  const card = (policy: Record<string, unknown>) =>
+    renderToStaticMarkup(h(MemoryRouter, null, h(Settings.UnmaintainedCard, { policy, onChange: () => {} })));
+  const unset = card({});
+  assert.ok(text(unset).includes("Treat a package as unmaintained after (months without a release)"));
+  assert.match(unset, /id="unmaintained-months"[^>]*min="6"[^>]*max="120"[^>]*value="24"/);
+  assert.ok(text(unset).includes("Between 6 and 120. Default 24."));
+  assert.match(card({ unmaintained_months: 36 }), /value="36"/);
+  assert.ok(!text(card({ unmaintained_months: 36 })).includes("must be a whole number"));
+  assert.ok(text(card({ unmaintained_months: 5 })).includes("must be a whole number between 6 and 120"));
+  for (const [n, ok] of [[undefined, true], [6, true], [120, true], [5, false], [121, false], [12.5, false]] as const) {
+    assert.equal(Settings.unmaintainedValid({ unmaintained_months: n }), ok, `months ${n}`);
+  }
 });

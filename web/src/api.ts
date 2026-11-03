@@ -2861,6 +2861,11 @@ export interface RiskPolicy {
   due_dates?: "sla" | "patch_calendar" | "";
   /** Patch windows for due_dates "patch_calendar"; absent means the defaults. */
   patch_calendar?: PatchCalendar;
+  /**
+   * Months without a release after which the no-fix advice treats a package as unmaintained
+   * (6–120; absent means the default, 24).
+   */
+  unmaintained_months?: number;
 }
 
 /** Monthly patch windows: test N days after Patch Tuesday, production M days after test. */
@@ -2873,6 +2878,10 @@ export interface PatchCalendar {
 export const DEFAULT_PATCH_CALENDAR: PatchCalendar = { test_days_after_patch_tuesday: 1, prod_days_after_test: 7, timezone: "UTC" };
 
 export const DEFAULT_EXCEPTION_MAX_DAYS = 365;
+/** The risk policy's unmaintained cutoff: its default and allowed range, in months. */
+export const DEFAULT_UNMAINTAINED_MONTHS = 24;
+export const MIN_UNMAINTAINED_MONTHS = 6;
+export const MAX_UNMAINTAINED_MONTHS = 120;
 
 /** Who last changed a policy and when, from the audit log. */
 export interface PolicyChangeRef {
@@ -3244,6 +3253,8 @@ export interface NoFixSection {
   title: string;
   /** Distinct issues across its packages. */
   issues: number;
+  /** On an unmaintained section with a package past it: the risk policy's cutoff in months. */
+  unmaintained_months?: number;
   items: NoFixItem[];
 }
 

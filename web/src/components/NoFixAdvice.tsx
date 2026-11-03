@@ -10,7 +10,18 @@ import { CodeBlock } from "./ui";
  * how to see what pulls each one in; then the decisions the fix page
  * already offers.
  */
-export function NoFixAdviceView({ advice, accept, snooze }: { advice: NoFixAdvice; accept: To; snooze: To }) {
+export function NoFixAdviceView({
+  advice,
+  accept,
+  snooze,
+  canEditPolicy = false,
+}: {
+  advice: NoFixAdvice;
+  accept: To;
+  snooze: To;
+  /** Admins get a link to the risk policy's unmaintained setting from the heading that names it. */
+  canEditPolicy?: boolean;
+}) {
   const b = advice.bundled;
   const commands = b?.commands ?? [];
   return (
@@ -31,7 +42,7 @@ export function NoFixAdviceView({ advice, accept, snooze }: { advice: NoFixAdvic
       {advice.sections.map((s) => (
         <section key={s.kind} className="nofix-section" aria-label={s.title}>
           <h3 className="nofix-title">
-            {s.title} ({plural(s.issues, "issue")})
+            <SectionTitle title={s.title} months={s.unmaintained_months} link={canEditPolicy} /> ({plural(s.issues, "issue")})
           </h3>
           <ul className="nofix-list">
             {s.items.map((it) => (
@@ -58,5 +69,22 @@ export function NoFixAdviceView({ advice, accept, snooze }: { advice: NoFixAdvic
         <Link to={accept}>ignore it with a reason</Link>; or <Link to={snooze}>snooze it until a fix is published</Link>.
       </p>
     </div>
+  );
+}
+
+const POLICY_WORDS = "your risk policy";
+
+/** A section's heading; "your risk policy" links to the setting for admins when the policy's cutoff applied. */
+function SectionTitle({ title, months, link }: { title: string; months?: number; link: boolean }) {
+  const at = title.indexOf(POLICY_WORDS);
+  if (!months || !link || at < 0) return <>{title}</>;
+  return (
+    <>
+      {title.slice(0, at)}
+      <Link to="/settings/risk-policy#unmaintained-months" title="Change how long without a release makes a package unmaintained">
+        {POLICY_WORDS}
+      </Link>
+      {title.slice(at + POLICY_WORDS.length)}
+    </>
   );
 }
