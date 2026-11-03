@@ -149,7 +149,8 @@ export const ARTICLES: Article[] = [
       {
         p: "When a fix can't be applied yet, record why: **Snooze** it until a date or until a fix ships, or **Ignore** it with a reason, a scope and an expiry (see [Snooze and ignore](help:exceptions) and [Ignore issues](help:ignore-issues)). Engineers and viewers use **Ask to ignore**, which goes to the [approval inbox](help:approvals).",
       },
-      { p: "Top fixes also says how many issues it does not show and why (no free fix yet, kernels that are not running, assets that are not production, lower priority, snoozed or accepted). Every number is a link to the list it counts." },
+      { p: "Top fixes also says how many issues it does not show and why (no fix in the standard updates yet, kernels that are not running, assets that are not production, lower priority, snoozed or ignored). Every number is a link to the list it counts. \"No fix in the standard updates\" means no fixed version is published yet, or the vendor publishes it only in a paid support subscription such as Ubuntu Pro; the fix page says what to do meanwhile." },
+      { p: "Words with a dotted underline (SOS, incident, issue, fix) show their meaning when you point at them; the [Glossary](help:glossary) has the rest. Under the title, **vulnerability data updated** says when the newest data source last synced. A warning appears there when a source is out of date or failing; open [Data sources](/intelligence) to see which (see [Coverage, Intelligence feeds and gaps](help:coverage-intelligence))." },
       { p: "For alerts, someone on the team should check [Incidents](/incidents) (under **Activity**) daily and acknowledge new ones, so escalations don't fire." },
     ],
   },
