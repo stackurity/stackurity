@@ -15,13 +15,13 @@ if { [ -e /run/stackurity-release.lock ] && ! flock -n /run/stackurity-release.l
 	{ [ -e /run/stackurity-backup.lock ] && ! flock -n /run/stackurity-backup.lock true; }; then
 	log "a release or backup is running; skipped"; exit 0
 fi
-if pgrep -f 'docker build|docker buildx|buildkitd|rehearse-' >/dev/null; then
+if pgrep -f 'docker build |docker buildx build|buildx build|rehearse-' >/dev/null; then
 	log "a build or rehearsal is running; skipped"; exit 0
 fi
 free_mib=$(awk '/^MemAvailable:/ {print int($2/1024)}' /proc/meminfo)
 [ "$free_mib" -ge "$MIN_FREE_MIB" ] || { log "only ${free_mib} MiB available; skipped"; exit 0; }
 
 nice -n 19 ionice -c 3 docker run --rm --cap-drop ALL --cap-add SETUID --cap-add SETGID --cap-add CHOWN \
-	--security-opt no-new-privileges --memory 768m --memory-swap 768m --cpus 1 --cpu-shares 64 \
+	--security-opt no-new-privileges --memory 1024m --memory-swap 1024m --cpus 1 --cpu-shares 64 \
 	-v "$DB_VOLUME":/var/lib/clamav --entrypoint freshclam "$IMAGE" --stdout --foreground
 log "signatures updated"

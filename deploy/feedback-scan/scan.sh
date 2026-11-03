@@ -46,7 +46,7 @@ if { [ -e /run/stackurity-release.lock ] && ! flock -n /run/stackurity-release.l
 	log "a release or backup is running; skipped"
 	exit 0
 fi
-if pgrep -f 'docker build|docker buildx|buildkitd|rehearse-' >/dev/null; then
+if pgrep -f 'docker build |docker buildx build|buildx build|rehearse-' >/dev/null; then
 	log "a build or rehearsal is running; skipped"
 	exit 0
 fi
