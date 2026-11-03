@@ -29,7 +29,7 @@ import { UsagePage } from "./pages/settings/Usage";
 import { BillingPage } from "./pages/settings/Billing";
 import { SingleSignOnPage } from "./pages/settings/SingleSignOn";
 import { DashboardPage } from "./pages/Dashboard";
-import { AutomaticFixPoliciesPage, SettingsPage } from "./pages/Settings";
+import { AutomaticFixPoliciesPage, SettingsIndex, SettingsLayout } from "./pages/Settings";
 import { AssetsPage } from "./pages/Assets";
 import { AssetDetailPage } from "./pages/AssetDetail";
 import { AddServerPage } from "./pages/AddServer";
@@ -271,15 +271,54 @@ export function App() {
         <Route path="activity" element={<Moved to={() => "/incidents"} />} />
         <Route path="incidents" element={<IncidentsPage />} />
         <Route path="incidents/:id" element={<IncidentDetailPage />} />
-        <Route path="settings" element={<SettingsPage />} />
-        <Route
-          path="settings/automatic-fixes"
-          element={
-            <RequireRole min="security">
-              <AutomaticFixPoliciesPage />
-            </RequireRole>
-          }
-        />
+        {/* Settings: every section on the left, the open one on the right. */}
+        <Route path="settings" element={<SettingsLayout />}>
+          <Route index element={<SettingsIndex />} />
+          <Route path="risk-policy" element={<RiskPolicyPage />} />
+          <Route path="fix-grouping" element={<FixGroupingPage />} />
+          <Route path="vex" element={<VexPage />} />
+          <Route path="vex/:id" element={<VexDocumentPage />} />
+          <Route
+            path="automatic-fixes"
+            element={
+              <RequireRole min="security">
+                <AutomaticFixPoliciesPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="usage"
+            element={
+              <RequireRole min="admin">
+                <UsagePage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="billing"
+            element={
+              <RequireRole min="admin">
+                <BillingPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="sso"
+            element={
+              <RequireRole min="admin">
+                <SingleSignOnPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="jobs"
+            element={
+              <RequireRole min="admin">
+                <JobsPage />
+              </RequireRole>
+            }
+          />
+        </Route>
         <Route path="intelligence" element={<IntelligencePage />} />
         <Route path="assets" element={<AssetsPage />} />
         <Route
@@ -309,45 +348,9 @@ export function App() {
         <Route path="checks" element={<ChecksPage />} />
         <Route path="approvals" element={<ApprovalsPage />} />
         <Route path="settings/approvals" element={<Moved to={() => "/approvals"} />} />
-        <Route
-          path="settings/usage"
-          element={
-            <RequireRole min="admin">
-              <UsagePage />
-            </RequireRole>
-          }
-        />
-        <Route
-          path="settings/sso"
-          element={
-            <RequireRole min="admin">
-              <SingleSignOnPage />
-            </RequireRole>
-          }
-        />
-        <Route
-          path="settings/billing"
-          element={
-            <RequireRole min="admin">
-              <BillingPage />
-            </RequireRole>
-          }
-        />
         <Route path="account" element={<AccountPage />} />
         {/* Linked Slack accounts moved to Your account. */}
         <Route path="settings/slack" element={<Navigate replace to="/account#slack" />} />
-        <Route path="settings/risk-policy" element={<RiskPolicyPage />} />
-        <Route path="settings/fix-grouping" element={<FixGroupingPage />} />
-        <Route path="settings/vex" element={<VexPage />} />
-        <Route path="settings/vex/:id" element={<VexDocumentPage />} />
-        <Route
-          path="settings/jobs"
-          element={
-            <RequireRole min="admin">
-              <JobsPage />
-            </RequireRole>
-          }
-        />
         {/*
           Moved out of Settings into Assets, Integrations and People. The
           old addresses (bookmarks, emails, Slack and Jira links) redirect,

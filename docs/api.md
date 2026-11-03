@@ -484,7 +484,13 @@ Lists the account's droplets (optionally `?tag=`) with, for each, `name`, `regio
 
 **Who:** anyone · outside `/api/v1`
 
-The agent installer script, with the server's URL filled in: `STACKURITY_BASE_URL`, or without it the URL the request came in on. In that case a `Host` header that is not a hostname or IP address with an optional port gets `400` instead of a script. Served with `Cache-Control: no-store` and `Vary: Host`.
+The agent installer script for Linux, with the server's URL filled in: `STACKURITY_BASE_URL`, or without it the URL the request came in on. In that case a `Host` header that is not a hostname or IP address with an optional port gets `400` instead of a script. Served with `Cache-Control: no-store` and `Vary: Host`.
+
+### `GET /install/agent.ps1`
+
+**Who:** anyone · outside `/api/v1`
+
+The agent installer script for Windows (`text/plain`), run with `irm .../install/agent.ps1 | iex`; see [Windows hosts](install.md#windows-hosts). The server's public URL is filled in; the enrollment code never is.
 
 ### `GET /install/kubernetes.yaml`
 
@@ -496,7 +502,7 @@ The Kubernetes reporter's manifest for this server ([kubernetes.md](kubernetes.m
 
 **Who:** anyone · outside `/api/v1`
 
-The agent builds the installer downloads: `linux-amd64` and `linux-arm64`, each with a `.sha256`. They are bundled in the server image (`STACKURITY_AGENT_DIR`).
+The agent builds the installers download: `linux-amd64`, `linux-arm64` and `windows-amd64`, each with a `.sha256`. They are bundled in the server image (`STACKURITY_AGENT_DIR`).
 
 ### `POST /kubernetes/report`
 
