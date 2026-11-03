@@ -73,6 +73,10 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/auth/logout":       {class: "skip"},
 	"POST /api/v1/enroll":            {class: "public"},
 	"POST /api/v1/ci/token":          {class: "public"},
+	// Error reports from the dashboard, signed in or not: they write to
+	// the caller's own workspace only, and nothing comes back
+	// (client_errors_test.go).
+	"POST /api/v1/client-errors": {class: "public"},
 	// The CloudFormation template for connecting AWS: the same file for
 	// everyone. The stack's callback names A's external ID without a token
 	// and is refused (aws_test.go covers tokens).
@@ -312,6 +316,7 @@ var routeRules = map[string]routeRule{
 	"DELETE /api/v1/admin/packs/{id}":        {class: "instance"},
 	"GET /api/v1/admin/health":               {class: "instance"},
 	"GET /api/v1/admin/coverage-gaps":        {class: "instance"},
+	"GET /api/v1/admin/client-errors":        {class: "instance"},
 	"GET /api/v1/updates":                    {class: "instance"},
 	"GET /api/v1/admin/workspaces/":          {class: "instance"},
 	"POST /api/v1/admin/workspaces/":         {class: "instance"},
