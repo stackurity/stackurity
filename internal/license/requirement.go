@@ -58,7 +58,7 @@ type KeyStatus struct {
 type Requirement struct {
 	// From is when the server stops working without a key: when it was
 	// installed, or KeyGrace after an existing server first started a
-	// version needing one (migration 0086).
+	// version needing one (migration 0087).
 	From     time.Time
 	Upgraded bool
 	Licence  *Holder

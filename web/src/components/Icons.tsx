@@ -150,6 +150,35 @@ export const IconActivity = (p: P) => (
   </Svg>
 );
 
+export const IconReports = (p: P) => (
+  <Svg {...p}>
+    <path d="M7 3h7l5 5v13H7z" />
+    <path d="M14 3v5h5M10 17v-3M13 17v-5M16 17v-2" />
+  </Svg>
+);
+
+export const IconPlug = (p: P) => (
+  <Svg {...p}>
+    <path d="M9 3v4M15 3v4M6 7h12v4a6 6 0 0 1-12 0zM12 17v4" />
+  </Svg>
+);
+
+export const IconPeople = (p: P) => (
+  <Svg {...p}>
+    <circle cx="9" cy="8" r="3" />
+    <circle cx="17" cy="9" r="2" />
+    <path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M15 14.5c.6-.3 1.3-.5 2-.5 2.2 0 4 1.8 4 4" />
+  </Svg>
+);
+
+export const IconAdmin = (p: P) => (
+  <Svg {...p}>
+    <rect x="3" y="4" width="18" height="7" rx="1.5" />
+    <rect x="3" y="13" width="18" height="7" rx="1.5" />
+    <path d="M7 7.5h.01M7 16.5h.01" />
+  </Svg>
+);
+
 export const IconMore = (p: P) => (
   <Svg {...p}>
     <circle cx="5" cy="12" r="1.3" />
@@ -194,5 +223,37 @@ export const IconSignalOff = (p: P) => (
   <Svg {...p}>
     <path d="M5 12.5a10 10 0 0 1 3-2.2M12 9a10 10 0 0 1 7 3.5M8.5 16a5 5 0 0 1 7 0M12 19.5v.3" />
     <path d="M4 4l16 16" />
+  </Svg>
+);
+export const IconLayers = (p: P) => (
+  <Svg {...p}>
+    <path d="M12 3l9 5-9 5-9-5z" />
+    <path d="M3 13l9 5 9-5" />
+  </Svg>
+);
+export const IconDocument = (p: P) => (
+  <Svg {...p}>
+    <path d="M14 3H6.5A1.5 1.5 0 0 0 5 4.5v15A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V8z" />
+    <path d="M14 3v5h5" />
+    <path d="M9 14l2 2 4-4" />
+  </Svg>
+);
+export const IconGauge = (p: P) => (
+  <Svg {...p}>
+    <path d="M4.5 18a9 9 0 1 1 15 0" />
+    <path d="M12 14l4-5" />
+    <circle cx="12" cy="14" r="1.2" />
+  </Svg>
+);
+export const IconCard = (p: P) => (
+  <Svg {...p}>
+    <rect x="3" y="5.5" width="18" height="13" rx="2" />
+    <path d="M3 10h18M7 15h3" />
+  </Svg>
+);
+export const IconSignIn = (p: P) => (
+  <Svg {...p}>
+    <path d="M14 4h4.5A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5H14" />
+    <path d="M10 8l4 4-4 4M14 12H4" />
   </Svg>
 );

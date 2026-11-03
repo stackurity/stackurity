@@ -535,7 +535,7 @@ func licenceKeyFromEnv() (key, from string, err error) {
 }
 
 // keyRequirement reads from when this server needs a key (a free Community
-// key or a paid licence; migration 0086) and says so in the log. A hosted
+// key or a paid licence; migration 0087) and says so in the log. A hosted
 // edition drops the requirement (its platform holds the licence).
 func keyRequirement(ctx context.Context, st *store.Store, holder *license.Holder, log *slog.Logger) (*license.Requirement, error) {
 	from, upgraded, observed, err := st.LicenseRequirement(ctx)
@@ -557,7 +557,7 @@ func keyRequirement(ctx context.Context, st *store.Store, holder *license.Holder
 }
 
 // keyGraceTick is how often a server adds its running time to the grace
-// period's count (migration 0086); a longer gap counts as keyGraceMaxStep.
+// period's count (migration 0087); a longer gap counts as keyGraceMaxStep.
 const (
 	keyGraceTick    = 10 * time.Minute
 	keyGraceMaxStep = 20 * time.Minute
@@ -1005,6 +1005,13 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 		if err := st.PruneOAuth(ctx); err != nil {
 			return err
 		}
+		// Ask Stackurity: conversations 30 days after they started,
+		// abandoned spend holds, usage older than two years.
+		if n, err := st.PurgeAsk(ctx); err != nil {
+			return err
+		} else if n > 0 {
+			log.Info("assistant conversations deleted after 30 days", "count", n)
+		}
 		// Connect PagerDuty steps nobody finished, with their tokens.
 		if err := st.PurgePagerDutyConnects(ctx); err != nil {
 			return err
@@ -1126,7 +1133,7 @@ func adminCmd() *cobra.Command {
 				return err
 			}
 			fmt.Printf("loaded %d demo assets (names start with demo-). Findings appear once the vulnerability feeds have synced,\n"+
-				"usually within a few minutes; see Intelligence for feed status. Remove them with: stackurity admin load-demo --remove\n", len(ids))
+				"usually within a few minutes; see Integrations, Data sources for feed status. Remove them with: stackurity admin load-demo --remove\n", len(ids))
 			return nil
 		},
 	}

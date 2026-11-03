@@ -1,6 +1,6 @@
 # The Stackurity GitHub App ("Install on GitHub")
 
-With a GitHub App configured on the server, people cover their repositories in one click: **Settings → Integrations → Git repository → Install on GitHub**, pick the repositories on GitHub's own install screen, and the first results arrive within minutes. Nobody creates, pastes or renews a personal access token, and no CI step is needed.
+With a GitHub App configured on the server, people cover their repositories in one click: **Integrations → Git repository → Install on GitHub**, pick the repositories on GitHub's own install screen, and the first results arrive within minutes. Nobody creates, pastes or renews a personal access token, and no CI step is needed.
 
 Stackurity Cloud has this app. On your own server it is optional: without it, **Install on GitHub** is hidden and repositories are covered as before, by a [Git integration](install.md#repositories) with a read-only token, or by `stackurity scan` in CI. All three put a repository on the same asset (its `git-url` identity), so they can be mixed.
 
@@ -48,7 +48,7 @@ GitHub posts events to `/api/v1/integrations/github/webhook`. The endpoint is pu
 
 ### In the dashboard
 
-**Settings → Integrations** lists each repository with the other integrations, and the **Git repository** card shows **Install on GitHub** and the connected GitHub accounts, with:
+**Integrations** lists each repository with the other integrations, and the **Git repository** card shows **Install on GitHub** and the connected GitHub accounts, with:
 
 - **Add or remove repositories**: GitHub's page for the installation. Changes there reach Stackurity by webhook.
 - **Sync**: list the repositories again now (`POST /api/v1/integrations/github/installations/{installation_id}/sync`).
@@ -100,7 +100,7 @@ One GitHub App serves every organisation on the server. Register it once, under 
    | `STACKURITY_GITHUB_URL` | Optional: your GitHub Enterprise Server, such as `https://github.example.com` (the API is then `<that>/api/v3`). Unset for github.com |
 
    All six, or none: setting only some stops the server at start with a message naming the missing ones. `STACKURITY_BASE_URL` must be set (it is the app's callback and webhook address). The start-up log prints the callback and webhook URLs GitHub must use.
-5. In Stackurity, **Settings → Integrations → Git repository → Install on GitHub**, pick a test repository with a lockfile, **Install**. Back in Stackurity, the repository appears under **Active integrations** and its first scan finishes within a minute or two. On GitHub, the app's **Advanced** tab lists the webhook deliveries; push a lockfile change to the default branch to see a `push` delivery answered `scan queued`.
+5. In Stackurity, **Integrations → Git repository → Install on GitHub**, pick a test repository with a lockfile, **Install**. Back in Stackurity, the repository appears under **Active integrations** and its first scan finishes within a minute or two. On GitHub, the app's **Advanced** tab lists the webhook deliveries; push a lockfile change to the default branch to see a `push` delivery answered `scan queued`.
 
 To rotate a credential, generate a new private key or client secret, or change the webhook secret, in the app's settings, update the variable and restart. Delete the old private key on GitHub once the server uses the new one.
 

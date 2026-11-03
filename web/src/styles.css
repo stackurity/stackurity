@@ -4188,46 +4188,131 @@ h6.md-h {
   }
 }
 
-/* --- settings index */
+/* --- settings: every section on the left, the open one on the right */
 
-.settings-groups {
+.settings-layout {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--s4);
-  margin-bottom: var(--s4);
+  grid-template-columns: 232px minmax(0, 1fr);
+  gap: var(--s6);
+  align-items: start;
 }
-.settings-group {
-  margin-bottom: 0;
+.settings-nav {
+  position: sticky;
+  top: var(--s4);
 }
-.settings-group h2 {
+.settings-nav-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 var(--s2) var(--s3);
   margin-bottom: var(--s2);
+  border-bottom: 1px solid var(--border);
 }
-.settings-list {
+.settings-nav-head strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-nav-group + .settings-nav-group {
+  margin-top: var(--s2);
+  padding-top: var(--s2);
+  border-top: 1px solid var(--border);
+}
+.settings-nav-title {
+  margin: var(--s2) var(--s2) var(--s1);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+.settings-nav ul {
   list-style: none;
   margin: 0;
   padding: 0;
 }
-.settings-link {
+.settings-nav-item {
+  position: relative;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-height: 44px;
-  padding: var(--s2) 0;
-  border-top: 1px solid var(--border);
+  align-items: center;
+  gap: var(--s2);
+  min-height: 36px;
+  padding: 6px var(--s2);
+  border-radius: var(--radius);
+  color: var(--text);
   text-decoration: none;
 }
-.settings-list li:first-child .settings-link {
-  border-top: none;
+.settings-nav-item .icon {
+  flex: none;
+  color: var(--muted);
 }
-.settings-link:hover .settings-label {
-  text-decoration: underline;
+.settings-nav-item:hover {
+  background: var(--surface-2);
 }
-.settings-label {
-  font-weight: 650;
+.settings-nav-item.active {
+  background: var(--muted-bg);
+  font-weight: 600;
 }
+.settings-nav-item.active::before {
+  content: "";
+  position: absolute;
+  left: -8px;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.settings-nav-item.active .icon {
+  color: var(--text);
+}
+.settings-nav-note {
+  margin: var(--s3) var(--s2) 0;
+}
+.settings-main {
+  min-width: 0;
+}
+/* Narrow screens: the sections become a row above the open one. */
 @media (max-width: 900px) {
-  .settings-groups {
-    grid-template-columns: 1fr;
+  .settings-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s3);
+  }
+  .settings-nav {
+    position: static;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: var(--s2);
+  }
+  .settings-nav-head,
+  .settings-nav-title,
+  .settings-nav-note {
+    display: none;
+  }
+  .settings-nav {
+    display: flex;
+    overflow-x: auto;
+    gap: var(--s1);
+    scrollbar-width: thin;
+  }
+  .settings-nav-group,
+  .settings-nav-group + .settings-nav-group {
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .settings-nav ul {
+    display: flex;
+    gap: var(--s1);
+  }
+  .settings-nav-item {
+    white-space: nowrap;
+    min-height: 44px;
+  }
+  .settings-nav-item.active::before {
+    left: 8px;
+    right: 8px;
+    top: auto;
+    bottom: 0;
+    width: auto;
+    height: 3px;
   }
 }
 
@@ -4276,6 +4361,15 @@ h6.md-h {
   flex-direction: column;
   gap: var(--s3);
 }
+/* A card list that stands in for a table on phones (Checks). */
+.approval-list.only-narrow {
+  display: none;
+}
+@media (max-width: 720px) {
+  .approval-list.only-narrow {
+    display: flex;
+  }
+}
 .approval {
   padding: var(--s3) var(--s4);
   background: var(--surface);
@@ -4285,7 +4379,7 @@ h6.md-h {
   overflow-wrap: anywhere;
 }
 .approval h3 {
-  margin: 0 0 var(--s1, 4px);
+  margin: 0 0 var(--s1);
   font-size: 15px;
 }
 .approval p {
@@ -4877,7 +4971,7 @@ h6.md-h {
   word-break: break-all;
 }
 
-/* --- Settings, Integrations */
+/* --- Integrations */
 .int-name {
   display: flex;
   align-items: center;
@@ -4998,7 +5092,7 @@ h6.md-h {
   min-width: 0;
 }
 
-/* --- Settings, AI assistants */
+/* --- Integrations, AI assistants */
 .assistant-url-label {
   margin: 0 0 6px;
 }
@@ -5328,7 +5422,7 @@ div.assistant-card {
   margin: 4px 0 0;
 }
 
-/* Settings ▸ Integrations: GitLab groups connected with Connect GitLab. */
+/* Integrations: GitLab groups connected with Connect GitLab. */
 .int-gl-row {
   display: flex;
   flex-wrap: wrap;
@@ -5353,7 +5447,7 @@ div.assistant-card {
   gap: 8px;
 }
 
-/* Settings ▸ Integrations: GitHub accounts connected through the GitHub App. */
+/* Integrations: GitHub accounts connected through the GitHub App. */
 .int-gh-row {
   display: flex;
   flex-wrap: wrap;
@@ -5363,7 +5457,7 @@ div.assistant-card {
   padding: 8px 0;
 }
 
-/* Settings, Integrations, AWS (pages/settings/Aws.tsx) */
+/* Integrations, AWS (pages/settings/Aws.tsx) */
 .aws-inline {
   display: flex;
   gap: var(--s2);
@@ -5382,7 +5476,7 @@ div.assistant-card {
   overflow: auto;
 }
 
-/* Settings → Users: what a new user can see, and the permissions table. */
+/* People → Users: what a new user can see, and the permissions table. */
 .access-scope,
 .access-projects {
   margin-top: var(--s3);
