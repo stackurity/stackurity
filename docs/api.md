@@ -364,7 +364,83 @@ Disconnects that provider. 409 when it is the only way into an account without a
 
 **Who:** any signed-in user (10 an hour)
 
-Sends feedback to the Stackurity team: `kind` (`bug`, `idea`, `question`), `message` (up to 5000 characters), optional `email` and `page`. 202 when delivered, 502 when the feedback service cannot be reached, 404 when feedback is turned off (`feedback_enabled: false`). See [network.md](network.md#feedback).
+Sends feedback to the Stackurity team: `kind` (`issue`, `feature`, `question`; `bug` and `idea` still work), `message` (up to 5000 characters), optional `email`, `page` and `viewport` (`1280x800`). JSON, or `multipart/form-data` with those fields first and then up to three files named `attachment`: PNG, JPEG, WebP or GIF images and PDFs up to 10 MB each, MP4 or WebM videos up to 50 MB, 90 MB together. Files are checked by their content, not their name (400 otherwise, 413 when too large), and images lose their metadata (EXIF, location, comments) before anything is sent. 202 with `ref` (FB-123) when the feedback service gives one, 502 when it cannot be reached, 404 when feedback is turned off (`feedback_enabled: false`). See [network.md](network.md#feedback).
+
+### `GET /feedback/mine`
+
+**Who:** any signed-in user
+
+What the caller sent from this installation, newest first: `ref`, `kind`, `summary` (the first line), `attachments`, `status` (`received`, `reviewing`, `in_progress`, `fixed`, `released`, `wont_fix`, `duplicate`, `unknown`), `status_note` (the team's note, e.g. why it won't be changed), `fixed_in`, `status_at`, `created_at`. Statuses of open items older than five minutes are asked again from the feedback service, sending only each item's reference and status token; `check_failed` is true when that did not work.
+
+## Feedback queue
+
+Only on the server that runs the Stackurity team's queue (`STACKURITY_FEEDBACK_QUEUE_DIR`); everywhere else these answer 404 or 403. See [feedback-queue.md](feedback-queue.md).
+
+### `POST /feedback-queue/intake`
+
+**Who:** the website relay, with `X-Stackurity-Feedback-Key`
+
+`multipart/form-data`: an `item` part (JSON: `kind`, `description`, `email`, `page`, `browser`, `viewport`, `version`, `edition`, `hosting`, `source`) and up to three `attachment` parts, checked by content and size and stored under random names (images without metadata). 201 with `ref` and the sender's status `token`; 401 without the key, 413 too large, 415 not an accepted type, 507 when attachment storage is full (feedback without attachments is still taken).
+
+### `POST /feedback-queue/status`
+
+**Who:** the website relay, with `X-Stackurity-Feedback-Key`
+
+`{"items": [{"ref", "token"}]}` (up to 50). Each item's public `status` (as in `GET /feedback/mine`), `resolution` once the team decided, `fixed_in` and `updated_at`; `unknown` when the reference and token do not match.
+
+### `GET /admin/feedback`
+
+**Who:** instance admin, or a feedback triage token
+
+Items newest first: `status` (comma-separated: `new`, `triaged`, `in_progress`, `needs_owner`, `fixed`, `released`, `wont_fix`, `duplicate`), `before` (a reference) and `limit` (up to 200). Also `counts` per status and `storage` (`used_bytes`, `max_bytes`).
+
+### `GET /admin/feedback/{id}`
+
+**Who:** instance admin, or a feedback triage token
+
+`{id}` is `FB-123` or `123`. The `item` (with `triage_notes`, `contact_email`, `source`, `version`, `edition`, `page`, `browser`, `viewport`, `link`, timestamps), its `attachments` (name, type, size, `scan`, `purged_at`) and `events`.
+
+### `PATCH /admin/feedback/{id}`
+
+**Who:** instance admin, or a feedback triage token
+
+Any of `status`, `resolution` (shown to the sender; required for `wont_fix`), `triage_notes` (replaces) or `note` (appends a dated paragraph with who wrote it), `link` (a pull request or issue under `https://github.com/stackurity/`), `duplicate_of` (a reference; required for `duplicate`), `fixed_in` (a version). Every change is kept in the item's `events`.
+
+### `DELETE /admin/feedback/{id}`
+
+**Who:** instance admin (not a triage token)
+
+Deletes an item (spam, abuse) with its attachment files and history. 204.
+
+### `POST /admin/feedback/{id}/attachments/{aid}/link`
+
+**Who:** instance admin, or a feedback triage token
+
+A download link signed with a key the website relay never holds (`STACKURITY_FEEDBACK_LINK_KEY`), valid for ten minutes: `url`, `expires_at`, `name`, `content_type`, `size`. 410 when the retention rules deleted the file.
+
+### `GET /feedback-attachments/{id}`
+
+**Who:** anyone with a signed link from the route above
+
+The file, as a download (`Content-Disposition: attachment`, `Content-Security-Policy: sandbox`, `nosniff`): it is never shown inside the dashboard. 403 when the link is wrong or has expired.
+
+### `GET /admin/feedback-tokens`
+
+**Who:** instance admin
+
+The triage agent's tokens: `name`, `prefix`, `created_at`, `expires_at`, `last_used_at`, `revoked_at`.
+
+### `POST /admin/feedback-tokens`
+
+**Who:** instance admin (not a triage token)
+
+`name` and `days` (1–90, default 30). The answer has the secret (`stkfb_…`) once. It works only on `/admin/feedback` routes: list and read items, fetch attachment links, change status and notes.
+
+### `DELETE /admin/feedback-tokens/{id}`
+
+**Who:** instance admin
+
+Revokes the token at once.
 
 ### `GET /tokens`
 
@@ -1856,6 +1932,18 @@ Removes a source; its documents keep its name. Audited as `vex_source.delete`.
 Decisions about open issues as a VEX document ([what is exported](vex.md#exporting)). `format`: `openvex` (default) or `cyclonedx`; `notes=true` includes people's ignore notes and mitigations as impact statements (security or admin, else 403); `asset_id` for one asset, `project_id` (or the switcher) for one project, neither for every asset the caller sees. Sent as a download (`Content-Disposition`).
 
 ## Intelligence
+
+### `GET /public/cves/recent`
+
+**Who:** anyone (no sign-in; 60 requests a minute per address)
+
+The public log of new CVEs, newest first: `{"tracking_since": "...", "cves": [{"cve", "added", "source", "exact"}]}`. `added` is when the CVE first reached this server, and `source` the feed that brought it: `epss` (FIRST's daily file of every scored CVE) or `kev` (CISA's catalogue). Only these two feeds count. Which advisory feeds a server syncs follows what its workspaces run, so their times would tell the public about the workspaces' software. The time is written once and never changed. CVEs stored before this was recorded are not listed; `tracking_since` is when exact times began. `limit` is 1 to 200 (default 50), and `before` (RFC 3339, URL-encoded) pages back to older entries. stackurity.ai shows this log for Stackurity Cloud.
+
+### `GET /public/cves`
+
+**Who:** anyone (no sign-in; 60 requests a minute per address)
+
+What the log records for the CVEs in `id` (repeat it, or separate IDs with commas; 1 to 200). Same shape as above; `exact: false` marks a CVE stored before `tracking_since`, which arrived on or before `added`. Unknown CVEs are left out.
 
 ### `GET /advisories/{key}`
 

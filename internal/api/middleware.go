@@ -67,6 +67,10 @@ type Principal struct {
 	// process with the person's own session while they wait for an answer.
 	// It may only read (projectGate), and nothing from outside can set it.
 	Ask bool
+	// FeedbackAgent is the triage agent's token for the feedback queue
+	// (feedback_queue.go): no user and no workspace, and only the queue's
+	// routes accept it.
+	FeedbackAgent *store.FeedbackAgentToken
 	// PasswordChangeRequired: an administrator set a temporary password
 	// (password_reset.go); the session may only change it.
 	PasswordChangeRequired bool
@@ -124,8 +128,27 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 				writeError(w, 401, "unauthorized", "use a Bearer token")
 				return
 			}
+			secret = strings.TrimSpace(secret)
+			if strings.HasPrefix(secret, FeedbackTokenPrefix+"_") {
+				// A triage token: the feedback queue's routes only.
+				if !feedbackAgentPath(r.URL.Path) || s.FeedbackQueue == nil {
+					writeError(w, 401, "unauthorized", "a feedback triage token works only on /api/v1/admin/feedback")
+					return
+				}
+				t, err := s.Store.FeedbackAgentByToken(r.Context(), auth.HashToken(secret))
+				if errors.Is(err, store.ErrNotFound) {
+					writeError(w, 401, "unauthorized", "invalid or expired token")
+					return
+				}
+				if err != nil {
+					s.credentialsUnavailable(w, r, err)
+					return
+				}
+				next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, &Principal{FeedbackAgent: t})))
+				return
+			}
 			var err error
-			p, err = s.bearerPrincipal(r.Context(), strings.TrimSpace(secret))
+			p, err = s.bearerPrincipal(r.Context(), secret)
 			if errors.Is(err, errAssistantToken) {
 				writeError(w, 401, "unauthorized", "an assistant's token works only through /mcp")
 				return
