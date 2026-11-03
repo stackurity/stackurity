@@ -17,8 +17,8 @@ docker compose up -d                   # pulls ghcr.io/stackurity/stackurity:lat
 docker compose logs stackurity | grep -A2 "one-time token"
 ```
 
-To pin a release, set `STACKURITY_IMAGE=ghcr.io/stackurity/stackurity:0.14.1` in `deploy/.env`. The same signed image is on Docker Hub as `stackurity/stackurity:0.14.1` (`docker pull stackurity/stackurity`); GHCR is the default because Docker Hub limits anonymous pulls. Images are signed; check one with
-`cosign verify ghcr.io/stackurity/stackurity:0.14.1 --certificate-identity-regexp '^https://github.com/stackurity/stackurity/.github/workflows/release.yml@refs/tags/' --certificate-oidc-issuer https://token.actions.githubusercontent.com` (see [security-audit.md](security-audit.md)).
+To pin a release, set `STACKURITY_IMAGE=ghcr.io/stackurity/stackurity:0.15.0` in `deploy/.env`. The same signed image is on Docker Hub as `stackurity/stackurity:0.15.0` (`docker pull stackurity/stackurity`); GHCR is the default because Docker Hub limits anonymous pulls. Images are signed; check one with
+`cosign verify ghcr.io/stackurity/stackurity:0.15.0 --certificate-identity-regexp '^https://github.com/stackurity/stackurity/.github/workflows/release.yml@refs/tags/' --certificate-oidc-issuer https://token.actions.githubusercontent.com` (see [security-audit.md](security-audit.md)).
 
 Open the dashboard through your HTTPS proxy (see [TLS](#tls)), or at http://localhost:8080 in a browser on the server itself, enter the one-time setup token from the log, and create the first administrator. The token only works while no users exist. The dashboard then asks for the server's [free key](#the-free-key): get one at https://app.stackurity.dev/self-hosted-key from any computer and paste it in. Agents and scans can send data before the key is entered.
 
@@ -212,22 +212,55 @@ The activity log records `auth.login` with `"method": "social"` and the provider
 
 ### Two-factor sign-in
 
-Anyone can turn on two-factor sign-in under **Your account → Two-factor sign-in**: after their password, Stackurity asks for a six-digit code from an authenticator app (TOTP, RFC 6238: 1Password, Google Authenticator, Microsoft Authenticator, Authy and others). Setting it up asks for the password again, shows a QR code (and the key as text), and is confirmed with a code. It then shows ten one-time **recovery codes** once; each signs in once instead of a code, for a lost phone. **New recovery codes** replaces the set.
+Each person sets up their second factors under **Your account → Two-factor methods**. Passkeys come first:
 
-- The secret is encrypted with `STACKURITY_SECRET_KEY` (AES-256-GCM, as stored secrets are), so two-factor sign-in needs that key; without it the page says so. Recovery codes are stored as hashes.
+- **Passkeys and security keys** (WebAuthn): a passkey in the device's platform authenticator (Touch ID, Face ID, Windows Hello, Android), in a password manager, or on a hardware key such as a YubiKey. People can register several, each with a name ("MacBook Touch ID", "YubiKey 5"), see when each was added and last used, rename them and remove them. A passkey is checked by the browser against this server's domain, so a look-alike site cannot use it: it is **phishing-resistant**.
+- **An authenticator app** (TOTP, RFC 6238: 1Password, Google Authenticator, Microsoft Authenticator, Authy and others): a six-digit code after the password. Setting it up asks for the password again, shows a QR code (and the key as text), and is confirmed with a code.
+- **Recovery codes**: ten one-time codes, shown once when the first passkey or app is set up; each signs in once instead of a passkey or code, for a lost device. **New recovery codes** replaces the set and, like any other change to factors, signs out the account's other sessions. They are removed with the last passkey or app.
+
+**Signing in.** After the password, Stackurity asks for the second factor, offering a passkey first. **Sign in with a passkey** on the sign-in page signs in without an email or password: the browser offers the passkeys it holds for this server, and the passkey must verify the person (fingerprint, face or PIN), so it counts as both factors on its own. A passkey used after a password only needs to be present.
+
+**What passkeys need.** The relying party ID of every passkey is the host of `STACKURITY_BASE_URL`; it is never hard-coded. Passkeys therefore need `STACKURITY_BASE_URL` set to a domain name over `https` (`http://localhost` works for trying it out; browsers refuse passkeys for an IP address). Without that, the page says why and the authenticator app still works. **Changing the domain in `STACKURITY_BASE_URL` makes every registered passkey stop working**: browsers only offer a passkey on the domain it was made for. Before a move, make sure people have recovery codes or an authenticator app; after it, they sign in with those and register their passkeys again. A server that answers on several domains still accepts passkeys only from the base URL's origin.
+
+**How passkeys are checked.**
+
+- Attestation is `none`: Stackurity does not ask which make or model of device holds the key.
+- User verification is `preferred` when registering and after a password, and `required` for passkey sign-in without a password.
+- Each passkey's signature counter is checked. A counter that does not go up (when the device keeps one; synced passkeys send 0) can mean the key was copied: the sign-in is refused, logged, recorded as `auth.passkey_clone_warning`, the passkey is marked on the page, the sessions signed in or confirmed with it end, and the person is emailed. Two sign-ins with the same counter at once count as that too: only one is accepted.
+- Each challenge is kept on the server, bound to the browser by a short-lived cookie, and used once, within five minutes.
+- An account can have up to 20 passkeys; only their public keys are stored, never the private keys.
+- The `Permissions-Policy` header allows passkeys (`publickey-credentials-get` and `-create`) for the dashboard's own origin only.
+
+**Other rules.**
+
+- The app's secret is encrypted with `STACKURITY_SECRET_KEY` (AES-256-GCM, as stored secrets are), so the app needs that key; without it the page says so. Recovery codes are stored as hashes.
 - A code is accepted once: the same code (or an earlier one) cannot sign in again, even within its 90-second window (the current 30-second step and one either side, for clock drift).
-- Wrong codes are limited: five end the sign-in (the password must be entered again), and ten tries per account in 15 minutes from any address.
-- Turning it on signs out the account's other sessions. Turning it off asks for the password, and is refused while an organisation of theirs requires it.
-- **API tokens and connected AI assistants are not asked for a code**, as with GitHub: they are credentials of their own. The page lists how many the person has, with links to review them.
-- People who sign in with single sign-on are not asked for a Stackurity code: their identity provider does the second factor.
+- Wrong codes and failed passkeys are limited: five end the sign-in (the password must be entered again), and ten tries per account in 15 minutes from any address. Passkey sign-in is limited per address.
+- Adding or removing a second factor signs out the account's other sessions and gives this one a new ID. Removing one asks for the password, and is refused when the factors left would no longer meet the policy of one of the person's organisations. Removing the passkey (or app) the current session signed in with downgrades it, so its organisation's policy decides again.
+- **Every change is emailed** to the account's address, when the server can send email (as for password reset links): a passkey, the authenticator app or email codes added or removed, two-factor sign-in turned off, new recovery codes, and an administrator's reset (naming the administrator). The email says when, from which address and on which kind of device (browser and system, such as "Chrome on macOS"), and links to reset the password if it was not them. It cannot be turned off: it is how someone learns that a phished password and code were used to add an attacker's passkey.
+- **API tokens and connected AI assistants are not asked for a second factor**, as with GitHub: they are credentials of their own. The page lists how many the person has, with links to review them.
+- People who sign in with single sign-on are not asked for a Stackurity second factor: their identity provider does that. **Sign in with a passkey** does not get round an organisation's **Require single sign-on**: such a session is refused there as a password session is, except for the organisation owner's break-glass access.
 
-**Require it for an organisation.** An admin can turn on **People → Users → Require two-factor sign-in for all members** (their own account needs it first). Members who sign in with a password and have none are then sent to set it up before they can do anything else; members using single sign-on are not affected. The page counts the members without it.
+**Why there is no SMS.** Codes sent by text message are deliberately not offered. A phone number can be moved to an attacker's SIM (SIM swapping) or its messages intercepted, so SMS does not protect against the attacks a second factor is for; and sending them to Indian numbers needs DLT registration of the sender and every message template, a cost and delay for each installation. Passkeys and authenticator apps are free and stronger.
 
-**A lost phone.** An admin resets a member's two-factor sign-in with **Reset two-factor** on **People → Users**; it is recorded in the activity log (`user.mfa_reset`) and ends the member's sessions. As with passwords, only an instance administrator can reset it for an account that also belongs to other organisations, or for an instance administrator.
+**An organisation's policy.** Admins set it under **People → Users → Two-factor sign-in**:
 
-Every step is in the activity log: `auth.mfa_enabled`, `auth.mfa_disabled`, `auth.mfa_failed`, `auth.mfa_recovery_code_used`, `auth.mfa_recovery_codes_replaced`, and `auth.login` with `"mfa": "totp"` or `"recovery_code"`.
+- **Two-factor sign-in**: **Optional**, **Required for everyone**, or **Required for admins and security** (members with the admin or security role, organisation-wide or through a project, and instance administrators). The server-wide pages of an instance administrator (licence, packs, organisations, platform health) need the policy of every organisation the account belongs to, whichever one the session works in. So do the other powers of the role: changing the account or resetting the two-factor sign-in of someone who also belongs to other organisations, and using the server's `env:` and `file:` secrets; until then an instance administrator acts as an admin of the organisation they work in. An instance administrator's API tokens follow the same rule: a session that does not meet every policy cannot create one (except collector tokens), and a token opens those routes only while the account has a factor that counts in every organisation. Tokens are not asked for a factor themselves, as for everyone else. A policy that requires a factor needs a method that works on this server (passkeys need `STACKURITY_BASE_URL`, the app `STACKURITY_SECRET_KEY`); one nobody could meet is refused.
+- **Methods that count**: passkey or security key, authenticator app (one of these must stay). A recovery code counts where the passkey or app it backs up does.
+- **Require phishing-resistant sign-in (passkeys only) for admins** (Enterprise plan, as single sign-on for an organisation is): admins must sign in with a passkey, whatever the rest of the policy says. Once on, it stays enforced if the plan lapses, and can always be turned off. An admin who has no passkey yet sets one up from a session signed in with the app or a recovery code, so until every admin has one, a phished password and code could still register an attacker's passkey for them: have admins add passkeys (two each, so one can be lost) before turning it on, and watch the count of admins without one. An admin who has a passkey can no longer replace it with a recovery code (it is as easy to phish as an app code): another admin resets a lost one.
 
-Passkeys and security keys (WebAuthn) are not supported yet.
+The admin saving a policy must meet it with the session they are using, so a policy cannot lock its own author out (the page says to set up or sign in with the method first). An API token can make the policy stricter but not weaker, and cannot reset a member's two-factor sign-in: tokens are not asked for a second factor, so those need an admin signed in to the dashboard. The page counts the members the policy would ask to set up a second factor, and the admins without a passkey.
+
+The policy applies to every browser session working in the organisation except single sign-on's: one signed in with a password, a passkey, an invitation or a hosted edition's sign-up link, and one whose sign-in method is not recorded. Only a session marked as single sign-on, or pinned to an organisation by its own identity provider, is left to the identity provider. Each organisation applies its own policy to a person who belongs to several, as they switch between them. A session that does not meet it can do nothing else until it does:
+
+- With no method that counts there, the person is sent straight to set one up, passkeys first.
+- With one, but signed in with something else (the app where admins must use a passkey), they confirm with it.
+- A recovery code stands in for a lost passkey: a session signed in with one may set up a new passkey, which also ends the account's other sessions. Not for an admin who has a passkey where passkeys are required of admins: they confirm with a passkey, or another admin resets theirs.
+- A session that must confirm with a factor in any of the person's organisations cannot add, rename or remove factors, or make new recovery codes, until it has, even while it works in another organisation with a weaker policy: so a phished password and app code cannot register an attacker's passkey for an admin who has one. Nor can a session whose sign-in never asked for the account's factors (single sign-on, an invitation) while the account has one: it confirms with a factor first (**Two-factor methods** offers it), since factors work in every organisation. A passkey whose signature counter once went backwards (a sign of a copied key) signs in no more; remove it and add it again.
+
+**A lost device.** An admin resets a member's two-factor sign-in with **Reset two-factor** on **People → Users**: it removes their passkeys, authenticator app and recovery codes, ends their sessions, and is recorded as `user.mfa_reset`. It needs a dashboard session (not an API token), and not for one's own account (that is **Two-factor methods**, with the password). As with passwords, only an instance administrator can reset it for an account that also belongs to other organisations, or for an instance administrator.
+
+**The activity log.** Adding, renaming and removing factors are recorded in every organisation the person belongs to: `auth.passkey_added`, `auth.passkey_renamed`, `auth.passkey_removed`, `auth.mfa_enabled` and `auth.mfa_disabled` (with `method` or `methods`). Sign-ins are `auth.login` with `"mfa": "passkey"`, `"totp"` or `"recovery_code"`, or `"method": "passkey"` for passkey sign-in; failures are `auth.mfa_failed` and `auth.login_failed`; confirming a session is `auth.mfa_step_up`; a counter that went backwards is `auth.passkey_clone_warning` (in every organisation, like `auth.mfa_recovery_code_used`); and `auth.mfa_recovery_codes_replaced`; and the policy's changes are `settings.mfa_policy` (before and after).
 
 ### Passwords
 
@@ -237,7 +270,7 @@ Passwords are 12 to 256 characters, stored with argon2id. A new password is also
 
 A browser session ends 30 minutes after it was last used (`STACKURITY_SESSION_IDLE_TIMEOUT`), and in any case 12 hours after sign-in. The session cookie is `HttpOnly`, `SameSite=Strict`, and `Secure` unless `STACKURITY_COOKIE_SECURE=false`; only a hash of it is stored.
 
-- Every sign-in gets a new session ID, and a session the browser already had ends. Turning on two-factor sign-in and changing your password replace the current session's ID too. Roles are read on every request, so a role change takes effect at once without one.
+- Every sign-in gets a new session ID, and a session the browser already had ends. Adding or removing a second factor, confirming with one, and changing your password replace the current session's ID too. Roles are read on every request, so a role change takes effect at once without one.
 - Changing your password (**Your account → Password**) signs out your other sessions and, unless you untick it, disconnects your AI assistants. API tokens keep working unless you tick **Also revoke my API tokens**; the page then says how many still work, with a link to review them.
 - The activity log records `auth.login`, `auth.logout`, and `auth.session_expired` with `reason` `idle` or `absolute` (when the session is next used, or by the hourly housekeeping if it never is).
 
@@ -822,7 +855,7 @@ The plugin also runs as an ordinary **Plugin** integration, with a role you made
  "secret_ref": "file:/run/secrets/aws.json", "schedule_minutes": 720}
 ```
 
-The secret file holds `{"aws_access_key_id": "...", "aws_secret_access_key": "..."}`. Without it, the plugin uses the instance role (only in the default organisation). Give the role the read-only actions listed above. The exact list is also in the plugin's metadata, under **Integrations → Plugins** or with `GET /api/v1/plugins`.
+The secret file holds `{"aws_access_key_id": "...", "aws_secret_access_key": "..."}`. Without it, the plugin uses the instance role (only in the default organisation). Give the role the read-only actions listed above. The exact list is also in the plugin's metadata, under **Settings → Plugins** or with `GET /api/v1/plugins`.
 
 ### Google Cloud managed services
 
@@ -842,7 +875,7 @@ The integration this creates:
 {"kind": "plugin", "config": {"plugin": "gcp-managed", "config": {"project_id": "acme-prod", "project_number": "123456789012", "environment_label": "env"}}, "schedule_minutes": 720}
 ```
 
-If your organisation cannot use workload identity federation, the same page shows the fallback: the same role and service account, plus a key (`gcloud iam service-accounts keys create`). Store the key file's contents, unchanged, as a workspace secret under **Integrations → Secrets** and set `"auth": "service_account_key"` and `"secret_ref": "secret:<name>"`. The key file's `token_uri` is ignored: the plugin signs in at `oauth2.googleapis.com` only. An organisation policy (`iam.disableServiceAccountKeyCreation`) may forbid keys.
+If your organisation cannot use workload identity federation, the same page shows the fallback: the same role and service account, plus a key (`gcloud iam service-accounts keys create`). Store the key file's contents, unchanged, as a workspace secret under **Settings → Secrets** and set `"auth": "service_account_key"` and `"secret_ref": "secret:<name>"`. The key file's `token_uri` is ignored: the plugin signs in at `oauth2.googleapis.com` only. An organisation policy (`iam.disableServiceAccountKeyCreation`) may forbid keys.
 
 A service the role cannot read, or whose API is not enabled in the project, is shown under the project's coverage as failed or skipped with Google's reason, never as zero resources. Cloud Run services deployed from a container image are left to image scanning (add the image as a **Container image** integration).
 
@@ -957,7 +990,7 @@ The first OSV download for an ecosystem can be large (see [network.md](network.m
 
 ## Notifications
 
-Everything Stackurity connects to is under **Integrations**: the **Active integrations** with their status (last delivery, last error) and a gear for their settings, and **Add an integration** with cards in three groups: **Notifications** (email, Slack, Microsoft Teams, Jira, PagerDuty, ServiceNow, webhook), **Sources** (every way to connect something: Linux and Windows servers through the agent, which open **Add server**; Git repositories; CI pipelines with `stackurity scan` or the GitHub Action; container images and registries; Kubernetes clusters; AWS managed services; SBOM upload; other plugins) and **AI assistants**. Active integrations also show servers with the agent, with their count and last report. The old **Integrations** links lead there.
+Everything Stackurity connects to is under **Integrations**: the **Active integrations** with their status (last delivery, last error) and a gear for their settings, and **Add an integration** with cards in three groups: **Notifications** (email, Slack, Microsoft Teams, Jira, PagerDuty, ServiceNow, webhook), **Sources** (every way to connect something: Linux and Windows servers through the agent, which open **Add server**; Git repositories; CI pipelines with `stackurity scan` or the GitHub Action; container images and registries; Kubernetes clusters; AWS managed services; SBOM upload; other plugins) and **AI assistants**. Active integrations also show servers with the agent, with their count and last report. The old **Settings → Notifications** links lead there.
 
 The first-run flow asks two questions and sets up one notification integration for the new project:
 
@@ -1045,7 +1078,7 @@ With a plain incoming webhook, Slack buttons open the dashboard. With a Slack ap
 2. **Incoming Webhooks**: turn on **Activate Incoming Webhooks**, then **Add New Webhook to Workspace**, pick the channel and **Allow**. Copy the webhook URL (`https://hooks.slack.com/services/T.../B.../...`). This adds the `incoming-webhook` scope; add no other scope.
 3. **Interactivity & Shortcuts**: turn on **Interactivity** and set the **Request URL** to `https://<your Stackurity address>/api/v1/integrations/slack/actions`. **Save Changes**.
 4. **Basic Information**, **App Credentials**: **Show** and copy the **Signing Secret** (not the client secret or verification token).
-5. In Stackurity, **Integrations → Secrets**: store the webhook URL (for example as `SLACK_WEBHOOK`) and the signing secret (`SLACK_SIGNING`). Instance administrators can use `env:STACKURITY_SECRET_...` or `file:` references instead.
+5. In Stackurity, **Settings → Secrets**: store the webhook URL (for example as `SLACK_WEBHOOK`) and the signing secret (`SLACK_SIGNING`). Instance administrators can use `env:STACKURITY_SECRET_...` or `file:` references instead.
 6. **Integrations**, add Slack with **Advanced: use a webhook** (or edit the existing one, if it uses this app's webhook): webhook URL reference `secret:SLACK_WEBHOOK`, **Slack app signing secret reference** `secret:SLACK_SIGNING`. **Send test**. Messages from then on carry the interactive buttons.
 
 Each person links their Slack account once. The first time they click, Slack shows them (only them) a link that works once, for 15 minutes; they sign in to Stackurity and confirm "link Slack user X in Slack workspace T to my account". From then on their clicks act as them, with their role and projects, as in the dashboard: engineers and above can assign, security and admin can snooze, people with access to some projects only can act on those projects' fixes. Refusals are explained to them in Slack. Every action is audited as theirs with source `slack`. People see and remove their links under the account menu, **Your account** (and their link for one Slack workspace on that Slack integration's page, **Your Slack account**).
@@ -1066,7 +1099,7 @@ There is never more than one issue per incident and channel, across retries and 
 
 **Connect Jira** (Jira Cloud, when the server has the Stackurity Atlassian app: [jira-app.md](jira-app.md)) needs no token: an administrator approves on Atlassian's page and picks the site, project, issue type and done status from lists read from Jira. Its tokens are sealed and refreshed by the server; when Atlassian stops accepting them (the app was removed from the person's Atlassian account, or 90 days without use), the integration shows **Reconnect needed** and deliveries fail with that reason until someone reconnects. Where the app is configured, new Jira integrations use it unless **Use an API token instead** is chosen.
 
-With a token, the Jira account needs to browse the project, create issues, add comments and transition issues. **Send test** checks the credentials (or the connection), the project, the issue type and the mapped priorities without creating anything. Store the token as a workspace secret (`secret:NAME`, Integrations > Secrets). Jira Data Center and Server always use a personal access token: they have no OAuth 2.0 (3LO).
+With a token, the Jira account needs to browse the project, create issues, add comments and transition issues. **Send test** checks the credentials (or the connection), the project, the issue type and the mapped priorities without creating anything. Store the token as a workspace secret (`secret:NAME`, Settings > Secrets). Jira Data Center and Server always use a personal access token: they have no OAuth 2.0 (3LO).
 
 ### PagerDuty
 
@@ -1122,24 +1155,25 @@ Everything is in PostgreSQL. The data volume only holds temporary clones. Keep t
 - `STACKURITY_SECRET_KEY`, if you set it. Stored workspace secrets are encrypted with it and cannot be read without it. Keep it apart from the database dumps.
 - Your free key or licence key (it is also stored in the database).
 
+A backup is two files: the database, and the roles it grants privileges to. Roles belong to the PostgreSQL server, not to the database, so `pg_dump` leaves them out.
+
 ```sh
 # backup
 docker compose exec -T postgres pg_dump -U stackurity -Fc stackurity > stackurity-$(date +%F).dump
+docker compose exec -T postgres pg_dumpall -U stackurity --roles-only --no-role-passwords > stackurity-roles-$(date +%F).sql
 
 # restore into a fresh install
 docker compose up -d postgres
+# the roles first (errors for roles that already exist, such as stackurity, are harmless)
+docker compose exec -T postgres psql -U stackurity -d postgres < stackurity-roles-2026-10-23.sql
 docker compose exec -T postgres pg_restore -U stackurity -d stackurity --clean --if-exists < stackurity-2026-10-23.dump
 docker compose up -d
 ```
 
-Restoring into a new PostgreSQL server prints `role "stackurity_app" does not exist` errors and exits with status 1. They are expected: roles belong to the server, not the dump, and Stackurity creates the role and its grants again when it starts (before release 0.2, a server with several workspaces refused to start after such a restore; start 0.2 or later against it). To restore without these errors, save the roles next to each dump and load them first:
+Load the roles before `pg_restore`. The migrations grant privileges to the `stackurity_app` role, and on a PostgreSQL server that does not have it, `pg_restore` fails on each of those grants (`role "stackurity_app" does not exist`) and exits with status 1. If you have no roles file for the dump, create the role instead, then run `pg_restore`:
 
 ```sh
-# with each backup
-docker compose exec -T postgres pg_dumpall -U stackurity --roles-only --no-role-passwords > stackurity-roles-$(date +%F).sql
-
-# before pg_restore (errors for roles that already exist, such as stackurity, are harmless)
-docker compose exec -T postgres psql -U stackurity -d postgres < stackurity-roles-2026-10-23.sql
+docker compose exec -T postgres psql -U stackurity -d postgres -c 'CREATE ROLE stackurity_app NOLOGIN;'
 ```
 
 Test a restore regularly. A backup you have never restored is not a backup. To check one: restore it into a separate PostgreSQL, start Stackurity against it with `STACKURITY_FEEDS=off`, and confirm that `/readyz` answers 200 and `stackurity admin list-workspaces` shows your workspaces and asset counts.
@@ -1179,7 +1213,7 @@ If a replica of the old version was missed, it refuses to start, or, if it was s
 
 The chart's `updateStrategy` is `Recreate`: Kubernetes deletes every pod of the old version before it creates the new ones, so two versions never share the database. CI checks that the chart renders `Recreate` by default. Do not override it with `RollingUpdate` for a version upgrade: during a rolling update, pods of both versions run together against a schema only the new one understands. (Old pods then fail `/readyz` and stop their background work, so the damage is limited, but it is not a supported way to upgrade.) A rolling restart of the *same* version (`kubectl rollout restart`) is safe with either strategy.
 
-Before a release is published, CI installs each earlier release listed under `from:` in [`.github/workflows/release-checks.yml`](../.github/workflows/release-checks.yml) (the supported upgrade sources), loads data, starts the new version on the same database, checks that the previous version then refuses that database (for releases that have the check), restores a backup of the result into a new PostgreSQL server, and runs the rollback below, checking readiness and counts at each step. The script is `tools/release-checks/upgrade.sh`; you can run it against your own build: `tools/release-checks/upgrade.sh ghcr.io/stackurity/stackurity:0.14.1 stackurity:mybuild`.
+Before a release is published, CI installs each earlier release listed under `from:` in [`.github/workflows/release-checks.yml`](../.github/workflows/release-checks.yml) (the supported upgrade sources), loads data, starts the new version on the same database, checks that the previous version then refuses that database (for releases that have the check), restores a backup of the result into a new PostgreSQL server, and runs the rollback below, checking readiness and counts at each step. The script is `tools/release-checks/upgrade.sh`; you can run it against your own build: `tools/release-checks/upgrade.sh ghcr.io/stackurity/stackurity:0.15.0 stackurity:mybuild`.
 
 ### Rolling back
 
@@ -1200,7 +1234,7 @@ Upgrading again later works as before; the migrations run again. With Helm, rest
 
 ```sh
 kubectl create secret generic stackurity-db --from-literal=url='postgres://stackurity:...@db:5432/stackurity?sslmode=require'
-helm install stackurity oci://ghcr.io/stackurity/charts/stackurity --version 0.14.1 \
+helm install stackurity oci://ghcr.io/stackurity/charts/stackurity --version 0.15.0 \
   --set database.existingSecret=stackurity-db \
   --set ingress.enabled=true --set ingress.host=stackurity.example.com \
   --set config.baseURL=https://stackurity.example.com
@@ -1208,7 +1242,7 @@ helm install stackurity oci://ghcr.io/stackurity/charts/stackurity --version 0.1
 
 To give the server its [free key](#the-free-key) from a Secret rather than in the dashboard, `kubectl create secret generic stackurity-license --from-literal=key=<the key>` and add `--set license.existingSecret=stackurity-license`.
 
-The chart is published with each release from 0.4.0 and signed with Sigstore (`cosign verify ghcr.io/stackurity/charts/stackurity:0.14.1 --certificate-identity-regexp '^https://github.com/stackurity/stackurity/.github/workflows/release.yml@refs/tags/' --certificate-oidc-issuer https://token.actions.githubusercontent.com`). You can also install from a checkout: `helm install stackurity deploy/helm/stackurity ...`.
+The chart is published with each release from 0.4.0 and signed with Sigstore (`cosign verify ghcr.io/stackurity/charts/stackurity:0.15.0 --certificate-identity-regexp '^https://github.com/stackurity/stackurity/.github/workflows/release.yml@refs/tags/' --certificate-oidc-issuer https://token.actions.githubusercontent.com`). You can also install from a checkout: `helm install stackurity deploy/helm/stackurity ...`.
 
 Behind an ingress controller the chart reads the client address from `X-Forwarded-For` (`config.trustedProxyHeader`; use `CF-Connecting-IP` when Cloudflare is in front), trusting the private ranges where pods and nodes live; list your controller's addresses in `config.trustedProxies` to narrow that ([Client addresses behind a proxy](#client-addresses-behind-a-proxy)). The chart runs the same hardened container: non-root, read-only root filesystem, all capabilities dropped, `RuntimeDefault` seccomp, and no service-account token. PostgreSQL isn't bundled; use a managed database or an operator. Set `replicaCount` above 1 for availability (see [Running several replicas](#running-several-replicas)); the chart keeps the `Recreate` update strategy so an upgrade never runs two versions at once; do not switch it to `RollingUpdate` for upgrades ([Upgrading](#helm-and-the-update-strategy)). `metrics.enabled=true` serves Prometheus metrics on port 9100 through a separate `<release>-metrics` Service, never through the ingress. With the Prometheus Operator, add `metrics.serviceMonitor.enabled=true` (and `metrics.serviceMonitor.labels` matching your Prometheus's `serviceMonitorSelector`, for example `release: kube-prometheus-stack`) for a ServiceMonitor that scrapes it every `metrics.serviceMonitor.interval` (30s). It is created only when the cluster serves `monitoring.coreos.com/v1`; with `helm template`, pass `--api-versions monitoring.coreos.com/v1/ServiceMonitor`. `metrics.prometheusRule.enabled=true` adds the [recommended alerts](operations.md#recommended-alerts) as a PrometheusRule (with `metrics.prometheusRule.labels` for your Prometheus's `ruleSelector`), under the same condition.
 

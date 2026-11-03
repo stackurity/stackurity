@@ -15,7 +15,7 @@ import (
 	"github.com/stackurity/stackurity/internal/testdb"
 )
 
-// Migration 0087 records from when the server needs a key: at once on a new
+// Migration 0094 records from when the server needs a key: at once on a new
 // install, 30 days on for one that already has users or data (an upgrade).
 // Ticks add running time by the database's clock, never more than the step
 // and never a negative one.
@@ -58,7 +58,7 @@ func TestLicenseRequirementMigration(t *testing.T) {
 		t.Fatal(err)
 	}
 	exec(`DROP TABLE license_requirement`)
-	exec(`DELETE FROM schema_migrations WHERE name = '0087_license_requirement'`)
+	exec(`DELETE FROM schema_migrations WHERE name = '0094_license_requirement'`)
 	if _, err := db.Migrate(ctx, pool); err != nil {
 		t.Fatal(err)
 	}

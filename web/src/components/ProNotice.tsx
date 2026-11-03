@@ -8,12 +8,13 @@ const NAMES: Record<Feature, string> = {
   evidence_report: "The evidence report",
   sso: "Single sign-on",
   enterprise_packs: "Enterprise stack packs",
+  phishing_resistant_mfa: "Requiring passkeys for admins",
 };
 
 /** Explains that a feature is part of a paid plan, and how to get it. */
 export function ProNotice({ feature, children }: { feature: Feature; children?: React.ReactNode }) {
   const { me } = useAuth();
-  const plan = feature === "enterprise_packs" ? "Enterprise" : "Pro";
+  const plan = feature === "enterprise_packs" || feature === "phishing_resistant_mfa" ? "Enterprise" : "Pro";
   return (
     <div className="alert alert-info pro-notice" role="note">
       <span className="pro-badge">{plan}</span> {NAMES[feature]} is part of Stackurity {plan}.{" "}

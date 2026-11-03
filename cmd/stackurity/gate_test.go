@@ -64,7 +64,18 @@ func TestGateValidateAndReport(t *testing.T) {
 	if !errors.As(err, &ee) || ee.code != gateExitCode {
 		t.Fatalf("report error = %v", err)
 	}
-	for _, want := range []string{"2 components could not be evaluated", "2 open findings, 1 meet the gate", "lodash@4.17.20", "GHSA-x (exploited)"} {
+	for _, want := range []string{"2 components could not be evaluated", "2 open findings, 1 meets the gate", "lodash@4.17.20", "GHSA-x (exploited)"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output lacks %q:\n%s", want, out.String())
+		}
+	}
+	// One of each is counted in the singular.
+	out.Reset()
+	err = g.report(&out, &client.CollectionResult{Status: "evaluated", Gaps: 1, Findings: res.Findings[:1]})
+	if !errors.As(err, &ee) || ee.msg != "1 finding meets the gate" {
+		t.Errorf("report error for one finding = %v", err)
+	}
+	for _, want := range []string{"1 component could not be evaluated", "it cannot fail the gate", "1 open finding, 1 meets the gate"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output lacks %q:\n%s", want, out.String())
 		}

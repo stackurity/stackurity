@@ -33,6 +33,10 @@ func (s *Server) meta(w http.ResponseWriter, r *http.Request) {
 	if s.EmailPreferences {
 		meta["email_preferences"] = true
 	}
+	// "Sign in with a passkey" on the sign-in page.
+	if wa, _ := s.relyingPartyFor(); wa != nil {
+		meta["passkeys"] = true
+	}
 	// The aud a CI job requests its ID token with (POST /ci/token).
 	if aud := s.ciAudience(); aud != "" {
 		meta["ci_audience"] = aud
@@ -208,8 +212,8 @@ func sessionSecret(r *http.Request) string {
 
 // rotateSession replaces the caller's session with a new one (a new
 // session ID) in the same workspace, signed in as opts says. It is used
-// when what the session may do changes: two-factor sign-in turned on, a
-// new password.
+// when what the session may do changes: a second factor added, removed or
+// confirmed, a new password.
 func (s *Server) rotateSession(w http.ResponseWriter, r *http.Request, opts store.SessionOpts) error {
 	p := principal(r)
 	// The new session replaces this one: it keeps its single sign-on pin and
@@ -253,7 +257,8 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{"user": p.User, "role": p.Role, "token": p.Token, "workspace": nil, "workspaces": []store.Membership{},
 		"edition": ed, "features": features, "feedback_enabled": s.FeedbackURL != "" && p.User != nil,
 		"access": "organisation", "project_role": p.ProjectRole, "projects": []store.Project{}, "default_project_id": 0,
-		"mfa_enrolment_required": p.NeedsMFAEnrolment, "password_change_required": p.PasswordChangeRequired,
+		"mfa_enrolment_required": p.MFANeed == mfaEnrol, "mfa_step_up_required": p.MFANeed == mfaStepUp, "mfa_accepted": p.MFAAccepted, "mfa_recovery_accepted": p.MFARecoveryHelps,
+		"password_change_required": p.PasswordChangeRequired,
 		// invite_only: people join by invitation (POST /users is refused),
 		// so the dashboard offers Invite instead of Add user.
 		"invite_only": s.InviteOnly}
@@ -391,6 +396,20 @@ func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 403, "forbidden", "cannot create a token above your own role")
 			return
 		}
+		// An instance administrator's token carries the powers of the role
+		// (server-wide routes with the admin role, the server's secrets,
+		// accounts of other workspaces), and tokens are not asked for a
+		// second factor: the request making one must meet every workspace's
+		// two-factor policy, as using those powers does.
+		if p.User.InstanceAdmin {
+			if _, refusal, err := instanceAdminPowers(p); err != nil {
+				s.fail(w, r, err)
+				return
+			} else if refusal != nil {
+				refusal.write(w)
+				return
+			}
+		}
 		userID = &p.User.ID
 	default:
 		s.fail(w, r, badRequest("role must be one of viewer, engineer, security, admin, collector"))
@@ -493,7 +512,7 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 	_ = s.Store.Audit(r.Context(), p.Actor(r), "auth.password_changed", "user", itoa(p.User.ID), out)
 	// What the session may do changed (a temporary password is gone): a
 	// new session ID, signed in as before.
-	if err := s.rotateSession(w, r, store.SessionOpts{PasswordLogin: p.PasswordSession, MFA: p.User.MFAEnabled && p.PasswordSession}); err != nil {
+	if err := s.rotateSession(w, r, store.SessionOpts{Login: p.Login, MFA: p.MFAMethod, MFACredential: p.MFACredential}); err != nil {
 		s.fail(w, r, err)
 		return
 	}

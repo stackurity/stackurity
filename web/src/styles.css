@@ -3029,6 +3029,88 @@ h6.md-h {
 .feedback-sent-what code {
   overflow-wrap: anywhere;
 }
+.feedback-fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.feedback-warning {
+  margin: 4px 0 var(--s2);
+  padding: var(--s2) var(--s3);
+  border-left: 3px solid var(--warn-dot);
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+}
+.feedback-attach-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+}
+.feedback-attach-row .hint {
+  margin: 0;
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.feedback-files {
+  list-style: none;
+  margin: var(--s2) 0 0;
+  padding: 0;
+}
+.feedback-files li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px var(--s2);
+  padding: 6px var(--s2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 6px;
+}
+.feedback-files li.has-error {
+  border-color: var(--bad-dot);
+}
+.feedback-file-name {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.feedback-file-size {
+  white-space: nowrap;
+}
+.feedback-file-error {
+  flex-basis: 100%;
+  margin: 0;
+}
+.feedback-summary {
+  overflow-wrap: anywhere;
+}
+.feedback-note {
+  margin: 4px 0 0;
+  padding: 4px var(--s2);
+  border-left: 3px solid var(--border-strong);
+  color: var(--text-2);
+  font-size: 13px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.feedback-table td {
+  vertical-align: top;
+}
+.feedback-table td:nth-child(1),
+.feedback-table td:nth-child(2),
+.feedback-table td:nth-child(4) {
+  white-space: nowrap;
+}
+.feedback-check-failed {
+  margin: 0 0 var(--s3);
+}
 @media (max-width: 700px) {
   .topbar-feedback-label {
     position: absolute;
@@ -5382,6 +5464,36 @@ div.assistant-card {
   list-style: none;
   padding: 0;
   margin: 0.75rem 0;
+}
+.mfa-method {
+  padding: var(--s3) 0;
+  border-top: 1px solid var(--border);
+}
+.mfa-method h3 {
+  margin: 0 0 var(--s2);
+  font-size: 1rem;
+}
+.mfa-passkeys {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 var(--s3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+.mfa-passkeys > li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--s2);
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.mfa-passkeys > li > div:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* "I've fixed it — check now" on fix cards and the fix detail (FixVerify). */
