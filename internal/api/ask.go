@@ -40,7 +40,12 @@ import (
 // AskConsentVersion is the version of the wording an organisation's
 // administrator agrees to before Ask Stackurity is turned on (the consent
 // dialog, web/src/ask.ts consentText), approved by the owner on 2026-11-03.
-// Each person's first-use notice uses the same wording and version. A new
+// Each person's first-use notice uses the same wording and version,
+// addressed to the person; in it, the last sentence of the retention
+// paragraph reads "Administrators can turn Ask Stackurity off at any
+// time." instead of "You can turn ...", since most people who see the
+// notice cannot (approved by the owner on 2026-11-03 as part of this
+// version). A new
 // version turns Ask off for organisations that agreed to an older one until
 // an administrator agrees again, and every person accepts the notice again.
 const AskConsentVersion = "ask-consent-2026-11-03"
@@ -247,7 +252,13 @@ func (s *Server) askCreateConversation(w http.ResponseWriter, r *http.Request) {
 	if p.Project > 0 {
 		project = &p.Project
 	}
-	c, err := s.Store.CreateAskConversation(ctx, p.User.ID, project, l.Model, "")
+	// The conversation starts on the cheapest model and steps up to the
+	// plan's model at most (ask/tier.go).
+	model := l.Model
+	if s.Ask != nil {
+		model = s.Ask.StartModel(l.Model)
+	}
+	c, err := s.Store.CreateAskConversation(ctx, p.User.ID, project, model, "")
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -550,7 +561,7 @@ func (s *Server) askQuestion(w http.ResponseWriter, r *http.Request) {
 		_ = s.Store.TitleAskConversation(ctx, p.User.ID, conv.ID, in.Text)
 	}
 	out, err := s.Ask.Ask(qctx, ask.Question{Conversation: conv, UserID: p.User.ID, Text: in.Text, Page: page, Project: project,
-		Model: conv.Model, SpendCapMicros: l.SpendCapMicros, API: api}, func(e ask.Event) {
+		Model: conv.Model, SpendCapMicros: l.SpendCapMicros, Ceiling: l.Model, API: api}, func(e ask.Event) {
 		switch e.Kind {
 		case "text":
 			send("text", map[string]string{"text": e.Text})
@@ -561,6 +572,11 @@ func (s *Server) askQuestion(w http.ResponseWriter, r *http.Request) {
 		}
 	})
 	answerSeq := s.askSignals(context.WithoutCancel(ctx), p.User.ID, conv, out, err)
+	if errors.Is(err, context.Canceled) {
+		// The person stopped the answer: the rest of the conversation
+		// uses a stronger model (ask/tier.go).
+		s.askStepUpBetween(context.WithoutCancel(ctx), p.User.ID, conv.ID, l.Model, ask.StepStopped)
+	}
 	if err != nil {
 		if out.CostMicros == 0 && len(out.Usage) == 0 {
 			// The model was never reached: the question does not count.
@@ -764,5 +780,21 @@ func (s *Server) askAlert(ctx context.Context, scope string, level int, spent, c
 		"An administrator can turn Ask Stackurity off under Integrations → AI assistants."}}
 	if err := s.AccountMail.SendMail(ctx, to, m); err != nil {
 		s.Log.Error("ask: spend alert email not sent", "err", err)
+	}
+}
+
+// askStepUpBetween moves a conversation one model up, within the plan's
+// model, after a signal between questions (a stopped answer, a
+// thumbs-down). A failure is logged: the conversation just stays.
+func (s *Server) askStepUpBetween(ctx context.Context, userID, convID int64, ceiling, reason string) {
+	if s.Ask == nil {
+		return
+	}
+	c, err := s.Store.AskConversation(ctx, userID, convID)
+	if err != nil {
+		return
+	}
+	if _, _, err := s.Ask.StepUpBetween(ctx, userID, c, ceiling, reason); err != nil {
+		s.Log.Warn("ask: moving a conversation to a stronger model", "reason", reason, "err", err)
 	}
 }

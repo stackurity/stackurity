@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Link } from "react-router";
 import { api, type Asset, type Check, type List } from "../api";
+import { useAuth } from "../auth";
+import { checksEmpty } from "../emptyCopy";
 import { useLoad } from "../hooks";
 import { AssetSelect, ProjectFilter } from "../components/AssetPicker";
 import { CheckBadge } from "../components/CheckAgain";
@@ -29,6 +31,7 @@ function Counts({ c }: { c: Check }) {
 
 /** Activity > Checks: every check again, newest first, with its result. */
 export function ChecksPage() {
+  const { canAct } = useAuth();
   const [offset, setOffset] = useState(0);
   const [open, setOpen] = useState(false);
   const [asset, setAsset] = useState("");
@@ -91,9 +94,7 @@ export function ChecksPage() {
       <ErrorBox error={res.error} title="Could not load checks" />
       {!res.data && !res.error && <Loading />}
       {res.data && res.data.items.length === 0 && (
-        <EmptyState title="No checks yet" help="check-again">
-          <p>Press Check again on a fix or an asset to ask for a fresh report.</p>
-        </EmptyState>
+        <EmptyState {...checksEmpty({ asset: Boolean(asset), waiting: open }, canAct("engineer"))} help="check-again" />
       )}
       {res.data && res.data.items.length > 0 && (
         <>

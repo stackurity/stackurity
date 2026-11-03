@@ -11373,6 +11373,152 @@
     }
    }
   },
+  "/auth/mfa/email/send": {
+   "post": {
+    "operationId": "post_auth_mfa_email_send",
+    "summary": "Second step of a password sign-in: email a six-digit code",
+    "description": "With the challenge cookie from `POST /auth/login`, for an account that uses email codes: emails a code valid for 10 minutes; then `POST /auth/mfa/verify` with it\n\nRole: none",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "none",
+    "security": [],
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/mfa/email": {
+   "post": {
+    "operationId": "post_auth_mfa_email",
+    "summary": "Turn on email codes (password): emails a code to confirm",
+    "description": "Turn on email codes (password): emails a code to confirm\n\nRole: any signed-in user (session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (session)",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "delete_auth_mfa_email",
+    "summary": "Turn off email codes (password)",
+    "description": "Turn off email codes (password)\n\nRole: any signed-in user (session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (session)",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/mfa/email/confirm": {
+   "post": {
+    "operationId": "post_auth_mfa_email_confirm",
+    "summary": "Turn on email codes with the code emailed",
+    "description": "Turn on email codes with the code emailed\n\nRole: any signed-in user (session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (session)",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/mfa/step-up/email/send": {
+   "post": {
+    "operationId": "post_auth_mfa_step_up_email_send",
+    "summary": "Email a code that confirms this session",
+    "description": "Email a code that confirms this session\n\nRole: any signed-in user (session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (session)",
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/credentials/health": {
    "get": {
     "operationId": "get_credentials_health",
@@ -14509,7 +14655,7 @@
    "get": {
     "operationId": "get_ask_usage_calls",
     "summary": "Ask Stackurity model calls of this organisation",
-    "description": "This organisation's Ask Stackurity model calls. `items`: one per model call, newest first, with `id`, `created_at`, `workspace_id`, `user_id`, `conversation_id` (null once deleted), `kind` (`answer` or `summary`), `model`, `prompt_version`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `cost_micros` (millionths of a US dollar), `latency_ms`, `tool_calls`, `tool_names`, `history_turns_sent`, `summary_used`, `stop_reason`, `error_code`, `request_id`. Metadata only: never a question, an answer or tool results. Kept 90 days (then daily totals, kept two years). `format=csv` returns the same as a CSV file\n\nRole: admin",
+    "description": "This organisation's Ask Stackurity model calls. `items`: one per model call, newest first, with `id`, `created_at`, `workspace_id`, `user_id`, `conversation_id` (null once deleted), `kind` (`answer`, `summary` or `triage`, the small call that asks whether a short follow-up says the last answer was wrong), `model`, `prompt_version`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `cost_micros` (millionths of a US dollar), `latency_ms`, `tool_calls`, `tool_names`, `history_turns_sent`, `summary_used`, `stop_reason`, `error_code`, `request_id`, `step_up_reason` (why this answer moved to a stronger model: `complex`, `rephrased`, `dissatisfied`, `not_found`, `tool_error`, `thumbs_down`, `stopped`; empty when it did not) and `stepped_from` (the model it moved from). Metadata only: never a question, an answer or tool results. Kept 90 days (then daily totals, kept two years). `format=csv` returns the same as a CSV file\n\nRole: admin",
     "tags": [
      "Ask Stackurity"
     ],
@@ -14622,7 +14768,7 @@
    "get": {
     "operationId": "get_admin_ask_calls",
     "summary": "Ask Stackurity model calls on this server",
-    "description": "Every organisation's Ask Stackurity model calls on this server. `items`: one per model call, newest first, with `id`, `created_at`, `workspace_id`, `user_id`, `conversation_id` (null once deleted), `kind` (`answer` or `summary`), `model`, `prompt_version`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `cost_micros` (millionths of a US dollar), `latency_ms`, `tool_calls`, `tool_names`, `history_turns_sent`, `summary_used`, `stop_reason`, `error_code`, `request_id`. Metadata only: never a question, an answer or tool results. Kept 90 days (then daily totals, kept two years). `format=csv` returns the same as a CSV file\n\nRole: instance admin",
+    "description": "Every organisation's Ask Stackurity model calls on this server. `items`: one per model call, newest first, with `id`, `created_at`, `workspace_id`, `user_id`, `conversation_id` (null once deleted), `kind` (`answer`, `summary` or `triage`, the small call that asks whether a short follow-up says the last answer was wrong), `model`, `prompt_version`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `cost_micros` (millionths of a US dollar), `latency_ms`, `tool_calls`, `tool_names`, `history_turns_sent`, `summary_used`, `stop_reason`, `error_code`, `request_id`, `step_up_reason` (why this answer moved to a stronger model: `complex`, `rephrased`, `dissatisfied`, `not_found`, `tool_error`, `thumbs_down`, `stopped`; empty when it did not) and `stepped_from` (the model it moved from). Metadata only: never a question, an answer or tool results. Kept 90 days (then daily totals, kept two years). `format=csv` returns the same as a CSV file\n\nRole: instance admin",
     "tags": [
      "Instance administration"
     ],

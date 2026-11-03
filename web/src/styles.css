@@ -1331,6 +1331,12 @@ select:disabled {
 .empty-body p {
   margin: 0;
 }
+.empty-body p + p {
+  margin-top: 6px;
+}
+.empty-action {
+  margin: var(--s4) 0 0;
+}
 .loading {
   display: flex;
   align-items: center;

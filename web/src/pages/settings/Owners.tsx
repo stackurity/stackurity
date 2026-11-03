@@ -7,6 +7,7 @@ import { AssetSelect } from "../../components/AssetPicker";
 import { stackLayerLabel } from "../../components/Stack";
 import { Table, type Column } from "../../components/Table";
 import { Card, EmptyState, ErrorBox, Loading, Notice, PageHeader } from "../../components/ui";
+import { OWNER_RULES_EMPTY } from "../../emptyCopy";
 import { confirmAction } from "../../components/ConfirmDialog";
 import { NoTeamsHint } from "../../components/Teams";
 import { ownerLabel } from "../../components/Owners";
@@ -157,10 +158,9 @@ export function OwnersPage() {
       <ErrorBox error={rules.error} title="Could not load owner rules" />
       {!rules.data && !rules.error && <Loading />}
       {rules.data && rules.data.items.length === 0 && editing !== "new" && (
-        <EmptyState title="No owner rules yet" help="owner-rules">
+        <EmptyState {...OWNER_RULES_EMPTY} action={{ ...OWNER_RULES_EMPTY.action!, onClick: () => setEditing("new") }} help="owner-rules">
           <p>
-            New issues stay unassigned until someone assigns them. Add a rule such as “operating system packages on every server → the infra team” or “everything in the
-            Shop project → Anita”.
+            A rule is, for example, “operating system packages on every server → the infra team” or “everything in the Shop project → Anita”.
           </p>
         </EmptyState>
       )}

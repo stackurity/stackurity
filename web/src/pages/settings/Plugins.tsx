@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { api, safeHttpUrl, type InstalledPlugin, type PluginList } from "../../api";
+import { PLUGINS_EMPTY } from "../../emptyCopy";
 import { useLoad } from "../../hooks";
 import { Badge, Chip } from "../../components/Badge";
 import { Card, Code, CodeBlock, EmptyState, ErrorBox, Loading, PageHeader } from "../../components/ui";
@@ -143,9 +144,9 @@ export function PluginsPage() {
         </Card>
       )}
       {res.data?.enabled && res.data.items.length === 0 && (
-        <EmptyState title="No plugins installed">
+        <EmptyState {...PLUGINS_EMPTY} help="cloud-plugins" helpLabel="How plugins work">
           <p>
-            Copy plugin executables into <Code>STACKURITY_PLUGIN_DIR</Code>. See docs/plugins.md.
+            Copy plugin executables into <Code>STACKURITY_PLUGIN_DIR</Code> and restart the server. See docs/plugins.md.
           </p>
         </EmptyState>
       )}

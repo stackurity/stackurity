@@ -139,7 +139,8 @@ func (s *Server) askFeedback(w http.ResponseWriter, r *http.Request) {
 	// While Ask is off for the organisation (turned off, or its consent is
 	// to an older wording), no conversation text leaves it as a snapshot:
 	// the feedback keeps only what the person chose and wrote.
-	if l, err := s.askLimits(r.Context()); err != nil || !l.Enabled {
+	l, lerr := s.askLimits(r.Context())
+	if lerr != nil || !l.Enabled {
 		fi.Consent = false
 	}
 	if convID == 0 && fi.Scope != "ui" {
@@ -166,6 +167,11 @@ func (s *Server) askFeedback(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.fail(w, r, err)
 		return
+	}
+	// A thumbs-down: the rest of the conversation uses a stronger model,
+	// within the plan's (ask/tier.go).
+	if fi.Rating == "down" && convID > 0 && lerr == nil && l.Enabled {
+		s.askStepUpBetween(context.WithoutCancel(r.Context()), p.User.ID, convID, l.Model, ask.StepThumbsDown)
 	}
 	writeJSON(w, 201, map[string]any{"id": fb.ID, "consent": fb.Consent})
 }
