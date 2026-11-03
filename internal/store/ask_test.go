@@ -252,7 +252,7 @@ func TestAskLockKeyIsWide(t *testing.T) {
 	}
 }
 
-// Every organisation starts with the assistant off, new ones too (0097):
+// Every organisation starts with the assistant off, new ones too (0087):
 // it is turned on only with an administrator's consent.
 func TestAskOffUntilConsent(t *testing.T) {
 	f := newAskFixture(t)
