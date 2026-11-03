@@ -11,14 +11,17 @@ import { IssueLinks } from "../components/IssueLinks";
 
 const LIMIT = 50;
 
+// satisfies: every kind in INCIDENT_KINDS needs a label, or the Kind filter
+// shows an empty option (it did for "leak").
 export const INCIDENT_KIND_LABEL: Record<string, string> = {
   vulnerability: "Vulnerability",
   end_of_life: "End of life",
+  leak: "Leaked key",
   feed: "Feed problem",
   collection: "Collection problem",
   coverage: "Coverage drop",
   platform: "Platform problem",
-};
+} satisfies Record<(typeof INCIDENT_KINDS)[number], string>;
 
 export function IncidentsPage() {
   const [params, setParams] = useSearchParams();
@@ -153,7 +156,7 @@ export function IncidentsPage() {
             <option value="">All kinds</option>
             {INCIDENT_KINDS.map((k) => (
               <option key={k} value={k}>
-                {INCIDENT_KIND_LABEL[k]}
+                {INCIDENT_KIND_LABEL[k] ?? humanize(k)}
               </option>
             ))}
           </select>

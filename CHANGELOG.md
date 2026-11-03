@@ -49,6 +49,8 @@ Each release's section is published as its GitHub release notes, and a tag witho
 ### Fixed
 
 - **Checks on a wide screen listed every check twice**, as a table and again as the phone cards below it.
+- **The CLI counts one thing in the singular.** `stackurity scan` and the gate said "1 leaked keys or passwords meet --fail-on-leak", "1 findings meet the gate", "1 open findings", "1 components could not be evaluated" and "1 observations stored"; they now say "1 leaked key or password meets", "1 finding meets the gate" and so on.
+- **Restoring a backup into a new PostgreSQL server** ([Backup and restore](docs/install.md#backup-and-restore)): the steps now save the roles file with every backup and load it before `pg_restore` (or create the `stackurity_app` role when there is no roles file), since `pg_restore` fails on the grants to that role without it.
 
 ### Upgrading
 

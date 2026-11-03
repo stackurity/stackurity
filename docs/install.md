@@ -1142,24 +1142,25 @@ Everything is in PostgreSQL. The data volume only holds temporary clones. Keep t
 - `STACKURITY_SECRET_KEY`, if you set it. Stored workspace secrets are encrypted with it and cannot be read without it. Keep it apart from the database dumps.
 - Your licence key, if you use Pro or Enterprise (it is also stored in the database).
 
+A backup is two files: the database, and the roles it grants privileges to. Roles belong to the PostgreSQL server, not to the database, so `pg_dump` leaves them out.
+
 ```sh
 # backup
 docker compose exec -T postgres pg_dump -U stackurity -Fc stackurity > stackurity-$(date +%F).dump
+docker compose exec -T postgres pg_dumpall -U stackurity --roles-only --no-role-passwords > stackurity-roles-$(date +%F).sql
 
 # restore into a fresh install
 docker compose up -d postgres
+# the roles first (errors for roles that already exist, such as stackurity, are harmless)
+docker compose exec -T postgres psql -U stackurity -d postgres < stackurity-roles-2026-10-23.sql
 docker compose exec -T postgres pg_restore -U stackurity -d stackurity --clean --if-exists < stackurity-2026-10-23.dump
 docker compose up -d
 ```
 
-Restoring into a new PostgreSQL server prints `role "stackurity_app" does not exist` errors and exits with status 1. They are expected: roles belong to the server, not the dump, and Stackurity creates the role and its grants again when it starts (before release 0.2, a server with several workspaces refused to start after such a restore; start 0.2 or later against it). To restore without these errors, save the roles next to each dump and load them first:
+Load the roles before `pg_restore`. The migrations grant privileges to the `stackurity_app` role, and on a PostgreSQL server that does not have it, `pg_restore` fails on each of those grants (`role "stackurity_app" does not exist`) and exits with status 1. If you have no roles file for the dump, create the role instead, then run `pg_restore`:
 
 ```sh
-# with each backup
-docker compose exec -T postgres pg_dumpall -U stackurity --roles-only --no-role-passwords > stackurity-roles-$(date +%F).sql
-
-# before pg_restore (errors for roles that already exist, such as stackurity, are harmless)
-docker compose exec -T postgres psql -U stackurity -d postgres < stackurity-roles-2026-10-23.sql
+docker compose exec -T postgres psql -U stackurity -d postgres -c 'CREATE ROLE stackurity_app NOLOGIN;'
 ```
 
 Test a restore regularly. A backup you have never restored is not a backup. To check one: restore it into a separate PostgreSQL, start Stackurity against it with `STACKURITY_FEEDS=off`, and confirm that `/readyz` answers 200 and `stackurity admin list-workspaces` shows your workspaces and asset counts.
