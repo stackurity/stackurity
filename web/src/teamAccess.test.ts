@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { TEAMS_EXPLAINED, mergeTeamAccess, ownsChange } from "./teamAccess.ts";
 
-// Settings > Teams: "Can see" (the team's grants, which its members get)
+// People > Teams: "Can see" (the team's grants, which its members get)
 // and "Owns" (assets whose alerts go to it; no access).
 
 test("Can see: current grants as edited, plus what the picker adds", () => {

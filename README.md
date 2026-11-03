@@ -63,7 +63,7 @@ docker compose exec stackurity stackurity admin load-demo        # --remove dele
 **3. Connect your own estate:**
 
 - **Servers:** under **Assets → Add server**, create an install command and run it on each Linux host (or, in PowerShell, on each Windows host). The agent is read-only and unprivileged, and it reports OS packages, runtimes and the libraries your deployed applications have installed (on Windows, the OS build and installed programs).
-- **Code:** add repositories under **Settings → Integrations**, or run `stackurity scan . --fail-on critical` in CI to block vulnerable changes.
+- **Code:** add repositories under **Integrations**, or run `stackurity scan . --fail-on critical` in CI to block vulnerable changes.
 - **Cloud:** the AWS plugin reads managed service versions with a read-only role, and the Kubernetes reporter (in the cluster) or plugin reads a cluster's workloads, images and exposure with a read-only service account.
 - **People and tools:** invite your team (or turn on single sign-on with Pro), route alerts to Slack, Teams or email, and connect AI assistants to `/mcp` with the organisation, project and role you choose.
 

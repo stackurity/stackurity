@@ -791,7 +791,7 @@ func AWSPluginRun(ctx context.Context, st *store.Store, client *awsconnect.Clien
 	}
 	switch {
 	case c.Status != "active":
-		return cfg, nil, true, errors.New("the AWS connection is not active: verify its role under Settings > Integrations > AWS")
+		return cfg, nil, true, errors.New("the AWS connection is not active: verify its role under Integrations > AWS")
 	case !client.Enabled():
 		return cfg, nil, true, errors.New("AWS connections are not set up on this server (STACKURITY_AWS_PRINCIPAL_ARN)")
 	case cfg.Plugin != "aws-managed":

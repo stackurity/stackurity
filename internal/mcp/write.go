@@ -801,7 +801,7 @@ func init() {
 						return map[string]any{"result": "Invitation emailed to " + email + "."}, nil
 					}
 					return map[string]any{"result": "Invitation created for " + email + ", but this server does not send email. To get a link to " +
-						"pass on privately, invite them again in Stackurity (Settings, Projects and access, the project, Invite by email): that replaces this invitation and shows the link once."}, nil
+						"pass on privately, invite them again in Stackurity (Assets, Projects, the project, Invite by email): that replaces this invitation and shows the link once."}, nil
 				}}, nil
 		}},
 	}

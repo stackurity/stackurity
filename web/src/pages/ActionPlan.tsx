@@ -92,7 +92,7 @@ export function FixGroupList({
           {!compactEmpty && (
             <p>
               No open issues need a change. That covers only what was inventoried and checked; see <Link to="/coverage">Coverage</Link>{" "}
-              and <Link to="/intelligence">Intelligence</Link> for gaps.
+              and <Link to="/intelligence">Data sources</Link> for gaps.
             </p>
           )}
         </EmptyState>

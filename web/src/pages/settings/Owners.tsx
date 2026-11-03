@@ -20,7 +20,7 @@ const LEVEL_LABEL: Record<number, string> = {
   1: "Organisation default",
 };
 
-/** Settings > Owner rules: who new issues are assigned to. */
+/** People > Owner rules: who new issues are assigned to. */
 export function OwnersPage() {
   const rules = useLoad(() => api.get<List<OwnerRule>>("/owner-rules"), []);
   const act = useAction();
@@ -249,7 +249,7 @@ function RuleForm({ rule, onSaved, onCancel }: { rule?: OwnerRule; onSaved: () =
               </select>
               {projects.data && projects.data.items.length === 0 && (
                 <p className="hint">
-                  No projects yet. <Link to="/settings/projects">Create one</Link>.
+                  No projects yet. <Link to="/projects">Create one</Link>.
                 </p>
               )}
             </div>

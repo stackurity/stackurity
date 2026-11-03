@@ -92,7 +92,7 @@ export function SlackOAuthCallbackPage() {
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const admin = can("admin");
   const fromOnboarding = readPending() !== null;
-  const backTo = fromOnboarding ? "/get-started?step=notify" : "/settings/integrations";
+  const backTo = fromOnboarding ? "/get-started?step=notify" : "/integrations";
 
   useEffect(() => {
     if (denied || !code || !state || !admin) return;
@@ -108,7 +108,7 @@ export function SlackOAuthCallbackPage() {
         setOutcome(o);
         return;
       }
-      navigate(withChannel(safeReturn(o.result.return_to, "/settings/integrations"), o.result.channel.id), { replace: true });
+      navigate(withChannel(safeReturn(o.result.return_to, "/integrations"), o.result.channel.id), { replace: true });
     }).catch((e) => {
       if (live) setError(e instanceof ApiError ? e : new ApiError(0, "client", String(e)));
     });
@@ -191,7 +191,7 @@ export function SlackOAuthCallbackPage() {
         <ErrorBox error={outcome.routeError} title="Could not choose what to send" />
         <p>Choose what this channel hears about in its settings.</p>
         <div className="form-actions">
-          <Link className="btn btn-primary" to={`/settings/integrations/channels/${r.channel.id}`}>
+          <Link className="btn btn-primary" to={`/integrations/channels/${r.channel.id}`}>
             Choose what to send
           </Link>
         </div>
