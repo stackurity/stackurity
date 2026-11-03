@@ -57,7 +57,7 @@ func (s *Store) CountActiveAssets(ctx context.Context) (int64, error) {
 
 // LicenseRequirement is from when this installation needs a key, whether
 // it got the grace period of an upgrade, and how long servers have been
-// seen running since (migration 0087). Without the row, a key is needed now.
+// seen running since (migration 0094). Without the row, a key is needed now.
 func (s *Store) LicenseRequirement(ctx context.Context) (from time.Time, upgraded bool, observed time.Duration, err error) {
 	var secs int64
 	err = s.Pool.QueryRow(tenant.System(ctx), `SELECT required_from, upgraded, observed_seconds FROM license_requirement WHERE id = 1`).
@@ -82,7 +82,7 @@ func (s *Store) TickLicenseRequirement(ctx context.Context, maxStep time.Duratio
 	return time.Duration(secs) * time.Second, err
 }
 
-// ServerID is this installation's random id (migration 0088), or "" when
+// ServerID is this installation's random id (migration 0095), or "" when
 // the requirement's row is missing.
 func (s *Store) ServerID(ctx context.Context) (string, error) {
 	var id string
@@ -94,7 +94,7 @@ func (s *Store) ServerID(ctx context.Context) (string, error) {
 }
 
 // CreateKeyLink stores the hash of a one-time state for the free-key
-// button, bound to a user and the hash of their session (migration 0088).
+// button, bound to a user and the hash of their session (migration 0095).
 // Expired states go as new ones come.
 func (s *Store) CreateKeyLink(ctx context.Context, stateHash []byte, userID int64, sessionHash []byte, expires time.Time) error {
 	sys := tenant.System(ctx)

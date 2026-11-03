@@ -65,6 +65,8 @@ export interface Meta {
   sso_discovery?: boolean;
   /** True when this server sends product updates or vulnerability news, so people have email preferences (a hosted edition). */
   email_preferences?: boolean;
+  /** True when passkeys work on this server (STACKURITY_BASE_URL with a domain name over https). */
+  passkeys?: boolean;
   /** Present when people can sign up and sign in with Google, Microsoft or GitHub (a hosted edition): only configured providers. */
   social?: SocialMeta;
   /** Present where people can get a free key for a self-hosted server (Stackurity Cloud). */
@@ -213,8 +215,10 @@ export interface User {
   instance_admin: boolean;
   /** "organisation": a role on everything; "projects": access through projects only (role is then empty). */
   access?: Access;
-  /** Two-factor sign-in is on for this account. */
+  /** The account has a second factor. */
   mfa_enabled?: boolean;
+  /** The account's second factors. */
+  mfa_methods?: MfaMethod[];
   /** Contact information on the membership in this workspace; may be empty. */
   phone?: string;
   /** Their own grants in this workspace (not their teams'). */
@@ -223,6 +227,11 @@ export interface User {
   /** Their teams that can see something: access through team membership. */
   access_teams?: string[] | null;
 }
+
+/** A second factor: a passkey or security key, an authenticator app, or email codes (the fallback). */
+export type MfaMethod = "passkey" | "totp" | "email";
+/** What the second step of a sign-in can take. */
+export type MfaSignInMethod = MfaMethod | "recovery_code";
 
 /** How a member reaches a workspace's data. */
 export type Access = "organisation" | "projects";
@@ -572,8 +581,14 @@ export interface Me {
   features: Feature[];
   /** Whether Send feedback is on (STACKURITY_FEEDBACK_URL) for this signed-in user. */
   feedback_enabled?: boolean;
-  /** The organisation requires two-factor sign-in and this session has none: only enrolment is possible. */
+  /** The organisation requires a second factor this account does not have: only setting one up is possible. */
   mfa_enrolment_required?: boolean;
+  /** The organisation requires a second factor this session was not signed in with: only confirming with it is possible. */
+  mfa_step_up_required?: boolean;
+  /** The methods that count in this organisation, when one of the two above is set. */
+  mfa_accepted?: MfaMethod[] | null;
+  /** A recovery code lets this session go on (false where only a passkey counts for an admin who has one). */
+  mfa_recovery_accepted?: boolean;
   /** An administrator set a temporary password: only changing it is possible. */
   password_change_required?: boolean;
   /** Set when the session's workspace requires its own single sign-on, which this session did not use; workspace is then null. */
@@ -656,7 +671,7 @@ export interface OrgSSOChange {
 }
 
 export type Edition = "community" | "pro" | "enterprise";
-export type Feature = "remediation" | "teams" | "evidence_report" | "sso" | "enterprise_packs";
+export type Feature = "remediation" | "teams" | "evidence_report" | "sso" | "enterprise_packs" | "phishing_resistant_mfa";
 
 export interface LicenseInfo {
   status: {
@@ -3681,14 +3696,16 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: {
   const headers: Record<string, string> = { Accept: "application/json" };
   if (method !== "GET") headers["X-Stackurity-CSRF"] = "1";
   if (activeProject > 0 && !opts?.allProjects) headers["X-Stackurity-Project"] = String(activeProject);
-  if (body !== undefined) headers["Content-Type"] = "application/json";
+  // FormData: the browser sets multipart/form-data with its boundary.
+  const form = typeof FormData !== "undefined" && body instanceof FormData;
+  if (body !== undefined && !form) headers["Content-Type"] = "application/json";
   let res: Response;
   try {
     res = await fetch(`/api/v1${path}`, {
       method,
       headers,
       credentials: "same-origin",
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : form ? (body as FormData) : JSON.stringify(body),
     });
   } catch (e) {
     throw new ApiError(0, "network", "Could not reach the Stackurity server. Check that it is running.");
@@ -3722,6 +3739,8 @@ export const api = {
   /** GET across every project, whatever the switcher says (settings, pickers). */
   getAll: <T>(path: string, q?: Query) => request<T>("GET", path + qs(q), undefined, { allProjects: true }),
   post: <T>(path: string, body?: unknown) => request<T>("POST", path, body ?? {}),
+  /** POST multipart/form-data (file uploads); the browser adds the Content-Type and boundary. */
+  postForm: <T>(path: string, form: FormData) => request<T>("POST", path, form),
   patch: <T>(path: string, body: unknown) => request<T>("PATCH", path, body),
   put: <T>(path: string, body: unknown) => request<T>("PUT", path, body),
   del: <T = void>(path: string, body?: unknown) => request<T>("DELETE", path, body),
@@ -3737,7 +3756,7 @@ export const api = {
   discoverSSO: (email: string) => request<{ login_url: string; label: string }>("POST", "/auth/sso/discover", { email }, { quiet401: true }),
   me: () => request<Me>("GET", "/auth/me", undefined, { quiet401: true }),
   login: (email: string, password: string) =>
-    request<User & { mfa_required?: boolean }>("POST", "/auth/login", { email, password }, { quiet401: true }),
+    request<User & { mfa_required?: boolean; methods?: MfaSignInMethod[] }>("POST", "/auth/login", { email, password }, { quiet401: true }),
   setup: (b: { setup_token: string; email: string; name: string; password: string }) =>
     request<User>("POST", "/setup", b, { quiet401: true }),
   logout: () => request<void>("POST", "/auth/logout", undefined, { quiet401: true }),
@@ -3775,7 +3794,7 @@ export const api = {
   socialSignup: (b: { token: string; name: string; organisation: string; accept_terms: true; email_notice_version?: string }) =>
     request<{ workspace_id: number; next: string }>("POST", "/signup/social", b, { quiet401: true }),
   confirmSocialLink: (token: string) =>
-    request<User & { mfa_required?: boolean }>("POST", "/auth/social/confirm", { token }, { quiet401: true }),
+    request<User & { mfa_required?: boolean; methods?: MfaSignInMethod[] }>("POST", "/auth/social/confirm", { token }, { quiet401: true }),
   socialConnections: () => request<{ providers: SocialConnection[]; has_password: boolean }>("GET", "/auth/social"),
   connectSocial: (provider: string, password: string) =>
     request<{ redirect_url: string }>("POST", `/auth/social/${encodeURIComponent(provider)}/link`, { password }),

@@ -3,7 +3,9 @@ import { api } from "../api";
 import { useAuth } from "../auth";
 import { useAction } from "../hooks";
 import { Code, ErrorBox } from "../components/ui";
-import { MfaLoginStep } from "./TwoFactor";
+import type { MfaSignInMethod } from "../api";
+import { MfaLoginStep, PasskeySignInButton } from "./TwoFactor";
+import { mfaFromQuery } from "../mfa";
 import { ForgotPasswordLink } from "./Password";
 import { SocialButtons } from "./Social";
 
@@ -19,8 +21,11 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const act = useAction();
   // The password was right and the account has two-factor sign-in, or a
-  // sign-in with a provider came back asking for the code (?mfa=1).
-  const [mfa, setMfa] = useState(() => new URLSearchParams(window.location.search).get("mfa") === "1");
+  // sign-in with a provider came back asking for the second step
+  // (?mfa=passkey,totp,recovery_code; "1" from servers before passkeys):
+  // the methods its second step offers.
+  const [mfa, setMfa] = useState<MfaSignInMethod[] | null>(() => mfaFromQuery(window.location.search));
+  const passkeys = state.phase === "login" && Boolean(state.meta.passkeys);
   const discovery = state.phase === "login" && Boolean(state.meta.sso_discovery);
   const [ssoMode, setSSOMode] = useState(false);
   const find = useAction();
@@ -63,7 +68,7 @@ export function LoginPage() {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     const ok = await act.run(() => api.login(email.trim(), password));
-    if (ok?.mfa_required) setMfa(true);
+    if (ok?.mfa_required) setMfa(ok.methods ?? ["totp", "recovery_code"]);
     else if (ok) await refresh();
   };
   const clearMfaQuery = () => {
@@ -72,11 +77,12 @@ export function LoginPage() {
   if (mfa)
     return (
       <MfaLoginStep
+        methods={mfa}
         onDone={async () => {
           clearMfaQuery();
           await refresh();
         }}
-        onRestart={() => (clearMfaQuery(), setMfa(false), setPassword(""))}
+        onRestart={() => (clearMfaQuery(), setMfa(null), setPassword(""))}
       />
     );
 
@@ -130,6 +136,14 @@ export function LoginPage() {
           {act.pending ? "Signing in…" : "Sign in"}
         </button>
         <ForgotPasswordLink />
+        {passkeys && (
+          <>
+            <p className="muted small" style={{ textAlign: "center" }}>
+              or
+            </p>
+            <PasskeySignInButton onDone={refresh} />
+          </>
+        )}
         {discovery && (
           <p className="small" style={{ textAlign: "center" }}>
             <button type="button" className="btn btn-link" onClick={() => setSSOMode(true)}>

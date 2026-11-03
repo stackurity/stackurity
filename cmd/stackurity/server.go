@@ -165,6 +165,10 @@ func serverCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			feedbackQueue, err := feedbackQueueFromEnv(log)
+			if err != nil {
+				return err
+			}
 			holder, licFromEnv, err := loadLicence(ctx, st, log)
 			if err != nil {
 				return err
@@ -356,11 +360,12 @@ func serverCmd() *cobra.Command {
 				Packs:              packMgr,
 				Licence:            holder, Gate: gate, LicenceFromEnv: licFromEnv, KeyRequirement: keyReq,
 				Health: checker, UpdateCheck: updateCfg.Enabled,
-				CoverageGaps: func(ctx context.Context) (any, error) { return coverageGaps(ctx) },
-				FeedbackURL:  feedbackURL,
-				GitLab:       glClient,
-				GitHubApp:    ghApp,
-				AWS:          awsClient,
+				CoverageGaps:  func(ctx context.Context) (any, error) { return coverageGaps(ctx) },
+				FeedbackURL:   feedbackURL,
+				FeedbackQueue: feedbackQueue,
+				GitLab:        glClient,
+				GitHubApp:     ghApp,
+				AWS:           awsClient,
 			}
 			if srv.AccountMail, err = accountMailer(dispatcher, log); err != nil {
 				return err
@@ -414,6 +419,7 @@ func serverCmd() *cobra.Command {
 					RedirectURL: strings.TrimRight(os.Getenv("STACKURITY_BASE_URL"), "/") + "/integrations/gitlab/callback"}
 			}
 			registerJobs(w, st, res, dataDir, log, pluginRunner, packMgr, cloud, ghApp, awsClient, glRunner)
+			registerFeedbackRetention(w, st, feedbackQueue, log)
 			// Prioritise, correlate, plan and deliver notifications; none
 			// for a read-only workspace.
 			w.EveryCollectingWorkspace("alerts", tm.Alerts, dispatcher.Tick)
@@ -541,7 +547,7 @@ func licenceKeyFromEnv() (key, from string, err error) {
 }
 
 // keyRequirement reads from when this server needs a key (a free Community
-// key or a paid licence; migration 0087) and says so in the log. A hosted
+// key or a paid licence; migration 0094) and says so in the log. A hosted
 // edition drops the requirement (its platform holds the licence).
 func keyRequirement(ctx context.Context, st *store.Store, holder *license.Holder, log *slog.Logger) (*license.Requirement, error) {
 	from, upgraded, observed, err := st.LicenseRequirement(ctx)
@@ -563,7 +569,7 @@ func keyRequirement(ctx context.Context, st *store.Store, holder *license.Holder
 }
 
 // keyGraceTick is how often a server adds its running time to the grace
-// period's count (migration 0087); a longer gap counts as keyGraceMaxStep.
+// period's count (migration 0094); a longer gap counts as keyGraceMaxStep.
 const (
 	keyGraceTick    = 10 * time.Minute
 	keyGraceMaxStep = 20 * time.Minute

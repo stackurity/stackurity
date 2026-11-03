@@ -14,6 +14,7 @@ import {
   IconAdmin,
   IconChevron,
   IconHelp,
+  IconInbox,
   IconInventory,
   IconMessage,
   IconMore,
@@ -343,6 +344,14 @@ function Shell() {
                   </button>
                 </li>
               )}
+              {showFeedback && (
+                <li>
+                  <Link to="/feedback" className="sheet-item">
+                    <IconInbox />
+                    <span className="sheet-item-main">My feedback</span>
+                  </Link>
+                </li>
+              )}
             </ul>
             <button type="button" className="btn sheet-close" onClick={() => setMore(false)}>
               Close
@@ -588,6 +597,11 @@ function AvatarMenu({ onFeedback, onLogout, version }: { onFeedback?: () => void
             >
               <IconMessage size={16} /> <span className="menu-item-main">Send feedback</span>
             </button>
+          )}
+          {onFeedback && (
+            <Link to="/feedback" role="menuitem" className="menu-item" onClick={() => pop.setOpen(false)}>
+              <span className="menu-item-main">My feedback</span>
+            </Link>
           )}
           {me?.user?.instance_admin && (
             <Link to="/updates" role="menuitem" className="menu-item" onClick={() => pop.setOpen(false)}>

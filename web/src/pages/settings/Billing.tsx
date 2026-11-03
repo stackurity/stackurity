@@ -79,7 +79,16 @@ export function BillingPage() {
           </Link>
         }
       />
-      <ErrorBox error={res.error} title="Could not load billing" />
+      {res.error?.status === 404 ? (
+        // The server answers 404 for an organisation the operator set up
+        // (not billed through Stackurity Cloud): explain, don't show an error.
+        <Notice kind="info">
+          <strong>This organisation is not billed through Stackurity Cloud.</strong> It was set up by the operator, who
+          sets its limits. <Link to="/settings/usage">Usage</Link> shows what it uses.
+        </Notice>
+      ) : (
+        <ErrorBox error={res.error} title="Could not load billing" />
+      )}
       {!b && !res.error && <Loading />}
       {b && (
         <>
