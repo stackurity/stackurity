@@ -86,6 +86,7 @@ func (s *Scanner) nestedApp(dir, p string) bool {
 type App struct {
 	Dir          string // host path
 	Name         string
+	Version      string // the version its own package.json or composer.json gives, if any
 	GitURL       string // origin remote, when the directory is a Git checkout
 	Observations []model.Observation
 	Coverage     []model.CoverageItem
@@ -447,8 +448,8 @@ func (s *Scanner) ScanApp(ctx context.Context, dir string) App {
 		app.Coverage = append(app.Coverage, model.CoverageItem{Scope: "app:" + dir, Status: "failed", Reason: reason})
 		return app
 	}
-	if n := s.packageName(dir); n != "" {
-		app.Name = n
+	if n, v := s.packageName(dir); n != "" {
+		app.Name, app.Version = n, clip(v)
 	}
 	app.GitURL = s.gitOrigin(dir)
 
@@ -956,18 +957,19 @@ func (s *Scanner) scanComposerInstalled(vendor string) ([]model.Observation, mod
 
 // --- helpers
 
-func (s *Scanner) packageName(dir string) string {
+func (s *Scanner) packageName(dir string) (name, version string) {
 	var p packageJSON
 	if readJSON(s.path(path.Join(dir, "package.json")), &p) == nil && p.Name != "" {
-		return p.Name
+		return p.Name, p.Version
 	}
 	var c struct {
-		Name string `json:"name"`
+		Name    string `json:"name"`
+		Version string `json:"version"`
 	}
 	if readJSON(s.path(path.Join(dir, "composer.json")), &c) == nil && c.Name != "" {
-		return c.Name
+		return c.Name, c.Version
 	}
-	return ""
+	return "", ""
 }
 
 var remoteURL = regexp.MustCompile(`^\s*url\s*=\s*(\S+)\s*$`)

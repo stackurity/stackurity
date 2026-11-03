@@ -3202,6 +3202,49 @@ export interface FixGroup {
   requires_major?: boolean;
   recommended_yanked?: boolean;
   rationale?: string[] | null;
+  /** No-fix groups: per application package, what can be done without a fixed version. */
+  no_fix_advice?: NoFixAdvice | null;
+}
+
+export interface NoFixAdvice {
+  /** The packages come with the application the group is on: only its upgrade changes them. */
+  bundled?: NoFixBundled | null;
+  sections: NoFixSection[];
+}
+
+export interface NoFixBundled {
+  app: string;
+  app_version?: string;
+  app_dir?: string;
+  /** The application's newest release, when release data has one newer than app_version. */
+  latest_version?: string;
+  text: string;
+  /** Show which top-level dependency pulls each package in. */
+  commands?: string[] | null;
+}
+
+export interface NoFixSection {
+  /** renamed, unmaintained or no_fix_yet. */
+  kind: string;
+  title: string;
+  /** Distinct issues across its packages. */
+  issues: number;
+  items: NoFixItem[];
+}
+
+export interface NoFixItem {
+  component: string;
+  version: string;
+  issues: string[];
+  text: string;
+  move_to?: string;
+  fixed_version?: string;
+  deprecated?: string;
+  last_release?: string;
+  /** The advisory's own workaround, quoted as written. */
+  workaround?: string;
+  workaround_source?: string;
+  bundled?: boolean;
 }
 
 export interface FixPlace {

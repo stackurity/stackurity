@@ -113,6 +113,9 @@ type Group struct {
 	RequiresMajor     bool     `json:"requires_major,omitempty"`
 	RecommendedYanked bool     `json:"recommended_yanked,omitempty"`
 	Rationale         []string `json:"rationale,omitempty"`
+	// NoFixAdvice says, per application package in a NoFix group, what can
+	// be done without a fixed version (see AdviseNoFix).
+	NoFixAdvice *NoFixAdvice `json:"no_fix_advice,omitempty"`
 	// Places lists every asset the fix applies to, when groups are merged
 	// by FixKey (see Merge); empty for a single asset's group.
 	Places       []Place           `json:"places,omitempty"`

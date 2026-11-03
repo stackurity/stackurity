@@ -2118,6 +2118,36 @@ details.json pre {
   background: var(--surface-2);
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
 }
+.nofix-bundled {
+  padding: var(--s2) var(--s3);
+  border-left: 3px solid var(--accent);
+  background: var(--surface-2);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+.nofix-bundled p {
+  margin: 0 0 var(--s1);
+}
+.nofix-title {
+  font-size: 14px;
+  margin: var(--s3) 0 var(--s1);
+}
+.nofix-list {
+  margin: 0;
+  padding-left: var(--s4);
+}
+.nofix-list li {
+  margin-bottom: var(--s2);
+  overflow-wrap: anywhere;
+}
+.nofix-workaround {
+  margin: var(--s1) 0 0;
+  padding-left: var(--s2);
+  border-left: 2px solid var(--border);
+}
+.nofix-quote {
+  display: block;
+  white-space: pre-line;
+}
 .fix-actions {
   display: flex;
   gap: var(--s2);

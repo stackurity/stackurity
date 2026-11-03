@@ -34,6 +34,7 @@ import {
   versionsText,
 } from "../components/FixGroups";
 import { Badge } from "../components/Badge";
+import { NoFixAdviceView } from "../components/NoFixAdvice";
 import { AssetSelect, ProjectFilter } from "../components/AssetPicker";
 import { OwnerSplit } from "../components/Owners";
 import { assignGroup, FindingActions, GROUP_ACTION_MAX } from "../components/Workflow";
@@ -400,7 +401,15 @@ export function FixGroupDetailPage() {
         </Card>
         <Card title="How to fix">
           <div className="form-compact form">
-            <ActionInstruction action={g.action} />
+            {g.no_fix_advice && g.no_fix_advice.sections.length > 0 ? (
+              <NoFixAdviceView
+                advice={g.no_fix_advice}
+                accept={{ search: params.toString(), hash: "#accept" }}
+                snooze={{ search: params.toString(), hash: "#snooze" }}
+              />
+            ) : (
+              <ActionInstruction action={g.action} />
+            )}
             {g.note && <p className="hint">{g.note}</p>}
             <p className="small">
               <strong>Change:</strong> {changeText(g)}

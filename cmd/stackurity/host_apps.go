@@ -112,6 +112,9 @@ func appBatch(app apps.App, host model.AssetRef, collectorID string) *model.Obse
 	}
 	b.Coverage = app.Coverage
 	b.Relations = []model.RelationRef{{Kind: "runs_on", To: host.Identifiers}}
+	if app.Version != "" {
+		b.Asset.Attributes["app_version"] = clipAttr(app.Version)
+	}
 	if app.GitURL != "" {
 		b.Asset.Attributes["git_url"] = app.GitURL
 		b.Relations = append(b.Relations, model.RelationRef{Kind: "built_from",

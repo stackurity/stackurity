@@ -6,6 +6,10 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+### Changed
+
+- **"How to fix" says what to do about issues with no fixed version.** A fix for issues with no fix published yet used to say only "Watch for fixes; consider mitigations or replacing the affected components." It now goes package by package, grouped by kind: **Fixed under another name** when the advisory lists another package with a fix (babel-traverse: "Fixed in @babel/traverse 7.23.2; babel-traverse gets no fix: move to @babel/traverse"); **Unmaintained** when the registry marks the package deprecated (its notice is quoted, so a successor is named only when the maintainers name one) or it has had no release for two years; and **No fix yet** otherwise. When the advisory gives its own workaround it is quoted, with the advisory named. Packages found inside an application's dependency tree get one note at the top: they come with that application (ghost 6.52.0), only its upgrade changes them, and the command that shows what pulls each one in, for the package manager it was found with (`cd /var/www/ghost/versions/6.52.0 && pnpm why babel-traverse ...`, `npm ls`, `yarn why`, `composer why`, `go mod why -m`, `cargo tree -i`). The card ends with the decisions the fix page already has: mitigate with a note, accept the risk until a date, ignore with a reason, or snooze until a fix is published. `GET /fix-groups` returns this as `no_fix_advice` and the group's `action` says it in one paragraph, so the MCP `action_plan` and `remediation_plan` tools and Ask answer the same way. Everything comes from data the server already stores. Advisories now keep their workaround section (only advisories that have one are stored again, the next time their feed is read in full or they change), and agents report a deployed application's own version (`app_version`, from its package.json or composer.json). See [`GET /fix-groups`](docs/api.md#get-fix-groups).
+
 ## 0.15.0
 
 ### Added

@@ -81,6 +81,9 @@ func Rebuild(ctx context.Context, st *store.Store, now time.Time) (int, error) {
 	if err := recommend(ctx, st, rows, groups, assign, now); err != nil {
 		return 0, err
 	}
+	if err := adviseNoFix(ctx, st, rows, groups, assign, now); err != nil {
+		return 0, err
+	}
 	return len(groups), st.ReplaceFixGroups(ctx, groups, assign)
 }
 
@@ -126,6 +129,34 @@ func recommend(ctx context.Context, st *store.Store, rows []fixplan.Row, groups 
 		}
 		rec := upgrade.Recommend(in)
 		g.SetRecommendation(rec.Recommended, rec.ChangeType, rec.RequiresMajor, rec.RecommendedYanked, rec.Rationale)
+	}
+	return nil
+}
+
+// adviseNoFix adds per-package guidance to groups of issues with no fixed
+// version, from the findings' advisories and the packages' release data.
+func adviseNoFix(ctx context.Context, st *store.Store, rows []fixplan.Row, groups []*fixplan.Group, assign map[int64]string, now time.Time) error {
+	var ids []int64
+	for _, r := range rows {
+		if strings.HasSuffix(assign[r.FindingID], ":"+fixplan.NoFix) && fixplan.NeedsNoFixAdvice(r) {
+			ids = append(ids, r.FindingID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	found, err := st.NoFixContext(ctx, ids)
+	if err != nil {
+		return err
+	}
+	byGroup := map[string][]fixplan.NoFixFinding{}
+	for _, f := range found {
+		byGroup[assign[f.FindingID]] = append(byGroup[assign[f.FindingID]], f)
+	}
+	for _, g := range groups {
+		if fs := byGroup[g.ID]; g.Kind == fixplan.NoFix && len(fs) > 0 {
+			fixplan.AdviseNoFix(g, fs, now)
+		}
 	}
 	return nil
 }
