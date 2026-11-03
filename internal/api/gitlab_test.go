@@ -1526,6 +1526,9 @@ func TestGitLabDisconnect(t *testing.T) {
 }
 
 func TestGitLabLimits(t *testing.T) {
+	// The webhook's limit is read when the routes are built.
+	const hookLimit = 5
+	t.Cleanup(api.SetGitLabWebhookLimit(hookLimit))
 	f := gitlabSetup(t)
 	e := f.e
 	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
@@ -1555,20 +1558,31 @@ func TestGitLabLimits(t *testing.T) {
 		t.Fatalf("integrations once there is room: %+v", ints)
 	}
 
-	// Clones per connection per minute: past the limit a scan waits.
+	// Clones per connection per minute: past the limit a scan waits. The
+	// limit counts in fixed minutes of the database clock, so two scans can
+	// fall either side of a boundary and both run. Three scans made within
+	// a minute span at most two windows, so with a limit of one, at least
+	// one of them must wait, and a scan that waits clones nothing.
 	f.runner.ClonesPerMinute = 1
 	shop := glIntegration(t, e, 1, glIntegrations(t, e, 1)["acme/shop"].ID)
 	if _, err := e.st.Pool.Exec(tenant.System(context.Background()), `DELETE FROM rate_limits`); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.runner.Run(ctx, shop); err != nil {
-		t.Fatal(err)
-	}
 	clones := f.gl.clones["acme/shop"]
-	err = f.runner.Run(ctx, shop)
 	var d *worker.Deferred
-	if !errors.As(err, &d) || f.gl.clones["acme/shop"] != clones {
-		t.Fatalf("second scan in the minute: %v, %d clones", err, f.gl.clones["acme/shop"]-clones)
+	ran, waited := 0, 0
+	for range 3 {
+		switch err := f.runner.Run(ctx, shop); {
+		case err == nil:
+			ran++
+		case errors.As(err, &d):
+			waited++
+		default:
+			t.Fatal(err)
+		}
+	}
+	if waited == 0 || f.gl.clones["acme/shop"]-clones != ran {
+		t.Fatalf("three scans with a limit of one a minute: %d ran, %d waited, %d clones", ran, waited, f.gl.clones["acme/shop"]-clones)
 	}
 
 	// GitLab's rate limit (429, Retry-After) defers a sync, no error.
@@ -1580,9 +1594,10 @@ func TestGitLabLimits(t *testing.T) {
 		t.Fatalf("rate-limited sync: %v", err)
 	}
 
-	// The webhook is limited per address.
+	// The webhook is limited per address. Its windows are fixed minutes
+	// too: 2n+1 deliveries within a minute put more than n in one window.
 	limited := false
-	for i := 0; i < 1300 && !limited; i++ {
+	for i := 0; i < 2*hookLimit+1 && !limited; i++ {
 		code, _ := f.hook(t, conn.ID, "x", "Push Hook", "l-"+itoa(int64(i)), map[string]any{})
 		limited = code == 429
 	}
