@@ -658,6 +658,13 @@ func (s *Store) SessionInfo(ctx context.Context, secret string) (*Session, error
 	if err != nil {
 		return nil, err
 	}
+	// Single sign-on is exempt from the two-factor policy, so it never
+	// operates the installation either: an account made an instance
+	// administrator while linked (by SQL, at setup) gets the role's powers
+	// only from a password session with its second factor.
+	if login == LoginSSO {
+		u.InstanceAdmin = false
+	}
 	return &Session{User: u, Workspace: wsID, Login: login, MFA: mfa, MFACredential: mfaCred, PasswordChangeRequired: changePassword,
 		ExpiresAt: expiresAt}, nil
 }
