@@ -1,6 +1,6 @@
 /**
  * What each role may do: the one source for the permission labels, the
- * "What can each do?" table in Settings → Users, the role help in invite
+ * "What can each do?" table in People → Users, the role help in invite
  * forms and the help article "Users, teams and roles". Kept free of React
  * and of imports other than types so node --test can load it.
  *

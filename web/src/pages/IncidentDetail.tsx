@@ -74,7 +74,7 @@ function SystemDetail({ inc }: { inc: Incident }) {
       <p>
         {inc.kind === "feed" && (
           <>
-            Check the feed on the <Link to="/intelligence">Intelligence page</Link>. This incident resolves itself when the feed syncs
+            Check the feed on the <Link to="/intelligence">Data sources page</Link>. This incident resolves itself when the feed syncs
             again.
           </>
         )}
@@ -137,7 +137,7 @@ function Deliveries({ items, onRetried }: { items: Delivery[]; onRetried: () => 
       <ErrorBox error={act.error} title="Retry failed" />
       {items.length === 0 ? (
         <p className="muted">
-          No notifications for this incident. Check the routes under <Link to="/settings/integrations">Settings → Integrations</Link>.
+          No notifications for this incident. Check the routes under <Link to="/integrations">Integrations</Link>.
         </p>
       ) : (
         <Table caption="Deliveries" columns={cols} rows={items} rowKey={(d) => d.id} />

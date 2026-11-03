@@ -240,7 +240,7 @@ func (s *Server) teamsRemoved(ctx context.Context, act *teamsActivity, channelID
 }
 
 const teamsWelcome = "Hi, I'm Stackurity. To get your organisation's security notifications in a channel: in Stackurity, open " +
-	"**Settings → Integrations → Microsoft Teams** and click **Add to Teams**, then send the code it shows in that channel, " +
+	"**Integrations → Microsoft Teams** and click **Add to Teams**, then send the code it shows in that channel, " +
 	"mentioning me: `@Stackurity ABCDE-FGHJK`."
 
 func (s *Server) teamsReply(ctx context.Context, app *notify.TeamsApp, act *teamsActivity, text string) {

@@ -4886,7 +4886,7 @@ h6.md-h {
   word-break: break-all;
 }
 
-/* --- Settings, Integrations */
+/* --- Integrations */
 .int-name {
   display: flex;
   align-items: center;
@@ -5007,7 +5007,7 @@ h6.md-h {
   min-width: 0;
 }
 
-/* --- Settings, AI assistants */
+/* --- Integrations, AI assistants */
 .assistant-url-label {
   margin: 0 0 6px;
 }
@@ -5337,7 +5337,7 @@ div.assistant-card {
   margin: 4px 0 0;
 }
 
-/* Settings ▸ Integrations: GitLab groups connected with Connect GitLab. */
+/* Integrations: GitLab groups connected with Connect GitLab. */
 .int-gl-row {
   display: flex;
   flex-wrap: wrap;
@@ -5362,7 +5362,7 @@ div.assistant-card {
   gap: 8px;
 }
 
-/* Settings ▸ Integrations: GitHub accounts connected through the GitHub App. */
+/* Integrations: GitHub accounts connected through the GitHub App. */
 .int-gh-row {
   display: flex;
   flex-wrap: wrap;
@@ -5372,7 +5372,7 @@ div.assistant-card {
   padding: 8px 0;
 }
 
-/* Settings, Integrations, AWS (pages/settings/Aws.tsx) */
+/* Integrations, AWS (pages/settings/Aws.tsx) */
 .aws-inline {
   display: flex;
   gap: var(--s2);
@@ -5391,7 +5391,7 @@ div.assistant-card {
   overflow: auto;
 }
 
-/* Settings → Users: what a new user can see, and the permissions table. */
+/* People → Users: what a new user can see, and the permissions table. */
 .access-scope,
 .access-projects {
   margin-top: var(--s3);
