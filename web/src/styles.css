@@ -5480,6 +5480,7 @@ div.assistant-card {
 }
 .ask-head-actions {
   display: inline-flex;
+  flex: none;
   gap: 4px;
 }
 .ask-body {
@@ -5592,7 +5593,35 @@ div.assistant-card {
 .ask-who > span:last-child {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   line-height: 1.2;
+}
+.ask-who {
+  flex: 1;
+  overflow: hidden;
+}
+.ask-who strong,
+.ask-bot-tag {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* A phone: the header's buttons get the room; the name may shorten. */
+@media (max-width: 480px) {
+  .ask-head {
+    padding: 10px 8px 10px 12px;
+    gap: 4px;
+  }
+  .ask-head-actions {
+    gap: 0;
+  }
+  .ask-head-actions .btn-sm {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+  .ask-bot-tag {
+    display: none;
+  }
 }
 .ask-bot-tag {
   font-size: 0.75rem;

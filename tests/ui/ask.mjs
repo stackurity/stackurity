@@ -54,6 +54,18 @@ for (const width of [1280, 390]) {
   const understand = panel.getByRole("button", { name: "I understand" });
   if (await understand.isVisible()) await understand.click();
   ok(await panel.locator(".ask-avatar").first().isVisible(), `${tag} the panel shows the bot's avatar`);
+  // The header's name never runs under its buttons (it did at 390 px).
+  const overlap = await panel.locator(".ask-head").evaluate((h) => {
+    const who = h.querySelector(".ask-who")?.getBoundingClientRect();
+    const btns = [...h.querySelectorAll(".ask-head-actions button")].map((b) => b.getBoundingClientRect());
+    const name = h.querySelector(".ask-who strong");
+    return {
+      clash: Boolean(who && btns.length && who.right > btns[0].left + 1),
+      offscreen: btns.some((r) => r.right > window.innerWidth + 1),
+      spill: name ? name.scrollWidth > name.clientWidth + 1 && getComputedStyle(name).textOverflow !== "ellipsis" : false,
+    };
+  });
+  ok(!overlap.clash && !overlap.offscreen && !overlap.spill, `${tag} the header's name and buttons don't overlap ${JSON.stringify(overlap)}`);
   const q = panel.getByLabel("Your question");
   await q.fill("What should I fix first?");
   await panel.getByRole("button", { name: "Ask", exact: true }).click();
