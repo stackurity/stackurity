@@ -67,6 +67,8 @@ var projectRoutes = map[string]projectScope{
 	"GET /api/v1/ask/conversations/{id}":           accountScope,
 	"DELETE /api/v1/ask/conversations/{id}":        accountScope,
 	"POST /api/v1/ask/conversations/{id}/messages": accountScope,
+	"POST /api/v1/ask/conversations/{id}/feedback": accountScope,
+	"POST /api/v1/ask/feedback":                    accountScope,
 	"DELETE /api/v1/slack/links/{id}":              accountScope,
 	"POST /api/v1/slack/links/preview":             accountScope,
 	"POST /api/v1/slack/links/confirm":             accountScope,

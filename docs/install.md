@@ -153,6 +153,13 @@ Ask Stackurity answers questions in a panel of the dashboard with a Claude model
 | `STACKURITY_ASK_PRICES` | Anthropic's list prices | `model=input,cache_write,cache_read,output;...` in US dollars per million tokens, for Bedrock and Vertex, which bill their own prices. Spend and caps are counted with these |
 | `STACKURITY_ASK_FALLBACKS` | on | `off` stops Anthropic's API from retrying a question its safety checks declined on another model (Anthropic's API only) |
 | `STACKURITY_ASK_BASE_URL` | — | Anthropic's API through a proxy |
+| `STACKURITY_ASK_SUMMARY_MODEL` | `claude-haiku-5-5` | Writes the summary of a long conversation's earlier turns (counted against the same caps) |
+| `STACKURITY_ASK_LONG_CHAT_QUESTIONS` | `20` | After this many questions in one conversation, the panel suggests starting a new chat (a suggestion, not a limit) |
+| `STACKURITY_ASK_LONG_CHAT_COST_USD` | `1.00` | The same, once a conversation's model calls have cost this much |
+
+Long conversations stay cheap: each question resends at most the last 8 questions of its conversation, and at most about 20,000 tokens of them. Past that, the earlier turns are condensed into a short summary by the summary model, sent in their place (the conversation itself is kept as it was). A tool result is cut at 24 KB.
+
+Every model call is recorded without its text (tokens, cost, latency, tools, how it ended) for 90 days, then as daily totals for two years: `GET /api/v1/ask/usage/calls` (organisation admins, also as CSV) and `GET /api/v1/admin/ask/calls` (instance admins, every organisation). The server logs one line per call (`ask call`) with the same fields.
 
 Questions and what the assistant reads to answer them go to the provider ([network.md](network.md#ask-stackurity)). Each question can make up to 8 model calls. A typical question costs about $0.05 with `claude-sonnet-5-5` and $0.10 with `claude-opus-5-5`; one that reads a lot, up to about three times that.
 

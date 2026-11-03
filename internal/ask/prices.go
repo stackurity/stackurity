@@ -18,12 +18,14 @@ type Price struct {
 }
 
 // prices are Anthropic's list prices (5-minute cache writes), from
-// https://platform.claude.com/docs/en/about-claude/pricing (2026-10-31).
+// https://platform.claude.com/docs/en/about-claude/pricing (2026-10-31;
+// Sonnet 5.5's cache reads corrected to $0.20 on 2026-11-03, from the
+// claude-api reference's model table).
 // The fallback models a refusal can route to are listed too. Bedrock and
 // Vertex bill their own prices: set STACKURITY_ASK_PRICES there.
 var prices = map[string]Price{
 	"claude-opus-5-5":   {Input: 4, CacheWrite: 5, CacheRead: 0.20, Output: 20},
-	"claude-sonnet-5-5": {Input: 2, CacheWrite: 2.5, CacheRead: 0.10, Output: 10},
+	"claude-sonnet-5-5": {Input: 2, CacheWrite: 2.5, CacheRead: 0.20, Output: 10},
 	"claude-haiku-5-5": {Input: 0.10, CacheWrite: 0.125, CacheRead: 0.01, Output: 0.50,
 		LongPrompt: &Price{Input: 0.50, CacheWrite: 0.625, CacheRead: 0.05, Output: 2.50}, LongPromptTokens: 100_000},
 	"claude-opus-5":    {Input: 5, CacheWrite: 6.25, CacheRead: 0.50, Output: 25},

@@ -88,7 +88,7 @@ func askQ(t *testing.T, s *session, conv int64, text string, page map[string]str
 // starts a conversation.
 func askReady(t *testing.T, e *env, s *session) int64 {
 	t.Helper()
-	if err := e.st.SetAskEnabled(tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace), true); err != nil {
+	if err := e.st.ConsentToAsk(tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace), 0, api.AskConsentVersion); err != nil {
 		t.Fatal(err)
 	}
 	if code := s.do("POST", "/api/v1/ask/notice", map[string]string{"version": api.AskNoticeVersion}, nil); code != 204 {
@@ -132,8 +132,41 @@ func TestAskOptIn(t *testing.T) {
 	if code := s.do("POST", "/api/v1/ask/conversations", map[string]any{}, nil); code != 403 {
 		t.Errorf("start while off: %d", code)
 	}
-	if code := s.do("PUT", "/api/v1/ask/settings", map[string]bool{"enabled": true}, &st); code != 200 || st["enabled"] != true {
+	// On only with the administrator's consent to the current wording.
+	if code := s.do("PUT", "/api/v1/ask/settings", map[string]bool{"enabled": true}, nil); code != 400 {
+		t.Errorf("turn on without consent: %d", code)
+	}
+	if code := s.do("PUT", "/api/v1/ask/settings", map[string]any{"enabled": true, "consent_version": "ask-consent-2000-01-01"}, nil); code != 409 {
+		t.Errorf("turn on with old wording: %d", code)
+	}
+	if code := s.do("GET", "/api/v1/ask/status", nil, &st); st["reason"] != "ask_disabled" {
+		t.Fatalf("after refused consents: %d %v", code, st)
+	}
+	_, token, err := e.st.CreateToken(tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace), "admin token", auth.RoleAdmin, nil, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(map[string]any{"enabled": true, "consent_version": api.AskConsentVersion})
+	if code := bearer(e, token, "PUT", "/api/v1/ask/settings", b, map[string]string{"Content-Type": "application/json"}); code != 403 {
+		t.Errorf("consent through an API token: %d", code)
+	}
+	if code := s.do("PUT", "/api/v1/ask/settings", map[string]any{"enabled": true, "consent_version": api.AskConsentVersion}, &st); code != 200 || st["enabled"] != true {
 		t.Fatalf("turn on: %d %v", code, st)
+	}
+	var who struct {
+		By      *int64
+		Version string
+		At      *time.Time
+	}
+	if err := e.st.Pool.QueryRow(tenant.System(context.Background()), `SELECT ask_consented_by, ask_consent_version, ask_consented_at FROM workspaces WHERE id = $1`,
+		tenant.DefaultWorkspace).Scan(&who.By, &who.Version, &who.At); err != nil || who.By == nil || who.Version != api.AskConsentVersion || who.At == nil {
+		t.Errorf("consent recorded: %+v %v", who, err)
+	}
+	var audits int
+	_ = e.st.Pool.QueryRow(tenant.System(context.Background()), `SELECT count(*) FROM audit_events WHERE action = 'ask.consent'
+		AND detail->>'consent_version' = $1`, api.AskConsentVersion).Scan(&audits)
+	if audits != 1 {
+		t.Errorf("ask.consent audit events = %d", audits)
 	}
 	var c store.AskConversation
 	if code := s.do("POST", "/api/v1/ask/conversations", map[string]any{}, &c); code != 201 || c.Model != ask.DefaultModel {
@@ -471,5 +504,54 @@ func TestAskWorkspaceSwitchMidAnswer(t *testing.T) {
 	results := string(fake.Requests()[1].Body)
 	if !strings.Contains(results, `"is_error":true`) || strings.Contains(results, "betasecret") {
 		t.Errorf("the tool read another organisation: %s", results)
+	}
+}
+
+// The call log: organisation admins read their organisation's calls (JSON
+// or CSV), instance admins every organisation's; never question or
+// answer text; anyone else is refused.
+func TestAskUsageCalls(t *testing.T) {
+	fake := asktest.New(t, asktest.Reply{Text: "The secret answer about web-1.", Usage: asktest.Usage{Input: 1200, Output: 80}})
+	e := newEnvWith(t, withAsk(t, fake, nil))
+	e.user("admin@x.io", auth.RoleAdmin)
+	e.user("eng@x.io", auth.RoleEngineer)
+	e.user("root@x.io", auth.RoleViewer)
+	e.instanceAdmin("root@x.io")
+	admin := e.login("admin@x.io")
+	conv := askReady(t, e, admin)
+	if _, evs, raw := askQ(t, admin, conv, "A secret question?", nil, nil); lastEvent(evs).Name != "done" {
+		t.Fatalf("ask: %s", raw)
+	} else if _, ok := lastEvent(evs).Data["long_chat"]; !ok {
+		t.Errorf("done has no long_chat: %s", raw)
+	}
+	var out struct{ Items []store.AskAPICall }
+	if code := admin.do("GET", "/api/v1/ask/usage/calls", nil, &out); code != 200 || len(out.Items) != 1 {
+		t.Fatalf("admin: %d %+v", code, out)
+	}
+	c := out.Items[0]
+	if c.Kind != "answer" || c.InputTokens != 1200 || c.OutputTokens != 80 || c.CostMicros == 0 || c.PromptVersion != ask.PromptVersion {
+		t.Errorf("call row: %+v", c)
+	}
+	resp := admin.req("GET", "/api/v1/ask/usage/calls?format=csv", nil, nil)
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 200 || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/csv") || !strings.Contains(string(body), "claude-sonnet-5-5") {
+		t.Errorf("csv: %d %s", resp.StatusCode, body)
+	}
+	if strings.Contains(string(body), "secret") {
+		t.Errorf("the call log holds text: %s", body)
+	}
+	if code := e.login("eng@x.io").do("GET", "/api/v1/ask/usage/calls", nil, nil); code != 403 {
+		t.Errorf("engineer: %d", code)
+	}
+	if code := admin.do("GET", "/api/v1/admin/ask/calls", nil, nil); code != 403 {
+		t.Errorf("organisation admin on the server-wide log: %d", code)
+	}
+	if code := admin.do("GET", "/api/v1/ask/usage/calls?since=yesterday", nil, nil); code != 400 {
+		t.Errorf("bad since: %d", code)
+	}
+	var all struct{ Items []store.AskAPICall }
+	if code := e.login("root@x.io").do("GET", "/api/v1/admin/ask/calls?limit=10", nil, &all); code != 200 || len(all.Items) != 1 {
+		t.Errorf("instance admin: %d %+v", code, all)
 	}
 }

@@ -32,8 +32,16 @@ const (
 	// MaxRounds is the model calls one question may make.
 	MaxRounds = 8
 	// MaxContextTokens: a conversation whose prompt grew past this is
-	// closed; the person starts a new one.
+	// closed; the person starts a new one. With the history budget
+	// (history.go) only one question's own tool rounds can get near it.
 	MaxContextTokens = 150_000
+	// DefaultSummaryModel writes the summary of a long conversation's
+	// earlier turns.
+	DefaultSummaryModel = "claude-haiku-5-5"
+	// DefaultLongChatQuestions and DefaultLongChatCostMicros: past either,
+	// the panel suggests starting a new chat (a suggestion, not a limit).
+	DefaultLongChatQuestions  = 20
+	DefaultLongChatCostMicros = 1_000_000
 )
 
 // Config is the installation's assistant configuration, from the
@@ -61,6 +69,32 @@ type Config struct {
 	// Prices override or add model prices (STACKURITY_ASK_PRICES), for
 	// Bedrock and Vertex, whose prices differ from Anthropic's.
 	Prices map[string]Price
+	// SummaryModel summarises long conversations
+	// (STACKURITY_ASK_SUMMARY_MODEL; default DefaultSummaryModel).
+	SummaryModel string
+	// LongChatQuestions and LongChatCostMicros: past either, the answer
+	// suggests a new chat (STACKURITY_ASK_LONG_CHAT_QUESTIONS,
+	// STACKURITY_ASK_LONG_CHAT_COST_USD; 0 uses the default).
+	LongChatQuestions  int64
+	LongChatCostMicros int64
+}
+
+func (c Config) summaryModel() string {
+	if c.SummaryModel != "" {
+		return c.SummaryModel
+	}
+	return DefaultSummaryModel
+}
+
+func (c Config) longChat(questions int, costMicros int64) bool {
+	q, m := c.LongChatQuestions, c.LongChatCostMicros
+	if q <= 0 {
+		q = DefaultLongChatQuestions
+	}
+	if m <= 0 {
+		m = DefaultLongChatCostMicros
+	}
+	return int64(questions) >= q || costMicros >= m
 }
 
 // Enabled reports whether a provider is configured.
@@ -77,6 +111,8 @@ func (c Config) Enabled() bool { return c.Provider != "" }
 //	STACKURITY_ASK_PRICES                    model=input,cache_write,cache_read,output;... in USD per million tokens
 //	STACKURITY_ASK_FALLBACKS                 off to turn server-side fallback off
 //	STACKURITY_ASK_BASE_URL                  the API through a proxy
+//	STACKURITY_ASK_SUMMARY_MODEL             the model that summarises long conversations
+//	STACKURITY_ASK_LONG_CHAT_QUESTIONS, STACKURITY_ASK_LONG_CHAT_COST_USD  when to suggest a new chat
 func FromEnv() (Config, error) {
 	key, err := envOrFile("STACKURITY_ANTHROPIC_API_KEY")
 	if err != nil {
@@ -92,6 +128,7 @@ func FromEnv() (Config, error) {
 		Model:         strings.TrimSpace(os.Getenv("STACKURITY_ASK_MODEL")),
 		Effort:        strings.ToLower(strings.TrimSpace(os.Getenv("STACKURITY_ASK_EFFORT"))),
 		NoFallbacks:   strings.EqualFold(strings.TrimSpace(os.Getenv("STACKURITY_ASK_FALLBACKS")), "off"),
+		SummaryModel:  strings.TrimSpace(os.Getenv("STACKURITY_ASK_SUMMARY_MODEL")),
 	}
 	if c.Provider == "" && c.APIKey != "" {
 		c.Provider = ProviderAnthropic
@@ -113,6 +150,16 @@ func FromEnv() (Config, error) {
 	}
 	if c.Prices, err = ParsePrices(os.Getenv("STACKURITY_ASK_PRICES")); err != nil {
 		return c, err
+	}
+	if n, err := envInt("STACKURITY_ASK_LONG_CHAT_QUESTIONS"); err != nil {
+		return c, err
+	} else if n != nil {
+		c.LongChatQuestions = *n
+	}
+	if n, err := envUSD("STACKURITY_ASK_LONG_CHAT_COST_USD"); err != nil {
+		return c, err
+	} else if n != nil {
+		c.LongChatCostMicros = *n
 	}
 	return c, c.Check()
 }

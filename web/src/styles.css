@@ -6231,6 +6231,7 @@ a.cov-chip:hover {
 }
 .ask-head-actions {
   display: inline-flex;
+  flex: none;
   gap: 4px;
 }
 .ask-body {
@@ -6330,5 +6331,210 @@ a.cov-chip:hover {
   .ask-panel {
     width: 100vw;
     border-left: 0;
+  }
+}
+
+/* Ask Stackurity as a bot: avatar, name, the minimised button. */
+.ask-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.ask-who > span:last-child {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.2;
+}
+.ask-who {
+  flex: 1;
+  overflow: hidden;
+}
+.ask-who strong,
+.ask-bot-tag {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* A phone: the header's buttons get the room; the name may shorten. */
+@media (max-width: 480px) {
+  .ask-head {
+    padding: 10px 8px 10px 12px;
+    gap: 4px;
+  }
+  .ask-head-actions {
+    gap: 0;
+  }
+  .ask-head-actions .btn-sm {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+  .ask-bot-tag {
+    display: none;
+  }
+}
+.ask-bot-tag {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.ask-avatar {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.ask-bot-turn {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 100%;
+}
+.ask-bot-msg {
+  flex: 1;
+  min-width: 0;
+}
+.ask-bot-name {
+  display: block;
+  margin-bottom: 2px;
+}
+.ask-bubble {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 45;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px 6px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 4px 16px rgba(15, 27, 51, 0.16);
+  cursor: pointer;
+  font: inherit;
+}
+.ask-bubble:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.ask-bubble-busy {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: ask-pulse 1.2s ease-in-out infinite;
+}
+@keyframes ask-pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ask-bubble-busy {
+    animation: none;
+  }
+}
+@media (max-width: 700px) {
+  .ask-bubble-label {
+    display: none;
+  }
+  .ask-bubble {
+    padding: 6px;
+  }
+}
+
+/* Ask Stackurity's consent dialog: long text scrolls inside the dialog. */
+.ask-consent {
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+}
+.ask-consent-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 12px;
+  font-weight: 600;
+}
+.ask-consent-check input {
+  flex: none;
+  width: auto;
+  margin-top: 3px;
+}
+.ask-consent-check span {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Ask Stackurity feedback (AskFeedback.tsx): thumbs under an answer, and
+   the form, a bottom sheet on a phone. */
+.ask-rate {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  color: var(--muted);
+}
+.ask-rate-btn {
+  display: inline-flex;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+}
+.ask-rate-btn:hover,
+.ask-rate-btn:focus-visible {
+  color: var(--text);
+  background: var(--surface-2);
+}
+.ask-fb select,
+.ask-fb textarea {
+  width: 100%;
+  max-width: 100%;
+}
+.ask-fb-scope {
+  border: 0;
+  padding: 0;
+  margin: var(--s3) 0 0;
+  min-width: 0;
+}
+.ask-fb-scope legend {
+  padding: 0;
+  margin-bottom: 4px;
+}
+.ask-fb-radio,
+.ask-fb-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 4px 0;
+  overflow-wrap: anywhere;
+}
+.ask-fb-consent {
+  margin-top: var(--s3);
+}
+.confirm-body .ask-fb-radio input,
+.confirm-body .ask-fb-consent input {
+  flex: none;
+  width: auto;
+  margin-top: 3px;
+}
+.ask-fb-note {
+  margin-top: var(--s2);
+}
+@media (max-width: 600px) {
+  .ask-fb-backdrop {
+    place-items: end stretch;
+    padding: 0;
+  }
+  .ask-fb {
+    max-width: none;
+    max-height: 90dvh;
+    border-radius: var(--radius) var(--radius) 0 0;
   }
 }

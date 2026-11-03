@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -480,5 +481,119 @@ func TestToolsPerRoundCapped(t *testing.T) {
 	msgs, _ := rawMessages(t, r.fake.Requests()[1].Body)
 	if last := msgs[len(msgs)-1]; bytes.Count(last, []byte(`"tool_use_id"`)) != len(tools) || !bytes.Contains(last, []byte("at most")) {
 		t.Errorf("tool results = %s", last)
+	}
+}
+
+// A 30-question conversation stays within the history budget: no request
+// resends more than HistoryMaxExchanges earlier questions or about
+// HistoryMaxTokens of them; the earlier turns go into a summary written by
+// the summary model; once summarised, earlier turns carry no thinking
+// blocks; every model call (answers and summaries) is recorded, without
+// text.
+func TestLongConversationStaysInBudget(t *testing.T) {
+	long := strings.Repeat("The fix is to upgrade openssl on web-1 to 3.0.15. ", 80) // ~4 KB an answer
+	var replies []asktest.Reply
+	for range 80 {
+		replies = append(replies, asktest.Reply{Thinking: true, Text: long, Usage: asktest.Usage{Input: 3000, CacheRead: 6000, Output: 600}})
+	}
+	r := newRig(t, replies...)
+	for i := range 30 {
+		if _, err := r.ask(fmt.Sprintf("Question %d about web-1?", i+1), nil); err != nil {
+			t.Fatalf("question %d: %v", i+1, err)
+		}
+	}
+	summaries, answers, withSummary := 0, 0, 0
+	for i, req := range r.fake.Requests() {
+		msgs, top := rawMessages(t, req.Body)
+		var model string
+		_ = json.Unmarshal(top["model"], &model)
+		if bytes.Contains(top["system"], []byte("You condense the earlier part")) {
+			summaries++
+			if model != ask.DefaultSummaryModel || top["tools"] != nil {
+				t.Errorf("request %d: summary call model %s, tools %s", i, model, top["tools"])
+			}
+			continue
+		}
+		answers++
+		// The history: every message but the question just asked, and the
+		// summary when there is one.
+		hist := msgs[:len(msgs)-1]
+		summarised := len(hist) > 0 && bytes.Contains(hist[0], []byte("earlier-conversation-summary"))
+		if summarised {
+			withSummary++
+			hist = hist[1:]
+			if len(msgs[0]) > 9000 {
+				t.Errorf("request %d: summary message is %d bytes", i, len(msgs[0]))
+			}
+			for _, m := range hist {
+				if bytes.Contains(m, []byte(`"type":"thinking"`)) {
+					t.Fatalf("request %d: an earlier turn kept its thinking block after the summary: %.200s", i, m)
+				}
+			}
+		}
+		var size, questions int
+		for _, m := range hist {
+			size += len(m)
+			if bytes.Contains(m, []byte(`stackurity-context`)) {
+				questions++
+			}
+		}
+		if questions > ask.HistoryMaxExchanges || size/3 > ask.HistoryMaxTokens {
+			t.Errorf("request %d: %d earlier questions, ~%d tokens of history", i, questions, size/3)
+		}
+	}
+	if answers != 30 || summaries < 3 || withSummary < 20 {
+		t.Fatalf("answers %d, summaries %d, answers sent with a summary %d", answers, summaries, withSummary)
+	}
+	// Every call is recorded: kind, model, prompt version, tokens; no text.
+	calls, err := r.st.ListAskAPICalls(r.ctx, store.AskCallFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != answers+summaries {
+		t.Fatalf("recorded %d calls, want %d", len(calls), answers+summaries)
+	}
+	var sum, used int
+	for _, c := range calls {
+		if c.Kind == "summary" {
+			sum++
+		}
+		if c.SummaryUsed {
+			used++
+		}
+		if c.PromptVersion != ask.PromptVersion || c.InputTokens == 0 || c.CostMicros == 0 || c.ConversationID == nil || *c.ConversationID != r.conv.ID {
+			t.Errorf("call row %+v", c)
+		}
+	}
+	if sum != summaries || used == 0 {
+		t.Errorf("summary rows %d, rows that used a summary %d", sum, used)
+	}
+	stored, _ := r.st.AskMessages(r.ctx, r.user, r.conv.ID)
+	if last := stored[len(stored)-1]; last.PromptVersion != ask.PromptVersion {
+		t.Errorf("answer prompt version %q", last.PromptVersion)
+	}
+	// The whole conversation is still stored: the summary replaces what is
+	// sent, not what is kept.
+	if len(stored) != 60 {
+		t.Errorf("stored messages: %d", len(stored))
+	}
+}
+
+// Past DefaultLongChatQuestions questions the outcome suggests a new chat.
+func TestLongChatSuggested(t *testing.T) {
+	var replies []asktest.Reply
+	for range 40 {
+		replies = append(replies, asktest.Reply{Text: "ok"})
+	}
+	r := newRig(t, replies...)
+	var out ask.Outcome
+	for i := range ask.DefaultLongChatQuestions {
+		var err error
+		if out, err = r.ask("q", nil); err != nil {
+			t.Fatal(err)
+		}
+		if out.LongChat != (i+1 >= ask.DefaultLongChatQuestions) {
+			t.Fatalf("question %d: long chat %v", i+1, out.LongChat)
+		}
 	}
 }
