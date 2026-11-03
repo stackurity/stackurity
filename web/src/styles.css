@@ -5581,3 +5581,91 @@ div.assistant-card {
     border-left: 0;
   }
 }
+
+/* Ask Stackurity as a bot: avatar, name, the minimised button. */
+.ask-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.ask-who > span:last-child {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+.ask-bot-tag {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.ask-avatar {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.ask-bot-turn {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 100%;
+}
+.ask-bot-msg {
+  flex: 1;
+  min-width: 0;
+}
+.ask-bot-name {
+  display: block;
+  margin-bottom: 2px;
+}
+.ask-bubble {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 45;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px 6px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 4px 16px rgba(15, 27, 51, 0.16);
+  cursor: pointer;
+  font: inherit;
+}
+.ask-bubble:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.ask-bubble-busy {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: ask-pulse 1.2s ease-in-out infinite;
+}
+@keyframes ask-pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ask-bubble-busy {
+    animation: none;
+  }
+}
+@media (max-width: 700px) {
+  .ask-bubble-label {
+    display: none;
+  }
+  .ask-bubble {
+    padding: 6px;
+  }
+}
