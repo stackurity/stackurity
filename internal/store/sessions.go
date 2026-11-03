@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -99,10 +100,10 @@ func (s *Store) ListSessions(ctx context.Context, userID int64, current string, 
 	rows, err := s.Pool.Query(ctx, `SELECT s.public_id::text, s.token_hash = $3,
 		COALESCE(s.login_method, CASE WHEN s.password_login THEN 'password' WHEN s.sso_workspace_id IS NOT NULL THEN 'sso' ELSE '' END),
 		COALESCE(s.mfa_method, CASE WHEN s.mfa_at IS NOT NULL THEN 'totp' ELSE '' END),
-		COALESCE(s.user_agent, ''), COALESCE(s.ip, ''), COALESCE(w.name, ''), s.signed_in_at, s.last_seen_at, s.expires_at
+		COALESCE(s.user_agent, ''), COALESCE(s.ip, ''), COALESCE(w.name, ''), COALESCE(s.signed_in_at, s.created_at), s.last_seen_at, s.expires_at
 		FROM sessions s LEFT JOIN workspaces w ON w.id = s.sso_workspace_id
 		WHERE `+sessionScope+` AND s.expires_at > now() AND NOT ($4 > 0 AND s.last_seen_at < now() - make_interval(secs => $4))
-		ORDER BY s.signed_in_at DESC, s.public_id`, userID, pinned, auth.HashToken(current), s.SessionIdle.Seconds())
+		ORDER BY COALESCE(s.signed_in_at, s.created_at) DESC, s.public_id`, userID, pinned, auth.HashToken(current), s.SessionIdle.Seconds())
 	if err != nil {
 		return nil, err
 	}
@@ -114,6 +115,11 @@ func (s *Store) ListSessions(ctx context.Context, userID int64, current string, 
 }
 
 var sessionIDPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+// ErrSessionEnded: the session a new ID was asked for (SessionOpts.Replaces)
+// has ended, for instance signed out from Your account while the request
+// was in flight. It is ErrNotFound to callers that only check that.
+var ErrSessionEnded = fmt.Errorf("the session has ended: %w", ErrNotFound)
 
 // ErrCurrentSession is a request to sign out, by its ID, the session the
 // request was made with (POST /auth/logout does that).

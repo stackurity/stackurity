@@ -120,32 +120,79 @@ func TestActiveSessions(t *testing.T) {
 		}
 	}
 
-	// A new ID for the same sign-in keeps when and where it was signed in.
+	// A new ID for the same sign-in keeps its public ID, and when and where
+	// it was signed in; the old secret stops working at once.
 	elsewhere := store.WithSessionClient(bg, store.SessionClient{UserAgent: "curl/8", IP: "192.0.2.9"})
 	rotated, err := s.CreateSessionWith(elsewhere, ann.ID, tenant.DefaultWorkspace, store.SessionOpts{Login: store.LoginPassword, Replaces: mine})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.DeleteSession(bg, mine); err != nil {
-		t.Fatal(err)
+	if _, err := s.SessionInfo(bg, mine); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("the old secret after a new ID: %v", err)
 	}
 	list, err = s.ListSessions(bg, ann.ID, rotated, 0)
 	if err != nil || len(list) != 1 {
 		t.Fatalf("after a new ID: %+v %v", list, err)
 	}
-	if r := list[0]; !r.Current || r.IP != "203.0.113.7" || !r.SignedInAt.Equal(got.SignedInAt) || r.ID == got.ID {
+	if r := list[0]; !r.Current || r.IP != "203.0.113.7" || !r.SignedInAt.Equal(got.SignedInAt) || r.ID != got.ID || r.UserAgent != got.UserAgent {
 		t.Errorf("replaced session: %+v, was %+v", r, got)
 	}
-	// Replacing another person's session copies nothing of it.
-	stolen, err := s.CreateSessionWith(elsewhere, ann.ID, tenant.DefaultWorkspace, store.SessionOpts{Replaces: bobs})
+	// Another person's session is not replaced, and nothing is created.
+	if _, err := s.CreateSessionWith(elsewhere, ann.ID, tenant.DefaultWorkspace, store.SessionOpts{Replaces: bobs}); !errors.Is(err, store.ErrSessionEnded) {
+		t.Errorf("replacing bob's session: %v", err)
+	}
+	if _, err := s.SessionInfo(bg, bobs); err != nil {
+		t.Errorf("bob's session after ann tried to replace it: %v", err)
+	}
+	if l, _ := s.ListSessions(bg, ann.ID, rotated, 0); len(l) != 1 {
+		t.Errorf("ann's sessions after replacing bob's: %+v", l)
+	}
+}
+
+// A session signed out while one of its requests is in flight is not
+// brought back when that request gives it a new ID (a new password, a
+// factor changed): the new ID is refused and no session remains.
+func TestRevokedSessionIsNotRotated(t *testing.T) {
+	s := store.New(testdb.New(t))
+	bg := context.Background()
+	ann, err := s.CreateUser(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "ann@x.io", "", auth.RoleViewer, "correct horse battery")
 	if err != nil {
 		t.Fatal(err)
 	}
-	list, _ = s.ListSessions(bg, ann.ID, stolen, 0)
+	laptop, err := s.CreateSessionWith(bg, ann.ID, tenant.DefaultWorkspace, store.SessionOpts{Login: store.LoginPassword})
+	if err != nil {
+		t.Fatal(err)
+	}
+	phone, err := s.CreateSessionWith(bg, ann.ID, tenant.DefaultWorkspace, store.SessionOpts{Login: store.LoginPassword})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var phoneID string
+	list, err := s.ListSessions(bg, ann.ID, laptop, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, a := range list {
-		if a.Current && a.IP != "192.0.2.9" {
-			t.Errorf("replacing bob's session: %+v", a)
+		if !a.Current {
+			phoneID = a.ID
 		}
+	}
+	// The phone's request has been authenticated; the laptop signs it out;
+	// the phone's request then asks for a new ID.
+	if _, err := s.RevokeSession(bg, ann.ID, phoneID, laptop, 0); err != nil {
+		t.Fatal(err)
+	}
+	secret, err := s.CreateSessionWith(bg, ann.ID, tenant.DefaultWorkspace, store.SessionOpts{Login: store.LoginPassword, MFA: store.MFATOTP, Replaces: phone})
+	if !errors.Is(err, store.ErrSessionEnded) || !errors.Is(err, store.ErrNotFound) || secret != "" {
+		t.Fatalf("a new ID for a signed-out session: %q %v", secret, err)
+	}
+	list, err = s.ListSessions(bg, ann.ID, laptop, 0)
+	if err != nil || len(list) != 1 || !list[0].Current {
+		t.Errorf("ann's sessions afterwards: %+v %v", list, err)
+	}
+	var n int
+	if err := s.Pool.QueryRow(bg, `SELECT count(*) FROM sessions WHERE user_id = $1 AND public_id = $2::uuid`, ann.ID, phoneID).Scan(&n); err != nil || n != 0 {
+		t.Errorf("rows for the signed-out session: %d %v", n, err)
 	}
 }
 

@@ -642,6 +642,10 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		// A session with a passkey marked meanwhile as possibly copied
 		// (store.CreateSessionWith): refused like the sign-in itself.
 		passkeyFailed(w, "clone")
+	case errors.Is(err, store.ErrSessionEnded):
+		// The session was signed out while this request was in flight
+		// (rotateSession): it is not given a new ID.
+		writeError(w, 401, "unauthorized", "your session has ended; sign in again")
 	case errors.Is(err, store.ErrNotFound):
 		writeError(w, 404, "not_found", "not found")
 	case errors.Is(err, store.ErrConflict):

@@ -414,8 +414,11 @@ type SessionOpts struct {
 	// Expires keeps a replaced session's end; zero: SessionTTL from now.
 	Expires time.Time
 	// Replaces is the secret of the session this one replaces (a new ID for
-	// the same sign-in): the new one keeps its sign-in time, browser and
-	// address (Your account → Active sessions). It must be the same user's.
+	// the same sign-in): that session's row takes the new secret, keeping
+	// its public ID, sign-in time, browser, address, pin and end (Pinned and
+	// Expires are then not used). The old secret stops working in the same
+	// transaction. When it is no longer a session of userID (signed out
+	// meanwhile), nothing is created: ErrSessionEnded.
 	Replaces string
 }
 
@@ -465,23 +468,37 @@ func (s *Store) CreateSessionWith(ctx context.Context, userID, workspaceID int64
 				return err
 			}
 		}
+		if opts.Replaces != "" {
+			// A new ID for the same sign-in: the row itself gets the new
+			// token, so it keeps its public ID, browser, address, sign-in
+			// time, pin and end. A session signed out meanwhile (Your account,
+			// another tab's sign-out, expiry) has no row: nothing is created.
+			// A concurrent sign-out by public ID either runs first (no row
+			// here) or waits for this update and then deletes the renamed row.
+			tag, err := tx.Exec(ctx, `UPDATE sessions SET token_hash = $3, created_at = now(), last_seen_at = now(),
+				workspace_id = CASE WHEN sso_workspace_id IS NOT NULL THEN sso_workspace_id ELSE $4 END,
+				password_login = $5, mfa_at = $6, login_method = NULLIF($7, ''), mfa_method = NULLIF($8, ''), mfa_credential_id = $9,
+				signed_in_at = COALESCE(signed_in_at, created_at)
+				WHERE token_hash = $1 AND user_id = $2 AND expires_at > now()`,
+				auth.HashToken(opts.Replaces), userID, auth.HashToken(secret), ws, opts.Login == LoginPassword || opts.Login == LoginSocial, mfaAt,
+				opts.Login, opts.MFA, cred)
+			if err != nil {
+				return err
+			}
+			if tag.RowsAffected() == 0 {
+				return ErrSessionEnded
+			}
+			return nil
+		}
 		// password_login is what releases before migration 0087 read: a social
 		// sign-in was one there too (held to "Require two-factor sign-in").
-		// The browser is the request's (WithSessionClient), or for a
-		// replacement the replaced session's.
-		var replaces []byte
-		if opts.Replaces != "" {
-			replaces = auth.HashToken(opts.Replaces)
-		}
+		// The browser is the request's (WithSessionClient).
 		client := sessionClientOf(ctx)
 		_, err := tx.Exec(ctx, `INSERT INTO sessions (token_hash, user_id, expires_at, workspace_id, password_login, mfa_at, sso_workspace_id,
 			login_method, mfa_method, mfa_credential_id, user_agent, ip, signed_in_at)
-			SELECT $1, $2, $3, $4, $5, $6, $7, NULLIF($8, ''), NULLIF($9, ''), $10,
-				CASE WHEN o.token_hash IS NULL THEN NULLIF($11, '') ELSE o.user_agent END,
-				CASE WHEN o.token_hash IS NULL THEN NULLIF($12, '') ELSE o.ip END, COALESCE(o.signed_in_at, now())
-			FROM (SELECT 1) one LEFT JOIN sessions o ON o.token_hash = $13 AND o.user_id = $2`,
+			VALUES ($1, $2, $3, $4, $5, $6, $7, NULLIF($8, ''), NULLIF($9, ''), $10, NULLIF($11, ''), NULLIF($12, ''), now())`,
 			auth.HashToken(secret), userID, expires, ws, opts.Login == LoginPassword || opts.Login == LoginSocial, mfaAt, pinned, opts.Login, opts.MFA, cred,
-			client.UserAgent, client.IP, replaces)
+			client.UserAgent, client.IP)
 		return err
 	})
 	if err != nil {

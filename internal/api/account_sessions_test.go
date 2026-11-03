@@ -184,15 +184,15 @@ func TestAccountSessions(t *testing.T) {
 		t.Errorf("auth.other_sessions_revoked: %q", d)
 	}
 
-	// A new session ID for the same sign-in (a new password) keeps when and
-	// where it was signed in.
+	// A new session ID for the same sign-in (a new password) keeps its
+	// public ID, and when and where it was signed in.
 	if code := laptop.do("POST", "/api/v1/auth/password", map[string]string{"current_password": pw, "new_password": "another long passphrase"}, nil); code != 200 {
 		t.Fatalf("new password: %d", code)
 	}
 	var after sessionList
 	laptop.do("GET", "/api/v1/auth/sessions", nil, &after)
 	if len(after.Items) != 1 || !after.Items[0].Current || after.Items[0].IP != "203.0.113.7" || !after.Items[0].SignedInAt.Equal(this.SignedInAt) ||
-		after.Items[0].ID == this.ID {
+		after.Items[0].ID != this.ID {
 		t.Errorf("after a new password: %+v, was %+v", after.Items, this)
 	}
 }
