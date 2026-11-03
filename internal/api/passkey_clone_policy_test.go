@@ -117,3 +117,33 @@ func TestClonedOnlyPasskeyWherePasskeysOnly(t *testing.T) {
 		t.Errorf("remove the marked passkey from the app session: %d %+v", code, out)
 	}
 }
+
+// The self-lockout guard on PUT /settings/security does not count a marked
+// passkey: an admin whose only passkey is marked cannot, with an API
+// token, require passkeys of everyone (they could then not sign in).
+func TestPolicyGuardIgnoresAClonedPasskey(t *testing.T) {
+	e := newPasskeyEnv(t)
+	bg := context.Background()
+	e.user("ann@x.io", auth.RoleAdmin)
+	ann := e.login("ann@x.io")
+	registerPasskey(t, ann, newAuthenticator(), "YubiKey")
+	var annID int64
+	if err := e.st.Pool.QueryRow(bg, `SELECT id FROM users WHERE email = 'ann@x.io'`).Scan(&annID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.st.PasskeyCloneWarning(bg, annID, mfaStatusOf(t, ann).Passkeys[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	_, tok, err := e.st.CreateToken(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "t", auth.RoleAdmin, &annID, annID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := bearer(e, tok, "PUT", "/api/v1/settings/security", []byte(`{"policy": "everyone", "methods": ["passkey"]}`),
+		map[string]string{"Content-Type": "application/json"})
+	if code != 409 {
+		t.Errorf("policy requiring passkeys, saved by an admin whose only passkey is marked: %d, want 409", code)
+	}
+	if pol, err := e.st.MFAPolicyOf(bg, tenant.DefaultWorkspace); err != nil || pol.Require != store.PolicyOptional {
+		t.Errorf("policy after the refusal: %+v %v", pol, err)
+	}
+}

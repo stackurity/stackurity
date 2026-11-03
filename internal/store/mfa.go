@@ -463,7 +463,7 @@ type AccountMFAReset struct {
 	Removed       []string // the methods that were on (passkey, totp, email)
 	SessionsEnded int64
 	// Workspaces lists every workspace the account belongs to (disabled
-	// ones too), for the audit log.
+	// ones too): user.mfa_reset is recorded in each.
 	Workspaces []int64
 }
 
@@ -472,10 +472,13 @@ type AccountMFAReset struct {
 // and ends its sessions, whatever its workspaces' policies. It is the
 // operator's way out when no admin can reset it in the dashboard
 // (stackurity admin reset-mfa): a single admin whose only passkey is lost
-// or marked as possibly copied, where only passkeys count for admins. It is
-// ErrNotFound for no such account and ErrConflict when it has no second
-// factor.
-func (s *Store) ResetAccountMFA(ctx context.Context, email string) (AccountMFAReset, error) {
+// or marked as possibly copied, where only passkeys count for admins.
+//
+// user.mfa_reset, by a, is recorded in every workspace the account belongs
+// to (the platform's events when none) in the same transaction: the reset
+// is never made without its record. It is ErrNotFound for no such account
+// and ErrConflict when it has no second factor.
+func (s *Store) ResetAccountMFA(ctx context.Context, email string, a Actor, via string) (AccountMFAReset, error) {
 	ctx = tenant.System(ctx)
 	var out AccountMFAReset
 	err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
@@ -498,8 +501,23 @@ func (s *Store) ResetAccountMFA(ctx context.Context, email string) (AccountMFARe
 		if err != nil {
 			return err
 		}
-		out.Workspaces, err = pgx.CollectRows(rows, pgx.RowTo[int64])
-		return err
+		if out.Workspaces, err = pgx.CollectRows(rows, pgx.RowTo[int64]); err != nil {
+			return err
+		}
+		detail := map[string]any{"email": out.Email, "methods": out.Removed, "sessions_ended": out.SessionsEnded, "via": via}
+		scopes := []*int64{nil}
+		if len(out.Workspaces) > 0 {
+			scopes = scopes[:0]
+			for i := range out.Workspaces {
+				scopes = append(scopes, &out.Workspaces[i])
+			}
+		}
+		for _, ws := range scopes {
+			if err := auditTx(ctx, tx, ws, a, "user.mfa_reset", "user", fmt.Sprint(out.UserID), detail); err != nil {
+				return fmt.Errorf("recording the reset in the audit log (nothing was changed): %w", err)
+			}
+		}
+		return nil
 	})
 	return out, err
 }

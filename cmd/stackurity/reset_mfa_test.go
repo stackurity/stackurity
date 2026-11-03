@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/stackurity/stackurity/internal/auth"
 	"github.com/stackurity/stackurity/internal/store"
@@ -91,5 +94,41 @@ func TestAdminResetMFA(t *testing.T) {
 	// Nothing left to reset: refused, and not audited again.
 	if err := resetMFA(bg, st, "ann@x.io", &out); err == nil || !strings.Contains(err.Error(), "no two-factor sign-in") {
 		t.Errorf("second reset: %v", err)
+	}
+}
+
+// When user.mfa_reset cannot be written, the command fails (exits non-zero)
+// and nothing is reset: the record commits with the reset or not at all.
+func TestAdminResetMFAFailsClosed(t *testing.T) {
+	st := store.New(testdb.New(t))
+	bg := context.Background()
+	u, err := st.CreateUser(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "ann@x.io", "", auth.RoleAdmin, "correct horse battery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.AddPasskey(bg, u.ID, store.NewPasskey{CredentialID: []byte("cred-1"), Name: "Key", Record: []byte(`{}`)}, [][]byte{[]byte("h")}); err != nil {
+		t.Fatal(err)
+	}
+	var schema string
+	if err := st.Pool.QueryRow(bg, `SELECT current_schema()`).Scan(&schema); err != nil {
+		t.Fatal(err)
+	}
+	owner, err := pgx.Connect(bg, os.Getenv("STACKURITY_TEST_DATABASE_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer owner.Close(bg)
+	if _, err := owner.Exec(bg, fmt.Sprintf(`CREATE FUNCTION %[1]s.refuse_audit() RETURNS trigger LANGUAGE plpgsql AS
+		$$ BEGIN RAISE EXCEPTION 'audit write refused (test)'; END $$;
+		CREATE TRIGGER refuse_mfa_reset BEFORE INSERT ON %[1]s.audit_events FOR EACH ROW
+		WHEN (NEW.action = 'user.mfa_reset') EXECUTE FUNCTION %[1]s.refuse_audit()`, pgx.Identifier{schema}.Sanitize())); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := resetMFA(bg, st, "ann@x.io", &out); err == nil {
+		t.Fatalf("reset-mfa succeeded although its audit record could not be written: %s", out.String())
+	}
+	if ms, err := st.MFAMethods(bg, u.ID); err != nil || len(ms) != 1 {
+		t.Errorf("factors after the failed reset: %v %v; want the passkey kept", ms, err)
 	}
 }
