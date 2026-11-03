@@ -40,6 +40,7 @@ var projectScopes = map[string]string{
 	"GET /healthz":                         "public",
 	"GET /readyz":                          "public",
 	"GET /install/agent.sh":                "public",
+	"GET /install/agent-macos.sh":          "public",
 	"GET /install/agent.ps1":               "public",
 	"GET /download/agent/{platform}":       "public",
 	"GET /api/v1/meta":                     "public",
@@ -124,26 +125,38 @@ var projectScopes = map[string]string{
 	"GET /mcp":                                      "public",
 	"DELETE /mcp":                                   "public",
 
-	"GET /api/v1/auth/me":                   "account",
-	"POST /api/v1/auth/password":            "account",
-	"GET /api/v1/auth/email-preferences":    "account",
-	"PUT /api/v1/auth/email-preferences":    "account",
-	"PUT /api/v1/auth/default-project":      "account",
-	"POST /api/v1/feedback":                 "account",
-	"GET /api/v1/workspaces":                "account",
-	"POST /api/v1/workspaces/{id}/activate": "account",
-	"GET /api/v1/tokens":                    "account",
-	"POST /api/v1/tokens":                   "account",
-	"DELETE /api/v1/tokens/{id}":            "account",
-	"GET /api/v1/slack/links":               "account",
-	"DELETE /api/v1/slack/links/{id}":       "account",
-	"POST /api/v1/slack/links/preview":      "account",
-	"POST /api/v1/slack/links/confirm":      "account",
-	"POST /api/v1/oauth/authorize/preview":  "account",
-	"POST /api/v1/oauth/authorize":          "account",
-	"GET /api/v1/assistants":                "account",
-	"DELETE /api/v1/assistants/{id}":        "account",
-	"PATCH /api/v1/assistants/{id}":         "account",
+	"GET /api/v1/auth/me":                          "account",
+	"POST /api/v1/auth/password":                   "account",
+	"GET /api/v1/auth/email-preferences":           "account",
+	"PUT /api/v1/auth/email-preferences":           "account",
+	"PUT /api/v1/auth/default-project":             "account",
+	"POST /api/v1/feedback":                        "account",
+	"GET /api/v1/workspaces":                       "account",
+	"POST /api/v1/workspaces/{id}/activate":        "account",
+	"GET /api/v1/tokens":                           "account",
+	"POST /api/v1/tokens":                          "account",
+	"DELETE /api/v1/tokens/{id}":                   "account",
+	"GET /api/v1/slack/links":                      "account",
+	"GET /api/v1/ask/status":                       "account",
+	"POST /api/v1/ask/notice":                      "account",
+	"GET /api/v1/ask/conversations":                "account",
+	"POST /api/v1/ask/conversations":               "account",
+	"DELETE /api/v1/ask/conversations":             "account",
+	"GET /api/v1/ask/conversations/{id}":           "account",
+	"DELETE /api/v1/ask/conversations/{id}":        "account",
+	"POST /api/v1/ask/conversations/{id}/messages": "account",
+	"GET /api/v1/ask/settings":                     "org",
+	"PUT /api/v1/ask/settings":                     "org",
+	"DELETE /api/v1/ask/settings/conversations":    "org",
+	"GET /api/v1/admin/ask":                        "org",
+	"DELETE /api/v1/slack/links/{id}":              "account",
+	"POST /api/v1/slack/links/preview":             "account",
+	"POST /api/v1/slack/links/confirm":             "account",
+	"POST /api/v1/oauth/authorize/preview":         "account",
+	"POST /api/v1/oauth/authorize":                 "account",
+	"GET /api/v1/assistants":                       "account",
+	"DELETE /api/v1/assistants/{id}":               "account",
+	"PATCH /api/v1/assistants/{id}":                "account",
 
 	"GET /api/v1/packs":              "global",
 	"GET /api/v1/packs/{id}/archive": "global",
@@ -193,6 +206,8 @@ var projectScopes = map[string]string{
 	"GET /api/v1/inventory":                     "scoped",
 	"GET /api/v1/inventory/updates":             "scoped",
 	"GET /api/v1/coverage/unchecked":            "scoped",
+	"GET /api/v1/coverage/overview":             "scoped",
+	"GET /api/v1/coverage/assets":               "scoped",
 	"GET /api/v1/dashboard/trend":               "scoped",
 	"GET /api/v1/coverage":                      "scoped",
 	"GET /api/v1/audit":                         "scoped",
@@ -227,6 +242,7 @@ var projectScopes = map[string]string{
 	"POST /api/v1/fix-groups/{id}/check":         "scoped-write",
 	"POST /api/v1/fix-groups/{id}/applied":       "scoped-write",
 	"POST /api/v1/ignore-requests":               "scoped-write",
+	"POST /api/v1/coverage/support-requests":     "scoped-write",
 	"POST /api/v1/ignore-requests/{id}/decision": "scoped-write",
 	"DELETE /api/v1/ignore-rules/{id}":           "scoped-write",
 	"GET /api/v1/agent/check":                    "org",
@@ -414,9 +430,12 @@ func (o *org) grant(t *testing.T, email string, project, asset int64, role auth.
 	return out.Grant
 }
 
-func newOrg(t *testing.T) *org {
+func newOrg(t *testing.T) *org { t.Helper(); return newOrgWith(t, nil) }
+
+// newOrgWith is newOrg with the server adjusted before it starts.
+func newOrgWith(t *testing.T, adjust func(*api.Server)) *org {
 	t.Helper()
-	e := newEnv(t)
+	e := newEnvWith(t, adjust)
 	ctx := context.Background()
 	if err := e.st.EnsureFeed(tenant.System(ctx), "osv:npm", "vulnerability", time.Hour, 6*time.Hour); err != nil {
 		t.Fatal(err)

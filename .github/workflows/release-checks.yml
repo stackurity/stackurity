@@ -15,7 +15,41 @@ on:
 permissions:
   contents: read
 
+# A new push to a pull request cancels its older run. Called from the
+# release workflow, the group is that run's own and nothing is cancelled.
+concurrency:
+  group: release-checks-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  # Whether the upgrade checks need to run: always for a release, and for a
+  # pull request unless it only changes the dashboard's front end, the
+  # documentation or the browser tests, which cannot change an upgrade.
+  changes:
+    name: What changed
+    runs-on: ubuntu-latest
+    outputs:
+      upgrade: ${{ steps.c.outputs.upgrade }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 2
+      - id: c
+        run: |
+          if [ "${{ github.event_name }}" != pull_request ]; then
+            echo upgrade=true >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # HEAD is the pull request merged into its base; HEAD^1 is the base.
+          other=$(git diff --name-only HEAD^1 HEAD | grep -Ev '^(web/|docs/|tests/ui/)|\.md$' || true)
+          if [ -n "$other" ]; then
+            echo "Upgrade checks run: $(echo "$other" | wc -l) files outside web/, docs/, tests/ui/ and Markdown changed"
+            echo upgrade=true >> "$GITHUB_OUTPUT"
+          else
+            echo "Upgrade checks skipped: only web/, docs/, tests/ui/ or Markdown changed"
+            echo upgrade=false >> "$GITHUB_OUTPUT"
+          fi
+
   # Workspace isolation: one workspace never sees or changes another's data,
   # and the database enforces it. A failure, a skip or a test that no longer
   # exists fails this job, which blocks the pull request and the release
@@ -45,6 +79,8 @@ jobs:
 
   image:
     name: Build the current image
+    needs: changes
+    if: needs.changes.outputs.upgrade == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -68,6 +104,7 @@ jobs:
   upgrade:
     name: Upgrade, restore and rollback from ${{ matrix.from }}
     needs: image
+    if: needs.image.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:

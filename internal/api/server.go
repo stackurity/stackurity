@@ -22,6 +22,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"github.com/stackurity/stackurity/internal/ask"
 	"github.com/stackurity/stackurity/internal/auth"
 	"github.com/stackurity/stackurity/internal/awsconnect"
 	"github.com/stackurity/stackurity/internal/db"
@@ -172,6 +173,9 @@ type Server struct {
 	// relyingParty is the WebAuthn relying party for passkeys, made from
 	// BaseURL on first use (webauthn.go).
 	relyingParty relyingPartyOnce
+	// Ask is the in-app assistant (ask.go); nil when no model provider is
+	// configured.
+	Ask *ask.Engine
 }
 
 func (s *Server) Handler() http.Handler {
@@ -179,6 +183,9 @@ func (s *Server) Handler() http.Handler {
 		editionPrepare(s)
 	}
 	s.limiter = newRateLimiter(s.Store, s.Log)
+	if s.Ask != nil && s.Ask.Alert == nil {
+		s.Ask.Alert = s.askAlert
+	}
 	s.ciKeyCache = &ciKeyCache{sets: map[string]*ciIssuerKeys{}}
 	r := chi.NewRouter()
 	if s.TrustProxy {
@@ -201,6 +208,7 @@ func (s *Server) Handler() http.Handler {
 	r.Get("/.well-known/openai-apps-challenge", s.openAIAppsChallenge)
 
 	r.Get("/install/agent.sh", s.installScript)
+	r.Get("/install/agent-macos.sh", s.installScriptMacOS)
 	r.Get("/install/agent.ps1", s.installPowerShell)
 	r.Get("/install/kubernetes.yaml", s.installKubernetes)
 	// The CloudFormation template for connecting AWS (handlers_aws.go).
@@ -297,6 +305,8 @@ func (s *Server) Handler() http.Handler {
 			r.Get("/assistants", s.listAssistants)
 			r.Patch("/assistants/{id}", s.updateAssistant)
 			r.Delete("/assistants/{id}", s.disconnectAssistant)
+			// Ask Stackurity, the in-app assistant (ask.go).
+			s.askRoutes(r)
 			r.Get("/packs", s.listPacks)
 			r.Get("/packs/{id}/archive", s.packArchive)
 			r.Route("/admin/license", func(r chi.Router) {
@@ -400,6 +410,9 @@ func (s *Server) Handler() http.Handler {
 				r.Get("/inventory/updates", s.inventoryUpdates)
 				r.Get("/coverage", s.listCoverage)
 				r.Get("/coverage/unchecked", s.uncheckedSummary)
+				r.Get("/coverage/overview", s.coverageOverview)
+				r.Get("/coverage/assets", s.coverageAssets)
+				r.Post("/coverage/support-requests", s.requestSupport)
 				r.Get("/teams", s.listTeams)
 				r.Get("/owner-rules", s.listOwnerRules)
 				r.Get("/audit", s.listAudit)

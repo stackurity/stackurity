@@ -1,0 +1,12 @@
+{
+  "homebrew_version": "4.4.0",
+  "installed_on_request": true,
+  "installed_as_dependency": false,
+  "source": {
+    "tap": "mongodb/brew",
+    "spec": "stable",
+    "versions": {
+      "stable": "8.0.3"
+    }
+  }
+}

@@ -59,6 +59,10 @@ type Principal struct {
 	// MFARecoveryHelps: a recovery code lets this session go on (to set up
 	// a factor that counts), when MFANeed asks it to confirm.
 	MFARecoveryHelps bool
+	// Ask: the request is a tool of Ask Stackurity (ask.go), made in
+	// process with the person's own session while they wait for an answer.
+	// It may only read (projectGate), and nothing from outside can set it.
+	Ask bool
 	// PasswordChangeRequired: an administrator set a temporary password
 	// (password_reset.go); the session may only change it.
 	PasswordChangeRequired bool
@@ -81,6 +85,8 @@ func (p *Principal) Actor(r *http.Request) store.Actor {
 		a.Type = "anonymous"
 	case p.Assistant != nil:
 		a.Type, a.ID, a.Name = "assistant", p.Assistant.ID, p.User.Email+" (assistant "+p.Assistant.ClientName+")"
+	case p.Ask:
+		a.Type, a.ID, a.Name = "user", p.User.ID, p.User.Email+" (Ask Stackurity)"
 	case p.Token != nil:
 		a.Type, a.ID, a.Name = "token", p.Token.ID, p.Token.Name
 		if p.User != nil {
@@ -130,7 +136,7 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 			sess, err := s.Store.SessionInfo(r.Context(), c.Value)
 			switch {
 			case err == nil:
-				p = &Principal{User: sess.User, Role: sess.User.Role, Session: true, Workspace: sess.Workspace,
+				p = &Principal{User: sess.User, Role: sess.User.Role, Session: true, Workspace: sess.Workspace, Ask: viaAsk(r.Context()),
 					Login: sess.Login, MFAMethod: sess.MFA, MFACredential: sess.MFACredential,
 					PasswordChangeRequired: sess.PasswordChangeRequired, SSOWorkspace: sess.SSOWorkspace, SessionExpires: sess.ExpiresAt}
 				if p.Workspace > 0 && editionSessionAccess != nil {
@@ -139,6 +145,14 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 						p.Workspace, p.Role, p.SSORequired = 0, "", req
 					}
 				}
+				if p.Ask && p.Workspace != askWorkspace(r.Context()) {
+					// The person switched organisation while Ask was
+					// answering: its tools read only the one asked in.
+					writeError(w, 409, "workspace_changed", "the organisation changed while Ask Stackurity was answering")
+					return
+				}
+				// The session gate runs below, once the two-factor policy
+				// (which needs the roles) has been applied.
 			case !errors.Is(err, store.ErrNotFound):
 				s.credentialsUnavailable(w, r, err)
 				return
