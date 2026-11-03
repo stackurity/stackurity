@@ -139,7 +139,7 @@ export function reportingRows(incidents: IncidentLike[] | null | undefined, asse
         kind: "reporting" as const,
         tone: "warn" as const,
         title: a ? quietTitle(a) : i.title.replace(/^Asset /, ""),
-        action: { label: "Open incident", to: `/incidents/${i.id}` },
+        action: { label: "Open the incident", to: `/incidents/${i.id}` },
       };
     });
     if (inc.length > REPORTING_ROWS)
@@ -148,7 +148,7 @@ export function reportingRows(incidents: IncidentLike[] | null | undefined, asse
         kind: "reporting",
         tone: "warn",
         title: `${plural(inc.length - REPORTING_ROWS, "more incident")} about what stopped reporting`,
-        action: { label: "See all", to: "/incidents?status=open&kind=collection" },
+        action: { label: "Open the incident list", to: "/incidents?status=open&kind=collection" },
       });
     return rows;
   }
@@ -159,7 +159,7 @@ export function reportingRows(incidents: IncidentLike[] | null | undefined, asse
     tone: "warn",
     title: quietTitle(a),
     lastSeen: a.last_seen,
-    action: { label: "Check it", to: `/assets/${a.id}` },
+    action: { label: "Open the asset", to: `/assets/${a.id}` },
   }));
   if (stale.length > REPORTING_ROWS)
     rows.push({
@@ -167,7 +167,7 @@ export function reportingRows(incidents: IncidentLike[] | null | undefined, asse
       kind: "reporting",
       tone: "warn",
       title: `Also ${quietKinds(stale.slice(REPORTING_ROWS), stale.length - REPORTING_ROWS)}`,
-      action: { label: "See all", to: "/assets?status=stale" },
+      action: { label: "Open the asset list", to: "/assets?status=stale" },
     });
   return rows;
 }
@@ -188,7 +188,7 @@ export function needsYou(i: NeedsInput): NeedRow[] {
       tone: "crit",
       title: sos.items[0].title,
       detail: "Open SOS incident",
-      action: { label: "Open incident", to: `/incidents/${sos.items[0].id}` },
+      action: { label: "Open the incident", to: `/incidents/${sos.items[0].id}` },
     });
   else if (sos && sos.total > 1)
     rows.push({
@@ -196,7 +196,7 @@ export function needsYou(i: NeedsInput): NeedRow[] {
       kind: "sos",
       tone: "crit",
       title: `${plural(sos.total, "open SOS incident")}`,
-      action: { label: "See SOS incidents", to: "/incidents?status=open&sos=true" },
+      action: { label: "Open the SOS incident list", to: "/incidents?status=open&sos=true" },
     });
   const overdue = i.sla?.overdue ?? 0;
   if (overdue > 0)
@@ -205,7 +205,7 @@ export function needsYou(i: NeedsInput): NeedRow[] {
       kind: "overdue",
       tone: "crit",
       title: `${plural(overdue, "issue")} past ${overdue === 1 ? "its" : "their"} fix-by date`,
-      action: { label: "See overdue issues", to: "/fixes/issues?overdue=true" },
+      action: { label: "Open the overdue issues", to: "/fixes/issues?overdue=true" },
     });
   const due = i.sla?.due_today ?? 0;
   if (due > 0 && i.checkedAt && i.endOfToday)
@@ -214,7 +214,7 @@ export function needsYou(i: NeedsInput): NeedRow[] {
       kind: "due",
       tone: "warn",
       title: `${plural(due, "issue")} due by the end of today`,
-      action: { label: "See what's due", to: dueTodayLink(i.checkedAt, i.endOfToday) },
+      action: { label: "Open the issues due today", to: dueTodayLink(i.checkedAt, i.endOfToday) },
     });
   rows.push(...reportingRows(i.collectionIncidents, i.assets));
   if ((i.ignoreRequests ?? 0) > 0)
@@ -223,7 +223,7 @@ export function needsYou(i: NeedsInput): NeedRow[] {
       kind: "approval",
       tone: "warn",
       title: `${plural(i.ignoreRequests!, "request")} to ignore issues ${i.ignoreRequests === 1 ? "is" : "are"} waiting for a decision`,
-      action: { label: "Decide", to: "/approvals" },
+      action: { label: "Open approvals", to: "/approvals" },
     });
   if ((i.fixPlans ?? 0) > 0)
     rows.push({
@@ -231,7 +231,7 @@ export function needsYou(i: NeedsInput): NeedRow[] {
       kind: "approval",
       tone: "warn",
       title: `${plural(i.fixPlans!, "automatic fix", "automatic fixes")} waiting for approval`,
-      action: { label: "Review", to: "/fixes/automatic" },
+      action: { label: "Open automatic fixes", to: "/fixes/automatic" },
     });
   for (const a of (i.assets ?? []).filter((a) => a.collection_status === "partial").slice(0, REPORTING_ROWS))
     rows.push({
@@ -239,7 +239,7 @@ export function needsYou(i: NeedsInput): NeedRow[] {
       kind: "incomplete",
       tone: "warn",
       title: `${capitalize(assetNoun(a.kind))} ${a.name}: the last check was incomplete`,
-      action: { label: "See what was missed", to: `/assets/${a.id}?tab=coverage` },
+      action: { label: "Open its coverage", to: `/assets/${a.id}?tab=coverage` },
     });
   return rows;
 }
@@ -319,4 +319,162 @@ export function reportingCount(status: Record<string, number> | null | undefined
     .reduce((a, [, n]) => a + n, 0);
   const stale = s.stale ?? 0;
   return { reporting: total - stale, total, stale };
+}
+
+/**
+ * The words the Dashboard uses that a first-time user may not know, said
+ * as the Glossary (help/articles.ts) says them. Shown as a tooltip where
+ * each first appears in a block.
+ */
+export const TERMS = {
+  sos: "SOS: an issue that matches one of the SOS rules in the risk policy, such as known exploited in production. These are the few that should page someone.",
+  incident: "Incident: issues with the same vulnerability on assets owned by one team, grouped so you get one alert. Also system problems, such as a server that stopped reporting.",
+  issue: "Issue: one vulnerability or end-of-life component on one asset.",
+  fix: "Fix: one piece of work, such as installing updates on a server, that clears one or more issues.",
+} as const;
+
+export type Term = keyof typeof TERMS;
+
+const TERM_WORDS: Record<Term, RegExp> = {
+  sos: /\bSOS\b/,
+  incident: /\bincidents?\b/i,
+  issue: /\bissues?\b/i,
+  fix: /\bfix(es)?\b/i,
+};
+
+/**
+ * A text split into plain parts and the first use of each term not yet in
+ * seen (which it adds to), for the Dashboard to underline with a tooltip.
+ */
+export function termParts(text: string, seen: Set<Term>): (string | { text: string; term: Term })[] {
+  const hits: { at: number; len: number; term: Term }[] = [];
+  for (const term of Object.keys(TERM_WORDS) as Term[]) {
+    if (seen.has(term)) continue;
+    const m = TERM_WORDS[term].exec(text);
+    if (m) hits.push({ at: m.index, len: m[0].length, term });
+  }
+  hits.sort((a, b) => a.at - b.at);
+  const out: (string | { text: string; term: Term })[] = [];
+  let at = 0;
+  for (const h of hits) {
+    if (h.at < at) continue; // overlapping words: the first one wins
+    if (h.at > at) out.push(text.slice(at, h.at));
+    out.push({ text: text.slice(h.at, h.at + h.len), term: h.term });
+    seen.add(h.term);
+    at = h.at + h.len;
+  }
+  if (at < text.length) out.push(text.slice(at));
+  return out;
+}
+
+interface BucketCount {
+  findings?: number;
+}
+
+/** One reason Top fixes leaves issues out: the count, the list it opens, and why in words. */
+export interface HiddenReason {
+  key: string;
+  n: number;
+  to: string;
+  text: string;
+  /** A longer explanation, for a tooltip. */
+  title?: string;
+}
+
+/**
+ * Why issues are not in Top fixes, in the order the server sorts fix groups
+ * into buckets (store.FixBuckets), then snoozed and ignored. The no_fix
+ * bucket is fix groups of kind no_fix (fixplan.NoFix): no fixed version is
+ * published, or only in a paid vendor subscription such as Ubuntu Pro or
+ * SUSE LTSS. Nothing in Stackurity is paid to fix it.
+ */
+export function hiddenReasons(hidden: Record<string, BucketCount | undefined> | null | undefined, snoozed = 0, accepted = 0): HiddenReason[] {
+  const h = hidden ?? {};
+  const rows: HiddenReason[] = [
+    {
+      key: "no_fix",
+      n: h.no_fix?.findings ?? 0,
+      to: "/fixes?bucket=no_fix",
+      text: "are waiting for the vendor to publish a fix",
+      title: "No fixed version has been published yet, or the vendor publishes it only in a paid support subscription (such as Ubuntu Pro). The fix page says what to do meanwhile.",
+    },
+    { key: "old_kernels", n: h.old_kernels?.findings ?? 0, to: "/fixes?bucket=old_kernels", text: "are in kernels that are not running" },
+    { key: "non_production", n: h.non_production?.findings ?? 0, to: "/fixes?bucket=non_production", text: "are on assets that are not production" },
+    { key: "lower_priority", n: h.lower_priority?.findings ?? 0, to: "/fixes?bucket=lower_priority", text: "are lower priority (P2 to P4, no SOS rule)" },
+    { key: "suppressed", n: snoozed, to: "/fixes/issues?state=suppressed", text: "are snoozed" },
+    { key: "risk_accepted", n: accepted, to: "/fixes/issues?state=risk_accepted", text: "are ignored" },
+  ];
+  return rows.filter((r) => r.n > 0);
+}
+
+export interface FeedLike {
+  name: string;
+  kind: string;
+  enabled: boolean;
+  last_attempt: string | null;
+  last_success: string | null;
+  last_error: string;
+  /** The server's verdict: no successful sync within the feed's stale_after limit. */
+  stale: boolean;
+}
+
+/**
+ * How fresh vulnerability intelligence is, for the Dashboard:
+ * fresh, stale (a feed past its freshness limit), failing (the last sync
+ * failed but the data is still within its limit), pending (the first
+ * sync has not finished) or never (nothing ever synced because the syncs
+ * fail, or every feed is turned off).
+ */
+export type FreshnessState = "fresh" | "stale" | "failing" | "pending" | "never";
+
+export interface Freshness {
+  state: FreshnessState;
+  /** The newest successful sync across enabled feeds; null when none. */
+  lastSuccess: string | null;
+  stale: string[];
+  failing: string[];
+  /** The warning line, empty when fresh. */
+  warning: string;
+}
+
+function names(list: string[]): string {
+  return list.length > 1 ? `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}` : list[0];
+}
+
+/**
+ * The feeds' state as the Data sources page shows it and the operators'
+ * health checks raise it (health.feedProblems): a feed is stale when the
+ * server says so (no successful sync within stale_after) and it has synced
+ * before; failing when its last attempt failed. A feed that has never been
+ * attempted is waiting for its first sync. Disabled feeds do not count.
+ */
+export function feedFreshness(feeds: FeedLike[] | null | undefined): Freshness {
+  const on = (feeds ?? []).filter((f) => f.enabled);
+  let lastSuccess: string | null = null;
+  for (const f of on) if (f.last_success && (!lastSuccess || Date.parse(f.last_success) > Date.parse(lastSuccess))) lastSuccess = f.last_success;
+  const stale = on.filter((f) => f.stale && f.last_success).map((f) => f.name);
+  const failing = on.filter((f) => f.last_error && !(f.stale && f.last_success)).map((f) => f.name);
+  if (on.length === 0)
+    return { state: "never", lastSuccess, stale, failing, warning: "Every vulnerability data source is turned off, so no vulnerabilities can be found." };
+  if (!lastSuccess && failing.length > 0)
+    return { state: "never", lastSuccess, stale, failing, warning: "Vulnerability data has never been downloaded: the sync keeps failing, so no vulnerabilities can be found yet." };
+  if (!lastSuccess)
+    return { state: "pending", lastSuccess, stale, failing, warning: "Vulnerability data has not been downloaded yet. Issues appear once the first sync finishes." };
+  if (stale.length > 0)
+    return {
+      state: "stale",
+      lastSuccess,
+      stale,
+      failing,
+      warning: `${stale.length === 1 ? "Data source" : "Data sources"} ${names(stale)} ${stale.length === 1 ? "is" : "are"} out of date: no successful sync within ${stale.length === 1 ? "its" : "their"} freshness limit. New vulnerabilities may be missing.`,
+    };
+  if (failing.length > 0)
+    return {
+      state: "failing",
+      lastSuccess,
+      stale,
+      failing,
+      warning: `${failing.length === 1 ? "Data source" : "Data sources"} ${names(failing)} ${failing.length === 1 ? "is" : "are"} failing to sync. The data is still within its freshness limit.`,
+    };
+  return { state: "fresh", lastSuccess, stale, failing, warning: "" };
 }
