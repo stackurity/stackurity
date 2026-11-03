@@ -55,8 +55,9 @@ export function FixesTabs() {
     <LinkTabs
       label="Fixes"
       tabs={[
-        { to: "/fixes", label: "Fixes", match: (p) => p === "/fixes" || (under(p, "/fixes") && !under(p, "/fixes/issues", "/fixes/automatic")) || under(p, "/action-plan") },
+        { to: "/fixes", label: "Fixes", match: (p) => p === "/fixes" || (under(p, "/fixes") && !under(p, "/fixes/issues", "/fixes/automatic", "/fixes/leaks")) || under(p, "/action-plan") },
         { to: "/fixes/issues", label: "All issues", match: (p) => under(p, "/fixes/issues", "/findings") },
+        { to: "/fixes/leaks", label: "Leaked keys", match: (p) => under(p, "/fixes/leaks") },
         { to: "/fixes/automatic", label: "Automatic fixes", match: (p) => under(p, "/fixes/automatic", "/remediation") },
       ]}
     />
@@ -97,7 +98,7 @@ export function ActivityTabs() {
 
 /** The tab bar of a place, on its list pages (not on detail pages). */
 export function SectionTabsFor({ path }: { path: string }) {
-  if (["/fixes", "/fixes/issues", "/fixes/automatic"].includes(path)) return <FixesTabs />;
+  if (["/fixes", "/fixes/issues", "/fixes/leaks", "/fixes/automatic"].includes(path)) return <FixesTabs />;
   if (["/assets", "/components", "/components/updates", "/coverage"].includes(path)) return <AssetsTabs />;
   if (["/incidents", "/checks", "/approvals", "/outcomes", "/reports", "/audit"].includes(path)) return <ActivityTabs />;
   return null;
