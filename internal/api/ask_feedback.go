@@ -141,6 +141,11 @@ func (s *Server) askFeedback(w http.ResponseWriter, r *http.Request) {
 	if fi.Scope == "" {
 		fi.Scope = "answer"
 	}
+	if fi.Seq == 0 {
+		// Not about one answer: the prompt in use now (an answer's
+		// feedback takes the answer's own version).
+		fi.PromptVersion = ask.PromptVersion
+	}
 	if in.Consent && convID > 0 {
 		msgs, err := s.Store.AskMessages(r.Context(), p.User.ID, convID)
 		if err != nil {

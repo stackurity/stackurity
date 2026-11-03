@@ -5619,9 +5619,10 @@ div.assistant-card {
 .ask-fb-consent {
   margin-top: var(--s3);
 }
-.ask-fb-radio input,
-.ask-fb-consent input {
+.confirm-body .ask-fb-radio input,
+.confirm-body .ask-fb-consent input {
   flex: none;
+  width: auto;
   margin-top: 3px;
 }
 .ask-fb-note {
