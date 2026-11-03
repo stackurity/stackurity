@@ -31,3 +31,13 @@ export function mfaFromQuery(search: string): SignInMethod[] | null {
   const ms = v.split(",").filter((m): m is SignInMethod => (SIGN_IN_METHODS as string[]).includes(m));
   return ms.length ? ms : null;
 }
+
+/**
+ * What to do about a passkey blocked as possibly copied. Says the same as the
+ * server's refusal (passkeyCloneMessage in internal/api/webauthn.go) and
+ * docs/install.md; a test keeps them together.
+ */
+export const PASSKEY_COPIED_FIX = [
+  "Sign in with another method, then remove this passkey and add it again.",
+  "If only passkeys count for you and this was your only one, ask another admin to reset your two-factor sign-in.",
+] as const;
