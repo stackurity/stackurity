@@ -5572,3 +5572,69 @@ div.assistant-card {
     border-left: 0;
   }
 }
+
+/* Ask Stackurity feedback (AskFeedback.tsx): thumbs under an answer, and
+   the form, a bottom sheet on a phone. */
+.ask-rate {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  color: var(--muted);
+}
+.ask-rate-btn {
+  display: inline-flex;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+}
+.ask-rate-btn:hover,
+.ask-rate-btn:focus-visible {
+  color: var(--text);
+  background: var(--surface-2);
+}
+.ask-fb select,
+.ask-fb textarea {
+  width: 100%;
+  max-width: 100%;
+}
+.ask-fb-scope {
+  border: 0;
+  padding: 0;
+  margin: var(--s3) 0 0;
+  min-width: 0;
+}
+.ask-fb-scope legend {
+  padding: 0;
+  margin-bottom: 4px;
+}
+.ask-fb-radio,
+.ask-fb-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 4px 0;
+  overflow-wrap: anywhere;
+}
+.ask-fb-consent {
+  margin-top: var(--s3);
+}
+.ask-fb-radio input,
+.ask-fb-consent input {
+  flex: none;
+  margin-top: 3px;
+}
+.ask-fb-note {
+  margin-top: var(--s2);
+}
+@media (max-width: 600px) {
+  .ask-fb-backdrop {
+    place-items: end stretch;
+    padding: 0;
+  }
+  .ask-fb {
+    max-width: none;
+    max-height: 90dvh;
+    border-radius: var(--radius) var(--radius) 0 0;
+  }
+}

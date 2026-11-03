@@ -19,6 +19,7 @@ import {
 import { Card, ErrorBox, RelativeTime } from "./ui";
 import { IconMessage } from "./Icons";
 import { confirmAction } from "./ConfirmDialog";
+import { AskFeedbackButton, AskRate } from "./AskFeedback";
 
 /** Renders an answer: text, bold, code, lists, and links to Stackurity pages only (ask.ts). */
 export function AskAnswer({ text, onNavigate }: { text: string; onNavigate?: () => void }) {
@@ -80,6 +81,8 @@ export function AskButton({ status, onOpen }: { status: AskStatus | undefined; o
 interface Turn {
   role: "user" | "assistant" | "notice";
   text: string;
+  /** An answer's sequence number, for feedback. */
+  seq?: number;
 }
 
 const REASONS: Record<string, string> = {
@@ -139,7 +142,7 @@ export function AskPanel({ open, onClose, status, reload }: { open: boolean; onC
         r.messages.map((m) =>
           m.stop_reason === "refusal" && !m.text
             ? { role: "notice", text: "Claude declined to answer this question." }
-            : { role: m.role, text: m.text },
+            : { role: m.role, text: m.text, seq: m.seq },
         ),
       );
     } catch (e) {
@@ -220,6 +223,7 @@ export function AskPanel({ open, onClose, status, reload }: { open: boolean; onC
     const ctl = new AbortController();
     abort.current = ctl;
     let answer = "";
+    let answerSeq = 0;
     let closing: Turn | null = null;
     try {
       await streamQuestion(id, q, usePage ? page : null, getActiveProject(), (e) => {
@@ -237,6 +241,7 @@ export function AskPanel({ open, onClose, status, reload }: { open: boolean; onC
             setTool(String(e.data.tool ?? "Reading"));
             break;
           case "done":
+            answerSeq = Number(e.data.answer_seq) || 0;
             if (e.data.message) closing = { role: "notice", text: String(e.data.message) };
             break;
           case "error":
@@ -252,7 +257,7 @@ export function AskPanel({ open, onClose, status, reload }: { open: boolean; onC
       setBusy(false);
       setDraft("");
       setTool("");
-      setTurns((t) => [...t, ...(answer ? [{ role: "assistant" as const, text: answer }] : []), ...(closing ? [closing] : [])]);
+      setTurns((t) => [...t, ...(answer ? [{ role: "assistant" as const, text: answer, seq: answerSeq || undefined }] : []), ...(closing ? [closing] : [])]);
       reload();
     }
   };
@@ -272,6 +277,7 @@ export function AskPanel({ open, onClose, status, reload }: { open: boolean; onC
         <span className="ask-head-actions">
           {s?.notice_accepted && (
             <>
+              <AskFeedbackButton conv={conv} />
               <button type="button" className="btn btn-sm btn-link" onClick={() => setHistory((h) => !h)} aria-expanded={history}>
                 History
               </button>
@@ -348,7 +354,10 @@ export function AskPanel({ open, onClose, status, reload }: { open: boolean; onC
                   {t.text}
                 </div>
               ) : t.role === "assistant" ? (
-                <AskAnswer key={i} text={t.text} />
+                <div key={`${conv ?? "new"}:${i}`}>
+                  <AskAnswer text={t.text} />
+                  {conv !== null && t.seq ? <AskRate conv={conv} seq={t.seq} /> : null}
+                </div>
               ) : (
                 <p key={i} className="ask-note small">
                   {t.text}
