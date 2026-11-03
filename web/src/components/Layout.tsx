@@ -8,11 +8,27 @@ import { GlobalSearch } from "./Search";
 import { FeedbackDialog, feedbackAvailable, type FeedbackHandle } from "./Feedback";
 import { PlatformHealthBanner } from "../pages/admin/Health";
 import { UpdateBanner } from "../pages/admin/Updates";
-import { IconActionPlan, IconActivity, IconChevron, IconHelp, IconInventory, IconMessage, IconMore, IconOverview, IconSettings, IconSidebar } from "./Icons";
-import { sectionOf, SectionTabsFor, type Section } from "./nav";
+import {
+  IconActionPlan,
+  IconActivity,
+  IconAdmin,
+  IconChevron,
+  IconHelp,
+  IconInventory,
+  IconMessage,
+  IconMore,
+  IconOverview,
+  IconPeople,
+  IconPlug,
+  IconReports,
+  IconSettings,
+  IconSidebar,
+} from "./Icons";
+import { sectionOf, SectionTabsFor, useSectionHome, type Section } from "./nav";
 import { ErrorBox } from "./ui";
 import { AskButton, AskPanel } from "./AskPanel";
 import type { AskStatus } from "../ask";
+import { clearAskState, EMPTY_ASK_STATE, loadAskState, saveAskState, type AskPanelState } from "../askState";
 
 const STORE_KEY = "stackurity.nav";
 
@@ -89,16 +105,30 @@ function Shell() {
 
   // Ask Stackurity: the panel is on every page; the button shows once the
   // server has a model provider.
-  const [askOpen, setAskOpen] = useState(false);
+  // Its state lives here, in the shell, so it survives moving between
+  // pages; it is kept for the tab per organisation (askState.ts).
+  const wsId = me?.workspace?.id;
+  const [ask, setAsk] = useState<AskPanelState>(EMPTY_ASK_STATE);
+  const askFor = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (askFor.current === wsId) return;
+    askFor.current = wsId;
+    setAsk(loadAskState(wsId));
+  }, [wsId]);
+  useEffect(() => {
+    if (wsId && askFor.current === wsId) saveAskState(wsId, ask);
+  }, [ask, wsId]);
+  const updateAsk = (patch: Partial<AskPanelState>) => setAsk((a) => ({ ...a, ...patch }));
+  const askOpen = ask.open && !ask.minimised;
   const askStatus = useLoad(
     () => (hasWorkspace ? api.get<AskStatus>("/ask/status") : Promise.resolve(undefined)),
-    [hasWorkspace, me?.workspace?.id, askOpen],
+    [hasWorkspace, wsId, askOpen],
   );
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.altKey && (e.key === "k" || e.key === "K") && askStatus.data && askStatus.data.reason !== "not_configured") {
         e.preventDefault();
-        setAskOpen((o) => !o);
+        setAsk((a) => (a.open && !a.minimised ? { ...a, open: false, minimised: false } : { ...a, open: true, minimised: false }));
       }
     };
     window.addEventListener("keydown", onKey);
@@ -112,7 +142,12 @@ function Shell() {
     [pathname, decider],
   );
 
-  const entries: NavEntry[] = [
+  // Each item opens its first tab this person may open; an item with none
+  // is hidden (People for non-admins, Admin outside instance admins).
+  // Settings configures the organisation, so members with project access
+  // only do not get it.
+  const home = useSectionHome();
+  const all: NavEntry[] = [
     { id: "dashboard", to: "/", label: "Dashboard", icon: <IconOverview /> },
     {
       id: "fixes",
@@ -133,17 +168,22 @@ function Shell() {
           ? { count: sos.data?.total ?? 0, label: "open SOS incidents", tone: "crit" }
           : { count: approvals.data?.total ?? 0, label: "requests to ignore issues waiting for approval", tone: "warn" },
     },
-    {
-      id: "settings",
-      to: "/settings",
-      label: "Settings",
-      icon: <IconSettings />,
-    },
+    { id: "reports", to: "/outcomes", label: "Reports", icon: <IconReports /> },
+    { id: "integrations", to: "/integrations", label: "Integrations", icon: <IconPlug /> },
+    { id: "people", to: "/people", label: "People", icon: <IconPeople /> },
+    { id: "settings", to: projectOnly ? "" : "/settings", label: "Settings", icon: <IconSettings /> },
+    { id: "admin", to: "/admin/workspaces", label: "Admin", icon: <IconAdmin /> },
   ];
+  const entries = all.flatMap((n) => {
+    const to = n.to && home(n.id, n.to);
+    return to ? [{ ...n, to }] : [];
+  });
   const current = sectionOf(pathname);
   const showFeedback = feedbackAvailable(me);
   const version = meta ? `v${meta.version.replace(/^v/, "")}` : "";
-  const moreActive = current === "activity" || current === "settings" || current === "help";
+  // Phones show the first three items in the bar; the rest are under More.
+  const moreActive = entries.slice(3).some((n) => n.id === current) || current === "help";
+  const moreBadge = entries.slice(3).find((n) => n.badge && n.badge.count > 0)?.badge;
 
   return (
     <div className={`shell${collapsed ? " shell-collapsed" : ""}`}>
@@ -208,8 +248,11 @@ function Shell() {
           <WorkspaceSwitcher />
           <ProjectSwitcher />
           <div className="topbar-search">{me?.workspace ? <GlobalSearch /> : null}</div>
-          {me?.workspace && <AskButton status={askStatus.data} onOpen={() => setAskOpen(true)} />}
-          <AvatarMenu onFeedback={showFeedback ? () => feedback.current?.open() : undefined} onLogout={() => void logout()} version={version} />
+          {me?.workspace && <AskButton status={askStatus.data} onOpen={() => updateAsk({ open: true, minimised: false })} />}
+          <AvatarMenu onFeedback={showFeedback ? () => feedback.current?.open() : undefined} onLogout={() => {
+              clearAskState();
+              void logout();
+            }} version={version} />
         </header>
         <main id="main" className="content" tabIndex={-1}>
           <UpdateBanner />
@@ -255,7 +298,7 @@ function Shell() {
         >
           <IconMore />
           <span className="tabbar-label">More</span>
-          {entries[3].badge && <CountBadge b={entries[3].badge} />}
+          {moreBadge && <CountBadge b={moreBadge} />}
         </button>
       </nav>
       {more && (
@@ -311,7 +354,7 @@ function Shell() {
       )}
       {/* Mounted once, outside the menus, so closing a menu does not close the dialog. */}
       <FeedbackDialog ref={feedback} />
-      {me?.workspace && <AskPanel open={askOpen} onClose={() => setAskOpen(false)} status={askStatus.data} reload={askStatus.reload} />}
+      {me?.workspace && <AskPanel key={wsId} state={ask} update={updateAsk} status={askStatus.data} reload={askStatus.reload} />}
     </div>
   );
 }
@@ -373,6 +416,7 @@ function WorkspaceSwitcher() {
     setBusy(true);
     try {
       await api.post(`/workspaces/${id}/activate`);
+      clearAskState(); // the panel never carries one organisation's conversation into another
       window.location.assign("/");
     } catch {
       setBusy(false);
@@ -472,7 +516,7 @@ function ProjectSwitcher() {
             </button>
           ))}
           {can("admin") && (
-            <Link to="/settings/projects" role="menuitem" className="menu-item menu-item-sep" onClick={() => pop.setOpen(false)}>
+            <Link to="/projects" role="menuitem" className="menu-item menu-item-sep" onClick={() => pop.setOpen(false)}>
               <span className="menu-item-main">Manage projects and access</span>
             </Link>
           )}
@@ -527,10 +571,10 @@ function AvatarMenu({ onFeedback, onLogout, version }: { onFeedback?: () => void
               <span className="menu-item-main">Your account</span>
             </Link>
           )}
-          <Link to="/settings/ai-assistants" role="menuitem" className="menu-item" onClick={() => pop.setOpen(false)}>
+          <Link to="/integrations/ai-assistants" role="menuitem" className="menu-item" onClick={() => pop.setOpen(false)}>
             <span className="menu-item-main">Connect an AI assistant</span>
           </Link>
-          <Link to="/settings/ai-assistants#connected" role="menuitem" className="menu-item" onClick={() => pop.setOpen(false)}>
+          <Link to="/integrations/ai-assistants#connected" role="menuitem" className="menu-item" onClick={() => pop.setOpen(false)}>
             <span className="menu-item-main">Connected assistants</span>
           </Link>
           {onFeedback && (

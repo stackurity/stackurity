@@ -26,6 +26,9 @@ import (
 //go:embed install/agent.sh
 var agentInstallScript string
 
+//go:embed install/agent.ps1
+var agentInstallPowerShell string
+
 type enrollmentRequest struct {
 	Label        string   `json:"label"`
 	Environment  string   `json:"environment"`
@@ -271,6 +274,40 @@ func shSingleQuoted(v string) string {
 	return "'" + strings.ReplaceAll(v, "'", `'\''`) + "'"
 }
 
+// installPowerShell serves the Windows agent installer with this server's URL
+// filled in. The URL goes into a single-quoted PowerShell string, so quotes
+// in it (from a Host header, when no base URL is configured) cannot end the
+// string and run as code. The script never contains an enrollment code: the
+// person running it sets STACKURITY_ENROLL_CODE.
+func (s *Server) installPowerShell(w http.ResponseWriter, r *http.Request) {
+	base, err := s.publicURL(r)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if !scriptSafeURL.MatchString(base) {
+		writeError(w, 500, "misconfigured", "STACKURITY_BASE_URL must be an http(s) URL without spaces, quotes or shell characters")
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = w.Write([]byte(strings.ReplaceAll(agentInstallPowerShell, "__SERVER__", psSingleQuoted(base))))
+}
+
+// psSingleQuoted escapes text for the inside of a PowerShell single-quoted
+// string: PowerShell ends one at an ASCII apostrophe or any of the
+// typographic single quotes, and reads each doubled as one literal quote.
+func psSingleQuoted(v string) string {
+	var b strings.Builder
+	for _, c := range v {
+		switch c {
+		case '\'', '\u2018', '\u2019', '\u201a', '\u201b':
+			b.WriteRune(c)
+		}
+		b.WriteRune(c)
+	}
+	return b.String()
+}
+
 // publicURL is the configured base URL, or the URL this request came in on.
 // The second is built from the Host header, so it is refused (400) unless
 // the header is a hostname or IP address with an optional port.
@@ -344,7 +381,7 @@ func validPort(p string) bool {
 	return err == nil && len(p) <= 5 && strings.Trim(p, "0123456789") == "" && n >= 1 && n <= 65535
 }
 
-var agentPlatform = regexp.MustCompile(`^linux-(amd64|arm64)(\.sha256)?$`)
+var agentPlatform = regexp.MustCompile(`^(linux-(amd64|arm64)|windows-amd64)(\.sha256)?$`)
 
 // downloadAgent serves the agent binaries bundled with the server.
 func (s *Server) downloadAgent(w http.ResponseWriter, r *http.Request) {
@@ -369,7 +406,11 @@ func (s *Server) downloadAgent(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	} else {
 		w.Header().Set("Content-Type", "application/octet-stream")
-		w.Header().Set("Content-Disposition", `attachment; filename="stackurity"`)
+		file := "stackurity"
+		if strings.HasPrefix(name, "windows-") {
+			file = "stackurity.exe"
+		}
+		w.Header().Set("Content-Disposition", `attachment; filename="`+file+`"`)
 	}
 	http.ServeContent(w, r, "", st.ModTime(), f)
 }

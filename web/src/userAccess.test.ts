@@ -152,7 +152,7 @@ test("Add to teams: optional; with Specific, a team that can see something is en
   // A team that can see nothing (an owner team, say) is not enough.
   s = run(s, { type: "toggleTeam", teamId: 5, checked: true }, { type: "toggleTeam", teamId: 5, checked: true }, { type: "toggleTeam", teamId: 0, checked: true });
   assert.deepEqual(s.teams, [5], "a team is added once; 0 is not a team");
-  assert.deepEqual(problems(s, {}, TEAMS), ["The teams chosen cannot see anything yet: add a project, or give a team access under Settings, Teams."]);
+  assert.deepEqual(problems(s, {}, TEAMS), ["The teams chosen cannot see anything yet: add a project, or give a team access under People, Teams."]);
   s = run(s, { type: "toggleTeam", teamId: 4, checked: true });
   assert.deepEqual(problems(s, {}, TEAMS), []);
   assert.deepEqual(toRequest(s), { email: "new@x.io", name: "New", phone: "", password: "", teams: [5, 4], role: "none", grants: [] });

@@ -49,7 +49,7 @@ export function GitHubCallbackPage() {
   const again = (label: string) => (
     <div className="slack-link-actions">
       {admin ? <InstallOnGitHubButton className="btn btn-primary btn-block" /> : null}
-      <Link className="btn btn-block" to="/settings/integrations">
+      <Link className="btn btn-block" to="/integrations">
         {label}
       </Link>
     </div>
@@ -103,7 +103,7 @@ export function GitHubCallbackPage() {
           GitHub sent your request to the organisation&apos;s owners. Once one of them approves the Stackurity app, click <strong>Install on GitHub</strong>{" "}
           again to connect it.
         </Notice>
-        <Link className="btn btn-block" to="/settings/integrations">
+        <Link className="btn btn-block" to="/integrations">
           Back to integrations
         </Link>
       </>
@@ -114,7 +114,7 @@ export function GitHubCallbackPage() {
       <>
         <Notice kind="success">GitHub is connected: {i.account_login}. Its repositories are listed and scanned in the next few minutes.</Notice>
         <div className="form-actions">
-          <Link className="btn btn-primary" to="/settings/integrations">
+          <Link className="btn btn-primary" to="/integrations">
             See the repositories
           </Link>
         </div>

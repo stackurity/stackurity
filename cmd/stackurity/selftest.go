@@ -110,12 +110,12 @@ func (s *selftest) connect(ctx context.Context) bool {
 		Role string `json:"role"`
 	}
 	if err := s.cl.Do(ctx, "GET", "/api/v1/auth/me", nil, nil, &me); err != nil {
-		s.add("server", diag.Fail, "The token is refused", err.Error(), "Create an API token with the admin role (Settings → API tokens) and pass it in STACKURITY_TOKEN or --token-file.")
+		s.add("server", diag.Fail, "The token is refused", err.Error(), "Create an API token with the admin role (Integrations → API tokens) and pass it in STACKURITY_TOKEN or --token-file.")
 		return false
 	}
 	if me.Role != "admin" {
 		s.add("server", diag.Fail, "The token's role is "+me.Role+", not admin", "The selftest deletes the asset it creates, which needs an admin.",
-			"Create an API token with the admin role (Settings → API tokens) for the selftest.")
+			"Create an API token with the admin role (Integrations → API tokens) for the selftest.")
 		return false
 	}
 	s.add("server", diag.Pass, "Stackurity "+meta.Version+" answers; the token is an admin's", "", "")

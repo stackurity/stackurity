@@ -45,7 +45,7 @@ build-ee: web ee-overlay
 
 # The API package alone runs close to go test's default 10 minutes in the
 # licensed and cloud builds on CI runners.
-TEST_TIMEOUT ?= 25m
+TEST_TIMEOUT ?= 40m
 
 test-ee: ee-overlay
 	go test $(EE_FLAGS) -timeout $(TEST_TIMEOUT) ./...

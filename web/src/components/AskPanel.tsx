@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useLocation } from "react-router";
 import { api, ApiError, getActiveProject } from "../api";
 import {
   AskHTTPError,
+  consentCheckbox,
+  consentText,
   noticeText,
   PAGE_LABEL,
   pageOf,
@@ -21,6 +23,7 @@ import { IconMessage } from "./Icons";
 import { confirmAction } from "./ConfirmDialog";
 import { AskFeedbackButton, AskRate } from "./AskFeedback";
 import { AskLongChat } from "./AskLongChat";
+import type { AskPanelState } from "../askState";
 
 /** Renders an answer: text, bold, code, lists, and links to Stackurity pages only (ask.ts). */
 export function AskAnswer({ text, onNavigate }: { text: string; onNavigate?: () => void }) {
@@ -87,21 +90,46 @@ interface Turn {
 }
 
 const REASONS: Record<string, string> = {
-  ask_disabled: "An administrator of this organisation has turned Ask Stackurity off. Admins can turn it on under Settings → AI assistants.",
+  ask_disabled: "An administrator of this organisation has turned Ask Stackurity off. Admins can turn it on under Integrations → AI assistants.",
   plan_required: "Ask Stackurity is not included in this organisation's plan.",
   read_only: "Ask Stackurity is off while the organisation is read-only.",
   spend_cap: "This organisation's Ask Stackurity budget for the month is used up. It is back on the 1st.",
 };
 
 /** The panel: on every page, opened from the top bar. */
-export function AskPanel({ open, onClose, status, reload }: { open: boolean; onClose: () => void; status: AskStatus | undefined; reload: () => void }) {
+/**
+ * The panel, mounted once in the app shell (Layout): it stays open, with its
+ * conversation, scroll position, half-typed question and any answer still
+ * streaming, while the person moves between pages. Open, minimised, the
+ * conversation and the question are also kept for the tab (askState.ts),
+ * so a reload brings them back. Minimised, it is a small button in the
+ * corner, so the page behind can be used (on a phone the panel fills the
+ * screen).
+ */
+export function AskPanel({
+  state,
+  update,
+  status,
+  reload,
+}: {
+  state: AskPanelState;
+  update: (patch: Partial<AskPanelState>) => void;
+  status: AskStatus | undefined;
+  reload: () => void;
+}) {
   const { pathname } = useLocation();
+  const open = state.open && !state.minimised;
+  const conv = state.conversation;
+  const text = state.text;
+  const setConv = (id: number | null) => update({ conversation: id });
+  const setText = (t: string) => update({ text: t });
+  const onClose = () => update({ open: false, minimised: false });
+  const minimise = () => update({ minimised: true });
   const [convs, setConvs] = useState<AskConversation[]>([]);
-  const [conv, setConv] = useState<number | null>(null);
   const [turns, setTurns] = useState<Turn[]>([]);
+  const [loaded, setLoaded] = useState<number | null>(null);
   const [draft, setDraft] = useState("");
   const [tool, setTool] = useState("");
-  const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [history, setHistory] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
@@ -110,18 +138,55 @@ export function AskPanel({ open, onClose, status, reload }: { open: boolean; onC
   const abort = useRef<AbortController | null>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const end = useRef<HTMLDivElement>(null);
+  const body = useRef<HTMLDivElement>(null);
+  const scroll = useRef<number | null>(null);
   const page: AskPage | null = pageOf(pathname);
 
   useEffect(() => setUsePage(true), [pathname]);
-  useEffect(() => end.current?.scrollIntoView({ block: "end" }), [turns, draft, tool]);
+  useEffect(() => {
+    if (open) end.current?.scrollIntoView({ block: "end" });
+  }, [turns, draft, tool]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!open) return;
     input.current?.focus();
     api.get<{ items: AskConversation[] }>("/ask/conversations").then((r) => setConvs(r.items), () => undefined);
   }, [open]);
+  // Hidden and shown again (minimised, closed, Alt+K): the log comes back
+  // where the person left it.
+  useLayoutEffect(() => {
+    if (open && body.current && scroll.current !== null) body.current.scrollTop = scroll.current;
+  }, [open]);
+  // After a reload, the saved conversation is read back once.
+  useEffect(() => {
+    if (conv === null || loaded === conv || busy) return;
+    setLoaded(conv);
+    if (turns.length > 0) return; // this tab already holds it
+    api.get<{ messages: AskMessage[] }>(`/ask/conversations/${conv}`).then(
+      (r) => setTurns(toTurns(r.messages)),
+      () => setConv(null), // deleted or expired: start afresh
+    );
+  }, [conv]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => abort.current?.abort(), []);
 
-  if (!open) return null;
+  const keepScroll = () => {
+    if (body.current) scroll.current = body.current.scrollTop;
+  };
+  const hide = (minimised: boolean) => {
+    keepScroll();
+    if (minimised) minimise();
+    else onClose();
+  };
+
+  if (!state.open) return null;
+  if (state.minimised) {
+    return (
+      <button type="button" className="ask-bubble" onClick={() => update({ minimised: false })} aria-label={busy ? "Show Ask Stackurity (answering)" : "Show Ask Stackurity"}>
+        <AskAvatar />
+        <span className="ask-bubble-label">Ask Stackurity</span>
+        {busy && <span className="ask-bubble-busy" aria-hidden="true" />}
+      </button>
+    );
+  }
 
   const fail = (e: unknown) => setError(e instanceof ApiError ? e : new ApiError(0, "error", e instanceof Error ? e.message : String(e)));
 
@@ -140,14 +205,9 @@ export function AskPanel({ open, onClose, status, reload }: { open: boolean; onC
     setError(null);
     try {
       const r = await api.get<{ messages: AskMessage[] }>(`/ask/conversations/${id}`);
+      setLoaded(id);
       setConv(id);
-      setTurns(
-        r.messages.map((m) =>
-          m.stop_reason === "refusal" && !m.text
-            ? { role: "notice", text: "Claude declined to answer this question." }
-            : { role: m.role, text: m.text, seq: m.seq },
-        ),
-      );
+      setTurns(toTurns(r.messages));
     } catch (e) {
       fail(e);
     }
@@ -155,6 +215,7 @@ export function AskPanel({ open, onClose, status, reload }: { open: boolean; onC
 
   const fresh = () => {
     setLongChat(false);
+    setLoaded(null);
     setConv(null);
     setTurns([]);
     setHistory(false);
@@ -212,6 +273,7 @@ export function AskPanel({ open, onClose, status, reload }: { open: boolean; onC
       if (id === null) {
         const c = await api.post<AskConversation>("/ask/conversations", {});
         id = c.id;
+        setLoaded(c.id);
         setConv(c.id);
         setConvs((cs) => [{ ...c, title: q }, ...cs]);
       }
@@ -268,6 +330,11 @@ export function AskPanel({ open, onClose, status, reload }: { open: boolean; onC
   };
 
   const stop = () => abort.current?.abort();
+  // On a phone the panel covers the page: following a link minimises it,
+  // so the page opens in view and the conversation waits in the corner.
+  const onLinkClick = () => {
+    if (window.matchMedia("(max-width: 700px)").matches) hide(true);
+  };
   const s = status;
   const blocked = s && !s.available ? REASONS[s.reason] ?? s.message : "";
   const left =
@@ -276,9 +343,15 @@ export function AskPanel({ open, onClose, status, reload }: { open: boolean; onC
       : "";
 
   return (
-    <aside className="ask-panel" role="dialog" aria-modal="false" aria-label="Ask Stackurity" onKeyDown={(e) => e.key === "Escape" && onClose()}>
+    <aside className="ask-panel" role="dialog" aria-modal="false" aria-label="Ask Stackurity" onKeyDown={(e) => e.key === "Escape" && hide(false)}>
       <header className="ask-head">
-        <strong>Ask Stackurity</strong>
+        <span className="ask-who">
+          <AskAvatar />
+          <span>
+            <strong>Ask Stackurity</strong>
+            <span className="ask-bot-tag">AI assistant</span>
+          </span>
+        </span>
         <span className="ask-head-actions">
           {s?.notice_accepted && (
             <>
@@ -291,7 +364,10 @@ export function AskPanel({ open, onClose, status, reload }: { open: boolean; onC
               </button>
             </>
           )}
-          <button type="button" className="btn btn-sm btn-link" onClick={onClose} aria-label="Close">
+          <button type="button" className="btn btn-sm btn-link" onClick={() => hide(true)} aria-label="Minimise" title="Minimise: keeps this conversation">
+            –
+          </button>
+          <button type="button" className="btn btn-sm btn-link" onClick={() => hide(false)} aria-label="Close">
             ✕
           </button>
         </span>
@@ -341,10 +417,10 @@ export function AskPanel({ open, onClose, status, reload }: { open: boolean; onC
         </div>
       ) : (
         <>
-          <div className="ask-body ask-log" aria-live="polite">
+          <div className="ask-body ask-log" aria-live="polite" ref={body}>
             {turns.length === 0 && !busy && (
               <div className="muted">
-                <p>Ask about your inventory, issues and fixes. For example:</p>
+                <p>Hi, I&apos;m Ask Stackurity, an AI assistant. Ask me about your inventory, issues and fixes. For example:</p>
                 <ul>
                   <li>What should we fix first this week?</li>
                   <li>Which servers run an end-of-life version of PHP?</li>
@@ -359,17 +435,21 @@ export function AskPanel({ open, onClose, status, reload }: { open: boolean; onC
                   {t.text}
                 </div>
               ) : t.role === "assistant" ? (
-                <div key={`${conv ?? "new"}:${i}`}>
-                  <AskAnswer text={t.text} />
+                <BotTurn key={`${conv ?? "new"}:${i}`}>
+                  <AskAnswer text={t.text} onNavigate={onLinkClick} />
                   {conv !== null && t.seq ? <AskRate conv={conv} seq={t.seq} /> : null}
-                </div>
+                </BotTurn>
               ) : (
                 <p key={i} className="ask-note small">
                   {t.text}
                 </p>
               ),
             )}
-            {draft && <AskAnswer text={draft} />}
+            {draft && (
+              <BotTurn>
+                <AskAnswer text={draft} onNavigate={onLinkClick} />
+              </BotTurn>
+            )}
             {busy && <p className="small muted ask-tool">{tool ? `${tool}…` : "Thinking…"}</p>}
             <div ref={end} />
           </div>
@@ -420,7 +500,7 @@ export function AskPanel({ open, onClose, status, reload }: { open: boolean; onC
 }
 
 /**
- * Settings → AI assistants: the organisation admin's switch for Ask
+ * Integrations → AI assistants: the organisation admin's switch for Ask
  * Stackurity, this month's use, and deleting every conversation (which
  * admins can do but never read).
  */
@@ -443,17 +523,15 @@ export function AskSettingsCard() {
       setBusy(false);
     }
   };
-  const toggle = async (enabled: boolean) => {
-    if (
-      enabled &&
-      !(await confirmAction({
-        title: "Turn Ask Stackurity on for everyone in this organisation?",
-        message: noticeText(s?.provider ?? "anthropic")[0],
-        action: "Turn on",
-      }))
-    )
-      return;
-    void run(async () => setS(await api.put<AskSettings>("/ask/settings", { enabled })));
+  const [consenting, setConsenting] = useState(false);
+  // Turning it on goes through the consent dialog; off needs nothing.
+  const toggle = (enabled: boolean) => {
+    if (enabled) setConsenting(true);
+    else void run(async () => setS(await api.put<AskSettings>("/ask/settings", { enabled: false })));
+  };
+  const consent = () => {
+    setConsenting(false);
+    void run(async () => setS(await api.put<AskSettings>("/ask/settings", { enabled: true, consent_version: s?.consent_version })));
   };
   const deleteAll = async () => {
     if (
@@ -486,9 +564,10 @@ export function AskSettingsCard() {
             see, with links to the pages it used. Questions and the data read to answer them go to {providerWordsShort(s.provider)}.
           </p>
           <label>
-            <input type="checkbox" checked={s.enabled} disabled={busy} onChange={(e) => void toggle(e.target.checked)} /> Turn on Ask Stackurity for this
+            <input type="checkbox" checked={s.enabled} disabled={busy} onChange={(e) => toggle(e.target.checked)} /> Turn on Ask Stackurity for this
             organisation
           </label>
+          {consenting && <AskConsentDialog provider={s.provider} onConsent={consent} onCancel={() => setConsenting(false)} />}
           <p className="small muted">
             {s.questions_this_month} questions this month
             {s.question_limit !== null ? ` of ${s.question_limit}${s.question_period === "total" ? " in total" : ""}` : ""}
@@ -509,5 +588,94 @@ export function AskSettingsCard() {
 }
 
 function providerWordsShort(provider: string): string {
-  return provider === "bedrock" ? "Amazon Bedrock" : provider === "vertex" ? "Google Vertex AI" : "Anthropic in the United States";
+  return provider === "bedrock" ? "Amazon Bedrock" : provider === "vertex" ? "Google Vertex AI" : "Anthropic, PBC, which may process them in the United States or other regions";
+}
+
+function toTurns(messages: AskMessage[]): Turn[] {
+  return messages.map((m) =>
+    m.stop_reason === "refusal" && !m.text ? { role: "notice", text: "Claude declined to answer this question." } : { role: m.role, text: m.text, seq: m.seq },
+  );
+}
+
+/** The assistant's avatar: a small robot in the brand colour, so it reads as a bot. */
+export function AskAvatar() {
+  return (
+    <span className="ask-avatar" aria-hidden="true">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="4" y="8" width="16" height="12" rx="3" />
+        <path d="M12 4v4" />
+        <circle cx="12" cy="3" r="1" />
+        <path d="M9 13v1M15 13v1" />
+        <path d="M9.5 17h5" />
+      </svg>
+    </span>
+  );
+}
+
+/** One answer from the assistant, marked as the bot's. */
+function BotTurn({ children }: { children: ReactNode }) {
+  return (
+    <div className="ask-bot-turn">
+      <AskAvatar />
+      <div className="ask-bot-msg">
+        <span className="ask-bot-name small muted">Ask Stackurity</span>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The consent an administrator gives before Ask Stackurity is turned on:
+ * the approved wording (ask.ts consentText), a box to tick, and Turn on,
+ * which stays disabled until the box is ticked. Cancel, Escape or a click
+ * outside leaves it off. The server records who agreed, when and to which
+ * version (ask.consent in the audit log).
+ */
+export function AskConsentDialog({ provider, onConsent, onCancel }: { provider: string; onConsent: () => void; onCancel: () => void }) {
+  const [agreed, setAgreed] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    box.current?.querySelector<HTMLElement>("input")?.focus();
+  }, []);
+  return (
+    <div className="confirm-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onCancel()}>
+      <div
+        ref={box}
+        className="confirm-dialog ask-consent"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="ask-consent-title"
+        aria-describedby="ask-consent-body"
+        tabIndex={-1}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            e.preventDefault();
+            onCancel();
+          }
+        }}
+      >
+        <h2 id="ask-consent-title" className="confirm-title">
+          Turn on Ask Stackurity for this organisation?
+        </h2>
+        <div id="ask-consent-body" className="confirm-body">
+          {consentText(provider, "organisation").map((p, i) => (
+            <p key={i}>{p}</p>
+          ))}
+          <label className="ask-consent-check">
+            <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
+            <span>{consentCheckbox(provider)}</span>
+          </label>
+        </div>
+        <div className="confirm-actions">
+          <button type="button" className="btn" onClick={onCancel}>
+            Cancel
+          </button>
+          <button type="button" className="btn btn-primary confirm-action" disabled={!agreed} onClick={onConsent}>
+            Turn on Ask Stackurity
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }

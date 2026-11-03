@@ -215,7 +215,7 @@ func (s *Server) projectGate(next http.Handler) http.Handler {
 				return
 			}
 			if !a.AllowWrites && r.Method != http.MethodGet {
-				writeError(w, 403, "forbidden", "this assistant is read-only: allow changes for it under Settings → AI assistants")
+				writeError(w, 403, "forbidden", "this assistant is read-only: allow changes for it under Integrations → AI assistants")
 				return
 			}
 			if a.ProjectID != nil {
@@ -546,7 +546,7 @@ func (s *Server) createGrant(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if !member {
-				writeError(w, 403, "invite_only", "people join this service by invitation: invite them by email (Settings → Users, or the project's Invite)")
+				writeError(w, 403, "invite_only", "people join this service by invitation: invite them by email (People → Users, or the project's Invite)")
 				return
 			}
 			in.UserID = &uid

@@ -13312,7 +13312,7 @@
    "get": {
     "operationId": "get_ask_settings",
     "summary": "Ask Stackurity settings and use",
-    "description": "`enabled`, `configured`, `provider`, `model`, `question_limit`, `question_period`, `spend_cap_micros`, `questions_this_month`, `spend_this_month_micros` (millionths of a US dollar). Never anyone's conversations\n\nRole: admin",
+    "description": "`enabled`, `configured`, `provider`, `model`, `question_limit`, `question_period`, `spend_cap_micros`, `questions_this_month`, `spend_this_month_micros` (millionths of a US dollar), and `consent_version`, the current consent wording's version. Never anyone's conversations\n\nRole: admin",
     "tags": [
      "Ask Stackurity"
     ],
@@ -13339,7 +13339,7 @@
    "put": {
     "operationId": "put_ask_settings",
     "summary": "Turn Ask Stackurity on or off for the organisation",
-    "description": "`{\"enabled\": true | false}`. Audited as `ask.settings`\n\nRole: admin",
+    "description": "`{\"enabled\": true, \"consent_version\": \"…\"}` turns it on: `consent_version` is the version of the consent wording the administrator ticked and confirmed in the dashboard's consent dialog (`consent_version` from `GET /ask/settings`). Without it: 400 `consent_required`; an older version: 409 `consent_outdated`; from an API token or a connected assistant: 403 (consent is a signed-in person's). Who agreed, when and to which version is stored and audited as `ask.consent`. `{\"enabled\": false}` turns it off, audited as `ask.settings`\n\nRole: admin",
     "tags": [
      "Ask Stackurity"
     ],
@@ -13990,7 +13990,7 @@
    "bearerToken": {
     "type": "http",
     "scheme": "bearer",
-    "description": "An API token (stk_...) from Settings, API tokens, or a collector token. A user's token never acts above its owner's current role."
+    "description": "An API token (stk_...) from Integrations, API tokens, or a collector token. A user's token never acts above its owner's current role."
    },
    "session": {
     "type": "apiKey",

@@ -26,7 +26,7 @@ export function SlackInstallPage() {
     setGoing(name);
     try {
       if (id !== me?.workspace?.id) await api.post(`/workspaces/${id}/activate`);
-      const r = await api.post<{ url: string }>("/integrations/slack/install", { return_to: "/settings/integrations" });
+      const r = await api.post<{ url: string }>("/integrations/slack/install", { return_to: "/integrations" });
       window.location.assign(r.url);
     } catch (e) {
       setError(e instanceof ApiError ? e : new ApiError(0, "client", String(e)));
@@ -48,7 +48,7 @@ export function SlackInstallPage() {
       <>
         {error.status === 404 ? (
           <Notice kind="warn">
-            Add to Slack is not set up on this server. An administrator can still connect Slack with an incoming webhook under Settings → Integrations → Slack.
+            Add to Slack is not set up on this server. An administrator can still connect Slack with an incoming webhook under Integrations → Slack.
           </Notice>
         ) : error.status === 403 ? (
           <Notice kind="warn">Only an organisation&apos;s administrators can add Stackurity to Slack, and this organisation is read-only or you are not one of them.</Notice>
@@ -57,7 +57,7 @@ export function SlackInstallPage() {
         )}
         <div className="slack-link-actions">
           {/* A full load: the organisation may have changed. */}
-          <a className="btn btn-block" href="/settings/integrations">
+          <a className="btn btn-block" href="/integrations">
             Go to Stackurity
           </a>
         </div>
