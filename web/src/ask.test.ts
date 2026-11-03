@@ -101,3 +101,13 @@ test("the consent wording is the approved one", async () => {
   assert.equal(notice[5], "Answers can be wrong. Check them on the linked pages before you act on them.");
   assert.ok(notice.every((p) => !/United States\./.test(p) || /or other regions/.test(p)), "never 'United States' alone");
 });
+
+test("the client's consent version is the server's", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { ASK_CONSENT_VERSION, ASK_NOTICE_VERSION } = await import("./ask.ts");
+  const go = readFileSync(new URL("../../internal/api/ask.go", import.meta.url), "utf8");
+  const m = /const AskConsentVersion = "([^"]+)"/.exec(go);
+  assert.ok(m, "AskConsentVersion not found in internal/api/ask.go");
+  assert.equal(ASK_CONSENT_VERSION, m[1], "web/src/ask.ts and internal/api/ask.go disagree on the consent wording's version");
+  assert.equal(ASK_NOTICE_VERSION, ASK_CONSENT_VERSION);
+});
