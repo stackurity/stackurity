@@ -2026,6 +2026,12 @@ Invoices of the organisation's subscriptions.
 
 The free self-hosted keys issued: `total`, `emails` (distinct), `last_30_days`, and `items` (`id`, `key_id`, `email`, `name`, `company`, `issued_at`), newest first; `?limit=` 1 to 500, default 100.
 
+### `GET /admin/trials`
+
+**Who:** instance admin · Stackurity Cloud
+
+The trial report: every organisation that signed up on the cloud, by the week it signed up (`cohorts`, Monday in UTC, newest first, and `totals`: `signed_up`, `activated`, `active_7d`, `converted` (paid at least once), `trialing`, `expired`, `cancelled`, `never_activated`, `went_quiet`), and `orgs`, each with `signed_up_at`, `trial_ends_at`, `state` (`trialing`, `converted`, `expired`: the trial ended unpaid, `cancelled`: paid, then cancelled, including a plan that ends with the period already paid for (`billing_status` `cancelling`), or stopped paying) and the `billing_status` it comes from, `first_paid_at`, `first_asset_at`, `first_asset_kind`, `hours_to_first_asset`, asset counts, `last_sign_in_at`, `last_seen_at`, `last_collection_at`, `last_agent_check_in_at`, `last_api_use_at`, `last_activity_at`, `active_7d`, `active_30d` and `flags` (`never_activated`, `went_quiet`: a trial with no activity for `quiet_days`, `trial_ended_not_converted`). Activity is sign-ins, dashboard use, collections, collector check-ins and API use by members who are not instance administrators. `excluded` lists the workspaces left out (the operator's own and test organisations, set in the cloud's configuration). It only reads. Instance administrators also get a short weekly summary of it by email, which the cloud's configuration can turn off.
+
 ### `PUT /admin/trials/{id}`
 
 **Who:** instance admin · Stackurity Cloud
@@ -2049,6 +2055,82 @@ The payment provider's answer from the payment page. A valid signature sends the
 **Who:** Razorpay (its signature) · Stackurity Cloud · outside `/api/v1`
 
 Payment events from Razorpay.
+
+## Ask Stackurity
+
+The in-app assistant ([ai-assistants.md](ai-assistants.md#ask-stackurity)). It is off unless the server has a model provider and the organisation's admin turned it on. Its tools read the API as the person asking, in process, with their session: the same roles, projects and row-level security, read-only. Conversations are the person's own; they are deleted 30 days after they were started.
+
+### `GET /api/v1/ask/status`
+
+**Who:** a browser session
+
+`available`, and when not, `reason` (`not_configured`, `ask_disabled`, `plan_required`, `read_only`, `spend_cap`) and `message`; `notice_version` and `notice_accepted`; `questions_used`, `questions_limit` (null: no limit), `question_period` (`month` or `total`) and `resets_at`.
+
+### `POST /api/v1/ask/notice`
+
+**Who:** a browser session
+
+`{"version"}` from `/ask/status`: the person accepted the data notice (409 `notice_changed` for an older version). Audited as `ask.notice_accepted`.
+
+### `GET /api/v1/ask/conversations`
+
+**Who:** a browser session
+
+The caller's own conversations in this organisation, the latest first: `id`, `title`, `model`, `created_at`, `updated_at`, `expires_at`.
+
+### `POST /api/v1/ask/conversations`
+
+**Who:** a browser session
+
+Starts a conversation (201) with the organisation's model and the project chosen in the switcher. 404 `not_configured`, 403 `ask_disabled`, 402 `plan_required` or `read_only` when the assistant cannot be used.
+
+### `DELETE /api/v1/ask/conversations`
+
+**Who:** a browser session
+
+Deletes all of the caller's conversations in this organisation; answers `deleted`.
+
+### `GET /api/v1/ask/conversations/{id}`
+
+**Who:** a browser session
+
+One of the caller's conversations as they saw it: `conversation` and `messages` (`role`, `text`, `page`, `stop_reason`, `created_at`), without tool data. 404 for anyone else's, an organisation admin's included.
+
+### `DELETE /api/v1/ask/conversations/{id}`
+
+**Who:** a browser session
+
+Deletes one of the caller's conversations (404 for anyone else's).
+
+### `POST /api/v1/ask/conversations/{id}/messages`
+
+**Who:** a browser session
+
+Asks a question: `{"text", "page": {"kind": "finding" | "asset" | "component" | "fix_group", "id"}}` (`page` optional; one the caller cannot read is ignored). The answer streams as server-sent events: `tool` (`{"tool": "Reading issue #12"}`), `text` (a piece of the answer), `reset` (drop the text so far: a refusal, or a fallback model took over), then `done` (`stop_reason`, `questions_used`, `questions_limit`, `message`) or `error` (`code`: `spend_cap`, `too_long`, `timeout`, `unavailable`, `internal`). Before the stream starts: 409 `notice_required`; 429 `quota_reached`, `busy` (one question at a time) or `rate_limited` (10 a minute and 60 an hour per person, 300 an hour per organisation); and the errors of `POST /ask/conversations`.
+
+### `GET /api/v1/ask/settings`
+
+**Who:** admin
+
+`enabled`, `configured`, `provider`, `model`, `question_limit`, `question_period`, `spend_cap_micros`, `questions_this_month` and `spend_this_month_micros` (millionths of a US dollar). Never anyone's conversations.
+
+### `PUT /api/v1/ask/settings`
+
+**Who:** admin
+
+`{"enabled": true | false}`: turns the assistant on or off for the organisation. Audited as `ask.settings`.
+
+### `DELETE /api/v1/ask/settings/conversations`
+
+**Who:** admin
+
+Deletes every conversation in the organisation, whoever had it, and answers how many (`deleted`). An admin can delete conversations but never read them. Audited as `ask.conversations_deleted`.
+
+### `GET /api/v1/admin/ask`
+
+**Who:** instance admin
+
+`configured`, `provider`, `default_model`, `effort`, `global_spend_cap_micros` and `spend_this_month_micros` across every organisation.
 
 ## AI assistants, OAuth and MCP
 

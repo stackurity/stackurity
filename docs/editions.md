@@ -11,6 +11,7 @@ What Community, Pro and Enterprise include, their limits and what each capabilit
 | Priorities (P1 to P4, SOS), incidents, coverage ledger, Action plan, upgrade recommendations | ✓ | ✓ | ✓ | |
 | Notifications: email, Slack, Teams, webhooks, Jira; urgent messages and daily or weekly summaries; routing by priority, kind and environment, quiet hours, hourly limits | ✓ | ✓ | ✓ | |
 | CI gates, MCP server for AI assistants, API and CLI, audit log | ✓ | ✓ | ✓ | |
+| Ask Stackurity, the in-app assistant | ✓ | ✓ | ✓ | Off unless the server has a model provider (your own Anthropic, Bedrock or Vertex AI account, [install.md](install.md#ask-stackurity-in-app-assistant)) and an organisation admin turns it on |
 | Workspaces (several organisations on one installation, isolated by row-level security) | ✓ | ✓ | ✓ | Each workspace has a plan; it gets the lower of its plan and the licence |
 | Official stack packs (Java, Cargo, Swift, Hex, C/C++) | ✓ | ✓ | ✓ | Installed by an instance admin ([packs.md](packs.md)) |
 | Teams | One | Any number | Any number | Community: creating a second team answers `402 plan_required` |

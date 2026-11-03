@@ -589,3 +589,22 @@ func (s *Store) MarkAskAlert(ctx context.Context, scope string, level int) (bool
 	}
 	return false, fmt.Errorf("alert scope %q: %w", scope, ErrInvalid)
 }
+
+// TitleAskConversation gives user's conversation id a title (its first
+// question) when it has none.
+func (s *Store) TitleAskConversation(ctx context.Context, userID, id int64, title string) error {
+	_, err := s.Pool.Exec(ctx, `UPDATE ask_conversations SET title = left($3, 200) WHERE id = $1 AND user_id = $2 AND title = ''`, id, userID, title)
+	return err
+}
+
+// AskQuestionsTotal returns every question the workspace in ctx asked, in
+// every month (for a total allowance).
+func (s *Store) AskQuestionsTotal(ctx context.Context) (int64, error) {
+	ws, err := askWorkspace(ctx)
+	if err != nil {
+		return 0, err
+	}
+	var n int64
+	err = s.Pool.QueryRow(tenant.System(ctx), `SELECT COALESCE(sum(questions), 0) FROM ask_usage WHERE workspace_id = $1`, ws).Scan(&n)
+	return n, err
+}

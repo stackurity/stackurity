@@ -52,6 +52,7 @@ import { LicensePage } from "./pages/admin/License";
 import { HealthPage } from "./pages/admin/Health";
 import { CoverageGapsPage } from "./pages/admin/CoverageGaps";
 import { UpdatesPage } from "./pages/admin/Updates";
+import { TrialsPage } from "./pages/admin/Trials";
 import { TeamsPage } from "./pages/settings/Teams";
 import { OwnersPage } from "./pages/settings/Owners";
 import { TokensPage } from "./pages/settings/Tokens";
@@ -543,6 +544,14 @@ export function App() {
           element={
             <RequireInstanceAdmin>
               <CoverageGapsPage />
+            </RequireInstanceAdmin>
+          }
+        />
+        <Route
+          path="admin/trials"
+          element={
+            <RequireInstanceAdmin>
+              <TrialsPage />
             </RequireInstanceAdmin>
           }
         />
