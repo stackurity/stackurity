@@ -15,7 +15,7 @@ import (
 	"github.com/stackurity/stackurity/internal/auth"
 )
 
-// Email codes, the fallback second factor (migration 0091): six digits sent
+// Email codes, the fallback second factor (migration 0086): six digits sent
 // by the transactional mail, valid for ten minutes, used once. A person
 // turns them on themselves (confirmed with a code), only while they have no
 // passkey or authenticator app; adding either turns them off.
