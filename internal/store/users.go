@@ -658,6 +658,13 @@ func (s *Store) SessionInfo(ctx context.Context, secret string) (*Session, error
 	if err != nil {
 		return nil, err
 	}
+	// Single sign-on is exempt from the two-factor policy, so it never
+	// operates the installation either: an account made an instance
+	// administrator while linked (by SQL, at setup) gets the role's powers
+	// only from a password session with its second factor.
+	if login == LoginSSO {
+		u.InstanceAdmin = false
+	}
 	return &Session{User: u, Workspace: wsID, Login: login, MFA: mfa, MFACredential: mfaCred, PasswordChangeRequired: changePassword,
 		ExpiresAt: expiresAt}, nil
 }
@@ -791,6 +798,21 @@ func (s *Store) TokenPrincipal(ctx context.Context, secret string) (*Token, *Use
 		}
 		if err != nil || u.Disabled {
 			return nil, nil, ErrNotFound
+		}
+		// An account linked to single sign-on never operates the
+		// installation (single sign-on is exempt from the two-factor
+		// policy), also through a token: one made from a single sign-on
+		// session before the account was made an instance administrator
+		// would otherwise gain the powers. Remove the link first. Read only
+		// for instance administrators, so other tokens pay no extra query.
+		if u.InstanceAdmin {
+			var linked bool
+			if err := s.Pool.QueryRow(sys, `SELECT oidc_subject IS NOT NULL FROM users WHERE id = $1`, u.ID).Scan(&linked); err != nil {
+				return nil, nil, err
+			}
+			if linked {
+				u.InstanceAdmin = false
+			}
 		}
 		// A member with project access only acts with at most their
 		// highest grant; the request is then narrowed to what they may see.

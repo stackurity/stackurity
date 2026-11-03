@@ -404,6 +404,18 @@ func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+		// A single sign-on session has no instance-admin powers (the store
+		// drops the flag from it), but a token of the account would carry
+		// them, so such a session makes none for an instance administrator.
+		if p.Session && p.ssoSession() {
+			if acct, err := s.Store.GetUser(r.Context(), p.User.ID); err != nil {
+				s.fail(w, r, err)
+				return
+			} else if acct.InstanceAdmin {
+				writeError(w, 403, "forbidden", "instance administrators sign in with their password and second factor to create API tokens, not single sign-on")
+				return
+			}
+		}
 		userID = &p.User.ID
 	default:
 		s.fail(w, r, badRequest("role must be one of viewer, engineer, security, admin, collector"))
