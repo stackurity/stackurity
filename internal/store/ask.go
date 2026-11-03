@@ -42,6 +42,9 @@ type AskSettings struct {
 	SpendCapMicros *int64 `json:"spend_cap_micros"`
 	// Model is the model for this organisation ("": the server's default).
 	Model string `json:"model"`
+	// ConsentVersion is the version of the wording an administrator agreed
+	// to when turning the assistant on ("": nobody has).
+	ConsentVersion string `json:"consent_version"`
 }
 
 // AskLimits are what an edition or an instance admin sets for an
@@ -60,8 +63,8 @@ func (s *Store) AskSettings(ctx context.Context) (AskSettings, error) {
 		return AskSettings{}, ErrNotFound
 	}
 	var a AskSettings
-	err := s.Pool.QueryRow(tenant.System(ctx), `SELECT ask_enabled, ask_question_limit, ask_question_period, ask_spend_cap_micros, ask_model FROM workspaces WHERE id = $1`, ws).
-		Scan(&a.Enabled, &a.QuestionLimit, &a.QuestionPeriod, &a.SpendCapMicros, &a.Model)
+	err := s.Pool.QueryRow(tenant.System(ctx), `SELECT ask_enabled, ask_question_limit, ask_question_period, ask_spend_cap_micros, ask_model, ask_consent_version FROM workspaces WHERE id = $1`, ws).
+		Scan(&a.Enabled, &a.QuestionLimit, &a.QuestionPeriod, &a.SpendCapMicros, &a.Model, &a.ConsentVersion)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return a, ErrNotFound
 	}
@@ -75,6 +78,21 @@ func (s *Store) SetAskEnabled(ctx context.Context, enabled bool) error {
 		return ErrNotFound
 	}
 	tag, err := s.Pool.Exec(tenant.System(ctx), `UPDATE workspaces SET ask_enabled = $2 WHERE id = $1`, ws, enabled)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return err
+}
+
+// ConsentToAsk records that userID agreed to the wording version and turns
+// the assistant on for the workspace in ctx, in one statement.
+func (s *Store) ConsentToAsk(ctx context.Context, userID int64, version string) error {
+	ws, ok := tenant.Workspace(ctx)
+	if !ok || version == "" {
+		return ErrNotFound
+	}
+	tag, err := s.Pool.Exec(tenant.System(ctx), `UPDATE workspaces SET ask_enabled = true, ask_consent_version = $2, ask_consented_by = NULLIF($3, 0),
+		ask_consented_at = now() WHERE id = $1`, ws, version, userID)
 	if err == nil && tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}

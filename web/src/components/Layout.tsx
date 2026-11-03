@@ -28,6 +28,7 @@ import { sectionOf, SectionTabsFor, useSectionHome, type Section } from "./nav";
 import { ErrorBox } from "./ui";
 import { AskButton, AskPanel } from "./AskPanel";
 import type { AskStatus } from "../ask";
+import { clearAskState, EMPTY_ASK_STATE, loadAskState, saveAskState, type AskPanelState } from "../askState";
 
 const STORE_KEY = "stackurity.nav";
 
@@ -104,16 +105,32 @@ function Shell() {
 
   // Ask Stackurity: the panel is on every page; the button shows once the
   // server has a model provider.
-  const [askOpen, setAskOpen] = useState(false);
+  // Its state lives here, in the shell, so it survives moving between
+  // pages; it is kept for the tab per organisation (askState.ts).
+  const wsId = me?.workspace?.id;
+  const userId = me?.user?.id;
+  const [ask, setAsk] = useState<AskPanelState>(EMPTY_ASK_STATE);
+  const askFor = useRef<string>("");
+  const askKey = `${wsId ?? ""}:${userId ?? ""}`;
+  useEffect(() => {
+    if (askFor.current === askKey) return;
+    askFor.current = askKey;
+    setAsk(loadAskState(wsId, userId));
+  }, [askKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (wsId && userId && askFor.current === askKey) saveAskState(wsId, userId, ask);
+  }, [ask, askKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const updateAsk = (patch: Partial<AskPanelState>) => setAsk((a) => ({ ...a, ...patch }));
+  const askOpen = ask.open && !ask.minimised;
   const askStatus = useLoad(
     () => (hasWorkspace ? api.get<AskStatus>("/ask/status") : Promise.resolve(undefined)),
-    [hasWorkspace, me?.workspace?.id, askOpen],
+    [hasWorkspace, wsId, askOpen],
   );
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.altKey && (e.key === "k" || e.key === "K") && askStatus.data && askStatus.data.reason !== "not_configured") {
         e.preventDefault();
-        setAskOpen((o) => !o);
+        setAsk((a) => (a.open && !a.minimised ? { ...a, open: false, minimised: false } : { ...a, open: true, minimised: false }));
       }
     };
     window.addEventListener("keydown", onKey);
@@ -233,8 +250,11 @@ function Shell() {
           <WorkspaceSwitcher />
           <ProjectSwitcher />
           <div className="topbar-search">{me?.workspace ? <GlobalSearch /> : null}</div>
-          {me?.workspace && <AskButton status={askStatus.data} onOpen={() => setAskOpen(true)} />}
-          <AvatarMenu onFeedback={showFeedback ? () => feedback.current?.open() : undefined} onLogout={() => void logout()} version={version} />
+          {me?.workspace && <AskButton status={askStatus.data} onOpen={() => updateAsk({ open: true, minimised: false })} />}
+          <AvatarMenu onFeedback={showFeedback ? () => feedback.current?.open() : undefined} onLogout={() => {
+              clearAskState();
+              void logout();
+            }} version={version} />
         </header>
         <main id="main" className="content" tabIndex={-1}>
           <UpdateBanner />
@@ -331,7 +351,7 @@ function Shell() {
       )}
       {/* Mounted once, outside the menus, so closing a menu does not close the dialog. */}
       <FeedbackDialog ref={feedback} />
-      {me?.workspace && <AskPanel open={askOpen} onClose={() => setAskOpen(false)} status={askStatus.data} reload={askStatus.reload} />}
+      {me?.workspace && <AskPanel key={askKey} state={ask} update={updateAsk} status={askStatus.data} reload={askStatus.reload} />}
     </div>
   );
 }
@@ -393,6 +413,7 @@ function WorkspaceSwitcher() {
     setBusy(true);
     try {
       await api.post(`/workspaces/${id}/activate`);
+      clearAskState(); // the panel never carries one organisation's conversation into another
       window.location.assign("/");
     } catch {
       setBusy(false);
