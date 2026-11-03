@@ -20,12 +20,12 @@ export const ARTICLES: Article[] = [
       },
       {
         steps: [
-          "**Create your first project.** A name, and a description if you like. A project groups what belongs together: a site, a product or a client.",
-          "**Add something to check.** **A Linux server**: one install command, first results in about 2 minutes. **A code repository**: a token for your CI and a GitHub Actions step (or the `stackurity scan` command), first results on the next CI run. **Upload an SBOM**: a CycloneDX or SPDX file, first results in under a minute. Whatever you add here lands in the project.",
-          "**Wait for it to report.** The page shows what has arrived, how many packages, and when the check is done.",
-          "**Read the first result.** For example \"We found 1,676 packages on commmerceblog. 3 fixes matter now.\", with links to them.",
-          "**Turn on notifications.** Slack (**Add to Slack**, or a webhook) or email. Choose what to send right away (urgent issues, all new issues, or nothing) and a daily or weekly summary (or none). They cover this project only; fine-tune them later in [Integrations](/integrations).",
-          "**Invite people.** By email: they see this project with the permission you choose (or more, if you add it). They get a link that works once, for 7 days.",
+          "**Create a project.** A name, and a description if you like. Use a project for a product, a client, an environment or a team.",
+          "**Add a server or repo.** **A Linux server**: one install command, first results in about 2 minutes. **A code repository**: a token for your CI and a GitHub Actions step (or the `stackurity scan` command), first results on the next CI run. **Upload an SBOM**: a CycloneDX or SPDX file, first results in under a minute. Whatever you add here lands in the project.",
+          "**First check.** The page counts what has arrived as it happens: agent connected, components found, issues found, fixes recommended. Vulnerability data is downloaded for the software found; until it has synced, the page says how many components wait for it.",
+          "**Review fixes.** \"Your first check is done\": assets, components, issues and coverage, with a link to the top recommended fix.",
+          "**Choose alerts.** Slack (**Add to Slack**, or a webhook) or email. Choose what to send right away (urgent issues, all new issues, or nothing) and a daily or weekly summary (or none). They cover this project only; fine-tune them later in [Integrations](/integrations).",
+          "**Invite your team.** By email: they see this project with the permission you choose (or more, if you add it). They get a link that works once, for 7 days.",
         ],
       },
       { h: "A quiet first scan" },
