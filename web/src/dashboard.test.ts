@@ -199,7 +199,7 @@ test("not shown in Top fixes: no fix published is never said as a price", () => 
     ],
   );
   for (const x of r) assert.doesNotMatch(x.text, /free|paid|pay/i, x.key);
-  assert.equal(r[0].text, "are waiting for the vendor to publish a fix");
+  assert.equal(r[0].text, "have no fix in the standard updates yet");
   assert.match(r[0].title ?? "", /Ubuntu Pro/);
   assert.equal(r[1].text, "are lower priority (P2 to P4, no SOS rule)");
   assert.deepEqual(hiddenReasons(null), []);

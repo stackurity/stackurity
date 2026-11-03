@@ -395,7 +395,7 @@ export function hiddenReasons(hidden: Record<string, BucketCount | undefined> | 
       key: "no_fix",
       n: h.no_fix?.findings ?? 0,
       to: "/fixes?bucket=no_fix",
-      text: "are waiting for the vendor to publish a fix",
+      text: "have no fix in the standard updates yet",
       title: "No fixed version has been published yet, or the vendor publishes it only in a paid support subscription (such as Ubuntu Pro). The fix page says what to do meanwhile.",
     },
     { key: "old_kernels", n: h.old_kernels?.findings ?? 0, to: "/fixes?bucket=old_kernels", text: "are in kernels that are not running" },
