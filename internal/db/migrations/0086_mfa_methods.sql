@@ -78,7 +78,7 @@ UPDATE sessions SET login_method = 'password' WHERE password_login;
 UPDATE sessions SET login_method = 'sso' WHERE sso_workspace_id IS NOT NULL;
 UPDATE sessions SET mfa_method = 'totp' WHERE mfa_at IS NOT NULL;
 
--- The workspace's two-factor policy (Settings → Users):
+-- The workspace's two-factor policy (People → Users):
 --   mfa_policy: optional, everyone, or admins (admins and security);
 --   mfa_methods: the methods that count here;
 --   mfa_phishing_resistant_admins: admins must sign in with a passkey
