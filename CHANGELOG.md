@@ -6,6 +6,8 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.15.0
+
 ### Added
 
 - **Windows servers install the agent with one PowerShell command.** Under **Assets → Add server** (and in the first-run flow), the install command now has a **Windows** tab next to Linux: `$env:STACKURITY_ENROLL_CODE = 'enr_...'; irm https://<server>/install/agent.ps1 | iex` in PowerShell run as administrator (with a first statement that turns on TLS 1.2 for Windows PowerShell 5.1 on Windows Server 2016). The script, served at `/install/agent.ps1` with the server's URL filled in like `agent.sh`, refuses to run without elevation, downloads the agent from the server (`/download/agent/windows-amd64`, now bundled in the image) and checks its SHA-256, installs it to Program Files, enrolls with the one-time code, and registers the **StackurityAgent** service, which reports at boot and every 6 hours. The service runs as its own virtual account (`NT SERVICE\StackurityAgent`) with no privileges beyond traversing folders and a write-restricted token; only that account and Administrators can read the token in `C:\ProgramData\Stackurity`. The agent reports to the Windows service manager when it runs as a service (`golang.org/x/sys/windows/svc`) and writes its output to the Application event log. Run the command again without a code to upgrade; `$env:STACKURITY_UNINSTALL = '1'` removes the agent. The manual scheduled-task install remains documented as an alternative. The MCP `create_enrollment` tool returns the Windows command too (`windows_install_command`). See [Windows hosts](docs/install.md#windows-hosts).
