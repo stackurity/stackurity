@@ -110,7 +110,19 @@ func (s *Server) updateUser(w http.ResponseWriter, r *http.Request) {
 		// choose their own at their next sign-in.
 		u.Temporary = id != principal(r).User.ID
 	}
-	if err := s.Store.UpdateUser(r.Context(), id, u, principal(r).User.InstanceAdmin); err != nil {
+	// An instance administrator may change accounts that belong to other
+	// workspaces too, once the request meets every one's two-factor policy;
+	// until then it acts as this workspace's admin, and is told why when
+	// that is not enough.
+	power, refusal, err := instanceAdminPowers(principal(r))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if err := s.Store.UpdateUser(r.Context(), id, u, power); err != nil {
+		if refusal != nil && errors.Is(err, store.ErrConflict) {
+			err = refusal
+		}
 		s.fail(w, r, err)
 		return
 	}
@@ -366,13 +378,21 @@ type integrationRequest struct {
 }
 
 // checkSecretRef keeps the server's own secrets (env: and file:) to instance
-// administrators: on a shared installation they belong to the operator, and
+// administrators whose request meets every workspace's two-factor policy
+// (instanceAdminPowers): on a shared installation they belong to the operator, and
 // whoever can point an integration somewhere could send them there.
 func checkSecretRef(r *http.Request, ref string) error {
 	if !secrets.ServerSecret(ref) {
 		return nil
 	}
-	if p := principal(r); p == nil || p.User == nil || !p.User.InstanceAdmin {
+	power, refusal, err := instanceAdminPowers(principal(r))
+	if err != nil {
+		return err
+	}
+	if refusal != nil {
+		return refusal
+	}
+	if !power {
 		return forbidden("env: and file: secrets belong to the server; only an instance administrator can use them or change what uses them. " +
 			"Store the credential in this workspace (Integrations > Secrets) and reference it as secret:NAME")
 	}

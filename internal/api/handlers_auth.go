@@ -390,6 +390,20 @@ func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 403, "forbidden", "cannot create a token above your own role")
 			return
 		}
+		// An instance administrator's token carries the powers of the role
+		// (server-wide routes with the admin role, the server's secrets,
+		// accounts of other workspaces), and tokens are not asked for a
+		// second factor: the request making one must meet every workspace's
+		// two-factor policy, as using those powers does.
+		if p.User.InstanceAdmin {
+			if _, refusal, err := instanceAdminPowers(p); err != nil {
+				s.fail(w, r, err)
+				return
+			} else if refusal != nil {
+				refusal.write(w)
+				return
+			}
+		}
 		userID = &p.User.ID
 	default:
 		s.fail(w, r, badRequest("role must be one of viewer, engineer, security, admin, collector"))

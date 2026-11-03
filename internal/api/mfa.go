@@ -738,8 +738,18 @@ func (s *Server) resetMemberMFA(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 409, "conflict", "to remove your own second factors, use Your account → Two-factor methods")
 		return
 	}
-	target, removed, err := s.Store.ResetMemberMFA(r.Context(), id, p.User.InstanceAdmin)
+	// As for updateUser: the powers of an instance administrator need every
+	// workspace's two-factor policy met.
+	power, refusal, err := instanceAdminPowers(p)
 	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	target, removed, err := s.Store.ResetMemberMFA(r.Context(), id, power)
+	if err != nil {
+		if refusal != nil && errors.Is(err, store.ErrConflict) {
+			err = refusal
+		}
 		s.fail(w, r, err)
 		return
 	}

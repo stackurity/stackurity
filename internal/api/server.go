@@ -633,7 +633,10 @@ func writeError(w http.ResponseWriter, status int, code, msg string, details ...
 // unexpected is logged and returned as a generic 500.
 func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	var ve *model.ValidationError
+	var refusal *instanceAdminRefusal
 	switch {
+	case errors.As(err, &refusal):
+		refusal.write(w)
 	case errors.Is(err, store.ErrNotFound):
 		writeError(w, 404, "not_found", "not found")
 	case errors.Is(err, store.ErrConflict):

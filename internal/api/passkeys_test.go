@@ -1507,3 +1507,123 @@ func TestSecondFactorKeepsTheSignInMethod(t *testing.T) {
 		t.Error("a challenge for a single sign-on")
 	}
 }
+
+// instanceAdminSetup: root is an instance admin and an admin in workspace 1
+// (optional policy) with no second factor, and a viewer in Acme, which
+// requires two-factor sign-in of admins (instance admins included) with
+// methods. boss is an admin in Acme and a member of workspace 1.
+func instanceAdminSetup(t *testing.T, e *env, methods []string) (acme store.Workspace, root *session, rootID, bossID int64) {
+	t.Helper()
+	bg := context.Background()
+	e.user("root@x.io", auth.RoleAdmin)
+	e.instanceAdmin("root@x.io")
+	ws, _, err := e.st.CreateWorkspace(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "Acme", "acme", "boss@acme.io", "Boss", pw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.st.Pool.Exec(tenant.System(bg), `INSERT INTO workspace_members (workspace_id, user_id, role)
+		SELECT $1, id, 'viewer' FROM users WHERE email = 'root@x.io'
+		UNION ALL SELECT 1, id, 'viewer' FROM users WHERE email = 'boss@acme.io'`, ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.st.SetMFAPolicy(bg, ws.ID, store.MFAPolicy{Require: store.PolicyAdmins, Methods: methods}); err != nil {
+		t.Fatal(err)
+	}
+	for email, id := range map[string]*int64{"root@x.io": &rootID, "boss@acme.io": &bossID} {
+		if err := e.st.Pool.QueryRow(bg, `SELECT id FROM users WHERE email = $1`, email).Scan(id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	root = e.login("root@x.io")
+	if code := root.do("POST", "/api/v1/workspaces/1/activate", nil, nil); code != 200 {
+		t.Fatalf("workspace 1: %d", code)
+	}
+	return *ws, root, rootID, bossID
+}
+
+// An instance admin's API token does not get round "Required for admins":
+// a session that does not meet every workspace's policy cannot make one,
+// and a token of an account without a factor that counts everywhere does
+// not open the instance-wide routes.
+func TestInstanceAdminTokensFollowEveryWorkspacesPolicy(t *testing.T) {
+	e := newPasskeyEnv(t)
+	bg := context.Background()
+	acme, root, rootID, _ := instanceAdminSetup(t, e, []string{"passkey", "totp"})
+	admin := func(token string) (int, int) {
+		t.Helper()
+		return bearer(e, token, "GET", "/api/v1/admin/workspaces", nil, nil),
+			bearer(e, token, "PATCH", fmt.Sprintf("/api/v1/admin/workspaces/%d", acme.ID), []byte(`{"name": "Acme Inc"}`),
+				map[string]string{"Content-Type": "application/json"})
+	}
+
+	// The probe: a token from workspace 1, then the admin routes with it.
+	var out apiErr
+	var tok struct{ Secret string }
+	if code := root.do("POST", "/api/v1/tokens", map[string]any{"name": "t", "role": "admin"}, &out); code != 403 || out.Error.Code != "mfa_enrolment_required" {
+		t.Fatalf("admin token from a session without a factor: %d %+v", code, out)
+	}
+	if code := root.do("POST", "/api/v1/tokens", map[string]any{"name": "t", "role": "viewer"}, nil); code != 403 {
+		t.Errorf("viewer token from a session without a factor: %d", code)
+	}
+	if code := root.do("POST", "/api/v1/tokens", map[string]any{"name": "c", "role": "collector"}, nil); code != 201 {
+		t.Errorf("collector token (no user, no instance powers): %d", code)
+	}
+	// A token made before (or around) that check: refused at use.
+	_, old, err := e.st.CreateToken(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "old", auth.RoleAdmin, &rootID, rootID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if get, patch := admin(old); get != 403 || patch != 403 {
+		t.Fatalf("an older admin token of an account without a factor: GET %d, PATCH %d", get, patch)
+	}
+	if ws, err := e.st.GetWorkspace(bg, acme.ID); err != nil || ws.Name != "Acme" {
+		t.Fatalf("Acme after the attempts: %+v %v", ws, err)
+	}
+
+	// With a factor that counts everywhere, both work.
+	enrol(t, root)
+	if code := root.do("POST", "/api/v1/tokens", map[string]any{"name": "t", "role": "admin"}, &tok); code != 201 {
+		t.Fatalf("admin token after setting up the app: %d", code)
+	}
+	for name, secret := range map[string]string{"new": tok.Secret, "older": old} {
+		if get, patch := admin(secret); get != 200 || patch != 200 {
+			t.Errorf("%s admin token with the app: GET %d, PATCH %d", name, get, patch)
+		}
+	}
+	// Where only passkeys count, an account with the app alone has nothing
+	// that counts there: its tokens lose the instance-wide routes again.
+	if _, err := e.st.SetMFAPolicy(bg, acme.ID, store.MFAPolicy{Require: store.PolicyAdmins, Methods: []string{"passkey"}}); err != nil {
+		t.Fatal(err)
+	}
+	if get, _ := admin(tok.Secret); get != 403 {
+		t.Errorf("admin token, app only, Acme counting passkeys only: %d", get)
+	}
+}
+
+// The other powers of an instance admin (accounts of other workspaces,
+// their second factors) also need every workspace's policy met; until
+// then the instance admin acts as this workspace's admin.
+func TestInstanceAdminPowersFollowEveryWorkspacesPolicy(t *testing.T) {
+	e := newPasskeyEnv(t)
+	_, root, _, bossID := instanceAdminSetup(t, e, []string{"passkey", "totp"})
+	enrol(t, e.login("boss@acme.io"))
+	var out apiErr
+	if code := root.do("PATCH", fmt.Sprintf("/api/v1/users/%d", bossID), map[string]any{"password": "a whole new password 1"}, &out); code != 403 ||
+		out.Error.Code != "mfa_enrolment_required" {
+		t.Errorf("change the password of Acme's admin from workspace 1: %d %+v", code, out)
+	}
+	if code := root.do("DELETE", fmt.Sprintf("/api/v1/users/%d/mfa", bossID), nil, &out); code != 403 || out.Error.Code != "mfa_enrolment_required" {
+		t.Errorf("reset the two-factor sign-in of Acme's admin from workspace 1: %d %+v", code, out)
+	}
+	var n int
+	if err := e.st.Pool.QueryRow(context.Background(), `SELECT count(*) FROM user_mfa WHERE user_id = $1`, bossID).Scan(&n); err != nil || n != 1 {
+		t.Errorf("boss's app after the refused reset: %d %v", n, err)
+	}
+	enrol(t, root)
+	if code := root.do("PATCH", fmt.Sprintf("/api/v1/users/%d", bossID), map[string]any{"password": "a whole new password 1"}, &out); code != 200 {
+		t.Errorf("password change with the app: %d %+v", code, out)
+	}
+	if code := root.do("DELETE", fmt.Sprintf("/api/v1/users/%d/mfa", bossID), nil, &out); code != 204 {
+		t.Errorf("reset with the app: %d %+v", code, out)
+	}
+}
