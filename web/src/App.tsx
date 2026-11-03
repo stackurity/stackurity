@@ -57,6 +57,7 @@ import { JobsPage } from "./pages/settings/Jobs";
 import { NotFound } from "./pages/NotFound";
 import { SearchPage } from "./pages/Search";
 import { IssuesPage } from "./pages/Findings";
+import { LeaksPage } from "./pages/Leaks";
 import { FindingDetailPage } from "./pages/FindingDetail";
 import { IntelligencePage } from "./pages/Intelligence";
 import { IncidentsPage } from "./pages/Incidents";
@@ -66,7 +67,7 @@ import { PlanDetailPage } from "./pages/PlanDetail";
 import { PluginsPage } from "./pages/settings/Plugins";
 import { AwsPage } from "./pages/settings/Aws";
 import { FixesPage, FixGroupDetailPage } from "./pages/ActionPlan";
-import { IntegrationsHubPage } from "./pages/settings/Integrations";
+import { DeliveryLogPage, IntegrationsHubPage } from "./pages/settings/Integrations";
 import { IntegrationAddPage, IntegrationChannelPage } from "./pages/settings/IntegrationsChannel";
 import { RiskPolicyPage } from "./pages/settings/RiskPolicy";
 import { FixGroupingPage } from "./pages/settings/FixGrouping";
@@ -100,10 +101,16 @@ function RequireRole({ min, children }: { min: UserRole; children: ReactNode }) 
 function Moved({ to }: { to: (params: Record<string, string | undefined>, search: URLSearchParams) => string }) {
   const params = useParams();
   const { search, hash } = useLocation();
-  const target = to(params, new URLSearchParams(search));
-  const keep = target.includes("?") ? "" : search;
+  // The query as `to` left it (it may take out what it used), unless the
+  // target brings its own.
+  const q = new URLSearchParams(search);
+  const target = to(params, q);
+  const keep = target.includes("?") || !q.toString() ? "" : `?${q}`;
   return <Navigate replace to={target + keep + hash} />;
 }
+
+/** A page that moved out of Settings, with its sub-path (e.g. a project's id) kept. */
+const movedTo = (path: string) => <Moved to={(p) => path + (p["*"] ? `/${p["*"]}` : "")} />;
 
 function RequireInstanceAdmin({ children }: { children: ReactNode }) {
   const { me } = useAuth();
@@ -227,6 +234,7 @@ export function App() {
         <Route path="help/:topic" element={help} />
         <Route path="fixes" element={<FixesPage />} />
         <Route path="fixes/issues" element={<IssuesPage />} />
+        <Route path="fixes/leaks" element={<LeaksPage />} />
         <Route path="fixes/automatic" element={<AutomaticFixesPage />} />
         <Route path="fixes/:id" element={<FixGroupDetailPage />} />
         <Route path="action-plan" element={<Moved to={() => "/fixes"} />} />
@@ -282,21 +290,12 @@ export function App() {
         <Route path="components/updates" element={<UpdatesAvailablePage />} />
         <Route path="components/:id" element={<ComponentDetailPage />} />
         <Route path="coverage" element={<CoveragePage />} />
-        <Route
-          path="integrations"
-          element={
-            <RequireRole min="engineer">
-              <IntegrationsPage />
-            </RequireRole>
-          }
-        />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="outcomes" element={<OutcomesPage />} />
         <Route path="audit" element={<AuditPage />} />
         <Route path="checks" element={<ChecksPage />} />
         <Route path="approvals" element={<ApprovalsPage />} />
         <Route path="settings/approvals" element={<Moved to={() => "/approvals"} />} />
-        <Route path="settings/tokens" element={<TokensPage />} />
         <Route
           path="settings/usage"
           element={
@@ -324,104 +323,10 @@ export function App() {
         <Route path="account" element={<AccountPage />} />
         {/* Linked Slack accounts moved to Your account. */}
         <Route path="settings/slack" element={<Navigate replace to="/account#slack" />} />
-        <Route path="settings/ai-assistants" element={<AssistantsPage />} />
-        <Route path="settings/assistants" element={<Navigate replace to="/settings/ai-assistants#connected" />} />
         <Route path="settings/risk-policy" element={<RiskPolicyPage />} />
         <Route path="settings/fix-grouping" element={<FixGroupingPage />} />
         <Route path="settings/vex" element={<VexPage />} />
         <Route path="settings/vex/:id" element={<VexDocumentPage />} />
-        <Route
-          path="settings/plugins"
-          element={
-            <RequireRole min="admin">
-              <PluginsPage />
-            </RequireRole>
-          }
-        />
-        <Route
-          path="settings/notifications"
-          element={<Moved to={(_p, q) => (q.get("tab") === "deliveries" ? "/settings/integrations?tab=deliveries" : "/settings/integrations")} />}
-        />
-        <Route
-          path="settings/integrations"
-          element={
-            <RequireRole min="engineer">
-              <IntegrationsHubPage />
-            </RequireRole>
-          }
-        />
-        <Route
-          path="settings/integrations/aws"
-          element={
-            <RequireRole min="admin">
-              <AwsPage />
-            </RequireRole>
-          }
-        />
-        <Route
-          path="settings/integrations/channels/:id"
-          element={
-            <RequireRole min="security">
-              <IntegrationChannelPage />
-            </RequireRole>
-          }
-        />
-        <Route
-          path="settings/integrations/new/:kind"
-          element={
-            <RequireRole min="admin">
-              <IntegrationAddPage />
-            </RequireRole>
-          }
-        />
-        <Route
-          path="settings/users"
-          element={
-            <RequireRole min="admin">
-              <UsersPage />
-            </RequireRole>
-          }
-        />
-        <Route
-          path="settings/projects"
-          element={
-            <RequireRole min="admin">
-              <ProjectsPage />
-            </RequireRole>
-          }
-        />
-        <Route
-          path="settings/projects/:id"
-          element={
-            <RequireRole min="admin">
-              <ProjectDetailPage />
-            </RequireRole>
-          }
-        />
-        <Route
-          path="settings/teams"
-          element={
-            <RequireRole min="admin">
-              <TeamsPage />
-            </RequireRole>
-          }
-        />
-        <Route
-          path="settings/owners"
-          element={
-            <RequireRole min="admin">
-              <OwnersPage />
-            </RequireRole>
-          }
-        />
-        <Route
-          path="settings/conflicts"
-          element={
-            <RequireRole min="admin">
-              <ConflictsPage />
-            </RequireRole>
-          }
-        />
         <Route
           path="settings/jobs"
           element={
@@ -430,14 +335,161 @@ export function App() {
             </RequireRole>
           }
         />
+        {/*
+          Moved out of Settings into Assets, Integrations and People. The
+          old addresses (bookmarks, emails, Slack and Jira links) redirect,
+          keeping the query and hash.
+        */}
         <Route
-          path="settings/secrets"
+          path="projects"
+          element={
+            <RequireRole min="admin">
+              <ProjectsPage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="projects/:id"
+          element={
+            <RequireRole min="admin">
+              <ProjectDetailPage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="assets/conflicts"
+          element={
+            <RequireRole min="admin">
+              <ConflictsPage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="integrations"
+          element={
+            <RequireRole min="engineer">
+              <IntegrationsHubPage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="integrations/sources"
+          element={
+            <RequireRole min="engineer">
+              <IntegrationsPage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="integrations/deliveries"
+          element={
+            <RequireRole min="security">
+              <DeliveryLogPage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="integrations/aws"
+          element={
+            <RequireRole min="admin">
+              <AwsPage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="integrations/channels/:id"
+          element={
+            <RequireRole min="security">
+              <IntegrationChannelPage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="integrations/new/:kind"
+          element={
+            <RequireRole min="admin">
+              <IntegrationAddPage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="integrations/secrets"
           element={
             <RequireRole min="admin">
               <SecretsPage />
             </RequireRole>
           }
         />
+        <Route path="integrations/tokens" element={<TokensPage />} />
+        <Route path="integrations/ai-assistants" element={<AssistantsPage />} />
+        <Route
+          path="integrations/plugins"
+          element={
+            <RequireRole min="admin">
+              <PluginsPage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="people"
+          element={
+            <RequireRole min="admin">
+              <UsersPage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="people/teams"
+          element={
+            <RequireRole min="admin">
+              <TeamsPage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="people/owners"
+          element={
+            <RequireRole min="admin">
+              <OwnersPage />
+            </RequireRole>
+          }
+        />
+        <Route path="settings/projects/*" element={movedTo("/projects")} />
+        <Route path="settings/conflicts" element={movedTo("/assets/conflicts")} />
+        <Route
+          path="settings/integrations"
+          element={
+            <Moved
+              to={(_p, q) => {
+                if (q.get("tab") !== "deliveries") return "/integrations";
+                q.delete("tab");
+                return "/integrations/deliveries";
+              }}
+            />
+          }
+        />
+        <Route path="settings/integrations/*" element={movedTo("/integrations")} />
+        <Route
+          path="settings/notifications"
+          element={
+            <Moved
+              to={(_p, q) => {
+                const deliveries = q.get("tab") === "deliveries";
+                q.delete("tab");
+                return deliveries ? "/integrations/deliveries" : "/integrations";
+              }}
+            />
+          }
+        />
+        <Route path="settings/secrets" element={movedTo("/integrations/secrets")} />
+        <Route path="settings/tokens" element={movedTo("/integrations/tokens")} />
+        <Route path="settings/ai-assistants" element={movedTo("/integrations/ai-assistants")} />
+        <Route path="settings/assistants" element={<Navigate replace to="/integrations/ai-assistants#connected" />} />
+        <Route path="settings/plugins" element={movedTo("/integrations/plugins")} />
+        <Route path="settings/users" element={movedTo("/people")} />
+        <Route path="settings/teams" element={movedTo("/people/teams")} />
+        <Route path="settings/owners" element={movedTo("/people/owners")} />
+        <Route path="admin" element={<Navigate replace to="/admin/workspaces" />} />
         <Route
           path="admin/workspaces"
           element={

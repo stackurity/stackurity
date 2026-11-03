@@ -26,6 +26,7 @@ import (
 	"github.com/stackurity/stackurity/internal/client"
 	"github.com/stackurity/stackurity/internal/collect/docker"
 	"github.com/stackurity/stackurity/internal/collect/gitrepo"
+	"github.com/stackurity/stackurity/internal/collect/leaks"
 	"github.com/stackurity/stackurity/internal/collect/lockfile"
 	"github.com/stackurity/stackurity/internal/model"
 	"github.com/stackurity/stackurity/internal/sbom"
@@ -134,7 +135,7 @@ func printResult(r *client.IngestResult) {
 	fmt.Println()
 	if r.ProjectID > 0 {
 		if r.InProject != nil && !*r.InProject {
-			fmt.Printf("warning: asset %d already existed and is not in project %d: a collector token adds only the assets it creates; an admin can add it under Settings > Projects and access\n", r.AssetID, r.ProjectID)
+			fmt.Printf("warning: asset %d already existed and is not in project %d: a collector token adds only the assets it creates; an admin can add it under Assets > Projects\n", r.AssetID, r.ProjectID)
 		} else {
 			fmt.Printf("asset %d is in project %d\n", r.AssetID, r.ProjectID)
 		}
@@ -167,6 +168,9 @@ type hostOptions struct {
 	// docker reads the images of the host's running containers (--docker);
 	// nil when off. It keeps its readings between collections.
 	docker *docker.Scanner
+	// leaks scans application directories for keys and passwords
+	// written in their files (off with --no-leaks).
+	leaks bool
 }
 
 // dockerWorkDir is where images are unpacked while they are read: TMPDIR
@@ -236,7 +240,7 @@ func writeJSON(path string, v any) error {
 func agentCmd() *cobra.Command {
 	var c conn
 	var interval, actionInterval, checkInterval time.Duration
-	var once, remediate, noRuntimes, discoverApps, noPacks, withDocker bool
+	var once, remediate, noRuntimes, discoverApps, noPacks, withDocker, noLeaks bool
 	var root, envName, output, allowFile, dockerSocket string
 	var dockerMaxMB int64
 	var appDirs []string
@@ -283,7 +287,7 @@ again only when its image ID changes or after 7 days. Images larger than
 must be able to use the Docker socket, which is equivalent to root on the
 host; see docs/install.md.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			opts := &hostOptions{root: root, runtimes: !noRuntimes, appDirs: appDirs, discoverApps: discoverApps}
+			opts := &hostOptions{root: root, runtimes: !noRuntimes, appDirs: appDirs, discoverApps: discoverApps, leaks: !noLeaks}
 			if withDocker {
 				if runtime.GOOS == "windows" {
 					return errors.New("--docker is only supported on Linux hosts")
@@ -359,10 +363,11 @@ host; see docs/install.md.`,
 			var assetIDs []int64
 			// Servers before 0.14 refuse a batch with an app list (unknown
 			// field); ask once what the server takes.
-			appList, hostImages := false, false
+			appList, hostImages, takesLeaks := false, false, false
 			if m, err := cl.Meta(ctx); err == nil {
 				appList = m.Has(client.FeatureAppList)
 				hostImages = m.Has(client.FeatureHostImages)
+				takesLeaks = m.Has(client.FeatureLeaks)
 			}
 			if opts.docker != nil && !hostImages {
 				fmt.Fprintln(os.Stderr, "warning: the server does not take container images from the agent (Stackurity 0.14 or later is needed); --docker is ignored")
@@ -375,6 +380,12 @@ host; see docs/install.md.`,
 				if !appList {
 					for _, b := range bs {
 						b.Apps = nil
+					}
+				}
+				if !takesLeaks {
+					// Older servers refuse the field.
+					for _, b := range bs {
+						b.Leaks = nil
 					}
 				}
 				if !hostImages {
@@ -513,6 +524,8 @@ host; see docs/install.md.`,
 	cmd.Flags().StringVar(&root, "root", "/", "filesystem root to inspect (for containers or mounted images)")
 	cmd.Flags().BoolVar(&noRuntimes, "no-runtimes", false, "skip detection of runtimes installed outside the package manager")
 	cmd.Flags().BoolVar(&noPacks, "no-packs", false, "do not use the server's stack packs on application directories")
+	cmd.Flags().BoolVar(&noLeaks, "no-leaks", os.Getenv("STACKURITY_NO_LEAKS") == "true",
+		"do not look for keys and passwords written in application files (env STACKURITY_NO_LEAKS=true)")
 	cmd.Flags().StringSliceVar(&appDirs, "app-dir", splitList(os.Getenv("STACKURITY_APP_DIRS")),
 		"directory of a deployed application to inventory (repeatable; env STACKURITY_APP_DIRS, comma-separated)")
 	cmd.Flags().BoolVar(&discoverApps, "discover-apps", os.Getenv("STACKURITY_DISCOVER_APPS") == "true",
@@ -555,8 +568,8 @@ func jitter(d time.Duration) time.Duration {
 func scanCmd() *cobra.Command {
 	c := conn{ci: true}
 	var g gate
-	var name, envName, output, gitURL string
-	var noPacks bool
+	var name, envName, output, gitURL, failOnLeak string
+	var noPacks, noLeaks bool
 	cmd := &cobra.Command{
 		Use:   "scan DIR",
 		Short: "Scan a project directory's lockfiles and report them",
@@ -575,14 +588,23 @@ risk-accepted on the server do not count.
 
 With --project (an id or name; or STACKURITY_PROJECT) a new asset is added
 to that project, and an admin's token also adds an existing one. A collector
-token must have been made for that project (Settings > API tokens, or the
+token must have been made for that project (Integrations > API tokens, or the
 first-run flow) and may name only it; a name needs a token that can read
 projects, so give a collector token the id. The command checks that the
-server supports this (0.10 or later) before it uploads anything.`,
+server supports this (0.10 or later) before it uploads anything.
+
+The scan also looks for keys, tokens and passwords written in the project's
+files (in a Git checkout, only the files Git tracks). They are printed here
+with their value masked and sent without the value. --fail-on-leak exits with
+status 3 when one has the given severity or higher; it needs no server. A line
+containing "stackurity:allow" is not reported.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := g.validate(); err != nil {
 				return err
+			}
+			if failOnLeak != "" && (noLeaks || !leaks.ValidSeverity(failOnLeak)) {
+				return errors.New("--fail-on-leak takes low, medium, high or critical, and cannot be combined with --no-leaks")
 			}
 			if g.enabled() && output != "" {
 				return errors.New("--fail-on flags need the server's evaluation; they cannot be combined with --output")
@@ -629,6 +651,9 @@ server supports this (0.10 or later) before it uploads anything.`,
 			if err != nil {
 				return err
 			}
+			if !noLeaks {
+				b.Leaks = scanLeaks(cmd.Context(), dir)
+			}
 			if err := b.Validate(); err != nil {
 				return err
 			}
@@ -637,27 +662,41 @@ server supports this (0.10 or later) before it uploads anything.`,
 					fmt.Fprintf(os.Stderr, "%s: %s %s\n", cv.Status, cv.Scope, cv.Reason)
 				}
 			}
+			leakErr := printLeaks(os.Stderr, b.Leaks, failOnLeak)
 			if output != "" {
-				return writeBatch(output, b)
+				if err := writeBatch(output, b); err != nil {
+					return err
+				}
+				return leakErr
+			}
+			if b.Leaks != nil {
+				if m, err := cl.Meta(cmd.Context()); err != nil || !m.Has(client.FeatureLeaks) {
+					fmt.Fprintln(os.Stderr, "warning: the server does not take leaked keys (Stackurity 0.15 or later is needed); they are not sent")
+					b.Leaks = nil
+				}
 			}
 			r, err := cl.Ingest(cmd.Context(), b)
 			if err != nil {
 				return err
 			}
 			printResult(r)
-			if !g.enabled() {
-				return nil
+			if g.enabled() {
+				res, err := g.await(cmd.Context(), cl, r.CollectionID)
+				if err != nil {
+					return err
+				}
+				if err := g.report(os.Stdout, res); err != nil {
+					return err
+				}
 			}
-			res, err := g.await(cmd.Context(), cl, r.CollectionID)
-			if err != nil {
-				return err
-			}
-			return g.report(os.Stdout, res)
+			return leakErr
 		},
 	}
 	c.flags(cmd)
 	g.flags(cmd)
 	cmd.Flags().BoolVar(&noPacks, "no-packs", false, "do not download and run the stack packs installed on the server")
+	cmd.Flags().BoolVar(&noLeaks, "no-leaks", false, "do not look for keys and passwords written in the project's files")
+	cmd.Flags().StringVar(&failOnLeak, "fail-on-leak", "", "exit 3 when a leaked key or password has this severity or higher (low, medium, high, critical)")
 	cmd.Flags().StringVar(&name, "name", "", "asset name (default: directory name)")
 	cmd.Flags().StringVar(&gitURL, "git-url", os.Getenv("STACKURITY_GIT_URL"), "repository URL; used as the asset identity so CI runs and server scans match")
 	cmd.Flags().StringVar(&envName, "environment", "", "environment label")

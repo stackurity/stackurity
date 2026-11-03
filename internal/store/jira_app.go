@@ -303,7 +303,7 @@ func (s *Store) JiraAccessToken(ctx context.Context, box Sealer, id int64, force
 		}
 		tok, err := refresh(ctx, old)
 		if errors.Is(err, ErrJiraGrantRevoked) {
-			reason := truncateText(err.Error()+". An administrator can reconnect Jira in Settings → Integrations.", 500)
+			reason := truncateText(err.Error()+". An administrator can reconnect Jira in Integrations.", 500)
 			reconnect = &JiraReconnectError{Reason: reason}
 			if _, err := tx.Exec(ctx, `UPDATE jira_connections SET status = 'reconnect_needed', status_reason = $2 WHERE id = $1`, id, reason); err != nil {
 				return err

@@ -25,7 +25,7 @@ import { JiraConnectFields, type JiraPick } from "../../components/JiraConnect";
 import { DeliveryStatus } from "../IncidentDetail";
 
 /*
- * Shared pieces of Settings, Integrations for notifications: the connection
+ * Shared pieces of Integrations for notifications: the connection
  * form of a channel, the email recipients list, the delivery log.
  */
 
@@ -188,7 +188,7 @@ export function ChannelForm({
   extra,
   validate,
   afterCreate,
-  returnTo = "/settings/integrations",
+  returnTo = "/integrations",
   submitLabel,
   title = "Connection",
   connectionExtra,
@@ -587,7 +587,7 @@ export function ChannelForm({
               idp={idp}
               value={jiraPick}
               onChange={setJiraPick}
-              returnTo={channel ? `/settings/integrations/channels/${channel.id}` : "/settings/integrations/new/jira"}
+              returnTo={channel ? `/integrations/channels/${channel.id}` : "/integrations/new/jira"}
               onName={(n) => {
                 if (!name.trim()) setName(n);
               }}
@@ -900,7 +900,7 @@ export function ChannelForm({
                           ? "OAuth client secret"
                           : "integration user's password"
                         : "incoming webhook URL (it is a credential)"}{" "}
-              under <Link to="/settings/secrets">Settings → Secrets</Link> and reference it as <Code>secret:NAME</Code>; instance administrators can also use{" "}
+              under <Link to="/integrations/secrets">Integrations → Secrets</Link> and reference it as <Code>secret:NAME</Code>; instance administrators can also use{" "}
               <Code>env:STACKURITY_SECRET_…</Code> or <Code>file:/run/secrets/…</Code>.
               {kind === "jira" && " Send test checks the credentials and project access without creating an issue."}
               {kind === "servicenow" && " Send test checks the credentials, read access to the table and the assignment group without creating a record."}
@@ -927,7 +927,7 @@ export function ChannelForm({
               Interactivity with the Request URL <span className="break">
                 <Code>{`${window.location.origin}/api/v1/integrations/slack/actions`}</Code>
               </span>, and store its signing secret under{" "}
-              <Link to="/settings/secrets">Settings → Secrets</Link>. Empty: the buttons open Stackurity instead.{" "}
+              <Link to="/integrations/secrets">Integrations → Secrets</Link>. Empty: the buttons open Stackurity instead.{" "}
               <Link to="/help/notifications">How to set it up</Link>
             </p>
           </div>

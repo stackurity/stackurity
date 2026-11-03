@@ -18,7 +18,7 @@ Both run the same release, and everything in the [Community edition](editions.md
 
 **Day 1: connect.** About 30 minutes together on a call.
 - Install the agent on a few Linux servers, including at least one in production (**Assets → Add server** gives a one-line command; the agent is read-only and unprivileged, see [install.md](install.md)).
-- Add two or three repositories under **Settings → Integrations**, or add [`stackurity/scan-action`](https://github.com/marketplace/actions/stackurity-scan) to one CI pipeline.
+- Add two or three repositories under **Integrations**, or add [`stackurity/scan-action`](https://github.com/marketplace/actions/stackurity-scan) to one CI pipeline.
 - Optional: container images, a Kubernetes cluster ([kubernetes.md](kubernetes.md)) or AWS managed services.
 
 **Week 1: look.** On your own, 30 to 60 minutes.
