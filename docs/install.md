@@ -275,7 +275,8 @@ A browser session ends 30 minutes after it was last used (`STACKURITY_SESSION_ID
 
 - Every sign-in gets a new session ID, and a session the browser already had ends. Adding or removing a second factor, confirming with one, and changing your password replace the current session's ID too. Roles are read on every request, so a role change takes effect at once without one.
 - Changing your password (**Your account → Password**) signs out your other sessions and, unless you untick it, disconnects your AI assistants. API tokens keep working unless you tick **Also revoke my API tokens**; the page then says how many still work, with a link to review them.
-- The activity log records `auth.login`, `auth.logout`, and `auth.session_expired` with `reason` `idle` or `absolute` (when the session is next used, or by the hourly housekeeping if it never is).
+- **Your account → Active sessions** lists your own browser sessions: the browser and address each was signed in from, how, when, and when it was last used. **Sign out** ends one at once, and **Sign out of all other sessions** ends every one but yours; API tokens are separate (**Integrations → API tokens**). The browser (`User-Agent`) and address are stored with a session only while it lasts. A session signed in through an organisation's own single sign-on sees and ends only the sessions pinned to that organisation.
+- The activity log records `auth.login`, `auth.logout`, `auth.session_revoked`, `auth.other_sessions_revoked`, and `auth.session_expired` with `reason` `idle` or `absolute` (when the session is next used, or by the hourly housekeeping if it never is).
 
 ### Forgotten passwords
 

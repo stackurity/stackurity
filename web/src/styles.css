@@ -5559,7 +5559,8 @@ div.assistant-card {
   margin: 0 0 var(--s2);
   font-size: 1rem;
 }
-.mfa-passkeys {
+.mfa-passkeys,
+.session-list {
   list-style: none;
   padding: 0;
   margin: 0 0 var(--s3);
@@ -5567,7 +5568,8 @@ div.assistant-card {
   flex-direction: column;
   gap: var(--s2);
 }
-.mfa-passkeys > li {
+.mfa-passkeys > li,
+.session-list > li {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
@@ -5577,7 +5579,8 @@ div.assistant-card {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 }
-.mfa-passkeys > li > div:first-child {
+.mfa-passkeys > li > div:first-child,
+.session-list > li > div:first-child {
   min-width: 0;
   overflow-wrap: anywhere;
 }

@@ -2494,6 +2494,96 @@
     }
    }
   },
+  "/auth/sessions": {
+   "get": {
+    "operationId": "get_auth_sessions",
+    "summary": "Your active browser sessions",
+    "description": "Your active browser sessions\n\nRole: any signed-in user (session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (session)",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/sessions/revoke-others": {
+   "post": {
+    "operationId": "post_auth_sessions_revoke_others",
+    "summary": "Sign out all your other browser sessions",
+    "description": "Sign out all your other browser sessions\n\nRole: any signed-in user (session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (session)",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/sessions/{id}": {
+   "delete": {
+    "operationId": "delete_auth_sessions_id",
+    "summary": "Sign out one of your other browser sessions",
+    "description": "Sign out one of your other browser sessions\n\nRole: any signed-in user (session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (session)",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/auth/password-reset": {
    "post": {
     "operationId": "post_auth_password_reset",
