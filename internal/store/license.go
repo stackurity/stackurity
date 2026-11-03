@@ -57,7 +57,7 @@ func (s *Store) CountActiveAssets(ctx context.Context) (int64, error) {
 
 // LicenseRequirement is from when this installation needs a key, whether
 // it got the grace period of an upgrade, and how long servers have been
-// seen running since (migration 0085). Without the row, a key is needed now.
+// seen running since (migration 0086). Without the row, a key is needed now.
 func (s *Store) LicenseRequirement(ctx context.Context) (from time.Time, upgraded bool, observed time.Duration, err error) {
 	var secs int64
 	err = s.Pool.QueryRow(tenant.System(ctx), `SELECT required_from, upgraded, observed_seconds FROM license_requirement WHERE id = 1`).

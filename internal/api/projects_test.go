@@ -164,6 +164,8 @@ var projectScopes = map[string]string{
 	"GET /api/v1/assets/{id}/drift":             "scoped",
 	"GET /api/v1/assets/{id}/stack":             "scoped",
 	"GET /api/v1/assets/{id}/sbom":              "scoped",
+	"GET /api/v1/assets/{id}/leaks":             "scoped",
+	"GET /api/v1/leaks":                         "scoped",
 	"GET /api/v1/assets/{id}/remediation":       "scoped",
 	"GET /api/v1/components":                    "scoped",
 	"GET /api/v1/components/{id}":               "scoped",
@@ -217,6 +219,8 @@ var projectScopes = map[string]string{
 	"DELETE /api/v1/assets/{id}/relations":       "scoped-write",
 	"POST /api/v1/findings/{id}/actions":         "scoped-write",
 	"POST /api/v1/findings/actions":              "scoped-write",
+	"POST /api/v1/leaks/{id}/dismiss":            "scoped-write",
+	"POST /api/v1/leaks/{id}/undismiss":          "scoped-write",
 	"POST /api/v1/incidents/{id}/actions":        "scoped-write",
 	"POST /api/v1/assets/{id}/check":             "scoped-write",
 	"POST /api/v1/fix-groups/{id}/check":         "scoped-write",
@@ -1482,7 +1486,7 @@ func TestProjectMCP(t *testing.T) {
 		lines = append(lines, string(b))
 		n++
 	}
-	tools := []string{"search", "list_assets", "action_plan", "asset_stack", "list_findings", "get_finding", "find_component",
+	tools := []string{"search", "list_assets", "action_plan", "asset_stack", "list_findings", "list_leaks", "get_finding", "find_component",
 		"explain_finding", "upgrade_recommendation", "remediation_plan", "verify_since", "updates_available"}
 	for _, name := range tools {
 		add(name, args)

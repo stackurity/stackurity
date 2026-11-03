@@ -103,7 +103,7 @@ func TestDoctor(t *testing.T) {
 		Memory: func() MemoryInfo { return MemoryInfo{Limit: 2 << 30, LimitFrom: "container limit"} }}
 	cfg.Intel.OSVBaseURL = mirror.URL + "/osv"
 	cfg.Intel.NpmRegistry = gone.URL
-	// An upgraded server inside its grace period (migration 0085).
+	// An upgraded server inside its grace period (migration 0086).
 	if _, err := st.Pool.Exec(tenant.System(context.Background()),
 		`UPDATE license_requirement SET upgraded = true, required_from = now() + interval '30 days', observed_seconds = 0`); err != nil {
 		t.Fatal(err)

@@ -160,8 +160,14 @@ func TestPrepareOnRepositoryCopy(t *testing.T) {
 	}
 	next := version{prev.major, prev.minor + 1, 0}
 	// A changelog with something to release, as main has between releases.
+	// Right after a release the Unreleased heading is there but empty: fill
+	// it rather than adding a second one.
 	if !hasEntries(cl) {
-		cl = strings.Replace(cl, "## "+prev.String(), "## Unreleased\n\n### Fixed\n\n- **Test entry.**\n\n## "+prev.String(), 1)
+		if strings.Contains(cl, "\n## Unreleased\n") {
+			cl = strings.Replace(cl, "\n## Unreleased\n", "\n## Unreleased\n\n### Fixed\n\n- **Test entry.**\n", 1)
+		} else {
+			cl = strings.Replace(cl, "## "+prev.String(), "## Unreleased\n\n### Fixed\n\n- **Test entry.**\n\n## "+prev.String(), 1)
+		}
 	}
 	dir := t.TempDir()
 	files := append([]string{changelogFile, serverJSON, matrixFile, "go.mod", "go.sum"}, append(chartFiles, docFiles...)...)
@@ -183,8 +189,8 @@ func TestPrepareOnRepositoryCopy(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, f := range append(lint, filepath.Join(root, "tools", "releaselint", "doc.go")) {
-		if strings.HasSuffix(f, "packs_test.go") {
-			continue // needs internal/packs; not touched by a release
+		if strings.HasSuffix(f, "packs_test.go") || strings.HasSuffix(f, "communitykey_test.go") {
+			continue // need internal/packs and internal/license; not touched by a release
 		}
 		b, _ := os.ReadFile(f)
 		if err := os.WriteFile(filepath.Join(dir, "tools", "releaselint", filepath.Base(f)), b, 0o644); err != nil {

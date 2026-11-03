@@ -221,6 +221,10 @@ const FeatureAppList = "app_list"
 // agent's --docker).
 const FeatureHostImages = "host_images"
 
+// FeatureLeaks, in Meta.Features, means the server takes a batch's leaks
+// (keys and passwords found in files). Older servers refuse the field.
+const FeatureLeaks = "leaks"
+
 // Meta is the server's anonymous description of itself (GET /meta).
 type Meta struct {
 	Version       string   `json:"version"`
