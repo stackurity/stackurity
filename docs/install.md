@@ -207,7 +207,7 @@ Each person sets up their second factors under **Your account → Two-factor met
 
 A six-digit code sent by email after the password, for people with no passkey or authenticator app. It uses the same transactional mail as password reset links (Stackurity Cloud's, or `STACKURITY_SMTP_*` on your own server), so it needs that mail.
 
-- **Off by default.** An admin allows them under **Settings → Users → Two-factor sign-in → Email code (fallback)**. People then turn them on themselves under **Your account → Two-factor methods**: the password, then a code sent to their address, which proves it reaches them.
+- **Off by default.** An admin allows them under **People → Users → Two-factor sign-in → Email code (fallback)**. People then turn them on themselves under **Your account → Two-factor methods**: the password, then a code sent to their address, which proves it reaches them.
 - **Never counted for admin, security or instance-admin roles**, never for **phishing-resistant sign-in**, and **never offered to someone who has another method**: setting up a passkey or the app turns email codes off (`auth.mfa_disabled`, "replaced").
 - A code is six random digits, valid for **10 minutes**, used **once**, and bound to the sign-in (or session) that asked for it; only a hash of it, with that sign-in's secret, is stored. The email's subject is "Someone is signing in to Stackurity", with the address the request came from.
 - Limited like app codes: five wrong codes end the sign-in and ten per account in 15 minutes; one code every 30 seconds, five per sign-in, six per account in 15 minutes.
