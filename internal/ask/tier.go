@@ -128,10 +128,17 @@ func IsComplex(q string) bool {
 // dissatisfiedRE: a follow-up that says the last answer was wrong.
 var dissatisfiedRE = regexp.MustCompile(`(?i)^\W*(no\b|nope\b|wrong\b|incorrect\b|that'?s\s+(not|wrong|incorrect)|that\s+is\s+(not|wrong|incorrect)|not\s+what\s+i\s+(asked|meant|wanted)|you\s+(misunderstood|got\s+it\s+wrong|are\s+wrong|didn'?t\s+(answer|understand))|this\s+is\s+(wrong|not\s+right)|(that|it)\s+doesn'?t\s+(answer|help)|try\s+again\b)`)
 
+// politeNoRE: a "no" that is not about the last answer ("No worries",
+// "no thanks, that's all").
+var politeNoRE = regexp.MustCompile(`(?i)^\W*no\W*(worries|problem|problems|thanks|thank\s+you|need|rush|hurry)\b`)
+
 // SaysDissatisfied reports, by phrase alone, a follow-up that says the
 // last answer was wrong. Ambiguous short follow-ups go to the small model
 // (Engine.dissatisfied).
-func SaysDissatisfied(q string) bool { return dissatisfiedRE.MatchString(strings.TrimSpace(q)) }
+func SaysDissatisfied(q string) bool {
+	q = strings.TrimSpace(q)
+	return dissatisfiedRE.MatchString(q) && !politeNoRE.MatchString(q)
+}
 
 // triagePrompt is the small model's instruction for a short follow-up.
 const triagePrompt = `You classify one message from a person using a software inventory assistant. Answer with exactly one word: yes or no.
@@ -193,7 +200,7 @@ func (e *Engine) dissatisfied(ctx context.Context, q Question, lastAnswer string
 	}
 	msg := userMessage(textBlock("The assistant's previous answer (excerpt):\n<answer>\n" + CleanText(lastAnswer) + "\n</answer>\n\nThe person's new message:\n<message>\n" +
 		CleanText(q.Text) + "\n</message>\n\nDoes the new message say the previous answer was wrong or did not answer what was asked? yes or no."))
-	res, _, err := e.call(ctx, q, callSpec{kind: "triage", model: e.triageModel(q.Ceiling), maxTokens: 16, system: triagePrompt, noTools: true, noThinking: true},
+	res, _, err := e.call(ctx, q, callSpec{kind: "triage", model: e.triageModel(q.Ceiling), maxTokens: 16, system: triagePrompt, noTools: true, noThinking: true, effort: "low"},
 		[]json.RawMessage{msg}, func(Event) {})
 	if err != nil || res == nil {
 		return false

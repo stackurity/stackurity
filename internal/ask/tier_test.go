@@ -106,7 +106,8 @@ func TestStartModelAndSteps(t *testing.T) {
 		}
 	}
 	for q, want := range map[string]bool{"No, that's not what I asked": true, "that's wrong": true, "Not what I meant.": true,
-		"And db-1?": false, "Now the same for db-1": false, "Thanks!": false} {
+		"And db-1?": false, "Now the same for db-1": false, "Thanks!": false,
+		"No worries, thanks": false, "no thanks, that's all": false, "No problem": false, "No, it's wrong": true, "nope": true} {
 		if ask.SaysDissatisfied(q) != want {
 			t.Errorf("SaysDissatisfied(%q) = %v", q, !want)
 		}
@@ -117,6 +118,9 @@ func TestStartModelAndSteps(t *testing.T) {
 // fallback (Haiku has none) and without the small triage call.
 func TestTierSimpleStaysOnHaiku(t *testing.T) {
 	r := tierRig(t, haiku, asktest.Reply{Text: "web-1 runs openssl 3.0.2."}, asktest.Reply{Text: "db-1 runs 3.0.13."})
+	// An operator's effort above high: the triage call still turns
+	// thinking off, which Claude Haiku 5.5 allows only at high or below.
+	r.eng.Config.Effort = "max"
 	if _, err := r.askUnder(sonnet, "What runs on web-1?"); err != nil {
 		t.Fatal(err)
 	}
@@ -141,6 +145,12 @@ func TestTierSimpleStaysOnHaiku(t *testing.T) {
 	}
 	if th, _ := triage["thinking"].(map[string]any); th["type"] != "disabled" {
 		t.Errorf("triage thinking = %v", triage["thinking"])
+	}
+	if oc, _ := triage["output_config"].(map[string]any); oc["effort"] != "low" {
+		t.Errorf("triage output_config = %v, want effort low", triage["output_config"])
+	}
+	if oc, _ := r.fake.Bodies()[2]["output_config"].(map[string]any); oc["effort"] != "max" {
+		t.Errorf("answer output_config = %v, want the configured effort", r.fake.Bodies()[2]["output_config"])
 	}
 }
 

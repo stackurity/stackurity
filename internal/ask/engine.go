@@ -303,8 +303,11 @@ type callSpec struct {
 	// system and noTools: the summary call's own prompt, without tools.
 	system  string
 	noTools bool
-	// noThinking: the triage call, a one-word answer.
+	// noThinking: the triage call, a one-word answer. effort, when set,
+	// replaces the configured effort (thinking can be turned off on Claude
+	// Haiku 5.5 only at effort high or below).
 	noThinking bool
+	effort     string
 	// stepUpReason and steppedFrom: this answer moved to a stronger
 	// model, why and from which (tier.go), for the call record.
 	stepUpReason string
@@ -331,7 +334,11 @@ func (e *Engine) call(ctx context.Context, q Question, spec callSpec, msgs []jso
 		return nil, 0, err
 	}
 	started := e.now()
-	res, err := e.Model.Stream(ctx, Call{Model: spec.model, Effort: e.Config.Effort, MaxTokens: spec.maxTokens, Messages: msgs,
+	effort := e.Config.Effort
+	if spec.effort != "" {
+		effort = spec.effort
+	}
+	res, err := e.Model.Stream(ctx, Call{Model: spec.model, Effort: effort, MaxTokens: spec.maxTokens, Messages: msgs,
 		System: spec.system, NoTools: spec.noTools, NoFallbacks: !fallbacks, NoThinking: spec.noThinking}, func(ev StreamEvent) {
 		switch {
 		case ev.Reset:
