@@ -4,7 +4,7 @@
 
 What happens:
 
-1. **Settings → Integrations → Git repository → Connect GitLab** sends the admin to GitLab's consent page. Stackurity asks for the `api` scope here, because creating a group access token and a group webhook needs it.
+1. **Integrations → Git repository → Connect GitLab** sends the admin to GitLab's consent page. Stackurity asks for the `api` scope here, because creating a group access token and a group webhook needs it.
 2. Back in Stackurity, the admin picks one of the groups their GitLab account is a Reporter or above of. Stackurity checks the membership with GitLab itself; the group id the browser sends is not trusted.
 3. As the group's **Owner**, Stackurity creates:
    - a **group access token** named *Stackurity*, with `read_api` and `read_repository`, the **Reporter** role and an expiry just under a year. It is stored encrypted with `STACKURITY_SECRET_KEY` and used for every listing and clone;

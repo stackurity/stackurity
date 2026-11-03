@@ -51,7 +51,7 @@ type userRequest struct {
 // transaction. Neither is refused: there is no default access.
 func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
 	if s.InviteOnly {
-		writeError(w, 403, "invite_only", "people join this service by invitation: invite them (Settings → Users, or a project's Invite) and they set up their own account")
+		writeError(w, 403, "invite_only", "people join this service by invitation: invite them (People → Users, or a project's Invite) and they set up their own account")
 		return
 	}
 	var req userRequest
@@ -374,7 +374,7 @@ func checkSecretRef(r *http.Request, ref string) error {
 	}
 	if p := principal(r); p == nil || p.User == nil || !p.User.InstanceAdmin {
 		return forbidden("env: and file: secrets belong to the server; only an instance administrator can use them or change what uses them. " +
-			"Store the credential in this workspace (Settings > Secrets) and reference it as secret:NAME")
+			"Store the credential in this workspace (Integrations > Secrets) and reference it as secret:NAME")
 	}
 	return nil
 }

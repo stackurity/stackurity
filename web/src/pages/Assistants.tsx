@@ -164,7 +164,7 @@ export function ConnectAssistantPage() {
           </button>
         </div>
         <p className="small muted">
-          It stays connected until you disconnect it in <Link to="/settings/ai-assistants#connected">Connected assistants</Link>, or it is unused for{" "}
+          It stays connected until you disconnect it in <Link to="/integrations/ai-assistants#connected">Connected assistants</Link>, or it is unused for{" "}
           {plural(pv.idle_days, "day")}. Not you?{" "}
           <button type="button" className="btn-link" onClick={() => void logout()}>
             Sign out
@@ -444,7 +444,7 @@ function OtherClient({ url }: { url: string }) {
       </p>
       <Steps>
         <li>
-          Create a token under <Link to="/settings/tokens">Settings, API tokens</Link>, with the role the assistant should have (viewer for
+          Create a token under <Link to="/integrations/tokens">Integrations, API tokens</Link>, with the role the assistant should have (viewer for
           read only). Save it in a file only you can read.
         </li>
         <li>Add this to the assistant&apos;s MCP settings, with your token file:</li>
@@ -530,7 +530,7 @@ function AskAISetting() {
 }
 
 /**
- * Settings, AI assistants: how to connect Claude, ChatGPT or an editor
+ * Integrations, AI assistants: how to connect Claude, ChatGPT or an editor
  * (the MCP address and steps per client), and the signed-in person's
  * connected assistants in every organisation, with Allow changes and
  * Disconnect.

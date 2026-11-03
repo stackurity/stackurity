@@ -448,13 +448,13 @@ With `"fleet": true` it creates a **fleet code** for many servers: `uses` up to 
 
 **Who:** admin
 
-The hosts that used a code, newest first: `hostname` (as the host reported it), `remote_addr`, `used_at`, and the `token_prefix` of the collector token it received (under **Settings → API tokens**; empty once that token is deleted) with `token_revoked`.
+The hosts that used a code, newest first: `hostname` (as the host reported it), `remote_addr`, `used_at`, and the `token_prefix` of the collector token it received (under **Integrations → API tokens**; empty once that token is deleted) with `token_revoked`.
 
 ### `DELETE /enrollments/{id}`
 
 **Who:** admin
 
-Revokes an enrollment code. Hosts that already enrolled keep their tokens; revoke those under **Settings → API tokens** (the usage list gives their prefixes).
+Revokes an enrollment code. Hosts that already enrolled keep their tokens; revoke those under **Integrations → API tokens** (the usage list gives their prefixes).
 
 ### `GET /integrations/digitalocean`
 
@@ -2537,7 +2537,7 @@ Webhook channels receive each message as JSON. Fields are only ever added, never
   ],
   "counts": {"urgent": 6, "assets": 1, "problems": 0},
   "link": "https://stackurity.example.com/",
-  "settings_link": "https://stackurity.example.com/settings/notifications?tab=routes",
+  "settings_link": "https://stackurity.example.com/integrations",
   "at": "2026-10-26T09:12:00Z"
 }
 ```
