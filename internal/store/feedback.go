@@ -92,7 +92,7 @@ type FeedbackItem struct {
 const feedbackItemCols = `i.id, 'FB-' || i.id, i.kind, i.description, i.contact_email, i.source, i.version, i.edition,
 	i.page, i.browser, i.viewport, i.status, i.resolution, i.triage_notes, i.link, i.duplicate_of, i.fixed_in,
 	i.created_at, i.updated_at, i.triaged_at, i.closed_at, i.notified_at,
-	(SELECT count(*) FROM feedback_attachments a WHERE a.item_id = i.id)::int`
+	(SELECT count(*) FROM feedback_attachments a WHERE a.item_id = i.id AND a.scan <> 'pending')::int`
 
 // FeedbackAttachment is one stored file of an item.
 type FeedbackAttachment struct {
@@ -106,9 +106,19 @@ type FeedbackAttachment struct {
 	Scan        string     `json:"scan"`
 	CreatedAt   time.Time  `json:"created_at"`
 	PurgedAt    *time.Time `json:"purged_at"`
+	// ScanSignature names what the virus scanner found (scan "infected").
+	ScanSignature string     `json:"scan_signature,omitempty"`
+	ScannedAt     *time.Time `json:"scanned_at"`
 }
 
-const feedbackAttachmentCols = `id, item_id, name, content_type, size, sha256, storage_key, scan, created_at, purged_at`
+const feedbackAttachmentCols = `id, item_id, name, content_type, size, sha256, storage_key, scan, created_at, purged_at, scan_signature, scanned_at`
+
+// FeedbackAttachmentVisible reports whether operators and the triage agent
+// may see and download an attachment: checked without a scanner, or
+// scanned clean, and not deleted.
+func FeedbackAttachmentVisible(a *FeedbackAttachment) bool {
+	return a.PurgedAt == nil && (a.Scan == "checked" || a.Scan == "clean")
+}
 
 // FeedbackEvent is one change to an item.
 type FeedbackEvent struct {
@@ -218,7 +228,8 @@ func (s *Store) GetFeedbackItem(ctx context.Context, id int64) (*FeedbackItem, [
 	if err != nil {
 		return nil, nil, nil, notFound(err)
 	}
-	rows, err = s.Pool.Query(sys, `SELECT `+feedbackAttachmentCols+` FROM feedback_attachments WHERE item_id = $1 ORDER BY id`, id)
+	// Attachments waiting for the virus scan are not shown.
+	rows, err = s.Pool.Query(sys, `SELECT `+feedbackAttachmentCols+` FROM feedback_attachments WHERE item_id = $1 AND scan <> 'pending' ORDER BY id`, id)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -445,8 +456,11 @@ func (s *Store) PurgeFeedback(ctx context.Context, attachmentsAfter, recordsAfte
 
 // FeedbackAgentToken is a triage agent's token (the secret is shown once).
 type FeedbackAgentToken struct {
-	ID         int64      `json:"id"`
-	Name       string     `json:"name"`
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+	// Scope is "triage" (items, notes, status, attachment links) or
+	// "scanner" (the list of files waiting for a scan, and scan results).
+	Scope      string     `json:"scope"`
 	Prefix     string     `json:"prefix"`
 	CreatedAt  time.Time  `json:"created_at"`
 	ExpiresAt  time.Time  `json:"expires_at"`
@@ -454,12 +468,12 @@ type FeedbackAgentToken struct {
 	RevokedAt  *time.Time `json:"revoked_at"`
 }
 
-const feedbackTokenCols = `id, name, prefix, created_at, expires_at, last_used_at, revoked_at`
+const feedbackTokenCols = `id, name, scope, prefix, created_at, expires_at, last_used_at, revoked_at`
 
 // CreateFeedbackAgentToken stores a new triage token.
-func (s *Store) CreateFeedbackAgentToken(ctx context.Context, name, prefix string, hash []byte, createdBy int64, expires time.Time) (*FeedbackAgentToken, error) {
-	rows, err := s.Pool.Query(tenant.System(ctx), `INSERT INTO feedback_agent_tokens (name, prefix, token_hash, created_by, expires_at)
-		VALUES ($1, $2, $3, $4, $5) RETURNING `+feedbackTokenCols, name, prefix, hash, createdBy, expires)
+func (s *Store) CreateFeedbackAgentToken(ctx context.Context, name, scope, prefix string, hash []byte, createdBy int64, expires time.Time) (*FeedbackAgentToken, error) {
+	rows, err := s.Pool.Query(tenant.System(ctx), `INSERT INTO feedback_agent_tokens (name, scope, prefix, token_hash, created_by, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6) RETURNING `+feedbackTokenCols, name, scope, prefix, hash, createdBy, expires)
 	if err != nil {
 		return nil, err
 	}
@@ -592,4 +606,60 @@ func (s *Store) FeedbackStorageKeys(ctx context.Context) (map[string]bool, error
 		out[k] = true
 	}
 	return out, nil
+}
+
+// FeedbackScanQueue lists attachments waiting for the virus scan, oldest
+// first.
+func (s *Store) FeedbackScanQueue(ctx context.Context, limit int) ([]FeedbackAttachment, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	rows, err := s.Pool.Query(tenant.System(ctx), `SELECT `+feedbackAttachmentCols+` FROM feedback_attachments
+		WHERE scan = 'pending' AND purged_at IS NULL ORDER BY id LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByPos[FeedbackAttachment])
+}
+
+// RecordFeedbackScan stores the scanner's verdict on a pending attachment.
+// Infected: the attachment is marked deleted (the caller removes the file,
+// whose key is returned), and its item is flagged for the owner with a
+// note, unless it is already closed. ErrNotFound when the attachment is not
+// pending (already scanned, or deleted).
+func (s *Store) RecordFeedbackScan(ctx context.Context, aid int64, clean bool, signature, actor string) (key string, err error) {
+	sys := tenant.System(ctx)
+	err = pgx.BeginFunc(sys, s.Pool, func(tx pgx.Tx) error {
+		var item int64
+		if err := tx.QueryRow(sys, `SELECT item_id, storage_key FROM feedback_attachments WHERE id = $1 AND scan = 'pending'
+			AND purged_at IS NULL FOR UPDATE`, aid).Scan(&item, &key); err != nil {
+			return notFound(err)
+		}
+		if clean {
+			if _, err := tx.Exec(sys, `UPDATE feedback_attachments SET scan = 'clean', scanned_at = now() WHERE id = $1`, aid); err != nil {
+				return err
+			}
+			key = ""
+			_, err := tx.Exec(sys, `INSERT INTO feedback_events (item_id, actor, action, detail) VALUES ($1, $2, 'scanned', $3)`,
+				item, actor, fmt.Sprintf("attachment %d clean", aid))
+			return err
+		}
+		if _, err := tx.Exec(sys, `UPDATE feedback_attachments SET scan = 'infected', scan_signature = $2, scanned_at = now(), purged_at = now()
+			WHERE id = $1`, aid, signature); err != nil {
+			return err
+		}
+		detail := fmt.Sprintf("attachment %d flagged by the virus scanner (%s) and deleted", aid, signature)
+		if _, err := tx.Exec(sys, `INSERT INTO feedback_events (item_id, actor, action, detail) VALUES ($1, $2, 'scanned', $3)`,
+			item, actor, detail); err != nil {
+			return err
+		}
+		note := time.Now().UTC().Format("2006-01-02 15:04") + " " + actor + ": " + detail + "."
+		_, err := tx.Exec(sys, `UPDATE feedback_items SET updated_at = now(),
+			triage_notes = left(CASE WHEN triage_notes = '' THEN $2 ELSE triage_notes || E'\n\n' || $2 END, 20000),
+			status = CASE WHEN status IN ('released', 'wont_fix', 'duplicate') THEN status ELSE 'needs_owner' END,
+			triaged_at = COALESCE(triaged_at, now())
+			WHERE id = $1`, item, note)
+		return err
+	})
+	return key, err
 }

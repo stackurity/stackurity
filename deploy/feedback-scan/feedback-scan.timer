@@ -1,0 +1,10 @@
+[Unit]
+Description=Scan new feedback attachments every 10 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitInactiveSec=10min
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target

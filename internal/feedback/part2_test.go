@@ -1,70 +1,11 @@
 package feedback
 
 import (
-	"bufio"
-	"bytes"
+	"encoding/base64"
 	"encoding/binary"
-	"errors"
-	"io"
-	"net"
 	"strings"
 	"testing"
 )
-
-func TestClamdScan(t *testing.T) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ln.Close()
-	go func() {
-		for {
-			c, err := ln.Accept()
-			if err != nil {
-				return
-			}
-			go func(c net.Conn) {
-				defer c.Close()
-				r := bufio.NewReader(c)
-				cmd, _ := r.ReadString(0)
-				if cmd != "zINSTREAM\x00" {
-					return
-				}
-				var data []byte
-				for {
-					var n uint32
-					if binary.Read(r, binary.BigEndian, &n) != nil {
-						return
-					}
-					if n == 0 {
-						break
-					}
-					chunk := make([]byte, n)
-					if _, err := io.ReadFull(r, chunk); err != nil {
-						return
-					}
-					data = append(data, chunk...)
-				}
-				if bytes.Contains(data, []byte("EICAR")) {
-					c.Write([]byte("stream: Eicar-Test-Signature FOUND\x00"))
-				} else {
-					c.Write([]byte("stream: OK\x00"))
-				}
-			}(c)
-		}
-	}()
-	c := &Clamd{Addr: ln.Addr().String()}
-	if err := c.Scan(strings.NewReader("%PDF-1.4 clean")); err != nil {
-		t.Fatalf("clean: %v", err)
-	}
-	if err := c.Scan(strings.NewReader("X5O!P%@AP EICAR test")); !errors.Is(err, ErrInfected) {
-		t.Fatalf("infected: %v", err)
-	}
-	down := &Clamd{Addr: "127.0.0.1:1"}
-	if err := down.Scan(strings.NewReader("x")); err == nil || errors.Is(err, ErrInfected) {
-		t.Fatalf("scanner down must fail closed: %v", err)
-	}
-}
 
 func TestEmailTemplates(t *testing.T) {
 	for _, name := range EmailTemplates() {
@@ -83,5 +24,54 @@ func TestEmailTemplates(t *testing.T) {
 	}
 	if _, err := RenderEmail("other", EmailData{}); err == nil {
 		t.Error("unknown template rendered")
+	}
+}
+
+// A 1x1 lossless WebP.
+const tinyWebP = "UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA=="
+
+func TestReencode(t *testing.T) {
+	for _, k := range []Kind{PNG, JPEG, GIF} {
+		var in []byte
+		switch k {
+		case PNG:
+			in = pngWithMetadata(t)
+		case JPEG:
+			in = jpegWithMetadata(t)
+		case GIF:
+			in = gifWithMetadata(t)
+		}
+		stripped, err := StripImage(k, in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, k2, err := Reencode(k, stripped)
+		if err != nil || k2 != k {
+			t.Fatalf("%s: %v %s", k, err, k2)
+		}
+		if got, err := Detect(out); err != nil || got != k {
+			t.Errorf("%s re-encoded detects as %s", k, got)
+		}
+		if strings.Contains(string(out), "12.9716N") {
+			t.Errorf("%s: metadata survived", k)
+		}
+	}
+	w, _ := base64.StdEncoding.DecodeString(tinyWebP)
+	out, k, err := Reencode(WebP, w)
+	if err != nil || k != PNG || !strings.HasPrefix(string(out), "\x89PNG") {
+		t.Fatalf("webp: %v %s", err, k)
+	}
+	// A PNG claiming 50 megapixels is refused before decoding.
+	ihdr := make([]byte, 13)
+	binary.BigEndian.PutUint32(ihdr[0:], 10000)
+	binary.BigEndian.PutUint32(ihdr[4:], 5000)
+	ihdr[8], ihdr[9] = 8, 2
+	big := append([]byte("\x89PNG\r\n\x1a\n"), pngChunk("IHDR", ihdr)...)
+	big = append(big, pngChunk("IEND", nil)...)
+	if _, _, err := Reencode(PNG, big); err != ErrTooManyPixels {
+		t.Fatalf("50 MP: %v", err)
+	}
+	if _, _, err := Reencode(PNG, []byte("\x89PNG\r\n\x1a\nbroken")); err != ErrBadImage {
+		t.Fatalf("broken: %v", err)
 	}
 }

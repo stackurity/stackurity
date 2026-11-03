@@ -312,6 +312,8 @@ var projectScopes = map[string]string{
 	"GET /api/v1/admin/feedback/":                             "org",
 	"GET /api/v1/admin/feedback/{id}":                         "org",
 	"GET /api/v1/admin/feedback/email-templates":              "org",
+	"GET /api/v1/admin/feedback/scan/pending":                 "org",
+	"POST /api/v1/admin/feedback/scan/{aid}":                  "org",
 	"PATCH /api/v1/admin/feedback/{id}":                       "org",
 	"DELETE /api/v1/admin/feedback/{id}":                      "org",
 	"POST /api/v1/admin/feedback/{id}/attachments/{aid}/link": "org",

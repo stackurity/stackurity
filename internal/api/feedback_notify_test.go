@@ -1,18 +1,14 @@
 package api_test
 
 import (
-	"bufio"
 	"context"
-	"encoding/binary"
-	"io"
-	"net"
+	"fmt"
 	"os"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/stackurity/stackurity/internal/auth"
-	"github.com/stackurity/stackurity/internal/feedback"
 	"github.com/stackurity/stackurity/internal/notify"
 )
 
@@ -106,72 +102,91 @@ func TestFeedbackSenderEmail(t *testing.T) {
 	}
 }
 
-// fakeClamd answers INSTREAM: FOUND for data containing EICAR.
-func fakeClamd(t *testing.T) string {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { ln.Close() })
-	go func() {
-		for {
-			c, err := ln.Accept()
-			if err != nil {
-				return
-			}
-			go func(c net.Conn) {
-				defer c.Close()
-				r := bufio.NewReader(c)
-				if cmd, _ := r.ReadString(0); cmd != "zINSTREAM\x00" {
-					return
-				}
-				var data []byte
-				for {
-					var n uint32
-					if binary.Read(r, binary.BigEndian, &n) != nil {
-						return
-					}
-					if n == 0 {
-						break
-					}
-					chunk := make([]byte, n)
-					if _, err := io.ReadFull(r, chunk); err != nil {
-						return
-					}
-					data = append(data, chunk...)
-				}
-				if strings.Contains(string(data), "EICAR") {
-					c.Write([]byte("stream: Eicar-Test-Signature FOUND\x00"))
-				} else {
-					c.Write([]byte("stream: OK\x00"))
-				}
-			}(c)
-		}
-	}()
-	return ln.Addr().String()
-}
-
-func TestFeedbackClamdAndStorageWarning(t *testing.T) {
+func TestFeedbackScanOnDemand(t *testing.T) {
 	e, dir := queueEnv(t, 200)
-	e.api.FeedbackQueue.Clamd = &feedback.Clamd{Addr: fakeClamd(t)}
-	if code, res := postIntake(t, e, intakeKey, validItem(), upload{"a.pdf", []byte("%PDF-1.4 X5O!P%@AP EICAR-STANDARD-ANTIVIRUS")}); code != 422 {
-		t.Fatalf("infected: %d %v", code, res)
+	e.api.FeedbackQueue.ScanRequired = true
+	e.user("ops@x.io", auth.RoleAdmin)
+	e.instanceAdmin("ops@x.io")
+	ops := e.login("ops@x.io")
+	var triage, scanner struct{ Token string }
+	ops.do("POST", "/api/v1/admin/feedback-tokens", map[string]any{"name": "agent"}, &triage)
+	if code := ops.do("POST", "/api/v1/admin/feedback-tokens", map[string]any{"name": "scanner", "scope": "scanner"}, &scanner); code != 201 {
+		t.Fatalf("scanner token: %d", code)
 	}
-	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
-		t.Fatalf("infected file kept")
+	if code := ops.do("POST", "/api/v1/admin/feedback-tokens", map[string]any{"name": "x", "scope": "admin"}, nil); code != 400 {
+		t.Fatalf("bad scope: %d", code)
 	}
-	// Clean, and past 80% of the cap: the reply carries the warning.
-	code, res := postIntake(t, e, intakeKey, validItem(), upload{"b.pdf", []byte("%PDF-1.4 " + strings.Repeat("x", 160))})
-	if code != 201 || !strings.Contains(res["storage_warning"].(string), "84%") {
-		t.Fatalf("clean: %d %v", code, res)
+
+	code, res := postIntake(t, e, intakeKey, validItem(), upload{"a.pdf", []byte("%PDF-1.4 clean" + strings.Repeat("x", 100))}, upload{"b.pdf", []byte("%PDF-1.4 X5O EICAR" + strings.Repeat("x", 60))})
+	if code != 201 || !strings.Contains(res["storage_warning"].(string), "%") {
+		t.Fatalf("intake: %d %v", code, res)
 	}
-	// A scanner that is down refuses attachments (fails closed).
-	e.api.FeedbackQueue.Clamd = &feedback.Clamd{Addr: "127.0.0.1:1"}
-	e.api.FeedbackQueue.StorageMax = 1 << 30
-	if code, res := postIntake(t, e, intakeKey, validItem(), upload{"c.pdf", []byte("%PDF-1.4 c")}); code != 503 {
-		t.Fatalf("scanner down: %d %v", code, res)
+	ref := res["ref"].(string)
+	// Pending: invisible to operators and the triage agent.
+	var item struct {
+		Item struct {
+			Status      string
+			TriageNotes string `json:"triage_notes"`
+			Count       int    `json:"attachment_count"`
+		} `json:"item"`
+		Attachments []struct {
+			ID   int64
+			Scan string
+		} `json:"attachments"`
 	}
-	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
-		t.Fatalf("%d files", len(entries))
+	bearerJSON(t, e, triage.Token, "GET", "/api/v1/admin/feedback/"+ref, nil, &item)
+	if len(item.Attachments) != 0 || item.Item.Count != 0 {
+		t.Fatalf("pending attachments visible: %+v", item)
+	}
+	// Scopes do not mix.
+	if code := bearerJSON(t, e, triage.Token, "GET", "/api/v1/admin/feedback/scan/pending", nil, nil); code != 403 {
+		t.Fatalf("triage token on the scan queue: %d", code)
+	}
+	for _, p := range []string{"/api/v1/admin/feedback", "/api/v1/admin/feedback/" + ref, "/api/v1/auth/me"} {
+		if code := bearerJSON(t, e, scanner.Token, "GET", p, nil, nil); code != 403 && code != 401 {
+			t.Fatalf("scanner token on %s: %d", p, code)
+		}
+	}
+	var pending struct {
+		Attachments []struct {
+			ID         int64  `json:"id"`
+			StorageKey string `json:"storage_key"`
+		} `json:"attachments"`
+	}
+	if code := bearerJSON(t, e, scanner.Token, "GET", "/api/v1/admin/feedback/scan/pending", nil, &pending); code != 200 || len(pending.Attachments) != 2 {
+		t.Fatalf("scan queue: %d %+v", code, pending)
+	}
+	clean, bad := pending.Attachments[0], pending.Attachments[1]
+	// A link for a pending attachment is refused.
+	if code := ops.do("POST", fmt.Sprintf("/api/v1/admin/feedback/%s/attachments/%d/link", ref, clean.ID), nil, nil); code != 404 {
+		t.Fatalf("link while pending: %d", code)
+	}
+	if code := bearerJSON(t, e, scanner.Token, "POST", fmt.Sprintf("/api/v1/admin/feedback/scan/%d", bad.ID), map[string]any{"result": "infected", "signature": "x<script>"}, nil); code != 400 {
+		t.Fatalf("bad signature: %d", code)
+	}
+	for id, body := range map[int64]map[string]any{clean.ID: {"result": "clean"}, bad.ID: {"result": "infected", "signature": "Eicar-Test-Signature"}} {
+		if code := bearerJSON(t, e, scanner.Token, "POST", fmt.Sprintf("/api/v1/admin/feedback/scan/%d", id), body, nil); code != 204 {
+			t.Fatalf("scan result %d: %d", id, code)
+		}
+	}
+	// Again: no longer pending.
+	if code := bearerJSON(t, e, scanner.Token, "POST", fmt.Sprintf("/api/v1/admin/feedback/scan/%d", clean.ID), map[string]any{"result": "infected", "signature": "X"}, nil); code != 404 {
+		t.Fatalf("second verdict: %d", code)
+	}
+	if _, err := os.Stat(dir + "/" + bad.StorageKey); !os.IsNotExist(err) {
+		t.Fatalf("infected file kept: %v", err)
+	}
+	if _, err := os.Stat(dir + "/" + clean.StorageKey); err != nil {
+		t.Fatalf("clean file: %v", err)
+	}
+	bearerJSON(t, e, triage.Token, "GET", "/api/v1/admin/feedback/"+ref, nil, &item)
+	if item.Item.Status != "needs_owner" || !strings.Contains(item.Item.TriageNotes, "Eicar-Test-Signature") || len(item.Attachments) != 2 {
+		t.Fatalf("after scan: %+v", item)
+	}
+	if code := ops.do("POST", fmt.Sprintf("/api/v1/admin/feedback/%s/attachments/%d/link", ref, clean.ID), nil, nil); code != 200 {
+		t.Fatalf("link when clean: %d", code)
+	}
+	if code := ops.do("POST", fmt.Sprintf("/api/v1/admin/feedback/%s/attachments/%d/link", ref, bad.ID), nil, nil); code != 410 {
+		t.Fatalf("link when infected: %d", code)
 	}
 }

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -70,12 +69,13 @@ func feedbackQueueFromEnv(log *slog.Logger) (*api.FeedbackQueue, error) {
 		return nil, errors.New("STACKURITY_FEEDBACK_LINK_KEY must be at least 32 characters and differ from the intake key")
 	}
 	q := &api.FeedbackQueue{Disk: disk, IntakeKey: key, StorageMax: maxMB << 20, LinkKey: linkKey}
-	if addr := strings.TrimSpace(os.Getenv("STACKURITY_FEEDBACK_CLAMD")); addr != "" {
-		if _, _, err := net.SplitHostPort(addr); err != nil {
-			return nil, fmt.Errorf("STACKURITY_FEEDBACK_CLAMD must be host:port of a clamd TCP socket, not %q", addr)
-		}
-		q.Clamd = &feedback.Clamd{Addr: addr}
-		log.Info("feedback attachments are scanned by clamd", "addr", addr)
+	switch v := strings.TrimSpace(os.Getenv("STACKURITY_FEEDBACK_SCAN")); v {
+	case "", "off":
+	case "required":
+		q.ScanRequired = true
+		log.Info("feedback attachments are held until the virus scanner reports them clean", "see", "deploy/feedback-scan")
+	default:
+		return nil, fmt.Errorf("STACKURITY_FEEDBACK_SCAN must be required or off, not %q", v)
 	}
 	switch v := strings.TrimSpace(os.Getenv("STACKURITY_FEEDBACK_EMAILS")); v {
 	case "", "off":

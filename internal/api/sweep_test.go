@@ -287,6 +287,8 @@ var routeRules = map[string]routeRule{
 	"GET /api/v1/admin/feedback/":                             {class: "instance"},
 	"GET /api/v1/admin/feedback/{id}":                         {class: "instance"},
 	"GET /api/v1/admin/feedback/email-templates":              {class: "instance"},
+	"GET /api/v1/admin/feedback/scan/pending":                 {class: "instance"},
+	"POST /api/v1/admin/feedback/scan/{aid}":                  {class: "instance"},
 	"PATCH /api/v1/admin/feedback/{id}":                       {class: "instance"},
 	"DELETE /api/v1/admin/feedback/{id}":                      {class: "instance"},
 	"POST /api/v1/admin/feedback/{id}/attachments/{aid}/link": {class: "instance"},

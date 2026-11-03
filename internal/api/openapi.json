@@ -367,6 +367,84 @@
     }
    }
   },
+  "/admin/feedback/scan/pending": {
+   "get": {
+    "operationId": "get_admin_feedback_scan_pending",
+    "summary": "List feedback attachments waiting for the virus scan",
+    "description": "Pending attachments: `id`, `storage_key`, `size`, `sha256`. See feedback-queue.md\n\nRole: instance admin or feedback scanner token",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "instance admin or feedback scanner token",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/admin/feedback/scan/{aid}": {
+   "post": {
+    "operationId": "post_admin_feedback_scan_aid",
+    "summary": "Report a virus scan verdict",
+    "description": "`result` clean or infected (with `signature`). See feedback-queue.md\n\nRole: instance admin or feedback scanner token",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "instance admin or feedback scanner token",
+    "parameters": [
+     {
+      "name": "aid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/admin/feedback/{id}": {
    "get": {
     "operationId": "get_admin_feedback_id",

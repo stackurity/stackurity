@@ -1,0 +1,12 @@
+[Unit]
+Description=Stackurity feedback attachments: on-demand virus scan
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/stackurity/feedback-scan.env
+ExecStart=/opt/stackurity/feedback-scan/scan.sh
+Nice=19
+IOSchedulingClass=idle
+TimeoutStartSec=30min

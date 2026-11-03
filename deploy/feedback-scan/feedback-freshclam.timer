@@ -1,0 +1,10 @@
+[Unit]
+Description=Update ClamAV signatures for feedback scans once a day
+
+[Timer]
+OnCalendar=*-*-* 03:30:00 UTC
+RandomizedDelaySec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
