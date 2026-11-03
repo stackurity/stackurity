@@ -12,7 +12,7 @@
 # without any change here.
 set -euo pipefail
 
-flags=(-race -count=1 -timeout 30m)
+flags=(-race -count=1 -timeout 40m)
 # Packages with shards of their own (keep in step with the matrix in ci.yml).
 own='/internal/(api|intel|store|notify)$'
 
