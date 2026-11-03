@@ -423,7 +423,7 @@ func assetGroup(state, collectionStatus string) string {
 }
 
 // Support requests: a workspace asks for an ecosystem Stackurity does not
-// check yet (migration 0089). One per workspace and ecosystem; instance
+// check yet (migration 0090). One per workspace and ecosystem; instance
 // administrators see them counted on the coverage-gap report.
 
 // ErrNotUnsupported: the ecosystem is not one the workspace has components
