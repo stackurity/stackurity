@@ -11,6 +11,7 @@ import {
   type FixGroupSummary,
   type IgnoreRequest,
   type Incident,
+  type LeakList,
   type List,
   type Onboarding,
   type Overview,
@@ -403,8 +404,40 @@ function CoverageBlock({ o, unchecked, assets }: { o: Overview; unchecked: Retur
 /**
  * 5. Secrets and credentials (admins): connections failing, API tokens
  * expiring or unused, stored secrets not changed for a year. Only what
- * Stackurity was given; secrets left in code or on servers are not looked for.
+ * Stackurity was given, and keys found written in files (Leaked keys).
  */
+/** Keys found written in files: those that need action, and where the rest are kept. */
+function LeakLine() {
+  const action = useLoad(() => api.get<LeakList>("/leaks", { status: "open", severity: "critical,high", limit: 1 }), []);
+  const kept = useLoad(() => api.get<LeakList>("/leaks", { status: "open", severity: "medium,low", limit: 1 }), []);
+  if (!action.data || !kept.data) return null;
+  const n = action.data.total;
+  const k = kept.data.total;
+  if (n === 0) {
+    return (
+      <p className="small">
+        <span className="text-good">
+          <IconCheckCircle size={14} /> No leaked keys need action
+        </span>
+        {k > 0 && (
+          <span className="muted">
+            {" "}
+            (<Link to="/fixes/leaks">{plural(k, "key")}</Link> kept in configuration files)
+          </span>
+        )}
+      </p>
+    );
+  }
+  return (
+    <p className="dash-coverage-line">
+      <Link to="/fixes/leaks" className="text-bad">
+        {plural(n, "leaked key")}
+      </Link>{" "}
+      <span className="small muted">need action (revoke and replace them)</span>
+    </p>
+  );
+}
+
 function CredentialsBlock() {
   const res = useLoad(() => api.get<CredentialHealth>("/credentials/health"), []);
   const h = res.data;
@@ -473,7 +506,7 @@ function CredentialsBlock() {
           ))}
         </ul>
       )}
-      <p className="small muted">Secrets left in code, container images or on servers are not looked for yet.</p>
+      <LeakLine />
     </Block>
   );
 }

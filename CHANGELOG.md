@@ -13,6 +13,11 @@ Each release's section is published as its GitHub release notes, and a tag witho
 ### Changed
 
 - **Pages people use every day moved out of Settings into the sidebar.** The sidebar is now Dashboard, Fixes, Assets, Activity, **Reports**, **Integrations**, **People**, Settings and, for instance administrators, **Admin**; an item is shown only when your role can open something in it (members with access to some projects only see neither People nor Settings). **Assets** gains **Projects** (`/projects`) and, for admins while there are some, **Identity conflicts** (`/assets/conflicts`). **Activity** keeps Incidents, Checks and Approvals; Outcomes, the evidence report and the audit log are under **Reports**. **Integrations** (`/integrations`) holds everything Stackurity connects to, the **Delivery log** (`/integrations/deliveries`), Secrets, API tokens, AI assistants, Plugins and **Data sources** (formerly Intelligence); the scheduled sources page (Git repositories, images, plugins) is now `/integrations/sources`. **People** (`/people`) holds Users, Teams and Owner rules, and **Admin** the installation pages (Workspaces, Platform health, Coverage gaps, Stack packs, Licence, What's new). Settings keeps the switches: risk policy, fix grouping, VEX, automatic fix policies, plan and usage, billing, single sign-on and jobs. Every old address redirects to the new page with its query and hash (`/settings/projects`, `/settings/users`, `/settings/teams`, `/settings/owners`, `/settings/integrations` and its sub-pages, `/settings/notifications`, `/settings/secrets`, `/settings/tokens`, `/settings/ai-assistants`, `/settings/plugins`, `/settings/conflicts`), so links in older emails, Slack and Jira keep working; new notification emails link to the new addresses.
+- **The Dashboard counts leaked keys.** The Secrets and credentials block said secrets in code or on servers were not looked for; it now shows how many leaked keys need action, linking to **Leaked keys**.
+
+### Fixed
+
+- **Checks on a wide screen listed every check twice**, as a table and again as the phone cards below it.
 
 ### Upgrading
 
