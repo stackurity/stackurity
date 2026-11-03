@@ -267,7 +267,15 @@ func (s *Server) instanceAdminMFA(ctx context.Context, p *Principal) (mfaNeed, [
 	if p.User == nil || !p.User.InstanceAdmin || (p.Session && p.ssoSession()) {
 		return mfaOK, nil, "", nil
 	}
+	// A session is decided as everywhere else, from every factor the
+	// account has: a passkey marked as possibly copied still means it must
+	// confirm (step-up), not set up a new factor. A token is decided from
+	// the factors that can sign in: a marked passkey is not one that
+	// counts, so it carries no powers on its strength.
 	methods, err := s.Store.MFAMethods(ctx, p.User.ID)
+	if !p.Session {
+		methods, err = s.Store.UsableMFAMethods(ctx, p.User.ID)
+	}
 	if err != nil {
 		return mfaOK, nil, "", err
 	}
@@ -374,7 +382,8 @@ func mfaAlwaysAllows(r *http.Request, path string) bool {
 // mfaRemovalBlocked names a workspace of userID whose policy their
 // remaining factors would no longer meet ("" when none would): removing a
 // factor never goes below what an organisation requires. An admin's reset
-// is the way out for a lost device.
+// is the way out for a lost device. remaining leaves out passkeys marked
+// as possibly copied (store.MFAFloor): they sign in no more.
 func (s *Server) mfaRemovalBlocked(r *http.Request, u *store.User, remaining []string) (string, error) {
 	cases, err := s.mfaCasesEverywhere(r.Context(), u, "", remaining)
 	if err != nil {
@@ -565,13 +574,15 @@ func (s *Server) putSecuritySettings(w http.ResponseWriter, r *http.Request) {
 	}
 	// Self-lockout guard: the admin saving the policy must meet it with the
 	// session they are using (an API token: with their account's factors).
+	// A passkey marked as possibly copied signs in no more, so it is not
+	// one they could meet it with.
 	if p.User != nil {
 		access, err := s.Store.UserAccess(r.Context(), p.Workspace, p.User.ID)
 		if err != nil {
 			s.fail(w, r, err)
 			return
 		}
-		methods, err := s.Store.MFAMethods(r.Context(), p.User.ID)
+		methods, err := s.Store.UsableMFAMethods(r.Context(), p.User.ID)
 		if err != nil {
 			s.fail(w, r, err)
 			return

@@ -1264,7 +1264,23 @@ func adminCmd() *cobra.Command {
 	emailSuppress.Flags().StringVar(&suppressCategory, "category", "all", "marketing, vulnerability_news or all")
 	_ = emailSuppress.MarkFlagRequired("email")
 
-	c.AddCommand(createUser, createToken, loadDemo, createWorkspace, listWorkspaces, renameWorkspace, setLicence, verifyAudit, emailSuppress)
+	var resetEmail string
+	resetMFACmd := &cobra.Command{
+		Use:   "reset-mfa",
+		Short: "Remove an account's second factors and end its sessions (an operator's way in for a locked-out sole admin); audited in each of its workspaces",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			st, err := openStore(cmd.Context())
+			if err != nil {
+				return err
+			}
+			defer st.Pool.Close()
+			return resetMFA(cmd.Context(), st, resetEmail, cmd.OutOrStdout())
+		},
+	}
+	resetMFACmd.Flags().StringVar(&resetEmail, "email", "", "the account's email address (required)")
+	_ = resetMFACmd.MarkFlagRequired("email")
+
+	c.AddCommand(createUser, createToken, loadDemo, createWorkspace, listWorkspaces, renameWorkspace, setLicence, verifyAudit, emailSuppress, resetMFACmd)
 	for _, f := range editionAdminCommands {
 		c.AddCommand(f())
 	}

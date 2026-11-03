@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -22,14 +23,31 @@ import (
 // issued with the first of them and deleted with the last.
 
 // mfaMethodsSQL lists the second factors of the account u.id, strongest
-// first.
+// first. A passkey marked as possibly copied (clone_warning_at) is listed:
+// the account has it, and the decision whether a session must confirm with
+// a factor (step-up) reads this list, so marking a passkey never turns a
+// step-up into an enrolment that a phished password and app code could
+// use to register a new passkey.
 const mfaMethodsSQL = `ARRAY(SELECT x.m FROM (VALUES
 	  ('passkey', EXISTS (SELECT 1 FROM webauthn_credentials c WHERE c.user_id = u.id)),
 	  ('totp', EXISTS (SELECT 1 FROM user_mfa m WHERE m.user_id = u.id AND m.enabled_at IS NOT NULL)),
 	  ('email', EXISTS (SELECT 1 FROM user_email_mfa e WHERE e.user_id = u.id AND e.enabled_at IS NOT NULL))) x(m, on_)
 	WHERE x.on_)`
 
-// strongFactorSQL is true when the account $1 has a passkey or TOTP.
+// usableMFAMethodsSQL is mfaMethodsSQL without the passkeys marked as
+// possibly copied, which sign in no more: the factors that can meet a
+// policy. The floors read it (a removal may not leave only a marked
+// passkey, nor may a policy be saved on the strength of one), and so does
+// the check that lets an instance admin's API token use the role's powers.
+const usableMFAMethodsSQL = `ARRAY(SELECT x.m FROM (VALUES
+	  ('passkey', EXISTS (SELECT 1 FROM webauthn_credentials c WHERE c.user_id = u.id AND c.clone_warning_at IS NULL)),
+	  ('totp', EXISTS (SELECT 1 FROM user_mfa m WHERE m.user_id = u.id AND m.enabled_at IS NOT NULL)),
+	  ('email', EXISTS (SELECT 1 FROM user_email_mfa e WHERE e.user_id = u.id AND e.enabled_at IS NOT NULL))) x(m, on_)
+	WHERE x.on_)`
+
+// strongFactorSQL is true when the account $1 has a passkey or TOTP. A
+// marked passkey counts here: it keeps the recovery codes that back it up
+// (the way back for its owner) and keeps email codes off.
 const strongFactorSQL = `(EXISTS (SELECT 1 FROM webauthn_credentials c WHERE c.user_id = $1)
 	OR EXISTS (SELECT 1 FROM user_mfa m WHERE m.user_id = $1 AND m.enabled_at IS NOT NULL))`
 
@@ -80,6 +98,14 @@ func (s *Store) MFAStatus(ctx context.Context, userID int64) (MFAState, error) {
 func (s *Store) MFAMethods(ctx context.Context, userID int64) ([]string, error) {
 	var ms []string
 	err := s.Pool.QueryRow(ctx, `SELECT `+mfaMethodsSQL+` FROM users u WHERE u.id = $1`, userID).Scan(&ms)
+	return ms, notFound(err)
+}
+
+// UsableMFAMethods lists userID's second factors that can sign in: those
+// of MFAMethods without a passkey marked as possibly copied.
+func (s *Store) UsableMFAMethods(ctx context.Context, userID int64) ([]string, error) {
+	var ms []string
+	err := s.Pool.QueryRow(ctx, `SELECT `+usableMFAMethodsSQL+` FROM users u WHERE u.id = $1`, userID).Scan(&ms)
 	return ms, notFound(err)
 }
 
@@ -216,13 +242,15 @@ func (s *Store) UseRecoveryCode(ctx context.Context, userID int64, hash []byte) 
 // removals at once cannot both pass it.
 type MFAFloor func(remaining []string) error
 
-// checkFloor calls floor (nil: none) with userID's factors as tx sees them.
+// checkFloor calls floor (nil: none) with userID's factors as tx sees them,
+// leaving out passkeys marked as possibly copied: they sign in no more, so
+// they cannot be what keeps a policy met.
 func checkFloor(ctx context.Context, tx pgx.Tx, userID int64, floor MFAFloor) error {
 	if floor == nil {
 		return nil
 	}
 	var ms []string
-	if err := tx.QueryRow(ctx, `SELECT `+mfaMethodsSQL+` FROM users u WHERE u.id = $1`, userID).Scan(&ms); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT `+usableMFAMethodsSQL+` FROM users u WHERE u.id = $1`, userID).Scan(&ms); err != nil {
 		return err
 	}
 	return floor(ms)
@@ -426,4 +454,52 @@ func (s *Store) ResetMemberMFA(ctx context.Context, id int64, instanceAdmin bool
 		return err
 	})
 	return email, removed, err
+}
+
+// AccountMFAReset is what ResetAccountMFA did.
+type AccountMFAReset struct {
+	UserID        int64
+	Email         string
+	Removed       []string // the methods that were on (passkey, totp, email)
+	SessionsEnded int64
+	// Workspaces lists every workspace the account belongs to (disabled
+	// ones too), for the audit log.
+	Workspaces []int64
+}
+
+// ResetAccountMFA removes every second factor of the account with email
+// (passkeys, the app, email codes, recovery codes, sign-ins in progress)
+// and ends its sessions, whatever its workspaces' policies. It is the
+// operator's way out when no admin can reset it in the dashboard
+// (stackurity admin reset-mfa): a single admin whose only passkey is lost
+// or marked as possibly copied, where only passkeys count for admins. It is
+// ErrNotFound for no such account and ErrConflict when it has no second
+// factor.
+func (s *Store) ResetAccountMFA(ctx context.Context, email string) (AccountMFAReset, error) {
+	ctx = tenant.System(ctx)
+	var out AccountMFAReset
+	err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
+		err := tx.QueryRow(ctx, `SELECT id, email FROM users WHERE email = lower($1)`, strings.TrimSpace(email)).Scan(&out.UserID, &out.Email)
+		if err != nil {
+			return notFound(err)
+		}
+		if out.Removed, err = removeAllFactors(ctx, tx, out.UserID); err != nil {
+			return err
+		}
+		if len(out.Removed) == 0 {
+			return fmt.Errorf("%s has no two-factor sign-in: %w", out.Email, ErrConflict)
+		}
+		tag, err := tx.Exec(ctx, `DELETE FROM sessions WHERE user_id = $1`, out.UserID)
+		if err != nil {
+			return err
+		}
+		out.SessionsEnded = tag.RowsAffected()
+		rows, err := tx.Query(ctx, `SELECT workspace_id FROM workspace_members WHERE user_id = $1 ORDER BY workspace_id`, out.UserID)
+		if err != nil {
+			return err
+		}
+		out.Workspaces, err = pgx.CollectRows(rows, pgx.RowTo[int64])
+		return err
+	})
+	return out, err
 }
