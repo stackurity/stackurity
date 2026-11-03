@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/stackurity/stackurity/internal/collect/leaks"
 	"github.com/stackurity/stackurity/internal/collect/limits"
 	"github.com/stackurity/stackurity/internal/collect/lockfile"
 	"github.com/stackurity/stackurity/internal/model"
@@ -79,10 +80,13 @@ type Scanner struct {
 	// CAFile, when set, is the only certificate bundle git trusts (tests
 	// serve repositories over HTTPS with their own certificate).
 	CAFile string
+	// NoLeaks turns off the scan for keys and passwords in the clone.
+	NoLeaks bool
 }
 
-// Scan clones the repository at depth 1, scans lockfiles and removes the
-// clone. token may be empty for public repositories.
+// Scan clones the repository at depth 1, scans lockfiles and keys written
+// in its files, and removes the clone. token may be empty for public
+// repositories.
 func (s *Scanner) Scan(ctx context.Context, cfg Config, token string) (*model.ObservationBatch, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -145,6 +149,16 @@ func (s *Scanner) Scan(ctx context.Context, cfg Config, token string) (*model.Ob
 		return nil, err
 	}
 	b.Collector.Method = "repository"
+	if !s.NoLeaks {
+		// Keys and passwords committed to the default branch. A fresh
+		// clone holds only tracked files; each keeps its severity.
+		res := leaks.Dir(ctx, src, leaks.Options{})
+		b.Leaks = &model.LeakScan{Found: []model.Leak{}, Complete: res.Complete, Reason: res.Reason}
+		for _, l := range res.Leaks {
+			leaks.Grade(&l, "", false)
+			b.Leaks.Found = append(b.Leaks.Found, l)
+		}
+	}
 	return b, nil
 }
 

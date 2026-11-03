@@ -78,7 +78,14 @@ function SystemDetail({ inc }: { inc: Incident }) {
             again.
           </>
         )}
-        {inc.kind !== "feed" && assetId && (
+        {inc.kind === "leak" && assetId && (
+          <>
+            {typeof d.why === "string" && <>{d.why} </>}
+            See the asset's <Link to={`/assets/${assetId}?tab=leaks`}>leaked keys</Link>. Rotate each key: revoke it and issue a new one.
+            This incident resolves itself once a complete scan no longer finds critical or high leaks on the asset, or they are dismissed.
+          </>
+        )}
+        {inc.kind !== "feed" && inc.kind !== "leak" && assetId && (
           <>
             See the <Link to={`/assets/${assetId}?tab=${inc.kind === "coverage" ? "coverage" : "collections"}`}>asset</Link>. This
             incident resolves itself once collection is healthy again.
