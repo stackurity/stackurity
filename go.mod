@@ -33,6 +33,7 @@ require (
 	golang.org/x/net v0.62.0
 	golang.org/x/oauth2 v0.37.0
 	golang.org/x/sys v0.49.0
+	howett.net/plist v1.0.1
 	rsc.io/qr v0.2.0
 )
 

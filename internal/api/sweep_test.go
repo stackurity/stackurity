@@ -60,6 +60,7 @@ var routeRules = map[string]routeRule{
 	"GET /healthz":                   {class: "public"},
 	"GET /readyz":                    {class: "public"},
 	"GET /install/agent.sh":          {class: "public"},
+	"GET /install/agent-macos.sh":    {class: "public"},
 	"GET /install/agent.ps1":         {class: "public"},
 	"GET /install/kubernetes.yaml":   {class: "public"},
 	"GET /download/agent/{platform}": {class: "public"},

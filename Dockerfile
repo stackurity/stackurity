@@ -36,6 +36,11 @@ RUN --mount=type=bind,from=pro,target=/pro set -e; FLAGS=""; \
       CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build $FLAGS -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
         -o /out/agents/stackurity-linux-$arch ./cmd/stackurity; \
       (cd /out/agents && sha256sum stackurity-linux-$arch > stackurity-linux-$arch.sha256); \
+      # And for Macs (agent-macos.sh): no cgo, so it cross-compiles; the
+      # linker signs the arm64 build ad hoc, as macOS requires.
+      CGO_ENABLED=0 GOOS=darwin GOARCH=$arch go build $FLAGS -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
+        -o /out/agents/stackurity-darwin-$arch ./cmd/stackurity; \
+      (cd /out/agents && sha256sum stackurity-darwin-$arch > stackurity-darwin-$arch.sha256); \
     done; \
     # And for Windows hosts (agent.ps1). The host collector is the registry
     # reader in internal/collect/windows.

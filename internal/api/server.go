@@ -205,6 +205,7 @@ func (s *Server) Handler() http.Handler {
 	r.Get("/.well-known/openai-apps-challenge", s.openAIAppsChallenge)
 
 	r.Get("/install/agent.sh", s.installScript)
+	r.Get("/install/agent-macos.sh", s.installScriptMacOS)
 	r.Get("/install/agent.ps1", s.installPowerShell)
 	r.Get("/install/kubernetes.yaml", s.installKubernetes)
 	// The CloudFormation template for connecting AWS (handlers_aws.go).

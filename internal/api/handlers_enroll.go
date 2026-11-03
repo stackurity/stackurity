@@ -381,7 +381,7 @@ func validPort(p string) bool {
 	return err == nil && len(p) <= 5 && strings.Trim(p, "0123456789") == "" && n >= 1 && n <= 65535
 }
 
-var agentPlatform = regexp.MustCompile(`^(linux-(amd64|arm64)|windows-amd64)(\.sha256)?$`)
+var agentPlatform = regexp.MustCompile(`^((linux|darwin)-(amd64|arm64)|windows-amd64)(\.sha256)?$`)
 
 // downloadAgent serves the agent binaries bundled with the server.
 func (s *Server) downloadAgent(w http.ResponseWriter, r *http.Request) {

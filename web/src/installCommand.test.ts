@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { linuxCommand, windowsCommand } from "./installCommand.ts";
+import { linuxCommand, macCommand, windowsCommand } from "./installCommand.ts";
 
 const https = { origin: "https://stk.example.com", protocol: "https:", hostname: "stk.example.com" };
 const plain = { origin: "http://stk.internal:8080", protocol: "http:", hostname: "stk.internal" };
@@ -28,4 +28,12 @@ test("Windows command: TLS 1.2, the code in a single-quoted string, irm piped to
   // A local port (an SSH tunnel) needs no override, as for Linux.
   assert.equal(windowsCommand("enr_abc", tunnel).insecure, false);
   assert.doesNotMatch(windowsCommand("enr_abc", tunnel).command, /ALLOW_HTTP/);
+});
+
+test("macOS command: the LaunchDaemon installer, no Docker option", () => {
+  assert.deepEqual(macCommand("enr_abc", https), {
+    command: "curl -fsSL https://stk.example.com/install/agent-macos.sh | sudo STACKURITY_ENROLL_CODE=enr_abc sh",
+    insecure: false,
+  });
+  assert.equal(macCommand("enr_abc", plain).insecure, true);
 });

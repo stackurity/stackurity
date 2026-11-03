@@ -632,9 +632,16 @@ var GlobalDirs = []string{
 
 // ScanGlobal inventories host-wide libraries that no OS package owns.
 func (s *Scanner) ScanGlobal() ([]model.Observation, []model.CoverageItem) {
+	return s.ScanGlobalDirs(GlobalDirs)
+}
+
+// ScanGlobalDirs is ScanGlobal for another platform's directories (glob
+// patterns): a path ending in node_modules is read as npm's, any other as
+// Python's site-packages.
+func (s *Scanner) ScanGlobalDirs(patterns []string) ([]model.Observation, []model.CoverageItem) {
 	var obs []model.Observation
 	var cov []model.CoverageItem
-	for _, pattern := range GlobalDirs {
+	for _, pattern := range patterns {
 		dirs, _ := filepath.Glob(s.path(pattern))
 		sort.Strings(dirs)
 		for _, full := range dirs {

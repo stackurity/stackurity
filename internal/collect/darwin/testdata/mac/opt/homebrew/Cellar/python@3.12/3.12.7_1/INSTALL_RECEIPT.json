@@ -1,0 +1,12 @@
+{
+  "homebrew_version": "4.4.0",
+  "installed_on_request": false,
+  "installed_as_dependency": true,
+  "source": {
+    "tap": "homebrew/core",
+    "spec": "stable",
+    "versions": {
+      "stable": "3.12.7"
+    }
+  }
+}

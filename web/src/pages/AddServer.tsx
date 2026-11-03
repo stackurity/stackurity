@@ -7,7 +7,7 @@ import { Table, type Column } from "../components/Table";
 import { Card, Code, CodeBlock, EmptyState, ErrorBox, KeyValues, Loading, Notice, PageHeader, RelativeTime, Tabs } from "../components/ui";
 import { confirmAction } from "../components/ConfirmDialog";
 import { DigitalOceanPanel, FleetPanel } from "./AddServerFleet";
-import { linuxCommand, windowsCommand } from "../installCommand";
+import { linuxCommand, macCommand, windowsCommand } from "../installCommand";
 
 type Mode = "one" | "fleet" | "digitalocean";
 
@@ -25,7 +25,12 @@ export function windowsInstallCommand(code: string): { command: string; insecure
   return windowsCommand(code, window.location);
 }
 
-export type ServerOS = "linux" | "windows";
+/** The one-line installer for a Mac (installCommand.ts). */
+export function macInstallCommand(code: string): { command: string; insecure: boolean } {
+  return macCommand(code, window.location);
+}
+
+export type ServerOS = "linux" | "windows" | "macos";
 
 /** The install command for one code, with a tab for each operating system. */
 export function InstallCommandTabs({
@@ -41,7 +46,7 @@ export function InstallCommandTabs({
   idPrefix: string;
   docker?: boolean;
 }) {
-  const { command } = os === "windows" ? windowsInstallCommand(code) : installCommand(code, docker);
+  const { command } = os === "windows" ? windowsInstallCommand(code) : os === "macos" ? macInstallCommand(code) : installCommand(code, docker);
   return (
     <div className="install-command">
       <Tabs<ServerOS>
@@ -52,11 +57,12 @@ export function InstallCommandTabs({
         tabs={[
           { id: "linux", label: "Linux" },
           { id: "windows", label: "Windows" },
+          { id: "macos", label: "macOS" },
         ]}
       />
       <div role="tabpanel" id={`${idPrefix}panel-${os}`} aria-labelledby={`${idPrefix}tab-${os}`} className="tabpanel">
         {os === "windows" && <p className="small">In PowerShell opened with <strong>Run as administrator</strong>:</p>}
-        <CodeBlock text={command} label={os === "windows" ? "Install command for Windows (PowerShell)" : "Install command for Linux"} />
+        <CodeBlock text={command} label={os === "windows" ? "Install command for Windows (PowerShell)" : os === "macos" ? "Install command for macOS" : "Install command for Linux"} />
       </div>
     </div>
   );
@@ -110,7 +116,7 @@ export function AddServerPage() {
       <PageHeader
         help="add-server"
         title="Add server"
-        sub="Create an install command, then run it on the new Linux or Windows server. It installs the read-only agent and enrolls the server."
+        sub="Create an install command, then run it on the new Linux or Windows server, or a Mac. It installs the read-only agent and enrolls the server."
       />
       <Tabs
         label="How many servers"
@@ -278,6 +284,29 @@ function InstallCommand({ created, onDone }: { created: EnrollmentCreated; onDon
               </ul>
             </div>
           </div>
+        ) : os === "macos" ? (
+          <div className="grid-2 tight">
+            <div>
+              <h3>What the command does</h3>
+              <ul className="banner-list small">
+                <li>Downloads the agent from this server (Apple silicon or Intel) and checks its checksum.</li>
+                <li>Creates a hidden, unprivileged <Code>_stackurity</Code> account and enrolls the Mac with this code.</li>
+                <li>Installs a LaunchDaemon that runs as that account and reports every 6 hours. Running it again upgrades the agent.</li>
+                <li>
+                  The agent only reads: the macOS version, applications, Homebrew packages and runtimes. Users&apos; home folders are
+                  private, so their own applications are reported as not checked.
+                </li>
+              </ul>
+            </div>
+            <div>
+              <h3>Requirements</h3>
+              <ul className="banner-list small">
+                <li>macOS 10.15 or later</li>
+                <li>An administrator account (sudo)</li>
+                <li>Outbound HTTPS from the Mac to this dashboard</li>
+              </ul>
+            </div>
+          </div>
         ) : (
           <div className="grid-2 tight">
             <div>
@@ -308,7 +337,7 @@ function InstallCommand({ created, onDone }: { created: EnrollmentCreated; onDon
           appear as their own assets linked to it.
         </p>
         <p className="small muted">
-          Other ways: manual installs, and removing the agent, are described in the documentation (docs/install.md).
+          Other ways: MDM for Macs, manual installs, and removing the agent, are described in the documentation (docs/install.md).
         </p>
         <div className="form-actions">
           <button type="button" className="btn" onClick={onDone}>

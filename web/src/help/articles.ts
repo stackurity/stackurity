@@ -223,7 +223,7 @@ export const ARTICLES: Article[] = [
     id: "add-server",
     title: "Add a server",
     section: "Adding servers and sources",
-    summary: "Create a one-time install command in the dashboard and run it on the new Linux or Windows server. Admins only.",
+    summary: "Create a one-time install command in the dashboard and run it on the new Linux or Windows server or Mac. Admins only.",
     where: ["Assets", "Add server"],
     keywords: "add server new server install command enroll enrollment code curl sudo agent linux systemd windows powershell service onboarding",
     body: [
@@ -272,7 +272,7 @@ export const ARTICLES: Article[] = [
           "The server appears under **Assets** within a minute; applications appear as their own assets linked to it.",
           "Unused codes are listed under **Pending install codes** on the same page until they expire or are used up. **Revoke** one you no longer need; servers that already enrolled keep reporting.",
           "For many servers at once (cloud-init, Ansible, Terraform, an SSH loop or DigitalOcean), see [Add many servers](help:add-many-servers).",
-          "To install by hand, see [Add a Linux server manually](help:add-linux-server), [Add a Windows server](help:windows-hosts) and docs/install.md.",
+          "For a Mac, see [Add a Mac](help:macos-hosts). To install by hand, see [Add a Linux server manually](help:add-linux-server), [Add a Windows server](help:windows-hosts) and docs/install.md.",
         ],
       },
     ],
@@ -508,6 +508,52 @@ $env:STACKURITY_ENVIRONMENT = "production"
 stackurity.exe agent --interval 6h`,
         label: "PowerShell",
       },
+    ],
+  },
+  {
+    id: "macos-hosts",
+    title: "Add a Mac",
+    section: "Adding servers and sources",
+    summary: "Developer laptops and macOS build servers: a LaunchDaemon that reads the macOS version, applications, Homebrew and runtimes.",
+    where: ["Assets", "Add server"],
+    keywords: "mac macos macbook laptop apple homebrew brew launchd launchdaemon mdm jamf kandji intune applications",
+    body: [
+      {
+        steps: [
+          "Open [Assets](/assets), click **Add server** and create an install command as for a Linux server.",
+          "Choose the **macOS** tab and copy the command.",
+          "Run it in Terminal on the Mac, as an administrator (it asks for your password through sudo).",
+          "Check the Mac appears under **Assets** with its macOS version.",
+        ],
+      },
+      { code: "curl -fsSL https://stackurity.example.com/install/agent-macos.sh | sudo STACKURITY_ENROLL_CODE=… sh", label: "Install command" },
+      { h: "What it does" },
+      {
+        list: [
+          "Downloads the agent from your Stackurity server (Apple silicon or Intel) and verifies its checksum.",
+          "Creates a hidden `_stackurity` account with no password, shell or home, and enrolls the Mac with the code.",
+          "Installs a LaunchDaemon (`com.stackurity.agent`) that runs as that account, in the background, and reports every 6 hours. Running the command again upgrades the agent.",
+          "It only reads, and needs no Full Disk Access.",
+        ],
+      },
+      { h: "What you will see" },
+      {
+        list: [
+          "**macOS**: end of life (from endoflife.date). Apple's security updates are not checked, and the row says so.",
+          "**Applications** in /Applications: listed with their versions, inventory only. No vulnerabilities are matched for Mac applications yet.",
+          "**Homebrew** formulae and casks: inventory only, except runtimes such as Node.js, Python or PostgreSQL, which get end-of-life findings.",
+          "**Runtimes and JDKs** (python.org, nvm, pyenv, rbenv, asdf, Temurin, Corretto and others): end of life.",
+          "**Global npm and pip packages**: vulnerabilities, as on Linux.",
+          "Users' home folders are private to their owners, so the agent cannot read `~/Applications` or version managers there: each home folder is shown as not checked, never as clean.",
+        ],
+      },
+      { h: "Many Macs (MDM)" },
+      {
+        p: "Create a code that can enroll as many Macs as you manage (up to 500) and is valid for longer, then run the installer from an MDM policy script (Jamf, Kandji, Intune, Mosyle); those scripts run as root. A Mac already enrolled only upgrades. A signed installer package is not available yet. See docs/install.md for the script.",
+      },
+      { h: "Remove it" },
+      { code: "curl -fsSL https://stackurity.example.com/install/agent-macos.sh | sudo STACKURITY_UNINSTALL=1 sh", label: "Uninstall" },
+      { p: "Then delete the Mac under **Assets** and revoke its token under **Settings ▸ API tokens** if you no longer want its history." },
     ],
   },
   {

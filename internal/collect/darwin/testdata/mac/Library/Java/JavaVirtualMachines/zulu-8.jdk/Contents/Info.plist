@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>com.azul.zulu.8.jdk</string>
+	<key>JavaVM</key>
+	<dict>
+		<key>JVMVendor</key>
+		<string>Azul Systems, Inc.</string>
+		<key>JVMVersion</key>
+		<string>1.8.0_432</string>
+	</dict>
+</dict>
+</plist>
