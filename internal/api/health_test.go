@@ -3,6 +3,8 @@ package api_test
 import (
 	"bytes"
 	"context"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -110,12 +112,24 @@ func TestHTTPMetricsUseRoutePatterns(t *testing.T) {
 	var b bytes.Buffer
 	e.api.HTTPMetrics.Write(metrics.NewWriter(&b))
 	out := b.String()
-	if !strings.Contains(out, `stackurity_http_requests_total{method="GET",route="/api/v1/assets/{id}",code="4xx"} 2`) {
+	lines := strings.Split(out, "\n")
+	if !slices.Contains(lines, `stackurity_http_requests_total{method="GET",route="/api/v1/assets/{id}",code="4xx"} 2`) {
 		t.Errorf("asset requests not grouped by pattern:\n%s", out)
 	}
-	for _, raw := range []string{"12345", "67890", "no/such", "dashboard"} {
-		if strings.Contains(out, raw) {
-			t.Errorf("raw path %q became a label:\n%s", raw, out)
+	// Only label values are checked: the raw IDs can turn up as digits of a
+	// timing sum (0.0123456), which is not a label.
+	label := regexp.MustCompile(`(\w+)="([^"]*)"`)
+	for _, line := range lines {
+		open, end := strings.IndexByte(line, '{'), strings.LastIndexByte(line, '}')
+		if strings.HasPrefix(line, "#") || open < 0 || end < open {
+			continue
+		}
+		for _, m := range label.FindAllStringSubmatch(line[open+1:end], -1) {
+			for _, raw := range []string{"12345", "67890", "no/such", "dashboard"} {
+				if strings.Contains(m[2], raw) {
+					t.Errorf("raw path %q became a label (%s=%q):\n%s", raw, m[1], m[2], out)
+				}
+			}
 		}
 	}
 }
