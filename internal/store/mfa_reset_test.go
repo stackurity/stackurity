@@ -239,3 +239,47 @@ func TestResetAccountMFAKeepsTheAuditChain(t *testing.T) {
 		t.Errorf("chained user.mfa_reset events in workspace 1: %d %v", n, err)
 	}
 }
+
+// With the sessions of migration 0094 (a public ID, the browser, a session
+// renamed by SessionOpts.Replaces), the reset still ends every session of
+// the account, and one renamed after it is not brought back.
+func TestResetAccountMFAEndsEverySession(t *testing.T) {
+	s := store.New(testdb.New(t))
+	bg := context.Background()
+	u, err := s.CreateUser(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "ann@x.io", "", auth.RoleAdmin, "correct horse battery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.AddPasskey(bg, u.ID, store.NewPasskey{CredentialID: []byte("cred-1"), Name: "Key", Record: []byte(`{}`)}, nil); err != nil {
+		t.Fatal(err)
+	}
+	withDevice := store.WithSessionClient(bg, store.SessionClient{UserAgent: "Mozilla/5.0 (Macintosh)", IP: "203.0.113.9"})
+	first, err := s.CreateSessionWith(withDevice, u.ID, tenant.DefaultWorkspace, store.SessionOpts{Login: store.LoginPassword})
+	if err != nil {
+		t.Fatal(err)
+	}
+	renamed, err := s.CreateSessionWith(bg, u.ID, tenant.DefaultWorkspace, store.SessionOpts{Login: store.LoginPassword, Replaces: first})
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := s.CreateSessionWith(withDevice, u.ID, tenant.DefaultWorkspace, store.SessionOpts{Login: store.LoginPassword})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := s.ResetAccountMFA(bg, "ann@x.io", cli, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.SessionsEnded != 2 {
+		t.Errorf("sessions ended: %d, want 2 (the renamed one and the other)", r.SessionsEnded)
+	}
+	var left int
+	if err := s.Pool.QueryRow(bg, `SELECT count(*) FROM sessions WHERE user_id = $1`, u.ID).Scan(&left); err != nil || left != 0 {
+		t.Errorf("sessions left: %d %v", left, err)
+	}
+	for name, secret := range map[string]string{"renamed": renamed, "other": other} {
+		if _, err := s.CreateSessionWith(bg, u.ID, tenant.DefaultWorkspace, store.SessionOpts{Login: store.LoginPassword, Replaces: secret}); !errors.Is(err, store.ErrSessionEnded) {
+			t.Errorf("a new ID for the %s session after the reset: %v, want ErrSessionEnded", name, err)
+		}
+	}
+}

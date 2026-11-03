@@ -475,7 +475,7 @@ export function DeliveryLogPage() {
     <>
       <PageHeader help="notifications" title="Delivery log" sub="Every message Stackurity sent, held or could not deliver, newest first." />
       <ErrorBox error={channels.error} title="Could not load notification integrations" />
-      <DeliveriesTab channels={channels.data?.items ?? []} admin={can("admin")} />
+      <DeliveriesTab channels={channels.data?.items ?? []} channelsLoaded={Boolean(channels.data)} admin={can("admin")} />
     </>
   );
 }

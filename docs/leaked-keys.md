@@ -94,7 +94,7 @@ The fix for a leaked key is always to rotate it: revoke it and issue a new one. 
 
 People with the security role (on the asset, with a project grant) can dismiss a leak: a test key kept on purpose, or one already rotated. Add a note saying which. A dismissed leak stays dismissed whatever later scans see, and can be opened again. Dismissing and opening again are recorded in the activity log.
 
-A leak a complete scan no longer sees is resolved as gone, and opens again if a later scan sees it. A scan that could not read everything (the scan's limits, unreadable files) resolves nothing; the asset's **Leaked keys** tab says the scan was incomplete and why. An asset never scanned for keys says so, rather than showing no leaks.
+A leak a complete scan no longer sees is resolved as gone, and opens again if a later scan sees it. A scan that could not read everything (the scan's limits, unreadable files) resolves nothing; the asset's **Leaked keys** tab says the scan was incomplete and why. An asset never scanned for keys says so, rather than showing no leaks. So does the **Leaked keys** page when no asset you can see has been scanned yet.
 
 ## API and MCP
 

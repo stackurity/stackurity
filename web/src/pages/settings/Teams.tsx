@@ -6,6 +6,7 @@ import { api, type Asset, type InvitationGrant, type List, type Project, type Te
 import { useAction, useLoad } from "../../hooks";
 import { Table, type Column } from "../../components/Table";
 import { Card, EmptyState, ErrorBox, Loading, PageHeader } from "../../components/ui";
+import { teamsEmpty } from "../../emptyCopy";
 import { confirmAction } from "../../components/ConfirmDialog";
 import { AccessPicker } from "../../components/AccessPicker";
 import { PERMISSIONS, SPECIFIC_ROLES, accessLines, permissionLabel } from "../../roles";
@@ -133,7 +134,7 @@ export function TeamsPage() {
       <ErrorBox error={teams.error} title="Could not load teams" />
       {!teams.data && !teams.error && <Loading />}
       {teams.data && teams.data.items.length === 0 && editing !== "new" && (
-        <EmptyState title="No teams yet">
+        <EmptyState {...teamsEmpty(!atFreeLimit)} action={atFreeLimit ? undefined : { label: "Add team", permitted: true, onClick: () => setEditing("new") }}>
           <p>Create a team, give it access to projects or assets, and set it as the owner of assets so their alerts go to it.</p>
         </EmptyState>
       )}

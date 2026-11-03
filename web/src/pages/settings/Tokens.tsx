@@ -5,6 +5,7 @@ import { useAction, useLoad } from "../../hooks";
 import { Badge } from "../../components/Badge";
 import { Table, type Column } from "../../components/Table";
 import { Card, Code, CopyBox, EmptyState, ErrorBox, Loading, PageHeader, RelativeTime } from "../../components/ui";
+import { tokensEmpty } from "../../emptyCopy";
 import { confirmAction } from "../../components/ConfirmDialog";
 
 function tokenState(t: Token): string {
@@ -117,7 +118,7 @@ export function TokensPage() {
       </div>
       <ErrorBox error={res.error} title="Could not load tokens" />
       {!res.data && !res.error && <Loading />}
-      {res.data && rows.length === 0 && <EmptyState title="No tokens" />}
+      {res.data && rows.length === 0 && <EmptyState {...tokensEmpty(res.data.items.length > 0, Boolean(me?.user && me.token === null))} />}
       {rows.length > 0 && <Table caption="API tokens" columns={columns} rows={rows} rowKey={(t) => t.id} rowClassName={(t) => (t.revoked_at ? "row-removed" : undefined)} />}
     </>
   );

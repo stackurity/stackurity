@@ -18,6 +18,7 @@ import { useAction, useLoad, useUnsavedChanges, type Loaded } from "../../hooks"
 import { Badge } from "../../components/Badge";
 import { Table, type Column } from "../../components/Table";
 import { Card, Code, EmptyState, ErrorBox, Loading, Notice, Pager, RelativeTime, SaveBar } from "../../components/ui";
+import { deliveriesEmpty } from "../../emptyCopy";
 import { ProNotice } from "../../components/ProNotice";
 import { AddToSlackButton, ConnectPagerDutyButton, parseAddresses, SmtpProviderPicker, StackurityEmailFields } from "../../components/NotifyChoices";
 import { AddToTeams } from "../../components/AddToTeams";
@@ -1074,7 +1075,7 @@ export function heldReason(d: Delivery): string {
   return "";
 }
 
-export function DeliveriesTab({ channels, admin }: { channels: Channel[]; admin: boolean }) {
+export function DeliveriesTab({ channels, channelsLoaded = true, admin }: { channels: Channel[]; channelsLoaded?: boolean; admin: boolean }) {
   const [status, setStatus] = useState("");
   const [channel, setChannel] = useState("");
   const [offset, setOffset] = useState(0);
@@ -1179,7 +1180,9 @@ export function DeliveriesTab({ channels, admin }: { channels: Channel[]; admin:
       <ErrorBox error={act.error} title="Retry failed" />
       <ErrorBox error={res.error} title="Could not load deliveries" />
       {!res.data && !res.error && <Loading />}
-      {res.data && res.data.items.length === 0 && <EmptyState title="No deliveries" />}
+      {res.data && res.data.items.length === 0 && (
+        <EmptyState {...deliveriesEmpty(channelsLoaded ? channels.length : undefined, Boolean(status || channel), admin)} />
+      )}
       {res.data && res.data.items.length > 0 && (
         <>
           <Table

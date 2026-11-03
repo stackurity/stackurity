@@ -4,6 +4,7 @@ import { useLoad } from "../../hooks";
 import { Badge } from "../../components/Badge";
 import { Table, type Column } from "../../components/Table";
 import { EmptyState, ErrorBox, Loading, PageHeader, RelativeTime } from "../../components/ui";
+import { jobsEmpty } from "../../emptyCopy";
 
 function jobState(j: Job): string {
   if (j.failed_at) return "failed";
@@ -50,7 +51,7 @@ export function JobsPage() {
       </div>
       <ErrorBox error={res.error} title="Could not load jobs" />
       {!res.data && !res.error && <Loading />}
-      {res.data && res.data.items.length === 0 && <EmptyState title="No jobs" />}
+      {res.data && res.data.items.length === 0 && <EmptyState {...jobsEmpty(Boolean(state))} />}
       {res.data && res.data.items.length > 0 && <Table caption="Jobs" columns={columns} rows={res.data.items} rowKey={(j) => j.id} />}
     </>
   );

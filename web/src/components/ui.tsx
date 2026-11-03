@@ -6,6 +6,7 @@ import type { JobState } from "../hooks";
 import type { Tone } from "./Badge";
 import { absTime, relTime } from "../format";
 import { errorView } from "../errors";
+import type { EmptyActionCopy } from "../emptyCopy";
 
 export function RelativeTime({ iso, empty = "never" }: { iso: string | null | undefined; empty?: string }) {
   // Re-render every minute so "x min ago" stays honest on an open page.
@@ -57,14 +58,62 @@ export function Notice({ kind = "info", children }: { kind?: "info" | "warn" | "
   );
 }
 
-export function EmptyState({ title, children, help, helpLabel }: { title: string; children?: ReactNode; help?: string; helpLabel?: string }) {
+export interface EmptyAction extends EmptyActionCopy {
+  /** A button on this page (opens a form) instead of a link. */
+  onClick?: () => void;
+}
+
+/**
+ * An empty list: why it is empty (`why`, or children), the one action that
+ * fills it, and what appears then (`after`). The action is a button only
+ * when the person may use it; otherwise its `otherwise` line says who can.
+ * The copy for each page is in emptyCopy.ts.
+ */
+export function EmptyState({
+  title,
+  why,
+  after,
+  action,
+  children,
+  help,
+  helpLabel,
+}: {
+  title: string;
+  why?: ReactNode;
+  after?: ReactNode;
+  action?: EmptyAction;
+  children?: ReactNode;
+  help?: string;
+  helpLabel?: string;
+}) {
+  const otherwise = action && !action.permitted ? action.otherwise : undefined;
   return (
     <div className="empty">
       <span className="empty-icon" aria-hidden="true">
         <IconInbox size={24} />
       </span>
       <p className="empty-title">{title}</p>
-      {children && <div className="empty-body">{children}</div>}
+      {(why || children || after || otherwise) && (
+        <div className="empty-body">
+          {why && <p>{why}</p>}
+          {children}
+          {after && <p>{after}</p>}
+          {otherwise && <p>{otherwise}</p>}
+        </div>
+      )}
+      {action?.permitted && (
+        <p className="empty-action">
+          {action.to ? (
+            <Link className="btn btn-primary" to={action.to}>
+              {action.label}
+            </Link>
+          ) : (
+            <button type="button" className="btn btn-primary" onClick={action.onClick}>
+              {action.label}
+            </button>
+          )}
+        </p>
+      )}
       {help && (
         <p className="empty-help">
           <Link to={`/help/${help}`}>{helpLabel ?? "How this works"}</Link>

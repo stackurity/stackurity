@@ -5,6 +5,7 @@ import { useAction, useLoad } from "../../hooks";
 import { Badge } from "../../components/Badge";
 import { Table, type Column } from "../../components/Table";
 import { Card, Code, CodeBlock, EmptyState, ErrorBox, KeyValues, Loading, Notice, PageHeader, RelativeTime } from "../../components/ui";
+import { awsEmpty } from "../../emptyCopy";
 import { confirmAction } from "../../components/ConfirmDialog";
 
 /*
@@ -165,9 +166,7 @@ export function AwsPage() {
         <>
           <h2 className="section-title">Connected accounts</h2>
           {items.length === 0 ? (
-            <EmptyState title="No AWS accounts yet">
-              <p>Accounts appear here once you launch a stack.</p>
-            </EmptyState>
+            <EmptyState {...awsEmpty(setup.enabled)} />
           ) : (
             items.map((c) => (
               <ConnectionCard
