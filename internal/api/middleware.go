@@ -44,7 +44,7 @@ type Principal struct {
 	Assistant *store.AssistantGrant
 	// Login is how a browser session was signed in (store.LoginPassword,
 	// LoginPasskey, LoginInvite, LoginSignup, LoginSSO; "" for a session
-	// from before migration 0091).
+	// from before migration 0086).
 	Login string
 	// MFAMethod is the second factor the session was signed in with ("" for
 	// none), and MFACredential the passkey it used (0: none).
