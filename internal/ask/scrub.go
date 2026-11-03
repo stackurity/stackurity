@@ -48,7 +48,13 @@ var personKeys = map[string]bool{
 var secretREs = []*regexp.Regexp{
 	regexp.MustCompile(`-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?(-----END [A-Z0-9 ]*PRIVATE KEY-----|$)`),
 	regexp.MustCompile(`\b(gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|glpat-[A-Za-z0-9_-]{20,}|xox[abeprs]-[A-Za-z0-9-]{10,}|sk-ant-[A-Za-z0-9_-]{16,}|sk-[A-Za-z0-9_-]{32,}|(AKIA|ASIA)[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35})`),
+	// Stackurity's own secrets (auth.NewToken: kind, "_", lower-case base32).
+	regexp.MustCompile(`\b(stk[a-z]{0,3}|sess|inv|mfa|pwr|enr|slk)_[a-z2-7]{20,}`),
 }
+
+// secretValueRE is a value given to a key that names a credential
+// ("password=...", "api_key: ..."): the value goes, the key stays.
+var secretValueRE = regexp.MustCompile(`(?i)\b(password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key)(\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s,;"']+)`)
 
 // urlUserinfoRE is a URL's user:password@ part.
 var urlUserinfoRE = regexp.MustCompile(`([A-Za-z][A-Za-z0-9+.-]*://)[^/\s:@]*:[^/\s@]*@`)
@@ -61,7 +67,7 @@ func redactSecrets(s string) string {
 	for _, re := range secretREs {
 		s = re.ReplaceAllString(s, secretRemoved)
 	}
-	return s
+	return secretValueRE.ReplaceAllString(s, "${1}${2}"+secretRemoved)
 }
 
 var emailRE = regexp.MustCompile(`[A-Za-z0-9._%+'-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}`)

@@ -132,8 +132,16 @@ func (s *Server) askFeedback(w http.ResponseWriter, r *http.Request) {
 	if s.limited(w, r, "too much feedback; try again later", limitHit{"ask-feedback", strconv.FormatInt(p.User.ID, 10), limitAskFeedback}) {
 		return
 	}
+	// The person's own words are redacted like a snapshot: credentials
+	// and email addresses never reach the reviewers.
 	fi := store.AskFeedbackInput{UserID: p.User.ID, ConversationID: convID, Seq: in.Seq, Rating: in.Rating, Category: in.Category,
-		Scope: in.Scope, Text: ask.CleanText(in.Text), Consent: in.Consent, PagePath: cleanPagePath(in.PagePath), Viewport: cleanViewport(in.Viewport)}
+		Scope: in.Scope, Text: ask.SnapshotText(in.Text), Consent: in.Consent, PagePath: cleanPagePath(in.PagePath), Viewport: cleanViewport(in.Viewport)}
+	// While Ask is off for the organisation (turned off, or its consent is
+	// to an older wording), no conversation text leaves it as a snapshot:
+	// the feedback keeps only what the person chose and wrote.
+	if l, err := s.askLimits(r.Context()); err != nil || !l.Enabled {
+		fi.Consent = false
+	}
 	if convID == 0 && fi.Scope != "ui" {
 		s.fail(w, r, badRequest("feedback without a conversation is about the panel itself (scope ui)"))
 		return
@@ -146,7 +154,7 @@ func (s *Server) askFeedback(w http.ResponseWriter, r *http.Request) {
 		// feedback takes the answer's own version).
 		fi.PromptVersion = ask.PromptVersion
 	}
-	if in.Consent && convID > 0 {
+	if fi.Consent && convID > 0 {
 		msgs, err := s.Store.AskMessages(r.Context(), p.User.ID, convID)
 		if err != nil {
 			s.fail(w, r, err)

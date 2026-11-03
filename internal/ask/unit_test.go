@@ -262,3 +262,18 @@ func TestSummaryWrapperCannotBeClosed(t *testing.T) {
 		t.Errorf("wrapper tags = %d, want 2 (one opening, one closing): %s", n, m)
 	}
 }
+
+// Stackurity's own tokens and key=value credentials are removed too
+// (security review: a pasted API token reached a feedback snapshot).
+func TestOwnTokensAndKeyValuesRedacted(t *testing.T) {
+	in := "my token stka_abcdefghijklmnopqrstuvwxyz234567 fails; also password=hunter2hunter and api_key: \"k-123456\" and sess_qrstuvwxyzabcdefghij2345"
+	out := SnapshotText(in)
+	for _, leaked := range []string{"abcdefghijklmnop", "hunter2", "k-123456", "qrstuvwxyzabc"} {
+		if strings.Contains(out, leaked) {
+			t.Errorf("%q kept: %s", leaked, out)
+		}
+	}
+	if !strings.Contains(out, "password=(secret removed)") || !strings.Contains(out, "my token") {
+		t.Errorf("redacted too much or too little: %s", out)
+	}
+}

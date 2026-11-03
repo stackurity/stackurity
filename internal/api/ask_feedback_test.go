@@ -13,6 +13,7 @@ import (
 	"github.com/stackurity/stackurity/internal/ask/asktest"
 	"github.com/stackurity/stackurity/internal/auth"
 	"github.com/stackurity/stackurity/internal/store"
+	"github.com/stackurity/stackurity/internal/tenant"
 )
 
 type feedbackList struct {
@@ -205,5 +206,39 @@ func TestAskFeedbackReviewToken(t *testing.T) {
 	}
 	if code, _ := get("/api/v1/admin/ask/feedback"); code != 401 {
 		t.Errorf("revoked token: %d", code)
+	}
+}
+
+// While Ask is off for the organisation, feedback keeps only what the
+// person chose and wrote: no conversation snapshot, even with the box
+// ticked; the person's own words are redacted like a snapshot.
+func TestAskFeedbackWhileOff(t *testing.T) {
+	fake := asktest.New(t, asktest.Reply{Text: "web-1 runs openssl 3.0.2."})
+	e := newEnvWith(t, withAsk(t, fake, nil))
+	e.user("admin@x.io", auth.RoleAdmin)
+	admin := e.login("admin@x.io")
+	conv := askReady(t, e, admin)
+	if _, evs, raw := askQ(t, admin, conv, "Which hosts run openssl?", nil, nil); lastEvent(evs).Name != "done" {
+		t.Fatalf("ask: %s", raw)
+	}
+	if code := admin.do("PUT", "/api/v1/ask/settings", map[string]bool{"enabled": false}, nil); code != 200 {
+		t.Fatal("turn off")
+	}
+	in := map[string]any{"seq": 2, "rating": "down", "category": "wrong", "consent": true,
+		"text": "my token stka_abcdefghijklmnopqrstuvwxyz234567 and password=hunter2hunter"}
+	var created map[string]any
+	if code := admin.do("POST", fmt.Sprintf("/api/v1/ask/conversations/%d/feedback", conv), in, &created); code != 201 || created["consent"] != false {
+		t.Fatalf("feedback while off: %d %v", code, created)
+	}
+	var snap *string
+	var text string
+	if err := e.st.Pool.QueryRow(tenant.System(context.Background()), `SELECT snapshot::text, text FROM ask_feedback ORDER BY id DESC LIMIT 1`).Scan(&snap, &text); err != nil {
+		t.Fatal(err)
+	}
+	if snap != nil {
+		t.Errorf("snapshot stored while Ask was off: %s", *snap)
+	}
+	if strings.Contains(text, "abcdefghijklmnop") || strings.Contains(text, "hunter2") {
+		t.Errorf("credentials kept in the feedback text: %s", text)
 	}
 }

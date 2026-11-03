@@ -76,7 +76,7 @@ func (p *Principal) Actor(r *http.Request) store.Actor {
 	case p == nil:
 		a.Type = "anonymous"
 	case p.FeedbackReviewer != nil:
-		a.Type, a.ID, a.Name = "token", p.FeedbackReviewer.ID, "feedback review: "+p.FeedbackReviewer.Name+" ("+p.FeedbackReviewer.Prefix+")"
+		a.Type, a.ID, a.Name = "review_token", p.FeedbackReviewer.ID, "feedback review: "+p.FeedbackReviewer.Name+" ("+p.FeedbackReviewer.Prefix+")"
 	case p.Assistant != nil:
 		a.Type, a.ID, a.Name = "assistant", p.Assistant.ID, p.User.Email+" (assistant "+p.Assistant.ClientName+")"
 	case p.Ask:
