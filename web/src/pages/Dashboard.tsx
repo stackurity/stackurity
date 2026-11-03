@@ -169,7 +169,7 @@ function UnfiledAssets() {
         {n === 1 ? "it" : "them"}.
       </span>
       <Link to="/assets?unfiled=true&project=0">Show {n === 1 ? "it" : "them"}</Link>
-      {can("admin") && <Link to="/settings/projects">File them in projects</Link>}
+      {can("admin") && <Link to="/projects">File them in projects</Link>}
     </div>
   );
 }
@@ -416,7 +416,7 @@ function CredentialsBlock() {
       g: h.failing,
       text: `${plural(h.failing.total, "connection")} failing`,
       hint: "often an expired, revoked or replaced key",
-      to: "/settings/integrations",
+      to: "/integrations",
       tone: "text-bad",
     },
     {
@@ -424,7 +424,7 @@ function CredentialsBlock() {
       g: h.expiring,
       text: `${plural(h.expiring.total, "API token")} expiring or recently expired`,
       hint: "replace before anything stops reporting",
-      to: "/settings/tokens",
+      to: "/integrations/tokens",
       tone: "text-warn-strong",
     },
     {
@@ -432,14 +432,14 @@ function CredentialsBlock() {
       g: h.unused,
       text: `${plural(h.unused.total, "API token")} not used for ${h.unused_days} days`,
       hint: h.unused.total === 1 ? "revoke it if nothing needs it" : "revoke what nothing needs",
-      to: "/settings/tokens",
+      to: "/integrations/tokens",
     },
     {
       key: "old",
       g: h.old,
       text: `${plural(h.old.total, "stored secret")} not changed for over a year`,
       hint: h.old.total === 1 ? "rotate it" : "rotate them",
-      to: "/settings/secrets",
+      to: "/integrations/secrets",
     },
   ].filter((x) => x.g.total > 0);
   return (
@@ -448,7 +448,7 @@ function CredentialsBlock() {
       icon={<IconKey />}
       title="Secrets and credentials"
       badge={groups.length > 0 ? plural(groups.reduce((n, x) => n + x.g.total, 0), "thing") : undefined}
-      link={{ to: "/settings/secrets", label: "Secrets" }}
+      link={{ to: "/integrations/secrets", label: "Secrets" }}
     >
       {groups.length === 0 ? (
         <p className="small">

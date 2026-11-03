@@ -18,11 +18,11 @@ const DOCS_BASE = "https://github.com/stackurity/stackurity/blob/main/";
 
 /** Where to look in the dashboard for each kind of problem. */
 const KIND_PAGE: Partial<Record<HealthProblem["kind"], [string, string]>> = {
-  feed: ["/intelligence", "Intelligence"],
-  intelligence: ["/intelligence", "Intelligence"],
+  feed: ["/intelligence", "Data sources"],
+  intelligence: ["/intelligence", "Data sources"],
   jobs: ["/settings/jobs", "Background jobs"],
-  integration: ["/integrations", "Integrations"],
-  notification: ["/settings/integrations", "Integrations"],
+  integration: ["/integrations/sources", "Integrations, Sources"],
+  notification: ["/integrations", "Integrations"],
   collector: ["/assets?status=stale", "Assets"],
   coverage: ["/coverage", "Coverage"],
 };

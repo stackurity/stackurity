@@ -24,7 +24,7 @@ export const ARTICLES: Article[] = [
           "**Add something to check.** **A Linux server**: one install command, first results in about 2 minutes. **A code repository**: a token for your CI and a GitHub Actions step (or the `stackurity scan` command), first results on the next CI run. **Upload an SBOM**: a CycloneDX or SPDX file, first results in under a minute. Whatever you add here lands in the project.",
           "**Wait for it to report.** The page shows what has arrived, how many packages, and when the check is done.",
           "**Read the first result.** For example \"We found 1,676 packages on commmerceblog. 3 fixes matter now.\", with links to them.",
-          "**Turn on notifications.** Slack (**Add to Slack**, or a webhook) or email. Choose what to send right away (urgent issues, all new issues, or nothing) and a daily or weekly summary (or none). They cover this project only; fine-tune them later in [Settings, Integrations](/settings/integrations).",
+          "**Turn on notifications.** Slack (**Add to Slack**, or a webhook) or email. Choose what to send right away (urgent issues, all new issues, or nothing) and a daily or weekly summary (or none). They cover this project only; fine-tune them later in [Integrations](/integrations).",
           "**Invite people.** By email: they see this project with the permission you choose (or more, if you add it). They get a link that works once, for 7 days.",
         ],
       },
@@ -35,12 +35,12 @@ export const ARTICLES: Article[] = [
       { h: "Invitations" },
       {
         list: [
-          "With an email channel under **Settings ▸ Notifications**, the link is emailed through that mail server. Without one, the link is shown once for you to copy and send.",
-          "An invitation says what they will see, like **Add user**: all projects and assets with one permission, or specific projects and assets, each with its own. A project's **Invite** starts with that project; **Settings ▸ Users ▸ Invite by email** starts with nothing chosen.",
+          "With an email channel under **Integrations**, the link is emailed through that mail server. Without one, the link is shown once for you to copy and send.",
+          "An invitation says what they will see, like **Add user**: all projects and assets with one permission, or specific projects and assets, each with its own. A project's **Invite** starts with that project; **People ▸ Users ▸ Invite by email** starts with nothing chosen.",
           "Someone new creates their account from the link and sees what the invitation gives. Someone with an account signs in first, as the invited email address. Someone already in your organisation gets the access at once, without a link.",
           "Accepting never changes a role someone already has in your organisation, and keeps a higher role they already had on a project or asset.",
           "What it gives is checked again when they accept: a project archived, or an asset deleted or merged, since you sent it is skipped, and the page tells them. If nothing is left, the link does not work until you send a new invitation.",
-          "Inviting someone again replaces their open invitation. **Settings ▸ Users** lists every invitation, and a project's page the ones that include it; either can withdraw one that was not used yet.",
+          "Inviting someone again replaces their open invitation. **People ▸ Users** lists every invitation, and a project's page the ones that include it; either can withdraw one that was not used yet.",
         ],
       },
       { note: "Running the server yourself? See the install guide (docs/install.md) for the first start, the setup token and backups." },
@@ -55,7 +55,7 @@ export const ARTICLES: Article[] = [
     title: "Connect an AI assistant",
     section: "Getting started",
     summary: "Ask Claude, ChatGPT, Cursor, VS Code, Windsurf, Gemini CLI or Replit what is installed, what is vulnerable and what to upgrade.",
-    where: ["Settings", "AI assistants"],
+    where: ["Integrations", "AI assistants"],
     keywords: "ai assistant claude chatgpt cursor vs code copilot claude code windsurf gemini cli replit mcp connector model context protocol oauth connected assistants allow changes",
     body: [
       {
@@ -63,7 +63,7 @@ export const ARTICLES: Article[] = [
       },
       {
         steps: [
-          "Open [Settings ▸ AI assistants](/settings/ai-assistants) and copy the address shown there.",
+          "Open [Integrations ▸ AI assistants](/integrations/ai-assistants) and copy the address shown there.",
           "Click your assistant's card and follow its steps. Cursor, VS Code and Replit have an install button; the others take the address as a custom connector or MCP server.",
           "Sign in to Stackurity when the assistant asks. Choose the organisation and what it can see. Tick **Allow changes** only if it should make changes for you. Click **Allow**.",
         ],
@@ -103,12 +103,16 @@ export const ARTICLES: Article[] = [
           ["Place", "What it holds"],
           ["Dashboard", "The landing page after you sign in, in four blocks: **Needs you now** (open SOS incidents, issues overdue or due today, approvals waiting, assets that stopped reporting; one button each), **Top fixes**, **Risk at a glance** (open issues by priority, known exploited, end of life, came back after a fix, a 30-day trend and fix-by dates) and **Coverage health**. Every number opens the list it counts."],
           ["Fixes", "Every fix, one card per change, most urgent first. **All issues** lists each finding with filters; **Automatic fixes** shows the upgrades Stackurity applies for you (Pro)."],
-          ["Assets", "Servers, repositories, images and cloud services, with their **Components** and **Coverage**."],
-          ["Activity", "Incidents, checks (Check again and their results), approvals, remediation outcomes, the evidence report and the audit log."],
-          ["Settings", "Integrations, risk policy, automatic fix policies, intelligence feeds, notifications, people, tokens and administration."],
+          ["Assets", "Servers, repositories, images and cloud services, with their **Components**, **Coverage** and **Projects** (admins), and **Identity conflicts** when there are some."],
+          ["Activity", "Incidents, checks (Check again and their results) and approvals."],
+          ["Reports", "Remediation outcomes, the evidence report and the audit log."],
+          ["Integrations", "Everything Stackurity connects to, the delivery log, secrets, API tokens, AI assistants, plugins and data sources (the vulnerability feeds)."],
+          ["People", "Users, teams and owner rules (admins)."],
+          ["Settings", "Risk policy, fix grouping, VEX, automatic fix policies, plan and usage, single sign-on and jobs."],
+          ["Admin", "For instance administrators: workspaces, platform health, coverage gaps, stack packs, the licence and what's new."],
         ],
       },
-      { p: "On a phone the menu is a bar at the bottom: Dashboard, Fixes, Assets and **More** (Activity, Settings, Help and feedback). Your workspace is at the top left, search in the middle, and your account menu (email, role, help, feedback, log out) at the top right." },
+      { p: "Each place shows only what your role can open: People needs the admin role, Admin is for instance administrators. On a phone the menu is a bar at the bottom: Dashboard, Fixes, Assets and **More** (the other places, Help and feedback). Your workspace is at the top left, search in the middle, and your account menu (email, role, help, feedback, log out) at the top right." },
       {
         note: "Stackurity runs on your own server and sends no telemetry. The only outbound calls are to the vulnerability feeds, your Git hosts and registries, the notification channels you configure, and [feedback](help:feedback) when you send it.",
       },
@@ -275,7 +279,7 @@ export const ARTICLES: Article[] = [
       {
         list: [
           "**Fleet codes** on the same page lists each code with how many servers it has enrolled. **Show servers** lists which hosts used it, from which address and when.",
-          "**Revoke** stops a code at once. Servers that already enrolled keep reporting; revoke their tokens under **Settings → API tokens** if needed (the list shows each token's prefix).",
+          "**Revoke** stops a code at once. Servers that already enrolled keep reporting; revoke their tokens under **Integrations → API tokens** if needed (the list shows each token's prefix).",
           "Up to 60 servers enroll per minute with one code. Servers over the limit wait and try again on their own.",
         ],
       },
@@ -301,7 +305,7 @@ export const ARTICLES: Article[] = [
     title: "Add a Linux server manually",
     section: "Adding servers and sources",
     summary: "Create a collector token, install the agent binary, run it as a systemd service. Repeat for each server.",
-    where: ["Settings", "API tokens"],
+    where: ["Integrations", "API tokens"],
     keywords: "add server second server more servers agent install host token systemd collector manual",
     body: [
       { note: "Most servers are easier to add with a one-time install command: see [Add a server](help:add-server). Use these steps when you can't run the installer." },
@@ -311,7 +315,7 @@ export const ARTICLES: Article[] = [
       { h: "1. Create a collector token (once)" },
       {
         steps: [
-          "Go to **Settings ▸ API tokens**.",
+          "Go to **Integrations ▸ API tokens**.",
           "Under **Create token**, enter a name such as `servers`, choose role **collector (submit observations only)**, and leave the expiry empty (or set hours).",
           "Click **Create token** and copy the token (it starts with `stk_`). It is shown only once.",
           "You can use one collector token for all servers, or one per server so you can revoke them separately. Only admins can create collector tokens.",
@@ -458,7 +462,7 @@ stackurity.exe agent --interval 6h`,
     title: "Add a repository (Git integration or CI scan)",
     section: "Adding servers and sources",
     summary: "Read lockfiles from a repository, either by letting the server clone it or by scanning in CI.",
-    where: ["Settings", "Integrations"],
+    where: ["Integrations"],
     keywords: "git github gitlab lockfile npm composer repository ci",
     body: [
       { note: "On GitLab, where your server offers it, [Connect GitLab](help:gitlab) covers a whole group in one step: no token or CI step." },
@@ -466,7 +470,7 @@ stackurity.exe agent --interval 6h`,
       { h: "Option A: the server clones it on a schedule" },
       {
         steps: [
-          "Go to **Settings ▸ Integrations** and click **Add integration ▸ Git repository** (admin).",
+          "Go to **Integrations** and click **Add integration ▸ Git repository** (admin).",
           "Enter the HTTPS URL. For a private repository, create a read-only access token at your Git host, put it in the server's environment as `STACKURITY_SECRET_GITHUB` (any name starting with `STACKURITY_SECRET_`), and enter the secret reference `env:STACKURITY_SECRET_GITHUB`. GitHub needs username `x-access-token`, GitLab `oauth2`, Bitbucket `x-token-auth`.",
           "Optionally set a branch or tag, the environment, and how often to run (15 minutes to a week; default 6 hours).",
           "Click **Create integration**, then **Run now** to scan straight away. The status shows the last attempt and any error.",
@@ -496,13 +500,13 @@ stackurity.exe agent --interval 6h`,
     title: "Connect GitLab (a group's projects in one step)",
     section: "Adding servers and sources",
     summary: "Scan every project of a GitLab group, subgroups included: authorise on GitLab, pick the group, no token to paste.",
-    where: ["Settings", "Integrations", "Git repository"],
+    where: ["Integrations", "Git repository"],
     keywords: "gitlab group project subgroup oauth access token webhook push self-managed private repository",
     body: [
       { p: "Where your Stackurity server offers Connect GitLab (Stackurity Cloud does), you don't need to create a token or add a CI step to scan your GitLab projects." },
       {
         steps: [
-          "Go to **Settings ▸ Integrations** and, on the **Git repository** card, click **Connect GitLab** (admins).",
+          "Go to **Integrations** and, on the **Git repository** card, click **Connect GitLab** (admins).",
           "GitLab asks you to authorise Stackurity. It asks for the **api** scope once, to set things up; Stackurity revokes that token before the page answers.",
           "Back in Stackurity, pick a group you are a member of and click **Connect this group**. Each project appears under **Active integrations**, and the first results arrive within minutes.",
         ],
@@ -518,7 +522,7 @@ stackurity.exe agent --interval 6h`,
       { h: "When projects are scanned" },
       {
         list: [
-          "Right after you connect, then every 6 hours (change it per project under **Settings ▸ Integrations**).",
+          "Right after you connect, then every 6 hours (change it per project under **Integrations**).",
           "With a group webhook (Owner role, GitLab Premium or Ultimate): when a push to the default branch changes a lockfile or manifest. Without one, the connection says *scanned on the schedule only*.",
           "New projects in the group are added, and removed ones have their issues closed as removed (the asset and its history stay), daily and when the webhook reports a change.",
         ],
@@ -526,7 +530,7 @@ stackurity.exe agent --interval 6h`,
       { h: "Change or remove it" },
       {
         list: [
-          "**Switch one project off**: open it under **Settings ▸ Integrations** and switch it off.",
+          "**Switch one project off**: open it under **Integrations** and switch it off.",
           "**Disconnect**: GitLab asks you to authorise once more, then Stackurity deletes its webhook and access token there and stops scanning. The history is kept.",
           "**Remove here only**: stops scanning and revokes Stackurity's credential without visiting GitLab; a group Owner deletes the webhook later.",
           "The group access token expires after a year: the connection warns 30 days before. Connect again to renew it.",
@@ -543,7 +547,7 @@ stackurity.exe agent --interval 6h`,
     title: "Scan in CI without a stored secret (GitHub Actions, GitLab)",
     section: "Adding servers and sources",
     summary: "Trust a repository once; its pipelines prove who they are with the CI provider's ID token instead of a stored collector token.",
-    where: ["Settings", "Integrations", "CI pipeline"],
+    where: ["Integrations", "CI pipeline"],
     keywords: "oidc openid connect id token keyless secretless github actions gitlab id_tokens id-token write trust ci token STACKURITY_ID_TOKEN",
     body: [
       {
@@ -552,7 +556,7 @@ stackurity.exe agent --interval 6h`,
       { h: "1. Trust the repository (admin)" },
       {
         steps: [
-          "Go to **Settings ▸ Integrations**, open **CI pipeline** and click **Trust a repository**.",
+          "Go to **Integrations**, open **CI pipeline** and click **Trust a repository**.",
           "Choose GitHub Actions or GitLab CI (for a self-managed GitLab, enter its https URL).",
           "Enter the repository (`acme/shop`, or a GitLab project path such as `acme/backend/shop`). To trust every repository of an owner or group, tick **Every repository of this owner**; nothing else matches more than one repository.",
           "Optionally limit it to a branch (only scans of `main`, so a branch that may never merge cannot replace the inventory), a deployment environment or one workflow file, and choose the project new repositories go to.",
@@ -597,13 +601,13 @@ stackurity.exe agent --interval 6h`,
     title: "Install on GitHub (the Stackurity GitHub App)",
     section: "Adding servers and sources",
     summary: "Cover your GitHub repositories in one click: pick them on GitHub, no token to create or renew.",
-    where: ["Settings", "Integrations", "Git repository"],
+    where: ["Integrations", "Git repository"],
     keywords: "github app install repositories token organisation private repository webhook push",
     body: [
       { p: "Where your Stackurity server has the GitHub App (Stackurity Cloud does), you don't need a token or a CI step to scan your GitHub repositories." },
       {
         steps: [
-          "Go to **Settings ▸ Integrations** and, on the **Git repository** card, click **Install on GitHub** (admins).",
+          "Go to **Integrations** and, on the **Git repository** card, click **Install on GitHub** (admins).",
           "On GitHub, pick the account or organisation, then **All repositories** or **Only select repositories**, and click **Install**. Installing on an organisation needs an owner of it; a member can only request it.",
           "GitHub brings you back to Stackurity. Each repository appears under **Active integrations**, and the first results arrive within minutes.",
         ],
@@ -619,7 +623,7 @@ stackurity.exe agent --interval 6h`,
       { h: "When repositories are scanned" },
       {
         list: [
-          "Right after you install, then every 6 hours (change it per repository under **Settings ▸ Integrations**).",
+          "Right after you install, then every 6 hours (change it per repository under **Integrations**).",
           "When a push to the default branch changes a lockfile or manifest (`package-lock.json`, `go.mod`, `composer.json` and the like). Pushes to other branches, or that change only other files, don't trigger a scan.",
           "Repositories you add or remove on GitHub are followed. A removed repository's issues are closed as removed; the asset and its history stay.",
         ],
@@ -628,7 +632,7 @@ stackurity.exe agent --interval 6h`,
       {
         list: [
           "**Add or remove repositories**: on GitHub (the link on the Git repository card), under the installation's repository access.",
-          "**Switch one repository off**: open it under **Settings ▸ Integrations** and switch it off.",
+          "**Switch one repository off**: open it under **Integrations** and switch it off.",
           "**Disconnect**: stops scanning, keeps the history, and uninstalls the app from that GitHub account.",
           "Suspending or uninstalling the app on GitHub switches its repositories off here, with a note.",
         ],
@@ -712,12 +716,12 @@ stackurity.exe agent --interval 6h`,
     title: "Scan a container image",
     section: "Adding servers and sources",
     summary: "The server reads an image straight from its registry with the bundled Syft; nothing in the image runs.",
-    where: ["Settings", "Integrations"],
+    where: ["Integrations"],
     keywords: "docker image registry ghcr syft",
     body: [
       {
         steps: [
-          "Go to **Settings ▸ Integrations ▸ Add integration ▸ Container image** (admin).",
+          "Go to **Integrations ▸ Add integration ▸ Container image** (admin).",
           "Enter the image reference, e.g. `ghcr.io/acme/shop:1.4`. Pin a digest (`@sha256:…`) to inventory exactly what you deploy; a tag is re-resolved on every run.",
           "Optionally set the platform (`linux/amd64`) for multi-architecture images, and the environment.",
           "For a private registry, set a secret reference to the token or password (with **Registry username** when the secret is a password).",
@@ -732,12 +736,12 @@ stackurity.exe agent --interval 6h`,
     title: "Connect a container registry",
     section: "Adding servers and sources",
     summary: "Scan the recent tags of every repository in GitHub Container Registry, Docker Hub, Amazon ECR or your own registry, and pick up new ones on a schedule.",
-    where: ["Settings", "Integrations"],
+    where: ["Integrations"],
     keywords: "registry ghcr docker hub ecr harbor gitlab quay oci repositories tags latest semver",
     body: [
       {
         steps: [
-          "Go to **Settings ▸ Integrations ▸ Container image / registry ▸ Connect a registry** (admin).",
+          "Go to **Integrations ▸ Container image / registry ▸ Connect a registry** (admin).",
           "Choose the registry: **GitHub Container Registry** (the organisation or user), **Docker Hub** (the namespace and user name), **Amazon ECR** (the region; the keys, or an existing AWS integration) or **Other registry** (its https address).",
           "Paste a read-only token or password; it is stored as a workspace secret and never shown again. Or name an existing secret (`secret:NAME`).",
           "Click **List repositories**, then tick the ones to scan, or keep **All repositories** with patterns to leave some out (`*-sandbox`).",
@@ -761,12 +765,12 @@ stackurity.exe agent --interval 6h`,
     title: "Connect AWS",
     section: "Adding servers and sources",
     summary: "Connect an AWS account with one CloudFormation stack: RDS, Aurora, ElastiCache, EKS, Lambda and OpenSearch versions, and optionally the agent on EC2 through SSM.",
-    where: ["Settings", "Integrations", "AWS"],
+    where: ["Integrations", "AWS"],
     keywords: "aws amazon cloudformation launch stack quick create iam role external id rds aurora lambda eks elasticache opensearch plugin managed service ssm ec2 run command agent install",
     body: [
       {
         steps: [
-          "Go to **Settings ▸ Integrations** and open **AWS**.",
+          "Go to **Integrations** and open **AWS**.",
           "Choose the regions to read and the region for the stack. Tick **Allow installing the agent through SSM** if you want to add EC2 instances from Stackurity too.",
           "Click **Launch Stack in AWS**. The AWS console opens with everything filled in. Tick the box that acknowledges the stack creates an IAM role, and click **Create stack**.",
           "Wait about a minute. The page shows the account as connected when the stack reports its role, and the first collection runs.",
@@ -793,7 +797,7 @@ stackurity.exe agent --interval 6h`,
       { p: "Remove the connection on the AWS page, then delete the stack in the AWS console. Stackurity cannot delete it for you." },
       { h: "Your own role or keys" },
       {
-        p: "The plugin also runs as a **Plugin** integration with a role you made (role ARN and external ID) or keys stored as a secret: **Settings ▸ Integrations ▸ Add integration ▸ Plugin**, then **AWS managed services**. Its permissions are under **Settings ▸ Plugins**.",
+        p: "The plugin also runs as a **Plugin** integration with a role you made (role ARN and external ID) or keys stored as a secret: **Integrations ▸ Add integration ▸ Plugin**, then **AWS managed services**. Its permissions are under **Integrations ▸ Plugins**.",
       },
       { p: "Each service appears as a *managed service* asset; end-of-life dates come from endoflife.date. Vulnerabilities inside AWS-managed engines are patched by AWS and are listed as evaluation gaps, not as clean." },
       { note: "Running Stackurity yourself? Connecting with a stack needs `STACKURITY_AWS_PRINCIPAL_ARN` and AWS credentials on the server; see the install guide (docs/install.md, \"AWS managed services\")." },
@@ -849,12 +853,12 @@ stackurity.exe agent --interval 6h`,
     title: "Kubernetes clusters",
     section: "Adding servers and sources",
     summary: "Connect a cluster with one command: a read-only reporter in the cluster sends its workloads, the images they run, their exposure and the cluster and node versions.",
-    where: ["Settings", "Integrations", "Kubernetes cluster"],
+    where: ["Integrations", "Kubernetes cluster"],
     keywords: "kubernetes k8s cluster workload deployment pod eks gke aks kind exposure nodeport loadbalancer ingress helm kubectl reporter enroll",
     body: [
       {
         steps: [
-          "Go to [Settings ▸ Integrations](/settings/integrations) and click **Add** on **Kubernetes cluster** (admins only).",
+          "Go to [Integrations](/integrations) and click **Add** on **Kubernetes cluster** (admins only).",
           "Enter the **Cluster name** (e.g. `prod-eu`), optionally an **Environment**, and whether to read the whole cluster or only some namespaces.",
           "Click **Create install command**. Copy the **Helm** or the **kubectl** command: the one-time code in it is shown only once.",
           "Run it anywhere with `kubectl` access to the cluster. The cluster appears under **Assets** a minute or two later.",
@@ -865,7 +869,7 @@ stackurity.exe agent --interval 6h`,
         p: "The command installs the **reporter**: one small pod in the `stackurity` namespace that reads the cluster with a read-only service account (it lists workloads, pods, Services, Ingresses, namespaces and nodes; never Secrets or ConfigMaps) and sends what it finds to Stackurity over HTTPS every hour. Nothing connects into the cluster and no kubeconfig leaves it, so it works when Stackurity cannot reach the cluster's API server.",
       },
       {
-        p: "The code goes into the Secret `stackurity-reporter`, never into a URL. On first start the reporter exchanges it for its own token, keeps the token in that Secret (the only Secret it may read or change) and removes the code. If you revoke the token under **Settings ▸ API tokens**, put a new code in the Secret as `enroll-code` and it enrolls again.",
+        p: "The code goes into the Secret `stackurity-reporter`, never into a URL. On first start the reporter exchanges it for its own token, keeps the token in that Secret (the only Secret it may read or change) and removes the code. If you revoke the token under **Integrations ▸ API tokens**, put a new code in the Secret as `enroll-code` and it enrolls again.",
       },
       {
         p: "The cluster appears as a *cluster* asset with its control plane, kubelet, container runtime and node OS versions (end-of-life dates from endoflife.date). Each Deployment, StatefulSet, DaemonSet, CronJob, Job or bare Pod is a *workload* asset, linked to the images it runs (`deployed_as`), pinned to the digest the node pulled.",
@@ -880,8 +884,8 @@ stackurity.exe agent --interval 6h`,
       {
         steps: [
           "If Stackurity can reach the cluster's API server and you would rather not run anything in the cluster, apply the read-only role from `deploy/kubernetes/stackurity-reader.yaml` (`kubectl apply -f`).",
-          "Make a kubeconfig for its service account token and store it as a workspace secret (**Settings ▸ Secrets**) holding `{\"kubeconfig\": \"…\"}`. When Stackurity runs in the cluster with that service account, set `in_cluster` instead.",
-          "Go to **Settings ▸ Integrations ▸ Add integration ▸ Plugin**, choose **Kubernetes** and set at least `cluster_name`. `environment_label` takes each workload's environment from a namespace label.",
+          "Make a kubeconfig for its service account token and store it as a workspace secret (**Integrations ▸ Secrets**) holding `{\"kubeconfig\": \"…\"}`. When Stackurity runs in the cluster with that service account, set `in_cluster` instead.",
+          "Go to **Integrations ▸ Add integration ▸ Plugin**, choose **Kubernetes** and set at least `cluster_name`. `environment_label` takes each workload's environment from a namespace label.",
           "Set the secret reference and click **Validate and create**, then **Run now**.",
         ],
       },
@@ -1183,7 +1187,7 @@ stackurity.exe agent --interval 6h`,
       {
         list: [
           "Likely cause: the CI job or scheduled scan that uploads it stopped or failed. Check its last pipeline run.",
-          "Scan commands are in **Settings ▸ Integrations ▸ CI pipeline**.",
+          "Scan commands are in **Integrations ▸ CI pipeline**.",
           "Scanned only now and then? On the asset page, **Edit** ▸ **Expected reporting** ▸ **One-off or manual**.",
         ],
       },
@@ -1313,7 +1317,7 @@ jobs:
     title: "Coverage, Intelligence feeds and gaps",
     section: "Daily work",
     summary: "Make sure “no findings” really means nothing was found.",
-    where: ["Settings", "Intelligence and feeds"],
+    where: ["Integrations", "Data sources"],
     keywords: "feeds osv kev endoflife stale evaluation gap coverage state not checked needs you unsupported resolves on its own no published advisories awaiting verification refresh re-evaluate",
     body: [
       {
@@ -1326,7 +1330,7 @@ jobs:
         p: "Components that were not checked are split by who acts, on Findings, each asset's page and Coverage: **needs you** first (a version that could not be read, with the fix for each, or application files the agent may not read), then what **Stackurity doesn't support yet**, then what **resolves on its own** once vulnerability data syncs. The banner is a warning only when something needs you, or when vulnerability data is past its staleness window. A release with **no published advisories** is noted on its row and not counted.",
       },
       {
-        p: "**Intelligence** (Settings ▸ Intelligence and feeds) lists the data feeds: OSV per ecosystem (hourly), CISA KEV (hourly), endoflife.date (daily), and the npm and Packagist registries. Each shows OK, Stale, Error, Never synced or Disabled.",
+        p: "**Integrations ▸ Data sources** lists the data feeds: OSV per ecosystem (hourly), CISA KEV (hourly), endoflife.date (daily), and the npm and Packagist registries. Each shows OK, Stale, Error, Never synced or Disabled.",
       },
       {
         list: [
@@ -1386,7 +1390,7 @@ jobs:
     title: "Evidence report",
     section: "Daily work",
     summary: "A printable patch-management summary for a period, for audits and management.",
-    where: ["Activity", "Evidence report"],
+    where: ["Reports", "Evidence report"],
     keywords: "audit report compliance print pdf sla",
     body: [
       {
@@ -1406,7 +1410,7 @@ jobs:
     title: "Remediation outcomes and why an issue closed",
     section: "Daily work",
     summary: "What counts as remediation in Outcomes and the evidence report, and what does not.",
-    where: ["Activity", "Outcomes"],
+    where: ["Reports", "Outcomes"],
     keywords: "outcomes remediation time to remedy mttr sla resolved closed withdrawn advisory changed superseded not counted",
     body: [
       {
@@ -1536,7 +1540,7 @@ jobs:
           "On the host, save the token to `/etc/stackurity/token` (mode 600) and write `/etc/stackurity/remediation-allow`: one shell-glob package pattern per line, e.g. `libssl*`, `openssl`. Only listed packages can ever change, whatever the server asks.",
           "Install the systemd unit shown on the page: `stackurity agent --remediate --interval 6h --action-interval 5m`, running as root.",
           "`systemctl daemon-reload && systemctl enable --now stackurity-remediate.service`, and stop the read-only agent on that host if it uses a different token.",
-          "Nothing changes until a plan covering this host is approved. To un-enrol, revoke the token under **Settings ▸ API tokens**.",
+          "Nothing changes until a plan covering this host is approved. To un-enrol, revoke the token under **Integrations ▸ API tokens**.",
         ],
       },
     ],
@@ -1663,11 +1667,11 @@ jobs:
     title: "Notifications: integrations, triggers, summaries",
     section: "Settings and administration",
     summary: "A few messages that bring people to the dashboard: urgent alerts, daily or weekly summaries, overdue reminders. Slack, Teams, email, webhooks, Jira, PagerDuty or ServiceNow.",
-    where: ["Settings", "Integrations"],
+    where: ["Integrations"],
     keywords: "integrations trigger events rule slack teams email webhook jira issue ticket route channel urgent summary daily weekly overdue escalation quiet hours digest rate limit connected first scan slack app add to slack add to teams teams app bot code workflows connect jira atlassian oauth reconnect interactivity signing secret link slack account assign snooze smtp ses sendgrid postmark mailgun zeptomail gmail confirm held quota",
     body: [
       {
-        p: "Everything Stackurity connects to is in [Settings, Integrations](/settings/integrations): **Active integrations** with their status and a settings button, and **Add an integration** for notifications (email, Slack, Teams, Jira, PagerDuty, ServiceNow, webhooks), sources (Git repositories, container registries, Kubernetes, AWS, plugins) and AI assistants. The **Delivery log** is a tab there.",
+        p: "Everything Stackurity connects to is in [Integrations](/integrations): **Active integrations** with their status and a settings button, and **Add an integration** for notifications (email, Slack, Teams, Jira, PagerDuty, ServiceNow, webhooks), sources (Git repositories, container registries, Kubernetes, AWS, plugins) and AI assistants. The **Delivery log** is a tab there.",
       },
       { h: "1. The connection (admin)" },
       {
@@ -1746,8 +1750,8 @@ jobs:
           "**Incoming Webhooks**: turn it on, **Add New Webhook to Workspace**, pick the channel, and copy the webhook URL. No other scopes or OAuth settings are needed.",
           "**Interactivity & Shortcuts**: turn it on and set the **Request URL** to `https://<your Stackurity address>/api/v1/integrations/slack/actions`. Save.",
           "**Basic Information**, **App Credentials**: copy the **Signing Secret**.",
-          "In [Settings, Secrets](/settings/secrets), store the webhook URL and the signing secret (for example SLACK_WEBHOOK and SLACK_SIGNING).",
-          "In [Settings, Integrations](/settings/integrations), add (or edit) a Slack integration with **Advanced: use a webhook**: webhook URL reference `secret:SLACK_WEBHOOK`, signing secret reference `secret:SLACK_SIGNING`. Use **Send test**.",
+          "In [Integrations, Secrets](/integrations/secrets), store the webhook URL and the signing secret (for example SLACK_WEBHOOK and SLACK_SIGNING).",
+          "In [Integrations](/integrations), add (or edit) a Slack integration with **Advanced: use a webhook**: webhook URL reference `secret:SLACK_WEBHOOK`, signing secret reference `secret:SLACK_SIGNING`. Use **Send test**.",
         ],
       },
       {
@@ -1777,7 +1781,7 @@ jobs:
         p: "**Disconnecting.** Deleting the integration in Stackurity deletes its key. Because Stackurity no longer has access to PagerDuty, the **Stackurity** integration stays on the PagerDuty service until you delete it there: the service, **Integrations**, **Stackurity**, **Delete Integration** (the integration's settings in Stackurity link to it). Until then it receives nothing from Stackurity. Connecting the same service again gives its integration a new key; delete the older **Stackurity** integration in PagerDuty.",
       },
       {
-        p: "**Without Connect PagerDuty**, add the integration yourself: in PagerDuty, the service, **Integrations**, **Add an integration**, **Events API V2**, and copy the **Integration Key**. Store it under Settings, Secrets. Pick the EU service region if your PagerDuty account is in the EU.",
+        p: "**Without Connect PagerDuty**, add the integration yourself: in PagerDuty, the service, **Integrations**, **Add an integration**, **Events API V2**, and copy the **Integration Key**. Store it under Integrations, Secrets. Pick the EU service region if your PagerDuty account is in the EU.",
       },
       { h: "ServiceNow" },
       {
@@ -1845,13 +1849,13 @@ jobs:
     title: "Users, teams and roles",
     section: "Settings and administration",
     summary: "Who can see and change what, and adding someone with exactly the access they need.",
-    where: ["Settings", "Users"],
+    where: ["People", "Users"],
     keywords: "role viewer engineer security admin team password permission view edit decide phone add user scope specific all projects assets",
     body: [
       {
         p: "Everyone in a workspace sees either **all projects and assets**, or only the **specific projects and assets** they are given. On top of that, a permission says what they may do there.",
       },
-      // The same table as "What can each permission do?" under Settings ▸ Users (web/src/roles.ts).
+      // The same table as "What can each permission do?" under People ▸ Users (web/src/roles.ts).
       { table: permissionTable() },
       { list: PERMISSION_NOTES },
       {
@@ -1860,7 +1864,7 @@ jobs:
       { h: "Adding a user" },
       {
         steps: [
-          "**Settings ▸ Users ▸ Add user** (admin): their name, email and, if you like, a phone number (contact information only; nothing is sent to it). For a new account, an initial password of at least 12 characters; share it securely. Someone who already has an account joins with it.",
+          "**People ▸ Users ▸ Add user** (admin): their name, email and, if you like, a phone number (contact information only; nothing is sent to it). For a new account, an initial password of at least 12 characters; share it securely. Someone who already has an account joins with it.",
           "**What can they see?** must be answered; nothing is chosen for you. **All projects and assets**: pick one permission, which covers everything, including what is added later. **Specific projects or assets**: add one or more projects.",
           "For each project, choose **All assets in this project** with one permission (this also covers assets added to the project later), or **Chosen assets**: tick each asset and give it its own permission, for example one asset View only and another View and edit. Projects can mix the two.",
           "**Add user** creates the person and all of their access together; if any part is refused, nothing is created. The list's **Can see** column shows it at a glance, such as \"All projects — View and edit\" or \"2 projects, 3 assets\".",
@@ -1879,10 +1883,10 @@ jobs:
       { h: "Changing it later" },
       {
         list: [
-          "Change the permission on all projects from the list, or choose **Specific projects only** to take it away; their project and asset access then comes from **Settings ▸ Projects and access**.",
+          "Change the permission on all projects from the list, or choose **Specific projects only** to take it away; their project and asset access then comes from **Assets ▸ Projects**.",
           "**Edit** changes the name and phone; **Disable** stops sign-in and the user's tokens; **Reset password** sets a new, temporary one.",
-          "**Settings ▸ Teams ▸ Add team**: name, contact email and members. Then **Edit** it to choose what it **can see** and which assets it **owns** (see Teams below).",
-          "**Invite by email** (on **Settings ▸ Users**, or a project's page) asks the same **What can they see?** and sends a link instead of setting a password. On Stackurity Cloud people join by invitation only, so **Add user** is not shown there.",
+          "**People ▸ Teams ▸ Add team**: name, contact email and members. Then **Edit** it to choose what it **can see** and which assets it **owns** (see Teams below).",
+          "**Invite by email** (on **People ▸ Users**, or a project's page) asks the same **What can they see?** and sends a link instead of setting a password. On Stackurity Cloud people join by invitation only, so **Add user** is not shown there.",
         ],
       },
     ],
@@ -1892,7 +1896,7 @@ jobs:
     title: "Projects and access",
     section: "Settings and administration",
     summary: "Group assets into projects and give people access to chosen projects only.",
-    where: ["Settings", "Projects and access"],
+    where: ["Assets", "Projects"],
     keywords: "project client agency site contractor access grant switcher unfiled team role permission",
     body: [
       {
@@ -1905,7 +1909,7 @@ jobs:
           ["Organisation-wide role (viewer, engineer, security, admin)", "Every asset, in every project and in none."],
           ["A role on a project", "Only that project's assets, with their issues, fixes, incidents, components, search results, reports and activity. Organisation pages (users, teams, integrations, notifications, jobs) are not shown."],
           ["A role on one asset", "Only that asset. For the rare server one contractor looks after; prefer projects."],
-          ["A team's role on a project or asset (Settings ▸ Teams ▸ Can see)", "Everyone in the team, including people who join it later, while they are in it."],
+          ["A team's role on a project or asset (People ▸ Teams ▸ Can see)", "Everyone in the team, including people who join it later, while they are in it."],
           ["The team that owns an asset", "Nothing: ownership routes alerts and incidents to the team, and gives no access."],
         ],
       },
@@ -1925,12 +1929,12 @@ jobs:
       { h: "Setting it up (admins)" },
       {
         steps: [
-          "**Settings ▸ Projects and access ▸ New project**, then add its assets. **Suggested groupings** proposes related assets (an application runs on a host, is built from a repository); nothing is added until you accept.",
+          "**Assets ▸ Projects ▸ New project**, then add its assets. **Suggested groupings** proposes related assets (an application runs on a host, is built from a repository); nothing is added until you accept.",
           "Under **Who has access**, give a person (by email) or a team a role. Someone who is not a member yet joins with access to that project only; give a new account an initial password of at least 12 characters.",
           "Or **Invite by email**: it starts with this project, asks for the permission, and can add other projects or chosen assets. They get a link that works once, for 7 days, and choose their own password. See [Your first ten minutes](help:getting-started).",
           "The Dashboard tells organisation-wide roles how many assets are **not in a project**: only they see those, so file them.",
-          "To send a client only their project's alerts, tick the project in a notification integration's settings (**Settings ▸ Integrations**). A route to Jira can be limited to one project: its issues then describe only that project's part of each incident.",
-          "**Settings ▸ Users** can change someone to **projects only**: they keep their account but lose the organisation-wide role.",
+          "To send a client only their project's alerts, tick the project in a notification integration's settings (**Integrations**). A route to Jira can be limited to one project: its issues then describe only that project's part of each incident.",
+          "**People ▸ Users** can change someone to **projects only**: they keep their account but lose the organisation-wide role.",
         ],
       },
       {
@@ -1943,7 +1947,7 @@ jobs:
     title: "API tokens",
     section: "Settings and administration",
     summary: "Personal tokens for scripts, and collector tokens for agents and CI.",
-    where: ["Settings", "API tokens"],
+    where: ["Integrations", "API tokens"],
     keywords: "token collector bearer ci script revoke",
     body: [
       {
@@ -1962,7 +1966,7 @@ jobs:
     title: "Integrations and plugins",
     section: "Settings and administration",
     summary: "Scheduled server-side collection: Git repositories, container images and plugins.",
-    where: ["Settings", "Integrations"],
+    where: ["Integrations"],
     keywords: "integration run now schedule plugin",
     body: [
       {
@@ -1970,7 +1974,7 @@ jobs:
           "Engineers can see integrations and **Run now**; admins add, disable or delete them.",
           "Kinds: [Git repository](help:repositories), [Container image](help:container-images), [Plugin](help:cloud-plugins).",
           "Each row shows status, environment, schedule, secret reference, last attempt, last success and the last error.",
-          "**Settings ▸ Plugins** (admin) lists installed plugins and what each needs before you use one.",
+          "**Integrations ▸ Plugins** (admin) lists installed plugins and what each needs before you use one.",
         ],
       },
     ],
@@ -1997,11 +2001,11 @@ jobs:
     title: "Owner rules: who issues are assigned to",
     section: "Settings and administration",
     summary: "Assign new issues automatically by project, asset and part of the tech stack, without changing what people assigned.",
-    where: ["Settings", "Owner rules"],
+    where: ["People", "Owner rules"],
     keywords: "owner owners assign assignee auto-assign rule team person project asset stack layer package ownership",
     body: [
       {
-        p: "An owner rule says who issues on part of your estate belong to: a person, a team or both. Admins add rules under **Settings → Owner rules**. A rule has three parts: **where** (every asset, one project or one asset), optionally **which part of the stack** (a layer such as operating system or web server, a package name such as `openssl` or `linux*`, or both) and **who**.",
+        p: "An owner rule says who issues on part of your estate belong to: a person, a team or both. Admins add rules under **People → Owner rules**. A rule has three parts: **where** (every asset, one project or one asset), optionally **which part of the stack** (a layer such as operating system or web server, a package name such as `openssl` or `linux*`, or both) and **who**.",
       },
       {
         p: "When an issue could match several rules, the most specific one assigns it:",

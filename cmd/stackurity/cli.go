@@ -135,7 +135,7 @@ func printResult(r *client.IngestResult) {
 	fmt.Println()
 	if r.ProjectID > 0 {
 		if r.InProject != nil && !*r.InProject {
-			fmt.Printf("warning: asset %d already existed and is not in project %d: a collector token adds only the assets it creates; an admin can add it under Settings > Projects and access\n", r.AssetID, r.ProjectID)
+			fmt.Printf("warning: asset %d already existed and is not in project %d: a collector token adds only the assets it creates; an admin can add it under Assets > Projects\n", r.AssetID, r.ProjectID)
 		} else {
 			fmt.Printf("asset %d is in project %d\n", r.AssetID, r.ProjectID)
 		}
@@ -588,7 +588,7 @@ risk-accepted on the server do not count.
 
 With --project (an id or name; or STACKURITY_PROJECT) a new asset is added
 to that project, and an admin's token also adds an existing one. A collector
-token must have been made for that project (Settings > API tokens, or the
+token must have been made for that project (Integrations > API tokens, or the
 first-run flow) and may name only it; a name needs a token that can read
 projects, so give a collector token the id. The command checks that the
 server supports this (0.10 or later) before it uploads anything.

@@ -154,7 +154,7 @@ func (s *Server) createInvitation(w http.ResponseWriter, r *http.Request) {
 	}
 	if member {
 		if role != store.RoleNone {
-			writeError(w, 409, "conflict", "this person is already a member; change their role under Settings, Users")
+			writeError(w, 409, "conflict", "this person is already a member; change their role under People, Users")
 			return
 		}
 		ids, err := s.Store.GrantMember(r.Context(), uid, grants, req.Teams, actorUserID(p))
@@ -236,7 +236,7 @@ func (s *Server) emailInvitation(r *http.Request, inv *store.Invitation, link st
 		return false, "the email settings could not be read"
 	}
 	if ch == nil {
-		return false, "no email channel is set up; add one under Settings, Notifications to send invitations by email"
+		return false, "no email channel is set up; add one under Integrations to send invitations by email"
 	}
 	ws, err := s.Store.GetWorkspace(r.Context(), inv.WorkspaceID)
 	if err != nil {

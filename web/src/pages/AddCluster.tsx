@@ -15,7 +15,7 @@ export function AddClusterPage() {
   return (
     <>
       <nav className="crumbs" aria-label="Breadcrumb">
-        <Link to="/settings/integrations">Integrations</Link> <span aria-hidden="true">/</span> <span>Kubernetes cluster</span>
+        <Link to="/integrations">Integrations</Link> <span aria-hidden="true">/</span> <span>Kubernetes cluster</span>
       </nav>
       <PageHeader
         help="kubernetes"
@@ -29,7 +29,7 @@ export function AddClusterPage() {
       )}
       <p className="small muted">
         Stackurity can also pull from the cluster's API server, if it can reach it, with the Kubernetes plugin:{" "}
-        <Link to="/integrations">add a Plugin integration</Link>. See <Link to="/help/kubernetes">Kubernetes clusters</Link>.
+        <Link to="/integrations/sources">add a Plugin integration</Link>. See <Link to="/help/kubernetes">Kubernetes clusters</Link>.
       </p>
     </>
   );

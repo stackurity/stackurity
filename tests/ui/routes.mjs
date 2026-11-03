@@ -4,10 +4,10 @@
 // real id) or an extra check for a set of routes.
 import { readFileSync } from "node:fs";
 
-/** Every path the router declares, except the catch-all. */
+/** Every path the router declares, except the catch-all and old addresses kept as redirects with a sub-path ("settings/projects/*"). */
 export function appRoutes(appTsx) {
   const src = readFileSync(appTsx, "utf8");
-  return [...src.matchAll(/path="([^"]+)"/g)].map((m) => m[1]).filter((p) => p !== "*");
+  return [...src.matchAll(/path="([^"]+)"/g)].map((m) => m[1]).filter((p) => !p.includes("*"));
 }
 
 /**
@@ -24,7 +24,9 @@ export async function fillParams(path, get) {
     "action-plan/:id": async () => `action-plan/${encodeURIComponent((await first("/fix-groups?limit=1"))?.id ?? "")}`,
     "incidents/:id": async () => `incidents/${(await first("/incidents?status=all&limit=1"))?.id ?? ""}`,
     "components/:id": async () => `components/${(await first("/components?limit=1"))?.id ?? ""}`,
-    "settings/integrations/new/:kind": async () => "settings/integrations/new/slack",
+    "integrations/new/:kind": async () => "integrations/new/slack",
+    "integrations/channels/:id": async () => `integrations/channels/${(await first("/channels"))?.id ?? ""}`,
+    "projects/:id": async () => `projects/${(await first("/projects"))?.id ?? ""}`,
   };
   if (!path.includes(":")) return "/" + path;
   const f = fills[path];
@@ -40,6 +42,8 @@ export async function fillParams(path, get) {
  */
 export const EXTRA_CHECKS = [
   ["/settings", [1280], ["no-horizontal-scroll"]],
+  ["/integrations", [1280], ["no-horizontal-scroll"]],
+  ["/people", [1280], ["no-horizontal-scroll"]],
   ["/", [390], ["no-horizontal-scroll"]],
 ];
 
