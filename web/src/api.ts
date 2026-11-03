@@ -123,6 +123,12 @@ export interface SignupMeta {
   email_notice_version?: string;
   /** Where people can reach us, for example when their email address is refused. */
   contact_url?: string;
+  /** The page with the plans and their prices. */
+  pricing_url?: string;
+  /** Where to get the free self-hosted Community edition. */
+  self_hosted_url?: string;
+  /** Days an organisation without a plan stays read-only before its data is deleted; absent when the service does not delete. */
+  delete_after_days?: number;
 }
 
 export type EmailCategory = "marketing" | "vulnerability_news";

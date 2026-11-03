@@ -390,6 +390,22 @@ A session started by an organisation's single sign-on works only in that organis
 
 ## Collecting inventory
 
+### What the agent reads and sends
+
+**Assets → Add server** shows this summary before any install command is created. The details for each system are in the sections below.
+
+| | |
+|---|---|
+| Reads and sends | The host's name and machine ID (`/etc/machine-id`, the Windows machine GUID or the Mac's hardware UUID), the OS version, its packages (dpkg, rpm or apk) or installed programs (the Windows registry; applications and Homebrew on a Mac), and on Linux and macOS runtimes installed outside the package manager. Names, versions and where each was found, not file contents. With application discovery (on by default) or `--app-dir`, the libraries of deployed applications; with `STACKURITY_DOCKER=1`, the images of running containers |
+| Keys and passwords | Found in application directories ([leaked-keys.md](leaked-keys.md)) and reported by rule, file, line, setting name, a fingerprint and, for a key with its own format, a masked preview. The value never leaves the host. `--no-leaks` turns it off |
+| Changes | None. The agent never installs, removes or changes software. [Automatic fixing](remediation.md) (Pro and Enterprise, Linux only) needs `--remediate`, root, a token an admin binds to the host and a local allowlist file; the installers never set it up |
+| Account | Its own unprivileged account: `stackurity` (Linux), `_stackurity` (macOS), `NT SERVICE\StackurityAgent` (Windows). Only the install needs root or an administrator. `STACKURITY_DOCKER=1` adds the Docker socket's group, which is equivalent to root |
+| Network | Your Stackurity server only, over HTTPS (plain HTTP only to a local port or with `STACKURITY_ALLOW_HTTP=1`). No telemetry and no update check: [network.md](network.md), checked on every pull request by `cmd/stackurity/egress_test.go` |
+| How often | At start and every 6 hours (`--interval`); between collections, a small `GET` about once a minute asking whether someone pressed **Check again** (`--check-interval`, `0` turns it off) |
+| Removing it | [Linux](#removing-the-agent-from-a-linux-host), [Windows](#windows-hosts) and [macOS](#macs) (`STACKURITY_UNINSTALL=1`) |
+
+`stackurity agent --once --output -` prints what the agent collects without sending it.
+
 ### Linux hosts
 
 **The quick way.** Under **Assets → Add server**, choose the environment and, optionally, the application directories to inventory, and create an install command. **Also check websites and apps on this server** is ticked by default: the agent then also looks for deployed applications (`STACKURITY_DISCOVER_APPS=true`, see [Applications deployed on the host](#applications-deployed-on-the-host)). Untick it to read only the operating system's packages and runtimes. Run the command on the host:
@@ -455,6 +471,20 @@ Enable it with `sudo systemctl enable --now stackurity-agent`; the host appears 
 If the server is not reachable over HTTPS from the host (for example it listens only on `127.0.0.1`), forward a local port over SSH with a dedicated account whose key allows nothing but that forward (`restrict,port-forwarding,permitopen="127.0.0.1:8180"` in its `authorized_keys`), run the forward as its own systemd unit, and point `STACKURITY_SERVER` at `http://127.0.0.1:<local port>`. The in-app help (**Help → Connect over an SSH tunnel**) has the full units.
 
 Runtimes and servers installed outside the package manager are invisible to the package database, yet they reach end of life like anything else: Node.js from nvm or a tarball, a downloaded Redis, MySQL, MariaDB, PostgreSQL, MongoDB, Meilisearch, nginx or HAProxy binary, and Python, Go, Ruby or PHP builds under `/usr/local` or `/opt`. The agent looks for these in the usual locations, skips any that a package owns, and reports the rest with their version, so their end-of-life dates appear with everything else. For nvm and pyenv the version comes from the install path. Otherwise the agent runs the binary's `--version` flag with an empty environment and a 5-second limit, and only when the binary and every directory above it are owned by root or the agent's user and not writable by anyone else. Binaries under `--root` are never run. Vulnerabilities are not matched for these runtimes (there is no advisory feed keyed by binary), which the **Intelligence** page lists as an evaluation gap. Turn detection off with `--no-runtimes`. With `ProtectHome=yes` the agent cannot see per-user installs such as `~/.nvm`; use `ProtectHome=read-only` to include them.
+
+#### Removing the agent from a Linux host
+
+The installer has no uninstall mode; these commands remove everything it installed (the service, the binary, `/etc/stackurity` with the token, and the `stackurity` user):
+
+```sh
+sudo systemctl disable --now stackurity-agent
+sudo rm -f /etc/systemd/system/stackurity-agent.service /usr/local/bin/stackurity
+sudo systemctl daemon-reload
+sudo rm -rf /etc/stackurity
+sudo userdel stackurity
+```
+
+The host stays in Stackurity until you delete it under **Assets**, and its collector token stays valid until you revoke it under **Integrations → API tokens**.
 
 #### Many servers at once
 
