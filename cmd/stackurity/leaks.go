@@ -46,7 +46,8 @@ func printLeaks(w io.Writer, s *model.LeakScan, failOn string) error {
 		fmt.Fprintf(w, "partial: key scan %s\n", s.Reason)
 	}
 	if blocking > 0 {
-		return &exitError{code: gateExitCode, msg: fmt.Sprintf("%d leaked keys or passwords meet --fail-on-leak %s: rotate each one (revoke it and issue a new one), then remove it from the file", blocking, failOn)}
+		return &exitError{code: gateExitCode, msg: fmt.Sprintf("%s %s --fail-on-leak %s: rotate %s (revoke it and issue a new one), then remove it from the file",
+			count(blocking, "leaked key or password", "leaked keys or passwords"), agree(blocking, "meets", "meet"), failOn, agree(blocking, "it", "each one"))}
 	}
 	return nil
 }
