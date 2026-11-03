@@ -274,6 +274,33 @@ export const ARTICLES: Article[] = [
       },
       { h: "What it does on Windows" },
       { p: "See [Add a Windows server](help:windows-hosts)." },
+      { h: "What the agent reads and sends", id: "agent" },
+      {
+        list: [
+          "**Reads and sends:** the server's name and machine ID, its operating system version, packages and installed programs, and on Linux and macOS runtimes such as Node.js or Python installed outside the package manager: their names, versions and where they were found, not file contents. Websites and apps and their libraries (on by default), and the images of running Docker containers (only if ticked).",
+          "**Keys and passwords** written into those apps' files are reported by file, line, setting and kind of key, with a fingerprint and, for a key, a masked preview such as `sk_live_…4f2a`. The value itself never leaves the server. `--no-leaks` (or `STACKURITY_NO_LEAKS=true`) turns this off.",
+          "**Changes nothing:** it never installs, removes or changes software. Automatic fixing is a separate paid feature (Pro) for Linux that needs the agent to run as root with `--remediate`, a token an admin binds to that server, and an allowlist file on the server itself; the install command never turns it on.",
+          "**Runs as** its own unprivileged account: `stackurity` on Linux, `_stackurity` on macOS, `NT SERVICE\\StackurityAgent` on Windows. Only the install needs root or an administrator. Checking Docker containers gives it the Docker socket, which is equivalent to root.",
+          "**Connects to** this Stackurity server only, over HTTPS unless you allow plain HTTP: no telemetry and no update checks. Each pull request checks this by running the agent against a server that records every connection.",
+          "**Reports** when it starts and every 6 hours. In between, about once a minute, it asks the server whether someone pressed **Check again**.",
+          "`stackurity agent --once --output -` prints what it collects without sending it.",
+        ],
+      },
+      { h: "Remove the agent", id: "uninstall" },
+      {
+        code: `sudo systemctl disable --now stackurity-agent
+sudo rm -f /etc/systemd/system/stackurity-agent.service /usr/local/bin/stackurity
+sudo systemctl daemon-reload
+sudo rm -rf /etc/stackurity
+sudo userdel stackurity`,
+        label: "Remove the agent on Linux",
+      },
+      { code: "curl -fsSL https://stackurity.example.com/install/agent-macos.sh | sudo STACKURITY_UNINSTALL=1 sh", label: "Remove the agent on macOS" },
+      {
+        code: "[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072; $env:STACKURITY_UNINSTALL = '1'; irm https://stackurity.example.com/install/agent.ps1 | iex",
+        label: "Remove the agent on Windows (PowerShell as administrator)",
+      },
+      { p: "**Add server** shows these commands with your server's address. The server stays under **Assets** until you delete it there, and its token works until you revoke it under **Integrations → API tokens**." },
       { h: "Requirements" },
       {
         list: [
