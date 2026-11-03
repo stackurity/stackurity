@@ -470,7 +470,7 @@ type Session struct {
 	// only there: if the user has left it, Workspace is 0, never another.
 	SSOWorkspace int64
 	// Login is how the session was signed in (LoginPassword, ...; "" for
-	// a session from before migration 0090 that was not a password one).
+	// a session from before migration 0091 that was not a password one).
 	Login string
 	// MFA is the second factor checked for this session ("" for none), and
 	// MFACredential the passkey it was checked with (0: none).

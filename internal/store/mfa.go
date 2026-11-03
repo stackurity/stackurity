@@ -13,7 +13,7 @@ import (
 	"github.com/stackurity/stackurity/internal/tenant"
 )
 
-// Two-factor sign-in (migrations 0053 and 0090): passkeys and security keys
+// Two-factor sign-in (migrations 0053 and 0091): passkeys and security keys
 // (webauthn.go), a TOTP secret sealed with STACKURITY_SECRET_KEY, email
 // codes as a fallback, one-time recovery codes stored hashed, and the
 // short-lived challenge between the password and the second factor.
