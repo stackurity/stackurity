@@ -70,6 +70,13 @@ type Policy struct {
 	// were added.
 	DueDates      string         `json:"due_dates,omitempty"`
 	PatchCalendar *PatchCalendar `json:"patch_calendar,omitempty"`
+
+	// UnmaintainedMonths is how long without a release makes a package
+	// unmaintained in the advice for issues with no fixed version
+	// (fixplan.AdviseNoFix). The default, DefaultUnmaintainedMonths, is
+	// stored as 0 and left out of the JSON, like DueDates, so policies (and
+	// their versions) saved before the field existed do not change.
+	UnmaintainedMonths int `json:"unmaintained_months,omitempty"`
 }
 
 type SLA struct {
@@ -139,6 +146,10 @@ func (p Policy) Validate() error {
 	}
 	if p.ExceptionMaxDays < 0 || p.ExceptionMaxDays > 730 {
 		return errors.New("exception_max_days must be between 1 and 730 (0 for the default of 365)")
+	}
+	if p.UnmaintainedMonths != 0 && (p.UnmaintainedMonths < MinUnmaintainedMonths || p.UnmaintainedMonths > MaxUnmaintainedMonths) {
+		return fmt.Errorf("unmaintained_months must be between %d and %d (0 for the default of %d)",
+			MinUnmaintainedMonths, MaxUnmaintainedMonths, DefaultUnmaintainedMonths)
 	}
 	if p.EPSSThreshold <= 0 || p.EPSSThreshold > 1 {
 		return errors.New("epss_threshold must be a probability above 0 and at most 1 (0.1 is 10%)")
@@ -506,9 +517,30 @@ func DecodePolicy(raw []byte, strict bool) (Policy, error) {
 // DefaultExceptionMaxDays is the exception limit when a policy leaves it at 0.
 const DefaultExceptionMaxDays = 365
 
+// The unmaintained cutoff's default and allowed range, in months.
+const (
+	DefaultUnmaintainedMonths = 24
+	MinUnmaintainedMonths     = 6
+	MaxUnmaintainedMonths     = 120
+)
+
+// Unmaintained returns the unmaintained cutoff in months, the default when
+// the policy leaves it unset.
+func (p Policy) Unmaintained() int {
+	if p.UnmaintainedMonths == 0 {
+		return DefaultUnmaintainedMonths
+	}
+	return p.UnmaintainedMonths
+}
+
 // Normalize fills the values that stand for "the default", so the policy that
 // is stored, audited and versioned is exactly the one that is applied.
 func (p Policy) Normalize() Policy {
+	// The default cutoff is stored as no value, so choosing it explicitly
+	// gives the same policy and version as never setting it.
+	if p.UnmaintainedMonths == DefaultUnmaintainedMonths {
+		p.UnmaintainedMonths = 0
+	}
 	if p.ExceptionMaxDays == 0 {
 		p.ExceptionMaxDays = DefaultExceptionMaxDays
 	}

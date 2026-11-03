@@ -62,7 +62,7 @@ func keys(m map[string]model.Observation) []string {
 func TestScanNodeApp(t *testing.T) {
 	tr := newTree(t)
 	app := "srv/shop"
-	tr.file(app+"/package.json", `{"name":"shop","dependencies":{"express":"^4","@aws-sdk/client-s3":"^3"},"devDependencies":{"jest":"^29"}}`)
+	tr.file(app+"/package.json", `{"name":"shop","version":"2.4.0","dependencies":{"express":"^4","@aws-sdk/client-s3":"^3"},"devDependencies":{"jest":"^29"}}`)
 	// The lockfile says 4.18.2 but 4.17.1 is what is installed: installed wins.
 	tr.file(app+"/package-lock.json", `{"lockfileVersion":3,"packages":{"":{"dependencies":{"express":"^4"}},
 		"node_modules/express":{"version":"4.18.2"}}}`)
@@ -95,8 +95,8 @@ func TestScanNodeApp(t *testing.T) {
 	if m["pkg:npm/jest@29.7.0"].Scope != "dev" {
 		t.Errorf("jest scope = %q", m["pkg:npm/jest@29.7.0"].Scope)
 	}
-	if a.Name != "shop" || a.GitURL != "https://github.com/acme/shop.git" {
-		t.Errorf("name %q git %q", a.Name, a.GitURL)
+	if a.Name != "shop" || a.Version != "2.4.0" || a.GitURL != "https://github.com/acme/shop.git" {
+		t.Errorf("name %q version %q git %q", a.Name, a.Version, a.GitURL)
 	}
 	validate(t, a)
 }

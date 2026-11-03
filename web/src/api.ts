@@ -2869,6 +2869,11 @@ export interface RiskPolicy {
   due_dates?: "sla" | "patch_calendar" | "";
   /** Patch windows for due_dates "patch_calendar"; absent means the defaults. */
   patch_calendar?: PatchCalendar;
+  /**
+   * Months without a release after which the no-fix advice treats a package as unmaintained
+   * (6–120; absent means the default, 24).
+   */
+  unmaintained_months?: number;
 }
 
 /** Monthly patch windows: test N days after Patch Tuesday, production M days after test. */
@@ -2881,6 +2886,10 @@ export interface PatchCalendar {
 export const DEFAULT_PATCH_CALENDAR: PatchCalendar = { test_days_after_patch_tuesday: 1, prod_days_after_test: 7, timezone: "UTC" };
 
 export const DEFAULT_EXCEPTION_MAX_DAYS = 365;
+/** The risk policy's unmaintained cutoff: its default and allowed range, in months. */
+export const DEFAULT_UNMAINTAINED_MONTHS = 24;
+export const MIN_UNMAINTAINED_MONTHS = 6;
+export const MAX_UNMAINTAINED_MONTHS = 120;
 
 /** Who last changed a policy and when, from the audit log. */
 export interface PolicyChangeRef {
@@ -3225,6 +3234,51 @@ export interface FixGroup {
   requires_major?: boolean;
   recommended_yanked?: boolean;
   rationale?: string[] | null;
+  /** No-fix groups: per application package, what can be done without a fixed version. */
+  no_fix_advice?: NoFixAdvice | null;
+}
+
+export interface NoFixAdvice {
+  /** The packages come with the application the group is on: only its upgrade changes them. */
+  bundled?: NoFixBundled | null;
+  sections: NoFixSection[];
+}
+
+export interface NoFixBundled {
+  app: string;
+  app_version?: string;
+  app_dir?: string;
+  /** The application's newest release, when release data has one newer than app_version. */
+  latest_version?: string;
+  text: string;
+  /** Show which top-level dependency pulls each package in. */
+  commands?: string[] | null;
+}
+
+export interface NoFixSection {
+  /** renamed, unmaintained or no_fix_yet. */
+  kind: string;
+  title: string;
+  /** Distinct issues across its packages. */
+  issues: number;
+  /** On an unmaintained section with a package past it: the risk policy's cutoff in months. */
+  unmaintained_months?: number;
+  items: NoFixItem[];
+}
+
+export interface NoFixItem {
+  component: string;
+  version: string;
+  issues: string[];
+  text: string;
+  move_to?: string;
+  fixed_version?: string;
+  deprecated?: string;
+  last_release?: string;
+  /** The advisory's own workaround, quoted as written. */
+  workaround?: string;
+  workaround_source?: string;
+  bundled?: boolean;
 }
 
 export interface FixPlace {

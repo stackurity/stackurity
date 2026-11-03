@@ -1053,6 +1053,15 @@ Fixes (fix groups), most urgent first, paged. Query: `asset_id`, `kind`, `enviro
 - `bucket`: `focus` (a fix exists, SOS or P1, on a production asset or one with no environment), `no_fix`, `old_kernels`, `non_production` or `lower_priority`. Every group is in exactly one, checked in that order.
 - `group_by`: `fix` (the same change in several places is one entry with `places`, each with its group, asset, app directory and finding count) or `asset` (one entry per asset). The default is the workspace's setting (`GET /settings/fix-grouping`).
 
+A `no_fix` group with application packages (npm, PyPI, Composer and the like; not operating system packages) carries `no_fix_advice`: what can be done about each package without a fixed version, from stored data only. Its `action` says the same in one paragraph.
+
+- `sections`, in this order, each with `kind`, `title`, `issues` (distinct issues) and `items` (one per package and version: `component`, `version`, `issues`, `text`):
+  - `renamed`: for every issue of the package, the advisory lists another package of the same ecosystem with a fixed version: `move_to` and `fixed_version`, the highest fixed release it lists ("Fixed in @babel/traverse 7.23.2; babel-traverse gets no fix: move to @babel/traverse.").
+  - `unmaintained`: the registry marks the package deprecated (`deprecated`, its notice quoted as published, which may name a successor), or it has had no release for the risk policy's `unmaintained_months` (default 24; `last_release`). The section's `title` names the rule ("No release for 24 months or more (your risk policy)", "Deprecated by the maintainers", or both), and `unmaintained_months` is set when the policy's cutoff applied.
+  - `no_fix_yet`: neither; no fixed release yet.
+  - Any item may carry `workaround`, the advisory's own workaround or mitigation section quoted as written, and `workaround_source`, the advisory it is from.
+- `bundled`, when packages were found inside the application's own dependency tree and the project does not list them itself: `app`, `app_version` (from the application's package.json or composer.json, which agents report from this release), `app_dir`, `latest_version` (the application's newest release, when release data for a package of its name has one newer than `app_version`), `text`, and `commands` that show which top-level dependency pulls each package in (`pnpm why`, `npm ls`, `yarn why`, `composer why`, `go mod why -m` or `cargo tree -i`, chosen from where each package was found). Items it applies to have `bundled: true`.
+
 ### `GET /fix-groups/summary`
 
 **Who:** viewer
@@ -1165,7 +1174,7 @@ Queues a full re-evaluation of the workspace's inventory.
 
 **Who:** viewer
 
-Priority weights (including `epss` and `epss_threshold`), thresholds, deadlines and SOS rules, with the policy `version` and `last_change` (who, when, versions, changed fields; null when never changed). `due_dates` is `patch_calendar` when non-urgent findings are due at their asset's next patch window, set by `patch_calendar` (`test_days_after_patch_tuesday`, 0–20, default 1; `prod_days_after_test`, 0–28, default 7; `timezone`, default `UTC`); it is left out for `sla`, the default ([risk.md](risk.md#due-dates-from-a-patch-calendar)).
+Priority weights (including `epss` and `epss_threshold`), thresholds, deadlines and SOS rules, with the policy `version` and `last_change` (who, when, versions, changed fields; null when never changed). `due_dates` is `patch_calendar` when non-urgent findings are due at their asset's next patch window, set by `patch_calendar` (`test_days_after_patch_tuesday`, 0–20, default 1; `prod_days_after_test`, 0–28, default 7; `timezone`, default `UTC`); it is left out for `sla`, the default ([risk.md](risk.md#due-dates-from-a-patch-calendar)). `unmaintained_months` (6 to 120, default 24, left out while it is the default) is how long without a release makes a package unmaintained in the advice for issues with no fixed version ([Unmaintained packages](risk.md#unmaintained-packages)).
 
 ### `PUT /risk-policy`
 

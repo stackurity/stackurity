@@ -24,7 +24,10 @@ func (f *fakeAPI) Do(_ context.Context, method, path string, _ io.Reader, _ map[
 	case strings.HasPrefix(path, "/api/v1/fix-groups?"):
 		body = `{"items":[{"id":"3:package_upgrade:9","kind":"package_upgrade","asset_id":3,"component":"lodash","from_version":"4.17.15",
 			"to_version":"4.17.21","recommended_version":"4.17.23","target_version":"4.17.23","change_type":"patch","finding_count":2,"top_priority":"P2",
-			"by_severity":{"high":2}}],"total":1}`
+			"by_severity":{"high":2}},
+			{"id":"3:no_fix","kind":"no_fix","asset_id":3,"finding_count":1,"top_priority":"P2","no_fix_advice":{"sections":[{"kind":"renamed",
+			"title":"Fixed under another name","issues":1,"items":[{"component":"babel-traverse","version":"6.26.0","issues":["CVE-2023-45133"],
+			"text":"Fixed in @babel/traverse 7.23.2","move_to":"@babel/traverse","fixed_version":"7.23.2"}]}]}}],"total":2}`
 	case strings.HasSuffix(path, "/explain"), strings.HasSuffix(path, "/upgrade"), strings.HasPrefix(path, "/api/v1/findings/verify?"):
 		body = `{"ok":true}`
 	default:
@@ -169,7 +172,8 @@ func TestAssistantTools(t *testing.T) {
 		t.Errorf("requests = %v", api.paths)
 	}
 	plan := text(4)
-	for _, s := range []string{`"minimum_fixed_version": "4.17.21"`, `"recommended_version": "4.17.23"`, `"target_version": "4.17.23"`, `"installed_version": "4.17.15"`, `"shown": 1`} {
+	for _, s := range []string{`"minimum_fixed_version": "4.17.21"`, `"recommended_version": "4.17.23"`, `"target_version": "4.17.23"`, `"installed_version": "4.17.15"`, `"shown": 2`,
+		`"move_to": "@babel/traverse"`} {
 		if !strings.Contains(plan, s) {
 			t.Errorf("remediation_plan lacks %s: %s", s, plan)
 		}
