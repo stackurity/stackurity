@@ -83,7 +83,7 @@ interface Turn {
 }
 
 const REASONS: Record<string, string> = {
-  ask_disabled: "An administrator of this organisation has turned Ask Stackurity off. Admins can turn it on under Settings → AI assistants.",
+  ask_disabled: "An administrator of this organisation has turned Ask Stackurity off. Admins can turn it on under Integrations → AI assistants.",
   plan_required: "Ask Stackurity is not included in this organisation's plan.",
   read_only: "Ask Stackurity is off while the organisation is read-only.",
   spend_cap: "This organisation's Ask Stackurity budget for the month is used up. It is back on the 1st.",
@@ -405,7 +405,7 @@ export function AskPanel({ open, onClose, status, reload }: { open: boolean; onC
 }
 
 /**
- * Settings → AI assistants: the organisation admin's switch for Ask
+ * Integrations → AI assistants: the organisation admin's switch for Ask
  * Stackurity, this month's use, and deleting every conversation (which
  * admins can do but never read).
  */

@@ -67,7 +67,7 @@ export function ReportingNotice({ asset }: { asset: Asset }) {
           <summary>Scan it on a schedule</summary>
           <p>
             Save a collector token as the CI secret <span className="mono">STACKURITY_TOKEN</span> (
-            <Link to="/settings/integrations">Settings → Integrations → CI pipeline</Link>).
+            <Link to="/integrations">Integrations → CI pipeline</Link>).
           </p>
           <CodeBlock text={github} label="GitHub Actions workflow" />
           <CodeBlock text={gitlab} label="GitLab CI job (add a pipeline schedule)" />
@@ -102,7 +102,7 @@ export function ReportingNotice({ asset }: { asset: Asset }) {
     return (
       <Notice kind="info">
         <strong>No longer seen by its integration</strong> since {shortDate(asset.last_seen)}. If the integration runs, the {noun} is probably gone
-        from its source: delete it here. A failing integration has its own problem under Settings → Integrations. Its last results are kept, marked
+        from its source: delete it here. A failing integration has its own problem under Integrations. Its last results are kept, marked
         stale.
       </Notice>
     );
@@ -116,7 +116,7 @@ export function ReportingNotice({ asset }: { asset: Asset }) {
       </strong>{" "}
       Your services may be fine; this is about Stackurity's view. Findings are not refreshed, and the last results are kept, marked stale. Likely
       cause: the CI job or scheduled scan that uploads it stopped or failed. Fix: check its last pipeline run. Scan commands are in{" "}
-      <Link to="/settings/integrations">Settings → Integrations → CI pipeline</Link>. If it is only scanned now and then, set its reporting to one-off
+      <Link to="/integrations">Integrations → CI pipeline</Link>. If it is only scanned now and then, set its reporting to one-off
       below. <Link to="/help/asset-reporting#scans">More</Link>
     </Notice>
   );

@@ -150,6 +150,35 @@ export const IconActivity = (p: P) => (
   </Svg>
 );
 
+export const IconReports = (p: P) => (
+  <Svg {...p}>
+    <path d="M7 3h7l5 5v13H7z" />
+    <path d="M14 3v5h5M10 17v-3M13 17v-5M16 17v-2" />
+  </Svg>
+);
+
+export const IconPlug = (p: P) => (
+  <Svg {...p}>
+    <path d="M9 3v4M15 3v4M6 7h12v4a6 6 0 0 1-12 0zM12 17v4" />
+  </Svg>
+);
+
+export const IconPeople = (p: P) => (
+  <Svg {...p}>
+    <circle cx="9" cy="8" r="3" />
+    <circle cx="17" cy="9" r="2" />
+    <path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M15 14.5c.6-.3 1.3-.5 2-.5 2.2 0 4 1.8 4 4" />
+  </Svg>
+);
+
+export const IconAdmin = (p: P) => (
+  <Svg {...p}>
+    <rect x="3" y="4" width="18" height="7" rx="1.5" />
+    <rect x="3" y="13" width="18" height="7" rx="1.5" />
+    <path d="M7 7.5h.01M7 16.5h.01" />
+  </Svg>
+);
+
 export const IconMore = (p: P) => (
   <Svg {...p}>
     <circle cx="5" cy="12" r="1.3" />

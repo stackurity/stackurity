@@ -138,7 +138,7 @@ export function IntelligencePage() {
   return (
     <>
       <PageHeader help="coverage-intelligence"
-        title="Intelligence"
+        title="Data sources"
         sub="Feeds that supply vulnerability, release and end-of-life data, and inventory that could not be evaluated."
         actions={
           engineer && (

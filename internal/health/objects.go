@@ -45,7 +45,7 @@ func (c *Checker) objectProblems(ctx context.Context, viewerWS int64) ([]Problem
 	if err != nil {
 		return nil, err
 	}
-	add(ints, func(store.HealthItem) string { return "/integrations" }, func(g *store.HealthGroup) Problem {
+	add(ints, func(store.HealthItem) string { return "/integrations/sources" }, func(g *store.HealthGroup) Problem {
 		title := count(g.Count, "integration", "integrations") + " failing"
 		switch {
 		case g.Severe > 0 && g.Count == 1:
@@ -64,11 +64,11 @@ func (c *Checker) objectProblems(ctx context.Context, viewerWS int64) ([]Problem
 	if err != nil {
 		return nil, err
 	}
-	add(chans, func(store.HealthItem) string { return "/settings/notifications" }, func(g *store.HealthGroup) Problem {
+	add(chans, func(store.HealthItem) string { return "/integrations" }, func(g *store.HealthGroup) Problem {
 		return Problem{Kind: "notification", Key: "delivery", Title: "Notifications are not being delivered on " + count(g.Count, "channel", "channels"),
 			Scope: Scope{Summary: fmt.Sprintf("%s %s with deliveries that failed in the last 7 days (%d) or are being retried",
 				count(g.Count, "channel", "channels"), where(g), g.Severe)},
-			NextStep: "Open Settings > Notifications, send a test message on the channel, fix its URL, secret or mail settings, " +
+			NextStep: "Open Integrations, send a test message on the channel, fix its URL, secret or mail settings, " +
 				"then retry the failed deliveries listed there.",
 			Docs: docsNotify}
 	})
@@ -103,7 +103,7 @@ func (c *Checker) objectProblems(ctx context.Context, viewerWS int64) ([]Problem
 				"and are marked stale (%d production)", count(g.Count, "repository, image or SBOM", "repositories, images or SBOMs"), where(g),
 				words.Pick(int(g.Count), "its", "their"), g.Severe)},
 			NextStep: "Likely cause: the CI job or scheduled scan that uploads it stopped or failed. Check its last pipeline run; " +
-				"scan commands are in Settings > Integrations > CI pipeline. If it is only scanned now and then, set its reporting to one-off on the asset page.",
+				"scan commands are in Integrations > CI pipeline. If it is only scanned now and then, set its reporting to one-off on the asset page.",
 			Docs: docsReporting}
 	})
 
