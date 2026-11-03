@@ -47,15 +47,19 @@ interface TabLink {
   min?: UserRole;
   /** For instance administrators, who operate this installation. */
   instanceAdmin?: boolean;
+  /** Shown only where the server offers billing (a hosted edition). */
+  billing?: boolean;
   /** Shown only where the server hands out free self-hosted keys (Stackurity Cloud). */
   communityKeys?: boolean;
 }
 
 /** Whether the signed-in person may open a tab: the same rules as the routes in App.tsx. */
-function useAllowed(): (t: Pick<TabLink, "min" | "instanceAdmin" | "communityKeys">) => boolean {
+function useAllowed(): (t: Pick<TabLink, "min" | "instanceAdmin" | "billing" | "communityKeys">) => boolean {
   const { can, me, meta } = useAuth();
   return (t) =>
-    (!t.communityKeys || Boolean(meta?.community_keys)) && (t.instanceAdmin ? Boolean(me?.user?.instance_admin) : !t.min || can(t.min));
+    (!t.billing || Boolean(meta?.billing)) &&
+    (!t.communityKeys || Boolean(meta?.community_keys)) &&
+    (t.instanceAdmin ? Boolean(me?.user?.instance_admin) : !t.min || can(t.min));
 }
 
 /** Tabs that are links: each tab is its own URL, so it can be bookmarked and shared. */
@@ -156,6 +160,7 @@ const TABS: Record<Tabbed, { label: string; tabs: TabLink[] }> = {
       { to: "/admin/workspaces", label: "Workspaces", instanceAdmin: true },
       { to: "/admin/health", label: "Platform health", instanceAdmin: true },
       { to: "/admin/coverage-gaps", label: "Coverage gaps", instanceAdmin: true },
+      { to: "/admin/trials", label: "Trials", instanceAdmin: true, billing: true },
       { to: "/admin/packs", label: "Stack packs", instanceAdmin: true },
       { to: "/admin/license", label: "Licence", instanceAdmin: true },
       { to: "/admin/self-hosted-keys", label: "Self-hosted keys", instanceAdmin: true, communityKeys: true },

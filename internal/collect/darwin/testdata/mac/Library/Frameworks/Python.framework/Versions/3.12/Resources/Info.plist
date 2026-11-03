@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>org.python.python</string>
+	<key>CFBundleShortVersionString</key>
+	<string>3.12.4, (c) 2001-2024 Python Software Foundation.</string>
+	<key>CFBundleVersion</key>
+	<string>3.12.4</string>
+</dict>
+</plist>

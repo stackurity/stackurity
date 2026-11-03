@@ -84,6 +84,18 @@ func versionedDebProduct(purlKey string) (product, cycle string, ok bool) {
 // osProducts maps os-release IDs to endoflife.date product names.
 var osProducts = store.OSProducts
 
+// isMacOS reports whether r is a Mac's operating system row
+// (internal/collect/darwin).
+func isMacOS(r store.EvalRow) bool {
+	return r.Type == "generic" && r.Evidence["kind"] == "operating-system" && r.PurlKey == "pkg:generic/macos"
+}
+
+// Coverage reasons for macOS rows: what is, and is not, evaluated.
+const (
+	macOSNoUpdates        = "macOS security updates are not evaluated (no vulnerability source Stackurity reads lists Apple's fixes by macOS version); the release's end of life is"
+	macOSAppInventoryOnly = "macOS application: inventory only; no vulnerability source is matched for macOS applications yet"
+)
+
 // Evaluate re-evaluates the given components (nil means all) or one asset.
 //
 // Evaluations of one workspace run one at a time (Store.LockEvaluations):
@@ -195,10 +207,18 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 				return nil, err
 			}
 			want = append(want, found...)
+		case isMacOS(r):
+			// No source Stackurity reads lists Apple's fixes by macOS
+			// version, so the release's end of life is all that is known.
+			unsupported(macOSNoUpdates)
 		case r.Type == "generic" && r.Evidence["kind"] == "operating-system":
 			// The OS itself is covered by lifecycle, its packages by the distro feed.
+		case r.Type == "generic" && r.Evidence["kind"] == "runtime" && r.Evidence["install"] == "homebrew":
+			unsupported("runtime installed by Homebrew: lifecycle is tracked, vulnerabilities are not matched (no vulnerability source lists Homebrew's builds)")
 		case r.Type == "generic" && r.Evidence["kind"] == "runtime":
 			unsupported("runtime installed outside a package manager: lifecycle is tracked, vulnerabilities are not matched")
+		case r.Type == "generic" && r.Evidence["kind"] == "macos-app":
+			unsupported(macOSAppInventoryOnly)
 		case r.Type == "generic" && r.Evidence["kind"] == "cms":
 			// WordPress core: no vulnerability source used here lists it
 			// (OSV has no WordPress ecosystem).
