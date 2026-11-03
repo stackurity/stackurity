@@ -1432,6 +1432,15 @@ func registerIntel(w *worker.Worker, st *store.Store, dataDir string, log *slog.
 	w.Every("enqueue-due-feeds", time.Minute, enqueueDueFeeds)
 	// Affected entries no advisory refers to any more (advisories changed or
 	// withdrawn). It reads every package row once, so daily.
+	// Ask Stackurity's model-call log: daily totals for each finished day,
+	// detailed rows after 90 days, daily totals after two years.
+	w.Every("ask-calls-rollup", 24*time.Hour, func(ctx context.Context) error {
+		n, daily, err := st.RollUpAskAPICalls(ctx, time.Now())
+		if err == nil && n+daily > 0 {
+			log.Info("assistant call log pruned", "detailed_rows", n, "daily_rows", daily)
+		}
+		return err
+	})
 	w.Every("prune-affected-values", 24*time.Hour, func(ctx context.Context) error {
 		n, err := st.PruneAffectedValues(ctx)
 		if n > 0 {

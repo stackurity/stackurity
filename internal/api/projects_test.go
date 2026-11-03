@@ -155,6 +155,8 @@ var projectScopes = map[string]string{
 	"GET /api/v1/admin/ask/review-tokens/":         "org",
 	"POST /api/v1/admin/ask/review-tokens/":        "org",
 	"DELETE /api/v1/admin/ask/review-tokens/{id}":  "org",
+	"GET /api/v1/ask/usage/calls":                  "org",
+	"GET /api/v1/admin/ask/calls":                  "org",
 	"DELETE /api/v1/slack/links/{id}":              "account",
 	"POST /api/v1/slack/links/preview":             "account",
 	"POST /api/v1/slack/links/confirm":             "account",

@@ -233,6 +233,8 @@ var routeRules = map[string]routeRule{
 	"GET /api/v1/admin/ask/review-tokens/":         {class: "instance"},
 	"POST /api/v1/admin/ask/review-tokens/":        {class: "instance"},
 	"DELETE /api/v1/admin/ask/review-tokens/{id}":  {class: "instance"},
+	"GET /api/v1/ask/usage/calls":                  {class: "list"},
+	"GET /api/v1/admin/ask/calls":                  {class: "instance"},
 	"DELETE /api/v1/slack/links/{id}":              {class: "object", obj: id("slacklink")},
 	"POST /api/v1/slack/links/preview":             {class: "create", body: func(a *tenantFx) any { return map[string]string{"token": a.ids["slacktoken"]} }},
 	"POST /api/v1/slack/links/confirm":             {class: "create", body: func(a *tenantFx) any { return map[string]string{"token": a.ids["slacktoken"]} }},
@@ -1352,7 +1354,7 @@ func (e *env) snapshot(t *testing.T, a *tenantFx) string {
 		"/api/v1/second-checks", "/api/v1/vex/documents", "/api/v1/vex/sources", "/api/v1/vex/documents/{vexdoc}/statements",
 		"/api/v1/projects/{project}", "/api/v1/access-grants", "/api/v1/assets?project_id={project}",
 		"/api/v1/invitations", "/api/v1/onboarding", "/api/v1/usage", "/api/v1/slack/links", "/api/v1/integrations/jira/connections",
-		"/api/v1/ask/conversations", "/api/v1/ask/conversations/{askconv}",
+		"/api/v1/ask/conversations", "/api/v1/ask/conversations/{askconv}", "/api/v1/ask/usage/calls",
 	}, editionSnapshotPaths...) {
 		resp := a.sess["admin"].req("GET", fill(p, a.ids), nil, nil)
 		body, _ := io.ReadAll(resp.Body)

@@ -13403,6 +13403,90 @@
     }
    }
   },
+  "/ask/usage/calls": {
+   "get": {
+    "operationId": "get_ask_usage_calls",
+    "summary": "Ask Stackurity model calls of this organisation",
+    "description": "This organisation's Ask Stackurity model calls. `items`: one per model call, newest first, with `id`, `created_at`, `workspace_id`, `user_id`, `conversation_id` (null once deleted), `kind` (`answer` or `summary`), `model`, `prompt_version`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `cost_micros` (millionths of a US dollar), `latency_ms`, `tool_calls`, `tool_names`, `history_turns_sent`, `summary_used`, `stop_reason`, `error_code`, `request_id`. Metadata only: never a question, an answer or tool results. Kept 90 days (then daily totals, kept two years). `format=csv` returns the same as a CSV file\n\nRole: admin",
+    "tags": [
+     "Ask Stackurity"
+    ],
+    "x-stackurity-role": "admin",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "since",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "format": "date-time"
+      },
+      "description": "Calls at or after this time (RFC 3339)"
+     },
+     {
+      "name": "until",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "format": "date-time"
+      },
+      "description": "Calls before this time (RFC 3339)"
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "maximum": 10000,
+       "default": 1000
+      }
+     },
+     {
+      "name": "before_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      },
+      "description": "Next page: calls with a smaller id"
+     },
+     {
+      "name": "format",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "enum": [
+        "json",
+        "csv"
+       ],
+       "default": "json"
+      }
+     }
+    ]
+   }
+  },
   "/admin/ask": {
    "get": {
     "operationId": "get_admin_ask",
@@ -13430,6 +13514,90 @@
       "$ref": "#/components/responses/Error"
      }
     }
+   }
+  },
+  "/admin/ask/calls": {
+   "get": {
+    "operationId": "get_admin_ask_calls",
+    "summary": "Ask Stackurity model calls on this server",
+    "description": "Every organisation's Ask Stackurity model calls on this server. `items`: one per model call, newest first, with `id`, `created_at`, `workspace_id`, `user_id`, `conversation_id` (null once deleted), `kind` (`answer` or `summary`), `model`, `prompt_version`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `cost_micros` (millionths of a US dollar), `latency_ms`, `tool_calls`, `tool_names`, `history_turns_sent`, `summary_used`, `stop_reason`, `error_code`, `request_id`. Metadata only: never a question, an answer or tool results. Kept 90 days (then daily totals, kept two years). `format=csv` returns the same as a CSV file\n\nRole: instance admin",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "instance admin",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "parameters": [
+     {
+      "name": "since",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "format": "date-time"
+      },
+      "description": "Calls at or after this time (RFC 3339)"
+     },
+     {
+      "name": "until",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "format": "date-time"
+      },
+      "description": "Calls before this time (RFC 3339)"
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "minimum": 1,
+       "maximum": 10000,
+       "default": 1000
+      }
+     },
+     {
+      "name": "before_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      },
+      "description": "Next page: calls with a smaller id"
+     },
+     {
+      "name": "format",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "enum": [
+        "json",
+        "csv"
+       ],
+       "default": "json"
+      }
+     }
+    ]
    }
   },
   "/ask/conversations/{id}/feedback": {

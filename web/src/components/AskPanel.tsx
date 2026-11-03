@@ -20,6 +20,7 @@ import { Card, ErrorBox, RelativeTime } from "./ui";
 import { IconMessage } from "./Icons";
 import { confirmAction } from "./ConfirmDialog";
 import { AskFeedbackButton, AskRate } from "./AskFeedback";
+import { AskLongChat } from "./AskLongChat";
 
 /** Renders an answer: text, bold, code, lists, and links to Stackurity pages only (ask.ts). */
 export function AskAnswer({ text, onNavigate }: { text: string; onNavigate?: () => void }) {
@@ -105,6 +106,7 @@ export function AskPanel({ open, onClose, status, reload }: { open: boolean; onC
   const [history, setHistory] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
   const [usePage, setUsePage] = useState(true);
+  const [longChat, setLongChat] = useState(false);
   const abort = useRef<AbortController | null>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const end = useRef<HTMLDivElement>(null);
@@ -133,6 +135,7 @@ export function AskPanel({ open, onClose, status, reload }: { open: boolean; onC
   };
 
   const openConv = async (id: number) => {
+    setLongChat(false);
     setHistory(false);
     setError(null);
     try {
@@ -151,6 +154,7 @@ export function AskPanel({ open, onClose, status, reload }: { open: boolean; onC
   };
 
   const fresh = () => {
+    setLongChat(false);
     setConv(null);
     setTurns([]);
     setHistory(false);
@@ -243,6 +247,7 @@ export function AskPanel({ open, onClose, status, reload }: { open: boolean; onC
           case "done":
             answerSeq = Number(e.data.answer_seq) || 0;
             if (e.data.message) closing = { role: "notice", text: String(e.data.message) };
+            if (e.data.long_chat === true) setLongChat(true);
             break;
           case "error":
             closing = { role: "notice", text: String(e.data.message ?? "Something went wrong.") };
@@ -368,6 +373,7 @@ export function AskPanel({ open, onClose, status, reload }: { open: boolean; onC
             {busy && <p className="small muted ask-tool">{tool ? `${tool}…` : "Thinking…"}</p>}
             <div ref={end} />
           </div>
+          {longChat && !busy && <AskLongChat onNew={fresh} />}
           <form className="ask-form" onSubmit={(e) => void send(e)}>
             {blocked && <p className="ask-note small">{blocked}</p>}
             {page && usePage && (

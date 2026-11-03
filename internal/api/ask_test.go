@@ -473,3 +473,52 @@ func TestAskWorkspaceSwitchMidAnswer(t *testing.T) {
 		t.Errorf("the tool read another organisation: %s", results)
 	}
 }
+
+// The call log: organisation admins read their organisation's calls (JSON
+// or CSV), instance admins every organisation's; never question or
+// answer text; anyone else is refused.
+func TestAskUsageCalls(t *testing.T) {
+	fake := asktest.New(t, asktest.Reply{Text: "The secret answer about web-1.", Usage: asktest.Usage{Input: 1200, Output: 80}})
+	e := newEnvWith(t, withAsk(t, fake, nil))
+	e.user("admin@x.io", auth.RoleAdmin)
+	e.user("eng@x.io", auth.RoleEngineer)
+	e.user("root@x.io", auth.RoleViewer)
+	e.instanceAdmin("root@x.io")
+	admin := e.login("admin@x.io")
+	conv := askReady(t, e, admin)
+	if _, evs, raw := askQ(t, admin, conv, "A secret question?", nil, nil); lastEvent(evs).Name != "done" {
+		t.Fatalf("ask: %s", raw)
+	} else if _, ok := lastEvent(evs).Data["long_chat"]; !ok {
+		t.Errorf("done has no long_chat: %s", raw)
+	}
+	var out struct{ Items []store.AskAPICall }
+	if code := admin.do("GET", "/api/v1/ask/usage/calls", nil, &out); code != 200 || len(out.Items) != 1 {
+		t.Fatalf("admin: %d %+v", code, out)
+	}
+	c := out.Items[0]
+	if c.Kind != "answer" || c.InputTokens != 1200 || c.OutputTokens != 80 || c.CostMicros == 0 || c.PromptVersion != ask.PromptVersion {
+		t.Errorf("call row: %+v", c)
+	}
+	resp := admin.req("GET", "/api/v1/ask/usage/calls?format=csv", nil, nil)
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 200 || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/csv") || !strings.Contains(string(body), "claude-sonnet-5-5") {
+		t.Errorf("csv: %d %s", resp.StatusCode, body)
+	}
+	if strings.Contains(string(body), "secret") {
+		t.Errorf("the call log holds text: %s", body)
+	}
+	if code := e.login("eng@x.io").do("GET", "/api/v1/ask/usage/calls", nil, nil); code != 403 {
+		t.Errorf("engineer: %d", code)
+	}
+	if code := admin.do("GET", "/api/v1/admin/ask/calls", nil, nil); code != 403 {
+		t.Errorf("organisation admin on the server-wide log: %d", code)
+	}
+	if code := admin.do("GET", "/api/v1/ask/usage/calls?since=yesterday", nil, nil); code != 400 {
+		t.Errorf("bad since: %d", code)
+	}
+	var all struct{ Items []store.AskAPICall }
+	if code := e.login("root@x.io").do("GET", "/api/v1/admin/ask/calls?limit=10", nil, &all); code != 200 || len(all.Items) != 1 {
+		t.Errorf("instance admin: %d %+v", code, all)
+	}
+}
