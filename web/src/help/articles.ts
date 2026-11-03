@@ -211,7 +211,7 @@ export const ARTICLES: Article[] = [
           "Up to 3 files: PNG, JPEG, WebP or GIF images, MP4 or WebM videos, and PDFs.",
           "Images and PDFs may be 10 MB each, videos 50 MB each, and 90 MB together.",
           "The server checks each file's content, not just its name, and refuses anything else.",
-          "Images have their metadata (such as the location a photo was taken, and the camera) removed before they are sent.",
+          "Images have their metadata (such as the location a photo was taken, and the camera) removed before they are sent. Videos and PDFs are sent as they are: a video recorded on a phone can carry where it was recorded.",
         ],
       },
       { note: "Screenshots may contain your data and will be sent to the Stackurity team. Crop or blur anything you don't want to share (host names, findings, emails) before attaching." },
