@@ -27,6 +27,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/package-url/packageurl-go"
 
@@ -64,6 +65,10 @@ type Scanner struct {
 	// bundleRead counts the bytes read from compiled bundles in this
 	// host's scan, across applications (bundles.go).
 	bundleRead int
+	// served are the directories the web server serves, read once
+	// (leaks.go).
+	servedOnce sync.Once
+	served     []string
 }
 
 // nestedApp reports whether host path p is another application below dir.
