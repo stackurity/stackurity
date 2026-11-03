@@ -92,7 +92,7 @@ export function changeText(g: FixGroup): string {
   if (g.change_type === "patch") return "patch release";
   switch (g.kind) {
     case "security_updates":
-      return "routine package updates";
+      return "package updates, low effort";
     case "windows_update":
       return "cumulative update and restart";
     case "program_update":

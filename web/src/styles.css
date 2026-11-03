@@ -1331,6 +1331,12 @@ select:disabled {
 .empty-body p {
   margin: 0;
 }
+.empty-body p + p {
+  margin-top: 6px;
+}
+.empty-action {
+  margin: var(--s4) 0 0;
+}
 .loading {
   display: flex;
   align-items: center;
@@ -3978,6 +3984,21 @@ h6.md-h {
   color: var(--text-2);
   font-size: 13px;
   font-weight: 600;
+}
+/* A one-line explanation under a block title; a Dashboard word with its meaning on hover. */
+.dash-hint {
+  margin: 0 0 var(--s2);
+}
+.dash-term {
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+  cursor: help;
+}
+.dash-feeds-warn {
+  color: var(--warn-fg);
+}
+.dash-feeds-warn svg {
+  vertical-align: -2px;
 }
 .dash-tiles {
   margin-bottom: var(--s3);

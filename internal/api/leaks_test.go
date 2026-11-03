@@ -53,6 +53,12 @@ func TestLeaksAPI(t *testing.T) {
 		}
 		return res
 	}
+	var before struct {
+		ScannedAssets int64 `json:"scanned_assets"`
+	}
+	if code := admin.do("GET", "/api/v1/leaks", nil, &before); code != 200 || before.ScannedAssets != 0 {
+		t.Errorf("scanned assets before any scan: %d %+v", code, before)
+	}
 	served := model.Leak{Rule: "password-assignment", Title: "Password or key in configuration", Severity: "critical",
 		Path: "/var/www/html/.env", Line: 4, Name: "DB_PASSWORD", Fingerprint: strings.Repeat("1f", 16), Exposure: model.ExposureServed}
 	one := send("web-1", served)
@@ -63,12 +69,13 @@ func TestLeaksAPI(t *testing.T) {
 	}
 
 	type leaks struct {
-		Items []store.Leak
-		Total int64
-		Scans []store.LeakScan
+		Items         []store.Leak
+		Total         int64
+		Scans         []store.LeakScan
+		ScannedAssets int64 `json:"scanned_assets"`
 	}
 	var all leaks
-	if code := admin.do("GET", "/api/v1/leaks?severity=critical", nil, &all); code != 200 || all.Total != 2 {
+	if code := admin.do("GET", "/api/v1/leaks?severity=critical", nil, &all); code != 200 || all.Total != 2 || all.ScannedAssets != 2 {
 		t.Fatalf("list: %d %+v", code, all)
 	}
 	var mine leaks
@@ -121,7 +128,7 @@ func TestLeaksAPI(t *testing.T) {
 	}
 	member := e.signIn("proj-sec@x.io")
 	var seen leaks
-	if code := member.do("GET", "/api/v1/leaks", nil, &seen); code != 200 || seen.Total != 1 || seen.Items[0].ID != l1 {
+	if code := member.do("GET", "/api/v1/leaks", nil, &seen); code != 200 || seen.Total != 1 || seen.Items[0].ID != l1 || seen.ScannedAssets != 1 {
 		t.Errorf("member list: %d %+v", code, seen)
 	}
 	if code := member.do("GET", fmt.Sprintf("/api/v1/assets/%d/leaks", two.AssetID), nil, nil); code != 404 {
