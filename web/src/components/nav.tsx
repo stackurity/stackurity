@@ -47,12 +47,14 @@ interface TabLink {
   min?: UserRole;
   /** For instance administrators, who operate this installation. */
   instanceAdmin?: boolean;
+  /** Shown only where the server offers billing (a hosted edition). */
+  billing?: boolean;
 }
 
 /** Whether the signed-in person may open a tab: the same rules as the routes in App.tsx. */
-function useAllowed(): (t: Pick<TabLink, "min" | "instanceAdmin">) => boolean {
-  const { can, me } = useAuth();
-  return (t) => (t.instanceAdmin ? Boolean(me?.user?.instance_admin) : !t.min || can(t.min));
+function useAllowed(): (t: Pick<TabLink, "min" | "instanceAdmin" | "billing">) => boolean {
+  const { can, me, meta } = useAuth();
+  return (t) => (!t.billing || Boolean(meta?.billing)) && (t.instanceAdmin ? Boolean(me?.user?.instance_admin) : !t.min || can(t.min));
 }
 
 /** Tabs that are links: each tab is its own URL, so it can be bookmarked and shared. */
@@ -153,6 +155,7 @@ const TABS: Record<Tabbed, { label: string; tabs: TabLink[] }> = {
       { to: "/admin/workspaces", label: "Workspaces", instanceAdmin: true },
       { to: "/admin/health", label: "Platform health", instanceAdmin: true },
       { to: "/admin/coverage-gaps", label: "Coverage gaps", instanceAdmin: true },
+      { to: "/admin/trials", label: "Trials", instanceAdmin: true, billing: true },
       { to: "/admin/packs", label: "Stack packs", instanceAdmin: true },
       { to: "/admin/license", label: "Licence", instanceAdmin: true },
       { to: "/updates", label: "What's new", instanceAdmin: true },

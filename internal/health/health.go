@@ -168,6 +168,9 @@ type Checker struct {
 	// a risk in this deployment; empty when they are marked Secure or the
 	// deployment is declared local (see cmd/stackurity cookieRisk).
 	InsecureCookies string
+	// AskGlobalCap is Ask Stackurity's monthly spend cap for the whole
+	// installation, in millionths of a US dollar (nil: none, or Ask is off).
+	AskGlobalCap *int64
 }
 
 // PlatformTarget returns the workspace platform incidents are raised in. When
@@ -291,6 +294,15 @@ func (c *Checker) CheckFor(ctx context.Context, viewerWS int64) (*Report, error)
 			Scope:    Scope{Summary: "email sent by Stackurity, in every workspace", Count: int64(q.Held24h)},
 			NextStep: "If an organisation needs more, raise its limits (STACKURITY_CLOUD_EMAIL_PER_MINUTE, _PER_HOUR, _PER_DAY), or check whether something sends far more than usual.",
 			Docs:     "docs/install.md#notifications"})
+	}
+	if c.AskGlobalCap != nil && *c.AskGlobalCap > 0 {
+		spent, err := c.Store.AskGlobalSpend(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if p, ok := askSpendProblem(spent, *c.AskGlobalCap); ok {
+			r.Problems = append(r.Problems, p)
+		}
 	}
 	if wait := time.Duration(r.OldestQueuedSeconds * float64(time.Second)); wait > queueBacklog {
 		var queued int64
@@ -537,4 +549,23 @@ func (c *Checker) PlatformIncidents(ctx context.Context) ([]store.SystemIncident
 			Detail: map[string]any{"problem": p.Kind}})
 	}
 	return out, nil
+}
+
+// askSpendProblem reports Ask Stackurity's spend this month at 80 per cent
+// of the installation's cap or more.
+func askSpendProblem(spent, capMicros int64) (Problem, bool) {
+	if spent*100 < capMicros*80 {
+		return Problem{}, false
+	}
+	p := Problem{Severity: Warning, Kind: "ask", Key: "spend",
+		Title:    fmt.Sprintf("Ask Stackurity has used %d%% of this month's spend cap", spent*100/capMicros),
+		Detail:   fmt.Sprintf("$%.2f of $%.2f (STACKURITY_ASK_GLOBAL_SPEND_CAP_USD). At the cap, every organisation's questions stop until the 1st.", float64(spent)/1e6, float64(capMicros)/1e6),
+		Scope:    Scope{Summary: "Ask Stackurity, in every organisation"},
+		NextStep: "Raise STACKURITY_ASK_GLOBAL_SPEND_CAP_USD and restart, or let it reset on the 1st (UTC).",
+		Docs:     "docs/ai-assistants.md#ask-stackurity"}
+	if spent >= capMicros {
+		p.Severity = Critical
+		p.Title = "Ask Stackurity has reached this month's spend cap"
+	}
+	return p, true
 }
