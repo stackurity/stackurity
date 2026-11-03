@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -1382,5 +1383,52 @@ func TestPasskeyConcurrentUsesAtOneCounter(t *testing.T) {
 	}
 	if ok != 1 || clone != 1 {
 		t.Fatalf("two sign-ins at one counter: %v %+v", codes, outs)
+	}
+}
+
+// New recovery codes are a factor change like any other: the account's
+// other sessions end and this one gets a new ID.
+func TestNewRecoveryCodesEndOtherSessions(t *testing.T) {
+	e := newPasskeyEnv(t)
+	e.user("ann@x.io", auth.RoleEngineer)
+	ann := e.login("ann@x.io")
+	secret, _ := enrol(t, ann)
+	if _, err := e.st.Pool.Exec(context.Background(), `UPDATE user_mfa SET last_step = 0`); err != nil {
+		t.Fatal(err)
+	}
+	other, _ := passwordStep(t, e, "ann@x.io")
+	if code := other.do("POST", "/api/v1/auth/mfa/verify", map[string]string{"code": totpAt(t, secret, 30*time.Second)}, nil); code != 200 {
+		t.Fatalf("other sign-in: %d", code)
+	}
+	sessionCookie := func(s *session) string {
+		u, _ := url.Parse(e.srv.URL + "/api/v1/")
+		for _, c := range s.http.Jar.Cookies(u) {
+			if c.Name == "stackurity_session" {
+				return c.Value
+			}
+		}
+		t.Fatal("no session cookie")
+		return ""
+	}
+	before := sessionCookie(ann)
+	var out struct {
+		RecoveryCodes []string `json:"recovery_codes"`
+	}
+	if code := ann.do("POST", "/api/v1/auth/mfa/recovery-codes", map[string]string{"password": pw}, &out); code != 200 || len(out.RecoveryCodes) != 10 {
+		t.Fatalf("new recovery codes: %d %d", code, len(out.RecoveryCodes))
+	}
+	if code := other.do("GET", "/api/v1/auth/me", nil, nil); code != 401 {
+		t.Errorf("other session after new recovery codes: %d", code)
+	}
+	if code := ann.do("GET", "/api/v1/auth/me", nil, nil); code != 200 {
+		t.Errorf("this session after new recovery codes: %d", code)
+	}
+	if sessionCookie(ann) == before {
+		t.Error("this session kept its ID")
+	}
+	old := e.anon()
+	old.hdr = map[string]string{"Cookie": "stackurity_session=" + before}
+	if code := old.do("GET", "/api/v1/auth/me", nil, nil); code != 401 {
+		t.Errorf("the replaced session ID: %d", code)
 	}
 }

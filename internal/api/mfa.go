@@ -550,7 +550,14 @@ func (s *Server) newRecoveryCodes(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	s.auditAccount(r, u, "auth.mfa_recovery_codes_replaced", nil)
+	// Like any other factor change: the other sessions end (one may be the
+	// reason for new codes) and this one gets a new ID.
+	ended, err := s.factorChanged(w, r, keepFactor(principal(r)))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.auditAccount(r, u, "auth.mfa_recovery_codes_replaced", map[string]any{"other_sessions_ended": ended})
 	s.notifyFactorChange(r, u.Email, "New recovery codes were made, and the old ones stopped working,", "")
 	writeJSON(w, 200, map[string]any{"recovery_codes": codes})
 }
