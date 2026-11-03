@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { ALL_ONLY, CAPABILITIES, NO, PERMISSIONS, ROLE_HELP, SPECIFIC_ROLES, YES, invitationSummary, permissionLabel, permissionTable, scopeSummary } from "./roles.ts";
 
-// The permissions table (Settings → Users, the help article) must say what
+// The permissions table (People → Users, the help article) must say what
 // the server enforces. Each row names routes that prove it; this reads the
 // router (internal/api/server.go) and the project rules
 // (internal/api/projects.go) and checks each route's minimum role and

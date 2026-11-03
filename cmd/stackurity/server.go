@@ -947,6 +947,13 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 		if err := st.PruneOAuth(ctx); err != nil {
 			return err
 		}
+		// Ask Stackurity: conversations 30 days after they started,
+		// abandoned spend holds, usage older than two years.
+		if n, err := st.PurgeAsk(ctx); err != nil {
+			return err
+		} else if n > 0 {
+			log.Info("assistant conversations deleted after 30 days", "count", n)
+		}
 		// Connect PagerDuty steps nobody finished, with their tokens.
 		if err := st.PurgePagerDutyConnects(ctx); err != nil {
 			return err
@@ -1068,7 +1075,7 @@ func adminCmd() *cobra.Command {
 				return err
 			}
 			fmt.Printf("loaded %d demo assets (names start with demo-). Findings appear once the vulnerability feeds have synced,\n"+
-				"usually within a few minutes; see Intelligence for feed status. Remove them with: stackurity admin load-demo --remove\n", len(ids))
+				"usually within a few minutes; see Integrations, Data sources for feed status. Remove them with: stackurity admin load-demo --remove\n", len(ids))
 			return nil
 		},
 	}

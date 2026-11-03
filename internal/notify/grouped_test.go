@@ -352,7 +352,7 @@ func TestGroupedPayloads(t *testing.T) {
 	}
 	if !strings.Contains(body, "- commmerceblog: 74 new urgent issues\r\n  https://stk.example/fixes/issues?asset_id=1&priority=P1\r\n") ||
 		!strings.Contains(body, `<a href="https://stk.example/fixes/1:package_upgrade:0">Top fix: Upgrade package-0 to 2.0 (clears 100 issues)</a>`) ||
-		!strings.Contains(body, "Change these notifications: https://stk.example/settings/notifications?tab=routes") {
+		!strings.Contains(body, "Change these notifications: https://stk.example/integrations") {
 		t.Errorf("email body = %s", body)
 	}
 	if strings.Contains(strings.ReplaceAll(body, "\r\n", ""), "\n") {

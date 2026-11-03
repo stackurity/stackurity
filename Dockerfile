@@ -41,7 +41,12 @@ RUN --mount=type=bind,from=pro,target=/pro set -e; FLAGS=""; \
       CGO_ENABLED=0 GOOS=darwin GOARCH=$arch go build $FLAGS -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
         -o /out/agents/stackurity-darwin-$arch ./cmd/stackurity; \
       (cd /out/agents && sha256sum stackurity-darwin-$arch > stackurity-darwin-$arch.sha256); \
-    done
+    done; \
+    # And for Windows hosts (agent.ps1). The host collector is the registry
+    # reader in internal/collect/windows.
+    CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build $FLAGS -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
+      -o /out/agents/stackurity-windows-amd64 ./cmd/stackurity; \
+    (cd /out/agents && sha256sum stackurity-windows-amd64 > stackurity-windows-amd64.sha256)
 
 FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine AS syft
 # Syft generates container image SBOMs from registries (no container runtime).

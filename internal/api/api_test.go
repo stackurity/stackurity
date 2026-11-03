@@ -1198,7 +1198,8 @@ func TestAgentDownload(t *testing.T) {
 		t.Errorf("macOS checksum: %d %q", code, body)
 	}
 	for _, p := range []string{"/download/agent/linux-amd64", "/download/agent/..%2f..%2fetc%2fpasswd", "/download/agent/windows-amd64",
-		"/download/agent/darwin-arm64", "/download/agent/darwin-386"} {
+		"/download/agent/darwin-arm64", "/download/agent/darwin-386",
+		"/download/agent/windows-arm64", "/download/agent/stackurity-windows-amd64.exe"} {
 		if code, _ := get(p); code != 404 {
 			t.Errorf("%s: %d", p, code)
 		}
@@ -1208,6 +1209,34 @@ func TestAgentDownload(t *testing.T) {
 	}
 	if _, body := get("/install/agent-macos.sh"); !strings.Contains(body, "SERVER='https://stk.example.com'") {
 		t.Error("the macOS installer should use the configured base URL")
+	}
+
+	// The Windows build, for agent.ps1, is saved as stackurity.exe.
+	for name, data := range map[string]string{"stackurity-windows-amd64": "MZ", "stackurity-windows-amd64.sha256": "abc  stackurity-windows-amd64\n"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(data), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	resp, err := http.Get(srv.URL + "/download/agent/windows-amd64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 || resp.Header.Get("Content-Disposition") != `attachment; filename="stackurity.exe"` {
+		t.Errorf("windows download: %d %q", resp.StatusCode, resp.Header.Get("Content-Disposition"))
+	}
+	if code, body := get("/download/agent/windows-amd64.sha256"); code != 200 || !strings.HasPrefix(body, "abc ") {
+		t.Errorf("windows checksum: %d %q", code, body)
+	}
+	resp, err = http.Get(srv.URL + "/install/agent.ps1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 200 || resp.Header.Get("Content-Type") != "text/plain; charset=utf-8" ||
+		!strings.Contains(string(b), "$Server = 'https://stk.example.com'") {
+		t.Errorf("windows installer: %d %q", resp.StatusCode, resp.Header.Get("Content-Type"))
 	}
 }
 

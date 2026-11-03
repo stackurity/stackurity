@@ -22,7 +22,7 @@ import { Card, EmptyState, ErrorBox, Loading, Notice, PageHeader } from "../../c
 import { confirmAction, promptText } from "../../components/ConfirmDialog";
 
 /*
- * Settings, Projects and access (admins). Projects group assets; people and
+ * Assets, Projects (admins). Projects group assets; people and
  * teams get a role on chosen projects, or on one asset. Someone with access
  * to a project sees only its assets. Every change is in the audit log.
  */
@@ -80,7 +80,7 @@ export function ProjectsPage() {
     const p = await act.run(() => api.post<Project>("/projects", { name, asset_ids: ids }));
     if (p) {
       reloadAll();
-      navigate(`/settings/projects/${p.id}`);
+      navigate(`/projects/${p.id}`);
     }
   };
   const dismiss = async (sg: ProjectSuggestion) => {
@@ -111,7 +111,7 @@ export function ProjectsPage() {
           onCreated={(p) => {
             setCreating(false);
             reloadAll();
-            navigate(`/settings/projects/${p.id}`);
+            navigate(`/projects/${p.id}`);
           }}
         />
       )}
@@ -181,14 +181,14 @@ export function ProjectsPage() {
             {projects.map((p) => (
               <li key={p.id}>
                 <span className="grow">
-                  <Link to={`/settings/projects/${p.id}`}>
+                  <Link to={`/projects/${p.id}`}>
                     <strong>{p.name}</strong>
                   </Link>
                   {p.archived_at && <span className="muted"> (archived)</span>}
                   {p.description && <span className="small muted"> · {p.description}</span>}
                 </span>
                 <span className="small">{plural(p.asset_count, "asset")}</span>
-                <Link className="btn btn-sm" to={`/settings/projects/${p.id}`}>
+                <Link className="btn btn-sm" to={`/projects/${p.id}`}>
                   Assets and access
                 </Link>
               </li>
@@ -505,7 +505,7 @@ export function ProjectDetailPage() {
   return (
     <>
       <nav className="crumbs" aria-label="Breadcrumb">
-        <Link to="/settings/projects">Projects and access</Link>
+        <Link to="/projects">Projects and access</Link>
       </nav>
       <PageHeader
         help="projects"

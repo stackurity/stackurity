@@ -109,7 +109,7 @@ export function EmailStopPage({ kind }: { kind: "unsubscribe" | "block" }) {
         <p>
           {kind === "block"
             ? "Stackurity will never email this address again, whichever organisation asks. Nothing else changes."
-            : "This address will stop getting Stackurity notifications from this organisation. Members can change what they get under Settings → Integrations."}
+            : "This address will stop getting Stackurity notifications from this organisation. Members can change what they get under Integrations."}
         </p>
         <ErrorBox error={error} title="Could not do that" />
         <div className="form-actions">

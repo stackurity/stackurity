@@ -135,7 +135,7 @@ func printResult(r *client.IngestResult) {
 	fmt.Println()
 	if r.ProjectID > 0 {
 		if r.InProject != nil && !*r.InProject {
-			fmt.Printf("warning: asset %d already existed and is not in project %d: a collector token adds only the assets it creates; an admin can add it under Settings > Projects and access\n", r.AssetID, r.ProjectID)
+			fmt.Printf("warning: asset %d already existed and is not in project %d: a collector token adds only the assets it creates; an admin can add it under Assets > Projects\n", r.AssetID, r.ProjectID)
 		} else {
 			fmt.Printf("asset %d is in project %d\n", r.AssetID, r.ProjectID)
 		}
@@ -553,6 +553,16 @@ host; see docs/install.md.`,
 	cmd.Flags().DurationVar(&actionInterval, "action-interval", 5*time.Minute, "how often to check for approved changes when --remediate is set")
 	cmd.Flags().DurationVar(&checkInterval, "check-interval", 45*time.Second,
 		"how often to ask the server whether someone pressed Check again (0 turns it off)")
+	// Started by the Windows service control manager (the agent.ps1
+	// installer registers the service), the agent reports to it and stops
+	// when asked; anywhere else this runs the agent as it is.
+	run := cmd.RunE
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		return runAgent(cmd.Context(), func(ctx context.Context) error {
+			cmd.SetContext(ctx)
+			return run(cmd, args)
+		})
+	}
 	return cmd
 }
 
@@ -595,7 +605,7 @@ risk-accepted on the server do not count.
 
 With --project (an id or name; or STACKURITY_PROJECT) a new asset is added
 to that project, and an admin's token also adds an existing one. A collector
-token must have been made for that project (Settings > API tokens, or the
+token must have been made for that project (Integrations > API tokens, or the
 first-run flow) and may name only it; a name needs a token that can read
 projects, so give a collector token the id. The command checks that the
 server supports this (0.10 or later) before it uploads anything.
