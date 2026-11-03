@@ -4,5 +4,5 @@ contact_links:
     url: https://github.com/stackurity/stackurity/security/advisories/new
     about: Please report vulnerabilities privately, not as an issue (see SECURITY.md).
   - name: Questions and pilots
-    url: https://stackurity.dev/#contact
+    url: https://stackurity.ai/#contact
     about: Ask a question or talk to us about a pilot.
