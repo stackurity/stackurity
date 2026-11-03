@@ -252,6 +252,9 @@ func (s *Server) Handler() http.Handler {
 		r.Post("/auth/login", s.login)
 		r.Post("/auth/logout", s.logout)
 		s.mfaPublicRoutes(r)
+		// Reviewing Ask Stackurity feedback: operators and feedback review
+		// tokens, which have no user or organisation (ask_feedback.go).
+		s.askFeedbackReviewRoutes(r)
 		s.passwordResetRoutes(r)
 		r.Post("/enroll", s.enroll)
 		// A CI job's OpenID Connect token for a collector token (ci_oidc.go).

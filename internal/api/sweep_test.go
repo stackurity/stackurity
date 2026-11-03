@@ -222,6 +222,17 @@ var routeRules = map[string]routeRule{
 	"PUT /api/v1/ask/settings":                     {class: "create", body: func(*tenantFx) any { return map[string]bool{"enabled": false} }},
 	"DELETE /api/v1/ask/settings/conversations":    {class: "create"},
 	"GET /api/v1/admin/ask":                        {class: "instance"},
+	// Feedback on Ask Stackurity: on the caller's own conversation only;
+	// the review is the installation's operators' (and their review
+	// tokens'), never an organisation's.
+	"POST /api/v1/ask/conversations/{id}/feedback": {class: "object", obj: id("askconv"), body: func(*tenantFx) any { return map[string]string{"scope": "chat", "rating": "down"} }},
+	"POST /api/v1/ask/feedback":                    {class: "create", body: func(*tenantFx) any { return map[string]string{"scope": "ui", "category": "other"} }},
+	"GET /api/v1/admin/ask/feedback/":              {class: "instance"},
+	"GET /api/v1/admin/ask/feedback/{id}":          {class: "instance"},
+	"PATCH /api/v1/admin/ask/feedback/{id}":        {class: "instance"},
+	"GET /api/v1/admin/ask/review-tokens/":         {class: "instance"},
+	"POST /api/v1/admin/ask/review-tokens/":        {class: "instance"},
+	"DELETE /api/v1/admin/ask/review-tokens/{id}":  {class: "instance"},
 	"DELETE /api/v1/slack/links/{id}":              {class: "object", obj: id("slacklink")},
 	"POST /api/v1/slack/links/preview":             {class: "create", body: func(a *tenantFx) any { return map[string]string{"token": a.ids["slacktoken"]} }},
 	"POST /api/v1/slack/links/confirm":             {class: "create", body: func(a *tenantFx) any { return map[string]string{"token": a.ids["slacktoken"]} }},

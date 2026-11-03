@@ -79,8 +79,9 @@ type AskSnapshotMessage struct {
 type AskFeedbackInput struct {
 	UserID         int64
 	ConversationID int64
-	// Seq is the answer's sequence number (0: the whole conversation, or
-	// the bot's look and controls).
+	// ConversationID 0: feedback on the panel itself (scope ui), from a
+	// panel with no conversation yet. Seq is the answer's sequence number
+	// (0: the whole conversation, or the bot's look and controls).
 	Seq           int
 	Rating        string // up, down or ""
 	Category      string
@@ -160,8 +161,14 @@ func (s *Store) AddAskFeedback(ctx context.Context, in AskFeedbackInput) (*AskFe
 	if err := in.Validate(); err != nil {
 		return nil, err
 	}
-	if _, err := s.AskConversation(ctx, in.UserID, in.ConversationID); err != nil {
-		return nil, err
+	var conv *int64
+	if in.ConversationID > 0 {
+		if _, err := s.AskConversation(ctx, in.UserID, in.ConversationID); err != nil {
+			return nil, err
+		}
+		conv = &in.ConversationID
+	} else if in.Scope != "ui" || in.Seq != 0 {
+		return nil, fmt.Errorf("feedback without a conversation is about the panel itself: %w", ErrInvalid)
 	}
 	ws, err := askWorkspace(ctx)
 	if err != nil {
@@ -212,7 +219,7 @@ func (s *Store) AddAskFeedback(ctx context.Context, in AskFeedbackInput) (*AskFe
 	return scanAskFeedback(s.Pool.QueryRow(ctx, `INSERT INTO ask_feedback (workspace_id, user_id, conversation_id, message_id, kind, rating,
 		category, scope, text, consent, snapshot, prompt_version, model, usage_call_id, page_path, viewport)
 		VALUES ($1, $2, $3, $4, 'explicit', $5, $6, $7, $8, $9, $10, left($11, 40), left($12, 100), $13, $14, $15)
-		RETURNING `+askFeedbackCols, ws, in.UserID, in.ConversationID, msgID, rating, in.Category, in.Scope, strings.TrimSpace(in.Text),
+		RETURNING `+askFeedbackCols, ws, in.UserID, conv, msgID, rating, in.Category, in.Scope, strings.TrimSpace(in.Text),
 		in.Consent, snap, in.PromptVersion, in.Model, in.UsageCallID, in.PagePath, in.Viewport))
 }
 

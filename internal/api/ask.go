@@ -62,6 +62,8 @@ func (s *Server) askRoutes(r chi.Router) {
 	r.Get("/ask/conversations/{id}", s.askGetConversation)
 	r.Delete("/ask/conversations/{id}", s.askDeleteConversation)
 	r.Post("/ask/conversations/{id}/messages", s.askQuestion)
+	r.Post("/ask/conversations/{id}/feedback", s.askFeedback)
+	r.Post("/ask/feedback", s.askFeedback)
 	r.Group(func(r chi.Router) {
 		r.Use(requireRole(auth.RoleAdmin))
 		r.Get("/ask/settings", s.askSettings)
@@ -516,6 +518,7 @@ func (s *Server) askQuestion(w http.ResponseWriter, r *http.Request) {
 			send("reset", map[string]any{})
 		}
 	})
+	answerSeq := s.askSignals(context.WithoutCancel(ctx), p.User.ID, conv, out, err)
 	if err != nil {
 		if out.CostMicros == 0 && len(out.Usage) == 0 {
 			// The model was never reached: the question does not count.
@@ -527,7 +530,7 @@ func (s *Server) askQuestion(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	done := map[string]any{"stop_reason": out.StopReason, "questions_used": counted.Used, "questions_limit": l.QuestionLimit}
+	done := map[string]any{"stop_reason": out.StopReason, "questions_used": counted.Used, "questions_limit": l.QuestionLimit, "answer_seq": answerSeq}
 	switch out.StopReason {
 	case "refusal":
 		done["message"] = "Claude declined to answer this question. Try asking it another way."

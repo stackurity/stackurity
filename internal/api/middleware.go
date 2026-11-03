@@ -42,6 +42,10 @@ type Principal struct {
 	// (assistants.go). Its requests come only from the tools behind /mcp;
 	// Token then describes it, so it is capped like an API token.
 	Assistant *store.AssistantGrant
+	// FeedbackReviewer: a read-only token for reviewing Ask Stackurity
+	// feedback (ask_feedback.go). It has no user and no organisation, and
+	// authenticate lets it reach only the feedback review routes.
+	FeedbackReviewer *store.AskFeedbackReviewToken
 	// Ask: the request is a tool of Ask Stackurity (ask.go), made in
 	// process with the person's own session while they wait for an answer.
 	// It may only read (projectGate), and nothing from outside can set it.
@@ -71,6 +75,8 @@ func (p *Principal) Actor(r *http.Request) store.Actor {
 	switch {
 	case p == nil:
 		a.Type = "anonymous"
+	case p.FeedbackReviewer != nil:
+		a.Type, a.ID, a.Name = "token", p.FeedbackReviewer.ID, "feedback review: "+p.FeedbackReviewer.Name+" ("+p.FeedbackReviewer.Prefix+")"
 	case p.Assistant != nil:
 		a.Type, a.ID, a.Name = "assistant", p.Assistant.ID, p.User.Email+" (assistant "+p.Assistant.ClientName+")"
 	case p.Ask:
@@ -114,6 +120,10 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 			}
 			if errors.Is(err, store.ErrNotFound) {
 				writeError(w, 401, "unauthorized", "invalid or expired token")
+				return
+			}
+			if err == nil && p.FeedbackReviewer != nil && !feedbackReviewRequest(r) {
+				writeError(w, 403, "forbidden", "a feedback review token works only on GET and PATCH /api/v1/admin/ask/feedback")
 				return
 			}
 			if err != nil {
@@ -188,6 +198,13 @@ var errAssistantToken = errors.New("assistant token outside /mcp")
 // a request the /mcp endpoint makes in process (viaMCP). Invalid tokens are
 // store.ErrNotFound.
 func (s *Server) bearerPrincipal(ctx context.Context, secret string) (*Principal, error) {
+	if strings.HasPrefix(secret, store.AskFeedbackReviewTokenKind+"_") {
+		t, err := s.Store.AskFeedbackReviewPrincipal(ctx, secret)
+		if err != nil {
+			return nil, err
+		}
+		return &Principal{FeedbackReviewer: t}, nil
+	}
 	if strings.HasPrefix(secret, assistantTokenPrefix) {
 		if !viaMCP(ctx) {
 			return nil, errAssistantToken

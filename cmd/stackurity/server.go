@@ -960,6 +960,16 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 		} else if n > 0 {
 			log.Info("assistant conversations deleted after 30 days", "count", n)
 		}
+		// Ask Stackurity feedback: conversations left after a failed answer,
+		// snapshots after 90 days, feedback after a year.
+		if _, err := st.DetectAskAbandoned(ctx); err != nil {
+			return err
+		}
+		if snaps, rows, err := st.PurgeAskFeedback(ctx); err != nil {
+			return err
+		} else if snaps+rows > 0 {
+			log.Info("assistant feedback purged", "snapshots", snaps, "rows", rows)
+		}
 		// Connect PagerDuty steps nobody finished, with their tokens.
 		if err := st.PurgePagerDutyConnects(ctx); err != nil {
 			return err
