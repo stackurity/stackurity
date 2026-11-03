@@ -484,7 +484,13 @@ Lists the account's droplets (optionally `?tag=`) with, for each, `name`, `regio
 
 **Who:** anyone · outside `/api/v1`
 
-The agent installer script for Linux, with the server's URL filled in: `STACKURITY_BASE_URL`, or without it the URL the request came in on. In that case a `Host` header that is not a hostname or IP address with an optional port gets `400` instead of a script. Served with `Cache-Control: no-store` and `Vary: Host`.
+The agent installer script for Linux for Linux hosts, with the server's URL filled in: `STACKURITY_BASE_URL`, or without it the URL the request came in on. In that case a `Host` header that is not a hostname or IP address with an optional port gets `400` instead of a script. Served with `Cache-Control: no-store` and `Vary: Host`.
+
+### `GET /install/agent-macos.sh`
+
+**Who:** anyone · outside `/api/v1`
+
+The agent installer script for Macs (a LaunchDaemon; see [Macs](install.md#macs)). Without `STACKURITY_BASE_URL` the URL in it comes from the request's Host header, which must be a hostname or IP address with an optional port (400 otherwise); it is served with `Cache-Control: no-store`.
 
 ### `GET /install/agent.ps1`
 
@@ -502,7 +508,7 @@ The Kubernetes reporter's manifest for this server ([kubernetes.md](kubernetes.m
 
 **Who:** anyone · outside `/api/v1`
 
-The agent builds the installers download: `linux-amd64`, `linux-arm64` and `windows-amd64`, each with a `.sha256`. They are bundled in the server image (`STACKURITY_AGENT_DIR`).
+The agent builds the installers download: `linux-amd64`, `linux-arm64`, `windows-amd64`, `darwin-amd64` and `darwin-arm64`, each with a `.sha256`. They are bundled in the server image (`STACKURITY_AGENT_DIR`).
 
 ### `POST /kubernetes/report`
 
@@ -672,7 +678,7 @@ The asset's inventory as CycloneDX 1.6.
 
 **Who:** viewer
 
-The component explorer, paged. Query: `q`, `type`.
+The component explorer, paged. Query: `q`, `type`, and `segment` (`checked`, `needs_you`, `waiting`, `not_supported` or `no_advisories`): the components of one segment of the coverage headline, whose `total` is that segment's count in `GET /coverage/overview`.
 
 ### `GET /components/{id}`
 
@@ -725,6 +731,26 @@ The coverage ledger across assets, paged. Query: `asset_id`, `problems=true`.
 **Who:** viewer
 
 The components that were not checked, grouped by reason and who acts, for one asset (`asset_id`) or every asset the caller may see. See [Unchecked components](#unchecked-components).
+
+### `GET /coverage/overview`
+
+**Who:** viewer
+
+The Coverage page's headline. `total` counts the components on current assets, and `segments` splits them into `checked`, `needs_you`, `waiting`, `not_supported` and `no_advisories`, which add up to `total`. A component is counted once, in the first of these that any of its rows is in: needs you, waiting, not supported, no published advisories, checked. So a component checked on one asset with no readable version on another is `needs_you`. `GET /components?segment=` lists each segment.
+
+`ecosystems` are the ecosystems and operating systems found, most components first. Each has a `key` (`npm`, `deb:ubuntu-24.04`, `windows`, `wordpress`), a `label` (`npm`, `Ubuntu 24.04`), the package `type`, `components`, `checked` (checked, or no published advisories), `not_supported`, a `status` (`checked`, `partly` or `not_supported`) and `requested` (the workspace asked for support).
+
+### `GET /coverage/assets`
+
+**Who:** viewer
+
+Assets worst first, paged: by `group` (`failed_collection`, `not_reporting`, `partly_checked`, `awaiting_first_check`, `healthy`), then the smallest share checked, then name. Query: `group` limits the list to one group; `groups` always counts every group. Each item has `id`, `name`, `kind`, `collection_status`, `reporting`, `state`, `components`, `checked`, `not_checked` (components not checked, by who acts: `user`, `stackurity`, `automatic`, `none`), `problem_scopes` (collector scopes not fully checked; `GET /coverage?asset_id=&problems=true` lists them) and `last_report`.
+
+### `POST /coverage/support-requests`
+
+**Who:** viewer
+
+`{"ecosystem"}`: asks for an ecosystem Stackurity does not check yet to be supported. The ecosystem is a `key` from `GET /coverage/overview` that has components Stackurity does not support; anything else is a 400. One request per workspace and ecosystem: asking again changes nothing. Only people signed in to the dashboard may ask (API tokens get 403), at most 10 times a minute and 50 times a day each (429 beyond). Answers `ecosystem`, `label` and `requested`. Audited as `coverage.support_request` the first time. Instance administrators see the requests counted per ecosystem on `GET /admin/coverage-gaps` (`support_requests`).
 
 ### `GET /evaluation-gaps`
 
@@ -1934,7 +1960,7 @@ Platform health across workspaces: `status` (`ok`, `warning`, `critical`), `prob
 
 **Who:** instance admin
 
-What Stackurity cannot check, across every active workspace: `unread_files` (files a scan found that no built-in reader or installed stack pack reads, by `kind` such as `hex:mix.lock` or `swift:Package.resolved`), `no_vulnerability_source` (components whose coverage is `unsupported`, by package type and reason; vendor builds are counted per repository) `no_lifecycle` (products no lifecycle source tracks, such as NestJS; installed release lines the lifecycle data does not list; runtimes and operating systems with no lifecycle product) and `not_checked` (components a vulnerability source exists for that were still not checked, by `reason`, package type and subject: `kind` is `reason|type|subject`, such as `waiting_for_data|npm|osv:npm` or `no_advisories|deb|Debian:13`). Each entry has `kind`, `label`, `detail`, `assets`, `workspaces` and `actor` (`stackurity`, `user`, `automatic` or `none`; see [Unchecked components](#unchecked-components)), and `components` for vulnerability sources and `not_checked`. Also `workspaces`, `assets`, `checked_at` and the lifecycle `overlay_version`. Counts and type names only: no workspace, asset, path or package is named. See [compatibility.md](compatibility.md#what-stackurity-cannot-check).
+What Stackurity cannot check, across every active workspace: `unread_files` (files a scan found that no built-in reader or installed stack pack reads, by `kind` such as `hex:mix.lock` or `swift:Package.resolved`), `no_vulnerability_source` (components whose coverage is `unsupported`, by package type and reason; vendor builds are counted per repository) `no_lifecycle` (products no lifecycle source tracks, such as NestJS; installed release lines the lifecycle data does not list; runtimes and operating systems with no lifecycle product) and `not_checked` (components a vulnerability source exists for that were still not checked, by `reason`, package type and subject: `kind` is `reason|type|subject`, such as `waiting_for_data|npm|osv:npm` or `no_advisories|deb|Debian:13`). Each entry has `kind`, `label`, `detail`, `assets`, `workspaces` and `actor` (`stackurity`, `user`, `automatic` or `none`; see [Unchecked components](#unchecked-components)), and `components` for vulnerability sources and `not_checked`. `support_requests` counts, per ecosystem, the workspaces that asked for it to be supported (`ecosystem`, `label`, `workspaces`, `latest`). Also `workspaces`, `assets`, `checked_at` and the lifecycle `overlay_version`. Counts and type names only: no workspace, asset, path or package is named. See [compatibility.md](compatibility.md#what-stackurity-cannot-check).
 
 ### `GET /updates`
 

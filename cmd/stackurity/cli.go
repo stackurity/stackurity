@@ -246,7 +246,7 @@ func agentCmd() *cobra.Command {
 	var appDirs []string
 	cmd := &cobra.Command{
 		Use:   "agent",
-		Short: "Collect OS and package inventory from this Linux host and report it",
+		Short: "Collect OS and package inventory from this Linux host or Mac and report it",
 		Long: `Reads /etc/os-release and the dpkg, rpm or apk package database and sends
 the result to the server. Without --remediate it never installs, removes or
 changes software, and runs fine as an unprivileged user.
@@ -257,6 +257,13 @@ MongoDB, nginx, HAProxy, Meilisearch) and reports their versions. To read a
 version it runs the binary's --version flag, but only for binaries owned by
 root or the agent's own user that no other user can modify, and never under a
 --root other than /. Use --no-runtimes to turn this off.
+
+On macOS it reads the version from SystemVersion.plist, applications'
+Info.plist in /Applications and ~/Applications, Homebrew's Cellar and
+Caskroom, runtimes and JDKs from their files, and global npm and pip
+packages. It runs nothing but ioreg (for the hardware UUID), and reports what
+its user may not read, such as other users' home directories, as coverage.
+With --root, a Mac reads a Linux filesystem mounted there.
 
 With --remediate (root required) the agent also applies upgrades the server
 has approved for this host, but only for packages matching the local

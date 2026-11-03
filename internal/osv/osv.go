@@ -279,6 +279,8 @@ func WhyNoTarget(purl, ver string) (reason string, unsupported bool) {
 		}
 	case "cocoapods":
 		return "CocoaPods packages have no vulnerability source: OSV publishes no CocoaPods advisories", true
+	case "brew":
+		return "Homebrew packages have no vulnerability source: OSV publishes no Homebrew advisories, and Homebrew's builds are not listed elsewhere", true
 	case "conan":
 		return "Conan packages have no vulnerability source: OSV publishes no ConanCenter advisories", true
 	case "generic":
