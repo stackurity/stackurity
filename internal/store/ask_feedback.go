@@ -169,9 +169,17 @@ func (s *Store) AddAskFeedback(ctx context.Context, in AskFeedbackInput) (*AskFe
 	}
 	var msgID *int64
 	if in.Seq > 0 {
+		// The answer's own model and prompt version, and the model call
+		// that produced it (the latest answer call of the conversation up to
+		// the answer's time; the call log has no message id).
 		var id int64
-		err := s.Pool.QueryRow(ctx, `SELECT id FROM ask_messages WHERE conversation_id = $1 AND seq = $2 AND role = 'assistant'`,
-			in.ConversationID, in.Seq).Scan(&id)
+		var model, pv string
+		var call *int64
+		err := s.Pool.QueryRow(ctx, `SELECT m.id, m.model, m.prompt_version,
+			(SELECT a.id FROM ask_api_calls a WHERE a.conversation_id = m.conversation_id AND a.kind = 'answer'
+				AND a.created_at <= m.created_at + interval '5 seconds' ORDER BY a.id DESC LIMIT 1)
+			FROM ask_messages m WHERE m.conversation_id = $1 AND m.seq = $2 AND m.role = 'assistant'`,
+			in.ConversationID, in.Seq).Scan(&id, &model, &pv, &call)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -179,6 +187,15 @@ func (s *Store) AddAskFeedback(ctx context.Context, in AskFeedbackInput) (*AskFe
 			return nil, err
 		}
 		msgID = &id
+		if in.Model == "" {
+			in.Model = model
+		}
+		if in.PromptVersion == "" {
+			in.PromptVersion = pv
+		}
+		if in.UsageCallID == nil {
+			in.UsageCallID = call
+		}
 	}
 	var snap any
 	if in.Consent && len(in.Snapshot) > 0 {

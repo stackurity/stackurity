@@ -119,3 +119,45 @@ func TestSecretsRedacted(t *testing.T) {
 		}
 	}
 }
+
+func TestRephrased(t *testing.T) {
+	for _, c := range []struct {
+		q       string
+		earlier []string
+		want    bool
+	}{
+		{"Which hosts run openssl 3.0?", []string{"Which servers run openssl 3.0?"}, true}, // other words, same question
+		{"Which hosts run openssl 3.0 right now?", []string{"Which hosts are running openssl 3.0 right now"}, true},
+		{"What hosts run OpenSSL 3.0", []string{"which hosts run openssl 3.0?"}, true},
+		{"Which hosts run openssl 3.0?", []string{"Which hosts run openssl 3.0?", "Thanks", "What about db-1?"}, false}, // three questions back
+		{"yes", []string{"yes"}, false},
+		{"and db-1?", []string{"and db-1?"}, false},
+		{"List end-of-life PHP versions on web servers", []string{"What should we fix first this week?"}, false},
+	} {
+		if got := Rephrased(c.q, c.earlier); got != c.want {
+			t.Errorf("Rephrased(%q, %q) = %v, want %v", c.q, c.earlier, got, c.want)
+		}
+	}
+}
+
+func TestSaysNotFound(t *testing.T) {
+	for s, want := range map[string]bool{
+		"I couldn’t find any asset named web-9 in your inventory.":                   true,
+		"I'm not sure what you mean by \"the old one\". Which asset?":                true,
+		"web-1 runs openssl 3.0.2; upgrade it to 3.0.15.":                            false,
+		strings.Repeat("web-1 needs openssl 3.0.15. ", 40) + "I couldn't find db-9.": false,
+	} {
+		if got := SaysNotFound(s); got != want {
+			t.Errorf("SaysNotFound(%.50q) = %v", s, got)
+		}
+	}
+}
+
+func TestSnapshotText(t *testing.T) {
+	got := SnapshotText("ask bob@example.com; key ghp_abcdefghijklmnopqrstuvwxyz0123456789 at https://u:p4ss@git.example.com/x​")
+	for _, bad := range []string{"bob@", "ghp_", "p4ss", "​"} {
+		if strings.Contains(got, bad) {
+			t.Errorf("snapshot keeps %q: %s", bad, got)
+		}
+	}
+}

@@ -65,6 +65,9 @@ type Outcome struct {
 	StopReason string
 	CostMicros int64
 	Usage      []ModelUsage
+	// ToolErrors counts tools that ran and failed (not those skipped for
+	// the budget or a stop), for the implicit feedback signal.
+	ToolErrors int
 }
 
 // ErrTooLong is a conversation that grew too long to continue.
@@ -164,7 +167,8 @@ func (e *Engine) Ask(ctx context.Context, q Question, emit func(Event)) (Outcome
 			return out, nil
 		}
 		last := round >= MaxRounds || prompt > MaxContextTokens
-		results := e.runTools(ctx, q.API, res.ToolUses, last, emit)
+		results, failed := e.runTools(ctx, q.API, res.ToolUses, last, emit)
+		out.ToolErrors += failed
 		tm := userMessage(results...)
 		if _, err := e.Store.AppendAskMessage(sctx, q.UserID, c.ID, store.AskMessage{Role: "user", Content: tm}, 0); err != nil {
 			return out, err
@@ -271,8 +275,9 @@ const MaxToolsPerRound = 8
 // runTools runs the tools the model asked for, as the person, and returns
 // their results in order, all for one user message. last: the question's
 // budget is used up, so each result says so instead of running.
-func (e *Engine) runTools(ctx context.Context, api mcp.API, uses []ToolUse, last bool, emit func(Event)) []map[string]any {
+func (e *Engine) runTools(ctx context.Context, api mcp.API, uses []ToolUse, last bool, emit func(Event)) ([]map[string]any, int) {
 	out := make([]map[string]any, len(uses))
+	ran := make([]bool, len(uses))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, maxParallelTools)
 	for i, u := range uses {
@@ -288,6 +293,7 @@ func (e *Engine) runTools(ctx context.Context, api mcp.API, uses []ToolUse, last
 			continue
 		}
 		emit(Event{Kind: "tool", Tool: toolLabel(u)})
+		ran[i] = true
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -297,7 +303,13 @@ func (e *Engine) runTools(ctx context.Context, api mcp.API, uses []ToolUse, last
 		}()
 	}
 	wg.Wait()
-	return out
+	failed := 0
+	for i, r := range out {
+		if ran[i] && r["is_error"] == true {
+			failed++
+		}
+	}
+	return out, failed
 }
 
 func toolResult(id, text string, isErr bool) map[string]any {

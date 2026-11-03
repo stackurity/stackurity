@@ -38,7 +38,7 @@ CREATE TABLE ask_feedback (
     snapshot         jsonb CHECK (snapshot IS NULL OR consent),
     prompt_version   text NOT NULL DEFAULT '' CHECK (length(prompt_version) <= 40),
     model            text NOT NULL DEFAULT '' CHECK (length(model) <= 100),
-    usage_call_id    bigint,
+    usage_call_id    bigint REFERENCES ask_api_calls(id) ON DELETE SET NULL,
     page_path        text NOT NULL DEFAULT '' CHECK (length(page_path) <= 300),
     viewport         text NOT NULL DEFAULT '' CHECK (length(viewport) <= 20),
     status           text NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'triaged', 'fixed', 'wontfix')),

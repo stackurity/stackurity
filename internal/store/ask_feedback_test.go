@@ -34,6 +34,12 @@ func TestAskFeedbackExplicit(t *testing.T) {
 	f := newAskFixture(t)
 	c := askConvWithAnswer(t, f.s, f.ws1, f.alice, "end_turn")
 	snap := []store.AskSnapshotMessage{{Seq: 1, Role: "user", Text: "Which hosts run openssl 3.0?"}, {Seq: 2, Role: "assistant", Text: "web-1 and db-1."}}
+	ws1, _ := tenant.Workspace(f.ws1)
+	var call int64
+	if err := f.s.Pool.QueryRow(f.ws1, `INSERT INTO ask_api_calls (workspace_id, user_id, conversation_id, kind, model, prompt_version)
+		VALUES ($1, $2, $3, 'answer', 'claude-sonnet-5-5', 'v1') RETURNING id`, ws1, f.alice, c.ID).Scan(&call); err != nil {
+		t.Fatal(err)
+	}
 
 	// A thumbs down with the form, consent given: kept with its snapshot.
 	fb, err := f.s.AddAskFeedback(f.ws1, store.AskFeedbackInput{UserID: f.alice, ConversationID: c.ID, Seq: 2, Rating: "down", Category: "wrong",
@@ -41,7 +47,8 @@ func TestAskFeedbackExplicit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fb.Kind != "explicit" || fb.Scope != "answer" || fb.MessageID == nil || !fb.Consent || !strings.Contains(string(fb.Snapshot), "db-1") || fb.Status != "new" {
+	if fb.Kind != "explicit" || fb.Scope != "answer" || fb.MessageID == nil || !fb.Consent || !strings.Contains(string(fb.Snapshot), "db-1") || fb.Status != "new" ||
+		fb.UsageCallID == nil || *fb.UsageCallID != call {
 		t.Fatalf("feedback = %+v", fb)
 	}
 	// Without consent no snapshot is kept, whatever the caller sends.
