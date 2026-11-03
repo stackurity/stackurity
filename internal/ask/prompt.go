@@ -6,6 +6,13 @@ import (
 	"time"
 )
 
+// PromptVersion names the system prompt below. It is stored on every answer
+// and every model call (ask_messages.prompt_version, ask_api_calls), so the
+// ratings and costs of one version can be compared with the next. Bump it
+// (date + a counter for that day) whenever SystemPrompt, summaryPrompt or
+// the tool definitions change in a way the model would notice.
+const PromptVersion = "2026-11-03.1"
+
 // SystemPrompt is the same for every organisation and every call: nothing
 // about the person, the organisation or the date goes in it (that is in
 // each question's context block), so the tools and this prompt are one

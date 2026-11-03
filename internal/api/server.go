@@ -255,10 +255,18 @@ func (s *Server) Handler() http.Handler {
 		r.Use(s.authenticate, csrfGuard, s.keyGate)
 		r.Get("/meta", s.meta)
 		r.Get("/openapi.json", s.openAPI)
+		r.Route("/public/cves", func(r chi.Router) {
+			r.Use(s.limitAddress("public-cves", limitPublicCVEs, "too many requests; wait a minute"))
+			r.Get("/", s.publicCVEs)
+			r.Get("/recent", s.recentCVEs)
+		})
 		r.Post("/setup", s.setup)
 		r.Post("/auth/login", s.login)
 		r.Post("/auth/logout", s.logout)
 		s.mfaPublicRoutes(r)
+		// Reviewing Ask Stackurity feedback: operators and feedback review
+		// tokens, which have no user or organisation (ask_feedback.go).
+		s.askFeedbackReviewRoutes(r)
 		s.passwordResetRoutes(r)
 		r.Post("/enroll", s.enroll)
 		// A CI job's OpenID Connect token for a collector token (ci_oidc.go).
