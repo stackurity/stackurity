@@ -2,6 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type Reac
 import { Link, useLocation } from "react-router";
 import { api, ApiError, getActiveProject } from "../api";
 import {
+  ASK_CONSENT_VERSION,
+  ASK_NOTICE_VERSION,
   AskHTTPError,
   consentCheckbox,
   consentText,
@@ -187,7 +189,7 @@ export function AskPanel({
 
   const accept = async () => {
     try {
-      await api.post("/ask/notice", { version: status?.notice_version });
+      await api.post("/ask/notice", { version: ASK_NOTICE_VERSION });
       reload();
     } catch (e) {
       fail(e);
@@ -518,7 +520,7 @@ export function AskSettingsCard() {
   };
   const consent = () => {
     setConsenting(false);
-    void run(async () => setS(await api.put<AskSettings>("/ask/settings", { enabled: true, consent_version: s?.consent_version })));
+    void run(async () => setS(await api.put<AskSettings>("/ask/settings", { enabled: true, consent_version: ASK_CONSENT_VERSION })));
   };
   const deleteAll = async () => {
     if (

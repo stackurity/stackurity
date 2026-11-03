@@ -7,7 +7,16 @@
 // Stackurity's own pages (askHref). No image, no HTML, no other link: an
 // answer cannot send anything anywhere.
 
-export const ASK_NOTICE_VERSION = "ask-consent-2026-11-03";
+/**
+ * The version of the consent wording in consentText below. The client sends
+ * this, the version of the text it actually showed, never the server's
+ * current version: a page loaded before a new wording was deployed is then
+ * refused (409) instead of recording consent to text nobody saw.
+ */
+export const ASK_CONSENT_VERSION = "ask-consent-2026-11-03";
+
+/** Each person's notice is the same wording, so the same version. */
+export const ASK_NOTICE_VERSION = ASK_CONSENT_VERSION;
 
 export interface AskStatus {
   available: boolean;
