@@ -41,6 +41,7 @@ import {
   UpdateBadge,
 } from "../components/Badge";
 import { StackTab } from "../components/Stack";
+import { LeaksView } from "../components/Leaks";
 import { KubernetesCard, WORKLOAD_ATTRS } from "../components/Kubernetes";
 import { FindingsTable } from "../components/Findings";
 import { Table, type Column } from "../components/Table";
@@ -69,8 +70,8 @@ import { NoTeamsHint } from "../components/Teams";
 import { REPORTING_OVERRIDES, ReportingNotice, reportingSummary } from "../components/Reporting";
 import { AssetAskAI } from "../components/AskAI";
 
-type Tab = "action-plan" | "stack" | "findings" | "inventory" | "coverage" | "collections" | "relations" | "drift" | "remediation";
-const TABS: Tab[] = ["action-plan", "stack", "findings", "inventory", "coverage", "collections", "relations", "drift", "remediation"];
+type Tab = "action-plan" | "stack" | "findings" | "leaks" | "inventory" | "coverage" | "collections" | "relations" | "drift" | "remediation";
+const TABS: Tab[] = ["action-plan", "stack", "findings", "leaks", "inventory", "coverage", "collections", "relations", "drift", "remediation"];
 
 /** Kinds whose stack is the most useful first view when nothing needs fixing. */
 const STACK_FIRST_KINDS = ["application", "host", "repository", "cluster", "workload"];
@@ -287,6 +288,7 @@ export function AssetDetailPage() {
           ...(findingCount > 0 ? [{ id: "action-plan" as Tab, label: "Fixes" }] : []),
           { id: "stack", label: "Stack" },
           ...(findingCount > 0 ? [{ id: "findings" as Tab, label: `Issues (${findingCount.toLocaleString()})` }] : []),
+          { id: "leaks", label: "Leaked keys" },
           { id: "inventory", label: `Inventory (${a.component_count.toLocaleString()})` },
           { id: "coverage", label: "Coverage" },
           { id: "collections", label: "Collections" },
@@ -307,6 +309,7 @@ export function AssetDetailPage() {
             {tab === "action-plan" && <AssetActionPlan assetId={a.id} />}
             {tab === "stack" && <StackTab asset={a} />}
         {tab === "findings" && <FindingsTab assetId={a.id} />}
+        {tab === "leaks" && <LeaksView assetId={a.id} />}
         {tab === "inventory" && <InventoryTab assetId={a.id} />}
         {tab === "coverage" && <CoverageTab assetId={a.id} />}
         {tab === "collections" && <CollectionsTab assetId={a.id} />}
