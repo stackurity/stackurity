@@ -17,6 +17,7 @@ package api
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -42,6 +43,7 @@ import (
 
 	"github.com/stackurity/stackurity/internal/auth"
 	"github.com/stackurity/stackurity/internal/feedback"
+	"github.com/stackurity/stackurity/internal/notify"
 	"github.com/stackurity/stackurity/internal/store"
 )
 
@@ -59,6 +61,14 @@ type FeedbackQueue struct {
 	// website relay never holds it. Empty uses a random key per process,
 	// so links work only on the replica that made them.
 	LinkKey string
+	// Clamd scans attachments (STACKURITY_FEEDBACK_CLAMD); nil checks type,
+	// size and structure only. A configured scanner that is down refuses
+	// attachments (fails closed).
+	Clamd *feedback.Clamd
+	// Emails sends the sender one short email when their item is released
+	// or will not be fixed (STACKURITY_FEEDBACK_EMAILS=on); off by default
+	// until the owner approves the wording.
+	Emails bool
 
 	once     sync.Once
 	linkKey  []byte
@@ -136,6 +146,7 @@ func (s *Server) feedbackOperatorRoutes(r chi.Router) {
 	r.Route("/admin/feedback", func(r chi.Router) {
 		r.Use(requireFeedbackOperator)
 		r.Get("/", s.listFeedbackQueue)
+		r.Get("/email-templates", s.feedbackEmailTemplates)
 		r.Get("/{id}", s.getFeedbackQueueItem)
 		r.Patch("/{id}", s.updateFeedbackQueueItem)
 		r.Post("/{id}/attachments/{aid}/link", s.feedbackAttachmentLink)
@@ -337,6 +348,10 @@ func (s *Server) feedbackIntake(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 507, "storage_full", err.Error())
 		case errors.Is(err, feedback.ErrUnsupported), errors.Is(err, feedback.ErrBadImage):
 			writeError(w, 415, "unsupported", err.Error())
+		case errors.Is(err, feedback.ErrInfected):
+			writeError(w, 422, "infected", err.Error())
+		case errors.Is(err, errFeedbackScanUnavailable):
+			writeError(w, 503, "scan_unavailable", err.Error())
 		default:
 			s.fail(w, r, err)
 		}
@@ -411,11 +426,20 @@ func (s *Server) feedbackIntake(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Log.Info("feedback received", "ref", store.FeedbackRef(id), "kind", item.Kind, "source", item.Source, "attachments", len(item.Attachments))
-	writeJSON(w, 201, map[string]any{
+	reply := map[string]any{
 		"ref": store.FeedbackRef(id), "token": secret, "kind": item.Kind, "source": item.Source,
 		"version": item.Version, "edition": item.Edition, "attachments": len(item.Attachments),
-	})
+	}
+	if len(item.Attachments) > 0 {
+		if warn := s.feedbackStorageWarning(r.Context()); warn != "" {
+			// The relay posts it to the team's Slack with the item.
+			reply["storage_warning"] = warn
+		}
+	}
+	writeJSON(w, 201, reply)
 }
+
+var errFeedbackScanUnavailable = errors.New("attachments cannot be checked right now; send the feedback without them or try again later")
 
 var errFeedbackStorageFull = errors.New("attachments cannot be stored right now; send the feedback without them")
 
@@ -473,6 +497,23 @@ func (q *FeedbackQueue) storeAttachment(r *http.Request, s *Server, part io.Read
 	}
 	a := &store.FeedbackAttachment{Name: feedback.SafeName(name, k), ContentType: k.ContentType(), Size: n,
 		SHA256: h.Sum(nil), StorageKey: key, Scan: "checked"}
+	if q.Clamd != nil {
+		f, err := q.Disk.Open(key)
+		if err != nil {
+			return a, err
+		}
+		err = q.Clamd.Scan(f)
+		f.Close()
+		switch {
+		case errors.Is(err, feedback.ErrInfected):
+			s.Log.Warn("feedback attachment flagged by the virus scanner", "type", k.ContentType(), "size", n)
+			return a, err
+		case err != nil:
+			s.Log.Error("feedback virus scanner unavailable; attachment refused", "err", err)
+			return a, errFeedbackScanUnavailable
+		}
+		a.Scan = "checked_clamav"
+	}
 	// Counts this request's earlier files and other intakes in flight.
 	q.inflight.Add(n)
 	*reserved += n
@@ -480,6 +521,24 @@ func (q *FeedbackQueue) storeAttachment(r *http.Request, s *Server, part io.Read
 		return a, errFeedbackStorageFull
 	}
 	return a, nil
+}
+
+// FeedbackStorageAlertPercent is the share of the attachment cap above
+// which the team is warned.
+const FeedbackStorageAlertPercent = 80
+
+// feedbackStorageWarning says when attachment storage is above the alert
+// share, and logs it as an error (the logs are watched).
+func (s *Server) feedbackStorageWarning(ctx context.Context) string {
+	q := s.FeedbackQueue
+	used, err := s.Store.FeedbackStorageBytes(ctx)
+	if err != nil || q.StorageMax <= 0 || used*100 < q.StorageMax*FeedbackStorageAlertPercent {
+		return ""
+	}
+	msg := fmt.Sprintf("feedback attachment storage is at %d%% of %d MB; raise STACKURITY_FEEDBACK_STORAGE_MAX_MB or delete old items",
+		used*100/q.StorageMax, q.StorageMax>>20)
+	s.Log.Error(msg, "used_bytes", used, "max_bytes", q.StorageMax)
+	return msg
 }
 
 // feedbackQueueStatus answers the sender's installation: the public status
@@ -665,12 +724,75 @@ func (s *Server) updateFeedbackQueueItem(w http.ResponseWriter, r *http.Request)
 		s.fail(w, r, err)
 		return
 	}
-	_, after, err := s.Store.UpdateFeedbackItem(r.Context(), id, p, feedbackActor(r))
+	before, after, err := s.Store.UpdateFeedbackItem(r.Context(), id, p, feedbackActor(r))
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
+	if before.Status != after.Status && (after.Status == store.FeedbackReleased || after.Status == store.FeedbackWontFix) {
+		s.emailFeedbackSender(r.Context(), after)
+	}
 	writeJSON(w, 200, after)
+}
+
+// emailFeedbackSender sends the one email for a released or won't-fix
+// item, when the sender left an address and emails are on. Off, it only
+// logs that no email went.
+func (s *Server) emailFeedbackSender(ctx context.Context, it *store.FeedbackItem) {
+	if it.ContactEmail == "" || it.NotifiedAt != nil {
+		return
+	}
+	tmpl := "released"
+	if it.Status == store.FeedbackWontFix {
+		tmpl = "wont_fix"
+	}
+	if !s.FeedbackQueue.Emails || s.AccountMail == nil {
+		s.Log.Info("feedback sender not emailed: STACKURITY_FEEDBACK_EMAILS is off or no mail is configured", "ref", it.Ref, "template", tmpl)
+		return
+	}
+	m, err := feedback.RenderEmail(tmpl, feedback.EmailData{Ref: it.Ref, Summary: it.Description, Resolution: it.Resolution, Version: it.FixedIn})
+	if err != nil {
+		s.Log.Error("feedback email", "err", err)
+		return
+	}
+	var lines []string
+	for _, para := range strings.Split(strings.TrimSpace(m.Body), "\n\n") {
+		lines = append(lines, para)
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	msg := notify.Message{Event: "feedback_update", Title: m.Subject, At: time.Now().UTC(), Summary: lines}
+	if err := s.AccountMail.SendMail(ctx, []string{it.ContactEmail}, msg); err != nil {
+		s.Log.Error("feedback email not sent", "ref", it.Ref, "err", err)
+		return
+	}
+	if err := s.Store.MarkFeedbackNotified(ctx, it.ID, tmpl); err != nil {
+		s.Log.Error("feedback email sent but not recorded", "ref", it.Ref, "err", err)
+	}
+}
+
+// feedbackEmailTemplates renders the emails with sample text, for the
+// owner to approve before STACKURITY_FEEDBACK_EMAILS is turned on.
+func (s *Server) feedbackEmailTemplates(w http.ResponseWriter, r *http.Request) {
+	if !s.queueOn(w) {
+		return
+	}
+	sample := feedback.EmailData{Ref: "FB-123", Summary: "The Fixes page loses the asset filter after I open a fix and go back",
+		Resolution: "The filter is now kept when you go back.", Version: "0.15.0"}
+	var out []map[string]string
+	for _, name := range feedback.EmailTemplates() {
+		d := sample
+		if name == "wont_fix" {
+			d.Resolution = "Exports stay in the API (GET /fixes?format=csv) so they follow your project access; the dashboard will not get a separate button."
+		}
+		m, err := feedback.RenderEmail(name, d)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		out = append(out, map[string]string{"name": name, "subject": m.Subject, "body": m.Body})
+	}
+	writeJSON(w, 200, map[string]any{"enabled": s.FeedbackQueue.Emails && s.AccountMail != nil, "templates": out})
 }
 
 func (s *Server) deleteFeedbackQueueItem(w http.ResponseWriter, r *http.Request) {

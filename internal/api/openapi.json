@@ -338,6 +338,35 @@
     }
    }
   },
+  "/admin/feedback/email-templates": {
+   "get": {
+    "operationId": "get_admin_feedback_email_templates",
+    "summary": "Preview the emails sent to people who sent feedback",
+    "description": "The released and won't-fix emails rendered with sample text (`name`, `subject`, `body`) and `enabled`. See feedback-queue.md\n\nRole: instance admin or feedback triage token",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "instance admin or feedback triage token",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/admin/feedback/{id}": {
    "get": {
     "operationId": "get_admin_feedback_id",

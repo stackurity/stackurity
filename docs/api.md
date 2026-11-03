@@ -445,7 +445,7 @@ Only on the server that runs the Stackurity team's queue (`STACKURITY_FEEDBACK_Q
 
 **Who:** the website relay, with `X-Stackurity-Feedback-Key`
 
-`multipart/form-data`: an `item` part (JSON: `kind`, `description`, `email`, `page`, `browser`, `viewport`, `version`, `edition`, `hosting`, `source`) and up to three `attachment` parts, checked by content and size and stored under random names (images without metadata). 201 with `ref` and the sender's status `token`; 401 without the key, 413 too large, 415 not an accepted type, 507 when attachment storage is full (feedback without attachments is still taken).
+`multipart/form-data`: an `item` part (JSON: `kind`, `description`, `email`, `page`, `browser`, `viewport`, `version`, `edition`, `hosting`, `source`) and up to three `attachment` parts, checked by content and size and stored under random names (images without metadata). 201 with `ref` and the sender's status `token`; 401 without the key, 413 too large, 415 not an accepted type, 422 flagged by the virus scanner, 503 when the configured scanner cannot be reached, 507 when attachment storage is full (feedback without attachments is still taken). Above 80% of the storage cap the answer has `storage_warning`, which the relay posts to the team.
 
 ### `POST /feedback-queue/status`
 
@@ -459,6 +459,12 @@ Only on the server that runs the Stackurity team's queue (`STACKURITY_FEEDBACK_Q
 
 Items newest first: `status` (comma-separated: `new`, `triaged`, `in_progress`, `needs_owner`, `fixed`, `released`, `wont_fix`, `duplicate`), `before` (a reference) and `limit` (up to 200). Also `counts` per status and `storage` (`used_bytes`, `max_bytes`).
 
+### `GET /admin/feedback/email-templates`
+
+**Who:** instance admin, or a feedback triage token
+
+The emails a sender gets when their item is released or will not be fixed, rendered with sample text (`name`, `subject`, `body`), and `enabled` (`STACKURITY_FEEDBACK_EMAILS=on` and mail configured). For approving the wording before turning them on.
+
 ### `GET /admin/feedback/{id}`
 
 **Who:** instance admin, or a feedback triage token
@@ -469,7 +475,7 @@ Items newest first: `status` (comma-separated: `new`, `triaged`, `in_progress`, 
 
 **Who:** instance admin, or a feedback triage token
 
-Any of `status`, `resolution` (shown to the sender; required for `wont_fix`), `triage_notes` (replaces) or `note` (appends a dated paragraph with who wrote it), `link` (a pull request or issue under `https://github.com/stackurity/`), `duplicate_of` (a reference; required for `duplicate`), `fixed_in` (a version). Every change is kept in the item's `events`.
+Moving an item to `released` or `wont_fix` emails the sender once, if they left an address and `STACKURITY_FEEDBACK_EMAILS=on`. Any of `status`, `resolution` (shown to the sender; required for `wont_fix`), `triage_notes` (replaces) or `note` (appends a dated paragraph with who wrote it), `link` (a pull request or issue under `https://github.com/stackurity/`), `duplicate_of` (a reference; required for `duplicate`), `fixed_in` (a version). Every change is kept in the item's `events`.
 
 ### `DELETE /admin/feedback/{id}`
 

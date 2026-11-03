@@ -29,6 +29,8 @@ installation ──POST /feedback (JSON or multipart)──▶ stackurity.dev (r
 | `STACKURITY_FEEDBACK_QUEUE_DIR` | Directory for attachments (created with mode 0700). Setting it turns the queue on. In production: on the data volume, e.g. `/var/lib/stackurity/feedback`. Never under `/tmp` (a RAM disk in the container). |
 | `STACKURITY_FEEDBACK_INTAKE_KEY` or `_FILE` | The key the website relay sends (at least 32 characters). It also derives the key that signs attachment links. The website's `FEEDBACK_QUEUE_KEY_FILE` holds the same value. |
 | `STACKURITY_FEEDBACK_LINK_KEY` or `_FILE` | Signs attachment download links (at least 32 characters, not the intake key). Unset, each process makes a random key, so links work only on the replica that made them. |
+| `STACKURITY_FEEDBACK_CLAMD` | `host:port` of a clamd TCP socket. Each attachment is streamed to it (INSTREAM) after the other checks; a match is refused with 422, and a scanner that cannot be reached refuses attachments (503) rather than letting them through. Unset: no virus scan. |
+| `STACKURITY_FEEDBACK_EMAILS` | `on` sends the sender one short email when their item is released or will not be fixed (with the team's reason), through the server's account mail. Off by default: the owner approves the wording first (`GET /api/v1/admin/feedback/email-templates`). The email quotes nothing the sender wrote, since the address is not verified. |
 | `STACKURITY_FEEDBACK_STORAGE_MAX_MB` | Cap on the attachments kept (default 5120). Above it, new attachments are refused with 507 and feedback without attachments is still taken. `GET /api/v1/admin/feedback` reports `storage.used_bytes` and `max_bytes`. |
 
 ## Items
@@ -67,7 +69,8 @@ The schema is in `internal/db/migrations/*_feedback.sql`. The queue's tables hav
 - **Checks:** the type is decided from the file's first bytes, never from its name or the browser's Content-Type. Images are walked chunk by chunk and lose EXIF, XMP, IPTC, ICC, comments and anything after the image's end, with no re-encoding. A structure that doesn't parse is refused, as is a declared size over 100 megapixels. The installation does this before sending, and the queue does it again.
 - **Storage:** files are stored under random 128-bit names in the queue's directory and opened only through an `os.Root`. Names from people are kept only as a cleaned display name.
 - **Access:** operators get a link signed with HMAC-SHA256 (over the item, the attachment and the expiry, with a key the relay never holds) that expires in ten minutes. The file is served as a download with `Content-Security-Policy: sandbox`, `nosniff` and `no-store`.
-- **Not yet:** a virus scanner (ClamAV) is not in this version. The production droplet has 4 GB of memory, and clamd needs about 1 to 1.5 GB for its signatures.
+- **Virus scan:** optional, with ClamAV (`STACKURITY_FEEDBACK_CLAMD`). It is off on the production droplet for now: the droplet has 4 GB of memory, and clamd needs about 1 to 1.5 GB for its signatures.
+- **Storage alert:** above 80% of the cap, the intake logs an error and its answer carries `storage_warning`, which the website posts to the team's Slack; the daily job logs the same.
 - **Video metadata:** it is not removed. Screen recordings rarely carry any, but phone videos can carry a location.
 
 ## Retention

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -68,7 +69,22 @@ func feedbackQueueFromEnv(log *slog.Logger) (*api.FeedbackQueue, error) {
 	if linkKey != "" && (len(linkKey) < 32 || linkKey == key) {
 		return nil, errors.New("STACKURITY_FEEDBACK_LINK_KEY must be at least 32 characters and differ from the intake key")
 	}
-	return &api.FeedbackQueue{Disk: disk, IntakeKey: key, StorageMax: maxMB << 20, LinkKey: linkKey}, nil
+	q := &api.FeedbackQueue{Disk: disk, IntakeKey: key, StorageMax: maxMB << 20, LinkKey: linkKey}
+	if addr := strings.TrimSpace(os.Getenv("STACKURITY_FEEDBACK_CLAMD")); addr != "" {
+		if _, _, err := net.SplitHostPort(addr); err != nil {
+			return nil, fmt.Errorf("STACKURITY_FEEDBACK_CLAMD must be host:port of a clamd TCP socket, not %q", addr)
+		}
+		q.Clamd = &feedback.Clamd{Addr: addr}
+		log.Info("feedback attachments are scanned by clamd", "addr", addr)
+	}
+	switch v := strings.TrimSpace(os.Getenv("STACKURITY_FEEDBACK_EMAILS")); v {
+	case "", "off":
+	case "on":
+		q.Emails = true
+	default:
+		return nil, fmt.Errorf("STACKURITY_FEEDBACK_EMAILS must be on or off, not %q", v)
+	}
+	return q, nil
 }
 
 // registerFeedbackRetention deletes old attachment files and records daily.
@@ -78,6 +94,10 @@ func registerFeedbackRetention(w *worker.Worker, st *store.Store, q *api.Feedbac
 	}
 	w.Every("feedback-retention", 24*time.Hour, func(ctx context.Context) error {
 		files, items, err := st.PurgeFeedback(ctx, feedbackAttachmentRetention, feedbackRecordRetention, q.Disk.Remove)
+		if used, err := st.FeedbackStorageBytes(ctx); err == nil && q.StorageMax > 0 && used*100 >= q.StorageMax*api.FeedbackStorageAlertPercent {
+			log.Error("feedback attachment storage is above the alert level", "used_bytes", used, "max_bytes", q.StorageMax,
+				"fix", "raise STACKURITY_FEEDBACK_STORAGE_MAX_MB or delete old items")
+		}
 		if files > 0 || items > 0 {
 			log.Info("feedback retention", "files_deleted", files, "items_deleted", items)
 		}
