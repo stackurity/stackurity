@@ -37,9 +37,16 @@ import (
 // admin turned it on, its plan includes questions, and the person accepted
 // the data notice.
 
-// AskNoticeVersion is the data notice's version: a new one is accepted
-// again.
-const AskNoticeVersion = "2026-11"
+// AskConsentVersion is the version of the wording an organisation's
+// administrator agrees to before Ask Stackurity is turned on (the consent
+// dialog, web/src/ask.ts consentText), approved by the owner on 2026-11-03.
+// Each person's first-use notice uses the same wording and version. A new
+// version turns Ask off for organisations that agreed to an older one until
+// an administrator agrees again, and every person accepts the notice again.
+const AskConsentVersion = "ask-consent-2026-11-03"
+
+// AskNoticeVersion is each person's data notice: the same wording.
+const AskNoticeVersion = AskConsentVersion
 
 // Limits on Ask Stackurity, per person and per organisation.
 var (
@@ -102,6 +109,8 @@ func (s *Server) askLimits(ctx context.Context) (askLimits, error) {
 		return askLimits{}, err
 	}
 	l := askLimits{AskSettings: a}
+	// On only with an administrator's consent to the current wording.
+	l.Enabled = a.Enabled && a.ConsentVersion == AskConsentVersion
 	if s.Ask == nil {
 		return l, nil
 	}
@@ -321,13 +330,20 @@ func (s *Server) askSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, map[string]any{"enabled": l.Enabled, "configured": l.Configured, "provider": l.Provider, "model": l.Model,
 		"question_limit": l.QuestionLimit, "question_period": l.QuestionPeriod, "spend_cap_micros": l.SpendCapMicros,
-		"questions_this_month": u.Questions, "spend_this_month_micros": u.CostMicros, "notice_version": AskNoticeVersion})
+		"questions_this_month": u.Questions, "spend_this_month_micros": u.CostMicros, "notice_version": AskNoticeVersion,
+		"consent_version": AskConsentVersion})
 }
 
-// PUT /ask/settings {"enabled"} (organisation admins).
+// PUT /ask/settings {"enabled", "consent_version"} (organisation admins).
+// Turning it on needs consent_version, the version of the wording the
+// administrator ticked and confirmed in the consent dialog: it must be the
+// current one (409 otherwise, so a stale page cannot consent to wording
+// it did not show). Who agreed, when and to which version is stored and
+// written to the audit log (ask.consent). Turning it off needs nothing.
 func (s *Server) askPutSettings(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Enabled *bool `json:"enabled"`
+		Enabled        *bool  `json:"enabled"`
+		ConsentVersion string `json:"consent_version"`
 	}
 	if err := decode(r, &in); err != nil {
 		s.fail(w, r, err)
@@ -337,11 +353,35 @@ func (s *Server) askPutSettings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "bad_request", "enabled is required")
 		return
 	}
-	if err := s.Store.SetAskEnabled(r.Context(), *in.Enabled); err != nil {
+	p := principal(r)
+	if *in.Enabled {
+		// Consent is a person's: an administrator signed in to the
+		// dashboard, never an API token or a connected assistant.
+		if p == nil || p.User == nil || !p.Session || p.Token != nil || p.Assistant != nil || p.Ask {
+			writeError(w, 403, "consent_required", "an administrator turns Ask Stackurity on in the dashboard, agreeing to its terms there")
+			return
+		}
+		if in.ConsentVersion == "" {
+			writeError(w, 400, "consent_required", "turning Ask Stackurity on needs an administrator's consent: consent_version is required")
+			return
+		}
+		if in.ConsentVersion != AskConsentVersion {
+			writeError(w, 409, "consent_outdated", "the consent wording has changed: reload the page and read it again")
+			return
+		}
+		if err := s.Store.ConsentToAsk(r.Context(), p.User.ID, AskConsentVersion); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		_ = s.Store.Audit(r.Context(), p.Actor(r), "ask.consent", "workspace", "", map[string]any{"enabled": true, "consent_version": AskConsentVersion})
+		s.askSettings(w, r)
+		return
+	}
+	if err := s.Store.SetAskEnabled(r.Context(), false); err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	_ = s.Store.Audit(r.Context(), principal(r).Actor(r), "ask.settings", "workspace", "", map[string]any{"enabled": *in.Enabled})
+	_ = s.Store.Audit(r.Context(), p.Actor(r), "ask.settings", "workspace", "", map[string]any{"enabled": false})
 	s.askSettings(w, r)
 }
 
@@ -717,7 +757,7 @@ func (s *Server) askAlert(ctx context.Context, scope string, level int, spent, c
 		line = "Your organisation has used its Ask Stackurity budget for this month. Questions are paused until the 1st."
 	}
 	m := notify.Message{Event: "ask_spend", Title: title, At: time.Now().UTC(), Summary: []string{line,
-		"An administrator can turn Ask Stackurity off under Settings → AI assistants."}}
+		"An administrator can turn Ask Stackurity off under Integrations → AI assistants."}}
 	if err := s.AccountMail.SendMail(ctx, to, m); err != nil {
 		s.Log.Error("ask: spend alert email not sent", "err", err)
 	}

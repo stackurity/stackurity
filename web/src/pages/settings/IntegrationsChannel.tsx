@@ -497,7 +497,7 @@ function RuleEditor({
         projects={ctx.projects}
         teams={ctx.teams}
         options={ctx.options}
-        returnTo={`/settings/integrations/channels/${channel.id}`}
+        returnTo={`/integrations/channels/${channel.id}`}
         showName={showName}
       />
       <SaveError error={act.error} title="Could not save" />
@@ -674,7 +674,7 @@ function ChannelEditor({
               projects={ctx.projects}
               teams={ctx.teams}
               options={ctx.options}
-              returnTo={`/settings/integrations/channels/${channel.id}`}
+              returnTo={`/integrations/channels/${channel.id}`}
             />
           </div>
         </Card>
@@ -683,7 +683,7 @@ function ChannelEditor({
   );
 }
 
-/** /settings/integrations/channels/:id */
+/** /integrations/channels/:id */
 export function IntegrationChannelPage() {
   const { id } = useParams();
   const channelId = Number(id);
@@ -714,7 +714,7 @@ export function IntegrationChannelPage() {
   if (!channel)
     return (
       <Notice kind="warn">
-        This integration does not exist any more. <Link to="/settings/integrations">Back to Integrations</Link>
+        This integration does not exist any more. <Link to="/integrations">Back to Integrations</Link>
       </Notice>
     );
 
@@ -756,13 +756,13 @@ export function IntegrationChannelPage() {
     )
       return;
     const ok = await act.run(() => api.del(`/channels/${channel.id}`).then(() => true));
-    if (ok) navigate("/settings/integrations");
+    if (ok) navigate("/integrations");
   };
 
   return (
     <>
       <p className="small">
-        <Link to="/settings/integrations">← Integrations</Link>
+        <Link to="/integrations">← Integrations</Link>
       </p>
       <PageHeader
         help="notifications"
@@ -938,7 +938,7 @@ export function IntegrationChannelPage() {
   );
 }
 
-/** /settings/integrations/new/:kind: the connection and what to send, saved together. */
+/** /integrations/new/:kind: the connection and what to send, saved together. */
 export function IntegrationAddPage() {
   const { kind: k } = useParams();
   const navigate = useNavigate();
@@ -949,19 +949,19 @@ export function IntegrationAddPage() {
   const members = useLoad(() => (kind === "stackurity_email" ? api.getAll<List<DirectoryUser>>("/users/directory") : Promise.resolve(null)), [kind]);
   const [r, setR] = useState<Route>(() => newRule(0, ""));
 
-  if (!kind) return <Notice kind="warn">Unknown integration. <Link to="/settings/integrations">Back to Integrations</Link></Notice>;
+  if (!kind) return <Notice kind="warn">Unknown integration. <Link to="/integrations">Back to Integrations</Link></Notice>;
   if (!options.data) return <Loading />;
   if (kind === "stackurity_email" && !options.data.platform_email.enabled)
     return (
       <Notice kind="warn">
-        This server does not send email itself. Use <Link to="/settings/integrations/new/email">Email (your mail server)</Link>.
+        This server does not send email itself. Use <Link to="/integrations/new/email">Email (your mail server)</Link>.
       </Notice>
     );
 
   return (
     <>
       <p className="small">
-        <Link to="/settings/integrations">← Integrations</Link>
+        <Link to="/integrations">← Integrations</Link>
       </p>
       <PageHeader
         help="notifications"
@@ -976,11 +976,11 @@ export function IntegrationAddPage() {
           kind={kind}
           options={options.data}
           members={members.data?.items}
-          onCancel={() => navigate("/settings/integrations")}
-          onSaved={(c, connected) => navigate(`/settings/integrations/channels/${c.id}${connected ? "?added=1" : ""}`)}
+          onCancel={() => navigate("/integrations")}
+          onSaved={(c, connected) => navigate(`/integrations/channels/${c.id}${connected ? "?added=1" : ""}`)}
           validate={() => ruleProblem(r, isTracker(kind))}
           afterCreate={(c) => api.post<Route>("/routes", ruleBody(r, c))}
-          returnTo="/settings/integrations"
+          returnTo="/integrations"
           submitLabel="Add integration"
           extra={
             <Card title="What to send">
@@ -995,7 +995,7 @@ export function IntegrationAddPage() {
                   projects={ctx.projects}
                   teams={ctx.teams}
                   options={ctx.options}
-                  returnTo="/settings/integrations"
+                  returnTo="/integrations"
                 />
               </div>
             </Card>

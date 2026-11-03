@@ -111,7 +111,7 @@ export function TwoFactorCard() {
 function TwoFactorBody({ st, reload }: { st: MfaStatus; reload: () => void }) {
   const [mode, setMode] = useState<"idle" | "enrol" | "codes" | "off">("idle");
   const [codes, setCodes] = useState<string[] | null>(null);
-  // Sent here to set it up (?return=/settings/users): go back once done.
+  // Sent here to set it up (?return=/people): go back once done.
   const [params] = useSearchParams();
   const back = safeReturn(params.get("return"));
   const navigate = useNavigate();
@@ -200,8 +200,8 @@ function BypassNote({ st }: { st: MfaStatus }) {
   return (
     <Notice kind="info">
       You have {st.tokens} API token{st.tokens === 1 ? "" : "s"} and {st.assistants} connected AI assistant{st.assistants === 1 ? "" : "s"}. They keep
-      working without a code: review them under <Link to="/settings/tokens">API tokens</Link> and{" "}
-      <Link to="/settings/ai-assistants#connected">AI assistants</Link>.
+      working without a code: review them under <Link to="/integrations/tokens">API tokens</Link> and{" "}
+      <Link to="/integrations/ai-assistants#connected">AI assistants</Link>.
     </Notice>
   );
 }
@@ -366,7 +366,7 @@ export function MfaEnrolmentPage() {
   );
 }
 
-/** Settings → Users: "Require two-factor sign-in for all members" (admins). */
+/** People → Users: "Require two-factor sign-in for all members" (admins). */
 export function RequireMfaCard() {
   const { me } = useAuth();
   const { pathname } = useLocation();

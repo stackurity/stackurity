@@ -88,7 +88,7 @@ func askQ(t *testing.T, s *session, conv int64, text string, page map[string]str
 // starts a conversation.
 func askReady(t *testing.T, e *env, s *session) int64 {
 	t.Helper()
-	if err := e.st.SetAskEnabled(tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace), true); err != nil {
+	if err := e.st.ConsentToAsk(tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace), 0, api.AskConsentVersion); err != nil {
 		t.Fatal(err)
 	}
 	if code := s.do("POST", "/api/v1/ask/notice", map[string]string{"version": api.AskNoticeVersion}, nil); code != 204 {
@@ -132,8 +132,41 @@ func TestAskOptIn(t *testing.T) {
 	if code := s.do("POST", "/api/v1/ask/conversations", map[string]any{}, nil); code != 403 {
 		t.Errorf("start while off: %d", code)
 	}
-	if code := s.do("PUT", "/api/v1/ask/settings", map[string]bool{"enabled": true}, &st); code != 200 || st["enabled"] != true {
+	// On only with the administrator's consent to the current wording.
+	if code := s.do("PUT", "/api/v1/ask/settings", map[string]bool{"enabled": true}, nil); code != 400 {
+		t.Errorf("turn on without consent: %d", code)
+	}
+	if code := s.do("PUT", "/api/v1/ask/settings", map[string]any{"enabled": true, "consent_version": "ask-consent-2000-01-01"}, nil); code != 409 {
+		t.Errorf("turn on with old wording: %d", code)
+	}
+	if code := s.do("GET", "/api/v1/ask/status", nil, &st); st["reason"] != "ask_disabled" {
+		t.Fatalf("after refused consents: %d %v", code, st)
+	}
+	_, token, err := e.st.CreateToken(tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace), "admin token", auth.RoleAdmin, nil, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(map[string]any{"enabled": true, "consent_version": api.AskConsentVersion})
+	if code := bearer(e, token, "PUT", "/api/v1/ask/settings", b, map[string]string{"Content-Type": "application/json"}); code != 403 {
+		t.Errorf("consent through an API token: %d", code)
+	}
+	if code := s.do("PUT", "/api/v1/ask/settings", map[string]any{"enabled": true, "consent_version": api.AskConsentVersion}, &st); code != 200 || st["enabled"] != true {
 		t.Fatalf("turn on: %d %v", code, st)
+	}
+	var who struct {
+		By      *int64
+		Version string
+		At      *time.Time
+	}
+	if err := e.st.Pool.QueryRow(tenant.System(context.Background()), `SELECT ask_consented_by, ask_consent_version, ask_consented_at FROM workspaces WHERE id = $1`,
+		tenant.DefaultWorkspace).Scan(&who.By, &who.Version, &who.At); err != nil || who.By == nil || who.Version != api.AskConsentVersion || who.At == nil {
+		t.Errorf("consent recorded: %+v %v", who, err)
+	}
+	var audits int
+	_ = e.st.Pool.QueryRow(tenant.System(context.Background()), `SELECT count(*) FROM audit_events WHERE action = 'ask.consent'
+		AND detail->>'consent_version' = $1`, api.AskConsentVersion).Scan(&audits)
+	if audits != 1 {
+		t.Errorf("ask.consent audit events = %d", audits)
 	}
 	var c store.AskConversation
 	if code := s.do("POST", "/api/v1/ask/conversations", map[string]any{}, &c); code != 201 || c.Model != ask.DefaultModel {

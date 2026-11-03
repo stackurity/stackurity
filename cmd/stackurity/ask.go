@@ -30,6 +30,6 @@ func askEngine(ctx context.Context, st *store.Store, log *slog.Logger) (*ask.Eng
 	} else {
 		log.Warn("Ask Stackurity has no monthly spend cap for the whole server: set STACKURITY_ASK_GLOBAL_SPEND_CAP_USD")
 	}
-	log.Info("Ask Stackurity enabled: organisations can turn it on under Settings → AI assistants", attrs...)
+	log.Info("Ask Stackurity enabled: organisations can turn it on under Integrations → AI assistants", attrs...)
 	return &ask.Engine{Model: client, Store: st, Prices: ask.Prices{Overrides: cfg.Prices}, Config: cfg, Log: log}, nil
 }

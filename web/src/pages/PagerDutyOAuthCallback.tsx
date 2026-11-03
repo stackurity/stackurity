@@ -13,7 +13,7 @@ import { errorView } from "../errors";
  * integration to it, keeps its key, and forgets PagerDuty's token.
  */
 
-const START_AGAIN = "/settings/integrations/new/pagerduty";
+const START_AGAIN = "/integrations/new/pagerduty";
 
 const exchanges = new Map<string, Promise<PagerDutyOAuthResult>>();
 
@@ -98,7 +98,7 @@ export function PagerDutyOAuthCallbackPage() {
     setBusy(true);
     try {
       const r = await api.post<PagerDutyFinishResult>("/integrations/pagerduty/finish", { session: conn.session, service_id: picked });
-      navigate(withChannel(safeReturn(r.return_to, "/settings/integrations"), r.channel.id), { replace: true });
+      navigate(withChannel(safeReturn(r.return_to, "/integrations"), r.channel.id), { replace: true });
     } catch (err) {
       setFinishError(asApiError(err));
       setBusy(false);
@@ -108,7 +108,7 @@ export function PagerDutyOAuthCallbackPage() {
   const cancel = async () => {
     setBusy(true);
     if (conn) await api.post("/integrations/pagerduty/cancel", { session: conn.session }).catch(() => undefined);
-    navigate(safeReturn(conn?.return_to, "/settings/integrations"), { replace: true });
+    navigate(safeReturn(conn?.return_to, "/integrations"), { replace: true });
   };
 
   const startAgain = (label: string) => (
@@ -116,7 +116,7 @@ export function PagerDutyOAuthCallbackPage() {
       <Link className="btn btn-primary btn-block" to={START_AGAIN}>
         {label}
       </Link>
-      <Link className="btn btn-block" to="/settings/integrations">
+      <Link className="btn btn-block" to="/integrations">
         Back to integrations
       </Link>
     </div>

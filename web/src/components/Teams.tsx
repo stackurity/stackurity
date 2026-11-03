@@ -8,7 +8,7 @@ import { ErrorBox } from "./ui";
 
 /**
  * Under a team dropdown with no teams to choose: where teams are made.
- * Admins get a link to Settings, Teams; everyone else is told to ask one.
+ * Admins get a link to People, Teams; everyone else is told to ask one.
  */
 export function NoTeamsHint({ what = "choose one here" }: { what?: string }) {
   const { can } = useAuth();
@@ -17,10 +17,10 @@ export function NoTeamsHint({ what = "choose one here" }: { what?: string }) {
       No teams yet.{" "}
       {can("admin") ? (
         <>
-          Create one under <Link to="/settings/teams">Settings, Teams</Link> to {what}.
+          Create one under <Link to="/people/teams">People, Teams</Link> to {what}.
         </>
       ) : (
-        <>Ask an administrator to create one under Settings, Teams.</>
+        <>Ask an administrator to create one under People, Teams.</>
       )}
     </p>
   );
@@ -65,7 +65,7 @@ export function NewTeamInline({ id, teams, onCreated, onCancel }: { id: string; 
           </button>
         )}
       </div>
-      <p className="hint">Add people to it later under Settings, Teams.</p>
+      <p className="hint">Add people to it later under People, Teams.</p>
     </div>
   );
 }

@@ -5,7 +5,7 @@ import { confirmAction } from "../../components/ConfirmDialog";
 import { CodeBlock, ErrorBox, Notice, RelativeTime } from "../../components/ui";
 
 /*
- * Keyless CI scans (Settings → Integrations → CI pipeline): CI trusts, and
+ * Keyless CI scans (Integrations → CI pipeline): CI trusts, and
  * the workflow snippets that use them. A trust lets a CI provider's ID token
  * for one repository (or, chosen explicitly, every repository of an owner)
  * be exchanged for a collector token that lives 15 minutes and can report
