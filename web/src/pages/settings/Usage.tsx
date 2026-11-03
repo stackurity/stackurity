@@ -126,7 +126,7 @@ function UsageDetails({ u }: { u: AssetUsage }) {
         <UsageMeter used={u.projects} limit={u.project_limit} noun="projects" />
         <p className="small muted">
           Archived projects are not counted. At the limit new projects are refused; existing ones are always kept.{" "}
-          <Link to="/settings/projects">Projects</Link>
+          <Link to="/projects">Projects</Link>
         </p>
       </Card>
       <Card title="New assets refused at the limit">

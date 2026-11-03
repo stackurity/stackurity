@@ -19,7 +19,7 @@ function listFor(group: SearchGroup, q: string): string | null {
     case "components":
       return `/components${qs({ q })}`;
     case "teams":
-      return "/settings/teams";
+      return "/people/teams";
     case "members":
       // The member list is for admins only; a narrower search finds the rest.
       return null;

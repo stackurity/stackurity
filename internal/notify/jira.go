@@ -243,7 +243,7 @@ func (j *jiraClient) do(ctx context.Context, method, p string, body, out any) er
 		}
 	case http.StatusUnauthorized:
 		if j.token != nil {
-			return &PermanentError{fmt.Errorf("Jira rejected the Connect Jira token; if this persists, reconnect Jira in Settings → Integrations: %w", err)}
+			return &PermanentError{fmt.Errorf("Jira rejected the Connect Jira token; if this persists, reconnect Jira in Integrations: %w", err)}
 		}
 		return &PermanentError{fmt.Errorf("Jira rejected the credentials (check the username and token): %w", err)}
 	case http.StatusForbidden:
