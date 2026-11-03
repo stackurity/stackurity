@@ -27,7 +27,7 @@ Each release's section is published as its GitHub release notes, and a tag witho
 ### Upgrading
 
 - Migration `0085_leaks` adds two tables and changes the incidents row-level security policy; it takes a short lock on `incidents`.
-- Migration `0087_feedback` adds five tables (additive).
+- Migration `0091_feedback` adds five tables (additive).
 - Feedback with attachments needs the website (stackurity.dev) to accept them; feedback without attachments works with any version of it.
 - Upgrade the server before the agents. An agent or `stackurity scan` from this release keeps working with an older server: it leaves leaks out and says so.
 
