@@ -80,12 +80,14 @@ ClamAV's signatures take about 1 to 1.5 GB of memory, too much to keep resident 
 
 - **Holding:** with `STACKURITY_FEEDBACK_SCAN=required`, a new attachment is stored as `pending`. It is not listed, linked or served to operators or the triage agent until it is scanned.
 - **Scanning:** every 10 minutes, `scan.sh` asks for pending attachments (`GET /api/v1/admin/feedback/scan/pending`), runs `clamscan` once over them in a throwaway container (no network, read-only, the queue directory mounted read-only, memory capped at 1.5 GiB, one CPU at the lowest CPU and I/O priority), and reports each verdict (`POST /api/v1/admin/feedback/scan/{aid}`).
-- **When it waits:** it skips the run, and leaves files pending, while a release (`/run/stackurity-release.lock`) or backup (`/run/stackurity-backup.lock`) holds its lock, a build or migration rehearsal runs, or less than 1.7 GiB of memory is available. A clamscan error leaves files pending too: nothing is let through unscanned.
+- **When it waits:** it skips the run, and leaves files pending, while a release runs, a build or backup holds its lock, a migration rehearsal runs, or less than 1.7 GiB of memory is available (see [RELEASING.md](../RELEASING.md#host-locks) for the shared locks). While it scans it holds the build lock, so no build starts meanwhile. A clamscan error leaves files pending too: nothing is let through unscanned.
 - **Infected:** the file is deleted at once (`scan` `infected`, with the signature name), the item moves to `needs_owner` and its notes say what was found.
 - **Signatures:** `freshclam.sh` updates them once a day into a Docker volume, under the same conditions.
 - **Token:** the scripts use a feedback token with scope `scanner` (`POST /api/v1/admin/feedback-tokens` with `"scope":"scanner"`), which can read the pending list and report verdicts and nothing else; a triage token cannot do either.
 
-Install (host, as root): copy `deploy/feedback-scan` to `/opt/stackurity/feedback-scan`, the env example to `/etc/stackurity/feedback-scan.env` (0600), the scanner token to the file it names (0600), the units to `/etc/systemd/system`, then run `freshclam.sh` once and `systemctl enable --now feedback-freshclam.timer feedback-scan.timer`. Release scripts should hold `flock /run/stackurity-release.lock` while they run.
+Install (host, as root): copy `deploy/feedback-scan` to `/opt/stackurity/feedback-scan`, the env example to `/etc/stackurity/feedback-scan.env` (0600), the scanner token to the file it names (0600), the units to `/etc/systemd/system`, then run `freshclam.sh` once and `systemctl enable --now feedback-freshclam.timer feedback-scan.timer`.
+
+Measured on the production droplet (3 November 2026): `freshclam` 30 s, peak 672 MiB; `clamscan` 43–60 s for 2–4 files up to 50 MB, peak 1029–1085 MiB inside the 1.5 GiB cap. Host memory available fell by about 1 GiB during a scan.
 
 ## Retention
 

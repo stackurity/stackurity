@@ -8,9 +8,12 @@
 # priority), and reports each verdict. Nothing stays resident between runs.
 #
 # It does nothing, and the timer tries again later, while:
-#   - another scan runs, or a release holds /run/stackurity-release.lock;
-#   - a build or migration rehearsal runs (docker build, buildx, buildkitd,
-#     rehearse-*.sh);
+#   - a release runs (/run/stackurity-release.flag from release-lock.sh,
+#     under 6 hours old);
+#   - a build holds the shared build lock /run/lock/stackurity-build.lock
+#     (staging and release builds; the scan takes the same lock while it
+#     runs, so neither starts during the other), a backup holds
+#     /run/stackurity-backup.lock, or a migration rehearsal runs;
 #   - the host has less than FEEDBACK_SCAN_MIN_FREE_MIB available.
 #
 # Settings (environment, e.g. from /etc/stackurity/feedback-scan.env):
@@ -36,18 +39,23 @@ MIN_FREE_MIB="${FEEDBACK_SCAN_MIN_FREE_MIB:-1740}"
 
 log() { echo "feedback-scan: $*"; }
 
-# One scan at a time.
-exec 9>/run/stackurity-feedback-scan.lock
-flock -n 9 || { log "another scan is running; skipped"; exit 0; }
-
-# Not during a release (release scripts hold this lock while they run).
-if { [ -e /run/stackurity-release.lock ] && ! flock -n /run/stackurity-release.lock true; } ||
-	{ [ -e /run/stackurity-backup.lock ] && ! flock -n /run/stackurity-backup.lock true; }; then
-	log "a release or backup is running; skipped"
+# One build-sized job at a time: the scan shares the build lock with the
+# staging builder and release builds (stackurity-pro ops/release-lock.sh),
+# so it never overlaps a build, and a build never starts during a scan.
+# A release in progress (its flag under 6 hours old) skips the scan too.
+if [ -f /run/stackurity-release.flag ]; then
+	since=$(awk '{print $1; exit}' /run/stackurity-release.flag 2>/dev/null || echo 0)
+	if [[ "$since" =~ ^[0-9]+$ ]] && [ $(( $(date +%s) - since )) -lt 21600 ]; then
+		log "a release is running; skipped"
+		exit 0
+	fi
+fi
+if [ -e /run/stackurity-backup.lock ] && ! flock -n /run/stackurity-backup.lock true; then
+	log "a backup is running; skipped"
 	exit 0
 fi
-if pgrep -f 'docker build |docker buildx build|buildx build|rehearse-' >/dev/null; then
-	log "a build or rehearsal is running; skipped"
+if pgrep -f 'rehearse-' >/dev/null; then
+	log "a migration rehearsal is running; skipped"
 	exit 0
 fi
 free_mib=$(awk '/^MemAvailable:/ {print int($2/1024)}' /proc/meminfo)
@@ -55,6 +63,11 @@ if [ "$free_mib" -lt "$MIN_FREE_MIB" ]; then
 	log "only ${free_mib} MiB available (need ${MIN_FREE_MIB}); skipped"
 	exit 0
 fi
+
+exec 9>/run/lock/stackurity-build.lock
+flock -n 9 || { log "a build holds the build lock; skipped"; exit 0; }
+echo "clamav pid $$ since $(date -u +%FT%TZ)" >/run/lock/stackurity-build.holder
+trap 'rm -f /run/lock/stackurity-build.holder' EXIT
 
 token=$(cat "$TOKEN_FILE")
 api() { curl -sS --fail --max-time 30 -H "Authorization: Bearer $token" -H 'Content-Type: application/json' "$@"; }
@@ -83,7 +96,7 @@ done
 
 log "scanning ${#files[@]} attachment(s) with ${free_mib} MiB available"
 out=$(mktemp)
-trap 'rm -f "$out"' EXIT
+trap 'rm -f "$out" /run/lock/stackurity-build.holder' EXIT
 set +e
 nice -n 19 ionice -c 3 docker run --rm --network none --read-only --cap-drop ALL \
 	--security-opt no-new-privileges --memory "$MEMORY" --memory-swap "$MEMORY" --cpus 1 --cpu-shares 64 \
