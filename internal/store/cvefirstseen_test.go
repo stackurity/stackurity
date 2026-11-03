@@ -99,7 +99,7 @@ func TestCVEFirstSeen(t *testing.T) {
 	}
 }
 
-// CVEs stored before migration 0088 are marked backfilled: listed by ID
+// CVEs stored before migration 0089 are marked backfilled: listed by ID
 // lookups as "on or before", never in the recent log.
 func TestCVEFirstSeenBackfilled(t *testing.T) {
 	ctx := tenant.System(context.Background())

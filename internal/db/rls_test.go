@@ -22,7 +22,7 @@ var globalTables = map[string]string{
 	"feeds":              "public intelligence; changed only by instance admins",
 	"known_exploited":    "public intelligence",
 	"epss_scores":        "public intelligence",
-	"cve_first_seen":     "public intelligence: when each CVE first reached Stackurity (migration 0088)",
+	"cve_first_seen":     "public intelligence: when each CVE first reached Stackurity (migration 0089)",
 	"lifecycle_cycles":   "public intelligence",
 	"lifecycle_products": "public intelligence",
 	"license_key":        "installation licence",
