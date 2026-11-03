@@ -56,10 +56,20 @@ var projectRoutes = map[string]projectScope{
 	"POST /api/v1/tokens":                   accountScope,
 	"DELETE /api/v1/tokens/{id}":            accountScope,
 	// The caller's own linked Slack accounts (rows narrowed to them too).
-	"GET /api/v1/slack/links":          accountScope,
-	"DELETE /api/v1/slack/links/{id}":  accountScope,
-	"POST /api/v1/slack/links/preview": accountScope,
-	"POST /api/v1/slack/links/confirm": accountScope,
+	"GET /api/v1/slack/links": accountScope,
+	// Ask Stackurity: the caller's own conversations and questions; the
+	// tools it runs are narrowed as the caller's own requests are.
+	"GET /api/v1/ask/status":                       accountScope,
+	"POST /api/v1/ask/notice":                      accountScope,
+	"GET /api/v1/ask/conversations":                accountScope,
+	"POST /api/v1/ask/conversations":               accountScope,
+	"DELETE /api/v1/ask/conversations":             accountScope,
+	"GET /api/v1/ask/conversations/{id}":           accountScope,
+	"DELETE /api/v1/ask/conversations/{id}":        accountScope,
+	"POST /api/v1/ask/conversations/{id}/messages": accountScope,
+	"DELETE /api/v1/slack/links/{id}":              accountScope,
+	"POST /api/v1/slack/links/preview":             accountScope,
+	"POST /api/v1/slack/links/confirm":             accountScope,
 	// Connecting AI assistants: the consent page and the caller's own
 	// connections, in every workspace they belong to.
 	"POST /api/v1/oauth/authorize/preview": accountScope,
@@ -118,6 +128,8 @@ var projectRoutes = map[string]projectScope{
 	"GET /api/v1/inventory/updates":            scopedRead,
 	"GET /api/v1/coverage":                     scopedRead,
 	"GET /api/v1/coverage/unchecked":           scopedRead,
+	"GET /api/v1/coverage/overview":            scopedRead,
+	"GET /api/v1/coverage/assets":              scopedRead,
 	"GET /api/v1/dashboard/trend":              scopedRead,
 	"GET /api/v1/audit":                        scopedRead,
 	// Members with project access only see the people of their projects.
@@ -150,6 +162,9 @@ var projectRoutes = map[string]projectScope{
 	"POST /api/v1/fix-groups/{id}/applied": scopedWrite,
 	// Anyone who can see the issues may ask; the request is narrowed too.
 	"POST /api/v1/ignore-requests": scopedWrite,
+	// Anyone may ask for an ecosystem they can see on their assets; the
+	// request names the ecosystem, never an asset.
+	"POST /api/v1/coverage/support-requests": scopedWrite,
 	// Security on every issue's asset; a rule for every asset needs an
 	// organisation-wide security or admin role (Server.everywhere).
 	"POST /api/v1/ignore-requests/{id}/decision": scopedWrite,
@@ -181,6 +196,18 @@ func (s *Server) projectGate(next http.Handler) http.Handler {
 		if p.Restricted && sc == orgOnly {
 			writeError(w, 403, "forbidden", "this needs an organisation-wide role; you have access to some projects only")
 			return
+		}
+		if p.Ask {
+			// Ask Stackurity's tools read what the person may read, and
+			// nothing else: no changes, no account settings, no assistant.
+			if r.Method != http.MethodGet {
+				writeError(w, 403, "forbidden", "Ask Stackurity only reads")
+				return
+			}
+			if sc == accountScope && route != "GET /api/v1/auth/me" {
+				writeError(w, 403, "forbidden", "Ask Stackurity cannot read account settings")
+				return
+			}
 		}
 		if a := p.Assistant; a != nil {
 			// An assistant reaches only what its tools use: no account

@@ -60,6 +60,7 @@ var routeRules = map[string]routeRule{
 	"GET /healthz":                   {class: "public"},
 	"GET /readyz":                    {class: "public"},
 	"GET /install/agent.sh":          {class: "public"},
+	"GET /install/agent-macos.sh":    {class: "public"},
 	"GET /install/agent.ps1":         {class: "public"},
 	"GET /install/kubernetes.yaml":   {class: "public"},
 	"GET /download/agent/{platform}": {class: "public"},
@@ -208,10 +209,24 @@ var routeRules = map[string]routeRule{
 	}},
 	// The caller's own linked Slack accounts. A's link token must not
 	// preview or link for B, and A's link must not be removed.
-	"GET /api/v1/slack/links":          {class: "list"},
-	"DELETE /api/v1/slack/links/{id}":  {class: "object", obj: id("slacklink")},
-	"POST /api/v1/slack/links/preview": {class: "create", body: func(a *tenantFx) any { return map[string]string{"token": a.ids["slacktoken"]} }},
-	"POST /api/v1/slack/links/confirm": {class: "create", body: func(a *tenantFx) any { return map[string]string{"token": a.ids["slacktoken"]} }},
+	"GET /api/v1/slack/links": {class: "list"},
+	// Ask Stackurity: the caller's own conversations; another person's,
+	// in any organisation, is 404 to read, delete or ask in.
+	"GET /api/v1/ask/status":                       {class: "account"},
+	"POST /api/v1/ask/notice":                      {class: "create", body: func(*tenantFx) any { return map[string]string{"version": api.AskNoticeVersion} }},
+	"GET /api/v1/ask/conversations":                {class: "list"},
+	"POST /api/v1/ask/conversations":               {class: "create", body: func(*tenantFx) any { return map[string]any{} }},
+	"DELETE /api/v1/ask/conversations":             {class: "create"},
+	"GET /api/v1/ask/conversations/{id}":           {class: "object", obj: id("askconv")},
+	"DELETE /api/v1/ask/conversations/{id}":        {class: "object", obj: id("askconv")},
+	"POST /api/v1/ask/conversations/{id}/messages": {class: "object", obj: id("askconv"), body: func(*tenantFx) any { return map[string]string{"text": "hello"} }},
+	"GET /api/v1/ask/settings":                     {class: "list"},
+	"PUT /api/v1/ask/settings":                     {class: "create", body: func(*tenantFx) any { return map[string]bool{"enabled": false} }},
+	"DELETE /api/v1/ask/settings/conversations":    {class: "create"},
+	"GET /api/v1/admin/ask":                        {class: "instance"},
+	"DELETE /api/v1/slack/links/{id}":              {class: "object", obj: id("slacklink")},
+	"POST /api/v1/slack/links/preview":             {class: "create", body: func(a *tenantFx) any { return map[string]string{"token": a.ids["slacktoken"]} }},
+	"POST /api/v1/slack/links/confirm":             {class: "create", body: func(a *tenantFx) any { return map[string]string{"token": a.ids["slacktoken"]} }},
 
 	// AI assistants (assistants.go). Discovery is public and names no
 	// tenant; registration, tokens and revocation are form or JSON
@@ -307,6 +322,8 @@ var routeRules = map[string]routeRule{
 	"GET /api/v1/inventory":             {class: "list", query: "?asset_id={asset}"},
 	"GET /api/v1/inventory/updates":     {class: "list", query: "?asset_id={asset}"},
 	"GET /api/v1/coverage/unchecked":    {class: "list", query: "?asset_id={asset}"},
+	"GET /api/v1/coverage/overview":     {class: "list"},
+	"GET /api/v1/coverage/assets":       {class: "list"},
 	"GET /api/v1/coverage":              {class: "list", query: "?asset_id={asset}"},
 	"GET /api/v1/teams":                 {class: "list"},
 	"GET /api/v1/owner-rules":           {class: "list", query: "?asset_id={asset}"},
@@ -457,6 +474,8 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/ignore-requests": {class: "create", body: func(a *tenantFx) any {
 		return map[string]any{"finding_ids": []int64{a.int("finding")}, "reason": "false_positive", "note": "sweep", "scope": "everywhere", "expiry": "never"}
 	}},
+	// An ecosystem only A has: B is refused, and A's requests stay as they are.
+	"POST /api/v1/coverage/support-requests": {class: "create", body: func(*tenantFx) any { return map[string]string{"ecosystem": "cocoapods"} }},
 	"POST /api/v1/risk-policy/preview": {class: "create", body: func(*tenantFx) any {
 		return map[string]any{"known_exploited": 9, "thresholds": map[string]float64{"p1": 5, "p2": 3, "p3": 1}}
 	}},
@@ -853,6 +872,20 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 	}
 	set("token", at.Token.ID)
 	f.tokens["admin-token"] = at.Secret
+	// An Ask Stackurity conversation of the admin's, with a question naming
+	// the tag, and the notice accepted: nobody else may read or delete it.
+	conv, err := e.st.CreateAskConversation(ctx, me.User.ID, nil, "claude-sonnet-5-5", "conv-"+tag)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.st.AppendAskMessage(ctx, me.User.ID, conv.ID, store.AskMessage{Role: "user",
+		Content: json.RawMessage(`{"role":"user","content":[{"type":"text","text":"question-` + tag + `"}]}`), VisibleText: "question-" + tag}, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.st.AcceptAskNotice(ctx, me.User.ID, api.AskNoticeVersion); err != nil {
+		t.Fatal(err)
+	}
+	set("askconv", conv.ID)
 	_, agent, err := e.st.CreateAssetToken(ctx, main.AssetID, "agent-"+tag, me.User.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -1314,6 +1347,7 @@ func (e *env) snapshot(t *testing.T, a *tenantFx) string {
 		"/api/v1/second-checks", "/api/v1/vex/documents", "/api/v1/vex/sources", "/api/v1/vex/documents/{vexdoc}/statements",
 		"/api/v1/projects/{project}", "/api/v1/access-grants", "/api/v1/assets?project_id={project}",
 		"/api/v1/invitations", "/api/v1/onboarding", "/api/v1/usage", "/api/v1/slack/links", "/api/v1/integrations/jira/connections",
+		"/api/v1/ask/conversations", "/api/v1/ask/conversations/{askconv}",
 	}, editionSnapshotPaths...) {
 		resp := a.sess["admin"].req("GET", fill(p, a.ids), nil, nil)
 		body, _ := io.ReadAll(resp.Body)

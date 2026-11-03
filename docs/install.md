@@ -123,6 +123,25 @@ Connecting an asset is quiet: one "connected" message, and no alerts, Jira issue
 
 Secrets are never stored in the database. Integrations hold a *reference*: `env:STACKURITY_SECRET_GITHUB` or `file:/run/secrets/github_token`.
 
+## Ask Stackurity (in-app assistant)
+
+Ask Stackurity answers questions in a panel of the dashboard with a Claude model ([ai-assistants.md](ai-assistants.md#ask-stackurity)). It is off unless the server has a model provider, and then each organisation's admin turns it on. It works in every edition, with your own provider account: you pay the provider for what it uses.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `STACKURITY_ANTHROPIC_API_KEY` (or `_FILE`) | — | An Anthropic API key: turns the assistant on with Anthropic's API. `ANTHROPIC_API_KEY` and other `ANTHROPIC_*` variables are ignored |
+| `STACKURITY_ASK_PROVIDER` | `anthropic` with a key, else off | `bedrock` for Amazon Bedrock (`STACKURITY_ASK_BEDROCK_REGION`, AWS credentials from the usual chain) or `vertex` for Vertex AI (`STACKURITY_ASK_VERTEX_PROJECT`, `STACKURITY_ASK_VERTEX_REGION`, Google application default credentials; only in a server built with `-tags ask_vertex`, which adds Google's client libraries) |
+| `STACKURITY_ASK_MODEL` | `claude-sonnet-5-5` | The model for organisations that have none of their own. On Bedrock the `anthropic.` prefix is added |
+| `STACKURITY_ASK_EFFORT` | `low` | `low`, `medium`, `high`, `xhigh` or `max`: more effort is slower and dearer |
+| `STACKURITY_ASK_QUESTIONS_PER_MONTH` | no limit | Questions a month for each organisation without its own limit |
+| `STACKURITY_ASK_SPEND_CAP_USD` | no cap | Model spend a month for each organisation without its own cap |
+| `STACKURITY_ASK_GLOBAL_SPEND_CAP_USD` | no cap | Model spend a month for the whole server. Questions stop at the cap; Platform health warns from 80% |
+| `STACKURITY_ASK_PRICES` | Anthropic's list prices | `model=input,cache_write,cache_read,output;...` in US dollars per million tokens, for Bedrock and Vertex, which bill their own prices. Spend and caps are counted with these |
+| `STACKURITY_ASK_FALLBACKS` | on | `off` stops Anthropic's API from retrying a question its safety checks declined on another model (Anthropic's API only) |
+| `STACKURITY_ASK_BASE_URL` | — | Anthropic's API through a proxy |
+
+Questions and what the assistant reads to answer them go to the provider ([network.md](network.md#ask-stackurity)). Each question can make up to 8 model calls. A typical question costs about $0.05 with `claude-sonnet-5-5` and $0.10 with `claude-opus-5-5`; one that reads a lot, up to about three times that.
+
 ## Editions and licences
 
 Without a licence Stackurity runs as **Community**: all detection, intelligence, alerts, one team, the Action plan, CI gates, SBOMs, workspaces and the official stack packs. A licence adds:
@@ -736,6 +755,53 @@ stackurity.exe agent --interval 6h
 ```
 
 To move a manual install to the service, remove the scheduled task and the token file, then run the install command with a new code.
+
+### Macs
+
+Developer laptops and macOS build servers run the same agent. Under **Assets → Add server**, choose **macOS** and create an install command, then run it on the Mac:
+
+```sh
+curl -fsSL https://stackurity.example.com/install/agent-macos.sh | sudo STACKURITY_ENROLL_CODE=enr_... sh
+```
+
+The script downloads the agent for the Mac's architecture (Apple silicon or Intel) from your Stackurity server and checks its SHA-256. It creates a hidden account, `_stackurity` (the first free ID from 401 to 499, no shell, no home, no password), exchanges the code for a collector token and runs the agent as a LaunchDaemon (`/Library/LaunchDaemons/com.stackurity.agent.plist`) under that account, reporting every 6 hours with background priority. Files: the binary in `/Library/Application Support/Stackurity/bin`, the token and `agent.env` in `/Library/Application Support/Stackurity/conf` (readable by root and `_stackurity` only), the log in `/Library/Logs/Stackurity/agent.log` (rotated by `newsyslog`, `/etc/newsyslog.d/stackurity.conf`). The settings from `agent.env` are copied into the LaunchDaemon's environment as data; nothing in the file is run. Run the same command without the code to upgrade.
+
+**Why its own account, not root or `nobody`.** Reading `/Applications`, Homebrew and the system's version needs no privileges, so the agent does not get them. `nobody` is shared by other daemons, and any of them could read the token; a dedicated account, as Apple's own daemons (`_www`, `_postgres`) have, keeps it private. The price is that users' home directories are private to their owners: `~/Applications` and version managers under home directories are reported as coverage gaps, not inventoried. The agent needs no Full Disk Access.
+
+**What it reads** is described in [compatibility: macOS](compatibility.md#macos): the OS version (end of life is evaluated; Apple's security updates are not), applications (inventory only), Homebrew formulae and casks, runtimes and JDKs (end of life), and global npm and pip packages (vulnerabilities). `--app-dir` and `--discover-apps` work as on Linux, for projects on a build server.
+
+**Uninstall:**
+
+```sh
+curl -fsSL https://stackurity.example.com/install/agent-macos.sh | sudo STACKURITY_UNINSTALL=1 sh
+```
+
+or by hand:
+
+```sh
+sudo launchctl bootout system/com.stackurity.agent
+sudo rm -f /Library/LaunchDaemons/com.stackurity.agent.plist /etc/newsyslog.d/stackurity.conf
+sudo rm -rf "/Library/Application Support/Stackurity" /Library/Logs/Stackurity
+sudo dscl . -delete /Users/_stackurity; sudo dscl . -delete /Groups/_stackurity
+```
+
+The host stays on the server until you delete it, and its collector token until you revoke it under **Settings → API tokens**.
+
+**MDM (Jamf, Kandji, Intune, Mosyle).** Create a code that allows as many uses as Macs in scope (up to 500) and a longer expiry, and run this as a policy script; MDM scripts run as root:
+
+```sh
+#!/bin/sh
+set -eu
+export STACKURITY_ENROLL_CODE=enr_...
+script="$(mktemp)"
+trap 'rm -f "$script"' EXIT
+curl -fsSL https://stackurity.example.com/install/agent-macos.sh -o "$script"
+/bin/sh "$script"
+```
+
+A Mac already enrolled ignores the code and only upgrades, so the same script can run on a schedule. A signed, notarized installer package (`.pkg`) and a configuration profile are not provided yet. The binaries are ad hoc signed (the Go linker signs them for Apple silicon) and not notarized; downloaded with `curl` they carry no quarantine flag, so Gatekeeper does not stop them, but a copy downloaded with a browser will be.
+
+**By hand**, for example to try the collector without installing anything: `stackurity agent --once --output -` prints what would be sent. Run as your own user it can read your home directory, so it reports more than the daemon will.
 
 ### AWS managed services
 

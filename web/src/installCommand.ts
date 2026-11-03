@@ -25,6 +25,13 @@ export function linuxCommand(code: string, loc: Origin, docker = false): { comma
   return { command: `curl -fsSL ${loc.origin}/install/agent.sh | sudo ${env} sh`, insecure };
 }
 
+/** The one-line installer for a Mac (agent-macos.sh, a LaunchDaemon). */
+export function macCommand(code: string, loc: Origin): { command: string; insecure: boolean } {
+  const insecure = isInsecure(loc);
+  const env = `STACKURITY_ENROLL_CODE=${code}${insecure ? " STACKURITY_ALLOW_HTTP=1" : ""}`;
+  return { command: `curl -fsSL ${loc.origin}/install/agent-macos.sh | sudo ${env} sh`, insecure };
+}
+
 /**
  * The one-line installer for a new Windows host, for PowerShell run as
  * administrator. The first statement turns on TLS 1.2, which Windows

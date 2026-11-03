@@ -345,6 +345,9 @@ var OSProducts = map[string]string{
 	"debian": "debian", "ubuntu": "ubuntu", "alpine": "alpine-linux", "rocky": "rocky-linux",
 	"almalinux": "almalinux", "rhel": "rhel", "centos": "centos", "amzn": "amazon-linux",
 	"fedora": "fedora", "opensuse-leap": "opensuse", "sles": "sles", "ol": "oracle-linux",
+	// Not an os-release ID: the macOS agent reports the OS as
+	// pkg:generic/macos (internal/collect/darwin).
+	"macos": "macos",
 }
 
 // ComponentsOfTypes returns ids of components with current inventory whose
