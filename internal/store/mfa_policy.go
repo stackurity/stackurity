@@ -11,7 +11,7 @@ import (
 	"github.com/stackurity/stackurity/internal/tenant"
 )
 
-// A workspace's two-factor policy (People → Users, migration 0086). The
+// A workspace's two-factor policy (People → Users, migration 0087). The
 // decision for one session is made in the api package (mfa_policy.go);
 // this file stores the policy and what it is decided from.
 
