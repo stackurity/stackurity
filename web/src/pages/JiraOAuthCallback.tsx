@@ -17,7 +17,7 @@ const exchanges = new Map<string, Promise<JiraOAuthResult>>();
 
 /** Only addresses inside the dashboard. */
 function safeReturn(to: string | undefined): string {
-  return to && to.startsWith("/") && !to.startsWith("//") ? to : "/settings/integrations/new/jira";
+  return to && to.startsWith("/") && !to.startsWith("//") ? to : "/integrations/new/jira";
 }
 
 function withConnection(to: string, id: number): string {
@@ -56,10 +56,10 @@ export function JiraOAuthCallbackPage() {
 
   const again = (
     <div className="form-actions">
-      <Link className="btn btn-primary" to="/settings/integrations/new/jira">
+      <Link className="btn btn-primary" to="/integrations/new/jira">
         Start again
       </Link>
-      <Link className="btn" to="/settings/integrations">
+      <Link className="btn" to="/integrations">
         Back to Integrations
       </Link>
     </div>

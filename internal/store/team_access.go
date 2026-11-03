@@ -73,7 +73,7 @@ func teamTargets(ctx context.Context, tx pgx.Tx, teams []int64) ([]string, bool,
 
 // errTeamsSeeNothing: specific access given through teams alone, none of
 // which can see anything yet.
-var errTeamsSeeNothing = fmt.Errorf("the teams chosen cannot see any project or asset yet; give a team access under Settings, Teams, or choose projects or assets for this person: %w", ErrInvalid)
+var errTeamsSeeNothing = fmt.Errorf("the teams chosen cannot see any project or asset yet; give a team access under People, Teams, or choose projects or assets for this person: %w", ErrInvalid)
 
 // joinTeams adds uid to the teams in workspace ws, inside tx.
 func joinTeams(ctx context.Context, tx pgx.Tx, ws, uid int64, teams []int64) error {

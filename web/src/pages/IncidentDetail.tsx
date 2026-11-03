@@ -74,11 +74,18 @@ function SystemDetail({ inc }: { inc: Incident }) {
       <p>
         {inc.kind === "feed" && (
           <>
-            Check the feed on the <Link to="/intelligence">Intelligence page</Link>. This incident resolves itself when the feed syncs
+            Check the feed on the <Link to="/intelligence">Data sources page</Link>. This incident resolves itself when the feed syncs
             again.
           </>
         )}
-        {inc.kind !== "feed" && assetId && (
+        {inc.kind === "leak" && assetId && (
+          <>
+            {typeof d.why === "string" && <>{d.why} </>}
+            See the asset's <Link to={`/assets/${assetId}?tab=leaks`}>leaked keys</Link>. Rotate each key: revoke it and issue a new one.
+            This incident resolves itself once a complete scan no longer finds critical or high leaks on the asset, or they are dismissed.
+          </>
+        )}
+        {inc.kind !== "feed" && inc.kind !== "leak" && assetId && (
           <>
             See the <Link to={`/assets/${assetId}?tab=${inc.kind === "coverage" ? "coverage" : "collections"}`}>asset</Link>. This
             incident resolves itself once collection is healthy again.
@@ -130,7 +137,7 @@ function Deliveries({ items, onRetried }: { items: Delivery[]; onRetried: () => 
       <ErrorBox error={act.error} title="Retry failed" />
       {items.length === 0 ? (
         <p className="muted">
-          No notifications for this incident. Check the routes under <Link to="/settings/integrations">Settings → Integrations</Link>.
+          No notifications for this incident. Check the routes under <Link to="/integrations">Integrations</Link>.
         </p>
       ) : (
         <Table caption="Deliveries" columns={cols} rows={items} rowKey={(d) => d.id} />

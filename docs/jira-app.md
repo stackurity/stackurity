@@ -1,6 +1,6 @@
 # Connect Jira (the Stackurity Atlassian app)
 
-With an Atlassian OAuth 2.0 app configured on the server, people connect Jira Cloud in one click: **Settings → Integrations → Jira → Connect Jira**, approve on Atlassian's page, and they are back in Stackurity choosing the site, project, issue type and the status that means done from lists read from their Jira. Nobody creates an API token, types a site address or an account email, or pastes anything.
+With an Atlassian OAuth 2.0 app configured on the server, people connect Jira Cloud in one click: **Integrations → Jira → Connect Jira**, approve on Atlassian's page, and they are back in Stackurity choosing the site, project, issue type and the status that means done from lists read from their Jira. Nobody creates an API token, types a site address or an account email, or pastes anything.
 
 Stackurity Cloud has this app. On your own server it is optional: without it, Jira integrations use an API token (Jira Cloud) or a personal access token (Jira Data Center and Server) as before, and **Connect Jira** is hidden. Jira Data Center and Server have no OAuth 2.0 (3LO); they always use a personal access token. Where the app is configured, new Jira integrations default to Connect Jira, and **Use an API token instead** is always there.
 
@@ -53,7 +53,7 @@ One issue per incident is kept exactly as with an API token ([Jira](install.md#j
 
    Both, or neither: setting only one stops the server at start with a message. `STACKURITY_BASE_URL` and `STACKURITY_SECRET_KEY` must be set. The start-up log prints the callback URL and the scopes.
 6. **Distribution**: until it is shared, only the app's owner can connect it. To let other Atlassian organisations connect (needed for a service like Stackurity Cloud), **Distribution → Edit**, **Sharing**, fill in the vendor and privacy policy, and answer the personal data question (the app stores no personal data: no account ids).
-7. In Stackurity, **Settings → Integrations → Jira → Connect Jira**, **Accept** on Atlassian's page, pick the site, project and issue type, **Add integration**, then **Send test**.
+7. In Stackurity, **Integrations → Jira → Connect Jira**, **Accept** on Atlassian's page, pick the site, project and issue type, **Add integration**, then **Send test**.
 
 To rotate the secret, generate a new one in the app's **Settings**, update the variable and restart. Connections keep working: their refresh tokens are not tied to the secret.
 

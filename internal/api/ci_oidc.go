@@ -28,7 +28,7 @@ import (
 // each job (GitHub Actions with `permissions: id-token: write`, GitLab CI
 // with `id_tokens:`). POST /ci/token checks such a token against the
 // issuer's published keys and the CI trusts administrators made under
-// Settings → Integrations → CI pipeline, and answers with a collector token
+// Integrations → CI pipeline, and answers with a collector token
 // that:
 //
 //   - expires after ciTokenTTL,
@@ -421,7 +421,7 @@ func (s *Server) ciToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(trusts) == 0 {
-		writeError(w, 403, "forbidden", "no CI trust on this server accepts tokens from this issuer; an administrator adds one under Settings → Integrations → CI pipeline")
+		writeError(w, 403, "forbidden", "no CI trust on this server accepts tokens from this issuer; an administrator adds one under Integrations → CI pipeline")
 		return
 	}
 
@@ -436,7 +436,7 @@ func (s *Server) ciToken(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if len(ws) > 1 {
-			writeError(w, 400, "trust_required", "this server hosts several organisations, so a CI job names its CI trust: set STACKURITY_CI_TRUST (the scan action's ci-trust input) to the trust's id, shown under Settings → Integrations → CI pipeline")
+			writeError(w, 400, "trust_required", "this server hosts several organisations, so a CI job names its CI trust: set STACKURITY_CI_TRUST (the scan action's ci-trust input) to the trust's id, shown under Integrations → CI pipeline")
 			return
 		}
 	}
@@ -502,7 +502,7 @@ func (s *Server) ciToken(w http.ResponseWriter, r *http.Request) {
 	t := candidates[0]
 	for _, o := range candidates[1:] {
 		if o.WorkspaceID != t.WorkspaceID || !sameProject(o.ProjectID, t.ProjectID) {
-			writeError(w, 409, "conflict", "several CI trusts accept this repository, for different organisations or projects; set STACKURITY_CI_TRUST to the id of the trust to use (shown under Settings → Integrations → CI pipeline)")
+			writeError(w, 409, "conflict", "several CI trusts accept this repository, for different organisations or projects; set STACKURITY_CI_TRUST to the id of the trust to use (shown under Integrations → CI pipeline)")
 			return
 		}
 	}
@@ -576,7 +576,7 @@ func ciAuditDetail(c *ciClaims, extra map[string]any) map[string]any {
 	return d
 }
 
-// --- trusts (Settings → Integrations → CI pipeline)
+// --- trusts (Integrations → CI pipeline)
 
 type ciTrustRequest struct {
 	Name          string `json:"name"`

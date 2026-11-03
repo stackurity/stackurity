@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -781,6 +780,8 @@ func (d *Dispatcher) message(in store.Incident, event string) Message {
 		m.Action = "Check the agent, integration credentials or network path"
 	case "coverage":
 		m.Action = "Confirm whether software was removed or the collector lost access"
+	case "leak":
+		d.leakMessage(&m, det, list)
 	case "platform":
 		m.Summary = append(m.Summary, "A problem with the Stackurity installation itself: findings and notifications may be out of date")
 		m.Action = "An instance administrator should check Platform health in the dashboard and the server logs"
@@ -796,6 +797,9 @@ func (d *Dispatcher) message(in store.Incident, event string) Message {
 		m.Summary = append([]string{"Stopped reporting again after recovering"}, m.Summary...)
 	case "resolved":
 		m.Summary = []string{"No open findings remain for this incident"}
+		if in.Kind == "leak" {
+			m.Summary = []string{"No critical or high leaked keys remain open on this asset"}
+		}
 		if in.Kind == "feed" {
 			m.Title = "Intelligence feed " + in.Key + " has recovered"
 			m.Summary = []string{"The feed has synced again and its data is within its freshness limit"}
@@ -1109,7 +1113,7 @@ func (d *Dispatcher) Digest(ctx context.Context) error {
 		}
 		key := "digest:" + stamp
 		msg := Message{Event: EventDigest, Title: fmt.Sprintf("Stackurity: %s held by an hourly limit", plural(len(ids), "notification")),
-			Summary: lines, At: d.now().UTC(), Link: d.url("/settings/notifications", url.Values{"tab": {"deliveries"}})}
+			Summary: lines, At: d.now().UTC(), Link: d.url("/integrations/deliveries", nil)}
 		if _, err := d.Store.EnqueueDelivery(ctx, chID, nil, nil, EventDigest, key, msg); err != nil {
 			return err
 		}
@@ -1169,7 +1173,7 @@ func (d *Dispatcher) digestRoutes(ctx context.Context, routes []store.Route, hel
 		key := fmt.Sprintf("digest:%d:%s", r.ID, stamp)
 		msg := Message{Event: EventDigest, Title: fmt.Sprintf("Stackurity: %s held by %s", plural(len(ids), "urgent message"), limit),
 			Route: r.Name, Summary: lines, At: d.now().UTC(),
-			Link: inProject(d.url("/settings/notifications", url.Values{"tab": {"deliveries"}}), routeProject(r, 0))}
+			Link: inProject(d.url("/integrations/deliveries", nil), routeProject(r, 0))}
 		if err := d.enqueueRouted(ctx, r, EventDigest, key, msg); err != nil {
 			return err
 		}

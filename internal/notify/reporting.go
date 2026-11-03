@@ -100,9 +100,9 @@ func (d *Dispatcher) reportingMessage(m *Message, det reportingDetail) {
 			"At risk: findings for "+these(n, noun)+" are not refreshed, so new vulnerabilities in "+them(n)+" go unseen. "+
 				"The last results are kept, marked stale.",
 			"Likely cause: "+cause+".")
-		m.Action = "Fix: check " + its(n) + " last pipeline run. Scan commands are in Settings → Integrations → CI pipeline."
+		m.Action = "Fix: check " + its(n) + " last pipeline run. Scan commands are in Integrations → CI pipeline."
 		if det.Cause == "upload" {
-			m.Action = "Fix: upload a current SBOM, or run the scan in CI (Settings → Integrations → CI pipeline) so it stays current."
+			m.Action = "Fix: upload a current SBOM, or run the scan in CI (Integrations → CI pipeline) so it stays current."
 		}
 	}
 	var lines []string

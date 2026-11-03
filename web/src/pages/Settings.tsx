@@ -10,7 +10,6 @@ interface Entry {
   label: string;
   about: string;
   min?: UserRole;
-  instanceAdmin?: boolean;
   feature?: Feature;
   /** Shown only where the server offers billing (a hosted edition). */
   billing?: boolean;
@@ -18,19 +17,13 @@ interface Entry {
 
 const GROUPS: { title: string; entries: Entry[] }[] = [
   {
-    title: "What Stackurity checks and how it decides",
+    title: "How Stackurity decides",
     entries: [
-      { to: "/settings/integrations", label: "Integrations", about: "Everything Stackurity connects to: Slack, email, Jira, Git repositories, cloud accounts, AI assistants.", min: "engineer" },
       { to: "/settings/risk-policy", label: "Risk policy", about: "How issues get their priority, SOS rules, deadlines and the longest snooze." },
       {
         to: "/settings/fix-grouping",
         label: "Fix grouping",
         about: "Show a fix needed in several places as one card listing them, or one card per asset.",
-      },
-      {
-        to: "/approvals",
-        label: "Approvals and ignore rules",
-        about: "Requests to ignore issues, and the ignore rules in force for one asset or every asset.",
       },
       {
         to: "/settings/vex",
@@ -40,42 +33,9 @@ const GROUPS: { title: string; entries: Entry[] }[] = [
       {
         to: "/settings/automatic-fixes",
         label: "Automatic fixes",
-        about: "Policies that let Stackurity apply upgrades for you, with approval and canary hosts.",
+        about: "Policies that let Stackurity apply upgrades for you, with approval and canary hosts. The plans themselves are under Fixes.",
         min: "security",
         feature: "remediation",
-      },
-      { to: "/intelligence", label: "Intelligence and feeds", about: "Where vulnerability, release and end-of-life data comes from, and what could not be checked." },
-    ],
-  },
-  {
-    title: "Alerts",
-    entries: [
-      { to: "/settings/integrations", label: "Notifications", about: "Email, Slack, Teams, webhooks and Jira: who hears about what, under Integrations.", min: "security" },
-      { to: "/settings/integrations?tab=deliveries", label: "Delivery log", about: "Every message sent, held or failed.", min: "security" },
-    ],
-  },
-  {
-    title: "People and access",
-    entries: [
-      { to: "/settings/users", label: "Users", about: "Invite people and set their role.", min: "admin" },
-      {
-        to: "/settings/projects",
-        label: "Projects and access",
-        about: "Group assets into projects and give people or teams access to chosen projects only.",
-        min: "admin",
-      },
-      { to: "/settings/teams", label: "Teams", about: "Owner teams for assets, alert routing and escalation.", min: "admin" },
-      {
-        to: "/settings/owners",
-        label: "Owner rules",
-        about: "Who new issues are assigned to, by project, asset and part of the tech stack.",
-        min: "admin",
-      },
-      { to: "/settings/tokens", label: "API tokens", about: "Tokens for the API, CI scans and collectors." },
-      {
-        to: "/settings/ai-assistants",
-        label: "AI assistants",
-        about: "Connect Claude, ChatGPT or your code editor, and see the assistants you allowed to use Stackurity as you.",
       },
     ],
   },
@@ -89,46 +49,21 @@ const GROUPS: { title: string; entries: Entry[] }[] = [
   },
   {
     title: "Maintenance",
-    entries: [
-      { to: "/settings/plugins", label: "Plugins", about: "Collectors installed on this server.", min: "admin" },
-      { to: "/settings/conflicts", label: "Identity conflicts", about: "Assets that might be the same machine reported twice.", min: "admin" },
-      { to: "/settings/jobs", label: "Jobs", about: "Background work that failed or is waiting.", min: "admin" },
-      { to: "/settings/secrets", label: "Secrets", about: "Credentials stored for integrations and notifications.", min: "admin" },
-    ],
-  },
-  {
-    title: "This installation",
-    entries: [
-      { to: "/admin/workspaces", label: "Workspaces", about: "Create workspaces, set their plan and their limit on monitored assets.", instanceAdmin: true },
-      { to: "/admin/health", label: "Platform health", about: "Whether feeds, jobs and collectors are working.", instanceAdmin: true },
-      {
-        to: "/admin/coverage-gaps",
-        label: "Coverage gaps",
-        about: "What Stackurity cannot check across every workspace: unread files, components and products without data.",
-        instanceAdmin: true,
-      },
-      {
-        to: "/admin/trials",
-        label: "Trials",
-        about: "Organisations that signed up on Stackurity Cloud: whether they connected anything, still use it and paid.",
-        instanceAdmin: true,
-        billing: true,
-      },
-      { to: "/admin/packs", label: "Stack packs", about: "Extra file readers for stacks Stackurity does not read on its own.", instanceAdmin: true },
-      { to: "/admin/license", label: "Licence", about: "Edition, limits and expiry.", instanceAdmin: true },
-      { to: "/updates", label: "What's new", about: "Release notes and updates for this server.", instanceAdmin: true },
-    ],
+    entries: [{ to: "/settings/jobs", label: "Jobs", about: "Background work that failed or is waiting.", min: "admin" }],
   },
 ];
 
-/** Settings: every setting in one place, grouped by what it is for. */
+/**
+ * Settings: the switches for how this workspace checks and decides. Pages
+ * people use day to day have their own place in the sidebar (Integrations,
+ * People, Assets ▸ Projects, Reports, Admin).
+ */
 export function SettingsPage() {
-  const { can, has, me, meta } = useAuth();
-  const visible = (e: Entry) =>
-    (!e.billing || Boolean(meta?.billing)) && (e.instanceAdmin ? Boolean(me?.user?.instance_admin) : !e.min || can(e.min));
+  const { can, has, meta } = useAuth();
+  const visible = (e: Entry) => (!e.billing || Boolean(meta?.billing)) && (!e.min || can(e.min));
   return (
     <>
-      <PageHeader title="Settings" sub="How Stackurity checks, decides and alerts in this workspace, and who can use it." />
+      <PageHeader title="Settings" sub="How Stackurity checks and decides in this workspace, and its plan." />
       <div className="settings-groups">
         {GROUPS.map((g) => {
           const entries = g.entries.filter(visible);
@@ -153,7 +88,8 @@ export function SettingsPage() {
         })}
       </div>
       <p className="small muted">
-        The audit log moved to <Link to="/audit">Activity</Link>.
+        Integrations (with notifications, tokens and AI assistants), People (users, teams and owner rules) and Projects (under Assets) moved to the sidebar;
+        the audit log is under Reports.
       </p>
     </>
   );

@@ -83,7 +83,7 @@ export function CloudConnectPanel({ provider, admin }: { provider: "gcp" | "azur
       {plugins.data && !installed && (
         <Notice kind="warn">
           The <span className="mono">{pluginName}</span> plugin is not installed on this server. It ships in the Stackurity image; see{" "}
-          <Link to="/settings/plugins">Settings → Plugins</Link>.
+          <Link to="/integrations/plugins">Integrations → Plugins</Link>.
         </Notice>
       )}
       <form className="form" onSubmit={show}>
@@ -152,7 +152,7 @@ export function CloudConnectPanel({ provider, admin }: { provider: "gcp" | "azur
             <summary>{t.fallbackTitle}</summary>
             <CodeBlock text={setup.fallback_commands} label={`${t.name} fallback commands`} />
             <p className="small">
-              Store {setup.fallback_secret} as a workspace secret under <Link to="/settings/secrets">Settings → Secrets</Link>, then enter its name.
+              Store {setup.fallback_secret} as a workspace secret under <Link to="/integrations/secrets">Integrations → Secrets</Link>, then enter its name.
               Stored secrets are encrypted and never shown again.
             </p>
             <div className="field">

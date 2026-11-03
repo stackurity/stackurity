@@ -56,14 +56,14 @@ export function GitLabCallbackPage() {
   const back = (label: string) => (
     <div className="slack-link-actions">
       {admin ? <ConnectGitLabButton className="btn btn-primary btn-block" /> : null}
-      <Link className="btn btn-block" to="/settings/integrations">
+      <Link className="btn btn-block" to="/integrations">
         {label}
       </Link>
     </div>
   );
   const done = (
     <div className="form-actions">
-      <Link className="btn btn-primary" to="/settings/integrations">
+      <Link className="btn btn-primary" to="/integrations">
         Back to integrations
       </Link>
     </div>
@@ -153,7 +153,7 @@ export function GitLabCallbackPage() {
           <button type="button" className="btn btn-primary" onClick={() => void connect()} disabled={group === null || pick.pending}>
             {pick.pending ? "Connecting…" : "Connect this group"}
           </button>
-          <Link className="btn" to="/settings/integrations">
+          <Link className="btn" to="/integrations">
             Cancel
           </Link>
         </div>

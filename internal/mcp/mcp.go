@@ -152,7 +152,8 @@ const instructions = "Stackurity inventories software across hosts, deployed app
 	"list_assets to find the project or server, then action_plan for what to upgrade (each group lists the packages " +
 	"and target versions), asset_stack for every layer an application relies on, and list_findings or get_finding " +
 	"for details. explain_finding cites why a finding matched and why it has its priority, upgrade_recommendation and remediation_plan " +
-	"give versions to move to (from stored data only), and verify_since checks what was fixed after a change."
+	"give versions to move to (from stored data only), and verify_since checks what was fixed after a change. " +
+	"list_leaks lists keys, tokens and passwords found written in files (never their values)."
 
 const readOnlyNote = " This connection is read-only: no tool changes anything."
 
@@ -223,7 +224,7 @@ func (s *Server) dispatch(ctx context.Context, req request, modern bool) (any, *
 		}
 		if t.write != nil && !s.AllowWrites {
 			return nil, &rpcError{Code: codeInvalidParams, Message: "unknown tool " + p.Name + ": this connection is read-only " +
-				"(allow changes for it in Stackurity under Settings → AI assistants; for stackurity mcp, --allow-writes)"}
+				"(allow changes for it in Stackurity under Integrations → AI assistants; for stackurity mcp, --allow-writes)"}
 		}
 		args := map[string]any{}
 		if len(p.Arguments) > 0 && string(p.Arguments) != "null" {
@@ -448,6 +449,50 @@ var tools = map[string]tool{
 				res.Items = []finding{}
 			}
 			return map[string]any{"findings": res.Items, "total": res.Total, "shown": len(res.Items)}, nil
+		},
+	},
+	"list_leaks": {
+		description: "Keys, tokens and passwords found written in an asset's files (leaked keys), most severe first: the kind " +
+			"of key, the file and line, the setting it was assigned to, a masked preview, exposure (served: in a file the " +
+			"web server may send to anyone; world_readable: every account on the host can read it) and why: one line saying why " +
+			"it has its severity and what to do; quote it to the user. Low and medium are mostly keys kept in configuration " +
+			"files, where they belong: ask for severity critical,high for what needs action. The value itself is never " +
+			"stored or shown. The fix is to rotate the key (revoke it and issue a new one), then remove it from the file. " +
+			"With asset_id, scans says whether that asset's last key scan was complete: no scan means its files were never checked.",
+		schema: obj(map[string]any{
+			"asset_id": num("Limit to one asset"),
+			"severity": str("Comma-separated: critical, high, medium, low"),
+			"status":   str("open (the default), resolved (gone or dismissed) or all"),
+			"limit":    num("At most this many (default 50, max 200)"),
+		}),
+		run: func(ctx context.Context, api API, a map[string]any) (any, error) {
+			limit := 50
+			if n, ok := intArg(a["limit"]); ok && n > 0 {
+				limit = min(n, 200)
+			}
+			q := url.Values{"limit": {strconv.Itoa(limit)}}
+			set(q, "severity", a["severity"])
+			set(q, "status", a["status"])
+			var res struct {
+				Items []map[string]any `json:"items"`
+				Total int64            `json:"total"`
+				Scans []map[string]any `json:"scans,omitempty"`
+			}
+			path := "/api/v1/leaks?"
+			if id, ok := intArg(a["asset_id"]); ok && id > 0 {
+				path = "/api/v1/assets/" + strconv.Itoa(id) + "/leaks?"
+			}
+			if err := api.Do(ctx, "GET", path+q.Encode(), nil, nil, &res); err != nil {
+				return nil, err
+			}
+			if res.Items == nil {
+				res.Items = []map[string]any{}
+			}
+			out := map[string]any{"leaks": res.Items, "total": res.Total, "shown": len(res.Items)}
+			if res.Scans != nil {
+				out["scans"] = res.Scans
+			}
+			return out, nil
 		},
 	},
 	"get_finding": {
@@ -781,7 +826,7 @@ type findingVEX struct {
 
 // readTools and writeTools are listed in this order (a stable order lets
 // clients cache the list).
-var readTools = []string{"search", "list_assets", "action_plan", "asset_stack", "list_findings", "get_finding", "find_component",
+var readTools = []string{"search", "list_assets", "action_plan", "asset_stack", "list_findings", "list_leaks", "get_finding", "find_component",
 	"explain_finding", "upgrade_recommendation", "remediation_plan", "verify_since", "updates_available"}
 
 // readTitles are the read tools' short human titles (directories show them).
@@ -791,6 +836,7 @@ var readTitles = map[string]string{
 	"action_plan":            "What to fix first",
 	"asset_stack":            "An asset's stack",
 	"list_findings":          "List issues",
+	"list_leaks":             "List leaked keys",
 	"get_finding":            "Get an issue",
 	"find_component":         "Find a package",
 	"explain_finding":        "Explain an issue's priority",
