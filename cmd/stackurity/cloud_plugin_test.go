@@ -49,12 +49,17 @@ func TestPlatformCredentialsForPluginRuns(t *testing.T) {
 	}
 
 	dir, work := t.TempDir(), t.TempDir()
+	// The plugin writes the request it was given to dump. The worker can
+	// run it twice (the queued job, and the scheduler finding the new
+	// integration due), and the second run may still be writing while the
+	// first one's result is read: write a temporary file and rename it, so
+	// that dump is only ever a whole request.
 	dump := filepath.Join(t.TempDir(), "request.json")
 	meta := `{"protocol_version":"1","metadata":{"id":"azure-managed","name":"a","version":"1","maintainer":"m","license":"MIT","schema_version":"1","permissions":[],` +
 		`"credentials":["stackurity_azure_app_id (server)","stackurity_azure_app_secret (server)","stackurity_workspace_proof (server)","azure_client_id","azure_client_secret"],"network_access":[],"known_limitations":[]}}`
 	batch := `{"schema_version":"1","collector":{"id":"azure-managed"},"asset":{"kind":"managed_service","name":"aks-main","provider":"azure","identifiers":[{"scheme":"azure-resource-id","value":"/subscriptions/s/aks-main"}]},` +
 		`"observed_at":"` + time.Now().UTC().Format(time.RFC3339) + `","observations":[{"purl":"pkg:generic/azure-kubernetes-service@1.29.7","confidence":"confirmed","evidence":{"kind":"managed-service"}}],"complete":true}`
-	script := "#!/bin/sh\ncase \"$1\" in\nmetadata) echo '" + meta + "' ;;\ncollect) cat > " + dump + "; echo '{\"protocol_version\":\"1\",\"batches\":[" + batch + "]}' ;;\n" +
+	script := "#!/bin/sh\ncase \"$1\" in\nmetadata) echo '" + meta + "' ;;\ncollect) cat > " + dump + ".$$ && mv " + dump + ".$$ " + dump + "; echo '{\"protocol_version\":\"1\",\"batches\":[" + batch + "]}' ;;\n" +
 		"*) cat >/dev/null; echo '{\"protocol_version\":\"1\",\"validation\":{\"ok\":true}}' ;;\nesac\n"
 	if err := os.WriteFile(filepath.Join(dir, "azure-managed"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)

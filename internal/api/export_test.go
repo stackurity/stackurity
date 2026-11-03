@@ -36,3 +36,14 @@ func SetCITokenLimit(n int) (restore func()) {
 	limitCIToken.n = n
 	return func() { limitCIToken = old }
 }
+
+// SetGitLabWebhookLimit lowers the per-address limit on GitLab webhook
+// deliveries and returns a function that restores it. Call it before the
+// server is built: the route reads the limit then. The window stays a
+// fixed minute, so a test sending 2n+1 deliveries within a minute is sure to
+// be limited even across a window boundary.
+func SetGitLabWebhookLimit(n int) (restore func()) {
+	old := limitGitLabWebhook
+	limitGitLabWebhook.n = n
+	return func() { limitGitLabWebhook = old }
+}
