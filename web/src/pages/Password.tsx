@@ -202,7 +202,7 @@ export function ChangePasswordForm({ onDone }: { onDone?: (r: ChangeResult | und
         {kept > 0 && (
           <>
             {" "}
-            {kept} API token{kept === 1 ? " still works" : "s still work"}: <Link to="/settings/tokens">review them</Link>.
+            {kept} API token{kept === 1 ? " still works" : "s still work"}: <Link to="/integrations/tokens">review them</Link>.
           </>
         )}
       </>,

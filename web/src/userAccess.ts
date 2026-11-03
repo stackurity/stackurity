@@ -136,7 +136,7 @@ export function problems(s: AddUserState, names: Record<number, string> = {}, te
   // Specific may be met by teams alone, when one of them can see something.
   const teamsSee = s.teams.some((t) => (teams[t]?.sees.length ?? 0) > 0);
   if (s.projects.length === 0 && !teamsSee)
-    out.push(s.teams.length ? "The teams chosen cannot see anything yet: add a project, or give a team access under Settings, Teams." : "Add at least one project.");
+    out.push(s.teams.length ? "The teams chosen cannot see anything yet: add a project, or give a team access under People, Teams." : "Add at least one project.");
   for (const p of s.projects) {
     const n = names[p.projectId] ?? `project ${p.projectId}`;
     if (p.mode === "") out.push(`${n}: choose all its assets, or chosen assets.`);

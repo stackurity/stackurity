@@ -15,7 +15,7 @@
   },
   "description": {
     "short": "Urgent security issues, overdue fixes and summaries in a Teams channel.",
-    "full": "Stackurity tells your team about new urgent issues, issues that came back after a fix, overdue fixes and daily or weekly summaries, grouped per check and per fix, never one message per issue. Add the app to a team, then send it the code shown in Stackurity (Settings, Integrations, Microsoft Teams, Add to Teams) in the channel that should get the notifications. Stackurity posts only to channels connected that way."
+    "full": "Stackurity tells your team about new urgent issues, issues that came back after a fix, overdue fixes and daily or weekly summaries, grouped per check and per fix, never one message per issue. Add the app to a team, then send it the code shown in Stackurity (Integrations, Microsoft Teams, Add to Teams) in the channel that should get the notifications. Stackurity posts only to channels connected that way."
   },
   "icons": {
     "color": "color.png",

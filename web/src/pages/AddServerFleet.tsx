@@ -211,7 +211,7 @@ function FleetCodes({ res }: { res: Loaded<{ items: Enrollment[] | null }> }) {
     if (
       !(await confirmAction({
         title: `Revoke fleet code ${name}?`,
-        message: "Servers that already enrolled keep reporting; revoke their tokens under Settings → API tokens if needed.",
+        message: "Servers that already enrolled keep reporting; revoke their tokens under Integrations → API tokens if needed.",
         consequence: "The code can no longer add servers.",
         action: "Revoke fleet code",
         destructive: true,

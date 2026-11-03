@@ -205,7 +205,7 @@ export function TwoFactorCard() {
 
 function TwoFactorBody({ st, reload }: { st: MfaStatus; reload: () => void }) {
   const [codes, setCodes] = useState<string[] | null>(null);
-  // Sent here to set it up (?return=/settings/users): go back once done.
+  // Sent here to set it up (?return=/people): go back once done.
   const [params] = useSearchParams();
   const back = safeReturn(params.get("return"));
   const navigate = useNavigate();
@@ -504,8 +504,8 @@ function BypassNote({ st }: { st: MfaStatus }) {
   return (
     <Notice kind="info">
       You have {st.tokens} API token{st.tokens === 1 ? "" : "s"} and {st.assistants} connected AI assistant{st.assistants === 1 ? "" : "s"}. They keep
-      working without a second factor: review them under <Link to="/settings/tokens">API tokens</Link> and{" "}
-      <Link to="/settings/ai-assistants#connected">AI assistants</Link>.
+      working without a second factor: review them under <Link to="/integrations/tokens">API tokens</Link> and{" "}
+      <Link to="/integrations/ai-assistants#connected">AI assistants</Link>.
     </Notice>
   );
 }
@@ -796,7 +796,7 @@ function ConfirmFactor({ methods, recovery, onDone }: { methods: MfaMethod[]; re
   );
 }
 
-// --- Settings → Users: the organisation's policy (admins)
+// --- People → Users: the organisation's policy (admins)
 
 interface SecuritySettings {
   policy: "optional" | "everyone" | "admins";
@@ -818,7 +818,7 @@ const POLICIES: [SecuritySettings["policy"], string, string][] = [
   ["admins", "Required for admins and security", "Members with the admin or security role, organisation-wide or on a project."],
 ];
 
-/** Settings → Users: who must use two-factor sign-in, and which methods count. */
+/** People → Users: who must use two-factor sign-in, and which methods count. */
 export function RequireMfaCard() {
   const res = useLoad(() => api.get<SecuritySettings>("/settings/security"), []);
   const act = useAction();

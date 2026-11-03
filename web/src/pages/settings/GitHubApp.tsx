@@ -7,14 +7,14 @@ import { ErrorBox, RelativeTime } from "../../components/ui";
 /*
  * The Stackurity GitHub App ("Install on GitHub", docs/github-app.md):
  * the button on the Git repository card, and the connected GitHub accounts
- * under Settings ▸ Integrations.
+ * under Integrations.
  */
 
 /** Starts Install on GitHub: GitHub's install page, with a state bound to this person. */
 export function InstallOnGitHubButton({ className = "btn btn-sm btn-primary" }: { className?: string }) {
   const act = useAction();
   const start = async () => {
-    const r = await act.run(() => api.post<{ url: string }>("/integrations/github/install", { return_to: "/settings/integrations" }));
+    const r = await act.run(() => api.post<{ url: string }>("/integrations/github/install", { return_to: "/integrations" }));
     if (r?.url) window.location.assign(r.url);
   };
   return (

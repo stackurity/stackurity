@@ -6,7 +6,7 @@
     "url": "https://app.stackurity.dev/api/v1/integrations/github/webhook",
     "active": true
   },
-  "redirect_url": "https://app.stackurity.dev/settings/integrations",
+  "redirect_url": "https://app.stackurity.dev/integrations",
   "callback_urls": [
     "https://app.stackurity.dev/integrations/github/callback"
   ],

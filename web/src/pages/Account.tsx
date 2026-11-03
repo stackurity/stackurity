@@ -67,7 +67,7 @@ export function AccountPage() {
       </section>
       <Card title="AI assistants">
         <p>
-          <Link to="/settings/ai-assistants#connected">Assistants you allowed to use Stackurity as you</Link>
+          <Link to="/integrations/ai-assistants#connected">Assistants you allowed to use Stackurity as you</Link>
         </p>
       </Card>
     </>

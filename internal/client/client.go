@@ -138,7 +138,7 @@ type IngestResult struct {
 
 // ErrProjectIgnored: an upload asked for a project and the server's answer
 // does not name it, so the server ignored project_id.
-var ErrProjectIgnored = errors.New("the server stored the upload without the project: it does not support project_id on uploads (Stackurity 0.10 or later is needed); add the asset to the project in Settings > Projects and access")
+var ErrProjectIgnored = errors.New("the server stored the upload without the project: it does not support project_id on uploads (Stackurity 0.10 or later is needed); add the asset to the project in Assets > Projects")
 
 // projectQuery is the query string an upload adds for c.Project.
 func (c *Client) projectQuery() string {

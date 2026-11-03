@@ -92,7 +92,7 @@ export function InventorySummary() {
           label="Identity conflicts"
           value={o.identity_conflicts.toLocaleString()}
           tone={o.identity_conflicts > 0 ? "warn" : undefined}
-          sub={o.identity_conflicts > 0 && can("admin") ? <Link to="/settings/conflicts">Resolve</Link> : "open"}
+          sub={o.identity_conflicts > 0 && can("admin") ? <Link to="/assets/conflicts">Resolve</Link> : "open"}
         />
       </div>
 

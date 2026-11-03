@@ -1,6 +1,6 @@
 # The Stackurity Slack app ("Add to Slack")
 
-With a Slack app configured on the server, people connect Slack in two clicks: **Settings → Integrations → Slack → Add to Slack**, pick a channel on Slack's page, **Allow**, and they are back in Stackurity with a Slack integration ready. Their messages have **Assign to me** and **Snooze 1 week** buttons that act from Slack, verified with the app's signing secret. Nobody copies webhook URLs or secrets.
+With a Slack app configured on the server, people connect Slack in two clicks: **Integrations → Slack → Add to Slack**, pick a channel on Slack's page, **Allow**, and they are back in Stackurity with a Slack integration ready. Their messages have **Assign to me** and **Snooze 1 week** buttons that act from Slack, verified with the app's signing secret. Nobody copies webhook URLs or secrets.
 
 Stackurity Cloud has this app. On your own server it is optional: without it, Slack integrations use an incoming webhook as before (**Advanced: use a webhook** is always there), and the **Add to Slack** button is hidden.
 
@@ -45,6 +45,6 @@ One Slack app serves every organisation on the server. A Slack workspace can be 
    All three, or none: setting only some stops the server at start with a message. `STACKURITY_BASE_URL` and `STACKURITY_SECRET_KEY` must be set. The start-up log prints the three URLs Slack must use.
 4. Back in the app's settings, **Event Subscriptions**: if the Request URL shows as not verified, click **Retry** (the server now answers Slack's check). **Save Changes**.
 5. **Manage Distribution**: to let other Slack workspaces add the app (needed for a service like Stackurity Cloud), tick the checklist and **Activate Public Distribution**. A server used by one company can skip this; the app can then only be added to the Slack workspace that owns it.
-6. In Stackurity, **Settings → Integrations → Slack → Add to Slack**, pick a channel, **Allow**, then **Send test**.
+6. In Stackurity, **Integrations → Slack → Add to Slack**, pick a channel, **Allow**, then **Send test**.
 
 To rotate the client secret or signing secret, **Regenerate** it in the app's settings, update the variable and restart. Clicks signed with the old signing secret are refused from then on.
