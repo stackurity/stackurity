@@ -278,7 +278,7 @@ func TestRequireMFAForMembers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sec, err := e.st.CreateSession(ctx, u.ID, tenant.DefaultWorkspace)
+	sec, err := e.st.CreateSessionWith(ctx, u.ID, tenant.DefaultWorkspace, store.SessionOpts{Login: store.LoginSSO})
 	if err != nil {
 		t.Fatal(err)
 	}

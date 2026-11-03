@@ -786,7 +786,7 @@ function NotifyStep({ project, onNext }: { project: Project; onNext: () => void 
         <ErrorBox error={act.error} title="Could not send a test" />
         <p className="small">Each fix in a message has Assign to me, Snooze and Open buttons that open it here.</p>
         <p className="small">
-          You can fine-tune this in <Link to={`/integrations/channels/${saved.channel}`}>Integrations</Link>.
+          You can fine-tune this in <Link to={`/settings/integrations/channels/${saved.channel}`}>Integrations</Link>.
         </p>
         <div className="form-actions">
           <button type="button" className="btn" onClick={test} disabled={act.pending}>
@@ -853,7 +853,7 @@ function NotifyStep({ project, onNext }: { project: Project; onNext: () => void 
       <form className="form" onSubmit={save}>
         {backChannel > 0 && back.data && (
           <Notice kind="info">
-            Slack is connected. Choose what to send below, or later under <Link to={`/integrations/channels/${backChannel}`}>Integrations</Link>.
+            Slack is connected. Choose what to send below, or later under <Link to={`/settings/integrations/channels/${backChannel}`}>Integrations</Link>.
           </Notice>
         )}
         <fieldset className="field">
@@ -958,7 +958,7 @@ function NotifyStep({ project, onNext }: { project: Project; onNext: () => void 
 function InviteStep({ project, onFinish, pending }: { project: Project; onFinish: () => void; pending: boolean }) {
   return (
     <StepCard>
-      <p>People you invite see {project.name} with the permission you choose, unless you give them more. You can invite more people later from the project's page or People, Users.</p>
+      <p>People you invite see {project.name} with the permission you choose, unless you give them more. You can invite more people later from the project's page or Settings, Users.</p>
       <InviteForm projectId={project.id} projectName={project.name} />
       <div className="form-actions onboard-finish">
         <button type="button" className="btn btn-primary" onClick={onFinish} disabled={pending}>
@@ -984,8 +984,9 @@ export function SetupChecklist({ o, onChange, compact }: { o: Onboarding; onChan
     { done: Boolean(o.steps.assistant), text: "Connect an AI assistant", to: "/integrations/ai-assistants" },
     { done: o.steps.notifications, text: "Turn on notifications", to: "/integrations" },
     { done: o.steps.invite, text: "Invite your team", to: "/people" },
-    // Recommended for admins: their account can change everything.
-    { done: Boolean(me?.user?.mfa_enabled), text: "Turn on two-factor sign-in for your account", to: "/account#mfa" },
+    // Recommended for admins: their account can change everything. A
+    // passkey is offered first there; they come back here once it is set up.
+    { done: Boolean(me?.user?.mfa_enabled), text: "Set up two-factor (a passkey takes a minute)", to: "/account?return=%2F#mfa" },
   ];
   const left = items.filter((i) => !i.done).length;
   const hide = async () => {

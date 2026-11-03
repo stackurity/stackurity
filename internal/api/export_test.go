@@ -1,6 +1,11 @@
 package api
 
-import "time"
+import (
+	"net/http"
+	"time"
+
+	"github.com/stackurity/stackurity/internal/store"
+)
 
 // SetAccountFailureWindow shortens the per-account sign-in failure window
 // for a test and returns a function that restores it. Tests in this package
@@ -35,6 +40,21 @@ func SetCITokenLimit(n int) (restore func()) {
 	old := limitCIToken
 	limitCIToken.n = n
 	return func() { limitCIToken = old }
+}
+
+// RefuseSessionsIn makes workspace ws refuse browser sessions, as an
+// organisation that requires its own single sign-on does in an edition
+// (editionSessionAccess): such a session then works in no workspace. It
+// returns a function that restores the hook.
+func RefuseSessionsIn(ws int64) (restore func()) {
+	prev := editionSessionAccess
+	editionSessionAccess = func(_ *Server, _ *http.Request, _ *store.User, in, _ int64) *SSORequired {
+		if in == ws {
+			return &SSORequired{WorkspaceID: ws, WorkspaceName: "refused", LoginURL: "/sso/refused/login"}
+		}
+		return nil
+	}
+	return func() { editionSessionAccess = prev }
 }
 
 // SetGitLabWebhookLimit lowers the per-address limit on GitLab webhook

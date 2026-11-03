@@ -174,6 +174,9 @@ type Server struct {
 	// Breached refuses passwords found in data breaches (Pwned Passwords,
 	// k-anonymity); nil turns the check off.
 	Breached *auth.BreachChecker
+	// relyingParty is the WebAuthn relying party for passkeys, made from
+	// BaseURL on first use (webauthn.go).
+	relyingParty relyingPartyOnce
 	// Ask is the in-app assistant (ask.go); nil when no model provider is
 	// configured.
 	Ask *ask.Engine
@@ -630,7 +633,14 @@ func writeError(w http.ResponseWriter, status int, code, msg string, details ...
 // unexpected is logged and returned as a generic 500.
 func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	var ve *model.ValidationError
+	var refusal *instanceAdminRefusal
 	switch {
+	case errors.As(err, &refusal):
+		refusal.write(w)
+	case errors.Is(err, store.ErrPasskeyCounter):
+		// A session with a passkey marked meanwhile as possibly copied
+		// (store.CreateSessionWith): refused like the sign-in itself.
+		passkeyFailed(w, "clone")
 	case errors.Is(err, store.ErrNotFound):
 		writeError(w, 404, "not_found", "not found")
 	case errors.Is(err, store.ErrConflict):

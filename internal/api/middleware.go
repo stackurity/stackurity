@@ -42,6 +42,23 @@ type Principal struct {
 	// (assistants.go). Its requests come only from the tools behind /mcp;
 	// Token then describes it, so it is capped like an API token.
 	Assistant *store.AssistantGrant
+	// Login is how a browser session was signed in (store.LoginPassword,
+	// LoginPasskey, LoginInvite, LoginSignup, LoginSSO; "" for a session
+	// from before migration 0087).
+	Login string
+	// MFAMethod is the second factor the session was signed in with ("" for
+	// none), and MFACredential the passkey it used (0: none).
+	MFAMethod     string
+	MFACredential int64
+	// MFANeed is what the workspace's two-factor policy asks of the session
+	// (mfa_policy.go): nothing, setting up a factor, or confirming with one.
+	MFANeed mfaNeed
+	// MFAAccepted lists the factors that count for the session's user in
+	// its workspace, when MFANeed asks for one.
+	MFAAccepted []string
+	// MFARecoveryHelps: a recovery code lets this session go on (to set up
+	// a factor that counts), when MFANeed asks it to confirm.
+	MFARecoveryHelps bool
 	// FeedbackReviewer: a read-only token for reviewing Ask Stackurity
 	// feedback (ask_feedback.go). It has no user and no organisation, and
 	// authenticate lets it reach only the feedback review routes.
@@ -50,15 +67,16 @@ type Principal struct {
 	// process with the person's own session while they wait for an answer.
 	// It may only read (projectGate), and nothing from outside can set it.
 	Ask bool
+	// instanceAdminMFA, set by authenticate for every principal of an
+	// instance administrator (session or API token), decides what the
+	// request must do before it may use the powers of the role
+	// (Server.instanceAdminMFA, instanceAdminPowers). It is evaluated only
+	// where those are used.
+	instanceAdminMFA func() (mfaNeed, []string, string, error)
 	// FeedbackAgent is the triage agent's token for the feedback queue
 	// (feedback_queue.go): no user and no workspace, and only the queue's
 	// routes accept it.
 	FeedbackAgent *store.FeedbackAgentToken
-	// PasswordSession: a browser session signed in with a local password.
-	PasswordSession bool
-	// NeedsMFAEnrolment: such a session without a second factor in a
-	// workspace that requires one (mfa.go); it may only set one up.
-	NeedsMFAEnrolment bool
 	// PasswordChangeRequired: an administrator set a temporary password
 	// (password_reset.go); the session may only change it.
 	PasswordChangeRequired bool
@@ -158,12 +176,12 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 			switch {
 			case err == nil:
 				p = &Principal{User: sess.User, Role: sess.User.Role, Session: true, Workspace: sess.Workspace, Ask: viaAsk(r.Context()),
-					PasswordSession: sess.PasswordLogin, NeedsMFAEnrolment: sess.NeedsMFAEnrolment,
+					Login: sess.Login, MFAMethod: sess.MFA, MFACredential: sess.MFACredential,
 					PasswordChangeRequired: sess.PasswordChangeRequired, SSOWorkspace: sess.SSOWorkspace, SessionExpires: sess.ExpiresAt}
 				if p.Workspace > 0 && editionSessionAccess != nil {
 					if req := editionSessionAccess(s, r, sess.User, p.Workspace, sess.SSOWorkspace); req != nil {
 						// Fail closed: no workspace, so no workspace data.
-						p.Workspace, p.Role, p.SSORequired, p.NeedsMFAEnrolment = 0, "", req, false
+						p.Workspace, p.Role, p.SSORequired = 0, "", req
 					}
 				}
 				if p.Ask && p.Workspace != askWorkspace(r.Context()) {
@@ -172,9 +190,8 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 					writeError(w, 409, "workspace_changed", "the organisation changed while Ask Stackurity was answering")
 					return
 				}
-				if sessionGate(w, r, p) {
-					return
-				}
+				// The session gate runs below, once the two-factor policy
+				// (which needs the roles) has been applied.
 			case !errors.Is(err, store.ErrNotFound):
 				s.credentialsUnavailable(w, r, err)
 				return
@@ -206,6 +223,17 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 					}
 				}
 				p.Project = requestedProject(r)
+			}
+			// The workspace's two-factor policy needs the roles just read.
+			if err := s.applyMFAPolicy(ctx, p); err != nil {
+				s.credentialsUnavailable(w, r, err)
+				return
+			}
+			if p.User != nil && p.User.InstanceAdmin {
+				p.instanceAdminMFA = func() (mfaNeed, []string, string, error) { return s.instanceAdminMFA(ctx, p) }
+			}
+			if p.Session && sessionGate(w, r, p) {
+				return
 			}
 			r = r.WithContext(ctx)
 		}
@@ -284,12 +312,24 @@ func requireAuth(next http.Handler) http.Handler {
 }
 
 // requireInstanceAdmin allows only operators of the installation, signed in
-// with a session or an admin token of theirs.
+// with a session or an admin token of theirs. These routes act on the whole
+// server, so the request must meet the two-factor policy of every workspace
+// the account belongs to, not only the one it works in
+// (instanceAdminPowers).
 func requireInstanceAdmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := principal(r)
 		if p == nil || p.User == nil || !p.User.InstanceAdmin || (p.Token != nil && p.Role != auth.RoleAdmin) || p.Assistant != nil {
 			writeError(w, 403, "forbidden", "requires an instance administrator")
+			return
+		}
+		ok, refusal, err := instanceAdminPowers(p)
+		if err != nil {
+			writeError(w, 503, "unavailable", "credentials cannot be checked right now; try again shortly")
+			return
+		}
+		if !ok {
+			refusal.write(w)
 			return
 		}
 		next.ServeHTTP(w, r)
