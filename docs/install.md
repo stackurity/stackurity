@@ -140,6 +140,7 @@ Ask Stackurity answers questions in a panel of the dashboard with a Claude model
 | `STACKURITY_ASK_FALLBACKS` | on | `off` stops Anthropic's API from retrying a question its safety checks declined on another model (Anthropic's API only) |
 | `STACKURITY_ASK_BASE_URL` | — | Anthropic's API through a proxy |
 | `STACKURITY_ASK_SUMMARY_MODEL` | `claude-haiku-5-5` | Writes the summary of a long conversation's earlier turns (counted against the same caps) |
+| `STACKURITY_ASK_START_MODEL` | `claude-haiku-5-5` | The model a conversation starts on; it steps up, within the organisation's model (the ceiling, `STACKURITY_ASK_MODEL` or the plan's), when the person is struggling or the request is complex. `plan` starts on the organisation's model |
 | `STACKURITY_ASK_LONG_CHAT_QUESTIONS` | `20` | After this many questions in one conversation, the panel suggests starting a new chat (a suggestion, not a limit) |
 | `STACKURITY_ASK_LONG_CHAT_COST_USD` | `1.00` | The same, once a conversation's model calls have cost this much |
 

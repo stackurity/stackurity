@@ -156,6 +156,11 @@ type AskConversation struct {
 	// they are not resent with each question (ask/history.go).
 	Summary        string `json:"-"`
 	SummaryThrough int    `json:"-"`
+	// PendingStepUp is why the conversation moved to Model between
+	// questions (a thumbs-down, a stopped answer), and PendingSteppedFrom
+	// the model it left: the next answer's call record carries them.
+	PendingStepUp      string `json:"-"`
+	PendingSteppedFrom string `json:"-"`
 }
 
 // AskMessage is one message of a conversation.
@@ -185,11 +190,13 @@ type AskTokens struct {
 	Output     int64 `json:"output"`
 }
 
-const askConversationCols = `id, user_id, project_id, model, title, context_tokens, created_at, updated_at, summary, summary_through`
+const askConversationCols = `id, user_id, project_id, model, title, context_tokens, created_at, updated_at, summary, summary_through,
+	pending_step_up, pending_stepped_from`
 
 func scanAskConversation(row pgx.Row) (*AskConversation, error) {
 	var c AskConversation
-	err := row.Scan(&c.ID, &c.UserID, &c.ProjectID, &c.Model, &c.Title, &c.ContextTokens, &c.CreatedAt, &c.UpdatedAt, &c.Summary, &c.SummaryThrough)
+	err := row.Scan(&c.ID, &c.UserID, &c.ProjectID, &c.Model, &c.Title, &c.ContextTokens, &c.CreatedAt, &c.UpdatedAt, &c.Summary, &c.SummaryThrough,
+		&c.PendingStepUp, &c.PendingSteppedFrom)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}

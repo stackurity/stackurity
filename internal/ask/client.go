@@ -131,7 +131,15 @@ type Call struct {
 	System      string
 	NoTools     bool
 	NoFallbacks bool
+	// NoThinking turns thinking off: the small yes-or-no triage call,
+	// where thinking would only spend tokens (allowed at low effort).
+	NoThinking bool
 }
+
+// serverFallback reports whether the provider offers server-side fallback
+// for model: Claude Haiku 5.5 has none (a request asking for it would be
+// refused), so it never asks.
+func serverFallback(model string) bool { return !strings.Contains(model, "haiku") }
 
 // Result is what one model call returned.
 type Result struct {
@@ -216,7 +224,10 @@ func (c *Client) Stream(ctx context.Context, call Call, on func(StreamEvent)) (*
 		OutputConfig: anthropic.BetaOutputConfigParam{Effort: anthropic.BetaOutputConfigEffort(call.Effort)},
 		CacheControl: anthropic.NewBetaCacheControlEphemeralParam(),
 	}
-	if c.fallbacks && !call.NoFallbacks {
+	if call.NoThinking {
+		p.Thinking = anthropic.BetaThinkingConfigParamUnion{OfDisabled: &anthropic.BetaThinkingConfigDisabledParam{}}
+	}
+	if c.fallbacks && !call.NoFallbacks && serverFallback(call.Model) {
 		p.Fallbacks = anthropic.BetaFallbacksParamOfDefault()
 		p.Betas = []anthropic.AnthropicBeta{anthropic.AnthropicBetaServerSideFallback2026_07_01}
 	}

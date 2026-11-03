@@ -72,7 +72,7 @@ func (s *Server) writeAskCalls(w http.ResponseWriter, r *http.Request, ctx conte
 		cw := csv.NewWriter(w)
 		_ = cw.Write([]string{"id", "created_at", "workspace_id", "user_id", "conversation_id", "kind", "model", "prompt_version",
 			"input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "cost_micros", "latency_ms",
-			"tool_calls", "tool_names", "history_turns_sent", "summary_used", "stop_reason", "error_code", "request_id"})
+			"tool_calls", "tool_names", "history_turns_sent", "summary_used", "stop_reason", "error_code", "request_id", "step_up_reason", "stepped_from"})
 		opt := func(p *int64) string {
 			if p == nil {
 				return ""
@@ -85,7 +85,7 @@ func (s *Server) writeAskCalls(w http.ResponseWriter, r *http.Request, ctx conte
 				c.Kind, csvSafe(c.Model), csvSafe(c.PromptVersion), i(c.InputTokens, 10), i(c.OutputTokens, 10), i(c.CacheReadTokens, 10),
 				i(c.CacheWriteTokens, 10), i(c.CostMicros, 10), i(c.LatencyMS, 10), strconv.Itoa(c.ToolCalls),
 				csvSafe(strings.Join(c.ToolNames, " ")), strconv.Itoa(c.HistoryTurnsSent), strconv.FormatBool(c.SummaryUsed),
-				csvSafe(c.StopReason), csvSafe(c.ErrorCode), csvSafe(c.RequestID)})
+				csvSafe(c.StopReason), csvSafe(c.ErrorCode), csvSafe(c.RequestID), csvSafe(c.StepUpReason), csvSafe(c.SteppedFrom)})
 		}
 		cw.Flush()
 	default:
