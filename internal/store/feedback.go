@@ -550,3 +550,46 @@ func (s *Store) SetFeedbackSentStatus(ctx context.Context, id int64, status, not
 		WHERE id = $1`, id, status, note, fixedIn, at)
 	return err
 }
+
+// DeleteFeedbackItem deletes an item (spam, abuse) with its attachments and
+// history, and returns the storage keys of files still on disk.
+func (s *Store) DeleteFeedbackItem(ctx context.Context, id int64) ([]string, error) {
+	sys := tenant.System(ctx)
+	var keys []string
+	err := pgx.BeginFunc(sys, s.Pool, func(tx pgx.Tx) error {
+		rows, err := tx.Query(sys, `SELECT storage_key FROM feedback_attachments WHERE item_id = $1 AND purged_at IS NULL`, id)
+		if err != nil {
+			return err
+		}
+		if keys, err = pgx.CollectRows(rows, pgx.RowTo[string]); err != nil {
+			return err
+		}
+		tag, err := tx.Exec(sys, `DELETE FROM feedback_items WHERE id = $1`, id)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return ErrNotFound
+		}
+		return nil
+	})
+	return keys, err
+}
+
+// FeedbackStorageKeys returns the keys of attachment files that should be
+// on disk, for the sweep that removes files with no row.
+func (s *Store) FeedbackStorageKeys(ctx context.Context) (map[string]bool, error) {
+	rows, err := s.Pool.Query(tenant.System(ctx), `SELECT storage_key FROM feedback_attachments WHERE purged_at IS NULL`)
+	if err != nil {
+		return nil, err
+	}
+	keys, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]bool, len(keys))
+	for _, k := range keys {
+		out[k] = true
+	}
+	return out, nil
+}

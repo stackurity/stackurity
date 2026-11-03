@@ -334,11 +334,17 @@ Items newest first: `status` (comma-separated: `new`, `triaged`, `in_progress`, 
 
 Any of `status`, `resolution` (shown to the sender; required for `wont_fix`), `triage_notes` (replaces) or `note` (appends a dated paragraph with who wrote it), `link` (a pull request or issue under `https://github.com/stackurity/`), `duplicate_of` (a reference; required for `duplicate`), `fixed_in` (a version). Every change is kept in the item's `events`.
 
+### `DELETE /admin/feedback/{id}`
+
+**Who:** instance admin (not a triage token)
+
+Deletes an item (spam, abuse) with its attachment files and history. 204.
+
 ### `POST /admin/feedback/{id}/attachments/{aid}/link`
 
 **Who:** instance admin, or a feedback triage token
 
-A signed download link, valid for ten minutes: `url`, `expires_at`, `name`, `content_type`, `size`. 410 when the retention rules deleted the file.
+A download link signed with a key the website relay never holds (`STACKURITY_FEEDBACK_LINK_KEY`), valid for ten minutes: `url`, `expires_at`, `name`, `content_type`, `size`. 410 when the retention rules deleted the file.
 
 ### `GET /feedback-attachments/{id}`
 

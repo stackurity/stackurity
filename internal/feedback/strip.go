@@ -252,6 +252,15 @@ func stripWebP(b []byte) ([]byte, error) {
 	copy(out, b[:12])
 	p := 12
 	sawImage := false
+	// dims records a declared size; any over MaxPixels refuses the file.
+	var w, h int64
+	dims := func(width, height int64) bool {
+		if width <= 0 || height <= 0 || width*height > MaxPixels {
+			return false
+		}
+		w, h = width, height
+		return true
+	}
 	for p < len(b) {
 		if p+8 > len(b) {
 			return nil, ErrBadImage
@@ -271,11 +280,34 @@ func stripWebP(b []byte) ([]byte, error) {
 			if n < 10 {
 				return nil, ErrBadImage
 			}
+			d := chunk[8:]
+			if !dims(int64(d[4])|int64(d[5])<<8|int64(d[6])<<16+1, int64(d[7])|int64(d[8])<<8|int64(d[9])<<16+1) {
+				return nil, ErrBadImage
+			}
 			c := append([]byte(nil), chunk...)
 			c[8] &^= 0x08 | 0x04 // EXIF and XMP present
 			out = append(out, c...)
 			continue
-		case "VP8 ", "VP8L", "ANMF", "ALPH":
+		case "VP8L":
+			d := chunk[8 : 8+n]
+			if n < 5 || d[0] != 0x2f {
+				return nil, ErrBadImage
+			}
+			bits := binary.LittleEndian.Uint32(d[1:5])
+			if !dims(int64(bits&0x3fff)+1, int64((bits>>14)&0x3fff)+1) {
+				return nil, ErrBadImage
+			}
+			sawImage = true
+		case "VP8 ":
+			d := chunk[8 : 8+n]
+			if n < 10 || d[3] != 0x9d || d[4] != 0x01 || d[5] != 0x2a {
+				return nil, ErrBadImage
+			}
+			if !dims(int64(binary.LittleEndian.Uint16(d[6:])&0x3fff), int64(binary.LittleEndian.Uint16(d[8:])&0x3fff)) {
+				return nil, ErrBadImage
+			}
+			sawImage = true
+		case "ANMF", "ALPH":
 			sawImage = true
 		case "ICCP", "ANIM":
 		default:
@@ -284,7 +316,7 @@ func stripWebP(b []byte) ([]byte, error) {
 		}
 		out = append(out, chunk...)
 	}
-	if !sawImage {
+	if !sawImage || w == 0 || h == 0 {
 		return nil, ErrBadImage
 	}
 	binary.LittleEndian.PutUint32(out[4:], uint32(len(out)-8))

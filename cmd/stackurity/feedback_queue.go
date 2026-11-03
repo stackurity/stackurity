@@ -57,7 +57,18 @@ func feedbackQueueFromEnv(log *slog.Logger) (*api.FeedbackQueue, error) {
 		log.Warn("feedback queue: could not remove unfinished uploads", "err", err)
 	}
 	log.Info("feedback queue enabled", "dir", dir, "storage_max_mb", maxMB)
-	return &api.FeedbackQueue{Disk: disk, IntakeKey: key, StorageMax: maxMB << 20}, nil
+	linkKey := os.Getenv("STACKURITY_FEEDBACK_LINK_KEY")
+	if f := os.Getenv("STACKURITY_FEEDBACK_LINK_KEY_FILE"); f != "" {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			return nil, fmt.Errorf("STACKURITY_FEEDBACK_LINK_KEY_FILE: %w", err)
+		}
+		linkKey = strings.TrimSpace(string(b))
+	}
+	if linkKey != "" && (len(linkKey) < 32 || linkKey == key) {
+		return nil, errors.New("STACKURITY_FEEDBACK_LINK_KEY must be at least 32 characters and differ from the intake key")
+	}
+	return &api.FeedbackQueue{Disk: disk, IntakeKey: key, StorageMax: maxMB << 20, LinkKey: linkKey}, nil
 }
 
 // registerFeedbackRetention deletes old attachment files and records daily.
@@ -70,6 +81,27 @@ func registerFeedbackRetention(w *worker.Worker, st *store.Store, q *api.Feedbac
 		if files > 0 || items > 0 {
 			log.Info("feedback retention", "files_deleted", files, "items_deleted", items)
 		}
-		return err
+		if err != nil {
+			return err
+		}
+		// Files with no row: a crash between writing a file and storing
+		// its item. An hour is far longer than any upload takes.
+		onDisk, err := q.Disk.Keys(time.Now().Add(-time.Hour))
+		if err != nil {
+			return err
+		}
+		known, err := st.FeedbackStorageKeys(ctx)
+		if err != nil {
+			return err
+		}
+		for _, k := range onDisk {
+			if !known[k] {
+				if err := q.Disk.Remove(k); err != nil {
+					return err
+				}
+				log.Warn("feedback: removed an attachment file with no item", "key", k)
+			}
+		}
+		return nil
 	})
 }

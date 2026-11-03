@@ -1,14 +1,13 @@
 // Package feedback holds what the feedback queue and the dashboard's Send
 // feedback share: which attachments are accepted and how they are made safe
-// to keep (attach.go, strip.go), where the queue keeps them (disk.go), the
-// optional virus scan (clamd.go), and the emails to the person who sent an
-// item (email.go).
+// to keep (attach.go, strip.go), and where the queue keeps them (disk.go).
 //
 // Attachments are untrusted. Their type comes from their first bytes, never
 // from the file name or the browser's Content-Type; images lose their
 // metadata (EXIF, XMP, comments, GPS) before they leave the installation,
-// and again when the queue stores them. Files are stored under random names
-// and are only ever served as downloads.
+// and again when the queue stores them. Videos and PDFs are checked by type
+// and size only: their metadata is kept. Files are stored under random
+// names and are only ever served as downloads.
 package feedback
 
 import (

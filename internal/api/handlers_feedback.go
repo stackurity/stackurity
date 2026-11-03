@@ -55,6 +55,10 @@ const (
 // limitFeedback caps what one user can send.
 var limitFeedback = rateLimit{10, time.Hour}
 
+// feedbackUploads bounds sends with attachments at once on this server
+// (each holds up to 90 MB in memory); more are asked to try again.
+var feedbackUploads = make(chan struct{}, 2)
+
 // FeedbackURLFromEnv reads STACKURITY_FEEDBACK_URL. Unset means the default;
 // set to an empty string (or off) turns feedback off and returns "".
 func FeedbackURLFromEnv() (string, error) {
@@ -296,9 +300,21 @@ func (s *Server) sendFeedback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 403, "forbidden", "feedback needs a signed-in user")
 		return
 	}
+	// Counted before the body is read, so refused uploads cost the
+	// sender their allowance too.
+	if s.limited(w, r, "you have sent a lot of feedback; try again in an hour", limitHit{"feedback", itoa(p.User.ID), limitFeedback}) {
+		return
+	}
 	var req feedbackRequest
 	var files []feedbackAttachment
 	if strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "multipart/form-data") {
+		select {
+		case feedbackUploads <- struct{}{}:
+			defer func() { <-feedbackUploads }()
+		default:
+			writeError(w, 503, "busy", "another upload is being sent; try again in a minute")
+			return
+		}
 		rc := http.NewResponseController(w)
 		_ = rc.SetReadDeadline(time.Now().Add(feedbackUploadTimeout))
 		_ = rc.SetWriteDeadline(time.Now().Add(feedbackUploadTimeout + time.Minute))
@@ -319,9 +335,6 @@ func (s *Server) sendFeedback(w http.ResponseWriter, r *http.Request) {
 	out, err := validateFeedback(req)
 	if err != nil {
 		s.fail(w, r, err)
-		return
-	}
-	if s.limited(w, r, "you have sent a lot of feedback; try again in an hour", limitHit{"feedback", itoa(p.User.ID), limitFeedback}) {
 		return
 	}
 	out.Version = s.Version

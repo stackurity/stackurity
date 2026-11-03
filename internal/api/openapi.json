@@ -393,6 +393,43 @@
       "$ref": "#/components/responses/Error"
      }
     }
+   },
+   "delete": {
+    "operationId": "delete_admin_feedback_id",
+    "summary": "Delete a feedback item",
+    "description": "Deletes an item (spam, abuse) with its attachment files and history. See feedback-queue.md\n\nRole: instance admin",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "instance admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
    }
   },
   "/admin/feedback/{id}/attachments/{aid}/link": {

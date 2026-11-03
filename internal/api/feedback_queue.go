@@ -18,6 +18,7 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
@@ -31,6 +32,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -52,6 +55,30 @@ type FeedbackQueue struct {
 	// StorageMax caps the attachments kept, in bytes
 	// (STACKURITY_FEEDBACK_STORAGE_MAX_MB).
 	StorageMax int64
+	// LinkKey signs attachment links (STACKURITY_FEEDBACK_LINK_KEY); the
+	// website relay never holds it. Empty uses a random key per process,
+	// so links work only on the replica that made them.
+	LinkKey string
+
+	once     sync.Once
+	linkKey  []byte
+	inflight atomic.Int64 // bytes written by intakes not yet committed
+	uploads  chan struct{}
+}
+
+func (q *FeedbackQueue) init() {
+	q.once.Do(func() {
+		if q.LinkKey != "" {
+			k := sha256.Sum256([]byte("stackurity feedback attachment link\x00" + q.LinkKey))
+			q.linkKey = k[:]
+		} else {
+			q.linkKey = make([]byte, 32)
+			if _, err := rand.Read(q.linkKey); err != nil {
+				panic(err)
+			}
+		}
+		q.uploads = make(chan struct{}, feedbackIntakeConcurrency)
+	})
 }
 
 const (
@@ -62,16 +89,20 @@ const (
 	feedbackLinkTTL      = 10 * time.Minute
 	feedbackIntakeBody   = feedback.MaxTotalBytes + 2<<20
 	feedbackItemJSON     = 16 << 10
+	// feedbackIntakeConcurrency bounds intakes at once (each holds at most
+	// one 10 MB image in memory); more get 503 and the sender retries.
+	feedbackIntakeConcurrency = 8
 )
 
 var (
 	limitFeedbackIntakeIP  = rateLimit{30, time.Hour}
 	limitFeedbackIntakeAll = rateLimit{300, time.Hour}
-	limitFeedbackStatus    = rateLimit{600, time.Hour}
+	limitFeedbackStatus    = rateLimit{3000, time.Hour}
 	limitFeedbackDownload  = rateLimit{120, time.Minute}
-	// feedbackImageSlots bounds images held in memory while they are
-	// stripped (each at most 10 MB).
-	feedbackImageSlots = make(chan struct{}, 2)
+	// limitFeedbackIntakeFiles caps items with attachments per sender.
+	limitFeedbackIntakeFiles = rateLimit{10, time.Hour}
+	// limitFeedbackStatusIP caps status checks per sender address.
+	limitFeedbackStatusIP = rateLimit{120, time.Hour}
 )
 
 // feedbackAgentPath reports whether a triage token may be used on path.
@@ -84,10 +115,10 @@ func (q *FeedbackQueue) keyOK(r *http.Request) bool {
 	return q != nil && q.IntakeKey != "" && got != "" && subtle.ConstantTimeCompare([]byte(got), []byte(q.IntakeKey)) == 1
 }
 
-func (q *FeedbackQueue) linkSig(aid, exp int64) string {
-	k := sha256.Sum256([]byte("stackurity feedback attachment link\x00" + q.IntakeKey))
-	m := hmac.New(sha256.New, k[:])
-	fmt.Fprintf(m, "%d:%d", aid, exp)
+func (q *FeedbackQueue) linkSig(item, aid, exp int64) string {
+	q.init()
+	m := hmac.New(sha256.New, q.linkKey)
+	fmt.Fprintf(m, "%d:%d:%d", item, aid, exp)
 	return hex.EncodeToString(m.Sum(nil))
 }
 
@@ -108,6 +139,8 @@ func (s *Server) feedbackOperatorRoutes(r chi.Router) {
 		r.Get("/{id}", s.getFeedbackQueueItem)
 		r.Patch("/{id}", s.updateFeedbackQueueItem)
 		r.Post("/{id}/attachments/{aid}/link", s.feedbackAttachmentLink)
+		// Deleting (spam, abuse) is for instance administrators only.
+		r.With(requireInstanceAdmin).Delete("/{id}", s.deleteFeedbackQueueItem)
 	})
 	r.Route("/admin/feedback-tokens", func(r chi.Router) {
 		r.Use(requireInstanceAdmin)
@@ -168,6 +201,15 @@ var (
 	feedbackVersion  = regexp.MustCompile(`^(dev|test|v?[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?)$`)
 	feedbackViewport = regexp.MustCompile(`^[0-9]{2,5}x[0-9]{2,5}$`)
 )
+
+// relaySender is the sender's address the relay reports (trusted only
+// after the key was checked); "unknown" when it gives none.
+func relaySender(r *http.Request) string {
+	if a, err := netip.ParseAddr(r.Header.Get("X-Stackurity-Feedback-Client-IP")); err == nil {
+		return a.String()
+	}
+	return "unknown"
+}
 
 // feedbackKind maps the form's kinds (and the older ones) to the queue's.
 func feedbackKind(k string) (string, bool) {
@@ -252,14 +294,17 @@ func (s *Server) feedbackIntake(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 401, "unauthorized", "missing or wrong intake key")
 		return
 	}
-	sender := r.Header.Get("X-Stackurity-Feedback-Client-IP")
-	if a, err := netip.ParseAddr(sender); err == nil {
-		sender = a.String()
-	} else {
-		sender = "unknown"
-	}
+	sender := relaySender(r)
 	if s.limited(w, r, "too much feedback; try again in an hour",
 		limitHit{"feedback-intake-ip", sender, limitFeedbackIntakeIP}, limitHit{"feedback-intake", "all", limitFeedbackIntakeAll}) {
+		return
+	}
+	q.init()
+	select {
+	case q.uploads <- struct{}{}:
+		defer func() { <-q.uploads }()
+	default:
+		writeError(w, 503, "busy", "the feedback queue is busy; try again in a minute")
 		return
 	}
 	rc := http.NewResponseController(w)
@@ -272,6 +317,8 @@ func (s *Server) feedbackIntake(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var keys []string
+	var reserved int64
+	defer func() { q.inflight.Add(-reserved) }()
 	cleanup := func() {
 		for _, k := range keys {
 			_ = q.Disk.Remove(k)
@@ -329,7 +376,19 @@ func (s *Server) feedbackIntake(w http.ResponseWriter, r *http.Request) {
 			fail(badRequest(fmt.Sprintf("at most %d attachments", feedback.MaxFiles)))
 			return
 		}
-		a, err := q.storeAttachment(r, s, part, total)
+		if len(item.Attachments) == 0 {
+			ok, err := s.limiter.check(r.Context(), limitHit{"feedback-intake-files", sender, limitFeedbackIntakeFiles})
+			if err != nil {
+				fail(err)
+				return
+			}
+			if !ok {
+				cleanup()
+				writeError(w, 429, "rate_limited", "too many attachments from your address; send without them or try again in an hour")
+				return
+			}
+		}
+		a, err := q.storeAttachment(r, s, part, total, &reserved)
 		if a != nil && a.StorageKey != "" {
 			keys = append(keys, a.StorageKey)
 		}
@@ -362,7 +421,7 @@ var errFeedbackStorageFull = errors.New("attachments cannot be stored right now;
 
 // storeAttachment checks and writes one file. The returned attachment has
 // its StorageKey set once something is on disk, so the caller can remove it.
-func (q *FeedbackQueue) storeAttachment(r *http.Request, s *Server, part io.Reader, total int64) (*store.FeedbackAttachment, error) {
+func (q *FeedbackQueue) storeAttachment(r *http.Request, s *Server, part io.Reader, total int64, reserved *int64) (*store.FeedbackAttachment, error) {
 	name := ""
 	if p, ok := part.(interface{ FileName() string }); ok {
 		name = p.FileName()
@@ -381,14 +440,13 @@ func (q *FeedbackQueue) storeAttachment(r *http.Request, s *Server, part io.Read
 	if err != nil {
 		return nil, err
 	}
-	if used >= q.StorageMax {
+	if used+q.inflight.Load() >= q.StorageMax {
 		return nil, errFeedbackStorageFull
 	}
 	h := sha256.New()
 	var key string
 	var n int64
 	if k.Image() {
-		feedbackImageSlots <- struct{}{}
 		b, err := io.ReadAll(io.LimitReader(br, limit+1))
 		if err == nil && int64(len(b)) > limit {
 			err = &feedback.TooLarge{Kind: k, Total: limit < k.MaxBytes()}
@@ -400,7 +458,6 @@ func (q *FeedbackQueue) storeAttachment(r *http.Request, s *Server, part io.Read
 			h.Write(b)
 			key, n, err = q.Disk.Write(bytes.NewReader(b), k, limit)
 		}
-		<-feedbackImageSlots
 		if err != nil {
 			return nil, err
 		}
@@ -416,7 +473,10 @@ func (q *FeedbackQueue) storeAttachment(r *http.Request, s *Server, part io.Read
 	}
 	a := &store.FeedbackAttachment{Name: feedback.SafeName(name, k), ContentType: k.ContentType(), Size: n,
 		SHA256: h.Sum(nil), StorageKey: key, Scan: "checked"}
-	if used+n > q.StorageMax {
+	// Counts this request's earlier files and other intakes in flight.
+	q.inflight.Add(n)
+	*reserved += n
+	if used+q.inflight.Load() > q.StorageMax {
 		return a, errFeedbackStorageFull
 	}
 	return a, nil
@@ -433,7 +493,8 @@ func (s *Server) feedbackQueueStatus(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 401, "unauthorized", "missing or wrong intake key")
 		return
 	}
-	if s.limited(w, r, "too many status checks", limitHit{"feedback-status", "all", limitFeedbackStatus}) {
+	if s.limited(w, r, "too many status checks", limitHit{"feedback-status-ip", relaySender(r), limitFeedbackStatusIP},
+		limitHit{"feedback-status", "all", limitFeedbackStatus}) {
 		return
 	}
 	var req struct {
@@ -612,6 +673,29 @@ func (s *Server) updateFeedbackQueueItem(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, 200, after)
 }
 
+func (s *Server) deleteFeedbackQueueItem(w http.ResponseWriter, r *http.Request) {
+	if !s.queueOn(w) {
+		return
+	}
+	id, err := feedbackIDParam(r)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	keys, err := s.Store.DeleteFeedbackItem(r.Context(), id)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	for _, k := range keys {
+		if err := s.FeedbackQueue.Disk.Remove(k); err != nil {
+			s.Log.Error("feedback attachment not deleted; the orphan sweep will retry", "key", k, "err", err)
+		}
+	}
+	s.Log.Info("feedback item deleted", "ref", store.FeedbackRef(id), "by", feedbackActor(r), "files", len(keys))
+	w.WriteHeader(204)
+}
+
 func (s *Server) feedbackAttachmentLink(w http.ResponseWriter, r *http.Request) {
 	if !s.queueOn(w) {
 		return
@@ -636,7 +720,7 @@ func (s *Server) feedbackAttachmentLink(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	exp := time.Now().Add(feedbackLinkTTL).Unix()
-	u := fmt.Sprintf("%s/feedback-attachments/%d?exp=%d&sig=%s", strings.TrimRight(s.BaseURL, "/"), aid, exp, s.FeedbackQueue.linkSig(aid, exp))
+	u := fmt.Sprintf("%s/feedback-attachments/%d?exp=%d&sig=%s", strings.TrimRight(s.BaseURL, "/"), aid, exp, s.FeedbackQueue.linkSig(id, aid, exp))
 	writeJSON(w, 200, map[string]any{"url": u, "expires_at": time.Unix(exp, 0).UTC(), "name": a.Name,
 		"content_type": a.ContentType, "size": a.Size})
 }
@@ -648,16 +732,24 @@ func (s *Server) feedbackDownload(w http.ResponseWriter, r *http.Request) {
 	if !s.queueOn(w) {
 		return
 	}
+	denied := func() { writeError(w, 403, "forbidden", "this link is invalid or has expired; ask for a new one") }
 	aid, err := idParam(r, "id")
 	exp, err2 := strconv.ParseInt(r.URL.Query().Get("exp"), 10, 64)
 	now := time.Now().Unix()
-	if err != nil || err2 != nil || exp < now || exp > now+int64(feedbackLinkTTL/time.Second)+60 ||
-		!hmac.Equal([]byte(r.URL.Query().Get("sig")), []byte(q.linkSig(aid, exp))) {
-		writeError(w, 403, "forbidden", "this link is invalid or has expired; ask for a new one")
+	if err != nil || err2 != nil || exp < now || exp > now+int64(feedbackLinkTTL/time.Second)+60 {
+		denied()
 		return
 	}
 	a, err := s.Store.GetFeedbackAttachment(r.Context(), aid)
-	if err != nil || a.PurgedAt != nil {
+	if err != nil {
+		denied()
+		return
+	}
+	if !hmac.Equal([]byte(r.URL.Query().Get("sig")), []byte(q.linkSig(a.ItemID, aid, exp))) {
+		denied()
+		return
+	}
+	if a.PurgedAt != nil {
 		writeError(w, 404, "not_found", "not found")
 		return
 	}

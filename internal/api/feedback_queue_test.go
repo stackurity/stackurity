@@ -3,6 +3,9 @@ package api_test
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -657,5 +660,69 @@ func TestFeedbackRetention(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
 		t.Fatalf("%d files left", len(entries))
+	}
+}
+
+func TestFeedbackDeleteAndForgedLinks(t *testing.T) {
+	e, dir := queueEnv(t, 0)
+	e.api.FeedbackQueue.LinkKey = "a-separate-link-key-0123456789abcdef0123"
+	_, res := postIntake(t, e, intakeKey, validItem(), upload{"a.pdf", []byte("%PDF-1.4 spam")})
+	ref := res["ref"].(string)
+	e.user("ops@x.io", auth.RoleAdmin)
+	e.instanceAdmin("ops@x.io")
+	ops := e.login("ops@x.io")
+	var item struct {
+		Attachments []struct{ ID int64 } `json:"attachments"`
+	}
+	ops.do("GET", "/api/v1/admin/feedback/"+ref, nil, &item)
+	aid := item.Attachments[0].ID
+
+	// Whoever holds the intake key (the relay) cannot sign a link.
+	exp := time.Now().Add(5 * time.Minute).Unix()
+	k := sha256.Sum256([]byte("stackurity feedback attachment link\x00" + intakeKey))
+	for _, msg := range []string{fmt.Sprintf("%d:%d", aid, exp), fmt.Sprintf("1:%d:%d", aid, exp)} {
+		m := hmac.New(sha256.New, k[:])
+		m.Write([]byte(msg))
+		resp, err := http.Get(fmt.Sprintf("%s/feedback-attachments/%d?exp=%d&sig=%s", e.srv.URL, aid, exp, hex.EncodeToString(m.Sum(nil))))
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != 403 {
+			t.Fatalf("link signed with the intake key: %d", resp.StatusCode)
+		}
+	}
+
+	// The triage token cannot delete; an instance admin can.
+	var created struct{ Token string }
+	ops.do("POST", "/api/v1/admin/feedback-tokens", map[string]any{"name": "agent"}, &created)
+	if code := bearerJSON(t, e, created.Token, "DELETE", "/api/v1/admin/feedback/"+ref, nil, nil); code != 403 {
+		t.Fatalf("triage token delete: %d", code)
+	}
+	if code := ops.do("DELETE", "/api/v1/admin/feedback/"+ref, nil, nil); code != 204 {
+		t.Fatalf("delete: %d", code)
+	}
+	if code := ops.do("GET", "/api/v1/admin/feedback/"+ref, nil, nil); code != 404 {
+		t.Fatalf("after delete: %d", code)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Fatalf("%d files left", len(entries))
+	}
+
+	// A file with no row (a crash before the item was stored) is listed
+	// for the sweep once it is old enough, and kept while it may be in flight.
+	key, _, err := e.api.FeedbackQueue.Disk.Write(strings.NewReader("%PDF-1.4 orphan"), feedback.PDF, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if keys, _ := e.api.FeedbackQueue.Disk.Keys(time.Now().Add(-time.Hour)); len(keys) != 0 {
+		t.Fatalf("new file listed as old: %v", keys)
+	}
+	old := time.Now().Add(-2 * time.Hour)
+	os.Chtimes(filepath.Join(dir, key), old, old)
+	keys, _ := e.api.FeedbackQueue.Disk.Keys(time.Now().Add(-time.Hour))
+	known, err := e.st.FeedbackStorageKeys(context.Background())
+	if err != nil || len(keys) != 1 || known[keys[0]] {
+		t.Fatalf("orphan: %v %v %v", keys, known, err)
 	}
 }

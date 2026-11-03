@@ -235,6 +235,15 @@ func TestStripImageRefusesBrokenAndHugeFiles(t *testing.T) {
 	if _, err := StripImage(WebP, riff(webpChunk("EXIF", []byte(secret)))); err == nil {
 		t.Error("WebP without an image accepted")
 	}
+	// A WebP declaring a 16-million-pixel-square canvas.
+	huge := webpChunk("VP8X", []byte{0, 0, 0, 0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff})
+	if _, err := StripImage(WebP, riff(huge, webpChunk("VP8L", []byte{0x2f, 0x07, 0xc0, 0x01, 0x00}))); !errors.Is(err, ErrBadImage) {
+		t.Errorf("huge WebP canvas: %v", err)
+	}
+	// Random bytes in a VP8 chunk are not an image.
+	if _, err := StripImage(WebP, riff(webpChunk("VP8 ", []byte("not a vp8 frame at all")))); err == nil {
+		t.Error("garbage VP8 accepted")
+	}
 	w := riff(webpChunk("VP8L", []byte{1, 2}))
 	binary.LittleEndian.PutUint32(w[16:], 1<<30)
 	if _, err := StripImage(WebP, w); err == nil {

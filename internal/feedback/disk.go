@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"regexp"
+	"time"
 )
 
 // Disk keeps the queue's attachments in one private directory, each under a
@@ -97,6 +98,30 @@ func (d *Disk) Remove(key string) error {
 		return err
 	}
 	return nil
+}
+
+// Keys lists stored files last changed before cutoff (temporary files are
+// not included).
+func (d *Disk) Keys(cutoff time.Time) ([]string, error) {
+	f, err := d.root.Open(".")
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	entries, err := f.ReadDir(-1)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, e := range entries {
+		if !ValidKey(e.Name()) {
+			continue
+		}
+		if info, err := e.Info(); err == nil && info.ModTime().Before(cutoff) {
+			out = append(out, e.Name())
+		}
+	}
+	return out, nil
 }
 
 // RemoveStale deletes temporary files left by a crash during an upload.
