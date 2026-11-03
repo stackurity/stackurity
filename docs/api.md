@@ -368,7 +368,7 @@ The assistants a person has connected (`/assistants`) and the OAuth consent page
 
 **Who:** anyone
 
-Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project`. `app_list` means `POST /ingest` takes a host batch's `apps` (see [ObservationBatch](#observationbatch)); agents send it only to servers that list it (0.14). `host_images` means `POST /ingest` scopes `host-image` identities to their host and takes a host batch's `images`; the agent's `--docker` sends container images only to servers that list it. `kubernetes_report` means [`POST /kubernetes/report`](#post-kubernetesreport) exists; the Kubernetes reporter falls back to `POST /ingest` without it. `email_preferences: true` means this server sends bulk email (product updates, vulnerability news), so people have email preferences. On Stackurity Cloud, `social` lists the configured sign-in providers (`providers`: `id`, `label`, `start_url`) and, when the GitHub App is set up, `github_install_url`.
+Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project`. `app_list` means `POST /ingest` takes a host batch's `apps` (see [ObservationBatch](#observationbatch)); agents send it only to servers that list it (0.14). `host_images` means `POST /ingest` scopes `host-image` identities to their host and takes a host batch's `images`; the agent's `--docker` sends container images only to servers that list it. `kubernetes_report` means [`POST /kubernetes/report`](#post-kubernetesreport) exists; the Kubernetes reporter falls back to `POST /ingest` without it. `leaks` means `POST /ingest` stores a batch's `leaks` ([leaked keys](leaked-keys.md)); collectors send them only to servers that list it. `email_preferences: true` means this server sends bulk email (product updates, vulnerability news), so people have email preferences. On Stackurity Cloud, `social` lists the configured sign-in providers (`providers`: `id`, `label`, `start_url`) and, when the GitHub App is set up, `github_install_url`.
 
 ### `GET /openapi.json`
 
@@ -625,6 +625,12 @@ Removes a relation.
 
 Everything the asset relies on, followed through relations (up to three hops), with open findings grouped by layer (`web_server`, `cms`, `os`, `runtime`, `data_store`, `libraries`, `declared`, `managed_service`, `platform`, `other`). For an application: its hosts, repository, images and dependencies; for a host, its applications; for a cluster, its workloads and images.
 
+### `GET /assets/{id}/leaks`
+
+**Who:** viewer
+
+The asset's [leaked keys](leaked-keys.md), paged, with the filters of [`GET /leaks`](#get-leaks), and `scans`: the last key scan by each collector (`collector_id`, `complete`, `reason`, `found`, `scanned_at`). No scan means the asset's files were never checked for keys, which is not the same as none found.
+
 ### `GET /assets/{id}/drift`
 
 **Who:** viewer
@@ -791,6 +797,24 @@ Applies a [workflow action](#workflow) to the finding.
 **Who:** as above
 
 The same action on up to 500 findings (`ids`).
+
+### `GET /leaks`
+
+**Who:** viewer
+
+[Leaked keys](leaked-keys.md): keys, tokens and passwords collectors found written in assets' files, most severe first, paged. Each has `asset_id`, `asset_name`, `collector_id`, `rule`, `title`, `path`, `line`, `name`, `fingerprint`, `preview`, `severity`, `exposure`, `why` (one line saying why it has its severity and what to do, from its exposure, the kind of asset and the file; alerts, the dashboard and MCP show the same line), `status` (`open` or `resolved`), `resolution` (`gone` or `dismissed`), `resolution_note`, `first_seen`, `last_seen` and `resolved_at`. The value is never stored. Query: `status` (`open`, the default, `resolved` or `all`), `severity` (one or several, comma-separated: `critical,high` for what needs action; low and medium are mostly keys kept in configuration files, where they belong), `asset_id`.
+
+### `POST /leaks/{id}/dismiss`
+
+**Who:** security (on the leak's asset, with a project grant)
+
+Dismiss a leaked key, with an optional `note` (up to 1,000 characters): a test key kept on purpose, or one already rotated. It stays dismissed whatever later scans see. Recorded in the activity log.
+
+### `POST /leaks/{id}/undismiss`
+
+**Who:** security (on the leak's asset, with a project grant)
+
+Open a dismissed leak again. `409` for a leak that is not dismissed: one resolved as gone stays resolved until a scan sees it again.
 
 ### `GET /fix-groups`
 
@@ -2305,6 +2329,7 @@ The single ingest contract for agents, scanners, SBOM imports and plugins. See [
 - `complete: true` tells the server that this batch is the collector's whole view of the asset. Components missing from it are marked removed, and history is kept. A batch that is not complete still removes what it left out outside the paths it could not read: when every `coverage` item that is not `checked` names an absolute path (`path:/srv/app/tmp`, `lockfile:/srv/app/yarn.lock`, `npm-installed:/srv/app/node_modules`; Composer's `vendor/composer/installed.json` stands for its `vendor` directory), components located at or below those paths are kept and the others are marked removed. When any such item names no path (`walk`, `depth`, `dpkg`, `invalid-entries`), nothing is removed. (Before 0.14 only complete batches removed anything, so an application with one unreadable cache directory kept an upgraded version's old libraries for good; its next collection removes them.)
 - `apps` (optional, host batches only, servers listing the `app_list` feature): `{"dirs": ["/var/www/html/phpmyadmin", ...]}`, every application directory the host's agent reports in this run, at most 1,000. The host's applications (`app-path` assets) not in the list are marked removed: each gets an empty complete collection (its findings resolve as `removed`), a `skipped` coverage note on `app:<dir>` saying why, and `collection_status` `removed`; the result lists them in `apps_removed`. An application that reports again is present again. Agents leave `apps` out when discovery stopped at its limits, so a missing directory is never guessed.
 - `images` (optional, host batches only, servers listing the `host_images` feature): `{"refs": ["postgres:16", "sha256:...", ...]}`, the `host-image` identity of every image the host's running containers use, at most 1,000. The host's images not in the list are marked removed the same way as applications (coverage note on `image:<ref>`, collection by `linux-docker`), and the result lists them in `images_removed`. The agent leaves `images` out when it could not list every running image (Docker unreadable, an image it could not inspect).
+- `leaks` (optional, servers listing the `leaks` feature): `{"found": [...], "complete": true, "reason": ""}`, the [leaked keys](leaked-keys.md) the collector's key scan found, at most 1,000. Each has `rule`, `title`, `severity` (`critical`, `high`, `medium`, `low`), `path`, `line`, `name` (the setting the value was assigned to), `fingerprint` (32 lower-case hex characters), `preview` (a masked prefix and last four characters) and `exposure` (`served`, `world_readable` or empty). There is no field for the value. A leak seen again stays one leak (by asset, collector, fingerprint and file); when `complete`, the collector's open leaks on the asset missing from `found` are resolved as gone, otherwise `reason` says what was not checked. A dismissed leak stays dismissed. The result counts `leaks_found` and `leaks_gone`. Without `leaks`, leaks reported before are kept.
 - `coverage[].status` is one of `checked`, `skipped`, `failed`, `unsupported` or `partial`.
 - Limits: 200,000 observations, 64 MiB on the wire, 256 MiB after decompression.
 
@@ -2459,6 +2484,7 @@ Findings with the same `kind` and `key` whose assets belong to the same owner te
 - a stale or failing feed (`feed`); in the operators' workspace, routes that were sent it also get a `resolved` message when the feed syncs again
 - a stale asset or failing integration (`collection`)
 - a drop of more than half in an asset's collected inventory (`coverage`)
+- open critical or high [leaked keys](leaked-keys.md) on an asset (`leak`, key `asset:<id>`; `P1` when one is critical, else `P2`); these go where new issues go right away (`urgent` or `new_issues`), not with problems
 - in the operators' workspace only (the default workspace, or `STACKURITY_PLATFORM_WORKSPACE`), a critical problem with the installation itself, such as a background task that keeps failing or intelligence that never synced (`platform`)
 
 Routes send to channels and filter by SOS only, kinds, environments, owner teams and projects. People get a few grouped messages that link to the dashboard, never one message per incident. A route's `events` decide which (the dashboard calls them the integration's **Trigger**):
