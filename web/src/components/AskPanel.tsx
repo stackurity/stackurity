@@ -3,6 +3,8 @@ import { Link, useLocation } from "react-router";
 import { api, ApiError, getActiveProject } from "../api";
 import {
   AskHTTPError,
+  consentCheckbox,
+  consentText,
   noticeText,
   PAGE_LABEL,
   pageOf,
@@ -508,17 +510,15 @@ export function AskSettingsCard() {
       setBusy(false);
     }
   };
-  const toggle = async (enabled: boolean) => {
-    if (
-      enabled &&
-      !(await confirmAction({
-        title: "Turn Ask Stackurity on for everyone in this organisation?",
-        message: noticeText(s?.provider ?? "anthropic")[0],
-        action: "Turn on",
-      }))
-    )
-      return;
-    void run(async () => setS(await api.put<AskSettings>("/ask/settings", { enabled })));
+  const [consenting, setConsenting] = useState(false);
+  // Turning it on goes through the consent dialog; off needs nothing.
+  const toggle = (enabled: boolean) => {
+    if (enabled) setConsenting(true);
+    else void run(async () => setS(await api.put<AskSettings>("/ask/settings", { enabled: false })));
+  };
+  const consent = () => {
+    setConsenting(false);
+    void run(async () => setS(await api.put<AskSettings>("/ask/settings", { enabled: true, consent_version: s?.consent_version })));
   };
   const deleteAll = async () => {
     if (
@@ -551,9 +551,10 @@ export function AskSettingsCard() {
             see, with links to the pages it used. Questions and the data read to answer them go to {providerWordsShort(s.provider)}.
           </p>
           <label>
-            <input type="checkbox" checked={s.enabled} disabled={busy} onChange={(e) => void toggle(e.target.checked)} /> Turn on Ask Stackurity for this
+            <input type="checkbox" checked={s.enabled} disabled={busy} onChange={(e) => toggle(e.target.checked)} /> Turn on Ask Stackurity for this
             organisation
           </label>
+          {consenting && <AskConsentDialog provider={s.provider} onConsent={consent} onCancel={() => setConsenting(false)} />}
           <p className="small muted">
             {s.questions_this_month} questions this month
             {s.question_limit !== null ? ` of ${s.question_limit}${s.question_period === "total" ? " in total" : ""}` : ""}
@@ -574,7 +575,7 @@ export function AskSettingsCard() {
 }
 
 function providerWordsShort(provider: string): string {
-  return provider === "bedrock" ? "Amazon Bedrock" : provider === "vertex" ? "Google Vertex AI" : "Anthropic in the United States";
+  return provider === "bedrock" ? "Amazon Bedrock" : provider === "vertex" ? "Google Vertex AI" : "Anthropic, PBC, which may process them in the United States or other regions";
 }
 
 function toTurns(messages: AskMessage[]): Turn[] {
@@ -606,6 +607,61 @@ function BotTurn({ children }: { children: ReactNode }) {
       <div className="ask-bot-msg">
         <span className="ask-bot-name small muted">Ask Stackurity</span>
         {children}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The consent an administrator gives before Ask Stackurity is turned on:
+ * the approved wording (ask.ts consentText), a box to tick, and Turn on,
+ * which stays disabled until the box is ticked. Cancel, Escape or a click
+ * outside leaves it off. The server records who agreed, when and to which
+ * version (ask.consent in the audit log).
+ */
+export function AskConsentDialog({ provider, onConsent, onCancel }: { provider: string; onConsent: () => void; onCancel: () => void }) {
+  const [agreed, setAgreed] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    box.current?.querySelector<HTMLElement>("input")?.focus();
+  }, []);
+  return (
+    <div className="confirm-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onCancel()}>
+      <div
+        ref={box}
+        className="confirm-dialog ask-consent"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="ask-consent-title"
+        aria-describedby="ask-consent-body"
+        tabIndex={-1}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            e.preventDefault();
+            onCancel();
+          }
+        }}
+      >
+        <h2 id="ask-consent-title" className="confirm-title">
+          Turn on Ask Stackurity for this organisation?
+        </h2>
+        <div id="ask-consent-body" className="confirm-body">
+          {consentText(provider, "organisation").map((p, i) => (
+            <p key={i}>{p}</p>
+          ))}
+          <label className="ask-consent-check">
+            <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
+            <span>{consentCheckbox(provider)}</span>
+          </label>
+        </div>
+        <div className="confirm-actions">
+          <button type="button" className="btn" onClick={onCancel}>
+            Cancel
+          </button>
+          <button type="button" className="btn btn-primary confirm-action" disabled={!agreed} onClick={onConsent}>
+            Turn on Ask Stackurity
+          </button>
+        </div>
       </div>
     </div>
   );

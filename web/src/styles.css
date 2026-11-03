@@ -5669,3 +5669,25 @@ div.assistant-card {
     padding: 6px;
   }
 }
+
+/* Ask Stackurity's consent dialog: long text scrolls inside the dialog. */
+.ask-consent {
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+}
+.ask-consent-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 12px;
+  font-weight: 600;
+}
+.ask-consent-check input {
+  flex: none;
+  width: auto;
+  margin-top: 3px;
+}
+.ask-consent-check span {
+  flex: 1;
+  min-width: 0;
+}

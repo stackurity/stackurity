@@ -49,8 +49,15 @@ func p64(n int64) *int64 { return &n }
 func TestAskSettings(t *testing.T) {
 	f := newAskFixture(t)
 	a, err := f.s.AskSettings(f.ws1)
-	if err != nil || !a.Enabled || a.QuestionLimit != nil || a.SpendCapMicros != nil || a.Model != "" {
+	if err != nil || a.Enabled || a.ConsentVersion != "" || a.QuestionLimit != nil || a.SpendCapMicros != nil || a.Model != "" {
 		t.Fatalf("defaults = %+v %v", a, err)
+	}
+	// An administrator's consent turns it on and records the wording.
+	if err := f.s.ConsentToAsk(f.ws1, 0, "ask-consent-test"); err != nil {
+		t.Fatal(err)
+	}
+	if a, _ = f.s.AskSettings(f.ws1); !a.Enabled || a.ConsentVersion != "ask-consent-test" {
+		t.Fatalf("after consent = %+v", a)
 	}
 	ws, _ := tenant.Workspace(f.ws1)
 	if err := f.s.SetAskLimits(f.ws1, ws, store.AskLimits{QuestionLimit: p64(20), SpendCapMicros: p64(5_000_000), Model: "claude-sonnet-5-5"}); err != nil {
@@ -63,7 +70,7 @@ func TestAskSettings(t *testing.T) {
 	if a.Enabled || *a.QuestionLimit != 20 || a.QuestionPeriod != "month" || *a.SpendCapMicros != 5_000_000 || a.Model != "claude-sonnet-5-5" {
 		t.Errorf("after set = %+v", a)
 	}
-	if b, _ := f.s.AskSettings(f.ws2); !b.Enabled || b.QuestionLimit != nil {
+	if b, _ := f.s.AskSettings(f.ws2); b.Enabled || b.ConsentVersion != "" || b.QuestionLimit != nil {
 		t.Errorf("the other workspace changed: %+v", b)
 	}
 	for _, bad := range []store.AskLimits{{QuestionLimit: p64(-1)}, {SpendCapMicros: p64(-1)}, {Model: "a model; drop"}, {QuestionPeriod: "week"}} {
@@ -245,15 +252,15 @@ func TestAskLockKeyIsWide(t *testing.T) {
 	}
 }
 
-// Organisations that exist when 0086 runs start with the assistant off;
-// new ones start with it on.
-func TestAskOptInForExistingOrganisations(t *testing.T) {
+// Every organisation starts with the assistant off, new ones too (0097):
+// it is turned on only with an administrator's consent.
+func TestAskOffUntilConsent(t *testing.T) {
 	f := newAskFixture(t)
 	if a, err := f.s.AskSettings(tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)); err != nil || a.Enabled {
-		t.Errorf("the workspace that existed before the migration = %+v %v", a, err)
+		t.Errorf("the workspace that existed before the migrations = %+v %v", a, err)
 	}
-	if a, _ := f.s.AskSettings(f.ws1); !a.Enabled {
-		t.Error("a workspace created after the migration is off")
+	if a, _ := f.s.AskSettings(f.ws1); a.Enabled {
+		t.Error("a workspace created after the migrations is on")
 	}
 }
 

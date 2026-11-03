@@ -79,3 +79,25 @@ test("server-sent events across chunks", () => {
   assert.deepEqual(p.push("\n"), [{ event: "done", data: {} }]);
   assert.deepEqual(p.push("event: text\ndata: not json\n\n"), []);
 });
+
+// The consent wording approved by the owner on 2026-11-03 (version
+// ask-consent-2026-11-03). Changing it needs a new version and approval.
+test("the consent wording is the approved one", async () => {
+  const { consentText, CONSENT_CHECKBOX, noticeText } = await import("./ask.ts");
+  assert.deepEqual(consentText("anthropic", "organisation"), [
+    "Ask Stackurity is an AI chat assistant. When someone in your organisation asks it a question, Stackurity sends the question, the page they have open, and the Stackurity data the assistant reads to answer it (such as inventory, findings, advisory text, and asset, team, project and package names) to Anthropic, PBC, the AI provider.",
+    "Anthropic may process this data on its servers in the United States or other regions. Stackurity does not control where.",
+    "Before anything is sent, Stackurity removes your colleagues' names and email addresses, and credentials it recognises (such as passwords in web addresses, access tokens and private keys).",
+    "Under Anthropic's commercial terms, Anthropic may not train its models on this data.",
+    "Stackurity keeps conversations for 30 days; backups can keep them for up to about 60 days in all. Each person can read only their own. Administrators can delete them but cannot read them. You can turn Ask Stackurity off at any time.",
+  ]);
+  assert.equal(
+    CONSENT_CHECKBOX,
+    "I am an administrator of this organisation, and I agree that questions and the related Stackurity data are sent to Anthropic as described above.",
+  );
+  const notice = noticeText("anthropic");
+  assert.equal(notice.length, 6);
+  assert.match(notice[0], /^Ask Stackurity is an AI chat assistant\. When you ask it a question, Stackurity sends the question, the page you have open,/);
+  assert.equal(notice[5], "Answers can be wrong. Check them on the linked pages before you act on them.");
+  assert.ok(notice.every((p) => !/United States\./.test(p) || /or other regions/.test(p)), "never 'United States' alone");
+});
