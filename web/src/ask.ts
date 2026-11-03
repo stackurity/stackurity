@@ -7,7 +7,16 @@
 // Stackurity's own pages (askHref). No image, no HTML, no other link: an
 // answer cannot send anything anywhere.
 
-export const ASK_NOTICE_VERSION = "2026-11";
+/**
+ * The version of the consent wording in consentText below. The client sends
+ * this, the version of the text it actually showed, never the server's
+ * current version: a page loaded before a new wording was deployed is then
+ * refused (409) instead of recording consent to text nobody saw.
+ */
+export const ASK_CONSENT_VERSION = "ask-consent-2026-11-03";
+
+/** Each person's notice is the same wording, so the same version. */
+export const ASK_NOTICE_VERSION = ASK_CONSENT_VERSION;
 
 export interface AskStatus {
   available: boolean;
@@ -47,6 +56,8 @@ export interface AskPage {
 
 export interface AskSettings {
   enabled: boolean;
+  /** The consent wording's version an administrator agrees to before turning it on. */
+  consent_version: string;
   configured: boolean;
   provider: string;
   model: string;
@@ -65,21 +76,61 @@ export function providerWords(provider: string): string {
     case "vertex":
       return "Google Vertex AI, in the Google Cloud project and region this server is set up with";
     default:
-      return "Anthropic, in the United States";
+      return "Anthropic, PBC";
   }
+}
+
+/**
+ * The consent wording, version ask-consent-2026-11-03, approved by the owner
+ * on 2026-11-03 (the API's AskConsentVersion): an organisation's
+ * administrator agrees to it in the consent dialog before Ask Stackurity is
+ * turned on, and each person accepts the same wording, addressed to them,
+ * before their first question. Changing a word here means a new version
+ * there, and a new approval.
+ *
+ * For Amazon Bedrock and Vertex AI (self-hosted servers set up with them)
+ * the paragraphs that name Anthropic as the processor say who does instead.
+ */
+export function consentText(provider: string, to: "organisation" | "person"): string[] {
+  const asks = to === "organisation" ? "When someone in your organisation asks it a question" : "When you ask it a question";
+  const page = to === "organisation" ? "the page they have open" : "the page you have open";
+  const data = "the Stackurity data the assistant reads to answer it (such as inventory, findings, advisory text, and asset, team, project and package names)";
+  const keep =
+    "Stackurity keeps conversations for 30 days; backups can keep them for up to about 60 days in all. Each person can read only their own. " +
+    "Administrators can delete them but cannot read them. " +
+    (to === "organisation" ? "You can turn Ask Stackurity off at any time." : "Administrators can turn Ask Stackurity off at any time.");
+  const scrub =
+    "Before anything is sent, Stackurity removes your colleagues' names and email addresses, and credentials it recognises (such as passwords in web addresses, access tokens and private keys).";
+  if (provider === "bedrock" || provider === "vertex") {
+    return [
+      `Ask Stackurity is an AI chat assistant. ${asks}, Stackurity sends the question, ${page}, and ${data} to ${providerWords(provider)}.`,
+      scrub,
+      keep,
+    ];
+  }
+  return [
+    `Ask Stackurity is an AI chat assistant. ${asks}, Stackurity sends the question, ${page}, and ${data} to Anthropic, PBC, the AI provider.`,
+    "Anthropic may process this data on its servers in the United States or other regions. Stackurity does not control where.",
+    scrub,
+    "Under Anthropic's commercial terms, Anthropic may not train its models on this data.",
+    keep,
+  ];
+}
+
+/** The consent checkbox's label. */
+export const CONSENT_CHECKBOX =
+  "I am an administrator of this organisation, and I agree that questions and the related Stackurity data are sent to Anthropic as described above.";
+
+/** The checkbox for Amazon Bedrock and Vertex AI servers. */
+export function consentCheckbox(provider: string): string {
+  if (provider === "bedrock") return "I am an administrator of this organisation, and I agree that questions and the related Stackurity data are sent to Amazon Bedrock as described above.";
+  if (provider === "vertex") return "I am an administrator of this organisation, and I agree that questions and the related Stackurity data are sent to Google Vertex AI as described above.";
+  return CONSENT_CHECKBOX;
 }
 
 /** The data notice a person accepts before their first question. */
 export function noticeText(provider: string): string[] {
-  return [
-    `Ask Stackurity uses Claude, an AI model made by Anthropic. When you ask a question, Stackurity sends it to ${providerWords(provider)}, ` +
-      "together with the page you have open and the Stackurity data the assistant reads to answer it: your inventory, issues, " +
-      "advisory text, and asset, team and package names. Your colleagues' names and email addresses are removed first.",
-    "The assistant can read only what you can see in Stackurity, and it cannot change anything.",
-    "Stackurity keeps your conversations for 30 days; database backups can keep them for up to about 60 days in all. Only you can read " +
-      "them, and you can delete them at any time. Your organisation's admins can delete them but cannot read them.",
-    "Answers can be wrong. Check them on the linked pages before you act on them.",
-  ];
+  return [...consentText(provider, "person"), "Answers can be wrong. Check them on the linked pages before you act on them."];
 }
 
 // Stackurity pages an answer may link to. Anything else is shown as text.

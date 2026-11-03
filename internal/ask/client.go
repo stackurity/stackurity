@@ -126,6 +126,11 @@ type Call struct {
 	// Messages are the conversation so far, each a message as JSON
 	// ({"role":..., "content":[...]}), sent byte for byte.
 	Messages []json.RawMessage
+	// System replaces SystemPrompt, and NoTools sends no tools: the
+	// summary call (history.go). NoFallbacks: no server-side fallback.
+	System      string
+	NoTools     bool
+	NoFallbacks bool
 }
 
 // Result is what one model call returned.
@@ -192,19 +197,26 @@ func (c *Client) Stream(ctx context.Context, call Call, on func(StreamEvent)) (*
 	for i, m := range call.Messages {
 		msgs[i] = param.Override[anthropic.BetaMessageParam](m)
 	}
+	system, tools := SystemPrompt, c.tools
+	if call.System != "" {
+		system = call.System
+	}
+	if call.NoTools {
+		tools = nil
+	}
 	p := anthropic.BetaMessageNewParams{
 		Model:     anthropic.Model(c.ModelID(call.Model)),
 		MaxTokens: int64(call.MaxTokens),
 		// The frozen system prompt carries the cache breakpoint for the
-		// tools and itself; the top-level automatic breakpoint follows the
-		// conversation as it grows.
-		System:       []anthropic.BetaTextBlockParam{{Text: SystemPrompt, CacheControl: anthropic.NewBetaCacheControlEphemeralParam()}},
-		Tools:        c.tools,
+		// tools and itself (tools render before system); the top-level
+		// automatic breakpoint follows the conversation as it grows.
+		System:       []anthropic.BetaTextBlockParam{{Text: system, CacheControl: anthropic.NewBetaCacheControlEphemeralParam()}},
+		Tools:        tools,
 		Messages:     msgs,
 		OutputConfig: anthropic.BetaOutputConfigParam{Effort: anthropic.BetaOutputConfigEffort(call.Effort)},
 		CacheControl: anthropic.NewBetaCacheControlEphemeralParam(),
 	}
-	if c.fallbacks {
+	if c.fallbacks && !call.NoFallbacks {
 		p.Fallbacks = anthropic.BetaFallbacksParamOfDefault()
 		p.Betas = []anthropic.AnthropicBeta{anthropic.AnthropicBetaServerSideFallback2026_07_01}
 	}
