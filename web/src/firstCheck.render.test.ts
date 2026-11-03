@@ -38,8 +38,9 @@ function render(name: string, props: any): string {
 function text(html: string): string {
   return html
     .replace(/<[^>]+>/g, " ")
-    .replace(/&amp;/g, "&")
     .replace(/&#x27;/g, "'")
+    // Last, so an escaped "&amp;#x27;" is not unescaped twice.
+    .replace(/&amp;/g, "&")
     .replace(/\s+/g, " ")
     .trim();
 }
