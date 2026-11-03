@@ -66,6 +66,8 @@ var routeRules = map[string]routeRule{
 	"GET /download/agent/{platform}": {class: "public"},
 	"GET /api/v1/meta":               {class: "public"},
 	"GET /api/v1/openapi.json":       {class: "public"},
+	"GET /api/v1/public/cves/":       {class: "public"},
+	"GET /api/v1/public/cves/recent": {class: "public"},
 	"POST /api/v1/setup":             {class: "skip"},
 	"POST /api/v1/auth/login":        {class: "skip"},
 	"POST /api/v1/auth/logout":       {class: "skip"},
@@ -270,6 +272,22 @@ var routeRules = map[string]routeRule{
 	// Sends what the user typed to the feedback URL outside the
 	// installation, nothing of the workspace; see feedback_test.go.
 	"POST /api/v1/feedback": {class: "skip"},
+	// The caller's own sent items (filtered by user); feedback_queue_test.go.
+	"GET /api/v1/feedback/mine": {class: "account"},
+	// The Stackurity team's feedback queue: the relay's key or a signed
+	// link, and instance administrators or the triage token only
+	// (feedback_queue_test.go).
+	"POST /api/v1/feedback-queue/intake":                      {class: "public"},
+	"POST /api/v1/feedback-queue/status":                      {class: "public"},
+	"GET /feedback-attachments/{id}":                          {class: "public"},
+	"GET /api/v1/admin/feedback/":                             {class: "instance"},
+	"GET /api/v1/admin/feedback/{id}":                         {class: "instance"},
+	"PATCH /api/v1/admin/feedback/{id}":                       {class: "instance"},
+	"DELETE /api/v1/admin/feedback/{id}":                      {class: "instance"},
+	"POST /api/v1/admin/feedback/{id}/attachments/{aid}/link": {class: "instance"},
+	"GET /api/v1/admin/feedback-tokens/":                      {class: "instance"},
+	"POST /api/v1/admin/feedback-tokens/":                     {class: "instance"},
+	"DELETE /api/v1/admin/feedback-tokens/{id}":               {class: "instance"},
 
 	// Shared by every workspace.
 	"GET /api/v1/packs":                 {class: "global"},

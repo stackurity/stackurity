@@ -87,11 +87,11 @@ func TestFeedbackForwardsOnlyWhatTheUserTyped(t *testing.T) {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	if strings.Join(keys, ",") != "edition,email,kind,message,page,source,version" {
+	if strings.Join(keys, ",") != "edition,email,hosting,kind,message,page,source,version" {
 		t.Fatalf("fields sent: %v", keys)
 	}
 	want := map[string]any{"kind": "bug", "message": "The action plan is empty after the upgrade", "email": "me@example.com",
-		"page": "/assets/42/inventory", "version": "test", "edition": "enterprise", "source": "app"}
+		"page": "/assets/42/inventory", "version": "test", "edition": "enterprise", "source": "app", "hosting": "self_hosted"}
 	for k, v := range want {
 		if got[k] != v {
 			t.Errorf("%s = %v, want %v", k, got[k], v)

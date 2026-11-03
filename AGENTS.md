@@ -9,6 +9,7 @@ For people and AI coding agents. Most pull requests here come from AI builder se
 - What CI runs: [.github/workflows/ci.yml](.github/workflows/ci.yml). Build and test targets: [Makefile](Makefile).
 - Free vs paid code and how the licensed build is assembled: [docs/design/open-core.md](docs/design/open-core.md).
 - Every outbound connection the server makes: [docs/network.md](docs/network.md).
+- Project skills for AI sessions: [.claude/skills](.claude/skills) (`/feedback`: the feedback queue, [docs/feedback-queue.md](docs/feedback-queue.md)).
 - Documentation that tests keep in step with the code: [tools/docslint/doc.go](tools/docslint/doc.go), [tools/releaselint/doc.go](tools/releaselint/doc.go).
 
 ## Conventions that are easy to guess wrong

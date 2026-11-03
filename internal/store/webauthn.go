@@ -154,22 +154,54 @@ func (s *Store) AddPasskey(ctx context.Context, userID int64, p NewPasskey, reco
 	return pk, issued, err
 }
 
+// ErrPasskeyCounter: another assertion already stored a signature counter
+// at or above this one's (two assertions at the same counter raced, which
+// is what a copied key looks like), or the passkey was marked meanwhile.
+// The assertion must be refused as a clone warning.
+var ErrPasskeyCounter = fmt.Errorf("the passkey's signature counter did not go up: %w", ErrConflict)
+
 // PasskeyUsed records a successful assertion: the updated record (sign
-// counter, backup state) and the time.
-func (s *Store) PasskeyUsed(ctx context.Context, userID, id int64, record []byte, backedUp bool) error {
+// counter, backup state) and the time. It is a compare-and-set on the
+// counter: the record is replaced only while the stored counter is below
+// signCount, so of two assertions checked against the same stored counter
+// only one is recorded, and the other gets ErrPasskeyCounter. An
+// authenticator that always reports 0 has no counter to compare (the
+// library refuses 0 once a counter was stored). A marked passkey is never
+// recorded as used.
+func (s *Store) PasskeyUsed(ctx context.Context, userID, id int64, record []byte, signCount uint32, backedUp bool) error {
 	tag, err := s.Pool.Exec(ctx, `UPDATE webauthn_credentials SET record = $3, backed_up = $4, last_used_at = now()
-		WHERE id = $2 AND user_id = $1`, userID, id, record, backedUp)
-	if err == nil && tag.RowsAffected() == 0 {
+		WHERE id = $2 AND user_id = $1 AND clone_warning_at IS NULL
+		  AND ($5::bigint = 0 OR COALESCE((record->'authenticator'->>'signCount')::bigint, 0) < $5::bigint)`,
+		userID, id, record, backedUp, int64(signCount))
+	if err != nil || tag.RowsAffected() > 0 {
+		return err
+	}
+	var exists bool
+	if err := s.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM webauthn_credentials WHERE id = $2 AND user_id = $1)`, userID, id).Scan(&exists); err != nil {
+		return err
+	}
+	if !exists {
 		return ErrNotFound
 	}
-	return err
+	return ErrPasskeyCounter
 }
 
-// PasskeyCloneWarning marks a credential whose signature counter went
-// backwards (the sign-in was refused).
-func (s *Store) PasskeyCloneWarning(ctx context.Context, userID, id int64) error {
-	_, err := s.Pool.Exec(ctx, `UPDATE webauthn_credentials SET clone_warning_at = now() WHERE id = $2 AND user_id = $1`, userID, id)
-	return err
+// PasskeyCloneWarning marks a credential whose signature counter did not
+// go up (the sign-in was refused) and ends the sessions signed in or
+// confirmed with it: either copy of the key may be the attacker's. It
+// returns how many sessions ended.
+func (s *Store) PasskeyCloneWarning(ctx context.Context, userID, id int64) (int64, error) {
+	var ended int64
+	err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `UPDATE webauthn_credentials SET clone_warning_at = COALESCE(clone_warning_at, now()) WHERE id = $2 AND user_id = $1`, userID, id)
+		if err != nil || tag.RowsAffected() == 0 {
+			return err
+		}
+		tag, err = tx.Exec(ctx, `DELETE FROM sessions WHERE user_id = $1 AND mfa_credential_id = $2`, userID, id)
+		ended = tag.RowsAffected()
+		return err
+	})
+	return ended, err
 }
 
 // RenamePasskey renames one of userID's passkeys and returns its old name.

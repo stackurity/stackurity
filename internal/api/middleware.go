@@ -67,6 +67,15 @@ type Principal struct {
 	// process with the person's own session while they wait for an answer.
 	// It may only read (projectGate), and nothing from outside can set it.
 	Ask bool
+	// instanceAdminMFA, set by authenticate for an instance administrator's
+	// browser session, decides what the session must do before it may use
+	// the instance-wide routes (Server.instanceAdminMFA). It is evaluated
+	// only there.
+	instanceAdminMFA func() (mfaNeed, []string, string, error)
+	// FeedbackAgent is the triage agent's token for the feedback queue
+	// (feedback_queue.go): no user and no workspace, and only the queue's
+	// routes accept it.
+	FeedbackAgent *store.FeedbackAgentToken
 	// PasswordChangeRequired: an administrator set a temporary password
 	// (password_reset.go); the session may only change it.
 	PasswordChangeRequired bool
@@ -124,8 +133,27 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 				writeError(w, 401, "unauthorized", "use a Bearer token")
 				return
 			}
+			secret = strings.TrimSpace(secret)
+			if strings.HasPrefix(secret, FeedbackTokenPrefix+"_") {
+				// A triage token: the feedback queue's routes only.
+				if !feedbackAgentPath(r.URL.Path) || s.FeedbackQueue == nil {
+					writeError(w, 401, "unauthorized", "a feedback triage token works only on /api/v1/admin/feedback")
+					return
+				}
+				t, err := s.Store.FeedbackAgentByToken(r.Context(), auth.HashToken(secret))
+				if errors.Is(err, store.ErrNotFound) {
+					writeError(w, 401, "unauthorized", "invalid or expired token")
+					return
+				}
+				if err != nil {
+					s.credentialsUnavailable(w, r, err)
+					return
+				}
+				next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, &Principal{FeedbackAgent: t})))
+				return
+			}
 			var err error
-			p, err = s.bearerPrincipal(r.Context(), strings.TrimSpace(secret))
+			p, err = s.bearerPrincipal(r.Context(), secret)
 			if errors.Is(err, errAssistantToken) {
 				writeError(w, 401, "unauthorized", "an assistant's token works only through /mcp")
 				return
@@ -199,6 +227,9 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 			if err := s.applyMFAPolicy(ctx, p); err != nil {
 				s.credentialsUnavailable(w, r, err)
 				return
+			}
+			if p.Session && p.User != nil && p.User.InstanceAdmin {
+				p.instanceAdminMFA = func() (mfaNeed, []string, string, error) { return s.instanceAdminMFA(ctx, p) }
 			}
 			if p.Session && sessionGate(w, r, p) {
 				return
@@ -280,13 +311,36 @@ func requireAuth(next http.Handler) http.Handler {
 }
 
 // requireInstanceAdmin allows only operators of the installation, signed in
-// with a session or an admin token of theirs.
+// with a session or an admin token of theirs. These routes act on the whole
+// server, so a browser session must meet the two-factor policy of every
+// workspace the account belongs to (Server.instanceAdminMFA), not only the
+// one it works in.
 func requireInstanceAdmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := principal(r)
 		if p == nil || p.User == nil || !p.User.InstanceAdmin || (p.Token != nil && p.Role != auth.RoleAdmin) || p.Assistant != nil {
 			writeError(w, 403, "forbidden", "requires an instance administrator")
 			return
+		}
+		if p.Session {
+			if p.instanceAdminMFA == nil {
+				// Fail closed: every session principal comes from authenticate.
+				writeError(w, 403, "forbidden", "requires an instance administrator")
+				return
+			}
+			need, accepted, where, err := p.instanceAdminMFA()
+			if err != nil {
+				writeError(w, 503, "unavailable", "credentials cannot be checked right now; try again shortly")
+				return
+			}
+			switch need {
+			case mfaStepUp:
+				writeError(w, 403, "mfa_step_up_required", where+" requires you to confirm with "+methodNames(accepted)+" to administer this server")
+				return
+			case mfaEnrol:
+				writeError(w, 403, "mfa_enrolment_required", where+" requires two-factor sign-in with "+methodNames(accepted)+"; set it up to administer this server")
+				return
+			}
 		}
 		next.ServeHTTP(w, r)
 	})

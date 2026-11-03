@@ -287,16 +287,37 @@ func (s *Store) RemoveTOTP(ctx context.Context, userID int64, floor MFAFloor) (b
 // MFAChallengeTTL is how long the code step of a sign-in may take.
 const MFAChallengeTTL = 5 * time.Minute
 
-// CreateMFAChallenge starts the second step of userID's sign-in and returns
-// the secret for its cookie.
+// CreateMFAChallenge starts the second step of userID's password sign-in
+// and returns the secret for its cookie.
 func (s *Store) CreateMFAChallenge(ctx context.Context, userID int64) (string, error) {
+	return s.CreateMFAChallengeFor(ctx, userID, LoginPassword)
+}
+
+// CreateMFAChallengeFor is CreateMFAChallenge for a sign-in that began with
+// login (LoginPassword or LoginSocial): the session started after the
+// second factor is recorded as signed in with it (TakeMFAChallenge).
+func (s *Store) CreateMFAChallengeFor(ctx context.Context, userID int64, login string) (string, error) {
+	if login != LoginPassword && login != LoginSocial {
+		return "", fmt.Errorf("a two-factor challenge follows a password or social sign-in, not %q: %w", login, ErrInvalid)
+	}
 	secret, _, err := auth.NewToken("mfa")
 	if err != nil {
 		return "", err
 	}
-	_, err = s.Pool.Exec(ctx, `INSERT INTO mfa_challenges (token_hash, user_id, expires_at)
-		VALUES ($1, $2, now() + make_interval(secs => $3))`, auth.HashToken(secret), userID, MFAChallengeTTL.Seconds())
+	_, err = s.Pool.Exec(ctx, `INSERT INTO mfa_challenges (token_hash, user_id, expires_at, login_method)
+		VALUES ($1, $2, now() + make_interval(secs => $3), $4)`, auth.HashToken(secret), userID, MFAChallengeTTL.Seconds(), login)
 	return secret, err
+}
+
+// TakeMFAChallenge ends a challenge whose second factor was just checked
+// and returns how its sign-in began (LoginPassword or LoginSocial). It is
+// ErrNotFound when the challenge has gone (expired, too many wrong codes,
+// or already used).
+func (s *Store) TakeMFAChallenge(ctx context.Context, secret string) (string, error) {
+	var login string
+	err := s.Pool.QueryRow(ctx, `DELETE FROM mfa_challenges WHERE token_hash = $1 AND expires_at > now() RETURNING login_method`,
+		auth.HashToken(secret)).Scan(&login)
+	return login, notFound(err)
 }
 
 // MFAChallengeUser resolves a live challenge to its user.

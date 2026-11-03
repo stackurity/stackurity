@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -345,6 +347,9 @@ func TestPasskeyCounterRegression(t *testing.T) {
 	ann := e.login("ann@x.io")
 	a := newAuthenticator()
 	registerPasskey(t, ann, a, "YubiKey")
+	// ann's session is then signed in with the passkey, so the clone
+	// warning would end it: move it to the app.
+	addApp(t, ann)
 	c := a.Creds[0]
 	c.Counter = 10
 	if _, code, _ := passwordless(t, e, a); code != 200 { // counter 11
@@ -802,8 +807,12 @@ func TestStepUpCannotChangeFactorsFromAnotherWorkspace(t *testing.T) {
 	if code := s.do("DELETE", fmt.Sprintf("/api/v1/auth/mfa/passkeys/%d", st.Passkeys[0].ID), map[string]string{"password": pw}, nil); code != 403 {
 		t.Errorf("remove the real passkey from workspace 1: %d", code)
 	}
-	if n := len(mfaStatusOf(t, s).Passkeys); n != 1 {
-		t.Errorf("%d passkeys after the attempts", n)
+	if code := s.do("PATCH", fmt.Sprintf("/api/v1/auth/mfa/passkeys/%d", st.Passkeys[0].ID), map[string]string{"name": "Old key, remove me"}, &out); code != 403 ||
+		out.Error.Code != "mfa_step_up_required" {
+		t.Errorf("rename the real passkey from workspace 1: %d %+v", code, out)
+	}
+	if pks := mfaStatusOf(t, s).Passkeys; len(pks) != 1 || pks[0].Name != "Real key" {
+		t.Errorf("passkeys after the attempts: %+v", pks)
 	}
 }
 
@@ -1190,5 +1199,311 @@ func TestAdminsPolicyCoversInstanceAdmins(t *testing.T) {
 	e.login("root@x.io").do("GET", "/api/v1/auth/me", nil, &me)
 	if !me.Enrol {
 		t.Error("instance admin with a viewer role not asked to set up a second factor")
+	}
+}
+
+// An instance admin's server-wide routes need the policy of every
+// workspace the account belongs to: switching to a workspace with a weaker
+// policy, or working in none, does not escape "Required for admins".
+func TestInstanceAdminMeetsEveryWorkspacesPolicy(t *testing.T) {
+	e := newPasskeyEnv(t)
+	bg := context.Background()
+	e.user("root@x.io", auth.RoleViewer) // workspace 1: optional
+	e.instanceAdmin("root@x.io")
+	acme, _, err := e.st.CreateWorkspace(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "Acme", "acme", "owner@acme.io", "Owner", pw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.st.Pool.Exec(tenant.System(bg), `INSERT INTO workspace_members (workspace_id, user_id, role)
+		SELECT $1, id, 'viewer' FROM users WHERE email = 'root@x.io'`, acme.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.st.SetMFAPolicy(bg, acme.ID, store.MFAPolicy{Require: store.PolicyAdmins, Methods: []string{"passkey", "totp"}}); err != nil {
+		t.Fatal(err)
+	}
+	adminCode := func(s *session) (int, string) {
+		t.Helper()
+		var out apiErr
+		code := s.do("GET", "/api/v1/admin/workspaces", nil, &out)
+		return code, out.Error.Code
+	}
+
+	root := e.login("root@x.io")
+	if code := root.do("POST", fmt.Sprintf("/api/v1/workspaces/%d/activate", acme.ID), nil, nil); code != 200 {
+		t.Fatalf("switch to Acme: %d", code)
+	}
+	if code, why := adminCode(root); code != 403 || why != "mfa_enrolment_required" {
+		t.Fatalf("admin routes from Acme without a factor: %d %s", code, why)
+	}
+	// The exploit: switch to the optional workspace.
+	if code := root.do("POST", "/api/v1/workspaces/1/activate", nil, nil); code != 200 {
+		t.Fatalf("switch to workspace 1: %d", code)
+	}
+	if code := root.do("GET", "/api/v1/assets", nil, nil); code != 200 {
+		t.Fatalf("workspace 1 itself is optional: %d", code)
+	}
+	if code, why := adminCode(root); code != 403 || why != "mfa_enrolment_required" {
+		t.Fatalf("admin routes from the optional workspace without a factor: %d %s", code, why)
+	}
+	secret, _ := enrol(t, root)
+	if code, why := adminCode(root); code != 200 {
+		t.Fatalf("admin routes with the app: %d %s", code, why)
+	}
+
+	// A session that has not confirmed with the factor it has steps up.
+	var uid int64
+	if err := e.st.Pool.QueryRow(bg, `SELECT id FROM users WHERE email = 'root@x.io'`).Scan(&uid); err != nil {
+		t.Fatal(err)
+	}
+	sec, err := e.st.CreateSessionWith(bg, uid, tenant.DefaultWorkspace, store.SessionOpts{Login: store.LoginPassword})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := e.anon()
+	s.hdr = map[string]string{"Cookie": "stackurity_session=" + sec}
+	if code, why := adminCode(s); code != 403 || why != "mfa_step_up_required" {
+		t.Fatalf("admin routes from an unconfirmed session: %d %s", code, why)
+	}
+	if _, err := e.st.Pool.Exec(bg, `UPDATE user_mfa SET last_step = 0`); err != nil {
+		t.Fatal(err)
+	}
+	if code := s.do("POST", "/api/v1/auth/mfa/step-up", map[string]string{"code": totpAt(t, secret, 30*time.Second)}, nil); code != 200 {
+		t.Fatalf("step-up: %d", code)
+	}
+	s.hdr = nil // the cookie jar holds the rotated session
+	if code, why := adminCode(s); code != 200 {
+		t.Fatalf("admin routes after the step-up: %d %s", code, why)
+	}
+
+	// A session that works in no workspace (the only one it belongs to
+	// refused it) is held to that workspace's policy too.
+	if _, err := e.st.CreateUser(tenant.WithWorkspace(bg, acme.ID), "ops@acme.io", "", auth.RoleViewer, pw); err != nil {
+		t.Fatal(err)
+	}
+	e.instanceAdmin("ops@acme.io")
+	defer api.RefuseSessionsIn(acme.ID)()
+	ops := e.login("ops@acme.io")
+	if code, why := adminCode(ops); code != 403 || why != "mfa_enrolment_required" {
+		t.Fatalf("admin routes from no workspace without a factor: %d %s", code, why)
+	}
+	enrol(t, ops)
+	if code, why := adminCode(ops); code != 200 {
+		t.Fatalf("admin routes from no workspace with the app: %d %s", code, why)
+	}
+}
+
+// A clone warning ends the sessions signed in with that passkey (a copy of
+// its key may be the attacker's) and is emailed; other sessions carry on.
+func TestPasskeyCloneWarningEndsItsSessions(t *testing.T) {
+	mail := newFakeMail()
+	e := newPasskeyEnvWith(t, func(s *api.Server) { s.AccountMail = mail })
+	e.user("ann@x.io", auth.RoleEngineer)
+	ann := e.login("ann@x.io")
+	a := newAuthenticator()
+	registerPasskey(t, ann, a, "YubiKey")
+	mail.wait(t)
+	addApp(t, ann) // ann's own session is now signed in with the app
+	mail.wait(t)
+	c := a.Creds[0]
+	c.Counter = 10
+	withIt, code, out := passwordless(t, e, a) // counter 11
+	if code != 200 {
+		t.Fatalf("passwordless: %d %+v", code, out)
+	}
+	afterPassword, _ := passwordStep(t, e, "ann@x.io")
+	if code, out := passkeyStep(t, afterPassword, a, c); code != 200 { // counter 12
+		t.Fatalf("passkey as second factor: %d %+v", code, out)
+	}
+	for name, s := range map[string]*session{"passwordless": withIt, "second factor": afterPassword} {
+		if code := s.do("GET", "/api/v1/auth/me", nil, nil); code != 200 {
+			t.Fatalf("%s session: %d", name, code)
+		}
+	}
+
+	c.Counter = 4 // a copy of the key, behind
+	if _, code, out := passwordless(t, e, a); code != 401 || out.Error.Code != "passkey_clone_warning" {
+		t.Fatalf("counter went backwards: %d %+v", code, out)
+	}
+	for name, s := range map[string]*session{"passwordless": withIt, "second factor": afterPassword} {
+		if code := s.do("GET", "/api/v1/auth/me", nil, nil); code != 401 {
+			t.Errorf("%s session after the clone warning: %d", name, code)
+		}
+	}
+	if code := ann.do("GET", "/api/v1/auth/me", nil, nil); code != 200 {
+		t.Errorf("the session signed in with the app: %d", code)
+	}
+	m := mail.wait(t)
+	if body := strings.Join(m.msg.Summary, "\n"); m.to != "ann@x.io" || !strings.Contains(body, "YubiKey") || !strings.Contains(body, "copied") {
+		t.Errorf("clone warning email to %s: %s", m.to, body)
+	}
+}
+
+// Two assertions at the same signature counter, finished at once: only one
+// signs in; the other is refused as a clone, as a key used from two places
+// would be.
+func TestPasskeyConcurrentUsesAtOneCounter(t *testing.T) {
+	e := newPasskeyEnv(t)
+	e.user("ann@x.io", auth.RoleEngineer)
+	a := newAuthenticator()
+	registerPasskey(t, e.login("ann@x.io"), a, "YubiKey")
+	c := a.Creds[0]
+	type started struct {
+		s    *session
+		cred json.RawMessage
+	}
+	var both []started
+	for range 2 {
+		s := e.anon()
+		var begin struct{ Options json.RawMessage }
+		if code := s.do("POST", "/api/v1/auth/passkey/begin", nil, &begin); code != 200 {
+			t.Fatalf("begin: %d", code)
+		}
+		c.Counter = 10 // both assertions carry counter 11
+		cred, err := a.Get(begin.Options, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		both = append(both, started{s, cred})
+	}
+	codes := make([]int, 2)
+	outs := make([]apiErr, 2)
+	var wg sync.WaitGroup
+	for i, st := range both {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			codes[i] = st.s.do("POST", "/api/v1/auth/passkey/finish", map[string]any{"credential": st.cred}, &outs[i])
+		}()
+	}
+	wg.Wait()
+	ok, clone := 0, 0
+	for i, code := range codes {
+		switch {
+		case code == 200:
+			ok++
+		case code == 401 && outs[i].Error.Code == "passkey_clone_warning":
+			clone++
+		}
+	}
+	if ok != 1 || clone != 1 {
+		t.Fatalf("two sign-ins at one counter: %v %+v", codes, outs)
+	}
+}
+
+// New recovery codes are a factor change like any other: the account's
+// other sessions end and this one gets a new ID.
+func TestNewRecoveryCodesEndOtherSessions(t *testing.T) {
+	e := newPasskeyEnv(t)
+	e.user("ann@x.io", auth.RoleEngineer)
+	ann := e.login("ann@x.io")
+	secret, _ := enrol(t, ann)
+	if _, err := e.st.Pool.Exec(context.Background(), `UPDATE user_mfa SET last_step = 0`); err != nil {
+		t.Fatal(err)
+	}
+	other, _ := passwordStep(t, e, "ann@x.io")
+	if code := other.do("POST", "/api/v1/auth/mfa/verify", map[string]string{"code": totpAt(t, secret, 30*time.Second)}, nil); code != 200 {
+		t.Fatalf("other sign-in: %d", code)
+	}
+	sessionCookie := func(s *session) string {
+		u, _ := url.Parse(e.srv.URL + "/api/v1/")
+		for _, c := range s.http.Jar.Cookies(u) {
+			if c.Name == "stackurity_session" {
+				return c.Value
+			}
+		}
+		t.Fatal("no session cookie")
+		return ""
+	}
+	before := sessionCookie(ann)
+	var out struct {
+		RecoveryCodes []string `json:"recovery_codes"`
+	}
+	if code := ann.do("POST", "/api/v1/auth/mfa/recovery-codes", map[string]string{"password": pw}, &out); code != 200 || len(out.RecoveryCodes) != 10 {
+		t.Fatalf("new recovery codes: %d %d", code, len(out.RecoveryCodes))
+	}
+	if code := other.do("GET", "/api/v1/auth/me", nil, nil); code != 401 {
+		t.Errorf("other session after new recovery codes: %d", code)
+	}
+	if code := ann.do("GET", "/api/v1/auth/me", nil, nil); code != 200 {
+		t.Errorf("this session after new recovery codes: %d", code)
+	}
+	if sessionCookie(ann) == before {
+		t.Error("this session kept its ID")
+	}
+	old := e.anon()
+	old.hdr = map[string]string{"Cookie": "stackurity_session=" + before}
+	if code := old.do("GET", "/api/v1/auth/me", nil, nil); code != 401 {
+		t.Errorf("the replaced session ID: %d", code)
+	}
+}
+
+// A session started after a second factor records how its sign-in began:
+// a hosted edition's social sign-in is not recorded as a password one,
+// whether the second factor was a code or a passkey. A challenge is used
+// once.
+func TestSecondFactorKeepsTheSignInMethod(t *testing.T) {
+	e := newPasskeyEnv(t)
+	bg := context.Background()
+	e.user("ann@x.io", auth.RoleEngineer)
+	ann := e.login("ann@x.io")
+	a := newAuthenticator()
+	registerPasskey(t, ann, a, "Key")
+	secret := addApp(t, ann)
+	var uid int64
+	if err := e.st.Pool.QueryRow(bg, `SELECT id FROM users WHERE email = 'ann@x.io'`).Scan(&uid); err != nil {
+		t.Fatal(err)
+	}
+	// started begins a sign-in as the edition's social sign-in does.
+	started := func(login string) *session {
+		t.Helper()
+		ch, err := e.st.CreateMFAChallengeFor(bg, uid, login)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := e.anon()
+		s.hdr = map[string]string{"Cookie": "stackurity_mfa=" + ch}
+		return s
+	}
+	latest := func() (login string, passwordLogin bool) {
+		t.Helper()
+		if err := e.st.Pool.QueryRow(bg, `SELECT login_method, password_login FROM sessions WHERE user_id = $1 ORDER BY created_at DESC, token_hash LIMIT 1`, uid).
+			Scan(&login, &passwordLogin); err != nil {
+			t.Fatal(err)
+		}
+		return login, passwordLogin
+	}
+	if _, err := e.st.Pool.Exec(bg, `UPDATE user_mfa SET last_step = 0`); err != nil {
+		t.Fatal(err)
+	}
+	social := started(store.LoginSocial)
+	code := totpAt(t, secret, 30*time.Second)
+	if c := social.do("POST", "/api/v1/auth/mfa/verify", map[string]string{"code": code}, nil); c != 200 {
+		t.Fatalf("social sign-in, app code: %d", c)
+	}
+	if login, pl := latest(); login != store.LoginSocial || !pl {
+		t.Errorf("social sign-in with the app recorded as %q (password_login %v)", login, pl)
+	}
+	// The challenge is gone: a second code with it does nothing.
+	var out apiErr
+	if c := social.do("POST", "/api/v1/auth/mfa/verify", map[string]string{"code": totpAt(t, secret, 60*time.Second)}, &out); c != 401 || out.Error.Code != "mfa_expired" {
+		t.Errorf("the used challenge again: %d %+v", c, out)
+	}
+
+	if c, out := passkeyStep(t, started(store.LoginSocial), a, nil); c != 200 {
+		t.Fatalf("social sign-in, passkey: %d %+v", c, out)
+	}
+	if login, _ := latest(); login != store.LoginSocial {
+		t.Errorf("social sign-in with a passkey recorded as %q", login)
+	}
+	s, _ := passwordStep(t, e, "ann@x.io")
+	if c, out := passkeyStep(t, s, a, nil); c != 200 {
+		t.Fatalf("password sign-in, passkey: %d %+v", c, out)
+	}
+	if login, pl := latest(); login != store.LoginPassword || !pl {
+		t.Errorf("password sign-in recorded as %q (password_login %v)", login, pl)
+	}
+	// Only a password or social sign-in has a second step.
+	if _, err := e.st.CreateMFAChallengeFor(bg, uid, store.LoginSSO); err == nil {
+		t.Error("a challenge for a single sign-on")
 	}
 }

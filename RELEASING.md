@@ -52,6 +52,10 @@ go run ./tools/release next v0.15.0
 
 adds it to the upgrade matrix and opens a small pull request, so every later release is tested as an upgrade from it. `releaselint` fails the first pull request that adds something under `## Unreleased` until this is merged.
 
+### 6. Feedback: `/feedback release`
+
+Once the release is deployed to Stackurity Cloud, run `/feedback release v0.15.0` (the project skill in `.claude/skills/feedback`). It moves feedback items marked `fixed` whose pull request is in the tag to `released` with `fixed_in`, so the people who sent them see it under **My feedback** ([feedback-queue.md](docs/feedback-queue.md)).
+
 ## Gates that stay
 
 Nothing here skips a check; it only stops people from doing by hand what a command does:
