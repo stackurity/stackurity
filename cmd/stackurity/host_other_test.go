@@ -107,3 +107,19 @@ func TestAgentReportsCompiledBundles(t *testing.T) {
 		t.Errorf("own = %+v %+v", apps["/srv/own"].Observations, apps["/srv/own"].Coverage)
 	}
 }
+
+// An application's own version (its package.json) is reported as an
+// attribute, for "only a ghost 6.52.0 upgrade changes it".
+func TestAppBatchVersion(t *testing.T) {
+	host := model.AssetRef{Kind: model.AssetHost, Name: "blog", Identifiers: []model.Identifier{{Scheme: "machine-id", Value: "m"}}}
+	b := appBatch(apps.App{Dir: "/var/www/ghost/versions/6.52.0", Name: "ghost", Version: "6.52.0"}, host, "linux-apps")
+	if b.Asset.Attributes["app_version"] != "6.52.0" || b.Asset.Name != "ghost on blog" {
+		t.Errorf("asset %+v", b.Asset)
+	}
+	if b = appBatch(apps.App{Dir: "/srv/site", Name: "site"}, host, "linux-apps"); b.Asset.Attributes["app_version"] != "" {
+		t.Errorf("no version, no attribute: %+v", b.Asset.Attributes)
+	}
+	if _, ok := b.Asset.Attributes["app_version"]; ok {
+		t.Error("an empty app_version is left out")
+	}
+}

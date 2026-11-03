@@ -315,11 +315,22 @@ func (s *Server) passkeyCloned(r *http.Request, userID, id int64, name string) e
 	return nil
 }
 
+// passkeyCloneMessage answers an assertion with a passkey marked as
+// possibly copied. Removing it and adding it again needs a session that
+// has confirmed with a factor that counts; where only passkeys count for
+// the person (an admin under passkey sign-in for admins) and this was their
+// only one, nothing they have does, so another admin resets their
+// two-factor sign-in (on a server with one admin, the operator: stackurity
+// admin reset-mfa). The message says both: it is given before sign-in, so
+// it does not depend on the account's organisations.
+const passkeyCloneMessage = "this passkey's signature counter went backwards, which can mean it was copied; it signs in no more. " +
+	"Sign in with another method, then remove this passkey and add it again. " +
+	"If only passkeys count for you and this was your only one, ask another admin to reset your two-factor sign-in"
+
 // passkeyFailed answers a refused assertion.
 func passkeyFailed(w http.ResponseWriter, why string) {
 	if why == "clone" {
-		writeError(w, 401, "passkey_clone_warning", "this passkey's signature counter went backwards, which can mean it was copied; "+
-			"it signs in no more. Use another method, remove this passkey and add it again")
+		writeError(w, 401, "passkey_clone_warning", passkeyCloneMessage)
 		return
 	}
 	writeError(w, 401, "passkey_invalid", "that passkey did not work; try again or use another method")

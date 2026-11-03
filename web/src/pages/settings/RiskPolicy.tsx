@@ -17,6 +17,7 @@ import { Table, type Column } from "../../components/Table";
 import { Card, ErrorBox, Loading, Notice, PageHeader, RelativeTime } from "../../components/ui";
 import { plural } from "../../format";
 import { PatchCalendarCard } from "./PatchCalendarCard";
+import { UnmaintainedCard, unmaintainedValid } from "./UnmaintainedCard";
 
 const SEVERITY_KEYS = ["critical", "high", "medium", "low", "none", "unknown"];
 const CRITICALITY_KEYS = ["critical", "high", "medium", "low", "unknown"];
@@ -286,6 +287,7 @@ export function RiskPolicyPage() {
 
   const exceptionDays = p.exception_max_days ?? DEFAULT_EXCEPTION_MAX_DAYS;
   const exceptionDaysValid = Number.isInteger(exceptionDays) && exceptionDays >= 1 && exceptionDays <= 730;
+  const fieldsValid = exceptionDaysValid && unmaintainedValid(p);
 
   const bodyOf = (policy: RiskPolicy) => ({ ...policy, sos_rules: (policy.sos_rules ?? []).map(cleanRule) });
   const body = bodyOf(p);
@@ -307,7 +309,7 @@ export function RiskPolicyPage() {
   };
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (!exceptionDaysValid || !previewed) return;
+    if (!fieldsValid || !previewed) return;
     void save();
   };
   const reset = () => {
@@ -508,6 +510,7 @@ export function RiskPolicyPage() {
             </div>
             {!exceptionDaysValid && <p className="hint text-bad">Longest exception must be a whole number of days between 1 and 730.</p>}
           </Card>
+          <UnmaintainedCard policy={p} onChange={(n) => set("unmaintained_months", n)} />
           <Card title="SOS rules">
             <p className="hint">
               A finding is SOS when any rule matches (all its conditions hold). Only confirmed findings can be SOS, and a rule cannot rely
@@ -578,13 +581,13 @@ export function RiskPolicyPage() {
         {saved && <Notice kind="success">Risk policy saved. Priorities are recalculated on the next notification cycle (within a few minutes).</Notice>}
         {admin && (
           <div className="form-actions bulkbar">
-            <button type="button" className="btn" disabled={!dirty || !exceptionDaysValid || previewAct.pending || previewed} onClick={() => void runPreview()}>
+            <button type="button" className="btn" disabled={!dirty || !fieldsValid || previewAct.pending || previewed} onClick={() => void runPreview()}>
               {previewAct.pending ? "Previewing…" : preview && !previewed ? "Preview again" : "Preview impact"}
             </button>
             <button
               type="submit"
               className="btn btn-primary"
-              disabled={act.pending || !dirty || !exceptionDaysValid || !previewed}
+              disabled={act.pending || !dirty || !fieldsValid || !previewed}
               title={dirty && !previewed ? "Preview the impact of these changes first" : undefined}
             >
               {act.pending ? "Saving…" : "Save policy"}

@@ -656,31 +656,32 @@ func init() {
 			set(q, "asset_id", a["asset_id"])
 			var res struct {
 				Items []struct {
-					ID                string   `json:"id"`
-					Kind              string   `json:"kind"`
-					Title             string   `json:"title"`
-					Action            string   `json:"action"`
-					AssetID           int64    `json:"asset_id"`
-					AssetName         string   `json:"asset_name"`
-					Environment       string   `json:"environment"`
-					Component         string   `json:"component"`
-					FromVersion       string   `json:"from_version"`
-					ToVersion         string   `json:"to_version"`
-					Recommended       string   `json:"recommended_version"`
-					TargetVersion     string   `json:"target_version"`
-					ChangeType        string   `json:"change_type"`
-					RequiresMajor     bool     `json:"requires_major"`
-					RecommendedYanked bool     `json:"recommended_yanked"`
-					Packages          []string `json:"packages"`
-					PackageCount      int      `json:"package_count"`
-					FindingCount      int      `json:"finding_count"`
-					UniqueIssues      int      `json:"unique_issues"`
-					TopPriority       string   `json:"top_priority"`
-					SOS               bool     `json:"sos"`
-					KnownExploited    int      `json:"known_exploited"`
-					Needs             string   `json:"needs"`
-					Effort            string   `json:"effort"`
-					Note              string   `json:"note"`
+					ID                string          `json:"id"`
+					Kind              string          `json:"kind"`
+					Title             string          `json:"title"`
+					Action            string          `json:"action"`
+					AssetID           int64           `json:"asset_id"`
+					AssetName         string          `json:"asset_name"`
+					Environment       string          `json:"environment"`
+					Component         string          `json:"component"`
+					FromVersion       string          `json:"from_version"`
+					ToVersion         string          `json:"to_version"`
+					Recommended       string          `json:"recommended_version"`
+					TargetVersion     string          `json:"target_version"`
+					ChangeType        string          `json:"change_type"`
+					RequiresMajor     bool            `json:"requires_major"`
+					RecommendedYanked bool            `json:"recommended_yanked"`
+					Packages          []string        `json:"packages"`
+					PackageCount      int             `json:"package_count"`
+					FindingCount      int             `json:"finding_count"`
+					UniqueIssues      int             `json:"unique_issues"`
+					TopPriority       string          `json:"top_priority"`
+					SOS               bool            `json:"sos"`
+					KnownExploited    int             `json:"known_exploited"`
+					Needs             string          `json:"needs"`
+					Effort            string          `json:"effort"`
+					Note              string          `json:"note"`
+					NoFixAdvice       json.RawMessage `json:"no_fix_advice"`
 				} `json:"items"`
 				Total int64 `json:"total"`
 			}
@@ -713,12 +714,15 @@ func init() {
 				PaidChannel    string   `json:"paid_channel,omitempty"`
 				Effort         string   `json:"effort"`
 				Note           string   `json:"note,omitempty"`
+				// NoFixAdvice is the per-package guidance of a group with
+				// no fixed version (renamed, unmaintained, no fix yet).
+				NoFixAdvice json.RawMessage `json:"no_fix_advice,omitempty"`
 			}
 			out := []group{}
 			for _, g := range res.Items {
 				out = append(out, group{g.ID, g.Kind, g.Title, g.Action, g.AssetID, g.AssetName, g.Environment, g.Component,
 					g.FromVersion, g.ToVersion, g.Recommended, g.TargetVersion, g.ChangeType, g.RequiresMajor, g.RecommendedYanked, g.Packages,
-					g.PackageCount, g.FindingCount, g.UniqueIssues, g.TopPriority, g.SOS, g.KnownExploited, paidChannel(g.Needs), g.Effort, g.Note})
+					g.PackageCount, g.FindingCount, g.UniqueIssues, g.TopPriority, g.SOS, g.KnownExploited, paidChannel(g.Needs), g.Effort, g.Note, g.NoFixAdvice})
 			}
 			return map[string]any{"groups": out, "total": res.Total, "shown": len(out),
 				"note": "target_version is the version to tell people to move to (the title and action name it): recommended_version " +
@@ -726,7 +730,10 @@ func init() {
 					"that fixes every finding in the group; recommended_version comes from registry release data and is absent when " +
 					"there is none. Use upgrade_recommendation for the reasons. action is the free path; " +
 					"paid_channel names a paid subscription (Ubuntu Pro, SUSE LTSS) that also publishes fixes for some findings, " +
-					"an option to mention, never the recommendation."}, nil
+					"an option to mention, never the recommendation. A no_fix group's no_fix_advice says per package what can be done " +
+					"without a fixed version: sections renamed (move to move_to, fixed in fixed_version), unmaintained (deprecated or " +
+					"no release for the risk policy's unmaintained_months, 24 by default) and no_fix_yet, with the advisory's own workaround when it gives one, quoted; bundled " +
+					"says the packages come with the application (only its upgrade changes them) and gives commands that show what pulls each in."}, nil
 		},
 	}
 	tools["updates_available"] = tool{
