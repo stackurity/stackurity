@@ -164,7 +164,7 @@ export function phaseText(
       if (overdue)
         return {
           title: "Vulnerability data is missing",
-          text: `${plural(x.componentsWaiting ?? 0, "component")} cannot be checked yet: their vulnerability data is overdue or switched off. The Intelligence page shows each feed.`,
+          text: `${plural(x.componentsWaiting ?? 0, "component")} cannot be checked yet: their vulnerability data is overdue or switched off. Integrations → Data sources shows each feed.`,
         };
       return {
         title: "Waiting for vulnerability data",

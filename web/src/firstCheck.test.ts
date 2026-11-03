@@ -100,7 +100,7 @@ test("checked, vulnerability data not synced: says how many wait and that it res
   // Overdue (feeds off, air-gapped): it will not resolve on its own.
   const o = phaseText("feeds", x, "server", "", true);
   assert.equal(o.title, "Vulnerability data is missing");
-  assert.match(o.text, /Intelligence/);
+  assert.match(o.text, /Data sources/);
 });
 
 test("done: the milestone from the real numbers", () => {
