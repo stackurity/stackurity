@@ -23,6 +23,8 @@ import {
 import { Card, ErrorBox, RelativeTime } from "./ui";
 import { IconMessage } from "./Icons";
 import { confirmAction } from "./ConfirmDialog";
+import { AskFeedbackButton, AskRate } from "./AskFeedback";
+import { AskLongChat } from "./AskLongChat";
 import type { AskPanelState } from "../askState";
 
 /** Renders an answer: text, bold, code, lists, and links to Stackurity pages only (ask.ts). */
@@ -85,6 +87,8 @@ export function AskButton({ status, onOpen }: { status: AskStatus | undefined; o
 interface Turn {
   role: "user" | "assistant" | "notice";
   text: string;
+  /** An answer's sequence number, for feedback. */
+  seq?: number;
 }
 
 const REASONS: Record<string, string> = {
@@ -132,6 +136,7 @@ export function AskPanel({
   const [history, setHistory] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
   const [usePage, setUsePage] = useState(true);
+  const [longChat, setLongChat] = useState(false);
   const abort = useRef<AbortController | null>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const end = useRef<HTMLDivElement>(null);
@@ -197,6 +202,7 @@ export function AskPanel({
   };
 
   const openConv = async (id: number) => {
+    setLongChat(false);
     setHistory(false);
     setError(null);
     try {
@@ -210,6 +216,7 @@ export function AskPanel({
   };
 
   const fresh = () => {
+    setLongChat(false);
     setLoaded(null);
     setConv(null);
     setTurns([]);
@@ -284,6 +291,7 @@ export function AskPanel({
     const ctl = new AbortController();
     abort.current = ctl;
     let answer = "";
+    let answerSeq = 0;
     let closing: Turn | null = null;
     try {
       await streamQuestion(id, q, usePage ? page : null, getActiveProject(), (e) => {
@@ -301,7 +309,9 @@ export function AskPanel({
             setTool(String(e.data.tool ?? "Reading"));
             break;
           case "done":
+            answerSeq = Number(e.data.answer_seq) || 0;
             if (e.data.message) closing = { role: "notice", text: String(e.data.message) };
+            if (e.data.long_chat === true) setLongChat(true);
             break;
           case "error":
             closing = { role: "notice", text: String(e.data.message ?? "Something went wrong.") };
@@ -316,7 +326,7 @@ export function AskPanel({
       setBusy(false);
       setDraft("");
       setTool("");
-      setTurns((t) => [...t, ...(answer ? [{ role: "assistant" as const, text: answer }] : []), ...(closing ? [closing] : [])]);
+      setTurns((t) => [...t, ...(answer ? [{ role: "assistant" as const, text: answer, seq: answerSeq || undefined }] : []), ...(closing ? [closing] : [])]);
       reload();
     }
   };
@@ -347,6 +357,7 @@ export function AskPanel({
         <span className="ask-head-actions">
           {s?.notice_accepted && (
             <>
+              <AskFeedbackButton conv={conv} />
               <button type="button" className="btn btn-sm btn-link" onClick={() => setHistory((h) => !h)} aria-expanded={history}>
                 History
               </button>
@@ -426,8 +437,9 @@ export function AskPanel({
                   {t.text}
                 </div>
               ) : t.role === "assistant" ? (
-                <BotTurn key={i}>
+                <BotTurn key={`${conv ?? "new"}:${i}`}>
                   <AskAnswer text={t.text} onNavigate={onLinkClick} />
+                  {conv !== null && t.seq ? <AskRate conv={conv} seq={t.seq} /> : null}
                 </BotTurn>
               ) : (
                 <p key={i} className="ask-note small">
@@ -443,6 +455,7 @@ export function AskPanel({
             {busy && <p className="small muted ask-tool">{tool ? `${tool}…` : "Thinking…"}</p>}
             <div ref={end} />
           </div>
+          {longChat && !busy && <AskLongChat onNew={fresh} />}
           <form className="ask-form" onSubmit={(e) => void send(e)}>
             {blocked && <p className="ask-note small">{blocked}</p>}
             {page && usePage && (
@@ -582,7 +595,7 @@ function providerWordsShort(provider: string): string {
 
 function toTurns(messages: AskMessage[]): Turn[] {
   return messages.map((m) =>
-    m.stop_reason === "refusal" && !m.text ? { role: "notice", text: "Claude declined to answer this question." } : { role: m.role, text: m.text },
+    m.stop_reason === "refusal" && !m.text ? { role: "notice", text: "Claude declined to answer this question." } : { role: m.role, text: m.text, seq: m.seq },
   );
 }
 
