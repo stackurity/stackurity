@@ -88,6 +88,12 @@ export function providerWords(provider: string): string {
  * before their first question. Changing a word here means a new version
  * there, and a new approval.
  *
+ * Version notes, ask-consent-2026-11-03: in the person's notice, the last
+ * sentence of the retention paragraph reads "Administrators can turn Ask
+ * Stackurity off at any time." instead of the administrator's "You can turn
+ * Ask Stackurity off at any time.", since most people who see the notice
+ * cannot; the owner approved this on 2026-11-03 as part of the version.
+ *
  * For Amazon Bedrock and Vertex AI (self-hosted servers set up with them)
  * the paragraphs that name Anthropic as the processor say who does instead.
  */
