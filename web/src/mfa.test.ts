@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { MFA_METHODS, mfaFromQuery, mustSetUpOwnFirst } from "./mfa.ts";
+import { readFileSync } from "node:fs";
+import { MFA_METHODS, PASSKEY_COPIED_FIX, mfaFromQuery, mustSetUpOwnFirst } from "./mfa.ts";
 import { safeReturn } from "./returnTo.ts";
 
 test("an admin without two-factor must set up their own before requiring it", () => {
@@ -37,4 +38,19 @@ test("a provider sign-in continues to the second step it names", () => {
   // Names the page does not know are dropped; nothing left is no step.
   assert.deepEqual(mfaFromQuery("?mfa=passkey,<script>"), ["passkey"]);
   assert.equal(mfaFromQuery("?mfa=sms"), null);
+});
+
+test("a passkey blocked as copied: the page says what the server and the docs say", () => {
+  const read = (f: string) => readFileSync(new URL(f, import.meta.url), "utf8");
+  const page = read("pages/TwoFactor.tsx");
+  assert.match(page, /PASSKEY_COPIED_FIX\.join/);
+  assert.doesNotMatch(page, /add the key again if it is yours/);
+  // The server's message is Go string pieces joined with +; the last sentence has no full stop there.
+  const go = read("../../internal/api/webauthn.go").replace(/"\s*\+\s*"/g, "");
+  const docs = read("../../docs/install.md");
+  const [again, onlyOne] = PASSKEY_COPIED_FIX;
+  assert.ok(go.includes(again), "webauthn.go: " + again);
+  assert.ok(go.includes(onlyOne.replace(/\.$/, "")), "webauthn.go: " + onlyOne);
+  assert.match(docs, /sign in with another method, then remove it and add it again/);
+  assert.match(docs, /another admin resets their two-factor sign-in/);
 });
