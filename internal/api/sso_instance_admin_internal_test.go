@@ -92,11 +92,28 @@ func TestSSOSessionNeverInstanceAdmin(t *testing.T) {
 	if _, err := st.Pool.Exec(tenant.System(bg), `UPDATE users SET instance_admin = false WHERE id = $1`, u.ID); err != nil {
 		t.Fatal(err)
 	}
-	if status, b := call(sso, "", "POST", "/api/v1/tokens", `{"name":"ops3","role":"admin","ttl_hours":0}`); status != 201 {
-		t.Errorf("token from an SSO session of an ordinary admin: %d %s", status, b)
+	secretOf := func(b []byte) string {
+		var created struct {
+			Secret string `json:"secret"`
+		}
+		_ = json.Unmarshal(b, &created)
+		return created.Secret
 	}
+	status, b = call(sso, "", "POST", "/api/v1/tokens", `{"name":"ops3","role":"admin","ttl_hours":0}`)
+	if status != 201 {
+		t.Fatalf("token from an SSO session of an ordinary admin: %d %s", status, b)
+	}
+	early := secretOf(b)
+	// Made an instance admin by SQL afterwards: that token gains nothing
+	// while the account is linked.
 	if _, err := st.Pool.Exec(tenant.System(bg), `UPDATE users SET instance_admin = true WHERE id = $1`, u.ID); err != nil {
 		t.Fatal(err)
+	}
+	if status, b := call("", early, "GET", "/api/v1/admin/workspaces", ""); status != 403 {
+		t.Errorf("token minted before the promotion, account linked: %d %s", status, b)
+	}
+	if status, _ := call("", early, "GET", "/api/v1/auth/me", ""); status != 200 {
+		t.Errorf("the token's ordinary use: %d", status)
 	}
 
 	// The same account's password session keeps the role (the policy is
@@ -107,5 +124,22 @@ func TestSSOSessionNeverInstanceAdmin(t *testing.T) {
 	}
 	if status, b := call(pw, "", "GET", "/api/v1/admin/workspaces", ""); status != 200 {
 		t.Errorf("password session of an instance admin: %d %s", status, b)
+	}
+	// A token it makes while the account is still linked has no
+	// instance-admin powers either (the documented rule: remove the link
+	// first); once the link is removed, the same token has them.
+	status, b = call(pw, "", "POST", "/api/v1/tokens", `{"name":"ops4","role":"admin","ttl_hours":0}`)
+	if status != 201 {
+		t.Fatalf("token from a password session: %d %s", status, b)
+	}
+	fromPassword := secretOf(b)
+	if status, b := call("", fromPassword, "GET", "/api/v1/admin/workspaces", ""); status != 403 {
+		t.Errorf("password-session token of a linked instance admin: %d %s", status, b)
+	}
+	if _, err := st.Pool.Exec(tenant.System(bg), `UPDATE users SET oidc_issuer = NULL, oidc_subject = NULL WHERE id = $1`, u.ID); err != nil {
+		t.Fatal(err)
+	}
+	if status, b := call("", fromPassword, "GET", "/api/v1/admin/workspaces", ""); status != 200 {
+		t.Errorf("password-session token after the link is removed: %d %s", status, b)
 	}
 }
