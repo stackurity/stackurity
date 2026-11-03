@@ -160,8 +160,14 @@ func TestPrepareOnRepositoryCopy(t *testing.T) {
 	}
 	next := version{prev.major, prev.minor + 1, 0}
 	// A changelog with something to release, as main has between releases.
+	// Right after a release the Unreleased heading is there but empty: fill
+	// it rather than adding a second one.
 	if !hasEntries(cl) {
-		cl = strings.Replace(cl, "## "+prev.String(), "## Unreleased\n\n### Fixed\n\n- **Test entry.**\n\n## "+prev.String(), 1)
+		if strings.Contains(cl, "\n## Unreleased\n") {
+			cl = strings.Replace(cl, "\n## Unreleased\n", "\n## Unreleased\n\n### Fixed\n\n- **Test entry.**\n", 1)
+		} else {
+			cl = strings.Replace(cl, "## "+prev.String(), "## Unreleased\n\n### Fixed\n\n- **Test entry.**\n\n## "+prev.String(), 1)
+		}
 	}
 	dir := t.TempDir()
 	files := append([]string{changelogFile, serverJSON, matrixFile, "go.mod", "go.sum"}, append(chartFiles, docFiles...)...)

@@ -138,7 +138,7 @@ type IngestResult struct {
 
 // ErrProjectIgnored: an upload asked for a project and the server's answer
 // does not name it, so the server ignored project_id.
-var ErrProjectIgnored = errors.New("the server stored the upload without the project: it does not support project_id on uploads (Stackurity 0.10 or later is needed); add the asset to the project in Settings > Projects and access")
+var ErrProjectIgnored = errors.New("the server stored the upload without the project: it does not support project_id on uploads (Stackurity 0.10 or later is needed); add the asset to the project in Assets > Projects")
 
 // projectQuery is the query string an upload adds for c.Project.
 func (c *Client) projectQuery() string {
@@ -220,6 +220,10 @@ const FeatureAppList = "app_list"
 // identities to their host and takes a host batch's images.refs (the
 // agent's --docker).
 const FeatureHostImages = "host_images"
+
+// FeatureLeaks, in Meta.Features, means the server takes a batch's leaks
+// (keys and passwords found in files). Older servers refuse the field.
+const FeatureLeaks = "leaks"
 
 // Meta is the server's anonymous description of itself (GET /meta).
 type Meta struct {

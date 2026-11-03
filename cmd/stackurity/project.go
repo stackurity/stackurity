@@ -90,7 +90,7 @@ func resolveProject(ctx context.Context, cl *client.Client, v string) (id int64,
 	var ae *client.APIError
 	switch {
 	case errors.As(err, &ae) && ae.Status == 403:
-		return 0, "", fmt.Errorf("this token cannot list projects, so the name %q cannot be looked up; pass the project's id instead (Settings > Projects and access)", v)
+		return 0, "", fmt.Errorf("this token cannot list projects, so the name %q cannot be looked up; pass the project's id instead (Assets > Projects)", v)
 	case errors.As(err, &ae) && ae.Status == 404:
 		return 0, "", errors.New("the server has no projects (servers before 0.8)")
 	case err != nil:
@@ -145,7 +145,7 @@ func enrollProject(v string) (int64, error) {
 	}
 	n, err := strconv.ParseInt(v, 10, 64)
 	if err != nil || n <= 0 {
-		return 0, fmt.Errorf("--project: enroll needs the project's id, not a name (%q): it has no token to look names up with. The id is in Settings > Projects and access", v)
+		return 0, fmt.Errorf("--project: enroll needs the project's id, not a name (%q): it has no token to look names up with. The id is in Assets > Projects", v)
 	}
 	return n, nil
 }

@@ -32,6 +32,11 @@ type IngestResult struct {
 	// ImagesRemoved lists the container images on this host that the
 	// batch's image list (images.refs) no longer names, marked removed.
 	ImagesRemoved []int64 `json:"images_removed,omitempty"`
+	// LeaksFound is the number of leaked keys the batch reported, and
+	// LeaksGone the open ones on the asset its complete scan no longer
+	// saw, now resolved.
+	LeaksFound int   `json:"leaks_found,omitempty"`
+	LeaksGone  int64 `json:"leaks_gone,omitempty"`
 	// VEX is what importing the VEX embedded in an uploaded CycloneDX SBOM
 	// did (POST /sbom/import), and VEXNote why it was not imported.
 	VEX     *VEXImportResult `json:"vex,omitempty"`
@@ -158,6 +163,11 @@ func (s *Store) Ingest(ctx context.Context, b *model.ObservationBatch, tokenID i
 		if b.Images != nil && b.Asset.Kind == model.AssetHost {
 			if res.ImagesRemoved, err = removeGoneImages(ctx, tx, assetID, b, tok); err != nil {
 				return fmt.Errorf("removed images: %w", err)
+			}
+		}
+		if b.Leaks != nil {
+			if res.LeaksFound, res.LeaksGone, err = writeLeaks(ctx, tx, assetID, res.CollectionID, b); err != nil {
+				return fmt.Errorf("leaks: %w", err)
 			}
 		}
 		status := "ok"

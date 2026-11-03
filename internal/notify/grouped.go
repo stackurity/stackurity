@@ -137,13 +137,13 @@ func teamIn(ids []int64, team *int64) bool {
 
 // incidentInProjects: a route limited to projects hears about an issue
 // (its findings are then counted per asset, for the project's assets only)
-// and about collection and coverage problems of the project's assets, not
-// about other problems.
+// and about collection and coverage problems and leaked keys of the
+// project's assets, not about other problems.
 func incidentInProjects(r store.Route, in store.Incident) bool {
 	if isFindingKind(in.Kind) {
 		return true
 	}
-	if in.Kind != "collection" && in.Kind != "coverage" {
+	if in.Kind != "collection" && in.Kind != "coverage" && in.Kind != "leak" {
 		return false
 	}
 	if rd, ok := readReporting(in); ok {
@@ -209,6 +209,12 @@ func urgentIncident(r store.Route, in store.Incident) bool {
 	if !inScope(r, in) {
 		return false
 	}
+	// A leaked key is a security issue, not a problem with Stackurity:
+	// it goes where new issues go right away.
+	if in.Kind == "leak" {
+		t := newIssueThreshold(r)
+		return t != "" && risk.PriorityAtLeast(in.Priority, t)
+	}
 	if !isFindingKind(in.Kind) {
 		return r.HasEvent(store.EventProblems) && (risk.PriorityAtLeast(in.Priority, r.MinPriority) || in.SOS)
 	}
@@ -246,7 +252,7 @@ func (d *Dispatcher) url(path string, q url.Values) string {
 
 func (d *Dispatcher) homeURL() string { return d.url("/", nil) }
 func (d *Dispatcher) settingsURL() string {
-	return d.url("/settings/notifications", url.Values{"tab": {"routes"}})
+	return d.url("/integrations", nil)
 }
 func (d *Dispatcher) fixURL(id string) string { return d.url("/fixes/"+url.PathEscape(id), nil) }
 func (d *Dispatcher) assetURL(id int64) string {
@@ -943,7 +949,7 @@ func (d *Dispatcher) planSummary(ctx context.Context, r store.Route, weekly bool
 		}
 		msg.Sections = append(msg.Sections, Section{Items: []Item{{
 			Text: fmt.Sprintf("Includes %s held back by %s", plural(len(held), "urgent message"), limit),
-			Link: d.url("/settings/notifications", url.Values{"tab": {"deliveries"}}),
+			Link: d.url("/integrations/deliveries", nil),
 		}}})
 		msg.Summary = itemTexts(msg.Sections)
 	}

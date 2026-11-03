@@ -42,7 +42,7 @@ export function OwnerRulesCard({ assetId, projectId }: { assetId?: number; proje
       )}
       {can("admin") && (
         <p className="small">
-          <Link to="/settings/owners">Manage owner rules</Link>
+          <Link to="/people/owners">Manage owner rules</Link>
         </p>
       )}
     </Card>

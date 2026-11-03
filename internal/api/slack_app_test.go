@@ -194,7 +194,7 @@ func TestSlackAppOAuthState(t *testing.T) {
 	var back installAnswer
 	// (The same Slack channel again: the integration is reused.)
 	if code := admin.do("POST", "/api/v1/integrations/slack/oauth", map[string]string{"code": "good-code", "state": u.Query().Get("state")}, &back); code != 200 ||
-		back.ReturnTo != "/settings/integrations" || back.Channel.ID != got.Channel.ID {
+		back.ReturnTo != "/integrations" || back.Channel.ID != got.Channel.ID {
 		t.Errorf("return_to = %q (%d)", back.ReturnTo, code)
 	}
 	// App channels are made only by the install, and keep their webhook.

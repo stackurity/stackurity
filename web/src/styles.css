@@ -4276,6 +4276,15 @@ h6.md-h {
   flex-direction: column;
   gap: var(--s3);
 }
+/* A card list that stands in for a table on phones (Checks). */
+.approval-list.only-narrow {
+  display: none;
+}
+@media (max-width: 720px) {
+  .approval-list.only-narrow {
+    display: flex;
+  }
+}
 .approval {
   padding: var(--s3) var(--s4);
   background: var(--surface);
@@ -4877,7 +4886,7 @@ h6.md-h {
   word-break: break-all;
 }
 
-/* --- Settings, Integrations */
+/* --- Integrations */
 .int-name {
   display: flex;
   align-items: center;
@@ -4998,7 +5007,7 @@ h6.md-h {
   min-width: 0;
 }
 
-/* --- Settings, AI assistants */
+/* --- Integrations, AI assistants */
 .assistant-url-label {
   margin: 0 0 6px;
 }
@@ -5994,7 +6003,7 @@ a.cov-chip:hover {
   }
 }
 
-/* Settings ▸ Integrations: GitLab groups connected with Connect GitLab. */
+/* Integrations: GitLab groups connected with Connect GitLab. */
 .int-gl-row {
   display: flex;
   flex-wrap: wrap;
@@ -6019,7 +6028,7 @@ a.cov-chip:hover {
   gap: 8px;
 }
 
-/* Settings ▸ Integrations: GitHub accounts connected through the GitHub App. */
+/* Integrations: GitHub accounts connected through the GitHub App. */
 .int-gh-row {
   display: flex;
   flex-wrap: wrap;
@@ -6029,7 +6038,7 @@ a.cov-chip:hover {
   padding: 8px 0;
 }
 
-/* Settings, Integrations, AWS (pages/settings/Aws.tsx) */
+/* Integrations, AWS (pages/settings/Aws.tsx) */
 .aws-inline {
   display: flex;
   gap: var(--s2);
@@ -6048,7 +6057,7 @@ a.cov-chip:hover {
   overflow: auto;
 }
 
-/* Settings → Users: what a new user can see, and the permissions table. */
+/* People → Users: what a new user can see, and the permissions table. */
 .access-scope,
 .access-projects {
   margin-top: var(--s3);

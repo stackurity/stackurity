@@ -2204,8 +2204,48 @@ export function vexExportURL(format: "openvex" | "cyclonedx", assetID?: number, 
 export interface IgnoreRequestList extends List<IgnoreRequest> {
   can_decide: boolean;
 }
-export const INCIDENT_KINDS = ["vulnerability", "end_of_life", "feed", "collection", "coverage", "platform"] as const;
-export const SYSTEM_INCIDENT_KINDS = ["feed", "collection", "coverage", "platform"];
+export const INCIDENT_KINDS = ["vulnerability", "end_of_life", "leak", "feed", "collection", "coverage", "platform"] as const;
+export const SYSTEM_INCIDENT_KINDS = ["leak", "feed", "collection", "coverage", "platform"];
+
+/** A key, token or password found written in a file. The value is never stored. */
+export interface Leak {
+  id: number;
+  asset_id: number;
+  asset_name: string;
+  asset_kind: string;
+  collector_id: string;
+  fingerprint: string;
+  path: string;
+  line: number;
+  rule: string;
+  title: string;
+  name: string;
+  preview: string;
+  severity: "critical" | "high" | "medium" | "low";
+  exposure: "" | "served" | "world_readable";
+  status: "open" | "resolved";
+  resolution: "" | "gone" | "dismissed";
+  resolution_note: string;
+  resolved_by: number | null;
+  first_seen: string;
+  last_seen: string;
+  resolved_at: string | null;
+  /** One line: why it has its severity and what to do. */
+  why: string;
+}
+
+/** The last key scan of an asset by one collector. */
+export interface LeakScan {
+  collector_id: string;
+  complete: boolean;
+  reason: string;
+  found: number;
+  scanned_at: string;
+}
+
+export interface LeakList extends List<Leak> {
+  scans?: LeakScan[];
+}
 
 export interface PriorityFactor {
   name: string;

@@ -88,7 +88,7 @@ export function AccessPicker({
         <div className="field access-projects">
           <ErrorBox error={projects.error} title="Could not load projects" />
           {projects.data && projects.data.items.length === 0 && (
-            <Notice kind="warn">There are no projects yet. Create one under Settings, Projects and access, or give them all projects and assets.</Notice>
+            <Notice kind="warn">There are no projects yet. Create one under Assets, Projects, or give them all projects and assets.</Notice>
           )}
           {f.projects.map((p) => (
             <ProjectAccess key={p.projectId} idp={idp} pick={p} name={names[p.projectId] ?? `Project ${p.projectId}`} dispatch={dispatch} />
@@ -135,7 +135,7 @@ function TeamPicker({ idp, f, dispatch, teams }: { idp: string; f: AddUserState;
                   onChange={(e) => dispatch({ type: "toggleTeam", teamId: t.id, checked: e.target.checked })} />
                 <span>
                   <strong>{t.name}</strong>
-                  <span className="hint"> {sees.length ? `Can see: ${sees.join("; ")}` : "Can see nothing yet (give it access under Settings, Teams)."}</span>
+                  <span className="hint"> {sees.length ? `Can see: ${sees.join("; ")}` : "Can see nothing yet (give it access under People, Teams)."}</span>
                 </span>
               </label>
             </li>

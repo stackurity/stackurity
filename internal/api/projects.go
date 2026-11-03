@@ -90,6 +90,8 @@ var projectRoutes = map[string]projectScope{
 	"GET /api/v1/assets/{id}/drift":            scopedRead,
 	"GET /api/v1/assets/{id}/stack":            scopedRead,
 	"GET /api/v1/assets/{id}/sbom":             scopedRead,
+	"GET /api/v1/assets/{id}/leaks":            scopedRead,
+	"GET /api/v1/leaks":                        scopedRead,
 	"GET /api/v1/assets/{id}/remediation":      scopedRead,
 	"GET /api/v1/components":                   scopedRead,
 	"GET /api/v1/components/{id}":              scopedRead,
@@ -142,6 +144,8 @@ var projectRoutes = map[string]projectScope{
 	"DELETE /api/v1/assets/{id}/relations": scopedWrite,
 	"POST /api/v1/findings/{id}/actions":   scopedWrite,
 	"POST /api/v1/findings/actions":        scopedWrite,
+	"POST /api/v1/leaks/{id}/dismiss":      scopedWrite,
+	"POST /api/v1/leaks/{id}/undismiss":    scopedWrite,
 	"POST /api/v1/incidents/{id}/actions":  scopedWrite,
 	"POST /api/v1/assets/{id}/check":       scopedWrite,
 	"POST /api/v1/fix-groups/{id}/check":   scopedWrite,
@@ -192,7 +196,7 @@ func (s *Server) projectGate(next http.Handler) http.Handler {
 				return
 			}
 			if !a.AllowWrites && r.Method != http.MethodGet {
-				writeError(w, 403, "forbidden", "this assistant is read-only: allow changes for it under Settings → AI assistants")
+				writeError(w, 403, "forbidden", "this assistant is read-only: allow changes for it under Integrations → AI assistants")
 				return
 			}
 			if a.ProjectID != nil {
@@ -523,7 +527,7 @@ func (s *Server) createGrant(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if !member {
-				writeError(w, 403, "invite_only", "people join this service by invitation: invite them by email (Settings → Users, or the project's Invite)")
+				writeError(w, 403, "invite_only", "people join this service by invitation: invite them by email (People → Users, or the project's Invite)")
 				return
 			}
 			in.UserID = &uid

@@ -40,7 +40,7 @@ export function useAskAIHidden(): [boolean, (hidden: boolean) => void] {
 /**
  * "Ask Claude / ChatGPT about this": opens the assistant with a question
  * made of public identifiers only (askAI.ts). Not connected yet: a link to
- * Settings, AI assistants instead. Dismissible per person.
+ * Integrations, AI assistants instead. Dismissible per person.
  */
 export function AskAI({ question, compact }: { question: AskQuestion | null; compact?: boolean }) {
   const [hidden, setHidden] = useAskAIHidden();
@@ -59,7 +59,7 @@ export function AskAI({ question, compact }: { question: AskQuestion | null; com
   if (hidden || !question || offer === null) return null;
 
   const dismiss = (
-    <button type="button" className="btn-link ask-ai-dismiss" onClick={() => setHidden(true)} aria-label="Hide Ask your AI everywhere" title="Hide (you can turn it back on in Settings, AI assistants)">
+    <button type="button" className="btn-link ask-ai-dismiss" onClick={() => setHidden(true)} aria-label="Hide Ask your AI everywhere" title="Hide (you can turn it back on in Integrations, AI assistants)">
       ×
     </button>
   );
@@ -69,7 +69,7 @@ export function AskAI({ question, compact }: { question: AskQuestion | null; com
     return (
       <aside className="ask-ai" aria-label="Ask your AI">
         <span className="ask-ai-text">
-          Ask Claude or ChatGPT about this. <Link to="/settings/ai-assistants">Connect your assistant</Link> first, then it can look up the details in
+          Ask Claude or ChatGPT about this. <Link to="/integrations/ai-assistants">Connect your assistant</Link> first, then it can look up the details in
           Stackurity with your permission.
         </span>
         {dismiss}
